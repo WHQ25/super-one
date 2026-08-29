@@ -47,10 +47,65 @@ describe('Codex realtime protocol mapping', () => {
     })).toEqual({ type: 'realtime_transcript', role: 'assistant', text: 'Done', final: true })
   })
 
+  it('maps the item transcript stream so concurrent speakers keep separate buffers', () => {
+    expect(mapCodexRealtimeNotification({
+      method: 'thread/realtime/item/started',
+      params: {
+        threadId: 't1',
+        item: { id: 'item-1', realtimeSessionId: 'rt-1', type: 'transcriptSegment', role: 'assistant', text: '' },
+      },
+    })).toEqual({
+      type: 'realtime_transcript_item',
+      phase: 'started',
+      itemId: 'item-1',
+      realtimeSessionId: 'rt-1',
+      role: 'assistant',
+      text: '',
+    })
+    expect(mapCodexRealtimeNotification({
+      method: 'thread/realtime/item/transcript/delta',
+      params: { threadId: 't1', itemId: 'item-1', delta: 'On ' },
+    })).toEqual({ type: 'realtime_transcript_item', phase: 'delta', itemId: 'item-1', text: 'On ' })
+    expect(mapCodexRealtimeNotification({
+      method: 'thread/realtime/item/completed',
+      params: {
+        threadId: 't1',
+        item: { id: 'item-1', realtimeSessionId: 'rt-1', type: 'transcriptSegment', role: 'assistant', text: 'On it.' },
+      },
+    })).toEqual({
+      type: 'realtime_transcript_item',
+      phase: 'completed',
+      itemId: 'item-1',
+      realtimeSessionId: 'rt-1',
+      role: 'assistant',
+      text: 'On it.',
+    })
+  })
+
+  it('ignores realtime items that are not transcript segments', () => {
+    expect(mapCodexRealtimeNotification({
+      method: 'thread/realtime/item/completed',
+      params: {
+        threadId: 't1',
+        item: { id: 'item-2', realtimeSessionId: 'rt-1', type: 'realtimeSessionStarted' },
+      },
+    })).toBeNull()
+  })
+
   it('extracts durable transcript segments from the mixed thread timeline', () => {
     expect(mapCodexRealtimeTimeline({
       data: [
-        { type: 'turnStarted', position: 1, turnId: 'turn-1' },
+        {
+          type: 'realtime',
+          position: 3,
+          item: {
+            id: 'rt-item-2',
+            realtimeSessionId: 'rt-1',
+            type: 'transcriptSegment',
+            role: 'assistant',
+            text: 'hi',
+          },
+        },
         {
           type: 'realtime',
           position: 2,
@@ -62,10 +117,14 @@ describe('Codex realtime protocol mapping', () => {
             text: 'hello',
           },
         },
+        { type: 'turnStarted', position: 1, turnId: 'turn-1' },
       ],
       activeRealtimeSessionAtPageStart: 'rt-1',
     })).toEqual({
-      segments: [{ id: 'rt-item-1', realtimeSessionId: 'rt-1', role: 'user', text: 'hello' }],
+      segments: [
+        { id: 'rt-item-1', realtimeSessionId: 'rt-1', role: 'user', text: 'hello' },
+        { id: 'rt-item-2', realtimeSessionId: 'rt-1', role: 'assistant', text: 'hi' },
+      ],
       threadMessages: [],
       activeRealtimeSessionId: 'rt-1',
       hasTimeline: true,

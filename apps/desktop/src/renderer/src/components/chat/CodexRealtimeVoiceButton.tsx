@@ -22,8 +22,9 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, additionalDir
   const [state, setState] = useState<VoiceState>('idle')
   const setView = useCodexRealtimeViewStore((store) => store.setView)
   const setRealtimeSession = useCodexRealtimeViewStore((store) => store.setRealtimeSession)
-  const appendTranscriptDelta = useCodexRealtimeViewStore((store) => store.appendTranscriptDelta)
-  const finalizeTranscript = useCodexRealtimeViewStore((store) => store.finalizeTranscript)
+  const startTranscriptItem = useCodexRealtimeViewStore((store) => store.startTranscriptItem)
+  const appendTranscriptItemDelta = useCodexRealtimeViewStore((store) => store.appendTranscriptItemDelta)
+  const completeTranscriptItem = useCodexRealtimeViewStore((store) => store.completeTranscriptItem)
   const peerRef = useRef<RTCPeerConnection | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -89,12 +90,21 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, additionalDir
       })
       return
     }
-    if (event.type === 'realtime_transcript') {
-      if (event.final) {
-        finalizeTranscript(sessionId, event.role, event.text)
-      } else {
-        appendTranscriptDelta(sessionId, event.role, event.text)
+    if (event.type === 'realtime_transcript_item') {
+      if (event.phase === 'delta') {
+        appendTranscriptItemDelta(sessionId, event.itemId, event.text)
+        return
       }
+      // `started`/`completed` always carry the item's role and realtime session.
+      if (!event.role || !event.realtimeSessionId) return
+      const item = {
+        itemId: event.itemId,
+        realtimeSessionId: event.realtimeSessionId,
+        role: event.role,
+        text: event.text,
+      }
+      if (event.phase === 'started') startTranscriptItem(sessionId, item)
+      else completeTranscriptItem(sessionId, item)
       return
     }
     if (event.type === 'realtime_error') {
@@ -109,7 +119,7 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, additionalDir
       setRealtimeSession(sessionId, null)
       void refreshTimeline()
     }
-  }), [appendTranscriptDelta, finalizeTranscript, refreshTimeline, releaseMedia, sessionId, setRealtimeSession, setView, updateState])
+  }), [appendTranscriptItemDelta, completeTranscriptItem, refreshTimeline, releaseMedia, sessionId, setRealtimeSession, setView, startTranscriptItem, updateState])
 
   useEffect(() => () => {
     releaseMedia()

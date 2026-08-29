@@ -63,6 +63,12 @@ export function reconcileRealtimeTimeline(
   const merged = {
     ...providerTimeline,
     segments,
+    // Realtime lifecycle events are persisted before they are sent to the
+    // renderer. When a provider snapshot races with start/close, the local row
+    // therefore carries the newer liveness state.
+    activeRealtimeSessionId: local
+      ? local.activeRealtimeSessionId
+      : providerTimeline.activeRealtimeSessionId,
     hasTimeline: providerTimeline.hasTimeline || segments.length > 0 || local?.hasTimeline === true,
   }
   saveRealtimeTimeline(sessionId, merged)
@@ -73,7 +79,7 @@ export function reconcileRealtimeTimeline(
 export function applyRealtimeTimelineEvent(sessionId: string, event: AgentEvent): void {
   if (
     event.type !== 'realtime_started'
-    && event.type !== 'realtime_transcript'
+    && event.type !== 'realtime_transcript_item'
     && event.type !== 'realtime_closed'
   ) return
 
@@ -90,19 +96,30 @@ export function applyRealtimeTimelineEvent(sessionId: string, event: AgentEvent)
     saveRealtimeTimeline(sessionId, { ...current, activeRealtimeSessionId: null, hasTimeline: true })
     return
   }
-  if (!event.final || !event.text) return
+  // Only a completed item is durable: Codex has sealed it into the thread rollout by
+  // then, and `itemId` is the id its canonical copy will carry.
+  if (event.phase !== 'completed' || !event.text || !event.role) return
 
-  const realtimeSessionId = current.activeRealtimeSessionId ?? 'live'
-  const last = current.segments.at(-1)
-  if (last?.realtimeSessionId === realtimeSessionId && last.role === event.role && last.text === event.text) return
+  const realtimeSessionId = event.realtimeSessionId
+    ?? current.activeRealtimeSessionId
+    ?? 'live'
+  const segment = {
+    id: `local-${randomUUID()}`,
+    sourceItemId: event.itemId,
+    realtimeSessionId,
+    role: event.role,
+    text: event.text,
+  }
+  const existing = current.segments.findIndex((candidate) => (
+    candidate.sourceItemId === event.itemId || candidate.id === event.itemId
+  ))
   saveRealtimeTimeline(sessionId, {
     ...current,
-    segments: [...current.segments, {
-      id: `local-${randomUUID()}`,
-      realtimeSessionId,
-      role: event.role,
-      text: event.text,
-    }],
+    segments: existing >= 0
+      ? current.segments.map((candidate, index) => (
+        index === existing ? { ...candidate, text: segment.text } : candidate
+      ))
+      : [...current.segments, segment],
     hasTimeline: true,
   })
 }

@@ -24,22 +24,51 @@ describe('realtime timeline repository', () => {
     })
   })
 
-  it('persists final transcript segments and closes the active realtime session', () => {
+  it('persists completed transcript items and closes the active realtime session', () => {
     applyRealtimeTimelineEvent('sid-1', { type: 'realtime_started', realtimeSessionId: 'rt-1', version: 'v3' })
-    applyRealtimeTimelineEvent('sid-1', { type: 'realtime_transcript', role: 'user', text: 'hello', final: false })
-    applyRealtimeTimelineEvent('sid-1', { type: 'realtime_transcript', role: 'user', text: 'hello', final: true })
+    applyRealtimeTimelineEvent('sid-1', {
+      type: 'realtime_transcript_item', phase: 'started', itemId: 'item-1', realtimeSessionId: 'rt-1', role: 'user', text: '',
+    })
+    applyRealtimeTimelineEvent('sid-1', {
+      type: 'realtime_transcript_item', phase: 'delta', itemId: 'item-1', text: 'hello',
+    })
+    applyRealtimeTimelineEvent('sid-1', {
+      type: 'realtime_transcript_item', phase: 'completed', itemId: 'item-1', realtimeSessionId: 'rt-1', role: 'user', text: 'hello',
+    })
     applyRealtimeTimelineEvent('sid-1', { type: 'realtime_closed' })
 
     expect(loadRealtimeTimeline('sid-1')).toMatchObject({
       activeRealtimeSessionId: null,
       hasTimeline: true,
-      segments: [{ realtimeSessionId: 'rt-1', role: 'user', text: 'hello' }],
+      segments: [{ sourceItemId: 'item-1', realtimeSessionId: 'rt-1', role: 'user', text: 'hello' }],
     })
+  })
+
+  it('matches a split transcript by item id instead of its repeated text', () => {
+    applyRealtimeTimelineEvent('sid-1', { type: 'realtime_started', realtimeSessionId: 'rt-1', version: 'v3' })
+    applyRealtimeTimelineEvent('sid-1', {
+      type: 'realtime_transcript_item', phase: 'completed', itemId: 'item-1', realtimeSessionId: 'rt-1', role: 'assistant', text: 'Right away',
+    })
+    applyRealtimeTimelineEvent('sid-1', {
+      type: 'realtime_transcript_item', phase: 'completed', itemId: 'item-2', realtimeSessionId: 'rt-1', role: 'assistant', text: 'Right away',
+    })
+    const provider: RealtimeTimelineResult = {
+      segments: [{ id: 'item-2', realtimeSessionId: 'rt-1', role: 'assistant', text: 'Right away' }],
+      threadMessages: [],
+      activeRealtimeSessionId: null,
+      hasTimeline: true,
+    }
+
+    // Only the published half is consumed; the still-pending one survives as itself.
+    expect(reconcileRealtimeTimeline('sid-1', provider).segments.map((segment) => segment.sourceItemId ?? segment.id))
+      .toEqual(['item-2', 'item-1'])
   })
 
   it('keeps a local final segment until the provider timeline publishes it', () => {
     applyRealtimeTimelineEvent('sid-1', { type: 'realtime_started', realtimeSessionId: 'rt-1', version: 'v3' })
-    applyRealtimeTimelineEvent('sid-1', { type: 'realtime_transcript', role: 'assistant', text: 'local reply', final: true })
+    applyRealtimeTimelineEvent('sid-1', {
+      type: 'realtime_transcript_item', phase: 'completed', itemId: 'item-1', realtimeSessionId: 'rt-1', role: 'assistant', text: 'local reply',
+    })
     const provider: RealtimeTimelineResult = {
       segments: [],
       threadMessages: [],
@@ -61,12 +90,31 @@ describe('realtime timeline repository', () => {
     expect(loadRealtimeTimeline('sid-1')).toEqual(reconciled)
   })
 
+  it('keeps persisted lifecycle state when a provider snapshot races with it', () => {
+    applyRealtimeTimelineEvent('sid-1', { type: 'realtime_started', realtimeSessionId: 'rt-1', version: 'v3' })
+    expect(reconcileRealtimeTimeline('sid-1', {
+      segments: [],
+      threadMessages: [],
+      activeRealtimeSessionId: null,
+      hasTimeline: true,
+    }).activeRealtimeSessionId).toBe('rt-1')
+
+    applyRealtimeTimelineEvent('sid-1', { type: 'realtime_closed' })
+    expect(reconcileRealtimeTimeline('sid-1', {
+      segments: [],
+      threadMessages: [],
+      activeRealtimeSessionId: 'rt-1',
+      hasTimeline: true,
+    }).activeRealtimeSessionId).toBeNull()
+  })
+
   it('replaces one matching local segment even when its realtime session id differs', () => {
     applyRealtimeTimelineEvent('sid-1', {
-      type: 'realtime_transcript',
+      type: 'realtime_transcript_item',
+      phase: 'completed',
+      itemId: 'item-1',
       role: 'assistant',
       text: ' local   reply ',
-      final: true,
     })
     const provider: RealtimeTimelineResult = {
       segments: [{

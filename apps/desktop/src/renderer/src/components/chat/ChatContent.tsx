@@ -236,9 +236,6 @@ function ChatTranscript({
   const awaitingRealtimeTimeline = queueProvider === 'codex'
     && !!providerSessionId
     && (realtimeTimelineLoadStatus === 'idle' || realtimeTimelineLoadStatus === 'loading')
-  const realtimeTimelineFailed = queueProvider === 'codex'
-    && !!providerSessionId
-    && realtimeTimelineLoadStatus === 'error'
   const isLocalQueue = !parseRemoteProjectKey(scope?.projectPath ?? activeProject ?? '')
   const canSteerQueue = isLocalQueue
     && HARNESS_CAPABILITIES[queueProvider].supportsQueuedSteer
@@ -381,9 +378,7 @@ function ChatTranscript({
           ? <SideChatEmptyState />
           : awaitingRealtimeTimeline
             ? <p className="py-16 text-center text-sm text-muted-foreground">{t('common.loading')}</p>
-            : realtimeTimelineFailed
-              ? <p className="py-16 text-center text-sm text-muted-foreground">{t('chat.realtimeVoice.timelineLoadFailed')}</p>
-              : draftId || (queueProvider === 'codex' && hasRealtimeTimeline)
+            : draftId || (queueProvider === 'codex' && hasRealtimeTimeline)
                 ? <DraftSessionSurface />
                 : <ChatSuggestions />
       ) : (

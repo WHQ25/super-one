@@ -1,10 +1,12 @@
 import { useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
+import { cn } from '@superone/ui/lib/utils'
 import type { ChatMessage as ChatMessageType, RealtimeTimelineSegment } from '@superone/shared/agent-types'
 import {
   EMPTY_CODEX_REALTIME_SESSION_VIEW,
   hydrateCodexRealtimeTimeline,
+  liveItemToSegment,
   type CodexConversationView,
   useCodexRealtimeViewStore,
 } from '@/stores/codex-realtime-view'
@@ -48,14 +50,12 @@ export function CodexRealtimeTranscript({
     void hydrateCodexRealtimeTimeline(projectPath, sessionId)
   }, [projectPath, sessionId])
 
+  // Live items follow the snapshot: they are the tail of the conversation, ordered by
+  // when each speaker started, and move into `segments` once a refresh publishes them.
   const transcript = useMemo<RealtimeTimelineSegment[]>(() => [
     ...realtime.segments,
-    ...(realtime.liveText ? [{
-      id: 'live',
-      realtimeSessionId: realtime.realtimeSessionId ?? 'live',
-      ...realtime.liveText,
-    }] : []),
-  ], [realtime.liveText, realtime.realtimeSessionId, realtime.segments])
+    ...realtime.liveItems.filter((item) => item.text.length > 0).map(liveItemToSegment),
+  ], [realtime.liveItems, realtime.segments])
   const realtimeMessages = useMemo(() => transcript.map(realtimeSegmentToChatMessage), [transcript])
   const messages = view === 'thread' ? realtime.threadMessages : realtimeMessages
   const lastAssistantIndex = messages.findLastIndex((message) => message.role === 'assistant')
@@ -67,7 +67,10 @@ export function CodexRealtimeTranscript({
         className="chat-scroll-area h-full min-w-0 animate-[fade-in_150ms_ease-out]"
         viewportRef={scrollViewportRef}
       >
-        <SelectionContextMenuZone className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">
+        <SelectionContextMenuZone className={cn(
+          'mx-auto flex w-full min-w-0 max-w-3xl flex-col p-3 @lg:p-3.5 @2xl:p-4',
+          view === 'realtime' ? 'gap-0.5' : 'gap-1 @lg:gap-1.5 @2xl:gap-1.5',
+        )}>
           {messages.map((message, index) => (
             <div key={message.id} data-message-id={message.id} className="chat-message-wrapper">
               <ChatMessage
@@ -75,6 +78,7 @@ export function CodexRealtimeTranscript({
                 sessionStatus="idle"
                 isLastAssistant={index === lastAssistantIndex}
                 hideFooter={view === 'realtime'}
+                compactSpacing={view === 'realtime'}
               />
             </div>
           ))}

@@ -43,9 +43,22 @@ export function mergePendingRealtimeTimelineSegments(
     if (index >= 0) unmatched.delete(index)
   }
 
-  const unpublished: RealtimeTimelineSegment[] = []
+  // A pending segment committed from the realtime item stream already knows the id
+  // its canonical copy will carry. Resolve every such identity before falling back to
+  // text, or a still-unpublished utterance could consume the entry that belongs to a
+  // published one — Codex repeats text whenever it splits a transcript mid-utterance.
+  const unresolved: RealtimeTimelineSegment[] = []
   for (const segment of current) {
     if (!isPending(segment)) continue
+    const index = segment.sourceItemId === undefined ? -1 : canonical.findIndex((candidate, candidateIndex) => (
+      unmatched.has(candidateIndex) && candidate.id === segment.sourceItemId
+    ))
+    if (index >= 0) unmatched.delete(index)
+    else unresolved.push(segment)
+  }
+
+  const unpublished: RealtimeTimelineSegment[] = []
+  for (const segment of unresolved) {
     const key = transcriptKey(segment)
     const index = canonical.findIndex((candidate, candidateIndex) => (
       unmatched.has(candidateIndex) && transcriptKey(candidate) === key

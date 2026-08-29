@@ -69,6 +69,30 @@ function transcriptRole(value: unknown): RealtimeTranscriptRole {
   return value === 'assistant' ? 'assistant' : 'user'
 }
 
+/**
+ * Map a realtime item lifecycle notification. Only transcript segments are
+ * surfaced; the other realtime item kinds (session started/closed, promoted BEM
+ * items) already arrive through dedicated notifications.
+ */
+function mapRealtimeTranscriptItem(
+  params: Record<string, unknown>,
+  phase: 'started' | 'completed',
+): AgentEvent | null {
+  const item = asRecord(params.item)
+  if (readString(item?.type) !== 'transcriptSegment') return null
+  const itemId = readString(item?.id)
+  const realtimeSessionId = readString(item?.realtimeSessionId)
+  if (!itemId || !realtimeSessionId) return null
+  return {
+    type: 'realtime_transcript_item',
+    phase,
+    itemId,
+    realtimeSessionId,
+    role: transcriptRole(item?.role),
+    text: typeof item?.text === 'string' ? item.text : '',
+  }
+}
+
 export function mapCodexRealtimeNotification(notification: AppServerNotification): AgentEvent | null {
   const { method, params } = notification
   switch (method) {
@@ -81,6 +105,17 @@ export function mapCodexRealtimeNotification(notification: AppServerNotification
     case 'thread/realtime/sdp': {
       const sdp = readString(params.sdp)
       return sdp ? { type: 'realtime_sdp', sdp } : null
+    }
+    case 'thread/realtime/item/started':
+      return mapRealtimeTranscriptItem(params, 'started')
+    case 'thread/realtime/item/completed':
+      return mapRealtimeTranscriptItem(params, 'completed')
+    case 'thread/realtime/item/transcript/delta': {
+      const itemId = readString(params.itemId)
+      const text = typeof params.delta === 'string' ? params.delta : ''
+      return itemId && text
+        ? { type: 'realtime_transcript_item', phase: 'delta', itemId, text }
+        : null
     }
     case 'thread/realtime/transcript/delta': {
       const text = typeof params.delta === 'string' ? params.delta : ''
@@ -193,7 +228,16 @@ export function mapCodexRealtimeTimeline(
 ): RealtimeTimelineResult {
   const entries = Array.isArray(response.data) ? response.data : []
   const hasTimeline = entries.some((entry) => readString(asRecord(entry)?.type) === 'realtime')
-  const segments = entries.flatMap((entry) => {
+  // thread/timeline/list returns the newest entries first. Render and persist the
+  // timeline chronologically so replacing the live transcript does not flip it.
+  const chronologicalEntries = entries
+    .map((entry, index) => {
+      const position = asRecord(entry)?.position
+      return { entry, index, position: typeof position === 'number' ? position : index }
+    })
+    .sort((left, right) => left.position - right.position || left.index - right.index)
+    .map(({ entry }) => entry)
+  const segments = chronologicalEntries.flatMap((entry) => {
     const record = asRecord(entry)
     if (readString(record?.type) !== 'realtime') return []
     const item = asRecord(record?.item)
@@ -211,7 +255,7 @@ export function mapCodexRealtimeTimeline(
   })
   return {
     segments,
-    threadMessages: mapTimelineThreadMessages(entries, threadId),
+    threadMessages: mapTimelineThreadMessages(chronologicalEntries, threadId),
     activeRealtimeSessionId: readString(response.activeRealtimeSessionAtPageStart),
     hasTimeline,
   }

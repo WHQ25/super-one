@@ -476,7 +476,7 @@ function migrateLegacyRemotePowerMode(): AppSettings {
 sessionManager.onAny((_sid, event) => {
   if (
     event.type === 'realtime_started'
-    || event.type === 'realtime_transcript'
+    || event.type === 'realtime_transcript_item'
     || event.type === 'realtime_closed'
   ) {
     try {

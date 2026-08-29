@@ -10,7 +10,7 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
   const activeSessionState = {
     draftText: '',
     draftJson: null as object | null,
-    status: 'idle' as const,
+    status: 'idle' as 'idle' | 'streaming',
     attachments: [] as Array<{ mimeType: string; base64: string; name: string }>,
     browserAnnotations: [] as Array<{ id: string }>,
     mentions: [] as Array<{ kind: 'file' | 'directory' | 'agent'; value: string; displayName: string }>,
@@ -386,6 +386,7 @@ vi.mock('./ReviewPanel', () => ({
 
 vi.mock('./StopButton', () => ({
   StopButton: () => null,
+  harnessUsesSoftCancel: () => false,
 }))
 
 vi.mock('@/components/ui/HighlightedText', () => ({
@@ -406,6 +407,7 @@ beforeEach(() => {
   editorState.destroyed = false
   activeSessionState.draftText = ''
   activeSessionState.draftJson = null
+  activeSessionState.status = 'idle'
   activeSessionState.attachments = []
   activeSessionState.mentions = []
   activeSessionState.preferredProvider = 'claude'
@@ -625,6 +627,16 @@ describe('ChatInput', () => {
     expect(send).toBeTruthy()
     expect(realtime).toBeTruthy()
     expect(send!.compareDocumentPosition(realtime!) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+  })
+
+  it('hides the realtime voice control while a Codex turn is streaming', () => {
+    activeSessionState.preferredProvider = 'codex'
+    activeSessionState.sessionProvider = 'codex'
+    activeSessionState.status = 'streaming'
+
+    render(<ChatInput />)
+
+    expect(document.querySelector('button .lucide-audio-lines')).toBeNull()
   })
 
   it('hides the additional directory hint after realtime voice starts', () => {

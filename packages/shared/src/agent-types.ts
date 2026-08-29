@@ -1763,6 +1763,23 @@ export type AgentEventBase =
   | { type: 'realtime_started'; realtimeSessionId?: string; version: string }
   | { type: 'realtime_sdp'; sdp: string }
   | { type: 'realtime_transcript'; role: RealtimeTranscriptRole; text: string; final: boolean }
+  /**
+   * Item-scoped realtime transcript. Unlike the flat `realtime_transcript` stream,
+   * every event carries the item id Codex assigns the moment a speaker starts, so
+   * concurrent user/assistant transcripts stay in separate buffers and keep their
+   * true start order even when a transcription finishes out of order.
+   *
+   * `role`/`realtimeSessionId` are only present on `started` and `completed`; a
+   * `delta` identifies its buffer by `itemId` alone.
+   */
+  | {
+      type: 'realtime_transcript_item'
+      phase: 'started' | 'delta' | 'completed'
+      itemId: string
+      text: string
+      role?: RealtimeTranscriptRole
+      realtimeSessionId?: string
+    }
   | { type: 'realtime_error'; error: string }
   | { type: 'realtime_closed'; reason?: string }
 
@@ -1789,6 +1806,12 @@ export interface RealtimeTimelineSegment {
   realtimeSessionId: string
   role: RealtimeTranscriptRole
   text: string
+  /**
+   * Codex realtime item id of a segment committed locally before the provider
+   * published it. Lets a snapshot merge match its canonical copy by id instead of
+   * by text, which a split transcript would repeat.
+   */
+  sourceItemId?: string
 }
 
 export interface RealtimeTimelineResult {

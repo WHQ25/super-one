@@ -9,13 +9,27 @@ import { mergePendingRealtimeTimelineSegments } from '@superone/shared/realtime-
 
 export type CodexConversationView = 'thread' | 'realtime'
 
+/**
+ * One transcript item of the running call. Codex opens a separate item per speaker
+ * the moment they start, so the two roles stream into two buffers and the array
+ * order is the order speech began — not the order transcription happened to finish.
+ */
+export interface CodexRealtimeLiveItem {
+  itemId: string
+  realtimeSessionId: string
+  role: RealtimeTranscriptRole
+  text: string
+  done: boolean
+}
+
 export interface CodexRealtimeSessionViewState {
   view: CodexConversationView
   loadStatus: 'idle' | 'loading' | 'loaded' | 'error'
   segments: RealtimeTimelineSegment[]
   threadMessages: ChatMessage[]
-  liveText: { role: RealtimeTranscriptRole; text: string } | null
+  liveItems: CodexRealtimeLiveItem[]
   realtimeSessionId: string | null
+  realtimeSessionSource: 'timeline' | 'event'
   hasTimeline: boolean
 }
 
@@ -24,10 +38,13 @@ export const EMPTY_CODEX_REALTIME_SESSION_VIEW: CodexRealtimeSessionViewState = 
   loadStatus: 'idle',
   segments: [],
   threadMessages: [],
-  liveText: null,
+  liveItems: [],
   realtimeSessionId: null,
+  realtimeSessionSource: 'timeline',
   hasTimeline: false,
 }
+
+export type CodexRealtimeTranscriptItem = Omit<CodexRealtimeLiveItem, 'done'>
 
 interface CodexRealtimeViewStore {
   sessions: Record<string, CodexRealtimeSessionViewState>
@@ -36,8 +53,9 @@ interface CodexRealtimeViewStore {
   setTimelineError: (sessionId: string) => void
   setTimeline: (sessionId: string, timeline: RealtimeTimelineResult) => void
   setRealtimeSession: (sessionId: string, realtimeSessionId: string | null) => void
-  appendTranscriptDelta: (sessionId: string, role: RealtimeTranscriptRole, text: string) => void
-  finalizeTranscript: (sessionId: string, role: RealtimeTranscriptRole, text: string) => void
+  startTranscriptItem: (sessionId: string, item: CodexRealtimeTranscriptItem) => void
+  appendTranscriptItemDelta: (sessionId: string, itemId: string, text: string) => void
+  completeTranscriptItem: (sessionId: string, item: CodexRealtimeTranscriptItem) => void
 }
 
 function sessionState(
@@ -45,6 +63,19 @@ function sessionState(
   sessionId: string,
 ): CodexRealtimeSessionViewState {
   return sessions[sessionId] ?? EMPTY_CODEX_REALTIME_SESSION_VIEW
+}
+
+/** Marks a segment this view committed before the provider timeline published it. */
+const LIVE_SEGMENT_ID_PREFIX = 'live-'
+
+export function liveItemToSegment(item: CodexRealtimeLiveItem): RealtimeTimelineSegment {
+  return {
+    id: `${LIVE_SEGMENT_ID_PREFIX}${item.itemId}`,
+    sourceItemId: item.itemId,
+    realtimeSessionId: item.realtimeSessionId,
+    role: item.role,
+    text: item.text,
+  }
 }
 
 export const useCodexRealtimeViewStore = create<CodexRealtimeViewStore>((set) => ({
@@ -69,19 +100,30 @@ export const useCodexRealtimeViewStore = create<CodexRealtimeViewStore>((set) =>
 
   setTimeline: (sessionId, timeline) => set((state) => {
     const current = sessionState(state.sessions, sessionId)
+    const segments = mergePendingRealtimeTimelineSegments(
+      timeline.segments,
+      current.segments,
+      [LIVE_SEGMENT_ID_PREFIX],
+    )
+    // A live item stays in the buffer until a snapshot carries the same transcript,
+    // so a call whose refresh has not landed yet keeps rendering its own transcript
+    // instead of blanking.
+    const published = new Set(segments.map((segment) => segment.sourceItemId ?? segment.id))
     return {
       sessions: {
         ...state.sessions,
         [sessionId]: {
           ...current,
           loadStatus: 'loaded',
-          segments: mergePendingRealtimeTimelineSegments(
-            timeline.segments,
-            current.segments,
-            ['live-'],
-          ),
+          segments,
+          liveItems: current.liveItems.filter((item) => !published.has(item.itemId)),
           threadMessages: timeline.threadMessages,
-          realtimeSessionId: timeline.activeRealtimeSessionId ?? current.realtimeSessionId,
+          // Once this renderer observes a realtime lifecycle event, that event is
+          // authoritative. A timeline request may have started before the call
+          // started or closed, so its active id can be stale in either direction.
+          realtimeSessionId: current.realtimeSessionSource === 'event'
+            ? current.realtimeSessionId
+            : timeline.activeRealtimeSessionId,
           hasTimeline: timeline.hasTimeline || current.hasTimeline,
         },
       },
@@ -96,44 +138,59 @@ export const useCodexRealtimeViewStore = create<CodexRealtimeViewStore>((set) =>
         [sessionId]: {
           ...current,
           realtimeSessionId,
+          realtimeSessionSource: 'event',
           hasTimeline: current.hasTimeline || realtimeSessionId !== null,
-          ...(realtimeSessionId === null ? { liveText: null } : {}),
         },
       },
     }
   }),
 
-  appendTranscriptDelta: (sessionId, role, text) => set((state) => {
+  startTranscriptItem: (sessionId, item) => set((state) => {
     const current = sessionState(state.sessions, sessionId)
-    const liveText = current.liveText?.role === role
-      ? { role, text: `${current.liveText.text}${text}` }
-      : { role, text }
-    return {
-      sessions: {
-        ...state.sessions,
-        [sessionId]: { ...current, liveText },
-      },
-    }
-  }),
-
-  finalizeTranscript: (sessionId, role, text) => set((state) => {
-    const current = sessionState(state.sessions, sessionId)
-    const realtimeSessionId = current.realtimeSessionId ?? 'live'
-    const segment: RealtimeTimelineSegment = {
-      id: `live-${realtimeSessionId}-${current.segments.length}`,
-      realtimeSessionId,
-      role,
-      text,
-    }
+    if (current.liveItems.some((live) => live.itemId === item.itemId)) return state
     return {
       sessions: {
         ...state.sessions,
         [sessionId]: {
           ...current,
-          segments: [...current.segments, segment],
-          liveText: null,
+          liveItems: [...current.liveItems, { ...item, done: false }],
           hasTimeline: true,
         },
+      },
+    }
+  }),
+
+  appendTranscriptItemDelta: (sessionId, itemId, text) => set((state) => {
+    const current = sessionState(state.sessions, sessionId)
+    if (!current.liveItems.some((live) => live.itemId === itemId)) return state
+    return {
+      sessions: {
+        ...state.sessions,
+        [sessionId]: {
+          ...current,
+          liveItems: current.liveItems.map((live) => (
+            live.itemId === itemId ? { ...live, text: `${live.text}${text}` } : live
+          )),
+        },
+      },
+    }
+  }),
+
+  completeTranscriptItem: (sessionId, item) => set((state) => {
+    const current = sessionState(state.sessions, sessionId)
+    // Codex sends the canonical text on completion; it may differ from the
+    // concatenated deltas, so replace rather than keep what streamed. An item the
+    // view never saw start (mounted mid-call) is appended in completion order.
+    const known = current.liveItems.some((live) => live.itemId === item.itemId)
+    const liveItems = known
+      ? current.liveItems.map((live) => (
+        live.itemId === item.itemId ? { ...live, ...item, done: true } : live
+      ))
+      : [...current.liveItems, { ...item, done: true }]
+    return {
+      sessions: {
+        ...state.sessions,
+        [sessionId]: { ...current, liveItems, hasTimeline: true },
       },
     }
   }),

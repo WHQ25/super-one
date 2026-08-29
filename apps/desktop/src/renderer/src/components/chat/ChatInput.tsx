@@ -1989,12 +1989,11 @@ export function ChatInput() {
               onDisarm={handleDisarmScheduled}
               onSetSendAt={setSendAt}
             />
-            {activeProviderForResources === 'codex' && activeProject && displayedSessionId && (
+            {activeProviderForResources === 'codex' && !isStreaming && activeProject && displayedSessionId && (
               <CodexRealtimeVoiceButton
                 projectPath={activeProject}
                 sessionId={displayedSessionId}
                 additionalDirs={additionalDirs}
-                disabled={isStreaming}
               />
             )}
           </div>

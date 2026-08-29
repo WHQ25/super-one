@@ -52,7 +52,7 @@ export function CodexConversationViewToggle({
       className={cn(showingRealtime ? 'text-foreground' : 'text-muted-foreground/60')}
       onClick={toggleView}
     >
-      {showingRealtime ? <MessageSquare /> : <AudioLines />}
+      {showingRealtime ? <MessageSquare className="size-[13px]" /> : <AudioLines />}
     </IconButton>
   )
 }

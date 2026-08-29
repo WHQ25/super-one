@@ -68,6 +68,7 @@ interface ChatMessageProps {
   isLastAssistant: boolean
   hideUserActions?: boolean
   hideFooter?: boolean
+  compactSpacing?: boolean
 }
 
 /** Tools whose consecutive calls can be collapsed into a summary group. */
@@ -1010,7 +1011,7 @@ function renderClaudeSegments(
   })
 }
 
-export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, isLastAssistant, hideUserActions, hideFooter }: ChatMessageProps) {
+export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, isLastAssistant, hideUserActions, hideFooter, compactSpacing = false }: ChatMessageProps) {
   const { t } = useTranslation()
   const projectPath = useChatStore((s) => s.activeProject)
   const detailChatMode = useAppStore((s) => s.detailChatMode)
@@ -1080,7 +1081,12 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
   if (isInitialTask) return <CollabTaskBubble text={userText} />
 
   return (
-    <div className={cn('w-0 min-w-full flex', isUser ? (isCollab ? 'justify-start' : 'justify-end') : 'mb-2 justify-start')}>
+    <div className={cn(
+      'w-0 min-w-full flex',
+      isUser
+        ? (isCollab ? 'justify-start' : 'justify-end')
+        : compactSpacing ? 'mb-1 justify-start' : 'mb-2 justify-start',
+    )}>
       <div className={cn(isUser ? 'group/copy relative mb-0 flex min-w-0 max-w-[90%] flex-col' : 'w-full', isUser && !isCollab && 'items-end', isUser && isCollab && 'items-start')}>
         {isCollab && collabLabelKey && (
           <div className="mb-1 flex items-center gap-1 px-0.5 text-xs font-medium text-primary/80">

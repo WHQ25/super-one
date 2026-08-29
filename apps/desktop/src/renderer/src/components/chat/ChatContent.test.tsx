@@ -479,6 +479,25 @@ describe('ChatContent empty-state gate is harness-agnostic', () => {
     await waitFor(() => expect(screen.getByTestId('chat-suggestions')).toBeInTheDocument())
   })
 
+  it('returns a new Codex session to Start Listening when no voice timeline exists', async () => {
+    reset()
+    hoisted.sessionState.messages = []
+    hoisted.sessionState.session = null
+    hoisted.sessionState._providerSessionId = 'thread-new'
+    hoisted.sessionState._historyHydrated = true
+    hoisted.sessionState.sessionProvider = 'codex'
+    hoisted.sessionState.preferredProvider = 'codex'
+    Object.assign(window.agent, {
+      loadRealtimeTimeline: vi.fn(async () => null),
+      getRealtimeTimeline: vi.fn(async () => { throw new Error('timeline not found') }),
+    })
+
+    renderContent()
+
+    await waitFor(() => expect(screen.getByTestId('chat-suggestions')).toBeInTheDocument())
+    expect(screen.queryByText('chat.realtimeVoice.timelineLoadFailed')).toBeNull()
+  })
+
   it('does NOT show ChatSuggestions while an un-hydrated stub is still loading (no flash)', () => {
     reset()
     hoisted.sessionState.messages = []

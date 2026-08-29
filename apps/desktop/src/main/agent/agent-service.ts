@@ -1603,6 +1603,7 @@ export class AgentService {
           && existing.snapshot.messages.length === 0
           && !existing.isStreaming()
         ) {
+          log.warn('[agent-service] empty session recreated sid=%s harness=%s->%s', requestedSid, existing.snapshot.harnessId, expectedHarness)
           await mgr.disposeSession(requestedSid)
           const prefs = prefsFor(expectedHarness)
           return mgr.createSession({
@@ -1631,6 +1632,7 @@ export class AgentService {
           && resumed.snapshot.messages.length === 0
           && !resumed.isStreaming()
         ) {
+          log.warn('[agent-service] empty session recreated sid=%s harness=%s->%s (resumed)', requestedSid, resumed.snapshot.harnessId, expectedHarness)
           await mgr.disposeSession(requestedSid)
           const prefs = prefsFor(expectedHarness)
           return mgr.createSession({
@@ -1719,6 +1721,7 @@ export class AgentService {
           log.debug('[agent-service] prewarm skipped sid=%s harness=%s expected=%s', hint.sessionId, existing.snapshot.harnessId, harnessId)
           return null
         }
+        log.warn('[agent-service] prewarm recreated empty session sid=%s harness=%s->%s', hint.sessionId, existing.snapshot.harnessId, harnessId)
         await mgr.disposeSession(hint.sessionId)
         // Harness switch on an empty draft: create fresh (do not resume old provider session).
         return mgr.createSession({ ...createOpts, id: hint.sessionId })
@@ -1850,7 +1853,12 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.START_REALTIME_VOICE, async (_event, projectPath: string, sessionId: string, request: import('@superone/shared/agent-types').RealtimeVoiceStartRequest) => {
       this.throwIfRemoteLocked(projectPath)
+      // Realtime voice forces the session onto codex. Record the harness it had first:
+      // if it was not codex, resolving below recreates the session, which reads in the
+      // UI as the call "jumping to a new session".
+      const harnessBefore = this.sessionManager?.getSession(sessionId)?.snapshot.harnessId ?? '(none)'
       const session = await this.getOrCreateActiveSession(projectPath, sessionId, { provider: 'codex' })
+      log.info('[agent-service] realtime voice start sid=%s harnessBefore=%s thread=%s', session.id, harnessBefore, session.snapshot.providerSessionId ?? '(none)')
       const preferredVoice = readAppSettings().agentPreference.codex.realtimeVoice
       await session.startRealtimeVoice(
         request.voice || !preferredVoice
@@ -3122,7 +3130,18 @@ export class AgentService {
       return loadSessionState(sessionId)
     })
 
-    ipcMain.handle(AgentIpcChannels.SESSIONS_DELETE, (_event, sessionId: string) => {
+    ipcMain.handle(AgentIpcChannels.SESSIONS_DELETE, async (_event, sessionId: string) => {
+      // Tear the runtime down first: session state is persisted with an upsert, so a
+      // session still alive after the row is gone — a realtime call keeps streaming
+      // transcript and titles — would INSERT itself straight back. Disposing also
+      // stops that call instead of leaving it talking to a deleted session.
+      if (this.sessionManager?.getSession(sessionId)) {
+        try {
+          await this.sessionManager.disposeSession(sessionId)
+        } catch (err) {
+          log.warn('[agent-service] dispose before delete failed sid=%s: %s', sessionId, err instanceof Error ? err.message : String(err))
+        }
+      }
       dbDeleteSession(sessionId)
       this.emitSessionsChanged()
     })

@@ -429,7 +429,6 @@ export const AppSidebar = memo(function AppSidebar() {
     if (current?._activeSessionId === target.sessionId) {
       if (remote) {
         // Avoid local resetSession minting a desktop SessionManager session.
-        removeSessionFromMemory(target.folderPath, target.sessionId)
         useChatStore.setState((s) => {
           const proj = s.projectSessions[target.folderPath]
           if (!proj) return s
@@ -441,11 +440,14 @@ export const AppSidebar = memo(function AppSidebar() {
           }
         })
       } else {
-        resetSession()
+        await resetSession()
       }
-    } else {
-      removeSessionFromMemory(target.folderPath, target.sessionId)
     }
+    // Every delete must also drop the session from renderer memory, not just from the
+    // database. The sidebar synthesises rows out of `_sessions` for anything the DB has
+    // no row for yet — a voice session has no chat messages and often lives only there —
+    // so a row left in memory survives its own deletion and can never be removed.
+    removeSessionFromMemory(target.folderPath, target.sessionId)
 
     setFolderSessions((prev) => ({
       ...prev,

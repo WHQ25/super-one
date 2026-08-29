@@ -1729,13 +1729,17 @@ export class Session implements SessionContract {
   private forwardEvent(event: AgentEvent): AgentEvent {
     this._lastEventAt = Date.now()
     this.touchRuntimeActivity()
-    if (
-      this._realtimeTitlePending
-      && event.type === 'realtime_transcript'
-      && event.role === 'user'
-      && event.final
-    ) {
-      const title = event.text.trim().replace(/\s+/g, ' ').slice(0, 100)
+    // Codex publishes two transcript streams and a call may only produce the
+    // item-scoped one, so titling has to accept either. Reading just the flat stream
+    // left voice-only sessions untitled — they showed up in the sidebar as
+    // "New Session" and were indistinguishable from an empty draft.
+    if (this._realtimeTitlePending) {
+      const spoken = event.type === 'realtime_transcript' && event.final && event.role === 'user'
+        ? event.text
+        : event.type === 'realtime_transcript_item' && event.phase === 'completed' && event.role === 'user'
+          ? event.text
+          : null
+      const title = spoken?.trim().replace(/\s+/g, ' ').slice(0, 100)
       if (title) {
         this._realtimeTitlePending = false
         this.setTitle(title, 'agent')

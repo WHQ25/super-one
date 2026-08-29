@@ -648,6 +648,30 @@ describe('AgentService Realtime Voice', () => {
     expect(realtimeTimelineRepoMocks.reconcileRealtimeTimeline).toHaveBeenCalledWith('sid-voice', timeline)
   })
 
+  /**
+   * A live voice session keeps writing (transcript, generated title), and that write
+   * path is an upsert — deleting only the row lets the next write INSERT it straight
+   * back. The runtime has to be torn down first, and in that order.
+   */
+  it('tears down a live session before deleting its row so it cannot be resurrected', async () => {
+    const service = new AgentService()
+    const order: string[] = []
+    const disposeSession = vi.fn(async () => { order.push('dispose') })
+    const dbSessions = await import('../db-sessions')
+    vi.mocked(dbSessions.deleteSession).mockImplementation(() => { order.push('delete') })
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn(() => makeMockSession({ id: 'sid-voice' })),
+      disposeSession,
+    }
+    service.setup()
+
+    const handler = getRegisteredIpcHandler(AgentIpcChannels.SESSIONS_DELETE)!
+    await handler(null, 'sid-voice')
+
+    expect(disposeSession).toHaveBeenCalledWith('sid-voice')
+    expect(order).toEqual(['dispose', 'delete'])
+  })
+
   it('creates a Codex session from the renderer draft before starting voice', async () => {
     const service = new AgentService()
     const startRealtimeVoice = vi.fn().mockResolvedValue(undefined)

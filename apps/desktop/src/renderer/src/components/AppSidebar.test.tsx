@@ -512,6 +512,55 @@ describe('AppSidebar interactions', () => {
     await screen.findByText('Old Session')
   })
 
+  /**
+   * A voice session has no chat messages and often no DB row at all — the sidebar
+   * synthesises its row out of renderer memory (see ProjectSidebarRow's realtime
+   * exemption). Deleting only the database row therefore matched nothing and left the
+   * row on screen, where every further delete was equally powerless.
+   */
+  it('drops a voice-only session from memory when deleted, not just from the database', async () => {
+    sessionsByFolder = { '/project-a': [] }
+    chatState.projectSessions = {
+      '/project-a': {
+        _activeSessionId: 'sid-voice',
+        _sessions: {
+          'sid-voice': {
+            messages: [],
+            status: 'idle',
+            pendingPermissions: [],
+            pendingQuestion: null,
+            pendingPlanApproval: null,
+            awaitingAssistantReply: false,
+            sessionProvider: 'codex',
+            _gitBranch: null,
+            _historyHydrated: true,
+          },
+        },
+        unseenCompletedSessions: new Set<string>(),
+      },
+    }
+    const { useCodexRealtimeViewStore } = await import('@/stores/codex-realtime-view')
+    useCodexRealtimeViewStore.getState().setTimeline('sid-voice', {
+      segments: [{ id: 'seg-1', realtimeSessionId: 'rt-1', role: 'user', text: 'spoken' }],
+      threadMessages: [],
+      activeRealtimeSessionId: null,
+      hasTimeline: true,
+    })
+
+    const { AppSidebar } = await import('./AppSidebar')
+    render(<AppSidebar />)
+    fireEvent.click(screen.getByText('project-a'))
+    await screen.findByText('New session')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    const confirm = await screen.findAllByRole('button', { name: 'Delete' })
+    fireEvent.click(confirm[confirm.length - 1] as HTMLButtonElement)
+
+    await waitFor(() => {
+      expect(chatState.removeSessionFromMemory).toHaveBeenCalledWith('/project-a', 'sid-voice')
+    })
+  })
+
   it('does not show a phantom New session for an unhydrated live session without user text', async () => {
     sessionsByFolder = {
       '/project-a': [],

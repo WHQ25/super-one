@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react'
 import type { CodexReasoningEffort } from '@superone/shared/agent-types'
-import { useActiveSession, useChatStore } from '@/stores/chat'
+import { useActiveSession, useChatStore, useScopedSessionActions } from '@/stores/chat'
 import { formatCodexModelName, formatReasoningEffortLabel } from '../chat-input-utils'
 import { CodexModeSelector } from '../CodexModeSelector'
 import {
@@ -22,9 +22,7 @@ export function CodexModelSelector({ onCloseAutoFocus }: Props) {
   const selectedCodexServiceTier = useActiveSession((s) => s.selectedCodexServiceTier)
   const codexModels = useActiveSession((s) => s.codexModels)
   const codexModelsLoading = useActiveSession((s) => s.codexModelsLoading)
-  const setSelectedCodexModel = useChatStore((s) => s.setSelectedCodexModel)
-  const setSelectedCodexReasoningEffort = useChatStore((s) => s.setSelectedCodexReasoningEffort)
-  const setSelectedCodexServiceTier = useChatStore((s) => s.setSelectedCodexServiceTier)
+  const { setSelectedCodexModel, setSelectedCodexReasoningEffort, setSelectedCodexServiceTier } = useScopedSessionActions()
   const refreshCodexModels = useChatStore((s) => s.refreshCodexModels)
   const providerProps = useSelectorProviders('codex')
 

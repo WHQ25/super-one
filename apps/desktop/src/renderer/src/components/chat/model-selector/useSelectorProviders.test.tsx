@@ -77,6 +77,7 @@ vi.mock('@/stores/chat', () => {
   return {
     useActiveSession: (selector: (s: typeof session) => unknown) => selector(session),
     useChatStore: (selector: (s: typeof chat) => unknown) => selector(chat),
+    useScopedSessionActions: () => chat,
   }
 })
 

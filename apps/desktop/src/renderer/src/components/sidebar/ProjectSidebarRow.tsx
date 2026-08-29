@@ -14,7 +14,7 @@ import { MiniAppHostGroup } from './MiniAppHostGroup'
 import { cn } from '@superone/ui/lib/utils'
 import { homePath } from '@/lib/path-utils'
 import type { Automation, RecentFolder, ScheduledSend, SessionHistoryEntry } from '@superone/shared/agent-types'
-import { DEFAULT_SESSION_TITLE, getSessionTitle, isLiveSession } from './session-state-utils'
+import { DEFAULT_SESSION_TITLE, getSessionTitle, isEphemeralSession, isLiveSession } from './session-state-utils'
 import { AutomationDialog } from '../AutomationDialog'
 import { SessionRow, type SessionRowCallbacks } from './SessionRow'
 import { ProjectHistoryList } from './ProjectHistoryList'
@@ -157,6 +157,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
     const sig: Record<string, string> = {}
     if (proj?._sessions) {
       for (const [sid, data] of Object.entries(proj._sessions)) {
+        if (isEphemeralSession(data)) continue
         const hasRealtimeTimeline = useCodexRealtimeViewStore.getState().sessions[sid]?.hasTimeline ?? false
         if (data.messages.length === 0 && !hasRealtimeTimeline) continue
         sig[sid] = [
@@ -215,6 +216,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
     if (projectSession?._sessions) {
       const live: SessionHistoryEntry[] = []
       for (const [sid, data] of Object.entries(projectSession._sessions)) {
+        if (isEphemeralSession(data)) continue
         const hasRealtimeTimeline = useCodexRealtimeViewStore.getState().sessions[sid]?.hasTimeline ?? false
         if (data.messages.length === 0 && !hasRealtimeTimeline) continue
         const title = getSessionTitle(data.messages)

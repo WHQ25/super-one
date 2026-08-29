@@ -16,6 +16,13 @@ let currentSessionIdGetter: (() => string | null) | null = null
 // recording is on (App toggles it on mosaic entry) we remember the opens and replay
 // them after the exit-restore so they survive the return to single and show. A
 // getter-injection-free boolean keeps this module clear of store import cycles.
+/**
+ * Panel id of the single side-chat tab. Declared here rather than in the store so
+ * the dock API stays free of a store import (`stores/side-chat` reads the chat
+ * store, which reaches back into this module).
+ */
+export const SIDE_CHAT_PANEL_ID = 'side-chat'
+
 let mosaicOpenedPanels: { id: string; replay: () => void }[] = []
 let mosaicRecording = false
 
@@ -69,11 +76,30 @@ export function getDockSnapshot(): SerializedDockview | null {
   return dockApi?.toJSON() ?? null
 }
 
+let swappingLayout = false
+
+/**
+ * True while a whole dock layout is being swapped in or out.
+ *
+ * The dock is parked and restored per session, so switching sessions removes
+ * every panel and re-adds it from JSON. Panel-removal listeners that mean
+ * "the user closed this" — the side chat closes its session that way — have to
+ * sit this out, or a session switch would destroy what it is only stashing.
+ */
+export function isLayoutSwapping(): boolean {
+  return swappingLayout
+}
+
 export function applyDockSnapshot(json: SerializedDockview | null): boolean {
   if (!dockApi) return false
   useActivityPanelStore.getState().setMaximizedGroup(null)
-  if (json) dockApi.fromJSON(json)
-  else dockApi.clear()
+  swappingLayout = true
+  try {
+    if (json) dockApi.fromJSON(json)
+    else dockApi.clear()
+  } finally {
+    swappingLayout = false
+  }
   return true
 }
 
@@ -88,6 +114,22 @@ export function closeGhostMiniAppPanels(isAlive: (instanceKey: string) => boolea
     const instanceKey = panel.id.slice('miniapp-'.length)
     if (!isAlive(instanceKey)) panel.api.close()
   }
+}
+
+/**
+ * Drop a restored side-chat tab whose session is already gone.
+ *
+ * A side chat is serialized into its parent's parked layout like any other
+ * panel, but the session behind it can be disposed while that layout is off
+ * screen — opening a side chat from a different session discards the previous
+ * one. Restoring the parent then re-adds a tab pointing at nothing.
+ */
+export function closeGhostSideChatPanel(isAlive: (sessionId: string) => boolean): void {
+  if (!dockApi) return
+  const panel = dockApi.panels.find((p) => p.id === SIDE_CHAT_PANEL_ID)
+  if (!panel) return
+  const sessionId = (panel.params as { sessionId?: string } | undefined)?.sessionId
+  if (!sessionId || !isAlive(sessionId)) panel.api.close()
 }
 
 function ensureVisible() {
@@ -265,6 +307,47 @@ export function closeTrajectoryTab(sessionId: string) {
   const panelId = `trajectory-${sessionId}`
   removeMosaicOpen(panelId)
   dockApi?.panels.find((p) => p.id === panelId)?.api.close()
+}
+
+/**
+ * The single side-chat tab. Fixed panel id because only one side chat exists at
+ * a time — reopening lands in the same slot in the strip rather than growing it.
+ *
+ * Not recorded via `recordMosaicOpen`: a side chat is scoped to the one session
+ * it forked from, so re-materialising it into another tile's dock would show a
+ * conversation branched off somebody else's thread.
+ */
+export function openSideChatTab(projectPath: string, sessionId: string, label: string) {
+  ensureVisible()
+  execOrDefer(() => {
+    if (!dockApi) return
+    const existing = dockApi.panels.find((p) => p.id === SIDE_CHAT_PANEL_ID)
+    if (existing) {
+      // Same session — the caller is surfacing the side chat already docked here
+      // (e.g. a second "Ask in Side Chat"). Re-adding would remount the pane and
+      // throw away its scroll position and in-flight composer text.
+      if (existing.params?.sessionId === sessionId) {
+        existing.api.setActive()
+        return
+      }
+      // A different session means the previous side chat is already disposed, so
+      // the slot is replaced rather than activated.
+      existing.api.close()
+    }
+    const position = positionInMaximizedGroup()
+    dockApi.addPanel({
+      id: SIDE_CHAT_PANEL_ID,
+      component: 'side-chat',
+      tabComponent: 'side-chat-tab',
+      title: label,
+      params: { projectPath, sessionId },
+      ...(position ? { position } : {}),
+    })
+  })
+}
+
+export function closeSideChatTab() {
+  dockApi?.panels.find((p) => p.id === SIDE_CHAT_PANEL_ID)?.api.close()
 }
 
 /**

@@ -127,6 +127,30 @@ describe('Codex session connection reuse', () => {
     expect(isCodexBrowserAndComputerUseDenied(session.superoneSessionId)).toBe(false)
   })
 
+  it('carries a staged instruction as turn/start additionalContext, once', async () => {
+    const handle = makeFakeHandle()
+    createHandleMock.mockResolvedValue(handle)
+    const session = trackSession(createCodexSession('/project', 'gpt-5.4', undefined, undefined, 'default'))
+    session.pendingInstruction = 'YOU ARE A SIDE CHAT'
+
+    await runCodexTurn(session, { mode: 'auto' }, '/project', { prompt: 'first', model: 'gpt-5.4', permissionPreset: 'default' })
+
+    const firstTurn = handle.connection.request.mock.calls.find(([method]) => method === 'turn/start')
+    // additionalContext lands as a developer-role message inside the
+    // conversation; developer_instructions would have moved the cached prefix.
+    expect((firstTurn?.[1] as Record<string, unknown>).additionalContext).toEqual({
+      superone: { value: 'YOU ARE A SIDE CHAT', kind: 'application' },
+    })
+    expect(session.pendingInstruction).toBeNull()
+
+    handle.connection.request.mockClear()
+    handle.connection.nextNotification.mockImplementation(async () => ({ method: 'turn/completed', params: { turn: { status: 'completed' } } }))
+    await runCodexTurn(session, { mode: 'auto' }, '/project', { prompt: 'second', model: 'gpt-5.4', permissionPreset: 'default' })
+
+    const secondTurn = handle.connection.request.mock.calls.find(([method]) => method === 'turn/start')
+    expect((secondTurn?.[1] as Record<string, unknown>).additionalContext).toBeUndefined()
+  })
+
   it('tears down and respawns the connection when the session is reset', async () => {
     const handleA = makeFakeHandle()
     const handleB = makeFakeHandle()

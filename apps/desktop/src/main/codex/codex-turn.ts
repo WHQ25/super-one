@@ -2440,11 +2440,22 @@ export async function runCodexTurn(
         }
 
         markMutationStarted()
+        // Consumed by this turn only. `kind: 'application'` makes the app server
+        // render it as a developer-role message inserted immediately BEFORE the
+        // user input — inside the conversation, at the tail. `developer_instructions`
+        // would land at `input[0]` instead (codex's
+        // `includes_developer_instructions_message_in_request` asserts exactly that),
+        // moving the cached prefix this fork exists to reuse.
+        const pendingInstruction = session.pendingInstruction
+        session.pendingInstruction = null
         const turnStartResult = await connection.request(
           'turn/start',
           compactRecord({
             threadId: resolvedThreadId,
             input,
+            ...(pendingInstruction
+              ? { additionalContext: { superone: { value: pendingInstruction, kind: 'application' } } }
+              : {}),
             model: session.model,
             serviceTier: session.serviceTier,
             effort: session.modelReasoningEffort,

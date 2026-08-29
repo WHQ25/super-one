@@ -116,6 +116,15 @@ export type Messages = {
       cordis: { name: string; description: string }
     }
   }
+  sideChat: {
+    title: string
+    ephemeralNotice: string
+    commandDesc: string
+    openingToast: string
+    unavailable: string
+    closeConfirm: { title: string; body: string; action: string; dontAsk: string }
+    replaceConfirm: { title: string; body: string; action: string }
+  }
   trajectory: {
     title: string
     toolbarAria: string
@@ -451,6 +460,7 @@ export type Messages = {
       convertToMiniWindow: string
       dragToMiniWindow: string
       forkToWorktree: string
+      newSideChat: string
       /** @deprecated Prefer forkToSameWorktree — kept for older UI strings. */
       forkToLocal: string
       /** Same directory / no new worktree (local + remote). */
@@ -1549,6 +1559,7 @@ export type Messages = {
     selectionMenu: {
       copy: string
       addToChat: string
+      askInSideChat: string
     }
     error: {
       detailsToggle: string
@@ -3652,6 +3663,24 @@ export const en: Messages = {
       },
     },
   },
+  sideChat: {
+    title: 'Side Chat',
+    ephemeralNotice: 'Side chats are temporary. This conversation cannot be recovered once you close the tab or quit the app.',
+    commandDesc: 'Open a temporary side chat branched from this conversation',
+    openingToast: 'Opening side chat…',
+    unavailable: "This session can't open a side chat.",
+    closeConfirm: {
+      title: 'Close this side chat?',
+      body: 'Side chat cannot be recovered once you close this tab.',
+      action: 'Confirm Close',
+      dontAsk: "Don't ask again",
+    },
+    replaceConfirm: {
+      title: 'Replace the open side chat?',
+      body: 'Only one side chat can be open at a time. The current one is discarded and cannot be reopened.',
+      action: 'Replace',
+    },
+  },
   trajectory: {
     title: 'Trajectory',
     toolbarAria: 'Trajectory toolbar',
@@ -3986,6 +4015,7 @@ export const en: Messages = {
       convertToMiniWindow: 'Convert to Mini Window',
       dragToMiniWindow: 'Release to open as mini window',
       forkToWorktree: 'Fork to New Worktree',
+      newSideChat: 'New Side Chat',
       forkToLocal: 'Fork to Same Worktree',
       forkToSameWorktree: 'Fork to Same Worktree',
       forkingToast: 'Forking session…',
@@ -5171,6 +5201,7 @@ export const en: Messages = {
     selectionMenu: {
       copy: 'Copy',
       addToChat: 'Add to Chat',
+      askInSideChat: 'Ask in Side Chat',
     },
     error: {
       detailsToggle: 'Error Details',

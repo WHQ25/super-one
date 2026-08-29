@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { ChevronDown, Eye, ShieldCheck, ShieldOff } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import type { PermissionMode } from '@superone/shared/agent-types'
-import { useActiveSession, useChatStore } from '@/stores/chat'
+import { useActiveSession, useScopedSessionActions } from '@/stores/chat'
 import {
   DEEPSEEK_DEFAULT_PERMISSION_MODE,
   DEEPSEEK_PERMISSION_MODES,
@@ -42,7 +42,7 @@ export function DeepseekPermissionSelector({ compact = false }: { compact?: bool
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const permissionMode = useActiveSession((state) => state.permissionMode)
-  const setPermissionMode = useChatStore((state) => state.setPermissionMode)
+  const { setPermissionMode } = useScopedSessionActions()
 
   useEffect(() => {
     if (!DEEPSEEK_PERMISSION_MODES.includes(permissionMode)) {

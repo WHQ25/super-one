@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Zap } from 'lucide-react'
 import type { EffortLevel } from '@superone/shared/agent-types'
-import { useActiveSession, useChatStore, selectClaudeModels } from '@/stores/chat'
+import { useActiveSession, useChatStore, useScopedSessionActions, selectClaudeModels } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
 import { consumerForHarness, resolveEffective } from '@/lib/provider-resolve'
@@ -34,8 +34,7 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
   const sessionApiProviderId = useActiveSession((s) => s.apiProviderId)
   const availableModels = useChatStore(selectClaudeModels)
   const activeProject = useChatStore((s) => s.activeProject)
-  const setSelectedModel = useChatStore((s) => s.setSelectedModel)
-  const setSelectedEffort = useChatStore((s) => s.setSelectedEffort)
+  const { setSelectedModel, setSelectedEffort } = useScopedSessionActions()
   const refreshClaudeResources = useChatStore((s) => s.refreshClaudeResources)
   const claudeResourcesLoading = useChatStore((s) => s.claudeResourcesLoading)
   const claudeModelsLoading = useActiveSession((s) => s.claudeModelsLoading)

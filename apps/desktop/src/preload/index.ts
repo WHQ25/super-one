@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { AgentIpcChannels, type AgentEvent, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexGoalStatus, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type CodexExternalAgentItem, type CodexMcpOauthLoginOptions, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest, type ThemeMode, type ComputerUseDisplayInfo, type ComputerUseViewfinderClaim, type ComputerUseViewfinderFrame, type RealtimeVoiceStartRequest, type RealtimeTimelineResult, type CodexRealtimeVoiceCatalog } from '@superone/shared/agent-types'
+import { AgentIpcChannels, type AgentEvent, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexGoalStatus, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type CodexExternalAgentItem, type CodexMcpOauthLoginOptions, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type SideChatStartRequest, type SideChatStartResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest, type ThemeMode, type ComputerUseDisplayInfo, type ComputerUseViewfinderClaim, type ComputerUseViewfinderFrame, type RealtimeVoiceStartRequest, type RealtimeTimelineResult, type CodexRealtimeVoiceCatalog } from '@superone/shared/agent-types'
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
 import type { DshPluginInstallSource, ScheduledSend, ScheduledSendPatch, ScheduledSendSessionInit, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
@@ -74,11 +74,11 @@ const agentAPI = {
   setPermissionMode: (projectPath: string, sessionId: string, mode: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_PERMISSION_MODE, projectPath, sessionId, mode) as Promise<boolean>,
 
-  setSandboxMode: (projectPath: string, mode: SandboxMode) =>
-    ipcRenderer.invoke(AgentIpcChannels.SET_SANDBOX_MODE, projectPath, mode),
+  setSandboxMode: (projectPath: string, mode: SandboxMode, sessionId?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SET_SANDBOX_MODE, projectPath, mode, sessionId),
 
-  setSessionSettings: (projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null; mode?: string | null; agentPreset?: string | null }) =>
-    ipcRenderer.invoke(AgentIpcChannels.SET_SESSION_SETTINGS, projectPath, settings),
+  setSessionSettings: (projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null; mode?: string | null; agentPreset?: string | null }, sessionId?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SET_SESSION_SETTINGS, projectPath, settings, sessionId),
 
   setSessionApiProvider: (sessionId: string, apiProviderId: string | null) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_SESSION_API_PROVIDER, sessionId, apiProviderId) as Promise<void>,
@@ -2124,6 +2124,10 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.GIT_ASSIGN_BRANCH, folderPath, worktreePath, name) as Promise<WorktreeAssignResult>,
   forkSession: (request: SessionForkRequest) =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_FORK, request) as Promise<SessionForkResult>,
+  startSideChat: (request: SideChatStartRequest) =>
+    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_SIDE_CHAT_START, request) as Promise<SideChatStartResult>,
+  closeSideChat: (sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_SIDE_CHAT_CLOSE, sessionId) as Promise<boolean>,
   getGitStatusFiles: (folderPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_STATUS_FILES, folderPath),
   getGitLog: (folderPath: string, query?: string) =>

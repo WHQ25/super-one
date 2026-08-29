@@ -1,4 +1,4 @@
-import { useChatStore } from '@/stores/chat'
+import { useScopedSessionActions } from '@/stores/chat'
 import { CONFIG_APPLY_FIELD, type PermissionRequest } from '@superone/shared/agent-types'
 import { ConfigConfirmPrompt } from './ConfigConfirmPrompt'
 
@@ -12,7 +12,7 @@ import { ConfigConfirmPrompt } from './ConfigConfirmPrompt'
  * - reject  → allow=false, formAnswers={ feedback }
  */
 export function ConfigConfirmPromptContainer({ request }: { request: PermissionRequest }) {
-  const respondToPermission = useChatStore((s) => s.respondToPermission)
+  const { respondToPermission } = useScopedSessionActions()
   const payload = request.configConfirm
   if (!payload) return null
 

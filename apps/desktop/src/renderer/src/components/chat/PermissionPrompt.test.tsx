@@ -27,6 +27,9 @@ const activeSessionState = {
 vi.mock('@/stores/chat', () => ({
   useChatStore: (selector: (state: typeof chatState) => unknown) => selector(chatState),
   useActiveSession: (selector: (state: typeof activeSessionState) => unknown) => selector(activeSessionState),
+  // The prompt reaches its replies through the scope-bound wrapper now; outside a
+  // SessionScopeProvider it forwards to the same store actions.
+  useScopedSessionActions: () => chatState,
   selectClaudeModels: () => [],
   selectClaudeAccount: () => ({}),
 }))

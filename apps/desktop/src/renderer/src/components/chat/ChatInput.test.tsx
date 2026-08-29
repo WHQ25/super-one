@@ -85,6 +85,9 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     removeUserSelectionAt: vi.fn(),
     clearUserSelections: vi.fn(),
     activeProject: '/project',
+    // Read by the `/side` eligibility selector. Empty means "no session row",
+    // which is what this suite's composer-only scenarios actually describe.
+    projectSessions: {} as Record<string, unknown>,
     isOpen: true,
     harnessResources: {
       claude: null,

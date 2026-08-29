@@ -1,4 +1,4 @@
-import { useChatStore, useActiveSession, selectClaudeModels, selectClaudeAccount } from '@/stores/chat'
+import { useChatStore, useActiveSession, selectClaudeModels, selectClaudeAccount, useScopedSessionActions } from '@/stores/chat'
 import { useMemo } from 'react'
 import { eligibilityFromStore } from '@/lib/auto-mode-eligibility'
 import { modes, PERMISSION_MODES } from './PermissionModeList'
@@ -13,7 +13,7 @@ interface PermissionModeSelectorProps {
 export function PermissionModeSelector({ compact = false }: PermissionModeSelectorProps) {
   const permissionMode = useActiveSession((s) => s.permissionMode)
   const selectedModel = useActiveSession((s) => s.selectedModel)
-  const setPermissionMode = useChatStore((s) => s.setPermissionMode)
+  const { setPermissionMode } = useScopedSessionActions()
   const account = useChatStore(selectClaudeAccount)
   const availableModels = useChatStore(selectClaudeModels)
 

@@ -1,11 +1,11 @@
 import { useEffect } from 'react'
-import { useActiveSession, useChatStore } from '@/stores/chat'
+import { useActiveSession, useScopedSessionActions } from '@/stores/chat'
 import { PermissionModePopover } from './PermissionModePopover'
 import { OPENCODE_PERMISSION_MODES } from './opencodePermissionModes'
 
 export function OpenCodePermissionSelector({ compact = false }: { compact?: boolean }) {
   const permissionMode = useActiveSession((state) => state.permissionMode)
-  const setPermissionMode = useChatStore((state) => state.setPermissionMode)
+  const { setPermissionMode } = useScopedSessionActions()
 
   useEffect(() => {
     if (!OPENCODE_PERMISSION_MODES.includes(permissionMode)) setPermissionMode('default')

@@ -1,7 +1,12 @@
 import { createHash, randomUUID } from 'crypto'
 import log from '../logger'
 import { authHeaders, modelsUrl } from '../providers/endpoint-test'
-import { parseOpenAiModelsList } from '@superone/shared/platform-registry'
+import {
+  PROTOCOL_FAMILY,
+  parseOpenAiModelsList,
+  sanitizeDiscoveredByFamily,
+  type ProtocolFamily,
+} from '@superone/shared/platform-registry'
 import { parseAccountLoginStart, parseAccountStatus, parseAccountUsage, readCodexConfigRequirements, readCodexServerDiagnostics } from '@superone/codex'
 import {
   buildCodexAccountEnv,
@@ -283,19 +288,32 @@ function modelCacheSignature(auth: CodexProjectAuth, apiProviderId?: string | nu
   return `${codexProviderSignature(apiProviderId)}::${auth.mode}:${apiKeyFingerprint}`
 }
 
-function modelOptionsFromOpenAiList(payload: unknown, platformId?: string): ModelOption[] | null {
+/**
+ * Keep only models this endpoint's own wire can actually chat on. A relay lists its whole
+ * catalog here, so `byFamily` is the split: image models share the `openai` family with chat
+ * (task tells them apart) while video rides its own family, and anthropic-only ids are
+ * unreachable over an openai wire. Ids the parser cannot classify default to openai/chat, so
+ * plain OpenAI-compatible providers keep every model.
+ */
+function modelOptionsFromOpenAiList(
+  payload: unknown,
+  platformId?: string,
+  family: ProtocolFamily = 'openai',
+): ModelOption[] | null {
   const models = parseOpenAiModelsList(payload)
   if (!models) return null
   const reasoning = resolveCodexChatReasoning(platformId)
   const supportedReasoningEfforts = codexReasoningOptions(reasoning)
-  return models.map((model, index) => ({
-    id: model.id,
-    name: model.name ?? model.id,
-    description: '',
-    isDefault: index === 0,
-    supportedReasoningEfforts,
-    defaultReasoningEffort: reasoning?.defaultEffort,
-  }))
+  return models
+    .filter((model) => sanitizeDiscoveredByFamily(model.byFamily)[family]?.includes('chat'))
+    .map((model, index) => ({
+      id: model.id,
+      name: model.name ?? model.id,
+      description: '',
+      isDefault: index === 0,
+      supportedReasoningEfforts,
+      defaultReasoningEffort: reasoning?.defaultEffort,
+    }))
 }
 
 interface CachedModelList {
@@ -720,11 +738,11 @@ export class CodexExperimentService {
       }
       const payload = await response.json()
       log.debug('[codex] custom provider models response provider=%s status=%d payload=%s', resolved.credentialId, response.status, JSON.stringify(payload))
-      const models = modelOptionsFromOpenAiList(payload, resolved.platformId)
+      const models = modelOptionsFromOpenAiList(payload, resolved.platformId, PROTOCOL_FAMILY[resolved.protocol])
       if (!models) {
         throw new Error('Custom Codex provider returned an invalid models response')
       }
-      log.info('[codex] custom provider models fetched provider=%s count=%d', resolved.credentialId, models.length)
+      log.info('[codex] custom provider models fetched provider=%s family=%s count=%d', resolved.credentialId, PROTOCOL_FAMILY[resolved.protocol], models.length)
       return models
     } catch (error) {
       const message = error instanceof Error
@@ -792,11 +810,21 @@ export class CodexExperimentService {
     projectPath: string,
     fn: (request: AppServerConnection['request']) => Promise<T>,
   ): Promise<T> {
+    return this.withEphemeralAppServerConnection(
+      projectPath,
+      async (connection) => fn(connection.request),
+    )
+  }
+
+  private async withEphemeralAppServerConnection<T>(
+    projectPath: string,
+    fn: (connection: AppServerConnection) => Promise<T>,
+  ): Promise<T> {
     const auth = this.getProjectAuth(projectPath)
     const handle = await createAppServerConnection(auth)
     const stderrBaseline = handle.getStderr()
     try {
-      return await fn(handle.connection.request)
+      return await fn(handle.connection)
     } catch (error) {
       const stderr = readAppServerStderrSince(handle, stderrBaseline)
       if (!stderr) throw error

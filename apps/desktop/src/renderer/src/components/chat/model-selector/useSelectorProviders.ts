@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { HarnessId } from '@superone/shared/agent-types'
 import { type Credential } from '@superone/shared/platform-registry'
-import { useActiveSession, useChatStore } from '@/stores/chat'
+import { useActiveSession, useScopedSessionActions } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
 import { consumerForHarness, credentialsForConsumer, providerDisplayForCredential, resolveEffectiveProviderId } from '@/lib/provider-resolve'
@@ -31,7 +31,7 @@ export function useSelectorProviders(harness: HarnessId) {
   const bindings = useSettingsStore((s) => s.bindings)
   const providerScope = useSettingsStore((s) => s.providerScope)
   const fetchProviderData = useSettingsStore((s) => s.fetchProviderData)
-  const setSessionApiProviderId = useChatStore((s) => s.setSessionApiProviderId)
+  const { setSessionApiProviderId } = useScopedSessionActions()
   const navigateTo = useAppStore((s) => s.navigateTo)
   const setSettingsTab = useAppStore((s) => s.setSettingsTab)
   const selectedHostConnectionId = useAppStore((s) => s.selectedHostConnectionId)

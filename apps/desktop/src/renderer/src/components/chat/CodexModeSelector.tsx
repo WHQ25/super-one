@@ -1,6 +1,6 @@
 import { ClipboardList, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { useActiveSession, useChatStore } from '@/stores/chat'
+import { useActiveSession, useScopedSessionActions } from '@/stores/chat'
 import { modes } from './PermissionModeList'
 import { cn } from '@superone/ui/lib/utils'
 
@@ -9,7 +9,7 @@ const planMode = modes.find((mode) => mode.id === 'plan')!
 export function CodexModeSelector() {
   const { t } = useTranslation()
   const selectedMode = useActiveSession((s) => s.selectedCodexCollaborationMode)
-  const setSelectedMode = useChatStore((s) => s.setSelectedCodexCollaborationMode)
+  const { setSelectedCodexCollaborationMode: setSelectedMode } = useScopedSessionActions()
 
   if (selectedMode !== 'plan') return null
 

@@ -218,7 +218,8 @@ describe('carrying a draft across projects', () => {
         '/to': {
           _activeSessionId: 'sid-to',
           sandboxInfo: { enabled: false, autoAllowBash: false },
-          _sessions: { 'sid-to': session({ draftText: '' }) },
+          // Stale runtime fact from this session's own `init_ready`.
+          _sessions: { 'sid-to': session({ draftText: '', sandboxInfo: { enabled: false, autoAllowBash: false } }) },
         },
       },
     } as unknown as ChatStore
@@ -248,6 +249,11 @@ describe('carrying a draft across projects', () => {
     expect(dest.selectedEffort).toBe('high')
     expect(dest.permissionMode).toBe('acceptEdits')
     expect(state.projectSessions['/to'].sandboxInfo).toEqual({ enabled: true, autoAllowBash: true })
+    // Regression: the destination session recorded its own runtime sandbox from a
+    // previous `init_ready`. A session-level value wins over the project one in
+    // `mergedView`, so keeping it would shadow the sandbox the carry just set and
+    // show the user a guarantee belonging to a backend that is gone.
+    expect(dest.sandboxInfo).toBeUndefined()
     expect(state.projectSessions['/from']._sessions['sid-from'].draftText).toBe('')
     expect(getDraftIdForSession('sid-to')).toBe('draft-stable')
     expect(getDraftIdForSession('sid-from')).toBeUndefined()

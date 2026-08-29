@@ -100,6 +100,7 @@ export class ClaudeBackend implements SessionBackend {
   private stagedProviderSessionId: string | null = null
   /** SDK-inline machine notifications, released at the next step boundary. */
   private pendingInlineNotifications: Array<{ msg: SDKUserMessage; clientMessageId: string }> = []
+  private pendingInstruction: string | null = null
   /** User messages stay under SuperOne control until their own turn or an explicit Steer. */
   private readonly queuedUserMessages = new QueuedUserMessageQueue({
     isBusy: () => this.turnResolves.size > 0,
@@ -327,6 +328,36 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   /**
+   * Hold an instruction for the next turn, delivered as a transcript entry that
+   * does not query.
+   *
+   * `shouldQuery: false` is the load-bearing field: the SDK appends the message
+   * and merges it into the next user message that DOES query, so the instruction
+   * arrives attached to the turn it qualifies without costing a round trip.
+   * `isSynthetic` rides along as provenance only — it is undocumented in the SDK
+   * types and reads as an emitter-side marker, so nothing here depends on it.
+   */
+  stageInstruction(text: string): void {
+    this.pendingInstruction = text
+  }
+
+  /** Push the staged instruction ahead of the user message it belongs to. */
+  private flushPendingInstruction(): void {
+    const text = this.pendingInstruction
+    if (!text || !this.bridge) return
+    this.pendingInstruction = null
+    this.bridge.push({
+      type: 'user',
+      message: { role: 'user', content: text },
+      parent_tool_use_id: null,
+      uuid: randomUUID(),
+      session_id: this.providerSessionId ?? '',
+      isSynthetic: true,
+      shouldQuery: false,
+    } as SDKUserMessage)
+  }
+
+  /**
    * Push a machine wake-up via Claude Agent SDK provenance
    * `origin: { kind: 'task-notification' }` (not a human composer message).
    * Uses priority `next` so an in-flight turn is not interrupted.
@@ -398,6 +429,7 @@ export class ClaudeBackend implements SessionBackend {
     }
 
     const userMsg = buildUserMessage(turnRequest, this.providerSessionId ?? '')
+    this.flushPendingInstruction()
     this.bridge.push(userMsg)
 
     try {

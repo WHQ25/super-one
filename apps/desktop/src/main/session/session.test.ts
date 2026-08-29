@@ -1633,6 +1633,105 @@ describe('Session state machine', () => {
   })
 })
 
+describe('firstTurnPreamble', () => {
+  it('uses the harness channel when the backend has one', async () => {
+    const backend = new FakeBackend()
+    const staged: string[] = []
+    ;(backend as unknown as { stageInstruction: (t: string) => void }).stageInstruction =
+      (t: string) => { staged.push(t) }
+    const session = new Session({
+      id: 'sess-native',
+      projectPath: '/tmp/proj',
+      cwd: '/tmp/proj',
+      providerId: 'claude-base',
+      harnessId: 'claude',
+      providerConfig: { apiKey: 'sk-x' },
+      backend,
+      firstTurnPreamble: 'YOU ARE A SIDE CHAT',
+    })
+
+    const send = session.send({ content: 'why is this slow?' })
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveSend?.()
+    await send
+
+    expect(staged).toEqual(['YOU ARE A SIDE CHAT'])
+    // The harness delivers it, so the user's message is left alone.
+    expect(backend.sendCalls[0]?.content).toBe('why is this slow?')
+  })
+
+  it('rides the first provider message when the harness has no channel', async () => {
+    const { session, backend } = makeSession({ firstTurnPreamble: 'YOU ARE A SIDE CHAT' })
+
+    const send = session.send({ content: 'why is this slow?' })
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveSend?.()
+    await send
+
+    // What the provider reads carries the instructions...
+    expect(backend.sendCalls[0]?.content).toBe('YOU ARE A SIDE CHAT\n\nwhy is this slow?')
+    // ...while the bubble shows only what the user typed.
+    const bubble = session.snapshot.messages.find((m) => m.role === 'user')
+    expect(bubble?.content).toEqual([{ type: 'text', text: 'why is this slow?' }])
+  })
+
+  it('applies once — later turns ride the cached prefix unchanged', async () => {
+    const { session, backend } = makeSession({ firstTurnPreamble: 'YOU ARE A SIDE CHAT' })
+
+    const first = session.send({ content: 'a' })
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveSend?.()
+    await first
+
+    const second = session.send({ content: 'b' })
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveSend?.()
+    await second
+
+    expect(backend.sendCalls[1]?.content).toBe('b')
+  })
+
+  it('stages onto the started backend, not the cold one a fresh side chat has', async () => {
+    const backend = new FakeBackend()
+    const staged: string[] = []
+    // Mirrors CodexBackend: the instruction is written onto the harness session
+    // object, which only exists after `start()`. Staging early is a silent drop.
+    ;(backend as unknown as { stageInstruction: (t: string) => void }).stageInstruction =
+      (t: string) => { if (backend.started) staged.push(t) }
+    const session = new Session({
+      id: 'sess-cold',
+      projectPath: '/tmp/proj',
+      cwd: '/tmp/proj',
+      providerId: 'claude-base',
+      harnessId: 'claude',
+      providerConfig: { apiKey: 'sk-x' },
+      backend,
+      firstTurnPreamble: 'YOU ARE A SIDE CHAT',
+    })
+
+    // No prewarm: a side chat is never the project's active session, so its
+    // backend is cold on the very turn the preamble has to reach.
+    expect(backend.started).toBe(false)
+    const send = session.send({ content: 'why is this slow?' })
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveSend?.()
+    await send
+
+    expect(staged).toEqual(['YOU ARE A SIDE CHAT'])
+  })
+
+  it('is absent without the option, so an ordinary session is untouched', async () => {
+    const { session, backend } = makeSession()
+
+    const send = session.send({ content: 'hi' })
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveSend?.()
+    await send
+
+    expect(backend.sendCalls[0]?.content).toBe('hi')
+  })
+})
+
 describe('Session event forwarding', () => {
   it('forwards backend events with sessionId tagged', async () => {
     const { session, backend } = makeSession()

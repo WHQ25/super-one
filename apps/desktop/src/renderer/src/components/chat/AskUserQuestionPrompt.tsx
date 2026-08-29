@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
-import { useChatStore, useActiveSession } from '@/stores/chat'
+import { useActiveSession, useScopedSessionActions } from '@/stores/chat'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { QuestionPreviewContent as PreviewContent } from './tool-result-views'
 import { useRestoreChatInputFocus } from '@/hooks/useRestoreChatInputFocus'
@@ -273,8 +273,7 @@ function defaultSelections(questions: UserQuestion[]): Record<string, string> {
 export function AskUserQuestionPrompt() {
   const { t } = useTranslation()
   const pendingQuestion = useActiveSession((s) => s.pendingQuestion)
-  const answerQuestion = useChatStore((s) => s.answerQuestion)
-  const dismissQuestion = useChatStore((s) => s.dismissQuestion)
+  const { answerQuestion, dismissQuestion } = useScopedSessionActions()
   const chatRootRef = useChatRootRef()
   useRestoreChatInputFocus(!!pendingQuestion)
 

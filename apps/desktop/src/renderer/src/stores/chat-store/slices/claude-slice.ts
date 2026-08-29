@@ -5,14 +5,15 @@ import {
   findCursorEffortParam,
   normalizeEffortValue,
 } from '@superone/cursor/cursor-model-selection'
-import type { ChatStore } from '../types'
+import type { ChatStore, SessionWriteTarget } from '../types'
 import { getDefaultEffortForModel } from '../defaults'
 import {
   applyDefaultModel,
-  getActivePerSession,
+  commitPerSession,
   getProject,
+  getScopedPerSession,
+  resolveWriteScope,
   triggerPrewarm,
-  updateActivePerSession,
   updateProjectState,
 } from '../index'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
@@ -25,16 +26,23 @@ import {
 
 /**
  * Claude-harness-specific user setters. None touch Codex state; they
- * mutate the active session's `selectedModel` / `selectedEffort` flags
- * plus call into IPC to broadcast and prewarm.
+ * mutate one session's `selectedModel` / `selectedEffort` flags plus call
+ * into IPC to broadcast and prewarm.
+ *
+ * Every setter takes an optional `SessionWriteTarget`. The composer that hosts
+ * the model picker exists once per *pane* — a mosaic tile, and the side chat
+ * docked in the activity panel — while the picker's reads go through the
+ * scope-aware `useActiveSession`. Writing to the project's active session would
+ * therefore send a side chat's model change into the conversation it forked
+ * from, and leave the side chat showing something it is not running.
  */
 export interface ClaudeSlice {
-  setSelectedModel: (model: string) => void
-  setSelectedEffort: (effort?: EffortLevel) => void
-  setCursorModelParams: (params: Record<string, string>) => void
-  setCursorModelParam: (id: string, value: string) => void
+  setSelectedModel: (model: string, target?: SessionWriteTarget) => void
+  setSelectedEffort: (effort?: EffortLevel, target?: SessionWriteTarget) => void
+  setCursorModelParams: (params: Record<string, string>, target?: SessionWriteTarget) => void
+  setCursorModelParam: (id: string, value: string, target?: SessionWriteTarget) => void
   setFastMode: (enabled: boolean) => void
-  setSelectedAcpMode: (modeId: string) => void
+  setSelectedAcpMode: (modeId: string, target?: SessionWriteTarget) => void
   refreshClaudeResources: (force?: boolean) => Promise<void>
   refreshCursorSlashItems: (projectPath?: string) => Promise<void>
   /** Load Claude models for a project (remote → node provider store; local → connectClaude). */
@@ -240,22 +248,20 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
     }
   },
 
-  setSelectedAcpMode: (modeId) => {
-    const { activeProject } = get()
-    if (!activeProject) return
-    const session = getActivePerSession(get(), activeProject)
+  setSelectedAcpMode: (modeId, target) => {
+    const { projectPath, ipcSessionId, session } = resolveWriteScope(get(), target)
+    if (!projectPath) return
     const provider = session.sessionProvider ?? session.preferredProvider
     if (provider !== 'acp') return
     if (session.selectedAcpModeId === modeId) return
-    set((s) => updateActivePerSession(s, () => ({ selectedAcpModeId: modeId })))
-    void window.agent.setSessionSettings(activeProject, { mode: modeId })
+    set((s) => commitPerSession(s, target, () => ({ selectedAcpModeId: modeId })))
+    void window.agent.setSessionSettings(projectPath, { mode: modeId }, ipcSessionId)
   },
 
-  setSelectedModel: (model) => {
+  setSelectedModel: (model, target) => {
     const state = get()
-    const { activeProject } = state
+    const { projectPath: activeProject, ipcSessionId, session } = resolveWriteScope(state, target)
     if (!activeProject) return
-    const session = getActivePerSession(get(), activeProject)
     const provider = session.sessionProvider ?? session.preferredProvider
 
     if (provider === 'acp' || provider === 'opencode' || provider === 'cursor') {
@@ -288,25 +294,25 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
         patch.selectedEffort = nextEffort
         patch.effortUserChosen = true
         void ensureCursorHarnessModelPrefsLoaded().then(() => {
-          const live = getActivePerSession(get(), activeProject)
+          const live = getScopedPerSession(get(), target)
           if ((live.sessionProvider ?? live.preferredProvider) !== 'cursor') return
           if (live.selectedModel !== model) return
           const resolved = applyResolved()
-          set((s) => updateActivePerSession(s, () => ({
+          set((s) => commitPerSession(s, target, () => ({
             cursorModelParams: resolved.params,
             selectedEffort: resolved.nextEffort,
             effortUserChosen: true,
           })))
           if (resolved.nextEffort && !parseRemoteProjectKey(activeProject)) {
-            void window.agent.setSessionSettings(activeProject, { effort: resolved.nextEffort })
+            void window.agent.setSessionSettings(activeProject, { effort: resolved.nextEffort }, ipcSessionId)
           }
         })
       }
-      set((s) => updateActivePerSession(s, () => patch))
+      set((s) => commitPerSession(s, target, () => patch))
       void window.agent.setSessionSettings(activeProject, {
         model,
         ...(provider === 'cursor' && patch.selectedEffort ? { effort: patch.selectedEffort } : {}),
-      })
+      }, ipcSessionId)
       return
     }
 
@@ -319,7 +325,7 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
     const defaultEffort = getDefaultEffortForModel(modelInfo)
     // Keep permissionMode as-is when switching models — SuperOne no longer
     // client-gates Auto Mode (local or remote). Claude runtime enforces support.
-    set((s) => updateActivePerSession(s, () => ({
+    set((s) => commitPerSession(s, target, () => ({
       selectedModel: model,
       selectedEffort: defaultEffort,
       modelUserChosen: true,
@@ -328,18 +334,17 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
     })))
     // Desktop SessionManager does not own remote node drafts — skip local IPC.
     if (!isRemote) {
-      void window.agent.setSessionSettings(activeProject, { model, effort: defaultEffort ?? null })
-      if (getActivePerSession(get(), activeProject).draftText.length > 0) {
+      void window.agent.setSessionSettings(activeProject, { model, effort: defaultEffort ?? null }, ipcSessionId)
+      if (getScopedPerSession(get(), target).draftText.length > 0) {
         triggerPrewarm(get(), activeProject)
       }
     }
   },
 
-  setSelectedEffort: (effort) => {
+  setSelectedEffort: (effort, target) => {
     const state = get()
-    const { activeProject } = state
+    const { projectPath: activeProject, ipcSessionId, session } = resolveWriteScope(state, target)
     if (!activeProject) return
-    const session = getActivePerSession(state, activeProject)
     const provider = session.sessionProvider ?? session.preferredProvider
     const patch: Partial<import('../types').PerSessionState> = {
       selectedEffort: effort,
@@ -361,37 +366,35 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
         }
       }
     }
-    set((s) => updateActivePerSession(s, () => patch))
+    set((s) => commitPerSession(s, target, () => patch))
     // Desktop SessionManager does not own remote node drafts — skip local IPC.
     if (!parseRemoteProjectKey(activeProject)) {
-      void window.agent.setSessionSettings(activeProject, { effort: effort ?? null })
-      if (getActivePerSession(get(), activeProject).draftText.length > 0) {
+      void window.agent.setSessionSettings(activeProject, { effort: effort ?? null }, ipcSessionId)
+      if (getScopedPerSession(get(), target).draftText.length > 0) {
         triggerPrewarm(get(), activeProject)
       }
     }
   },
 
-  setCursorModelParams: (params) => {
+  setCursorModelParams: (params, target) => {
     const state = get()
-    const { activeProject } = state
+    const { projectPath: activeProject, session } = resolveWriteScope(state, target)
     if (!activeProject) return
-    const session = getActivePerSession(state, activeProject)
     // An identical map still mints a new object reference, which re-arms any
     // effect that both depends on cursorModelParams and writes it. With an
     // empty seed map (degraded Cursor catalog: params present, values missing)
     // that effect never satisfies its own guard and storms React into #185.
     if (shallow(session.cursorModelParams, params)) return
-    set((s) => updateActivePerSession(s, () => ({ cursorModelParams: params })))
+    set((s) => commitPerSession(s, target, () => ({ cursorModelParams: params })))
     if (session.selectedModel) {
       persistCursorHarnessModelParams(session.selectedModel, params)
     }
   },
 
-  setCursorModelParam: (id, value) => {
+  setCursorModelParam: (id, value, target) => {
     const state = get()
-    const { activeProject } = state
+    const { projectPath: activeProject, ipcSessionId, session } = resolveWriteScope(state, target)
     if (!activeProject) return
-    const session = getActivePerSession(state, activeProject)
     const nextParams = { ...session.cursorModelParams, [id]: value }
     const patch: Partial<import('../types').PerSessionState> = { cursorModelParams: nextParams }
     const cursorModel = state.harnessResources.cursor?.models.find((m) => m.id === session.selectedModel)
@@ -403,12 +406,12 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
         patch.effortUserChosen = true
       }
     }
-    set((s) => updateActivePerSession(s, () => patch))
+    set((s) => commitPerSession(s, target, () => patch))
     if (session.selectedModel) {
       persistCursorHarnessModelParams(session.selectedModel, nextParams)
     }
     if (patch.selectedEffort && !parseRemoteProjectKey(activeProject)) {
-      void window.agent.setSessionSettings(activeProject, { effort: patch.selectedEffort })
+      void window.agent.setSessionSettings(activeProject, { effort: patch.selectedEffort }, ipcSessionId)
     }
   },
 

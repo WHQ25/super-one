@@ -74,6 +74,18 @@ export interface CodexSession {
   forkListeners: Map<string, ForkListenerHandle>
   forkCallbacks: CodexRunStreamCallbacks | null
   systemPromptAppend?: string
+  /**
+   * One instruction to hand the next `turn/start` as an `additionalContext`
+   * entry (`kind: 'application'`). Cleared once that turn is issued.
+   *
+   * Deliberately not folded into `systemPromptAppend`: that becomes the thread's
+   * `developer_instructions`, which codex renders as `input[0]` — the head of the
+   * request — so changing it invalidates the entire cached prefix. An
+   * `additionalContext` entry is rendered as a developer-role message sitting just
+   * before the user input, i.e. at the tail of the conversation, which leaves the
+   * prefix byte-identical to the parent thread's.
+   */
+  pendingInstruction?: string | null
 }
 
 function resolvePermissionPreset(preset?: CodexPermissionPreset): CodexPermissionPreset {

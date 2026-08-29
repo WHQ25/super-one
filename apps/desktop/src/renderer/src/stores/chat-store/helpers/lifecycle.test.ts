@@ -210,9 +210,43 @@ describe('_syncAndResumeSession', () => {
     let captured: unknown
     const set = (updater: (s: never) => unknown) => { captured = updater(baseState) }
     await _syncAndResumeSession('/p1', 'sid-1', set as never, '/p1')
-    const proj = (captured as { projectSessions: Record<string, { sandboxInfo: { enabled: boolean }; _sessions: Record<string, { permissionMode: string }> }> }).projectSessions['/p1']
+    const proj = (captured as { projectSessions: Record<string, { sandboxInfo: { enabled: boolean }; _sessions: Record<string, { permissionMode: string; sandboxInfo?: { enabled: boolean } }> }> }).projectSessions['/p1']
     expect(proj.sandboxInfo.enabled).toBe(true)
     expect(proj._sessions['sid-1'].permissionMode).toBe('plan')
+    // The title said "onto the session" but only the project was ever asserted.
+    // Main's answer is a fact about THIS session, and a session record wins in
+    // `mergedView` — so failing to write it leaves any older record on top.
+    expect(proj._sessions['sid-1'].sandboxInfo).toEqual({ enabled: true, autoAllowBash: true })
+  })
+
+  // Regression: a cold resume that rebuilt the runtime at the project's own
+  // setting compared equal to the project and returned early, leaving a stale
+  // session record — which wins in `mergedView` — showing a sandbox that is not
+  // in force.
+  it('overwrites a stale session record even when the project value already matches', async () => {
+    resumeSession.mockResolvedValueOnce({
+      permissionMode: 'default',
+      sandboxInfo: { enabled: false, autoAllowBash: false },
+    })
+    const baseState = {
+      projectSessions: {
+        '/p1': {
+          ...createDefaultProjectState(),
+          sandboxInfo: { enabled: false, autoAllowBash: false },
+          _activeSessionId: 'sid-1',
+          _sessions: {
+            'sid-1': { ...createDefaultPerSessionState(), sandboxInfo: { enabled: true, autoAllowBash: true } },
+          },
+        },
+      },
+    } as never
+    let captured: unknown
+    const set = (updater: (s: never) => unknown) => { captured = updater(baseState) }
+
+    await _syncAndResumeSession('/p1', 'sid-1', set as never, '/p1')
+
+    const proj = (captured as { projectSessions: Record<string, { _sessions: Record<string, { sandboxInfo?: { enabled: boolean } }> }> }).projectSessions['/p1']
+    expect(proj._sessions['sid-1'].sandboxInfo).toEqual({ enabled: false, autoAllowBash: false })
   })
 
   it('preserves state when resumeSession returns unchanged settings', async () => {

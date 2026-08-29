@@ -242,6 +242,25 @@ export interface PerSessionState {
   _gitBranch: string | null
   _worktreePath: string | null
   _worktreeRemoved: boolean
+  /**
+   * Sandbox this ONE session's runtime is actually under, when it differs from
+   * the project's.
+   *
+   * Normally absent: every session in a project shares the project's sandbox, and
+   * `ProjectState.sandboxInfo` is the answer. A side chat breaks that — it is a
+   * separate runtime that can be re-sandboxed on its own — and a badge is a
+   * safety claim, so the pane that owns the divergence has to be able to say so
+   * rather than repaint the project's value for everyone.
+   */
+  sandboxInfo?: SandboxInfo | null
+  /**
+   * SuperOne id of the conversation this side chat was forked from.
+   *
+   * Set only on side chats, which exist in `_sessions` but never in the database
+   * and never as `_activeSessionId`. Read to suppress affordances that make no
+   * sense inside one (forking it again, opening a side chat off a side chat).
+   */
+  _sideChatParentId?: string | null
   additionalDirs: string[]
   additionalDirsDirty: boolean
   apiRetry: { attempt: number; maxRetries?: number; delayMs: number; message?: string } | null
@@ -391,7 +410,7 @@ export interface ChatStore {
   sendMessage: (content: string, segments?: InputSegment[], explicitMentions?: Mention[], attachments?: ImageAttachment[], target?: SessionWriteTarget) => Promise<void>
   approveCodexPlan: () => Promise<void>
   rejectCodexPlan: (feedback?: string) => Promise<void>
-  interrupt: () => Promise<void>
+  interrupt: (target?: SessionWriteTarget) => Promise<void>
   disconnectRemoteSession: () => void
 
   toggleOpen: () => void
@@ -418,31 +437,31 @@ export interface ChatStore {
 
   setDetailedUsage: (projectPath: string, sessionId: string, usage: ContextUsageInfo | null) => void
 
-  setSelectedModel: (model: string) => void
-  setSelectedEffort: (effort?: EffortLevel) => void
-  setCursorModelParams: (params: Record<string, string>) => void
-  setCursorModelParam: (id: string, value: string) => void
+  setSelectedModel: (model: string, target?: SessionWriteTarget) => void
+  setSelectedEffort: (effort?: EffortLevel, target?: SessionWriteTarget) => void
+  setCursorModelParams: (params: Record<string, string>, target?: SessionWriteTarget) => void
+  setCursorModelParam: (id: string, value: string, target?: SessionWriteTarget) => void
   setFastMode: (enabled: boolean) => void
   refreshClaudeResources: (force?: boolean) => Promise<void>
   loadClaudeModels: (projectPath: string, apiProviderId: string | null, force?: boolean) => Promise<ModelOption[]>
-  setSelectedCodexModel: (model: string) => void
-  setSelectedCodexReasoningEffort: (effort?: CodexReasoningEffort) => void
-  setSelectedCodexServiceTier: (tier: string | null) => void
-  setSelectedCodexPermissionPreset: (preset: CodexPermissionPreset) => void
-  setSelectedCodexCollaborationMode: (mode: CodexCollaborationMode) => void
+  setSelectedCodexModel: (model: string, target?: SessionWriteTarget) => void
+  setSelectedCodexReasoningEffort: (effort?: CodexReasoningEffort, target?: SessionWriteTarget) => void
+  setSelectedCodexServiceTier: (tier: string | null, target?: SessionWriteTarget) => void
+  setSelectedCodexPermissionPreset: (preset: CodexPermissionPreset, target?: SessionWriteTarget) => void
+  setSelectedCodexCollaborationMode: (mode: CodexCollaborationMode, target?: SessionWriteTarget) => void
   loadCodexModels: (projectPath: string, apiProviderId: string | null, force?: boolean) => Promise<ModelOption[]>
   refreshCodexModels: (force?: boolean) => Promise<void>
   refreshCodexSkills: (projectPath?: string) => Promise<void>
   refreshCursorSlashItems: (projectPath?: string) => Promise<void>
   setPreferredProvider: (provider: ChatProvider) => void
-  setDshPreset: (preset: string) => void
+  setDshPreset: (preset: string, target?: SessionWriteTarget) => void
   setAcpAgentId: (agentId: string | null) => void
-  setOpenCodeAgentId: (agentId: string | null) => void
-  setSelectedAcpMode: (modeId: string) => void
+  setOpenCodeAgentId: (agentId: string | null, target?: SessionWriteTarget) => void
+  setSelectedAcpMode: (modeId: string, target?: SessionWriteTarget) => void
   /** Lazy-load ACP slash commands when the / popup opens (also refreshes cache). */
   ensureAcpSlashCommands: () => void
 
-  setSessionApiProviderId: (apiProviderId: string | null) => Promise<void>
+  setSessionApiProviderId: (apiProviderId: string | null, target?: SessionWriteTarget) => Promise<void>
   openProviderPopup: () => void
   openMcpPopup: () => void
   openWorkflowsPopup: () => void
@@ -458,16 +477,16 @@ export interface ChatStore {
   removeBrowserAnnotation: (id: string, target?: SessionWriteTarget) => void
   clearBrowserAnnotations: (target?: SessionWriteTarget) => void
 
-  respondToPermission: (requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel', formAnswers?: Record<string, unknown>) => Promise<boolean>
-  setPermissionMode: (mode: PermissionMode) => Promise<void>
-  cyclePermissionMode: () => void
-  togglePlanModeShortcut: () => void
-  setSandboxMode: (mode: SandboxMode) => Promise<void>
+  respondToPermission: (requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel', formAnswers?: Record<string, unknown>, target?: SessionWriteTarget) => Promise<boolean>
+  setPermissionMode: (mode: PermissionMode, target?: SessionWriteTarget) => Promise<void>
+  cyclePermissionMode: (target?: SessionWriteTarget) => void
+  togglePlanModeShortcut: (target?: SessionWriteTarget) => void
+  setSandboxMode: (mode: SandboxMode, target?: SessionWriteTarget) => Promise<void>
 
-  answerQuestion: (requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations) => void
-  dismissQuestion: (requestId: string) => void
+  answerQuestion: (requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations, target?: SessionWriteTarget) => void
+  dismissQuestion: (requestId: string, target?: SessionWriteTarget) => void
 
-  respondToPlanApproval: (requestId: string, approved: boolean, feedback?: string, postApprovalMode?: PermissionMode) => void
+  respondToPlanApproval: (requestId: string, approved: boolean, feedback?: string, postApprovalMode?: PermissionMode, target?: SessionWriteTarget) => void
 
   dismissSlashCommandOutput: (target?: SessionWriteTarget) => void
   dismissCompactError: () => void

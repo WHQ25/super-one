@@ -115,6 +115,15 @@ export interface SessionConstructorOptions {
   resolveProviderConfigForApiProvider?: (apiProviderId: string | null) => unknown
   getActiveDefaultApiProviderId?: (harnessId: HarnessId) => string | null
   onBeforeInterrupt?: () => void
+  /**
+   * Side-chat marker. Persistence is already suppressed by SessionManager
+   * withholding `onStateChange`; this flag exists so callers can tell an
+   * ephemeral session apart without inspecting hooks (e.g. to avoid promoting
+   * it to the project's active session on send).
+   */
+  ephemeral?: boolean
+  /** See `SessionCreateOptions.firstTurnPreamble`. */
+  firstTurnPreamble?: string
 }
 
 function agentIdFromConfig(config: unknown): string | null {
@@ -168,6 +177,11 @@ export class Session implements SessionContract {
   readonly providerId: string
   readonly harnessId: HarnessId
   readonly createdAt: number
+  /** Side chat: lives only in this process, never written to the SuperOne DB. */
+  readonly ephemeral: boolean
+  private readonly firstTurnPreamble: string | undefined
+  /** Chosen by `prepareFirstTurnPreamble`, delivered by `flushFirstTurnPreamble`. */
+  private pendingPreamble: string | null = null
 
   private _cwd: string
   get cwd(): string { return this._cwd }
@@ -495,6 +509,8 @@ export class Session implements SessionContract {
     this._cwd = opts.cwd
     this.providerId = opts.providerId
     this.harnessId = opts.harnessId
+    this.ephemeral = opts.ephemeral ?? false
+    this.firstTurnPreamble = opts.firstTurnPreamble
     this.providerConfig = opts.providerConfig
     this.backend = opts.backend
     // Idle task-notification flushes must take Session.send / _sendChain — never
@@ -653,6 +669,7 @@ export class Session implements SessionContract {
     const providerOrigin = opts?.providerOrigin ?? 'local'
     this.assertCanSend(providerOrigin)
     this.touchRuntimeActivity()
+    request = this.prepareFirstTurnPreamble(request)
     const isQueued = (request.priority === 'next' || request.priority === 'later') && this.isStreaming()
     if (isQueued) {
       this.assertNotDisposed()
@@ -677,6 +694,7 @@ export class Session implements SessionContract {
           this._pendingQueuedRequests.set(request.clientMessageId, { request, providerOrigin })
         }
         try {
+          this.flushFirstTurnPreamble()
           await this.backend.send(request)
         } catch (error) {
           if (request.clientMessageId) this._pendingQueuedRequests.delete(request.clientMessageId)
@@ -730,6 +748,7 @@ export class Session implements SessionContract {
       }
       this._status = 'streaming'
       try {
+        this.flushFirstTurnPreamble()
         await this.backend.send(request)
       } finally {
         if ((this._status as SessionStatus) !== 'disposed') this._status = 'ended'
@@ -1215,6 +1234,17 @@ export class Session implements SessionContract {
    * one switches through the roster.
    * @param presetId - the preset to compose from, or `null` to take the default.
    */
+  /**
+   * The dsh preset this session composes its agent from, or null for the default.
+   *
+   * Lives in `providerConfig` rather than a field of its own, so a caller that
+   * wants to copy it (a side-chat fork) cannot read it without this accessor.
+   */
+  getAgentPreset(): string | null {
+    if (this.harnessId !== 'dsh') return null
+    return (this.providerConfig as { agentPreset?: string } | null)?.agentPreset ?? null
+  }
+
   setAgentPreset(presetId: string | null): void {
     this.assertNotDisposed()
     if (this.harnessId !== 'dsh') return
@@ -2017,6 +2047,59 @@ export class Session implements SessionContract {
     this._contextTokens = next.contextTokens
     this._streamingTokensByMessageId = next.streamingTokensByMessageId
     this._lastUsageByMessageId = next.lastUsageByMessageId
+  }
+
+  /**
+   * Choose how this session's one-time instructions will travel.
+   *
+   * Prefers the harness's own conversation-level channel (`stageInstruction`):
+   * Claude appends a non-querying transcript entry, Codex hands the turn a
+   * developer-role context fragment. Only a harness with neither falls back to
+   * riding the user's message — visible to the model, invisible in the bubble.
+   *
+   * Runs at the top of `send` because the fallback rewrites `content`, and
+   * `appendUserMessage` needs `userMessageContent` already set to keep the bubble
+   * showing only what the user typed. The native channel is merely *chosen* here
+   * and delivered later by `flushFirstTurnPreamble`.
+   *
+   * Gated on an empty transcript rather than a consume-once flag: that is the
+   * same fact, derived, so a send that throws before appending its user message
+   * does not silently drop the instructions on the retry.
+   */
+  private prepareFirstTurnPreamble(request: SendMessageRequest): SendMessageRequest {
+    if (!this.firstTurnPreamble || this._messages.length > 0) return request
+    if (this.backend.stageInstruction) {
+      this.pendingPreamble = this.firstTurnPreamble
+      return request
+    }
+    return {
+      ...request,
+      content: `${this.firstTurnPreamble}\n\n${request.content}`,
+      userMessageContent: request.userMessageContent ?? [
+        ...(request.images ?? []).map((attachment) =>
+          attachment.mimeType === 'application/pdf'
+            ? ({ type: 'document', name: attachment.name } as const)
+            : ({ type: 'image', name: attachment.name } as const),
+        ),
+        { type: 'text', text: request.content },
+      ],
+    }
+  }
+
+  /**
+   * Hand the chosen instruction to the backend that will actually run this turn.
+   *
+   * Deliberately not done alongside the choice: a side chat is never the
+   * project's active session, so it is never prewarmed, and its backend is still
+   * cold on the one turn the preamble has to reach. `CodexBackend` parks the text
+   * on a harness session object that does not exist until `start()`, so staging
+   * before `ensureStarted` / `rebuildBackend` writes into a backend about to be
+   * replaced and the instruction is dropped without a trace.
+   */
+  private flushFirstTurnPreamble(): void {
+    if (!this.pendingPreamble) return
+    this.backend.stageInstruction?.(this.pendingPreamble)
+    this.pendingPreamble = null
   }
 
   private appendUserMessage(request: SendMessageRequest, providerOrigin: SendProviderOrigin): void {

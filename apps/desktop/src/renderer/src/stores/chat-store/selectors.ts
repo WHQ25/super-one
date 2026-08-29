@@ -32,7 +32,15 @@ function mergedView(key: string, project: ProjectState, session: PerSessionState
   if (!cached || cached.project !== project || cached.session !== session) {
     if (viewCache.size >= VIEW_CACHE_LIMIT) viewCache.clear()
     // Session fields must win over project (e.g. preferredProvider/sessionProvider).
-    cached = { project, session, view: { ...project, ...session } }
+    // `sandboxInfo` is spelled out after the spread rather than left to it: it is
+    // absent on most sessions, and a patch that carries the key as `undefined`
+    // would otherwise blank the project's value instead of falling back to it.
+    const view: ActiveSessionView = {
+      ...project,
+      ...session,
+      sandboxInfo: session.sandboxInfo ?? project.sandboxInfo,
+    }
+    cached = { project, session, view }
     viewCache.set(key, cached)
   }
   return cached.view

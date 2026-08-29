@@ -2,7 +2,7 @@ import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
-import { useChatStore, useActiveSession, selectClaudeModels, selectClaudeAccount } from '@/stores/chat'
+import { useChatStore, useActiveSession, selectClaudeModels, selectClaudeAccount, useScopedSessionActions } from '@/stores/chat'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { resolveMiniAppToolIdentity } from '@/lib/miniapp-tool-identity'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
@@ -117,8 +117,7 @@ export function PermissionPrompt() {
   const { t } = useTranslation()
   const pendingPermission = useActiveSession((s) => s.pendingPermissions[0] ?? null)
   const sessionProvider = useActiveSession((s) => s.sessionProvider)
-  const respondToPermission = useChatStore((s) => s.respondToPermission)
-  const setPermissionMode = useChatStore((s) => s.setPermissionMode)
+  const { respondToPermission, setPermissionMode } = useScopedSessionActions()
   const cwd = useActiveSession((s) => s.cwd)
   const homedir = useActiveSession((s) => s.homedir)
   const account = useChatStore(selectClaudeAccount)

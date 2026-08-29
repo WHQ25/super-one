@@ -33,19 +33,37 @@ export async function _syncAndResumeSession(
     const sess = proj._sessions[sessionId]
     if (!sess) return {}
     const permissionChanged = sess.permissionMode !== result.permissionMode
+    // Compared against what this session currently SHOWS — its own record if it
+    // has one, the project's value otherwise. Comparing against the project alone
+    // is what let a stale record survive: a cold resume that rebuilt the runtime
+    // at the project setting reads as "no change" and returns early, leaving the
+    // old record — which wins in `mergedView` — on top of main's answer.
+    //
+    // Leaving an absent record absent when it already resolves to `result` keeps
+    // opening a session free of state churn; inheriting yields the same value.
+    const shown = sess.sandboxInfo ?? proj.sandboxInfo
     const sandboxChanged =
-      proj.sandboxInfo.enabled !== result.sandboxInfo.enabled ||
-      proj.sandboxInfo.autoAllowBash !== result.sandboxInfo.autoAllowBash
+      shown.enabled !== result.sandboxInfo.enabled
+      || shown.autoAllowBash !== result.sandboxInfo.autoAllowBash
     if (!permissionChanged && !sandboxChanged) return s
+    // `result.sandboxInfo` is main's answer for THIS session, so it is recorded on
+    // the session. The project value follows only for the session that speaks for
+    // it — the same rule the `init_ready` / `agent_setting_change` reducers use.
+    const isActive = sessionId === proj._activeSessionId
     return {
       projectSessions: {
         ...s.projectSessions,
         [projectPath]: {
           ...proj,
-          sandboxInfo: sandboxChanged ? result.sandboxInfo : proj.sandboxInfo,
-          _sessions: permissionChanged
-            ? { ...proj._sessions, [sessionId]: { ...sess, permissionMode: result.permissionMode } }
-            : proj._sessions,
+          sandboxInfo: sandboxChanged && isActive ? result.sandboxInfo : proj.sandboxInfo,
+          _sessions: {
+            ...proj._sessions,
+            [sessionId]: {
+              ...sess,
+              ...(permissionChanged ? { permissionMode: result.permissionMode } : {}),
+              ...(sandboxChanged ? { sandboxInfo: result.sandboxInfo } : {}),
+            },
+          },
         },
       },
     }

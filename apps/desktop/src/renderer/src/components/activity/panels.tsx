@@ -4,6 +4,7 @@ import { MiniAppSlot } from '@/components/miniapp/MiniAppSlot'
 import { BrowserView } from '@/components/browser/BrowserView'
 import { TrajectoryPanel } from '@/components/trajectory/TrajectoryPanel'
 import { DeviceDockPanel } from '@/components/device/DeviceDockPanel'
+import { SideChatPanel } from '@/components/chat/SideChatPanel'
 import { ActivityTerminalPanel } from './ActivityTerminalPanel'
 
 function FilePreviewPanel(props: IDockviewPanelProps<{ filePath: string }>) {
@@ -26,6 +27,10 @@ function TrajectoryDockPanel(props: IDockviewPanelProps<{ sessionId: string }>) 
   return <TrajectoryPanel sessionId={props.params.sessionId} />
 }
 
+function SideChatDockPanel(props: IDockviewPanelProps<{ projectPath: string; sessionId: string }>) {
+  return <SideChatPanel projectPath={props.params.projectPath} sessionId={props.params.sessionId} />
+}
+
 export const activityPanelComponents: Record<string, React.FunctionComponent<IDockviewPanelProps>> = {
   'file-preview': FilePreviewPanel,
   'miniapp': MiniAppPanel as React.FunctionComponent<IDockviewPanelProps>,
@@ -33,4 +38,5 @@ export const activityPanelComponents: Record<string, React.FunctionComponent<IDo
   'terminal': TerminalHostPanel as React.FunctionComponent<IDockviewPanelProps>,
   'trajectory': TrajectoryDockPanel as React.FunctionComponent<IDockviewPanelProps>,
   'device': DeviceDockPanel as React.FunctionComponent<IDockviewPanelProps>,
+  'side-chat': SideChatDockPanel as React.FunctionComponent<IDockviewPanelProps>,
 }

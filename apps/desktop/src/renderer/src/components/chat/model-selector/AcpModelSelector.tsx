@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Loader2 } from 'lucide-react'
-import { useActiveSession, useChatStore } from '@/stores/chat'
+import { useActiveSession, useChatStore, useScopedSessionActions } from '@/stores/chat'
 import type { AcpAgentDescriptor } from '@superone/shared/agent-types'
 import { acpAgentDisplayName } from '@superone/shared/acp-brand'
 import {
@@ -43,8 +43,7 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
   const acpModeConfigId = useActiveSession((s) => s.acpModeConfigId)
   const selectedAcpModeId = useActiveSession((s) => s.selectedAcpModeId)
   const agents = useChatStore((s) => s.harnessResources.acp?.agents ?? EMPTY_ACP_AGENTS)
-  const setSelectedModel = useChatStore((s) => s.setSelectedModel)
-  const setSelectedAcpMode = useChatStore((s) => s.setSelectedAcpMode)
+  const { setSelectedModel, setSelectedAcpMode } = useScopedSessionActions()
 
   const agent = agents.find((a) => a.id === acpAgentId)
   // Prefer catalog name; if agents aren't loaded yet (mini-window cold start), derive from id.

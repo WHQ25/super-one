@@ -138,6 +138,10 @@ export class SessionManagerImpl implements SessionManagerContract {
     for (const [sid, projectPath] of this.sessionProjects) {
       const session = this.sessions.get(sid)
       if (!session) continue
+      // A side chat is owned by the renderer panel that opened it. Replaying it
+      // through the boot-time snapshot sync would resurrect it as an ordinary
+      // session row — with no panel to render it and no database row behind it.
+      if (session.ephemeral) continue
       out.push({
         sid,
         projectPath,
@@ -232,15 +236,20 @@ export class SessionManagerImpl implements SessionManagerContract {
       apiProviderId,
       acpAgentId: opts.acpAgentId ?? null,
       systemPromptAppend: opts.systemPromptAppend,
+      firstTurnPreamble: opts.firstTurnPreamble,
       resumedProviderSessionId: resumedProviderSessionId ?? undefined,
       homedir: homedir(),
       getProjectResources: (c) => this.projectResources.get(c),
       getProjectExtraDirs: this.persistence.getProjectExtraDirs,
       invalidateProjectResources: (c) => this.projectResources.invalidate(c),
-      onStateChange: this.persistence.onSessionStateChange
+      ephemeral: opts.ephemeral,
+      // Ephemeral sessions withhold both persistence hooks rather than adding a
+      // branch inside Session: `notifyStateChange` already no-ops without
+      // `onStateChange`, so exactly one place decides whether a session writes.
+      onStateChange: !opts.ephemeral && this.persistence.onSessionStateChange
         ? (snapshot) => this.persistence.onSessionStateChange!(snapshot)
         : undefined,
-      onProviderSessionIdChange: this.persistence.onProviderSessionIdChange
+      onProviderSessionIdChange: !opts.ephemeral && this.persistence.onProviderSessionIdChange
         ? (sid, providerSessionId) => this.persistence.onProviderSessionIdChange!(sid, providerSessionId)
         : undefined,
       getActiveProvider: this.persistence.getActiveProvider,
@@ -255,7 +264,8 @@ export class SessionManagerImpl implements SessionManagerContract {
     })
 
     this.registerSession(session, opts.projectPath)
-    this.activeByProject.set(opts.projectPath, sessionId)
+    // A side chat opens next to the chat the user is reading, not instead of it.
+    if (!opts.ephemeral) this.activeByProject.set(opts.projectPath, sessionId)
     try {
       this.persistence.onSessionCreated?.({
         id: sessionId,
@@ -280,6 +290,11 @@ export class SessionManagerImpl implements SessionManagerContract {
     if (this.sessionProjects.get(sessionId) !== projectPath) {
       throw new Error(`Session ${sessionId} does not belong to project ${projectPath}`)
     }
+    // An ephemeral session (side chat) is docked beside the project's chat, never
+    // instead of it. Guarding here rather than at each call site: prewarm and send
+    // both route through this, and `activeByProject` decides where session-less
+    // events land and what the next cold boot restores as foreground.
+    if (session.ephemeral) return
     this.activeByProject.set(projectPath, sessionId)
   }
 

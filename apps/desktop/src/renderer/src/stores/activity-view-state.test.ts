@@ -10,8 +10,10 @@ const {
   mockSetOnDockReady,
   mockSetShowPanel,
   mockCloseGhostMiniAppPanels,
+  mockCloseGhostSideChatPanel,
   mockMaterializeOwnedBrowserTabs,
   openAppsRef,
+  sideChatRef,
 } = vi.hoisted(() => ({
   mockApplyDockSnapshot: vi.fn(),
   mockGetDockSnapshot: vi.fn<() => SerializedDockview | null>(),
@@ -19,6 +21,8 @@ const {
   mockSetOnDockReady: vi.fn<(cb: (() => void) | null) => void>(),
   mockSetShowPanel: vi.fn(),
   mockCloseGhostMiniAppPanels: vi.fn<(isAlive: (appId: string) => boolean) => void>(),
+  mockCloseGhostSideChatPanel: vi.fn<(isAlive: (sessionId: string) => boolean) => void>(),
+  sideChatRef: { value: null as { sessionId: string } | null },
   mockMaterializeOwnedBrowserTabs: vi.fn<(sessionId: string) => void>(),
   openAppsRef: { value: {} as Record<string, unknown> },
 }))
@@ -30,6 +34,7 @@ vi.mock('@/components/activity/activity-panel-api', () => ({
   setOnDockReady: mockSetOnDockReady,
   setCurrentSessionIdGetter: vi.fn(),
   closeGhostMiniAppPanels: mockCloseGhostMiniAppPanels,
+  closeGhostSideChatPanel: mockCloseGhostSideChatPanel,
   materializeOwnedBrowserTabs: mockMaterializeOwnedBrowserTabs,
 }))
 
@@ -37,6 +42,10 @@ vi.mock('./miniapp', () => ({
   useMiniAppStore: {
     getState: () => ({ openApps: openAppsRef.value }),
   },
+}))
+
+vi.mock('./side-chat', () => ({
+  useSideChatStore: { getState: () => ({ current: sideChatRef.value }) },
 }))
 
 let mockShowPanel = false
@@ -283,6 +292,19 @@ describe('activity-view-state', () => {
     expect(mockCloseGhostMiniAppPanels).toHaveBeenCalledTimes(1)
     const isAlive = mockCloseGhostMiniAppPanels.mock.calls[0][0]
     expect(isAlive('X:proj-1')).toBe(false)
+  })
+
+  it('restore treats a side-chat tab from a superseded session as a ghost', () => {
+    mockIsDockReady.mockReturnValue(true)
+    sideChatRef.value = { sessionId: 'live-side-chat' }
+    mockCloseGhostSideChatPanel.mockClear()
+
+    useActivityViewStateStore.getState().restore('sess-A')
+
+    expect(mockCloseGhostSideChatPanel).toHaveBeenCalledTimes(1)
+    const isAlive = mockCloseGhostSideChatPanel.mock.calls[0][0]
+    expect(isAlive('live-side-chat')).toBe(true)
+    expect(isAlive('side-chat-replaced-while-parked')).toBe(false)
   })
 
   it('restore keeps miniapp panels whose instanceKey is still alive in openApps', () => {

@@ -140,6 +140,24 @@ export const zh: Messages = {
       },
     },
   },
+  sideChat: {
+    title: '临时对话',
+    ephemeralNotice: '临时对话不会持久化保存，关闭标签页或退出应用后无法恢复。',
+    commandDesc: '从当前会话分支出一个临时对话',
+    openingToast: '正在打开临时对话…',
+    unavailable: '当前会话无法打开临时对话。',
+    closeConfirm: {
+      title: '关闭这个临时对话？',
+      body: '关闭这个标签页后，临时对话将无法恢复。',
+      action: '确认关闭',
+      dontAsk: '不再询问',
+    },
+    replaceConfirm: {
+      title: '替换当前的临时对话？',
+      body: '同时只能开启一个临时对话。当前这个会被丢弃，且无法恢复。',
+      action: '替换',
+    },
+  },
   trajectory: {
     title: '轨迹',
     toolbarAria: '轨迹工具栏',
@@ -469,6 +487,7 @@ export const zh: Messages = {
       convertToMiniWindow: '转为迷你窗口',
       dragToMiniWindow: '松开打开为小窗',
       forkToWorktree: 'Fork 到新 Worktree',
+      newSideChat: '新建临时对话',
       forkToLocal: 'Fork 到同一 Worktree',
       forkToSameWorktree: 'Fork 到同一 Worktree',
       forkingToast: '正在 Fork 会话…',
@@ -1641,6 +1660,7 @@ export const zh: Messages = {
     selectionMenu: {
       copy: '复制',
       addToChat: '添加到聊天',
+      askInSideChat: '在临时对话中提问',
     },
     error: {
       detailsToggle: '错误细节',

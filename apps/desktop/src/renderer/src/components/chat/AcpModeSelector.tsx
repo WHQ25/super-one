@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { ChevronDown, Layers } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
-import { useActiveSession, useChatStore } from '@/stores/chat'
+import { useActiveSession, useScopedSessionActions } from '@/stores/chat'
 
 /**
  * ACP session-mode picker (configOptions category=mode), e.g. OpenCode-style modes.
@@ -18,7 +18,7 @@ export function AcpModeSelector({ compact = false }: { compact?: boolean }) {
   const acpModeConfigId = useActiveSession((s) => s.acpModeConfigId)
   const selectedAcpModeId = useActiveSession((s) => s.selectedAcpModeId)
   const acpModesStatus = useActiveSession((s) => s.acpModesStatus)
-  const setSelectedAcpMode = useChatStore((s) => s.setSelectedAcpMode)
+  const { setSelectedAcpMode } = useScopedSessionActions()
 
   // configId null ⇒ Grok effort catalog → AcpModelSelector / GroupedModelEffortSelector
   if (!acpModeConfigId) return null

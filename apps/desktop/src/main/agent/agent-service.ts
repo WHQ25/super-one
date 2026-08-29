@@ -45,6 +45,7 @@ import { activateWorktree, getCheckedOutBranches, getWorktreeInfo, gitErrorMessa
 import { coerceSandboxModeForCapability, getSandboxCapability } from '../sandbox-platform'
 import { searchFiles, searchMentions, EXCLUDED_DIRS, type AgentEntry } from './fuzzy-file-search'
 import { SessionClaimConflictError, SessionLockedError } from '../session/types'
+import type { Session as SessionContract } from '../session/types'
 import { installAcpRecapFocus } from '../acp/acp-recap-focus'
 
 /** Resolve a path to its git common directory (shared across worktrees). */
@@ -82,8 +83,9 @@ import { resolveFavicon, cacheCapturedFavicon } from '../favicon'
 import { resolveSiteIdentity } from '../site-identity'
 import { backupMcpServers, listLibrary, deleteLibraryEntry, getLibraryEntry } from '../mcp-library-service'
 import { uninstallMcpbBundle } from '../mcpb/mcpb-installer'
-import type { HookSavePayload, SessionForkRequest, HarnessId, DshPluginInstallSource } from '@superone/shared/agent-types'
+import type { HookSavePayload, SessionForkRequest, SideChatStartRequest, HarnessId, DshPluginInstallSource } from '@superone/shared/agent-types'
 import { forkSession } from '../session/session-fork'
+import { closeSideChat, startSideChat } from '../session/side-chat'
 import { loadRealtimeTimeline, reconcileRealtimeTimeline } from '../session/realtime-timeline-repo'
 
 export class AgentService {
@@ -148,10 +150,21 @@ export class AgentService {
   }
 
   private isRemoteLockedSession(projectPath: string): boolean {
-    const activeSession = this.sessionManager?.getActiveSession(projectPath)
-    if (!activeSession) return false
-    if (activeSession.owner.kind === 'remote') return true
-    if (activeSession.subscribers.size > 0) return true
+    return this.isSessionRemoteLocked(this.sessionManager?.getActiveSession(projectPath))
+  }
+
+  /**
+   * Lock check for one specific session rather than "whatever the project's
+   * active session happens to be".
+   *
+   * Handlers that accept an explicit session id must use this: reading the
+   * project's active session there answers a question about a different
+   * session, and lets a write through on the strength of it.
+   */
+  private isSessionRemoteLocked(session: SessionContract | null | undefined): boolean {
+    if (!session) return false
+    if (session.owner.kind === 'remote') return true
+    if (session.subscribers.size > 0) return true
     return false
   }
 
@@ -1924,20 +1937,40 @@ export class AgentService {
       }
     })
 
-    ipcMain.handle(AgentIpcChannels.SET_SANDBOX_MODE, async (_event, projectPath: string, mode: SandboxMode) => {
-      this.throwIfRemoteLocked(projectPath)
+    ipcMain.handle(AgentIpcChannels.SET_SANDBOX_MODE, async (_event, projectPath: string, mode: SandboxMode, sessionId?: string) => {
+      if (!sessionId) this.throwIfRemoteLocked(projectPath)
       const capability = getSandboxCapability()
       if (mode !== 'off' && capability.supportLevel === 'unsupported') {
         throw new Error(capability.unsupportedReason ?? '当前平台不支持沙盒')
+      }
+      // Same rule as SET_SESSION_SETTINGS: an explicit id is a scoped write from
+      // a pane that is not the project's active chat, and both guards must read
+      // the session being written rather than whichever one is in the foreground.
+      if (sessionId) {
+        const scoped = this.sessionManager?.getSession(sessionId) ?? null
+        if (!scoped) return
+        if (scoped.snapshot.projectPath !== projectPath) return
+        if (this.isSessionRemoteLocked(scoped)) return
+        return scoped.setSandboxMode(mode)
       }
       const session = await this.getOrCreateActiveSession(projectPath)
       return session.setSandboxMode(mode)
     })
 
-    ipcMain.handle(AgentIpcChannels.SET_SESSION_SETTINGS, (_event, projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null; mode?: string | null; agentPreset?: string | null }) => {
-      if (this.isRemoteLockedSession(projectPath)) return
-      const session = this.sessionManager?.getActiveSession(projectPath)
+    ipcMain.handle(AgentIpcChannels.SET_SESSION_SETTINGS, (_event, projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null; mode?: string | null; agentPreset?: string | null }, sessionId?: string) => {
+      // An explicit id is a scoped write from a pane that is not the project's
+      // active chat — a mosaic tile, or a side chat, whose picker would
+      // otherwise re-configure the conversation it was forked from.
+      const session = sessionId
+        ? this.sessionManager?.getSession(sessionId) ?? null
+        : this.sessionManager?.getActiveSession(projectPath)
       if (!session) return
+      // Both guards read the session being WRITTEN. Checking the project's
+      // active session instead would let a scoped write into a remote-owned
+      // session through, and would let a stale scope address a session that
+      // belongs to an entirely different project.
+      if (session.snapshot.projectPath !== projectPath) return
+      if (this.isSessionRemoteLocked(session)) return
       session.setSelectedSettings(settings)
       if (settings.agentPreset !== undefined) session.setAgentPreset(settings.agentPreset)
     })
@@ -3110,6 +3143,18 @@ export class AgentService {
       return result
     })
 
+    // Side chat deliberately does NOT emitSessionsChanged: an ephemeral session
+    // is absent from the database, so refreshing the sidebar would show nothing
+    // and only cost a re-query.
+    ipcMain.handle(AgentIpcChannels.SESSIONS_SIDE_CHAT_START, async (_event, request: SideChatStartRequest) => {
+      return startSideChat(this.requireSessionManager(), request)
+    })
+
+    ipcMain.handle(AgentIpcChannels.SESSIONS_SIDE_CHAT_CLOSE, async (_event, sessionId: string) => {
+      if (!this.sessionManager) return false
+      return closeSideChat(this.sessionManager, sessionId)
+    })
+
     ipcMain.handle(AgentIpcChannels.SESSIONS_PIN, (_event, sessionId: string, pinned: boolean) => {
       dbPinSession(sessionId, pinned)
       this.emitSessionsChanged()
@@ -3266,6 +3311,8 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_DELETE)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_DELETE_OLDER)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_FORK)
+    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_SIDE_CHAT_START)
+    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_SIDE_CHAT_CLOSE)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_PIN)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_HIDE)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LIST_PINNED)

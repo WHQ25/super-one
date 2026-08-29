@@ -2,6 +2,7 @@ import type {
   CodexCollaborationMode,
   PermissionMode,
   QuestionAnnotations,
+  SandboxInfo,
   SandboxMode,
 } from '@superone/shared/agent-types'
 import { useAppStore } from '../../app'
@@ -21,16 +22,15 @@ import {
   _buildQuestionAnswerItem,
   _computeHasPendingInteraction,
 } from './lifecycle'
-import { _getEffectiveSessionId } from './persistence'
 import { resolveProvider } from './provider-routing'
 import {
-  getActivePerSession,
+  commitPerSession,
   getProject,
-  updateActivePerSession,
+  resolveWriteScope,
   updatePerSession,
   updateProjectState,
 } from './store-helpers'
-import type { ChatStore, PerSessionState } from '../types'
+import type { ChatStore, PerSessionState, SessionWriteTarget } from '../types'
 import type { NodeSessionSnapshot } from '@/lib/remote-session-messages'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 
@@ -214,20 +214,23 @@ export async function respondToPermissionImpl(
   selectedSuggestions: number[] | undefined,
   decision: 'cancel' | undefined,
   formAnswers: Record<string, unknown> | undefined,
+  target?: SessionWriteTarget,
 ): Promise<boolean> {
-  const { activeProject } = get()
+  // Scope matters more here than anywhere else in this file: the prompt is
+  // rendered from the pane's own `pendingPermissions`, so resolving the project's
+  // active session instead misses the requestId, returns false, and leaves the
+  // pane's backend waiting on an answer that was never delivered.
+  const { projectPath: activeProject, sessionId: targetSid, session } = resolveWriteScope(get(), target)
   if (!activeProject) return false
-  const session = getActivePerSession(get(), activeProject)
   const respondedRequest = session.pendingPermissions.find((p) => p.requestId === requestId)
   if (!respondedRequest) {
-    window.app.trace?.('permission.flow', 'click_miss', { reason: 'not_in_active_session_pending', activeProject }, requestId)
+    window.app.trace?.('permission.flow', 'click_miss', { reason: 'not_in_scoped_session_pending', activeProject }, requestId)
     return false
   }
-  const activeSid = getProject(get(), activeProject)._activeSessionId ?? undefined
-  window.app.trace?.('permission.flow', 'user_click', { allow, activeSid, provider: session.sessionProvider }, requestId)
+  window.app.trace?.('permission.flow', 'user_click', { allow, activeSid: targetSid, provider: session.sessionProvider }, requestId)
+  const activeSid = targetSid ?? undefined
   let handled = false
   try {
-    const targetSid = _getEffectiveSessionId(getProject(get(), activeProject)) ?? activeSid
     const remote = parseRemoteProjectKey(activeProject)
     if (remote && targetSid) {
       const decisionValue: 'allow' | 'deny' | 'allow_always' =
@@ -262,7 +265,7 @@ export async function respondToPermissionImpl(
               pendingFields.awaitingAssistantReply || nodeSnap?.status === 'streaming'
             const providerId = nodeSnap?.harnessId || nodeSnap?.providerId || 'codex'
             set((s) =>
-              updateActivePerSession(s, (sess) => ({
+              commitPerSession(s, target, (sess) => ({
                 messages: remoteMsgs.reconcileTranscriptWithLocalMessages(
                   sess.messages,
                   nodeSnap?.transcript,
@@ -304,7 +307,7 @@ export async function respondToPermissionImpl(
     return false
   }
   set((s) => {
-    const perSessionUpdate = updateActivePerSession(s, (sess) => {
+    const perSessionUpdate = commitPerSession(s, target, (sess) => {
       const updates: Partial<PerSessionState> = {
         pendingPermissions: sess.pendingPermissions.filter((p) => p.requestId !== requestId),
       }
@@ -332,10 +335,10 @@ export async function setPermissionModeImpl(
   set: ChatStoreSet,
   get: () => ChatStore,
   mode: PermissionMode,
+  target?: SessionWriteTarget,
 ): Promise<void> {
-  const { activeProject } = get()
+  const { projectPath: activeProject, sessionId } = resolveWriteScope(get(), target)
   if (!activeProject) return
-  const sessionId = getProject(get(), activeProject)._activeSessionId
   if (!sessionId) return
   // Remote node projects: UI-only until send (node has its own permission handling).
   // Never getOrCreate a desktop SessionManager entry for a remote: path.
@@ -393,9 +396,10 @@ function clearLocalPendingQuestion(
   set: ChatStoreSet,
   activeProject: string,
   codexQaItem: ReturnType<typeof _buildQuestionAnswerItem> | null,
+  target?: SessionWriteTarget,
 ): void {
   set((s) => {
-    const partial = updateActivePerSession(s, (prev) => {
+    const partial = commitPerSession(s, target, (prev) => {
       if (!codexQaItem) return { pendingQuestion: null }
       const lastMsg = prev.messages[prev.messages.length - 1]
       if (!lastMsg?.metadata?.codex) return { pendingQuestion: null }
@@ -425,13 +429,11 @@ export function answerQuestionImpl(
   requestId: string,
   answers: Record<string, string>,
   annotations?: QuestionAnnotations,
+  target?: SessionWriteTarget,
 ): void {
-  const { activeProject } = get()
+  const { projectPath: activeProject, sessionId: targetSid, session } = resolveWriteScope(get(), target)
   if (!activeProject) return
-  const session = getActivePerSession(get(), activeProject)
   if (session.pendingQuestion && session.pendingQuestion.requestId !== requestId) return
-  const activeSid = getProject(get(), activeProject)._activeSessionId ?? undefined
-  const targetSid = _getEffectiveSessionId(getProject(get(), activeProject)) ?? activeSid
   const codexQaItem =
     session.sessionProvider === 'codex' && session.pendingQuestion
       ? _buildQuestionAnswerItem(session.pendingQuestion.questions, answers)
@@ -485,20 +487,18 @@ export function answerQuestionImpl(
     }
     void window.agent.answerQuestion(targetSid, requestId, answers, annotations)
   }
-  clearLocalPendingQuestion(set, activeProject, codexQaItem)
+  clearLocalPendingQuestion(set, activeProject, codexQaItem, target)
 }
 
 export function dismissQuestionImpl(
   set: ChatStoreSet,
   get: () => ChatStore,
   requestId: string,
+  target?: SessionWriteTarget,
 ): void {
-  const { activeProject } = get()
+  const { projectPath: activeProject, sessionId: targetSid, session } = resolveWriteScope(get(), target)
   if (!activeProject) return
-  const session = getActivePerSession(get(), activeProject)
   if (session.pendingQuestion && session.pendingQuestion.requestId !== requestId) return
-  const activeSid = getProject(get(), activeProject)._activeSessionId ?? undefined
-  const targetSid = _getEffectiveSessionId(getProject(get(), activeProject)) ?? activeSid
 
   if (targetSid) {
     const remote = parseRemoteProjectKey(activeProject)
@@ -547,7 +547,7 @@ export function dismissQuestionImpl(
     }
     void window.agent.dismissQuestion(targetSid, requestId)
   }
-  clearLocalPendingQuestion(set, activeProject, null)
+  clearLocalPendingQuestion(set, activeProject, null, target)
 }
 
 export function respondToPlanApprovalImpl(
@@ -557,12 +557,10 @@ export function respondToPlanApprovalImpl(
   approved: boolean,
   feedback: string | undefined,
   postApprovalMode: PermissionMode | undefined,
+  target?: SessionWriteTarget,
 ): void {
-  const { activeProject } = get()
+  const { projectPath: activeProject, sessionId: targetSid, session } = resolveWriteScope(get(), target)
   if (!activeProject) return
-  const session = getActivePerSession(get(), activeProject)
-  const activeSid = getProject(get(), activeProject)._activeSessionId ?? undefined
-  const targetSid = _getEffectiveSessionId(getProject(get(), activeProject)) ?? activeSid
   if (targetSid) {
     const remote = parseRemoteProjectKey(activeProject)
     if (remote) {
@@ -587,7 +585,7 @@ export function respondToPlanApprovalImpl(
     }
   }
   set((s) => {
-    const perSessionUpdate = updateActivePerSession(s, () => ({
+    const perSessionUpdate = commitPerSession(s, target, () => ({
       pendingPlanApproval: null,
       planApprovalOutcome: { approved, feedback },
       ...(approved && { permissionMode: (postApprovalMode ?? 'default') as PermissionMode }),
@@ -609,16 +607,38 @@ export async function setSandboxModeImpl(
   set: ChatStoreSet,
   get: () => ChatStore,
   mode: SandboxMode,
+  target?: SessionWriteTarget,
 ): Promise<void> {
-  const { activeProject } = get()
+  const { projectPath: activeProject, ipcSessionId, session } = resolveWriteScope(get(), target)
   if (!activeProject) return
+  // One rule, the same one the event reducers and the resume path follow: a
+  // sandbox we have just learned is recorded on the session it belongs to, and
+  // the project value follows only for the session that speaks for the project.
+  //
+  // A scoped write is one pane re-sandboxing its own runtime, so it records only
+  // there — writing the project value would repaint every other pane's badge with
+  // a guarantee that holds for this pane alone. An unscoped write went to the
+  // project's active session, so it records on both; recording only the project
+  // would leave that session's older value shadowing what was just written.
+  const applyInfo = (info: SandboxInfo) => set((s) => {
+    if (target) return commitPerSession(s, target, () => ({ sandboxInfo: info }))
+    return updateProjectState(s, activeProject, (project) => {
+      const sid = project._activeSessionId
+      const session = sid ? project._sessions[sid] : undefined
+      return {
+        sandboxInfo: info,
+        ...(session && sid
+          ? { _sessions: { ...project._sessions, [sid]: { ...session, sandboxInfo: info } } }
+          : {}),
+      }
+    })
+  })
   if (parseRemoteProjectKey(activeProject)) {
     // Node-side sandbox is not driven by desktop SessionManager; keep UI optimistic.
     const { sandboxModeToInfo } = await import('./prefs-cache')
-    set((s) => updateProjectState(s, activeProject, () => ({ sandboxInfo: sandboxModeToInfo(mode) })))
+    applyInfo(sandboxModeToInfo(mode))
     return
   }
-  const session = getActivePerSession(get())
   const provider = resolveProvider(session)
   const effectiveMode = coerceSandboxModeForHarness(provider, mode)
   if (effectiveMode !== 'off') {
@@ -631,15 +651,15 @@ export async function setSandboxModeImpl(
     }
   }
   try {
-    const updated = await window.agent.setSandboxMode(activeProject, effectiveMode)
-    set((s) => updateProjectState(s, activeProject, () => ({ sandboxInfo: updated })))
+    const updated = await window.agent.setSandboxMode(activeProject, effectiveMode, ipcSessionId)
+    applyInfo(updated)
   } catch (err) {
     console.warn('[chat] setSandboxMode failed:', err)
   }
 }
 
-export function cyclePermissionModeImpl(get: () => ChatStore): void {
-  const session = getActivePerSession(get())
+export function cyclePermissionModeImpl(get: () => ChatStore, target?: SessionWriteTarget): void {
+  const { session } = resolveWriteScope(get(), target)
   const provider = resolveProvider(session)
   // ACP/Grok: only modes SuperOne can drive over the wire (see acpPermissionModes).
   // OpenCode: no auto classifier. Cursor: Agent / Plan / Full Access. Claude: full cycle (excludes bypass/dontAsk).
@@ -653,48 +673,47 @@ export function cyclePermissionModeImpl(get: () => ChatStore): void {
   const startIdx = permissionModes.indexOf(session.permissionMode)
   const anchor = startIdx === -1 ? 0 : startIdx
   const next = permissionModes[(anchor + 1) % permissionModes.length]
-  get().setPermissionMode(next)
+  get().setPermissionMode(next, target)
 }
 
-export function togglePlanModeShortcutImpl(get: () => ChatStore): void {
-  const session = getActivePerSession(get())
+export function togglePlanModeShortcutImpl(get: () => ChatStore, target?: SessionWriteTarget): void {
+  const { session } = resolveWriteScope(get(), target)
   const provider = resolveProvider(session)
   if (provider === 'codex') {
     const next: CodexCollaborationMode = session.selectedCodexCollaborationMode === 'plan' ? 'default' : 'plan'
-    get().setSelectedCodexCollaborationMode(next)
+    get().setSelectedCodexCollaborationMode(next, target)
     return
   }
   // ACP/Grok: plan is session/set_mode — toggle plan vs default (not permission cycle).
   if (provider === 'acp') {
-    get().setPermissionMode(session.permissionMode === 'plan' ? 'default' : 'plan')
+    get().setPermissionMode(session.permissionMode === 'plan' ? 'default' : 'plan', target)
     return
   }
   // Cursor: toggle Plan vs Auto (Full Access stays reachable via selector / Shift+Tab cycle).
   if (provider === 'cursor') {
     get().setPermissionMode(
       session.permissionMode === 'plan' ? CURSOR_DEFAULT_PERMISSION_MODE : 'plan',
+      target,
     )
     return
   }
-  get().cyclePermissionMode()
+  get().cyclePermissionMode(target)
 }
 
 export async function setSessionApiProviderIdImpl(
   set: ChatStoreSet,
   get: () => ChatStore,
   apiProviderId: string | null,
+  target?: SessionWriteTarget,
 ): Promise<void> {
-  const { activeProject } = get()
+  const { projectPath: activeProject, sessionId, session: sess } = resolveWriteScope(get(), target)
   if (!activeProject) return
-  const project = getProject(get(), activeProject)
-  const sessionId = project._activeSessionId
   if (!sessionId) return
-  set((s) => updateActivePerSession(s, () => ({
+  set((s) => commitPerSession(s, target, () => ({
     apiProviderId,
     slashCommandOutput: null,
   })))
-  const sess = project._sessions[sessionId]
-  const isCodex = (sess?.sessionProvider ?? sess?.preferredProvider ?? 'claude') === 'codex'
+  const isCodex = (sess.sessionProvider ?? sess.preferredProvider ?? 'claude') === 'codex'
   try {
     await window.agent.setSessionApiProvider(sessionId, apiProviderId)
   } catch (err) {

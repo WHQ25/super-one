@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   buildSessionMenuItems,
   resolveSessionIdForCopy,
+  type SessionMenuHandlers,
 } from './session-menu-items'
 import type { SessionHistoryEntry } from '@superone/shared/agent-types'
 
@@ -50,6 +51,44 @@ function itemIds(folderPath: string): string[] {
     .filter((e): e is Extract<typeof e, { kind: 'item' }> => e.kind === 'item')
     .map((e) => e.id)
 }
+
+describe('buildSessionMenuItems fork capability gate', () => {
+  function idsFor(entry: SessionHistoryEntry, extra: Partial<SessionMenuHandlers> = {}): string[] {
+    return buildSessionMenuItems(entry, '/repo', t, { ...handlers, ...extra })
+      .filter((e): e is Extract<typeof e, { kind: 'item' }> => e.kind === 'item')
+      .map((e) => e.id)
+  }
+
+  it('offers both fork modes on a harness that can fork', () => {
+    expect(idsFor({ ...base, provider: 'claude' })).toEqual(
+      expect.arrayContaining(['forkWorktree', 'forkLocal']),
+    )
+  })
+
+  it.each(['acp', 'cursor'] as const)(
+    'hides fork on %s, whose adapter returns a session the agent never saw',
+    (provider) => {
+      const ids = idsFor({ ...base, provider })
+      expect(ids).not.toContain('forkWorktree')
+      expect(ids).not.toContain('forkLocal')
+    },
+  )
+
+  it('keeps fork on a legacy row that never recorded its harness', () => {
+    const { provider: _dropped, ...noProvider } = base
+    expect(idsFor(noProvider as SessionHistoryEntry)).toContain('forkWorktree')
+  })
+
+  it('offers New Side Chat only when the caller passes the handler', () => {
+    expect(idsFor(base)).not.toContain('newSideChat')
+    expect(idsFor(base, { onNewSideChat: vi.fn() })).toContain('newSideChat')
+  })
+
+  it('withholds New Side Chat on a harness that cannot fork, handler or not', () => {
+    expect(idsFor({ ...base, provider: 'cursor' }, { onNewSideChat: vi.fn() }))
+      .not.toContain('newSideChat')
+  })
+})
 
 describe('buildSessionMenuItems remote vs local', () => {
   it('includes mini window and remote fork for remote project keys', () => {

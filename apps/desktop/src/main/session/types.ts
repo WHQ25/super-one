@@ -75,6 +75,34 @@ export interface SessionCreateOptions {
    * hydrates this from the stored `provider_session_id`.
    */
   providerSessionId?: string | null
+  /**
+   * Never write this session to the SuperOne database.
+   *
+   * SessionManager drops the persistence hooks, so `Session.notifyStateChange`
+   * short-circuits on its existing `if (!this.onStateChange)` guard — no row in
+   * `sessions`, none in `chat_messages`, nothing in the sidebar. The session also
+   * stays out of `activeByProject`, so opening one never steals the project's
+   * active session from the chat the user is actually in.
+   *
+   * The provider's own transcript is NOT covered: `Harness.forkTranscript` exists
+   * precisely to make the agent write one. Callers clean that up on close.
+   */
+  ephemeral?: boolean
+  /**
+   * Instructions delivered alongside the FIRST turn of this session, once.
+   *
+   * Deliberately not `systemPromptAppend`. The system block is the head of every
+   * request, so changing it changes the cached prefix — a forked session whose
+   * system prompt differs from its parent's gets no prompt-cache hit at all and
+   * re-reads the whole copied transcript at full price. Delivering the same text
+   * inside the conversation leaves the prefix byte-identical, so everything up to
+   * the fork point still hits and only these tokens are new.
+   *
+   * How it travels is the harness's business — see `SessionBackend.stageInstruction`.
+   * Harnesses with no such channel fall back to riding the user's message, where
+   * `userMessageContent` keeps the bubble showing only what the user typed.
+   */
+  firstTurnPreamble?: string
 }
 
 /**
@@ -293,6 +321,24 @@ export interface SessionBackend {
   clearCodexGoal?(threadId: string): Promise<boolean>
   stopTask?(taskId: string): Promise<void>
   /**
+   * Stage an out-of-band instruction to ride the NEXT turn, using whatever the
+   * harness offers natively for conversation-level context.
+   *
+   * Present only on harnesses that have such a mechanism — its absence is the
+   * signal to fall back, which is why there is no matching `HARNESS_CAPABILITIES`
+   * flag: a boolean that has to stay in sync with a method's existence is one
+   * fact in two places, and the copy nobody edits is the one that goes stale.
+   *
+   * Implementations must NOT put the text in the system prompt. The system block
+   * heads every request, so changing it changes the cached prefix — for a forked
+   * session that throws away the parent's prompt cache entirely. Staging is the
+   * whole contract: the text belongs in the conversation, next to the turn it
+   * qualifies.
+   *
+   * Called before `send`; the backend clears it once delivered.
+   */
+  stageInstruction?(text: string): void
+  /**
    * Mid-turn host wake only. Never call backend.send() for a new turn from this
    * hook — that races the Session state machine. See
    * {@link TaskNotificationInjectResult} for what each outcome obliges Session
@@ -346,11 +392,14 @@ export interface Session {
    * Record the dsh agent preset this session composes from. A no-op on every
    * other harness — the concept is dsh's own.
    */
+  getAgentPreset(): string | null
   setAgentPreset(presetId: string | null): void
 
   readonly id: string
   readonly projectPath: string
   readonly cwd: string
+  /** Side chat: process-local only, never persisted. See `SessionCreateOptions.ephemeral`. */
+  readonly ephemeral: boolean
   readonly snapshot: SessionSnapshot
   readonly owner: SessionOwner
   readonly subscribers: ReadonlySet<string>

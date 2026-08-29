@@ -15,6 +15,7 @@ vi.mock('@/stores/chat', () => ({
   useActiveSession: (selector: (s: typeof hoisted.session) => unknown) => selector(hoisted.session),
   useChatStore: (selector: (s: { setDshPreset: unknown }) => unknown) =>
     selector({ setDshPreset: hoisted.setDshPreset }),
+  useScopedSessionActions: () => ({ setDshPreset: hoisted.setDshPreset }),
 }))
 
 const ROSTER: DeepseekPresetRoster = {

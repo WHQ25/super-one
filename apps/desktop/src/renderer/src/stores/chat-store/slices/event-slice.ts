@@ -221,7 +221,21 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
     }
     if (event.type === 'agent_setting_change' && event.patch?.sandboxInfo) {
       const next = event.patch.sandboxInfo
-      set((s) => updateProjectState(s, projectPath, () => ({ sandboxInfo: next })))
+      // Main reports sandbox per session. Folding every report into the project
+      // value makes a side chat's runtime change repaint the main chat's badge —
+      // and a sandbox badge is a safety claim, not decoration. The project value
+      // still tracks the active session, which is what unscoped readers mean.
+      set((s) => updateProjectState(s, projectPath, (project) => {
+        const sid = eventSessionId ?? project._activeSessionId
+        const session = sid ? project._sessions[sid] : undefined
+        const isActive = !sid || sid === project._activeSessionId
+        return {
+          ...(isActive ? { sandboxInfo: next } : {}),
+          ...(session && sid
+            ? { _sessions: { ...project._sessions, [sid]: { ...session, sandboxInfo: next } } }
+            : {}),
+        }
+      }))
     }
     let hydrateSessionId: string | null = null
 
@@ -419,8 +433,11 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
 
       if (event.type === 'init_ready') {
         updatedSession.cwd = event.cwd
+        updatedSession.sandboxInfo = event.sandboxInfo
         updatedProject.homedir = event.homedir
-        updatedProject.sandboxInfo = event.sandboxInfo
+        // Only the active session may speak for the project. A side chat's
+        // init_ready otherwise announces its inherited sandbox as the project's.
+        if (targetSid === project._activeSessionId) updatedProject.sandboxInfo = event.sandboxInfo
         updatedProject._projectSkills = event.skills
         updatedProject._projectCommands = event.projectCommands
         const claudeRes = s.harnessResources.claude

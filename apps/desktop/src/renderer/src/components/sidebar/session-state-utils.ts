@@ -106,6 +106,27 @@ export function getPendingReason(
   return null
 }
 
+/**
+ * True for an in-memory session that must never appear in a project's session
+ * list — the sidebar, the Ctrl+Tab switcher, or anything else that offers
+ * navigation between a project's sessions.
+ *
+ * A side chat is registered in `_sessions` like any other session and streams
+ * like one, so every liveness check passes and the live-merge promotes it into a
+ * row. But it has no database row, it is docked in the activity panel rather than
+ * the chat area, and it is discarded with its tab — so the row appears mid-turn
+ * and vanishes on close, which reads as a session the user just lost.
+ *
+ * Keyed on `_sideChatParentId` because that is the same fact the main process
+ * calls `Session.ephemeral`; both sides gate on the session being disposable, not
+ * on it being a side chat specifically.
+ */
+export function isEphemeralSession(
+  session: { _sideChatParentId?: string | null } | undefined,
+): boolean {
+  return !!session?._sideChatParentId
+}
+
 export function isLiveSession(
   session:
     | {

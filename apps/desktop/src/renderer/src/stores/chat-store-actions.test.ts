@@ -526,7 +526,7 @@ describe('setSandboxMode', () => {
     setupProject()
     mockWindowAgent.setSandboxMode.mockResolvedValueOnce({ enabled: false, autoAllowBash: false })
     await useChatStore.getState().setSandboxMode('off')
-    expect(mockWindowAgent.setSandboxMode).toHaveBeenCalledWith(PATH, 'off')
+    expect(mockWindowAgent.setSandboxMode).toHaveBeenCalledWith(PATH, 'off', undefined)
     expect(activeProjectState().sandboxInfo).toEqual({ enabled: false, autoAllowBash: false })
   })
 

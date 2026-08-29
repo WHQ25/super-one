@@ -79,6 +79,12 @@ export const CLAUDE_INTERCEPTED_COMMANDS: Record<string, () => Promise<void>> = 
   workflows: async () => {
     useChatStore.getState().openWorkflowsPopup()
   },
+  // Imported lazily: side-chat-actions reaches back into this store, and a
+  // top-level import would close the cycle at module-eval time.
+  side: async () => {
+    const { requestSideChat } = await import('@/lib/side-chat-actions')
+    await requestSideChat()
+  },
 }
 
 export const CLAUDE_INTERCEPTED_COMMAND_NAMES: ReadonlySet<string> =
@@ -152,6 +158,7 @@ export {
   updateActivePerSession,
   commitPerSession,
   resolveActiveSessionId,
+  resolveWriteScope,
 } from './helpers/store-helpers'
 
 import {
@@ -167,6 +174,7 @@ import {
   updateActivePerSession,
   commitPerSession,
   resolveActiveSessionId,
+  resolveWriteScope,
 } from './helpers/store-helpers'
 
 export {
@@ -499,7 +507,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
 
   disconnectRemoteSession: () => disconnectRemoteSessionImpl(set, get),
 
-  interrupt: async () => interruptImpl(set, get),
+  interrupt: async (target) => interruptImpl(set, get, target),
 
   clearMessages: () => clearMessagesImpl(set, get),
 
@@ -515,15 +523,15 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
   // setSelectedCodexModel / setSelectedCodexReasoningEffort / setSelectedCodexPermissionPreset /
   // setSelectedCodexCollaborationMode / refreshCodexModels / refreshCodexSkills now provided by createCodexSlice
 
-  setDshPreset: (preset) => {
-    const { activeProject } = get()
-    if (!activeProject) return
+  setDshPreset: (preset, target) => {
+    const { projectPath, ipcSessionId } = resolveWriteScope(get(), target)
+    if (!projectPath) return
     // Held per session and never persisted: once the session has an agent,
     // dsh's own durable log is authoritative and the picker reads that instead.
-    set((s) => updateActivePerSession(s, () => ({ dshPreset: preset })))
+    set((s) => commitPerSession(s, target, () => ({ dshPreset: preset })))
     // Folded into the session's provider config on the main side, which is what
     // the backend reads when it creates the dsh agent.
-    void window.agent.setSessionSettings(activeProject, { agentPreset: preset })
+    void window.agent.setSessionSettings(projectPath, { agentPreset: preset }, ipcSessionId)
   },
 
   setPreferredProvider: (provider) => setPreferredProviderImpl(set, get, provider),
@@ -532,20 +540,20 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
 
   // addAttachment / removeAttachment / clearAttachments now provided by createCoreSlice
 
-  respondToPermission: async (requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers) =>
-    respondToPermissionImpl(set, get, requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers),
-  setPermissionMode: async (mode) => setPermissionModeImpl(set, get, mode),
-  answerQuestion: (requestId, answers, annotations) => answerQuestionImpl(set, get, requestId, answers, annotations),
-  dismissQuestion: (requestId) => dismissQuestionImpl(set, get, requestId),
-  respondToPlanApproval: (requestId, approved, feedback, postApprovalMode) =>
-    respondToPlanApprovalImpl(set, get, requestId, approved, feedback, postApprovalMode),
-  setSandboxMode: async (mode) => setSandboxModeImpl(set, get, mode),
-  cyclePermissionMode: () => cyclePermissionModeImpl(get),
-  togglePlanModeShortcut: () => togglePlanModeShortcutImpl(get),
+  respondToPermission: async (requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers, target) =>
+    respondToPermissionImpl(set, get, requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers, target),
+  setPermissionMode: async (mode, target) => setPermissionModeImpl(set, get, mode, target),
+  answerQuestion: (requestId, answers, annotations, target) => answerQuestionImpl(set, get, requestId, answers, annotations, target),
+  dismissQuestion: (requestId, target) => dismissQuestionImpl(set, get, requestId, target),
+  respondToPlanApproval: (requestId, approved, feedback, postApprovalMode, target) =>
+    respondToPlanApprovalImpl(set, get, requestId, approved, feedback, postApprovalMode, target),
+  setSandboxMode: async (mode, target) => setSandboxModeImpl(set, get, mode, target),
+  cyclePermissionMode: (target) => cyclePermissionModeImpl(get, target),
+  togglePlanModeShortcut: (target) => togglePlanModeShortcutImpl(get, target),
 
   // dismissSlashCommandOutput / openProviderPopup / openMcpPopup now provided by createCoreSlice
 
-  setSessionApiProviderId: async (apiProviderId) => setSessionApiProviderIdImpl(set, get, apiProviderId),
+  setSessionApiProviderId: async (apiProviderId, target) => setSessionApiProviderIdImpl(set, get, apiProviderId, target),
 
   // toggleTodos / addMention / removeMention / setMiniAppContext / clearMiniAppContext /
   // toggleMiniAppContext / addUserSelection / removeUserSelectionAt / clearUserSelections
@@ -1133,7 +1141,8 @@ export {
 
 export { selectOpenCodeAgents, selectOpenCodeCommands } from './opencode-selectors'
 
-export { SessionScopeProvider, useSessionScope, type SessionScope } from './session-scope'
+export { SessionScopeProvider, useSessionScope, markPaneTouched, lastTouchedPane, _resetLastTouchedPane, type SessionScope } from './session-scope'
+export { useScopedSessionActions } from './use-scoped-session-actions'
 
 export {
   type CodexCommand,

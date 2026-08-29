@@ -72,6 +72,27 @@ describe('collectAllActiveRows', () => {
     expect(rows[1].isPrevious).toBe(true)
   })
 
+  it('omits a side chat even while it streams, and even as the previous session', () => {
+    const project = makeProject({
+      active: 's1',
+      sessions: {
+        s1: liveStreaming,
+        // A side chat lives in `_sessions` like any other session and streams like
+        // one, so every liveness check passes. Only `_sideChatParentId` says it is
+        // docked in the activity panel and dies with its tab.
+        side: { ...liveStreaming, _sideChatParentId: 's1' },
+      },
+    })
+
+    const rows = collect({
+      projects: { '/p': project },
+      active: '/p',
+      previous: { projectPath: '/p', sessionId: 'side' },
+    })
+
+    expect(rows.map((r) => r.sessionId)).toEqual(['s1'])
+  })
+
   it('moves an already-active previous session into the slot after current', () => {
     const project = makeProject({
       active: 's1',

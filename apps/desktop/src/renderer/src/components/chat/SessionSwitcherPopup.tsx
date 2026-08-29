@@ -6,7 +6,7 @@ import type { SessionIconProps } from '@superone/ui/components/harness/ClaudeSes
 import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { useChatStore, type PerSessionState, type ProjectState } from '@/stores/chat'
 import { useCtrlTabSwitcher } from '@/hooks/useCtrlTabSwitcher'
-import { getPendingReason, isLiveSession, resolveSessionTitle, type PendingReasonT } from '@/components/sidebar/session-state-utils'
+import { getPendingReason, isEphemeralSession, isLiveSession, resolveSessionTitle, type PendingReasonT } from '@/components/sidebar/session-state-utils'
 import { useStallLevel, getStallColor, useEllipsisRepaintKey, type StallLevel } from '@/lib/stall-utils'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { cn } from '@superone/ui/lib/utils'
@@ -98,6 +98,9 @@ export function collectAllActiveRows(input: CollectActiveRowsInput): ActiveRow[]
     const remoteSet = new Set(remoteSessions[projectPath] ?? [])
     const isActiveProject = projectPath === activeProject
     for (const [sid, data] of Object.entries(project._sessions)) {
+      // Ahead of the current/previous pins: those bypass every liveness check, so
+      // a side chat that was focused once would otherwise be pinned permanently.
+      if (isEphemeralSession(data)) continue
       const isUnseen = project.unseenCompletedSessions.has(sid)
       const isCurrent = isActiveProject && sid === activeSid
       const isPrevious = !!prevKey && prevKey.projectPath === projectPath && prevKey.sessionId === sid && !isCurrent
@@ -114,7 +117,7 @@ export function collectAllActiveRows(input: CollectActiveRowsInput): ActiveRow[]
   if (prevKey && !rows.some((r) => r.projectPath === prevKey.projectPath && r.sessionId === prevKey.sessionId)) {
     const project = projectSessions[prevKey.projectPath]
     const data = project?._sessions[prevKey.sessionId]
-    if (project && data && (data.messages.length > 0 || data._historyHydrated)) {
+    if (project && data && !isEphemeralSession(data) && (data.messages.length > 0 || data._historyHydrated)) {
       const dbById = new Map(project.sessions.map((entry) => [entry.sessionId, entry]))
       const remoteSet = new Set(remoteSessions[prevKey.projectPath] ?? [])
       const isUnseen = project.unseenCompletedSessions.has(prevKey.sessionId)

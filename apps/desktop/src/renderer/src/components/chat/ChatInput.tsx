@@ -65,6 +65,7 @@ import { groupItems, PopupSectionHeader } from './popup-groups'
 import { computeMatchingSlashCommands } from './chat-input/computeMatchingSlashCommands'
 import { plainTextToTiptapDoc, plainTextToTiptapParagraphContent } from './chat-input/plainTextToTiptapDoc'
 import { resolveSlashCommandsForProvider } from './chat-input/resolveSlashCommandsForProvider'
+import { requestSideChat, useCanOpenSideChat } from '@/lib/side-chat-actions'
 import { resolveChatInputPlaceholder } from './chat-input/resolveChatInputPlaceholder'
 import { CodexGoalDialog } from './CodexGoalDialog'
 import { CodexGoalIndicator } from './CodexGoalIndicator'
@@ -113,7 +114,7 @@ export function ChatInput() {
       addDir: s.addDir,
       removeDir: s.removeDir,
     })))
-    const { sendMessage, interrupt, setShowReviewPanel } = storeActions
+    const { sendMessage, setShowReviewPanel } = storeActions
     const sessionScope = useSessionScope()
     const { text, draftJson, status, attachments, browserAnnotations, mentions, permissionMode, hasPendingInteraction, queuedMessages, miniAppContexts, userSelections, projectExtraDirs, additionalDirs, additionalDirsDirty } =
       useActiveSession(useShallow((s) => ({
@@ -160,6 +161,7 @@ export function ChatInput() {
       clearBrowserAnnotations,
       addMention, removeMention, dismissCommandPopup, toggleMiniAppContext,
       clearMiniAppContext, removeUserSelectionAt, clearUserSelections, addDir, removeDir,
+      scopedInterrupt,
     } = useMemo(() => {
       const target = sessionScope ?? undefined
       return {
@@ -192,6 +194,9 @@ export function ChatInput() {
         clearUserSelections: () => storeActions.clearUserSelections(target),
         addDir: (p: string, scope: 'session' | 'project') => storeActions.addDir(p, scope, target),
         removeDir: (p: string, scope: 'session' | 'project') => storeActions.removeDir(p, scope, target),
+        // Stop must interrupt the pane it is rendered in, not whichever session
+        // happens to be the project's active one.
+        scopedInterrupt: () => storeActions.interrupt(target),
       }
     }, [storeActions, sessionScope])
     const fileInputRef = useRef<HTMLInputElement>(null)
@@ -257,6 +262,7 @@ export function ChatInput() {
     const resolvedCodexProviderId = useResolvedProviderId('codex')
     // One folder set for every harness now — nothing swaps with the provider.
     const supportsAdditionalDirs = HARNESS_CAPABILITIES[activeProviderForResources]?.supportsAdditionalDirs ?? false
+    const canOpenSideChat = useCanOpenSideChat()
     const isCodexPlanMode = activeProviderForResources === 'codex' && selectedCodexCollaborationMode === 'plan'
     const hasContent = text.trim().length > 0 || attachments.length > 0 || browserAnnotations.length > 0 || mentions.length > 0 || hasPasteChips
     const codexDirsPendingNextTurn = activeProviderForResources === 'codex' && isStreaming && additionalDirsDirty
@@ -437,15 +443,26 @@ export function ChatInput() {
           cursor: cursorSlashCommands,
           dsh: deepseekSlashCommands,
         })
-        if (!supportsAdditionalDirs || base.some((c) => c.name === 'add-dir')) return base
-        return [...base, {
-          name: 'add-dir',
-          description: t('chat.codexCommands.addDirDesc'),
-          argumentHint: '[project|session] [dir]',
+        const withDirs = !supportsAdditionalDirs || base.some((c) => c.name === 'add-dir')
+          ? base
+          : [...base, {
+            name: 'add-dir',
+            description: t('chat.codexCommands.addDirDesc'),
+            argumentHint: '[project|session] [dir]',
+            isSkill: false,
+          }]
+        // `/side` follows the same single-gate rule as `/add-dir`: a host command
+        // over a harness-neutral capability, offered wherever that capability is
+        // real rather than copied into each catalog.
+        if (!canOpenSideChat || withDirs.some((c) => c.name === 'side')) return withDirs
+        return [...withDirs, {
+          name: 'side',
+          description: t('sideChat.commandDesc'),
+          argumentHint: '',
           isSkill: false,
         }]
       },
-      [t, supportsAdditionalDirs, activeProviderForResources, slashCommands, codexSlashCommands, acpSlashCommands, openCodeSlashCommands, cursorSlashCommands, deepseekSlashCommands],
+      [t, supportsAdditionalDirs, canOpenSideChat, activeProviderForResources, slashCommands, codexSlashCommands, acpSlashCommands, openCodeSlashCommands, cursorSlashCommands, deepseekSlashCommands],
     )
 
     const matchingCommands = useMemo(
@@ -561,6 +578,14 @@ export function ChatInput() {
           useChatStore.getState().openMcpPopup()
           return
         }
+        // Host command on every forkable harness, so it is handled before the
+        // `activeProviderForResources === 'claude'` gate below.
+        if (name === 'side') {
+          clearFirstLine()
+          setSlashIndex(-1)
+          void requestSideChat()
+          return
+        }
         if (name === 'clear' && activeProviderForResources === 'cursor') {
           clearFirstLine()
           setSlashIndex(-1)
@@ -602,7 +627,7 @@ export function ChatInput() {
         if (name === 'plan' && activeProviderForResources === 'codex') {
           clearFirstLine()
           setSlashIndex(-1)
-          useChatStore.getState().setSelectedCodexCollaborationMode('plan')
+          useChatStore.getState().setSelectedCodexCollaborationMode('plan', sessionScope ?? undefined)
           return
         }
         if (name === 'review' && activeProviderForResources === 'codex') {
@@ -618,7 +643,7 @@ export function ChatInput() {
         replaceFirstLineWith(`/${name} `)
         setSlashIndex(-1)
       },
-      [activeProviderForResources, clearAttachments, mentions, removeMention, setShowReviewPanel, clearFirstLine, replaceFirstLineWith, replaceEditorTextPreservingTrailingSpace, setText, cursorSlashCommands]
+      [activeProviderForResources, clearAttachments, mentions, removeMention, setShowReviewPanel, clearFirstLine, replaceFirstLineWith, replaceEditorTextPreservingTrailingSpace, setText, cursorSlashCommands, sessionScope]
     )
 
     const addDirParse = useMemo(() => {
@@ -1951,7 +1976,7 @@ export function ChatInput() {
             <ContextUsage />
             {isStreaming && (
               <StopButton
-                onInterrupt={interrupt}
+                onInterrupt={scopedInterrupt}
                 softCancel={harnessUsesSoftCancel(activeProviderForResources)}
               />
             )}

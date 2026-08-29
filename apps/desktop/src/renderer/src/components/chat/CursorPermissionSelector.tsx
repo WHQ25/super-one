@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
-import { useActiveSession, useChatStore } from '@/stores/chat'
+import { useActiveSession, useScopedSessionActions } from '@/stores/chat'
 import {
   CURSOR_DEFAULT_PERMISSION_MODE,
   CURSOR_PERMISSION_MODES,
@@ -18,7 +18,7 @@ export function CursorPermissionSelector({ compact = false }: { compact?: boolea
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const permissionMode = useActiveSession((state) => state.permissionMode)
-  const setPermissionMode = useChatStore((state) => state.setPermissionMode)
+  const { setPermissionMode } = useScopedSessionActions()
 
   // New Cursor sessions default to Claude's `default` mode. Latch the coerce
   // so a no-op / failed write cannot re-arm this effect (same class as the

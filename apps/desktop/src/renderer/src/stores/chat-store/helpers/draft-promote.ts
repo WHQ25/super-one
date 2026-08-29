@@ -337,6 +337,12 @@ function contentAndSettingsFields(
     draftJson: carried.docJson,
     attachments: carried.attachments,
     draftId: carried.draftId,
+    // `sandboxInfo` on a session records what THAT runtime was built with. A
+    // carried draft has no runtime yet, and both branches below either reuse a
+    // session or clone one from a template — so without dropping it here the new
+    // draft would keep the old backend's sandbox and shadow the project value the
+    // carry just set, showing the user a guarantee for a process that is gone.
+    sandboxInfo: undefined,
     ...sessionFieldsFromSettings(settings),
   }
 }

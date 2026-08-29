@@ -35,6 +35,15 @@ export interface HarnessCapabilities {
    * that silently does nothing.
    */
   supportsAdditionalDirs: boolean
+  /**
+   * Can clone a conversation into an independent one that keeps the provider's
+   * own context (`Harness.forkTranscript`).
+   *
+   * False means the harness has no transcript-fork API, so a "fork" would hand
+   * back a session the agent has no memory of. Gates the fork entries and side
+   * chat: offering them would look like it worked and silently lose everything.
+   */
+  supportsFork: boolean
   /** User-facing display name for this harness. */
   displayName: string
 }
@@ -50,6 +59,8 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsQueuedSteer: true,
     // SDK `additionalDirectories`.
     supportsAdditionalDirs: true,
+    // SDK `forkSession()` copies + remaps the transcript jsonl.
+    supportsFork: true,
     displayName: 'Claude',
   },
   codex: {
@@ -62,6 +73,8 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsQueuedSteer: true,
     // sandbox_workspace_write.writable_roots, re-sent every turn.
     supportsAdditionalDirs: true,
+    // app-server thread fork, truncatable at a turn id.
+    supportsFork: true,
     displayName: 'Codex',
   },
   acp: {
@@ -77,6 +90,9 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsQueuedSteer: false,
     // session/new additionalDirectories, gated per agent capability.
     supportsAdditionalDirs: true,
+    // `session/fork` exists upstream but is UNSTABLE and unread here; the
+    // current adapter returns a fresh uuid the agent never saw.
+    supportsFork: false,
     displayName: 'Others',
   },
   opencode: {
@@ -89,6 +105,8 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsQueuedSteer: false,
     // Single `directory` only.
     supportsAdditionalDirs: false,
+    // Server-side `forkSession(id, anchor)` + `moveSession`.
+    supportsFork: true,
     displayName: 'OpenCode',
   },
   cursor: {
@@ -102,6 +120,8 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsQueuedSteer: false,
     // Single cwd; multi-root parked in the harness design doc.
     supportsAdditionalDirs: false,
+    // SDK has no transcript-fork API; the adapter creates a blank agent.
+    supportsFork: false,
     displayName: 'Cursor',
   },
   dsh: {
@@ -124,6 +144,8 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsQueuedSteer: false,
     // Single cwd.
     supportsAdditionalDirs: false,
+    // `runtime.forkSession` copies the log prefix up to an event seq.
+    supportsFork: true,
     displayName: 'DeepSeek',
   },
 }

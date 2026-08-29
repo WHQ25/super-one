@@ -118,6 +118,36 @@ describe('Codex custom provider model discovery', () => {
     now.mockRestore()
   })
 
+  it('keeps only models the endpoint wire can chat on', async () => {
+    // Shape of a NewAPI relay catalog: chat, image, video and anthropic-only ids in one list.
+    const relayResponse = new Response(
+      JSON.stringify({
+        data: [
+          { id: 'gemini-3-pro-image', supported_endpoint_types: ['openai'] },
+          { id: 'doubao-seedance-2-5-260628', supported_endpoint_types: ['openai-video', 'ark-video'] },
+          { id: 'gpt-5.4', supported_endpoint_types: ['openai'] },
+          { id: 'glm-5.2', supported_endpoint_types: ['openai', 'anthropic'] },
+          { id: 'claude-only', supported_endpoint_types: ['anthropic'] },
+          { id: 'unclassifiable-house-model' },
+        ],
+      }),
+      { status: 200 },
+    )
+    vi.stubGlobal('fetch', vi.fn(async () => relayResponse))
+    const service = new CodexExperimentService()
+
+    const models = await service.listModels('/project')
+    // Video rides its own family; image shares openai but not the chat task; anthropic-only is
+    // unreachable over this wire. An id the parser cannot place stays, defaulting to openai chat.
+    expect(models.map((model) => model.id)).toEqual([
+      'gpt-5.4',
+      'glm-5.2',
+      'unclassifiable-house-model',
+    ])
+    // The default lands on a chat model, not whatever the relay happened to list first.
+    expect(models.filter((model) => model.isDefault).map((model) => model.id)).toEqual(['gpt-5.4'])
+  })
+
   it('keeps caches separate for credentials that share a provider URL', async () => {
     resolveServiceMock.mockImplementation((_harness: string, credentialId: string | null) => ({
       ...provider(credentialId === 'credential-b' ? 'key-b' : 'key-a'),

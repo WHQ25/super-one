@@ -25,7 +25,7 @@ import type {
 import { Switch } from '@superone/ui/components/ui/switch'
 import { cn } from '@superone/ui/lib/utils'
 import { useAppStore } from '@/stores/app'
-import { useChatStore } from '@/stores/chat'
+import { useChatStore, useScopedSessionActions } from '@/stores/chat'
 import { getCachedAcpCatalog } from '@/stores/chat-store/harness/acp-handler'
 import { hasOpenRadixOverlay } from '@/lib/radix-overlay'
 import { modes } from './PermissionModeList'
@@ -688,7 +688,7 @@ export function AutomationConfirmPromptContainer({
 }: {
   request: PermissionRequest
 }) {
-  const respondToPermission = useChatStore((s) => s.respondToPermission)
+  const { respondToPermission } = useScopedSessionActions()
   const payload = request.automationConfirm
 
   // formAnswers is the 7th arg — session.ts hands it to resolveAutomationConfirm as content.

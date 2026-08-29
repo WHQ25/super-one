@@ -1,7 +1,8 @@
-import { Copy, Eye, EyeOff, FolderOpen, GitFork, MessageSquarePlus, Pencil, PictureInPicture2, Pin, Tag, Trash2 } from 'lucide-react'
+import { Copy, Eye, EyeOff, FolderOpen, GitFork, MessageCirclePlus, MessageSquarePlus, Pencil, PictureInPicture2, Pin, Tag, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { TFunction } from 'i18next'
 import type { SessionForkMode, SessionHistoryEntry } from '@superone/shared/agent-types'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { providerSessionIdFromResume } from '@superone/shared/environment'
 import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
@@ -16,6 +17,8 @@ export interface SessionMenuHandlers {
   onDelete?: () => void
   /** Insert a `@session` mention chip into the active chat composer. */
   onAddToChat?: () => void
+  /** Chat-header affordance — opens an ephemeral side chat forked off this session. */
+  onNewSideChat?: () => void
 }
 
 export interface SessionMenuOptions {
@@ -25,6 +28,18 @@ export interface SessionMenuOptions {
    * into a mini window for the session it is already showing (chat header).
    */
   miniWindow?: 'open' | 'convert'
+}
+
+/**
+ * Whether this row's harness can clone a conversation the agent still remembers.
+ *
+ * A row whose harness is unknown (legacy list entries omit `provider`) is treated
+ * as forkable: the entry has been offered there for as long as the feature has
+ * existed, and hiding it on a missing field would be a silent regression.
+ */
+export function sessionSupportsFork(session: SessionHistoryEntry): boolean {
+  if (!session.provider) return true
+  return HARNESS_CAPABILITIES[session.provider].supportsFork
 }
 
 export function providerLabelFor(session: SessionHistoryEntry): string {
@@ -193,7 +208,12 @@ export function buildSessionMenuItems(
   // Fork to new worktree vs same directory (mode: worktree | local). Label is
   // shared for local and remote — "Same Worktree" avoids implying the
   // controlling desktop host on remote projects.
-  if (!session.isWorktree) {
+  //
+  // Absent rather than disabled on a harness without `supportsFork`: its adapter
+  // hands back a session the agent never saw, so the entry would look like it
+  // worked while silently dropping the whole conversation.
+  const canFork = sessionSupportsFork(session)
+  if (!session.isWorktree && canFork) {
     items.push(
       { kind: 'separator' },
       { kind: 'item', id: 'forkWorktree', label: t('sidebar.contextMenu.forkToWorktree'), icon: GitFork, onSelect: () => handlers.onFork('worktree') },
@@ -203,6 +223,22 @@ export function buildSessionMenuItems(
         label: t('sidebar.contextMenu.forkToSameWorktree'),
         icon: GitFork,
         onSelect: () => handlers.onFork('local'),
+      },
+    )
+  }
+
+  // Side chat is a fork that never touches the session list, so it rides the
+  // same capability gate. Only the chat header passes the handler — a sidebar
+  // row points at a session that is not on screen to put the panel beside.
+  if (handlers.onNewSideChat && canFork) {
+    items.push(
+      { kind: 'separator' },
+      {
+        kind: 'item',
+        id: 'newSideChat',
+        label: t('sidebar.contextMenu.newSideChat'),
+        icon: MessageCirclePlus,
+        onSelect: handlers.onNewSideChat,
       },
     )
   }

@@ -1,7 +1,7 @@
 import { Box, PackageOpen, ChevronDown } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
-import { useChatStore, useActiveSession } from '@/stores/chat'
+import { useActiveSession, useScopedSessionActions } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useState } from 'react'
 import type { HarnessId, SandboxMode } from '@superone/shared/agent-types'
@@ -168,7 +168,7 @@ export function SandboxModeSelector({ compact = false }: SandboxModeSelectorProp
   const sandboxInfo = useActiveSession((s) => s.sandboxInfo)
   const sessionProvider = useActiveSession((s) => s.sessionProvider)
   const preferredProvider = useActiveSession((s) => s.preferredProvider)
-  const setSandboxMode = useChatStore((s) => s.setSandboxMode)
+  const { setSandboxMode } = useScopedSessionActions()
   const sandboxCapability = useAppStore((s) => s.sandboxCapability)
   const sandboxProbe = useAppStore((s) => s.sandboxProbe)
   const navigateTo = useAppStore((s) => s.navigateTo)

@@ -384,8 +384,14 @@ describe('PlanApprovalPrompt — integration', () => {
     expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
       expect.any(String), 'plan-req-1', true, undefined,
     )
+    // The follow-up is now addressed to the pane's own session; outside a
+    // SessionScopeProvider that resolves to undefined (= the active session).
     expect(sendSpy).toHaveBeenCalledWith(
       expect.stringContaining('The user approved the plan with the following review comments:'),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
     )
     expect(sendSpy.mock.calls[0][0]).toContain('ship after tests')
   })

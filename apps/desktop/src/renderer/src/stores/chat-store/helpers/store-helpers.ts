@@ -197,3 +197,35 @@ export function commitPerSession(
   if (target) return updatePerSession(state, target.projectPath, target.sessionId, updater)
   return updateActivePerSession(state, updater)
 }
+
+/**
+ * Where a per-session write lands, resolved once for both the store patch and
+ * the IPC that mirrors it into the main process.
+ *
+ * `target` is the pane's `SessionScope` (a mosaic pane, or the side chat docked
+ * in the activity panel). Without one the write is the project's active session,
+ * which is what an unscoped call has always meant.
+ *
+ * `ipcSessionId` is deliberately undefined for unscoped calls: the main-process
+ * handlers resolve the project's active session themselves, and that path also
+ * covers drafts whose session id the renderer has not adopted yet.
+ */
+export function resolveWriteScope(
+  state: ChatStore,
+  target?: SessionWriteTarget,
+): {
+  projectPath: string | null
+  sessionId: string | null
+  ipcSessionId: string | undefined
+  session: PerSessionState
+} {
+  const projectPath = target?.projectPath ?? state.activeProject
+  const project = projectPath ? state.projectSessions[projectPath] : undefined
+  const sessionId = target?.sessionId ?? project?._activeSessionId ?? null
+  return {
+    projectPath,
+    sessionId,
+    ipcSessionId: target?.sessionId,
+    session: getScopedPerSession(state, target),
+  }
+}

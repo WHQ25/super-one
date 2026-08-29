@@ -10,7 +10,7 @@ import {
   isCursorToggleParam,
   normalizeEffortValue,
 } from '@superone/cursor/cursor-model-selection'
-import { useActiveSession, useChatStore } from '@/stores/chat'
+import { useActiveSession, useChatStore, useScopedSessionActions } from '@/stores/chat'
 import {
   GroupedModelEffortSelector,
   type SelectorCatalogParam,
@@ -50,10 +50,7 @@ export function CursorModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (
   const selectedModel = useActiveSession((state) => state.selectedModel)
   const selectedEffort = useActiveSession((state) => state.selectedEffort)
   const cursorModelParams = useActiveSession((state) => state.cursorModelParams)
-  const setSelectedModel = useChatStore((state) => state.setSelectedModel)
-  const setSelectedEffort = useChatStore((state) => state.setSelectedEffort)
-  const setCursorModelParams = useChatStore((state) => state.setCursorModelParams)
-  const setCursorModelParam = useChatStore((state) => state.setCursorModelParam)
+  const { setSelectedModel, setSelectedEffort, setCursorModelParams, setCursorModelParam } = useScopedSessionActions()
 
   const enabledModels = useMemo(
     () => filterEnabledCursorModels(resources?.models ?? [], {

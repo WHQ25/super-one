@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Plus, Check, ChevronRight } from 'lucide-react'
-import { useActiveSession, useChatStore } from '@/stores/chat'
+import { useActiveSession, useScopedSessionActions } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
 import { ProviderLabel } from '@/components/ProviderLabel'
@@ -25,7 +25,7 @@ export function ProviderSlashPopup({ onClose }: { onClose: () => void }) {
   const platforms = useSettingsStore((s) => s.platforms)
   const credentials = useSettingsStore((s) => s.credentials)
   const fetchProviderData = useSettingsStore((s) => s.fetchProviderData)
-  const setSessionApiProviderId = useChatStore((s) => s.setSessionApiProviderId)
+  const { setSessionApiProviderId } = useScopedSessionActions()
   const navigateTo = useAppStore((s) => s.navigateTo)
   const setSettingsTab = useAppStore((s) => s.setSettingsTab)
   const experimentalClaudeOpenAiChatEnabled = useAppStore((s) => s.experimentalClaudeOpenAiChatEnabled)

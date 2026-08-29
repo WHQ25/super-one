@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { IDockviewPanelHeaderProps } from 'dockview-core'
-import { Bug, Globe, Maximize, RotateCw, Route, Shrink, Smartphone, Terminal as TerminalIcon, X } from 'lucide-react'
+import { Bug, Globe, Maximize, MessageCirclePlus, RotateCw, Route, Shrink, Smartphone, Terminal as TerminalIcon, X } from 'lucide-react'
 import { motion } from 'motion/react'
 import { cn } from '@superone/ui/lib/utils'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
@@ -13,6 +13,7 @@ import { BrowserFavicon } from '@/components/browser/BrowserFavicon'
 import { useDeviceTabActions } from '@/components/device/device-tab-actions'
 import { deviceFamilyIcon } from '@/components/device/device-icons'
 import { closeActivityTerminalTab, closeBrowserTab, closeDeviceTab, closeTrajectoryTab, toggleMaximizedActivityGroup } from './activity-panel-api'
+import { requestCloseSideChat } from '@/lib/side-chat-actions'
 
 function useIsActive(api: IDockviewPanelHeaderProps['api']) {
   const [active, setActive] = useState(api.isActive)
@@ -297,6 +298,23 @@ export function DeviceTab(props: IDockviewPanelHeaderProps<{ instanceId: string 
   )
 }
 
+export function SideChatTab(props: IDockviewPanelHeaderProps) {
+  const { t } = useTranslation()
+  const active = useIsActive(props.api)
+  const title = usePanelTitle(props.api)
+  // Closing is destructive, so the X asks first — `requestCloseSideChat` opens the
+  // confirm dialog and only calls back into the dock once the user agrees.
+  return (
+    <div className={tabChipClass(active)}>
+      <HoverCloseSlot onClose={() => { void requestCloseSideChat() }}>
+        <MessageCirclePlus className="size-3.5 shrink-0" />
+      </HoverCloseSlot>
+      <TabTitle>{title || t('sideChat.title')}</TabTitle>
+      <MaximizeTabAction api={props.api} active={active} />
+    </div>
+  )
+}
+
 export const activityTabComponents: Record<string, React.FunctionComponent<IDockviewPanelHeaderProps>> = {
   'file-preview-tab': FilePreviewTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'miniapp-tab': MiniAppTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
@@ -304,4 +322,5 @@ export const activityTabComponents: Record<string, React.FunctionComponent<IDock
   'terminal-tab': TerminalTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'trajectory-tab': TrajectoryTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'device-tab': DeviceTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
+  'side-chat-tab': SideChatTab,
 }

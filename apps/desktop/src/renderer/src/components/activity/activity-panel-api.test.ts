@@ -17,6 +17,9 @@ import {
   setCurrentSessionIdGetter,
   setDockApi,
   claimNewTabOmniboxFocus,
+  applyDockSnapshot,
+  closeGhostSideChatPanel,
+  isLayoutSwapping,
 } from './activity-panel-api'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useBrowserStore } from '@/stores/browser'
@@ -431,5 +434,63 @@ describe('openDeviceTab', () => {
 
     expect(window.environment.deviceRelease).toHaveBeenCalledExactlyOnceWith('ios-sim:sim-1')
     expect(useDeviceInstanceStore.getState().byId[second]?.deviceId).toBe('android:emulator-5554')
+  })
+})
+
+describe('layout swaps vs. real closes', () => {
+  it('flags a snapshot restore so removal listeners can tell a stash from a close', () => {
+    const seen: boolean[] = []
+    setDockApi({
+      panels: [],
+      activePanel: undefined,
+      fromJSON: () => { seen.push(isLayoutSwapping()) },
+      clear: () => { seen.push(isLayoutSwapping()) },
+    } as never)
+
+    applyDockSnapshot({ grid: {} } as never)
+    applyDockSnapshot(null)
+
+    // True only while dockview is tearing the layout down and rebuilding it...
+    expect(seen).toEqual([true, true])
+    // ...and never leaks past that, or a genuine close would be ignored.
+    expect(isLayoutSwapping()).toBe(false)
+  })
+
+  it('clears the flag even when dockview throws mid-restore', () => {
+    setDockApi({
+      panels: [],
+      activePanel: undefined,
+      fromJSON: () => { throw new Error('corrupt layout') },
+    } as never)
+
+    expect(() => applyDockSnapshot({ grid: {} } as never)).toThrow('corrupt layout')
+    expect(isLayoutSwapping()).toBe(false)
+  })
+})
+
+describe('closeGhostSideChatPanel', () => {
+  function seedSideChatPanel(sessionId: string | undefined) {
+    const close = vi.fn()
+    setDockApi({
+      panels: [{ id: 'side-chat', params: sessionId ? { sessionId } : undefined, api: { close } }],
+      activePanel: undefined,
+    } as never)
+    return close
+  }
+
+  it('drops a restored tab whose session was replaced while the layout was parked', () => {
+    const close = seedSideChatPanel('old-side-chat')
+
+    closeGhostSideChatPanel((sessionId) => sessionId === 'live-side-chat')
+
+    expect(close).toHaveBeenCalled()
+  })
+
+  it('keeps the tab of the side chat that is actually open', () => {
+    const close = seedSideChatPanel('live-side-chat')
+
+    closeGhostSideChatPanel((sessionId) => sessionId === 'live-side-chat')
+
+    expect(close).not.toHaveBeenCalled()
   })
 })

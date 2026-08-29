@@ -33,6 +33,7 @@ const mockWindowAgent = {
   prewarm: vi.fn().mockResolvedValue(undefined),
   setPermissionMode: vi.fn().mockResolvedValue(undefined),
   setSessionSettings: vi.fn().mockResolvedValue(undefined),
+  broadcastSessionSetting: vi.fn().mockResolvedValue(undefined),
   rewindFiles: vi.fn().mockResolvedValue({ canRewind: true } as const),
   rewindCodeAndChat: vi.fn().mockResolvedValue({ canRewind: true } as const),
   rewindConversation: vi.fn().mockResolvedValue({ canRewind: true } as const),
@@ -331,7 +332,7 @@ describe('claude-slice: setSelectedModel', () => {
     expect(sess.modelUserChosen).toBe(true)
     expect(sess.effortUserChosen).toBe(false)
     expect(sess.contextWindow).toBeNull()
-    expect(mockWindowAgent.setSessionSettings).toHaveBeenCalledWith(PATH, { model: 'opus-4-8', effort: 'high' })
+    expect(mockWindowAgent.setSessionSettings).toHaveBeenCalledWith(PATH, { model: 'opus-4-8', effort: 'high' }, undefined)
     expect(mockWindowAgent.setPermissionMode).not.toHaveBeenCalled()
     expect(mockWindowAgent.prewarm).not.toHaveBeenCalled()
   })
@@ -371,13 +372,13 @@ describe('claude-slice: setSelectedEffort', () => {
     useChatStore.getState().setSelectedEffort('high')
     expect(activeSession().selectedEffort).toBe('high')
     expect(activeSession().effortUserChosen).toBe(true)
-    expect(mockWindowAgent.setSessionSettings).toHaveBeenCalledWith(PATH, { effort: 'high' })
+    expect(mockWindowAgent.setSessionSettings).toHaveBeenCalledWith(PATH, { effort: 'high' }, undefined)
   })
 
   it('forwards undefined as null to backend when effort is cleared', () => {
     setupProject()
     useChatStore.getState().setSelectedEffort(undefined)
-    expect(mockWindowAgent.setSessionSettings).toHaveBeenCalledWith(PATH, { effort: null })
+    expect(mockWindowAgent.setSessionSettings).toHaveBeenCalledWith(PATH, { effort: null }, undefined)
   })
 
   it('prewarms immediately when there is unsent draft text', () => {
@@ -760,6 +761,59 @@ describe('per-session writers: scoped target isolation', () => {
     expect(sessionOf(other).draftText).toBe('queued')
     expect(sessionOf(other).queuedMessages).toEqual([])
     expect(sessionOf(active).draftText).toBe('')
+  })
+
+  // Regression: the model picker rendered inside a side chat (or a non-focused
+  // mosaic tile) reads its own session through `useActiveSession` but used to
+  // write through `updateActivePerSession`. Changing the model in a side chat
+  // therefore re-configured the conversation it forked from, and left the side
+  // chat displaying a model it was not running.
+  it('setSelectedModel writes model + backend settings for the scoped pane, never the active session', () => {
+    const { active, other } = setupTwoSessions()
+    setClaudeResources({ models: [opus, sonnet], account: { subscriptionType: 'Claude Max' } as AccountInfo })
+    useChatStore.getState().setSelectedModel('sonnet-4-6')
+    vi.clearAllMocks()
+
+    useChatStore.getState().setSelectedModel('opus-4-8', { projectPath: PATH, sessionId: other })
+
+    expect(sessionOf(other).selectedModel).toBe('opus-4-8')
+    expect(sessionOf(active).selectedModel).toBe('sonnet-4-6')
+    expect(mockWindowAgent.setSessionSettings).toHaveBeenCalledWith(
+      PATH,
+      { model: 'opus-4-8', effort: 'high' },
+      other,
+    )
+  })
+
+  it('setSelectedEffort writes effort for the scoped pane and addresses the backend by that session id', () => {
+    const { active, other } = setupTwoSessions()
+    useChatStore.getState().setSelectedEffort('low')
+    vi.clearAllMocks()
+
+    useChatStore.getState().setSelectedEffort('high', { projectPath: PATH, sessionId: other })
+
+    expect(sessionOf(other).selectedEffort).toBe('high')
+    expect(sessionOf(active).selectedEffort).toBe('low')
+    expect(mockWindowAgent.setSessionSettings).toHaveBeenCalledWith(PATH, { effort: 'high' }, other)
+  })
+
+  it('setSelectedCodexModel writes the codex pair for the scoped pane and broadcasts under that session id', () => {
+    const { active, other } = setupTwoSessions()
+    useChatStore.setState((s) => ({
+      projectSessions: {
+        ...s.projectSessions,
+        [PATH]: { ...s.projectSessions[PATH], codexModels: [{ id: 'gpt-5-codex', name: 'GPT-5 Codex', description: '' } as ModelOption] },
+      },
+    }))
+
+    useChatStore.getState().setSelectedCodexModel('gpt-5-codex', { projectPath: PATH, sessionId: other })
+
+    expect(sessionOf(other).selectedCodexModel).toBe('gpt-5-codex')
+    expect(sessionOf(active).selectedCodexModel).toBe('')
+    expect(mockWindowAgent.broadcastSessionSetting).toHaveBeenCalledWith(
+      other,
+      expect.objectContaining({ selectedCodexModel: 'gpt-5-codex' }),
+    )
   })
 })
 

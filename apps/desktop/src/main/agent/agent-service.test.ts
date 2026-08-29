@@ -2673,6 +2673,76 @@ const osForAddDirTests = await import('os')
 const pathForAddDirTests = await import('path')
 const childProcessForAddDirTests = await import('child_process')
 
+/**
+ * A scoped write carries a renderer-supplied session id. Both the ownership and
+ * the remote-lock check therefore have to read that session — reading the
+ * project's active one answers a question about a different session and lets
+ * the write through on the strength of it.
+ */
+describe('SET_SESSION_SETTINGS scoped writes', () => {
+  const PROJECT = '/project-a'
+
+  function makeSession(over: Partial<{ projectPath: string; owner: { kind: string }; subscribers: Set<string> }> = {}) {
+    return {
+      snapshot: { projectPath: over.projectPath ?? PROJECT },
+      owner: over.owner ?? { kind: 'local' },
+      subscribers: over.subscribers ?? new Set<string>(),
+      setSelectedSettings: vi.fn(),
+      setAgentPreset: vi.fn(),
+    }
+  }
+
+  function setup(sessions: Record<string, ReturnType<typeof makeSession>>, activeId: string) {
+    const service = new AgentService()
+    service.setup()
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: (id: string) => sessions[id] ?? null,
+      getActiveSession: () => sessions[activeId] ?? null,
+    }
+    return getRegisteredIpcHandler(AgentIpcChannels.SET_SESSION_SETTINGS)!
+  }
+
+  it('applies a scoped write to the addressed session, leaving the active one alone', async () => {
+    const active = makeSession()
+    const pane = makeSession()
+    const handle = setup({ active, pane }, 'active')
+
+    await handle({}, PROJECT, { model: 'opus-4-8' }, 'pane')
+
+    expect(pane.setSelectedSettings).toHaveBeenCalledWith({ model: 'opus-4-8' })
+    expect(active.setSelectedSettings).not.toHaveBeenCalled()
+  })
+
+  it('refuses a scoped write to a session owned by a remote device, even when the active session is free', async () => {
+    const active = makeSession()
+    const pane = makeSession({ owner: { kind: 'remote' } })
+    const handle = setup({ active, pane }, 'active')
+
+    await handle({}, PROJECT, { model: 'opus-4-8' }, 'pane')
+
+    expect(pane.setSelectedSettings).not.toHaveBeenCalled()
+  })
+
+  it('refuses a scoped write whose session belongs to a different project', async () => {
+    const active = makeSession()
+    const foreign = makeSession({ projectPath: '/project-b' })
+    const handle = setup({ active, foreign }, 'active')
+
+    await handle({}, PROJECT, { model: 'opus-4-8' }, 'foreign')
+
+    expect(foreign.setSelectedSettings).not.toHaveBeenCalled()
+  })
+
+  it('still resolves the project active session when no id is supplied', async () => {
+    const active = makeSession()
+    const handle = setup({ active }, 'active')
+
+    await handle({}, PROJECT, { model: 'opus-4-8' })
+
+    expect(active.setSelectedSettings).toHaveBeenCalledWith({ model: 'opus-4-8' })
+  })
+})
+
 describe('add-dir IPC handlers', () => {
   const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = fsForAddDirTests
   const { tmpdir, homedir } = osForAddDirTests

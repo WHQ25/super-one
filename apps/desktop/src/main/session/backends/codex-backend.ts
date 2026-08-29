@@ -862,6 +862,19 @@ export class CodexBackend implements SessionBackend {
     await task
   }
 
+  /**
+   * Hold an instruction for the next turn, delivered as an `additionalContext`
+   * fragment on `turn/start`.
+   *
+   * Codex records those as developer-role messages in the conversation, so this
+   * reaches the model with the same weight as an instruction while leaving the
+   * thread's `developer_instructions` — and therefore the cached prefix —
+   * untouched.
+   */
+  stageInstruction(text: string): void {
+    if (this.session) this.session.pendingInstruction = text
+  }
+
   async interrupt(): Promise<void> {
     if (!this.started) return
     if (this.goalController.goal?.status === 'active' || this.goalController.active) {

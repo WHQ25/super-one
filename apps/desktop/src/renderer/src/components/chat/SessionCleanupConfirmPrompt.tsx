@@ -16,7 +16,7 @@ import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { resolveProjectNameFromFolders, resolveProjectPathForOpen } from '@/lib/resolve-project-path'
 import { useAppStore } from '@/stores/app'
-import { useChatStore } from '@/stores/chat'
+import { useChatStore, useScopedSessionActions } from '@/stores/chat'
 import { ApproveRejectBar } from './PermissionActionBar'
 import { canAutofocusInChatRoot, isFocusInChat, useChatRootRef } from './is-focus-in-chat'
 
@@ -262,7 +262,7 @@ export function SessionCleanupConfirmPromptContainer({
 }: {
   request: PermissionRequest
 }) {
-  const respondToPermission = useChatStore((s) => s.respondToPermission)
+  const { respondToPermission } = useScopedSessionActions()
   const payload = request.sessionCleanupConfirm
   if (!payload) return null
 

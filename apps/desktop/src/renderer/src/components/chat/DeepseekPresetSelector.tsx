@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from '@superone/ui/components/ui/dropdown-menu'
 import { cn } from '@superone/ui/lib/utils'
-import { useActiveSession, useChatStore } from '@/stores/chat'
+import { useActiveSession, useScopedSessionActions } from '@/stores/chat'
 
 /**
  * A mark per shipped preset, keyed by id rather than by name or order.
@@ -68,7 +68,7 @@ export function useDeepseekPresetSelection() {
   const sessionId = useActiveSession((state) => state._providerSessionId)
   const draft = useActiveSession((state) => state.dshPreset)
   const hasStarted = useActiveSession((state) => state.messages.length > 0)
-  const setPreset = useChatStore((state) => state.setDshPreset)
+  const { setDshPreset: setPreset } = useScopedSessionActions()
 
   const [presets, setPresets] = useState<DeepseekPresetInfo[]>([])
   const [current, setCurrent] = useState<string | null>(null)

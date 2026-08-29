@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect, useCallback, useMemo, useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
-import { useChatStore, useActiveSession, selectClaudeModels, selectClaudeAccount } from '@/stores/chat'
+import { useChatStore, useActiveSession, useSessionScope, selectClaudeModels, selectClaudeAccount, useScopedSessionActions } from '@/stores/chat'
 import { PenLine, Check, X, FastForward, Zap, Circle, CheckCircle2 } from 'lucide-react'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { checkAutoModeEligibility } from '@/lib/auto-mode-eligibility'
@@ -19,8 +19,16 @@ export function PlanApprovalPrompt() {
   const { t } = useTranslation()
   const pending = useActiveSession((s) => s.pendingPlanApproval)
   const sessionProvider = useActiveSession((s) => s.sessionProvider)
-  const respond = useChatStore((s) => s.respondToPlanApproval)
-  const sendMessage = useChatStore((s) => s.sendMessage)
+  const { respondToPlanApproval: respond } = useScopedSessionActions()
+  const rawSendMessage = useChatStore((s) => s.sendMessage)
+  const scope = useSessionScope()
+  // The approved plan's feedback is a real turn. Unscoped it would be posted to
+  // the project's active conversation — i.e. a side chat's plan feedback would
+  // appear in, and be answered by, the chat it forked from.
+  const sendMessage = useCallback(
+    (content: string) => rawSendMessage(content, undefined, undefined, undefined, scope ?? undefined),
+    [rawSendMessage, scope],
+  )
   const account = useChatStore(selectClaudeAccount)
   const availableModels = useChatStore(selectClaudeModels)
   const selectedModel = useActiveSession((s) => s.selectedModel)

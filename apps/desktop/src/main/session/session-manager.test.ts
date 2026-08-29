@@ -530,6 +530,27 @@ describe('SessionManager', () => {
       expect(mgr.getActiveSession('/pp')).toBeNull()
       expect(mgr.getSession(s.snapshot.id)).not.toBeNull()
     })
+
+    it('an ephemeral session never becomes active, even when asked', () => {
+      const parent = mgr.createSession({ projectPath: '/pp', providerId: 'claude-base' })
+      const side = mgr.createSession({ projectPath: '/pp', providerId: 'claude-base', ephemeral: true })
+
+      expect(mgr.getActiveSession('/pp')?.snapshot.id).toBe(parent.snapshot.id)
+
+      // Prewarm and send both route through setActiveSession with whatever
+      // session the composer belongs to — including a side chat's.
+      mgr.setActiveSession('/pp', side.snapshot.id)
+      expect(mgr.getActiveSession('/pp')?.snapshot.id).toBe(parent.snapshot.id)
+    })
+  })
+
+  describe('live snapshots', () => {
+    it('omits ephemeral sessions, which no panel would be there to render', () => {
+      const parent = mgr.createSession({ projectPath: '/pp', providerId: 'claude-base' })
+      mgr.createSession({ projectPath: '/pp', providerId: 'claude-base', ephemeral: true })
+
+      expect(mgr.listLiveSnapshots().map((e) => e.sid)).toEqual([parent.snapshot.id])
+    })
   })
 
   describe('persistence hooks', () => {

@@ -1,8 +1,9 @@
 import { create } from 'zustand'
 import type { SerializedDockview } from 'dockview-core'
-import { applyDockSnapshot, closeGhostMiniAppPanels, getDockSnapshot, isDockReady, materializeOwnedBrowserTabs, setCurrentSessionIdGetter, setOnDockReady } from '@/components/activity/activity-panel-api'
+import { applyDockSnapshot, closeGhostMiniAppPanels, closeGhostSideChatPanel, getDockSnapshot, isDockReady, materializeOwnedBrowserTabs, setCurrentSessionIdGetter, setOnDockReady } from '@/components/activity/activity-panel-api'
 import { useActivityPanelStore } from './activity-panel'
 import { useMiniAppStore } from './miniapp'
+import { useSideChatStore } from './side-chat'
 
 export interface SessionViewState {
   layout: SerializedDockview | null
@@ -25,6 +26,9 @@ function applyState(state: SessionViewState | undefined) {
   applyDockSnapshot(state?.layout ?? null)
   useActivityPanelStore.getState().setShowPanel(state?.showPanel ?? false)
   closeGhostMiniAppPanels((instanceKey) => instanceKey in useMiniAppStore.getState().openApps)
+  // Only one side chat exists at a time, so a restored tab for any other session
+  // is a leftover from before it was replaced.
+  closeGhostSideChatPanel((sessionId) => sessionId === useSideChatStore.getState().current?.sessionId)
 }
 
 export const useActivityViewStateStore = create<ActivityViewStateStore>((set, get) => ({

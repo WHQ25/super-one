@@ -1,4 +1,4 @@
-import { useChatStore } from '@/stores/chat'
+import { useScopedSessionActions } from '@/stores/chat'
 import {
   SESSION_AGENT_LAUNCHES_FIELD,
   type PermissionRequest,
@@ -7,7 +7,7 @@ import {
 import { SessionAgentsConfirmPrompt } from './SessionAgentsConfirmPrompt'
 
 export function SessionAgentsConfirmPromptContainer({ request }: { request: PermissionRequest }) {
-  const respondToPermission = useChatStore((state) => state.respondToPermission)
+  const { respondToPermission } = useScopedSessionActions()
   const payload = request.sessionAgentsConfirm
   if (!payload) return null
 

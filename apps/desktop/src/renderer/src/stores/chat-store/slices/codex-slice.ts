@@ -2,55 +2,55 @@ import type { StateCreator } from 'zustand'
 import type { CodexCollaborationMode, CodexPermissionPreset, CodexReasoningEffort, ModelOption } from '@superone/shared/agent-types'
 import { resolveCodexReasoningEffort } from '../helpers/codex-helpers'
 import { codexModelCacheKey } from '../helpers/codex-model-cache'
-import type { ChatStore } from '../types'
+import type { ChatStore, SessionWriteTarget } from '../types'
 import {
-  _getEffectiveSessionId,
-  getActivePerSession,
+  commitPerSession,
   getProject,
   resolveSessionCodexSelection,
+  resolveWriteScope,
   saveLastCodexSelection,
-  updateActivePerSession,
   updateProjectState,
 } from '../index'
 
 /**
  * Codex-harness-specific actions: model/effort/permission/collaboration
- * mode setters plus model/skills refresh. All scoped to the active
- * project; no Claude state mutation.
+ * mode setters plus model/skills refresh. No Claude state mutation.
+ *
+ * The setters take an optional `SessionWriteTarget` for the same reason the
+ * Claude ones do: the composer is per-pane (mosaic tile, side chat), so
+ * "the active session" is not the session whose picker the user just used.
  */
 export interface CodexSlice {
-  setSelectedCodexModel: (model: string) => void
-  setSelectedCodexReasoningEffort: (effort?: CodexReasoningEffort) => void
-  setSelectedCodexServiceTier: (tier: string | null) => void
-  setSelectedCodexPermissionPreset: (preset: CodexPermissionPreset) => void
-  setSelectedCodexCollaborationMode: (mode: CodexCollaborationMode) => void
+  setSelectedCodexModel: (model: string, target?: SessionWriteTarget) => void
+  setSelectedCodexReasoningEffort: (effort?: CodexReasoningEffort, target?: SessionWriteTarget) => void
+  setSelectedCodexServiceTier: (tier: string | null, target?: SessionWriteTarget) => void
+  setSelectedCodexPermissionPreset: (preset: CodexPermissionPreset, target?: SessionWriteTarget) => void
+  setSelectedCodexCollaborationMode: (mode: CodexCollaborationMode, target?: SessionWriteTarget) => void
   loadCodexModels: (projectPath: string, apiProviderId: string | null, force?: boolean) => Promise<ModelOption[]>
   refreshCodexModels: (force?: boolean) => Promise<void>
   refreshCodexSkills: (projectPath?: string) => Promise<void>
 }
 
 export const createCodexSlice: StateCreator<ChatStore, [], [], CodexSlice> = (set, get) => ({
-  setSelectedCodexModel: (model) => {
-    const { activeProject } = get()
+  setSelectedCodexModel: (model, target) => {
+    const { projectPath: activeProject, sessionId, session: activeSession } = resolveWriteScope(get(), target)
     if (!activeProject) return
     const proj = getProject(get(), activeProject)
     const selectedModel = proj.codexModels.find((entry) => entry.id === model)
     const selectedEffort = resolveCodexReasoningEffort(selectedModel)
-    const activeSession = getActivePerSession(get())
     const selectedServiceTier = selectedModel?.serviceTiers?.some((tier) => tier.id === activeSession.selectedCodexServiceTier)
       ? activeSession.selectedCodexServiceTier
       : (selectedModel?.defaultServiceTier ?? null)
     saveLastCodexSelection(model, selectedEffort)
-    set((s) => updateActivePerSession(s, () => ({
+    set((s) => commitPerSession(s, target, () => ({
       selectedCodexModel: model,
       selectedCodexReasoningEffort: selectedEffort,
       selectedCodexServiceTier: selectedServiceTier,
       codexModelUserChosen: true,
       codexReasoningEffortUserChosen: false,
     })))
-    const sid = _getEffectiveSessionId(getProject(get(), activeProject))
-    if (sid) {
-      void window.agent.broadcastSessionSetting(sid, {
+    if (sessionId) {
+      void window.agent.broadcastSessionSetting(sessionId, {
         selectedCodexModel: model,
         selectedCodexReasoningEffort: selectedEffort ?? null,
         selectedCodexServiceTier: selectedServiceTier,
@@ -58,56 +58,49 @@ export const createCodexSlice: StateCreator<ChatStore, [], [], CodexSlice> = (se
     }
   },
 
-  setSelectedCodexReasoningEffort: (effort) => {
-    const { activeProject } = get()
+  setSelectedCodexReasoningEffort: (effort, target) => {
+    const { projectPath: activeProject, sessionId, session: sess } = resolveWriteScope(get(), target)
     if (!activeProject) return
     const proj = getProject(get(), activeProject)
-    const sess = getActivePerSession(get())
     const selectedModel = proj.codexModels.find((entry) => entry.id === sess.selectedCodexModel)
     const selectedEffort = resolveCodexReasoningEffort(selectedModel, effort)
     saveLastCodexSelection(sess.selectedCodexModel, selectedEffort)
-    set((s) => updateActivePerSession(s, () => ({
+    set((s) => commitPerSession(s, target, () => ({
       selectedCodexReasoningEffort: selectedEffort,
       codexReasoningEffortUserChosen: true,
     })))
-    const sid = _getEffectiveSessionId(getProject(get(), activeProject))
-    if (sid) {
-      void window.agent.broadcastSessionSetting(sid, {
+    if (sessionId) {
+      void window.agent.broadcastSessionSetting(sessionId, {
         selectedCodexReasoningEffort: selectedEffort ?? null,
       })
     }
   },
 
-  setSelectedCodexServiceTier: (tier) => {
-    const { activeProject } = get()
+  setSelectedCodexServiceTier: (tier, target) => {
+    const { projectPath: activeProject, sessionId, session } = resolveWriteScope(get(), target)
     if (!activeProject) return
     const project = getProject(get(), activeProject)
-    const session = getActivePerSession(get())
     const model = project.codexModels.find((entry) => entry.id === session.selectedCodexModel)
     const selectedTier = tier && model?.serviceTiers?.some((entry) => entry.id === tier) ? tier : null
-    set((state) => updateActivePerSession(state, () => ({ selectedCodexServiceTier: selectedTier })))
-    const sid = _getEffectiveSessionId(getProject(get(), activeProject))
-    if (sid) void window.agent.broadcastSessionSetting(sid, { selectedCodexServiceTier: selectedTier })
+    set((state) => commitPerSession(state, target, () => ({ selectedCodexServiceTier: selectedTier })))
+    if (sessionId) void window.agent.broadcastSessionSetting(sessionId, { selectedCodexServiceTier: selectedTier })
   },
 
-  setSelectedCodexPermissionPreset: (preset) => {
-    const { activeProject } = get()
+  setSelectedCodexPermissionPreset: (preset, target) => {
+    const { projectPath: activeProject, sessionId } = resolveWriteScope(get(), target)
     if (!activeProject) return
-    set((s) => updateActivePerSession(s, () => ({
+    set((s) => commitPerSession(s, target, () => ({
       selectedCodexPermissionPreset: preset,
     })))
-    const sid = _getEffectiveSessionId(getProject(get(), activeProject))
-    if (sid) {
-      void window.agent.broadcastSessionSetting(sid, { selectedCodexPermissionPreset: preset })
+    if (sessionId) {
+      void window.agent.broadcastSessionSetting(sessionId, { selectedCodexPermissionPreset: preset })
     }
   },
 
-  setSelectedCodexCollaborationMode: (mode) => {
-    const { activeProject } = get()
+  setSelectedCodexCollaborationMode: (mode, target) => {
+    const { projectPath: activeProject, sessionId } = resolveWriteScope(get(), target)
     if (!activeProject) return
-    const project = getProject(get(), activeProject)
-    const sessionId = _getEffectiveSessionId(project)
-    set((s) => updateActivePerSession(s, () => ({
+    set((s) => commitPerSession(s, target, () => ({
       selectedCodexCollaborationMode: mode,
       codexPlanRejectHintActive: false,
     })))

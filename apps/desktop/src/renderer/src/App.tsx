@@ -7,6 +7,7 @@ import { LayoutToggle } from '@/components/coding/LayoutToggle'
 import { ChatPanel } from '@/components/chat/ChatPanel'
 import { CodingWorkspace } from '@/components/coding/CodingWorkspace'
 import { ActivityPanel } from '@/components/activity/ActivityPanel'
+import { SideChatConfirmDialog } from '@/components/chat/SideChatConfirmDialog'
 import { openBrowserTab, beginMosaicRecording, replayMosaicOpenedPanels } from '@/components/activity/activity-panel-api'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { MosaicDropZone } from '@/components/mosaic/MosaicDropZone'
@@ -618,6 +619,8 @@ function App(): React.JSX.Element {
           hidden={mosaicMode === 'mosaic' || panelsFolded}
           transitionMs={inMiniWindow ? FOLD_PANEL_MS : undefined}
         />
+
+        <SideChatConfirmDialog />
 
         {/* Main area */}
         <div data-main-area="" className={cn(

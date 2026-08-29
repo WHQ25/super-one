@@ -19,6 +19,7 @@ import type { SessionForkMode, SessionHistoryEntry } from '@superone/shared/agen
 import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { buildSessionMenuItems } from '@/lib/session-menu-items'
+import { requestSideChat, useCanOpenSideChat } from '@/lib/side-chat-actions'
 import { showNativeContextMenu, toNativeMenu, type AdaptiveMenuEntry } from '@/lib/native-context-menu'
 import { RenameSessionDialog, type RenameSessionTarget } from '@/components/sidebar/RenameSessionDialog'
 
@@ -83,6 +84,8 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
     }),
   )
 
+  const sideChatAvailable = useCanOpenSideChat(sessionId)
+
   const afterMutate = useCallback(async () => {
     await useChatStore.getState().fetchSessions()
     useAppStore.getState().bumpSessionListNonce()
@@ -133,6 +136,10 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
         await afterMutate()
       },
       onFork: handleFork,
+      // Only offered where a side chat can actually dock beside the session:
+      // the foreground chat of a local project. `resolveSideChatTarget` owns the
+      // rest of the rule (forkable harness, non-empty, not already a side chat).
+      onNewSideChat: sideChatAvailable ? () => { void requestSideChat() } : undefined,
     },
     { miniWindow: 'convert' },
   )

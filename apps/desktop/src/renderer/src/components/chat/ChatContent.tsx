@@ -24,6 +24,7 @@ import {
 import { ModelFallbackRow } from './ModelFallbackRow'
 import { selectClaudeModels } from '@/stores/chat-store/selectors'
 import { ChatSuggestions } from './ChatSuggestions'
+import { SideChatEmptyState } from './SideChatEmptyState'
 import { DraftSessionSurface } from './DraftSessionSurface'
 import { PermissionPrompt } from './PermissionPrompt'
 import { AskUserQuestionPrompt } from './AskUserQuestionPrompt'
@@ -196,7 +197,7 @@ function ChatTranscript({
     displayedSessionId, historyHydrated,
     sessionStatus, lastAssistantMessageId, queuedMessages, awaitingAssistantReply, acpModels,
     sessionProvider, preferredProvider,
-    draftId, providerSessionId,
+    draftId, sideChatParentId, providerSessionId,
   } = useActiveSession(useShallow((s) => ({
     messages: s.messages,
     isCompacting: s.isCompacting,
@@ -211,6 +212,7 @@ function ChatTranscript({
     awaitingAssistantReply: s.awaitingAssistantReply,
     acpModels: s.acpModels,
     draftId: s.draftId,
+    sideChatParentId: s._sideChatParentId ?? null,
     providerSessionId: s._providerSessionId,
     sessionProvider: s.sessionProvider,
     preferredProvider: s.preferredProvider,
@@ -372,7 +374,12 @@ function ChatTranscript({
   return (
     <div className="relative min-w-0 flex-1 overflow-hidden">
       {messages.length === 0 && historyHydrated && sessionStatus !== 'streaming' && sessionStatus !== 'background' && !awaitingAssistantReply ? (
-        awaitingRealtimeTimeline
+        sideChatParentId
+          // A side chat is empty on purpose and must never reach ChatSuggestions:
+          // picking a harness there switches the project's active session, which
+          // would yank the parent chat out from under the panel.
+          ? <SideChatEmptyState />
+          : awaitingRealtimeTimeline
             ? <p className="py-16 text-center text-sm text-muted-foreground">{t('common.loading')}</p>
             : realtimeTimelineFailed
               ? <p className="py-16 text-center text-sm text-muted-foreground">{t('chat.realtimeVoice.timelineLoadFailed')}</p>

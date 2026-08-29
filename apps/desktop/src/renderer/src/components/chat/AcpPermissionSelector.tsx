@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronDown } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
-import { useActiveSession, useChatStore } from '@/stores/chat'
+import { useActiveSession, useScopedSessionActions } from '@/stores/chat'
 import { AcpPermissionModeList, acpPermissionModeOption } from './AcpPermissionModeList'
 import { ACP_PERMISSION_MODES, type AcpPermissionModeId } from './acpPermissionModes'
 
@@ -14,7 +14,7 @@ export function AcpPermissionSelector({ compact = false }: { compact?: boolean }
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const permissionMode = useActiveSession((state) => state.permissionMode)
-  const setPermissionMode = useChatStore((state) => state.setPermissionMode)
+  const { setPermissionMode } = useScopedSessionActions()
 
   useEffect(() => {
     if (!ACP_PERMISSION_MODES.includes(permissionMode as AcpPermissionModeId)) {

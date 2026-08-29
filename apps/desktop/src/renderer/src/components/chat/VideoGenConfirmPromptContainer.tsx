@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useChatStore } from '@/stores/chat'
+import { useScopedSessionActions } from '@/stores/chat'
 import { VIDEO_GEN_PARAMS_FIELD, type PermissionRequest, type VideoGenParams, type VideoGenReferenceImage } from '@superone/shared/agent-types'
 import { VideoGenConfirmPrompt } from './VideoGenConfirmPrompt'
 
@@ -14,7 +14,7 @@ import { VideoGenConfirmPrompt } from './VideoGenConfirmPrompt'
  * - reject  → allow=false, formAnswers={ feedback }
  */
 export function VideoGenConfirmPromptContainer({ request }: { request: PermissionRequest }) {
-  const respondToPermission = useChatStore((s) => s.respondToPermission)
+  const { respondToPermission } = useScopedSessionActions()
   const payload = request.videoGenConfirm
   const [referenceImages, setReferenceImages] = useState<VideoGenReferenceImage[]>([])
 

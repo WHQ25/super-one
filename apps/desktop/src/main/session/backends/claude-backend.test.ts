@@ -406,6 +406,59 @@ describe('ClaudeBackend', () => {
     })
   })
 
+  describe('stageInstruction()', () => {
+    it('pushes a non-querying transcript entry ahead of the user message', async () => {
+      const backend = new ClaudeBackend()
+      const events: AgentEvent[] = []
+      backend.onEvent((e) => events.push(e))
+      await backend.start(makeStartOpts())
+      const pushSpy = vi.spyOn(hoisted.captured.bridge as { push: (...args: unknown[]) => void }, 'push')
+
+      backend.stageInstruction('YOU ARE A SIDE CHAT')
+      const sendPromise = backend.send({ content: 'why is this slow?' })
+      await new Promise((r) => setTimeout(r, 0))
+
+      expect(pushSpy).toHaveBeenCalledTimes(2)
+      const [instruction] = pushSpy.mock.calls[0]! as [Record<string, unknown>]
+      // shouldQuery:false is what makes this an append rather than a turn — the
+      // SDK merges it into the next message that does query.
+      expect(instruction.shouldQuery).toBe(false)
+      expect(instruction.message).toEqual({ role: 'user', content: 'YOU ARE A SIDE CHAT' })
+      const [userMsg] = pushSpy.mock.calls[1]! as [{ message: { content: unknown } }]
+      expect(userMsg.message.content).toBe('why is this slow?')
+
+      const startEvt = events.find((e) => e.type === 'message_start') as Extract<AgentEvent, { type: 'message_start' }>
+      hoisted.captured.emit?.({ type: 'message_complete', messageId: startEvt.message.id, metadata: {} })
+      await sendPromise
+    })
+
+    it('delivers once — a second turn pushes only the user message', async () => {
+      const backend = new ClaudeBackend()
+      const events: AgentEvent[] = []
+      backend.onEvent((e) => events.push(e))
+      await backend.start(makeStartOpts())
+      const pushSpy = vi.spyOn(hoisted.captured.bridge as { push: (...args: unknown[]) => void }, 'push')
+
+      backend.stageInstruction('YOU ARE A SIDE CHAT')
+      const first = backend.send({ content: 'a' })
+      await new Promise((r) => setTimeout(r, 0))
+      let startEvt = events.find((e) => e.type === 'message_start') as Extract<AgentEvent, { type: 'message_start' }>
+      hoisted.captured.emit?.({ type: 'message_complete', messageId: startEvt.message.id, metadata: {} })
+      await first
+
+      events.length = 0
+      pushSpy.mockClear()
+      const second = backend.send({ content: 'b' })
+      await new Promise((r) => setTimeout(r, 0))
+
+      expect(pushSpy).toHaveBeenCalledTimes(1)
+
+      startEvt = events.find((e) => e.type === 'message_start') as Extract<AgentEvent, { type: 'message_start' }>
+      hoisted.captured.emit?.({ type: 'message_complete', messageId: startEvt.message.id, metadata: {} })
+      await second
+    })
+  })
+
   describe('task-notification wake on a rebuilt runtime', () => {
     /**
      * The idle reaper releases the runtime between turns. A mailbox wake is the

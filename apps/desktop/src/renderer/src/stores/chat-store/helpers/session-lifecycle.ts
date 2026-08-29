@@ -29,10 +29,12 @@ import {
 } from './persistence'
 import { applyCachedCodexPermissionPreset, defaultPrefsCache, sandboxModeToInfo } from './prefs-cache'
 import {
+  commitPerSession,
   getActivePerSession,
   getProject,
   inheritMiniAppToolsForNewSession,
   resolveActiveSessionId,
+  resolveWriteScope,
   triggerPrewarm,
   updateActivePerSession,
   updatePerSession,
@@ -43,7 +45,7 @@ import { createDefaultPerSessionState, createDefaultProjectState, createSessionI
 import { CURSOR_DEFAULT_PERMISSION_MODE } from '@/components/chat/cursorPermissionModes'
 import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { isRemoteSession, removeRemoteSession } from '../index'
-import type { ChatProvider, ChatStore, PerSessionState } from '../types'
+import type { ChatProvider, ChatStore, PerSessionState, SessionWriteTarget } from '../types'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { stopBashOutputLive } from './bash-output-live'
 
@@ -367,12 +369,18 @@ export function disconnectRemoteSessionImpl(set: ChatStoreSet, get: () => ChatSt
   }
 }
 
-export async function interruptImpl(set: ChatStoreSet, get: () => ChatStore): Promise<void> {
-  const { activeProject } = get()
+export async function interruptImpl(
+  set: ChatStoreSet,
+  get: () => ChatStore,
+  target?: SessionWriteTarget,
+): Promise<void> {
+  // Stop belongs to the pane that rendered it. Resolving the project's active
+  // session instead interrupts the main conversation while the pane that was
+  // actually asked to stop — a side chat, a background mosaic tile — keeps
+  // streaming with no reachable stop control.
+  const { projectPath: activeProject, sessionId: sid } = resolveWriteScope(get(), target)
   if (!activeProject) return
-  const project = getProject(get(), activeProject)
-  const sid = resolveActiveSessionId(project)
-  set((s) => updateActivePerSession(s, () => ({ awaitingAssistantReply: false })))
+  set((s) => commitPerSession(s, target, () => ({ awaitingAssistantReply: false })))
 
   // Remote node session: EnvironmentHost → CLI session.interrupt
   const remote = parseRemoteProjectKey(activeProject)
@@ -393,7 +401,7 @@ export async function interruptImpl(set: ChatStoreSet, get: () => ChatStore): Pr
     } catch {
       /* ignore */
     }
-    set((s) => updateActivePerSession(s, () => ({
+    set((s) => commitPerSession(s, target, () => ({
       status: 'idle',
       awaitingAssistantReply: false,
       pendingPermissions: [],
@@ -410,7 +418,7 @@ export async function interruptImpl(set: ChatStoreSet, get: () => ChatStore): Pr
     interrupted = false
   }
   if (!interrupted) {
-    set((s) => updateActivePerSession(s, () => ({
+    set((s) => commitPerSession(s, target, () => ({
       status: 'idle',
       pendingPermissions: [],
       pendingQuestion: null,

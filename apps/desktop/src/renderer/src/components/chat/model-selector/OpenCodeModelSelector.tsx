@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import type { EffortLevel } from '@superone/shared/agent-types'
-import { selectOpenCodeAgents, useActiveSession, useChatStore } from '@/stores/chat'
+import { selectOpenCodeAgents, useActiveSession, useChatStore, useScopedSessionActions } from '@/stores/chat'
 import { resolveDefaultOpenCodeAgent } from '@/stores/chat-store/harness/opencode-handler'
 import { groupModelsBySlashPrefix, resolveSlashModelLabel, splitSlashModelId } from '../ModelSelectorLists'
 import {
@@ -33,9 +33,7 @@ export function OpenCodeModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?:
   const selectedEffort = useActiveSession((state) => state.selectedEffort)
   const selectedAgentId = useActiveSession((state) => state.openCodeAgentId)
   const permissionMode = useActiveSession((state) => state.permissionMode)
-  const setSelectedModel = useChatStore((state) => state.setSelectedModel)
-  const setSelectedEffort = useChatStore((state) => state.setSelectedEffort)
-  const setOpenCodeAgentId = useChatStore((state) => state.setOpenCodeAgentId)
+  const { setSelectedModel, setSelectedEffort, setOpenCodeAgentId } = useScopedSessionActions()
 
   const isPlanMode = permissionMode === 'plan'
   const effectiveAgentId = isPlanMode

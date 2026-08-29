@@ -174,7 +174,7 @@ describe('DeepseekModelSelector', () => {
     fireEvent.click(screen.getByRole('button', { name: 'DeepSeek Reasoner' }))
 
     expect(setSelectedModel).toHaveBeenCalledOnce()
-    expect(setSelectedModel).toHaveBeenCalledWith('deepseek-reasoner')
+    expect(setSelectedModel).toHaveBeenCalledWith('deepseek-reasoner', undefined)
     const state = useChatStore.getState()
     const project = state.projectSessions['/deepseek']
     expect(project._sessions[project._activeSessionId!].selectedModel).toBe('deepseek-reasoner')
@@ -206,7 +206,7 @@ describe('DeepseekModelSelector', () => {
       { value: 'high', label: 'High' },
     ])
     fireEvent.click(screen.getByRole('button', { name: 'High' }))
-    expect(setSelectedEffort).toHaveBeenCalledWith('high')
+    expect(setSelectedEffort).toHaveBeenCalledWith('high', undefined)
   })
 
   it('does not create a store-write storm while deriving the default', async () => {

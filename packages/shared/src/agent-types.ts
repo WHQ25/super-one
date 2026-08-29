@@ -1541,6 +1541,36 @@ export type SessionForkResult =
   | { ok: true; sessionId: string; worktreePath?: string }
   | { ok: false; error: string }
 
+/**
+ * Open a side chat: an ephemeral fork of a live conversation, docked beside it.
+ *
+ * Only harnesses whose `HARNESS_CAPABILITIES.supportsFork` is true can serve
+ * this — without a real transcript fork the child would be a blank session
+ * pretending to remember the parent.
+ */
+export interface SideChatStartRequest {
+  /** SuperOne session id of the conversation to branch from. */
+  parentSessionId: string
+}
+
+export type SideChatStartResult =
+  | {
+    ok: true
+    /** SuperOne session id of the side chat. Never written to the database. */
+    sessionId: string
+    projectPath: string
+    cwd: string
+    harnessId: HarnessId
+    providerId: string
+    apiProviderId: string | null
+    acpAgentId: string | null
+    selectedModel: string | null
+    selectedEffort: string | null
+    /** dsh preset the fork composes from, or null. Other harnesses always report null. */
+    agentPreset: string | null
+  }
+  | { ok: false; error: string }
+
 // --- Main → Renderer push events ---
 
 /** Subagent API-retry status carried on tool_progress while a sub-agent waits out a rate-limit/backoff. */
@@ -3570,6 +3600,8 @@ export const AgentIpcChannels = {
   SESSIONS_RENAME: 'sessions:rename',
   SESSIONS_CREATE: 'sessions:create',
   SESSIONS_FORK: 'sessions:fork',
+  SESSIONS_SIDE_CHAT_START: 'sessions:side-chat-start',
+  SESSIONS_SIDE_CHAT_CLOSE: 'sessions:side-chat-close',
   SESSIONS_SAVE_STATE: 'sessions:save-state',
   SESSIONS_LOAD_STATE: 'sessions:load-state',
   SESSIONS_DELETE: 'sessions:delete',

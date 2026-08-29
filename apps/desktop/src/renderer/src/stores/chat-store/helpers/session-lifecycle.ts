@@ -746,6 +746,7 @@ export function setPreferredProviderImpl(
   set: ChatStoreSet,
   get: () => ChatStore,
   provider: ChatProvider,
+  opts?: { userChosen?: boolean },
 ): void {
   const { activeProject } = get()
   if (!activeProject) return
@@ -853,6 +854,7 @@ export function setPreferredProviderImpl(
     ...emptyDraftHarnessReset,
     preferredProvider: provider,
     sessionProvider: provider,
+    harnessUserChosen: opts?.userChosen === true,
     ...(provider === 'cursor' ? { permissionMode: CURSOR_DEFAULT_PERMISSION_MODE } : {}),
   })))
 

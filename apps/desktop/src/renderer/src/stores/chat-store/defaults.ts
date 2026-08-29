@@ -57,6 +57,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     chatInputFocusNonce: 0,
     chatInputRestoreFocusNonce: 0,
     preferredProvider: 'claude',
+    harnessUserChosen: false,
     acpAgentId: null,
     openCodeAgentId: null,
     acpModels: [],

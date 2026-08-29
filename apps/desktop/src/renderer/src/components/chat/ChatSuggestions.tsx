@@ -8,6 +8,7 @@ import { ProviderLabel } from '@/components/ProviderLabel'
 import { consumerForHarness, resolveEffective } from '@/lib/provider-resolve'
 import {
   orderSuggestionHarnesses,
+  resolveAutoApplyHarness,
   resolveMenuTabOption,
   suggestionHarnessKey,
   type SuggestionHarnessOption,
@@ -60,6 +61,13 @@ const HARNESS_RANK_DAYS = 7
  * the menu tab label.
  */
 let rememberedSuggestionMenuHarness: SuggestionHarnessPreference | null | undefined
+/**
+ * Which harnesses are installed and enabled is a machine-level fact, not per-instance
+ * state. Empty-session harness switches mint a new session id and remount this
+ * component; without the cache the catalog restarts at `null`, which renders as
+ * "No harness enabled yet" for the length of one IPC round trip.
+ */
+let rememberedHarnessCatalog: HarnessCatalogStatus[] | null = null
 /** Survives ProviderSelector remounts. connectCursor failure clears
  *  `initializedHarnesses`, and empty-session harness switches mint a new
  *  session id — without this latch that pair retries forever. */
@@ -110,13 +118,16 @@ export function ProviderSelector({
   const preferredProvider = useActiveSession((s) => s.preferredProvider)
   const acpAgentId = useActiveSession((s) => s.acpAgentId)
   const messageCount = useActiveSession((s) => s.messages.length)
+  const harnessUserChosen = useActiveSession((s) => s.harnessUserChosen)
   const agents = useChatStore((s) => s.harnessResources.acp?.agents ?? EMPTY_ACP_AGENTS)
   const setPreferredProvider = useChatStore((s) => s.setPreferredProvider)
   const setAcpAgentId = useChatStore((s) => s.setAcpAgentId)
   const initializeHarness = useChatStore((s) => s.initializeHarness)
   const experimentalAgentsEnabled = useAppStore((s) => s.experimentalAgentsEnabled)
   const enabledExperimentalAgents = useAppStore((s) => s.enabledExperimentalAgents)
-  const [harnessCatalog, setHarnessCatalog] = useState<HarnessCatalogStatus[] | null>(null)
+  const [harnessCatalog, setHarnessCatalog] = useState<HarnessCatalogStatus[] | null>(
+    () => rememberedHarnessCatalog,
+  )
   const sessionScope = useSessionScope()
   const [agentMenuOpen, setAgentMenuOpen] = useState(false)
   const [ranks, setRanks] = useState<HarnessSessionRank[]>(EMPTY_RANKS)
@@ -157,14 +168,14 @@ export function ProviderSelector({
       .listHarnesses?.()
       .then((list) => {
         if (cancelled) return
-        setHarnessCatalog(
-          Array.isArray(list)
-            ? list.map((r) => ({ id: r.id, enabled: r.enabled, state: r.state }))
-            : null,
-        )
+        rememberedHarnessCatalog = Array.isArray(list)
+          ? list.map((r) => ({ id: r.id, enabled: r.enabled, state: r.state }))
+          : null
+        setHarnessCatalog(rememberedHarnessCatalog)
       })
       .catch(() => {
-        if (!cancelled) setHarnessCatalog(null)
+        // A failed refresh must not blank a catalog that already loaded once.
+        if (!cancelled) setHarnessCatalog(rememberedHarnessCatalog)
       })
     return () => {
       cancelled = true
@@ -221,11 +232,11 @@ export function ProviderSelector({
     }
   }, [])
 
-  const selectProvider = useCallback(async (provider: ChatProvider) => {
+  const selectProvider = useCallback(async (provider: ChatProvider, userChosen = false) => {
     if (sessionScope) {
       await useChatStore.getState().switchToSession(sessionScope.projectPath, sessionScope.sessionId)
     }
-    setPreferredProvider(provider)
+    setPreferredProvider(provider, { userChosen })
     if (!sessionScope) return
     const nextSessionId = useChatStore.getState().projectSessions[sessionScope.projectPath]?._activeSessionId
     if (nextSessionId && nextSessionId !== sessionScope.sessionId) {
@@ -297,10 +308,10 @@ export function ProviderSelector({
         await useChatStore.getState().switchToSession(sessionScope.projectPath, sessionScope.sessionId)
       }
       if (option.acpAgentId) setAcpAgentId(option.acpAgentId)
-      if (preferredProvider !== 'acp') await selectProvider('acp')
+      if (preferredProvider !== 'acp') await selectProvider('acp', manual)
       return
     }
-    await selectProvider(option.provider)
+    await selectProvider(option.provider, manual)
   }, [
     persistDefaultHarness,
     persistSecondaryHarness,
@@ -452,26 +463,23 @@ export function ProviderSelector({
   // tab — that was snapping harness selection back to default immediately.
   const lastAutoAppliedKeyRef = useRef<string | null>(null)
   useEffect(() => {
-    if (disableAutoApply) return
-    if (!fixedHarness) return
-    if (suggestionHarness === undefined) return
-    if (messageCount > 0) return
-
-    const target = suggestionHarness == null
-      ? fixedHarness
-      : orderedHarnesses.find((o) => (
-        o.provider === suggestionHarness.provider
-        && (o.provider !== 'acp' || o.acpAgentId === (suggestionHarness.acpAgentId ?? null))
-      )) ?? fixedHarness
-
-    if (lastAutoAppliedKeyRef.current === target.key) return
-    lastAutoAppliedKeyRef.current = target.key
-    if (activeKey === target.key) return
+    const decision = resolveAutoApplyHarness({
+      disableAutoApply,
+      harnessUserChosen,
+      fixedHarness,
+      suggestionHarness,
+      orderedHarnesses,
+      messageCount,
+      lastAppliedKey: lastAutoAppliedKeyRef.current,
+      activeKey,
+    })
+    if (decision.remember) lastAutoAppliedKeyRef.current = decision.remember.key
     // Auto path is neither a fixed-tab click nor a menu pick — don't rewrite
     // dropdown-slot memory / settings pins.
-    void selectHarnessOption(target, false, 'fixed')
+    if (decision.apply) void selectHarnessOption(decision.apply, false, 'fixed')
   }, [
     disableAutoApply,
+    harnessUserChosen,
     suggestionHarness,
     fixedHarness,
     orderedHarnesses,

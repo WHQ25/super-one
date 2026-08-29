@@ -534,7 +534,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     void window.agent.setSessionSettings(projectPath, { agentPreset: preset }, ipcSessionId)
   },
 
-  setPreferredProvider: (provider) => setPreferredProviderImpl(set, get, provider),
+  setPreferredProvider: (provider, opts) => setPreferredProviderImpl(set, get, provider, opts),
   setAcpAgentId: (agentId) => setAcpAgentIdImpl(set, get, agentId),
   ensureAcpSlashCommands: () => ensureAcpSlashCommandsImpl(set, get),
 

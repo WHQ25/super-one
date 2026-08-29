@@ -182,6 +182,12 @@ export interface PerSessionState {
   chatInputFocusNonce: number
   chatInputRestoreFocusNonce: number
   preferredProvider: ChatProvider
+  /**
+   * True once the user picked this session's harness by hand. The empty-session
+   * auto-apply reads it so a remount cannot re-impose the default harness over a
+   * manual pick — component-local memory dies with the component, this does not.
+   */
+  harnessUserChosen: boolean
   /** Selected ACP agent id when preferredProvider/sessionProvider is acp. */
   acpAgentId: string | null
   /** Selected OpenCode primary agent for this session. */
@@ -453,7 +459,7 @@ export interface ChatStore {
   refreshCodexModels: (force?: boolean) => Promise<void>
   refreshCodexSkills: (projectPath?: string) => Promise<void>
   refreshCursorSlashItems: (projectPath?: string) => Promise<void>
-  setPreferredProvider: (provider: ChatProvider) => void
+  setPreferredProvider: (provider: ChatProvider, opts?: { userChosen?: boolean }) => void
   setDshPreset: (preset: string, target?: SessionWriteTarget) => void
   setAcpAgentId: (agentId: string | null) => void
   setOpenCodeAgentId: (agentId: string | null, target?: SessionWriteTarget) => void

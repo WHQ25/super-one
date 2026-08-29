@@ -219,3 +219,51 @@ export function resolveMenuTabOption(input: {
   }
   return input.menuHarnesses[0] ?? null
 }
+
+export interface AutoApplyHarnessDecision {
+  /** Target to record as already auto-applied, even when no switch follows. */
+  remember: SuggestionHarnessOption | null
+  /** Harness to switch to, or null when the current selection already stands. */
+  apply: SuggestionHarnessOption | null
+}
+
+/**
+ * Decide whether an empty session should adopt the default (or top-ranked) harness.
+ *
+ * The auto-apply exists so a fresh session opens on the harness the user prefers. It
+ * must never overrule a pick the user made by hand: `harnessUserChosen` is session
+ * state precisely because the component rendering this surface is unmounted and
+ * remounted (starting a realtime call does exactly that), and anything remembered in
+ * the component would be forgotten at that moment.
+ */
+export function resolveAutoApplyHarness(input: {
+  disableAutoApply: boolean
+  harnessUserChosen: boolean
+  fixedHarness: SuggestionHarnessOption | null
+  /** `undefined` while settings are still loading — decide nothing yet. */
+  suggestionHarness: SuggestionHarnessPreference | null | undefined
+  orderedHarnesses: SuggestionHarnessOption[]
+  messageCount: number
+  lastAppliedKey: string | null
+  activeKey: string
+}): AutoApplyHarnessDecision {
+  const none: AutoApplyHarnessDecision = { remember: null, apply: null }
+  if (input.disableAutoApply) return none
+  if (input.harnessUserChosen) return none
+  if (!input.fixedHarness) return none
+  if (input.suggestionHarness === undefined) return none
+  if (input.messageCount > 0) return none
+
+  const preference = input.suggestionHarness
+  const target = preference == null
+    ? input.fixedHarness
+    : input.orderedHarnesses.find((option) => (
+      option.provider === preference.provider
+      && (option.provider !== 'acp' || option.acpAgentId === (preference.acpAgentId ?? null))
+    )) ?? input.fixedHarness
+
+  // Only a *changed* target re-applies, so switching to the secondary tab is not
+  // snapped back to the default on the next render.
+  if (input.lastAppliedKey === target.key) return none
+  return { remember: target, apply: input.activeKey === target.key ? null : target }
+}

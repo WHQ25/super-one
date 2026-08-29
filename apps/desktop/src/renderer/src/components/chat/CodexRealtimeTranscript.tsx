@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
 import type { ChatMessage as ChatMessageType, RealtimeTimelineSegment } from '@superone/shared/agent-types'
 import {
   EMPTY_CODEX_REALTIME_SESSION_VIEW,
+  hydrateCodexRealtimeTimeline,
   type CodexConversationView,
   useCodexRealtimeViewStore,
 } from '@/stores/codex-realtime-view'
@@ -40,24 +41,12 @@ export function CodexRealtimeTranscript({
   const realtime = useCodexRealtimeViewStore(
     (state) => state.sessions[sessionId] ?? EMPTY_CODEX_REALTIME_SESSION_VIEW,
   )
-  const setTimeline = useCodexRealtimeViewStore((state) => state.setTimeline)
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState(false)
+  const loading = realtime.loadStatus === 'idle' || realtime.loadStatus === 'loading'
+  const loadError = realtime.loadStatus === 'error'
 
   useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    setLoadError(false)
-    void window.agent.getRealtimeTimeline(projectPath, sessionId).then((timeline) => {
-      if (cancelled) return
-      setTimeline(sessionId, timeline)
-    }).catch(() => {
-      if (!cancelled) setLoadError(true)
-    }).finally(() => {
-      if (!cancelled) setLoading(false)
-    })
-    return () => { cancelled = true }
-  }, [projectPath, sessionId, setTimeline])
+    void hydrateCodexRealtimeTimeline(projectPath, sessionId)
+  }, [projectPath, sessionId])
 
   const transcript = useMemo<RealtimeTimelineSegment[]>(() => [
     ...realtime.segments,

@@ -1,9 +1,32 @@
-import { beforeEach, describe, expect, it } from 'vitest'
-import { useCodexRealtimeViewStore } from './codex-realtime-view'
+/** @vitest-environment jsdom */
+
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { hydrateCodexRealtimeTimeline, useCodexRealtimeViewStore } from './codex-realtime-view'
 
 describe('codex realtime view store', () => {
   beforeEach(() => {
     useCodexRealtimeViewStore.setState({ sessions: {} })
+  })
+
+  it('replaces a live segment with the local snapshot despite a session id mismatch', () => {
+    const store = useCodexRealtimeViewStore.getState()
+    store.setRealtimeSession('session-a', 'rt-1')
+    store.finalizeTranscript('session-a', 'assistant', 'same reply')
+
+    store.setTimeline('session-a', {
+      segments: [{
+        id: 'local-1',
+        realtimeSessionId: 'live',
+        role: 'assistant',
+        text: 'same reply',
+      }],
+      threadMessages: [],
+      activeRealtimeSessionId: null,
+      hasTimeline: true,
+    })
+
+    expect(useCodexRealtimeViewStore.getState().sessions['session-a']?.segments)
+      .toHaveLength(1)
   })
 
   it('keeps the selected view isolated by Codex session', () => {
@@ -54,5 +77,42 @@ describe('codex realtime view store', () => {
 
     expect(useCodexRealtimeViewStore.getState().sessions['session-a']?.segments.map((segment) => segment.text))
       .toEqual(['Earlier response', 'Live request'])
+  })
+
+  it('renders the local snapshot before the provider refresh finishes', async () => {
+    let resolveProvider!: (timeline: {
+      segments: never[]
+      threadMessages: never[]
+      activeRealtimeSessionId: null
+      hasTimeline: boolean
+    }) => void
+    const provider = new Promise<{
+      segments: never[]
+      threadMessages: never[]
+      activeRealtimeSessionId: null
+      hasTimeline: boolean
+    }>((resolve) => { resolveProvider = resolve })
+    Object.defineProperty(window, 'agent', {
+      configurable: true,
+      value: {
+        loadRealtimeTimeline: vi.fn(async () => ({
+          segments: [{ id: 'local-1', realtimeSessionId: 'rt-1', role: 'user', text: 'cached request' }],
+          threadMessages: [],
+          activeRealtimeSessionId: null,
+          hasTimeline: true,
+        })),
+        getRealtimeTimeline: vi.fn(() => provider),
+      },
+    })
+
+    const hydration = hydrateCodexRealtimeTimeline('/repo', 'session-a')
+    await vi.waitFor(() => {
+      expect(useCodexRealtimeViewStore.getState().sessions['session-a']?.segments[0]?.text)
+        .toBe('cached request')
+    })
+    expect(useCodexRealtimeViewStore.getState().sessions['session-a']?.view).toBe('realtime')
+
+    resolveProvider({ segments: [], threadMessages: [], activeRealtimeSessionId: null, hasTimeline: true })
+    await hydration
   })
 })

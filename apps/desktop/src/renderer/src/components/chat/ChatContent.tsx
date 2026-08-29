@@ -46,7 +46,7 @@ import { ChatRootContext } from './is-focus-in-chat'
 import type { CodexPlanApprovalState } from '@superone/shared/agent-types'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
-import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
+import { hydrateCodexRealtimeTimeline, useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 
 interface ChatContentProps {
   scrollViewportRef: React.RefObject<HTMLDivElement | null>
@@ -196,7 +196,7 @@ function ChatTranscript({
     displayedSessionId, historyHydrated,
     sessionStatus, lastAssistantMessageId, queuedMessages, awaitingAssistantReply, acpModels,
     sessionProvider, preferredProvider,
-    draftId,
+    draftId, providerSessionId,
   } = useActiveSession(useShallow((s) => ({
     messages: s.messages,
     isCompacting: s.isCompacting,
@@ -211,6 +211,7 @@ function ChatTranscript({
     awaitingAssistantReply: s.awaitingAssistantReply,
     acpModels: s.acpModels,
     draftId: s.draftId,
+    providerSessionId: s._providerSessionId,
     sessionProvider: s.sessionProvider,
     preferredProvider: s.preferredProvider,
   })))
@@ -225,8 +226,17 @@ function ChatTranscript({
   const hasRealtimeTimeline = useCodexRealtimeViewStore(
     (state) => displayedSessionId ? state.sessions[displayedSessionId]?.hasTimeline ?? false : false,
   )
+  const realtimeTimelineLoadStatus = useCodexRealtimeViewStore(
+    (state) => displayedSessionId ? state.sessions[displayedSessionId]?.loadStatus ?? 'idle' : 'idle',
+  )
   const queueTarget = scope ?? undefined
   const queueProvider = resolveProvider({ sessionProvider, preferredProvider })
+  const awaitingRealtimeTimeline = queueProvider === 'codex'
+    && !!providerSessionId
+    && (realtimeTimelineLoadStatus === 'idle' || realtimeTimelineLoadStatus === 'loading')
+  const realtimeTimelineFailed = queueProvider === 'codex'
+    && !!providerSessionId
+    && realtimeTimelineLoadStatus === 'error'
   const isLocalQueue = !parseRemoteProjectKey(scope?.projectPath ?? activeProject ?? '')
   const canSteerQueue = isLocalQueue
     && HARNESS_CAPABILITIES[queueProvider].supportsQueuedSteer
@@ -362,9 +372,13 @@ function ChatTranscript({
   return (
     <div className="relative min-w-0 flex-1 overflow-hidden">
       {messages.length === 0 && historyHydrated && sessionStatus !== 'streaming' && sessionStatus !== 'background' && !awaitingAssistantReply ? (
-        draftId || (queueProvider === 'codex' && hasRealtimeTimeline)
-          ? <DraftSessionSurface />
-          : <ChatSuggestions />
+        awaitingRealtimeTimeline
+            ? <p className="py-16 text-center text-sm text-muted-foreground">{t('common.loading')}</p>
+            : realtimeTimelineFailed
+              ? <p className="py-16 text-center text-sm text-muted-foreground">{t('chat.realtimeVoice.timelineLoadFailed')}</p>
+              : draftId || (queueProvider === 'codex' && hasRealtimeTimeline)
+                ? <DraftSessionSurface />
+                : <ChatSuggestions />
       ) : (
         <ScrollArea key={displayedSessionId ?? 'default'} className="chat-scroll-area h-full min-w-0 animate-[fade-in_150ms_ease-out]" viewportRef={scrollViewportRef}>
           <SelectionContextMenuZone className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">
@@ -484,9 +498,10 @@ function ChatTranscript({
 export function ChatContent({ scrollViewportRef, showScrollButton = false, scrollToBottom, stopAutoScroll, foreground = true }: ChatContentProps) {
   const scope = useSessionScope()
   const activeProject = useChatStore((s) => s.activeProject)
-  const { pendingPlanApproval, displayedSessionId, sessionProvider, preferredProvider, messagesLength } = useActiveSession(useShallow((s) => ({
+  const { pendingPlanApproval, displayedSessionId, providerSessionId, sessionProvider, preferredProvider, messagesLength } = useActiveSession(useShallow((s) => ({
     pendingPlanApproval: s.pendingPlanApproval,
     displayedSessionId: scope?.sessionId ?? s._activeSessionId,
+    providerSessionId: s._providerSessionId,
     sessionProvider: s.sessionProvider,
     preferredProvider: s.preferredProvider,
     messagesLength: s.messages.length,
@@ -499,6 +514,16 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   )
   const projectPath = scope?.projectPath ?? activeProject
   const isCodexSession = resolveProvider({ sessionProvider, preferredProvider }) === 'codex'
+  useEffect(() => {
+    if (
+      !displayedSessionId
+      || !projectPath
+      || !isCodexSession
+      || !providerSessionId
+      || messagesLength > 0
+    ) return
+    void hydrateCodexRealtimeTimeline(projectPath, displayedSessionId)
+  }, [displayedSessionId, isCodexSession, messagesLength, projectPath, providerSessionId])
   const showRealtime = Boolean(
     displayedSessionId
     && projectPath

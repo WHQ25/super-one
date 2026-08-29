@@ -334,6 +334,7 @@ export type PersistedSessionState = {
   gitBranch: string | null
   worktreePath: string | null
   provider: ChatProvider
+  providerSessionId?: string | null
   apiProviderId?: string | null
   acpAgentId?: string | null
   selectedModel?: string | null

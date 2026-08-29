@@ -74,7 +74,6 @@ describe('CodexRealtimeVoiceButton', () => {
 
     await waitFor(() => expect(startRealtimeVoice).toHaveBeenCalledWith('/repo', 'session-1', {
       sdp: 'local-offer',
-      voice: 'cove',
       additionalDirs: ['/extra'],
     }))
 
@@ -98,5 +97,6 @@ describe('CodexRealtimeVoiceButton', () => {
 
     await waitFor(() => expect(stopRealtimeVoice).toHaveBeenCalledWith('/repo', 'session-1'))
     expect(stopTrack).toHaveBeenCalled()
+    expect(useCodexRealtimeViewStore.getState().sessions['session-1']?.realtimeSessionId).toBeNull()
   })
 })

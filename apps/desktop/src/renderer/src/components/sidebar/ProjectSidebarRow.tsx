@@ -144,8 +144,12 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
 }: ProjectSidebarRowProps) {
   const { t } = useTranslation()
   const realtimeSessionSig = useCodexRealtimeViewStore((state) => Object.entries(state.sessions)
-    .filter(([, session]) => session.hasTimeline)
-    .map(([sessionId]) => sessionId)
+    .filter(([, session]) => session.hasTimeline || session.realtimeSessionId !== null)
+    .map(([sessionId, session]) => [
+      sessionId,
+      session.hasTimeline ? 1 : 0,
+      session.realtimeSessionId ?? '',
+    ].join('\x01'))
     .sort()
     .join('\x01'))
   const liveSessionSig = useChatStore(useShallow((s) => {
@@ -240,8 +244,11 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
       const entry = projectSession?._sessions?.[session.sessionId]
       const isUnseen = projectSession?.unseenCompletedSessions?.has(session.sessionId)
       if (!entry && !isUnseen) return false
-      if (useCodexRealtimeViewStore.getState().sessions[session.sessionId]?.hasTimeline) return true
-      return isLiveSession(entry, isUnseen)
+      const realtimeSessionId = useCodexRealtimeViewStore
+        .getState()
+        .sessions[session.sessionId]?.realtimeSessionId
+      const isRealtimeActive = typeof realtimeSessionId === 'string'
+      return isLiveSession(entry, isUnseen, isRealtimeActive)
     }
     const liveGroups = isExpanded ? [] : groups.filter((group) =>
       isLive(group.parent) || group.children.some(isLive),

@@ -1154,6 +1154,15 @@ export type Messages = {
         description: string
         updated: string
       }
+      realtimeVoice: {
+        label: string
+        description: string
+        menuTitle: string
+        menuDescription: string
+        loading: string
+        loadFailed: string
+        updated: string
+      }
       sandbox: {
         label: string
         description: string
@@ -4742,6 +4751,15 @@ export const en: Messages = {
         label: 'Permission Mode',
         description: 'Default permission mode when starting a new session.',
         updated: 'Default permission mode updated',
+      },
+      realtimeVoice: {
+        label: 'Realtime Voice',
+        description: 'Used for new Realtime conversations.',
+        menuTitle: 'Choose a voice',
+        menuDescription: 'Choose the voice used for new Realtime conversations.',
+        loading: 'Loading voices…',
+        loadFailed: 'Voices unavailable',
+        updated: 'Realtime voice set to {{voice}}',
       },
       sandbox: {
         label: 'Sandbox',

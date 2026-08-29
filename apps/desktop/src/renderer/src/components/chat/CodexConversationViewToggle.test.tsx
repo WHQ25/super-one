@@ -44,6 +44,7 @@ describe('CodexConversationViewToggle', () => {
     fireEvent.click(button)
 
     expect(button).toHaveAttribute('aria-pressed', 'true')
+    expect(button.querySelector('.lucide-message-square')).not.toBeNull()
     expect(useCodexRealtimeViewStore.getState().sessions['session-a']?.view).toBe('realtime')
   })
 

@@ -281,6 +281,14 @@ describe('isLiveSession', () => {
     expect(isLiveSession({ status: 'streaming' }, false)).toBe(true)
   })
 
+  it('should return true while realtime voice is active', () => {
+    expect(isLiveSession({ status: 'idle' }, false, true)).toBe(true)
+  })
+
+  it('should return false after realtime voice ends without unseen activity', () => {
+    expect(isLiveSession({ status: 'idle' }, false, false)).toBe(false)
+  })
+
   it('should return true when permissions are pending', () => {
     const session = {
       pendingPermissions: [

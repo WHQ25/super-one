@@ -24,6 +24,7 @@ import {
 import { clearCodexProxyCache } from '../providers/llm-proxy-manager'
 import { resolveChatService } from '../providers/resolver'
 import { codexReasoningOptions, resolveCodexChatReasoning } from '../providers/codex-responses/reasoning'
+import { listCodexRealtimeVoices } from './codex-realtime'
 import type {
   CodexAccountLoginStartResult,
   CodexAccountStatus,
@@ -38,6 +39,7 @@ import type {
   CodexRateLimitResetCredit,
   CodexRateLimitResetOutcome,
   CodexRateLimitWindow,
+  CodexRealtimeVoiceCatalog,
   CodexReasoningEffort,
   CodexSetAuthRequest,
   CodexServerDiagnostics,
@@ -802,6 +804,10 @@ export class CodexExperimentService {
     } finally {
       await closeEphemeralAppServer(handle)
     }
+  }
+
+  async listRealtimeVoices(projectPath: string): Promise<CodexRealtimeVoiceCatalog> {
+    return this.withAppServerRequest(projectPath, listCodexRealtimeVoices)
   }
 
   async getRateLimits(projectPath: string, apiProviderId: string | null = null): Promise<CodexRateLimits | null> {

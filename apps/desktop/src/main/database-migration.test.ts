@@ -123,6 +123,19 @@ describe('database migration', () => {
     expect(normalized).toContain('updated_at TEXT NOT NULL')
   })
 
+  it('creates the session realtime timeline snapshot table', async () => {
+    const { getDb } = await import('./database')
+    getDb()
+
+    const create = dbMock.exec.mock.calls
+      .map((call) => call[0] as string)
+      .find((sql) => sql.includes('CREATE TABLE IF NOT EXISTS session_realtime_timelines'))
+    expect(create).toBeDefined()
+    expect((create as string).replace(/\s+/g, ' ')).toContain(
+      'session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE',
+    )
+  })
+
   it('creates persistent collaboration grants, mailbox messages, and cursors', async () => {
     const { getDb } = await import('./database')
     getDb()

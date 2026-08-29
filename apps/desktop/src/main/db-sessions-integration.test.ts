@@ -155,9 +155,15 @@ describe('session restore with worktree path', () => {
     expect(loadSessionState('nonexistent')).toBeNull()
   })
 
-  it('should return null when session has no messages', () => {
+  it('should restore session metadata when session has no messages', () => {
     createSession('/tmp/project', 'session-empty', undefined, true, 'main', '/some/path')
-    expect(loadSessionState('session-empty')).toBeNull()
+    expect(loadSessionState('session-empty')).toMatchObject({
+      messages: [],
+      isWorktree: true,
+      gitBranch: 'main',
+      worktreePath: '/some/path',
+      provider: 'claude',
+    })
   })
 
   it('should preserve renamed title when createSession is called again with extracted title', () => {
@@ -199,12 +205,13 @@ describe('loadSessionState provider authority (provider_id is the source of trut
     getDbMock.mockReturnValue(mockDbWithSessionRow({
       title: 't', total_cost_usd: 0, context_tokens: 0,
       is_worktree: 0, git_branch: null, worktree_path: null,
-      provider: null, provider_id: 'codex-base', api_provider_id: null,
+      provider: null, provider_id: 'codex-base', provider_session_id: 'thread-realtime', api_provider_id: null,
     }))
 
     const restored = loadSessionState('legacy-codex')
     expect(restored).not.toBeNull()
     expect(restored!.provider).toBe('codex')
+    expect(restored!.providerSessionId).toBe('thread-realtime')
   })
 
   it('falls back to legacy provider column when provider_id is NULL', () => {

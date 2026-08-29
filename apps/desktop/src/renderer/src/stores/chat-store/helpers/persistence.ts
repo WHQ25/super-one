@@ -60,6 +60,7 @@ export function _mergePersistedSessionState(session: PerSessionState, saved: Per
     contextTokens: Math.max(session.contextTokens, saved.contextTokens),
     sessionProvider: session.sessionProvider ?? persistedProvider,
     preferredProvider: session.sessionProvider ? session.preferredProvider : persistedProvider,
+    _providerSessionId: session._providerSessionId ?? saved.providerSessionId ?? null,
     _gitBranch: session._gitBranch ?? saved.gitBranch,
     _worktreePath: session._worktreePath ?? saved.worktreePath,
     lastAssistantMessageId:
@@ -111,6 +112,7 @@ export function _mergeHydratedSessionState(
     codexUsageSnapshot: session.codexUsageSnapshot ?? hydrated.codexUsageSnapshot,
     sessionProvider: session.sessionProvider ?? hydrated.sessionProvider,
     preferredProvider: session.sessionProvider ? session.preferredProvider : hydrated.preferredProvider,
+    _providerSessionId: session._providerSessionId ?? hydrated._providerSessionId,
     _gitBranch: session._gitBranch ?? hydrated._gitBranch,
     _worktreePath: session._worktreePath ?? hydrated._worktreePath,
     lastAssistantMessageId:

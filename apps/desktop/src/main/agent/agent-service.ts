@@ -84,6 +84,7 @@ import { backupMcpServers, listLibrary, deleteLibraryEntry, getLibraryEntry } fr
 import { uninstallMcpbBundle } from '../mcpb/mcpb-installer'
 import type { HookSavePayload, SessionForkRequest, HarnessId, DshPluginInstallSource } from '@superone/shared/agent-types'
 import { forkSession } from '../session/session-fork'
+import { loadRealtimeTimeline, reconcileRealtimeTimeline } from '../session/realtime-timeline-repo'
 
 export class AgentService {
   private mainWindow: BrowserWindow | null = null
@@ -1837,7 +1838,12 @@ export class AgentService {
     ipcMain.handle(AgentIpcChannels.START_REALTIME_VOICE, async (_event, projectPath: string, sessionId: string, request: import('@superone/shared/agent-types').RealtimeVoiceStartRequest) => {
       this.throwIfRemoteLocked(projectPath)
       const session = await this.getOrCreateActiveSession(projectPath, sessionId, { provider: 'codex' })
-      await session.startRealtimeVoice(request)
+      const preferredVoice = readAppSettings().agentPreference.codex.realtimeVoice
+      await session.startRealtimeVoice(
+        request.voice || !preferredVoice
+          ? request
+          : { ...request, voice: preferredVoice },
+      )
     })
 
     ipcMain.handle(AgentIpcChannels.STOP_REALTIME_VOICE, async (_event, projectPath: string, sessionId: string) => {
@@ -1848,10 +1854,15 @@ export class AgentService {
       await session.stopRealtimeVoice()
     })
 
+    ipcMain.handle(AgentIpcChannels.LOAD_REALTIME_TIMELINE, (_event, sessionId: string) => {
+      return loadRealtimeTimeline(sessionId)
+    })
+
     ipcMain.handle(AgentIpcChannels.GET_REALTIME_TIMELINE, async (_event, projectPath: string, sessionId: string) => {
       this.throwIfRemoteLocked(projectPath)
       const session = await this.getOrCreateActiveSession(projectPath, sessionId, { provider: 'codex' })
-      return session.getRealtimeTimeline()
+      const timeline = await session.getRealtimeTimeline()
+      return reconcileRealtimeTimeline(sessionId, timeline)
     })
 
     ipcMain.handle(AgentIpcChannels.STOP_TASK, async (_event, sessionId: string, taskId: string) => {
@@ -3151,6 +3162,7 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.INTERRUPT)
     ipcMain.removeHandler(AgentIpcChannels.START_REALTIME_VOICE)
     ipcMain.removeHandler(AgentIpcChannels.STOP_REALTIME_VOICE)
+    ipcMain.removeHandler(AgentIpcChannels.LOAD_REALTIME_TIMELINE)
     ipcMain.removeHandler(AgentIpcChannels.GET_REALTIME_TIMELINE)
     ipcMain.removeHandler(AgentIpcChannels.STOP_TASK)
     ipcMain.removeHandler(AgentIpcChannels.PERMISSION_RESPONSE)

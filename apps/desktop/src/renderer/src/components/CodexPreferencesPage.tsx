@@ -10,6 +10,7 @@ import {
   type ResourceScopeView,
 } from '@/components/settings/ResourceScopeToolbar'
 import { CodexImportConfigSection } from '@/components/CodexImportConfigSection'
+import { CodexRealtimeVoicePreference } from '@/components/CodexRealtimeVoicePreference'
 import { formatCodexModelName, formatReasoningEffortLabel } from '@/components/chat/chat-input-utils'
 import { CodexPermissionPresetList, codexPermissionPresetOptions } from '@/components/chat/CodexPermissionPresetList'
 import { CodexModelList, CodexReasoningEffortList } from '@/components/chat/ModelSelectorLists'
@@ -29,6 +30,7 @@ export function CodexPreferencesPage() {
   const [defaultModel, setDefaultModel] = useState('')
   const [defaultReasoningEffort, setDefaultReasoningEffort] = useState<CodexReasoningEffort | ''>('')
   const [defaultPermissionPreset, setDefaultPermissionPreset] = useState<CodexPermissionPreset | ''>('')
+  const [realtimeVoice, setRealtimeVoice] = useState('')
   const [codexModels, setCodexModels] = useState<ModelOption[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -46,6 +48,7 @@ export function CodexPreferencesPage() {
         setDefaultModel(settings.agentPreference.codex.defaultModel)
         setDefaultReasoningEffort(settings.agentPreference.codex.defaultReasoningEffort)
         setDefaultPermissionPreset(settings.agentPreference.codex.defaultPermissionPreset)
+        setRealtimeVoice(settings.agentPreference.codex.realtimeVoice)
       })
       .finally(() => {
         if (mounted) setLoading(false)
@@ -87,6 +90,7 @@ export function CodexPreferencesPage() {
     defaultModel?: string
     defaultReasoningEffort?: CodexReasoningEffort | ''
     defaultPermissionPreset?: CodexPermissionPreset | ''
+    realtimeVoice?: string
   }, successMessage: string) {
     if (saving) return
     setSaving(true)
@@ -97,12 +101,14 @@ export function CodexPreferencesPage() {
             defaultModel: patch.defaultModel ?? defaultModel,
             defaultReasoningEffort: patch.defaultReasoningEffort ?? defaultReasoningEffort,
             defaultPermissionPreset: patch.defaultPermissionPreset ?? defaultPermissionPreset,
+            realtimeVoice: patch.realtimeVoice ?? realtimeVoice,
           },
         },
       })
       setDefaultModel(result.agentPreference.codex.defaultModel)
       setDefaultReasoningEffort(result.agentPreference.codex.defaultReasoningEffort)
       setDefaultPermissionPreset(result.agentPreference.codex.defaultPermissionPreset)
+      setRealtimeVoice(result.agentPreference.codex.realtimeVoice)
       await invalidateDefaultCodexPreferencesCache()
       toast.success(successMessage)
       setSaving(false)
@@ -140,6 +146,13 @@ export function CodexPreferencesPage() {
     setPermissionOpen(false)
   }
 
+  async function handleRealtimeVoiceSelect(voice: string) {
+    await saveCodexDefaults(
+      { realtimeVoice: voice },
+      t('settings.preferences.realtimeVoice.updated', { voice }),
+    )
+  }
+
   const emptyModelsMessage = currentFolder
     ? t('settings.preferences.defaultModel.empty')
     : t('settings.preferences.defaultModel.emptyNoProject')
@@ -160,6 +173,13 @@ export function CodexPreferencesPage() {
                 title={t('settings.preferences.defaultProvider.label')}
                 description={t('settings.preferences.defaultProvider.description')}
                 fallback={<ProviderOptionLabel brandKey="openai" />}
+              />
+
+              <CodexRealtimeVoicePreference
+                projectPath={currentFolder}
+                value={realtimeVoice}
+                disabled={disabled}
+                onChange={handleRealtimeVoiceSelect}
               />
 
               <div className="flex items-center justify-between gap-4 border-b border-border p-4">

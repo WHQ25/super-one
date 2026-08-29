@@ -11,6 +11,7 @@ interface FakeSessionState {
   apiRetry: null
   pendingPlanApproval: null
   _activeSessionId: string | null
+  _providerSessionId: string | null
   session: unknown
   _worktreeRemoved: boolean
   status: string
@@ -34,6 +35,7 @@ const hoisted = vi.hoisted(() => {
     apiRetry: null,
     pendingPlanApproval: null,
     _activeSessionId: 'sid-1',
+    _providerSessionId: null,
     session: { sessionId: 'sid-1' },
     _worktreeRemoved: false,
     status: 'idle',
@@ -229,6 +231,7 @@ afterEach(() => {
   hoisted.sessionState.queuedMessages = []
   hoisted.sessionState.sessionProvider = 'claude'
   hoisted.sessionState.preferredProvider = 'claude'
+  hoisted.sessionState._providerSessionId = null
   hoisted.sessionState.status = 'idle'
 })
 
@@ -406,6 +409,74 @@ describe('ChatContent empty-state gate is harness-agnostic', () => {
       expect(document.querySelector('[data-message-id="codex-timeline-turn-1"]')).not.toBeNull()
     })
     expect(screen.queryByTestId('chat-suggestions')).toBeNull()
+  })
+
+  it('discovers and renders voice-only history after a cold restore', async () => {
+    reset()
+    hoisted.sessionState.messages = []
+    hoisted.sessionState.session = null
+    hoisted.sessionState._providerSessionId = 'thread-realtime'
+    hoisted.sessionState._historyHydrated = true
+    hoisted.sessionState.sessionProvider = 'codex'
+    hoisted.sessionState.preferredProvider = 'codex'
+    const timeline = {
+      segments: [],
+      threadMessages: [{
+        id: 'codex-timeline-turn-cold',
+        role: 'assistant' as const,
+        status: 'complete' as const,
+        content: [{ type: 'text' as const, text: 'Restored response' }],
+        createdAt: '',
+        providerId: 'codex',
+      }],
+      activeRealtimeSessionId: null,
+      hasTimeline: true,
+    }
+    const getRealtimeTimeline = vi.fn(async () => timeline)
+    Object.assign(window.agent, {
+      loadRealtimeTimeline: vi.fn(async () => null),
+      getRealtimeTimeline,
+    })
+
+    renderContent()
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-message-id="codex-timeline-turn-cold"]')).not.toBeNull()
+    })
+    expect(getRealtimeTimeline).toHaveBeenCalledWith('/tmp/project', 'sid-1')
+    expect(screen.queryByTestId('chat-suggestions')).toBeNull()
+  })
+
+  it('shows a loading state instead of ChatSuggestions while voice history is hydrating', async () => {
+    reset()
+    hoisted.sessionState.messages = []
+    hoisted.sessionState.session = null
+    hoisted.sessionState._providerSessionId = 'thread-realtime'
+    hoisted.sessionState._historyHydrated = true
+    hoisted.sessionState.sessionProvider = 'codex'
+    hoisted.sessionState.preferredProvider = 'codex'
+    let resolveTimeline!: (timeline: {
+      segments: never[]
+      threadMessages: never[]
+      activeRealtimeSessionId: null
+      hasTimeline: boolean
+    }) => void
+    const remote = new Promise<{
+      segments: never[]
+      threadMessages: never[]
+      activeRealtimeSessionId: null
+      hasTimeline: boolean
+    }>((resolve) => { resolveTimeline = resolve })
+    Object.assign(window.agent, {
+      loadRealtimeTimeline: vi.fn(async () => null),
+      getRealtimeTimeline: vi.fn(() => remote),
+    })
+
+    renderContent()
+
+    expect(screen.queryByTestId('chat-suggestions')).toBeNull()
+    resolveTimeline({ segments: [], threadMessages: [], activeRealtimeSessionId: null, hasTimeline: false })
+    await waitFor(() => expect(screen.getByTestId('chat-suggestions')).toBeInTheDocument())
   })
 
   it('does NOT show ChatSuggestions while an un-hydrated stub is still loading (no flash)', () => {

@@ -41,6 +41,7 @@ import {
 import { resolveProvider } from './provider-routing'
 import { createDefaultPerSessionState, createDefaultProjectState, createSessionId, freshSubagentColorPool, getDefaultEffortForModel } from '../defaults'
 import { CURSOR_DEFAULT_PERMISSION_MODE } from '@/components/chat/cursorPermissionModes'
+import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { isRemoteSession, removeRemoteSession } from '../index'
 import type { ChatProvider, ChatStore, PerSessionState } from '../types'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
@@ -599,6 +600,9 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
   const activeSession = getActivePerSession(get())
   const currentSid = resolveActiveSessionId(project)
   const nextProvider = activeSession.sessionProvider ?? activeSession.preferredProvider
+  const hasRealtimeTimeline = currentSid
+    ? useCodexRealtimeViewStore.getState().sessions[currentSid]?.hasTimeline === true
+    : false
   // Remote projects use the same draft-sid lifecycle as local: New session only
   // mints a renderer UUID. Node `session.create` happens on first send via
   // resolveNodeSessionId (no early create, no forced codex default).
@@ -611,6 +615,7 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
   // session *and* their text kept, so fall through and park it as a draft.
   if (
     activeSession.messages.length === 0 &&
+    !hasRealtimeTimeline &&
     !hasDraftContent(activeSession) &&
     !_isLiveSession(activeSession) &&
     !activeSession._worktreePath &&

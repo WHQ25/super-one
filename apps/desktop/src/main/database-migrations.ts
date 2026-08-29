@@ -32,7 +32,7 @@ import { encryptSecret } from './crypto/secret-store'
  * every launch); it decides when a pre-migration snapshot is taken and lets a
  * build recognise a database written by a newer build.
  */
-export const SCHEMA_VERSION = 3
+export const SCHEMA_VERSION = 4
 
 /**
  * The oldest schema revision that can still read this database.
@@ -164,6 +164,12 @@ function applyMigrations(db: Database.Database): void {
       provider_id TEXT NOT NULL,
       metadata_json TEXT,
       FOREIGN KEY (claude_session_id) REFERENCES sessions(claude_session_id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS session_realtime_timelines (
+      session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+      timeline_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS browser_history (

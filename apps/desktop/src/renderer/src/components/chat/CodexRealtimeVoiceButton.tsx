@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import type { AgentEvent } from '@superone/shared/agent-types'
-import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
+import { refreshCodexRealtimeTimeline, useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { preferTcpIceCandidates, startWebRtcDiagnostics, waitForIceGathering } from '@/lib/realtime-webrtc'
 
 type VoiceState = 'idle' | 'starting' | 'active' | 'stopping'
@@ -21,7 +21,6 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, additionalDir
   const { t } = useTranslation()
   const [state, setState] = useState<VoiceState>('idle')
   const setView = useCodexRealtimeViewStore((store) => store.setView)
-  const setTimeline = useCodexRealtimeViewStore((store) => store.setTimeline)
   const setRealtimeSession = useCodexRealtimeViewStore((store) => store.setRealtimeSession)
   const appendTranscriptDelta = useCodexRealtimeViewStore((store) => store.appendTranscriptDelta)
   const finalizeTranscript = useCodexRealtimeViewStore((store) => store.finalizeTranscript)
@@ -57,13 +56,12 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, additionalDir
 
   const refreshTimeline = useCallback(async () => {
     try {
-      const timeline = await window.agent.getRealtimeTimeline(projectPath, sessionId)
-      setTimeline(sessionId, timeline)
+      await refreshCodexRealtimeTimeline(projectPath, sessionId)
       timelineLoadedRef.current = true
     } catch {
       // Timeline is supplementary; a live call can still proceed.
     }
-  }, [projectPath, sessionId, setTimeline])
+  }, [projectPath, sessionId])
 
   useEffect(() => window.agent.onAgentEvent((event: AgentEvent) => {
     if (event.sessionId !== sessionId) return
@@ -155,7 +153,6 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, additionalDir
       if (!sdp) throw new Error(t('chat.realtimeVoice.offerFailed'))
       await window.agent.startRealtimeVoice(projectPath, sessionId, {
         sdp,
-        voice: 'cove',
         ...(additionalDirs !== undefined ? { additionalDirs } : {}),
       })
       if (stateRef.current === 'starting') {
@@ -183,9 +180,10 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, additionalDir
     } finally {
       releaseMedia()
       updateState('idle')
+      setRealtimeSession(sessionId, null)
       void refreshTimeline()
     }
-  }, [projectPath, refreshTimeline, releaseMedia, sessionId, updateState])
+  }, [projectPath, refreshTimeline, releaseMedia, sessionId, setRealtimeSession, updateState])
 
   const active = state === 'active' || state === 'stopping'
   const busy = state === 'starting' || state === 'stopping'

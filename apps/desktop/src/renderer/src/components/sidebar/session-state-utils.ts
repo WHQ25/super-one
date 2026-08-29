@@ -117,8 +117,10 @@ export function isLiveSession(
     }
     | undefined,
   isUnseen: boolean | undefined,
+  isRealtimeActive: boolean = false,
 ): boolean {
   return !!isUnseen
+    || isRealtimeActive
     || session?.status === 'streaming'
     || session?.status === 'background'
     || (session?.pendingPermissions?.length ?? 0) > 0

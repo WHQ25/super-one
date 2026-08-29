@@ -44,6 +44,7 @@ describe('app-settings-service', () => {
     defaultModel: '',
     defaultReasoningEffort: '',
     defaultPermissionPreset: 'auto-review',
+    realtimeVoice: '',
     brandHue: null,
     tokenOverrides: {},
   }
@@ -206,6 +207,7 @@ describe('app-settings-service', () => {
             defaultModel: 'gpt-5.4',
             defaultReasoningEffort: 'high',
             defaultPermissionPreset: 'full-access',
+            realtimeVoice: '',
             brandHue: null,
             tokenOverrides: {},
           },
@@ -284,6 +286,7 @@ describe('app-settings-service', () => {
             defaultModel: 123,
             defaultReasoningEffort: 'turbo',
             defaultPermissionPreset: 'unrestricted',
+            realtimeVoice: 'Cove!',
           },
         },
       }))
@@ -346,6 +349,7 @@ describe('app-settings-service', () => {
             defaultModel: 'gpt-5.4',
             defaultReasoningEffort: 'low',
             defaultPermissionPreset: 'auto-review',
+            realtimeVoice: '',
             brandHue: null,
             tokenOverrides: {},
           },
@@ -600,12 +604,24 @@ describe('app-settings-service', () => {
 
       const result = saveAppSettings({
         agentPreference: {
-          codex: { defaultModel: 'gpt-5.4', defaultPermissionPreset: 'read-only' },
+          codex: { defaultModel: 'gpt-5.4', defaultPermissionPreset: 'read-only', realtimeVoice: 'juniper' },
         },
       })
       expect(result.agentPreference.claude.defaultModel).toBe('claude-opus-4-8')
       expect(result.agentPreference.codex.defaultModel).toBe('gpt-5.4')
       expect(result.agentPreference.codex.defaultPermissionPreset).toBe('read-only')
+      expect(result.agentPreference.codex.realtimeVoice).toBe('juniper')
+    })
+
+    it('normalizes Codex realtime voice ids and rejects invalid patches', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({
+        agentPreference: { codex: { ...defaultCodex, realtimeVoice: ' Cove ' } },
+      }))
+
+      expect(readAppSettings().agentPreference.codex.realtimeVoice).toBe('cove')
+      expect(saveAppSettings({
+        agentPreference: { codex: { realtimeVoice: '../voice' } },
+      }).agentPreference.codex.realtimeVoice).toBe('cove')
     })
 
     it('creates file with defaults merged when file does not exist', () => {

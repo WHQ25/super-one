@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   buildCodexRealtimeStartParams,
+  mapCodexRealtimeVoiceCatalog,
   mapCodexRealtimeNotification,
   mapCodexRealtimeTimeline,
 } from './codex-realtime'
@@ -18,6 +19,21 @@ describe('Codex realtime protocol mapping', () => {
       transport: { type: 'webrtc', sdp: 'offer' },
     })
     expect(params).not.toHaveProperty('model')
+  })
+
+  it('lets app-server choose its current default voice when none is configured', () => {
+    expect(buildCodexRealtimeStartParams('t1', { sdp: 'offer' })).not.toHaveProperty('voice')
+  })
+
+  it('flattens the v1 catalog used by realtime v3', () => {
+    expect(mapCodexRealtimeVoiceCatalog({
+      voices: {
+        v1: ['juniper', 'cove'],
+        v2: ['marin'],
+        defaultV1: 'cove',
+        defaultV2: 'marin',
+      },
+    })).toEqual({ voices: ['juniper', 'cove'], defaultVoice: 'cove' })
   })
 
   it('maps SDP and transcript notifications to harness-neutral events', () => {

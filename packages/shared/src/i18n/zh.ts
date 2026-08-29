@@ -1223,6 +1223,15 @@ export const zh: Messages = {
         description: '新会话启动时的默认权限模式。',
         updated: '默认权限模式已更新',
       },
+      realtimeVoice: {
+        label: '实时语音音色',
+        description: '用于新的 Realtime 语音对话。',
+        menuTitle: '选择音色',
+        menuDescription: '选择新的 Realtime 语音对话使用的音色。',
+        loading: '正在加载音色…',
+        loadFailed: '音色暂不可用',
+        updated: '实时语音音色已设为 {{voice}}',
+      },
       sandbox: {
         label: '沙盒',
         description: '新会话启动时的默认沙盒模式。',

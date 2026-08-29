@@ -127,6 +127,7 @@ const defaults: AppSettings = {
       defaultModel: '',
       defaultReasoningEffort: '',
       defaultPermissionPreset: 'auto-review',
+      realtimeVoice: '',
       brandHue: null,
       tokenOverrides: {},
     },
@@ -419,6 +420,12 @@ function readClaudePreference(data: Record<string, unknown>): ClaudePref {
   }
 }
 
+function readCodexRealtimeVoice(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const voice = value.trim().toLowerCase()
+  return voice === '' || /^[a-z][a-z0-9_-]{0,63}$/.test(voice) ? voice : null
+}
+
 function readCodexPreference(data: Record<string, unknown>): CodexPref {
   const agentPreference = data.agentPreference && typeof data.agentPreference === 'object'
     ? data.agentPreference as Record<string, unknown>
@@ -442,6 +449,8 @@ function readCodexPreference(data: Record<string, unknown>): CodexPref {
     defaultPermissionPreset: codexPreference?.defaultPermissionPreset === '' || isCodexPermissionPreset(codexPreference?.defaultPermissionPreset)
       ? (codexPreference.defaultPermissionPreset as CodexPermissionPreset | '')
       : defaults.agentPreference.codex.defaultPermissionPreset,
+    realtimeVoice: readCodexRealtimeVoice(codexPreference?.realtimeVoice)
+      ?? defaults.agentPreference.codex.realtimeVoice,
     brandHue: readBrandHue(codexPreference?.brandHue),
     tokenOverrides: sanitizeOverrides(codexPreference?.tokenOverrides),
   }
@@ -769,6 +778,10 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
       codex: {
         ...current.agentPreference.codex,
         ...patch.agentPreference?.codex,
+        realtimeVoice: patch.agentPreference?.codex?.realtimeVoice === undefined
+          ? current.agentPreference.codex.realtimeVoice
+          : (readCodexRealtimeVoice(patch.agentPreference.codex.realtimeVoice)
+              ?? current.agentPreference.codex.realtimeVoice),
       },
       acp: {
         ...current.agentPreference.acp,

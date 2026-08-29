@@ -94,6 +94,7 @@ vi.stubGlobal('window', {
 vi.stubGlobal('localStorage', mockLocalStorage)
 
 const { useChatStore } = await import('../index')
+const { useCodexRealtimeViewStore } = await import('../../codex-realtime-view')
 const { defaultPrefsCache } = await import('./prefs-cache')
 
 const PATH = '/p-test'
@@ -200,6 +201,7 @@ function userMsg(id: string, providerId: 'claude' | 'codex' = 'claude'): ChatMes
 
 beforeEach(() => {
   resetStore()
+  useCodexRealtimeViewStore.setState({ sessions: {} })
   vi.clearAllMocks()
   mockLocalStorage.clear()
   defaultPrefsCache.permissionMode = null
@@ -325,6 +327,33 @@ describe('resetSessionImpl', () => {
     expect(newSid).not.toBe(oldSid)
     expect(newSid).toMatch(/^[0-9a-f-]{36}$/)
     expect(activeSession().sessionProvider).toBe('codex')
+  })
+
+  it('creates a new session when an otherwise empty Codex session has voice history', async () => {
+    setupProject()
+    patchSession({
+      sessionProvider: 'codex',
+      preferredProvider: 'codex',
+      messages: [],
+    })
+    const oldSid = activeProjectState()._activeSessionId!
+    useCodexRealtimeViewStore.getState().setTimeline(oldSid, {
+      segments: [{
+        id: 'voice-1',
+        realtimeSessionId: 'rt-1',
+        role: 'user',
+        text: 'hello',
+      }],
+      threadMessages: [],
+      activeRealtimeSessionId: null,
+      hasTimeline: true,
+    })
+
+    await useChatStore.getState().resetSession()
+
+    expect(activeProjectState()._activeSessionId).not.toBe(oldSid)
+    expect(activeSession().sessionProvider).toBe('codex')
+    expect(mockWindowAgent.resetSession).toHaveBeenCalledWith(oldSid)
   })
 
   it('mints a uuid-style sid for claude provider sessions', async () => {

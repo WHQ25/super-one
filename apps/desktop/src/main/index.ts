@@ -78,6 +78,7 @@ import { DeviceRegistry } from './remote/device-registry'
 import { MobileBroadcaster } from './remote/mobile-broadcaster'
 import { PresenceCoordinator } from './remote/presence-coordinator'
 import { getSessionRecord, listWorktreePaths, loadSessionStateBySid, resolveProviderSessionIdForResume, saveSessionStateBySid, updateProviderSessionId } from './session/session-repo'
+import { applyRealtimeTimelineEvent } from './session/realtime-timeline-repo'
 import { deepseekTrajectorySource } from './deepseek/trajectory-source'
 import { clearTrajectoryWatches, setTrajectoryWatch } from './deepseek/trajectory-watch'
 import type { TrajectoryPayloadRef } from '@superone/shared/trajectory-types'
@@ -473,6 +474,17 @@ function migrateLegacyRemotePowerMode(): AppSettings {
   return current
 }
 sessionManager.onAny((_sid, event) => {
+  if (
+    event.type === 'realtime_started'
+    || event.type === 'realtime_transcript'
+    || event.type === 'realtime_closed'
+  ) {
+    try {
+      applyRealtimeTimelineEvent(_sid, event)
+    } catch (err) {
+      log.warn('[realtime] failed to persist timeline sid=%s: %s', _sid, err instanceof Error ? err.message : String(err))
+    }
+  }
   if (event.type === 'permission_request') {
     const alive = !!mainWindow && !mainWindow.isDestroyed()
     log.info('[onAny] permission_request sid=%s sessionId=%s projectPath=%s windowAlive=%s requestId=%s',
@@ -2368,6 +2380,13 @@ function registerIpcHandlers(): void {
       return remoteCodexGetRateLimits(getEnvironmentHost(), projectPath, apiProviderId ?? null)
     }
     return codexService.getRateLimits(projectPath, apiProviderId ?? null)
+  })
+
+  ipcMain.handle(AgentIpcChannels.CODEX_LIST_REALTIME_VOICES, async (_event, projectPath?: string | null) => {
+    const localProjectPath = projectPath && !parseRemoteProjectKey(projectPath)
+      ? projectPath
+      : app.getPath('userData')
+    return codexService.listRealtimeVoices(localProjectPath)
   })
 
   ipcMain.handle(AgentIpcChannels.CODEX_GET_ACCOUNT_USAGE, async (_event, projectPath: string, apiProviderId?: string | null, threadId?: string | null) => {

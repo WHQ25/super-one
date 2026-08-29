@@ -150,6 +150,12 @@ vi.mock('../database', () => ({
   getDb: vi.fn(),
 }))
 
+const realtimeTimelineRepoMocks = vi.hoisted(() => ({
+  loadRealtimeTimeline: vi.fn(),
+  reconcileRealtimeTimeline: vi.fn((_sessionId: string, timeline: unknown) => timeline),
+}))
+vi.mock('../session/realtime-timeline-repo', () => realtimeTimelineRepoMocks)
+
 vi.mock('../providers/resolver', () => ({
   resolveChatService: vi.fn(() => null),
   buildRemoteActiveService: vi.fn(() => null),
@@ -166,7 +172,7 @@ vi.mock('../app-settings-service', () => ({
     locale: '',
     agentPreference: {
       claude: { defaultModel: '', defaultEffort: '', defaultPermissionMode: '', defaultSandboxMode: '' },
-      codex: { defaultModel: '', defaultReasoningEffort: '', defaultPermissionPreset: '' },
+      codex: { defaultModel: '', defaultReasoningEffort: '', defaultPermissionPreset: '', realtimeVoice: '' },
       acp: { enabled: false, brandHue: null, tokenOverrides: {}, selectedAgentId: null },
     },
   })),
@@ -598,6 +604,50 @@ describe('AgentService SESSIONS_RESUME (cwd sync)', () => {
 })
 
 describe('AgentService Realtime Voice', () => {
+  it('loads the local realtime timeline without starting a session runtime', async () => {
+    const service = new AgentService()
+    const local = {
+      segments: [{ id: 'local-1', realtimeSessionId: 'rt-1', role: 'user', text: 'cached' }],
+      threadMessages: [],
+      activeRealtimeSessionId: null,
+      hasTimeline: true,
+    }
+    realtimeTimelineRepoMocks.loadRealtimeTimeline.mockReturnValue(local)
+    ;(service as { sessionManager: unknown }).sessionManager = { getSession: vi.fn() }
+    service.setup()
+
+    const handler = getRegisteredIpcHandler(AgentIpcChannels.LOAD_REALTIME_TIMELINE)!
+    expect(handler(null, 'sid-voice')).toEqual(local)
+    expect(realtimeTimelineRepoMocks.loadRealtimeTimeline).toHaveBeenCalledWith('sid-voice')
+  })
+
+  it('reconciles a provider timeline into the local snapshot', async () => {
+    const service = new AgentService()
+    const timeline = {
+      segments: [],
+      threadMessages: [],
+      activeRealtimeSessionId: null,
+      hasTimeline: true,
+    }
+    const getRealtimeTimeline = vi.fn(async () => timeline)
+    const existing = makeMockSession({
+      id: 'sid-voice',
+      cwd: '/repo/main',
+      snapshot: { projectPath: '/repo/main', harnessId: 'codex', messages: [] },
+      getRealtimeTimeline,
+    })
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn(() => existing),
+      getActiveSession: vi.fn(() => existing),
+      setActiveSession: vi.fn(),
+    }
+    service.setup()
+
+    const handler = getRegisteredIpcHandler(AgentIpcChannels.GET_REALTIME_TIMELINE)!
+    await expect(handler(null, '/repo/main', 'sid-voice')).resolves.toEqual(timeline)
+    expect(realtimeTimelineRepoMocks.reconcileRealtimeTimeline).toHaveBeenCalledWith('sid-voice', timeline)
+  })
+
   it('creates a Codex session from the renderer draft before starting voice', async () => {
     const service = new AgentService()
     const startRealtimeVoice = vi.fn().mockResolvedValue(undefined)
@@ -617,7 +667,15 @@ describe('AgentService Realtime Voice', () => {
     }
     service.setup()
     const handler = getRegisteredIpcHandler(AgentIpcChannels.START_REALTIME_VOICE)!
-    const request = { sdp: 'offer', voice: 'cove' }
+    const request = { sdp: 'offer' }
+    const currentSettings = appSettings.readAppSettings()
+    vi.mocked(appSettings.readAppSettings).mockReturnValueOnce({
+      ...currentSettings,
+      agentPreference: {
+        ...currentSettings.agentPreference,
+        codex: { ...currentSettings.agentPreference.codex, realtimeVoice: 'juniper' },
+      },
+    })
 
     await handler(null, '/repo/main', 'draft-voice', request)
 
@@ -626,7 +684,7 @@ describe('AgentService Realtime Voice', () => {
       providerId: 'codex-base',
       id: 'draft-voice',
     }))
-    expect(startRealtimeVoice).toHaveBeenCalledWith(request)
+    expect(startRealtimeVoice).toHaveBeenCalledWith({ ...request, voice: 'juniper' })
   })
 })
 

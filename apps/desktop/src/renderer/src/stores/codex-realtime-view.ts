@@ -5,11 +5,13 @@ import type {
   RealtimeTimelineSegment,
   RealtimeTranscriptRole,
 } from '@superone/shared/agent-types'
+import { mergePendingRealtimeTimelineSegments } from '@superone/shared/realtime-timeline'
 
 export type CodexConversationView = 'thread' | 'realtime'
 
 export interface CodexRealtimeSessionViewState {
   view: CodexConversationView
+  loadStatus: 'idle' | 'loading' | 'loaded' | 'error'
   segments: RealtimeTimelineSegment[]
   threadMessages: ChatMessage[]
   liveText: { role: RealtimeTranscriptRole; text: string } | null
@@ -19,6 +21,7 @@ export interface CodexRealtimeSessionViewState {
 
 export const EMPTY_CODEX_REALTIME_SESSION_VIEW: CodexRealtimeSessionViewState = {
   view: 'thread',
+  loadStatus: 'idle',
   segments: [],
   threadMessages: [],
   liveText: null,
@@ -29,6 +32,8 @@ export const EMPTY_CODEX_REALTIME_SESSION_VIEW: CodexRealtimeSessionViewState = 
 interface CodexRealtimeViewStore {
   sessions: Record<string, CodexRealtimeSessionViewState>
   setView: (sessionId: string, view: CodexConversationView) => void
+  setTimelineLoading: (sessionId: string) => void
+  setTimelineError: (sessionId: string) => void
   setTimeline: (sessionId: string, timeline: RealtimeTimelineResult) => void
   setRealtimeSession: (sessionId: string, realtimeSessionId: string | null) => void
   appendTranscriptDelta: (sessionId: string, role: RealtimeTranscriptRole, text: string) => void
@@ -51,22 +56,30 @@ export const useCodexRealtimeViewStore = create<CodexRealtimeViewStore>((set) =>
     return { sessions: { ...state.sessions, [sessionId]: { ...current, view } } }
   }),
 
+  setTimelineLoading: (sessionId) => set((state) => {
+    const current = sessionState(state.sessions, sessionId)
+    if (current.loadStatus === 'loading') return state
+    return { sessions: { ...state.sessions, [sessionId]: { ...current, loadStatus: 'loading' } } }
+  }),
+
+  setTimelineError: (sessionId) => set((state) => {
+    const current = sessionState(state.sessions, sessionId)
+    return { sessions: { ...state.sessions, [sessionId]: { ...current, loadStatus: 'error' } } }
+  }),
+
   setTimeline: (sessionId, timeline) => set((state) => {
     const current = sessionState(state.sessions, sessionId)
-    const unpublished = current.segments.filter((segment) => (
-      segment.id.startsWith('live-')
-      && !timeline.segments.some((persisted) => (
-        persisted.realtimeSessionId === segment.realtimeSessionId
-        && persisted.role === segment.role
-        && persisted.text === segment.text
-      ))
-    ))
     return {
       sessions: {
         ...state.sessions,
         [sessionId]: {
           ...current,
-          segments: [...timeline.segments, ...unpublished],
+          loadStatus: 'loaded',
+          segments: mergePendingRealtimeTimelineSegments(
+            timeline.segments,
+            current.segments,
+            ['live-'],
+          ),
           threadMessages: timeline.threadMessages,
           realtimeSessionId: timeline.activeRealtimeSessionId ?? current.realtimeSessionId,
           hasTimeline: timeline.hasTimeline || current.hasTimeline,
@@ -125,3 +138,47 @@ export const useCodexRealtimeViewStore = create<CodexRealtimeViewStore>((set) =>
     }
   }),
 }))
+
+const timelineHydrations = new Map<string, Promise<void>>()
+
+function applyTimeline(sessionId: string, timeline: RealtimeTimelineResult): void {
+  const store = useCodexRealtimeViewStore.getState()
+  store.setTimeline(sessionId, timeline)
+  if (timeline.threadMessages.length === 0 && timeline.segments.length > 0) {
+    store.setView(sessionId, 'realtime')
+  }
+}
+
+/** Load the local snapshot first, then reconcile it with Codex in the background. */
+export function hydrateCodexRealtimeTimeline(projectPath: string, sessionId: string): Promise<void> {
+  const existing = timelineHydrations.get(sessionId)
+  if (existing) return existing
+
+  useCodexRealtimeViewStore.getState().setTimelineLoading(sessionId)
+  let restoredLocal = false
+  const hydration = (async () => {
+    try {
+      const local = await window.agent.loadRealtimeTimeline(sessionId)
+      if (local) {
+        restoredLocal = true
+        applyTimeline(sessionId, local)
+      }
+    } catch {
+      // A missing/corrupt local snapshot falls through to the provider copy.
+    }
+
+    try {
+      applyTimeline(sessionId, await window.agent.getRealtimeTimeline(projectPath, sessionId))
+    } catch {
+      if (!restoredLocal) useCodexRealtimeViewStore.getState().setTimelineError(sessionId)
+    }
+  })().finally(() => {
+    timelineHydrations.delete(sessionId)
+  })
+  timelineHydrations.set(sessionId, hydration)
+  return hydration
+}
+
+export async function refreshCodexRealtimeTimeline(projectPath: string, sessionId: string): Promise<void> {
+  applyTimeline(sessionId, await window.agent.getRealtimeTimeline(projectPath, sessionId))
+}

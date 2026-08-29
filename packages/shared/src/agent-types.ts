@@ -1748,6 +1748,12 @@ export interface RealtimeVoiceStartRequest {
   additionalDirs?: string[]
 }
 
+/** Codex realtime voices flattened for the protocol version SuperOne uses. */
+export interface CodexRealtimeVoiceCatalog {
+  voices: string[]
+  defaultVoice: string
+}
+
 export interface RealtimeTimelineSegment {
   id: string
   realtimeSessionId: string
@@ -3306,6 +3312,7 @@ export const AgentIpcChannels = {
   CODEX_GET_SERVER_DIAGNOSTICS: 'codex:get-server-diagnostics',
   CODEX_GET_CONFIG_REQUIREMENTS: 'codex:get-config-requirements',
   CODEX_CONSUME_RATE_LIMIT_RESET: 'codex:consume-rate-limit-reset',
+  CODEX_LIST_REALTIME_VOICES: 'codex:list-realtime-voices',
   CODEX_MCP_OAUTH_LOGIN: 'codex:mcp-oauth-login',
   CODEX_EXTERNAL_AGENT_DETECT: 'codex:external-agent-detect',
   CODEX_EXTERNAL_AGENT_IMPORT: 'codex:external-agent-import',
@@ -3326,6 +3333,7 @@ export const AgentIpcChannels = {
   INTERRUPT: 'agent:interrupt',
   START_REALTIME_VOICE: 'agent:start-realtime-voice',
   STOP_REALTIME_VOICE: 'agent:stop-realtime-voice',
+  LOAD_REALTIME_TIMELINE: 'agent:load-realtime-timeline',
   GET_REALTIME_TIMELINE: 'agent:get-realtime-timeline',
   STOP_TASK: 'agent:stop-task',
   EVENT: 'agent:event',
@@ -4363,6 +4371,8 @@ export interface AppSettings {
       defaultModel: string
       defaultReasoningEffort: CodexReasoningEffort | ''
       defaultPermissionPreset: CodexPermissionPreset | ''
+      /** Empty string follows the Codex app-server default voice. */
+      realtimeVoice: string
       brandHue: number | null
       tokenOverrides: TokenOverrides
     }

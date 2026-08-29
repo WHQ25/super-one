@@ -57,6 +57,7 @@ export const APP_SERVER_IDEMPOTENT_METHODS = new Set<string>([
   'thread/list',
   'thread/read',
   'thread/loaded/list',
+  'thread/realtime/listVoices',
   'skills/list',
   'hooks/list',
   'plugin/list',

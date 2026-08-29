@@ -1,12 +1,20 @@
 import type {
   AgentEvent,
   ChatMessage,
+  CodexRealtimeVoiceCatalog,
   CodexThreadItem,
   RealtimeTimelineResult,
   RealtimeTranscriptRole,
   RealtimeVoiceStartRequest,
 } from '@superone/shared/agent-types'
-import { asRecord, readString, resolvePermissionProfile, type AppServerNotification, type CodexProjectAuth } from './app-server-connection'
+import {
+  asRecord,
+  readString,
+  resolvePermissionProfile,
+  type AppServerConnection,
+  type AppServerNotification,
+  type CodexProjectAuth,
+} from './app-server-connection'
 import type { NotificationDispatcher, NotificationInbox } from './codex-notification-dispatcher'
 import type { CodexSession } from './codex-session'
 import { deriveFinalResponse, mapThreadItemFromAppServer, withThreadConnection } from './codex-turn'
@@ -17,20 +25,44 @@ export interface CodexRealtimeHandle {
   closed: Promise<void>
 }
 
+const CODEX_REALTIME_VERSION = 'v3'
+
 export function buildCodexRealtimeStartParams(
   threadId: string,
   request: RealtimeVoiceStartRequest,
 ) {
   return {
     threadId,
-    version: 'v3',
+    version: CODEX_REALTIME_VERSION,
     outputModality: 'audio',
     codexResponseHandoffMode: 'bemTags',
     includeStartupContext: true,
     flushTranscriptTailOnSessionEnd: true,
-    voice: request.voice ?? 'cove',
+    ...(request.voice ? { voice: request.voice } : {}),
     transport: { type: 'webrtc', sdp: request.sdp },
   }
+}
+
+function readVoiceList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return [...new Set(value.filter((voice): voice is string => typeof voice === 'string' && voice.length > 0))]
+}
+
+/** Flatten Codex's protocol-versioned response to the v1 voice group used by v3. */
+export function mapCodexRealtimeVoiceCatalog(response: Record<string, unknown>): CodexRealtimeVoiceCatalog {
+  const voicesRecord = asRecord(response.voices)
+  const voices = readVoiceList(voicesRecord?.v1)
+  const defaultVoice = readString(voicesRecord?.defaultV1)
+  if (voices.length === 0 || !defaultVoice || !voices.includes(defaultVoice)) {
+    throw new Error('Codex returned an invalid realtime voice catalog.')
+  }
+  return { voices, defaultVoice }
+}
+
+export async function listCodexRealtimeVoices(
+  request: AppServerConnection['request'],
+): Promise<CodexRealtimeVoiceCatalog> {
+  return mapCodexRealtimeVoiceCatalog(await request('thread/realtime/listVoices', {}))
 }
 
 function transcriptRole(value: unknown): RealtimeTranscriptRole {

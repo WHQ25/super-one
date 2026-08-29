@@ -1,9 +1,9 @@
 import { useEffect } from 'react'
-import { AudioLines, MessagesSquare } from 'lucide-react'
+import { AudioLines, MessageSquare } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
-import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
+import { hydrateCodexRealtimeTimeline, refreshCodexRealtimeTimeline, useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 
 interface CodexConversationViewToggleProps {
   projectPath: string
@@ -22,18 +22,11 @@ export function CodexConversationViewToggle({
   const view = useCodexRealtimeViewStore((state) => state.sessions[sessionId]?.view ?? 'thread')
   const hasTimeline = useCodexRealtimeViewStore((state) => state.sessions[sessionId]?.hasTimeline ?? false)
   const setView = useCodexRealtimeViewStore((state) => state.setView)
-  const setTimeline = useCodexRealtimeViewStore((state) => state.setTimeline)
 
   useEffect(() => {
     if (!enabled || !projectPath || !sessionId || !providerSessionId || view !== 'thread' || hasTimeline) return
-    let cancelled = false
-    void window.agent.getRealtimeTimeline(projectPath, sessionId).then((timeline) => {
-      if (!cancelled) setTimeline(sessionId, timeline)
-    }).catch(() => {
-      // A timeline is optional; keep the control hidden when it cannot be loaded.
-    })
-    return () => { cancelled = true }
-  }, [enabled, hasTimeline, projectPath, providerSessionId, sessionId, setTimeline, view])
+    void hydrateCodexRealtimeTimeline(projectPath, sessionId)
+  }, [enabled, hasTimeline, projectPath, providerSessionId, sessionId, view])
 
   if (!enabled || !sessionId) return null
 
@@ -46,9 +39,7 @@ export function CodexConversationViewToggle({
     const nextView = showingRealtime ? 'thread' : 'realtime'
     setView(sessionId, nextView)
     if (nextView !== 'thread' || !projectPath) return
-    void window.agent.getRealtimeTimeline(projectPath, sessionId).then((timeline) => {
-      setTimeline(sessionId, timeline)
-    }).catch(() => {
+    void refreshCodexRealtimeTimeline(projectPath, sessionId).catch(() => {
       // Keep the last known snapshot when a refresh fails.
     })
   }
@@ -61,7 +52,7 @@ export function CodexConversationViewToggle({
       className={cn(showingRealtime ? 'text-foreground' : 'text-muted-foreground/60')}
       onClick={toggleView}
     >
-      {showingRealtime ? <MessagesSquare /> : <AudioLines />}
+      {showingRealtime ? <MessageSquare /> : <AudioLines />}
     </IconButton>
   )
 }

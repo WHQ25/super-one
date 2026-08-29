@@ -109,6 +109,22 @@ describe('_mergePersistedSessionState', () => {
     expect(merged._historyHydrated).toBe(true)
   })
 
+  it('restores the provider session id for an empty voice-only session', () => {
+    const merged = _mergePersistedSessionState(createDefaultPerSessionState(), {
+      messages: [],
+      totalCostUsd: 0,
+      contextTokens: 0,
+      isWorktree: false,
+      gitBranch: null,
+      worktreePath: null,
+      provider: 'codex',
+      providerSessionId: 'thread-realtime',
+    })
+
+    expect(merged.sessionProvider).toBe('codex')
+    expect(merged._providerSessionId).toBe('thread-realtime')
+  })
+
   it('rebuilds videoGenStatuses from persisted tool results on cold restore', () => {
     const sess = createDefaultPerSessionState()
     const saved = {

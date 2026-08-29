@@ -4000,6 +4000,29 @@ describe('task_started event', () => {
 // issue if/when feature is implemented.
 
 describe('switchSession Case B codex usage restore', () => {
+  it('restores an empty voice-only Codex session with its provider thread', async () => {
+    setupProject('/test')
+    mockWindowApp.loadSessionState.mockResolvedValue({
+      messages: [],
+      totalCostUsd: 0,
+      contextTokens: 0,
+      isWorktree: false,
+      gitBranch: null,
+      worktreePath: null,
+      provider: 'codex',
+      providerSessionId: 'thread-realtime',
+    })
+
+    await useChatStore.getState().switchSession('voice-only-session')
+
+    const session = useChatStore.getState().projectSessions['/test']._sessions['voice-only-session']
+    expect(session.messages).toEqual([])
+    expect(session.sessionProvider).toBe('codex')
+    expect(session.preferredProvider).toBe('codex')
+    expect(session._providerSessionId).toBe('thread-realtime')
+    expect(session._historyHydrated).toBe(true)
+  })
+
   it('restores codex context window from saved message metadata', async () => {
     setupProject('/test')
     mockWindowApp.loadSessionState.mockResolvedValue({

@@ -122,6 +122,54 @@ function MediaImage(props: ComponentProps<'img'>) {
   return createElement(MarkdownImage, props)
 }
 
+/**
+ * Markdown `src` that already names its own transport — leave it alone. Mirrors
+ * the negative lookahead in MD_IMAGE_RE so text-level and render-level
+ * resolution agree on what counts as project-relative.
+ */
+const ABSOLUTE_MEDIA_SRC_RE = /^(?:https?:\/\/|data:|blob:|file:\/\/|local-file:\/\/|remote-media:\/\/)/
+
+/**
+ * Fold a src written relative to its containing markdown file into a path
+ * relative to the project root, collapsing `.` / `..`.
+ *
+ * Markdown resolves relative paths against the FILE, not the project root — a
+ * `docs/report/x.md` writing `assets/a.png` means `docs/report/assets/a.png`.
+ * The chat renderer never needs this (the agent writes cwd-relative paths), but
+ * the .md editor does, and skipping it 404s on every image in a subdirectory.
+ */
+export function rebaseMarkdownSrc(src: string, baseDir: string): string {
+  if (!src || !baseDir || ABSOLUTE_MEDIA_SRC_RE.test(src)) return src
+  if (src.startsWith('/') || /^[A-Za-z]:[\\/]/.test(src)) return src
+  const parts: string[] = []
+  for (const segment of `${baseDir}/${src}`.replace(/\\/g, '/').split('/')) {
+    if (!segment || segment === '.') continue
+    if (segment === '..' && parts.length > 0 && parts[parts.length - 1] !== '..') {
+      parts.pop()
+      continue
+    }
+    parts.push(segment)
+  }
+  return parts.join('/')
+}
+
+/**
+ * Render-time counterpart of `resolveMarkdownMedia`. Use this where the
+ * markdown text is a live document (the .md editor) and must not be rewritten:
+ * only the displayed src is resolved, the source keeps its relative path.
+ */
+export function resolveMarkdownMediaSrc(src: string, projectPath: string | null | undefined): string {
+  if (!src || !projectPath || ABSOLUTE_MEDIA_SRC_RE.test(src)) return src
+  return resolveMediaSrcForProject(src, projectPath)
+}
+
+/**
+ * Media renderers shared with the .md editor. `MarkdownMedia` dispatches on the
+ * file extension (what `![…](…)` needs); the tag-specific two are for raw
+ * `<video>` / `<audio>`, where the author's tag beats extension guessing.
+ */
+export { MediaImage as MarkdownMedia, MediaVideo as MarkdownVideo, MediaAudio as MarkdownAudio }
+
 /** Shared Streamdown code component. */
 export const streamdownComponents = {
   code: createStreamdownCodeComponent(codePlugin),

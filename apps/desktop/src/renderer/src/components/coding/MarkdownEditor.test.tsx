@@ -38,6 +38,15 @@ vi.mock('./extensions/mermaid-node', async () => {
   const { Node } = await import('@tiptap/core')
   return { MermaidNode: Node.create({ name: 'mermaid', group: 'block', atom: true }) }
 })
+vi.mock('./extensions/media-nodes', async () => {
+  const { Node } = await import('@tiptap/core')
+  const { createContext } = await import('react')
+  return {
+    MediaBaseDirProvider: createContext('').Provider,
+    MediaImageNode: Node.create({ name: 'image', group: 'inline', inline: true, atom: true }),
+    RawMediaNode: Node.create({ name: 'rawMedia', group: 'inline', inline: true, atom: true }),
+  }
+})
 vi.mock('./extensions/slash-command', async () => {
   const { Extension } = await import('@tiptap/core')
   return { SlashCommand: Extension.create({ name: 'slashCommand' }) }

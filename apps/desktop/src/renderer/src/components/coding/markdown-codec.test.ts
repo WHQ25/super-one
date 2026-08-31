@@ -6,7 +6,7 @@ import StarterKit from '@tiptap/starter-kit'
 import { CodeBlockLowlight } from '@tiptap/extension-code-block-lowlight'
 import { TableKit } from '@tiptap/extension-table'
 import { common, createLowlight } from 'lowlight'
-import { docToMarkdown, markdownToDoc, splitFrontmatter } from './markdown-codec'
+import { docToMarkdown, ImageSchema, markdownToDoc, RawMediaSchema, splitFrontmatter } from './markdown-codec'
 
 const lowlight = createLowlight(common)
 
@@ -36,6 +36,8 @@ const extensions = [
   InlineMathStub,
   BlockMathStub,
   MermaidStub,
+  ImageSchema,
+  RawMediaSchema,
 ]
 
 async function roundTrip(input: string): Promise<string> {
@@ -132,6 +134,58 @@ describe('markdown round-trip', () => {
   })
 })
 
+describe('media round-trip', () => {
+  it('preserves a relative image without rewriting its path', async () => {
+    expect(await roundTrip('![a cat](./assets/cat.png)')).toBe('![a cat](./assets/cat.png)\n')
+  })
+
+  it('preserves a video embed written as an image', async () => {
+    expect(await roundTrip('![demo](media/demo.mp4)')).toBe('![demo](media/demo.mp4)\n')
+  })
+
+  it('preserves an image with an empty alt and a remote url', async () => {
+    expect(await roundTrip('![](https://example.com/a.png)')).toBe('![](https://example.com/a.png)\n')
+  })
+
+  it('preserves an image title', async () => {
+    expect(await roundTrip('![a](b.png "caption")')).toBe('![a](b.png "caption")\n')
+  })
+
+  it('keeps an image that shares a paragraph with text', async () => {
+    expect(await roundTrip('before ![a](b.png) after')).toBe('before ![a](b.png) after\n')
+  })
+
+  it('preserves a single-line raw video tag', async () => {
+    const input = '<video src="media/demo.mp4" controls></video>'
+    expect(await roundTrip(input)).toBe(`${input}\n`)
+  })
+
+  it('preserves a raw audio tag', async () => {
+    const input = '<audio src="media/take.mp3" controls loop></audio>'
+    expect(await roundTrip(input)).toBe(`${input}\n`)
+  })
+
+  it('preserves a raw video written as a multi-line html block', async () => {
+    const out = await roundTrip('<video controls>\n</video>')
+    expect(out).toBe('<video controls></video>\n')
+  })
+
+  it('preserves source children of a raw video', async () => {
+    const out = await roundTrip('<video controls><source src="a.webm" type="video/webm"><source src="a.mp4" type="video/mp4"></video>')
+    expect(out).toBe('<video controls><source src="a.webm" type="video/webm"><source src="a.mp4" type="video/mp4"></video>\n')
+  })
+
+  it('keeps a raw video that shares a paragraph with text', async () => {
+    const input = 'before <video src="a.mp4"></video> after'
+    expect(await roundTrip(input)).toBe(`${input}\n`)
+  })
+
+  it('is idempotent across a second round-trip', async () => {
+    const once = await roundTrip('<video controls>\n  <source src="a.mp4" type="video/mp4">\n</video>')
+    expect(await roundTrip(once)).toBe(once)
+  })
+})
+
 describe('frontmatter round-trip', () => {
   it('keeps frontmatter as the first code block on save', async () => {
     const md = '---\ntitle: Hello\ntags: [a, b]\n---\n# Body\n'
@@ -206,6 +260,26 @@ describe('docs/test/markdown-formats fixture', () => {
     const out = await roundTrip(fixture)
     expect(out).toMatch(/^> Single-line blockquote/m)
     expect(out).toMatch(/^> > Inner quote/m)
+  })
+
+  it('preserves image and video embeds', async () => {
+    const out = await roundTrip(fixture)
+    expect(out).toContain('![a relative image](assets/cat.png)')
+    expect(out).toContain('![a video embed](media/demo.mp4)')
+    expect(out).toContain('![](https://example.com/remote.png)')
+  })
+
+  it('preserves raw video and audio tags', async () => {
+    const out = await roundTrip(fixture)
+    expect(out).toContain('<video src="media/demo.mp4" controls></video>')
+    expect(out).toContain('<audio src="media/take.mp3" controls loop></audio>')
+    expect(out).toContain('<video controls><source src="media/demo.webm" type="video/webm"><source src="media/demo.mp4" type="video/mp4"></video>')
+  })
+
+  it('preserves images embedded inside list items', async () => {
+    const out = await roundTrip(fixture)
+    expect(out).toContain('- Empty alt image (decorative): ![](assets/decorative.png)')
+    expect(out).toContain('- Image with alt + title: ![alt text](assets/logo.png "Logo title")')
   })
 
   it('preserves horizontal rule', async () => {

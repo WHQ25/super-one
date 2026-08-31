@@ -24,29 +24,31 @@ export function startMediaServer(): Promise<number> {
     if (server) { resolve(port); return }
 
     server = createServer((req, res) => {
-      if (!req.url) { res.writeHead(400).end(); return }
+      // Also on the failure paths: without it the renderer reports a missing
+      // file as an opaque CORS block, which hides the real 403/404/415.
+      const cors = {
+        'Access-Control-Allow-Origin': '*',
+        'Cross-Origin-Resource-Policy': 'cross-origin',
+      }
+
+      if (!req.url) { res.writeHead(400, cors).end(); return }
       const filePath = decodeURIComponent(req.url)
       const resolved = resolveRealPath(filePath)
 
       if (!isPathWithinAllowed(resolved, getAllowedRoots())) {
         log.warn('[media-server] blocked:', resolved)
-        res.writeHead(403).end('Forbidden')
+        res.writeHead(403, cors).end('Forbidden')
         return
       }
 
       const ext = extname(resolved).toLowerCase()
       const mime = MEDIA_MIME[ext]
-      if (!mime) { res.writeHead(415).end('Unsupported media type'); return }
+      if (!mime) { res.writeHead(415, cors).end('Unsupported media type'); return }
 
       let fileSize: number
       try { fileSize = statSync(resolved).size } catch {
-        res.writeHead(404).end('Not found')
+        res.writeHead(404, cors).end('Not found')
         return
-      }
-
-      const cors = {
-        'Access-Control-Allow-Origin': '*',
-        'Cross-Origin-Resource-Policy': 'cross-origin',
       }
 
       const range = req.headers.range

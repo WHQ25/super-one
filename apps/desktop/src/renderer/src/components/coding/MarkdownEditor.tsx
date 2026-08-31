@@ -13,6 +13,7 @@ import { openBrowserTab } from '@/components/activity/activity-panel-api'
 import { docToMarkdown, markdownToDoc } from './markdown-codec'
 import { CodeBlock } from './extensions/code-block-view'
 import { MermaidNode } from './extensions/mermaid-node'
+import { MediaBaseDirProvider, MediaImageNode, RawMediaNode } from './extensions/media-nodes'
 import { SlashCommand } from './extensions/slash-command'
 import { TableContextMenu, TABLE_MENU_ENTRIES, type TableMenuPos } from './extensions/TableContextMenu'
 import { createMathExtensions, type MathEditTarget } from './extensions/math'
@@ -76,6 +77,8 @@ export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChan
       CodeBlock.configure({ lowlight, defaultLanguage: 'plaintext' }),
       TableKit,
       MermaidNode,
+      MediaImageNode,
+      RawMediaNode,
       ...createMathExtensions({ onEdit: setMathEdit }),
       SlashCommand,
       Placeholder.configure({ placeholder: 'Start writing…' }),
@@ -167,12 +170,17 @@ export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChan
     return () => { if (timerRef.current) clearTimeout(timerRef.current) }
   }, [])
 
+  // Relative media srcs resolve against the file's own directory, not the root.
+  const mediaBaseDir = filePath.replace(/\\/g, '/').replace(/\/?[^/]*$/, '')
+
   return (
     <>
-      <EditorContent
-        editor={editor}
-        className="markdown-editor size-full overflow-auto text-sm [&_.tiptap]:size-full [&_.tiptap]:p-6 [&_.tiptap]:outline-none"
-      />
+      <MediaBaseDirProvider value={mediaBaseDir}>
+        <EditorContent
+          editor={editor}
+          className="markdown-editor size-full overflow-auto text-sm [&_.tiptap]:size-full [&_.tiptap]:p-6 [&_.tiptap]:outline-none"
+        />
+      </MediaBaseDirProvider>
       {editor && tableMenu && (
         <TableContextMenu editor={editor} pos={tableMenu} onClose={() => setTableMenu(null)} />
       )}

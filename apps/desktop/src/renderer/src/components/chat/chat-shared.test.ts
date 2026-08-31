@@ -21,7 +21,7 @@ vi.mock('./CodeBlock', () => ({ createStreamdownCodeComponent: () => ({}) }))
 vi.mock('./LinkSafetyModal', () => ({ LinkSafetyModal: () => null }))
 vi.mock('./markdown-image', () => ({ MarkdownImage: () => null }))
 
-import { resolveMarkdownMedia, resolveMarkdownFileLinks, resolveMarkdownLocalRefs, formatTokens } from './chat-shared'
+import { rebaseMarkdownSrc, resolveMarkdownMedia, resolveMarkdownMediaSrc, resolveMarkdownFileLinks, resolveMarkdownLocalRefs, formatTokens } from './chat-shared'
 
 describe('formatTokens', () => {
   it('should return "0" for 0', () => {
@@ -62,6 +62,80 @@ describe('formatTokens', () => {
   it('should return negative numbers as plain string below 1000', () => {
     expect(formatTokens(-1)).toBe('-1')
     expect(formatTokens(-999)).toBe('-999')
+  })
+})
+
+describe('rebaseMarkdownSrc', () => {
+  it('should resolve a src against the markdown file directory', () => {
+    expect(rebaseMarkdownSrc('assets/a.png', 'docs/report')).toBe('docs/report/assets/a.png')
+  })
+
+  it('should collapse a leading ./', () => {
+    expect(rebaseMarkdownSrc('./assets/a.png', 'docs/report')).toBe('docs/report/assets/a.png')
+  })
+
+  it('should walk up for ..', () => {
+    expect(rebaseMarkdownSrc('../shared/a.png', 'docs/report')).toBe('docs/shared/a.png')
+  })
+
+  it('should keep .. that escapes the project root', () => {
+    expect(rebaseMarkdownSrc('../../../a.png', 'docs')).toBe('../../a.png')
+  })
+
+  it('should leave the src alone for a file at the project root', () => {
+    expect(rebaseMarkdownSrc('assets/a.png', '')).toBe('assets/a.png')
+  })
+
+  it('should leave absolute paths alone', () => {
+    expect(rebaseMarkdownSrc('/tmp/a.png', 'docs/report')).toBe('/tmp/a.png')
+    expect(rebaseMarkdownSrc('C:\\tmp\\a.png', 'docs/report')).toBe('C:\\tmp\\a.png')
+  })
+
+  it('should leave srcs that name their own transport alone', () => {
+    expect(rebaseMarkdownSrc('https://example.com/a.png', 'docs')).toBe('https://example.com/a.png')
+    expect(rebaseMarkdownSrc('data:image/png;base64,AA', 'docs')).toBe('data:image/png;base64,AA')
+  })
+
+  it('should resolve the reported case to the file that exists on disk', () => {
+    const rebased = rebaseMarkdownSrc('assets/01-bug-stuck-queued-bubble.png', 'docs/report')
+    expect(resolveMarkdownMediaSrc(rebased, '/Users/foo/super-one')).toBe(
+      'local-file:///Users/foo/super-one/docs/report/assets/01-bug-stuck-queued-bubble.png',
+    )
+  })
+})
+
+describe('resolveMarkdownMediaSrc', () => {
+  const project = '/Users/foo/project'
+
+  it('should resolve a relative src against the project root', () => {
+    expect(resolveMarkdownMediaSrc('./image.png', project)).toBe('local-file:///Users/foo/project/image.png')
+  })
+
+  it('should resolve a bare relative src', () => {
+    expect(resolveMarkdownMediaSrc('media/clip.mp4', project)).toBe('local-file:///Users/foo/project/media/clip.mp4')
+  })
+
+  it('should resolve an absolute path to a local-file url', () => {
+    expect(resolveMarkdownMediaSrc('/tmp/a.png', project)).toBe('local-file:///tmp/a.png')
+  })
+
+  it('should resolve a remote project src to a remote-media ref', () => {
+    expect(resolveMarkdownMediaSrc('shot.png', 'remote:conn-1:/Users/foo/project').startsWith('remote-media://ref/')).toBe(true)
+  })
+
+  it.each([
+    'https://example.com/a.png',
+    'http://example.com/a.png',
+    'data:image/png;base64,AAAA',
+    'blob:abc',
+    'local-file:///tmp/a.png',
+    'remote-media://ref/abc',
+  ])('should leave %s untouched', (src) => {
+    expect(resolveMarkdownMediaSrc(src, project)).toBe(src)
+  })
+
+  it('should leave the src untouched without a project root', () => {
+    expect(resolveMarkdownMediaSrc('./image.png', null)).toBe('./image.png')
   })
 })
 

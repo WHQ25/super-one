@@ -62,12 +62,87 @@ const BlockMathSchema = Node.create({
   renderHTML({ HTMLAttributes }) { return ['div', { ...HTMLAttributes, 'data-type': 'block-math' }] },
 })
 
+/** Ordered attribute map of an element, so serialization can replay it verbatim. */
+function readAttributes(el: Element): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const attr of Array.from(el.attributes)) out[attr.name] = attr.value
+  return out
+}
+
+/**
+ * Markdown images (`![alt](src)`) — also how this app embeds video and audio,
+ * which the editor's node view dispatches on by file extension. Without a node
+ * in the schema `generateJSON` drops every `<img>`, so the preview rendered
+ * nothing *and* the next autosave wrote the image out of the file.
+ */
+export const ImageSchema = Node.create({
+  name: 'image',
+  group: 'inline',
+  inline: true,
+  atom: true,
+  addAttributes() {
+    return {
+      src: { default: '' },
+      alt: { default: null },
+      title: { default: null },
+    }
+  },
+  parseHTML() { return [{ tag: 'img[src]' }] },
+  renderHTML({ HTMLAttributes }) { return ['img', HTMLAttributes] },
+})
+
+/**
+ * Raw `<video>` / `<audio>` written directly in the markdown. Parsed from the
+ * DOM rather than from the mdast `html` node because the common single-line
+ * form (`<video src="a.mp4"></video>`) is not a CommonMark HTML block — remark
+ * splits it into separate open/close inline html nodes, and only the browser's
+ * parser puts the element back together.
+ *
+ * Inline (like `image`) so both spellings round-trip: a tag on its own line is
+ * a paragraph holding just this node, and a tag mid-sentence stays mid-sentence.
+ * Attributes and `<source>` children are carried verbatim so serialization
+ * gives the author's markup back instead of a normalized rewrite.
+ */
+export const RawMediaSchema = Node.create({
+  name: 'rawMedia',
+  group: 'inline',
+  inline: true,
+  atom: true,
+  addAttributes() {
+    return {
+      tag: { default: 'video' },
+      attrs: { default: {} },
+      sources: { default: [] },
+    }
+  },
+  parseHTML() {
+    return (['video', 'audio'] as const).map((tag) => ({
+      tag,
+      getAttrs: (el: HTMLElement) => ({
+        tag,
+        attrs: readAttributes(el),
+        sources: Array.from(el.querySelectorAll('source')).map(readAttributes),
+      }),
+    }))
+  },
+  renderHTML({ node }) {
+    const sources = (node.attrs.sources as Array<Record<string, string>>) ?? []
+    return [
+      node.attrs.tag as string,
+      { ...((node.attrs.attrs as Record<string, string>) ?? {}) },
+      ...sources.map((source) => ['source', source] as const),
+    ] as never
+  },
+})
+
 const codecExtensions = [
   StarterKit.configure({ codeBlock: false }),
   CodeBlockLowlight.configure({ lowlight: codecLowlight, defaultLanguage: 'plaintext' }),
   TableKit,
   InlineMathSchema,
   BlockMathSchema,
+  ImageSchema,
+  RawMediaSchema,
 ]
 
 async function markdownToHtml(markdown: string): Promise<string> {
@@ -115,6 +190,27 @@ export async function markdownToDoc(source: string): Promise<JSONContent> {
   return generateJSON(html, codecExtensions)
 }
 
+function serializeImage(node: ProseMirrorNode): string {
+  const src = (node.attrs.src as string) || ''
+  const alt = (node.attrs.alt as string) || ''
+  const title = node.attrs.title as string | null
+  return `![${alt}](${title ? `${src} "${title}"` : src})`
+}
+
+function serializeAttributes(attrs: Record<string, string>): string {
+  return Object.entries(attrs)
+    .map(([name, value]) => (value === '' ? ` ${name}` : ` ${name}="${value.replace(/"/g, '&quot;')}"`))
+    .join('')
+}
+
+function serializeRawMedia(node: ProseMirrorNode): string {
+  const tag = (node.attrs.tag as string) || 'video'
+  const attrs = (node.attrs.attrs as Record<string, string>) ?? {}
+  const sources = (node.attrs.sources as Array<Record<string, string>>) ?? []
+  const inner = sources.map((source) => `<source${serializeAttributes(source)}>`).join('')
+  return `<${tag}${serializeAttributes(attrs)}>${inner}</${tag}>`
+}
+
 function serializeInline(node: ProseMirrorNode): string {
   let text = ''
   node.forEach((child) => {
@@ -138,6 +234,10 @@ function serializeInline(node: ProseMirrorNode): string {
       text += '  \n'
     } else if (child.type.name === 'inlineMath') {
       text += `$${(child.attrs.latex as string) || ''}$`
+    } else if (child.type.name === 'image') {
+      text += serializeImage(child)
+    } else if (child.type.name === 'rawMedia') {
+      text += serializeRawMedia(child)
     } else {
       text += serializeInline(child)
     }

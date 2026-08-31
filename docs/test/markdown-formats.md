@@ -217,8 +217,8 @@ A table with inline marks inside cells:
 - Relative repo file: [CLAUDE.md](../../CLAUDE.md)
 - Anchor inside doc: [#tables](#tables-gfm)
 - Bare URL with title: [tooltip](https://example.com)
-- Empty alt image (decorative):
-- Image with alt + title:
+- Empty alt image (decorative): ![](assets/decorative.png)
+- Image with alt + title: ![alt text](assets/logo.png "Logo title")
 
 ## HTML passthrough
 
@@ -297,11 +297,28 @@ sequenceDiagram
 
 Double-click a diagram to edit its Mermaid syntax; hover and click the maximize button (or press Space when selected) for fullscreen with pan + zoom.
 
-## Known-not-yet-supported
+## Media
 
-### Local media (chat only)
+`![alt](src)` renders live in the editor: the src is resolved against the project root
+for display only (the file keeps the relative path), and the extension picks the
+element — image, `<video>`, or `<audio>`.
 
-The chat renderer rewrites `local-file://` URLs to `MediaImage` / `MediaVideo` / `MediaAudio`. The file editor shows the raw markdown for now:
+![a relative image](assets/cat.png)
+
+![a video embed](media/demo.mp4)
+
+![](https://example.com/remote.png)
+
+Broken paths degrade to their alt text rather than disappearing.
+
+Raw `<video>` / `<audio>` tags are preserved verbatim — attributes and `<source>`
+children included — and play in the preview:
+
+<video src="media/demo.mp4" controls></video>
+
+<audio src="media/take.mp3" controls loop></audio>
+
+<video controls><source src="media/demo.webm" type="video/webm"><source src="media/demo.mp4" type="video/mp4"></video>
 
 ---
 

@@ -18,6 +18,7 @@ import type {
   CodexCollabToolCallItem,
   CodexThreadItem,
 } from '@superone/shared/agent-types'
+import { appendAggregatedOutput } from '@superone/shared/codex-command-output'
 
 export interface ForkListenerHandle {
   readonly forkThreadId: string
@@ -219,7 +220,7 @@ export function startForkListener(opts: ForkListenerOptions): ForkListenerHandle
           id: itemId,
           type: 'command_execution',
           command: prevCmd?.command ?? '',
-          aggregatedOutput: `${prevCmd?.aggregatedOutput ?? ''}${delta}`,
+          aggregatedOutput: appendAggregatedOutput(prevCmd?.aggregatedOutput, delta),
           ...(prevCmd?.exitCode !== undefined ? { exitCode: prevCmd.exitCode } : {}),
           status: prevCmd?.status ?? 'in_progress',
           ...(prevCmd?.commandActions ? { commandActions: prevCmd.commandActions } : {}),

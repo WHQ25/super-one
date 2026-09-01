@@ -63,6 +63,7 @@ import {
   MCP_SUPERONE_TOOL_PREFIX,
   toQualifiedSuperoneToolName,
 } from '../mcp/superone-host-owned-tools'
+import { appendAggregatedOutput, capAggregatedOutput } from '@superone/shared/codex-command-output'
 import { MAIN_THREAD_ONLY_SUPERONE_TOOL_NAMES } from '@superone/shared/superone-host-owned-tools'
 import { resolveConfigConfirm, rejectConfigConfirm } from '../mcp/config-tools'
 import { resolveVideoConfirm, rejectVideoConfirm } from '../mcp/media-tools'
@@ -370,10 +371,12 @@ export function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadI
     case 'commandExecution': {
       const prevCommand = previous?.type === 'command_execution' ? previous : null
       const command = readString(rec.command) ?? prevCommand?.command ?? ''
-      const aggregatedOutput = readString(rec.aggregatedOutput)
-        ?? readString(rec.aggregated_output)
-        ?? prevCommand?.aggregatedOutput
-        ?? ''
+      const aggregatedOutput = capAggregatedOutput(
+        readString(rec.aggregatedOutput)
+          ?? readString(rec.aggregated_output)
+          ?? prevCommand?.aggregatedOutput
+          ?? '',
+      )
       const exitCode = readNumber(rec.exitCode) ?? readNumber(rec.exit_code)
       const commandActions = Array.isArray(rec.commandActions)
         ? rec.commandActions.map((a) => {
@@ -1993,7 +1996,7 @@ export async function streamTurnEvents(
             id: itemId,
             type: 'command_execution',
             command: prevCmd?.command ?? '',
-            aggregatedOutput: `${prevCmd?.aggregatedOutput ?? ''}${delta}`,
+            aggregatedOutput: appendAggregatedOutput(prevCmd?.aggregatedOutput, delta),
             ...(prevCmd?.exitCode !== undefined ? { exitCode: prevCmd.exitCode } : {}),
             status: prevCmd?.status ?? 'in_progress',
             ...(prevCmd?.commandActions ? { commandActions: prevCmd.commandActions } : {}),
@@ -2228,7 +2231,7 @@ export async function streamTurnEvents(
           id: itemId,
           type: 'command_execution',
           command: previousCommand?.command ?? '',
-          aggregatedOutput: `${previousCommand?.aggregatedOutput ?? ''}${delta}`,
+          aggregatedOutput: appendAggregatedOutput(previousCommand?.aggregatedOutput, delta),
           ...(previousCommand?.exitCode !== undefined ? { exitCode: previousCommand.exitCode } : {}),
           status: previousCommand?.status ?? 'in_progress',
           ...(previousCommand?.commandActions ? { commandActions: previousCommand.commandActions } : {}),

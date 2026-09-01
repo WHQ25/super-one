@@ -5,6 +5,7 @@
  * and process lifecycle; this mapper owns item state and message projection.
  */
 import { buildAgentErrorInfo } from '@superone/shared/agent-error'
+import { appendAggregatedOutput, capAggregatedOutput } from '@superone/shared/codex-command-output'
 import {
   readCodexAgentMessageDelivery,
   readCodexErrorOverrides,
@@ -273,10 +274,12 @@ export function mapCodexThreadItem(
         id,
         type: 'command_execution',
         command: readString(rec.command) ?? prev?.command ?? '',
-        aggregatedOutput: readString(rec.aggregatedOutput)
-          ?? readString(rec.aggregated_output)
-          ?? prev?.aggregatedOutput
-          ?? '',
+        aggregatedOutput: capAggregatedOutput(
+          readString(rec.aggregatedOutput)
+            ?? readString(rec.aggregated_output)
+            ?? prev?.aggregatedOutput
+            ?? '',
+        ),
         ...(exitCode !== null ? { exitCode } : {}),
         status: mapCommandExecutionStatus(rec.status ?? prev?.status),
         ...(actions ? { commandActions: actions } : prev?.commandActions ? { commandActions: prev.commandActions } : {}),
@@ -702,7 +705,7 @@ export function createCodexAgentEventMapper(
             id: itemId,
             type: 'command_execution',
             command: command?.command ?? '',
-            aggregatedOutput: `${command?.aggregatedOutput ?? ''}${readCodexDeltaText(params)}`,
+            aggregatedOutput: appendAggregatedOutput(command?.aggregatedOutput, readCodexDeltaText(params)),
             ...(command?.exitCode !== undefined ? { exitCode: command.exitCode } : {}),
             status: command?.status ?? 'in_progress',
             ...(command?.commandActions ? { commandActions: command.commandActions } : {}),

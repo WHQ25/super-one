@@ -1,5 +1,14 @@
 import type { RealtimeTimelineSegment } from './agent-types'
 
+const REALTIME_DELEGATION_OPEN = '<realtime_delegation>'
+const REALTIME_DELEGATION_CLOSE = '</realtime_delegation>'
+
+export function isRealtimeDelegationText(text: string): boolean {
+  const normalized = text.trim()
+  return normalized.startsWith(REALTIME_DELEGATION_OPEN)
+    && normalized.endsWith(REALTIME_DELEGATION_CLOSE)
+}
+
 function transcriptKey(segment: RealtimeTimelineSegment): string {
   return JSON.stringify([segment.role, segment.text.trim().replace(/\s+/g, ' ')])
 }

@@ -380,40 +380,7 @@ describe('ChatContent empty-state gate is harness-agnostic', () => {
     expect(screen.getByTestId('draft-session-surface')).toBeInTheDocument()
   })
 
-  /**
-   * Both transcripts are views of one session, so the fade that marks *arriving at a
-   * different session* must not replay when a call switches between them — that read
-   * as the chat blanking out for a frame. The frame element is what carries the fade,
-   * so it has to survive the switch.
-   */
-  it('keeps one transcript frame when a call switches the view', () => {
-    reset()
-    hoisted.sessionState.messages = []
-    hoisted.sessionState.session = { sessionId: 'sid-1' }
-    hoisted.sessionState._historyHydrated = true
-    hoisted.sessionState.sessionProvider = 'codex'
-    hoisted.sessionState.preferredProvider = 'codex'
-    useCodexRealtimeViewStore.getState().setTimeline('sid-1', {
-      segments: [{ id: 'seg-1', realtimeSessionId: 'rt-1', role: 'user', text: 'spoken' }],
-      threadMessages: [],
-      activeRealtimeSessionId: null,
-      hasTimeline: true,
-    })
-
-    const { container } = renderContent()
-    const before = container.querySelector('[data-transcript-frame]')
-    expect(before).not.toBeNull()
-    expect(useCodexRealtimeViewStore.getState().sessions['sid-1'].view).toBe('thread')
-
-    // What starting a call does: the realtime view takes over the same session.
-    act(() => {
-      useCodexRealtimeViewStore.getState().setView('sid-1', 'realtime')
-    })
-
-    expect(container.querySelector('[data-transcript-frame]')).toBe(before)
-  })
-
-  it('renders canonical Codex turns behind a voice-only session', async () => {
+  it('renders voice transcript and canonical Codex turns in one turn view', async () => {
     reset()
     hoisted.sessionState.messages = []
     hoisted.sessionState.session = { sessionId: 'sid-1' }
@@ -421,7 +388,12 @@ describe('ChatContent empty-state gate is harness-agnostic', () => {
     hoisted.sessionState.sessionProvider = 'codex'
     hoisted.sessionState.preferredProvider = 'codex'
     const timeline = {
-      segments: [],
+      segments: [{
+        id: 'voice-1',
+        realtimeSessionId: 'rt-1',
+        role: 'user' as const,
+        text: 'Voice request',
+      }],
       threadMessages: [{
         id: 'codex-timeline-turn-1',
         role: 'assistant' as const,
@@ -441,6 +413,8 @@ describe('ChatContent empty-state gate is harness-agnostic', () => {
     await waitFor(() => {
       expect(document.querySelector('[data-message-id="codex-timeline-turn-1"]')).not.toBeNull()
     })
+    expect(document.querySelector('[data-message-id="codex-realtime-voice-1"]')).not.toBeNull()
+    expect(screen.getAllByTestId('chat-message')).toHaveLength(2)
     expect(screen.queryByTestId('chat-suggestions')).toBeNull()
   })
 

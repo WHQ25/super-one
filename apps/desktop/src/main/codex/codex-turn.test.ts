@@ -2304,14 +2304,17 @@ describe('streamTurnEvents finalizes stale in_progress items on turn/completed',
       },
     ])
 
+    const onTurnStarted = vi.fn()
     const result = await streamTurnEvents(
       mockConnection,
       session,
       null,
       new AbortController(),
+      { onTurnStarted },
     )
 
     expect(result.turnId).toBe('automatic-turn')
+    expect(onTurnStarted).toHaveBeenCalledWith({ turnId: 'automatic-turn', queued: false })
     expect(session.activeTurnId).toBe('automatic-turn')
 
     await session.steerFn?.('Continue')

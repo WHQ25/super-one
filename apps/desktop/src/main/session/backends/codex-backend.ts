@@ -66,6 +66,7 @@ import type { BackendCommand, BackendStartOptions, HarnessId, SessionBackend, Ta
 
 export interface CodexRunStreamCallbacksDeps {
   onThreadStarted?: (threadId: string) => void
+  onTurnStarted?: (info: { turnId?: string; queued: boolean }) => void
   onItemDelta?: (phase: 'started' | 'updated' | 'completed', item: CodexThreadItem) => void
   onUsageDelta?: (usage: CodexUsageInfo) => void
   onUsageAccounted?: (threadId: string, usage: CodexUsageInfo) => void
@@ -263,6 +264,7 @@ export class CodexBackend implements SessionBackend {
 
   private session: CodexSession | null = null
   private realtimeHandle: CodexRealtimeHandle | null = null
+  private realtimeTurnPump: Promise<void> | null = null
   private authChangedUnsub: (() => void) | null = null
 
   private warmHandlePromise: Promise<WarmCodexHandle | null> | null = null
@@ -364,6 +366,7 @@ export class CodexBackend implements SessionBackend {
   private isTurnBusy(): boolean {
     return Boolean(
       this.activeRun
+      || this.realtimeTurnPump
       || this.goalController.active
       || this.session?.runningController
       || this.session?.steerFn,
@@ -544,12 +547,12 @@ export class CodexBackend implements SessionBackend {
 
   async releaseRuntime(_reason: 'idle'): Promise<void> {
     const session = this.session
-    if (this.activeRun || this.goalController.active || session?.runningController) return
+    if (this.activeRun || this.realtimeTurnPump || this.goalController.active || session?.runningController) return
     if (session?.forkListeners && session.forkListeners.size > 0) return
     const handle = session?.connectionHandle ?? null
     await this.discardWarmHandle('idle')
     if (handle && session?.connectionHandle === handle && (
-      this.activeRun || this.goalController.active || session.runningController
+      this.activeRun || this.realtimeTurnPump || this.goalController.active || session.runningController
     )) return
     await this.closeRuntimeConnection('idle release', handle)
     trace('backend.lifecycle', 'runtime_released', { reason: 'idle', backend: 'codex' })
@@ -649,9 +652,23 @@ export class CodexBackend implements SessionBackend {
   async send(request: SendMessageRequest): Promise<void> {
     this.assertStarted()
     if (this.realtimeHandle) throw new Error('Stop realtime voice before sending a text turn.')
-    if ((request.priority === 'next' || request.priority === 'later') && this.isTurnBusy()) {
-      await this.enqueueDurableMessage(request)
-      return
+    if (this.realtimeTurnPump) await this.realtimeTurnPump
+    if (request.priority === 'next' || request.priority === 'later') {
+      if (this.isTurnBusy()) {
+        await this.enqueueDurableMessage(request)
+        return
+      }
+      // Falling through to a normal turn still has to answer the queue. Three
+      // layers decide "is this queued" independently — the renderer from its
+      // `status_change`-driven copy of the status, `Session.isStreaming()`, and
+      // this check — and only the last one is authoritative. The renderer has
+      // already parked the bubble in `queuedMessages`, and `queued_message_consumed`
+      // is the only event that takes it back out, so skipping it here strands
+      // the bubble at the bottom of the chat while the reply streams above it.
+      // `QueuedUserMessageQueue.intercept` does the same for every other harness.
+      if (request.clientMessageId) {
+        this.emit({ type: 'queued_message_consumed', clientMessageId: request.clientMessageId })
+      }
     }
     const sessionThreadId = this.session?.threadId
     if (!this.goalController.goal && sessionThreadId) {
@@ -896,20 +913,109 @@ export class CodexBackend implements SessionBackend {
   async startRealtimeVoice(request: RealtimeVoiceStartRequest): Promise<void> {
     this.assertStarted()
     if (this.realtimeHandle) throw new Error('Realtime voice is already active.')
+    if (this.realtimeTurnPump) await this.realtimeTurnPump
     if (this.isTurnBusy()) throw new Error('Wait for the current Codex turn to finish before starting voice.')
     const session = this.session
     const startOpts = this.startOpts
     if (!session || !startOpts) throw new Error('Codex realtime session is unavailable.')
-    const handle = await startCodexRealtime(
-      session,
-      this.service.getProjectAuth(startOpts.projectPath),
-      startOpts.projectPath,
-      startOpts.cwd || startOpts.projectPath,
-      request,
-      (event) => this.emit(event),
-    )
+    let runningAssistantId: string | null = null
+    let turnStartedAt = Date.now()
+    const finalizeRealtimeTurn = (result: Pick<CodexRunResult, 'threadId' | 'turnId' | 'usage' | 'turnUsage'>, finalResponse?: string): void => {
+      if (!runningAssistantId) return
+      const turnUsage = this.completedTurnUsage(result.turnUsage)
+      this.recordTurnUsageStats(turnUsage, result.usage, session.model)
+      this.finalizeMessage(runningAssistantId, {
+        ...(finalResponse ? { finalResponseFallback: finalResponse } : {}),
+        threadId: result.threadId,
+        turnId: result.turnId,
+        usage: result.usage,
+        turnUsage,
+        model: session.model,
+        startedAt: turnStartedAt,
+      })
+      runningAssistantId = null
+    }
+    const baseCallbacks = this.buildCallbacks()
+    this.swapRunAssistantId = (nextId: string) => {
+      if (runningAssistantId) {
+        finalizeRealtimeTurn({ threadId: this.providerSessionId, usage: this.lastUsageSnapshot })
+      } else {
+        this.resetSegments(nextId)
+      }
+      runningAssistantId = nextId
+      turnStartedAt = Date.now()
+      this.currentMessageId = nextId
+      this.ensureSegment(nextId)
+    }
+    let handle: CodexRealtimeHandle
+    try {
+      handle = await startCodexRealtime(
+        session,
+        this.service.getProjectAuth(startOpts.projectPath),
+        startOpts.projectPath,
+        startOpts.cwd || startOpts.projectPath,
+        request,
+        (event) => this.emit(event),
+        {
+          callbacks: {
+            ...baseCallbacks,
+            onTurnStarted: ({ turnId, queued }) => {
+              if (queued) return
+              const messageId = `codex_realtime_${turnId ?? `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`}`
+              this.resetSegments(messageId)
+              runningAssistantId = messageId
+              turnStartedAt = Date.now()
+              this.currentMessageId = messageId
+              this.emit({
+                type: 'message_start',
+                message: {
+                  id: messageId,
+                  role: 'assistant',
+                  status: 'streaming',
+                  content: [],
+                  createdAt: new Date().toISOString(),
+                  providerId: 'codex',
+                },
+              })
+              this.emit({ type: 'status_change', status: 'streaming' })
+            },
+            onTurnCompleted: ({ turnId }) => {
+              finalizeRealtimeTurn({
+                threadId: this.providerSessionId,
+                turnId,
+                usage: this.lastUsageSnapshot,
+              })
+            },
+            onTurnFailed: (error) => {
+              if (runningAssistantId) this.failMessage(runningAssistantId, error)
+              runningAssistantId = null
+            },
+          },
+          onCompleted: (result) => {
+            finalizeRealtimeTurn(result, result.finalResponse)
+            this.emit({ type: 'status_change', status: 'idle' })
+            this.currentMessageId = null
+            this.flushPendingTaskNotifications()
+          },
+          onError: (error) => {
+            if (runningAssistantId) this.failMessage(runningAssistantId, error)
+            runningAssistantId = null
+            this.emit({ type: 'status_change', status: 'idle' })
+            this.currentMessageId = null
+          },
+        },
+      )
+    } catch (error) {
+      this.swapRunAssistantId = null
+      throw error
+    }
     this.fireProviderSessionId(handle.threadId)
     this.realtimeHandle = handle
+    const turnPump = handle.delegatedTurns.finally(() => {
+      if (this.realtimeTurnPump === turnPump) this.realtimeTurnPump = null
+      this.swapRunAssistantId = null
+    })
+    this.realtimeTurnPump = turnPump
     void handle.closed.finally(() => {
       if (this.realtimeHandle === handle) this.realtimeHandle = null
     })
@@ -940,11 +1046,13 @@ export class CodexBackend implements SessionBackend {
     this.taskNotificationFlush.dispose()
     try { await this.realtimeHandle?.stop() } catch { /* connection teardown below is authoritative */ }
     this.realtimeHandle = null
+    const realtimeTurnPump = this.realtimeTurnPump
     const session = this.session
     try {
       if (session && (session.runningController || this.activeRun)) resetCodexSession(session)
       else await this.closeRuntimeConnection('backend close')
     } catch { /* ignore */ }
+    if (realtimeTurnPump) { try { await realtimeTurnPump } catch { /* ignore */ } }
     if (this.warmHandlePromise) {
       const warmPromise = this.warmHandlePromise
       this.warmHandlePromise = null

@@ -29,13 +29,6 @@ describe('codex realtime view store', () => {
     expect(useCodexRealtimeViewStore.getState().sessions['session-a']?.loadStatus).toBe('loaded')
   })
 
-  it('keeps the selected view isolated by Codex session', () => {
-    useCodexRealtimeViewStore.getState().setView('session-a', 'realtime')
-
-    expect(useCodexRealtimeViewStore.getState().sessions['session-a']?.view).toBe('realtime')
-    expect(useCodexRealtimeViewStore.getState().sessions['session-b']).toBeUndefined()
-  })
-
   it('streams an interleaved user and assistant transcript into separate buffers', () => {
     const store = useCodexRealtimeViewStore.getState()
     store.setRealtimeSession('session-a', 'rt-1')
@@ -245,8 +238,6 @@ describe('codex realtime view store', () => {
       expect(useCodexRealtimeViewStore.getState().sessions['session-a']?.segments[0]?.text)
         .toBe('cached request')
     })
-    expect(useCodexRealtimeViewStore.getState().sessions['session-a']?.view).toBe('realtime')
-
     resolveProvider({ segments: [], threadMessages: [], activeRealtimeSessionId: null, hasTimeline: true })
     await hydration
   })

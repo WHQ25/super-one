@@ -1,12 +1,14 @@
 import type {
   AgentEvent,
   ChatMessage,
+  CodexRunResult,
   CodexRealtimeVoiceCatalog,
   CodexThreadItem,
   RealtimeTimelineResult,
   RealtimeTranscriptRole,
   RealtimeVoiceStartRequest,
 } from '@superone/shared/agent-types'
+import { isRealtimeDelegationText } from '@superone/shared/realtime-timeline'
 import {
   CODEX_REALTIME_END_INSTRUCTIONS,
   CODEX_REALTIME_INITIAL_DEVELOPER_INSTRUCTIONS,
@@ -23,12 +25,26 @@ import {
 } from './app-server-connection'
 import type { NotificationDispatcher, NotificationInbox } from './codex-notification-dispatcher'
 import type { CodexSession } from './codex-session'
-import { deriveFinalResponse, mapThreadItemFromAppServer, withThreadConnection } from './codex-turn'
+import {
+  deriveFinalResponse,
+  mapThreadItemFromAppServer,
+  rejectPendingApprovals,
+  streamTurnEvents,
+  withThreadConnection,
+  type CodexRunStreamCallbacks,
+} from './codex-turn'
 
 export interface CodexRealtimeHandle {
   readonly threadId: string
   stop(): Promise<void>
   closed: Promise<void>
+  delegatedTurns: Promise<void>
+}
+
+export interface CodexRealtimeDelegatedTurnHandler {
+  callbacks: CodexRunStreamCallbacks
+  onCompleted(result: CodexRunResult): void
+  onError(error: Error): void
 }
 
 const CODEX_REALTIME_VERSION = 'v3'
@@ -87,6 +103,18 @@ export async function listCodexRealtimeVoices(
 
 function transcriptRole(value: unknown): RealtimeTranscriptRole {
   return value === 'assistant' ? 'assistant' : 'user'
+}
+
+function mapTimelineRealtimeSegment(entry: unknown): RealtimeTimelineResult['segments'][number] | null {
+  const record = asRecord(entry)
+  if (readString(record?.type) !== 'realtime') return null
+  const item = asRecord(record?.item)
+  if (readString(item?.type) !== 'transcriptSegment') return null
+  const id = readString(item?.id)
+  const realtimeSessionId = readString(item?.realtimeSessionId)
+  const text = typeof item?.text === 'string' ? item.text : ''
+  if (!id || !realtimeSessionId || !text) return null
+  return { id, realtimeSessionId, role: transcriptRole(item?.role), text }
 }
 
 /**
@@ -185,29 +213,50 @@ export function mapCodexRealtimeNotification(notification: AppServerNotification
 function mapTimelineThreadMessages(entries: unknown[], threadId: string | null): ChatMessage[] {
   const turns = new Map<string, {
     position: number
+    order: number
     status: ChatMessage['status']
     users: ChatMessage[]
     items: CodexThreadItem[]
   }>()
+  const realtimeMessages: Array<{ position: number; order: number; messages: ChatMessage[] }> = []
 
-  const turnFor = (turnId: string, position: number) => {
+  const turnFor = (turnId: string, position: number, order: number) => {
     const existing = turns.get(turnId)
     if (existing) {
       existing.position = Math.min(existing.position, position)
+      existing.order = Math.min(existing.order, order)
       return existing
     }
-    const created = { position, status: 'streaming' as const, users: [], items: [] }
+    const created = { position, order, status: 'streaming' as const, users: [], items: [] }
     turns.set(turnId, created)
     return created
   }
 
-  for (const entry of entries) {
+  for (const [order, entry] of entries.entries()) {
     const record = asRecord(entry)
     const type = readString(record?.type)
+    const position = typeof record?.position === 'number' ? record.position : Number.MAX_SAFE_INTEGER
+    if (type === 'realtime') {
+      const segment = mapTimelineRealtimeSegment(entry)
+      if (!segment) continue
+      realtimeMessages.push({
+        position,
+        order,
+        messages: [{
+          id: `codex-realtime-${segment.id}`,
+          role: segment.role,
+          status: 'complete',
+          content: [{ type: 'text', text: segment.text }],
+          createdAt: '',
+          providerId: 'codex',
+        }],
+      })
+      continue
+    }
+
     const turnId = readString(record?.turnId)
     if (!record || !turnId || (type !== 'item' && type !== 'turnStarted' && type !== 'turnCompleted')) continue
-    const position = typeof record.position === 'number' ? record.position : Number.MAX_SAFE_INTEGER
-    const turn = turnFor(turnId, position)
+    const turn = turnFor(turnId, position, order)
 
     if (type === 'turnCompleted') {
       const status = readString(record.status)
@@ -227,6 +276,7 @@ function mapTimelineThreadMessages(entries: unknown[], threadId: string | null):
         })
         .filter((part): part is string => part !== null)
         .join('\n')
+      if (isRealtimeDelegationText(text)) continue
       turn.users.push({
         id,
         role: 'user',
@@ -242,9 +292,8 @@ function mapTimelineThreadMessages(entries: unknown[], threadId: string | null):
     if (mapped) turn.items.push(mapped)
   }
 
-  return [...turns.entries()]
-    .sort(([, left], [, right]) => left.position - right.position)
-    .flatMap(([turnId, turn]) => {
+  const positionedTurns = [...turns.entries()].map(([turnId, turn]) => {
+    const messages = (() => {
       if (turn.items.length === 0) return turn.users
       const finalResponse = deriveFinalResponse(turn.items)
       const assistant: ChatMessage = {
@@ -264,7 +313,17 @@ function mapTimelineThreadMessages(entries: unknown[], threadId: string | null):
         },
       }
       return [...turn.users, assistant]
-    })
+    })()
+    return {
+      position: turn.position,
+      order: turn.order,
+      messages,
+    }
+  })
+
+  return [...realtimeMessages, ...positionedTurns]
+    .sort((left, right) => left.position - right.position || left.order - right.order)
+    .flatMap(({ messages }) => messages)
 }
 
 export function mapCodexRealtimeTimeline(
@@ -282,22 +341,9 @@ export function mapCodexRealtimeTimeline(
     })
     .sort((left, right) => left.position - right.position || left.index - right.index)
     .map(({ entry }) => entry)
-  const segments = chronologicalEntries.flatMap((entry) => {
-    const record = asRecord(entry)
-    if (readString(record?.type) !== 'realtime') return []
-    const item = asRecord(record?.item)
-    if (readString(item?.type) !== 'transcriptSegment') return []
-    const id = readString(item?.id)
-    const realtimeSessionId = readString(item?.realtimeSessionId)
-    const text = typeof item?.text === 'string' ? item.text : ''
-    if (!id || !realtimeSessionId || !text) return []
-    return [{
-      id,
-      realtimeSessionId,
-      role: transcriptRole(item?.role),
-      text,
-    }]
-  })
+  const segments = chronologicalEntries
+    .map(mapTimelineRealtimeSegment)
+    .filter((segment): segment is NonNullable<typeof segment> => segment !== null)
   return {
     segments,
     threadMessages: mapTimelineThreadMessages(chronologicalEntries, threadId),
@@ -330,6 +376,70 @@ async function pumpRealtime(
   }
 }
 
+async function pumpRealtimeDelegatedTurns(
+  connection: AppServerConnection,
+  inbox: NotificationInbox,
+  dispatcher: NotificationDispatcher,
+  session: CodexSession,
+  threadId: string,
+  realtimeClosed: Promise<void>,
+  handler: CodexRealtimeDelegatedTurnHandler,
+): Promise<void> {
+  const controller = new AbortController()
+  let turnActive = false
+  let realtimeEnded = false
+  session.runningController = controller
+  const callbacks: CodexRunStreamCallbacks = {
+    ...handler.callbacks,
+    onTurnStarted: (info) => {
+      turnActive = true
+      handler.callbacks.onTurnStarted?.(info)
+    },
+    onTurnCompleted: (info) => {
+      turnActive = false
+      handler.callbacks.onTurnCompleted?.(info)
+    },
+  }
+
+  void realtimeClosed.then(() => {
+    realtimeEnded = true
+    // Realtime close and its final delegated turn can arrive in the same batch.
+    // Give the dispatcher one task to route that turn before deciding the pump is idle.
+    setTimeout(() => {
+      if (!turnActive && callbacks.hasQueuedMessages?.() !== true) controller.abort()
+    }, 0)
+  })
+
+  try {
+    while (!controller.signal.aborted) {
+      turnActive = false
+      const streamed = await streamTurnEvents(connection, session, null, controller, callbacks, {
+        notificationInbox: inbox,
+      })
+      handler.onCompleted({
+        threadId: streamed.threadId,
+        ...(streamed.turnId ? { turnId: streamed.turnId } : {}),
+        finalResponse: deriveFinalResponse(streamed.items),
+        usage: streamed.usage,
+        turnUsage: streamed.turnUsage,
+        items: streamed.items,
+      })
+      if (realtimeEnded && callbacks.hasQueuedMessages?.() !== true) break
+    }
+  } catch (error) {
+    if (!controller.signal.aborted) {
+      handler.onError(error instanceof Error ? error : new Error(String(error)))
+    }
+  } finally {
+    dispatcher.unregisterRealtimeTurnInbox(threadId)
+    session.activeTurnId = null
+    session.steerFn = null
+    session.interruptFn = null
+    rejectPendingApprovals(session, 'Codex realtime turn interrupted')
+    if (session.runningController === controller) session.runningController = null
+  }
+}
+
 export async function startCodexRealtime(
   session: CodexSession,
   auth: CodexProjectAuth,
@@ -337,6 +447,7 @@ export async function startCodexRealtime(
   cwd: string,
   request: RealtimeVoiceStartRequest,
   emit: (event: AgentEvent) => void,
+  delegatedTurnHandler: CodexRealtimeDelegatedTurnHandler,
 ): Promise<CodexRealtimeHandle> {
   if (session.apiProviderId) {
     throw new Error('Realtime voice currently supports the official Codex account only.')
@@ -352,8 +463,18 @@ export async function startCodexRealtime(
       const dispatcher = session.notificationDispatcher
       if (!dispatcher) throw new Error('Codex notification dispatcher unavailable')
       const inbox = dispatcher.registerRealtimeInbox(threadId)
+      const turnInbox = dispatcher.registerRealtimeTurnInbox(threadId)
       const cancellation = { cancelled: false }
       const closed = pumpRealtime(inbox, dispatcher, threadId, emit, cancellation)
+      const delegatedTurns = pumpRealtimeDelegatedTurns(
+        connection,
+        turnInbox,
+        dispatcher,
+        session,
+        threadId,
+        closed,
+        delegatedTurnHandler,
+      )
       try {
         await connection.request(
           'thread/realtime/start',
@@ -362,12 +483,15 @@ export async function startCodexRealtime(
       } catch (error) {
         cancellation.cancelled = true
         dispatcher.unregisterRealtimeInbox(threadId)
+        dispatcher.unregisterRealtimeTurnInbox(threadId)
         void closed
+        void delegatedTurns
         throw error
       }
       return {
         threadId,
         closed,
+        delegatedTurns,
         stop: async () => {
           await connection.request('thread/realtime/stop', { threadId })
         },
@@ -390,9 +514,38 @@ export async function listCodexRealtimeTimeline(
     projectPath,
     cwd,
     resolvePermissionProfile(session.permissionPreset),
-    async ({ connection, threadId }) => mapCodexRealtimeTimeline(
-      await connection.request('thread/timeline/list', { threadId, limit: 200 }),
-      threadId,
-    ),
+    async ({ connection, threadId }) => listCodexRealtimeTimelinePages(connection.request, threadId),
   )
+}
+
+export async function listCodexRealtimeTimelinePages(
+  request: AppServerConnection['request'],
+  threadId: string,
+): Promise<RealtimeTimelineResult> {
+  const data: unknown[] = []
+  const seenCursors = new Set<string>()
+  let cursor: unknown = undefined
+  let activeRealtimeSessionAtPageStart: unknown = null
+  let firstPage = true
+
+  do {
+    const response = await request('thread/timeline/list', {
+      threadId,
+      limit: 200,
+      ...(cursor === undefined ? {} : { cursor }),
+    })
+    if (firstPage) {
+      activeRealtimeSessionAtPageStart = response.activeRealtimeSessionAtPageStart
+      firstPage = false
+    }
+    if (Array.isArray(response.data)) data.push(...response.data)
+    cursor = response.nextCursor ?? null
+    if (cursor !== null) {
+      const cursorKey = JSON.stringify(cursor)
+      if (seenCursors.has(cursorKey)) throw new Error('Codex timeline returned a repeated cursor.')
+      seenCursors.add(cursorKey)
+    }
+  } while (cursor !== null)
+
+  return mapCodexRealtimeTimeline({ data, activeRealtimeSessionAtPageStart }, threadId)
 }

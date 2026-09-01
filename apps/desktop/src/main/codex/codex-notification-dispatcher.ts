@@ -98,6 +98,8 @@ export interface NotificationDispatcher {
   unregisterForkInbox(threadId: string): void
   registerRealtimeInbox(threadId: string): NotificationInbox
   unregisterRealtimeInbox(threadId: string): void
+  registerRealtimeTurnInbox(threadId: string): NotificationInbox
+  unregisterRealtimeTurnInbox(threadId: string): void
   hasForkInbox(threadId: string): boolean
   forkThreadIds(): string[]
   close(reason?: string): void
@@ -115,6 +117,7 @@ export function createNotificationDispatcher(
   const mainState: InboxState = { queue: [], waiters: [], closed: false }
   const forkStates = new Map<string, InboxState>()
   const realtimeStates = new Map<string, InboxState>()
+  const realtimeTurnStates = new Map<string, InboxState>()
   let dispatcherClosed = false
 
   const pushTo = (state: InboxState, notif: AppServerNotification): void => {
@@ -174,6 +177,28 @@ export function createNotificationDispatcher(
       realtimeStates.delete(threadId)
       closeInboxState(state)
     },
+    registerRealtimeTurnInbox: (threadId) => {
+      let state = realtimeTurnStates.get(threadId)
+      if (!state) {
+        state = { queue: [], waiters: [], closed: false }
+        realtimeTurnStates.set(threadId, state)
+      }
+      const keep: AppServerNotification[] = []
+      for (const notif of mainState.queue) {
+        if (extractThreadId(notif.params) === threadId) pushTo(state, notif)
+        else keep.push(notif)
+      }
+      mainState.queue = keep
+      return makeInbox(state)
+    },
+    unregisterRealtimeTurnInbox: (threadId) => {
+      const state = realtimeTurnStates.get(threadId)
+      if (!state) return
+      realtimeTurnStates.delete(threadId)
+      for (const notif of state.queue) pushTo(mainState, notif)
+      state.queue = []
+      closeInboxState(state)
+    },
     hasForkInbox: (threadId) => forkStates.has(threadId),
     forkThreadIds: () => Array.from(forkStates.keys()),
     close: (reason) => {
@@ -187,8 +212,12 @@ export function createNotificationDispatcher(
       for (const state of realtimeStates.values()) {
         closeInboxState(state, err)
       }
+      for (const state of realtimeTurnStates.values()) {
+        closeInboxState(state, err)
+      }
       forkStates.clear()
       realtimeStates.clear()
+      realtimeTurnStates.clear()
     },
   }
 
@@ -202,8 +231,10 @@ export function createNotificationDispatcher(
         closeInboxState(mainState, error)
         for (const state of forkStates.values()) closeInboxState(state, error)
         for (const state of realtimeStates.values()) closeInboxState(state, error)
+        for (const state of realtimeTurnStates.values()) closeInboxState(state, error)
         forkStates.clear()
         realtimeStates.clear()
+        realtimeTurnStates.clear()
         dispatcherClosed = true
         return
       }
@@ -226,6 +257,9 @@ export function createNotificationDispatcher(
       const realtimeState = threadId && notif.method.startsWith('thread/realtime/')
         ? realtimeStates.get(threadId)
         : undefined
+      const realtimeTurnState = threadId && !notif.method.startsWith('thread/realtime/')
+        ? realtimeTurnStates.get(threadId)
+        : undefined
       if (process.env.NODE_ENV === 'development' && (notif.method === 'mcpServer/elicitation/request' || notif.method.startsWith('applyExecApproval') || notif.method.startsWith('applyPatchApproval'))) {
         trace('codex.dispatch', 'approval_route', {
           method: notif.method,
@@ -237,6 +271,7 @@ export function createNotificationDispatcher(
       }
       if (realtimeState) pushTo(realtimeState, notif)
       else if (forkState) pushTo(forkState, notif)
+      else if (realtimeTurnState) pushTo(realtimeTurnState, notif)
       else pushTo(mainState, notif)
     }
   })()

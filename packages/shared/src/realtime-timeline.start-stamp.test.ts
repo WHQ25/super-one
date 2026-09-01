@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import type { RealtimeTimelineSegment } from './agent-types'
-import { mergePendingRealtimeTimelineSegments } from './realtime-timeline'
+import { isRealtimeDelegationText, mergePendingRealtimeTimelineSegments } from './realtime-timeline'
+
+describe('realtime delegation text', () => {
+  it('recognizes only messages fully wrapped by the internal tag', () => {
+    expect(isRealtimeDelegationText(`
+      <realtime_delegation>
+        <input>Inspect the project</input>
+      </realtime_delegation>
+    `)).toBe(true)
+    expect(isRealtimeDelegationText('Mention <realtime_delegation> as text')).toBe(false)
+  })
+})
 
 /**
  * Codex publishes realtime items without timestamps, so a start time only ever exists

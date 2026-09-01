@@ -65,32 +65,25 @@ describe('CodexRealtimeVoiceButton', () => {
     vi.unstubAllGlobals()
   })
 
-  it('enters the call view on the click instead of waiting for the SDP answer', async () => {
+  it('marks the unified transcript as starting before the SDP answer', async () => {
     render(<CodexRealtimeVoiceButton projectPath="/repo" sessionId="session-1" />)
     fireEvent.click(screen.getByRole('button'))
 
-    // Negotiation takes seconds. Leaving the pane on the empty-session chrome for that
-    // span walks it through three mutually exclusive branches, each of which remounts
-    // the harness picker — the user sees the chat blank out and rebuild.
     await waitFor(() => {
       const view = useCodexRealtimeViewStore.getState().sessions['session-1']
-      expect(view?.view).toBe('realtime')
       expect(view?.starting).toBe(true)
     })
     expect(useCodexRealtimeViewStore.getState().sessions['session-1']?.realtimeSessionId).toBeNull()
   })
 
-  it('returns to the previous view when the call never connects', async () => {
+  it('clears the starting state when the call never connects', async () => {
     ;(navigator.mediaDevices.getUserMedia as ReturnType<typeof vi.fn>)
       .mockRejectedValueOnce(new Error('microphone blocked'))
-    useCodexRealtimeViewStore.getState().setView('session-1', 'thread')
-
     render(<CodexRealtimeVoiceButton projectPath="/repo" sessionId="session-1" />)
     fireEvent.click(screen.getByRole('button'))
 
     await waitFor(() => {
       const view = useCodexRealtimeViewStore.getState().sessions['session-1']
-      expect(view?.view).toBe('thread')
       expect(view?.starting).toBe(false)
     })
   })
@@ -107,8 +100,6 @@ describe('CodexRealtimeVoiceButton', () => {
       additionalDirs: ['/extra'],
     }))
 
-    // The view already entered the call on the click; `realtime_started` only names it.
-    expect(useCodexRealtimeViewStore.getState().sessions['session-1']?.view).toBe('realtime')
     emit?.({
       type: 'realtime_started',
       sessionId: 'session-1',
@@ -116,7 +107,6 @@ describe('CodexRealtimeVoiceButton', () => {
       version: 'v3',
     })
     const started = useCodexRealtimeViewStore.getState().sessions['session-1']
-    expect(started?.view).toBe('realtime')
     expect(started?.realtimeSessionId).toBe('realtime-1')
     expect(started?.starting).toBe(false)
 

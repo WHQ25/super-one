@@ -124,6 +124,33 @@ describe('NotificationDispatcher', () => {
     dispatcher.close()
   })
 
+  it('isolates backing Codex turns while realtime is active', async () => {
+    const { connection } = makeQueueConnection([])
+    const dispatcher = createNotificationDispatcher(connection)
+    const turnInbox = dispatcher.registerRealtimeTurnInbox('main-1')
+    const realtimeInbox = dispatcher.registerRealtimeInbox('main-1')
+    pushNotification(connection, { method: 'turn/started', params: { threadId: 'main-1', turn: { id: 'turn-1' } } })
+    pushNotification(connection, { method: 'thread/realtime/sdp', params: { threadId: 'main-1', sdp: 'answer' } })
+    pushNotification(connection, { method: 'item/started', params: { threadId: 'other', item: {} } })
+
+    await expect(turnInbox.next()).resolves.toMatchObject({ method: 'turn/started' })
+    await expect(realtimeInbox.next()).resolves.toMatchObject({ method: 'thread/realtime/sdp' })
+    await expect(dispatcher.mainInbox.next()).resolves.toMatchObject({ params: { threadId: 'other' } })
+    dispatcher.close()
+  })
+
+  it('returns unread backing turn notifications to main after realtime', async () => {
+    const { connection } = makeQueueConnection([])
+    const dispatcher = createNotificationDispatcher(connection)
+    dispatcher.registerRealtimeTurnInbox('main-1')
+    pushNotification(connection, { method: 'turn/started', params: { threadId: 'main-1', turn: { id: 'turn-1' } } })
+    await Promise.resolve()
+    dispatcher.unregisterRealtimeTurnInbox('main-1')
+
+    await expect(dispatcher.mainInbox.next()).resolves.toMatchObject({ method: 'turn/started' })
+    dispatcher.close()
+  })
+
   it('reads threadId from nested params.thread.id', async () => {
     const { connection } = makeQueueConnection([])
     const dispatcher = createNotificationDispatcher(connection)

@@ -2683,6 +2683,30 @@ describe('deferred resume on sendMessage', () => {
   })
 })
 
+describe('message id minting', () => {
+  it('gives two sends in the same millisecond distinct client message ids', async () => {
+    setupProject('/test')
+    mockWindowAgent.sendMessage.mockClear()
+    // Codex keys its durable queue by clientMessageId, so a collision silently
+    // drops one queued message and strands its bubble in the composer queue.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'))
+      await useChatStore.getState().sendMessage('first')
+      await useChatStore.getState().sendMessage('second')
+    } finally {
+      vi.useRealTimers()
+    }
+
+    const ids = mockWindowAgent.sendMessage.mock.calls.map(
+      (call) => (call[1] as { clientMessageId?: string }).clientMessageId,
+    )
+    expect(ids).toHaveLength(2)
+    expect(ids.every(Boolean)).toBe(true)
+    expect(new Set(ids).size).toBe(2)
+  })
+})
+
 describe('codex plan mode', () => {
   it('toggles codex plan mode via the shortcut action', () => {
     setupProject('/test')

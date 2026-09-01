@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   buildCodexRealtimeStartParams,
+  listCodexRealtimeTimelinePages,
   mapCodexRealtimeVoiceCatalog,
   mapCodexRealtimeNotification,
   mapCodexRealtimeTimeline,
@@ -129,10 +130,56 @@ describe('Codex realtime protocol mapping', () => {
         { id: 'rt-item-1', realtimeSessionId: 'rt-1', role: 'user', text: 'hello' },
         { id: 'rt-item-2', realtimeSessionId: 'rt-1', role: 'assistant', text: 'hi' },
       ],
-      threadMessages: [],
+      threadMessages: [
+        {
+          id: 'codex-realtime-rt-item-1',
+          role: 'user',
+          status: 'complete',
+          content: [{ type: 'text', text: 'hello' }],
+          createdAt: '',
+          providerId: 'codex',
+        },
+        {
+          id: 'codex-realtime-rt-item-2',
+          role: 'assistant',
+          status: 'complete',
+          content: [{ type: 'text', text: 'hi' }],
+          createdAt: '',
+          providerId: 'codex',
+        },
+      ],
       activeRealtimeSessionId: 'rt-1',
       hasTimeline: true,
     })
+  })
+
+  it('loads every timeline page using Codex opaque cursors', async () => {
+    const cursor = { threadId: 'thread-1', position: 100, kind: 2, id: 'cursor-1' }
+    const request = vi.fn()
+      .mockResolvedValueOnce({
+        data: [{
+          type: 'realtime',
+          position: 2,
+          item: { id: 'newer', realtimeSessionId: 'rt-1', type: 'transcriptSegment', role: 'assistant', text: 'newer' },
+        }],
+        nextCursor: cursor,
+        activeRealtimeSessionAtPageStart: 'rt-1',
+      })
+      .mockResolvedValueOnce({
+        data: [{
+          type: 'realtime',
+          position: 1,
+          item: { id: 'older', realtimeSessionId: 'rt-1', type: 'transcriptSegment', role: 'user', text: 'older' },
+        }],
+        nextCursor: null,
+      })
+
+    const result = await listCodexRealtimeTimelinePages(request, 'thread-1')
+
+    expect(request).toHaveBeenNthCalledWith(1, 'thread/timeline/list', { threadId: 'thread-1', limit: 200 })
+    expect(request).toHaveBeenNthCalledWith(2, 'thread/timeline/list', { threadId: 'thread-1', limit: 200, cursor })
+    expect(result.segments.map((segment) => segment.id)).toEqual(['older', 'newer'])
+    expect(result.activeRealtimeSessionId).toBe('rt-1')
   })
 
   it('reports a realtime timeline even when it has no transcript segments', () => {
@@ -188,5 +235,51 @@ describe('Codex realtime protocol mapping', () => {
       content: [{ type: 'text', text: 'Done' }],
       metadata: { codex: { threadId: 'thread-1', turnId: 'turn-1' } },
     })
+  })
+
+  it('interleaves voice transcript with normal turns and hides realtime delegation input', () => {
+    const result = mapCodexRealtimeTimeline({
+      data: [
+        {
+          type: 'realtime',
+          position: 1,
+          item: {
+            type: 'transcriptSegment',
+            id: 'voice-user-1',
+            realtimeSessionId: 'rt-1',
+            role: 'user',
+            text: 'Inspect the project',
+          },
+        },
+        { type: 'turnStarted', position: 2, turnId: 'turn-1' },
+        {
+          type: 'item',
+          position: 3,
+          turnId: 'turn-1',
+          item: {
+            type: 'userMessage',
+            id: 'delegation-1',
+            content: [{
+              type: 'text',
+              text: '<realtime_delegation>\n<input>Inspect the project</input>\n</realtime_delegation>',
+            }],
+          },
+        },
+        {
+          type: 'item',
+          position: 4,
+          turnId: 'turn-1',
+          item: { type: 'agentMessage', id: 'agent-1', text: 'Found the issue', phase: null, delivery: null },
+        },
+        { type: 'turnCompleted', position: 5, turnId: 'turn-1', status: 'completed' },
+      ],
+    }, 'thread-1')
+
+    expect(result.threadMessages.map((message) => [message.id, message.role])).toEqual([
+      ['codex-realtime-voice-user-1', 'user'],
+      ['codex-timeline-turn-1', 'assistant'],
+    ])
+    expect(result.threadMessages[0]?.content).toEqual([{ type: 'text', text: 'Inspect the project' }])
+    expect(result.threadMessages[1]?.content).toEqual([{ type: 'text', text: 'Found the issue' }])
   })
 })

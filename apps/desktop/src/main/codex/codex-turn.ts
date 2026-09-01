@@ -106,6 +106,8 @@ export function extractSuperoneMiniAppToolName(message: string): string | null {
 
 export interface CodexRunStreamCallbacks {
   onThreadStarted?: (threadId: string) => void
+  /** A provider-created turn surfaced on the shared thread notification stream. */
+  onTurnStarted?: (info: { turnId?: string; queued: boolean }) => void
   onItemDelta?: (phase: 'started' | 'updated' | 'completed', item: CodexThreadItem) => void
   emitForkItem?: (forkThreadId: string, phase: 'started' | 'updated' | 'completed', item: CodexThreadItem) => void
   onUsageDelta?: (usage: CodexUsageInfo) => void
@@ -2054,6 +2056,10 @@ export async function streamTurnEvents(
             })
           }
         }
+        callbacks?.onTurnStarted?.({
+          ...(startedTurnId ? { turnId: startedTurnId } : {}),
+          queued: isQueuedTurnStart,
+        })
         break
       }
 

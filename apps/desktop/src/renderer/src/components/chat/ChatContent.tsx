@@ -41,13 +41,17 @@ const WorkflowFullView = lazy(() => import('./WorkflowFullView').then((m) => ({ 
 import { WorkflowNavigationContext, type WorkflowViewState } from './workflow-navigation-context'
 import { SelectionContextMenuZone } from './SelectionContextMenu'
 import { ChatScrollIndicator } from './ChatScrollIndicator'
-import { CodexRealtimeTranscript } from './CodexRealtimeTranscript'
+import { mergeCodexRealtimeMessages } from './codex-realtime-messages'
 import { extractTurnOutline } from './turn-outline'
 import { ChatRootContext } from './is-focus-in-chat'
 import type { CodexPlanApprovalState } from '@superone/shared/agent-types'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
-import { hydrateCodexRealtimeTimeline, useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
+import {
+  EMPTY_CODEX_REALTIME_SESSION_VIEW,
+  hydrateCodexRealtimeTimeline,
+  useCodexRealtimeViewStore,
+} from '@/stores/codex-realtime-view'
 
 interface ChatContentProps {
   scrollViewportRef: React.RefObject<HTMLDivElement | null>
@@ -228,6 +232,11 @@ function ChatTranscript({
   const hasRealtimeTimeline = useCodexRealtimeViewStore(
     (state) => displayedSessionId ? state.sessions[displayedSessionId]?.hasTimeline ?? false : false,
   )
+  const realtime = useCodexRealtimeViewStore(
+    (state) => displayedSessionId
+      ? state.sessions[displayedSessionId] ?? EMPTY_CODEX_REALTIME_SESSION_VIEW
+      : EMPTY_CODEX_REALTIME_SESSION_VIEW,
+  )
   const realtimeTimelineLoadStatus = useCodexRealtimeViewStore(
     (state) => displayedSessionId ? state.sessions[displayedSessionId]?.loadStatus ?? 'idle' : 'idle',
   )
@@ -242,13 +251,19 @@ function ChatTranscript({
     && sessionStatus === 'streaming'
   const isLocalCodexQueue = isLocalQueue && queueProvider === 'codex'
   const canStartCodexQueue = isLocalCodexQueue && sessionStatus !== 'streaming'
+  const displayMessages = useMemo(
+    () => queueProvider === 'codex' ? mergeCodexRealtimeMessages(messages, realtime) : messages,
+    [messages, queueProvider, realtime],
+  )
+  const displayLastAssistantMessageId = displayMessages.findLast((message) => message.role === 'assistant')?.id
+    ?? lastAssistantMessageId
 
   const prevScrollHeightRef = useRef(0)
   const [expandLevel, setExpandLevel] = useState(0)
-  const messagesLen = messages.length
-  const messagesTailId = messages[messagesLen - 1]?.id
+  const messagesLen = displayMessages.length
+  const messagesTailId = displayMessages[messagesLen - 1]?.id
   const compactIndices = useMemo(
-    () => messages.flatMap((msg, i) => (parseCompactMarker(msg) ? [i] : [])),
+    () => displayMessages.flatMap((msg, i) => (parseCompactMarker(msg) ? [i] : [])),
     // messages identity churns on every streaming delta; compact markers only change
     // when messages are added/removed, captured by length + tail id.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -258,7 +273,7 @@ function ChatTranscript({
     compactIndices.length > 0 && expandLevel < compactIndices.length
       ? compactIndices[compactIndices.length - 1 - expandLevel]
       : 0
-  const visibleMessages = visibleStart > 0 ? messages.slice(visibleStart) : messages
+  const visibleMessages = visibleStart > 0 ? displayMessages.slice(visibleStart) : displayMessages
 
   const [renderCount, setRenderCount] = useState(INITIAL_RENDER_COUNT)
   const sentinelRef = useRef<HTMLDivElement>(null)
@@ -330,8 +345,8 @@ function ChatTranscript({
   }, [compactIndices.length, scrollViewportRef])
   const [jumpNonce, setJumpNonce] = useState(0)
   const pendingScrollIdRef = useRef<string | null>(null)
-  const messagesRef = useRef(messages)
-  messagesRef.current = messages
+  const messagesRef = useRef(displayMessages)
+  messagesRef.current = displayMessages
   const compactIndicesRef = useRef(compactIndices)
   compactIndicesRef.current = compactIndices
   const jumpToMessage = useCallback((id: string) => {
@@ -370,7 +385,7 @@ function ChatTranscript({
 
   return (
     <div className="relative min-w-0 flex-1 overflow-hidden">
-      {messages.length === 0 && historyHydrated && sessionStatus !== 'streaming' && sessionStatus !== 'background' && !awaitingAssistantReply ? (
+      {displayMessages.length === 0 && historyHydrated && sessionStatus !== 'streaming' && sessionStatus !== 'background' && !awaitingAssistantReply ? (
         sideChatParentId
           // A side chat is empty on purpose and must never reach ChatSuggestions:
           // picking a harness there switches the project's active session, which
@@ -409,7 +424,7 @@ function ChatTranscript({
               }
               const compactInfo = parseCompactMarker(msg)
               if (compactInfo) {
-                const origIdx = messages.indexOf(msg)
+                const origIdx = displayMessages.indexOf(msg)
                 const rank = compactIndices.length - 1 - compactIndices.indexOf(origIdx)
                 const isExpanded = rank < expandLevel
                 return (
@@ -430,7 +445,7 @@ function ChatTranscript({
               const turnMeta = parseTurnMetaMarker(msg)
               if (turnMeta) {
                 // Metadata path already shows this summary above the footer.
-                if (isRedundantTurnSummaryMarker(turnMeta, messages)) return null
+                if (isRedundantTurnSummaryMarker(turnMeta, displayMessages)) return null
                 return (
                   <div key={msg.id} data-message-id={msg.id} className="chat-message-wrapper">
                     <TurnMetaIndicator meta={turnMeta} />
@@ -439,7 +454,7 @@ function ChatTranscript({
               }
               return (
                 <div key={msg.id} data-message-id={msg.id} className="chat-message-wrapper">
-                  <ChatMessage message={msg} sessionStatus={sessionStatus} isLastAssistant={msg.id === lastAssistantMessageId} />
+                  <ChatMessage message={msg} sessionStatus={sessionStatus} isLastAssistant={msg.id === displayLastAssistantMessageId} />
                 </div>
               )
             })}
@@ -475,12 +490,12 @@ function ChatTranscript({
           </SelectionContextMenuZone>
         </ScrollArea>
       )}
-      {messages.length > 0 && (
+      {displayMessages.length > 0 && (
         <ChatScrollIndicator entries={outline} hasCompact={hasCompact} compactExpanded={compactExpanded} compactSplit={compactSplit} viewportRef={scrollViewportRef} onJump={jumpToMessage} onToggleCompact={toggleCompact} />
       )}
       {!liquidGlass && <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-6 bg-linear-to-t from-card to-transparent" />}
       <AnimatePresence>
-        {showScrollButton && scrollToBottom && messages.length > 0 && (
+        {showScrollButton && scrollToBottom && displayMessages.length > 0 && (
           <motion.button
             onClick={scrollToBottom}
             className="absolute bottom-3 left-1/2 z-10 flex size-7 -translate-x-1/2 cursor-pointer items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm transition-colors hover:text-foreground"
@@ -500,20 +515,13 @@ function ChatTranscript({
 export function ChatContent({ scrollViewportRef, showScrollButton = false, scrollToBottom, stopAutoScroll, foreground = true }: ChatContentProps) {
   const scope = useSessionScope()
   const activeProject = useChatStore((s) => s.activeProject)
-  const { pendingPlanApproval, displayedSessionId, providerSessionId, sessionProvider, preferredProvider, messagesLength } = useActiveSession(useShallow((s) => ({
+  const { pendingPlanApproval, displayedSessionId, providerSessionId, sessionProvider, preferredProvider } = useActiveSession(useShallow((s) => ({
     pendingPlanApproval: s.pendingPlanApproval,
     displayedSessionId: scope?.sessionId ?? s._activeSessionId,
     providerSessionId: s._providerSessionId,
     sessionProvider: s.sessionProvider,
     preferredProvider: s.preferredProvider,
-    messagesLength: s.messages.length,
   })))
-  const conversationView = useCodexRealtimeViewStore(
-    (state) => displayedSessionId ? state.sessions[displayedSessionId]?.view ?? 'thread' : 'thread',
-  )
-  const realtimeThreadMessagesLength = useCodexRealtimeViewStore(
-    (state) => displayedSessionId ? state.sessions[displayedSessionId]?.threadMessages.length ?? 0 : 0,
-  )
   const projectPath = scope?.projectPath ?? activeProject
   const isCodexSession = resolveProvider({ sessionProvider, preferredProvider }) === 'codex'
   useEffect(() => {
@@ -522,24 +530,9 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
       || !projectPath
       || !isCodexSession
       || !providerSessionId
-      || messagesLength > 0
     ) return
     void hydrateCodexRealtimeTimeline(projectPath, displayedSessionId)
-  }, [displayedSessionId, isCodexSession, messagesLength, projectPath, providerSessionId])
-  const showRealtime = Boolean(
-    displayedSessionId
-    && projectPath
-    && isCodexSession
-    && conversationView === 'realtime',
-  )
-  const showRealtimeThread = Boolean(
-    displayedSessionId
-    && projectPath
-    && isCodexSession
-    && conversationView === 'thread'
-    && messagesLength === 0
-    && realtimeThreadMessagesLength > 0,
-  )
+  }, [displayedSessionId, isCodexSession, projectPath, providerSessionId])
 
   // ChatContent is the single render root for a visible session — mounted once per
   // single-mode pane, per mosaic tile, and per mini window. Reporting foreground here
@@ -672,31 +665,20 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
         <PlanApprovalPrompt />
       ) : (
         <>
-          {/* The fade belongs to arriving at a different session. Both transcripts are
-              views of the SAME session, so keying the fade here — rather than on each
-              of them — keeps starting a call from replaying it as a blank flash. */}
+          {/* The fade belongs to arriving at a different session. Voice and typed turns
+              share this transcript, so starting a call must not replace the frame. */}
           <div
             key={displayedSessionId ?? 'default'}
             data-transcript-frame=""
             className="flex min-h-0 min-w-0 flex-1 flex-col animate-[fade-in_150ms_ease-out]"
           >
-            {(showRealtime || showRealtimeThread) && displayedSessionId && projectPath ? (
-              <CodexRealtimeTranscript
-                projectPath={projectPath}
-                sessionId={displayedSessionId}
-                scrollViewportRef={scrollViewportRef}
-                liquidGlass={liquidGlass}
-                view={showRealtime ? 'realtime' : 'thread'}
-              />
-            ) : (
-              <ChatTranscript
-                scrollViewportRef={scrollViewportRef}
-                showScrollButton={showScrollButton}
-                scrollToBottom={scrollToBottom}
-                stopAutoScroll={stopAutoScroll}
-                liquidGlass={liquidGlass}
-              />
-            )}
+            <ChatTranscript
+              scrollViewportRef={scrollViewportRef}
+              showScrollButton={showScrollButton}
+              scrollToBottom={scrollToBottom}
+              stopAutoScroll={stopAutoScroll}
+              liquidGlass={liquidGlass}
+            />
           </div>
           <div className="mx-auto w-full min-w-0 max-w-3xl">
             <ChatComposerShell />

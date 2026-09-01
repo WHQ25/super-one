@@ -7,8 +7,6 @@ import type {
 } from '@superone/shared/agent-types'
 import { mergePendingRealtimeTimelineSegments } from '@superone/shared/realtime-timeline'
 
-export type CodexConversationView = 'thread' | 'realtime'
-
 /**
  * One transcript item of the running call. Codex opens a separate item per speaker
  * the moment they start, so the two roles stream into two buffers and the array
@@ -25,7 +23,6 @@ export interface CodexRealtimeLiveItem {
 }
 
 export interface CodexRealtimeSessionViewState {
-  view: CodexConversationView
   loadStatus: 'idle' | 'loading' | 'loaded' | 'error'
   segments: RealtimeTimelineSegment[]
   threadMessages: ChatMessage[]
@@ -43,7 +40,6 @@ export interface CodexRealtimeSessionViewState {
 }
 
 export const EMPTY_CODEX_REALTIME_SESSION_VIEW: CodexRealtimeSessionViewState = {
-  view: 'thread',
   loadStatus: 'idle',
   segments: [],
   threadMessages: [],
@@ -58,7 +54,6 @@ export type CodexRealtimeTranscriptItem = Omit<CodexRealtimeLiveItem, 'done'>
 
 interface CodexRealtimeViewStore {
   sessions: Record<string, CodexRealtimeSessionViewState>
-  setView: (sessionId: string, view: CodexConversationView) => void
   setTimelineLoading: (sessionId: string) => void
   setTimelineError: (sessionId: string) => void
   setTimeline: (sessionId: string, timeline: RealtimeTimelineResult) => void
@@ -92,12 +87,6 @@ export function liveItemToSegment(item: CodexRealtimeLiveItem): RealtimeTimeline
 
 export const useCodexRealtimeViewStore = create<CodexRealtimeViewStore>((set) => ({
   sessions: {},
-
-  setView: (sessionId, view) => set((state) => {
-    const current = sessionState(state.sessions, sessionId)
-    if (current.view === view) return state
-    return { sessions: { ...state.sessions, [sessionId]: { ...current, view } } }
-  }),
 
   setTimelineLoading: (sessionId) => set((state) => {
     const current = sessionState(state.sessions, sessionId)
@@ -227,11 +216,7 @@ export const useCodexRealtimeViewStore = create<CodexRealtimeViewStore>((set) =>
 const timelineHydrations = new Map<string, Promise<void>>()
 
 function applyTimeline(sessionId: string, timeline: RealtimeTimelineResult): void {
-  const store = useCodexRealtimeViewStore.getState()
-  store.setTimeline(sessionId, timeline)
-  if (timeline.threadMessages.length === 0 && timeline.segments.length > 0) {
-    store.setView(sessionId, 'realtime')
-  }
+  useCodexRealtimeViewStore.getState().setTimeline(sessionId, timeline)
 }
 
 /** Load the local snapshot first, then reconcile it with Codex in the background. */

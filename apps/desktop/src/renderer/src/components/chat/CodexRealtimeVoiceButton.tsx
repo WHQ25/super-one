@@ -8,7 +8,6 @@ import type { AgentEvent } from '@superone/shared/agent-types'
 import {
   refreshCodexRealtimeTimeline,
   useCodexRealtimeViewStore,
-  type CodexConversationView,
 } from '@/stores/codex-realtime-view'
 import { preferTcpIceCandidates, startWebRtcDiagnostics, waitForIceGathering } from '@/lib/realtime-webrtc'
 
@@ -24,7 +23,6 @@ export interface CodexRealtimeVoiceButtonProps {
 export function CodexRealtimeVoiceButton({ projectPath, sessionId, additionalDirs, disabled = false }: CodexRealtimeVoiceButtonProps) {
   const { t } = useTranslation()
   const [state, setState] = useState<VoiceState>('idle')
-  const setView = useCodexRealtimeViewStore((store) => store.setView)
   const setRealtimeSession = useCodexRealtimeViewStore((store) => store.setRealtimeSession)
   const setRealtimeStarting = useCodexRealtimeViewStore((store) => store.setRealtimeStarting)
   const startTranscriptItem = useCodexRealtimeViewStore((store) => store.startTranscriptItem)
@@ -37,7 +35,6 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, additionalDir
   const stateRef = useRef<VoiceState>('idle')
   const timelineLoadedRef = useRef(false)
   const negotiationTimerRef = useRef<number | null>(null)
-  const viewBeforeCallRef = useRef<CodexConversationView>('thread')
 
   useEffect(() => {
     timelineLoadedRef.current = false
@@ -50,8 +47,7 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, additionalDir
 
   const abandonStart = useCallback(() => {
     setRealtimeStarting(sessionId, false)
-    setView(sessionId, viewBeforeCallRef.current)
-  }, [sessionId, setRealtimeStarting, setView])
+  }, [sessionId, setRealtimeStarting])
 
   const releaseMedia = useCallback(() => {
     if (negotiationTimerRef.current !== null) window.clearTimeout(negotiationTimerRef.current)
@@ -79,8 +75,6 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, additionalDir
     if (event.sessionId !== sessionId) return
     if (event.type === 'realtime_started') {
       setRealtimeSession(sessionId, event.realtimeSessionId ?? 'live')
-      // The view switched on the click, so there is nothing to switch here.
-      setView(sessionId, 'realtime')
       return
     }
     if (event.type === 'realtime_sdp') {
@@ -134,7 +128,7 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, additionalDir
       setRealtimeSession(sessionId, null)
       void refreshTimeline()
     }
-  }), [abandonStart, appendTranscriptItemDelta, completeTranscriptItem, refreshTimeline, releaseMedia, sessionId, setRealtimeSession, setView, startTranscriptItem, updateState])
+  }), [abandonStart, appendTranscriptItemDelta, completeTranscriptItem, refreshTimeline, releaseMedia, sessionId, setRealtimeSession, startTranscriptItem, updateState])
 
   useEffect(() => () => {
     releaseMedia()
@@ -144,13 +138,7 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, additionalDir
 
   const start = useCallback(async () => {
     updateState('starting')
-    // Enter the call view on the click. Everything downstream — SDP negotiation, the
-    // first transcript item — takes seconds, and rendering the empty-pane chrome for
-    // that whole span remounts the harness picker through its own branch changes.
-    viewBeforeCallRef.current = useCodexRealtimeViewStore.getState()
-      .sessions[sessionId]?.view ?? 'thread'
     setRealtimeStarting(sessionId, true)
-    setView(sessionId, 'realtime')
     if (!timelineLoadedRef.current) void refreshTimeline()
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -205,7 +193,7 @@ export function CodexRealtimeVoiceButton({ projectPath, sessionId, additionalDir
     }
   }, [
     abandonStart, additionalDirs, projectPath, refreshTimeline, releaseMedia, sessionId,
-    setRealtimeStarting, setView, t, updateState,
+    setRealtimeStarting, t, updateState,
   ])
 
   const stop = useCallback(async () => {

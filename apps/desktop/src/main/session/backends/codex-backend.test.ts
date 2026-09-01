@@ -103,19 +103,27 @@ vi.mock('../../codex/codex-turn', () => ({
   buildCodexQueuedInput: turnMocks.buildCodexQueuedInput,
 }))
 
-const realtimeMocks = vi.hoisted(() => ({
-  startCodexRealtime: vi.fn(async () => ({
-    threadId: 'thread-realtime',
-    stop: vi.fn(async () => {}),
-    closed: new Promise<void>(() => {}),
-  })),
-  listCodexRealtimeTimeline: vi.fn(async () => ({
-    segments: [],
-    threadMessages: [],
-    activeRealtimeSessionId: null,
-    hasTimeline: false,
-  })),
-}))
+const realtimeMocks = vi.hoisted(() => {
+  const state = { delegatedHandler: undefined as unknown }
+  return {
+    state,
+    startCodexRealtime: vi.fn(async (...args: unknown[]) => {
+      state.delegatedHandler = args[6]
+      return {
+        threadId: 'thread-realtime',
+        stop: vi.fn(async () => {}),
+        closed: new Promise<void>(() => {}),
+        delegatedTurns: new Promise<void>(() => {}),
+      }
+    }),
+    listCodexRealtimeTimeline: vi.fn(async () => ({
+      segments: [],
+      threadMessages: [],
+      activeRealtimeSessionId: null,
+      hasTimeline: false,
+    })),
+  }
+})
 
 vi.mock('../../codex/codex-realtime', () => realtimeMocks)
 
@@ -127,11 +135,15 @@ vi.mock('../../codex/codex-session', () => ({
     threadId?: string,
     modelReasoningEffort?: unknown,
     permissionPreset?: string,
+    _apiProviderId?: string | null,
+    _systemPromptAppend?: string,
+    serviceTier?: string | null,
   ) => ({
     superoneSessionId,
     projectPath,
     model,
     modelReasoningEffort,
+    serviceTier: serviceTier ?? null,
     permissionPreset: permissionPreset ?? 'default',
     threadId: threadId ?? null,
     threadReady: false,
@@ -264,6 +276,7 @@ describe('CodexBackend lifecycle', () => {
     backend = new CodexBackend(service)
     realtimeMocks.startCodexRealtime.mockClear()
     realtimeMocks.listCodexRealtimeTimeline.mockClear()
+    realtimeMocks.state.delegatedHandler = undefined
   })
 
   it('kind is codex', () => {
@@ -310,6 +323,65 @@ describe('CodexBackend lifecycle', () => {
       type: 'provider_session_id',
       providerSessionId: 'thread-realtime',
     })
+  })
+
+  it('renders backing Codex turns while realtime voice is still active', async () => {
+    const events: AgentEvent[] = []
+    backend.onEvent((event) => events.push(event))
+    await backend.start(makeStartOpts())
+    await backend.startRealtimeVoice({ sdp: 'offer' })
+    const handler = realtimeMocks.state.delegatedHandler as {
+      callbacks: CodexRunStreamCallbacksDeps & { onTurnStarted?: (info: { turnId?: string; queued: boolean }) => void }
+      onCompleted: (result: CodexRunResult) => void
+    }
+    const item: CodexThreadItem = { id: 'agent-1', type: 'agent_message', text: 'Working live' }
+
+    handler.callbacks.onTurnStarted?.({ turnId: 'turn-live', queued: false })
+    handler.callbacks.onItemDelta?.('completed', item)
+    handler.onCompleted(makeResult({
+      threadId: 'thread-realtime',
+      turnId: 'turn-live',
+      finalResponse: 'Working live',
+      items: [item],
+    }))
+
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'message_start',
+      message: expect.objectContaining({ id: 'codex_realtime_turn-live', status: 'streaming' }),
+    }))
+    expect(events).toContainEqual({
+      type: 'codex_item_delta',
+      messageId: 'codex_realtime_turn-live',
+      phase: 'completed',
+      item,
+    })
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'message_complete',
+      messageId: 'codex_realtime_turn-live',
+    }))
+  })
+
+  it('waits for the realtime tail turn before starting the next text turn', async () => {
+    let finishTail!: () => void
+    const delegatedTurns = new Promise<void>((resolve) => { finishTail = resolve })
+    realtimeMocks.startCodexRealtime.mockResolvedValueOnce({
+      threadId: 'thread-realtime',
+      stop: vi.fn(async () => {}),
+      closed: Promise.resolve(),
+      delegatedTurns,
+    })
+    await backend.start(makeStartOpts())
+    await backend.startRealtimeVoice({ sdp: 'offer' })
+    await Promise.resolve()
+
+    const send = backend.send({ content: 'typed after voice' })
+    await Promise.resolve()
+    expect(service.runMock).not.toHaveBeenCalled()
+
+    finishTail()
+    await vi.waitFor(() => expect(service.runMock).toHaveBeenCalledOnce())
+    service.resolveRun(makeResult({ threadId: 'thread-realtime', turnId: 'text-turn' }))
+    await send
   })
 
   it('adopts a prewarmed connection and keeps it when the first send sets Codex options', async () => {
@@ -621,6 +693,16 @@ describe('CodexBackend send()', () => {
     expect(req.reasoningEffort).toBe('high')
   })
 
+  it('uses the session start service tier when the turn omits an override', async () => {
+    await backend.rebuild(makeStartOpts({ serviceTier: 'priority' }))
+    const pending = backend.send({ content: 'fast child turn' })
+    service.resolveRun(makeResult())
+    await pending
+
+    const [, , , req] = service.runMock.mock.calls[0]! as [unknown, unknown, string, CodexRunRequest]
+    expect(req.serviceTier).toBe('priority')
+  })
+
   it('codex.mode=review routes to reviewCodexTurn with the target', async () => {
     const pending = backend.send({
       content: '/review',
@@ -806,6 +888,29 @@ describe('CodexBackend send()', () => {
     expect(events).toContainEqual({ type: 'queued_message_consumed', clientMessageId: 'u2' })
     expect(events).toContainEqual(expect.objectContaining({ type: 'message_start', message: expect.objectContaining({ id: 'a2' }) }))
     expect(service.capturedCallbacks?.hasQueuedMessages?.()).toBe(false)
+
+    service.resolveRun(makeResult())
+    await pending
+  })
+
+  it('reconciles a queued send that reaches an idle backend by consuming it up front', async () => {
+    // The renderer parks the bubble in its own queue from a `status_change`-driven
+    // copy of the status, so a send typed in the gap after a turn ended still
+    // arrives with `priority: 'next'`. Running it as a normal turn without the
+    // consume event strands that bubble at the bottom of the chat forever.
+    const pending = backend.send({
+      content: 'late',
+      priority: 'next',
+      clientMessageId: 'u9',
+      assistantMessageId: 'a9',
+    })
+
+    expect(events).toContainEqual({ type: 'queued_message_consumed', clientMessageId: 'u9' })
+    const consumedAt = events.findIndex((e) => e.type === 'queued_message_consumed')
+    const startedAt = events.findIndex((e) => e.type === 'message_start')
+    expect(consumedAt).toBeGreaterThanOrEqual(0)
+    expect(consumedAt).toBeLessThan(startedAt)
+    expect(service.runMock).toHaveBeenCalledOnce()
 
     service.resolveRun(makeResult())
     await pending

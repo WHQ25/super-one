@@ -280,7 +280,10 @@ export function reduceTool(session: PerSessionState, event: ToolEvent): Partial<
       const prevTask = session.taskProgress[event.toolUseId]
       // Retry status only lives on sub-agent tool_progress (Task/Agent). A plain
       // tick clears any prior retry; a non-subagent tool never gets an entry.
-      const touchRetry = !!event.subagentRetry || !!prevTask?.retry
+      // A heartbeat is liveness, not progress — since SDK 0.3.257 Agent tool calls
+      // emit them periodically, so treating one as a plain tick would retract the
+      // badge while the subagent is still backing off.
+      const touchRetry = !!event.subagentRetry || (!!prevTask?.retry && !event.heartbeat)
       return {
         lastEventAt: Date.now(),
         messages: session.messages.map((msg) => {

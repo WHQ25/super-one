@@ -997,6 +997,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
             parentToolUseId: tp.parent_tool_use_id ?? null,
             taskId: tp.task_id,
             subagentType: tp.subagent_type,
+            ...(tp.heartbeat === true ? { heartbeat: true } : {}),
             subagentRetry: retry
               ? {
                   agentId: retry.agent_id ?? '',

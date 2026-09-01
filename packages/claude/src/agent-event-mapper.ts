@@ -669,6 +669,7 @@ export function createClaudeAgentEventMapper(
             parentToolUseId: raw.parent_tool_use_id ?? null,
             taskId: raw.task_id,
             subagentType: raw.subagent_type,
+            ...(raw.heartbeat === true ? { heartbeat: true } : {}),
             subagentRetry: retry ? {
               agentId: retry.agent_id ?? '',
               attempt: retry.attempt ?? 0,

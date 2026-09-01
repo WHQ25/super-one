@@ -159,6 +159,21 @@ describe('reduceTool: tool_progress', () => {
     expect(patch.taskProgress?.t1.retry).toBeUndefined()
   })
 
+  it('keeps a prior retry when the tick is a heartbeat frame', () => {
+    const session = createDefaultPerSessionState()
+    const retry = { agentId: 'a1', attempt: 2, maxRetries: 5, retryDelayMs: 60000, errorStatus: 429, errorCategory: 'rate_limit' }
+    session.taskProgress = { t1: { description: 'sub', totalTokens: 0, toolUses: 0, durationMs: 0, toolHistory: [], retry } }
+    session.messages = [makeAssistant('m1', [toolUseBlock('t1', 'Task')])]
+    const patch = reduceTool(session, {
+      type: 'tool_progress', messageId: 'm1', toolUseId: 't1', elapsedSeconds: 3, heartbeat: true,
+    } as never)
+    // The badge must survive the periodic Agent-tool heartbeat (SDK 0.3.257+):
+    // only a real progress tick means the retry is over.
+    expect((patch.taskProgress ?? session.taskProgress).t1.retry).toEqual(retry)
+    const tool = patch.messages?.[0].content[0] as { elapsedSeconds?: number }
+    expect(tool.elapsedSeconds).toBe(3)
+  })
+
   it('does not create a taskProgress entry for a non-subagent tool tick', () => {
     const session = createDefaultPerSessionState()
     session.messages = [makeAssistant('m1', [toolUseBlock('t1', 'BashTool')])]

@@ -29,6 +29,7 @@ import { CredentialConfig, OverridesEditor } from './providers/CredentialConfig'
 import { CredentialTabs } from './providers/CredentialTabs'
 import { CustomPlatformForm } from './providers/CustomPlatformForm'
 import { PlatformModelsPanel } from './providers/PlatformModelsPanel'
+import { plansByKeyCount } from './providers/plan-order'
 
 const BRAND_POPULARITY = [
   'anthropic',
@@ -214,8 +215,11 @@ function PlatformDetail({ platform }: { platform: Platform }) {
   const isDark = useIsDark()
   const isCustom = isCustomPlatform(platform)
   const variantLabel = platformVariantLabel(platform, platforms)
-  const [planId, setPlanId] = useState(platform.plans[0]?.id ?? '')
-  const selectedPlan = platform.plans.find((p) => p.id === planId) ?? platform.plans[0]
+  // Most-used plan first, so a user whose keys all live on one endpoint lands there instead of on
+  // whichever plan the registry happens to list first.
+  const orderedPlans = useMemo(() => plansByKeyCount(platform, credentials), [platform, credentials])
+  const [planId, setPlanId] = useState(() => orderedPlans[0]?.id ?? '')
+  const selectedPlan = orderedPlans.find((p) => p.id === planId) ?? orderedPlans[0]
   const [selectedKeyId, setSelectedKeyId] = useState('')
   const [editingName, setEditingName] = useState(false)
   const [iconBusy, setIconBusy] = useState(false)
@@ -321,9 +325,9 @@ function PlatformDetail({ platform }: { platform: Platform }) {
             )}
             {variantLabel && <Badge variant="secondary">{variantLabel}</Badge>}
           </span>
-          {platform.plans.length > 1 && (
+          {orderedPlans.length > 1 && (
             <span className="flex items-center gap-0.5 rounded-lg border border-border p-0.5">
-              {platform.plans.map((plan) => (
+              {orderedPlans.map((plan) => (
                 <button
                   key={plan.id}
                   type="button"

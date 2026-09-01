@@ -4,6 +4,76 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.60.1-alpha] - 2026-09-02
+
+### Added
+
+- Codex: realtime voice announces when it is actually connected. The composer
+  button used to flip to its stop state as soon as the SDP answer arrived —
+  before ICE and DTLS finish — so someone invited to speak was often talking
+  into a channel that could not yet carry audio. The cue now fires on
+  `connectionstatechange === 'connected'`, the point where media can flow, as
+  a synthesized chime (a sawtooth shaped by fixed vocal-tract formants).
+  Capture is held closed for the cue's duration so voice-activity detection
+  cannot mistake it for speech, and a session negotiating a call now shows a
+  connecting screen and a live indicator instead of the harness picker.
+- Codex: spoken turns and the Codex work they delegate render as one ordered
+  transcript. Entries carry `codexTimeline` metadata — a provenance tag, the
+  provider position once Codex publishes one, and a local event order used
+  until then — so live items, provider snapshots and reloaded history
+  reconcile onto a single sequence instead of racing to append. The chat
+  collapses each turn's delegated Codex work into that turn's own Detail
+  disclosure; the raw backing thread stays reachable in development through a
+  title-bar toggle.
+
+### Fixed
+
+- Claude: ambient housekeeping tasks no longer wedge a turn in background.
+  Tasks the CLI starts on its own — a live-update watcher, any
+  `skip_transcript` task — never report a terminal status, but were registered
+  in `activeBackgroundTasks` like real work, so one of them held the session
+  in `background` indefinitely: a running indicator in the sidebar and a
+  suppressed chat empty state. Both event mappers now filter on the `ambient`
+  flag added in Agent SDK 0.3.247. Genuine background work is unaffected.
+- Claude: the subagent retry badge survives SDK heartbeat ticks. Since Agent
+  SDK 0.3.257 an Agent tool call emits the same periodic `tool_progress`
+  heartbeat other long tools do; both mappers dropped the new `heartbeat`
+  field, so the renderer read it as an ordinary progress tick and retracted
+  SubagentRetryBadge while the subagent was still backing off. `heartbeat` is
+  carried through to AgentEvent, and only a real tick clears a retry.
+- Updater: update state is replayed to a late or reloaded renderer. The
+  startup check usually resolves before the renderer mounts its
+  `onUpdateEvent` listener, and `webContents.send` drops the event when nobody
+  is listening, so the sidebar update pill often never appeared until the next
+  launch. The main process now keeps the last emitted event and exposes it
+  over `UPDATER_GET_STATE`; the renderer subscribes first, then applies the
+  snapshot only while still idle. The updater is also re-pointed at the live
+  window from `createWindow`, so a window recreated via macOS activate no
+  longer drops every later event.
+
+### Changed
+
+- Upgrade Claude Agent SDK to 0.3.257 (from 0.3.246), moving the four pins
+  that must stay in lockstep: the desktop and CLI dependencies, the
+  `@superone/claude` harness package, `CLAUDE_SDK_VERSION`, and
+  `OFFICIAL_CLAUDE_SDK_VERSION`, which managed installs resolve at runtime.
+
+### Performance
+
+- Codex: a command item's aggregated output is capped at 256 KB. Codex
+  re-emits a command execution item in full on every output delta, so an
+  unbounded `aggregatedOutput` made streaming one command O(total²) and put
+  the whole buffer into persisted message metadata — a single `rg` over a
+  large tree was enough to stall the main process. The cap keeps the head
+  rather than a trailing window, because the renderer transport derives deltas
+  with `startsWith`.
+- Desktop: the size of a single event-trace row is bounded. The dev trace
+  serialized whatever it was handed, and Codex re-emitting a command item on
+  every delta meant tracing one large `rg` wrote thousands of multi-megabyte
+  rows through a synchronous better-sqlite3 insert — enough to stall the main
+  thread and exhaust the V8 heap. Long strings are capped inside the JSON
+  replacer, with a row-level backstop for payloads that are large by breadth.
+
 ## [0.60.0-alpha] - 2026-09-01
 
 ### Added

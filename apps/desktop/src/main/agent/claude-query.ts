@@ -623,7 +623,11 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
               emit({ type: 'status_change', status: 'streaming' })
             }
           } else if (sys.subtype === 'task_started') {
-            if (sys.task_id) activeBackgroundTasks.set(sys.task_id, { toolUseId: sys.tool_use_id, description: sys.description ?? '' })
+            // `ambient` marks housekeeping the CLI does not surface as user work
+            // (every skip_transcript task, plus auto-started live-update watchers).
+            // Counting one here would hold the turn in `background` forever: nothing
+            // retires it, so `maybeEmitDeferredIdle` could never fire.
+            if (sys.task_id && sys.ambient !== true) activeBackgroundTasks.set(sys.task_id, { toolUseId: sys.tool_use_id, description: sys.description ?? '' })
             emit({
               type: 'task_started',
               taskId: sys.task_id ?? '',
@@ -682,8 +686,8 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
             maybeEmitDeferredIdle()
           } else if (sys.subtype === 'background_tasks_changed') {
             activeBackgroundTasks.clear()
-            for (const t of (sys.tasks ?? []) as Array<{ task_id?: string; description?: string }>) {
-              if (t?.task_id) activeBackgroundTasks.set(t.task_id, { description: t.description ?? '' })
+            for (const t of (sys.tasks ?? []) as Array<{ task_id?: string; description?: string; ambient?: boolean }>) {
+              if (t?.task_id && t.ambient !== true) activeBackgroundTasks.set(t.task_id, { description: t.description ?? '' })
             }
             maybeEmitDeferredIdle()
           } else if (sys.subtype === 'hook_progress') {

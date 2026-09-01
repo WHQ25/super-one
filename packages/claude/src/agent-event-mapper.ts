@@ -342,7 +342,9 @@ export function createClaudeAgentEventMapper(
         }
         break
       case 'task_started':
-        if (system.task_id) {
+        // `ambient` housekeeping tasks never retire, so counting one would wedge
+        // the turn in `background` — see the desktop mapper for the same guard.
+        if (system.task_id && system.ambient !== true) {
           activeBackgroundTasks.set(system.task_id, {
             toolUseId: system.tool_use_id,
             description: system.description ?? '',
@@ -409,7 +411,7 @@ export function createClaudeAgentEventMapper(
       case 'background_tasks_changed':
         activeBackgroundTasks.clear()
         for (const task of system.tasks ?? []) {
-          if (task?.task_id) {
+          if (task?.task_id && task.ambient !== true) {
             activeBackgroundTasks.set(task.task_id, { description: task.description ?? '' })
           }
         }

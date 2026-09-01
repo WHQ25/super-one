@@ -1644,6 +1644,62 @@ describe('session_state_changed drives idle transition', () => {
     expect(statusTrail(events)).toEqual(['idle'])
   })
 
+  it('an ambient housekeeping task never counts as live background work', async () => {
+    state.messages = [
+      { type: 'system', subtype: 'task_started', task_id: 'amb-1', tool_use_id: 't1', description: 'live-update watcher', ambient: true },
+      { type: 'result', subtype: 'success', session_id: 'sid', usage: {} },
+    ]
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-ambient',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+    expect(statusTrail(events)).toEqual(['idle'])
+  })
+
+  it('background_tasks_changed listing only ambient tasks still settles to idle', async () => {
+    state.messages = [
+      { type: 'system', subtype: 'background_tasks_changed', tasks: [{ task_id: 'amb-1', description: 'watcher', ambient: true }] },
+      { type: 'result', subtype: 'success', session_id: 'sid', usage: {} },
+    ]
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-ambient-level',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+    expect(statusTrail(events)).toEqual(['idle'])
+  })
+
+  it('a real background task alongside an ambient one still defers idle', async () => {
+    state.messages = [
+      { type: 'system', subtype: 'task_started', task_id: 'amb-1', tool_use_id: 't0', description: 'watcher', ambient: true },
+      { type: 'system', subtype: 'task_started', task_id: 'bg-1', tool_use_id: 't1', description: 'sleep 30', task_type: 'local_bash' },
+      { type: 'result', subtype: 'success', session_id: 'sid', usage: {} },
+      { type: 'system', subtype: 'task_notification', task_id: 'bg-1', tool_use_id: 't1', status: 'completed', output_file: '/tmp/out' },
+    ]
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-ambient-mixed',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+    expect(statusTrail(events)).toEqual(['background', 'idle'])
+  })
+
   it('task_updated with completed status triggers deferred idle (after background) when result already arrived', async () => {
     state.messages = [
       { type: 'system', subtype: 'task_started', task_id: 'bg-1', tool_use_id: 't1', description: 'bg' },

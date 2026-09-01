@@ -113,6 +113,18 @@ describe('createClaudeAgentEventMapper', () => {
     ])
   })
 
+  it('does not count an ambient housekeeping task as live background work', () => {
+    const events: AgentEvent[] = []
+    const mapper = createClaudeAgentEventMapper({ messageId: 'm1', emit: (event) => events.push(event) })
+
+    mapper.apply({ type: 'system', subtype: 'task_started', task_id: 'amb1', tool_use_id: 'tu1', description: 'watcher', ambient: true })
+    mapper.apply({ type: 'result', subtype: 'success', session_id: 'sdk-session', result: 'done' })
+
+    const statuses = events.filter((e) => e.type === 'status_change').map((e) => (e as { status: string }).status)
+    expect(statuses).toContain('idle')
+    expect(statuses).not.toContain('background')
+  })
+
   it('attaches desktop result metadata and terminal events', () => {
     const events: AgentEvent[] = []
     const mapper = createClaudeAgentEventMapper({

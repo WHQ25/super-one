@@ -105,6 +105,7 @@ const mockWindowApp = {
   needsHarnessAlign: vi.fn().mockResolvedValue(true),
   connectClaude: vi.fn().mockResolvedValue({ models: [], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }),
   connectCodex: vi.fn().mockResolvedValue({ models: [] }),
+  getUpdateState: vi.fn().mockResolvedValue(null),
 }
 
 const mockEnvironment = {
@@ -852,5 +853,41 @@ describe('settings harness config navigation', () => {
     expect(useAppStore.getState().settingsTab).toBe('harnesses')
     expect(useAppStore.getState().settingsProvider).toBe('dsh')
     expect(useAppStore.getState().harnessListFocusKey).toBe('dsh')
+  })
+})
+
+describe('update state catch-up', () => {
+  beforeEach(() => {
+    useAppStore.setState({ updateStatus: 'idle', updateVersion: null, updateProgress: 0 })
+  })
+
+  it('shows the update pill for a check that finished before the listener mounted', async () => {
+    mockWindowApp.getUpdateState.mockResolvedValue({ type: 'available', version: '9.9.9' })
+
+    await useAppStore.getState().syncUpdateState()
+
+    expect(useAppStore.getState().updateStatus).toBe('available')
+    expect(useAppStore.getState().updateVersion).toBe('9.9.9')
+  })
+
+  it('leaves the status alone when the main process has nothing to replay', async () => {
+    mockWindowApp.getUpdateState.mockResolvedValue(null)
+
+    await useAppStore.getState().syncUpdateState()
+
+    expect(useAppStore.getState().updateStatus).toBe('idle')
+  })
+
+  it('keeps a live event that landed while the snapshot request was in flight', async () => {
+    let release: (value: unknown) => void = () => {}
+    mockWindowApp.getUpdateState.mockReturnValue(new Promise((resolve) => { release = resolve }))
+
+    const pending = useAppStore.getState().syncUpdateState()
+    useAppStore.getState().handleUpdateEvent({ type: 'download-progress', percent: 40, phase: 'app' })
+    release({ type: 'available', version: '9.9.9' })
+    await pending
+
+    expect(useAppStore.getState().updateStatus).toBe('downloading')
+    expect(useAppStore.getState().updateProgress).toBe(40)
   })
 })

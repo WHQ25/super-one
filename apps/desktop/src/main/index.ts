@@ -123,7 +123,7 @@ import {
   type NativeContextMenuItemSpec,
   type ComputerUseDisplayInfo,
 } from '@superone/shared/agent-types'
-import { initUpdater, installUpdate, checkForUpdates, downloadUpdate, retryUpdateHarnessPrefetch, simulateUpdate, simulateNotAvailable, getUpdaterState, getUpdateMenuState, setOnMenuChange, setUpdateChannel, isInstallingUpdate } from './updater'
+import { initUpdater, installUpdate, checkForUpdates, downloadUpdate, retryUpdateHarnessPrefetch, simulateUpdate, simulateNotAvailable, getUpdaterState, getUpdaterSnapshot, setUpdaterWindow, getUpdateMenuState, setOnMenuChange, setUpdateChannel, isInstallingUpdate } from './updater'
 import { startWatching, stopWatching } from './file-watcher'
 import { detectTextOrBinary, maxReadableBytes } from './file-read-limits'
 import { notifyWidgetReady, clearAllGates } from './generative-ui/widget-gate'
@@ -1062,6 +1062,9 @@ function createWindow(): void {
   setBashOutputWindow(mainWindow)
 
   allWindows.add(mainWindow)
+  // Re-point the updater at the live window; `initUpdater` runs once, so a
+  // window recreated via macOS `activate` would otherwise never see events.
+  setUpdaterWindow(mainWindow)
   attachRendererDiagnostics(mainWindow, 'main')
   rendererAgentEventTransport.resetCodexBaselines()
   mainWindow.on('closed', () => {
@@ -3908,6 +3911,8 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.UPDATER_SIMULATE, () => {
     simulateUpdate()
   })
+
+  ipcMain.handle(AgentIpcChannels.UPDATER_GET_STATE, () => getUpdaterSnapshot())
 
   ipcMain.handle(AgentIpcChannels.FILE_WATCH_START, (_e, folderPath: string) => {
     startWatching(getMainWindow(), folderPath, () => {

@@ -3790,6 +3790,8 @@ export const AgentIpcChannels = {
   UPDATER_CHECK: 'updater:check',
   UPDATER_DOWNLOAD: 'updater:download',
   UPDATER_SIMULATE: 'updater:simulate',
+  /** Pull the last updater event so a late/reloaded renderer can catch up. */
+  UPDATER_GET_STATE: 'updater:getState',
 
   // File watcher
   FILE_WATCH_START: 'app:file-watch-start',

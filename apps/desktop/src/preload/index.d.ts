@@ -252,6 +252,8 @@ interface AppAPI {
   retryUpdateHarness(): Promise<void>
   simulateUpdate(): Promise<void>
   onUpdateEvent(callback: (event: UpdateEvent) => void): () => void
+  /** Last updater event, for a renderer that mounted after it was pushed. */
+  getUpdateState(): Promise<UpdateEvent | null>
   onSetupEvent(callback: (event: SetupEvent) => void): () => void
 
   // Plugins

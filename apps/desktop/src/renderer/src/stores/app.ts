@@ -192,6 +192,8 @@ interface AppState {
 
   // Update
   handleUpdateEvent: (event: UpdateEvent) => void
+  /** Pull the updater state pushed before this renderer had a listener. */
+  syncUpdateState: () => Promise<void>
   downloadUpdate: () => void
   installUpdate: () => void
   /** Retry harness pre-fetch after harness-error (app binary already local). */
@@ -753,6 +755,18 @@ export const useAppStore = create<AppState>((set, get) => ({
         })
         break
     }
+  },
+
+  syncUpdateState: async () => {
+    // The startup check normally resolves before the renderer has mounted its
+    // listener, and that push is dropped for good (checks are startup-only).
+    // Replay the last event so the sidebar pill still appears.
+    const snapshot = await window.app.getUpdateState()
+    if (!snapshot) return
+    // A live event that landed while the invoke was in flight is newer — and any
+    // non-idle status already reflects one, so never clobber it with the replay.
+    if (get().updateStatus !== 'idle') return
+    get().handleUpdateEvent(snapshot)
   },
 
   downloadUpdate: () => {

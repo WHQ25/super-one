@@ -9,6 +9,13 @@ import { prefetchEnabledHarnessesForAppUpdate } from './harness/service'
 
 let win: BrowserWindow | null = null
 let updaterState: UpdateEvent['type'] = 'not-available'
+/**
+ * Last event pushed to the renderer. The startup check usually resolves before
+ * the renderer has mounted its listener (and a window reload drops the state
+ * entirely), so the renderer pulls this snapshot on mount instead of relying on
+ * having been alive for the push.
+ */
+let lastEvent: UpdateEvent | null = null
 let menuLabel = 'Check for Updates...'
 let menuEnabled = true
 let onMenuChange: (() => void) | null = null
@@ -63,6 +70,7 @@ function clearSimulateTimers(): void {
 function send(event: UpdateEvent): void {
   if (win && !win.isDestroyed()) win.webContents.send(AgentIpcChannels.UPDATER_EVENT, event)
   updaterState = event.type
+  lastEvent = event
   const prevLabel = menuLabel
   const prevEnabled = menuEnabled
   switch (event.type) {
@@ -162,6 +170,20 @@ export function getUpdaterState(): UpdateEvent['type'] {
   return updaterState
 }
 
+/** Last pushed updater event, replayed by a renderer that mounted too late. */
+export function getUpdaterSnapshot(): UpdateEvent | null {
+  return lastEvent
+}
+
+/**
+ * Re-point the push target after the main window is recreated (macOS activate
+ * with all windows closed). `initUpdater` only runs once, so without this the
+ * captured window stays destroyed and every later event is dropped.
+ */
+export function setUpdaterWindow(mainWindow: BrowserWindow): void {
+  win = mainWindow
+}
+
 export function getUpdateMenuState(): { label: string; enabled: boolean } {
   return { label: menuLabel, enabled: menuEnabled }
 }
@@ -173,6 +195,7 @@ export function setOnMenuChange(fn: () => void): void {
 export function initUpdater(mainWindow: BrowserWindow, channelPref?: UpdateChannel | null): void {
   win = mainWindow
   installingUpdate = false
+  lastEvent = null
   const testUpdater = process.env.TEST_UPDATER === '1'
   if (is.dev && !testUpdater) return
   autoUpdater.logger = log

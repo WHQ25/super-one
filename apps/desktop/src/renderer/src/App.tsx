@@ -192,9 +192,13 @@ function App(): React.JSX.Element {
   }, [activeSessionId])
 
   useEffect(() => {
-    return window.app.onUpdateEvent((event) => {
+    const off = window.app.onUpdateEvent((event) => {
       useAppStore.getState().handleUpdateEvent(event)
     })
+    // Subscribe first, then catch up: the startup check usually finishes before
+    // this effect runs, and that event is never re-sent.
+    void useAppStore.getState().syncUpdateState()
+    return off
   }, [])
 
   useEffect(() => {

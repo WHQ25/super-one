@@ -58,6 +58,8 @@ const {
   retryUpdateHarnessPrefetch,
   getUpdateMenuState,
   getUpdaterState,
+  getUpdaterSnapshot,
+  setUpdaterWindow,
 } = await import('./updater')
 
 const { prefetchEnabledHarnessesForAppUpdate } = await import('./harness/service')
@@ -313,5 +315,52 @@ describe('MacUpdater contract (electron-updater 6.7.3)', () => {
     autoUpdater.autoInstallOnAppQuit = false
     autoUpdater.quitAndInstall()
     expect(nativeUpdater.checkForUpdates).not.toHaveBeenCalled()
+  })
+})
+
+describe('renderer catch-up', () => {
+  type FakeWindow = { isDestroyed: () => boolean; webContents: { send: (channel: string, event: unknown) => void } }
+
+  function fakeWindow(sent: unknown[], destroyed = false): FakeWindow {
+    return {
+      isDestroyed: () => destroyed,
+      webContents: { send: (_channel, event) => { sent.push(event) } },
+    }
+  }
+
+  function fire(event: string, info: unknown): void {
+    const handler = autoUpdater.on.mock.calls.find(([name]: [string]) => name === event)?.[1] as
+      | ((info: unknown) => void)
+      | undefined
+    handler?.(info)
+  }
+
+  beforeEach(() => {
+    autoUpdater.on.mockClear()
+  })
+
+  it('keeps the last event so a renderer that mounted after the check can pull it', () => {
+    initUpdater({ isDestroyed: () => true } as never)
+    fire('update-available', { version: '9.9.9' })
+
+    expect(getUpdaterSnapshot()).toMatchObject({ type: 'available', version: '9.9.9' })
+  })
+
+  it('starts from a clean snapshot on init so a stale version is never replayed', () => {
+    initUpdater({ isDestroyed: () => true } as never)
+    fire('update-available', { version: '9.9.9' })
+    initUpdater({ isDestroyed: () => true } as never)
+
+    expect(getUpdaterSnapshot()).toBeNull()
+  })
+
+  it('pushes to a window attached after init instead of the destroyed original', () => {
+    const sent: unknown[] = []
+    initUpdater({ isDestroyed: () => true } as never)
+    setUpdaterWindow(fakeWindow(sent) as never)
+
+    fire('update-available', { version: '9.9.9' })
+
+    expect(sent).toEqual([{ type: 'available', version: '9.9.9', releaseNotes: undefined }])
   })
 })

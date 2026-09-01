@@ -4,6 +4,66 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.60.0-alpha] - 2026-09-01
+
+### Added
+
+- Codex: a Fast Mode default. `agentPreference.codex.defaultFastMode` (absent
+  means off) is settable from the Codex settings page and from the agent
+  itself through the `agent-codex` config domain, new sessions map it onto the
+  model's advertised Fast service tier, and `session_collab_request` now
+  carries `config.fastMode` so an approved Codex agent inherits it — the
+  approval card shows the toggle and disables it on models without the tier.
+- Chat: side chat — an ephemeral fork of the live conversation that shares its
+  context without writing back to the parent session.
+- Chat: a question addressed to you stays visible when a turn collapses.
+  `AskUserQuestion` now follows the same pinned rule as `widget_show` instead
+  of being folded into the Detail section alongside ordinary tool calls.
+- Sidebar: long session titles scroll on hover, reusing the mini-app
+  description marquee. The derived-title fallback also rises from 100 to 200
+  characters, and the seven places that each hard-coded 100 now share one
+  constant.
+- Browser: the agent can close browser tabs.
+- Codex: realtime prompt injection placeholders.
+- Codex: voice sessions are persisted locally.
+
+### Fixed
+
+- Codex: voice and text turns render in one transcript. The separate realtime
+  timeline view and its header toggle are gone; background work a voice call
+  delegates now streams in as it happens instead of appearing only once the
+  call ends, `<realtime_delegation>` wrapper messages no longer show up as
+  user input, and realtime history pages in full rather than stopping at the
+  last 100 entries. Ending a call and immediately typing no longer splits the
+  turn in two with the finishing voice turn wedged between the halves.
+- Chat: a queued message no longer stays stuck at the bottom of the chat after
+  its reply has streamed in. Codex's own queue branch skipped the
+  `queued_message_consumed` signal the renderer needs to un-park an
+  optimistically queued bubble.
+- Session: message ids are minted from a UUID instead of `Date.now()`. Two
+  sends inside one millisecond produced the same id, and because Codex keys
+  its durable queue by that id, one of the two was silently dropped.
+- Claude: a third-party provider model mapping no longer 404s on models the
+  official catalog lists with a 1M context. The alias-side `[1m]` marker is
+  dropped before the id reaches the SDK; mapping slot ids explicitly set to
+  `[1m]` are untouched.
+- Providers: the plan tab bar orders plans by how many keys each holds and
+  defaults to the busiest one, so a provider whose keys live on a non-first
+  endpoint no longer resets to the wrong plan on every visit.
+- Desktop: browser, mini-app and device webviews stay off screen while the
+  mini-window fold hides the Activity panel, instead of painting over the
+  folded chat window at their pre-fold size.
+- Markdown editor: images and raw `<video>` / `<audio>` survive the WYSIWYG
+  preview round-trip. They were dropped on the way in and, because the same
+  doc is serialized back on autosave, typing in the preview also deleted the
+  syntax from the file on disk.
+- Chat: the harness picker no longer undoes a manual pick.
+- Chat: voice sessions can be deleted and get titles.
+- Chat: realtime voice transport prefers TCP.
+- Codex: accumulated stderr is kept out of failed turns.
+- Session: voice works after a cold backend startup.
+- Harness: runtime tarballs are extracted with node-tar.
+
 ## [0.59.0-alpha] - 2026-08-28
 
 ### Added

@@ -8,6 +8,7 @@ import { isRemoteSession } from '../index'
 import { updateActivePerSession } from '../helpers/store-helpers'
 import type { ChatStore } from '../types'
 import { runCodexCommand } from './runner'
+import { newMessageId } from '@superone/shared/message-id'
 
 const CODEX_APPROVE_PLAN_PROMPT = 'Plan approved, start implementation.'
 
@@ -22,7 +23,7 @@ export async function approveCodexPlanImpl(
   const context = getCodexPlanActionContext(get, activeProject)
   if (!context) return
 
-  const userMessageId = `user_${Date.now()}`
+  const userMessageId = newMessageId('user')
   const userMessage = createLocalTextUserMessage(userMessageId, CODEX_APPROVE_PLAN_PROMPT)
 
   set((s) => ({
@@ -83,7 +84,7 @@ export async function rejectCodexPlanImpl(
     return
   }
 
-  const userMessageId = `user_${Date.now()}`
+  const userMessageId = newMessageId('user')
   const userMessage = createLocalTextUserMessage(userMessageId, trimmedFeedback)
 
   set((s) => ({

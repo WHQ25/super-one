@@ -3,6 +3,7 @@ import type {
   ContentBlock,
   ImageAttachment,
 } from '@superone/shared/agent-types'
+import { newMessageId } from '@superone/shared/message-id'
 import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
 import { buildBrowserAnnotationText } from './browser-annotation'
 import { runCodexCommand } from '../codex/runner'
@@ -1178,7 +1179,7 @@ export async function sendMessageImpl(
           : rawContent ? [{ type: 'text' as const, text: rawContent }] : []),
       ]
 
-  const userMessageId = `user_${Date.now()}`
+  const userMessageId = newMessageId('user')
   const messageContexts = activeContexts.length > 0
     ? activeContexts.map((ctx) => ({ appId: ctx.appId, appName: ctx.appName, summary: ctx.summary, content: ctx.content, color: ctx.color }))
     : undefined

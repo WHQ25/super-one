@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto'
+import { newMessageId } from '@superone/shared/message-id'
 import { execFileSync } from 'child_process'
 import { statSync } from 'fs'
 import log from '../logger'
@@ -216,7 +217,7 @@ export class AgentService {
     const cfg = options.agentConfig
     const harnessId = cfg.type
     const providerId = `${harnessId}-base`
-    const sessionId = harnessId === 'codex' ? `codex-auto-${Date.now()}` : randomUUID()
+    const sessionId = harnessId === 'codex' ? `codex-auto-${randomUUID()}` : randomUUID()
     const title = `[Auto] ${options.automationName ?? 'Automation'}`
 
     if (options.automationId) {
@@ -277,12 +278,12 @@ export class AgentService {
       acpAgentId: acpAgentId ?? null,
     })
 
-    const clientMessageId = `auto_${Date.now()}`
+    const clientMessageId = newMessageId('auto')
     if (cfg.type === 'codex') {
       await session.send({
         content: options.content,
         clientMessageId,
-        assistantMessageId: `auto-${Date.now()}`,
+        assistantMessageId: newMessageId('auto'),
         model,
         effort,
         codex: {
@@ -466,8 +467,8 @@ export class AgentService {
   }
 
   private async runCodexRemoteTurn(projectPath: string, sessionId: string, deviceId: string, command: { content: string; model?: string; effort?: string; permissionPreset?: string; collaborationMode?: string; threadId?: string; images?: SendMessageRequest['images']; gitBranch?: string | null; worktreeBranch?: string | null }, isNewSession?: boolean): Promise<void> {
-    const userMessageId = `user_${Date.now()}`
-    const assistantMessageId = `remote-${Date.now()}`
+    const userMessageId = newMessageId('user')
+    const assistantMessageId = newMessageId('remote')
     const mgr = this.requireSessionManager()
     let session = mgr.getSession(sessionId)
     if (!session) {

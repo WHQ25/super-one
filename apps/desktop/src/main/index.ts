@@ -72,6 +72,7 @@ import { SessionManagerImpl } from './session/session-manager'
 import { TerminalManager } from './terminal/terminal-manager'
 import { RemoteTerminalController } from './environment/remote-terminal-controller'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
+import { newMessageId } from '@superone/shared/message-id'
 import { TerminalBroadcaster } from './remote/terminal-broadcaster'
 import { nodePtySpawner } from './terminal/pty'
 import { DeviceRegistry } from './remote/device-registry'
@@ -2240,7 +2241,7 @@ function registerIpcHandlers(): void {
       extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[]; apiProviderId?: string | null; serviceTier?: string | null; additionalDirectories?: string[] },
     ) => {
       const assistantMessageId = messageId ?? `codex_${Date.now()}`
-      const persistedUserMessageId = userMessageId ?? `user_${Date.now()}`
+      const persistedUserMessageId = userMessageId ?? newMessageId('user')
       const session = getOrCreateCodexSession(sessionId, projectPath, cwd, gitBranch, extras?.apiProviderId)
       return runCodexTurnViaSessionManager(session, assistantMessageId, {
         content: userMessageText ?? prompt,
@@ -2685,7 +2686,7 @@ function registerIpcHandlers(): void {
         kind: 'codex.steer',
         input,
         newAssistantMessageId: messageId ?? `codex_${Date.now()}`,
-        newUserMessageId: userMessageId ?? `user_${Date.now()}`,
+        newUserMessageId: userMessageId ?? newMessageId('user'),
         newUserText: userMessageText ?? input,
       })
     },
@@ -2715,7 +2716,7 @@ function registerIpcHandlers(): void {
       return runCodexTurnViaSessionManager(session, assistantMessageId, {
         content: userMessageText ?? '/review',
         model,
-        clientMessageId: userMessageId ?? `user_${Date.now()}`,
+        clientMessageId: userMessageId ?? newMessageId('user'),
         assistantMessageId,
         gitBranch,
         worktreePath,
@@ -2758,7 +2759,7 @@ function registerIpcHandlers(): void {
       return runCodexTurnViaSessionManager(session, assistantMessageId, {
         content: userMessageText ?? '/compact',
         model,
-        clientMessageId: userMessageId ?? `user_${Date.now()}`,
+        clientMessageId: userMessageId ?? newMessageId('user'),
         assistantMessageId,
         gitBranch,
         worktreePath,

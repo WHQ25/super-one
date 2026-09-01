@@ -43,6 +43,8 @@ import { SelectionContextMenuZone } from './SelectionContextMenu'
 import { ChatScrollIndicator } from './ChatScrollIndicator'
 import { mergeCodexThreadMessages } from './codex-realtime-messages'
 import { CodexRealtimeTranscript } from './CodexRealtimeTranscript'
+import { RealtimeStartingSurface } from './RealtimeStartingSurface'
+import { RealtimeCallIndicator } from './RealtimeCallIndicator'
 import { extractTurnOutline } from './turn-outline'
 import { ChatRootContext } from './is-focus-in-chat'
 import type { CodexPlanApprovalState } from '@superone/shared/agent-types'
@@ -168,6 +170,7 @@ const ChatComposerShell = memo(function ChatComposerShell() {
       <AskUserQuestionPrompt />
       <CursorApiKeyDialog />
       <TodoPopup />
+      <RealtimeCallIndicator />
       <ChatInput />
       <ChatStatusBar />
     </>
@@ -398,11 +401,16 @@ function ChatTranscript({
           // picking a harness there switches the project's active session, which
           // would yank the parent chat out from under the panel.
           ? <SideChatEmptyState />
-          : awaitingRealtimeTimeline
-            ? <p className="py-16 text-center text-sm text-muted-foreground">{t('common.loading')}</p>
-            : draftId || (queueProvider === 'codex' && hasRealtimeTimeline)
-                ? <DraftSessionSurface />
-                : <ChatSuggestions />
+          // A voice call negotiating on a session with no timeline yet would
+          // otherwise land on the harness picker, which reads as "nothing is
+          // happening" at exactly the moment something is.
+          : realtime.starting
+            ? <RealtimeStartingSurface />
+            : awaitingRealtimeTimeline
+              ? <p className="py-16 text-center text-sm text-muted-foreground">{t('common.loading')}</p>
+              : draftId || (queueProvider === 'codex' && hasRealtimeTimeline)
+                  ? <DraftSessionSurface />
+                  : <ChatSuggestions />
       ) : (
         <ScrollArea key={displayedSessionId ?? 'default'} className="chat-scroll-area h-full min-w-0" viewportRef={scrollViewportRef}>
           <SelectionContextMenuZone className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">

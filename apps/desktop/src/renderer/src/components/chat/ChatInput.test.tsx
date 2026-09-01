@@ -639,6 +639,23 @@ describe('ChatInput', () => {
     expect(document.querySelector('button .lucide-audio-lines')).toBeNull()
   })
 
+  it('keeps the realtime voice control mounted while a delegated Codex turn is streaming', () => {
+    activeSessionState.preferredProvider = 'codex'
+    activeSessionState.sessionProvider = 'codex'
+
+    const { rerender } = render(<ChatInput />)
+    const realtime = document.querySelector('button .lucide-audio-lines')?.closest('button')
+    expect(realtime).toBeTruthy()
+
+    act(() => {
+      useCodexRealtimeViewStore.getState().setRealtimeSession('session-1', 'realtime-1')
+    })
+    activeSessionState.status = 'streaming'
+    rerender(<ChatInput />)
+
+    expect(document.querySelector('button .lucide-audio-lines')?.closest('button')).toBe(realtime)
+  })
+
   it('hides the additional directory hint after realtime voice starts', () => {
     activeSessionState.preferredProvider = 'codex'
     activeSessionState.sessionProvider = 'codex'

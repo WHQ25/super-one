@@ -360,6 +360,15 @@
   50% { opacity: 0.05; }
 }
 
+/* Same breathing as codex-session-veil, applied to the mark instead of to an
+   opaque cover over it. Compositing-wise the two are identical, but this one does
+   not need to know what colour it is sitting on, so it works away from the
+   sidebar. */
+@keyframes codex-session-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.95; }
+}
+
 @keyframes codex-session-warm {
   0%, 100% { opacity: 0.7; }
   50% { opacity: 1; }
@@ -410,6 +419,11 @@
   background: var(--sidebar, var(--background));
   will-change: opacity;
   animation: codex-session-veil 2.5s ease-in-out infinite;
+}
+
+.codex-session-pulse {
+  will-change: opacity;
+  animation: codex-session-pulse 2.5s ease-in-out infinite;
 }
 
 .codex-session-warm {

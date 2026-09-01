@@ -70,6 +70,7 @@ import { resolveChatInputPlaceholder } from './chat-input/resolveChatInputPlaceh
 import { CodexGoalDialog } from './CodexGoalDialog'
 import { CodexGoalIndicator } from './CodexGoalIndicator'
 import { CodexRealtimeVoiceButton } from './CodexRealtimeVoiceButton'
+import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { GrokGoalDialog } from './GrokGoalDialog'
 import { GrokGoalIndicator } from './GrokGoalIndicator'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
@@ -151,6 +152,11 @@ export function ChatInput() {
       showReviewPanel: s.showReviewPanel,
       displayedSessionId: sessionScope?.sessionId ?? s._activeSessionId,
     })))
+    const realtimeVoiceEngaged = useCodexRealtimeViewStore((state) => {
+      if (!displayedSessionId) return false
+      const realtime = state.sessions[displayedSessionId]
+      return Boolean(realtime?.starting || realtime?.realtimeSessionId)
+    })
     const commandPopup = useActiveSession((s) => s.slashCommandOutput)
     // Every per-session write is routed to this pane's session, not the project's
     // active one — otherwise a non-active pane's write (e.g. the editor's draft
@@ -1989,7 +1995,7 @@ export function ChatInput() {
               onDisarm={handleDisarmScheduled}
               onSetSendAt={setSendAt}
             />
-            {activeProviderForResources === 'codex' && !isStreaming && activeProject && displayedSessionId && (
+            {activeProviderForResources === 'codex' && (!isStreaming || realtimeVoiceEngaged) && activeProject && displayedSessionId && (
               <CodexRealtimeVoiceButton
                 projectPath={activeProject}
                 sessionId={displayedSessionId}

@@ -1299,9 +1299,14 @@ export type Messages = {
     realtimeVoice: {
       start: string
       stop: string
+      muteMicrophone: string
+      unmuteMicrophone: string
+      muteOutput: string
+      unmuteOutput: string
       listening: string
       timeline: string
       waiting: string
+      connecting: string
       showConversation: string
       showDebugThread: string
       showTimeline: string
@@ -4928,9 +4933,14 @@ export const en: Messages = {
     realtimeVoice: {
       start: 'Start Voice Conversation',
       stop: 'Stop Voice Conversation',
+      muteMicrophone: 'Mute microphone',
+      unmuteMicrophone: 'Unmute microphone',
+      muteOutput: 'Mute speaker',
+      unmuteOutput: 'Unmute speaker',
       listening: 'Realtime Voice',
       timeline: 'Voice Timeline',
       waiting: 'Listening for speech…',
+      connecting: 'Connecting voice…',
       showConversation: 'Show conversation',
       showDebugThread: 'Show backing Codex thread (developer)',
       showTimeline: 'Show voice timeline',

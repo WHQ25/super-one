@@ -104,6 +104,68 @@ function ScaledCodex({
   )
 }
 
+/**
+ * `running` spins the cloud, `pulse` breathes it, `still` holds it completely.
+ *
+ * `still` exists because motion is a claim: it says work is in flight. A surface that
+ * merely reports an established state should not keep animating, or the animation
+ * stops meaning anything.
+ */
+export type CodexCloudMotion = 'running' | 'pulse' | 'still'
+
+/**
+ * The Codex cloud mark with a caller-supplied glyph at its centre.
+ *
+ * Exported so surfaces beyond the session list can borrow the exact motion without
+ * copying the cloud path or re-deriving the timings. The glyph always sits in its
+ * own layer: under `running` the cloud rotates, and a glyph sharing that transform
+ * would spin with it.
+ */
+export function CodexCloudMark({
+  size,
+  motion = 'running',
+  children,
+}: {
+  size?: number
+  motion?: CodexCloudMotion
+  children?: React.ReactNode
+}) {
+  if (motion !== 'running') {
+    const breathing = motion === 'pulse'
+    // Opacity rides the wrapper so cloud and glyph fade as one object; the warm and
+    // specular layers keep drifting inside it, which is what stops a large mark from
+    // reading as a static PNG that someone is fading in and out. `still` drops all
+    // three together — a half-animated mark looks broken rather than calm.
+    return (
+      <span
+        className={`codex-session-wrap w-3.5 h-3.5${breathing ? ' codex-session-pulse' : ''}`}
+        style={wrapStyle(size)}
+      >
+        <span className={`codex-session-layer${breathing ? ' codex-session-scale' : ''}`}>
+          <svg viewBox="1 1 22 22" className="w-3 h-3 overflow-visible" style={svgStyle(size)} aria-hidden>
+            <Defs status="background" />
+            <CloudBody status="background" shimmer={breathing} />
+          </svg>
+        </span>
+        {children ? <span className="codex-session-layer">{children}</span> : null}
+      </span>
+    )
+  }
+  return (
+    <span className="codex-session-wrap w-3.5 h-3.5" style={wrapStyle(size)}>
+      <span className="codex-session-layer codex-session-run-scale">
+        <span className="codex-session-motion codex-session-rotate">
+          <svg viewBox="1 1 22 22" className="w-3 h-3 overflow-visible" style={svgStyle(size)} aria-hidden>
+            <Defs status="running" />
+            <CloudBody status="running" />
+          </svg>
+        </span>
+      </span>
+      <span className="codex-session-layer">{children}</span>
+    </span>
+  )
+}
+
 export function CodexSessionIcon({ status, size, renderLevel = 'rich' }: SessionIconProps) {
   // Mirrors ClaudeSessionIcon: resting states drop their interpolating animations
   // (`codex-session-scale` ≈ float, `warm`/`spec` ≈ the leg wiggle) at `compact`.
@@ -120,22 +182,12 @@ export function CodexSessionIcon({ status, size, renderLevel = 'rich' }: Session
 
   if (status === 'running') {
     return (
-      <span className="codex-session-wrap w-3.5 h-3.5" style={wrapStyle(size)}>
-        <span className="codex-session-layer codex-session-run-scale">
-          <span className="codex-session-motion codex-session-rotate">
-            <svg viewBox="1 1 22 22" className="w-3 h-3 overflow-visible" style={svgStyle(size)} aria-hidden>
-              <Defs status="running" />
-              <CloudBody status="running" />
-            </svg>
-          </span>
-        </span>
-        <span className="codex-session-layer">
-          <svg viewBox="1 1 22 22" className="w-3 h-3 overflow-visible" style={svgStyle(size)} aria-hidden>
-            <path d={SLASH} fill="#fff" />
-            <path className="codex-session-cursor-run" d={UNDERSCORE} fill="#fff" />
-          </svg>
-        </span>
-      </span>
+      <CodexCloudMark size={size} motion="running">
+        <svg viewBox="1 1 22 22" className="w-3 h-3 overflow-visible" style={svgStyle(size)} aria-hidden>
+          <path d={SLASH} fill="#fff" />
+          <path className="codex-session-cursor-run" d={UNDERSCORE} fill="#fff" />
+        </svg>
+      </CodexCloudMark>
     )
   }
 

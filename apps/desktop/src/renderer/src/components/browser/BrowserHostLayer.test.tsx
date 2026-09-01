@@ -35,6 +35,7 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }
 let useBrowserStore: typeof import('@/stores/browser').useBrowserStore
 let useActivityPanelStore: typeof import('@/stores/activity-panel').useActivityPanelStore
 let useAgentViewfinderStore: typeof import('@/stores/agent-viewfinder').useAgentViewfinderStore
+let useWindowMiniModeStore: typeof import('@/stores/window-mini-mode').useWindowMiniModeStore
 let BrowserHostLayer: typeof import('./BrowserHostLayer').BrowserHostLayer
 
 const RECT = { left: 120, top: 44, width: 560, height: 800 } as DOMRectReadOnly
@@ -45,6 +46,7 @@ beforeEach(async () => {
   ;({ useBrowserStore } = await import('@/stores/browser'))
   ;({ useActivityPanelStore } = await import('@/stores/activity-panel'))
   ;({ useAgentViewfinderStore } = await import('@/stores/agent-viewfinder'))
+  ;({ useWindowMiniModeStore } = await import('@/stores/window-mini-mode'))
   ;({ BrowserHostLayer } = await import('./BrowserHostLayer'))
   useAgentViewfinderStore.setState({ activeBySession: {} })
   act(() => useActivityPanelStore.getState().setShowPanel(true))
@@ -81,6 +83,31 @@ describe('BrowserHostLayer mosaic visibility', () => {
     expect(host.style.opacity).toBe('1')
     expect(host.style.clipPath).toBe('inset(0 0 0 0)')
     expect(host.style.transition).toBe('clip-path 300ms cubic-bezier(0.4, 0, 0.2, 1)')
+    expect(host.style.pointerEvents).toBe('auto')
+  })
+
+  it('parks the browser when the mini-window fold hides the panel behind the user toggle', () => {
+    const { container } = render(<BrowserHostLayer />)
+    act(() => {
+      useBrowserStore.getState().ensure('browser-a', 'https://example.com')
+      useBrowserStore.getState().updateSlot('browser-a', 'panel', RECT)
+    })
+
+    const host = container.querySelector('[data-browser-id="browser-a"]') as HTMLElement
+    expect(host.style.left).toBe('120px')
+
+    // The fold shuts both side panels without touching `showPanel` — the user's own
+    // toggle has to survive the round trip. The panel collapses its outer wrapper to
+    // width 0 while the inner dockview keeps its layout box, so this slot stays live
+    // and non-zero: gate on `showPanel` alone and the webview paints full size over
+    // the folded mini chat window.
+    act(() => useWindowMiniModeStore.setState({ phase: 'mini', panelsFolded: true }))
+    expect(useActivityPanelStore.getState().showPanel).toBe(true)
+    expect(host.style.left).toBe('-99999px')
+    expect(host.style.pointerEvents).toBe('none')
+
+    act(() => useWindowMiniModeStore.setState({ phase: 'app', panelsFolded: false }))
+    expect(host.style.left).toBe('120px')
     expect(host.style.pointerEvents).toBe('auto')
   })
 

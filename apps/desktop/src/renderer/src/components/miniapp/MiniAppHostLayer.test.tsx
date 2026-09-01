@@ -68,6 +68,7 @@ function makeEntry(id: string): MiniAppEntry {
 let useMiniAppStore: typeof import('@/stores/miniapp').useMiniAppStore
 let makeInstanceKey: typeof import('@/stores/miniapp').makeInstanceKey
 let useActivityPanelStore: typeof import('@/stores/activity-panel').useActivityPanelStore
+let useWindowMiniModeStore: typeof import('@/stores/window-mini-mode').useWindowMiniModeStore
 let MiniAppHostLayer: typeof import('./MiniAppHostLayer').MiniAppHostLayer
 
 beforeEach(async () => {
@@ -77,6 +78,7 @@ beforeEach(async () => {
   vi.resetModules()
   ;({ useMiniAppStore, makeInstanceKey } = await import('@/stores/miniapp'))
   ;({ useActivityPanelStore } = await import('@/stores/activity-panel'))
+  ;({ useWindowMiniModeStore } = await import('@/stores/window-mini-mode'))
   ;({ MiniAppHostLayer } = await import('./MiniAppHostLayer'))
   act(() => useActivityPanelStore.getState().setShowPanel(true))
 })
@@ -157,6 +159,37 @@ describe('MiniAppHostLayer persistence', () => {
 
     act(() => useActivityPanelStore.getState().setShowPanel(true))
     expect(host.style.display).toBe('block')
+    expect(host.style.left).toBe('120px')
+    expect(host.style.pointerEvents).toBe('auto')
+  })
+
+  it('parks panel-mode miniapps when the mini-window fold hides the panel behind the user toggle', async () => {
+    const { container } = render(<MiniAppHostLayer />)
+    const key = makeInstanceKey('app-a', 'proj-1')
+
+    await act(async () => {
+      await useMiniAppStore.getState().openAppInPanel(makeEntry('app-a'), '/proj')
+    })
+    act(() => {
+      useMiniAppStore.getState().updateSlot(
+        key,
+        'panel',
+        { left: 120, top: 44, width: 560, height: 800 } as DOMRectReadOnly,
+      )
+    })
+
+    const host = container.querySelector(`[data-instance-key="${key}"]`) as HTMLElement
+    expect(host.style.left).toBe('120px')
+
+    // The fold shuts both side panels without touching `showPanel` — the user's own
+    // toggle has to survive the round trip — so the panel is off screen while the
+    // store still says it is open, and its dockview slot stays live and non-zero.
+    act(() => useWindowMiniModeStore.setState({ phase: 'mini', panelsFolded: true }))
+    expect(useActivityPanelStore.getState().showPanel).toBe(true)
+    expect(host.style.left).toBe('-99999px')
+    expect(host.style.pointerEvents).toBe('none')
+
+    act(() => useWindowMiniModeStore.setState({ phase: 'app', panelsFolded: false }))
     expect(host.style.left).toBe('120px')
     expect(host.style.pointerEvents).toBe('auto')
   })

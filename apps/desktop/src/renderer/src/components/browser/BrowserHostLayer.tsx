@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useShallow } from 'zustand/react/shallow'
 import { useBrowserStore } from '@/stores/browser'
 import { useActivityPanelStore } from '@/stores/activity-panel'
+import { useActivityPanelOnScreen } from '@/hooks/useActivityPanelOnScreen'
 import { useAppStore } from '@/stores/app'
 import { useSashResizing } from '@/hooks/useSashResizing'
 import { useGlobalDragging } from '@/hooks/useGlobalDragging'
@@ -81,7 +82,7 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
   const emulation = useBrowserStore((s) => s.emulations[browserId])
   const capturing = useBrowserStore((s) => (s.captureRefs[browserId] ?? 0) > 0)
   const fullResolutionCapturing = useBrowserStore((s) => (s.fullResolutionCaptureRefs[browserId] ?? 0) > 0)
-  const activityShown = useActivityPanelStore((s) => s.showPanel)
+  const activityShown = useActivityPanelOnScreen()
   const activitySide = useActivityPanelStore((s) => s.side)
   // Match the main card corners: fullscreen drops outer radii on screen edges.
   const isFullscreen = useFullscreen()

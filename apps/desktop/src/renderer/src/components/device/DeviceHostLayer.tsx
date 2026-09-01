@@ -1,5 +1,5 @@
 import { useShallow } from 'zustand/react/shallow'
-import { useActivityPanelStore } from '@/stores/activity-panel'
+import { useActivityPanelOnScreen } from '@/hooks/useActivityPanelOnScreen'
 import {
   selectHostedDeviceInstances,
   useDevicePipStore,
@@ -81,17 +81,17 @@ function PersistentDevice({ instanceId, yielding }: { instanceId: string; yieldi
   const pipSlot = useDevicePipStore((state) => state.pipSlots[instanceId])
   const overlaySlot = useDevicePipStore((state) => state.overlaySlots[instanceId])
   const expanded = useDevicePipStore((state) => state.expandedInstanceId === instanceId)
-  const activityShown = useActivityPanelStore((state) => state.showPanel)
+  const activityShown = useActivityPanelOnScreen()
 
   /**
    * Which surface wins, in the order the preview itself already encodes: the tab
    * whenever the Activity panel is up, the expanded overlay next, the floating
    * preview last.
    *
-   * The `activityShown` test is not redundant with `panelSlot` existing. In mosaic
-   * mode the panel is forced hidden but dockview still reports a live layout rect —
-   * clipping does not change `getBoundingClientRect` — so a stale panel slot would
-   * otherwise win and paint the device into a rect nothing can see.
+   * The `activityShown` test is not redundant with `panelSlot` existing. Whenever the
+   * panel is hidden (mosaic, the mini-window fold) dockview still reports a live
+   * layout rect — clipping does not change `getBoundingClientRect` — so a stale panel
+   * slot would otherwise win and paint the device over whatever replaced the panel.
    */
   const slot: DeviceSlot | undefined = activityShown
     ? panelSlot

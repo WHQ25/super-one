@@ -9,6 +9,7 @@ import { useActivityViewStateStore } from '@/stores/activity-view-state'
 import { useActivityDropStore } from '@/stores/activity-drop'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useFullscreen } from '@/hooks/useFullscreen'
+import { useActivityPanelOnScreen } from '@/hooks/useActivityPanelOnScreen'
 import { useResizeHandle } from '@/hooks/useResizeHandle'
 import { ACTIVITY_PANEL_TRANSITION, LAYOUT } from '@/lib/layout-constants'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
@@ -23,7 +24,6 @@ import { cn } from '@superone/ui/lib/utils'
 
 interface ActivityPanelProps {
   getMaxWidth: () => number
-  hidden?: boolean
   /** Overrides the idle transition — the mini-window fold runs the panels on its own clock. */
   transitionMs?: number
 }
@@ -84,9 +84,9 @@ function ActivityNewTabAction() {
   )
 }
 
-export function ActivityPanel({ getMaxWidth, hidden, transitionMs }: ActivityPanelProps) {
-  const { showPanel, side, panelWidth, setPanelWidthByUser, maximized } = useActivityPanelStore()
-  const visible = showPanel && !hidden
+export function ActivityPanel({ getMaxWidth, transitionMs }: ActivityPanelProps) {
+  const { side, panelWidth, setPanelWidthByUser, maximized } = useActivityPanelStore()
+  const visible = useActivityPanelOnScreen()
   const outerRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
   const apiRef = useRef<DockviewApi | null>(null)

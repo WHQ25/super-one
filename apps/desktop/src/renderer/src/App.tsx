@@ -7,6 +7,7 @@ import { LayoutToggle } from '@/components/coding/LayoutToggle'
 import { ChatPanel } from '@/components/chat/ChatPanel'
 import { CodingWorkspace } from '@/components/coding/CodingWorkspace'
 import { ActivityPanel } from '@/components/activity/ActivityPanel'
+import { useActivityPanelOnScreen } from '@/hooks/useActivityPanelOnScreen'
 import { SideChatConfirmDialog } from '@/components/chat/SideChatConfirmDialog'
 import { openBrowserTab, beginMosaicRecording, replayMosaicOpenedPanels } from '@/components/activity/activity-panel-api'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
@@ -92,6 +93,9 @@ function App(): React.JSX.Element {
   const activitySide = useActivityPanelStore((s) => s.side)
   const hasActivityPanels = useActivityPanelStore((s) => s.hasPanels)
   const activityMaximized = useActivityPanelStore((s) => s.maximized)
+  // Whether the panel is really on screen — `showPanel` alone misses the mosaic and
+  // mini-window-fold hides. See the hook for why the two must never drift apart.
+  const activityOnScreen = useActivityPanelOnScreen()
   const mosaicMode = useMosaicStore((s) => s.mode)
   const mosaicRoot = useMosaicStore((s) => s.root)
   const canRestoreMosaic = useMosaicStore((s) => s.lastLayout !== null)
@@ -616,7 +620,6 @@ function App(): React.JSX.Element {
       )}>
         <ActivityPanel
           getMaxWidth={getActivityMaxWidth}
-          hidden={mosaicMode === 'mosaic' || panelsFolded}
           transitionMs={inMiniWindow ? FOLD_PANEL_MS : undefined}
         />
 
@@ -626,7 +629,7 @@ function App(): React.JSX.Element {
         <div data-main-area="" className={cn(
           'relative z-10 flex-1 flex-col overflow-hidden',
           activityMaximized && !inMiniWindow ? 'hidden' : 'flex',
-          showActivityPanel && !panelsFolded && (activitySide === 'left' ? 'border-l border-border' : 'border-r border-border'),
+          activityOnScreen && (activitySide === 'left' ? 'border-l border-border' : 'border-r border-border'),
         )} style={{ order: 1, minWidth: inMiniWindow ? 0 : MIN_MAIN }}>
         {/* Main header — drag region (hidden in mosaic; each tile carries its own) */}
         {compactMiniShell

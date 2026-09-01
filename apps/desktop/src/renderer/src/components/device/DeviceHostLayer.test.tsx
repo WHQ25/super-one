@@ -23,6 +23,7 @@ import {
 } from '../../../../test/fixtures/ios-simulator'
 import { setDockApi } from '@/components/activity/activity-panel-api'
 import { useActivityPanelStore } from '@/stores/activity-panel'
+import { useWindowMiniModeStore } from '@/stores/window-mini-mode'
 import { useChatStore } from '@/stores/chat'
 import { useDeviceInstanceStore } from '@/stores/device-instances'
 import { useDevicePipStore } from '@/stores/device-pip'
@@ -132,6 +133,7 @@ beforeEach(() => {
     return realGetBoundingClientRect.call(this)
   }
   useActivityPanelStore.setState({ showPanel: false, maximized: false, maximizedGroupId: null })
+  useWindowMiniModeStore.setState({ mode: null, phase: 'app', panelsFolded: false })
   useDevicePipStore.setState({
     readyInstanceId: null, readyDevices: {}, expandedInstanceId: null, hiddenInstanceId: null, device: null,
     slots: {}, pipSlots: {}, overlaySlots: {},
@@ -405,6 +407,21 @@ describe('iOS Simulator host layer placement', () => {
     act(() => {
       useDevicePipStore.getState().updateSlot(INSTANCE_ID, 'panel', RECT)
       useActivityPanelStore.getState().setShowPanel(false)
+    })
+
+    expect(host()!.style.left).not.toBe(`${RECT.left}px`)
+  })
+
+  it('does not paint into the dock rect while the mini-window fold holds the panel shut', async () => {
+    stubEnvironment()
+    await renderReady()
+
+    // The fold deliberately leaves `showPanel` alone so the user's toggle survives
+    // the round trip, so the panel is off screen while the store still reads open.
+    act(() => {
+      useDevicePipStore.getState().updateSlot(INSTANCE_ID, 'panel', RECT)
+      useActivityPanelStore.getState().setShowPanel(true)
+      useWindowMiniModeStore.setState({ phase: 'mini', panelsFolded: true })
     })
 
     expect(host()!.style.left).not.toBe(`${RECT.left}px`)

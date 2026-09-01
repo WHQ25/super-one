@@ -4,6 +4,7 @@ import { PanelLeft, PanelRight, PanelTop, PanelBottom, SquarePlus } from 'lucide
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useActivityDropStore, type DropPosition } from '@/stores/activity-drop'
 import { useActivityPanelStore } from '@/stores/activity-panel'
+import { useActivityPanelOnScreen } from '@/hooks/useActivityPanelOnScreen'
 import { useAppStore } from '@/stores/app'
 import { useSashResizing } from '@/hooks/useSashResizing'
 import { useGlobalDragging } from '@/hooks/useGlobalDragging'
@@ -82,7 +83,7 @@ export function MiniAppHostLayer() {
 function PersistentMiniAppContainer({ instanceKey, dragging }: { instanceKey: string; dragging: boolean }) {
   const slot = useMiniAppStore((s) => s.slots[instanceKey])
   const activitySide = useActivityPanelStore((s) => s.side)
-  const activityShown = useActivityPanelStore((s) => s.showPanel)
+  const activityShown = useActivityPanelOnScreen()
   const open = useMiniAppStore((s) => s.openApps[instanceKey])
   const appId = open?.entry.id
   const mounted = slot != null && slot.width > 0 && slot.height > 0

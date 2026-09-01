@@ -112,6 +112,48 @@ describe('CodexTurnView', () => {
     expect(screen.queryByText('Thinking')).toBeNull()
   })
 
+  it('collapses the entire delegated turn including the agent response by default', () => {
+    render(
+      <CodexTurnView
+        message={createMessage({
+          status: 'complete',
+          metadata: {
+            codex: {
+              threadId: 'thread-1',
+              usage: null,
+              items: [
+                {
+                  id: 'lookup-1',
+                  type: 'mcp_tool_call',
+                  server: 'example',
+                  tool: 'lookup',
+                  arguments: { query: 'auth' },
+                  status: 'completed',
+                },
+                { id: 'agent-1', type: 'agent_message', text: 'Full agent response' },
+              ],
+            },
+          },
+        })}
+        isStreaming={false}
+        isLastAssistant
+        collapseEntireTurn
+        footer={<div>Turn footer</div>}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: /Detail/ })).toBeTruthy()
+    expect(screen.queryByTestId('tool-mcp__example__lookup')).toBeNull()
+    expect(screen.queryByText('Full agent response')).toBeNull()
+    expect(screen.queryByText('Turn footer')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: /Detail/ }))
+
+    expect(screen.getByTestId('tool-mcp__example__lookup')).toBeTruthy()
+    expect(screen.getByText('Full agent response')).toBeTruthy()
+    expect(screen.getByText('Turn footer')).toBeTruthy()
+  })
+
   it('keeps terminal Codex error logs out of the turn body', () => {
     render(
       <CodexTurnView

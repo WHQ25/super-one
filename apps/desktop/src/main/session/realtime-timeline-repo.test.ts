@@ -27,7 +27,7 @@ describe('realtime timeline repository', () => {
   it('persists completed transcript items and closes the active realtime session', () => {
     applyRealtimeTimelineEvent('sid-1', { type: 'realtime_started', realtimeSessionId: 'rt-1', version: 'v3' })
     applyRealtimeTimelineEvent('sid-1', {
-      type: 'realtime_transcript_item', phase: 'started', itemId: 'item-1', realtimeSessionId: 'rt-1', role: 'user', text: '',
+      type: 'realtime_transcript_item', phase: 'started', itemId: 'item-1', realtimeSessionId: 'rt-1', role: 'user', text: '', seq: 10,
     })
     applyRealtimeTimelineEvent('sid-1', {
       type: 'realtime_transcript_item', phase: 'delta', itemId: 'item-1', text: 'hello',
@@ -40,7 +40,10 @@ describe('realtime timeline repository', () => {
     expect(loadRealtimeTimeline('sid-1')).toMatchObject({
       activeRealtimeSessionId: null,
       hasTimeline: true,
-      segments: [{ sourceItemId: 'item-1', realtimeSessionId: 'rt-1', role: 'user', text: 'hello' }],
+      segments: [{
+        sourceItemId: 'item-1', realtimeSessionId: 'rt-1', role: 'user', text: 'hello',
+        provenance: 'realtime-user', localOrder: 10,
+      }],
     })
   })
 
@@ -103,7 +106,7 @@ describe('realtime timeline repository', () => {
       .toEqual(['local reply'])
 
     provider.segments.push({
-      id: 'provider-1',
+      id: 'item-1',
       realtimeSessionId: 'rt-1',
       role: 'assistant',
       text: 'local reply',
@@ -131,7 +134,7 @@ describe('realtime timeline repository', () => {
     }).activeRealtimeSessionId).toBeNull()
   })
 
-  it('replaces one matching local segment even when its realtime session id differs', () => {
+  it('replaces a matching source item even when its realtime session id and text differ', () => {
     applyRealtimeTimelineEvent('sid-1', {
       type: 'realtime_transcript_item',
       phase: 'completed',
@@ -141,7 +144,7 @@ describe('realtime timeline repository', () => {
     })
     const provider: RealtimeTimelineResult = {
       segments: [{
-        id: 'provider-1',
+        id: 'item-1',
         realtimeSessionId: 'rt-1',
         role: 'assistant',
         text: 'local reply',

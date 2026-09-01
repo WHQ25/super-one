@@ -48,7 +48,7 @@ describe('merging realtime timeline segments preserves local start stamps', () =
     ])
   })
 
-  it('resolves stamps by text when a pending segment never learned its item id', () => {
+  it('does not reconcile entries by text when a pending segment has no stable identity', () => {
     const merged = mergePendingRealtimeTimelineSegments(
       [canonical('item-1', 'hello')],
       [{ id: 'local-1', realtimeSessionId: 'rt-live', role: 'user', text: 'hello', startedAtMs: 1000 }],
@@ -56,7 +56,8 @@ describe('merging realtime timeline segments preserves local start stamps', () =
     )
 
     expect(merged).toEqual([
-      { id: 'item-1', realtimeSessionId: 'rt-1', role: 'user', text: 'hello', startedAtMs: 1000 },
+      { id: 'item-1', realtimeSessionId: 'rt-1', role: 'user', text: 'hello' },
+      { id: 'local-1', realtimeSessionId: 'rt-live', role: 'user', text: 'hello', startedAtMs: 1000 },
     ])
   })
 

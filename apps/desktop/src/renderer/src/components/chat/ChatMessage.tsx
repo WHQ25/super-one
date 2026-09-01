@@ -46,6 +46,7 @@ import {
 } from './chat-shared'
 import { RewindButton } from './RewindButton'
 import { ForkButton } from './ForkButton'
+import { isRealtimeVoiceMessage } from './codex-realtime-messages'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
 import { tryCopy } from '@/lib/clipboard'
 import { MessageErrorBadge } from './MessageErrorBadge'
@@ -67,6 +68,8 @@ interface ChatMessageProps {
   sessionStatus: AgentStatus
   isLastAssistant: boolean
   hideUserActions?: boolean
+  hideCopyActions?: boolean
+  collapseEntireCodexTurn?: boolean
 }
 
 /** Tools whose consecutive calls can be collapsed into a summary group. */
@@ -1009,7 +1012,14 @@ function renderClaudeSegments(
   })
 }
 
-export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, isLastAssistant, hideUserActions }: ChatMessageProps) {
+export const ChatMessage = memo(function ChatMessage({
+  message,
+  sessionStatus,
+  isLastAssistant,
+  hideUserActions,
+  hideCopyActions,
+  collapseEntireCodexTurn,
+}: ChatMessageProps) {
   const { t } = useTranslation()
   const projectPath = useChatStore((s) => s.activeProject)
   const detailChatMode = useAppStore((s) => s.detailChatMode)
@@ -1033,7 +1043,7 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
     )
   // Copy text is only needed once the turn settles (the copy button is hidden while streaming),
   // so skip deriving the full concatenated text on every delta of the live message.
-  const assistantCopyText = isStreaming ? undefined : getAssistantCopyText(message)
+  const assistantCopyText = isStreaming || hideCopyActions ? undefined : getAssistantCopyText(message)
 
   const apps = useMiniAppStore((s) => s.apps)
   const [previewAtt, setPreviewAtt] = useState<ImageAttachment | null>(null)
@@ -1064,6 +1074,14 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
     [isUser, message.content],
   )
   const { copied: userCopied, copy: copyUserText } = useCopyText()
+  const assistantFooter = !isUser ? (
+    <DurationFooter
+      message={message}
+      copyText={assistantCopyText}
+      parentIsStreaming={isStreaming}
+      className={message.metadata?.turnSummary ? 'mt-1' : undefined}
+    />
+  ) : null
   // Host mailbox wake: right-aligned like a user turn, but plain status text (no bubble / tool row).
   if (isMailboxWake) {
     return (
@@ -1122,7 +1140,15 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
                 <AttachmentPreviewDialog attachment={previewAtt} onClose={() => setPreviewAtt(null)} />
               </TooltipProvider>
           : isCodexMessage
-            ? <CodexTurnView message={message} isStreaming={isStreaming} isLastAssistant={isLastAssistant} />
+            ? (
+              <CodexTurnView
+                message={message}
+                isStreaming={isStreaming}
+                isLastAssistant={isLastAssistant}
+                collapseEntireTurn={collapseEntireCodexTurn}
+                footer={collapseEntireCodexTurn ? assistantFooter : undefined}
+              />
+            )
             : (
               <ClaudeTurnBody
                 grouped={grouped!}
@@ -1143,27 +1169,20 @@ export const ChatMessage = memo(function ChatMessage({ message, sessionStatus, i
         {!isUser && message.metadata?.turnSummary && (
           <TurnSummaryAboveFooter summary={message.metadata.turnSummary} />
         )}
-        {!isUser && (
-          <DurationFooter
-            message={message}
-            copyText={assistantCopyText}
-            parentIsStreaming={isStreaming}
-            className={message.metadata?.turnSummary ? 'mt-1' : undefined}
-          />
-        )}
+        {!collapseEntireCodexTurn && assistantFooter}
       </div>
       {isUser && message.contexts && message.contexts.length > 0 && (
         <div className="mt-1.5">
           <MessageContextChips contexts={message.contexts} />
         </div>
       )}
-      {isUser && !hideUserActions && !isCollab && (
+      {isUser && !hideUserActions && !hideCopyActions && !isCollab && (
         <div className="relative mt-1 flex items-center gap-1 opacity-0 group-hover/copy:opacity-100">
           {message.checkpointId && <RewindButton checkpointId={message.checkpointId} rewound={message.rewound} className="opacity-100" />}
           {userText.length > 0 && <CopyButton copied={userCopied} onClick={() => copyUserText(userText)} className="opacity-100" />}
         </div>
       )}
-      {isUser && isCollab && userText.length > 0 && (
+      {isUser && !hideCopyActions && isCollab && userText.length > 0 && (
         <div className="relative mt-1 flex items-center gap-1 opacity-0 group-hover/copy:opacity-100">
           <CopyButton copied={userCopied} onClick={() => copyUserText(userText)} className="opacity-100" />
         </div>
@@ -1341,7 +1360,9 @@ function DurationFooter({
   }
 
   const showCopy = !isStreaming && !!copyText
-  const showFork = !isStreaming && message.status !== 'error'
+  // Voice segments carry a synthetic id with no truncation point in the backing
+  // Codex thread, so a fork from one could never resolve.
+  const showFork = !isStreaming && message.status !== 'error' && !isRealtimeVoiceMessage(message)
   const errorInfo = message.metadata?.errorInfo
   const showError = !isStreaming && !!errorInfo
   const terminalReason = message.metadata?.terminalReason

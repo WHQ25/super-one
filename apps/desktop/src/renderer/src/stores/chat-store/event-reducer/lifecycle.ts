@@ -1,4 +1,5 @@
 import type { AgentEvent } from '@superone/shared/agent-types'
+import { applySeqToMessage } from '@superone/shared/event-seq-utils'
 import { DEFAULT_PROVIDER } from '../index'
 import type { PerSessionState } from '../types'
 import { sealStreamingTools } from './shared'
@@ -48,8 +49,24 @@ export function reduceLifecycle(session: PerSessionState, event: LifecycleEvent)
 
     case 'message_start': {
       const existingIdx = session.messages.findIndex((m) => m.id === event.message.id)
+      const timeline = event.message.metadata?.codexTimeline
+      const message = {
+        ...event.message,
+        ...applySeqToMessage(event),
+        ...(timeline && event.seq !== undefined
+          ? {
+              metadata: {
+                ...event.message.metadata,
+                codexTimeline: {
+                  ...timeline,
+                  localOrder: timeline.localOrder ?? event.seq,
+                },
+              },
+            }
+          : {}),
+      }
       const nextMessages = existingIdx === -1
-        ? [...session.messages, event.message]
+        ? [...session.messages, message]
         : session.messages
       return {
         messages: nextMessages,

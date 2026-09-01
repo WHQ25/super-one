@@ -128,12 +128,25 @@ vi.mock('./ChatMessage', async () => {
   const { useSubagentNavigation } = await import('./subagent-navigation-context')
   const { useForkNavigation } = await import('./fork-navigation-context')
   return {
-    ChatMessage: () => {
+    ChatMessage: ({ message, hideUserActions, hideCopyActions, collapseEntireCodexTurn }: {
+      message?: { content?: Array<{ type: string; text?: string }> }
+      hideUserActions?: boolean
+      hideCopyActions?: boolean
+      collapseEntireCodexTurn?: boolean
+    }) => {
       const workflowNav = useWorkflowNavigation()
       const subagentNav = useSubagentNavigation()
       const forkNav = useForkNavigation()
       return (
-        <div data-testid="chat-message">
+        <div
+          data-testid="chat-message"
+          data-hide-user-actions={String(!!hideUserActions)}
+          data-hide-copy-actions={String(!!hideCopyActions)}
+          data-collapse-entire-codex-turn={String(!!collapseEntireCodexTurn)}
+        >
+          {message?.content
+            ?.filter((block) => block.type === 'text')
+            .map((block, i) => <span key={i}>{block.text}</span>)}
           <button
             type="button"
             data-testid="open-workflow"
@@ -360,6 +373,41 @@ describe('ChatContent empty-state gate is harness-agnostic', () => {
     expect(screen.getByTestId('draft-session-surface')).toBeInTheDocument()
   })
 
+  it('ignores timeline thread copies for a Codex session without voice history', () => {
+    reset()
+    hoisted.sessionState.messages = [{
+      id: 'canonical-turn',
+      role: 'assistant',
+      status: 'complete',
+      content: [{ type: 'text', text: 'Canonical response' }],
+      createdAt: '',
+      providerId: 'codex',
+    }]
+    hoisted.sessionState.session = { sessionId: 'sid-1' }
+    hoisted.sessionState._historyHydrated = true
+    hoisted.sessionState.sessionProvider = 'codex'
+    hoisted.sessionState.preferredProvider = 'codex'
+    useCodexRealtimeViewStore.getState().setTimeline('sid-1', {
+      segments: [],
+      threadMessages: [{
+        id: 'timeline-copy',
+        role: 'assistant',
+        status: 'complete',
+        content: [{ type: 'text', text: 'Timeline copy' }],
+        createdAt: '',
+        providerId: 'codex',
+      }],
+      activeRealtimeSessionId: null,
+      hasTimeline: false,
+    })
+
+    renderContent()
+
+    expect(screen.getByText('Canonical response')).toBeInTheDocument()
+    expect(screen.queryByText('Timeline copy')).toBeNull()
+    expect(screen.getAllByTestId('chat-message')).toHaveLength(1)
+  })
+
   it('does not apply the default harness to a Codex thread with only realtime history', () => {
     reset()
     hoisted.sessionState.messages = []
@@ -377,10 +425,10 @@ describe('ChatContent empty-state gate is harness-agnostic', () => {
     renderContent()
 
     expect(screen.queryByTestId('chat-suggestions')).toBeNull()
-    expect(screen.getByTestId('draft-session-surface')).toBeInTheDocument()
+    expect(screen.getByText('No voice transcript in this thread yet.')).toBeInTheDocument()
   })
 
-  it('renders voice transcript and canonical Codex turns in one turn view', async () => {
+  it('routes backing Codex turns through whole-turn Detail disclosure on the owning voice turn', async () => {
     reset()
     hoisted.sessionState.messages = []
     hoisted.sessionState.session = { sessionId: 'sid-1' }
@@ -388,12 +436,22 @@ describe('ChatContent empty-state gate is harness-agnostic', () => {
     hoisted.sessionState.sessionProvider = 'codex'
     hoisted.sessionState.preferredProvider = 'codex'
     const timeline = {
-      segments: [{
-        id: 'voice-1',
-        realtimeSessionId: 'rt-1',
-        role: 'user' as const,
-        text: 'Voice request',
-      }],
+      segments: [
+        {
+          id: 'voice-1',
+          realtimeSessionId: 'rt-1',
+          role: 'user' as const,
+          text: 'Voice request',
+          localOrder: 10,
+        },
+        {
+          id: 'voice-2',
+          realtimeSessionId: 'rt-1',
+          role: 'assistant' as const,
+          text: 'Voice response',
+          localOrder: 15,
+        },
+      ],
       threadMessages: [{
         id: 'codex-timeline-turn-1',
         role: 'assistant' as const,
@@ -401,6 +459,10 @@ describe('ChatContent empty-state gate is harness-agnostic', () => {
         content: [{ type: 'text' as const, text: 'Backing Codex response' }],
         createdAt: '',
         providerId: 'codex',
+        metadata: {
+          codex: { threadId: 'thread-1', turnId: 'turn-1', usage: null, items: [] },
+          codexTimeline: { provenance: 'realtime-delegated' as const, turnId: 'turn-1', localOrder: 20 },
+        },
       }],
       activeRealtimeSessionId: null,
       hasTimeline: true,
@@ -410,12 +472,62 @@ describe('ChatContent empty-state gate is harness-agnostic', () => {
 
     renderContent()
 
-    await waitFor(() => {
-      expect(document.querySelector('[data-message-id="codex-timeline-turn-1"]')).not.toBeNull()
-    })
-    expect(document.querySelector('[data-message-id="codex-realtime-voice-1"]')).not.toBeNull()
-    expect(screen.getAllByTestId('chat-message')).toHaveLength(2)
+    // Speech renders through the ordinary ChatMessage, not a voice-only layout —
+    // including its hover actions, so spoken text stays copyable.
+    const speech = await screen.findByText('Voice request')
+    const row = speech.closest('[data-testid="chat-message"]')
+    expect(row).not.toBeNull()
+    expect(row).toHaveAttribute('data-hide-user-actions', 'false')
+    expect(row).toHaveAttribute('data-hide-copy-actions', 'true')
+    expect(row).toHaveAttribute('data-collapse-entire-codex-turn', 'false')
+    expect(screen.getByText('Voice response').closest('[data-testid="chat-message"]'))
+      .toHaveAttribute('data-hide-copy-actions', 'true')
+    expect(screen.getByText('Backing Codex response').closest('[data-testid="chat-message"]'))
+      .toHaveAttribute('data-hide-copy-actions', 'false')
+    expect(screen.getByText('Backing Codex response').closest('[data-testid="chat-message"]'))
+      .toHaveAttribute('data-collapse-entire-codex-turn', 'true')
+    expect(document.querySelector('[data-message-id="codex-timeline-turn-1"]')).not.toBeNull()
+    expect(screen.queryByRole('button', { name: /Codex work.*Completed/ })).toBeNull()
     expect(screen.queryByTestId('chat-suggestions')).toBeNull()
+  })
+
+  it('shows the delegation prompt in the dev backing-thread view, hides it in the voice view', async () => {
+    reset()
+    hoisted.sessionState.messages = []
+    hoisted.sessionState.session = { sessionId: 'sid-1' }
+    hoisted.sessionState._historyHydrated = true
+    hoisted.sessionState.sessionProvider = 'codex'
+    hoisted.sessionState.preferredProvider = 'codex'
+    const prompt = '<realtime_delegation><input>Inspect the project</input></realtime_delegation>'
+    const timeline = {
+      segments: [{
+        id: 'voice-1', realtimeSessionId: 'rt-1', role: 'user' as const,
+        text: 'Voice request', localOrder: 10,
+      }],
+      threadMessages: [{
+        id: 'delegation-1',
+        role: 'user' as const,
+        status: 'complete' as const,
+        content: [{ type: 'text' as const, text: prompt }],
+        createdAt: '',
+        providerId: 'codex',
+        metadata: { codexTimeline: { provenance: 'realtime-delegated' as const, turnId: 'turn-1', position: 2 } },
+      }],
+      activeRealtimeSessionId: null,
+      hasTimeline: true,
+    }
+    useCodexRealtimeViewStore.getState().setTimeline('sid-1', timeline)
+    Object.assign(window.agent, { getRealtimeTimeline: vi.fn(async () => timeline) })
+
+    const { rerender } = renderContent()
+    expect(await screen.findByText('Voice request')).toBeInTheDocument()
+    expect(screen.queryByText(prompt)).toBeNull()
+
+    act(() => { useCodexRealtimeViewStore.getState().setView('sid-1', 'thread') })
+    rerender(<ChatContent scrollViewportRef={createRef<HTMLDivElement>()} />)
+
+    expect(screen.getByText(prompt)).toBeInTheDocument()
+    expect(screen.queryByText('Voice request')).toBeNull()
   })
 
   it('discovers and renders voice-only history after a cold restore', async () => {
@@ -427,7 +539,10 @@ describe('ChatContent empty-state gate is harness-agnostic', () => {
     hoisted.sessionState.sessionProvider = 'codex'
     hoisted.sessionState.preferredProvider = 'codex'
     const timeline = {
-      segments: [],
+      segments: [{
+        id: 'voice-cold', realtimeSessionId: 'rt-1', role: 'user' as const,
+        text: 'Restored voice request', localOrder: 10,
+      }],
       threadMessages: [{
         id: 'codex-timeline-turn-cold',
         role: 'assistant' as const,
@@ -447,9 +562,8 @@ describe('ChatContent empty-state gate is harness-agnostic', () => {
 
     renderContent()
 
-    await waitFor(() => {
-      expect(document.querySelector('[data-message-id="codex-timeline-turn-cold"]')).not.toBeNull()
-    })
+    expect(await screen.findByText('Restored voice request')).toBeInTheDocument()
+    expect(document.querySelector('[data-message-id="codex-timeline-turn-cold"]')).toBeNull()
     expect(getRealtimeTimeline).toHaveBeenCalledWith('/tmp/project', 'sid-1')
     expect(screen.queryByTestId('chat-suggestions')).toBeNull()
   })

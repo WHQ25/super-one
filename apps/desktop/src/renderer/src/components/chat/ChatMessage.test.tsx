@@ -74,6 +74,68 @@ afterEach(() => {
   })
 })
 
+describe('ChatMessage fork affordance', () => {
+  const spoken = (): ChatMessageType => ({
+    ...createCodexMessage({ status: 'complete', content: [{ type: 'text', text: 'On it.' }] }),
+    id: 'codex-realtime-item-1',
+    metadata: { codexTimeline: { provenance: 'realtime-assistant', realtimeSessionId: 'rt-1' } },
+  })
+
+  it('offers fork on an ordinary completed Codex turn', () => {
+    render(
+      <ChatMessage
+        message={createCodexMessage({ status: 'complete', content: [{ type: 'text', text: 'Done.' }] })}
+        sessionStatus="idle"
+        isLastAssistant
+      />,
+    )
+    expect(screen.queryByLabelText('fork')).toBeTruthy()
+  })
+
+  it('hides fork on a realtime voice segment, whose synthetic id has no fork point', () => {
+    render(<ChatMessage message={spoken()} sessionStatus="idle" isLastAssistant />)
+    expect(screen.queryByLabelText('fork')).toBeNull()
+  })
+})
+
+describe('ChatMessage copy affordance', () => {
+  it('omits copy actions from a voice user message', () => {
+    const { container } = render(
+      <ChatMessage
+        message={{
+          id: 'voice-user-1',
+          role: 'user',
+          status: 'complete',
+          content: [{ type: 'text', text: 'Voice request' }],
+          createdAt: new Date().toISOString(),
+          providerId: 'codex',
+        }}
+        sessionStatus="idle"
+        isLastAssistant={false}
+        hideCopyActions
+      />,
+    )
+
+    expect(container.querySelector('.lucide-copy')).toBeNull()
+  })
+
+  it('omits copy actions from a voice assistant message', () => {
+    const { container } = render(
+      <ChatMessage
+        message={createCodexMessage({
+          status: 'complete',
+          content: [{ type: 'text', text: 'Voice response' }],
+        })}
+        sessionStatus="idle"
+        isLastAssistant
+        hideCopyActions
+      />,
+    )
+
+    expect(container.querySelector('.lucide-copy')).toBeNull()
+  })
+})
+
 describe('ChatMessage token footer', () => {
   it('falls back to metadata.usage for completed ACP turns without consumedTokens', () => {
     render(

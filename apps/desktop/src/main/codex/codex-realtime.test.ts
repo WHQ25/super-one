@@ -127,8 +127,14 @@ describe('Codex realtime protocol mapping', () => {
       activeRealtimeSessionAtPageStart: 'rt-1',
     })).toEqual({
       segments: [
-        { id: 'rt-item-1', realtimeSessionId: 'rt-1', role: 'user', text: 'hello' },
-        { id: 'rt-item-2', realtimeSessionId: 'rt-1', role: 'assistant', text: 'hi' },
+        {
+          id: 'rt-item-1', realtimeSessionId: 'rt-1', role: 'user', text: 'hello',
+          position: 2, provenance: 'realtime-user',
+        },
+        {
+          id: 'rt-item-2', realtimeSessionId: 'rt-1', role: 'assistant', text: 'hi',
+          position: 3, provenance: 'realtime-assistant',
+        },
       ],
       threadMessages: [
         {
@@ -138,6 +144,14 @@ describe('Codex realtime protocol mapping', () => {
           content: [{ type: 'text', text: 'hello' }],
           createdAt: '',
           providerId: 'codex',
+          metadata: {
+            codexTimeline: {
+              provenance: 'realtime-user',
+              position: 2,
+              realtimeSessionId: 'rt-1',
+              sourceItemId: 'rt-item-1',
+            },
+          },
         },
         {
           id: 'codex-realtime-rt-item-2',
@@ -146,6 +160,14 @@ describe('Codex realtime protocol mapping', () => {
           content: [{ type: 'text', text: 'hi' }],
           createdAt: '',
           providerId: 'codex',
+          metadata: {
+            codexTimeline: {
+              provenance: 'realtime-assistant',
+              position: 3,
+              realtimeSessionId: 'rt-1',
+              sourceItemId: 'rt-item-2',
+            },
+          },
         },
       ],
       activeRealtimeSessionId: 'rt-1',
@@ -233,11 +255,14 @@ describe('Codex realtime protocol mapping', () => {
       role: 'assistant',
       status: 'complete',
       content: [{ type: 'text', text: 'Done' }],
-      metadata: { codex: { threadId: 'thread-1', turnId: 'turn-1' } },
+      metadata: {
+        codex: { threadId: 'thread-1', turnId: 'turn-1' },
+        codexTimeline: { provenance: 'codex', position: 1, turnId: 'turn-1' },
+      },
     })
   })
 
-  it('interleaves voice transcript with normal turns and hides realtime delegation input', () => {
+  it('interleaves voice transcript with normal turns and keeps the realtime delegation input', () => {
     const result = mapCodexRealtimeTimeline({
       data: [
         {
@@ -275,11 +300,97 @@ describe('Codex realtime protocol mapping', () => {
       ],
     }, 'thread-1')
 
+    // The delegation prompt is the only record of what the voice agent asked Codex
+    // to do; it rides its turn so the backing-thread view can show it verbatim.
     expect(result.threadMessages.map((message) => [message.id, message.role])).toEqual([
       ['codex-realtime-voice-user-1', 'user'],
+      ['delegation-1', 'user'],
       ['codex-timeline-turn-1', 'assistant'],
     ])
     expect(result.threadMessages[0]?.content).toEqual([{ type: 'text', text: 'Inspect the project' }])
-    expect(result.threadMessages[1]?.content).toEqual([{ type: 'text', text: 'Found the issue' }])
+    expect(result.threadMessages[1]?.content).toEqual([{
+      type: 'text',
+      text: '<realtime_delegation>\n<input>Inspect the project</input>\n</realtime_delegation>',
+    }])
+    expect(result.threadMessages[1]?.metadata).toMatchObject({
+      codexTimeline: { provenance: 'realtime-delegated', position: 2, turnId: 'turn-1' },
+    })
+    expect(result.threadMessages[2]?.content).toEqual([{ type: 'text', text: 'Found the issue' }])
+    expect(result.threadMessages[2]?.metadata).toMatchObject({
+      codexTimeline: {
+        provenance: 'realtime-delegated',
+        position: 5,
+        turnId: 'turn-1',
+      },
+    })
+  })
+
+  it('maps two voice and delegated interactions into one provider-positioned timeline', () => {
+    const delegation = (id: string, turnId: string, position: number, text: string) => ({
+      type: 'item',
+      position,
+      turnId,
+      item: {
+        type: 'userMessage',
+        id,
+        content: [{ type: 'text', text: `<realtime_delegation><input>${text}</input></realtime_delegation>` }],
+      },
+    })
+    const voice = (
+      id: string,
+      position: number,
+      role: 'user' | 'assistant',
+      text: string,
+    ) => ({
+      type: 'realtime',
+      position,
+      item: { type: 'transcriptSegment', id, realtimeSessionId: 'rt-1', role, text },
+    })
+
+    const result = mapCodexRealtimeTimeline({
+      data: [
+        voice('user-1', 1, 'user', 'Inspect this problem.'),
+        voice('voice-1', 2, 'assistant', "Okay, I'll check it."),
+        { type: 'turnStarted', position: 3, turnId: 'turn-1' },
+        delegation('delegation-1', 'turn-1', 4, 'Inspect this problem.'),
+        { type: 'item', position: 5, turnId: 'turn-1', item: { type: 'agentMessage', id: 'agent-1', text: 'Root cause found.', phase: null, delivery: null } },
+        { type: 'turnCompleted', position: 6, turnId: 'turn-1', status: 'completed' },
+        voice('user-2', 7, 'user', 'Please fix it.'),
+        voice('voice-2', 8, 'assistant', 'Okay.'),
+        { type: 'turnStarted', position: 9, turnId: 'turn-2' },
+        delegation('delegation-2', 'turn-2', 10, 'Please fix it.'),
+        { type: 'item', position: 11, turnId: 'turn-2', item: { type: 'agentMessage', id: 'agent-2', text: 'Fixed and verified.', phase: null, delivery: null } },
+        { type: 'turnCompleted', position: 12, turnId: 'turn-2', status: 'completed' },
+      ],
+    }, 'thread-1')
+
+    expect(result.threadMessages.map((message) => message.content[0])).toEqual([
+      { type: 'text', text: 'Inspect this problem.' },
+      { type: 'text', text: "Okay, I'll check it." },
+      { type: 'text', text: '<realtime_delegation><input>Inspect this problem.</input></realtime_delegation>' },
+      { type: 'text', text: 'Root cause found.' },
+      { type: 'text', text: 'Please fix it.' },
+      { type: 'text', text: 'Okay.' },
+      { type: 'text', text: '<realtime_delegation><input>Please fix it.</input></realtime_delegation>' },
+      { type: 'text', text: 'Fixed and verified.' },
+    ])
+    expect(result.threadMessages.map((message) => (
+      (message.metadata as { codexTimeline?: { provenance?: string } } | undefined)
+        ?.codexTimeline?.provenance
+    ))).toEqual([
+      'realtime-user',
+      'realtime-assistant',
+      'realtime-delegated',
+      'realtime-delegated',
+      'realtime-user',
+      'realtime-assistant',
+      'realtime-delegated',
+      'realtime-delegated',
+    ])
+    expect(result.threadMessages
+      .filter((message) => message.role === 'assistant'
+        && message.metadata?.codexTimeline?.provenance === 'realtime-delegated')
+      .map((message) => message.metadata?.codexTimeline?.position))
+      .toEqual([6, 12])
   })
 })

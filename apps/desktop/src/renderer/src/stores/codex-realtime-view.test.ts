@@ -91,6 +91,7 @@ describe('codex realtime view store', () => {
       realtimeSessionId: 'rt-1',
       role: 'assistant',
       text: 'Hello world.',
+      localOrder: 1,
       done: true,
     }])
   })
@@ -159,6 +160,36 @@ describe('codex realtime view store', () => {
     expect(useCodexRealtimeViewStore.getState().sessions['session-a']).toMatchObject({
       liveItems: [],
       segments: [{ id: 'assistant-1', text: 'same reply' }],
+    })
+  })
+
+  it('reconciles a pending transcript by source id without changing its local order', () => {
+    const store = useCodexRealtimeViewStore.getState()
+    store.setRealtimeSession('session-a', 'rt-1')
+    store.completeTranscriptItem('session-a', {
+      itemId: 'assistant-1',
+      realtimeSessionId: 'rt-1',
+      role: 'assistant',
+      text: 'same reply',
+      localOrder: 30,
+    } as Parameters<typeof store.completeTranscriptItem>[1])
+
+    store.setTimeline('session-a', {
+      segments: [{
+        id: 'assistant-1',
+        realtimeSessionId: 'rt-1',
+        role: 'assistant',
+        text: 'same reply',
+        position: 8,
+      } as never],
+      threadMessages: [],
+      activeRealtimeSessionId: null,
+      hasTimeline: true,
+    })
+
+    expect(useCodexRealtimeViewStore.getState().sessions['session-a']).toMatchObject({
+      liveItems: [],
+      segments: [{ id: 'assistant-1', position: 8, localOrder: 30 }],
     })
   })
 

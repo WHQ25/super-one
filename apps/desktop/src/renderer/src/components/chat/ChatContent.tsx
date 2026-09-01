@@ -41,7 +41,8 @@ const WorkflowFullView = lazy(() => import('./WorkflowFullView').then((m) => ({ 
 import { WorkflowNavigationContext, type WorkflowViewState } from './workflow-navigation-context'
 import { SelectionContextMenuZone } from './SelectionContextMenu'
 import { ChatScrollIndicator } from './ChatScrollIndicator'
-import { mergeCodexRealtimeMessages } from './codex-realtime-messages'
+import { mergeCodexThreadMessages } from './codex-realtime-messages'
+import { CodexRealtimeTranscript } from './CodexRealtimeTranscript'
 import { extractTurnOutline } from './turn-outline'
 import { ChatRootContext } from './is-focus-in-chat'
 import type { CodexPlanApprovalState } from '@superone/shared/agent-types'
@@ -251,9 +252,15 @@ function ChatTranscript({
     && sessionStatus === 'streaming'
   const isLocalCodexQueue = isLocalQueue && queueProvider === 'codex'
   const canStartCodexQueue = isLocalCodexQueue && sessionStatus !== 'streaming'
+  // ChatTranscript doubles as the dev-only backing-thread view (see `showRealtime`).
+  // That view exists to show the machinery, so it keeps the delegation prompts the
+  // voice view hides.
+  const showsBackingThread = import.meta.env.DEV && hasRealtimeTimeline && realtime.view === 'thread'
   const displayMessages = useMemo(
-    () => queueProvider === 'codex' ? mergeCodexRealtimeMessages(messages, realtime) : messages,
-    [messages, queueProvider, realtime],
+    () => queueProvider === 'codex' && hasRealtimeTimeline
+      ? mergeCodexThreadMessages(messages, realtime, { keepDelegationPrompts: showsBackingThread })
+      : messages,
+    [hasRealtimeTimeline, messages, queueProvider, realtime, showsBackingThread],
   )
   const displayLastAssistantMessageId = displayMessages.findLast((message) => message.role === 'assistant')?.id
     ?? lastAssistantMessageId
@@ -515,7 +522,14 @@ function ChatTranscript({
 export function ChatContent({ scrollViewportRef, showScrollButton = false, scrollToBottom, stopAutoScroll, foreground = true }: ChatContentProps) {
   const scope = useSessionScope()
   const activeProject = useChatStore((s) => s.activeProject)
-  const { pendingPlanApproval, displayedSessionId, providerSessionId, sessionProvider, preferredProvider } = useActiveSession(useShallow((s) => ({
+  const {
+    messages, sessionStatus, pendingPermissions, pendingQuestion, pendingPlanApproval,
+    displayedSessionId, providerSessionId, sessionProvider, preferredProvider,
+  } = useActiveSession(useShallow((s) => ({
+    messages: s.messages,
+    sessionStatus: s.status,
+    pendingPermissions: s.pendingPermissions,
+    pendingQuestion: s.pendingQuestion,
     pendingPlanApproval: s.pendingPlanApproval,
     displayedSessionId: scope?.sessionId ?? s._activeSessionId,
     providerSessionId: s._providerSessionId,
@@ -524,6 +538,27 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   })))
   const projectPath = scope?.projectPath ?? activeProject
   const isCodexSession = resolveProvider({ sessionProvider, preferredProvider }) === 'codex'
+  const realtime = useCodexRealtimeViewStore(
+    (state) => displayedSessionId
+      ? state.sessions[displayedSessionId] ?? EMPTY_CODEX_REALTIME_SESSION_VIEW
+      : EMPTY_CODEX_REALTIME_SESSION_VIEW,
+  )
+  const threadMessages = useMemo(
+    () => isCodexSession && realtime.hasTimeline
+      ? mergeCodexThreadMessages(messages, realtime)
+      : messages,
+    [isCodexSession, messages, realtime],
+  )
+  const showRealtime = Boolean(
+    displayedSessionId
+    && projectPath
+    && isCodexSession
+    && realtime.hasTimeline
+    && (!import.meta.env.DEV || realtime.view === 'realtime'),
+  )
+  const needsDecision = (pendingPermissions?.length ?? 0) > 0
+    || pendingQuestion != null
+    || pendingPlanApproval != null
   useEffect(() => {
     if (
       !displayedSessionId
@@ -661,24 +696,36 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
             }
           }}
         />
-      ) : pendingPlanApproval ? (
+      ) : pendingPlanApproval && !showRealtime ? (
         <PlanApprovalPrompt />
       ) : (
         <>
-          {/* The fade belongs to arriving at a different session. Voice and typed turns
-              share this transcript, so starting a call must not replace the frame. */}
+          {/* The fade belongs to arriving at a different session. Switching between
+              the unified voice feed and the dev-only raw thread keeps the frame. */}
           <div
             key={displayedSessionId ?? 'default'}
             data-transcript-frame=""
             className="flex min-h-0 min-w-0 flex-1 flex-col animate-[fade-in_150ms_ease-out]"
           >
-            <ChatTranscript
-              scrollViewportRef={scrollViewportRef}
-              showScrollButton={showScrollButton}
-              scrollToBottom={scrollToBottom}
-              stopAutoScroll={stopAutoScroll}
-              liquidGlass={liquidGlass}
-            />
+            {showRealtime ? (
+              <CodexRealtimeTranscript
+                projectPath={projectPath!}
+                sessionId={displayedSessionId!}
+                scrollViewportRef={scrollViewportRef}
+                liquidGlass={liquidGlass}
+                threadMessages={threadMessages}
+                sessionStatus={sessionStatus}
+                needsDecision={needsDecision}
+              />
+            ) : (
+              <ChatTranscript
+                scrollViewportRef={scrollViewportRef}
+                showScrollButton={showScrollButton}
+                scrollToBottom={scrollToBottom}
+                stopAutoScroll={stopAutoScroll}
+                liquidGlass={liquidGlass}
+              />
+            )}
           </div>
           <div className="mx-auto w-full min-w-0 max-w-3xl">
             <ChatComposerShell />

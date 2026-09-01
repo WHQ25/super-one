@@ -7,6 +7,8 @@ import type {
 } from '@superone/shared/agent-types'
 import { mergePendingRealtimeTimelineSegments } from '@superone/shared/realtime-timeline'
 
+export type CodexConversationView = 'thread' | 'realtime'
+
 /**
  * One transcript item of the running call. Codex opens a separate item per speaker
  * the moment they start, so the two roles stream into two buffers and the array
@@ -18,11 +20,14 @@ export interface CodexRealtimeLiveItem {
   role: RealtimeTranscriptRole
   text: string
   done: boolean
+  /** Stable local event sequence used until Codex publishes a provider position. */
+  localOrder?: number
   /** Epoch ms of when this speaker opened the item; absent if the view mounted mid-item. */
   startedAtMs?: number
 }
 
 export interface CodexRealtimeSessionViewState {
+  view: CodexConversationView
   loadStatus: 'idle' | 'loading' | 'loaded' | 'error'
   segments: RealtimeTimelineSegment[]
   threadMessages: ChatMessage[]
@@ -30,6 +35,8 @@ export interface CodexRealtimeSessionViewState {
   realtimeSessionId: string | null
   realtimeSessionSource: 'timeline' | 'event'
   hasTimeline: boolean
+  /** Next fallback order for local events that arrive without a Session event seq. */
+  nextLocalOrder: number
   /**
    * The user asked for a call and the SDP round trip has not answered yet. The view
    * must switch on the click, not on `realtime_started` — waiting means the empty-pane
@@ -40,6 +47,7 @@ export interface CodexRealtimeSessionViewState {
 }
 
 export const EMPTY_CODEX_REALTIME_SESSION_VIEW: CodexRealtimeSessionViewState = {
+  view: 'realtime',
   loadStatus: 'idle',
   segments: [],
   threadMessages: [],
@@ -47,6 +55,7 @@ export const EMPTY_CODEX_REALTIME_SESSION_VIEW: CodexRealtimeSessionViewState = 
   realtimeSessionId: null,
   realtimeSessionSource: 'timeline',
   hasTimeline: false,
+  nextLocalOrder: 1,
   starting: false,
 }
 
@@ -54,6 +63,7 @@ export type CodexRealtimeTranscriptItem = Omit<CodexRealtimeLiveItem, 'done'>
 
 interface CodexRealtimeViewStore {
   sessions: Record<string, CodexRealtimeSessionViewState>
+  setView: (sessionId: string, view: CodexConversationView) => void
   setTimelineLoading: (sessionId: string) => void
   setTimelineError: (sessionId: string) => void
   setTimeline: (sessionId: string, timeline: RealtimeTimelineResult) => void
@@ -81,12 +91,20 @@ export function liveItemToSegment(item: CodexRealtimeLiveItem): RealtimeTimeline
     realtimeSessionId: item.realtimeSessionId,
     role: item.role,
     text: item.text,
+    provenance: item.role === 'assistant' ? 'realtime-assistant' : 'realtime-user',
+    localOrder: item.localOrder,
     ...(item.startedAtMs === undefined ? {} : { startedAtMs: item.startedAtMs }),
   }
 }
 
 export const useCodexRealtimeViewStore = create<CodexRealtimeViewStore>((set) => ({
   sessions: {},
+
+  setView: (sessionId, view) => set((state) => {
+    const current = sessionState(state.sessions, sessionId)
+    if (current.view === view) return state
+    return { sessions: { ...state.sessions, [sessionId]: { ...current, view } } }
+  }),
 
   setTimelineLoading: (sessionId) => set((state) => {
     const current = sessionState(state.sessions, sessionId)
@@ -106,15 +124,25 @@ export const useCodexRealtimeViewStore = create<CodexRealtimeViewStore>((set) =>
 
   setTimeline: (sessionId, timeline) => set((state) => {
     const current = sessionState(state.sessions, sessionId)
+    const completedLiveSegments = current.liveItems.filter((item) => item.done).map(liveItemToSegment)
+    const liveSegmentIds = new Set(completedLiveSegments.map((segment) => segment.id))
     const segments = mergePendingRealtimeTimelineSegments(
       timeline.segments,
-      current.segments,
+      [
+        ...current.segments,
+        ...completedLiveSegments,
+      ],
       [LIVE_SEGMENT_ID_PREFIX],
-    )
+    ).filter((segment) => !liveSegmentIds.has(segment.id))
     // A live item stays in the buffer until a snapshot carries the same transcript,
     // so a call whose refresh has not landed yet keeps rendering its own transcript
     // instead of blanking.
     const published = new Set(segments.map((segment) => segment.sourceItemId ?? segment.id))
+    const maxLocalOrder = Math.max(
+      current.nextLocalOrder - 1,
+      ...segments.map((segment) => segment.localOrder ?? 0),
+      ...timeline.threadMessages.map((message) => message.metadata?.codexTimeline?.localOrder ?? 0),
+    )
     return {
       sessions: {
         ...state.sessions,
@@ -131,6 +159,7 @@ export const useCodexRealtimeViewStore = create<CodexRealtimeViewStore>((set) =>
             ? current.realtimeSessionId
             : timeline.activeRealtimeSessionId,
           hasTimeline: timeline.hasTimeline || current.hasTimeline,
+          nextLocalOrder: maxLocalOrder + 1,
         },
       },
     }
@@ -155,19 +184,30 @@ export const useCodexRealtimeViewStore = create<CodexRealtimeViewStore>((set) =>
   setRealtimeStarting: (sessionId, starting) => set((state) => {
     const current = sessionState(state.sessions, sessionId)
     if (current.starting === starting) return state
-    return { sessions: { ...state.sessions, [sessionId]: { ...current, starting } } }
-  }),
-
-  startTranscriptItem: (sessionId, item) => set((state) => {
-    const current = sessionState(state.sessions, sessionId)
-    if (current.liveItems.some((live) => live.itemId === item.itemId)) return state
     return {
       sessions: {
         ...state.sessions,
         [sessionId]: {
           ...current,
-          liveItems: [...current.liveItems, { ...item, done: false }],
+          starting,
+          hasTimeline: current.hasTimeline || starting,
+        },
+      },
+    }
+  }),
+
+  startTranscriptItem: (sessionId, item) => set((state) => {
+    const current = sessionState(state.sessions, sessionId)
+    if (current.liveItems.some((live) => live.itemId === item.itemId)) return state
+    const localOrder = item.localOrder ?? current.nextLocalOrder
+    return {
+      sessions: {
+        ...state.sessions,
+        [sessionId]: {
+          ...current,
+          liveItems: [...current.liveItems, { ...item, localOrder, done: false }],
           hasTimeline: true,
+          nextLocalOrder: Math.max(current.nextLocalOrder, localOrder + 1),
         },
       },
     }
@@ -194,20 +234,33 @@ export const useCodexRealtimeViewStore = create<CodexRealtimeViewStore>((set) =>
     // Codex sends the canonical text on completion; it may differ from the
     // concatenated deltas, so replace rather than keep what streamed. An item the
     // view never saw start (mounted mid-call) is appended in completion order.
-    const known = current.liveItems.some((live) => live.itemId === item.itemId)
+    const existing = current.liveItems.find((live) => live.itemId === item.itemId)
+    const known = existing !== undefined
+    const localOrder = existing?.localOrder ?? item.localOrder ?? current.nextLocalOrder
     const liveItems = known
       ? current.liveItems.map((live) => (
         // The completion may arrive without a stamp; the one taken when the item
         // opened is the earlier and more accurate of the two, so it wins.
         live.itemId === item.itemId
-          ? { ...live, ...item, startedAtMs: live.startedAtMs ?? item.startedAtMs, done: true }
+          ? {
+              ...live,
+              ...item,
+              localOrder,
+              startedAtMs: live.startedAtMs ?? item.startedAtMs,
+              done: true,
+            }
           : live
       ))
-      : [...current.liveItems, { ...item, done: true }]
+      : [...current.liveItems, { ...item, localOrder, done: true }]
     return {
       sessions: {
         ...state.sessions,
-        [sessionId]: { ...current, liveItems, hasTimeline: true },
+        [sessionId]: {
+          ...current,
+          liveItems,
+          hasTimeline: true,
+          nextLocalOrder: Math.max(current.nextLocalOrder, localOrder + 1),
+        },
       },
     }
   }),

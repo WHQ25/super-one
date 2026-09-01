@@ -52,6 +52,8 @@ import { useTerminalStore } from '@/stores/terminal'
 import { useActiveSession, extractSessionTitle, useChatStore } from '@/stores/chat'
 import { SessionTitleAnimated } from '@/components/sidebar/AnimatedSessionTitle'
 import { HeaderSessionMenu } from '@/components/chat/HeaderSessionMenu'
+import { CodexConversationViewToggle } from '@/components/chat/CodexConversationViewToggle'
+import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 import { useSettingsStore } from '@/stores/settings'
 import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@superone/ui/lib/utils'
@@ -500,6 +502,10 @@ function App(): React.JSX.Element {
 
   const sessionId = useActiveSession((s) => s._activeSessionId ?? s.session?.sessionId ?? '')
   const sessionFallback = useActiveSession((s) => s._title ?? extractSessionTitle(s.messages))
+  const isCodexSession = useActiveSession((s) => resolveProvider({
+    sessionProvider: s.sessionProvider,
+    preferredProvider: s.preferredProvider,
+  }) === 'codex')
 
   useEffect(() => {
     useActivityPanelStore.getState().resetUserResized()
@@ -645,6 +651,9 @@ function App(): React.JSX.Element {
           {/* Mini-app controls */}
           <div className="mr-3 flex items-center gap-1.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
             <MiniAppMediaIndicator />
+            {import.meta.env.DEV && (
+              <CodexConversationViewToggle sessionId={sessionId} enabled={isCodexSession} />
+            )}
             {(() => {
               const terminalButton = (
                 <TooltipProvider delayDuration={300}>

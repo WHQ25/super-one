@@ -153,6 +153,8 @@ interface CodexTurnViewProps {
   message: ChatMessageType
   isStreaming: boolean
   isLastAssistant: boolean
+  collapseEntireTurn?: boolean
+  footer?: ReactNode
 }
 
 type CodexSegment =
@@ -400,7 +402,13 @@ const CodexItemSegment = memo(function CodexItemSegment(props: CodexItemSegmentP
 })
 
 
-export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTurnViewProps) {
+export function CodexTurnView({
+  message,
+  isStreaming,
+  isLastAssistant,
+  collapseEntireTurn = false,
+  footer,
+}: CodexTurnViewProps) {
   const codex = message.metadata?.codex
   const detailChatMode = useAppStore((s) => s.detailChatMode)
   const selectedCodexCollaborationMode = useActiveSession((s) => s.selectedCodexCollaborationMode)
@@ -542,6 +550,40 @@ export function CodexTurnView({ message, isStreaming, isLastAssistant }: CodexTu
       }
       return null
     })
+
+  if (collapseEntireTurn) {
+    const hasFallback = !hasAssistantMessage && !!fallbackText
+    const hasContent = segments.length > 0 || hasFallback || imageItems.length > 0
+    if (!hasContent) return null
+
+    return (
+      <div className="codex-turn min-w-0 w-full space-y-1">
+        <TurnDetailSection
+          stats={summarizeCodexProcess(segments, codexItems)}
+          runs={[{
+            key: 'entire-turn',
+            collapsible: true,
+            content: (
+              <div className="space-y-2">
+                {renderSegments(segments, false)}
+                {hasFallback && (
+                  <div className="my-0.5">
+                    <CopyableMarkdown
+                      text={fallbackText}
+                      isStreaming={isStreaming}
+                      components={fileLinkComponents}
+                    />
+                  </div>
+                )}
+                {imageItems.length > 0 && <ImageGalleryBlock items={imageItems} />}
+                {footer}
+              </div>
+            ),
+          }]}
+        />
+      </div>
+    )
+  }
 
   const body = (() => {
     if (!detailChatMode && !isStreaming) {

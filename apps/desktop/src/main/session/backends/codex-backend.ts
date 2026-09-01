@@ -975,6 +975,12 @@ export class CodexBackend implements SessionBackend {
                   content: [],
                   createdAt: new Date().toISOString(),
                   providerId: 'codex',
+                  metadata: {
+                    codexTimeline: {
+                      provenance: 'realtime-delegated',
+                      ...(turnId ? { turnId } : {}),
+                    },
+                  },
                 },
               })
               this.emit({ type: 'status_change', status: 'streaming' })

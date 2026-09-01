@@ -9,10 +9,6 @@ export function isRealtimeDelegationText(text: string): boolean {
     && normalized.endsWith(REALTIME_DELEGATION_CLOSE)
 }
 
-function transcriptKey(segment: RealtimeTimelineSegment): string {
-  return JSON.stringify([segment.role, segment.text.trim().replace(/\s+/g, ' ')])
-}
-
 /** Remove duplicate canonical entries without collapsing legitimate repeated speech. */
 export function dedupeRealtimeTimelineSegments(
   segments: RealtimeTimelineSegment[],
@@ -43,10 +39,13 @@ export function mergePendingRealtimeTimelineSegments(
   // Codex publishes no timestamps, so a canonical entry only ever carries the start
   // time SuperOne stamped locally. Every match below hands that stamp forward, or a
   // snapshot refresh would silently erase the timeline's scale.
-  const stamps = new Map<number, number>()
+  const localMetadata = new Map<number, Pick<RealtimeTimelineSegment, 'startedAtMs' | 'localOrder'>>()
   const claim = (index: number, segment: RealtimeTimelineSegment) => {
     unmatched.delete(index)
-    if (segment.startedAtMs !== undefined) stamps.set(index, segment.startedAtMs)
+    localMetadata.set(index, {
+      ...(segment.startedAtMs === undefined ? {} : { startedAtMs: segment.startedAtMs }),
+      ...(segment.localOrder === undefined ? {} : { localOrder: segment.localOrder }),
+    })
   }
 
   // Existing provider entries identify the part of the canonical snapshot we
@@ -60,35 +59,31 @@ export function mergePendingRealtimeTimelineSegments(
     if (index >= 0) claim(index, segment)
   }
 
-  // A pending segment committed from the realtime item stream already knows the id
-  // its canonical copy will carry. Resolve every such identity before falling back to
-  // text, or a still-unpublished utterance could consume the entry that belongs to a
-  // published one — Codex repeats text whenever it splits a transcript mid-utterance.
-  const unresolved: RealtimeTimelineSegment[] = []
+  // A pending segment committed from the realtime item stream knows the provider
+  // item id its canonical copy will carry. Entries without that identity remain
+  // separate: repeated speech is legitimate and text is not a dedupe key.
+  const unpublished: RealtimeTimelineSegment[] = []
   for (const segment of current) {
     if (!isPending(segment)) continue
     const index = segment.sourceItemId === undefined ? -1 : canonical.findIndex((candidate, candidateIndex) => (
       unmatched.has(candidateIndex) && candidate.id === segment.sourceItemId
     ))
     if (index >= 0) claim(index, segment)
-    else unresolved.push(segment)
-  }
-
-  const unpublished: RealtimeTimelineSegment[] = []
-  for (const segment of unresolved) {
-    const key = transcriptKey(segment)
-    const index = canonical.findIndex((candidate, candidateIndex) => (
-      unmatched.has(candidateIndex) && transcriptKey(candidate) === key
-    ))
-    if (index >= 0) claim(index, segment)
     else unpublished.push(segment)
   }
 
   const stamped = canonical.map((segment, index) => {
-    const startedAtMs = stamps.get(index)
-    return startedAtMs === undefined || segment.startedAtMs !== undefined
-      ? segment
-      : { ...segment, startedAtMs }
+    const local = localMetadata.get(index)
+    if (!local) return segment
+    return {
+      ...segment,
+      ...(segment.startedAtMs === undefined && local.startedAtMs !== undefined
+        ? { startedAtMs: local.startedAtMs }
+        : {}),
+      ...(segment.localOrder === undefined && local.localOrder !== undefined
+        ? { localOrder: local.localOrder }
+        : {}),
+    }
   })
   return dedupeRealtimeTimelineSegments([...stamped, ...unpublished])
 }

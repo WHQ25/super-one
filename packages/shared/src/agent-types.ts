@@ -567,6 +567,8 @@ export interface MessageMetadata {
   queuedTurnCount?: number
   consumedTokens?: { input: number; output: number }
   codex?: CodexTurnInfo
+  /** Ordering and origin of an entry in a Codex realtime conversation timeline. */
+  codexTimeline?: CodexTimelineMetadata
   resultText?: string
   permissionDenials?: PermissionDenialInfo[]
   fastModeState?: 'off' | 'cooldown' | 'on'
@@ -1806,6 +1808,24 @@ export type AgentStatus = 'idle' | 'streaming' | 'background' | 'error'
 
 export type RealtimeTranscriptRole = 'user' | 'assistant'
 
+export type CodexTimelineProvenance =
+  | 'realtime-user'
+  | 'realtime-assistant'
+  | 'realtime-delegated'
+  | 'codex'
+
+/** Stable identity and ordering carried across live events and provider snapshots. */
+export interface CodexTimelineMetadata {
+  provenance: CodexTimelineProvenance
+  /** Authoritative position from Codex's thread timeline once published. */
+  position?: number
+  /** Local event order used until a provider position is available. */
+  localOrder?: number
+  realtimeSessionId?: string
+  sourceItemId?: string
+  turnId?: string
+}
+
 export interface RealtimeVoiceStartRequest {
   sdp: string
   voice?: string
@@ -1823,6 +1843,12 @@ export interface RealtimeTimelineSegment {
   realtimeSessionId: string
   role: RealtimeTranscriptRole
   text: string
+  /** Explicit origin for newly mapped entries; omitted on legacy persisted snapshots. */
+  provenance?: Extract<CodexTimelineProvenance, 'realtime-user' | 'realtime-assistant'>
+  /** Authoritative position from Codex's thread timeline once published. */
+  position?: number
+  /** Local event order used while this item is pending provider publication. */
+  localOrder?: number
   /**
    * Codex realtime item id of a segment committed locally before the provider
    * published it. Lets a snapshot merge match its canonical copy by id instead of

@@ -360,6 +360,7 @@ export function finalizeCodexAssistantMessage(
       status: 'complete' as const,
       content: [{ type: 'text' as const, text: args.text }],
       metadata: args.result.usage ? {
+        ...message.metadata,
         durationMs: args.durationMs,
         usage: args.result.turnUsage ?? {
           inputTokens: Math.max(0, args.result.usage.lastInputTokens - args.result.usage.lastCachedInputTokens),
@@ -376,6 +377,7 @@ export function finalizeCodexAssistantMessage(
           ...(args.model ? { model: args.model } : {}),
         },
       } : {
+        ...message.metadata,
         durationMs: args.durationMs,
         codex: {
           threadId: args.result.threadId,

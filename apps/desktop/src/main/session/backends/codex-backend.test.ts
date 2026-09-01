@@ -347,7 +347,16 @@ describe('CodexBackend lifecycle', () => {
 
     expect(events).toContainEqual(expect.objectContaining({
       type: 'message_start',
-      message: expect.objectContaining({ id: 'codex_realtime_turn-live', status: 'streaming' }),
+      message: expect.objectContaining({
+        id: 'codex_realtime_turn-live',
+        status: 'streaming',
+        metadata: expect.objectContaining({
+          codexTimeline: expect.objectContaining({
+            provenance: 'realtime-delegated',
+            turnId: 'turn-live',
+          }),
+        }),
+      }),
     }))
     expect(events).toContainEqual({
       type: 'codex_item_delta',

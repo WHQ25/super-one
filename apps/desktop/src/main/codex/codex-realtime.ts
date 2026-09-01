@@ -114,7 +114,16 @@ function mapTimelineRealtimeSegment(entry: unknown): RealtimeTimelineResult['seg
   const realtimeSessionId = readString(item?.realtimeSessionId)
   const text = typeof item?.text === 'string' ? item.text : ''
   if (!id || !realtimeSessionId || !text) return null
-  return { id, realtimeSessionId, role: transcriptRole(item?.role), text }
+  const role = transcriptRole(item?.role)
+  const position = typeof record?.position === 'number' ? record.position : undefined
+  return {
+    id,
+    realtimeSessionId,
+    role,
+    text,
+    provenance: role === 'assistant' ? 'realtime-assistant' : 'realtime-user',
+    ...(position === undefined ? {} : { position }),
+  }
 }
 
 /**
@@ -213,10 +222,12 @@ export function mapCodexRealtimeNotification(notification: AppServerNotification
 function mapTimelineThreadMessages(entries: unknown[], threadId: string | null): ChatMessage[] {
   const turns = new Map<string, {
     position: number
+    completionPosition: number | null
     order: number
     status: ChatMessage['status']
     users: ChatMessage[]
     items: CodexThreadItem[]
+    delegated: boolean
   }>()
   const realtimeMessages: Array<{ position: number; order: number; messages: ChatMessage[] }> = []
 
@@ -227,7 +238,15 @@ function mapTimelineThreadMessages(entries: unknown[], threadId: string | null):
       existing.order = Math.min(existing.order, order)
       return existing
     }
-    const created = { position, order, status: 'streaming' as const, users: [], items: [] }
+    const created = {
+      position,
+      completionPosition: null,
+      order,
+      status: 'streaming' as const,
+      users: [],
+      items: [],
+      delegated: false,
+    }
     turns.set(turnId, created)
     return created
   }
@@ -249,6 +268,15 @@ function mapTimelineThreadMessages(entries: unknown[], threadId: string | null):
           content: [{ type: 'text', text: segment.text }],
           createdAt: '',
           providerId: 'codex',
+          metadata: {
+            codexTimeline: {
+              provenance: segment.provenance
+                ?? (segment.role === 'assistant' ? 'realtime-assistant' : 'realtime-user'),
+              position,
+              realtimeSessionId: segment.realtimeSessionId,
+              sourceItemId: segment.id,
+            },
+          },
         }],
       })
       continue
@@ -261,6 +289,7 @@ function mapTimelineThreadMessages(entries: unknown[], threadId: string | null):
     if (type === 'turnCompleted') {
       const status = readString(record.status)
       turn.status = status === 'failed' ? 'error' : status === 'interrupted' ? 'interrupted' : 'complete'
+      turn.completionPosition = position
       continue
     }
     if (type !== 'item') continue
@@ -276,7 +305,12 @@ function mapTimelineThreadMessages(entries: unknown[], threadId: string | null):
         })
         .filter((part): part is string => part !== null)
         .join('\n')
-      if (isRealtimeDelegationText(text)) continue
+      // The delegation envelope is the only record of what the voice agent actually
+      // asked Codex to do — it originates inside the thread, so nothing else carries
+      // it. Kept here and hidden by the renderer's voice view, which already says the
+      // same thing in speech; the backing-thread view shows it verbatim.
+      const delegation = isRealtimeDelegationText(text)
+      if (delegation) turn.delegated = true
       turn.users.push({
         id,
         role: 'user',
@@ -284,6 +318,13 @@ function mapTimelineThreadMessages(entries: unknown[], threadId: string | null):
         content: [{ type: 'text', text }],
         createdAt: '',
         providerId: 'codex',
+        metadata: {
+          codexTimeline: {
+            provenance: delegation ? 'realtime-delegated' : 'codex',
+            position: turn.position,
+            turnId,
+          },
+        },
       })
       continue
     }
@@ -293,6 +334,9 @@ function mapTimelineThreadMessages(entries: unknown[], threadId: string | null):
   }
 
   const positionedTurns = [...turns.entries()].map(([turnId, turn]) => {
+    const displayPosition = turn.delegated && turn.completionPosition !== null
+      ? turn.completionPosition
+      : turn.position
     const messages = (() => {
       if (turn.items.length === 0) return turn.users
       const finalResponse = deriveFinalResponse(turn.items)
@@ -310,12 +354,17 @@ function mapTimelineThreadMessages(entries: unknown[], threadId: string | null):
             usage: null,
             items: turn.items,
           },
+          codexTimeline: {
+            provenance: turn.delegated ? 'realtime-delegated' : 'codex',
+            position: displayPosition,
+            turnId,
+          },
         },
       }
       return [...turn.users, assistant]
     })()
     return {
-      position: turn.position,
+      position: displayPosition,
       order: turn.order,
       messages,
     }

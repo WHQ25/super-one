@@ -2003,7 +2003,24 @@ export class Session implements SessionContract {
     }
     if (event.type === 'message_start') {
       const existing = this._messages.find((m) => m.id === event.message.id)
-      if (!existing) this.replaceMessages([...this._messages, event.message])
+      if (!existing) {
+        const timeline = event.message.metadata?.codexTimeline
+        const message = timeline && event.seq !== undefined
+          ? {
+              ...event.message,
+              _lastAppliedSeq: event.seq,
+              ...(event.epoch === undefined ? {} : { _lastAppliedEpoch: event.epoch }),
+              metadata: {
+                ...event.message.metadata,
+                codexTimeline: {
+                  ...timeline,
+                  localOrder: timeline.localOrder ?? event.seq,
+                },
+              },
+            }
+          : event.message
+        this.replaceMessages([...this._messages, message])
+      }
       return
     }
     if (
@@ -2039,11 +2056,28 @@ export class Session implements SessionContract {
         durationMs: codexMeta?.durationMs as number | undefined,
         model: codexMeta?.model as string | undefined,
       })
+      const endStampedMessages = next.messages.map((message) => {
+        if (message.id !== event.messageId || event.seq === undefined) return message
+        const timeline = message.metadata?.codexTimeline
+        if (timeline?.provenance !== 'realtime-delegated') return message
+        return {
+          ...message,
+          _lastAppliedSeq: event.seq,
+          ...(event.epoch === undefined ? {} : { _lastAppliedEpoch: event.epoch }),
+          metadata: {
+            ...message.metadata,
+            codexTimeline: {
+              ...timeline,
+              localOrder: event.seq,
+            },
+          },
+        }
+      })
       this.replaceMessages(errorInfo
-        ? next.messages.map((m) => (m.id === event.messageId
+        ? endStampedMessages.map((m) => (m.id === event.messageId
             ? { ...m, metadata: { ...m.metadata, errorInfo } }
             : m))
-        : next.messages)
+        : endStampedMessages)
       this._totalCostUsd = next.totalCostUsd
       this._contextTokens = next.contextTokens
       this._streamingTokensByMessageId = next.streamingTokensByMessageId

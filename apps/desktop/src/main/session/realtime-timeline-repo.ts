@@ -13,6 +13,12 @@ const EMPTY_TIMELINE: RealtimeTimelineResult = {
   hasTimeline: false,
 }
 
+const transcriptStartOrders = new Map<string, number>()
+
+function transcriptOrderKey(sessionId: string, itemId: string): string {
+  return `${sessionId}:${itemId}`
+}
+
 function parseTimeline(raw: string): RealtimeTimelineResult | null {
   try {
     const value = JSON.parse(raw) as Partial<RealtimeTimelineResult>
@@ -93,12 +99,23 @@ export function applyRealtimeTimelineEvent(sessionId: string, event: AgentEvent)
     return
   }
   if (event.type === 'realtime_closed') {
+    for (const key of transcriptStartOrders.keys()) {
+      if (key.startsWith(`${sessionId}:`)) transcriptStartOrders.delete(key)
+    }
     saveRealtimeTimeline(sessionId, { ...current, activeRealtimeSessionId: null, hasTimeline: true })
+    return
+  }
+  if (event.phase === 'started') {
+    if (event.seq !== undefined) transcriptStartOrders.set(transcriptOrderKey(sessionId, event.itemId), event.seq)
     return
   }
   // Only a completed item is durable: Codex has sealed it into the thread rollout by
   // then, and `itemId` is the id its canonical copy will carry.
   if (event.phase !== 'completed' || !event.text || !event.role) return
+
+  const orderKey = transcriptOrderKey(sessionId, event.itemId)
+  const localOrder = transcriptStartOrders.get(orderKey) ?? event.seq
+  transcriptStartOrders.delete(orderKey)
 
   const realtimeSessionId = event.realtimeSessionId
     ?? current.activeRealtimeSessionId
@@ -109,6 +126,8 @@ export function applyRealtimeTimelineEvent(sessionId: string, event: AgentEvent)
     realtimeSessionId,
     role: event.role,
     text: event.text,
+    provenance: event.role === 'assistant' ? 'realtime-assistant' as const : 'realtime-user' as const,
+    ...(localOrder === undefined ? {} : { localOrder }),
     ...(event.startedAtMs === undefined ? {} : { startedAtMs: event.startedAtMs }),
   }
   const existing = current.segments.findIndex((candidate) => (
@@ -119,7 +138,13 @@ export function applyRealtimeTimelineEvent(sessionId: string, event: AgentEvent)
     segments: existing >= 0
       ? current.segments.map((candidate, index) => (
         index === existing
-          ? { ...candidate, text: segment.text, startedAtMs: candidate.startedAtMs ?? segment.startedAtMs }
+          ? {
+              ...candidate,
+              text: segment.text,
+              provenance: candidate.provenance ?? segment.provenance,
+              localOrder: candidate.localOrder ?? segment.localOrder,
+              startedAtMs: candidate.startedAtMs ?? segment.startedAtMs,
+            }
           : candidate
       ))
       : [...current.segments, segment],

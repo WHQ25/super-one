@@ -2893,6 +2893,48 @@ describe('Session persist hook', () => {
     })
   })
 
+  it('moves a live delegated Codex turn timeline stamp from start to completion', () => {
+    const { session, backend } = makeSession({
+      providerId: 'codex-base',
+      harnessId: 'codex',
+    })
+    backend.emit({
+      type: 'message_start',
+      message: {
+        id: 'delegated-1',
+        role: 'assistant',
+        status: 'streaming',
+        content: [],
+        createdAt: '',
+        providerId: 'codex',
+        metadata: {
+          codexTimeline: {
+            provenance: 'realtime-delegated',
+            turnId: 'turn-1',
+          },
+        },
+      },
+    })
+    const startOrder = session.snapshot.messages[0]?.metadata?.codexTimeline?.localOrder
+
+    backend.emit({
+      type: 'message_complete',
+      messageId: 'delegated-1',
+      metadata: {
+        codex: {
+          threadId: 'thread-1',
+          turnId: 'turn-1',
+          usage: null,
+          items: [],
+        },
+      },
+    })
+
+    const completed = session.snapshot.messages[0]
+    expect(completed?.metadata?.codexTimeline?.localOrder).toBeGreaterThan(startOrder ?? 0)
+    expect(completed?._lastAppliedSeq).toBe(completed?.metadata?.codexTimeline?.localOrder)
+  })
+
   it('waits for cold backend startup shared with timeline before starting voice', async () => {
     const { session, backend } = makeSession({
       providerId: 'codex-base',

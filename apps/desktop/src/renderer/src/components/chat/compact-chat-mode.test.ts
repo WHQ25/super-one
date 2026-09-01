@@ -56,6 +56,17 @@ describe('partitionTurnForCompactMode', () => {
     expect(shape(runs)).toEqual(['c:early', 'p:widget', 'c:late', 'p:answer'])
   })
 
+  it('pins AskUserQuestion — the question is addressed to the reader, not process', () => {
+    const items = [
+      { kind: 'tools', id: 'early' },
+      { kind: 'block', block: { type: 'tool_use', toolName: 'AskUserQuestion' }, id: 'ask' },
+      { kind: 'tools', id: 'late' },
+      text('answer'),
+    ]
+    const runs = partitionTurnForCompactMode(items, isClaudePinnedSegment)
+    expect(shape(runs)).toEqual(['c:early', 'p:ask', 'c:late', 'p:answer'])
+  })
+
   it('does not pin an ordinary tool call', () => {
     const items = [
       { kind: 'block', block: { type: 'tool_use', toolName: 'Read' }, id: 'read' },

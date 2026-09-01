@@ -6,14 +6,26 @@ import { isWidgetShowTool } from './media-generation'
  * disclosure; pinned content stays visible at its original position, so
  * expanding Detail restores the turn's real order instead of re-ordering it.
  *
- * Pinned = the agent's own prose (markdown) and widget_show calls, wherever
- * they appear — mid-turn narration is content, not process. Everything after
- * the last pinned item is pinned too, so an interrupted turn that ends mid-
- * tool still surfaces its incomplete tail.
+ * Pinned = the agent's own prose (markdown) and tools whose call *is* addressed
+ * to the user (widget_show, AskUserQuestion), wherever they appear — mid-turn
+ * narration is content, not process. Everything after the last pinned item is
+ * pinned too, so an interrupted turn that ends mid-tool still surfaces its
+ * incomplete tail.
  *
  * Collapse threshold and Detail badge use *visible* process segments only
  * (hidden tool calls / paired tool_result shells do not count).
  */
+
+/**
+ * Tools whose call is aimed at the user rather than at the task: a widget is
+ * the answer's surface, and a question is a turn addressed to the reader.
+ * Burying either under "Detail" hides the one thing the turn wants seen.
+ */
+export function isPinnedToolName(toolName: string): boolean {
+  return isWidgetShowTool(toolName)
+    || toolName === 'AskUserQuestion'
+    || toolName.endsWith('__AskUserQuestion')
+}
 
 /** Min visible process segments before compact mode collapses them under Detail. */
 export const MIN_PROCESS_SEGMENTS_TO_COLLAPSE = 3
@@ -63,18 +75,18 @@ export function collapsibleItems<T>(runs: ReadonlyArray<TurnRun<T>>): T[] {
   return runs.flatMap((run) => (run.collapsible ? run.items : []))
 }
 
-/** Claude / ACP content segments: bare text blocks and widget_show calls are pinned. */
+/** Claude / ACP content segments: bare text blocks and user-facing tool calls are pinned. */
 export function isClaudePinnedSegment(seg: {
   kind: string
   block?: { type: string; toolName?: string }
 }): boolean {
   if (seg.kind !== 'block' || !seg.block) return false
   if (seg.block.type === 'text') return true
-  return seg.block.type === 'tool_use' && isWidgetShowTool(seg.block.toolName ?? '')
+  return seg.block.type === 'tool_use' && isPinnedToolName(seg.block.toolName ?? '')
 }
 
 /**
- * Codex topology segments: agent_message / plan / widget_show items are pinned.
+ * Codex topology segments: agent_message / plan / user-facing tool items are pinned.
  * `itemAt` resolves a segment index into the full codex item list.
  */
 export function isCodexPinnedSegment(
@@ -85,7 +97,7 @@ export function isCodexPinnedSegment(
   const item = itemAt(seg.index)
   if (!item) return false
   if (item.type === 'agent_message' || item.type === 'plan') return true
-  return item.type === 'mcp_tool_call' && isWidgetShowTool(`mcp__${item.server}__${item.tool}`)
+  return item.type === 'mcp_tool_call' && isPinnedToolName(`mcp__${item.server}__${item.tool}`)
 }
 
 type ClaudeVisibilitySeg = {

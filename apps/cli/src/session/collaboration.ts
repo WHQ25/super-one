@@ -206,14 +206,16 @@ export class CollaborationService {
       // remote @codex mention means the same thing on both sides.
       if (!harnesses.isSessionHarnessRunnable(harnessId)) return
       seen.add(profileId)
-      const models = listHarnessModels(providers, harnessId, null, providerOptions).map((m) => ({
+      const harnessModels = listHarnessModels(providers, harnessId, null, providerOptions)
+      const models = harnessModels.map((m) => ({
         id: m.id,
         name: m.name || m.id,
         ...(m.description ? { description: m.description } : {}),
+        ...(m.serviceTiers?.length ? { serviceTiers: m.serviceTiers } : {}),
       }))
-      const defaultModel = models.find((m) => (m as { isDefault?: boolean }).isDefault) ?? models[0]
+      const defaultModel = harnessModels.find((m) => m.isDefault) ?? harnessModels[0]
       const efforts = new Set<string>()
-      for (const m of listHarnessModels(providers, harnessId, null, providerOptions)) {
+      for (const m of harnessModels) {
         for (const e of m.supportedEffortLevels ?? []) efforts.add(e)
       }
       const cfg =
@@ -254,6 +256,9 @@ export class CollaborationService {
         defaultConfig: {
           ...(modelDefault ? { model: modelDefault } : {}),
           ...(effortDefault ? { effort: effortDefault } : {}),
+          ...(harnessId === 'codex'
+            ? { fastMode: typeof cfg.fastMode === 'boolean' ? cfg.fastMode : false }
+            : {}),
         },
         models: models.length > 0 ? models : [{ id: 'default', name: 'Default' }],
         efforts: [...efforts],
@@ -973,6 +978,7 @@ export class CollaborationService {
       config: {
         model: config.model,
         effort: config.effort,
+        fastMode: config.fastMode,
         permissionMode: config.permissionMode,
         sandboxMode: config.sandboxMode,
         cwd,
@@ -1417,6 +1423,7 @@ export class CollaborationService {
       ...base,
       ...(typeof patch.model === 'string' && patch.model.trim() ? { model: patch.model.trim() } : {}),
       ...(typeof patch.effort === 'string' && patch.effort.trim() ? { effort: patch.effort.trim() } : {}),
+      ...(typeof patch.fastMode === 'boolean' ? { fastMode: patch.fastMode } : {}),
       ...(typeof patch.permissionMode === 'string' ? { permissionMode: patch.permissionMode } : {}),
       ...(typeof patch.sandboxMode === 'string' ? { sandboxMode: patch.sandboxMode } : {}),
       ...(patch.apiProviderId === null || typeof patch.apiProviderId === 'string'
@@ -1507,6 +1514,7 @@ export class CollaborationService {
           ...(typeof patch.effort === 'string' && patch.effort.trim()
             ? { effort: patch.effort.trim() }
             : {}),
+          ...(typeof patch.fastMode === 'boolean' ? { fastMode: patch.fastMode } : {}),
           ...(typeof patch.permissionMode === 'string'
             ? { permissionMode: patch.permissionMode }
             : {}),

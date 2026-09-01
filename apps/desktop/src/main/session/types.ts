@@ -61,6 +61,8 @@ export interface SessionCreateOptions {
   sandboxMode?: SandboxMode
   effort?: SendMessageRequest['effort']
   model?: string
+  /** Codex service tier selected for this session (for example `priority`). */
+  codexServiceTier?: string | null
   additionalDirectories?: string[]
   resumeFrom?: string
   title?: string
@@ -149,6 +151,8 @@ export interface BackendStartOptions {
   sandboxInfo?: SandboxInfo
   effort?: SendMessageRequest['effort']
   model?: string
+  /** Codex service tier used when a turn does not provide an explicit override. */
+  serviceTier?: string | null
   additionalDirectories?: string[]
   abortController: AbortController
   providerSessionId?: string

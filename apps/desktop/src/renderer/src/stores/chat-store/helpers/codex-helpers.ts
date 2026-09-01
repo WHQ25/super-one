@@ -8,6 +8,7 @@ import type {
   CodexUsageInfo,
   ModelOption,
 } from '@superone/shared/agent-types'
+import { resolveCodexFastServiceTier } from '@superone/shared/codex-fast-mode'
 import type { ChatStore, PerSessionState, ProjectState } from '../types'
 import { findLatestCodexUsage, hasValidCodexUsageSnapshot } from './codex-usage'
 import { _getEffectiveSessionId } from './persistence'
@@ -254,21 +255,26 @@ export function saveLastCodexSelection(modelId: string, reasoningEffort?: CodexR
   } catch {}
 }
 
-export function resolveDefaultCodexSelection(models: ModelOption[]): { modelId: string; reasoningEffort?: CodexReasoningEffort } {
+export function resolveDefaultCodexSelection(models: ModelOption[]): { modelId: string; reasoningEffort?: CodexReasoningEffort; serviceTier: string | null } {
   const remembered = readLastCodexSelection()
-  const defaults = defaultPrefsCache.codexSelection ?? { modelId: '', reasoningEffort: undefined }
-  return resolveCodexModelSelection(
+  const defaults = defaultPrefsCache.codexSelection ?? { modelId: '', reasoningEffort: undefined, fastMode: false }
+  const selection = resolveCodexModelSelection(
     models,
     defaults.modelId || remembered.modelId,
     defaults.reasoningEffort ?? remembered.reasoningEffort,
   )
+  const model = models.find((entry) => entry.id === selection.modelId)
+  return {
+    ...selection,
+    serviceTier: resolveCodexFastServiceTier(model, defaults.fastMode),
+  }
 }
 
 export function resolveSessionCodexSelection(
   models: ModelOption[],
   selectedCodexModel: string,
   selectedCodexReasoningEffort?: CodexReasoningEffort,
-): { modelId: string; reasoningEffort?: CodexReasoningEffort } {
+): { modelId: string; reasoningEffort?: CodexReasoningEffort; serviceTier?: string | null } {
   if (selectedCodexModel || selectedCodexReasoningEffort) {
     return resolveCodexModelSelection(models, selectedCodexModel, selectedCodexReasoningEffort)
   }

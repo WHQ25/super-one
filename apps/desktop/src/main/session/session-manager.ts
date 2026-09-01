@@ -46,6 +46,7 @@ export interface LoadedSessionData {
   acpAgentId?: string | null
   selectedModel?: string | null
   selectedEffort?: import('@superone/shared/agent-types').EffortLevel | null
+  codexServiceTier?: string | null
   /** Human-approved launch settings for collaboration children. */
   permissionMode?: PermissionMode
   sandboxMode?: SandboxMode
@@ -228,6 +229,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       sandboxInfo,
       effort: selectedEffort,
       model: selectedModel,
+      codexServiceTier: opts.codexServiceTier,
       // Caller scope only. `Session` owns the union with the project's folders
       // and recomputes it every turn; pre-mixing them here would bake project
       // folders into the caller half, so a later removal could never propagate.
@@ -348,6 +350,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       acpAgentId: data.acpAgentId ?? null,
       effort: data.selectedEffort ?? undefined,
       model: data.selectedModel ?? undefined,
+      codexServiceTier: data.codexServiceTier,
       systemPromptAppend: data.systemPromptAppend,
       homedir: homedir(),
       getProjectResources: (c) => this.projectResources.get(c),

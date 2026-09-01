@@ -16,6 +16,7 @@ import {
   SESSION_AGENT_TASK_MAX,
 } from '@superone/shared/agent-types'
 import { acpAgentDisplayName, resolveHarnessBrandKey } from '@superone/shared/acp-brand'
+import { findCodexFastServiceTier } from '@superone/shared/codex-fast-mode'
 import { activateWorktree, resolveMainWorktreeDir } from '../git/worktree-ops'
 import { decryptSecret, encryptSecret } from '../crypto/secret-store'
 import { getDb } from '../database'
@@ -99,6 +100,7 @@ interface MessageRow {
 export interface SessionCollaborationRunConfig {
   permissionMode?: PermissionMode
   sandboxMode?: SandboxMode
+  codexServiceTier?: string | null
 }
 
 type AuthorizedGrant = GrantRow & { credential: string }
@@ -340,6 +342,9 @@ function mergeConfirmedLaunches(
     const effort = typeof patch.effort === 'string' && patch.effort.trim()
       ? patch.effort.trim()
       : base.config.effort
+    const fastMode = typeof patch.fastMode === 'boolean'
+      ? patch.fastMode
+      : base.config.fastMode
     const apiProviderId = patch.apiProviderId === null
       ? null
       : typeof patch.apiProviderId === 'string'
@@ -381,6 +386,7 @@ function mergeConfirmedLaunches(
         ...base.config,
         ...(model !== undefined ? { model } : {}),
         ...(effort !== undefined ? { effort } : {}),
+        ...(fastMode !== undefined ? { fastMode } : {}),
         ...(apiProviderId !== undefined ? { apiProviderId } : {}),
         ...(permissionMode !== undefined ? { permissionMode } : {}),
         ...(sandboxMode !== undefined ? { sandboxMode } : {}),
@@ -445,7 +451,7 @@ function createGrants(parentSessionId: string, launches: SessionAgentLaunchPropo
   if (launches.length === 0 || launches.length > 16) throw new Error('The confirmed request must contain 1 to 16 launches')
   const launchIds = new Set(launches.map((launch) => launch.launchId))
   if (launchIds.size !== launches.length) throw new Error('Every confirmed launch must have a unique launchId')
-  const profiles = new Set(listSessionAgentProfiles().map((profile) => profile.id))
+  const profiles = new Map(listSessionAgentProfiles().map((profile) => [profile.id, profile]))
   // spawn and handoff insert identically; only `kind` differs, and that single
   // column is what keeps handoff sessions out of every parent→child query.
   const insertChild = getDb().prepare(`
@@ -556,11 +562,15 @@ function createGrants(parentSessionId: string, launches: SessionAgentLaunchPropo
       }
     }
 
-    if (!profiles.has(launch.agentId)) throw new Error(`Unknown agent profile: ${launch.agentId}`)
+    const profile = profiles.get(launch.agentId)
+    if (!profile) throw new Error(`Unknown agent profile: ${launch.agentId}`)
     if (!launch.task?.trim()) throw new Error(`Every ${mode} launch must include a non-empty task`)
     const credential = `s1sc_${randomBytes(32).toString('base64url')}`
     const config = {
       ...launch.config,
+      ...(typeof launch.config.fastMode === 'boolean'
+        ? { codexServiceTier: resolveCodexServiceTier(launch.agentId, launch.config, profile) }
+        : {}),
       name,
       role,
       summary: launch.summary.trim(),
@@ -669,10 +679,10 @@ export function getSessionCollaborationRunConfig(
   sessionId: string,
 ): SessionCollaborationRunConfig | null {
   const row = getDb().prepare(`
-    SELECT config_json
+    SELECT agent_id, config_json
     FROM session_collaboration_grants
     WHERE child_session_id = ? AND COALESCE(kind, 'spawn') = 'spawn'
-  `).get(sessionId) as { config_json: string } | undefined
+  `).get(sessionId) as { agent_id: string; config_json: string } | undefined
   if (!row) return null
 
   const config = parseConfig(row.config_json)
@@ -682,11 +692,29 @@ export function getSessionCollaborationRunConfig(
   const sandboxMode = config.sandboxMode && EDITABLE_SANDBOX_MODES.has(config.sandboxMode)
     ? config.sandboxMode
     : undefined
-  if (!permissionMode && !sandboxMode) return null
+  const hasFastMode = typeof config.fastMode === 'boolean'
+  const codexServiceTier = hasFastMode
+    ? resolveCodexServiceTier(row.agent_id, config)
+    : undefined
+  if (!permissionMode && !sandboxMode && !hasFastMode) return null
   return {
     ...(permissionMode ? { permissionMode } : {}),
     ...(sandboxMode ? { sandboxMode } : {}),
+    ...(hasFastMode ? { codexServiceTier } : {}),
   }
+}
+
+function resolveCodexServiceTier(
+  agentId: string,
+  config: SessionAgentLaunchConfig,
+  resolvedProfile?: ReturnType<typeof listSessionAgentProfiles>[number],
+): string | null {
+  if (!config.fastMode) return null
+  if (config.codexServiceTier !== undefined) return config.codexServiceTier
+  const profile = resolvedProfile ?? listSessionAgentProfiles().find((item) => item.id === agentId)
+  if (profile?.harnessId !== 'codex') return null
+  const model = profile.models.find((item) => item.id === config.model)
+  return findCodexFastServiceTier(model)?.id ?? null
 }
 
 function linkActivationWakeText(
@@ -1143,6 +1171,7 @@ export async function startSessionAgent(
   const childSessionId = randomUUID()
   const agentId = grant.agent_id
   const profile = listSessionAgentProfiles().find((item) => item.id === agentId)
+  const codexServiceTier = resolveCodexServiceTier(agentId, config)
   const displayName = deriveCollaborationName({ name: config.name })
   const role = deriveCollaborationRole({
     role: config.role,
@@ -1168,6 +1197,7 @@ export async function startSessionAgent(
       providerId: grant.agent_id,
       model: config.model,
       effort: config.effort as EffortLevel | undefined,
+      codexServiceTier,
       apiProviderId: config.apiProviderId,
       permissionMode: config.permissionMode as PermissionMode | undefined,
       sandboxMode: config.sandboxMode as SandboxMode | undefined,
@@ -1243,6 +1273,7 @@ export async function startSessionAgent(
     config: {
       model: config.model,
       effort: config.effort,
+      fastMode: config.fastMode,
       permissionMode: config.permissionMode,
       sandboxMode: config.sandboxMode,
       cwd,

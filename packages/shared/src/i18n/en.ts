@@ -1164,6 +1164,11 @@ export type Messages = {
         description: string
         updated: string
       }
+      fastMode: {
+        label: string
+        description: string
+        updated: string
+      }
       realtimeVoice: {
         label: string
         description: string
@@ -4787,6 +4792,11 @@ export const en: Messages = {
         label: 'Permission Mode',
         description: 'Default permission mode when starting a new session.',
         updated: 'Default permission mode updated',
+      },
+      fastMode: {
+        label: 'Fast Mode',
+        description: 'Use the lower-latency Fast tier for new Codex sessions when the selected model supports it.',
+        updated: 'Default Fast mode updated',
       },
       realtimeVoice: {
         label: 'Realtime Voice',

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
-import { Bot, FolderClosed, MessageSquare, Users } from 'lucide-react'
+import { Bot, FolderClosed, MessageSquare, Users, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Streamdown } from 'streamdown'
 import { Kbd } from '@superone/ui/components/ui/kbd'
+import { Switch } from '@superone/ui/components/ui/switch'
 import { cn } from '@superone/ui/lib/utils'
+import { findCodexFastServiceTier } from '@superone/shared/codex-fast-mode'
 import type {
   PermissionMode,
   SandboxMode,
@@ -45,7 +47,7 @@ interface Props {
  */
 type EditableConfig = Pick<
   SessionAgentLaunchProposal['config'],
-  'model' | 'effort' | 'apiProviderId' | 'permissionMode' | 'sandboxMode'
+  'model' | 'effort' | 'fastMode' | 'apiProviderId' | 'permissionMode' | 'sandboxMode'
 >
 
 function basename(path: string): string {
@@ -208,6 +210,8 @@ function LaunchPanel({
     onChange,
   })
   const workDirState = workDirStateOf(config.worktree?.enabled ? config.worktree : null)
+  const selectedProfileModel = profile?.models.find((model) => model.id === modelSelector.selectedModelId)
+  const supportsFastMode = harnessId === 'codex' && !!findCodexFastServiceTier(selectedProfileModel)
   const nameRole = launchNameRoleLine(launch)
   const peerTitle = peerSessionTitle(launch)
   const summary = launch.summary?.trim() || launch.task
@@ -344,7 +348,13 @@ function LaunchPanel({
               modelGroups={modelSelector.modelGroups}
               selectedModelId={modelSelector.selectedModelId}
               selectedModelLabel={modelSelector.selectedModelLabel}
-              onSelectModel={modelSelector.onSelectModel}
+              onSelectModel={(modelId) => {
+                modelSelector.onSelectModel(modelId)
+                const nextModel = profile?.models.find((model) => model.id === modelId)
+                if (harnessId === 'codex' && !findCodexFastServiceTier(nextModel)) {
+                  onChange({ fastMode: false })
+                }
+              }}
               shouldCloseAfterModelSelect={modelSelector.shouldCloseAfterModelSelect}
               effortOptions={modelSelector.effortOptions}
               selectedEffort={modelSelector.selectedEffort}
@@ -358,6 +368,28 @@ function LaunchPanel({
               modelsLoading={modelSelector.modelsLoading}
               triggerLabel={modelSelector.triggerLabel}
             />
+            {harnessId === 'codex' && (
+              <>
+                <span aria-hidden="true" className="h-3.5 w-px shrink-0 bg-border" />
+                <label
+                  className={cn(
+                    'inline-flex h-7 shrink-0 items-center gap-1.5 rounded-sm px-1.5 text-xs',
+                    supportsFastMode ? 'text-foreground' : 'text-muted-foreground',
+                  )}
+                  title={t('settings.preferences.fastMode.label')}
+                >
+                  <Zap className="size-3" />
+                  <span>{t('settings.preferences.fastMode.label')}</span>
+                  <Switch
+                    aria-label={t('settings.preferences.fastMode.label')}
+                    checked={config.fastMode === true}
+                    disabled={!supportsFastMode}
+                    onCheckedChange={(fastMode) => onChange({ fastMode })}
+                    className="scale-75"
+                  />
+                </label>
+              </>
+            )}
             <span aria-hidden="true" className="h-3.5 w-px shrink-0 bg-border" />
             <HarnessPermissionPopover
               harnessId={harnessId}

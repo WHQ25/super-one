@@ -455,6 +455,10 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
                 properties: {
                   model: { type: 'string' },
                   effort: { type: 'string' },
+                  fastMode: {
+                    type: 'boolean',
+                    description: 'Codex only. Enable the selected model\'s Fast service tier for this agent session.',
+                  },
                   apiProviderId: { type: ['string', 'null'] },
                   permissionMode: {
                     type: 'string',

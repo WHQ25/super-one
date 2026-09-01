@@ -58,6 +58,7 @@ export function applySessionAgentDefaults(
     const patch: Partial<PerSessionState> = {}
     if (sel.modelId !== session.selectedCodexModel) patch.selectedCodexModel = sel.modelId
     if (sel.reasoningEffort !== session.selectedCodexReasoningEffort) patch.selectedCodexReasoningEffort = sel.reasoningEffort
+    if (sel.serviceTier !== undefined && sel.serviceTier !== session.selectedCodexServiceTier) patch.selectedCodexServiceTier = sel.serviceTier
     return patch
   }
   if (provider === 'acp' || provider === 'opencode' || provider === 'cursor' || provider === 'dsh') return {}

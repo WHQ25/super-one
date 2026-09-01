@@ -127,6 +127,7 @@ const defaults: AppSettings = {
       defaultModel: '',
       defaultReasoningEffort: '',
       defaultPermissionPreset: 'auto-review',
+      defaultFastMode: false,
       realtimeVoice: '',
       brandHue: null,
       tokenOverrides: {},
@@ -449,6 +450,9 @@ function readCodexPreference(data: Record<string, unknown>): CodexPref {
     defaultPermissionPreset: codexPreference?.defaultPermissionPreset === '' || isCodexPermissionPreset(codexPreference?.defaultPermissionPreset)
       ? (codexPreference.defaultPermissionPreset as CodexPermissionPreset | '')
       : defaults.agentPreference.codex.defaultPermissionPreset,
+    defaultFastMode: typeof codexPreference?.defaultFastMode === 'boolean'
+      ? codexPreference.defaultFastMode
+      : defaults.agentPreference.codex.defaultFastMode,
     realtimeVoice: readCodexRealtimeVoice(codexPreference?.realtimeVoice)
       ?? defaults.agentPreference.codex.realtimeVoice,
     brandHue: readBrandHue(codexPreference?.brandHue),

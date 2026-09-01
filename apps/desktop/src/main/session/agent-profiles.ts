@@ -27,6 +27,7 @@ import {
   sessionHarnessIdToNodeHarnessId,
 } from '@superone/shared/environment'
 import { formatCodexModelName } from '@superone/shared/codex-model-label'
+import { findCodexFastServiceTier } from '@superone/shared/codex-fast-mode'
 import {
   effectiveEndpoints,
   findPlan,
@@ -83,6 +84,7 @@ function profileResources(
   const efforts = new Set<string>()
   let defaultModel: ModelOption | undefined
   let defaultEffort: string | undefined
+  let defaultFastMode: boolean | undefined
   if (provider.harnessId === 'acp') {
     const cached = getCachedHarnessResources('acp')
     if (!cached) return { models: [], efforts: [], defaultConfig: {} }
@@ -121,6 +123,7 @@ function profileResources(
         : defaultModel?.defaultReasoningEffort && supported.includes(defaultModel.defaultReasoningEffort)
           ? defaultModel.defaultReasoningEffort
           : supported[supported.length - 1]
+      defaultFastMode = preferences.codex.defaultFastMode && !!findCodexFastServiceTier(defaultModel)
     } else {
       defaultModel = models.find((model) => model.isDefault) ?? models[0]
       const supported = defaultModel?.supportedEffortLevels ?? []
@@ -137,6 +140,7 @@ function profileResources(
     defaultConfig: {
       ...(defaultModel ? { model: defaultModel.id } : {}),
       ...(defaultEffort ? { effort: defaultEffort } : {}),
+      ...(defaultFastMode !== undefined ? { fastMode: defaultFastMode } : {}),
     },
   }
 }
@@ -249,6 +253,7 @@ export function listSessionAgentProfiles(): SessionAgentProfile[] {
         ? formatCodexModelName(model.name, model.id)
         : (model.name || model.id),
       ...(model.description ? { description: model.description } : {}),
+      ...(model.serviceTiers?.length ? { serviceTiers: model.serviceTiers } : {}),
     }))
     const name = profileDisplayName(provider, acpAgentId)
     const brandKey = resolveHarnessBrandKey(provider.harnessId, acpAgentId)
@@ -287,4 +292,3 @@ export function listAgentMentionTargets(): AgentMentionTarget[] {
     })),
   )
 }
-

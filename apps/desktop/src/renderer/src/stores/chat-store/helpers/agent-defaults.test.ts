@@ -91,6 +91,7 @@ const codexHigh: ModelOption = {
   isDefault: true,
   supportedReasoningEfforts: [{ value: 'high', description: 'High' }, { value: 'medium', description: 'Med' }],
   defaultReasoningEffort: 'high',
+  serviceTiers: [{ id: 'priority', name: 'Fast', description: 'Lower latency' }],
 }
 
 beforeEach(() => {
@@ -177,6 +178,7 @@ describe('applyDefaultModel', () => {
 
 describe('applySessionAgentDefaults', () => {
   it('returns Codex selection patch when the session is a Codex session', () => {
+    defaultPrefsCache.codexSelection = { modelId: '', fastMode: true }
     const session = createDefaultPerSessionState()
     session.sessionProvider = 'codex'
     session.selectedCodexModel = ''
@@ -185,6 +187,7 @@ describe('applySessionAgentDefaults', () => {
     const patch = applySessionAgentDefaults(session, project, [])
     expect(patch.selectedCodexModel).toBe('gpt-5-high')
     expect(patch.selectedCodexReasoningEffort).toBe('high')
+    expect(patch.selectedCodexServiceTier).toBe('priority')
   })
 
   it('returns {} when the Codex session already has the resolved selection', () => {

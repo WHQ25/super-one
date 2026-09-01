@@ -163,6 +163,17 @@ describe('built-in superone tool registration surfaces', () => {
     expect(LAUNCH_PERMISSION_MODE_DESCRIPTION).not.toMatch(/bypassPermissions/)
   })
 
+  it('exposes Codex Fast Mode on session_collab_request launch config', () => {
+    const def = BUILT_IN_SUPERONE_TOOL_DEFS.find((d) => d.name === 'session_collab_request')!
+    const launch = (def.inputSchema.properties as Record<string, { items?: { properties?: Record<string, unknown> } }>)
+      .launches.items!.properties!
+    const config = (launch.config as { properties: Record<string, { type?: string; description?: string }> }).properties
+
+    expect(config.fastMode.type).toBe('boolean')
+    expect(config.fastMode.description).toMatch(/Codex/i)
+    expect(config.fastMode.description).toMatch(/Fast/i)
+  })
+
   it('points session_collab_request at product/collaboration for worktree recipes', () => {
     expect(SESSION_REQUEST_AGENTS_DESCRIPTION).toContain(
       'read_manual({ domain: "product", topic: "collaboration" })',

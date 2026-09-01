@@ -44,6 +44,7 @@ describe('app-settings-service', () => {
     defaultModel: '',
     defaultReasoningEffort: '',
     defaultPermissionPreset: 'auto-review',
+    defaultFastMode: false,
     realtimeVoice: '',
     brandHue: null,
     tokenOverrides: {},
@@ -145,6 +146,7 @@ describe('app-settings-service', () => {
             defaultModel: 'gpt-5.4',
             defaultReasoningEffort: 'high',
             defaultPermissionPreset: 'full-access',
+            defaultFastMode: true,
           },
         },
       }))
@@ -207,6 +209,7 @@ describe('app-settings-service', () => {
             defaultModel: 'gpt-5.4',
             defaultReasoningEffort: 'high',
             defaultPermissionPreset: 'full-access',
+            defaultFastMode: true,
             realtimeVoice: '',
             brandHue: null,
             tokenOverrides: {},
@@ -349,6 +352,7 @@ describe('app-settings-service', () => {
             defaultModel: 'gpt-5.4',
             defaultReasoningEffort: 'low',
             defaultPermissionPreset: 'auto-review',
+            defaultFastMode: false,
             realtimeVoice: '',
             brandHue: null,
             tokenOverrides: {},
@@ -604,13 +608,22 @@ describe('app-settings-service', () => {
 
       const result = saveAppSettings({
         agentPreference: {
-          codex: { defaultModel: 'gpt-5.4', defaultPermissionPreset: 'read-only', realtimeVoice: 'juniper' },
+          codex: { defaultModel: 'gpt-5.4', defaultPermissionPreset: 'read-only', defaultFastMode: true, realtimeVoice: 'juniper' },
         },
       })
       expect(result.agentPreference.claude.defaultModel).toBe('claude-opus-4-8')
       expect(result.agentPreference.codex.defaultModel).toBe('gpt-5.4')
+      expect(result.agentPreference.codex.defaultFastMode).toBe(true)
       expect(result.agentPreference.codex.defaultPermissionPreset).toBe('read-only')
       expect(result.agentPreference.codex.realtimeVoice).toBe('juniper')
+    })
+
+    it('defaults Codex Fast mode off when the preference is absent', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({
+        agentPreference: { codex: { defaultModel: 'gpt-5.4' } },
+      }))
+
+      expect(readAppSettings().agentPreference.codex.defaultFastMode).toBe(false)
     })
 
     it('normalizes Codex realtime voice ids and rejects invalid patches', () => {

@@ -53,7 +53,7 @@ function makeSettings(overrides: Partial<AppSettings> = {}): AppSettings {
     suggestionMenuHarness: null,
     agentPreference: {
       claude: { defaultModel: '', defaultEffort: '', defaultPermissionMode: '', defaultSandboxMode: '', brandHue: null, tokenOverrides: {}, disabledSkills: [], askUserQuestionPreviewFormat: 'markdown' },
-      codex: { defaultModel: '', defaultReasoningEffort: '', defaultPermissionPreset: '', brandHue: null, tokenOverrides: {} },
+      codex: { defaultModel: '', defaultReasoningEffort: '', defaultPermissionPreset: '', defaultFastMode: false, realtimeVoice: '', brandHue: null, tokenOverrides: {} },
       acp: { enabled: false, brandHue: null, tokenOverrides: {}, selectedAgentId: null },
     },
     ...overrides,
@@ -173,11 +173,11 @@ describe('settings registry patch building', () => {
 
   it('deep-merges multiple agentPreference fields into one nested patch', () => {
     const { patch } = buildPatchFromValues(
-      { claudeDefaultModel: 'claude-opus-4-8', claudeDefaultEffort: 'high', codexDefaultModel: 'gpt-5', codexDefaultPermissionPreset: 'full-access' },
+      { claudeDefaultModel: 'claude-opus-4-8', claudeDefaultEffort: 'high', codexDefaultModel: 'gpt-5', codexDefaultPermissionPreset: 'full-access', codexDefaultFastMode: true },
       makeSettings(),
     )
     expect(patch.agentPreference?.claude).toMatchObject({ defaultModel: 'claude-opus-4-8', defaultEffort: 'high' })
-    expect(patch.agentPreference?.codex).toMatchObject({ defaultModel: 'gpt-5', defaultPermissionPreset: 'full-access' })
+    expect(patch.agentPreference?.codex).toMatchObject({ defaultModel: 'gpt-5', defaultPermissionPreset: 'full-access', defaultFastMode: true })
   })
 
   it('maps a cleared nullable field to its empty representation in the patch', () => {

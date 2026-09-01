@@ -240,6 +240,7 @@ export function ensureSessionImpl(
       const codexSelection = resolveDefaultCodexSelection(project.codexModels)
       newSession.selectedCodexModel = codexSelection.modelId
       newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
+      newSession.selectedCodexServiceTier = codexSelection.serviceTier
     }
     project._sessions = { [draftId]: newSession }
     return {
@@ -584,6 +585,7 @@ export function resetSessionForWorktreeSwitchImpl(
     const codexSelection = resolveDefaultCodexSelection(proj.codexModels)
     newSession.selectedCodexModel = codexSelection.modelId
     newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
+    newSession.selectedCodexServiceTier = codexSelection.serviceTier
     return {
       projectSessions: {
         ...s.projectSessions,
@@ -670,6 +672,7 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
     const codexSelection = resolveDefaultCodexSelection(proj.codexModels)
     newSession.selectedCodexModel = codexSelection.modelId
     newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
+    newSession.selectedCodexServiceTier = codexSelection.serviceTier
     if (nextProvider === 'cursor') newSession.permissionMode = CURSOR_DEFAULT_PERMISSION_MODE
     return {
       projectSessions: {

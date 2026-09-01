@@ -1242,6 +1242,11 @@ export const zh: Messages = {
         description: '新会话启动时的默认权限模式。',
         updated: '默认权限模式已更新',
       },
+      fastMode: {
+        label: 'Fast 模式',
+        description: '当所选模型支持时，为新的 Codex 会话使用低延迟 Fast 服务层级。',
+        updated: '默认 Fast 模式已更新',
+      },
       realtimeVoice: {
         label: '实时语音音色',
         description: '用于新的 Realtime 语音对话。',

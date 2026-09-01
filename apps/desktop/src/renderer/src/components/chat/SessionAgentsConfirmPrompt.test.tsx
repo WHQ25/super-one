@@ -31,8 +31,12 @@ function payload(): SessionAgentRequestPayload {
         id: 'codex-base',
         name: 'Codex',
         harnessId: 'codex',
-        defaultConfig: { model: 'gpt-5.4', effort: 'medium' },
-        models: [{ id: 'gpt-5.4', name: 'GPT5.4' }],
+        defaultConfig: { model: 'gpt-5.4', effort: 'medium', fastMode: false },
+        models: [{
+          id: 'gpt-5.4',
+          name: 'GPT5.4',
+          serviceTiers: [{ id: 'priority', name: 'Fast', description: 'Lower latency' }],
+        }],
         efforts: ['medium', 'high'],
         apiProviders: [{ id: 'openai-key', name: 'OpenAI', brand: 'openai', keyName: 'codex2' }],
       },
@@ -64,6 +68,7 @@ function payload(): SessionAgentRequestPayload {
           cwd: '/Users/me/projects/super-one',
           model: 'gpt-5.4',
           effort: 'high',
+          fastMode: false,
           permissionMode: 'plan',
           sandboxMode: 'off',
           worktree: { enabled: true, baseBranch: 'main', mode: 'branch', branchName: 'agent/types' },
@@ -151,6 +156,19 @@ describe('session agents confirm prompt', () => {
     fireEvent.keyDown(window, { key: 'Tab' })
     expect(screen.getByRole('button', { name: /GPT5\.4/ })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /gpt-5\.4/ })).toBeNull()
+  })
+
+  it('shows and confirms Fast Mode for a Codex launch', () => {
+    const onConfirm = vi.fn()
+    renderInChat(<SessionAgentsConfirmPrompt payload={payload()} onConfirm={onConfirm} onReject={vi.fn()} />)
+
+    fireEvent.keyDown(window, { key: 'Tab' })
+    const fastMode = screen.getByRole('switch', { name: 'Fast Mode' })
+    expect(fastMode).not.toBeChecked()
+    fireEvent.click(fastMode)
+    fireEvent.keyDown(window, { key: 'Enter' })
+
+    expect(onConfirm.mock.calls[0][0][1].config.fastMode).toBe(true)
   })
 
   it('gives each agent the permission vocabulary of its own harness', () => {

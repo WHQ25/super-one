@@ -815,7 +815,13 @@ export interface SessionAgentProfile {
   description?: string
   /** Effective defaults inherited when a launch omits the corresponding fields. */
   defaultConfig: SessionAgentLaunchConfig
-  models: Array<{ id: string; name: string; description?: string }>
+  models: Array<{
+    id: string
+    name: string
+    description?: string
+    /** Codex service tiers advertised for this model (for example Fast/priority). */
+    serviceTiers?: Array<{ id: string; name: string; description: string }>
+  }>
   efforts: string[]
   /**
    * Third-party AI keys usable for this harness. `name` is the platform label
@@ -863,6 +869,10 @@ export interface SessionAgentWorktreeConfig {
 export interface SessionAgentLaunchConfig {
   model?: string
   effort?: string
+  /** Codex only: run the child session on the model's advertised Fast service tier. */
+  fastMode?: boolean
+  /** Host-resolved tier persisted with approved collaboration grants. Not agent-editable. */
+  codexServiceTier?: string | null
   apiProviderId?: string | null
   permissionMode?: PermissionMode
   sandboxMode?: SandboxMode
@@ -4487,6 +4497,8 @@ export interface AppSettings {
       defaultModel: string
       defaultReasoningEffort: CodexReasoningEffort | ''
       defaultPermissionPreset: CodexPermissionPreset | ''
+      /** Enable the model's Fast service tier for new Codex sessions. */
+      defaultFastMode: boolean
       /** Empty string follows the Codex app-server default voice. */
       realtimeVoice: string
       brandHue: number | null

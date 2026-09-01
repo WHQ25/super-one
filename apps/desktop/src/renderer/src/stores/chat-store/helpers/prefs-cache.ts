@@ -1,4 +1,5 @@
 import type {
+  AppSettings,
   CodexPermissionPreset,
   CodexReasoningEffort,
   EffortLevel,
@@ -14,7 +15,7 @@ interface DefaultPrefsCache {
   permissionMode: PermissionMode | null
   sandboxMode: SandboxMode | null
   claudeSelection: { modelId: string; effort?: EffortLevel } | null
-  codexSelection: { modelId: string; reasoningEffort?: CodexReasoningEffort } | null
+  codexSelection: { modelId: string; reasoningEffort?: CodexReasoningEffort; fastMode: boolean } | null
   codexPermissionPreset: CodexPermissionPreset
 }
 
@@ -27,6 +28,16 @@ export const defaultPrefsCache: DefaultPrefsCache = {
 }
 
 let defaultPrefsLoadGeneration = 0
+
+function cacheCodexPreferences(appSettings: Pick<AppSettings, 'agentPreference'>): void {
+  const codex = appSettings.agentPreference?.codex
+  defaultPrefsCache.codexSelection = {
+    modelId: typeof codex?.defaultModel === 'string' ? codex.defaultModel : '',
+    reasoningEffort: toCodexReasoningEffort(codex?.defaultReasoningEffort),
+    fastMode: codex?.defaultFastMode === true,
+  }
+  defaultPrefsCache.codexPermissionPreset = toCodexPermissionPreset(codex?.defaultPermissionPreset)
+}
 
 export function toCodexReasoningEffort(value: unknown): CodexReasoningEffort | undefined {
   switch (value) {
@@ -79,17 +90,13 @@ export async function _loadDefaultSessionPrefs(): Promise<void> {
       modelId: typeof claude?.defaultModel === 'string' ? claude.defaultModel : '',
       effort: toEffortLevel(claude?.defaultEffort),
     }
-    defaultPrefsCache.codexSelection = {
-      modelId: typeof appSettings.agentPreference?.codex?.defaultModel === 'string' ? appSettings.agentPreference.codex.defaultModel : '',
-      reasoningEffort: toCodexReasoningEffort(appSettings.agentPreference?.codex?.defaultReasoningEffort),
-    }
-    defaultPrefsCache.codexPermissionPreset = toCodexPermissionPreset(appSettings.agentPreference?.codex?.defaultPermissionPreset)
+    cacheCodexPreferences(appSettings)
   } catch {
     if (generation !== defaultPrefsLoadGeneration) return
     defaultPrefsCache.permissionMode = 'default'
     defaultPrefsCache.sandboxMode = null
     defaultPrefsCache.claudeSelection = { modelId: '', effort: undefined }
-    defaultPrefsCache.codexSelection = { modelId: '', reasoningEffort: undefined }
+    defaultPrefsCache.codexSelection = { modelId: '', reasoningEffort: undefined, fastMode: false }
     defaultPrefsCache.codexPermissionPreset = DEFAULT_CODEX_PERMISSION_PRESET
   }
 }
@@ -119,3 +126,10 @@ export function _clearDefaultPrefsCache(): void {
 
 // Eager load on module init — same side-effect as the original index.ts.
 void _loadDefaultSessionPrefs()
+
+// config_apply writes settings in the main process, then broadcasts this event.
+// Keep future session initialization in sync even when no preferences page is open.
+window.app.onAppSettingsChange?.((settings) => {
+  defaultPrefsLoadGeneration += 1
+  cacheCodexPreferences(settings)
+})

@@ -3,6 +3,7 @@ import { ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
+import { Switch } from '@superone/ui/components/ui/switch'
 import { cn } from '@superone/ui/lib/utils'
 import { DefaultProviderRow, ProviderOptionLabel } from '@/components/providers/DefaultProviderRow'
 import {
@@ -30,6 +31,7 @@ export function CodexPreferencesPage() {
   const [defaultModel, setDefaultModel] = useState('')
   const [defaultReasoningEffort, setDefaultReasoningEffort] = useState<CodexReasoningEffort | ''>('')
   const [defaultPermissionPreset, setDefaultPermissionPreset] = useState<CodexPermissionPreset | ''>('')
+  const [defaultFastMode, setDefaultFastMode] = useState(false)
   const [realtimeVoice, setRealtimeVoice] = useState('')
   const [codexModels, setCodexModels] = useState<ModelOption[]>([])
   const [loading, setLoading] = useState(true)
@@ -48,6 +50,7 @@ export function CodexPreferencesPage() {
         setDefaultModel(settings.agentPreference.codex.defaultModel)
         setDefaultReasoningEffort(settings.agentPreference.codex.defaultReasoningEffort)
         setDefaultPermissionPreset(settings.agentPreference.codex.defaultPermissionPreset)
+        setDefaultFastMode(settings.agentPreference.codex.defaultFastMode)
         setRealtimeVoice(settings.agentPreference.codex.realtimeVoice)
       })
       .finally(() => {
@@ -90,6 +93,7 @@ export function CodexPreferencesPage() {
     defaultModel?: string
     defaultReasoningEffort?: CodexReasoningEffort | ''
     defaultPermissionPreset?: CodexPermissionPreset | ''
+    defaultFastMode?: boolean
     realtimeVoice?: string
   }, successMessage: string) {
     if (saving) return
@@ -101,6 +105,7 @@ export function CodexPreferencesPage() {
             defaultModel: patch.defaultModel ?? defaultModel,
             defaultReasoningEffort: patch.defaultReasoningEffort ?? defaultReasoningEffort,
             defaultPermissionPreset: patch.defaultPermissionPreset ?? defaultPermissionPreset,
+            defaultFastMode: patch.defaultFastMode ?? defaultFastMode,
             realtimeVoice: patch.realtimeVoice ?? realtimeVoice,
           },
         },
@@ -108,6 +113,7 @@ export function CodexPreferencesPage() {
       setDefaultModel(result.agentPreference.codex.defaultModel)
       setDefaultReasoningEffort(result.agentPreference.codex.defaultReasoningEffort)
       setDefaultPermissionPreset(result.agentPreference.codex.defaultPermissionPreset)
+      setDefaultFastMode(result.agentPreference.codex.defaultFastMode)
       setRealtimeVoice(result.agentPreference.codex.realtimeVoice)
       await invalidateDefaultCodexPreferencesCache()
       toast.success(successMessage)
@@ -150,6 +156,13 @@ export function CodexPreferencesPage() {
     await saveCodexDefaults(
       { realtimeVoice: voice },
       t('settings.preferences.realtimeVoice.updated', { voice }),
+    )
+  }
+
+  async function handleFastModeChange(enabled: boolean) {
+    await saveCodexDefaults(
+      { defaultFastMode: enabled },
+      t('settings.preferences.fastMode.updated'),
     )
   }
 
@@ -199,6 +212,18 @@ export function CodexPreferencesPage() {
                     <CodexPermissionPresetList activePreset={activePermissionPreset} onSelect={handlePermissionPresetSelect} />
                   </PopoverContent>
                 </Popover>
+              </div>
+
+              <div className="flex items-center justify-between gap-4 border-b border-border p-4">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">{t('settings.preferences.fastMode.label')}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{t('settings.preferences.fastMode.description')}</p>
+                </div>
+                <Switch
+                  checked={defaultFastMode}
+                  onCheckedChange={(checked) => void handleFastModeChange(checked)}
+                  disabled={disabled}
+                />
               </div>
 
               <div className="flex items-center justify-between gap-4 border-b border-border p-4">

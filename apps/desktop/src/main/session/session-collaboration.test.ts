@@ -52,7 +52,7 @@ const state = vi.hoisted(() => ({
   projects: [] as Array<{ path: string; missing?: boolean }>,
   agentPreference: {
     claude: { defaultModel: 'test-model', defaultEffort: 'high' },
-    codex: { defaultModel: '', defaultReasoningEffort: '' },
+    codex: { defaultModel: '', defaultReasoningEffort: '', defaultFastMode: false },
     acp: { selectedAgentId: null as string | null },
   },
 }))
@@ -358,7 +358,7 @@ beforeEach(() => {
   state.projects = [{ path: TEST_CWD }]
   state.agentPreference = {
     claude: { defaultModel: 'test-model', defaultEffort: 'high' },
-    codex: { defaultModel: '', defaultReasoningEffort: '' },
+    codex: { defaultModel: '', defaultReasoningEffort: '', defaultFastMode: false },
     acp: { selectedAgentId: null },
   }
 })
@@ -466,21 +466,31 @@ describe('@agent mention targets', () => {
     state.resourceCache = {
       codex: {
         models: [
-          { id: 'gpt-5.6-sol', name: 'gpt-5.6-sol', supportedReasoningEfforts: [{ value: 'medium' }] },
+          {
+            id: 'gpt-5.6-sol',
+            name: 'gpt-5.6-sol',
+            supportedReasoningEfforts: [{ value: 'medium' }],
+            serviceTiers: [{ id: 'priority', name: 'Fast', description: 'Lower latency' }],
+          },
           { id: 'custom-model', name: 'My Custom Model', supportedReasoningEfforts: [{ value: 'high' }] },
         ],
       },
     }
     state.agentPreference = {
       ...state.agentPreference,
-      codex: { defaultModel: 'gpt-5.6-sol', defaultReasoningEffort: 'medium' },
+      codex: { defaultModel: 'gpt-5.6-sol', defaultReasoningEffort: 'medium', defaultFastMode: true },
     }
 
     expect(listSessionAgentProfiles()).toEqual([
       expect.objectContaining({
         id: 'codex-base',
+        defaultConfig: { model: 'gpt-5.6-sol', effort: 'medium', fastMode: true },
         models: [
-          expect.objectContaining({ id: 'gpt-5.6-sol', name: 'GPT5.6 Sol' }),
+          expect.objectContaining({
+            id: 'gpt-5.6-sol',
+            name: 'GPT5.6 Sol',
+            serviceTiers: [{ id: 'priority', name: 'Fast', description: 'Lower latency' }],
+          }),
           expect.objectContaining({ id: 'custom-model', name: 'My Custom Model' }),
         ],
       }),
@@ -606,6 +616,59 @@ describe('@agent mention targets', () => {
       model: 'test-model',
       effort: 'high',
     }))
+  })
+
+  it('applies approved Codex Fast Mode to the child session and resume config', async () => {
+    state.db!.prepare('UPDATE sessions SET provider_id = ?').run('codex-base')
+    state.providers = [{
+      id: 'codex-base', harnessId: 'codex', name: 'Codex', isBase: true, config: {}, createdAt: 0, updatedAt: 0,
+    }]
+    state.resourceCache = {
+      codex: {
+        models: [{
+          id: 'gpt-5.6-sol',
+          name: 'gpt-5.6-sol',
+          supportedReasoningEfforts: [{ value: 'medium' }],
+          serviceTiers: [{ id: 'priority', name: 'Fast', description: 'Lower latency' }],
+        }],
+      },
+    }
+    state.agentPreference = {
+      ...state.agentPreference,
+      codex: { defaultModel: 'gpt-5.6-sol', defaultReasoningEffort: 'medium', defaultFastMode: true },
+    }
+    const parent = fakeSession('parent')
+    const { host, createSession } = fakeHost(parent)
+    const promise = requestSessionAgents(parent.id, {
+      launches: [{
+        launchId: 'fast-codex',
+        agentId: 'codex-base',
+        task: 'Run with Fast Mode',
+        name: 'FastBot',
+        role: 'Worker',
+      }],
+    }, host)
+    const event = (parent.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentEvent
+    if (event.type !== 'permission_request') throw new Error('Expected permission request')
+    const launches = event.request.sessionAgentsConfirm!.launches
+    expect(launches[0].config.fastMode).toBe(true)
+    resolveSessionAgentsConfirm(event.request.requestId, 'accept', {
+      [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify(launches),
+    })
+
+    const grants = resultJson(await promise).launches as Array<{ credential: string }>
+    const started = resultJson(await startSessionAgent('parent', grants[0].credential, host))
+
+    expect(createSession).toHaveBeenCalledWith(expect.objectContaining({
+      providerId: 'codex-base',
+      codexServiceTier: 'priority',
+    }))
+    expect(getSessionCollaborationRunConfig(started.sessionId as string)).toEqual({
+      permissionMode: 'default',
+      sandboxMode: 'off',
+      codexServiceTier: 'priority',
+    })
+    expect(started.config).toMatchObject({ fastMode: true })
   })
 
   it('keeps an explicit agent model and effort ahead of profile defaults', async () => {

@@ -9,16 +9,23 @@ vi.mock('../../app', () => ({
 }))
 
 const getAppSettings = vi.fn()
+let appSettingsChange: ((data: ReturnType<typeof settings>) => void) | undefined
 
 vi.stubGlobal('window', {
-  app: { getAppSettings },
+  app: {
+    getAppSettings,
+    onAppSettingsChange: vi.fn((callback) => {
+      appSettingsChange = callback
+      return () => { appSettingsChange = undefined }
+    }),
+  },
 })
 
-function settings(defaultPermissionPreset: '' | 'default' | 'full-access') {
+function settings(defaultPermissionPreset: '' | 'default' | 'full-access', defaultFastMode?: boolean) {
   return {
     agentPreference: {
       claude: { defaultModel: '', defaultEffort: '', defaultPermissionMode: '', defaultSandboxMode: '' },
-      codex: { defaultModel: '', defaultReasoningEffort: '', defaultPermissionPreset },
+      codex: { defaultModel: '', defaultReasoningEffort: '', defaultPermissionPreset, defaultFastMode },
     },
   }
 }
@@ -47,6 +54,23 @@ describe('_loadDefaultSessionPrefs', () => {
     await _loadDefaultSessionPrefs()
 
     expect(defaultPrefsCache.codexPermissionPreset).toBe('auto-review')
+  })
+
+  it('defaults Codex Fast mode off and reads an explicit enabled preference', async () => {
+    getAppSettings.mockResolvedValue(settings('default'))
+    await _loadDefaultSessionPrefs()
+    expect(defaultPrefsCache.codexSelection?.fastMode).toBe(false)
+
+    getAppSettings.mockResolvedValue(settings('default', true))
+    await _loadDefaultSessionPrefs()
+    expect(defaultPrefsCache.codexSelection?.fastMode).toBe(true)
+  })
+
+  it('refreshes Codex defaults after an agent-applied settings broadcast', () => {
+    appSettingsChange?.(settings('full-access', true))
+
+    expect(defaultPrefsCache.codexSelection?.fastMode).toBe(true)
+    expect(defaultPrefsCache.codexPermissionPreset).toBe('full-access')
   })
 
   it('ignores an older settings read that resolves after the latest read', async () => {

@@ -190,6 +190,10 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
                   "effort": {
                     "type": "string"
                   },
+                  "fastMode": {
+                    "type": "boolean",
+                    "description": "Codex only. Enable the selected model's Fast service tier for this agent session."
+                  },
                   "apiProviderId": {
                     "type": [
                       "string",

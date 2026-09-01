@@ -411,6 +411,7 @@ const sessionManager = new SessionManagerImpl({
       selectedEffort: loaded.record.selectedEffort,
       permissionMode: collaborationConfig?.permissionMode,
       sandboxMode: collaborationConfig?.sandboxMode,
+      codexServiceTier: collaborationConfig?.codexServiceTier,
       systemPromptAppend: getSessionCollaborationSystemPrompt(sessionId),
     }
   },

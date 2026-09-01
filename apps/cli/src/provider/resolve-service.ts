@@ -223,6 +223,7 @@ export interface ModelOptionWire {
   supportedEffortLevels?: string[]
   supportedReasoningEfforts?: Array<{ value: string }>
   defaultReasoningEffort?: string
+  serviceTiers?: Array<{ id: string; name: string; description: string }>
 }
 
 /** Default Claude slugs when the node has no custom catalog. */

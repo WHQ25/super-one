@@ -427,6 +427,14 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
         toPatch: (v) => ({ agentPreference: { codex: { defaultPermissionPreset: (v ?? '') as AppSettings['agentPreference']['codex']['defaultPermissionPreset'] } } }),
       },
       {
+        key: 'codexDefaultFastMode',
+        label: 'Default Fast Mode',
+        type: 'boolean',
+        note: 'Enable the model Fast service tier for new Codex sessions when supported.',
+        read: (s) => s.agentPreference.codex.defaultFastMode,
+        toPatch: (v) => ({ agentPreference: { codex: { defaultFastMode: v as boolean } } }),
+      },
+      {
         key: 'codexBrandHue',
         label: 'Brand Hue',
         type: 'number',

@@ -347,6 +347,8 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
           config: z.object({
             model: z.string().optional(),
             effort: z.string().optional(),
+            fastMode: z.boolean().optional()
+              .describe('Codex only. Enable the selected model\'s Fast service tier for this agent session.'),
             apiProviderId: z.string().nullable().optional(),
             permissionMode: z.enum(['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto', 'agent'])
               .optional()

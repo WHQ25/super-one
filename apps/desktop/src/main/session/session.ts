@@ -89,6 +89,7 @@ export interface SessionConstructorOptions {
   sandboxInfo?: SandboxInfo
   effort?: SendMessageRequest['effort']
   model?: string
+  codexServiceTier?: string | null
   additionalDirectories?: string[]
   title?: string | null
   createdAt?: number
@@ -542,6 +543,7 @@ export class Session implements SessionContract {
       sandboxInfo: this.sandboxInfo,
       selectedModel: this.model ?? null,
       selectedEffort: this.effort ?? null,
+      selectedCodexServiceTier: opts.codexServiceTier ?? null,
       apiProviderId: this._apiProviderId,
     }
     this.systemPromptAppend = opts.systemPromptAppend
@@ -1193,6 +1195,7 @@ export class Session implements SessionContract {
       sandboxInfo: this.sandboxInfo,
       effort: hint?.effort ?? asEffortLevel(this._uiSettings.selectedAcpModeId) ?? this.effort,
       model: hint?.model ?? this.model,
+      serviceTier: this._uiSettings.selectedCodexServiceTier,
       additionalDirectories: this.backendDirs(dirs),
       abortController: new AbortController(),
       providerSessionId: this._providerSessionId ?? undefined,
@@ -1697,6 +1700,7 @@ export class Session implements SessionContract {
       sandboxInfo: this.sandboxInfo,
       effort: asEffortLevel(this._uiSettings.selectedAcpModeId) ?? this.effort,
       model: this.model,
+      serviceTier: this._uiSettings.selectedCodexServiceTier,
       additionalDirectories: this.backendDirs(),
       abortController: this.abortController,
       providerSessionId: this._providerSessionId ?? undefined,

@@ -390,6 +390,7 @@ export class CodexBackend implements SessionBackend {
       undefined,
       opts.apiProviderId ?? null,
       opts.systemPromptAppend,
+      opts.serviceTier ?? null,
     )
     this.session.queueChangedFn = (threadId) => this.scheduleDurableQueueRefresh(threadId)
     await this.adoptWarmHandle()
@@ -571,6 +572,9 @@ export class CodexBackend implements SessionBackend {
   async rebuild(opts: BackendStartOptions): Promise<void> {
     if (!this.started) { await this.start(opts); return }
     this.startOpts = opts
+    if (this.session && opts.serviceTier !== undefined) {
+      this.session.serviceTier = opts.serviceTier
+    }
     this.discardSessionConnection('rebuild')
   }
 
@@ -676,7 +680,9 @@ export class CodexBackend implements SessionBackend {
     const resolvedModel = request.model ?? config.model
     const resolvedServiceTier = request.codex?.serviceTier !== undefined
       ? request.codex.serviceTier
-      : (this.session?.serviceTier ?? null)
+      : this.session
+        ? this.session.serviceTier
+        : (startOpts.serviceTier ?? null)
     const resolvedThreadId = request.codex?.threadId ?? this.providerSessionId ?? undefined
     const resolvedCwd = request.codex?.cwd ?? startOpts.cwd
 

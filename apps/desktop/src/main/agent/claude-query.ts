@@ -1,5 +1,6 @@
 import { query, type CanUseTool, type HookCallback, type OnElicitation, type Options, type Query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { randomUUID } from 'node:crypto'
+import { resolveMappedClaudeModelId } from '@superone/shared/agent-types'
 import type { AgentEvent, PermissionMode, QuestionPreviewFormat, SandboxInfo, SendMessageRequest } from '@superone/shared/agent-types'
 import { mapModelFallbackWire, MODEL_FALLBACK_SUBTYPES } from '@superone/shared/model-fallback-wire'
 import { readTerminalSlashCommands } from '@superone/shared/slash-commands'
@@ -84,7 +85,7 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
   return {
     cwd: opts.cwd,
     pathToClaudeCodeExecutable: resolveHarnessRuntime('claude'),
-    model: opts.model,
+    model: resolveMappedClaudeModelId(opts.model, opts.env),
     effort: opts.effort,
     thinking: { type: 'adaptive', display: 'summarized' },
     promptSuggestions: true,

@@ -92,12 +92,20 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
   const fastModeState = useActiveSession((s) => s.session?.fastModeState)
   const providerProps = useSelectorProviders(activeProvider)
 
+  const entries = useMemo(
+    () => resolveClaudeEntries(availableModels, activeModelEnv),
+    [availableModels, activeModelEnv],
+  )
+
   // If selectedModel is empty but the catalog loaded (common on remote drafts),
   // treat the default/first model as display selection until the user picks one.
+  // Read it off the resolved entries, not the raw catalog: a live mapping folds
+  // the catalog's `[1m]` rows onto the plain alias, and the raw catalog would
+  // hand back a suffixed id the user was never shown (see resolveClaudeEntries).
   const effectiveSelectedModelId =
     selectedModel ||
-    availableModels.find((m) => m.isDefault)?.id ||
-    availableModels[0]?.id ||
+    entries.find(({ model }) => model.isDefault)?.model.id ||
+    entries[0]?.model.id ||
     ''
 
   useEffect(() => {
@@ -117,12 +125,12 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
   const currentModelName = resolveClaudeDisplayName(currentModel, activeModelEnv)
 
   const models = useMemo<SelectorModelOption[]>(
-    () => resolveClaudeEntries(availableModels, activeModelEnv).map(({ model, displayName, description }) => ({
+    () => entries.map(({ model, displayName, description }) => ({
       id: model.id,
       name: displayName,
       description,
     })),
-    [availableModels, activeModelEnv],
+    [entries],
   )
 
   const effortOptions = useMemo<SelectorEffortOption[]>(() => {

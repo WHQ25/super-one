@@ -108,6 +108,38 @@ describe('buildClaudeOptions permissionMode', () => {
   })
 })
 
+describe('buildClaudeOptions model', () => {
+  const MAPPED_ENV = {
+    ANTHROPIC_BASE_URL: 'https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic',
+    ANTHROPIC_DEFAULT_OPUS_MODEL: 'qwen3.8-max',
+  }
+
+  it('drops the alias [1m] when a provider slot mapping is live', () => {
+    // Otherwise Claude Code substitutes the slot and keeps the suffix, sending
+    // `qwen3.8-max[1m]` — a model no mapped provider serves (404).
+    const options = buildClaudeOptions({
+      superoneSessionId: 's1',
+      projectPath: '/repo',
+      cwd: '/repo',
+      permissionMode: 'default',
+      model: 'opus[1m]',
+      env: MAPPED_ENV,
+    })
+    expect(options.model).toBe('opus')
+  })
+
+  it('keeps the alias [1m] when talking to the official endpoint', () => {
+    const options = buildClaudeOptions({
+      superoneSessionId: 's1',
+      projectPath: '/repo',
+      cwd: '/repo',
+      permissionMode: 'default',
+      model: 'opus[1m]',
+    })
+    expect(options.model).toBe('opus[1m]')
+  })
+})
+
 describe('buildClaudeOptions allowedTools', () => {
   it('pre-allows every statically host-owned SuperOne tool so auto mode never classifies them', () => {
     const allowed = buildClaudeOptions({ projectPath: '/repo', cwd: '/repo', permissionMode: 'auto' }).allowedTools

@@ -9,6 +9,7 @@
 import { existsSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { query as sdkQuery, type Options, type SDKMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import { resolveMappedClaudeModelId } from '@superone/shared/agent-types'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import type { SessionTurnEvent } from '@superone/shared/environment'
 import { MessageBridge } from './message-bridge'
@@ -222,7 +223,7 @@ function buildLiveOptions(
   const base: Options = {
     cwd: opts.cwd,
     ...(binaryPath ? { pathToClaudeCodeExecutable: binaryPath } : {}),
-    model: opts.model,
+    model: resolveMappedClaudeModelId(opts.model, env ?? (process.env as Record<string, string | undefined>)),
     ...(effort ? { effort } : {}),
     includePartialMessages: true,
     thinking: { type: 'adaptive', display: 'summarized' },

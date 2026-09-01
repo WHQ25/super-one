@@ -1,15 +1,9 @@
-// Claude Code enables the 1M-token context beta (`context-1m-2025-08-07`) when a model id ends in
-// `[1m]`; it strips the suffix and adds the beta header. Catalog ids never carry it, so compare
-// against the base id (suffix stripped) when matching mapping ids to catalog models.
-export const ONE_M_SUFFIX = '[1m]'
+// The `[1m]` suffix contract lives in @superone/shared/agent-types so the main
+// process (which strips it off the alias when a provider mapping is live) and
+// the renderer read the same definition. Re-exported here for renderer imports.
+import { hasOneM, stripOneM } from '@superone/shared/agent-types'
 
-export function stripOneM(id: string): string {
-  return id.endsWith(ONE_M_SUFFIX) ? id.slice(0, -ONE_M_SUFFIX.length) : id
-}
-
-export function hasOneM(id: string): boolean {
-  return id.endsWith(ONE_M_SUFFIX)
-}
+export { ONE_M_SUFFIX, hasOneM, stripOneM } from '@superone/shared/agent-types'
 
 /**
  * Model ids eligible for the UI `[1m]` long-context toggle.

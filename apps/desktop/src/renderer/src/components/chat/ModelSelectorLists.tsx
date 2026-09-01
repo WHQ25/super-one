@@ -1,5 +1,6 @@
 import { Check, Loader2 } from 'lucide-react'
 import type { CodexReasoningEffort, EffortLevel, ModelBucket, ModelOption, ProviderModelEnv, ReasoningEffortOption } from '@superone/shared/agent-types'
+import { hasOneM } from '@/lib/model-id'
 import { formatCodexModelName, formatReasoningEffortLabel } from './chat-input-utils'
 
 function claudeIdToBucket(id: string): ModelBucket {
@@ -60,14 +61,35 @@ interface ResolvedEntry {
   description?: string
 }
 
+/**
+ * The alias a mapped bucket should hand back on select.
+ *
+ * A bucket collapses to a single row — `opus` and `opus[1m]` both resolve
+ * through `ANTHROPIC_DEFAULT_OPUS_MODEL` and render the same slot name, so the
+ * user cannot tell them apart. That row must therefore carry the plain alias:
+ * under a mapping the 1M decision belongs to the slot id (the credential
+ * editor's toggle stores `qwen3.8-max[1m]`), and an alias-side suffix is
+ * re-attached to the substituted id — `opus[1m]` becomes `qwen3.8-max[1m]`,
+ * which no provider serves.
+ */
+function preferredAliasByBucket(models: ModelOption[]): Map<ModelBucket, ModelOption> {
+  const preferred = new Map<ModelBucket, ModelOption>()
+  for (const model of models) {
+    const bucket = claudeIdToBucket(model.id)
+    const current = preferred.get(bucket)
+    if (!current || (hasOneM(current.id) && !hasOneM(model.id))) preferred.set(bucket, model)
+  }
+  return preferred
+}
+
 export function resolveClaudeEntries(models: ModelOption[], modelEnv: ProviderModelEnv | null | undefined): ResolvedEntry[] {
+  if (!modelEnv) {
+    return models.map((model) => ({ model, displayName: model.name, description: model.description }))
+  }
+  const preferred = preferredAliasByBucket(models)
   const entries: ResolvedEntry[] = []
   const seenSlotIds = new Set<string>()
   for (const model of models) {
-    if (!modelEnv) {
-      entries.push({ model, displayName: model.name, description: model.description })
-      continue
-    }
     const bucket = claudeIdToBucket(model.id)
     const slot = modelEnv[bucket]
     if (!slot?.id) {
@@ -77,7 +99,7 @@ export function resolveClaudeEntries(models: ModelOption[], modelEnv: ProviderMo
     if (seenSlotIds.has(slot.id)) continue
     seenSlotIds.add(slot.id)
     entries.push({
-      model,
+      model: preferred.get(bucket) ?? model,
       displayName: slot.name ?? slot.id,
       description: slot.description,
     })

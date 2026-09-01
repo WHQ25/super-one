@@ -3216,6 +3216,54 @@ export function expandProviderModelEnv(modelEnv: ProviderModelEnv): Record<strin
   return env
 }
 
+/**
+ * Claude Code reads a trailing `[1m]` on a model id as "enable the 1M-context
+ * beta": it drops the suffix off the wire id and adds
+ * `anthropic-beta: context-1m-2025-08-07`. SuperOne never parses it — the
+ * suffix is carried verbatim from the mapping slot / model catalog to the SDK.
+ * Catalog ids never carry it, so match on the base id.
+ */
+export const ONE_M_SUFFIX = '[1m]'
+
+export function hasOneM(id: string): boolean {
+  return id.endsWith(ONE_M_SUFFIX)
+}
+
+export function stripOneM(id: string): string {
+  return hasOneM(id) ? id.slice(0, -ONE_M_SUFFIX.length) : id
+}
+
+const MODEL_MAPPING_ENV_IDS: readonly string[] = MODEL_BUCKETS.map((bucket) => BUCKET_ENV_KEYS[bucket].id)
+
+/** True when the env expands a {@link ProviderModelEnv} — i.e. a third-party slot mapping is live. */
+export function hasProviderModelMappingEnv(env: Record<string, string | undefined> | undefined | null): boolean {
+  if (!env) return false
+  return MODEL_MAPPING_ENV_IDS.some((key) => !!env[key])
+}
+
+/**
+ * The model id handed to the Claude SDK, with the alias-side `[1m]` dropped when
+ * a provider model mapping is live.
+ *
+ * Under a mapping the session model is only a *slot selector* (`opus` picks
+ * whatever `ANTHROPIC_DEFAULT_OPUS_MODEL` points at), so the 1M decision belongs
+ * to the slot id — the credential editor's 1M toggle stores `qwen3.8-max[1m]`.
+ * An alias-side `[1m]` is therefore never user intent there; it can only arrive
+ * from the official catalog's 1M rows being picked as a fallback default. Claude
+ * Code re-attaches it to the substituted id (`opus[1m]` → `qwen3.8-max[1m]`),
+ * which the provider rejects with 404.
+ *
+ * Mapping slot ids are untouched: a slot the user explicitly set to `[1m]` still
+ * reaches the harness verbatim.
+ */
+export function resolveMappedClaudeModelId(
+  model: string | undefined,
+  env: Record<string, string | undefined> | undefined | null,
+): string | undefined {
+  if (!model || !hasOneM(model)) return model
+  return hasProviderModelMappingEnv(env) ? stripOneM(model) : model
+}
+
 // Consumer-facing capability, orthogonal to wire protocol. See @superone/shared/platform-registry.
 export type CapabilityTask = 'chat' | 'image' | 'video' | 'tts' | 'asr'
 

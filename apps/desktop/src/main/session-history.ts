@@ -2,6 +2,7 @@ import { homedir } from 'os'
 import { join } from 'path'
 import { readdirSync, readFileSync, statSync } from 'fs'
 import type { ChatMessage, ContentBlock, LoadSessionMessagesResult, SessionHistoryEntry } from '@superone/shared/agent-types'
+import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
 
 function encodeCwd(cwd: string): string {
   return cwd.replace(/[\\/]/g, '-')
@@ -68,7 +69,7 @@ export function listSessions(cwd: string): SessionHistoryEntry[] {
           // Extract title from first user message with meaningful text
           if (!title) {
             const text = extractUserText(obj.message?.content)
-            if (text) title = text.length > 100 ? text.slice(0, 100) + '…' : text
+            if (text) title = text.length > SESSION_TITLE_MAX_CHARS ? text.slice(0, SESSION_TITLE_MAX_CHARS) + '…' : text
           }
         } catch {
           continue

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { applyClaudeEventToRuntime, createClaudeRuntime, extractResultText, buildUserMessage, extractClaudeTitle } from './claude-session-runtime'
 import type { AgentEvent, ChatMessage, SendMessageRequest } from '@superone/shared/agent-types'
+import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
 
 function makeRuntime(messages: ChatMessage[]) {
   return createClaudeRuntime('/test', 'sess-1', { messages })
@@ -662,9 +663,9 @@ describe('extractClaudeTitle', () => {
     expect(extractClaudeTitle([])).toBeUndefined()
   })
 
-  it('truncates long text to 100 chars', () => {
-    const long = 'x'.repeat(150)
-    expect(extractClaudeTitle([userMessage(long)])).toBe('x'.repeat(100))
+  it('truncates long text at the shared session-title cap', () => {
+    const long = 'x'.repeat(SESSION_TITLE_MAX_CHARS + 50)
+    expect(extractClaudeTitle([userMessage(long)])).toBe('x'.repeat(SESSION_TITLE_MAX_CHARS))
   })
 
   it('replaces miniapp tag with @AppName so title shows app name only', () => {

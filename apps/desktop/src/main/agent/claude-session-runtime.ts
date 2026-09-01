@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import type { AgentEvent, ChatMessage, ContentBlock, SendMessageRequest, SessionInfo } from '@superone/shared/agent-types'
 import { applySeqToMessage, isReplayedEventForMessage } from '@superone/shared/event-seq-utils'
 import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
+import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
 import { applyContentDelta, sealStreamingTools } from '@superone/shared/content-delta'
 import { resolveDeltaHomeMessageId, resolveTaskToolUseId } from '@superone/shared/subagent-routing'
 
@@ -565,5 +566,5 @@ export function extractClaudeTitle(messages: ChatMessage[]): string | undefined 
     .map((block) => block.text)
     .join(' ') ?? ''
   const cleaned = stripMiniAppMarkup(text)
-  return cleaned.slice(0, 100) || undefined
+  return cleaned.slice(0, SESSION_TITLE_MAX_CHARS) || undefined
 }

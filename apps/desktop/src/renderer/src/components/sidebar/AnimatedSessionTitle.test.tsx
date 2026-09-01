@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { render, act } from '@testing-library/react'
+import { render, act, fireEvent } from '@testing-library/react'
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { SessionTitleAnimated } from './AnimatedSessionTitle'
 
@@ -58,5 +58,41 @@ describe('sidebar session title — stall color repaint', () => {
     act(() => { vi.advanceTimersByTime(600) })
 
     expect(container.querySelector('.animated-title-inner')).not.toBe(duringTransition)
+  })
+})
+
+describe('sidebar session title — hover marquee', () => {
+  function renderOverflowing(visibleWidth: number, textWidth: number) {
+    const { container } = render(<SessionTitleAnimated sessionId="s1" fallback={TITLE} className="" />)
+    const wrap = container.querySelector('.animated-title-wrap') as HTMLElement
+    const inner = container.querySelector('.animated-title-inner') as HTMLElement
+    // jsdom has no layout — both metrics read 0, so the overflow has to be faked.
+    Object.defineProperty(wrap, 'clientWidth', { value: visibleWidth, configurable: true })
+    Object.defineProperty(inner, 'scrollWidth', { value: textWidth, configurable: true })
+    return { wrap, inner }
+  }
+
+  it('scrolls the hidden remainder while hovered, and stops on leave', () => {
+    const { wrap, inner } = renderOverflowing(100, 260)
+
+    fireEvent.mouseEnter(wrap)
+
+    expect(wrap.dataset.marquee).toBe('on')
+    expect(inner.style.animationName).toBe('marquee')
+    expect(inner.style.getPropertyValue('--marquee-dist')).toBe('-160px')
+
+    fireEvent.mouseLeave(wrap)
+
+    expect(wrap.dataset.marquee).toBeUndefined()
+    expect(inner.style.animationName).toBe('')
+  })
+
+  it('leaves a title that already fits alone', () => {
+    const { wrap, inner } = renderOverflowing(300, 200)
+
+    fireEvent.mouseEnter(wrap)
+
+    expect(wrap.dataset.marquee).toBeUndefined()
+    expect(inner.style.animationName).toBe('')
   })
 })

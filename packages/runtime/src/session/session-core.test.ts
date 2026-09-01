@@ -9,6 +9,7 @@ import {
   type SessionEventLog,
   type SessionStore,
 } from './session-runtime'
+import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
 
 function session(overrides?: Partial<NodeSessionRecord>): NodeSessionRecord {
   return {
@@ -66,7 +67,9 @@ function memoryPorts() {
 describe('deriveSessionTitleFromUserText', () => {
   it('trims and truncates like desktop extractClaudeTitle', () => {
     expect(deriveSessionTitleFromUserText('  hello world  ')).toBe('hello world')
-    expect(deriveSessionTitleFromUserText('x'.repeat(120))).toBe(`${'x'.repeat(100)}…`)
+    expect(deriveSessionTitleFromUserText('x'.repeat(SESSION_TITLE_MAX_CHARS + 20))).toBe(
+      `${'x'.repeat(SESSION_TITLE_MAX_CHARS)}…`,
+    )
     expect(deriveSessionTitleFromUserText('   ')).toBeNull()
   })
 

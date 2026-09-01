@@ -570,6 +570,16 @@ html:not(.dark) [data-sidebar-inner] .is-scrolling::-webkit-scrollbar-thumb:hove
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Hover marquee: the wrap clips and the inner slides. Only while scrolling —
+   `overflow: hidden` on the wrap would otherwise clip the 3D char flip. */
+.animated-title-wrap[data-marquee="on"] {
+  overflow: hidden;
+}
+.animated-title-wrap[data-marquee="on"] .animated-title-inner {
+  width: max-content;
+  overflow: visible;
+  text-overflow: clip;
+}
 .animated-title-wrap[data-phase="out"] .animated-title-inner,
 .animated-title-wrap[data-phase="in"] .animated-title-inner {
   transform-style: preserve-3d;

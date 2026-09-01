@@ -1,6 +1,7 @@
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { compareMessageSeq } from '@superone/shared/event-seq-utils'
 import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
+import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
 import { applyContentDelta } from '@superone/shared/content-delta'
 
 export const applyDelta = applyContentDelta
@@ -11,7 +12,7 @@ export function extractSessionTitle(messages: ChatMessage[]): string | null {
     .filter((b) => b.type === 'text')
     .map((b) => (b as { text: string }).text)
     .join(' ') ?? ''
-  return stripMiniAppMarkup(text).slice(0, 100) || null
+  return stripMiniAppMarkup(text).slice(0, SESSION_TITLE_MAX_CHARS) || null
 }
 
 export function mergeMessagesByMaxSeq(snap: ChatMessage[], existing: ChatMessage[]): ChatMessage[] {

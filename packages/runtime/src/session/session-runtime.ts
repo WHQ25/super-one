@@ -19,6 +19,7 @@ import {
   pageSessionMessageCatalog,
 } from './message-catalog'
 import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
+import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
 import type { LeaseGuard, SessionEventLog, SessionStore } from './ports'
 import {
   DEFAULT_HOST_ACTION_CLAIM_TTL_MS,
@@ -63,11 +64,11 @@ export function redactTaskNotificationForDisplay(content: string): string {
 
 // TurnImageAttachment used by TurnOpts / send queue.
 
-/** Match desktop extractClaudeTitle: first user text, stripped, max 100 chars. */
+/** Match desktop extractClaudeTitle: first user text, stripped, capped at SESSION_TITLE_MAX_CHARS. */
 export function deriveSessionTitleFromUserText(text: string): string | null {
   const cleaned = stripMiniAppMarkup(text).trim().replace(/\s+/g, ' ')
   if (!cleaned) return null
-  return cleaned.length > 100 ? `${cleaned.slice(0, 100)}…` : cleaned
+  return cleaned.length > SESSION_TITLE_MAX_CHARS ? `${cleaned.slice(0, SESSION_TITLE_MAX_CHARS)}…` : cleaned
 }
 
 /** Match desktop session-fork title: append " (fork)" once. */

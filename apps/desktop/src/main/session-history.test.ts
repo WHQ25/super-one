@@ -19,6 +19,7 @@ vi.mock('os', () => ({
 }))
 
 import { listSessions, loadSessionMessages, clearSessionMessageCache } from './session-history'
+import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
 
 function jsonl(...lines: object[]): string {
   return lines.map((l) => JSON.stringify(l)).join('\n')
@@ -152,13 +153,13 @@ describe('listSessions', () => {
     expect(sessions[0].sessionId).toBe('sess')
   })
 
-  it('truncates long titles at 100 chars', () => {
-    const longText = 'a'.repeat(150)
+  it('truncates long titles at the shared session-title cap', () => {
+    const longText = 'a'.repeat(SESSION_TITLE_MAX_CHARS + 50)
     readdirSyncMock.mockReturnValue(['s.jsonl'])
     statSyncMock.mockReturnValue({ mtime: new Date('2025-01-01') })
     readFileSyncMock.mockReturnValue(jsonl(userEntry(longText)))
     const sessions = listSessions('/proj')
-    expect(sessions[0].title).toBe('a'.repeat(100) + '\u2026')
+    expect(sessions[0].title).toBe('a'.repeat(SESSION_TITLE_MAX_CHARS) + '\u2026')
   })
 
   it('extracts gitBranch from first user message with it', () => {

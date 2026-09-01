@@ -3,6 +3,7 @@ import type {
   ContentBlock,
   ImageAttachment,
 } from '@superone/shared/agent-types'
+import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
 import { buildBrowserAnnotationText } from './browser-annotation'
 import { runCodexCommand } from '../codex/runner'
 import { createDefaultPerSessionState, createSessionId, freshSubagentColorPool } from '../defaults'
@@ -657,8 +658,8 @@ export async function sendMessageImpl(
       const derivedTitle =
         snapTitle ||
         (titleSource
-          ? titleSource.length > 100
-            ? `${titleSource.slice(0, 100)}…`
+          ? titleSource.length > SESSION_TITLE_MAX_CHARS
+            ? `${titleSource.slice(0, SESSION_TITLE_MAX_CHARS)}…`
             : titleSource
           : null)
       patchSession((sess) => ({

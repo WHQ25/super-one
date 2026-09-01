@@ -17,6 +17,7 @@ import type {
   SendMessageRequest,
 } from '@superone/shared/agent-types'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
+import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
 import log from '../logger'
 import { trace } from '../agent/event-trace'
 import { getSandboxCapability } from '../sandbox-platform'
@@ -1739,7 +1740,7 @@ export class Session implements SessionContract {
         : event.type === 'realtime_transcript_item' && event.phase === 'completed' && event.role === 'user'
           ? event.text
           : null
-      const title = spoken?.trim().replace(/\s+/g, ' ').slice(0, 100)
+      const title = spoken?.trim().replace(/\s+/g, ' ').slice(0, SESSION_TITLE_MAX_CHARS)
       if (title) {
         this._realtimeTitlePending = false
         this.setTitle(title, 'agent')

@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Bot, ChevronDown, ChevronRight, Clock, CornerDownRight, Eye, EyeOff, Loader2, MessageSquare, Pin, Smartphone } from 'lucide-react'
 import type { SessionIconProps } from '@superone/ui/components/harness/ClaudeSessionIcon'
 import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
+import { MarqueeText } from '@superone/ui/components/ui/marquee-text'
 import { cn } from '@superone/ui/lib/utils'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore, useHasRealProject } from '@/stores/app'
@@ -47,9 +48,9 @@ function PlainSessionTitle({ sessionId, fallback, className }: { sessionId: stri
   const title = useSessionTitleByAgent(sessionId, fallback)
   const repaintKey = useEllipsisRepaintKey(className ?? '')
   return (
-    <span key={repaintKey} className={cn('session-row-title min-w-0 flex-1 truncate text-[13px]', className)}>
+    <MarqueeText key={repaintKey} className={cn('session-row-title min-w-0 flex-1 text-[13px]', className)}>
       {title}
-    </span>
+    </MarqueeText>
   )
 }
 

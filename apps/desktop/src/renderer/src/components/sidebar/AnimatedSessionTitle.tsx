@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { cn } from '@superone/ui/lib/utils'
+import { useHoverMarquee } from '@superone/ui/components/ui/marquee-text'
 import { useEllipsisRepaintKey } from '@/lib/stall-utils'
 import { useChatStore } from '@/stores/chat'
 import { resolveSessionTitle } from './session-state-utils'
@@ -78,13 +79,23 @@ export function SessionTitleAnimated({ sessionId, fallback, className }: Session
   // truncates, so it is the node that has to be recreated — after the wrap's
   // color transition has landed. See `useEllipsisRepaintKey`.
   const repaintKey = useEllipsisRepaintKey(className ?? '')
+  // Hover marquee for titles too long to fit. Suspended while the char
+  // animation runs: both effects transform `.animated-title-inner`, and the
+  // wrap only clips (`data-marquee="on"`) while scrolling so the 3D flip keeps
+  // its overflow.
+  const { containerRef, contentRef, marqueeStyle, hoverHandlers } = useHoverMarquee<HTMLSpanElement, HTMLSpanElement>({
+    enabled: phase === 'idle',
+  })
 
   return (
     <span
+      ref={containerRef}
       className={cn('animated-title-wrap relative inline-block min-w-0 max-w-full align-middle', className)}
       data-phase={phase}
+      data-marquee={marqueeStyle ? 'on' : undefined}
+      {...hoverHandlers}
     >
-      <span key={repaintKey} className="animated-title-inner">
+      <span key={repaintKey} ref={contentRef} className="animated-title-inner" style={marqueeStyle ?? undefined}>
         {chars.map((ch, i) => (
           <span
             key={`${writeKey}-${i}`}

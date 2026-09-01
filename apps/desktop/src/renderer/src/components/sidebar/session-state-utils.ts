@@ -6,6 +6,7 @@ import type {
   SessionAgentLaunchProposal,
   SessionAgentRequestPayload,
 } from '@superone/shared/agent-types'
+import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
 
 /** Minimal i18n surface so pure utils stay free of react-i18next hooks. */
 export type PendingReasonT = (key: string, options?: Record<string, string | number>) => string
@@ -159,7 +160,7 @@ export function getSessionTitle(messages: ChatMessage[] | undefined): string | n
       .filter(Boolean)
       .join(' ')
       .trim()
-    if (text) return text.slice(0, 100)
+    if (text) return text.slice(0, SESSION_TITLE_MAX_CHARS)
   }
   return null
 }

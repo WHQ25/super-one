@@ -351,8 +351,9 @@ function LaunchPanel({
                 tooltip={t('settings.preferences.fastMode.label')}
                 aria-pressed={config.fastMode === true}
                 onClick={() => onChange({ fastMode: config.fastMode !== true })}
-                className={cn(config.fastMode === true && 'text-primary hover:text-primary')}
               >
+                {/* On/off reads as filled-vs-outline in the model label's own color — the same
+                    contrast the chat-input trigger uses for its Fast bolt. */}
                 <Zap className={cn(config.fastMode === true && 'fill-current')} />
               </IconButton>
             )}

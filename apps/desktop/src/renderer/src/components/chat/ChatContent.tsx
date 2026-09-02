@@ -166,11 +166,11 @@ const ChatComposerShell = memo(function ChatComposerShell() {
   }
   return (
     <>
+      <RealtimeCallIndicator />
       <PermissionPrompt />
       <AskUserQuestionPrompt />
       <CursorApiKeyDialog />
       <TodoPopup />
-      <RealtimeCallIndicator />
       <ChatInput />
       <ChatStatusBar />
     </>

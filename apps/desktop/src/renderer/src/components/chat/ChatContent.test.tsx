@@ -193,6 +193,7 @@ vi.mock('./ForkedThreadView', () => ({
 vi.mock('./ChatSuggestions', () => ({ ChatSuggestions: () => <div data-testid="chat-suggestions" /> }))
 vi.mock('./DraftSessionSurface', () => ({ DraftSessionSurface: () => <div data-testid="draft-session-surface" /> }))
 vi.mock('./PermissionPrompt', () => ({ PermissionPrompt: () => <div data-testid="permission-prompt" /> }))
+vi.mock('./RealtimeCallIndicator', () => ({ RealtimeCallIndicator: () => <div data-testid="realtime-call-indicator" /> }))
 vi.mock('./AskUserQuestionPrompt', () => ({ AskUserQuestionPrompt: () => <div data-testid="ask-user-question" /> }))
 vi.mock('./CursorApiKeyDialog', () => ({ CursorApiKeyDialog: () => <div data-testid="cursor-api-key-dialog" /> }))
 vi.mock('./TodoPopup', () => ({ TodoPopup: () => <div data-testid="todo-popup" /> }))
@@ -335,6 +336,19 @@ describe('ChatContent worktree-removed banner', () => {
     expect(screen.queryByText(/READ ONLY/i)).toBeNull()
     expect(screen.getByTestId('chat-input')).toBeInTheDocument()
     expect(screen.getByTestId('permission-prompt')).toBeInTheDocument()
+  })
+
+  it('renders permission prompts below the realtime voice indicator', () => {
+    hoisted.sessionState._worktreeRemoved = false
+    hoisted.sessionState.session = { sessionId: 'sid-1' }
+    hoisted.sessionState.messages = []
+    hoisted.isRemoteLocked.value = false
+
+    renderContent()
+
+    const siblings = [...screen.getByTestId('realtime-call-indicator').parentElement!.children]
+    expect(siblings.indexOf(screen.getByTestId('realtime-call-indicator')))
+      .toBeLessThan(siblings.indexOf(screen.getByTestId('permission-prompt')))
   })
 })
 

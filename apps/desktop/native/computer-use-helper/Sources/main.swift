@@ -1159,7 +1159,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             socketPath = args[1]
         } else {
             socketPath = FileManager.default.temporaryDirectory
-                .appendingPathComponent("superone-computer-use-release.sock").path
+                // Fallback for a hand-launched helper only; SuperOne always passes
+                // the socket path explicitly, scoped to its build variant.
+                .appendingPathComponent("superone-computer-use-stable.sock").path
         }
         if let idx = args.firstIndex(of: "--parent-pid"), idx + 1 < args.count {
             parentPid = Int(args[idx + 1])

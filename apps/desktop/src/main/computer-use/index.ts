@@ -25,8 +25,8 @@ export {
   resetSharedHelperClient,
   DEV_HELPER_APP_NAME,
   DEV_HELPER_BUNDLE_ID,
-  RELEASE_HELPER_APP_NAME,
-  RELEASE_HELPER_BUNDLE_ID,
+  releaseHelperAppName,
+  releaseHelperBundleId,
 } from './platform/macos-helper-client'
 export {
   startComputerUseHelper,

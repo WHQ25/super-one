@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   DEV_HELPER_BUNDLE_ID,
   MacosHelperClient,
-  RELEASE_HELPER_BUNDLE_ID,
+  releaseHelperBundleId,
 } from './macos-helper-client'
 
 const cleanup: Array<() => Promise<void> | void> = []
@@ -81,7 +81,7 @@ describe('MacosHelperClient identity handshake', () => {
     cleanup.push(() => client.close())
 
     await expect(client.ensureConnected()).rejects.toThrow(
-      `expected ${RELEASE_HELPER_BUNDLE_ID}, got ${DEV_HELPER_BUNDLE_ID}`,
+      `expected ${releaseHelperBundleId()}, got ${DEV_HELPER_BUNDLE_ID}`,
     )
     expect(fake.methods).toEqual(['doctor'])
   })

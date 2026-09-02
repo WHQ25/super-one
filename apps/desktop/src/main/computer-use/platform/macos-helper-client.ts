@@ -16,13 +16,30 @@ import { fileURLToPath } from 'node:url'
 import type { HelperRequest, HelperResponse, HelperEvent } from './helper-protocol'
 import { isHelperEvent } from './helper-protocol'
 import type { HelperDoctor } from './helper-protocol'
+import { variant as appVariant } from '../../variant'
 
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url))
 
 export const DEV_HELPER_APP_NAME = 'SuperOne Dev Computer Use'
-export const RELEASE_HELPER_APP_NAME = 'SuperOne Computer Use'
 export const DEV_HELPER_BUNDLE_ID = 'com.superone.computer-use.dev'
-export const RELEASE_HELPER_BUNDLE_ID = 'com.superone.computer-use'
+
+/**
+ * Release helper identity, scoped to the build variant.
+ *
+ * The helper is installed OUTSIDE the app bundle on purpose (macOS attributes
+ * a nested app's Screen Recording grant to the outer app), so the two
+ * side-by-side variants would otherwise share one install root, one bundle id
+ * and one socket. Each launch fingerprints the bundle and, on a mismatch,
+ * pkills by executable name and swaps the bundle underneath -- with shared
+ * names that is an endless ping-pong between stable and alpha.
+ */
+export function releaseHelperAppName(): string {
+  return `${appVariant().productName} Computer Use`
+}
+
+export function releaseHelperBundleId(): string {
+  return appVariant().computerUseBundleId
+}
 
 export type ComputerUseHelperVariant = 'dev' | 'release'
 
@@ -57,9 +74,14 @@ export function resolveHelperVariant(): ComputerUseHelperVariant {
 
 /** Variant-specific socket under TMPDIR — user-only after helper chmod. */
 export function defaultHelperSocketPath(
-  variant: ComputerUseHelperVariant = resolveHelperVariant(),
+  helperVariant: ComputerUseHelperVariant = resolveHelperVariant(),
 ): string {
-  return join(tmpdir(), `superone-computer-use-${variant}.sock`)
+  // The dev helper is repo-local and already distinct. Release sockets must
+  // additionally separate the side-by-side app variants: connectOrLaunch and
+  // restartHelper unlink the socket path, so a shared one lets each app tear
+  // down the other's listener.
+  const scope = helperVariant === 'dev' ? 'dev' : appVariant().downloadPrefix
+  return join(tmpdir(), `superone-computer-use-${scope}.sock`)
 }
 
 function nativeHelperRootCandidates(): string[] {
@@ -72,13 +94,13 @@ function nativeHelperRootCandidates(): string[] {
 
 export function defaultReleaseHelperInstallRoot(): string {
   return process.env.SUPERONE_CU_HELPER_INSTALL_ROOT
-    ?? join(homedir(), 'Library', 'Application Support', 'SuperOne', 'Computer Use')
+    ?? join(homedir(), 'Library', 'Application Support', appVariant().dataDirName, 'Computer Use')
 }
 
 export function installedReleaseHelperAppPath(
   installRoot = defaultReleaseHelperInstallRoot(),
 ): string {
-  return join(installRoot, `${RELEASE_HELPER_APP_NAME}.app`)
+  return join(installRoot, `${releaseHelperAppName()}.app`)
 }
 
 export function resolvePackagedReleaseHelperSource(
@@ -91,14 +113,14 @@ export function resolvePackagedReleaseHelperSource(
     resourcesPath,
     '..',
     'Frameworks',
-    `${RELEASE_HELPER_APP_NAME}.app`,
+    `${releaseHelperAppName()}.app`,
   )
   return existsSync(source) ? source : null
 }
 
 function helperBundleFingerprint(appPath: string): string | null {
   const files = [
-    join(appPath, 'Contents', 'MacOS', RELEASE_HELPER_APP_NAME),
+    join(appPath, 'Contents', 'MacOS', releaseHelperAppName()),
     join(appPath, 'Contents', 'Info.plist'),
     join(appPath, 'Contents', '_CodeSignature', 'CodeResources'),
   ]
@@ -177,8 +199,8 @@ export function resolveHelperAppPath(opts?: ResolveHelperAppPathOptions): string
 
   const preferDev = opts?.preferDev ?? resolveHelperVariant() === 'dev'
   const names = preferDev
-    ? [DEV_HELPER_APP_NAME, RELEASE_HELPER_APP_NAME]
-    : [RELEASE_HELPER_APP_NAME, DEV_HELPER_APP_NAME]
+    ? [DEV_HELPER_APP_NAME, releaseHelperAppName()]
+    : [releaseHelperAppName(), DEV_HELPER_APP_NAME]
 
   if (!preferDev) {
     const installRoot = opts?.installRoot === undefined
@@ -210,7 +232,7 @@ export function helperProcessMatchPatterns(
   variant?: ComputerUseHelperVariant,
 ): string[] {
   const dev = `${DEV_HELPER_APP_NAME}.app/Contents/MacOS/${DEV_HELPER_APP_NAME}`
-  const release = `${RELEASE_HELPER_APP_NAME}.app/Contents/MacOS/${RELEASE_HELPER_APP_NAME}`
+  const release = `${releaseHelperAppName()}.app/Contents/MacOS/${releaseHelperAppName()}`
   if (variant === 'dev') return [dev]
   if (variant === 'release') return [release]
   return [dev, release]
@@ -420,7 +442,7 @@ export class MacosHelperClient {
     const doctor = doctorResponse.result as HelperDoctor
     const expectedBundleId = this.variant === 'dev'
       ? DEV_HELPER_BUNDLE_ID
-      : RELEASE_HELPER_BUNDLE_ID
+      : releaseHelperBundleId()
     if (doctor.bundleId !== expectedBundleId) {
       throw new Error(
         `Computer Use helper identity mismatch: expected ${expectedBundleId}, got ${doctor.bundleId || 'unknown'}`,

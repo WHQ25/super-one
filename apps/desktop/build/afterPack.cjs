@@ -4,6 +4,17 @@ const { readdirSync, statSync, rmSync, existsSync, cpSync, renameSync } = requir
 const { join } = require('node:path')
 const { execFileSync } = require('node:child_process')
 
+const VARIANTS = require('../variants.json')
+
+function computerUseHelperBundleId() {
+  const id = process.env.SUPERONE_VARIANT
+  const entry = VARIANTS[id]
+  if (!entry) {
+    throw new Error(`[afterPack] SUPERONE_VARIANT "${id}" is not a known variant`)
+  }
+  return entry.computerUseBundleId
+}
+
 const ARCH_NAMES = { 0: 'ia32', 1: 'x64', 2: 'armv7l', 3: 'arm64', 4: 'universal' }
 const PLATFORM_MAP = { darwin: 'darwin', mac: 'darwin', win32: 'win32', windows: 'win32', linux: 'linux' }
 
@@ -18,23 +29,32 @@ const HELPER_VARIANTS = [
   { nameSuffix: 'LLM Proxy Helper', bundleName: 'Electron Helper (LLM Proxy)', bundleIdSuffix: 'llmproxy' },
 ]
 
-const COMPUTER_USE_HELPER_NAME = 'SuperOne Computer Use'
+// The helper is installed outside the app bundle at runtime, so its name and
+// bundle id must differ per variant or the stable and alpha apps overwrite and
+// pkill each other's helper. Must match releaseHelperAppName() /
+// releaseHelperBundleId() in src/main/computer-use/platform/macos-helper-client.ts.
+function computerUseHelperName(productFilename) {
+  return `${productFilename} Computer Use`
+}
 
-function bundleComputerUseHelper(appOutDir, productFilename, archName) {
+function bundleComputerUseHelper(appOutDir, productFilename, archName, helperBundleId) {
   const frameworksDir = join(appOutDir, `${productFilename}.app`, 'Contents', 'Frameworks')
   const buildScript = join(__dirname, '..', 'native', 'computer-use-helper', 'scripts', 'build.sh')
+  const helperName = computerUseHelperName(productFilename)
 
   execFileSync('/bin/bash', [buildScript, 'release', archName], {
     env: {
       ...process.env,
       SUPERONE_CU_HELPER_DIST: frameworksDir,
       SUPERONE_CU_SKIP_CODESIGN: '1',
+      SUPERONE_CU_HELPER_APP_NAME: helperName,
+      SUPERONE_CU_HELPER_BUNDLE_ID: helperBundleId,
     },
     stdio: 'inherit',
   })
 
-  const helperDir = join(frameworksDir, `${COMPUTER_USE_HELPER_NAME}.app`)
-  const helperBinary = join(helperDir, 'Contents', 'MacOS', COMPUTER_USE_HELPER_NAME)
+  const helperDir = join(frameworksDir, `${helperName}.app`)
+  const helperBinary = join(helperDir, 'Contents', 'MacOS', helperName)
   if (!existsSync(helperBinary)) {
     throw new Error(`[afterPack] Computer Use helper binary missing at ${helperBinary}`)
   }
@@ -52,7 +72,7 @@ function bundleComputerUseHelper(appOutDir, productFilename, archName) {
   console.log(`[afterPack] bundled Computer Use helper for ${archName}: ${helperDir}`)
 }
 
-function cloneNamedHelperRuntimes(appOutDir, productFilename) {
+function cloneNamedHelperRuntimes(appOutDir, productFilename, appId) {
   const contentsDir = join(appOutDir, `${productFilename}.app`, 'Contents')
   const frameworksDir = join(contentsDir, 'Frameworks')
   const macosDir = join(contentsDir, 'MacOS')
@@ -77,7 +97,7 @@ function cloneNamedHelperRuntimes(appOutDir, productFilename) {
     setPlistString('CFBundleExecutable', variantName)
     setPlistString('CFBundleDisplayName', variantName)
     setPlistString('CFBundleName', bundleName)
-    setPlistString('CFBundleIdentifier', `com.superone.app.helper.${bundleIdSuffix}`)
+    setPlistString('CFBundleIdentifier', `${appId}.helper.${bundleIdSuffix}`)
 
     console.log(`[afterPack] cloned named helper runtime: ${variantName}`)
   }
@@ -234,8 +254,9 @@ module.exports = async function afterPack(context) {
     : join(context.appOutDir, 'resources', 'app.asar.unpacked')
 
   if (osName === 'darwin') {
-    bundleComputerUseHelper(context.appOutDir, context.packager.appInfo.productFilename, archName)
-    cloneNamedHelperRuntimes(context.appOutDir, context.packager.appInfo.productFilename)
+    const { productFilename, id: appId } = context.packager.appInfo
+    bundleComputerUseHelper(context.appOutDir, productFilename, archName, computerUseHelperBundleId())
+    cloneNamedHelperRuntimes(context.appOutDir, productFilename, appId)
   }
 
   const keepSuffix = `${osName}-${archName}`

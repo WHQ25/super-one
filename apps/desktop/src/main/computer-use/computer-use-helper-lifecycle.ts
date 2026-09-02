@@ -5,7 +5,7 @@ import { basename } from 'node:path'
 import log from '../logger'
 import {
   DEV_HELPER_APP_NAME,
-  RELEASE_HELPER_APP_NAME,
+  releaseHelperAppName,
   defaultHelperSocketPath,
   getSharedHelperClient,
   installPackagedReleaseHelper,
@@ -207,7 +207,7 @@ export async function startComputerUseHelper(
   if (started) return
 
   const variant = resolveHelperVariant()
-  const appName = variant === 'dev' ? DEV_HELPER_APP_NAME : RELEASE_HELPER_APP_NAME
+  const appName = variant === 'dev' ? DEV_HELPER_APP_NAME : releaseHelperAppName()
   let appPath: string | null
   try {
     appPath = prepareComputerUseHelper()
@@ -332,7 +332,7 @@ export async function pollComputerUsePermissionStatus(
 export function stopComputerUseHelper(): void {
   if (!isComputerUseHelperManaged()) return
   const variant = resolveHelperVariant()
-  const appName = variant === 'dev' ? DEV_HELPER_APP_NAME : RELEASE_HELPER_APP_NAME
+  const appName = variant === 'dev' ? DEV_HELPER_APP_NAME : releaseHelperAppName()
   log.info('[computer-use] stopping %s', appName)
   // Do not create or asynchronously reconnect a client during shutdown. The old
   // fire-and-forget terminate request could launch a helper after pkill ran.

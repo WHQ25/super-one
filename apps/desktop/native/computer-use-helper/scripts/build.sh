@@ -60,16 +60,25 @@ else
   BUNDLE_ID="com.superone.computer-use"
 fi
 
+# The release helper is installed outside the app bundle (macOS attributes a
+# nested app's Screen Recording grant to the outer app), so the side-by-side
+# stable and alpha apps must ship differently named and identified copies or
+# they overwrite each other's install and pkill each other's process.
+# afterPack passes the variant's values; the Info-*.plist files stay templates.
+APP_NAME="${SUPERONE_CU_HELPER_APP_NAME:-$APP_NAME}"
+BUNDLE_ID="${SUPERONE_CU_HELPER_BUNDLE_ID:-$BUNDLE_ID}"
+
 APP="$DIST/${APP_NAME}.app"
 BIN_NAME="$APP_NAME"
 MACOS_DIR="$APP/Contents/MacOS"
 OUT="$MACOS_DIR/$BIN_NAME"
 
-# Remove the other variant's stale app name if present (avoid TCC confusion)
-if [[ "$VARIANT" == "dev" ]]; then
-  rm -rf "$DIST/SuperOne Computer Use.app"
-else
-  rm -rf "$DIST/SuperOne Dev Computer Use.app"
+# Remove any other Computer Use helper in the same dist dir (avoid TCC
+# confusion). Matching the " Computer Use.app" suffix keeps this away from
+# Electron's own "* Helper.app" bundles when DIST is a packaged app's
+# Frameworks directory.
+if [[ -d "$DIST" ]]; then
+  find "$DIST" -maxdepth 1 -name "* Computer Use.app" ! -name "${APP_NAME}.app" -exec rm -rf {} +
 fi
 
 # ── Incremental: skip compile when binary is newer than sources ─────────────
@@ -164,6 +173,13 @@ fi
 
 mkdir -p "$MACOS_DIR" "$APP/Contents/Resources" "$BUILD_TMP_DIR" "$MODULE_CACHE_DIR"
 cp "$PLIST_SRC" "$APP/Contents/Info.plist"
+# Inject the variant identity so the plists stay templates rather than a second
+# place the names have to be kept in sync.
+HELPER_PLIST="$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$HELPER_PLIST"
+/usr/libexec/PlistBuddy -c "Set :CFBundleName $APP_NAME" "$HELPER_PLIST"
+/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $APP_NAME" "$HELPER_PLIST"
+/usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $APP_NAME" "$HELPER_PLIST"
 # The cursor glyph is drawn procedurally (AgentCursorGlyph) — no bitmap to ship.
 # NOTICE.md still must go in the bundle: CursorMotionModel.swift is vendored MIT.
 cp "$ROOT/Resources/NOTICE.md" "$APP/Contents/Resources/"

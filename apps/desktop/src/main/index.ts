@@ -14,7 +14,8 @@ import { is } from '@electron-toolkit/utils'
 import type { EnvironmentHost } from './environment/environment-host'
 import type { DraftUpsertRequest } from '@superone/shared/environment'
 import log from './logger'
-import { resolveAndMigrateUserData } from './user-data-path'
+import { packagedUserDataPath } from './user-data-path'
+import { variant } from './variant'
 import { startMediaServer, getMediaServerPort } from './media-server'
 import { getMediaProviderStatuses } from './media-gen/settings-service'
 import { getAppBasePath, cacheAppEntry, generateCSP, readManifest, validatePath, discoverApps, discoverProjectApps, setAllowedMedia, clearAllowedMedia, isMediaAllowed, appIdFromUrl, listDevRegistryView, registerDevMiniApp, unregisterDevMiniApp, installDevPointer, removeDevPointer, setDevPointerEnabled } from './miniapp/miniapp-service'
@@ -249,21 +250,34 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'superone-app', privileges: { secure: true, supportFetchAPI: true, corsEnabled: true, standard: true } },
 ])
 
-app.setName('SuperOne')
+// Drives app.getPath('logs') and, on macOS, the safeStorage keychain item.
+// Packaged builds already carry this via extraMetadata.productName; setting it
+// here keeps unpackaged runs on the same identity.
+app.setName(variant().productName)
 if (is.dev) {
-  app.setPath('userData', join(process.cwd(), '.dev-data'))
+  // Honour SUPERONE_INSTANCE here too: the e2e harness passes one expecting an
+  // isolated profile, and without it a test run writes into the developer's
+  // own .dev-data.
+  app.setPath(
+    'userData',
+    packagedUserDataPath({
+      appData: process.cwd(),
+      dataDirName: '.dev-data',
+      instance: process.env.SUPERONE_INSTANCE,
+    }),
+  )
 } else {
-  const resolved = resolveAndMigrateUserData({
-    appData: app.getPath('appData'),
-    instance: process.env.SUPERONE_INSTANCE,
-  })
-  if (resolved.action !== 'none') {
-    log.info(`[user-data] ${resolved.action} → ${resolved.path}`)
-  }
-  if (resolved.error) {
-    log.warn(`[user-data] ${resolved.error}`)
-  }
-  app.setPath('userData', resolved.path)
+  // Electron resolves userData from package.json during init, before this file
+  // runs, and app.setName does not move it — the side-by-side variants only
+  // stay on separate profiles because of this explicit setPath.
+  app.setPath(
+    'userData',
+    packagedUserDataPath({
+      appData: app.getPath('appData'),
+      dataDirName: variant().dataDirName,
+      instance: process.env.SUPERONE_INSTANCE,
+    }),
+  )
 }
 
 const chromiumFeatures = ['PlatformHEVCDecoderSupport']
@@ -628,10 +642,12 @@ const rendererAgentEventTransport = createRendererAgentEventTransport((events) =
 })
 
 /**
- * Must stay in sync with `appId` in `electron-builder.yml` — Windows matches
- * the toast against the installer-created shortcut's AppUserModelID.
+ * Windows matches a toast against the installer-created shortcut's
+ * AppUserModelID, and NSIS writes that shortcut from `appId`. Deriving both
+ * from the variant keeps them in sync; a hardcoded id would make the alpha
+ * build's notifications share identity with stable and replace them.
  */
-const WINDOWS_APP_USER_MODEL_ID = 'com.superone.app'
+const WINDOWS_APP_USER_MODEL_ID = variant().appId
 
 /**
  * Human-intervention notifications. Registered channels are pure transports;

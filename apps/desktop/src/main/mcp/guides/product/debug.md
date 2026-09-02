@@ -60,9 +60,12 @@ Log line format: `[YYYY-MM-DD HH:mm:ss] [level] message`
 | **Windows** | `%APPDATA%\SuperOne\` |
 | **Linux** | `~/.config/SuperOne/` |
 
-Multi-instance: if `SUPERONE_INSTANCE` is set, userData is `…/SuperOne/instance-<name>/`.
+The directory name above is the **stable** variant. The alpha variant is a
+separate app and uses `SuperOne Alpha` in the same parent, so the two never
+share a profile.
 
-Older builds used `super-one` in the same parent directory. The first packaged launch after this change moves that tree into `SuperOne` (the Computer Use helper already lives at `SuperOne/Computer Use/`). If the move fails, the app keeps reading `super-one` so sessions are not opened against an empty profile.
+Multi-instance: if `SUPERONE_INSTANCE` is set, userData nests one level deeper
+(`…/SuperOne Alpha/instance-<name>/`, or `.dev-data/instance-<name>/` in dev).
 
 ### Useful files under userData
 

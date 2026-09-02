@@ -544,6 +544,30 @@ describe('ChatContent empty-state gate is harness-agnostic', () => {
     expect(screen.queryByText('Voice request')).toBeNull()
   })
 
+  it('hides the backing Codex todo popup in the voice view but keeps it in the thread view', () => {
+    reset()
+    hoisted.sessionState.messages = []
+    hoisted.sessionState.session = { sessionId: 'sid-1' }
+    hoisted.sessionState._historyHydrated = true
+    hoisted.sessionState.sessionProvider = 'codex'
+    hoisted.sessionState.preferredProvider = 'codex'
+    useCodexRealtimeViewStore.getState().setTimeline('sid-1', {
+      segments: [],
+      threadMessages: [],
+      activeRealtimeSessionId: null,
+      hasTimeline: true,
+    })
+
+    const { rerender } = renderContent()
+
+    expect(screen.queryByTestId('todo-popup')).toBeNull()
+
+    act(() => { useCodexRealtimeViewStore.getState().setView('sid-1', 'thread') })
+    rerender(<ChatContent scrollViewportRef={createRef<HTMLDivElement>()} />)
+
+    expect(screen.getByTestId('todo-popup')).toBeInTheDocument()
+  })
+
   it('discovers and renders voice-only history after a cold restore', async () => {
     reset()
     hoisted.sessionState.messages = []

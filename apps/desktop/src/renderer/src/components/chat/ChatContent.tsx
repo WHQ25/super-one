@@ -91,7 +91,7 @@ function createChatDensityStyle(scale: number): React.CSSProperties {
  * Composer stack — owns NO messages subscription. Stream ticks that only update
  * transcript text should not re-render TipTap / status chrome.
  */
-const ChatComposerShell = memo(function ChatComposerShell() {
+const ChatComposerShell = memo(function ChatComposerShell({ showTodoPopup }: { showTodoPopup: boolean }) {
   const { t } = useTranslation()
   const worktreeRemoved = useActiveSession((s) => s._worktreeRemoved)
   const sessionProvider = useActiveSession((s) => s.sessionProvider)
@@ -170,7 +170,7 @@ const ChatComposerShell = memo(function ChatComposerShell() {
       <PermissionPrompt />
       <AskUserQuestionPrompt />
       <CursorApiKeyDialog />
-      <TodoPopup />
+      {showTodoPopup && <TodoPopup />}
       <ChatInput />
       <ChatStatusBar />
     </>
@@ -736,7 +736,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
             )}
           </div>
           <div className="mx-auto w-full min-w-0 max-w-3xl">
-            <ChatComposerShell />
+            <ChatComposerShell showTodoPopup={!showRealtime} />
           </div>
         </>
       )}

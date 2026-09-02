@@ -5,6 +5,7 @@ import { Link } from "@/i18n/navigation"
 import type { Locale } from "@/i18n/routing"
 import { getCategory, type Feature } from "@/lib/features/taxonomy"
 import { FeaturePlayer } from "./feature-player"
+import { HarnessBadges } from "./harness-badges"
 
 interface FeatureViewProps {
   locale: Locale
@@ -74,7 +75,7 @@ export function FeatureView({ locale, feature }: FeatureViewProps) {
                   <span className="text-foreground text-lg font-medium">
                     {s.title[locale]}
                   </span>
-                  {s.harness ? <HarnessBadge harness={s.harness} /> : null}
+                  <HarnessBadges harnesses={s.harnesses} />
                 </div>
                 <p className="text-muted-foreground text-sm leading-relaxed">
                   {s.blurb[locale]}
@@ -92,23 +93,3 @@ export function FeatureView({ locale, feature }: FeatureViewProps) {
   )
 }
 
-function HarnessBadge({ harness }: { harness: "claude" | "codex" | "both" }) {
-  const styles = {
-    claude:
-      "bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-200",
-    codex:
-      "bg-emerald-100 text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200",
-    both: "bg-muted text-muted-foreground",
-  }
-  const labels = { claude: "Claude", codex: "Codex", both: "Claude + Codex" }
-  return (
-    <span
-      className={cn(
-        "rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider",
-        styles[harness],
-      )}
-    >
-      {labels[harness]}
-    </span>
-  )
-}

@@ -1,28 +1,42 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { ArrowRight, ChevronLeft } from "lucide-react"
 import { useTranslations } from "next-intl"
+import { HARNESS_SHOWCASE } from "@superone/desktop-mocks/desktop"
+import type { HarnessId } from "@superone/shared/agent-types"
 import { cn } from "@superone/ui/lib/utils"
 import { Link } from "@/i18n/navigation"
 import type { Locale } from "@/i18n/routing"
 import {
   featuresForHarness,
+  harnessesInCategory,
   type FeatureCategory,
 } from "@/lib/features/taxonomy"
 import { FeaturePlayer } from "./feature-player"
+import { HarnessBadges } from "./harness-badges"
 
 interface CategoryViewProps {
   locale: Locale
   category: FeatureCategory
 }
 
-type HarnessFilter = "all" | "claude" | "codex"
+type HarnessFilter = HarnessId | "all"
+
+const SHORT_LABEL = new Map(HARNESS_SHOWCASE.map((h) => [h.id, h.shortLabel]))
 
 export function CategoryView({ locale, category }: CategoryViewProps) {
   const t = useTranslations("Features")
   const [filter, setFilter] = useState<HarnessFilter>("all")
-  const features = featuresForHarness(category, filter)
+  // Tabs come from the content, so a category only offers engines it can show.
+  const tabs = useMemo<HarnessFilter[]>(
+    () => ["all", ...harnessesInCategory(category)],
+    [category],
+  )
+  // Navigating to a category that lacks the selected engine falls back to all,
+  // rather than rendering an empty list under a tab that is not there.
+  const active = tabs.includes(filter) ? filter : "all"
+  const features = featuresForHarness(category, active)
 
   return (
     <div className="flex flex-col gap-10">
@@ -48,19 +62,19 @@ export function CategoryView({ locale, category }: CategoryViewProps) {
 
       {category.harnessTabs ? (
         <div className="border-border flex w-fit items-center gap-1 rounded-full border p-1 text-sm">
-          {(["all", "claude", "codex"] as const).map((key) => (
+          {tabs.map((key) => (
             <button
               key={key}
               type="button"
               onClick={() => setFilter(key)}
               className={cn(
                 "rounded-full px-4 py-1.5 transition-colors",
-                filter === key
+                active === key
                   ? "bg-foreground text-background"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
-              {t(`category.tabs.${key}`)}
+              {key === "all" ? t("category.tabs.all") : (SHORT_LABEL.get(key) ?? key)}
             </button>
           ))}
         </div>
@@ -84,7 +98,7 @@ export function CategoryView({ locale, category }: CategoryViewProps) {
                     <span className="text-foreground text-lg font-medium">
                       {f.title[locale]}
                     </span>
-                    {f.harness ? <HarnessBadge harness={f.harness} /> : null}
+                    <HarnessBadges harnesses={f.harnesses} />
                   </div>
                   <p className="text-muted-foreground text-sm leading-relaxed">
                     {f.blurb[locale]}
@@ -106,21 +120,3 @@ export function CategoryView({ locale, category }: CategoryViewProps) {
   )
 }
 
-function HarnessBadge({ harness }: { harness: "claude" | "codex" | "both" }) {
-  const styles = {
-    claude: "bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-200",
-    codex: "bg-emerald-100 text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200",
-    both: "bg-muted text-muted-foreground",
-  }
-  const labels = { claude: "Claude", codex: "Codex", both: "Claude + Codex" }
-  return (
-    <span
-      className={cn(
-        "rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider",
-        styles[harness],
-      )}
-    >
-      {labels[harness]}
-    </span>
-  )
-}

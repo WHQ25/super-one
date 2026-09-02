@@ -1,3 +1,4 @@
+import type { HarnessId } from "@superone/shared/agent-types"
 import type { Locale } from "@/i18n/routing"
 
 export type FeatureVideoId =
@@ -12,13 +13,25 @@ export type FeatureVideoId =
   | "F09"
   | "F10"
 
-export type Harness = "claude" | "codex" | "both"
+/**
+ * Display order for harness filters and badges. The taxonomy owns the order so
+ * a filter row reads the same everywhere, independent of object key order.
+ */
+export const HARNESS_ORDER: HarnessId[] = [
+  "claude",
+  "codex",
+  "cursor",
+  "opencode",
+  "dsh",
+  "acp",
+]
 
 export type SubFeature = {
   slug: string
   feature: string
   category: string
-  harness?: Harness
+  /** Harnesses that expose this. Omitted means it is harness-agnostic. */
+  harnesses?: HarnessId[]
   videoId?: FeatureVideoId
   title: Record<Locale, string>
   blurb: Record<Locale, string>
@@ -27,7 +40,8 @@ export type SubFeature = {
 export type Feature = {
   slug: string
   category: string
-  harness?: Harness
+  /** Harnesses that expose this. Omitted means it is harness-agnostic. */
+  harnesses?: HarnessId[]
   videoId?: FeatureVideoId
   title: Record<Locale, string>
   blurb: Record<Locale, string>
@@ -308,7 +322,6 @@ export const featureTaxonomy: FeatureCategory[] = [
       {
         slug: "dual-harness",
         category: "engines",
-        harness: "both",
         videoId: "F01",
         title: { en: "Multi-harness switching", zh: "多引擎切换" },
         blurb: {
@@ -320,7 +333,6 @@ export const featureTaxonomy: FeatureCategory[] = [
             slug: "per-session-engine",
             feature: "dual-harness",
             category: "engines",
-            harness: "both",
             videoId: "F01",
             title: { en: "Engine per session", zh: "每会话独立引擎" },
             blurb: {
@@ -332,7 +344,6 @@ export const featureTaxonomy: FeatureCategory[] = [
             slug: "switch-anytime",
             feature: "dual-harness",
             category: "engines",
-            harness: "both",
             title: { en: "Switch any time", zh: "随时切换" },
             blurb: {
               en: "Swap engines mid-project without leaving the app.",
@@ -344,7 +355,7 @@ export const featureTaxonomy: FeatureCategory[] = [
       {
         slug: "claude-core",
         category: "engines",
-        harness: "claude",
+        harnesses: ["claude"],
         videoId: "F09",
         title: { en: "Claude essentials", zh: "Claude 核心" },
         blurb: {
@@ -356,7 +367,7 @@ export const featureTaxonomy: FeatureCategory[] = [
             slug: "permission-modes",
             feature: "claude-core",
             category: "engines",
-            harness: "claude",
+            harnesses: ["claude"],
             videoId: "F09",
             title: { en: "Permission modes", zh: "Permission modes" },
             blurb: {
@@ -368,7 +379,7 @@ export const featureTaxonomy: FeatureCategory[] = [
             slug: "plan-mode",
             feature: "claude-core",
             category: "engines",
-            harness: "claude",
+            harnesses: ["claude"],
             videoId: "F05",
             title: { en: "Plan mode", zh: "Plan mode" },
             blurb: {
@@ -380,7 +391,7 @@ export const featureTaxonomy: FeatureCategory[] = [
             slug: "effort-thinking",
             feature: "claude-core",
             category: "engines",
-            harness: "claude",
+            harnesses: ["claude"],
             title: { en: "Effort & thinking", zh: "Effort 与 thinking" },
             blurb: {
               en: "Tune Claude's thinking budget per session.",
@@ -391,7 +402,7 @@ export const featureTaxonomy: FeatureCategory[] = [
             slug: "models",
             feature: "claude-core",
             category: "engines",
-            harness: "claude",
+            harnesses: ["claude"],
             title: { en: "Model selection", zh: "模型选择" },
             blurb: {
               en: "Opus, Sonnet, Haiku — pick per session.",
@@ -402,7 +413,7 @@ export const featureTaxonomy: FeatureCategory[] = [
             slug: "slash-commands",
             feature: "claude-core",
             category: "engines",
-            harness: "claude",
+            harnesses: ["claude"],
             title: { en: "Slash commands", zh: "斜杠命令" },
             blurb: {
               en: "Built-in /commands plus anything from your installed skills.",
@@ -414,7 +425,7 @@ export const featureTaxonomy: FeatureCategory[] = [
       {
         slug: "claude-orchestration",
         category: "engines",
-        harness: "claude",
+        harnesses: ["claude"],
         videoId: "F07",
         title: { en: "Claude orchestration", zh: "Claude 编排" },
         blurb: {
@@ -426,7 +437,7 @@ export const featureTaxonomy: FeatureCategory[] = [
             slug: "subagents",
             feature: "claude-orchestration",
             category: "engines",
-            harness: "claude",
+            harnesses: ["claude"],
             videoId: "F07",
             title: { en: "Subagents orchestration", zh: "子代理调度" },
             blurb: {
@@ -438,7 +449,7 @@ export const featureTaxonomy: FeatureCategory[] = [
             slug: "todos-tasks",
             feature: "claude-orchestration",
             category: "engines",
-            harness: "claude",
+            harnesses: ["claude"],
             title: { en: "TodoWrite & TaskCreate", zh: "TodoWrite 与 TaskCreate" },
             blurb: {
               en: "Built-in task tracking the agent updates as it works.",
@@ -449,7 +460,7 @@ export const featureTaxonomy: FeatureCategory[] = [
             slug: "ask-user",
             feature: "claude-orchestration",
             category: "engines",
-            harness: "claude",
+            harnesses: ["claude"],
             title: { en: "AskUserQuestion", zh: "AskUserQuestion" },
             blurb: {
               en: "The agent asks structured follow-ups when it needs your input.",
@@ -461,7 +472,7 @@ export const featureTaxonomy: FeatureCategory[] = [
       {
         slug: "codex-core",
         category: "engines",
-        harness: "codex",
+        harnesses: ["codex"],
         title: { en: "Codex essentials", zh: "Codex 核心" },
         blurb: {
           en: "Sandbox presets, the native action loop, and model selection.",
@@ -472,7 +483,7 @@ export const featureTaxonomy: FeatureCategory[] = [
             slug: "permission-sandbox",
             feature: "codex-core",
             category: "engines",
-            harness: "codex",
+            harnesses: ["codex"],
             title: { en: "Permission presets & sandbox", zh: "权限预设与沙箱" },
             blurb: {
               en: "Default sandboxed or full-access — your call per session.",
@@ -483,7 +494,7 @@ export const featureTaxonomy: FeatureCategory[] = [
             slug: "codex-actions",
             feature: "codex-core",
             category: "engines",
-            harness: "codex",
+            harnesses: ["codex"],
             title: { en: "Five Codex actions", zh: "Codex 五动作" },
             blurb: {
               en: "run, review, compact, steer, interrupt — Codex's native loop.",
@@ -494,7 +505,7 @@ export const featureTaxonomy: FeatureCategory[] = [
             slug: "codex-models",
             feature: "codex-core",
             category: "engines",
-            harness: "codex",
+            harnesses: ["codex"],
             title: { en: "Model selection", zh: "模型选择" },
             blurb: {
               en: "GPT-5 and GPT-5.5 over the Responses API.",
@@ -506,7 +517,7 @@ export const featureTaxonomy: FeatureCategory[] = [
       {
         slug: "codex-advanced",
         category: "engines",
-        harness: "codex",
+        harnesses: ["codex"],
         title: { en: "Codex advanced", zh: "Codex 进阶" },
         blurb: {
           en: "Capabilities only Codex has today — computer use, image generation, thread surgery.",
@@ -517,7 +528,7 @@ export const featureTaxonomy: FeatureCategory[] = [
             slug: "computer-use",
             feature: "codex-advanced",
             category: "engines",
-            harness: "codex",
+            harnesses: ["codex"],
             title: { en: "Computer use", zh: "Computer use(计算机操作)" },
             blurb: {
               en: "Codex can read your screen and drive the OS to complete tasks.",
@@ -528,7 +539,7 @@ export const featureTaxonomy: FeatureCategory[] = [
             slug: "image-generation",
             feature: "codex-advanced",
             category: "engines",
-            harness: "codex",
+            harnesses: ["codex"],
             title: { en: "Image generation", zh: "图像生成" },
             blurb: {
               en: "Generate images mid-conversation without leaving the session.",
@@ -539,7 +550,7 @@ export const featureTaxonomy: FeatureCategory[] = [
             slug: "fork-rollback",
             feature: "codex-advanced",
             category: "engines",
-            harness: "codex",
+            harnesses: ["codex"],
             title: { en: "Thread fork & rollback", zh: "Thread fork 与 rollback" },
             blurb: {
               en: "Fork a thread or roll back N turns — Codex-native protocol.",
@@ -572,7 +583,6 @@ export const featureTaxonomy: FeatureCategory[] = [
             slug: "mcp-servers",
             feature: "resources",
             category: "extend",
-            harness: "both",
             title: { en: "MCP servers", zh: "MCP 服务器" },
             blurb: {
               en: "Add tools, data, and integrations via the Model Context Protocol.",
@@ -583,7 +593,7 @@ export const featureTaxonomy: FeatureCategory[] = [
             slug: "skills",
             feature: "resources",
             category: "extend",
-            harness: "claude",
+            harnesses: ["claude"],
             title: { en: "Skills", zh: "Skills" },
             blurb: {
               en: "Pre-baked agent workflows triggered by /skill-name.",
@@ -594,7 +604,7 @@ export const featureTaxonomy: FeatureCategory[] = [
             slug: "subagents-library",
             feature: "resources",
             category: "extend",
-            harness: "claude",
+            harnesses: ["claude"],
             title: { en: "Subagents library", zh: "子代理库" },
             blurb: {
               en: "Define specialist subagents with their own prompts, tools, and models.",
@@ -605,7 +615,7 @@ export const featureTaxonomy: FeatureCategory[] = [
             slug: "plugins",
             feature: "resources",
             category: "extend",
-            harness: "claude",
+            harnesses: ["claude"],
             title: { en: "Plugins & marketplace", zh: "Plugin 与市场" },
             blurb: {
               en: "Install plugins from the marketplace or build your own.",
@@ -616,7 +626,7 @@ export const featureTaxonomy: FeatureCategory[] = [
             slug: "hooks",
             feature: "resources",
             category: "extend",
-            harness: "claude",
+            harnesses: ["claude"],
             title: { en: "Hooks", zh: "Hooks" },
             blurb: {
               en: "SessionStart, PreToolUse, Stop, and more — react to agent lifecycle events.",
@@ -627,7 +637,6 @@ export const featureTaxonomy: FeatureCategory[] = [
             slug: "memory-instructions",
             feature: "resources",
             category: "extend",
-            harness: "both",
             title: { en: "Memory & project instructions", zh: "Memory 与项目说明" },
             blurb: {
               en: "Claude reads CLAUDE.md, Codex reads AGENTS.md — your project's brain on disk.",
@@ -828,7 +837,7 @@ export const featureTaxonomy: FeatureCategory[] = [
             slug: "claude-providers",
             feature: "providers",
             category: "connect",
-            harness: "claude",
+            harnesses: ["claude"],
             title: { en: "Claude API & OAuth", zh: "Claude API 与 OAuth" },
             blurb: {
               en: "Use your Anthropic API key or sign in via OAuth.",
@@ -839,7 +848,7 @@ export const featureTaxonomy: FeatureCategory[] = [
             slug: "claude-custom-gateway",
             feature: "providers",
             category: "connect",
-            harness: "claude",
+            harnesses: ["claude"],
             title: { en: "Custom Claude gateway", zh: "自定义 Claude 网关" },
             blurb: {
               en: "Point Claude at a self-hosted or third-party compatible gateway.",
@@ -850,7 +859,7 @@ export const featureTaxonomy: FeatureCategory[] = [
             slug: "codex-auth",
             feature: "providers",
             category: "connect",
-            harness: "codex",
+            harnesses: ["codex"],
             title: { en: "Codex auth modes", zh: "Codex 认证方式" },
             blurb: {
               en: "Auto, ChatGPT login, or API key — switch any time.",
@@ -861,7 +870,7 @@ export const featureTaxonomy: FeatureCategory[] = [
             slug: "codex-custom-providers",
             feature: "providers",
             category: "connect",
-            harness: "codex",
+            harnesses: ["codex"],
             title: { en: "Custom model_providers", zh: "自定义 model_providers" },
             blurb: {
               en: "Wire Codex to any Responses-API-compatible provider via config.",
@@ -1012,10 +1021,16 @@ export function neighborSubFeatures(
 
 export function featuresForHarness(
   cat: FeatureCategory,
-  filter: "all" | "claude" | "codex",
+  filter: HarnessId | "all",
 ): Feature[] {
   if (filter === "all" || !cat.harnessTabs) return cat.features
-  return cat.features.filter(
-    (f) => f.harness === filter || f.harness === "both",
-  )
+  // A feature with no harnesses listed is agnostic, so it survives every filter.
+  return cat.features.filter((f) => !f.harnesses || f.harnesses.includes(filter))
+}
+
+/** Harnesses a category actually has content for, in display order. */
+export function harnessesInCategory(cat: FeatureCategory): HarnessId[] {
+  const present = new Set<HarnessId>()
+  for (const f of cat.features) for (const h of f.harnesses ?? []) present.add(h)
+  return HARNESS_ORDER.filter((h) => present.has(h))
 }

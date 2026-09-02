@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatMessage, RealtimeTimelineSegment } from '@superone/shared/agent-types'
 import { buildRealtimeConversationTurns } from './realtime-conversation-turns'
-import { mapRealtimeTurnActivities } from './realtime-turn-activities'
+import { buildRealtimeTranscriptLayout, mapRealtimeTurnActivities } from './realtime-turn-activities'
 
 const segment = (
   id: string,
@@ -76,5 +76,26 @@ describe('realtime conversation turns', () => {
 
     expect(activities.get('user-1')?.status).toBe('completed')
     expect(activities.get('user-2')?.status).toBe('needs-decision')
+  })
+
+  it('renders newer voice turns before an earlier activity that is still working', () => {
+    const turns = buildRealtimeConversationTurns([
+      segment('user-1', 'user', 10),
+      segment('assistant-1', 'assistant', 15),
+      segment('user-2', 'user', 30),
+      segment('assistant-2', 'assistant', 40),
+    ])
+    const activities = mapRealtimeTurnActivities({
+      turns,
+      messages: [work('work-1', 'turn-a', 20)],
+      sessionStatus: 'background',
+      needsDecision: false,
+    })
+
+    expect(buildRealtimeTranscriptLayout(turns, activities)).toEqual([
+      { kind: 'voice', turnId: 'user-1' },
+      { kind: 'voice', turnId: 'user-2' },
+      { kind: 'activity', turnId: 'user-1' },
+    ])
   })
 })

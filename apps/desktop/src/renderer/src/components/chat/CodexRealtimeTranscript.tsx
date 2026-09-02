@@ -9,7 +9,7 @@ import {
 } from '@/stores/codex-realtime-view'
 import { realtimeSegmentsToMessage, selectRealtimeTranscript } from './codex-realtime-messages'
 import { buildRealtimeConversationTurns } from './realtime-conversation-turns'
-import { mapRealtimeTurnActivities } from './realtime-turn-activities'
+import { buildRealtimeTranscriptLayout, mapRealtimeTurnActivities } from './realtime-turn-activities'
 import { SelectionContextMenuZone } from './SelectionContextMenu'
 import { ChatMessage as ChatMessageView } from './ChatMessage'
 import { PlanApprovalPrompt } from './PlanApprovalPrompt'
@@ -75,16 +75,20 @@ export function CodexRealtimeTranscript({
   const turns = useMemo(() => buildRealtimeConversationTurns(transcript), [transcript])
   // Realtime splits one spoken reply across several items; a turn's whole assistant run
   // becomes a single markdown block.
-  const spoken = useMemo(() => turns.map((turn) => ({
+  const spoken = useMemo(() => new Map(turns.map((turn) => [turn.id, {
     user: turn.user ? realtimeSegmentsToMessage([turn.user]) : null,
     assistant: turn.assistant.length > 0 ? realtimeSegmentsToMessage(turn.assistant) : null,
-  })), [turns])
+  }])), [turns])
   const activities = useMemo(() => mapRealtimeTurnActivities({
     turns,
     messages: threadMessages,
     sessionStatus,
     needsDecision,
   }), [needsDecision, sessionStatus, threadMessages, turns])
+  const layout = useMemo(
+    () => buildRealtimeTranscriptLayout(turns, activities),
+    [activities, turns],
+  )
   const lastAssistantMessageId = threadMessages.findLast((message) => message.role === 'assistant')?.id
   const loading = realtime.loadStatus === 'idle' || realtime.loadStatus === 'loading'
   const live = realtime.realtimeSessionId !== null || realtime.starting
@@ -109,14 +113,30 @@ export function CodexRealtimeTranscript({
     <div className="relative min-w-0 flex-1 overflow-hidden">
       <ScrollArea key={sessionId} className="chat-scroll-area h-full min-w-0" viewportRef={scrollViewportRef}>
         <SelectionContextMenuZone className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">
-          {turns.map((turn, index) => {
-            const activity = activities.get(turn.id)
-            const activityMessages = activity
-              ? threadMessages.filter((message) => activity.messageIds.includes(message.id))
-              : []
-            const { user, assistant } = spoken[index]
+          {layout.map((row) => {
+            if (row.kind === 'activity') {
+              const activity = activities.get(row.turnId)
+              const activityMessages = activity
+                ? threadMessages.filter((message) => activity.messageIds.includes(message.id))
+                : []
+              return (
+                <Fragment key={`activity-${row.turnId}`}>
+                  {activityMessages.map((message) => (
+                    <TranscriptMessage
+                      key={message.id}
+                      message={message}
+                      sessionStatus={sessionStatus}
+                      isLastAssistant={message.id === lastAssistantMessageId}
+                      collapseEntireCodexTurn
+                    />
+                  ))}
+                  {activity?.status === 'needs-decision' && <PlanApprovalPrompt />}
+                </Fragment>
+              )
+            }
+            const { user, assistant } = spoken.get(row.turnId) ?? { user: null, assistant: null }
             return (
-              <Fragment key={turn.id}>
+              <Fragment key={`voice-${row.turnId}`}>
                 {user && (
                   <TranscriptMessage
                     message={user}
@@ -131,16 +151,6 @@ export function CodexRealtimeTranscript({
                     hideCopyActions
                   />
                 )}
-                {activityMessages.map((message) => (
-                  <TranscriptMessage
-                    key={message.id}
-                    message={message}
-                    sessionStatus={sessionStatus}
-                    isLastAssistant={message.id === lastAssistantMessageId}
-                    collapseEntireCodexTurn
-                  />
-                ))}
-                {activity?.status === 'needs-decision' && <PlanApprovalPrompt />}
               </Fragment>
             )
           })}

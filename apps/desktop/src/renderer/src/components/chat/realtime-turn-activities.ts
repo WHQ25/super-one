@@ -13,6 +13,34 @@ export interface RealtimeTurnActivity {
   summary: string | null
 }
 
+export type RealtimeTranscriptLayoutRow =
+  | { kind: 'voice'; turnId: string }
+  | { kind: 'activity'; turnId: string }
+
+/**
+ * Keep unfinished delegated work at the live edge of the transcript. Realtime speech
+ * can continue while that work runs, so pinning the activity to its originating voice
+ * turn would make newer speech appear below an older, still-open detail block.
+ */
+export function buildRealtimeTranscriptLayout(
+  turns: readonly RealtimeConversationTurn[],
+  activities: ReadonlyMap<string, RealtimeTurnActivity>,
+): RealtimeTranscriptLayoutRow[] {
+  const rows: RealtimeTranscriptLayoutRow[] = []
+  const trailing: RealtimeTranscriptLayoutRow[] = []
+
+  for (const turn of turns) {
+    rows.push({ kind: 'voice', turnId: turn.id })
+    const activity = activities.get(turn.id)
+    if (!activity) continue
+    const row = { kind: 'activity', turnId: turn.id } as const
+    if (activity.status === 'working') trailing.push(row)
+    else rows.push(row)
+  }
+
+  return [...rows, ...trailing]
+}
+
 function orderOfSegment(segment: RealtimeTimelineSegment): number | null {
   return segment.position ?? segment.localOrder ?? null
 }

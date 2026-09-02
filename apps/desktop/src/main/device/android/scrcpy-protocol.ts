@@ -23,8 +23,14 @@ export const SCRCPY_SERVER_VERSION = '4.0'
 export const SCRCPY_SERVER_SHA256 =
   '84924bd564a1eb6089c872c7521f968058977f91f5ff02514a8c74aff3210f3a'
 
-/** Where the jar is pushed. Not persistent — see `ScrcpySession`. */
-export const SCRCPY_DEVICE_PATH = '/data/local/tmp/scrcpy-server.jar'
+/**
+ * Where the jar is pushed. Not persistent — see `ScrcpySession`.
+ *
+ * Version-scoped: the server hard-checks its version during the handshake, so
+ * an unversioned path lets two SuperOne builds pushing different jars break
+ * each other's sessions on a shared device.
+ */
+export const SCRCPY_DEVICE_PATH = `/data/local/tmp/scrcpy-server-v${SCRCPY_SERVER_VERSION}.jar`
 
 const DEVICE_NAME_BYTES = 64
 const CODEC_ID_BYTES = 4

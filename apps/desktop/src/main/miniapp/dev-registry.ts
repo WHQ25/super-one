@@ -15,6 +15,17 @@ function registryFile(): string {
 const EMPTY: DevRegistryFile = { version: 1, apps: [] }
 
 let cache: DevRegistryFile | null = null
+/** Identity of the file the cache was built from; null when it did not exist. */
+let cacheStamp: string | null = null
+
+async function fileStamp(): Promise<string | null> {
+  try {
+    const info = await stat(registryFile())
+    return `${info.mtimeMs}:${info.size}`
+  } catch {
+    return null
+  }
+}
 
 async function readRaw(): Promise<DevRegistryFile> {
   let raw: string
@@ -39,8 +50,13 @@ async function readRaw(): Promise<DevRegistryFile> {
 }
 
 async function load(): Promise<DevRegistryFile> {
-  if (cache) return cache
+  // The registry is user-level and shared on purpose, so another SuperOne
+  // process can write it between our reads. Caching without invalidation made
+  // the next write clobber whatever the other process had registered.
+  const stamp = await fileStamp()
+  if (cache && stamp === cacheStamp) return cache
   cache = await readRaw()
+  cacheStamp = stamp
   return cache
 }
 
@@ -51,6 +67,7 @@ async function persist(file: DevRegistryFile): Promise<void> {
   await writeFile(tmp, JSON.stringify(file, null, 2), 'utf-8')
   await rename(tmp, path)
   cache = file
+  cacheStamp = await fileStamp()
 }
 
 export async function listEntries(): Promise<DevRegistryEntry[]> {

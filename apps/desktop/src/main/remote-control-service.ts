@@ -3,6 +3,7 @@ import { hostname } from 'node:os'
 import WebSocket from 'ws'
 import { diffLines } from 'diff'
 import log from './logger'
+import { variant } from './variant'
 import { humanizePageToolName } from '@superone/shared/page-tool-name'
 import type { AgentEvent, RemoteCommand, ContentBlock, ChatMessage, CodexThreadItem, CodexCollabToolCallItem, RemoteDeviceConfig, TodoToolItem, TerminalEvent } from '@superone/shared/agent-types'
 import { isSubagentToolName } from '@superone/shared/tool-ui'
@@ -12,6 +13,16 @@ import { trace } from './agent/event-trace'
 import { readOutputFile } from './agent/claude-session-runtime'
 import { listWorkflowAgentsSync } from './workflow-transcripts'
 import { initHighlighter, highlightCodeSync, highlightCodeByLang, parseAnsiTokens, type DiffTokenLine } from './remote-highlighter'
+
+/**
+ * Machine name published over mDNS. The default variant advertises the bare
+ * host name; any other appends its label so a phone can tell two SuperOne
+ * installs on one machine apart.
+ */
+function lanHostLabel(): string {
+  const label = variant().displayLabel
+  return label ? `${hostname()} (${label})` : hostname()
+}
 import {
   bytesToHex,
   deriveKeys,
@@ -901,7 +912,10 @@ export class RemoteControlService {
       await advertiser.publish({
         name: `superone-${roomId.substring(0, 8)}`,
         port,
-        txt: { roomId, hostName: hostname() },
+        // Both variants advertise from the same machine, so the label has to
+        // disambiguate them in the phone's picker. Carried in hostName rather
+        // than a new TXT key so existing clients show it without a change.
+        txt: { roomId, hostName: lanHostLabel(), variant: variant().downloadPrefix },
       })
     } catch (err) {
       log.error('[RemoteControl] Failed to start LAN advertiser:', err)

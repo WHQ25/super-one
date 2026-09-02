@@ -8,6 +8,7 @@
     "downloadPrefix": "stable",
     "harnessDirName": "harness",
     "computerUseBundleId": "com.superone.computer-use",
+    "displayLabel": null,
     "icon": "build/icon.png",
     "prereleaseTag": null
   },
@@ -20,6 +21,7 @@
     "downloadPrefix": "alpha",
     "harnessDirName": "harness-alpha",
     "computerUseBundleId": "com.superone.computer-use.alpha",
+    "displayLabel": "Alpha",
     "icon": "build/icon.png",
     "prereleaseTag": "alpha"
   }

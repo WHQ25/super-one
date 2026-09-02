@@ -258,7 +258,15 @@ async function installMacHelper(helper: string, plist: string): Promise<void> {
 class MacPlatformAdapter implements LidPowerPlatformAdapter {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null
   private active = false
-  private readonly leasePath = `/private/tmp/${MAC_HELPER_LABEL}.${process.getuid?.() ?? 0}.lease`
+  /**
+   * One lease per process, not per user. The LaunchDaemon is deliberately
+   * shared by every SuperOne variant (two privileged root daemons for one
+   * product would be worse), but a shared lease file meant either app turning
+   * closed-lid mode off deleted the lease the other was relying on -- and a
+   * closed lid then really slept the Mac mid-run.
+   */
+  private readonly leasePath =
+    `/private/tmp/${MAC_HELPER_LABEL}.${process.getuid?.() ?? 0}.${process.pid}.lease`
 
   async prepare(userInitiated: boolean): Promise<void> {
     const resources = resolveMacHelperResources()

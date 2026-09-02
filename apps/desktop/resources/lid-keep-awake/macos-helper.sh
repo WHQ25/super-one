@@ -32,9 +32,9 @@ release_owned_override() {
   /bin/rm -f "$BORROWED_FILE"
 }
 
-lease_is_fresh() {
-  uid="$1"
-  lease="$LEASE_PREFIX.$uid.lease"
+lease_file_is_fresh() {
+  lease="$1"
+  uid="$2"
 
   [ -f "$lease" ] || return 1
   [ ! -L "$lease" ] || return 1
@@ -54,6 +54,20 @@ lease_is_fresh() {
   now="$(/bin/date +%s)"
   age=$((now - timestamp))
   [ "$age" -ge -5 ] && [ "$age" -le "$LEASE_MAX_AGE" ]
+}
+
+# Leases are per process (<prefix>.<uid>.<pid>.lease) so the side-by-side
+# SuperOne variants cannot revoke each other's. Any fresh lease holds the
+# override; expired ones are ignored and age out on their own.
+lease_is_fresh() {
+  uid="$1"
+  for lease in "$LEASE_PREFIX.$uid."*.lease; do
+    [ -e "$lease" ] || continue
+    if lease_file_is_fresh "$lease" "$uid"; then
+      return 0
+    fi
+  done
+  return 1
 }
 
 console_user_has_fresh_lease() {

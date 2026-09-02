@@ -1,0 +1,22 @@
+{
+  "stable": {
+    "packageName": "superone",
+    "appId": "com.superone.app",
+    "productName": "SuperOne",
+    "executableName": "superone",
+    "dataDirName": "SuperOne",
+    "downloadPrefix": "stable",
+    "icon": "build/icon.png",
+    "prereleaseTag": null
+  },
+  "alpha": {
+    "packageName": "superone-alpha",
+    "appId": "com.superone.app.alpha",
+    "productName": "SuperOne Alpha",
+    "executableName": "superone-alpha",
+    "dataDirName": "SuperOne Alpha",
+    "downloadPrefix": "alpha",
+    "icon": "build/icon.png",
+    "prereleaseTag": "alpha"
+  }
+}

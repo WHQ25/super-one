@@ -1,5 +1,13 @@
-appId: com.superone.app
-productName: SuperOne
+# Shared electron-builder base. NOT a complete config on its own.
+#
+# Every identity field (appId, productName, package.json name, icon,
+# linux.executableName, publish target, output dir) is owned by variants.json
+# and applied by electron-builder.config.cjs. Do not reintroduce them here —
+# two sources of truth is exactly how the stable and alpha builds would drift
+# into colliding on one install directory or one update manifest.
+#
+# Build with: SUPERONE_VARIANT=<stable|alpha> electron-builder --config electron-builder.config.cjs
+
 directories:
   output: dist
 
@@ -105,10 +113,6 @@ asarUnpack:
   # unpacks them. The addon require.resolve()s this binary then dlopens it.
   - "node_modules/@img/sharp-libvips-*/**"
 
-publish:
-  provider: generic
-  url: https://dl.super-one.dev
-
 mac:
   target:
     - dmg
@@ -127,10 +131,6 @@ win:
     - nsis
 
 linux:
-  # electron-builder derives executableName from package.json `name`
-  # (@superone/desktop), which sanitizes to an invalid `@superonedesktop`
-  # and fails AppImage path validation on 26.15+. Pin it explicitly.
-  executableName: superone
   target:
     - AppImage
   category: Development

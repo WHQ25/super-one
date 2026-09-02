@@ -54,6 +54,24 @@ describe('CodingWorkspace', () => {
     expect(screen.getByTestId('single')).toHaveAttribute('data-session-id', 'sid-2')
   })
 
+  it('shows the focused session alone when a mosaic folds into the mini shell', () => {
+    hoisted.activeSessionId = 'sid-focused'
+    const { rerender } = render(<CodingWorkspace mosaicMode="mosaic" />)
+    expect(screen.getByTestId('mosaic').parentElement).not.toHaveClass('hidden')
+
+    rerender(<CodingWorkspace mosaicMode="mosaic" compact />)
+    expect(screen.getByTestId('mosaic').parentElement).toHaveClass('hidden')
+    expect(screen.getByTestId('mosaic')).toHaveAttribute('data-foreground', 'false')
+    const single = screen.getByTestId('single')
+    expect(single.parentElement).not.toHaveClass('hidden')
+    expect(single).toHaveAttribute('data-foreground', 'true')
+    expect(single).toHaveAttribute('data-session-id', 'sid-focused')
+
+    // Unfolding hands the grid back untouched — the mosaic tree was never rewritten.
+    rerender(<CodingWorkspace mosaicMode="mosaic" />)
+    expect(screen.getByTestId('mosaic').parentElement).not.toHaveClass('hidden')
+  })
+
   it('switches to compact chrome without replacing the single session layout', () => {
     const { rerender } = render(<CodingWorkspace mosaicMode="single" />)
     const single = screen.getByTestId('single')

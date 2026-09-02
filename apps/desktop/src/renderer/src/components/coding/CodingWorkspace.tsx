@@ -17,23 +17,29 @@ export function CodingWorkspace({ mosaicMode, compact = false }: CodingWorkspace
     () => activeProject && activeSessionId ? { projectPath: activeProject, sessionId: activeSessionId } : undefined,
     [activeProject, activeSessionId],
   )
+  // The mini shell is a single chat column wide: a mosaic cannot lay out in it, and
+  // every tile carries its own maximize/close chrome that would sit right beside the
+  // mini header's restore button. So the mini shell always shows the focused session
+  // alone. The mosaic tree stays untouched in the store, which is what lets unfolding
+  // back to the full window land in the grid the user left.
+  const effectiveMode = compact ? 'single' : mosaicMode
   const [singleScope, setSingleScope] = useState(activeScope)
   useLayoutEffect(() => {
-    if (mosaicMode === 'mosaic') return
+    if (effectiveMode === 'mosaic') return
     setSingleScope((current) =>
       current?.projectPath === activeScope?.projectPath && current?.sessionId === activeScope?.sessionId
         ? current
         : activeScope,
     )
-  }, [mosaicMode, activeScope])
+  }, [effectiveMode, activeScope])
 
   return (
     <>
-      <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col', mosaicMode === 'mosaic' && 'hidden')}>
-        <CodingLayout foreground={mosaicMode !== 'mosaic'} scope={singleScope} compact={compact} />
+      <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col', effectiveMode === 'mosaic' && 'hidden')}>
+        <CodingLayout foreground={effectiveMode !== 'mosaic'} scope={singleScope} compact={compact} />
       </div>
-      <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col', mosaicMode !== 'mosaic' && 'hidden')}>
-        <SessionMosaic foreground={mosaicMode === 'mosaic'} />
+      <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col', effectiveMode !== 'mosaic' && 'hidden')}>
+        <SessionMosaic foreground={effectiveMode === 'mosaic'} />
       </div>
     </>
   )

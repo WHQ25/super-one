@@ -1,9 +1,11 @@
 /**
  * Desktop harness install root.
  *
- * Production (and any non-dev host): the **shared** SuperOne harness root
- * `~/.superone/harness` — same path the CLI uses (`@superone/runtime`
- * `resolveHarnessHomeRoot`). Desktop and remote-node installs share binaries.
+ * Production: `~/.superone/<variant harnessDirName>`. The store is NOT shared
+ * between the side-by-side variants: `pruneVersions` keeps only the newest few
+ * versions and deletes the rest, so a shared root lets one variant delete the
+ * harness binary the other is executing. Stable keeps the historical
+ * `~/.superone/harness`, which is also what the CLI resolves to.
  *
  * Dev (`is.dev`): `<userData>/harness` → `apps/desktop/.dev-data/harness` so
  * local enable/download testing does not clobber the real user install.
@@ -14,9 +16,8 @@ import { app } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import {
-  resolveHarnessHomeRoot as resolveSharedHarnessHomeRoot,
-} from '@superone/runtime/harness'
+import { SUPERONE_DIRNAME } from '@superone/runtime/harness'
+import { variant } from '../variant'
 
 function userHome(): string {
   try {
@@ -43,5 +44,5 @@ export function resolveHarnessHomeRoot(): string {
   const dev = devHarnessRoot()
   if (dev) return dev
 
-  return resolveSharedHarnessHomeRoot({ userHome: userHome(), ignoreEnv: true })
+  return join(userHome(), SUPERONE_DIRNAME, variant().harnessDirName)
 }

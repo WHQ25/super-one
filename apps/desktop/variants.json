@@ -6,6 +6,7 @@
     "executableName": "superone",
     "dataDirName": "SuperOne",
     "downloadPrefix": "stable",
+    "harnessDirName": "harness",
     "icon": "build/icon.png",
     "prereleaseTag": null
   },
@@ -16,6 +17,7 @@
     "executableName": "superone-alpha",
     "dataDirName": "SuperOne Alpha",
     "downloadPrefix": "alpha",
+    "harnessDirName": "harness-alpha",
     "icon": "build/icon.png",
     "prereleaseTag": "alpha"
   }

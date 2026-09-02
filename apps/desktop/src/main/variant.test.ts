@@ -41,7 +41,7 @@ describe('variant identity table', () => {
   // productName drives app.name (logs, safeStorage), packageName drives the
   // NSIS install dir and the updater cache dir. A shared value in any one of
   // them makes the two builds overwrite each other.
-  it.each(['appId', 'productName', 'packageName', 'executableName', 'dataDirName', 'downloadPrefix'])(
+  it.each(['appId', 'productName', 'packageName', 'executableName', 'dataDirName', 'downloadPrefix', 'harnessDirName'])(
     'gives every variant a distinct %s',
     (field) => {
       const values = entries.map(([, v]) => v[field as keyof typeof v])

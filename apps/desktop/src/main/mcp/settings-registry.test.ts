@@ -21,7 +21,6 @@ function makeSettings(overrides: Partial<AppSettings> = {}): AppSettings {
     autoExpandFileDiffs: false,
     detailChatMode: false,
     locale: '',
-    updateChannel: null,
     themeMode: 'system',
     terminalLightPalette: null,
     terminalDarkPalette: null,
@@ -136,12 +135,11 @@ describe('settings registry validation', () => {
   })
 
   it('rejects an enum value outside the allowed set', () => {
-    expect(validateChanges([{ key: 'updateChannel', value: 'nightly' }], makeSettings()).rejected).toHaveLength(1)
-    expect(validateChanges([{ key: 'updateChannel', value: 'beta' }], makeSettings()).valid[0].proposedValue).toBe('beta')
+    expect(validateChanges([{ key: 'locale', value: 'de' }], makeSettings()).rejected).toHaveLength(1)
+    expect(validateChanges([{ key: 'locale', value: 'zh' }], makeSettings()).valid[0].proposedValue).toBe('zh')
   })
 
   it('treats empty as clear-to-default for clearable fields', () => {
-    expect(validateChanges([{ key: 'updateChannel', value: null }], makeSettings()).valid[0].proposedValue).toBe(null)
     expect(validateChanges([{ key: 'locale', value: '' }], makeSettings()).valid[0].proposedValue).toBe('')
     expect(validateChanges([{ key: 'claudeBrandHue', value: null }], makeSettings()).valid[0].proposedValue).toBe(null)
   })
@@ -181,8 +179,8 @@ describe('settings registry patch building', () => {
   })
 
   it('maps a cleared nullable field to its empty representation in the patch', () => {
-    const { patch } = buildPatchFromValues({ updateChannel: null, locale: '', claudeBrandHue: null }, makeSettings())
-    expect(patch.updateChannel).toBe(null)
+    const { patch } = buildPatchFromValues({ uiFontFamily: null, locale: '', claudeBrandHue: null }, makeSettings())
+    expect(patch.uiFontFamily).toBe(null)
     expect(patch.locale).toBe('')
     expect(patch.agentPreference?.claude?.brandHue).toBe(null)
   })
@@ -244,7 +242,6 @@ describe('settings registry — new field groups', () => {
     }))
     expect(guide?.fields).toMatchObject([
       { key: 'locale' },
-      { key: 'updateChannel' },
       { key: 'analyticsEnabled' },
       { key: 'experimentalAgentsEnabled', currentValue: true },
       { key: 'experimentalRemoteNodesEnabled', currentValue: false },
@@ -284,7 +281,7 @@ describe('settings registry guide', () => {
   it('returns null for an unknown domain and a guide for a known one', () => {
     expect(buildDomainGuide('bogus', makeSettings())).toBeNull()
     expect(buildDomainGuide('updater', makeSettings())).toBeNull()
-    const guide = buildDomainGuide('general', makeSettings({ updateChannel: 'alpha' }))
-    expect(guide?.fields.find((f) => f.key === 'updateChannel')).toMatchObject({ currentValue: 'alpha', allowedValues: ['alpha', 'beta', 'stable'], clearable: true })
+    const guide = buildDomainGuide('general', makeSettings({ locale: 'zh' }))
+    expect(guide?.fields.find((f) => f.key === 'locale')).toMatchObject({ currentValue: 'zh', allowedValues: ['en', 'zh'], clearable: true })
   })
 })

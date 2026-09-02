@@ -4316,7 +4316,8 @@ export interface RemoteDeviceConfig {
 
 export type Locale = 'en' | 'zh'
 
-export type UpdateChannel = 'alpha' | 'beta' | 'stable'
+/** Release channel of a build. One per side-by-side app variant. */
+export type UpdateChannel = 'alpha' | 'stable'
 
 export type ThemeMode = 'system' | 'light' | 'dark'
 
@@ -4408,7 +4409,6 @@ export interface AppSettings {
    */
   detailChatMode: boolean
   locale: Locale | ''
-  updateChannel: UpdateChannel | null
   themeMode: ThemeMode
   terminalLightPalette: string | null
   terminalDarkPalette: string | null
@@ -4569,7 +4569,6 @@ export interface AppSettingsPatch {
   autoExpandFileDiffs?: boolean
   detailChatMode?: boolean
   locale?: Locale | ''
-  updateChannel?: UpdateChannel | null
   themeMode?: ThemeMode
   terminalLightPalette?: string | null
   terminalDarkPalette?: string | null

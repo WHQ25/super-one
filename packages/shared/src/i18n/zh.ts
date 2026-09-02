@@ -1213,17 +1213,6 @@ export const zh: Messages = {
         updated: '应用图标已更新',
         resetDone: '应用图标已恢复默认',
       },
-      updateChannel: {
-        label: '更新通道',
-        description: '选择从哪条发布线接收自动更新。切换到更稳定的通道时,应用可能回退到该通道的最新版本。',
-        stable: '正式版',
-        beta: '测试版',
-        alpha: '内测版',
-        stableDescription: '仅正式发布版本。',
-        betaDescription: '测试版及正式版。',
-        alphaDescription: '最早的构建 —— 内测版、测试版与正式版。',
-        updated: '更新通道已切换',
-      },
       checkUpdates: {
         label: '检查更新',
         description: 'SuperOne 仅在启动时自动检查一次。当前版本 v{{version}}。',

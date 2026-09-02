@@ -17,7 +17,6 @@ import type {
   SandboxMode,
   SuggestionHarnessPreference,
   ThemeMode,
-  UpdateChannel,
   WebmcpTrustedOrigin,
 } from '@superone/shared/agent-types'
 import { DEFAULT_NOTIFICATION_SETTINGS, NOTIFICATION_KINDS, normalizeNotificationSettings } from '@superone/shared/notifications'
@@ -100,7 +99,6 @@ const defaults: AppSettings = {
   autoExpandFileDiffs: false,
   detailChatMode: false,
   locale: '',
-  updateChannel: null,
   themeMode: 'system',
   terminalLightPalette: null,
   terminalDarkPalette: null,
@@ -277,9 +275,6 @@ function isQuestionPreviewFormat(value: unknown): value is QuestionPreviewFormat
   return value === 'markdown' || value === 'html'
 }
 
-function isUpdateChannel(value: unknown): value is UpdateChannel {
-  return value === 'alpha' || value === 'beta' || value === 'stable'
-}
 
 function isThemeMode(value: unknown): value is ThemeMode {
   return value === 'system' || value === 'light' || value === 'dark'
@@ -545,7 +540,6 @@ export function readAppSettings(): AppSettings {
           ? !data.compactChatMode
           : defaults.detailChatMode,
       locale: data.locale === '' || isLocale(data.locale) ? data.locale : defaults.locale,
-      updateChannel: data.updateChannel === null || isUpdateChannel(data.updateChannel) ? data.updateChannel : defaults.updateChannel,
       themeMode: isThemeMode(data.themeMode) ? data.themeMode : defaults.themeMode,
       terminalLightPalette: typeof data.terminalLightPalette === 'string' ? data.terminalLightPalette : defaults.terminalLightPalette,
       terminalDarkPalette: typeof data.terminalDarkPalette === 'string' ? data.terminalDarkPalette : defaults.terminalDarkPalette,
@@ -624,7 +618,6 @@ export function readAppSettings(): AppSettings {
       autoExpandFileDiffs: defaults.autoExpandFileDiffs,
       detailChatMode: defaults.detailChatMode,
       locale: defaults.locale,
-      updateChannel: defaults.updateChannel,
       themeMode: defaults.themeMode,
       terminalLightPalette: defaults.terminalLightPalette,
       terminalDarkPalette: defaults.terminalDarkPalette,
@@ -745,7 +738,6 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     autoExpandFileDiffs: patch.autoExpandFileDiffs ?? current.autoExpandFileDiffs,
     detailChatMode: patch.detailChatMode ?? current.detailChatMode,
     locale: patch.locale ?? current.locale,
-    updateChannel: patch.updateChannel === undefined ? current.updateChannel : patch.updateChannel,
     themeMode: patch.themeMode === undefined ? current.themeMode : patch.themeMode,
     terminalLightPalette: patch.terminalLightPalette === undefined ? current.terminalLightPalette : patch.terminalLightPalette,
     terminalDarkPalette: patch.terminalDarkPalette === undefined ? current.terminalDarkPalette : patch.terminalDarkPalette,

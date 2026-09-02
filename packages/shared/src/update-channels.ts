@@ -1,23 +1,13 @@
 import type { UpdateChannel } from './agent-types'
 
-export type YmlChannel = 'latest' | 'beta' | 'alpha'
-
-export const UPDATE_CHANNELS: readonly UpdateChannel[] = ['stable', 'beta', 'alpha']
-
-// Channels currently safe to expose in the settings selector. `beta` / `stable`
-// have no published manifest on R2 yet, so offering them would 404 on switch
-// (electron-updater errors). Widen this to the full list once those channels
-// are populated by a real beta/stable release via set-latest.
-export const AVAILABLE_UPDATE_CHANNELS: readonly UpdateChannel[] = ['alpha']
-
-export const UPDATE_CHANNEL_TO_YML: Record<UpdateChannel, YmlChannel> = {
-  stable: 'latest',
-  beta: 'beta',
-  alpha: 'alpha',
-}
-
+/**
+ * Map a version string onto a release channel.
+ *
+ * The desktop app does NOT use this: stable and alpha are separate build
+ * variants and each one knows its own identity (`variants.json`). This exists
+ * for `@super-one/cli`, which ships at the desktop version but has no variant
+ * of its own, and needs a harness manifest channel to download from.
+ */
 export function channelFromVersion(version: string): UpdateChannel {
-  if (/-alpha/i.test(version)) return 'alpha'
-  if (/-beta/i.test(version)) return 'beta'
-  return 'stable'
+  return /-alpha/i.test(version) ? 'alpha' : 'stable'
 }

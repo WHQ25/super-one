@@ -72,7 +72,6 @@ describe('app-settings-service', () => {
     autoExpandFileDiffs: false,
     detailChatMode: false,
     locale: '',
-    updateChannel: null,
     themeMode: 'system',
     terminalLightPalette: null,
     terminalDarkPalette: null,
@@ -166,8 +165,7 @@ describe('app-settings-service', () => {
         autoExpandFileDiffs: false,
         detailChatMode: false,
         locale: '',
-        updateChannel: null,
-        themeMode: 'system',
+            themeMode: 'system',
         terminalLightPalette: null,
         terminalDarkPalette: null,
         terminalFontSize: 14,
@@ -319,8 +317,7 @@ describe('app-settings-service', () => {
         autoExpandFileDiffs: false,
         detailChatMode: false,
         locale: '',
-        updateChannel: null,
-        themeMode: 'system',
+            themeMode: 'system',
         terminalLightPalette: null,
         terminalDarkPalette: null,
         terminalFontSize: 14,
@@ -741,27 +738,6 @@ describe('app-settings-service', () => {
       expect(mocks.writeFileSync).not.toHaveBeenCalled()
     })
 
-    it('persists updateChannel round-trip and accepts each valid value', () => {
-      for (const channel of ['alpha', 'beta', 'stable'] as const) {
-        mocks.writeFileSync.mockClear()
-        mocks.readFileSync.mockImplementation(fileNotFound)
-        saveAppSettings({ updateChannel: channel })
-        const written = mocks.writeFileSync.mock.calls[0][1] as string
-        mocks.readFileSync.mockReturnValue(written)
-        expect(readAppSettings().updateChannel).toBe(channel)
-      }
-    })
-
-    it('falls back to null when stored updateChannel is invalid', () => {
-      mocks.readFileSync.mockReturnValue(JSON.stringify({ updateChannel: 'nightly' }))
-      expect(readAppSettings().updateChannel).toBeNull()
-    })
-
-    it('resets updateChannel back to null when patch passes null', () => {
-      mocks.readFileSync.mockReturnValue(JSON.stringify({ updateChannel: 'alpha' }))
-      const result = saveAppSettings({ updateChannel: null })
-      expect(result.updateChannel).toBeNull()
-    })
 
     it('persists light and dark terminal palettes independently', () => {
       mocks.readFileSync.mockImplementation(fileNotFound)

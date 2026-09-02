@@ -49,7 +49,6 @@ vi.mock('./harness/service', () => ({
 }))
 
 const {
-  setUpdateChannel,
   initUpdater,
   checkForUpdates,
   downloadUpdate,
@@ -231,28 +230,15 @@ describe('atomic app + harness package', () => {
   })
 })
 
-describe('manual update channel switching', () => {
-  beforeEach(() => {
-    autoUpdater.channel = ''
-    autoUpdater.allowDowngrade = false
-    downgradeDuringCheck = undefined
-    autoUpdater.checkForUpdates.mockClear()
-  })
-
-  it('maps the user channel to its electron-builder yml track', () => {
-    setUpdateChannel('stable')
-    expect(autoUpdater.channel).toBe('latest')
-    setUpdateChannel('beta')
-    expect(autoUpdater.channel).toBe('beta')
-    setUpdateChannel('alpha')
-    expect(autoUpdater.channel).toBe('alpha')
-  })
-
-  it('allows downgrade during the switch check then resets it afterwards', async () => {
-    setUpdateChannel('stable')
-    expect(autoUpdater.checkForUpdates).toHaveBeenCalledOnce()
-    expect(downgradeDuringCheck).toBe(true)
-    await new Promise((resolve) => setTimeout(resolve, 0))
+describe('update lane', () => {
+  it('never enables downgrade', () => {
+    // Each variant has exactly one update lane baked into its app-update.yml,
+    // so nothing assigns autoUpdater.channel at runtime. That matters: the
+    // channel setter force-sets allowDowngrade = true (electron-updater
+    // AppUpdater), which is how the old per-user channel preference silently
+    // left every user who had set one running with downgrades allowed.
+    autoUpdater.allowDowngrade = true
+    initUpdater({ isDestroyed: () => true } as never)
     expect(autoUpdater.allowDowngrade).toBe(false)
   })
 })

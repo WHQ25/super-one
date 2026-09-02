@@ -3,8 +3,7 @@ import pkg from 'electron-updater'
 const { autoUpdater } = pkg
 import { is } from '@electron-toolkit/utils'
 import log from './logger'
-import { AgentIpcChannels, type UpdateChannel, type UpdateEvent } from '@superone/shared/agent-types'
-import { UPDATE_CHANNEL_TO_YML } from '@superone/shared/update-channels'
+import { AgentIpcChannels, type UpdateEvent } from '@superone/shared/agent-types'
 import { prefetchEnabledHarnessesForAppUpdate } from './harness/service'
 
 let win: BrowserWindow | null = null
@@ -192,7 +191,7 @@ export function setOnMenuChange(fn: () => void): void {
   onMenuChange = fn
 }
 
-export function initUpdater(mainWindow: BrowserWindow, channelPref?: UpdateChannel | null): void {
+export function initUpdater(mainWindow: BrowserWindow): void {
   win = mainWindow
   installingUpdate = false
   lastEvent = null
@@ -205,10 +204,6 @@ export function initUpdater(mainWindow: BrowserWindow, channelPref?: UpdateChann
   autoUpdater.autoInstallOnAppQuit = false
   autoUpdater.allowDowngrade = false
   if (testUpdater) autoUpdater.forceDevUpdateConfig = true
-  if (channelPref) {
-    autoUpdater.channel = UPDATE_CHANNEL_TO_YML[channelPref]
-    log.info(`[updater] channel pref applied: ${channelPref} → ${autoUpdater.channel}`)
-  }
   autoUpdater.on('checking-for-update', () => {
     send({ type: 'checking' })
   })
@@ -347,22 +342,6 @@ export function retryUpdateHarnessPrefetch(): void {
   startHarnessPrefetch(version)
 }
 
-export function setUpdateChannel(channel: UpdateChannel | null): void {
-  if (is.dev && process.env.TEST_UPDATER !== '1') return
-  if (channel) {
-    autoUpdater.channel = UPDATE_CHANNEL_TO_YML[channel]
-    log.info(`[updater] channel changed to ${channel} → ${autoUpdater.channel}`)
-  }
-  autoUpdater.allowDowngrade = true
-  autoUpdater
-    .checkForUpdates()
-    .catch((err) => {
-      log.warn('[updater] post-channel-change check failed:', err.message)
-    })
-    .finally(() => {
-      autoUpdater.allowDowngrade = false
-    })
-}
 
 export function simulateUpdate(): void {
   clearSimulateTimers()

@@ -55,16 +55,6 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
         toPatch: (v) => ({ locale: (v ?? '') as AppSettings['locale'] }),
       },
       {
-        key: 'updateChannel',
-        label: 'Update Channel',
-        type: 'enum',
-        enumValues: ['alpha', 'beta', 'stable'],
-        clearTo: null,
-        note: 'Clear to follow the channel this build shipped on.',
-        read: (s) => s.updateChannel,
-        toPatch: (v) => ({ updateChannel: (v ?? null) as AppSettings['updateChannel'] }),
-      },
-      {
         key: 'analyticsEnabled',
         label: 'Analytics',
         type: 'boolean',

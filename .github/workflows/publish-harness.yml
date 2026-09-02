@@ -13,12 +13,11 @@ on:
   workflow_dispatch:
     inputs:
       channel:
-        description: 'Harness manifest channel to publish'
+        description: 'Which app variant to publish harness runtimes for'
         required: true
         type: choice
         options:
           - alpha
-          - beta
           - stable
         default: alpha
       app_version:

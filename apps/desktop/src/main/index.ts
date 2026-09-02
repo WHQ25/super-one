@@ -126,7 +126,7 @@ import {
   type NativeContextMenuItemSpec,
   type ComputerUseDisplayInfo,
 } from '@superone/shared/agent-types'
-import { initUpdater, installUpdate, checkForUpdates, downloadUpdate, retryUpdateHarnessPrefetch, simulateUpdate, simulateNotAvailable, getUpdaterState, getUpdaterSnapshot, setUpdaterWindow, getUpdateMenuState, setOnMenuChange, setUpdateChannel, isInstallingUpdate } from './updater'
+import { initUpdater, installUpdate, checkForUpdates, downloadUpdate, retryUpdateHarnessPrefetch, simulateUpdate, simulateNotAvailable, getUpdaterState, getUpdaterSnapshot, setUpdaterWindow, getUpdateMenuState, setOnMenuChange, isInstallingUpdate } from './updater'
 import { startWatching, stopWatching } from './file-watcher'
 import { detectTextOrBinary, maxReadableBytes } from './file-read-limits'
 import { notifyWidgetReady, clearAllGates } from './generative-ui/widget-gate'
@@ -840,9 +840,6 @@ async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettin
   }
   if (result.locale) {
     await applyLocale(result.locale)
-  }
-  if (patch?.updateChannel !== undefined) {
-    setUpdateChannel(result.updateChannel)
   }
   if (patch?.liquidGlass !== undefined) {
     applyWindowAppearance()
@@ -5710,7 +5707,7 @@ app.whenReady().then(async () => {
 
   createWindow()
   applyAppIcon(readAppSettings().customAppIconPath, allWindows)
-  initUpdater(mainWindow!, readAppSettings().updateChannel)
+  initUpdater(mainWindow!)
 
   let devUpdateToggle = false
   function buildAppMenu(): void {

@@ -15,17 +15,13 @@ import { parseHarnessReleaseManifest } from './managed-release'
 export const HARNESS_CDN_BASE = 'https://dl.super-one.dev'
 export const HARNESS_CDN_BUCKET_PREFIX = 'harness'
 
-/** Channel keys used for harness/manifest/<channel>.json (matches UpdateChannel). */
-export type HarnessManifestChannel = 'alpha' | 'beta' | 'stable'
+/** Channel keys used for harness/manifest/<channel>.json (one per app variant). */
+export type HarnessManifestChannel = 'alpha' | 'stable'
 
-export const HARNESS_MANIFEST_CHANNELS: readonly HarnessManifestChannel[] = [
-  'alpha',
-  'beta',
-  'stable',
-]
+export const HARNESS_MANIFEST_CHANNELS: readonly HarnessManifestChannel[] = ['alpha', 'stable']
 
 export function isHarnessManifestChannel(value: string): value is HarnessManifestChannel {
-  return value === 'alpha' || value === 'beta' || value === 'stable'
+  return value === 'alpha' || value === 'stable'
 }
 
 /**

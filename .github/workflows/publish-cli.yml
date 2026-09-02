@@ -18,7 +18,7 @@ on:
         required: false
         default: ''
       tag:
-        description: 'npm dist-tag (alpha | beta | latest). Empty = derive from version.'
+        description: 'npm dist-tag (alpha | latest). Empty = derive from version.'
         required: false
         default: ''
       dry_run:
@@ -69,7 +69,6 @@ jobs:
           if [ -z "$TAG" ]; then
             case "$VER" in
               *-alpha*|*-alpha.*) TAG=alpha ;;
-              *-beta*|*-beta.*) TAG=beta ;;
               *) TAG=latest ;;
             esac
           fi

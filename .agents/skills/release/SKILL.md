@@ -1,8 +1,8 @@
 ---
 name: release
-description: "Automate the SuperOne release process: version bump, commit, per-platform build, CLI npm publish, harness R2 mirror (when pins change), promote artifacts to draft release, and publish. Trigger with /release [alpha|beta|public] [major|feature|patch]. Use this skill whenever the user wants to release, publish, ship, or deploy a new version of the app."
-arguments: "[alpha|beta|public] [major|feature|patch]"
-argument-hint: "[alpha|beta|public] [major|feature|patch]"
+description: "Automate the SuperOne release process: version bump, commit, per-platform build, CLI npm publish, harness R2 mirror (when pins change), promote artifacts to draft release, and publish. Trigger with /release [alpha|stable] [major|feature|patch]. Use this skill whenever the user wants to release, publish, ship, or deploy a new version of the app."
+arguments: "[alpha|stable] [major|feature|patch]"
+argument-hint: "[alpha|stable] [major|feature|patch]"
 compatibility: "Requires git, gh, bun, npm, curl, GitHub Actions access, and network approval for GitHub, npm, and dl.super-one.dev."
 ---
 
@@ -14,19 +14,31 @@ Automate the SuperOne release pipeline. The pipeline has **independently retryab
 - `publish-cli.yml` — packs and publishes **`@super-one/cli`** to the public npm registry at the **same version string** as desktop (lockstep). Desktop **Other Devices → SSH → registry install** pins `@super-one/cli@<app-version>`; if this step is skipped, remote SSH bootstrap cannot install that version from npm. Auth: npm **Trusted Publishing (OIDC)** for this repo (preferred) or optional `NPM_TOKEN` secret. Independent of desktop electron-builder — fires in parallel with builds at Step 3.
 - `publish-harness.yml` — **conditional**. When Claude/Codex managed pin constants (or the pack script) changed since the previous tag, `npm pack`s the pinned platform tarballs, SHA-256s them, and `aws s3 sync`s byte-exact mirrors + `harness/manifest/<channel>.json` to R2 (`https://dl.super-one.dev/harness/...`). Desktop install tries R2 first, npm registry fallback, same digest. Auth: same R2 secrets as promote (`R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_ACCOUNT_ID`). Independent of electron-builder — fires in parallel with builds at Step 3 when Step 1 said yes. **Not every app release** — only when harness pins move (see Invariants).
 - `deploy-relay.yml` — runs `bunx wrangler deploy` against `apps/relay/` to push the Cloudflare Worker (relay) to production. Authenticated by the repo `CLOUDFLARE_API_TOKEN` secret, so this **must** run inside Actions, never from a local terminal (the local shell typically lacks the token, and skill permissions block credential-discovery anyway). Independent of the build/promote chain — triggered in parallel with builds at Step 3.
-- `promote.yml` — **archive only**. Downloads artifacts and (a) uploads them **flat** (binaries + channel ymls) to a **draft** GitHub Release (bridge-mode legacy path — legacy alpha clients embed `UPDATER_TOKEN` and pull from there — **and** the manifest source for set-latest); (b) moves the binaries into a `v${VERSION}/` subdir and `aws s3 sync`s **only the binaries** to Cloudflare R2 bucket `super-one-releases` served at `https://dl.super-one.dev`. It writes **no** root channel yml — a promoted version is archived but not yet anyone's latest (that's `set-latest`). Promote does **not** touch `harness/` keys (those are `publish-harness` only).
+- `promote.yml` — **archive only**. Takes a `variant` and downloads artifacts, then (a) uploads them **flat** (binaries + update ymls) to a **draft** GitHub Release (bridge-mode legacy path — legacy alpha clients embed `UPDATER_TOKEN` and pull from there — **and** the manifest source for set-latest); (b) moves the binaries into a `<variant>/v${VERSION}/` subdir and `aws s3 sync`s **only the binaries** to Cloudflare R2 bucket `super-one-releases` served at `https://dl.super-one.dev`. It writes **no** pointer yml — a promoted version is archived but not yet anyone's latest (that's `set-latest`). Promote does **not** touch `harness/` keys (those are `publish-harness` only).
 - Final `gh release edit --draft=false --prerelease` — flips the draft to published; GitHub then materializes the tag on `target_commitish`.
-- `set-latest.yml` — **manual, decoupled from promote**. Sets a given release as a channel's latest: re-points the channel pointer yml(s) on R2 **with cascade** (setting `stable` also updates `beta`+`alpha`; `beta` also `alpha`; `alpha` only `alpha`, so alpha users still receive beta/stable builds) and refreshes the permanent `https://dl.super-one.dev/{alpha,beta,stable}/latest/<installer>` download links. It reads the version's manifest from its **GitHub Release** (so any historical version works without a rebuild), and `force=true` overrides the semver guard to **roll a channel back** to an older version. Does **not** publish harness runtimes.
+- `set-latest.yml` — **manual, decoupled from promote**. Sets a given release as one variant's latest: writes `<variant>/latest-*.yml` on R2 and refreshes the permanent `https://dl.super-one.dev/{alpha,stable}/latest/<installer>` download links. **There is no cascade** — stable and alpha are separate apps with separate `appId`s, so handing the alpha app a stable installer would install a different bundle over it. It reads the version's manifest from its **GitHub Release** (so any historical version works without a rebuild), and `force=true` overrides the semver guard to **roll a variant back** to an older version. Does **not** publish harness runtimes.
 
 Tags are created by GitHub at publish time, never pushed from local. A failing build or bad artifact can be re-run without burning a version number or force-pushing a tag.
 
-**Channel** is auto-derived by electron-builder from the version string: `-alpha.N` → channel `alpha` (yml files `alpha-mac.yml` / `alpha.yml` / `alpha-linux.yml`); `-beta.N` → `beta`; `-rc.N` → `rc`; otherwise → `latest`. Each channel's "current pointer" yml at the R2 root is written by **`set-latest`** (not promote), with cascade; binaries under `v${VERSION}/` are append-only (and set-latest backfills them from the GitHub Release if R2 has dropped them).
+**Variant, not channel.** SuperOne ships as two side-by-side apps built from one codebase — `stable` and `alpha` — with different `appId`, `productName`, package.json `name`, userData directory and Computer Use helper identity, all declared in `apps/desktop/variants.json`. They install alongside each other and never share data.
 
-**npm dist-tag** for `@super-one/cli` mirrors the same pre-release rule: `-alpha*` → tag `alpha`, `-beta*` → `beta`, else `latest`. Pre-releases must **never** publish with dist-tag `latest`.
+Every build therefore needs `SUPERONE_VARIANT`; `electron-builder.config.cjs` has **no default** and fails without it. It also asserts the version's prerelease tag matches the variant (`stable` ⇒ no prerelease, `alpha` ⇒ `-alpha`), because `@super-one/cli`, the harness manifest channel and the GitHub prerelease flag are all still derived from the version string.
+
+Each variant sets `publish.channel: latest` explicitly, so electron-builder emits the same `latest-mac.yml` / `latest.yml` / `latest-linux.yml` for both and the **variant lives in the R2 prefix**:
+
+```
+dl.super-one.dev/
+  stable/  latest-mac.yml  v0.63.0/…        latest/<installer>
+  alpha/   latest-mac.yml  v0.64.0-alpha/…  latest/<installer>
+```
+
+Pointer ymls are written by **`set-latest`** (not promote); binaries under `<variant>/v${VERSION}/` are append-only (and set-latest backfills them from the GitHub Release if R2 has dropped them).
+
+**npm dist-tag** for `@super-one/cli` follows the variant: `-alpha*` → tag `alpha`, otherwise `latest`. Pre-releases must **never** publish with dist-tag `latest`, and the workflow refuses any pre-release it cannot map (including a stray `-beta` / `-rc`) rather than silently tagging it `latest`.
 
 ## Arguments
 
-- **channel**: `alpha` (default). `beta` and `public` are reserved.
+- **variant**: `alpha` (default) or `stable`. This is which app is being released, not a channel of one app.
 - **bump**: `patch` (default). `major` / `feature` / `patch` drive semver position:
   - `major`: `0.14.3-alpha` → `1.0.0-alpha`
   - `feature`: `0.14.3-alpha` → `0.15.0-alpha`
@@ -45,8 +57,8 @@ command below (Steps 3–9 and the Recovery Patterns).
 This is the **only** human checkpoint in the pipeline. Do all of the following **in one response** and ask for a single combined confirmation:
 
 1. Read `version` from `package.json`.
-2. Parse args; default to `alpha` + `patch`. Reject `beta` / `public` (not yet supported) and stop.
-3. Calculate the new version string.
+2. Parse args; default to `alpha` + `patch`.
+3. Calculate the new version string. For `alpha` it keeps the `-alpha` suffix. For `stable` see **Cutting a stable release** below — it is not a bump of the alpha line.
 4. `git log --oneline --no-decorate v<previous-version>..HEAD` to enumerate commits since the last release tag.
 5. **Decide whether relay deploys this release**: run `git diff --quiet v<previous-version>..HEAD -- apps/relay/`. Non-empty diff → relay will be deployed and `apps/relay/package.json` will jump to the new version (skipping any intermediate versions where it wasn't deployed). Empty diff → relay is left alone.
 6. **Decide whether harness R2 publish runs this release**:
@@ -58,7 +70,7 @@ This is the **only** human checkpoint in the pipeline. Do all of the following *
      .github/workflows/publish-harness.yml
    ```
    Non-empty → **yes** (pin constants, pack script, or workflow changed). Empty → **no** (existing R2 mirrors + channel manifest stay valid; desktop still has npm fallback).
-   - Map the **app release channel** to the harness manifest channel: `alpha` → `alpha`, `beta` → `beta`, `public`/stable → `stable`.
+   - The harness manifest channel is the variant id: `alpha` → `alpha`, `stable` → `stable`.
    - **Manual override**: if the user asks to refresh harness mirrors even without a pin diff (e.g. first bootstrap, corrupted R2 object), treat harness publish as **yes** for this release and note it in the confirmation block.
 7. Draft the CHANGELOG entry:
    - Drop noise (`chore(release): bump version`, purely internal refactors with no user impact).
@@ -68,7 +80,7 @@ This is the **only** human checkpoint in the pipeline. Do all of the following *
    - `Current: X.Y.Z-alpha → New: A.B.C-alpha`
    - `Relay deploy: yes (apps/relay/package.json: <previous-relay-version> → <new-version>)` **or** `Relay deploy: no (no apps/relay/ diff since v<previous-version>)`
    - `CLI npm: yes (@super-one/cli@A.B.C-alpha, dist-tag alpha)` — default for every release (required for SSH registry install). Only note skip if the user explicitly asks for a desktop-only release.
-   - `Harness R2: yes (channel=<alpha|beta|stable>, pins/script changed since v<previous>)` **or** `Harness R2: no (no managed pin / pack-script diff since v<previous>)` — when yes, note that Claude/Codex tarball mirrors + `harness/manifest/<channel>.json` will be rewritten on R2 (~1.2 GB pack, ~1–3 min CI).
+   - `Harness R2: yes (channel=<alpha|stable>, pins/script changed since v<previous>)` **or** `Harness R2: no (no managed pin / pack-script diff since v<previous>)` — when yes, note that Claude/Codex tarball mirrors + `harness/manifest/<channel>.json` will be rewritten on R2 (~1.2 GB pack, ~1–3 min CI).
    - The full drafted CHANGELOG entry (as the literal block that will be inserted)
 9. Ask for one combined confirmation / edits, as a plain-language question at the end of the same
    message (e.g. "Proceed with this?"). Do not use a structured choice-card input tool for this step:
@@ -103,31 +115,35 @@ Derive the npm dist-tag from `<new-version>`:
 | Version pattern | `-f tag=` |
 |-----------------|-----------|
 | `*-alpha*` / `*-alpha.*` | `alpha` |
-| `*-beta*` / `*-beta.*` | `beta` |
 | otherwise (stable) | `latest` |
 
-Map harness manifest channel from the **release channel** (not from the npm dist-tag name `latest`):
+The harness manifest channel is the variant id (not the npm dist-tag name `latest`):
 
-| Release arg / version | `-f channel=` for `publish-harness` |
-|-----------------------|-------------------------------------|
-| `alpha` / `*-alpha*`  | `alpha` |
-| `beta` / `*-beta*`    | `beta` |
-| `public` / no pre     | `stable` |
+| Variant | `-f channel=` for `publish-harness` |
+|---------|-------------------------------------|
+| `alpha`  | `alpha` |
+| `stable` | `stable` |
 
 ```bash
-gh workflow run build-mac.yml    --ref main
-gh workflow run build-win.yml    --ref main
-gh workflow run build-linux.yml  --ref main
+# `variant` is required — the builder config has no default on purpose, since a
+# silent default ships a build under the wrong identity. Pass `version` only
+# when packaging a commit under a different version (see "Cutting a stable
+# release"); leave it blank otherwise.
+for wf in build-mac build-win build-linux; do
+  gh workflow run "$wf.yml" --ref main \
+    -f variant=<alpha|stable> \
+    -f version=<blank or the override>
+done
 
 # Lockstep CLI (default — skip only if Step 1 said desktop-only):
 gh workflow run publish-cli.yml --ref main \
   -f version=<new-version> \
-  -f tag=<alpha|beta|latest> \
+  -f tag=<alpha|latest> \
   -f dry_run=false
 
 # Only if Step 1 said harness R2 publish:
 gh workflow run publish-harness.yml --ref main \
-  -f channel=<alpha|beta|stable> \
+  -f channel=<alpha|stable> \
   -f dry_run=false
 
 # Only if Step 1 said relay deploys this release:
@@ -161,7 +177,7 @@ Poll `gh run view <id> --json status,conclusion` for each dispatched run. Typica
 ```bash
 npm view @super-one/cli@<new-version> version
 npm view @super-one/cli dist-tags --json
-# expect version listed and dist-tags.<alpha|beta|latest> == <new-version> for this channel
+# expect version listed and dist-tags.<alpha|latest> == <new-version> for this variant
 ```
 
 **Harness verification** (once `publish-harness` is green — only if dispatched):
@@ -188,6 +204,7 @@ Once all three builds are green, collect the run IDs and fire promote:
 ```bash
 gh workflow run promote.yml --ref main \
   -f release_tag=v<new-version> \
+  -f variant=<alpha|stable> \
   -f target_sha=$(git rev-parse origin/main) \
   -f mac_run_id=<mac-run-id> \
   -f win_run_id=<win-run-id> \
@@ -203,12 +220,12 @@ Promote is **archive-only**. It downloads each platform's artifact, uploads them
 ### Step 6: Monitor promote + verify draft + verify R2 binaries
 
 1. Poll `gh run view <promote-run-id>` until complete.
-2. **GitHub Release assertion**: `gh release view v<new-version> --json isDraft,isPrerelease,assets -q '.isDraft, .isPrerelease, (.assets | length), (.assets[].name)'` — expect `isDraft=true`, `isPrerelease=true` (alpha/beta/rc), and the channel-prefixed yml files in the asset list (the GitHub Release keeps the **flat** ymls — both for bridge-mode legacy clients and as the manifest source for set-latest). Channel is derived from the new version: `<channel>-mac.yml` / `<channel>.yml` / `<channel>-linux.yml` where channel is `alpha` / `beta` / `rc` / `latest`. Full mac+win+linux is typically ~14 assets: 4 dmg/zip + 4 blockmap + 1 exe + 1 exe blockmap + 1 AppImage + 3 channel yml.
-3. **R2 binaries assertion**: confirm the binaries landed under `v<version>/` (HEAD, don't download the body):
+2. **GitHub Release assertion**: `gh release view v<new-version> --json isDraft,isPrerelease,assets -q '.isDraft, .isPrerelease, (.assets | length), (.assets[].name)'` — expect `isDraft=true`, `isPrerelease=true` for an alpha release, and the update ymls in the asset list (the GitHub Release keeps the **flat** ymls — both for bridge-mode legacy clients and as the manifest source for set-latest). Both variants emit `latest-mac.yml` / `latest.yml` / `latest-linux.yml`, since the variant lives in the R2 prefix, not the file name. Full mac+win+linux is typically ~14 assets: 4 dmg/zip + 4 blockmap + 1 exe + 1 exe blockmap + 1 AppImage + 3 yml.
+3. **R2 binaries assertion**: confirm the binaries landed under `<variant>/v<version>/` (HEAD, don't download the body):
    ```bash
-   curl -sI "https://dl.super-one.dev/v<new-version>/SuperOne-<new-version>.dmg" | head -1   # expect HTTP/.. 200
+   curl -sI "https://dl.super-one.dev/<variant>/v<new-version>/SuperOne-<new-version>.dmg" | head -1   # expect HTTP/.. 200
    ```
-   **Do NOT** expect `<channel>-mac.yml` at the R2 root to reflect this version yet — promote no longer writes it; that happens in Step 8 (set-latest).
+   The stable variant's installers are named `SuperOne-…`, alpha's `SuperOne Alpha-…` (productName differs per variant). **Do NOT** expect `<variant>/latest-mac.yml` to reflect this version yet — promote no longer writes it; that happens in Step 8 (set-latest).
 4. If both assertions pass, proceed to publish without prompting. If they fail, stop and surface the mismatch.
 
 ### Step 7: Publish
@@ -220,33 +237,33 @@ NOTES=$(awk '/^## \[<new-version>\]/{flag=1;next} /^## \[/{flag=0} flag' CHANGEL
 gh release edit v<new-version> --draft=false --prerelease --notes "$NOTES"
 ```
 
-**Alpha/beta/rc tags MUST use `--prerelease`** at publish time. With R2 + GenericProvider, this flag no longer affects auto-update (channel is determined by the yml filename on R2, which electron-builder derives from the version string), but it still controls GitHub Release UI classification and keeps the GitHub Releases list consistent with the bundled CHANGELOG. promote.yml already auto-derives the same flag for the draft creation step, so this is the only manual moment where you confirm it.
+**Alpha tags MUST use `--prerelease`** at publish time. With R2 + GenericProvider this flag does not affect auto-update (each variant reads its own prefix), but it controls GitHub Release UI classification and keeps the GitHub Releases list consistent with the bundled CHANGELOG. promote.yml auto-derives the same flag from the version for the draft creation step, so this is the only manual moment where you confirm it.
 
-For `public` (future, version like `1.0.0` without semver prerelease suffix): omit `--prerelease`.
+For a stable release (version like `1.0.0`, no prerelease suffix): omit `--prerelease`.
 
 Publishing materializes the tag on `target_commitish` (the SHA supplied to promote). Run `git fetch origin --tags` afterwards so the local repo has the new tag.
 
-### Step 8: Set channel latest + fixed download links (set-latest)
+### Step 8: Set variant latest + fixed download links (set-latest)
 
-After publish, run `set-latest.yml` to establish this version as the channel's latest **with cascade** and to (re)generate the permanent `{channel}/latest/` download links. This is also the **rollback** tool.
+After publish, run `set-latest.yml` to establish this version as the variant's latest and to (re)generate the permanent `{variant}/latest/` download links. This is also the **rollback** tool.
 
 ```bash
 gh workflow run set-latest.yml --ref main \
   -f release_tag=v<new-version> \
-  -f channel=<alpha|beta|stable>
+  -f variant=<alpha|stable>
 ```
 
-- `channel` is the **user-facing** channel name (`stable` maps to the `latest-*.yml` track on R2). Cascade is automatic — `stable` updates `latest`+`beta`+`alpha`, `beta` updates `beta`+`alpha`, `alpha` only `alpha`. A semver guard skips any channel whose live version is already newer (so an older stable never downgrades alpha users).
+- `variant` is the app being published. **Nothing cascades**: each variant has its own `<variant>/latest-*.yml` and its own installers, and an installer from the other variant carries a different `appId`. A semver guard skips the variant if its live version is already newer.
 - Manifest source is the version's **GitHub Release** (`gh release download <tag>`), so the release must exist (it does — promote created it). If the version's binaries are **not** on R2 under `v<version>/` (e.g. rolling back to an old or pruned version — R2 is not guaranteed to retain every version forever), set-latest **backfills** them from the GitHub Release to R2 before re-pointing the channel. So rollback works for any historical version that still has a GitHub Release, even if R2 dropped its binaries.
 - Monitor: `gh run view <id> --json status,conclusion`. Then verify the fixed links resolve — use **HEAD**, never download the full body:
   ```bash
-  curl -sI https://dl.super-one.dev/<channel>/latest/SuperOne.dmg | head -1   # expect HTTP/.. 200
+  curl -sI https://dl.super-one.dev/<variant>/latest/SuperOne.dmg | head -1   # expect HTTP/.. 200
   ```
   (Windows installer name contains a space → URL-encode: `SuperOne%20Setup.exe`.)
 - **Rollback**: to re-point a channel at an older version, override the semver guard with `force=true`:
   ```bash
   gh workflow run set-latest.yml --ref main \
-    -f release_tag=v<older-version> -f channel=alpha -f force=true
+    -f release_tag=v<older-version> -f variant=alpha -f force=true
   ```
 
 ### Step 9: Report
@@ -258,11 +275,38 @@ Show the user:
 3. **CLI npm status**: `@super-one/cli@<new-version>` published (or skipped), dist-tag used, and `npm view` confirmation. Mention that desktop remote install pins this exact version (`npm i -g @super-one/cli@<new-version>` / registry path over SSH).
 4. **Harness R2 status**: published (channel + run URL + `https://dl.super-one.dev/harness/manifest/<channel>.json`) **or** skipped (no pin/script diff). Remind that desktop install is R2-primary / npm-fallback either way.
 
+## Cutting a stable release
+
+A stable release is **not** a bump of the alpha line. It is the same tree that
+has been running as alpha, packaged under the stable identity:
+
+1. Pick the alpha commit that has proven itself in the field. Use its SHA as
+   `ref` for the builds — do **not** create a bump commit, or the stable binary
+   is "the validated tree plus a commit nobody ran".
+2. Dispatch the three builds with `-f variant=stable` and `-f version=<X.Y.Z>`
+   (no prerelease suffix). `SUPERONE_VERSION` overrides the packaging version,
+   which electron-builder merges into the metadata before `AppInfo` is built, so
+   it drives artifact filenames, `app.getVersion()` and the update manifest. The
+   config asserts the override has no prerelease tag for `stable`, so a mistake
+   fails the build instead of shipping a mislabelled app.
+3. `publish-cli` for the same version with dist-tag `latest`, then promote and
+   set-latest with `-f variant=stable`.
+
+The alpha line keeps moving independently; nothing about the stable cut changes
+`package.json`, so the next alpha release continues from where it was.
+
+**One compile, two packaging passes** only holds within a single CI run. When a
+stable release is cut days after the alpha, `out/` is long gone, so the build
+workflow checks out the target SHA and compiles again. Same source, deterministic
+result — but budget a full build, not just a packaging pass.
+
 ## Recovery Patterns
 
 | Failure | Action |
 |---|---|
-| Build workflow fails on one platform | Fix on main, re-trigger that platform only, reuse the other two platforms' existing run IDs in promote |
+| Build workflow fails on one platform | Fix on main, re-trigger that platform only (same `variant` / `version`), reuse the other two platforms' existing run IDs in promote |
+| Build fails immediately with `SUPERONE_VARIANT is required` | The dispatch omitted `-f variant=`. There is no default by design — a silent one ships a build under the wrong identity |
+| Build fails with `does not match variant` | The version's prerelease tag disagrees with the variant (`stable` needs no prerelease, `alpha` needs `-alpha`). Either the wrong variant was dispatched, or a stable cut needs `-f version=` (see **Cutting a stable release**) |
 | `publish-cli.yml` fails tests / pack / smoke | Fix on main, re-trigger `publish-cli.yml` with the **same** `-f version=<new-version>`. Desktop promote can continue in parallel — remote registry install for this version stays broken until CLI is green |
 | `publish-cli.yml` fails with `ENEEDAUTH` / blank auth | Prefer npm Trusted Publishing: package `@super-one/cli` on npmjs.com must list this GitHub repo + workflow filename `publish-cli.yml`, and the job must keep `permissions.id-token: write`. Do **not** export an empty `NPM_TOKEN` (blank `_authToken` in `.npmrc` breaks OIDC). Optional: set a real Automation `NPM_TOKEN` secret |
 | `publish-cli.yml` fails with `E404` after provenance signed | Usually outdated npm CLI on the runner (need ≥11.5.1). Workflow must run `npm install -g npm@^11.5.1` before publish; restore that step if removed. Also confirm Trusted Publisher config matches repo/workflow name exactly |
@@ -275,23 +319,23 @@ Show the user:
 | Promote workflow fails mid-upload (GitHub side) | Re-trigger promote with the same tag — `--clobber` replaces any partial assets |
 | Promote workflow fails on R2 sync step | The GitHub Release upload happens before the R2 sync step in promote.yml, so the GitHub side can be intact while R2 is empty. Re-trigger promote with the same tag — `aws s3 sync` is idempotent (same key = update); the GitHub upload step uses `--clobber` |
 | Promote fails with `getaddrinfo ENOTFOUND sts.<region>.amazonaws.com` | Do **NOT** use `aws-actions/configure-aws-credentials@v4` for R2 — its default STS credential validation tries to call AWS STS, which doesn't apply to Cloudflare R2 (region `auto` produces `sts.auto.amazonaws.com` NXDOMAIN). promote.yml injects R2 creds as `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_DEFAULT_REGION` env vars directly on the sync step, no action wrapper. If you see this error, someone re-introduced the action — remove it |
-| R2 channel yml has stale paths (no `v${VERSION}/` prefix) | The prefix is applied by `prefixVersionPaths` (`scripts/lib/channels.ts`) inside **set-latest**, not promote — promote no longer touches root ymls. If the live `<channel>-mac.yml` lacks the `v<version>/` prefix, re-run `set-latest` for that tag/channel |
+| R2 pointer yml has stale paths (no `v${VERSION}/` prefix) | The prefix is applied by `prefixVersionPaths` (`scripts/lib/channels.ts`) inside **set-latest**, not promote. If the live `<variant>/latest-mac.yml` lacks the `v<version>/` prefix, re-run `set-latest` for that tag/variant |
 | Draft release has wrong tag or SHA | `gh release delete v<new-version> --cleanup-tag --yes`, then re-run promote |
 | `set-latest` fails with `GetObjectTagging not implemented` | Cloudflare R2 does not implement object tagging, which `aws s3 cp` calls during an s3→s3 server-side copy. The fixed-link copy step passes `--copy-props none` to skip tag/metadata propagation. If you hit this, someone removed that flag — restore it. (The earlier `aws s3 cp out/ --recursive` for the ymls is a local→s3 upload and is unaffected) |
-| `set-latest` staged nothing (semver guard held) | The target version is older than the channel's live version, so the guard skipped it (workflow logs `hold <yml>: live X is newer`). Intended — to **roll back** to that older version, re-run with `force=true` |
-| Already published and later found broken | Either ship a new patch version, or **roll the channel back** with `set-latest force=true` pointed at the last-good tag (re-points the channel yml + fixed links to the good version without rewriting history). Broken **CLI** on npm cannot be un-published in place — ship a new lockstep patch and republish `@super-one/cli` |
+| `set-latest` staged nothing (semver guard held) | The target version is older than the variant's live version, so the guard skipped it (workflow logs `hold <variant>/<yml>: live X is newer`). Intended — to **roll back** to that older version, re-run with `force=true` |
+| Already published and later found broken | Either ship a new patch version, or **roll the variant back** with `set-latest force=true` pointed at the last-good tag (re-points that variant's yml + fixed links to the good version without rewriting history). Broken **CLI** on npm cannot be un-published in place — ship a new lockstep patch and republish `@super-one/cli` |
 
 ## Invariants
 
 - Local git never creates or force-pushes tags for releases. GitHub owns tag creation at publish time.
 - `CHANGELOG.md` entries describe only **verified** behavior — no "may fix" or speculative claims.
-- Alpha/beta/rc releases are always marked `isPrerelease=true` in GitHub for UI classification consistency. (R2 + GenericProvider auto-update no longer depends on this flag — it's driven by the channel-suffixed yml filename.)
+- Alpha releases are always marked `isPrerelease=true` in GitHub for UI classification consistency. (R2 + GenericProvider auto-update does not depend on this flag — it is driven by the variant prefix the build points at.)
 - `bun.lock` is never modified by the release flow.
-- **Dual-publish is permanent**: `promote.yml` always uploads to both GitHub Release (flat layout) and R2 (`v${VERSION}/` subdirectory). GitHub Release is the legacy path for clients built before the R2 switch, R2 is the source of truth for current/future clients. **Never** delete the GitHub Release upload step.
-- **`set-latest` is decoupled from `promote`** and is never auto-invoked by it — running set-latest is a separate, explicit step. promote archives the build; set-latest makes a version a channel's latest (cascade) + refreshes the fixed `{channel}/latest/` download links + is the rollback path (`force=true`). Channel logic (cascade, semver compare, path prefix, version-less naming) lives in `scripts/lib/channels.ts` — **CI-only, kept out of the app bundle**; `@superone/shared/update-channels` exposes only the app-facing surface (`UPDATE_CHANNELS` / `UPDATE_CHANNEL_TO_YML` / `channelFromVersion`). set-latest reads each version's manifest from its **GitHub Release**, and **backfills the binaries to R2 from that Release if `v<version>/` is missing** (R2 is not guaranteed to keep every version), so it works for any historical version without a rebuild.
+- **Dual-publish is permanent**: `promote.yml` always uploads to both GitHub Release (flat layout) and R2 (`<variant>/v${VERSION}/` subdirectory). GitHub Release is the legacy path for clients built before the R2 switch, R2 is the source of truth for current/future clients. **Never** delete the GitHub Release upload step.
+- **`set-latest` is decoupled from `promote`** and is never auto-invoked by it — running set-latest is a separate, explicit step. promote archives the build; set-latest makes a version a variant's latest + refreshes the fixed `{variant}/latest/` download links + is the rollback path (`force=true`). Manifest logic (semver compare, path prefix, version-less naming) lives in `scripts/lib/channels.ts` — **CI-only, kept out of the app bundle**; `@superone/shared/update-channels` exposes only `channelFromVersion`, which exists for `@super-one/cli` (no variant of its own) and is never called by the desktop app. set-latest reads each version's manifest from its **GitHub Release**, and **backfills the binaries to R2 from that Release if `v<version>/` is missing** (R2 is not guaranteed to keep every version), so it works for any historical version without a rebuild.
 - **Never rotate `UPDATER_TOKEN`** the GitHub PAT secret. Legacy alpha clients embed it in their ASAR for `PrivateGitHubProvider` auth; rotating the token bricks their auto-update path. The secret is no longer consumed by any build workflow but **must** remain valid in GitHub Secrets indefinitely.
 - **Relay deploys go through `deploy-relay.yml`, never local terminal.** The `CLOUDFLARE_API_TOKEN` lives only in GitHub repo secrets. Local `bun run deploy:relay` will fail in non-interactive shells, and skill permissions deliberately block credential discovery from shell rc files. Always dispatch the workflow.
 - **Relay deploy is conditional on actual diff.** Only dispatch `deploy-relay.yml` when `git diff v<previous>..HEAD -- apps/relay/` is non-empty. No-op deploys just clutter Cloudflare's Version History with duplicate Version IDs and obscure the real protocol-changing deploys you'd want to roll back to.
 - **`apps/relay/package.json` version skips intermediate releases.** It is bumped only on releases where relay actually deploys, and it jumps straight to the current release version. So the relay version may go `0.29.1-alpha → 0.35.0-alpha` if the six intermediate releases between them had no `apps/relay/` diff. This is what keeps `apps/relay/package.json` truthful: its version always matches the version actually running on Cloudflare for this commit lineage. **Never** lockstep-bump it just because the root or desktop version moved.
 - **`@super-one/cli` locksteps with root/desktop version.** Every release dispatches `publish-cli.yml` with `-f version=<new-version>` (same string as `package.json` / app). Never publish pre-releases with npm dist-tag `latest`. Never install bare `@latest` / `@alpha` from desktop remote install — always pin the exact version. Workspace package `@superone/cli` stays private `0.0.0`; public package name is `@super-one/cli` produced by `apps/cli/scripts/pack-npm.ts`.
-- **Harness R2 mirrors do not lockstep with every app version.** Dispatch `publish-harness.yml` only when `OFFICIAL_CLAUDE_SDK_VERSION` / `OFFICIAL_CODEX_NPM_VERSION` (or the pack/CDN script/workflow) changed since the previous tag — or when the user explicitly forces a refresh. Pins are read from source constants inside the workflow; **never** pass free-form package versions as workflow inputs (channel + dry_run only). Artifact keys are content-addressed by npm name + version (`harness/artifacts/...`), so re-publish of the same pin is idempotent. Channel manifests live at `harness/manifest/<alpha|beta|stable>.json` and are independent of app auto-update ymls (`alpha-mac.yml` etc.). Desktop install is **R2 primary, npm registry fallback**, one SHA-256 for both. Promote / set-latest **never** write under `harness/`.
+- **Harness R2 mirrors do not lockstep with every app version.** Dispatch `publish-harness.yml` only when `OFFICIAL_CLAUDE_SDK_VERSION` / `OFFICIAL_CODEX_NPM_VERSION` (or the pack/CDN script/workflow) changed since the previous tag — or when the user explicitly forces a refresh. Pins are read from source constants inside the workflow; **never** pass free-form package versions as workflow inputs (channel + dry_run only). Artifact keys are content-addressed by npm name + version (`harness/artifacts/...`), so re-publish of the same pin is idempotent. Channel manifests live at `harness/manifest/<alpha|stable>.json` and are independent of app auto-update ymls (`<variant>/latest-mac.yml`). Desktop install is **R2 primary, npm registry fallback**, one SHA-256 for both. Promote / set-latest **never** write under `harness/`.

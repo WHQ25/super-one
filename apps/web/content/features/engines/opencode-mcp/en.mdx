@@ -1,0 +1,19 @@
+## What it does
+
+Attach an MCP server that requires an OAuth browser round trip, without leaving the app to complete it.
+
+## How it works
+
+- The consent page opens in SuperOne's embedded browser rather than your system browser, so the redirect comes back to a window the app owns.
+- The token is captured at the redirect and written to SuperOne's credential store, next to your provider keys.
+- The server is then attached to the OpenCode session like any other MCP server; from the model's side there is nothing special about it.
+
+## Why this is worth building
+
+An OAuth MCP server is normally awkward in a desktop agent: the flow wants a browser, the browser wants a redirect target, and the redirect target has to be something that can hand the token back. Owning the browser closes that loop. It is the same embedded browser the agent itself drives — the capability exists for other reasons, and the OAuth flow gets it for free.
+
+## FAQ
+
+**Does the token get shared with other harnesses?** The credential store is shared, so a server you authorised once is available wherever it is attached.
+
+**What if the server's token expires?** Re-running the attach flow re-opens consent and replaces the stored token.

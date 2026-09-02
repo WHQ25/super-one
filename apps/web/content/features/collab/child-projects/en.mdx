@@ -1,0 +1,15 @@
+## What it does
+
+When a collaborator's working directory has never been opened in SuperOne, it is registered as a project of its own rather than living inside the parent session.
+
+## Why
+
+Work that only exists inside another session's transcript is work you cannot find later. You would have to remember which parent spawned it, open that session, and scroll. Registering the directory as a project puts the collaborator's sessions in the sidebar where every other project's sessions are, so it is reachable by the same path as everything else.
+
+## How it works
+
+The directory is registered on launch, and the collaborator's sessions are scoped to it. If the directory is already a known project, it is used as-is — nothing is duplicated.
+
+## FAQ
+
+**Does this clutter my project list?** Only directories that were genuinely new appear. A collaborator working in a project you already have open does not create a second entry.

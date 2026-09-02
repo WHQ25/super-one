@@ -1,0 +1,19 @@
+## What it does
+
+Run a shell command inside an OpenCode session, and share or unshare that session as a public link.
+
+## Shell mode
+
+A message starting with `!` is a shell command, not a prompt. It runs through OpenCode's own shell path with the session's model and agent, and its output lands in the transcript where the model can read it on the next turn. Attachments are rejected on a shell message — an image has no meaning as a command, and silently dropping it would be worse than refusing.
+
+## Sharing
+
+`/share` publishes the session and returns a link; `/unshare` removes public access again. The reply says plainly that the link is public, because a share link that reads as private is the kind of mistake you only make once.
+
+## Why route it through the session
+
+A shell command typed into the session is not the same as one typed into a terminal beside it: the output becomes part of the conversation, so the next turn already knows what happened. That is the whole point of `!` living here rather than in a separate pane.
+
+## FAQ
+
+**Does `!` respect the session's permission mode?** It runs through OpenCode's own execution path, under whatever that path enforces.

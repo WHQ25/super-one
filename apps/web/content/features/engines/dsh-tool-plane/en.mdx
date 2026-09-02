@@ -1,0 +1,18 @@
+## What it does
+
+DeepSeek Agent mounts its own file, search, shell and todo tools per session, and SuperOne's MCP surface is bridged in alongside them rather than replacing them.
+
+## How it works
+
+- The native tools run under a sandbox provider: the filesystem and the bash executor are both sandboxed, and the shell environment is composed rather than inherited wholesale.
+- SuperOne's own tools — browser, media generation, widgets, mini-apps, settings — are registered **natively** on the agent scope, so they appear as ordinary dsh tool rows instead of arriving through a separate transport.
+- A mutating call parks and raises a permission request carrying the tool name, the parsed arguments and the call id. Approving releases the parked call; anything else denies it with a reason the model can read and act on.
+- The request also carries the dsh session that made the call. For a delegated child that is the child's own session, while the prompt is answered by the SuperOne session that owns its ancestry — so a nested agent's approval still lands in front of you.
+
+## Why "bridged in alongside"
+
+The alternative — proxying dsh's tools through SuperOne's MCP server — would have made every native call take a round trip it did not need, and would have made the two tool families render differently. Registering on the agent scope means one tool plane, one permission path, one row style.
+
+## FAQ
+
+**Can it run without SuperOne's tools?** Yes. Omit them and the session runs with dsh's file and shell tools only.

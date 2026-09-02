@@ -1,0 +1,18 @@
+## What it does
+
+Cursor Agent runs on Cursor's own SDK, and the model parameters that SDK exposes are surfaced in full rather than reduced to a single dropdown.
+
+## How it works
+
+- The model list is read from your Cursor account, so it tracks what Cursor actually offers you instead of a table baked into a release.
+- Each parameter is declared as data on the harness rather than branched at the call site, which is why the selector looks the same here as it does on Claude or Codex.
+- An enable list decides which parameters a given harness is allowed to send, so a knob Cursor supports and another engine does not simply stops rendering on the other engine.
+- The choice is per session and survives restart, alongside the permission mode and the cwd.
+
+## Why it is a list and not a table
+
+Every engine in SuperOne reads its catalog from the account, not from the app. That is what lets a model shipped by a vendor on a Tuesday appear in the picker without an app update, and it is also why the picker occasionally shows a model you have not enabled — the catalog is the vendor's answer, not ours.
+
+## FAQ
+
+**Does Cursor Agent need the Cursor editor installed?** No. It talks to the SDK directly; the editor is not in the path.

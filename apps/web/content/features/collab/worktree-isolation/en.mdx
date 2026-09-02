@@ -1,0 +1,17 @@
+## What it does
+
+A collaborator can be given its own git worktree, so its edits land in a separate checkout instead of on top of yours.
+
+## Why it matters for collaboration specifically
+
+Two agents editing the same working tree is not a merge problem, it is a race: one writes a file the other is halfway through reading, and both produce work built on a state that never existed. A worktree gives the collaborator a checkout of its own — same repository and history, separate files on disk — so parallel work is parallel rather than interleaved.
+
+## How it works
+
+- The collaborator runs with the worktree as its working directory.
+- Local uncommitted changes can optionally be carried into the fork, for when the task depends on work you have not committed yet.
+- The worktree is a normal git worktree, so you inspect, diff and merge it with the tools you already use.
+
+## FAQ
+
+**Is it required?** No. Isolation is optional — a read-only or advisory collaborator does not need it.

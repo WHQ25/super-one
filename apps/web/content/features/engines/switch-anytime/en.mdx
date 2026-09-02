@@ -1,0 +1,23 @@
+## What it does
+
+Change a session's engine while it is running, without starting over somewhere else.
+
+## What carries over and what does not
+
+The working directory, the project and the file context carry over. Conversation memory does not — each harness owns its own transcript format, and pretending otherwise would produce a history the new engine cannot faithfully replay.
+
+That constraint is why handoff exists alongside the switch: it writes a durable Markdown brief so the plan and the constraints travel even though the raw conversation cannot.
+
+## Why you would
+
+- The remaining work suits a different engine — long reasoning on one, fast focused edits on another.
+- The current engine lacks a capability the task now needs.
+- One account hit a rate limit and the work should continue rather than wait.
+
+## What stays independent
+
+Memory, slash commands and tool permissions are per harness, so switching does not carry one engine's instructions into another where they may not apply.
+
+## FAQ
+
+**Does the whole project switch?** No. The engine is a property of the session, so other sessions in the same project keep theirs.

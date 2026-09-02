@@ -1,0 +1,14 @@
+## What it does
+
+Claude's own slash commands appear in the same `/` menu as everything else, together with the commands your installed skills provide.
+
+## How it works
+
+- Built-in commands, project commands and skill-provided commands are searched together, so you type what you want rather than remembering which source it came from.
+- Commands that only make sense in a terminal are hidden from the host menu instead of appearing and then failing when picked.
+- A command that produces a report keeps its output in the transcript, so the result is still readable after the turn ends.
+- Skills are managed per user or per project, so a project can carry its own commands without polluting every other project.
+
+## FAQ
+
+**Do my skills work on other engines too?** Skills are a Claude concept, but SuperOne's own host commands work everywhere, and other harnesses contribute their native commands to the same menu.

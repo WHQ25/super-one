@@ -1,0 +1,23 @@
+## What it does
+
+Run your own code at points in the agent's lifecycle — before a tool call, when a session starts, when the agent stops — and let that code influence what happens next.
+
+## The events
+
+- **`PreToolUse`** — fires before a tool runs, and can block it. This is how a subagent's tool allowlist is actually enforced, rather than being advisory.
+- **`PostToolUse`** — fires after, with the result in hand.
+- **`SessionStart`** — fires when a session begins. Note that the in-process SDK does not deliver this as a callback; SuperOne wires it through its own path.
+- **`Stop`** — fires when the agent finishes a turn, which is where a "did you run the tests" check belongs.
+- **`UserPromptSubmit`**, **`Notification`** and the others cover the remaining edges.
+
+## How output is treated
+
+A hook's output is fed back as user feedback, not as a system instruction. That is deliberate: a hook that could rewrite the system prompt would be a much larger security surface than a hook that can say "this call is denied, here is why."
+
+## Why hooks over prompt instructions
+
+A prompt asks; a hook enforces. "Never commit to main" in an instructions file is a request the model can talk itself out of on a long run. The same rule as a `PreToolUse` hook is a wall.
+
+## FAQ
+
+**Do hooks run for subagents too?** Yes — that is precisely the gating mechanism used for their tool access.

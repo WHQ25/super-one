@@ -1,0 +1,20 @@
+## What it does
+
+The relay is a Cloudflare Worker backed by Durable Objects. You can run it on your own Cloudflare account instead of using the hosted one.
+
+## How it works
+
+- One Durable Object per room holds the connection state and the event buffer for the devices attached to it. Durable Objects are the right shape here because a room needs a single consistent place to serialise events — the alternative is reconciling ordering across edge locations.
+- Buffered events are released on per-device ACK, so a device that goes offline gets its backlog rather than a gap.
+- Deployment is `wrangler deploy` against your account; the desktop then points at your Worker's URL.
+- The relay ships on its own semver tag, separate from the desktop app's release train, because the two do not have to move together.
+
+## Why this is worth offering
+
+The relay never sees plaintext, so self-hosting is not a security upgrade — it is an availability and jurisdiction choice. Some teams need the traffic to transit infrastructure they control, and that is a legitimate requirement even when the contents are already opaque. Being able to say "run your own, here is how" is cheaper than arguing about it.
+
+## FAQ
+
+**Does self-hosting weaken anything?** No; the encryption is unchanged. You are swapping who operates the router.
+
+**What does it cost?** Workers and Durable Objects pricing on your own account — the relay does very little compute per message.

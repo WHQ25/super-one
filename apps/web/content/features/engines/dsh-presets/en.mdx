@@ -1,0 +1,27 @@
+## What it does
+
+DeepSeek Agent's "modes" are agent presets: each one is a composition that decides which tools the model gets and what its prompt says. Alongside them sit runtime plugin install and a set of sandbox-backed permission presets.
+
+## Agent presets
+
+A preset is a directory holding one `agent.cordis.yml` — an agent-plane composition. The roster mounts each preset once per process under a standing scope, and a session joins by having its agent scope parented to that mount. Presets carry their own icons, so a session started under one is recognisable in the sidebar without reading its settings.
+
+Composition is the YAML's business, not SuperOne's. The app owns only the seam: the slice of the roster it drives, and the projection the UI reads.
+
+## Plugins
+
+Plugins install at runtime into the dsh tree, which is what makes a preset able to reference a tool the app did not ship. Because the runtime is embedded in-process rather than spawned, an installed plugin is available to the next session without restarting anything.
+
+## Permission presets
+
+dsh's permission vocabulary bundles the two knobs it actually enforces — the sandbox mode the shell and filesystem run under, and whether approval questions are asked at all:
+
+- **Read-only** — no writes anywhere; reads and searches run freely.
+- **Workspace write** — writes only inside this project and the temp directories, asking before each one.
+- **Danger full access** — no sandbox, no questions.
+
+dsh ships the latter two by default. Read-only was added because SuperOne offers a look-but-do-not-touch mode on every other harness and dsh's sandbox vocabulary already had the mode — only the preset row was missing.
+
+## FAQ
+
+**Are these the same as Claude's permission modes?** They map onto the shared vocabulary for display, but the names above are the mechanism dsh enforces.

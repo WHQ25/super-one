@@ -1,0 +1,19 @@
+## What it does
+
+Sora, Veo, Seedance and Ark sit behind one protocol table, so `media_generate_video` looks the same whichever of them is answering.
+
+## How it works
+
+- Each provider's submit / poll / fetch shape is declared as data in the table, not branched at the call site — adding a provider is a row, not a code path.
+- Video generation is long-running and asynchronous, so a job returns a handle and `media_video_status` reports on it. The session does not block waiting for a render.
+- **A run that costs money requires explicit confirmation first.** The agent does not get to decide on your behalf that a re-render is worth it.
+
+## Why the confirmation is not optional
+
+Video generation is the one tool on this surface where a retry loop has a real bill attached. Every other tool's failure mode is wasted time; this one's is wasted money, and a model that is uncertain will naturally try again. The confirmation is the place where "try again" stops being free, which is what keeps the uncertainty from compounding.
+
+## FAQ
+
+**Can I see cost before confirming?** The confirmation names the provider and model being used, which is what the price attaches to.
+
+**What happens if I close the app mid-render?** The job is the provider's; the handle is what reconnects to it.

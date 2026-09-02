@@ -1,0 +1,17 @@
+## What it does
+
+Fork copies a session at any past message and continues in a new one, leaving the original untouched.
+
+## Why fork instead of rewind
+
+Rewind moves a session back and discards what came after. Fork keeps both: the original stays as it was, and the copy continues from the chosen point. Use rewind when the later turns are simply wrong; use fork when they might be right and you want to try something else in parallel.
+
+## How it works
+
+- Pick any past message as the fork point. Everything up to it is carried over.
+- The fork is a full local session — its own title, its own status, its own place in the sidebar.
+- Both sessions run independently from that point on, including on different engines if you want to compare how two of them handle the same setup.
+
+## FAQ
+
+**Is forking supported on every engine?** The capability differs by harness and the app declares it as data rather than assuming — Claude forks via the SDK, Codex via a thread fork at a turn id, and the others through their own equivalents where they have one.

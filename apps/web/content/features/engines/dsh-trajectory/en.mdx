@@ -1,0 +1,19 @@
+## What it does
+
+A foldable panel that shows what a DeepSeek session actually did — turns, requests, steps, tool calls and their results — and stays readable after thousands of events.
+
+## The incremental fold
+
+The panel is built on a fold: one forward pass over the session log, held open so a live session can be folded event by event instead of from the start.
+
+dsh's log is seq-contiguous and its happy order is already causal (`turn/start` → `request/header` → `step/start` → chunks → `assistant/message` → `tool/call` → `tool/result` → `step/end` → `turn/end`), so the pass stays linear with a little open-bracket state. Nothing is inferred from wall-clock ordering — every association comes from an explicit id or an open bracket.
+
+Holding that state open is what makes the panel affordable. A streaming turn appends events continuously, and re-folding the whole log per poll would cost the entire history every time. The fold instead consumes only what is new, and reports what that changed — **including records it revised**, because a `tool/result` completes a call opened thousands of events earlier.
+
+## Why not just render the log
+
+A raw dsh log is a correct record and an unreadable one: a single turn can be hundreds of events, most of them chunks. The fold projects it into the unit you actually reason about — a call and its outcome, a step and what it produced — and keeps that projection cheap enough to update live.
+
+## FAQ
+
+**Does it cost anything on a session I am not looking at?** The fold advances with the log; the projection is what the panel reads.

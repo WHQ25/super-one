@@ -1,0 +1,20 @@
+## What it does
+
+Attach Model Context Protocol servers to a session and every engine that supports MCP can call them — the server is configured once, not once per harness.
+
+## How it works
+
+- Servers are configured in SuperOne and attached at session creation, so a server you add is available to a Claude session and a Codex session without being described twice.
+- Transport is whatever the server speaks: stdio for a local process, HTTP or SSE for a remote one, with OAuth handled in the embedded browser where the server requires it.
+- MCP support is declared per harness in `HARNESS_CAPABILITIES`. Where an engine cannot take user servers, the attach control does not appear for it rather than failing when used.
+- Tool results come back as an envelope, not plain text, so structured content, images and errors survive the trip into the transcript intact.
+
+## Where the host's own server fits
+
+SuperOne runs its own MCP server too — the browser, devices, media generation, widgets and mini-apps you see elsewhere in these docs are that server's tools. It is attached automatically; your servers sit alongside it.
+
+## FAQ
+
+**Do MCP tools go through the permission prompt?** Yes, on the same path as native tools, and they can be auto-allowed per tool.
+
+**Does a server restart per session?** A stdio server is a process; the lifecycle follows the sessions that attach it.

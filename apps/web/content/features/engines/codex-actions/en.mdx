@@ -1,0 +1,23 @@
+## What it does
+
+Codex's native loop is five actions — run, review, compact, steer and interrupt — and SuperOne exposes all five rather than reducing them to send-and-wait.
+
+## The five
+
+- **Run** starts a turn.
+- **Review** asks Codex to review work rather than produce it, which is a different mode rather than a differently worded prompt.
+- **Compact** summarizes the thread so it can keep going past its context limit.
+- **Steer** injects guidance into a turn that is already running — you correct course without stopping and restarting.
+- **Interrupt** stops the current turn.
+
+## Why steer and interrupt are different
+
+Interrupt discards what the turn was doing. Steer keeps it and redirects it. When an agent is heading the wrong way but has already done useful work, restarting throws away the useful part; steering does not. Queued messages can also be sent explicitly as steering rather than waiting to become the next turn.
+
+## Stopping the right thing
+
+Stop aborts the current turn while leaving background work alone, so interrupting a reply does not also kill a task that was deliberately running in the background.
+
+## FAQ
+
+**Do other engines have all five?** They differ, and the app declares the differences as data — the UI shows what the active engine actually supports.

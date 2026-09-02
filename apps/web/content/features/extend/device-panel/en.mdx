@@ -1,0 +1,19 @@
+## What it does
+
+iOS Simulators, Android emulators and physical Android devices all appear in one panel, and the agent reaches them the same way: it requests a device from the catalog and receives a control grant.
+
+## How it works
+
+- The catalog is tiered — booted devices first, then available ones, then what would need starting — so the agent asks for "an iPhone" and gets a sensible answer rather than a list it has to rank itself.
+- The grant is per **tab**, and each tab has its own identity. A session can therefore hold two devices at once: an iPhone and a Pixel, side by side, both under the same conversation.
+- Screenshot, tap, swipe, type and rotate are the same tool calls regardless of platform; the transport underneath differs (simctl and a private-framework bridge for iOS, scrcpy and adb for Android) and none of that reaches the call site.
+
+## What the timings force
+
+Android's UI dump takes about 2.5 seconds and screencap about 170ms. That difference is why the settle loop polls screenshots rather than dumps — a settle built on dumps would spend most of a gesture waiting. Rotation swaps width and height, so anything that cached the geometry has to invalidate it.
+
+On iOS, the accessibility tree is read through a private translator that needs three singletons configured; miss one and it returns nil silently rather than failing loudly.
+
+## FAQ
+
+**Does a physical device need anything installed?** Android needs USB or wireless debugging enabled; the app handles the rest.

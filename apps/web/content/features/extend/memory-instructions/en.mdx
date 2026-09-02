@@ -1,0 +1,22 @@
+## What it does
+
+Every engine reads a project instructions file from disk, and SuperOne treats that file as the project's brain rather than as one harness's private config.
+
+## Where each engine looks
+
+- **Claude** reads `CLAUDE.md`, merging a user-level file with the project's, and loads per-directory files additively when you work inside that directory.
+- **Codex** reads `AGENTS.md`.
+- **OpenCode** writes its own via `/init`.
+- The others follow their own conventions, which SuperOne surfaces rather than overrides.
+
+## Why per-directory files matter
+
+A monorepo's root instructions and its `apps/desktop` instructions are answering different questions — one is "how is this repo laid out", the other is "what will bite you in this subsystem". Keeping the root file lean and letting the subsystem file carry the detail is what makes both worth reading; a single 2000-line file gets skimmed by humans and diluted for models.
+
+## Memory
+
+Separately from the instructions file, an agent can keep a persistent memory: facts about you, guidance you have given, ongoing project constraints, pointers to external resources. Memory is for what the repo does not already record — code structure and git history are better read than remembered.
+
+## FAQ
+
+**Do the engines see each other's files?** No. Each reads its own convention; SuperOne does not cross-feed them.

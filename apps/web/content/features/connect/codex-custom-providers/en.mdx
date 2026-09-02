@@ -1,0 +1,20 @@
+## What it does
+
+Codex can be pointed at a provider that is not OpenAI, through its own `model_providers` configuration.
+
+## How it works
+
+- A provider entry names the base URL, the auth style and the wire protocol. Codex reads it from its config; SuperOne writes and manages that config rather than making you hand-edit it.
+- Endpoints that speak the **Responses API** work directly.
+- Endpoints that speak **Chat Completions** work through a translation layer. Codex is built around Responses, so the bridge from Chat Completions onto that shape had to be built rather than borrowed — a gateway you already run does not have to change on its side.
+- Once configured, the provider's models appear in the same per-session picker as everything else, with reasoning effort shown only where the model supports it.
+
+## Why this matters more than it sounds
+
+"Bring your own endpoint" is the difference between a harness you can use at work and one you cannot. Plenty of teams route all model traffic through a gateway for logging, cost attribution or policy reasons, and an agent that can only talk to the vendor directly is simply out of the running. Making the endpoint configurable is what puts Codex on the same footing as the others here.
+
+## FAQ
+
+**Do I edit TOML by hand?** No — the provider registry manages the configuration.
+
+**Does the effort control still appear?** Only where the model behind the provider actually supports reasoning.

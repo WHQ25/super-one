@@ -1,0 +1,17 @@
+## What it does
+
+Codex's own protocol supports forking a thread and rolling it back, and SuperOne drives both directly rather than emulating them.
+
+## Native, not simulated
+
+Rolling back by replaying a shortened transcript into a new thread is an approximation: the server-side state and the client's idea of it drift. Codex exposes the operation at the protocol level, truncatable at a turn id, so a rollback is the thread actually moving rather than a copy that resembles it.
+
+## How it works
+
+- **Fork** copies the thread at a chosen turn and continues in a new session, leaving the original intact.
+- **Rollback** takes the thread itself back N turns and continues from there.
+- Both are pinned to a protocol version, because the operation's shape has changed across Codex releases and a mismatch would fail in ways that look like data loss rather than a version problem.
+
+## FAQ
+
+**When would I roll back instead of forking?** Roll back when the later turns are simply wrong and you want them gone. Fork when they might be right and you want to try a second path in parallel.

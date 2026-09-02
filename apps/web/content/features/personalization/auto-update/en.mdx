@@ -1,0 +1,19 @@
+## What it does
+
+SuperOne updates itself from its own distribution, and you choose how early you want the updates.
+
+## Channels
+
+Alpha, beta and public. Alpha ships continuously and is where the features described across these pages land first; public moves when a release has settled. Switching channel changes which feed the updater watches.
+
+## How delivery works
+
+Artifacts are served from object storage rather than a release page, so downloads do not depend on a code host's rate limits or availability. Harness pins are pre-fetched into the same atomic update, so after an upgrade the app and the engines it drives are a matched set rather than a combination that has to be reconciled on first launch.
+
+## You decide when
+
+An available update is announced, but downloading it takes a click. Nothing large is pulled in the background while you are working, and nothing restarts without you.
+
+## FAQ
+
+**What happens to a running session during an update?** The update installs on restart, so sessions are not interrupted at download time.

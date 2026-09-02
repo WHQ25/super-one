@@ -1,0 +1,19 @@
+## What it does
+
+Codex runs under a permission preset that decides what it may do without asking, and a sandbox that decides what it can reach at all.
+
+## Two separate questions
+
+Permission is about approval: does this action need your confirmation. Sandbox is about capability: can this process write outside the workspace or reach the network in the first place. They are configured separately because the safe combinations are not the same for every task — a preset that approves edits automatically is reasonable inside a sandbox and reckless without one.
+
+## How it works
+
+- Presets range from asking about everything to running unattended, chosen per session.
+- The sandbox state is shown as a chip in the status bar for every harness, so you can see the mode you are in without opening settings.
+- Sandbox is a runtime fact rather than a stored preference: it reflects what the running session actually has, which matters when a session was resumed or inherited its configuration from elsewhere.
+
+## FAQ
+
+**Can I change it mid-session?** Yes, permission presets apply from the next turn.
+
+**Is the sandbox the same on every platform?** The mechanism differs by OS; what is uniform is that the state is reported rather than assumed.

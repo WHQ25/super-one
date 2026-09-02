@@ -1,0 +1,26 @@
+## 它做什么
+
+小程序的 WebView 是沙盒化的,画不出自己的边界之外。overlay API 让它请宿主替它画 —— tooltip、右键菜单与 popover 渲染在应用自己的外壳里,用应用自己的样式。
+
+## 这个面有什么
+
+`superone.ui` 给 WebView 提供:
+
+- **`showTooltip` / `hideTooltip`** —— 锚定到应用提供的一个矩形,可指定方位。
+- **`showContextMenu(position, items)`** —— 原生菜单;以被选项的 id 兑现,取消则为 `null`。
+- **`showPopover(options)`** —— 把应用自己的某个模板渲染在宿主拥有的 popover 里,锚定到一个矩形,并返回一个句柄。
+- **`startDrag(paths)`** —— 从 WebView 里发起原生文件拖拽。
+
+toast 不在这个面上:它挪到了 **Node 宿主**侧的 `context.host.toast`,而那正是「一个没人在看 WebView 时完成的后台任务」真正所在的地方。
+
+## Popover 里的 WebView
+
+popover 本身就是一个跑着同一个应用的 WebView。在它内部,`showPopover` 被**从 API 上删掉** —— popover 不能再开 popover —— 应用转而拿到 `superone.popover`:打开它时带的数据、回到父视图的 `postMessage`/`onMessage`,以及 `close()`。
+
+## 为什么由宿主来画
+
+一个能画到应用外壳上的沙盒 frame,不过是换了个名字的逃生口。把绘制交给宿主既保住了边界,又顺带让每个小程序的菜单看起来像应用的菜单,而不是像六个不同的网页。
+
+## 常见问题
+
+**popover 模板必须是应用自带的 HTML 吗?** 是的 —— 它指名自己的某个模板;宿主不在这里渲染任意标记。

@@ -1,0 +1,22 @@
+## What it does
+
+Mini-apps are developed inside SuperOne, by the agent, through four MCP tools — the app under development is registered live, so you edit and reload instead of packing and installing.
+
+## The four tools
+
+- **`miniapp_dev_setup`** — scaffold a new app. `vanilla` gives you a single `index.html` with no build step; `react` gives React + TypeScript + Tailwind and needs a build. Scope is `project` (visible only in that project, and `.s1-dev.json` is committable) or `user` (visible everywhere on this machine).
+- **`miniapp_dev_register`** — point the app at source that already exists. It reads `manifest.json` from the directory root or `dist/`, and can install a dev pointer immediately or just register.
+- **`miniapp_dev_pack`** — produce the `.s1app` when you are ready to distribute.
+- **`miniapp_dev_update_types`** — refresh `superone.d.ts` in an existing app so the host API's types match the version you are running against.
+
+## The two-runtime shape
+
+A mini-app is not one program. A trusted **Node host** owns computation and the agent tools; the **WebView** owns rendering. A feature that needs both — and most do — has to be wired on both sides, and the recurring mistake is wiring one and testing the other. When something works in dev and silently does nothing in the installed app, this is where to look first.
+
+## Why develop in-app
+
+The app being built is a set of tools the agent can call. Developing it anywhere else means the agent cannot exercise what it just wrote until an install cycle completes. Registering live collapses that loop: write, reload, call it.
+
+## FAQ
+
+**Does a project-scoped dev app get committed?** `.s1-dev.json` is committable by design, so a teammate who opens the project gets the same app.

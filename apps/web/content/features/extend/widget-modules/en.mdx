@@ -1,0 +1,22 @@
+## What it does
+
+`widget_show` ships six guideline modules the agent can load before authoring — each one a house style for a kind of visual, so the output looks deliberate instead of improvised.
+
+## The modules
+
+- **`diagram`** — architecture, flow and sequence drawings.
+- **`mockup`** — UI layouts and component comps.
+- **`interactive`** — explainers where the reader manipulates something.
+- **`chart`** — data visualisation.
+- **`art`** — illustration and decorative work.
+- **`native`** — UI that matches the host app's own components and tokens.
+
+## Why modules and not one big prompt
+
+A chart and an illustration want opposite advice. Folded into a single instruction block, the guidance for one dilutes the other, and the model averages them into something that is neither. Loading only the module that applies keeps each set of rules sharp — and keeps the tokens spent on guidance proportional to what is being drawn.
+
+`native` is the interesting one: it is what lets an agent-authored widget sit inside the app without looking like a foreign object, because it is written against the same tokens the app's own surfaces use.
+
+## FAQ
+
+**Can more than one module be loaded?** Yes — a chart inside a native-styled panel is a reasonable combination.

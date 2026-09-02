@@ -1,0 +1,17 @@
+## What it does
+
+A mini-app ships as a single `.s1app` file — a zip with a manifest and an integrity manifest. Drag it onto the app to install.
+
+## The format
+
+- The package is a zip containing the app's files, its `manifest.json`, and `integrity.json`: a map from each relative path to that file's SHA-256.
+- Install verifies every file against that map before the app is registered, so a truncated download or a tampered archive fails at install rather than at first run.
+- Installed apps live under `~/.superone/apps`. Install metadata and the set of pre-approved tool grants are stored beside the app, not inside its bundle — so re-installing a new version does not silently carry old approvals.
+
+## Why per-file hashes and not one archive hash
+
+An archive hash tells you the download was intact. A per-file map tells you *which* file is wrong, and keeps verifying after extraction — which matters because the app on disk is what actually runs, and it is the thing a later process could modify. The extra cost is a hash per file at pack time, paid once by the author.
+
+## FAQ
+
+**Can I install from a directory during development?** Yes — the dev workflow registers an app in place, without packing it first.

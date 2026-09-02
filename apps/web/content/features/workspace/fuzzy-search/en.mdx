@@ -1,0 +1,14 @@
+## What it does
+
+Search the project's files by fuzzy match, with results ranked and grouped by directory.
+
+## How it works
+
+- Open it from the file tree header and start typing; matches update as you go.
+- Ranking favours matches on the filename over matches deep in a path, so typing a name finds the file rather than every directory that happens to contain those letters.
+- Results are grouped by directory, which keeps several same-named files — `index.ts` in a dozen packages — distinguishable without reading full paths.
+- Arrow keys move through results, <kbd>↵</kbd> opens, <kbd>Esc</kbd> closes.
+
+## FAQ
+
+**Does it search file contents?** No — this is a path matcher. Content search is what you would ask the agent for, and it has grep and glob tools for exactly that.

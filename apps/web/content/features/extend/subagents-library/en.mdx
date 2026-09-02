@@ -1,0 +1,18 @@
+## What it does
+
+Define specialist subagents — each with its own prompt, tool allowlist and model — and hand them work from the main session.
+
+## How it works
+
+- A subagent is a Markdown file whose frontmatter declares its name, description, model and tools. The description is what the parent agent reads when choosing which specialist fits a task.
+- Running subagents render as nested Task blocks: the child's steps appear under the call that started it, rebuilt by `parentToolUseId`, so a tree several levels deep still reads as a tree.
+- Tool access is gated with a `PreToolUse` hook rather than by trusting the frontmatter alone — the allowlist is enforced at call time.
+- A subagent does not inherit the main session's appended system prompt. Its prompt is its own, which is the point: a reviewer that inherited "just ship it" would not be a reviewer.
+
+## When it is worth it
+
+Fan out when the answer requires reading across many files and you only want the conclusion, not the file dumps — and when several pieces of work are genuinely independent. A single lookup in a file you have already located is faster done directly than delegated.
+
+## FAQ
+
+**Can a subagent spawn its own subagents?** Nesting is supported and rendered recursively.

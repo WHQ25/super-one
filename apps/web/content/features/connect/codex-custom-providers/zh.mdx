@@ -1,0 +1,20 @@
+## 它做什么
+
+Codex 可以通过它自己的 `model_providers` 配置,指向非 OpenAI 的 provider。
+
+## 怎么工作
+
+- 一条 provider 记录写明 base URL、认证方式与 wire 协议。Codex 从它的配置里读;而这份配置由 SuperOne 写入并管理,不需要你手工去编辑。
+- 讲 **Responses API** 的端点直接可用。
+- 讲 **Chat Completions** 的端点经由一层翻译工作。Codex 是围绕 Responses 建的,于是从 Chat Completions 到那个形状的桥必须自己造,借不到 —— 而你已经在跑的网关那一侧不必改动。
+- 配好之后,该 provider 的模型出现在与其他一切相同的按会话选择器里,推理 effort 只在模型支持时显示。
+
+## 为什么这件事比听上去更重要
+
+「自带端点」是「一个你在公司能用的 harness」与「不能用的 harness」之间的分界。相当多团队出于日志、成本归属或合规的理由,把所有模型流量都过一层网关,而一个只能直连厂商的 agent 直接出局。把端点做成可配置的,才让 Codex 在这里与其他各家站在同一起跑线上。
+
+## 常见问题
+
+**要手工编辑 TOML 吗?** 不用 —— provider 注册表管理这份配置。
+
+**effort 控件还会出现吗?** 只在 provider 背后的模型确实支持推理时才出现。

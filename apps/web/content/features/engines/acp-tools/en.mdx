@@ -1,0 +1,20 @@
+## What it does
+
+An ACP agent's tool calls render into the same chat UI every other harness uses — a read is a read, an edit shows a diff, a search shows its query.
+
+## How it works
+
+ACP describes a tool call with a `kind` (`read`, `edit`, `execute`, `search`, `fetch`, `delete`, `think`) plus raw arguments whose shape is up to the agent. Normalisation takes both:
+
+- When the agent supplies a meaningful `kind`, that is trusted and the row is rendered accordingly.
+- The raw arguments are then probed for the field the row actually needs — a path, a pattern, a query, a URL — across the several names different agents use for the same thing.
+- A `search` with a query and no URL is a web search; the same shape with a URL is a fetch. The disambiguation is done on the arguments, not on the tool's name.
+- Names that are obviously a grep by any spelling (`grep`, `Grep`, `ripgrep`, `code_search`, …) collapse onto one row type.
+
+## Why normalise instead of passing through
+
+ACP is deliberately loose about argument shape, which is what lets any agent speak it. The cost is that a passthrough renderer would show six different-looking rows for six agents doing the same file read. Normalisation is where that looseness gets absorbed, once, instead of leaking into every part of the UI that wants to know what a call did.
+
+## FAQ
+
+**What happens to a tool the normaliser does not recognise?** It renders as a generic tool row with its arguments — nothing is dropped.

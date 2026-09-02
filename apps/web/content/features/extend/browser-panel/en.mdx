@@ -1,0 +1,18 @@
+## What it does
+
+The embedded browser is a real browser panel — tabs, bookmarks, history, zoom — that lives beside the conversation and that the agent can drive.
+
+## How it works
+
+- **Tabs are isolated per session.** A tab belongs to the session that opened it, which is distinct from where it gets docked; a background session's tab does not surface itself in the foreground pane.
+- **Bookmarks** organise into folders, and the address bar autocompletes against bookmarks and history.
+- **Popup logins** are redirected into the same tab rather than opening a window that the app then has to chase — an OAuth flow that ends in a window nobody owns is an OAuth flow that never finishes.
+- **Zoom** is per site and persists.
+
+## Why an embedded browser at all
+
+Two reasons that are really one. The agent needs a browser it can observe and act in, with a snapshot it can read rather than pixels it has to guess at. And the app needs a browser it owns for anything involving a redirect — OAuth for MCP servers, provider sign-in, WebMCP site trust. Owning the browser makes both problems the same problem.
+
+## FAQ
+
+**Does the agent see my normal browser's cookies?** No. This is a separate browser with its own storage.

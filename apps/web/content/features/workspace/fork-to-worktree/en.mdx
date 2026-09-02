@@ -1,0 +1,17 @@
+## What it does
+
+Fork a session at any past message and land the copy in a brand-new git worktree, so the branch of conversation and the branch of code are created together.
+
+## Why the two belong together
+
+Forking a session to try a different approach usually means the code is about to diverge too. Doing it in the same checkout means the two attempts overwrite each other on disk no matter how cleanly the conversations are separated. Creating the worktree as part of the fork makes the isolation the default rather than a step you remember afterwards.
+
+## How it works
+
+- Pick the fork point, and the new session opens with a fresh worktree as its working directory.
+- Carrying local uncommitted changes into the fork is optional — take them when the task depends on work you have not committed, leave them for a clean branch.
+- The result is an ordinary git worktree, so it shows up in `git worktree list` and merges like anything else.
+
+## FAQ
+
+**What happens to the original?** Nothing. It keeps its session and its checkout.

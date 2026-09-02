@@ -1,0 +1,18 @@
+## What it does
+
+An ACP session can plan before it acts, and when it finishes planning you get the same line-comment review surface Claude's plan mode uses.
+
+## How it works
+
+- Plan mode is entered from the host UI rather than being something only the agent can decide.
+- The agent's `exit_plan_mode` call opens the review panel — you can comment on individual lines of the plan, approve it, or send it back.
+- ACP's own `session/update` plan entries map onto the same todo events the other harnesses emit, so a plan that evolves mid-run updates the task list you are already watching.
+- Permission requests map onto SuperOne's shared permission vocabulary, with pre-approval handled the same way it is elsewhere.
+
+## Why the review surface is shared
+
+Reviewing a plan is the same act regardless of which engine wrote it: you read it, you disagree with one step, you say so on that step. Giving each harness its own review UI would mean learning the disagreement gesture several times over for no reason. The plan arrives through a different protocol; what you do with it does not change.
+
+## FAQ
+
+**Does every ACP agent support plan mode?** Plan support is declared per agent; the control appears where the agent reports it.

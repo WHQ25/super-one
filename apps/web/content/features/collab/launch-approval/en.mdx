@@ -1,0 +1,15 @@
+## What it does
+
+An agent cannot start a collaborator on its own. It asks, you read the request, and you allow or decline it.
+
+## Why the request is readable
+
+The launch task renders as a markdown bubble, not a raw tool payload. You see the actual brief the collaborator will receive — the goal, the constraints, the working directory — before anything starts. A launch summary is kept separate from the full task, so the sidebar can show a one-line description while the bubble carries everything.
+
+## Autonomous by default
+
+Approved children launch into an autonomous permission mode. This is deliberate: a child that stops for per-tool approval turns one supervised session into two, which is the opposite of delegating. You approve the delegation once, at the point where you can still judge it.
+
+## FAQ
+
+**Can I decline and let the parent continue?** Yes. Declining ends the launch, not the parent's turn — the agent gets the refusal and carries on with what it can do itself.

@@ -1,0 +1,17 @@
+## What it does
+
+Type `/` for a fuzzy-searched list of everything you can invoke: built-in commands, your skills, and the commands the active engine ships natively.
+
+## Three sources, one menu
+
+- **Host commands** are implemented by SuperOne and work on any engine.
+- **Native commands** come from the harness itself, so an engine's own `/compact`, `/init` or `/share` appears here rather than needing a terminal. Commands that only make sense in a terminal are filtered out instead of failing when picked.
+- **Skills** you installed appear alongside both, so a workflow you wrote is invoked the same way as anything built in.
+
+## While it runs
+
+A local slash command shows that it is running rather than appearing to hang. Commands that produce a report keep their output in the transcript, so the result stays readable later instead of vanishing when the turn ends.
+
+## FAQ
+
+**Are commands the same on every engine?** The host ones are. Native ones differ by harness — the menu lists what the active engine actually supports rather than showing entries that would fail.

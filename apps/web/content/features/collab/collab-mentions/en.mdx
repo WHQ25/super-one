@@ -1,0 +1,17 @@
+## What it does
+
+Address one specific collaborator from the composer by `@`-mentioning it, instead of broadcasting to whoever happens to be listening.
+
+## How it works
+
+Collaborators appear in the same `@` picker as files, sessions and the built-in capabilities. Mentioning one scopes the message to that session, so in a group of children each gets instructions meant for it rather than a shared stream it has to filter.
+
+The sidebar shows the child list under its parent, with a pending chip while a collaborator is working — so you can see who is busy before deciding who to talk to.
+
+## Why it replaced a generic mention
+
+An earlier version had a single `@collab` mention that addressed the collaboration surface as a whole. Naming the collaborator directly is both shorter to type and unambiguous once more than one is running.
+
+## FAQ
+
+**What if the collaborator is idle?** The message goes to its mailbox and wakes it, and the wake row records why it started again.

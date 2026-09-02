@@ -177,8 +177,8 @@ export const featureTaxonomy: FeatureCategory[] = [
             category: "workspace",
             title: { en: "Fuzzy file search", zh: "模糊文件搜索" },
             blurb: {
-              en: "⌘P opens ranked fuzzy matching grouped by directory.",
-              zh: "⌘P 按目录分组的排序模糊搜索。",
+              en: "Ranked fuzzy matching grouped by directory, opened from the file tree header.",
+              zh: "在文件树顶部发起,按目录分组的排序模糊搜索。",
             },
           },
           {
@@ -508,8 +508,8 @@ export const featureTaxonomy: FeatureCategory[] = [
             harnesses: ["codex"],
             title: { en: "Model selection", zh: "模型选择" },
             blurb: {
-              en: "GPT-5 and GPT-5.5 over the Responses API.",
-              zh: "GPT-5 与 GPT-5.5,走 Responses API。",
+              en: "Pick per session from the models your Codex account offers.",
+              zh: "按会话从你的 Codex 账号提供的模型里选。",
             },
           },
         ],
@@ -993,10 +993,10 @@ export const featureTaxonomy: FeatureCategory[] = [
             slug: "widget-modules",
             feature: "widgets",
             category: "extend",
-            title: { en: "Five widget modules", zh: "五大 widget 模块" },
+            title: { en: "Six widget modules", zh: "六大 widget 模块" },
             blurb: {
-              en: "Built-in guides for diagrams, UI mockups, interactive explainers, charts, art.",
-              zh: "内置 5 类指南:diagram、mockup、interactive、chart、art。",
+              en: "Built-in guides for diagrams, UI mockups, interactive explainers, charts, art, native UI.",
+              zh: "内置 6 类指南:diagram、mockup、interactive、chart、art、native。",
             },
           },
         ],
@@ -1352,8 +1352,8 @@ export const featureTaxonomy: FeatureCategory[] = [
             harnesses: ["codex"],
             title: { en: "Custom model_providers", zh: "自定义 model_providers" },
             blurb: {
-              en: "Wire Codex to any Responses-API-compatible provider via config.",
-              zh: "通过配置把 Codex 接到任意 Responses API 兼容 provider。",
+              en: "Wire Codex to any provider via config — Responses API directly, Chat Completions through a bridge.",
+              zh: "通过配置把 Codex 接到任意 provider —— Responses API 直连,Chat Completions 走桥接。",
             },
           },
         ],

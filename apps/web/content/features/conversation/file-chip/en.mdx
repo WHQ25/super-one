@@ -1,0 +1,18 @@
+## What it does
+
+Files referenced in a conversation appear as chips rather than as bare paths, and a chip is clickable.
+
+## How it works
+
+- A chip carries the file's identity, not just its name, so two files called `index.ts` in different packages stay distinguishable.
+- Clicking one opens it in the preview panel beside the conversation.
+- A chip can also open the file in the browser panel, which is how you look at a rendered HTML or Markdown output rather than its source.
+- Chips appear both in what you write and in what the agent writes back, so a file the agent touched is reachable from the message that mentions it.
+
+## Why not just a path
+
+A path in prose is something you have to copy, paste and locate. A chip is the file — one click from the sentence that mentions it to the contents it refers to, without leaving the conversation or reconstructing where the path was rooted.
+
+## FAQ
+
+**Do chips survive copy and paste?** Yes — they round-trip through invisible markers, so pasting a message elsewhere keeps the reference intact.

@@ -1,0 +1,20 @@
+## What it does
+
+Run Claude on your Anthropic API key, or sign in with OAuth and use your existing plan.
+
+## How it works
+
+- **OAuth** signs you in through the embedded browser and stores the token in SuperOne's credential store. Usage and remaining limits are read from the account, so the app can show you where you stand rather than guessing from token counts.
+- **API key** is the alternative when you would rather pay per token or use a key that is not tied to a personal login.
+- The model catalog is filtered by what your account actually has. A plan that does not include a model does not show it — the list is the account's answer, not a table shipped in the release.
+- Credentials are stored once and reachable by every session, so switching project or harness does not mean signing in again.
+
+## Why the credential store is shared
+
+A provider key is a fact about you, not about a session. Storing it per session would mean re-entering it constantly and having no single place to revoke it. One store also means a session that spawns a child on a different harness does not have to hand credentials along.
+
+## FAQ
+
+**Can I have both configured?** Yes — the active one is a per-session choice.
+
+**Where is the key kept?** In the app's credential store, not in a config file in your repo.

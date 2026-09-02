@@ -1,0 +1,19 @@
+## What it does
+
+Set how much thinking budget Claude spends on a session, from quick replies to extended reasoning.
+
+## How it works
+
+- Effort is chosen per session alongside the model, and can be changed mid-session.
+- Higher effort produces more reasoning, which shows up in the thinking block and takes longer before the first visible output.
+- The selector only appears where it applies. A provider that maps to a fixed configuration does not show an effort control, because offering a knob that does nothing is worse than not offering one.
+
+## Choosing a level
+
+- **Low** for mechanical edits where the answer is not in doubt — renames, formatting, applying a pattern you already described.
+- **Medium** for ordinary work.
+- **High and above** for design decisions, tricky debugging, and refactors where the wrong plan costs more than the extra minutes.
+
+## FAQ
+
+**Does effort cost more?** More reasoning is more tokens. For work that would otherwise need a second attempt, it usually costs less overall.

@@ -1,0 +1,17 @@
+## What it does
+
+Point at something on a page and hand it to the agent — click an element to attach it to the chat input, or drag an image straight into the conversation.
+
+## How it works
+
+- Element pick puts a structured reference to that element into the composer, so the next message says "this button" in terms the agent can act on rather than in terms you have to describe.
+- Images drag out of the page and into the conversation as attachments; they land as normal image content, which every harness that takes images can read.
+- Copying an image from the page uses the browser's own clipboard path, which needed care around focus — a right-click copy in a WebView is not the same event the host window thinks it is.
+
+## Why pointing beats describing
+
+"The third button in the toolbar" is a sentence the model has to re-derive from a snapshot, and can get wrong. A reference you produced by clicking is unambiguous by construction. It is the same reason a stack trace beats a bug report: you already know exactly where you are; the cost is only in getting that fact across intact.
+
+## FAQ
+
+**Does the agent then re-take a snapshot?** It can — the reference points into the page, and the page is still there.

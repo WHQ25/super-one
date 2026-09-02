@@ -1,0 +1,17 @@
+## What it does
+
+Reasoning is shown as a collapsible block: folded by default so the answer leads, expandable when you want to see how the agent got there.
+
+## How it works
+
+- **Consecutive reasoning is merged.** Engines emit reasoning in fragments; rendering each as its own block would produce a stack of near-empty cards. They are merged into one block per stretch of thinking.
+- **Duration is persisted.** How long the agent thought is recorded with the block, so a reopened session still shows it rather than resetting to zero.
+- **Every engine, one shape.** Claude's thinking and Codex's reasoning items render into the same block, so the transcript reads consistently whichever engine produced it.
+
+## Why fold it
+
+Reasoning is useful when a result surprises you and noise the rest of the time. Folding by default optimizes for the common case without discarding the audit trail — the content is there, one click away, and it persists with the session.
+
+## FAQ
+
+**Does effort affect it?** Higher effort produces more reasoning, so the block grows. The effort level itself is chosen per session alongside the model.

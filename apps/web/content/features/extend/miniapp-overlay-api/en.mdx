@@ -1,0 +1,26 @@
+## What it does
+
+A mini-app's WebView is sandboxed, so it cannot draw outside its own bounds. The overlay API lets it ask the host to draw for it — tooltips, context menus and popovers that render in the app's own chrome, in the app's own style.
+
+## The surface
+
+`superone.ui` gives the WebView:
+
+- **`showTooltip` / `hideTooltip`** — anchored to a rect the app supplies, with a side.
+- **`showContextMenu(position, items)`** — a native menu; resolves with the chosen item's id, or `null` if dismissed.
+- **`showPopover(options)`** — renders one of the app's own templates in a host-owned popover, anchored to a rect, and returns a handle.
+- **`startDrag(paths)`** — start a native file drag out of the WebView.
+
+Toast is not on this surface: it moved to `context.host.toast` on the **Node host** side, which is where a background job that finishes without anyone looking at the WebView actually lives.
+
+## Popover WebViews
+
+A popover is itself a WebView running the same app. Inside it, `showPopover` is **removed** from the API — a popover cannot open a popover — and the app instead gets `superone.popover`, with the data it was opened with, `postMessage`/`onMessage` back to the parent view, and `close()`.
+
+## Why the host draws
+
+A sandboxed frame that could paint over the app's chrome would be an escape hatch by another name. Handing the drawing to the host keeps the boundary intact and, as a side effect, makes every mini-app's menus look like the app's menus rather than like six different web pages.
+
+## FAQ
+
+**Does the popover template have to be HTML the app ships?** Yes — it names one of its own templates; the host does not render arbitrary markup here.

@@ -1,0 +1,18 @@
+## What it does
+
+OpenCode ships its own agents and its own native commands. Both are surfaced in SuperOne on the shared session lifecycle rather than reimplemented.
+
+## How it works
+
+- The agent roster comes from the OpenCode server, so agents you define in your own config appear in the picker without SuperOne knowing their names in advance.
+- Native commands — including `init`, which writes the project's agent instructions — dispatch to the server and their output lands in the transcript as a normal turn.
+- The selected agent is per session and rides along with the model, so a session pinned to a review agent stays on it across restarts.
+- Todos and subagents are both supported here, which means a long OpenCode run renders with the same task list and nested Task blocks you get on Claude.
+
+## Where it differs
+
+OpenCode takes a single `directory` rather than a list, so the additional-directories control is not offered for its sessions. That is a capability declared on the harness, not a branch at the call site — the control disappears rather than failing when used.
+
+## FAQ
+
+**Does `/init` overwrite an existing instructions file?** That is OpenCode's own behaviour; SuperOne dispatches the command unchanged.

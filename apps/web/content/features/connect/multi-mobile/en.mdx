@@ -1,0 +1,15 @@
+## What it does
+
+Several phones can watch the same desktop session at once — your phone and your tablet both following the run, both able to reply.
+
+## How it works
+
+- Each device subscribes to **one** session at a time. That is the unit: a device is looking at a conversation, not at the whole desktop.
+- The relay buffers events for devices that are not currently connected, and buffer GC runs on **per-device ACK** rather than on a timer. An offline device counts as pending, not as gone — otherwise the phone in your pocket comes back to a hole in the transcript.
+- Event payloads are trimmed for mobile, which is where a new tool type has to be explicitly exempted. A tool the trimmer does not know about is a tool whose output silently disappears on the phone while looking fine on the desktop.
+
+## FAQ
+
+**Do the phones see each other?** They see the same session; there is no separate presence surface between them.
+
+**What happens if two phones reply at once?** They queue into the same session, in the order the relay receives them.

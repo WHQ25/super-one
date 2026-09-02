@@ -1,0 +1,17 @@
+## What it does
+
+Give an agent a prompt and a schedule, and it fires on its own — a cron expression for something recurring, or a timestamp for a one-off.
+
+## How it works
+
+- Schedules are either `recurring` with a cron expression, or `one-time` with a run timestamp. The next run is computed from the schedule; a recurring schedule with no cron and a one-time with no timestamp both resolve to "never", rather than to an accidental immediate run.
+- Automations are stored and evaluated in the shared runtime, so a desktop and a headless node compute the same next run from the same record — the behaviour does not fork by where it runs.
+- A fired automation starts a real session. It has the project, the tools and the permissions a session started by hand would have.
+
+## What to schedule and what not to
+
+A schedule is useful for work that is genuinely periodic — a nightly dependency audit, a Monday summary of what changed. It is a poor fit for polling something the app can already notify you about: if the harness re-invokes you when a background task finishes, a one-minute schedule to check on it is pure waste. Match the interval to how fast the thing you are watching actually changes.
+
+## FAQ
+
+**What if the machine is asleep when it should fire?** The next run is recomputed from the schedule; a missed recurring slot does not stack up into a burst.

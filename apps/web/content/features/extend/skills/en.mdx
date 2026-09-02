@@ -1,0 +1,18 @@
+## What it does
+
+Skills are pre-baked agent workflows: a folder of instructions the agent loads on demand, invoked with `/skill-name`.
+
+## How it works
+
+- A skill is a directory with a `SKILL.md` whose frontmatter carries the name and a one-line description. The description is what the agent matches against when deciding a skill applies.
+- Typing `/` in the composer lists the skills available in this project and in your user-level skills directory, with the same picker that lists native commands.
+- Invoking one loads its instructions into the turn — the agent follows them in place of its default approach for that kind of task.
+- Some skills run in a subagent instead and return a finished result rather than instructions.
+
+## Why a folder and not a prompt
+
+The point of a skill is that it survives the session. A prompt you paste is gone when the context is; a skill is a file in the repo, reviewed like code, and the next session — or the next person — gets the same procedure. That is also why skills live in the project by default: a deploy checklist belongs to the deploy, not to whoever wrote it.
+
+## FAQ
+
+**Do skills work on other engines?** Skills are Claude's mechanism. Other engines have their own command surfaces, which SuperOne exposes natively.

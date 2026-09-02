@@ -1,0 +1,17 @@
+## What it does
+
+Point Claude at a gateway you run, or at a third-party service that speaks the Anthropic API shape.
+
+## How it works
+
+- The base URL and key are configured per credential, so a gateway sits alongside your direct Anthropic credential rather than replacing it.
+- Where a provider speaks a different wire shape, requests go through a proxy sidecar that translates. The sidecar's lifecycle is the app's problem, not yours — including making sure it does not outlive the app as an orphan process.
+- Model classification reuses the local catalog rather than re-deriving capabilities from the model's name. A gateway that serves a model the catalog already knows gets that model's real properties, instead of a heuristic guess about what the string implies.
+
+## The one thing that catches people
+
+A third-party gateway that runs bash tools can lose `PATH` if the environment is replaced rather than merged. Passing `env` to the SDK replaces the whole environment — it does not merge with the parent's — so a gateway configuration that sets one variable and forgets the rest produces an agent that cannot find `git`. If shell commands suddenly fail with "command not found" after adding a gateway, this is where to look.
+
+## FAQ
+
+**Does effort selection still work?** Where the mapped provider does not expose it, the selector is hidden rather than shown as a no-op. That is deliberate.

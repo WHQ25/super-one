@@ -1,0 +1,18 @@
+## What it does
+
+Pick which Claude model a session runs on — Opus, Sonnet or Haiku — and change it without starting a new session.
+
+## How it works
+
+- The model is a per-session choice, so a heavy refactor and a quick lookup can run side by side on different models in the same project.
+- The list reflects what your account actually has access to, rather than every model that exists.
+- Model and effort are chosen together in one selector, along with the provider, because in practice you are choosing a combination rather than three independent things.
+- Context window, reasoning support and pricing come from a model catalog, so a model added later shows correct metadata without an app update.
+
+## Fallback is visible
+
+If a request falls back to another model, that is recorded in the transcript as a notice row rather than silently substituted — you can see which turn ran on what.
+
+## FAQ
+
+**Can different sessions use different models at once?** Yes, and different engines too. The choice belongs to the session, not the project.

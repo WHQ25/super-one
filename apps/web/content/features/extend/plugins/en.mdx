@@ -1,0 +1,18 @@
+## What it does
+
+Install plugins from a marketplace, or point the app at your own — a plugin bundles skills, subagents, hooks, commands and MCP servers into one installable unit.
+
+## How it works
+
+- A marketplace is a repository the app reads a manifest from; you can add your team's own alongside the public ones.
+- Installing a plugin registers everything it carries at once: its skills show up in the `/` picker, its subagents in the specialist roster, its MCP servers in the attach list.
+- Plugin-provided skills are namespaced `plugin:skill`, so two marketplaces can both ship a `deploy` without shadowing each other.
+- Plugins are per user or per project depending on where they are installed, which is what lets a project pin the toolchain its contributors are expected to have.
+
+## Why bundle rather than share files
+
+The pieces of an agent workflow are not independent: a skill that calls an MCP server is useless without the server, and a hook that gates a subagent's tools is meaningless without the subagent. Shipping them separately means every consumer reassembles the same set by hand and one of them gets it wrong. The bundle is the unit that actually works.
+
+## FAQ
+
+**Can I build one without publishing it?** Yes — a local directory works as a marketplace source.

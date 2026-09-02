@@ -1,0 +1,17 @@
+## What it does
+
+Every ACP session gets SuperOne's own MCP server attached by the host — the embedded browser, device control, computer use, media generation, widgets and mini-apps included.
+
+## How it works
+
+The host attaches the server at session creation rather than asking the agent to configure it. From the agent's side these are ordinary MCP tools; it does not need to know they are the host's, and it does not need an entry in anyone's config file to reach them.
+
+This is the point of integrating at the protocol rather than at the vendor. An ACP agent whose own CLI never shipped a browser can drive one here, because the browser is not the agent's feature — it is the host's, and the host is what every harness has in common.
+
+## What it does not yet cover
+
+Attaching **your own** MCP servers to an ACP session is a separate gap: the host's server goes on automatically, but user-configured servers are not wired through for ACP yet.
+
+## FAQ
+
+**Does this mean an ACP agent can control my phone?** It can call the device tools, subject to the same grant and approval flow every other harness goes through.

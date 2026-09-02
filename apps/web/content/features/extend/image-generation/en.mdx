@@ -1,0 +1,19 @@
+## What it does
+
+`media_generate_image` is on the MCP surface for every harness, so any engine can generate or edit an image without its own CLI ever having shipped the capability.
+
+## How it works
+
+- Providers are read from a model catalog rather than a hardcoded list, so a model your account gains appears without an app update.
+- Results collect into a **gallery card at the end of the turn** rather than interrupting the transcript one image at a time. A turn that produced six variants reads as six variants, not as six separate messages you have to scroll past.
+- The host displays generated media inline automatically. An agent that re-embeds the result with Markdown duplicates it — the image is already there.
+
+## Provider quirks worth knowing
+
+Not every provider that generates images also edits them. Volcengine's image-to-image endpoint returns 404, which is a provider fact rather than a configuration mistake — the useful response is to pick a different provider for edits, not to keep re-checking the credentials.
+
+## FAQ
+
+**Where do the files go?** Into the session's media store, referenced from the transcript.
+
+**Can a mini-app call this?** Yes — it is an ordinary tool on the same surface.

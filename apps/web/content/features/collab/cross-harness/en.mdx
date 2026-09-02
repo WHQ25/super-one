@@ -1,0 +1,17 @@
+## What it does
+
+A collaborator does not have to run the same engine as the session that started it. A Claude session can hand a task to Codex, or to Cursor, OpenCode, DeepSeek or an ACP agent, and read the result back.
+
+## Why it works
+
+Collaboration is built on the shared session seam rather than on any one engine's subagent feature. Claude has subagents; Codex does not. If collaboration had been implemented on top of Claude's subagents, it would have been a Claude feature that other engines could never have. Implementing it at the session layer means the unit being delegated to is a session — and every harness produces those.
+
+## What that buys you
+
+- Delegate by strength: long reasoning to one engine, fast focused edits to another.
+- Route around a capability gap: hand off to a harness that has something the current one lacks.
+- Keep going when one engine hits a rate limit, without restarting the task elsewhere by hand.
+
+## FAQ
+
+**Does the result come back in a usable form?** Yes — the collaborator's output arrives through the mailbox as markdown, and a handoff carries a durable Markdown document rather than a verbal summary.

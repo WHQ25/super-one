@@ -1,0 +1,18 @@
+## What it does
+
+A real terminal inside the project, so running a command does not mean leaving the app and losing the context you are working in.
+
+## How it works
+
+- Terminals open in the activity panel with tabs, each rooted at the project's working directory.
+- It is a real PTY, not a command runner — interactive programs, TUIs and shells behave the way they do in your own terminal.
+- macOS keyboard conventions are honoured, and the panel's open and close are animated so a terminal appearing does not visually jolt the layout.
+- Terminal themes follow the app's appearance settings rather than being configured separately.
+
+## Why it matters
+
+The agent runs commands through its own tools and shows you the output. The integrated terminal is the other direction: the commands you want to run yourself, in the same directory, without a second window to align.
+
+## FAQ
+
+**Is this what the agent uses?** No. The agent's Bash tool is separate and its output lands in the transcript. This terminal is yours.

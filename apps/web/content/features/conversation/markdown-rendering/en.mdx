@@ -1,0 +1,23 @@
+## What it does
+
+Replies render as Markdown while they stream — code fences with highlighting, lists, links, tables, math and diagrams — rather than appearing as raw text that formats itself once the turn ends.
+
+## Streaming without reflow
+
+Rendering incrementally is harder than rendering once, because a half-arrived code fence is not valid Markdown yet. The renderer works from block completion signals rather than re-parsing the whole message on every token, so a long reply does not reflow from the top each time a character lands.
+
+## What it renders
+
+- Code fences with syntax highlighting.
+- Math, inline and block.
+- Mermaid diagrams, themed to match the app.
+- Tables, task lists, footnotes and the rest of GitHub-flavoured Markdown.
+- Favicons beside external links, so a link's destination is recognizable before you hover it.
+
+## Staying visible
+
+When a turn collapses, its markdown and any widgets it rendered stay visible. Collapsing hides the process — the tool calls and intermediate steps — not the answer.
+
+## FAQ
+
+**Are diagrams interactive?** Mermaid diagrams render natively and follow the theme; widgets are the interactive surface, and they get their own tool.

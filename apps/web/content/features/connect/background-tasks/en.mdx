@@ -1,0 +1,17 @@
+## What it does
+
+Long-running work keeps going while you do something else, and tells you when it is done — including on your phone, if you have left the desk.
+
+## How it works
+
+- A backgrounded task is tracked by the harness. When it finishes, the agent is re-invoked with the result rather than having to poll for it.
+- Notifications route through the same relay path as everything else, so a task that completes while you are away arrives on the paired device.
+- Parking a session does not stop its stream. A session you moved out of the way keeps producing; mounted sessions are exempted from teardown precisely so that "I'll look at this later" does not mean "I killed it".
+
+## Why polling is the wrong instinct
+
+If the harness re-invokes you when tracked work finishes, a short-interval check is wasted — it wakes up, finds nothing new, and goes back to sleep, having spent a turn. The exception is work the harness cannot see: a CI run, a deploy, a remote queue. There, an interval matched to how fast that state actually changes is the right tool, and a long fallback covers the case where the notification never arrives at all.
+
+## FAQ
+
+**Do I lose the output if I close the panel?** No — the task's output lands in the session's transcript, which is where you left it.

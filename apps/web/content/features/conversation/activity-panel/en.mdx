@@ -1,0 +1,19 @@
+## What it does
+
+A panel beside the conversation that carries the working surfaces and the record: tool calls, approvals, the terminal, the browser, devices and file previews, each in its own tab.
+
+## The audit trail
+
+Every tool call and every approval is recorded with a timestamp. The value is not the log itself but what it lets you do afterwards: when an agent did something surprising, you can find the call, see the arguments it was given and the result it got back, and tell the difference between a bad decision and a bad tool result.
+
+## Tabs
+
+The panel holds several surfaces at once — a terminal, a browser, a device preview, a file — and the tab strip scrolls when there are more than fit. Focus stays owned by the panel, so typing in a terminal tab does not leak keystrokes into the chat input behind it.
+
+## Layout
+
+The panel can be collapsed, maximized to fill the window, or left beside the chat. Opening it from mosaic mode collapses back to a single session first, and the layout you had is restored when it closes.
+
+## FAQ
+
+**Is the record kept after the session ends?** Yes — it persists with the session, so a resumed session still shows what happened, including tool calls from previous runs.

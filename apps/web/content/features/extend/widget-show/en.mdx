@@ -1,0 +1,18 @@
+## What it does
+
+`widget_show` is an MCP tool the agent calls to render something visual inline in the chat — an SVG diagram, an interactive HTML widget, a chart — instead of describing it in prose.
+
+## How it works
+
+- The agent passes markup; the host renders it in a sandboxed iframe inside the transcript, sized to the conversation.
+- Widgets are interactive: a control the agent wired up can call back into the session, so the widget is a surface you can use rather than a picture you look at.
+- A widget worth keeping can be saved as a template and listed later, so a dashboard you liked does not have to be re-described.
+- Mermaid is the exception: fenced ```mermaid blocks are rendered natively by the host, so a plain diagram does not need the tool at all.
+
+## Why sandbox it
+
+A widget is model-authored markup, which means it should be treated as untrusted by construction — an iframe that could reach the host page would be an escape hatch straight out of the transcript. The sandbox is what makes "let the model write UI" a reasonable idea rather than a reckless one.
+
+## FAQ
+
+**When should the agent use a widget instead of a table?** When the content is visual, data-heavy or interactive. A short list is better as Markdown.

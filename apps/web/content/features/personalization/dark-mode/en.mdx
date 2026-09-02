@@ -1,0 +1,17 @@
+## What it does
+
+Light, dark, or follow the system. The two modes are separate designs rather than one design with its lightness inverted.
+
+## Light mode is built, not derived
+
+Light mode is constructed as inverted chrome at the token layer: surfaces that are darkest in dark mode become lightest here, and the hierarchy is rebuilt rather than inherited. Every token channel is written explicitly, so no value silently falls through to a dark-mode default.
+
+The text colour that sits on a brand fill is computed from that fill by contrast rather than picked once. Because brand hue is user-adjustable, a hand-chosen foreground would be wrong across most of the range — and at very high lightness a fill physically cannot carry much colour, which the derivation accounts for instead of producing an unreadable chip.
+
+## Following the system
+
+System mode tracks the OS appearance. When native vibrancy is in play the app pins its appearance explicitly, because a vibrant window otherwise follows the system independently of the app's own theme and the two can disagree.
+
+## FAQ
+
+**Do mocks and previews follow the theme?** Yes — embedded product surfaces derive from the same tokens, so they flip with the rest of the app.

@@ -1,0 +1,17 @@
+## What it does
+
+Claude keeps a task list as it works, updating items from pending to in-progress to done, and SuperOne renders it as a live checklist rather than as tool output you have to read.
+
+## Why it is worth surfacing
+
+A long turn is otherwise opaque: you can see that the agent is working but not what it thinks remains. The list makes the plan and the progress visible at the same time, which is what lets you interrupt early when the plan itself is wrong rather than after it has been carried out.
+
+## How it works
+
+- The popup shows the current list, and the status bar reflects progress without opening it.
+- Items update in place as the agent works, so the list is state rather than a log of state changes.
+- The list belongs to the turn's own reasoning; you read it and steer, rather than editing it directly.
+
+## FAQ
+
+**Do other engines have this?** Task tracking is a Claude capability. Where an engine lacks it, the app declares that as data rather than rendering an empty list.

@@ -1,0 +1,21 @@
+## What it does
+
+`@` opens a picker for the things you want the agent to look at: files, sessions, artifacts — and a set of built-in capabilities.
+
+## Built-in mentions
+
+Beyond files and sessions, `@` reaches capabilities directly:
+
+- **A collaborator**, to address one specific child or linked session.
+- **A desktop app**, which grants this session Computer Use over it.
+- **The browser**, to point the agent at what is open.
+- **A widget**, to ask for a rendered surface rather than text.
+- **`@debug`**, which prompts you for what went wrong before the agent starts guessing.
+
+## Why chips survive copy and paste
+
+A mention becomes a chip, and the chip carries invisible zero-width markers. Copying a message and pasting it elsewhere round-trips back into a chip rather than degrading into plain text, so the agent still knows which file you meant rather than receiving a bare name it has to guess at.
+
+## FAQ
+
+**Does mentioning a file send its contents?** It sends a reference. The agent reads the file when it needs to, which keeps a large file out of the prompt until it is actually relevant.

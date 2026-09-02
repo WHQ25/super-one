@@ -1,0 +1,14 @@
+## What it does
+
+The sidebar carries a file tree for the open project, annotated with git status so you can see what changed without switching to a terminal.
+
+## How it works
+
+- Files and folders are marked with their git state, so modified, added and untracked entries are distinguishable at a glance.
+- The tree covers the project root plus any workspace folders you added, so directories outside the root are browsable in the same place.
+- Selecting a file opens it in the preview pane rather than an external editor, and a right-click offers the usual operations plus opening the real path in your editor.
+- The tree is also what the agent sees: it reads the same structure, so "the file in the sidebar" and "the file the agent means" are the same file.
+
+## FAQ
+
+**Does it follow remote projects?** Yes, with a manual refresh for remote trees — a remote node's filesystem does not push change events, so the refresh is explicit rather than pretending to be live.

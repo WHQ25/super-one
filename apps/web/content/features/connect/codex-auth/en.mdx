@@ -1,0 +1,21 @@
+## What it does
+
+Codex sessions authenticate three ways — `auto`, ChatGPT login, or an API key — and you can switch between them at any time.
+
+## The three modes
+
+- **Auto** picks whichever credential is available, which is the right default when you have one of each and do not care which is used.
+- **ChatGPT login** uses your existing subscription. Sign-in happens in the embedded browser and the token lands in the shared credential store.
+- **API key** bills per token against an OpenAI key.
+
+## Switching
+
+The mode is a per-session setting, changeable mid-project. Switching does not reset the thread — the next turn goes out under the new credential and the conversation continues.
+
+Usage and rate limits are tracked per model, so when a subscription hits a limit you can see it rather than inferring it from a failure.
+
+## FAQ
+
+**Does the model list change with the auth mode?** Yes — the catalog comes from the account behind whichever credential is active.
+
+**Is `auto` doing anything clever?** No. It picks what is present; it does not fail over mid-turn.

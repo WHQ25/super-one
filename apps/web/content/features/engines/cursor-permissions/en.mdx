@@ -1,0 +1,21 @@
+## What it does
+
+Cursor's permission modes and its sandbox toggle are read the same way as every other engine's, so switching harness does not mean relearning what the app is allowed to do.
+
+## The mapping
+
+SuperOne's shared permission vocabulary maps onto Cursor's honestly rather than approximately:
+
+- **Plan** becomes Cursor's `plan` mode with auto-review off — the agent reasons and proposes, it does not edit.
+- **Agent** and **Auto** both become `agent` mode with auto-review on.
+- **Bypass permissions** stays `agent` mode but turns auto-review off, which is the honest reading: you asked not to be interrupted, not for a different execution mode.
+
+The sandbox is a **separate** switch. It is not folded into the permission mode, because a sandboxed full-access run and an unsandboxed plan run are both meaningful and neither is expressible if the two knobs are merged.
+
+## Why keep them separate
+
+Merging sandbox into the mode is the tempting simplification, and it is the one that makes the app lie. The mode answers "how much does it ask me"; the sandbox answers "what can it reach if it does not ask". Collapsing them means one of those two questions gets answered by guesswork.
+
+## FAQ
+
+**Does plan mode still let it read files?** Yes. Plan restricts writing, not reading.

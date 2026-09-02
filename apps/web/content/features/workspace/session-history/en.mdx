@@ -1,0 +1,19 @@
+## What it does
+
+Every session is kept and resumable, and each one names itself from what was actually discussed.
+
+## AI-generated titles
+
+A session's title is derived from the conversation rather than from its first message or a timestamp. "Fix the relay reconnect bug" is findable months later; "Session 47" is not. Renaming also requires tags on the first pass, so sessions carry a second axis to filter by beyond their titles.
+
+## Resuming
+
+Resume picks a session back up with its history intact. Long-running sessions can be archived rather than deleted, and archived sessions stay searchable — the archive is for getting them out of the sidebar, not out of reach.
+
+## Finding one again
+
+Sessions can be listed, searched and filtered by tag, both from the UI and by the agent through `session_list`, `session_search` and `session_read` — so an agent can look up what a past session concluded instead of asking you to paste it.
+
+## FAQ
+
+**Do titles ever get stale?** A session renamed by hand keeps your title; automatic naming does not overwrite a manual one.

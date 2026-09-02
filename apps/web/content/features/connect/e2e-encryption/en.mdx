@@ -1,0 +1,24 @@
+## What it does
+
+The relay routes bytes between your desktop and your phone without being able to read them. Session contents are encrypted before they leave the desktop and decrypted on the device.
+
+## How it works
+
+Pairing establishes a master secret that only the two ends hold. From it, HKDF-SHA256 derives two separate keys:
+
+- A **channel key**, used to compute the room id (SHA-256 of the channel key, truncated) and to sign HMAC auth tokens over `role:timestamp`.
+- An **AES-GCM key**, used to encrypt every payload. Each message carries a fresh random 12-byte IV prepended to its ciphertext.
+
+Files use a chunked envelope of the same construction: a versioned header, then 4 MB chunks each sealed under GCM with its own IV and tag, so a large transfer streams without ever holding the whole file in memory in plaintext.
+
+## What the relay can see
+
+Routing metadata: which room, how large, when. Not the contents. The room id is derived from the channel key rather than being a name you choose, so it does not leak the project or session it belongs to either.
+
+## Why two derived keys instead of one
+
+The key that proves who you are and the key that hides what you said should not be the same key. Deriving both from one secret keeps pairing simple; keeping them separate means a token that must be transmitted to authenticate does not double as the key that protects the payload.
+
+## FAQ
+
+**Does self-hosting the relay change this?** No — the relay is not trusted in either case, which is exactly why self-hosting is optional rather than necessary.

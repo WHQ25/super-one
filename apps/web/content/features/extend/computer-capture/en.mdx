@@ -1,0 +1,17 @@
+## What it does
+
+Computer use in SuperOne captures a **window**, not the screen — the agent looks at the app it is working in, and only at that app.
+
+## Why the distinction matters
+
+Screen capture hands the model everything in front of you: the other window with your inbox in it, the notification that just arrived, whatever is on your second display. Window capture is the scope you actually meant when you said "look at this app". Narrowing the capture is not a limitation; it is the feature.
+
+## How it works
+
+- Capture is scoped per window, and modal safety holds across windows — a modal in another app does not become the agent's problem, and a modal in the target window is not missed.
+- Accessibility transient roots are included, which is what keeps menus readable. A dropdown or context menu is not a child of the window in the accessibility tree; a capture that only walked the window's own subtree would show an open menu as a blank rectangle.
+- The result is a semantic tree the agent reads, not just pixels — so a button is a button with a label, not a region it has to recognise.
+
+## FAQ
+
+**Can the agent act on a window it did not capture?** Actions are scoped to the granted window, the same way capture is.

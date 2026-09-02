@@ -1,0 +1,17 @@
+## What it does
+
+Collaborating sessions exchange messages through a mailbox rather than shouting into each other's transcripts.
+
+## How it works
+
+- **Messages render as markdown** in the tool UI, so a note from the other side reads as prose instead of a JSON blob you have to decode.
+- **Wake rows** show when a session was roused by an incoming message. An idle session that suddenly starts working again has a visible reason.
+- **Mid-turn arrivals queue.** A message that lands while the receiving session is mid-turn does not interrupt it. It is queued and flushed through that session's own send path, so it never arrives inside a half-written tool call.
+
+## Why queueing matters
+
+Injecting a message into a running turn means the model sees it between a tool call and its result — a position where the conversation is not in a coherent state. Queueing costs a little latency and buys a transcript that always makes sense on replay.
+
+## FAQ
+
+**Do both sides see the same mailbox?** Yes, it is a shared channel. Each session keeps its own transcript; only what you send crosses over.

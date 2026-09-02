@@ -1,0 +1,18 @@
+## What it does
+
+Choose which model a Codex session runs on. The list comes from your account rather than from a table baked into the app.
+
+## How it works
+
+- Models are fetched from the Codex app-server and cached per provider, so the list reflects what you actually have access to and updates when your account does.
+- The choice is per session, alongside effort, in the same selector used for every other engine.
+- Usage and rate limits are tracked per model, so you can see which one is consuming your budget.
+- Reasoning support is a property of the model, and the effort control appears only where the model actually supports it.
+
+## Custom providers
+
+Codex can be pointed at a custom provider through its own `model_providers` configuration, including endpoints that speak the Chat Completions shape rather than Responses. The provider registry handles the translation, so a gateway you already run can serve a Codex session without changes on its side.
+
+## FAQ
+
+**Does switching model reset the thread?** No. The model applies from the next turn; the thread continues.

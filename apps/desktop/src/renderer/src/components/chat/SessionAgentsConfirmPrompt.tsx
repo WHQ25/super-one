@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType }
 import { Bot, FolderClosed, MessageSquare, Users, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Streamdown } from 'streamdown'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Kbd } from '@superone/ui/components/ui/kbd'
-import { Switch } from '@superone/ui/components/ui/switch'
 import { cn } from '@superone/ui/lib/utils'
 import { findCodexFastServiceTier } from '@superone/shared/codex-fast-mode'
 import type {
@@ -343,6 +343,19 @@ function LaunchPanel({
           </div>
 
           <div className="mt-2 flex min-w-0 shrink-0 flex-wrap items-center gap-1 rounded-md border border-border bg-muted/20 px-1 py-0.5">
+            {/* Fast mode rides in front of the model label as a toggleable glyph, mirroring the
+                lightning bolt the chat-input model trigger shows when the Fast tier is on. */}
+            {supportsFastMode && (
+              <IconButton
+                size="sm"
+                tooltip={t('settings.preferences.fastMode.label')}
+                aria-pressed={config.fastMode === true}
+                onClick={() => onChange({ fastMode: config.fastMode !== true })}
+                className={cn(config.fastMode === true && 'text-primary hover:text-primary')}
+              >
+                <Zap className={cn(config.fastMode === true && 'fill-current')} />
+              </IconButton>
+            )}
             <GroupedModelEffortSelector
               models={modelSelector.models}
               modelGroups={modelSelector.modelGroups}
@@ -368,28 +381,6 @@ function LaunchPanel({
               modelsLoading={modelSelector.modelsLoading}
               triggerLabel={modelSelector.triggerLabel}
             />
-            {harnessId === 'codex' && (
-              <>
-                <span aria-hidden="true" className="h-3.5 w-px shrink-0 bg-border" />
-                <label
-                  className={cn(
-                    'inline-flex h-7 shrink-0 items-center gap-1.5 rounded-sm px-1.5 text-xs',
-                    supportsFastMode ? 'text-foreground' : 'text-muted-foreground',
-                  )}
-                  title={t('settings.preferences.fastMode.label')}
-                >
-                  <Zap className="size-3" />
-                  <span>{t('settings.preferences.fastMode.label')}</span>
-                  <Switch
-                    aria-label={t('settings.preferences.fastMode.label')}
-                    checked={config.fastMode === true}
-                    disabled={!supportsFastMode}
-                    onCheckedChange={(fastMode) => onChange({ fastMode })}
-                    className="scale-75"
-                  />
-                </label>
-              </>
-            )}
             <span aria-hidden="true" className="h-3.5 w-px shrink-0 bg-border" />
             <HarnessPermissionPopover
               harnessId={harnessId}

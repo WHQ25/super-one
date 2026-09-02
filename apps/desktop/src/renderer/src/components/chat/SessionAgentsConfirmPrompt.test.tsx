@@ -163,9 +163,10 @@ describe('session agents confirm prompt', () => {
     renderInChat(<SessionAgentsConfirmPrompt payload={payload()} onConfirm={onConfirm} onReject={vi.fn()} />)
 
     fireEvent.keyDown(window, { key: 'Tab' })
-    const fastMode = screen.getByRole('switch', { name: 'Fast Mode' })
-    expect(fastMode).not.toBeChecked()
+    const fastMode = screen.getByRole('button', { name: 'Fast Mode' })
+    expect(fastMode).toHaveAttribute('aria-pressed', 'false')
     fireEvent.click(fastMode)
+    expect(screen.getByRole('button', { name: 'Fast Mode' })).toHaveAttribute('aria-pressed', 'true')
     fireEvent.keyDown(window, { key: 'Enter' })
 
     expect(onConfirm.mock.calls[0][0][1].config.fastMode).toBe(true)

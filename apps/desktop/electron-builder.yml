@@ -7,6 +7,8 @@
 # into colliding on one install directory or one update manifest.
 #
 # Build with: SUPERONE_VARIANT=<stable|alpha> electron-builder --config electron-builder.config.cjs
+# Optionally SUPERONE_VERSION=<semver> to package a commit under a different
+# version (cutting stable from a validated alpha tree without a bump commit).
 
 directories:
   output: dist

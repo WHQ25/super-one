@@ -45,6 +45,24 @@ function resolveVariantId() {
 }
 
 /**
+ * Effective packaging version.
+ *
+ * Cutting stable from a validated alpha commit must not require a bump commit,
+ * or the stable binary is "the validated tree plus a commit nobody ran". The
+ * override lives here rather than on the command line (`-c.extraMetadata.version`)
+ * because electron-builder merges CLI `-c` overrides *after* this config
+ * returns, which would let a caller bypass the variant assertion below.
+ */
+function resolveVersion(packageVersion) {
+  const override = process.env.SUPERONE_VERSION?.trim()
+  if (!override) return packageVersion
+  if (!semver.valid(override)) {
+    throw new Error(`SUPERONE_VERSION "${override}" is not a valid semver version`)
+  }
+  return override
+}
+
+/**
  * The desktop variant is explicit, but `@super-one/cli`, the harness manifest
  * channel and the GitHub prerelease flag all still derive from the version
  * string. Assert the two agree so those derivations stay consistent, and so a
@@ -66,7 +84,8 @@ const variantId = resolveVariantId()
 const variant = VARIANTS[variantId]
 
 const pkg = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'utf8'))
-assertVersionMatchesVariant(pkg.version, variantId)
+const version = resolveVersion(pkg.version)
+assertVersionMatchesVariant(version, variantId)
 
 const base = yaml.load(readFileSync(join(__dirname, 'electron-builder.yml'), 'utf8'))
 
@@ -99,5 +118,8 @@ module.exports = {
     name: variant.packageName,
     productName: variant.productName,
     variant: variantId,
+    // Merged into the packaged package.json before AppInfo is built, so this
+    // drives artifact filenames, app.getVersion() and the update manifest.
+    version,
   },
 }

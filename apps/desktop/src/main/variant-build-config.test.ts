@@ -15,16 +15,20 @@ const matching = entries.find(([, v]) => v.prereleaseTag === prereleaseTag)?.[0]
 const mismatched = entries.find(([, v]) => v.prereleaseTag !== prereleaseTag)?.[0]
 
 /** The config reads env and package.json at require time, so reload per case. */
-function loadConfig(variant?: string): Record<string, unknown> {
+function loadConfig(variant?: string, versionOverride?: string): Record<string, unknown> {
   delete require_.cache[CONFIG_PATH]
-  const previous = process.env.SUPERONE_VARIANT
+  const previous = { ...process.env }
   if (variant === undefined) delete process.env.SUPERONE_VARIANT
   else process.env.SUPERONE_VARIANT = variant
+  if (versionOverride === undefined) delete process.env.SUPERONE_VERSION
+  else process.env.SUPERONE_VERSION = versionOverride
   try {
     return require_(CONFIG_PATH) as Record<string, unknown>
   } finally {
-    if (previous === undefined) delete process.env.SUPERONE_VARIANT
-    else process.env.SUPERONE_VARIANT = previous
+    for (const key of ['SUPERONE_VARIANT', 'SUPERONE_VERSION']) {
+      if (previous[key] === undefined) delete process.env[key]
+      else process.env[key] = previous[key]
+    }
   }
 }
 
@@ -78,6 +82,32 @@ describe('electron-builder variant config', () => {
     expect((config.mac as { notarize: boolean }).notarize).toBe(true)
     expect((config.files as string[]).length).toBeGreaterThan(10)
     expect((config.asarUnpack as string[]).length).toBeGreaterThan(0)
+  })
+
+  describe('version override', () => {
+    const stableVersion = '99.0.0'
+    const stable = entries.find(([, v]) => v.prereleaseTag === null)?.[0] as VariantId
+
+    it('packages a stable build from an alpha-numbered tree without a bump commit', () => {
+      // Otherwise the stable binary is "the validated tree plus a commit the
+      // alpha users never ran".
+      const config = loadConfig(stable, stableVersion)
+      expect((config.extraMetadata as { version: string }).version).toBe(stableVersion)
+      expect(config.appId).toBe(VARIANTS[stable].appId)
+    })
+
+    it('validates the variant against the overridden version, not package.json', () => {
+      expect(() => loadConfig(stable, '99.0.0-alpha')).toThrow(/does not match variant/)
+    })
+
+    it('rejects an override that is not valid semver', () => {
+      expect(() => loadConfig(matching, 'v99')).toThrow(/is not a valid semver version/)
+    })
+
+    it('falls back to the package.json version when unset', () => {
+      const config = loadConfig(matching)
+      expect((config.extraMetadata as { version: string }).version).toBe(version)
+    })
   })
 
   it('does not leave identity fields in the shared base', () => {

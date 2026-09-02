@@ -21,9 +21,21 @@ describe('Codex realtime protocol mapping', () => {
     })
     expect(params).not.toHaveProperty('model')
     expect(params).not.toHaveProperty('prompt')
-    expect(params).not.toHaveProperty('initialItems')
     expect(params).not.toHaveProperty('realtimeStartInstructions')
     expect(params).not.toHaveProperty('realtimeEndInstructions')
+  })
+
+  it('forces voice delegation through SuperOne collaboration instead of native Codex agents', () => {
+    const params = buildCodexRealtimeStartParams('t1', { sdp: 'offer' })
+    const instructions = params.initialItems?.[0]?.text ?? ''
+
+    expect(params.initialItems).toEqual([{ role: 'developer', text: instructions }])
+    expect(instructions).toMatch(/SuperOne realtime voice session/)
+    expect(instructions).toMatch(/session_collab_list_agents/)
+    expect(instructions).toMatch(/session_collab_request/)
+    expect(instructions).toMatch(/session_collab_start/)
+    expect(instructions).toMatch(/Do not use.*spawn_agent/i)
+    expect(instructions).toMatch(/Codex, Claude Code, or another configured harness/)
   })
 
   it('lets app-server choose its current default voice when none is configured', () => {

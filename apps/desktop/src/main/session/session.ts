@@ -54,7 +54,6 @@ import {
   redactTaskNotificationForDisplay,
   taskNotificationRequest,
 } from './task-notification-queue'
-import { buildOrphanTaskNotificationMessage } from './orphan-task-notification'
 import { buildModelFallbackMessage, modelFallbackSignature } from './model-fallback-notification'
 import {
   LOCAL_OWNER,
@@ -248,12 +247,6 @@ export class Session implements SessionContract {
   private _totalCostUsd = 0
   private _contextTokens = 0
   private _taskProgress: Record<string, TaskProgressEntry> = {}
-  /**
-   * Terminal task ids already observed (or explicitly stopped) in this Session.
-   * The set intentionally outlives an idle backend runtime release so Claude's
-   * resume-time orphan scan cannot mint a second transcript row for the task.
-   */
-  private _settledBackgroundTaskIds = new Set<string>()
   /** Last announced model swap, so a retry loop cannot mint the same row twice. */
   private _lastModelFallbackSignature: string | null = null
   private _streamingTokensByMessageId: Record<string, { input: number; output: number }> = {}
@@ -1377,7 +1370,6 @@ export class Session implements SessionContract {
         if (this.harnessId !== 'claude') return
         if (!this.backend.stopTask) return
         await this.backend.stopTask(cmd.taskId)
-        this._settledBackgroundTaskIds.add(cmd.taskId)
         return
       }
     }
@@ -1433,7 +1425,6 @@ export class Session implements SessionContract {
     this._totalCostUsd = 0
     this._contextTokens = 0
     this._taskProgress = {}
-    this._settledBackgroundTaskIds.clear()
     this._lastModelFallbackSignature = null
     this._streamingTokensByMessageId = {}
     this._lastUsageByMessageId = {}
@@ -1809,17 +1800,6 @@ export class Session implements SessionContract {
     const sequenced = event.seq === undefined
       ? ({ ...event, ...nextEventSeq() } as AgentEvent)
       : event
-    const taskNotificationId = sequenced.type === 'task_notification'
-      ? (sequenced.taskId || sequenced.toolUseId)
-      : undefined
-    const isRepeatedTaskNotification = !!taskNotificationId
-      && this._settledBackgroundTaskIds.has(taskNotificationId)
-    // Snapshot the pre-reducer transcript: the reducer may attach the result to a
-    // tool block, and only its absence from the current turn *before* that
-    // decides whether to mint a wake row.
-    const orphanNotificationRow = sequenced.type === 'task_notification' && !isRepeatedTaskNotification
-      ? buildOrphanTaskNotificationMessage(sequenced, this._messages, this._taskProgress)
-      : null
     // The swap outlives its turn, so it lands in the transcript instead of in
     // transient session state that `status: idle` would wipe.
     let modelFallbackRow: ChatMessage | null = null
@@ -1831,7 +1811,6 @@ export class Session implements SessionContract {
       }
     }
     this.applyReducer(sequenced)
-    if (taskNotificationId) this._settledBackgroundTaskIds.add(taskNotificationId)
     const outbound = this.enrichOutboundEvent(sequenced)
     const existingProjectPath = (sequenced as { projectPath?: string }).projectPath
     const tagged = { ...outbound, sessionId: this.id, projectPath: existingProjectPath ?? this.projectPath } as AgentEvent
@@ -1849,7 +1828,6 @@ export class Session implements SessionContract {
     // assistant turn the wake triggers. appendTranscriptMessage persists it and
     // re-emits it as user_message_appended — renderer and mobile both pick it up
     // without either having to reduce task_notification a second time.
-    if (orphanNotificationRow) this.appendTranscriptMessage(orphanNotificationRow)
     if (modelFallbackRow) this.appendTranscriptMessage(modelFallbackRow)
     if (tagged.type === 'acp_models') {
       this._cachedAcpModels = tagged

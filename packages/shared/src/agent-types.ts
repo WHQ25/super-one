@@ -596,12 +596,6 @@ export interface MessageMetadata {
    */
   turnSummary?: string
   /**
-   * Background-task wake whose launching tool block is gone or not in the
-   * current turn. Present only on the synthetic transcript row minted for it
-   * (see `buildOrphanTaskNotificationMessage`).
-   */
-  taskNotification?: TaskNotificationMeta
-  /**
    * Automatic model swap (SDK `model_fallback` / `model_refusal_fallback`, and
    * the ACP equivalent). Present only on the synthetic transcript row minted
    * for it (see `buildModelFallbackMessage`).
@@ -633,16 +627,6 @@ export interface ModelFallbackMeta {
   scope?: 'session' | 'local'
   /** Refusal category (`'cyber'`, `'bio'`, …). Open string: new ones ship ahead of any schema. */
   refusalCategory?: string | null
-}
-
-/** Structured payload behind the compact "agent was notified" transcript row. */
-export interface TaskNotificationMeta {
-  status: 'completed' | 'failed' | 'stopped'
-  /** Task description captured at `task_started`, when it survived the runtime. */
-  description?: string
-  summary?: string
-  outputFile?: string
-  usage?: { totalTokens: number; toolUses: number; durationMs: number }
 }
 
 // --- Todo items (derived from TaskCreate/TaskUpdate tool calls) ---

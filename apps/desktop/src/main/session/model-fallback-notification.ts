@@ -26,8 +26,9 @@ export function modelFallbackSignature(event: ModelFallbackEvent): string {
  * has to survive `status: idle`, a reload and a session switch, and has to keep
  * its chronological position among the messages it applies to.
  *
- * Like {@link buildOrphanTaskNotificationMessage} it is a `providerId: 'system'`
- * assistant message so it stays out of `extractClaudeTitle`, and its text block
+ * It is a `providerId: 'system'` assistant message so it stays out of
+ * `extractClaudeTitle` (which titles a session from its first *user* message),
+ * and its text block
  * is plain prose because DB rows, transcript exports and the mobile snapshot all
  * read it directly — only the desktop chat knows how to render
  * `metadata.modelFallback`.

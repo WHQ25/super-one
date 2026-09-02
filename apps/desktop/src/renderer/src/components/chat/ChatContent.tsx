@@ -16,11 +16,6 @@ import { AnimatePresence, motion } from 'motion/react'
 import { ChatInput } from './ChatInput'
 import { ChatStatusBar } from './ChatStatusBar'
 import { ChatMessage, CompactingIndicator, CompactIndicator, CompactErrorIndicator, ApiRetryIndicator, parseCompactMarker, parseTurnMetaMarker, isRedundantTurnSummaryMarker, TurnMetaIndicator, RecappingIndicator } from './ChatMessage'
-import {
-  groupConsecutiveTaskNotifications,
-  TaskNotificationGroup,
-  TaskNotificationRow,
-} from './TaskNotificationRow'
 import { ModelFallbackRow } from './ModelFallbackRow'
 import { selectClaudeModels } from '@/stores/chat-store/selectors'
 import { ChatSuggestions } from './ChatSuggestions'
@@ -293,7 +288,6 @@ function ChatTranscript({
   // A fallback id can name a model from either catalog: model_fallback is emitted
   // by the Claude SDK and by the ACP backends.
   const modelCatalog = useMemo(() => [...claudeModels, ...acpModels], [claudeModels, acpModels])
-  const renderEntries = groupConsecutiveTaskNotifications(renderedMessages)
 
   useEffect(() => {
     const sentinel = sentinelRef.current
@@ -415,20 +409,7 @@ function ChatTranscript({
         <ScrollArea key={displayedSessionId ?? 'default'} className="chat-scroll-area h-full min-w-0" viewportRef={scrollViewportRef}>
           <SelectionContextMenuZone className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">
             {hasMore && <div ref={sentinelRef} className="h-px" style={{ overflowAnchor: 'none' }} />}
-            {renderEntries.map((entry) => {
-              if (entry.type === 'task-notification-group') {
-                const first = entry.items[0]
-                return (
-                  <div key={first.id} data-message-id={first.id} className="chat-message-wrapper">
-                    {entry.items.length === 1 ? (
-                      <TaskNotificationRow meta={first.meta} />
-                    ) : (
-                      <TaskNotificationGroup items={entry.items} />
-                    )}
-                  </div>
-                )
-              }
-              const msg = entry.message
+            {renderedMessages.map((msg) => {
               const fallbackMeta = msg.metadata?.modelFallback
               if (fallbackMeta) {
                 return (

@@ -1554,15 +1554,6 @@ export type Messages = {
       recapLabel: string
       generatingRecap: string
     }
-    /** Background-task wake whose launching tool block is gone or off-turn. */
-    taskNotification: {
-      completed: string
-      failed: string
-      stopped: string
-      group_one: string
-      group_other: string
-      outputFile: string
-    }
     /** Automatic model swap row (SDK `model_fallback`). */
     modelFallback: {
       switchedTo: string
@@ -5238,14 +5229,6 @@ export const en: Messages = {
       summaryLabel: 'Summary:',
       recapLabel: 'Recap:',
       generatingRecap: 'Generating recap…',
-    },
-    taskNotification: {
-      completed: 'Background task finished',
-      failed: 'Background task failed',
-      stopped: 'Background task stopped',
-      group_one: '{{count}} notification',
-      group_other: '{{count}} notifications',
-      outputFile: 'Output log',
     },
     modelFallback: {
       switchedTo: 'Switched to {{model}}',

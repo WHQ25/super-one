@@ -59,6 +59,10 @@ describe('app-settings-service', () => {
   const defaultBrandOnly = { brandHue: null, tokenOverrides: {} }
   const defaultSettings = {
     analyticsEnabled: true,
+    notifications: {
+      enabled: true,
+      kinds: { permission: true, question: true, plan: true, confirm: true },
+    },
     powerMode: 'system',
     experimentalAgentsEnabled: false,
     enabledExperimentalAgents: [],
@@ -152,6 +156,7 @@ describe('app-settings-service', () => {
       }))
       expect(readAppSettings()).toEqual({
         analyticsEnabled: false,
+        notifications: defaultSettings.notifications,
         powerMode: 'system',
         experimentalAgentsEnabled: false,
         enabledExperimentalAgents: [],
@@ -304,6 +309,7 @@ describe('app-settings-service', () => {
       }))
       expect(readAppSettings()).toEqual({
         analyticsEnabled: false,
+        notifications: defaultSettings.notifications,
         powerMode: 'system',
         experimentalAgentsEnabled: false,
         enabledExperimentalAgents: [],

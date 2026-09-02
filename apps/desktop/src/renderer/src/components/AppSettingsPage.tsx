@@ -23,6 +23,7 @@ import { shutdownAnalytics, startAnalytics } from '@/lib/analytics'
 import { changeLocale } from '@/i18n'
 import { useAppStore } from '@/stores/app'
 import { DefaultProviderRow } from '@/components/providers/DefaultProviderRow'
+import { NotificationSettingsSection } from '@/components/settings/NotificationSettingsSection'
 import type {
   Locale,
   PowerMode,
@@ -261,6 +262,8 @@ export function AppSettingsPage() {
             fallback={<span className="truncate text-sm text-muted-foreground">{t('settings.general.videoProvider.auto')}</span>}
           />
         </div>
+
+        <NotificationSettingsSection />
 
         <div className="rounded-lg border border-border">
           <div className="border-b border-border px-4 py-2">

@@ -549,6 +549,15 @@ export type Messages = {
       noSpace: string
     }
   }
+  notifications: {
+    untitledSession: string
+    kind: {
+      permission: { title: string; body: string }
+      question: { title: string; body: string }
+      plan: { title: string; body: string }
+      confirm: { title: string }
+    }
+  }
   settings: {
     layout: {
       tabs: {
@@ -1032,6 +1041,18 @@ export type Messages = {
         failed: string
       }
       media: string
+      notifications: {
+        section: string
+        enabled: { label: string; description: string }
+        kinds: {
+          label: string
+          description: string
+          permission: string
+          question: string
+          plan: string
+          confirm: string
+        }
+      }
       imageProvider: {
         label: string
         description: string
@@ -4133,6 +4154,15 @@ export const en: Messages = {
       noSpace: 'Not enough space',
     },
   },
+  notifications: {
+    untitledSession: 'Untitled session',
+    kind: {
+      permission: { title: '{{session}} needs permission', body: 'Waiting for approval to run {{tool}}.' },
+      question: { title: '{{session}} has a question', body: 'The agent is waiting for your answer.' },
+      plan: { title: '{{session}} needs plan approval', body: 'A plan is ready for your review.' },
+      confirm: { title: '{{session}} needs your confirmation' },
+    },
+  },
   settings: {
     layout: {
       tabs: {
@@ -4665,6 +4695,21 @@ export const en: Messages = {
         failed: 'Could not update the power mode',
       },
       media: 'Media',
+      notifications: {
+        section: 'Notifications',
+        enabled: {
+          label: 'Notify when a session needs you',
+          description: 'Send a system notification when an agent is blocked on your input. Suppressed while SuperOne is focused.',
+        },
+        kinds: {
+          label: 'Notify me about',
+          description: 'Pick which kinds of interruption are worth a notification.',
+          permission: 'Tool permission requests',
+          question: 'Questions from the agent',
+          plan: 'Plan approvals',
+          confirm: 'Host confirmations',
+        },
+      },
       imageProvider: {
         label: 'Image Provider',
         description: 'Which provider generates images. Add keys and enable image models in Providers.',

@@ -2,6 +2,7 @@
 
 import type { TokenOverrides } from './harness-brand'
 import type { AcpGoal } from './acp-goal'
+import type { NotificationSettings } from './notifications'
 
 // --- Image attachments ---
 
@@ -3709,6 +3710,9 @@ export const AgentIpcChannels = {
   ACTIVATE_SESSION: 'agent:activate-session',
   SET_SESSION_FOREGROUND: 'agent:set-session-foreground',
 
+  /** Main → renderer: the user clicked a notification; open this session. */
+  NOTIFICATION_ACTIVATE: 'app:notification-activate',
+
   // Live session snapshots for renderer resync
   GET_LIVE_SNAPSHOTS: 'agent:get-live-snapshots',
 
@@ -4511,6 +4515,12 @@ export interface AppSettings {
    * the app forces Welcome → Discover again so older installs migrate harnesses.
    */
   onboardingEpoch: number
+  /**
+   * Human-intervention notifications (permission gates, questions, plan
+   * approval, MCP elicitation). Channel-neutral on purpose: the desktop banner
+   * is only the first delivery channel.
+   */
+  notifications: NotificationSettings
   agentPreference: {
     claude: {
       defaultModel: string
@@ -4564,6 +4574,8 @@ export interface HarnessSessionRank {
 
 export interface AppSettingsPatch {
   analyticsEnabled?: boolean
+  /** Partial patch: omitted kinds keep their current value. */
+  notifications?: { enabled?: boolean; kinds?: Partial<NotificationSettings['kinds']> }
   powerMode?: PowerMode
   experimentalAgentsEnabled?: boolean
   enabledExperimentalAgents?: string[]

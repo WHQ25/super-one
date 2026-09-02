@@ -204,6 +204,15 @@ function App(): React.JSX.Element {
   }, [])
 
   useEffect(() => {
+    return window.app.onNotificationActivate(({ sessionId, projectPath }) => {
+      // No fallback when projectPath is missing: routing is the notification
+      // payload's job, and a guess here would silently open the wrong chat.
+      if (!projectPath) return
+      void useChatStore.getState().switchToSession(projectPath, sessionId)
+    })
+  }, [])
+
+  useEffect(() => {
     return window.app.onDeviceStatusChanged(({ online, firstConnect, name }) => {
       if (!online || !firstConnect) return
       toast.success(t('sidebar.remote.deviceConnectedToast', { name: name ?? '' }), {

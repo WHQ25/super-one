@@ -20,6 +20,7 @@ import type {
   UpdateChannel,
   WebmcpTrustedOrigin,
 } from '@superone/shared/agent-types'
+import { DEFAULT_NOTIFICATION_SETTINGS, NOTIFICATION_KINDS, normalizeNotificationSettings } from '@superone/shared/notifications'
 import { sanitizeOverrides } from '@superone/shared/harness-brand'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 
@@ -68,8 +69,28 @@ function readPowerMode(data: Record<string, unknown>): PowerMode {
   return 'system'
 }
 
+/**
+ * Patch merge for the nested notification settings. `kinds` is patched
+ * per-key rather than replaced so a UI that toggles one switch never has to
+ * round-trip the whole map (and so a stale renderer can't silently reset the
+ * others).
+ */
+function mergeNotificationSettings(
+  current: AppSettings['notifications'],
+  patch: AppSettingsPatch['notifications'],
+): AppSettings['notifications'] {
+  if (!patch) return current
+  const kinds = { ...current.kinds }
+  for (const kind of NOTIFICATION_KINDS) {
+    const next = patch.kinds?.[kind]
+    if (typeof next === 'boolean') kinds[kind] = next
+  }
+  return { enabled: patch.enabled ?? current.enabled, kinds }
+}
+
 const defaults: AppSettings = {
   analyticsEnabled: true,
+  notifications: DEFAULT_NOTIFICATION_SETTINGS,
   powerMode: 'system',
   experimentalAgentsEnabled: false,
   enabledExperimentalAgents: [],
@@ -503,6 +524,7 @@ export function readAppSettings(): AppSettings {
     const data = JSON.parse(readFileSync(getSettingsPath(), 'utf-8'))
     return {
       analyticsEnabled: typeof data.analyticsEnabled === 'boolean' ? data.analyticsEnabled : defaults.analyticsEnabled,
+      notifications: normalizeNotificationSettings(data.notifications),
       powerMode: readPowerMode(data),
       experimentalAgentsEnabled: typeof data.experimentalAgentsEnabled === 'boolean'
         ? data.experimentalAgentsEnabled
@@ -592,6 +614,7 @@ export function readAppSettings(): AppSettings {
   } catch {
     return {
       analyticsEnabled: defaults.analyticsEnabled,
+      notifications: normalizeNotificationSettings(undefined),
       powerMode: defaults.powerMode,
       experimentalAgentsEnabled: defaults.experimentalAgentsEnabled,
       enabledExperimentalAgents: [],
@@ -706,6 +729,7 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
 
   const merged: AppSettings = {
     analyticsEnabled: patch.analyticsEnabled ?? current.analyticsEnabled,
+    notifications: mergeNotificationSettings(current.notifications, patch.notifications),
     powerMode: patch.powerMode ?? current.powerMode,
     experimentalAgentsEnabled: patch.experimentalAgentsEnabled
       ?? patch.agentPreference?.acp?.enabled

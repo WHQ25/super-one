@@ -618,6 +618,8 @@ interface AppAPI {
 
   onContentZoom(callback: (action: 'in' | 'out' | 'reset') => void): () => void
 
+  /** Main → renderer: a notification was clicked; open this session. */
+  onNotificationActivate(callback: (payload: { sessionId: string; projectPath?: string }) => void): () => void
   onCloseTabShortcut(callback: () => void): () => void
 
   onBrowserAnnotateShortcut(callback: (webContentsId: number) => void): () => void

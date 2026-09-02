@@ -588,6 +588,15 @@ export const zh: Messages = {
       noSpace: '空间不足',
     },
   },
+  notifications: {
+    untitledSession: '未命名会话',
+    kind: {
+      permission: { title: '{{session}} 需要授权', body: '正在等待你批准执行 {{tool}}。' },
+      question: { title: '{{session}} 有问题要问你', body: '智能体正在等待你的回答。' },
+      plan: { title: '{{session}} 需要审批计划', body: '计划已生成，等待你确认。' },
+      confirm: { title: '{{session}} 需要你确认' },
+    },
+  },
   settings: {
     layout: {
       tabs: {
@@ -1108,6 +1117,21 @@ export const zh: Messages = {
         failed: '无法更新电源运行模式',
       },
       media: '媒体',
+      notifications: {
+        section: '通知',
+        enabled: {
+          label: '会话需要你时发送通知',
+          description: '当智能体卡住等待你输入时发送系统通知。SuperOne 处于前台时不打扰。',
+        },
+        kinds: {
+          label: '通知这些情况',
+          description: '选择哪些类型的中断值得推送通知。',
+          permission: '工具授权请求',
+          question: '智能体的提问',
+          plan: '计划审批',
+          confirm: '宿主确认请求',
+        },
+      },
       imageProvider: {
         label: '图片生成服务商',
         description: '由哪个服务商生成图片。在「服务商」中添加密钥并启用图片模型。',

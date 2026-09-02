@@ -1972,6 +1972,14 @@ const appAPI = {
     }
   },
 
+  onNotificationActivate: (callback: (payload: { sessionId: string; projectPath?: string }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: { sessionId: string; projectPath?: string }): void => callback(payload)
+    ipcRenderer.on(AgentIpcChannels.NOTIFICATION_ACTIVATE, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.NOTIFICATION_ACTIVATE, handler)
+    }
+  },
+
   onCloseTabShortcut: (callback: () => void) => {
     const handler = (): void => callback()
     ipcRenderer.on(AgentIpcChannels.CLOSE_TAB_SHORTCUT, handler)

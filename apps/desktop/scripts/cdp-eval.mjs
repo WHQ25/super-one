@@ -20,7 +20,7 @@ if (!expression) {
 }
 
 const targets = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()
-const page = targets.find((t) => t.type === 'page' && t.url.startsWith('http'))
+const page = targets.find((t) => t.type === 'page' && (t.url.startsWith('http') || t.url.startsWith('file:')))
 if (!page) {
   console.error('no renderer page target; is the dev app running with REMOTE_DEBUGGING_PORT?')
   process.exit(1)

@@ -77,6 +77,8 @@ import { TerminalBroadcaster } from './remote/terminal-broadcaster'
 import { nodePtySpawner } from './terminal/pty'
 import { DeviceRegistry } from './remote/device-registry'
 import { MobileBroadcaster } from './remote/mobile-broadcaster'
+import { NotificationService } from './notifications/notification-service'
+import { DesktopNotificationChannel } from './notifications/desktop-notification-channel'
 import { PresenceCoordinator } from './remote/presence-coordinator'
 import { getSessionRecord, listWorktreePaths, loadSessionStateBySid, resolveProviderSessionIdForResume, saveSessionStateBySid, updateProviderSessionId } from './session/session-repo'
 import { applyRealtimeTimelineEvent } from './session/realtime-timeline-repo'
@@ -494,7 +496,7 @@ sessionManager.onAny((_sid, event) => {
   }
   agentService.notifyEventSubscribers(event)
   scheduledSendService.observe(_sid, event)
-  rendererAgentEventTransport.push(event)
+  publishAgentEvent(event)
 })
 const deviceRegistry = new DeviceRegistry(sessionManager)
 const remoteCallbacks: RemoteControlCallbacks = {
@@ -624,6 +626,56 @@ void import('./device-agent').then(({ setDeviceAgentViewfinderClaimSink }) => {
 const rendererAgentEventTransport = createRendererAgentEventTransport((events) => {
   safeSend(AgentIpcChannels.EVENT, events)
 })
+
+/**
+ * Must stay in sync with `appId` in `electron-builder.yml` — Windows matches
+ * the toast against the installer-created shortcut's AppUserModelID.
+ */
+const WINDOWS_APP_USER_MODEL_ID = 'com.superone.app'
+
+/**
+ * Human-intervention notifications. Registered channels are pure transports;
+ * the policy (settings, dedupe, focus suppression) lives in the service, so a
+ * future mobile-push channel is `registerChannel` and nothing else.
+ */
+const notificationService = new NotificationService({
+  readSettings: () => readAppSettings().notifications,
+  // Whole-app focus: if any SuperOne window has focus the in-app UI already
+  // shows the request, and an OS banner would only duplicate it.
+  isAppFocused: () => [...allWindows].some((win) => !win.isDestroyed() && win.isFocused()),
+  describeSession: (sessionId) => {
+    const session = sessionManager.getSession(sessionId)
+    if (!session) return undefined
+    return { title: session.snapshot.title, projectPath: session.projectPath }
+  },
+  t: (key, options) => t(key, options),
+})
+notificationService.registerChannel(new DesktopNotificationChannel({
+  getIcon: () => getAppIcon(),
+  onActivate: (intent) => {
+    const win = mainWindow
+    if (!win || win.isDestroyed()) return
+    if (win.isMinimized()) win.restore()
+    app.focus({ steal: true })
+    win.show()
+    win.focus()
+    win.webContents.send(AgentIpcChannels.NOTIFICATION_ACTIVATE, {
+      sessionId: intent.sessionId,
+      projectPath: intent.projectPath,
+    })
+  },
+}))
+
+/**
+ * Single convergence point for everything the renderer sees. Notifications tap
+ * here rather than at `sessionManager.onAny` alone, because interaction
+ * *resolutions* are broadcast by AgentService and never pass through onAny —
+ * without this the banner would never be withdrawn.
+ */
+function publishAgentEvent(event: AgentEvent): void {
+  notificationService.handleEvent(event)
+  rendererAgentEventTransport.push(event)
+}
 
 new PresenceCoordinator(sessionManager, {
   broadcastToRenderer: (event) => safeSend(AgentIpcChannels.EVENT, event),
@@ -1053,7 +1105,7 @@ function createWindow(): void {
   initMiniAppHostActionBridge(() => mainWindow)
   setMiniAppHostActionRunner(runMiniAppHostAction)
   setAppToolExecutor(executeMiniAppTool)
-  agentService.setBroadcastFn((event) => rendererAgentEventTransport.push(event))
+  agentService.setBroadcastFn((event) => publishAgentEvent(event))
   agentService.setSessionManager(sessionManager)
   automationService.setMainWindow(mainWindow)
   automationService.setAgentService(agentService)
@@ -5407,6 +5459,11 @@ function registerIpcHandlers(): void {
 }
 
 app.whenReady().then(async () => {
+  // Windows ties toast notifications to the Start Menu shortcut's
+  // AppUserModelID, which electron-builder's NSIS target sets to `appId`. The
+  // running process must declare the same id or Windows drops the toast (or
+  // shows it without our icon). Must happen before any window opens.
+  if (process.platform === 'win32') app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID)
   log.info(
     '[startup] appVersion=%s electron=%s platform=%s arch=%s logPath=%s',
     app.getVersion(),

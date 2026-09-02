@@ -1,0 +1,17 @@
+"两套引擎"从来不是重点。重点是引擎应该是一个可以选的东西。ACP 让这个选择变得开放。
+
+### 接的是协议,不是厂商
+
+ACP 后端接入的是 Claude 和 Codex 用的同一道接缝:会话生命周期、模型、斜杠命令、权限模式和 worktree 工作目录,全部映射到共享契约上。每个 agent 的模型列表会被缓存,斜杠命令在你打开 `/` 弹窗时才懒加载,完整的配置缓存意味着切换 agent 不必重新盘问一遍 CLI。
+
+### Grok,完整接通
+
+Grok 的工具调用映射到其他每个 harness 共用的那套聊天 UI —— 包括拆开它的 `use_tool` 信封、映射 `SearchTools`,于是无论哪个引擎产生的工具行,读起来都一样。`AskUserQuestion` 已接通,`exit_plan_mode` 打开的是同一套行内评论式计划评审,计划模式也可以从宿主界面进入,而不只是靠输入命令。
+
+### 它继承 SuperOne 的工具面
+
+宿主会给每个 ACP 会话挂上 SuperOne 自己的 MCP 服务并注入宿主提示词,于是一个 ACP agent 在不知情的情况下获得了浏览器、computer use 和媒体工具。用户配置的 MCP 服务映射为 ACP 的 session servers,`set_model` 与 `session/load` 也已接通,会话可以从中断处恢复。
+
+### 它出现在哪
+
+启用 ACP 后,Codex 会和它一起收进 agent 下拉菜单,harness 分页也随之回归 —— 无论你打开了多少个引擎,选择器始终是同一个控件。

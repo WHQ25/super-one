@@ -1,0 +1,17 @@
+Screen control is usually all-or-nothing: an agent gets your display, or it gets nothing. Computer Use in SuperOne is scoped to the app you hand it.
+
+### Grant by dragging an app in
+
+`@`-mention a desktop app in the chat input to grant this session control of it. The grant UI shows the real app icon, so what you are authorizing is unambiguous, and the permissions screen has an always-allow path for apps you use constantly. A guided drag float walks you through the first grant instead of dropping you into a system settings pane with no context.
+
+### Window capture, not screen capture
+
+Capture is per window rather than per display. Multi-window modal safety means a dialog that appears over the target window is recognized rather than clicked through, and accessibility transient roots are included so menus and popovers that live outside the window tree are still readable.
+
+### The app catalog is compact
+
+The apps catalog is compacted before it reaches the model — a list of what is running and controllable, not a dump of every bundle on disk. Snapshots read the accessibility tree first and fall back to pixels only where the app described nothing.
+
+### A lab to test against
+
+A fixture app ships alongside it, so the tool surface can be exercised against a known target rather than against whatever happens to be open.

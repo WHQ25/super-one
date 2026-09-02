@@ -1,0 +1,13 @@
+Six harnesses cannot all ship inside the download. So none of them do.
+
+### Zero bundled binaries
+
+Packaged platform binaries were dropped from the app. When you enable a harness, its artifacts are fetched from an R2 mirror with npm as the fallback, and pins are pre-fetched into the atomic app update so an upgrade does not leave you with a version mismatch. Desktop and CLI share one install root and one download path — the install kernel was lifted into the runtime so both hosts run the same code.
+
+### A settings home for each engine
+
+Settings gains a Harnesses panel with per-harness configuration nested inside it. Pickers filter to what you actually enabled, harness order is set by dragging rather than by a pile of default-preference dropdowns, and a user/project scope switcher covers harness resources.
+
+### First run looks around
+
+Onboarding scans for CLIs already on your machine and recommends harnesses accordingly, rather than asking you to pick from six names you may not recognize. An epoch-based re-onboard forces the flow again when the pins change materially, so the recommendation is never stale.

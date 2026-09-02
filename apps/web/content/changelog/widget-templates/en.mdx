@@ -1,0 +1,13 @@
+An agent that renders a good dashboard once has produced something disposable. Saving it makes it an asset.
+
+### A file-backed template store
+
+Rendered widgets can be saved as named templates on disk. Because the store is plain files, templates are backed up, diffed and version-controlled like anything else in the project — there is no opaque database to export from.
+
+### Re-render by name
+
+`widget_show` accepts a saved template name and renders it with fresh data, so the second time you want that layout you ask for it instead of describing it again. Saved templates are surfaced in the widget guide the agent reads, which means the model discovers what you already have rather than reinventing it.
+
+### Saving is a user action
+
+You save the widget, not the agent — the save control lives on the rendered widget itself, so a template exists because you decided it was worth keeping.

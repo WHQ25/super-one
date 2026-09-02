@@ -1,0 +1,13 @@
+Cursor runs on its own SDK rather than a CLI, which made it a good test of whether the harness seam was really engine-shaped.
+
+### Native SDK, full surface
+
+`@cursor/sdk` is wired end to end on SDK 1.0.27: sessions, MCP, cloud sessions and the recovery surface all map onto the shared contract. The integration lives in its own package, following the same pattern as the other harnesses.
+
+### Its own knobs, in the shared shape
+
+Permission modes and a sandbox toggle are exposed the way every other harness exposes them, so the chat status bar reads the same regardless of engine. The full model parameter surface is available, with a model enable list and harness-scoped preferences so Cursor's settings do not leak into anyone else's.
+
+### Settings that do not become a wall
+
+The Cursor settings page is split into tabs rather than one long scroll. The `Auto` permission mode was renamed to `Agent`, matching what it actually does.

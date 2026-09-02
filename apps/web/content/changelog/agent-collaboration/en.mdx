@@ -1,0 +1,17 @@
+Two agents working on the same repo in separate windows are two agents that do not know about each other. Collaboration makes the boundary crossable.
+
+### You approve every launch
+
+An agent asks to start a collaborator; you see what it intends to delegate and approve or decline. The launch task renders as a markdown bubble rather than a raw tool payload, so the request is readable before you act on it. Child launches are guided toward autonomous permission modes, because a child you have to babysit defeats the purpose.
+
+### A mailbox, not a fire-and-forget
+
+Collaborators exchange messages through a mailbox. Messages render as markdown in the tool UI, and mailbox wake rows show when a session was roused by an incoming message. Notifications that arrive mid-turn are queued and flushed through the session's own send path, so a message never lands in the middle of a half-written tool call.
+
+### The boundary is the point
+
+The collaborator does not have to be the same harness. A Claude session can hand a task to Codex and read the result back, because collaboration is built on the shared session seam rather than on any one engine's subagent feature.
+
+### It brings its own project
+
+If the collaborator's working directory has never been opened, it is registered as its own project — so the work shows up where you would look for it instead of being orphaned inside the parent's session.

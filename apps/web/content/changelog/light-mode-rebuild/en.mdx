@@ -1,0 +1,9 @@
+Light mode had been the dark theme with the lightness turned up. That is why it never quite looked designed.
+
+### Inverted chrome, not lightened dark
+
+The chrome relationship is inverted at the token layer: surfaces that were the darkest in dark mode become the lightest here, and the hierarchy is rebuilt rather than inherited. Every token channel is stamped explicitly, so a value never falls through to a dark-mode default.
+
+### Ink derived by contrast
+
+The brand fill was deepened, and the text color that sits on it is computed from the fill by contrast rather than chosen once and hoped to work across every hue. Brand hue is user-adjustable, so a hand-picked foreground would have been wrong for most of the range — at very high lightness a fill physically cannot carry color, and the derivation accounts for that instead of producing an unreadable chip.

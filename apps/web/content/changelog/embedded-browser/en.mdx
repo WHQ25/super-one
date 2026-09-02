@@ -1,0 +1,13 @@
+An agent that can read your code but not the page you are debugging is only half useful. The activity panel now hosts a real browser, and that browser is wired into the tool surface every harness inherits.
+
+### A browser you would actually use
+
+Tabs with per-session isolation, bookmarks with folders, history autocomplete in the address bar, `Cmd/Ctrl+D` to bookmark, `Cmd/Ctrl`-click to open in a new tab, page zoom controls, and a load-progress bar instead of a spinning reload icon. Popup-based logins are redirected into the same tab so OAuth flows complete instead of vanishing. Certificate-error sites can be entered past a warning rather than being a dead end.
+
+### Point at something and hand it to the agent
+
+Annotation mode lets you click elements on the page and attach them to the chat input. The webview's context menu carries the rest — copy an image, drag it straight into chat, or fire a quick annotation action.
+
+### The same browser as MCP tools
+
+`browser_tabs`, `browser_snapshot`, `browser_act`, `browser_query`, `browser_evaluate`, `browser_network` and friends are registered on the SuperOne MCP surface, so Claude, Codex and every other harness get them without shipping a browser of their own. Snapshots are section-selectable with console grep and TOON output to keep them small; selectors are stabilized and ambiguous matches are reported rather than silently resolved; secret values are masked in type-tool summaries. Network recording is on-demand, and a CDP-backed automation tier sits behind an experimental setting for the cases the synthetic path cannot express.

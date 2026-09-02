@@ -1,0 +1,21 @@
+The agent should run where the code is. That is often not the laptop you are typing on.
+
+### A headless node
+
+`superone` ships as a CLI that runs a node server with no Electron in sight. The runtime foundations it needs — sessions, filesystem, git, leases, spawn environment, crypto — were extracted into dual-use packages, and each harness became its own package you depend on only if you enable it. A node pulls Claude and Codex from official npm rather than bundling them.
+
+### Desktop-bound tools come home
+
+A node cannot show you a browser. So tools that need the desktop are delegated back over a host action channel: the node calls, the desktop executes, the result returns. The full SuperOne tool surface is available on a remote session, and host action grants are explicit rather than ambient.
+
+### Events, losslessly
+
+`session.agent_event` streams the harness event exactly as it happened, so a remote session's transcript reconstructs identically to a local one. The agent-event mappers were extracted Electron-free specifically so the node and the desktop derive the same thing from the same bytes.
+
+### One session list
+
+Sessions, projects, skills and MCP servers on a node are reached through the same environment API as local ones, with pagination and recovery layers so a flaky link degrades instead of breaking. Desired remotes auto-connect and wake on resume, and the CLI version is checked against the desktop so an older host refuses rather than misbehaves.
+
+### Getting the CLI there
+
+An opt-in upgrade path installs or updates the node CLI over SSH, and remote nodes stay behind an experimental settings toggle.

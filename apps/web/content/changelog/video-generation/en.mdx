@@ -1,0 +1,17 @@
+Image generation proved the shape. Video needed the same shape plus an answer to "this call costs a dollar and takes two minutes".
+
+### Four backends, one protocol table
+
+Sora, Veo, Seedance and New API-compatible endpoints are declared as video wire protocols in the platform registry, alongside the image ones. A native Volcengine Ark adapter lands at the same time, with Ark's size constraints surfaced in the media provider listing so the model picks a valid resolution instead of failing at the API.
+
+### Confirmation before spend
+
+`media_generate_video` prompts for explicit user confirmation before it runs. The tool block is expandable and reports live status while the job is in flight, because a two-minute render should not look like a hung turn.
+
+### Clips land in the gallery
+
+Generated videos render as gallery cards next to generated images, and reference images used as input are shown in the gallery too — so what went in is visible next to what came out.
+
+### A guide per provider
+
+`read_manual` gains a per-provider media section, so the agent reads the constraints of the backend it is about to call rather than discovering them through a 400.

@@ -1,0 +1,21 @@
+The other five engines are processes SuperOne talks to. DeepSeek is a runtime SuperOne hosts.
+
+### Embedded, not spawned
+
+`@superone/deepseek` embeds the dsh runtime in-process, and the backend drives it directly. Credentials come from SuperOne's own store rather than a separate config file, so the engine you enabled is authenticated by the app you enabled it in.
+
+### The tool plane, mounted per session
+
+Each session mounts dsh's native tool plane, with SuperOne's own MCP surface bridged in alongside it and third-party MCP servers mounted on the scope chain. MCP config edits apply to sessions that are already running, and servers are managed from the settings page like every other harness.
+
+### Delegation and resume
+
+Foreground subagents run on a host-plane tool surface, delegated children render as Task blocks, and a `subagent_fork` tool handles the split. Fork and cold resume are pinned so a session reopens where it stopped. Sessions compact automatically and on `/compact`.
+
+### A trajectory you can read
+
+The trajectory ledger is rendered as a panel built on an incremental fold, so a long run stays scrollable rather than re-deriving itself on every event. A failed subagent surfaces its provider diagnostic directly in the Task chip instead of failing silently.
+
+### Presets and safety
+
+Agent presets get their own icons and an animated picker, DeepSeek's mode merges into the shared model selector, and multimodal image input is wired natively. Third-party dsh plugins can be installed at runtime, with self-modifying plugins behind an explicit opt-in, and the whole engine is confined behind sandbox-backed permission presets.

@@ -1,0 +1,17 @@
+An agent that writes a mobile app should be able to look at it running.
+
+### Read the tree, fall back to pixels
+
+The iOS Simulator helper reads the semantic accessibility tree, and recognized on-screen text is presented as a normal UI tree rather than a separate OCR result — so the agent queries one structure. Pixels are read only where the app described nothing. Snapshot identity is a fingerprint of both the tree and the frame, because either one alone can be stale while the other has moved on, and element refs are pinned to the snapshot they came from so a stale ref fails loudly instead of clicking the wrong thing.
+
+### Android through the same seam
+
+Android devices are discovered and offered in the same catalog, driven through the same agent seam, with a neutral frame and input model and a live video stream. One connection serves every viewer, real phones are named by their market name rather than a parts number, and emulators shut down with the app.
+
+### Three providers, one panel
+
+iOS Simulator, Android, and the mirrored iPhone appear in a cross-platform device panel behind a platform-routed IPC facade. The agent asks for a device from a tiered catalog and receives a control grant; each device tab carries its own identity, so one session can hold two devices and name which one a call is for.
+
+### The preview is the viewfinder
+
+The floating preview over the chat is the same surface the agent sees. What you are watching and what it is acting on are one thing, not two.

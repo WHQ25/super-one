@@ -1,0 +1,17 @@
+Two engines was never the point. The point was that the engine should be a choice. ACP makes that choice open-ended.
+
+### The protocol, not the vendor
+
+An ACP backend joins the same seam Claude and Codex use: session lifecycle, models, slash commands, permission modes and worktree cwd all map onto the shared contract. Per-agent models are cached, slash commands lazy-load when you open the `/` popup, and the full config cache means switching agents does not re-interrogate the CLI.
+
+### Grok, wired end to end
+
+Grok's tool calls are mapped onto the same chat UI every other harness renders into — including unwrapping its `use_tool` envelope and mapping `SearchTools`, so tool rows read the same whichever engine produced them. `AskUserQuestion` is wired, `exit_plan_mode` opens the same line-comment plan review, and plan mode can be entered from the host UI rather than only by typing.
+
+### It inherits the SuperOne tool surface
+
+The host attaches SuperOne's MCP server to every ACP session and injects the host prompt, so an ACP agent gets the browser, computer use and media tools without knowing they exist. User-configured MCP servers map onto ACP session servers, and `set_model` plus `session/load` are wired so a session resumes where it left off.
+
+### Where it shows up
+
+With ACP enabled, Codex folds into the agent dropdown alongside it and harness tabs come back — the picker stays one control no matter how many engines you have turned on.

@@ -1,0 +1,17 @@
+Running two agents at once used to mean two windows. Now the main area itself splits.
+
+### A binary split-tree, not a fixed grid
+
+Drag a session from the sidebar into the main area and it splits wherever you drop it — left, right, above, below. The layout is a binary split tree, so each drop subdivides one pane rather than reflowing a grid, and every divider is draggable. The drop preview is measured off the real DOM, so what you see before releasing is where the pane lands.
+
+### Panes stay alive
+
+A mounted-session registry keeps non-active sessions running. Switch focus, or open a second conversation beside the first, and neither one stops streaming. Panes you are not driving render in a read-only mode, and the window's minimum size grows with the split so a tile can never be squeezed below usable width.
+
+### Chrome moves into the tiles
+
+In mosaic mode the main header disappears and its controls move into each tile's own header — session actions on title hover, a single/grid toggle, and an input box on every tile so switching focus is one click rather than a mode change. Opening the terminal or activity panel collapses back to single automatically, and the panel state survives the round trip.
+
+### Drag a session out into its own window
+
+The same drag that splits a pane can leave the window entirely: drop a session outside and it opens as a mini window, with the drag preview following your cursor across the boundary.

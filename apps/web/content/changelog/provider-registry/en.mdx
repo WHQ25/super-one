@@ -1,0 +1,13 @@
+Every new vendor used to mean another branch in the provider code. The registry now describes what an endpoint can do, and the app reads that description.
+
+### Endpoint families
+
+A platform declares endpoint families rather than one base URL, so a vendor that serves chat completions, an Anthropic-shaped route and an image protocol from different paths is one entry instead of three. Custom platform endpoints are stored per API key, connection testing is unified behind the first endpoint's model list, and an `openai-responses` toggle covers providers that need the Responses shape for Codex compatibility.
+
+### Models discover themselves
+
+Point SuperOne at an OpenAI-compatible endpoint or a relay and it lists the models it actually serves. Discovered models are classified against the local models.dev catalog, so context window, reasoning support and pricing come from the catalog instead of a hand-maintained table — and the catalog details show up for custom and discovered models alike. Model glyphs are matched from catalog aliases, so a model you added yourself still gets its brand mark.
+
+### Custom platforms are fully editable
+
+Capabilities, keys and model mapping can all be edited after the fact. Custom models are managed directly in the model list, media capability is derived from the models you enabled, and reasoning capability is carried through to the effort selector. Startup cost for custom providers was cut so adding one no longer slows the first launch.

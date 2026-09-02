@@ -1,0 +1,13 @@
+Agents that write UI code have always had to stop at the image. Now they do not.
+
+### One service, two callers
+
+`media_generate_image` is registered on the SuperOne MCP surface, so every harness can call it, and the same service backs a human-facing action in chat. Providers are declared in the platform registry with their wire protocol, and the model list you enable determines which media capabilities light up — there is no separate media provider to configure.
+
+### Results land as a gallery, not a wall of files
+
+Generated images collect into a gallery card at the end of the turn rather than interrupting the transcript one file at a time. While a generation is in flight the card shows a breathing placeholder sized to the eventual output, so the layout does not jump when the image arrives.
+
+### Downloads go where you would expect
+
+Generated images default to the project folder on download, with an explicit download action in the context menu for everything else.

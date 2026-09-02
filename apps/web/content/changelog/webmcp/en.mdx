@@ -1,0 +1,13 @@
+The embedded browser let an agent read a page. WebMCP lets the page hand the agent a keyboard.
+
+### Discovery, then consent, then memory
+
+Page tools are discovered from the document, calls require per-origin consent, and the grant persists so you approve a site once rather than every visit. Discovered tools surface in the UI, and the chat rows for a page-tool call are designed rather than rendered as generic MCP output.
+
+### Trust is per origin, and it is a gate
+
+A site trust decision gates the whole page-tool surface for that origin. This is deliberately stricter than per-call approval: a page that can define tools can rename and redefine them, so the meaningful unit of trust is the site, not the individual call. Tool fingerprints catch the rug-pull case where an approved tool quietly becomes a different one.
+
+### It rides the browser, not the harness
+
+Because WebMCP lives on the embedded browser, every harness gets it. The page publishes once; Claude, Codex, Cursor, OpenCode, DeepSeek and any ACP agent can all call it.

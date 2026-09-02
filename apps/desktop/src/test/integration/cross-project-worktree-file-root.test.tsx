@@ -13,7 +13,7 @@ const appOverrides: Record<string, unknown> = {
   resumeSession,
   loadSessionState: async () => null,
   listDir: async () => [],
-  pathExists: async () => true,
+  worktreeExists: async () => true,
   getProjectId: async () => 'pid-b',
   trace: () => {},
 }

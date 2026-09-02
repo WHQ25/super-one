@@ -1,5 +1,4 @@
 import { randomUUID } from 'crypto'
-import { existsSync } from 'fs'
 import { homedir } from 'os'
 import type {
   AgentEvent,
@@ -11,6 +10,7 @@ import type {
 import type { HarnessId } from './types'
 import log from '../logger'
 import { discoverProjectAgents, discoverProjectCommands, discoverSkills } from '../agent/discover-resources'
+import { worktreeExists } from '../git/worktree-alive'
 import { harnessRegistry } from './harness-registry'
 import { getSessionProvider } from './session-provider-repo'
 import { ProjectResourceCache } from './project-resource-cache'
@@ -75,7 +75,9 @@ export interface SessionManagerPersistence {
 
 function resolveResumedCwd(data: LoadedSessionData): { cwd: string; missingWorktreePath: string | null } {
   if (!data.worktreePath) return { cwd: data.projectPath, missingWorktreePath: null }
-  if (existsSync(data.worktreePath)) return { cwd: data.worktreePath, missingWorktreePath: null }
+  if (worktreeExists(data.worktreePath, data.projectPath)) {
+    return { cwd: data.worktreePath, missingWorktreePath: null }
+  }
   return { cwd: data.projectPath, missingWorktreePath: data.worktreePath }
 }
 

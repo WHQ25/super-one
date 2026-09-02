@@ -886,6 +886,48 @@ describe('SessionManager', () => {
       expect(captured.some((e) => e.type === 'worktree_missing')).toBe(false)
     })
 
+    it('marks worktreeMissing when a removed worktree left residue behind', () => {
+      // `git worktree remove` unregisters the worktree but routinely leaves the
+      // directory: one untracked entry (a harness recreating `.claude/.cc-writes`
+      // in the old cwd) defeats the removal. The directory answering `existsSync`
+      // used to keep the session writable against a cwd with no repo and no code.
+      hoisted.existsSyncMock.mockImplementation((path: string) => path === '/outside/wt-residue')
+      const loadSession = vi.fn(() => ({
+        projectPath: '/proj-wt',
+        providerId: 'claude-base',
+        providerSessionId: null,
+        messages: [],
+        totalCostUsd: 0,
+        contextTokens: 0,
+        worktreePath: '/outside/wt-residue',
+        gitBranch: 'feature/x',
+      }))
+      const mgr2 = new SessionManagerImpl({ loadSession })
+      const session = mgr2.resumeSession('sid-wt-residue')
+      expect(session.snapshot.worktreeMissing).toBe(true)
+      expect(session.snapshot.cwd).toBe('/proj-wt')
+    })
+
+    it('keeps a worktree outside the project alive while it still carries its .git link', () => {
+      hoisted.existsSyncMock.mockImplementation(
+        (path: string) => path === '/outside/wt-live' || path === '/outside/wt-live/.git',
+      )
+      const loadSession = vi.fn(() => ({
+        projectPath: '/proj-wt',
+        providerId: 'claude-base',
+        providerSessionId: null,
+        messages: [],
+        totalCostUsd: 0,
+        contextTokens: 0,
+        worktreePath: '/outside/wt-live',
+        gitBranch: 'feature/x',
+      }))
+      const mgr2 = new SessionManagerImpl({ loadSession })
+      const session = mgr2.resumeSession('sid-wt-live')
+      expect(session.snapshot.worktreeMissing).toBe(false)
+      expect(session.snapshot.cwd).toBe('/outside/wt-live')
+    })
+
     it('applies permissionMode from opts to the resumed session (not persisted stale mode)', () => {
       const loadSession = vi.fn(() => ({
         projectPath: '/proj',

@@ -757,7 +757,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       const worktreeMissing =
         !!cachedTarget._worktreePath &&
         !cachedTarget._worktreeRemoved &&
-        !(await window.app.pathExists(cachedTarget._worktreePath))
+        !(await window.app.worktreeExists(cachedTarget._worktreePath, activeProject))
 
       set((s) => {
         const proj = getProject(s, activeProject)

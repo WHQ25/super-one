@@ -2947,9 +2947,9 @@ function registerIpcHandlers(): void {
     }
   })
 
-  ipcMain.handle(AgentIpcChannels.PATH_EXISTS, async (_event, p: string) => {
-    const { existsSync } = await import('node:fs')
-    return existsSync(p)
+  ipcMain.handle(AgentIpcChannels.GIT_WORKTREE_EXISTS, async (_event, worktreePath: string, projectPath: string) => {
+    const { worktreeExists } = await import('./git/worktree-alive')
+    return worktreeExists(worktreePath, projectPath)
   })
 
   ipcMain.handle(AgentIpcChannels.GIT_WORKTREE_INFO, async (_event, folderPath: string) => {

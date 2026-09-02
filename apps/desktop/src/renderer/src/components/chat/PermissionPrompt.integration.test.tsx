@@ -43,7 +43,7 @@ const mockWindowApp = {
   createSession: vi.fn().mockResolvedValue(undefined),
   saveSessionState: vi.fn().mockResolvedValue(undefined),
   loadSessionState: vi.fn().mockResolvedValue(null),
-  pathExists: vi.fn().mockResolvedValue(true),
+  worktreeExists: vi.fn().mockResolvedValue(true),
   resumeSession: vi.fn().mockResolvedValue(undefined),
   listSessionsForFolder: vi.fn().mockResolvedValue([]),
   codexRun: vi.fn(),

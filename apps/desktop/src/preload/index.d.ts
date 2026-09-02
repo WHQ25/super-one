@@ -661,7 +661,7 @@ interface AppAPI {
   getGitBranches(folderPath: string): Promise<string[]>
   switchGitBranch(folderPath: string, branch: string): Promise<GitResult>
   createBranch(folderPath: string, branch: string): Promise<GitResult>
-  pathExists(p: string): Promise<boolean>
+  worktreeExists(worktreePath: string, projectPath: string): Promise<boolean>
   getWorktreeInfo(folderPath: string): Promise<WorktreeInfo | null>
   getCheckedOutBranches(folderPath: string): Promise<string[]>
   activateWorktree(folderPath: string, request: WorktreeActivateRequest | null): Promise<{ ok: true; path: string } | { ok: false; error: string }>

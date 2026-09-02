@@ -8,7 +8,7 @@ const resumeSession = vi.fn(async (_project: string, _sessionId: string, _cwd?: 
 
 const appOverrides: Record<string, unknown> = {
   resumeSession,
-  pathExists: async () => true,
+  worktreeExists: async () => true,
   listDir: async () => [],
   trace: () => {},
 }

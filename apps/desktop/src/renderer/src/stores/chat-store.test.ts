@@ -67,7 +67,7 @@ const mockWindowApp = {
   createSession: vi.fn().mockResolvedValue(undefined),
   saveSessionState: vi.fn().mockResolvedValue(undefined),
   loadSessionState: vi.fn().mockResolvedValue(null),
-  pathExists: vi.fn().mockResolvedValue(true),
+  worktreeExists: vi.fn().mockResolvedValue(true),
   resumeSession: vi.fn().mockResolvedValue(undefined),
   listSessionsForFolder: vi.fn().mockResolvedValue([]),
   codexRun: vi.fn().mockResolvedValue({ threadId: 'thread-1', finalResponse: 'done', usage: null, items: [] }),
@@ -4392,7 +4392,7 @@ describe('switchSession Case A worktree existence check', () => {
       },
     })
 
-    mockWindowApp.pathExists.mockResolvedValueOnce(false)
+    mockWindowApp.worktreeExists.mockResolvedValueOnce(false)
     mockSetActiveWorktree.mockClear()
 
     await useChatStore.getState().switchSession(sid)
@@ -4401,7 +4401,7 @@ describe('switchSession Case A worktree existence check', () => {
     expect(after._worktreeRemoved).toBe(true)
     expect(after.cwd).toBe('/test')
     expect(mockSetActiveWorktree).toHaveBeenCalledWith('/test', null)
-    expect(mockWindowApp.pathExists).toHaveBeenCalledWith('/test/.worktrees/vanished')
+    expect(mockWindowApp.worktreeExists).toHaveBeenCalledWith('/test/.worktrees/vanished', '/test')
   })
 
   it('keeps worktree active when the directory still exists', async () => {
@@ -4427,7 +4427,7 @@ describe('switchSession Case A worktree existence check', () => {
       },
     })
 
-    mockWindowApp.pathExists.mockResolvedValueOnce(true)
+    mockWindowApp.worktreeExists.mockResolvedValueOnce(true)
     mockSetActiveWorktree.mockClear()
 
     await useChatStore.getState().switchSession(sid)
@@ -4437,7 +4437,7 @@ describe('switchSession Case A worktree existence check', () => {
     expect(mockSetActiveWorktree).toHaveBeenCalledWith('/test', '/test/.worktrees/alive')
   })
 
-  it('skips pathExists check for sessions without an active worktree', async () => {
+  it('skips the worktree check for sessions without an active worktree', async () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
     const sid = 'no-wt'
@@ -4460,12 +4460,12 @@ describe('switchSession Case A worktree existence check', () => {
       },
     })
 
-    mockWindowApp.pathExists.mockClear()
+    mockWindowApp.worktreeExists.mockClear()
     mockSetActiveWorktree.mockClear()
 
     await useChatStore.getState().switchSession(sid)
 
-    expect(mockWindowApp.pathExists).not.toHaveBeenCalled()
+    expect(mockWindowApp.worktreeExists).not.toHaveBeenCalled()
   })
 })
 
@@ -4579,7 +4579,7 @@ describe('worktree_missing event (main -> renderer signal)', () => {
     expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', sid, '/test')
   })
 
-  it('switchSession Case B no longer calls pathExists (main is the source of truth)', async () => {
+  it('switchSession Case B no longer probes the worktree (main is the source of truth)', async () => {
     setupProject('/test')
     mockWindowApp.loadSessionState.mockResolvedValue({
       messages: [],
@@ -4589,11 +4589,11 @@ describe('worktree_missing event (main -> renderer signal)', () => {
       provider: 'claude',
       worktreePath: '/test/.worktrees/might-be-gone',
     })
-    mockWindowApp.pathExists.mockClear()
+    mockWindowApp.worktreeExists.mockClear()
 
     await useChatStore.getState().switchSession('db-wt-session')
 
-    expect(mockWindowApp.pathExists).not.toHaveBeenCalled()
+    expect(mockWindowApp.worktreeExists).not.toHaveBeenCalled()
     expect(mockSetActiveWorktree).toHaveBeenCalledWith('/test', '/test/.worktrees/might-be-gone')
   })
 })

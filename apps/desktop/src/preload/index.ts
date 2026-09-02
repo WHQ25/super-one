@@ -2108,8 +2108,9 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.GIT_SWITCH_BRANCH, folderPath, branch),
   createBranch: (folderPath: string, branch: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_CREATE_BRANCH, folderPath, branch),
-  pathExists: (p: string): Promise<boolean> =>
-    ipcRenderer.invoke(AgentIpcChannels.PATH_EXISTS, p),
+  /** Is the session's recorded worktree still a usable checkout? See main/git/worktree-alive. */
+  worktreeExists: (worktreePath: string, projectPath: string): Promise<boolean> =>
+    ipcRenderer.invoke(AgentIpcChannels.GIT_WORKTREE_EXISTS, worktreePath, projectPath),
   getWorktreeInfo: (folderPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_WORKTREE_INFO, folderPath),
   getCheckedOutBranches: (folderPath: string) =>

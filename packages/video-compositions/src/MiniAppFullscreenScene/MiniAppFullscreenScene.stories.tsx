@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
+import { HARNESS_CODEX_HUE } from "@superone/desktop-mocks"
 import {
   MINIAPP_FULLSCREEN_DURATION_IN_FRAMES,
   MINIAPP_FULLSCREEN_FPS,
@@ -48,7 +49,11 @@ export const PlayerDark: Story = {
 }
 
 export const PlayerCodex: Story = {
-  args: { ...miniAppFullscreenSceneDefaultProps, harness: "codex", brandHue: 165 },
+  args: {
+    ...miniAppFullscreenSceneDefaultProps,
+    harness: "codex",
+    brandHue: HARNESS_CODEX_HUE,
+  },
   render: (args) => (
     <PlayerStage
       component={MiniAppFullscreenScene}

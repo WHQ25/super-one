@@ -47,7 +47,7 @@ export const NoPinnedNoApps: Story = {
 }
 
 export const EmptyProjects: Story = {
-  args: { projects: [], pinnedSessions: [] },
+  args: { projects: [], pinnedSessions: [], drafts: [] },
 }
 
 export const CollapsedProjects: Story = {
@@ -60,6 +60,10 @@ export const MissingProjectsOnly: Story = {
 
 export const RemoteOffline: Story = {
   args: { remoteOnline: false },
+}
+
+export const RemoteHost: Story = {
+  args: { hostLabel: "Build Mac mini" },
 }
 
 export const FilesTab: Story = {

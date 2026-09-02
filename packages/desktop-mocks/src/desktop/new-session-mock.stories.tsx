@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
 import { NewSessionMock } from "./new-session-mock"
+import { HARNESS_SHOWCASE_IDS } from "./showcase-catalog"
 
 const meta: Meta<typeof NewSessionMock> = {
   title: "Desktop Mocks/NewSessionMock",
@@ -18,11 +19,11 @@ const meta: Meta<typeof NewSessionMock> = {
   argTypes: {
     defaultHarness: {
       control: { type: "inline-radio" },
-      options: ["claude", "codex"],
+      options: HARNESS_SHOWCASE_IDS,
     },
     harness: {
       control: { type: "inline-radio" },
-      options: [undefined, "claude", "codex"],
+      options: [undefined, ...HARNESS_SHOWCASE_IDS],
     },
     placeholder: { control: "text" },
   },
@@ -43,6 +44,22 @@ export const ControlledClaude: Story = {
 
 export const ControlledCodex: Story = {
   args: { harness: "codex" },
+}
+
+export const ControlledCursor: Story = {
+  args: { harness: "cursor" },
+}
+
+export const ControlledOpenCode: Story = {
+  args: { harness: "opencode" },
+}
+
+export const ControlledDeepSeek: Story = {
+  args: { harness: "dsh" },
+}
+
+export const ControlledGrokAcp: Story = {
+  args: { harness: "acp" },
 }
 
 export const CustomPlaceholder: Story = {

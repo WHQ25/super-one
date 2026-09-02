@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
+import { HARNESS_CODEX_HUE } from "@superone/desktop-mocks"
 import {
   CHAT_STREAM_DURATION_IN_FRAMES,
   CHAT_STREAM_FPS,
@@ -33,7 +34,7 @@ export const Player: Story = {
 }
 
 export const Codex: Story = {
-  args: { ...chatStreamDefaultProps, harness: "codex", brandHue: 165 },
+  args: { ...chatStreamDefaultProps, harness: "codex", brandHue: HARNESS_CODEX_HUE },
   render: (args) => (
     <PlayerStage
       component={ChatStream}

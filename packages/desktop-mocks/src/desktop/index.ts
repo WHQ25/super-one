@@ -20,9 +20,11 @@ export {
   type MockAutomation,
   type MockWorker,
   type MockPinnedSession,
+  type MockDraft,
   type MockApp,
   type AutomationStatus,
   type SessionStatus,
+  type SessionProvider,
   type SidebarTab,
 } from "./desktop-shell"
 export {
@@ -110,6 +112,7 @@ export {
   CodexPermissionPopoverMock,
   EffortSelectorPopoverMock,
   GitBranchPopoverMock,
+  GroupedModelEffortPopoverMock,
   ModelEffortTriggerStrip,
   ModelSelectorPopoverMock,
   PermissionModePopoverMock,
@@ -124,6 +127,7 @@ export {
   type EffortSelectorPopoverMockProps,
   type GitBranchDirty,
   type GitBranchPopoverMockProps,
+  type GroupedModelEffortPopoverMockProps,
   type ModelEffortTriggerStripProps,
   type ModelEntry,
   type ModelSelectorPopoverMockProps,
@@ -170,11 +174,20 @@ export {
 } from "./context-menu-mock"
 export { ShimmerText, type ShimmerTextProps } from "./shimmer-text"
 export { RollingNumber, type RollingNumberProps } from "./rolling-number"
-export { ClaudeAgentIcon, CodexAgentIcon, type Harness } from "./icons"
+export {
+  ClaudeAgentIcon,
+  CodexAgentIcon,
+  HarnessAgentIcon,
+  HarnessSessionIcon,
+  type Harness,
+  type HarnessAgentIconProps,
+  type HarnessSessionIconProps,
+} from "./icons"
 export {
   BrandScope,
   HARNESS_CLAUDE_HUE,
   HARNESS_CODEX_HUE,
+  HARNESS_HUE,
   type BrandScopeProps,
 } from "./brand-scope"
 export {
@@ -184,3 +197,67 @@ export {
   createT,
   type MockT,
 } from "./i18n"
+export {
+  HARNESS_SHOWCASE,
+  HARNESS_SHOWCASE_IDS,
+  SHOWCASE_SANDBOX_LABEL,
+  harnessShowcaseMeta,
+  type HarnessShowcaseMeta,
+  type ShowcaseSandboxMode,
+} from "./showcase-catalog"
+export {
+  ComposerVoiceButtonMock,
+  ContextDial,
+  ModelEffortTriggerMock,
+  ScheduledSendControlMock,
+  type ModelEffortTriggerMockProps,
+  type MockPipKind,
+  type MockVoiceState,
+  type ScheduledSendControlMockProps,
+} from "./chat-input-mock"
+export {
+  RealtimeVoiceMock,
+  CodexConversationThreadMock,
+  CodexConversationViewToggleMock,
+  CodexRealtimeTimelineMock,
+  CodexRealtimeVoiceButtonMock,
+  DEFAULT_REALTIME_THREAD_MESSAGES,
+  DEFAULT_REALTIME_TIMELINE_SEGMENTS,
+  type CodexConversationThreadMockProps,
+  type CodexConversationView,
+  type CodexConversationViewToggleMockProps,
+  type CodexRealtimeTimelineMockProps,
+  type CodexRealtimeVoiceButtonMockProps,
+  type RealtimeThreadMessageMock,
+  type RealtimeTimelineSegmentMock,
+  type RealtimeVoiceMockProps,
+  type RealtimeVoiceState,
+} from "./realtime-voice-mock"
+export {
+  ActivityPanelMock,
+  DEFAULT_ACTIVITY_TABS,
+  type ActivityPanelMockProps,
+  type ActivityTabKind,
+  type MockActivityTab,
+} from "./activity-panel-mock"
+export { SideChatMock, type SideChatMockProps } from "./side-chat-mock"
+export {
+  TurnDetailMock,
+  type TurnDetailMockProps,
+  type TurnDetailRunMock,
+  type TurnDetailStatsMock,
+} from "./turn-detail-mock"
+export {
+  BrowserCloseResultMock,
+  CollaborationMock,
+  type BrowserCloseFailureMock,
+  type BrowserCloseResultMockProps,
+  type CollaborationAgentMock,
+  type CollaborationCoordinatorMock,
+  type CollaborationEventMock,
+  type CollaborationHarnessMock,
+  type CollaborationMockProps,
+  type CollaborationModeMock,
+  type CollaborationStatusMock,
+  type CollaborationSubtaskMock,
+} from "./collaboration-mock"

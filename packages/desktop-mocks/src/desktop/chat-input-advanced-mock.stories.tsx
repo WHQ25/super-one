@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
+import type { ComponentType } from "react"
 import { ChatInputAdvancedMock } from "./chat-input-advanced-mock"
 
 const meta: Meta<typeof ChatInputAdvancedMock> = {
@@ -16,11 +17,25 @@ const meta: Meta<typeof ChatInputAdvancedMock> = {
 export default meta
 type Story = StoryObj<typeof ChatInputAdvancedMock>
 
+const popupDecorator = (Story: ComponentType) => (
+  <div className="pt-72">
+    <Story />
+  </div>
+)
+
 export const Empty: Story = {}
 
 export const Typing: Story = {
   args: {
     value: "Help me refactor the sidebar so the project rows collapse independently",
+  },
+}
+
+export const ScheduledSend: Story = {
+  args: {
+    value: "Post the release summary after the smoke tests finish",
+    scheduled: true,
+    scheduledLabel: "Send at 6:30 PM",
   },
 }
 
@@ -31,6 +46,7 @@ export const PromptSuggestion: Story = {
 }
 
 export const SlashPopup: Story = {
+  decorators: [popupDecorator],
   args: {
     value: "/rev",
     slashPopup: {
@@ -59,7 +75,32 @@ export const SlashPopup: Story = {
   },
 }
 
+export const SideChatCommand: Story = {
+  decorators: [popupDecorator],
+  args: {
+    value: "/si",
+    slashPopup: {
+      query: "si",
+      activeIndex: 0,
+      commands: [
+        {
+          name: "side",
+          description: "Open a temporary side chat that inherits this conversation",
+          matchIndices: [0, 1],
+        },
+        {
+          name: "skill-creator",
+          description: "Create or update a reusable Codex skill",
+          isSkill: true,
+          matchIndices: [0],
+        },
+      ],
+    },
+  },
+}
+
 export const MentionPopupFiles: Story = {
+  decorators: [popupDecorator],
   args: {
     value: "@chat",
     mentionPopup: {

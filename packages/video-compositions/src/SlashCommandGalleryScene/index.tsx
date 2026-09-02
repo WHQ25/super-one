@@ -6,7 +6,6 @@ import {
   ChatMock,
   HARNESS_CLAUDE_HUE,
   McpSlashPopupMock,
-  ProviderSlashPopupMock,
   type Harness,
   type MockMessage,
 } from "@superone/desktop-mocks"
@@ -63,37 +62,6 @@ const STAGES: Stage[] = [
     caption: "No MCP servers yet — link to Settings → MCP",
     placeholder: "/mcp",
     popover: <McpSlashPopupMock variant="empty" />,
-  },
-  {
-    title: "/provider · switch API gateway",
-    caption: "Branded picker — default Claude, plus configured providers",
-    placeholder: "/provider",
-    popover: (
-      <ProviderSlashPopupMock
-        items={[
-          { id: "default", brand: "claude", label: "Claude (Default)", current: true },
-          { id: "openrouter", brand: "openrouter", label: "OpenRouter", focused: true },
-          { id: "zhipu", brand: "zhipu", label: "Z.ai GLM" },
-          { id: "deepseek", brand: "deepseek", label: "DeepSeek" },
-          { id: "volcengine", brand: "volcengine", label: "Volcengine" },
-        ]}
-      />
-    ),
-  },
-  {
-    title: "/provider · while streaming",
-    caption: "Streaming guard — switch applied after current turn finishes",
-    placeholder: "/provider",
-    popover: (
-      <ProviderSlashPopupMock
-        streaming
-        items={[
-          { id: "default", brand: "claude", label: "Claude (Default)", current: true },
-          { id: "zhipu", brand: "zhipu", label: "Z.ai GLM", focused: true },
-          { id: "kimi", brand: "kimi", label: "Kimi" },
-        ]}
-      />
-    ),
   },
 ]
 

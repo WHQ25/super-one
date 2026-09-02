@@ -47,7 +47,7 @@ interface Stage {
 const STAGES: Stage[] = [
   {
     title: "Select Model",
-    popover: <ModelSelectorPopoverMock activeId="opus-4-7-1m" />,
+    popover: <ModelSelectorPopoverMock activeId="claude-opus-4-8" />,
     statusBar: {},
     modelEffort: { activeTrigger: "model" },
     anchor: "model",
@@ -106,7 +106,7 @@ const STAGES: Stage[] = [
       harness: "codex",
       activeTrigger: "codex-permission",
     },
-    modelEffort: { modelLabel: "GPT-5.5", effortLabel: "Extra High" },
+    modelEffort: { modelLabel: "GPT5.6 Sol", effortLabel: "Extra High" },
     anchor: "codex-permission",
   },
 ]
@@ -148,7 +148,7 @@ const ANCHOR_OFFSETS: Record<Stage["anchor"], { left: number; bottom: number }> 
   sandbox: { left: 1100, bottom: 64 },
   "codex-permission": { left: 1100, bottom: 64 },
   model: { left: 90, bottom: 152 },
-  effort: { left: 200, bottom: 152 },
+  effort: { left: 90, bottom: 152 },
 }
 
 export const PopoverGalleryScene = ({ harness, brandHue, darkMode }: PopoverGallerySceneProps) => {

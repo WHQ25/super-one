@@ -1,9 +1,34 @@
 "use client"
 
-import { ArrowUp, Box, ChevronDown, Circle, FolderClosed, GitBranch, Paperclip, Shield } from "lucide-react"
+import {
+  ArrowUp,
+  AudioLines,
+  Box,
+  ChevronDown,
+  Circle,
+  Clock3,
+  FolderClosed,
+  GitBranch,
+  Loader2,
+  MonitorUp,
+  PackageOpen,
+  Paperclip,
+  Shield,
+  Square,
+  Users,
+  X,
+} from "lucide-react"
+import { IconButton } from "@superone/ui/components/ui/icon-button"
 import { cn } from "@superone/ui/lib/utils"
 import type { Harness } from "./icons"
 import { useMockT } from "./i18n"
+import {
+  harnessShowcaseMeta,
+  SHOWCASE_SANDBOX_LABEL,
+} from "./showcase-catalog"
+
+export type MockVoiceState = "hidden" | "idle" | "starting" | "active" | "stopping"
+export type MockPipKind = "browser" | "computer" | "device"
 
 export interface ChatInputMockProps {
   placeholder?: string
@@ -16,12 +41,13 @@ export interface ChatInputMockProps {
   branchDirty?: boolean
   permissionLabel?: string
   sandboxLabel?: "Off" | "On" | "Auto"
+  voiceState?: MockVoiceState
+  streaming?: boolean
+  scheduled?: boolean
+  scheduledLabel?: string
+  backgroundAgents?: number
+  pipKind?: MockPipKind
   className?: string
-}
-
-const DEFAULT_MODEL: Record<Harness, string> = {
-  claude: "Opus 4.7 1M",
-  codex: "GPT-5.5",
 }
 
 export function ChatInputMock({
@@ -33,15 +59,24 @@ export function ChatInputMock({
   workDirName = "super-one",
   branch = "main",
   branchDirty = true,
-  permissionLabel = "Normal",
-  sandboxLabel = "On",
+  permissionLabel,
+  sandboxLabel,
+  voiceState,
+  streaming = false,
+  scheduled = false,
+  scheduledLabel,
+  backgroundAgents = 0,
+  pipKind,
   className,
 }: ChatInputMockProps) {
   const t = useMockT()
-  const model = modelLabel ?? DEFAULT_MODEL[harness]
+  const harnessMeta = harnessShowcaseMeta(harness)
+  const model = modelLabel ?? harnessMeta.model
   const effort = effortLabel ?? t("settings.preferences.effort.levels.xhigh")
-  const placeholderText =
-    placeholder ?? t(harness === "codex" ? "chat.placeholder.codexAsk" : "chat.placeholder.claudeAsk")
+  const placeholderText = placeholder ?? harnessMeta.placeholder
+  const resolvedPermissionLabel = permissionLabel ?? harnessMeta.permission
+  const resolvedSandboxLabel = sandboxLabel ?? SHOWCASE_SANDBOX_LABEL[harnessMeta.sandbox]
+  const resolvedVoiceState = voiceState ?? (harness === "codex" ? "idle" : "hidden")
 
   return (
     <div className={cn("@container mx-auto w-full min-w-0 max-w-3xl", className)}>
@@ -58,32 +93,23 @@ export function ChatInputMock({
               <Paperclip className="size-3.5" />
             </button>
 
-            <button
-              type="button"
-              className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <span className="max-w-[140px] truncate">{model}</span>
-              <ChevronDown className="size-3" />
-            </button>
-
-            <button
-              type="button"
-              className="flex items-center gap-0.5 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <span className="max-w-[100px] truncate">{effort}</span>
-              <ChevronDown className="size-3" />
-            </button>
+            <ModelEffortTriggerMock modelLabel={model} effortLabel={effort} />
           </div>
 
           <div className="flex items-center gap-1.5">
             <ContextDial pct={contextPct} />
-            <button
-              type="button"
-              className="inline-flex size-7 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
-              aria-label="Send"
-            >
-              <ArrowUp className="size-3.5" />
-            </button>
+            {streaming && (
+              <IconButton size="md" tooltip="Stop" className="rounded-full border border-border">
+                <Square />
+              </IconButton>
+            )}
+            <ScheduledSendControlMock
+              scheduled={scheduled}
+              scheduledLabel={scheduledLabel}
+            />
+            {resolvedVoiceState !== "hidden" && !streaming && (
+              <ComposerVoiceButtonMock state={resolvedVoiceState} />
+            )}
           </div>
         </div>
       </div>
@@ -93,29 +119,45 @@ export function ChatInputMock({
         workDirName={workDirName}
         branch={branch}
         branchDirty={branchDirty}
-        permissionLabel={permissionLabel}
-        sandboxLabel={sandboxLabel}
+        permissionLabel={resolvedPermissionLabel}
+        sandboxLabel={resolvedSandboxLabel}
+        backgroundAgents={backgroundAgents}
+        pipKind={pipKind}
       />
     </div>
   )
 }
 
-interface ChatStatusBarMockProps {
+export interface ChatStatusBarMockProps {
   harness: Harness
   workDirName: string
   branch: string
   branchDirty: boolean
   permissionLabel: string
   sandboxLabel: "Off" | "On" | "Auto"
+  backgroundAgents: number
+  pipKind?: MockPipKind
 }
 
 const SANDBOX_COLOR: Record<"Off" | "On" | "Auto", string> = {
-  Off: "text-muted-foreground hover:bg-muted",
-  On: "text-emerald-500 hover:bg-emerald-500/10 dark:text-emerald-400",
-  Auto: "text-amber-600 hover:bg-amber-500/10 dark:text-amber-400",
+  Off: "text-muted-foreground",
+  On: "text-success",
+  Auto: "text-warning",
 }
 
-function ChatStatusBarMock({ harness, workDirName, branch, branchDirty, permissionLabel, sandboxLabel }: ChatStatusBarMockProps) {
+export function ChatStatusBarMock({
+  harness,
+  workDirName,
+  branch,
+  branchDirty,
+  permissionLabel,
+  sandboxLabel,
+  backgroundAgents,
+  pipKind,
+}: ChatStatusBarMockProps) {
+  const sandboxInteractive = harnessShowcaseMeta(harness).sandboxInteractive
+  const SandboxIcon = sandboxLabel === "Off" ? PackageOpen : Box
+
   return (
     <div className="flex items-center gap-2 whitespace-nowrap px-3 pb-1 pt-0.5 @lg:px-7 @lg:pb-3 @lg:pt-1 text-[11px] text-muted-foreground">
       <button
@@ -135,7 +177,7 @@ function ChatStatusBarMock({ harness, workDirName, branch, branchDirty, permissi
       >
         <GitBranch className="size-3" />
         <span className="max-w-[140px] truncate">{branch}</span>
-        {branchDirty && <Circle className="size-1.5 fill-amber-500 text-amber-500" />}
+        {branchDirty && <Circle className="size-1.5 fill-warning text-warning" />}
         <ChevronDown className="size-3" />
       </button>
 
@@ -152,30 +194,152 @@ function ChatStatusBarMock({ harness, workDirName, branch, branchDirty, permissi
 
       <div className="flex-1" />
 
-      {harness === "claude" && (
+      {backgroundAgents > 0 && (
+        <button type="button" className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors hover:bg-muted">
+          <Users className="size-3" />
+          <span>{backgroundAgents}</span>
+        </button>
+      )}
+
+      {pipKind && (
+        <button type="button" className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors hover:bg-muted">
+          <MonitorUp className="size-3" />
+          <span className="capitalize">{pipKind}</span>
+        </button>
+      )}
+
+      {sandboxInteractive ? (
         <button
           type="button"
           className={cn(
-            "flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] transition-colors",
+            "flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] transition-colors hover:bg-muted",
             SANDBOX_COLOR[sandboxLabel],
           )}
           title={`Sandbox ${sandboxLabel}`}
         >
-          <Box className="size-3" />
+          <SandboxIcon className="size-3" />
           <span>{sandboxLabel}</span>
           <ChevronDown className="size-3" />
         </button>
+      ) : (
+        <span
+          className={cn(
+            "flex items-center gap-1 rounded-lg px-2 py-1 text-[11px]",
+            SANDBOX_COLOR[sandboxLabel],
+          )}
+          title={`Sandbox ${sandboxLabel}`}
+          aria-label={`Sandbox ${sandboxLabel}`}
+        >
+          <SandboxIcon className="size-3" />
+          <span>{sandboxLabel}</span>
+        </span>
       )}
     </div>
   )
 }
 
-function ContextDial({ pct }: { pct: number }) {
+export interface ModelEffortTriggerMockProps {
+  modelLabel: string
+  effortLabel?: string | null
+  active?: boolean
+  className?: string
+}
+
+/** Current desktop model and effort selector: one trigger, one popover. */
+export function ModelEffortTriggerMock({
+  modelLabel,
+  effortLabel,
+  active = false,
+  className,
+}: ModelEffortTriggerMockProps) {
+  return (
+    <button
+      type="button"
+      className={cn(
+        "group flex min-w-0 max-w-xl items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+        active && "bg-muted text-foreground",
+        className,
+      )}
+    >
+      <span className="flex min-w-0 items-center gap-1 overflow-hidden">
+        <span className="min-w-0 shrink truncate">{modelLabel}</span>
+        {effortLabel && (
+          <>
+            <span className="shrink-0 text-muted-foreground/70">·</span>
+            <span className="min-w-0 shrink-[64] truncate">{effortLabel}</span>
+          </>
+        )}
+      </span>
+      <ChevronDown className="size-3 shrink-0 transition-transform duration-200 group-data-[state=open]:rotate-180" />
+    </button>
+  )
+}
+
+export interface ScheduledSendControlMockProps {
+  scheduled?: boolean
+  scheduledLabel?: string
+  canSend?: boolean
+}
+
+/** Static counterpart of the production scheduled-send control's armed state. */
+export function ScheduledSendControlMock({
+  scheduled = false,
+  scheduledLabel = "Send at 6:30 PM",
+  canSend = true,
+}: ScheduledSendControlMockProps) {
+  if (scheduled) {
+    return (
+      <div
+        role="status"
+        aria-label={scheduledLabel}
+        className="inline-flex h-7 items-center gap-1.5 rounded-full border border-warning/60 bg-warning/15 pl-2 pr-2.5 text-xs font-medium text-warning"
+      >
+        <Clock3 className="size-3.5 shrink-0" />
+        <span className="min-w-0 overflow-hidden whitespace-nowrap">{scheduledLabel}</span>
+      </div>
+    )
+  }
+
+  return (
+    <IconButton
+      size="md"
+      variant="ghost"
+      tooltip="Send"
+      disabled={!canSend}
+      className="rounded-full border border-border disabled:opacity-30"
+    >
+      <ArrowUp />
+    </IconButton>
+  )
+}
+
+export function ComposerVoiceButtonMock({ state }: { state: Exclude<MockVoiceState, "hidden"> }) {
+  const busy = state === "starting" || state === "stopping"
+  const active = state === "active" || state === "stopping"
+  return (
+    <IconButton
+      size="md"
+      variant="ghost"
+      disabled={busy}
+      tooltip={active ? "Stop realtime voice" : "Start realtime voice"}
+      className={cn(
+        "rounded-full border",
+        active
+          ? "border-destructive bg-destructive text-destructive-foreground hover:bg-destructive/90 hover:text-destructive-foreground"
+          : "border-foreground bg-foreground text-background hover:bg-foreground/90 hover:text-background",
+      )}
+    >
+      {busy ? <Loader2 className="animate-spin" /> : active ? <X /> : <AudioLines />}
+    </IconButton>
+  )
+}
+
+export function ContextDial({ pct }: { pct: number }) {
   const clamped = Math.max(0, Math.min(1, pct))
   const radius = 5
   const circumference = 2 * Math.PI * radius
   const used = circumference * clamped
-  const color = clamped > 0.7 ? "#ef4444" : clamped > 0.4 ? "#f59e0b" : "#22c55e"
+  const strokeClass = clamped > 0.7 ? "stroke-destructive" : clamped > 0.4 ? "stroke-warning" : "stroke-success"
   return (
     <button
       type="button"
@@ -190,7 +354,7 @@ function ContextDial({ pct }: { pct: number }) {
             cy="7"
             r={radius}
             fill="none"
-            stroke={color}
+            className={strokeClass}
             strokeWidth="2"
             strokeDasharray={`${used} ${circumference - used}`}
             strokeDashoffset={circumference * 0.25}

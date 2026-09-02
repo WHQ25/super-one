@@ -8,11 +8,13 @@ import {
   CalendarClock,
   ChevronDown,
   ChevronRight,
+  Clock,
   EyeOff,
   Folder,
   FolderClosed,
   FolderOpen,
   FolderX,
+  Gauge,
   LayoutGrid,
   Loader2,
   Maximize,
@@ -22,6 +24,7 @@ import {
   PanelLeftDashed,
   PanelLeftOpen,
   PanelRightOpen,
+  PencilLine,
   Pin,
   Plus,
   Settings,
@@ -30,13 +33,14 @@ import {
   SquareTerminal,
   Store,
   Sun,
+  Trash2,
 } from "lucide-react"
 import { Button } from "@superone/ui/components/ui/button"
 import { ScrollArea } from "@superone/ui/components/ui/scroll-area"
 import { Tabs, TabsList, TabsTrigger } from "@superone/ui/components/ui/tabs"
-import { ClaudeSessionIcon, type SessionIconProps } from "@superone/ui/components/harness/ClaudeSessionIcon"
-import { CodexSessionIcon } from "@superone/ui/components/harness/CodexSessionIcon"
+import type { SessionIconProps } from "@superone/ui/components/harness/ClaudeSessionIcon"
 import { cn } from "@superone/ui/lib/utils"
+import { HarnessSessionIcon, type Harness } from "./icons"
 import { useMockT } from "./i18n"
 import { TerminalPanelMock } from "./terminal-panel-mock"
 
@@ -49,7 +53,7 @@ export type SessionStatus =
   | "automation"
   | "remote"
 
-export type SessionProvider = "claude" | "codex"
+export type SessionProvider = Harness
 
 export interface MockSession {
   id: string
@@ -105,9 +109,17 @@ export interface MockApp {
   isDev?: boolean
 }
 
+export interface MockDraft {
+  id: string
+  title: string
+  scheduled?: boolean
+  pendingSync?: boolean
+}
+
 export interface DesktopShellProps {
   projects?: MockProject[]
   pinnedSessions?: MockPinnedSession[]
+  drafts?: MockDraft[]
   apps?: MockApp[]
   appsExpanded?: boolean
   headerTitle?: string
@@ -120,6 +132,8 @@ export interface DesktopShellProps {
   terminal?: ReactNode
   terminalHeight?: number
   remoteOnline?: boolean
+  hostLabel?: string
+  showHostSwitcher?: boolean
   height?: number | string
   children: ReactNode
   className?: string
@@ -127,7 +141,12 @@ export interface DesktopShellProps {
 
 const DEFAULT_PINNED: MockPinnedSession[] = [
   { id: "p1", title: "Relay protocol redesign", folderName: "super-one", provider: "claude", status: "running" },
-  { id: "p2", title: "Hermès theme tokens", folderName: "marketing-site", provider: "codex", status: "unseen" },
+  { id: "p2", title: "Hermès theme tokens", folderName: "marketing-site", provider: "opencode", status: "unseen" },
+]
+
+const DEFAULT_DRAFTS: MockDraft[] = [
+  { id: "d1", title: "Follow up on the release checklist" },
+  { id: "d2", title: "Run the desktop smoke tests", scheduled: true },
 ]
 
 const DEFAULT_APPS: MockApp[] = [
@@ -165,10 +184,10 @@ const DEFAULT_PROJECTS: MockProject[] = [
     sessions: [
       { id: "s1", title: "Refactor sidebar layout", active: true, status: "running", provider: "claude" },
       { id: "s2", title: "Fix relay reconnect bug", status: "unseen", pendingReason: "Allow Bash?", provider: "codex" },
-      { id: "s3", title: "Polish miniapp permissions", status: "background", provider: "claude" },
-      { id: "s4", title: "Worktree merge experiment", status: "idle", isWorktree: true, provider: "claude" },
-      { id: "s5", title: "Mobile pairing QR flow", status: "remote", provider: "codex" },
-      { id: "s6", title: "Weekly changelog draft", status: "automation", provider: "codex" },
+      { id: "s3", title: "Polish miniapp permissions", status: "background", provider: "cursor" },
+      { id: "s4", title: "Worktree merge experiment", status: "idle", isWorktree: true, provider: "opencode" },
+      { id: "s5", title: "Mobile pairing QR flow", status: "remote", provider: "dsh" },
+      { id: "s6", title: "Weekly changelog draft", status: "automation", provider: "acp" },
     ],
     hasMore: true,
   },
@@ -181,7 +200,7 @@ const DEFAULT_PROJECTS: MockProject[] = [
     ],
     sessions: [
       { id: "ms1", title: "Landing hero copy", status: "idle", provider: "claude" },
-      { id: "ms2", title: "OG image generator", status: "background", provider: "codex" },
+      { id: "ms2", title: "OG image generator", status: "background", provider: "dsh" },
     ],
   },
   {
@@ -196,6 +215,7 @@ const DEFAULT_PROJECTS: MockProject[] = [
 export function DesktopShell({
   projects = DEFAULT_PROJECTS,
   pinnedSessions = DEFAULT_PINNED,
+  drafts = DEFAULT_DRAFTS,
   apps = DEFAULT_APPS,
   appsExpanded = false,
   headerTitle,
@@ -208,6 +228,8 @@ export function DesktopShell({
   terminal,
   terminalHeight = 240,
   remoteOnline = true,
+  hostLabel,
+  showHostSwitcher = true,
   height = "100%",
   children,
   className,
@@ -225,6 +247,7 @@ export function DesktopShell({
       <DesktopSidebar
         projects={projects}
         pinnedSessions={pinnedSessions}
+        drafts={drafts}
         apps={apps}
         appsExpanded={appsExpanded}
         sidebarTab={sidebarTab}
@@ -232,6 +255,8 @@ export function DesktopShell({
         showTrafficLights={showTrafficLights}
         showActivityPanelToggle={showActivityPanelToggle}
         remoteOnline={remoteOnline}
+        hostLabel={hostLabel}
+        showHostSwitcher={showHostSwitcher}
       />
       <div className="flex min-w-0 flex-1 flex-col bg-card">
         <DesktopMainHeader
@@ -261,6 +286,7 @@ export function DesktopShell({
 export interface DesktopSidebarProps {
   projects?: MockProject[]
   pinnedSessions?: MockPinnedSession[]
+  drafts?: MockDraft[]
   apps?: MockApp[]
   appsExpanded?: boolean
   sidebarTab?: SidebarTab
@@ -268,6 +294,8 @@ export interface DesktopSidebarProps {
   showTrafficLights?: boolean
   showActivityPanelToggle?: boolean
   remoteOnline?: boolean
+  hostLabel?: string
+  showHostSwitcher?: boolean
   width?: number | string
   layoutToggleSide?: "right" | "left"
 }
@@ -275,6 +303,7 @@ export interface DesktopSidebarProps {
 export function DesktopSidebar({
   projects = DEFAULT_PROJECTS,
   pinnedSessions = DEFAULT_PINNED,
+  drafts = DEFAULT_DRAFTS,
   apps = DEFAULT_APPS,
   appsExpanded = false,
   sidebarTab = "sessions",
@@ -282,6 +311,8 @@ export function DesktopSidebar({
   showTrafficLights = true,
   showActivityPanelToggle = false,
   remoteOnline = true,
+  hostLabel,
+  showHostSwitcher = true,
   width,
   layoutToggleSide = "right",
 }: DesktopSidebarProps) {
@@ -289,6 +320,7 @@ export function DesktopSidebar({
     <Sidebar
       projects={projects}
       pinnedSessions={pinnedSessions}
+      drafts={drafts}
       apps={apps}
       appsExpanded={appsExpanded}
       sidebarTab={sidebarTab}
@@ -296,6 +328,8 @@ export function DesktopSidebar({
       showTrafficLights={showTrafficLights}
       showActivityPanelToggle={showActivityPanelToggle}
       remoteOnline={remoteOnline}
+      hostLabel={hostLabel}
+      showHostSwitcher={showHostSwitcher}
       width={width}
       layoutToggleSide={layoutToggleSide}
     />
@@ -360,6 +394,7 @@ function MainHeader({
 function Sidebar({
   projects,
   pinnedSessions,
+  drafts,
   apps,
   appsExpanded,
   sidebarTab,
@@ -367,11 +402,14 @@ function Sidebar({
   showTrafficLights,
   showActivityPanelToggle,
   remoteOnline,
+  hostLabel,
+  showHostSwitcher,
   width,
   layoutToggleSide = "right",
 }: {
   projects: MockProject[]
   pinnedSessions: MockPinnedSession[]
+  drafts: MockDraft[]
   apps: MockApp[]
   appsExpanded: boolean
   sidebarTab: SidebarTab
@@ -379,6 +417,8 @@ function Sidebar({
   showTrafficLights: boolean
   showActivityPanelToggle: boolean
   remoteOnline: boolean
+  hostLabel?: string
+  showHostSwitcher: boolean
   width?: number | string
   layoutToggleSide?: "right" | "left"
 }) {
@@ -400,20 +440,20 @@ function Sidebar({
         <Button
           variant="outline"
           size="sm"
-          className="mb-1 w-full justify-center gap-1.5 border-sidebar-border bg-sidebar text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground dark:border-border"
+          className="mb-1 w-full justify-center gap-1.5 border-sidebar-border bg-sidebar text-sidebar-foreground hover:border-sidebar-foreground/25 hover:bg-sidebar hover:text-sidebar-foreground"
         >
           <SquarePen className="size-3.5" />
           {t("sidebar.newSession")}
         </Button>
       </div>
 
-      <Tabs value={sidebarTab} className="mx-2 mb-1 shrink-0">
+      <Tabs value={sidebarTab} className="mx-1.5 mb-1 shrink-0">
         <TabsList>
-          <TabsTrigger value="sessions" className="py-1">
+          <TabsTrigger value="sessions" className="py-2">
             <MessageSquare className="size-3.5" />
             {t("sidebar.tabs.sessions")}
           </TabsTrigger>
-          <TabsTrigger value="files" className="py-1">
+          <TabsTrigger value="files" className="py-2">
             <FolderClosed className="size-3.5" />
             {t("sidebar.tabs.files")}
           </TabsTrigger>
@@ -426,7 +466,6 @@ function Sidebar({
         <div className="flex flex-col px-1.5 pb-1">
           <span className="px-1.5 py-1.5 text-xs font-medium text-sidebar-foreground/70">{t("sidebar.pinned")}</span>
           {pinnedSessions.map((s) => {
-            const PinHarnessIcon = s.provider === "codex" ? CodexSessionIcon : s.provider === "claude" ? ClaudeSessionIcon : null
             const pinHarnessStatus: SessionIconProps["status"] =
               s.status === "running" ? "running"
                 : s.status === "background" ? "background"
@@ -436,18 +475,18 @@ function Sidebar({
             return (
               <div
                 key={s.id}
-                className="group/pin flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 py-1.5 transition-colors hover:bg-sidebar-accent"
+                className="group/pin flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 py-1.5 transition-colors hover:bg-sidebar-hover"
               >
-                {PinHarnessIcon && (
+                {s.provider && (
                   <span className="shrink-0">
-                    <PinHarnessIcon status={pinHarnessStatus} active={s.active} size={22} renderLevel="compact" />
+                    <HarnessSessionIcon harness={s.provider} status={pinHarnessStatus} active={s.active} size={22} renderLevel="compact" />
                   </span>
                 )}
                 <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span className="min-w-0 truncate text-[13px]">{s.title}</span>
                   <span className="min-w-0 truncate text-[11px] text-sidebar-foreground/50">{s.folderName}</span>
                 </div>
-                <button className="box-content w-0 shrink-0 overflow-hidden rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-all hover:text-sidebar-accent-foreground group-hover/pin:w-3 group-hover/pin:opacity-100">
+                <button className="box-content w-0 shrink-0 overflow-hidden rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-all hover:text-sidebar-foreground group-hover/pin:w-3 group-hover/pin:opacity-100">
                   <Pin className="size-3" />
                 </button>
               </div>
@@ -461,33 +500,41 @@ function Sidebar({
           <div className="min-h-0 flex-1">{fileTree}</div>
         ) : (
           <>
-            <div className="flex items-center justify-between pl-4 pr-3 pt-1.5 pb-0.5">
-              <span className="text-sm font-medium text-sidebar-foreground/40">{t("sidebar.projects")}</span>
+            <div className="flex items-center justify-between pl-3 pr-3 pt-1.5 pb-0.5">
+              {showHostSwitcher ? (
+                <button className="flex min-w-0 max-w-[70%] items-center gap-1 rounded-md px-1 py-0.5 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground">
+                  <span className="truncate">{hostLabel ?? t("sidebar.thisMac")}</span>
+                  <ChevronDown className="size-3.5 shrink-0 opacity-70" />
+                </button>
+              ) : (
+                <span className="px-1 py-0.5 text-sm font-medium text-sidebar-foreground/40">{t("sidebar.projects")}</span>
+              )}
               <div className="flex items-center gap-0.5">
                 <Button
                   size="icon-xs"
                   variant="ghost"
-                  className="shrink-0 cursor-pointer text-sidebar-foreground/70 hover:text-sidebar-accent-foreground"
+                  className="shrink-0 cursor-pointer text-sidebar-foreground/70 hover:text-sidebar-foreground"
                 >
                   <Plus className="size-3.5" />
                 </Button>
                 <Button
                   size="icon-xs"
                   variant="ghost"
-                  className="shrink-0 cursor-pointer text-sidebar-foreground/70 hover:text-sidebar-accent-foreground"
+                  className="shrink-0 cursor-pointer text-sidebar-foreground/70 hover:text-sidebar-foreground"
                 >
                   <ArrowDownUp className="size-3" />
                 </Button>
               </div>
             </div>
             <div className="min-h-0 flex-1">
-              {projects.length === 0 ? (
+              {projects.length === 0 && drafts.length === 0 ? (
                 <div className="flex flex-1 items-center justify-center p-4 text-xs text-sidebar-foreground/70">
                   {t("sidebar.empty")}
                 </div>
               ) : (
                 <ScrollArea className="h-full">
                   <div className="flex w-0 min-w-full flex-col px-1.5 pb-1.5">
+                    <DraftRows drafts={drafts} />
                     {projects.map((project) => (
                       <ProjectRow key={project.name} project={project} />
                     ))}
@@ -504,6 +551,26 @@ function Sidebar({
   )
 }
 
+function DraftRows({ drafts }: { drafts: MockDraft[] }) {
+  return drafts.map((draft) => (
+    <div
+      key={draft.id}
+      className="group/draft flex h-9 cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 transition-colors hover:bg-sidebar-hover"
+    >
+      {draft.scheduled ? (
+        <Clock className="size-3.5 shrink-0 text-warning" aria-label="Scheduled send" />
+      ) : (
+        <PencilLine className="size-3.5 shrink-0 text-sidebar-foreground/45" />
+      )}
+      <span className="min-w-0 flex-1 truncate text-md text-sidebar-foreground">{draft.title}</span>
+      {draft.pendingSync && <Clock className="size-3 shrink-0 text-warning" aria-label="Pending sync" />}
+      <button className="rounded p-1 text-sidebar-foreground/45 opacity-0 transition-opacity hover:text-sidebar-foreground group-hover/draft:opacity-100">
+        <Trash2 className="size-3" />
+      </button>
+    </div>
+  ))
+}
+
 function ProjectRow({ project }: { project: MockProject }) {
   const t = useMockT()
   const isExpanded = project.expanded ?? false
@@ -517,7 +584,7 @@ function ProjectRow({ project }: { project: MockProject }) {
       <div
         className={cn(
           "group flex h-9 items-center overflow-hidden rounded-md px-2.5 transition-colors",
-          isMissing ? "cursor-default opacity-60" : "cursor-pointer hover:bg-sidebar-accent",
+          isMissing ? "cursor-default opacity-60" : "cursor-pointer hover:bg-sidebar-hover",
         )}
       >
         <ChevronRight
@@ -545,13 +612,13 @@ function ProjectRow({ project }: { project: MockProject }) {
         {!isMissing && (
           <div className="ml-auto hidden shrink-0 items-center gap-0.5 group-hover:flex">
             <button
-              className="rounded p-0.5 text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground"
+              className="rounded p-0.5 text-sidebar-foreground/70 transition-colors hover:text-sidebar-foreground"
               aria-label={t("tooltips.newAutomation")}
             >
               <CalendarClock className="size-4" />
             </button>
             <button
-              className="rounded p-0.5 text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground"
+              className="rounded p-0.5 text-sidebar-foreground/70 transition-colors hover:text-sidebar-foreground"
               aria-label={t("tooltips.newSession")}
             >
               <SquarePen className="size-4" />
@@ -573,7 +640,7 @@ function ProjectRow({ project }: { project: MockProject }) {
               <SessionRow key={session.id} session={session} />
             ))}
             {project.hasMore && (
-              <button className="flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground/70">
+              <button className="flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-sidebar-foreground/50 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground/70">
                 <ChevronDown className="size-3.5 shrink-0" />
                 <span>{t("sidebar.contextMenu.showMore")}</span>
               </button>
@@ -603,7 +670,7 @@ function AutomationGroup({
   const t = useMockT()
   return (
     <div className="overflow-hidden pl-2.5">
-      <button className="group/auto flex h-7 w-full items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground/70">
+      <button className="group/auto flex h-7 w-full items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-sidebar-foreground/50 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground/70">
         <ChevronRight
           className={cn(
             "hidden size-3.5 shrink-0 transition-transform duration-200 group-hover/auto:block",
@@ -619,7 +686,7 @@ function AutomationGroup({
           {automations.map((automation) => (
             <button
               key={automation.id}
-              className="flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-sidebar-accent"
+              className="flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-sidebar-hover"
             >
               <span className="flex items-center gap-1.5 truncate">
                 <CalendarClock className="size-3 shrink-0 text-sidebar-foreground/50" />
@@ -649,7 +716,7 @@ function WorkerGroup({ workers }: { workers: MockWorker[] }) {
   const t = useMockT()
   return (
     <div className="overflow-hidden pl-2.5">
-      <button className="group/worker flex h-7 w-full items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground/70">
+      <button className="group/worker flex h-7 w-full items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-sidebar-foreground/50 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground/70">
         <ChevronRight className="hidden size-3.5 shrink-0 rotate-90 transition-transform duration-200 group-hover/worker:block" />
         <LayoutGrid className="size-3.5 shrink-0 group-hover/worker:hidden" />
         <span>{t("sidebar.contextMenu.miniApps")}</span>
@@ -659,7 +726,7 @@ function WorkerGroup({ workers }: { workers: MockWorker[] }) {
         {workers.map((worker) => (
           <button
             key={worker.id}
-            className="group/wrow flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-sidebar-accent"
+            className="group/wrow flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-sidebar-hover"
           >
             <span className="flex min-w-0 items-center gap-2">
               <LayoutGrid className="size-4 shrink-0 text-sidebar-foreground/50" />
@@ -681,11 +748,11 @@ function SessionRow({ session }: { session: MockSession }) {
       <div
         className={cn(
           "group/session flex cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2.5 py-1.5 transition-colors",
-          session.active ? "bg-sidebar-accent" : "hover:bg-sidebar-accent",
+          session.active ? "bg-sidebar-accent text-sidebar-accent-foreground" : "hover:bg-sidebar-hover",
         )}
       >
         <div className="relative flex size-3 shrink-0 items-center justify-center">
-          <span className="absolute inset-0 flex items-center justify-center rounded text-sidebar-foreground/70 opacity-0 transition-opacity group-hover/session:opacity-100">
+          <span className="absolute inset-0 flex items-center justify-center rounded text-sidebar-foreground/70 opacity-0 transition-opacity hover:text-sidebar-foreground group-hover/session:opacity-100">
             <EyeOff className="size-3" />
           </span>
           <span className="pointer-events-none transition-opacity group-hover/session:opacity-0">
@@ -694,7 +761,7 @@ function SessionRow({ session }: { session: MockSession }) {
         </div>
         <span className="min-w-0 truncate text-[13px]">{session.title}</span>
         <div className="ml-auto flex shrink-0 items-center">
-          <button className="box-content w-0 shrink-0 overflow-hidden rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-all hover:text-sidebar-accent-foreground group-hover/session:w-3 group-hover/session:opacity-100">
+          <button className="box-content w-0 shrink-0 overflow-hidden rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-all hover:text-sidebar-foreground group-hover/session:w-3 group-hover/session:opacity-100">
             <Pin className="size-3" />
           </button>
         </div>
@@ -713,15 +780,14 @@ function SessionRow({ session }: { session: MockSession }) {
 
 function SessionStatusIcon({ status, provider, active }: { status?: SessionStatus; provider?: SessionProvider; active?: boolean }) {
   if (status === "remote") return <Smartphone className="size-3 text-sidebar-foreground/70" />
-  const HarnessIcon = provider === "codex" ? CodexSessionIcon : provider === "claude" ? ClaudeSessionIcon : null
   const harnessStatus: SessionIconProps["status"] =
     status === "running" ? "running"
       : status === "background" ? "background"
       : status === "unseen" ? "unseen"
       : status === "automation" ? "automation"
       : "default"
-  if (HarnessIcon && harnessStatus !== "default") {
-    return <HarnessIcon status={harnessStatus} active={active} renderLevel="compact" />
+  if (provider && harnessStatus !== "default") {
+    return <HarnessSessionIcon harness={provider} status={harnessStatus} active={active} renderLevel="compact" />
   }
   if (status === "running") return <Loader2 className="size-3 animate-spin text-sidebar-foreground/70" />
   return <MessageSquare className="size-3 text-sidebar-foreground/70" />
@@ -732,28 +798,34 @@ function SidebarFooter({ remoteOnline }: { remoteOnline: boolean }) {
   return (
     <div className="flex items-center gap-1 px-3 py-2">
       <button
-        className="rounded-md p-1.5 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+        className="rounded-md p-1.5 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground"
         aria-label={t("sidebar.settings")}
       >
         <Settings className="size-3.5" />
       </button>
       <button
-        className="rounded-md p-1.5 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground dark:hidden"
+        className="rounded-md p-1.5 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground dark:hidden"
         aria-label="Brand color"
       >
         <Palette className="size-3.5" />
       </button>
       <button
-        className="relative rounded-md p-1.5 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+        className="relative rounded-md p-1.5 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground"
         aria-label="Remote"
       >
         <Smartphone className="size-3.5" />
         <span
           className={cn(
             "absolute top-1 right-1 size-1.5 rounded-full",
-            remoteOnline ? "bg-green-500" : "bg-red-500",
+            remoteOnline ? "bg-success" : "bg-error",
           )}
         />
+      </button>
+      <button
+        className="rounded-md p-1.5 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground"
+        aria-label="Usage"
+      >
+        <Gauge className="size-3.5" />
       </button>
     </div>
   )
@@ -780,7 +852,7 @@ function AppsDrawer({ apps, expanded }: { apps: MockApp[]; expanded: boolean }) 
   return (
     <div className="mx-2 mt-1 mb-1 shrink-0">
       <div className="overflow-hidden rounded-lg border border-sidebar-border">
-        <button className="flex min-h-[30px] w-full cursor-pointer items-center justify-between px-2.5 py-1 transition-colors hover:bg-sidebar-accent">
+        <button className="flex min-h-[30px] w-full cursor-pointer items-center justify-between px-2.5 py-1 transition-colors hover:bg-sidebar-hover">
           <div className="flex items-center gap-2">
             {collapsedAsApps ? (
               <>
@@ -819,7 +891,7 @@ function AppsDrawer({ apps, expanded }: { apps: MockApp[]; expanded: boolean }) 
               {apps.map((app, i) => (
                 <div
                   key={app.id}
-                  className="group/sapp flex cursor-grab items-center gap-2.5 overflow-hidden rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent active:cursor-grabbing"
+                  className="group/sapp flex cursor-grab items-center gap-2.5 overflow-hidden rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-hover active:cursor-grabbing"
                 >
                   <MockAppIcon id={app.id} name={app.name} className="size-6 shrink-0 rounded-[6px]" />
                   <div className="flex w-0 flex-1 flex-col overflow-hidden">
@@ -840,18 +912,18 @@ function AppsDrawer({ apps, expanded }: { apps: MockApp[]; expanded: boolean }) 
                       <span className="truncate text-[11px] text-sidebar-foreground/50">{app.description}</span>
                     )}
                   </div>
-                  <button className="ml-1 shrink-0 rounded p-1 text-sidebar-foreground/40 opacity-0 transition-opacity hover:bg-sidebar-accent-foreground/10 hover:text-sidebar-foreground/80 group-hover/sapp:opacity-100">
+                  <button className="ml-1 shrink-0 rounded p-1 text-sidebar-foreground/40 opacity-0 transition-opacity hover:bg-sidebar-accent-foreground/10 hover:text-sidebar-foreground group-hover/sapp:opacity-100">
                     <Maximize className="size-3.5" />
                   </button>
                 </div>
               ))}
             </div>
             <div className="flex gap-1 px-1 pb-1">
-              <button className="mt-0.5 flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-sidebar-foreground/40 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground/70">
+              <button className="mt-0.5 flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-sidebar-foreground/40 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground/70">
                 <Store className="size-3" />
                 Marketplace
               </button>
-              <button className="mt-0.5 flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-sidebar-foreground/40 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground/70">
+              <button className="mt-0.5 flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-sidebar-foreground/40 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground/70">
                 <Plus className="size-3" />
                 Build Your Own
               </button>

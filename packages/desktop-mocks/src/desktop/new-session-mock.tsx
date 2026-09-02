@@ -2,14 +2,21 @@
 
 import { useState, type ReactNode } from "react"
 import { AnimatePresence, motion } from "motion/react"
-import { Claude, OpenAI } from "@lobehub/icons"
 import { Check, ChevronDown, Folder, FolderOpen, Plus } from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@superone/ui/components/ui/dropdown-menu"
 import { Tabs, TabsList, TabsTrigger } from "@superone/ui/components/ui/tabs"
 import { cn } from "@superone/ui/lib/utils"
-import { ClaudeAgentIcon, CodexAgentIcon, type Harness } from "./icons"
+import { HarnessAgentIcon, HarnessSessionIcon, type Harness } from "./icons"
 import { DesktopShell, type DesktopShellProps } from "./desktop-shell"
 import { ChatInputMock } from "./chat-input-mock"
 import { useMockT } from "./i18n"
+import { HARNESS_SHOWCASE, harnessShowcaseMeta } from "./showcase-catalog"
 
 export interface NewSessionMockProps extends Omit<DesktopShellProps, "children" | "headerTitle"> {
   harness?: Harness
@@ -42,6 +49,7 @@ export function NewSessionMock({
   const harness = harnessProp ?? internalHarness
   const isControlled = harnessProp !== undefined
   const isFrameDriven = frame !== undefined
+  const harnessMeta = harnessShowcaseMeta(harness)
 
   const handleChange = (next: Harness) => {
     if (!isControlled) setInternalHarness(next)
@@ -53,7 +61,7 @@ export function NewSessionMock({
       <div className="flex h-full flex-col">
         <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4">
           <HarnessFader harness={harness} disableMotion={isFrameDriven}>
-            {harness === "claude" ? <ClaudeAgentIcon /> : <CodexAgentIcon />}
+            <HarnessAgentIcon harness={harness} />
           </HarnessFader>
 
           <HarnessFader
@@ -66,27 +74,47 @@ export function NewSessionMock({
             duration={0.25}
           >
             <span className="text-xs text-muted-foreground">{t("chat.suggestions.poweredBy")}</span>
-            {harness === "claude" ? (
-              <span className="inline-flex items-center gap-1.5">
-                <Claude.Color size={12} />
-                <Claude.Text size={9} />
-              </span>
-            ) : (
-              <span className="inline-flex items-center" style={{ gap: 12 * 0.4 }}>
-                <OpenAI size={12} />
-                <span className="leading-none" style={{ fontSize: 12 * 0.75 * 0.95 }}>ChatGPT</span>
-              </span>
-            )}
+            <HarnessSessionIcon harness={harness} status="default" size={18} renderLevel="compact" />
+            <span className="text-xs font-medium">{harnessMeta.label}</span>
           </HarnessFader>
 
-          <Tabs value={harness} onValueChange={(v) => handleChange(v as Harness)}>
+          <Tabs
+            value={harness === HARNESS_SHOWCASE[0].id ? "fixed" : "menu"}
+            onValueChange={(value) => {
+              if (value === "fixed") handleChange(HARNESS_SHOWCASE[0].id)
+            }}
+          >
             <TabsList className="rounded-lg p-1">
-              <TabsTrigger value="claude" className="rounded-md px-3 py-1.5 text-xs">
-                {t("settings.layout.providers.claude")}
+              <TabsTrigger value="fixed" className="rounded-md px-3 py-1.5 text-xs">
+                {HARNESS_SHOWCASE[0].shortLabel}
               </TabsTrigger>
-              <TabsTrigger value="codex" className="rounded-md px-3 py-1.5 text-xs">
-                {t("settings.layout.providers.codex")}
-              </TabsTrigger>
+              <div
+                data-slot="tabs-trigger"
+                data-state={harness === HARNESS_SHOWCASE[0].id ? "inactive" : "active"}
+                className="relative z-10 inline-flex min-w-28 items-center justify-center rounded-md text-xs font-medium data-[state=active]:text-foreground"
+              >
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button type="button" className="flex w-full items-center justify-center gap-1 px-3 py-1.5">
+                      <span className="truncate">
+                        {harness === HARNESS_SHOWCASE[0].id ? HARNESS_SHOWCASE[1].shortLabel : harnessMeta.shortLabel}
+                      </span>
+                      <ChevronDown className="size-3.5 shrink-0" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="center" className="min-w-48">
+                    <DropdownMenuGroup>
+                      {HARNESS_SHOWCASE.slice(1).map((option) => (
+                        <DropdownMenuItem key={option.id} onSelect={() => handleChange(option.id)}>
+                          <HarnessSessionIcon harness={option.id} status="default" renderLevel="compact" />
+                          <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                          {option.id === harness && <Check />}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </TabsList>
           </Tabs>
 

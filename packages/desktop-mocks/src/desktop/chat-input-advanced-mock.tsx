@@ -2,27 +2,35 @@
 
 import type { CSSProperties, ReactNode } from "react"
 import {
-  ArrowUp,
   Bot,
-  ChevronDown,
   Check,
-  Circle,
   FileText,
   Folder,
-  FolderClosed,
-  GitBranch,
   Paperclip,
   Quote,
-  Shield,
   Square,
   UnfoldVertical,
   X,
 } from "lucide-react"
 import { FileIcon } from "@superone/ui/components/ui/FileIcon"
+import { IconButton } from "@superone/ui/components/ui/icon-button"
 import { Kbd } from "@superone/ui/components/ui/kbd"
 import { cn } from "@superone/ui/lib/utils"
 import type { Harness } from "./icons"
+import {
+  ChatStatusBarMock,
+  ComposerVoiceButtonMock,
+  ContextDial,
+  ModelEffortTriggerMock,
+  ScheduledSendControlMock,
+  type MockPipKind,
+  type MockVoiceState,
+} from "./chat-input-mock"
 import { useMockT } from "./i18n"
+import {
+  harnessShowcaseMeta,
+  SHOWCASE_SANDBOX_LABEL,
+} from "./showcase-catalog"
 
 export type ChatInputDirScope = "user" | "project" | "session"
 
@@ -119,6 +127,12 @@ export interface ChatInputAdvancedMockProps {
   modelLabel?: string
   effortLabel?: string
   contextPct?: number
+  voiceState?: MockVoiceState
+  streaming?: boolean
+  scheduled?: boolean
+  scheduledLabel?: string
+  backgroundAgents?: number
+  pipKind?: MockPipKind
 
   placeholder?: string
   value?: string
@@ -141,21 +155,22 @@ export interface ChatInputAdvancedMockProps {
   overlay?: ReactNode
 }
 
-const DEFAULT_MODEL: Record<Harness, string> = {
-  claude: "Opus 4.7 1M",
-  codex: "GPT-5.5",
-}
-
 export function ChatInputAdvancedMock({
   harness = "claude",
   workDirName = "super-one",
   branch = "main",
   branchDirty = true,
-  permissionLabel = "Normal",
-  sandboxLabel = "On",
+  permissionLabel,
+  sandboxLabel,
   modelLabel,
   effortLabel,
   contextPct = 0.32,
+  voiceState,
+  streaming = false,
+  scheduled = false,
+  scheduledLabel,
+  backgroundAgents = 0,
+  pipKind,
   placeholder,
   value,
   caretAtEnd = true,
@@ -174,10 +189,13 @@ export function ChatInputAdvancedMock({
   overlay,
 }: ChatInputAdvancedMockProps) {
   const t = useMockT()
-  const model = modelLabel ?? DEFAULT_MODEL[harness]
+  const harnessMeta = harnessShowcaseMeta(harness)
+  const model = modelLabel ?? harnessMeta.model
   const effort = effortLabel ?? t("settings.preferences.effort.levels.xhigh")
-  const placeholderText =
-    placeholder ?? t(harness === "codex" ? "chat.placeholder.codexAsk" : "chat.placeholder.claudeAsk")
+  const placeholderText = placeholder ?? harnessMeta.placeholder
+  const resolvedPermissionLabel = permissionLabel ?? harnessMeta.permission
+  const resolvedSandboxLabel = sandboxLabel ?? SHOWCASE_SANDBOX_LABEL[harnessMeta.sandbox]
+  const resolvedVoiceState = voiceState ?? (harness === "codex" ? "idle" : "hidden")
 
   const trimmedValue = value ?? ""
   const hasTypedValue = trimmedValue.length > 0
@@ -250,41 +268,30 @@ export function ChatInputAdvancedMock({
               <Paperclip className="size-3.5" />
             </button>
 
-            <button
-              type="button"
-              className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <span className="max-w-[140px] truncate">{model}</span>
-              <ChevronDown className="size-3" />
-            </button>
-
-            <button
-              type="button"
-              className="flex items-center gap-0.5 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <span className="max-w-[100px] truncate">{effort}</span>
-              <ChevronDown className="size-3" />
-            </button>
+            <ModelEffortTriggerMock modelLabel={model} effortLabel={effort} />
           </div>
 
           <div className="flex items-center gap-1.5">
             <ContextDial pct={contextPct} />
-            <button
-              type="button"
-              className={cn(
-                "inline-flex size-7 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors",
-                canSend ? "bg-primary text-primary-foreground border-primary" : "opacity-30",
-              )}
-              aria-label="Send"
-            >
-              <ArrowUp className="size-3.5" />
-            </button>
+            {streaming && (
+              <IconButton size="md" tooltip="Stop" className="rounded-full border border-border">
+                <Square />
+              </IconButton>
+            )}
+            <ScheduledSendControlMock
+              scheduled={scheduled}
+              scheduledLabel={scheduledLabel}
+              canSend={canSend}
+            />
+            {resolvedVoiceState !== "hidden" && !streaming && (
+              <ComposerVoiceButtonMock state={resolvedVoiceState} />
+            )}
           </div>
         </div>
 
         {isDragging && (
-          <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-[inherit] border-2 border-dashed border-blue-500 bg-blue-500/10">
-            <span className="text-xs font-medium text-blue-600 dark:text-blue-400">
+          <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-[inherit] border-2 border-dashed border-primary bg-primary/10">
+            <span className="text-xs font-medium text-primary">
               Drop to attach
             </span>
           </div>
@@ -293,13 +300,15 @@ export function ChatInputAdvancedMock({
         {overlay}
       </div>
 
-      <ChatStatusFooter
+      <ChatStatusBarMock
         harness={harness}
         workDirName={workDirName}
         branch={branch}
         branchDirty={branchDirty}
-        permissionLabel={permissionLabel}
-        sandboxLabel={sandboxLabel}
+        permissionLabel={resolvedPermissionLabel}
+        sandboxLabel={resolvedSandboxLabel}
+        backgroundAgents={backgroundAgents}
+        pipKind={pipKind}
       />
     </div>
   )
@@ -358,9 +367,9 @@ function MentionChipView({ mention }: { mention: MentionChipMock }) {
       data-mention=""
     >
       {kind === "agent" ? (
-        <Bot className="size-3 shrink-0 text-purple-600 dark:text-purple-400" />
+        <Bot className="size-3 shrink-0 text-insight-fg" />
       ) : kind === "directory" ? (
-        <Folder className="size-3 shrink-0 text-blue-600 dark:text-blue-400" />
+        <Folder className="size-3 shrink-0 text-primary" />
       ) : (
         <FileIcon name={displayName} size={12} className="size-3 shrink-0" />
       )}
@@ -614,7 +623,7 @@ function DirsHintBar({ dirs }: { dirs: ChatInputDirHintMock[] }) {
           key={`${d.scope}-${d.name}`}
           className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[11px] text-muted-foreground"
         >
-          <Folder className="size-3 shrink-0 text-blue-500" />
+          <Folder className="size-3 shrink-0 text-primary" />
           <span>{d.name}</span>
           <span className="ml-1 rounded bg-muted px-1 py-0.5 text-[9px] uppercase tracking-wide text-muted-foreground/70">
             {d.scope}
@@ -638,7 +647,7 @@ function HighlightedText({
     <>
       {Array.from(text).map((ch, i) =>
         set.has(i) ? (
-          <span key={i} className="text-orange-600 dark:text-orange-400 font-medium">
+          <span key={i} className="font-medium text-primary">
             {ch}
           </span>
         ) : (
@@ -674,15 +683,15 @@ function MentionPopupBar({ popup }: { popup: MentionPopupMock }) {
             )}
           >
             {item.kind === "agent" ? (
-              <Bot className="size-3.5 shrink-0 text-purple-600 dark:text-purple-400" />
+              <Bot className="size-3.5 shrink-0 text-insight-fg" />
             ) : item.kind === "directory" ? (
-              <Folder className="size-3.5 shrink-0 text-blue-500" />
+              <Folder className="size-3.5 shrink-0 text-primary" />
             ) : (
               <FileIcon name={item.name} size={14} />
             )}
             <span className="min-w-0 truncate">
               {item.kind === "agent" ? (
-                <span className="font-medium text-purple-600 dark:text-purple-400">
+                <span className="font-medium text-insight-fg">
                   <HighlightedText text={item.name} indices={item.matchIndices} />
                 </span>
               ) : (
@@ -713,144 +722,58 @@ function MentionPopupBar({ popup }: { popup: MentionPopupMock }) {
 function SlashPopupBar({ popup }: { popup: SlashPopupMock }) {
   const t = useMockT()
   const activeIndex = popup.activeIndex ?? 0
+  let startIndex = 0
+  const groups = ([
+    { key: "command", items: popup.commands.filter((command) => !command.isSkill) },
+    { key: "skill", items: popup.commands.filter((command) => command.isSkill) },
+  ] as const)
+    .filter((group) => group.items.length > 0)
+    .map((group) => {
+      const result = { ...group, startIndex }
+      startIndex += group.items.length
+      return result
+    })
+
   return (
-    <div className="absolute bottom-full left-0 right-0 z-10 mb-1 flex max-h-64 flex-col overflow-hidden rounded-xl border border-border bg-card p-1.5">
+    <div className="absolute bottom-full left-0 right-0 z-10 mb-1 flex max-h-64 flex-col overflow-hidden rounded-xl border border-border bg-popover p-1.5">
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {popup.commands.map((cmd, i) => {
-          const nameIndices = [0, ...(cmd.matchIndices ?? []).map((x) => x + 1)]
-          return (
-            <button
-              key={cmd.name}
-              type="button"
-              className={cn(
-                "flex w-full flex-col gap-0.5 rounded px-2 py-1.5 text-left text-xs transition-colors",
-                i === activeIndex
-                  ? "bg-muted text-foreground"
-                  : "text-foreground hover:bg-muted/50",
-              )}
-            >
-              <span className="flex min-w-0 items-center gap-1.5 font-medium">
-                <span className="text-blue-600 dark:text-blue-400">
-                  <HighlightedText text={`/${cmd.name}`} indices={nameIndices} />
-                </span>
-                {cmd.argumentHint && (
-                  <span className="truncate text-muted-foreground font-normal">{cmd.argumentHint}</span>
-                )}
-                {cmd.isSkill && (
-                  <span className="rounded bg-emerald-100 px-1 py-px text-[10px] font-normal text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-400">
-                    {t("chat.slashCommand.skillBadge")}
+        {groups.map((group) => (
+          <div key={group.key}>
+            <div className="flex select-none items-baseline gap-1 px-2 pb-0.5 pt-2 text-xs font-medium text-muted-foreground">
+              <span>{t(group.key === "skill" ? "chat.slashCommand.groupSkills" : "chat.slashCommand.groupCommands")}</span>
+              <span className="text-muted-foreground/60">· {group.items.length}</span>
+            </div>
+            {group.items.map((cmd, index) => {
+              const itemIndex = group.startIndex + index
+              const nameIndices = [0, ...(cmd.matchIndices ?? []).map((x) => x + 1)]
+              return (
+                <button
+                  key={`${group.key}:${cmd.name}`}
+                  type="button"
+                  className={cn(
+                    "flex w-full flex-col gap-0.5 rounded px-2 py-1.5 text-left text-xs transition-colors",
+                    itemIndex === activeIndex
+                      ? "bg-primary/15 text-foreground"
+                      : "text-foreground hover:bg-muted/40",
+                  )}
+                >
+                  <span className="flex min-w-0 items-center gap-1.5 font-medium">
+                    <span className="shrink-0 whitespace-nowrap font-semibold text-highlighted">
+                      <HighlightedText text={`/${cmd.name}`} indices={nameIndices} />
+                    </span>
+                    {cmd.argumentHint && (
+                      <span className="min-w-0 flex-1 truncate font-normal text-muted-foreground">{cmd.argumentHint}</span>
+                    )}
                   </span>
-                )}
-              </span>
-              {cmd.description && (
-                <span className="line-clamp-2 text-muted-foreground leading-snug">{cmd.description}</span>
-              )}
-            </button>
-          )
-        })}
+                  {cmd.description && (
+                    <span className="line-clamp-2 leading-snug text-muted-foreground">{cmd.description}</span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        ))}
       </div>
     </div>
-  )
-}
-
-interface ChatStatusFooterProps {
-  harness: Harness
-  workDirName: string
-  branch: string
-  branchDirty: boolean
-  permissionLabel: string
-  sandboxLabel: "Off" | "On" | "Auto"
-}
-
-const SANDBOX_COLOR: Record<"Off" | "On" | "Auto", string> = {
-  Off: "text-muted-foreground hover:bg-muted",
-  On: "text-emerald-500 hover:bg-emerald-500/10 dark:text-emerald-400",
-  Auto: "text-amber-600 hover:bg-amber-500/10 dark:text-amber-400",
-}
-
-function ChatStatusFooter({
-  harness,
-  workDirName,
-  branch,
-  branchDirty,
-  permissionLabel,
-  sandboxLabel,
-}: ChatStatusFooterProps) {
-  return (
-    <div className="flex items-center gap-2 whitespace-nowrap px-3 pb-1 pt-0.5 @lg:px-7 @lg:pb-3 @lg:pt-1 text-[11px] text-muted-foreground">
-      <button
-        type="button"
-        className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors hover:bg-muted hover:text-foreground"
-        title={workDirName}
-      >
-        <FolderClosed className="size-3" />
-        <span className="max-w-[140px] truncate">{workDirName}</span>
-      </button>
-      <div className="h-3 w-px bg-border" />
-      <button
-        type="button"
-        className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors hover:bg-muted hover:text-foreground"
-      >
-        <GitBranch className="size-3" />
-        <span className="max-w-[140px] truncate">{branch}</span>
-        {branchDirty && <Circle className="size-1.5 fill-amber-500 text-amber-500" />}
-        <ChevronDown className="size-3" />
-      </button>
-      <div className="h-3 w-px bg-border" />
-      <button
-        type="button"
-        className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors hover:bg-muted hover:text-foreground"
-      >
-        <Shield className="size-3" />
-        <span>{permissionLabel}</span>
-        <ChevronDown className="size-3" />
-      </button>
-      <div className="flex-1" />
-      {harness === "claude" && (
-        <button
-          type="button"
-          className={cn(
-            "flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] transition-colors",
-            SANDBOX_COLOR[sandboxLabel],
-          )}
-          title={`Sandbox ${sandboxLabel}`}
-        >
-          <span className="inline-block size-3 rounded-sm border border-current" />
-          <span>{sandboxLabel}</span>
-          <ChevronDown className="size-3" />
-        </button>
-      )}
-    </div>
-  )
-}
-
-function ContextDial({ pct }: { pct: number }) {
-  const clamped = Math.max(0, Math.min(1, pct))
-  const radius = 5
-  const circumference = 2 * Math.PI * radius
-  const used = circumference * clamped
-  const color = clamped > 0.7 ? "#ef4444" : clamped > 0.4 ? "#f59e0b" : "#22c55e"
-  return (
-    <span
-      aria-label={`Context ${(clamped * 100).toFixed(0)}%`}
-      className="flex items-center rounded-sm p-1"
-    >
-      <svg width="14" height="14" viewBox="0 0 14 14" className="shrink-0">
-        <circle cx="7" cy="7" r={radius} fill="none" className="stroke-border" strokeWidth="2" />
-        {clamped > 0 && (
-          <circle
-            cx="7"
-            cy="7"
-            r={radius}
-            fill="none"
-            stroke={color}
-            strokeWidth="2"
-            strokeDasharray={`${used} ${circumference - used}`}
-            strokeDashoffset={circumference * 0.25}
-            strokeLinecap="round"
-          />
-        )}
-      </svg>
-    </span>
   )
 }

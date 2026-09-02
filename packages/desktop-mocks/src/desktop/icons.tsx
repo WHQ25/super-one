@@ -1,4 +1,17 @@
-export type Harness = "claude" | "codex"
+import type { ComponentType } from "react"
+import type { HarnessId } from "@superone/shared/agent-types"
+import { AcpSessionIcon } from "@superone/ui/components/harness/AcpSessionIcon"
+import {
+  ClaudeSessionIcon,
+  type SessionIconProps,
+} from "@superone/ui/components/harness/ClaudeSessionIcon"
+import { CodexSessionIcon } from "@superone/ui/components/harness/CodexSessionIcon"
+import { CursorSessionIcon } from "@superone/ui/components/harness/CursorSessionIcon"
+import { DeepseekSessionIcon } from "@superone/ui/components/harness/DeepseekSessionIcon"
+import { GrokSessionIcon } from "@superone/ui/components/harness/GrokSessionIcon"
+import { OpenCodeSessionIcon } from "@superone/ui/components/harness/OpenCodeSessionIcon"
+
+export type Harness = HarnessId
 
 interface AgentIconProps {
   className?: string
@@ -124,4 +137,37 @@ export function CodexAgentIcon({ className = "size-16" }: AgentIconProps) {
       </g>
     </svg>
   )
+}
+
+const SESSION_ICON_BY_HARNESS = {
+  claude: ClaudeSessionIcon,
+  codex: CodexSessionIcon,
+  cursor: CursorSessionIcon,
+  opencode: OpenCodeSessionIcon,
+  dsh: DeepseekSessionIcon,
+  // The product showcase uses Grok as its concrete ACP example. Consumers that
+  // need an unbranded protocol client can opt into the generic mark below.
+  acp: GrokSessionIcon,
+} satisfies Record<Harness, ComponentType<SessionIconProps>>
+
+export interface HarnessSessionIconProps extends SessionIconProps {
+  harness: Harness
+  genericAcp?: boolean
+}
+
+export function HarnessSessionIcon({ harness, genericAcp = false, ...props }: HarnessSessionIconProps) {
+  const Icon = harness === "acp" && genericAcp ? AcpSessionIcon : SESSION_ICON_BY_HARNESS[harness]
+  return <Icon {...props} />
+}
+
+export interface HarnessAgentIconProps extends AgentIconProps {
+  harness: Harness
+  size?: number
+}
+
+/** Large new-session mark backed by the same canonical icons as the desktop sidebar. */
+export function HarnessAgentIcon({ harness, className = "size-16", size = 64 }: HarnessAgentIconProps) {
+  if (harness === "claude") return <ClaudeAgentIcon className={className} />
+  if (harness === "codex") return <CodexAgentIcon className={className} />
+  return <HarnessSessionIcon harness={harness} status="default" size={size} renderLevel="rich" />
 }

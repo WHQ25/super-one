@@ -4,12 +4,14 @@ import {
   CodexPermissionPopoverMock,
   EffortSelectorPopoverMock,
   GitBranchPopoverMock,
+  GroupedModelEffortPopoverMock,
   ModelEffortTriggerStrip,
   ModelSelectorPopoverMock,
   PermissionModePopoverMock,
   SandboxModePopoverMock,
   WorktreePopoverMock,
 } from "./chat-popovers-mock"
+import { HARNESS_SHOWCASE } from "./showcase-catalog"
 
 const meta: Meta = {
   title: "Desktop Mocks/ChatPopovers",
@@ -18,6 +20,10 @@ const meta: Meta = {
 export default meta
 
 type Story = StoryObj
+
+export const GroupedModelAndEffort: Story = {
+  render: () => <GroupedModelEffortPopoverMock />,
+}
 
 export const ModelSelector: Story = {
   render: () => <ModelSelectorPopoverMock />,
@@ -141,6 +147,21 @@ export const StatusBarCodexHarness: Story = {
   render: () => (
     <div className="rounded-lg border border-border bg-card">
       <ChatStatusBarMock harness="codex" />
+    </div>
+  ),
+}
+
+export const StatusBarsAllHarnesses: Story = {
+  render: () => (
+    <div className="flex max-w-3xl flex-col gap-2">
+      {HARNESS_SHOWCASE.map((harness) => (
+        <div key={harness.id} className="rounded-lg border border-border bg-card">
+          <div className="border-b border-border px-4 py-2 text-xs font-medium text-muted-foreground">
+            {harness.label}
+          </div>
+          <ChatStatusBarMock harness={harness.id} />
+        </div>
+      ))}
     </div>
   ),
 }

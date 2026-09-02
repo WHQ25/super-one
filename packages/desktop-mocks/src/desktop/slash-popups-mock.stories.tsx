@@ -2,9 +2,9 @@ import type { Meta, StoryObj } from "@storybook/react-vite"
 import {
   AddDirSlashPopupMock,
   McpSlashPopupMock,
-  ProviderSlashPopupMock,
   type AddDirEntryMock,
 } from "./slash-popups-mock"
+import { HARNESS_SHOWCASE } from "./showcase-catalog"
 
 const meta: Meta = {
   title: "Desktop Mocks/SlashPopups",
@@ -86,6 +86,16 @@ export const McpLiveCodex: Story = {
   render: () => <McpSlashPopupMock variant="live" harness="codex" />,
 }
 
+export const McpAllHarnesses: Story = {
+  render: () => (
+    <div className="grid gap-3 lg:grid-cols-2">
+      {HARNESS_SHOWCASE.map((harness) => (
+        <McpSlashPopupMock key={harness.id} variant="live" harness={harness.id} />
+      ))}
+    </div>
+  ),
+}
+
 export const McpProbe: Story = {
   render: () => (
     <McpSlashPopupMock
@@ -105,81 +115,6 @@ export const McpEmpty: Story = {
 
 export const McpLoading: Story = {
   render: () => <McpSlashPopupMock variant="loading" />,
-}
-
-export const ProviderDefault: Story = {
-  render: () => <ProviderSlashPopupMock />,
-}
-
-export const ProviderFocusOpenRouter: Story = {
-  render: () => (
-    <ProviderSlashPopupMock
-      items={[
-        { id: "default", brand: "claude", label: "Claude (Default)", current: true },
-        { id: "openrouter", brand: "openrouter", label: "OpenRouter", focused: true },
-        { id: "zhipu", brand: "zhipu", label: "Z.ai GLM" },
-        { id: "deepseek", brand: "deepseek", label: "DeepSeek" },
-        { id: "volcengine", brand: "volcengine", label: "Volcengine" },
-      ]}
-    />
-  ),
-}
-
-export const ProviderCodexHarness: Story = {
-  render: () => (
-    <ProviderSlashPopupMock
-      items={[
-        { id: "default", brand: "chatgpt", label: "ChatGPT (Default)", current: true },
-        { id: "openai", brand: "openai", label: "OpenAI Direct" },
-        { id: "openrouter", brand: "openrouter", label: "OpenRouter" },
-        { id: "google", brand: "google", label: "Google Vertex" },
-        { id: "bedrock", brand: "bedrock", label: "AWS Bedrock" },
-      ]}
-    />
-  ),
-}
-
-export const ProviderStreaming: Story = {
-  render: () => (
-    <ProviderSlashPopupMock
-      streaming
-      items={[
-        { id: "default", brand: "claude", label: "Claude (Default)", current: true },
-        { id: "openrouter", brand: "openrouter", label: "OpenRouter", focused: true },
-        { id: "zhipu", brand: "zhipu", label: "Z.ai GLM" },
-      ]}
-    />
-  ),
-}
-
-export const ProviderChinaCluster: Story = {
-  render: () => (
-    <ProviderSlashPopupMock
-      items={[
-        { id: "default", brand: "claude", label: "Claude (Default)" },
-        { id: "zhipu", brand: "zhipu", label: "Z.ai GLM", current: true },
-        { id: "kimi", brand: "kimi", label: "Kimi" },
-        { id: "minimax", brand: "minimax", label: "Minimax" },
-        { id: "doubao", brand: "doubao", label: "Doubao" },
-        { id: "bailian", brand: "bailian", label: "Bailian" },
-        { id: "volcengine", brand: "volcengine", label: "Volcengine" },
-        { id: "siliconcloud", brand: "siliconcloud", label: "SiliconCloud" },
-      ]}
-    />
-  ),
-}
-
-export const ProviderUnbranded: Story = {
-  render: () => (
-    <ProviderSlashPopupMock
-      items={[
-        { id: "default", brand: "claude", label: "Claude (Default)" },
-        { id: "custom-1", label: "company-internal-gateway" },
-        { id: "custom-2", label: "staging.api.acme.io", focused: true },
-        { id: "custom-3", label: "kong-prod-cluster", current: true },
-      ]}
-    />
-  ),
 }
 
 export const McpMixedStatuses: Story = {

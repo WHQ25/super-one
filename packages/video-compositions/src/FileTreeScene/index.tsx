@@ -108,7 +108,7 @@ export function App() {
     startLine: 1,
     code: `{
   "name": "super-one",
-  "version": "0.31.2-alpha",
+  "version": "0.59.0-alpha",
   "private": true,
   "type": "module",
   "workspaces": ["apps/*", "packages/*"],

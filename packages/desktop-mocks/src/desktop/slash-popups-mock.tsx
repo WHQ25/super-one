@@ -18,8 +18,10 @@ import {
   Bailian,
   Bedrock,
   Claude,
+  Cursor,
   DeepSeek,
   Doubao,
+  Gemini,
   Google,
   Kimi,
   KwaiKAT,
@@ -32,11 +34,15 @@ import {
   OpenRouter,
   SiliconCloud,
   Volcengine,
+  VertexAI,
   XiaomiMiMo,
+  ZAI,
   Zhipu,
 } from "@lobehub/icons"
 import { cn } from "@superone/ui/lib/utils"
+import type { Harness } from "./icons"
 import { useMockT } from "./i18n"
+import { harnessShowcaseMeta } from "./showcase-catalog"
 
 function PanelShell({ className, children }: { className?: string; children: ReactNode }) {
   return (
@@ -71,8 +77,8 @@ function PanelHeader({
             className={cn(
               "truncate text-[10px]",
               metaTone === "muted" && "text-muted-foreground/70",
-              metaTone === "live" && "text-green-600 dark:text-green-400",
-              metaTone === "error" && "text-red-600 dark:text-red-400",
+              metaTone === "live" && "text-success",
+              metaTone === "error" && "text-error",
             )}
           >
             {meta}
@@ -165,7 +171,7 @@ function DirChip({
   return (
     <div className="group flex items-center justify-between gap-2 rounded py-0.5 text-xs">
       <div className="flex shrink-0 items-center gap-1 rounded-md border border-border bg-muted/40 px-1.5 py-0.5">
-        <Folder className="size-3 shrink-0 text-blue-500" />
+        <Folder className="size-3 shrink-0 text-primary" />
         <span className="font-medium text-foreground">{basename(path)}</span>
         {onRemoveMark && (
           <span className="rounded p-0.5 text-muted-foreground">
@@ -302,7 +308,7 @@ export function AddDirSlashPopupMock({
                   c.focused ? "bg-muted text-foreground" : "text-foreground",
                 )}
               >
-                <Folder className="size-3.5 shrink-0 text-blue-500" />
+                <Folder className="size-3.5 shrink-0 text-primary" />
                 <span className="truncate">
                   <HighlightedText text={c.name} indices={c.matchIndices ?? []} />
                 </span>
@@ -346,10 +352,10 @@ export type McpServerStatusMock =
   | "disabled"
 
 const STATUS_DOT: Record<McpServerStatusMock, string> = {
-  connected: "bg-green-500",
-  pending: "bg-yellow-500",
-  "needs-auth": "bg-yellow-500",
-  failed: "bg-red-500",
+  connected: "bg-success",
+  pending: "bg-warning",
+  "needs-auth": "bg-warning",
+  failed: "bg-error",
   disabled: "bg-muted-foreground/40",
 }
 
@@ -368,7 +374,7 @@ export type McpSlashVariant = "live" | "probe" | "empty" | "loading"
 export interface McpSlashPopupMockProps {
   variant?: McpSlashVariant
   servers?: McpServerEntryMock[]
-  harness?: "claude" | "codex"
+  harness?: Harness
   className?: string
 }
 
@@ -410,7 +416,7 @@ export function McpSlashPopupMock({
   className,
 }: McpSlashPopupMockProps) {
   const t = useMockT()
-  const harnessLabel = harness === "codex" ? "Codex" : "Claude"
+  const harnessLabel = harnessShowcaseMeta(harness).shortLabel
   const meta =
     variant === "live"
       ? `${harnessLabel} · live session`
@@ -525,11 +531,13 @@ export function McpSlashPopupMock({
 export type ProviderBrandKey =
   | "claude"
   | "anthropic"
+  | "cursor"
   | "chatgpt"
   | "openai"
   | "openrouter"
   | "deepseek"
   | "zhipu"
+  | "zai"
   | "kimi"
   | "moonshot"
   | "minimax"
@@ -537,6 +545,8 @@ export type ProviderBrandKey =
   | "bailian"
   | "bedrock"
   | "google"
+  | "gemini"
+  | "vertexai"
   | "doubao"
   | "longcat"
   | "modelscope"
@@ -555,8 +565,10 @@ interface BrandEntry {
 const BRANDS: Record<ProviderBrandKey, BrandEntry> = {
   anthropic: { Mono: Anthropic, Text: Anthropic.Text },
   claude: { Mono: Claude, Color: Claude.Color, Text: Claude.Text },
+  cursor: { Mono: Cursor, Text: Cursor.Text },
   openrouter: { Mono: OpenRouter, Text: OpenRouter.Text },
   zhipu: { Mono: Zhipu, Color: Zhipu.Color, Text: Zhipu.Text },
+  zai: { Mono: ZAI, Text: ZAI.Text },
   kimi: { Mono: Kimi, Color: Kimi.Color, Text: Kimi.Text },
   moonshot: { Mono: Moonshot, Text: Moonshot.Text },
   minimax: { Mono: Minimax, Color: Minimax.Color, Text: Minimax.Text },
@@ -564,6 +576,8 @@ const BRANDS: Record<ProviderBrandKey, BrandEntry> = {
   bailian: { Mono: Bailian, Color: Bailian.Color, Text: Bailian.Text },
   bedrock: { Mono: Bedrock, Color: Bedrock.Color, Text: Bedrock.Text },
   google: { Mono: Google, Color: Google.Color, Text: Google.Brand },
+  gemini: { Mono: Gemini, Color: Gemini.Color, Text: Gemini.Text },
+  vertexai: { Mono: VertexAI, Color: VertexAI.Color, Text: VertexAI.Text },
   deepseek: { Mono: DeepSeek, Color: DeepSeek.Color, Text: DeepSeek.Text },
   doubao: { Mono: Doubao, Color: Doubao.Color, Text: Doubao.Text },
   kwaikat: { Mono: KwaiKAT, Text: KwaiKAT.Text },
@@ -630,6 +644,7 @@ const DEFAULT_PROVIDER_ITEMS: ProviderItemMock[] = [
   { id: "custom", label: "Self-hosted gateway" },
 ]
 
+/** @deprecated Provider selection moved into the model selector; retained for downstream compatibility. */
 export function ProviderSlashPopupMock({
   items = DEFAULT_PROVIDER_ITEMS,
   streaming = false,

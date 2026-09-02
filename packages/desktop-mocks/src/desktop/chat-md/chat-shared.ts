@@ -30,8 +30,8 @@ export const streamdownLinkSafety: LinkSafetyConfig = {
   renderModal: (props) => createElement(LinkSafetyModal, props),
 }
 
-function localFileToMediaUrl(src: string | undefined): string | undefined {
-  if (!src) return src
+function localFileToMediaUrl<T>(src: T): T | string {
+  if (typeof src !== 'string' || !src) return src
   if (src.startsWith('local-file:///')) {
     const filePath = decodeURIComponent(new URL(src).pathname)
     return toMediaUrl(filePath)
@@ -51,8 +51,8 @@ function MediaAudio(props: ComponentProps<'audio'>) {
   return createElement('audio', { ...props, src: localFileToMediaUrl(props.src), controls: true })
 }
 
-function getMediaExt(src: string | undefined): string | null {
-  if (!src) return null
+function getMediaExt(src: ComponentProps<'img'>['src']): string | null {
+  if (typeof src !== 'string' || !src) return null
   try {
     const pathname = src.startsWith('local-file:///') ? new URL(src).pathname : src
     return pathname.slice(pathname.lastIndexOf('.')).toLowerCase()
@@ -127,4 +127,3 @@ export function formatTokens(n: number): string {
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
   return String(n)
 }
-

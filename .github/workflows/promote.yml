@@ -6,6 +6,13 @@ on:
       release_tag:
         description: 'Release tag (e.g. v0.21.5-alpha)'
         required: true
+      variant:
+        description: 'Which side-by-side app these artifacts belong to'
+        required: true
+        type: choice
+        options:
+          - alpha
+          - stable
       target_sha:
         description: 'Commit SHA to tag when released (defaults to main HEAD)'
         required: false
@@ -113,13 +120,17 @@ jobs:
           echo "Assets:"
           gh release view "${{ inputs.release_tag }}" --json assets -q '.assets[].name'
 
-      - name: Restructure staging for R2 (binaries → version subdir; drop channel ymls)
+      - name: Restructure staging for R2 (binaries → variant/version subdir; drop channel ymls)
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
+          VARIANT: ${{ inputs.variant }}
         run: |
           set -euo pipefail
+          # Each variant owns its own prefix on R2. Its app-update.yml points at
+          # https://dl.super-one.dev/<variant>, so the manifest's relative
+          # v<version>/ paths resolve inside that prefix.
           PREFIX="${RELEASE_TAG#v}"
-          PREFIX="v${PREFIX}"
+          PREFIX="${VARIANT}/v${PREFIX}"
           echo "Archiving binaries under prefix: ${PREFIX}/"
 
           mkdir -p "staging/${PREFIX}"
@@ -145,7 +156,7 @@ jobs:
           aws s3 sync staging/ s3://super-one-releases/ \
             --endpoint-url "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
             --no-progress
-          echo "Archived to https://dl.super-one.dev/ (run set-latest to publish a channel)"
+          echo "Archived to https://dl.super-one.dev/${{ inputs.variant }}/ (run set-latest to publish it)"
 
       - name: Delete consumed CI artifacts
         env:

@@ -1,28 +1,9 @@
-import type { UpdateChannel } from '@superone/shared/agent-types'
-import {
-  UPDATE_CHANNEL_TO_YML,
-  channelFromVersion,
-  type YmlChannel,
-} from '@superone/shared/update-channels'
-
-// Stability order, most stable first. A release on channel N is also offered to
-// every less-stable channel after it (cascade), so alpha users still receive
-// beta/stable builds and beta users still receive stable builds.
-export const YML_CHANNELS_BY_STABILITY: readonly YmlChannel[] = ['latest', 'beta', 'alpha']
-
-export const YML_TO_UPDATE_CHANNEL: Record<YmlChannel, UpdateChannel> = {
-  latest: 'stable',
-  beta: 'beta',
-  alpha: 'alpha',
-}
-
-export function nativeYmlChannel(version: string): YmlChannel {
-  return UPDATE_CHANNEL_TO_YML[channelFromVersion(version)]
-}
-
-export function cascadeTargets(channel: YmlChannel): YmlChannel[] {
-  return YML_CHANNELS_BY_STABILITY.slice(YML_CHANNELS_BY_STABILITY.indexOf(channel))
-}
+// Release-manifest helpers.
+//
+// There is no channel cascade any more: stable and alpha are separate apps
+// with separate bundle identities, so offering a stable build to the alpha
+// app would hand it an installer whose appId does not match. Each variant owns
+// one prefix on R2 and publishes a single `latest-*.yml` inside it.
 
 interface ParsedVersion {
   core: [number, number, number]
@@ -102,10 +83,10 @@ export function fixedLinkName(filename: string, version: string): string {
   return `${stem}.exe`
 }
 
-// Stable, version-less download URL path for a channel's newest build, e.g.
-// fixedDownloadPath('alpha', 'SuperOne.dmg') -> 'alpha/latest/SuperOne.dmg'.
-export function fixedDownloadPath(channel: UpdateChannel, fileName: string): string {
-  return `${channel}/latest/${fileName}`
+// Stable, version-less download URL path for a variant's newest build, e.g.
+// fixedDownloadPath('alpha', 'SuperOne Alpha.dmg') -> 'alpha/latest/SuperOne Alpha.dmg'.
+export function fixedDownloadPath(variant: string, fileName: string): string {
+  return `${variant}/latest/${fileName}`
 }
 
 // GitHub normalizes spaces in release asset names to dots. Releases archived
@@ -116,4 +97,10 @@ export function artifactPathCandidates(path: string): string[] {
   const slash = path.lastIndexOf('/') + 1
   const dotted = `${path.slice(0, slash)}${path.slice(slash).replaceAll(' ', '.')}`
   return dotted === path ? [path] : [path, dotted]
+}
+
+// Where promote.yml archives a build's binaries. The update manifest lives at
+// `<variant>/latest-*.yml` and its urls are relative, so they resolve here.
+export function versionedArtifactPath(variant: string, version: string, fileName: string): string {
+  return `${variant}/v${version}/${fileName}`
 }

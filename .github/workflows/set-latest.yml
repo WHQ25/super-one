@@ -6,17 +6,15 @@ on:
       release_tag:
         description: 'Release tag to set as latest (e.g. v0.40.1-alpha)'
         required: true
-      channel:
-        description: 'Set this version as the latest of which channel (cascades to less-stable channels)'
+      variant:
+        description: 'Which side-by-side app to publish this version to'
         required: true
         type: choice
         options:
           - alpha
-          - beta
           - stable
-        default: alpha
       force:
-        description: 'Force — allow rolling a channel back to an older version (override the semver guard)'
+        description: 'Force — allow rolling a variant back to an older version (override the semver guard)'
         required: false
         type: boolean
         default: false
@@ -37,7 +35,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile --ignore-scripts
 
-      - name: Download channel manifests from the release
+      - name: Download update manifests from the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -57,36 +55,37 @@ jobs:
           set -euo pipefail
           ENDPOINT="https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
           VERSION="${{ inputs.release_tag }}"; VERSION="${VERSION#v}"
-          if [ -n "$(aws s3 ls "s3://super-one-releases/v${VERSION}/" --endpoint-url "$ENDPOINT" 2>/dev/null)" ]; then
-            echo "v${VERSION}/ already on R2 — no backfill needed"
+          PREFIX="${{ inputs.variant }}/v${VERSION}"
+          if [ -n "$(aws s3 ls "s3://super-one-releases/${PREFIX}/" --endpoint-url "$ENDPOINT" 2>/dev/null)" ]; then
+            echo "${PREFIX}/ already on R2 — no backfill needed"
             exit 0
           fi
-          echo "v${VERSION}/ missing on R2 — backfilling binaries from the GitHub Release"
+          echo "${PREFIX}/ missing on R2 — backfilling binaries from the GitHub Release"
           mkdir -p binstage
           gh release download "${{ inputs.release_tag }}" -D binstage \
             -p '*.dmg' -p '*.zip' -p '*.exe' -p '*.AppImage' -p '*.blockmap'
           echo "--- downloaded ---"; ls -la binstage/
-          aws s3 cp binstage/ "s3://super-one-releases/v${VERSION}/" --recursive \
+          aws s3 cp binstage/ "s3://super-one-releases/${PREFIX}/" --recursive \
             --endpoint-url "$ENDPOINT" --no-progress
-          echo "Backfilled v${VERSION}/ to R2"
+          echo "Backfilled ${PREFIX}/ to R2"
 
-      - name: Compute cascade manifests + fixed-link plan
+      - name: Compute manifests + fixed-link plan
         run: |
           set -euo pipefail
           bun scripts/set-latest.ts \
             "${{ inputs.release_tag }}" \
-            "${{ inputs.channel }}" \
+            "${{ inputs.variant }}" \
             "${{ inputs.force }}" \
             manifests \
             https://dl.super-one.dev \
             out \
             fixed-copies.json
-          echo "--- staged channel manifests ---"
+          echo "--- staged manifests ---"
           ls -la out/ 2>/dev/null || echo "(none staged — semver guard held; rerun with force=true to override)"
           echo "--- fixed-link plan ---"
           cat fixed-copies.json
 
-      - name: Publish channel manifests + fixed download links to R2
+      - name: Publish manifests + fixed download links to R2
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -108,4 +107,4 @@ jobs:
               --endpoint-url "$ENDPOINT" --cache-control "public, max-age=300" \
               --copy-props none --no-progress
           done
-          echo "Set ${{ inputs.release_tag }} as latest of ${{ inputs.channel }} (cascade)."
+          echo "Set ${{ inputs.release_tag }} as latest of the ${{ inputs.variant }} app."

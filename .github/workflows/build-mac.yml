@@ -7,6 +7,16 @@ on:
         description: 'Branch or commit SHA to build'
         required: false
         default: 'main'
+      variant:
+        description: 'Which side-by-side app to build'
+        required: true
+        type: choice
+        options:
+          - alpha
+          - stable
+      version:
+        description: 'Override the packaged version (e.g. cutting stable from an alpha commit). Blank = package.json.'
+        required: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -26,6 +36,8 @@ jobs:
       - run: bun run check-deps-lock
       - run: bun run build:mac -- --x64 --arm64 --publish never
         env:
+          SUPERONE_VARIANT: ${{ inputs.variant }}
+          SUPERONE_VERSION: ${{ inputs.version }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ secrets.MAC_CERTS }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
@@ -37,9 +49,9 @@ jobs:
         with:
           name: dist-mac
           path: |
-            apps/desktop/dist/*.dmg
-            apps/desktop/dist/*.zip
-            apps/desktop/dist/*.blockmap
-            apps/desktop/dist/*-mac.yml
+            apps/desktop/dist/${{ inputs.variant }}/*.dmg
+            apps/desktop/dist/${{ inputs.variant }}/*.zip
+            apps/desktop/dist/${{ inputs.variant }}/*.blockmap
+            apps/desktop/dist/${{ inputs.variant }}/*-mac.yml
           retention-days: 1
           if-no-files-found: error

@@ -1,29 +1,29 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import type { UpdateChannel } from '@superone/shared/agent-types'
-import { UPDATE_CHANNELS, UPDATE_CHANNEL_TO_YML, type YmlChannel } from '@superone/shared/update-channels'
+import VARIANTS from '../apps/desktop/variants.json'
 import {
   artifactPathCandidates,
-  cascadeTargets,
   fixedDownloadPath,
   fixedLinkName,
-  nativeYmlChannel,
   prefixVersionPaths,
   shouldPublish,
-  YML_TO_UPDATE_CHANNEL,
+  versionedArtifactPath,
 } from './lib/channels'
 
 const INSTALLER_EXTS = ['.dmg', '.exe', '.appimage']
 
 interface Platform {
   key: string
-  ymlName: (channel: YmlChannel) => string
+  ymlName: string
 }
 
+// Every variant sets `publish.channel: latest` explicitly, so electron-builder
+// emits the same manifest names for all of them and the variant lives in the
+// R2 prefix instead of the file name.
 const PLATFORMS: Platform[] = [
-  { key: 'mac', ymlName: (c) => `${c}-mac.yml` },
-  { key: 'win', ymlName: (c) => `${c}.yml` },
-  { key: 'linux', ymlName: (c) => `${c}-linux.yml` },
+  { key: 'mac', ymlName: 'latest-mac.yml' },
+  { key: 'win', ymlName: 'latest.yml' },
+  { key: 'linux', ymlName: 'latest-linux.yml' },
 ]
 
 interface CopyOp {
@@ -94,55 +94,56 @@ async function fetchRemoteVersion(baseUrl: string, ymlName: string): Promise<str
 
 async function main(): Promise<void> {
   const tag = process.argv[2] ?? ''
-  const channel = process.argv[3] as UpdateChannel
+  const variant = process.argv[3] ?? ''
   const force = (process.argv[4] ?? 'false') === 'true'
   const manifestsDir = process.argv[5] ?? 'manifests'
-  const baseUrl = (process.argv[6] ?? 'https://dl.super-one.dev').replace(/\/+$/, '')
+  const rootUrl = (process.argv[6] ?? 'https://dl.super-one.dev').replace(/\/+$/, '')
   const outDir = process.argv[7] ?? 'out'
   const planPath = process.argv[8] ?? 'fixed-copies.json'
 
   const version = tag.replace(/^v/, '')
-  if (!version || !UPDATE_CHANNELS.includes(channel)) {
-    console.error('usage: set-latest <tag> <alpha|beta|stable> [force] [manifestsDir] [baseUrl] [outDir] [planPath]')
+  const variantIds = Object.keys(VARIANTS)
+  if (!version || !variantIds.includes(variant)) {
+    console.error(`usage: set-latest <tag> <${variantIds.join('|')}> [force] [manifestsDir] [baseUrl] [outDir] [planPath]`)
     process.exit(1)
   }
 
-  const nativeChannel = nativeYmlChannel(version)
-  const targets = cascadeTargets(UPDATE_CHANNEL_TO_YML[channel])
-  console.log(`set-latest version=${version} channel=${channel} force=${force} cascade=${targets.join(',')}`)
+  // Each variant is a separate app: its manifests, binaries and fixed links all
+  // live under its own prefix, and nothing cascades between them.
+  const baseUrl = `${rootUrl}/${variant}`
+  console.log(`set-latest version=${version} variant=${variant} force=${force}`)
 
-  mkdirSync(outDir, { recursive: true })
+  const variantOutDir = join(outDir, variant)
+  mkdirSync(variantOutDir, { recursive: true })
   const plan: CopyOp[] = []
 
   for (const platform of PLATFORMS) {
-    const manifestPath = join(manifestsDir, platform.ymlName(nativeChannel))
+    const manifestPath = join(manifestsDir, platform.ymlName)
     if (!existsSync(manifestPath)) {
-      console.log(`skip ${platform.key}: ${platform.ymlName(nativeChannel)} not downloaded`)
+      console.log(`skip ${platform.key}: ${platform.ymlName} not downloaded`)
       continue
     }
     const prefixed = await resolveArtifactPaths(
       prefixVersionPaths(readFileSync(manifestPath, 'utf8'), version),
       baseUrl,
     )
-    const installerUrls = parseInstallerUrls(prefixed)
 
-    for (const target of targets) {
-      const targetName = platform.ymlName(target)
-      if (!force) {
-        const current = await fetchRemoteVersion(baseUrl, targetName)
-        if (!shouldPublish(version, current)) {
-          console.log(`hold ${targetName}: live ${current} is newer than ${version} (use force to override)`)
-          continue
-        }
+    if (!force) {
+      const current = await fetchRemoteVersion(baseUrl, platform.ymlName)
+      if (!shouldPublish(version, current)) {
+        console.log(`hold ${variant}/${platform.ymlName}: live ${current} is newer than ${version} (use force to override)`)
+        continue
       }
-      writeFileSync(join(outDir, targetName), prefixed)
-      console.log(`stage ${targetName} -> ${version}`)
-      for (const url of installerUrls) {
-        plan.push({
-          src: url,
-          dst: fixedDownloadPath(YML_TO_UPDATE_CHANNEL[target], fixedLinkName(basename(url), version)),
-        })
-      }
+    }
+    writeFileSync(join(variantOutDir, platform.ymlName), prefixed)
+    console.log(`stage ${variant}/${platform.ymlName} -> ${version}`)
+
+    for (const url of parseInstallerUrls(prefixed)) {
+      const fileName = basename(url)
+      plan.push({
+        src: versionedArtifactPath(variant, version, fileName),
+        dst: fixedDownloadPath(variant, fixedLinkName(fileName, version)),
+      })
     }
   }
 

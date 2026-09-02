@@ -27,6 +27,10 @@ export default defineConfig({
       'src/**/*.{test,spec}.?(c|m)[jt]s?(x)',
       '../../packages/shared/src/**/*.{test,spec}.?(c|m)[jt]s?(x)',
       '../../packages/ui/src/**/*.{test,spec}.?(c|m)[jt]s?(x)',
+      // Release tooling. Without this the suite silently skipped
+      // scripts/lib/channels.test.ts, which looked like coverage of the
+      // update-manifest logic and was never executed.
+      '../../scripts/**/*.{test,spec}.?(c|m)[jt]s?(x)',
     ],
     coverage: {
       provider: 'v8',

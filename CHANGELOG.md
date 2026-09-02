@@ -4,6 +4,55 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.60.2-alpha] - 2026-09-02
+
+### Added
+
+- Codex: the realtime voice indicator now shows what the call is actually
+  doing. The cloud mark carries an audio glyph and four activity states —
+  listening, user speaking, thinking, assistant speaking — with concentric
+  cloud-shaped waves that ride the live microphone level. The level comes
+  from an analyser tapped off the already-open capture stream, so it adds no
+  second microphone request and routes no audio anywhere.
+- Chat: an active voice turn's Detail disclosure shows elapsed time while the
+  delegated work is still running, so a long Codex task under a spoken turn
+  reads as in-progress rather than stalled.
+
+### Fixed
+
+- Sessions: a removed git worktree is now detected by its repo link rather
+  than by the directory existing. `git worktree remove` routinely leaves the
+  folder behind — one untracked file defeats removal, and a harness still
+  running in the old cwd can recreate one (`.claude/.cc-writes` is the
+  observed case). The husk passed the old `existsSync` check, so the session
+  stayed writable against a cwd with no repo and every tool call failed with
+  a confusing "file not found" instead of the session going read-only. Paths
+  inside the project checkout are exempt, since a collaboration child may
+  legitimately record a `worktreePath` there.
+- Desktop: the mini session window shows the focused session alone instead of
+  attempting a mosaic. The mini shell is one chat column wide, so tiles could
+  not lay out and their per-tile chrome collided with the mini header's
+  restore button. The mosaic tree is left untouched in the store, so
+  unfolding back to the full window returns to the grid you left.
+- Chat: unfinished delegated work stays pinned to the live edge of a voice
+  transcript. Speech continues while that work runs, so anchoring the detail
+  block to its originating turn pushed newer speech below an older, still-open
+  block.
+- Chat: the todo popup no longer overlays the realtime voice timeline, and the
+  permission prompt is placed below the voice indicator rather than on top of
+  it.
+- Codex: a realtime voice session is now instructed to delegate only through
+  the SuperOne collaboration tools rather than Codex's native child-agent
+  tools, so a spoken "have someone else do this" can pick Codex, Claude Code
+  or any configured harness and stays user-approved and visible.
+
+### Changed
+
+- Website: the marketing site is rebuilt around the four product pillars, with
+  a features hub, marketplace and changelog, long-form docs for collaboration
+  and the shared tool surface, and engine pages for Cursor, OpenCode, DeepSeek
+  and ACP. It previously described a two-engine app.
+
 ## [0.60.1-alpha] - 2026-09-02
 
 ### Added

@@ -210,18 +210,18 @@ describe('realtime voice surfaces', () => {
     await waitFor(() => expect(screen.queryByTestId('realtime-call-indicator')).toBeNull())
   })
 
-  it('flanks the cloud with the agent on the left and the user on the right', async () => {
+  it('flanks the voice mark with the agent on the left and the user on the right', async () => {
     const { container } = render(<VoiceSurfaces />)
     await reachConnectedCall()
 
     const row = screen.getByTestId('realtime-call-indicator')
     expect(row).toHaveClass('justify-center')
-    // A bare, motionless cloud: no glyph inside it and no ambient animation. The
-    // indicator reports state; it never competes with the transcript for attention.
-    expect(row.querySelectorAll('.codex-session-wrap svg')).toHaveLength(1)
-    for (const moving of ['pulse', 'scale', 'rotate', 'warm', 'spec']) {
-      expect(row.querySelector(`.codex-session-${moving}`)).toBeNull()
-    }
+    const mark = screen.getByTestId('realtime-voice-mark')
+    expect(mark).toHaveAttribute('data-activity', 'listening')
+    expect(mark.querySelector('.lucide-audio-lines')).not.toBeNull()
+    expect(mark.querySelector('.realtime-voice-mark-shell')).not.toBeNull()
+    expect(mark.querySelector('.realtime-voice-halo')).not.toBeNull()
+    expect(mark.querySelectorAll('.realtime-voice-halo-outline')).toHaveLength(3)
 
     const sides = [...row.querySelectorAll('[data-testid^="realtime-caption-"]')]
     expect(sides.map((node) => node.getAttribute('data-testid')))
@@ -229,6 +229,36 @@ describe('realtime voice surfaces', () => {
     // Each column's text hugs the cloud rather than the outer edge.
     expect(sides[0]!.querySelector('p')).toHaveClass('text-right')
     expect(sides[1]!.querySelector('p')).toHaveClass('text-left')
+  })
+
+  it('maps transcript lifecycle events onto the voice indicator activity', async () => {
+    render(<VoiceSurfaces />)
+    await reachConnectedCall()
+    const mark = screen.getByTestId('realtime-voice-mark')
+
+    emit?.({
+      type: 'realtime_transcript_item', sessionId: 'session-1', phase: 'started',
+      itemId: 'user-activity', realtimeSessionId: 'rt-1', role: 'user', text: '', seq: 1,
+    })
+    await waitFor(() => expect(mark).toHaveAttribute('data-activity', 'user-speaking'))
+
+    emit?.({
+      type: 'realtime_transcript_item', sessionId: 'session-1', phase: 'completed',
+      itemId: 'user-activity', realtimeSessionId: 'rt-1', role: 'user', text: 'Plan it.', seq: 2,
+    })
+    await waitFor(() => expect(mark).toHaveAttribute('data-activity', 'thinking'))
+
+    emit?.({
+      type: 'realtime_transcript_item', sessionId: 'session-1', phase: 'started',
+      itemId: 'assistant-activity', realtimeSessionId: 'rt-1', role: 'assistant', text: '', seq: 3,
+    })
+    await waitFor(() => expect(mark).toHaveAttribute('data-activity', 'assistant-speaking'))
+
+    emit?.({
+      type: 'realtime_transcript_item', sessionId: 'session-1', phase: 'completed',
+      itemId: 'assistant-activity', realtimeSessionId: 'rt-1', role: 'assistant', text: 'Done.', seq: 4,
+    })
+    await waitFor(() => expect(mark).toHaveAttribute('data-activity', 'listening'))
   })
 
   it('gives each caption the cloud\'s height, centred until it needs to scroll', async () => {

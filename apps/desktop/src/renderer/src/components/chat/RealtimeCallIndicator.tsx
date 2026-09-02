@@ -1,11 +1,13 @@
 import { useEffect, useRef, type CSSProperties } from 'react'
+import { AudioLines } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { CodexCloudMark } from '@superone/ui/components/harness/CodexSessionIcon'
+import { CodexCloudMark, CodexCloudOutline } from '@superone/ui/components/harness/CodexSessionIcon'
 import { cn } from '@superone/ui/lib/utils'
 import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { useRealtimeCallStore } from '@/stores/realtime-call'
 
 const MARK_SIZE = 64
+const GLYPH_SIZE = 23
 const NO_LIVE_ITEMS: never[] = []
 
 /** Matches the cloud, so the three columns share one baseline box. */
@@ -65,9 +67,8 @@ function CaptionColumn({
 /**
  * Persistent "a voice call is running" marker above the composer.
  *
- * Purely a status surface — the bare cloud held still, with live captions flanking it
- * by speaker: the agent on the left, the user on the right, so the direction of the
- * exchange is legible without labels. Every control over the call lives in the
+ * Purely a status surface — the voice mark reflects listening, speech, and thinking,
+ * with live captions flanking it by speaker. Every control over the call lives in the
  * composer toolbar beside the session's other actions, rather than hiding behind a
  * hover on this one.
  */
@@ -75,6 +76,8 @@ export function RealtimeCallIndicator() {
   const { t } = useTranslation()
   const state = useRealtimeCallStore((store) => store.state)
   const sessionId = useRealtimeCallStore((store) => store.sessionId)
+  const activity = useRealtimeCallStore((store) => store.activity)
+  const inputLevel = useRealtimeCallStore((store) => store.inputLevel)
   const liveItems = useCodexRealtimeViewStore((store) => (
     sessionId ? store.sessions[sessionId]?.liveItems ?? NO_LIVE_ITEMS : NO_LIVE_ITEMS
   ))
@@ -93,8 +96,33 @@ export function RealtimeCallIndicator() {
       className="flex items-center justify-center gap-3 px-2 py-2"
     >
       <CaptionColumn text={assistantCaption} side="left" testId="realtime-caption-assistant" />
-      <span className="shrink-0">
-        <CodexCloudMark size={MARK_SIZE} motion="still" />
+      <span
+        data-testid="realtime-voice-mark"
+        data-activity={activity}
+        className="realtime-voice-mark shrink-0 text-primary"
+        style={{ '--voice-level': inputLevel } as CSSProperties}
+      >
+        <span className="realtime-voice-halo" aria-hidden>
+          <CodexCloudOutline size={MARK_SIZE} className="realtime-voice-halo-outline" />
+          <CodexCloudOutline
+            size={MARK_SIZE}
+            className="realtime-voice-halo-outline realtime-voice-halo-wave"
+          />
+          <CodexCloudOutline
+            size={MARK_SIZE}
+            className="realtime-voice-halo-outline realtime-voice-halo-wave"
+          />
+        </span>
+        <span className="realtime-voice-mark-shell">
+          <CodexCloudMark size={MARK_SIZE} motion="still">
+            <AudioLines
+              className="text-white"
+              strokeWidth={2}
+              style={{ width: GLYPH_SIZE, height: GLYPH_SIZE }}
+              aria-hidden
+            />
+          </CodexCloudMark>
+        </span>
       </span>
       <CaptionColumn text={userCaption} side="right" testId="realtime-caption-user" />
     </div>

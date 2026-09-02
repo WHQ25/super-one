@@ -113,6 +113,29 @@ function ScaledCodex({
  */
 export type CodexCloudMotion = 'running' | 'pulse' | 'still'
 
+/** The exact cloud silhouette for effects that need to stay aligned with the mark. */
+export function CodexCloudOutline({
+  size,
+  className,
+}: {
+  size?: number
+  className?: string
+}) {
+  return (
+    <svg
+      viewBox="1 1 22 22"
+      className={className}
+      style={svgStyle(size)}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="0.45"
+      aria-hidden
+    >
+      <path d={CLOUD} pathLength="100" />
+    </svg>
+  )
+}
+
 /**
  * The Codex cloud mark with a caller-supplied glyph at its centre.
  *

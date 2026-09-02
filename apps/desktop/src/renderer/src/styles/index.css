@@ -64,6 +64,126 @@
   animation: breathe 1.8s ease-in-out infinite;
 }
 
+@keyframes realtime-voice-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.045); }
+}
+
+@keyframes realtime-voice-trace {
+  to { stroke-dashoffset: -100; }
+}
+
+@keyframes realtime-voice-wave {
+  0% {
+    opacity: calc(0.48 + var(--voice-level) * 0.32);
+    transform: scale(0.96);
+  }
+  75%, 100% { opacity: 0; transform: scale(1.3); }
+}
+
+.realtime-voice-mark {
+  --voice-level: 0;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.realtime-voice-mark-shell {
+  position: relative;
+  display: inline-flex;
+  transform-origin: center;
+  transition: transform 90ms ease-out;
+}
+
+.realtime-voice-halo {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center;
+  transform: scale(1.08);
+  pointer-events: none;
+}
+
+.realtime-voice-halo-outline {
+  position: absolute;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.realtime-voice-halo-wave {
+  opacity: 0;
+}
+
+.realtime-voice-mark[data-activity='listening'] .realtime-voice-mark-shell {
+  animation: realtime-voice-breathe 2.2s ease-in-out infinite;
+}
+
+.realtime-voice-mark[data-activity='listening'] .realtime-voice-halo-outline:first-child {
+  opacity: 0.24;
+}
+
+.realtime-voice-mark[data-activity='user-speaking'] .realtime-voice-mark-shell {
+  transform: scale(calc(1 + var(--voice-level) * 0.09));
+}
+
+.realtime-voice-mark[data-activity='user-speaking'] .realtime-voice-halo {
+  transform: scale(calc(1.08 + var(--voice-level) * 0.14));
+  transition: transform 90ms ease-out;
+}
+
+.realtime-voice-mark[data-activity='user-speaking'] .realtime-voice-halo-outline:first-child {
+  opacity: calc(0.45 + var(--voice-level) * 0.45);
+}
+
+.realtime-voice-mark[data-activity='user-speaking'] .realtime-voice-halo-wave {
+  animation: realtime-voice-wave 1.3s ease-out infinite;
+}
+
+.realtime-voice-mark[data-activity='user-speaking'] .realtime-voice-halo-wave:last-child {
+  animation-delay: 0.65s;
+}
+
+.realtime-voice-mark[data-activity='thinking'] .realtime-voice-halo-outline:first-child {
+  opacity: 0.7;
+}
+
+.realtime-voice-mark[data-activity='thinking'] .realtime-voice-halo-outline:first-child {
+  stroke-dasharray: 34 66;
+  animation: realtime-voice-trace 3s linear infinite;
+}
+
+.realtime-voice-mark[data-activity='assistant-speaking'] .realtime-voice-halo-outline:first-child {
+  opacity: 0.42;
+}
+
+.realtime-voice-mark[data-activity='assistant-speaking'] .realtime-voice-halo-wave {
+  animation: realtime-voice-wave 1.8s ease-out infinite;
+}
+
+.realtime-voice-mark[data-activity='assistant-speaking'] .realtime-voice-halo-wave:last-child {
+  animation-delay: 0.9s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .realtime-voice-mark .realtime-voice-mark-shell,
+  .realtime-voice-mark .realtime-voice-halo,
+  .realtime-voice-mark .realtime-voice-halo-outline {
+    animation: none;
+    transition: none;
+  }
+
+  .realtime-voice-mark[data-activity='user-speaking'] .realtime-voice-mark-shell {
+    transform: none;
+  }
+
+  .realtime-voice-mark[data-activity='user-speaking'] .realtime-voice-halo {
+    transform: scale(1.08);
+  }
+}
+
 .image-skeleton {
   position: relative;
   overflow: hidden;

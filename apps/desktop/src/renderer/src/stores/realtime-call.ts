@@ -6,6 +6,7 @@ import { VOICE_READY_CUE_MIC_GUARD_MS, playVoiceReadyCue } from '@/lib/audio-cue
 import { refreshCodexRealtimeTimeline, useCodexRealtimeViewStore } from './codex-realtime-view'
 
 export type RealtimeCallState = 'idle' | 'starting' | 'active' | 'stopping'
+export type RealtimeCallActivity = 'listening' | 'user-speaking' | 'thinking' | 'assistant-speaking'
 
 interface RealtimeCallStore {
   /** Session the live call belongs to; null while idle. */
@@ -13,6 +14,10 @@ interface RealtimeCallStore {
   state: RealtimeCallState
   microphoneMuted: boolean
   outputMuted: boolean
+  /** Presentation state for the live call indicator. */
+  activity: RealtimeCallActivity
+  /** Smoothed microphone RMS, normalized to 0...1. */
+  inputLevel: number
 }
 
 /**
@@ -28,6 +33,8 @@ export const useRealtimeCallStore = create<RealtimeCallStore>(() => ({
   state: 'idle',
   microphoneMuted: false,
   outputMuted: false,
+  activity: 'listening',
+  inputLevel: 0,
 }))
 
 interface CallMedia {
@@ -40,6 +47,7 @@ interface CallMedia {
   unsubscribe: (() => void) | null
   negotiationTimer: number | null
   cueGuardTimer: number | null
+  stopInputLevelMonitor: (() => void) | null
   /** True while the ready cue is playing into a live channel. */
   cueGuarded: boolean
   readyCuePlayed: boolean
@@ -73,22 +81,77 @@ function applyMicrophoneEnabled(): void {
   for (const track of media.stream?.getAudioTracks() ?? []) track.enabled = enabled
 }
 
+/**
+ * Sample the already-open microphone stream for the indicator. This does not add a
+ * second capture request or route audio anywhere; the source only feeds an analyser.
+ */
+function startInputLevelMonitor(stream: MediaStream): () => void {
+  if (typeof window.AudioContext !== 'function') return () => {}
+
+  let context: AudioContext | null = null
+  try {
+    context = new window.AudioContext()
+    const source = context.createMediaStreamSource(stream)
+    const analyser = context.createAnalyser()
+    analyser.fftSize = 256
+    source.connect(analyser)
+
+    const samples = new Float32Array(analyser.fftSize)
+    let frame = 0
+    let smoothed = 0
+    let published = 0
+    const sample = () => {
+      analyser.getFloatTimeDomainData(samples)
+      let energy = 0
+      for (const value of samples) energy += value * value
+      const rms = Math.sqrt(energy / samples.length)
+      const normalized = Math.min(1, Math.max(0, (rms - 0.012) / 0.16))
+      smoothed += (normalized - smoothed) * 0.28
+      if (Math.abs(smoothed - published) >= 0.025) {
+        published = smoothed
+        useRealtimeCallStore.setState({ inputLevel: smoothed })
+      }
+      frame = window.requestAnimationFrame(sample)
+    }
+    frame = window.requestAnimationFrame(sample)
+
+    return () => {
+      window.cancelAnimationFrame(frame)
+      source.disconnect()
+      analyser.disconnect()
+      void context?.close()
+    }
+  } catch {
+    void context?.close()
+    return () => {}
+  }
+}
+
 function releaseMedia(): void {
   if (!media) return
   if (media.negotiationTimer !== null) window.clearTimeout(media.negotiationTimer)
   if (media.cueGuardTimer !== null) window.clearTimeout(media.cueGuardTimer)
+  media.stopInputLevelMonitor?.()
   media.stopDiagnostics?.()
   media.unsubscribe?.()
   for (const track of media.stream?.getTracks() ?? []) track.stop()
   media.peer?.close()
   if (media.audio) media.audio.srcObject = null
   media = null
+  useRealtimeCallStore.setState({ inputLevel: 0 })
 }
 
 /** Tear the call down locally and return the UI to its resting state. */
 function finishCall(sessionId: string, projectPath: string): void {
   releaseMedia()
-  useRealtimeCallStore.setState({ sessionId: null, state: 'idle', microphoneMuted: false, outputMuted: false })
+  useRealtimeCallStore.setState({
+    sessionId: null,
+    state: 'idle',
+    microphoneMuted: false,
+    outputMuted: false,
+    activity: 'listening',
+    inputLevel: 0,
+  })
   view().setRealtimeSession(sessionId, null)
   void refreshTimeline(projectPath, sessionId)
 }
@@ -137,7 +200,7 @@ function handleAgentEvent(event: AgentEvent): void {
       reprioritizedCandidateCount: tcpPreference.reprioritizedCandidateCount,
     }, sessionId)
     void peer.setRemoteDescription({ type: 'answer', sdp: tcpPreference.sdp }).then(() => {
-      useRealtimeCallStore.setState({ state: 'active' })
+      useRealtimeCallStore.setState({ state: 'active', activity: 'listening' })
     }).catch((error) => {
       reportError(error)
       releaseMedia()
@@ -164,6 +227,18 @@ function handleAgentEvent(event: AgentEvent): void {
     }
     if (event.phase === 'started') view().startTranscriptItem(sessionId, item)
     else view().completeTranscriptItem(sessionId, item)
+
+    // Transcript items can overlap briefly. Prefer an active assistant, then an
+    // active user, before falling back to the transition implied by this event.
+    const pending = view().sessions[sessionId]?.liveItems.filter((live) => !live.done) ?? []
+    const activity: RealtimeCallActivity = pending.some((live) => live.role === 'assistant')
+      ? 'assistant-speaking'
+      : pending.some((live) => live.role === 'user')
+        ? 'user-speaking'
+        : event.phase === 'completed' && event.role === 'user'
+          ? 'thinking'
+          : 'listening'
+    useRealtimeCallStore.setState({ activity })
     return
   }
 
@@ -197,6 +272,8 @@ export async function startRealtimeCall({
     state: 'starting',
     microphoneMuted: false,
     outputMuted: false,
+    activity: 'listening',
+    inputLevel: 0,
   })
   view().setRealtimeStarting(sessionId, true)
   view().setView(sessionId, 'realtime')
@@ -212,6 +289,7 @@ export async function startRealtimeCall({
     unsubscribe: null,
     negotiationTimer: null,
     cueGuardTimer: null,
+    stopInputLevelMonitor: null,
     cueGuarded: false,
     readyCuePlayed: false,
   }
@@ -225,6 +303,7 @@ export async function startRealtimeCall({
     })
     if (!media) return
     media.stream = stream
+    media.stopInputLevelMonitor = startInputLevelMonitor(stream)
     const peer = new RTCPeerConnection()
     media.peer = peer
     if (import.meta.env.DEV) {
@@ -306,7 +385,7 @@ export async function stopRealtimeCall(): Promise<void> {
 
 export function toggleRealtimeMicrophone(): void {
   const next = !useRealtimeCallStore.getState().microphoneMuted
-  useRealtimeCallStore.setState({ microphoneMuted: next })
+  useRealtimeCallStore.setState({ microphoneMuted: next, ...(next ? { inputLevel: 0 } : {}) })
   applyMicrophoneEnabled()
 }
 
@@ -320,5 +399,12 @@ export function toggleRealtimeOutput(): void {
 export function resetRealtimeCallForTests(): void {
   releaseMedia()
   timelineLoadedFor = null
-  useRealtimeCallStore.setState({ sessionId: null, state: 'idle', microphoneMuted: false, outputMuted: false })
+  useRealtimeCallStore.setState({
+    sessionId: null,
+    state: 'idle',
+    microphoneMuted: false,
+    outputMuted: false,
+    activity: 'listening',
+    inputLevel: 0,
+  })
 }

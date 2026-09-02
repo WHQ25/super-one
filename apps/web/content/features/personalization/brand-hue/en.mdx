@@ -1,13 +1,13 @@
 ## What it does
 
-Pick a hue, and the entire app retints. Pick a different one per harness, and you'll always know whether you're talking to Claude or Codex without reading a label.
+Pick a hue, and the entire app retints. Pick a different one per harness, and you'll always know which engine you're talking to without reading a label.
 
 ## How it works
 
 - Every colour token in the app derives from a single `--brand-hue` variable using OKLch math.
 - The hue picker lives in the header. Drag the slider, watch the app reflow live.
-- Each harness ships with a default hue (warm orange for Claude, cool green for Codex), but anything is fair game.
-- Works in both light and dark mode — saturation and lightness stops are matched per mode.
+- Each harness ships with a default hue — warm orange for Claude, blue for Codex, green for OpenCode, slate for Cursor, blue-violet for DeepSeek, purple for Grok over ACP — but anything is fair game.
+- Works in both light and dark mode. Light mode is built as inverted chrome rather than a lightened dark theme, and the text colour on a brand fill is derived from that fill by contrast, so a hue stays readable across the whole range.
 
 ## Why it matters
 

@@ -1,21 +1,21 @@
-## Why two harnesses?
+## Why more than one engine?
 
-Different models have different strengths. Claude is sharper on long reasoning and large refactors. Codex is faster on focused edits and quick scripts. Instead of forcing you to pick once, SuperOne keeps both within arm's reach.
+Different models have different strengths. Claude is sharper on long reasoning and large refactors. Codex is faster on focused edits and quick scripts. Cursor, OpenCode, DeepSeek and any ACP-compatible agent bring their own. Instead of forcing you to pick once, SuperOne keeps all of them within arm's reach.
 
 ## How it works
 
 - Each session has its own engine, model, and effort level — chosen at creation or switched mid-task.
-- Brand hue follows the active harness (warm orange for Claude, cool green for Codex), so you always know who is talking.
+- Brand hue follows the active harness (warm orange for Claude, blue for Codex, green for OpenCode, slate for Cursor, blue-violet for DeepSeek, purple for Grok over ACP), so you always know who is talking.
 - Memory, slash commands, and tool permissions stay independent per harness.
+- Every engine inherits the same SuperOne tool surface — browser, devices, Computer Use, media generation — regardless of what its own CLI ships.
 
 ## Shortcuts
 
-- <kbd>⌘</kbd> <kbd>N</kbd> — new Claude session
-- <kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>N</kbd> — new Codex session
-- <kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>H</kbd> — switch the active session's harness
+- <kbd>⌘</kbd> <kbd>N</kbd> — new session
+- <kbd>⌃</kbd> <kbd>Tab</kbd> — switch between sessions in the project
 
 ## FAQ
 
-**Do I need both API keys?** No. You can run only Claude, only Codex, or both. The other engine simply stays disabled.
+**Do I need to set up all of them?** No. Enable the engines you want; the rest stay disabled and are never downloaded. Nothing is bundled into the app — a harness is fetched only when you turn it on.
 
-**Can a session hand off mid-task?** Yes — the plan and file context transfer to a new session, but conversation memory stays with the original.
+**Can a session hand off mid-task?** Yes. Handoff starts a sibling session on any engine and carries a durable Markdown handoff to it, so the plan and file context transfer while conversation memory stays with the original.

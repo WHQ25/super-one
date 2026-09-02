@@ -1,0 +1,21 @@
+## What it does
+
+Spawn starts a child session and keeps you in the conversation with it. The parent stays in charge: it delegates a piece of work, the child does it, and the result comes back into the parent's transcript.
+
+## How it works
+
+- The agent asks to spawn a collaborator. You see the launch task rendered as a markdown bubble — the full brief, not a tool payload — and approve or decline.
+- The child launches with an autonomous permission mode. A child you have to approve tool-by-tool defeats the point of delegating.
+- The child appears in the sidebar under its parent, with a pending chip while it works.
+- Messages flow back through a mailbox. If one arrives while the parent is mid-turn, it queues and flushes through the parent's own send path rather than landing inside a half-written tool call.
+
+## When to use it
+
+- A self-contained subtask you want isolated from the main transcript — porting tests, sweeping a rename, drafting a migration.
+- Work you want to supervise. You can keep talking to the child; it is a session, not a background job.
+
+## FAQ
+
+**Does the child have to run the same engine?** No. Spawn a Codex child from a Claude session, or the reverse — collaboration is built on the shared session seam.
+
+**Where does its work land?** If the child's working directory has never been opened, it is registered as its own project, so the work shows up where you would look for it.

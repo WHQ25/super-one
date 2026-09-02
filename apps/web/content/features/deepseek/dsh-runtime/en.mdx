@@ -1,0 +1,20 @@
+## What it does
+
+The other engines are processes SuperOne talks to. DeepSeek is a runtime SuperOne hosts: the dsh runtime is embedded in-process and the backend drives it directly.
+
+## Why that is different
+
+A spawned CLI owns its own configuration, credentials and tool registry, and the host negotiates with it across a process boundary. An embedded runtime does not need the negotiation — SuperOne serves its credentials from its own store, mounts its tool plane per session, and applies configuration changes to sessions that are already running rather than at the next launch.
+
+## How it works
+
+- **Credentials from the app.** The engine you enabled is authenticated by the app you enabled it in, not by a separate config file you have to keep in sync.
+- **Native tool plane per session.** Each session mounts dsh's own tools, with SuperOne's MCP surface bridged in alongside and third-party MCP servers mounted on the scope chain.
+- **Live config.** Editing an MCP server applies to running sessions; you do not restart to pick up a change.
+- **Fork and cold resume.** Both are pinned, so a session reopens where it stopped rather than at the last checkpoint that happened to survive.
+
+## FAQ
+
+**Does it still get the SuperOne tools?** Yes — browser, devices, Computer Use and media generation are bridged in like they are for every other harness.
+
+**Can I install plugins?** Yes, at runtime. Self-modifying plugins sit behind an explicit opt-in, and the engine as a whole runs under sandbox-backed permission presets.

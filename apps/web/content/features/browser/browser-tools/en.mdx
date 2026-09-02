@@ -1,0 +1,22 @@
+## What it does
+
+The browser in the activity panel is also a set of tools on the SuperOne MCP surface. Every harness gets them — Claude, Codex, Cursor, OpenCode, DeepSeek and any ACP agent — without shipping a browser of its own.
+
+## The tools
+
+- `browser_tabs` — open, navigate, reload, close. Localhost gets a port shorthand.
+- `browser_snapshot` — the page as structure: interactive elements with selectors, a tree, text, console, or a screenshot. Sections are selectable so a snapshot stays small.
+- `browser_act` — click, hover, type, press, scroll, drag, select, upload.
+- `browser_query` / `browser_wait_for` — target something you already know, or wait for a condition instead of sleeping.
+- `browser_evaluate` — run JavaScript when the other tools cannot express it.
+- `browser_network` / `browser_perf` — on-demand recording, so nothing is captured until asked.
+
+## What keeps it usable
+
+- **Stabilized selectors.** An ambiguous match is reported rather than silently resolved to the first hit, so the agent knows it needs to narrow down.
+- **Masked secrets.** Values typed into password-shaped fields are masked in tool summaries.
+- **Compact output.** Snapshots default to a lean section set and can emit TOON, which keeps a large page from eating the context window.
+
+## FAQ
+
+**Is the agent's browser the same one I see?** Yes. You are looking at the same tabs it drives, so you can watch it work and take over at any point.

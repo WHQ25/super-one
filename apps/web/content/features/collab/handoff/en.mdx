@@ -1,0 +1,20 @@
+## What it does
+
+Handoff starts a sibling session that takes over. Unlike spawn, the new session is not working for the old one — it inherits the task and continues it.
+
+## How it works
+
+- The handoff carries a durable Markdown document, not a verbal summary. The plan, the constraints and the file context are written down and travel with the task.
+- The sibling can run on any engine. Hand a task from Claude to Codex when the remaining work suits it better, or move to a harness with a capability the current one lacks.
+- Conversation memory stays with the original session. What transfers is the brief, deliberately — a fresh session with a clean context is often the point of handing off.
+- The original session stays open. You can read what it did before the handoff at any time.
+
+## When to use it
+
+- The task changed shape and the current session's context is now mostly noise.
+- The remaining work suits a different engine.
+- A long session is approaching its context limit and you would rather restate the goal than compact it.
+
+## FAQ
+
+**How is this different from spawn?** Spawn keeps the parent in charge and reports back. Handoff transfers ownership — after it, the sibling is the one doing the work.

@@ -1,0 +1,21 @@
+## What it does
+
+Preview a running iOS Simulator beside the conversation, and let the agent read and drive it — as structure first, pixels only where structure runs out.
+
+## How it works
+
+- **Semantic tree first.** The helper reads the simulator's accessibility tree, so the agent queries labelled elements rather than guessing at coordinates from a screenshot.
+- **Recognized text joins that tree.** Text found on screen is presented as part of the normal UI tree instead of arriving as a separate OCR result, so there is one structure to query, not two.
+- **Pixels as fallback.** Regions the app described with nothing are read from the frame — the gap is filled, not papered over.
+
+## Why snapshots carry a fingerprint
+
+Snapshot identity is a fingerprint of both the tree and the frame. Either one alone can be stale while the other has moved on: a view can repaint without changing its accessibility tree, and a tree can update a frame before the pixels land. Element refs are pinned to the snapshot they came from, so acting on a stale ref fails loudly instead of clicking whatever now occupies that position.
+
+## The preview is the viewfinder
+
+The floating preview over the chat shows the same surface the agent is acting on. What you are watching and what it is driving are one thing.
+
+## FAQ
+
+**Does it work with rotation?** Yes — rotation is handled and the tree and frame dimensions follow.

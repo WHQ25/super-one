@@ -1,0 +1,20 @@
+## What it does
+
+Computer Use is granted one app at a time. You hand the agent a specific application; it does not get your screen.
+
+## How it works
+
+- **Grant by mentioning.** `@`-mention a desktop app in the chat input to give this session control of it. The grant UI shows the real app icon, so what you are authorizing is unambiguous.
+- **Always-allow for the regulars.** Apps you drive constantly can be granted standing permission; everything else asks each session.
+- **A guided first grant.** The first time, a drag float walks you through the permission step rather than dropping you into a system settings pane with no context.
+- **Per session, not per app forever.** A grant belongs to the session that asked for it. Closing the session ends it.
+
+## What the agent sees
+
+Only the app you granted. The catalog it receives is compacted to what is running and controllable, not every bundle on disk, and capture is scoped to that app's windows.
+
+## FAQ
+
+**Can I take it back?** Yes — permissions are revocable from settings, including the always-allow entries.
+
+**Does the agent see other windows?** No. Capture is per window within the granted app, and a modal appearing over it is recognized rather than clicked through.

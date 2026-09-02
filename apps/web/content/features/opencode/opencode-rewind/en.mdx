@@ -1,0 +1,19 @@
+## What it does
+
+OpenCode sessions support compact, rewind and fork — the same three moves you have on the other engines, so a session can be wound back or branched without leaving the app.
+
+## The three moves
+
+- **Compact** summarizes the conversation so far and continues in the same session. Use it when the history is long but still the right history.
+- **Rewind** takes the session back to an earlier turn. Use it when a turn went wrong and everything after it is noise.
+- **Fork** copies the session at a point and continues in a new one. Use it when you want to try a second approach without losing the first.
+
+## Why it matters that all three exist here
+
+An engine missing rewind forces you to start over; an engine missing fork forces you to choose between two approaches instead of running both. Having the same three on every harness is what lets you pick an engine for how it reasons rather than for which escape hatches it happens to ship.
+
+## FAQ
+
+**Does forking copy the whole history?** It copies the session up to the fork point. From there the two sessions are independent.
+
+**Is compaction automatic?** It runs when the context needs it, and you can trigger it yourself from the session controls.

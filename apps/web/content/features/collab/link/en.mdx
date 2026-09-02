@@ -1,0 +1,22 @@
+## What it does
+
+Link opens a mailbox between two sessions that already exist. Neither one is the other's child; they are two ongoing pieces of work that can now reach each other.
+
+## How it works
+
+- Pick an existing session to link with. Both keep their own history, engine and permissions — linking adds a channel, it does not merge anything.
+- Messages render as markdown in the tool UI, so a message from the other side reads as prose rather than a JSON blob.
+- A wake row shows when a session was roused by an incoming message, so you can see why it started working again after sitting idle.
+- `@`-mention a specific collaborator from the composer to address one of them directly.
+
+## When to use it
+
+- Two sessions working on opposite sides of the same interface — one on the API, one on the client — that need to agree on a contract.
+- A long-running session that should notify a second one when it reaches a milestone.
+- Sessions in different worktrees that need to compare notes without sharing a checkout.
+
+## FAQ
+
+**Can they be on different engines?** Yes. Linking works across harness boundaries like the other collaboration modes.
+
+**Does linking merge their histories?** No. Each session keeps its own transcript; only the messages you send through the mailbox cross over.

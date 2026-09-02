@@ -1,0 +1,20 @@
+## What it does
+
+Cursor is driven through its native `@cursor/sdk` rather than a command-line binary, which is what makes cloud sessions and the recovery surface available inside SuperOne.
+
+## SDK rather than CLI
+
+Most harnesses are a process SuperOne spawns and speaks to over stdio. Cursor is a library call. That difference is invisible in the chat — the same session contract, the same status bar, the same tool rows — and it was a useful test of whether the harness seam was really shaped around engines rather than around subprocesses.
+
+## What you get
+
+- **Cloud sessions**, mapped onto the shared session contract so they list, resume and fork like local ones.
+- **A recovery surface**, so an interrupted session has a defined way back rather than being lost.
+- **Full model parameters**, with a model enable list and harness-scoped preferences that do not leak into other engines.
+- **Permission modes and a sandbox toggle**, exposed the way every other harness exposes them.
+
+## FAQ
+
+**Do I need Cursor installed?** The integration uses the SDK, so there is no separate CLI to install — enabling the harness is enough.
+
+**Is `Agent` the same as the old `Auto`?** Yes. The permission mode was renamed to match what it actually does.

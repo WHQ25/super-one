@@ -1,0 +1,22 @@
+## What it does
+
+ACP support means SuperOne integrated a protocol, not a vendor. Any agent that speaks the Agent Client Protocol can run as a first-class harness; Grok is the first one wired end to end.
+
+## What maps onto the shared contract
+
+- Session lifecycle, so an ACP session is created, resumed and forked like any other.
+- Models, cached per agent so switching does not re-interrogate the CLI every time.
+- Slash commands, lazy-loaded when you open the `/` popup rather than enumerated at startup.
+- Permission modes and worktree cwd, so the status bar reads the same as it does for Claude or Codex.
+
+## It inherits the SuperOne tool surface
+
+The host attaches SuperOne's MCP server to every ACP session and injects the host prompt. An ACP agent therefore gets the browser, device control, Computer Use and media tools without its own implementation knowing they exist. User-configured MCP servers map onto ACP session servers, so servers you added apply here too.
+
+## Why the protocol layer is the right seam
+
+Wiring one vendor produces one integration. Wiring the protocol means the next compatible agent is configuration rather than code — which is how a fifth and sixth engine took days instead of weeks.
+
+## FAQ
+
+**Is Grok the only option?** No. Grok is the example that is wired and tested; the seam is the protocol.

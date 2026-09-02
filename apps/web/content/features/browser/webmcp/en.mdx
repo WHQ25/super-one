@@ -1,0 +1,21 @@
+## What it does
+
+WebMCP lets a page publish tools to the agent viewing it. The embedded browser discovers them, and — once you trust the site — the agent can call them.
+
+## How it works
+
+- **Discovery.** Page tools are read from the document as you browse. Discovered tools surface in the UI so you can see what a site is offering before anything runs.
+- **Consent per origin.** Calling a page tool requires a site trust decision for that origin. The grant persists, so you approve a site once rather than on every visit.
+- **Purpose-built chat rows.** A page-tool call renders as its own row rather than as generic MCP output, so it reads like what it is.
+
+## Why trust is per site, not per call
+
+A page that can define tools can also rename and redefine them. Approving an individual call would be approving a name, and the thing behind that name can change on the next load. The meaningful unit of trust is therefore the origin. Tool fingerprints cover the remaining case: if an approved tool quietly becomes a different one, the change is caught rather than inherited.
+
+## Why it matters
+
+Because WebMCP rides the embedded browser rather than any one harness, a page publishes its tools once and every engine can call them.
+
+## FAQ
+
+**Can a site grant itself access?** No. Discovery happens automatically; calling does not. Nothing runs until you trust the origin.

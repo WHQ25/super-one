@@ -1,0 +1,18 @@
+## What it does
+
+Android emulators and real phones are discovered into the same device catalog as the iOS Simulator, driven through the same agent seam, and streamed live into the panel.
+
+## How it works
+
+- **Discovery into a shared catalog.** Emulators and attached phones appear alongside every other device, so the agent asks for a device rather than for a platform.
+- **One connection, every viewer.** A single connection to a device serves the panel, the floating preview and the agent at once, instead of each opening its own stream and fighting over the socket.
+- **Named the way you would name it.** A real phone reports a parts number as its model; the catalog resolves the market name, so you pick a phone you recognize.
+- **Neutral frame and input types.** The frame and input model are platform-agnostic, which is why the same tools drive an iOS Simulator and an Android phone without the agent branching on platform.
+
+## Lifecycle
+
+Emulators started for a session shut down with the app, so a forgotten emulator does not keep draining the machine after you quit.
+
+## FAQ
+
+**Can one session hold two devices?** Yes. Each device tab carries its own identity, and the agent names which device a call is for.

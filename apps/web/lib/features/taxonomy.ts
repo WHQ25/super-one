@@ -518,34 +518,12 @@ export const featureTaxonomy: FeatureCategory[] = [
         slug: "codex-advanced",
         category: "engines",
         harnesses: ["codex"],
-        title: { en: "Codex advanced", zh: "Codex 进阶" },
+        title: { en: "Codex thread surgery", zh: "Codex thread 操作" },
         blurb: {
-          en: "Capabilities only Codex has today — computer use, image generation, thread surgery.",
-          zh: "目前只有 Codex 独占的能力 —— computer use、图像生成、thread 操作。",
+          en: "Fork a thread or roll back turns using Codex's own protocol.",
+          zh: "用 Codex 自己的协议 fork 一份 thread 或回退若干轮。",
         },
         subFeatures: [
-          {
-            slug: "computer-use",
-            feature: "codex-advanced",
-            category: "engines",
-            harnesses: ["codex"],
-            title: { en: "Computer use", zh: "Computer use(计算机操作)" },
-            blurb: {
-              en: "Codex can read your screen and drive the OS to complete tasks.",
-              zh: "Codex 可以读屏 + 操作系统帮你完成任务。",
-            },
-          },
-          {
-            slug: "image-generation",
-            feature: "codex-advanced",
-            category: "engines",
-            harnesses: ["codex"],
-            title: { en: "Image generation", zh: "图像生成" },
-            blurb: {
-              en: "Generate images mid-conversation without leaving the session.",
-              zh: "对话中途直接生图,不用切应用。",
-            },
-          },
           {
             slug: "fork-rollback",
             feature: "codex-advanced",
@@ -778,8 +756,8 @@ export const featureTaxonomy: FeatureCategory[] = [
     slug: "extend",
     title: { en: "Extend & build", zh: "扩展与构建" },
     blurb: {
-      en: "Wire resources into the engine's brain, render inline widgets, build sandboxed mini-apps.",
-      zh: "把资源接入引擎大脑、渲染内联 widget、构建沙盒小程序。",
+      en: "The tool surface every harness inherits — a browser, devices, computer use, media, widgets and mini-apps.",
+      zh: "每个 harness 都继承的工具面 —— 浏览器、设备、computer use、媒体生成、widget 与小程序。",
     },
     harnessTabs: false,
     features: [
@@ -938,6 +916,160 @@ export const featureTaxonomy: FeatureCategory[] = [
             blurb: {
               en: "Embedded build/dev system: setup, register, pack, update types.",
               zh: "应用内嵌开发流程:setup / register / pack / update_types。",
+            },
+          },
+        ],
+      },
+      {
+        slug: "browser",
+        category: "extend",
+        title: { en: "Embedded browser", zh: "内嵌浏览器" },
+        blurb: {
+          en: "A real browser in the activity panel, and the same browser as tools the agent can drive.",
+          zh: "活动面板里的真浏览器,同一个浏览器也是 agent 能驱动的工具。",
+        },
+        subFeatures: [
+          {
+            slug: "browser-panel",
+            feature: "browser",
+            category: "extend",
+            title: { en: "Tabs, bookmarks, history", zh: "标签页、书签与历史" },
+            blurb: {
+              en: "Per-session tab isolation, bookmark folders, address-bar autocomplete, zoom and popup-login handling.",
+              zh: "标签页按会话隔离,书签文件夹、地址栏自动补全、缩放,以及弹窗登录处理。",
+            },
+          },
+          {
+            slug: "browser-tools",
+            feature: "browser",
+            category: "extend",
+            title: { en: "Browser automation tools", zh: "浏览器自动化工具" },
+            blurb: {
+              en: "Snapshot, act, query, evaluate and network tools on the SuperOne MCP surface, with stabilized selectors and masked secrets.",
+              zh: "snapshot、act、query、evaluate 与网络工具挂在 SuperOne MCP 面上,选择器稳定化,密文自动遮蔽。",
+            },
+          },
+          {
+            slug: "browser-annotate",
+            feature: "browser",
+            category: "extend",
+            title: { en: "Annotate and hand over", zh: "标注后交给 agent" },
+            blurb: {
+              en: "Click elements on the page to attach them to the chat input, or drag an image straight into the conversation.",
+              zh: "点选页面元素附到聊天输入框,或把图片直接拖进对话。",
+            },
+          },
+          {
+            slug: "webmcp",
+            feature: "browser",
+            category: "extend",
+            title: { en: "WebMCP page tools", zh: "WebMCP 页面工具" },
+            blurb: {
+              en: "A page can publish tools to the agent viewing it, gated by a per-origin site trust decision that persists.",
+              zh: "页面可以向正在浏览它的 agent 发布工具,由可持久化的按来源站点信任闸把关。",
+            },
+          },
+        ],
+      },
+      {
+        slug: "devices",
+        category: "extend",
+        title: { en: "Device control", zh: "设备控制" },
+        blurb: {
+          en: "Drive an iOS Simulator, an Android device, or your mirrored iPhone from the same seam.",
+          zh: "用同一道接缝操作 iOS 模拟器、Android 设备,或投屏中的 iPhone。",
+        },
+        subFeatures: [
+          {
+            slug: "ios-simulator",
+            feature: "devices",
+            category: "extend",
+            title: { en: "iOS Simulator", zh: "iOS 模拟器" },
+            blurb: {
+              en: "Reads the semantic accessibility tree, presents recognized text as part of that tree, and falls back to pixels only where the app described nothing.",
+              zh: "读取语义化辅助功能树,把识别到的文字并入同一棵树,只在应用什么都没描述的地方才回退到像素。",
+            },
+          },
+          {
+            slug: "android-devices",
+            feature: "devices",
+            category: "extend",
+            title: { en: "Android devices", zh: "Android 设备" },
+            blurb: {
+              en: "Emulators and real phones discovered into the shared catalog, with a live video stream and market names instead of part numbers.",
+              zh: "模拟器与真机被发现后进入共享目录,带实时视频流,显示市场名而不是零件号。",
+            },
+          },
+          {
+            slug: "device-panel",
+            feature: "devices",
+            category: "extend",
+            title: { en: "One panel, one grant", zh: "统一面板与控制授权" },
+            blurb: {
+              en: "The agent requests a device from a tiered catalog and receives a control grant; each tab has its own identity, so a session can hold two.",
+              zh: "agent 从分层目录请求设备并获得控制授权;每个标签有独立身份,一个会话可以同时持有两台。",
+            },
+          },
+        ],
+      },
+      {
+        slug: "computer-use",
+        category: "extend",
+        title: { en: "Computer Use", zh: "Computer Use" },
+        blurb: {
+          en: "Grant an agent one desktop app, not your whole machine — and take it back.",
+          zh: "把一个桌面应用交给 agent,而不是整台机器 —— 并且可以收回。",
+        },
+        subFeatures: [
+          {
+            slug: "computer-grant",
+            feature: "computer-use",
+            category: "extend",
+            title: { en: "Grant by app", zh: "按应用授权" },
+            blurb: {
+              en: "@-mention a desktop app to grant this session control of it, with an always-allow path for the ones you use constantly.",
+              zh: "@ 提及一个桌面应用即可授予当前会话控制权,常用应用可设为始终允许。",
+            },
+          },
+          {
+            slug: "computer-capture",
+            feature: "computer-use",
+            category: "extend",
+            title: { en: "Window capture, not screen capture", zh: "捕获窗口而非屏幕" },
+            blurb: {
+              en: "Capture is scoped per window, with modal safety across windows and accessibility transient roots so menus stay readable.",
+              zh: "捕获按窗口进行,跨窗口模态安全,并纳入辅助功能瞬态根节点,菜单依然可读。",
+            },
+          },
+        ],
+      },
+      {
+        slug: "media-generation",
+        category: "extend",
+        title: { en: "Image & video generation", zh: "图像与视频生成" },
+        blurb: {
+          en: "Produce an asset mid-task instead of describing one the agent cannot make.",
+          zh: "在任务中途直接产出素材,而不是描述一个 agent 做不出来的东西。",
+        },
+        subFeatures: [
+          {
+            slug: "image-generation",
+            feature: "media-generation",
+            category: "extend",
+            title: { en: "Image generation", zh: "图像生成" },
+            blurb: {
+              en: "media_generate_image is on the MCP surface for every harness; results collect into a gallery card at the end of the turn.",
+              zh: "media_generate_image 对每个 harness 开放;结果汇集到该轮末尾的图库卡片。",
+            },
+          },
+          {
+            slug: "video-generation",
+            feature: "media-generation",
+            category: "extend",
+            title: { en: "Video generation", zh: "视频生成" },
+            blurb: {
+              en: "Sora, Veo, Seedance and Ark behind one protocol table, with explicit confirmation before a run that costs money.",
+              zh: "Sora、Veo、Seedance 与 Ark 归入同一张协议表,花钱的任务执行前需要明确确认。",
             },
           },
         ],

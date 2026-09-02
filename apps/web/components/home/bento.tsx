@@ -1,6 +1,5 @@
 "use client"
 
-import type { ReactNode } from "react"
 import { motion } from "motion/react"
 import { useTranslations } from "next-intl"
 import { ArrowUpRight } from "lucide-react"
@@ -8,17 +7,14 @@ import {
   SubagentBlockMock,
   ToolBlockMock,
 } from "@superone/desktop-mocks/desktop"
-import { cn } from "@superone/ui/lib/utils"
 import { Link } from "@/i18n/navigation"
 import { MockStage } from "./mock-stage"
 import { HarnessLineup } from "./harness-lineup"
 
 /**
  * The four product pillars from the repo's own framing, in order. This is the
- * sales pitch, not the sitemap — the taxonomy's six categories live on
- * /features, where they serve people who already use the app.
- *
- * `href` is optional on purpose: collaboration has no features page yet.
+ * sales pitch, not the sitemap — the taxonomy's categories live on /features,
+ * where they serve people who already use the app.
  */
 const PILLARS = [
   {
@@ -50,7 +46,7 @@ const PILLARS = [
   {
     key: "collaborate",
     span: "md:col-span-1",
-    href: undefined,
+    href: "/features/collab",
     stage: { width: 520, maxHeight: 210 },
     render: () => (
       <SubagentBlockMock
@@ -83,29 +79,7 @@ const PILLARS = [
 ] as const
 
 const CARD_CLASS =
-  "border-border bg-card group flex h-full flex-col gap-5 rounded-2xl border p-6 transition-colors"
-
-function CardShell({
-  href,
-  children,
-}: {
-  href?: string
-  children: ReactNode
-}) {
-  if (!href) return <div className={CARD_CLASS}>{children}</div>
-  return (
-    <Link
-      href={href}
-      className={cn(
-        CARD_CLASS,
-        "hover:border-primary/40 hover:bg-accent/30",
-        "focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
-      )}
-    >
-      {children}
-    </Link>
-  )
-}
+  "border-border bg-card group flex h-full flex-col gap-5 rounded-2xl border p-6 transition-colors hover:border-primary/40 hover:bg-accent/30 focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none"
 
 export function Bento() {
   const t = useTranslations("Home.bento")
@@ -135,13 +109,11 @@ export function Bento() {
             transition={{ duration: 0.5, ease: "easeOut", delay: i * 0.06 }}
             className={pillar.span}
           >
-            <CardShell href={pillar.href}>
+            <Link href={pillar.href} className={CARD_CLASS}>
               <div>
                 <h3 className="flex items-center gap-1.5 text-lg font-semibold tracking-tight">
                   {t(`${pillar.key}.title`)}
-                  {pillar.href ? (
-                    <ArrowUpRight className="text-muted-foreground size-4 opacity-0 transition-opacity group-hover:opacity-100" />
-                  ) : null}
+                  <ArrowUpRight className="text-muted-foreground size-4 opacity-0 transition-opacity group-hover:opacity-100" />
                 </h3>
                 <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
                   {t(`${pillar.key}.desc`)}
@@ -154,7 +126,7 @@ export function Bento() {
               >
                 {pillar.render()}
               </MockStage>
-            </CardShell>
+            </Link>
           </motion.div>
         ))}
       </div>

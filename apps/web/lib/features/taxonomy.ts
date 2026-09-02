@@ -753,6 +753,140 @@ export const featureTaxonomy: FeatureCategory[] = [
     ],
   },
   {
+    slug: "collab",
+    title: { en: "Collaboration", zh: "协作" },
+    blurb: {
+      en: "Sessions that talk to each other across harness boundaries — spawn a child, hand off to a sibling, or link two into a shared mailbox.",
+      zh: "跨 harness 边界互相对话的会话 —— 派生子会话、移交给同级,或把两个连成共享信箱。",
+    },
+    harnessTabs: false,
+    features: [
+      {
+        slug: "launch-modes",
+        category: "collab",
+        title: { en: "Three ways to involve another session", zh: "让另一个会话参与进来的三种方式" },
+        blurb: {
+          en: "Spawn, handoff and link differ in who stays in charge afterwards.",
+          zh: "spawn、handoff 与 link 的区别在于:之后由谁负责。",
+        },
+        subFeatures: [
+          {
+            slug: "spawn",
+            feature: "launch-modes",
+            category: "collab",
+            title: { en: "Spawn a child", zh: "派生子会话" },
+            blurb: {
+              en: "Start a child session you keep talking to — the parent stays in charge and reads results back.",
+              zh: "启动一个你可以持续对话的子会话 —— 父会话仍然主导,并把结果读回来。",
+            },
+          },
+          {
+            slug: "handoff",
+            feature: "launch-modes",
+            category: "collab",
+            title: { en: "Hand off to a sibling", zh: "移交给同级" },
+            blurb: {
+              en: "A sibling session takes over the task, carrying a durable Markdown handoff instead of a summary that evaporates.",
+              zh: "由同级会话接手任务,带走一份持久的 Markdown 交接文档,而不是一段说完就没的总结。",
+            },
+          },
+          {
+            slug: "link",
+            feature: "launch-modes",
+            category: "collab",
+            title: { en: "Link two sessions", zh: "连接两个会话" },
+            blurb: {
+              en: "Open a mailbox with a session that already exists, so two ongoing pieces of work can reach each other.",
+              zh: "与一个已经存在的会话建立信箱,让两件正在进行的工作能够互相触达。",
+            },
+          },
+        ],
+      },
+      {
+        slug: "collab-control",
+        category: "collab",
+        title: { en: "You stay in the loop", zh: "你始终在环内" },
+        blurb: {
+          en: "Every launch is approved, every message is readable, and nothing lands mid-tool-call.",
+          zh: "每次启动都经你批准,每条消息都可读,而且不会落在一次工具调用中间。",
+        },
+        subFeatures: [
+          {
+            slug: "launch-approval",
+            feature: "collab-control",
+            category: "collab",
+            title: { en: "Approve every launch", zh: "每次启动都要批准" },
+            blurb: {
+              en: "The launch task renders as a markdown bubble, so you read what is being delegated before you allow it.",
+              zh: "启动任务渲染为 markdown 气泡,于是你在放行之前先读到它要委派什么。",
+            },
+          },
+          {
+            slug: "mailbox",
+            feature: "collab-control",
+            category: "collab",
+            title: { en: "Mailbox and wakes", zh: "信箱与唤醒" },
+            blurb: {
+              en: "Messages render as markdown and wake rows show what roused a session; mid-turn arrivals queue and flush through the session's own send path.",
+              zh: "消息以 markdown 渲染,唤醒行显示是什么叫醒了会话;回合中途到达的消息先排队,再经会话自己的发送通道冲刷出去。",
+            },
+          },
+          {
+            slug: "collab-mentions",
+            feature: "collab-control",
+            category: "collab",
+            title: { en: "@-mention a collaborator", zh: "@ 提及协作者" },
+            blurb: {
+              en: "Address a specific collaborator from the composer, and watch the child list and pending chips in the sidebar.",
+              zh: "在输入框里指名某个协作者,并在侧栏看到子会话列表与待处理标记。",
+            },
+          },
+        ],
+      },
+      {
+        slug: "collab-isolation",
+        category: "collab",
+        title: { en: "Where the work lands", zh: "工作落在哪里" },
+        blurb: {
+          en: "A collaborator can be isolated in its own worktree, and it brings its own project rather than hiding inside the parent.",
+          zh: "协作者可以被隔离进自己的 worktree,并且自带项目,而不是藏在父会话内部。",
+        },
+        subFeatures: [
+          {
+            slug: "worktree-isolation",
+            feature: "collab-isolation",
+            category: "collab",
+            title: { en: "Optional worktree isolation", zh: "可选的 worktree 隔离" },
+            blurb: {
+              en: "Give a collaborator its own git worktree so parallel work never collides with what you are doing.",
+              zh: "给协作者一份独立的 git worktree,并行工作不会和你正在做的事撞车。",
+            },
+          },
+          {
+            slug: "child-projects",
+            feature: "collab-isolation",
+            category: "collab",
+            title: { en: "A child brings its own project", zh: "子会话自带项目" },
+            blurb: {
+              en: "If the collaborator's working directory was never opened, it is registered as its own project so the work shows up where you would look.",
+              zh: "如果协作者的工作目录从未被打开过,它会被注册为独立项目,于是这些工作出现在你会去找的地方。",
+            },
+          },
+          {
+            slug: "cross-harness",
+            feature: "collab-isolation",
+            category: "collab",
+            title: { en: "Across harness boundaries", zh: "跨越 harness 边界" },
+            blurb: {
+              en: "The collaborator does not have to run the same engine — collaboration is built on the shared session seam, not one engine's subagent feature.",
+              zh: "协作者不必跑同一套引擎 —— 协作建立在共享的会话接缝上,而不是某一个引擎的 subagent 功能上。",
+            },
+          },
+        ],
+      },
+    ],
+  },
+  {
     slug: "extend",
     title: { en: "Extend & build", zh: "扩展与构建" },
     blurb: {

@@ -1320,6 +1320,7 @@ export type Messages = {
     }
     compactMode: {
       detail: string
+      workingFor: string
       toolCalls: string
       filesChanged: string
     }
@@ -4954,6 +4955,7 @@ export const en: Messages = {
     },
     compactMode: {
       detail: 'Detail',
+      workingFor: 'Working for {{duration}}',
       toolCalls: '{{count}} tool calls',
       filesChanged: '{{count}} files changed',
     },

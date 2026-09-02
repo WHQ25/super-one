@@ -8,7 +8,9 @@ import { createDefaultPerSessionState, createDefaultProjectState, useChatStore }
 import { useAppStore } from '@/stores/app'
 
 vi.mock('./CodexTurnView', () => ({
-  CodexTurnView: () => <div data-testid="codex-turn" />,
+  CodexTurnView: ({ isWorking }: { isWorking?: boolean }) => (
+    <div data-testid="codex-turn" data-working={String(!!isWorking)} />
+  ),
 }))
 
 vi.mock('./ForkButton', () => ({
@@ -71,6 +73,21 @@ afterEach(() => {
   useChatStore.setState({
     activeProject: null,
     projectSessions: {},
+  })
+})
+
+describe('ChatMessage delegated Codex state', () => {
+  it('keeps a streaming delegated turn working while its session is backgrounded', () => {
+    render(
+      <ChatMessage
+        message={createCodexMessage()}
+        sessionStatus="background"
+        isLastAssistant
+        collapseEntireCodexTurn
+      />,
+    )
+
+    expect(screen.getByTestId('codex-turn')).toHaveAttribute('data-working', 'true')
   })
 })
 

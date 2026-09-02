@@ -62,6 +62,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { useIsDark } from '@/hooks/use-is-dark'
 import type { ChatMessageContext } from '@superone/shared/agent-types'
+import { formatCompactDuration } from './duration-format'
 
 interface ChatMessageProps {
   message: ChatMessageType
@@ -669,12 +670,7 @@ export function formatCompactTokens(tokens: number): string {
   return String(tokens)
 }
 
-/** Format a millisecond duration as "98s" / "1m 38s". */
-export function formatCompactDuration(ms: number): string {
-  const totalSec = Math.round(ms / 1000)
-  if (totalSec < 60) return `${totalSec}s`
-  return `${Math.floor(totalSec / 60)}m ${totalSec % 60}s`
-}
+export { formatCompactDuration }
 
 export function CompactIndicator({
   trigger,
@@ -1025,6 +1021,9 @@ export const ChatMessage = memo(function ChatMessage({
   const detailChatMode = useAppStore((s) => s.detailChatMode)
   const isUser = message.role === 'user'
   const isStreaming = message.status === 'streaming' && sessionStatus === 'streaming' && isLastAssistant
+  const isWorking = message.status === 'streaming'
+    && (sessionStatus === 'streaming' || sessionStatus === 'background')
+    && isLastAssistant
   const isCodexMessage = !isUser && message.providerId === 'codex'
   const collabLabelKey = isUser ? collaborationLabelKey(message) : null
   const isCollab = collabLabelKey != null
@@ -1144,6 +1143,7 @@ export const ChatMessage = memo(function ChatMessage({
               <CodexTurnView
                 message={message}
                 isStreaming={isStreaming}
+                isWorking={isWorking}
                 isLastAssistant={isLastAssistant}
                 collapseEntireTurn={collapseEntireCodexTurn}
                 footer={collapseEntireCodexTurn ? assistantFooter : undefined}

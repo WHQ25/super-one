@@ -4,7 +4,7 @@ import { Collapsible as CollapsiblePrimitive } from 'radix-ui'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { cn } from '@superone/ui/lib/utils'
-import { formatCompactDuration } from './ChatMessage'
+import { formatCompactDuration } from './duration-format'
 
 const STATUS_TONE: Record<TaskNotificationMeta['status'], string> = {
   completed: 'text-success',

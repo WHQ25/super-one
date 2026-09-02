@@ -152,6 +152,7 @@ const CodexAppToolGroup = memo(function CodexAppToolGroup({ appId, items, isStre
 interface CodexTurnViewProps {
   message: ChatMessageType
   isStreaming: boolean
+  isWorking?: boolean
   isLastAssistant: boolean
   collapseEntireTurn?: boolean
   footer?: ReactNode
@@ -405,6 +406,7 @@ const CodexItemSegment = memo(function CodexItemSegment(props: CodexItemSegmentP
 export function CodexTurnView({
   message,
   isStreaming,
+  isWorking = isStreaming,
   isLastAssistant,
   collapseEntireTurn = false,
   footer,
@@ -560,6 +562,7 @@ export function CodexTurnView({
       <div className="codex-turn min-w-0 w-full space-y-1">
         <TurnDetailSection
           stats={summarizeCodexProcess(segments, codexItems)}
+          workingSince={isWorking ? message.createdAt : undefined}
           runs={[{
             key: 'entire-turn',
             collapsible: true,

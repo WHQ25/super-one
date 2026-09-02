@@ -1,5 +1,6 @@
 import {
   Fragment,
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -10,6 +11,7 @@ import { useTranslation } from 'react-i18next'
 import { ChevronDown, ChevronRight, FileDiff, List, Wrench } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import type { TurnProcessStats } from './turn-process-stats'
+import { formatCompactDuration } from './duration-format'
 
 /** One rendered run of a turn — see `partitionTurnForCompactMode`. */
 export interface TurnDetailRun {
@@ -24,6 +26,8 @@ interface TurnDetailSectionProps {
   runs: TurnDetailRun[]
   /** Visible tool / file / line stats collapsed under Detail. */
   stats?: TurnProcessStats
+  /** While collapsed, replace Detail with a live working duration. */
+  workingSince?: string | number
   className?: string
 }
 
@@ -111,10 +115,28 @@ function TurnDetailRegion({ expanded, children }: { expanded: boolean; children:
   )
 }
 
-export function TurnDetailSection({ runs, stats, className }: TurnDetailSectionProps) {
-  const { t } = useTranslation()
+export function TurnDetailSection({ runs, stats, workingSince, className }: TurnDetailSectionProps) {
+  const { t, i18n } = useTranslation()
   const [expanded, setExpanded] = useState(false)
-  const label = t('chat.compactMode.detail')
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (workingSince === undefined || expanded) return
+    const tick = () => setNow(Date.now())
+    tick()
+    const interval = setInterval(tick, 1000)
+    return () => clearInterval(interval)
+  }, [expanded, workingSince])
+  const parsedWorkingSince = typeof workingSince === 'string'
+    ? new Date(workingSince).getTime()
+    : workingSince
+  const workingDuration = parsedWorkingSince !== undefined && Number.isFinite(parsedWorkingSince)
+    ? Math.max(0, now - parsedWorkingSince)
+    : 0
+  const label = !expanded && workingSince !== undefined
+    ? t('chat.compactMode.workingFor', {
+        duration: formatCompactDuration(workingDuration, i18n.resolvedLanguage ?? i18n.language),
+      })
+    : t('chat.compactMode.detail')
   // Anchor the indicator to the first collapsed run so a turn that opens with prose
   // still reads top-down: intro, Detail (standing in for the tools), answer.
   const firstCollapsible = runs.findIndex((run) => run.collapsible)

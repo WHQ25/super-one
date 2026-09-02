@@ -1398,6 +1398,7 @@ export const zh: Messages = {
     },
     compactMode: {
       detail: '详细过程',
+      workingFor: '已工作 {{duration}}',
       toolCalls: '{{count}} 次工具调用',
       filesChanged: '{{count}} 个文件改动',
     },

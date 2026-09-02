@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
-import { describe, expect, it } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { TurnDetailSection } from './TurnDetailSection'
 
@@ -58,5 +58,24 @@ describe('turn detail disclosure', () => {
     await waitFor(() => expect(screen.getByText('tools-1')).toBeInTheDocument())
     const text = [...container.querySelectorAll('p')].map((p) => p.textContent)
     expect(text).toEqual(['tools-1', 'markdown', 'tools-2', 'answer'])
+  })
+
+  it('shows a live working duration only while collapsed', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-03-09T00:01:03.000Z'))
+    const { unmount } = render(
+      <TurnDetailSection runs={runs} workingSince="2026-03-09T00:00:00.000Z" />,
+    )
+
+    expect(screen.getByRole('button', { name: /Working for 1m 3s/ })).toBeInTheDocument()
+    act(() => vi.advanceTimersByTime(1000))
+    expect(screen.getByRole('button', { name: /Working for 1m 4s/ })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button'))
+    expect(screen.getByRole('button', { name: /Detail/ })).toBeInTheDocument()
+    expect(screen.queryByText(/Working for/)).toBeNull()
+
+    unmount()
+    vi.useRealTimers()
   })
 })

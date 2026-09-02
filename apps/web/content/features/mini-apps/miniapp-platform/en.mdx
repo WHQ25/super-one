@@ -1,0 +1,20 @@
+## What it does
+
+Ask for a CSV viewer, a regex tester, a colour-picker, a dashboard — the agent builds it as a real interactive mini-app right inside SuperOne. Save it, pin it, share it.
+
+## How it works
+
+- A mini-app is a sandboxed canvas (HTML + JS, with a built-in component library) the agent writes for you.
+- It runs full-screen alongside the chat, with proper toast, popover, and context-menu APIs.
+- Save to your local library, or publish to your team's marketplace.
+- Open it later from the sidebar like any other app.
+
+## Why it matters
+
+- Turns one-shot answers into reusable tools.
+- The visual surface lives next to the prompt that built it — easier to iterate.
+- A natural way for non-engineers on your team to consume agent output.
+
+## FAQ
+
+**Are mini-apps sandboxed?** Yes — they run in an isolated runtime with no filesystem or network access unless the user grants it explicitly per call.

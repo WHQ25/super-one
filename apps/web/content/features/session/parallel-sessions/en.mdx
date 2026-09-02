@@ -1,0 +1,20 @@
+## What it does
+
+Spin up multiple agent sessions on the same project — each in its own session window, each with its own running state. No context switching, no losing your place.
+
+## How it works
+
+- The sidebar groups sessions by project and branch.
+- Run any number of sessions in parallel; background tasks notify you when they're ready.
+- Each session keeps its own input, scroll position, and tool history.
+- Switch sessions instantly with <kbd>⌘</kbd> <kbd>1..9</kbd> or via the sidebar.
+
+## Why it matters
+
+- Compare two approaches by running them in parallel sessions on the same prompt.
+- Keep a long-running migration in one session while exploring a quick fix in another.
+- Stack reviews: read in session A while session B runs the build.
+
+## FAQ
+
+**Will they collide on the same files?** Not if you also use worktrees — each session can run in its own checkout, so disk state is isolated.

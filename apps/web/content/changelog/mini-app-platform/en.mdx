@@ -1,0 +1,21 @@
+Mini-apps started as full-screen sandboxes the agent could open from chat. Three releases reshape what they can be — they no longer have to look like apps at all.
+
+### Standalone tools render right inside the chat block
+
+A mini-app can declare `standalone: true` tools whose result paints in an iframe placed directly in the chat message. No panel, no separate UI — just an inline result card that the mini-app's own HTML owns. Calls survive panel close, viewport-scroll unmount with cached-result replay, and out-of-order `miniapp-ready` vs callEntry delivery.
+
+### Intercept iframes for human-in-the-loop tools
+
+Standalone tools can declare `renderer.intercept` for two-phase HITL flows. Phase 1 shows the intercept iframe to gather refined inputs; once submitted (or cancelled with `onCancel: reject | resolve-empty`), phase 2 takes over with the result iframe. The same `callId` carries through both phases, so the model sees one tool call from start to finish.
+
+### Background workers
+
+Mini-apps can now declare a headless background worker — downloads, long-lived tasks, periodic syncs — that keeps running independently of any visible window. Lifecycle is enforced through a dedicated worker-host process with an app-quit gate, and a per-project worker group in the sidebar shows live status text.
+
+### Mention mini-apps from the chat input
+
+`@`-mention any installed mini-app from the chat input. The chip survives copy/paste via invisible zero-width markers and round-trips back to a chip on receipt, so the agent always knows which app you meant.
+
+### A per-app SQLite database API
+
+Mini-apps get a minimal, secure SQLite surface — `query` / `exec` / `batch` / `pragma` with SQL-keyword and PRAGMA allowlisting. DB files live at `<install-slot>/data` under host ownership, so backups and uninstalls stay directory operations and the agent can read state directly.

@@ -1,0 +1,21 @@
+When you drive your desktop from a phone, the bytes have to get there somehow. We added a relay path months ago for the case where you're not on the same Wi-Fi. This release closes the loop on it: end-to-end encryption.
+
+### AES-GCM, chunked, AAD-bound
+
+Files routed through the relay's R2 bucket are now wrapped in a chunked AES-GCM envelope — 4MB chunks, AAD bound to `channelKey:r2Key:chunkIndex`. The desktop seals on upload, the phone unwraps on download, and R2 never sees plaintext. LAN transport is unchanged because it doesn't go through the relay at all.
+
+### Drag files into anything
+
+The sidebar file tree now uses Electron's native `webContents.startDrag()`, so dragged items flow through the OS as real `Files`. Drop them into Finder, VS Code, a sandboxed mini-app iframe, or any other app that accepts file drops. Internal drops — within the tree, into the @-mention chat input, into the activity dock — still work as before.
+
+### Quote selected code into chat
+
+Select code in the File or Changes tab and right-click → quote into chat. A file chip (icon + basename + line range) lands in the chat input, with a popover showing the selection rendered through the same diff view as FilePreview — syntax highlighting preserved, red/green diff backgrounds intact. Mixed selections produce a unified-diff body.
+
+### Mobile leaves cleanly when the desktop quits
+
+Quitting SuperOne now broadcasts a `desktop_shutdown` frame across both relay and LAN. Mobile clients disconnect, pop back to the device list, and show a "Desktop has quit" snackbar — replacing the silent exponential-backoff reconnect loop that used to fire on every desktop quit. The relay durable object also resets its event buffer and ACK sequence state so the next desktop boot starts a fresh session instead of trying to replay stale events.
+
+### Stalled sessions are visually obvious
+
+The running-session spinner in the sidebar now ages with the session: neutral → amber after 60s of no activity → red after 120s. A stalled session is visible at a glance without opening its chat.

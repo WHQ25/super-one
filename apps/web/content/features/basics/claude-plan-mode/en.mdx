@@ -1,0 +1,22 @@
+## What it does
+
+Before the agent touches a single file, Plan mode drafts a step-by-step proposal: which files to edit, in what order, and why. You read it, tweak it, approve it — only then does it run.
+
+## How it works
+
+- Trigger Plan mode for any request by toggling the planner pill in the chat input.
+- The agent streams a structured plan: files, commands, and outcomes, in order.
+- Approve in one click, reject to send it back for revision, or edit any step before approving.
+- Plans persist with the session so you can iterate or revisit them later.
+
+## When to use it
+
+- First time using a new codebase — Plan mode shows you what the agent thinks the structure is.
+- Refactors that touch more than two files.
+- Anything destructive: deletes, schema migrations, broad renames.
+
+## FAQ
+
+**Can I always run in plan mode?** Yes — set it as the default for a session or a project in settings.
+
+**Does the plan cost extra tokens?** A modest amount. For complex tasks it usually saves tokens overall by avoiding rework.

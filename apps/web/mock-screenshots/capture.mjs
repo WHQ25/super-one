@@ -29,10 +29,18 @@ if (!exec) {
 const STORYBOOK = 'http://localhost:6006'
 
 const SHOTS = [
-  { id: 'web-mocks-desktop-newsessionmock--default', file: 'new-session-claude.png', themes: ['light', 'dark'] },
-  { id: 'web-mocks-desktop-newsessionmock--controlled-codex', file: 'new-session-codex.png', themes: ['light', 'dark'] },
-  { id: 'web-mocks-desktop-chatmock--default', file: 'chat-default.png', themes: ['light', 'dark'] },
-  { id: 'web-mocks-desktop-chatmock--short-conversation', file: 'chat-short.png', themes: ['light', 'dark'] },
+  { id: 'desktop-mocks-newsessionmock--default', file: 'new-session-claude.png', themes: ['light'] },
+  { id: 'desktop-mocks-newsessionmock--controlled-codex', file: 'new-session-codex.png', themes: ['light'] },
+  { id: 'desktop-mocks-chatmock--default', file: 'chat-default.png', themes: ['light'] },
+  { id: 'desktop-mocks-chatinputadvanced--side-chat-command', file: 'chat-side-command.png', themes: ['light'] },
+  { id: 'desktop-mocks-chatinputadvanced--scheduled-send', file: 'chat-scheduled-send.png', themes: ['light'] },
+  { id: 'desktop-mocks-chatpopovers--grouped-model-and-effort', file: 'grouped-model-effort.png', themes: ['light'] },
+  { id: 'desktop-mocks-realtimevoice--timeline-history', file: 'realtime-timeline.png', themes: ['light'] },
+  { id: 'desktop-mocks-activitypanel--side-chat-active', file: 'activity-side-chat.png', themes: ['light'] },
+  { id: 'desktop-mocks-sidechat--close-confirmation', file: 'side-chat-confirm.png', themes: ['light'] },
+  { id: 'desktop-mocks-turndetailmock--completed-collapsed', file: 'turn-details.png', themes: ['light'] },
+  { id: 'desktop-mocks-collaborationmock--cross-harness-running', file: 'collaboration.png', themes: ['light'] },
+  { id: 'desktop-mocks-collaborationmock--browser-close-partial-failure', file: 'browser-close.png', themes: ['light'] },
 ]
 
 const browser = await chromium.launch({ executablePath: exec, headless: true })

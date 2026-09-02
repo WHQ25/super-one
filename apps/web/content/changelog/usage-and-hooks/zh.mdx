@@ -1,0 +1,19 @@
+三个新增,让你在 SuperOne 内部能做更多事,而不必频繁切到别处。
+
+### Token 用量统计
+
+新的 **Settings → Usage** 标签提供 Today / 7d / 30d / 90d / All 时间预设,并按 harness 过滤。每个预设切换不同图表 —— 横向条形、分组/堆叠条形、堆叠面积,以及 GitHub 风格的热力图 —— 配合 Total Tokens / Sessions / Messages 汇总卡和按模型分解。
+
+升级后首次启动会从已有聊天历史回填:Claude 用量按 (会话, 模型) 的累计 max 重算,Codex 按 step 求和。会话数和消息数现在在首次保存时记入新的 `activity_daily` 表,聊天后续被删除也不会塌陷。
+
+### Mini-app 可申请麦克风 / 摄像头
+
+Mini-app 现在可以在 manifest 里声明 `permissions.media: [microphone | camera]`,然后用标准 `navigator.mediaDevices.getUserMedia`。授予由 manifest 把关,动态应用到 iframe 的 `sandbox` / `allow` 属性,安装对话框和每个 app 的设置详情页都会显式呈现。Host 渲染的录制指示器在底层 track 结束时确定性清除 —— 不会留下孤儿小红点。
+
+### Claude Hooks 全 5 种类型,跨 3 个作用域
+
+新设置页让你跨 user / project / local 作用域编辑 `settings.json#hooks`。支持 SDK 全部 5 种 hook(command、prompt、agent、http、mcp_tool),各自带类型专属字段 + 一个共用的高级区。写入在下一次会话启动生效。Codex 标签隐藏,因为 Codex 目前没有 hook 系统。
+
+### 安静的焦点环
+
+Input 和 Textarea 的 `focus-visible` 环从 3px 染色环改成 1px 细环,跟应用里旧的 hand-rolled 输入风格一致。表单密集的对话框扫读起来更安静。

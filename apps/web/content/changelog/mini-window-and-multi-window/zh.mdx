@@ -1,0 +1,21 @@
+有时候你想让一个聊天盯着长时间构建,另一个用来正经写代码。以前这意味着 Alt-Tab 体操;现在只是开一个窗口。
+
+### Mini Window
+
+在 sidebar 里右键任一会话 → **在 Mini Window 中打开**,弹出一个轻量、可置顶的 BrowserWindow,实时与主窗口同步同一个聊天。窗口标题栏可以切换 pin / unpin;Cmd+W 关当前聚焦的窗口;就算 mini window 还开着,点 dock 图标也能把主窗口拉回来。
+
+底层不是一次性 hack。新增的多窗口广播层(`safeSend` 一次扇出到所有 BrowserWindow、harness 无关的 session resume、通用 `SessionSettingsPatch` 通道)替换了原来按 setting 分散的 IPC 管线 —— 未来的"分离聊天"类功能都能直接复用这套接线。
+
+### 跨项目的 Ctrl+Tab
+
+按住 Ctrl+Tab 循环切换活跃会话 —— 流式中、后台、未读、pending —— 横跨**所有打开的项目**,不再只限于当前项目。弹窗里显示 sidebar 风格的状态图标和 pending 原因 chip。松开 Ctrl 提交,Esc 或窗口失焦取消。
+
+刚离开的会话紧贴当前会话排在后面,模拟 macOS Cmd+Tab 在两个 App 间 ping-pong 的体感 —— 按一下就回到来处。弹窗渲染前等 200ms,所以快按快放可以静默切换,不闪 modal。
+
+### 品牌色全窗口同步
+
+Hue 切换通过 `APP_SETTINGS_CHANGED` 广播给所有窗口,harness 主题色在主窗口和 mini window 间保持一致。
+
+### Mini-window 的权限/提问解析也同步
+
+在 mini-window 里通过权限请求、提问、计划审批的弹窗给出回答时,结果会同步广播回主窗口。两个 store 在跨窗口审批时不再脱节。

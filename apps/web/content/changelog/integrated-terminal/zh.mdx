@@ -1,0 +1,19 @@
+能改代码的 agent 只讲了一半故事 —— 你还要跑起来,看它崩,tail 日志,重启。以前这意味着 Alt-Tab 切到外部终端 —— 现在不用了。
+
+### 本地终端,真 PTY
+
+SuperOne 内置了 node-pty + xterm 的终端,寄宿在一个专用的 coding drawer 里。这是一个真正的 PTY,不是假 REPL —— shell 启动脚本会跑、alias 生效、你的 prompt 长什么样就是什么样。我们加上了 WebGL 渲染、Unicode 11、可点击链接,以及终端内 **⌘F** 搜索。
+
+- **⌘T** 在终端聚焦时开一个新 tab
+- **⌘W** 关闭当前 tab,没有 tab 时退到关窗口
+- Tab 标题跟随 shell 的 OSC title 序列自动更新
+- Tab 可拖拽重新排序(Chrome 风格)
+- 每会话独立 open state,项目层共享实例
+
+### 通过 Relay / LAN 远程终端
+
+第二阶段上线:集成终端通过 SuperOne 已有的 Relay / LAN 通道流式同步到手机。入站命令带会话所有权和快照分片,所以手机可以执行一个根在桌面项目里的 shell —— 完整的输入输出,完整的终端语义。
+
+### macOS 文本更锐利
+
+一个小但能感知的改进:macOS 默认开启 grayscale 字体平滑,整个 app 的字形更细、更清晰。喜欢原来效果的话,Appearance 设置里有 "Crisp Text" 开关切回。

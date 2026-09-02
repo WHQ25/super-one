@@ -1,0 +1,9 @@
+Remote control gets a real file bridge. When you're driving a desktop session from your phone, the agent can now hand files back to you directly.
+
+### mobile_share_file
+
+A new MCP tool lets the agent push any desktop file to the connected phone. The transfer renders as a dedicated tool block in chat with **live upload progress**, and a `shareId` correlates the tool result with its payload so large files stream reliably end to end.
+
+### Stat-only reads
+
+`read_desktop_file` gained a `statOnly` mode, so the agent can fetch a file's metadata — size, type, existence — without pulling the whole thing over the wire. Cheap checks stay cheap.

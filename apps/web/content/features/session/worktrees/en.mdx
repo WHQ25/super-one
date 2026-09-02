@@ -1,0 +1,19 @@
+## What it does
+
+One click creates a fresh git worktree for the current task — separate branch, separate folder, separate node_modules if you want. Your main checkout never breaks.
+
+## How it works
+
+- Right-click a session and pick **Move to worktree**. Uncommitted changes (including untracked files) are stashed and transplanted into the new worktree.
+- A worktree session shows a dirty-state indicator in the sidebar so you always know what's pending commit.
+- Cleanup is one command away when the branch lands — SuperOne prunes the worktree and the branch together.
+
+## Why it matters
+
+- No more "stash, switch, fix, unstash, broken" cycles.
+- Dev servers stay alive in the main checkout while the agent experiments in a worktree.
+- Worktree forks let you ask "what if I tried this instead?" without touching your working tree.
+
+## FAQ
+
+**Do I need to run `git worktree` myself?** No. SuperOne wraps it. If you prefer the CLI it still works — the UI picks up worktrees you create externally.

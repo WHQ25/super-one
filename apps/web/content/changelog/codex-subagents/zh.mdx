@@ -1,0 +1,17 @@
+Codex 几个月前就开始派生 subagent —— worker 和 fork —— 但它们在聊天里呈现为零散的卡块,很难扫读。这次更新把所有 agent 派生统一为同一张卡片,看起来、点起来都一致。
+
+### 统一的 Subagent 卡片
+
+Worker、fork 以及任何 collab 引出的嵌套 agent,现在都折叠为一张卡:状态徽章、流式文本、内嵌工具流一应俱全。点开有专门的全屏视图,把该 agent 参与的每一次 collab 历史聚合到一起。collab 调用失败时(比如 resume worker 出现 `notFound`)会就地弹一个琥珀色的失败块。
+
+### 随状态变化的品牌图标
+
+Claude / Codex 会话各自有品牌专属图标,根据 **运行中**、**后台**、**未读**、**自动化** 状态切换动效。会话切换器、sidebar、pinned 列表共用一套视觉语言 —— 一眼就能看出每条对话背后是哪个 engine。
+
+### 全场景图片右键菜单
+
+在聊天里右键任意 markdown 图片可以复制、拖出、在 Finder 中显示,或发送到新对话。Codex 生成图片画廊与聊天图片共用同一套手势;拖出的文件走的是 OS 原生 `Files`,所以可以直接拖到 Finder、VS Code 或沙箱 mini-app iframe。
+
+### Subagent 配色不再翻车
+
+每个 Task subagent 从每会话 8 色池(紫/蓝/青/teal/绿/琥珀/橙/玫红)选一种颜色,并发的 subagent 视觉上互不重叠。颜色会保留整个会话生命周期,历史加载的任务也适用 —— 任务完成后不再悄悄回到默认紫色。

@@ -1,14 +1,385 @@
 {
   "Home": {
-    "title": "SuperOne",
-    "tagline": "把所有编码智能体放在同一处",
+    "release": "v0.59.0-alpha · 最新 main",
+    "title": "所有编码智能体，共用一个工作界面",
+    "tagline": "让 Claude、Codex、Cursor、OpenCode、DeepSeek 与 ACP 智能体围绕同一批项目工作，再把 SuperOne 的工具与协作能力交给每一个智能体。",
     "getStarted": "立即开始",
-    "learnMore": "了解更多"
+    "learnMore": "了解更多",
+    "viewDemos": "查看最新版界面",
+    "readDocs": "阅读文档",
+    "showcaseEyebrow": "直接来自桌面产品",
+    "showcaseTitle": "展示真实产品界面，不做营销替身",
+    "showcaseDescription": "这些预览与 Storybook、发行素材共用同一套 mock 包，已经包含最新的实时语音与跨 harness 协作流程。",
+    "hero": {
+      "badge": "Alpha 已开放",
+      "titleLine1": "一个桌面应用",
+      "titleLine2": "所有 Agent",
+      "titleAccent": "由你定义",
+      "tagline": "Claude、Codex、Cursor、OpenCode、DeepSeek 以及任何 ACP agent —— 同一个界面、同一份历史、同一套工具。每一个都获得它自己 CLI 从未有过的能力，而且它们之间可以互相交接任务。",
+      "secondary": "查看文档",
+      "preview": "产品预览"
+    },
+    "download": {
+      "cta": "下载 {platform} 版",
+      "detecting": "正在识别你的平台…",
+      "other": "其他平台"
+    },
+    "bento": {
+      "heading": "四件事，让它不只是一个启动器",
+      "subheading": "任何 agent 都能在终端里跑。当它们都跑在这里，会发生什么。",
+      "integrate": {
+        "title": "一个界面，所有 agent",
+        "desc": "Claude、Codex、Cursor、OpenCode、DeepSeek 以及任何 ACP agent，共用同一份项目、会话历史、凭据、MCP 服务与技能。按会话切换引擎 —— harness 之间的差异被声明为数据，而不是散落在调用处的分支。"
+      },
+      "extend": {
+        "title": "它们的 CLI 从未有过的能力",
+        "desc": "每个 harness 都继承 SuperOne 自己的工具面：内嵌浏览器、computer use、iOS 模拟器与 Android 设备控制、图像与视频生成、可交互 widget。"
+      },
+      "collaborate": {
+        "title": "会互相交接的 agent",
+        "desc": "派生子会话、移交给同级、或把两个会话连成共享信箱 —— 跨 harness 边界。Claude 会话可以把任务交给 Codex，再把结果读回来。"
+      },
+      "build": {
+        "title": "你写的应用，变成 agent 的工具",
+        "desc": "Mini-app 用一个可信 Node 宿主掌管计算，用 WebView 掌管渲染。你写出来的东西，会变成 agent 能调用的工具。"
+      }
+    },
+    "rows": {
+      "heading": "为真实的工作方式而设计",
+      "collab": {
+        "title": "看着任务跨过边界",
+        "desc": "协调视图里能看到每个派生出来的 agent：跑在哪个 harness 上、领了什么子任务、现在到哪一步。任何一个都能隔离进独立的 git worktree，并行工作互不干扰。"
+      },
+      "voice": {
+        "title": "说给它听，看着它做",
+        "desc": "与 agent 实时语音对话，转写以时间线落进对话，工具在后台照常执行。"
+      }
+    },
+    "cta": {
+      "title": "把下一个想法带到桌面",
+      "subtitle": "Alpha 期间免费,更新自动推送。",
+      "secondary": "浏览示例"
+    }
+  },
+  "Download": {
+    "badge": "Alpha 已开放",
+    "title": "下载 SuperOne",
+    "tagline": "Alpha 期间免费,新版本会自动推送更新。",
+    "desktop": {
+      "heading": "桌面端",
+      "subheading": "已签名公证的 macOS / Windows / Linux 安装包。"
+    },
+    "mobile": {
+      "heading": "移动端",
+      "subheading": "在手机上镜像桌面会话,远程驱动你的 Agent。",
+      "ios": {
+        "title": "iOS · TestFlight",
+        "desc": "小范围内测,加入候补名单,等席位开放后会收到 TestFlight 邀请。",
+        "cta": "加入 TestFlight",
+        "status": "邀请制"
+      },
+      "android": {
+        "title": "Android Beta APK",
+        "desc": "可侧载安装的 Beta 版,已接通中继协议,自动更新尚未接入 —— 留个邮箱,通知你上线。",
+        "cta": "即将开放",
+        "status": "开发中"
+      }
+    },
+    "footnote": "想看更新日志?去文档站查看 Changelog。"
+  },
+  "Features": {
+    "sidebar": {
+      "overview": "总览",
+      "all": "全部功能",
+      "mobileToggle": "浏览功能"
+    },
+    "hub": {
+      "eyebrow": "功能手册",
+      "title": "SuperOne 功能手册",
+      "tagline": "每个功能都配短视频 demo、小白也看得懂的解释,以及高级玩家关心的细节。第一次来?从下面四张卡开始。",
+      "startHere": "从这里开始",
+      "browseByArea": "按领域浏览",
+      "featureCount": "{count} 项功能",
+      "start": {
+        "harness": {
+          "title": "选一个引擎",
+          "desc": "六套引擎共用一个界面 —— 一键切换。"
+        },
+        "plan": {
+          "title": "先计划再动手",
+          "desc": "可审批的计划代替黑盒自动跑。"
+        },
+        "permissions": {
+          "title": "全程在控",
+          "desc": "每个工具单独放权,完整审计记录。"
+        },
+        "miniapps": {
+          "title": "扩展你的画布",
+          "desc": "小程序把回答变成可复用的工具。"
+        }
+      }
+    },
+    "category": {
+      "eyebrow": "分类",
+      "back": "全部功能",
+      "readMore": "查看详情",
+      "empty": "这里还没东西 —— 即将上线。",
+      "subCount": "{count} 个子功能",
+      "tabs": {
+        "all": "全部",
+        "claude": "Claude",
+        "codex": "Codex"
+      }
+    },
+    "feature": {
+      "eyebrow": "功能"
+    },
+    "detail": {
+      "crumbRoot": "功能",
+      "clickToPlay": "点 ▶ 播放",
+      "prev": "上一项",
+      "next": "下一项"
+    }
+  },
+  "Changelog": {
+    "badge": "最新动态",
+    "title": "更新日志",
+    "tagline": "我们发了什么、为什么这样做、接下来去哪里。只挑你会真的感知到的变化。",
+    "categories": {
+      "feature": "新功能",
+      "improvement": "改进",
+      "fix": "修复",
+      "announcement": "公告"
+    },
+    "loadMore": "再加载 {remaining} 条",
+    "showing": "已显示 {count} / {total}",
+    "end": "已经到最早一条。"
+  },
+  "Footer": {
+    "tagline": "面向 AI 创作的元桌面应用。",
+    "product": "产品",
+    "resources": "资源",
+    "company": "公司",
+    "links": {
+      "demos": "示例",
+      "docs": "文档",
+      "download": "下载",
+      "changelog": "更新日志",
+      "github": "GitHub",
+      "about": "关于",
+      "privacy": "隐私"
+    },
+    "rights": "保留所有权利。"
+  },
+  "Demos": {
+    "release": "UI 基线 · v0.59.0-alpha + 最新 main",
+    "title": "逐个查看当前版本的 SuperOne 界面",
+    "description": "这里按场景整理了网站、Storybook 与发行素材共用的桌面产品状态。调整页头品牌色，即可在同一套局部主题系统下检查全部预览。",
+    "sections": {
+      "workspace": {
+        "title": "工作区与输入框",
+        "description": "共享桌面壳现已覆盖六种 harness、更完整的项目状态，以及当前桌面会话实际使用的输入控制。"
+      },
+      "conversation": {
+        "title": "对话与活动面板",
+        "description": "实时语音、对话/时间线切换、临时侧聊、活动标签页，以及完成回合的紧凑详情。"
+      },
+      "coordination": {
+        "title": "跨 harness 协作",
+        "description": "在不同编码智能体之间派生、连接、等待与移交任务，同时在一段对话中持续掌握进度。"
+      },
+      "decisions": {
+        "title": "人工决策",
+        "description": "权限确认、结构化提问与计划审批，让关键智能体操作始终明确、可复核。"
+      },
+      "tools": {
+        "title": "工具与执行",
+        "description": "紧凑工具输出、待办进度、会话控制、MCP 服务与内嵌终端遵循同一套视觉语言。"
+      },
+      "files": {
+        "title": "文件与预览",
+        "description": "代码仓库状态与富文件预览始终与对话并列，无需离开桌面工作区。"
+      }
+    },
+    "cards": {
+      "newSession": {
+        "title": "六种 harness 的新会话",
+        "description": "Claude、Codex、Cursor、OpenCode、DeepSeek 与 ACP/Grok 都是当前桌面壳中的一等会话目标。"
+      },
+      "composer": {
+        "title": "当前会话输入框",
+        "description": "斜杠命令、侧聊、后台智能体、语音、模型、权限与沙箱控制汇聚在同一个输入区域。"
+      },
+      "realtime": {
+        "title": "实时语音时间线",
+        "description": "Codex 语音会话可以在普通对话和实时纵向时间线之间切换。"
+      },
+      "activity": {
+        "title": "统一活动面板",
+        "description": "文件、Mini App、浏览器、终端、轨迹、设备与侧聊共享可关闭、可最大化的标签栏。"
+      },
+      "sideChat": {
+        "title": "临时侧聊",
+        "description": "聚焦追问继承主对话上下文，独立显示上下文用量，并在丢弃前进行确认。"
+      },
+      "turnDetails": {
+        "title": "完成回合详情",
+        "description": "正文保持清晰，思考、工具调用与过程输出则按原顺序折叠到一个详情区域。"
+      },
+      "collaboration": {
+        "title": "跨 harness 智能体树",
+        "description": "协调者可以组合 Codex、Cursor、OpenCode、ACP 等会话，同时保留清晰的归属与状态。"
+      },
+      "subagent": {
+        "title": "后台智能体进度",
+        "description": "长时间委派任务会就地报告提示词、活动历史、耗时与 token 使用量。"
+      },
+      "browserClose": {
+        "title": "浏览器关闭结果",
+        "description": "紧凑工具行能够区分全部完成、部分失败、流式进行中和完全失败。"
+      },
+      "permission": {
+        "title": "工具权限",
+        "description": "执行前完整呈现命令上下文、原因与可持久化的授权选项。"
+      },
+      "question": {
+        "title": "结构化用户输入",
+        "description": "智能体可以暂停并请求边界清晰的选择，同时说明每个选项的影响。"
+      },
+      "plan": {
+        "title": "计划审批",
+        "description": "在会话转入执行前，先审阅实施路径和所需权限。"
+      },
+      "toolBlocks": {
+        "title": "工具输出",
+        "description": "编辑、命令、搜索、浏览器操作、MCP 调用与错误统一使用紧凑、可展开的格式。"
+      },
+      "todo": {
+        "title": "目标进度",
+        "description": "已完成、进行中、受阻和待处理工作保持清晰，同时不过度占用对话空间。"
+      },
+      "status": {
+        "title": "会话状态与 MCP",
+        "description": "工作树状态、权限、沙箱和已连接工具服务都可从输入框旁直接查看。"
+      },
+      "terminal": {
+        "title": "内嵌终端",
+        "description": "终端输出与智能体对话继续共享同一个项目和会话上下文。"
+      },
+      "fileTree": {
+        "title": "仓库文件树",
+        "description": "展开状态、选择与 Git 变更沿用桌面应用最新的深色侧栏处理。"
+      },
+      "filePreview": {
+        "title": "富文件预览",
+        "description": "代码、Markdown、图片与 diff 都可作为活动面板呈现，无需离开当前对话。"
+      }
+    }
   },
   "Nav": {
     "home": "首页",
     "demos": "示例",
-    "docs": "文档"
+    "features": "功能",
+    "resources": "资源",
+    "pricing": "定价",
+    "changelog": "更新日志",
+    "docs": "文档",
+    "download": "下载",
+    "resourcesItems": {
+      "skills": {
+        "title": "Skills",
+        "desc": "预置的 Agent 工作流,一句话就能跑起来。",
+        "href": "/skills"
+      },
+      "mcps": {
+        "title": "MCP 服务",
+        "desc": "通过 MCP 协议接入工具、数据与第三方集成。",
+        "href": "/mcps"
+      },
+      "miniapps": {
+        "title": "Mini-app",
+        "desc": "Agent 构建并在 SuperOne 内运行的沙箱应用。",
+        "href": "/docs"
+      },
+      "providers": {
+        "title": "Providers",
+        "desc": "自带模型 —— Claude、Codex 或自定义网关。",
+        "href": "/docs"
+      }
+    }
+  },
+  "Skills": {
+    "badge": "Skill 库",
+    "title": "Skills",
+    "tagline": "预置的 Agent 工作流,塞进 SuperOne 一句话就能跑。",
+    "totalLabel": "共 {count} 个 skill",
+    "searchPlaceholder": "搜索 skill…",
+    "featured": "精选",
+    "browseAll": "全部分类",
+    "noResults": "没有匹配的 skill。",
+    "byAuthor": "by {name}",
+    "official": "官方",
+    "community": "社区",
+    "install": "在 SuperOne 中打开",
+    "categories": {
+      "all": "全部",
+      "development": "开发",
+      "writing": "写作与文档",
+      "research": "调研",
+      "data": "数据分析",
+      "productivity": "效率",
+      "creative": "创作"
+    },
+    "detail": {
+      "back": "全部 skill",
+      "examplePrompts": "试试这样问",
+      "about": "介绍",
+      "tags": "标签",
+      "publishedBy": "作者"
+    }
+  },
+  "Mcps": {
+    "badge": "服务列表",
+    "title": "MCP 服务",
+    "tagline": "用 Model Context Protocol 接入工具、数据和第三方集成。",
+    "totalLabel": "共 {count} 个服务",
+    "searchPlaceholder": "搜索服务…",
+    "featured": "精选",
+    "browseAll": "全部分类",
+    "noResults": "没有匹配的服务。",
+    "official": "官方",
+    "community": "社区",
+    "install": "在 SuperOne 中打开",
+    "authRequired": "需鉴权",
+    "noAuth": "无需鉴权",
+    "transport": {
+      "stdio": "stdio",
+      "http": "http",
+      "sse": "sse"
+    },
+    "stats": {
+      "tools": "工具",
+      "resources": "资源",
+      "prompts": "prompt"
+    },
+    "categories": {
+      "all": "全部",
+      "devtools": "开发工具",
+      "storage": "数据与存储",
+      "productivity": "效率",
+      "search": "搜索与浏览",
+      "cloud": "云服务",
+      "communication": "沟通协作"
+    },
+    "detail": {
+      "back": "全部服务",
+      "about": "介绍",
+      "tools": "代表性工具",
+      "config": "示例配置",
+      "configCopy": "复制配置",
+      "transport": "传输",
+      "capabilities": "能力"
+    }
   },
   "Theme": {
     "label": "主题",

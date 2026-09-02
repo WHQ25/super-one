@@ -1,0 +1,17 @@
+A trio of changes that look small individually but together reshape how SuperOne talks to your operating system.
+
+### Sandbox is now per-platform
+
+Seatbelt is built into macOS, so the sandbox is enabled by default there. Linux and WSL2 stay opt-in until you flip it on — a lazy probe checks `bwrap` + `socat` availability and surfaces install hints in Preferences if either is missing. Windows and WSL1 don't expose the On / Auto options at all because the underlying primitives don't exist.
+
+Three independent guards (Session constructor, `buildClaudeOptions`, runtime `setSandbox`) coerce unsupported platforms before the request reaches the SDK, and the SDK now runs with `failIfUnavailable: false` so an over-optimistic probe degrades gracefully instead of crashing the turn. The chat sandbox selector silently reverts to Off on probe failure, with a "Enable in Settings first" link to the right page.
+
+### Web Storage for mini-apps that need it
+
+Mini-app iframes are `allow-scripts`-only by default — opaque origin, which silently breaks `localStorage`, `sessionStorage`, `indexedDB`, and the Cache API for any third-party library that relies on them. Mini-apps that need storage now opt in with `permissions.storage` (object with a required `reason`); granting it adds `allow-same-origin` to the iframe sandbox. Each app stays isolated because mini-apps already load from per-(app, project) `superone-app://` origins.
+
+Install consent and the per-app settings page render a Storage row with a **Persistent** badge so the grant is visible at install time and at any time after.
+
+### Activity Monitor stops lying
+
+Spawned auxiliary processes — Claude SDK, Codex app-server, `dns-sd`, `caffeinate` / `systemd-inhibit`, install scripts — now get distinct `argv0` values. Renderer windows (main, mini, mini-app dev webview) set `process.title`. You can finally tell helpers apart in `ps` and Activity Monitor instead of staring at a wall of "SuperOne Helper" rows.

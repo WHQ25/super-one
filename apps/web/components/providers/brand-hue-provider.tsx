@@ -9,10 +9,13 @@ import {
   useState,
   type ReactNode,
 } from "react"
-import { clampBrandHue } from "@superone/shared/harness-brand"
+import {
+  clampBrandHue,
+  HARNESS_DEFAULT_BRAND_HUE,
+} from "@superone/shared/harness-brand"
 
 const STORAGE_KEY = "superone.web.brandHue"
-export const DEFAULT_BRAND_HUE = 42
+export const DEFAULT_BRAND_HUE = HARNESS_DEFAULT_BRAND_HUE.claude
 
 interface BrandHueContextValue {
   brandHue: number

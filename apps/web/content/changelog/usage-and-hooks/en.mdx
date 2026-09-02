@@ -1,0 +1,19 @@
+Three additions that broaden what you can do inside SuperOne without leaving it.
+
+### Token usage stats
+
+A new **Settings → Usage** tab shows token usage with Today / 7d / 30d / 90d / All presets and a harness filter. Charts switch per preset — horizontal bars, grouped/stacked bars, stacked area, and a GitHub-style heatmap — alongside summary cards (Total Tokens / Sessions / Messages) and a per-model breakdown.
+
+First launch after the upgrade backfills from existing chat history; Claude usage is recomputed as per-session per-model cumulative max, Codex as sum-of-step. Sessions and messages counts are recorded into a new `activity_daily` table the moment a session or message is first saved, so they no longer collapse when chats are later deleted.
+
+### Mini-apps can ask for mic and camera
+
+Mini-apps now declare `permissions.media: [microphone | camera]` in their manifest and use standard `navigator.mediaDevices.getUserMedia`. Grants are gated by the manifest, dynamically applied to iframe `sandbox` / `allow` attributes, and surfaced at the install dialog and the per-app settings detail page. A host-rendered recording indicator clears deterministically when the underlying tracks end — no orphan red dots.
+
+### Claude hooks, all five types, all three scopes
+
+A new settings page lets you edit `settings.json#hooks` across user / project / local scopes. All five SDK hook types are supported (command, prompt, agent, http, mcp_tool) with type-specific fields and a shared advanced section. Writes take effect at the next session start. The Codex tab is hidden because Codex has no hook system today.
+
+### Quieter focus rings
+
+Input and Textarea focus-visible rings drop from a 3px tinted ring to a subtle 1px ring, matching the older hand-rolled inputs across the app. Form-dense dialogs are quieter to scan.

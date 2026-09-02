@@ -1,0 +1,21 @@
+Most users will never notice this. That's the point.
+
+### Distribution on Cloudflare R2
+
+Auto-update used to pull builds from a private GitHub Release through an embedded `UPDATER_TOKEN` baked into every client. As we moved toward going public, that's an obvious thing to fix: tokens shouldn't ship in app bundles, and GitHub Release isn't a CDN.
+
+Releases now live in a Cloudflare R2 bucket served via `https://dl.super-one.dev` (with DNS managed in Cloudflare for full edge presence). Per-version binaries sit under `v${VERSION}/`; channel pointer files (`alpha-mac.yml`, `beta-mac.yml`, `latest-mac.yml`) live at the bucket root so clients can resolve "latest on my channel" without knowing the version up front. No auth tokens, no rate limits, just a public custom domain.
+
+### Existing clients migrate themselves
+
+Alpha clients built before this release still carry the old GitHub Releases path. We dual-publish — every release uploads to both the GitHub Release (legacy flat layout) and R2 (`v${VERSION}/` subdirectory) — so existing clients keep getting updates from GitHub until they auto-upgrade once to a build that knows about R2. After that, they follow R2. No manual reinstall required.
+
+The legacy `UPDATER_TOKEN` stays in CI indefinitely as a constraint. Rotating it would brick auto-update for any client still on the old path, so we leave it valid forever.
+
+### Update channel preference
+
+Settings now persist an `updateChannel` value (`alpha` | `beta` | `stable` | `null` to follow the channel the build was cut on). UI for switching channels isn't exposed yet, but you can set it via devtools or by editing `app-settings.json`. Downgrade protection is automatic via electron-updater's default `allowDowngrade: false`, so switching to a more stable channel won't install an older version — you stay put until that channel catches up.
+
+### Monorepo conversion underneath
+
+The same release also restructured the repo into bun workspaces — `apps/desktop` + `apps/web` + `apps/relay` + `packages/{ui,shared,tsconfig}` — so the marketing site, the relay worker, and the desktop client share UI primitives and types from one tree.

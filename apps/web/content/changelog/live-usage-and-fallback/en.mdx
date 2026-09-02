@@ -1,0 +1,9 @@
+Long sessions burn tokens, and until now you only found out when a request got throttled. This release surfaces usage and limits where you actually work — and tells you the moment a request switches models.
+
+### Live usage for Claude and Codex
+
+The sidebar now reads your real quota straight from the provider. Claude accounts show live usage pulled from the OAuth usage endpoint; Codex accounts surface ChatGPT subscription rate limits and per-account token usage reported by the app-server. No more guessing how much headroom is left before the next turn.
+
+### Model fallback, made visible
+
+When a request can't run on your selected model and the agent SDK falls back to another, a fallback indicator appears inline on the message. You always know which model actually answered — no silent substitutions.

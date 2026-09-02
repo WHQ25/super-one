@@ -1,0 +1,21 @@
+大多数用户根本感觉不到这次改动。这就是它的目标。
+
+### 分发迁移到 Cloudflare R2
+
+之前的自动更新从一个私有 GitHub Release 拉构建,客户端里 baked 了一个 `UPDATER_TOKEN`。在准备公开发布的路上,这是个明显该修的事:token 不应该装进应用包,GitHub Release 也不是 CDN。
+
+新的发布全部走 Cloudflare R2 桶,通过 `https://dl.super-one.dev` 服务(DNS 也在 Cloudflare,完整边缘覆盖)。每版二进制在 `v${VERSION}/` 子目录;channel 指针文件(`alpha-mac.yml`、`beta-mac.yml`、`latest-mac.yml`)放桶根,客户端不知道版本号也能解析 "我这条 channel 的最新版"。没有 token、没有限流,就是一个公开的自定义域名。
+
+### 老客户端自动迁移
+
+本次发布之前的 Alpha 客户端还带着旧的 GitHub Release 路径。我们做双发布 —— 每个 release 同时上 GitHub Release(扁平 legacy 布局)和 R2(`v${VERSION}/` 子目录) —— 所以老客户端能从 GitHub 继续拿更新,直到它升级到一个认识 R2 的版本,之后跟随 R2。不需要手动重装。
+
+旧的 `UPDATER_TOKEN` 永久保留在 CI 里。旋转它会让仍在旧路径上的客户端断更新,所以我们让它一直有效。
+
+### 更新通道偏好
+
+设置里现在持久化 `updateChannel`(`alpha` | `beta` | `stable` | `null` 跟随构建时的 channel)。切换 UI 暂未暴露,但可以通过 devtools 或编辑 `app-settings.json` 改。降级保护自动生效(electron-updater 默认 `allowDowngrade: false`),切到更稳定的 channel 时不会装更老的版本 —— 你会停在原地等那条 channel 追上来。
+
+### 顺手做了 Monorepo 改造
+
+同一次发布把仓库重组成 bun workspaces —— `apps/desktop` + `apps/web` + `apps/relay` + `packages/{ui,shared,tsconfig}` —— 这样营销站、Relay Worker、桌面客户端可以共享一份 UI 原语和类型。

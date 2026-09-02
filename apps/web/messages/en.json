@@ -1,14 +1,385 @@
 {
   "Home": {
-    "title": "SuperOne",
-    "tagline": "Every coding agent on one surface",
+    "release": "v0.59.0-alpha · latest main",
+    "title": "Every coding agent. One shared surface.",
+    "tagline": "Run Claude, Codex, Cursor, OpenCode, DeepSeek, and ACP agents over the same projects — then give every one of them SuperOne's tools and collaboration layer.",
     "getStarted": "Get started",
-    "learnMore": "Learn more"
+    "learnMore": "Learn more",
+    "viewDemos": "Explore the current UI",
+    "readDocs": "Read the docs",
+    "showcaseEyebrow": "Built from the desktop product",
+    "showcaseTitle": "The actual product surfaces, not a marketing facsimile",
+    "showcaseDescription": "These previews come from the same reusable mock package as Storybook and the release media pipeline, including the latest realtime voice and cross-harness coordination flows.",
+    "hero": {
+      "badge": "Alpha now available",
+      "titleLine1": "One Desktop",
+      "titleLine2": "Every Agent",
+      "titleAccent": "Yours to shape",
+      "tagline": "Claude, Codex, Cursor, OpenCode, DeepSeek and any ACP agent — one surface, one history, one set of tools. Each gains abilities its own CLI never shipped, and they can hand work to each other.",
+      "secondary": "Read the docs",
+      "preview": "Product preview"
+    },
+    "download": {
+      "cta": "Download for {platform}",
+      "detecting": "Detecting your platform…",
+      "other": "Other platforms"
+    },
+    "bento": {
+      "heading": "Four things make it more than a launcher",
+      "subheading": "Any agent can run in a terminal. Here is what changes when they all run here.",
+      "integrate": {
+        "title": "One surface, every agent",
+        "desc": "Claude, Codex, Cursor, OpenCode, DeepSeek and any ACP agent share the same project, session history, credentials, MCP servers and skills. Switch engine per session — harness differences are declared as data, not branched at call sites."
+      },
+      "extend": {
+        "title": "Abilities their CLI never shipped",
+        "desc": "Every harness inherits SuperOne's own tool surface: an embedded browser, computer use, iOS Simulator and Android control, image and video generation, interactive widgets."
+      },
+      "collaborate": {
+        "title": "Agents that hand off to each other",
+        "desc": "Spawn a child session, hand off to a sibling, or link two into a shared mailbox — across harness boundaries. A Claude session can give a task to Codex and read the result back."
+      },
+      "build": {
+        "title": "Apps that become agent tools",
+        "desc": "Mini-apps pair a trusted Node host that owns computation with WebViews that own rendering. What you build becomes tools the agent can call."
+      }
+    },
+    "rows": {
+      "heading": "Built for the way you actually work",
+      "collab": {
+        "title": "Watch a task cross the boundary",
+        "desc": "The coordinator view shows every spawned agent — which harness it runs on, which subtask it took, where it stands. Isolate any of them in its own git worktree so parallel work never collides."
+      },
+      "voice": {
+        "title": "Talk to it, watch it work",
+        "desc": "Hold a realtime voice conversation with the agent. The transcript lands as a timeline while tools keep running in the background."
+      }
+    },
+    "cta": {
+      "title": "Bring your next idea to the desktop",
+      "subtitle": "Free while in alpha. Updates ship automatically.",
+      "secondary": "Explore demos"
+    }
+  },
+  "Download": {
+    "badge": "Alpha now available",
+    "title": "Get SuperOne",
+    "tagline": "Free during alpha. Updates ship automatically as we cut new builds.",
+    "desktop": {
+      "heading": "Desktop",
+      "subheading": "Signed and notarized builds for macOS, Windows, and Linux."
+    },
+    "mobile": {
+      "heading": "Mobile",
+      "subheading": "Mirror desktop sessions and drive your agent from a phone.",
+      "ios": {
+        "title": "iOS via TestFlight",
+        "desc": "Limited beta. Join the waitlist to receive a TestFlight invite when seats open up.",
+        "cta": "Join TestFlight",
+        "status": "Invite-only"
+      },
+      "android": {
+        "title": "Android beta APK",
+        "desc": "Side-loadable build with relay support. Auto-update is not wired in yet — sign up to get notified.",
+        "cta": "Coming soon",
+        "status": "In development"
+      }
+    },
+    "footnote": "Looking for changelogs or release notes? Check the docs site."
+  },
+  "Features": {
+    "sidebar": {
+      "overview": "Overview",
+      "all": "All features",
+      "mobileToggle": "Browse features"
+    },
+    "hub": {
+      "eyebrow": "Handbook",
+      "title": "The SuperOne handbook",
+      "tagline": "Browse every feature with a short demo, a beginner explanation, and the details power users care about. New here? Start with the four cards below.",
+      "startHere": "Start here",
+      "browseByArea": "Browse by area",
+      "featureCount": "{count, plural, one {# feature} other {# features}}",
+      "start": {
+        "harness": {
+          "title": "Pick an agent",
+          "desc": "Six engines share one surface — one click to switch."
+        },
+        "plan": {
+          "title": "Plan before you run",
+          "desc": "Approvable plans replace blind autorun."
+        },
+        "permissions": {
+          "title": "Stay in control",
+          "desc": "Per-tool permissions, full audit trail."
+        },
+        "miniapps": {
+          "title": "Grow your canvas",
+          "desc": "Mini-apps turn answers into reusable tools."
+        }
+      }
+    },
+    "category": {
+      "eyebrow": "Category",
+      "back": "All features",
+      "readMore": "Read more",
+      "empty": "Nothing here yet — coming soon.",
+      "subCount": "{count, plural, one {# sub-feature} other {# sub-features}}",
+      "tabs": {
+        "all": "All",
+        "claude": "Claude",
+        "codex": "Codex"
+      }
+    },
+    "feature": {
+      "eyebrow": "Feature"
+    },
+    "detail": {
+      "crumbRoot": "Features",
+      "clickToPlay": "Click ▶ to play",
+      "prev": "Previous",
+      "next": "Next"
+    }
+  },
+  "Changelog": {
+    "badge": "What's new",
+    "title": "Changelog",
+    "tagline": "Notes on what we shipped, why it matters, and where we're going next. Filtered for the things you'll actually notice.",
+    "categories": {
+      "feature": "Feature",
+      "improvement": "Improvement",
+      "fix": "Fix",
+      "announcement": "Announcement"
+    },
+    "loadMore": "Load {remaining} more",
+    "showing": "Showing {count} of {total}",
+    "end": "You've reached the beginning."
+  },
+  "Footer": {
+    "tagline": "A meta desktop app for AI-powered creation.",
+    "product": "Product",
+    "resources": "Resources",
+    "company": "Company",
+    "links": {
+      "demos": "Demos",
+      "docs": "Docs",
+      "download": "Download",
+      "changelog": "Changelog",
+      "github": "GitHub",
+      "about": "About",
+      "privacy": "Privacy"
+    },
+    "rights": "All rights reserved."
+  },
+  "Demos": {
+    "release": "UI baseline · v0.59.0-alpha + latest main",
+    "title": "The current SuperOne interface, surface by surface",
+    "description": "A categorized gallery of the desktop product states used by the website, Storybook, and release media. Change the brand color in the header to inspect every preview under the same scoped theme system.",
+    "sections": {
+      "workspace": {
+        "title": "Workspace and composer",
+        "description": "The shared shell now exposes six harnesses, richer project state, and the same composer controls used by current desktop sessions."
+      },
+      "conversation": {
+        "title": "Conversation and activity",
+        "description": "Realtime voice, thread/timeline switching, temporary side chat, activity tabs, and compact completed-turn details."
+      },
+      "coordination": {
+        "title": "Cross-harness coordination",
+        "description": "Spawn, link, wait for, and hand work across different coding agents while keeping their progress visible in one conversation."
+      },
+      "decisions": {
+        "title": "Human decisions",
+        "description": "Permissions, structured questions, and plan approval keep consequential agent actions explicit and reviewable."
+      },
+      "tools": {
+        "title": "Tools and execution",
+        "description": "Compact tool output, todo progress, current session controls, MCP discovery, and an embedded terminal share one visual language."
+      },
+      "files": {
+        "title": "Files and previews",
+        "description": "Repository state and rich file previews stay available alongside the conversation without leaving the desktop shell."
+      }
+    },
+    "cards": {
+      "newSession": {
+        "title": "Six-harness new session",
+        "description": "Claude, Codex, Cursor, OpenCode, DeepSeek, and ACP/Grok are first-class session targets in the current shell."
+      },
+      "composer": {
+        "title": "Current session composer",
+        "description": "Slash commands, side chat, background-agent state, voice, model, permission, and sandbox controls compose in one input."
+      },
+      "realtime": {
+        "title": "Realtime voice timeline",
+        "description": "Codex voice sessions can move between the normal thread and a live chronological timeline."
+      },
+      "activity": {
+        "title": "Unified activity panel",
+        "description": "Files, mini-apps, browser, terminal, trajectory, devices, and side chat use one closable and maximizable tab strip."
+      },
+      "sideChat": {
+        "title": "Temporary side chat",
+        "description": "Focused follow-ups inherit the parent conversation, track their own context, and confirm before being discarded."
+      },
+      "turnDetails": {
+        "title": "Completed-turn details",
+        "description": "Prose stays readable while thinking, tool calls, and process output collapse behind one ordered disclosure."
+      },
+      "collaboration": {
+        "title": "Cross-harness agent tree",
+        "description": "A coordinator can combine Codex, Cursor, OpenCode, ACP, and other sessions without hiding ownership or status."
+      },
+      "subagent": {
+        "title": "Background agent progress",
+        "description": "Long-running delegated work reports its prompt, activity history, elapsed time, and token usage in place."
+      },
+      "browserClose": {
+        "title": "Browser close results",
+        "description": "Compact tool rows distinguish complete, partial, streaming, and failed close operations."
+      },
+      "permission": {
+        "title": "Tool permission",
+        "description": "Exact command context, rationale, and durable approval options remain visible before execution."
+      },
+      "question": {
+        "title": "Structured user input",
+        "description": "The agent can pause for a bounded choice with clear consequences instead of guessing."
+      },
+      "plan": {
+        "title": "Plan review",
+        "description": "Review the intended approach and requested permissions before the session switches into execution."
+      },
+      "toolBlocks": {
+        "title": "Tool output",
+        "description": "Edits, shell commands, searches, browser actions, MCP calls, and errors share a compact expandable format."
+      },
+      "todo": {
+        "title": "Goal progress",
+        "description": "Completed, active, blocked, and pending work stays legible without taking over the conversation."
+      },
+      "status": {
+        "title": "Session status and MCP",
+        "description": "Worktree state, permissions, sandboxing, and connected tool servers are available directly beside the composer."
+      },
+      "terminal": {
+        "title": "Embedded terminal",
+        "description": "Shell output stays attached to the same project and session context as the agent conversation."
+      },
+      "fileTree": {
+        "title": "Repository tree",
+        "description": "Expanded folders, selection, and Git state use the same dark sidebar treatment as the desktop app."
+      },
+      "filePreview": {
+        "title": "Rich file preview",
+        "description": "Code, Markdown, images, and diffs render as activity surfaces without leaving the active conversation."
+      }
+    }
   },
   "Nav": {
     "home": "Home",
     "demos": "Demos",
-    "docs": "Docs"
+    "features": "Features",
+    "resources": "Resources",
+    "pricing": "Pricing",
+    "changelog": "Changelog",
+    "docs": "Docs",
+    "download": "Download",
+    "resourcesItems": {
+      "skills": {
+        "title": "Skills",
+        "desc": "Pre-baked agent workflows you can run with one click.",
+        "href": "/skills"
+      },
+      "mcps": {
+        "title": "MCP servers",
+        "desc": "Drop in tools, data, and integrations over the MCP protocol.",
+        "href": "/mcps"
+      },
+      "miniapps": {
+        "title": "Mini-apps",
+        "desc": "Sandboxed apps the agent builds and runs inside SuperOne.",
+        "href": "/docs"
+      },
+      "providers": {
+        "title": "Providers",
+        "desc": "Bring your own model — Claude, Codex, or a custom gateway.",
+        "href": "/docs"
+      }
+    }
+  },
+  "Skills": {
+    "badge": "Library",
+    "title": "Skills",
+    "tagline": "Pre-baked agent workflows you can drop into SuperOne and run with a sentence.",
+    "totalLabel": "{count, plural, one {# skill} other {# skills}} available",
+    "searchPlaceholder": "Search skills…",
+    "featured": "Featured",
+    "browseAll": "Browse",
+    "noResults": "No skills match that filter.",
+    "byAuthor": "by {name}",
+    "official": "Official",
+    "community": "Community",
+    "install": "Open in SuperOne",
+    "categories": {
+      "all": "All",
+      "development": "Development",
+      "writing": "Writing & docs",
+      "research": "Research",
+      "data": "Data & analytics",
+      "productivity": "Productivity",
+      "creative": "Creative"
+    },
+    "detail": {
+      "back": "All skills",
+      "examplePrompts": "Try saying",
+      "about": "About",
+      "tags": "Tags",
+      "publishedBy": "Author"
+    }
+  },
+  "Mcps": {
+    "badge": "Servers",
+    "title": "MCP servers",
+    "tagline": "Plug in tools, data, and integrations using the Model Context Protocol.",
+    "totalLabel": "{count, plural, one {# server} other {# servers}} available",
+    "searchPlaceholder": "Search servers…",
+    "featured": "Featured",
+    "browseAll": "Browse",
+    "noResults": "Nothing matches that filter.",
+    "official": "Official",
+    "community": "Community",
+    "install": "Open in SuperOne",
+    "authRequired": "Auth required",
+    "noAuth": "No auth",
+    "transport": {
+      "stdio": "stdio",
+      "http": "http",
+      "sse": "sse"
+    },
+    "stats": {
+      "tools": "tools",
+      "resources": "resources",
+      "prompts": "prompts"
+    },
+    "categories": {
+      "all": "All",
+      "devtools": "Dev tools",
+      "storage": "Data & storage",
+      "productivity": "Productivity",
+      "search": "Search & browse",
+      "cloud": "Cloud",
+      "communication": "Communication"
+    },
+    "detail": {
+      "back": "All servers",
+      "about": "About",
+      "tools": "Highlighted tools",
+      "config": "Example configuration",
+      "configCopy": "Copy config",
+      "transport": "Transport",
+      "capabilities": "Capabilities"
+    }
   },
   "Theme": {
     "label": "Theme",

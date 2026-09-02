@@ -1,0 +1,21 @@
+Sometimes you want to keep one chat watching a long-running build while you actually work in another. That used to require Alt-Tab gymnastics. Now it's just a window.
+
+### Mini Window
+
+Right-click any session in the sidebar → **Open in Mini Window** spawns a lightweight, optionally always-on-top BrowserWindow that runs the same chat in real-time sync with the main window. Pin or unpin from the window header. Cmd+W closes the focused window; the dock icon brings the main window back even with mini windows open.
+
+Under the hood, this isn't a one-off feature. A new multi-window broadcast layer (`safeSend` fans out to every BrowserWindow, harness-agnostic session resume, a generic `SessionSettingsPatch` channel) replaces the per-setting IPC plumbing — so future detached-chat surfaces inherit the same wiring for free.
+
+### Ctrl+Tab across every project
+
+Hold Ctrl+Tab to cycle through active sessions — streaming, background, unseen, or pending — across **every open project**, not just the current one. The popup shows sidebar-style status icons and pending-reason chips. Release Ctrl to commit, Esc or window blur cancels.
+
+The just-left session slots in right after the current one, matching the macOS Cmd+Tab two-app ping-pong feel — one tap and you're back where you came from. A 200ms delay before rendering means a quick tap-and-release commits silently without flashing the modal.
+
+### Brand hue, across every window
+
+Hue changes now broadcast through `APP_SETTINGS_CHANGED` to every open window, so the harness-themed accent stays in sync between main and mini. Live across the whole app.
+
+### Mini-window prompt resolution stays in sync
+
+Resolving a permission, question, or plan-approval prompt from the mini-window now broadcasts back to the main window too. The two stores no longer fall out of sync on cross-window approvals.

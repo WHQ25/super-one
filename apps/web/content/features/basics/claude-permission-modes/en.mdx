@@ -1,0 +1,20 @@
+## What it does
+
+SuperOne never silently runs a shell command, edits a file, or hits the network. Every tool the agent wants to use surfaces an approval card the first time it appears — allow once, allow for this project, or always allow.
+
+## How it works
+
+- Three tiers of allowlist: **session**, **project**, **global**. Project and global persist; session resets when you close the app.
+- Per-tool granularity. You can allow `git status` while still pausing on `rm -rf`.
+- A kill switch above the chat input revokes every permission with one keystroke.
+- The activity panel keeps a timestamped audit trail of every tool call, with the prompt that triggered it.
+
+## Why it matters
+
+- No surprise side effects.
+- You can run a borrowed prompt without yolo-trusting it.
+- Compliance and review become a single scrollable record.
+
+## FAQ
+
+**Where are allowlists stored?** Project allowlists live in `.superone/permissions.json` (gitignored by default). Global lives in user prefs.

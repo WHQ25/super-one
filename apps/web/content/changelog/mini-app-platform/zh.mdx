@@ -1,0 +1,21 @@
+Mini-app 一开始是 agent 能从聊天里打开的全屏沙箱。最近三个版本把它的形态彻底打开 —— 它不一定非要长得像 app。
+
+### Standalone 工具直接在聊天块里渲染
+
+Mini-app 可以声明 `standalone: true` 工具,结果直接在聊天消息里的 iframe 中显示。没有面板、没有独立 UI —— 就是一张就地渲染的结果卡,样式由 mini-app 自己的 HTML 控制。即便面板关闭、滚动出视口卸载,或 `miniapp-ready` 与 callEntry 到达乱序,调用都能正确恢复(走缓存重放)。
+
+### Intercept iframe:工具里嵌入人在回路
+
+Standalone 工具可以声明 `renderer.intercept`,实现两阶段 HITL 流程。阶段 1 显示 intercept iframe 让用户给出更精确的输入;提交(或通过 `onCancel: reject | resolve-empty` 取消)之后,阶段 2 切到结果 iframe。同一个 `callId` 贯穿两阶段,模型从头到尾只看到一次工具调用。
+
+### 后台 Worker
+
+Mini-app 现在可以声明一个无头后台 worker —— 下载、长任务、周期同步 —— 不依赖任何可见窗口持续运行。生命周期由独立的 worker-host 进程托管,带 app-quit gate;sidebar 里每个项目有一个 worker 分组实时显示状态。
+
+### 在聊天输入里 @ Mini-app
+
+聊天输入里 `@` 提及任何已安装的 mini-app。Chip 用零宽字符标记,所以复制粘贴也能保住,接收端会还原成 chip —— agent 始终知道你指的是哪个 app。
+
+### 每个 Mini-app 自带的 SQLite
+
+Mini-app 拿到一组最小化、安全的 SQLite API —— `query` / `exec` / `batch` / `pragma`,SQL 关键字 + PRAGMA 白名单管控。DB 文件位于 `<install-slot>/data`,归 host 所有;备份/卸载都是目录操作,agent 也能直接读应用状态。

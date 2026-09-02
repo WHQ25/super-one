@@ -1,0 +1,19 @@
+## 它做什么
+
+一键给当前任务开一个干净的 git worktree —— 独立分支、独立目录、必要时连 node_modules 都独立。主 checkout 永远稳。
+
+## 怎么工作
+
+- 右键一个会话,选 **移到 worktree**。未提交的改动(包括未跟踪文件)会被 stash 后转移过去。
+- worktree 会话在侧边栏会带一个 dirty 标记,提醒你还有什么没提交。
+- 分支合并完,一行命令清理 —— SuperOne 会一并干掉 worktree 和分支。
+
+## 为什么有用
+
+- 告别 "stash → 切分支 → 改 → unstash → 又坏了" 的循环。
+- 主 checkout 里 dev server 不重启,智能体在 worktree 里随便造。
+- Worktree fork 让你"假如换一种试试"零成本,不动现工作树。
+
+## 常见问题
+
+**得自己跑 `git worktree` 吗?** 不用,SuperOne 包好了。当然你想自己跑也行,外部新建的 worktree UI 能识别。

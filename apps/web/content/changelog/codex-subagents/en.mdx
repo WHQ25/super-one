@@ -1,0 +1,17 @@
+Codex started spawning subagents — workers and forks — months ago, but they rendered as a patchwork of chat blocks that were hard to scan. This release unifies the surface so every agentic spawn looks (and behaves) the same.
+
+### Unified subagent cards
+
+Workers, forks, and any collab-driven nested agent now collapse into a single card with a status pill, streaming text, and an inline tool feed. Click for a dedicated full-screen view that aggregates every collab the agent participated in. An amber failure block surfaces inline when a collab call errors out (e.g. `notFound` on a resumed worker).
+
+### Status-aware brand icons
+
+Claude and Codex sessions now carry harness-specific icons that animate across **running**, **background**, **unseen**, and **automated** states. The session switcher, sidebar, and pinned list all share the visual language — at a glance you know which engine is on the other side of which conversation.
+
+### Image actions, everywhere
+
+Right-click any markdown image in chat to copy, drag out, reveal in folder, or send to a new conversation. The Codex generated-image gallery and chat images share one gesture set now, and dragged files flow through the OS as real `Files` — so you can drop them into Finder, VS Code, or a sandboxed mini-app iframe.
+
+### Subagent colors that stick
+
+Each Task subagent picks a color from a per-session 8-color pool (purple/blue/cyan/teal/green/amber/orange/rose) so concurrent subagents stay visually distinct. The color persists for the lifetime of the session, including in history-loaded tasks — no more reverting to purple once a task completes.

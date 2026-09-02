@@ -1,0 +1,21 @@
+如果你曾经在一长串 "New Session, New Session, New Session" 里翻找某次关于认证 bug 的对话 —— 这个更新就是给你的。
+
+### Agent 起名,你有最终发言权
+
+新的 `session_rename` MCP 工具让当前模型在主题清晰后自动重命名聊天。前几轮通常是探索性的;到第三、四轮主题就稳定了 —— 你会看到它自动落到 sidebar 上。
+
+如果你手动改过会话名,SQLite 里的 `is_user_renamed` 标记会锁住它,工具返回 `user_locked`,模型就不会再调。你的标题永远赢。
+
+### Codex 也读 SuperOne 的 system prompt
+
+Codex 的 app-server 协议没有 system-prompt 追加接口,所以 SuperOne 的工具使用规则(`widget_show`、`miniapp_dev_read_guide`、`session_rename`)以前会被静默漏掉。现在通过 `developer_instructions` 在每个 thread/turn 注入,Codex 行为与 Claude 一致 —— 包括自动改名。
+
+### 一个不会撒谎的标题动画
+
+当前显示的会话被改名时,新标题会逐字翻转(`rotateX`)进入,带一道 accent 色 shimmer。切到另一个会话则直接跳到目标标题,不做动画 —— 所以动画永远意味着"这里发生了改名",而不是"你切换了页面"。
+
+动画在六个标题位置都生效:coding header、聊天面板 header、mini window、sidebar pinned、sidebar 列表、历史对话框。
+
+### 内置工具不再弹权限框
+
+一个小改动,但日常体验差异很大:SuperOne 内置 MCP 工具(`miniapp_dev_*`、`session_rename`、`widget_show`)不再触发权限弹窗。之前预批准的逻辑要求工具名有 `__` 命名空间分隔符,而内置工具没有 —— 现在 Claude 和 Codex 都统一预批准。

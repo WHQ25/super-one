@@ -1,0 +1,19 @@
+An agent that can edit your code is half a story. You also need to run it, watch it crash, tail a log, restart it. That used to mean Alt-Tab'ing to a real terminal — not anymore.
+
+### Local terminal, real PTY
+
+SuperOne now ships a node-pty + xterm-backed terminal in a dedicated coding drawer. It's a real PTY, not a fake REPL — your shell startup runs, your aliases work, your prompt looks like your prompt. We added WebGL rendering, Unicode 11, clickable links, and an in-terminal **⌘F** search.
+
+- **⌘T** opens a fresh tab when the terminal is focused
+- **⌘W** closes the active tab, falling back to the window when no tab is focused
+- Tab titles auto-update from the shell's OSC title sequence
+- Tabs reorder by drag, Chrome-style
+- Per-session open state, with shared instances at the project level
+
+### Remote terminal over relay or LAN
+
+Phase 2 of the rollout: the integrated terminal streams to mobile through the same relay/LAN transport SuperOne already uses for chat. Inbound commands carry session ownership and snapshot chunking, so a phone can run a shell rooted in your desktop project — full output, full input, with proper terminal semantics.
+
+### Sharper text on macOS
+
+A small but real improvement: macOS text now renders with grayscale font smoothing by default, producing thinner, crisper glyphs across the entire app. If you prefer the old look, there's a "Crisp Text" toggle in Appearance settings.

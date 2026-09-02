@@ -1,0 +1,17 @@
+三个看似零散的改动,合起来重塑了 SuperOne 与操作系统打交道的方式。
+
+### 沙箱按平台区分
+
+macOS 自带 Seatbelt,所以沙箱默认开启。Linux 和 WSL2 需要手动打开 —— 一个 lazy probe 会探测 `bwrap` + `socat` 是否可用,缺哪个就在 Preferences 里弹安装提示。Windows 和 WSL1 完全不显示 On / Auto 选项,因为底层原语就不存在。
+
+三道独立守卫(Session 构造、`buildClaudeOptions`、运行时 `setSandbox`)在请求到达 SDK 之前就把不支持的平台拦掉,SDK 自身则用 `failIfUnavailable: false` 跑 —— 探测过于乐观时优雅降级,不再让 turn 崩。聊天沙箱选择器在探测失败时静默回落到 Off,并带一个 "Enable in Settings first" 链接指向对应设置页。
+
+### 让需要存储的 Mini-app 用得上 Web Storage
+
+Mini-app iframe 默认只有 `allow-scripts` —— opaque origin,这会让 `localStorage` / `sessionStorage` / `indexedDB` / Cache API 静默失败,任何依赖这些 API 的第三方库都会挂。需要存储的 mini-app 现在通过 `permissions.storage`(对象,必填 `reason`)显式申请;授予后,`allow-same-origin` 加入 iframe sandbox。隔离不会丢,因为 mini-app 本来就从每 (app, project) 各自的 `superone-app://` 源加载。
+
+安装同意页和每个 app 的设置页都会显示一行 Storage 状态,带 **Persistent** 徽章,授予情况在安装时和事后都看得到。
+
+### Activity Monitor 不再骗人
+
+派生的辅助进程 —— Claude SDK、Codex app-server、`dns-sd`、`caffeinate` / `systemd-inhibit`、安装脚本 —— 现在都有独立的 `argv0`。Renderer 窗口(主、mini、mini-app dev webview)各自设 `process.title`。在 `ps` 和 Activity Monitor 里终于能区分谁是谁,不再面对一墙的 "SuperOne Helper"。

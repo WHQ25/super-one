@@ -1,0 +1,9 @@
+SuperOne 换上了新外观 —— 为此底层的设计体系也做了一轮彻底整理。
+
+### Liquid Glass
+
+在设置里打开 **Liquid Glass**,即可启用半透明暗色主题:磨砂、分层的界面,配合原生窗口 vibrancy,带来层次与纵深。它完全可选,由 `AppSettings.liquidGlass` 单独门控 —— 不主动开启时,经典不透明主题保持原样。
+
+### 更干净的 token 底座
+
+幕后,设计 token 体系做了收敛:中性化的 accent token、独立的 highlighted token,以及一组成对的 **success / warning / error** 语义色,在亮暗两种模式下都呈现正确。编码布局也改为浮动卡片样式,间距与缩放手柄更精致。

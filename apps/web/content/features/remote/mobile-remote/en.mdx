@@ -1,0 +1,19 @@
+## What it does
+
+Resume a session from the bus, approve a tool from the kitchen, get pinged when a long task finishes. Your phone is a full controller for the SuperOne running on your desk.
+
+## How it works
+
+- A Cloudflare Workers relay (or your own self-hosted one) bridges your desktop and mobile over an end-to-end encrypted channel.
+- The mobile app subscribes to a single active session at a time; turns stream live.
+- Plan approvals, permission prompts, and slash commands all work from mobile.
+- Push notifications fire when a background task completes or when an approval is waiting.
+
+## Self-hosting
+
+- The relay is a single Cloudflare Worker + Durable Object. Bring your own Cloudflare account, run `wrangler deploy`, point your devices at it.
+- No third-party storage — the relay only buffers a session's recent events for replay.
+
+## FAQ
+
+**What happens if my phone goes offline mid-session?** The relay buffers events; when you come back they replay in order from your last ack.

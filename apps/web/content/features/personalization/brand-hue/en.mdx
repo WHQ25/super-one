@@ -1,0 +1,20 @@
+## What it does
+
+Pick a hue, and the entire app retints. Pick a different one per harness, and you'll always know whether you're talking to Claude or Codex without reading a label.
+
+## How it works
+
+- Every colour token in the app derives from a single `--brand-hue` variable using OKLch math.
+- The hue picker lives in the header. Drag the slider, watch the app reflow live.
+- Each harness ships with a default hue (warm orange for Claude, cool green for Codex), but anything is fair game.
+- Works in both light and dark mode — saturation and lightness stops are matched per mode.
+
+## Why it matters
+
+- Visual cue prevents the "wait, which agent did I just ask to delete that?" moment.
+- Personal — make the workspace match how you feel about today.
+- Accessible — high-contrast palettes don't require manual overrides; the token system does the math.
+
+## FAQ
+
+**Will my hue sync across devices?** Currently per-device. Multi-device sync is on the roadmap.

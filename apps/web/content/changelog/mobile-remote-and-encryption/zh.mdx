@@ -1,0 +1,21 @@
+手机操控桌面时,数据总要走某条路。几个月前我们加了 Relay 通道,处理不在同一 Wi-Fi 的情况。这次更新把这条链路彻底闭环:端到端加密。
+
+### AES-GCM 分块,AAD 绑定
+
+经过 Relay R2 桶转发的文件现在用分块 AES-GCM 信封封装 —— 4MB 一块,AAD 绑定到 `channelKey:r2Key:chunkIndex`。桌面在上传时封,手机在下载时解,R2 看不到任何明文。LAN 通道不经过 Relay,所以保持原样。
+
+### 文件可以拖进任何 App
+
+Sidebar 文件树现在用 Electron 原生 `webContents.startDrag()`,拖动的文件以操作系统级 `Files` 流转。可以拖到 Finder、VS Code、沙箱 mini-app iframe,或任何接受文件拖入的应用。内部拖拽 —— 文件树内、@-mention 输入框、活动 dock —— 行为不变。
+
+### 选中代码引用到聊天
+
+在 File 或 Changes 标签里选代码,右键 → 引用到聊天。一张文件 chip(图标 + 文件名 + 行号区间)落到聊天输入,悬停可弹出 popover 显示选区,渲染走 FilePreview 同一套 diff 视图 —— 语法高亮保留,红绿 diff 背景完整。跨行混合选择产出 unified diff 正文。
+
+### 桌面退出时手机端干净下线
+
+退出 SuperOne 时会通过 Relay 和 LAN 同时广播 `desktop_shutdown` 帧。手机客户端断开、跳回设备列表、弹出 "Desktop has quit" snackbar —— 替代了原来每次桌面退出都触发的指数退避重连循环。Relay durable object 也借此重置事件缓冲和 ACK 序列号,所以下次桌面启动是全新会话,不会重放陈旧事件。
+
+### 卡住的会话一眼可见
+
+Sidebar 的运行中会话 spinner 现在会老化:无活动 60 秒变琥珀色,120 秒变红色。不用打开聊天就能看出哪个会话卡住了。

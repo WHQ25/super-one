@@ -1,0 +1,18 @@
+Long-running coding sessions used to be one-shot — once you started typing in a fresh chat, your scratch edits, half-finished experiments, and uncommitted diffs were locked to that branch. This release rebuilds the session surface around the idea that a conversation should be portable.
+
+### Worktree handoff
+
+Right-click any session and pick **Move to worktree**. SuperOne checks out a fresh git worktree, ports your uncommitted changes (including untracked files via `git stash -u`) into it, and relocates the agent's `cwd` so the next turn picks up exactly where you left off. The original branch stays clean.
+
+A new dirty-state indicator on worktree sessions shows uncommitted files at a glance, and the chat status bar resolves the worktree vs main-repo branch from a single source of truth so the two pills never desync.
+
+### Fork from any message
+
+Hover any message in the conversation, hit **Fork here**, and a new session opens with history truncated to that point. Two flavors:
+
+- **Local fork** — same cwd, alternate timeline. Perfect for exploring an alternative answer to the same prompt.
+- **Worktree fork** — isolated checkout. Perfect for "what if I tried this instead" experiments without touching your working tree.
+
+### Fuzzy file search, tree-structured
+
+The sidebar's file picker now does ranked fuzzy matching with results grouped by directory — so navigating a 5,000-file repo doesn't flatten into noise. Bound to <kbd>⌘P</kbd>.

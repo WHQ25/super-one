@@ -1,0 +1,21 @@
+## What it does
+
+Bring in a code reviewer, planner, research agent, or any specialist subagent without losing your main thread. Subagents run in their own context and return a clean summary instead of dumping their token noise back into the parent chat.
+
+## How it works
+
+- Pick a subagent from the built-in roster, or define your own.
+- Each subagent has its own system prompt, tool allowlist, and (optionally) model.
+- Run in the foreground (you wait) or background (you get notified when it's done).
+- Results land as compact result cards in the parent conversation, with the full transcript one click away.
+
+## Use cases
+
+- **Code reviewer** — paste a diff, get a second opinion.
+- **Planner** — explore options before committing to an implementation.
+- **Web researcher** — heavy fetching with results summarised back in line.
+- **Test writer** — generate covering tests without polluting the parent's memory.
+
+## FAQ
+
+**Where do I configure subagents?** Per-project in `.superone/subagents/` or globally in settings. Both live as plain markdown + frontmatter.

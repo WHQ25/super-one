@@ -1,0 +1,13 @@
+When an agent fans out into parallel subagents, the chat used to fill with a wall of independent cards. This release makes multi-agent runs legible — and brings the same care to structured results and the markdown editor.
+
+### Workflows, grouped by phase
+
+Parallel subagents and Task runs within one assistant message now aggregate into a single **workflow** block, grouped by phase as the run progresses. You see the shape of the work — what's fanning out, what's verifying, what's done — instead of a flat pile of cards. The workflow meta and agent list also relay to mobile, so remote sessions show the same view.
+
+### StructuredOutput as a tool card
+
+When an agent returns structured output, it now renders as a first-class, tool-style card instead of raw text — clean to scan, consistent with every other tool block.
+
+### Tables in the markdown editor
+
+The markdown editor gained a **table** slash command with a grid picker and context menu for row/column edits. Links you insert now route through the link-safety confirm modal, so nothing navigates without a check.

@@ -1,0 +1,21 @@
+If you've ever scrolled back through a sidebar of "New Session, New Session, New Session" trying to find that one conversation about your auth bug — this one's for you.
+
+### The agent retitles, you stay in charge
+
+A new `session_rename` MCP tool lets the active model retitle the current chat as the topic clarifies. The first few turns are usually exploratory; by the third or fourth, the conversation has a clear subject — and now you'll see it land in the sidebar automatically.
+
+If you've manually renamed a session, an `is_user_renamed` flag locks it. The tool returns `user_locked` and the model stops calling it. Your titles win.
+
+### Codex respects your system prompt
+
+Codex's app-server protocol has no system-prompt append interface, so SuperOne's tool-usage rules (`widget_show`, `miniapp_dev_read_guide`, `session_rename`) used to silently miss. They're now injected via `developer_instructions` on every thread/turn, so Codex behaves like Claude — including the auto-rename.
+
+### A title animation that doesn't lie
+
+When a rename fires for the *currently displayed* session, the new title flips in character-by-character with an accent-color shimmer. Switching to a different session jumps straight to that session's title without animating — so the animation always means "rename happened here," never "you navigated."
+
+The flip plays across all six title surfaces: coding header, chat panel header, mini window, sidebar pinned, sidebar list, history dialog.
+
+### Built-in tools are pre-approved everywhere
+
+A small fix with big quality-of-life payoff: SuperOne's built-in MCP tools (`miniapp_dev_*`, `session_rename`, `widget_show`) no longer prompt for permission. The pre-approve check used to require a `__` namespace separator that built-in tools don't have; that's been fixed, so the same tools work without prompts on both Claude and Codex.

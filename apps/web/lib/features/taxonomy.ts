@@ -559,6 +559,219 @@ export const featureTaxonomy: FeatureCategory[] = [
           },
         ],
       },
+      {
+        slug: "cursor-agent",
+        category: "engines",
+        harnesses: ["cursor"],
+        title: { en: "Cursor Agent", zh: "Cursor Agent" },
+        blurb: {
+          en: "Cursor's own SDK, driven in-app with its full parameter surface.",
+          zh: "Cursor 自己的 SDK,在应用内驱动,完整参数面可用。",
+        },
+        subFeatures: [
+          {
+            slug: "cursor-models",
+            feature: "cursor-agent",
+            category: "engines",
+            harnesses: ["cursor"],
+            title: { en: "Model parameters", zh: "模型参数" },
+            blurb: {
+              en: "The full model parameter surface, with a per-harness enable list.",
+              zh: "完整的模型参数面,带按 harness 划分的启用列表。",
+            },
+          },
+          {
+            slug: "cursor-permissions",
+            feature: "cursor-agent",
+            category: "engines",
+            harnesses: ["cursor"],
+            title: { en: "Agent mode & sandbox", zh: "Agent 模式与沙盒" },
+            blurb: {
+              en: "Permission modes and a sandbox toggle, read the same way as every other engine.",
+              zh: "权限模式与沙盒开关,读法与其他每套引擎一致。",
+            },
+          },
+          {
+            slug: "cursor-cloud",
+            feature: "cursor-agent",
+            category: "engines",
+            harnesses: ["cursor"],
+            title: { en: "Cloud sessions", zh: "云端会话" },
+            blurb: {
+              en: "Cloud sessions and the recovery surface, mapped onto the shared session contract.",
+              zh: "云端会话与恢复面,映射到共享的会话契约上。",
+            },
+          },
+        ],
+      },
+      {
+        slug: "opencode",
+        category: "engines",
+        harnesses: ["opencode"],
+        title: { en: "OpenCode", zh: "OpenCode" },
+        blurb: {
+          en: "A full harness — native commands, rewind and fork, MCP with OAuth.",
+          zh: "完整 harness —— 原生命令、rewind 与 fork、带 OAuth 的 MCP。",
+        },
+        subFeatures: [
+          {
+            slug: "opencode-agents",
+            feature: "opencode",
+            category: "engines",
+            harnesses: ["opencode"],
+            title: { en: "Agent selection & commands", zh: "Agent 选择与命令" },
+            blurb: {
+              en: "OpenCode's own agents and native commands, including init, on the shared lifecycle.",
+              zh: "OpenCode 自己的 agent 与原生命令(含 init),接在共享生命周期上。",
+            },
+          },
+          {
+            slug: "opencode-rewind",
+            feature: "opencode",
+            category: "engines",
+            harnesses: ["opencode"],
+            title: { en: "Compact, rewind & fork", zh: "Compact、rewind 与 fork" },
+            blurb: {
+              en: "Wind a session back or branch it, the same way you would on the other engines.",
+              zh: "把会话回退或分叉,方式与在其他引擎上一致。",
+            },
+          },
+          {
+            slug: "opencode-mcp",
+            feature: "opencode",
+            category: "engines",
+            harnesses: ["opencode"],
+            title: { en: "MCP with OAuth", zh: "带 OAuth 的 MCP" },
+            blurb: {
+              en: "Attach MCP servers that need a browser round trip without leaving the app.",
+              zh: "需要走一趟浏览器的 MCP 服务,不离开应用就能挂上。",
+            },
+          },
+          {
+            slug: "opencode-shell",
+            feature: "opencode",
+            category: "engines",
+            harnesses: ["opencode"],
+            title: { en: "Shell mode & sharing", zh: "Shell 模式与分享" },
+            blurb: {
+              en: "Shell mode inside the session, plus OpenCode's session sharing commands.",
+              zh: "会话内的 shell 模式,以及 OpenCode 的会话分享命令。",
+            },
+          },
+        ],
+      },
+      {
+        slug: "deepseek",
+        category: "engines",
+        harnesses: ["dsh"],
+        title: { en: "DeepSeek Agent", zh: "DeepSeek Agent" },
+        blurb: {
+          en: "Hosted in-process rather than spawned, with its own tool plane and trajectory.",
+          zh: "以进程内托管而非外部进程运行,自带工具面与轨迹。",
+        },
+        subFeatures: [
+          {
+            slug: "dsh-runtime",
+            feature: "deepseek",
+            category: "engines",
+            harnesses: ["dsh"],
+            title: { en: "In-process runtime", zh: "进程内运行时" },
+            blurb: {
+              en: "The dsh runtime is embedded, and SuperOne serves its credentials from its own store.",
+              zh: "dsh 运行时被嵌入进程内,凭据由 SuperOne 自己的存储供给。",
+            },
+          },
+          {
+            slug: "dsh-tool-plane",
+            feature: "deepseek",
+            category: "engines",
+            harnesses: ["dsh"],
+            title: { en: "Native tool plane", zh: "原生工具面" },
+            blurb: {
+              en: "Its native tools mount per session, with SuperOne's MCP surface bridged in alongside.",
+              zh: "原生工具按会话挂载,SuperOne 的 MCP 面桥接在旁。",
+            },
+          },
+          {
+            slug: "dsh-trajectory",
+            feature: "deepseek",
+            category: "engines",
+            harnesses: ["dsh"],
+            title: { en: "Trajectory ledger", zh: "轨迹账本" },
+            blurb: {
+              en: "A foldable panel built on an incremental fold, so a long run stays readable.",
+              zh: "基于增量折叠构建的可折叠面板,长时间运行也保持可读。",
+            },
+          },
+          {
+            slug: "dsh-presets",
+            feature: "deepseek",
+            category: "engines",
+            harnesses: ["dsh"],
+            title: { en: "Agent presets & plugins", zh: "Agent 预设与插件" },
+            blurb: {
+              en: "Presets with their own icons, runtime plugin install, and sandbox-backed permission presets.",
+              zh: "带各自图标的预设、运行时插件安装,以及沙盒支撑的权限预设。",
+            },
+          },
+        ],
+      },
+      {
+        slug: "acp-agents",
+        category: "engines",
+        harnesses: ["acp"],
+        title: { en: "ACP agents", zh: "ACP agent" },
+        blurb: {
+          en: "Any agent that speaks the Agent Client Protocol, wired first for Grok.",
+          zh: "任何会说 Agent Client Protocol 的 agent,首先为 Grok 接通。",
+        },
+        subFeatures: [
+          {
+            slug: "acp-protocol",
+            feature: "acp-agents",
+            category: "engines",
+            harnesses: ["acp"],
+            title: { en: "The protocol, not the vendor", zh: "接协议,不接厂商" },
+            blurb: {
+              en: "Session lifecycle, models, slash commands and worktree cwd map onto the shared contract.",
+              zh: "会话生命周期、模型、斜杠命令与 worktree 工作目录映射到共享契约。",
+            },
+          },
+          {
+            slug: "acp-tools",
+            feature: "acp-agents",
+            category: "engines",
+            harnesses: ["acp"],
+            title: { en: "Tool mapping", zh: "工具映射" },
+            blurb: {
+              en: "Grok's tool calls render into the same chat UI every other harness uses.",
+              zh: "Grok 的工具调用渲染进其他每个 harness 共用的那套聊天界面。",
+            },
+          },
+          {
+            slug: "acp-plan",
+            feature: "acp-agents",
+            category: "engines",
+            harnesses: ["acp"],
+            title: { en: "Plan mode & permissions", zh: "计划模式与权限" },
+            blurb: {
+              en: "Enter plan mode from the host UI; exit_plan_mode opens the same line-comment review.",
+              zh: "从宿主界面进入计划模式;exit_plan_mode 打开同一套行内评论式评审。",
+            },
+          },
+          {
+            slug: "acp-superone-tools",
+            feature: "acp-agents",
+            category: "engines",
+            harnesses: ["acp"],
+            title: { en: "Inherits the SuperOne tools", zh: "继承 SuperOne 工具面" },
+            blurb: {
+              en: "The host attaches SuperOne's MCP server to every ACP session, browser and devices included.",
+              zh: "宿主给每个 ACP 会话挂上 SuperOne 的 MCP 服务,浏览器与设备也在其中。",
+            },
+          },
+        ],
+      },
     ],
   },
   {

@@ -51,3 +51,9 @@ export function installIpcMocks(): void {
     }
   }
 }
+
+// Renderer modules subscribe to IPC at *module init* (e.g. chat-store's prefs cache calls
+// `window.app.onAppSettingsChange` top-level). Preview's own `installIpcMocks()` call runs
+// after its imports have already been evaluated, so the mocks must land as an import-time
+// side effect of this module — it is imported before any renderer store.
+installIpcMocks()

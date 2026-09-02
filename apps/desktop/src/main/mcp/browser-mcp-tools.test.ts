@@ -42,7 +42,6 @@ vi.mock('../browser/browser-cdp', () => ({
   isCdpMockEnabled: () => gates.cdp && gates.mock,
   isCdpEmulateEnabled: () => gates.cdp && gates.emulate,
   resolveCdpTarget: vi.fn(async () => 7),
-  cdpScreenshot: vi.fn(),
   cdpClick: vi.fn(),
   cdpHover: vi.fn(),
   cdpDrag: vi.fn(),

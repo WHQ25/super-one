@@ -4,7 +4,7 @@ import type { AgentEvent } from '@superone/shared/agent-types'
 import { z, toJSONSchema, type ZodTypeAny } from 'zod'
 import { browserAutomationCall, browserFocusGuard, resolveBrowserWebContentsId, type BrowserAutomationOp } from '../browser/browser-automation-bridge'
 import { existsSync } from 'fs'
-import { isCdpEnabled, isCdpCookiesEnabled, isCdpMockEnabled, isCdpEmulateEnabled, resolveCdpTarget, cdpScreenshot, cdpClick, cdpHover, cdpDrag, cdpPress, cdpType, cdpEmulate, cdpGetCookies, cdpSetFileInput } from '../browser/browser-cdp'
+import { isCdpEnabled, isCdpCookiesEnabled, isCdpMockEnabled, isCdpEmulateEnabled, resolveCdpTarget, cdpClick, cdpHover, cdpDrag, cdpPress, cdpType, cdpEmulate, cdpGetCookies, cdpSetFileInput } from '../browser/browser-cdp'
 import { encode as toonEncode } from '@toon-format/toon'
 import { startRecording, stopRecording, waitForRecordedRequest, getRecordedRequest, addMockRule, clearMockRules, type RecordedRequest } from '../browser/browser-cdp-network'
 import { measurePerf, samplePerf, resolveAppTarget } from '../browser/browser-cdp-perf'
@@ -839,13 +839,10 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
     },
     async (args) => {
       try {
-        if (isCdpEnabled() && args.selector) {
-          const webContentsId = await resolveCdpTarget(sessionId, args.tab)
-          const shot = await cdpScreenshot(webContentsId, { selector: args.selector })
-          const path = persistScreenshot(shot.data, 'image/png')
-          if (!path) return errorReply('Failed to save screenshot to disk.')
-          return textReply({ path, width: shot.width, height: shot.height })
-        }
+        // Always capture through the renderer, selector or not. It is the only
+        // path that un-scales a picture-in-picture webview and waits for the guest
+        // to re-rasterize before reading pixels; a CDP Page.captureScreenshot reads
+        // the composited surface as-is, so under PiP it returned a blurry upscale.
         const result = (await browserAutomationCall(sessionId, 'screenshot', args)) as ScreenshotResult
         const path = persistScreenshot(result.data, result.mimeType)
         if (!path) return errorReply('Failed to save screenshot to disk.')

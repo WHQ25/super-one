@@ -128,66 +128,6 @@ export async function resolveCdpTarget(sessionId: string, tab?: string): Promise
   return resolveBrowserWebContentsId(sessionId, tab)
 }
 
-interface Viewport {
-  pageX?: number
-  pageY?: number
-  clientWidth: number
-  clientHeight: number
-}
-
-interface LayoutMetrics {
-  cssVisualViewport?: Viewport
-  visualViewport?: Viewport
-}
-
-interface CaptureScreenshotResult {
-  data: string
-}
-
-export interface CdpScreenshot {
-  data: string
-  width: number
-  height: number
-}
-
-export interface CdpScreenshotOptions {
-  selector?: string
-}
-
-async function boundingBox(webContentsId: number, selector: string): Promise<{ x: number; y: number; width: number; height: number }> {
-  const evalRes = await cdpSend<{ result?: { value?: string } }>(webContentsId, 'Runtime.evaluate', {
-    expression: `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null; const b = el.getBoundingClientRect(); return JSON.stringify({ x: b.x + window.scrollX, y: b.y + window.scrollY, width: b.width, height: b.height }); })()`,
-    returnByValue: true,
-  })
-  const raw = evalRes?.result?.value
-  if (!raw) throw new Error('Screenshot selector did not resolve to a visible element')
-  const box = JSON.parse(raw) as { x: number; y: number; width: number; height: number }
-  if (box.width <= 0 || box.height <= 0) throw new Error('Screenshot selector did not resolve to a visible element')
-  return box
-}
-
-export async function cdpScreenshot(webContentsId: number, options: CdpScreenshotOptions = {}): Promise<CdpScreenshot> {
-  if (options.selector) {
-    const box = await boundingBox(webContentsId, options.selector)
-    const shot = await cdpSend<CaptureScreenshotResult>(webContentsId, 'Page.captureScreenshot', {
-      format: 'png',
-      captureBeyondViewport: true,
-      clip: { x: box.x, y: box.y, width: box.width, height: box.height, scale: 1 },
-    })
-    return { data: shot.data, width: Math.round(box.width), height: Math.round(box.height) }
-  }
-  const metrics = await cdpSend<LayoutMetrics>(webContentsId, 'Page.getLayoutMetrics', {})
-  const vp = metrics.cssVisualViewport ?? metrics.visualViewport
-  if (!vp) throw new Error('Could not read page layout metrics for viewport screenshot')
-  const width = Math.round(vp.clientWidth)
-  const height = Math.round(vp.clientHeight)
-  const shot = await cdpSend<CaptureScreenshotResult>(webContentsId, 'Page.captureScreenshot', {
-    format: 'png',
-    clip: { x: vp.pageX ?? 0, y: vp.pageY ?? 0, width, height, scale: 1 },
-  })
-  return { data: shot.data, width, height }
-}
-
 export async function cdpClick(webContentsId: number, x: number, y: number): Promise<void> {
   await cdpSend(webContentsId, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x, y })
   await cdpSend(webContentsId, 'Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: 1 })

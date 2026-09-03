@@ -1,4 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import VARIANTS from '../apps/desktop/variants.json'
 import {
@@ -76,25 +78,69 @@ function replaceManifestPath(text: string, current: string, replacement: string)
     .join('\n')
 }
 
-async function artifactExists(baseUrl: string, path: string): Promise<boolean> {
-  try {
-    const res = await fetch(`${baseUrl}/${path}`, {
-      method: 'HEAD',
-      cache: 'no-store',
-    })
-    return res.ok
-  } catch {
-    return false
+const BUCKET = process.env.R2_BUCKET ?? 'super-one-releases'
+
+/**
+ * Ask the BUCKET what is live, never the public URL.
+ *
+ * What every caller below actually needs is a three-state answer -- "this
+ * version", "never published", "I do not know" -- and the third has to be
+ * fatal, because treating it as "never published" bypasses the semver guard and
+ * silently skips the legacy bridge.
+ *
+ * The public URL cannot give that answer. `dl.super-one.dev` returns 404 for a
+ * missing object to some clients and 403 to others (GitHub runners get 403,
+ * reproducibly), so the "definitively absent" branch was unreachable from CI
+ * and the first publish to any new variant prefix failed -- exactly the path
+ * the stable cutover takes. A 403 from a CDN edge says nothing about the
+ * bucket's contents, so widening the check to accept it would have thrown away
+ * the guard rather than fixed it.
+ *
+ * s3api distinguishes the two properly: a missing key is `(404) Not Found` /
+ * `NoSuchKey`, a credentials problem is `(403) Forbidden` / `AccessDenied`. It
+ * also reads through no CDN cache, so a 200 here is the authoritative state
+ * rather than whatever the edge last stored.
+ */
+function awsS3Api(args: string[]): { status: number; stdout: string; stderr: string } {
+  const endpoint = process.env.R2_ENDPOINT_URL
+  if (!endpoint) {
+    throw new Error('R2_ENDPOINT_URL is required — reads go to the bucket, not the public URL')
   }
+  const res = spawnSync('aws', ['s3api', ...args, '--endpoint-url', endpoint], {
+    encoding: 'utf8',
+  })
+  if (res.error) throw new Error(`aws s3api failed to run: ${res.error.message}`)
+  return { status: res.status ?? 1, stdout: res.stdout ?? '', stderr: (res.stderr ?? '').trim() }
 }
 
-async function resolveArtifactPaths(text: string, baseUrl: string): Promise<string> {
+/** True only for "this key is not in the bucket". Any other failure throws. */
+function isMissingKeyError(stderr: string): boolean {
+  return /\(404\)|NoSuchKey|Not Found/i.test(stderr)
+}
+
+function objectExists(key: string): boolean {
+  const res = awsS3Api(['head-object', '--bucket', BUCKET, '--key', key])
+  if (res.status === 0) return true
+  if (isMissingKeyError(res.stderr)) return false
+  throw new Error(`could not stat s3://${BUCKET}/${key}: ${res.stderr || `aws exited ${res.status}`}`)
+}
+
+/** Object body, or null when the key is definitively absent. */
+function readObject(key: string): string | null {
+  const out = join(mkdtempSync(join(tmpdir(), 'set-latest-')), 'object')
+  const res = awsS3Api(['get-object', '--bucket', BUCKET, '--key', key, out])
+  if (res.status === 0) return readFileSync(out, 'utf8')
+  if (isMissingKeyError(res.stderr)) return null
+  throw new Error(`could not read s3://${BUCKET}/${key}: ${res.stderr || `aws exited ${res.status}`}`)
+}
+
+function resolveArtifactPaths(text: string, variant: string): string {
   let resolved = text
   for (const path of [...new Set(parseArtifactPaths(text))]) {
     const candidates = artifactPathCandidates(path)
-    if (candidates.length === 1 || (await artifactExists(baseUrl, path))) continue
+    if (candidates.length === 1 || objectExists(`${variant}/${path}`)) continue
     for (const candidate of candidates.slice(1)) {
-      if (await artifactExists(baseUrl, candidate)) {
+      if (objectExists(`${variant}/${candidate}`)) {
         console.log(`resolve legacy artifact ${path} -> ${candidate}`)
         resolved = replaceManifestPath(resolved, path, candidate)
         break
@@ -104,21 +150,12 @@ async function resolveArtifactPaths(text: string, baseUrl: string): Promise<stri
   return resolved
 }
 
-async function fetchRemoteVersion(baseUrl: string, ymlName: string): Promise<string | null> {
-  const url = `${baseUrl}/${ymlName}`
-  let res: Response
-  try {
-    res = await fetch(url, { cache: 'no-store' })
-  } catch (err) {
-    throw new Error(`could not reach ${url}: ${err instanceof Error ? err.message : String(err)}`)
-  }
-  // null means "definitively not published", and nothing else. Treating an
-  // unreachable manifest as an empty channel would bypass the semver guard and
-  // silently skip the legacy bridge, so anything but a 404 fails the run.
-  if (res.status === 404) return null
-  if (!res.ok) throw new Error(`unexpected ${res.status} fetching ${url}`)
-  const match = (await res.text()).match(/^version:\s*(.+)$/m)
-  if (!match) throw new Error(`no version field in ${url}`)
+/** Version a manifest key currently names, or null when it was never published. */
+function remoteVersion(key: string): string | null {
+  const body = readObject(key)
+  if (body === null) return null
+  const match = body.match(/^version:\s*(.+)$/m)
+  if (!match) throw new Error(`no version field in s3://${BUCKET}/${key}`)
   return unquote(match[1])
 }
 
@@ -126,18 +163,18 @@ async function fetchRemoteVersion(baseUrl: string, ymlName: string): Promise<str
 // names that already exist are rewritten: a missing one means no installed
 // build ever read it, and creating it would leave an orphan that
 // prune-releases (which scans `<variant>/`) cannot see.
-async function stageLegacyRoot(
+function stageLegacyRoot(
   platform: Platform,
   prefixed: string,
   variant: string,
   version: string,
-  rootUrl: string,
   outDir: string,
   force: boolean,
-): Promise<void> {
+): void {
   const rooted = rootRelativePaths(prefixed, variant)
   for (const name of LEGACY_ROOT_YML_NAMES[platform.key] ?? []) {
-    const current = await fetchRemoteVersion(rootUrl, name)
+    // Legacy names live at the bucket ROOT, so the key is the bare filename.
+    const current = remoteVersion(name)
     if (current === null) {
       console.log(`skip legacy root ${name}: not published, no client reads it`)
       continue
@@ -173,9 +210,10 @@ async function main(): Promise<void> {
   }
 
   // Each variant is a separate app: its manifests, binaries and fixed links all
-  // live under its own prefix, and nothing cascades between them.
-  const baseUrl = `${rootUrl}/${variant}`
+  // live under its own prefix, and nothing cascades between them. `rootUrl` is
+  // where clients will READ this; every check below reads the bucket instead.
   console.log(`set-latest version=${version} variant=${variant} force=${force} legacyRoot=${legacyRoot}`)
+  console.log(`bucket=s3://${BUCKET}/${variant}/  public=${rootUrl}/${variant}/`)
 
   const legacyAppId = (VARIANTS as Record<string, { appId: string }>)[variant].appId
   if (legacyRoot && legacyAppId !== LEGACY_APP_ID) {
@@ -196,13 +234,13 @@ async function main(): Promise<void> {
       console.log(`skip ${platform.key}: ${platform.ymlName} not downloaded`)
       continue
     }
-    const prefixed = await resolveArtifactPaths(
+    const prefixed = resolveArtifactPaths(
       prefixVersionPaths(readFileSync(manifestPath, 'utf8'), version),
-      baseUrl,
+      variant,
     )
 
     if (!force) {
-      const current = await fetchRemoteVersion(baseUrl, platform.ymlName)
+      const current = remoteVersion(`${variant}/${platform.ymlName}`)
       if (!shouldPublish(version, current)) {
         console.log(`hold ${variant}/${platform.ymlName}: live ${current} is newer than ${version} (use force to override)`)
         continue
@@ -211,7 +249,7 @@ async function main(): Promise<void> {
     writeFileSync(join(variantOutDir, platform.ymlName), prefixed)
     console.log(`stage ${variant}/${platform.ymlName} -> ${version}`)
 
-    if (legacyRoot) await stageLegacyRoot(platform, prefixed, variant, version, rootUrl, outDir, force)
+    if (legacyRoot) stageLegacyRoot(platform, prefixed, variant, version, outDir, force)
 
     for (const url of parseInstallerUrls(prefixed)) {
       const fileName = basename(url)

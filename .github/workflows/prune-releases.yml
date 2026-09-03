@@ -49,32 +49,50 @@ jobs:
 
       - name: Read the versions this variant currently publishes
         id: live
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
         run: |
           set -euo pipefail
-          BASE="https://dl.super-one.dev/${{ inputs.variant }}"
+          ENDPOINT="https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
           LIVE=""
+
+          # Read the BUCKET, not dl.super-one.dev. A transient failure must not
+          # look like "nothing is published" -- that would silently drop the
+          # guard and let the run delete the version clients are downloading
+          # right now -- so only a definitively absent key counts as absent and
+          # anything else fails the job. The public URL cannot support that
+          # distinction: it answers a missing object with 403 for a runner and
+          # 404 for a browser, so "absent" was unreachable from CI and this step
+          # failed on every variant that has no pointer yet. s3api separates the
+          # two (404/NoSuchKey vs 403/AccessDenied) and reads through no cache.
+          fetch_manifest() { # key, outfile -> 0 found, 1 absent, 2 unknown
+            local err
+            if err="$(aws s3api get-object --bucket super-one-releases \
+                        --key "$1" --endpoint-url "$ENDPOINT" "$2" 2>&1 >/dev/null)"; then
+              return 0
+            fi
+            case "$err" in
+              *"(404)"*|*NoSuchKey*|*"Not Found"*) return 1 ;;
+              *) echo "::error::s3://super-one-releases/$1: ${err}"; return 2 ;;
+            esac
+          }
+
           for yml in latest-mac.yml latest.yml latest-linux.yml; do
-            # A transient fetch failure must not look like "nothing is
-            # published" -- that would silently drop the guard and let the run
-            # delete the version clients are downloading right now. Only a real
-            # 404 counts as absent; anything else fails the job.
-            code="$(curl -sS -o "${yml}.body" -w '%{http_code}' "${BASE}/${yml}" || echo 000)"
-            case "$code" in
-              200)
+            key="${{ inputs.variant }}/${yml}"
+            set +e; fetch_manifest "$key" "${yml}.body"; rc=$?; set -e
+            case "$rc" in
+              0)
                 v="$(sed -n 's/^version:[[:space:]]*//p' "${yml}.body" | tr -d "'\"" | head -1)"
                 if [ -z "$v" ]; then
-                  echo "::error::${yml} fetched but has no version field"; exit 1
+                  echo "::error::${key} fetched but has no version field"; exit 1
                 fi
-                echo "${yml} -> ${v}"
+                echo "${key} -> ${v}"
                 LIVE="${LIVE:+$LIVE,}$v"
                 ;;
-              404)
-                echo "${yml} -> (not published yet)"
-                ;;
-              *)
-                echo "::error::${BASE}/${yml} returned ${code}; refusing to prune without knowing what is live"
-                exit 1
-                ;;
+              1) echo "${key} -> (not published yet)" ;;
+              *) echo "::error::refusing to prune without knowing what is live"; exit 1 ;;
             esac
           done
 
@@ -85,14 +103,11 @@ jobs:
           # <variant>/latest-*.yml names it any more. Pruning it 404s them.
           # Only count a root manifest whose paths are under THIS variant.
           for yml in alpha-mac.yml alpha.yml alpha-linux.yml beta-mac.yml beta.yml beta-linux.yml latest-mac.yml latest.yml latest-linux.yml; do
-            code="$(curl -sS -o "root-${yml}.body" -w '%{http_code}' "https://dl.super-one.dev/${yml}" || echo 000)"
-            case "$code" in
-              200) ;;
-              404) continue ;;
-              *)
-                echo "::error::root/${yml} returned ${code}; refusing to prune without knowing what is live"
-                exit 1
-                ;;
+            set +e; fetch_manifest "$yml" "root-${yml}.body"; rc=$?; set -e
+            case "$rc" in
+              0) ;;
+              1) continue ;;
+              *) echo "::error::refusing to prune without knowing what is live"; exit 1 ;;
             esac
             p="$(sed -n 's/^path:[[:space:]]*//p' "root-${yml}.body" | tr -d "'\"" | head -1)"
             case "$p" in

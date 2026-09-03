@@ -75,6 +75,16 @@ jobs:
           echo "Backfilled ${PREFIX}/ to R2"
 
       - name: Compute manifests + fixed-link plan
+        # The semver guard asks what is currently live. It has to ask the
+        # BUCKET: dl.super-one.dev answers a missing object with 403 for a
+        # runner and 404 for a browser, so over the public URL the
+        # "never published" branch is unreachable from CI and a first publish
+        # to any new variant prefix fails.
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ENDPOINT_URL: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
         run: |
           set -euo pipefail
           bun scripts/set-latest.ts \

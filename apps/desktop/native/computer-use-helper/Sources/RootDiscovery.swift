@@ -29,11 +29,18 @@ func frontmostApp() -> [String: Any]? {
     ]
 }
 
+/// Wall-clock ceiling for one whole scan. Per-message timeouts bound a single AX
+/// call; this bounds their sum, so N unresponsive apps cannot add up past the
+/// host's RPC timeout. Degrading (returning fewer roots) beats answering nothing.
+let axDiscoveryBudget: TimeInterval = 3
+
 func listWindows(scanBundleIds: [String] = []) -> [[String: Any]] {
     let opts: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
     guard let info = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: Any]] else {
         return []
     }
+    let deadline = Date().addingTimeInterval(axDiscoveryBudget)
+    var budgetExceeded = false
     let selfPid = Int(ProcessInfo.processInfo.processIdentifier)
     var roots: [[String: Any]] = []
     for window in info {
@@ -50,9 +57,21 @@ func listWindows(scanBundleIds: [String] = []) -> [[String: Any]] {
         let height = bounds?["Height"] as? CGFloat ?? 0
         let windowId = window[kCGWindowNumber as String] as? Int ?? 0
         let bundleId = NSRunningApplication(processIdentifier: pid_t(pid))?.bundleIdentifier ?? ""
-        let axMetadata = axTrusted() && windowId > 0
-            ? try? resolveAxWindow(pid: pid_t(pid), windowId: windowId, windowTitle: title)
-            : nil
+        // A CG window row is cheap and always reported; only its AX enrichment is
+        // skipped once the budget is gone, so a stalled app costs detail, not rows.
+        var axMetadata: AxWindowMetadata?
+        if axTrusted() && windowId > 0 {
+            if Date() < deadline {
+                axMetadata = try? resolveAxWindow(
+                    pid: pid_t(pid),
+                    windowId: windowId,
+                    windowTitle: title,
+                    messagingTimeout: axDiscoveryMessagingTimeout
+                )
+            } else {
+                budgetExceeded = true
+            }
+        }
         let classification = axMetadata.map(classifyAxWindow)
         roots.append([
             "app": owner,
@@ -77,13 +96,21 @@ func listWindows(scanBundleIds: [String] = []) -> [[String: Any]] {
         $0.activationPolicy == .regular && Int($0.processIdentifier) != selfPid
     }
     for app in apps {
+        if Date() >= deadline {
+            budgetExceeded = true
+            break
+        }
+        // An app that has already gone does not answer AX; skipping it is free.
+        // A *quitting* one still reports false here — that case is on the timeout.
+        if app.isTerminated { continue }
         let pid = app.processIdentifier
         let cgRootCount = roots.filter { ($0["pid"] as? Int) == Int(pid) }.count
         let transients = discoverAxTransientRoots(
             pid: pid,
             includeDescendants: pid == frontPid
                 || cgRootCount > 1
-                || scanBundleIds.contains(app.bundleIdentifier ?? "")
+                || scanBundleIds.contains(app.bundleIdentifier ?? ""),
+            messagingTimeout: axDiscoveryMessagingTimeout
         )
         for transient in transients {
             let classification = classifyAxWindow(transient.metadata)
@@ -123,6 +150,11 @@ func listWindows(scanBundleIds: [String] = []) -> [[String: Any]] {
             ])
         }
     }
+    if budgetExceeded {
+        FileHandle.standardError.write(Data(
+            "[superone-cu-helper] list_windows exceeded \(axDiscoveryBudget)s AX budget — result is partial\n".utf8
+        ))
+    }
     return roots
 }
 
@@ -156,7 +188,7 @@ func focusWindow(pid: Int, windowId: Int, windowTitle: String? = nil) throws {
         windowId: windowId,
         windowTitle: windowTitle
     ).element
-    let app = AXUIElementCreateApplication(processId)
+    let app = axApplication(processId)
 
     if runningApp.isHidden { runningApp.unhide() }
     AXUIElementSetAttributeValue(target, kAXMinimizedAttribute as CFString, kCFBooleanFalse)

@@ -89,6 +89,8 @@ SOURCES=(
   "$ROOT/Sources/Input.swift"
   "$ROOT/Sources/AxTree.swift"
   "$ROOT/Sources/RootDiscovery.swift"
+  "$ROOT/Sources/Mirror.swift"
+  "$ROOT/Sources/Ocr.swift"
   "$ROOT/Sources/AgentCursorVisuals.swift"
   "$ROOT/Sources/AgentOverlay.swift"
   "$ROOT/Sources/PictureInPicture.swift"

@@ -8,6 +8,36 @@ import Foundation
 // assign stable DFS indices (1…N), and perform AXPress / AXSetValue by index.
 // Bounds are in global screen coordinates (top-left origin, points).
 
+// MARK: - AX messaging budget
+//
+// Every AX read is a synchronous mach message to the target app. An app that has
+// stopped servicing its runloop — quitting, hung, SIGSTOPped — answers none of
+// them, and with no explicit timeout each call blocks for seconds. Measured on a
+// frozen app: one `list_windows` went 0.4s → 4.6s, two went 1.1s → 12.1s. That is
+// how "the user closed the app we were driving" turns into an RPC timeout, and no
+// liveness check can prevent it: a quitting app is still in `runningApplications`
+// with a live pid, it just stops answering.
+
+/// Ceiling for a single AX message, applied process-wide.
+let axDefaultMessagingTimeout: Float = 2
+
+/// Discovery walks *every* running app, so one of them quitting must not cost
+/// seconds. Missing a root beats stalling the scan — the next scan picks it up.
+let axDiscoveryMessagingTimeout: Float = 0.3
+
+/// Bound every AX message this process sends. A per-element timeout overrides this
+/// for that element only; elements obtained *from* it fall back to this value.
+func installAxMessagingDefaults() {
+    AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), axDefaultMessagingTimeout)
+}
+
+/// App-level AX element carrying an explicit per-message timeout.
+func axApplication(_ pid: pid_t, timeout: Float = axDefaultMessagingTimeout) -> AXUIElement {
+    let element = AXUIElementCreateApplication(pid)
+    AXUIElementSetMessagingTimeout(element, timeout)
+    return element
+}
+
 struct AxWalkLimits {
     var maxNodes: Int
     var maxDepth: Int
@@ -490,13 +520,17 @@ private func axRootTitle(_ element: AXUIElement, metadata: AxWindowMetadata) -> 
 
 func discoverAxTransientRoots(
     pid: pid_t,
-    includeDescendants: Bool
+    includeDescendants: Bool,
+    messagingTimeout: Float = axDefaultMessagingTimeout
 ) -> [AxTransientRoot] {
     guard axTrusted() else { return [] }
-    let app = AXUIElementCreateApplication(pid)
+    let app = axApplication(pid, timeout: messagingTimeout)
     var elements: [AXUIElement] = []
 
     func appendCandidate(_ element: AXUIElement) {
+        // Children do not inherit the app element's timeout — set it as we go, or
+        // a partially responsive app stalls the walk one node at a time.
+        AXUIElementSetMessagingTimeout(element, messagingTimeout)
         if elements.contains(where: { CFEqual($0, element) }) { return }
         let metadata = windowMetadata(element)
         guard classifyAxWindow(metadata).kind != "window",
@@ -558,7 +592,8 @@ func liveAxRootGeometry(id: String, pid: pid_t) throws -> LiveWindowGeometry {
 func resolveAxWindow(
     pid: pid_t,
     windowId: Int,
-    windowTitle: String? = nil
+    windowTitle: String? = nil,
+    messagingTimeout: Float = axDefaultMessagingTimeout
 ) throws -> AxWindowMetadata {
     let geometry = try liveWindowGeometry(windowId: windowId)
     guard geometry.pid == Int(pid) else {
@@ -568,8 +603,9 @@ func resolveAxWindow(
         )
     }
 
-    let windows = axWindows(app: AXUIElementCreateApplication(pid))
+    let windows = axWindows(app: axApplication(pid, timeout: messagingTimeout))
     let boundsMatches = windows.filter {
+        AXUIElementSetMessagingTimeout($0, messagingTimeout)
         guard let frame = axFrame($0) else { return false }
         return axFramesMatch(frame, geometry.bounds)
     }
@@ -728,7 +764,7 @@ func axTreeSnapshot(
     guard axTrusted() else {
         throw HelperError(code: "AX_MISSING", message: "Accessibility permission not granted for Computer Use helper")
     }
-    let app = AXUIElementCreateApplication(pid)
+    let app = axApplication(pid)
     let needsSettle = ChromiumAccessibilityActivator.shared.activate(pid: pid, app: app)
 
     func tryResolveRoot() -> AXUIElement? {
@@ -936,7 +972,7 @@ func axPerform(
     guard index >= 1 else {
         throw HelperError(code: "INVALID", message: "index must be >= 1")
     }
-    let app = AXUIElementCreateApplication(pid)
+    let app = axApplication(pid)
     let rootEl = try resolveAxRoot(
         app: app,
         pid: pid,

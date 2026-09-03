@@ -1121,23 +1121,68 @@ final class SocketServer {
 
     private func processLine(_ line: Data, client: Int32) {
         let decoder = JSONDecoder()
-        let encoder = JSONEncoder()
         guard let req = try? decoder.decode(HelperRequest.self, from: line) else {
             let err = HelperResponse.failure(id: "?", code: "PARSE", message: "invalid JSON request")
-            if let data = try? encoder.encode(err) {
+            if let data = try? JSONEncoder().encode(err) {
                 HelperEventBus.shared.send(data, to: client)
             }
             return
         }
-        let sem = DispatchSemaphore(value: 0)
-        var response: HelperResponse!
-        Task {
-            response = await handle(request: req)
-            sem.signal()
+        let respond: () async -> Void = {
+            let response = await handle(request: req)
+            if let data = try? JSONEncoder().encode(response) {
+                HelperEventBus.shared.send(data, to: client)
+            }
         }
-        sem.wait()
-        if let data = try? encoder.encode(response) {
-            HelperEventBus.shared.send(data, to: client)
+        // Responses carry the request id and the host dispatches on it, so answering
+        // out of order is on-protocol. What is NOT safe to reorder is input: two
+        // overlapping act transactions would interleave keystrokes. So only methods
+        // that cannot block on a foreign app's runloop stay on the serial lane.
+        if RpcLanes.concurrentMethods.contains(req.method) {
+            Task { await respond() }
+        } else {
+            RpcLanes.serial.submit(respond)
+        }
+    }
+}
+
+/// Lane policy for incoming RPCs.
+///
+/// Every request used to run to completion on its connection's reader thread
+/// before the next line was even parsed, so one AX read against a quitting app
+/// stalled *every* method — a `ping` issued alongside a stalled `list_windows`
+/// came back 1ms after it, 12s late. Reads and visuals now run concurrently;
+/// anything that drives input or placement keeps the old serial ordering.
+enum RpcLanes {
+    static let serial = SerialRpcLane()
+
+    /// Read-only observation plus visual/overlay commands. None of these mutate
+    /// shared helper state without its own lock, and these are exactly the calls
+    /// that can block on an unresponsive target.
+    static let concurrentMethods: Set<String> = [
+        "ping", "doctor", "list_apps", "frontmost", "list_windows", "ax_tree",
+        "validate_geometry", "capture", "zoom", "ocr", "mirror_state",
+        "overlay_set_enabled", "overlay_show_target", "overlay_cursor",
+        "overlay_cursor_visible", "overlay_hide",
+        "pip_set_enabled", "pip_show_target", "pip_update_cursor", "pip_hide",
+        "pip_restore", "pip_resize",
+        "session_clear_visuals",
+    ]
+}
+
+/// Serializes async work by chaining tasks — an `actor` cannot do this, since
+/// actors are reentrant and would let a suspended request admit the next one.
+final class SerialRpcLane: @unchecked Sendable {
+    private let lock = NSLock()
+    private var tail: Task<Void, Never> = Task {}
+
+    func submit(_ body: @escaping () async -> Void) {
+        lock.lock()
+        defer { lock.unlock() }
+        let previous = tail
+        tail = Task {
+            await previous.value
+            await body()
         }
     }
 }
@@ -1149,6 +1194,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        installAxMessagingDefaults()
         let args = CommandLine.arguments
         // Expected: <exec> --socket <path>
         var socketPath: String?

@@ -95,7 +95,7 @@ func findMirrorWindow() -> MirrorWindow? {
 func mirrorInterstitial(_ window: MirrorWindow) -> [[String: String]] {
     var raw: CFTypeRef?
     guard AXUIElementCopyAttributeValue(
-        AXUIElementCreateApplication(window.pid),
+        axApplication(window.pid),
         kAXWindowsAttribute as CFString,
         &raw
     ) == .success, let windows = raw as? [AXUIElement] else { return [] }

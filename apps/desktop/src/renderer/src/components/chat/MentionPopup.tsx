@@ -138,6 +138,15 @@ function HighlightedPath({ path, indices }: { path: string; indices: number[] })
   return <HighlightedText text={path} indices={indices} className="truncate" />
 }
 
+/**
+ * Renders an `@handle`. The typed `@` is part of the user's query, so it is
+ * highlighted together with the keyword whenever the keyword itself matched.
+ */
+function HighlightedHandle({ keyword, indices }: { keyword: string; indices: number[] }) {
+  const shifted = indices.length > 0 ? [0, ...indices.map((i) => i + 1)] : indices
+  return <HighlightedText text={`@${keyword}`} indices={shifted} className="truncate" />
+}
+
 function isDirItem(item: FlatItem): boolean {
   if (item.kind === 'dir-entry') return item.entry.isDirectory
   if (item.kind === 'file') return item.isDirectory
@@ -934,8 +943,10 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
                 <HighlightedPath path={item.displayName} indices={item.matchIndices} />
               </span>
               <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                @
-                <HighlightedPath path={SESSION_MENTION_KEYWORD} indices={item.keywordMatchIndices} />
+                <HighlightedHandle
+                  keyword={SESSION_MENTION_KEYWORD}
+                  indices={item.keywordMatchIndices}
+                />
               </span>
             </span>
             <span className="shrink-0 text-2xs text-muted-foreground">
@@ -1026,8 +1037,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
                 <HighlightedPath path={item.target.displayName} indices={item.matchIndices} />
               </span>
               <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                @
-                <HighlightedPath path={item.target.slug} indices={item.keywordMatchIndices} />
+                <HighlightedHandle keyword={item.target.slug} indices={item.keywordMatchIndices} />
               </span>
             </span>
           </button>
@@ -1068,8 +1078,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
                 </span>
               ) : (
                 <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                  @
-                  <HighlightedPath path={item.id} indices={item.keywordMatchIndices} />
+                  <HighlightedHandle keyword={item.id} indices={item.keywordMatchIndices} />
                 </span>
               )}
             </span>

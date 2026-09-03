@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { NotificationIntent } from '@superone/shared/notifications'
 
 /** One fake Electron `Notification`, recording what the channel did to it. */
@@ -164,5 +164,61 @@ describe('DesktopNotificationChannel', () => {
     channel.dispose()
 
     expect(FakeNotification.instances.map((n) => n.closed)).toEqual([true, true])
+  })
+})
+
+describe('priming the macOS authorization prompt', () => {
+  const platform = process.platform
+
+  function setPlatform(value: NodeJS.Platform): void {
+    Object.defineProperty(process, 'platform', { value, configurable: true })
+  }
+
+  beforeEach(() => {
+    FakeNotification.instances = []
+    FakeNotification.supported = true
+  })
+
+  afterEach(() => {
+    setPlatform(platform)
+  })
+
+  it('posts one banner on macOS so the prompt lands where it can be explained', () => {
+    setPlatform('darwin')
+    const channel = new DesktopNotificationChannel({ onActivate: vi.fn() })
+
+    expect(channel.primePermission({ title: 'On', body: 'Body' })).toBe(true)
+    expect(FakeNotification.instances).toHaveLength(1)
+    expect(FakeNotification.instances[0]!.shown).toBe(true)
+    expect(FakeNotification.instances[0]!.options).toMatchObject({ title: 'On', silent: true })
+  })
+
+  it('stays out of the withdraw bookkeeping', () => {
+    // There is no interaction behind it, so nothing should ever retract it --
+    // and dispose must not try, since the banner carries no intent id.
+    setPlatform('darwin')
+    const channel = new DesktopNotificationChannel({ onActivate: vi.fn() })
+    channel.primePermission({ title: 'On', body: 'Body' })
+
+    channel.dispose()
+
+    expect(FakeNotification.instances[0]!.closed).toBe(false)
+  })
+
+  it('does nothing off macOS, where there is no prompt to spend', () => {
+    for (const other of ['win32', 'linux'] as NodeJS.Platform[]) {
+      setPlatform(other)
+      const channel = new DesktopNotificationChannel({ onActivate: vi.fn() })
+      expect(channel.primePermission({ title: 'On', body: 'Body' })).toBe(false)
+    }
+    expect(FakeNotification.instances).toHaveLength(0)
+  })
+
+  it('does nothing when the OS cannot show notifications at all', () => {
+    setPlatform('darwin')
+    FakeNotification.supported = false
+    const channel = new DesktopNotificationChannel({ onActivate: vi.fn() })
+    expect(channel.primePermission({ title: 'On', body: 'Body' })).toBe(false)
+    FakeNotification.supported = true
   })
 })

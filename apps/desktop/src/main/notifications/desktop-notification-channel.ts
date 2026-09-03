@@ -33,6 +33,31 @@ export class DesktopNotificationChannel implements NotificationChannel {
     return Notification.isSupported()
   }
 
+  /**
+   * Post one banner for the sole purpose of making macOS ask.
+   *
+   * macOS shows its authorization prompt the first time an app actually posts,
+   * and there is no API to request it earlier. Left alone, that prompt arrives
+   * the first time an agent blocks on input -- i.e. mid-task, while the user is
+   * looking at something else, which is exactly when a prompt gets dismissed
+   * reflexively. Worse, a denial is invisible to us: Electron exposes no
+   * authorization status for notifications, so Settings would go on claiming
+   * they are enabled while nothing could ever be delivered.
+   *
+   * So we spend the prompt somewhere it can be explained. macOS only -- Windows
+   * and Linux have no prompt to trigger, and a banner there would be noise.
+   *
+   * This deliberately does not go through `deliver`: there is no interaction
+   * behind it, so it has no intent id to dedupe on, nothing to withdraw it, and
+   * nowhere to route a click.
+   */
+  primePermission(copy: { title: string; body: string }): boolean {
+    if (process.platform !== 'darwin' || !this.isAvailable()) return false
+    log.info('[notifications] priming macOS authorization prompt')
+    new Notification({ title: copy.title, body: copy.body, silent: true }).show()
+    return true
+  }
+
   deliver(intent: NotificationIntent): void {
     const icon = this.deps.getIcon?.() ?? undefined
     const notification = new Notification({

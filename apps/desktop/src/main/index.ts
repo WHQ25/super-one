@@ -683,7 +683,7 @@ const notificationService = new NotificationService({
   },
   t: (key, options) => t(key, options),
 })
-notificationService.registerChannel(new DesktopNotificationChannel({
+const desktopNotificationChannel = new DesktopNotificationChannel({
   getIcon: () => getAppIcon(),
   onActivate: (intent) => {
     const win = mainWindow
@@ -697,7 +697,8 @@ notificationService.registerChannel(new DesktopNotificationChannel({
       projectPath: intent.projectPath,
     })
   },
-}))
+})
+notificationService.registerChannel(desktopNotificationChannel)
 
 /**
  * Single convergence point for everything the renderer sees. Notifications tap
@@ -3976,6 +3977,16 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.UPDATER_INSTALL, () => {
     installUpdate()
+  })
+
+  // Spend the macOS authorization prompt at the end of onboarding, where it
+  // can be explained, instead of mid-task the first time an agent blocks.
+  ipcMain.handle(AgentIpcChannels.NOTIFICATION_PRIME, () => {
+    if (!readAppSettings().notifications.enabled) return false
+    return desktopNotificationChannel.primePermission({
+      title: t('notifications.prime.title'),
+      body: t('notifications.prime.body'),
+    })
   })
 
   ipcMain.handle(AgentIpcChannels.UPDATER_CHECK, () => {

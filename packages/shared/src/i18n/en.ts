@@ -553,6 +553,7 @@ export type Messages = {
     }
   }
   notifications: {
+    prime: { title: string; body: string }
     untitledSession: string
     kind: {
       permission: { title: string; body: string }
@@ -4148,6 +4149,10 @@ export const en: Messages = {
     },
   },
   notifications: {
+    prime: {
+      title: 'Notifications are on',
+      body: "SuperOne will let you know when an agent needs you and you're looking elsewhere.",
+    },
     untitledSession: 'Untitled session',
     kind: {
       permission: { title: '{{session}} needs permission', body: 'Waiting for approval to run {{tool}}.' },

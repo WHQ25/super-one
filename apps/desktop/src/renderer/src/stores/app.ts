@@ -637,6 +637,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       onboardingEpoch: CURRENT_ONBOARDING_EPOCH,
     })
     set({ onboardingStep: 'welcome' })
+    // Both exits from onboarding land here, which makes it the one place the
+    // macOS notification prompt can be spent while the user is still paying
+    // attention to setup. Never block on it: a refused or failed prompt must
+    // not stop someone reaching the app.
+    void window.app.primeNotificationPermission?.().catch(() => {})
     // First enable may already have installed pins; only block when still misaligned.
     const needsAlign = await window.app.needsHarnessAlign().catch(() => true)
     if (needsAlign) {

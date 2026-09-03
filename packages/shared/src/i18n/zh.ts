@@ -592,6 +592,10 @@ export const zh: Messages = {
     },
   },
   notifications: {
+    prime: {
+      title: '通知已开启',
+      body: '当智能体需要你、而你正在别处时，SuperOne 会提醒你。',
+    },
     untitledSession: '未命名会话',
     kind: {
       permission: { title: '{{session}} 需要授权', body: '正在等待你批准执行 {{tool}}。' },

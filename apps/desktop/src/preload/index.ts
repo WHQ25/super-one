@@ -1248,6 +1248,9 @@ const appAPI = {
   installUpdate: () =>
     ipcRenderer.invoke(AgentIpcChannels.UPDATER_INSTALL),
 
+  primeNotificationPermission: () =>
+    ipcRenderer.invoke(AgentIpcChannels.NOTIFICATION_PRIME),
+
   checkForUpdates: () =>
     ipcRenderer.invoke(AgentIpcChannels.UPDATER_CHECK),
 

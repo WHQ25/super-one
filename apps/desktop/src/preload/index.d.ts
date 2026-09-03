@@ -246,6 +246,8 @@ interface AppAPI {
   acpGetSandbox(): Promise<SandboxInfo>
   codexSetAuth(projectPath: string, request: CodexSetAuthRequest): Promise<CodexAuthStatus>
   installUpdate(): Promise<void>
+  /** Post one banner so macOS asks now rather than mid-task. Resolves false when it did not post. */
+  primeNotificationPermission(): Promise<boolean>
   checkForUpdates(): Promise<void>
   downloadUpdate(): Promise<void>
   /** Retry harness pre-fetch after harness-error (app binary already downloaded). */

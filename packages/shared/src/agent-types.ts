@@ -3808,6 +3808,7 @@ export const AgentIpcChannels = {
   // Updater
   UPDATER_EVENT: 'updater:event',
   UPDATER_INSTALL: 'updater:install',
+  NOTIFICATION_PRIME: 'notifications:prime',
   UPDATER_CHECK: 'updater:check',
   UPDATER_DOWNLOAD: 'updater:download',
   UPDATER_SIMULATE: 'updater:simulate',

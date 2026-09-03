@@ -200,8 +200,9 @@ before it constructs `AppInfo`, so it is the only seam that reaches the install 
   `electron-builder.yml` as a base and overrides the identity keys. It deliberately
   does **not** use electron-builder's `extends`: that unions arrays, so a variant
   could never drop a target the base declares. It requires `SUPERONE_VARIANT` (no
-  default), asserts version↔variant, and honours a `SUPERONE_VERSION` override so a
-  stable build can be cut from an alpha commit. Output goes to `dist/<variant>/`
+  default) and derives the packaging version from the base version plus the
+  variant's `prereleaseTag` — see **Versioning** below. Output goes to
+  `dist/<variant>/`
 - **`electron-builder.yml` is not a complete config on its own** — the identity
   fields were removed from it
 - **`src/main/variant.ts`** is the runtime lookup, reading `variant` from the
@@ -336,11 +337,18 @@ Local builds: `SUPERONE_VARIANT=alpha bun run build:mac`.
 
 ### Versioning
 
-`alpha` builds carry an `-alpha` prerelease tag; `stable` builds carry none, and
-`electron-builder.config.cjs` asserts that correspondence. A stable release can still
-be cut from an alpha commit by passing `SUPERONE_VERSION` (or the `version` workflow
-input) — which is exactly why nothing at runtime may infer the variant from the
-version string.
+`package.json` carries the **base** version — a plain release number, no prerelease
+tag. `electron-builder.config.cjs` appends the variant's `prereleaseTag`, so one base
+of `0.61.0` packages as `0.61.0` for stable and `0.61.0-alpha` for alpha. Neither
+normal path needs an override, and there is no input that expresses "stable build
+carrying an -alpha version".
+
+`SUPERONE_VERSION` (and the `version` workflow input) override the **base**, for
+cutting a release from an older commit without a bump commit. Passing a base that
+already has a prerelease tag is an error.
+
+Note the direction: the variant is authoritative and the version is derived from it.
+Nothing at runtime may go the other way and infer the variant from the version string.
 
 The step-by-step release runbook lives in the `release` skill.
 

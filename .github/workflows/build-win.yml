@@ -15,7 +15,7 @@ on:
           - alpha
           - stable
       version:
-        description: 'Override the packaged version (e.g. cutting stable from an alpha commit). Blank = package.json.'
+        description: 'Override the BASE version, e.g. cutting a release from an older commit. Plain release number — the variant appends its own -alpha. Blank = package.json.'
         required: false
 
 env:

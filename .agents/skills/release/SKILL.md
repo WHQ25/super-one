@@ -93,7 +93,7 @@ After this confirmation, **everything below runs without further prompting** unl
 ### Step 2: Bump version, write CHANGELOG, commit, push
 
 1. Insert `## [<new-version>] - <YYYY-MM-DD>` at the top of `CHANGELOG.md`, right after the header block, with the confirmed entry.
-2. Update `version` in **both** `package.json` (root) and `apps/desktop/package.json` to the new value — these always lockstep. **`publish-cli` packs using the root `package.json` version** (or the explicit `-f version=` input); do **not** change workspace `apps/cli/package.json` (`@superone/cli` stays private `0.0.0` — the public name is `@super-one/cli` from `pack-npm`).
+2. Update `version` in **both** `package.json` (root) and `apps/desktop/package.json` to the new value — these always lockstep. It is the **base** version: a plain release number with **no** `-alpha` suffix. The alpha variant appends its own at package time, so one base of `0.61.0` yields `0.61.0-alpha` and `0.61.0`. A base carrying a prerelease tag fails the build. **`publish-cli` packs using the root `package.json` version verbatim** (or the explicit `-f version=` input) — it does NOT derive a variant suffix, so the alpha CLI publish needs `-f version=<X.Y.Z>-alpha -f tag=alpha` while the stable one can take the default; do **not** change workspace `apps/cli/package.json` (`@superone/cli` stays private `0.0.0` — the public name is `@super-one/cli` from `pack-npm`).
 3. **If Step 1 decided relay deploys this release**: also update `apps/relay/package.json` `version` to the same new value. The relay version skips intermediate releases where it had no diff, so this jump may be larger than a single semver step (e.g. `0.29.1-alpha` → `0.35.0-alpha`). That's intentional — it preserves the invariant that `apps/relay/package.json` reflects the version actually deployed to Cloudflare.
 4. Do NOT modify `bun.lock` (version bumps don't touch deps).
 5. Stage and commit in one shot:
@@ -302,12 +302,13 @@ has been running as alpha, packaged under the stable identity:
 1. Pick the alpha commit that has proven itself in the field. Use its SHA as
    `ref` for the builds — do **not** create a bump commit, or the stable binary
    is "the validated tree plus a commit nobody ran".
-2. Dispatch the three builds with `-f variant=stable` and `-f version=<X.Y.Z>`
-   (no prerelease suffix). `SUPERONE_VERSION` overrides the packaging version,
-   which electron-builder merges into the metadata before `AppInfo` is built, so
-   it drives artifact filenames, `app.getVersion()` and the update manifest. The
-   config asserts the override has no prerelease tag for `stable`, so a mistake
-   fails the build instead of shipping a mislabelled app.
+2. Dispatch the three builds with `-f variant=stable`. Add `-f version=<X.Y.Z>`
+   **only** when cutting from a commit whose `package.json` base differs from the
+   number you want to ship; the base already packages as `X.Y.Z` for stable and
+   `X.Y.Z-alpha` for alpha, so the usual case needs no override. The value is the
+   BASE — pass `0.61.0`, never `0.61.0-alpha`; a base with a prerelease tag fails
+   the build. It reaches electron-builder before `AppInfo` is built, so it drives
+   artifact filenames, `app.getVersion()` and the update manifest.
 3. **Publish the stable harness channel.** The normal Step-1 diff rule almost
    never fires on a stable cut (no pin changed -- the tree is the alpha tree),
    so this is easy to skip, and `harness/manifest/stable.json` does not exist
@@ -364,7 +365,7 @@ gh workflow run prune-releases.yml --ref main \
 |---|---|
 | Build workflow fails on one platform | Fix on main, re-trigger that platform only (same `variant` / `version`), reuse the other two platforms' existing run IDs in promote |
 | Build fails immediately with `SUPERONE_VARIANT is required` | The dispatch omitted `-f variant=`. There is no default by design — a silent one ships a build under the wrong identity |
-| Build fails with `does not match variant` | The version's prerelease tag disagrees with the variant (`stable` needs no prerelease, `alpha` needs `-alpha`). Either the wrong variant was dispatched, or a stable cut needs `-f version=` (see **Cutting a stable release**) |
+| Build fails with `must be a plain release version` | The base version (`package.json`, or `-f version=`) carries a prerelease tag. The variant appends its own — pass the plain number the error message names |
 | `publish-cli.yml` fails tests / pack / smoke | Fix on main, re-trigger `publish-cli.yml` with the **same** `-f version=<new-version>`. Desktop promote can continue in parallel — remote registry install for this version stays broken until CLI is green |
 | `publish-cli.yml` fails with `ENEEDAUTH` / blank auth | Prefer npm Trusted Publishing: package `@super-one/cli` on npmjs.com must list this GitHub repo + workflow filename `publish-cli.yml`, and the job must keep `permissions.id-token: write`. Do **not** export an empty `NPM_TOKEN` (blank `_authToken` in `.npmrc` breaks OIDC). Optional: set a real Automation `NPM_TOKEN` secret |
 | `publish-cli.yml` fails with `E404` after provenance signed | Usually outdated npm CLI on the runner (need ≥11.5.1). Workflow must run `npm install -g npm@^11.5.1` before publish; restore that step if removed. Also confirm Trusted Publisher config matches repo/workflow name exactly |

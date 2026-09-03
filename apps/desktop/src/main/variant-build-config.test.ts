@@ -7,12 +7,17 @@ const require_ = createRequire(import.meta.url)
 const CONFIG_PATH = fileURLToPath(new URL('../../electron-builder.config.cjs', import.meta.url))
 const PKG_PATH = fileURLToPath(new URL('../../package.json', import.meta.url))
 
-const { version } = require_(PKG_PATH) as { version: string }
-const prereleaseTag = /^\d+\.\d+\.\d+-([0-9a-z]+)/i.exec(version)?.[1] ?? null
+const { version: baseVersion } = require_(PKG_PATH) as { version: string }
 
 const entries = Object.entries(VARIANTS) as [VariantId, (typeof VARIANTS)[VariantId]][]
-const matching = entries.find(([, v]) => v.prereleaseTag === prereleaseTag)?.[0]
-const mismatched = entries.find(([, v]) => v.prereleaseTag !== prereleaseTag)?.[0]
+/** Any variant works for base-config assertions; nothing here is variant-specific. */
+const someVariant = entries[0]![0]
+const stable = entries.find(([, v]) => v.prereleaseTag === null)![0]
+const alpha = entries.find(([, v]) => v.prereleaseTag !== null)![0]
+
+function packagedVersion(config: Record<string, unknown>): string {
+  return (config.extraMetadata as { version: string }).version
+}
 
 /** The config reads env and package.json at require time, so reload per case. */
 function loadConfig(variant?: string, versionOverride?: string): Record<string, unknown> {
@@ -47,17 +52,16 @@ describe('electron-builder variant config', () => {
     expect(() => loadConfig('nightly')).toThrow(/Unknown SUPERONE_VARIANT "nightly"/)
   })
 
-  it('refuses a variant whose prerelease tag disagrees with the version', () => {
-    // `@super-one/cli`, the harness manifest channel and the GitHub prerelease
-    // flag all still derive from the version string, so the two must agree.
-    expect(mismatched).toBeDefined()
-    expect(() => loadConfig(mismatched)).toThrow(/does not match variant/)
+  it('derives one base version into each variant lane', () => {
+    // package.json holds the plain release number and the variant appends its
+    // own tag, so "stable build carrying an -alpha version" is not expressible
+    // rather than merely rejected.
+    expect(baseVersion).not.toMatch(/-/)
+    expect(packagedVersion(loadConfig(stable))).toBe(baseVersion)
+    expect(packagedVersion(loadConfig(alpha))).toBe(`${baseVersion}-${VARIANTS[alpha].prereleaseTag}`)
   })
 
-  it('wires every identity chain from the variant table', () => {
-    expect(matching).toBeDefined()
-    const id = matching as VariantId
-    const v = VARIANTS[id]
+  it.each(entries)('wires every identity chain from the variant table (%s)', (id, v) => {
     const config = loadConfig(id)
 
     expect(config.appId).toBe(v.appId)
@@ -74,39 +78,38 @@ describe('electron-builder variant config', () => {
     })
     expect((config.directories as { output: string }).output).toBe(`dist/${id}`)
     expect((config.linux as { executableName: string }).executableName).toBe(v.executableName)
+    expect(packagedVersion(config)).toBe(
+      v.prereleaseTag ? `${baseVersion}-${v.prereleaseTag}` : baseVersion,
+    )
   })
 
   it('keeps the shared base config intact', () => {
-    const config = loadConfig(matching)
+    const config = loadConfig(someVariant)
     expect((config.mac as { target: string[] }).target).toEqual(['dmg', 'zip'])
     expect((config.mac as { notarize: boolean }).notarize).toBe(true)
     expect((config.files as string[]).length).toBeGreaterThan(10)
     expect((config.asarUnpack as string[]).length).toBeGreaterThan(0)
   })
 
-  describe('version override', () => {
-    const stableVersion = '99.0.0'
-    const stable = entries.find(([, v]) => v.prereleaseTag === null)?.[0] as VariantId
-
-    it('packages a stable build from an alpha-numbered tree without a bump commit', () => {
-      // Otherwise the stable binary is "the validated tree plus a commit the
-      // alpha users never ran".
-      const config = loadConfig(stable, stableVersion)
-      expect((config.extraMetadata as { version: string }).version).toBe(stableVersion)
-      expect(config.appId).toBe(VARIANTS[stable].appId)
+  describe('base version override', () => {
+    it('cuts a release from an older commit without a bump commit', () => {
+      // Otherwise the binary is "the validated tree plus a commit nobody ran".
+      // The override is the BASE, so each variant still gets its own lane.
+      expect(packagedVersion(loadConfig(stable, '99.0.0'))).toBe('99.0.0')
+      expect(packagedVersion(loadConfig(alpha, '99.0.0'))).toBe('99.0.0-alpha')
+      expect(loadConfig(stable, '99.0.0').appId).toBe(VARIANTS[stable].appId)
     })
 
-    it('validates the variant against the overridden version, not package.json', () => {
-      expect(() => loadConfig(stable, '99.0.0-alpha')).toThrow(/does not match variant/)
+    it('rejects a base that already carries a prerelease tag', () => {
+      // Passing "99.0.0-alpha" is the natural mistake now that the tag is
+      // implicit; taking it literally would double it to "99.0.0-alpha-alpha".
+      for (const id of [stable, alpha]) {
+        expect(() => loadConfig(id, '99.0.0-alpha')).toThrow(/must be a plain release version/)
+      }
     })
 
     it('rejects an override that is not valid semver', () => {
-      expect(() => loadConfig(matching, 'v99')).toThrow(/is not a valid semver version/)
-    })
-
-    it('falls back to the package.json version when unset', () => {
-      const config = loadConfig(matching)
-      expect((config.extraMetadata as { version: string }).version).toBe(version)
+      expect(() => loadConfig(someVariant, 'v99')).toThrow(/is not a valid semver version/)
     })
   })
 

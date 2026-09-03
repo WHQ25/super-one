@@ -149,7 +149,6 @@ interface AppState {
   appVersion: string
   appVariant: UpdateChannel
   alphaDownloadUrl: string
-  powerModeResetNeedsApproval: boolean
 
   // Sandbox
   sandboxCapability: SandboxCapability | null
@@ -302,7 +301,6 @@ async function runContinueToMain(
     appVersion: startupData.appVersion,
     appVariant: startupData.variant,
     alphaDownloadUrl: startupData.alphaDownloadUrl,
-    powerModeResetNeedsApproval: startupData.powerModeResetNeedsApproval,
   })
   console.info(
     '[continueToMain] cached: claude=%s codex=%s opencode=%s cursor=%s sandbox=%s',
@@ -355,8 +353,6 @@ async function enterMainAfterGates(
     appVersion: startupData.appVersion ?? get().appVersion,
     appVariant: startupData.variant ?? get().appVariant,
     alphaDownloadUrl: startupData.alphaDownloadUrl ?? get().alphaDownloadUrl,
-    powerModeResetNeedsApproval:
-      startupData.powerModeResetNeedsApproval ?? get().powerModeResetNeedsApproval,
   })
 
   if (startupData.sandboxCapability) {
@@ -637,11 +633,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       onboardingEpoch: CURRENT_ONBOARDING_EPOCH,
     })
     set({ onboardingStep: 'welcome' })
-    // Both exits from onboarding land here, which makes it the one place the
-    // macOS notification prompt can be spent while the user is still paying
-    // attention to setup. Never block on it: a refused or failed prompt must
-    // not stop someone reaching the app.
-    void window.app.primeNotificationPermission?.().catch(() => {})
+    // Fallback for anyone who walked past the switch on the welcome step: the
+    // preference defaults on, so leaving it on means they still want these and
+    // the prompt should be spent while setup is on screen rather than mid-task.
+    // Never block on it — a refused or failed prompt must not gate the app.
+    void (async () => {
+      const settings = await window.app.getAppSettings()
+      if (!settings.notifications.enabled || settings.notificationsPrimedAt != null) return
+      await window.app.saveAppSettings({ notificationsPrimedAt: Date.now() })
+      await window.app.primeNotificationPermission()
+    })().catch(() => {})
     // First enable may already have installed pins; only block when still misaligned.
     const needsAlign = await window.app.needsHarnessAlign().catch(() => true)
     if (needsAlign) {
@@ -656,7 +657,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   appVersion: '',
   appVariant: 'stable',
   alphaDownloadUrl: '',
-  powerModeResetNeedsApproval: false,
   sandboxCapability: null,
   sandboxProbe: null,
   probeSandbox: async (force?: boolean) => {

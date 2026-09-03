@@ -11,6 +11,7 @@ import {
 import { useAppStore } from '@/stores/app'
 import { useTheme } from '@/hooks/useTheme'
 import { ThemeModeCards } from '@/components/settings/ThemeModeCards'
+import { OnboardingNotifications } from './OnboardingNotifications'
 import { changeLocale } from '@/i18n'
 import { applyCrispText } from '@/lib/font-smoothing'
 import { resolveSystemLocale } from '@superone/shared/i18n'
@@ -72,7 +73,7 @@ export function OnboardingWelcome(): React.JSX.Element {
   }
 
   return (
-    <div className="flex w-full flex-col items-center gap-10">
+    <div className="flex w-full flex-col items-center gap-8">
       <div className="max-w-md text-center">
         <h1 className="text-4xl font-bold tracking-tight">{t('shell.onboarding.welcome.title')}</h1>
       </div>
@@ -84,6 +85,8 @@ export function OnboardingWelcome(): React.JSX.Element {
           labelFor={(mode) => t(`settings.appearance.theme.${mode}`)}
         />
       </div>
+
+      <OnboardingNotifications />
 
       <div className="flex flex-col items-center gap-4">
         <Button size="lg" onClick={() => goToOnboardingStep('discover')}>

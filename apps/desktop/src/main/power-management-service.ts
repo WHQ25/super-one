@@ -61,11 +61,11 @@ export interface PowerManagementServiceDeps {
 /**
  * The closed-lid helper is installed under an admin prompt, so it can only be
  * (re)installed when the user asked for it. A restore at launch therefore fails
- * whenever the bundled helper differs from what is installed -- which happens
- * on any release that edits the script, not just when something is wrong.
+ * whenever this build ships a newer helper than the installed one.
  *
- * Tagged separately because it is recoverable by one click, unlike a build that
- * is missing the helper resources outright.
+ * Named separately so the startup log says "needs approval" rather than looking
+ * like a build that is missing its helper resources outright; the user is not
+ * told, because the fix is one click in Settings whenever they next want it.
  */
 export class PowerHelperApprovalRequiredError extends Error {
   constructor() {
@@ -76,7 +76,7 @@ export class PowerHelperApprovalRequiredError extends Error {
 
 export type PowerStartResult =
   | { restored: true }
-  | { restored: false; needsApproval: boolean; message: string }
+  | { restored: false; message: string }
 
 export class PowerManagementService {
   private readonly adapter: LidPowerPlatformAdapter
@@ -124,11 +124,7 @@ export class PowerManagementService {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       log.warn('[power] could not restore power mode: %s', message)
-      return {
-        restored: false,
-        needsApproval: error instanceof PowerHelperApprovalRequiredError,
-        message,
-      }
+      return { restored: false, message }
     }
   }
 
@@ -215,11 +211,37 @@ class NoopPlatformAdapter implements LidPowerPlatformAdapter {
   async dispose(): Promise<void> {}
 }
 
-function buffersEqual(left: string, right: string): boolean {
+/**
+ * The `SUPERONE_HELPER_VERSION=N` line the helper script carries.
+ *
+ * Returns null for an unreadable or unversioned script -- including every copy
+ * installed before this scheme existed, which must be replaced once.
+ */
+export function parseMacHelperVersion(contents: string): number | null {
+  const match = /^SUPERONE_HELPER_VERSION=(\d+)\s*$/m.exec(contents)
+  return match ? Number(match[1]) : null
+}
+
+/**
+ * Reinstall only when this build ships a NEWER helper than the installed one.
+ *
+ * The rule used to be byte equality, which was safe but symmetric: the stable
+ * and alpha apps ship different bytes for a while after any helper change, so
+ * each launch of one invalidated the other and asked for an admin password to
+ * put its own copy back. Monotonic versions make an older build accept a newer
+ * installed helper -- the daemon is deliberately shared, and a newer revision
+ * of it is by definition the one both apps should be running.
+ */
+export function macHelperIsUpToDate(bundled: number | null, installed: number | null): boolean {
+  if (bundled === null || installed === null) return false
+  return installed >= bundled
+}
+
+function readMacHelperVersion(path: string): number | null {
   try {
-    return readFileSync(left).equals(readFileSync(right))
+    return parseMacHelperVersion(readFileSync(path, 'utf8'))
   } catch {
-    return false
+    return null
   }
 }
 
@@ -237,10 +259,12 @@ function resolveMacHelperResources(): { helper: string; plist: string } {
   }
 }
 
-async function isMacHelperCurrent(helper: string, plist: string): Promise<boolean> {
-  if (!buffersEqual(helper, MAC_HELPER_DEST) || !buffersEqual(plist, MAC_PLIST_DEST)) {
+async function isMacHelperCurrent(helper: string): Promise<boolean> {
+  if (!macHelperIsUpToDate(readMacHelperVersion(helper), readMacHelperVersion(MAC_HELPER_DEST))) {
     return false
   }
+  // The plist is covered by the same version, so it is not compared: launchctl
+  // failing here is what catches a daemon that was never bootstrapped.
   try {
     await execFileAsync('/bin/launchctl', ['print', `system/${MAC_HELPER_LABEL}`])
     return true
@@ -272,7 +296,7 @@ async function installMacHelper(helper: string, plist: string): Promise<void> {
     throw new Error(`Administrator approval is required to enable closed-lid operation: ${message}`)
   }
 
-  if (!await isMacHelperCurrent(helper, plist)) {
+  if (!await isMacHelperCurrent(helper)) {
     throw new Error('The closed-lid helper was installed but could not be started')
   }
 }
@@ -292,7 +316,7 @@ class MacPlatformAdapter implements LidPowerPlatformAdapter {
 
   async prepare(userInitiated: boolean): Promise<void> {
     const resources = resolveMacHelperResources()
-    if (await isMacHelperCurrent(resources.helper, resources.plist)) return
+    if (await isMacHelperCurrent(resources.helper)) return
     if (!userInitiated) {
       throw new PowerHelperApprovalRequiredError()
     }

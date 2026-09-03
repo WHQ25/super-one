@@ -2666,8 +2666,6 @@ export interface StartupData {
   variant: UpdateChannel
   /** Direct installer link for the Alpha build on this platform. */
   alphaDownloadUrl: string
-  /** Closed-lid mode was reset at launch and one admin prompt would restore it. */
-  powerModeResetNeedsApproval: boolean
 }
 
 // --- Codex experimental integration ---
@@ -4403,6 +4401,13 @@ export interface AppSettings {
   experimentalRemoteNodesEnabled: boolean
   crispText: boolean
   /**
+   * When the macOS notification authorization prompt was spent, or null if it
+   * has not been. Persisted rather than kept in onboarding state so navigating
+   * back and forth cannot ask twice, and so the onboarding switch reflects
+   * something real instead of a value it made up on mount.
+   */
+  notificationsPrimedAt: number | null
+  /**
    * When true, Edit / Write / FileChange tool blocks auto-expand to show the
    * live diff while streaming (and stay expanded when complete). When false
    * (default), only the header with line counts is shown until the user expands.
@@ -4573,6 +4578,7 @@ export interface AppSettingsPatch {
   experimentalClaudeOpenAiChatEnabled?: boolean
   experimentalRemoteNodesEnabled?: boolean
   crispText?: boolean
+  notificationsPrimedAt?: number | null
   autoExpandFileDiffs?: boolean
   detailChatMode?: boolean
   locale?: Locale | ''

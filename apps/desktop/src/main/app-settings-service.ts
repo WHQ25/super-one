@@ -96,6 +96,7 @@ const defaults: AppSettings = {
   experimentalClaudeOpenAiChatEnabled: false,
   experimentalRemoteNodesEnabled: false,
   crispText: true,
+  notificationsPrimedAt: null,
   autoExpandFileDiffs: false,
   detailChatMode: false,
   locale: '',
@@ -532,6 +533,8 @@ export function readAppSettings(): AppSettings {
         ? data.experimentalRemoteNodesEnabled
         : defaults.experimentalRemoteNodesEnabled,
       crispText: typeof data.crispText === 'boolean' ? data.crispText : defaults.crispText,
+      notificationsPrimedAt:
+        typeof data.notificationsPrimedAt === 'number' ? data.notificationsPrimedAt : null,
       autoExpandFileDiffs: typeof data.autoExpandFileDiffs === 'boolean' ? data.autoExpandFileDiffs : defaults.autoExpandFileDiffs,
       detailChatMode: typeof data.detailChatMode === 'boolean'
         ? data.detailChatMode
@@ -615,6 +618,7 @@ export function readAppSettings(): AppSettings {
       experimentalClaudeOpenAiChatEnabled: defaults.experimentalClaudeOpenAiChatEnabled,
       experimentalRemoteNodesEnabled: defaults.experimentalRemoteNodesEnabled,
       crispText: defaults.crispText,
+      notificationsPrimedAt: defaults.notificationsPrimedAt,
       autoExpandFileDiffs: defaults.autoExpandFileDiffs,
       detailChatMode: defaults.detailChatMode,
       locale: defaults.locale,
@@ -735,6 +739,10 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     experimentalRemoteNodesEnabled: patch.experimentalRemoteNodesEnabled
       ?? current.experimentalRemoteNodesEnabled,
     crispText: patch.crispText ?? current.crispText,
+    notificationsPrimedAt:
+      patch.notificationsPrimedAt !== undefined
+        ? patch.notificationsPrimedAt
+        : current.notificationsPrimedAt,
     autoExpandFileDiffs: patch.autoExpandFileDiffs ?? current.autoExpandFileDiffs,
     detailChatMode: patch.detailChatMode ?? current.detailChatMode,
     locale: patch.locale ?? current.locale,

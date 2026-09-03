@@ -122,16 +122,6 @@ function App(): React.JSX.Element {
     ap.setShowPanel(!ap.showPanel)
   }, [])
 
-  // A release that edits the privileged closed-lid helper invalidates the
-  // installed copy, and it can only be reinstalled behind an admin prompt the
-  // user asked for. Main turns the mode off so the settings UI stays truthful;
-  // without this the reset would be something they had to discover.
-  const powerModeResetNeedsApproval = useAppStore((s) => s.powerModeResetNeedsApproval)
-  useEffect(() => {
-    if (!powerModeResetNeedsApproval) return
-    toast.warning(t('shell.powerMode.resetNeedsApproval'), { duration: 10000 })
-  }, [powerModeResetNeedsApproval, t])
-
   useEffect(() => {
     const unsub = window.app.onCodexSkillsChanged?.((event) => {
       void useChatStore.getState().refreshCodexSkills(event.projectPath)

@@ -514,6 +514,11 @@ export const zh: Messages = {
       openProject: '打开项目',
     },
     onboarding: {
+      notifications: {
+        label: '通知',
+        description: '当智能体需要你、而你正在别处时提醒你。',
+        allowHint: 'macOS 会请求授权，请选择「允许」。',
+      },
       welcome: {
         title: '欢迎使用 Super One',
         tagline: '你的桌面 Coding Agent 主场。',
@@ -566,9 +571,6 @@ export const zh: Messages = {
         description: '出错了。请检查下方输出后重试。',
       },
       install: '安装 Claude Code',
-    },
-    powerMode: {
-      resetNeedsApproval: '本次更新关闭了合盖运行。请到设置中重新开启，macOS 会要求输入一次密码。',
     },
     update: {
       checking: '正在检查更新...',

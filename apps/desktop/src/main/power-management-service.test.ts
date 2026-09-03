@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('electron', () => ({
@@ -26,6 +28,8 @@ vi.mock('./logger', () => ({
 
 import {
   PowerManagementService,
+  macHelperIsUpToDate,
+  parseMacHelperVersion,
   parseWindowsAcLidAction,
   resolveLegacyRemotePowerMode,
   type PowerManagementServiceDeps,
@@ -169,5 +173,32 @@ describe('resolveLegacyRemotePowerMode', () => {
   it('does not downgrade a closed-lid choice or migrate a disabled toggle', () => {
     expect(resolveLegacyRemotePowerMode('lid-closed-on-ac', true)).toBe('lid-closed-on-ac')
     expect(resolveLegacyRemotePowerMode('system', false)).toBe('system')
+  })
+})
+
+describe('mac helper versioning', () => {
+  const script = readFileSync(
+    join(__dirname, '../../resources/lid-keep-awake/macos-helper.sh'),
+    'utf8',
+  )
+
+  it('reads the version the shipped helper declares', () => {
+    expect(parseMacHelperVersion(script)).toBeGreaterThanOrEqual(1)
+  })
+
+  it('treats an unversioned or unparsable helper as unknown', () => {
+    expect(parseMacHelperVersion('#!/bin/sh\nexit 0\n')).toBeNull()
+    expect(parseMacHelperVersion('SUPERONE_HELPER_VERSION=v2')).toBeNull()
+  })
+
+  it('accepts an installed helper newer than this build, so variants stop fighting', () => {
+    expect(macHelperIsUpToDate(1, 2)).toBe(true)
+    expect(macHelperIsUpToDate(2, 2)).toBe(true)
+  })
+
+  it('reinstalls when this build is newer, or when either side has no version', () => {
+    expect(macHelperIsUpToDate(2, 1)).toBe(false)
+    expect(macHelperIsUpToDate(1, null)).toBe(false)
+    expect(macHelperIsUpToDate(null, 1)).toBe(false)
   })
 })

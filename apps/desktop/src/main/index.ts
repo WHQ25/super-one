@@ -289,14 +289,6 @@ if (is.dev) {
   }
 }
 
-/**
- * Set when closed-lid mode was turned off at launch only because the bundled
- * helper no longer matches the installed one -- an admin prompt away from
- * working. Reported once through startup data so the user is told instead of
- * discovering the setting reset itself.
- */
-let powerModeResetNeedsApproval = false
-
 const chromiumFeatures = ['PlatformHEVCDecoderSupport']
 if (readAppSettings().webmcpEnabled === true) chromiumFeatures.push('WebMCP')
 app.commandLine.appendSwitch('enable-features', chromiumFeatures.join(','))
@@ -4575,7 +4567,6 @@ function registerIpcHandlers(): void {
       appVersion: app.getVersion(),
       variant: variantId(),
       alphaDownloadUrl: variantDownloadUrl('alpha'),
-      powerModeResetNeedsApproval,
     }
   })
 
@@ -5529,10 +5520,9 @@ app.whenReady().then(async () => {
       : 'system'
     await powerManagementService.setMode(fallbackMode, false).catch(() => {})
     // Persisting the fallback keeps the settings UI honest -- the mode really
-    // is off. But silently downgrading a setting the user chose is the part
-    // that reads as a bug, so when one click can undo it, say so.
+    // is off. The reason is in the log above; the user is not interrupted for
+    // it, since re-enabling in Settings is what reinstalls the helper anyway.
     saveAppSettings({ powerMode: fallbackMode })
-    if (powerStart.needsApproval) powerModeResetNeedsApproval = true
   }
 
   // Older builds spawned detached `opencode serve` processes that survived force-quit.

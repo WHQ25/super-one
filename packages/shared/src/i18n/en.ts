@@ -489,6 +489,11 @@ export type Messages = {
       openProject: string
     }
     onboarding: {
+      notifications: {
+        label: string
+        description: string
+        allowHint: string
+      }
       welcome: {
         title: string
         tagline: string
@@ -528,9 +533,6 @@ export type Messages = {
       success: { title: string; description: string }
       error: { title: string; description: string }
       install: string
-    }
-    powerMode: {
-      resetNeedsApproval: string
     }
     update: {
       checking: string
@@ -4070,6 +4072,11 @@ export const en: Messages = {
       openProject: 'Open Project',
     },
     onboarding: {
+      notifications: {
+        label: 'Notifications',
+        description: 'Get told when an agent needs you and you are looking elsewhere.',
+        allowHint: 'macOS will ask for permission — choose Allow.',
+      },
       welcome: {
         title: 'Welcome to Super One',
         tagline: 'The desktop home for your coding agents.',
@@ -4122,10 +4129,6 @@ export const en: Messages = {
         description: 'Something went wrong. Check the output below and try again.',
       },
       install: 'Install Claude Code',
-    },
-    powerMode: {
-      resetNeedsApproval:
-        'Closed-lid operation was turned off by this update. Turn it back on in Settings — macOS will ask for your password once.',
     },
     update: {
       checking: 'Checking for updates...',

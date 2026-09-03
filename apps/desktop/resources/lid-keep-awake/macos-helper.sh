@@ -10,6 +10,13 @@
 
 set -eu
 
+# Revision of this privileged pair (script + plist). The app reinstalls only
+# when the copy it ships is NEWER than the installed one, so two SuperOne
+# variants running different builds no longer overwrite each other's helper
+# behind an admin prompt. Bump this on every change to this file OR to
+# com.superone.lid-keep-awake.plist -- an unbumped edit will not be picked up.
+SUPERONE_HELPER_VERSION=1
+
 STATE_DIR="/var/db/com.superone.lid-keep-awake"
 OWNED_FILE="$STATE_DIR/owned"
 BORROWED_FILE="$STATE_DIR/borrowed"

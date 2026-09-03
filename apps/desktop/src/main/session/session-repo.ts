@@ -4,6 +4,7 @@ import log from '../logger'
 import { getProjectId } from '../recent-folders'
 import { recordSessionStarted, recordMessageCounts, type HarnessKind } from '../usage-stats-service'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
+import { sealCodexMetadata, sealStreamingTools } from '@superone/shared/content-delta'
 import type { ChatMessage, ContentBlock, EffortLevel, ImageAttachment, ChatMessageContext } from '@superone/shared/agent-types'
 import { BASE_SESSION_PROVIDER_DEFINITIONS } from '@superone/shared/session-provider-definitions'
 import type { HarnessId, MessagePersistMode } from './types'
@@ -15,6 +16,51 @@ export function serializeMessageContent(msg: ChatMessage): string {
     ...(msg.contexts ? { contexts: msg.contexts } : {}),
     ...(msg.userSelections ? { userSelections: msg.userSelections } : {}),
   })
+}
+
+/** The row columns the message mapper needs; every read path's row type has them. */
+export interface PersistedMessageRow {
+  id: string
+  role: string
+  status: string
+  content_json: string
+  created_at: string
+  provider_id: string
+  metadata_json: string | null
+  checkpoint_id: string | null
+  resume_point_id: string | null
+}
+
+/**
+ * One persisted row → one ChatMessage. Single mapper for every read path so a
+ * transcript cannot be reconstructed two different ways.
+ *
+ * Nothing read here is live, which makes this the place a transcript heals.
+ * A row left `streaming` by a crash reports as `interrupted`, and tool rows that
+ * never received their result stop claiming to be busy — Claude's in
+ * `content`, Codex's in `metadata.codex.items`. Sealing on the terminal events
+ * only fixes turns from here on; rows already on disk keep shimmering on every
+ * reload until something seals them at the door.
+ */
+export function rowToChatMessage(row: PersistedMessageRow): ChatMessage {
+  const parsed = parseMessageContent(row.content_json)
+  const metadata = sealCodexMetadata(
+    row.metadata_json ? JSON.parse(row.metadata_json) as ChatMessage['metadata'] : undefined,
+  )
+  return {
+    id: row.id,
+    role: row.role as ChatMessage['role'],
+    status: (row.status === 'streaming' ? 'interrupted' : row.status) as ChatMessage['status'],
+    content: sealStreamingTools(parsed.content),
+    ...(parsed.attachments ? { attachments: parsed.attachments } : {}),
+    ...(parsed.contexts ? { contexts: parsed.contexts } : {}),
+    ...(parsed.userSelections ? { userSelections: parsed.userSelections } : {}),
+    createdAt: row.created_at,
+    providerId: row.provider_id,
+    ...(metadata ? { metadata } : {}),
+    ...(row.checkpoint_id ? { checkpointId: row.checkpoint_id } : {}),
+    ...(row.resume_point_id ? { resumePointId: row.resume_point_id } : {}),
+  }
 }
 
 export function parseMessageContent(json: string): {
@@ -628,23 +674,7 @@ export function loadSessionStateBySid(sid: string): LoadedSessionState | null {
     ORDER BY sort_order ASC
   `).all(sid) as MessageRow[]
 
-  const messages: ChatMessage[] = rows.map((r) => {
-    const parsed = parseMessageContent(r.content_json)
-    return {
-      id: r.id,
-      role: r.role as ChatMessage['role'],
-      status: (r.status === 'streaming' ? 'interrupted' : r.status) as ChatMessage['status'],
-      content: parsed.content,
-      ...(parsed.attachments ? { attachments: parsed.attachments } : {}),
-      ...(parsed.contexts ? { contexts: parsed.contexts } : {}),
-      ...(parsed.userSelections ? { userSelections: parsed.userSelections } : {}),
-      createdAt: r.created_at,
-      providerId: r.provider_id,
-      ...(r.metadata_json ? { metadata: JSON.parse(r.metadata_json) } : {}),
-      ...(r.checkpoint_id ? { checkpointId: r.checkpoint_id } : {}),
-      ...(r.resume_point_id ? { resumePointId: r.resume_point_id } : {}),
-    }
-  })
+  const messages: ChatMessage[] = rows.map(rowToChatMessage)
 
   return { record, messages }
 }

@@ -1,4 +1,4 @@
-import type { ContentBlock } from './agent-types'
+import type { ChatMessage, ContentBlock } from './agent-types'
 
 /** Fields that carry UI-facing summary text for tool rows. */
 const SUMMARY_INPUT_KEYS = [
@@ -193,4 +193,64 @@ export function sealStreamingTools(content: ContentBlock[]): ContentBlock[] {
     return { ...block, status: 'complete' as const }
   })
   return changed ? next : content
+}
+
+/**
+ * Codex items that legitimately outlive the turn that started them. A video
+ * render spans the submit call and a later status poll, so freezing its card
+ * would replace real progress with a lie.
+ */
+const CODEX_DETACHED_ITEM_TYPES = new Set(['image_generation', 'video_generation'])
+
+/**
+ * Codex counterpart of {@link sealStreamingTools}.
+ *
+ * A Codex turn keeps its tool rows in `metadata.codex.items`, not in
+ * `message.content`, so `sealStreamingTools` never sees them: the renderer maps
+ * `in_progress` straight to a streaming row, and an interrupted turn leaves the
+ * last tool shimmering ("Pressing…") forever — in the transcript AND in the DB.
+ *
+ * Same contract as the content seal: same ref back when nothing was in flight,
+ * and BOTH terminal paths (renderer reducer + main-process runtime) must call it
+ * or the persisted transcript diverges from what the user saw.
+ */
+export function sealCodexItems<T extends { id: string; type: string; status?: string }>(
+  items: T[],
+): T[] {
+  let changed = false
+  const next = items.map((item) => {
+    if (CODEX_DETACHED_ITEM_TYPES.has(item.type)) return item
+    // Collab items own a nested transcript; its rows shimmer independently.
+    const children = (item as { childItems?: Record<string, T[]> }).childItems
+    let nextChildren: Record<string, T[]> | undefined
+    if (children) {
+      for (const [threadId, childItems] of Object.entries(children)) {
+        const sealedChildren = sealCodexItems(childItems)
+        if (sealedChildren === childItems) continue
+        nextChildren = { ...(nextChildren ?? children), [threadId]: sealedChildren }
+      }
+    }
+    if (item.status !== 'in_progress' && !nextChildren) return item
+    changed = true
+    return {
+      ...item,
+      ...(item.status === 'in_progress' ? { status: 'completed' } : {}),
+      ...(nextChildren ? { childItems: nextChildren } : {}),
+    }
+  })
+  return changed ? next : items
+}
+
+/**
+ * Seal a message's Codex transcript in place. Convenience wrapper so every
+ * terminal path spells the `metadata.codex.items` walk the same way.
+ */
+export function sealCodexMetadata(
+  metadata: ChatMessage['metadata'],
+): ChatMessage['metadata'] {
+  const items = metadata?.codex?.items
+  if (!items?.length) return metadata
+  const sealed = sealCodexItems(items)
+  if (sealed === items) return metadata
+  return { ...metadata, codex: { ...metadata!.codex!, items: sealed } }
 }

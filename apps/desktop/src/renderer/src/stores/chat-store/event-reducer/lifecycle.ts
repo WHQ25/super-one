@@ -2,7 +2,7 @@ import type { AgentEvent } from '@superone/shared/agent-types'
 import { applySeqToMessage } from '@superone/shared/event-seq-utils'
 import { DEFAULT_PROVIDER } from '../index'
 import type { PerSessionState } from '../types'
-import { sealStreamingTools } from './shared'
+import { sealCodexMetadata, sealStreamingTools } from './shared'
 
 type LifecycleEvent = Extract<AgentEvent, {
   type:
@@ -113,11 +113,11 @@ export function reduceLifecycle(session: PerSessionState, event: LifecycleEvent)
       return {
         messages: session.messages.map((msg) => {
           if (msg.id !== event.messageId) return msg
-          const nextMeta = {
+          const nextMeta = sealCodexMetadata({
             ...msg.metadata,
             ...(event.metadata ?? {}),
             ...(consumedTokens ? { consumedTokens } : {}),
-          }
+          })
           return {
             ...msg,
             status: 'interrupted' as const,
@@ -151,10 +151,10 @@ export function reduceLifecycle(session: PerSessionState, event: LifecycleEvent)
           return {
             ...msg,
             status: 'error' as const,
-            metadata: {
+            metadata: sealCodexMetadata({
               ...msg.metadata,
               errorInfo: event.errorInfo ?? { raw: event.error },
-            },
+            }),
             content: sealStreamingTools(msg.content),
           }
         }),

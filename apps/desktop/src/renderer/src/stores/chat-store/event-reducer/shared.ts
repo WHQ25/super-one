@@ -2,7 +2,7 @@ import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
 
 // Re-exported from the shared package: the main-process session runtime seals on
 // the same terminal events, and both sides must use one implementation.
-export { sealStreamingTools } from '@superone/shared/content-delta'
+export { sealCodexMetadata, sealStreamingTools } from '@superone/shared/content-delta'
 
 /**
  * Tool names that we accumulate partial JSON for across `tool_input_delta`

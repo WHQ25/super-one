@@ -24,6 +24,7 @@ import {
   loadSessionStateBySid,
   forkSessionRecord,
   resolveProviderSessionIdForResume,
+  rowToChatMessage,
 } from './session-repo'
 
 describe('resolveProviderSessionIdForResume', () => {
@@ -1000,5 +1001,66 @@ describe('session-repo', () => {
       const forked = loadSessionStateBySid('fork-miss')
       expect(forked!.messages).toHaveLength(2)
     })
+  })
+})
+
+describe('rowToChatMessage: healing a transcript on load', () => {
+  const row = (over: Partial<Parameters<typeof rowToChatMessage>[0]> = {}): Parameters<typeof rowToChatMessage>[0] => ({
+    id: 'm1',
+    role: 'assistant',
+    status: 'interrupted',
+    content_json: JSON.stringify({ content: [] }),
+    created_at: '2026-09-03T22:26:38Z',
+    provider_id: 'codex',
+    metadata_json: null,
+    checkpoint_id: null,
+    resume_point_id: null,
+    ...over,
+  })
+
+  it('stops a Codex tool row that was persisted mid-flight from rendering as running', () => {
+    // Shape written before the terminal paths sealed: interrupted turn, live item.
+    const message = rowToChatMessage(row({
+      metadata_json: JSON.stringify({
+        codex: {
+          threadId: 't1',
+          usage: null,
+          items: [{ id: 'i1', type: 'mcp_tool_call', tool: 'computer_act', status: 'in_progress' }],
+        },
+      }),
+    }))
+
+    const item = message.metadata!.codex!.items[0]
+    expect('status' in item ? item.status : undefined).toBe('completed')
+  })
+
+  it('stops a Claude tool row that never got its result', () => {
+    const message = rowToChatMessage(row({
+      provider_id: 'claude',
+      content_json: JSON.stringify({
+        content: [{ type: 'tool_use', toolName: 'Bash', toolUseId: 'tu1', input: '{}', status: 'streaming' }],
+      }),
+    }))
+
+    expect(message.content[0]).toMatchObject({ type: 'tool_use', status: 'complete' })
+  })
+
+  it('keeps carrying a video render — it outlives the turn that started it', () => {
+    const message = rowToChatMessage(row({
+      metadata_json: JSON.stringify({
+        codex: {
+          threadId: 't1',
+          usage: null,
+          items: [{ id: 'v1', type: 'video_generation', status: 'in_progress' }],
+        },
+      }),
+    }))
+
+    const item = message.metadata!.codex!.items[0]
+    expect('status' in item ? item.status : undefined).toBe('in_progress')
+  })
+
+  it('reports a message left streaming by a crash as interrupted', () => {
+    expect(rowToChatMessage(row({ status: 'streaming' })).status).toBe('interrupted')
   })
 })

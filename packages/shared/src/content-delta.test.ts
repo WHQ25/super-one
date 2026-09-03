@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import type { ContentBlock } from './agent-types'
-import { applyContentDelta, mergeToolUseInputJson } from './content-delta'
+import type { CodexThreadItem, ContentBlock } from './agent-types'
+import { applyContentDelta, mergeToolUseInputJson, sealCodexItems } from './content-delta'
 
 const thinking = (text: string, parent?: string | null): ContentBlock =>
   ({ type: 'thinking', thinking: text, ...(parent !== undefined ? { parentToolUseId: parent } : {}) }) as ContentBlock
@@ -106,5 +106,45 @@ describe('mergeToolUseInputJson', () => {
       JSON.stringify({ path: 'src', head_limit: 10 }),
     )
     expect(JSON.parse(merged as string)).toEqual({ pattern: 'foo', path: 'src', head_limit: 10 })
+  })
+})
+
+describe('sealCodexItems', () => {
+  const mcpCall = (id: string, status: string): CodexThreadItem =>
+    ({ id, type: 'mcp_tool_call', server: 'superone', tool: 'computer_act', status }) as unknown as CodexThreadItem
+
+  it('seals an mcp_tool_call left in_progress when the turn was interrupted', () => {
+    const sealed = sealCodexItems([mcpCall('i1', 'completed'), mcpCall('i2', 'in_progress')])
+    expect(sealed[1].status).toBe('completed')
+    expect(sealed[0].status).toBe('completed')
+  })
+
+  it('returns the same array ref when nothing was in flight', () => {
+    const items = [mcpCall('i1', 'completed'), mcpCall('i2', 'failed')]
+    expect(sealCodexItems(items)).toBe(items)
+  })
+
+  it('leaves media generation alone — a render outlives the turn that started it', () => {
+    const items = [
+      { id: 'v1', type: 'video_generation', status: 'in_progress' },
+      { id: 'g1', type: 'image_generation', status: 'in_progress' },
+    ] as unknown as CodexThreadItem[]
+    expect(sealCodexItems(items)).toBe(items)
+  })
+
+  it('seals collab child items too — a nested agent row shimmers on its own', () => {
+    const items = [{
+      id: 'c1',
+      type: 'collab_tool_call',
+      tool: 'spawnAgent',
+      status: 'in_progress',
+      receiverThreadIds: [],
+      agentsStates: {},
+      childItems: { t1: [mcpCall('n1', 'in_progress')] },
+    }] as unknown as CodexThreadItem[]
+    const sealed = sealCodexItems(items)
+    expect(sealed[0].status).toBe('completed')
+    const child = (sealed[0] as unknown as { childItems: Record<string, CodexThreadItem[]> }).childItems.t1[0]
+    expect(child.status).toBe('completed')
   })
 })

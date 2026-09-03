@@ -2,7 +2,7 @@ import type { AgentEvent } from '@superone/shared/agent-types'
 import { isSubagentToolName } from '@superone/shared/tool-ui'
 import { getCodexCompletionEventMeta, getCodexContextTokens } from '../helpers/codex-helpers'
 import type { PerSessionState } from '../types'
-import { clearStreamingToolInput, sealStreamingTools } from './shared'
+import { clearStreamingToolInput, sealCodexMetadata, sealStreamingTools } from './shared'
 
 type MessageCompleteEvent = Extract<AgentEvent, { type: 'message_complete' }>
 
@@ -81,7 +81,9 @@ export function reduceMessageComplete(session: PerSessionState, event: MessageCo
         ...(codexCompletionMeta?.finalResponse
           ? { content: [{ type: 'text', text: codexCompletionMeta.finalResponse }] }
           : { content: sealStreamingTools(msg.content) }),
-        metadata: nextMetadata,
+        // Codex keeps its tool rows in metadata, out of reach of the content
+        // seal above, so the same rule needs saying twice.
+        metadata: sealCodexMetadata(nextMetadata),
       }
     }),
     totalCostUsd: newCost,

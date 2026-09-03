@@ -1,4 +1,5 @@
 import type { AgentEvent, ChatMessage, CodexRunResult, CodexThreadItem, CodexUsageInfo } from '@superone/shared/agent-types'
+import { sealCodexItems, sealCodexMetadata } from '@superone/shared/content-delta'
 import { applySeqToMessage, isReplayedEventForMessage } from '@superone/shared/event-seq-utils'
 import { buildClaudeUserMessage, extractClaudeTitle, type PersistedClaudeSessionState } from './claude-session-runtime'
 
@@ -349,10 +350,15 @@ export function finalizeCodexAssistantMessage(
   const nextMessages = runtime.messages.map((message) => {
     if (message.id !== args.messageId) return message
     if (args.status !== 'complete' || !args.result) {
+      // No CodexRunResult means no authoritative final item list, so the items
+      // accumulated while streaming are what gets persisted — including whatever
+      // was `in_progress` when the user hit Stop. Seal them or the transcript
+      // reloads with a tool row shimmering forever. Mirrors the renderer reducer.
       return {
         ...message,
         status: args.status,
         content: [{ type: 'text' as const, text: args.text }],
+        metadata: sealCodexMetadata(message.metadata),
       }
     }
     return {
@@ -373,7 +379,7 @@ export function finalizeCodexAssistantMessage(
           threadId: args.result.threadId,
           usage: args.result.usage,
           ...(args.result.turnUsage ? { turnUsage: args.result.turnUsage } : {}),
-          items: args.result.items,
+          items: sealCodexItems(args.result.items),
           ...(args.model ? { model: args.model } : {}),
         },
       } : {
@@ -382,7 +388,7 @@ export function finalizeCodexAssistantMessage(
         codex: {
           threadId: args.result.threadId,
           usage: null,
-          items: args.result.items,
+          items: sealCodexItems(args.result.items),
           ...(args.model ? { model: args.model } : {}),
         },
       },

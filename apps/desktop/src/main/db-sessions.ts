@@ -1,6 +1,6 @@
 import { getDb } from './database'
 import { getProjectId } from './recent-folders'
-import { serializeMessageContent, parseMessageContent, deriveHarnessId } from './session/session-repo'
+import { serializeMessageContent, rowToChatMessage, deriveHarnessId } from './session/session-repo'
 import { recordSessionStarted, recordMessageCounts, type HarnessKind } from './usage-stats-service'
 import type { ChatMessage, EffortLevel, SessionHistoryEntry, PinnedSessionEntry } from '@superone/shared/agent-types'
 import { parseTagsJson } from '@superone/shared/session-tags'
@@ -309,23 +309,7 @@ export function loadSessionState(
     ORDER BY sort_order ASC
   `).all(sessionId) as DbChatMessage[]
 
-  const messages: ChatMessage[] = rows.map((r) => {
-    const parsed = parseMessageContent(r.content_json)
-    return {
-      id: r.id,
-      role: r.role as ChatMessage['role'],
-      status: (r.status === 'streaming' ? 'interrupted' : r.status) as ChatMessage['status'],
-      content: parsed.content,
-      ...(parsed.attachments ? { attachments: parsed.attachments } : {}),
-      ...(parsed.contexts ? { contexts: parsed.contexts } : {}),
-      ...(parsed.userSelections ? { userSelections: parsed.userSelections } : {}),
-      createdAt: r.created_at,
-      providerId: r.provider_id,
-      ...(r.metadata_json ? { metadata: JSON.parse(r.metadata_json) } : {}),
-      ...(r.checkpoint_id ? { checkpointId: r.checkpoint_id } : {}),
-      ...(r.resume_point_id ? { resumePointId: r.resume_point_id } : {}),
-    }
-  })
+  const messages: ChatMessage[] = rows.map(rowToChatMessage)
 
   return {
     messages,
@@ -375,23 +359,7 @@ export function loadSessionMessagesPaginated(
   const slice = rows.slice(startIndex, endIndex)
   const hasMore = startIndex > 0
 
-  const messages: ChatMessage[] = slice.map((r) => {
-    const parsed = parseMessageContent(r.content_json)
-    return {
-      id: r.id,
-      role: r.role as ChatMessage['role'],
-      status: (r.status === 'streaming' ? 'interrupted' : r.status) as ChatMessage['status'],
-      content: parsed.content,
-      ...(parsed.attachments ? { attachments: parsed.attachments } : {}),
-      ...(parsed.contexts ? { contexts: parsed.contexts } : {}),
-      ...(parsed.userSelections ? { userSelections: parsed.userSelections } : {}),
-      createdAt: r.created_at,
-      providerId: r.provider_id,
-      ...(r.metadata_json ? { metadata: JSON.parse(r.metadata_json) } : {}),
-      ...(r.checkpoint_id ? { checkpointId: r.checkpoint_id } : {}),
-      ...(r.resume_point_id ? { resumePointId: r.resume_point_id } : {}),
-    }
-  })
+  const messages: ChatMessage[] = slice.map(rowToChatMessage)
 
   return { messages, cursor: hasMore ? startIndex : null, hasMore }
 }

@@ -2,6 +2,7 @@ import { existsSync, readdirSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { app, nativeImage, type BrowserWindow, type NativeImage } from 'electron'
 import { is } from '@electron-toolkit/utils'
+import { variant } from './variant'
 
 const STORED_ICON_PREFIX = 'custom-app-icon'
 
@@ -9,7 +10,7 @@ let cachedIcon: NativeImage | null = null
 
 function defaultIconPath(): string {
   return is.dev
-    ? join(app.getAppPath(), 'build', 'icon.png')
+    ? join(app.getAppPath(), variant().icon)
     : join(process.resourcesPath, 'icon.png')
 }
 

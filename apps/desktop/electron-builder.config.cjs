@@ -87,6 +87,16 @@ const version = resolveVersion(pkg.version, variantId)
 
 const base = yaml.load(readFileSync(join(__dirname, 'electron-builder.yml'), 'utf8'))
 
+// `applyAppIcon()` reloads this resource after the app is ready so custom icons
+// can be reset at runtime. Keep that fallback aligned with the bundle icon;
+// otherwise Alpha/Dev briefly launch with their own icon and then switch to the
+// stable icon copied by the shared base config.
+const extraResources = base.extraResources.map((resource) =>
+  resource && typeof resource === 'object' && resource.to === 'icon.png'
+    ? { ...resource, from: variant.icon }
+    : resource,
+)
+
 /**
  * Installer filenames, decoupled from `productName`.
  *
@@ -112,6 +122,7 @@ module.exports = {
   appId: variant.appId,
   productName: variant.productName,
   icon: variant.icon,
+  extraResources,
   mac: { ...base.mac, artifactName: `${artifactBase}-\${version}-\${arch}-mac.\${ext}` },
   dmg: { ...base.dmg, artifactName: `${artifactBase}-\${version}-\${arch}.\${ext}` },
   nsis: { ...base.nsis, artifactName: `${artifactBase}-\${version}-Setup.\${ext}` },

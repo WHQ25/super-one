@@ -66,6 +66,12 @@ describe('electron-builder variant config', () => {
 
     expect(config.appId).toBe(v.appId)
     expect(config.productName).toBe(v.productName)
+    expect(config.icon).toBe(v.icon)
+    expect(
+      (config.extraResources as Array<{ from?: string; to?: string }>).find(
+        (resource) => resource.to === 'icon.png',
+      ),
+    ).toMatchObject({ from: v.icon })
     expect(config.extraMetadata).toMatchObject({
       name: v.packageName,
       productName: v.productName,

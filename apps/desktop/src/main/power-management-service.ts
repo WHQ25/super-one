@@ -58,6 +58,26 @@ export interface PowerManagementServiceDeps {
   clearInterval: typeof globalThis.clearInterval
 }
 
+/**
+ * The closed-lid helper is installed under an admin prompt, so it can only be
+ * (re)installed when the user asked for it. A restore at launch therefore fails
+ * whenever the bundled helper differs from what is installed -- which happens
+ * on any release that edits the script, not just when something is wrong.
+ *
+ * Tagged separately because it is recoverable by one click, unlike a build that
+ * is missing the helper resources outright.
+ */
+export class PowerHelperApprovalRequiredError extends Error {
+  constructor() {
+    super('Closed-lid helper needs renewed user approval')
+    this.name = 'PowerHelperApprovalRequiredError'
+  }
+}
+
+export type PowerStartResult =
+  | { restored: true }
+  | { restored: false; needsApproval: boolean; message: string }
+
 export class PowerManagementService {
   private readonly adapter: LidPowerPlatformAdapter
   private mode: PowerMode = 'system'
@@ -80,8 +100,8 @@ export class PowerManagementService {
     this.adapter = deps.createAdapter()
   }
 
-  async start(mode: PowerMode): Promise<boolean> {
-    if (this.started) return true
+  async start(mode: PowerMode): Promise<PowerStartResult> {
+    if (this.started) return { restored: true }
     this.started = true
     this.onAcPower = this.deps.platform === 'linux'
       ? this.deps.detectLinuxAc()
@@ -97,16 +117,18 @@ export class PowerManagementService {
       this.deps.onBattery(this.handleOnBattery)
     }
 
-    if (mode === 'system') return true
+    if (mode === 'system') return { restored: true }
     try {
       await this.setMode(mode, false)
-      return true
+      return { restored: true }
     } catch (error) {
-      log.warn(
-        '[power] could not restore power mode: %s',
-        error instanceof Error ? error.message : String(error),
-      )
-      return false
+      const message = error instanceof Error ? error.message : String(error)
+      log.warn('[power] could not restore power mode: %s', message)
+      return {
+        restored: false,
+        needsApproval: error instanceof PowerHelperApprovalRequiredError,
+        message,
+      }
     }
   }
 
@@ -272,7 +294,7 @@ class MacPlatformAdapter implements LidPowerPlatformAdapter {
     const resources = resolveMacHelperResources()
     if (await isMacHelperCurrent(resources.helper, resources.plist)) return
     if (!userInitiated) {
-      throw new Error('Closed-lid helper needs renewed user approval')
+      throw new PowerHelperApprovalRequiredError()
     }
     await installMacHelper(resources.helper, resources.plist)
   }

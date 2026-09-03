@@ -108,11 +108,15 @@ export function fixedDownloadPath(variant: string, fileName: string): string {
   return `${variant}/latest/${fileName}`
 }
 
-// GitHub normalizes spaces in release asset names to dots. Releases archived
-// through the legacy GitHub bridge can therefore have a dotted Windows binary
-// on R2 even though electron-builder's manifest still contains spaces.
+// GitHub normalizes spaces in release asset names to dots, so a version
+// backfilled from a Release can sit on R2 under a dotted key while the manifest
+// still spells it with spaces.
+//
+// This is keyed on the space, not on the extension: the alpha variant's
+// productName contains one, which puts a space in EVERY one of its artifacts --
+// including the mac `.zip`, which is the file the updater actually downloads.
+// A name with no space produces an identical candidate and is filtered out.
 export function artifactPathCandidates(path: string): string[] {
-  if (!path.toLowerCase().endsWith('.exe')) return [path]
   const slash = path.lastIndexOf('/') + 1
   const dotted = `${path.slice(0, slash)}${path.slice(slash).replaceAll(' ', '.')}`
   return dotted === path ? [path] : [path, dotted]

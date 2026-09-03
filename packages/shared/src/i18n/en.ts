@@ -529,6 +529,9 @@ export type Messages = {
       error: { title: string; description: string }
       install: string
     }
+    powerMode: {
+      resetNeedsApproval: string
+    }
     update: {
       checking: string
       available: string
@@ -4117,6 +4120,10 @@ export const en: Messages = {
         description: 'Something went wrong. Check the output below and try again.',
       },
       install: 'Install Claude Code',
+    },
+    powerMode: {
+      resetNeedsApproval:
+        'Closed-lid operation was turned off by this update. Turn it back on in Settings — macOS will ask for your password once.',
     },
     update: {
       checking: 'Checking for updates...',

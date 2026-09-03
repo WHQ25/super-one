@@ -124,7 +124,23 @@ describe('artifactPathCandidates', () => {
     ])
   })
 
-  it('leaves non-exe paths untouched', () => {
+  it('rescues the mac zip too, which is what the updater actually downloads', () => {
+    // Every alpha artifact carries the space from "SuperOne Alpha", so gating
+    // this on .exe left the one file macOS auto-update needs unresolvable.
+    expect(artifactPathCandidates('v1.0.0-alpha/SuperOne Alpha-1.0.0-alpha-arm64-mac.zip')).toEqual([
+      'v1.0.0-alpha/SuperOne Alpha-1.0.0-alpha-arm64-mac.zip',
+      'v1.0.0-alpha/SuperOne.Alpha-1.0.0-alpha-arm64-mac.zip',
+    ])
+    expect(artifactPathCandidates('v1.0.0-alpha/SuperOne Alpha-1.0.0-alpha-arm64.dmg')).toEqual([
+      'v1.0.0-alpha/SuperOne Alpha-1.0.0-alpha-arm64.dmg',
+      'v1.0.0-alpha/SuperOne.Alpha-1.0.0-alpha-arm64.dmg',
+    ])
+  })
+
+  it('leaves a name with no space untouched', () => {
     expect(artifactPathCandidates('v1.0.0/SuperOne.dmg')).toEqual(['v1.0.0/SuperOne.dmg'])
+    expect(artifactPathCandidates('v1.0.0/SuperOne-1.0.0-arm64-mac.zip')).toEqual([
+      'v1.0.0/SuperOne-1.0.0-arm64-mac.zip',
+    ])
   })
 })

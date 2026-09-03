@@ -26,13 +26,6 @@ import { DefaultProviderRow } from '@/components/providers/DefaultProviderRow'
 import { NotificationSettingsSection } from '@/components/settings/NotificationSettingsSection'
 import type { Locale, PowerMode } from '@superone/shared/agent-types'
 
-/**
- * The site's download page rather than a direct R2 fixed link: building the
- * installer URL here would hardcode the alpha build's file naming, which is
- * derived from its productName and would break silently if that changed.
- */
-const ALPHA_DOWNLOAD_URL = 'https://super-one.dev/download'
-
 export function AppSettingsPage() {
   const { t, i18n } = useTranslation()
   const [analyticsEnabled, setAnalyticsEnabled] = useState(false)
@@ -43,6 +36,7 @@ export function AppSettingsPage() {
   const [confirmPowerMode, setConfirmPowerMode] = useState(false)
   const appVersion = useAppStore((s) => s.appVersion)
   const appVariant = useAppStore((s) => s.appVariant)
+  const alphaDownloadUrl = useAppStore((s) => s.alphaDownloadUrl)
 
   const currentLocale: Locale = i18n.language === 'zh' ? 'zh' : 'en'
   const languageLabel = currentLocale === 'zh'
@@ -193,7 +187,7 @@ export function AppSettingsPage() {
             <p className="text-xs font-medium text-muted-foreground">{t('settings.general.updates')}</p>
           </div>
           <UpdateCheckRow version={appVersion} />
-          {appVariant === 'stable' && (
+          {appVariant === 'stable' && alphaDownloadUrl !== '' && (
             <div className="flex items-center justify-between gap-4 border-t border-border p-4">
               <div className="min-w-0">
                 <p className="text-sm font-medium">{t('settings.general.alphaBuild.label')}</p>
@@ -205,7 +199,7 @@ export function AppSettingsPage() {
                 variant="outline"
                 size="sm"
                 className="shrink-0"
-                onClick={() => void window.app.openExternalLink(ALPHA_DOWNLOAD_URL)}
+                onClick={() => void window.app.openExternalLink(alphaDownloadUrl)}
               >
                 {t('settings.general.alphaBuild.action')}
               </Button>

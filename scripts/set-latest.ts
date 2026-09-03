@@ -43,10 +43,25 @@ function unquote(value: string): string {
   return value.trim().replace(/^['"]|['"]$/g, '')
 }
 
+/** Installer artifacts only -- these get a human-facing fixed download link. */
 function parseInstallerUrls(text: string): string[] {
   return [...text.matchAll(/^\s*-?\s*url:\s*(.+)$/gm)]
     .map((m) => unquote(m[1]))
     .filter((u) => INSTALLER_EXTS.some((ext) => u.toLowerCase().endsWith(ext)))
+}
+
+/**
+ * Every relative artifact the manifest points at, including the mac `.zip`.
+ *
+ * The zip is not an installer -- nobody downloads it by hand -- but it IS what
+ * electron-updater fetches on macOS, so it has to survive the dotted-name
+ * rescue below or a backfilled alpha release 404s on exactly the file the
+ * updater needs.
+ */
+function parseArtifactPaths(text: string): string[] {
+  return [...text.matchAll(/^\s*-?\s*(?:url|path):\s*(.+)$/gm)]
+    .map((m) => unquote(m[1]))
+    .filter((u) => !/^https?:\/\//.test(u))
 }
 
 function replaceManifestPath(text: string, current: string, replacement: string): string {
@@ -75,7 +90,7 @@ async function artifactExists(baseUrl: string, path: string): Promise<boolean> {
 
 async function resolveArtifactPaths(text: string, baseUrl: string): Promise<string> {
   let resolved = text
-  for (const path of [...new Set(parseInstallerUrls(text))]) {
+  for (const path of [...new Set(parseArtifactPaths(text))]) {
     const candidates = artifactPathCandidates(path)
     if (candidates.length === 1 || (await artifactExists(baseUrl, path))) continue
     for (const candidate of candidates.slice(1)) {

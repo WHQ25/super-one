@@ -2664,6 +2664,10 @@ export interface StartupData {
   appVersion: string
   /** Which side-by-side app this is. Decided at package time, not derived. */
   variant: UpdateChannel
+  /** Direct installer link for the Alpha build on this platform. */
+  alphaDownloadUrl: string
+  /** Closed-lid mode was reset at launch and one admin prompt would restore it. */
+  powerModeResetNeedsApproval: boolean
 }
 
 // --- Codex experimental integration ---

@@ -567,6 +567,9 @@ export const zh: Messages = {
       },
       install: '安装 Claude Code',
     },
+    powerMode: {
+      resetNeedsApproval: '本次更新关闭了合盖运行。请到设置中重新开启，macOS 会要求输入一次密码。',
+    },
     update: {
       checking: '正在检查更新...',
       available: '更新',

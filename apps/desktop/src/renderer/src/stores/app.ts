@@ -148,6 +148,8 @@ interface AppState {
   // App
   appVersion: string
   appVariant: UpdateChannel
+  alphaDownloadUrl: string
+  powerModeResetNeedsApproval: boolean
 
   // Sandbox
   sandboxCapability: SandboxCapability | null
@@ -299,6 +301,8 @@ async function runContinueToMain(
     sandboxCapability: startupData.sandboxCapability ?? null,
     appVersion: startupData.appVersion,
     appVariant: startupData.variant,
+    alphaDownloadUrl: startupData.alphaDownloadUrl,
+    powerModeResetNeedsApproval: startupData.powerModeResetNeedsApproval,
   })
   console.info(
     '[continueToMain] cached: claude=%s codex=%s opencode=%s cursor=%s sandbox=%s',
@@ -350,6 +354,9 @@ async function enterMainAfterGates(
     sandboxCapability: startupData.sandboxCapability ?? get().sandboxCapability,
     appVersion: startupData.appVersion ?? get().appVersion,
     appVariant: startupData.variant ?? get().appVariant,
+    alphaDownloadUrl: startupData.alphaDownloadUrl ?? get().alphaDownloadUrl,
+    powerModeResetNeedsApproval:
+      startupData.powerModeResetNeedsApproval ?? get().powerModeResetNeedsApproval,
   })
 
   if (startupData.sandboxCapability) {
@@ -643,6 +650,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   appVersion: '',
   appVariant: 'stable',
+  alphaDownloadUrl: '',
+  powerModeResetNeedsApproval: false,
   sandboxCapability: null,
   sandboxProbe: null,
   probeSandbox: async (force?: boolean) => {

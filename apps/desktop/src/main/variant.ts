@@ -1,6 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
+import {
+  downloadPlatformFor,
+  fixedDownloadUrl,
+  type DownloadArch,
+} from '@superone/shared/download-links'
 import VARIANTS from '../../variants.json'
 
 /**
@@ -63,3 +68,22 @@ export function variantScopedId(suffix: string): string {
 }
 
 export { VARIANTS }
+
+/**
+ * Direct installer link for a variant on THIS machine.
+ *
+ * Settings offers the Alpha build from the stable app. It cannot send the user
+ * to the marketing site for it: that site publishes the stable app only, so the
+ * link would advertise Alpha and hand over stable. Going straight at the fixed
+ * R2 link also means the right platform and architecture with no page in
+ * between -- both of which this process already knows.
+ */
+export function variantDownloadUrl(id: VariantId): string {
+  const target = VARIANTS[id]
+  return fixedDownloadUrl({
+    downloadPrefix: target.downloadPrefix,
+    productName: target.productName,
+    platform: downloadPlatformFor(process.platform),
+    arch: process.arch === 'x64' ? 'x64' : ('arm64' as DownloadArch),
+  })
+}

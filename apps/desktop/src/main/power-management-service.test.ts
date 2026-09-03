@@ -75,7 +75,7 @@ describe('PowerManagementService', () => {
 
   it('does nothing until the user enables the setting', async () => {
     const h = createHarness()
-    await expect(h.service.start('system')).resolves.toBe(true)
+    await expect(h.service.start('system')).resolves.toEqual({ restored: true })
     expect(h.adapter.prepare).not.toHaveBeenCalled()
     expect(h.adapter.activate).not.toHaveBeenCalled()
     expect(h.startPowerBlocker).not.toHaveBeenCalled()
@@ -110,7 +110,7 @@ describe('PowerManagementService', () => {
 
   it('keeps consent armed but inactive until a battery-powered laptop reaches AC', async () => {
     const h = createHarness({ battery: true })
-    await expect(h.service.start('lid-closed-on-ac')).resolves.toBe(true)
+    await expect(h.service.start('lid-closed-on-ac')).resolves.toEqual({ restored: true })
 
     expect(h.adapter.prepare).toHaveBeenCalledWith(false)
     expect(h.adapter.activate).not.toHaveBeenCalled()

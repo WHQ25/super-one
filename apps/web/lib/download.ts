@@ -1,3 +1,7 @@
+import {
+  type DownloadArch as SharedDownloadArch,
+  fixedDownloadUrl,
+} from "@superone/shared/download-links"
 import type { DesktopPlatform } from "./platform"
 
 const BASE = (
@@ -7,11 +11,9 @@ const BASE = (
 /**
  * Which side-by-side app the site offers. Ordinary visitors get `stable`.
  *
- * The installer names are derived from each variant's `productName` -- they
- * are what `fixedLinkName` in `scripts/lib/channels.ts` produces, so the two
- * must stay in step. The source of truth is `apps/desktop/variants.json`;
- * this app cannot import across the workspace boundary, so it mirrors the two
- * product names and nothing else.
+ * The two product names are mirrored here because this app cannot import
+ * `apps/desktop/variants.json`; the installer names they imply come from
+ * `@superone/shared/download-links`, which the desktop app reads too.
  */
 export type DownloadVariant = "stable" | "alpha"
 
@@ -38,24 +40,18 @@ export const DOWNLOAD_TARGETS: DownloadTarget[] = [
   { platform: "linux" },
 ]
 
-function fixedFileName(
-  variant: DownloadVariant,
-  platform: DesktopPlatform,
-  arch?: DownloadArch,
-): string {
-  const product = PRODUCT_NAME[variant]
-  if (platform === "mac") return arch === "x64" ? `${product}.dmg` : `${product}-arm64.dmg`
-  if (platform === "win") return `${product} Setup.exe`
-  return `${product}.AppImage`
-}
-
 export function downloadUrl(
   platform: DesktopPlatform,
   arch?: DownloadArch,
   variant: DownloadVariant = DEFAULT_VARIANT,
 ): string {
-  const name = encodeURIComponent(fixedFileName(variant, platform, arch))
-  return `${BASE}/${variant}/latest/${name}`
+  return fixedDownloadUrl({
+    baseUrl: BASE,
+    downloadPrefix: variant,
+    productName: PRODUCT_NAME[variant],
+    platform,
+    arch: arch as SharedDownloadArch | undefined,
+  })
 }
 
 export function isTarget(

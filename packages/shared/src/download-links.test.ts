@@ -8,9 +8,10 @@ import {
 describe('fixedInstallerName', () => {
   it('derives every platform name from the artifact base name', () => {
     expect(fixedInstallerName('SuperOne', 'mac', 'arm64')).toBe('SuperOne-arm64.dmg')
-    expect(fixedInstallerName('SuperOne', 'mac', 'x64')).toBe('SuperOne.dmg')
+    expect(fixedInstallerName('SuperOne', 'mac', 'x64')).toBe('SuperOne-x64.dmg')
     expect(fixedInstallerName('SuperOne', 'win')).toBe('SuperOne-Setup.exe')
-    expect(fixedInstallerName('SuperOne', 'linux')).toBe('SuperOne.AppImage')
+    // electron-builder spells an AppImage's arch the AppImage way.
+    expect(fixedInstallerName('SuperOne', 'linux')).toBe('SuperOne-x86_64.AppImage')
   })
 
   it('separates the variants by prerelease tag, not by product name', () => {
@@ -20,12 +21,12 @@ describe('fixedInstallerName', () => {
     expect(fixedInstallerName('SuperOne', 'mac', 'arm64', 'alpha')).toBe(
       'SuperOne-alpha-arm64.dmg',
     )
-    expect(fixedInstallerName('SuperOne', 'mac', 'x64', 'alpha')).toBe('SuperOne-alpha.dmg')
+    expect(fixedInstallerName('SuperOne', 'mac', 'x64', 'alpha')).toBe('SuperOne-alpha-x64.dmg')
     expect(fixedInstallerName('SuperOne', 'win', undefined, 'alpha')).toBe(
       'SuperOne-alpha-Setup.exe',
     )
     expect(fixedInstallerName('SuperOne', 'linux', undefined, 'alpha')).toBe(
-      'SuperOne-alpha.AppImage',
+      'SuperOne-alpha-x86_64.AppImage',
     )
   })
 
@@ -53,7 +54,7 @@ describe('fixedDownloadUrl', () => {
         prereleaseTag: null,
         platform: 'linux',
       }),
-    ).toBe('https://dl.super-one.dev/stable/latest/SuperOne.AppImage')
+    ).toBe('https://dl.super-one.dev/stable/latest/SuperOne-x86_64.AppImage')
   })
 
   it('trims a trailing slash from an overridden base', () => {

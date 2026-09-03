@@ -98,12 +98,14 @@ describe('fixedLinkName', () => {
     expect(fixedLinkName('SuperOne-0.61.0-alpha-arm64.dmg', '0.61.0-alpha')).toBe(
       'SuperOne-alpha-arm64.dmg',
     )
-    expect(fixedLinkName('SuperOne-0.61.0-alpha.dmg', '0.61.0-alpha')).toBe('SuperOne-alpha.dmg')
+    expect(fixedLinkName('SuperOne-0.61.0-alpha-x64.dmg', '0.61.0-alpha')).toBe(
+      'SuperOne-alpha-x64.dmg',
+    )
     expect(fixedLinkName('SuperOne-0.61.0-alpha-Setup.exe', '0.61.0-alpha')).toBe(
       'SuperOne-alpha-Setup.exe',
     )
-    expect(fixedLinkName('SuperOne-0.61.0-alpha.AppImage', '0.61.0-alpha')).toBe(
-      'SuperOne-alpha.AppImage',
+    expect(fixedLinkName('SuperOne-0.61.0-alpha-x86_64.AppImage', '0.61.0-alpha')).toBe(
+      'SuperOne-alpha-x86_64.AppImage',
     )
   })
 
@@ -132,9 +134,9 @@ describe('fixed link name agreement between the producing and consuming halves',
 
   const artifacts = (version: string) => [
     { file: `SuperOne-${version}-arm64.dmg`, platform: 'mac' as const, arch: 'arm64' as const },
-    { file: `SuperOne-${version}.dmg`, platform: 'mac' as const, arch: 'x64' as const },
+    { file: `SuperOne-${version}-x64.dmg`, platform: 'mac' as const, arch: 'x64' as const },
     { file: `SuperOne-${version}-Setup.exe`, platform: 'win' as const, arch: undefined },
-    { file: `SuperOne-${version}.AppImage`, platform: 'linux' as const, arch: undefined },
+    { file: `SuperOne-${version}-x86_64.AppImage`, platform: 'linux' as const, arch: undefined },
   ]
 
   for (const variant of ['stable', 'alpha'] as const) {

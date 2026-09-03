@@ -276,9 +276,9 @@ R2 layout:
 super-one-releases/
   stable/latest-mac.yml · latest.yml · latest-linux.yml   ← what the stable app polls
   stable/v0.61.0/{*.dmg,*.zip,*.exe,*.AppImage,*.blockmap}
-  stable/latest/{SuperOne.dmg,SuperOne-arm64.dmg,…}       ← shareable release-number-less links
+  stable/latest/{SuperOne-x64.dmg,SuperOne-arm64.dmg,…}   ← shareable release-number-less links
   alpha/…                                                  ← same shape, separate app
-  alpha/latest/{SuperOne-alpha.dmg,SuperOne-alpha-arm64.dmg,…}
+  alpha/latest/{SuperOne-alpha-x64.dmg,SuperOne-alpha-arm64.dmg,…}
   alpha-mac.yml · alpha.yml · alpha-linux.yml              ← LEGACY, bucket root only
 ```
 
@@ -307,6 +307,13 @@ drift surfaces only as a 404 in production:
 `channels.test.ts` pins the last two against each other directly;
 `variant-build-config.test.ts` asserts the templates put `${version}` right
 after the base, which is what makes the tag land where the other two expect it.
+
+**Read a build log before touching the arch suffixes.** How `${arch}` renders is
+not uniform and not guessable, and every one of the three was wrong on first
+guess: mac emits `-x64` / `-arm64` (an EXPLICIT artifactName does not collapse
+x64 the way the built-in default does), Windows emits nothing (the workflow
+builds only the host arch and NSIS produces one installer), and Linux emits
+`x86_64`, not `x64`. Nothing fails until a download 404s.
 
 Manifest urls are relative, so `<variant>/latest-mac.yml` + `v${VERSION}/x.dmg`
 resolves inside the right prefix with zero client config.

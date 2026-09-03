@@ -31,10 +31,21 @@ export function downloadPlatformFor(nodePlatform: string): DownloadPlatform {
  * tag is the only thing keeping `stable/latest/` and `alpha/latest/` from
  * handing out byte-different files under one filename.
  *
- * Only macOS ships two architectures, and `${arch}` collapses to nothing on
- * x64, so only arm64 carries a suffix. The Windows and Linux fixed links are
- * single files, matching what electron-builder emits for those targets.
+ * The arch suffixes are what electron-builder actually emits for each target,
+ * which is not uniform and is not guessable:
+ *
+ *   - mac  `-x64` / `-arm64`. An EXPLICIT artifactName does not collapse
+ *          `${arch}` on x64 the way the built-in default does.
+ *   - win  none. The workflow builds only the host arch and NSIS emits one
+ *          installer, so the template carries no `${arch}` to render.
+ *   - linux `x86_64`, not `x64` — electron-builder spells an AppImage's arch
+ *          the AppImage way.
+ *
+ * Every one of these was wrong on first guess. Read a build log before
+ * changing them; nothing here fails until a download 404s.
  */
+const APPIMAGE_ARCH: Record<DownloadArch, string> = { x64: 'x86_64', arm64: 'arm64' }
+
 export function fixedInstallerName(
   artifactBaseName: string,
   platform: DownloadPlatform,
@@ -42,11 +53,9 @@ export function fixedInstallerName(
   prereleaseTag?: string | null,
 ): string {
   const stem = prereleaseTag ? `${artifactBaseName}-${prereleaseTag}` : artifactBaseName
-  if (platform === 'mac') {
-    return arch === 'x64' ? `${stem}.dmg` : `${stem}-arm64.dmg`
-  }
+  if (platform === 'mac') return `${stem}-${arch ?? 'arm64'}.dmg`
   if (platform === 'win') return `${stem}-Setup.exe`
-  return `${stem}.AppImage`
+  return `${stem}-${APPIMAGE_ARCH[arch ?? 'x64']}.AppImage`
 }
 
 export interface FixedDownloadUrlOptions {

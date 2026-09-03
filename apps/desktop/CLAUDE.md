@@ -277,8 +277,23 @@ pulling installed clients across onto the stable app. Constraints:
   unreachable manifest as "nothing published" would both bypass the semver guard and
   silently skip this bridge
 
-**Never rotate `UPDATER_TOKEN`** — the oldest alpha clients embed it in their ASAR for
-private GitHub Release auth, and `promote.yml` still uploads there for them.
+**Pre-R2 clients (built before `v0.28.1-alpha`) are deliberately abandoned.** They
+use `PrivateGitHubProvider`, which hardcodes `getDefaultChannelName()` — it looks for
+`latest-*.yml` on the newest non-draft **prerelease** GitHub Release and ignores
+`autoUpdater.channel` entirely (`PrivateGitHubProvider.js:24,63-65`). Since the R2
+switch those releases only carried `alpha-*.yml`, so they have been failing with
+`ERR_UPDATER_CHANNEL_FILE_NOT_FOUND` for months.
+
+The alpha variant emits `latest-*.yml` again (explicit `publish.channel: latest`), so
+once an alpha-variant release is published these clients WILL match it and be offered
+`SuperOne Alpha` — a different appId. macOS Squirrel rejects it (the designated
+requirement names `com.superone.app`); Windows and Linux would install the alpha app
+beside them. **This is accepted, not a bug to fix**: the affected population is a
+handful of long-stale alpha users who have not received an update in months either
+way. Do not "fix" it by renaming the alpha ymls unless that decision is revisited.
+
+`UPDATER_TOKEN` still must not be rotated — it is embedded in those shipped ASARs —
+but note the reason is now inertia, not a working update path.
 
 **`prune-releases.yml`** deletes archived versions manually: inputs `variant`, `mode`
 (`single` | `older-than`), `version`, `dry_run` (default true),

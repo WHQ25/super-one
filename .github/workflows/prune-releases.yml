@@ -1,0 +1,157 @@
+name: Prune Archived Releases
+
+on:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: 'Which app to prune'
+        required: true
+        type: choice
+        options:
+          - alpha
+          - stable
+      mode:
+        description: 'single = just this version | older-than = everything below it'
+        required: true
+        type: choice
+        options:
+          - single
+          - older-than
+      version:
+        description: 'Version (e.g. 0.61.0-alpha). For older-than this is the exclusive boundary and is kept.'
+        required: true
+      dry_run:
+        description: 'Report what would be deleted without deleting it'
+        required: false
+        type: boolean
+        default: true
+      delete_github_release:
+        description: 'Also delete the GitHub Release. This removes set-latest rollback for that version.'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Read the versions this variant currently publishes
+        id: live
+        run: |
+          set -euo pipefail
+          BASE="https://dl.super-one.dev/${{ inputs.variant }}"
+          LIVE=""
+          for yml in latest-mac.yml latest.yml latest-linux.yml; do
+            # A transient fetch failure must not look like "nothing is
+            # published" -- that would silently drop the guard and let the run
+            # delete the version clients are downloading right now. Only a real
+            # 404 counts as absent; anything else fails the job.
+            code="$(curl -sS -o "${yml}.body" -w '%{http_code}' "${BASE}/${yml}" || echo 000)"
+            case "$code" in
+              200)
+                v="$(sed -n 's/^version:[[:space:]]*//p' "${yml}.body" | tr -d "'\"" | head -1)"
+                if [ -z "$v" ]; then
+                  echo "::error::${yml} fetched but has no version field"; exit 1
+                fi
+                echo "${yml} -> ${v}"
+                LIVE="${LIVE:+$LIVE,}$v"
+                ;;
+              404)
+                echo "${yml} -> (not published yet)"
+                ;;
+              *)
+                echo "::error::${BASE}/${yml} returned ${code}; refusing to prune without knowing what is live"
+                exit 1
+                ;;
+            esac
+          done
+          echo "versions=${LIVE}" >> "$GITHUB_OUTPUT"
+
+      - name: List archived objects
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          set -euo pipefail
+          # s3api rather than `s3 ls`: installer names contain spaces
+          # ("SuperOne Setup.exe"), so column-splitting the ls output truncates
+          # keys. --output json + jq keeps them intact, and the CLI paginates.
+          aws s3api list-objects-v2 \
+            --bucket super-one-releases \
+            --prefix "${{ inputs.variant }}/" \
+            --endpoint-url "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
+            --query 'Contents[].Key' --output json | jq -r '.[]? // empty' > keys.txt
+          echo "$(wc -l < keys.txt) objects under ${{ inputs.variant }}/"
+
+      - name: Compute the prune plan
+        run: |
+          set -euo pipefail
+          bun scripts/prune-releases.ts \
+            "${{ inputs.mode }}" \
+            "${{ inputs.version }}" \
+            "${{ inputs.variant }}" \
+            keys.txt \
+            "${{ steps.live.outputs.versions }}" \
+            prune-plan.json | tee plan.log
+
+      - name: Summarise
+        run: |
+          {
+            echo "### Prune ${{ inputs.variant }} — ${{ inputs.mode }} \`${{ inputs.version }}\`"
+            echo
+            echo "Currently published: \`${{ steps.live.outputs.versions }}\`"
+            echo
+            echo '```'
+            cat plan.log
+            echo '```'
+            if [ "${{ inputs.dry_run }}" = "true" ]; then
+              echo
+              echo '**Dry run — nothing was deleted.** Re-run with `dry_run=false` to apply.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Delete the binaries from R2
+        if: ${{ inputs.dry_run == false }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          set -euo pipefail
+          ENDPOINT="https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
+          jq -r '.remove[]' prune-plan.json | while read -r v; do
+            echo "removing ${{ inputs.variant }}/v${v}/"
+            aws s3 rm "s3://super-one-releases/${{ inputs.variant }}/v${v}/" \
+              --recursive --endpoint-url "$ENDPOINT" --no-progress
+          done
+
+      - name: Delete the GitHub Releases
+        if: ${{ inputs.dry_run == false && inputs.delete_github_release }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # The Release is set-latest's manifest source and its R2 backfill
+          # source, so this is what makes a version unrecoverable. The tag is
+          # left in place; it costs nothing and keeps the history readable.
+          jq -r '.remove[]' prune-plan.json | while read -r v; do
+            if gh release view "v${v}" >/dev/null 2>&1; then
+              echo "deleting release v${v}"
+              gh release delete "v${v}" --yes
+            else
+              echo "no release v${v}"
+            fi
+          done

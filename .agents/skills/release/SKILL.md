@@ -15,6 +15,7 @@ Automate the SuperOne release pipeline. The pipeline has **independently retryab
 - `publish-harness.yml` — **conditional**. When Claude/Codex managed pin constants (or the pack script) changed since the previous tag, `npm pack`s the pinned platform tarballs, SHA-256s them, and `aws s3 sync`s byte-exact mirrors + `harness/manifest/<channel>.json` to R2 (`https://dl.super-one.dev/harness/...`). Desktop install tries R2 first, npm registry fallback, same digest. Auth: same R2 secrets as promote (`R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_ACCOUNT_ID`). Independent of electron-builder — fires in parallel with builds at Step 3 when Step 1 said yes. **Not every app release** — only when harness pins move (see Invariants).
 - `deploy-relay.yml` — runs `bunx wrangler deploy` against `apps/relay/` to push the Cloudflare Worker (relay) to production. Authenticated by the repo `CLOUDFLARE_API_TOKEN` secret, so this **must** run inside Actions, never from a local terminal (the local shell typically lacks the token, and skill permissions block credential-discovery anyway). Independent of the build/promote chain — triggered in parallel with builds at Step 3.
 - `promote.yml` — **archive only**. Takes a `variant` and downloads artifacts, then (a) uploads them **flat** (binaries + update ymls) to a **draft** GitHub Release (bridge-mode legacy path — legacy alpha clients embed `UPDATER_TOKEN` and pull from there — **and** the manifest source for set-latest); (b) moves the binaries into a `<variant>/v${VERSION}/` subdir and `aws s3 sync`s **only the binaries** to Cloudflare R2 bucket `super-one-releases` served at `https://dl.super-one.dev`. It writes **no** pointer yml — a promoted version is archived but not yet anyone's latest (that's `set-latest`). Promote does **not** touch `harness/` keys (those are `publish-harness` only).
+- `prune-releases.yml` — **manual, destructive, dry-run by default**. Deletes a variant's archived binaries under `<variant>/v<version>/`, either one version or everything below a boundary. It refuses to touch a version any of that variant's `latest-*.yml` still points at, and it fails rather than proceeding if it cannot read those pointers. Optionally deletes the GitHub Release too — see the invariant below before using that.
 - Final `gh release edit --draft=false --prerelease` — flips the draft to published; GitHub then materializes the tag on `target_commitish`.
 - `set-latest.yml` — **manual, decoupled from promote**. Sets a given release as one variant's latest: writes `<variant>/latest-*.yml` on R2 and refreshes the permanent `https://dl.super-one.dev/{alpha,stable}/latest/<installer>` download links. **There is no cascade** — stable and alpha are separate apps with separate `appId`s, so handing the alpha app a stable installer would install a different bundle over it. It reads the version's manifest from its **GitHub Release** (so any historical version works without a rebuild), and `force=true` overrides the semver guard to **roll a variant back** to an older version. Does **not** publish harness runtimes.
 
@@ -300,6 +301,31 @@ stable release is cut days after the alpha, `out/` is long gone, so the build
 workflow checks out the target SHA and compiles again. Same source, deterministic
 result — but budget a full build, not just a packaging pass.
 
+## Pruning archived releases
+
+R2 is append-only through the normal flow, so old `<variant>/v<version>/`
+directories accumulate. `prune-releases.yml` is the manual cleanup:
+
+```bash
+# See what would go, without deleting anything (dry_run defaults to true)
+gh workflow run prune-releases.yml --ref main \
+  -f variant=alpha -f mode=older-than -f version=0.62.0-alpha
+
+# Apply it
+gh workflow run prune-releases.yml --ref main \
+  -f variant=alpha -f mode=older-than -f version=0.62.0-alpha -f dry_run=false
+```
+
+- `mode=single` deletes exactly that version; `mode=older-than` deletes every
+  archived version below it and **keeps the boundary itself**.
+- The version currently published on that variant is never deleted, whichever
+  mode is used. The run reads `<variant>/latest-{mac,,linux}.yml` first and
+  protects every version they name.
+- Plan logic lives in `scripts/prune-releases.ts` (unit-tested); the workflow
+  only executes the plan, the same split as `set-latest`.
+- `delete_github_release=true` additionally removes the GitHub Release. Read
+  the invariant below first — this is the irreversible part, not the R2 delete.
+
 ## Recovery Patterns
 
 | Failure | Action |
@@ -333,6 +359,8 @@ result — but budget a full build, not just a packaging pass.
 - `bun.lock` is never modified by the release flow.
 - **Dual-publish is permanent**: `promote.yml` always uploads to both GitHub Release (flat layout) and R2 (`<variant>/v${VERSION}/` subdirectory). GitHub Release is the legacy path for clients built before the R2 switch, R2 is the source of truth for current/future clients. **Never** delete the GitHub Release upload step.
 - **`set-latest` is decoupled from `promote`** and is never auto-invoked by it — running set-latest is a separate, explicit step. promote archives the build; set-latest makes a version a variant's latest + refreshes the fixed `{variant}/latest/` download links + is the rollback path (`force=true`). Manifest logic (semver compare, path prefix, version-less naming) lives in `scripts/lib/channels.ts` — **CI-only, kept out of the app bundle**; `@superone/shared/update-channels` exposes only `channelFromVersion`, which exists for `@super-one/cli` (no variant of its own) and is never called by the desktop app. set-latest reads each version's manifest from its **GitHub Release**, and **backfills the binaries to R2 from that Release if `v<version>/` is missing** (R2 is not guaranteed to keep every version), so it works for any historical version without a rebuild.
+- **Deleting R2 binaries is recoverable; deleting the GitHub Release is not.** `set-latest` reads a version's manifest from its GitHub Release and backfills the binaries to R2 when `<variant>/v<version>/` is missing, so pruning R2 alone leaves every historical version rollable-back-to. Once the Release is gone that version can only be reproduced by rebuilding it. Prune R2 freely; pass `delete_github_release=true` only for versions you have decided never to return to.
+- **A prune never deletes what a pointer references.** `<variant>/latest-*.yml` hands clients an exact `v<version>/` path, so removing that version 404s every download and every update on the variant with nothing failing in CI. `prune-releases.yml` reads the pointers before planning and aborts if it cannot (a 404 means "not published yet"; any other status fails the run rather than silently pruning with an empty guard).
 - **Never rotate `UPDATER_TOKEN`** the GitHub PAT secret. Legacy alpha clients embed it in their ASAR for `PrivateGitHubProvider` auth; rotating the token bricks their auto-update path. The secret is no longer consumed by any build workflow but **must** remain valid in GitHub Secrets indefinitely.
 - **Relay deploys go through `deploy-relay.yml`, never local terminal.** The `CLOUDFLARE_API_TOKEN` lives only in GitHub repo secrets. Local `bun run deploy:relay` will fail in non-interactive shells, and skill permissions deliberately block credential discovery from shell rc files. Always dispatch the workflow.
 - **Relay deploy is conditional on actual diff.** Only dispatch `deploy-relay.yml` when `git diff v<previous>..HEAD -- apps/relay/` is non-empty. No-op deploys just clutter Cloudflare's Version History with duplicate Version IDs and obscure the real protocol-changing deploys you'd want to roll back to.

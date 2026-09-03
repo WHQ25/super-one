@@ -20,11 +20,12 @@ afterEach(async () => {
 async function boot(turnRunner = createSimulatedCodexRunner({ delayMs: 40, chunks: ['A', 'B', 'C', 'D'] })) {
   const nodeHome = mkdtempSync(join(tmpdir(), 'p3-node-'))
   dirs.push(nodeHome)
-  const port = 27000 + Math.floor(Math.random() * 10000)
   const rt = await startNodeRuntime({
     nodeHome,
     bindHost: '127.0.0.1',
-    bindPort: port,
+    // Ephemeral port: the OS picks a free one and the handle's `url` carries
+    // it back, so parallel test files cannot collide.
+    bindPort: 0,
     turnRunner, simulatedHarness: true })
   runtimes.push(rt)
   return rt
@@ -95,7 +96,6 @@ describe('Phase 3 disconnect-safe remote Session', () => {
   it('reconciles streaming sessions as interrupted after node restart (non-reattachable)', async () => {
     const nodeHome = mkdtempSync(join(tmpdir(), 'p3-restart-'))
     dirs.push(nodeHome)
-    const port = 28000 + Math.floor(Math.random() * 5000)
 
     let resolveHold: (() => void) | undefined
     const hold = new Promise<void>((r) => {
@@ -120,7 +120,9 @@ describe('Phase 3 disconnect-safe remote Session', () => {
     const rt = await startNodeRuntime({
       nodeHome,
       bindHost: '127.0.0.1',
-      bindPort: port,
+      // Ephemeral port: the OS picks a free one and the handle's `url` carries
+      // it back, so parallel test files cannot collide.
+      bindPort: 0,
       turnRunner: blockingRunner, simulatedHarness: true })
     runtimes.push(rt)
 
@@ -172,7 +174,10 @@ describe('Phase 3 disconnect-safe remote Session', () => {
     const rt2 = await startNodeRuntime({
       nodeHome,
       bindHost: '127.0.0.1',
-      bindPort: port + 1,
+      // Ephemeral port: the OS picks a free one and the handle's `url`
+      // carries it back. The previous runtime is stopped above, so the
+      // restart does not need a different number to dodge TIME_WAIT.
+      bindPort: 0,
       turnRunner: createSimulatedCodexRunner(), simulatedHarness: true })
     runtimes.push(rt2)
 
@@ -245,12 +250,13 @@ describe('Phase 3 disconnect-safe remote Session', () => {
   it('after node restart session.get returns providerResume and coldSessionResume is true', async () => {
     const nodeHome = mkdtempSync(join(tmpdir(), 'p3-cold-'))
     dirs.push(nodeHome)
-    const port = 28500 + Math.floor(Math.random() * 5000)
 
     const rt = await startNodeRuntime({
       nodeHome,
       bindHost: '127.0.0.1',
-      bindPort: port,
+      // Ephemeral port: the OS picks a free one and the handle's `url` carries
+      // it back, so parallel test files cannot collide.
+      bindPort: 0,
       turnRunner: createSimulatedCodexRunner({ delayMs: 10, chunks: ['hi'] }),
       simulatedHarness: true,
     })
@@ -302,7 +308,10 @@ describe('Phase 3 disconnect-safe remote Session', () => {
     const rt2 = await startNodeRuntime({
       nodeHome,
       bindHost: '127.0.0.1',
-      bindPort: port + 1,
+      // Ephemeral port: the OS picks a free one and the handle's `url`
+      // carries it back. The previous runtime is stopped above, so the
+      // restart does not need a different number to dodge TIME_WAIT.
+      bindPort: 0,
       turnRunner: createSimulatedCodexRunner({ delayMs: 5, chunks: ['again'] }),
       simulatedHarness: true,
     })

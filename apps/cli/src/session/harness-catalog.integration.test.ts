@@ -37,14 +37,15 @@ afterEach(async () => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
 })
 
-async function boot(opts: { simulatedHarness?: boolean; nodeHome?: string; port?: number } = {}) {
+async function boot(opts: { simulatedHarness?: boolean; nodeHome?: string } = {}) {
   const nodeHome = opts.nodeHome ?? mkdtempSync(join(tmpdir(), 'hm-cat-'))
   if (!opts.nodeHome) dirs.push(nodeHome)
-  const port = opts.port ?? 30000 + Math.floor(Math.random() * 5000)
   const rt = await startNodeRuntime({
     nodeHome,
     bindHost: '127.0.0.1',
-    bindPort: port,
+    // Ephemeral port: the OS picks a free one and the handle's `url` carries
+    // it back, so parallel test files cannot collide.
+    bindPort: 0,
     simulatedHarness: opts.simulatedHarness,
   })
   runtimes.push(rt)
@@ -219,9 +220,8 @@ describe('Harness catalog (Stage 1)', () => {
   it('simulatedHarness does not contaminate a production restart of the same node home', async () => {
     const nodeHome = mkdtempSync(join(tmpdir(), 'hm-restart-'))
     dirs.push(nodeHome)
-    const port = 31000 + Math.floor(Math.random() * 2000)
 
-    const sim = await boot({ simulatedHarness: true, nodeHome, port })
+    const sim = await boot({ simulatedHarness: true, nodeHome })
     const simClient = await connectAuthedRpc(sim)
     const simDesc = (await simClient.rpc('environment.descriptor')) as {
       capabilities: { harnessIds: string[] }
@@ -231,7 +231,7 @@ describe('Harness catalog (Stage 1)', () => {
     await sim.stop()
     runtimes.pop()
 
-    const prod = await boot({ nodeHome, port: port + 1 })
+    const prod = await boot({ nodeHome })
     const prodClient = await connectAuthedRpc(prod)
     const prodDesc = (await prodClient.rpc('environment.descriptor')) as {
       capabilities: { harnessIds: string[] }

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   DEV_HELPER_BUNDLE_ID,
+  expectedHelperBundleId,
   MacosHelperClient,
   releaseHelperBundleId,
 } from './macos-helper-client'
@@ -76,13 +77,29 @@ describe('MacosHelperClient identity handshake', () => {
   })
 
   it('rejects a helper from the other build variant', async () => {
+    // The expected id is passed rather than derived: `variantId()` reports
+    // `dev` in an unpackaged process, so `releaseHelperBundleId()` returns the
+    // dev id and "release client meets dev helper" cannot be built here. The
+    // other half of the guarantee -- that each variant declares a DISTINCT
+    // computerUseBundleId -- is pinned in variant.test.ts.
+    const otherVariantId = 'com.superone.computer-use.alpha'
+    expect(otherVariantId).not.toBe(DEV_HELPER_BUNDLE_ID)
+
     const fake = await startFakeHelper(DEV_HELPER_BUNDLE_ID)
-    const client = new MacosHelperClient(fake.socketPath, null, 'release')
+    const client = new MacosHelperClient(fake.socketPath, null, 'release', otherVariantId)
     cleanup.push(() => client.close())
 
     await expect(client.ensureConnected()).rejects.toThrow(
-      `expected ${releaseHelperBundleId()}, got ${DEV_HELPER_BUNDLE_ID}`,
+      `expected ${otherVariantId}, got ${DEV_HELPER_BUNDLE_ID}`,
     )
+    // Rejected before set_host: a foreign helper must never be told to drive
+    // this process.
     expect(fake.methods).toEqual(['doctor'])
+  })
+
+  it('demands this variant’s own helper when no id is injected', () => {
+    // Guards the default that production actually uses.
+    expect(expectedHelperBundleId('release')).toBe(releaseHelperBundleId())
+    expect(expectedHelperBundleId('dev')).toBe(DEV_HELPER_BUNDLE_ID)
   })
 })

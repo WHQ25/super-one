@@ -41,6 +41,19 @@ export function releaseHelperBundleId(): string {
   return appVariant().computerUseBundleId
 }
 
+/**
+ * Bundle id a client of this helper variant must see in the doctor handshake.
+ *
+ * Note this collapses in an unpackaged process: `variantId()` reports `dev`
+ * there, so the release branch returns the dev id too. Harmless in practice --
+ * `resolveHelperVariant()` also reports `dev`, so nothing asks for `release` --
+ * but it does mean the two branches are indistinguishable outside a packaged
+ * build, which is why MacosHelperClient takes the id as an override.
+ */
+export function expectedHelperBundleId(variant: ComputerUseHelperVariant): string {
+  return variant === 'dev' ? DEV_HELPER_BUNDLE_ID : releaseHelperBundleId()
+}
+
 export type ComputerUseHelperVariant = 'dev' | 'release'
 
 export interface ResolveHelperAppPathOptions {
@@ -254,6 +267,15 @@ export class MacosHelperClient {
     private readonly socketPath: string = defaultHelperSocketPath(),
     private readonly appPath: string | null = resolveHelperAppPath(),
     private readonly variant: ComputerUseHelperVariant = resolveHelperVariant(),
+    /**
+     * Identity this client demands of the helper it connects to.
+     *
+     * Injectable because the derived value cannot express a mismatch in an
+     * unpackaged process: `variantId()` is always `dev` there, so
+     * `releaseHelperBundleId()` returns the dev id and "release client meets
+     * dev helper" is unconstructible. Production never passes it.
+     */
+    private readonly expectedBundleId: string = expectedHelperBundleId(variant),
   ) {}
 
   get path(): string {
@@ -440,12 +462,9 @@ export class MacosHelperClient {
       throw new Error(doctorResponse.error?.message ?? 'Computer Use helper doctor failed')
     }
     const doctor = doctorResponse.result as HelperDoctor
-    const expectedBundleId = this.variant === 'dev'
-      ? DEV_HELPER_BUNDLE_ID
-      : releaseHelperBundleId()
-    if (doctor.bundleId !== expectedBundleId) {
+    if (doctor.bundleId !== this.expectedBundleId) {
       throw new Error(
-        `Computer Use helper identity mismatch: expected ${expectedBundleId}, got ${doctor.bundleId || 'unknown'}`,
+        `Computer Use helper identity mismatch: expected ${this.expectedBundleId}, got ${doctor.bundleId || 'unknown'}`,
       )
     }
 

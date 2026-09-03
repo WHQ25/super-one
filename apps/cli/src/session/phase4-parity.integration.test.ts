@@ -21,11 +21,12 @@ afterEach(async () => {
 async function boot(opts?: { simulatedHarness?: boolean }) {
   const nodeHome = mkdtempSync(join(tmpdir(), 'p4-node-'))
   dirs.push(nodeHome)
-  const port = 29000 + Math.floor(Math.random() * 5000)
   const rt = await startNodeRuntime({
     nodeHome,
     bindHost: '127.0.0.1',
-    bindPort: port,
+    // Ephemeral port: the OS picks a free one and the handle's `url` carries
+    // it back, so parallel test files cannot collide.
+    bindPort: 0,
     simulatedHarness: opts?.simulatedHarness !== false,
   })
   runtimes.push(rt)
@@ -94,12 +95,13 @@ describe('Phase 4 harness parity + collaboration', () => {
   it('collaboration.request/start/send/retrieve succeed without simulatedHarness and survive restart', async () => {
     const nodeHome = mkdtempSync(join(tmpdir(), 'p4-collab-'))
     dirs.push(nodeHome)
-    const port = 29500 + Math.floor(Math.random() * 500)
     // Production-like: no simulated harness gate for collab.
     const rt = await startNodeRuntime({
       nodeHome,
       bindHost: '127.0.0.1',
-      bindPort: port,
+      // Ephemeral port: the OS picks a free one and the handle's `url` carries
+      // it back, so parallel test files cannot collide.
+      bindPort: 0,
       simulatedHarness: false,
       // Allow turns so start can deliver the initial task without a real binary.
       allowSimulatedTurnFallback: true,
@@ -241,7 +243,10 @@ describe('Phase 4 harness parity + collaboration', () => {
     const rt2 = await startNodeRuntime({
       nodeHome,
       bindHost: '127.0.0.1',
-      bindPort: port + 1,
+      // Ephemeral port: the OS picks a free one and the handle's `url`
+      // carries it back. The previous runtime is stopped above, so the
+      // restart does not need a different number to dodge TIME_WAIT.
+      bindPort: 0,
       simulatedHarness: false,
       allowSimulatedTurnFallback: true,
     })

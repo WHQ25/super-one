@@ -27,11 +27,12 @@ afterEach(async () => {
 async function boot(runner?: TurnRunner) {
   const nodeHome = mkdtempSync(join(tmpdir(), 'ha-e2e-'))
   dirs.push(nodeHome)
-  const port = 30000 + Math.floor(Math.random() * 4000)
   const rt = await startNodeRuntime({
     nodeHome,
     bindHost: '127.0.0.1',
-    bindPort: port,
+    // Ephemeral port: the OS picks a free one and the handle's `url` carries
+    // it back, so parallel test files cannot collide.
+    bindPort: 0,
     turnRunner: runner ?? createSimulatedTurnRunner({ delayMs: 5, chunks: ['ok'] }),
     simulatedHarness: true,
   })
@@ -53,11 +54,12 @@ async function setupStreamingSession(rt: NodeRuntime, hold: Promise<void>) {
   runtimes.pop()
   const nodeHome = mkdtempSync(join(tmpdir(), 'ha-e2e2-'))
   dirs.push(nodeHome)
-  const port = 31000 + Math.floor(Math.random() * 4000)
   const rt2 = await startNodeRuntime({
     nodeHome,
     bindHost: '127.0.0.1',
-    bindPort: port,
+    // Ephemeral port: the OS picks a free one and the handle's `url` carries
+    // it back, so parallel test files cannot collide.
+    bindPort: 0,
     turnRunner: runner,
     simulatedHarness: true,
   })

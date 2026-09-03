@@ -31,8 +31,9 @@ afterEach(async () => {
 async function boot(): Promise<NodeRuntime> {
   const nodeHome = mkdtempSync(join(tmpdir(), 'ws-node-'))
   dirs.push(nodeHome)
-  const port = 25000 + Math.floor(Math.random() * 10000)
-  const rt = await startNodeRuntime({ nodeHome, bindHost: '127.0.0.1', bindPort: port, simulatedHarness: true })
+  // Ephemeral port: the OS picks a free one and the handle's `url` carries it
+  // back, so parallel test files cannot collide.
+  const rt = await startNodeRuntime({ nodeHome, bindHost: '127.0.0.1', bindPort: 0, simulatedHarness: true })
   runtimes.push(rt)
   return rt
 }
@@ -240,7 +241,6 @@ describe('Phase 2 workspace integration', () => {
   it('allows session list/create without simulatedHarness (production session surface)', async () => {
     const nodeHome = mkdtempSync(join(tmpdir(), 'sess-prod-'))
     dirs.push(nodeHome)
-    const port = 25000 + Math.floor(Math.random() * 10000)
     // Fake codex binary so fail-closed runtime-ready accepts create; turns still use
     // simulated fallback so CI hosts without a real codex install can settle.
     const fakeCodex = join(nodeHome, 'fake-codex')
@@ -252,7 +252,9 @@ describe('Phase 2 workspace integration', () => {
     const rt = await startNodeRuntime({
       nodeHome,
       bindHost: '127.0.0.1',
-      bindPort: port,
+      // Ephemeral port: the OS picks a free one and the handle's `url` carries
+      // it back, so parallel test files cannot collide.
+      bindPort: 0,
       allowSimulatedTurnFallback: true,
     })
     runtimes.push(rt)

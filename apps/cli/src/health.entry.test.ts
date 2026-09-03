@@ -14,11 +14,12 @@ describe('health capture', () => {
   it('GET /health returns ok and environmentId', async () => {
     const nodeHome = mkdtempSync(join(tmpdir(), 'health-cap-'))
     dirs.push(nodeHome)
-    const port = 32000 + Math.floor(Math.random() * 1000)
     const rt = await startNodeRuntime({
       nodeHome,
       bindHost: '127.0.0.1',
-      bindPort: port,
+      // Ephemeral port: the OS picks a free one and the handle's `url` carries
+      // it back, so parallel test files cannot collide.
+      bindPort: 0,
       label: 'health-capture', simulatedHarness: true })
     try {
       const res = await fetch(`${rt.server.url}/health`)

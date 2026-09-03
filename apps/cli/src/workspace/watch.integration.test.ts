@@ -26,11 +26,12 @@ async function bootWatch(): Promise<{
   const projectDir = mkdtempSync(join(tmpdir(), 'watch-proj-'))
   dirs.push(nodeHome, projectDir)
   writeFileSync(join(projectDir, 'a.txt'), 'a')
-  const port = 36000 + Math.floor(Math.random() * 1000)
   const rt = await startNodeRuntime({
     nodeHome,
     bindHost: '127.0.0.1',
-    bindPort: port,
+    // Ephemeral port: the OS picks a free one and the handle's `url` carries
+    // it back, so parallel test files cannot collide.
+    bindPort: 0,
     simulatedHarness: true,
   })
   runtimes.push(rt)

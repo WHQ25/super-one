@@ -21,11 +21,12 @@ afterEach(async () => {
 async function freePortRuntime(): Promise<NodeRuntime> {
   const nodeHome = mkdtempSync(join(tmpdir(), 'superone-int-'))
   dirs.push(nodeHome)
-  const port = 20000 + Math.floor(Math.random() * 20000)
   const runtime = await startNodeRuntime({
     nodeHome,
     bindHost: '127.0.0.1',
-    bindPort: port,
+    // Ephemeral port: the OS picks a free one and the handle's `url` carries
+    // it back, so parallel test files cannot collide.
+    bindPort: 0,
     label: 'test-node', simulatedHarness: true })
   runtimes.push(runtime)
   return runtime

@@ -18,6 +18,11 @@ on:
         required: false
         type: boolean
         default: false
+      legacy_root:
+        description: 'Legacy bridge — also refresh the pre-variant root manifests (alpha-*.yml) so already-installed clients cross over to this build. stable only.'
+        required: false
+        type: boolean
+        default: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -79,7 +84,8 @@ jobs:
             manifests \
             https://dl.super-one.dev \
             out \
-            fixed-copies.json
+            fixed-copies.json \
+            "${{ inputs.legacy_root }}"
           echo "--- staged manifests ---"
           ls -la out/ 2>/dev/null || echo "(none staged — semver guard held; rerun with force=true to override)"
           echo "--- fixed-link plan ---"
@@ -108,3 +114,6 @@ jobs:
               --copy-props none --no-progress
           done
           echo "Set ${{ inputs.release_tag }} as latest of the ${{ inputs.variant }} app."
+          if [ "${{ inputs.legacy_root }}" = "true" ]; then
+            echo "::notice::Legacy bridge on — pre-variant clients polling the bucket root were pointed at ${{ inputs.variant }}/."
+          fi

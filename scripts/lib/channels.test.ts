@@ -4,7 +4,9 @@ import {
   compareVersions,
   fixedDownloadPath,
   fixedLinkName,
+  LEGACY_ROOT_YML_NAMES,
   prefixVersionPaths,
+  rootRelativePaths,
   shouldPublish,
   versionedArtifactPath,
 } from './channels'
@@ -51,6 +53,35 @@ describe('prefixVersionPaths', () => {
   it('leaves absolute and already-prefixed entries alone', () => {
     const yml = ['  - url: https://cdn/x.dmg', 'path: v1.0.0/x.dmg'].join('\n')
     expect(prefixVersionPaths(yml, '1.0.0')).toBe(yml)
+  })
+})
+
+describe('rootRelativePaths', () => {
+  // A pre-variant client fetches https://dl.super-one.dev/alpha-mac.yml and
+  // resolves the relative entries against the BUCKET ROOT, so the manifest it
+  // reads has to name the variant that now owns those binaries.
+  it('re-roots a variant manifest for a client reading from the bucket root', () => {
+    const yml = ['files:', '  - url: v1.0.0/SuperOne-1.0.0.dmg', 'path: v1.0.0/SuperOne-1.0.0.dmg'].join('\n')
+    const rooted = rootRelativePaths(yml, 'stable')
+    expect(rooted).toBe(
+      ['files:', '  - url: stable/v1.0.0/SuperOne-1.0.0.dmg', 'path: stable/v1.0.0/SuperOne-1.0.0.dmg'].join('\n'),
+    )
+    expect(new URL('stable/v1.0.0/SuperOne-1.0.0.dmg', 'https://dl.super-one.dev/alpha-mac.yml').pathname).toBe(
+      '/stable/v1.0.0/SuperOne-1.0.0.dmg',
+    )
+  })
+
+  it('is idempotent, so re-running set-latest cannot double the prefix', () => {
+    const yml = 'path: stable/v1.0.0/x.dmg'
+    expect(rootRelativePaths(yml, 'stable')).toBe(yml)
+  })
+
+  it('covers every legacy root name for a platform whose manifest we publish', () => {
+    // The runtime channel setting let a legacy client override its build
+    // channel, so any of the three names may be the one it actually polls.
+    expect(LEGACY_ROOT_YML_NAMES.mac).toContain('alpha-mac.yml')
+    expect(LEGACY_ROOT_YML_NAMES.win).toContain('alpha.yml')
+    expect(LEGACY_ROOT_YML_NAMES.linux).toContain('alpha-linux.yml')
   })
 })
 

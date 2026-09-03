@@ -167,27 +167,126 @@ Startup flow lives in `db-open.ts` (verify → snapshot → migrate → recover)
 `apps/desktop/src/main/updater.ts` wraps `electron-updater` with an IPC push pattern:
 
 - Guarded by `is.dev` — completely skipped in development unless `TEST_UPDATER=1`
-- `autoDownload = false` — check may run automatically on launch / channel change, but the binary download starts only when the user clicks **Update** (sidebar / settings / app menu → `UPDATER_DOWNLOAD` → `downloadUpdate()`). Restart still uses `UPDATER_INSTALL`
-- Distribution: artifacts hosted on Cloudflare R2, served via custom domain `https://dl.super-one.dev`. `electron-updater` uses the built-in `GenericProvider` (`publish.provider: generic` in `electron-builder.yml`); no auth tokens needed (bucket is public via custom domain)
-- Channels: electron-builder auto-derives the **build** channel from `package.json` version — `0.1.0-alpha.3` → `alpha-mac.yml` / `alpha.yml` / `alpha-linux.yml`; `1.0.0` → `latest-*.yml`. The built channel is embedded in ASAR's `app-update.yml`, but users can **override it at runtime**: the `updateChannel` app-setting (`stable` | `beta` | `alpha`, default `null` = follow build) drives a selector in `AppSettingsPage`. `setUpdateChannel` maps it via `@superone/shared/update-channels` `UPDATE_CHANNEL_TO_YML` and sets `autoUpdater.channel`. Switching to a more-stable channel sets `autoUpdater.allowDowngrade = true` for that one check (reset in `.finally`) so the client can move down onto the stable line; periodic checks keep `allowDowngrade = false`
-- Channel cascade: channels are **not** isolated. When a version is set as a channel's latest it is written into that channel's yml **and every less-stable one** (stable → `latest`+`beta`+`alpha`, beta → `beta`+`alpha`, alpha → `alpha`), guarded by semver so an older stable never clobbers a newer prerelease already on `alpha` (unless `force`). So alpha users still receive beta/stable builds. Logic lives in `scripts/lib/channels.ts` (`cascadeTargets` / `shouldPublish` / `compareVersions` / `prefixVersionPaths` / `fixedLinkName`, bun-tested in `scripts/lib/channels.test.ts`) and is applied by `scripts/set-latest.ts` — **not** by `promote`. The app-runtime module `@superone/shared/update-channels` deliberately keeps only the app-facing surface (`UPDATE_CHANNELS` / `UPDATE_CHANNEL_TO_YML` / `channelFromVersion`); CI-only logic stays out of the renderer/main bundle
+- `autoDownload = false` — the check may run automatically on launch, but the binary download starts only when the user clicks **Update** (sidebar / settings / app menu → `UPDATER_DOWNLOAD` → `downloadUpdate()`). Restart still uses `UPDATER_INSTALL`
+- Distribution: artifacts hosted on Cloudflare R2, served via custom domain `https://dl.super-one.dev`. `electron-updater` uses the built-in `GenericProvider`; no auth tokens needed (bucket is public via custom domain)
+- **There is no runtime channel.** `updater.ts` never sets `autoUpdater.channel` or `allowDowngrade`; a build only ever reads the feed baked into its own `app-update.yml`. That is deliberate — setting `channel` at runtime also latches `allowDowngrade = true` inside electron-updater (`AppUpdater.js`), which used to leave every user with a channel preference permanently able to move backwards. `updater.test.ts` guards this
 - Events flow: `autoUpdater` → `webContents.send(UPDATER_EVENT)` → `useAppStore.handleUpdateEvent()` → `<UpdateNotification />`
 
-Dev testing: `TEST_UPDATER=1 bun run dev` (uses `apps/desktop/dev-app-update.yml`, which points to the alpha channel on `dl.super-one.dev`)
+Dev testing: `TEST_UPDATER=1 bun run dev` (uses `apps/desktop/dev-app-update.yml`).
 
-Release flow — **two independent workflows** (they do not call each other):
+### Build Variants (stable + alpha side by side)
 
-1. **`promote.yml` (archive only)** — collects the per-platform CI artifacts, (a) uploads them **flat** (binaries + channel ymls) to a draft GitHub Release (changelog mirror + serves legacy GitHub-provider clients during the bridge period), then (b) moves the binaries into a `v${VERSION}/` subdir and **drops the ymls** (`rm staging/*.yml`), then (c) `aws s3 sync staging/ s3://super-one-releases/` so R2 gains only `v${VERSION}/{*.dmg,*.exe,*.AppImage,*.zip,*.blockmap}`. **Promote never touches a root channel yml** — a freshly promoted version is archived but not yet "latest" for anyone.
+**`apps/desktop/variants.json` is the single source of truth** for every identity a
+variant owns, read by both the builder config (CJS) and the runtime (TS). The two
+variants are two different applications that happen to share a codebase — a user can
+install both, and they share no data, no bundle id, no install directory and no
+update feed. `stable` inherits the historical identity (`com.superone.app` /
+`SuperOne` / the existing userData tree); `alpha` is the new one.
 
-2. **`set-latest.yml` (manual, makes a version live)** — `workflow_dispatch` inputs `release_tag` + `channel` + `force`. It `gh release download <tag> -p '*.yml'` to get that version's flat manifests, then `bun scripts/set-latest.ts` (needs `bun install --frozen-lockfile --ignore-scripts` for the workspace symlink) which `prefixVersionPaths` → `v${VERSION}/`, computes the cascade target ymls (semver-guarded unless `force=true`), writes them to `out/`, and emits a `fixed-copies.json` plan. The workflow then `aws s3 cp out/ s3://…/` (root channel ymls) and server-side `aws s3 cp` each installer `v${VERSION}/… → ${channel}/latest/<version-less name>` (`--cache-control max-age=300`). **`force=true` enables rollback** — re-point a channel at an older version. R2 then has `bucket-root/{alpha,beta,latest}-*.yml` + `bucket-root/v0.1.0-alpha.4/{*.dmg,...}` + `bucket-root/{alpha,beta,stable}/latest/{SuperOne.dmg,SuperOne-arm64.dmg,SuperOne.AppImage,SuperOne Setup.exe}`.
+Three identity chains have to move together, and they come from three different
+electron-builder fields — getting only two of them right produces a collision that
+does not show up until install time:
 
-Normal release = run `promote` then `set-latest <tag> <its-channel>`. Manifest source for set-latest is the **GitHub Release** (every promoted version archives its flat ymls there), so any historical version can be set/rolled-back without a rebuild.
+| Field | Governs | Symptom if shared |
+|---|---|---|
+| `appId` | OS registration, macOS TCC, Windows registry / AUMID | Grants and taskbar pinning bleed across variants |
+| `productName` | `.app` name, Electron `app.name` → log dir, `safeStorage` keychain entry | One app's credentials are undecryptable by the other |
+| package.json `name` | NSIS install dir + electron-updater cache dir (via `appInfo.sanitizedName`) | **Both variants install into the same `%LOCALAPPDATA%\Programs` folder** |
 
-Fixed download links: `https://dl.super-one.dev/{alpha,beta,stable}/latest/<file>` always resolve to that channel's newest installer (permanent, shareable — for README/QR/external use). These are human-download aliases only; electron-updater itself keeps reading the versioned `v${VERSION}/` paths from the channel yml.
+The third is injected through `extraMetadata.name`, which electron-builder applies
+before it constructs `AppInfo`, so it is the only seam that reaches the install path.
 
-R2 layout rationale: yml stays at bucket root because clients fetch it via fixed URL (can't include `${version}` macro since version is unknown until yml is read); binaries go under `v${VERSION}/` so the bucket root stays scannable as more releases accumulate. The `path:` and `files[].url:` fields in each yml carry the `v${VERSION}/` prefix so electron-updater resolves the correct URL automatically — zero client config.
+- **`electron-builder.config.cjs` is the only build entry point.** It loads
+  `electron-builder.yml` as a base and overrides the identity keys. It deliberately
+  does **not** use electron-builder's `extends`: that unions arrays, so a variant
+  could never drop a target the base declares. It requires `SUPERONE_VARIANT` (no
+  default), asserts version↔variant, and honours a `SUPERONE_VERSION` override so a
+  stable build can be cut from an alpha commit. Output goes to `dist/<variant>/`
+- **`electron-builder.yml` is not a complete config on its own** — the identity
+  fields were removed from it
+- **`src/main/variant.ts`** is the runtime lookup, reading `variant` from the
+  packaged package.json. `variant()` / `variantId()` / `variantScopedId()` are how
+  main-process code asks which app it is. Dev defaults to `alpha`
+- **userData is set explicitly**, not via `app.setName`. Electron computes the
+  userData path from package.json during init, *before* main runs, so `setName` does
+  not move it. `packagedUserDataPath()` in `user-data-path.ts` builds it and
+  `index.ts` calls `app.setPath('userData', …)` in both the dev and packaged branches
+- Anything else living at a fixed absolute path needs a per-variant scope too, and
+  the list is not obvious: the harness root (`~/.superone/<harnessDirName>`, because
+  `pruneVersions` keeps only two versions and would delete the other variant's
+  running binary), the Computer Use helper bundle id and install root, and the
+  lid-keep-awake lease (now per-process: `<prefix>.<uid>.<pid>.lease`)
+- The renderer learns which variant it is from `StartupData.variant`. **Never derive
+  it from the version string** — `SUPERONE_VERSION` breaks that correspondence
 
-Bridge mode: alpha clients built before the R2 switch have `provider: github` baked into ASAR's `app-update.yml` and embed `UPDATER_TOKEN` for private GitHub Release auth. They keep working because `promote.yml` still uploads to GitHub Release (flat layout). Once they auto-update to a post-switch build, that build's ASAR has `provider: generic` + `https://dl.super-one.dev`, so subsequent checks go to R2. Long-term policy: keep dual-publish indefinitely; **never** rotate `UPDATER_TOKEN` (legacy clients embed it).
+### Release Flow
+
+Three independent workflows; they do not call each other. All take a `variant`.
+
+1. **`build-{mac,win,linux}.yml`** — `workflow_dispatch` with `ref`, `variant`,
+   optional `version`. Sets `SUPERONE_VARIANT` / `SUPERONE_VERSION` and uploads from
+   `apps/desktop/dist/<variant>/`.
+2. **`promote.yml` (archive only)** — uploads the artifacts **flat** to a draft
+   GitHub Release (changelog mirror + the legacy GitHub-provider bridge), then moves
+   the binaries to `<variant>/v${VERSION}/` on R2 and drops the ymls. **Promote never
+   makes anything live.**
+3. **`set-latest.yml` (makes a version live)** — inputs `release_tag`, `variant`,
+   `force`, `legacy_root`. Downloads that version's flat manifests from the GitHub
+   Release, runs `scripts/set-latest.ts`, publishes `<variant>/latest-*.yml` and
+   refreshes the fixed download links. `force=true` is how you roll a variant back.
+
+`scripts/lib/channels.ts` holds the pure helpers (`compareVersions`, `shouldPublish`,
+`prefixVersionPaths`, `rootRelativePaths`, `fixedLinkName`, `fixedDownloadPath`,
+`versionedArtifactPath`), tested in `channels.test.ts` — which runs under the desktop
+vitest suite via the `../../scripts/**` include in `vitest.config.ts`.
+
+**There is no channel cascade.** It was removed with the variant split: handing the
+alpha app a stable build would install a different `appId` over it. Each variant owns
+one R2 prefix and publishes exactly one `latest-*.yml` inside it. `@superone/shared/update-channels`
+keeps only `channelFromVersion`, for `@super-one/cli` (which ships at the desktop
+version, has no variant, and needs a harness manifest channel).
+
+R2 layout:
+
+```
+super-one-releases/
+  stable/latest-mac.yml · latest.yml · latest-linux.yml   ← what the stable app polls
+  stable/v0.61.0/{*.dmg,*.zip,*.exe,*.AppImage,*.blockmap}
+  stable/latest/{SuperOne.dmg,SuperOne-arm64.dmg,…}       ← shareable version-less links
+  alpha/…                                                  ← same shape, separate app
+  alpha-mac.yml · alpha.yml · alpha-linux.yml              ← LEGACY, bucket root only
+```
+
+Manifest urls are relative, so `<variant>/latest-mac.yml` + `v${VERSION}/x.dmg`
+resolves inside the right prefix with zero client config.
+
+**Legacy root bridge (`legacy_root=true`).** Builds from before the variant split
+baked in `url: https://dl.super-one.dev` with no variant segment and derived their
+channel from their own version, so they poll `alpha-*.yml` **at the bucket root** and
+will never look inside `stable/`. `legacy_root` re-roots the same manifest
+(`rootRelativePaths` → `stable/v${VERSION}/…`) and writes it under those root names,
+pulling installed clients across onto the stable app. Constraints:
+
+- It only refreshes root names that **already exist**; a 404 means no shipped build
+  reads that name, and creating it would leave an orphan `prune-releases.yml`
+  (which scans `<variant>/`) cannot see
+- `set-latest.ts` refuses `legacy_root` for any variant whose `appId` is not
+  `com.superone.app` — legacy clients are that bundle id and must only ever be
+  offered that app's builds
+- A manifest fetch that is neither 200 nor 404 **fails the run**. Treating an
+  unreachable manifest as "nothing published" would both bypass the semver guard and
+  silently skip this bridge
+
+**Never rotate `UPDATER_TOKEN`** — the oldest alpha clients embed it in their ASAR for
+private GitHub Release auth, and `promote.yml` still uploads there for them.
+
+**`prune-releases.yml`** deletes archived versions manually: inputs `variant`, `mode`
+(`single` | `older-than`), `version`, `dry_run` (default true),
+`delete_github_release`. It refuses to delete a version any of that variant's three
+pointer ymls currently names. Planning is pure (`scripts/prune-releases.ts`,
+`planPrune`).
+
+The step-by-step runbook lives in the `release` skill (`.agents/skills/release/SKILL.md`).
 
 ### Codex Integration (Experimental)
 
@@ -201,36 +300,34 @@ Bridge mode: alpha clients built before the R2 switch have `provider: github` ba
 
 ### Build & Packaging
 
-Configured via `apps/desktop/electron-builder.yml` (electron-vite natively supports this file):
+The build entry point is **`apps/desktop/electron-builder.config.cjs`**, not the yml —
+see **Build Variants** above. `SUPERONE_VARIANT` is required; there is no default,
+because a build with the wrong identity is worse than no build.
 
-- Output: `apps/desktop/dist/` directory
-- `asarUnpack: "**/*.node"` — required for `better-sqlite3` native module (Claude/Codex platform binaries are **not** unpacked; P5 installs them on demand under `~/.superone/harness`)
-- `publish.provider: github` — electron-updater reads from GitHub Releases
-- macOS: DMG + ZIP (universal). ZIP target required for auto-update. Code signing env vars commented out for now
-- Windows: NSIS (x64 + arm64)
-- Linux: AppImage (x64 + arm64)
+- Output: `apps/desktop/dist/<variant>/`
+- `asarUnpack: "**/*.node"` — required for the `better-sqlite3` native module (harness
+  platform binaries are **not** unpacked; they are installed on demand under
+  `~/.superone/<harnessDirName>`)
+- `publish`: `generic` against `https://dl.super-one.dev/<downloadPrefix>` with an
+  explicit `channel: latest`. The explicit channel is what stops electron-builder
+  deriving one from the version's prerelease tag, so every variant emits the same
+  `latest-*.yml` names and the variant lives in the R2 prefix instead
+- `build/afterPack.cjs` clones the per-variant Computer Use helper and rewrites the
+  cloned Electron Helper bundle ids to `${appId}.helper.*`
+- macOS: DMG + ZIP (ZIP is required for auto-update) · Windows: NSIS (x64 + arm64) ·
+  Linux: AppImage (x64 + arm64)
 
-### CI/CD & Release
+Local builds: `SUPERONE_VARIANT=alpha bun run build:mac`.
 
-`.github/workflows/build-{mac,win,linux}.yml` — manual `workflow_dispatch` per platform; `promote.yml` collects artifacts into a draft GitHub release:
+### Versioning
 
-- Three parallel jobs: macOS / Windows / Linux
-- Flow: checkout → setup-bun → `bun install --frozen-lockfile` → `bun run build:{platform} -- --publish never` → `actions/upload-artifact@v4` from `apps/desktop/dist/*`
-- Promote: `actions/download-artifact@v4` → `gh release create/upload`. The `upload-artifact` longest-common-prefix strip means downloaded files land flat at `staging/*` despite source paths under `apps/desktop/dist/`
+`alpha` builds carry an `-alpha` prerelease tag; `stable` builds carry none, and
+`electron-builder.config.cjs` asserts that correspondence. A stable release can still
+be cut from an alpha commit by passing `SUPERONE_VERSION` (or the `version` workflow
+input) — which is exactly why nothing at runtime may infer the variant from the
+version string.
 
-Versioning: prerelease iterations use `-alpha.N` suffix (e.g. `0.1.0-alpha.1` → `0.1.0-alpha.2`). Patch number is reserved for stable releases (`0.1.0` → `0.1.1`).
-
-Release steps:
-
-```bash
-# 1. Bump version in BOTH apps/desktop/package.json (the published app) and root package.json (kept in sync for visibility)
-# 2. Commit and tag
-git commit -am "chore(release): bump version to 0.1.0-alpha.3"
-git tag v0.1.0-alpha.3
-git push origin main --tags
-# 3. Trigger build-{mac,win,linux}.yml workflow_dispatch, then promote.yml with the run IDs
-gh release edit v0.1.0-alpha.3 --draft=false --prerelease  # alpha/beta must use --prerelease
-```
+The step-by-step release runbook lives in the `release` skill.
 
 ## Styling
 

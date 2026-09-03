@@ -59,16 +59,35 @@ export function shouldPublish(next: string, current: string | null): boolean {
   return current === null || compareVersions(next, current) >= 0
 }
 
+function prefixManifestPaths(ymlText: string, prefix: string): string {
+  return ymlText.replace(/^(\s*-?\s*(?:url|path):\s+)(.+?)\s*$/gm, (_m, head: string, value: string) => {
+    if (value.startsWith(prefix) || /^https?:\/\//.test(value)) return `${head}${value}`
+    return `${head}${prefix}${value}`
+  })
+}
+
 // Prefix every `url:` / `path:` value in a channel manifest with `v${version}/`,
 // matching the R2 layout (binaries live under the version subdir). Leaves values
 // already prefixed or absolute untouched. Relocates the flat manifests archived
 // on the GitHub Release onto R2's versioned layout.
 export function prefixVersionPaths(ymlText: string, version: string): string {
-  const prefix = `v${version}/`
-  return ymlText.replace(/^(\s*-?\s*(?:url|path):\s+)(.+?)\s*$/gm, (_m, head: string, value: string) => {
-    if (value.startsWith(prefix) || /^https?:\/\//.test(value)) return `${head}${value}`
-    return `${head}${prefix}${value}`
-  })
+  return prefixManifestPaths(ymlText, `v${version}/`)
+}
+
+// Re-root a variant's manifest for a client that resolves relative paths against
+// the bucket root rather than the variant prefix: `v1.2.3/x.dmg` -> `stable/v1.2.3/x.dmg`.
+export function rootRelativePaths(ymlText: string, variant: string): string {
+  return prefixManifestPaths(ymlText, `${variant}/`)
+}
+
+// The manifest names pre-variant clients poll at the BUCKET ROOT. Those builds
+// baked in `url: https://dl.super-one.dev` with no variant segment and derived
+// the channel from their own version, so they will never look inside a variant
+// prefix. Refreshing these is the only way to reach an installed legacy client.
+export const LEGACY_ROOT_YML_NAMES: Record<string, string[]> = {
+  mac: ['alpha-mac.yml', 'beta-mac.yml', 'latest-mac.yml'],
+  win: ['alpha.yml', 'beta.yml', 'latest.yml'],
+  linux: ['alpha-linux.yml', 'beta-linux.yml', 'latest-linux.yml'],
 }
 
 // Strip the version token (and its leading separator) from an artifact filename

@@ -266,6 +266,24 @@ gh workflow run set-latest.yml --ref main \
   gh workflow run set-latest.yml --ref main \
     -f release_tag=v<older-version> -f variant=alpha -f force=true
   ```
+- **`legacy_root=true` — the one-way bridge for pre-variant clients.** Builds from
+  before the variant split poll `alpha-*.yml` at the **bucket root**, not inside any
+  variant prefix, so a normal `set-latest` reaches none of them. This flag re-roots
+  the same manifest to `stable/v<version>/…` and writes it under those legacy root
+  names, pulling installed clients onto the stable app. Use it on the **cutover
+  stable release**, and keep using it on later stable releases until you are willing
+  to strand whoever never updated. The script refuses it for any variant that is not
+  `com.superone.app`, and skips root names that do not already exist.
+  ```bash
+  gh workflow run set-latest.yml --ref main \
+    -f release_tag=v<version> -f variant=stable -f legacy_root=true
+  ```
+  Verify afterwards — the root manifest must name the version **and** the prefix:
+  ```bash
+  curl -s https://dl.super-one.dev/alpha-mac.yml | grep -E '^version:|^path:'
+  # version: <version>
+  # path: stable/v<version>/SuperOne-<version>-arm64-mac.zip
+  ```
 
 ### Step 9: Report
 
@@ -291,7 +309,8 @@ has been running as alpha, packaged under the stable identity:
    config asserts the override has no prerelease tag for `stable`, so a mistake
    fails the build instead of shipping a mislabelled app.
 3. `publish-cli` for the same version with dist-tag `latest`, then promote and
-   set-latest with `-f variant=stable`.
+   set-latest with `-f variant=stable`. For a stable release that must also collect
+   pre-variant clients, add `-f legacy_root=true` (see Step 8).
 
 The alpha line keeps moving independently; nothing about the stable cut changes
 `package.json`, so the next alpha release continues from where it was.

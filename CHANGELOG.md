@@ -4,6 +4,62 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.61.0-alpha] - 2026-09-03
+
+### Added
+
+- SuperOne now ships as two side-by-side apps built from one codebase:
+  SuperOne and SuperOne Alpha. They carry separate bundle ids, install
+  directories, data directories, harness runtimes, Computer Use helpers and
+  update feeds, so both can be installed at once and neither can overwrite
+  the other's sessions or credentials.
+- Notifications: an OS notification is raised when a session blocks on a
+  human — permission requests, questions and plan approvals — and is
+  withdrawn as soon as the interaction is answered anywhere. Its wording
+  comes from the same source as the sidebar's "waiting on you" chip, so the
+  two cannot drift.
+- Onboarding: turning notifications on is an explicit switch on the welcome
+  step (macOS only), so the system authorization prompt arrives with context
+  instead of during the first blocked task.
+- Settings: the stable app's Updates card offers the Alpha build.
+
+### Changed
+
+- The per-user update channel selector is gone, along with the never-published
+  beta channel. Switching lanes is now "install the other app".
+- Settings: the four per-kind notification toggles moved behind a disclosure,
+  collapsed by default, with a count shown when any have been customised.
+- Chat: the synthetic "agent was woken by a background task" transcript row is
+  removed. The wake still reaches the agent; it just leaves no visible row.
+- Chat: Codex Fast mode on the collab confirm card is now a lightning glyph in
+  front of the model name instead of a labelled switch that wrapped the row.
+
+### Fixed
+
+- Auto-update: every user who had ever picked an update channel was running
+  with downgrades allowed, because electron-updater's channel setter
+  force-enables `allowDowngrade`. Removing the runtime channel closes it.
+- Collab: a session launched with a third-party provider no longer reverts to
+  the default harness model. An `apiProviderId` that is not a valid credential
+  id is rejected at launch with a message naming the valid ids.
+- Chat: a compact boundary no longer takes the running footer off the live
+  reply.
+- Chat: a mention query now highlights the leading `@` in the handle.
+- Browser: with the CDP setting on, element screenshots are no longer a blurry
+  upscale of the picture-in-picture surface. Every screenshot goes through the
+  renderer path and keeps full 2x density.
+- The harness runtime store, the Computer Use helper identity and the
+  closed-lid power lease are scoped per build, so two installed variants
+  cannot clobber each other.
+
+### CI
+
+- New `prune-releases` workflow deletes archived R2 versions, refusing any
+  version a live pointer manifest still names.
+- `promote` and `set-latest` are reworked around variants: each variant owns
+  one R2 prefix, and `set-latest` gained a `legacy_root` bridge that pulls
+  pre-variant clients onto the stable app.
+
 ## [0.60.2-alpha] - 2026-09-02
 
 ### Added

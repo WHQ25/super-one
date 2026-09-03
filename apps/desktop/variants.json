@@ -22,7 +22,7 @@
     "harnessDirName": "harness-alpha",
     "computerUseBundleId": "com.superone.computer-use.alpha",
     "displayLabel": "Alpha",
-    "icon": "build/icon.png",
+    "icon": "build/icon-alpha.png",
     "prereleaseTag": "alpha"
   }
 }

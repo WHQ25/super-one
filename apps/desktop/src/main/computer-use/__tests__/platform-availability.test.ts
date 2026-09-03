@@ -140,6 +140,10 @@ describe('Computer Use platform availability', () => {
     expect(new Set(names).size).toBe(names.length)
     expect(new Set(ids).size).toBe(ids.length)
     expect(new Set(roots).size).toBe(roots.length)
-    expect(ids).not.toContain(DEV_HELPER_BUNDLE_ID)
+    // The dev variant owns the unpackaged helper id -- an unpackaged run and a
+    // packaged dev build are the same app. No SHIPPING variant may take it, or
+    // a developer running dev would pkill the helper of a real install.
+    const shipping = Object.entries(VARIANTS).filter(([id]) => id !== 'dev')
+    expect(shipping.map(([, v]) => v.computerUseBundleId)).not.toContain(DEV_HELPER_BUNDLE_ID)
   })
 })

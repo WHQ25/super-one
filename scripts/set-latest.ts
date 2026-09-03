@@ -162,7 +162,11 @@ async function main(): Promise<void> {
   const legacyRoot = (process.argv[9] ?? 'false') === 'true'
 
   const version = tag.replace(/^v/, '')
-  const variantIds = Object.keys(VARIANTS)
+  // A variant with no download prefix publishes nothing and has no R2 layout,
+  // so it is not a thing this script can be pointed at.
+  const variantIds = Object.entries(VARIANTS as Record<string, { downloadPrefix: string | null }>)
+    .filter(([, v]) => v.downloadPrefix !== null)
+    .map(([id]) => id)
   if (!version || !variantIds.includes(variant)) {
     console.error(`usage: set-latest <tag> <${variantIds.join('|')}> [force] [manifestsDir] [baseUrl] [outDir] [planPath] [legacyRoot]`)
     process.exit(1)

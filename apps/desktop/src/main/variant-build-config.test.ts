@@ -71,11 +71,18 @@ describe('electron-builder variant config', () => {
       productName: v.productName,
       variant: id,
     })
-    expect(config.publish).toEqual({
-      provider: 'generic',
-      url: `https://dl.super-one.dev/${v.downloadPrefix}`,
-      channel: 'latest',
-    })
+    if (v.downloadPrefix === null) {
+      // No prefix means no R2 layout to point at. A null feed is what stops
+      // electron-builder baking an app-update.yml, so a local build cannot
+      // auto-update itself onto a shipping line.
+      expect(config.publish).toBeNull()
+    } else {
+      expect(config.publish).toEqual({
+        provider: 'generic',
+        url: `https://dl.super-one.dev/${v.downloadPrefix}`,
+        channel: 'latest',
+      })
+    }
     expect((config.directories as { output: string }).output).toBe(`dist/${id}`)
     expect((config.linux as { executableName: string }).executableName).toBe(v.executableName)
     expect(packagedVersion(config)).toBe(

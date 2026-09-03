@@ -15,7 +15,7 @@ import { dirname } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { Readable } from 'node:stream'
 import { app } from 'electron'
-import { variantId } from '../variant'
+import { harnessManifestChannelForVariant } from '../variant'
 import {
   createFetchJson,
   createManagedTarballInstaller,
@@ -172,7 +172,7 @@ export function createDesktopTarballInstaller(
     // version-shaped guess. That guess is only correct while the builder
     // asserts version<->variant, and that assertion exists to catch a
     // mis-dispatched build -- not to pick a harness channel.
-    channel: opts.channel ?? variantId(),
+    channel: opts.channel ?? harnessManifestChannelForVariant(),
     releaseVersion,
     cdnBase: opts.cdnBase,
     npmOnly: opts.npmOnly,

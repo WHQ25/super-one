@@ -836,7 +836,19 @@ async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettin
     ? undefined
     : readAppSettings().powerMode
   if (requestedPowerMode !== undefined) {
-    await powerManagementService.setMode(requestedPowerMode, true)
+    try {
+      await powerManagementService.setMode(requestedPowerMode, true)
+    } catch (error) {
+      // The renderer shows this, but the closed-lid path runs a privileged
+      // install whose real cause (launchctl's own error) is only in this
+      // message -- and a toast is gone before anyone can read it.
+      log.warn(
+        '[power] could not switch to %s: %s',
+        requestedPowerMode,
+        error instanceof Error ? error.message : String(error),
+      )
+      throw error
+    }
   }
 
   let result: AppSettings

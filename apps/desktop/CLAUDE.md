@@ -207,7 +207,23 @@ before it constructs `AppInfo`, so it is the only seam that reaches the install 
   fields were removed from it
 - **`src/main/variant.ts`** is the runtime lookup, reading `variant` from the
   packaged package.json. `variant()` / `variantId()` / `variantScopedId()` are how
-  main-process code asks which app it is. Dev defaults to `alpha`
+  main-process code asks which app it is
+- **There is a third variant, `dev`**, and it never publishes. `downloadPrefix` is
+  `null`, which makes the builder emit `publish: null` so no `app-update.yml` is
+  baked and a local build cannot auto-update itself onto a shipping line.
+  `build:mac-dev` defaults to it — before that it defaulted to `alpha`, so a local
+  build installed under the real Alpha's appId and shared its profile, TCC grants
+  and Computer Use helper. `scripts/set-latest.ts` only accepts variants that have
+  a prefix
+- **Unpackaged runs are the `dev` variant** (`DEV_VARIANT_ID`). They cannot take
+  its bundle id — macOS reads that from `node_modules/electron/dist/Electron.app`
+  at launch and Electron has no runtime override, so `bun run dev` is always
+  `com.github.Electron`. Everything SuperOne itself controls does follow it. To
+  exercise anything keyed on a real bundle id (notification authorization, TCC),
+  build `SUPERONE_VARIANT=dev bun run build:mac-dev` and run the packaged app
+- Force the onboarding flow with `RENDERER_VITE_FORCE_ONBOARDING=1 bun run dev`.
+  It re-shows the flow but resets nothing, so a step gated on persisted state
+  (`notificationsPrimedAt`) needs that field cleared in `.dev-data/app-settings.json`
 - **userData is set explicitly**, not via `app.setName`. Electron computes the
   userData path from package.json during init, *before* main runs, so `setName` does
   not move it. `packagedUserDataPath()` in `user-data-path.ts` builds it and

@@ -2663,7 +2663,7 @@ export interface StartupData {
   sandboxCapability: SandboxCapability
   appVersion: string
   /** Which side-by-side app this is. Decided at package time, not derived. */
-  variant: UpdateChannel
+  variant: AppVariant
   /** Direct installer link for the Alpha build on this platform. */
   alphaDownloadUrl: string
 }
@@ -4322,6 +4322,16 @@ export interface RemoteDeviceConfig {
 export type Locale = 'en' | 'zh'
 
 /** Release channel of a build. One per side-by-side app variant. */
+/**
+ * Which side-by-side app a build is. Mirrors the keys of `variants.json`.
+ *
+ * Distinct from `UpdateChannel` on purpose: that one is a manifest channel for
+ * consumers with no variant of their own (`@super-one/cli`). They used to share
+ * a type because the two sets happened to match, which stopped being true the
+ * moment a variant existed that publishes nothing.
+ */
+export type AppVariant = 'stable' | 'alpha' | 'dev'
+
 export type UpdateChannel = 'alpha' | 'stable'
 
 export type ThemeMode = 'system' | 'light' | 'dark'

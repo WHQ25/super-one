@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -28,6 +29,7 @@ vi.mock('./logger', () => ({
 
 import {
   PowerManagementService,
+  buildMacHelperInstallCommand,
   macHelperIsUpToDate,
   parseMacHelperVersion,
   parseWindowsAcLidAction,
@@ -200,5 +202,37 @@ describe('mac helper versioning', () => {
     expect(macHelperIsUpToDate(2, 1)).toBe(false)
     expect(macHelperIsUpToDate(1, null)).toBe(false)
     expect(macHelperIsUpToDate(null, 1)).toBe(false)
+  })
+})
+
+
+describe('buildMacHelperInstallCommand', () => {
+  const command = buildMacHelperInstallCommand('/app/resources/macos-helper.sh', '/app/resources/d.plist')
+
+  it('is valid sh -- it only ever runs as root behind an admin prompt', () => {
+    const parsed = spawnSync('/bin/sh', ['-n'], { input: command, encoding: 'utf8' })
+    expect(parsed.stderr).toBe('')
+    expect(parsed.status).toBe(0)
+  })
+
+  it('waits the old job out before bootstrapping, and retries', () => {
+    // bootout returns before launchd finished; bootstrapping into that window
+    // fails with EIO and leaves nothing loaded.
+    const bootout = command.indexOf('launchctl bootout')
+    const wait = command.indexOf('while /bin/launchctl print')
+    const bootstrap = command.indexOf('until /bin/launchctl bootstrap')
+    expect(bootout).toBeGreaterThan(-1)
+    expect(wait).toBeGreaterThan(bootout)
+    expect(bootstrap).toBeGreaterThan(wait)
+  })
+
+  it('enables the label before bootstrapping it, not after', () => {
+    expect(command.indexOf('launchctl enable')).toBeLessThan(command.indexOf('launchctl bootstrap'))
+  })
+
+  it('quotes the paths it was handed', () => {
+    const quoted = buildMacHelperInstallCommand("/a b/it's.sh", '/a b/d.plist')
+    expect(quoted).toContain(`'/a b/it'"'"'s.sh'`)
+    expect(spawnSync('/bin/sh', ['-n'], { input: quoted, encoding: 'utf8' }).status).toBe(0)
   })
 })

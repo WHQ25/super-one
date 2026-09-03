@@ -273,21 +273,41 @@ async function isMacHelperCurrent(helper: string): Promise<boolean> {
   }
 }
 
+/**
+ * The privileged one-shot, as a single `sh` command.
+ *
+ * Two things here are not decoration. `bootout` returns before launchd has
+ * finished tearing the old job down -- our helper traps EXIT to drop the sleep
+ * override, so teardown is not instant -- and a `bootstrap` that lands inside
+ * that window fails with EIO, leaving nothing loaded at all. So the old job is
+ * waited out, and the bootstrap is retried. `enable` also has to come first:
+ * launchd refuses to bootstrap a label that is disabled, and running it after
+ * the bootstrap would be too late to help.
+ *
+ * Exported for tests -- this string only ever runs as root behind an admin
+ * prompt, so it is not something to iterate on by trial.
+ */
+export function buildMacHelperInstallCommand(helper: string, plist: string): string {
+  const label = MAC_HELPER_LABEL
+  return [
+    'set -e',
+    '/usr/bin/install -d -o root -g wheel -m 755 /Library/PrivilegedHelperTools',
+    `/usr/bin/install -o root -g wheel -m 755 ${shellQuote(helper)} ${shellQuote(MAC_HELPER_DEST)}`,
+    `/usr/bin/install -o root -g wheel -m 644 ${shellQuote(plist)} ${shellQuote(MAC_PLIST_DEST)}`,
+    `/bin/launchctl bootout system/${label} >/dev/null 2>&1 || true`,
+    `n=0; while /bin/launchctl print system/${label} >/dev/null 2>&1 && [ $n -lt 50 ]; do /bin/sleep 0.1; n=$((n+1)); done`,
+    `/bin/launchctl enable system/${label}`,
+    `n=0; until /bin/launchctl bootstrap system ${shellQuote(MAC_PLIST_DEST)}; do n=$((n+1)); [ $n -lt 10 ] || exit 1; /bin/sleep 0.5; done`,
+    `/bin/launchctl kickstart -k system/${label}`,
+  ].join('; ')
+}
+
 async function installMacHelper(helper: string, plist: string): Promise<void> {
   if (!existsSync(helper) || !existsSync(plist)) {
     throw new Error('Closed-lid helper resources are missing from this build')
   }
 
-  const command = [
-    'set -e',
-    '/usr/bin/install -d -o root -g wheel -m 755 /Library/PrivilegedHelperTools',
-    `/usr/bin/install -o root -g wheel -m 755 ${shellQuote(helper)} ${shellQuote(MAC_HELPER_DEST)}`,
-    `/usr/bin/install -o root -g wheel -m 644 ${shellQuote(plist)} ${shellQuote(MAC_PLIST_DEST)}`,
-    `/bin/launchctl bootout system/${MAC_HELPER_LABEL} >/dev/null 2>&1 || true`,
-    `/bin/launchctl bootstrap system ${shellQuote(MAC_PLIST_DEST)}`,
-    `/bin/launchctl enable system/${MAC_HELPER_LABEL}`,
-    `/bin/launchctl kickstart -k system/${MAC_HELPER_LABEL}`,
-  ].join('; ')
+  const command = buildMacHelperInstallCommand(helper, plist)
   const script = `do shell script ${JSON.stringify(`/bin/sh -c ${shellQuote(command)}`)} with administrator privileges`
   try {
     await execFileAsync('/usr/bin/osascript', ['-e', script], { timeout: 120_000 })

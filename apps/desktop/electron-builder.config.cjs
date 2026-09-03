@@ -103,14 +103,20 @@ module.exports = {
     // differ per variant instead of colliding on one slot.
     executableName: variant.executableName,
   },
-  publish: {
-    provider: 'generic',
-    url: `https://dl.super-one.dev/${variant.downloadPrefix}`,
-    // Explicit channel suppresses electron-builder's prerelease-derived
-    // channel, so every variant publishes `latest-*.yml` under its own prefix
-    // and "update channel" stops existing as a wire-level concept.
-    channel: 'latest',
-  },
+  // A variant with no download prefix never publishes, so it gets no feed at
+  // all: electron-builder then bakes no `app-update.yml`, and the updater has
+  // nothing to check. A local build must never be able to auto-update itself
+  // onto a shipping line.
+  publish: variant.downloadPrefix
+    ? {
+        provider: 'generic',
+        url: `https://dl.super-one.dev/${variant.downloadPrefix}`,
+        // Explicit channel suppresses electron-builder's prerelease-derived
+        // channel, so every variant publishes `latest-*.yml` under its own prefix
+        // and "update channel" stops existing as a wire-level concept.
+        channel: 'latest',
+      }
+    : null,
   extraMetadata: {
     ...base.extraMetadata,
     name: variant.packageName,

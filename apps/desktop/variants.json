@@ -26,5 +26,19 @@
     "icon": "build/icon-alpha.png",
     "prereleaseTag": "alpha",
     "legacyDataDirName": null
+  },
+  "dev": {
+    "packageName": "superone-dev",
+    "appId": "com.superone.app.dev",
+    "productName": "SuperOne Dev",
+    "executableName": "superone-dev",
+    "dataDirName": "SuperOne Dev",
+    "downloadPrefix": null,
+    "harnessDirName": "harness-dev",
+    "computerUseBundleId": "com.superone.computer-use.dev",
+    "displayLabel": "Dev",
+    "icon": "build/icon-dev.png",
+    "prereleaseTag": "dev",
+    "legacyDataDirName": null
   }
 }

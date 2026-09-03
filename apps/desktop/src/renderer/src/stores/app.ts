@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AppSettings, RecentFolder, RemoteDeviceConfig, SandboxCapability, SandboxProbeResult, SetupEvent, SettingsProvider, StartupData, UpdateChannel, UpdateEvent, WorktreeMode } from '@superone/shared/agent-types'
+import type { AppSettings, RecentFolder, RemoteDeviceConfig, SandboxCapability, SandboxProbeResult, SetupEvent, SettingsProvider, StartupData, AppVariant, UpdateEvent, WorktreeMode } from '@superone/shared/agent-types'
 import type { HarnessId } from '@superone/shared/session-types'
 import {
   clampA,
@@ -147,7 +147,7 @@ interface AppState {
 
   // App
   appVersion: string
-  appVariant: UpdateChannel
+  appVariant: AppVariant
   alphaDownloadUrl: string
 
   // Sandbox

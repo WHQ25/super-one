@@ -3,7 +3,7 @@ import { hostname } from 'node:os'
 import WebSocket from 'ws'
 import { diffLines } from 'diff'
 import log from './logger'
-import { variant } from './variant'
+import { variant, variantId } from './variant'
 import { humanizePageToolName } from '@superone/shared/page-tool-name'
 import type { AgentEvent, RemoteCommand, ContentBlock, ChatMessage, CodexThreadItem, CodexCollabToolCallItem, RemoteDeviceConfig, TodoToolItem, TerminalEvent } from '@superone/shared/agent-types'
 import { isSubagentToolName } from '@superone/shared/tool-ui'
@@ -915,7 +915,7 @@ export class RemoteControlService {
         // Both variants advertise from the same machine, so the label has to
         // disambiguate them in the phone's picker. Carried in hostName rather
         // than a new TXT key so existing clients show it without a change.
-        txt: { roomId, hostName: lanHostLabel(), variant: variant().downloadPrefix },
+        txt: { roomId, hostName: lanHostLabel(), variant: variantId() },
       })
     } catch (err) {
       log.error('[RemoteControl] Failed to start LAN advertiser:', err)

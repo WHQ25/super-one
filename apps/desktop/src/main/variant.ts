@@ -20,8 +20,16 @@ import VARIANTS from '../../variants.json'
 export type VariantId = keyof typeof VARIANTS
 export type VariantIdentity = (typeof VARIANTS)[VariantId]
 
-/** Unpackaged runs (dev, e2e against `out/`) are alpha-flavoured. */
-export const DEV_VARIANT_ID: VariantId = 'alpha'
+/**
+ * Unpackaged runs (`bun run dev`, e2e against `out/`) are the dev app.
+ *
+ * They cannot actually take its bundle id -- macOS reads that from
+ * `node_modules/electron/dist/Electron.app` at launch and Electron has no
+ * runtime override -- but everything SuperOne itself controls (profile, harness
+ * root, Computer Use helper) should be the dev identity rather than borrowing
+ * the shipping alpha app's.
+ */
+export const DEV_VARIANT_ID: VariantId = 'dev'
 
 export function isVariantId(value: unknown): value is VariantId {
   return typeof value === 'string' && Object.hasOwn(VARIANTS, value)
@@ -78,7 +86,11 @@ export { VARIANTS }
  * R2 link also means the right platform and architecture with no page in
  * between -- both of which this process already knows.
  */
-export function variantDownloadUrl(id: VariantId): string {
+export type PublishedVariantId = {
+  [K in VariantId]: (typeof VARIANTS)[K]['downloadPrefix'] extends null ? never : K
+}[VariantId]
+
+export function variantDownloadUrl(id: PublishedVariantId): string {
   const target = VARIANTS[id]
   return fixedDownloadUrl({
     downloadPrefix: target.downloadPrefix,
@@ -86,4 +98,15 @@ export function variantDownloadUrl(id: VariantId): string {
     platform: downloadPlatformFor(process.platform),
     arch: process.arch === 'x64' ? 'x64' : ('arm64' as DownloadArch),
   })
+}
+
+/**
+ * Which harness manifest this app reads.
+ *
+ * `dev` is built from the same tree as `alpha` and never publishes one of its
+ * own, so it shares alpha's. Mapped explicitly rather than derived from the
+ * version string -- that derivation is for consumers with no variant.
+ */
+export function harnessManifestChannelForVariant(): 'alpha' | 'stable' {
+  return variantId() === 'stable' ? 'stable' : 'alpha'
 }

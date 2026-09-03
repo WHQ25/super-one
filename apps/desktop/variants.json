@@ -10,7 +10,8 @@
     "computerUseBundleId": "com.superone.computer-use",
     "displayLabel": null,
     "icon": "build/icon.png",
-    "prereleaseTag": null
+    "prereleaseTag": null,
+    "legacyDataDirName": "super-one"
   },
   "alpha": {
     "packageName": "superone-alpha",
@@ -23,6 +24,7 @@
     "computerUseBundleId": "com.superone.computer-use.alpha",
     "displayLabel": "Alpha",
     "icon": "build/icon-alpha.png",
-    "prereleaseTag": "alpha"
+    "prereleaseTag": "alpha",
+    "legacyDataDirName": null
   }
 }

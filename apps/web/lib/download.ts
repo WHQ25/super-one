@@ -4,7 +4,24 @@ const BASE = (
   process.env.NEXT_PUBLIC_DOWNLOAD_BASE_URL ?? "https://dl.super-one.dev"
 ).replace(/\/+$/, "")
 
-const CHANNEL = process.env.NEXT_PUBLIC_DOWNLOAD_CHANNEL ?? "alpha"
+/**
+ * Which side-by-side app the site offers. Ordinary visitors get `stable`.
+ *
+ * The installer names are derived from each variant's `productName` -- they
+ * are what `fixedLinkName` in `scripts/lib/channels.ts` produces, so the two
+ * must stay in step. The source of truth is `apps/desktop/variants.json`;
+ * this app cannot import across the workspace boundary, so it mirrors the two
+ * product names and nothing else.
+ */
+export type DownloadVariant = "stable" | "alpha"
+
+const PRODUCT_NAME: Record<DownloadVariant, string> = {
+  stable: "SuperOne",
+  alpha: "SuperOne Alpha",
+}
+
+const DEFAULT_VARIANT = (process.env.NEXT_PUBLIC_DOWNLOAD_CHANNEL ??
+  "stable") as DownloadVariant
 
 export type DownloadArch = "arm64" | "x64"
 
@@ -21,14 +38,24 @@ export const DOWNLOAD_TARGETS: DownloadTarget[] = [
   { platform: "linux" },
 ]
 
-function fixedFileName(platform: DesktopPlatform, arch?: DownloadArch): string {
-  if (platform === "mac") return arch === "x64" ? "SuperOne.dmg" : "SuperOne-arm64.dmg"
-  if (platform === "win") return "SuperOne Setup.exe"
-  return "SuperOne.AppImage"
+function fixedFileName(
+  variant: DownloadVariant,
+  platform: DesktopPlatform,
+  arch?: DownloadArch,
+): string {
+  const product = PRODUCT_NAME[variant]
+  if (platform === "mac") return arch === "x64" ? `${product}.dmg` : `${product}-arm64.dmg`
+  if (platform === "win") return `${product} Setup.exe`
+  return `${product}.AppImage`
 }
 
-export function downloadUrl(platform: DesktopPlatform, arch?: DownloadArch): string {
-  return `${BASE}/${CHANNEL}/latest/${encodeURIComponent(fixedFileName(platform, arch))}`
+export function downloadUrl(
+  platform: DesktopPlatform,
+  arch?: DownloadArch,
+  variant: DownloadVariant = DEFAULT_VARIANT,
+): string {
+  const name = encodeURIComponent(fixedFileName(variant, platform, arch))
+  return `${BASE}/${variant}/latest/${name}`
 }
 
 export function isTarget(

@@ -77,6 +77,36 @@ jobs:
                 ;;
             esac
           done
+
+          # The pre-variant root manifests also name a live version. After a
+          # set-latest with legacy_root they point INTO this bucket -- e.g.
+          # alpha-mac.yml serving stable/v0.61.0/ -- so a version can be the
+          # one legacy clients are downloading right now while no
+          # <variant>/latest-*.yml names it any more. Pruning it 404s them.
+          # Only count a root manifest whose paths are under THIS variant.
+          for yml in alpha-mac.yml alpha.yml alpha-linux.yml beta-mac.yml beta.yml beta-linux.yml latest-mac.yml latest.yml latest-linux.yml; do
+            code="$(curl -sS -o "root-${yml}.body" -w '%{http_code}' "https://dl.super-one.dev/${yml}" || echo 000)"
+            case "$code" in
+              200) ;;
+              404) continue ;;
+              *)
+                echo "::error::root/${yml} returned ${code}; refusing to prune without knowing what is live"
+                exit 1
+                ;;
+            esac
+            p="$(sed -n 's/^path:[[:space:]]*//p' "root-${yml}.body" | tr -d "'\"" | head -1)"
+            case "$p" in
+              "${{ inputs.variant }}/"*) ;;
+              *) echo "root/${yml} -> ${p:-(no path)} — not this variant, ignoring"; continue ;;
+            esac
+            v="$(sed -n 's/^version:[[:space:]]*//p' "root-${yml}.body" | tr -d "'\"" | head -1)"
+            if [ -z "$v" ]; then
+              echo "::error::root/${yml} fetched but has no version field"; exit 1
+            fi
+            echo "root/${yml} -> ${v} (legacy bridge into ${{ inputs.variant }}/)"
+            LIVE="${LIVE:+$LIVE,}$v"
+          done
+
           echo "versions=${LIVE}" >> "$GITHUB_OUTPUT"
 
       - name: List archived objects

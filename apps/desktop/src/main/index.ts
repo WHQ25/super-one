@@ -14,7 +14,7 @@ import { is } from '@electron-toolkit/utils'
 import type { EnvironmentHost } from './environment/environment-host'
 import type { DraftUpsertRequest } from '@superone/shared/environment'
 import log from './logger'
-import { packagedUserDataPath } from './user-data-path'
+import { packagedUserDataPath, resolveAndMigrateUserData } from './user-data-path'
 import { variant, variantId } from './variant'
 import { startMediaServer, getMediaServerPort } from './media-server'
 import { getMediaProviderStatuses } from './media-gen/settings-service'
@@ -270,14 +270,23 @@ if (is.dev) {
   // Electron resolves userData from package.json during init, before this file
   // runs, and app.setName does not move it — the side-by-side variants only
   // stay on separate profiles because of this explicit setPath.
-  app.setPath(
-    'userData',
-    packagedUserDataPath({
-      appData: app.getPath('appData'),
-      dataDirName: variant().dataDirName,
-      instance: process.env.SUPERONE_INSTANCE,
-    }),
-  )
+  //
+  // stable also inherits the pre-variant `super-one` tree, so this may move it
+  // first. The result is authoritative: a failed migration deliberately returns
+  // the legacy path rather than let the app open an empty profile.
+  const userData = resolveAndMigrateUserData({
+    appData: app.getPath('appData'),
+    dataDirName: variant().dataDirName,
+    legacyDataDirName: variant().legacyDataDirName,
+    instance: process.env.SUPERONE_INSTANCE,
+  })
+  app.setPath('userData', userData.path)
+  if (userData.action !== 'none') {
+    const detail = userData.error ? ` (${userData.error})` : ''
+    const line = `[userdata] ${userData.action}: using ${userData.path}${detail}`
+    if (userData.action === 'kept-legacy') log.warn(line)
+    else log.info(line)
+  }
 }
 
 const chromiumFeatures = ['PlatformHEVCDecoderSupport']

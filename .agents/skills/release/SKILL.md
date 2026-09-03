@@ -308,7 +308,20 @@ has been running as alpha, packaged under the stable identity:
    it drives artifact filenames, `app.getVersion()` and the update manifest. The
    config asserts the override has no prerelease tag for `stable`, so a mistake
    fails the build instead of shipping a mislabelled app.
-3. `publish-cli` for the same version with dist-tag `latest`, then promote and
+3. **Publish the stable harness channel.** The normal Step-1 diff rule almost
+   never fires on a stable cut (no pin changed -- the tree is the alpha tree),
+   so this is easy to skip, and `harness/manifest/stable.json` does not exist
+   until someone runs it. Without it every stable client falls back to plain
+   npm for harness downloads: not fatal, but slow and it bypasses R2 entirely.
+   `app_version` must be passed explicitly -- it defaults to the root
+   package.json version, which is still on the alpha line.
+   ```bash
+   gh workflow run publish-harness.yml --ref <the same alpha SHA> \
+     -f channel=stable -f app_version=<X.Y.Z>
+   ```
+   Verify: `curl -sI https://dl.super-one.dev/harness/manifest/stable.json | head -1`
+   and `.../app/harness-pins/<X.Y.Z>.json`.
+4. `publish-cli` for the same version with dist-tag `latest`, then promote and
    set-latest with `-f variant=stable`. For a stable release that must also collect
    pre-variant clients, add `-f legacy_root=true` (see Step 8).
 

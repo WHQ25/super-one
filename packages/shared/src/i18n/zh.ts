@@ -1128,7 +1128,8 @@ export const zh: Messages = {
         },
         kinds: {
           label: '通知这些情况',
-          description: '选择哪些类型的中断值得推送通知。',
+          summaryAll: '所有中断类型',
+          summarySome: '{{total}} 类中已选 {{selected}} 类',
           permission: '工具授权请求',
           question: '智能体的提问',
           plan: '计划审批',

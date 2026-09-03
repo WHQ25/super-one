@@ -1049,7 +1049,8 @@ export type Messages = {
         enabled: { label: string; description: string }
         kinds: {
           label: string
-          description: string
+          summaryAll: string
+          summarySome: string
           permission: string
           question: string
           plan: string
@@ -4695,7 +4696,8 @@ export const en: Messages = {
         },
         kinds: {
           label: 'Notify me about',
-          description: 'Pick which kinds of interruption are worth a notification.',
+          summaryAll: 'Every kind of interruption',
+          summarySome: '{{selected}} of {{total}} kinds',
           permission: 'Tool permission requests',
           question: 'Questions from the agent',
           plan: 'Plan approvals',

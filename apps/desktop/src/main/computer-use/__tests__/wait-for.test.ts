@@ -26,6 +26,7 @@ const ROOT: Omit<UiRootIdentity, 'rootId'> = {
 
 class SequencedAdapter implements PlatformAdapter {
   private lookIndex = 0
+  readonly lookModes: ObserveMode[] = []
 
   constructor(private readonly outlines: UiOutlineNode[]) {}
 
@@ -40,6 +41,7 @@ class SequencedAdapter implements PlatformAdapter {
   ): Promise<PlatformLook> {
     const outline = this.outlines[Math.min(this.lookIndex, this.outlines.length - 1)]!
     this.lookIndex += 1
+    this.lookModes.push(mode)
     return {
       root: ROOT,
       outline,
@@ -87,10 +89,18 @@ function statusNode(ref: string, value: string, y = 40): UiOutlineNode {
 }
 
 function serviceFor(outlines: UiOutlineNode[]): ComputerUseService {
-  const service = new ComputerUseService({ adapter: new SequencedAdapter(outlines) })
+  return serviceWithAdapter(outlines).service
+}
+
+function serviceWithAdapter(outlines: UiOutlineNode[]): {
+  service: ComputerUseService
+  adapter: SequencedAdapter
+} {
+  const adapter = new SequencedAdapter(outlines)
+  const service = new ComputerUseService({ adapter })
   service.policy.setEnabled(true)
   service.policy.grant({ app: ROOT.app, bundleId: ROOT.bundleId, tier: 'full' })
-  return service
+  return { service, adapter }
 }
 
 describe('computer_wait_for with real polling', () => {
@@ -196,5 +206,54 @@ describe('computer_wait_for with real polling', () => {
       { expect: { kind: 'valueEquals', ref: '@e2', value: 'Ready' } },
     )
     expect(result.outcome).toBe('worked')
+  })
+
+  it('polls without screenshots and hands back a successor in the base mode', async () => {
+    const { service, adapter } = serviceWithAdapter([
+      outline([statusNode('@e2', 'Loading')]),
+      outline([statusNode('@e2', 'Loading')]),
+      outline([statusNode('@e2', 'Ready')]),
+    ])
+    const base = await service.observe(undefined, 'fused')
+    const result = await service.waitFor(
+      base.stateId,
+      { kind: 'valueEquals', ref: '@e2', value: 'Ready' },
+      500,
+    )
+    expect(result.status).toBe('verified')
+    // base, two semantic polls, then one fused successor capture
+    expect(adapter.lookModes).toEqual(['fused', 'semantic', 'semantic', 'fused'])
+    expect(service.getStateStore().get(result.successorStateId)?.mode).toBe('fused')
+  })
+
+  it('keeps polling on the base mode when it has no AX outline', async () => {
+    const { service, adapter } = serviceWithAdapter([
+      outline([]),
+      outline([statusNode('@e2', 'Ready')]),
+    ])
+    const base = await service.observe(undefined, 'visual')
+    const result = await service.waitFor(
+      base.stateId,
+      { kind: 'exists', ref: '@e2' },
+      100,
+    )
+    expect(result.status).toBe('verified')
+    expect(adapter.lookModes).toEqual(['visual', 'visual'])
+  })
+
+  it('times out on semantic polls and captures the failed successor in the base mode', async () => {
+    const { service, adapter } = serviceWithAdapter([
+      outline([statusNode('@e2', 'Loading')]),
+    ])
+    const base = await service.observe(undefined, 'fused')
+    const result = await service.waitFor(
+      base.stateId,
+      { kind: 'valueEquals', ref: '@e2', value: 'Ready' },
+      100,
+    )
+    expect(result.status).toBe('failed')
+    expect(adapter.lookModes[0]).toBe('fused')
+    expect(adapter.lookModes.slice(1, -1).every((mode) => mode === 'semantic')).toBe(true)
+    expect(adapter.lookModes.at(-1)).toBe('fused')
   })
 })

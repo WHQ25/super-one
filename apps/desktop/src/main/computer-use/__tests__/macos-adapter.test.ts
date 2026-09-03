@@ -307,8 +307,6 @@ describe('MacosPlatformAdapter (mocked client)', () => {
       return { ok: true }
     })
     const look = await adapter.look(root(), 'visual')
-    // Software cursor is suspended only for the capture itself, then restored.
-    expect(call).toHaveBeenCalledWith('overlay_cursor_visible', { visible: false })
     expect(call).toHaveBeenCalledWith('capture', {
       allowAllApps: false,
       grantedBundleIds: ['com.apple.TextEdit'],
@@ -317,7 +315,9 @@ describe('MacosPlatformAdapter (mocked client)', () => {
       pid: 42,
       windowId: 12345,
     })
-    expect(call).toHaveBeenCalledWith('overlay_cursor_visible', { visible: true })
+    // The helper's capture filter already excludes the cursor panel; hiding it
+    // around every screenshot made the cursor blink on each observe.
+    expect(call.mock.calls.some((c) => c[0] === 'overlay_cursor_visible')).toBe(false)
     expect(call).toHaveBeenCalledWith('overlay_show_target', expect.objectContaining({
       app: 'TextEdit',
       bundleId: 'com.apple.TextEdit',

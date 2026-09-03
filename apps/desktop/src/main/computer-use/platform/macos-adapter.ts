@@ -362,28 +362,6 @@ export class MacosPlatformAdapter implements PlatformAdapter {
     }))
   }
 
-  /**
-   * Hide software cursor only for the duration of a screenshot, then restore.
-   * Keeps tip state so the hop continues after capture; status chip stays up.
-   */
-  private async withCursorSuspendedForCapture<T>(fn: () => Promise<T>): Promise<T> {
-    if (!this.visualOn()) return fn()
-    try {
-      await this.client.call('overlay_cursor_visible', { visible: false })
-    } catch {
-      // helper offline / tests
-    }
-    try {
-      return await fn()
-    } finally {
-      try {
-        await this.client.call('overlay_cursor_visible', { visible: true })
-      } catch {
-        // ignore
-      }
-    }
-  }
-
   async look(
     root: UiRootIdentity,
     mode: ObserveMode,
@@ -434,18 +412,18 @@ export class MacosPlatformAdapter implements PlatformAdapter {
       }
     }
 
-    // Suspend software cursor only while capturing; restore immediately after.
-    const capture = await this.withCursorSuspendedForCapture(() =>
-      this.client.call<HelperCaptureResult>('capture', {
-        allowAllApps: allowAll,
-        grantedBundleIds: allowAll ? [] : granted,
-        maxWidth: this.maxCaptureWidth,
-        capture: captureScope,
-        pid: targetRoot.pid,
-        ...(typeof targetRoot.windowId === 'number' ? { windowId: targetRoot.windowId } : {}),
-        ...(targetRoot.axRootId ? { axRootId: targetRoot.axRootId } : {}),
-      }),
-    )
+    // The software cursor stays up through the capture: the helper's content filter
+    // already excludes its own process (window captures are single-window, display
+    // captures exclude the helper app), so hiding it here only made it blink.
+    const capture = await this.client.call<HelperCaptureResult>('capture', {
+      allowAllApps: allowAll,
+      grantedBundleIds: allowAll ? [] : granted,
+      maxWidth: this.maxCaptureWidth,
+      capture: captureScope,
+      pid: targetRoot.pid,
+      ...(typeof targetRoot.windowId === 'number' ? { windowId: targetRoot.windowId } : {}),
+      ...(targetRoot.axRootId ? { axRootId: targetRoot.axRootId } : {}),
+    })
 
     // Chip + restore last tip (if any). Do not force-hide cursor after observe.
     await this.showTargetOverlay(targetRoot, { pulseRing: true })
@@ -639,20 +617,18 @@ export class MacosPlatformAdapter implements PlatformAdapter {
   ): Promise<CapturedImage> {
     const allowAll = this.getAllowAllApps()
     const granted = this.getGrantedBundleIds()
-    const res = await this.withCursorSuspendedForCapture(() =>
-      this.client.call<HelperCaptureResult>('zoom', {
-        allowAllApps: allowAll,
-        grantedBundleIds: allowAll ? [] : granted,
-        region,
-        // Same width budget as full observe — avoid full-retina intermediate captures.
-        maxWidth: this.maxCaptureWidth,
-        capture: coordinateSpace.kind ?? (coordinateSpace.fullScreen ? 'display' : 'window'),
-        pid: root.pid,
-        ...(typeof root.windowId === 'number' ? { windowId: root.windowId } : {}),
-        ...(root.axRootId ? { axRootId: root.axRootId } : {}),
-        ...this.coordinatePayload(coordinateSpace),
-      }),
-    )
+    const res = await this.client.call<HelperCaptureResult>('zoom', {
+      allowAllApps: allowAll,
+      grantedBundleIds: allowAll ? [] : granted,
+      region,
+      // Same width budget as full observe — avoid full-retina intermediate captures.
+      maxWidth: this.maxCaptureWidth,
+      capture: coordinateSpace.kind ?? (coordinateSpace.fullScreen ? 'display' : 'window'),
+      pid: root.pid,
+      ...(typeof root.windowId === 'number' ? { windowId: root.windowId } : {}),
+      ...(root.axRootId ? { axRootId: root.axRootId } : {}),
+      ...this.coordinatePayload(coordinateSpace),
+    })
     return {
       mimeType: 'image/png',
       data: res.data,

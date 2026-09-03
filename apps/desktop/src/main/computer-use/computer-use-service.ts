@@ -914,6 +914,10 @@ export class ComputerUseService {
       }
     }
 
+    // Poll on the AX outline alone. Conditions never read the screenshot, and a
+    // capture every 50ms is what the user sees as the software cursor flickering.
+    // `visual` has no AX outline to poll, so it keeps its own mode.
+    const pollMode: ObserveMode = base.mode === 'visual' ? 'visual' : 'semantic'
     const interval = 50
     const maxAttempts = Math.max(1, Math.ceil(timeoutMs / interval))
     for (let i = 0; i < maxAttempts; i++) {
@@ -921,14 +925,15 @@ export class ComputerUseService {
       if (this.fake) this.fake.advanceTime(interval)
       else await sleep(interval, signal)
 
-      const obs = await this.observe(base.root.rootId, base.mode, base.capture)
+      const obs = await this.observe(base.root.rootId, pollMode, base.capture)
       throwIfAborted(signal)
       const state = this.requireState(obs.stateId)
       if (evaluateBoundCondition(binding, state.outline)) {
+        const successor = await this.waitSuccessor(base, obs, pollMode, signal)
         return {
           status: 'verified',
-          successorStateId: obs.stateId,
-          successorRoot: targetIdentity(obs.root),
+          successorStateId: successor.stateId,
+          successorRoot: targetIdentity(successor.root),
         }
       }
     }
@@ -940,6 +945,23 @@ export class ComputerUseService {
       successorStateId: last.stateId,
       successorRoot: targetIdentity(last.root),
     }
+  }
+
+  /**
+   * The successor state must carry the modality the caller has been working in:
+   * a fused base gets a fused successor (with screenshot), not the semantic poll
+   * that happened to verify the condition.
+   */
+  private async waitSuccessor(
+    base: { root: UiRootIdentity; mode: ObserveMode; capture: CaptureScope },
+    polled: ObserveResult,
+    pollMode: ObserveMode,
+    signal?: AbortSignal,
+  ): Promise<ObserveResult> {
+    if (pollMode === base.mode) return polled
+    const successor = await this.observe(base.root.rootId, base.mode, base.capture)
+    throwIfAborted(signal)
+    return successor
   }
 
   /**

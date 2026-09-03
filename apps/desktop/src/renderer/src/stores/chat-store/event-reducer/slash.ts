@@ -185,12 +185,22 @@ export function reduceSlash(session: PerSessionState, event: SlashEvent): Partia
         : [...session.messages]
       let insertIdx = msgs.length
       if (!compactUserId) {
-        for (let i = msgs.length - 1; i >= 0; i--) {
+        // The marker belongs above the prompt whose turn triggered compaction, so
+        // the collapse hides history and leaves that exchange visible. Scanning
+        // for the plain last user message is not that prompt once a mid-turn
+        // steer or a host wake has appended its bubble *after* the running reply:
+        // the marker would land below the live message, hiding the turn behind
+        // the collapse. Stay above the live reply, and anchor on it when nothing
+        // user-authored precedes it.
+        const liveIdx = msgs.findLastIndex((m) => m.role === 'assistant' && m.status === 'streaming')
+        let userIdx = -1
+        for (let i = (liveIdx === -1 ? msgs.length : liveIdx) - 1; i >= 0; i--) {
           if (msgs[i].role === 'user') {
-            insertIdx = i
+            userIdx = i
             break
           }
         }
+        insertIdx = userIdx !== -1 ? userIdx : liveIdx !== -1 ? liveIdx : msgs.length
       }
       msgs.splice(insertIdx, 0, {
         id: `compact_${Date.now()}`,

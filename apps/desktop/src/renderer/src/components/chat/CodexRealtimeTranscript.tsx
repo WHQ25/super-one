@@ -11,7 +11,7 @@ import { realtimeSegmentsToMessage, selectRealtimeTranscript } from './codex-rea
 import { buildRealtimeConversationTurns } from './realtime-conversation-turns'
 import { buildRealtimeTranscriptLayout, mapRealtimeTurnActivities } from './realtime-turn-activities'
 import { SelectionContextMenuZone } from './SelectionContextMenu'
-import { ChatMessage as ChatMessageView } from './ChatMessage'
+import { ChatMessage as ChatMessageView, findLastAssistantMessageId } from './ChatMessage'
 import { PlanApprovalPrompt } from './PlanApprovalPrompt'
 import { RealtimeStartingSurface } from './RealtimeStartingSurface'
 
@@ -89,7 +89,7 @@ export function CodexRealtimeTranscript({
     () => buildRealtimeTranscriptLayout(turns, activities),
     [activities, turns],
   )
-  const lastAssistantMessageId = threadMessages.findLast((message) => message.role === 'assistant')?.id
+  const lastAssistantMessageId = findLastAssistantMessageId(threadMessages)
   const loading = realtime.loadStatus === 'idle' || realtime.loadStatus === 'loading'
   const live = realtime.realtimeSessionId !== null || realtime.starting
   const emptyKey = live

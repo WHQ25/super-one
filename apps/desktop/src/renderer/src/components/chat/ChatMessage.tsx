@@ -599,6 +599,23 @@ export function isRedundantTurnSummaryMarker(
 }
 
 /**
+ * The live assistant turn, skipping the system marker rows that render as
+ * indicators rather than as a reply.
+ *
+ * A compact / turn-meta marker carries `role: 'assistant'`, and
+ * `compact_boundary` splices its marker in *before the last user message* —
+ * which lands below the streaming reply whenever a mid-turn steer or a host
+ * wake appended a user bubble after it. Letting the marker win here strips
+ * `isLastAssistant` off the live message, and its footer stops reporting that
+ * the turn is still running.
+ */
+export function findLastAssistantMessageId(messages: readonly ChatMessageType[]): string | undefined {
+  return messages.findLast(
+    (m) => m.role === 'assistant' && !parseCompactMarker(m) && !parseTurnMetaMarker(m),
+  )?.id
+}
+
+/**
  * Standalone system marker row.
  * - `recap` — current session recap path
  * - `summary` — legacy only (no longer minted; new turns use metadata.turnSummary)

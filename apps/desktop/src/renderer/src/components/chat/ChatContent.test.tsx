@@ -176,6 +176,9 @@ vi.mock('./ChatMessage', async () => {
     ApiRetryIndicator: () => <div data-testid="api-retry" />,
     parseCompactMarker: () => null,
     parseTurnMetaMarker: () => null,
+    // Mirrors the real helper under these stubbed parsers: nothing here is a marker.
+    findLastAssistantMessageId: (messages: Array<{ id: string; role: string }>) =>
+      messages.findLast((m) => m.role === 'assistant')?.id,
     TurnMetaIndicator: () => <div data-testid="turn-meta" />,
   }
 })

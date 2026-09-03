@@ -3,7 +3,7 @@
 import { act, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatMessage as ChatMessageType } from '@superone/shared/agent-types'
-import { ChatMessage, isRedundantTurnSummaryMarker } from './ChatMessage'
+import { ChatMessage, findLastAssistantMessageId, isRedundantTurnSummaryMarker } from './ChatMessage'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 
@@ -548,6 +548,39 @@ describe('isRedundantTurnSummaryMarker', () => {
         metadata: { turnSummary: 'You fixed the parser.' },
       }],
     )).toBe(false)
+  })
+})
+
+describe('findLastAssistantMessageId', () => {
+  const live: ChatMessageType = { ...createClaudeMessage([{ type: 'text', text: 'working' }]), id: 'a1', status: 'streaming' }
+  const marker = (text: string): ChatMessageType => ({
+    ...createClaudeMessage([{ type: 'text', text }]),
+    id: `marker-${text}`,
+    providerId: 'system',
+  })
+
+  it('skips a compact marker sitting below the live reply', () => {
+    expect(findLastAssistantMessageId([
+      live,
+      marker('__compact__:auto:1234::'),
+      { ...createClaudeMessage([]), id: 'u-steer', role: 'user' },
+    ])).toBe('a1')
+  })
+
+  it('skips a turn-meta marker', () => {
+    expect(findLastAssistantMessageId([
+      live,
+      marker('__turn_meta__:{"kind":"recap","text":"recapped"}'),
+    ])).toBe('a1')
+  })
+
+  it('still returns a real system-provider assistant row', () => {
+    const wake = { ...createClaudeMessage([{ type: 'text', text: 'Background task completed' }]), id: 'sys-1', providerId: 'system' }
+    expect(findLastAssistantMessageId([live, wake])).toBe('sys-1')
+  })
+
+  it('is undefined when nothing qualifies', () => {
+    expect(findLastAssistantMessageId([marker('__compact__:auto:1::')])).toBeUndefined()
   })
 })
 

@@ -177,6 +177,27 @@ describe('mergeMessagesByMaxSeq', () => {
     expect(merged[2]._lastAppliedSeq).toBe(99)
   })
 
+  it('re-splices a renderer-only marker ahead of the row it preceded', () => {
+    // main never materializes the __compact__ divider, so it is absent from the
+    // snapshot; appending it would put it below the streaming reply.
+    const snap = [makeMessage('u1', 'ask'), makeMessage('a1', 'working')]
+    const existing = [
+      makeMessage('compact_1', '__compact__:auto:1234::'),
+      makeMessage('u1', 'ask'),
+      makeMessage('a1', 'working'),
+    ]
+
+    expect(mergeMessagesByMaxSeq(snap, existing).map((m) => m.id)).toEqual(['compact_1', 'u1', 'a1'])
+  })
+
+  it('keeps a local-only row with nothing left to precede at the end', () => {
+    // Nothing follows it locally, so it is newer than the snapshot, not misplaced.
+    const snap = [makeMessage('m1', 'a')]
+    const existing = [makeMessage('m1', 'a'), makeMessage('m2', 'newer')]
+
+    expect(mergeMessagesByMaxSeq(snap, existing).map((m) => m.id)).toEqual(['m1', 'm2'])
+  })
+
   it('uses snapshot when seqs are both undefined', () => {
     const snap = [makeMessage('m1', 'snap')]
     const existing = [makeMessage('m1', 'local')]

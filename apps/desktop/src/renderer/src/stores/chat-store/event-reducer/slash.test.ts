@@ -222,6 +222,46 @@ describe('reduceSlash: compact_boundary', () => {
     expect(patch._pendingCompactUserId).toBe('')
   })
 
+  it('stays above the streaming reply when a mid-turn steer appended a user bubble after it', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [
+      makeMessage('u1', { role: 'user' }),
+      makeMessage('a1', { role: 'assistant', status: 'streaming' }),
+      makeMessage('u-steer', { role: 'user' }),
+    ]
+
+    const patch = reduceSlash(session, {
+      type: 'compact_boundary',
+      trigger: 'auto',
+      preTokens: 1234,
+    } as never)
+
+    const msgs = patch.messages!
+    const compactIdx = msgs.findIndex((m) => m.providerId === 'system')
+    // Above u1 — never between a1 and the steer, which would hide the running
+    // turn behind the collapse and hand it `isLastAssistant`.
+    expect(compactIdx).toBe(msgs.findIndex((m) => m.id === 'u1') - 1)
+    expect(msgs.findLast((m) => m.role === 'assistant')!.id).toBe('a1')
+  })
+
+  it('anchors on the streaming reply when no user message precedes it', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [
+      makeMessage('a1', { role: 'assistant', status: 'streaming' }),
+      makeMessage('u-wake', { role: 'user' }),
+    ]
+
+    const patch = reduceSlash(session, {
+      type: 'compact_boundary',
+      trigger: 'auto',
+      preTokens: 10,
+    } as never)
+
+    const msgs = patch.messages!
+    expect(msgs.findIndex((m) => m.providerId === 'system')).toBe(0)
+    expect(msgs.findLast((m) => m.role === 'assistant')!.id).toBe('a1')
+  })
+
   it('strips the pending compact user message and re-emits __compact__ when _pendingCompactUserId is set', () => {
     const session = createDefaultPerSessionState()
     session._pendingCompactUserId = 'u-pending'

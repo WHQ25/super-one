@@ -15,7 +15,7 @@ import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 import { AnimatePresence, motion } from 'motion/react'
 import { ChatInput } from './ChatInput'
 import { ChatStatusBar } from './ChatStatusBar'
-import { ChatMessage, CompactingIndicator, CompactIndicator, CompactErrorIndicator, ApiRetryIndicator, parseCompactMarker, parseTurnMetaMarker, isRedundantTurnSummaryMarker, TurnMetaIndicator, RecappingIndicator } from './ChatMessage'
+import { ChatMessage, CompactingIndicator, CompactIndicator, CompactErrorIndicator, ApiRetryIndicator, findLastAssistantMessageId, parseCompactMarker, parseTurnMetaMarker, isRedundantTurnSummaryMarker, TurnMetaIndicator, RecappingIndicator } from './ChatMessage'
 import { ModelFallbackRow } from './ModelFallbackRow'
 import { selectClaudeModels } from '@/stores/chat-store/selectors'
 import { ChatSuggestions } from './ChatSuggestions'
@@ -260,7 +260,7 @@ function ChatTranscript({
       : messages,
     [hasRealtimeTimeline, messages, queueProvider, realtime, showsBackingThread],
   )
-  const displayLastAssistantMessageId = displayMessages.findLast((message) => message.role === 'assistant')?.id
+  const displayLastAssistantMessageId = findLastAssistantMessageId(displayMessages)
     ?? lastAssistantMessageId
 
   const prevScrollHeightRef = useRef(0)

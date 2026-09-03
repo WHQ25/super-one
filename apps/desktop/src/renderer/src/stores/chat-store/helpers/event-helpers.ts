@@ -17,19 +17,31 @@ export function extractSessionTitle(messages: ChatMessage[]): string | null {
 
 export function mergeMessagesByMaxSeq(snap: ChatMessage[], existing: ChatMessage[]): ChatMessage[] {
   const existingById = new Map(existing.map((m) => [m.id, m]))
-  const result: ChatMessage[] = []
-  const seen = new Set<string>()
-  for (const sm of snap) {
-    const em = existingById.get(sm.id)
-    if (!em) {
-      result.push(sm)
-    } else {
-      result.push(compareMessageSeq(em, sm) > 0 ? em : sm)
-    }
-    seen.add(sm.id)
-  }
+  const snapIds = new Set(snap.map((m) => m.id))
+  // Rows main never saw — the `__compact__` / `__turn_meta__` markers a reducer
+  // splices in — carry no place in the snapshot order. Re-insert each ahead of
+  // the row it locally preceded; only rows with nothing left to precede are
+  // genuinely newer than the snapshot and belong at the end. Appending them all
+  // instead drags a compact divider to the bottom of the transcript, where it
+  // collapses the live turn and takes `isLastAssistant` off the streaming reply.
+  const localOnlyBefore = new Map<string, ChatMessage[]>()
+  let pending: ChatMessage[] = []
   for (const em of existing) {
-    if (!seen.has(em.id)) result.push(em)
+    if (!snapIds.has(em.id)) {
+      pending.push(em)
+    } else if (pending.length > 0) {
+      localOnlyBefore.set(em.id, pending)
+      pending = []
+    }
   }
+
+  const result: ChatMessage[] = []
+  for (const sm of snap) {
+    const before = localOnlyBefore.get(sm.id)
+    if (before) result.push(...before)
+    const em = existingById.get(sm.id)
+    result.push(em && compareMessageSeq(em, sm) > 0 ? em : sm)
+  }
+  result.push(...pending)
   return result
 }

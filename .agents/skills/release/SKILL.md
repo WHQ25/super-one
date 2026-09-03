@@ -319,11 +319,11 @@ has been running as alpha, packaged under the stable identity:
    so this is easy to skip, and `harness/manifest/stable.json` does not exist
    until someone runs it. Without it every stable client falls back to plain
    npm for harness downloads: not fatal, but slow and it bypasses R2 entirely.
-   `app_version` must be passed explicitly -- it defaults to the root
-   package.json version, which is still on the alpha line.
+   `app_version` is derived from the channel (base + that variant's prerelease
+   tag), so it needs no override unless the commit's base differs from the
+   number you are shipping.
    ```bash
-   gh workflow run publish-harness.yml --ref <the same alpha SHA> \
-     -f channel=stable -f app_version=<X.Y.Z>
+   gh workflow run publish-harness.yml --ref <the same alpha SHA> -f channel=stable
    ```
    Verify: `curl -sI https://dl.super-one.dev/harness/manifest/stable.json | head -1`
    and `.../app/harness-pins/<X.Y.Z>.json`.

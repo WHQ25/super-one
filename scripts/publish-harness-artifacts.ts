@@ -7,8 +7,10 @@
  *
  * Pins are read from @superone/runtime source constants — never free-form CLI
  * version args — so the manifest cannot drift from the code (design §4).
- * App-version pins use the monorepo root package.json version (same as the
- * desktop release they ship with) unless --app-version is passed.
+ * App-version pins are keyed by the version the SHIPPED app reports: the root
+ * package.json BASE plus the channel variant's prerelease tag, so `--channel
+ * alpha` writes app/harness-pins/<base>-alpha.json. Override with
+ * --app-version only when cutting a release from a commit whose base differs.
  *
  * Usage:
  *   bun scripts/publish-harness-artifacts.ts --channel alpha
@@ -60,6 +62,7 @@ import {
   appHarnessPinsUrl,
   currentProcessAppHarnessPins,
 } from '../packages/runtime/src/harness/app-harness-pins.ts'
+import VARIANTS from '../apps/desktop/variants.json'
 
 const REPO_ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '..')
 
@@ -120,6 +123,32 @@ function readRootVersion(): string {
   return raw.version.trim()
 }
 
+/**
+ * The version the SHIPPED app will report, which is the key the updater looks
+ * `app/harness-pins/<appVersion>.json` up under.
+ *
+ * Root package.json carries the plain BASE ("0.61.0"); the variant appends its
+ * own prerelease tag at package time, so the alpha app runs as "0.61.0-alpha"
+ * and asks for that key. Defaulting to the base wrote the pins under "0.61.0"
+ * instead, which no alpha client ever requests -- a miss the updater then
+ * papers over by falling back to its compiled-in pins, so nothing fails and the
+ * R2 mirror is simply bypassed.
+ *
+ * The channel IS the variant id, so this is the same derivation
+ * `electron-builder.config.cjs` does at package time, off the same table. Do
+ * not reintroduce a default that reads the base version directly.
+ */
+export function appVersionForChannel(
+  channel: HarnessManifestChannel,
+  baseVersion: string,
+): string {
+  const variant = (VARIANTS as Record<string, { prereleaseTag: string | null } | undefined>)[channel]
+  if (!variant) {
+    throw new Error(`no variant declares channel "${channel}" in apps/desktop/variants.json`)
+  }
+  return variant.prereleaseTag ? `${baseVersion}-${variant.prereleaseTag}` : baseVersion
+}
+
 /** `npm pack name@version` → absolute path to the produced .tgz */
 function npmPack(npmName: string, npmVersion: string, cwd: string): string {
   const spec = `${npmName}@${npmVersion}`
@@ -147,7 +176,7 @@ function parseArgs(argv: string[]): {
   upload: boolean
   baseUrl: string
   skipPack: boolean
-  /** Override root package.json version for app/harness-pins/<version>.json */
+  /** Override the derived app version for app/harness-pins/<version>.json */
   appVersion: string | null
 } {
   let channel: HarnessManifestChannel | null = null
@@ -316,8 +345,9 @@ async function main(): Promise<void> {
       `artifacts: claude=${claude.files.length} codex=${codex.files.length} total=${claude.files.length + codex.files.length}`,
     )
 
-    // Desktop strict update pre-fetch: same pin constants, keyed by app version.
-    const appVersion = args.appVersion ?? cliVersion
+    // Desktop strict update pre-fetch: same pin constants, keyed by the version
+    // the shipped app reports -- base + the channel variant's prerelease tag.
+    const appVersion = args.appVersion ?? appVersionForChannel(args.channel, cliVersion)
     const appPins = currentProcessAppHarnessPins(appVersion)
     // Guard: process pins must match the constants we just packed (single source of truth).
     if (appPins.pins.claude !== OFFICIAL_CLAUDE_SDK_VERSION) {
@@ -349,7 +379,11 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err) => {
-  console.error(err instanceof Error ? err.message : err)
-  process.exit(1)
-})
+// Guarded so the pure helpers above stay importable from a test, matching
+// prune-releases.ts.
+if (process.argv[1]?.endsWith('publish-harness-artifacts.ts')) {
+  main().catch((err) => {
+    console.error(err instanceof Error ? err.message : err)
+    process.exit(1)
+  })
+}

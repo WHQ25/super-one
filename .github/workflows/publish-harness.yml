@@ -21,7 +21,7 @@ on:
           - stable
         default: alpha
       app_version:
-        description: 'Override app/harness-pins/<version>.json key (default: root package.json version)'
+        description: 'Override app/harness-pins/<version>.json key. Default is derived: root package.json base + the channel variant prerelease tag (alpha -> X.Y.Z-alpha, stable -> X.Y.Z). Only needed when cutting from a commit whose base differs.'
         required: false
         type: string
         default: ''

@@ -11,15 +11,18 @@ const BASE = (
 /**
  * Which side-by-side app the site offers. Ordinary visitors get `stable`.
  *
- * The two product names are mirrored here because this app cannot import
- * `apps/desktop/variants.json`; the installer names they imply come from
+ * Both variants name their installers "SuperOne"; the prerelease tag is what
+ * separates the two fixed links. Mirrored here because this app cannot import
+ * `apps/desktop/variants.json` -- the names they imply come from
  * `@superone/shared/download-links`, which the desktop app reads too.
  */
 export type DownloadVariant = "stable" | "alpha"
 
-const PRODUCT_NAME: Record<DownloadVariant, string> = {
-  stable: "SuperOne",
-  alpha: "SuperOne Alpha",
+const ARTIFACT_BASE_NAME = "SuperOne"
+
+const PRERELEASE_TAG: Record<DownloadVariant, string | null> = {
+  stable: null,
+  alpha: "alpha",
 }
 
 const DEFAULT_VARIANT = (process.env.NEXT_PUBLIC_DOWNLOAD_CHANNEL ??
@@ -48,7 +51,8 @@ export function downloadUrl(
   return fixedDownloadUrl({
     baseUrl: BASE,
     downloadPrefix: variant,
-    productName: PRODUCT_NAME[variant],
+    artifactBaseName: ARTIFACT_BASE_NAME,
+    prereleaseTag: PRERELEASE_TAG[variant],
     platform,
     arch: arch as SharedDownloadArch | undefined,
   })

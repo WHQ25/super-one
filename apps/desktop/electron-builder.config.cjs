@@ -87,11 +87,34 @@ const version = resolveVersion(pkg.version, variantId)
 
 const base = yaml.load(readFileSync(join(__dirname, 'electron-builder.yml'), 'utf8'))
 
+/**
+ * Installer filenames, decoupled from `productName`.
+ *
+ * The default templates interpolate `${productName}`, which for the alpha
+ * variant reads "SuperOne Alpha-0.61.0-alpha-arm64.dmg" -- the word twice, once
+ * for the app and once for the version's prerelease tag. The base name is a
+ * separate field in `variants.json` so the .app can stay "SuperOne Alpha" (that
+ * string is load-bearing: Electron's app.name drives the log directory and the
+ * safeStorage keychain entry) while the file on disk says it once.
+ *
+ * Shape is otherwise the electron-builder defaults, with two deliberate
+ * choices. `${arch}` collapses to nothing on x64, so only arm64 carries a
+ * suffix. NSIS moves its "Setup" token behind the version -- the default puts
+ * it in front, which would land the variant tag mid-name once `fixedLinkName`
+ * strips the version core, instead of directly after the base like every other
+ * target. No template contains a space any more, so nothing new needs the
+ * dotted-name rescue in `artifactPathCandidates`.
+ */
+const artifactBase = variant.artifactBaseName
+
 module.exports = {
   ...base,
   appId: variant.appId,
   productName: variant.productName,
   icon: variant.icon,
+  mac: { ...base.mac, artifactName: `${artifactBase}-\${version}-\${arch}-mac.\${ext}` },
+  dmg: { ...base.dmg, artifactName: `${artifactBase}-\${version}-\${arch}.\${ext}` },
+  nsis: { ...base.nsis, artifactName: `${artifactBase}-\${version}-Setup.\${ext}` },
   // Both variants are packaged from one `out/`; separate output dirs keep the
   // two runs' channel manifests (both named `latest-*.yml`) from overwriting
   // each other when they happen on the same machine.
@@ -102,6 +125,7 @@ module.exports = {
     // the .desktop entry, hicolor icon paths and the appimagekit resource name
     // differ per variant instead of colliding on one slot.
     executableName: variant.executableName,
+    artifactName: `${artifactBase}-\${version}-\${arch}.\${ext}`,
   },
   // A variant with no download prefix never publishes, so it gets no feed at
   // all: electron-builder then bakes no `app-update.yml`, and the updater has

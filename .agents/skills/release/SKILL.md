@@ -258,9 +258,14 @@ gh workflow run set-latest.yml --ref main \
 - Manifest source is the version's **GitHub Release** (`gh release download <tag>`), so the release must exist (it does — promote created it). If the version's binaries are **not** on R2 under `v<version>/` (e.g. rolling back to an old or pruned version — R2 is not guaranteed to retain every version forever), set-latest **backfills** them from the GitHub Release to R2 before re-pointing the channel. So rollback works for any historical version that still has a GitHub Release, even if R2 dropped its binaries.
 - Monitor: `gh run view <id> --json status,conclusion`. Then verify the fixed links resolve — use **HEAD**, never download the full body:
   ```bash
-  curl -sI https://dl.super-one.dev/<variant>/latest/SuperOne.dmg | head -1   # expect HTTP/.. 200
+  # stable: SuperOne-arm64.dmg   alpha: SuperOne-alpha-arm64.dmg
+  curl -sI https://dl.super-one.dev/stable/latest/SuperOne-arm64.dmg | head -1  # expect HTTP/.. 200
+  curl -sI https://dl.super-one.dev/alpha/latest/SuperOne-alpha-arm64.dmg | head -1
   ```
-  (Windows installer name contains a space → URL-encode: `SuperOne%20Setup.exe`.)
+  Both variants build their installers from the base name `SuperOne`; the
+  variant's `prereleaseTag` is the only thing separating the two fixed links
+  (`SuperOne-Setup.exe` vs `SuperOne-alpha-Setup.exe`). No current name
+  contains a space.
 - **Rollback**: to re-point a channel at an older version, override the semver guard with `force=true`:
   ```bash
   gh workflow run set-latest.yml --ref main \

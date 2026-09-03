@@ -24,28 +24,38 @@ export function downloadPlatformFor(nodePlatform: string): DownloadPlatform {
 }
 
 /**
- * The version-less installer name published under `<variant>/latest/`.
+ * The release-number-less installer name published under `<variant>/latest/`.
  *
- * Only macOS ships two architectures; the Windows and Linux fixed links are
+ * Built from the variant's `artifactBaseName` and `prereleaseTag`, NOT its
+ * `productName`: both variants now name their installers "SuperOne", and the
+ * tag is the only thing keeping `stable/latest/` and `alpha/latest/` from
+ * handing out byte-different files under one filename.
+ *
+ * Only macOS ships two architectures, and `${arch}` collapses to nothing on
+ * x64, so only arm64 carries a suffix. The Windows and Linux fixed links are
  * single files, matching what electron-builder emits for those targets.
  */
 export function fixedInstallerName(
-  productName: string,
+  artifactBaseName: string,
   platform: DownloadPlatform,
   arch?: DownloadArch,
+  prereleaseTag?: string | null,
 ): string {
+  const stem = prereleaseTag ? `${artifactBaseName}-${prereleaseTag}` : artifactBaseName
   if (platform === 'mac') {
-    return arch === 'x64' ? `${productName}.dmg` : `${productName}-arm64.dmg`
+    return arch === 'x64' ? `${stem}.dmg` : `${stem}-arm64.dmg`
   }
-  if (platform === 'win') return `${productName} Setup.exe`
-  return `${productName}.AppImage`
+  if (platform === 'win') return `${stem}-Setup.exe`
+  return `${stem}.AppImage`
 }
 
 export interface FixedDownloadUrlOptions {
   /** The variant's R2 prefix (`variants.json` → `downloadPrefix`). */
   downloadPrefix: string
-  /** The variant's `productName`; the installer name derives from it. */
-  productName: string
+  /** The variant's `artifactBaseName`; the installer name derives from it. */
+  artifactBaseName: string
+  /** The variant's `prereleaseTag`, or null for the variant that has none. */
+  prereleaseTag?: string | null
   platform: DownloadPlatform
   arch?: DownloadArch
   baseUrl?: string
@@ -53,11 +63,16 @@ export interface FixedDownloadUrlOptions {
 
 export function fixedDownloadUrl(options: FixedDownloadUrlOptions): string {
   const base = (options.baseUrl ?? DOWNLOAD_BASE_URL).replace(/\/+$/, '')
-  // The product name can contain a space ("SuperOne Alpha"), so the last
-  // segment has to be encoded or the URL breaks for exactly the variant this
-  // link exists to offer.
+  // No current installer name contains a space, but encoding the last segment
+  // costs nothing and keeps a rollback to a historical, spaced artifact name
+  // from producing a broken URL.
   const name = encodeURIComponent(
-    fixedInstallerName(options.productName, options.platform, options.arch),
+    fixedInstallerName(
+      options.artifactBaseName,
+      options.platform,
+      options.arch,
+      options.prereleaseTag,
+    ),
   )
   return `${base}/${options.downloadPrefix}/latest/${name}`
 }

@@ -94,7 +94,8 @@ export function variantDownloadUrl(id: PublishedVariantId): string {
   const target = VARIANTS[id]
   return fixedDownloadUrl({
     downloadPrefix: target.downloadPrefix,
-    productName: target.productName,
+    artifactBaseName: target.artifactBaseName,
+    prereleaseTag: target.prereleaseTag,
     platform: downloadPlatformFor(process.platform),
     arch: process.arch === 'x64' ? 'x64' : ('arm64' as DownloadArch),
   })

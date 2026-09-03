@@ -90,12 +90,25 @@ export const LEGACY_ROOT_YML_NAMES: Record<string, string[]> = {
   linux: ['alpha-linux.yml', 'beta-linux.yml', 'latest-linux.yml'],
 }
 
-// Strip the version token (and its leading separator) from an artifact filename
-// to produce a stable, version-less "latest" download name.
-// "SuperOne-0.40.0-alpha-arm64.dmg" -> "SuperOne-arm64.dmg"
-// "SuperOne Setup 0.40.1-alpha.exe" -> "SuperOne Setup.exe"
+// Strip the release number (and its leading separator) from an artifact
+// filename to produce a stable "latest" download name.
+// "SuperOne-0.61.0-alpha-arm64.dmg" -> "SuperOne-alpha-arm64.dmg"
+// "SuperOne-0.62.0-arm64.dmg"       -> "SuperOne-arm64.dmg"
+//
+// Only the semver CORE goes. The prerelease tag stays, and that is what keeps
+// the two variants' fixed links apart: both build their installers from the
+// same base name now, so stripping the whole version would publish
+// `stable/latest/SuperOne-arm64.dmg` and `alpha/latest/SuperOne-arm64.dmg` --
+// identical filenames, distinguished only by a prefix the browser drops. Two
+// downloads in one folder would then be `SuperOne-arm64.dmg` and
+// `SuperOne-arm64 (1).dmg` with nothing to tell them apart.
+//
+// The consuming half is `fixedInstallerName` in
+// `@superone/shared/download-links`, which the desktop app and the marketing
+// site both read. Change one and the other 404s with nothing failing in CI.
 export function fixedLinkName(filename: string, version: string): string {
-  const escaped = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const core = version.trim().replace(/^v/i, '').split('-')[0]
+  const escaped = core.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const withoutVersion = filename.replace(new RegExp(`[ ._-]?${escaped}`), '')
   if (!withoutVersion.toLowerCase().endsWith('.exe')) return withoutVersion
   const stem = withoutVersion.slice(0, -'.exe'.length).replaceAll('.', ' ')

@@ -276,10 +276,37 @@ R2 layout:
 super-one-releases/
   stable/latest-mac.yml · latest.yml · latest-linux.yml   ← what the stable app polls
   stable/v0.61.0/{*.dmg,*.zip,*.exe,*.AppImage,*.blockmap}
-  stable/latest/{SuperOne.dmg,SuperOne-arm64.dmg,…}       ← shareable version-less links
+  stable/latest/{SuperOne.dmg,SuperOne-arm64.dmg,…}       ← shareable release-number-less links
   alpha/…                                                  ← same shape, separate app
+  alpha/latest/{SuperOne-alpha.dmg,SuperOne-alpha-arm64.dmg,…}
   alpha-mac.yml · alpha.yml · alpha-linux.yml              ← LEGACY, bucket root only
 ```
+
+**Installer filenames come from `artifactBaseName`, not `productName`.** Both
+variants name their files `SuperOne`, because `${productName}` would write
+"SuperOne Alpha-0.61.0-alpha-arm64.dmg" — the word once for the app and once
+for the version's prerelease tag. The `.app` keeps the full product name; only
+the file on disk drops it.
+
+What separates the two variants' *fixed* links is therefore the prerelease tag
+alone, and it survives because `fixedLinkName` strips only the semver **core**:
+`SuperOne-0.61.0-alpha-arm64.dmg` → `SuperOne-alpha-arm64.dmg`, while stable's
+`SuperOne-0.62.0-arm64.dmg` → `SuperOne-arm64.dmg`. Strip the whole version and
+both variants publish one filename, distinguished only by a prefix the browser
+throws away.
+
+This is a **three-way** contract with no build-time link between the parts, so a
+drift surfaces only as a 404 in production:
+
+| Part | File | Role |
+|---|---|---|
+| `artifactName` templates | `electron-builder.config.cjs` | produces the versioned name |
+| `fixedLinkName` | `scripts/lib/channels.ts` | derives the object key set-latest writes |
+| `fixedInstallerName` | `packages/shared/src/download-links.ts` | derives the URL desktop + web request |
+
+`channels.test.ts` pins the last two against each other directly;
+`variant-build-config.test.ts` asserts the templates put `${version}` right
+after the base, which is what makes the tag land where the other two expect it.
 
 Manifest urls are relative, so `<variant>/latest-mac.yml` + `v${VERSION}/x.dmg`
 resolves inside the right prefix with zero client config.

@@ -10,6 +10,7 @@ import {
   shouldPublish,
   versionedArtifactPath,
 } from './channels'
+import { fixedInstallerName } from '@superone/shared/download-links'
 
 describe('compareVersions', () => {
   it('orders core versions numerically, not lexically', () => {
@@ -86,12 +87,72 @@ describe('rootRelativePaths', () => {
 })
 
 describe('fixedLinkName', () => {
-  it('strips the version so the link is stable across releases', () => {
-    expect(fixedLinkName('SuperOne-0.40.0-alpha-arm64.dmg', '0.40.0-alpha')).toBe('SuperOne-arm64.dmg')
+  it('strips the release number so the link is stable across releases', () => {
+    expect(fixedLinkName('SuperOne-0.62.0-arm64.dmg', '0.62.0')).toBe('SuperOne-arm64.dmg')
+    expect(fixedLinkName('SuperOne-0.62.0-Setup.exe', '0.62.0')).toBe('SuperOne-Setup.exe')
   })
 
-  it('normalises the dots NSIS leaves in a Windows installer name', () => {
-    expect(fixedLinkName('SuperOne Setup 0.40.1-alpha.exe', '0.40.1-alpha')).toBe('SuperOne Setup.exe')
+  it('keeps the prerelease tag, which is all that separates the two variants', () => {
+    // Both variants name their installers "SuperOne" now. Strip the whole
+    // version and stable/ and alpha/ publish the same filename.
+    expect(fixedLinkName('SuperOne-0.61.0-alpha-arm64.dmg', '0.61.0-alpha')).toBe(
+      'SuperOne-alpha-arm64.dmg',
+    )
+    expect(fixedLinkName('SuperOne-0.61.0-alpha.dmg', '0.61.0-alpha')).toBe('SuperOne-alpha.dmg')
+    expect(fixedLinkName('SuperOne-0.61.0-alpha-Setup.exe', '0.61.0-alpha')).toBe(
+      'SuperOne-alpha-Setup.exe',
+    )
+    expect(fixedLinkName('SuperOne-0.61.0-alpha.AppImage', '0.61.0-alpha')).toBe(
+      'SuperOne-alpha.AppImage',
+    )
+  })
+
+  it('tolerates a v-prefixed tag as the version argument', () => {
+    expect(fixedLinkName('SuperOne-0.61.0-alpha-arm64.dmg', 'v0.61.0-alpha')).toBe(
+      'SuperOne-alpha-arm64.dmg',
+    )
+  })
+
+  it('still normalises the dots a GitHub-normalised historical name carries', () => {
+    // Rolling a variant back reads that release's manifest, which can name a
+    // spaced artifact from before the rename.
+    expect(fixedLinkName('SuperOne.Setup.0.40.1-alpha.exe', '0.40.1-alpha')).toBe(
+      'SuperOne Setup-alpha.exe',
+    )
+  })
+})
+
+describe('fixed link name agreement between the producing and consuming halves', () => {
+  // `fixedLinkName` decides the object key set-latest writes; `fixedInstallerName`
+  // decides the URL the desktop app and the marketing site request. They are in
+  // different packages and nothing links them at build time, so a drift shows up
+  // only as a 404 in production. Pin them against each other.
+  const VERSIONS = { stable: '0.62.0', alpha: '0.61.0-alpha' } as const
+  const TAGS = { stable: null, alpha: 'alpha' } as const
+
+  const artifacts = (version: string) => [
+    { file: `SuperOne-${version}-arm64.dmg`, platform: 'mac' as const, arch: 'arm64' as const },
+    { file: `SuperOne-${version}.dmg`, platform: 'mac' as const, arch: 'x64' as const },
+    { file: `SuperOne-${version}-Setup.exe`, platform: 'win' as const, arch: undefined },
+    { file: `SuperOne-${version}.AppImage`, platform: 'linux' as const, arch: undefined },
+  ]
+
+  for (const variant of ['stable', 'alpha'] as const) {
+    it(`agrees on every ${variant} installer`, () => {
+      for (const { file, platform, arch } of artifacts(VERSIONS[variant])) {
+        expect(fixedLinkName(file, VERSIONS[variant])).toBe(
+          fixedInstallerName('SuperOne', platform, arch, TAGS[variant]),
+        )
+      }
+    })
+  }
+
+  it('never lets the two variants collide on one filename', () => {
+    for (const { platform, arch } of artifacts('0.0.0')) {
+      expect(fixedInstallerName('SuperOne', platform, arch, TAGS.stable)).not.toBe(
+        fixedInstallerName('SuperOne', platform, arch, TAGS.alpha),
+      )
+    }
   })
 })
 

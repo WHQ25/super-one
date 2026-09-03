@@ -6,51 +6,66 @@ import {
 } from './download-links'
 
 describe('fixedInstallerName', () => {
-  it('derives every platform name from the variant product name', () => {
+  it('derives every platform name from the artifact base name', () => {
     expect(fixedInstallerName('SuperOne', 'mac', 'arm64')).toBe('SuperOne-arm64.dmg')
     expect(fixedInstallerName('SuperOne', 'mac', 'x64')).toBe('SuperOne.dmg')
-    expect(fixedInstallerName('SuperOne', 'win')).toBe('SuperOne Setup.exe')
+    expect(fixedInstallerName('SuperOne', 'win')).toBe('SuperOne-Setup.exe')
     expect(fixedInstallerName('SuperOne', 'linux')).toBe('SuperOne.AppImage')
   })
 
-  it('carries the space through for the alpha product name', () => {
-    // fixedLinkName strips only the version, so the space in "SuperOne Alpha"
-    // survives into the published object key.
-    expect(fixedInstallerName('SuperOne Alpha', 'mac', 'arm64')).toBe('SuperOne Alpha-arm64.dmg')
-    expect(fixedInstallerName('SuperOne Alpha', 'win')).toBe('SuperOne Alpha Setup.exe')
+  it('separates the variants by prerelease tag, not by product name', () => {
+    // Both variants build "SuperOne" installers, so without the tag these
+    // would be the same filename under two prefixes -- indistinguishable once
+    // a browser has dropped them both in ~/Downloads.
+    expect(fixedInstallerName('SuperOne', 'mac', 'arm64', 'alpha')).toBe(
+      'SuperOne-alpha-arm64.dmg',
+    )
+    expect(fixedInstallerName('SuperOne', 'mac', 'x64', 'alpha')).toBe('SuperOne-alpha.dmg')
+    expect(fixedInstallerName('SuperOne', 'win', undefined, 'alpha')).toBe(
+      'SuperOne-alpha-Setup.exe',
+    )
+    expect(fixedInstallerName('SuperOne', 'linux', undefined, 'alpha')).toBe(
+      'SuperOne-alpha.AppImage',
+    )
+  })
+
+  it('treats a null tag as the untagged variant', () => {
+    expect(fixedInstallerName('SuperOne', 'mac', 'arm64', null)).toBe('SuperOne-arm64.dmg')
   })
 })
 
 describe('fixedDownloadUrl', () => {
-  it('percent-encodes the installer name so a spaced product name resolves', () => {
+  it('keeps each variant on its own prefix AND its own filename', () => {
     expect(
       fixedDownloadUrl({
         downloadPrefix: 'alpha',
-        productName: 'SuperOne Alpha',
+        artifactBaseName: 'SuperOne',
+        prereleaseTag: 'alpha',
         platform: 'mac',
         arch: 'arm64',
       }),
-    ).toBe('https://dl.super-one.dev/alpha/latest/SuperOne%20Alpha-arm64.dmg')
-  })
+    ).toBe('https://dl.super-one.dev/alpha/latest/SuperOne-alpha-arm64.dmg')
 
-  it('keeps each variant on its own prefix', () => {
-    const stable = fixedDownloadUrl({
-      downloadPrefix: 'stable',
-      productName: 'SuperOne',
-      platform: 'linux',
-    })
-    expect(stable).toBe('https://dl.super-one.dev/stable/latest/SuperOne.AppImage')
+    expect(
+      fixedDownloadUrl({
+        downloadPrefix: 'stable',
+        artifactBaseName: 'SuperOne',
+        prereleaseTag: null,
+        platform: 'linux',
+      }),
+    ).toBe('https://dl.super-one.dev/stable/latest/SuperOne.AppImage')
   })
 
   it('trims a trailing slash from an overridden base', () => {
     expect(
       fixedDownloadUrl({
         downloadPrefix: 'stable',
-        productName: 'SuperOne',
+        artifactBaseName: 'SuperOne',
+        prereleaseTag: null,
         platform: 'win',
         baseUrl: 'https://example.test/',
       }),
-    ).toBe('https://example.test/stable/latest/SuperOne%20Setup.exe')
+    ).toBe('https://example.test/stable/latest/SuperOne-Setup.exe')
   })
 })
 

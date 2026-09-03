@@ -8,6 +8,7 @@ import type {
   SandboxMode,
   SessionAgentLaunchConfig,
   SessionAgentLaunchProposal,
+  SessionAgentProfile,
   SessionCollabLaunchMode,
 } from '@superone/shared/agent-types'
 import {
@@ -177,6 +178,30 @@ function resolveLaunchMode(raw: unknown): SessionCollabLaunchMode {
   return 'spawn'
 }
 
+/**
+ * `apiProviderId` is a credential id, and an unknown one is NOT an error further
+ * down: the provider resolver silently falls back to the global binding, so the
+ * child would quietly run on the default provider while the caller believes it
+ * picked a third-party one. Reject it here (and again at grant time, which is the
+ * choke point the confirm UI's edits also pass through) so a wrong id is a loud
+ * failure with the valid ids attached, not a silent downgrade.
+ */
+function assertKnownApiProviderId(
+  config: SessionAgentLaunchConfig | undefined,
+  profile: SessionAgentProfile,
+): void {
+  const apiProviderId = config?.apiProviderId
+  if (typeof apiProviderId !== 'string' || !apiProviderId.trim()) return
+  if (profile.apiProviders.some((provider) => provider.id === apiProviderId)) return
+  const known = profile.apiProviders.map((provider) => provider.id)
+  throw new Error(
+    `Unknown apiProviderId for agent ${profile.id}: ${apiProviderId}. `
+    + 'It must be a credential id from session_collab_list_agents → agents[].apiProviders[].id'
+    + (known.length > 0 ? ` (available: ${known.join(', ')})` : ' (this agent has no third-party providers configured)')
+    + '. Omit it to follow the user\'s global provider binding.',
+  )
+}
+
 function normalizeLaunches(args: RequestSessionAgentsArgs, parent: Session): SessionAgentLaunchProposal[] {
   if (!Array.isArray(args.launches) || args.launches.length === 0) {
     throw new Error('launches must contain at least one proposed session')
@@ -256,6 +281,7 @@ function normalizeLaunches(args: RequestSessionAgentsArgs, parent: Session): Ses
     if (!agentId) throw new Error(`${mode} launches require agentId from session_collab_list_agents`)
     const profile = profiles.get(agentId)
     if (!profile) throw new Error(`Unknown agent profile: ${agentId}`)
+    assertKnownApiProviderId(launch.config, profile)
     const task = launch.task?.trim()
     if (!task) throw new Error(`Every ${mode} launch must include a non-empty task`)
     if (task.length > SESSION_AGENT_TASK_MAX) {
@@ -564,6 +590,8 @@ function createGrants(parentSessionId: string, launches: SessionAgentLaunchPropo
 
     const profile = profiles.get(launch.agentId)
     if (!profile) throw new Error(`Unknown agent profile: ${launch.agentId}`)
+    // Also covers the confirm UI's provider edit, which reaches here as renderer input.
+    assertKnownApiProviderId(launch.config, profile)
     if (!launch.task?.trim()) throw new Error(`Every ${mode} launch must include a non-empty task`)
     const credential = `s1sc_${randomBytes(32).toString('base64url')}`
     const config = {
@@ -1225,15 +1253,27 @@ export async function startSessionAgent(
     }
     child.setTitle(title, 'agent')
     // Persist provider + ACP agent immediately so sidebar brand icons work before first save.
+    //
+    // api_provider_id / selected_model / selected_effort belong here for the same
+    // reason: Session.notifyStateChange refuses to persist an empty transcript, so
+    // until the first message lands this row is the renderer's ONLY source for them
+    // (chat-store restores both from the persisted row, never from the live Session).
+    // Leaving them null made the child's model selector resolve against the global
+    // provider binding and show the default harness model name instead of the
+    // launched third-party one.
     getDb().prepare(`
       UPDATE sessions
-      SET provider_id = ?, provider = ?, acp_agent_id = COALESCE(?, acp_agent_id), title = ?
+      SET provider_id = ?, provider = ?, acp_agent_id = COALESCE(?, acp_agent_id), title = ?,
+          api_provider_id = ?, selected_model = ?, selected_effort = ?
       WHERE id = ?
     `).run(
       grant.agent_id,
       profile?.harnessId ?? null,
       profile?.acpAgentId ?? null,
       title,
+      config.apiProviderId ?? null,
+      config.model ?? null,
+      config.effort ?? null,
       childSessionId,
     )
     const updated = isHandoff

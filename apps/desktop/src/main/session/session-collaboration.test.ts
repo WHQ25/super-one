@@ -186,6 +186,9 @@ function createSchema(db: Database.Database): void {
       provider_id TEXT,
       provider TEXT,
       acp_agent_id TEXT,
+      api_provider_id TEXT,
+      selected_model TEXT,
+      selected_effort TEXT,
       is_worktree INTEGER DEFAULT 0,
       worktree_path TEXT
     );
@@ -692,6 +695,67 @@ describe('@agent mention targets', () => {
       [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify(launches),
     })
     await promise
+  })
+
+  it('persists the launched provider, model and effort on the child row before its first message', async () => {
+    const parent = fakeSession('parent')
+    const { host, createSession } = fakeHost(parent)
+    const grants = await approveLaunches(parent, host, 1, { apiProviderId: 'api-1' })
+
+    const started = resultJson(await startSessionAgent('parent', grants[0].credential, host))
+
+    expect(createSession.mock.calls[0][0]).toMatchObject({ apiProviderId: 'api-1', model: 'test-model' })
+    // The renderer restores the child's selector state from this row alone — an
+    // empty transcript is never persisted by Session, so it must be complete here.
+    expect(state.db!.prepare(
+      'SELECT api_provider_id, selected_model, selected_effort FROM sessions WHERE id = ?',
+    ).get(started.sessionId)).toEqual({
+      api_provider_id: 'api-1',
+      selected_model: 'test-model',
+      selected_effort: 'high',
+    })
+  })
+
+  it('rejects an apiProviderId that is not a known credential instead of silently using the default provider', async () => {
+    const parent = fakeSession('parent')
+    const { host } = fakeHost(parent)
+
+    await expect(requestSessionAgents(parent.id, {
+      launches: [{
+        launchId: 'bad-provider',
+        agentId: 'claude-base',
+        task: 'Run on a third-party provider',
+        name: 'Agent',
+        role: 'Worker',
+        // A plausible agent mistake: the platform id rather than the credential id.
+        config: { cwd: TEST_CWD, apiProviderId: 'openai' },
+      }],
+    }, host)).rejects.toThrow(/Unknown apiProviderId.*available: api-1/s)
+    expect(parent.emitHostEvent).not.toHaveBeenCalled()
+  })
+
+  it('rejects a tampered apiProviderId injected by the confirm response', async () => {
+    const parent = fakeSession('parent')
+    const { host } = fakeHost(parent)
+    const promise = requestSessionAgents(parent.id, {
+      launches: [{
+        launchId: 'tampered',
+        agentId: 'claude-base',
+        task: 'Task',
+        name: 'Agent',
+        role: 'Worker',
+        config: { cwd: TEST_CWD },
+      }],
+    }, host)
+    const event = (parent.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentEvent
+    if (event.type !== 'permission_request') throw new Error('Expected permission request')
+    const launches = event.request.sessionAgentsConfirm!.launches
+    launches[0].config.apiProviderId = 'not-a-credential'
+    resolveSessionAgentsConfirm(event.request.requestId, 'accept', {
+      [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify(launches),
+    })
+
+    await expect(promise).rejects.toThrow(/Unknown apiProviderId/)
   })
 
   it('issues independent credentials for repeated profiles and starts each credential once', async () => {

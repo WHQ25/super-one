@@ -195,6 +195,39 @@ describe('createDesktopTarballInstaller', () => {
     }
   })
 
+  it('reads its own variant manifest, not one derived from the version string', async () => {
+    // The mocked app version is '0.0.0-test'. Nothing in it says "alpha", so a
+    // channel derived from the version would send this build to the STABLE
+    // manifest -- and then discard every pin in it as stale, silently losing
+    // the R2 path. Only the build variant knows which app this is.
+    const packWork = mkdtempSync(join(tmpdir(), 'so-pack-chan-'))
+    try {
+      const { bytes } = makeNpmTgz(packWork, {
+        'package.json': JSON.stringify({ name: '@anthropic-ai/claude-agent-sdk-test', version: '0.0.1' }),
+        claude: { body: '#!/bin/sh\necho ok\n', mode: 0o755 },
+      })
+      const pins = desktopPackagePins('claude')
+      const urls: string[] = []
+
+      const installer = createDesktopTarballInstaller({
+        fetchJson: async (url: string) => {
+          urls.push(url)
+          if (url.includes('/harness/manifest/')) throw new Error('manifest offline')
+          return {
+            version: pins.packages[0]!.version,
+            dist: { tarball: 'https://example.test/pkg.tgz', integrity: sha512Integrity(bytes) },
+          }
+        },
+        fetchBinary: async () => bytes,
+      })
+      await installer.install('claude', { root: home })
+
+      expect(urls[0]).toBe('https://dl.super-one.dev/harness/manifest/alpha.json')
+    } finally {
+      rmSync(packWork, { recursive: true, force: true })
+    }
+  })
+
   it('installs a new pin side-by-side without deleting the previous version dir', async () => {
     const packWork = mkdtempSync(join(tmpdir(), 'so-pack-sxs-'))
     try {
@@ -395,16 +428,33 @@ describe('createDesktopTarballInstaller', () => {
 })
 
 describe('resolveHarnessManifestChannel', () => {
-  it('prefers explicit, then env, then version', () => {
-    expect(resolveHarnessManifestChannel('beta')).toBe('beta')
+  function withEnvChannel(value: string, run: () => void): void {
     const prev = process.env.SUPERONE_HARNESS_CHANNEL
-    process.env.SUPERONE_HARNESS_CHANNEL = 'stable'
+    process.env.SUPERONE_HARNESS_CHANNEL = value
     try {
-      expect(resolveHarnessManifestChannel()).toBe('stable')
+      run()
     } finally {
       if (prev === undefined) delete process.env.SUPERONE_HARNESS_CHANNEL
       else process.env.SUPERONE_HARNESS_CHANNEL = prev
     }
+  }
+
+  it('lets the env escape hatch beat a caller that states its own channel', () => {
+    withEnvChannel('stable', () => {
+      expect(resolveHarnessManifestChannel('alpha')).toBe('stable')
+      expect(resolveHarnessManifestChannel()).toBe('stable')
+    })
+  })
+
+  it('takes a stated channel over anything the version string suggests', () => {
+    // This is the desktop's path: it passes its build variant, so a stable app
+    // cut from an alpha commit still reads the stable manifest.
+    expect(resolveHarnessManifestChannel('stable', '0.62.0-alpha')).toBe('stable')
+    expect(resolveHarnessManifestChannel('alpha', '1.0.0')).toBe('alpha')
+  })
+
+  it('falls back to the version string only when no channel was stated', () => {
+    // Reserved for @super-one/cli, which has no variant of its own.
     expect(resolveHarnessManifestChannel(undefined, '0.52.0-alpha')).toBe('alpha')
     expect(resolveHarnessManifestChannel(undefined, '1.0.0')).toBe('stable')
   })

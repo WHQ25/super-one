@@ -15,6 +15,7 @@ import { dirname } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { Readable } from 'node:stream'
 import { app } from 'electron'
+import { variantId } from '../variant'
 import {
   createFetchJson,
   createManagedTarballInstaller,
@@ -167,7 +168,11 @@ export function createDesktopTarballInstaller(
     fetchJson,
     downloadToFile,
     extractTgz,
-    channel: opts.channel,
+    // The desktop knows which app it is; it must never fall through to the
+    // version-shaped guess. That guess is only correct while the builder
+    // asserts version<->variant, and that assertion exists to catch a
+    // mis-dispatched build -- not to pick a harness channel.
+    channel: opts.channel ?? variantId(),
     releaseVersion,
     cdnBase: opts.cdnBase,
     npmOnly: opts.npmOnly,

@@ -96,13 +96,25 @@ export function managedPackagePins(id: ManagedHarnessId): {
 
 // ── channel ─────────────────────────────────────────────────────────────────
 
+/**
+ * Which harness manifest to read.
+ *
+ * The env var comes first because it is the debugging escape hatch: a caller
+ * that states a channel is stating its own identity, and an override that
+ * cannot beat that is not an override.
+ *
+ * `explicit` is how a caller that KNOWS which app it is answers -- the desktop
+ * passes its build variant. The version-shaped guess below is only for callers
+ * with no variant of their own (`@super-one/cli` ships at the desktop version),
+ * and so is the `alpha` default: that is the CLI's home, not the desktop's.
+ */
 export function resolveHarnessManifestChannel(
   explicit?: HarnessManifestChannel,
   releaseVersion?: string,
 ): HarnessManifestChannel {
-  if (explicit) return explicit
   const fromEnv = process.env.SUPERONE_HARNESS_CHANNEL?.trim()
   if (fromEnv && isHarnessManifestChannel(fromEnv)) return fromEnv
+  if (explicit) return explicit
   const ver =
     releaseVersion?.trim() ||
     process.env.SUPERONE_CLI_VERSION?.trim() ||

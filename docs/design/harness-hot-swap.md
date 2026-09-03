@@ -455,7 +455,7 @@ Examples:
 | CI | `.github/workflows/publish-harness.yml` (workflow_dispatch; optional `app_version`; dry_run supported) |
 | Desktop fetch order | R2 pin URL → npm registry; pin SHA-256 validates both |
 
-Channel selection on desktop: `SUPERONE_HARNESS_CHANNEL` → `channelFromVersion(app version)` → `alpha`.
+Channel selection on desktop: `SUPERONE_HARNESS_CHANNEL` → the build variant (`variantId()`). The version-derived fallback is for `@super-one/cli`, which has no variant.
 
 Pins always come from `OFFICIAL_CLAUDE_SDK_VERSION` / `OFFICIAL_CODEX_NPM_VERSION` in source — the workflow accepts only a channel (and optional app-version key), never free-form package versions. One `publish:harness --upload` publishes both the channel manifest and `app/harness-pins/<version>.json` so desktop clients can pre-fetch target pins before Restart.
 

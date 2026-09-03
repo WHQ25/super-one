@@ -1219,6 +1219,11 @@ export const zh: Messages = {
         action: '立即检查',
         failed: '检查更新失败',
       },
+      alphaBuild: {
+        label: 'SuperOne 先锋版',
+        description: '先锋版最先获得新功能，与当前应用并存安装，数据相互独立。',
+        action: '下载',
+      },
     },
     preferences: {
       title: '偏好设置',

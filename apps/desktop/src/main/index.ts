@@ -15,7 +15,7 @@ import type { EnvironmentHost } from './environment/environment-host'
 import type { DraftUpsertRequest } from '@superone/shared/environment'
 import log from './logger'
 import { packagedUserDataPath } from './user-data-path'
-import { variant } from './variant'
+import { variant, variantId } from './variant'
 import { startMediaServer, getMediaServerPort } from './media-server'
 import { getMediaProviderStatuses } from './media-gen/settings-service'
 import { getAppBasePath, cacheAppEntry, generateCSP, readManifest, validatePath, discoverApps, discoverProjectApps, setAllowedMedia, clearAllowedMedia, isMediaAllowed, appIdFromUrl, listDevRegistryView, registerDevMiniApp, unregisterDevMiniApp, installDevPointer, removeDevPointer, setDevPointerEnabled } from './miniapp/miniapp-service'
@@ -4541,7 +4541,12 @@ function registerIpcHandlers(): void {
       cursor ? `${cursor.models?.length ?? 0} models` : 'null',
       sandboxCapability.supportLevel,
     )
-    return { cached: { claude, codex, acp, opencode, cursor }, sandboxCapability, appVersion: app.getVersion() }
+    return {
+      cached: { claude, codex, acp, opencode, cursor },
+      sandboxCapability,
+      appVersion: app.getVersion(),
+      variant: variantId(),
+    }
   })
 
   ipcMain.handle(AgentIpcChannels.SANDBOX_PROBE, async () => {

@@ -2662,6 +2662,8 @@ export interface StartupData {
   }
   sandboxCapability: SandboxCapability
   appVersion: string
+  /** Which side-by-side app this is. Decided at package time, not derived. */
+  variant: UpdateChannel
 }
 
 // --- Codex experimental integration ---

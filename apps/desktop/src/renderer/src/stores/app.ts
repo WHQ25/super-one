@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AppSettings, RecentFolder, RemoteDeviceConfig, SandboxCapability, SandboxProbeResult, SetupEvent, SettingsProvider, StartupData, UpdateEvent, WorktreeMode } from '@superone/shared/agent-types'
+import type { AppSettings, RecentFolder, RemoteDeviceConfig, SandboxCapability, SandboxProbeResult, SetupEvent, SettingsProvider, StartupData, UpdateChannel, UpdateEvent, WorktreeMode } from '@superone/shared/agent-types'
 import type { HarnessId } from '@superone/shared/session-types'
 import {
   clampA,
@@ -147,6 +147,7 @@ interface AppState {
 
   // App
   appVersion: string
+  appVariant: UpdateChannel
 
   // Sandbox
   sandboxCapability: SandboxCapability | null
@@ -297,6 +298,7 @@ async function runContinueToMain(
     recentFolders: folders,
     sandboxCapability: startupData.sandboxCapability ?? null,
     appVersion: startupData.appVersion,
+    appVariant: startupData.variant,
   })
   console.info(
     '[continueToMain] cached: claude=%s codex=%s opencode=%s cursor=%s sandbox=%s',
@@ -347,6 +349,7 @@ async function enterMainAfterGates(
     recentFolders: folders,
     sandboxCapability: startupData.sandboxCapability ?? get().sandboxCapability,
     appVersion: startupData.appVersion ?? get().appVersion,
+    appVariant: startupData.variant ?? get().appVariant,
   })
 
   if (startupData.sandboxCapability) {
@@ -639,6 +642,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     await enterMainAfterGates(get, set)
   },
   appVersion: '',
+  appVariant: 'stable',
   sandboxCapability: null,
   sandboxProbe: null,
   probeSandbox: async (force?: boolean) => {

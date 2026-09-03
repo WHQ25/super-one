@@ -1140,6 +1140,11 @@ export type Messages = {
         action: string
         failed: string
       }
+      alphaBuild: {
+        label: string
+        description: string
+        action: string
+      }
     }
     preferences: {
       title: string
@@ -4776,6 +4781,12 @@ export const en: Messages = {
         description: 'SuperOne checks once on launch. Currently on v{{version}}.',
         action: 'Check Now',
         failed: 'Update check failed',
+      },
+      alphaBuild: {
+        label: 'SuperOne Alpha',
+        description:
+          'Alpha ships new features first and installs alongside this app with its own data.',
+        action: 'Download',
       },
     },
     preferences: {

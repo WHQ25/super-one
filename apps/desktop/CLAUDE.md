@@ -220,7 +220,14 @@ before it constructs `AppInfo`, so it is the only seam that reaches the install 
   at launch and Electron has no runtime override, so `bun run dev` is always
   `com.github.Electron`. Everything SuperOne itself controls does follow it. To
   exercise anything keyed on a real bundle id (notification authorization, TCC),
-  build `SUPERONE_VARIANT=dev bun run build:mac-dev` and run the packaged app
+  build `SUPERONE_VARIANT=dev bun run build:mac-dev` and run the packaged app.
+  That build is unsigned (`CSC_IDENTITY_AUTO_DISCOVERY=false`), so it ends with
+  an ad-hoc `codesign --deep`. Without it Finder refuses to launch the app while
+  running the executable from a shell still works — the kernel accepts Electron's
+  linker-signed binary, Gatekeeper does not accept the bundle — and the nested
+  Computer Use helper has no `_CodeSignature/CodeResources`, which
+  `helperBundleFingerprint` requires, so the app boots and then reports
+  "Packaged Computer Use helper is incomplete"
 - Force the onboarding flow with `RENDERER_VITE_FORCE_ONBOARDING=1 bun run dev`.
   It re-shows the flow but resets nothing, so a step gated on persisted state
   (`notificationsPrimedAt`) needs that field cleared in `.dev-data/app-settings.json`

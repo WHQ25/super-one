@@ -39,7 +39,7 @@ export function encryptPayload(aesKeyBytes: Uint8Array, payload: unknown): strin
   const out = new Uint8Array(12 + sealed.length)
   out.set(iv, 0)
   out.set(sealed, 12)
-  return uint8ToBase64(out)
+  return bytesToBase64String(out)
 }
 
 export function decryptPayload(aesKeyBytes: Uint8Array, data: string): unknown {
@@ -148,7 +148,7 @@ export function decryptBytesChunked(
   return merged
 }
 
-function uint8ToBase64(bytes: Uint8Array): string {
+export function bytesToBase64String(bytes: Uint8Array): string {
   if (typeof Buffer !== 'undefined') return Buffer.from(bytes).toString('base64')
   let binary = ''
   for (const b of bytes) binary += String.fromCharCode(b)

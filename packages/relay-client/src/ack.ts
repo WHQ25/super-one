@@ -9,10 +9,11 @@ export class SeqAckTracker {
 
   /** Add seq before decrypt. False = duplicate / already contiguous. */
   see(seq: number): boolean {
+    if (!Number.isSafeInteger(seq) || seq <= 0) return false
     if (seq <= this.lastAckedSeq || this.processed.has(seq)) return false
     this.processed.add(seq)
     this.trim()
-    return true
+    return this.processed.has(seq)
   }
 
   /** Advance contiguous ACK watermark. Call even when decrypt failed. */
@@ -29,7 +30,6 @@ export class SeqAckTracker {
     if (advanced === 0) return { lastAckedSeq: this.lastAckedSeq, advanced: 0, shouldAckNow: false }
     this.unackedCount += advanced
     const shouldAckNow = this.unackedCount >= 10
-    if (shouldAckNow) this.unackedCount = 0
     return { lastAckedSeq: this.lastAckedSeq, advanced, shouldAckNow }
   }
 
@@ -38,6 +38,16 @@ export class SeqAckTracker {
     for (const s of this.processed) {
       if (s <= this.lastAckedSeq) this.processed.delete(s)
     }
+    if (this.processed.size <= PROCESSED_SEQ_CAP) return
+    const farthest = [...this.processed].sort((a, b) => b - a)
+    for (const seq of farthest) {
+      if (this.processed.size <= PROCESSED_SEQ_CAP) break
+      this.processed.delete(seq)
+    }
+  }
+
+  acknowledgeSent(): void {
+    this.unackedCount = 0
   }
 
   clear(): void {

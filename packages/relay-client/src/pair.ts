@@ -8,8 +8,10 @@ export type PairQr = {
 }
 
 export function parsePairQr(raw: string): PairQr {
-  if (!raw.startsWith('superone://pair')) throw new Error('not a SuperOne pairing QR')
   const uri = new URL(raw)
+  if (uri.protocol !== 'superone:' || uri.hostname !== 'pair') {
+    throw new Error('not a SuperOne pairing QR')
+  }
   const q = uri.searchParams
   const channelId = q.get('channel') ?? ''
   const tempKeyHex = q.get('key') ?? ''
@@ -17,6 +19,11 @@ export function parsePairQr(raw: string): PairQr {
   const relayUrl = q.get('relay') ?? ''
   if (!channelId || !tempKeyHex || !desktopDeviceId || !relayUrl) {
     throw new Error('QR is missing channel, key, deviceId, or relay')
+  }
+  if (!/^[0-9a-f]{64}$/i.test(tempKeyHex)) throw new Error('QR pairing key is invalid')
+  const relay = new URL(relayUrl)
+  if (relay.protocol !== 'ws:' && relay.protocol !== 'wss:') {
+    throw new Error('QR relay URL must use ws or wss')
   }
   return { channelId, tempKeyHex, desktopDeviceId, relayUrl }
 }
@@ -26,7 +33,7 @@ export function generatePairCode(): string {
 }
 
 export function pairWsUrl(relayUrl: string, channelId: string): string {
-  return `${relayUrl.replace(/\/$/, '')}/pair?channel=${channelId}&role=mobile`
+  return `${relayUrl.replace(/\/$/, '')}/pair?channel=${encodeURIComponent(channelId)}&role=mobile`
 }
 
 export function encryptPairRequest(
@@ -69,18 +76,33 @@ export function startPairingHandshake(opts: {
   const code = generatePairCode()
   const ws = opts.openSocket(pairWsUrl(opts.qr.relayUrl, opts.qr.channelId))
   const done = new Promise<PairResult>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('pairing timeout')), 3 * 60 * 1000)
-    ws.onerror = () => {
+    let settled = false
+    const finish = (result: { ok: true; value: PairResult } | { ok: false; error: unknown }): void => {
+      if (settled) return
+      settled = true
       clearTimeout(timer)
-      reject(new Error('pairing socket error'))
+      if (result.ok) resolve(result.value)
+      else reject(result.error)
+      ws.close()
+    }
+    const timer = setTimeout(() => finish({ ok: false, error: new Error('pairing timeout') }), 3 * 60 * 1000)
+    ws.onerror = () => {
+      finish({ ok: false, error: new Error('pairing socket error') })
+    }
+    ws.onclose = () => {
+      if (!settled) finish({ ok: false, error: new Error('pairing socket closed') })
     }
     ws.onopen = () => {
-      const data = encryptPairRequest(opts.qr.tempKeyHex, {
-        code,
-        mobileDeviceId: opts.mobileDeviceId,
-        deviceName: opts.deviceName,
-      })
-      ws.send(JSON.stringify({ type: 'pair_request', data }))
+      try {
+        const data = encryptPairRequest(opts.qr.tempKeyHex, {
+          code,
+          mobileDeviceId: opts.mobileDeviceId,
+          deviceName: opts.deviceName,
+        })
+        ws.send(JSON.stringify({ type: 'pair_request', data }))
+      } catch (error) {
+        finish({ ok: false, error })
+      }
     }
     ws.onmessage = (ev) => {
       let frame: { type?: string; data?: string }
@@ -90,26 +112,20 @@ export function startPairingHandshake(opts: {
         return
       }
       if (frame.type === 'pair_rejected') {
-        clearTimeout(timer)
-        reject(new Error('pairing rejected'))
-        ws.close()
+        finish({ ok: false, error: new Error('pairing rejected') })
         return
       }
       if (frame.type === 'pair_already_paired') {
-        clearTimeout(timer)
-        reject(new Error('already paired'))
-        ws.close()
+        finish({ ok: false, error: new Error('already paired') })
         return
       }
       if (frame.type === 'pair_response' && frame.data) {
-        clearTimeout(timer)
         try {
           const result = decryptPairResponse(opts.qr.tempKeyHex, frame.data)
-          resolve({ ...result, relayUrl: result.relayUrl || opts.qr.relayUrl })
-        } catch (e) {
-          reject(e)
+          finish({ ok: true, value: { ...result, relayUrl: result.relayUrl || opts.qr.relayUrl } })
+        } catch (error) {
+          finish({ ok: false, error })
         }
-        ws.close()
       }
     }
   })

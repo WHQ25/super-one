@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Pure-TS relay/LAN crypto and (later) ACK/RPC for Expo and tests.",
+  "description": "Pure-TS relay/LAN crypto, ACK, pairing, and RPC for Expo.",
   "exports": {
     ".": "./src/index.ts",
     "./crypto": "./src/crypto.ts"

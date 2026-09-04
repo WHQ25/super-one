@@ -20,6 +20,7 @@ export type FrameEffect =
   | { kind: 'reset' }
   | { kind: 'desktop_shutdown' }
   | { kind: 'response'; requestId: string; payload: unknown }
+  | { kind: 'response_error'; requestId: string; error: unknown }
   | { kind: 'response_chunk'; requestId: string; index: number; total: number; data: string }
   | { kind: 'pong' }
 
@@ -66,7 +67,11 @@ export function handleInboundFrame(
   }
   if (type === 'response') {
     if (!frame.requestId || typeof frame.data !== 'string') return { kind: 'drop' }
-    return { kind: 'response', requestId: frame.requestId, payload: decrypt(frame.data) }
+    try {
+      return { kind: 'response', requestId: frame.requestId, payload: decrypt(frame.data) }
+    } catch (error) {
+      return { kind: 'response_error', requestId: frame.requestId, error }
+    }
   }
   if (type === 'response_chunk') {
     if (!frame.requestId || frame.index == null || frame.total == null || typeof frame.data !== 'string') {

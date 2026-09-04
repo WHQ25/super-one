@@ -30,11 +30,29 @@ describe('SeqAckTracker', () => {
     for (let i = 1; i <= PROCESSED_SEQ_CAP + 50; i++) {
       t.see(i * 2)
     }
-    t.trim()
-    expect(t.processed.size).toBeLessThanOrEqual(PROCESSED_SEQ_CAP + 50)
-    t.lastAckedSeq = 10_000
-    t.trim()
-    expect([...t.processed].every((s) => s > 10_000)).toBe(true)
+    expect(t.processed.size).toBe(PROCESSED_SEQ_CAP)
+    expect(t.processed.has(2)).toBe(true)
+    expect(t.processed.has((PROCESSED_SEQ_CAP + 50) * 2)).toBe(false)
+  })
+
+  it('rejects invalid envelope sequences', () => {
+    const t = new SeqAckTracker()
+    expect(t.see(0)).toBe(false)
+    expect(t.see(-1)).toBe(false)
+    expect(t.see(1.5)).toBe(false)
+    expect(t.processed.size).toBe(0)
+  })
+
+  it('keeps the unacked count until an ACK is actually sent', () => {
+    const t = new SeqAckTracker()
+    for (let seq = 1; seq <= 10; seq++) {
+      expect(t.see(seq)).toBe(true)
+      const marked = t.markProcessed(seq)
+      if (seq === 10) expect(marked.shouldAckNow).toBe(true)
+    }
+    expect(t.unackedCount).toBe(10)
+    t.acknowledgeSent()
+    expect(t.unackedCount).toBe(0)
   })
 
   it('isolates ACK namespaces per transport', () => {
@@ -63,6 +81,21 @@ describe('handleInboundFrame', () => {
     const b = handleInboundFrame({ type: 'event', seq: 2, data: batch }, tracker, decrypt)
     expect(b.kind).toBe('events')
     if (b.kind === 'events') expect(b.events).toHaveLength(2)
+  })
+
+  it('preserves event-owned seq values in mixed envelopes', () => {
+    const { aesKeyBytes } = deriveKeys(MASTER)
+    const decrypt = makeDecrypt(aesKeyBytes)
+    const tracker = new SeqAckTracker()
+    const batch = encryptPayload(aesKeyBytes, [
+      { type: 'a', seq: 77 },
+      { type: 'b' },
+    ])
+    const effect = handleInboundFrame({ type: 'event', seq: 1, data: batch }, tracker, decrypt)
+    expect(effect.kind).toBe('events')
+    if (effect.kind === 'events') {
+      expect(effect.events).toEqual([{ type: 'a', seq: 77 }, { type: 'b' }])
+    }
   })
 
   it('ACKs when decrypt fails', () => {
@@ -120,5 +153,22 @@ describe('EventBuffer buffer-first', () => {
     expect(epoch).toBe(1)
     expect(batches).toEqual([[{ type: 'live' }]])
     expect(b.isBuffering).toBe(false)
+  })
+
+  it('does not discard reconnect frames when restore starts buffering again', () => {
+    const b = new EventBuffer()
+    b.start()
+    b.push([{ type: 'during-connect' }])
+    b.start()
+    expect(b.release().batches).toEqual([[{ type: 'during-connect' }]])
+  })
+
+  it('drops pre-reset batches and keeps buffering', () => {
+    const b = new EventBuffer()
+    b.start()
+    b.push([{ type: 'stale' }])
+    b.restart()
+    b.push([{ type: 'fresh' }])
+    expect(b.release().batches).toEqual([[{ type: 'fresh' }]])
   })
 })

@@ -1,10 +1,12 @@
-import type { RemoteCommand } from '@superone/shared/agent-types'
+import type { ReadDesktopFileResponse, RemoteCommand, ShareFilePayload } from '@superone/shared/agent-types'
 import { SeqAckTracker } from './ack'
 import { EventBuffer } from './buffer'
 import { buildLanWsUrl, buildRelayWsUrl, type TransportKind } from './connect'
 import { decryptPayload, deriveKeys, encryptPayload } from './crypto'
 import { handleInboundFrame, makeDecrypt, type InboundFrame } from './frames'
 import { RpcInbox } from './rpc'
+import { uploadBytes, type HttpPut, type UploadBytesOptions } from './attachments'
+import { downloadDesktopFileBytes, downloadSharedFileBytes, type HttpGet } from './downloads'
 
 export type SocketLike = {
   send(data: string): void
@@ -23,10 +25,12 @@ const defaultOpenSocket: OpenSocket = (url) => new WebSocket(url) as unknown as 
 export class RelayClient {
   private ws: SocketLike | null = null
   private aesKeyBytes: Uint8Array | null = null
+  private channelKeyHex: string | null = null
   private readonly tracker = new SeqAckTracker()
   private readonly rpc = new RpcInbox()
   readonly buffer = new EventBuffer()
   private ackTimer: ReturnType<typeof setTimeout> | null = null
+  private cancelConnect: (() => void) | null = null
   private kind: TransportKind = 'relay'
   private closed = false
   private last:
@@ -70,6 +74,11 @@ export class RelayClient {
     masterSecret: string
     deviceId?: string
   }): Promise<void> {
+    const sameRelay = this.last?.kind === 'relay'
+      && this.last.relayUrl === opts.relayUrl
+      && this.last.masterSecret === opts.masterSecret
+      && this.last.deviceId === opts.deviceId
+    if (!sameRelay) this.tracker.clear()
     this.last = { kind: 'relay', ...opts }
     this.kind = 'relay'
     const built = await buildRelayWsUrl({
@@ -78,6 +87,7 @@ export class RelayClient {
       role: 'mobile',
       deviceId: opts.deviceId,
     })
+    this.channelKeyHex = built.channelKeyHex
     await this.open(built.url, built.aesKeyBytes, true)
   }
 
@@ -85,23 +95,67 @@ export class RelayClient {
     this.last = { kind: 'lan', host, port, masterSecret }
     this.kind = 'lan'
     const keys = deriveKeys(masterSecret)
+    this.channelKeyHex = keys.channelKeyHex
     this.tracker.clear()
     await this.open(buildLanWsUrl(host, port), keys.aesKeyBytes, false)
   }
 
   disconnect(): void {
     this.closed = true
+    this.cancelConnect?.()
+    this.cancelConnect = null
     this.clearAckTimer()
     this.rpc.failAll(new Error('disconnected'))
-    this.ws?.close()
+    const ws = this.ws
     this.ws = null
-    this.hooks.onStatus?.(false)
+    this.detachAndClose(ws)
+    this.tracker.clear()
+    this.buffer.stop()
+    if (ws) this.hooks.onStatus?.(false)
   }
 
-  request(command: RemoteCommand): Promise<unknown> {
+  request(command: RemoteCommand, timeoutMs = 15_000): Promise<unknown> {
     if (!this.ws || !this.aesKeyBytes) return Promise.reject(new Error('not connected'))
     const ws = this.ws
-    return this.rpc.begin(command, (frame) => ws.send(JSON.stringify(frame)), this.aesKeyBytes)
+    return this.rpc.begin(command, (frame) => ws.send(JSON.stringify(frame)), this.aesKeyBytes, timeoutMs)
+  }
+
+  uploadFile(
+    input: Omit<UploadBytesOptions, 'transport' | 'lanHost' | 'aesKeyBytes' | 'channelKeyHex' | 'request' | 'put'>,
+    put: HttpPut,
+  ): Promise<string> {
+    if (!this.ws || !this.aesKeyBytes || !this.channelKeyHex) return Promise.reject(new Error('not connected'))
+    return uploadBytes({
+      ...input,
+      transport: this.kind,
+      lanHost: this.last?.kind === 'lan' ? this.last.host : undefined,
+      aesKeyBytes: this.aesKeyBytes,
+      channelKeyHex: this.channelKeyHex,
+      request: (command, timeoutMs) => this.request(command, timeoutMs),
+      put,
+    })
+  }
+
+  downloadSharedFile(file: ShareFilePayload, get?: HttpGet): Promise<Uint8Array> {
+    return downloadSharedFileBytes({
+      file,
+      aesKeyBytes: this.aesKeyBytes,
+      channelKeyHex: this.channelKeyHex,
+      ...(get ? { get } : {}),
+    })
+  }
+
+  downloadDesktopFile(
+    file: Extract<ReadDesktopFileResponse, { url: string }>,
+    get?: HttpGet,
+  ): Promise<Uint8Array> {
+    return downloadDesktopFileBytes({
+      file,
+      transport: this.kind,
+      aesKeyBytes: this.aesKeyBytes,
+      channelKeyHex: this.channelKeyHex,
+      ...(get ? { get } : {}),
+    })
   }
 
   /** Fire-and-forget encrypted command. Terminal I/O uses this — results arrive on the terminal channel. */
@@ -114,37 +168,64 @@ export class RelayClient {
   reconnect(): Promise<void> {
     const last = this.last
     if (!last) return Promise.reject(new Error('never connected'))
+    this.buffer.start()
     if (last.kind === 'relay') return this.connectRelay(last)
     return this.connectLan(last.host, last.port, last.masterSecret)
   }
 
   private async open(url: string, aesKeyBytes: Uint8Array, replay: boolean): Promise<void> {
-    this.disconnect()
+    this.cancelConnect?.()
+    this.cancelConnect = null
+    this.clearAckTimer()
+    this.rpc.failAll(new Error('connection replaced'))
+    const previous = this.ws
+    this.ws = null
+    this.detachAndClose(previous)
     this.closed = false
     this.aesKeyBytes = aesKeyBytes
     const ws = (this.hooks.openSocket ?? defaultOpenSocket)(url)
     this.ws = ws
     await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('ws connect timeout')), 15_000)
-      ws.onerror = () => {
+      let settled = false
+      const finishError = (error: Error): void => {
+        if (settled) return
+        settled = true
         clearTimeout(timer)
-        reject(new Error('ws error'))
+        if (this.cancelConnect === cancel) this.cancelConnect = null
+        if (this.ws === ws) this.ws = null
+        this.detachAndClose(ws)
+        reject(error)
+      }
+      const timer = setTimeout(() => finishError(new Error('ws connect timeout')), 15_000)
+      const cancel = () => finishError(new Error('connection cancelled'))
+      this.cancelConnect = cancel
+      ws.onmessage = (ev) => {
+        if (this.ws === ws) this.onRaw(String(ev.data))
+      }
+      ws.onerror = () => finishError(new Error('ws error'))
+      ws.onclose = () => {
+        if (!settled) {
+          finishError(new Error('ws closed before connect'))
+          return
+        }
+        if (this.ws === ws) {
+          this.ws = null
+          this.clearAckTimer()
+          this.rpc.failAll(new Error('connection closed'))
+          this.hooks.onStatus?.(false)
+        }
       }
       ws.onopen = () => {
+        if (settled) return
+        settled = true
         clearTimeout(timer)
+        if (this.cancelConnect === cancel) this.cancelConnect = null
         resolve()
       }
     })
-    if (this.closed) {
-      ws.close()
+    if (this.closed || this.ws !== ws) {
+      this.detachAndClose(ws)
       return
-    }
-    ws.onmessage = (ev) => this.onRaw(String(ev.data))
-    ws.onclose = () => {
-      if (this.ws === ws) {
-        this.ws = null
-        this.hooks.onStatus?.(false)
-      }
     }
     this.hooks.onStatus?.(true)
     if (replay) {
@@ -179,22 +260,29 @@ export class RelayClient {
         this.hooks.onTerminal?.(effect.payload)
         return
       case 'reset':
+        this.clearAckTimer()
+        this.buffer.restart()
         this.hooks.onReset?.()
         return
       case 'desktop_shutdown':
+        this.clearAckTimer()
+        this.buffer.stop()
         this.hooks.onShutdown?.()
         return
       case 'response':
         this.rpc.complete(effect.requestId, effect.payload)
         return
+      case 'response_error':
+        this.rpc.fail(effect.requestId, effect.error)
+        return
       case 'response_chunk': {
-        const assembled = this.rpc.ingestChunk(effect.requestId, effect.index, effect.total, effect.data)
-        if (assembled) {
-          try {
+        try {
+          const assembled = this.rpc.ingestChunk(effect.requestId, effect.index, effect.total, effect.data)
+          if (assembled) {
             this.rpc.complete(effect.requestId, decryptPayload(this.aesKeyBytes, assembled))
-          } catch (e) {
-            this.rpc.complete(effect.requestId, { error: String(e) })
           }
+        } catch (error) {
+          this.rpc.fail(effect.requestId, error)
         }
       }
     }
@@ -203,20 +291,37 @@ export class RelayClient {
   private maybeAck(seq: number, flush: boolean): void {
     if (this.kind !== 'relay' || !this.ws || seq <= 0) return
     if (flush) {
-      this.sendAck(seq)
+      this.sendAck(this.tracker.lastAckedSeq)
       return
     }
-    this.clearAckTimer()
-    this.ackTimer = setTimeout(() => this.sendAck(seq), 2000)
+    if (this.ackTimer == null) {
+      this.ackTimer = setTimeout(() => this.sendAck(this.tracker.lastAckedSeq), 2000)
+    }
   }
 
   private sendAck(seq: number): void {
     this.clearAckTimer()
-    this.ws?.send(JSON.stringify({ type: 'ack', seq }))
+    const ws = this.ws
+    if (!ws) return
+    try {
+      ws.send(JSON.stringify({ type: 'ack', seq }))
+      this.tracker.acknowledgeSent()
+    } catch {
+      // A closing socket may reject send before onclose schedules reconnect.
+    }
   }
 
   private clearAckTimer(): void {
     if (this.ackTimer) clearTimeout(this.ackTimer)
     this.ackTimer = null
+  }
+
+  private detachAndClose(ws: SocketLike | null): void {
+    if (!ws) return
+    ws.onopen = null
+    ws.onmessage = null
+    ws.onclose = null
+    ws.onerror = null
+    ws.close()
   }
 }

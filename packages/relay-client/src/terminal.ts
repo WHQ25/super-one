@@ -11,7 +11,39 @@ export type TerminalPaint =
 type ChunkAcc = {
   total: number
   parts: Map<number, string>
+  chars: number
   snapshot?: TerminalSnapshot
+}
+
+export const MAX_TERMINAL_SNAPSHOT_CHUNKS = 1_024
+export const MAX_TERMINAL_SNAPSHOT_SETS = 4
+export const MAX_TERMINAL_SNAPSHOT_CHUNK_CHARS = 512 * 1_024
+export const MAX_TERMINAL_SNAPSHOT_CHARS = 16 * 1_024 * 1_024
+
+function validChunk(chunk: {
+  snapshotId?: unknown
+  index?: unknown
+  total?: unknown
+  ansi?: unknown
+  snapshot?: TerminalSnapshot
+}): chunk is {
+  snapshotId: string
+  index: number
+  total: number
+  ansi: string
+  snapshot?: TerminalSnapshot
+} {
+  return typeof chunk.snapshotId === 'string'
+    && chunk.snapshotId.length > 0
+    && chunk.snapshotId.length <= 256
+    && Number.isSafeInteger(chunk.index)
+    && Number.isSafeInteger(chunk.total)
+    && (chunk.total as number) > 0
+    && (chunk.total as number) <= MAX_TERMINAL_SNAPSHOT_CHUNKS
+    && (chunk.index as number) >= 0
+    && (chunk.index as number) < (chunk.total as number)
+    && typeof chunk.ansi === 'string'
+    && chunk.ansi.length <= MAX_TERMINAL_SNAPSHOT_CHUNK_CHARS
 }
 
 /** Reassemble snapshot chunks and strip seq/ack. Terminal never ACKs. */
@@ -36,14 +68,33 @@ export class TerminalAssembler {
       }
       case 'terminal_snapshot_chunk': {
         const chunk = ev as {
-          snapshotId: string
-          index: number
-          total: number
-          ansi: string
+          snapshotId?: unknown
+          index?: unknown
+          total?: unknown
+          ansi?: unknown
           snapshot?: TerminalSnapshot
         }
-        const acc: ChunkAcc = this.chunks.get(chunk.snapshotId) ?? { total: chunk.total, parts: new Map() }
-        acc.parts.set(chunk.index, chunk.ansi ?? '')
+        if (!validChunk(chunk)) return []
+        let acc = this.chunks.get(chunk.snapshotId)
+        if (acc && acc.total !== chunk.total) {
+          this.chunks.delete(chunk.snapshotId)
+          return []
+        }
+        if (!acc) {
+          if (this.chunks.size >= MAX_TERMINAL_SNAPSHOT_SETS) {
+            const oldest = this.chunks.keys().next().value as string | undefined
+            if (oldest) this.chunks.delete(oldest)
+          }
+          acc = { total: chunk.total, parts: new Map(), chars: 0 }
+        }
+        if (!acc.parts.has(chunk.index)) {
+          if (acc.chars + chunk.ansi.length > MAX_TERMINAL_SNAPSHOT_CHARS) {
+            this.chunks.delete(chunk.snapshotId)
+            return []
+          }
+          acc.parts.set(chunk.index, chunk.ansi)
+          acc.chars += chunk.ansi.length
+        }
         if (chunk.snapshot) acc.snapshot = chunk.snapshot
         this.chunks.set(chunk.snapshotId, acc)
         if (acc.parts.size < acc.total) return []

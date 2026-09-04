@@ -6,8 +6,25 @@ export { RpcInbox } from './rpc'
 export { RelayClient } from './client'
 export type { OpenSocket, SocketLike } from './client'
 export { restoreSession } from './restore'
-export { classifyUpload, finishUpload } from './attachments'
-export type { HttpPut } from './attachments'
+export {
+  INLINE_UPLOAD_MAX_BYTES,
+  MAX_UPLOAD_BYTES,
+  classifyUpload,
+  finishUpload,
+  resolveLanUploadUrl,
+  uploadBytes,
+} from './attachments'
+export {
+  MAX_DOWNLOAD_BYTES,
+  downloadDesktopFileBytes,
+  downloadSharedFileBytes,
+  type DesktopFileResponse,
+  type DownloadDesktopFileOptions,
+  type DownloadSharedFileOptions,
+  type HttpGet,
+  type HttpGetResponse,
+} from './downloads'
+export type { HttpPut, HttpPutResult, UploadBytesOptions } from './attachments'
 export { TerminalAssembler } from './terminal'
 export type { TerminalPaint } from './terminal'
 export {
@@ -38,6 +55,7 @@ export {
   FILE_ENVELOPE_VERSION,
   FILE_GCM_IV_SIZE,
   FILE_GCM_TAG_SIZE,
+  bytesToBase64String,
   bytesToHexString,
   computeHmacToken,
   computeRoomId,

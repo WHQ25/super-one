@@ -1638,8 +1638,10 @@ describe('AgentService.handleRemoteCommand', () => {
     const respondToPermission = vi.fn(() => true)
     const activeSession = makeMockSession({ id: 'sid-1', projectPath: '/p', respondToPermission })
     const broadcasts: unknown[] = []
+    const subscriberEvents: unknown[] = []
 
     const service = new AgentService()
+    service.addEventSubscriber((event) => { subscriberEvents.push(event) })
     ;(service as { sessionManager: unknown }).sessionManager = {
       getActiveSession: vi.fn(() => activeSession),
       getSession: vi.fn(() => activeSession),
@@ -1669,6 +1671,54 @@ describe('AgentService.handleRemoteCommand', () => {
     expect(broadcasts).toContainEqual({
       type: 'interaction_resolved', interactionType: 'permission', requestId: 'req-1', projectPath: '/p', sessionId: 'sid-1',
     })
+    expect(subscriberEvents).toContainEqual({
+      type: 'interaction_resolved', interactionType: 'permission', requestId: 'req-1', projectPath: '/p', sessionId: 'sid-1',
+    })
+  })
+
+  it('remote question and plan responses publish resolution events to mobile subscribers', async () => {
+    const session = makeMockSession({
+      id: 'sid-1',
+      projectPath: '/p',
+      respondToQuestion: vi.fn(),
+      dismissQuestion: vi.fn(),
+      respondToPlanApproval: vi.fn(),
+    })
+    const subscriberEvents: unknown[] = []
+    const service = new AgentService()
+    service.addEventSubscriber((event) => { subscriberEvents.push(event) })
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getActiveSession: vi.fn(() => session),
+      getSession: vi.fn(() => session),
+    }
+    ;(service as unknown as { findSessionBySid: (p: string, s: string) => unknown }).findSessionBySid = () => session
+
+    await service.handleRemoteCommand({
+      type: 'answer_question',
+      requestId: 'question-answer',
+      answers: { Continue: 'Yes' },
+      projectPath: '/p',
+      sessionId: 'sid-1',
+    } as never)
+    await service.handleRemoteCommand({
+      type: 'dismiss_question',
+      requestId: 'question-dismiss',
+      projectPath: '/p',
+      sessionId: 'sid-1',
+    } as never)
+    await service.handleRemoteCommand({
+      type: 'respond_plan_approval',
+      requestId: 'plan-1',
+      approved: true,
+      projectPath: '/p',
+      sessionId: 'sid-1',
+    } as never)
+
+    expect(subscriberEvents).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'interaction_resolved', interactionType: 'question', requestId: 'question-answer' }),
+      expect.objectContaining({ type: 'interaction_resolved', interactionType: 'question', requestId: 'question-dismiss' }),
+      expect.objectContaining({ type: 'interaction_resolved', interactionType: 'plan_approval', requestId: 'plan-1', approved: true }),
+    ]))
   })
 
   it.skip('send_message creates remote agent when sessionId differs from desktop agent', async () => {

@@ -1156,6 +1156,8 @@ After PR1–3 green, run WP-04/05/06 in parallel, then **WP-07 scaffold** once M
 
 **2026-09-04 (WP-27 interaction lifecycle smoke):** a real Android AskUserQuestion response reached the Claude harness but left the native sheet open because AgentService sent its synthetic `interaction_resolved` only to Desktop renderers. The synthetic event path now also notifies remote subscribers for permission, question, dismissal, and plan decisions, including decisions made from Desktop while Mobile is subscribed. After rebuilding the development desktop, a second question submission closed immediately and rendered the completed tool; a plan-mode rejection likewise closed immediately and rendered `Plan Rejected`. AgentService has 103 passing focused tests with 21 skipped, and Desktop node/web typechecks are green.
 
+The same Android run then triggered a real Claude `Write` permission request in Ask-before-changes mode. Denying it closed the native permission sheet immediately, the harness rendered the denial result, and `permission-smoke.txt` remained absent from the worktree.
+
 ---
 
 ## Appendix A — LOC / baseline (orientation)

@@ -1,6 +1,6 @@
 # Expo release runbook
 
-Status: **Android APK/OTA emulator-verified; iOS build 21 complete and TestFlight submission queued; physical release pending**
+Status: **Android APK/OTA emulator-verified; iOS build 21 ready for internal TestFlight; physical release pending**
 Plan: `docs/design/flutter-to-expo-migration-plan.md` WP-29
 
 The release owner completed Apple Developer login/2FA and let EAS manage the signing
@@ -18,9 +18,11 @@ does not require another binary build.
 Build 21 uses runtime `1.0.0`; no mobile runtime source changed after the latest
 production update. EAS generated a least-privilege App Manager API key and keeps its
 private material on the credentials service. Submission
-`e9fd75c9-1ec2-4eb7-9fe7-c9f46d85a4a8` is queued for build 21. The obsolete build 4
-submission failed as expected because its build number was lower than the Flutter
-baseline. Never download, commit, or paste the private key into chat.
+`e9fd75c9-1ec2-4eb7-9fe7-c9f46d85a4a8` uploaded build 21 successfully. App Store
+Connect reports `VALID` / `READY_FOR_BETA_TESTING`, so it is ready to assign to
+internal testers. The obsolete build 4 submission failed as expected because its
+build number was lower than the Flutter baseline. Never download, commit, or paste
+the private key into chat.
 
 Run EAS commands from `apps/mobile`. Keep `credentials.json`, signing files, build
 artifacts, screenshots, and videos out of git.

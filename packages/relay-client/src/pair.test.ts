@@ -60,7 +60,11 @@ describe('pairing QR', () => {
     socket.onmessage?.({
       data: JSON.stringify({
         type: 'pair_response',
-        data: encryptPayload(hexToByteArray(key), { masterSecret: 'secret', hostName: 'Mac' }),
+        data: encryptPayload(hexToByteArray(key), {
+          masterSecret: 'secret',
+          hostName: 'Mac',
+          relayUrl: 'ws://desktop-internal:8787',
+        }),
       }),
     })
     await expect(done).resolves.toEqual({

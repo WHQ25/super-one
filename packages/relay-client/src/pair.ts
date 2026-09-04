@@ -122,7 +122,9 @@ export function startPairingHandshake(opts: {
       if (frame.type === 'pair_response' && frame.data) {
         try {
           const result = decryptPairResponse(opts.qr.tempKeyHex, frame.data)
-          finish({ ok: true, value: { ...result, relayUrl: result.relayUrl || opts.qr.relayUrl } })
+          // Keep using the endpoint that completed the handshake. The desktop may be
+          // advertising an internal address that is unreachable through NAT or a proxy.
+          finish({ ok: true, value: { ...result, relayUrl: opts.qr.relayUrl } })
         } catch (error) {
           finish({ ok: false, error })
         }

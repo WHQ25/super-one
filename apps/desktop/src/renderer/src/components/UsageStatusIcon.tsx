@@ -431,6 +431,7 @@ function CodexRateLimitIcon({ projectPath, apiProviderId, threadId, status, tip,
   const { t } = useTranslation()
   const [limits, setLimits] = useState<CodexRateLimits | null>(null)
   const [usage, setUsage] = useState<CodexAccountUsage | null>(null)
+  const [accountEmail, setAccountEmail] = useState<string | null>(null)
 
   const fetchLimits = useCallback(() => {
     window.app.codexGetRateLimits(projectPath, apiProviderId).then(setLimits).catch(() => {})
@@ -441,6 +442,18 @@ function CodexRateLimitIcon({ projectPath, apiProviderId, threadId, status, tip,
     setLimits(null)
     setUsage(null)
   }, [projectPath, apiProviderId, threadId])
+
+  // Only for the ChatGPT sign-in. With an apiProviderId the turns bill a third-party key, and
+  // naming the OAuth account would point at a subscription this session never touches.
+  useEffect(() => {
+    setAccountEmail(null)
+    if (apiProviderId) return
+    let cancelled = false
+    window.app.codexGetAccountStatus(projectPath)
+      .then((account) => { if (!cancelled) setAccountEmail(account?.signedIn ? (account.email ?? null) : null) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [projectPath, apiProviderId])
 
   useRefetchOnTurnEnd(status, fetchLimits)
 
@@ -457,7 +470,7 @@ function CodexRateLimitIcon({ projectPath, apiProviderId, threadId, status, tip,
 
   return (
     <RateLimitTipHost tip={tip}>
-      <RateLimitGauge title={<ProviderLabel brandKey="openai" size={14} />} label={t('usageGauge.codexTitle')} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={fetchLimits} highlight={highlight}>
+      <RateLimitGauge title={<ProviderLabel brandKey="openai" size={14} />} label={t('usageGauge.codexTitle')} subtitle={accountEmail} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={fetchLimits} highlight={highlight}>
         {limits.primary && (
           <WindowRow label={formatWindowLabel(limits.primary.windowDurationMins, t)} usedPercent={limits.primary.usedPercent} resetsAt={limits.primary.resetsAt} />
         )}

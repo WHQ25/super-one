@@ -128,6 +128,7 @@ describe('UsageStatusIcon rate-limit tip', () => {
       })),
       codexGetRateLimits: vi.fn(async () => null),
       codexGetAccountUsage: vi.fn(async () => null),
+      codexGetAccountStatus: vi.fn(async () => ({ signedIn: true, email: 'me@openai.test', authMode: 'chatgpt', planType: 'plus' })),
       providerGetRateLimits: vi.fn(async () => null),
     })
   })
@@ -135,6 +136,40 @@ describe('UsageStatusIcon rate-limit tip', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
+  })
+
+  it('names the ChatGPT account in the Codex gauge, but not when a third-party key is in use', async () => {
+    hoisted.sessionState.sessionProvider = 'codex'
+    hoisted.sessionState.preferredProvider = 'codex'
+    ;(window.app.codexGetRateLimits as ReturnType<typeof vi.fn>).mockResolvedValue({
+      planType: 'plus',
+      primary: { windowDurationMins: 300, usedPercent: 40, resetsAt: null },
+      secondary: null,
+    })
+
+    const { unmount } = render(<UsageStatusIcon />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByText('60%').closest('button')!)
+      await Promise.resolve()
+    })
+    expect(screen.getByText('me@openai.test')).toBeInTheDocument()
+    unmount()
+
+    // An apiProviderId means the turn bills a third-party key — naming the OAuth account there
+    // would point at a subscription this session never touches.
+    hoisted.sessionState.apiProviderId = 'cred_01H8XYZ'
+    render(<UsageStatusIcon />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByText('60%').closest('button')!)
+      await Promise.resolve()
+    })
+    expect(screen.queryByText('me@openai.test')).toBeNull()
   })
 
   it('gives the icon-only gauge trigger an accessible name', async () => {

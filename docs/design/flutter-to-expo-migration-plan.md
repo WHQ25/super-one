@@ -18,7 +18,7 @@ Related: `apps/desktop/CLAUDE.md` (Remote Control), `apps/relay/`, `packages/sha
 - **No production users** — no data migration, staged rollout, or rollback obligation.
 - **Product scope:** Remote Control parity with **current desktop `main`** (0.61.0 at re-scope time; originally frozen at v0.55.2-alpha). The transcript follows `main` automatically because chat-core/chat-view *are* the desktop reducer and presenters; the RN shell must track `main` explicitly (all `PermissionRequest.requestKind` values, all `HarnessId`s for create/send). Not a desktop IDE clone — see `docs/design/chat-core-contracts.md` §1.
 
-**Execution update (2026-09-04):** branch rebased onto `main`; WP-09 and WP-11–22 are software-complete, and WP-23's software preflight is complete. `@superone/chat-core` owns the full reducer graph and a generated six-scenario `remote.out` TS snapshot oracle; `@superone/chat-view` owns the shared presenters plus self-contained chat and xterm documents; relay-client's ACK/replay/reset, terminal isolation, inline/LAN/R2 upload, and authenticated download invariants are green. WP-19 covers buffer-first reconnect rehydrate, stale-epoch rejection, 33 ms paint batching, live interaction sheets, and bounded WebView crash recovery. The RN shell includes camera QR, encrypted MMKV, lists/settings/files, native composer, IME guard, mentions, attachments, received-file preview/share, editable new-session worktree selection, structured collaboration handoff confirmation, and an iPad master/detail layout at 768 px. Native widget media uses result-owned gallery cards and host-backed file retrieval; nested code-widget iframes remain deliberately deferred under R6. Signed iPhone/iPad simulator and Android 16 emulator Release builds launch with dark SystemUI/Safe Area handling, and the Android QR camera flow opens and closes cleanly. A development Android build also completes remote pairing, cold-relaunch pairing restore, project/session navigation, shared Chat View streaming, interruption, and software-keyboard layout on the built-in device. WP-29 now has repository-owned EAS profiles, remote build-number policy, app-version runtime compatibility, credential guards, a linked Expo project, a configured Update URL, Android signing, a successful internal APK build, and a matching first OTA verified on the built-in Android emulator; iOS signing, physical acceptance, and Flutter archive remain gated.
+**Execution update (2026-09-04):** branch rebased onto `main`; WP-09 and WP-11–22 are software-complete, and WP-23's software preflight is complete. `@superone/chat-core` owns the full reducer graph and a generated six-scenario `remote.out` TS snapshot oracle; `@superone/chat-view` owns the shared presenters plus self-contained chat and xterm documents; relay-client's ACK/replay/reset, terminal isolation, inline/LAN/R2 upload, and authenticated download invariants are green. WP-19 covers buffer-first reconnect rehydrate, stale-epoch rejection, 33 ms paint batching, live interaction sheets, and bounded WebView crash recovery. The RN shell includes camera QR, encrypted MMKV, lists/settings/files, native composer, IME guard, mentions, attachments, received-file preview/share, editable new-session worktree selection, structured collaboration handoff confirmation, and an iPad master/detail layout at 768 px. Native widget media uses result-owned gallery cards and host-backed file retrieval; nested code-widget iframes remain deliberately deferred under R6. Signed iPhone/iPad simulator and Android 16 emulator Release builds launch with dark SystemUI/Safe Area handling, and the Android QR camera flow opens and closes cleanly. A development Android build also completes remote pairing, cold-relaunch pairing restore, project/session navigation, shared Chat View streaming, interruption, and software-keyboard layout on the built-in device. WP-29 now has repository-owned EAS profiles, remote build-number policy, app-version runtime compatibility, credential guards, a linked Expo project, a configured Update URL, Android signing, a successful internal APK build, a signed iOS production build, and a matching first OTA verified on the built-in Android emulator; TestFlight submission, physical acceptance, and Flutter archive remain gated.
 
 **Wave 8 execution update (2026-09-04):** WP-25 hygiene, logical commits, rebase, package tests, changed-Desktop verification, and workspace typecheck are complete on `feat/migrate-to-expo`; the final merge to `main` remains. WP-26, WP-27, and WP-28 are complete. The RN shell now uses generated desktop-semantic light/dark tokens, a native navigation stack, shared primitives, and the same theme payload for chat and terminal WebViews; Desktop and Expo share every planned non-mini-app specialised presenter. Mini-app iframes remain deferred. **WP-29 lean release is current**, followed by the final WP-25 merge.
 
@@ -854,8 +854,9 @@ than detouring through the remote file browser.
 installed and enforced by the release-config preflight. The Expo project is linked,
 its generated project id and Update URL are checked statically, and EAS owns the
 Android signing key. Internal Android build 3 completed and launched on the built-in
-Android 16 device; camera permission plus QR scanner open/cancel passed. iOS signing,
-physical-device distribution and smoke, and Flutter archival remain pending. The first
+Android 16 device; camera permission plus QR scanner open/cancel passed. Signed iOS
+production build 4 completed; TestFlight submission, physical-device distribution and
+smoke, and Flutter archival remain pending. The first
 matching `internal` update was published for Android and iOS runtime `1.0.0`; two
 Android Release restarts applied it and removed the internal window diagnostic from
 the rendered shell. A separate EAS development build retains Debug-only cleartext
@@ -865,10 +866,10 @@ pairing after a cold relaunch, opened the saved session, rendered the shared Cha
 streamed and interrupted a Chinese prompt, and kept the composer above Gboard. The
 relay client now retains the endpoint that actually completed the handshake instead
 of replacing it with an unreachable desktop-internal address. Release-mode physical
-pairing remains gated on the production WSS endpoint and the one-device smoke.
-The iOS production preflight found no usable remote signing certificate/profile and
-created no build; EAS incremented the remote build number to 2 before reporting that
-interactive credential setup is required.
+pairing remains gated on the production WSS endpoint and the one-device smoke. The
+first non-interactive TestFlight submission correctly stopped because App Store
+Connect has not yet supplied an `ascAppId`; the release owner must create/select that
+app once interactively.
 
 ---
 
@@ -1157,6 +1158,8 @@ After PR1–3 green, run WP-04/05/06 in parallel, then **WP-07 scaffold** once M
 **2026-09-04 (WP-27 interaction lifecycle smoke):** a real Android AskUserQuestion response reached the Claude harness but left the native sheet open because AgentService sent its synthetic `interaction_resolved` only to Desktop renderers. The synthetic event path now also notifies remote subscribers for permission, question, dismissal, and plan decisions, including decisions made from Desktop while Mobile is subscribed. After rebuilding the development desktop, a second question submission closed immediately and rendered the completed tool; a plan-mode rejection likewise closed immediately and rendered `Plan Rejected`. AgentService has 103 passing focused tests with 21 skipped, and Desktop node/web typechecks are green.
 
 The same Android run then triggered a real Claude `Write` permission request in Ask-before-changes mode. Denying it closed the native permission sheet immediately, the harness rendered the denial result, and `permission-smoke.txt` remained absent from the worktree.
+
+**2026-09-04 (WP-27/29 file and terminal smoke):** a real `mobile_share_file` call delivered `apps/mobile/package.json` into the native Android inbox with the expected name, project path, JSON MIME type, 2.1 KB size, and Ready state. The terminal then opened the session-owned shell and returned the exact worktree path from `pwd`. This run exposed a fast-submit race where React state lag could send only the first character of pasted terminal input; submission now uses `TextInput`'s native event text as the authoritative line. Mobile's 75 tests and typecheck remain green after the fix. These built-in-device checks supplement rather than replace the required physical-platform smoke.
 
 ---
 

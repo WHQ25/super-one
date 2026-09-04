@@ -12,6 +12,7 @@ import { getLatestCodexThreadId, useActiveSession, useChatStore } from '@/stores
 import { claudeAccountCredentialDir } from '@superone/shared/agent-types'
 import type { ClaudeExtraUsage, ClaudeRateLimits, CodexAccountUsage, CodexRateLimits, CodexRateLimitResetCredit, CodexRateLimitResetOutcome, ProviderRateLimits } from '@superone/shared/agent-types'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
+import { ProviderLabel } from './ProviderLabel'
 
 const FORCE_REFRESH_ON_OPEN_STALE_MS = 5 * 60 * 1000
 const RATE_LIMIT_TIP_MS = 6_000
@@ -333,7 +334,8 @@ function RateLimitTipHost({ tip, children }: { tip: RateLimitTipInfo | null; chi
 }
 
 function RateLimitGauge({ title, subtitle, planType, badgeRemaining, onOpen, onRefresh, refreshing, fetchedAt, highlight, children }: {
-  title: string
+  /** Text, or a brand lockup for providers we ship an icon for. */
+  title: ReactNode
   /** Identity line under the title — which account these numbers belong to. */
   subtitle?: string | null
   planType: string | null
@@ -383,7 +385,7 @@ function RateLimitGauge({ title, subtitle, planType, badgeRemaining, onOpen, onR
         <div className="flex min-w-52 flex-col gap-2 text-xs">
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center justify-between gap-3">
-              <span className="font-medium">{title}</span>
+              <span className="flex min-w-0 items-center font-medium">{title}</span>
               {planType && <span className="opacity-50">{planType}</span>}
             </div>
             {subtitle && <span className="truncate opacity-50">{subtitle}</span>}
@@ -525,7 +527,7 @@ function ClaudeRateLimitIcon({ credentialDir, status, tip, highlight }: { creden
 
   return (
     <RateLimitTipHost tip={tip}>
-      <RateLimitGauge title={t('usageGauge.claudeTitle')} subtitle={accountEmail} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt} highlight={highlight}>
+      <RateLimitGauge title={<ProviderLabel brandKey="claude" size={14} />} subtitle={accountEmail} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt} highlight={highlight}>
         {limits.windows.map((w) => (
           <WindowRow key={w.label} label={w.label} usedPercent={w.usedPercent} resetsAt={w.resetsAt} />
         ))}

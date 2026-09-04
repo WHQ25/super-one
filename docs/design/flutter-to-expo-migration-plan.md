@@ -754,9 +754,11 @@ agent id, and Mobile sends the chosen model/effort on create and send. Device
 rename/forget, project Git indicators, the eight permission kinds, question/plan
 sheets, compact permission selection, queued messages, additional-directory hints,
 generated titles, quick session switching, file chrome, and terminal controls are
-implemented. Remaining shell work is session archive/delete/tags, polished
-slash/mention overlays, the collapsible todo treatment, received-file inbox polish,
-and the simulator screenshot/Pinyin acceptance pass.
+implemented. Session rows now include model/status/tags and expose accessible swipe
+actions backed by real archive/delete RPCs; slash catalogs merge harness, project,
+and skill commands into a sectioned icon UI, mentions are sectioned, and the Todo
+panel expands into its full task list. Remaining shell work is harness icon parity,
+received-file inbox polish, and the simulator screenshot/Pinyin acceptance pass.
 
 #### WP-28 — T3: chat-view tool family coverage
 

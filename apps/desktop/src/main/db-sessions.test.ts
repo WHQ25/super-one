@@ -53,6 +53,7 @@ describe('db-sessions session query + mapping', () => {
         is_pinned: 0,
         provider_id: 'codex-base',
         provider: 'codex',
+        selected_model: 'gpt-5.6',
         parent_session_id: 'parent-1',
       },
       {
@@ -92,6 +93,7 @@ describe('db-sessions session query + mapping', () => {
     expect(providerBySessionId['s1']).toBe('codex')
     expect(providerBySessionId['s2']).toBe('claude')
     expect(providerBySessionId['s3']).toBe('acp')
+    expect(sessions[0].selectedModel).toBe('gpt-5.6')
     expect(sessions[0].parentSessionId).toBe('parent-1')
   })
 

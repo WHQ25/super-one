@@ -1,4 +1,17 @@
-import type { RefObject } from 'react'
+import { useState, type RefObject } from 'react'
+import {
+  Bot,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Circle,
+  Command,
+  File,
+  Folder,
+  LoaderCircle,
+  Sparkles,
+  Wrench,
+} from 'lucide-react-native'
 import {
   KeyboardAvoidingView,
   Platform,
@@ -42,6 +55,16 @@ export function ChatScreen(props: {
 }) {
   const styles = useMobileStyles()
   const { tokens } = useMobileTheme()
+  const [todosExpanded, setTodosExpanded] = useState(false)
+  const todoItems = Object.values(props.todos)
+  const completedTodos = todoItems.filter((todo) => todo.status === 'completed').length
+  const activeTodo = todoItems.find((todo) => todo.status === 'in_progress')
+    ?? todoItems.find((todo) => todo.status !== 'completed')
+  const mentionSections = [
+    { title: 'Agents', items: props.mentionHits.filter((item) => item.kind === 'agent') },
+    { title: 'Built-ins', items: props.mentionHits.filter((item) => item.kind === 'builtin') },
+    { title: 'Files & folders', items: props.mentionHits.filter((item) => item.kind !== 'agent' && item.kind !== 'builtin') },
+  ].filter((section) => section.items.length > 0)
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <WebView
@@ -53,16 +76,48 @@ export function ChatScreen(props: {
         onContentProcessDidTerminate={() => props.onWebProcessError('content process terminated')}
         onRenderProcessGone={() => props.onWebProcessError('render process terminated')}
       />
-      {Object.keys(props.todos).length ? (
+      {todoItems.length ? (
         <View style={styles.todoPanel}>
-          <Text style={styles.rowMeta}>
-            {Object.values(props.todos).filter((todo) => todo.status === 'completed').length}/{Object.keys(props.todos).length} tasks
-          </Text>
-          <Text numberOfLines={1} style={styles.rowTitle}>
-            {Object.values(props.todos).find((todo) => todo.status === 'in_progress')?.activeForm
-              ?? Object.values(props.todos).find((todo) => todo.status !== 'completed')?.subject
-              ?? 'Tasks complete'}
-          </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ expanded: todosExpanded }}
+            onPress={() => setTodosExpanded((expanded) => !expanded)}
+            style={styles.todoHeader}
+          >
+            {todosExpanded
+              ? <ChevronDown color={tokens.colors.mutedForeground} size={16} />
+              : <ChevronRight color={tokens.colors.mutedForeground} size={16} />}
+            <View style={styles.flex}>
+              <Text style={styles.rowMeta}>{completedTodos}/{todoItems.length} tasks</Text>
+              <Text numberOfLines={1} style={styles.rowTitle}>
+                {activeTodo?.activeForm ?? activeTodo?.subject ?? 'Tasks complete'}
+              </Text>
+            </View>
+          </Pressable>
+          {todosExpanded ? (
+            <View style={styles.todoList}>
+              {todoItems.map((todo) => {
+                const Icon = todo.status === 'completed'
+                  ? CheckCircle2
+                  : todo.status === 'in_progress'
+                    ? LoaderCircle
+                    : Circle
+                const color = todo.status === 'completed'
+                  ? tokens.colors.success
+                  : todo.status === 'in_progress'
+                    ? tokens.colors.primary
+                    : tokens.colors.mutedForeground
+                return (
+                  <View key={todo.id} style={styles.todoRow}>
+                    <Icon color={color} size={15} />
+                    <Text numberOfLines={2} style={styles.rowMeta}>
+                      {todo.status === 'in_progress' ? todo.activeForm || todo.subject : todo.subject}
+                    </Text>
+                  </View>
+                )
+              })}
+            </View>
+          ) : null}
         </View>
       ) : null}
       {props.queuedMessages.length ? (
@@ -82,21 +137,62 @@ export function ChatScreen(props: {
       </View>
       {props.slashHits.length ? (
         <ScrollView style={styles.overlay}>
+          <Text style={styles.overlayHeader}>Commands</Text>
           {props.slashHits.slice(0, 8).map((hit) => (
-            <Pressable key={hit.command.name} style={styles.row} onPress={() => props.onSlash(hit.command.name)}>
-              <Text style={styles.rowTitle}>/{hit.command.name}</Text>
-              <Text style={styles.rowMeta}>{hit.command.description}</Text>
+            <Pressable
+              accessibilityRole="button"
+              key={hit.command.name}
+              style={styles.overlayRow}
+              onPress={() => props.onSlash(hit.command.name)}
+            >
+              <View style={styles.overlayIcon}>
+                {hit.command.isSkill
+                  ? <Sparkles color={tokens.colors.primary} size={17} />
+                  : <Command color={tokens.colors.mutedForeground} size={17} />}
+              </View>
+              <View style={styles.flex}>
+                <Text style={styles.rowTitle}>/{hit.command.name}</Text>
+                {hit.command.description || hit.command.argumentHint ? (
+                  <Text numberOfLines={2} style={styles.rowMeta}>
+                    {[hit.command.description, hit.command.argumentHint].filter(Boolean).join(' · ')}
+                  </Text>
+                ) : null}
+              </View>
             </Pressable>
           ))}
         </ScrollView>
       ) : null}
       {props.mentionHits.length ? (
         <ScrollView style={styles.overlay}>
-          {props.mentionHits.slice(0, 8).map((item) => (
-            <Pressable key={`${item.kind}:${item.path}`} style={styles.row} onPress={() => props.onMention(item)}>
-              <Text style={styles.rowTitle}>{item.label ?? item.path}</Text>
-              <Text style={styles.rowMeta}>{item.kind}</Text>
-            </Pressable>
+          {mentionSections.map((section) => (
+            <View key={section.title}>
+              <Text style={styles.overlayHeader}>{section.title}</Text>
+              {section.items.slice(0, 8).map((item) => {
+                const Icon = item.kind === 'agent'
+                  ? Bot
+                  : item.kind === 'builtin'
+                    ? Wrench
+                    : item.isDirectory
+                      ? Folder
+                      : File
+                return (
+                  <Pressable
+                    accessibilityRole="button"
+                    key={`${item.kind}:${item.path}`}
+                    style={styles.overlayRow}
+                    onPress={() => props.onMention(item)}
+                  >
+                    <View style={styles.overlayIcon}>
+                      <Icon color={item.kind === 'agent' ? tokens.colors.primary : tokens.colors.mutedForeground} size={17} />
+                    </View>
+                    <View style={styles.flex}>
+                      <Text numberOfLines={1} style={styles.rowTitle}>{item.label ?? item.path}</Text>
+                      <Text numberOfLines={1} style={styles.rowMeta}>{item.path}</Text>
+                    </View>
+                  </Pressable>
+                )
+              })}
+            </View>
           ))}
         </ScrollView>
       ) : null}

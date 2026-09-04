@@ -1,13 +1,18 @@
 import { FlatList, Pressable, Text, View } from 'react-native'
-import { useMobileStyles } from '../theme/context'
+import type { HarnessId } from '@superone/shared/agent-types'
+import { useMobileStyles, useMobileTheme } from '../theme/context'
+import { SwipeSessionRow } from '../ui'
 
 export type TabletSessionRow = {
   sessionId: string
   title: string
   lastActiveAt?: string
-  provider?: string
+  provider?: HarnessId
   messageCount?: number
   gitBranch?: string
+  selectedModel?: string | null
+  status?: string
+  tags?: string[]
 }
 
 export function TabletSessionSidebar(props: {
@@ -17,8 +22,11 @@ export function TabletSessionSidebar(props: {
   onOpenSession: (session: TabletSessionRow) => void
   onCreateSession: () => void
   onOpenSettings: () => void
+  onArchiveSession: (session: TabletSessionRow) => void
+  onDeleteSession: (session: TabletSessionRow) => void
 }) {
   const styles = useMobileStyles()
+  const { tokens } = useMobileTheme()
   return (
     <View style={styles.tabletSidebar}>
       <Text numberOfLines={1} style={styles.sectionTitle}>{props.projectName}</Text>
@@ -35,13 +43,23 @@ export function TabletSessionSidebar(props: {
         data={props.sessions}
         keyExtractor={(item) => item.sessionId}
         renderItem={({ item }) => (
-          <Pressable
-            style={[styles.row, props.activeSessionId === item.sessionId ? styles.selectedRow : null]}
+          <SwipeSessionRow
+            title={item.title}
             onPress={() => props.onOpenSession(item)}
+            onArchive={() => props.onArchiveSession(item)}
+            onDelete={() => props.onDeleteSession(item)}
           >
-            <Text numberOfLines={1} style={styles.rowTitle}>{item.title || item.sessionId.slice(0, 8)}</Text>
-            <Text numberOfLines={1} style={styles.rowMeta}>{item.provider ?? ''} {item.lastActiveAt ?? ''}</Text>
-          </Pressable>
+            <View style={[
+              styles.row,
+              { backgroundColor: tokens.colors.background },
+              props.activeSessionId === item.sessionId ? styles.selectedRow : null,
+            ]}>
+              <Text numberOfLines={1} style={styles.rowTitle}>{item.title || item.sessionId.slice(0, 8)}</Text>
+              <Text numberOfLines={1} style={styles.rowMeta}>
+                {item.provider ?? ''}{item.selectedModel ? ` · ${item.selectedModel}` : ''}{item.status === 'streaming' ? ' · streaming' : ''}
+              </Text>
+            </View>
+          </SwipeSessionRow>
         )}
       />
     </View>

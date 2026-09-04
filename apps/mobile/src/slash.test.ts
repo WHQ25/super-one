@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { filterSlashCommands, fuzzyMatch } from './slash'
+import { filterSlashCommands, fuzzyMatch, mergeSlashCatalogs } from './slash'
 
 const RAW = [
   { name: 'help', description: 'Show help' },
@@ -20,5 +20,17 @@ describe('filterSlashCommands', () => {
     expect(names[0]).toBe('compact')
     expect(fuzzyMatch('hlp', 'help').match).toBe(true)
     expect(fuzzyMatch('zzz', 'help').match).toBe(false)
+  })
+
+  it('merges system, project, and skill catalogs without duplicate names', () => {
+    expect(mergeSlashCatalogs(
+      [{ name: 'review', description: 'System review' }],
+      [{ name: 'review', description: 'Project review' }, { name: 'test' }],
+      [{ name: 'ship', description: 'Release it' }],
+    )).toEqual([
+      { name: 'review', description: 'Project review', argumentHint: '', isSkill: false },
+      { name: 'test', description: '', argumentHint: '', isSkill: false },
+      { name: 'ship', description: 'Release it', argumentHint: '', isSkill: true },
+    ])
   })
 })

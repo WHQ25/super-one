@@ -2,39 +2,17 @@ import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { StatusBar } from 'expo-status-bar'
 import * as Clipboard from 'expo-clipboard'
 import { useCameraPermissions, type BarcodeScanningResult } from 'expo-camera'
-import { Bot, ArrowLeft, MessageSquare, Settings, SquareTerminal } from 'lucide-react-native'
-import {
-  ActivityIndicator,
-  Linking,
-  Pressable,
-  Text,
-  useWindowDimensions,
-  View,
-} from 'react-native'
+import { Linking, Pressable, Text, useWindowDimensions, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { WebView } from 'react-native-webview'
 import type { HostOutbound } from '@superone/chat-view'
 import {
-  loadPairings,
-  parsePairQr,
-  RelayClient,
-  savePairings,
-  startPairingHandshake,
-  upsertPairing,
+  loadPairings, parsePairQr, RelayClient, savePairings, startPairingHandshake, upsertPairing,
   type SavedPairing,
 } from '@superone/relay-client'
 import type {
-  AskUserQuestionRequest,
-  ChatMessage,
-  HarnessId,
-  ImageAttachment,
-  PermissionRequest,
-  PlanApprovalRequest,
-  RemoteCommand,
-  RemoteEffortOption,
-  RemoteSystemInfo,
-  TodoItem,
-  WorktreeInfo,
+  AskUserQuestionRequest, ChatMessage, HarnessId, ImageAttachment, PermissionRequest,
+  PlanApprovalRequest, RemoteCommand, TodoItem, WorktreeInfo,
 } from '@superone/shared/agent-types'
 import { ChatRuntime } from '../runtime'
 import { TerminalRuntime } from '../terminal-runtime'
@@ -47,8 +25,7 @@ import { filterSlashCommands } from '../slash'
 import { extractMentionQuery, insertMention, type MentionItem } from '../mentions'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { mobileWebViewTheme } from '../theme/tokens'
-import { PermissionSheet, PlanSheet, QuestionSheet } from '../sheets'
-import { harnessDisplayName, harnessSupportsAdditionalDirs } from '../provider-state'
+import { harnessSupportsAdditionalDirs } from '../provider-state'
 import { parentRemotePath, resolveRemoteFilePath, type RemoteDirectoryEntry } from '../shell-state'
 import { loadOrCreateMobileId, mobileKv } from '../storage'
 import { registerFatalChatViewError } from '../chat-view-recovery'
@@ -58,7 +35,7 @@ import {
   pickChatPdf,
   showAttachmentMenu,
 } from '../attachments'
-import { SettingsScreen, type ModelRow, type ShellGitInfo } from '../screens/settings-screen'
+import { SettingsScreen, type ShellGitInfo } from '../screens/settings-screen'
 import {
   buildWorktreeCreateOptions,
   LOCAL_WORKTREE_SELECTION,
@@ -68,7 +45,7 @@ import {
 import { shouldUseTabletMultiPane } from '../layout-state'
 import { TabletSessionSidebar, type TabletSessionRow as SessionRow } from './tablet-session-sidebar'
 import { resolveNativeRequest } from '../native-actions'
-import { SharedFileSheet, useSharedFileInbox } from '../shared-file-inbox'
+import { useSharedFileInbox } from '../shared-file-inbox'
 import type { ReconnectController } from '../reconnect-controller'
 import { createMobileRelayConnection } from '../mobile-relay-connection'
 import { SessionTransition } from '../session-transition'
@@ -80,12 +57,10 @@ import { PairingsScreen } from '../screens/pairings-screen'
 import { TerminalScreen } from '../screens/terminal-screen'
 import { SessionsScreen } from '../screens/sessions-screen'
 import { MobileNavigator, type MobileRoute as Screen } from './mobile-navigator'
-import { Badge, ListRow, Sheet } from '../ui'
-import {
-  effortOptionsForModel,
-  resolveSelectedEffort,
-  resolveSelectedModel,
-} from '../model-selection-state'
+import { MobileHeader, mobileHeaderTitle } from './mobile-header'
+import { MobileOverlays } from './mobile-overlays'
+import { useHarnessSelection } from './use-harness-selection'
+import { fetchShellDetails } from './shell-details'
 type ChatViewState = Extract<HostOutbound, { type: 'viewState' }>
 const kv = mobileKv
 const CHAT_VIEW_STATE_KEY = 'superone:chat-view-state'
@@ -109,13 +84,21 @@ export function MobileApp() {
   const [project, setProject] = useState<Project | null>(null)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [activeSessionTitle, setActiveSessionTitle] = useState('')
-  const [selectedProvider, setSelectedProvider] = useState<HarnessId>('claude')
-  const [selectedModel, setSelectedModel] = useState('')
-  const [selectedEffort, setSelectedEffort] = useState('')
-  const [selectedAcpAgentId, setSelectedAcpAgentId] = useState<string | null>(null)
-  const [models, setModels] = useState<ModelRow[]>([])
-  const [efforts, setEfforts] = useState<RemoteEffortOption[]>([])
-  const [systemInfo, setSystemInfo] = useState<RemoteSystemInfo>({})
+  const harnessSelection = useHarnessSelection()
+  const {
+    selectedProvider,
+    setSelectedProvider,
+    selectedModel,
+    selectedEffort,
+    setSelectedEffort,
+    selectedAcpAgentId,
+    models,
+    efforts,
+    permissionMode: permMode,
+    setPermissionMode: setPermMode,
+    permissionModes: permModes,
+    applySystemInfo,
+  } = harnessSelection
   const [gitInfo, setGitInfo] = useState<ShellGitInfo | null>(null)
   const [worktreeInfo, setWorktreeInfo] = useState<WorktreeInfo | null>(null)
   const [branches, setBranches] = useState<string[]>([])
@@ -131,8 +114,6 @@ export function MobileApp() {
   const [streaming, setStreaming] = useState(false)
   const [connectionState, setConnectionState] = useState<'connected' | 'reconnecting' | 'offline'>('offline')
   const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false)
-  const [permMode, setPermMode] = useState('default')
-  const [permModes, setPermModes] = useState<string[]>(['default', 'acceptEdits', 'plan', 'bypassPermissions'])
   const [slashHits, setSlashHits] = useState<ReturnType<typeof filterSlashCommands>>([])
   const [mentionHits, setMentionHits] = useState<MentionItem[]>([])
   const [attachments, setAttachments] = useState<ImageAttachment[]>([])
@@ -451,67 +432,19 @@ export function MobileApp() {
     setScreen('sessions')
   }
 
-  const applySystemInfo = (
-    provider: HarnessId,
-    info: RemoteSystemInfo,
-    current?: { model?: string; effort?: string; permissionMode?: string },
-  ) => {
-    const model = resolveSelectedModel(info, current?.model)
-    const nextEfforts = effortOptionsForModel(provider, info, model)
-    const effort = resolveSelectedEffort(nextEfforts, current?.effort ?? info.defaults?.effort)
-    const modes = info.permissionModes?.length
-      ? info.permissionModes
-      : info.permissionPresets ?? []
-    const permissionMode = current?.permissionMode && modes.includes(current.permissionMode)
-      ? current.permissionMode
-      : info.defaults?.permissionMode && modes.includes(info.defaults.permissionMode)
-        ? info.defaults.permissionMode
-        : modes[0] ?? 'default'
-
-    setSystemInfo(info)
-    setModels(info.models ?? [])
-    setSelectedModel(model)
-    setEfforts(nextEfforts)
-    setSelectedEffort(effort)
-    setSelectedAcpAgentId(provider === 'acp' ? info.acpAgentId ?? null : null)
-    setPermModes(modes.length ? modes : ['default'])
-    setPermMode(permissionMode)
-  }
-
   const loadShellDetails = async (provider: HarnessId = selectedProvider) => {
     const client = clientRef.current
     const p = project
     if (!client || !p) return
     const request = ++systemInfoRequestRef.current
-    const [git, resources, worktree, system, branchResult, checkedOutResult] = await Promise.all([
-      client.request({ type: 'get_git_info', requestId: randomId(), projectPath: p.path } as RemoteCommand)
-        .catch(() => null) as Promise<ShellGitInfo | null>,
-      client.request({
-        type: 'get_project_resources',
-        requestId: randomId(),
-        projectPath: p.path,
-        provider,
-      } as RemoteCommand).catch(() => null) as Promise<{ workspaceDirs?: string[] } | null>,
-      client.request({ type: 'get_worktree_info', requestId: randomId(), projectPath: p.path } as RemoteCommand)
-        .catch(() => null) as Promise<WorktreeInfo | null>,
-      client.request({
-        type: 'get_system_info',
-        requestId: randomId(),
-        projectPath: p.path,
-        provider,
-      } as RemoteCommand).catch(() => null) as Promise<RemoteSystemInfo | null>,
-      client.request({ type: 'get_git_branches', requestId: randomId(), projectPath: p.path } as RemoteCommand)
-        .catch(() => null) as Promise<{ branches?: string[] } | null>,
-      client.request({ type: 'get_checked_out_branches', requestId: randomId(), projectPath: p.path } as RemoteCommand)
-        .catch(() => null) as Promise<{ branches?: string[] } | null>,
-    ])
+    const details = await fetchShellDetails(client, p.path, provider)
     if (request !== systemInfoRequestRef.current) return
-    setGitInfo(git)
-    setWorkspaceDirs(resources?.workspaceDirs ?? [])
-    setWorktreeInfo(worktree)
-    if (system) applySystemInfo(provider, system)
-    setBranches(branchResult?.branches ?? [])
-    setCheckedOutBranches(checkedOutResult?.branches ?? [])
+    setGitInfo(details.git)
+    setWorkspaceDirs(details.workspaceDirs)
+    setWorktreeInfo(details.worktree)
+    if (details.system) applySystemInfo(provider, details.system)
+    setBranches(details.branches)
+    setCheckedOutBranches(details.checkedOutBranches)
   }
 
   const openSettings = () => {
@@ -655,6 +588,30 @@ export function MobileApp() {
     })
   }).catch(failSessionTransition)
 
+  const removeSession = async (row: SessionRow, type: 'archive_session' | 'delete_session') => {
+    const client = clientRef.current
+    const p = project
+    if (!client || !p) throw new Error('no active project')
+    const result = await client.request({
+      type,
+      requestId: randomId(),
+      projectPath: p.path,
+      sessionId: row.sessionId,
+    } as RemoteCommand) as { ok?: boolean; error?: string }
+    if (!result.ok) throw new Error(result.error ?? `failed to ${type === 'archive_session' ? 'archive' : 'delete'} session`)
+
+    setSessions((current) => current.filter((item) => item.sessionId !== row.sessionId))
+    if (sessionId === row.sessionId) {
+      client.send({ type: 'unsubscribe_session', sessionId: row.sessionId })
+      runtimeRef.current?.dispose()
+      runtimeRef.current = null
+      termRuntimeRef.current = null
+      setSessionId(null)
+      setActiveSessionTitle('')
+      setScreen('sessions')
+    }
+  }
+
   const createSession = () => {
     const client = clientRef.current
     const p = project
@@ -794,60 +751,23 @@ export function MobileApp() {
     if (!term.terminalId) runUiAction(() => term.create(p.path, runtime?.sessionId), setStatus, 'terminal failed')
   }
 
-  const header = useMemo(() => {
-    if (screen === 'projects') return 'Projects'
-    if (screen === 'sessions') return project?.name ?? 'Sessions'
-    if (screen === 'chat') return activeSessionTitle || 'Chat'
-    if (screen === 'terminal') return terminalUi.title
-    if (screen === 'settings') return 'Project settings'
-    if (screen === 'files') return 'Files'
-    return 'SuperOne'
-  }, [activeSessionTitle, screen, project, terminalUi.title])
+  const header = mobileHeaderTitle(screen, project?.name, activeSessionTitle, terminalUi.title)
   const tabletMultiPane = shouldUseTabletMultiPane(width, screen, !!project)
 
   return (
     <SafeAreaView style={styles.root}>
       <StatusBar style={tokens.scheme === 'dark' ? 'light' : 'dark'} />
-      <View style={styles.top}>
-        {screen !== 'pair' ? (
-          <Pressable accessibilityLabel="Back" accessibilityRole="button" onPress={back}>
-            <ArrowLeft color={tokens.colors.primary} size={22} />
-          </Pressable>
-        ) : <View />}
-        <View style={styles.headerTitleGroup}>
-          <View style={styles.headerTitleRow}>
-            {screen === 'chat' ? <Bot color={tokens.colors.primary} size={18} /> : null}
-            <Text numberOfLines={1} style={styles.title}>{header}</Text>
-            {screen === 'chat' && streaming ? <ActivityIndicator color={tokens.colors.primary} size="small" /> : null}
-          </View>
-          {screen === 'chat' ? (
-            <View style={styles.headerMetaRow}>
-              <Badge label={harnessDisplayName(selectedProvider)} />
-              <Badge
-                label={connectionState}
-                tone={connectionState === 'connected' ? 'success' : connectionState === 'reconnecting' ? 'warning' : 'error'}
-              />
-            </View>
-          ) : null}
-        </View>
-        <View style={styles.headerActions}>
-          {screen === 'chat' ? (
-            <Pressable accessibilityLabel="Switch session" accessibilityRole="button" onPress={() => setSessionSwitcherOpen(true)}>
-              <MessageSquare color={tokens.colors.primary} size={21} />
-            </Pressable>
-          ) : null}
-          {screen === 'chat' ? (
-            <Pressable accessibilityLabel="Terminal" accessibilityRole="button" onPress={openTerminal}>
-              <SquareTerminal color={tokens.colors.primary} size={21} />
-            </Pressable>
-          ) : null}
-          {screen === 'chat' || screen === 'sessions' ? (
-            <Pressable accessibilityLabel="Settings" accessibilityRole="button" onPress={openSettings}>
-              <Settings color={tokens.colors.primary} size={21} />
-            </Pressable>
-          ) : null}
-        </View>
-      </View>
+      <MobileHeader
+        route={screen}
+        title={header}
+        provider={selectedProvider}
+        streaming={streaming}
+        connectionState={connectionState}
+        onBack={back}
+        onSwitchSession={() => setSessionSwitcherOpen(true)}
+        onOpenTerminal={openTerminal}
+        onOpenSettings={openSettings}
+      />
 
       <View style={styles.contentRow}>
         {tabletMultiPane && project ? (
@@ -858,6 +778,16 @@ export function MobileApp() {
             onOpenSession={(row) => void openSession(row)}
             onCreateSession={() => void createSession()}
             onOpenSettings={openSettings}
+            onArchiveSession={(row) => runUiAction(
+              () => removeSession(row, 'archive_session'),
+              setStatus,
+              'failed to archive session',
+            )}
+            onDeleteSession={(row) => runUiAction(
+              () => removeSession(row, 'delete_session'),
+              setStatus,
+              'failed to delete session',
+            )}
           />
         ) : null}
         <View style={styles.mainPane}>
@@ -916,7 +846,21 @@ export function MobileApp() {
       }} /> : null}
 
       {route === 'sessions' ? (
-        <SessionsScreen sessions={sessions} onCreateSession={createSession} onOpenSession={openSession} />
+        <SessionsScreen
+          sessions={sessions}
+          onCreateSession={createSession}
+          onOpenSession={openSession}
+          onArchiveSession={(row) => runUiAction(
+            () => removeSession(row, 'archive_session'),
+            setStatus,
+            'failed to archive session',
+          )}
+          onDeleteSession={(row) => runUiAction(
+            () => removeSession(row, 'delete_session'),
+            setStatus,
+            'failed to delete session',
+          )}
+        />
       ) : null}
 
       {route === 'settings' ? (
@@ -936,21 +880,12 @@ export function MobileApp() {
           additionalDir={additionalDir}
           onAdditionalDirChange={setAdditionalDir}
           onProviderChange={(provider) => {
-            setSelectedProvider(provider)
+            harnessSelection.resetForProvider(provider)
             setHarness(provider)
-            setSelectedModel('')
-            setSelectedEffort('')
-            setEfforts([])
-            setSelectedAcpAgentId(null)
             if (provider !== 'claude') setWorktreeSelection(LOCAL_WORKTREE_SELECTION)
             void loadShellDetails(provider)
           }}
-          onModelChange={(model) => {
-            const nextEfforts = effortOptionsForModel(selectedProvider, systemInfo, model)
-            setSelectedModel(model)
-            setEfforts(nextEfforts)
-            setSelectedEffort(resolveSelectedEffort(nextEfforts, selectedEffort))
-          }}
+          onModelChange={harnessSelection.selectModel}
           onEffortChange={setSelectedEffort}
           onOpenFiles={openFiles}
           onAddDirectory={() => runUiAction(addWorkspaceDirectory, setStatus, 'failed to add directory')}
@@ -1040,44 +975,21 @@ export function MobileApp() {
       </View>
       <Text style={styles.meta}>{status} · window {CHAT_WINDOW.initialTurns}</Text>
 
-      <PermissionSheet
-        perm={perm}
-        onAllow={(id, formAnswers, alwaysAllow) => runUiAction(
-          () => runtimeRef.current?.respondPermission(id, true, formAnswers, alwaysAllow),
-          setStatus,
-          'permission response failed',
-        )}
-        onDeny={(id) => runUiAction(() => runtimeRef.current?.respondPermission(id, false), setStatus, 'permission response failed')}
-      />
-      <PlanSheet
+      <MobileOverlays
+        runtimeRef={runtimeRef}
+        setStatus={setStatus}
+        permission={perm}
         plan={plan}
-        onApprove={(id) => runUiAction(() => runtimeRef.current?.respondPlan(id, true), setStatus, 'plan response failed')}
-        onReject={(id) => runUiAction(() => runtimeRef.current?.respondPlan(id, false, 'rejected from mobile'), setStatus, 'plan response failed')}
-      />
-      <QuestionSheet
         question={question}
         answers={answers}
-        onPick={(header, label) => setAnswers((prev) => ({ ...prev, [header]: label }))}
-        onSubmit={(id) => runUiAction(() => runtimeRef.current?.answerQuestion(id, answers), setStatus, 'question response failed')}
-        onDismiss={(id) => runUiAction(() => runtimeRef.current?.dismissQuestion(id), setStatus, 'question response failed')}
+        onPickAnswer={(header, label) => setAnswers((current) => ({ ...current, [header]: label }))}
+        sessionSwitcherOpen={sessionSwitcherOpen}
+        onDismissSessionSwitcher={() => setSessionSwitcherOpen(false)}
+        sessions={sessions}
+        activeSessionId={sessionId}
+        onOpenSession={openSession}
+        sharedFileInbox={sharedFileInbox}
       />
-      <Sheet visible={sessionSwitcherOpen} title="Switch session" onDismiss={() => setSessionSwitcherOpen(false)}>
-        <View style={styles.sessionSwitcherList}>
-          {sessions.map((row) => (
-            <ListRow
-              key={row.sessionId}
-              title={row.title || 'Untitled'}
-              subtitle={row.provider}
-              selected={row.sessionId === sessionId}
-              onPress={() => {
-                setSessionSwitcherOpen(false)
-                void openSession(row)
-              }}
-            />
-          ))}
-        </View>
-      </Sheet>
-      <SharedFileSheet inbox={sharedFileInbox} />
     </SafeAreaView>
   )
 }

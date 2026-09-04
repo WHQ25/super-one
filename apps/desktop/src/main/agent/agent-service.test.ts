@@ -2345,6 +2345,65 @@ describe('AgentService.handleRemoteCommand', () => {
     },
   )
 
+  it('archives a remote session without deleting its transcript', async () => {
+    const respond = vi.fn()
+    const service = new AgentService()
+
+    await service.handleRemoteCommand({
+      type: 'archive_session',
+      requestId: 'archive-1',
+      projectPath: '/project',
+      sessionId: 'session-1',
+    }, respond)
+
+    expect(dbSessions.hideSession).toHaveBeenCalledWith('session-1', true)
+    expect(dbSessions.deleteSession).not.toHaveBeenCalled()
+    expect(respond).toHaveBeenCalledWith('archive-1', { ok: true })
+  })
+
+  it('disposes a live remote session before deleting its transcript', async () => {
+    const disposeSession = vi.fn(async () => {})
+    const respond = vi.fn()
+    const service = new AgentService()
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn(() => ({})),
+      disposeSession,
+    }
+
+    await service.handleRemoteCommand({
+      type: 'delete_session',
+      requestId: 'delete-1',
+      projectPath: '/project',
+      sessionId: 'session-1',
+    }, respond)
+
+    expect(disposeSession).toHaveBeenCalledWith('session-1')
+    expect(dbSessions.deleteSession).toHaveBeenCalledWith('session-1')
+    expect(disposeSession.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(dbSessions.deleteSession).mock.invocationCallOrder[0]!,
+    )
+    expect(respond).toHaveBeenCalledWith('delete-1', { ok: true })
+  })
+
+  it('rejects remote session removal outside the requested project', async () => {
+    vi.mocked(dbSessions.sessionBelongsToProject).mockReturnValue(false)
+    const respond = vi.fn()
+    const service = new AgentService()
+
+    await service.handleRemoteCommand({
+      type: 'archive_session',
+      requestId: 'archive-denied',
+      projectPath: '/other-project',
+      sessionId: 'session-1',
+    }, respond)
+
+    expect(dbSessions.hideSession).not.toHaveBeenCalled()
+    expect(respond).toHaveBeenCalledWith('archive-denied', expect.objectContaining({
+      ok: false,
+      error: expect.stringContaining('does not belong'),
+    }))
+  })
+
   it('get_system_info returns user agent defaults for claude', async () => {
     vi.mocked(appSettings.readAppSettings).mockReturnValue({
       analyticsEnabled: true,

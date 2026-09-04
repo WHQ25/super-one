@@ -1054,12 +1054,16 @@ export class AgentService {
             totalCount,
             sessions: visible.map((s) => {
               const row = countStmt.get(s.sessionId) as { cnt: number } | undefined
+              const live = this.sessionManager?.getSession(s.sessionId)
               return {
                 sessionId: s.sessionId,
                 title: s.title,
                 lastActiveAt: s.lastActiveAt,
                 messageCount: row?.cnt ?? 0,
                 provider: s.provider ?? 'claude',
+                selectedModel: live?.snapshot.selectedModel || s.selectedModel || null,
+                status: live?.snapshot.status ?? 'idle',
+                tags: s.tags ?? [],
                 gitBranch: s.gitBranch ?? null,
                 isWorktree: s.isWorktree ?? false,
                 worktreePath: s.worktreePath ?? null,
@@ -1069,6 +1073,43 @@ export class AgentService {
         } catch (err) {
           await respond?.(command.requestId, { error: (err as Error).message })
         }
+        break
+      }
+      case 'archive_session': {
+        if (!sessionBelongsToProject(command.sessionId, command.projectPath)) {
+          await respond?.(command.requestId, {
+            ok: false,
+            error: this.buildSessionAccessError(command.projectPath, command.sessionId),
+          })
+          break
+        }
+        dbHideSession(command.sessionId, true)
+        this.emitSessionsChanged()
+        await respond?.(command.requestId, { ok: true })
+        break
+      }
+      case 'delete_session': {
+        if (!sessionBelongsToProject(command.sessionId, command.projectPath)) {
+          await respond?.(command.requestId, {
+            ok: false,
+            error: this.buildSessionAccessError(command.projectPath, command.sessionId),
+          })
+          break
+        }
+        if (this.sessionManager?.getSession(command.sessionId)) {
+          try {
+            await this.sessionManager.disposeSession(command.sessionId)
+          } catch (err) {
+            log.warn(
+              '[AgentService] dispose before remote delete failed sid=%s: %s',
+              command.sessionId,
+              err instanceof Error ? err.message : String(err),
+            )
+          }
+        }
+        dbDeleteSession(command.sessionId)
+        this.emitSessionsChanged()
+        await respond?.(command.requestId, { ok: true })
         break
       }
       case 'list_models': {

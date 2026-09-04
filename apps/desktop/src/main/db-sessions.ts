@@ -41,7 +41,7 @@ export function listSessionsForProjectId(
     WITH related_sessions AS (
       SELECT s.id, s.title, s.created_at, s.is_worktree, s.is_pinned, s.is_hidden, s.git_branch, s.worktree_path,
              s.is_automation, s.automation_id, s.provider_session_id, s.provider_id, s.provider, s.acp_agent_id,
-             s.tags_json,
+             s.selected_model, s.tags_json,
              g.parent_session_id,
              COALESCE(g.parent_session_id, s.id) AS root_session_id,
              COALESCE(s.last_user_message_at, s.created_at) AS last_user_msg_at
@@ -68,7 +68,7 @@ export function listSessionsForProjectId(
     : safeOffset > 0
       ? db.prepare(`${baseSql} LIMIT -1 OFFSET ?`).all(projectId, safeOffset)
       : db.prepare(baseSql).all(projectId)
-  ) as Array<{ id: string; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null; is_hidden: number | null; git_branch: string | null; worktree_path: string | null; is_automation: number | null; automation_id: string | null; provider_session_id: string | null; provider_id: string | null; provider: string | null; acp_agent_id: string | null; parent_session_id: string | null; tags_json: string | null }>
+  ) as Array<{ id: string; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null; is_hidden: number | null; git_branch: string | null; worktree_path: string | null; is_automation: number | null; automation_id: string | null; provider_session_id: string | null; provider_id: string | null; provider: string | null; acp_agent_id: string | null; selected_model: string | null; parent_session_id: string | null; tags_json: string | null }>
 
   return rows.map((r) => {
     const tags = parseTagsJson(r.tags_json)
@@ -87,6 +87,7 @@ export function listSessionsForProjectId(
       ...(r.automation_id ? { automationId: r.automation_id } : {}),
       ...(r.provider_session_id ? { providerSessionId: r.provider_session_id } : {}),
       ...(r.acp_agent_id ? { acpAgentId: r.acp_agent_id } : {}),
+      ...(r.selected_model ? { selectedModel: r.selected_model } : {}),
       ...(r.parent_session_id ? { parentSessionId: r.parent_session_id } : {}),
       ...(tags.length ? { tags } : {}),
     }

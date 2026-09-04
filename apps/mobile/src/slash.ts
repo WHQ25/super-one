@@ -70,6 +70,25 @@ export function parseSlashCommand(item: unknown, skillNames: Set<string> = new S
   }
 }
 
+export function mergeSlashCatalogs(
+  systemCommands: unknown[],
+  projectCommands: unknown[],
+  skills: unknown[],
+): SlashCommand[] {
+  const merged = new Map<string, SlashCommand>()
+  const add = (items: unknown[], isSkill = false) => {
+    for (const item of items) {
+      const command = parseSlashCommand(item)
+      if (!command.name) continue
+      merged.set(command.name, isSkill ? { ...command, isSkill: true } : command)
+    }
+  }
+  add(systemCommands)
+  add(projectCommands)
+  add(skills, true)
+  return [...merged.values()]
+}
+
 /** Overlay only while the draft is a single `/token` with no space. */
 export function filterSlashCommands(
   text: string,

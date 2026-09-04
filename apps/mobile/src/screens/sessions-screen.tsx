@@ -1,8 +1,9 @@
 import { MessageSquare } from 'lucide-react-native'
-import { FlatList, Pressable, Text, View } from 'react-native'
+import { FlatList, Text, View } from 'react-native'
 import type { TabletSessionRow } from '../navigation/tablet-session-sidebar'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
-import { Badge, Button } from '../ui'
+import { harnessDisplayName } from '../provider-state'
+import { Badge, Button, SwipeSessionRow } from '../ui'
 
 function relativeTime(value?: string): string {
   if (!value) return ''
@@ -20,6 +21,8 @@ export function SessionsScreen(props: {
   sessions: TabletSessionRow[]
   onOpenSession: (session: TabletSessionRow) => void
   onCreateSession: () => void
+  onArchiveSession: (session: TabletSessionRow) => void
+  onDeleteSession: (session: TabletSessionRow) => void
 }) {
   const styles = useMobileStyles()
   const { tokens } = useMobileTheme()
@@ -36,18 +39,25 @@ export function SessionsScreen(props: {
         data={props.sessions}
         keyExtractor={(item) => item.sessionId}
         renderItem={({ item }) => (
-          <Pressable
-            style={[styles.sessionCard, isRecent(item.lastActiveAt) ? styles.sessionRecent : null]}
+          <SwipeSessionRow
+            title={item.title}
             onPress={() => props.onOpenSession(item)}
+            onArchive={() => props.onArchiveSession(item)}
+            onDelete={() => props.onDeleteSession(item)}
           >
-            <Text numberOfLines={2} style={styles.rowTitle}>{item.title || 'Untitled'}</Text>
-            <View style={styles.sessionMeta}>
-              <Badge label={item.provider ?? 'claude'} />
-              {'messageCount' in item && typeof item.messageCount === 'number' ? <Badge label={`${item.messageCount} messages`} /> : null}
-              {item.lastActiveAt ? <Badge label={relativeTime(item.lastActiveAt)} tone={isRecent(item.lastActiveAt) ? 'success' : 'neutral'} /> : null}
-              {'gitBranch' in item && typeof item.gitBranch === 'string' ? <Badge label={item.gitBranch} /> : null}
+            <View style={[styles.sessionCard, isRecent(item.lastActiveAt) ? styles.sessionRecent : null]}>
+              <Text numberOfLines={2} style={styles.rowTitle}>{item.title || 'Untitled'}</Text>
+              <View style={styles.sessionMeta}>
+                <Badge label={harnessDisplayName(item.provider ?? 'claude')} />
+                {item.selectedModel ? <Badge label={item.selectedModel} /> : null}
+                {item.status === 'streaming' ? <Badge label="Streaming" tone="success" /> : null}
+                {typeof item.messageCount === 'number' ? <Badge label={`${item.messageCount} messages`} /> : null}
+                {item.lastActiveAt ? <Badge label={relativeTime(item.lastActiveAt)} tone={isRecent(item.lastActiveAt) ? 'success' : 'neutral'} /> : null}
+                {item.gitBranch ? <Badge label={item.gitBranch} /> : null}
+                {item.tags?.map((tag) => <Badge key={tag} label={tag} />)}
+              </View>
             </View>
-          </Pressable>
+          </SwipeSessionRow>
         )}
       />
     </View>

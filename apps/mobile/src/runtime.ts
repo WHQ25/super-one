@@ -12,6 +12,7 @@ import { AGENT_EVENT_BATCH_MS } from '@superone/shared/agent-event-batcher'
 import type { RelayClient } from '@superone/relay-client'
 import { restoreSession } from '@superone/relay-client'
 import { randomId } from './ids'
+import { mergeSlashCatalogs } from './slash'
 
 type SessionState = ReturnType<typeof createDefaultChatCoreSession>
 type SharedFileEvent = Extract<AgentEvent, { type: 'shared_file' }>
@@ -135,14 +136,29 @@ export class ChatRuntime {
 
   async loadSystemInfo(provider: string = String(this.provider)): Promise<SystemInfo> {
     if (!this.projectPath) return {}
-    const info = await this.client.request({
-      type: 'get_system_info',
-      requestId: randomId(),
-      projectPath: this.projectPath,
-      provider: provider as HarnessId,
-    } as RemoteCommand) as SystemInfo
+    const [info, projectResources] = await Promise.all([
+      this.client.request({
+        type: 'get_system_info',
+        requestId: randomId(),
+        projectPath: this.projectPath,
+        provider: provider as HarnessId,
+      } as RemoteCommand) as Promise<SystemInfo>,
+      this.client.request({
+        type: 'get_project_resources',
+        requestId: randomId(),
+        projectPath: this.projectPath,
+        provider: provider as HarnessId,
+      } as RemoteCommand).catch(() => ({})) as Promise<{
+        projectSlashCommands?: unknown[]
+        skills?: unknown[]
+      }>,
+    ])
     this.provider = provider
-    this.slashCommands = info.userSlashCommands ?? info.slashCommands ?? []
+    this.slashCommands = mergeSlashCatalogs(
+      info.userSlashCommands ?? info.slashCommands ?? [],
+      projectResources.projectSlashCommands ?? [],
+      projectResources.skills ?? [],
+    )
     if (info.permissionModes?.length) this.permissionModes = info.permissionModes
     else if (info.permissionPresets?.length) this.permissionModes = info.permissionPresets
     this.models = info.models ?? []

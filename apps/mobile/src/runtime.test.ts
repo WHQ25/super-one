@@ -17,6 +17,12 @@ function fakeClient(epoch = 1) {
       if (cmd.type === 'get_system_info') {
         return { userSlashCommands: [{ name: 'help' }], permissionModes: ['default', 'plan'], models: [{ id: 'm' }] }
       }
+      if (cmd.type === 'get_project_resources') {
+        return {
+          projectSlashCommands: [{ name: 'project' }],
+          skills: [{ name: 'ship', description: 'Release' }],
+        }
+      }
       return { ok: true }
     }),
   }
@@ -48,7 +54,11 @@ describe('ChatRuntime', () => {
       additionalDirectories: ['/shared'],
     }))
     const info = await runtime.loadSystemInfo('claude')
-    expect(runtime.slashCommands).toEqual([{ name: 'help' }])
+    expect(runtime.slashCommands).toEqual([
+      { name: 'help', description: '', argumentHint: '', isSkill: false },
+      { name: 'project', description: '', argumentHint: '', isSkill: false },
+      { name: 'ship', description: 'Release', argumentHint: '', isSkill: true },
+    ])
     expect(info.permissionModes).toContain('plan')
     await runtime.setPermissionMode('plan')
     expect(runtime.permissionMode).toBe('plan')

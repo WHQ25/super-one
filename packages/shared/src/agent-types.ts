@@ -2462,6 +2462,7 @@ export interface SessionHistoryEntry {
   /** ACP agent id when provider is `acp` (e.g. `grok-build`) — drives brand icon. */
   acpAgentId?: string | null
   providerSessionId?: string // Claude Code SDK session UUID / Codex thread id
+  selectedModel?: string | null
   gitBranch?: string
   messageCount: number // Total user + assistant messages
   isWorktree?: boolean // true if session was created in a git worktree
@@ -4322,6 +4323,8 @@ export type RemoteCommand =
   | { type: 'add_project'; requestId: string; path: string }
   | { type: 'list_projects'; requestId: string }
   | { type: 'list_sessions'; requestId: string; projectPath: string; limit?: number; offset?: number }
+  | { type: 'archive_session'; requestId: string; projectPath: string; sessionId: string }
+  | { type: 'delete_session'; requestId: string; projectPath: string; sessionId: string }
   | { type: 'list_models'; requestId: string; projectPath: string }
   | { type: 'get_system_info'; requestId: string; projectPath: string; provider: HarnessId }
   | { type: 'get_project_resources'; requestId: string; projectPath: string; provider: HarnessId }

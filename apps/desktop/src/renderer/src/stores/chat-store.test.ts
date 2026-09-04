@@ -4656,14 +4656,14 @@ describe('compact_boundary user-message cleanup', () => {
     expect(after.messages.at(-1)!.content[0]).toMatchObject({ type: 'text', text: '__compact__:manual:1234::' })
   })
 
-  it('inserts pill before last user when compactUserId is not tracked (auto compact)', () => {
+  it('inserts an auto-compact boundary after completed goal turns and before the live continuation', () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
     const session = proj._sessions[proj._activeSessionId!]
     session.messages = [
       { id: 'u0', role: 'user', content: [{ type: 'text', text: 'older' }], status: 'complete', createdAt: '', providerId: 'claude' },
       { id: 'a0', role: 'assistant', content: [{ type: 'text', text: 'older reply' }], status: 'complete', createdAt: '', providerId: 'claude' },
-      { id: 'u1', role: 'user', content: [{ type: 'text', text: 'latest' }], status: 'complete', createdAt: '', providerId: 'claude' },
+      { id: 'a1', role: 'assistant', content: [{ type: 'text', text: 'goal continuation' }], status: 'streaming', createdAt: '', providerId: 'claude' },
     ] as never[]
     useChatStore.setState({ projectSessions: { '/test': proj } })
 
@@ -4678,7 +4678,7 @@ describe('compact_boundary user-message cleanup', () => {
     expect(ids[0]).toBe('u0')
     expect(ids[1]).toBe('a0')
     expect(after.messages[2].providerId).toBe('system')
-    expect(ids[3]).toBe('u1')
+    expect(ids[3]).toBe('a1')
   })
 
   it('does not double-remove when slash_command_output arrives after compact_boundary', () => {

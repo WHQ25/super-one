@@ -197,7 +197,7 @@ describe('reduceSlash: turn_summary / session_recap', () => {
 })
 
 describe('reduceSlash: compact_boundary', () => {
-  it('inserts a __compact__ assistant message before the last user message when no _pendingCompactUserId is set', () => {
+  it('appends the boundary at the event position when there is no live reply', () => {
     const session = createDefaultPerSessionState()
     session.messages = [
       makeMessage('u1', { role: 'user' }),
@@ -212,17 +212,36 @@ describe('reduceSlash: compact_boundary', () => {
     } as never)
 
     const msgs = patch.messages!
-    // Should insert before the last user message (u2)
     const compactIdx = msgs.findIndex((m) => m.role === 'assistant' && m.providerId === 'system')
-    const u2Idx = msgs.findIndex((m) => m.id === 'u2')
     expect(compactIdx).toBeGreaterThanOrEqual(0)
-    expect(compactIdx).toBe(u2Idx - 1)
+    expect(compactIdx).toBe(msgs.length - 1)
     expect((msgs[compactIdx].content[0] as { text: string }).text).toContain('__compact__:auto:1234')
     expect(patch.isCompacting).toBe(false)
     expect(patch._pendingCompactUserId).toBe('')
   })
 
-  it('stays above the streaming reply when a mid-turn steer appended a user bubble after it', () => {
+  it('places the boundary after all completed goal turns and before the live continuation', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [
+      makeMessage('u1', { role: 'user' }),
+      makeMessage('a1', { role: 'assistant', status: 'complete' }),
+      makeMessage('a2', { role: 'assistant', status: 'complete' }),
+      makeMessage('a3', { role: 'assistant', status: 'streaming' }),
+    ]
+
+    const patch = reduceSlash(session, {
+      type: 'compact_boundary',
+      trigger: 'auto',
+      preTokens: 1234,
+    } as never)
+
+    const ids = patch.messages!.map((m) => m.id)
+    const compactIdx = patch.messages!.findIndex((m) => m.providerId === 'system')
+    expect(ids.slice(0, compactIdx)).toEqual(['u1', 'a1', 'a2'])
+    expect(ids.slice(compactIdx + 1)).toEqual(['a3'])
+  })
+
+  it('stays immediately above the streaming reply when a mid-turn steer follows it', () => {
     const session = createDefaultPerSessionState()
     session.messages = [
       makeMessage('u1', { role: 'user' }),
@@ -238,9 +257,7 @@ describe('reduceSlash: compact_boundary', () => {
 
     const msgs = patch.messages!
     const compactIdx = msgs.findIndex((m) => m.providerId === 'system')
-    // Above u1 — never between a1 and the steer, which would hide the running
-    // turn behind the collapse and hand it `isLastAssistant`.
-    expect(compactIdx).toBe(msgs.findIndex((m) => m.id === 'u1') - 1)
+    expect(compactIdx).toBe(msgs.findIndex((m) => m.id === 'a1') - 1)
     expect(msgs.findLast((m) => m.role === 'assistant')!.id).toBe('a1')
   })
 

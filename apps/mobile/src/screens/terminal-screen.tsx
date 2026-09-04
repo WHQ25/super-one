@@ -10,7 +10,7 @@ export function TerminalScreen(props: {
   writable: boolean
   onWebMessage: (raw: string) => void
   onDraft: (value: string) => void
-  onSubmit: () => void
+  onSubmit: (value: string) => void
   onClaim: () => void
   onKey: (data: string) => void
 }) {
@@ -60,7 +60,7 @@ export function TerminalScreen(props: {
           onChangeText={props.onDraft}
           autoCapitalize="none"
           autoCorrect={false}
-          onSubmitEditing={props.onSubmit}
+          onSubmitEditing={(event) => props.onSubmit(event.nativeEvent.text)}
         />
         {!props.writable ? (
           <Pressable style={styles.send} onPress={props.onClaim}>

@@ -962,8 +962,7 @@ export function MobileApp() {
             termRuntimeRef.current?.handleViewMessage(raw)
           }}
           onDraft={setTermDraft}
-          onSubmit={() => {
-            const line = termDraft
+          onSubmit={(line) => {
             runUiAction(() => { termRuntimeRef.current?.input(`${line}\n`); setTermDraft('') }, setStatus, 'terminal input failed')
           }}
           onClaim={() => runUiAction(() => termRuntimeRef.current?.claim(), setStatus, 'terminal claim failed')}

@@ -1167,6 +1167,15 @@ The same Android run then triggered a real Claude `Write` permission request in 
 
 **2026-09-04 (WP-29 recovery OTA):** published commit `19ad04e3` to the `production` channel for Android and iOS runtime `1.0.0` as update group `25c7b31b-47a2-4c0a-abde-57220f3b1411`; a follow-up `eas update:list` confirmed it is the newest production group. Android internal group `7dc306ae-166f-4a4e-9053-53a1507a8aee` carries the same recovery code to the existing installable APK channel. EAS fingerprint comparison reports the identical native hash `1112c27360fc13d7332a26aed1c531bfb904d738` for iOS build 4 and the production update. App Store Connect app `6761263268` exists and is pinned in the EAS production submit profile. EAS still reports no iOS submission record because no usable App Store Connect API private key is available locally. TestFlight submission, physical iPhone/Android smoke, Flutter archival, and the final merge remain pending.
 
+**2026-09-04 (WP-29 TestFlight submission):** App Store Connect reported Flutter
+builds through build 20, so the first Expo build 4 submission was obsolete and failed
+without changing App Store state. EAS remote iOS versioning was advanced to that
+baseline, production build 21 (`35d269c4-164e-4865-9cce-4fa47b86aa01`) completed,
+and a newly generated App Manager API key was retained only by the EAS credentials
+service. Submission `e9fd75c9-1ec2-4eb7-9fe7-c9f46d85a4a8` is queued for build 21.
+TestFlight processing, physical iPhone/Android smoke, Flutter archival, and the final
+merge remain pending.
+
 ---
 
 ## Appendix A — LOC / baseline (orientation)

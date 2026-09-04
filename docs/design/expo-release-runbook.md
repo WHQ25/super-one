@@ -1,11 +1,13 @@
 # Expo release runbook
 
-Status: **Android APK/OTA emulator-verified; iOS build and production OTA complete; TestFlight submission and physical release pending**
+Status: **Android APK/OTA emulator-verified; iOS build 21 complete and TestFlight submission queued; physical release pending**
 Plan: `docs/design/flutter-to-expo-migration-plan.md` WP-29
 
 The release owner completed Apple Developer login/2FA and let EAS manage the signing
-assets. iOS production build `f9243fb7-367e-4a96-b823-6e0eb9b57d9a` (version 1.0.0,
-build 4) finished on 2026-09-04. App Store Connect app `6761263268` exists and its
+assets. The first Expo iOS production build used build number 4, but App Store Connect
+already contained Flutter build 20. EAS remote versioning was therefore advanced and
+iOS production build `35d269c4-164e-4865-9cce-4fa47b86aa01` (version 1.0.0,
+build 21) finished on 2026-09-04. App Store Connect app `6761263268` exists and its
 numeric `ascAppId` is pinned in the production submit profile.
 Production update group `25c7b31b-47a2-4c0a-abde-57220f3b1411` publishes commit
 `19ad04e3` for Android and iOS at runtime `1.0.0`, matching iOS build 4. It includes
@@ -13,13 +15,12 @@ the Flutter-aligned reconnect, peer-return, shutdown, and terminal recovery beha
 Android internal update group `7dc306ae-166f-4a4e-9053-53a1507a8aee` publishes the
 same runtime code to the existing installable APK channel, so manual Android testing
 does not require another binary build.
-EAS fingerprint comparison reports the same native hash
-`1112c27360fc13d7332a26aed1c531bfb904d738` for iOS build 4 and its latest
-production update, so the published JavaScript is native-compatible with that binary.
-EAS Submit still has no iOS submission record. The account has an active App Manager
-API key, but its one-time `.p8` private key is not present on this machine, so either
-provide a dedicated local API key file or run the first submission interactively with
-the release owner's Apple login. Never commit or paste the private key into chat.
+Build 21 uses runtime `1.0.0`; no mobile runtime source changed after the latest
+production update. EAS generated a least-privilege App Manager API key and keeps its
+private material on the credentials service. Submission
+`e9fd75c9-1ec2-4eb7-9fe7-c9f46d85a4a8` is queued for build 21. The obsolete build 4
+submission failed as expected because its build number was lower than the Flutter
+baseline. Never download, commit, or paste the private key into chat.
 
 Run EAS commands from `apps/mobile`. Keep `credentials.json`, signing files, build
 artifacts, screenshots, and videos out of git.

@@ -14,6 +14,9 @@ the Flutter-aligned reconnect, peer-return, shutdown, and terminal recovery beha
 Android internal update group `7dc306ae-166f-4a4e-9053-53a1507a8aee` publishes the
 same runtime code to the existing installable APK channel, so manual Android testing
 does not require another binary build.
+EAS fingerprint comparison reports the same native hash
+`1112c27360fc13d7332a26aed1c531bfb904d738` for iOS build 4 and its latest
+production update, so the published JavaScript is native-compatible with that binary.
 EAS Submit still has no iOS submission record; finish the first App Store Connect
 login/app setup before adding the numeric `ascAppId` to the production submit profile.
 

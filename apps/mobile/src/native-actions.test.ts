@@ -2,7 +2,13 @@ import { describe, expect, it, vi } from 'vitest'
 import { resolveNativeRequest, type NativeActionPorts } from './native-actions'
 
 function ports(): NativeActionPorts {
-  return { openLink: vi.fn(), openFile: vi.fn(), previewFile: vi.fn(), copyText: vi.fn() }
+  return {
+    openLink: vi.fn(),
+    openFile: vi.fn(),
+    previewFile: vi.fn(),
+    copyText: vi.fn(),
+    codexPlanApproval: vi.fn(),
+  }
 }
 
 describe('native chat actions', () => {
@@ -20,6 +26,17 @@ describe('native chat actions', () => {
     expect(target.openLink).toHaveBeenCalledWith('https://example.com')
     expect(target.openFile).toHaveBeenCalledWith('src/App.tsx')
     expect(target.previewFile).toHaveBeenCalledWith('art/output.png')
+  })
+
+  it('routes validated Codex plan decisions to the active runtime', async () => {
+    const target = ports()
+    await expect(resolveNativeRequest({
+      type: 'requestNative',
+      requestId: 'plan',
+      action: 'codexPlanApproval',
+      payload: { messageId: 'assistant-1', status: 'rejected', feedback: 'Revise step 2' },
+    }, target)).resolves.toMatchObject({ result: { ok: true } })
+    expect(target.codexPlanApproval).toHaveBeenCalledWith('assistant-1', 'rejected', 'Revise step 2')
   })
 
   it('reports invalid or unsupported actions instead of false success', async () => {

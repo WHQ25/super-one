@@ -13,6 +13,7 @@ import {
   Puzzle,
   ScanSearch,
   TriangleAlert,
+  X,
 } from 'lucide-react'
 import { requestNative } from './bridge'
 import { PortableMarkdown, PlainCode } from './PortableMarkdown'
@@ -641,12 +642,63 @@ function PortableCodexMarkdown({ text, isStreaming }: { text: string; isStreamin
   return <PortableText text={text} isStreaming={isStreaming} />
 }
 
-function PortablePlan({ item, isStreaming }: CodexItemPresenterProps) {
+function PortablePlanActions({
+  onApprove,
+  onReject,
+}: {
+  onApprove: () => void
+  onReject: (feedback?: string) => void
+}) {
+  const [feedback, setFeedback] = useState('')
+  return (
+    <div className="flex w-full flex-col gap-2">
+      <input
+        aria-label="Plan feedback"
+        className="h-8 w-full rounded bg-muted px-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+        placeholder="Reject feedback (optional)"
+        value={feedback}
+        onChange={(event) => setFeedback(event.target.value)}
+      />
+      <div className="flex gap-2">
+        <button
+          className="flex h-8 flex-1 items-center justify-center gap-1 rounded bg-success px-3 text-xs font-medium text-success-foreground"
+          type="button"
+          onClick={onApprove}
+        >
+          <Check className="size-3.5" />
+          Approve
+        </button>
+        <button
+          className="flex h-8 flex-1 items-center justify-center gap-1 rounded bg-destructive px-3 text-xs font-medium text-destructive-foreground"
+          type="button"
+          onClick={() => onReject(feedback.trim() || undefined)}
+        >
+          <X className="size-3.5" />
+          Reject
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function PortablePlan({
+  item,
+  isStreaming,
+  nextItem,
+  onApprovePlan,
+  onRejectPlan,
+  planApproval,
+}: CodexItemPresenterProps) {
   if (item.type !== 'plan') return null
   return (
     <CodexPlanBlockPresenter
       item={item}
       isStreaming={isStreaming}
+      hasFollowingItem={Boolean(nextItem)}
+      planApproval={planApproval}
+      onApprovePlan={onApprovePlan}
+      onRejectPlan={onRejectPlan}
+      renderApprovalActions={(actions) => <PortablePlanActions {...actions} />}
       Markdown={PortableCodexMarkdown}
     />
   )
@@ -948,6 +1000,13 @@ export function PortableCodexTurn({
   message: ChatMessage
   isLastAssistant: boolean
 }) {
+  const respondToPlan = (status: 'approved' | 'rejected', feedback?: string): void => {
+    requestNative('codexPlanApproval', {
+      messageId: message.id,
+      status,
+      ...(feedback ? { feedback } : {}),
+    })
+  }
   return (
     <CodexTurnViewPresenter
       message={message}
@@ -955,7 +1014,9 @@ export function PortableCodexTurn({
       isWorking={message.status === 'streaming'}
       isLastAssistant={isLastAssistant}
       detailChatMode={false}
-      canRespondToPlan={false}
+      canRespondToPlan
+      onApprovePlan={() => respondToPlan('approved')}
+      onRejectPlan={(feedback) => respondToPlan('rejected', feedback)}
       groupableAppByTool={EMPTY_MAP}
       appNameById={EMPTY_MAP}
       parts={CODEX_PARTS}

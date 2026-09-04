@@ -212,6 +212,11 @@ export function MobileApp() {
     const result = await resolveNativeRequest(message, {
       openLink: async (url) => { await Linking.openURL(url) },
       copyText: async (text) => { await Clipboard.setStringAsync(text) },
+      codexPlanApproval: async (messageId, status, feedback) => {
+        const runtime = runtimeRef.current
+        if (!runtime) throw new Error('no active session')
+        runtime.respondCodexPlan(messageId, status, feedback)
+      },
       previewFile: async (path) => {
         const client = clientRef.current
         if (!client || !project) throw new Error('no active project')
@@ -985,6 +990,10 @@ export function MobileApp() {
         permission={perm}
         plan={plan}
         question={question}
+        planContinueMode={selectedProvider === 'claude'
+          ? (permModes.includes('auto') ? 'auto' : 'acceptEdits')
+          : undefined}
+        onPlanContinueMode={setPermMode}
         sessionSwitcherOpen={sessionSwitcherOpen}
         onDismissSessionSwitcher={() => setSessionSwitcherOpen(false)}
         sessions={sessions}

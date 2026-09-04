@@ -260,6 +260,17 @@ export class ChatRuntime {
     this.client.send(cmd)
   }
 
+  respondCodexPlan(messageId: string, status: 'approved' | 'rejected', feedback?: string): void {
+    this.client.send({
+      type: 'codex_plan_approval',
+      messageId,
+      status,
+      sessionId: this.sessionId,
+      projectPath: this.projectPath,
+      ...(feedback ? { feedback } : {}),
+    })
+  }
+
   answerQuestion(
     requestId: string,
     answers: Record<string, string>,

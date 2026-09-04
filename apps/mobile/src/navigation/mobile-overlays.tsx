@@ -19,6 +19,8 @@ export function MobileOverlays(props: {
   permission: PermissionRequest | null
   plan: PlanApprovalRequest | null
   question: AskUserQuestionRequest | null
+  planContinueMode?: string
+  onPlanContinueMode: (mode: string) => void
   sessionSwitcherOpen: boolean
   onDismissSessionSwitcher: () => void
   sessions: TabletSessionRow[]
@@ -45,13 +47,19 @@ export function MobileOverlays(props: {
       />
       <PlanSheet
         plan={props.plan}
+        continueMode={props.planContinueMode}
         onApprove={(id) => runUiAction(
           () => runtime()?.respondPlan(id, true),
           props.setStatus,
           'plan response failed',
         )}
-        onReject={(id) => runUiAction(
-          () => runtime()?.respondPlan(id, false, 'rejected from mobile'),
+        onApproveAndContinue={(id, mode) => runUiAction(() => {
+          runtime()?.respondPlan(id, true)
+          runtime()?.setPermissionMode(mode)
+          props.onPlanContinueMode(mode)
+        }, props.setStatus, 'plan response failed')}
+        onReject={(id, feedback) => runUiAction(
+          () => runtime()?.respondPlan(id, false, feedback),
           props.setStatus,
           'plan response failed',
         )}

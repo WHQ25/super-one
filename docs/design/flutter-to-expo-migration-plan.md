@@ -765,6 +765,10 @@ Question sheets now key answers by the full question text required by the wire
 protocol, reset state per request, use tabs for multi-question prompts, preselect the
 first preview choice, and forward optional preview notes as annotations just like the
 Desktop prompt.
+Codex plan cards now expose approve/reject actions through the native bridge instead
+of being read-only. The native plan sheet shows requested permissions and file
+context, forwards rejection feedback, and offers Claude's post-approval Auto or
+Accept Edits transition.
 The built-in iPhone simulator now confirms that Return during a live Simplified
 Chinese Pinyin composition does not submit the partial text. That pass also exposed
 the native-stack scene retaining its full frame under the software keyboard; keyboard

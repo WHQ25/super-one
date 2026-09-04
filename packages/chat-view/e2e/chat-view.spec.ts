@@ -611,3 +611,28 @@ test('42 renders Codex images through the host-backed native gallery', async ({ 
       && item.payload?.path === '/project/output/concept-a.png'
   )))).toBe(true)
 })
+
+test('43 sends Codex plan decisions through the native host bridge', async ({ page }) => {
+  await send(page, { type: 'hydrate', messages: PLAN_RECORDINGS })
+
+  const plan = page.locator('[data-turn-id="recording-codex-plan"]')
+  await plan.getByText('Plan', { exact: true }).click()
+  await plan.getByLabel('Plan feedback').fill('Revise step 2')
+  await plan.getByRole('button', { name: 'Reject' }).click()
+
+  await expect.poll(() => page.evaluate(() => (
+    globalThis as typeof globalThis & {
+      __hostMessages: Array<{
+        type?: string
+        action?: string
+        payload?: { messageId?: string; status?: string; feedback?: string }
+      }>
+    }
+  ).__hostMessages.some((item) => (
+    item.type === 'requestNative'
+      && item.action === 'codexPlanApproval'
+      && item.payload?.messageId === 'recording-codex-plan'
+      && item.payload?.status === 'rejected'
+      && item.payload?.feedback === 'Revise step 2'
+  )))).toBe(true)
+})

@@ -169,18 +169,51 @@ function CollaborationLaunch(props: {
 
 export function PlanSheet(props: {
   plan: PlanApprovalRequest | null
+  continueMode?: string
   onApprove: (id: string) => void
-  onReject: (id: string) => void
+  onApproveAndContinue: (id: string, mode: string) => void
+  onReject: (id: string, feedback?: string) => void
 }) {
   const styles = useMobileStyles()
   const plan = props.plan
+  const [feedback, setFeedback] = useState('')
+  useEffect(() => setFeedback(''), [plan?.requestId])
   if (!plan) return null
+  const fileName = plan.planFilePath.split('/').pop()
+  const trimmedFeedback = feedback.trim() || undefined
   return (
-    <Sheet visible title="Approve plan?" onDismiss={() => props.onReject(plan.requestId)}>
-      <ScrollView style={styles.planBox}><Text style={styles.rowMeta}>{plan.planContent}</Text></ScrollView>
+    <Sheet visible title={fileName ? `Review plan · ${fileName}` : 'Review plan'} onDismiss={() => props.onReject(plan.requestId, trimmedFeedback)}>
+      <ScrollView style={styles.planBox}>
+        <Text selectable style={styles.rowMeta}>{plan.planContent}</Text>
+        {plan.allowedPrompts.length ? (
+          <View>
+            <Text style={styles.overlayHeader}>Requested permissions</Text>
+            {plan.allowedPrompts.map((prompt, index) => (
+              <ListRow key={`${prompt.tool}:${index}`} title={prompt.tool} subtitle={prompt.prompt} />
+            ))}
+          </View>
+        ) : null}
+      </ScrollView>
+      <TextInput
+        style={styles.input}
+        placeholder="Optional feedback"
+        value={feedback}
+        onChangeText={setFeedback}
+      />
       <View style={styles.permissionActions}>
         <Button label="Approve" onPress={() => props.onApprove(plan.requestId)} />
-        <Button label="Reject" variant="ghost" onPress={() => props.onReject(plan.requestId)} />
+        <Button
+          label={trimmedFeedback ? 'Reject with feedback' : 'Reject'}
+          variant="danger"
+          onPress={() => props.onReject(plan.requestId, trimmedFeedback)}
+        />
+        {props.continueMode ? (
+          <Button
+            label={props.continueMode === 'auto' ? 'Approve & Auto' : 'Approve & Accept edits'}
+            variant="secondary"
+            onPress={() => props.onApproveAndContinue(plan.requestId, props.continueMode!)}
+          />
+        ) : null}
       </View>
     </Sheet>
   )

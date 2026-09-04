@@ -8,6 +8,7 @@ export interface NativeActionPorts {
   openFile(path: string): Promise<void>
   previewFile(path: string): Promise<void>
   copyText(text: string): Promise<void>
+  codexPlanApproval(messageId: string, status: 'approved' | 'rejected', feedback?: string): Promise<void>
 }
 
 function payloadString(message: NativeRequest, key: string): string {
@@ -31,6 +32,18 @@ export async function resolveNativeRequest(
       await ports.previewFile(payloadString(message, 'path'))
     } else if (message.action === 'copyText') {
       await ports.copyText(payloadString(message, 'text'))
+    } else if (message.action === 'codexPlanApproval') {
+      const status = payloadString(message, 'status')
+      if (status !== 'approved' && status !== 'rejected') throw new Error('invalid codexPlanApproval status')
+      const feedbackValue = (message.payload as Record<string, unknown> | undefined)?.feedback
+      if (feedbackValue !== undefined && typeof feedbackValue !== 'string') {
+        throw new Error('invalid codexPlanApproval feedback')
+      }
+      await ports.codexPlanApproval(
+        payloadString(message, 'messageId'),
+        status,
+        feedbackValue,
+      )
     } else {
       throw new Error(`${message.action} is not available on mobile`)
     }

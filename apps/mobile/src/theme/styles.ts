@@ -75,7 +75,7 @@ export function createMobileStyles({ colors, radius, spacing, type }: MobileThem
     attach: { backgroundColor: colors.secondary, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.md },
     meta: { color: colors.mutedForeground, fontSize: type.meta, paddingVertical: spacing.sm },
     modal: { flex: 1, backgroundColor: colors.scrim, justifyContent: 'center', padding: spacing.xl },
-    planBox: { maxHeight: 240, marginVertical: spacing.md },
+    planBox: { maxHeight: 420, marginVertical: spacing.md },
     collabList: { maxHeight: 420, marginVertical: spacing.md },
     collabCard: { backgroundColor: colors.surface, borderRadius: 10, padding: spacing.md, marginBottom: spacing.sm },
     collabTask: { color: colors.foreground, fontSize: 13, marginTop: spacing.sm },

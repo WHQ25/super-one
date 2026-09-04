@@ -1980,6 +1980,7 @@ export type Messages = {
       selectOptionPreview: string
       noteOptionalPlaceholder: string
       submit: string
+      submitted: string
       hintSwitch: string
       hintNote: string
       hintSelect: string
@@ -2847,6 +2848,10 @@ export type Messages = {
       accountSignIn: string
       accountNotSignedIn: string
       accountLoading: string
+      claudeAddAccount: string
+      claudeSignOutAccount: string
+      claudeAccountAdded: string
+      claudeAccountAddFailed: string
       codexNeedsProject: string
       keyNameDuplicate: string
       deleteKeyTitle: string
@@ -5659,6 +5664,7 @@ export const en: Messages = {
       selectOptionPreview: 'Select an option to preview',
       noteOptionalPlaceholder: 'Add a note (optional)...',
       submit: 'Submit',
+      submitted: 'Submitted',
       hintSwitch: 'switch',
       hintNote: 'note',
       hintSelect: 'select',
@@ -6525,6 +6531,10 @@ export const en: Messages = {
       accountSignIn: 'Sign-In',
       accountNotSignedIn: 'Not Signed In',
       accountLoading: 'Loading account…',
+      claudeAddAccount: 'Add account',
+      claudeSignOutAccount: 'Sign out',
+      claudeAccountAdded: 'Signed in as {{email}}',
+      claudeAccountAddFailed: 'Sign-in did not complete',
       codexNeedsProject: 'Open a project to view the Codex account',
       keyNameDuplicate: 'A key with this name already exists on this platform',
       deleteKeyTitle: 'Delete Key',

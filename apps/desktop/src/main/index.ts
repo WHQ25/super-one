@@ -2580,8 +2580,8 @@ function registerIpcHandlers(): void {
     return codexService.importExternalAgentConfig(projectPath, items, apiProviderId ?? null)
   })
 
-  ipcMain.handle(AgentIpcChannels.CLAUDE_GET_RATE_LIMITS, (_event, force?: boolean) => {
-    return getClaudeRateLimits(force ?? false)
+  ipcMain.handle(AgentIpcChannels.CLAUDE_GET_RATE_LIMITS, (_event, force?: boolean, credentialDir?: string | null) => {
+    return getClaudeRateLimits(force ?? false, credentialDir ?? null)
   })
 
   ipcMain.handle(AgentIpcChannels.CLAUDE_LIST_ACCOUNTS, () => {

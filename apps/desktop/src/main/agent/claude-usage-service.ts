@@ -2,17 +2,16 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir, userInfo } from 'node:os'
 import { join } from 'node:path'
-import { createHash } from 'node:crypto'
 import log from '../logger'
 import type { ClaudeRateLimits } from '@superone/shared/agent-types'
 import { parseUsage, type UsageResponse } from './claude-usage-parse'
+import { keychainServiceNames } from './claude-account-parse'
 
 const BASE_API_URL = 'https://api.anthropic.com'
 const USAGE_URL = `${BASE_API_URL}/api/oauth/usage`
 const REFRESH_URL = 'https://platform.claude.com/v1/oauth/token'
 const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e'
 const SCOPES = 'user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload'
-const KEYCHAIN_SERVICE = 'Claude Code-credentials'
 const CRED_FILE_NAME = '.credentials.json'
 const USAGE_USER_AGENT = 'claude-code/2.1.69'
 const REFRESH_BUFFER_MS = 5 * 60 * 1000
@@ -34,6 +33,8 @@ interface CredentialFile {
 }
 
 interface LoadedCreds {
+  /** Domain these came from; `null` is the CLI's own default login. */
+  credentialDir: string | null
   oauth: OAuthCreds
   source: 'keychain' | 'file'
   serviceName: string | null
@@ -42,16 +43,37 @@ interface LoadedCreds {
   inferenceOnly?: boolean
 }
 
-let rateLimitedUntilMs = 0
-let lastUsageFetchMs = 0
-let cachedRateLimits: ClaudeRateLimits | null = null
+/**
+ * Throttle + backoff + last-good usage, kept **per credential domain**. These used to be three
+ * module-level globals, which is correct only while there is exactly one account: with several,
+ * one account's 429 backoff would suppress every other account's meters, and the 5-minute
+ * throttle would hand account B the cached numbers belonging to account A.
+ */
+interface DomainUsageState {
+  rateLimitedUntilMs: number
+  lastUsageFetchMs: number
+  cached: ClaudeRateLimits | null
+}
+
+const domainUsage = new Map<string, DomainUsageState>()
+
+function usageStateFor(credentialDir: string | null): DomainUsageState {
+  const key = credentialDir ?? ''
+  let state = domainUsage.get(key)
+  if (!state) {
+    state = { rateLimitedUntilMs: 0, lastUsageFetchMs: 0, cached: null }
+    domainUsage.set(key, state)
+  }
+  return state
+}
 
 function configDir(): string {
   return process.env.CLAUDE_CONFIG_DIR?.trim() || join(homedir(), '.claude')
 }
 
-function credentialsPath(): string {
-  return join(configDir(), CRED_FILE_NAME)
+/** `.credentials.json` for one domain. The CLI keeps it inside the securestorage dir. */
+function credentialsPath(credentialDir: string | null): string {
+  return join(credentialDir ?? configDir(), CRED_FILE_NAME)
 }
 
 function tryParseJson<T>(text: string | null | undefined): T | null {
@@ -73,13 +95,6 @@ function tryParseCredentialJSON(text: string | null): CredentialFile | null {
   return tryParseJson<CredentialFile>(Buffer.from(hex, 'hex').toString('utf8'))
 }
 
-function keychainServiceCandidates(): string[] {
-  const explicit = process.env.CLAUDE_CONFIG_DIR?.trim()
-  if (!explicit) return [KEYCHAIN_SERVICE]
-  const hash = createHash('sha256').update(explicit.normalize('NFC')).digest('hex').slice(0, 8)
-  return [`${KEYCHAIN_SERVICE}-${hash}`, KEYCHAIN_SERVICE]
-}
-
 function readKeychain(service: string, account: string): string | null {
   if (process.platform !== 'darwin') return null
   for (const args of [
@@ -96,25 +111,25 @@ function readKeychain(service: string, account: string): string | null {
   return null
 }
 
-function loadKeychainCredentials(account: string): LoadedCreds | null {
-  for (const service of keychainServiceCandidates()) {
+function loadKeychainCredentials(account: string, credentialDir: string | null): LoadedCreds | null {
+  for (const service of keychainServiceNames(credentialDir)) {
     const parsed = tryParseCredentialJSON(readKeychain(service, account))
     const oauth = parsed?.claudeAiOauth
     if (parsed && oauth?.accessToken) {
-      return { oauth, source: 'keychain', serviceName: service, account, fullData: parsed }
+      return { credentialDir, oauth, source: 'keychain', serviceName: service, account, fullData: parsed }
     }
   }
   return null
 }
 
-function loadFileCredentials(): LoadedCreds | null {
-  const file = credentialsPath()
+function loadFileCredentials(credentialDir: string | null): LoadedCreds | null {
+  const file = credentialsPath(credentialDir)
   if (!existsSync(file)) return null
   try {
     const parsed = tryParseCredentialJSON(readFileSync(file, 'utf8'))
     const oauth = parsed?.claudeAiOauth
     if (parsed && oauth?.accessToken) {
-      return { oauth, source: 'file', serviceName: null, account: null, fullData: parsed }
+      return { credentialDir, oauth, source: 'file', serviceName: null, account: null, fullData: parsed }
     }
   } catch (e) {
     log.warn('[claude-usage] credentials file read failed: %s', String(e))
@@ -122,12 +137,15 @@ function loadFileCredentials(): LoadedCreds | null {
   return null
 }
 
-function loadCredentials(): LoadedCreds | null {
+function loadCredentials(credentialDir: string | null): LoadedCreds | null {
   const account = userInfo().username
-  const stored = loadKeychainCredentials(account) ?? loadFileCredentials()
-  const envToken = process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim()
+  const stored = loadKeychainCredentials(account, credentialDir) ?? loadFileCredentials(credentialDir)
+  // CLAUDE_CODE_OAUTH_TOKEN describes the ambient environment, not a specific account. Letting it
+  // stand in for a named domain would report the env token's usage under that account's identity.
+  const envToken = credentialDir ? undefined : process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim()
   if (!envToken) return stored
   return {
+    credentialDir,
     oauth: { ...(stored?.oauth ?? { accessToken: '' }), accessToken: envToken },
     source: stored?.source ?? 'file',
     serviceName: stored?.serviceName ?? null,
@@ -150,7 +168,7 @@ function saveCredentials(creds: LoadedCreds): void {
   const text = JSON.stringify(creds.fullData)
   if (creds.source === 'file') {
     try {
-      writeFileSync(credentialsPath(), text, { mode: 0o600 })
+      writeFileSync(credentialsPath(creds.credentialDir), text, { mode: 0o600 })
     } catch (e) {
       log.error('[claude-usage] write credentials file failed: %s', String(e))
     }
@@ -260,18 +278,19 @@ function buildPlanType(oauth: OAuthCreds): string | null {
   return tierMatch ? `${base} ${tierMatch[1]}x` : base
 }
 
-export async function getClaudeRateLimits(force = false): Promise<ClaudeRateLimits | null> {
+export async function getClaudeRateLimits(force = false, credentialDir: string | null = null): Promise<ClaudeRateLimits | null> {
+  const state = usageStateFor(credentialDir)
   try {
-    const creds = loadCredentials()
+    const creds = loadCredentials(credentialDir)
     if (!creds?.oauth.accessToken?.trim() || !hasProfileScope(creds)) return null
 
     const nowMs = Date.now()
-    if (nowMs < rateLimitedUntilMs) return cachedRateLimits
+    if (nowMs < state.rateLimitedUntilMs) return state.cached
 
-    const wasRateLimited = rateLimitedUntilMs > 0
-    rateLimitedUntilMs = 0
-    if (!force && !wasRateLimited && cachedRateLimits && nowMs - lastUsageFetchMs < MIN_USAGE_FETCH_INTERVAL_MS) {
-      return cachedRateLimits
+    const wasRateLimited = state.rateLimitedUntilMs > 0
+    state.rateLimitedUntilMs = 0
+    if (!force && !wasRateLimited && state.cached && nowMs - state.lastUsageFetchMs < MIN_USAGE_FETCH_INTERVAL_MS) {
+      return state.cached
     }
 
     let accessToken = creds.oauth.accessToken
@@ -280,7 +299,7 @@ export async function getClaudeRateLimits(force = false): Promise<ClaudeRateLimi
       if (refreshed) accessToken = refreshed
     }
 
-    lastUsageFetchMs = nowMs
+    state.lastUsageFetchMs = nowMs
     let resp = await fetchUsage(accessToken)
     if (resp.status === 401 || resp.status === 403) {
       const refreshed = await refreshToken(creds)
@@ -292,21 +311,21 @@ export async function getClaudeRateLimits(force = false): Promise<ClaudeRateLimi
 
     if (resp.status === 429) {
       const retry = parseRetryAfterSeconds(resp)
-      rateLimitedUntilMs = nowMs + (retry !== null ? retry * 1000 : DEFAULT_RATE_LIMIT_BACKOFF_MS)
+      state.rateLimitedUntilMs = nowMs + (retry !== null ? retry * 1000 : DEFAULT_RATE_LIMIT_BACKOFF_MS)
       log.warn('[claude-usage] rate limited (429)')
-      return cachedRateLimits
+      return state.cached
     }
     if (!resp.ok) {
       log.info('[claude-usage] usage request failed status=%d', resp.status)
-      return cachedRateLimits
+      return state.cached
     }
 
     const data = tryParseJson<UsageResponse>(await resp.text())
-    if (!data) return cachedRateLimits
-    cachedRateLimits = { ...parseUsage(data, buildPlanType(creds.oauth)), fetchedAt: nowMs }
-    return cachedRateLimits
+    if (!data) return state.cached
+    state.cached = { ...parseUsage(data, buildPlanType(creds.oauth)), fetchedAt: nowMs }
+    return state.cached
   } catch (e) {
     log.info('[claude-usage] getClaudeRateLimits failed: %s', String(e))
-    return cachedRateLimits
+    return state.cached
   }
 }

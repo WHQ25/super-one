@@ -1229,7 +1229,8 @@ const appAPI = {
   codexImportExternalAgentConfig: (projectPath: string, items: CodexExternalAgentItem[], apiProviderId?: string | null) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_EXTERNAL_AGENT_IMPORT, projectPath, items, apiProviderId),
 
-  claudeGetRateLimits: (force?: boolean) => ipcRenderer.invoke(AgentIpcChannels.CLAUDE_GET_RATE_LIMITS, force),
+  claudeGetRateLimits: (force?: boolean, credentialDir?: string | null) =>
+    ipcRenderer.invoke(AgentIpcChannels.CLAUDE_GET_RATE_LIMITS, force, credentialDir),
 
   claudeListAccounts: () => ipcRenderer.invoke(AgentIpcChannels.CLAUDE_LIST_ACCOUNTS),
   claudeSignInAccount: (email?: string | null) => ipcRenderer.invoke(AgentIpcChannels.CLAUDE_SIGN_IN_ACCOUNT, email),

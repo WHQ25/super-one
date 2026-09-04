@@ -8,8 +8,11 @@ assets. iOS production build `f9243fb7-367e-4a96-b823-6e0eb9b57d9a` (version 1.0
 build 4) finished on 2026-09-04. The first App Store Connect submission still needs
 one interactive run to create/select the app; after that, persist its numeric
 `ascAppId` in the production submit profile so later submissions can be non-interactive.
-Production update group `54f90ac2-fdf6-4dda-99b5-0fa1fda472c7` publishes the
-current Android and iOS JavaScript at runtime `1.0.0`, matching iOS build 4.
+Production update group `25c7b31b-47a2-4c0a-abde-57220f3b1411` publishes commit
+`19ad04e3` for Android and iOS at runtime `1.0.0`, matching iOS build 4. It includes
+the Flutter-aligned reconnect, peer-return, shutdown, and terminal recovery behavior.
+EAS Submit still has no iOS submission record; finish the first App Store Connect
+login/app setup before adding the numeric `ascAppId` to the production submit profile.
 
 Run EAS commands from `apps/mobile`. Keep `credentials.json`, signing files, build
 artifacts, screenshots, and videos out of git.

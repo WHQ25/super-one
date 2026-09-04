@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { AgentEvent, ChatMessage, CodexThreadItem } from '@superone/shared/agent-types'
+import type { ChatMessage, CodexThreadItem } from '@superone/shared/agent-types'
 import { createDefaultChatCoreSession } from './defaults'
 import { reduceLifecycle } from './lifecycle'
 
@@ -36,11 +36,11 @@ describe('interrupting a Codex turn', () => {
   ] as const)('seals an in-flight tool row on %s', (type, expectedStatus) => {
     const session = createDefaultChatCoreSession()
     session.messages = [codexMessage([runningComputerAct])]
-    const event = type === 'message_error'
+    const event: Parameters<typeof reduceLifecycle>[1] = type === 'message_error'
       ? { type, messageId: 'm1', error: 'stream failed' }
       : { type, messageId: 'm1' }
 
-    const patch = reduceLifecycle(session, event as AgentEvent)
+    const patch = reduceLifecycle(session, event)
 
     expect(patch.messages![0].status).toBe(expectedStatus)
     expect(statusOf(patch.messages!)).toBe('completed')
@@ -54,7 +54,7 @@ describe('interrupting a Codex turn', () => {
     const patch = reduceLifecycle(session, {
       type: 'message_interrupted',
       messageId: 'm1',
-    } as AgentEvent)
+    })
 
     expect(statusOf(patch.messages!)).toBe('failed')
   })

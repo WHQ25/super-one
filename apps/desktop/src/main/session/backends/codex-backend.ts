@@ -32,7 +32,9 @@ import {
   createCodexSession,
   tearDownForkRuntime,
 } from '../../codex/codex-session'
+import { resolvePermissionProfile } from '../../codex/app-server-connection'
 import type { AppServerConnectionHandle, CodexProjectAuth } from '../../codex/app-server-connection'
+import { notifyCodexSkillsChanged } from '../../codex/codex-skills-watcher'
 import {
   buildCodexQueuedInput,
   compactCodexTurn,
@@ -1092,6 +1094,28 @@ export class CodexBackend implements SessionBackend {
   async setPermissionMode(mode: PermissionMode): Promise<void> {
     this.assertStarted()
     if (this.startOpts) this.startOpts.permissionMode = mode
+    const session = this.session
+    if (!session) return
+
+    const permissionPreset = mapPermissionMode(mode)
+    session.permissionPreset = permissionPreset
+    const { connectionHandle, threadId, activeTurnId } = session
+    if (!connectionHandle || !threadId || !activeTurnId) return
+
+    try {
+      const result = await connectionHandle.connection.request('turn/settings/update', {
+        threadId,
+        turnId: activeTurnId,
+        approvalsReviewer: resolvePermissionProfile(permissionPreset).approvalsReviewer,
+      })
+      if (result.status === 'targetUnavailable') {
+        log.debug('[CodexBackend] active turn ended before permission reviewer update')
+      }
+    } catch (err) {
+      // Keep the selected preset for the next step/turn even when this live turn
+      // races completion or an older app-server rejects the experimental method.
+      log.warn('[CodexBackend] live permission reviewer update failed: %s', err instanceof Error ? err.message : String(err))
+    }
   }
 
   async setSandbox(): Promise<void> {}
@@ -1302,7 +1326,54 @@ export class CodexBackend implements SessionBackend {
   }
 
   async reloadPlugins(): Promise<boolean> {
-    return false
+    try {
+      const connection = await this.ensureManagementConnection()
+      const result = await connection.request('plugin/reconcile', {
+        reason: 'superone runtime refresh',
+      })
+      const changedPlugins = Array.isArray(result.changedPlugins)
+        ? result.changedPlugins.filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === 'object')
+        : []
+      const session = this.session
+      const affectsMcps = changedPlugins.some((plugin) => plugin.hasMcps === true)
+      const affectsApps = changedPlugins.some((plugin) => plugin.hasApps === true)
+      const affectsSkills = changedPlugins.some((plugin) => plugin.hasSkills === true)
+      let refreshSucceeded = true
+
+      if (affectsApps) {
+        try {
+          await connection.request('app/installed', {
+            ...(session?.threadId ? { threadId: session.threadId } : {}),
+            forceRefresh: true,
+          })
+        } catch (err) {
+          refreshSucceeded = false
+          log.warn('[CodexBackend] plugin Apps refresh failed: %s', err instanceof Error ? err.message : String(err))
+        }
+      }
+      if (affectsMcps) {
+        try {
+          await connection.request('config/mcpServer/reload')
+        } catch (err) {
+          refreshSucceeded = false
+          log.warn('[CodexBackend] plugin MCP refresh failed: %s', err instanceof Error ? err.message : String(err))
+        }
+      }
+      if (affectsSkills && this.startOpts?.projectPath) {
+        notifyCodexSkillsChanged(this.startOpts.projectPath)
+      }
+
+      const failedIds = Array.isArray(result.failedRemotePluginIds)
+        ? result.failedRemotePluginIds.filter((id): id is string => typeof id === 'string')
+        : []
+      if (failedIds.length > 0) {
+        log.warn('[CodexBackend] plugin reconcile failed for: %s', failedIds.join(', '))
+      }
+      return refreshSucceeded && failedIds.length === 0
+    } catch (err) {
+      log.warn('[CodexBackend] reloadPlugins failed: %s', err instanceof Error ? err.message : String(err))
+      return false
+    }
   }
 
   async startQueuedMessages(): Promise<boolean> {

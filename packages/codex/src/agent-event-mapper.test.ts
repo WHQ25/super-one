@@ -186,14 +186,18 @@ describe('Codex AgentEvent mapper', () => {
     const events: AgentEvent[] = []
     const mapper = createCodexAgentEventMapper({ messageId: 'm', emit: (event) => events.push(event) })
     mapper.start('t')
-    mapper.apply({ method: 'item/started', params: { item: { id: 'bg', type: 'agentMessage', text: '', delivery: 'async' } } })
+    const questions = [
+      { title: 'Which environment?', options: ['Staging', 'Production'] },
+      { title: 'What deadline?', options: null },
+    ]
+    mapper.apply({ method: 'item/started', params: { item: { id: 'bg', type: 'agentMessage', text: '', delivery: 'async', questions } } })
     expect(mapper.apply({ method: 'item/agentMessage/delta', params: { itemId: 'bg', delta: 'background' } }).textDelta).toBeNull()
     mapper.apply({ method: 'item/completed', params: { item: { id: 'bg', type: 'agentMessage', text: 'background', delivery: 'async' } } })
     mapper.apply({ method: 'item/completed', params: { item: { id: 'inline', type: 'agentMessage', text: 'answer' } } })
     mapper.apply({ method: 'turn/completed', params: { turn: { id: 'turn', status: 'completed' } } })
     const complete = events.find((event) => event.type === 'message_complete')
     expect(complete?.metadata?.codex?.finalResponse).toBe('answer')
-    expect(mapper.items()[0]).toMatchObject({ delivery: 'async', text: 'background' })
+    expect(mapper.items()[0]).toMatchObject({ delivery: 'async', text: 'background', questions })
   })
 
   it('preserves 149 image failures and structured safety errors', () => {

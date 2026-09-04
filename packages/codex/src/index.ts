@@ -80,3 +80,4 @@ export {
   readCodexMcpResource,
   readCodexServerDiagnostics,
 } from './protocol-v149'
+export { readCodexAsyncUserInputQuestions } from './protocol-v153'

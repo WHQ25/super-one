@@ -73,6 +73,7 @@ import { buildAttachmentPathNote, persistAttachments } from '../agent/attachment
 import { buildCodexWorkspaceWriteSandboxPolicy } from '@superone/codex'
 import {
   readCodexAgentMessageDelivery,
+  readCodexAsyncUserInputQuestions,
   readCodexConfigRequirements,
   readCodexErrorOverrides,
   readCodexImageGenerationFailure,
@@ -352,7 +353,15 @@ export function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadI
       const text = readString(rec.text) ?? (previous?.type === 'agent_message' ? previous.text : '')
       const delivery = readCodexAgentMessageDelivery(rec.delivery)
         ?? (previous?.type === 'agent_message' ? previous.delivery : undefined)
-      return { id, type: 'agent_message', text, ...(delivery ? { delivery } : {}) }
+      const questions = readCodexAsyncUserInputQuestions(rec.questions)
+        ?? (previous?.type === 'agent_message' ? previous.questions : undefined)
+      return {
+        id,
+        type: 'agent_message',
+        text,
+        ...(delivery ? { delivery } : {}),
+        ...(questions ? { questions } : {}),
+      }
     }
 
     case 'reasoning': {
@@ -2158,6 +2167,7 @@ export async function streamTurnEvents(
           type: 'agent_message',
           text: `${previousText}${delta}`,
           ...(previous?.type === 'agent_message' && previous.delivery === 'async' ? { delivery: 'async' } : {}),
+          ...(previous?.type === 'agent_message' && previous.questions ? { questions: previous.questions } : {}),
         }
         upsertItem(itemOrder, itemMap, updated)
         callbacks?.onItemDelta?.('updated', updated)

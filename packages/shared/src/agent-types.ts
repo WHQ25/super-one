@@ -231,6 +231,14 @@ export interface CodexAgentMessageItem {
   text: string
   /** Background delivery does not terminate or replace the inline final response. */
   delivery?: 'async'
+  /** Structured, non-blocking questions carried by async agent messages. */
+  questions?: CodexAsyncUserInputQuestion[]
+}
+
+export interface CodexAsyncUserInputQuestion {
+  title: string
+  /** Suggested answers in display order; null means free text only. */
+  options: string[] | null
 }
 
 export interface CodexReasoningItem {

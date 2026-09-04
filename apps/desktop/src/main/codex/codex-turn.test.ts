@@ -2087,6 +2087,30 @@ describe('runCodexTurn turn/start payload', () => {
   })
 })
 
+describe('mapThreadItemFromAppServer async questions', () => {
+  it('preserves structured async questions with option and free-text inputs', () => {
+    expect(mapThreadItemFromAppServer({
+      id: 'async-question-1',
+      type: 'agentMessage',
+      text: 'Readable fallback',
+      delivery: 'async',
+      questions: [
+        { title: 'Which environment?', options: ['Staging', 'Production'] },
+        { title: 'What deadline?', options: null },
+      ],
+    })).toEqual({
+      id: 'async-question-1',
+      type: 'agent_message',
+      text: 'Readable fallback',
+      delivery: 'async',
+      questions: [
+        { title: 'Which environment?', options: ['Staging', 'Production'] },
+        { title: 'What deadline?', options: null },
+      ],
+    })
+  })
+})
+
 describe('mapThreadItemFromAppServer image generation', () => {
   it('maps a completed imageGeneration item with camelCase fields', () => {
     const result = mapThreadItemFromAppServer({

@@ -11,6 +11,7 @@ import {
   readCodexErrorOverrides,
   readCodexImageGenerationFailure,
 } from './protocol-v149'
+import { readCodexAsyncUserInputQuestions } from './protocol-v153'
 import type {
   AgentEvent,
   CodexCollabAgentState,
@@ -236,16 +237,20 @@ export function mapCodexThreadItem(
 
   switch (type) {
     case 'agent_message':
-    case 'agentMessage':
+    case 'agentMessage': {
+      const previousMessage = previous?.type === 'agent_message' ? previous : undefined
+      const questions = readCodexAsyncUserInputQuestions(rec.questions) ?? previousMessage?.questions
       return {
         id,
         type: 'agent_message',
-        text: readString(rec.text) ?? (previous?.type === 'agent_message' ? previous.text : ''),
+        text: readString(rec.text) ?? previousMessage?.text ?? '',
         ...(readCodexAgentMessageDelivery(rec.delivery)
-          ?? (previous?.type === 'agent_message' ? previous.delivery : undefined)
+          ?? previousMessage?.delivery
           ? { delivery: 'async' as const }
           : {}),
+        ...(questions ? { questions } : {}),
       }
+    }
     case 'reasoning': {
       const text = readString(rec.text)
         || readTextParts(rec.summary).join('\n\n')
@@ -653,6 +658,7 @@ export function createCodexAgentEventMapper(
             type: 'agent_message',
             text: `${previous?.type === 'agent_message' ? previous.text : ''}${delta}`,
             ...(previous?.type === 'agent_message' && previous.delivery === 'async' ? { delivery: 'async' } : {}),
+            ...(previous?.type === 'agent_message' && previous.questions ? { questions: previous.questions } : {}),
           })
           break
         }

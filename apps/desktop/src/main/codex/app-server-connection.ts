@@ -36,7 +36,7 @@ export const APP_SERVER_RESPONSE_TIMEOUT_MS = 15_000
 
 export const APP_SERVER_THREAD_LIFECYCLE_TIMEOUT_MS = 70_000
 
-const APP_SERVER_SLOW_METHODS = new Set<string>(['thread/start', 'thread/resume'])
+const APP_SERVER_SLOW_METHODS = new Set<string>(['thread/start', 'thread/resume', 'plugin/reconcile'])
 
 export function appServerTimeoutForMethod(method: string): number {
   return APP_SERVER_SLOW_METHODS.has(method)
@@ -62,7 +62,9 @@ export const APP_SERVER_IDEMPOTENT_METHODS = new Set<string>([
   'hooks/list',
   'plugin/list',
   'plugin/installed',
+  'plugin/reconcile',
   'plugin/read',
+  'app/installed',
   'mcpServerStatus/list',
   'config/read',
 ])

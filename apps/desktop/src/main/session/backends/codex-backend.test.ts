@@ -1599,6 +1599,30 @@ describe('CodexBackend unsupported operations degrade gracefully', () => {
     await expect(backend.reloadMcpServers()).resolves.toBeUndefined()
   })
 
+  it('updates the active turn reviewer when permission mode changes', async () => {
+    const request = vi.fn(async () => ({ status: 'applied' }))
+    const session = (backend as unknown as {
+      session: {
+        permissionPreset: string
+        connectionHandle: unknown
+        threadId: string | null
+        activeTurnId: string | null
+      }
+    }).session
+    session.connectionHandle = { connection: { request }, close: vi.fn(), getStderr: () => '', onClosed: vi.fn(() => () => {}) }
+    session.threadId = 'thread-live'
+    session.activeTurnId = 'turn-live'
+
+    await backend.setPermissionMode('auto')
+
+    expect(session.permissionPreset).toBe('auto-review')
+    expect(request).toHaveBeenCalledWith('turn/settings/update', {
+      threadId: 'thread-live',
+      turnId: 'turn-live',
+      approvalsReviewer: 'auto_review',
+    })
+  })
+
   it('getMcpServerStatus returns empty when the request rejects', async () => {
     const request = vi.fn(async () => { throw new Error('mcp-registry busy') })
     const session = (backend as unknown as { session: { connectionHandle: unknown } }).session
@@ -1666,8 +1690,33 @@ describe('CodexBackend unsupported operations degrade gracefully', () => {
     expect(backend.getCurrentProviderSessionId()).toBe('thread-forked')
   })
 
-  it('reloadPlugins returns false', async () => {
-    expect(await backend.reloadPlugins()).toBe(false)
+  it('reconciles plugins and refreshes affected MCP and Apps runtimes', async () => {
+    const request = vi.fn(async (method: string) => {
+      if (method === 'plugin/reconcile') {
+        return {
+          changedPlugins: [
+            { id: 'tools@example', hasMcps: true, hasApps: false, hasHooks: false, hasSkills: false },
+            { id: 'apps@example', hasMcps: false, hasApps: true, hasHooks: false, hasSkills: false },
+          ],
+          failedRemotePluginIds: [],
+          failedMaterializationRemotePluginIds: [],
+        }
+      }
+      return {}
+    })
+    const session = (backend as unknown as {
+      session: { connectionHandle: unknown; threadId: string | null }
+    }).session
+    session.connectionHandle = { connection: { request }, close: vi.fn(), getStderr: () => '', onClosed: vi.fn(() => () => {}) }
+    session.threadId = 'thread-plugins'
+
+    await expect(backend.reloadPlugins()).resolves.toBe(true)
+    expect(request).toHaveBeenNthCalledWith(1, 'plugin/reconcile', { reason: 'superone runtime refresh' })
+    expect(request).toHaveBeenNthCalledWith(2, 'app/installed', {
+      threadId: 'thread-plugins',
+      forceRefresh: true,
+    })
+    expect(request).toHaveBeenNthCalledWith(3, 'config/mcpServer/reload')
   })
 
   it('reconnectMcp throws', async () => {

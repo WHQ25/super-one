@@ -23,6 +23,7 @@ import type { CodexCollabToolCallItem } from '@superone/shared/agent-types'
 import { TerminalCommandOutput } from './TerminalCommandOutput'
 import { CompactLabeledToolRow, ToolName, ToolRow, ToolSummary, toolOutcomeLabel, withStreamingEllipsis } from './tool-row'
 import { isCodexCommandToolError } from './codex-command-status'
+import { CodexAsyncQuestionBlock } from './CodexAsyncQuestionBlock'
 
 interface PlanFooterActions {
   onApprove?: () => void
@@ -338,7 +339,9 @@ export function renderCodexItem(
     case 'agent_message':
       return (
         <div key={`${item.id}-${index}`} className="my-0.5">
-          <StreamingAgentMessage text={item.text} isStreaming={isStreaming} />
+          {item.questions?.length
+            ? <CodexAsyncQuestionBlock item={item} />
+            : <StreamingAgentMessage text={item.text} isStreaming={isStreaming} />}
         </div>
       )
 

@@ -42,7 +42,11 @@ const mockWindowApp = {
   codexReadPluginFile: vi.fn().mockResolvedValue(null),
 }
 
-vi.stubGlobal('window', { app: mockWindowApp })
+const mockWindowAgent = {
+  reloadPlugins: vi.fn().mockResolvedValue(true),
+}
+
+vi.stubGlobal('window', { app: mockWindowApp, agent: mockWindowAgent })
 
 const { useSettingsStore } = await import('./settings')
 const { useAppStore } = await import('./app')
@@ -414,6 +418,7 @@ describe('reloadPlugins', () => {
 
     await store.getState().reloadPlugins()
 
+    expect(mockWindowAgent.reloadPlugins).toHaveBeenCalledWith('/project')
     expect(mockWindowApp.codexListPlugins).toHaveBeenCalled()
     expect(mockWindowApp.codexListMarketplacePlugins).toHaveBeenCalled()
     expect(store.getState().pluginsLoading).toBe(false)

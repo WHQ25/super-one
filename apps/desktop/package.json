@@ -159,7 +159,7 @@
     "@lobehub/ui": "^5.3.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@musistudio/llms": "1.0.53",
-    "@openai/codex": "0.150.1",
+    "@openai/codex": "0.153.2",
     "@opencode-ai/models": "^0.0.2",
     "@opencode-ai/sdk": "^1.18.4",
     "@streamdown/math": "^1.0.2",

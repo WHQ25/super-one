@@ -241,7 +241,7 @@ interface AppAPI {
   codexImportExternalAgentConfig(projectPath: string, items: CodexExternalAgentItem[], apiProviderId?: string | null): Promise<CodexExternalAgentImportResult | null>
   /** `credentialDir` selects a signed-in account; omit it for the CLI's default login. */
   claudeGetRateLimits(force?: boolean, credentialDir?: string | null): Promise<ClaudeRateLimits | null>
-  claudeListAccounts(): Promise<ClaudeAccount[]>
+  claudeListAccounts(force?: boolean): Promise<ClaudeAccount[]>
   /** Allocates a fresh credential domain, then drives `claude auth login` inside it. */
   claudeSignInAccount(email?: string | null): Promise<ClaudeAccount | null>
   claudeSignOutAccount(credentialDir: string): Promise<void>

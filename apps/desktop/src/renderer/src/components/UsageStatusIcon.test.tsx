@@ -111,11 +111,13 @@ describe('UsageStatusIcon rate-limit tip', () => {
     hoisted.sessionState.sessionProvider = 'claude'
     hoisted.sessionState.preferredProvider = 'claude'
     hoisted.sessionState.acpAgentId = null
+    hoisted.sessionState.apiProviderId = null
     hoisted.sessionState._activeSessionId = 'session-a'
     hoisted.sessionState.session = null
     hoisted.codexThreadId = null
     vi.stubGlobal('app', {
       acpGetRateLimits: vi.fn(async () => null),
+      claudeListAccounts: vi.fn(async () => []),
       claudeGetRateLimits: vi.fn(async () => ({
         planType: 'pro',
         windows: [{ label: '5h', usedPercent: 82, resetsAt: Math.floor(Date.now() / 1000) + 3600 }],
@@ -131,6 +133,32 @@ describe('UsageStatusIcon rate-limit tip', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
+  })
+
+  it('keeps the first-party gauge when the session runs on a non-default Claude account', async () => {
+    // A Claude account carries an apiProviderId, so a "has an id means third-party" gate would
+    // route it to providerGetRateLimits — an endpoint it has no entry in — and drop the gauge.
+    hoisted.sessionState.apiProviderId = 'claude-account:/domains/work'
+
+    render(<UsageStatusIcon />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(window.app.claudeGetRateLimits).toHaveBeenCalledWith(false, '/domains/work')
+    expect(window.app.providerGetRateLimits).not.toHaveBeenCalled()
+  })
+
+  it('still routes a third-party credential id to the provider gauge', async () => {
+    hoisted.sessionState.apiProviderId = 'cred_01H8XYZ'
+
+    render(<UsageStatusIcon />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(window.app.providerGetRateLimits).toHaveBeenCalled()
+    expect(window.app.claudeGetRateLimits).not.toHaveBeenCalled()
   })
 
   it('shows tip from rateLimitInfo and auto-dismisses after 6s without residual highlight', async () => {

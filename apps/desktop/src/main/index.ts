@@ -96,7 +96,7 @@ import type { ProxyUpstream } from './providers/llm-proxy-manager'
 import { shutdownAll as shutdownAllProxies } from './providers/llm-proxy-manager'
 import { getBinding } from './providers/credential-store'
 import type { SessionProvider } from './session/types'
-import { expandProviderModelEnv } from '@superone/shared/agent-types'
+import { claudeAccountCredentialDir, expandProviderModelEnv } from '@superone/shared/agent-types'
 import { PROXY_TRANSFORMERS_ENV } from '@superone/shared/platform-registry'
 import { detectBuiltinAgents } from './acp/acp-detect'
 import { getBuiltinAgent } from './acp/agent-catalog'
@@ -329,6 +329,14 @@ function resolveBaseProviderConfig(provider: SessionProvider, apiProviderId: str
       || 'grok-build'
     return { ...base, agentId }
   }
+  // A non-default Claude account is still the first-party OAuth login -- no key, no base url.
+  // It only needs the credential domain, which redirects the CLI's keychain entry while leaving
+  // CLAUDE_CONFIG_DIR alone so transcripts stay shared and resume keeps working.
+  const claudeAccountDir = claudeAccountCredentialDir(apiProviderId)
+  if (claudeAccountDir) {
+    return { extraEnv: { CLAUDE_SECURESTORAGE_CONFIG_DIR: claudeAccountDir } }
+  }
+
   const resolved = resolveChatService(provider.harnessId, apiProviderId, {
     experimentalClaudeOpenAiChatEnabled: readAppSettings().experimentalClaudeOpenAiChatEnabled,
   })
@@ -2584,8 +2592,8 @@ function registerIpcHandlers(): void {
     return getClaudeRateLimits(force ?? false, credentialDir ?? null)
   })
 
-  ipcMain.handle(AgentIpcChannels.CLAUDE_LIST_ACCOUNTS, () => {
-    return listClaudeAccounts()
+  ipcMain.handle(AgentIpcChannels.CLAUDE_LIST_ACCOUNTS, (_event, force?: boolean) => {
+    return listClaudeAccounts(force ?? false)
   })
 
   ipcMain.handle(AgentIpcChannels.CLAUDE_SIGN_IN_ACCOUNT, (_event, email?: string | null) => {

@@ -39,6 +39,9 @@ const ESSENTIAL_EXACT = new Set<string>([
   'DYLD_FALLBACK_FRAMEWORK_PATH', 'DYLD_FALLBACK_LIBRARY_PATH',
   // Proxy bypass must survive E2BIG trimming — loopback MCP depends on it.
   'NO_PROXY', 'no_proxy',
+  // Selects which Claude account a session runs on. Trimming it does not fail loudly: the CLI
+  // silently falls back to the default login and the turn bills the wrong subscription.
+  'CLAUDE_SECURESTORAGE_CONFIG_DIR', 'CLAUDE_CONFIG_DIR',
 ])
 
 const ESSENTIAL_PREFIXES = [

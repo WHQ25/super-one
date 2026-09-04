@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { createHash } from 'node:crypto'
+import { claudeAccountCredentialDir, claudeAccountProviderId } from '@superone/shared/agent-types'
 import { parseAuthStatus, accountIdentityKey, dedupeAccounts, keychainServiceNames } from './claude-account-parse'
 
 const SIGNED_IN = JSON.stringify({
@@ -150,5 +151,26 @@ describe('keychainServiceNames — mirrors the CLI\'s own service-name construct
     const decomposed = '/domains/cafe\u0301'
     expect(decomposed).not.toBe(composed)
     expect(keychainServiceNames(decomposed, {})).toEqual(keychainServiceNames(composed, {}))
+  })
+})
+
+describe('claude account apiProviderId codec', () => {
+  it('round-trips a credential domain', () => {
+    const dir = '/Users/me/.superone/claude-accounts/abc-123'
+    expect(claudeAccountCredentialDir(claudeAccountProviderId(dir))).toBe(dir)
+  })
+
+  it('keeps the default domain as null so existing sessions keep their meaning', () => {
+    expect(claudeAccountProviderId(null)).toBeNull()
+    expect(claudeAccountCredentialDir(null)).toBeNull()
+  })
+
+  it('does not claim a third-party credential id', () => {
+    expect(claudeAccountCredentialDir('cred_01H8XYZ')).toBeNull()
+    expect(claudeAccountCredentialDir(undefined)).toBeNull()
+  })
+
+  it('treats a prefix with an empty payload as no account', () => {
+    expect(claudeAccountCredentialDir('claude-account:')).toBeNull()
   })
 })

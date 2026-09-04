@@ -78,13 +78,28 @@ function managedAccountDirs(): string[] {
 }
 
 /**
+ * Cached because each entry costs one `claude auth status` subprocess, and the provider dropdown
+ * asks on every mount. Sign-in / sign-out invalidate it directly, so the TTL only covers changes
+ * made outside SuperOne (a `claude /login` in the user's own terminal).
+ */
+const LIST_CACHE_TTL_MS = 60_000
+let listCache: { accounts: ClaudeAccount[]; at: number } | null = null
+
+export function invalidateAccountListCache(): void {
+  listCache = null
+}
+
+/**
  * Every account SuperOne can see: the CLI's default login first (it stays `apiProviderId: null`,
  * so existing sessions keep their meaning), then each managed credential domain.
  */
-export async function listAccounts(): Promise<ClaudeAccount[]> {
+export async function listAccounts(force = false): Promise<ClaudeAccount[]> {
+  if (!force && listCache && Date.now() - listCache.at < LIST_CACHE_TTL_MS) return listCache.accounts
   const dirs: Array<string | null> = [null, ...managedAccountDirs()]
   const accounts = await Promise.all(dirs.map((dir) => readAccount(dir)))
-  return dedupeAccounts(accounts.filter((account): account is ClaudeAccount => account != null))
+  const resolved = dedupeAccounts(accounts.filter((account): account is ClaudeAccount => account != null))
+  listCache = { accounts: resolved, at: Date.now() }
+  return resolved
 }
 
 /** Allocate an empty credential domain for a sign-in that hasn't happened yet. */
@@ -104,6 +119,7 @@ export async function signInAccount(credentialDir: string, email?: string | null
   const trimmed = email?.trim()
   if (trimmed) args.push('--email', trimmed)
   await runAuth(args, credentialDir, LOGIN_TIMEOUT_MS)
+  invalidateAccountListCache()
   return readAccount(credentialDir)
 }
 
@@ -117,4 +133,5 @@ export async function signOutAccount(credentialDir: string): Promise<void> {
   }
   await runAuth(['logout'], credentialDir, STATUS_TIMEOUT_MS)
   rmSync(credentialDir, { recursive: true, force: true })
+  invalidateAccountListCache()
 }

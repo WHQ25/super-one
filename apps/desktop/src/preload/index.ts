@@ -1232,7 +1232,7 @@ const appAPI = {
   claudeGetRateLimits: (force?: boolean, credentialDir?: string | null) =>
     ipcRenderer.invoke(AgentIpcChannels.CLAUDE_GET_RATE_LIMITS, force, credentialDir),
 
-  claudeListAccounts: () => ipcRenderer.invoke(AgentIpcChannels.CLAUDE_LIST_ACCOUNTS),
+  claudeListAccounts: (force?: boolean) => ipcRenderer.invoke(AgentIpcChannels.CLAUDE_LIST_ACCOUNTS, force),
   claudeSignInAccount: (email?: string | null) => ipcRenderer.invoke(AgentIpcChannels.CLAUDE_SIGN_IN_ACCOUNT, email),
   claudeSignOutAccount: (credentialDir: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CLAUDE_SIGN_OUT_ACCOUNT, credentialDir),

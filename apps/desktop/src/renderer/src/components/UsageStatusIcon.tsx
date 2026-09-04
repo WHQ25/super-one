@@ -9,6 +9,7 @@ import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Button } from '@superone/ui/components/ui/button'
 import { cn } from '@superone/ui/lib/utils'
 import { getLatestCodexThreadId, useActiveSession, useChatStore } from '@/stores/chat'
+import { claudeAccountCredentialDir } from '@superone/shared/agent-types'
 import type { ClaudeExtraUsage, ClaudeRateLimits, CodexAccountUsage, CodexRateLimits, CodexRateLimitResetCredit, CodexRateLimitResetOutcome, ProviderRateLimits } from '@superone/shared/agent-types'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 
@@ -462,23 +463,40 @@ function CodexRateLimitIcon({ projectPath, apiProviderId, threadId, status, tip,
   )
 }
 
-function ClaudeRateLimitIcon({ status, tip, highlight }: { status: string; tip: RateLimitTipInfo | null; highlight: GaugeHighlight }) {
+function ClaudeRateLimitIcon({ credentialDir, status, tip, highlight }: { credentialDir: string | null; status: string; tip: RateLimitTipInfo | null; highlight: GaugeHighlight }) {
   const { t } = useTranslation()
   const [limits, setLimits] = useState<ClaudeRateLimits | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  // Only this session's own account. Reading every account here would cost one throttled usage
+  // request each per popover open; the Providers settings panel is where the full picture lives.
+  const [accountEmail, setAccountEmail] = useState<string | null>(null)
 
   const fetchLimits = useCallback(() => {
-    window.app.claudeGetRateLimits().then(setLimits).catch(() => {})
-  }, [])
+    window.app.claudeGetRateLimits(false, credentialDir).then(setLimits).catch(() => {})
+  }, [credentialDir])
 
   const refresh = useCallback(() => {
     setRefreshing(true)
     window.app
-      .claudeGetRateLimits(true)
+      .claudeGetRateLimits(true, credentialDir)
       .then(setLimits)
       .catch(() => {})
       .finally(() => setRefreshing(false))
-  }, [])
+  }, [credentialDir])
+
+  useEffect(() => {
+    setLimits(null)
+    let cancelled = false
+    window.app.claudeListAccounts()
+      .then((accounts) => {
+        if (cancelled) return
+        const match = accounts.find((a) => a.credentialDir === credentialDir)
+        // Named only when there is something to disambiguate — a lone account needs no label.
+        setAccountEmail(accounts.length > 1 ? (match?.email ?? null) : null)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [credentialDir])
 
   const refreshIfStale = useCallback(() => {
     const fetchedAt = limits?.fetchedAt
@@ -501,6 +519,7 @@ function ClaudeRateLimitIcon({ status, tip, highlight }: { status: string; tip: 
   return (
     <RateLimitTipHost tip={tip}>
       <RateLimitGauge title={t('usageGauge.claudeTitle')} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt} highlight={highlight}>
+        {accountEmail && <div className="truncate opacity-60">{accountEmail}</div>}
         {limits.windows.map((w) => (
           <WindowRow key={w.label} label={w.label} usedPercent={w.usedPercent} resetsAt={w.resetsAt} />
         ))}
@@ -666,11 +685,16 @@ export function UsageStatusIcon() {
     return <CodexRateLimitIcon projectPath={activeProject} apiProviderId={apiProviderId ?? null} threadId={codexThreadId} status={status} tip={tip} highlight={highlight} />
   }
 
-  if (activeProvider === 'claude' && claudeApiProvider === 'firstParty' && !apiProviderId) {
-    return <ClaudeRateLimitIcon status={status} tip={tip} highlight={highlight} />
+  // A non-default Claude account carries an apiProviderId too, so "has an id" no longer means
+  // "third-party gateway". Testing for the account prefix keeps those sessions on the first-party
+  // meter instead of sending them down the provider path, which would ask a usage endpoint that
+  // does not exist for them and silently drop the gauge.
+  const claudeAccountDir = claudeAccountCredentialDir(apiProviderId)
+  if (activeProvider === 'claude' && claudeApiProvider === 'firstParty' && (!apiProviderId || claudeAccountDir)) {
+    return <ClaudeRateLimitIcon credentialDir={claudeAccountDir} status={status} tip={tip} highlight={highlight} />
   }
 
-  if (activeProvider === 'claude' && apiProviderId) {
+  if (activeProvider === 'claude' && apiProviderId && !claudeAccountDir) {
     return <ProviderRateLimitIcon apiProviderId={apiProviderId} status={status} tip={tip} highlight={highlight} />
   }
 

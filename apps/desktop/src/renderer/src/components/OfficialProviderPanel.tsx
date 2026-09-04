@@ -109,7 +109,7 @@ function ClaudeAccountsPanel() {
   const fetchAll = useCallback((force?: boolean) => {
     setLoading(true)
     window.app
-      .claudeListAccounts()
+      .claudeListAccounts(force)
       .then(async (accounts) => {
         const next = await Promise.all(
           accounts.map(async (account) => ({

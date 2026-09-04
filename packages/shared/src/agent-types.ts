@@ -2997,6 +2997,29 @@ export interface ClaudeAccount {
   projectsDirectory: string | null
 }
 
+/**
+ * A session's `apiProviderId` normally names a third-party credential. A non-default Claude
+ * account is expressed with this prefix instead, so one field keeps carrying "which credential
+ * does this session use" for both kinds without a second session column.
+ *
+ * The CLI's own login stays `null`, which is what every existing session already stores.
+ */
+export const CLAUDE_ACCOUNT_PROVIDER_PREFIX = 'claude-account:'
+
+/** `apiProviderId` for a Claude account, or `null` for the default domain (which stays `null`). */
+export function claudeAccountProviderId(credentialDir: string | null): string | null {
+  return credentialDir ? `${CLAUDE_ACCOUNT_PROVIDER_PREFIX}${credentialDir}` : null
+}
+
+/**
+ * The credential domain an `apiProviderId` names, or `null` when it is not a Claude account
+ * (the default login, or a third-party credential id).
+ */
+export function claudeAccountCredentialDir(apiProviderId: string | null | undefined): string | null {
+  if (!apiProviderId?.startsWith(CLAUDE_ACCOUNT_PROVIDER_PREFIX)) return null
+  return apiProviderId.slice(CLAUDE_ACCOUNT_PROVIDER_PREFIX.length) || null
+}
+
 export type CodexHookEventName =
   | 'preToolUse'
   | 'postToolUse'

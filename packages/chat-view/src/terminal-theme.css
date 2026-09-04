@@ -2,7 +2,12 @@
 
 :root {
   color-scheme: dark;
-  background: #09090b;
+  --terminal-background: #09090b;
+  --terminal-surface: #09090b;
+  --terminal-foreground: #e4e4e7;
+  --terminal-muted-foreground: #a1a1aa;
+  --terminal-border: #27272a;
+  background: var(--terminal-background);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
@@ -11,7 +16,7 @@ body {
   height: 100%;
   margin: 0;
   overflow: hidden;
-  background: #09090b;
+  background: var(--terminal-background);
 }
 
 #meta {
@@ -19,8 +24,9 @@ body {
   height: 28px;
   overflow: hidden;
   padding: 6px 10px;
-  border-bottom: 1px solid #27272a;
-  color: #a1a1aa;
+  border-bottom: 1px solid var(--terminal-border);
+  background: var(--terminal-surface);
+  color: var(--terminal-muted-foreground);
   font: 11px/15px system-ui, sans-serif;
   text-overflow: ellipsis;
   white-space: nowrap;

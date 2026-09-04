@@ -22,6 +22,18 @@ type Paint = TerminalSnapshotMeta & {
   message?: string
 }
 
+type TerminalThemeMessage = {
+  type: 'setTheme'
+  scheme?: 'light' | 'dark'
+  colors?: {
+    background?: string
+    surface?: string
+    foreground?: string
+    mutedForeground?: string
+    border?: string
+  }
+}
+
 type NativeHost = typeof globalThis & {
   __applyHost?: (message: unknown) => void
   ReactNativeWebView?: { postMessage(message: string): void }
@@ -75,6 +87,29 @@ function setMeta(snapshot: TerminalSnapshotMeta | undefined): void {
 
 function applyPaint(message: unknown): void {
   if (!message || typeof message !== 'object') return
+  const themeMessage = message as TerminalThemeMessage
+  if (themeMessage.type === 'setTheme') {
+    const light = themeMessage.scheme === 'light'
+    const colors = themeMessage.colors
+    const background = colors?.background ?? (light ? '#fafafa' : '#09090b')
+    const surface = colors?.surface ?? background
+    const foreground = colors?.foreground ?? (light ? '#18181b' : '#e4e4e7')
+    const mutedForeground = colors?.mutedForeground ?? (light ? '#71717a' : '#a1a1aa')
+    const border = colors?.border ?? (light ? '#e4e4e7' : '#27272a')
+    document.documentElement.style.colorScheme = light ? 'light' : 'dark'
+    document.documentElement.style.setProperty('--terminal-background', background)
+    document.documentElement.style.setProperty('--terminal-surface', surface)
+    document.documentElement.style.setProperty('--terminal-foreground', foreground)
+    document.documentElement.style.setProperty('--terminal-muted-foreground', mutedForeground)
+    document.documentElement.style.setProperty('--terminal-border', border)
+    terminal.options.theme = {
+      background,
+      foreground,
+      cursor: foreground,
+      selectionBackground: border,
+    }
+    return
+  }
   const outer = message as { type?: string; payload?: Paint }
   if (outer.type === 'reset') {
     terminal.reset()

@@ -22,6 +22,8 @@ describe('embedded terminal document', () => {
     expect(TERMINAL_VIEW_HTML).toContain('terminalInput')
     expect(TERMINAL_VIEW_HTML).toContain('terminalResize')
     expect(TERMINAL_VIEW_HTML).toContain('__applyHost')
+    expect(TERMINAL_VIEW_HTML).toContain('setTheme')
+    expect(TERMINAL_VIEW_HTML).toContain('--terminal-background')
   })
 
   it('is self-contained', () => {

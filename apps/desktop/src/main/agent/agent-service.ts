@@ -691,7 +691,15 @@ export class AgentService {
         }
         const agent = this.findSessionBySid(projectPath, command.sessionId)
         if (agent) {
-          const handled = agent.respondToPermission(command.requestId, command.decision, undefined, command.reason, command.selectedSuggestions)
+          const handled = agent.respondToPermission(
+            command.requestId,
+            command.decision,
+            undefined,
+            command.reason,
+            command.selectedSuggestions,
+            undefined,
+            command.formAnswers,
+          )
           if (handled) {
             this.broadcastEventToRenderer({ type: 'interaction_resolved', interactionType: 'permission', requestId: command.requestId, projectPath, sessionId: command.sessionId })
           } else {

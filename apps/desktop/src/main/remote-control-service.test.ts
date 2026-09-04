@@ -570,6 +570,19 @@ describe('stripMessagesForRemote', () => {
     expect(result.content[0]).toMatchObject({ type: 'read', input: '', toolFilePath: 'src/file.ts' })
   })
 
+  it('keeps only native-action tool inputs after remote stripping', () => {
+    const msg = makeMessage([
+      toolUseBlock('mcp__superone__widget_show', { template: '@native/chart', data: { value: 7 } }, 'widget-1'),
+      toolUseBlock('mcp__superone__mobile_share_file', { path: '/proj/report.pdf' }, 'share-1'),
+      toolUseBlock('Read', { file_path: '/proj/secret.ts' }, 'read-1'),
+    ])
+
+    const [result] = stripMessagesForRemote([msg], '/proj')
+    expect((result.content[0] as { input: string }).input).toContain('@native/chart')
+    expect((result.content[1] as { input: string }).input).toContain('report.pdf')
+    expect((result.content[2] as { input: string }).input).toBe('')
+  })
+
   it('keeps the WebMCP call summary but strips its page-tool input', () => {
     const msg = makeMessage([
       toolUseBlock('mcp__superone__browser_tools_call', {

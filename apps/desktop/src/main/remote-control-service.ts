@@ -7,6 +7,7 @@ import { variant, variantId } from './variant'
 import { humanizePageToolName } from '@superone/shared/page-tool-name'
 import type { AgentEvent, RemoteCommand, ContentBlock, ChatMessage, CodexThreadItem, CodexCollabToolCallItem, RemoteDeviceConfig, TodoToolItem, TerminalEvent } from '@superone/shared/agent-types'
 import { isSubagentToolName } from '@superone/shared/tool-ui'
+import { shouldKeepRemoteToolInput } from '@superone/shared/remote-tool-input'
 
 export type { RemoteDeviceConfig }
 import { trace } from './agent/event-trace'
@@ -399,7 +400,7 @@ function stripContentBlock(block: ContentBlock, bashCmds?: Map<string, string>, 
   if (block.type === 'tool_use') {
     const meta = computeToolMeta(block, projectPath)
     const mappedType = TOOL_TYPE_MAP[block.toolName] ?? 'tool_use'
-    const keepInput = block.toolName.endsWith('__widget_show') || block.toolName.endsWith('__mobile_share_file')
+    const keepInput = shouldKeepRemoteToolInput(block.toolName)
     return { ...block, type: mappedType, input: keepInput ? block.input : '', toolSummary: block.toolSummary ?? meta.toolSummary, toolFilePath: block.toolFilePath ?? meta.toolFilePath, toolLineDelta: block.toolLineDelta ?? meta.toolLineDelta, toolDiff: block.toolDiff ?? meta.toolDiff, toolDiffTokens: block.toolDiffTokens ?? meta.toolDiffTokens, toolTodos: block.toolTodos ?? meta.toolTodos, subagentType: meta.subagentType, toolPrompt: meta.toolPrompt, runInBackground: meta.runInBackground, workflowName: meta.workflowName, workflowDescription: meta.workflowDescription, workflowPhases: meta.workflowPhases } as ContentBlock
   }
   if (block.type === 'tool_result') {

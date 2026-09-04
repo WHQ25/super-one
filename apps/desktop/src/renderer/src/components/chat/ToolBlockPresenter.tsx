@@ -517,26 +517,15 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
       )
     }
     if (mcpInfo.mcpToolName === 'media_list_providers') {
-      if (!allowExpand || isError || isDenied) {
-        return (
-          <CompactLabeledToolRow
-            icon={<ToolIcon icon="image" className="size-3 shrink-0 text-muted-foreground" />}
-            label={withStreamingEllipsis(
-              toolOutcomeLabel({
-                streaming: isStreaming,
-                interrupted: isDenied || !!isError,
-                streamingLabel: t('chat.toolBlock.listingMediaProviders'),
-                actionLabel: t('chat.toolBlock.listMediaProviders'),
-                doneLabel: t('chat.toolBlock.listedMediaProviders'),
-              }),
-              isStreaming,
-            )}
-            streaming={isStreaming}
-            tone={toolRowTone(isDenied, isError)}
-          />
-        )
-      }
-      return <MediaProvidersBlock result={!isStreaming ? (result ?? null) : null} isStreaming={isStreaming} />
+      return (
+        <MediaProvidersBlock
+          result={!isStreaming ? cleanResult ?? null : null}
+          isStreaming={isStreaming}
+          isError={isError}
+          isDenied={isDenied}
+          allowExpand={allowExpand}
+        />
+      )
     }
     if (mcpInfo.mcpToolName === 'media_generate_video') {
       const videoFailed = !isDenied && isMediaToolErrorResult(cleanResult, isError)

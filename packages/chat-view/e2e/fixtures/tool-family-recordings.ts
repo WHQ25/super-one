@@ -370,3 +370,78 @@ export const AGENT_TOOL_RECORDINGS: ChatMessage[] = [
     providerId: 'claude',
   },
 ]
+
+/** Sanitized automation, config, and media-provider recording. */
+export const WORKFLOW_TOOL_RECORDING: ChatMessage = {
+  id: 'recording-workflow-tools',
+  role: 'assistant',
+  status: 'complete',
+  content: [
+    {
+      type: 'tool_use',
+      toolName: 'mcp__superone__automation_apply',
+      toolUseId: 'automation-apply',
+      input: JSON.stringify({ action: 'update', name: 'Daily review', enabled: true }),
+      status: 'complete',
+    },
+    {
+      type: 'tool_result',
+      toolUseId: 'automation-apply',
+      summary: JSON.stringify({
+        status: 'updated',
+        automation: {
+          name: 'Daily review',
+          enabled: true,
+          scheduleSummary: 'Every weekday at 09:00',
+          agentConfig: { type: 'codex' },
+        },
+      }),
+    },
+    {
+      type: 'tool_use',
+      toolName: 'mcp__superone__config_apply',
+      toolUseId: 'config-apply',
+      input: JSON.stringify({ resource: { operation: 'update' } }),
+      status: 'complete',
+    },
+    {
+      type: 'tool_result',
+      toolUseId: 'config-apply',
+      summary: JSON.stringify({
+        status: 'applied',
+        operation: 'update',
+        title: 'Chat settings',
+        applied: [{
+          key: 'detailChatMode',
+          label: 'Detail chat mode',
+          type: 'boolean',
+          oldValue: false,
+          newValue: true,
+        }],
+      }),
+    },
+    {
+      type: 'tool_use',
+      toolName: 'mcp__superone__media_list_providers',
+      toolUseId: 'media-providers',
+      input: '',
+      status: 'complete',
+    },
+    {
+      type: 'tool_result',
+      toolUseId: 'media-providers',
+      summary: JSON.stringify({
+        providers: [{
+          id: 'image-provider',
+          label: 'Image Lab',
+          provider: 'OpenAI',
+          kind: 'image',
+          defaultModel: 'gpt-image-1',
+          models: [{ id: 'gpt-image-1', label: 'GPT Image 1' }],
+        }],
+      }),
+    },
+  ],
+  createdAt: '2026-09-04T00:00:10.000Z',
+  providerId: 'claude',
+}

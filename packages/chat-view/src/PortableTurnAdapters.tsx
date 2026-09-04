@@ -53,6 +53,12 @@ import { VideoGenToolBlockPresenter } from './presenters/VideoGenToolBlock'
 import { ListAgentsToolBlockPresenter } from './presenters/ListAgentsToolBlock'
 import { ReportFindingsToolBlockPresenter } from './presenters/ReportFindingsToolBlock'
 import {
+  AutomationToolBlockPresenter,
+  isAutomationToolName,
+} from './presenters/AutomationToolBlock'
+import { ConfigApplyBlockPresenter } from './presenters/ConfigApplyBlock'
+import { MediaProvidersBlockPresenter } from './presenters/MediaProvidersBlock'
+import {
   COLLAB_TOOLS,
   SessionCollabToolBlockPresenter,
 } from './presenters/SessionCollabToolBlock'
@@ -219,6 +225,43 @@ function PortableClaudeTool(props: ClaudeToolPresenterProps) {
         isError={props.isError}
         isDenied={isDenied}
         renderMarkdown={(content) => <PortableText text={content} isStreaming={false} />}
+      />
+    )
+  }
+  if (collabToolName === 'media_list_providers') {
+    const isDenied = Boolean(props.result?.startsWith('[denied] '))
+    return (
+      <MediaProvidersBlockPresenter
+        result={isDenied ? null : props.result ?? null}
+        isStreaming={props.status === 'streaming'}
+        isError={props.isError}
+        isDenied={isDenied}
+      />
+    )
+  }
+  if (collabToolName === 'config_apply') {
+    const isDenied = Boolean(props.result?.startsWith('[denied] '))
+    return (
+      <ConfigApplyBlockPresenter
+        params={parseRecord(props.input)}
+        result={isDenied ? props.result?.slice('[denied] '.length) ?? null : props.result ?? null}
+        isStreaming={props.status === 'streaming'}
+        isError={Boolean(props.isError)}
+        isDenied={isDenied}
+        allowExpand
+      />
+    )
+  }
+  if (collabToolName && isAutomationToolName(collabToolName)) {
+    const isDenied = Boolean(props.result?.startsWith('[denied] '))
+    return (
+      <AutomationToolBlockPresenter
+        toolName={collabToolName}
+        params={parseRecord(props.input)}
+        result={isDenied ? props.result?.slice('[denied] '.length) : props.result}
+        isStreaming={props.status === 'streaming'}
+        isError={props.isError}
+        isDenied={isDenied}
       />
     )
   }

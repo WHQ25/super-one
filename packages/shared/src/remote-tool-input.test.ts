@@ -71,4 +71,15 @@ describe('remote tool input exemptions', () => {
       JSON.stringify({ launches: [{ name: 'Reviewer', role: 'review', prompt: 'private prompt' }] }),
     ))).toEqual({ launches: [{ name: 'Reviewer', role: 'review' }] })
   })
+
+  it('keeps workflow labels without prompts or config values', () => {
+    expect(JSON.parse(sanitizeRemoteToolInput(
+      'mcp__superone__automation_apply',
+      JSON.stringify({ action: 'update', name: 'Daily review', enabled: true, prompt: 'private' }),
+    ))).toEqual({ action: 'update', name: 'Daily review', enabled: true })
+    expect(JSON.parse(sanitizeRemoteToolInput(
+      'mcp__superone__config_apply',
+      JSON.stringify({ resource: { operation: 'update', recordId: 'secret' }, changes: [{ key: 'token', value: 'secret' }] }),
+    ))).toEqual({ resource: { operation: 'update' } })
+  })
 })

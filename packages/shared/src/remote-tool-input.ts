@@ -149,10 +149,43 @@ function sanitizeCollabInput(toolName: string, input: string): string {
   return launches.length > 0 ? JSON.stringify({ launches }) : ''
 }
 
+function sanitizeWorkflowInput(toolName: string, input: string): string {
+  const bare = superoneBareName(toolName)
+  const supported = new Set([
+    'automation_list',
+    'automation_apply',
+    'automation_delete',
+    'config_apply',
+  ])
+  if (!bare || !supported.has(bare) || !input) return ''
+  let parsed: unknown
+  try { parsed = JSON.parse(input) } catch { return '' }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return ''
+  const source = parsed as Record<string, unknown>
+  const safe: Record<string, unknown> = {}
+
+  if (bare === 'automation_list') {
+    copyDefined(source, safe, ['id'])
+  } else if (bare === 'automation_apply') {
+    copyDefined(source, safe, ['action', 'name', 'enabled'])
+  } else if (bare === 'automation_delete' && Array.isArray(source.ids)) {
+    safe.ids = source.ids.map(() => '')
+  } else if (bare === 'config_apply') {
+    const resource = source.resource && typeof source.resource === 'object' && !Array.isArray(source.resource)
+      ? source.resource as Record<string, unknown>
+      : null
+    if (resource && typeof resource.operation === 'string') {
+      safe.resource = { operation: resource.operation }
+    }
+  }
+  return Object.keys(safe).length ? JSON.stringify(safe) : ''
+}
+
 /** Privacy-preserving tool input projected into the remote transcript. */
 export function sanitizeRemoteToolInput(toolName: string, input: string): string {
   if (shouldKeepRemoteToolInput(toolName)) return input
   return sanitizeBrowserInput(toolName, input)
     || sanitizeInteractiveInput(toolName, input)
     || sanitizeCollabInput(toolName, input)
+    || sanitizeWorkflowInput(toolName, input)
 }

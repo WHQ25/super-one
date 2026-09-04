@@ -10,6 +10,7 @@ import {
   INTERACTIVE_TOOL_RECORDING,
   PLAN_RECORDINGS,
   VIDEO_GENERATION_RECORDING,
+  WORKFLOW_TOOL_RECORDING,
 } from './fixtures/tool-family-recordings'
 
 const documentUrl = pathToFileURL(resolve(import.meta.dirname, '../dist/index.html')).href
@@ -532,4 +533,28 @@ test('38 renders agent roster and review findings with shared presenters', async
   await expect(collab).toContainText('Reviewer session')
   await collab.locator('.tool-node > div').first().click()
   await expect(collab.getByText('Review complete.')).toBeVisible()
+})
+
+test('39 renders automation, config, and media-provider recordings with shared presenters', async ({ page }) => {
+  await send(page, { type: 'hydrate', messages: [WORKFLOW_TOOL_RECORDING] })
+
+  const turn = page.locator('[data-turn-id="recording-workflow-tools"]')
+  await turn.getByRole('button', { name: /Detail/ }).click()
+  const rows = turn.locator('.tool-node')
+  await expect(rows).toHaveCount(3)
+
+  await expect(rows.nth(0)).toContainText('Daily review')
+  await rows.nth(0).locator('> div').first().click()
+  await expect(rows.nth(0)).toContainText('Every weekday at 09:00')
+
+  await expect(rows.nth(1)).toContainText('Chat settings')
+  await rows.nth(1).locator('> div').first().click()
+  await expect(rows.nth(1)).toContainText('Detail chat mode')
+  await expect(rows.nth(1)).toContainText('off')
+  await expect(rows.nth(1)).toContainText('on')
+
+  await expect(rows.nth(2)).toContainText('1 matched')
+  await rows.nth(2).locator('> div').first().click()
+  await expect(rows.nth(2)).toContainText('OpenAI')
+  await expect(rows.nth(2)).toContainText('GPT Image 1')
 })

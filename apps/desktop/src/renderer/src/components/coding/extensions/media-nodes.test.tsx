@@ -48,6 +48,24 @@ describe('markdown editor media node views', () => {
     await waitFor(() => expect(img.getAttribute('src')).toBe('https://example.com/a.png'))
   })
 
+  it('renders an authored width inline instead of blowing the icon up to full size', async () => {
+    render(<Harness baseDir="" content='<p><img src="https://example.com/icon.png" alt="icon" width="16"> Grok</p>' />)
+    const img = await screen.findByAltText('icon')
+    await waitFor(() => expect(img.getAttribute('width')).toBe('16'))
+    // `width: auto` would beat the attribute's presentational hint, and `display:
+    // block` would push the label onto its own line.
+    expect(img.style.width).toBe('')
+    expect(img.style.height).toBe('auto')
+    expect(img.style.display).toBe('')
+  })
+
+  it('keeps the block preview defaults for a markdown image with no authored size', async () => {
+    render(<Harness baseDir="" content='<p><img src="https://example.com/shot.png" alt="shot"></p>' />)
+    const img = await screen.findByAltText('shot')
+    await waitFor(() => expect(img.style.display).toBe('block'))
+    expect(img.style.width).toBe('auto')
+  })
+
   it('renders a raw video tag as a playable video rebased on the file directory', async () => {
     const { container } = render(
       <Harness baseDir="docs/report" content='<p><video src="media/demo.mp4" controls></video></p>' />,

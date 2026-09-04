@@ -165,7 +165,8 @@ function buildImageDragPng(img: HTMLImageElement): { buffer: ArrayBuffer; scaleF
 
 interface InteractiveProps {
   savedPath: string
-  onOpen: () => void
+  /** Receives the click so callers can defer to an enclosing anchor. */
+  onOpen: (event: React.MouseEvent) => void
   className: string
   ariaLabel: string
   prompt?: string
@@ -192,9 +193,9 @@ export function ImageInteractive({ savedPath, onOpen, className, ariaLabel, prom
     document.addEventListener('dragend', cleanup)
   }
 
-  const handleClick = () => {
+  const handleClick = (event: React.MouseEvent) => {
     if (Date.now() - dragEndRef.current < 200) return
-    onOpen()
+    onOpen(event)
   }
 
   return (

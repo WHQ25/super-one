@@ -10,7 +10,9 @@ import { showNativeContextMenu } from '@/lib/native-context-menu'
 import { LinkSafetyModal } from '@/components/chat/LinkSafetyModal'
 import { requestOpenExternalLink } from '@/lib/external-link'
 import { openBrowserTab } from '@/components/activity/activity-panel-api'
-import { docToMarkdown, markdownToDoc } from './markdown-codec'
+import { markdownToDoc } from './markdown-codec'
+import { htmlSchemas } from './markdown-schemas'
+import { docToMarkdown } from './markdown-serialize'
 import { CodeBlock } from './extensions/code-block-view'
 import { MermaidNode } from './extensions/mermaid-node'
 import { MediaBaseDirProvider, MediaImageNode, RawMediaNode } from './extensions/media-nodes'
@@ -79,6 +81,7 @@ export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChan
       MermaidNode,
       MediaImageNode,
       RawMediaNode,
+      ...htmlSchemas,
       ...createMathExtensions({ onEdit: setMathEdit }),
       SlashCommand,
       Placeholder.configure({ placeholder: 'Start writing…' }),

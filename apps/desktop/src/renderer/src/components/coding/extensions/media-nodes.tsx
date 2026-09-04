@@ -8,7 +8,8 @@ import {
   rebaseMarkdownSrc,
   resolveMarkdownMediaSrc,
 } from '@/components/chat/chat-shared'
-import { ImageSchema, RawMediaSchema } from '../markdown-codec'
+import { mediaStyleFor } from '@/components/chat/markdown-media-style'
+import { ImageSchema, RawMediaSchema } from '../markdown-schemas'
 
 /**
  * Project-relative directory of the markdown file being edited — the base every
@@ -36,12 +37,50 @@ function MediaImageView({ node }: NodeViewProps) {
   const displaySrc = useDisplaySrc(String(node.attrs.src ?? ''))
   return (
     <NodeViewWrapper as="span" contentEditable={false} className="markdown-media">
-      <MarkdownMedia src={displaySrc} alt={alt} title={(node.attrs.title as string | null) ?? undefined} />
+      <MarkdownMedia
+        src={displaySrc}
+        alt={alt}
+        title={(node.attrs.title as string | null) ?? undefined}
+        width={(node.attrs.width as string | null) ?? undefined}
+        height={(node.attrs.height as string | null) ?? undefined}
+      />
     </NodeViewWrapper>
   )
 }
 
-function RawMediaView({ node }: NodeViewProps) {
+/**
+ * `<picture>` is left to the browser: its whole point is that the engine picks
+ * the best `<source>`, which is how a README shows an animated GIF over a static
+ * fallback. Wrapping the `<img>` in the usual lightbox button would break that —
+ * `<picture>` requires the `<img>` to be its direct child.
+ */
+function PictureView({ node }: NodeViewProps) {
+  const sources = (node.attrs.sources as Array<Record<string, string>>) ?? []
+  const fallback = (node.attrs.fallback as Record<string, string> | null) ?? {}
+  const projectRoot = useEffectiveProjectRoot()
+  const baseDir = useContext(MediaBaseDirContext)
+  const resolve = (src: string | undefined) =>
+    src ? resolveMarkdownMediaSrc(rebaseMarkdownSrc(src, baseDir), projectRoot) : undefined
+  return (
+    <NodeViewWrapper as="span" contentEditable={false} className="markdown-media">
+      <picture>
+        {sources.map((source, i) => (
+          <source key={i} srcSet={resolve(source.srcset)} type={source.type} media={source.media} />
+        ))}
+        <img
+          src={resolve(fallback.src)}
+          alt={fallback.alt ?? ''}
+          width={fallback.width}
+          height={fallback.height}
+          style={mediaStyleFor(fallback.width, fallback.height)}
+        />
+      </picture>
+    </NodeViewWrapper>
+  )
+}
+
+function RawMediaView(props: NodeViewProps) {
+  const { node } = props
   const tag = node.attrs.tag as string
   const attrs = (node.attrs.attrs as Record<string, string>) ?? {}
   const sources = (node.attrs.sources as Array<Record<string, string>>) ?? []
@@ -50,6 +89,7 @@ function RawMediaView({ node }: NodeViewProps) {
   const rawSrc = attrs.src || sources[0]?.src || ''
   const displaySrc = useDisplaySrc(rawSrc)
   const Media = tag === 'audio' ? MarkdownAudio : MarkdownVideo
+  if (tag === 'picture') return <PictureView {...props} />
   return (
     <NodeViewWrapper as="span" contentEditable={false} className="markdown-media">
       {rawSrc ? (

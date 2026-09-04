@@ -6,7 +6,9 @@ import StarterKit from '@tiptap/starter-kit'
 import { CodeBlockLowlight } from '@tiptap/extension-code-block-lowlight'
 import { TableKit } from '@tiptap/extension-table'
 import { common, createLowlight } from 'lowlight'
-import { docToMarkdown, ImageSchema, markdownToDoc, RawMediaSchema, splitFrontmatter } from './markdown-codec'
+import { markdownToDoc, splitFrontmatter } from './markdown-codec'
+import { htmlSchemas, ImageSchema, RawMediaSchema } from './markdown-schemas'
+import { docToMarkdown } from './markdown-serialize'
 
 const lowlight = createLowlight(common)
 
@@ -38,6 +40,7 @@ const extensions = [
   MermaidStub,
   ImageSchema,
   RawMediaSchema,
+  ...htmlSchemas,
 ]
 
 async function roundTrip(input: string): Promise<string> {
@@ -134,6 +137,135 @@ describe('markdown round-trip', () => {
   })
 })
 
+describe('html-only formatting round-trip', () => {
+  it('keeps a kbd key cap', async () => {
+    expect(await roundTrip('press <kbd>Cmd</kbd> to go')).toBe('press <kbd>Cmd</kbd> to go\n')
+  })
+
+  it('keeps one kbd around an icon and its label instead of splitting it in two', async () => {
+    const input = '<kbd><img src="a.png" width="16"> Claude Code</kbd>'
+    expect(await roundTrip(input)).toBe(`${input}\n`)
+  })
+
+  it('nests a kbd inside its link, the way a badge row is written', async () => {
+    // Normalized to markdown link syntax; the kbd stays inside the label, which
+    // is what decides how it renders.
+    const out = await roundTrip('<a href="https://x.ai/cli"><kbd>Grok</kbd></a>')
+    expect(out).toBe('[<kbd>Grok</kbd>](https://x.ai/cli)\n')
+  })
+
+  it('keeps a centered heading', async () => {
+    expect(await roundTrip('<h1 align="center">Orca</h1>')).toBe('<h1 align="center">Orca</h1>\n')
+  })
+
+  it('keeps a centered paragraph', async () => {
+    expect(await roundTrip('<p align="center">tagline</p>')).toBe('<p align="center">tagline</p>\n')
+  })
+
+  it('writes emphasis inside an aligned block as html, since markdown is not parsed there', async () => {
+    const input = '<p align="center"><strong>The AI Orchestrator</strong><br />for builders</p>'
+    expect(await roundTrip(input)).toBe(`${input}\n`)
+  })
+
+  it('pushes an align from a wrapping div down onto each block inside it', async () => {
+    const out = await roundTrip('<div align="center">\n\n# Title\n\ntagline\n\n</div>')
+    expect(out).toContain('<h1 align="center">Title</h1>')
+    expect(out).toContain('<p align="center">tagline</p>')
+  })
+
+  it('leaves an unaligned block as plain markdown', async () => {
+    expect(await roundTrip('# Title\n\nbody')).toBe('# Title\n\nbody\n')
+  })
+
+  it('writes emphasis spanning several text nodes with a single pair of markers', async () => {
+    // Two text nodes share the bold mark; closing and reopening it mid-emphasis
+    // produced `**bold *****and italic***`.
+    expect(await roundTrip('**bold _and italic_**')).toBe('**bold *and italic***\n')
+  })
+
+  it('keeps the link on a linked image', async () => {
+    const input = '[![logo](logo.png)](https://example.com)'
+    expect(await roundTrip(input)).toBe(`${input}\n`)
+  })
+})
+
+describe('structural html round-trip', () => {
+  it('keeps task list checkboxes, including a plain item in the same list', async () => {
+    const input = '- [ ] todo\n- [x] done\n- plain'
+    expect(await roundTrip(input)).toBe(`${input}\n`)
+  })
+
+  it('keeps a details block with its summary and body', async () => {
+    const input = '<details>\n<summary>More</summary>\n\nHidden body\n\n- one\n- two\n\n</details>'
+    expect(await roundTrip(input)).toBe(`${input}\n`)
+  })
+
+  it('keeps the open flag and rich markup in a summary', async () => {
+    const input = '<details open>\n<summary><strong>Bold</strong> summary</summary>\n\nbody\n\n</details>'
+    expect(await roundTrip(input)).toBe(`${input}\n`)
+  })
+
+  it('keeps footnotes instead of expanding them into anchors', async () => {
+    const input = 'text[^1] and [^note]\n\n[^1]: the note\n\n[^note]: another'
+    const out = await roundTrip(input)
+    expect(out).toBe(`${input}\n`)
+    // The generated section mdast-util-to-hast appends is text that was never
+    // in the file.
+    expect(out).not.toContain('Footnotes')
+    expect(out).not.toContain('user-content-fn')
+  })
+
+  it('keeps an html comment', async () => {
+    expect(await roundTrip('<!-- prettier-ignore -->\n\nafter')).toBe('<!-- prettier-ignore -->\n\nafter\n')
+  })
+
+  it('leaves a comment written inside a code fence alone', async () => {
+    const input = '```js\nconst a = 1 // <!-- x -->\n```'
+    expect(await roundTrip(input)).toBe(`${input}\n`)
+  })
+
+  it('does not append a blank line to a code fence on every save', async () => {
+    const input = '```js\nconst a = 1\n```'
+    expect(await roundTrip(input)).toBe(`${input}\n`)
+    expect(await roundTrip(await roundTrip(input))).toBe(`${input}\n`)
+  })
+
+  it('keeps a bare arrow in a code fence, which the html parser duplicates', async () => {
+    const input = '```rust\nfn f() -> u8 { 1 }\n// a --> b\n```'
+    expect(await roundTrip(input)).toBe(`${input}\n`)
+  })
+
+  it('keeps a picture element with its sources and fallback image', async () => {
+    const input = '<picture><source srcset="a.gif" type="image/gif"><img src="a.jpg" alt="x"></picture>'
+    expect(await roundTrip(input)).toBe(`${input}\n`)
+  })
+
+  it('keeps a bare anchor target', async () => {
+    expect(await roundTrip('<a name="top"></a>\n\ntext')).toBe('<a name="top"></a>\n\ntext\n')
+  })
+
+  it('writes a table back as html when a cell holds more than one block', async () => {
+    const input =
+      '<table>\n<tr>\n<td width="50%" valign="middle">\n\n### Head\n\nbody\n\n</td>\n<td width="50%">\n\n![](a.png)\n\n</td>\n</tr>\n</table>'
+    expect(await roundTrip(input)).toBe(`${input}\n`)
+  })
+
+  it('still writes a plain gfm table as pipes', async () => {
+    const input = '| a | b |\n| --- | --- |\n| **1** | `2` |'
+    expect(await roundTrip(input)).toBe(`${input}\n`)
+  })
+})
+
+describe('inline html round-trip', () => {
+  it.each([
+    ['sub and sup', '<sub>small</sub> and x<sup>2</sup>'],
+    ['ins, u, mark and small', '<ins>i</ins> <u>u</u> <mark>m</mark> <small>s</small>'],
+    ['abbr with its title', '<abbr title="HyperText Markup Language">HTML</abbr>'],
+  ])('keeps %s', async (_name, input) => {
+    expect(await roundTrip(input)).toBe(`${input}\n`)
+  })
+})
+
 describe('media round-trip', () => {
   it('preserves a relative image without rewriting its path', async () => {
     expect(await roundTrip('![a cat](./assets/cat.png)')).toBe('![a cat](./assets/cat.png)\n')
@@ -153,6 +285,20 @@ describe('media round-trip', () => {
 
   it('keeps an image that shares a paragraph with text', async () => {
     expect(await roundTrip('before ![a](b.png) after')).toBe('before ![a](b.png) after\n')
+  })
+
+  it('keeps the authored size of an html image', async () => {
+    const input = '<img src="logo.png" alt="logo" width="16">'
+    expect(await roundTrip(input)).toBe(`${input}\n`)
+  })
+
+  it('keeps a height-only html image', async () => {
+    const input = '<img src="logo.png" height="24">'
+    expect(await roundTrip(input)).toBe(`${input}\n`)
+  })
+
+  it('still writes a markdown image when no size was authored', async () => {
+    expect(await roundTrip('<img src="logo.png" alt="logo">')).toBe('![logo](logo.png)\n')
   })
 
   it('preserves a single-line raw video tag', async () => {
@@ -280,6 +426,31 @@ describe('docs/test/markdown-formats fixture', () => {
     const out = await roundTrip(fixture)
     expect(out).toContain('- Empty alt image (decorative): ![](assets/decorative.png)')
     expect(out).toContain('- Image with alt + title: ![alt text](assets/logo.png "Logo title")')
+  })
+
+  it('round-trips the whole fixture unchanged after the first pass', async () => {
+    const once = await roundTrip(fixture)
+    expect(await roundTrip(once)).toBe(once)
+  })
+
+  it('preserves the html-only constructs from the fixture', async () => {
+    const out = await roundTrip(fixture)
+    expect(out).toContain('<sub>subscript</sub>')
+    expect(out).toContain('<abbr title="HyperText Markup Language">HTML</abbr>')
+    expect(out).toContain('<!-- prettier-ignore -->')
+    expect(out).toContain('<summary>Click to expand</summary>')
+    expect(out).toContain('- [x] checked')
+    expect(out).toContain('[^fixture]: The definition body')
+    expect(out).toContain('<source srcset="assets/demo.gif" type="image/gif">')
+    expect(out).toContain('<td width="50%" valign="middle">')
+  })
+
+  it('preserves kbd and aligned blocks from the fixture', async () => {
+    const out = await roundTrip(fixture)
+    expect(out).toContain('<kbd>Cmd</kbd>')
+    expect(out).toContain('<kbd><img src="assets/logo.png" alt="" width="16"> Example</kbd>')
+    expect(out).toContain('<h3 align="center">A centred heading</h3>')
+    expect(out).toContain('<p align="center"><strong>A centred paragraph</strong><br />with a hard break inside it.</p>')
   })
 
   it('preserves horizontal rule', async () => {

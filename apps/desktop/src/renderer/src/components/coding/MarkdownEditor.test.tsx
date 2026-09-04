@@ -29,7 +29,13 @@ vi.mock('@tiptap/react', async (importOriginal) => {
     },
   }
 })
-vi.mock('./markdown-codec', () => codec)
+// Real schemas, mocked conversion: the editor has to register the same nodes and
+// marks the codec parses into, or the preview silently drops what it can't hold.
+vi.mock('./markdown-codec', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./markdown-codec')>()),
+  markdownToDoc: codec.markdownToDoc,
+}))
+vi.mock('./markdown-serialize', () => ({ docToMarkdown: codec.docToMarkdown }))
 vi.mock('./extensions/code-block-view', async () => {
   const { Node } = await import('@tiptap/core')
   return { CodeBlock: Node.create({ name: 'codeBlock', group: 'block', code: true, content: 'text*' }) }
@@ -57,6 +63,7 @@ vi.mock('./extensions/TableContextMenu', () => ({ TableContextMenu: () => null, 
 vi.mock('@/components/chat/LinkSafetyModal', () => ({ LinkSafetyModal: () => null }))
 
 const { MarkdownEditor } = await import('./MarkdownEditor')
+const { htmlSchemas } = await import('./markdown-schemas')
 
 function stubWindowApp() {
   const w = globalThis.window as unknown as Record<string, unknown>
@@ -72,6 +79,25 @@ describe('MarkdownEditor draft echo', () => {
   })
   afterEach(() => {
     vi.clearAllMocks()
+  })
+
+  it('registers every schema the codec parses into', async () => {
+    render(
+      <MarkdownEditor content="hello" filePath="docs/readme.md" onDirtyChange={() => {}} onContentChange={() => {}} />,
+    )
+    await waitFor(() => expect(captured.editor).not.toBeNull())
+    const schema = captured.editor!.schema
+    // Anything the codec can produce but the editor cannot hold is content the
+    // preview drops on load and autosave then writes out of the file.
+    for (const extension of htmlSchemas) {
+      if (extension.type === 'mark') expect(schema.marks[extension.name]).toBeDefined()
+      if (extension.type === 'node') expect(schema.nodes[extension.name]).toBeDefined()
+    }
+    // The three that add attributes to nodes they do not own.
+    expect(schema.nodes.paragraph.spec.attrs?.align).toBeDefined()
+    expect(schema.nodes.heading.spec.attrs?.align).toBeDefined()
+    expect(schema.nodes.listItem.spec.attrs?.checked).toBeDefined()
+    expect(schema.nodes.tableCell.spec.attrs?.width).toBeDefined()
   })
 
   it('keeps the caret in place when the parent echoes the draft back', async () => {

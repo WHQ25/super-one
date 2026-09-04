@@ -15,6 +15,7 @@ import {
 } from '@/lib/remote-media-url'
 import { LinkSafetyModal } from './LinkSafetyModal'
 import { MarkdownImage } from './markdown-image'
+import { mediaStyleFor } from './markdown-media-style'
 import { MarkdownTable } from './MarkdownTable'
 import { MarkdownRemoteMedia } from './markdown-remote-media'
 import { openBrowserTab } from '@/components/activity/activity-panel-api'
@@ -70,18 +71,17 @@ function localFileToMediaUrl(src: string | undefined): string | undefined {
 const VIDEO_EXTS = new Set(['.mp4', '.m4v', '.webm', '.ogg', '.mov'])
 const AUDIO_EXTS = new Set(['.mp3', '.wav', '.flac', '.aac', '.m4a', '.opus', '.weba'])
 
-const MEDIA_STYLE = { maxHeight: '20rem', maxWidth: '100%', width: 'auto', height: 'auto', borderRadius: '8px', display: 'block' } as const
-
 function MediaVideo(props: ComponentProps<'video'>) {
+  const style = mediaStyleFor(props.width, props.height)
   if (isRemoteMediaUrl(props.src)) {
-    return createElement(MarkdownRemoteMedia, { kind: 'video', src: props.src, style: MEDIA_STYLE })
+    return createElement(MarkdownRemoteMedia, { kind: 'video', src: props.src, style })
   }
   return createElement('video', {
     ...props,
     src: localFileToMediaUrl(props.src),
     controls: true,
     preload: 'metadata',
-    style: MEDIA_STYLE,
+    style,
   })
 }
 

@@ -45,6 +45,114 @@
   font-size: 0.9em;
   padding: 0.15em 0.35em;
 }
+/* Key cap / badge pill. GitHub draws a bordered, slightly raised box; a plain
+   <kbd> would otherwise be indistinguishable from surrounding monospace text. */
+.markdown-editor .tiptap kbd {
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  font-family: ui-monospace, 'JetBrainsMono', Menlo, monospace;
+  font-size: 0.85em;
+  line-height: 1.4;
+  padding: 0.1em 0.45em;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+/* Task list items. The checkbox lives in an attribute, not in editable content,
+   so it is drawn rather than embedded — an <input> inside contenteditable steals
+   focus and can be deleted like a character. */
+.markdown-editor .tiptap li[data-checked] {
+  list-style: none;
+  margin-left: -1.15rem;
+  padding-left: 1.15rem;
+  position: relative;
+}
+.markdown-editor .tiptap li[data-checked]::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.4em;
+  width: 0.85em;
+  height: 0.85em;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--background);
+}
+.markdown-editor .tiptap li[data-checked='true']::before {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+.markdown-editor .tiptap li[data-checked='true']::after {
+  content: '';
+  position: absolute;
+  left: 0.28em;
+  top: 0.55em;
+  width: 0.24em;
+  height: 0.46em;
+  border: solid var(--primary-foreground);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+
+.markdown-editor .tiptap details {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin: 1rem 0;
+  padding: 0.5rem 0.75rem;
+}
+.markdown-editor .tiptap summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.markdown-editor .tiptap details[open] summary {
+  margin-bottom: 0.5rem;
+}
+
+/* A footnote reference carries only its label; without this it renders as an
+   empty span and the marker disappears from the preview. */
+.markdown-editor .tiptap [data-type='footnote-ref']::after {
+  content: '[' attr(data-label) ']';
+  font-size: 0.75em;
+  vertical-align: super;
+  color: var(--primary);
+}
+.markdown-editor .tiptap [data-type='footnote-def'] {
+  border-left: 2px solid var(--border);
+  padding-left: 0.75rem;
+  margin: 0.5rem 0;
+  font-size: 0.9em;
+}
+.markdown-editor .tiptap [data-type='footnote-def']::before {
+  content: '[' attr(data-label) ']';
+  color: var(--muted-foreground);
+  font-size: 0.85em;
+}
+
+/* Shown rather than hidden: an invisible node is one the user deletes by
+   accident and never notices. */
+.markdown-editor .tiptap [data-type='html-comment']::before {
+  content: '<!--' attr(data-value) '-->';
+  color: var(--muted-foreground);
+  font-family: ui-monospace, 'JetBrainsMono', Menlo, monospace;
+  font-size: 0.85em;
+  opacity: 0.6;
+}
+
+.markdown-editor .tiptap mark {
+  background: color-mix(in oklch, var(--primary), transparent 70%);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 0.15em;
+}
+.markdown-editor .tiptap abbr {
+  text-decoration: underline dotted;
+  cursor: help;
+}
+
 .markdown-editor .tiptap pre {
   background: var(--muted);
   border-radius: 6px;

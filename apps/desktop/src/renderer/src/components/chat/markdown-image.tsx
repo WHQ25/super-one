@@ -9,10 +9,19 @@ import { toMediaUrl } from '@/lib/path-utils'
 import { isRemoteMediaUrl } from '@/lib/remote-media-url'
 import { useResolvedMediaSrc } from '@/hooks/use-resolved-media-src'
 import { ImageInteractive, useImageMenuItems } from './image-shared'
+import { mediaStyleFor } from './markdown-media-style'
 
 const isWindows = window.app.platform === 'win32'
 
-const MEDIA_STYLE = { maxHeight: '20rem', maxWidth: '100%', width: 'auto', height: 'auto', borderRadius: '8px', display: 'block' } as const
+/**
+ * An image wrapped in a link belongs to the link — GitHub navigates, it does
+ * not zoom. Opening the lightbox as well would stack our viewer on top of
+ * whatever the anchor already does (the external-link prompt), so the click is
+ * left to bubble to the anchor untouched.
+ */
+function insideLink(el: EventTarget | null): boolean {
+  return el instanceof Element && el.closest('a[href]') !== null
+}
 
 function srcToLocalPath(src: string | undefined): string | null {
   if (!src || !src.startsWith('local-file:///')) return null
@@ -117,6 +126,17 @@ export function MarkdownImage(props: ComponentProps<'img'>) {
   const savedPath = srcToLocalPath(props.src)
   const { displaySrc, loading, failed } = useResolvedMediaSrc(props.src)
   const alt = props.alt ?? ''
+  const mediaStyle = mediaStyleFor(props.width, props.height)
+  // An authored size means the image is meant to sit in a line of text, so the
+  // wrapper shares that baseline instead of topping out the line box.
+  const wrapperClass = cn(
+    'max-w-full cursor-pointer border-0 bg-transparent p-0',
+    mediaStyle.display === 'block' ? 'inline-block align-top' : 'inline align-middle',
+  )
+  const openLightbox = (e: React.MouseEvent) => {
+    if (insideLink(e.currentTarget)) return
+    setOpen(true)
+  }
 
   // Local file path for context menu / download when available.
   const localPath = savedPath
@@ -142,11 +162,11 @@ export function MarkdownImage(props: ComponentProps<'img'>) {
       <>
         <button
           type="button"
-          onClick={() => setOpen(true)}
-          className="inline-block max-w-full cursor-pointer border-0 bg-transparent p-0 align-top"
+          onClick={openLightbox}
+          className={wrapperClass}
           aria-label={alt || 'Image'}
         >
-          <img {...props} src={mediaSrc} alt={alt} draggable={false} style={MEDIA_STYLE} />
+          <img {...props} src={mediaSrc} alt={alt} draggable={false} style={mediaStyle} />
         </button>
         <Dialog open={open} onOpenChange={setOpen} modal={false}>
           <DialogContent
@@ -181,11 +201,11 @@ export function MarkdownImage(props: ComponentProps<'img'>) {
     <>
       <ImageInteractive
         savedPath={localPath}
-        onOpen={() => setOpen(true)}
+        onOpen={openLightbox}
         ariaLabel={alt || 'Image'}
-        className="inline-block max-w-full cursor-pointer border-0 bg-transparent p-0 align-top"
+        className={wrapperClass}
       >
-        <img {...props} src={mediaSrc} alt={alt} draggable={false} crossOrigin="anonymous" style={MEDIA_STYLE} />
+        <img {...props} src={mediaSrc} alt={alt} draggable={false} crossOrigin="anonymous" style={mediaStyle} />
       </ImageInteractive>
       <MarkdownImageLightbox
         src={mediaSrc}

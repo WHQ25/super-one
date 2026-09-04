@@ -224,16 +224,68 @@ A table with inline marks inside cells:
 
 Some inline raw HTML the editor should tolerate without breaking:
 
+Key caps and badge pills round-trip as `<kbd>`, including one wrapping an icon
+and its label: press <kbd>Cmd</kbd> then <kbd>K</kbd>, or click
+<a href="https://example.com"><kbd><img src="assets/logo.png" alt="" width="16"> Example</kbd></a>.
+
+<h3 align="center">A centred heading</h3>
+
+<p align="center"><strong>A centred paragraph</strong><br />with a hard break inside it.</p>
+
 subscript, superscript, and an HTML abbreviation.
+
+Inline tags with no markdown spelling: <sub>subscript</sub>, <sup>superscript</sup>,
+<ins>inserted</ins>, <u>underlined</u>, <mark>highlighted</mark>, <small>small</small>,
+and an <abbr title="HyperText Markup Language">HTML</abbr> abbreviation.
+
+An <a name="anchor-target"></a> anchor target, and a comment that other tools read:
+
+<!-- prettier-ignore -->
 
 A `<details>` block (collapsed by default):
 
-Click to expand
+<details>
+<summary>Click to expand</summary>
 
 Hidden content paragraph inside `<details>`. Includes a list:
 
 - one
 - two
+
+</details>
+
+A task list, with a plain item in the same list:
+
+- [ ] unchecked
+- [x] checked
+- plain item
+
+A footnote reference[^fixture] and its definition.
+
+[^fixture]: The definition body, which must not be rewritten into an anchor.
+
+A `<picture>` with an animated source and a static fallback:
+
+<picture><source srcset="assets/demo.gif" type="image/gif"><img src="assets/demo.jpg" alt="demo" width="480"></picture>
+
+A layout table whose cells hold block content:
+
+<table>
+<tr>
+<td width="50%" valign="middle">
+
+### Cell heading
+
+Cell body paragraph.
+
+</td>
+<td width="50%">
+
+![](assets/cat.png)
+
+</td>
+</tr>
+</table>
 
 ## Edge cases
 

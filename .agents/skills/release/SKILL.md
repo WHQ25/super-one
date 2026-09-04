@@ -45,6 +45,35 @@ Pointer ymls are written by **`set-latest`** (not promote); binaries under `<var
   - `feature`: `0.14.3-alpha` → `0.15.0-alpha`
   - `patch`: `0.14.3-alpha` → `0.14.4-alpha`
 
+## CHANGELOG structure
+
+`CHANGELOG.md` has one canonical timeline — **the stable line**. Alpha is not a
+second product; it is the channel SuperOne uses to prove a stable candidate, so
+its entries are working notes, not the record.
+
+```markdown
+## [Unreleased]          ← the stable candidate. Grows with every alpha.
+## [0.61.1-alpha]        ← per-release increment. Deleted when the stable ships.
+## [0.61.0]              ← a shipped stable. Permanent.
+```
+
+Three consequences worth stating, because each one is a trap:
+
+- **`[Unreleased]` is maintained by every alpha release, not written at stable
+  cut time.** A stable build is packaged from an already-proven *alpha commit*,
+  so if its notes needed a commit, that commit would either be absent from the
+  build or make it "the validated tree plus something nobody ran". Keeping the
+  candidate current in each alpha's bump commit means every alpha commit already
+  carries the notes it would ship as. **Cutting a stable touches no file.**
+- **Alpha entries are deleted once the stable covering them ships**, folded down
+  into that stable's entry. Their full text survives on each alpha's own GitHub
+  Release, which the invariants already forbid deleting. The fold-down is not
+  done at cut time either — it rides along in the next alpha's bump commit
+  (Step 2, item 2).
+- **`[Unreleased]` is not a copy of the alpha entries.** It is the same changes
+  rewritten for someone who upgraded stable-to-stable and saw no alpha: iteration
+  folded into final shape, alpha-only regressions dropped, Tests/CI omitted.
+
 ## Workflow
 
 **Network approval note**: every `gh workflow run`, `gh run view`, `gh release ...`, verification
@@ -73,16 +102,22 @@ This is the **only** human checkpoint in the pipeline. Do all of the following *
    Non-empty → **yes** (pin constants, pack script, or workflow changed). Empty → **no** (existing R2 mirrors + channel manifest stay valid; desktop still has npm fallback).
    - The harness manifest channel is the variant id: `alpha` → `alpha`, `stable` → `stable`.
    - **Manual override**: if the user asks to refresh harness mirrors even without a pin diff (e.g. first bootstrap, corrupted R2 object), treat harness publish as **yes** for this release and note it in the confirmation block.
-7. Draft the CHANGELOG entry:
-   - Drop noise (`chore(release): bump version`, purely internal refactors with no user impact).
-   - Group by type — **Added** (feat), **Fixed** (fix), **Changed** (refactor affecting user behavior, dep upgrades with user impact), **Performance** (perf), **Tests** (test), **CI** (ci). Omit empty groups.
-   - Concise, human-readable bullets. Combine related commits. No unverified claims ("may fix X") — only statements you can defend.
+7. Draft **two** CHANGELOG blocks — see **CHANGELOG structure** for why there are two:
+   - The **alpha entry** (`## [<new-version>] - <date>`) — this release's increment:
+     - Drop noise (`chore(release): bump version`, purely internal refactors with no user impact).
+     - Group by type — **Added** (feat), **Fixed** (fix), **Changed** (refactor affecting user behavior, dep upgrades with user impact), **Performance** (perf), **Tests** (test), **CI** (ci). Omit empty groups.
+     - Concise, human-readable bullets. Combine related commits. No unverified claims ("may fix X") — only statements you can defend.
+   - The updated **`## [Unreleased]`** block — the stable candidate, re-stated in full after merging this release's changes into what is already there. Write it for someone upgrading the *stable* app, who saw none of the alphas in between:
+     - Fold repeated iteration on one feature into its final shape. Three alphas refining the same panel is one bullet, not three.
+     - Drop a fix whose bug only ever existed in an alpha — a stable user never met it.
+     - Omit **Tests** and **CI**. Real work, but not a stable user's release notes.
 8. Show the user **all** of this in one plain markdown message — no tool call, just text in your reply:
    - `Current: X.Y.Z-alpha → New: A.B.C-alpha`
    - `Relay deploy: yes (apps/relay/package.json: <previous-relay-version> → <new-version>)` **or** `Relay deploy: no (no apps/relay/ diff since v<previous-version>)`
    - `CLI npm: yes (@super-one/cli@A.B.C-alpha, dist-tag alpha)` — default for every release (required for SSH registry install). Only note skip if the user explicitly asks for a desktop-only release.
    - `Harness R2: yes (channel=<alpha|stable>, pins/script changed since v<previous>)` **or** `Harness R2: no (no managed pin / pack-script diff since v<previous>)` — when yes, note that Claude/Codex tarball mirrors + `harness/manifest/<channel>.json` will be rewritten on R2 (~1.2 GB pack, ~1–3 min CI).
-   - The full drafted CHANGELOG entry (as the literal block that will be inserted)
+   - The full drafted alpha entry (as the literal block that will be inserted)
+   - The updated `## [Unreleased]` block, in full — it is the next stable release's notes verbatim, and this is the only moment anyone reviews it
 9. Ask for one combined confirmation / edits, as a plain-language question at the end of the same
    message (e.g. "Proceed with this?"). Do not use a structured choice-card input tool for this step:
    the CHANGELOG draft is multi-line formatted content that option cards are not built to review. A
@@ -92,11 +127,12 @@ After this confirmation, **everything below runs without further prompting** unl
 
 ### Step 2: Bump version, write CHANGELOG, commit, push
 
-1. Insert `## [<new-version>] - <YYYY-MM-DD>` at the top of `CHANGELOG.md`, right after the header block, with the confirmed entry.
-2. Update `version` in **both** `package.json` (root) and `apps/desktop/package.json` to the new value — these always lockstep. It is the **base** version: a plain release number with **no** `-alpha` suffix. The alpha variant appends its own at package time, so one base of `0.61.0` yields `0.61.0-alpha` and `0.61.0`. A base carrying a prerelease tag fails the build. **`publish-cli` packs using the root `package.json` version verbatim** (or the explicit `-f version=` input) — it does NOT derive a variant suffix, so the alpha CLI publish needs `-f version=<X.Y.Z>-alpha -f tag=alpha` while the stable one can take the default; do **not** change workspace `apps/cli/package.json` (`@superone/cli` stays private `0.0.0` — the public name is `@super-one/cli` from `pack-npm`).
-3. **If Step 1 decided relay deploys this release**: also update `apps/relay/package.json` `version` to the same new value. The relay version skips intermediate releases where it had no diff, so this jump may be larger than a single semver step (e.g. `0.29.1-alpha` → `0.35.0-alpha`). That's intentional — it preserves the invariant that `apps/relay/package.json` reflects the version actually deployed to Cloudflare.
-4. Do NOT modify `bun.lock` (version bumps don't touch deps).
-5. Stage and commit in one shot:
+1. Rewrite the top of `CHANGELOG.md`, right after the header block, with the two confirmed blocks: `## [Unreleased]` first, then `## [<new-version>] - <YYYY-MM-DD>` below it. `[Unreleased]` is **replaced wholesale** by the merged version, never appended to.
+2. **If a stable release was cut since the previous alpha**, do its pending fold-down in this same commit (this is the only place it happens — see **Cutting a stable release**): rename the then-current `## [Unreleased]` to `## [<stable-version>] - <that release's date>`, delete every `-alpha` entry it covers, and build the new `## [Unreleased]` above it from this release's changes alone.
+3. Update `version` in **both** `package.json` (root) and `apps/desktop/package.json` to the new value — these always lockstep. It is the **base** version: a plain release number with **no** `-alpha` suffix. The alpha variant appends its own at package time, so one base of `0.61.0` yields `0.61.0-alpha` and `0.61.0`. A base carrying a prerelease tag fails the build. **`publish-cli` packs using the root `package.json` version verbatim** (or the explicit `-f version=` input) — it does NOT derive a variant suffix, so the alpha CLI publish needs `-f version=<X.Y.Z>-alpha -f tag=alpha` while the stable one can take the default; do **not** change workspace `apps/cli/package.json` (`@superone/cli` stays private `0.0.0` — the public name is `@super-one/cli` from `pack-npm`).
+4. **If Step 1 decided relay deploys this release**: also update `apps/relay/package.json` `version` to the same new value. The relay version skips intermediate releases where it had no diff, so this jump may be larger than a single semver step (e.g. `0.29.1-alpha` → `0.35.0-alpha`). That's intentional — it preserves the invariant that `apps/relay/package.json` reflects the version actually deployed to Cloudflare.
+5. Do NOT modify `bun.lock` (version bumps don't touch deps).
+6. Stage and commit in one shot:
    ```bash
    # Always:
    git add package.json apps/desktop/package.json CHANGELOG.md
@@ -104,8 +140,8 @@ After this confirmation, **everything below runs without further prompting** unl
    git add apps/relay/package.json
    git commit -m "chore(release): bump version to <new-version>"
    ```
-6. **Do NOT create a local git tag**. Tag creation is deferred to GitHub at publish time.
-7. `git push origin main` (no `--tags`). No confirmation needed — already covered by Step 1.
+7. **Do NOT create a local git tag**. Tag creation is deferred to GitHub at publish time.
+8. `git push origin main` (no `--tags`). No confirmation needed — already covered by Step 1.
 
 ### Step 3: Trigger per-platform builds + CLI publish (+ harness / relay if Step 1 said yes)
 
@@ -231,12 +267,26 @@ Promote is **archive-only**. It downloads each platform's artifact, uploads them
 
 ### Step 7: Publish
 
-Extract the changelog entry for this version from `CHANGELOG.md` (everything between the `## [<new-version>]` heading and the next `##` heading). Use a HEREDOC so formatting is preserved:
+Extract the notes from `CHANGELOG.md`. **Which heading depends on the variant**: an
+alpha reads its own entry; a stable reads `[Unreleased]`, the accumulated candidate
+this build was cut from.
 
 ```bash
+# alpha
 NOTES=$(awk '/^## \[<new-version>\]/{flag=1;next} /^## \[/{flag=0} flag' CHANGELOG.md)
 gh release edit v<new-version> --draft=false --prerelease --notes "$NOTES"
+
+# stable
+NOTES=$(awk '/^## \[Unreleased\]/{flag=1;next} /^## \[/{flag=0} flag' CHANGELOG.md)
+gh release edit v<new-version> --draft=false --notes "$NOTES"
 ```
+
+A stable release has **no** `## [<version>]` heading in `CHANGELOG.md` when it
+publishes — that heading is written later, by the next alpha's bump commit. Do not
+"repair" the stable command to read `## [<new-version>]`: `\[0.62.0\]` does not match
+`[0.62.0-alpha]`, so it extracts **zero lines** and publishes empty notes with nothing
+failing. `v0.61.0` shipped carrying only its last alpha's increment for exactly this
+reason.
 
 **Alpha tags MUST use `--prerelease`** at publish time. With R2 + GenericProvider this flag does not affect auto-update (each variant reads its own prefix), but it controls GitHub Release UI classification and keeps the GitHub Releases list consistent with the bundled CHANGELOG. promote.yml auto-derives the same flag from the version for the draft creation step, so this is the only manual moment where you confirm it.
 
@@ -334,6 +384,13 @@ has been running as alpha, packaged under the stable identity:
 The alpha line keeps moving independently; nothing about the stable cut changes
 `package.json`, so the next alpha release continues from where it was.
 
+**A stable cut writes no file at all** — not `package.json`, not `CHANGELOG.md`.
+Its notes are the `## [Unreleased]` block already sitting in the commit being
+built (Step 7). Two things are then owed to the **next** alpha's bump commit,
+and are easy to forget because nothing fails without them: rename that
+`[Unreleased]` to `## [<stable-version>] - <date>`, and delete the `-alpha`
+entries it covers. Step 2, item 2.
+
 **One compile, two packaging passes** only holds within a single CI run. When a
 stable release is cut days after the alpha, `out/` is long gone, so the build
 workflow checks out the target SHA and compiles again. Same source, deterministic
@@ -393,6 +450,12 @@ gh workflow run prune-releases.yml --ref main \
 
 - Local git never creates or force-pushes tags for releases. GitHub owns tag creation at publish time.
 - `CHANGELOG.md` entries describe only **verified** behavior — no "may fix" or speculative claims.
+- **`CHANGELOG.md`'s canonical timeline is the stable line.** `[Unreleased]` is the
+  stable candidate and is updated by every alpha's bump commit; `-alpha` entries are
+  working notes that are folded into a stable entry and deleted once it ships. A
+  stable cut therefore modifies no file — see **CHANGELOG structure**. Never write a
+  `## [<stable-version>]` heading as part of publishing that stable; it lands in the
+  next alpha's bump commit.
 - Alpha releases are always marked `isPrerelease=true` in GitHub for UI classification consistency. (R2 + GenericProvider auto-update does not depend on this flag — it is driven by the variant prefix the build points at.)
 - `bun.lock` is never modified by the release flow.
 - **Dual-publish is permanent**: `promote.yml` always uploads to both GitHub Release (flat layout) and R2 (`<variant>/v${VERSION}/` subdirectory). GitHub Release is the legacy path for clients built before the R2 switch, R2 is the source of truth for current/future clients. **Never** delete the GitHub Release upload step.

@@ -759,8 +759,9 @@ actions backed by real archive/delete RPCs; slash catalogs merge harness, projec
 and skill commands into a sectioned icon UI, mentions are sectioned, and the Todo
 panel expands into its full task list. Harness marks now reuse the Desktop silhouettes
 for all six providers (including ACP Grok/OpenCode identity), and the received-file
-queue uses the shared adaptive sheet treatment. The simulator screenshot/Pinyin
-acceptance pass is the remaining shell work.
+queue uses the shared adaptive sheet treatment. Built-in simulator pairing uncovered
+and fixed a stale confirmation-code state that blocked returning to a paired device.
+The chat screenshot/Pinyin acceptance pass is the remaining shell work.
 
 #### WP-28 — T3: chat-view tool family coverage
 

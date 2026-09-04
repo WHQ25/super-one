@@ -374,6 +374,7 @@ export function MobileApp() {
         setCode(c)
         setStatus('Confirm this code on the desktop')
         const paired = await done
+        setCode(null)
         await connectWithSecret(paired.relayUrl || qr.relayUrl, paired.masterSecret, undefined, paired.hostName, qr.desktopDeviceId)
         return
       }
@@ -382,6 +383,7 @@ export function MobileApp() {
       if (!url || !json.secret) throw new Error('JSON needs relayUrl and secret')
       await connectWithSecret(url, json.secret)
     } catch (e) {
+      setCode(null)
       setStatus(e instanceof Error ? e.message : 'pair failed')
     }
   }

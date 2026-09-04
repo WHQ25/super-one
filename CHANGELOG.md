@@ -4,7 +4,185 @@ All notable changes to SuperOne are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [0.61.0-alpha] - 2026-09-03
+Released entries are the stable line. `[Unreleased]` accumulates the stable
+candidate: it is the source for the next stable release's notes, so cutting
+a stable build needs no commit of its own. The `-alpha` entries below it are
+the per-release detail of the alpha line SuperOne uses to prove that
+candidate — they are folded into the stable entry and removed once it ships.
+Every alpha release keeps its own notes on its GitHub Release.
+
+## [Unreleased]
+
+### Added
+
+- Claude multi-account: SuperOne now discovers every signed-in Claude
+  account, shows each one's usage meters in Settings → Providers, and lets
+  a session pick which subscription it runs on. Sign-in and sign-out go
+  through `claude auth login` / `logout`, and transcripts stay shared
+  across accounts so resuming still works. The provider dropdown only
+  splits the official row once a second account exists, so single-account
+  setups are unchanged.
+- Codex: adopted app-server 0.153 — structured async questions, live
+  reviewer updates and remote plugin reconciliation. The pinned Codex
+  runtime moves to 0.153.2.
+- Devices: starting a device and being allowed to drive it are now two
+  separate steps. The new `device_boot` tool powers a device on without a
+  prompt, so the ~20s cold boot no longer waits on a human, and the
+  control prompt appears with the device already on screen. That prompt
+  gains an "Always Allow" answer, recorded per device and honoured by
+  every later session; grants can be revoked from the device tab.
+- Markdown Preview now preserves the HTML a README depends on through the
+  edit round-trip: `<kbd>`, heading and paragraph alignment,
+  `<details>`/`<summary>`, task lists, footnotes, `<sub>`/`<sup>`/`<ins>`/
+  `<u>`/`<mark>`/`<small>`/`<abbr>`, comments, `<picture>`, named anchors,
+  and HTML tables with block content in cells. Authored image width and
+  height are honoured, and an image inside a link no longer opens the
+  lightbox over the link prompt.
+- Usage popover: the Claude and Codex gauges now use the harness brand
+  lockup as their title and name the account whose quota is being spent —
+  the Claude account, or the ChatGPT account for Codex sessions not
+  billing a third-party key.
+
+### Fixed
+
+- Markdown Preview no longer corrupts files it saves: code fences
+  accumulated a blank line on every save, a bare `-->` inside a fence
+  duplicated surrounding text, emphasis spanning two text nodes was
+  reopened mid-span, and a link mark on an image (or an explicit `alt=""`)
+  was dropped.
+- Usage: per-model weekly windows are read from Anthropic's new scoped
+  `limits` rows, so Fable's weekly window appears instead of nothing.
+- Usage: every rate-limit gauge is one width, so the popover no longer
+  resizes depending on which harness the session runs on.
+- Chat: the compact boundary anchors on the live reply, so goal-mode
+  threads no longer hide completed turns that were never compacted.
+- Chat: Codex threads with voice history interleave typed and realtime
+  turns chronologically instead of replacing the transcript with the
+  voice view.
+- Codex: tool rows left in flight when a turn is interrupted are now
+  sealed, in both the writers and on load, so an interrupted turn stops
+  rendering a tool as forever running. Existing affected messages heal
+  when read.
+- Computer Use: AX calls are bounded by an explicit messaging timeout, a
+  wall-clock budget on window listing, and concurrent dispatch of
+  read-only RPCs, so an app that is quitting or hung can no longer stall
+  the helper past the host's 30s timeout. Five frozen apps now take 3.7s
+  instead of 31.7s.
+- Computer Use: the software cursor no longer flickers during `observe`
+  and `wait_for`.
+- Browser: loaded pages get a real browser canvas — white, or dark for a
+  dark colour-scheme document — instead of bleeding the app's vibrancy.
+  Screenshots, annotations and recordings are flattened onto the same
+  canvas, so captures no longer carry a transparent hole.
+- Sidebar: attention and scheduled sessions stay visible in project lists
+  instead of being buried behind the pagination cutoff.
+- Remote nodes are served the current computer-use tool contract — the
+  descriptor copy had drifted and lost `computer_snapshot`'s TOON outline
+  semantics entirely.
+- Desktop: the variant icon is preserved after startup.
+- Widget guidelines no longer contradict themselves on emoji, and no
+  longer name Claude in text shipped to every harness.
+
+### Changed
+
+- Permission popovers share one width across every harness, so the menu
+  no longer resizes when switching harness.
+
+## [0.61.1-alpha] - 2026-09-04
+
+### Added
+
+- Claude multi-account: SuperOne now discovers every signed-in Claude
+  account, shows each one's usage meters in Settings → Providers, and lets
+  a session pick which subscription it runs on. Sign-in and sign-out go
+  through `claude auth login` / `logout`, and transcripts stay shared
+  across accounts so resuming still works. The provider dropdown only
+  splits the official row once a second account exists, so single-account
+  setups are unchanged.
+- Codex: adopted app-server 0.153 — structured async questions, live
+  reviewer updates and remote plugin reconciliation. The pinned Codex
+  runtime moves to 0.153.2.
+- Devices: starting a device and being allowed to drive it are now two
+  separate steps. The new `device_boot` tool powers a device on without a
+  prompt, so the ~20s cold boot no longer waits on a human, and the
+  control prompt appears with the device already on screen. That prompt
+  gains an "Always Allow" answer, recorded per device and honoured by
+  every later session; grants can be revoked from the device tab.
+- Markdown Preview now preserves the HTML a README depends on through the
+  edit round-trip: `<kbd>`, heading and paragraph alignment,
+  `<details>`/`<summary>`, task lists, footnotes, `<sub>`/`<sup>`/`<ins>`/
+  `<u>`/`<mark>`/`<small>`/`<abbr>`, comments, `<picture>`, named anchors,
+  and HTML tables with block content in cells. Authored image width and
+  height are honoured, and an image inside a link no longer opens the
+  lightbox over the link prompt.
+- Usage popover: the Claude and Codex gauges now use the harness brand
+  lockup as their title and name the account whose quota is being spent —
+  the Claude account, or the ChatGPT account for Codex sessions not
+  billing a third-party key.
+
+### Fixed
+
+- Markdown Preview no longer corrupts files it saves: code fences
+  accumulated a blank line on every save, a bare `-->` inside a fence
+  duplicated surrounding text, emphasis spanning two text nodes was
+  reopened mid-span, and a link mark on an image (or an explicit `alt=""`)
+  was dropped.
+- Usage: per-model weekly windows are read from Anthropic's new scoped
+  `limits` rows, so Fable's weekly window appears instead of nothing.
+- Usage: every rate-limit gauge is one width, so the popover no longer
+  resizes depending on which harness the session runs on.
+- Chat: the compact boundary anchors on the live reply, so goal-mode
+  threads no longer hide completed turns that were never compacted.
+- Chat: Codex threads with voice history interleave typed and realtime
+  turns chronologically instead of replacing the transcript with the
+  voice view.
+- Codex: tool rows left in flight when a turn is interrupted are now
+  sealed, in both the writers and on load, so an interrupted turn stops
+  rendering a tool as forever running. Existing affected messages heal
+  when read.
+- Computer Use: AX calls are bounded by an explicit messaging timeout, a
+  wall-clock budget on window listing, and concurrent dispatch of
+  read-only RPCs, so an app that is quitting or hung can no longer stall
+  the helper past the host's 30s timeout. Five frozen apps now take 3.7s
+  instead of 31.7s.
+- Computer Use: the software cursor no longer flickers during `observe`
+  and `wait_for`.
+- Browser: loaded pages get a real browser canvas — white, or dark for a
+  dark colour-scheme document — instead of bleeding the app's vibrancy.
+  Screenshots, annotations and recordings are flattened onto the same
+  canvas, so captures no longer carry a transparent hole.
+- Sidebar: attention and scheduled sessions stay visible in project lists
+  instead of being buried behind the pagination cutoff.
+- Remote nodes are served the current computer-use tool contract — the
+  descriptor copy had drifted and lost `computer_snapshot`'s TOON outline
+  semantics entirely.
+- Desktop: the variant icon is preserved after startup.
+- Widget guidelines no longer contradict themselves on emoji, and no
+  longer name Claude in text shipped to every harness.
+
+### Changed
+
+- Permission popovers share one width across every harness, so the menu
+  no longer resizes when switching harness.
+
+### Tests
+
+- Repaired two long-red tests: CLI suites now bind port 0 instead of
+  rolling overlapping random ports (a collision cost one release run to
+  EADDRINUSE), and the helper build-variant mismatch test can now
+  actually construct the mismatch it asserts.
+
+### CI
+
+- Release tooling: harness app-pins are keyed by the channel's app
+  version rather than the plain base, so alpha clients find their pins on
+  R2 instead of silently falling back; `set-latest` and `prune-releases`
+  ask the bucket via `s3api` instead of reading HTTP status off the public
+  URL, which could not distinguish "missing" from "forbidden"; and the
+  fixed download link names now match the arch suffixes builds actually
+  emit.
+
+## [0.61.0] - 2026-09-03
 
 ### Added
 

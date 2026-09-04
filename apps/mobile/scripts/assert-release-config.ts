@@ -26,6 +26,9 @@ const eas = JSON.parse(readFileSync(join(mobileRoot, 'eas.json'), 'utf8')) as {
 const rootPackage = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')) as {
   packageManager?: string
 }
+const mobilePackage = JSON.parse(readFileSync(join(mobileRoot, 'package.json'), 'utf8')) as {
+  dependencies?: Record<string, string>
+}
 const gitignore = readFileSync(join(mobileRoot, '.gitignore'), 'utf8').split(/\r?\n/)
 
 const bunVersion = rootPackage.packageManager?.match(/^bun@(.+)$/)?.[1]
@@ -54,6 +57,10 @@ if (production?.channel !== 'production' || production.autoIncrement !== true) {
 
 if (app.expo?.runtimeVersion?.policy !== 'appVersion') {
   throw new Error('EAS Update runtime compatibility must follow the native app version')
+}
+
+if (!mobilePackage.dependencies?.['expo-updates']) {
+  throw new Error('expo-updates must be installed before EAS Update can be configured')
 }
 
 if (!app.expo.ios?.bundleIdentifier || !app.expo.android?.package) {

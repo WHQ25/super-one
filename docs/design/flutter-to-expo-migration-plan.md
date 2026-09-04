@@ -826,6 +826,12 @@ than detouring through the remote file browser.
 
 **Do:** link the Expo project, upload credentials, configure `expo-updates` with app version as the runtime boundary (already in `eas.json`), `eas build --profile internal` (APK) and `--profile production` (TestFlight), distribute to internal testers. Then archive `super-one-flutter` read-only and update the docs/memory pointers.
 
+**Progress 2026-09-04:** the SDK-compatible `expo-updates` native dependency is
+installed and enforced by the release-config preflight. The EAS project link remains
+the boundary before adding its generated project id and update URL; credentials,
+remote builds, distribution, the physical-device smoke, and Flutter archival remain
+pending.
+
 ---
 
 ## 7. Wave / critical-path schedule

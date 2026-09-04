@@ -1,6 +1,6 @@
 # Expo release runbook
 
-Status: **repository configuration ready; account setup and release pending**
+Status: **`expo-updates` installed; project linking, update URL, credentials, and release pending**
 Plan: `docs/design/flutter-to-expo-migration-plan.md` WP-29
 
 Run EAS commands from `apps/mobile`. Keep `credentials.json`, signing files, build

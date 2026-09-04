@@ -104,6 +104,53 @@ export function selectRealtimeTranscript(
   ))
 }
 
+function timelineOrder(message: ChatMessage): number | null {
+  return message.metadata?.codexTimeline?.position
+    ?? message.metadata?.codexTimeline?.localOrder
+    ?? message._lastAppliedSeq
+    ?? null
+}
+
+/**
+ * Whether the visible edge of a mixed Codex thread still belongs to voice mode.
+ * A running/negotiating call always wins. Once it ends, a later ordinary Codex
+ * turn returns the composer chrome to normal while the earlier voice rows remain
+ * rendered in their own presentation.
+ */
+export function isRealtimeConversationTail(
+  messages: readonly ChatMessage[],
+  realtime: CodexRealtimeSessionViewState,
+): boolean {
+  if (realtime.starting || realtime.realtimeSessionId !== null) return true
+  const transcript = selectRealtimeTranscript(realtime)
+  if (transcript.length === 0) return realtime.hasTimeline
+
+  const latestVoiceOrder = Math.max(...transcript.map((segment) => (
+    segment.position ?? segment.localOrder ?? Number.MIN_SAFE_INTEGER
+  )))
+  const ordinary = messages.filter((message) => (
+    message.metadata?.codexTimeline?.provenance !== 'realtime-delegated'
+  ))
+  const unpositioned = ordinary.filter((message) => timelineOrder(message) === null)
+  if (unpositioned.length > 0) {
+    const latestVoiceTimestamp = Math.max(
+      Number.MIN_SAFE_INTEGER,
+      ...transcript.map((segment) => segment.startedAtMs ?? Number.MIN_SAFE_INTEGER),
+    )
+    // A local user row has no event sequence. Its timestamp still tells us which
+    // side of a newly observed voice call it belongs to; legacy rows with neither
+    // signal remain conservative and restore ordinary mode rather than hiding UI.
+    if (latestVoiceTimestamp === Number.MIN_SAFE_INTEGER) return false
+    const timestamps = unpositioned.map((message) => Date.parse(message.createdAt))
+    if (timestamps.some(Number.isNaN) || Math.max(...timestamps) > latestVoiceTimestamp) return false
+  }
+  const latestOrdinaryOrder = Math.max(
+    Number.MIN_SAFE_INTEGER,
+    ...ordinary.map((message) => timelineOrder(message) ?? Number.MIN_SAFE_INTEGER),
+  )
+  return latestVoiceOrder >= latestOrdinaryOrder
+}
+
 /**
  * Project spoken segments onto the ordinary ChatMessage shape so the voice line renders
  * through the same ChatMessage component as a typed turn. No `metadata.codex` on

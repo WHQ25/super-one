@@ -25,7 +25,7 @@ interface CodexRealtimeTranscriptProps {
   needsDecision: boolean
 }
 
-/** Render voice transcript and delegated Codex work through the ordinary turn UI. */
+/** Render voice transcript and Codex work through the ordinary turn UI. */
 function TranscriptMessage({
   message,
   sessionStatus,
@@ -86,8 +86,12 @@ export function CodexRealtimeTranscript({
     needsDecision,
   }), [needsDecision, sessionStatus, threadMessages, turns])
   const layout = useMemo(
-    () => buildRealtimeTranscriptLayout(turns, activities),
-    [activities, turns],
+    () => buildRealtimeTranscriptLayout(turns, activities, threadMessages),
+    [activities, threadMessages, turns],
+  )
+  const messagesById = useMemo(
+    () => new Map(threadMessages.map((message) => [message.id, message])),
+    [threadMessages],
   )
   const lastAssistantMessageId = findLastAssistantMessageId(threadMessages)
   const loading = realtime.loadStatus === 'idle' || realtime.loadStatus === 'loading'
@@ -102,7 +106,7 @@ export function CodexRealtimeTranscript({
   // Vertical centring needs a parent with a definite height, which a ScrollArea's
   // auto-sized content column is not. With nothing to scroll there is nothing to
   // give up by replacing it outright.
-  if (turns.length === 0 && realtime.starting) {
+  if (layout.length === 0 && realtime.starting) {
     return (
       <div className="relative min-w-0 flex-1 overflow-hidden">
         <RealtimeStartingSurface />
@@ -114,6 +118,17 @@ export function CodexRealtimeTranscript({
       <ScrollArea key={sessionId} className="chat-scroll-area h-full min-w-0" viewportRef={scrollViewportRef}>
         <SelectionContextMenuZone className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">
           {layout.map((row) => {
+            if (row.kind === 'message') {
+              const message = messagesById.get(row.messageId)
+              return message ? (
+                <TranscriptMessage
+                  key={message.id}
+                  message={message}
+                  sessionStatus={sessionStatus}
+                  isLastAssistant={message.id === lastAssistantMessageId}
+                />
+              ) : null
+            }
             if (row.kind === 'activity') {
               const activity = activities.get(row.turnId)
               const activityMessages = activity
@@ -155,7 +170,13 @@ export function CodexRealtimeTranscript({
             )
           })}
 
-          {turns.length === 0 && (
+          {realtime.starting && layout.length > 0 && (
+            <div className="h-48">
+              <RealtimeStartingSurface />
+            </div>
+          )}
+
+          {layout.length === 0 && (
             <p className="py-16 text-center text-sm text-muted-foreground">{t(emptyKey)}</p>
           )}
         </SelectionContextMenuZone>

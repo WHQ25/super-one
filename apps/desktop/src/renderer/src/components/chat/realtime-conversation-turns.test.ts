@@ -24,6 +24,18 @@ function work(id: string, turnId: string, order: number, durationMs = 0): ChatMe
   }
 }
 
+function normal(id: string, role: ChatMessage['role'], order: number): ChatMessage {
+  return {
+    id,
+    role,
+    status: 'complete',
+    content: [{ type: 'text', text: id }],
+    createdAt: '',
+    providerId: 'codex',
+    metadata: { codexTimeline: { provenance: 'codex', position: order } },
+  }
+}
+
 describe('realtime conversation turns', () => {
   it('keeps consecutive assistant segments in one user turn and starts anew on interruption', () => {
     const turns = buildRealtimeConversationTurns([
@@ -96,6 +108,50 @@ describe('realtime conversation turns', () => {
       { kind: 'voice', turnId: 'user-1' },
       { kind: 'voice', turnId: 'user-2' },
       { kind: 'activity', turnId: 'user-1' },
+    ])
+  })
+
+  it('keeps ordinary Codex turns around the voice portion of a mixed thread', () => {
+    const turns = buildRealtimeConversationTurns([
+      segment('voice-user', 'user', 10),
+      segment('voice-assistant', 'assistant', 15),
+    ])
+    const messages = [
+      normal('typed-before-user', 'user', 1),
+      normal('typed-before-assistant', 'assistant', 2),
+      work('voice-work', 'turn-a', 20),
+      normal('typed-after-user', 'user', 30),
+      normal('typed-after-assistant', 'assistant', 31),
+    ]
+    const activities = mapRealtimeTurnActivities({
+      turns,
+      messages,
+      sessionStatus: 'idle',
+      needsDecision: false,
+    })
+
+    expect(buildRealtimeTranscriptLayout(turns, activities, messages)).toEqual([
+      { kind: 'message', messageId: 'typed-before-user' },
+      { kind: 'message', messageId: 'typed-before-assistant' },
+      { kind: 'voice', turnId: 'voice-user' },
+      { kind: 'activity', turnId: 'voice-user' },
+      { kind: 'message', messageId: 'typed-after-user' },
+      { kind: 'message', messageId: 'typed-after-assistant' },
+    ])
+  })
+
+  it('uses timestamps to keep unpositioned local user rows around a new voice call', () => {
+    const turns = buildRealtimeConversationTurns([{
+      ...segment('voice-user', 'user', 10),
+      startedAtMs: 2_000,
+    }])
+    const before = { ...normal('before', 'user', 1), createdAt: new Date(1_000).toISOString(), metadata: undefined }
+    const after = { ...normal('after', 'user', 2), createdAt: new Date(3_000).toISOString(), metadata: undefined }
+
+    expect(buildRealtimeTranscriptLayout(turns, new Map(), [before, after])).toEqual([
+      { kind: 'message', messageId: 'before' },
+      { kind: 'voice', turnId: 'voice-user' },
+      { kind: 'message', messageId: 'after' },
     ])
   })
 })

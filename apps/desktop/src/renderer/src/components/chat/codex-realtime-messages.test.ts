@@ -3,6 +3,7 @@ import type { ChatMessage } from '@superone/shared/agent-types'
 import { EMPTY_CODEX_REALTIME_SESSION_VIEW } from '@/stores/codex-realtime-view'
 import {
   isRealtimeDelegationMessage,
+  isRealtimeConversationTail,
   isRealtimeVoiceMessage,
   mergeCodexRealtimeMessages,
   mergeCodexThreadMessages,
@@ -107,5 +108,43 @@ describe('Codex realtime/thread separation', () => {
     expect(result.id).toBe('codex-realtime-item-1')
     expect(result.metadata?.codexTimeline?.position).toBe(2)
     expect(isRealtimeVoiceMessage(result)).toBe(true)
+  })
+
+  it('returns to ordinary chat mode only when a text turn follows voice', () => {
+    const realtime = {
+      ...EMPTY_CODEX_REALTIME_SESSION_VIEW,
+      hasTimeline: true,
+      segments: [
+        { id: 'voice-1', realtimeSessionId: 'rt-1', role: 'user' as const, text: 'Hello', position: 10 },
+      ],
+    }
+    const before = {
+      ...message('before', 'assistant', 'Earlier text'),
+      metadata: { codexTimeline: { provenance: 'codex' as const, position: 5 } },
+    }
+    const after = {
+      ...message('after', 'assistant', 'Later text'),
+      metadata: { codexTimeline: { provenance: 'codex' as const, position: 15 } },
+    }
+
+    expect(isRealtimeConversationTail([before], realtime)).toBe(true)
+    expect(isRealtimeConversationTail([before, after], realtime)).toBe(false)
+    expect(isRealtimeConversationTail([before, after], { ...realtime, realtimeSessionId: 'rt-2' })).toBe(true)
+  })
+
+  it('uses timestamps to classify local user rows without timeline order', () => {
+    const realtime = {
+      ...EMPTY_CODEX_REALTIME_SESSION_VIEW,
+      hasTimeline: true,
+      segments: [{
+        id: 'voice-1', realtimeSessionId: 'rt-1', role: 'user' as const,
+        text: 'Hello', localOrder: 10, startedAtMs: 2_000,
+      }],
+    }
+    const before = { ...message('before', 'user', 'Earlier text'), createdAt: new Date(1_000).toISOString() }
+    const after = { ...message('after', 'user', 'Later text'), createdAt: new Date(3_000).toISOString() }
+
+    expect(isRealtimeConversationTail([before], realtime)).toBe(true)
+    expect(isRealtimeConversationTail([before, after], realtime)).toBe(false)
   })
 })

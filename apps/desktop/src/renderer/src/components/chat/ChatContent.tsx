@@ -36,7 +36,7 @@ const WorkflowFullView = lazy(() => import('./WorkflowFullView').then((m) => ({ 
 import { WorkflowNavigationContext, type WorkflowViewState } from './workflow-navigation-context'
 import { SelectionContextMenuZone } from './SelectionContextMenu'
 import { ChatScrollIndicator } from './ChatScrollIndicator'
-import { mergeCodexThreadMessages } from './codex-realtime-messages'
+import { isRealtimeConversationTail, mergeCodexThreadMessages } from './codex-realtime-messages'
 import { CodexRealtimeTranscript } from './CodexRealtimeTranscript'
 import { RealtimeStartingSurface } from './RealtimeStartingSurface'
 import { RealtimeCallIndicator } from './RealtimeCallIndicator'
@@ -545,6 +545,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     && realtime.hasTimeline
     && (!import.meta.env.DEV || realtime.view === 'realtime'),
   )
+  const realtimeAtTail = showRealtime && isRealtimeConversationTail(threadMessages, realtime)
   const needsDecision = (pendingPermissions?.length ?? 0) > 0
     || pendingQuestion != null
     || pendingPlanApproval != null
@@ -685,7 +686,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
             }
           }}
         />
-      ) : pendingPlanApproval && !showRealtime ? (
+      ) : pendingPlanApproval && !realtimeAtTail ? (
         <PlanApprovalPrompt />
       ) : (
         <>
@@ -717,7 +718,9 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
             )}
           </div>
           <div className="mx-auto w-full min-w-0 max-w-3xl">
-            <ChatComposerShell showTodoPopup={!showRealtime} />
+            <ChatComposerShell
+              showTodoPopup={!realtimeAtTail}
+            />
           </div>
         </>
       )}

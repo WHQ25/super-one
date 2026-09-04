@@ -508,6 +508,87 @@ describe('ChatContent empty-state gate is harness-agnostic', () => {
     expect(screen.queryByTestId('chat-suggestions')).toBeNull()
   })
 
+  it('renders typed history, the voice portion, and later typed turns in one timeline', async () => {
+    reset()
+    hoisted.sessionState.messages = []
+    hoisted.sessionState.session = { sessionId: 'sid-1' }
+    hoisted.sessionState._historyHydrated = true
+    hoisted.sessionState.sessionProvider = 'codex'
+    hoisted.sessionState.preferredProvider = 'codex'
+    const normal = (id: string, role: 'user' | 'assistant', text: string, position: number) => ({
+      id,
+      role,
+      status: 'complete' as const,
+      content: [{ type: 'text' as const, text }],
+      createdAt: '',
+      providerId: 'codex' as const,
+      metadata: { codexTimeline: { provenance: 'codex' as const, position } },
+    })
+    const timeline = {
+      segments: [
+        { id: 'voice-user', realtimeSessionId: 'rt-1', role: 'user' as const, text: 'Spoken request', position: 10 },
+        { id: 'voice-assistant', realtimeSessionId: 'rt-1', role: 'assistant' as const, text: 'Spoken reply', position: 15 },
+      ],
+      threadMessages: [
+        normal('typed-before-user', 'user', 'Typed before voice', 1),
+        normal('typed-before-assistant', 'assistant', 'Reply before voice', 2),
+        normal('typed-after-user', 'user', 'Typed after voice', 30),
+        normal('typed-after-assistant', 'assistant', 'Reply after voice', 31),
+      ],
+      activeRealtimeSessionId: null,
+      hasTimeline: true,
+    }
+    useCodexRealtimeViewStore.getState().setTimeline('sid-1', timeline)
+    Object.assign(window.agent, { getRealtimeTimeline: vi.fn(async () => timeline) })
+
+    renderContent()
+
+    await screen.findByText('Spoken request')
+    const visibleTexts = [...document.querySelectorAll('[data-message-id]')]
+      .map((element) => element.textContent)
+      .filter((text) => text?.includes('voice'))
+    expect(visibleTexts).toEqual([
+      expect.stringContaining('Typed before voice'),
+      expect.stringContaining('Reply before voice'),
+      expect.stringContaining('Typed after voice'),
+      expect.stringContaining('Reply after voice'),
+    ])
+    expect(screen.getByText('Spoken request').closest('[data-testid="chat-message"]'))
+      .toHaveAttribute('data-hide-copy-actions', 'true')
+    expect(screen.getByText('Typed after voice').closest('[data-testid="chat-message"]'))
+      .toHaveAttribute('data-hide-copy-actions', 'false')
+    expect(screen.getByTestId('todo-popup')).toBeInTheDocument()
+  })
+
+  it('keeps existing typed history visible while voice is connecting', () => {
+    reset()
+    hoisted.sessionState.messages = []
+    hoisted.sessionState.session = { sessionId: 'sid-1' }
+    hoisted.sessionState._historyHydrated = true
+    hoisted.sessionState.sessionProvider = 'codex'
+    hoisted.sessionState.preferredProvider = 'codex'
+    useCodexRealtimeViewStore.getState().setTimeline('sid-1', {
+      segments: [],
+      threadMessages: [{
+        id: 'typed-before',
+        role: 'assistant',
+        status: 'complete',
+        content: [{ type: 'text', text: 'Existing typed history' }],
+        createdAt: '',
+        providerId: 'codex',
+        metadata: { codexTimeline: { provenance: 'codex', position: 1 } },
+      }],
+      activeRealtimeSessionId: null,
+      hasTimeline: false,
+    })
+    useCodexRealtimeViewStore.getState().setRealtimeStarting('sid-1', true)
+
+    renderContent()
+
+    expect(screen.getByText('Existing typed history')).toBeInTheDocument()
+    expect(screen.queryByTestId('chat-suggestions')).toBeNull()
+  })
+
   it('shows the delegation prompt in the dev backing-thread view, hides it in the voice view', async () => {
     reset()
     hoisted.sessionState.messages = []
@@ -604,7 +685,7 @@ describe('ChatContent empty-state gate is harness-agnostic', () => {
     renderContent()
 
     expect(await screen.findByText('Restored voice request')).toBeInTheDocument()
-    expect(document.querySelector('[data-message-id="codex-timeline-turn-cold"]')).toBeNull()
+    expect(document.querySelector('[data-message-id="codex-timeline-turn-cold"]')).not.toBeNull()
     expect(getRealtimeTimeline).toHaveBeenCalledWith('/tmp/project', 'sid-1')
     expect(screen.queryByTestId('chat-suggestions')).toBeNull()
   })

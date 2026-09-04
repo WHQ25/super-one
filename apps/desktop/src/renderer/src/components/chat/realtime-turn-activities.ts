@@ -16,6 +16,7 @@ export interface RealtimeTurnActivity {
 export type RealtimeTranscriptLayoutRow =
   | { kind: 'voice'; turnId: string }
   | { kind: 'activity'; turnId: string }
+  | { kind: 'message'; messageId: string }
 
 /**
  * Keep unfinished delegated work at the live edge of the transcript. Realtime speech
@@ -25,20 +26,53 @@ export type RealtimeTranscriptLayoutRow =
 export function buildRealtimeTranscriptLayout(
   turns: readonly RealtimeConversationTurn[],
   activities: ReadonlyMap<string, RealtimeTurnActivity>,
+  messages: readonly ChatMessage[] = [],
 ): RealtimeTranscriptLayoutRow[] {
-  const rows: RealtimeTranscriptLayoutRow[] = []
+  const blocks: Array<{
+    order: number | null
+    timestamp: number | null
+    rows: RealtimeTranscriptLayoutRow[]
+  }> = []
   const trailing: RealtimeTranscriptLayoutRow[] = []
 
   for (const turn of turns) {
-    rows.push({ kind: 'voice', turnId: turn.id })
+    const rows: RealtimeTranscriptLayoutRow[] = [{ kind: 'voice', turnId: turn.id }]
     const activity = activities.get(turn.id)
-    if (!activity) continue
-    const row = { kind: 'activity', turnId: turn.id } as const
-    if (activity.status === 'working') trailing.push(row)
-    else rows.push(row)
+    if (activity) {
+      const row = { kind: 'activity', turnId: turn.id } as const
+      if (activity.status === 'working') trailing.push(row)
+      else rows.push(row)
+    }
+    const timestamps = [turn.user, ...turn.assistant]
+      .flatMap((segment) => segment?.startedAtMs === undefined ? [] : [segment.startedAtMs])
+    blocks.push({
+      order: turnStart(turn),
+      timestamp: timestamps.length > 0 ? Math.min(...timestamps) : null,
+      rows,
+    })
   }
 
-  return [...rows, ...trailing]
+  for (const message of messages) {
+    if (message.metadata?.codexTimeline?.provenance === 'realtime-delegated') continue
+    blocks.push({
+      order: orderOfMessage(message),
+      timestamp: Number.isNaN(Date.parse(message.createdAt)) ? null : Date.parse(message.createdAt),
+      rows: [{ kind: 'message', messageId: message.id }],
+    })
+  }
+
+  // `Array#sort` is stable, so user/assistant rows sharing a Codex turn position
+  // retain the chronological order supplied by the provider timeline. Messages
+  // without provider order use timestamps while a locally observed voice segment
+  // still has one; truly unpositioned rows stay at the visible tail.
+  blocks.sort((left, right) => {
+    if (left.order !== null && right.order !== null) return left.order - right.order
+    if (left.timestamp !== null && right.timestamp !== null) return left.timestamp - right.timestamp
+    if (left.order === null && right.order !== null) return 1
+    if (left.order !== null && right.order === null) return -1
+    return 0
+  })
+  return [...blocks.flatMap((block) => block.rows), ...trailing]
 }
 
 function orderOfSegment(segment: RealtimeTimelineSegment): number | null {

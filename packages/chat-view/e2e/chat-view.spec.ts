@@ -9,6 +9,7 @@ import {
   IMAGE_GENERATION_RECORDING,
   INTERACTIVE_TOOL_RECORDING,
   PLAN_RECORDINGS,
+  SESSION_ARCHIVE_RECORDING,
   VIDEO_GENERATION_RECORDING,
   WORKFLOW_TOOL_RECORDING,
 } from './fixtures/tool-family-recordings'
@@ -557,4 +558,22 @@ test('39 renders automation, config, and media-provider recordings with shared p
   await rows.nth(2).locator('> div').first().click()
   await expect(rows.nth(2)).toContainText('OpenAI')
   await expect(rows.nth(2)).toContainText('GPT Image 1')
+})
+
+test('40 renders session archive recordings with the shared presenter', async ({ page }) => {
+  await send(page, { type: 'hydrate', messages: [SESSION_ARCHIVE_RECORDING] })
+
+  const turn = page.locator('[data-turn-id="recording-session-archive"]')
+  const rows = turn.locator('.tool-node')
+  await expect(rows).toHaveCount(2)
+
+  await expect(rows.nth(0)).toContainText('1 session')
+  await expect(rows.nth(0)).toContainText('codex')
+  await rows.nth(0).locator('> div').first().click()
+  await expect(rows.nth(0)).toContainText('Mobile migration')
+  await expect(rows.nth(0)).toContainText('42')
+
+  await expect(rows.nth(1)).toContainText('1 session')
+  await rows.nth(1).locator('> div').first().click()
+  await expect(rows.nth(1)).toContainText('Old investigation')
 })

@@ -42,6 +42,8 @@
     "./presenters/page-tools-display": "./src/presenters/page-tools-display.ts",
     "./presenters/ReasoningBlock": "./src/presenters/ReasoningBlock.tsx",
     "./presenters/SessionCollabToolBlock": "./src/presenters/SessionCollabToolBlock.tsx",
+    "./presenters/SessionArchiveToolBlock": "./src/presenters/SessionArchiveToolBlock.tsx",
+    "./presenters/session-archive-display": "./src/presenters/session-archive-display.ts",
     "./presenters/report-findings-display": "./src/presenters/report-findings-display.ts",
     "./presenters/ReportFindingsToolBlock": "./src/presenters/ReportFindingsToolBlock.tsx",
     "./presenters/SubagentBlock": "./src/presenters/SubagentBlock.tsx",

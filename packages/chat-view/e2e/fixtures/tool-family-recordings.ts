@@ -445,3 +445,52 @@ export const WORKFLOW_TOOL_RECORDING: ChatMessage = {
   createdAt: '2026-09-04T00:00:10.000Z',
   providerId: 'claude',
 }
+
+/** Sanitized session-list and cleanup recording. */
+export const SESSION_ARCHIVE_RECORDING: ChatMessage = {
+  id: 'recording-session-archive',
+  role: 'assistant',
+  status: 'complete',
+  content: [
+    {
+      type: 'tool_use',
+      toolName: 'mcp__superone__session_list',
+      toolUseId: 'session-list',
+      input: JSON.stringify({ harness: 'codex' }),
+      status: 'complete',
+    },
+    {
+      type: 'tool_result',
+      toolUseId: 'session-list',
+      summary: JSON.stringify({
+        count: 1,
+        sessions: [{
+          id: 'session-mobile-migration',
+          title: 'Mobile migration',
+          harness: 'codex',
+          messageCount: 42,
+          createdAt: '2026-09-04T09:30:00.000Z',
+          pinned: true,
+        }],
+      }),
+    },
+    {
+      type: 'tool_use',
+      toolName: 'mcp__superone__session_cleanup',
+      toolUseId: 'session-cleanup',
+      input: JSON.stringify({ action: 'hide', sessionIds: [''] }),
+      status: 'complete',
+    },
+    {
+      type: 'tool_result',
+      toolUseId: 'session-cleanup',
+      summary: JSON.stringify({
+        status: 'ok',
+        action: 'hide',
+        affected: [{ id: 'session-old', title: 'Old investigation' }],
+      }),
+    },
+  ],
+  createdAt: '2026-09-04T00:00:11.000Z',
+  providerId: 'claude',
+}

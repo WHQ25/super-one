@@ -81,5 +81,13 @@ describe('remote tool input exemptions', () => {
       'mcp__superone__config_apply',
       JSON.stringify({ resource: { operation: 'update', recordId: 'secret' }, changes: [{ key: 'token', value: 'secret' }] }),
     ))).toEqual({ resource: { operation: 'update' } })
+    expect(JSON.parse(sanitizeRemoteToolInput(
+      'mcp__superone__session_cleanup',
+      JSON.stringify({ action: 'delete', sessionIds: ['private-a', 'private-b'] }),
+    ))).toEqual({ action: 'delete', sessionIds: ['', ''] })
+    expect(sanitizeRemoteToolInput(
+      'mcp__superone__session_search',
+      JSON.stringify({ query: 'private search' }),
+    )).toBe('')
   })
 })

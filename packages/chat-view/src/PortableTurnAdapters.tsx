@@ -59,6 +59,10 @@ import {
 import { ConfigApplyBlockPresenter } from './presenters/ConfigApplyBlock'
 import { MediaProvidersBlockPresenter } from './presenters/MediaProvidersBlock'
 import {
+  SessionArchiveToolBlockPresenter,
+  isSessionArchiveToolName,
+} from './presenters/SessionArchiveToolBlock'
+import {
   COLLAB_TOOLS,
   SessionCollabToolBlockPresenter,
 } from './presenters/SessionCollabToolBlock'
@@ -249,6 +253,19 @@ function PortableClaudeTool(props: ClaudeToolPresenterProps) {
         isError={Boolean(props.isError)}
         isDenied={isDenied}
         allowExpand
+      />
+    )
+  }
+  if (collabToolName && isSessionArchiveToolName(collabToolName)) {
+    const isDenied = Boolean(props.result?.startsWith('[denied] '))
+    return (
+      <SessionArchiveToolBlockPresenter
+        toolName={collabToolName}
+        params={parseRecord(props.input)}
+        result={isDenied ? props.result?.slice('[denied] '.length) : props.result}
+        isStreaming={props.status === 'streaming'}
+        isError={props.isError}
+        isDenied={isDenied}
       />
     )
   }

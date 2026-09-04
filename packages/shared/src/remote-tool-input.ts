@@ -156,6 +156,11 @@ function sanitizeWorkflowInput(toolName: string, input: string): string {
     'automation_apply',
     'automation_delete',
     'config_apply',
+    'project_list',
+    'session_list',
+    'session_search',
+    'session_read',
+    'session_cleanup',
   ])
   if (!bare || !supported.has(bare) || !input) return ''
   let parsed: unknown
@@ -177,6 +182,13 @@ function sanitizeWorkflowInput(toolName: string, input: string): string {
     if (resource && typeof resource.operation === 'string') {
       safe.resource = { operation: resource.operation }
     }
+  } else if (bare === 'session_list') {
+    copyDefined(source, safe, ['harness'])
+  } else if (bare === 'session_read') {
+    copyDefined(source, safe, ['view'])
+  } else if (bare === 'session_cleanup') {
+    copyDefined(source, safe, ['action'])
+    if (Array.isArray(source.sessionIds)) safe.sessionIds = source.sessionIds.map(() => '')
   }
   return Object.keys(safe).length ? JSON.stringify(safe) : ''
 }

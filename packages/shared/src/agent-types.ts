@@ -2963,6 +2963,32 @@ export interface ProviderRateLimits extends ClaudeRateLimits {
   creditBalanceDollars?: number
 }
 
+/**
+ * One signed-in Claude subscription, as reported by `claude auth status --json`.
+ *
+ * A credential domain is selected with `CLAUDE_SECURESTORAGE_CONFIG_DIR`, which redirects the
+ * keychain entry and `.credentials.json` **without** moving `CLAUDE_CONFIG_DIR` — so transcripts
+ * and `~/.claude/projects` stay shared and resuming a session across accounts keeps working.
+ */
+export interface ClaudeAccount {
+  /** Credential domain directory, or `null` for the CLI's own default login. */
+  credentialDir: string | null
+  loggedIn: boolean
+  /**
+   * `email|orgId`, lowercased — `null` when the account can't be identified.
+   * Plans are org-scoped, so one email with a personal org and a company org is two accounts
+   * with two separate usage pools; keying on email alone would merge them.
+   */
+  identityKey: string | null
+  email: string | null
+  orgId: string | null
+  orgName: string | null
+  /** Plan name as the CLI reports it (e.g. "max"), or `null` when signed out. */
+  subscriptionType: string | null
+  /** Where the CLI resolves transcripts to. Expected to be identical across accounts. */
+  projectsDirectory: string | null
+}
+
 export type CodexHookEventName =
   | 'preToolUse'
   | 'postToolUse'
@@ -3481,6 +3507,9 @@ export const AgentIpcChannels = {
 
   // Claude channels
   CLAUDE_GET_RATE_LIMITS: 'claude:get-rate-limits',
+  CLAUDE_LIST_ACCOUNTS: 'claude:list-accounts',
+  CLAUDE_SIGN_IN_ACCOUNT: 'claude:sign-in-account',
+  CLAUDE_SIGN_OUT_ACCOUNT: 'claude:sign-out-account',
 
   // Third-party provider usage channels
   PROVIDER_GET_RATE_LIMITS: 'provider:get-rate-limits',

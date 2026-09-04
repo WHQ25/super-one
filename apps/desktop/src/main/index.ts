@@ -164,6 +164,12 @@ import {
 } from './git-status-utils'
 import { mapModelInfo } from './agent/claude-models'
 import { getClaudeRateLimits } from './agent/claude-usage-service'
+import {
+  createAccountDir as createClaudeAccountDir,
+  listAccounts as listClaudeAccounts,
+  signInAccount as signInClaudeAccount,
+  signOutAccount as signOutClaudeAccount,
+} from './agent/claude-account-service'
 import { getProviderRateLimits } from './agent/provider-usage-service'
 import { getRecentFolders, getRecentFoldersWithPresence, addRecentFolder, removeRecentFolder, getProjectExtraDirs, getProjectId, getProjectPathById } from './recent-folders'
 import { PATH_EXISTS_OPEN_TIMEOUT_MS, pathExistsBounded } from './path-exists-bounded'
@@ -2576,6 +2582,18 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.CLAUDE_GET_RATE_LIMITS, (_event, force?: boolean) => {
     return getClaudeRateLimits(force ?? false)
+  })
+
+  ipcMain.handle(AgentIpcChannels.CLAUDE_LIST_ACCOUNTS, () => {
+    return listClaudeAccounts()
+  })
+
+  ipcMain.handle(AgentIpcChannels.CLAUDE_SIGN_IN_ACCOUNT, (_event, email?: string | null) => {
+    return signInClaudeAccount(createClaudeAccountDir(), email)
+  })
+
+  ipcMain.handle(AgentIpcChannels.CLAUDE_SIGN_OUT_ACCOUNT, (_event, credentialDir: string) => {
+    return signOutClaudeAccount(credentialDir)
   })
 
   ipcMain.handle(AgentIpcChannels.PROVIDER_GET_RATE_LIMITS, (_event, apiProviderId: string, force?: boolean) => {

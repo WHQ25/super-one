@@ -3,6 +3,11 @@
 Status: **Android internal APK and first OTA emulator-verified; iOS signing and physical release pending**
 Plan: `docs/design/flutter-to-expo-migration-plan.md` WP-29
 
+The 2026-09-04 non-interactive iOS production preflight found no usable remote
+certificate/profile and created no build. EAS incremented the remote `buildNumber` to
+2 before failing. The release owner must run the production build interactively once,
+complete Apple Developer login/2FA, and let EAS create or select the signing assets.
+
 Run EAS commands from `apps/mobile`. Keep `credentials.json`, signing files, build
 artifacts, screenshots, and videos out of git.
 

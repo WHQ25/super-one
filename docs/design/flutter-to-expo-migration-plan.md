@@ -784,6 +784,12 @@ Gboard. Its remote smoke also covers QR/deep-link pairing, cold-relaunch restore
 reconnect, project/session navigation, Unicode input plus the recent-input Return
 guard, streaming, interruption, and the shared Chat View presenter. Android Pinyin
 composition itself remains part of the physical-device smoke.
+Real Android AskUserQuestion and plan-mode runs also exposed a cross-surface lifecycle
+gap: `interaction_resolved` was sent to Desktop renderers but not Relay subscribers,
+leaving native sheets open after the harness had accepted the response. Synthetic
+permission, question, and plan resolutions now fan out to both surfaces. A second
+question submission and plan rejection each closed immediately and rendered Complete
+or Rejected in the shared transcript.
 
 #### WP-28 — T3: chat-view tool family coverage
 
@@ -860,6 +866,9 @@ streamed and interrupted a Chinese prompt, and kept the composer above Gboard. T
 relay client now retains the endpoint that actually completed the handshake instead
 of replacing it with an unreachable desktop-internal address. Release-mode physical
 pairing remains gated on the production WSS endpoint and the one-device smoke.
+The iOS production preflight found no usable remote signing certificate/profile and
+created no build; EAS incremented the remote build number to 2 before reporting that
+interactive credential setup is required.
 
 ---
 
@@ -1144,6 +1153,8 @@ After PR1–3 green, run WP-04/05/06 in parallel, then **WP-07 scaffold** once M
 **2026-09-04 (WP-26 completion):** replaced the ad-hoc mobile shell with generated desktop-semantic theme tokens, automatic system appearance, shared React Native primitives, and a real native-stack navigation hierarchy. Chat and terminal documents receive exact colours from the same token module. `App.tsx` is 10 lines, screens/navigation/UI live in their dedicated directories, the 768 px master/detail unsubscribe rule is preserved, and iPhone Release builds were visually checked in dark and light. Mobile has 54 passing tests across 24 files and Mobile typecheck is green. A local Xcode 26.5 Debug link failure against Expo SDK 54 / React Native 0.81 remains a development-toolchain issue; the clean Release build succeeds without a source-build workaround.
 
 **2026-09-04 (WP-27/29 Android remote smoke):** installed the EAS development APK on the built-in Android 16 device and paired it with the development desktop through the local relay. The relay client now keeps the QR endpoint that completed the encrypted handshake, so a desktop-internal address cannot break reconnect behind NAT or an emulator proxy. Cold relaunch restored the saved pairing; project/session navigation, shared Chat View rendering, Chinese Unicode input, streaming, interruption, and clickable file presenters all worked. Moving keyboard avoidance above the header/content coordinate boundary keeps the composer above Gboard, and successful RPCs no longer leave stale diagnostic footers. Mobile has 75 passing tests across 29 files, relay-client has 58 across 10, and Mobile typecheck is green. Android Pinyin composition, release-mode WSS pairing, physical-device smoke, iOS signing/TestFlight, and Flutter archive remain pending.
+
+**2026-09-04 (WP-27 interaction lifecycle smoke):** a real Android AskUserQuestion response reached the Claude harness but left the native sheet open because AgentService sent its synthetic `interaction_resolved` only to Desktop renderers. The synthetic event path now also notifies remote subscribers for permission, question, dismissal, and plan decisions, including decisions made from Desktop while Mobile is subscribed. After rebuilding the development desktop, a second question submission closed immediately and rendered the completed tool; a plan-mode rejection likewise closed immediately and rendered `Plan Rejected`. AgentService has 103 passing focused tests with 21 skipped, and Desktop node/web typechecks are green.
 
 ---
 

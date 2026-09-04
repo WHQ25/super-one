@@ -114,7 +114,11 @@ function lastMergeTargetIndex(content: ContentBlock[], delta: ContentBlock): num
  * Single source of truth for both the renderer store and the main-process
  * persistence runtime — keep them on this one implementation.
  */
-export function applyContentDelta(content: ContentBlock[], delta: ContentBlock): ContentBlock[] {
+export function applyContentDelta(
+  content: ContentBlock[],
+  delta: ContentBlock,
+  now: () => number = Date.now,
+): ContentBlock[] {
   if (delta.type === 'text') {
     const idx = lastMergeTargetIndex(content, delta)
     const target = idx === -1 ? undefined : content[idx]
@@ -136,7 +140,7 @@ export function applyContentDelta(content: ContentBlock[], delta: ContentBlock):
     if (idx !== -1) {
       const existing = content[idx]
       if (existing.type !== 'tool_use') {
-        return content.map((b, i) => (i === idx ? { ...delta, startedAt: Date.now() } : b))
+        return content.map((b, i) => (i === idx ? { ...delta, startedAt: now() } : b))
       }
       // Sparse ACP updates (status/content only, or backend web_search without query)
       // must not wipe a richer prior input / toolSummary.
@@ -160,7 +164,7 @@ export function applyContentDelta(content: ContentBlock[], delta: ContentBlock):
           }
         : b))
     }
-    return [...content, { ...delta, startedAt: Date.now() }]
+    return [...content, { ...delta, startedAt: now() }]
   }
   if (delta.type === 'tool_result') {
     const updated = content.map((b) =>

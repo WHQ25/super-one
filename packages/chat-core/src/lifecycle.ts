@@ -1,0 +1,198 @@
+import type { AgentEvent } from '@superone/shared/agent-types'
+import { applySeqToMessage } from '@superone/shared/event-seq-utils'
+import { DEFAULT_PROVIDER } from './transformers'
+import type { ChatCoreSession } from './types'
+import { sealCodexMetadata, sealStreamingTools } from './shared'
+import { defaultChatCorePorts, type ChatCorePorts } from './ports'
+
+type LifecycleEvent = Extract<AgentEvent, {
+  type:
+    | 'queued_message_consumed'
+    | 'queued_messages_restored'
+    | 'message_start'
+    | 'message_timestamp'
+    | 'messages_retracted'
+    | 'user_message_appended'
+    | 'message_interrupted'
+    | 'message_error'
+    | 'status_change'
+    | 'session_init'
+    | 'provider_session_id'
+    | 'init_ready'
+    | 'worktree_missing'
+}>
+
+export function reduceLifecycle(
+  session: ChatCoreSession,
+  event: LifecycleEvent,
+  ports: ChatCorePorts = defaultChatCorePorts,
+): Partial<ChatCoreSession> {
+  switch (event.type) {
+    case 'queued_messages_restored':
+      return {
+        queuedMessages: event.messages.map((message) => ({
+          id: message.clientMessageId,
+          role: 'user' as const,
+          status: 'complete' as const,
+          content: [{ type: 'text' as const, text: message.content }],
+          createdAt: new Date(ports.now()).toISOString(),
+          providerId: 'local',
+        })),
+      }
+    case 'queued_message_consumed': {
+      const idx = session.queuedMessages.findIndex((m) => m.id === event.clientMessageId)
+      if (idx === -1) return {}
+      const consumed = session.queuedMessages[idx]
+      const alreadyInTranscript = session.messages.some((m) => m.id === consumed.id)
+      return {
+        ...(alreadyInTranscript ? {} : { messages: [...session.messages, consumed] }),
+        queuedMessages: session.queuedMessages.filter((_, i) => i !== idx),
+        awaitingAssistantReply: true,
+        lastEventAt: ports.now(),
+      }
+    }
+
+    case 'message_start': {
+      const existingIdx = session.messages.findIndex((m) => m.id === event.message.id)
+      const timeline = event.message.metadata?.codexTimeline
+      const message = {
+        ...event.message,
+        ...applySeqToMessage(event),
+        ...(timeline && event.seq !== undefined
+          ? {
+              metadata: {
+                ...event.message.metadata,
+                codexTimeline: {
+                  ...timeline,
+                  localOrder: timeline.localOrder ?? event.seq,
+                },
+              },
+            }
+          : {}),
+      }
+      const nextMessages = existingIdx === -1
+        ? [...session.messages, message]
+        : session.messages
+      return {
+        messages: nextMessages,
+        promptSuggestion: null,
+        awaitingAssistantReply: false,
+        lastEventAt: ports.now(),
+        ...(event.message.role === 'assistant'
+          ? { lastAssistantMessageId: event.message.id, streamingTokens: { input: 0, output: 0 } }
+          : {}),
+      }
+    }
+
+    case 'message_timestamp': {
+      let changed = false
+      const messages = session.messages.map((msg) => {
+        if (msg.id !== event.messageId || msg.createdAt === event.timestamp) return msg
+        changed = true
+        return { ...msg, createdAt: event.timestamp }
+      })
+      return changed ? { messages } : {}
+    }
+
+    case 'user_message_appended': {
+      if (session.messages.some((m) => m.id === event.message.id)) return {}
+      return {
+        messages: [...session.messages, event.message],
+        lastEventAt: ports.now(),
+      }
+    }
+
+    case 'messages_retracted': {
+      const dropped = new Set(event.messageIds)
+      const messages = session.messages.filter((m) => !dropped.has(m.id))
+      // Idempotent by contract: an already-evicted id must not churn identity.
+      if (messages.length === session.messages.length) return {}
+      return { messages, lastEventAt: ports.now() }
+    }
+
+    case 'message_interrupted': {
+      const ft = session.streamingTokens
+      const consumedTokens = ft.input > 0 || ft.output > 0
+        ? { input: ft.input, output: ft.output }
+        : undefined
+      return {
+        messages: session.messages.map((msg) => {
+          if (msg.id !== event.messageId) return msg
+          const nextMeta = sealCodexMetadata({
+            ...msg.metadata,
+            ...(event.metadata ?? {}),
+            ...(consumedTokens ? { consumedTokens } : {}),
+          })
+          return {
+            ...msg,
+            status: 'interrupted' as const,
+            metadata: nextMeta,
+            // Interrupt only flips message.status. In-flight tool_use rows stay
+            // `streaming`, and React Compiler can reuse the previous tool tree
+            // when content is unchanged — wait_for keeps shimmering under the
+            // Interrupted footer. Seal the tools so the turn body invalidates.
+            content: sealStreamingTools(msg.content),
+          }
+        }),
+        pendingPermissions: [],
+        pendingQuestion: null,
+        pendingPlanApproval: null,
+        awaitingAssistantReply: false,
+        lastEventAt: 0,
+        streamingTokens: { input: 0, output: 0 },
+      }
+    }
+
+    case 'message_error':
+      return {
+        awaitingAssistantReply: false,
+        lastEventAt: 0,
+        streamingTokens: { input: 0, output: 0 },
+        messages: session.messages.map((msg) => {
+          if (msg.id !== event.messageId) return msg
+          // The failure lives in metadata, not in a text block: the footer badge
+          // owns the summary and its popover owns the detail. Harnesses that send
+          // no structured info still get a badge via the raw fallback.
+          return {
+            ...msg,
+            status: 'error' as const,
+            metadata: sealCodexMetadata({
+              ...msg.metadata,
+              errorInfo: event.errorInfo ?? { raw: event.error },
+            }),
+            content: sealStreamingTools(msg.content),
+          }
+        }),
+      }
+
+    case 'status_change':
+      // Leave queuedMessages in place. Grok/OpenCode emit idle at the end of
+      // the live turn *before* queued_message_consumed; splicing the queue in
+      // here (especially before the last assistant) jumps the next user prompt
+      // above the reply it is waiting on. Consume is the source of truth.
+      return {
+        status: event.status,
+        ...(event.status === 'idle' ? { apiRetry: null } : {}),
+        // Terminal state of an undeclared wire message can go missing; clearing on
+        // any turn end guarantees the running indicator cannot get stranded.
+        ...(event.status !== 'streaming' ? { runningSlashCommand: null } : {}),
+      }
+
+    case 'session_init':
+      ports.trace?.('chat.store', 'session_init', { sessionId: event.session?.sessionId, outputStyle: event.session?.outputStyle, availableOutputStyles: event.session?.availableOutputStyles })
+      return {
+        session: event.session,
+        _providerSessionId: event.session?.sessionId ?? session._providerSessionId,
+        sessionProvider: session.sessionProvider ?? DEFAULT_PROVIDER,
+      }
+
+    case 'provider_session_id':
+      return { _providerSessionId: event.providerSessionId }
+
+    case 'init_ready':
+      return { permissionMode: event.permissionMode }
+
+    case 'worktree_missing':
+      return { _worktreeRemoved: true, cwd: event.fallbackCwd }
+  }
+}

@@ -15,12 +15,7 @@ function sourceOf(name: string): string {
   return readFileSync(join(DIR, name), 'utf8')
 }
 
-/** WP-11 relocated component predicates and injected window via ports. */
-const REMAINING_COMPONENT_IMPORTS: Record<string, string> = {}
-
-const WINDOW_FILES = new Set<string>()
-
-describe('event-reducer extraction boundary (WP-01)', () => {
+describe('event-reducer package boundary (WP-12)', () => {
   it('does not import the Zustand barrel via ../index', () => {
     const hits: string[] = []
     for (const name of implementationFiles()) {
@@ -40,25 +35,33 @@ describe('event-reducer extraction boundary (WP-01)', () => {
     expect(hits).toEqual([])
   })
 
-  it('lists remaining @/components imports (WP-11 relocates these predicates)', () => {
-    const found: Record<string, string> = {}
+  it('does not import renderer components', () => {
+    const found: string[] = []
     for (const name of implementationFiles()) {
-      const match = sourceOf(name).match(/from\s+['"](@\/components\/[^'"]+)['"]/)
-      if (match) found[name] = match[1]
+      if (/from\s+['"]@\/components\//.test(sourceOf(name))) found.push(name)
     }
-    expect(found).toEqual(REMAINING_COMPONENT_IMPORTS)
+    expect(found).toEqual([])
   })
 
-  it('lists remaining window.* impurities (trace only; inject as a port in WP-11)', () => {
+  it('keeps window access in the Desktop adapter only', () => {
     const found = implementationFiles().filter((name) => /\bwindow\./.test(sourceOf(name)))
-    expect(found).toEqual([...WINDOW_FILES])
+    expect(found).toEqual(['index.ts'])
+
+    const adapter = sourceOf('index.ts')
+    expect(adapter).toContain('const desktopChatCorePorts: ChatCorePorts')
+    expect(adapter).toContain('window.app?.trace?.(channel, name, payload)')
+    expect(adapter).toContain('applyCoreEventToSession(session, event, ports)')
   })
 
-  it('lifecycle family has no @/components, window, or module Maps', () => {
-    const src = sourceOf('lifecycle.ts')
-    expect(src).not.toMatch(/from\s+['"]@\/components\//)
-    expect(src).not.toMatch(/\bwindow\./)
-    expect(src).not.toMatch(/new Map\s*</)
-    expect(src).toContain("from './transformers'")
+  it('keeps reducer-family files as chat-core compatibility shims', () => {
+    const shims = implementationFiles().filter((name) => name !== 'index.ts')
+    const nonPackageShims = shims.filter(
+      (name) => !/from\s+['"]@superone\/chat-core['"]/.test(sourceOf(name)),
+    )
+
+    expect(nonPackageShims).toEqual([])
+    expect(sourceOf('lifecycle.ts')).toContain(
+      "export { reduceLifecycle } from '@superone/chat-core'",
+    )
   })
 })

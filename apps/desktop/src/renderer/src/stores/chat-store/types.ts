@@ -39,6 +39,7 @@ import type {
   TodoItem,
 } from '@superone/shared/agent-types'
 import type { BuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
+import type { ChatCoreSession } from '@superone/chat-core'
 import type { BrowserAnnotation } from './helpers/browser-annotation'
 
 export type Corner = 'br' | 'bl' | 'tr' | 'tl' | 'tm' | 'rm' | 'bm' | 'lm'
@@ -93,7 +94,7 @@ export interface MiniAppContextSlot {
   checked: boolean
 }
 
-export interface PerSessionState {
+export interface PerSessionState extends ChatCoreSession {
   cwd: string
   _title: string | null
   messages: ChatMessage[]

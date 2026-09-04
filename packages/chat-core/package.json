@@ -3,13 +3,14 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Pure applyEventToSession for desktop and Expo. Implementation lives in the desktop event-reducer until the remaining helper files move.",
+  "description": "Pure chat event reducer shared by desktop and Expo.",
   "exports": {
     ".": "./src/index.ts"
   },
   "scripts": {
+    "fixtures:export": "bun scripts/export-fixtures.ts",
     "test": "vitest run",
-    "typecheck": "vitest run"
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@superone/shared": "workspace:*"

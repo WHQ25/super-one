@@ -45,6 +45,22 @@ describe('applyContentDelta: never merges across parentToolUseId', () => {
 })
 
 describe('applyContentDelta: tool_use input merge', () => {
+  it('uses the injected clock when a tool starts', () => {
+    const content = applyContentDelta([], {
+      type: 'tool_use',
+      toolUseId: 'clocked',
+      toolName: 'Read',
+      input: '{}',
+      status: 'streaming',
+    } as ContentBlock, () => 1_700_000_000_000)
+
+    expect(content[0]).toMatchObject({
+      type: 'tool_use',
+      toolUseId: 'clocked',
+      startedAt: 1_700_000_000_000,
+    })
+  })
+
   it('preserves query when a later sparse update omits it', () => {
     let content: ContentBlock[] = []
     content = applyContentDelta(content, {

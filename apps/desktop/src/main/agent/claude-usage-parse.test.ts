@@ -57,3 +57,68 @@ describe('parseUsage (Claude /api/oauth/usage → ClaudeRateLimits)', () => {
     expect(parseUsage(data, null).extraUsage).toBeNull()
   })
 })
+
+describe('parseUsage — model-scoped weekly windows from limits[]', () => {
+  it('reads a scoped weekly window by display_name and places it right after Weekly', () => {
+    const data: UsageResponse = {
+      five_hour: { utilization: 25 },
+      seven_day: { utilization: 40 },
+      seven_day_sonnet: null,
+      limits: [
+        {
+          kind: 'weekly_scoped',
+          group: 'weekly',
+          percent: 7,
+          resets_at: '2026-02-01T00:00:00Z',
+          scope: { model: { display_name: 'Fable', id: null }, surface: null },
+        },
+      ],
+    }
+
+    const result = parseUsage(data, 'Max 20x')
+
+    expect(result.windows.map((w) => w.label)).toEqual(['5h', 'Weekly', 'Fable weekly'])
+    expect(result.windows[2]).toEqual({
+      label: 'Fable weekly',
+      usedPercent: 7,
+      resetsAt: Math.floor(Date.parse('2026-02-01T00:00:00Z') / 1000),
+    })
+  })
+
+  it('prefers the scoped row over a legacy top-level window for the same model', () => {
+    const data: UsageResponse = {
+      seven_day_sonnet: { utilization: 5 },
+      limits: [
+        { kind: 'weekly_scoped', percent: 33, scope: { model: { display_name: 'Sonnet' } } },
+      ],
+    }
+
+    const result = parseUsage(data, null)
+
+    expect(result.windows).toEqual([{ label: 'Sonnet weekly', usedPercent: 33, resetsAt: null }])
+  })
+
+  it('ignores limits entries that are not weekly_scoped, lack a model name, or lack a numeric percent', () => {
+    const data: UsageResponse = {
+      limits: [
+        { kind: 'weekly', percent: 40, scope: { model: { display_name: 'Fable' } } },
+        { kind: 'weekly_scoped', percent: 40 },
+        { kind: 'weekly_scoped', scope: { model: { display_name: 'Fable' } } },
+        { kind: 'weekly_scoped', percent: 40, scope: { model: { display_name: '  ' } } },
+      ],
+    }
+
+    expect(parseUsage(data, null).windows).toEqual([])
+  })
+
+  it('de-duplicates repeated scoped rows for the same model, keeping the first', () => {
+    const data: UsageResponse = {
+      limits: [
+        { kind: 'weekly_scoped', percent: 7, scope: { model: { display_name: 'Fable' } } },
+        { kind: 'weekly_scoped', percent: 99, scope: { model: { display_name: 'Fable' } } },
+      ],
+    }
+
+    expect(parseUsage(data, null).windows).toEqual([{ label: 'Fable weekly', usedPercent: 7, resetsAt: null }])
+  })
+})

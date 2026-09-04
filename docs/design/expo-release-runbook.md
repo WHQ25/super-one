@@ -11,6 +11,9 @@ one interactive run to create/select the app; after that, persist its numeric
 Production update group `25c7b31b-47a2-4c0a-abde-57220f3b1411` publishes commit
 `19ad04e3` for Android and iOS at runtime `1.0.0`, matching iOS build 4. It includes
 the Flutter-aligned reconnect, peer-return, shutdown, and terminal recovery behavior.
+Android internal update group `7dc306ae-166f-4a4e-9053-53a1507a8aee` publishes the
+same runtime code to the existing installable APK channel, so manual Android testing
+does not require another binary build.
 EAS Submit still has no iOS submission record; finish the first App Store Connect
 login/app setup before adding the numeric `ascAppId` to the production submit profile.
 

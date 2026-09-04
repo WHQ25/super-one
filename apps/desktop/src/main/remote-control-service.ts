@@ -348,9 +348,8 @@ export function computeToolMeta(block: ContentBlock & { type: 'tool_use' }, proj
       const named = typeof p.name === 'string' ? humanizePageToolName(p.name) : ''
       summary = written || named || undefined
     }
-    // The phone gets `input` blanked, so a tool whose whole human story lives in an
-    // argument arrives with nothing to show. `device_*` asks the agent for a
-    // conversation-language `description` precisely to be that story — carry it over.
+    // The phone gets a privacy-projected input, so keep the agent-written description
+    // as stable summary metadata as well.
     if (!summary && /__device_[a-z_]+$/.test(block.toolName)) {
       summary = typeof p.description === 'string' && p.description.trim()
         ? p.description.trim()

@@ -35,4 +35,28 @@ describe('remote tool input exemptions', () => {
   it('continues stripping unrelated tool input', () => {
     expect(sanitizeRemoteToolInput('Read', '{"file_path":"/private"}')).toBe('')
   })
+
+  it('keeps only presenter-routing metadata for device and computer tools', () => {
+    expect(JSON.parse(sanitizeRemoteToolInput(
+      'mcp__superone__device_act',
+      JSON.stringify({
+        description: 'Fill the form',
+        actions: [
+          { type: 'type', text: 'secret', ref: 'password' },
+          { type: 'keyboard', connected: false },
+        ],
+      }),
+    ))).toEqual({
+      description: 'Fill the form',
+      actions: [{ type: 'type' }, { type: 'keyboard', connected: false }],
+    })
+    expect(JSON.parse(sanitizeRemoteToolInput(
+      'mcp__superone__computer_query',
+      JSON.stringify({ op: 'search', text: 'private customer', ref: 'row-4', stateId: 'state-1' }),
+    ))).toEqual({ op: 'search' })
+    expect(JSON.parse(sanitizeRemoteToolInput(
+      'mcp__superone__computer_snapshot',
+      JSON.stringify({ description: 'Inspect the window', mode: 'semantic', capture: 'screen', root: 'private-window' }),
+    ))).toEqual({ description: 'Inspect the window', mode: 'semantic', capture: 'screen' })
+  })
 })

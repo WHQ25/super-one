@@ -10,8 +10,8 @@ export function shouldKeepRemoteToolInput(toolName: string): boolean {
   return REMOTE_TOOL_INPUT_SUFFIXES.some((suffix) => toolName.endsWith(suffix))
 }
 
-function browserBareName(toolName: string): string | null {
-  const match = toolName.match(/^mcp__superone(?:__|\.)(browser_[a-z_]+)$/)
+function superoneBareName(toolName: string): string | null {
+  const match = toolName.match(/^mcp__superone(?:__|\.)([a-z_]+)$/)
   return match?.[1] ?? null
 }
 
@@ -31,7 +31,27 @@ function copyDefined(
  * remain stripped from the remote transcript.
  */
 function sanitizeBrowserInput(toolName: string, input: string): string {
-  const bare = browserBareName(toolName)
+  const bare = superoneBareName(toolName)
+  if (!bare?.startsWith('browser_')) return ''
+  return sanitizePresenterInput(bare, input)
+}
+
+function actionTypes(value: unknown, keepKeyboardState = false): Array<Record<string, unknown>> {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((action) => {
+    if (!action || typeof action !== 'object' || Array.isArray(action)) return []
+    const source = action as Record<string, unknown>
+    if (typeof source.type !== 'string') return []
+    return [{
+      type: source.type,
+      ...(keepKeyboardState && source.type === 'keyboard' && typeof source.connected === 'boolean'
+        ? { connected: source.connected }
+        : {}),
+    }]
+  })
+}
+
+function sanitizePresenterInput(bare: string, input: string): string {
   if (!bare || !input) return ''
   let parsed: unknown
   try { parsed = JSON.parse(input) } catch { return '' }
@@ -47,13 +67,7 @@ function sanitizeBrowserInput(toolName: string, input: string): string {
       copyDefined(source, safe, ['op'])
       break
     case 'browser_act':
-      if (Array.isArray(source.actions)) {
-        safe.actions = source.actions.flatMap((action) => {
-          if (!action || typeof action !== 'object' || Array.isArray(action)) return []
-          const type = (action as Record<string, unknown>).type
-          return typeof type === 'string' ? [{ type }] : []
-        })
-      }
+      if (Array.isArray(source.actions)) safe.actions = actionTypes(source.actions)
       break
     case 'browser_network': {
       copyDefined(source, safe, ['action', 'preset', 'reset', 'width', 'height'])
@@ -79,8 +93,33 @@ function sanitizeBrowserInput(toolName: string, input: string): string {
   return Object.keys(safe).length > 0 ? JSON.stringify(safe) : ''
 }
 
+/** Device/computer rows need only operation kinds; coordinates, text, refs, and app ids stay private. */
+function sanitizeInteractiveInput(toolName: string, input: string): string {
+  const bare = superoneBareName(toolName)
+  if (!bare || (!bare.startsWith('device_') && !bare.startsWith('computer_'))) return ''
+  if (!input) return ''
+  let parsed: unknown
+  try { parsed = JSON.parse(input) } catch { return '' }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return ''
+  const source = parsed as Record<string, unknown>
+  const safe: Record<string, unknown> = {}
+  copyDefined(source, safe, ['description'])
+
+  if (bare === 'device_snapshot') copyDefined(source, safe, ['mode'])
+  else if (bare === 'device_query') copyDefined(source, safe, ['op'])
+  else if (bare === 'device_act' && Array.isArray(source.actions)) {
+    safe.actions = actionTypes(source.actions, true)
+  } else if (bare === 'computer_apps') copyDefined(source, safe, ['action'])
+  else if (bare === 'computer_snapshot') copyDefined(source, safe, ['mode', 'capture'])
+  else if (bare === 'computer_query') copyDefined(source, safe, ['op'])
+  else if (bare === 'computer_act' && Array.isArray(source.actions)) {
+    safe.actions = actionTypes(source.actions)
+  }
+  return Object.keys(safe).length > 0 ? JSON.stringify(safe) : ''
+}
+
 /** Privacy-preserving tool input projected into the remote transcript. */
 export function sanitizeRemoteToolInput(toolName: string, input: string): string {
   if (shouldKeepRemoteToolInput(toolName)) return input
-  return sanitizeBrowserInput(toolName, input)
+  return sanitizeBrowserInput(toolName, input) || sanitizeInteractiveInput(toolName, input)
 }

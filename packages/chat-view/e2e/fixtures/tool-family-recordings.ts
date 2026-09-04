@@ -222,3 +222,74 @@ export const BROWSER_TOOL_RECORDING: ChatMessage = {
   createdAt: '2026-09-04T00:00:05.000Z',
   providerId: 'claude',
 }
+
+/** Sanitized Device and Computer Use recording with host-backed screenshots. */
+export const INTERACTIVE_TOOL_RECORDING: ChatMessage = {
+  id: 'recording-interactive-tools',
+  role: 'assistant',
+  status: 'complete',
+  content: [
+    {
+      type: 'tool_use',
+      toolName: 'mcp__superone__device_snapshot',
+      toolUseId: 'device-snapshot',
+      input: JSON.stringify({ description: 'Inspect checkout on phone', mode: 'visual' }),
+      status: 'complete',
+    },
+    {
+      type: 'tool_result',
+      toolUseId: 'device-snapshot',
+      summary: JSON.stringify({
+        device: 'iPhone 17 Pro',
+        orientation: 'landscape-left',
+        image: { path: '/project/device-checkout.png' },
+      }),
+    },
+    {
+      type: 'tool_use',
+      toolName: 'mcp__superone__device_act',
+      toolUseId: 'device-act',
+      input: JSON.stringify({ description: 'Submit mobile checkout', actions: [{ type: 'tap' }] }),
+      status: 'complete',
+    },
+    {
+      type: 'tool_result',
+      toolUseId: 'device-act',
+      summary: JSON.stringify({ outcome: 'didnt', reason: 'Button did not respond' }),
+    },
+    {
+      type: 'tool_use',
+      toolName: 'mcp__superone__computer_snapshot',
+      toolUseId: 'computer-snapshot',
+      input: JSON.stringify({ description: 'Inspect desktop checkout', mode: 'fused', capture: 'window' }),
+      status: 'complete',
+    },
+    {
+      type: 'tool_result',
+      toolUseId: 'computer-snapshot',
+      summary: JSON.stringify({
+        stateId: 'state-checkout',
+        root: { app: 'Safari', bundleId: 'com.apple.Safari', title: 'Checkout' },
+        image: { path: '/project/computer-checkout.png' },
+      }),
+    },
+    {
+      type: 'tool_use',
+      toolName: 'mcp__superone__computer_act',
+      toolUseId: 'computer-act',
+      input: JSON.stringify({ description: 'Confirm desktop checkout', actions: [{ type: 'click' }] }),
+      status: 'complete',
+    },
+    {
+      type: 'tool_result',
+      toolUseId: 'computer-act',
+      summary: JSON.stringify({
+        outcome: 'worked',
+        successorStateId: 'state-confirmed',
+        successorRoot: { app: 'Safari', bundleId: 'com.apple.Safari', title: 'Order confirmed' },
+      }),
+    },
+  ],
+  createdAt: '2026-09-04T00:00:06.000Z',
+  providerId: 'claude',
+}

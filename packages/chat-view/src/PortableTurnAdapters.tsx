@@ -50,8 +50,14 @@ import {
 import { EnterPlanModeBlock, ExitPlanModeBlockPresenter } from './presenters/PlanModeBlocks'
 import { ImageGenToolBlockPresenter } from './presenters/ImageGenToolBlock'
 import { VideoGenToolBlockPresenter } from './presenters/VideoGenToolBlock'
-import { BrowserToolBlockPresenter } from './presenters/BrowserToolBlock'
-import { getBrowserOp, type BrowserOp } from './presenters/browser-tool-display'
+import {
+  PortableBrowserTool,
+  PortableComputerTool,
+  PortableDeviceTool,
+  portableBrowserOp,
+  portableComputerOp,
+  portableDeviceOp,
+} from './PortableInteractiveTools'
 import {
   SubagentBlockPresenter,
   type SubagentColorClasses,
@@ -155,12 +161,38 @@ function PortableDocument({ name }: { name: string }) {
 function PortableClaudeTool(props: ClaudeToolPresenterProps) {
   const { pendingPermission } = useContext(PortableTurnContext)
   const browserOp = portableBrowserOp(props.toolName, props.input)
+  const computerOp = portableComputerOp(props.toolName)
+  const deviceOp = portableDeviceOp(props.toolName)
   if (props.toolName === 'EnterPlanMode') return <EnterPlanModeBlock />
   if (props.toolName === 'ExitPlanMode') return <ExitPlanModeBlockPresenter result={props.result} />
   if (browserOp) {
     return (
       <PortableBrowserTool
         op={browserOp}
+        input={props.input}
+        result={props.result}
+        toolSummary={props.toolSummary}
+        isStreaming={props.status === 'streaming'}
+        isError={props.isError}
+      />
+    )
+  }
+  if (computerOp) {
+    return (
+      <PortableComputerTool
+        op={computerOp}
+        input={props.input}
+        result={props.result}
+        toolSummary={props.toolSummary}
+        isStreaming={props.status === 'streaming'}
+        isError={props.isError}
+      />
+    )
+  }
+  if (deviceOp) {
+    return (
+      <PortableDeviceTool
+        op={deviceOp}
         input={props.input}
         result={props.result}
         toolSummary={props.toolSummary}
@@ -206,78 +238,6 @@ function isImageGenerationTool(toolName: string): boolean {
 function isVideoGenerationTool(toolName: string): boolean {
   return toolName === 'mcp__superone__media_generate_video'
     || ['ImageToVideo', 'ReferenceToVideo', 'image_to_video', 'reference_to_video'].includes(toolName)
-}
-
-function portableBrowserParams(input: unknown): Record<string, unknown> {
-  if (typeof input === 'string') return parseRecord(input)
-  return input && typeof input === 'object' && !Array.isArray(input)
-    ? input as Record<string, unknown>
-    : {}
-}
-
-function portableBrowserOp(toolName: string, input: unknown): BrowserOp | null {
-  const prefix = 'mcp__superone__'
-  if (!toolName.startsWith(prefix)) return null
-  const params = portableBrowserParams(input)
-  return getBrowserOp(toolName.slice(prefix.length), params)
-}
-
-function PortableBrowserFile({ path, label }: { path: string; label: string }) {
-  return (
-    <button
-      type="button"
-      className="inline-flex min-w-0 max-w-56 items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-foreground"
-      onClick={() => requestNative('previewFile', { path })}
-      aria-label={`Preview ${label}`}
-      title={path}
-    >
-      <FileText className="size-3 shrink-0 text-muted-foreground" />
-      <span className="truncate">{label}</span>
-    </button>
-  )
-}
-
-function PortableBrowserTool({
-  op,
-  input,
-  result,
-  toolSummary,
-  isStreaming,
-  isError,
-}: {
-  op: BrowserOp
-  input: unknown
-  result?: string
-  toolSummary?: string
-  isStreaming: boolean
-  isError?: boolean
-}) {
-  const params = portableBrowserParams(input)
-  const isDenied = Boolean(result?.startsWith('[denied] '))
-  const cleanResult = isDenied ? result?.slice('[denied] '.length) : result
-  return (
-    <BrowserToolBlockPresenter
-      op={op}
-      params={params}
-      result={cleanResult}
-      toolSummary={toolSummary}
-      isStreaming={isStreaming}
-      isError={isError}
-      isDenied={isDenied}
-      renderScreenshot={(path, label) => (
-        <button
-          type="button"
-          className="flex min-h-24 w-full items-center justify-center rounded border border-border/60 bg-muted/25 text-primary"
-          onClick={() => requestNative('previewFile', { path })}
-          aria-label={`Preview ${label}`}
-        >
-          <ImageIcon className="mr-1.5 size-4" />
-          <span className="max-w-64 truncate">{path.split('/').pop() || label}</span>
-        </button>
-      )}
-      renderFile={(path, filename) => <PortableBrowserFile path={path} label={filename} />}
-    />
-  )
 }
 
 function PortableImageGenTool({
@@ -608,10 +568,34 @@ function PortableCodexItem(props: CodexItemPresenterProps) {
     case 'mcp_tool_call': {
       const fullToolName = `mcp__${item.server}__${item.tool}`
       const browserOp = portableBrowserOp(fullToolName, item.arguments)
+      const computerOp = portableComputerOp(fullToolName)
+      const deviceOp = portableDeviceOp(fullToolName)
       if (browserOp) {
         return (
           <PortableBrowserTool
             op={browserOp}
+            input={item.arguments}
+            result={codexMcpItemResultText(item)}
+            isStreaming={item.status === 'in_progress'}
+            isError={item.status === 'failed' || Boolean(item.error)}
+          />
+        )
+      }
+      if (computerOp) {
+        return (
+          <PortableComputerTool
+            op={computerOp}
+            input={item.arguments}
+            result={codexMcpItemResultText(item)}
+            isStreaming={item.status === 'in_progress'}
+            isError={item.status === 'failed' || Boolean(item.error)}
+          />
+        )
+      }
+      if (deviceOp) {
+        return (
+          <PortableDeviceTool
+            op={deviceOp}
             input={item.arguments}
             result={codexMcpItemResultText(item)}
             isStreaming={item.status === 'in_progress'}

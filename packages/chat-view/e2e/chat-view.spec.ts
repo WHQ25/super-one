@@ -6,6 +6,7 @@ import {
   BROWSER_TOOL_RECORDING,
   CODEX_COLLAB_RECORDING,
   IMAGE_GENERATION_RECORDING,
+  INTERACTIVE_TOOL_RECORDING,
   PLAN_RECORDINGS,
   VIDEO_GENERATION_RECORDING,
 } from './fixtures/tool-family-recordings'
@@ -463,5 +464,42 @@ test('36 renders Browser, page-tool, and download recordings with shared present
     item.type === 'requestNative'
       && item.action === 'previewFile'
       && item.payload?.path === '/project/receipt.pdf'
+  )))).toBe(true)
+})
+
+test('37 renders Device and Computer Use recordings with shared presenters', async ({ page }) => {
+  await send(page, { type: 'hydrate', messages: [INTERACTIVE_TOOL_RECORDING] })
+
+  const turn = page.locator('[data-turn-id="recording-interactive-tools"]')
+  await turn.getByRole('button', { name: /Detail/ }).click()
+  const rows = turn.locator('.tool-node')
+  await expect(rows).toHaveCount(4)
+  await expect(rows.nth(0)).toContainText('Inspect checkout on phone')
+  await rows.nth(0).locator('> div').first().click()
+  await rows.nth(0).getByRole('button', { name: 'Preview Device Screenshot' }).click()
+  await expect.poll(() => page.evaluate(() => (
+    globalThis as typeof globalThis & {
+      __hostMessages: Array<{ type?: string; action?: string; payload?: { path?: string } }>
+    }
+  ).__hostMessages.some((item) => (
+    item.type === 'requestNative'
+      && item.action === 'previewFile'
+      && item.payload?.path === '/project/device-checkout.png'
+  )))).toBe(true)
+
+  await rows.nth(1).locator('> div').first().click()
+  await expect(rows.nth(1)).toContainText('Button did not respond')
+
+  await expect(rows.nth(2)).toContainText('Inspect desktop checkout')
+  await rows.nth(2).locator('> div').first().click()
+  await rows.nth(2).getByRole('button', { name: 'Preview Desktop Screenshot' }).click()
+  await expect.poll(() => page.evaluate(() => (
+    globalThis as typeof globalThis & {
+      __hostMessages: Array<{ type?: string; action?: string; payload?: { path?: string } }>
+    }
+  ).__hostMessages.some((item) => (
+    item.type === 'requestNative'
+      && item.action === 'previewFile'
+      && item.payload?.path === '/project/computer-checkout.png'
   )))).toBe(true)
 })

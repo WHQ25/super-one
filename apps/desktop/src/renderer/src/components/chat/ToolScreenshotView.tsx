@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from '@superone/ui/components/ui/dialog'
 import { cn } from '@superone/ui/lib/utils'
+import { ToolScreenshotViewPresenter } from '@superone/chat-view/presenters/ToolScreenshotView'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import { ImagePreview } from '@/components/coding/ImagePreview'
 import {
@@ -57,17 +58,18 @@ export function ToolScreenshotView({
   }
 
   if (loadError) {
-    return (
-      <div className="text-xs italic text-muted-foreground/60">
-        {unavailableLabel}
-      </div>
-    )
+    return <ToolScreenshotViewPresenter path={path} label={label} unavailableLabel={unavailableLabel} unavailable />
   }
-  if (!dataUri) return null
+  if (!dataUri) {
+    return <ToolScreenshotViewPresenter path={path} label={label} unavailableLabel={unavailableLabel} loading />
+  }
 
   return (
-    <>
-      <ImageInteractive
+    <ToolScreenshotViewPresenter
+      path={path}
+      label={label}
+      unavailableLabel={unavailableLabel}
+      thumbnail={<ImageInteractive
         savedPath={path}
         onOpen={() => setOpen(true)}
         downloadable
@@ -79,9 +81,8 @@ export function ToolScreenshotView({
           alt={label}
           className="mx-auto block max-h-80 w-auto max-w-full object-contain"
         />
-      </ImageInteractive>
-
-      <Dialog open={open} onOpenChange={setOpen} modal={false}>
+      </ImageInteractive>}
+      overlay={<Dialog open={open} onOpenChange={setOpen} modal={false}>
         <DialogContent
           showCloseButton={false}
           className="left-0 top-0 h-screen max-h-none w-screen max-w-none translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-none border-0 bg-background/95 p-0 shadow-none sm:max-w-none"
@@ -134,7 +135,7 @@ export function ToolScreenshotView({
             </div>
           )}
         </DialogContent>
-      </Dialog>
-    </>
+      </Dialog>}
+    />
   )
 }

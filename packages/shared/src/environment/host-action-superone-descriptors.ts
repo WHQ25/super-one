@@ -1,117 +1,18 @@
-/** Auto-generated SuperOne MCP tool descriptors for Host Action discovery.\n * Combined from desktop listSuperoneMcpTools + computer use + widgets + mobile share.\n * Regenerate when SuperOne MCP tool surface changes.\n */
+/**
+ * SuperOne MCP tool descriptors served to remote nodes for Host Action discovery.
+ * Combined from desktop listSuperoneMcpTools + computer use + widgets + mobile share.
+ *
+ * Hand-maintained: there is no generator. This is a second copy of the tool prompt
+ * surface, so a description edited only on the desktop side leaves remote sessions on
+ * the older contract with nothing failing — edit both in the same commit and let
+ * superone-mcp-builtin-defs.test.ts hold the parity.
+ */
 export interface HostActionSuperoneToolDescriptor {
   name: string
   description: string
   inputSchema: Record<string, unknown>
   /** Optional MCP tool meta (e.g. anthropic/alwaysLoad). */
   _meta?: Record<string, unknown>
-}
-
-const deviceDescriptionProperty = {
-  type: "string",
-  minLength: 1,
-  maxLength: 160,
-  description: "A short human-friendly explanation of what this step accomplishes, phrased for the user watching (e.g. 'Open the profile tab', 'Check the order total'). Shown in the UI in place of refs and coordinates. Write it in the conversation's language."
-}
-
-const deviceTargetProperty = {
-  type: "string",
-  description: "Which controlled device to act on — the id from device_list, or its name. Optional while this session controls exactly one device; required once it controls more than one (driving the wrong app there looks like a bug in the right one). Use device_request_control to be granted another."
-}
-
-const deviceConditionSchema = {
-  type: "object",
-  properties: {
-    kind: { type: "string", enum: ["exists", "notExists", "textEquals", "textContains"] },
-    ref: {
-      description: "Only valid within the snapshot it came from; prefer label or identifier when waiting.",
-      type: "string"
-    },
-    label: { description: "Visible name of the element.", type: "string" },
-    identifier: {
-      description: "Developer-assigned id. Survives copy changes and translation — the most durable target.",
-      type: "string"
-    },
-    text: {
-      description: "The string textEquals/textContains compares against. Required by those two kinds, and NOT a way to name an element — use label for that.",
-      type: "string",
-      minLength: 1
-    }
-  },
-  required: ["kind"],
-  additionalProperties: false
-}
-
-const deviceActionSchema = {
-  type: "object",
-  properties: {
-    type: {
-      type: "string",
-      enum: ["tap", "doubleTap", "longPress", "swipe", "pinch", "press", "type", "key", "rotate", "keyboard"]
-    },
-    ref: { description: "Element ref from the snapshot, e.g. \"@e12\". Preferred over coordinates.", type: "string" },
-    x: {
-      description: "Horizontal position as a fraction of the screen (0-1). Only when no ref fits.",
-      type: "number",
-      minimum: 0,
-      maximum: 1
-    },
-    y: {
-      description: "Vertical position as a fraction of the screen (0-1).",
-      type: "number",
-      minimum: 0,
-      maximum: 1
-    },
-    direction: {
-      description: "swipe: which way the finger travels. Content moves the opposite way, so \"up\" scrolls down a list.",
-      type: "string",
-      enum: ["up", "down", "left", "right"]
-    },
-    distance: {
-      description: "swipe: travel as a fraction of the screen. Default 0.6.",
-      type: "number",
-      minimum: 0.05,
-      maximum: 1
-    },
-    toX: {
-      description: "swipe: explicit destination instead of direction.",
-      type: "number",
-      minimum: 0,
-      maximum: 1
-    },
-    toY: { type: "number", minimum: 0, maximum: 1 },
-    scale: {
-      description: "pinch: final separation factor. Below 1 pinches in (zoom out), above 1 spreads.",
-      type: "number",
-      minimum: 0.1,
-      maximum: 5
-    },
-    durationMs: {
-      description: "How long the gesture takes. Short swipes flick and coast; long ones drag and stop.",
-      type: "integer",
-      minimum: 16,
-      maximum: 10000
-    },
-    text: {
-      description: "type: text to enter. Anything the simulated keyboard cannot spell (Chinese, emoji) is pasted automatically.",
-      type: "string"
-    },
-    button: {
-      type: "string",
-      enum: ["home", "lock", "side", "volume-up", "volume-down", "back", "app-switch"],
-      description: "key: a hardware button. `back` and `app-switch` are Android-only and are refused elsewhere.",
-    },
-    orientation: {
-      type: "string",
-      enum: ["portrait", "landscape-left", "portrait-upside-down", "landscape-right"]
-    },
-    connected: {
-      description: "keyboard: attach or detach the hardware keyboard. Detach it to make the on-screen keyboard appear.",
-      type: "boolean"
-    }
-  },
-  required: ["type"],
-  additionalProperties: false
 }
 
 export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescriptor[] = [
@@ -2024,7 +1925,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
   {
     "name": "computer_apps",
-    "description": "Discover and open desktop apps. action=list (default) returns a compact TOON app catalog: one row per app with app, bundleId, running, frontmost, granted, grantScope, pid, windows. Use query to keyword-filter by display name / bundle id / localized aliases (e.g. query=Notes or com.apple.TextEdit). Paginate with offset + limit (default limit 25, max 100); hasMore means call again with offset+=limit. Rows are sorted running/frontmost/granted first. Do NOT dump every window by default \u2014 pass includeRoots=true only when you need @rN roots for multi-window targeting. action=focus|launch accepts display name (any locale) or reverse-DNS bundleId; host resolves to a stable bundleId before the permission grant so one allow covers later snapshot/act. Launch/focus returns a slim {target} confirmation. If the user only asks to open an app, launch once and stop when target is returned. Prefer snapshot+act over focus. When actions target @eN refs, prefer delivery=semantic; otherwise delivery=app-directed. Prefer browser_* / shell when a non-GUI path exists.",
+    "description": "Discover and open desktop apps. action=list (default) returns a compact TOON app catalog: one row per app with app, bundleId, running, frontmost, granted, grantScope, pid, windows. Use query to keyword-filter by display name / bundle id / localized aliases (e.g. query=Notes or com.apple.TextEdit). Paginate with offset + limit (default limit 25, max 100); hasMore means call again with offset+=limit. Rows are sorted running/frontmost/granted first. action=focus|launch accepts display name (any locale) or reverse-DNS bundleId; host resolves to a stable bundleId before the permission grant so one allow covers later snapshot/act. Launch/focus returns a slim {target} confirmation. If the user only asks to open an app, launch once and stop when target is returned. Driving an app is computer_snapshot + computer_act; focus only puts a window in front.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2076,7 +1977,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
   {
     "name": "computer_snapshot",
-    "description": "Capture an immutable UI snapshot and return stateId (analogous to browser_snapshot for desktop apps). All subsequent query/act/wait_for calls must reference this stateId. mode=visual (and fused) saves the image to a temporary file and returns image.path (not base64). The image is NOT loaded into your context automatically; call Read on image.path if you need to look at pixels, or leave the path as a record for the user. mode=semantic returns accessibility outline with @eN refs (no image). mode=fused = screenshot + AX. Use computer_query on the cached outline for search/expand/inspect without recapturing. capture=window (default) captures only the selected window; coordinates are local to that image and remain valid if the window moves. Use capture=display explicitly when the whole display is required. If the window is resized or moves to a different display scale, input fails closed and a successor observation is created.",
+    "description": "Capture an immutable UI snapshot and return stateId (analogous to browser_snapshot for desktop apps). All subsequent query/act/wait_for calls must reference this stateId. mode=visual (and fused) saves the image to a temporary file and returns image.path (not base64). The image is NOT loaded into your context automatically; call Read on image.path if you need to look at pixels, or leave the path as a record for the user. mode=semantic returns accessibility outline with @eN refs (no image). mode=fused = screenshot + AX. The outline is a TOON table, not JSON: a header row outline[N]{ref,depth,role,name,value,x,y,w,h,can,state}: followed by one CSV-style row per node, in depth-first reading order. depth is the nesting level (a row is a child of the nearest row above it with a smaller depth). can lists only the supported actions, pipe-joined (press|setText|typeText|scroll|focus); empty means the node is inert. state lists only non-default flags (disabled|focused). x,y,w,h are the frame in capture space, empty when the node reports none. truncation.nodesOmitted > 0 means the returned outline was folded — reach the rest with computer_query, do not recapture. truncation.sourceTruncated means the native accessibility walk itself hit a limit, so those nodes are missing from the full tree too and computer_query cannot reach them either — narrow the target with capture=window or a specific rootId instead. Use computer_query on the cached outline for search/expand/inspect without recapturing. capture=window (default) captures only the selected window; coordinates are local to that image and remain valid if the window moves. Use capture=display explicitly when the whole display is required. If the window is resized or moves to a different display scale, input fails closed and a successor observation is created.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2159,7 +2060,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
   {
     "name": "computer_query",
-    "description": "Search / expand / inspect the cached outline for a stateId without recapturing the desktop. Use this for progressive disclosure of deep accessibility trees.",
+    "description": "Search / expand / inspect the cached outline for a stateId without recapturing the desktop. Use this for progressive disclosure of deep accessibility trees. expand/inspect return the subtree/element as the same TOON table computer_snapshot uses.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2205,7 +2106,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
   {
     "name": "computer_act",
-    "description": "Submit 1\u201320 related UI actions as a checked transaction against a stateId. Delivery policy (pick explicitly when possible): (1) Prefer delivery=semantic whenever actions use @eN refs and the action is press/setText/click(ref)/typeText(ref) \u2014 pure AX, most reliable for labeled controls. (2) Use delivery=app-directed (runtime default if omitted) for coordinate click/type/scroll/drag/keypress or when no usable AX ref exists \u2014 posts CGEvent to the target app PID in the background without stealing frontmost. (3) Use delivery=physical only when app-directed fails and global HID is required (requires frontmost; disruptive). Actions: click, typeText, keypress, scroll(dx,dy[,x,y|ref]), drag(path\u22652 points), moveMouse, press/setText (AX). scroll: positive dy scrolls content down; aim with x,y (capture space) or ref center; else window/outline center. drag: path is capture-space points; virtual cursor animates along the path. Returns outcome worked|didnt|unknown based on re-observation (not API success codes): worked when AX readback, expect, typed text, or a meaningful successor outline diff confirms effect; unknown only when applied but unprovable; didnt on hard failure or failed expect. When the successor has pixels, successorImage.path contains the fresh screenshot. Set recording=true to save a short video containing only this action transaction. Stale stateId (UI changed since snapshot) is rejected before side effects. delivery=semantic never silently upgrades to app-directed/physical input.",
+    "description": "Submit 1\u201320 related UI actions as a checked transaction against a stateId. Set delivery explicitly when you can; that field describes how the three modes differ. Actions: click, typeText, keypress, scroll(dx,dy[,x,y|ref]), drag(path\u22652 points), moveMouse, press/setText (AX). scroll: positive dy scrolls content down; aim with x,y (capture space) or ref center; else window/outline center. drag: path is capture-space points; virtual cursor animates along the path. Returns outcome worked|didnt|unknown based on re-observation (not API success codes): worked when AX readback, expect, typed text, or a meaningful successor outline diff confirms effect; unknown only when applied but unprovable; didnt on hard failure or failed expect. When the successor has pixels, successorImage.path contains the fresh screenshot. Set recording=true to save a short video containing only this action transaction. Stale stateId (UI changed since snapshot) is rejected before side effects. delivery=semantic never silently upgrades to app-directed/physical input.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2335,7 +2236,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
           "maximum": 60000
         },
         "delivery": {
-          "description": "Prefer semantic when actions target @eN refs (press/setText/click/typeText). Omit or app-directed = background postToPid (default). physical = global HID + frontmost only as last resort.",
+          "description": "semantic — pure AX; prefer it whenever actions use @eN refs and the action is press/setText/click(ref)/typeText(ref), the most reliable path for labeled controls. app-directed — the default when omitted; for coordinate click/type/scroll/drag/keypress or when no usable AX ref exists. Posts CGEvent to the target app PID in the background without stealing frontmost. physical — global HID; only when app-directed fails. Requires frontmost and is disruptive.",
           "type": "string",
           "enum": [
             "semantic",

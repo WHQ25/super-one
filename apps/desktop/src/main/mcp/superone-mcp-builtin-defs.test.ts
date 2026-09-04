@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { getDeviceAgentToolDescriptors } from '../device-agent/tools'
+import { getComputerUseToolDescriptors } from '../computer-use/tools'
 import { HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS } from '@superone/shared/environment/host-action-superone-descriptors'
 import { classifyHostActionTool } from '@superone/shared/environment/host-action-browser-catalog'
 import {
@@ -65,12 +66,24 @@ describe('built-in superone tool registration surfaces', () => {
     expect(deviceTools.filter((name) => !described.has(name))).toEqual([])
   })
 
-  it('keeps remote device descriptors aligned with desktop discovery', () => {
-    const desktopDescriptors = getDeviceAgentToolDescriptors()
-    for (const desktop of desktopDescriptors) {
+  // The Host Action dump is a second copy of the tool prompt surface, delivered to remote
+  // nodes, and nothing generates it. Without this, a description edited only on the desktop
+  // side leaves remote sessions running the older contract — no crash, no missing tool, just
+  // a model that was never told how to read the result.
+  it.each([
+    ['computer-use', getComputerUseToolDescriptors],
+    ['device', getDeviceAgentToolDescriptors],
+    ['built-in', () => BUILT_IN_SUPERONE_TOOL_DEFS],
+  ])('keeps %s descriptors aligned with the remote Host Action dump', (_group, source) => {
+    for (const desktop of source()) {
       const hostAction = HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS.find((def) => def.name === desktop.name)
       expect(hostAction?.description, `${desktop.name} description`).toBe(desktop.description)
       expect(hostAction?.inputSchema, `${desktop.name} input schema`).toEqual(desktop.inputSchema)
+    }
+  })
+
+  it('keeps device descriptors within the always-visible budget and correctly classified', () => {
+    for (const desktop of getDeviceAgentToolDescriptors()) {
       expect(desktop.description.length, `${desktop.name} description length`).toBeLessThanOrEqual(700)
     }
     expect(classifyHostActionTool('device_snapshot').replayPolicy).toBe('safe')

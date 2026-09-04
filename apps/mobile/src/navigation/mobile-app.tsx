@@ -96,6 +96,7 @@ export function MobileApp() {
   const [scannerOpen, setScannerOpen] = useState(false)
   const [cameraPermission, requestCameraPermission] = useCameraPermissions()
   const [pairings, setPairings] = useState<SavedPairing[]>([])
+  const [activePairingId, setActivePairingId] = useState<string | null>(null)
   const [projects, setProjects] = useState<Project[]>([])
   const [sessions, setSessions] = useState<SessionRow[]>([])
   const [project, setProject] = useState<Project | null>(null)
@@ -277,6 +278,11 @@ export function MobileApp() {
     await savePairings(kv, next)
     setPairings(next)
   }
+  const updatePairings = async (update: (current: SavedPairing[]) => SavedPairing[]) => {
+    const next = update(await loadPairings(kv))
+    await savePairings(kv, next)
+    setPairings(next)
+  }
   const connectWithSecret = async (relayUrl: string, secret: string, lanHostPort?: string, hostName?: string, desktopDeviceId?: string) => {
     const activeDeviceId = deviceId || await loadOrCreateMobileId()
     if (!deviceId) setDeviceId(activeDeviceId)
@@ -337,14 +343,26 @@ export function MobileApp() {
       lan: hp.includes(':') ? hp : undefined,
       desktopDeviceId,
     })
+    setActivePairingId(desktopDeviceId || hostName || relayUrl)
     const res = await client.request({ type: 'list_projects', requestId: randomId() } as RemoteCommand) as {
       projects?: Project[]
       error?: string
     }
     if (res.error) throw new Error(res.error)
-    setProjects(res.projects ?? [])
+    const projectRows = res.projects ?? []
+    setProjects(projectRows)
     setScreen('projects')
     setStatus(`${res.projects?.length ?? 0} projects`)
+    void Promise.all(projectRows.map(async (row) => {
+      const git = await client.request({
+        type: 'get_git_info',
+        requestId: randomId(),
+        projectPath: row.path,
+      } as RemoteCommand) as ShellGitInfo
+      return { ...row, git }
+    })).then((rows) => {
+      if (clientRef.current === client) setProjects(rows)
+    }).catch(() => { /* Git indicators are best-effort. */ })
   }
 
   const onPair = async (value: string = paste) => {
@@ -807,6 +825,8 @@ export function MobileApp() {
           lan={lan}
           code={code}
           pairings={pairings}
+          activePairingId={activePairingId}
+          connected={connectionState === 'connected'}
           onBarcodeScanned={onBarcodeScanned}
           onCancelScanner={() => setScannerOpen(false)}
           onPasteChange={setPaste}
@@ -815,6 +835,21 @@ export function MobileApp() {
           onOpenScanner={() => runUiAction(openScanner, setStatus, 'camera failed')}
           onConnect={(item) => void connectWithSecret(item.relayUrl, item.secret, item.lan || lan, item.hostName, item.desktopDeviceId)
             .catch((error) => setStatus(error instanceof Error ? error.message : 'connect failed'))}
+          onRename={(item, name) => runUiAction(
+            () => updatePairings((current) => current.map((pairing) => pairing.id === item.id ? { ...pairing, name } : pairing)),
+            setStatus,
+            'failed to rename device',
+          )}
+          onForget={(item) => runUiAction(async () => {
+            await updatePairings((current) => current.filter((pairing) => pairing.id !== item.id))
+            if (activePairingId === item.id) {
+              reconnectControllerRef.current?.cancel()
+              clientRef.current?.disconnect()
+              clientRef.current = null
+              setActivePairingId(null)
+              setConnectionState('offline')
+            }
+          }, setStatus, 'failed to forget device')}
         />
       ) : null}
 

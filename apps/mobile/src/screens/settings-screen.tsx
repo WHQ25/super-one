@@ -11,6 +11,8 @@ import { harnessSupportsAdditionalDirs, MOBILE_HARNESS_IDS } from '../provider-s
 
 export type ShellGitInfo = {
   branch: string | null
+  ahead?: number
+  behind?: number
   dirty?: { files: number; insertions: number; deletions: number }
 }
 

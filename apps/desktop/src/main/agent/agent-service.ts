@@ -1183,6 +1183,8 @@ export class AgentService {
           const files = status ? status.split('\n').filter(Boolean).length : 0
           let insertions = 0
           let deletions = 0
+          let ahead = 0
+          let behind = 0
           if (files > 0) {
             try {
               const shortstat = await gitRun(command.projectPath, ['diff', 'HEAD', '--shortstat'])
@@ -1192,8 +1194,16 @@ export class AgentService {
               if (delMatch) deletions = parseInt(delMatch[1])
             } catch { /* no HEAD yet */ }
           }
+          try {
+            const counts = await gitRun(command.projectPath, ['rev-list', '--left-right', '--count', '@{upstream}...HEAD'])
+            const [behindText, aheadText] = counts.trim().split(/\s+/)
+            behind = Number(behindText) || 0
+            ahead = Number(aheadText) || 0
+          } catch { /* no upstream */ }
           await respond?.(command.requestId, {
             branch,
+            ahead,
+            behind,
             ...(files > 0 ? { dirty: { files, insertions, deletions } } : {}),
           })
         } catch {

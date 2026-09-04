@@ -114,6 +114,8 @@ export function createMobileStyles({ colors, radius, spacing, type }: MobileThem
       borderRadius: 10,
     },
     devPairing: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, paddingTop: spacing.md },
+    pairingActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+    projectIndicators: { maxWidth: '48%', flexDirection: 'row', justifyContent: 'flex-end', flexWrap: 'wrap', gap: spacing.xs },
     sessionCard: {
       borderWidth: 1,
       borderColor: colors.border,

@@ -1,5 +1,7 @@
 export type SavedPairing = {
   id: string
+  /** User-assigned label. Host name remains the transport-reported identity. */
+  name?: string
   relayUrl: string
   secret: string
   hostName?: string

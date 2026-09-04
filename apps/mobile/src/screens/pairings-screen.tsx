@@ -1,9 +1,10 @@
 import { CameraView, type BarcodeScanningResult } from 'expo-camera'
-import { Laptop, Link2Off, QrCode } from 'lucide-react-native'
+import { useEffect, useState } from 'react'
+import { Laptop, Link2Off, MoreHorizontal, QrCode } from 'lucide-react-native'
 import { FlatList, Pressable, Text, TextInput, View } from 'react-native'
 import type { SavedPairing } from '@superone/relay-client'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
-import { Badge, Button, ListRow, SectionHeader } from '../ui'
+import { Badge, Button, ListRow, SectionHeader, Sheet } from '../ui'
 
 export function PairingsScreen(props: {
   scannerOpen: boolean
@@ -11,6 +12,8 @@ export function PairingsScreen(props: {
   lan: string
   code: string | null
   pairings: SavedPairing[]
+  activePairingId: string | null
+  connected: boolean
   onBarcodeScanned: (result: BarcodeScanningResult) => void
   onCancelScanner: () => void
   onPasteChange: (value: string) => void
@@ -18,9 +21,14 @@ export function PairingsScreen(props: {
   onPair: () => void
   onOpenScanner: () => void
   onConnect: (pairing: SavedPairing) => void
+  onRename: (pairing: SavedPairing, name: string) => void
+  onForget: (pairing: SavedPairing) => void
 }) {
   const styles = useMobileStyles()
   const { tokens } = useMobileTheme()
+  const [editing, setEditing] = useState<SavedPairing | null>(null)
+  const [name, setName] = useState('')
+  useEffect(() => setName(editing?.name ?? editing?.hostName ?? ''), [editing])
   if (props.scannerOpen) {
     return (
       <View style={styles.scannerBox}>
@@ -53,11 +61,22 @@ export function PairingsScreen(props: {
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
             <ListRow
-              title={item.hostName || item.relayUrl}
+              title={item.name || item.hostName || item.relayUrl}
               subtitle={item.lan ?? item.relayUrl}
               leading={(
                 <View style={styles.iconBox}>
                   <Laptop color={tokens.colors.mutedForeground} size={23} />
+                </View>
+              )}
+              trailing={(
+                <View style={styles.pairingActions}>
+                  <Badge
+                    label={props.activePairingId === item.id && props.connected ? 'Online' : 'Offline'}
+                    tone={props.activePairingId === item.id && props.connected ? 'success' : 'neutral'}
+                  />
+                  <Pressable accessibilityLabel={`Manage ${item.name || item.hostName || 'device'}`} onPress={() => setEditing(item)}>
+                    <MoreHorizontal color={tokens.colors.mutedForeground} size={21} />
+                  </Pressable>
                 </View>
               )}
               onPress={() => props.onConnect(item)}
@@ -98,6 +117,33 @@ export function PairingsScreen(props: {
           <Button label="Pair from link" onPress={props.onPair} variant="secondary" />
         </View>
       ) : null}
+      <Sheet visible={!!editing} title="Device" onDismiss={() => setEditing(null)}>
+        <TextInput
+          style={styles.input}
+          placeholder="Device name"
+          placeholderTextColor={tokens.colors.mutedForeground}
+          value={name}
+          onChangeText={setName}
+        />
+        <Button
+          label="Rename"
+          disabled={!name.trim()}
+          onPress={() => {
+            if (!editing) return
+            props.onRename(editing, name.trim())
+            setEditing(null)
+          }}
+        />
+        <Button
+          label="Forget device"
+          variant="danger"
+          onPress={() => {
+            if (!editing) return
+            props.onForget(editing)
+            setEditing(null)
+          }}
+        />
+      </Sheet>
     </View>
   )
 }

@@ -772,6 +772,9 @@ Accept Edits transition.
 Permission sheets now forward optional denial feedback and let users select the
 host-provided permission suggestions instead of rendering those suggestions as
 read-only JSON.
+The shared reducer now applies live `codex_plan_approval` events to the matching
+plan card, so mobile decisions transition immediately to their approved or rejected
+state without requiring a session reload.
 The built-in iPhone simulator now confirms that Return during a live Simplified
 Chinese Pinyin composition does not submit the partial text. That pass also exposed
 the native-stack scene retaining its full frame under the software keyboard; keyboard

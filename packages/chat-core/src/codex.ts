@@ -5,7 +5,14 @@ import { upsertCodexItem } from './codex-pure'
 import type { ChatCoreSession } from './types'
 import { defaultChatCorePorts, type ChatCorePorts } from './ports'
 
-type CodexEvent = Extract<AgentEvent, { type: 'codex_thread_started' | 'codex_item_delta' | 'codex_item_patch' | 'codex_mcp_startup' }>
+type CodexEvent = Extract<AgentEvent, {
+  type:
+    | 'codex_thread_started'
+    | 'codex_item_delta'
+    | 'codex_item_patch'
+    | 'codex_mcp_startup'
+    | 'codex_plan_approval'
+}>
 
 function applyCodexItemPatch(item: CodexThreadItem, patch: CodexItemPatch): CodexThreadItem | null {
   switch (item.type) {
@@ -42,6 +49,28 @@ export function reduceCodex(
   ports: ChatCorePorts = defaultChatCorePorts,
 ): Partial<ChatCoreSession> {
   switch (event.type) {
+    case 'codex_plan_approval':
+      return {
+        lastEventAt: ports.now(),
+        messages: session.messages.map((message) => {
+          if (message.id !== event.messageId) return message
+          const codex = message.metadata?.codex
+          if (!codex) return message
+          return {
+            ...message,
+            metadata: {
+              ...message.metadata,
+              codex: {
+                ...codex,
+                planApproval: {
+                  status: event.status,
+                  ...(event.feedback ? { feedback: event.feedback } : {}),
+                },
+              },
+            },
+          }
+        }),
+      }
     case 'codex_mcp_startup': {
       return {
         lastEventAt: ports.now(),

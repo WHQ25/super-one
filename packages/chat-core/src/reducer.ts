@@ -84,6 +84,7 @@ export function applyEventToSession(
     case 'codex_item_delta':
     case 'codex_item_patch':
     case 'codex_mcp_startup':
+    case 'codex_plan_approval':
       return reduceCodex(session, event, ports)
 
     case 'message_usage':

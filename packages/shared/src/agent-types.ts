@@ -4277,7 +4277,7 @@ export type RemoteCommand =
   | { type: 'send_message'; sessionId: string; projectPath: string; content: string; provider?: HarnessId; model?: string; effort?: string; images?: ImageAttachment[]; permissionPreset?: string; collaborationMode?: string; threadId?: string; clientMessageId?: string; priority?: 'now' | 'next' | 'later' }
   | { type: 'dequeue_message'; clientMessageId: string; projectPath?: string; sessionId: string }
   | { type: 'interrupt'; projectPath?: string; sessionId: string }
-  | { type: 'respond_permission'; requestId: string; decision: boolean; reason?: string; selectedSuggestions?: number[]; formAnswers?: Record<string, unknown>; projectPath?: string; sessionId: string }
+  | { type: 'respond_permission'; requestId: string; decision: boolean; alwaysAllow?: boolean; reason?: string; selectedSuggestions?: number[]; formAnswers?: Record<string, unknown>; projectPath?: string; sessionId: string }
   | { type: 'answer_question'; requestId: string; answers: Record<string, string>; annotations?: QuestionAnnotations; projectPath?: string; sessionId: string }
   | { type: 'dismiss_question'; requestId: string; projectPath?: string; sessionId: string }
   | { type: 'respond_plan_approval'; requestId: string; approved: boolean; feedback?: string; projectPath?: string; sessionId: string }

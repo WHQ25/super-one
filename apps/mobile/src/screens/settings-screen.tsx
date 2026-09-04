@@ -1,11 +1,13 @@
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native'
 import type { HarnessId, WorktreeInfo, WorktreeMode } from '@superone/shared/agent-types'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness-capabilities'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import {
   LOCAL_WORKTREE_SELECTION,
   worktreeSelectionError,
   type NewSessionWorktreeSelection,
 } from '../worktree-state'
+import { harnessSupportsAdditionalDirs, MOBILE_HARNESS_IDS } from '../provider-state'
 
 export type ShellGitInfo = {
   branch: string | null
@@ -86,13 +88,13 @@ export function SettingsScreen(props: Props) {
       <View style={styles.settingsCard}>
         <Text style={styles.sectionTitle}>New session provider</Text>
         <View style={styles.chips}>
-          {(['claude', 'codex'] as HarnessId[]).map((provider) => (
+          {MOBILE_HARNESS_IDS.map((provider) => (
             <Pressable
               key={provider}
               style={[styles.chip, props.selectedProvider === provider ? styles.chipOn : null]}
               onPress={() => props.onProviderChange(provider)}
             >
-              <Text style={styles.rowTitle}>{provider}</Text>
+              <Text style={styles.rowTitle}>{HARNESS_CAPABILITIES[provider].displayName}</Text>
             </Pressable>
           ))}
         </View>
@@ -197,29 +199,31 @@ export function SettingsScreen(props: Props) {
         )}
       </View>
 
-      <View style={styles.settingsCard}>
-        <Text style={styles.sectionTitle}>Additional directories</Text>
-        {props.workspaceDirs.map((dir) => (
-          <View key={dir} style={styles.rowBetween}>
-            <Text numberOfLines={1} style={styles.directoryText}>{dir}</Text>
-            <Pressable onPress={() => props.onRemoveDirectory(dir)}>
-              <Text style={styles.back}>Remove</Text>
-            </Pressable>
-          </View>
-        ))}
-        <TextInput
-          style={styles.input}
-          placeholder="Absolute directory path"
-          placeholderTextColor={tokens.colors.mutedForeground}
-          autoCapitalize="none"
-          autoCorrect={false}
-          value={props.additionalDir}
-          onChangeText={props.onAdditionalDirChange}
-        />
-        <Pressable style={styles.btn} onPress={props.onAddDirectory}>
-          <Text style={styles.btnText}>Add directory</Text>
-        </Pressable>
-      </View>
+      {harnessSupportsAdditionalDirs(props.selectedProvider) ? (
+        <View style={styles.settingsCard}>
+          <Text style={styles.sectionTitle}>Additional directories</Text>
+          {props.workspaceDirs.map((dir) => (
+            <View key={dir} style={styles.rowBetween}>
+              <Text numberOfLines={1} style={styles.directoryText}>{dir}</Text>
+              <Pressable onPress={() => props.onRemoveDirectory(dir)}>
+                <Text style={styles.back}>Remove</Text>
+              </Pressable>
+            </View>
+          ))}
+          <TextInput
+            style={styles.input}
+            placeholder="Absolute directory path"
+            placeholderTextColor={tokens.colors.mutedForeground}
+            autoCapitalize="none"
+            autoCorrect={false}
+            value={props.additionalDir}
+            onChangeText={props.onAdditionalDirChange}
+          />
+          <Pressable style={styles.btn} onPress={props.onAddDirectory}>
+            <Text style={styles.btnText}>Add directory</Text>
+          </Pressable>
+        </View>
+      ) : null}
     </ScrollView>
   )
 }

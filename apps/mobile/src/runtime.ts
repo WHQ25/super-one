@@ -53,6 +53,7 @@ export class ChatRuntime {
   provider: HarnessId | string = 'claude'
   slashCommands: unknown[] = []
   permissionModes: string[] = ['default', 'acceptEdits', 'plan', 'bypassPermissions']
+  sessionTitle = ''
   models: { id?: string; name?: string }[] = []
   private timer: ReturnType<typeof setTimeout> | null = null
   private dirty = false
@@ -219,6 +220,8 @@ export class ChatRuntime {
     requestId: string,
     decision: boolean,
     formAnswers?: Record<string, unknown>,
+    alwaysAllow?: boolean,
+    reason?: string,
   ): void {
     const cmd: RemoteCommand = {
       type: 'respond_permission',
@@ -226,6 +229,8 @@ export class ChatRuntime {
       decision,
       sessionId: this.sessionId,
       projectPath: this.projectPath,
+      ...(alwaysAllow !== undefined ? { alwaysAllow } : {}),
+      ...(reason ? { reason } : {}),
       ...(formAnswers ? { formAnswers } : {}),
     }
     this.client.send(cmd)
@@ -285,6 +290,9 @@ export class ChatRuntime {
   }
 
   private apply(event: AgentEvent): void {
+    if (event.type === 'session_title_changed' && event.sessionId === this.sessionId) {
+      this.sessionTitle = event.title
+    }
     if (this.handleSideEvent(event)) return
     this.session = this.reduce(this.session, event)
     this.dirty = true

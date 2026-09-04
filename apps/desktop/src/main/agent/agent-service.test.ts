@@ -1657,12 +1657,13 @@ describe('AgentService.handleRemoteCommand', () => {
       type: 'respond_permission',
       requestId: 'req-1',
       decision: true,
+      alwaysAllow: true,
       sessionId: 'sid-1',
       formAnswers,
     } as never)
 
     expect(respondToPermission).toHaveBeenCalledWith(
-      'req-1', true, undefined, undefined, undefined, undefined, formAnswers,
+      'req-1', true, true, undefined, undefined, undefined, formAnswers,
     )
     expect(broadcasts).toContainEqual({
       type: 'interaction_resolved', interactionType: 'permission', requestId: 'req-1', projectPath: '/p', sessionId: 'sid-1',

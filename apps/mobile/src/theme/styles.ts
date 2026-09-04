@@ -17,8 +17,11 @@ export function createMobileStyles({ colors, radius, spacing, type }: MobileThem
     sidebarAction: { paddingVertical: 6 },
     top: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.md },
     headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+    headerTitleGroup: { flex: 1, minWidth: 0, gap: spacing.xs },
+    headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+    headerMetaRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
     back: { color: colors.primary, fontSize: type.body },
-    title: { color: colors.foreground, fontSize: type.display, fontWeight: '600', flex: 1 },
+    title: { color: colors.foreground, fontSize: type.display, fontWeight: '600', flexShrink: 1 },
     input: {
       borderWidth: 1,
       borderColor: colors.input,
@@ -51,6 +54,10 @@ export function createMobileStyles({ colors, radius, spacing, type }: MobileThem
     rowTitle: { color: colors.foreground, fontSize: type.body },
     rowMeta: { color: colors.mutedForeground, fontSize: type.meta, marginTop: spacing.xs },
     composer: { flexDirection: 'row', gap: spacing.sm, paddingVertical: spacing.sm, alignItems: 'center' },
+    composerControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+    directoryHint: { color: colors.mutedForeground, flex: 1, fontSize: type.meta, textAlign: 'right' },
+    queuedRow: { backgroundColor: colors.muted, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+    todoPanel: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, paddingVertical: spacing.sm },
     composerInput: {
       flex: 1,
       borderWidth: 1,
@@ -69,6 +76,14 @@ export function createMobileStyles({ colors, radius, spacing, type }: MobileThem
     collabList: { maxHeight: 420, marginVertical: spacing.md },
     collabCard: { backgroundColor: colors.surface, borderRadius: 10, padding: spacing.md, marginBottom: spacing.sm },
     collabTask: { color: colors.foreground, fontSize: 13, marginTop: spacing.sm },
+    permissionDescription: { color: colors.mutedForeground, fontSize: type.body, lineHeight: 20 },
+    permissionBody: { maxHeight: 460 },
+    permissionField: { gap: spacing.sm, marginBottom: spacing.md },
+    permissionActions: { gap: spacing.sm },
+    questionBody: { maxHeight: 520 },
+    questionGroup: { gap: spacing.sm, marginBottom: spacing.lg },
+    questionPreview: { height: 180, backgroundColor: colors.surface, borderRadius: radius.md },
+    previewText: { color: colors.foreground, backgroundColor: colors.muted, borderRadius: radius.md, padding: spacing.md },
     warningText: { color: colors.warning, fontSize: type.meta, marginTop: 6 },
     chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: spacing.sm },
     chip: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: spacing.xs },
@@ -110,6 +125,7 @@ export function createMobileStyles({ colors, radius, spacing, type }: MobileThem
     },
     sessionRecent: { borderColor: colors.primary },
     sessionMeta: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
+    sessionSwitcherList: { maxHeight: 520 },
     attachmentStrip: { flexGrow: 0, marginBottom: spacing.xs },
     attachmentStripContent: { gap: 6 },
     attachmentChip: {
@@ -133,6 +149,11 @@ export function createMobileStyles({ colors, radius, spacing, type }: MobileThem
     rowBetween: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: 6 },
     directoryText: { color: colors.mutedForeground, flex: 1, fontSize: 13 },
     pathBar: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingBottom: spacing.sm },
+    pathUp: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+    terminalToolbar: { flexGrow: 0, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+    terminalToolbarContent: { gap: spacing.xs, paddingVertical: spacing.sm },
+    terminalKey: { minWidth: 46, alignItems: 'center', backgroundColor: colors.secondary, borderRadius: radius.sm, paddingHorizontal: spacing.sm, paddingVertical: spacing.sm },
+    disabledControl: { opacity: 0.4 },
   })
 }
 

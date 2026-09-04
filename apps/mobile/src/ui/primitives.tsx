@@ -5,6 +5,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native'
 import { useMobileTheme } from '../theme/context'
@@ -90,6 +91,8 @@ export function Sheet(props: {
   onDismiss?: () => void
 }) {
   const styles = usePrimitiveStyles()
+  const { width } = useWindowDimensions()
+  const tablet = width >= 768
   return (
     <Modal
       animationType="fade"
@@ -98,8 +101,8 @@ export function Sheet(props: {
       transparent
       visible={props.visible}
     >
-      <View style={styles.scrim}>
-        <View accessibilityViewIsModal style={styles.sheet}>
+      <View style={[styles.scrim, tablet && styles.tabletScrim]}>
+        <View accessibilityViewIsModal style={[styles.sheet, tablet && styles.tabletSheet]}>
           <SectionHeader title={props.title} />
           {props.children}
         </View>
@@ -178,6 +181,7 @@ function usePrimitiveStyles() {
       sectionHeader: { flexDirection: 'row', alignItems: 'center', minHeight: 32 },
       sectionTitle: { color: colors.foreground, flex: 1, fontSize: type.title, fontWeight: '600' as const },
       scrim: { flex: 1, backgroundColor: colors.scrim, justifyContent: 'flex-end' },
+      tabletScrim: { justifyContent: 'flex-start', alignItems: 'flex-end', paddingTop: 72, paddingRight: spacing.lg },
       sheet: {
         backgroundColor: colors.elevated,
         borderTopLeftRadius: radius.lg,
@@ -186,6 +190,13 @@ function usePrimitiveStyles() {
         paddingBottom: spacing.xl,
         gap: spacing.md,
         maxHeight: '88%',
+      },
+      tabletSheet: {
+        width: 520,
+        maxWidth: '60%',
+        borderRadius: radius.lg,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: colors.border,
       },
       chip: {
         borderWidth: 1,

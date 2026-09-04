@@ -1,6 +1,8 @@
+import { ChevronUp, File, Folder } from 'lucide-react-native'
 import { FlatList, Pressable, Text, View } from 'react-native'
 import { directoryEntryAction, parentRemotePath, type RemoteDirectoryEntry } from '../shell-state'
-import { useMobileStyles } from '../theme/context'
+import { useMobileStyles, useMobileTheme } from '../theme/context'
+import { ListRow } from '../ui'
 
 export function FilesScreen(props: {
   path: string
@@ -9,10 +11,12 @@ export function FilesScreen(props: {
   onOpenFile: (path: string) => void
 }) {
   const styles = useMobileStyles()
+  const { tokens } = useMobileTheme()
   return (
     <View style={styles.flex}>
       <View style={styles.pathBar}>
-        <Pressable onPress={() => props.onOpenDirectory(parentRemotePath(props.path))}>
+        <Pressable style={styles.pathUp} onPress={() => props.onOpenDirectory(parentRemotePath(props.path))}>
+          <ChevronUp color={tokens.colors.primary} size={18} />
           <Text style={styles.back}>Up</Text>
         </Pressable>
         <Text numberOfLines={1} style={styles.directoryText}>{props.path}</Text>
@@ -23,15 +27,16 @@ export function FilesScreen(props: {
         renderItem={({ item }) => {
           const action = directoryEntryAction(props.path, item)
           return (
-            <Pressable
-              style={styles.row}
+            <ListRow
+              title={item.name}
+              subtitle={item.isDirectory ? 'Directory' : 'Open or share file'}
+              leading={item.isDirectory
+                ? <Folder color={tokens.colors.primary} size={21} />
+                : <File color={tokens.colors.mutedForeground} size={21} />}
               onPress={() => action.kind === 'directory'
                 ? props.onOpenDirectory(action.path)
                 : props.onOpenFile(action.path)}
-            >
-              <Text style={styles.rowTitle}>{item.isDirectory ? '▸ ' : ''}{item.name}</Text>
-              <Text style={styles.rowMeta}>{item.isDirectory ? 'Directory' : 'Open or share file'}</Text>
-            </Pressable>
+            />
           )
         }}
       />

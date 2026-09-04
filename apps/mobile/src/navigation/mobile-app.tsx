@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { StatusBar } from 'expo-status-bar'
 import * as Clipboard from 'expo-clipboard'
 import { useCameraPermissions, type BarcodeScanningResult } from 'expo-camera'
-import { ArrowLeft, Settings, SquareTerminal } from 'lucide-react-native'
+import { Bot, ArrowLeft, MessageSquare, Settings, SquareTerminal } from 'lucide-react-native'
 import {
+  ActivityIndicator,
   Linking,
   Pressable,
   Text,
@@ -24,11 +25,13 @@ import {
 } from '@superone/relay-client'
 import type {
   AskUserQuestionRequest,
+  ChatMessage,
   HarnessId,
   ImageAttachment,
   PermissionRequest,
   PlanApprovalRequest,
   RemoteCommand,
+  TodoItem,
   WorktreeInfo,
 } from '@superone/shared/agent-types'
 import { ChatRuntime } from '../runtime'
@@ -43,6 +46,7 @@ import { extractMentionQuery, insertMention, type MentionItem } from '../mention
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { mobileWebViewTheme } from '../theme/tokens'
 import { PermissionSheet, PlanSheet, QuestionSheet } from '../sheets'
+import { harnessDisplayName, harnessSupportsAdditionalDirs } from '../provider-state'
 import { parentRemotePath, resolveRemoteFilePath, type RemoteDirectoryEntry } from '../shell-state'
 import { loadOrCreateMobileId, mobileKv } from '../storage'
 import { registerFatalChatViewError } from '../chat-view-recovery'
@@ -74,6 +78,7 @@ import { PairingsScreen } from '../screens/pairings-screen'
 import { TerminalScreen } from '../screens/terminal-screen'
 import { SessionsScreen } from '../screens/sessions-screen'
 import { MobileNavigator, type MobileRoute as Screen } from './mobile-navigator'
+import { Badge, ListRow, Sheet } from '../ui'
 type ChatViewState = Extract<HostOutbound, { type: 'viewState' }>
 const kv = mobileKv
 const CHAT_VIEW_STATE_KEY = 'superone:chat-view-state'
@@ -95,6 +100,7 @@ export function MobileApp() {
   const [sessions, setSessions] = useState<SessionRow[]>([])
   const [project, setProject] = useState<Project | null>(null)
   const [sessionId, setSessionId] = useState<string | null>(null)
+  const [activeSessionTitle, setActiveSessionTitle] = useState('')
   const [selectedProvider, setSelectedProvider] = useState<HarnessId>('claude')
   const [selectedModel, setSelectedModel] = useState('')
   const [models, setModels] = useState<ModelRow[]>([])
@@ -111,11 +117,15 @@ export function MobileApp() {
   const [termDraft, setTermDraft] = useState('')
   const [terminalUi, setTerminalUi] = useState({ writable: false, title: 'Terminal' })
   const [streaming, setStreaming] = useState(false)
+  const [connectionState, setConnectionState] = useState<'connected' | 'reconnecting' | 'offline'>('offline')
+  const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false)
   const [permMode, setPermMode] = useState('default')
   const [permModes, setPermModes] = useState<string[]>(['default', 'acceptEdits', 'plan', 'bypassPermissions'])
   const [slashHits, setSlashHits] = useState<ReturnType<typeof filterSlashCommands>>([])
   const [mentionHits, setMentionHits] = useState<MentionItem[]>([])
   const [attachments, setAttachments] = useState<ImageAttachment[]>([])
+  const [queuedMessages, setQueuedMessages] = useState<ChatMessage[]>([])
+  const [todos, setTodos] = useState<Record<string, TodoItem>>({})
   const [perm, setPerm] = useState<PermissionRequest | null>(null)
   const [plan, setPlan] = useState<PlanApprovalRequest | null>(null)
   const [question, setQuestion] = useState<AskUserQuestionRequest | null>(null)
@@ -166,6 +176,7 @@ export function MobileApp() {
   const syncSheets = (runtime: ChatRuntime, hydrate = false) => {
     if (connectionRef.current.epoch !== runtime.epoch) {
       connectionRef.current = { state: 'connected', epoch: runtime.epoch }
+      setConnectionState('connected')
       inject(webRef, { type: 'setConnection', ...connectionRef.current })
     }
     const pending = runtime.session.pendingPermissions[0]
@@ -178,10 +189,22 @@ export function MobileApp() {
         : null,
     })
     setStreaming(runtime.streaming)
+    setQueuedMessages(runtime.session.queuedMessages)
+    setTodos(runtime.session.todos)
     setPermMode(runtime.permissionMode)
     setPerm(pending ?? null)
     setPlan(runtime.session.pendingPlanApproval)
     setQuestion(runtime.session.pendingQuestion)
+    if (runtime.sessionTitle) {
+      setActiveSessionTitle(runtime.sessionTitle)
+      setSessions((current) => {
+        const row = current.find((item) => item.sessionId === runtime.sessionId)
+        if (!row || row.title === runtime.sessionTitle) return current
+        return current.map((item) => item.sessionId === runtime.sessionId
+          ? { ...item, title: runtime.sessionTitle }
+          : item)
+      })
+    }
   }
   const rememberViewState = (id: string, viewState: ChatViewState) => {
     chatViewStatesRef.current = { ...chatViewStatesRef.current, [id]: viewState }
@@ -286,11 +309,15 @@ export function MobileApp() {
       currentEpoch: (activeClient) => runtimeRef.current?.epoch ?? activeClient.buffer.epoch,
       onConnection: (state, epoch) => {
         connectionRef.current = { state, epoch }
+        setConnectionState(state)
         inject(webRef, { type: 'setConnection', state, epoch })
         setStatus(state === 'connected' ? 'connected' : 'disconnected — reconnecting')
       },
       onStatus: setStatus,
-      onShutdown: () => setStatus('desktop shut down'),
+      onShutdown: () => {
+        setConnectionState('offline')
+        setStatus('desktop shut down')
+      },
       suppressDisconnect: () => suppressReconnectRef.current,
     })
     reconnectControllerRef.current = reconnectController
@@ -537,6 +564,7 @@ export function MobileApp() {
     runtimeRef.current = null
     termRuntimeRef.current = null
     setSessionId(null)
+    setActiveSessionTitle('')
     setScreen('sessions')
     setStatus(error instanceof Error ? error.message : 'session transition failed')
   }
@@ -549,6 +577,7 @@ export function MobileApp() {
       client.send({ type: 'unsubscribe_session', sessionId: previousId })
     }
     setSessionId(row.sessionId)
+    setActiveSessionTitle(row.title || 'Untitled')
     const provider = (row.provider ?? 'claude') as HarnessId
     setSelectedProvider(provider)
     setHarness(provider)
@@ -583,10 +612,13 @@ export function MobileApp() {
         ...(selectedProvider === 'claude'
           ? buildWorktreeCreateOptions(worktreeSelection, gitInfo?.branch)
           : {}),
-        ...(workspaceDirs.length ? { additionalDirectories: workspaceDirs } : {}),
+        ...(harnessSupportsAdditionalDirs(selectedProvider) && workspaceDirs.length
+          ? { additionalDirectories: workspaceDirs }
+          : {}),
       })
       setWorktreeSelection(LOCAL_WORKTREE_SELECTION)
       setSessionId(id)
+      setActiveSessionTitle('New session')
       setScreen('chat')
       const info = await runtime.loadSystemInfo(selectedProvider)
       setModels(info.models ?? [])
@@ -689,12 +721,12 @@ export function MobileApp() {
   const header = useMemo(() => {
     if (screen === 'projects') return 'Projects'
     if (screen === 'sessions') return project?.name ?? 'Sessions'
-    if (screen === 'chat') return sessionId?.slice(0, 8) ?? 'Chat'
+    if (screen === 'chat') return activeSessionTitle || 'Chat'
     if (screen === 'terminal') return terminalUi.title
     if (screen === 'settings') return 'Project settings'
     if (screen === 'files') return 'Files'
     return 'SuperOne'
-  }, [screen, project, sessionId, terminalUi.title])
+  }, [activeSessionTitle, screen, project, terminalUi.title])
   const tabletMultiPane = shouldUseTabletMultiPane(width, screen, !!project)
 
   return (
@@ -706,8 +738,28 @@ export function MobileApp() {
             <ArrowLeft color={tokens.colors.primary} size={22} />
           </Pressable>
         ) : <View />}
-        <Text style={styles.title}>{header}</Text>
+        <View style={styles.headerTitleGroup}>
+          <View style={styles.headerTitleRow}>
+            {screen === 'chat' ? <Bot color={tokens.colors.primary} size={18} /> : null}
+            <Text numberOfLines={1} style={styles.title}>{header}</Text>
+            {screen === 'chat' && streaming ? <ActivityIndicator color={tokens.colors.primary} size="small" /> : null}
+          </View>
+          {screen === 'chat' ? (
+            <View style={styles.headerMetaRow}>
+              <Badge label={harnessDisplayName(selectedProvider)} />
+              <Badge
+                label={connectionState}
+                tone={connectionState === 'connected' ? 'success' : connectionState === 'reconnecting' ? 'warning' : 'error'}
+              />
+            </View>
+          ) : null}
+        </View>
         <View style={styles.headerActions}>
+          {screen === 'chat' ? (
+            <Pressable accessibilityLabel="Switch session" accessibilityRole="button" onPress={() => setSessionSwitcherOpen(true)}>
+              <MessageSquare color={tokens.colors.primary} size={21} />
+            </Pressable>
+          ) : null}
           {screen === 'chat' ? (
             <Pressable accessibilityLabel="Terminal" accessibilityRole="button" onPress={openTerminal}>
               <SquareTerminal color={tokens.colors.primary} size={21} />
@@ -819,6 +871,9 @@ export function MobileApp() {
           slashHits={slashHits}
           mentionHits={mentionHits}
           attachments={attachments}
+          additionalDirectories={workspaceDirs}
+          queuedMessages={queuedMessages}
+          todos={todos}
           draft={draft}
           streaming={streaming}
           onWebMessage={handleChatViewMessage}
@@ -871,6 +926,7 @@ export function MobileApp() {
             runUiAction(() => { termRuntimeRef.current?.input(`${line}\n`); setTermDraft('') }, setStatus, 'terminal input failed')
           }}
           onClaim={() => runUiAction(() => termRuntimeRef.current?.claim(), setStatus, 'terminal claim failed')}
+          onKey={(data) => runUiAction(() => termRuntimeRef.current?.input(data), setStatus, 'terminal input failed')}
         />
       ) : null}
               </>
@@ -882,7 +938,11 @@ export function MobileApp() {
 
       <PermissionSheet
         perm={perm}
-        onAllow={(id, formAnswers) => runUiAction(() => runtimeRef.current?.respondPermission(id, true, formAnswers), setStatus, 'permission response failed')}
+        onAllow={(id, formAnswers, alwaysAllow) => runUiAction(
+          () => runtimeRef.current?.respondPermission(id, true, formAnswers, alwaysAllow),
+          setStatus,
+          'permission response failed',
+        )}
         onDeny={(id) => runUiAction(() => runtimeRef.current?.respondPermission(id, false), setStatus, 'permission response failed')}
       />
       <PlanSheet
@@ -897,6 +957,22 @@ export function MobileApp() {
         onSubmit={(id) => runUiAction(() => runtimeRef.current?.answerQuestion(id, answers), setStatus, 'question response failed')}
         onDismiss={(id) => runUiAction(() => runtimeRef.current?.dismissQuestion(id), setStatus, 'question response failed')}
       />
+      <Sheet visible={sessionSwitcherOpen} title="Switch session" onDismiss={() => setSessionSwitcherOpen(false)}>
+        <View style={styles.sessionSwitcherList}>
+          {sessions.map((row) => (
+            <ListRow
+              key={row.sessionId}
+              title={row.title || 'Untitled'}
+              subtitle={row.provider}
+              selected={row.sessionId === sessionId}
+              onPress={() => {
+                setSessionSwitcherOpen(false)
+                void openSession(row)
+              }}
+            />
+          ))}
+        </View>
+      </Sheet>
       <SharedFileSheet inbox={sharedFileInbox} />
     </SafeAreaView>
   )

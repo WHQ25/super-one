@@ -1,48 +1,132 @@
-import { Modal, Pressable, ScrollView, Text, View } from 'react-native'
+import { useEffect, useMemo, useState } from 'react'
+import { ScrollView, Text, TextInput, View } from 'react-native'
+import { WebView } from 'react-native-webview'
 import type {
   AskUserQuestionRequest,
   PermissionRequest,
   PlanApprovalRequest,
   SessionAgentLaunchProposal,
 } from '@superone/shared/agent-types'
-import { buildCollaborationFormAnswers, collaborationLaunchLabel } from './collaboration-state'
+import { collaborationLaunchLabel } from './collaboration-state'
+import {
+  defaultPermissionFormAnswers,
+  elicitationAnswersAreValid,
+  initialElicitationAnswers,
+  permissionSheetPresentation,
+} from './permission-sheet-state'
 import { useMobileStyles } from './theme/context'
+import { Badge, Button, Chip, ListRow, Sheet } from './ui'
+import {
+  questionAnswersAreComplete,
+  selectedQuestionOptions,
+  toggleQuestionOption,
+} from './question-sheet-state'
 
 export function PermissionSheet(props: {
   perm: PermissionRequest | null
-  onAllow: (id: string, formAnswers?: Record<string, unknown>) => void
+  onAllow: (id: string, formAnswers?: Record<string, unknown>, alwaysAllow?: boolean) => void
   onDeny: (id: string) => void
 }) {
   const styles = useMobileStyles()
   const perm = props.perm
+  const fields = useMemo(() => perm?.elicitationForm ?? [], [perm?.elicitationForm])
+  const [formValues, setFormValues] = useState<Record<string, unknown>>({})
+  useEffect(() => {
+    setFormValues(initialElicitationAnswers(fields))
+  }, [fields, perm?.requestId])
   const collab = perm?.requestKind === 'session_agents_confirm'
     ? perm.sessionAgentsConfirm
     : undefined
+  if (!perm) return null
+  const presentation = permissionSheetPresentation(perm)
+  const formValid = elicitationAnswersAreValid(fields, formValues)
+  const answers = perm.requestKind === 'mcp_elicitation'
+    ? formValues
+    : defaultPermissionFormAnswers(perm)
+  const approve = (alwaysAllow = false) => {
+    const formAnswers = perm.requestKind === 'webmcp_trust_confirm'
+      ? { scope: alwaysAllow ? 'always' : 'session' }
+      : answers
+    props.onAllow(perm.requestId, formAnswers, alwaysAllow)
+  }
   return (
-    <Modal visible={!!perm} transparent animationType="fade">
-      <View style={styles.modal}>
-        <Text style={styles.rowTitle}>{collab ? 'Approve collaboration?' : `Allow ${perm?.toolName ?? 'tool'}?`}</Text>
+    <Sheet
+      visible
+      title={presentation.title}
+      onDismiss={() => props.onDeny(perm.requestId)}
+    >
+      {presentation.description ? <Text style={styles.permissionDescription}>{presentation.description}</Text> : null}
+      <ScrollView style={styles.permissionBody} keyboardShouldPersistTaps="handled">
         {collab ? (
-          <ScrollView style={styles.collabList}>
+          <View style={styles.collabList}>
             {collab.launches.map((launch) => (
               <CollaborationLaunch key={launch.launchId} launch={launch} profileName={
                 collab.profiles.find((profile) => profile.id === launch.agentId)?.name
               } />
             ))}
-          </ScrollView>
+          </View>
         ) : null}
-        <Pressable
-          style={styles.btn}
-          onPress={() => {
-            if (!perm) return
-            props.onAllow(perm.requestId, collab ? buildCollaborationFormAnswers(collab) : undefined)
-          }}
-        >
-          <Text style={styles.btnText}>{collab ? `Approve ${collab.launches.length} launch${collab.launches.length === 1 ? '' : 'es'}` : 'Allow'}</Text>
-        </Pressable>
-        <Pressable style={styles.btn} onPress={() => { if (perm) props.onDeny(perm.requestId) }}><Text style={styles.btnText}>Deny</Text></Pressable>
+        {fields.map((field) => (
+          <View key={field.name} style={styles.permissionField}>
+            <Text style={styles.rowTitle}>{field.label}{field.required ? ' *' : ''}</Text>
+            {field.description ? <Text style={styles.rowMeta}>{field.description}</Text> : null}
+            {field.type === 'enum' ? (
+              <View style={styles.chips}>
+                {(field.enumOptions ?? []).map((option) => (
+                  <Chip
+                    key={option}
+                    label={option}
+                    selected={formValues[field.name] === option}
+                    onPress={() => setFormValues((current) => ({ ...current, [field.name]: option }))}
+                  />
+                ))}
+              </View>
+            ) : field.type === 'boolean' ? (
+              <Chip
+                label={formValues[field.name] ? 'Enabled' : 'Disabled'}
+                selected={Boolean(formValues[field.name])}
+                onPress={() => setFormValues((current) => ({ ...current, [field.name]: !current[field.name] }))}
+              />
+            ) : (
+              <TextInput
+                style={styles.input}
+                value={String(formValues[field.name] ?? '')}
+                keyboardType={field.type === 'number' ? 'numeric' : 'default'}
+                onChangeText={(value) => setFormValues((current) => ({
+                  ...current,
+                  [field.name]: field.type === 'number' && value !== '' ? Number(value) : value,
+                }))}
+              />
+            )}
+          </View>
+        ))}
+        {!collab ? presentation.items.map((item, index) => (
+          <ListRow
+            key={`${item.title}:${index}`}
+            title={item.title}
+            subtitle={item.subtitle}
+            trailing={item.warning ? <Badge label="Review" tone="warning" /> : undefined}
+          />
+        )) : null}
+      </ScrollView>
+      <View style={styles.permissionActions}>
+        <Button
+          label={presentation.approveLabel}
+          disabled={!formValid}
+          variant={presentation.destructive ? 'danger' : 'primary'}
+          onPress={() => approve(false)}
+        />
+        {presentation.alwaysLabel ? (
+          <Button
+            label={presentation.alwaysLabel}
+            disabled={!formValid}
+            variant="secondary"
+            onPress={() => approve(true)}
+          />
+        ) : null}
+        <Button label={presentation.denyLabel} variant="ghost" onPress={() => props.onDeny(perm.requestId)} />
       </View>
-    </Modal>
+    </Sheet>
   )
 }
 
@@ -85,15 +169,15 @@ export function PlanSheet(props: {
 }) {
   const styles = useMobileStyles()
   const plan = props.plan
+  if (!plan) return null
   return (
-    <Modal visible={!!plan} transparent animationType="fade">
-      <View style={styles.modal}>
-        <Text style={styles.rowTitle}>Approve plan?</Text>
-        <ScrollView style={styles.planBox}><Text style={styles.rowMeta}>{plan?.planContent}</Text></ScrollView>
-        <Pressable style={styles.btn} onPress={() => { if (plan) props.onApprove(plan.requestId) }}><Text style={styles.btnText}>Approve</Text></Pressable>
-        <Pressable style={styles.btn} onPress={() => { if (plan) props.onReject(plan.requestId) }}><Text style={styles.btnText}>Reject</Text></Pressable>
+    <Sheet visible title="Approve plan?" onDismiss={() => props.onReject(plan.requestId)}>
+      <ScrollView style={styles.planBox}><Text style={styles.rowMeta}>{plan.planContent}</Text></ScrollView>
+      <View style={styles.permissionActions}>
+        <Button label="Approve" onPress={() => props.onApprove(plan.requestId)} />
+        <Button label="Reject" variant="ghost" onPress={() => props.onReject(plan.requestId)} />
       </View>
-    </Modal>
+    </Sheet>
   )
 }
 
@@ -106,25 +190,66 @@ export function QuestionSheet(props: {
 }) {
   const styles = useMobileStyles()
   const question = props.question
+  const [otherTexts, setOtherTexts] = useState<Record<string, string>>({})
+  useEffect(() => setOtherTexts({}), [question?.requestId])
+  if (!question) return null
+  const complete = questionAnswersAreComplete(question.questions, props.answers)
   return (
-    <Modal visible={!!question} transparent animationType="fade">
-      <View style={styles.modal}>
-        <Text style={styles.rowTitle}>Question</Text>
-        <ScrollView style={styles.planBox}>
-          {(question?.questions ?? []).map((q) => (
-            <View key={q.header} style={{ marginBottom: 12 }}>
+    <Sheet visible title="Question" onDismiss={() => props.onDismiss(question.requestId)}>
+      <ScrollView style={styles.questionBody} keyboardShouldPersistTaps="handled">
+        {question.questions.map((q) => {
+          const selected = selectedQuestionOptions(props.answers[q.header])
+          const selectedOption = q.options.find((option) => selected.includes(option.label))
+          const preview = selectedOption?.preview
+          return (
+            <View key={q.header} style={styles.questionGroup}>
               <Text style={styles.rowTitle}>{q.question}</Text>
-              {q.options.map((opt) => (
-                <Pressable key={opt.label} style={styles.row} onPress={() => props.onPick(q.header, opt.label)}>
-                  <Text style={props.answers[q.header] === opt.label ? styles.rowTitle : styles.rowMeta}>{opt.label}</Text>
-                </Pressable>
+              {q.multiSelect ? <Text style={styles.rowMeta}>Select one or more</Text> : null}
+              {q.options.map((option) => (
+                <ListRow
+                  key={option.label}
+                  title={option.label}
+                  subtitle={option.description}
+                  selected={selected.includes(option.label)}
+                  trailing={selected.includes(option.label) ? <Badge label="Selected" tone="success" /> : undefined}
+                  onPress={() => props.onPick(
+                    q.header,
+                    toggleQuestionOption(q, props.answers[q.header], option.label),
+                  )}
+                />
               ))}
+              <TextInput
+                style={styles.input}
+                placeholder="Other"
+                value={otherTexts[q.header] ?? ''}
+                onChangeText={(value) => {
+                  setOtherTexts((current) => ({ ...current, [q.header]: value }))
+                  if (!q.multiSelect) {
+                    props.onPick(q.header, value)
+                    return
+                  }
+                  const optionLabels = new Set(q.options.map((option) => option.label))
+                  const options = selectedQuestionOptions(props.answers[q.header]).filter((item) => optionLabels.has(item))
+                  props.onPick(q.header, [...options, value.trim()].filter(Boolean).join(', '))
+                }}
+              />
+              {preview && question.previewFormat === 'html' ? (
+                <WebView
+                  javaScriptEnabled={false}
+                  originWhitelist={[]}
+                  scrollEnabled={false}
+                  source={{ html: preview }}
+                  style={styles.questionPreview}
+                />
+              ) : preview ? <Text style={styles.previewText}>{preview}</Text> : null}
             </View>
-          ))}
-        </ScrollView>
-        <Pressable style={styles.btn} onPress={() => { if (question) props.onSubmit(question.requestId) }}><Text style={styles.btnText}>Submit</Text></Pressable>
-        <Pressable style={styles.btn} onPress={() => { if (question) props.onDismiss(question.requestId) }}><Text style={styles.btnText}>Dismiss</Text></Pressable>
+          )
+        })}
+      </ScrollView>
+      <View style={styles.permissionActions}>
+        <Button label="Submit" disabled={!complete} onPress={() => props.onSubmit(question.requestId)} />
+        <Button label="Dismiss" variant="ghost" onPress={() => props.onDismiss(question.requestId)} />
       </View>
-    </Modal>
+    </Sheet>
   )
 }

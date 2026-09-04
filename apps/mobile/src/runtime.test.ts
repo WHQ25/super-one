@@ -85,6 +85,15 @@ describe('ChatRuntime', () => {
     expect(runtime.messages[0]?.content).toEqual([{ type: 'text', text: 'hi' }])
   })
 
+  it('tracks generated session titles for native chrome', () => {
+    vi.useFakeTimers()
+    const runtime = new ChatRuntime(fakeClient() as never, vi.fn())
+    runtime.sessionId = 's'
+    runtime.ingest([{ type: 'session_title_changed', sessionId: 's', title: 'Generated title', source: 'agent' }])
+    vi.advanceTimersByTime(33)
+    expect(runtime.sessionTitle).toBe('Generated title')
+  })
+
   it('drops live events from stale buffer epochs', async () => {
     vi.useFakeTimers()
     const paint = vi.fn()
@@ -130,11 +139,18 @@ describe('ChatRuntime', () => {
     expect(runtime.session.pendingPlanApproval?.requestId).toBe('plan')
     expect(runtime.session.pendingQuestion?.requestId).toBe('question')
     const formAnswers = { sessionAgentLaunchesJson: '[{"mode":"handoff"}]' }
-    runtime.respondPermission('perm', true, formAnswers)
+    runtime.respondPermission('perm', true, formAnswers, true, 'approved on mobile')
     runtime.respondPlan('plan', false, 'change it')
     runtime.answerQuestion('question', { Scope: 'All' })
     expect(client.sent).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: 'respond_permission', requestId: 'perm', decision: true, formAnswers }),
+      expect.objectContaining({
+        type: 'respond_permission',
+        requestId: 'perm',
+        decision: true,
+        formAnswers,
+        alwaysAllow: true,
+        reason: 'approved on mobile',
+      }),
       expect.objectContaining({ type: 'respond_plan_approval', requestId: 'plan', approved: false }),
       expect.objectContaining({ type: 'answer_question', requestId: 'question' }),
     ]))

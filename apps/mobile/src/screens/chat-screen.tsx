@@ -10,11 +10,11 @@ import {
 } from 'react-native'
 import { WebView } from 'react-native-webview'
 import { CHAT_VIEW_HTML } from '@superone/chat-view'
-import type { ImageAttachment } from '@superone/shared/agent-types'
+import type { ChatMessage, ImageAttachment, TodoItem } from '@superone/shared/agent-types'
 import type { filterSlashCommands } from '../slash'
 import type { MentionItem } from '../mentions'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
-import { Chip } from '../ui'
+import { PermissionModeSelector } from '../ui'
 
 export function ChatScreen(props: {
   webRef: RefObject<WebView | null>
@@ -23,6 +23,9 @@ export function ChatScreen(props: {
   slashHits: ReturnType<typeof filterSlashCommands>
   mentionHits: MentionItem[]
   attachments: ImageAttachment[]
+  additionalDirectories: string[]
+  queuedMessages: ChatMessage[]
+  todos: Record<string, TodoItem>
   draft: string
   streaming: boolean
   onWebMessage: (raw: string) => void
@@ -50,15 +53,32 @@ export function ChatScreen(props: {
         onContentProcessDidTerminate={() => props.onWebProcessError('content process terminated')}
         onRenderProcessGone={() => props.onWebProcessError('render process terminated')}
       />
-      <View style={styles.chips}>
-        {props.permissionModes.map((mode) => (
-          <Chip
-            key={mode}
-            label={mode}
-            selected={props.permissionMode === mode}
-            onPress={() => props.onPermissionMode(mode)}
-          />
-        ))}
+      {Object.keys(props.todos).length ? (
+        <View style={styles.todoPanel}>
+          <Text style={styles.rowMeta}>
+            {Object.values(props.todos).filter((todo) => todo.status === 'completed').length}/{Object.keys(props.todos).length} tasks
+          </Text>
+          <Text numberOfLines={1} style={styles.rowTitle}>
+            {Object.values(props.todos).find((todo) => todo.status === 'in_progress')?.activeForm
+              ?? Object.values(props.todos).find((todo) => todo.status !== 'completed')?.subject
+              ?? 'Tasks complete'}
+          </Text>
+        </View>
+      ) : null}
+      {props.queuedMessages.length ? (
+        <View style={styles.queuedRow}>
+          <Text numberOfLines={1} style={styles.rowMeta}>{props.queuedMessages.length} queued · waiting for the current turn</Text>
+        </View>
+      ) : null}
+      <View style={styles.composerControls}>
+        <PermissionModeSelector
+          modes={props.permissionModes}
+          value={props.permissionMode}
+          onChange={props.onPermissionMode}
+        />
+        {props.additionalDirectories.length ? (
+          <Text numberOfLines={1} style={styles.directoryHint}>+{props.additionalDirectories.length} directories</Text>
+        ) : null}
       </View>
       {props.slashHits.length ? (
         <ScrollView style={styles.overlay}>

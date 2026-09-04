@@ -694,7 +694,7 @@ export class AgentService {
           const handled = agent.respondToPermission(
             command.requestId,
             command.decision,
-            undefined,
+            command.alwaysAllow,
             command.reason,
             command.selectedSuggestions,
             undefined,

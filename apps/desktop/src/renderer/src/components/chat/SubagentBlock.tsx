@@ -1,47 +1,53 @@
-import { useState, useEffect, useRef, useMemo, type ReactNode } from 'react'
-import { useTranslation } from 'react-i18next'
-import { Bot, ChevronRight, Check, Wrench, ArrowUp, ArrowDown, Maximize, TriangleAlert, CircleSlash } from 'lucide-react'
-import { cn } from '@superone/ui/lib/utils'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Streamdown } from 'streamdown'
+import type { ContentBlock } from '@superone/shared/agent-types'
 import { ToolBlock } from './ToolBlock'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { getSubagentColorClasses } from './subagent-colors'
 import { NestedToolContext } from './nested-tool-context'
 import { useSubagentNavigation } from './subagent-navigation-context'
-import { Streamdown } from 'streamdown'
-import type { ContentBlock } from '@superone/shared/agent-types'
-import { streamdownPlugins, streamdownRehypePlugins, streamdownControls, streamdownComponents, streamdownLinkSafety, formatTokens } from './chat-shared'
 import {
-  parseTaskInput,
-  parseSubagentIdFromText,
-  looksLikeBackgroundSubagentAck,
-  resolveTaskProgressEntry,
-  buildToolResultMap,
+  formatTokens,
+  streamdownComponents,
+  streamdownControls,
+  streamdownLinkSafety,
+  streamdownPlugins,
+  streamdownRehypePlugins,
+} from './chat-shared'
+import {
   buildToolErrorMaps,
+  buildToolResultMap,
   computeSubagentElapsed,
   groupSubagentChildren,
+  looksLikeBackgroundSubagentAck,
+  parseSubagentIdFromText,
+  parseTaskInput,
+  resolveTaskProgressEntry,
   type ToolErrorMaps,
 } from './subagent-utils'
 import { useSubagentJsonl } from './use-subagent-jsonl'
 import { AgentActivity, SubagentScrollArea } from './subagent-activity'
 import { SubagentRetryBadge } from './SubagentRetryBadge'
+import {
+  SubagentBlockPresenter,
+  type SubagentMarkdownProps,
+} from './presenters/SubagentBlock'
 
 const ZERO_TOKENS = { input: 0, output: 0 }
 
-// groupContent rebuilds a fresh childBlocks array on every render of the streaming message, even
-// for subagent segments whose blocks are unchanged (the immutable delta reducer preserves the
-// block refs). Reuse the previous array when the contents are shallow-equal so the downstream
-// derivations (buildToolResultMap / groupSubagentChildren, incl. nested subagents) stay cached
-// for completed subagents instead of re-deriving their whole subtree each delta.
-function useStableArray<T>(arr: T[]): T[] {
-  const ref = useRef(arr)
-  const prev = ref.current
-  if (prev !== arr && (prev.length !== arr.length || prev.some((v, i) => v !== arr[i]))) {
-    ref.current = arr
+function useStableArray<T>(items: T[]): T[] {
+  const ref = useRef(items)
+  const previous = ref.current
+  if (
+    previous !== items
+    && (previous.length !== items.length || previous.some((item, index) => item !== items[index]))
+  ) {
+    ref.current = items
   }
   return ref.current
 }
 
-interface SubagentBlockProps {
+export interface SubagentBlockProps {
   taskBlock: ContentBlock & { type: 'tool_use' }
   childBlocks: ContentBlock[]
   resultBlock?: ContentBlock
@@ -50,417 +56,21 @@ interface SubagentBlockProps {
   trailingAction?: ReactNode
 }
 
-/** Format elapsed seconds to a readable string. */
-function formatElapsed(seconds: number): string {
-  if (seconds < 60) return `${Math.round(seconds)}s`
-  const mins = Math.floor(seconds / 60)
-  const secs = Math.round(seconds % 60)
-  return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`
-}
-
-function SubagentTokens({ input, output }: { input: number; output: number }) {
-  if (input <= 0 && output <= 0) return null
+function DesktopSubagentMarkdown({ text }: SubagentMarkdownProps) {
   return (
-    <>
-      {input > 0 && (
-        <span className="inline-flex items-center gap-0.5 tabular-nums">
-          <ArrowUp className="size-2.5" />
-          {formatTokens(input)}
-        </span>
-      )}
-      {output > 0 && (
-        <span className="inline-flex items-center gap-0.5 tabular-nums">
-          <ArrowDown className="size-2.5" />
-          {formatTokens(output)}
-        </span>
-      )}
-    </>
+    <Streamdown
+      className="chat-md"
+      plugins={streamdownPlugins}
+      rehypePlugins={streamdownRehypePlugins}
+      components={streamdownComponents}
+      controls={streamdownControls}
+      linkSafety={streamdownLinkSafety}
+    >
+      {text}
+    </Streamdown>
   )
 }
 
-export function SubagentBlock({ taskBlock, childBlocks: childBlocksProp, resultBlock, isStreaming, defaultExpanded, trailingAction }: SubagentBlockProps) {
-  const { t } = useTranslation()
-  const childBlocks = useStableArray(childBlocksProp)
-  const tokens = useActiveSession((s) => s.subagentTokens[taskBlock.toolUseId] ?? ZERO_TOKENS)
-  const rawResultTextEarly = resultBlock?.type === 'tool_result' ? resultBlock.summary : undefined
-  const taskIdHint = useMemo(
-    () => parseSubagentIdFromText(rawResultTextEarly) ?? parseSubagentIdFromText(taskBlock.taskResultText),
-    [rawResultTextEarly, taskBlock.taskResultText],
-  )
-  // Prefer launch toolUseId; fall back to provisional Grok subagent_id key.
-  const progress = useActiveSession((s) =>
-    resolveTaskProgressEntry(s.taskProgress, taskBlock.toolUseId, taskIdHint),
-  )
-  const colorIdx = useActiveSession((s) => s.subagentColors[taskBlock.toolUseId])
-  const colors = useMemo(() => getSubagentColorClasses(colorIdx), [colorIdx])
-  const taskInput = useMemo(() => parseTaskInput(taskBlock.input), [taskBlock.input])
-  const showSpawningPlaceholder = !taskInput.subagentType && !taskInput.description
-  // Grok spawn often returns a plain-text "started in background" ack without
-  // run_in_background on the tool input — treat that as async so the early
-  // tool_result does not seal the card before task_notification.
-  const looksLikeBgAck = looksLikeBackgroundSubagentAck(rawResultTextEarly)
-  const isAsync = taskInput.runInBackground || looksLikeBgAck
-  // taskProgress is the authoritative running signal: every sub-agent (top-level,
-  // nested, background or foreground) reports task_started→task_notification. A
-  // background agent's early tool_result and an idle main turn must NOT read as
-  // complete while its task is still running. Agents without task tracking fall
-  // back to: async → no recorded result text; sync → has a tool_result.
-  const isComplete = progress
-    ? !!progress.completed
-    : (isAsync ? !!taskBlock.taskResultText : !!resultBlock)
-  const isRunning = progress
-    ? !progress.completed
-    : (isAsync ? !taskBlock.taskResultText : (!resultBlock && isStreaming))
-  const taskStatus = progress
-    ? progress.status
-    : (resultBlock?.type === 'tool_result' && resultBlock.isError ? 'failed' as const : undefined)
-  const isFailed = isComplete && taskStatus === 'failed'
-  const isStopped = isComplete && !!taskStatus && taskStatus !== 'completed' && !isFailed
-  const hasTokens = tokens.input > 0 || tokens.output > 0
-  const [expanded, setExpanded] = useState(defaultExpanded ?? false)
-  const nav = useSubagentNavigation()
-
-  useEffect(() => {
-    useChatStore.getState().assignSubagentColor(taskBlock.toolUseId)
-  }, [taskBlock.toolUseId])
-
-  const baselineElapsed = computeSubagentElapsed(taskBlock, progress, isRunning)
-  const startTimeRef = useRef<number>(Date.now() - baselineElapsed * 1000)
-  const [elapsed, setElapsed] = useState(baselineElapsed)
-
-  useEffect(() => {
-    if (!isRunning) return
-    startTimeRef.current = Date.now() - elapsed * 1000
-    const timer = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000))
-    }, 1000)
-    return () => clearInterval(timer)
-  }, [isRunning])
-
-  // Freeze elapsed on completion
-  useEffect(() => {
-    if (isComplete && elapsed === 0) {
-      const maxElapsed = childBlocks.reduce((max, b) => {
-        if (b.type === 'tool_use' && b.elapsedSeconds) return Math.max(max, b.elapsedSeconds)
-        return max
-      }, 0)
-      if (maxElapsed > 0) setElapsed(Math.round(maxElapsed))
-    }
-  }, [isComplete])
-
-  const toolResultMap = useMemo(() => buildToolResultMap(childBlocks), [childBlocks])
-  const toolErrorMaps = useMemo(() => buildToolErrorMaps(childBlocks), [childBlocks])
-  const childItems = useMemo(() => groupSubagentChildren(childBlocks, taskBlock.toolUseId), [childBlocks, taskBlock.toolUseId])
-  const rawResultText = rawResultTextEarly
-  const asyncOutputPath = useMemo(() => rawResultText?.match(/output_file:\s*(\S+)/)?.[1], [rawResultText])
-  // Prefer live progress, then persisted Agent fields / tool_result path (history reload).
-  const resultOutputPath = resultBlock?.type === 'tool_result' ? resultBlock.outputPath : undefined
-  const outputFile = asyncOutputPath
-    ?? progress?.outputFile
-    ?? taskBlock.taskOutputFile
-    ?? resultOutputPath
-  // A sub-agent's tool activity arrives one of two ways: inline childBlocks
-  // (parentToolUseId === this agent) for ordinary nested calls, or via the
-  // task_progress / JSONL channel when the agent ran in its own session —
-  // background agents AND workflow-spawned parallel agents, which are NOT
-  // run_in_background yet still produce no inline blocks. Drive the activity
-  // surface off "are there inline children?": with inline children we render those
-  // (the structured source of truth); without, fall back to the progress/JSONL
-  // channel. Keying off isAsync instead would hide a nested non-async agent's
-  // tools (empty shell) and double-render a background agent that has both.
-  const usesProgressActivity = childItems.length === 0
-
-  // Grok child chat_history.jsonl is not Claude agent-*.jsonl — skip SDK transcript read.
-  const isGrokChatHistory = !!outputFile && outputFile.endsWith('chat_history.jsonl')
-  const { entries: jsonlEntries, resultText: jsonlResultText } = useSubagentJsonl({
-    toolUseId: taskBlock.toolUseId,
-    taskResultText: taskBlock.taskResultText,
-    outputFile,
-    // Demand-driven: only watch while the card is expanded (or on full-view open).
-    // Collapsed running agents still show footer counts from taskProgress.
-    enabled: usesProgressActivity && !!outputFile && expanded,
-    isRunning,
-    skipAuthoritativeRead: isGrokChatHistory,
-  })
-
-  const resultText = isAsync
-    ? (jsonlResultText ?? taskBlock.taskResultText)
-    : (jsonlResultText ?? (asyncOutputPath ? undefined : rawResultText) ?? taskBlock.taskResultText)
-  // Provider-authored failure detail, kept out of `resultText` on purpose: it
-  // explains why the run ended and is NOT something the child said. Upstream
-  // draws the same line, and collapsing the two would attribute an
-  // infrastructure message to the agent.
-  const diagnostic = progress?.diagnostic
-  const toolCallCount = useMemo(() => {
-    let count = 0
-    for (const item of childItems) {
-      if (item.kind === 'subagent' || (item.kind === 'block' && item.block.type === 'tool_use')) count++
-    }
-    return count
-  }, [childItems])
-
-  // task_progress is live store state and is lost on history reload; the same
-  // history/usage is persisted onto the Agent block (taskToolHistory/taskUsage via
-  // _patchAgentBlock). Prefer live, fall back to persisted so a reloaded session
-  // still renders the activity instead of an empty shell.
-  // Prefer JSONL transcript (Grok chat_history / Claude agent-*.jsonl) for tool rows —
-  // progress.toolHistory from Grok tools_used is only a distinct-name set.
-  const activityHistory = (progress?.toolHistory?.length ? progress.toolHistory : taskBlock.taskToolHistory) ?? []
-  const activityToolUses = progress?.toolUses
-    ?? taskBlock.taskUsage?.toolUses
-    ?? (jsonlEntries.length > 0
-      ? jsonlEntries.reduce((n, e) => (e.type === 'tool' ? n + 1 : n), 0)
-      : activityHistory.length)
-  const activityTokens = progress?.totalTokens ?? taskBlock.taskUsage?.totalTokens ?? 0
-  const hasActivity = jsonlEntries.length > 0 || activityHistory.length > 0 || !!progress
-
-  const isExpandable = !showSpawningPlaceholder
-  const isExpanded = expanded && isExpandable
-
-  const statsContent = usesProgressActivity && hasActivity ? (
-    <>
-      {activityToolUses > 0 && (
-        <span className="inline-flex items-center gap-0.5">
-          <Wrench className="size-3" />
-          {activityToolUses}
-        </span>
-      )}
-      {activityTokens > 0 && (
-        <>
-          {activityToolUses > 0 && <span>·</span>}
-          <span className="tabular-nums">{formatTokens(activityTokens)}</span>
-        </>
-      )}
-    </>
-  ) : (
-    <>
-      {toolCallCount > 0 && (
-        <span className="inline-flex items-center gap-0.5">
-          <Wrench className="size-3" />
-          {toolCallCount}
-        </span>
-      )}
-      {hasTokens && toolCallCount > 0 && <span>·</span>}
-      <SubagentTokens input={tokens.input} output={tokens.output} />
-    </>
-  )
-
-  return (
-    <div className="subagent-container my-1 overflow-hidden rounded border border-border/50 bg-muted/20">
-      {/* Header: Bot icon + subagent_type + description */}
-      <button
-        type="button"
-        aria-disabled={!isExpandable}
-        onClick={() => { if (isExpandable) setExpanded((e) => !e) }}
-        className={cn(
-          'flex w-full items-center gap-2 px-2.5 py-2 text-xs transition-colors',
-          isExpandable ? 'hover:bg-muted/40' : 'cursor-default',
-        )}
-      >
-        <Bot className={cn('size-3.5 shrink-0', isFailed ? 'text-amber-600 dark:text-amber-400' : isStopped ? 'text-muted-foreground' : colors.text, isRunning && !isExpanded && 'animate-pulse')} />
-        {taskInput.name && taskInput.teamName ? (
-          <span className={cn('shrink-0 rounded px-1 py-px text-xs font-medium', colors.tagBg, colors.tagText)}>
-            {taskInput.name}@{taskInput.teamName}
-          </span>
-        ) : taskInput.name ? (
-          <>
-            <span className={cn('shrink-0 rounded px-1 py-px text-xs font-medium', colors.tagBg, colors.tagText)}>
-              {taskInput.name}
-            </span>
-            {taskInput.subagentType && taskInput.subagentType !== taskInput.name && (
-              <span className="shrink-0 text-xs text-muted-foreground">{taskInput.subagentType}</span>
-            )}
-          </>
-        ) : taskInput.subagentType ? (
-          <span className={cn('shrink-0 rounded px-1 py-px text-xs', colors.tagBg, colors.tagText)}>
-            {taskInput.subagentType}
-          </span>
-        ) : null}
-        {taskInput.description && (
-          <span className="min-w-0 truncate text-left text-muted-foreground">{taskInput.description}</span>
-        )}
-        {showSpawningPlaceholder && (
-          <span className="min-w-0 text-left text-muted-foreground">{t('chat.subagent.spawning')}</span>
-        )}
-        {isRunning && progress?.retry && <SubagentRetryBadge retry={progress.retry} className="ml-1" />}
-        {isExpandable && (
-          <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-            {!isExpanded && isFailed && (
-              <span className="inline-flex items-center gap-0.5 text-amber-600 dark:text-amber-400">
-                <TriangleAlert className="size-3" />{t('chat.subagent.failed')}
-              </span>
-            )}
-            {!isExpanded && isStopped && (
-              <span className="inline-flex items-center gap-0.5">
-                <CircleSlash className="size-3" />{t('chat.subagent.stopped')}
-              </span>
-            )}
-            {!isExpanded && statsContent}
-            {isExpanded && (
-              <span
-                role="button"
-                tabIndex={0}
-                onClick={(e) => { e.stopPropagation(); nav.open({ toolUseId: taskBlock.toolUseId }) }}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); nav.open({ toolUseId: taskBlock.toolUseId }) } }}
-                className="inline-flex items-center rounded p-0.5 hover:bg-muted hover:text-foreground"
-                title={t('chat.subagent.openFullView', 'Open full view')}
-              >
-                <Maximize className="size-3" />
-              </span>
-            )}
-            {trailingAction}
-            <ChevronRight
-              className={cn('size-3 shrink-0 transition-transform duration-200', isExpanded && 'rotate-90')}
-            />
-          </span>
-        )}
-      </button>
-
-      {isExpanded && (
-        <div className="border-t border-border/30">
-          {/* Input: prompt preview */}
-          {taskInput.prompt && <PromptPreview prompt={taskInput.prompt} model={taskInput.model} />}
-
-          {/* Agent activity — JSONL entries (text + tool interleaved), with live fallback */}
-          {usesProgressActivity && (jsonlEntries.length > 0 || hasActivity) && (
-            // Card body: proper ToolBlock chrome but header-only (no expand). Details open in full view.
-            <NestedToolContext.Provider value={{ defaultAutoExpand: false, allowExpand: false }}>
-              <AgentActivity
-                entries={jsonlEntries}
-                // Only use progress toolHistory when no transcript yet (name-only stubs).
-                fallbackTools={jsonlEntries.length === 0 ? activityHistory : undefined}
-                // Active tool comes from the last transcript row, not tools_used set order.
-                activeTool={undefined}
-                isRunning={isRunning}
-                summary={undefined}
-                colors={colors}
-              />
-            </NestedToolContext.Provider>
-          )}
-
-          {/* Sub tool calls + nested sub-agents — header-only rows (Claude parity); expand in full view */}
-          {childItems.length > 0 && (
-            <NestedToolContext.Provider value={{ defaultAutoExpand: false, allowExpand: false }}>
-              <SubagentScrollArea borderClass={colors.borderL}>
-                {childItems.map((item, i) =>
-                  item.kind === 'subagent' ? (
-                    <SubagentBlock
-                      key={`sa-${item.segment.taskBlock.toolUseId}`}
-                      taskBlock={item.segment.taskBlock}
-                      childBlocks={item.segment.childBlocks}
-                      resultBlock={item.segment.resultBlock}
-                      isStreaming={isStreaming}
-                    />
-                  ) : (
-                    renderChildBlock(item.block, i, isStreaming, toolResultMap, toolErrorMaps)
-                  )
-                )}
-              </SubagentScrollArea>
-            </NestedToolContext.Provider>
-          )}
-
-          {/* Failure detail — above the output, and never merged into it: this
-              is the provider explaining the failure, not the child answering. */}
-          {isFailed && diagnostic && (
-            <div className="border-t border-border/30 px-2.5 py-1.5">
-              <div className="mb-0.5 flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
-                <TriangleAlert className="size-3 shrink-0" />
-                <span>{t('chat.subagent.diagnostic')}</span>
-              </div>
-              <p className="whitespace-pre-wrap break-words text-xs text-muted-foreground">{diagnostic}</p>
-            </div>
-          )}
-
-          {/* Output — collapsible with line limit */}
-          {resultText && !(isAsync && isRunning) && <OutputPreview text={resultText} />}
-        </div>
-      )}
-
-      {isExpanded && (isRunning || isComplete) && <div className="flex items-center gap-1.5 border-t border-border/30 px-2.5 py-1.5 text-xs text-muted-foreground">
-        {isRunning ? (
-          <>
-            <span>{isAsync ? t('chat.subagent.runningInBackground') : t('chat.subagent.running')}</span>
-            {elapsed > 0 && <span className="tabular-nums">{formatElapsed(elapsed)}</span>}
-          </>
-        ) : isFailed ? (
-          <>
-            <TriangleAlert className="size-3 shrink-0 text-amber-600 dark:text-amber-400" />
-            <span className="text-amber-600 dark:text-amber-400">{t('chat.subagent.failed')}{elapsed > 0 ? ` ${formatElapsed(elapsed)}` : ''}</span>
-          </>
-        ) : isStopped ? (
-          <>
-            <CircleSlash className="size-3 shrink-0 text-muted-foreground" />
-            <span>{t('chat.subagent.stopped')}{elapsed > 0 ? ` ${formatElapsed(elapsed)}` : ''}</span>
-          </>
-        ) : (
-          <>
-            <Check className="size-3 shrink-0 text-success" />
-            <span>{t('chat.subagent.done')}{elapsed > 0 ? ` ${formatElapsed(elapsed)}` : ''}</span>
-          </>
-        )}
-        <span className="ml-auto flex items-center gap-1.5">{statsContent}</span>
-      </div>}
-    </div>
-  )
-}
-
-/** Collapsible output with scrollable content. */
-function OutputPreview({ text }: { text: string }) {
-  const { t } = useTranslation()
-  const [showOutput, setShowOutput] = useState(false)
-
-  return (
-    <div className="border-t border-border/30 px-3 py-1.5">
-      <button
-        onClick={(e) => { e.stopPropagation(); setShowOutput((s) => !s) }}
-        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <ChevronRight className={cn('size-2.5 shrink-0 transition-transform duration-200', showOutput && 'rotate-90')} />
-        <span className="font-medium">{t('chat.subagent.output')}</span>
-      </button>
-      {showOutput && (
-        <div className="mt-1 max-h-50 overflow-y-auto text-xs">
-          <Streamdown
-            className="chat-md"
-            plugins={streamdownPlugins}
-            rehypePlugins={streamdownRehypePlugins}
-            components={streamdownComponents}
-            controls={streamdownControls}
-            linkSafety={streamdownLinkSafety}
-          >
-            {text}
-          </Streamdown>
-        </div>
-      )}
-    </div>
-  )
-}
-
-/** Collapsible prompt preview. */
-function PromptPreview({ prompt, model }: { prompt: string; model?: string }) {
-  const { t } = useTranslation()
-  const [showPrompt, setShowPrompt] = useState(false)
-
-  return (
-    <div className="px-3 py-1.5 text-xs">
-      <button
-        onClick={(e) => { e.stopPropagation(); setShowPrompt((s) => !s) }}
-        className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <ChevronRight className={cn('size-2.5 shrink-0 transition-transform duration-200', showPrompt && 'rotate-90')} />
-        <span>{t('chat.subagent.prompt')}</span>
-        {model && <span className="ml-1 rounded bg-muted px-1 py-px text-xs">{model}</span>}
-      </button>
-      {showPrompt && (
-        <div className="mt-1 max-h-25 overflow-y-auto whitespace-pre-wrap rounded bg-background/50 px-2 py-1.5 text-muted-foreground leading-relaxed">
-          {prompt}
-        </div>
-      )}
-    </div>
-  )
-}
-
-/** Render a single child block inside the subagent container. */
 function renderChildBlock(
   block: ContentBlock,
   index: number,
@@ -484,10 +94,12 @@ function renderChildBlock(
         />
       )
     case 'tool_result':
-      if (toolResultMap.has(block.toolUseId)) return null
-      if (!block.summary) return null
+      if (toolResultMap.has(block.toolUseId) || !block.summary) return null
       return (
-        <div key={index} className="my-0.5 overflow-x-auto rounded bg-muted/50 px-2 py-1.5 font-mono text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap">
+        <div
+          key={index}
+          className="my-0.5 overflow-x-auto whitespace-pre-wrap rounded bg-muted/50 px-2 py-1.5 font-mono text-xs leading-relaxed text-muted-foreground"
+        >
           {block.summary}
         </div>
       )
@@ -495,3 +107,174 @@ function renderChildBlock(
       return null
   }
 }
+
+/** Desktop data and filesystem adapter for the portable subagent presenter. */
+export function SubagentBlock({
+  taskBlock,
+  childBlocks: childBlocksProp,
+  resultBlock,
+  isStreaming,
+  defaultExpanded,
+  trailingAction,
+}: SubagentBlockProps) {
+  const childBlocks = useStableArray(childBlocksProp)
+  const [expanded, setExpanded] = useState(defaultExpanded ?? false)
+  const tokens = useActiveSession(
+    (state) => state.subagentTokens[taskBlock.toolUseId] ?? ZERO_TOKENS,
+  )
+  const rawResultText = resultBlock?.type === 'tool_result' ? resultBlock.summary : undefined
+  const taskIdHint = useMemo(
+    () => parseSubagentIdFromText(rawResultText) ?? parseSubagentIdFromText(taskBlock.taskResultText),
+    [rawResultText, taskBlock.taskResultText],
+  )
+  const progress = useActiveSession((state) =>
+    resolveTaskProgressEntry(state.taskProgress, taskBlock.toolUseId, taskIdHint),
+  )
+  const colorIndex = useActiveSession((state) => state.subagentColors[taskBlock.toolUseId])
+  const colors = useMemo(() => getSubagentColorClasses(colorIndex), [colorIndex])
+  const taskInput = useMemo(() => parseTaskInput(taskBlock.input), [taskBlock.input])
+  const isAsync = taskInput.runInBackground || looksLikeBackgroundSubagentAck(rawResultText)
+  const isComplete = progress
+    ? !!progress.completed
+    : isAsync
+      ? !!taskBlock.taskResultText
+      : !!resultBlock
+  const isRunning = progress
+    ? !progress.completed
+    : isAsync
+      ? !taskBlock.taskResultText
+      : !resultBlock && isStreaming
+  const taskStatus = progress?.status
+    ?? (resultBlock?.type === 'tool_result' && resultBlock.isError ? 'failed' : undefined)
+  const isFailed = isComplete && taskStatus === 'failed'
+  const isStopped = isComplete && !!taskStatus && taskStatus !== 'completed' && !isFailed
+  const nav = useSubagentNavigation()
+
+  useEffect(() => {
+    useChatStore.getState().assignSubagentColor(taskBlock.toolUseId)
+  }, [taskBlock.toolUseId])
+
+  const toolResultMap = useMemo(() => buildToolResultMap(childBlocks), [childBlocks])
+  const toolErrorMaps = useMemo(() => buildToolErrorMaps(childBlocks), [childBlocks])
+  const childItems = useMemo(
+    () => groupSubagentChildren(childBlocks, taskBlock.toolUseId),
+    [childBlocks, taskBlock.toolUseId],
+  )
+  const asyncOutputPath = useMemo(
+    () => rawResultText?.match(/output_file:\s*(\S+)/)?.[1],
+    [rawResultText],
+  )
+  const resultOutputPath = resultBlock?.type === 'tool_result' ? resultBlock.outputPath : undefined
+  const outputFile = asyncOutputPath
+    ?? progress?.outputFile
+    ?? taskBlock.taskOutputFile
+    ?? resultOutputPath
+  const usesProgressActivity = childItems.length === 0
+  const { entries: jsonlEntries, resultText: jsonlResultText } = useSubagentJsonl({
+    toolUseId: taskBlock.toolUseId,
+    taskResultText: taskBlock.taskResultText,
+    outputFile,
+    enabled: usesProgressActivity && !!outputFile && expanded,
+    isRunning,
+    skipAuthoritativeRead: !!outputFile && outputFile.endsWith('chat_history.jsonl'),
+  })
+  const resultText = isAsync
+    ? jsonlResultText ?? taskBlock.taskResultText
+    : jsonlResultText ?? (asyncOutputPath ? undefined : rawResultText) ?? taskBlock.taskResultText
+  const activityHistory = (
+    progress?.toolHistory?.length ? progress.toolHistory : taskBlock.taskToolHistory
+  ) ?? []
+  const activityToolUses = progress?.toolUses
+    ?? taskBlock.taskUsage?.toolUses
+    ?? (jsonlEntries.length > 0
+      ? jsonlEntries.reduce((count, entry) => count + (entry.type === 'tool' ? 1 : 0), 0)
+      : activityHistory.length)
+  const activityTokens = progress?.totalTokens ?? taskBlock.taskUsage?.totalTokens ?? 0
+  const hasActivity = jsonlEntries.length > 0 || activityHistory.length > 0 || !!progress
+  const toolCallCount = useMemo(
+    () => childItems.reduce(
+      (count, item) => count + (item.kind === 'subagent'
+        || (item.kind === 'block' && item.block.type === 'tool_use') ? 1 : 0),
+      0,
+    ),
+    [childItems],
+  )
+  const completionElapsed = useMemo(
+    () => childBlocks.reduce(
+      (maximum, block) => block.type === 'tool_use' && block.elapsedSeconds
+        ? Math.max(maximum, block.elapsedSeconds)
+        : maximum,
+      0,
+    ),
+    [childBlocks],
+  )
+
+  const activityContent = usesProgressActivity && hasActivity ? (
+    <NestedToolContext.Provider value={{ defaultAutoExpand: false, allowExpand: false }}>
+      <AgentActivity
+        entries={jsonlEntries}
+        fallbackTools={jsonlEntries.length === 0 ? activityHistory : undefined}
+        activeTool={undefined}
+        isRunning={isRunning}
+        summary={undefined}
+        colors={colors}
+      />
+    </NestedToolContext.Provider>
+  ) : undefined
+
+  const childContent = childItems.length > 0 ? (
+    <NestedToolContext.Provider value={{ defaultAutoExpand: false, allowExpand: false }}>
+      <SubagentScrollArea borderClass={colors.borderL}>
+        {childItems.map((item, index) => item.kind === 'subagent' ? (
+          <SubagentBlock
+            key={`sa-${item.segment.taskBlock.toolUseId}`}
+            taskBlock={item.segment.taskBlock}
+            childBlocks={item.segment.childBlocks}
+            resultBlock={item.segment.resultBlock}
+            isStreaming={isStreaming}
+          />
+        ) : renderChildBlock(item.block, index, isStreaming, toolResultMap, toolErrorMaps))}
+      </SubagentScrollArea>
+    </NestedToolContext.Provider>
+  ) : undefined
+
+  return (
+    <SubagentBlockPresenter
+      toolUseId={taskBlock.toolUseId}
+      taskInput={taskInput}
+      colors={colors}
+      isAsync={isAsync}
+      isRunning={isRunning}
+      isComplete={isComplete}
+      isFailed={isFailed}
+      isStopped={isStopped}
+      expanded={expanded}
+      onExpandedChange={setExpanded}
+      onOpenFullView={() => nav.open({ toolUseId: taskBlock.toolUseId })}
+      initialElapsed={computeSubagentElapsed(taskBlock, progress, isRunning)}
+      completionElapsed={completionElapsed}
+      stats={usesProgressActivity && hasActivity
+        ? { toolCalls: activityToolUses, totalTokens: activityTokens }
+        : {
+            toolCalls: toolCallCount,
+            inputTokens: tokens.input,
+            outputTokens: tokens.output,
+          }}
+      retryBadge={isRunning && progress?.retry
+        ? <SubagentRetryBadge retry={progress.retry} className="ml-1" />
+        : undefined}
+      activityContent={activityContent}
+      childContent={childContent}
+      diagnostic={progress?.diagnostic}
+      resultText={resultText}
+      trailingAction={trailingAction}
+      formatTokens={formatTokens}
+      Markdown={DesktopSubagentMarkdown}
+    />
+  )
+}
+
+export {
+  SubagentBlockPresenter,
+  type SubagentBlockPresenterProps,
+} from './presenters/SubagentBlock'

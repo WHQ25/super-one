@@ -21,6 +21,7 @@
     "bench": "bun --filter @superone/desktop bench",
     "bench:agent-events": "bun --filter @superone/desktop bench:agent-events",
     "dev:web": "bun --filter @superone/web dev",
+    "build:chat-view": "bun --filter @superone/chat-view build",
     "dev:mobile": "bun --filter @superone/mobile dev",
     "dev:relay": "bun --filter @superone/relay dev",
     "dev:cli": "bun --filter @superone/cli dev",
@@ -49,6 +50,7 @@
     "test:runtime": "bun --filter @superone/runtime test",
     "test:relay-client": "bun --filter @superone/relay-client test",
     "test:chat-core": "bun --filter @superone/chat-core test",
+    "test:chat-view": "bun --filter @superone/chat-view test",
     "test:mobile": "bun --filter @superone/mobile test",
     "publish:harness": "bun scripts/publish-harness-artifacts.ts",
     "write:app-harness-pins": "bun scripts/write-app-harness-pins.ts",
@@ -76,6 +78,10 @@
     "@musistudio/llms": "1.0.53",
     "lowlight-mermaid": "^0.0.0",
     "remark-math": "^6.0.0"
+  },
+  "devDependencies": {
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
   },
   "patchedDependencies": {
     "@xterm/addon-webgl@0.19.0": "patches/@xterm%2Faddon-webgl@0.19.0.patch"

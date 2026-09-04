@@ -163,6 +163,7 @@
     "@opencode-ai/models": "^0.0.62",
     "@opencode-ai/sdk": "^1.18.26",
     "@streamdown/math": "^1.0.2",
+    "@superone/chat-view": "workspace:*",
     "@superone/claude": "workspace:*",
     "@superone/codex": "workspace:*",
     "@superone/cursor": "workspace:*",

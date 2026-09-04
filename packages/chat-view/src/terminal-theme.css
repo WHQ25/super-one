@@ -1,0 +1,39 @@
+@import '@xterm/xterm/css/xterm.css';
+
+:root {
+  color-scheme: dark;
+  background: #09090b;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #09090b;
+}
+
+#meta {
+  box-sizing: border-box;
+  height: 28px;
+  overflow: hidden;
+  padding: 6px 10px;
+  border-bottom: 1px solid #27272a;
+  color: #a1a1aa;
+  font: 11px/15px system-ui, sans-serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#terminal {
+  box-sizing: border-box;
+  height: calc(100% - 28px);
+  padding: 8px 6px;
+}
+
+.xterm,
+.xterm-screen,
+.xterm-viewport {
+  height: 100%;
+}

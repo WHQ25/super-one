@@ -2350,6 +2350,8 @@ export const zh: Messages = {
       collapseCommand: '收起命令',
       showFullOutput: '显示完整输出',
       collapseOutput: '收起输出',
+      outputLines_one: '{{count}} 行输出',
+      outputLines_other: '{{count}} 行输出',
       browser: {
         navigate: '导航',
         navigating: '正在导航',

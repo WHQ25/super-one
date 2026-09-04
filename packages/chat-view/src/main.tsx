@@ -1,60 +1,30 @@
-import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import type { ChatMessage } from '@superone/shared/agent-types'
+import { ChatView, ChatViewErrorBoundary } from './ChatView'
+import { initializeChatViewI18n } from './i18n'
+import './theme.css'
 
-type HostInbound =
-  | { type: 'hydrate'; messages: ChatMessage[] }
-  | { type: 'applyReductionPatch'; messages?: ChatMessage[] }
-  | { type: 'reset' }
-  | { type: 'setTheme'; hue?: number }
+// Brand hue is present before the first React paint; setTheme can override it later.
+document.documentElement.style.setProperty('--brand-hue', '250')
+document.documentElement.classList.add('dark')
 
-function textOf(msg: ChatMessage): string {
-  return msg.content
-    .map((b) => {
-      if (b.type === 'text') return b.text
-      if (b.type === 'tool_use') return `⚙ ${b.toolName}`
-      if (b.type === 'thinking') return b.thinking ? `… ${b.thinking.slice(0, 80)}` : ''
-      return ''
-    })
-    .filter(Boolean)
-    .join('\n')
-}
-
-function App() {
-  const [messages, setMessages] = useState<ChatMessage[]>([])
-
-  useEffect(() => {
-    const onMsg = (ev: MessageEvent<HostInbound>) => {
-      const data = ev.data
-      if (!data || typeof data !== 'object') return
-      if (data.type === 'hydrate' || data.type === 'applyReductionPatch') {
-        if (data.messages) setMessages(data.messages)
-      }
-      if (data.type === 'reset') setMessages([])
-      if (data.type === 'setTheme' && typeof data.hue === 'number') {
-        document.documentElement.style.setProperty('--brand-hue', String(data.hue))
-      }
-    }
-    window.addEventListener('message', onMsg)
-    window.parent?.postMessage({ type: 'ready' }, '*')
-    return () => window.removeEventListener('message', onMsg)
-  }, [])
-
-  return (
-    <div style={{ padding: 16, paddingBottom: 48 }}>
-      {messages.length === 0 ? <p style={{ color: '#71717a' }}>Waiting for session…</p> : null}
-      {messages.map((m) => (
-        <article key={m.id} style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 12, color: '#a1a1aa' }}>{m.role}</div>
-          <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', margin: 0 }}>{textOf(m)}</pre>
-        </article>
-      ))}
-    </div>
+async function start(): Promise<void> {
+  await initializeChatViewI18n('en')
+  const root = document.getElementById('root')
+  if (!root) throw new Error('chat-view root element is missing')
+  createRoot(root).render(
+    <ChatViewErrorBoundary>
+      <ChatView />
+    </ChatViewErrorBoundary>,
   )
 }
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+void start().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error)
+  document.body.innerHTML = '<pre class="chat-view-fatal"></pre>'
+  const fatal = document.querySelector('.chat-view-fatal')
+  if (fatal) fatal.textContent = message
+  const bridge = globalThis as typeof globalThis & {
+    ReactNativeWebView?: { postMessage(message: string): void }
+  }
+  bridge.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'error', fatal: true, message }))
+})

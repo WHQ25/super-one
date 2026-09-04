@@ -10,6 +10,7 @@ export default defineConfig({
     jsxImportSource: 'react',
   },
   resolve: {
+    dedupe: ['react', 'react-dom'],
     alias: {
       '@': fileURLToPath(new URL('./src/renderer/src', import.meta.url)),
     },

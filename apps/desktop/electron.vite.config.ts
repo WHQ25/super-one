@@ -78,6 +78,7 @@ export default defineConfig(({ mode }) => {
       strictPort: true
     },
     resolve: {
+      dedupe: ['react', 'react-dom'],
       alias: {
         '@': resolve('src/renderer/src')
       }

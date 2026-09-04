@@ -5,7 +5,12 @@ node_modules
 out
 download-links.md
 dist
+dist-terminal
 *.tgz
+
+# Generated offline WebView documents (build artifacts)
+packages/chat-view/src/generated-host-html.ts
+packages/chat-view/src/generated-terminal-html.ts
 
 # code coverage
 coverage
@@ -14,6 +19,7 @@ coverage
 # logs
 logs
 *.log
+*.log.old
 report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # dotenv environment variable files

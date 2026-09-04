@@ -2254,6 +2254,8 @@ export type Messages = {
       collapseCommand: string
       showFullOutput: string
       collapseOutput: string
+      outputLines_one: string
+      outputLines_other: string
       browser: {
         navigate: string
         navigating: string
@@ -5937,6 +5939,8 @@ export const en: Messages = {
       collapseCommand: 'Collapse command',
       showFullOutput: 'Show full output',
       collapseOutput: 'Collapse output',
+      outputLines_one: '{{count}} line of output',
+      outputLines_other: '{{count}} lines of output',
       browser: {
         navigate: 'Navigate',
         navigating: 'Navigating',

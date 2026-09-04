@@ -77,14 +77,13 @@ Both release profiles use remote build-number increments; the native app version
 the EAS Update runtime compatibility boundary. Keep `credentials.json` local and
 ignored. `assert-release-config.ts` (static, cheap) stays in the test command.
 
-**Release gate (lean, WP-29).** There is no evidence manifest, no `verify:device`, no
-`release:preflight`, no three-run performance matrix and no dogfood window; do not
-reintroduce them. Shipping requires one release-mode smoke on one physical iPhone and
-one physical Android (pair by camera QR, stream + stop, Pinyin IME, one sheet of each
-kind, 10 s airplane-mode flap, terminal `pwd`, one image attach, one received file, iPad
-rotation with a sheet open) plus a single RSS sanity run of the 200-turn corpus under
-250 MB — tighten the 24/40 DOM window if it is over. Record the result as a short
-Markdown note under gitignored `docs/temp/`. Screenshots and videos never enter git.
+**Release acceptance (WP-29).** Shipping requires one release-mode smoke on one
+physical iPhone and one physical Android (pair by camera QR, stream + stop, Pinyin IME,
+one sheet of each kind, 10 s airplane-mode flap, terminal `pwd`, one image attach, one
+received file, iPad rotation with a sheet open) plus a single RSS sanity run of the
+200-turn corpus under 250 MB — tighten the 24/40 DOM window if it is over. Record the
+result as a short Markdown note under gitignored `docs/temp/`. Screenshots and videos
+never enter git.
 
 Needs a **dev client** (`expo run:ios` / `expo run:android`), not Expo Go.
 After changing native dependencies or config plugins, run `expo prebuild` before the

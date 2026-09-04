@@ -1,3 +1,5 @@
+import type { RefObject } from 'react'
+import type { WebView } from 'react-native-webview'
 import type { HostInbound, HostOutbound } from '@superone/chat-view'
 
 type NativeRequest = Extract<HostOutbound, { type: 'requestNative' }>
@@ -15,6 +17,10 @@ function payloadString(message: NativeRequest, key: string): string {
   const value = (message.payload as Record<string, unknown> | undefined)?.[key]
   if (typeof value !== 'string' || !value) throw new Error(`invalid ${message.action} payload`)
   return value
+}
+
+export function injectHostMessage(ref: RefObject<WebView | null>, message: unknown): void {
+  ref.current?.injectJavaScript(`globalThis.__applyHost(${JSON.stringify(message)});true;`)
 }
 
 export async function resolveNativeRequest(

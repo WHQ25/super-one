@@ -21,6 +21,7 @@ import { isPairingQrInput, normalizePairingInput } from '../pairing-input'
 import { usePairingDeepLink } from '../pairing-deep-link'
 import { mergeMentionItems, shouldSubmitFromKeyboard } from '../composer-state'
 import { CHAT_WINDOW } from '../chat-window'
+import { CHAT_VIEW_STATE_KEY, parseStoredChatViewStates, type ChatViewState } from '../chat-view-state'
 import { filterSlashCommands } from '../slash'
 import { extractMentionQuery, insertMention, type MentionItem } from '../mentions'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
@@ -44,7 +45,7 @@ import {
 } from '../worktree-state'
 import { shouldUseTabletMultiPane } from '../layout-state'
 import { TabletSessionSidebar, type TabletSessionRow as SessionRow } from './tablet-session-sidebar'
-import { resolveNativeRequest } from '../native-actions'
+import { injectHostMessage as inject, resolveNativeRequest } from '../native-actions'
 import { useSharedFileInbox } from '../shared-file-inbox'
 import type { ReconnectController } from '../reconnect-controller'
 import { createMobileRelayConnection } from '../mobile-relay-connection'
@@ -62,9 +63,7 @@ import { MobileOverlays } from './mobile-overlays'
 import { MobileKeyboardFrame } from './mobile-keyboard-frame'
 import { useHarnessSelection } from './use-harness-selection'
 import { fetchShellDetails } from './shell-details'
-type ChatViewState = Extract<HostOutbound, { type: 'viewState' }>
 const kv = mobileKv
-const CHAT_VIEW_STATE_KEY = 'superone:chat-view-state'
 export function MobileApp() {
   const styles = useMobileStyles()
   const { tokens, setHarness } = useMobileTheme()
@@ -151,18 +150,13 @@ export function MobileApp() {
     })
     void kv.get(CHAT_VIEW_STATE_KEY).then((raw) => {
       if (!raw) return
-      try {
-        chatViewStatesRef.current = JSON.parse(raw) as Record<string, ChatViewState>
-      } catch { /* ignore corrupt view state */ }
+      chatViewStatesRef.current = parseStoredChatViewStates(raw)
     })
     return () => {
       if (viewStateWriteTimerRef.current != null) clearTimeout(viewStateWriteTimerRef.current)
       reconnectControllerRef.current?.cancel()
     }
   }, [])
-  const inject = (ref: RefObject<WebView | null>, msg: unknown) => {
-    ref.current?.injectJavaScript(`globalThis.__applyHost(${JSON.stringify(msg)});true;`)
-  }
   useEffect(() => {
     inject(webRef, webViewTheme)
     inject(termRef, webViewTheme)

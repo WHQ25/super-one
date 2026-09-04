@@ -3,6 +3,7 @@ import { pathToFileURL } from 'node:url'
 import { resolve } from 'node:path'
 import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
 import {
+  BROWSER_TOOL_RECORDING,
   CODEX_COLLAB_RECORDING,
   IMAGE_GENERATION_RECORDING,
   PLAN_RECORDINGS,
@@ -423,5 +424,44 @@ test('35 renders a video-generation recording with the shared presenter', async 
     item.type === 'requestNative'
       && item.action === 'previewFile'
       && item.payload?.path === '/project/first-frame.png'
+  )))).toBe(true)
+})
+
+test('36 renders Browser, page-tool, and download recordings with shared presenters', async ({ page }) => {
+  await send(page, { type: 'hydrate', messages: [BROWSER_TOOL_RECORDING] })
+
+  const turn = page.locator('[data-turn-id="recording-browser-tools"]')
+  await turn.getByRole('button', { name: /Detail/ }).click()
+  const rows = turn.locator('.tool-node')
+  await expect(rows).toHaveCount(4)
+  await expect(rows.nth(0)).toContainText('Screenshot')
+  await rows.nth(0).locator('> div').first().click()
+  await turn.getByRole('button', { name: 'Preview Screenshot' }).click()
+  await expect.poll(() => page.evaluate(() => (
+    globalThis as typeof globalThis & {
+      __hostMessages: Array<{ type?: string; action?: string; payload?: { path?: string } }>
+    }
+  ).__hostMessages.some((item) => (
+    item.type === 'requestNative'
+      && item.action === 'previewFile'
+      && item.payload?.path === '/project/browser-checkout.png'
+  )))).toBe(true)
+
+  await expect(rows.nth(1)).toContainText('Listed 1 Tool')
+  await rows.nth(1).locator('> div').first().click()
+  await expect(turn).toContainText('Adds the selected product to the cart.')
+  await expect(rows.nth(2)).toContainText('Add to Cart')
+  await expect(rows.nth(2)).toContainText('Add the black shirt to the cart')
+
+  await rows.nth(3).locator('> div').first().click()
+  await turn.getByRole('button', { name: 'Preview receipt.pdf' }).click()
+  await expect.poll(() => page.evaluate(() => (
+    globalThis as typeof globalThis & {
+      __hostMessages: Array<{ type?: string; action?: string; payload?: { path?: string } }>
+    }
+  ).__hostMessages.some((item) => (
+    item.type === 'requestNative'
+      && item.action === 'previewFile'
+      && item.payload?.path === '/project/receipt.pdf'
   )))).toBe(true)
 })

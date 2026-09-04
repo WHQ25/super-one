@@ -570,7 +570,7 @@ describe('stripMessagesForRemote', () => {
     expect(result.content[0]).toMatchObject({ type: 'read', input: '', toolFilePath: 'src/file.ts' })
   })
 
-  it('keeps only native-action tool inputs after remote stripping', () => {
+  it('keeps only presenter and native-action inputs after remote stripping', () => {
     const msg = makeMessage([
       toolUseBlock('mcp__superone__widget_show', { template: '@native/chart', data: { value: 7 } }, 'widget-1'),
       toolUseBlock('mcp__superone__mobile_share_file', { path: '/proj/report.pdf' }, 'share-1'),
@@ -583,7 +583,7 @@ describe('stripMessagesForRemote', () => {
     expect((result.content[2] as { input: string }).input).toBe('')
   })
 
-  it('keeps the WebMCP call summary but strips its page-tool input', () => {
+  it('keeps safe WebMCP routing metadata but strips page-tool arguments', () => {
     const msg = makeMessage([
       toolUseBlock('mcp__superone__browser_tools_call', {
         name: 'add-todo',
@@ -593,7 +593,8 @@ describe('stripMessagesForRemote', () => {
 
     const [result] = stripMessagesForRemote([msg])
 
-    expect(result.content[0]).toMatchObject({ input: '', toolSummary: 'Add Todo' })
+    expect(result.content[0]).toMatchObject({ toolSummary: 'Add Todo' })
+    expect(JSON.parse((result.content[0] as { input: string }).input)).toEqual({ name: 'add-todo' })
   })
 
   it('should convert Bash tool_result to bash_result with command prefix', () => {
@@ -670,6 +671,41 @@ describe('stripMessagesForRemote', () => {
       { content: 'first task', status: 'pending' },
       { content: 'second task', status: 'completed' },
     ])
+  })
+
+  it('converts a Codex Browser MCP item into a portable tool and result pair', () => {
+    const msg = makeMessage([], {
+      providerId: 'codex',
+      metadata: {
+        codex: {
+          items: [{
+            id: 'browser-shot',
+            type: 'mcp_tool_call',
+            server: 'superone',
+            tool: 'browser_snapshot',
+            arguments: { include: ['screenshot'], selector: '#private' },
+            result: {
+              content: [{ type: 'text', text: '{"ok":true,"path":"/project/shot.png"}' }],
+              structuredContent: null,
+            },
+            status: 'completed',
+          }],
+        },
+      } as unknown as ChatMessage['metadata'],
+    })
+
+    const [result] = stripMessagesForRemote([msg])
+    expect(result.content).toHaveLength(2)
+    expect(result.content[0]).toMatchObject({
+      type: 'tool_use',
+      toolName: 'mcp__superone__browser_snapshot',
+      input: '{"include":["screenshot"]}',
+    })
+    expect(result.content[1]).toMatchObject({
+      type: 'tool_result',
+      toolUseId: 'browser-shot',
+      summary: '{"ok":true,"path":"/project/shot.png"}',
+    })
   })
 
   it('should handle empty messages array', () => {

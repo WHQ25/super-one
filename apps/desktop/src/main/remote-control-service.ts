@@ -7,7 +7,7 @@ import { variant, variantId } from './variant'
 import { humanizePageToolName } from '@superone/shared/page-tool-name'
 import type { AgentEvent, RemoteCommand, ContentBlock, ChatMessage, CodexThreadItem, CodexCollabToolCallItem, RemoteDeviceConfig, TodoToolItem, TerminalEvent } from '@superone/shared/agent-types'
 import { isSubagentToolName } from '@superone/shared/tool-ui'
-import { shouldKeepRemoteToolInput } from '@superone/shared/remote-tool-input'
+import { sanitizeRemoteToolInput } from '@superone/shared/remote-tool-input'
 
 export type { RemoteDeviceConfig }
 import { trace } from './agent/event-trace'
@@ -400,8 +400,7 @@ function stripContentBlock(block: ContentBlock, bashCmds?: Map<string, string>, 
   if (block.type === 'tool_use') {
     const meta = computeToolMeta(block, projectPath)
     const mappedType = TOOL_TYPE_MAP[block.toolName] ?? 'tool_use'
-    const keepInput = shouldKeepRemoteToolInput(block.toolName)
-    return { ...block, type: mappedType, input: keepInput ? block.input : '', toolSummary: block.toolSummary ?? meta.toolSummary, toolFilePath: block.toolFilePath ?? meta.toolFilePath, toolLineDelta: block.toolLineDelta ?? meta.toolLineDelta, toolDiff: block.toolDiff ?? meta.toolDiff, toolDiffTokens: block.toolDiffTokens ?? meta.toolDiffTokens, toolTodos: block.toolTodos ?? meta.toolTodos, subagentType: meta.subagentType, toolPrompt: meta.toolPrompt, runInBackground: meta.runInBackground, workflowName: meta.workflowName, workflowDescription: meta.workflowDescription, workflowPhases: meta.workflowPhases } as ContentBlock
+    return { ...block, type: mappedType, input: sanitizeRemoteToolInput(block.toolName, block.input), toolSummary: block.toolSummary ?? meta.toolSummary, toolFilePath: block.toolFilePath ?? meta.toolFilePath, toolLineDelta: block.toolLineDelta ?? meta.toolLineDelta, toolDiff: block.toolDiff ?? meta.toolDiff, toolDiffTokens: block.toolDiffTokens ?? meta.toolDiffTokens, toolTodos: block.toolTodos ?? meta.toolTodos, subagentType: meta.subagentType, toolPrompt: meta.toolPrompt, runInBackground: meta.runInBackground, workflowName: meta.workflowName, workflowDescription: meta.workflowDescription, workflowPhases: meta.workflowPhases } as ContentBlock
   }
   if (block.type === 'tool_result') {
     if (bashCmds?.has(block.toolUseId)) {
@@ -493,6 +492,27 @@ function codexTodoListToBlock(item: Extract<CodexThreadItem, { type: 'todo_list'
   return { type: 'todo_result', toolUseId: item.id, summary: '', todoToolName: 'TodoWrite', toolTodos } as ContentBlock
 }
 
+function safeStringify(value: unknown): string {
+  try { return JSON.stringify(value) ?? String(value) } catch { return String(value) }
+}
+
+function codexMcpResultText(item: Extract<CodexThreadItem, { type: 'mcp_tool_call' }>): string | undefined {
+  const chunks: string[] = []
+  if (item.result) {
+    const content = Array.isArray(item.result.content)
+      ? item.result.content.flatMap((entry) => {
+          if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return []
+          const row = entry as Record<string, unknown>
+          return row.type === 'text' && typeof row.text === 'string' ? [row.text] : []
+        })
+      : []
+    chunks.push(content.length > 0 ? content.join('\n') : safeStringify(item.result))
+  }
+  if (item.error) chunks.push(`Error: ${item.error.message}`)
+  const text = chunks.join('\n\n').trim()
+  return text || undefined
+}
+
 function convertCodexItemsToBlocks(items: CodexThreadItem[], projectPath?: string): ContentBlock[] {
   const blocks: ContentBlock[] = []
   const collabGroups = new Map<string, CodexCollabToolCallItem[]>()
@@ -568,9 +588,27 @@ function convertCodexItemsToBlocks(items: CodexThreadItem[], projectPath?: strin
       case 'web_search':
         blocks.push({ type: 'web_search', toolName: 'WebSearch', toolUseId: item.id, input: '', status: 'complete', toolSummary: item.query } as ContentBlock)
         break
-      case 'mcp_tool_call':
-        blocks.push({ type: 'tool_use', toolName: `${item.server}:${item.tool}`, toolUseId: item.id, input: '', status: 'complete' } as ContentBlock)
+      case 'mcp_tool_call': {
+        const toolName = `mcp__${item.server}__${item.tool}`
+        const toolUse = stripContentBlock({
+          type: 'tool_use',
+          toolName,
+          toolUseId: item.id,
+          input: safeStringify(item.arguments),
+          status: item.status === 'in_progress' ? 'streaming' : 'complete',
+        } as ContentBlock, undefined, undefined, projectPath)
+        blocks.push(toolUse)
+        const result = codexMcpResultText(item)
+        if (result) {
+          blocks.push(stripContentBlock({
+            type: 'tool_result',
+            toolUseId: item.id,
+            summary: result,
+            isError: item.status === 'failed' || !!item.error,
+          } as ContentBlock))
+        }
         break
+      }
       case 'image_generation':
         blocks.push({
           type: 'codex_image_generation',

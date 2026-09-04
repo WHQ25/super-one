@@ -67,7 +67,7 @@ export function VideoGenToolBlockPresenter({
   const failed = currentStatus === 'error' || Boolean(isError)
   const statusError = liveStatus?.error
     || (parsed?.status === 'error' ? String(parsed.message ?? '') : '')
-    || errorMessage(result)
+    || (isError ? errorMessage(result) : '')
   const badge = useMemo(() => {
     if (currentStatus === 'submitted' || currentStatus === 'running') return t('chat.videoGenToolBlock.submitted', 'Submitted')
     if (currentStatus === 'generated') return t('chat.videoGenToolBlock.completed', 'Completed')

@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite'
-import { shouldKeepRemoteToolInput } from '@superone/shared/remote-tool-input'
+import { sanitizeRemoteToolInput } from '@superone/shared/remote-tool-input'
 import { diffLines } from 'diff'
 import { INSIGHT_HEADER_LINE, INSIGHT_FOOTER_LINE } from '@superone/shared/insight-markers'
 
@@ -273,8 +273,8 @@ function stripContentBlock(block: Record<string, unknown>, bashCmds?: Map<string
     const meta = computeToolMeta(block)
     const toolName = String(block.toolName ?? '')
     const mappedType = TOOL_TYPE_MAP[toolName] ?? 'tool_use'
-    const keepInput = shouldKeepRemoteToolInput(toolName)
-    return { ...block, type: mappedType, input: keepInput ? block.input : '', ...meta }
+    const input = typeof block.input === 'string' ? block.input : ''
+    return { ...block, type: mappedType, input: sanitizeRemoteToolInput(toolName, input), ...meta }
   }
   if (block.type === 'tool_result') {
     const toolUseId = String(block.toolUseId ?? '')

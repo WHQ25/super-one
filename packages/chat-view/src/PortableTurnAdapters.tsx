@@ -50,6 +50,12 @@ import {
 import { EnterPlanModeBlock, ExitPlanModeBlockPresenter } from './presenters/PlanModeBlocks'
 import { ImageGenToolBlockPresenter } from './presenters/ImageGenToolBlock'
 import { VideoGenToolBlockPresenter } from './presenters/VideoGenToolBlock'
+import { ListAgentsToolBlockPresenter } from './presenters/ListAgentsToolBlock'
+import { ReportFindingsToolBlockPresenter } from './presenters/ReportFindingsToolBlock'
+import {
+  COLLAB_TOOLS,
+  SessionCollabToolBlockPresenter,
+} from './presenters/SessionCollabToolBlock'
 import {
   PortableBrowserTool,
   PortableComputerTool,
@@ -163,8 +169,59 @@ function PortableClaudeTool(props: ClaudeToolPresenterProps) {
   const browserOp = portableBrowserOp(props.toolName, props.input)
   const computerOp = portableComputerOp(props.toolName)
   const deviceOp = portableDeviceOp(props.toolName)
+  const collabToolName = props.toolName.startsWith('mcp__superone__')
+    ? props.toolName.slice('mcp__superone__'.length)
+    : null
   if (props.toolName === 'EnterPlanMode') return <EnterPlanModeBlock />
   if (props.toolName === 'ExitPlanMode') return <ExitPlanModeBlockPresenter result={props.result} />
+  if (props.toolName === 'ListAgents') {
+    const isDenied = Boolean(props.result?.startsWith('[denied] '))
+    return (
+      <ListAgentsToolBlockPresenter
+        result={isDenied ? undefined : props.result}
+        isStreaming={props.status === 'streaming'}
+        isError={props.isError}
+        isDenied={isDenied}
+      />
+    )
+  }
+  if (props.toolName === 'ReportFindings') {
+    const isDenied = Boolean(props.result?.startsWith('[denied] '))
+    return (
+      <ReportFindingsToolBlockPresenter
+        params={parseRecord(props.input)}
+        isStreaming={props.status === 'streaming'}
+        isError={props.isError}
+        isDenied={isDenied}
+        elapsedSeconds={props.elapsedSeconds}
+        renderFile={(finding) => (
+          <button
+            type="button"
+            className="max-w-56 truncate rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-primary"
+            title={finding.line != null ? `${finding.file}:${finding.line}` : finding.file}
+            onClick={() => requestNative('openFile', { path: finding.file })}
+            aria-label={`Open ${finding.file}`}
+          >
+            {finding.file.split('/').pop() || finding.file}
+          </button>
+        )}
+      />
+    )
+  }
+  if (collabToolName && COLLAB_TOOLS.has(collabToolName)) {
+    const isDenied = Boolean(props.result?.startsWith('[denied] '))
+    return (
+      <SessionCollabToolBlockPresenter
+        toolName={collabToolName}
+        params={parseRecord(props.input)}
+        result={isDenied ? props.result?.slice('[denied] '.length) : props.result}
+        isStreaming={props.status === 'streaming'}
+        isError={props.isError}
+        isDenied={isDenied}
+        renderMarkdown={(content) => <PortableText text={content} isStreaming={false} />}
+      />
+    )
+  }
   if (browserOp) {
     return (
       <PortableBrowserTool

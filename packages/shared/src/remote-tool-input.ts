@@ -5,9 +5,12 @@ const REMOTE_TOOL_INPUT_SUFFIXES = [
   '__media_generate_video',
 ] as const
 
+const REMOTE_TOOL_INPUT_NAMES = new Set(['ReportFindings'])
+
 /** Full tool inputs required by a mobile presenter or native host action. */
 export function shouldKeepRemoteToolInput(toolName: string): boolean {
-  return REMOTE_TOOL_INPUT_SUFFIXES.some((suffix) => toolName.endsWith(suffix))
+  return REMOTE_TOOL_INPUT_NAMES.has(toolName)
+    || REMOTE_TOOL_INPUT_SUFFIXES.some((suffix) => toolName.endsWith(suffix))
 }
 
 function superoneBareName(toolName: string): string | null {
@@ -118,8 +121,38 @@ function sanitizeInteractiveInput(toolName: string, input: string): string {
   return Object.keys(safe).length > 0 ? JSON.stringify(safe) : ''
 }
 
+function sanitizeCollabInput(toolName: string, input: string): string {
+  const bare = superoneBareName(toolName)
+  const requestTools = new Set(['session_collab_request', 'session_request_agents_collab'])
+  const sendTools = new Set(['session_collab_send', 'session_send'])
+  if (!bare || (!requestTools.has(bare) && !sendTools.has(bare)) || !input) return ''
+  let parsed: unknown
+  try { parsed = JSON.parse(input) } catch { return '' }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return ''
+  const source = parsed as Record<string, unknown>
+  if (sendTools.has(bare)) {
+    return typeof source.content === 'string' ? JSON.stringify({ content: source.content }) : ''
+  }
+  if (!Array.isArray(source.launches)) return ''
+  const launches = source.launches.flatMap((launch) => {
+    if (!launch || typeof launch !== 'object' || Array.isArray(launch)) return []
+    const item = launch as Record<string, unknown>
+    const safe: Record<string, unknown> = {}
+    copyDefined(item, safe, ['name', 'role', 'launchId'])
+    if (item.config && typeof item.config === 'object' && !Array.isArray(item.config)) {
+      const config: Record<string, unknown> = {}
+      copyDefined(item.config as Record<string, unknown>, config, ['name', 'role'])
+      if (Object.keys(config).length > 0) safe.config = config
+    }
+    return Object.keys(safe).length > 0 ? [safe] : []
+  })
+  return launches.length > 0 ? JSON.stringify({ launches }) : ''
+}
+
 /** Privacy-preserving tool input projected into the remote transcript. */
 export function sanitizeRemoteToolInput(toolName: string, input: string): string {
   if (shouldKeepRemoteToolInput(toolName)) return input
-  return sanitizeBrowserInput(toolName, input) || sanitizeInteractiveInput(toolName, input)
+  return sanitizeBrowserInput(toolName, input)
+    || sanitizeInteractiveInput(toolName, input)
+    || sanitizeCollabInput(toolName, input)
 }

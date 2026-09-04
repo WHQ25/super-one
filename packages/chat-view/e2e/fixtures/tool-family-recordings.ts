@@ -293,3 +293,80 @@ export const INTERACTIVE_TOOL_RECORDING: ChatMessage = {
   createdAt: '2026-09-04T00:00:06.000Z',
   providerId: 'claude',
 }
+
+/** Sanitized agent-roster and review-result recordings. */
+export const AGENT_TOOL_RECORDINGS: ChatMessage[] = [
+  {
+    id: 'recording-list-agents',
+    role: 'assistant',
+    status: 'complete',
+    content: [
+      { type: 'tool_use', toolName: 'ListAgents', toolUseId: 'list-agents', input: '', status: 'complete' },
+      {
+        type: 'tool_result',
+        toolUseId: 'list-agents',
+        summary: [
+          'Subagents (1):',
+          '  reviewer-a  ·  Review  ·  running  ·  started 2m ago',
+          '',
+          'Peer sessions (1):',
+          '  mobile-shell [a1b2c3]  ·  interactive  ·  started 8m ago',
+        ].join('\n'),
+      },
+    ],
+    createdAt: '2026-09-04T00:00:07.000Z',
+    providerId: 'claude',
+  },
+  {
+    id: 'recording-report-findings',
+    role: 'assistant',
+    status: 'complete',
+    content: [
+      {
+        type: 'tool_use',
+        toolName: 'ReportFindings',
+        toolUseId: 'report-findings',
+        input: JSON.stringify({
+          level: 'high',
+          findings: [{
+            file: 'packages/chat-view/src/PortableTurnAdapters.tsx',
+            line: 120,
+            category: 'correctness',
+            verdict: 'CONFIRMED',
+            short_summary: 'Portable route drops the tool result',
+            summary: 'The portable route drops the completed tool result before rendering.',
+            failure_scenario: 'Open a completed remote session and expand the tool row.',
+          }],
+        }),
+        status: 'complete',
+      },
+      { type: 'tool_result', toolUseId: 'report-findings', summary: 'Findings reported' },
+    ],
+    createdAt: '2026-09-04T00:00:08.000Z',
+    providerId: 'claude',
+  },
+  {
+    id: 'recording-session-collab',
+    role: 'assistant',
+    status: 'complete',
+    content: [
+      {
+        type: 'tool_use',
+        toolName: 'mcp__superone__session_collab_send',
+        toolUseId: 'session-collab-send',
+        input: JSON.stringify({ content: '**Review complete.** The shared presenter is ready.' }),
+        status: 'complete',
+      },
+      {
+        type: 'tool_result',
+        toolUseId: 'session-collab-send',
+        summary: JSON.stringify({
+          status: 'sent',
+          to: { title: 'Reviewer session', sessionId: 'reviewer-session' },
+        }),
+      },
+    ],
+    createdAt: '2026-09-04T00:00:09.000Z',
+    providerId: 'claude',
+  },
+]

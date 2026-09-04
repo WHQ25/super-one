@@ -3,6 +3,7 @@ import { pathToFileURL } from 'node:url'
 import { resolve } from 'node:path'
 import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
 import {
+  AGENT_TOOL_RECORDINGS,
   BROWSER_TOOL_RECORDING,
   CODEX_COLLAB_RECORDING,
   IMAGE_GENERATION_RECORDING,
@@ -270,6 +271,7 @@ test('28 opens a remotely stripped file tool from derived metadata', async ({ pa
       && item.action === 'openFile'
       && item.payload?.path === 'apps/mobile/App.tsx'
   )))).toBe(true)
+
 })
 
 test('29 renders native widget media as a host-backed gallery', async ({ page }) => {
@@ -502,4 +504,32 @@ test('37 renders Device and Computer Use recordings with shared presenters', asy
       && item.action === 'previewFile'
       && item.payload?.path === '/project/computer-checkout.png'
   )))).toBe(true)
+})
+
+test('38 renders agent roster and review findings with shared presenters', async ({ page }) => {
+  await send(page, { type: 'hydrate', messages: AGENT_TOOL_RECORDINGS })
+
+  const roster = page.locator('[data-turn-id="recording-list-agents"]')
+  await expect(roster).toContainText('1 subagent')
+  await roster.locator('.tool-node > div').first().click()
+  await expect(roster).toContainText('reviewer-a')
+  await expect(roster).toContainText('mobile-shell')
+
+  const findings = page.locator('[data-turn-id="recording-report-findings"]')
+  await expect(findings).toContainText('Portable route drops the tool result')
+  await findings.getByRole('button', { name: 'Open packages/chat-view/src/PortableTurnAdapters.tsx' }).click()
+  await expect.poll(() => page.evaluate(() => (
+    globalThis as typeof globalThis & {
+      __hostMessages: Array<{ type?: string; action?: string; payload?: { path?: string } }>
+    }
+  ).__hostMessages.some((item) => (
+    item.type === 'requestNative'
+      && item.action === 'openFile'
+      && item.payload?.path === 'packages/chat-view/src/PortableTurnAdapters.tsx'
+  )))).toBe(true)
+
+  const collab = page.locator('[data-turn-id="recording-session-collab"]')
+  await expect(collab).toContainText('Reviewer session')
+  await collab.locator('.tool-node > div').first().click()
+  await expect(collab.getByText('Review complete.')).toBeVisible()
 })

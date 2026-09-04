@@ -389,7 +389,7 @@ describe('ToolBlock error auto-collapse', () => {
     })
   })
 
-  it('uses the generic tool error UI for failed collaboration tools', async () => {
+  it('uses the collaboration presenter for failed collaboration tools', () => {
     const result = JSON.stringify({ status: 'error', message: 'Invalid collaboration credential' })
     render(
       <ToolBlock
@@ -401,12 +401,11 @@ describe('ToolBlock error auto-collapse', () => {
       />,
     )
 
-    expect(screen.getByText(/session collab start/i)).not.toBeNull()
+    expect(screen.getByText(/session started/i)).not.toBeNull()
+    expect(screen.getByText('Agent')).not.toBeNull()
     expect(screen.getByText(/error/i)).not.toBeNull()
     expect(screen.queryByText(/collaboration session started/i)).toBeNull()
-
-    fireEvent.click(screen.getByText(/session collab start/i))
-    await waitFor(() => expect(screen.getByText(result)).not.toBeNull())
+    expect(screen.queryByText(result)).toBeNull()
   })
 })
 

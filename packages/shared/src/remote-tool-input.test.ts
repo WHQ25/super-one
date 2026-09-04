@@ -7,6 +7,7 @@ describe('remote tool input exemptions', () => {
     expect(shouldKeepRemoteToolInput('mcp__superone__mobile_share_file')).toBe(true)
     expect(shouldKeepRemoteToolInput('mcp__superone__media_generate_image')).toBe(true)
     expect(shouldKeepRemoteToolInput('mcp__superone__media_generate_video')).toBe(true)
+    expect(shouldKeepRemoteToolInput('ReportFindings')).toBe(true)
     expect(shouldKeepRemoteToolInput('Read')).toBe(false)
     expect(shouldKeepRemoteToolInput('mcp__other__widget_showcase')).toBe(false)
   })
@@ -58,5 +59,16 @@ describe('remote tool input exemptions', () => {
       'mcp__superone__computer_snapshot',
       JSON.stringify({ description: 'Inspect the window', mode: 'semantic', capture: 'screen', root: 'private-window' }),
     ))).toEqual({ description: 'Inspect the window', mode: 'semantic', capture: 'screen' })
+  })
+
+  it('keeps only visible collaboration content', () => {
+    expect(JSON.parse(sanitizeRemoteToolInput(
+      'mcp__superone__session_collab_send',
+      JSON.stringify({ content: 'Review is complete.', to: 'peer-secret', token: 'secret' }),
+    ))).toEqual({ content: 'Review is complete.' })
+    expect(JSON.parse(sanitizeRemoteToolInput(
+      'mcp__superone__session_collab_request',
+      JSON.stringify({ launches: [{ name: 'Reviewer', role: 'review', prompt: 'private prompt' }] }),
+    ))).toEqual({ launches: [{ name: 'Reviewer', role: 'review' }] })
   })
 })

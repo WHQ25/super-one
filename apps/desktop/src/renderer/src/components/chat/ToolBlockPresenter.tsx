@@ -55,7 +55,6 @@ import { EnterPlanModeBlock } from './presenters/PlanModeBlocks'
 import {
   COLLAB_TOOLS,
   SessionCollabToolBlock,
-  collabHeaderLabel,
 } from './tool-block-presenters/SessionCollabToolBlock'
 import {
   ConfigApplyBlock,
@@ -571,25 +570,16 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
         />
       )
     }
-    if (COLLAB_TOOLS.has(mcpInfo.mcpToolName) && !isError && !isDenied) {
-      if (!allowExpand) {
-        return (
-          <CompactLabeledToolRow
-            icon={<ToolIcon icon="bot" className="size-3 shrink-0 text-muted-foreground" />}
-            label={withStreamingEllipsis(
-              collabHeaderLabel(mcpInfo.mcpToolName, isStreaming, t),
-              isStreaming,
-            )}
-            streaming={isStreaming}
-          />
-        )
-      }
+    if (COLLAB_TOOLS.has(mcpInfo.mcpToolName)) {
       return (
         <SessionCollabToolBlock
           toolName={mcpInfo.mcpToolName}
           params={params}
           result={cleanResult}
           isStreaming={isStreaming}
+          isError={isError}
+          isDenied={isDenied}
+          allowExpand={allowExpand}
           onOpenSession={ports.onOpenSession}
         />
       )

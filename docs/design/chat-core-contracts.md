@@ -5,7 +5,7 @@ Baseline: desktop **v0.55.2-alpha** (`feat/migrate-to-expo` merged that tag)
 Plan: `docs/design/flutter-to-expo-migration-plan.md`  
 Scope: Remote Control client (Expo). Not a desktop IDE clone.
 
-This freeze is the type + protocol contract for `@superone/chat-core` and the RN ↔ WebView host. Implementation still lives in `apps/desktop/.../event-reducer` until WP-11 / WP-12.
+This freeze is the type + protocol contract for `@superone/chat-core` and the RN ↔ WebView host. Since WP-12 (2026-09-04), the package owns the implementation and Desktop calls it through `apps/desktop/.../event-reducer/index.ts`.
 
 ---
 
@@ -56,7 +56,7 @@ export interface ChatCorePorts {
 }
 ```
 
-Default desktop adapter: `now: () => Date.now()`, `id: (p) => p + Date.now()`, `trace: window.app?.trace`. Injected in WP-11.
+Package defaults provide `now` / `id` plus an isolated streaming-input store. The Desktop adapter injects `trace: window.app?.trace`; the package never reads browser globals.
 
 ---
 

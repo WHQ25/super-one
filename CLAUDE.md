@@ -54,7 +54,8 @@ super-one/
 ```
 
 Workspace package names: `@superone/desktop`, `@superone/cli`, `@superone/web`,
-`@superone/relay`, `@superone/mobile`, `@superone/ui`, `@superone/shared`, `@superone/relay-client`, `@superone/runtime`,
+`@superone/relay`, `@superone/mobile`, `@superone/ui`, `@superone/shared`,
+`@superone/relay-client`, `@superone/chat-core`, `@superone/chat-view`, `@superone/runtime`,
 `@superone/claude`, `@superone/codex`, `@superone/acp`, `@superone/opencode`,
 `@superone/tsconfig`. All `private: true`.
 
@@ -99,6 +100,7 @@ All root scripts proxy to a workspace via `bun --filter`. Run them from the repo
 ```bash
 bun run dev              # Start Electron app with hot reload (→ @superone/desktop)
 bun run dev:web          # Start Next.js dev server on :3000 (→ @superone/web)
+bun run build:chat-view  # Generate the offline mobile chat + terminal documents
 bun run dev:mobile       # Expo dev-client Metro (→ @superone/mobile; not Expo Go)
 bun run dev:cli          # Start superone CLI in foreground (→ @superone/cli)
 bun run dev:cli:lab      # Local remote-node lab on :7789 (host process; prefer for harness/creds)
@@ -107,6 +109,10 @@ bun run dev:cli:lab      # Local remote-node lab on :7789 (host process; prefer 
 # Docker SSH lab: bun run dev:cli:docker* — Linux/SSH fidelity only
 bun run test:cli         # Run CLI package tests
 bun run test:runtime     # Run @superone/runtime unit tests (session/fs/git/host-action)
+bun run test:chat-core   # Run the shared chat reducer suite
+bun run test:chat-view   # Run the shared DOM presenter / host protocol suite
+bun run test:relay-client # Run the mobile relay/LAN transport suite
+bun run test:mobile      # Build chat-view, then run the Expo mobile suite
 bun run dev:relay        # Start wrangler dev for Cloudflare Worker relay (→ @superone/relay)
 bun run deploy:relay     # wrangler deploy the relay (→ @superone/relay)
 bun run test:relay       # Run relay vitest suite

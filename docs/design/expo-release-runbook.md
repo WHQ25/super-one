@@ -24,6 +24,12 @@ internal testers. The obsolete build 4 submission failed as expected because its
 build number was lower than the Flutter baseline. Never download, commit, or paste
 the private key into chat.
 
+EAS reports different aggregate fingerprints for the earlier production update and
+build 21 because `eas.json` is itself a fingerprint input. A source-level fingerprint
+comparison shows that the only differing input is the submit-only `ascAppId`; native
+dependencies, Expo config, and autolinking inputs are unchanged. The existing runtime
+`1.0.0` update is therefore compatible with build 21.
+
 The current-source arm64 Release app also launches on the built-in iPad simulator;
 its camera pairing sheet survives portrait-to-landscape rotation. This does not prove
 the connected master/detail or physical-device smoke. Before the final archive, note

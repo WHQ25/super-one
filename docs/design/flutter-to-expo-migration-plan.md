@@ -817,7 +817,7 @@ Still deferred (R6): `StandaloneToolBlock`, the `WidgetBlock` iframe, `ToolRende
 
 **Completed 2026-09-04.** All seven ordered tool families render through shared
 presenters with Desktop adapter shells; mini-app iframes remain the explicit R6
-non-goal. The offline WebView suite now has 42 scenarios, including direct recordings
+non-goal. The offline WebView suite now has 43 scenarios, including direct recordings
 for Insight markers and Codex image galleries. Completed Codex images use the same
 host-backed native gallery and `previewFile` flow as native `widget_show` media rather
 than detouring through the remote file browser.
@@ -1195,6 +1195,12 @@ physical WSS smoke. The external Flutter repository is not archived. Its local
 working-tree changes, so those commits and changes must be deliberately preserved
 before the repository is made read-only. Flutter's 225 unit tests pass; analysis has
 three errors in stale integration-test adapters and is not a green archival gate.
+The repeated offline chat-view run passes all 43 scenarios, including the 200-turn
+window, every planned specialised tool family, and Codex plan decisions through the
+native host bridge.
+Build 21 and the production update have different aggregate EAS fingerprints only
+because the submit-only `ascAppId` changed `eas.json`; EAS's source comparison reports
+no other fingerprint input difference, and no runtime source changed after the update.
 
 ---
 

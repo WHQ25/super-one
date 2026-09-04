@@ -26,6 +26,7 @@ const appState = {
 }
 
 const chatState = {
+  activeProject: '/project-a' as string | null,
   resetSession: vi.fn(),
   fetchSessions: vi.fn(),
   removeSessionFromMemory: vi.fn(),
@@ -231,6 +232,7 @@ beforeEach(() => {
   appState.recentFolders = [{ name: 'project-a', path: '/project-a', addedAt: '2026-03-02T00:00:00.000Z' }]
   appState.selectedHostConnectionId = 'local'
   appState.experimentalRemoteNodesEnabled = false
+  chatState.activeProject = '/project-a'
   sessionsByFolder = {
     '/project-a': [
       { sessionId: 'sid-1', title: 'Old Session', lastActiveAt: '2026-03-02T00:00:00.000Z', messageCount: 2 },
@@ -267,6 +269,7 @@ describe('AppSidebar interactions', () => {
     expect(actions).not.toBeNull()
     expect(actions).toHaveClass('invisible', 'flex', 'opacity-0')
     expect(actions).not.toHaveClass('hidden')
+    expect(actions?.querySelector('.lucide-search')).not.toBeNull()
   })
 
   it('selects a remote project when clicking its sidebar row', async () => {
@@ -472,6 +475,7 @@ describe('AppSidebar interactions', () => {
   })
 
   it('shows the normal session menu with unpin for a pinned session', async () => {
+    chatState.activeProject = null
     mockWindowApp.listPinnedSessions.mockResolvedValue([{
       sessionId: 'sid-pinned',
       title: 'Pinned Session',
@@ -696,6 +700,244 @@ describe('AppSidebar interactions', () => {
     const afterA = screen.getByText('Session A')
     const afterB = screen.getByText('Session B')
     expect(afterA.compareDocumentPosition(afterB) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+  })
+
+  it('keeps a long-running session above the initial six-session cutoff', async () => {
+    sessionsByFolder = {
+      '/project-a': [
+        ...Array.from({ length: 6 }, (_, index) => ({
+          sessionId: `sid-recent-${index}`,
+          title: `Recent session ${index}`,
+          lastActiveAt: new Date(2026, 8, 4, 11, 30 - index).toISOString(),
+          messageCount: 2,
+        })),
+        {
+          sessionId: 'sid-running',
+          title: 'Long running session',
+          lastActiveAt: '2026-09-04T09:00:00.000Z',
+          messageCount: 2,
+        },
+      ],
+    }
+    chatState.projectSessions = {
+      '/project-a': {
+        _activeSessionId: 'sid-recent-0',
+        _sessions: {
+          'sid-running': {
+            messages: [{ role: 'user', content: [{ type: 'text', text: 'long task' }] }],
+            status: 'streaming',
+            pendingPermissions: [],
+            pendingQuestion: null,
+            pendingPlanApproval: null,
+            awaitingAssistantReply: false,
+            sessionProvider: 'claude',
+            _gitBranch: null,
+          },
+        },
+        unseenCompletedSessions: new Set<string>(),
+      },
+    }
+
+    const { AppSidebar } = await import('./AppSidebar')
+    render(<AppSidebar />)
+
+    fireEvent.click(screen.getByText('project-a'))
+    await screen.findByText('Long running session')
+
+    expect(screen.queryByText('Recent session 5')).toBeNull()
+    expect(screen.getByText('Show more')).toBeInTheDocument()
+  })
+
+  it('adds six sessions per Show more until pagination is exhausted and resets on collapse', async () => {
+    chatState.activeProject = null
+    sessionsByFolder = {
+      '/project-a': Array.from({ length: 40 }, (_, index) => ({
+        sessionId: `sid-page-${index}`,
+        title: `Paged session ${index}`,
+        lastActiveAt: new Date(2026, 8, 4, 12, 0, -index).toISOString(),
+        messageCount: 2,
+      })),
+    }
+    chatState.projectSessions = {
+      '/project-a': {
+        _activeSessionId: null,
+        _sessions: {},
+        unseenCompletedSessions: new Set<string>(),
+      },
+    }
+
+    const { AppSidebar } = await import('./AppSidebar')
+    render(<AppSidebar />)
+
+    fireEvent.click(screen.getByText('project-a'))
+    await screen.findByText('Paged session 5')
+    expect(screen.queryByText('Paged session 6')).toBeNull()
+
+    for (const lastVisibleIndex of [11, 17, 23, 29, 35, 39]) {
+      fireEvent.click(screen.getByText('Show more'))
+      await screen.findByText(`Paged session ${lastVisibleIndex}`)
+    }
+
+    await waitFor(() => {
+      expect(screen.queryByText('Show more')).toBeNull()
+    })
+    expect(screen.queryByText('Show less')).toBeNull()
+    expect(mockEnvironment.listSessions).toHaveBeenCalledWith(
+      'local',
+      '/project-a',
+      { limit: 13, offset: 26 },
+    )
+    expect(mockEnvironment.listSessions).toHaveBeenCalledWith(
+      'local',
+      '/project-a',
+      { limit: 13, offset: 39 },
+    )
+
+    fireEvent.click(screen.getByText('project-a'))
+    await waitFor(() => {
+      expect(screen.queryByText('Paged session 0')).toBeNull()
+    })
+    fireEvent.click(screen.getByText('project-a'))
+    await screen.findByText('Paged session 5')
+    expect(screen.queryByText('Paged session 6')).toBeNull()
+  })
+
+  it('shows every running session when their count exceeds the initial cutoff', async () => {
+    const normalSessions = Array.from({ length: 6 }, (_, index) => ({
+      sessionId: `sid-normal-${index}`,
+      title: `Normal fill session ${index}`,
+      lastActiveAt: new Date(2026, 8, 4, 11, 30 - index).toISOString(),
+      messageCount: 2,
+    }))
+    const runningSessions = Array.from({ length: 7 }, (_, index) => ({
+      sessionId: `sid-running-${index}`,
+      title: `Running session ${index}`,
+      lastActiveAt: new Date(2026, 8, 4, 9, 30 - index).toISOString(),
+      messageCount: 2,
+    }))
+    sessionsByFolder = {
+      '/project-a': [
+        ...normalSessions,
+        ...runningSessions,
+      ],
+    }
+    chatState.projectSessions = {
+      '/project-a': {
+        _activeSessionId: 'sid-running-0',
+        _sessions: Object.fromEntries(runningSessions.map((session) => [
+          session.sessionId,
+          {
+            messages: [{ role: 'user', content: [{ type: 'text', text: session.title }] }],
+            status: 'streaming',
+            pendingPermissions: [],
+            pendingQuestion: null,
+            pendingPlanApproval: null,
+            awaitingAssistantReply: false,
+            sessionProvider: 'claude',
+            _gitBranch: null,
+          },
+        ])),
+        unseenCompletedSessions: new Set<string>(),
+      },
+    }
+
+    const { AppSidebar } = await import('./AppSidebar')
+    render(<AppSidebar />)
+
+    fireEvent.click(screen.getByText('project-a'))
+    await Promise.all(runningSessions.map((session) => screen.findByText(session.title)))
+
+    expect(screen.queryByText('Normal fill session 0')).toBeNull()
+
+    fireEvent.click(screen.getByText('Show more'))
+    await Promise.all(normalSessions.map((session) => screen.findByText(session.title)))
+  })
+
+  it('shows an unseen session while collapsed and prioritizes it when expanded', async () => {
+    sessionsByFolder = {
+      '/project-a': [
+        ...Array.from({ length: 6 }, (_, index) => ({
+          sessionId: `sid-normal-${index}`,
+          title: `Normal session ${index}`,
+          lastActiveAt: new Date(2026, 8, 4, 11, 30 - index).toISOString(),
+          messageCount: 2,
+        })),
+        {
+          sessionId: 'sid-unseen',
+          title: 'Unseen completed session',
+          lastActiveAt: '2026-09-04T09:00:00.000Z',
+          messageCount: 2,
+        },
+      ],
+    }
+    chatState.projectSessions = {
+      '/project-a': {
+        _activeSessionId: 'sid-unseen',
+        _sessions: {},
+        unseenCompletedSessions: new Set(['sid-unseen']),
+      },
+    }
+
+    const { AppSidebar } = await import('./AppSidebar')
+    render(<AppSidebar />)
+
+    const unseen = await screen.findByText('Unseen completed session')
+    expect(screen.queryByText('Normal session 0')).toBeNull()
+
+    fireEvent.click(screen.getByText('project-a'))
+    const firstNormal = await screen.findByText('Normal session 0')
+
+    expect(unseen.compareDocumentPosition(firstNormal) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+    expect(screen.queryByText('Normal session 5')).toBeNull()
+  })
+
+  it('keeps the foreground idle session in the first group', async () => {
+    sessionsByFolder = {
+      '/project-a': [
+        ...Array.from({ length: 6 }, (_, index) => ({
+          sessionId: `sid-newer-${index}`,
+          title: `Newer session ${index}`,
+          lastActiveAt: new Date(2026, 8, 4, 11, 30 - index).toISOString(),
+          messageCount: 2,
+        })),
+        {
+          sessionId: 'sid-foreground',
+          title: 'Foreground idle session',
+          lastActiveAt: '2026-09-04T09:00:00.000Z',
+          messageCount: 2,
+        },
+      ],
+    }
+    chatState.projectSessions = {
+      '/project-a': {
+        _activeSessionId: 'sid-foreground',
+        _sessions: {
+          'sid-foreground': {
+            messages: [{ role: 'user', content: [{ type: 'text', text: 'foreground' }] }],
+            status: 'idle',
+            pendingPermissions: [],
+            pendingQuestion: null,
+            pendingPlanApproval: null,
+            awaitingAssistantReply: false,
+            sessionProvider: 'claude',
+            _gitBranch: null,
+          },
+        },
+        unseenCompletedSessions: new Set<string>(),
+      },
+    }
+
+    const { AppSidebar } = await import('./AppSidebar')
+    render(<AppSidebar />)
+
+    const foreground = await screen.findByText('Foreground idle session')
+    expect(screen.queryByText('Newer session 0')).toBeNull()
+
+    fireEvent.click(screen.getByText('project-a'))
+    const firstNormal = await screen.findByText('Newer session 0')
+
+    expect(foreground.compareDocumentPosition(firstNormal) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+    expect(screen.queryByText('Newer session 5')).toBeNull()
   })
 
   it('keeps showing a switched-away draft session while awaiting first reply', async () => {

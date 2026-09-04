@@ -1,7 +1,7 @@
 import { memo, useMemo, useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useTranslation } from 'react-i18next'
-import { CalendarClock, ChevronDown, ChevronRight, ChevronUp, Folder, FolderOpen, FolderX, History, Pencil, Play, SquarePen, Trash2 } from 'lucide-react'
+import { CalendarClock, ChevronDown, ChevronRight, Folder, FolderOpen, FolderX, Pencil, Play, Search, SquarePen, Trash2 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
@@ -51,9 +51,15 @@ function MorphHeight({ children, morphKey }: { children: React.ReactNode; morphK
   )
 }
 
-interface SidebarSessionGroup {
+export interface SidebarSessionGroup {
   parent: SessionHistoryEntry
   children: SessionHistoryEntry[]
+}
+
+export interface SidebarSessionSections {
+  attention: SidebarSessionGroup[]
+  scheduled: SidebarSessionGroup[]
+  normal: SidebarSessionGroup[]
 }
 
 export function groupSidebarSessions(sessions: SessionHistoryEntry[]): SidebarSessionGroup[] {
@@ -70,57 +76,69 @@ export function groupSidebarSessions(sessions: SessionHistoryEntry[]): SidebarSe
     .map((parent) => ({ parent, children: children.get(parent.sessionId) ?? [] }))
 }
 
-/**
- * Float the groups that owe a send to the top, soonest first.
- *
- * A queued send is the one thing in this list that is about the *future*: every
- * other row is ordered by when it was last active, which buries the session that
- * is going to speak next under every session that already has. Ties and the
- * unscheduled remainder keep the order they came in, so this only ever lifts
- * rows — it never reshuffles the list underneath them.
- *
- * Only the parent counts. A collab child sits inside its parent's group, and
- * pulling the group up because a child is scheduled would move a row the user
- * cannot even see while the group is collapsed.
- */
-export function orderScheduledGroupsFirst(
+export function partitionSidebarSessionGroups(
   groups: SidebarSessionGroup[],
   scheduledBySession: Record<string, ScheduledSend>,
-): SidebarSessionGroup[] {
-  const ranked = groups.map((group, index) => ({
-    group,
-    index,
-    dueAt: armedSendFor(scheduledBySession, group.parent.sessionId)?.sendAt ?? null,
-  }))
-  if (!ranked.some((entry) => entry.dueAt !== null)) return groups
-  ranked.sort((a, b) => {
-    if (a.dueAt !== null && b.dueAt !== null) return a.dueAt - b.dueAt || a.index - b.index
-    if (a.dueAt !== null) return -1
-    if (b.dueAt !== null) return 1
-    return a.index - b.index
+  isAttention: (session: SessionHistoryEntry) => boolean,
+): SidebarSessionSections {
+  const attention: SidebarSessionGroup[] = []
+  const scheduled: Array<{ group: SidebarSessionGroup; sendAt: number; index: number }> = []
+  const normal: SidebarSessionGroup[] = []
+
+  // Membership is exclusive and checked in priority order. A scheduled
+  // attention session stays in group one; only the parent owns a scheduled send.
+  groups.forEach((group, index) => {
+    if (isAttention(group.parent) || group.children.some(isAttention)) {
+      attention.push(group)
+      return
+    }
+    const queued = armedSendFor(scheduledBySession, group.parent.sessionId)
+    if (queued) {
+      scheduled.push({ group, sendAt: queued.sendAt, index })
+      return
+    }
+    normal.push(group)
   })
-  return ranked.map((entry) => entry.group)
+
+  scheduled.sort((a, b) => a.sendAt - b.sendAt || a.index - b.index)
+  return {
+    attention,
+    scheduled: scheduled.map((entry) => entry.group),
+    normal,
+  }
+}
+
+export function visibleSidebarSessionGroups(
+  sections: SidebarSessionSections,
+  isExpanded: boolean,
+  displayLimit: number,
+): SidebarSessionGroup[] {
+  if (!isExpanded) return sections.attention
+  const required = [...sections.attention, ...sections.scheduled]
+  const normalSlots = Math.max(0, displayLimit - required.length)
+  return [...required, ...sections.normal.slice(0, normalSlots)]
 }
 
 /**
  * Mirrors project-list collapse: when the parent's child list is collapsed,
- * still surface live/unseen children (streaming, pending, unseen, …).
+ * still surface attention children (running, pending, unseen, …).
  * Expanded lists show every child.
  */
 export function visibleChildSessions(
   children: SessionHistoryEntry[],
   childrenExpanded: boolean,
-  isLive: (session: SessionHistoryEntry) => boolean,
+  isAttention: (session: SessionHistoryEntry) => boolean,
 ): SessionHistoryEntry[] {
   if (childrenExpanded) return children
-  return children.filter(isLive)
+  return children.filter(isAttention)
 }
 
 interface ProjectSidebarRowProps extends SessionRowCallbacks {
   folder: RecentFolder
   isExpanded: boolean
   sessions: SessionHistoryEntry[]
-  maxSessions: number
+  hasMoreSessions: boolean
+  onLoadMoreSessions: (folderPath: string, minimumRootCount: number) => Promise<SessionHistoryEntry[]>
   onToggleExpand: (folderPath: string) => void
   onEditProject: (folder: RecentFolder) => void
   onRemoveProject: (folder: RecentFolder) => void
@@ -131,7 +149,8 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   folder,
   isExpanded,
   sessions: allSessions,
-  maxSessions,
+  hasMoreSessions,
+  onLoadMoreSessions,
   onToggleExpand,
   onSwitchSession,
   onPinSession,
@@ -143,6 +162,11 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   onNewSession,
 }: ProjectSidebarRowProps) {
   const { t } = useTranslation()
+  const foregroundSessionId = useChatStore((state) =>
+    state.activeProject === folder.path
+      ? state.projectSessions[folder.path]?._activeSessionId ?? null
+      : null,
+  )
   const realtimeSessionSig = useCodexRealtimeViewStore((state) => Object.entries(state.sessions)
     .filter(([, session]) => session.hasTimeline || session.realtimeSessionId !== null)
     .map(([sessionId, session]) => [
@@ -182,7 +206,8 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   }))
 
   const INITIAL_EXPAND_LEVEL = 6
-  const [expandLevel, setExpandLevel] = useState<number>(INITIAL_EXPAND_LEVEL)
+  const EXPAND_STEP = 6
+  const [additionalNormalCount, setAdditionalNormalCount] = useState(0)
   const [historyMode, setHistoryMode] = useState(false)
   /** Parent session ids whose collab child list is fully expanded. Default: collapsed. */
   const [expandedChildrenIds, setExpandedChildrenIds] = useState<Set<string>>(() => new Set())
@@ -197,7 +222,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   }, [])
 
   useEffect(() => {
-    if (!isExpanded) setExpandLevel(INITIAL_EXPAND_LEVEL)
+    if (!isExpanded) setAdditionalNormalCount(0)
   }, [isExpanded])
 
   const openHistory = useCallback(() => {
@@ -224,7 +249,8 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
         if (dbEntry?.isHidden) continue
         if (dbEntry) continue
         const isUnseen = projectSession.unseenCompletedSessions.has(sid)
-        if (!hasRealtimeTimeline && !isLiveSession(data, isUnseen)) continue
+        const isForeground = sid === foregroundSessionId
+        if (!hasRealtimeTimeline && !isForeground && !isLiveSession(data, isUnseen)) continue
         if (!title && !data._historyHydrated) continue
         live.push({
           sessionId: sid,
@@ -241,22 +267,24 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
       if (live.length > 0) sessions = [...live, ...sessions]
     }
 
-    const groups = orderScheduledGroupsFirst(groupSidebarSessions(sessions), scheduledBySession)
-    const isLive = (session: SessionHistoryEntry) => {
+    const isAttention = (session: SessionHistoryEntry) => {
+      if (session.sessionId === foregroundSessionId) return true
       const entry = projectSession?._sessions?.[session.sessionId]
       const isUnseen = projectSession?.unseenCompletedSessions?.has(session.sessionId)
-      if (!entry && !isUnseen) return false
       const realtimeSessionId = useCodexRealtimeViewStore
         .getState()
         .sessions[session.sessionId]?.realtimeSessionId
-      const isRealtimeActive = typeof realtimeSessionId === 'string'
-      return isLiveSession(entry, isUnseen, isRealtimeActive)
+      return isLiveSession(entry, isUnseen, typeof realtimeSessionId === 'string')
     }
-    const liveGroups = isExpanded ? [] : groups.filter((group) =>
-      isLive(group.parent) || group.children.some(isLive),
+    const sections = partitionSidebarSessionGroups(
+      groupSidebarSessions(sessions),
+      scheduledBySession,
+      isAttention,
     )
-
-    const displayLimit = Math.min(expandLevel, maxSessions)
+    const requiredCount = sections.attention.length + sections.scheduled.length
+    const displayLimit = Math.max(INITIAL_EXPAND_LEVEL, requiredCount) + additionalNormalCount
+    const groupsToShow = visibleSidebarSessionGroups(sections, isExpanded, displayLimit)
+    const totalCount = requiredCount + sections.normal.length
     return {
       displayPath: homePath(
         // Strip remote host-scoped keys for display (see remote-project-key.ts).
@@ -264,14 +292,13 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           ? folder.path.slice(folder.path.indexOf(':', 'remote:'.length) + 1) || folder.path
           : folder.path,
       ),
-      groupsToShow: isExpanded ? groups.slice(0, displayLimit) : liveGroups,
-      showSessions: isExpanded || liveGroups.length > 0,
-      totalCount: groups.length,
-      hasMoreThanInitial: groups.length > expandLevel,
-      hasOverflow: groups.length > maxSessions,
-      isLive,
+      groupsToShow,
+      showSessions: isExpanded || sections.attention.length > 0,
+      hasMoreToShow: isExpanded && (totalCount > groupsToShow.length || hasMoreSessions),
+      nextRootTarget: displayLimit + EXPAND_STEP + 1,
+      isAttention,
     }
-  }, [allSessions, folder.path, isExpanded, maxSessions, liveSessionSig, realtimeSessionSig, expandLevel, scheduledBySession])
+  }, [allSessions, folder.path, isExpanded, hasMoreSessions, liveSessionSig, realtimeSessionSig, additionalNormalCount, scheduledBySession, foregroundSessionId])
 
   /**
    * Every opened mini-app owns a host process, so listing live hosts would just
@@ -352,7 +379,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   const folderMenuItems: AdaptiveMenuEntry[] = [
     ...(!folder.missing
       ? ([
-          { kind: 'item', id: 'history', label: t('sidebar.contextMenu.sessionHistory'), icon: History, onSelect: openHistory },
+          { kind: 'item', id: 'history', label: t('sidebar.contextMenu.sessionHistory'), icon: Search, onSelect: openHistory },
           // Gated on !missing like history: with the root gone there is nothing
           // meaningful to point workspace folders at.
           { kind: 'item', id: 'edit-project', label: t('sidebar.contextMenu.editProject'), icon: Pencil, onSelect: () => onEditProject(folder) },
@@ -402,6 +429,18 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                 data-slot="project-row-actions"
                 className="invisible ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:visible group-hover:pointer-events-auto group-hover:opacity-100"
               >
+                <IconButton
+                  size="md"
+                  variant="nested"
+                  tooltip={t('sidebar.contextMenu.searchSessions')}
+                  tooltipSideOffset={8}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    openHistory()
+                  }}
+                >
+                  <Search />
+                </IconButton>
                 <IconButton
                   size="md"
                   variant="nested"
@@ -505,7 +544,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                 const hasChildren = children.length > 0
                 const childrenExpanded = hasChildren && expandedChildrenIds.has(parent.sessionId)
                 const childrenCollapsed = hasChildren && !childrenExpanded
-                const childrenToShow = visibleChildSessions(children, childrenExpanded, derived.isLive)
+                const childrenToShow = visibleChildSessions(children, childrenExpanded, derived.isAttention)
                 return (
                 <div key={parent.sessionId}>
                   <SessionRow
@@ -537,34 +576,17 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                 )
               })
             )}
-            {isExpanded && expandLevel < maxSessions && derived.hasMoreThanInitial && (
+            {isExpanded && derived.hasMoreToShow && (
               <button
-                onClick={() => setExpandLevel(maxSessions)}
+                onClick={() => {
+                  setAdditionalNormalCount((count) => count + EXPAND_STEP)
+                  void onLoadMoreSessions(folder.path, derived.nextRootTarget)
+                }}
                 className="flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-sidebar-foreground/50 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground/70"
               >
                 <ChevronDown className="size-3.5 shrink-0" />
                 <span>{t('sidebar.contextMenu.showMore')}</span>
               </button>
-            )}
-            {isExpanded && expandLevel >= maxSessions && derived.totalCount > INITIAL_EXPAND_LEVEL && (
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setExpandLevel(INITIAL_EXPAND_LEVEL)}
-                  className="flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-sidebar-foreground/50 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground/70"
-                >
-                  <ChevronUp className="size-3.5 shrink-0" />
-                  <span>{t('sidebar.contextMenu.showLess')}</span>
-                </button>
-                {derived.hasOverflow && (
-                  <IconButton
-                    size="md"
-                    tooltip={t('sidebar.contextMenu.sessionHistory')}
-                    onClick={openHistory}
-                  >
-                    <History />
-                  </IconButton>
-                )}
-              </div>
             )}
           </div>
         ) : null}

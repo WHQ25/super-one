@@ -1,7 +1,12 @@
 /** @vitest-environment jsdom */
 import { describe, expect, it } from 'vitest'
 import type { ScheduledSend, SessionHistoryEntry } from '@superone/shared/agent-types'
-import { groupSidebarSessions, orderScheduledGroupsFirst, visibleChildSessions } from './ProjectSidebarRow'
+import {
+  groupSidebarSessions,
+  partitionSidebarSessionGroups,
+  visibleChildSessions,
+  visibleSidebarSessionGroups,
+} from './ProjectSidebarRow'
 
 function session(sessionId: string, parentSessionId?: string): SessionHistoryEntry {
   return {
@@ -31,7 +36,7 @@ describe('groupSidebarSessions', () => {
   })
 })
 
-describe('orderScheduledGroupsFirst', () => {
+describe('partitionSidebarSessionGroups', () => {
   function queued(sessionId: string, sendAt: number, armed = true): ScheduledSend {
     return { sessionId, sendAt, message: null, armed, source: 'manual' }
   }
@@ -40,31 +45,119 @@ describe('orderScheduledGroupsFirst', () => {
     return Object.fromEntries(rows.map((row) => [row.sessionId, row]))
   }
 
-  const groups = groupSidebarSessions([session('a'), session('b'), session('c')])
+  it('partitions attention, scheduled, and normal groups in priority order', () => {
+    const groups = groupSidebarSessions([
+      session('normal-a'),
+      session('scheduled-later'),
+      session('attention'),
+      session('scheduled-sooner'),
+      session('normal-b'),
+    ])
 
-  it('floats the sessions that owe a send above the rest, soonest first', () => {
-    const ordered = orderScheduledGroupsFirst(groups, byId(queued('c', 200), queued('a', 100)))
-    expect(ordered.map((group) => group.parent.sessionId)).toEqual(['a', 'c', 'b'])
+    const sections = partitionSidebarSessionGroups(
+      groups,
+      byId(queued('scheduled-later', 200), queued('scheduled-sooner', 100)),
+      (entry) => entry.sessionId === 'attention',
+    )
+
+    expect(sections.attention.map((group) => group.parent.sessionId)).toEqual(['attention'])
+    expect(sections.scheduled.map((group) => group.parent.sessionId)).toEqual([
+      'scheduled-sooner',
+      'scheduled-later',
+    ])
+    expect(sections.normal.map((group) => group.parent.sessionId)).toEqual(['normal-a', 'normal-b'])
   })
 
-  it('leaves the unscheduled remainder in the order it arrived', () => {
-    const ordered = orderScheduledGroupsFirst(groups, byId(queued('b', 100)))
-    expect(ordered.map((group) => group.parent.sessionId)).toEqual(['b', 'a', 'c'])
+  it('keeps an attention session in group one even when it also has a schedule', () => {
+    const groups = groupSidebarSessions([session('attention'), session('normal')])
+    const sections = partitionSidebarSessionGroups(
+      groups,
+      byId(queued('attention', 100)),
+      (entry) => entry.sessionId === 'attention',
+    )
+
+    expect(sections.attention.map((group) => group.parent.sessionId)).toEqual(['attention'])
+    expect(sections.scheduled).toEqual([])
   })
 
-  it('ignores an offer nobody has answered', () => {
-    // Unarmed is a question, not a promise — reordering for it would announce
-    // something the user never agreed to.
-    const ordered = orderScheduledGroupsFirst(groups, byId(queued('c', 100, false)))
-    expect(ordered).toBe(groups)
+  it('puts a parent group in attention when its collaboration child needs attention', () => {
+    const groups = groupSidebarSessions([session('normal'), session('parent'), session('child', 'parent')])
+    const sections = partitionSidebarSessionGroups(
+      groups,
+      {},
+      (entry) => entry.sessionId === 'child',
+    )
+
+    expect(sections.attention.map((group) => group.parent.sessionId)).toEqual(['parent'])
+    expect(sections.normal.map((group) => group.parent.sessionId)).toEqual(['normal'])
   })
 
-  it('ignores a schedule on a collaboration child', () => {
-    const nested = groupSidebarSessions([session('a'), session('b'), session('kid', 'b')])
-    // The child sits inside its parent's group and is not even drawn while that
-    // group is collapsed, so lifting the group would move a row for a reason
-    // the user cannot see.
-    expect(orderScheduledGroupsFirst(nested, byId(queued('kid', 100)))).toBe(nested)
+  it('treats unarmed schedules and schedules on children as normal', () => {
+    const groups = groupSidebarSessions([session('parent'), session('child', 'parent'), session('unarmed')])
+    const sections = partitionSidebarSessionGroups(
+      groups,
+      byId(queued('child', 100), queued('unarmed', 200, false)),
+      () => false,
+    )
+
+    expect(sections.scheduled).toEqual([])
+    expect(sections.normal.map((group) => group.parent.sessionId)).toEqual(['parent', 'unarmed'])
+  })
+})
+
+describe('visibleSidebarSessionGroups', () => {
+  const groups = groupSidebarSessions([
+    session('attention-a'),
+    session('attention-b'),
+    session('scheduled-a'),
+    session('scheduled-b'),
+    session('normal-a'),
+    session('normal-b'),
+    session('normal-c'),
+  ])
+  const sections = {
+    attention: groups.slice(0, 2),
+    scheduled: groups.slice(2, 4),
+    normal: groups.slice(4),
+  }
+
+  it('shows only attention groups while the project is collapsed', () => {
+    const visible = visibleSidebarSessionGroups(sections, false, 6)
+
+    expect(visible.map((group) => group.parent.sessionId)).toEqual([
+      'attention-a',
+      'attention-b',
+    ])
+  })
+
+  it('shows all attention and scheduled groups before filling with normal groups', () => {
+    const visible = visibleSidebarSessionGroups(sections, true, 6)
+
+    expect(visible.map((group) => group.parent.sessionId)).toEqual([
+      'attention-a',
+      'attention-b',
+      'scheduled-a',
+      'scheduled-b',
+      'normal-a',
+      'normal-b',
+    ])
+  })
+
+  it('never truncates attention or scheduled groups when they exceed the display limit', () => {
+    const requiredGroups = groupSidebarSessions([
+      session('attention-a'),
+      session('attention-b'),
+      session('attention-c'),
+      session('scheduled-a'),
+      session('scheduled-b'),
+    ])
+    const visible = visibleSidebarSessionGroups({
+      attention: requiredGroups.slice(0, 3),
+      scheduled: requiredGroups.slice(3),
+      normal: [],
+    }, true, 2)
+
+    expect(visible).toEqual(requiredGroups)
   })
 })
 

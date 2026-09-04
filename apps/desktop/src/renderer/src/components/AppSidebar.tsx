@@ -58,12 +58,15 @@ const isMac = window.app.platform === 'darwin'
 
 type SortMode = 'recent' | 'added'
 
-const MAX_DISPLAY_SESSIONS = 12
-const SESSIONS_FETCH_LIMIT = MAX_DISPLAY_SESSIONS + 1
+const SESSIONS_FETCH_LIMIT = 13
 // Read through the next root so children belonging to the overflow root cannot
 // be stranded on the following row-based database page.
-const SESSIONS_FETCH_ROOT_TARGET = SESSIONS_FETCH_LIMIT + 1
+const SESSIONS_FETCH_ROOT_TARGET = 14
 const EMPTY_SESSIONS: SessionHistoryEntry[] = []
+
+function visibleRootSessionCount(sessions: SessionHistoryEntry[]): number {
+  return sessions.filter((session) => !session.isHidden && !session.parentSessionId).length
+}
 
 export const AppSidebar = memo(function AppSidebar() {
   const { t } = useTranslation()
@@ -129,6 +132,7 @@ export const AppSidebar = memo(function AppSidebar() {
   const prevSortModeRef = useRef<SortMode>('recent')
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
   const [folderSessions, setFolderSessions] = useState<Record<string, SessionHistoryEntry[]>>({})
+  const [folderSessionsHaveMore, setFolderSessionsHaveMore] = useState<Record<string, boolean>>({})
   const [pinnedSessions, setPinnedSessions] = useState<PinnedSessionEntry[]>([])
   const [deleteTarget, setDeleteTarget] = useState<{ sessionId: string; title: string; folderPath: string; provider: import('@superone/shared/agent-types').HarnessId } | null>(null)
   const [copiedCmd, setCopiedCmd] = useState<'cd' | 'resume' | null>(null)
@@ -162,6 +166,7 @@ export const AppSidebar = memo(function AppSidebar() {
   const inFlightFolderSessions = useRef(new Map<string, Promise<SessionHistoryEntry[]>>())
   const expandedFoldersRef = useRef(expandedFolders)
   const folderSessionsRef = useRef(folderSessions)
+  const folderSessionsHaveMoreRef = useRef(folderSessionsHaveMore)
 
   // Environments for the host switcher (local + paired remotes).
   // Skip listing remotes when the experiment is off.
@@ -215,6 +220,10 @@ export const AppSidebar = memo(function AppSidebar() {
     folderSessionsRef.current = folderSessions
   }, [folderSessions])
 
+  useEffect(() => {
+    folderSessionsHaveMoreRef.current = folderSessionsHaveMore
+  }, [folderSessionsHaveMore])
+
   const loadFolderSessions = useCallback(async (folderPath: string, reason: 'expand' | 'refresh' | 'current' | 'switch') => {
     const existing = inFlightFolderSessions.current.get(folderPath)
     if (existing) {
@@ -226,13 +235,14 @@ export const AppSidebar = memo(function AppSidebar() {
       const sessions: SessionHistoryEntry[] = []
       let offset = 0
       let visibleCount = 0
+      let hasMore = true
       const startedAt = performance.now()
       traceSidebar('sessions_load:start', { folderPath, reason, pageSize: SESSIONS_FETCH_LIMIT }, folderPath)
       try {
         // Unified Environment API (local + remote). Prefer hostProjects id for remote.
         const { listSessionsPage } = await import('@/lib/session-list-ops')
         const preferredProjectId = hostProjects.find((p) => p.path === folderPath)?.id ?? null
-        while (sessions.filter((session) => !session.isHidden && !session.parentSessionId).length < SESSIONS_FETCH_ROOT_TARGET) {
+        while (visibleRootSessionCount(sessions) < SESSIONS_FETCH_ROOT_TARGET) {
           const page = await listSessionsPage(folderPath, {
             limit: SESSIONS_FETCH_LIMIT,
             offset,
@@ -248,11 +258,18 @@ export const AppSidebar = memo(function AppSidebar() {
             elapsedMs: Math.round((performance.now() - startedAt) * 100) / 100,
             remote: Boolean(parseRemoteProjectKey(folderPath)),
           }, folderPath)
-          if (page.length === 0) break
+          if (page.length === 0) {
+            hasMore = false
+            break
+          }
           sessions.push(...page)
-          if (page.length < SESSIONS_FETCH_LIMIT) break
+          if (page.length < SESSIONS_FETCH_LIMIT) {
+            hasMore = false
+            break
+          }
           offset += page.length
         }
+        folderSessionsRef.current = { ...folderSessionsRef.current, [folderPath]: sessions }
         setFolderSessions((prev) => {
           const existing = prev[folderPath]
           if (existing && existing.length === sessions.length && existing.every((session, i) => shallow(session, sessions[i]))) {
@@ -260,6 +277,10 @@ export const AppSidebar = memo(function AppSidebar() {
           }
           return { ...prev, [folderPath]: sessions }
         })
+        folderSessionsHaveMoreRef.current = { ...folderSessionsHaveMoreRef.current, [folderPath]: hasMore }
+        setFolderSessionsHaveMore((prev) => prev[folderPath] === hasMore
+          ? prev
+          : { ...prev, [folderPath]: hasMore })
         traceSidebar('sessions_load:end', {
           folderPath,
           reason,
@@ -283,6 +304,71 @@ export const AppSidebar = memo(function AppSidebar() {
 
     inFlightFolderSessions.current.set(folderPath, promise)
     return promise
+  }, [hostProjects])
+
+  const loadMoreFolderSessions = useCallback(async (folderPath: string, minimumRootCount: number) => {
+    const pending = inFlightFolderSessions.current.get(folderPath)
+    if (pending) await pending
+
+    const cached = folderSessionsRef.current[folderPath] ?? []
+    if (folderSessionsHaveMoreRef.current[folderPath] !== true) return cached
+    if (visibleRootSessionCount(cached) >= minimumRootCount) return cached
+
+    const promise = (async () => {
+      let sessions = cached
+      let hasMore = true
+      const startedAt = performance.now()
+
+      try {
+        const { listSessionsPage } = await import('@/lib/session-list-ops')
+        const preferredProjectId = hostProjects.find((p) => p.path === folderPath)?.id ?? null
+        while (visibleRootSessionCount(sessions) < minimumRootCount && hasMore) {
+          const page = await listSessionsPage(folderPath, {
+            limit: SESSIONS_FETCH_LIMIT,
+            offset: sessions.length,
+            projectId: preferredProjectId,
+          })
+          traceSidebar('sessions_load:page', {
+            folderPath,
+            reason: 'show_more',
+            offset: sessions.length,
+            pageCount: page.length,
+            visibleCount: visibleRootSessionCount(sessions) + visibleRootSessionCount(page),
+            elapsedMs: Math.round((performance.now() - startedAt) * 100) / 100,
+            remote: Boolean(parseRemoteProjectKey(folderPath)),
+          }, folderPath)
+          if (page.length === 0) {
+            hasMore = false
+            break
+          }
+          sessions = [...sessions, ...page]
+          hasMore = page.length >= SESSIONS_FETCH_LIMIT
+        }
+
+        folderSessionsRef.current = { ...folderSessionsRef.current, [folderPath]: sessions }
+        setFolderSessions((prev) => ({ ...prev, [folderPath]: sessions }))
+        folderSessionsHaveMoreRef.current = { ...folderSessionsHaveMoreRef.current, [folderPath]: hasMore }
+        setFolderSessionsHaveMore((prev) => ({ ...prev, [folderPath]: hasMore }))
+        return sessions
+      } catch (error) {
+        traceSidebar('sessions_load:error', {
+          folderPath,
+          reason: 'show_more',
+          error: error instanceof Error ? error.message : String(error),
+          elapsedMs: Math.round((performance.now() - startedAt) * 100) / 100,
+        }, folderPath)
+        return sessions
+      }
+    })()
+
+    inFlightFolderSessions.current.set(folderPath, promise)
+    try {
+      return await promise
+    } finally {
+      if (inFlightFolderSessions.current.get(folderPath) === promise) {
+        inFlightFolderSessions.current.delete(folderPath)
+      }
+    }
   }, [hostProjects])
 
   const toggleExpand = useCallback((folderPath: string) => {
@@ -897,7 +983,8 @@ export const AppSidebar = memo(function AppSidebar() {
                     folder={folder}
                     isExpanded={expandedFolders.has(folder.path)}
                     sessions={folderSessions[folder.path] ?? EMPTY_SESSIONS}
-                    maxSessions={MAX_DISPLAY_SESSIONS}
+                    hasMoreSessions={folderSessionsHaveMore[folder.path] ?? false}
+                    onLoadMoreSessions={loadMoreFolderSessions}
                     onToggleExpand={toggleExpand}
                     onSwitchSession={handleSwitchSession}
                     onPinSession={handlePinSession}

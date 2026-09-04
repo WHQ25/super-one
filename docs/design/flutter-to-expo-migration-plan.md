@@ -1186,6 +1186,16 @@ bounded condition wait made both the focused test and the repeated changed-main 
 green. The final run has 5090 passing tests with 29 skipped; chat-core has 17,
 relay-client 60, chat-view 21, Mobile 80, Relay 52, and workspace typecheck is green.
 
+**2026-09-04 (WP-29 simulator and archive preflight):** rebuilt the current Expo
+source as an arm64 Release app and installed it on the controlled built-in iPad. The
+camera pairing sheet stayed open across portrait-to-landscape rotation and returned
+cleanly to the pairing list; connected master/detail behavior remains part of the
+physical WSS smoke. The external Flutter repository is not archived. Its local
+`main` is 21 commits ahead of the confirmed remote tip and also contains the frozen
+working-tree changes, so those commits and changes must be deliberately preserved
+before the repository is made read-only. Flutter's 225 unit tests pass; analysis has
+three errors in stale integration-test adapters and is not a green archival gate.
+
 ---
 
 ## Appendix A — LOC / baseline (orientation)

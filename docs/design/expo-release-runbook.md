@@ -24,6 +24,13 @@ internal testers. The obsolete build 4 submission failed as expected because its
 build number was lower than the Flutter baseline. Never download, commit, or paste
 the private key into chat.
 
+The current-source arm64 Release app also launches on the built-in iPad simulator;
+its camera pairing sheet survives portrait-to-landscape rotation. This does not prove
+the connected master/detail or physical-device smoke. Before the final archive, note
+that the Flutter clone has 21 local commits plus frozen working-tree changes that are
+not present on its remote; preserve them deliberately before making the repository
+read-only.
+
 Run EAS commands from `apps/mobile`. Keep `credentials.json`, signing files, build
 artifacts, screenshots, and videos out of git.
 

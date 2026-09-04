@@ -110,14 +110,10 @@ describe('EnvironmentHost product path', () => {
     })
     const attached = await host.attachRemoteTerminal(connectionId, terminal.terminalId)
     await host.writeRemoteTerminal(connectionId, terminal.terminalId, 'pwd\r')
-    let terminalOutput = ''
-    for (let attempt = 0; attempt < 120; attempt += 1) {
+    await vi.waitFor(async () => {
       const read = await host.readRemoteTerminal(connectionId, terminal.terminalId, attached.sequence)
-      terminalOutput = read.data
-      if (terminalOutput.includes(projectDir)) break
-      await new Promise((resolve) => setTimeout(resolve, 25))
-    }
-    expect(terminalOutput).toContain(projectDir)
+      expect(read.data).toContain(projectDir)
+    }, { timeout: 10_000, interval: 25 })
     await host.resizeRemoteTerminal(connectionId, terminal.terminalId, 100, 40)
     await host.killRemoteTerminal(connectionId, terminal.terminalId)
 

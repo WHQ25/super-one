@@ -7,12 +7,14 @@ import { DeviceAgentSession, errorReply, reply, type DeviceToolReply } from './e
 import { IosSimulatorBackend } from './ios-backend'
 import { AndroidBackend } from './android-backend'
 import { MirrorBackend } from './mirror-backend'
+import { bootDevice } from './boot'
 import { requestDeviceControl } from './control'
 import { listDeviceCatalog } from './device-catalog'
 import type { DevicePlatformPort } from '../device/platform-port'
 import { devicePlatformPorts, deviceSurfaces } from '../device/registry'
 import { getAndroidDeviceManager } from '../device/android'
 import { getMirrorDeviceManager } from '../device/ios-mirror'
+import { DEVICE_GRANTS, type DeviceGrantsPort } from './device-grants'
 import { createDeviceRecents, type DeviceRecentsPort } from './device-recents'
 import { resolveHeldDevice, type HeldDevice } from './target'
 import type { DeviceAgentToolName } from './tools'
@@ -131,6 +133,13 @@ export function setDeviceAgentRecentsFactory(factory: (sessionId: string) => Dev
   recentsFactory = factory
 }
 
+/** Standing control grants, swapped by tests so no settings file is needed. */
+let grants: DeviceGrantsPort = DEVICE_GRANTS
+
+export function setDeviceAgentGrants(next: DeviceGrantsPort): void {
+  grants = next
+}
+
 /**
  * How the control prompt reaches the user.
  *
@@ -215,6 +224,14 @@ export async function executeDeviceAgentTool(
         request: { ...(kind ? { kind } : {}), ...(model ? { model } : {}) },
       }))
     }
+    if (name === 'device_boot') {
+      const { device } = args as { device?: string }
+      return reply(await bootDevice({
+        ports: platformPortsFactory(),
+        request: { device: device ?? '' },
+        ...(signal ? { signal } : {}),
+      }))
+    }
     if (name === 'device_request_control') {
       const { description, device } = args as { description?: string; device?: string }
       return reply(await requestDeviceControl({
@@ -222,6 +239,7 @@ export async function executeDeviceAgentTool(
         ports: platformPortsFactory(),
         emitHostEvent: emitHostEventFor(sessionId),
         recents: recentsFactory(sessionId),
+        grants,
         request: {
           device: device ?? '',
           ...(description ? { reason: description } : {}),

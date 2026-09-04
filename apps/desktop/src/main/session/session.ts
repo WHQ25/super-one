@@ -1035,7 +1035,12 @@ export class Session implements SessionContract {
       return true
     } else if (resolveAutomationConfirm(requestId, allow ? 'accept' : 'decline', formAnswers)) {
       return true
-    } else if (resolveDeviceControlConfirm(requestId, allow ? 'accept' : 'decline', reason)) {
+    } else if (resolveDeviceControlConfirm(
+      requestId,
+      allow ? 'accept' : 'decline',
+      alwaysAllow === true,
+      reason,
+    )) {
       return true
     }
     return this.backend.respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers)

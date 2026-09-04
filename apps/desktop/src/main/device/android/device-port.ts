@@ -23,6 +23,10 @@ export class AndroidDevicePort implements DevicePlatformPort {
     return this.manager.boot(sessionId, deviceId)
   }
 
+  power(deviceId: string, signal?: AbortSignal): Promise<DeviceDescriptor | null> {
+    return this.manager.power(deviceId, signal)
+  }
+
   waitForPreview(deviceId: string, signal?: AbortSignal): Promise<void> {
     return this.manager.waitForPreview(deviceId, signal)
   }

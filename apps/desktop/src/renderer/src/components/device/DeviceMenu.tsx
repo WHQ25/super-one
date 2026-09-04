@@ -1,13 +1,13 @@
 import type { ReactNode } from 'react'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check } from 'lucide-react'
 import type { DeviceDescriptor } from '@superone/shared/device'
 import { formatDeviceId } from '@superone/shared/device'
 import type { DeviceSetupOption } from '@superone/shared/device-setup'
 import type { IosSimulatorDevice } from '@superone/shared/ios-simulator'
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
@@ -18,37 +18,37 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@superone/ui/components/ui/dropdown-menu'
-import { cn } from '@superone/ui/lib/utils'
+import { Switch } from '@superone/ui/components/ui/switch'
 import { DeviceSetupSubmenu, useDeviceSetupChoice } from './DeviceSetupMenu'
 import { deviceFamilyIcon } from './device-icons'
 import { buildDeviceCatalog } from './device-catalog'
 import { readRecentDeviceIds, rememberRecentDeviceId, resolveRecentDevices } from './device-recents'
+import { useDeviceAgentGrant } from './use-device-agent-grant'
 
 /** A green pip on anything already booted, so attaching reads differently from launching. */
 function RunningDot() {
   return <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-success" />
 }
 
+/**
+ * No tick for the current device: the trigger this menu hangs off IS the device name,
+ * so the selection is already on screen and a second marker only competes with the one
+ * mark that carries information the header cannot — whether the device is running.
+ */
 function DeviceItem({
   label,
   device,
-  selected,
   disabled,
   onSelect,
 }: {
   label: string
   device: DeviceDescriptor
-  selected: boolean
   disabled: boolean
   onSelect: () => void
 }) {
   const { t } = useTranslation()
   return (
     <DropdownMenuItem disabled={disabled} onSelect={onSelect} className="gap-2">
-      {/* The tick keeps its box when unticked: without it every row shifts sideways
-          the moment the selection moves, and the menu is a list of near-identical
-          model names where that flicker reads as the list itself changing. */}
-      <Check className={cn('size-3.5', !selected && 'invisible')} />
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {device.running && <RunningDot />}
       {disabled && (
@@ -164,13 +164,58 @@ export function DeviceMenu({
 
   const setup = useDeviceSetupChoice(created)
 
+  // The standing "agents may drive this" answer for the device this menu is naming.
+  // It belongs to the DEVICE, not to the tab or the session, which is why it reads off
+  // `currentDeviceId` rather than following the highlighted row.
+  const agentGrant = useDeviceAgentGrant()
+  const current = useMemo(
+    () => devices.find((entry) => entry.id === currentDeviceId) ?? null,
+    [devices, currentDeviceId],
+  )
+
   const label = (device: DeviceDescriptor) => `${device.name} · ${device.platformVersion}`
 
   return (
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild disabled={disabled}>{children}</DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-64">
+        {/* `hide-scrollbar`, not a gutter: the global 6px `::-webkit-scrollbar` is a classic
+            scrollbar, so an overflowing menu silently loses 6px off its right edge and stops
+            looking centred. The thumb is transparent until `.is-scrolling` anyway, so what
+            it costs here is a hint, and what it was taking was the symmetry of every row. */}
+        <DropdownMenuContent align="start" className="w-64 hide-scrollbar">
+          {/* First, and separated: everything below changes WHICH device you are looking
+              at, while this one changes what the agent may do with the device already on
+              screen. Absent when no device is selected — there would be nothing for it to
+              be about. */}
+          {current && (
+            <>
+              <DropdownMenuCheckboxItem
+                checked={agentGrant.isGranted(current.id)}
+                // The menu stays open: this is a setting, not a pick, and closing on it
+                // would read as having chosen a different device.
+                onSelect={(event) => event.preventDefault()}
+                onCheckedChange={(checked) => void agentGrant.setGranted(current, checked)}
+                // Still a checkbox item, so it keeps `menuitemcheckbox` and `aria-checked`
+                // — only its tick is swapped for the switch below, which is why the
+                // indicator slot and the padding reserved for it both go.
+                className="gap-2 pl-2 [&>span:first-child]:hidden"
+              >
+                <span className="min-w-0 flex-1">{t('activity.device.allowControl')}</span>
+                {/* Presentational: the row already owns the toggle, and a second
+                    interactive control inside it would answer the same click twice. */}
+                <Switch
+                  size="sm"
+                  checked={agentGrant.isGranted(current.id)}
+                  aria-hidden
+                  tabIndex={-1}
+                  className="pointer-events-none"
+                />
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuSeparator />
+            </>
+          )}
+
           {running.length > 0 && (
             <DropdownMenuGroup>
               <DropdownMenuLabel className="text-xs text-muted-foreground">
@@ -181,7 +226,6 @@ export function DeviceMenu({
                   key={entry.id}
                   label={label(entry)}
                   device={entry}
-                  selected={entry.id === currentDeviceId}
                   disabled={takenByOther(entry)}
                   onSelect={() => pick(entry.id)}
                 />
@@ -199,7 +243,6 @@ export function DeviceMenu({
                   key={entry.id}
                   label={label(entry)}
                   device={entry}
-                  selected={entry.id === currentDeviceId}
                   disabled={takenByOther(entry)}
                   onSelect={() => pick(entry.id)}
                 />
@@ -229,17 +272,14 @@ export function DeviceMenu({
                         key={model.name}
                         label={`${model.name} · ${only.platformVersion}`}
                         device={only}
-                        selected={only.id === currentDeviceId}
                         disabled={takenByOther(only)}
                         onSelect={() => pick(only.id)}
                       />
                     )
                   }
-                  const holdsCurrent = model.devices.some((entry) => entry.id === currentDeviceId)
                   return (
                     <DropdownMenuSub key={model.name}>
                       <DropdownMenuSubTrigger className="gap-2">
-                        <Check className={cn('size-3.5', !holdsCurrent && 'invisible')} />
                         <span className="min-w-0 flex-1 truncate">{model.name}</span>
                         {model.devices.some((entry) => entry.running) && <RunningDot />}
                       </DropdownMenuSubTrigger>
@@ -249,7 +289,6 @@ export function DeviceMenu({
                             key={entry.id}
                             label={entry.platformVersion}
                             device={entry}
-                            selected={entry.id === currentDeviceId}
                             disabled={takenByOther(entry)}
                             onSelect={() => pick(entry.id)}
                           />
@@ -263,6 +302,7 @@ export function DeviceMenu({
           })}
 
           <DeviceSetupSubmenu options={setupOptions} onChoose={setup.choose} />
+
         </DropdownMenuContent>
       </DropdownMenu>
 

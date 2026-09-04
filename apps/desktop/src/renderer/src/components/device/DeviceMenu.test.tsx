@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { DeviceDescriptor } from '@superone/shared/device'
@@ -79,6 +79,13 @@ function renderMenu(overrides: Partial<React.ComponentProps<typeof DeviceMenu>> 
 describe('iOS Simulator device menu', () => {
   beforeEach(() => {
     localStorage.clear()
+  })
+
+  afterEach(() => {
+    // The shared `window.app` proxy keeps own properties across files, so a stub left
+    // behind would follow every later suite into a different set of settings.
+    delete (window.app as unknown as Record<string, unknown>).getAppSettings
+    delete (window.app as unknown as Record<string, unknown>).saveAppSettings
   })
 
   it('picks a runtime from the model submenu and remembers it as recent', async () => {
@@ -187,5 +194,60 @@ describe('iOS Simulator device menu', () => {
 
     await user.click(held)
     expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  /**
+   * The standing grant's only home outside the chat prompt.
+   *
+   * It is a property of the DEVICE rather than of this tab or this session, so it is
+   * read off `currentDeviceId` — and it is the only thing in this menu that does not
+   * change which device you are looking at.
+   */
+  it('offers the standing agent-control answer for the device it is naming', async () => {
+    const saved: unknown[] = []
+    Object.assign(window.app, {
+      getAppSettings: () => Promise.resolve({ deviceControlGrants: [] }),
+      saveAppSettings: (patch: { deviceControlGrants: unknown[] }) => {
+        saved.push(patch.deviceControlGrants)
+        return Promise.resolve({ deviceControlGrants: patch.deviceControlGrants })
+      },
+    })
+    const user = userEvent.setup()
+    const { onSelect } = renderMenu({ currentDeviceId: SE.id })
+
+    await user.click(screen.getByRole('button', { name: 'Devices' }))
+    const toggle = await screen.findByRole('menuitemcheckbox', { name: /allow control/i })
+    expect(toggle).toHaveAttribute('aria-checked', 'false')
+
+    await user.click(toggle)
+
+    expect(saved).toEqual([[
+      { deviceId: SE.id, deviceName: SE.name, platformVersion: SE.platformVersion },
+    ]])
+    // A setting, not a pick: flipping it must not read as choosing a different device.
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('shows the standing answer already given, so it can be taken back', async () => {
+    Object.assign(window.app, {
+      getAppSettings: () => Promise.resolve({
+        deviceControlGrants: [{ deviceId: SE.id, deviceName: SE.name }],
+      }),
+    })
+    const user = userEvent.setup()
+    renderMenu({ currentDeviceId: SE.id })
+
+    await user.click(screen.getByRole('button', { name: 'Devices' }))
+    expect(await screen.findByRole('menuitemcheckbox', { name: /allow control/i }))
+      .toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('omits the toggle when no device is selected, since it would be about nothing', async () => {
+    const user = userEvent.setup()
+    renderMenu({ currentDeviceId: '' })
+
+    await user.click(screen.getByRole('button', { name: 'Devices' }))
+    await screen.findByRole('menuitem', { name: /iPhone SE/ })
+    expect(screen.queryByRole('menuitemcheckbox')).toBeNull()
   })
 })

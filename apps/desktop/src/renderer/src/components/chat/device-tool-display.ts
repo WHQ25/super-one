@@ -8,10 +8,11 @@
 
 import { parseMcpToolName } from './tool-display'
 
-export type DeviceOp = 'list' | 'request_control' | 'snapshot' | 'query' | 'act' | 'wait_for'
+export type DeviceOp =
+  | 'list' | 'boot' | 'request_control' | 'snapshot' | 'query' | 'act' | 'wait_for'
 
 const DEVICE_OPS = new Set<DeviceOp>([
-  'list', 'request_control', 'snapshot', 'query', 'act', 'wait_for',
+  'list', 'boot', 'request_control', 'snapshot', 'query', 'act', 'wait_for',
 ])
 
 export type DeviceActOutcome = 'worked' | 'didnt' | 'unknown'
@@ -67,6 +68,8 @@ export interface DeviceResultInfo {
   runningCount?: number
   /** `device_request_control` only — the session already held this device. */
   alreadyControlled?: boolean
+  /** `device_boot` only — the device was up before the call, so nothing was started. */
+  alreadyRunning?: boolean
 }
 
 /**
@@ -140,6 +143,7 @@ export function deviceVerbKey(
   streaming = false,
 ): string {
   if (op === 'list') return streaming ? 'listing' : 'list'
+  if (op === 'boot') return streaming ? 'booting' : 'boot'
   if (op === 'request_control') return streaming ? 'requestingControl' : 'requestControl'
 
   if (op === 'query') {
@@ -255,6 +259,7 @@ export function deviceInputSummary(op: DeviceOp, params: Record<string, unknown>
   switch (op) {
     case 'list':
       return ''
+    case 'boot':
     case 'request_control':
       return stringValue(params.device)
     case 'snapshot':
@@ -358,6 +363,15 @@ export function parseDeviceResult(
       deviceCount: typeof obj.total === 'number' ? obj.total : devices.length,
       runningCount: devices.filter((device) => device.running).length,
       ...(names.length > 0 ? { device: names.join(', ') } : {}),
+    }
+  }
+
+  if (op === 'boot') {
+    const device = asRecord(obj.device)
+    return {
+      status: 'ok',
+      ...(typeof device?.name === 'string' ? { device: device.name } : {}),
+      ...(obj.alreadyRunning === true ? { alreadyRunning: true } : {}),
     }
   }
 

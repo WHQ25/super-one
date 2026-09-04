@@ -39,6 +39,8 @@ export type Messages = {
       keyboardInput: string
       detach: string
       terminate: string
+      /** Standing "agents may drive this device" answer, toggled from the picker menu. */
+      allowControl: string
       detached: string
       terminated: string
       screenshot: string
@@ -1799,6 +1801,8 @@ export type Messages = {
       deny: string
       denyReasonPlaceholder: string
       alwaysAllow: string
+      /** device_control_confirm only — persists the grant for every session. */
+      alwaysAllowDevice: string
       sessionCleanupTitle: string
       sessionCleanupEmpty: string
       sessionCleanupDelete: string
@@ -2437,6 +2441,9 @@ export type Messages = {
       device: {
         list: string
         listing: string
+        boot: string
+        booting: string
+        alreadyRunning: string
         requestControl: string
         requestingControl: string
         deviceCount_one: string
@@ -3576,6 +3583,7 @@ export const en: Messages = {
       keyboardInput: 'Device keyboard input',
       detach: 'Disconnect Preview',
       terminate: 'Shut Down Device',
+      allowControl: 'Allow Control',
       detached: 'Preview disconnected. The device is still running.',
       terminated: 'The device has been shut down.',
       screenshot: 'Screenshot',
@@ -5479,6 +5487,7 @@ export const en: Messages = {
       deny: 'Deny',
       denyReasonPlaceholder: 'Deny reason (optional, Enter to submit)',
       alwaysAllow: 'Always Allow',
+      alwaysAllowDevice: 'Always Allow',
       sessionCleanupTitle: 'Permanently delete {{count}} session(s)?',
       sessionCleanupEmpty: 'No sessions selected.',
       sessionCleanupDelete: 'Delete',
@@ -6110,6 +6119,9 @@ export const en: Messages = {
       device: {
         list: 'List Devices',
         listing: 'Listing devices',
+        boot: 'Boot Device',
+        booting: 'Booting device',
+        alreadyRunning: 'Already Running',
         requestControl: 'Request Device',
         requestingControl: 'Requesting device',
         deviceCount_one: '{{count}} device',

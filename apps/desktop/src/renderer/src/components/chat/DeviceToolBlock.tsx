@@ -141,7 +141,8 @@ export function DeviceToolBlock({
   // showed the user what they were approving, and the result body is prose written
   // for the agent. A refusal is the exception: its reason has to be readable
   // somewhere, and the header truncates.
-  const expandable = !isStreaming && !!result && (op !== 'request_control' || failed)
+  const expandable = !isStreaming && !!result
+    && ((op !== 'request_control' && op !== 'boot') || failed)
 
   return (
     <ToolRow
@@ -303,6 +304,15 @@ function statusText(
     return info.deviceCount === 0
       ? t('chat.toolBlock.device.noDevices')
       : t('chat.toolBlock.device.deviceCount', { count: info.deviceCount })
+  }
+  if (op === 'boot') {
+    // Same reading as request_control, one state further back: which device, and
+    // whether anything actually had to start. "Already running" is why a call the
+    // user expected to take 20s came back instantly.
+    return [
+      info.device,
+      info.alreadyRunning ? t('chat.toolBlock.device.alreadyRunning') : '',
+    ].filter(Boolean).join(' · ')
   }
   if (op === 'request_control') {
     // The device name, not a word about the outcome: which device was handed over is

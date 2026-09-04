@@ -317,7 +317,35 @@ describe('device catalog rows', () => {
   it('uses the discovery verbs so the row does not read as an action on the device', () => {
     expect(deviceVerbKey('list', {})).toBe('list')
     expect(deviceVerbKey('list', {}, true)).toBe('listing')
+    expect(deviceVerbKey('boot', {})).toBe('boot')
+    expect(deviceVerbKey('boot', {}, true)).toBe('booting')
     expect(deviceVerbKey('request_control', {})).toBe('requestControl')
     expect(deviceVerbKey('request_control', {}, true)).toBe('requestingControl')
+  })
+
+  it('separates a boot that started something from one that found it already up', () => {
+    // The row's whole reading: which device, and why a call the user expected to take
+    // ~20s came back instantly.
+    const started = parseDeviceResult('boot', JSON.stringify({
+      running: true,
+      alreadyRunning: false,
+      controlled: false,
+      device: { id: 'a', name: 'iPhone 17 Pro Max', platform: 'iOS 26.4' },
+    }), false)
+    expect(started.device).toBe('iPhone 17 Pro Max')
+    expect(started.alreadyRunning).toBeUndefined()
+
+    const warm = parseDeviceResult('boot', JSON.stringify({
+      running: true,
+      alreadyRunning: true,
+      device: { id: 'a', name: 'iPhone 17 Pro Max' },
+    }), false)
+    expect(warm.alreadyRunning).toBe(true)
+  })
+
+  it('recognizes device_boot as one of ours rather than a third-party device_ tool', () => {
+    expect(getDeviceOp('device_boot')).toBe('boot')
+    expect(deviceToolVerbKey('mcp__superone__device_boot', {})).toBe('boot')
+    expect(deviceToolVerbKey('mcp__other__device_boot', {})).toBeNull()
   })
 })

@@ -30,6 +30,17 @@ export interface DevicePlatformPort {
    */
   boot(sessionId: string, deviceId: string): Promise<DeviceDescriptor | null>
 
+  /**
+   * Start the device without granting anything.
+   *
+   * Optional, and the option is the point: a mirrored iPhone has no "boot" — it is
+   * already someone's running phone — so the platform that cannot do this says so by
+   * not implementing it, rather than by faking a success the agent would then act on.
+   *
+   * Resolves to the device once it is up, or null if it never came up.
+   */
+  power?(deviceId: string, signal?: AbortSignal): Promise<DeviceDescriptor | null>
+
   /** Resolve only after the live preview has delivered its first drawable frame. */
   waitForPreview(deviceId: string, signal?: AbortSignal): Promise<void>
 
@@ -86,6 +97,20 @@ export function orderDevices(devices: readonly DeviceDescriptor[]): DeviceDescri
 /** Only devices that can actually be booted — an uninstalled runtime is not an option. */
 export function offerableDevices(devices: readonly DeviceDescriptor[]): DeviceDescriptor[] {
   return orderDevices(devices.filter((device) => device.available))
+}
+
+/**
+ * Which port speaks for a device.
+ *
+ * Unreachable while the descriptor came from a port in the same list, which is the
+ * only way one is ever produced. Named rather than non-null-asserted so a future
+ * caller that assembles the two separately fails loudly here.
+ */
+export function portFor(
+  ports: readonly DevicePlatformPort[],
+  device: DeviceDescriptor,
+): DevicePlatformPort | null {
+  return ports.find((candidate) => candidate.platform === device.platform) ?? null
 }
 
 /**

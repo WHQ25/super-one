@@ -1,18 +1,41 @@
 # Driving phones and tablets (`device_*`)
 
 SuperOne can drive iOS Simulators and Android devices/emulators. One session may
-hold several at once; every tool below except `device_list` needs a grant.
+hold several at once; every tool below except `device_list` and `device_boot`
+needs a grant.
 
 ## The loop
 
 ```
 device_list            → pick a device (free, boots nothing)
+device_boot            → start it (free, grants nothing) — do this while you keep working
 device_request_control → the user grants it; everything else fails with NO_DEVICE until then
 device_snapshot        → a stateId + a tree of @eN refs
 device_act             → act against that stateId, then re-observe
 device_wait_for        → block on a condition instead of snapshotting in a loop
 device_query           → re-read the snapshot you already have, with no device round trip
 ```
+
+## Starting a device vs being allowed to drive it
+
+These are two questions with two different answers, and they are two tools.
+
+Turning a simulator on is no more privileged than running `xcrun simctl boot`
+yourself, so `device_boot` needs no approval — call it as soon as you know which
+device you want, then go build while it comes up. It grants nothing: the device
+is running and nothing is driving it, and `device_snapshot` / `device_act` still
+fail with `NO_DEVICE`.
+
+Driving it is what the user answers. `device_request_control` raises a prompt and
+waits. It offers two answers, and they differ in lifetime rather than in reach:
+this chat only, or from now on for every session. A standing answer makes later
+calls return immediately with no prompt; a different device still asks. The user
+can take it back from the device tab's picker menu, so do not treat a device that
+worked yesterday as guaranteed today.
+
+Real phones (iPhone Mirroring, an attached Android handset) cannot be started
+this way — they are already someone's running device. Call
+`device_request_control` for those directly.
 
 `device_list` is tiered on purpose: a dev machine holds over a hundred
 simulators. No arguments returns what is running, what this project used before,

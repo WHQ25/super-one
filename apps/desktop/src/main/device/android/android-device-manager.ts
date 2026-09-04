@@ -536,17 +536,7 @@ export class AndroidDeviceManager {
     deviceId: string,
     signal?: AbortSignal,
   ): Promise<DeviceDescriptor | null> {
-    let serial = this.serialFor(deviceId)
-    if (!serial) {
-      const avdId = avdIdFromDeviceId(deviceId)
-      if (!avdId) return null
-      serial = await this.launchAndFind(avdId, signal)
-      if (!serial) return null
-    }
-    await this.waitForBoot(serial, signal)
-
-    const devices = await this.listDevices(signal)
-    const device = devices.find((candidate) => candidate.id === deviceId)
+    const device = await this.power(deviceId, signal)
     if (!device) return null
 
     const previousOwner = this.owners.get(deviceId)
@@ -559,6 +549,28 @@ export class AndroidDeviceManager {
     // Re-read so the descriptor handed back carries the ownership just recorded,
     // rather than the state from a moment before the grant.
     return { ...device, boundSessionId: sessionId }
+  }
+
+  /**
+   * Start the device without taking it.
+   *
+   * The power half of `boot`, split out because booting an emulator and being allowed
+   * to DRIVE it are two different questions — the agent may do the first on its own.
+   * A physical phone has nothing to start, so this only waits for the one already
+   * attached; `serialFor` returning null with no AVD id behind the handle is what
+   * "there is no device here to start" looks like.
+   */
+  async power(deviceId: string, signal?: AbortSignal): Promise<DeviceDescriptor | null> {
+    let serial = this.serialFor(deviceId)
+    if (!serial) {
+      const avdId = avdIdFromDeviceId(deviceId)
+      if (!avdId) return null
+      serial = await this.launchAndFind(avdId, signal)
+      if (!serial) return null
+    }
+    await this.waitForBoot(serial, signal)
+    const devices = await this.listDevices(signal)
+    return devices.find((candidate) => candidate.id === deviceId) ?? null
   }
 
   /**

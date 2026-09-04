@@ -994,6 +994,7 @@ export interface PermissionRequest {
     | 'session_cleanup_confirm'
     | 'automation_confirm'
     | 'webmcp_trust_confirm'
+    | 'device_control_confirm'
   serverName?: string
   message?: string
   subtitle?: string
@@ -1104,6 +1105,27 @@ export interface ComputerUseGrantPayload {
 export interface ComputerUseAlwaysAllowApp {
   app: string
   bundleId: string
+}
+
+/**
+ * A device any session may be handed control of without asking again.
+ *
+ * There are exactly two answers to "may the agent drive this device", and they differ
+ * in LIFETIME, not in reach: once, for the chat that asked — which needs no storage,
+ * because the binding already dies with the session — or from now on, for every
+ * session and every project, which is this. A grant scoped narrower than that would
+ * still re-ask the next time the same user opened the same simulator from a different
+ * folder, which is the friction the standing answer exists to remove.
+ *
+ * Per DEVICE, though: "let the agent drive my simulators" and "let it drive the phone
+ * on my desk" are not the same decision. `deviceName` is carried for the toggle that
+ * shows it — an id the user cannot read is a grant they cannot revoke.
+ */
+export interface DeviceControlGrant {
+  deviceId: string
+  deviceName: string
+  /** Runtime the device was approved on, e.g. "iOS 26.4". Display only. */
+  platformVersion?: string
 }
 
 /** Page-declared WebMCP tool annotations. Self-reported by an untrusted page — hints only. */
@@ -4474,6 +4496,11 @@ export interface AppSettings {
    * Session-scoped grants live only in memory (ComputerUsePolicy).
    */
   computerUseAlwaysAllowApps: ComputerUseAlwaysAllowApp[]
+  /**
+   * Devices any session may take control of without a prompt.
+   * The session-only answer is not persisted — ownership already dies with the session.
+   */
+  deviceControlGrants: DeviceControlGrant[]
   miniAppOrder: Record<string, string[]>
   customAppIconPath: string | null
   browserBookmarks: BrowserBookmark[]
@@ -4614,6 +4641,7 @@ export interface AppSettingsPatch {
   computerUseDedicatedDisplayId?: string | null
   computerUseAllowAllApps?: boolean
   computerUseAlwaysAllowApps?: ComputerUseAlwaysAllowApp[]
+  deviceControlGrants?: DeviceControlGrant[]
   miniAppOrder?: Record<string, string[]>
   customAppIconPath?: string | null
   browserBookmarks?: BrowserBookmark[]

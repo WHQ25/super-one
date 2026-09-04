@@ -143,6 +143,10 @@ export function PermissionPrompt() {
   const isWebMcpTrustConfirm = pendingPermission?.requestKind === 'webmcp_trust_confirm'
   const isSessionCleanupConfirm = pendingPermission?.requestKind === 'session_cleanup_confirm'
   const isAutomationConfirm = pendingPermission?.requestKind === 'automation_confirm'
+  // Deliberately NOT in `isSelfManagedConfirm`: this one keeps the standard prompt,
+  // because a refusal's typed reason is what the device tool reads back to the agent.
+  // It only adds a third button.
+  const isDeviceControlConfirm = pendingPermission?.requestKind === 'device_control_confirm'
   const isSelfManagedConfirm =
     isVideoGenConfirm
     || isConfigConfirm
@@ -154,7 +158,12 @@ export function PermissionPrompt() {
   const elicitationForm = pendingPermission?.elicitationForm ?? []
   const supportsAlwaysPersist = pendingPermission?.supportsAlwaysPersist ?? false
   useRestoreChatInputFocus(!!requestId)
-  const promptConfig = getPermissionPromptConfig(sessionProvider, allowAlwaysAllow, isElicitation)
+  const promptConfig = getPermissionPromptConfig(
+    sessionProvider,
+    allowAlwaysAllow,
+    isElicitation,
+    pendingPermission?.requestKind,
+  )
   const isCodexDecisionPrompt = promptConfig.buttonCount === 4
   const isEditTool = toolName === 'Write' || toolName === 'Edit' || toolName === 'NotebookEdit'
   const autoEligible = useMemo(
@@ -323,7 +332,7 @@ export function PermissionPrompt() {
         return
       }
 
-      if (isCodexDecisionPrompt && e.key === 'Enter' && e.shiftKey && !e.isComposing) {
+      if ((isCodexDecisionPrompt || isDeviceControlConfirm) && e.key === 'Enter' && e.shiftKey && !e.isComposing) {
         e.preventDefault()
         handleAlwaysAllow()
         return
@@ -372,7 +381,7 @@ export function PermissionPrompt() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [requestId, btnCount, handleCancel, handleDeny, handleAcceptEdit, handleAllow, isCodexDecisionPrompt, isEditTool, isCollapsed, suggestionsCount, toggleSuggestion, isSelfManagedConfirm, chatRootRef])
+  }, [requestId, btnCount, handleCancel, handleDeny, handleAcceptEdit, handleAllow, handleAlwaysAllow, isCodexDecisionPrompt, isDeviceControlConfirm, isEditTool, isCollapsed, suggestionsCount, toggleSuggestion, isSelfManagedConfirm, chatRootRef])
 
   if (!pendingPermission) return null
 
@@ -690,12 +699,28 @@ export function PermissionPrompt() {
                 ) : (
                   <ApproveRejectBar
                     approveRef={(el) => { btnRefs.current[0] = el }}
-                    rejectRef={(el) => { btnRefs.current[1] = el }}
+                    rejectRef={(el) => { btnRefs.current[isDeviceControlConfirm ? 2 : 1] = el }}
                     feedbackRef={feedbackRef}
                     onApprove={handleAllow}
                     onReject={handleDeny}
+                    // Two answers that differ only in lifetime read as the same word
+                    // unless both say theirs. "Allow" next to "Always Allow" invites
+                    // the user to assume the first one also sticks.
+                    {...(isDeviceControlConfirm
+                      ? { approveLabel: t('chat.permission.allowForSession') }
+                      : {})}
                     approveSuffix={selectedSuggestions.size > 0 && (
                       <span className="ml-1 text-xs text-success-foreground/70">+{selectedSuggestions.size}</span>
+                    )}
+                    extraActions={isDeviceControlConfirm && (
+                      <PermissionActionButton
+                        ref={(el) => { btnRefs.current[1] = el }}
+                        tone="primary"
+                        kbd="⇧⏎"
+                        onClick={handleAlwaysAllow}
+                      >
+                        {t('chat.permission.alwaysAllowDevice')}
+                      </PermissionActionButton>
                     )}
                     feedback={{
                       value: feedback,

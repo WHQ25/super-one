@@ -153,6 +153,25 @@ const DEVICE_LIST_EMPTY = JSON.stringify({
   note: 'No simulators exist on this machine. Create one in Xcode (or the Activity panel) first.',
 })
 
+const BOOT_STARTED = JSON.stringify({
+  running: true,
+  alreadyRunning: false,
+  controlled: false,
+  device: { id: '427A175E', name: 'iPhone 17 Pro Max', platform: 'iOS 26.4' },
+  note: 'The device is running, but nothing is driving it yet.',
+})
+
+const BOOT_ALREADY = JSON.stringify({
+  running: true,
+  alreadyRunning: true,
+  controlled: false,
+  device: { id: '427A175E', name: 'iPhone 17 Pro Max', platform: 'iOS 26.4' },
+  note: 'The device is running, but nothing is driving it yet.',
+})
+
+const BOOT_REFUSED = '[Error] NO_DEVICE: iPhone cannot be started from here — a ios device of '
+  + 'this kind is either a real device someone else turns on, or already running.'
+
 const CONTROL_GRANTED = JSON.stringify({
   controlled: true,
   alreadyControlled: false,
@@ -183,6 +202,13 @@ export const Gallery: Story = {
       <Note>Device UI grouped in the same family-first format as Automation.</Note>
       <Section title="Discovery">
         {tool('list', { description: '', result: DEVICE_LIST })}
+      </Section>
+      <Section title="Boot">
+        {tool('boot', {
+          description: 'Start the simulator while the build runs',
+          input: { device: '427A175E' },
+          result: BOOT_STARTED,
+        })}
       </Section>
       <Section title="Control">
         {tool('request_control', {
@@ -232,6 +258,18 @@ export const DeviceList: Story = {
     <StoryShell>
       {tool('list', { description: '', result: DEVICE_LIST })}
       {tool('list', { description: '', result: DEVICE_LIST_EMPTY })}
+    </StoryShell>
+  ),
+}
+
+export const DeviceBoot: Story = {
+  name: 'device_boot',
+  render: () => (
+    <StoryShell>
+      {tool('boot', { description: 'Start the simulator while the build runs', input: { device: '427A175E' }, result: BOOT_STARTED })}
+      {tool('boot', { description: 'Start the simulator while the build runs', input: { device: '427A175E' }, result: BOOT_ALREADY })}
+      {tool('boot', { description: 'Start the paired iPhone', input: { device: 'iPhone' }, status: 'streaming', elapsedSeconds: 8 })}
+      {tool('boot', { description: 'Start the paired iPhone', input: { device: 'iPhone' }, result: BOOT_REFUSED, isError: true })}
     </StoryShell>
   ),
 }

@@ -124,12 +124,28 @@ const toolDefs: Array<{ name: DeviceAgentToolName; description: string; shape: R
     },
   },
   {
+    name: 'device_boot',
+    description:
+      'Start a device and grant nothing. Needs no approval, so call it as soon as you know which '
+      + 'device you want — a cold boot costs ~20s and this pays it while you keep working. Returns '
+      + 'once it is running; a device already up returns immediately. It does NOT let you drive it: '
+      + 'device_snapshot and device_act still fail with NO_DEVICE until device_request_control '
+      + 'succeeds. Real phones cannot be started this way. ' + MANUAL,
+    shape: {
+      ...descriptionField,
+      device: z.string()
+        .describe('The id from device_list. A name is matched loosely as a fallback.'),
+    },
+  },
+  {
     name: 'device_request_control',
     description:
       'Ask the user to let this session control one device, and wait for their answer. Every other '
       + 'device_* tool fails with NO_DEVICE until this succeeds — call it first, not after a failure. '
-      + 'Pick the device from device_list yourself; a decline carries feedback that often names a '
-      + 'different one. Returns it bound and booted. ' + MANUAL,
+      + 'Boot it with device_boot first so the wait is not spent on a cold start. Pick the device from '
+      + 'device_list yourself; a decline carries feedback that often names a different one. The user '
+      + 'may approve it standing for this project, in which case later calls return with no prompt. '
+      + 'Returns it bound and booted. ' + MANUAL,
     shape: {
       ...descriptionField,
       device: z.string()

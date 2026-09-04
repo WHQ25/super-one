@@ -22,7 +22,8 @@ const CONFIRM_TIMEOUT_MS = 120_000
 export const DEVICE_REQUEST_CONTROL_QUALIFIED = `${MCP_SUPERONE_TOOL_PREFIX}device_request_control`
 
 export type DeviceControlDecision =
-  | { action: 'accept' }
+  /** `alwaysAllow` = "and stop asking for this device, in any session". */
+  | { action: 'accept'; alwaysAllow: boolean }
   | { action: 'decline' | 'cancel'; reason?: string }
 
 const confirms = new HostConfirmRegistry<DeviceControlDecision>({
@@ -35,10 +36,11 @@ const confirms = new HostConfirmRegistry<DeviceControlDecision>({
 export function resolveDeviceControlConfirm(
   requestId: string,
   action: 'accept' | 'decline',
+  alwaysAllow = false,
   reason?: string,
 ): boolean {
   if (action === 'decline') return confirms.settle(requestId, false, { action: 'decline', reason })
-  return confirms.settle(requestId, true, { action: 'accept' })
+  return confirms.settle(requestId, true, { action: 'accept', alwaysAllow })
 }
 
 export function rejectDeviceControlConfirm(requestId: string, reason: string): boolean {
@@ -68,9 +70,13 @@ export async function awaitDeviceControlConfirm(opts: {
         ...(opts.platform ? { platform: opts.platform } : {}),
         ...(opts.reason ? { description: opts.reason } : {}),
       },
-      // A control grant is per-session by nature — it ends when the preview is
-      // disconnected — so there is nothing durable for "always" to remember.
-      allowAlwaysAllow: false,
+      // Two answers with two lifetimes: this chat, or every chat from now on. "Always"
+      // is still scoped to THIS device — it is not the harness-level "stop asking about
+      // this tool name", which would cover every device including the real phone on the
+      // desk. `requestKind` is what routes the prompt to that third button.
+      allowAlwaysAllow: true,
+      supportsAlwaysPersist: true,
+      requestKind: 'device_control_confirm',
       serverName: 'superone',
       message: opts.message,
     }),

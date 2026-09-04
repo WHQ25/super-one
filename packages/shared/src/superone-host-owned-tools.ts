@@ -92,6 +92,7 @@ export const BROWSER_TOOL_NAMES = [
  */
 export const DEVICE_AGENT_TOOL_NAMES = [
   'device_list',
+  'device_boot',
   'device_request_control',
   'device_snapshot',
   'device_query',

@@ -101,6 +101,7 @@ describe('app-settings-service', () => {
     computerUseDedicatedDisplayId: null,
     computerUseAllowAllApps: false,
     computerUseAlwaysAllowApps: [],
+    deviceControlGrants: [],
     cdpCookiesEnabled: false,
     cdpMockEnabled: false,
     cdpEmulateEnabled: false,
@@ -133,6 +134,26 @@ describe('app-settings-service', () => {
       expect(readAppSettings().webmcpTrustedOrigins).toEqual([
         { origin: 'https://a.test', tools: { search: 'abc123' } },
         { origin: 'https://b.test', tools: {} },
+      ])
+    })
+
+    it('drops device grants that cannot say which device they cover', () => {
+      // A half-read grant is not a narrower grant — it is one nobody can match against
+      // or revoke, so it must not survive the read at all.
+      mocks.readFileSync.mockReturnValue(JSON.stringify({
+        deviceControlGrants: [
+          { deviceId: 'ios-sim:1', deviceName: 'iPhone 17', platformVersion: 'iOS 26.4' },
+          { deviceId: 'ios-sim:1', deviceName: 'duplicate dropped' },
+          { deviceName: 'no device id' },
+          { deviceId: 'ios-sim:2' },
+        ],
+      }))
+
+      expect(readAppSettings().deviceControlGrants).toEqual([
+        { deviceId: 'ios-sim:1', deviceName: 'iPhone 17', platformVersion: 'iOS 26.4' },
+        // Nameless rows still resolve: the id is what the check matches on, and the
+        // device-tab toggle would otherwise have nothing to print.
+        { deviceId: 'ios-sim:2', deviceName: 'ios-sim:2' },
       ])
     })
 
@@ -196,6 +217,7 @@ describe('app-settings-service', () => {
         computerUseDedicatedDisplayId: null,
         computerUseAllowAllApps: false,
         computerUseAlwaysAllowApps: [],
+        deviceControlGrants: [],
         cdpCookiesEnabled: false,
         cdpMockEnabled: false,
         cdpEmulateEnabled: false,
@@ -350,6 +372,7 @@ describe('app-settings-service', () => {
         computerUseDedicatedDisplayId: null,
         computerUseAllowAllApps: false,
         computerUseAlwaysAllowApps: [],
+        deviceControlGrants: [],
         cdpCookiesEnabled: false,
         cdpMockEnabled: false,
         cdpEmulateEnabled: false,

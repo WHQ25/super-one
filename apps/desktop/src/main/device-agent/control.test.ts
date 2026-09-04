@@ -8,6 +8,7 @@ import {
 } from '../ios-simulator/device-port'
 import { clearDeviceControlConfirmsForTests, resolveDeviceControlConfirm } from './control-confirm'
 import { requestDeviceControl } from './control'
+import type { DeviceGrantsPort, DeviceGrantSubject } from './device-grants'
 import type { DeviceRecentsPort } from './device-recents'
 import { DeviceAgentError } from './types'
 
@@ -65,6 +66,13 @@ class FakePort implements IosSimulatorCatalogSource {
     return { phase: chosen ? 'ready' : 'idle', device: chosen }
   }
 
+  /** Powering on without binding. Recorded separately so a test can tell them apart. */
+  async power(udid: string): Promise<IosSimulatorDevice> {
+    const chosen = this.catalog.find((candidate) => candidate.udid === udid)
+    if (!chosen) throw new Error(`Simulator ${udid} was not found.`)
+    return chosen
+  }
+
   subscribe(_udid: string, listener: (frame: IosSimulatorFrame) => void): () => void {
     this.previewListeners.add(listener)
     if (this.autoPreview) queueMicrotask(() => this.emitPreviewFrame())
@@ -93,6 +101,16 @@ function autoAnswer(
       requests.push(event.request.requestId)
       queueMicrotask(() => answer(event.request.requestId))
     },
+  }
+}
+
+/** Standing grants, with the writes recorded so "always" can be told from "once". */
+function fakeGrants(granted: string[] = []): DeviceGrantsPort & { granted: DeviceGrantSubject[] } {
+  const written: DeviceGrantSubject[] = []
+  return {
+    granted: written,
+    isGranted: (deviceId) => granted.includes(deviceId),
+    grant: (device) => { written.push(device) },
   }
 }
 
@@ -332,7 +350,7 @@ describe('requestDeviceControl', () => {
     // user already explained.
     const port = new FakePort([device({ udid: 'a', name: 'iPhone 16' })])
     const host = autoAnswer((requestId) => {
-      resolveDeviceControlConfirm(requestId, 'decline', 'Use the iPad instead')
+      resolveDeviceControlConfirm(requestId, 'decline', false, 'Use the iPad instead')
     })
 
     await expect(requestDeviceControl({
@@ -342,5 +360,76 @@ describe('requestDeviceControl', () => {
       request: { device: 'a' },
     })).rejects.toThrow(/Use the iPad instead/)
     expect(port.booted).toEqual([])
+  })
+
+  it('skips the prompt for a device the user already granted standing', async () => {
+    const port = new FakePort([device({ udid: 'granted', name: 'iPhone 16' })])
+    const grants = fakeGrants(['ios-sim:granted'])
+    const host = autoAnswer((requestId) => resolveDeviceControlConfirm(requestId, 'accept'))
+
+    const result = await requestDeviceControl({
+      sessionId: 's1',
+      ports: port.ports,
+      emitHostEvent: host.emit,
+      grants,
+      request: { device: 'granted' },
+    })
+
+    expect(host.requests).toEqual([])
+    expect(port.booted).toEqual([{ sessionId: 's1', udid: 'granted' }])
+    expect(result).toMatchObject({ controlled: true })
+  })
+
+  it('records a standing grant only when the user chooses always', async () => {
+    const port = new FakePort([device({ udid: 'cold', name: 'iPhone 16' })])
+    const grants = fakeGrants()
+    const host = autoAnswer((requestId) => resolveDeviceControlConfirm(requestId, 'accept', true))
+
+    await requestDeviceControl({
+      sessionId: 's1',
+      ports: port.ports,
+      emitHostEvent: host.emit,
+      grants,
+      request: { device: 'cold' },
+    })
+
+    expect(grants.granted).toEqual([
+      { id: 'ios-sim:cold', name: 'iPhone 16', platformVersion: 'iOS 26.4' },
+    ])
+  })
+
+  it('leaves a plain accept scoped to this chat, so the next session still asks', async () => {
+    const port = new FakePort([device({ udid: 'cold', name: 'iPhone 16' })])
+    const grants = fakeGrants()
+    const host = autoAnswer((requestId) => resolveDeviceControlConfirm(requestId, 'accept'))
+
+    await requestDeviceControl({
+      sessionId: 's1',
+      ports: port.ports,
+      emitHostEvent: host.emit,
+      grants,
+      request: { device: 'cold' },
+    })
+
+    expect(grants.granted).toEqual([])
+  })
+
+  it('still asks for a device that was not granted', async () => {
+    const port = new FakePort([
+      device({ udid: 'granted', name: 'iPhone 16' }),
+      device({ udid: 'other', name: 'iPad Pro' }),
+    ])
+    const grants = fakeGrants(['ios-sim:granted'])
+    const host = autoAnswer((requestId) => resolveDeviceControlConfirm(requestId, 'accept'))
+
+    await requestDeviceControl({
+      sessionId: 's1',
+      ports: port.ports,
+      emitHostEvent: host.emit,
+      grants,
+      request: { device: 'other' },
+    })
+
+    expect(host.requests).toHaveLength(1)
   })
 })

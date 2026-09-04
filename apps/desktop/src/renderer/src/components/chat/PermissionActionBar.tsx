@@ -99,6 +99,7 @@ export function ApproveRejectBar({
   rejectLabel,
   approveDisabled,
   approveSuffix,
+  extraActions,
   feedback,
   feedbackRef,
   approveRef,
@@ -111,6 +112,12 @@ export function ApproveRejectBar({
   approveDisabled?: boolean
   /** Extra content inside the approve button, e.g. a selected-suggestion count. */
   approveSuffix?: ReactNode
+  /**
+   * Buttons between approve and reject — the "and remember it" escalation, when a
+   * prompt has one. Slotted rather than flagged because what "remember" means differs
+   * per prompt (this session, this project, this site) and only the caller knows.
+   */
+  extraActions?: ReactNode
   feedback?: {
     value: string
     onChange: (value: string) => void
@@ -137,6 +144,7 @@ export function ApproveRejectBar({
         {approveLabel ?? t('chat.permission.allow')}
         {approveSuffix}
       </PermissionActionButton>
+      {extraActions}
       <PermissionActionButton ref={rejectRef} tone="reject" onClick={onReject} kbd={focused ? '↵' : 'esc'}>
         {rejectLabel ?? t('chat.permission.deny')}
       </PermissionActionButton>

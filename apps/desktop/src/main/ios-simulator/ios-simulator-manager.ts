@@ -316,12 +316,42 @@ export class IosSimulatorManager {
     if (!before) throw new Error(`Simulator ${udid} was not found.`)
     await this.bind(sessionId, udid)
     if (!before.booted) {
-      await this.simctl.boot(udid)
-      this.superOneBooted.add(udid)
-      this.syncExternalSimulatorWatch()
+      await this.powerOn(before)
       await this.ensureNativeSession(udid)
     }
     return this.announce(await this.getSessionState(udid))
+  }
+
+  /**
+   * Turn a simulator on without taking it.
+   *
+   * Split out of `boot` because starting a device and being allowed to DRIVE it are
+   * two different questions: the agent may boot one on its own, while the binding
+   * that follows still has to be granted. Deliberately does none of what `bind` does
+   * — no ownership, no helper attach — so a simulator powered on here is exactly what
+   * a simulator the user started themselves is, plus an entry in `superOneBooted` so
+   * shutdown still knows we are the ones who started it.
+   */
+  async power(udid: string): Promise<IosSimulatorDevice> {
+    const device = (await this.listDevices()).find((candidate) => candidate.udid === udid)
+    if (!device) throw new Error(`Simulator ${udid} was not found.`)
+    if (!device.available) {
+      throw new Error(device.availabilityError ?? `Simulator ${udid} is unavailable.`)
+    }
+    if (device.booted) return device
+    await this.powerOn(device)
+    // Re-read rather than patching `booted` in: the caller renders this row, and
+    // simctl is the only thing that can say the device actually came up.
+    return (await this.listDevices()).find((candidate) => candidate.udid === udid)
+      ?? { ...device, booted: true }
+  }
+
+  /** The power half of `boot`, given a row `listDevices` just produced. */
+  private async powerOn(device: IosSimulatorDevice): Promise<void> {
+    if (device.booted) return
+    await this.simctl.boot(device.udid)
+    this.superOneBooted.add(device.udid)
+    this.syncExternalSimulatorWatch()
   }
 
   /**

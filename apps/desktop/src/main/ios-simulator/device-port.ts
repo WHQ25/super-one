@@ -21,6 +21,7 @@ export interface IosSimulatorCatalogSource {
     sessionId: string,
     udid: string,
   ): Promise<{ phase: string; device?: IosSimulatorDevice | null }>
+  power(udid: string): Promise<IosSimulatorDevice>
   subscribe(udid: string, listener: (frame: IosSimulatorFrame) => void): () => void
 }
 
@@ -116,6 +117,11 @@ export class IosSimulatorDevicePort implements DevicePlatformPort {
     const udid = parseDeviceId(deviceId)?.native ?? deviceId
     const state = await this.source.boot(sessionId, udid)
     return state.phase === 'ready' && state.device ? toDeviceDescriptor(state.device) : null
+  }
+
+  async power(deviceId: string): Promise<DeviceDescriptor | null> {
+    const udid = parseDeviceId(deviceId)?.native ?? deviceId
+    return toDeviceDescriptor(await this.source.power(udid))
   }
 
   waitForPreview(deviceId: string, signal?: AbortSignal): Promise<void> {

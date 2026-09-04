@@ -8,6 +8,7 @@ import type {
   BrowserBookmarkGroup,
   CodexPermissionPreset,
   ComputerUseAlwaysAllowApp,
+  DeviceControlGrant,
   EffortLevel,
   HarnessId,
   Locale,
@@ -121,6 +122,7 @@ const defaults: AppSettings = {
   computerUseDedicatedDisplayId: null,
   computerUseAllowAllApps: false,
   computerUseAlwaysAllowApps: [],
+  deviceControlGrants: [],
   miniAppOrder: {},
   customAppIconPath: null,
   browserBookmarks: [],
@@ -336,6 +338,36 @@ function readComputerUseAlwaysAllowApps(value: unknown): ComputerUseAlwaysAllowA
     out.push({
       app: typeof a.app === 'string' && a.app.trim() ? a.app.trim() : bundleId,
       bundleId,
+    })
+  }
+  return out
+}
+
+/**
+ * Standing device-control grants, de-duplicated by device id.
+ *
+ * A row with no device id is dropped rather than repaired: a grant that cannot say
+ * WHICH device it covers is not a grant, and keeping a half-read one would silently
+ * widen it to whatever the caller happens to ask about.
+ */
+function readDeviceControlGrants(value: unknown): DeviceControlGrant[] {
+  if (!Array.isArray(value)) return []
+  const out: DeviceControlGrant[] = []
+  const seen = new Set<string>()
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue
+    const entry = item as Record<string, unknown>
+    const deviceId = typeof entry.deviceId === 'string' ? entry.deviceId.trim() : ''
+    if (!deviceId || seen.has(deviceId)) continue
+    seen.add(deviceId)
+    out.push({
+      deviceId,
+      deviceName: typeof entry.deviceName === 'string' && entry.deviceName.trim()
+        ? entry.deviceName.trim()
+        : deviceId,
+      ...(typeof entry.platformVersion === 'string' && entry.platformVersion.trim()
+        ? { platformVersion: entry.platformVersion.trim() }
+        : {}),
     })
   }
   return out
@@ -568,6 +600,7 @@ export function readAppSettings(): AppSettings {
       ),
       computerUseAllowAllApps: typeof data.computerUseAllowAllApps === 'boolean' ? data.computerUseAllowAllApps : defaults.computerUseAllowAllApps,
       computerUseAlwaysAllowApps: readComputerUseAlwaysAllowApps(data.computerUseAlwaysAllowApps),
+      deviceControlGrants: readDeviceControlGrants(data.deviceControlGrants),
       miniAppOrder: readMiniAppOrder(data.miniAppOrder),
       customAppIconPath: typeof data.customAppIconPath === 'string' ? data.customAppIconPath : defaults.customAppIconPath,
       browserBookmarks: readBookmarks(data.browserBookmarks),
@@ -643,6 +676,7 @@ export function readAppSettings(): AppSettings {
       computerUseDedicatedDisplayId: defaults.computerUseDedicatedDisplayId,
       computerUseAllowAllApps: defaults.computerUseAllowAllApps,
       computerUseAlwaysAllowApps: [],
+      deviceControlGrants: [],
       miniAppOrder: {},
       customAppIconPath: defaults.customAppIconPath,
       browserBookmarks: [],
@@ -777,6 +811,9 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     computerUseAlwaysAllowApps: patch.computerUseAlwaysAllowApps === undefined
       ? current.computerUseAlwaysAllowApps
       : readComputerUseAlwaysAllowApps(patch.computerUseAlwaysAllowApps),
+    deviceControlGrants: patch.deviceControlGrants === undefined
+      ? current.deviceControlGrants
+      : readDeviceControlGrants(patch.deviceControlGrants),
     miniAppOrder: patch.miniAppOrder
       ? { ...current.miniAppOrder, ...patch.miniAppOrder }
       : current.miniAppOrder,

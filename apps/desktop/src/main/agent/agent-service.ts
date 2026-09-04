@@ -1061,6 +1061,7 @@ export class AgentService {
                 lastActiveAt: s.lastActiveAt,
                 messageCount: row?.cnt ?? 0,
                 provider: s.provider ?? 'claude',
+                acpAgentId: s.acpAgentId ?? null,
                 selectedModel: live?.snapshot.selectedModel || s.selectedModel || null,
                 status: live?.snapshot.status ?? 'idle',
                 tags: s.tags ?? [],

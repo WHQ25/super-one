@@ -2345,6 +2345,45 @@ describe('AgentService.handleRemoteCommand', () => {
     },
   )
 
+  it('lists remote sessions with live model, status, tags, and ACP identity', async () => {
+    vi.mocked(dbSessions.listSessionsForFolder).mockReturnValue([{
+      sessionId: 'session-acp',
+      title: 'Grok review',
+      lastActiveAt: '2026-09-04T00:00:00.000Z',
+      messageCount: 0,
+      provider: 'acp',
+      acpAgentId: 'grok-build',
+      selectedModel: 'stored-model',
+      tags: ['review'],
+    }])
+    vi.mocked(database.getDb).mockReturnValue({
+      prepare: vi.fn(() => ({ get: vi.fn(() => ({ cnt: 7 })) })),
+    } as never)
+    const service = new AgentService()
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn(() => ({ snapshot: { selectedModel: 'live-model', status: 'streaming' } })),
+    }
+    const respond = vi.fn()
+
+    await service.handleRemoteCommand({
+      type: 'list_sessions',
+      requestId: 'list-1',
+      projectPath: '/project',
+    }, respond)
+
+    expect(respond).toHaveBeenCalledWith('list-1', expect.objectContaining({
+      sessions: [expect.objectContaining({
+        sessionId: 'session-acp',
+        provider: 'acp',
+        acpAgentId: 'grok-build',
+        selectedModel: 'live-model',
+        status: 'streaming',
+        tags: ['review'],
+        messageCount: 7,
+      })],
+    }))
+  })
+
   it('archives a remote session without deleting its transcript', async () => {
     const respond = vi.fn()
     const service = new AgentService()

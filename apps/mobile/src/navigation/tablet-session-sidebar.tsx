@@ -1,13 +1,14 @@
 import { FlatList, Pressable, Text, View } from 'react-native'
 import type { HarnessId } from '@superone/shared/agent-types'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
-import { SwipeSessionRow } from '../ui'
+import { HarnessIcon, SwipeSessionRow } from '../ui'
 
 export type TabletSessionRow = {
   sessionId: string
   title: string
   lastActiveAt?: string
   provider?: HarnessId
+  acpAgentId?: string | null
   messageCount?: number
   gitBranch?: string
   selectedModel?: string | null
@@ -54,7 +55,15 @@ export function TabletSessionSidebar(props: {
               { backgroundColor: tokens.colors.background },
               props.activeSessionId === item.sessionId ? styles.selectedRow : null,
             ]}>
-              <Text numberOfLines={1} style={styles.rowTitle}>{item.title || item.sessionId.slice(0, 8)}</Text>
+              <View style={styles.sessionTitleRow}>
+                <HarnessIcon
+                  provider={item.provider ?? 'claude'}
+                  acpAgentId={item.acpAgentId}
+                  status={item.status}
+                  size={18}
+                />
+                <Text numberOfLines={1} style={[styles.rowTitle, styles.flex]}>{item.title || item.sessionId.slice(0, 8)}</Text>
+              </View>
               <Text numberOfLines={1} style={styles.rowMeta}>
                 {item.provider ?? ''}{item.selectedModel ? ` · ${item.selectedModel}` : ''}{item.status === 'streaming' ? ' · streaming' : ''}
               </Text>

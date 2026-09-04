@@ -761,6 +761,7 @@ export function MobileApp() {
         route={screen}
         title={header}
         provider={selectedProvider}
+        acpAgentId={selectedAcpAgentId}
         streaming={streaming}
         connectionState={connectionState}
         onBack={back}

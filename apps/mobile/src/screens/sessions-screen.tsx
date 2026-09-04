@@ -3,7 +3,7 @@ import { FlatList, Text, View } from 'react-native'
 import type { TabletSessionRow } from '../navigation/tablet-session-sidebar'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { harnessDisplayName } from '../provider-state'
-import { Badge, Button, SwipeSessionRow } from '../ui'
+import { Badge, Button, HarnessIcon, SwipeSessionRow } from '../ui'
 
 function relativeTime(value?: string): string {
   if (!value) return ''
@@ -46,7 +46,14 @@ export function SessionsScreen(props: {
             onDelete={() => props.onDeleteSession(item)}
           >
             <View style={[styles.sessionCard, isRecent(item.lastActiveAt) ? styles.sessionRecent : null]}>
-              <Text numberOfLines={2} style={styles.rowTitle}>{item.title || 'Untitled'}</Text>
+              <View style={styles.sessionTitleRow}>
+                <HarnessIcon
+                  provider={item.provider ?? 'claude'}
+                  acpAgentId={item.acpAgentId}
+                  status={item.status}
+                />
+                <Text numberOfLines={2} style={[styles.rowTitle, styles.flex]}>{item.title || 'Untitled'}</Text>
+              </View>
               <View style={styles.sessionMeta}>
                 <Badge label={harnessDisplayName(item.provider ?? 'claude')} />
                 {item.selectedModel ? <Badge label={item.selectedModel} /> : null}

@@ -757,8 +757,10 @@ generated titles, quick session switching, file chrome, and terminal controls ar
 implemented. Session rows now include model/status/tags and expose accessible swipe
 actions backed by real archive/delete RPCs; slash catalogs merge harness, project,
 and skill commands into a sectioned icon UI, mentions are sectioned, and the Todo
-panel expands into its full task list. Remaining shell work is harness icon parity,
-received-file inbox polish, and the simulator screenshot/Pinyin acceptance pass.
+panel expands into its full task list. Harness marks now reuse the Desktop silhouettes
+for all six providers (including ACP Grok/OpenCode identity), and the received-file
+queue uses the shared adaptive sheet treatment. The simulator screenshot/Pinyin
+acceptance pass is the remaining shell work.
 
 #### WP-28 — T3: chat-view tool family coverage
 

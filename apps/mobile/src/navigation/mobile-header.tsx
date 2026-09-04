@@ -1,9 +1,9 @@
-import { Bot, ArrowLeft, MessageSquare, Settings, SquareTerminal } from 'lucide-react-native'
+import { ArrowLeft, MessageSquare, Settings, SquareTerminal } from 'lucide-react-native'
 import { ActivityIndicator, Pressable, Text, View } from 'react-native'
 import type { HarnessId } from '@superone/shared/agent-types'
 import { harnessDisplayName } from '../provider-state'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
-import { Badge } from '../ui'
+import { Badge, HarnessIcon } from '../ui'
 import type { MobileRoute } from './mobile-navigator'
 
 export function mobileHeaderTitle(
@@ -25,6 +25,7 @@ export function MobileHeader(props: {
   route: MobileRoute
   title: string
   provider: HarnessId
+  acpAgentId?: string | null
   streaming: boolean
   connectionState: 'connected' | 'reconnecting' | 'offline'
   onBack: () => void
@@ -44,7 +45,14 @@ export function MobileHeader(props: {
       ) : <View />}
       <View style={styles.headerTitleGroup}>
         <View style={styles.headerTitleRow}>
-          {chat ? <Bot color={tokens.colors.primary} size={18} /> : null}
+          {chat ? (
+            <HarnessIcon
+              provider={props.provider}
+              acpAgentId={props.acpAgentId}
+              status={props.streaming ? 'streaming' : 'idle'}
+              size={18}
+            />
+          ) : null}
           <Text numberOfLines={1} style={styles.title}>{props.title}</Text>
           {chat && props.streaming ? <ActivityIndicator color={tokens.colors.primary} size="small" /> : null}
         </View>

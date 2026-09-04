@@ -1,7 +1,8 @@
 import { useCallback, useRef, useState } from 'react'
 import { File, Paths } from 'expo-file-system'
 import * as Sharing from 'expo-sharing'
-import { Image, Modal, Pressable, Text, View } from 'react-native'
+import { CircleAlert, FileCheck2, FileDown } from 'lucide-react-native'
+import { ActivityIndicator, Image, Text, View } from 'react-native'
 import { MAX_DOWNLOAD_BYTES, type RelayClient } from '@superone/relay-client'
 import type {
   AgentEvent,
@@ -12,7 +13,8 @@ import type {
 import { formatFileSize, safeSharedFileName } from './shared-file-state'
 import { randomId } from './ids'
 import { InFlightKeys } from './in-flight-keys'
-import { useMobileStyles } from './theme/context'
+import { useMobileStyles, useMobileTheme } from './theme/context'
+import { Badge, Button, Sheet } from './ui'
 
 type SharedFileEvent = Extract<AgentEvent, { type: 'shared_file' }>
 type InboxItem = {
@@ -135,31 +137,52 @@ export function SharedFileSheet(props: {
   inbox: ReturnType<typeof useSharedFileInbox>
 }) {
   const styles = useMobileStyles()
+  const { tokens } = useMobileTheme()
   const { current, pendingCount } = props.inbox
   const file = current?.event.file
+  const statusLabel = current?.status === 'ready'
+    ? 'Ready'
+    : current?.status === 'error'
+      ? 'Failed'
+      : 'Downloading'
+  const StatusIcon = current?.status === 'ready'
+    ? FileCheck2
+    : current?.status === 'error'
+      ? CircleAlert
+      : FileDown
   return (
-    <Modal visible={!!current} transparent animationType="fade">
-      <View style={styles.modal}>
-        <View style={styles.settingsCard}>
-          <Text style={styles.sectionTitle}>File received</Text>
+    <Sheet visible={!!current} title="File received" onDismiss={props.inbox.dismiss}>
+      <View style={styles.sharedFileHeader}>
+        <View style={styles.iconBox}>
+          {current?.status === 'downloading'
+            ? <ActivityIndicator color={tokens.colors.primary} />
+            : <StatusIcon color={current?.status === 'error' ? tokens.colors.error : tokens.colors.primary} size={23} />}
+        </View>
+        <View style={styles.flex}>
           <Text numberOfLines={2} style={styles.rowTitle}>{file?.name}</Text>
           {file?.caption ? <Text style={styles.rowMeta}>{file.caption}</Text> : null}
           {file ? <Text style={styles.rowMeta}>{formatFileSize(file.size)} · {file.mimeType}</Text> : null}
-          {current?.status === 'downloading' ? <Text style={styles.rowMeta}>Downloading securely…</Text> : null}
-          {current?.error ? <Text style={styles.errorText}>{current.error}</Text> : null}
-          {current?.status === 'ready' && current.uri && file?.mimeType.startsWith('image/') ? (
-            <Image resizeMode="contain" source={{ uri: current.uri }} style={styles.sharedFilePreview} />
-          ) : null}
-          {current?.status === 'ready' ? (
-            <Pressable style={styles.btn} onPress={() => void props.inbox.open()}>
-              <Text style={styles.btnText}>Open or share</Text>
-            </Pressable>
-          ) : null}
-          <Pressable style={styles.secondaryBtn} onPress={props.inbox.dismiss}>
-            <Text style={styles.secondaryBtnText}>{pendingCount > 1 ? `Next (${pendingCount - 1})` : 'Dismiss'}</Text>
-          </Pressable>
         </View>
+        <Badge
+          label={statusLabel}
+          tone={current?.status === 'ready' ? 'success' : current?.status === 'error' ? 'error' : 'neutral'}
+        />
       </View>
-    </Modal>
+      {current?.status === 'downloading' ? <Text style={styles.rowMeta}>Downloading securely…</Text> : null}
+      {current?.error ? <Text style={styles.errorText}>{current.error}</Text> : null}
+      {current?.status === 'ready' && current.uri && file?.mimeType.startsWith('image/') ? (
+        <Image resizeMode="contain" source={{ uri: current.uri }} style={styles.sharedFilePreview} />
+      ) : null}
+      <View style={styles.sharedFileActions}>
+        {current?.status === 'ready' ? (
+          <Button label="Open or share" onPress={() => void props.inbox.open()} />
+        ) : null}
+        <Button
+          label={pendingCount > 1 ? `Next file (${pendingCount - 1} queued)` : 'Dismiss'}
+          onPress={props.inbox.dismiss}
+          variant="secondary"
+        />
+      </View>
+    </Sheet>
   )
 }

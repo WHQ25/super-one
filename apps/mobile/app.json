@@ -4,9 +4,12 @@
     "slug": "superone",
     "scheme": "superone",
     "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "orientation": "default",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "dark",
     "splash": {
       "image": "./assets/icon.png",
       "resizeMode": "contain",
@@ -19,7 +22,9 @@
       "bundleIdentifier": "com.superone.superone-remote",
       "infoPlist": {
         "NSLocalNetworkUsageDescription": "SuperOne can connect to your desktop on the local network.",
-        "NSBonjourServices": ["_superone._tcp."]
+        "NSBonjourServices": [
+          "_superone._tcp."
+        ]
       }
     },
     "android": {
@@ -29,7 +34,26 @@
         "backgroundColor": "#111111"
       }
     },
-    "plugins": ["expo-dev-client"],
+    "plugins": [
+      "expo-dev-client",
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow SuperOne to scan desktop pairing QR codes.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow SuperOne to attach images to chat.",
+          "cameraPermission": "Allow SuperOne to scan desktop pairing QR codes.",
+          "microphonePermission": false
+        }
+      ]
+    ],
     "extra": {
       "supportsExpoGo": false
     }

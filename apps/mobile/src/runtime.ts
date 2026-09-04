@@ -6,13 +6,20 @@ import type {
   PermissionRequest,
   RemoteCommand,
 } from '@superone/shared/agent-types'
-import { applyEventToSession, createDefaultPerSessionState } from '@superone/chat-core'
+import { applyEventToSession, createDefaultChatCoreSession } from '@superone/chat-core'
 import { AGENT_EVENT_BATCH_MS } from '@superone/shared/agent-event-batcher'
 import type { RelayClient } from '@superone/relay-client'
 import { restoreSession } from '@superone/relay-client'
 import { randomId } from './ids'
 
-type SessionState = ReturnType<typeof createDefaultPerSessionState>
+type SessionState = ReturnType<typeof createDefaultChatCoreSession>
+type SharedFileEvent = Extract<AgentEvent, { type: 'shared_file' }>
+type SharedFileProgressEvent = Extract<AgentEvent, { type: 'shared_file_progress' }>
+
+export type ChatRuntimeHooks = {
+  onSharedFile?: (event: SharedFileEvent) => void
+  onSharedFileProgress?: (event: SharedFileProgressEvent) => void
+}
 
 export type SystemInfo = {
   models?: { id?: string; name?: string }[]
@@ -25,8 +32,22 @@ export type SystemInfo = {
   error?: string
 }
 
+export type CreateSessionOptions = {
+  provider?: string
+  permissionMode?: string
+  effort?: string
+  model?: string
+  gitBranch?: string
+  worktreePath?: string
+  worktreeBranch?: string
+  worktreeMode?: 'branch' | 'attach' | 'detach'
+  worktreeBranchName?: string
+  worktreeCarryLocalChanges?: boolean
+  additionalDirectories?: string[]
+}
+
 export class ChatRuntime {
-  session: SessionState = createDefaultPerSessionState()
+  session: SessionState = createDefaultChatCoreSession()
   projectPath = ''
   sessionId = ''
   provider: HarnessId | string = 'claude'
@@ -35,36 +56,51 @@ export class ChatRuntime {
   models: { id?: string; name?: string }[] = []
   private timer: ReturnType<typeof setTimeout> | null = null
   private dirty = false
+  private eventEpoch = 0
+  private restoreGeneration = 0
+  private restoreQueue: Promise<void> = Promise.resolve()
 
   constructor(
     private readonly client: RelayClient,
     private readonly onPaint: (session: SessionState) => void,
+    private readonly hooks: ChatRuntimeHooks = {},
   ) {}
 
   async open(projectPath: string, sessionId: string): Promise<void> {
     this.projectPath = projectPath
     this.sessionId = sessionId
-    this.session = createDefaultPerSessionState()
-    const restored = await restoreSession(this.client, projectPath, sessionId)
-    this.session.messages = restored.messages
-    if (restored.provider) this.session.sessionProvider = restored.provider as SessionState['sessionProvider']
-    if (restored.provider) this.provider = restored.provider
-    if (restored.snapshot.permissionMode) {
-      this.session.permissionMode = restored.snapshot.permissionMode as SessionState['permissionMode']
-    }
-    if (restored.snapshot.status === 'streaming' || restored.snapshot.status === 'idle') {
-      this.session.status = restored.snapshot.status
-    }
-    for (const msg of restored.snapshot.inProgressMessages ?? []) {
-      if (!this.session.messages.some((m) => m.id === msg.id)) this.session.messages.push(msg)
-    }
-    for (const ev of restored.snapshot.pendingInteractions ?? []) {
-      this.apply(ev)
-    }
-    for (const batch of restored.liveBatches) {
-      for (const ev of batch) this.apply(ev as AgentEvent)
-    }
-    this.flush()
+    const generation = ++this.restoreGeneration
+    const restore = this.restoreQueue.then(async () => {
+      if (generation !== this.restoreGeneration) return
+      const restored = await restoreSession(this.client, projectPath, sessionId)
+      if (generation !== this.restoreGeneration) return
+      let session = createDefaultChatCoreSession()
+      session.messages = [...restored.messages]
+      if (restored.provider) session.sessionProvider = restored.provider as SessionState['sessionProvider']
+      if (restored.snapshot.permissionMode) {
+        session.permissionMode = restored.snapshot.permissionMode as SessionState['permissionMode']
+      }
+      if (restored.snapshot.status === 'streaming' || restored.snapshot.status === 'idle') {
+        session.status = restored.snapshot.status
+      }
+      for (const msg of restored.snapshot.inProgressMessages ?? []) {
+        if (!session.messages.some((m) => m.id === msg.id)) session.messages.push(msg)
+      }
+      const restoreEvents = [
+        ...(restored.snapshot.pendingInteractions ?? []),
+        ...restored.liveBatches.flat() as AgentEvent[],
+      ]
+      for (const event of restoreEvents) {
+        if (!this.handleSideEvent(event)) session = this.reduce(session, event)
+      }
+      this.session = session
+      this.eventEpoch = restored.epoch
+      if (restored.provider) this.provider = restored.provider
+      this.dirty = true
+      this.flush()
+    })
+    this.restoreQueue = restore.catch(() => {})
+    await restore
   }
 
   reopen(): Promise<void> {
@@ -72,8 +108,9 @@ export class ChatRuntime {
     return this.open(this.projectPath, this.sessionId)
   }
 
-  async create(projectPath: string, opts: { provider?: string; permissionMode?: string; model?: string } = {}): Promise<string> {
+  async create(projectPath: string, opts: CreateSessionOptions = {}): Promise<string> {
     const sessionId = randomId()
+    if (opts.provider) this.provider = opts.provider
     const res = await this.client.request({
       type: 'create_session',
       requestId: randomId(),
@@ -81,7 +118,19 @@ export class ChatRuntime {
       projectPath,
       ...(opts.provider ? { provider: opts.provider as HarnessId } : {}),
       ...(opts.permissionMode ? { permissionMode: opts.permissionMode } : {}),
+      ...(opts.effort ? { effort: opts.effort } : {}),
       ...(opts.model ? { model: opts.model } : {}),
+      ...(opts.gitBranch ? { gitBranch: opts.gitBranch } : {}),
+      ...(opts.worktreePath ? { worktreePath: opts.worktreePath } : {}),
+      ...(opts.worktreeBranch ? { worktreeBranch: opts.worktreeBranch } : {}),
+      ...(opts.worktreeMode ? { worktreeMode: opts.worktreeMode } : {}),
+      ...(opts.worktreeBranchName ? { worktreeBranchName: opts.worktreeBranchName } : {}),
+      ...(opts.worktreeCarryLocalChanges !== undefined
+        ? { worktreeCarryLocalChanges: opts.worktreeCarryLocalChanges }
+        : {}),
+      ...(opts.additionalDirectories?.length
+        ? { additionalDirectories: opts.additionalDirectories }
+        : {}),
     } as RemoteCommand) as { ok?: boolean; sessionId?: string; error?: string }
     if (res.error || res.ok === false) throw new Error(res.error ?? 'create_session failed')
     const id = res.sessionId ?? sessionId
@@ -108,29 +157,43 @@ export class ChatRuntime {
     return info
   }
 
-  ingest(events: unknown[]): void {
+  ingest(events: unknown[], epoch: number = this.eventEpoch): void {
+    if (epoch !== this.eventEpoch) return
     for (const ev of events) this.apply(ev as AgentEvent)
     this.schedule()
   }
 
-  send(content: string, extra: { images?: ImageAttachment[] } = {}): Promise<unknown> {
+  get epoch(): number {
+    return this.eventEpoch
+  }
+
+  dispose(): void {
+    this.restoreGeneration += 1
+    if (this.timer) clearTimeout(this.timer)
+    this.timer = null
+    this.dirty = false
+  }
+
+  send(content: string, extra: { images?: ImageAttachment[]; model?: string } = {}): void {
     const cmd: RemoteCommand = {
       type: 'send_message',
       sessionId: this.sessionId,
       projectPath: this.projectPath,
       content,
+      provider: this.provider as HarnessId,
+      ...(extra.model ? { model: extra.model } : {}),
       ...(extra.images?.length ? { images: extra.images } : {}),
     }
-    return this.client.request(cmd)
+    this.client.send(cmd)
   }
 
-  interrupt(): Promise<unknown> {
+  interrupt(): void {
     const cmd: RemoteCommand = {
       type: 'interrupt',
       sessionId: this.sessionId,
       projectPath: this.projectPath,
     }
-    return this.client.request(cmd)
+    this.client.send(cmd)
   }
 
   setPermissionMode(mode: string): void {
@@ -152,18 +215,23 @@ export class ChatRuntime {
     } as RemoteCommand) as Promise<{ items?: unknown[]; error?: string }>
   }
 
-  respondPermission(requestId: string, decision: boolean): Promise<unknown> {
+  respondPermission(
+    requestId: string,
+    decision: boolean,
+    formAnswers?: Record<string, unknown>,
+  ): void {
     const cmd: RemoteCommand = {
       type: 'respond_permission',
       requestId,
       decision,
       sessionId: this.sessionId,
       projectPath: this.projectPath,
+      ...(formAnswers ? { formAnswers } : {}),
     }
-    return this.client.request(cmd)
+    this.client.send(cmd)
   }
 
-  respondPlan(requestId: string, approved: boolean, feedback?: string): Promise<unknown> {
+  respondPlan(requestId: string, approved: boolean, feedback?: string): void {
     const cmd: RemoteCommand = {
       type: 'respond_plan_approval',
       requestId,
@@ -172,10 +240,10 @@ export class ChatRuntime {
       projectPath: this.projectPath,
       ...(feedback ? { feedback } : {}),
     }
-    return this.client.request(cmd)
+    this.client.send(cmd)
   }
 
-  answerQuestion(requestId: string, answers: Record<string, string>): Promise<unknown> {
+  answerQuestion(requestId: string, answers: Record<string, string>): void {
     const cmd: RemoteCommand = {
       type: 'answer_question',
       requestId,
@@ -183,17 +251,17 @@ export class ChatRuntime {
       sessionId: this.sessionId,
       projectPath: this.projectPath,
     }
-    return this.client.request(cmd)
+    this.client.send(cmd)
   }
 
-  dismissQuestion(requestId: string): Promise<unknown> {
+  dismissQuestion(requestId: string): void {
     const cmd: RemoteCommand = {
       type: 'dismiss_question',
       requestId,
       sessionId: this.sessionId,
       projectPath: this.projectPath,
     }
-    return this.client.request(cmd)
+    this.client.send(cmd)
   }
 
   get pendingPermission(): PermissionRequest | undefined {
@@ -217,9 +285,26 @@ export class ChatRuntime {
   }
 
   private apply(event: AgentEvent): void {
-    const patch = applyEventToSession(this.session, event)
-    this.session = { ...this.session, ...patch }
+    if (this.handleSideEvent(event)) return
+    this.session = this.reduce(this.session, event)
     this.dirty = true
+  }
+
+  private handleSideEvent(event: AgentEvent): boolean {
+    if (event.type === 'shared_file') {
+      this.hooks.onSharedFile?.(event)
+      return true
+    }
+    if (event.type === 'shared_file_progress') {
+      this.hooks.onSharedFileProgress?.(event)
+      return true
+    }
+    return false
+  }
+
+  private reduce(session: SessionState, event: AgentEvent): SessionState {
+    const patch = applyEventToSession(session, event)
+    return { ...session, ...patch }
   }
 
   private schedule(): void {
@@ -231,6 +316,8 @@ export class ChatRuntime {
   }
 
   flush(): void {
+    if (this.timer) clearTimeout(this.timer)
+    this.timer = null
     if (!this.dirty) return
     this.dirty = false
     this.onPaint(this.session)

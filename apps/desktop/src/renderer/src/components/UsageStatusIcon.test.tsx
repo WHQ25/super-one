@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const hoisted = vi.hoisted(() => {
@@ -117,7 +117,9 @@ describe('UsageStatusIcon rate-limit tip', () => {
     hoisted.codexThreadId = null
     vi.stubGlobal('app', {
       acpGetRateLimits: vi.fn(async () => null),
-      claudeListAccounts: vi.fn(async () => []),
+      claudeListAccounts: vi.fn(async () => [
+        { credentialDir: null, loggedIn: true, identityKey: 'me@example.com|org-a', email: 'me@example.com', orgId: 'org-a', orgName: 'Personal', subscriptionType: 'max', projectsDirectory: null },
+      ]),
       claudeGetRateLimits: vi.fn(async () => ({
         planType: 'pro',
         windows: [{ label: '5h', usedPercent: 82, resetsAt: Math.floor(Date.now() / 1000) + 3600 }],
@@ -133,6 +135,25 @@ describe('UsageStatusIcon rate-limit tip', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
+  })
+
+  it('names the account in the popover even when only one is signed in', async () => {
+    // The default domain's identity changes whenever the user runs `claude /login` in their own
+    // terminal, so "only one account" does not mean "no need to say which one".
+    render(<UsageStatusIcon />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    // fireEvent, not userEvent: this suite runs on fake timers, which deadlock user-event and
+    // every findBy*/waitFor helper.
+    await act(async () => {
+      // The gauge trigger carries the remaining-percent badge (82% used -> 18% left).
+      fireEvent.click(screen.getByText('18%').closest('button')!)
+      await Promise.resolve()
+    })
+
+    expect(screen.getByText('me@example.com')).toBeInTheDocument()
   })
 
   it('keeps the first-party gauge when the session runs on a non-default Claude account', async () => {

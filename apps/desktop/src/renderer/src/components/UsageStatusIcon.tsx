@@ -332,8 +332,10 @@ function RateLimitTipHost({ tip, children }: { tip: RateLimitTipInfo | null; chi
   )
 }
 
-function RateLimitGauge({ title, planType, badgeRemaining, onOpen, onRefresh, refreshing, fetchedAt, highlight, children }: {
+function RateLimitGauge({ title, subtitle, planType, badgeRemaining, onOpen, onRefresh, refreshing, fetchedAt, highlight, children }: {
   title: string
+  /** Identity line under the title — which account these numbers belong to. */
+  subtitle?: string | null
   planType: string | null
   badgeRemaining: number | null
   onOpen?: () => void
@@ -379,9 +381,12 @@ function RateLimitGauge({ title, planType, badgeRemaining, onOpen, onRefresh, re
       </PopoverTrigger>
       <PopoverContent side="top" align="end" className="w-auto p-3">
         <div className="flex min-w-52 flex-col gap-2 text-xs">
-          <div className="flex items-center justify-between gap-3">
-            <span className="font-medium">{title}</span>
-            {planType && <span className="opacity-50">{planType}</span>}
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-medium">{title}</span>
+              {planType && <span className="opacity-50">{planType}</span>}
+            </div>
+            {subtitle && <span className="truncate opacity-50">{subtitle}</span>}
           </div>
           {children}
           {(onRefresh || refreshing || fetchedAt != null) && (
@@ -491,8 +496,10 @@ function ClaudeRateLimitIcon({ credentialDir, status, tip, highlight }: { creden
       .then((accounts) => {
         if (cancelled) return
         const match = accounts.find((a) => a.credentialDir === credentialDir)
-        // Named only when there is something to disambiguate — a lone account needs no label.
-        setAccountEmail(accounts.length > 1 ? (match?.email ?? null) : null)
+        // Always named, even with one account: the default domain's identity changes whenever the
+        // user runs `claude /login` in their own terminal, and the meter is the only place that
+        // says whose quota is being spent.
+        setAccountEmail(match?.email ?? null)
       })
       .catch(() => {})
     return () => { cancelled = true }
@@ -518,8 +525,7 @@ function ClaudeRateLimitIcon({ credentialDir, status, tip, highlight }: { creden
 
   return (
     <RateLimitTipHost tip={tip}>
-      <RateLimitGauge title={t('usageGauge.claudeTitle')} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt} highlight={highlight}>
-        {accountEmail && <div className="truncate opacity-60">{accountEmail}</div>}
+      <RateLimitGauge title={t('usageGauge.claudeTitle')} subtitle={accountEmail} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt} highlight={highlight}>
         {limits.windows.map((w) => (
           <WindowRow key={w.label} label={w.label} usedPercent={w.usedPercent} resetsAt={w.resetsAt} />
         ))}

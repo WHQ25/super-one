@@ -5,6 +5,7 @@ import type { PermissionMode } from '@superone/shared/agent-types'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import type { AutoModeEligibility } from '@/lib/auto-mode-eligibility'
 import { modes, PermissionModeList } from './PermissionModeList'
+import { PERMISSION_POPOVER_CLASS } from './permissionPopoverStyles'
 
 export function PermissionModePopover({
   activeMode,
@@ -36,7 +37,7 @@ export function PermissionModePopover({
           {!compact && <ChevronDown className={`size-3 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />}
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" side="top" className="w-52 border-border bg-popover p-1">
+      <PopoverContent align="start" side="top" className={PERMISSION_POPOVER_CLASS}>
         <PermissionModeList
           activeMode={activeMode}
           availableModes={availableModes}

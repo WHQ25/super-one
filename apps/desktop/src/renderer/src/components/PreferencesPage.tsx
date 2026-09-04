@@ -17,8 +17,10 @@ import {
   DropdownMenuTrigger,
 } from '@superone/ui/components/ui/dropdown-menu'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
+import { cn } from '@superone/ui/lib/utils'
 import { modes as permissionModes } from '@/components/chat/PermissionModeSelector'
 import { PermissionModeList } from '@/components/chat/PermissionModeList'
+import { PERMISSION_POPOVER_CLASS } from '@/components/chat/permissionPopoverStyles'
 import { sandboxModes } from '@/components/chat/SandboxModeSelector'
 import {
   ClaudeModelList,
@@ -266,7 +268,7 @@ function ClaudePreferencesPage() {
                     <ChevronDown className={`size-3 transition-transform duration-200 ${permOpen ? 'rotate-180' : ''}`} />
                   </button>
                 </PopoverTrigger>
-                <PopoverContent align="end" side="bottom" className="w-52 border-border bg-card p-1">
+                <PopoverContent align="end" side="bottom" className={cn(PERMISSION_POPOVER_CLASS, 'bg-card')}>
                   <PermissionModeList
                     activeMode={activePermMode}
                     autoEligibility={autoPlanEligibility}

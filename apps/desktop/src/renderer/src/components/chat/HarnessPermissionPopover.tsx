@@ -13,6 +13,7 @@ import { CursorPermissionModeList, cursorPermissionModeOption } from './CursorPe
 import { DEEPSEEK_PERMISSION_MODES } from './deepseekPermissionModes'
 import { OPENCODE_PERMISSION_MODES } from './opencodePermissionModes'
 import { modes, PermissionModeList } from './PermissionModeList'
+import { PERMISSION_POPOVER_CLASS } from './permissionPopoverStyles'
 
 /**
  * A launch config carries a plain `PermissionMode`, so the Codex presets it can express are
@@ -36,7 +37,6 @@ interface Trigger {
   icon: ReactNode
   toneClass: string
   content: ReactNode
-  width: string
 }
 
 /**
@@ -68,7 +68,6 @@ export function HarnessPermissionPopover({
       label: t(option.labelKey),
       icon: option.triggerIcon,
       toneClass: option.triggerToneClass,
-      width: 'w-72',
       content: (
         <CodexPermissionPresetList
           activePreset={preset}
@@ -83,7 +82,6 @@ export function HarnessPermissionPopover({
       label: t(`chat.acpPermissionModes.${option.labelKey}.label`),
       icon: option.icon,
       toneClass: `${option.color} ${option.hoverBg}`,
-      width: 'w-56',
       content: <AcpPermissionModeList activeMode={option.id} onSelect={select} />,
     }
   } else if (harnessId === 'cursor') {
@@ -93,7 +91,6 @@ export function HarnessPermissionPopover({
       label: t(`chat.cursorPermissionModes.${option.labelKey}.label`),
       icon: option.icon,
       toneClass: `${option.color} ${option.hoverBg}`,
-      width: 'w-56',
       content: (
         <CursorPermissionModeList
           activeMode={mode}
@@ -114,7 +111,6 @@ export function HarnessPermissionPopover({
       label: t(`chat.permissionModes.${active.id}.label`),
       icon: active.icon,
       toneClass: `${active.color} ${active.hoverBg}`,
-      width: 'w-52',
       content: <PermissionModeList activeMode={active.id} availableModes={availableModes} onSelect={select} />,
     }
   }
@@ -132,7 +128,7 @@ export function HarnessPermissionPopover({
           <ChevronDown className={`size-3 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" side="top" className={`${trigger.width} border-border bg-popover p-1`}>
+      <PopoverContent align="start" side="top" className={PERMISSION_POPOVER_CLASS}>
         {trigger.content}
       </PopoverContent>
     </Popover>

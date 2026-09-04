@@ -5,6 +5,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components
 import { useActiveSession, useScopedSessionActions } from '@/stores/chat'
 import { AcpPermissionModeList, acpPermissionModeOption } from './AcpPermissionModeList'
 import { ACP_PERMISSION_MODES, type AcpPermissionModeId } from './acpPermissionModes'
+import { PERMISSION_POPOVER_CLASS } from './permissionPopoverStyles'
 
 /**
  * Grok Build permission baseline selector.
@@ -40,7 +41,7 @@ export function AcpPermissionSelector({ compact = false }: { compact?: boolean }
           )}
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" side="top" className="w-56 border-border bg-popover p-1">
+      <PopoverContent align="start" side="top" className={PERMISSION_POPOVER_CLASS}>
         <AcpPermissionModeList
           activeMode={active.id}
           onSelect={(mode) => {

@@ -5,6 +5,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components
 import { useActiveSession, useScopedSessionActions } from '@/stores/chat'
 import { DEFAULT_CODEX_PERMISSION_PRESET, type CodexPermissionPreset } from '@superone/shared/agent-types'
 import { CodexPermissionPresetList, codexPermissionPresetOptions } from './CodexPermissionPresetList'
+import { PERMISSION_POPOVER_CLASS } from './permissionPopoverStyles'
 
 interface CodexPermissionSelectorProps {
   compact?: boolean
@@ -31,7 +32,7 @@ export function CodexPermissionSelector({ compact = false }: CodexPermissionSele
           {!compact && <ChevronDown className={`size-3 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />}
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" side="top" className="w-72 border-border bg-popover p-2">
+      <PopoverContent align="start" side="top" className={PERMISSION_POPOVER_CLASS}>
         <CodexPermissionPresetList
           activePreset={preset}
           onSelect={(nextPreset) => {

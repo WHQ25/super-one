@@ -10,6 +10,7 @@ import {
   DEEPSEEK_PERMISSION_MODE_META,
   deepseekPermissionModeMeta,
 } from './deepseekPermissionModes'
+import { PERMISSION_POPOVER_CLASS } from './permissionPopoverStyles'
 
 /**
  * dsh presets rather than SuperOne's generic mode names, because the preset is
@@ -71,7 +72,7 @@ export function DeepseekPermissionSelector({ compact = false }: { compact?: bool
           {!compact && <ChevronDown className={`size-3 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />}
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" side="top" className="w-64 border-border bg-popover p-1">
+      <PopoverContent align="start" side="top" className={PERMISSION_POPOVER_CLASS}>
         <div className="px-2 py-1.5 text-xs text-muted-foreground">{t('chat.permissionModeTitle')}</div>
         {DEEPSEEK_PERMISSION_MODE_META.map((meta) => {
           const tone = TONE[meta.preset]

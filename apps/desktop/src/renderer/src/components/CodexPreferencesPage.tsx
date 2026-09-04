@@ -14,6 +14,7 @@ import { CodexImportConfigSection } from '@/components/CodexImportConfigSection'
 import { CodexRealtimeVoicePreference } from '@/components/CodexRealtimeVoicePreference'
 import { formatCodexModelName, formatReasoningEffortLabel } from '@/components/chat/chat-input-utils'
 import { CodexPermissionPresetList, codexPermissionPresetOptions } from '@/components/chat/CodexPermissionPresetList'
+import { PERMISSION_POPOVER_CLASS } from '@/components/chat/permissionPopoverStyles'
 import { CodexModelList, CodexReasoningEffortList } from '@/components/chat/ModelSelectorLists'
 import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
@@ -208,7 +209,7 @@ export function CodexPreferencesPage() {
                       <ChevronDown className={cn('size-3 transition-transform duration-200', permissionOpen && 'rotate-180')} />
                     </button>
                   </PopoverTrigger>
-                  <PopoverContent align="end" side="bottom" className="w-72 border-border bg-popover p-2">
+                  <PopoverContent align="end" side="bottom" className={PERMISSION_POPOVER_CLASS}>
                     <CodexPermissionPresetList activePreset={activePermissionPreset} onSelect={handlePermissionPresetSelect} />
                   </PopoverContent>
                 </Popover>

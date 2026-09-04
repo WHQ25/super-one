@@ -9,6 +9,7 @@ import {
   resolveCursorPermissionMode,
 } from './cursorPermissionModes'
 import { CursorPermissionModeList, cursorPermissionModeOption } from './CursorPermissionModeList'
+import { PERMISSION_POPOVER_CLASS } from './permissionPopoverStyles'
 
 /**
  * Status-bar permission control for Cursor sessions.
@@ -47,7 +48,7 @@ export function CursorPermissionSelector({ compact = false }: { compact?: boolea
           {!compact && <ChevronDown className={`size-3 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />}
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" side="top" className="w-56 border-border bg-popover p-1">
+      <PopoverContent align="start" side="top" className={PERMISSION_POPOVER_CLASS}>
         <CursorPermissionModeList
           activeMode={current.id}
           availableModes={CURSOR_PERMISSION_MODES}

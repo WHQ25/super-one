@@ -24,7 +24,8 @@
         "NSLocalNetworkUsageDescription": "SuperOne can connect to your desktop on the local network.",
         "NSBonjourServices": [
           "_superone._tcp."
-        ]
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {

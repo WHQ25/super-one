@@ -76,8 +76,11 @@ if (!mobilePackage.dependencies?.['expo-updates']) {
   throw new Error('expo-updates must be installed before EAS Update can be configured')
 }
 
-if (mobilePackage.scripts?.['eas-build-post-install'] !== 'bun run build:chat-view') {
-  throw new Error('EAS builds must generate the ignored Chat View host modules after install')
+if (
+  mobilePackage.scripts?.['eas-build-pre-install'] !== 'bun scripts/prepare-eas-install.ts'
+  || mobilePackage.scripts?.['eas-build-post-install'] !== 'bun run build:chat-view'
+) {
+  throw new Error('EAS hooks must isolate installs and generate ignored Chat View host modules')
 }
 
 if (!app.expo.ios?.bundleIdentifier || !app.expo.android?.package) {

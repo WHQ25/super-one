@@ -5,6 +5,7 @@ import type {
   AskUserQuestionRequest,
   PermissionRequest,
   PlanApprovalRequest,
+  QuestionAnnotations,
   SessionAgentLaunchProposal,
 } from '@superone/shared/agent-types'
 import { collaborationLaunchLabel } from './collaboration-state'
@@ -17,7 +18,11 @@ import {
 import { useMobileStyles } from './theme/context'
 import { Badge, Button, Chip, ListRow, Sheet } from './ui'
 import {
+  buildQuestionAnnotations,
+  initialQuestionAnswers,
   questionAnswersAreComplete,
+  questionKey,
+  questionNoteKey,
   selectedQuestionOptions,
   toggleQuestionOption,
 } from './question-sheet-state'
@@ -183,26 +188,48 @@ export function PlanSheet(props: {
 
 export function QuestionSheet(props: {
   question: AskUserQuestionRequest | null
-  answers: Record<string, string>
-  onPick: (header: string, label: string) => void
-  onSubmit: (id: string) => void
+  onSubmit: (id: string, answers: Record<string, string>, annotations?: QuestionAnnotations) => void
   onDismiss: (id: string) => void
 }) {
   const styles = useMobileStyles()
   const question = props.question
+  const [answers, setAnswers] = useState<Record<string, string>>({})
   const [otherTexts, setOtherTexts] = useState<Record<string, string>>({})
-  useEffect(() => setOtherTexts({}), [question?.requestId])
+  const [notesTexts, setNotesTexts] = useState<Record<string, string>>({})
+  const [activeQuestionIndex, setActiveQuestionIndex] = useState(0)
+  useEffect(() => {
+    setAnswers(initialQuestionAnswers(question?.questions ?? []))
+    setOtherTexts({})
+    setNotesTexts({})
+    setActiveQuestionIndex(0)
+  }, [question?.requestId])
   if (!question) return null
-  const complete = questionAnswersAreComplete(question.questions, props.answers)
+  const complete = questionAnswersAreComplete(question.questions, answers)
+  const activeQuestion = question.questions[activeQuestionIndex] ?? question.questions[0]
   return (
-    <Sheet visible title="Question" onDismiss={() => props.onDismiss(question.requestId)}>
+    <Sheet visible title={question.questions.length === 1 ? 'Question' : 'Questions'} onDismiss={() => props.onDismiss(question.requestId)}>
       <ScrollView style={styles.questionBody} keyboardShouldPersistTaps="handled">
-        {question.questions.map((q) => {
-          const selected = selectedQuestionOptions(props.answers[q.header])
-          const selectedOption = q.options.find((option) => selected.includes(option.label))
+        {question.questions.length > 1 ? (
+          <ScrollView horizontal contentContainerStyle={styles.chips} showsHorizontalScrollIndicator={false}>
+            {question.questions.map((item, index) => (
+              <Chip
+                key={questionKey(item)}
+                label={`${item.header}${answers[questionKey(item)]?.trim() ? ' ✓' : ''}`}
+                selected={index === activeQuestionIndex}
+                onPress={() => setActiveQuestionIndex(index)}
+              />
+            ))}
+          </ScrollView>
+        ) : null}
+        {activeQuestion ? (() => {
+          const q = activeQuestion
+          const key = questionKey(q)
+          const selected = selectedQuestionOptions(answers[key])
+          const selectedOption = q.options.find((option) => option.label === selected.at(-1))
           const preview = selectedOption?.preview
+          const noteKey = selectedOption ? questionNoteKey(q, selectedOption.label) : null
           return (
-            <View key={q.header} style={styles.questionGroup}>
+            <View key={key} style={styles.questionGroup}>
               <Text style={styles.rowTitle}>{q.question}</Text>
               {q.multiSelect ? <Text style={styles.rowMeta}>Select one or more</Text> : null}
               {q.options.map((option) => (
@@ -212,25 +239,22 @@ export function QuestionSheet(props: {
                   subtitle={option.description}
                   selected={selected.includes(option.label)}
                   trailing={selected.includes(option.label) ? <Badge label="Selected" tone="success" /> : undefined}
-                  onPress={() => props.onPick(
-                    q.header,
-                    toggleQuestionOption(q, props.answers[q.header], option.label),
-                  )}
+                  onPress={() => {
+                    setOtherTexts((current) => ({ ...current, [key]: '' }))
+                    setAnswers((current) => ({
+                      ...current,
+                      [key]: toggleQuestionOption(q, current[key], option.label),
+                    }))
+                  }}
                 />
               ))}
               <TextInput
                 style={styles.input}
                 placeholder="Other"
-                value={otherTexts[q.header] ?? ''}
+                value={otherTexts[key] ?? ''}
                 onChangeText={(value) => {
-                  setOtherTexts((current) => ({ ...current, [q.header]: value }))
-                  if (!q.multiSelect) {
-                    props.onPick(q.header, value)
-                    return
-                  }
-                  const optionLabels = new Set(q.options.map((option) => option.label))
-                  const options = selectedQuestionOptions(props.answers[q.header]).filter((item) => optionLabels.has(item))
-                  props.onPick(q.header, [...options, value.trim()].filter(Boolean).join(', '))
+                  setOtherTexts((current) => ({ ...current, [key]: value }))
+                  setAnswers((current) => ({ ...current, [key]: value }))
                 }}
               />
               {preview && question.previewFormat === 'html' ? (
@@ -242,12 +266,28 @@ export function QuestionSheet(props: {
                   style={styles.questionPreview}
                 />
               ) : preview ? <Text style={styles.previewText}>{preview}</Text> : null}
+              {preview && noteKey ? (
+                <TextInput
+                  style={styles.input}
+                  placeholder="Add a note (optional)"
+                  value={notesTexts[noteKey] ?? ''}
+                  onChangeText={(value) => setNotesTexts((current) => ({ ...current, [noteKey]: value }))}
+                />
+              ) : null}
             </View>
           )
-        })}
+        })() : null}
       </ScrollView>
       <View style={styles.permissionActions}>
-        <Button label="Submit" disabled={!complete} onPress={() => props.onSubmit(question.requestId)} />
+        <Button
+          label="Submit"
+          disabled={!complete}
+          onPress={() => props.onSubmit(
+            question.requestId,
+            answers,
+            buildQuestionAnnotations(question.questions, answers, notesTexts),
+          )}
+        />
         <Button label="Dismiss" variant="ghost" onPress={() => props.onDismiss(question.requestId)} />
       </View>
     </Sheet>

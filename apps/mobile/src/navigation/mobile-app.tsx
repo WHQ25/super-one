@@ -123,7 +123,6 @@ export function MobileApp() {
   const [perm, setPerm] = useState<PermissionRequest | null>(null)
   const [plan, setPlan] = useState<PlanApprovalRequest | null>(null)
   const [question, setQuestion] = useState<AskUserQuestionRequest | null>(null)
-  const [answers, setAnswers] = useState<Record<string, string>>({})
   const sharedFileInbox = useSharedFileInbox()
   const webRef = useRef<WebView>(null)
   const termRef = useRef<WebView>(null)
@@ -986,8 +985,6 @@ export function MobileApp() {
         permission={perm}
         plan={plan}
         question={question}
-        answers={answers}
-        onPickAnswer={(header, label) => setAnswers((current) => ({ ...current, [header]: label }))}
         sessionSwitcherOpen={sessionSwitcherOpen}
         onDismissSessionSwitcher={() => setSessionSwitcherOpen(false)}
         sessions={sessions}

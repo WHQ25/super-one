@@ -761,6 +761,10 @@ panel expands into its full task list. Harness marks now reuse the Desktop silho
 for all six providers (including ACP Grok/OpenCode identity), and the received-file
 queue uses the shared adaptive sheet treatment. Built-in simulator pairing uncovered
 and fixed a stale confirmation-code state that blocked returning to a paired device.
+Question sheets now key answers by the full question text required by the wire
+protocol, reset state per request, use tabs for multi-question prompts, preselect the
+first preview choice, and forward optional preview notes as annotations just like the
+Desktop prompt.
 The built-in iPhone simulator now confirms that Return during a live Simplified
 Chinese Pinyin composition does not submit the partial text. That pass also exposed
 the native-stack scene retaining its full frame under the software keyboard; keyboard

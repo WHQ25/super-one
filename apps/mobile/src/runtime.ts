@@ -2,6 +2,7 @@ import type {
   AgentEvent,
   ChatMessage,
   HarnessId,
+  QuestionAnnotations,
   ImageAttachment,
   PermissionRequest,
   RemoteCommand,
@@ -259,11 +260,16 @@ export class ChatRuntime {
     this.client.send(cmd)
   }
 
-  answerQuestion(requestId: string, answers: Record<string, string>): void {
+  answerQuestion(
+    requestId: string,
+    answers: Record<string, string>,
+    annotations?: QuestionAnnotations,
+  ): void {
     const cmd: RemoteCommand = {
       type: 'answer_question',
       requestId,
       answers,
+      ...(annotations ? { annotations } : {}),
       sessionId: this.sessionId,
       projectPath: this.projectPath,
     }

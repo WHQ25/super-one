@@ -19,8 +19,6 @@ export function MobileOverlays(props: {
   permission: PermissionRequest | null
   plan: PlanApprovalRequest | null
   question: AskUserQuestionRequest | null
-  answers: Record<string, string>
-  onPickAnswer: (header: string, label: string) => void
   sessionSwitcherOpen: boolean
   onDismissSessionSwitcher: () => void
   sessions: TabletSessionRow[]
@@ -60,10 +58,8 @@ export function MobileOverlays(props: {
       />
       <QuestionSheet
         question={props.question}
-        answers={props.answers}
-        onPick={props.onPickAnswer}
-        onSubmit={(id) => runUiAction(
-          () => runtime()?.answerQuestion(id, props.answers),
+        onSubmit={(id, answers, annotations) => runUiAction(
+          () => runtime()?.answerQuestion(id, answers, annotations),
           props.setStatus,
           'question response failed',
         )}

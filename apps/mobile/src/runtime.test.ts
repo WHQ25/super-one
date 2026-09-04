@@ -173,7 +173,7 @@ describe('ChatRuntime', () => {
     const formAnswers = { sessionAgentLaunchesJson: '[{"mode":"handoff"}]' }
     runtime.respondPermission('perm', true, formAnswers, true, 'approved on mobile')
     runtime.respondPlan('plan', false, 'change it')
-    runtime.answerQuestion('question', { Scope: 'All' })
+    runtime.answerQuestion('question', { Scope: 'All' }, { Scope: { notes: 'Include tests' } })
     expect(client.sent).toEqual(expect.arrayContaining([
       expect.objectContaining({
         type: 'respond_permission',
@@ -184,7 +184,11 @@ describe('ChatRuntime', () => {
         reason: 'approved on mobile',
       }),
       expect.objectContaining({ type: 'respond_plan_approval', requestId: 'plan', approved: false }),
-      expect.objectContaining({ type: 'answer_question', requestId: 'question' }),
+      expect.objectContaining({
+        type: 'answer_question',
+        requestId: 'question',
+        annotations: { Scope: { notes: 'Include tests' } },
+      }),
     ]))
   })
 

@@ -59,6 +59,7 @@ import { SessionsScreen } from '../screens/sessions-screen'
 import { MobileNavigator, type MobileRoute as Screen } from './mobile-navigator'
 import { MobileHeader, mobileHeaderTitle } from './mobile-header'
 import { MobileOverlays } from './mobile-overlays'
+import { MobileKeyboardFrame } from './mobile-keyboard-frame'
 import { useHarnessSelection } from './use-harness-selection'
 import { fetchShellDetails } from './shell-details'
 type ChatViewState = Extract<HostOutbound, { type: 'viewState' }>
@@ -794,7 +795,8 @@ export function MobileApp() {
           />
         ) : null}
         <View style={styles.mainPane}>
-          <MobileNavigator
+          <MobileKeyboardFrame>
+            <MobileNavigator
             route={screen}
             auxiliaryReturn={auxiliaryReturnRef.current}
             onRouteChange={(route) => {
@@ -973,11 +975,11 @@ export function MobileApp() {
       ) : null}
               </>
             )}
-          />
+            />
+          </MobileKeyboardFrame>
         </View>
       </View>
       <Text style={styles.meta}>{status} · window {CHAT_WINDOW.initialTurns}</Text>
-
       <MobileOverlays
         runtimeRef={runtimeRef}
         setStatus={setStatus}

@@ -761,7 +761,11 @@ panel expands into its full task list. Harness marks now reuse the Desktop silho
 for all six providers (including ACP Grok/OpenCode identity), and the received-file
 queue uses the shared adaptive sheet treatment. Built-in simulator pairing uncovered
 and fixed a stale confirmation-code state that blocked returning to a paired device.
-The chat screenshot/Pinyin acceptance pass is the remaining shell work.
+The built-in iPhone simulator now confirms that Return during a live Simplified
+Chinese Pinyin composition does not submit the partial text. That pass also exposed
+the native-stack scene retaining its full frame under the software keyboard; keyboard
+avoidance now wraps the navigator so chat and terminal composers share the corrected
+layout. A rebuilt simulator screenshot is the remaining shell evidence.
 
 #### WP-28 — T3: chat-view tool family coverage
 

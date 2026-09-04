@@ -13,8 +13,6 @@ import {
   Wrench,
 } from 'lucide-react-native'
 import {
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -66,7 +64,7 @@ export function ChatScreen(props: {
     { title: 'Files & folders', items: props.mentionHits.filter((item) => item.kind !== 'agent' && item.kind !== 'builtin') },
   ].filter((section) => section.items.length > 0)
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <View style={styles.flex}>
       <WebView
         ref={props.webRef}
         originWhitelist={['*']}
@@ -228,6 +226,6 @@ export function ChatScreen(props: {
           <Text style={styles.btnText}>{props.streaming ? 'Stop' : 'Send'}</Text>
         </Pressable>
       </View>
-    </KeyboardAvoidingView>
+    </View>
   )
 }

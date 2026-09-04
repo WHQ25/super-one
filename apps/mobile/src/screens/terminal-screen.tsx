@@ -1,5 +1,5 @@
 import type { RefObject } from 'react'
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
+import { Pressable, ScrollView, Text, TextInput, View } from 'react-native'
 import { WebView } from 'react-native-webview'
 import { TERMINAL_VIEW_HTML } from '@superone/chat-view'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
@@ -17,7 +17,7 @@ export function TerminalScreen(props: {
   const styles = useMobileStyles()
   const { tokens } = useMobileTheme()
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <View style={styles.flex}>
       <WebView
         ref={props.webRef}
         originWhitelist={['*']}
@@ -68,6 +68,6 @@ export function TerminalScreen(props: {
           </Pressable>
         ) : null}
       </View>
-    </KeyboardAvoidingView>
+    </View>
   )
 }

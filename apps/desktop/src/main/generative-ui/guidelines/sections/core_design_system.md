@@ -33,7 +33,7 @@ Output streams token-by-token. Structure code so useful content appears early.
 - **Corners**: use `border-radius: var(--border-radius-md)` (or `-lg` for cards) in HTML. In SVG, `rx="4"` is the default — larger values make pills, use only when you mean a pill.
 - **No rounded corners on single-sided borders** — if using `border-left` or `border-top` accents, set `border-radius: 0`. Rounded corners only work with full borders on all sides.
 - **No titles or prose inside the tool output** — see Philosophy above.
-- **Icon sizing**: When using emoji or inline SVG icons, explicitly set `font-size: 16px` for emoji or `width: 16px; height: 16px` for SVG icons. Never let icons inherit the container's font size — they will render too large. For larger decorative icons, use 24px max.
+- **Icon sizing**: Set inline SVG icons to `width: 16px; height: 16px` explicitly — inherited sizing renders them too large. For larger decorative icons, 24px is the maximum.
 - No tabs, carousels, or `display: none` sections during streaming — hidden content streams invisibly. Show all content stacked vertically. (Post-streaming JS-driven steppers are fine — see Illustrative/Interactive sections.)
 - No nested scrolling — auto-fit height.
 - **Canvas elements** must be wrapped in a `<div>` with explicit `height` (e.g. `height: 300px`) and `position: relative`. Never set width/height on `<canvas>` itself — size the wrapper, let the library fill it. During streaming, canvas is replaced by an animated placeholder that inherits the wrapper's dimensions.

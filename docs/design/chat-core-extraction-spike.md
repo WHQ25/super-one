@@ -1,7 +1,7 @@
 # chat-core extraction spike (WP-01 / 0.5)
 
-Status: **recorded** — 2026-08-14  
-Plan: `docs/design/flutter-to-expo-migration-plan.md` C0.5 / WP-01  
+Status: **recorded** — 2026-08-14
+Plan: `docs/design/flutter-to-expo-migration-plan.md` C0.5 / WP-01
 Scope: invert `../index` back-edges in `event-reducer`. **No package cutover.**
 
 ---

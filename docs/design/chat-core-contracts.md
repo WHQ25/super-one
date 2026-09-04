@@ -1,8 +1,8 @@
 # chat-core contracts (WP-02 freeze)
 
-Status: **frozen** — 2026-08-21  
-Baseline: desktop **v0.55.2-alpha** (`feat/migrate-to-expo` merged that tag)  
-Plan: `docs/design/flutter-to-expo-migration-plan.md`  
+Status: **frozen** — 2026-08-21
+Baseline: desktop **v0.55.2-alpha** (`feat/migrate-to-expo` merged that tag)
+Plan: `docs/design/flutter-to-expo-migration-plan.md`
 Scope: Remote Control client (Expo). Not a desktop IDE clone.
 
 This freeze is the type + protocol contract for `@superone/chat-core` and the RN ↔ WebView host. Since WP-12 (2026-09-04), the package owns the implementation and Desktop calls it through `apps/desktop/.../event-reducer/index.ts`.

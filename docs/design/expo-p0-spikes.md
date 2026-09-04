@@ -1,7 +1,7 @@
 # Expo P0 spikes (0.1 / 0.3 / 0.4)
 
-Status: **recorded** — 2026-08-21  
-Plan: `docs/design/flutter-to-expo-migration-plan.md`  
+Status: **recorded** — 2026-08-21
+Plan: `docs/design/flutter-to-expo-migration-plan.md`
 Baseline: desktop v0.55.2-alpha
 
 0.2 (crypto) and 0.5 / 0.6 (chat-core) live in their own notes. This file closes the remaining P0 gates.
@@ -45,7 +45,7 @@ Rules:
 - `resolver.nodeModulesPaths` is `[apps/mobile/node_modules, <root>/node_modules]`
 - `unstable_enableSymlinks: true`
 - `unstable_enablePackageExports: true` so `@superone/shared/*` follows `packages/shared/package.json` `exports`
-- **Leaf subpaths only.** Allowed first imports: `agent-types`, `event-seq-utils`, `agent-event-batcher`, `content-delta`, `tool-ui`, `agent-error`, `harness-brand`.  
+- **Leaf subpaths only.** Allowed first imports: `agent-types`, `event-seq-utils`, `agent-event-batcher`, `content-delta`, `tool-ui`, `agent-error`, `harness-brand`.
   **Forbidden:** `attachment-store`, `git-clone` (Node `fs` / `child_process`). Alias fallback if Metro ever fails exports: map `@superone/shared/*` → `packages/shared/src/*.ts`.
 
 Proof: `apps/mobile/scripts/assert-shared-resolution.ts` (workspace import + export-map lint). `bun run dev:mobile` is the Metro boot.

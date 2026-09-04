@@ -1,7 +1,7 @@
 # Relay crypto golden vectors (WP-03)
 
-Status: **spike_done** — 2026-08-21  
-Frozen trees (zero edits): `apps/desktop/src/main/remote-control-crypto.ts`, Flutter `lib/crypto.dart`  
+Status: **spike_done** — 2026-08-21
+Frozen trees (zero edits): `apps/desktop/src/main/remote-control-crypto.ts`, Flutter `lib/crypto.dart`
 Vectors: [`vectors.json`](./vectors.json)
 
 ## Algorithm (unchanged)

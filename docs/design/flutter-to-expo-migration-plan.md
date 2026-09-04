@@ -2,7 +2,7 @@
 
 Status: **executable plan — re-scoped 2026-09-04 (evening)**. Supersedes `docs/draft/flutter-to-expo-migration.md`. WP-01–22 are software-complete; WP-23/24 are **superseded** by Wave 8 (WP-25–29): land on `main` first, bring the RN shell to product quality, widen chat-view tool coverage, then ship through a lean release. **Executing agents: read §1a, then Wave 8, then start WP-25.**
 Last updated: 2026-09-04 (evening re-scope)
-Sources: draft migration, monorepo inventory, validation, work-package catalog, adversarial review (ordering / extraction / protocol / delivery), v0.55.2 remote-parity freeze  
+Sources: draft migration, monorepo inventory, validation, work-package catalog, adversarial review (ordering / extraction / protocol / delivery), v0.55.2 remote-parity freeze
 Related: `apps/desktop/CLAUDE.md` (Remote Control), `apps/relay/`, `packages/shared`, external repo `super-one-flutter`, `docs/design/chat-core-contracts.md`, `docs/design/expo-release-runbook.md`
 
 ---
@@ -112,7 +112,7 @@ Contracts are **projections** of the full reducer write-set, not the 34 statical
 - **`ChatCoreSession`**: union of all fields family reducers **read** on `PerSessionState` (see `apps/desktop/src/renderer/src/stores/chat-store/types.ts`).
 - **`ChatCorePatch`**: exhaustive key set of all fields family reducers **write** (Partial merge target). Generated from family write-points in:
   - `event-reducer/lifecycle.ts`, `content.ts`, `tool.ts`, `permission.ts`, `question-plan.ts`, `slash.ts`, `codex.ts`, `usage.ts`, `message-complete.ts`, `todos.ts`, ACP inline cases in `event-reducer/index.ts`.
-- **Signature (post-extract):**  
+- **Signature (post-extract):**
   `applyEventToSession(session: ChatCoreSession, event: AgentEvent, ports?: ChatCorePorts) → ChatCorePatch`
 - Desktop `event-slice` continues to merge patches structurally; production cutover to package only when **remote-relevant families are complete** (see §6 WP-12 narrow rule).
 
@@ -253,9 +253,9 @@ Inventory + validation outcomes (code paths preferred over draft-only numbers).
 - **0.5** chat-core boundary proof + compile-time boundary sketch — **done** (`docs/design/chat-core-extraction-spike.md`)
 - **0.6** freeze contracts + host protocol + dual-transport + buffer-first — **done** (`docs/design/chat-core-contracts.md`)
 - **0.2** golden AES-GCM/HKDF (+ chunked file) vectors — **done** (`docs/design/relay-crypto-golden/`)
-- **0.3** Metro `@superone/shared` under bun hoisted workspaces — **done** (`apps/mobile/metro.config.js` + `scripts/assert-shared-resolution.ts`)  
-- **0.1** mDNS attempt or formal fallback accept (non-blocking for P2) — **fallback accepted** (`docs/design/expo-p0-spikes.md`)  
-- **0.4** WebView RSS/frame + stress corpus owner — **done** (fail-closed window in `apps/mobile/src/chat-window.ts`; RSS on device at WP-18)  
+- **0.3** Metro `@superone/shared` under bun hoisted workspaces — **done** (`apps/mobile/metro.config.js` + `scripts/assert-shared-resolution.ts`)
+- **0.1** mDNS attempt or formal fallback accept (non-blocking for P2) — **fallback accepted** (`docs/design/expo-p0-spikes.md`)
+- **0.4** WebView RSS/frame + stress corpus owner — **done** (fail-closed window in `apps/mobile/src/chat-window.ts`; RSS on device at WP-18)
 
 Keep `super-one-flutter` readable through P7 as behavioural reference (ACK path, attachment transports, visual catalog).
 
@@ -313,7 +313,7 @@ Keep `super-one-flutter` readable through P7 as behavioural reference (ACK path,
 | **0.5** | chat-core cut | Invert `../index` + relocate component predicates + ports for clock/trace/Maps; no slice drag | Narrow **first family for proof only**; never fork production | **spike_done** — `../index` gone; remaining impurities in spike notes (WP-11) |
 | **0.6** | Host protocol + contracts | Freeze ChatCoreSession/Patch, three projections, dual-transport, buffer-first, `applyReductionPatch` | — | **freeze_done** — `docs/design/chat-core-contracts.md` |
 
-**P0 exit:** **complete 2026-08-21.** 0.1 fallback; 0.2 golden+noble; 0.3 Metro config + shared leaf proof; 0.4 fail-closed window; 0.5/0.6 chat-core freeze. Companion: `docs/design/expo-p0-spikes.md`.  
+**P0 exit:** **complete 2026-08-21.** 0.1 fallback; 0.2 golden+noble; 0.3 Metro config + shared leaf proof; 0.4 fail-closed window; 0.5/0.6 chat-core freeze. Companion: `docs/design/expo-p0-spikes.md`.
 **Gate:** WP-07 / WP-08 / WP-11 / WP-15 may start. Device RSS remains a WP-18 measurement against the locked window.
 
 ---
@@ -894,13 +894,13 @@ flowchart TD
 
 ### Critical path tracks (not a false serial bag)
 
-**Track A — chat-core / presenters (longest when ToolBlock dominates):**  
+**Track A — chat-core / presenters (longest when ToolBlock dominates):**
 WP-01 → WP-11 → WP-15 → WP-16 → WP-17 → WP-18 → **WP-19** → WP-23 → WP-24
 
-**Track B — relay / shell:**  
+**Track B — relay / shell:**
 WP-03 → WP-08 → WP-09 → WP-10 → WP-20 → WP-21 → **WP-19** → WP-23 → WP-24
 
-**Track C — oracle:**  
+**Track C — oracle:**
 WP-11 → WP-12 → WP-13 → WP-14 → **WP-19**
 
 **Merge node:** **WP-19** (requires A+B+C+WP-18+WP-21).

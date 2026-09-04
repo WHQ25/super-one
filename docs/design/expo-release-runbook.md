@@ -5,9 +5,8 @@ Plan: `docs/design/flutter-to-expo-migration-plan.md` WP-29
 
 The release owner completed Apple Developer login/2FA and let EAS manage the signing
 assets. iOS production build `f9243fb7-367e-4a96-b823-6e0eb9b57d9a` (version 1.0.0,
-build 4) finished on 2026-09-04. The first App Store Connect submission still needs
-one interactive run to create/select the app; after that, persist its numeric
-`ascAppId` in the production submit profile so later submissions can be non-interactive.
+build 4) finished on 2026-09-04. App Store Connect app `6761263268` exists and its
+numeric `ascAppId` is pinned in the production submit profile.
 Production update group `25c7b31b-47a2-4c0a-abde-57220f3b1411` publishes commit
 `19ad04e3` for Android and iOS at runtime `1.0.0`, matching iOS build 4. It includes
 the Flutter-aligned reconnect, peer-return, shutdown, and terminal recovery behavior.
@@ -17,8 +16,10 @@ does not require another binary build.
 EAS fingerprint comparison reports the same native hash
 `1112c27360fc13d7332a26aed1c531bfb904d738` for iOS build 4 and its latest
 production update, so the published JavaScript is native-compatible with that binary.
-EAS Submit still has no iOS submission record; finish the first App Store Connect
-login/app setup before adding the numeric `ascAppId` to the production submit profile.
+EAS Submit still has no iOS submission record. The account has an active App Manager
+API key, but its one-time `.p8` private key is not present on this machine, so either
+provide a dedicated local API key file or run the first submission interactively with
+the release owner's Apple login. Never commit or paste the private key into chat.
 
 Run EAS commands from `apps/mobile`. Keep `credentials.json`, signing files, build
 artifacts, screenshots, and videos out of git.

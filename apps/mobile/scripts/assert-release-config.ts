@@ -25,6 +25,7 @@ const eas = JSON.parse(readFileSync(join(mobileRoot, 'eas.json'), 'utf8')) as {
     autoIncrement?: boolean
     android?: { buildType?: string }
   }>
+  submit?: { production?: { ios?: { ascAppId?: string } } }
 }
 const rootPackage = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')) as {
   packageManager?: string
@@ -57,6 +58,10 @@ if (
 const production = eas.build?.production
 if (production?.channel !== 'production' || production.autoIncrement !== true) {
   throw new Error('production profile must auto-increment on the production channel')
+}
+
+if (!/^\d+$/.test(eas.submit?.production?.ios?.ascAppId ?? '')) {
+  throw new Error('production submit profile must identify the App Store Connect app')
 }
 
 if (app.expo?.runtimeVersion?.policy !== 'appVersion') {

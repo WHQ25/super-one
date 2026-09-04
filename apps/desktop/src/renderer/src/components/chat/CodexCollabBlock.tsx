@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Bot, ChevronRight, Check, Loader2, Wrench, Terminal, FileEdit, Search, ArrowUp, ArrowDown, Maximize, TriangleAlert } from 'lucide-react'
+import { Bot, ChevronRight, Check, Loader2, Wrench, Terminal, FileEdit, Search, ArrowUp, ArrowDown } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { cn } from '@superone/ui/lib/utils'
 import { Streamdown } from 'streamdown'
@@ -12,6 +12,10 @@ import { useActiveSession, useChatStore } from '@/stores/chat'
 import { getSubagentColorClasses } from './subagent-colors'
 import { CompactLabeledToolRow } from './tool-row'
 import { isCodexCommandToolError } from './codex-command-status'
+import {
+  CodexCollabBlockPresenter,
+  codexCollabViewModel,
+} from './presenters/CodexCollabBlock'
 
 export const TASK_CARD_ITEM_TYPES = new Set<CodexThreadItem['type']>([
   'command_execution',
@@ -398,157 +402,51 @@ export function isSpawnReady(item: CodexCollabToolCallItem): boolean {
   return item.receiverThreadIds.length > 0
 }
 
-function failureMessage(status: string | undefined, message: string | undefined, t: ReturnType<typeof useTranslation>['t']): string {
-  const trimmed = message?.trim()
-  if (trimmed) return trimmed
-  if (status === 'notFound') return t('chat.codexCollab.failureNotFound')
-  return t('chat.codexCollab.failureNoDetails')
+function DesktopCollabMarkdown({ text }: { text: string }) {
+  return (
+    <Streamdown
+      className="chat-md"
+      plugins={streamdownPlugins}
+      rehypePlugins={streamdownRehypePlugins}
+      components={streamdownComponents}
+      controls={streamdownControls}
+      linkSafety={streamdownLinkSafety}
+    >
+      {text}
+    </Streamdown>
+  )
 }
 
 export function CodexSubagentMarker({ item }: { item: CodexCollabToolCallItem }) {
-  const { t } = useTranslation()
   const forkNav = useForkNavigation()
-  const firstThreadId = item.receiverThreadIds[0] ?? Object.keys(item.agentsStates)[0]
-  const state = firstThreadId ? item.agentsStates[firstThreadId] : undefined
-  const name = state?.nickname ?? t('chat.codexCollab.defaultName')
-  const badge = state?.forkedFromId ? t('chat.codexCollab.forked') : state?.role
-  const status = state?.status
-  const isRunning = status === 'running' || status === 'pendingInit'
-  const isErrored = status === 'errored' || item.status === 'failed'
-  const isComplete = status === 'completed' && !isErrored
-  const tokens = state?.tokens ?? { input: 0, output: 0 }
-  const hasTokens = tokens.input > 0 || tokens.output > 0
-  const childItems = firstThreadId ? item.childItems?.[firstThreadId] ?? [] : []
-  const toolItems = useMemo(() => childItems.filter((it) => TASK_CARD_ITEM_TYPES.has(it.type)), [childItems])
-  const itemCount = toolItems.length
-  const lastAgentMessage = useMemo(() => {
-    for (let i = childItems.length - 1; i >= 0; i--) {
-      const c = childItems[i]
-      if (c.type === 'agent_message') return c.text
-    }
-    return ''
-  }, [childItems])
-
+  const view = useMemo(() => codexCollabViewModel(item), [item])
   const [expanded, setExpanded] = useState(false)
-
-  const colorKey = firstThreadId ?? item.id
   useEffect(() => {
-    if (colorKey) useChatStore.getState().assignSubagentColor(colorKey)
-  }, [colorKey])
-  const colorIdx = useActiveSession((s) => s.subagentColors[colorKey])
+    if (view.colorKey) useChatStore.getState().assignSubagentColor(view.colorKey)
+  }, [view.colorKey])
+  const colorIdx = useActiveSession((s) => s.subagentColors[view.colorKey])
   const colors = useMemo(() => getSubagentColorClasses(colorIdx), [colorIdx])
-
-  const openFullView = (e: React.MouseEvent | React.KeyboardEvent): void => {
-    e.stopPropagation()
-    if (firstThreadId) forkNav.open({ collabId: item.id, threadId: firstThreadId })
-  }
-
-  if (isErrored) {
-    const tool = t(`chat.codexCollab.toolLabels.${item.tool}`)
-    const summary = t('chat.codexCollab.failureSummary', {
-      tool,
-      message: failureMessage(status, state?.message, t),
-    })
-    return (
-      <div className="tool-node errored my-0.5 rounded bg-amber-500/10 transition-colors">
-        <div className="flex items-start gap-1.5 px-2 py-1.5 text-xs">
-          <TriangleAlert className="mt-0.5 size-3 shrink-0 text-amber-600 dark:text-amber-400" />
-          <span className="shrink-0 font-medium text-amber-600 dark:text-amber-400">{name}</span>
-          {badge && (
-            <span className={cn('mt-px shrink-0 rounded px-1 py-px text-xs', colors.tagBg, colors.tagText)}>
-              {badge}
-            </span>
-          )}
-          <span className="min-w-0 flex-1 break-words text-muted-foreground">{summary}</span>
-          <span className="mt-px shrink-0 rounded bg-amber-500/20 px-1 py-px text-xs text-amber-600 dark:text-amber-400">{t('chat.toolBlock.error')}</span>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <NestedToolContext.Provider value={{ defaultAutoExpand: false }}>
-    <div className="subagent-container my-1 min-w-0 overflow-hidden rounded border border-border/50 bg-muted/20">
-      <button
-        type="button"
-        onClick={() => setExpanded((e) => !e)}
-        className="flex w-full items-start gap-2 px-2.5 py-2 text-xs transition-colors hover:bg-muted/40"
-      >
-        <Bot className={cn('mt-0.5 size-3.5 shrink-0', colors.text, isRunning && !expanded && 'animate-pulse')} />
-        <span className="font-medium text-foreground">{name}</span>
-        {badge && (
-          <span className={cn('mt-px shrink-0 rounded px-1 py-px text-xs', colors.tagBg, colors.tagText)}>
-            {badge}
-          </span>
-        )}
-        {isErrored && (
-          <span className="ml-1 inline-flex shrink-0 items-center gap-1 text-red-600 dark:text-red-400">
-            <span className="size-2 rounded-full bg-red-600 dark:bg-red-400" />
-            <span className="text-xs font-medium">{t('chat.codexCollab.failed')}</span>
-          </span>
-        )}
-        <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-          {!expanded && <StatsCluster itemCount={itemCount} tokens={tokens} hasTokens={hasTokens} />}
-          {expanded && (
-            <span
-              role="button"
-              tabIndex={0}
-              onClick={openFullView}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') openFullView(e) }}
-              className="inline-flex items-center rounded p-0.5 hover:bg-muted hover:text-foreground"
-              title={t('chat.codexCollab.openFullView')}
-            >
-              <Maximize className="size-3" />
-            </span>
-          )}
-          <ChevronRight className={cn('mt-px size-3 shrink-0 transition-transform duration-200', expanded && 'rotate-90')} />
-        </span>
-      </button>
-
-      <AnimatePresence initial={false}>
-        {expanded && (item.prompt || toolItems.length > 0 || lastAgentMessage) && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden border-t border-border/30"
-          >
-            {item.prompt && <PromptPreview prompt={item.prompt} label={t(`chat.codexCollab.toolLabels.${item.tool}`)} />}
-            {toolItems.length > 0 && (
-              <CollabScrollArea borderClass={colors.borderL}>
-                {toolItems.map((it, i) => <MiniToolChip key={`${it.id}-${i}`} item={it} />)}
-              </CollabScrollArea>
-            )}
-            {lastAgentMessage && <OutputPreview text={lastAgentMessage} />}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {expanded && (isRunning || isComplete || isErrored) && (
-        <div className="flex items-center gap-1.5 border-t border-border/30 px-2.5 py-1.5 text-xs text-muted-foreground">
-          {isRunning ? (
-            <>
-              <Loader2 className="size-3 animate-spin" />
-              <span>{t('chat.subagent.running')}</span>
-            </>
-          ) : isErrored ? (
-            <>
-              <span className="size-2 rounded-full bg-red-600 dark:bg-red-400" />
-              <span>{t('chat.codexCollab.errored')}</span>
-            </>
-          ) : (
-            <>
-              <Check className="size-3 shrink-0 text-success" />
-              <span>{t('chat.subagent.done')}</span>
-            </>
-          )}
-          <span className="ml-auto flex items-center gap-1.5">
-            <StatsCluster itemCount={itemCount} tokens={tokens} hasTokens={hasTokens} />
-          </span>
-        </div>
-      )}
-    </div>
+      <CodexCollabBlockPresenter
+        item={item}
+        colors={colors}
+        expanded={expanded}
+        onExpandedChange={setExpanded}
+        canOpenFullView={Boolean(view.receiverId)}
+        onOpenFullView={() => {
+          if (view.receiverId) forkNav.open({ collabId: item.id, threadId: view.receiverId })
+        }}
+        childContent={view.activityItems.length > 0 ? (
+          <CollabScrollArea borderClass={colors.borderL}>
+            {view.activityItems.map((child, index) => (
+              <MiniToolChip key={`${child.id}-${index}`} item={child} />
+            ))}
+          </CollabScrollArea>
+        ) : undefined}
+        formatTokens={formatTokens}
+        Markdown={DesktopCollabMarkdown}
+      />
     </NestedToolContext.Provider>
   )
 }

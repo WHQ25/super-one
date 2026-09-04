@@ -2,14 +2,12 @@ import { createContext, useContext, useMemo, useState, type ReactNode } from 're
 import type {
   ChatMessage,
   CodexCollabToolCallItem,
-  CodexThreadItem,
   ContentBlock,
   ImageGenerationItem,
 } from '@superone/shared/agent-types'
 import { isAlwaysHiddenToolName, isSubagentToolName } from '@superone/shared/tool-ui'
 import {
   Check,
-  ClipboardList,
   FileText,
   ImageIcon,
   Puzzle,
@@ -44,6 +42,14 @@ import {
 } from './presenters/compact-chat-mode'
 import { groupContentPresenter, type GroupContentPorts } from './presenters/groupContent'
 import { ReasoningBlock } from './presenters/ReasoningBlock'
+import { CodexPlanBlockPresenter } from './presenters/CodexPlanBlock'
+import {
+  CodexCollabBlockPresenter,
+  codexCollabViewModel,
+} from './presenters/CodexCollabBlock'
+import { EnterPlanModeBlock, ExitPlanModeBlockPresenter } from './presenters/PlanModeBlocks'
+import { ImageGenToolBlockPresenter } from './presenters/ImageGenToolBlock'
+import { VideoGenToolBlockPresenter } from './presenters/VideoGenToolBlock'
 import {
   SubagentBlockPresenter,
   type SubagentColorClasses,
@@ -146,11 +152,114 @@ function PortableDocument({ name }: { name: string }) {
 
 function PortableClaudeTool(props: ClaudeToolPresenterProps) {
   const { pendingPermission } = useContext(PortableTurnContext)
+  if (props.toolName === 'EnterPlanMode') return <EnterPlanModeBlock />
+  if (props.toolName === 'ExitPlanMode') return <ExitPlanModeBlockPresenter result={props.result} />
+  if (isImageGenerationTool(props.toolName)) {
+    return (
+      <PortableImageGenTool
+        input={props.input}
+        result={props.result}
+        isStreaming={props.status === 'streaming'}
+        isError={props.isError}
+      />
+    )
+  }
+  if (isVideoGenerationTool(props.toolName) && !props.result?.startsWith('[denied] ')) {
+    return (
+      <PortableVideoGenTool
+        input={props.input}
+        result={props.result}
+        isStreaming={props.status === 'streaming'}
+        isError={props.isError}
+      />
+    )
+  }
   return (
     <PortableTool
       {...props}
       summary={props.toolSummary}
       pendingPermission={isPermissionPending(pendingPermission, props.toolUseId, props.toolName)}
+    />
+  )
+}
+
+function isImageGenerationTool(toolName: string): boolean {
+  return toolName === 'mcp__superone__media_generate_image'
+    || ['ImageGen', 'ImageEdit', 'image_gen', 'image_edit'].includes(toolName)
+}
+
+function isVideoGenerationTool(toolName: string): boolean {
+  return toolName === 'mcp__superone__media_generate_video'
+    || ['ImageToVideo', 'ReferenceToVideo', 'image_to_video', 'reference_to_video'].includes(toolName)
+}
+
+function PortableImageGenTool({
+  input,
+  result,
+  isStreaming,
+  isError,
+}: {
+  input: string
+  result?: string
+  isStreaming: boolean
+  isError?: boolean
+}) {
+  return (
+    <ImageGenToolBlockPresenter
+      params={parseRecord(input)}
+      result={result}
+      isStreaming={isStreaming}
+      isError={isError}
+      isDenied={Boolean(result?.startsWith('[denied] '))}
+      renderReferenceImage={(path, label) => (
+        <button
+          key={path}
+          type="button"
+          className="flex w-16 flex-none flex-col items-center gap-1"
+          onClick={() => requestNative('previewFile', { path })}
+          aria-label={`Preview ${label}`}
+        >
+          <span className="flex size-16 items-center justify-center rounded-md border border-border bg-muted/30">
+            <ImageIcon className="size-4 text-muted-foreground" />
+          </span>
+          <span className="max-w-16 truncate text-xs text-muted-foreground">{label}</span>
+        </button>
+      )}
+    />
+  )
+}
+
+function PortableVideoGenTool({
+  input,
+  result,
+  isStreaming,
+  isError,
+}: {
+  input: string
+  result?: string
+  isStreaming: boolean
+  isError?: boolean
+}) {
+  const preview = (path: string, label: string) => (
+    <button
+      key={path}
+      type="button"
+      className="flex items-center gap-1.5 text-xs text-primary"
+      onClick={() => requestNative('previewFile', { path })}
+      aria-label={`Preview ${label}`}
+    >
+      <ImageIcon className="size-3.5" />
+      <span className="max-w-48 truncate">{path.split('/').pop() || label}</span>
+    </button>
+  )
+  return (
+    <VideoGenToolBlockPresenter
+      params={parseRecord(input)}
+      result={result}
+      isStreaming={isStreaming}
+      isError={isError}
+      renderImageRef={preview}
+      renderFileRef={(path, label) => preview(path, label)}
     />
   )
 }
@@ -368,21 +477,13 @@ function PortableCodexMarkdown({ text, isStreaming }: { text: string; isStreamin
 }
 
 function PortablePlan({ item, isStreaming }: CodexItemPresenterProps) {
-  const [expanded, setExpanded] = useState(isStreaming)
   if (item.type !== 'plan') return null
   return (
-    <div className="my-1 overflow-hidden rounded border border-border/60 bg-muted/30 text-xs">
-      <button
-        type="button"
-        className="flex w-full items-center gap-1.5 px-2 py-2 text-left"
-        onClick={() => setExpanded((value) => !value)}
-      >
-        <ClipboardList className="size-3.5 shrink-0 text-primary" />
-        <span className="font-medium">Plan</span>
-        {!expanded && <span className="min-w-0 truncate text-muted-foreground">{item.text.split('\n')[0]}</span>}
-      </button>
-      {expanded && <div className="border-t border-border/50 px-3 py-2"><PortableCodexMarkdown text={item.text} isStreaming={isStreaming} /></div>}
-    </div>
+    <CodexPlanBlockPresenter
+      item={item}
+      isStreaming={isStreaming}
+      Markdown={PortableCodexMarkdown}
+    />
   )
 }
 
@@ -418,6 +519,26 @@ function PortableCodexItem(props: CodexItemPresenterProps) {
         </div>
       )
     case 'mcp_tool_call':
+      if (isImageGenerationTool(`mcp__${item.server}__${item.tool}`)) {
+        return (
+          <PortableImageGenTool
+            input={stringify(item.arguments)}
+            result={codexMcpItemResultText(item)}
+            isStreaming={item.status === 'in_progress'}
+            isError={item.status === 'failed' || Boolean(item.error)}
+          />
+        )
+      }
+      if (isVideoGenerationTool(`mcp__${item.server}__${item.tool}`)) {
+        return (
+          <PortableVideoGenTool
+            input={stringify(item.arguments)}
+            result={codexMcpItemResultText(item)}
+            isStreaming={item.status === 'in_progress'}
+            isError={item.status === 'failed' || Boolean(item.error)}
+          />
+        )
+      }
       return (
         <PortableTool
           toolName={`mcp__${item.server}__${item.tool}`}
@@ -485,50 +606,68 @@ function PortableCodexCommand({ item, isStreaming }: CodexCommandPresenterProps)
   )
 }
 
-function latestAgentText(items: CodexThreadItem[]): string | undefined {
-  for (let index = items.length - 1; index >= 0; index -= 1) {
-    const item = items[index]
-    if (item.type === 'agent_message') return item.text
-  }
-  return undefined
-}
-
 function PortableCodexSubagent({ item }: CodexSubagentPresenterProps) {
   const [expanded, setExpanded] = useState(false)
-  const receiverId = item.receiverThreadIds[0] ?? Object.keys(item.agentsStates)[0]
-  const state = receiverId ? item.agentsStates[receiverId] : undefined
-  const children = receiverId ? item.childItems?.[receiverId] ?? [] : []
-  const failed = item.status === 'failed' || state?.status === 'errored'
-  const complete = item.status === 'completed' || state?.status === 'completed'
-  const stopped = state?.status === 'shutdown' || state?.status === 'notFound'
+  const view = codexCollabViewModel(item)
+  const childContent = view.activityItems.length > 0 ? (
+    <div className="space-y-0.5 border-t border-border/30 px-2 py-1">
+      {view.activityItems.map((child, index) => {
+        if (child.type === 'command_execution') {
+          return <PortableCodexCommand key={`${child.id}-${index}`} item={child} isStreaming={view.isRunning} />
+        }
+        if (child.type === 'file_change') {
+          return (
+            <PortableTool
+              key={`${child.id}-${index}`}
+              toolName="FileChange"
+              toolUseId={child.id}
+              input={stringify({ changes: child.changes })}
+              summary={child.changes[0]?.path}
+              status="complete"
+              isError={child.status === 'failed'}
+              grouped
+            />
+          )
+        }
+        if (child.type === 'mcp_tool_call') {
+          return (
+            <PortableTool
+              key={`${child.id}-${index}`}
+              toolName={`mcp__${child.server}__${child.tool}`}
+              toolUseId={child.id}
+              input={stringify(child.arguments)}
+              result={codexMcpItemResultText(child)}
+              status={child.status === 'in_progress' ? 'streaming' : 'complete'}
+              isError={child.status === 'failed' || Boolean(child.error)}
+              grouped
+            />
+          )
+        }
+        if (child.type !== 'web_search') return null
+        return (
+          <PortableTool
+            key={`${child.id}-${index}`}
+            toolName="WebSearch"
+            toolUseId={child.id}
+            input={stringify({ query: child.query })}
+            summary={child.query}
+            status={child.status === 'in_progress' ? 'streaming' : 'complete'}
+            isError={child.status === 'failed'}
+            grouped
+          />
+        )
+      })}
+    </div>
+  ) : undefined
   return (
-    <SubagentBlockPresenter
-      toolUseId={item.id}
-      taskInput={{
-        name: state?.nickname ?? '',
-        teamName: '',
-        description: state?.role ?? '',
-        subagentType: state?.role ?? 'agent',
-        prompt: item.prompt ?? '',
-      }}
+    <CodexCollabBlockPresenter
+      item={item}
       colors={PORTABLE_COLORS}
-      isAsync={false}
-      isRunning={!failed && !complete && !stopped}
-      isComplete={failed || complete || stopped}
-      isFailed={failed}
-      isStopped={stopped}
       expanded={expanded}
       onExpandedChange={setExpanded}
       canOpenFullView={false}
       onOpenFullView={() => undefined}
-      initialElapsed={0}
-      stats={{
-        toolCalls: children.filter((child) => ['command_execution', 'file_change', 'mcp_tool_call', 'web_search'].includes(child.type)).length,
-        inputTokens: state?.tokens?.input,
-        outputTokens: state?.tokens?.output,
-      }}
-      resultText={latestAgentText(children) ?? state?.message}
-      diagnostic={failed ? state?.message : undefined}
+      childContent={childContent}
       formatTokens={formatTokens}
       Markdown={({ text }) => <PortableText text={text} isStreaming={false} />}
     />

@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, ChevronRight, PenLine, Smartphone, Upload, X } from 'lucide-react'
+import { ChevronRight, Smartphone, Upload } from 'lucide-react'
 import { diffLines } from 'diff'
 import { cn } from '@superone/ui/lib/utils'
 import {
@@ -26,6 +26,7 @@ import { FileChip } from './FileChip'
 import { useNestedToolDefaults } from './nested-tool-context'
 import { StandaloneToolBlock } from './StandaloneToolBlock'
 import { ToolIcon } from './ToolIcon'
+import { ExitPlanModeBlockPresenter } from './presenters/PlanModeBlocks'
 import {
   ToolBlockPresenter,
   type BashToolPresenterProps,
@@ -759,42 +760,5 @@ function FileChangeDiffStatic({ params }: { params: Record<string, unknown> }) {
  *  Derives outcome from tool result (persisted in messages) with live store as fallback. */
 function ExitPlanModeBlock({ result }: { result?: string }) {
   const liveOutcome = useActiveSession((s) => s.planApprovalOutcome)
-
-  const isDenied = !!result && result.startsWith('[denied] ')
-  const resultOutcome = result
-    ? (isDenied ? { approved: false, feedback: result.slice('[denied] '.length) } : { approved: true })
-    : null
-  const outcome = resultOutcome ?? liveOutcome
-
-  if (!outcome) {
-    return (
-      <div className="my-4 flex items-center gap-1.5 rounded bg-muted/20 px-2 py-1.5 text-sm">
-        <PenLine className="size-3 shrink-0 text-muted-foreground" />
-        <span className="font-medium text-muted-foreground">Review Plan</span>
-      </div>
-    )
-  }
-
-  if (outcome.approved) {
-    return (
-      <div className="my-4 flex items-center gap-1.5 rounded bg-success/10 px-2 py-1.5 text-sm">
-        <PenLine className="size-3 shrink-0 text-success" />
-        <span className="font-medium text-success">Plan Approved</span>
-        <Check className="ml-auto size-3 shrink-0 text-success" />
-      </div>
-    )
-  }
-
-  return (
-    <div className="my-4 rounded bg-error/10 px-2 py-1.5 text-sm">
-      <div className="flex items-center gap-1.5">
-        <PenLine className="size-3 shrink-0 text-error" />
-        <span className="font-medium text-error">Plan Rejected</span>
-        <X className="ml-auto size-3 shrink-0 text-error" />
-      </div>
-      {outcome.feedback && outcome.feedback !== 'User rejected the plan' && (
-        <div className="mt-1 text-xs text-error/70">{outcome.feedback}</div>
-      )}
-    </div>
-  )
+  return <ExitPlanModeBlockPresenter result={result} liveOutcome={liveOutcome} />
 }

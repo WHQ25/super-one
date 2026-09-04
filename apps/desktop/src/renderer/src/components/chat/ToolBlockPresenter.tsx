@@ -1,6 +1,6 @@
 import { memo, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Ban, ChevronRight, PenLine, TriangleAlert } from 'lucide-react'
+import { Ban, ChevronRight, TriangleAlert } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { parsePartialWidgetInput, parseWidgetResult } from '@superone/shared/generative-ui/types'
 import { getStallColor, type StallLevel } from '../../lib/stall-utils'
@@ -51,6 +51,7 @@ import { WidgetBlock } from './WidgetBlock'
 import { isWorkflowSmokeCheck } from './workflow-utils'
 import { AskUserQuestionResult, PrettyJSONCodeBlock } from './tool-result-views'
 import { RollingNumber } from './RollingNumber'
+import { EnterPlanModeBlock } from './presenters/PlanModeBlocks'
 import {
   COLLAB_TOOLS,
   SessionCollabToolBlock,
@@ -318,12 +319,7 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
   }
 
   if (toolName === 'EnterPlanMode') {
-    return (
-      <div className="my-4 flex items-center gap-1.5 rounded bg-primary/10 px-2 py-1.5 text-sm">
-        <PenLine className="size-3 shrink-0 text-primary" />
-        <span className="font-medium text-primary">{t('chat.toolBlock.enteredPlanMode')}</span>
-      </div>
-    )
+    return <EnterPlanModeBlock />
   }
   if (toolName === 'ExitPlanMode') {
     return ports.renderExitPlanMode(result)

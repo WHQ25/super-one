@@ -2,6 +2,12 @@ import { expect, test, type Page } from '@playwright/test'
 import { pathToFileURL } from 'node:url'
 import { resolve } from 'node:path'
 import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
+import {
+  CODEX_COLLAB_RECORDING,
+  IMAGE_GENERATION_RECORDING,
+  PLAN_RECORDINGS,
+  VIDEO_GENERATION_RECORDING,
+} from './fixtures/tool-family-recordings'
 
 const documentUrl = pathToFileURL(resolve(import.meta.dirname, '../dist/index.html')).href
 
@@ -358,4 +364,64 @@ test('31 uses the shared Codex command-group presenter', async ({ page }) => {
 
   await expect(page.locator('.tool-group')).toContainText(/2/)
   await expect(page.getByText('Reviewed both files.')).toBeVisible()
+})
+
+test('32 renders a Codex collaboration recording with the shared presenter', async ({ page }) => {
+  await send(page, { type: 'hydrate', messages: [CODEX_COLLAB_RECORDING] })
+
+  const card = page.locator('.subagent-container')
+  await expect(card).toContainText('Reviewer')
+  await expect(card).toContainText('UI review')
+  await card.locator('> button').click()
+  await expect(card.locator('[data-tool-use-id="child-read"]')).toContainText('ToolRow.tsx')
+  await expect(card.locator('[data-tool-use-id="child-search"]')).toContainText('mobile tool row accessibility')
+})
+
+test('33 renders Claude and Codex plan recordings with shared presenters', async ({ page }) => {
+  await send(page, { type: 'hydrate', messages: PLAN_RECORDINGS })
+
+  await expect(page.getByText('Entered Plan Mode')).toBeVisible()
+  await expect(page.getByText('Plan Approved')).toBeVisible()
+  const plan = page.locator('[data-turn-id="recording-codex-plan"]')
+  await expect(plan).toContainText('Migration plan')
+  await plan.getByText('Plan', { exact: true }).click()
+  await expect(plan).toContainText('Share presenters')
+})
+
+test('34 renders an image-generation recording with the shared presenter', async ({ page }) => {
+  await send(page, { type: 'hydrate', messages: [IMAGE_GENERATION_RECORDING] })
+
+  const turn = page.locator('[data-turn-id="recording-image-generation"]')
+  await expect(turn).toContainText('A compact mobile chat interface')
+  await turn.locator('.tool-node > div').first().click()
+  await expect(turn).toContainText('Generation quota reached')
+  await turn.getByRole('button', { name: 'Preview Reference 1' }).click()
+  await expect.poll(() => page.evaluate(() => (
+    globalThis as typeof globalThis & {
+      __hostMessages: Array<{ type?: string; action?: string; payload?: { path?: string } }>
+    }
+  ).__hostMessages.some((item) => (
+    item.type === 'requestNative'
+      && item.action === 'previewFile'
+      && item.payload?.path === '/project/reference.png'
+  )))).toBe(true)
+})
+
+test('35 renders a video-generation recording with the shared presenter', async ({ page }) => {
+  await send(page, { type: 'hydrate', messages: [VIDEO_GENERATION_RECORDING] })
+
+  const turn = page.locator('[data-turn-id="recording-video-generation"]')
+  await expect(turn).toContainText('Animate the mobile chat transition')
+  await turn.locator('.tool-node > div').first().click()
+  await expect(turn).toContainText('5s')
+  await turn.getByRole('button', { name: 'Preview First frame' }).click()
+  await expect.poll(() => page.evaluate(() => (
+    globalThis as typeof globalThis & {
+      __hostMessages: Array<{ type?: string; action?: string; payload?: { path?: string } }>
+    }
+  ).__hostMessages.some((item) => (
+    item.type === 'requestNative'
+      && item.action === 'previewFile'
+      && item.payload?.path === '/project/first-frame.png'
+  )))).toBe(true)
 })

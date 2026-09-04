@@ -1,9 +1,8 @@
-import { Check, ClipboardList, Clock, Copy, Expand, MessageSquare, ScanSearch, TriangleAlert } from 'lucide-react'
+import { Check, Clock, MessageSquare, ScanSearch, TriangleAlert } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import type { CodexCommandExecutionItem, CodexPlanApprovalState, CodexPlanItem, CodexThreadItem } from '@superone/shared/agent-types'
+import type { CodexCommandExecutionItem, CodexPlanApprovalState, CodexThreadItem } from '@superone/shared/agent-types'
 import { ToolBlock } from './ToolBlock'
 import { CopyableMarkdown } from './CopyableMarkdown'
-import { MarkdownView } from '@/components/MarkdownPreview'
 import { ReasoningBlock } from './ReasoningBlock'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { resolveMarkdownLocalRefs } from './chat-shared'
@@ -11,10 +10,10 @@ import { shortenPath } from './tool-display'
 import type { ToolIcon as ToolIconName } from './tool-display'
 import { ToolIcon } from './ToolIcon'
 import { cn } from '@superone/ui/lib/utils'
-import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { AnsiText } from '@/lib/ansi'
 import { FileChip } from './ToolBlock'
 import { CodexPlanImplementFooter } from './CodexPlanImplementFooter'
+import { CodexPlanBlockPresenter } from './presenters/CodexPlanBlock'
 import { CodexImageGenerationBlock } from './CodexImageGenerationBlock'
 import { fileLinkComponents } from './chat-markdown-components'
 import { createContext, memo, useContext, useState, useEffect, useRef } from 'react'
@@ -192,55 +191,7 @@ function CollabSendInputBlock({ item }: { item: CodexCollabToolCallItem }) {
   )
 }
 
-function PlanActionButton({ icon: Icon, onClick, title }: { icon: React.ElementType; onClick: (e: React.MouseEvent) => void; title: string }) {
-  return (
-    <IconButton size="xs" onClick={onClick} tooltip={title}>
-      <Icon className="size-3" />
-    </IconButton>
-  )
-}
-
-function PlanApprovalBadge({ planApproval }: { planApproval: CodexPlanApprovalState }) {
-  const { t } = useTranslation()
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium',
-        planApproval.status === 'approved'
-          ? 'bg-success/10 text-success'
-          : 'bg-error/10 text-error',
-      )}
-    >
-      {planApproval.status === 'approved' ? t('chat.plan.approved') : t('chat.plan.rejected')}
-    </span>
-  )
-}
-
-function PlanApprovalSummary({ planApproval }: { planApproval: CodexPlanApprovalState }) {
-  const { t } = useTranslation()
-  if (planApproval.status === 'approved') {
-    return (
-      <div className="flex items-center gap-1.5 text-xs text-success">
-        <Check className="size-3 shrink-0" />
-        <span className="font-medium">{t('chat.plan.planApproved')}</span>
-      </div>
-    )
-  }
-
-  return (
-    <div className="rounded bg-error/10 px-2 py-1.5 text-xs text-error">
-      <div className="flex items-center gap-1.5">
-        <TriangleAlert className="size-3 shrink-0" />
-        <span className="font-medium">{t('chat.plan.planRejected')}</span>
-      </div>
-      {planApproval.feedback && (
-        <div className="mt-1 text-error/75">{planApproval.feedback}</div>
-      )}
-    </div>
-  )
-}
-
-function CodexPlanBlock({
+function DesktopCodexPlanBlock({
   item,
   isStreaming,
   nextItem,
@@ -248,81 +199,30 @@ function CodexPlanBlock({
   onRejectPlan,
   planApproval,
 }: {
-  item: CodexPlanItem
+  item: Extract<CodexThreadItem, { type: 'plan' }>
   isStreaming: boolean
   nextItem?: CodexThreadItem
   onApprovePlan?: () => void
   onRejectPlan?: (feedback?: string) => void
   planApproval?: CodexPlanApprovalState
 }) {
-  const { t } = useTranslation()
-  const isItemStreaming = isStreaming && !nextItem
-  const [expanded, setExpanded] = useState(isItemStreaming)
-  const [copied, setCopied] = useState(false)
   const planFullscreen = usePlanFullscreen()
-
-  useEffect(() => {
-    if (isItemStreaming) setExpanded(true)
-  }, [isItemStreaming])
-
-  const handleCopy = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    navigator.clipboard.writeText(item.text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
-  }
-
-  const handleFullscreen = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    planFullscreen.open(item.text, { onApprove: onApprovePlan, onReject: onRejectPlan, planApproval })
-  }
-
-  const handleApprove = () => {
-    setExpanded(false)
-    onApprovePlan?.()
-  }
-
-  const handleReject = (feedback?: string) => {
-    setExpanded(false)
-    onRejectPlan?.(feedback)
-  }
-
   return (
-    <div className={cn(
-      'mb-0.5 mt-1 min-w-0 rounded border border-border/60 bg-muted/30 transition-colors hover:bg-muted/50 cursor-pointer',
-      expanded && 'overflow-hidden',
-    )}>
-      <div className="flex items-center gap-1.5 px-2 py-2 text-xs" onClick={() => setExpanded((e) => !e)}>
-        <ClipboardList className="size-3.5 shrink-0 text-primary" />
-        <span className="shrink-0 whitespace-nowrap font-medium text-foreground">{t('chat.plan.label')}</span>
-        {planApproval && <PlanApprovalBadge planApproval={planApproval} />}
-        {!expanded && <span className="min-w-0 truncate text-muted-foreground">{item.text.split('\n')[0]}</span>}
-        {!expanded && planApproval?.status === 'rejected' && planApproval.feedback && (
-          <span className="min-w-0 truncate text-error/75">{planApproval.feedback}</span>
-        )}
-        <div className="ml-auto flex items-center gap-1">
-          {expanded && (
-            <div className="flex items-center gap-0.5">
-              <PlanActionButton icon={copied ? Check : Copy} onClick={handleCopy} title={t('tooltips.copyPlan')} />
-              <PlanActionButton icon={Expand} onClick={handleFullscreen} title={t('tooltips.fullscreen')} />
-            </div>
-          )}
-        </div>
-        <ChevronRight className={cn('size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded ? 'rotate-90' : 'ml-auto')} />
-      </div>
-      {expanded && (
-        <>
-          <div className="max-h-96 overflow-y-auto border-t border-border/50">
-            <MarkdownView content={item.text} className="px-4 py-3 text-xs" />
-          </div>
-          {!planApproval && onApprovePlan && onRejectPlan && (
-            <div className="flex items-center justify-end border-t border-border/50 px-3 py-2">
-              <CodexPlanImplementFooter onApprove={handleApprove} onReject={handleReject} />
-            </div>
-          )}
-        </>
+    <CodexPlanBlockPresenter
+      item={item}
+      isStreaming={isStreaming}
+      hasFollowingItem={Boolean(nextItem)}
+      planApproval={planApproval}
+      onApprovePlan={onApprovePlan}
+      onRejectPlan={onRejectPlan}
+      onOpenFullscreen={(text, actions) => planFullscreen.open(text, actions)}
+      renderApprovalActions={({ onApprove, onReject }) => (
+        <CodexPlanImplementFooter onApprove={onApprove} onReject={onReject} />
       )}
-    </div>
+      Markdown={({ text, isStreaming: streaming }) => (
+        <CopyableMarkdown text={text} isStreaming={streaming} components={fileLinkComponents} />
+      )}
+    />
   )
 }
 
@@ -359,7 +259,7 @@ export function renderCodexItem(
 
     case 'plan':
       return (
-        <CodexPlanBlock
+        <DesktopCodexPlanBlock
           key={`${item.id}-${index}`}
           item={item}
           isStreaming={isStreaming}

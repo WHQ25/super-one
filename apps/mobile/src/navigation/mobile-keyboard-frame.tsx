@@ -7,13 +7,14 @@ import { useMobileStyles } from '../theme/context'
  *
  * This must sit outside the navigator. A KeyboardAvoidingView inside a native-stack
  * scene receives the keyboard event but the screen container keeps its original
- * frame, leaving the composer behind the keyboard on iOS.
+ * frame, leaving the composer behind the keyboard. iOS needs padding while
+ * Android edge-to-edge windows need the container height reduced explicitly.
  */
 export function MobileKeyboardFrame({ children }: PropsWithChildren) {
   const styles = useMobileStyles()
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.flex}
     >
       {children}

@@ -308,7 +308,7 @@ export function MobileApp() {
         connectionRef.current = { state, epoch }
         setConnectionState(state)
         inject(webRef, { type: 'setConnection', state, epoch })
-        setStatus(state === 'connected' ? 'connected' : 'disconnected — reconnecting')
+        setStatus(state === 'connected' ? '' : 'disconnected — reconnecting')
       },
       onStatus: setStatus,
       onShutdown: () => {
@@ -343,7 +343,7 @@ export function MobileApp() {
     const projectRows = res.projects ?? []
     setProjects(projectRows)
     setScreen('projects')
-    setStatus(`${res.projects?.length ?? 0} projects`)
+    setStatus('')
     void Promise.all(projectRows.map(async (row) => {
       const git = await client.request({
         type: 'get_git_info',
@@ -757,7 +757,8 @@ export function MobileApp() {
   return (
     <SafeAreaView style={styles.root}>
       <StatusBar style={tokens.scheme === 'dark' ? 'light' : 'dark'} />
-      <MobileHeader
+      <MobileKeyboardFrame>
+        <MobileHeader
         route={screen}
         title={header}
         provider={selectedProvider}
@@ -768,9 +769,9 @@ export function MobileApp() {
         onSwitchSession={() => setSessionSwitcherOpen(true)}
         onOpenTerminal={openTerminal}
         onOpenSettings={openSettings}
-      />
+        />
 
-      <View style={styles.contentRow}>
+        <View style={styles.contentRow}>
         {tabletMultiPane && project ? (
           <TabletSessionSidebar
             projectName={project.name}
@@ -791,8 +792,7 @@ export function MobileApp() {
             )}
           />
         ) : null}
-        <View style={styles.mainPane}>
-          <MobileKeyboardFrame>
+          <View style={styles.mainPane}>
             <MobileNavigator
             route={screen}
             auxiliaryReturn={auxiliaryReturnRef.current}
@@ -973,9 +973,9 @@ export function MobileApp() {
               </>
             )}
             />
-          </MobileKeyboardFrame>
+          </View>
         </View>
-      </View>
+      </MobileKeyboardFrame>
       {status ? <Text style={styles.meta}>{status}</Text> : null}
       <MobileOverlays
         runtimeRef={runtimeRef}

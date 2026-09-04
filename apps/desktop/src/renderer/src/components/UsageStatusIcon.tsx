@@ -333,9 +333,11 @@ function RateLimitTipHost({ tip, children }: { tip: RateLimitTipInfo | null; chi
   )
 }
 
-function RateLimitGauge({ title, subtitle, planType, badgeRemaining, onOpen, onRefresh, refreshing, fetchedAt, highlight, children }: {
+function RateLimitGauge({ title, label, subtitle, planType, badgeRemaining, onOpen, onRefresh, refreshing, fetchedAt, highlight, children }: {
   /** Text, or a brand lockup for providers we ship an icon for. */
   title: ReactNode
+  /** Accessible name for the trigger. Required because `title` may render as artwork only. */
+  label: string
   /** Identity line under the title — which account these numbers belong to. */
   subtitle?: string | null
   planType: string | null
@@ -368,6 +370,7 @@ function RateLimitGauge({ title, subtitle, planType, badgeRemaining, onOpen, onR
       <PopoverTrigger asChild>
         <IconButton
           size="sm"
+          aria-label={label}
           className={cn(
             'transition-colors',
             badgeRemaining != null && 'h-6 w-auto gap-1 px-1.5',
@@ -454,7 +457,7 @@ function CodexRateLimitIcon({ projectPath, apiProviderId, threadId, status, tip,
 
   return (
     <RateLimitTipHost tip={tip}>
-      <RateLimitGauge title={t('usageGauge.codexTitle')} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={fetchLimits} highlight={highlight}>
+      <RateLimitGauge title={<ProviderLabel brandKey="openai" size={14} />} label={t('usageGauge.codexTitle')} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={fetchLimits} highlight={highlight}>
         {limits.primary && (
           <WindowRow label={formatWindowLabel(limits.primary.windowDurationMins, t)} usedPercent={limits.primary.usedPercent} resetsAt={limits.primary.resetsAt} />
         )}
@@ -527,7 +530,7 @@ function ClaudeRateLimitIcon({ credentialDir, status, tip, highlight }: { creden
 
   return (
     <RateLimitTipHost tip={tip}>
-      <RateLimitGauge title={<ProviderLabel brandKey="claude" size={14} />} subtitle={accountEmail} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt} highlight={highlight}>
+      <RateLimitGauge title={<ProviderLabel brandKey="claude" size={14} />} label={t('usageGauge.claudeTitle')} subtitle={accountEmail} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt} highlight={highlight}>
         {limits.windows.map((w) => (
           <WindowRow key={w.label} label={w.label} usedPercent={w.usedPercent} resetsAt={w.resetsAt} />
         ))}
@@ -578,7 +581,7 @@ function ProviderRateLimitIcon({ apiProviderId, status, tip, highlight }: { apiP
 
   return (
     <RateLimitTipHost tip={tip}>
-      <RateLimitGauge title={limits.title} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt} highlight={highlight}>
+      <RateLimitGauge title={limits.title} label={limits.title} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt} highlight={highlight}>
         {limits.windows.map((w) => (
           <WindowRow key={w.label} label={w.label} usedPercent={w.usedPercent} resetsAt={w.resetsAt} />
         ))}
@@ -641,7 +644,7 @@ function AcpRateLimitIcon({ projectPath, agentId, status, tip, highlight }: { pr
 
   return (
     <RateLimitTipHost tip={tip}>
-      <RateLimitGauge title={limits.title} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt} highlight={highlight}>
+      <RateLimitGauge title={limits.title} label={limits.title} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt} highlight={highlight}>
         {limits.windows.map((w) => (
           <WindowRow key={w.label} label={w.label} usedPercent={w.usedPercent} resetsAt={w.resetsAt} />
         ))}

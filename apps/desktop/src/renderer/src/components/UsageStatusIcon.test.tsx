@@ -137,6 +137,17 @@ describe('UsageStatusIcon rate-limit tip', () => {
     vi.unstubAllGlobals()
   })
 
+  it('gives the icon-only gauge trigger an accessible name', async () => {
+    // The title slot now renders brand artwork, so the translated string is the only thing left
+    // that names this control for a screen reader.
+    render(<UsageStatusIcon />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(screen.getByRole('button', { name: 'Claude Usage' })).toBeInTheDocument()
+  })
+
   it('names the account in the popover even when only one is signed in', async () => {
     // The default domain's identity changes whenever the user runs `claude /login` in their own
     // terminal, so "only one account" does not mean "no need to say which one".

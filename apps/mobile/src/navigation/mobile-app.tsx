@@ -20,7 +20,6 @@ import { randomId } from '../ids'
 import { isPairingQrInput, normalizePairingInput } from '../pairing-input'
 import { usePairingDeepLink } from '../pairing-deep-link'
 import { mergeMentionItems, shouldSubmitFromKeyboard } from '../composer-state'
-import { CHAT_WINDOW } from '../chat-window'
 import { CHAT_VIEW_STATE_KEY, parseStoredChatViewStates, type ChatViewState } from '../chat-view-state'
 import { filterSlashCommands } from '../slash'
 import { extractMentionQuery, insertMention, type MentionItem } from '../mentions'
@@ -72,7 +71,7 @@ export function MobileApp() {
   const [screen, setScreen] = useState<Screen>('pair')
   const [paste, setPaste] = useState('')
   const [lan, setLan] = useState('')
-  const [status, setStatus] = useState('Paste a superone://pair QR or {relayUrl,secret} JSON')
+  const [status, setStatus] = useState('')
   const [code, setCode] = useState<string | null>(null)
   const [deviceId, setDeviceId] = useState('')
   const [scannerOpen, setScannerOpen] = useState(false)
@@ -977,7 +976,7 @@ export function MobileApp() {
           </MobileKeyboardFrame>
         </View>
       </View>
-      <Text style={styles.meta}>{status} · window {CHAT_WINDOW.initialTurns}</Text>
+      {status ? <Text style={styles.meta}>{status}</Text> : null}
       <MobileOverlays
         runtimeRef={runtimeRef}
         setStatus={setStatus}

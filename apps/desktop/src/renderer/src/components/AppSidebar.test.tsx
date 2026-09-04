@@ -891,7 +891,7 @@ describe('AppSidebar interactions', () => {
     expect(screen.queryByText('Normal session 5')).toBeNull()
   })
 
-  it('keeps the foreground idle session in the first group', async () => {
+  it('keeps the foreground idle session visible without promoting it', async () => {
     sessionsByFolder = {
       '/project-a': [
         ...Array.from({ length: 6 }, (_, index) => ({
@@ -936,8 +936,11 @@ describe('AppSidebar interactions', () => {
     fireEvent.click(screen.getByText('project-a'))
     const firstNormal = await screen.findByText('Newer session 0')
 
-    expect(foreground.compareDocumentPosition(firstNormal) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
-    expect(screen.queryByText('Newer session 5')).toBeNull()
+    // Idle means it is not competing for attention: it keeps its own (oldest)
+    // spot in the list rather than jumping above the more recent sessions,
+    // but the display limit still may not drop the session being viewed.
+    expect(firstNormal.compareDocumentPosition(foreground) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+    expect(screen.getByText('Newer session 5')).toBeTruthy()
   })
 
   it('keeps showing a switched-away draft session while awaiting first reply', async () => {

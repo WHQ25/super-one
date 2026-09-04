@@ -143,6 +143,71 @@ describe('visibleSidebarSessionGroups', () => {
     ])
   })
 
+  it('leaves a pinned group in its natural position instead of promoting it', () => {
+    const visible = visibleSidebarSessionGroups(
+      sections,
+      true,
+      6,
+      (group) => group.parent.sessionId === 'normal-a',
+    )
+
+    expect(visible.map((group) => group.parent.sessionId)).toEqual([
+      'attention-a',
+      'attention-b',
+      'scheduled-a',
+      'scheduled-b',
+      'normal-a',
+      'normal-b',
+    ])
+  })
+
+  it('appends a pinned group the display limit would otherwise drop', () => {
+    const visible = visibleSidebarSessionGroups(
+      sections,
+      true,
+      5,
+      (group) => group.parent.sessionId === 'normal-c',
+    )
+
+    expect(visible.map((group) => group.parent.sessionId)).toEqual([
+      'attention-a',
+      'attention-b',
+      'scheduled-a',
+      'scheduled-b',
+      'normal-a',
+      'normal-c',
+    ])
+  })
+
+  it('keeps a pinned group visible while the project is collapsed', () => {
+    const visible = visibleSidebarSessionGroups(
+      sections,
+      false,
+      6,
+      (group) => group.parent.sessionId === 'normal-b',
+    )
+
+    expect(visible.map((group) => group.parent.sessionId)).toEqual([
+      'attention-a',
+      'attention-b',
+      'normal-b',
+    ])
+  })
+
+  it('does not duplicate a pinned group that already needs attention', () => {
+    const visible = visibleSidebarSessionGroups(sections, true, 6, () => true)
+
+    expect(visible.map((group) => group.parent.sessionId)).toEqual([
+      'attention-a',
+      'attention-b',
+      'scheduled-a',
+      'scheduled-b',
+      'normal-a',
+      'normal-b',
+      'normal-c',
+    ])
+  })
+
   it('never truncates attention or scheduled groups when they exceed the display limit', () => {
     const requiredGroups = groupSidebarSessions([
       session('attention-a'),

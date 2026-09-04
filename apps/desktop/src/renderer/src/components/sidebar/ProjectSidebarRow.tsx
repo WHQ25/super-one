@@ -108,29 +108,46 @@ export function partitionSidebarSessionGroups(
   }
 }
 
+/**
+ * `isPinned` keeps a group rendered without promoting it — the session the user
+ * is currently viewing must stay reachable in the sidebar, but reordering it to
+ * the top would reshuffle the list under the cursor on every switch. So a pinned
+ * group holds its natural position and is only appended when the display limit
+ * (or a collapsed project row) would otherwise drop it.
+ */
 export function visibleSidebarSessionGroups(
   sections: SidebarSessionSections,
   isExpanded: boolean,
   displayLimit: number,
+  isPinned: (group: SidebarSessionGroup) => boolean = () => false,
 ): SidebarSessionGroup[] {
-  if (!isExpanded) return sections.attention
-  const required = [...sections.attention, ...sections.scheduled]
-  const normalSlots = Math.max(0, displayLimit - required.length)
-  return [...required, ...sections.normal.slice(0, normalSlots)]
+  const visible = isExpanded
+    ? (() => {
+        const required = [...sections.attention, ...sections.scheduled]
+        const normalSlots = Math.max(0, displayLimit - required.length)
+        return [...required, ...sections.normal.slice(0, normalSlots)]
+      })()
+    : [...sections.attention]
+  const shown = new Set(visible.map((group) => group.parent.sessionId))
+  for (const group of [...sections.scheduled, ...sections.normal]) {
+    if (shown.has(group.parent.sessionId) || !isPinned(group)) continue
+    visible.push(group)
+  }
+  return visible
 }
 
 /**
  * Mirrors project-list collapse: when the parent's child list is collapsed,
- * still surface attention children (running, pending, unseen, …).
- * Expanded lists show every child.
+ * still surface children that must stay reachable (running, pending, unseen,
+ * and the session currently in the foreground). Expanded lists show every child.
  */
 export function visibleChildSessions(
   children: SessionHistoryEntry[],
   childrenExpanded: boolean,
-  isAttention: (session: SessionHistoryEntry) => boolean,
+  isVisibleWhenCollapsed: (session: SessionHistoryEntry) => boolean,
 ): SessionHistoryEntry[] {
   if (childrenExpanded) return children
-  return children.filter(isAttention)
+  return children.filter(isVisibleWhenCollapsed)
 }
 
 interface ProjectSidebarRowProps extends SessionRowCallbacks {
@@ -267,8 +284,10 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
       if (live.length > 0) sessions = [...live, ...sessions]
     }
 
+    // Ordering priority is about work that wants the user — not about where the
+    // user already is. The foreground session is pinned visible instead (see
+    // `isPinnedGroup`), so switching to an idle session never reorders the list.
     const isAttention = (session: SessionHistoryEntry) => {
-      if (session.sessionId === foregroundSessionId) return true
       const entry = projectSession?._sessions?.[session.sessionId]
       const isUnseen = projectSession?.unseenCompletedSessions?.has(session.sessionId)
       const realtimeSessionId = useCodexRealtimeViewStore
@@ -276,6 +295,15 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
         .sessions[session.sessionId]?.realtimeSessionId
       return isLiveSession(entry, isUnseen, typeof realtimeSessionId === 'string')
     }
+    const isForegroundSession = (session: SessionHistoryEntry) =>
+      !!foregroundSessionId && session.sessionId === foregroundSessionId
+    const isPinnedGroup = (group: SidebarSessionGroup) =>
+      isForegroundSession(group.parent) || group.children.some(isForegroundSession)
+    // Collapsed child lists and collapsed project rows both keep the session the
+    // user is viewing on screen, so visibility unions both predicates.
+    const isVisibleWhenCollapsed = (session: SessionHistoryEntry) =>
+      isAttention(session) || isForegroundSession(session)
+
     const sections = partitionSidebarSessionGroups(
       groupSidebarSessions(sessions),
       scheduledBySession,
@@ -283,7 +311,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
     )
     const requiredCount = sections.attention.length + sections.scheduled.length
     const displayLimit = Math.max(INITIAL_EXPAND_LEVEL, requiredCount) + additionalNormalCount
-    const groupsToShow = visibleSidebarSessionGroups(sections, isExpanded, displayLimit)
+    const groupsToShow = visibleSidebarSessionGroups(sections, isExpanded, displayLimit, isPinnedGroup)
     const totalCount = requiredCount + sections.normal.length
     return {
       displayPath: homePath(
@@ -293,10 +321,10 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           : folder.path,
       ),
       groupsToShow,
-      showSessions: isExpanded || sections.attention.length > 0,
+      showSessions: isExpanded || groupsToShow.length > 0,
       hasMoreToShow: isExpanded && (totalCount > groupsToShow.length || hasMoreSessions),
       nextRootTarget: displayLimit + EXPAND_STEP + 1,
-      isAttention,
+      isVisibleWhenCollapsed,
     }
   }, [allSessions, folder.path, isExpanded, hasMoreSessions, liveSessionSig, realtimeSessionSig, additionalNormalCount, scheduledBySession, foregroundSessionId])
 
@@ -544,7 +572,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                 const hasChildren = children.length > 0
                 const childrenExpanded = hasChildren && expandedChildrenIds.has(parent.sessionId)
                 const childrenCollapsed = hasChildren && !childrenExpanded
-                const childrenToShow = visibleChildSessions(children, childrenExpanded, derived.isAttention)
+                const childrenToShow = visibleChildSessions(children, childrenExpanded, derived.isVisibleWhenCollapsed)
                 return (
                 <div key={parent.sessionId}>
                   <SessionRow

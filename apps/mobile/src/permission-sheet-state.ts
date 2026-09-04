@@ -161,6 +161,21 @@ export function permissionSheetPresentation(request: PermissionRequest): Permiss
         })),
       }
     }
+    case 'device_control_confirm': {
+      const device = String(request.input.device || 'this device')
+      const platform = typeof request.input.platform === 'string' ? request.input.platform : undefined
+      const reason = typeof request.input.description === 'string' ? request.input.description : undefined
+      return {
+        title: request.message || `Allow control of ${device}?`,
+        description: reason || 'SuperOne can observe and interact with this device for the current session.',
+        approveLabel: 'Allow for this session',
+        alwaysLabel: request.allowAlwaysAllow ? 'Always allow' : undefined,
+        denyLabel: 'Deny',
+        items: [
+          { title: device, subtitle: platform || 'Device' },
+        ],
+      }
+    }
     default:
       return {
         title: `Allow ${genericToolName(request.toolName)}?`,

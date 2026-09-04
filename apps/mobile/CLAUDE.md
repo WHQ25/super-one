@@ -38,8 +38,9 @@ Android edge-to-edge navigation will cover footer/composer content.
 - **Screens live under `src/screens/`**, navigation under `src/navigation/` (expo-router),
   primitives under `src/ui/`. `App.tsx` stays under 300 lines; state modules stay in
   `src/*-state.ts` with unit tests, as today.
-- **Track desktop `main`, not v0.55.2.** Every `PermissionRequest.requestKind` (8 today,
-  including `session_cleanup_confirm`, `automation_confirm`, `webmcp_trust_confirm`)
+- **Track desktop `main`, not v0.55.2.** Every `PermissionRequest.requestKind` (9 today,
+  including `session_cleanup_confirm`, `automation_confirm`, `webmcp_trust_confirm`,
+  `device_control_confirm`)
   gets a real sheet; create/send works for every `HarnessId` and reads
   `HARNESS_CAPABILITIES` instead of hard-coding harness names.
 - Permission mode is a compact selector, never a chip row. Effort is hidden for mapped

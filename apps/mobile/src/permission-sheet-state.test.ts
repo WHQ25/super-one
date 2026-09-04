@@ -7,16 +7,18 @@ import {
   permissionSheetPresentation,
 } from './permission-sheet-state'
 
-const kinds: NonNullable<PermissionRequest['requestKind']>[] = [
-  'mcp_elicitation',
-  'video_gen_confirm',
-  'config_confirm',
-  'session_agents_confirm',
-  'computer_use_grant',
-  'session_cleanup_confirm',
-  'automation_confirm',
-  'webmcp_trust_confirm',
-]
+const kindSet = {
+  mcp_elicitation: true,
+  video_gen_confirm: true,
+  config_confirm: true,
+  session_agents_confirm: true,
+  computer_use_grant: true,
+  session_cleanup_confirm: true,
+  automation_confirm: true,
+  webmcp_trust_confirm: true,
+  device_control_confirm: true,
+} satisfies Record<NonNullable<PermissionRequest['requestKind']>, true>
+const kinds = Object.keys(kindSet) as NonNullable<PermissionRequest['requestKind']>[]
 
 function request(requestKind: NonNullable<PermissionRequest['requestKind']>): PermissionRequest {
   return { requestId: requestKind, requestKind, toolName: 'test_tool', input: {}, allowAlwaysAllow: true }
@@ -27,6 +29,20 @@ describe('permission sheet state', () => {
     const titles = kinds.map((kind) => permissionSheetPresentation(request(kind)).title)
     expect(new Set(titles).size).toBe(kinds.length)
     expect(titles.every(Boolean)).toBe(true)
+  })
+
+  it('uses device-scoped actions for device control approval', () => {
+    const deviceRequest = request('device_control_confirm')
+    deviceRequest.input = { device: 'iPhone 17 Pro Max', platform: 'iOS 26.5' }
+    deviceRequest.message = 'Let this session control iPhone 17 Pro Max?'
+
+    expect(permissionSheetPresentation(deviceRequest)).toMatchObject({
+      title: 'Let this session control iPhone 17 Pro Max?',
+      approveLabel: 'Allow for this session',
+      alwaysLabel: 'Always allow',
+      denyLabel: 'Deny',
+      items: [{ title: 'iPhone 17 Pro Max', subtitle: 'iOS 26.5' }],
+    })
   })
 
   it('packs video and config defaults into the protocol fields', () => {

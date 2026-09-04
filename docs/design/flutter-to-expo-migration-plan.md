@@ -33,7 +33,7 @@ Related: `apps/desktop/CLAUDE.md` (Remote Control), `apps/relay/`, `packages/sha
 | Mobile-bound `AgentEvent` types (73 total − 11 `SKIPPED_EVENTS`) | 62 | 28 | 45% |
 | `AgentEvent` types added since 2026-06-20 | 21 | 0 | 0% |
 | `HarnessId` drivable from mobile | 6 | 2 (`claude`, `codex`) | 33% |
-| `PermissionRequest.requestKind` | 8 | 5 | 63% |
+| `PermissionRequest.requestKind` | 9 | 5 | 56% |
 | Chat tool renderer families | ~28 | ~13 | ~46% |
 
 The request path never drifted; the event and renderer paths drifted to under half in 2.5 months while `agent-types.ts` changed 206 times and the desktop chat renderer + reducer averaged 40–70 commits/week. That is reason 1 below, measured. In Expo the same 21 new event types are already handled because `@superone/chat-core` **is** the desktop reducer; the remaining gap is the RN shell and the specialised tool presenters, not the protocol.
@@ -721,7 +721,7 @@ Deliverables:
 | **depends_on** | WP-26 |
 | **parallel_ok_with** | WP-28 |
 | **Goal** | Every Flutter shell file has an RN counterpart at equal or better quality, and the shell tracks current `main` (not v0.55.2) for permission kinds and harness ids. |
-| **Exit** | Every row of the mapping table below is done or has an explicit non-goal line; all 8 `PermissionRequest.requestKind`s render a proper sheet; new-session and send work for all 6 `HarnessId`s per `HARNESS_CAPABILITIES`; iPad shows sheets as anchored popovers; Mobile suite green. |
+| **Exit** | Every row of the mapping table below is done or has an explicit non-goal line; all 9 `PermissionRequest.requestKind`s render a proper sheet; new-session and send work for all 6 `HarnessId`s per `HARNESS_CAPABILITIES`; iPad shows sheets as anchored popovers; Mobile suite green. |
 | **Tests** | Unit for state modules (already the pattern in `apps/mobile/src/*-state.ts`); one simulator screenshot per sheet; Chinese Pinyin IME check on the simulator. |
 | **Scope** | `apps/mobile/` |
 
@@ -735,7 +735,7 @@ Flutter reference → RN deliverable. Use `super-one-flutter/lib/` as the behavi
 | `chat_page.dart` composer region, `chat_input_dirs_hint.dart` | Permission mode as a **compact selector** (one control, not a chip row); additional-directories hint; attachment chips with remove; send/stop button state; queued-message row |
 | `provider_overlay.dart` | Provider/model/effort picker driven by `SessionUiState`; hide effort for mapped providers (desktop rule) |
 | `slash_command_overlay.dart`, `mention_overlay.dart`, `mention_controller.dart` | Polished slash and `@` overlays (keyboard-avoiding, sectioned, icons) |
-| `permission_sheet.dart` | One sheet component covering **all 8** `requestKind`s — including `session_cleanup_confirm`, `automation_confirm`, `webmcp_trust_confirm` — with the same per-kind copy as desktop `PermissionPrompt` |
+| `permission_sheet.dart` | One sheet component covering **all 9** `requestKind`s — including `session_cleanup_confirm`, `automation_confirm`, `webmcp_trust_confirm`, `device_control_confirm` — with the same per-kind copy as desktop `PermissionPrompt` |
 | `question_sheet.dart` | AskUserQuestion sheet: single/multi-select, "Other" free text; HTML previews rendered in the chat WebView |
 | `plan_approval_sheet.dart`, `codex_plan_approval_sheet.dart` | Plan approval sheet (Claude + Codex); the plan block in the transcript comes from WP-28 |
 | `worktree_sheet.dart`, `add_dir_overlay.dart` | State already implemented; bring the UI to reference quality |
@@ -751,7 +751,7 @@ Non-goals in this WP: mDNS discovery (keep QR/relay + manual host:port), Android
 base provider instead of falling through to Claude. Remote system info exposes each
 harness's own model, effort, permission, and slash catalog; ACP carries the selected
 agent id, and Mobile sends the chosen model/effort on create and send. Device
-rename/forget, project Git indicators, the eight permission kinds, question/plan
+rename/forget, project Git indicators, the nine permission kinds, question/plan
 sheets, compact permission selection, queued messages, additional-directory hints,
 generated titles, quick session switching, file chrome, and terminal controls are
 implemented. Session rows now include model/status/tags and expose accessible swipe
@@ -1155,7 +1155,7 @@ Flutter has **zero** custom MethodChannels — plugin capability only (camera, f
 
 ## Appendix D — Remote Control parity (Expo must / must not)
 
-Frozen with WP-02 on v0.55.2; **baseline moved to current `main` at the 2026-09-04 re-scope** (§1a). The transcript list below is satisfied automatically by chat-core/chat-view; the shell list is owned by WP-27 and must be re-read against `main` (8 `requestKind`s, 6 `HarnessId`s). Source of truth: `docs/design/chat-core-contracts.md` §1.
+Frozen with WP-02 on v0.55.2; **baseline moved to current `main` at the 2026-09-04 re-scope** (§1a). The transcript list below is satisfied automatically by chat-core/chat-view; the shell list is owned by WP-27 and must be re-read against `main` (9 `requestKind`s, 6 `HarnessId`s). Source of truth: `docs/design/chat-core-contracts.md` §1.
 
 **Must (transcript comes with chat-view extract from this baseline):** sandbox chip; model-fallback notice row; structured error badge; grouped / background task notifications; unified tool status; `@native/*` galleries; DeepSeek Task + `diagnostic`; Cursor nested subagents; Codex Fast / Approve for Me; `messages_retracted`.
 

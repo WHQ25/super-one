@@ -23,6 +23,7 @@ artifacts, screenshots, and videos out of git.
    `bunx eas-cli build --platform android --profile internal` and
    `bunx eas-cli build --platform ios --profile production`.
 5. Install the APK, submit the iOS artifact to TestFlight, and complete the physical
-   smoke checklist.
+   smoke checklist. Run the 10-second airplane-mode recovery manually; simulator
+   automation is not used for this timing-sensitive gate.
 6. Publish one matching EAS Update and verify that both installed builds receive it.
 7. Archive `super-one-flutter` read-only after both platform smokes pass.

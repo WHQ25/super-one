@@ -132,6 +132,21 @@ describe('handleInboundFrame', () => {
     expect(t.lastAckedSeq).toBe(0)
   })
 
+  it('surfaces desktop lifecycle control frames without touching ACK state', () => {
+    const tracker = new SeqAckTracker()
+    tracker.see(1); tracker.markProcessed(1)
+
+    expect(handleInboundFrame({ type: 'peer_disconnected' }, tracker, () => ({}))).toEqual({
+      kind: 'control',
+      frame: { type: 'peer_disconnected' },
+    })
+    expect(handleInboundFrame({ type: 'handshake', hostName: 'desktop' }, tracker, () => ({}))).toEqual({
+      kind: 'control',
+      frame: { type: 'handshake', hostName: 'desktop' },
+    })
+    expect(tracker.lastAckedSeq).toBe(1)
+  })
+
   it('drops duplicate envelope seq', () => {
     const { aesKeyBytes } = deriveKeys(MASTER)
     const decrypt = makeDecrypt(aesKeyBytes)

@@ -51,4 +51,32 @@ describe('TerminalRuntime WebView bridge', () => {
       requestId: expect.any(String),
     }))
   })
+
+  it('resubscribes a live terminal after reconnect and skips an exited terminal', () => {
+    const { runtime, send } = setup()
+    runtime.recover()
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'terminal_subscribe',
+      terminalId: 'term-1',
+    }))
+
+    send.mockClear()
+    runtime.ingest({ type: 'terminal_exited', terminalId: 'term-1', exitCode: 0 })
+    runtime.recover()
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('recreates a terminal whose create request was interrupted by reconnect', () => {
+    const send = vi.fn()
+    const runtime = new TerminalRuntime({ send } as never, vi.fn())
+    runtime.create('/project', 'session-1')
+    send.mockClear()
+
+    runtime.recover()
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'terminal_create',
+      projectPath: '/project',
+      sessionId: 'session-1',
+    }))
+  })
 })

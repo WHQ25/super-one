@@ -9,6 +9,7 @@ export type MobileRelayConnectionHooks = {
   onConnection: (state: ConnectionState, epoch: number) => void
   onStatus: (message: string) => void
   onShutdown: () => void
+  onKicked?: () => void
   suppressDisconnect: () => boolean
   openSocket?: OpenSocket
 }
@@ -18,13 +19,19 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
   reconnectController: ReconnectController
 } {
   let client!: RelayClient
+  let stopped = false
+  let peerLost = false
+  let peerRestore: Promise<void> | null = null
   const report = hooks.onConnection
   const restore = () => hooks.restore(client)
   const reconnectController = new ReconnectController(
     () => client.reconnect(),
     restore,
     {
-      onState: report,
+      onState: (state, epoch) => {
+        if (state === 'connected') peerLost = false
+        report(state, epoch)
+      },
       onRetry: (error, delayMs) => {
         const reason = error instanceof Error ? error.message : 'connection failed'
         hooks.onStatus(`${reason} — retrying in ${delayMs / 1_000}s`)
@@ -43,8 +50,45 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
         .then((epoch) => report('connected', epoch))
         .catch((error) => hooks.onStatus(error instanceof Error ? error.message : 'rehydrate failed'))
     },
-    onShutdown: hooks.onShutdown,
+    onShutdown: () => {
+      stopped = true
+      reconnectController.cancel()
+      client.disconnect()
+      hooks.onShutdown()
+    },
+    onControl: (frame) => {
+      if (frame.type === 'peer_disconnected') {
+        peerLost = true
+        report('reconnecting', hooks.currentEpoch(client))
+        hooks.onStatus('desktop disconnected — waiting to reconnect')
+        return
+      }
+      if (frame.type === 'peer_connected') {
+        if (peerLost) hooks.onStatus('desktop reconnected — waiting for handshake')
+        return
+      }
+      if (frame.type === 'kicked') {
+        stopped = true
+        reconnectController.cancel()
+        client.disconnect()
+        hooks.onKicked?.()
+        return
+      }
+      if (frame.type !== 'handshake' || !peerLost || reconnectController.isActive || peerRestore) return
+      peerRestore = restore()
+        .then((epoch) => {
+          if (stopped) return
+          peerLost = false
+          report('connected', epoch)
+          hooks.onStatus('')
+        })
+        .catch((error) => {
+          if (!stopped) hooks.onStatus(error instanceof Error ? error.message : 'rehydrate failed')
+        })
+        .finally(() => { peerRestore = null })
+    },
     onStatus: (connected) => {
+      if (stopped) return
       if (!connected && hooks.suppressDisconnect()) return
       if (connected) {
         if (reconnectController.isActive) {

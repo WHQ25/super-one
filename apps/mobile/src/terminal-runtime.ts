@@ -8,6 +8,7 @@ export class TerminalRuntime {
   writable = false
   status = 'running'
   title = 'Terminal'
+  private recoveryTarget: { projectPath: string; sessionId?: string } | null = null
 
   constructor(
     private readonly client: RelayClient,
@@ -35,12 +36,23 @@ export class TerminalRuntime {
   }
 
   create(projectPath: string, sessionId?: string): void {
+    this.recoveryTarget = { projectPath, ...(sessionId ? { sessionId } : {}) }
     this.client.send({
       type: 'terminal_create',
       requestId: randomId(),
       projectPath,
       ...(sessionId ? { sessionId } : {}),
     })
+  }
+
+  /** Restore the terminal subscription after transport/session recovery. */
+  recover(): void {
+    if (this.status === 'exited') return
+    if (this.terminalId) {
+      this.subscribe()
+      return
+    }
+    if (this.recoveryTarget) this.create(this.recoveryTarget.projectPath, this.recoveryTarget.sessionId)
   }
 
   input(data: string): void {
@@ -73,12 +85,16 @@ export class TerminalRuntime {
       return
     }
     if (message.type === 'terminalReady' && this.terminalId) {
-      this.client.send({ type: 'terminal_subscribe', requestId: randomId(), terminalId: this.terminalId })
+      this.subscribe()
     }
   }
 
   claim(): void {
     if (!this.terminalId) return
     this.client.send({ type: 'terminal_claim', requestId: randomId(), terminalId: this.terminalId })
+  }
+
+  private subscribe(): void {
+    this.client.send({ type: 'terminal_subscribe', requestId: randomId(), terminalId: this.terminalId })
   }
 }

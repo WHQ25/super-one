@@ -10,7 +10,15 @@ export type InboundFrame = {
   requestId?: string
   index?: number
   total?: number
+  hostName?: string
+  mobileDeviceId?: string
 }
+
+export type RelayControlFrame =
+  | { type: 'handshake'; hostName?: string }
+  | { type: 'peer_connected' }
+  | { type: 'peer_disconnected' }
+  | { type: 'kicked'; mobileDeviceId?: string }
 
 export type FrameEffect =
   | { kind: 'drop' }
@@ -19,6 +27,7 @@ export type FrameEffect =
   | { kind: 'terminal'; payload: unknown }
   | { kind: 'reset' }
   | { kind: 'desktop_shutdown' }
+  | { kind: 'control'; frame: RelayControlFrame }
   | { kind: 'response'; requestId: string; payload: unknown }
   | { kind: 'response_error'; requestId: string; error: unknown }
   | { kind: 'response_chunk'; requestId: string; index: number; total: number; data: string }
@@ -56,6 +65,18 @@ export function handleInboundFrame(
   if (type === 'desktop_shutdown') {
     tracker.clear()
     return { kind: 'desktop_shutdown' }
+  }
+  if (type === 'handshake') {
+    return { kind: 'control', frame: { type, ...(frame.hostName ? { hostName: frame.hostName } : {}) } }
+  }
+  if (type === 'peer_connected' || type === 'peer_disconnected') {
+    return { kind: 'control', frame: { type } }
+  }
+  if (type === 'kicked') {
+    return {
+      kind: 'control',
+      frame: { type, ...(frame.mobileDeviceId ? { mobileDeviceId: frame.mobileDeviceId } : {}) },
+    }
   }
   if (type === 'terminal') {
     if (typeof frame.data !== 'string') return { kind: 'drop' }

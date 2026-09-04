@@ -29,12 +29,7 @@ import { harnessSupportsAdditionalDirs } from '../provider-state'
 import { parentRemotePath, resolveRemoteFilePath, type RemoteDirectoryEntry } from '../shell-state'
 import { loadOrCreateMobileId, mobileKv } from '../storage'
 import { registerFatalChatViewError } from '../chat-view-recovery'
-import {
-  pickAndUploadProjectFile,
-  pickChatImages,
-  pickChatPdf,
-  showAttachmentMenu,
-} from '../attachments'
+import { pickAndUploadProjectFile, pickChatImages, pickChatPdf, showAttachmentMenu } from '../attachments'
 import { SettingsScreen, type ShellGitInfo } from '../screens/settings-screen'
 import {
   buildWorktreeCreateOptions,
@@ -62,6 +57,8 @@ import { MobileOverlays } from './mobile-overlays'
 import { MobileKeyboardFrame } from './mobile-keyboard-frame'
 import { useHarnessSelection } from './use-harness-selection'
 import { fetchShellDetails } from './shell-details'
+import { useReconnectOnForeground } from '../use-reconnect-on-foreground'
+import { logRelayEventTypes } from '../relay-debug'
 const kv = mobileKv
 export function MobileApp() {
   const styles = useMobileStyles()
@@ -140,6 +137,7 @@ export function MobileApp() {
   const auxiliaryReturnRef = useRef<'sessions' | 'chat'>('sessions')
   const suppressReconnectRef = useRef(false)
   const scanningRef = useRef(false)
+  useReconnectOnForeground(() => reconnectControllerRef.current?.force(connectionRef.current.epoch))
   useEffect(() => {
     void loadPairings(kv).then(setPairings).catch((error) => {
       setStatus(error instanceof Error ? error.message : 'failed to load pairings')
@@ -286,14 +284,7 @@ export function MobileApp() {
     suppressReconnectRef.current = false
     const { client, reconnectController } = createMobileRelayConnection({
       onEvents: (events, epoch) => {
-        if (__DEV__) {
-          const eventTypes = events.map((event) => (
-            event && typeof event === 'object' && 'type' in event
-              ? String((event as { type: unknown }).type)
-              : 'unknown'
-          ))
-          console.debug('[relay] decrypted AgentEvents', eventTypes)
-        }
+        logRelayEventTypes(events)
         runtimeRef.current?.ingest(events, epoch)
       },
       onTerminal: (payload) => termRuntimeRef.current?.ingest(payload),
@@ -301,6 +292,7 @@ export function MobileApp() {
         const runtime = runtimeRef.current
         if (!runtime) return activeClient.releaseBuffer().epoch
         await runtime.reopen()
+        termRuntimeRef.current?.recover()
         return runtime.epoch
       },
       currentEpoch: (activeClient) => runtimeRef.current?.epoch ?? activeClient.buffer.epoch,
@@ -314,6 +306,12 @@ export function MobileApp() {
       onShutdown: () => {
         setConnectionState('offline')
         setStatus('desktop shut down')
+        setScreen('pair')
+      },
+      onKicked: () => {
+        setConnectionState('offline')
+        setStatus('this device was removed from the desktop')
+        setScreen('pair')
       },
       suppressDisconnect: () => suppressReconnectRef.current,
     })
@@ -322,9 +320,9 @@ export function MobileApp() {
     const hp = (lanHostPort ?? lan).trim()
     if (hp.includes(':')) {
       const [host, port] = hp.split(':')
-      await client.connectLan(host, Number(port), secret)
+      await client.connectLan(host, Number(port), secret, { deviceId: activeDeviceId, deviceName: 'Expo' })
     } else {
-      await client.connectRelay({ relayUrl, masterSecret: secret, deviceId: activeDeviceId })
+      await client.connectRelay({ relayUrl, masterSecret: secret, deviceId: activeDeviceId, deviceName: 'Expo' })
     }
     await rememberPairing({
       id: desktopDeviceId || hostName || relayUrl,

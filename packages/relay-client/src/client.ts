@@ -3,7 +3,7 @@ import { SeqAckTracker } from './ack'
 import { EventBuffer } from './buffer'
 import { buildLanWsUrl, buildRelayWsUrl, type TransportKind } from './connect'
 import { decryptPayload, deriveKeys, encryptPayload } from './crypto'
-import { handleInboundFrame, makeDecrypt, type InboundFrame } from './frames'
+import { handleInboundFrame, makeDecrypt, type InboundFrame, type RelayControlFrame } from './frames'
 import { RpcInbox } from './rpc'
 import { uploadBytes, type HttpPut, type UploadBytesOptions } from './attachments'
 import { downloadDesktopFileBytes, downloadSharedFileBytes, type HttpGet } from './downloads'
@@ -19,6 +19,7 @@ export type SocketLike = {
 }
 
 export type OpenSocket = (url: string) => SocketLike
+export type MobileIdentity = { deviceId: string; deviceName: string }
 
 const defaultOpenSocket: OpenSocket = (url) => new WebSocket(url) as unknown as SocketLike
 
@@ -34,8 +35,8 @@ export class RelayClient {
   private kind: TransportKind = 'relay'
   private closed = false
   private last:
-    | { kind: 'relay'; relayUrl: string; masterSecret: string; deviceId?: string }
-    | { kind: 'lan'; host: string; port: number; masterSecret: string }
+    | { kind: 'relay'; relayUrl: string; masterSecret: string; deviceId?: string; deviceName?: string }
+    | { kind: 'lan'; host: string; port: number; masterSecret: string; identity?: MobileIdentity }
     | null = null
 
   constructor(
@@ -44,6 +45,7 @@ export class RelayClient {
       onTerminal?: (payload: unknown) => void
       onReset?: () => void
       onShutdown?: () => void
+      onControl?: (frame: RelayControlFrame) => void
       onStatus?: (connected: boolean) => void
       openSocket?: OpenSocket
     } = {},
@@ -73,14 +75,17 @@ export class RelayClient {
     relayUrl: string
     masterSecret: string
     deviceId?: string
+    deviceName?: string
   }): Promise<void> {
     const sameRelay = this.last?.kind === 'relay'
       && this.last.relayUrl === opts.relayUrl
       && this.last.masterSecret === opts.masterSecret
       && this.last.deviceId === opts.deviceId
+      && this.last.deviceName === opts.deviceName
     if (!sameRelay) this.tracker.clear()
     this.last = { kind: 'relay', ...opts }
     this.kind = 'relay'
+    this.closed = false
     const built = await buildRelayWsUrl({
       relayUrl: opts.relayUrl,
       masterSecret: opts.masterSecret,
@@ -88,16 +93,20 @@ export class RelayClient {
       deviceId: opts.deviceId,
     })
     this.channelKeyHex = built.channelKeyHex
-    await this.open(built.url, built.aesKeyBytes, true)
+    const identity = opts.deviceId
+      ? { deviceId: opts.deviceId, deviceName: opts.deviceName ?? 'Mobile' }
+      : undefined
+    await this.open(built.url, built.aesKeyBytes, true, identity)
   }
 
-  async connectLan(host: string, port: number, masterSecret: string): Promise<void> {
-    this.last = { kind: 'lan', host, port, masterSecret }
+  async connectLan(host: string, port: number, masterSecret: string, identity?: MobileIdentity): Promise<void> {
+    this.last = { kind: 'lan', host, port, masterSecret, ...(identity ? { identity } : {}) }
     this.kind = 'lan'
+    this.closed = false
     const keys = deriveKeys(masterSecret)
     this.channelKeyHex = keys.channelKeyHex
     this.tracker.clear()
-    await this.open(buildLanWsUrl(host, port), keys.aesKeyBytes, false)
+    await this.open(buildLanWsUrl(host, port), keys.aesKeyBytes, false, identity)
   }
 
   disconnect(): void {
@@ -170,10 +179,15 @@ export class RelayClient {
     if (!last) return Promise.reject(new Error('never connected'))
     this.buffer.start()
     if (last.kind === 'relay') return this.connectRelay(last)
-    return this.connectLan(last.host, last.port, last.masterSecret)
+    return this.connectLan(last.host, last.port, last.masterSecret, last.identity)
   }
 
-  private async open(url: string, aesKeyBytes: Uint8Array, replay: boolean): Promise<void> {
+  private async open(
+    url: string,
+    aesKeyBytes: Uint8Array,
+    replay: boolean,
+    identity?: MobileIdentity,
+  ): Promise<void> {
     this.cancelConnect?.()
     this.cancelConnect = null
     this.clearAckTimer()
@@ -227,6 +241,13 @@ export class RelayClient {
       this.detachAndClose(ws)
       return
     }
+    if (identity) {
+      ws.send(JSON.stringify({
+        type: 'register',
+        deviceName: identity.deviceName,
+        mobileDeviceId: identity.deviceId,
+      }))
+    }
     this.hooks.onStatus?.(true)
     if (replay) {
       const fromSeq = this.tracker.lastAckedSeq + 1
@@ -268,6 +289,9 @@ export class RelayClient {
         this.clearAckTimer()
         this.buffer.stop()
         this.hooks.onShutdown?.()
+        return
+      case 'control':
+        this.hooks.onControl?.(effect.frame)
         return
       case 'response':
         this.rpc.complete(effect.requestId, effect.payload)

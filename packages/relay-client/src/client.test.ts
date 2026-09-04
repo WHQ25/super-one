@@ -59,6 +59,35 @@ describe('RelayClient', () => {
     expect(released.batches).toHaveLength(1)
   })
 
+  it('registers mobile identity before replay and surfaces relay control frames', async () => {
+    let sock: MockSocket | null = null
+    const controls: unknown[] = []
+    const client = new RelayClient({
+      openSocket: () => {
+        sock = new MockSocket()
+        queueMicrotask(() => sock?.onopen?.())
+        return sock
+      },
+      onControl: (frame) => controls.push(frame),
+    })
+
+    await client.connectRelay({
+      relayUrl: 'wss://relay.example',
+      masterSecret: MASTER,
+      deviceId: 'dev-1',
+      deviceName: 'Expo',
+    })
+    expect(sock!.sent.slice(0, 2).map((frame) => JSON.parse(frame).type)).toEqual(['register', 'replay'])
+    sock!.emit({ type: 'peer_disconnected' })
+    sock!.emit({ type: 'peer_connected' })
+    sock!.emit({ type: 'handshake', hostName: 'desktop' })
+    expect(controls).toEqual([
+      { type: 'peer_disconnected' },
+      { type: 'peer_connected' },
+      { type: 'handshake', hostName: 'desktop' },
+    ])
+  })
+
   it('restoreSession is subscribe → history → snapshot → release', async () => {
     let sock: MockSocket | null = null
     const client = new RelayClient({

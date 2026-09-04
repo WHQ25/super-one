@@ -18,11 +18,11 @@ describe('ReconnectController', () => {
     controller.start(4)
     expect(onState).toHaveBeenCalledWith('reconnecting', 4)
 
-    await vi.advanceTimersByTimeAsync(1_200)
+    await vi.advanceTimersByTimeAsync(1_000)
     expect(reconnect).toHaveBeenCalledTimes(1)
-    expect(onRetry).toHaveBeenCalledWith(expect.any(Error), 2_400)
+    expect(onRetry).toHaveBeenCalledWith(expect.any(Error), 2_000)
 
-    await vi.advanceTimersByTimeAsync(2_400)
+    await vi.advanceTimersByTimeAsync(2_000)
     expect(reconnect).toHaveBeenCalledTimes(2)
     expect(restore).toHaveBeenCalledTimes(1)
     expect(onState).not.toHaveBeenCalledWith('connected', expect.anything())
@@ -47,5 +47,27 @@ describe('ReconnectController', () => {
 
     expect(reconnect).not.toHaveBeenCalled()
     expect(controller.isActive).toBe(false)
+  })
+
+  it('caps retries at 30 seconds and force reconnects immediately', async () => {
+    vi.useFakeTimers()
+    const reconnect = vi.fn().mockRejectedValue(new Error('offline'))
+    const onRetry = vi.fn()
+    const controller = new ReconnectController(reconnect, async () => 1, {
+      onState: vi.fn(),
+      onRetry,
+    })
+
+    controller.start(0)
+    for (const delay of [1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000]) {
+      await vi.advanceTimersByTimeAsync(delay)
+    }
+    expect(onRetry.mock.calls.map((call) => call[1])).toEqual([
+      2_000, 4_000, 8_000, 16_000, 30_000, 30_000, 30_000,
+    ])
+
+    controller.force(7)
+    await vi.runAllTicks()
+    expect(reconnect).toHaveBeenCalledTimes(8)
   })
 })

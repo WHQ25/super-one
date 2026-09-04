@@ -5,7 +5,8 @@ export type ReconnectControllerHooks = {
   onRetry?: (error: unknown, delayMs: number) => void
 }
 
-export const RECONNECT_DELAYS_MS = [1_200, 2_400, 4_800, 8_000, 10_000] as const
+/** Keep the Flutter-proven retry cadence: exponential backoff capped at 30s. */
+export const RECONNECT_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000] as const
 
 /**
  * Owns one reconnect loop. A transport open is not "connected" until the
@@ -29,11 +30,13 @@ export class ReconnectController {
 
   start(epoch: number): void {
     if (this.active) return
-    this.active = true
-    this.attempt = 0
-    const generation = ++this.generation
-    this.hooks.onState('reconnecting', epoch)
-    this.schedule(generation)
+    this.begin(epoch, false)
+  }
+
+  /** App foreground recovery skips the pending delay, matching Flutter forceReconnect. */
+  force(epoch: number): void {
+    this.cancel()
+    this.begin(epoch, true)
   }
 
   cancel(): void {
@@ -50,6 +53,15 @@ export class ReconnectController {
       this.timer = null
       void this.run(generation)
     }, delay)
+  }
+
+  private begin(epoch: number, immediate: boolean): void {
+    this.active = true
+    this.attempt = 0
+    const generation = ++this.generation
+    this.hooks.onState('reconnecting', epoch)
+    if (immediate) void this.run(generation)
+    else this.schedule(generation)
   }
 
   private async run(generation: number): Promise<void> {

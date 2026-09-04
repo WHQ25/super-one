@@ -11,6 +11,9 @@ const app = JSON.parse(readFileSync(join(mobileRoot, 'app.json'), 'utf8')) as {
     runtimeVersion?: { policy?: string }
     ios?: { bundleIdentifier?: string }
     android?: { package?: string }
+    owner?: string
+    updates?: { url?: string }
+    extra?: { eas?: { projectId?: string } }
   }
 }
 const eas = JSON.parse(readFileSync(join(mobileRoot, 'eas.json'), 'utf8')) as {
@@ -28,6 +31,7 @@ const rootPackage = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf
 }
 const mobilePackage = JSON.parse(readFileSync(join(mobileRoot, 'package.json'), 'utf8')) as {
   dependencies?: Record<string, string>
+  scripts?: Record<string, string>
 }
 const gitignore = readFileSync(join(mobileRoot, '.gitignore'), 'utf8').split(/\r?\n/)
 
@@ -59,8 +63,21 @@ if (app.expo?.runtimeVersion?.policy !== 'appVersion') {
   throw new Error('EAS Update runtime compatibility must follow the native app version')
 }
 
+const easProjectId = app.expo?.extra?.eas?.projectId
+if (
+  app.expo?.owner !== 'wuhangqi25'
+  || !easProjectId
+  || app.expo.updates?.url !== `https://u.expo.dev/${easProjectId}`
+) {
+  throw new Error('Expo owner, EAS project ID, and EAS Update URL must stay linked')
+}
+
 if (!mobilePackage.dependencies?.['expo-updates']) {
   throw new Error('expo-updates must be installed before EAS Update can be configured')
+}
+
+if (mobilePackage.scripts?.['eas-build-post-install'] !== 'bun run build:chat-view') {
+  throw new Error('EAS builds must generate the ignored Chat View host modules after install')
 }
 
 if (!app.expo.ios?.bundleIdentifier || !app.expo.android?.package) {

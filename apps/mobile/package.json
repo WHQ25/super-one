@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "build:chat-view": "bun --cwd ../../packages/chat-view build",
+    "eas-build-post-install": "bun run build:chat-view",
     "generate:theme": "bun scripts/generate-theme-tokens.ts",
     "predev": "bun run build:chat-view",
     "dev": "expo start --dev-client",

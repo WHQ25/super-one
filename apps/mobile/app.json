@@ -55,7 +55,14 @@
       ]
     ],
     "extra": {
-      "supportsExpoGo": false
+      "supportsExpoGo": false,
+      "eas": {
+        "projectId": "289781d4-d0fb-4b48-b501-d8d1b58651fb"
+      }
+    },
+    "owner": "wuhangqi25",
+    "updates": {
+      "url": "https://u.expo.dev/289781d4-d0fb-4b48-b501-d8d1b58651fb"
     }
   }
 }

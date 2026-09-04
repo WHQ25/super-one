@@ -4,12 +4,14 @@
   },
   "build": {
     "base": {
-      "bun": "1.3.9"
+      "bun": "1.3.9",
+      "channel": "base"
     },
     "development": {
       "extends": "base",
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "channel": "development"
     },
     "internal": {
       "extends": "base",

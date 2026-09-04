@@ -34,13 +34,13 @@ export function MobileOverlays(props: {
     <>
       <PermissionSheet
         perm={props.permission}
-        onAllow={(id, formAnswers, alwaysAllow) => runUiAction(
-          () => runtime()?.respondPermission(id, true, formAnswers, alwaysAllow),
+        onAllow={(id, formAnswers, alwaysAllow, selectedSuggestions) => runUiAction(
+          () => runtime()?.respondPermission(id, true, formAnswers, alwaysAllow, undefined, selectedSuggestions),
           props.setStatus,
           'permission response failed',
         )}
-        onDeny={(id) => runUiAction(
-          () => runtime()?.respondPermission(id, false),
+        onDeny={(id, reason) => runUiAction(
+          () => runtime()?.respondPermission(id, false, undefined, undefined, reason),
           props.setStatus,
           'permission response failed',
         )}

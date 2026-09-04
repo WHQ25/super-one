@@ -769,6 +769,9 @@ Codex plan cards now expose approve/reject actions through the native bridge ins
 of being read-only. The native plan sheet shows requested permissions and file
 context, forwards rejection feedback, and offers Claude's post-approval Auto or
 Accept Edits transition.
+Permission sheets now forward optional denial feedback and let users select the
+host-provided permission suggestions instead of rendering those suggestions as
+read-only JSON.
 The built-in iPhone simulator now confirms that Return during a live Simplified
 Chinese Pinyin composition does not submit the partial text. That pass also exposed
 the native-stack scene retaining its full frame under the software keyboard; keyboard

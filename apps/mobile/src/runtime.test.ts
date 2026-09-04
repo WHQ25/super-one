@@ -171,7 +171,7 @@ describe('ChatRuntime', () => {
     expect(runtime.session.pendingPlanApproval?.requestId).toBe('plan')
     expect(runtime.session.pendingQuestion?.requestId).toBe('question')
     const formAnswers = { sessionAgentLaunchesJson: '[{"mode":"handoff"}]' }
-    runtime.respondPermission('perm', true, formAnswers, true, 'approved on mobile')
+    runtime.respondPermission('perm', true, formAnswers, true, 'approved on mobile', [1, 3])
     runtime.respondPlan('plan', false, 'change it')
     runtime.respondCodexPlan('assistant-1', 'rejected', 'revise it')
     runtime.answerQuestion('question', { Scope: 'All' }, { Scope: { notes: 'Include tests' } })
@@ -183,6 +183,7 @@ describe('ChatRuntime', () => {
         formAnswers,
         alwaysAllow: true,
         reason: 'approved on mobile',
+        selectedSuggestions: [1, 3],
       }),
       expect.objectContaining({ type: 'respond_plan_approval', requestId: 'plan', approved: false }),
       expect.objectContaining({

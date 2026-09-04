@@ -4,6 +4,7 @@ import {
   defaultPermissionFormAnswers,
   elicitationAnswersAreValid,
   initialElicitationAnswers,
+  permissionSuggestionLabel,
   permissionSheetPresentation,
 } from './permission-sheet-state'
 
@@ -68,5 +69,14 @@ describe('permission sheet state', () => {
     expect(answers).toEqual({ scope: 'repo', note: '' })
     expect(elicitationAnswersAreValid(fields, answers)).toBe(false)
     expect(elicitationAnswersAreValid(fields, { ...answers, note: 'ok' })).toBe(true)
+  })
+
+  it('presents selectable permission suggestions in human terms', () => {
+    expect(permissionSuggestionLabel({ type: 'setMode', mode: 'acceptEdits' })).toBe('Switch to acceptEdits')
+    expect(permissionSuggestionLabel({
+      type: 'addDirectories',
+      directories: ['/shared'],
+      destination: 'projectSettings',
+    })).toBe('Allow access to /shared for this project')
   })
 })

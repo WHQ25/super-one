@@ -39,6 +39,40 @@ function genericToolName(toolName: string): string {
   return toolName.replace(/^mcp__[^_]+__/, '').replace(/[_-]+/g, ' ').trim() || 'tool'
 }
 
+function suggestionDestination(value: unknown): string {
+  const destinations: Record<string, string> = {
+    session: 'this session',
+    localSettings: 'this folder',
+    projectSettings: 'this project',
+    userSettings: 'all projects',
+    cliArg: 'the CLI',
+  }
+  return destinations[String(value ?? 'session')] ?? String(value)
+}
+
+export function permissionSuggestionLabel(suggestion: Record<string, unknown>): string {
+  switch (suggestion.type) {
+    case 'setMode':
+      return `Switch to ${String(suggestion.mode ?? 'the suggested mode')}`
+    case 'addDirectories': {
+      const directories = Array.isArray(suggestion.directories) ? suggestion.directories.join(', ') : ''
+      return `Allow access to ${directories || 'the suggested directories'} for ${suggestionDestination(suggestion.destination)}`
+    }
+    case 'addRules': {
+      const rules = Array.isArray(suggestion.rules)
+        ? suggestion.rules.map((rule) => {
+          if (!rule || typeof rule !== 'object') return String(rule)
+          const value = rule as Record<string, unknown>
+          return value.ruleContent ? `${String(value.toolName ?? '')} (${String(value.ruleContent)})` : String(value.toolName ?? '')
+        }).filter(Boolean).join(', ')
+        : ''
+      return `Allow ${rules || 'the suggested rules'} for ${suggestionDestination(suggestion.destination)}`
+    }
+    default:
+      return valueLabel(suggestion)
+  }
+}
+
 export function permissionSheetPresentation(request: PermissionRequest): PermissionSheetPresentation {
   switch (request.requestKind) {
     case 'mcp_elicitation':
@@ -183,7 +217,7 @@ export function permissionSheetPresentation(request: PermissionRequest): Permiss
         approveLabel: 'Allow',
         denyLabel: 'Deny',
         alwaysLabel: request.allowAlwaysAllow ? 'Always allow' : undefined,
-        items: request.suggestions?.map((suggestion) => ({ title: valueLabel(suggestion) })) ?? [],
+        items: [],
       }
   }
 }

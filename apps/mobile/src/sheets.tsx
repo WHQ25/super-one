@@ -13,6 +13,7 @@ import {
   defaultPermissionFormAnswers,
   elicitationAnswersAreValid,
   initialElicitationAnswers,
+  permissionSuggestionLabel,
   permissionSheetPresentation,
 } from './permission-sheet-state'
 import { useMobileStyles } from './theme/context'
@@ -29,21 +30,26 @@ import {
 
 export function PermissionSheet(props: {
   perm: PermissionRequest | null
-  onAllow: (id: string, formAnswers?: Record<string, unknown>, alwaysAllow?: boolean) => void
-  onDeny: (id: string) => void
+  onAllow: (id: string, formAnswers?: Record<string, unknown>, alwaysAllow?: boolean, selectedSuggestions?: number[]) => void
+  onDeny: (id: string, reason?: string) => void
 }) {
   const styles = useMobileStyles()
   const perm = props.perm
   const fields = useMemo(() => perm?.elicitationForm ?? [], [perm?.elicitationForm])
   const [formValues, setFormValues] = useState<Record<string, unknown>>({})
+  const [feedback, setFeedback] = useState('')
+  const [selectedSuggestions, setSelectedSuggestions] = useState<Set<number>>(new Set())
   useEffect(() => {
     setFormValues(initialElicitationAnswers(fields))
+    setFeedback('')
+    setSelectedSuggestions(new Set())
   }, [fields, perm?.requestId])
   const collab = perm?.requestKind === 'session_agents_confirm'
     ? perm.sessionAgentsConfirm
     : undefined
   if (!perm) return null
   const presentation = permissionSheetPresentation(perm)
+  const suggestions = perm.requestKind ? [] : perm.suggestions ?? []
   const formValid = elicitationAnswersAreValid(fields, formValues)
   const answers = perm.requestKind === 'mcp_elicitation'
     ? formValues
@@ -52,13 +58,19 @@ export function PermissionSheet(props: {
     const formAnswers = perm.requestKind === 'webmcp_trust_confirm'
       ? { scope: alwaysAllow ? 'always' : 'session' }
       : answers
-    props.onAllow(perm.requestId, formAnswers, alwaysAllow)
+    props.onAllow(
+      perm.requestId,
+      formAnswers,
+      alwaysAllow,
+      selectedSuggestions.size ? [...selectedSuggestions].sort((a, b) => a - b) : undefined,
+    )
   }
+  const deny = () => props.onDeny(perm.requestId, feedback.trim() || undefined)
   return (
     <Sheet
       visible
       title={presentation.title}
-      onDismiss={() => props.onDeny(perm.requestId)}
+      onDismiss={deny}
     >
       {presentation.description ? <Text style={styles.permissionDescription}>{presentation.description}</Text> : null}
       <ScrollView style={styles.permissionBody} keyboardShouldPersistTaps="handled">
@@ -113,7 +125,27 @@ export function PermissionSheet(props: {
             trailing={item.warning ? <Badge label="Review" tone="warning" /> : undefined}
           />
         )) : null}
+        {suggestions.map((suggestion, index) => (
+          <ListRow
+            key={`suggestion:${index}`}
+            title={permissionSuggestionLabel(suggestion)}
+            selected={selectedSuggestions.has(index)}
+            trailing={selectedSuggestions.has(index) ? <Badge label="Selected" tone="success" /> : undefined}
+            onPress={() => setSelectedSuggestions((current) => {
+              const next = new Set(current)
+              if (next.has(index)) next.delete(index)
+              else next.add(index)
+              return next
+            })}
+          />
+        ))}
       </ScrollView>
+      <TextInput
+        style={styles.input}
+        placeholder="Optional feedback when denying"
+        value={feedback}
+        onChangeText={setFeedback}
+      />
       <View style={styles.permissionActions}>
         <Button
           label={presentation.approveLabel}
@@ -129,7 +161,7 @@ export function PermissionSheet(props: {
             onPress={() => approve(true)}
           />
         ) : null}
-        <Button label={presentation.denyLabel} variant="ghost" onPress={() => props.onDeny(perm.requestId)} />
+        <Button label={presentation.denyLabel} variant="ghost" onPress={deny} />
       </View>
     </Sheet>
   )

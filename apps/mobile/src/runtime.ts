@@ -234,6 +234,7 @@ export class ChatRuntime {
     formAnswers?: Record<string, unknown>,
     alwaysAllow?: boolean,
     reason?: string,
+    selectedSuggestions?: number[],
   ): void {
     const cmd: RemoteCommand = {
       type: 'respond_permission',
@@ -243,6 +244,7 @@ export class ChatRuntime {
       projectPath: this.projectPath,
       ...(alwaysAllow !== undefined ? { alwaysAllow } : {}),
       ...(reason ? { reason } : {}),
+      ...(selectedSuggestions?.length ? { selectedSuggestions } : {}),
       ...(formAnswers ? { formAnswers } : {}),
     }
     this.client.send(cmd)

@@ -1,7 +1,7 @@
 # Flutter → Expo Mobile Migration Plan
 
 Status: **executable plan — re-scoped 2026-09-04 (evening)**. Supersedes `docs/draft/flutter-to-expo-migration.md`. WP-01–22 are software-complete; WP-23/24 are **superseded** by Wave 8 (WP-25–29): land on `main` first, bring the RN shell to product quality, widen chat-view tool coverage, then ship through a lean release. **Executing agents: read §1a, then Wave 8, then start WP-25.**
-Last updated: 2026-09-04 (evening re-scope)
+Last updated: 2026-09-04 (Wave 8 execution)
 Sources: draft migration, monorepo inventory, validation, work-package catalog, adversarial review (ordering / extraction / protocol / delivery), v0.55.2 remote-parity freeze
 Related: `apps/desktop/CLAUDE.md` (Remote Control), `apps/relay/`, `packages/shared`, external repo `super-one-flutter`, `docs/design/chat-core-contracts.md`, `docs/design/expo-release-runbook.md`
 
@@ -19,6 +19,8 @@ Related: `apps/desktop/CLAUDE.md` (Remote Control), `apps/relay/`, `packages/sha
 - **Product scope:** Remote Control parity with **current desktop `main`** (0.61.0 at re-scope time; originally frozen at v0.55.2-alpha). The transcript follows `main` automatically because chat-core/chat-view *are* the desktop reducer and presenters; the RN shell must track `main` explicitly (all `PermissionRequest.requestKind` values, all `HarnessId`s for create/send). Not a desktop IDE clone — see `docs/design/chat-core-contracts.md` §1.
 
 **Execution update (2026-09-04):** branch rebased onto `main`; WP-09 and WP-11–22 are software-complete, and WP-23's software preflight is complete. `@superone/chat-core` owns the full reducer graph and a generated six-scenario `remote.out` TS snapshot oracle; `@superone/chat-view` owns the shared presenters plus self-contained chat and xterm documents; relay-client's ACK/replay/reset, terminal isolation, inline/LAN/R2 upload, and authenticated download invariants are green. WP-19 covers buffer-first reconnect rehydrate, stale-epoch rejection, 33 ms paint batching, live interaction sheets, and bounded WebView crash recovery. The RN shell includes camera QR, encrypted MMKV, lists/settings/files, native composer, IME guard, mentions, attachments, received-file preview/share, editable new-session worktree selection, structured collaboration handoff confirmation, and an iPad master/detail layout at 768 px. Native widget media uses result-owned gallery cards and host-backed file retrieval; nested code-widget iframes remain deliberately deferred under R6. Signed iPhone/iPad simulator and Android 16 emulator Release builds launch with dark SystemUI/Safe Area handling, and the Android QR camera flow opens and closes cleanly. WP-24 now has repository-owned EAS profiles, remote build-number policy, app-version runtime compatibility, credential guards, and a release runbook; Expo project binding, physical acceptance, shipped builds, dogfood, and Flutter archive remain gated.
+
+**Wave 8 execution update (2026-09-04):** WP-25 hygiene, logical commits, rebase, package tests, changed-Desktop verification, and workspace typecheck are complete on `feat/migrate-to-expo`; the final merge to `main` remains. WP-28 now shares the active Codex collaboration card, Claude/Codex plan rows, insight markdown rows, and image/video generation rows between Desktop and Expo. Desktop keeps only host actions and live-store adapters at the old paths. Sanitized offline recordings cover these families, and chat-view has 35 passing Playwright scenarios. Browser, device/computer-use, and session/automation/config tool families remain next; mini-app iframes remain deferred.
 
 ### 1a. Re-scope decision (2026-09-04, evening)
 
@@ -1122,4 +1124,4 @@ Frozen with WP-02 on v0.55.2; **baseline moved to current `main` at the 2026-09-
 
 ---
 
-*End of plan. WP-01–22 complete; WP-23/24 superseded by Wave 8. **Next: WP-25 (land on `main`)**, then WP-26 → WP-27 ∥ WP-28, then WP-29. Physical-device evidence is no longer a gate; the one-smoke-per-platform list in WP-29 is.*
+*End of plan. WP-01–22 complete; WP-23/24 superseded by Wave 8. **Current: finish the WP-25 merge while continuing WP-26 → WP-27 ∥ WP-28; next WP-28 families are browser, device/computer-use, then session/config.** WP-29 follows. Physical-device evidence is no longer a gate; the one-smoke-per-platform list in WP-29 is.*

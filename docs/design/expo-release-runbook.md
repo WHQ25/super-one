@@ -1,6 +1,6 @@
 # Expo release runbook
 
-Status: **Android APK/OTA emulator-verified; iOS production build complete; TestFlight submission and physical release pending**
+Status: **Android APK/OTA emulator-verified; iOS build and production OTA complete; TestFlight submission and physical release pending**
 Plan: `docs/design/flutter-to-expo-migration-plan.md` WP-29
 
 The release owner completed Apple Developer login/2FA and let EAS manage the signing
@@ -8,6 +8,8 @@ assets. iOS production build `f9243fb7-367e-4a96-b823-6e0eb9b57d9a` (version 1.0
 build 4) finished on 2026-09-04. The first App Store Connect submission still needs
 one interactive run to create/select the app; after that, persist its numeric
 `ascAppId` in the production submit profile so later submissions can be non-interactive.
+Production update group `54f90ac2-fdf6-4dda-99b5-0fa1fda472c7` publishes the
+current Android and iOS JavaScript at runtime `1.0.0`, matching iOS build 4.
 
 Run EAS commands from `apps/mobile`. Keep `credentials.json`, signing files, build
 artifacts, screenshots, and videos out of git.

@@ -867,9 +867,11 @@ streamed and interrupted a Chinese prompt, and kept the composer above Gboard. T
 relay client now retains the endpoint that actually completed the handshake instead
 of replacing it with an unreachable desktop-internal address. Release-mode physical
 pairing remains gated on the production WSS endpoint and the one-device smoke. The
-first non-interactive TestFlight submission correctly stopped because App Store
-Connect has not yet supplied an `ascAppId`; the release owner must create/select that
-app once interactively.
+production update group `54f90ac2-fdf6-4dda-99b5-0fa1fda472c7` now carries the
+latest interaction and terminal fixes for Android and iOS runtime `1.0.0`, matching
+iOS build 4. The first non-interactive TestFlight submission correctly stopped because
+App Store Connect has not yet supplied an `ascAppId`; the release owner must
+create/select that app once interactively.
 
 ---
 

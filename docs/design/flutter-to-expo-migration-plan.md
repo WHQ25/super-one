@@ -747,6 +747,17 @@ Flutter reference → RN deliverable. Use `super-one-flutter/lib/` as the behavi
 
 Non-goals in this WP: mDNS discovery (keep QR/relay + manual host:port), Android tablets.
 
+**Progress 2026-09-04:** all six Harness ids now create sessions through their own
+base provider instead of falling through to Claude. Remote system info exposes each
+harness's own model, effort, permission, and slash catalog; ACP carries the selected
+agent id, and Mobile sends the chosen model/effort on create and send. Device
+rename/forget, project Git indicators, the eight permission kinds, question/plan
+sheets, compact permission selection, queued messages, additional-directory hints,
+generated titles, quick session switching, file chrome, and terminal controls are
+implemented. Remaining shell work is session archive/delete/tags, polished
+slash/mention overlays, the collapsible todo treatment, received-file inbox polish,
+and the simulator screenshot/Pinyin acceptance pass.
+
 #### WP-28 — T3: chat-view tool family coverage
 
 | | |

@@ -4272,8 +4272,38 @@ export type TerminalEvent =
   | { type: 'terminal_exited'; terminalId: string; exitCode: number | null; signal: number | null }
   | { type: 'terminal_error'; terminalId: string; code: TerminalErrorCode; message: string }
 
+export interface RemoteEffortOption {
+  value: string
+  label: string
+  description?: string
+}
+
+/** Provider-specific catalog projected to Remote Control clients. */
+export interface RemoteSystemInfo {
+  models?: ModelOption[]
+  efforts?: RemoteEffortOption[]
+  userSlashCommands?: SlashCommandInfo[]
+  slashCommands?: SlashCommandInfo[]
+  permissionModes?: string[]
+  /** Legacy Codex alias retained for older Remote Control clients. */
+  permissionPresets?: string[]
+  sandboxModes?: string[]
+  account?: unknown
+  activeProvider?: RemoteActiveProvider | null
+  acpAgentId?: string | null
+  defaults?: {
+    model?: string | null
+    effort?: string | null
+    permissionMode?: string | null
+    /** Legacy Codex aliases retained for older Remote Control clients. */
+    reasoningEffort?: string | null
+    permissionPreset?: string | null
+  }
+  error?: string
+}
+
 export type RemoteCommand =
-  | { type: 'create_session'; requestId: string; sessionId: string; projectPath: string; provider?: HarnessId; permissionMode?: string; effort?: string; model?: string; gitBranch?: string; worktreePath?: string; worktreeBranch?: string; worktreeMode?: WorktreeMode; worktreeBranchName?: string; worktreeCarryLocalChanges?: boolean; additionalDirectories?: string[] }
+  | { type: 'create_session'; requestId: string; sessionId: string; projectPath: string; provider?: HarnessId; acpAgentId?: string; permissionMode?: string; effort?: string; model?: string; gitBranch?: string; worktreePath?: string; worktreeBranch?: string; worktreeMode?: WorktreeMode; worktreeBranchName?: string; worktreeCarryLocalChanges?: boolean; additionalDirectories?: string[] }
   | { type: 'send_message'; sessionId: string; projectPath: string; content: string; provider?: HarnessId; model?: string; effort?: string; images?: ImageAttachment[]; permissionPreset?: string; collaborationMode?: string; threadId?: string; clientMessageId?: string; priority?: 'now' | 'next' | 'later' }
   | { type: 'dequeue_message'; clientMessageId: string; projectPath?: string; sessionId: string }
   | { type: 'interrupt'; projectPath?: string; sessionId: string }

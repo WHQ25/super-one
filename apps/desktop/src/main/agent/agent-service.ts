@@ -48,6 +48,7 @@ import { searchFiles, searchMentions, EXCLUDED_DIRS, type AgentEntry } from './f
 import { SessionClaimConflictError, SessionLockedError } from '../session/types'
 import type { Session as SessionContract } from '../session/types'
 import { installAcpRecapFocus } from '../acp/acp-recap-focus'
+import { buildRemoteHarnessSystemInfo } from './remote-harness-system-info'
 
 /** Resolve a path to its git common directory (shared across worktrees). */
 function getGitRoot(cwd: string): string {
@@ -558,16 +559,6 @@ export class AgentService {
         }
         const mgr = this.requireSessionManager()
 
-        if (provider === 'codex') {
-          try {
-            mgr.createSession({ projectPath, providerId: 'codex-base', id: sessionId })
-            await respond?.(command.requestId, { ok: true, sessionId })
-          } catch (err) {
-            await respond?.(command.requestId, { ok: false, error: (err as Error).message })
-          }
-          break
-        }
-
         let cwd = projectPath
         let recordedGitBranch: string | null | undefined = undefined
         try {
@@ -601,11 +592,13 @@ export class AgentService {
           mgr.createSession({
             projectPath,
             cwd,
-            providerId: 'claude-base',
+            providerId: this.baseProviderIdForHarness(provider ?? 'claude'),
             id: sessionId,
             ...(recordedGitBranch !== undefined ? { gitBranch: recordedGitBranch } : {}),
             permissionMode: command.permissionMode as PermissionMode | undefined,
             effort: command.effort as SendMessageRequest['effort'] | undefined,
+            model: command.model,
+            acpAgentId: command.acpAgentId ?? null,
             ...(command.additionalDirectories?.length ? { additionalDirectories: command.additionalDirectories } : {}),
           })
           await respond?.(command.requestId, { ok: true, sessionId, cwd, gitBranch: recordedGitBranch ?? null })
@@ -1091,54 +1084,23 @@ export class AgentService {
       }
       case 'get_system_info': {
         try {
-          const isClaude = command.provider !== 'codex'
-          const { agentPreference } = readAppSettings()
-          if (isClaude) {
-            const cached = getCachedHarnessResources('claude')
-            log.info('[get_system_info] provider=claude hasCached=%s cachedModels=%d projectPath=%s', !!cached, cached?.models?.length ?? 0, command.projectPath)
-            const cachedModels = cached?.models
-            const fetchStart = Date.now()
-            const models = cachedModels?.length ? cachedModels : await fetchModels(command.projectPath)
-            log.info('[get_system_info] resolvedModels=%d source=%s modelsElapsed=%dms', models.length, cachedModels?.length ? 'cache' : 'fetch', Date.now() - fetchStart)
-            const activeProvider = buildRemoteActiveService(resolveChatService('claude', null, {
-              experimentalClaudeOpenAiChatEnabled: readAppSettings().experimentalClaudeOpenAiChatEnabled,
-            }), 'claude')
-            await respond?.(command.requestId, {
-              models,
-              userSlashCommands: (cached?.slashCommands ?? []).filter((c) => !c.terminalBound),
-              account: cached?.account ?? null,
-              permissionModes: ['default', 'acceptEdits', 'auto', 'plan', 'bypassPermissions', 'dontAsk'],
-              sandboxModes: ['off', 'on', 'auto'],
-              activeProvider,
-              defaults: {
-                model: agentPreference.claude.defaultModel || null,
-                effort: agentPreference.claude.defaultEffort || null,
-                permissionMode: agentPreference.claude.defaultPermissionMode || null,
-              },
-            })
-          } else {
-            const cached = getCachedHarnessResources('codex')
-            const models = this.codexListModels ? await this.codexListModels(command.projectPath) : []
-            const userPrompts = cached?.prompts ?? []
-            const activeProvider = buildRemoteActiveService(resolveChatService('codex'), 'codex')
-            await respond?.(command.requestId, {
-              models,
-              slashCommands: [
-                { name: 'reset', description: 'Reset Codex thread' },
-                { name: 'review', description: 'Review code changes' },
-                { name: 'compact', description: 'Compact thread context' },
-                ...userPrompts.map((p) => ({ name: p.name, description: p.description ?? '', argumentHint: p.argumentHint ?? '' })),
-              ],
-              account: this.codexGetAuthStatus?.(command.projectPath) ?? null,
-              permissionPresets: ['read-only', 'default', 'auto-review', 'full-access'],
-              activeProvider,
-              defaults: {
-                model: agentPreference.codex.defaultModel || null,
-                reasoningEffort: agentPreference.codex.defaultReasoningEffort || null,
-                permissionPreset: agentPreference.codex.defaultPermissionPreset || null,
-              },
-            })
-          }
+          const settings = readAppSettings()
+          const info = await buildRemoteHarnessSystemInfo(command.projectPath, command.provider, {
+            settings,
+            getCachedResources: getCachedHarnessResources,
+            fetchClaudeModels: fetchModels,
+            listCodexModels: this.codexListModels,
+            codexAccount: this.codexGetAuthStatus,
+            activeProvider: (harnessId) => buildRemoteActiveService(
+              harnessId === 'claude'
+                ? resolveChatService('claude', null, {
+                    experimentalClaudeOpenAiChatEnabled: settings.experimentalClaudeOpenAiChatEnabled,
+                  })
+                : resolveChatService('codex'),
+              harnessId,
+            ),
+          })
+          await respond?.(command.requestId, info)
         } catch (err) {
           log.error('[get_system_info] error: %s', err instanceof Error ? err.message : String(err))
           await respond?.(command.requestId, { error: (err as Error).message })
@@ -1148,8 +1110,7 @@ export class AgentService {
       }
       case 'get_project_resources': {
         try {
-          const isClaude = command.provider !== 'codex'
-          if (isClaude) {
+          if (command.provider === 'claude') {
             const skills = listSkills(command.projectPath)
             const agents = discoverAllAgents(command.projectPath)
             const projectSlashCommands = discoverProjectCommands(command.projectPath)
@@ -1161,10 +1122,19 @@ export class AgentService {
               cwd: command.projectPath,
               homedir: homedir(),
             })
-          } else {
+          } else if (command.provider === 'codex') {
             const skills = await getSharedCodexSkillsService().list(command.projectPath)
             await respond?.(command.requestId, {
               skills: skills.map((s) => ({ name: s.name, description: s.description ?? '', argumentHint: s.argumentHint ?? '' })),
+              workspaceDirs: getProjectExtraDirs(command.projectPath),
+              cwd: command.projectPath,
+              homedir: homedir(),
+            })
+          } else {
+            await respond?.(command.requestId, {
+              skills: [],
+              agents: [],
+              projectSlashCommands: [],
               workspaceDirs: getProjectExtraDirs(command.projectPath),
               cwd: command.projectPath,
               homedir: homedir(),

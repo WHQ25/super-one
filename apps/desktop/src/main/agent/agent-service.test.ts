@@ -238,6 +238,7 @@ const dbSessions = await import('../db-sessions')
 const appSettings = await import('../app-settings-service')
 const claudeModels = await import('./claude-models')
 const database = await import('../database')
+const { BASE_SESSION_PROVIDERS } = await import('@superone/shared/session-provider-definitions')
 type MockSessionExtras = {
   owner: { kind: 'local' } | { kind: 'remote'; deviceId: string }
   subscribers: Set<string>
@@ -2310,6 +2311,40 @@ describe('AgentService.handleRemoteCommand', () => {
     expect(respond).toHaveBeenCalledWith('r8', { success: true })
   })
 
+  it.each(Object.entries(BASE_SESSION_PROVIDERS))(
+    'create_session routes %s through its own base provider',
+    async (provider, definition) => {
+      const createSession = vi.fn()
+      const respond = vi.fn()
+      const service = new AgentService()
+      ;(service as { sessionManager: unknown }).sessionManager = { createSession }
+
+      await service.handleRemoteCommand({
+        type: 'create_session',
+        requestId: `create-${provider}`,
+        sessionId: `session-${provider}`,
+        projectPath: '/project',
+        provider: provider as keyof typeof BASE_SESSION_PROVIDERS,
+        permissionMode: 'default',
+        model: 'catalog-model',
+        effort: 'high',
+        ...(provider === 'acp' ? { acpAgentId: 'grok-build' } : {}),
+      }, respond)
+
+      expect(createSession).toHaveBeenCalledWith(expect.objectContaining({
+        providerId: definition.id,
+        model: 'catalog-model',
+        effort: 'high',
+        permissionMode: 'default',
+        ...(provider === 'acp' ? { acpAgentId: 'grok-build' } : {}),
+      }))
+      expect(respond).toHaveBeenCalledWith(`create-${provider}`, expect.objectContaining({
+        ok: true,
+        sessionId: `session-${provider}`,
+      }))
+    },
+  )
+
   it('get_system_info returns user agent defaults for claude', async () => {
     vi.mocked(appSettings.readAppSettings).mockReturnValue({
       analyticsEnabled: true,
@@ -2425,7 +2460,14 @@ describe('AgentService.handleRemoteCommand', () => {
     )
 
     const [, payload] = respond.mock.calls[0] as [string, Record<string, unknown>]
-    expect(payload.defaults).toEqual({ model: 'gpt-5-codex', reasoningEffort: 'high', permissionPreset: 'full-access' })
+    expect(payload.defaults).toEqual({
+      model: 'gpt-5-codex',
+      effort: 'high',
+      permissionMode: 'bypassPermissions',
+      reasoningEffort: 'high',
+      permissionPreset: 'full-access',
+    })
+    expect(payload.permissionModes).toEqual(['default', 'auto', 'bypassPermissions'])
     expect(payload.permissionPresets).toEqual(['read-only', 'default', 'auto-review', 'full-access'])
     expect(payload.slashCommands).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'help' }),

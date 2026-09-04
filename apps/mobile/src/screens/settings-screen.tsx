@@ -1,5 +1,11 @@
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native'
-import type { HarnessId, WorktreeInfo, WorktreeMode } from '@superone/shared/agent-types'
+import type {
+  HarnessId,
+  ModelOption,
+  RemoteEffortOption,
+  WorktreeInfo,
+  WorktreeMode,
+} from '@superone/shared/agent-types'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness-capabilities'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import {
@@ -16,7 +22,7 @@ export type ShellGitInfo = {
   dirty?: { files: number; insertions: number; deletions: number }
 }
 
-export type ModelRow = { id?: string; name?: string }
+export type ModelRow = ModelOption
 
 type Props = {
   gitInfo: ShellGitInfo | null
@@ -27,12 +33,15 @@ type Props = {
   onWorktreeSelectionChange: (selection: NewSessionWorktreeSelection) => void
   selectedProvider: HarnessId
   selectedModel: string
+  selectedEffort: string
   models: ModelRow[]
+  efforts: RemoteEffortOption[]
   workspaceDirs: string[]
   additionalDir: string
   onAdditionalDirChange: (value: string) => void
   onProviderChange: (provider: HarnessId) => void
   onModelChange: (model: string) => void
+  onEffortChange: (effort: string) => void
   onOpenFiles: () => void
   onAddDirectory: () => void
   onRemoveDirectory: (dir: string) => void
@@ -101,22 +110,37 @@ export function SettingsScreen(props: Props) {
           ))}
         </View>
         {props.models.length ? (
-          <ScrollView horizontal contentContainerStyle={styles.modelStrip}>
-            {props.models.map((model) => {
-              const id = model.id ?? model.name ?? ''
-              if (!id) return null
-              return (
+          <>
+            <Text style={styles.rowMeta}>Model</Text>
+            <ScrollView horizontal contentContainerStyle={styles.modelStrip}>
+              {props.models.map((model) => (
                 <Pressable
-                  key={id}
-                  style={[styles.chip, props.selectedModel === id ? styles.chipOn : null]}
-                  onPress={() => props.onModelChange(id)}
+                  key={model.id}
+                  style={[styles.chip, props.selectedModel === model.id ? styles.chipOn : null]}
+                  onPress={() => props.onModelChange(model.id)}
                 >
-                  <Text style={styles.rowMeta}>{model.name ?? id}</Text>
+                  <Text style={styles.rowMeta}>{model.name || model.id}</Text>
                 </Pressable>
-              )
-            })}
-          </ScrollView>
+              ))}
+            </ScrollView>
+          </>
         ) : <Text style={styles.rowMeta}>Default model</Text>}
+        {props.efforts.length > 1 ? (
+          <>
+            <Text style={styles.rowMeta}>Effort</Text>
+            <ScrollView horizontal contentContainerStyle={styles.modelStrip}>
+              {props.efforts.map((effort) => (
+                <Pressable
+                  key={effort.value}
+                  style={[styles.chip, props.selectedEffort === effort.value ? styles.chipOn : null]}
+                  onPress={() => props.onEffortChange(effort.value)}
+                >
+                  <Text style={styles.rowMeta}>{effort.label}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </>
+        ) : null}
       </View>
 
       <View style={styles.settingsCard}>

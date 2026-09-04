@@ -31,6 +31,8 @@ import type {
   PermissionRequest,
   PlanApprovalRequest,
   RemoteCommand,
+  RemoteEffortOption,
+  RemoteSystemInfo,
   TodoItem,
   WorktreeInfo,
 } from '@superone/shared/agent-types'
@@ -79,6 +81,11 @@ import { TerminalScreen } from '../screens/terminal-screen'
 import { SessionsScreen } from '../screens/sessions-screen'
 import { MobileNavigator, type MobileRoute as Screen } from './mobile-navigator'
 import { Badge, ListRow, Sheet } from '../ui'
+import {
+  effortOptionsForModel,
+  resolveSelectedEffort,
+  resolveSelectedModel,
+} from '../model-selection-state'
 type ChatViewState = Extract<HostOutbound, { type: 'viewState' }>
 const kv = mobileKv
 const CHAT_VIEW_STATE_KEY = 'superone:chat-view-state'
@@ -104,7 +111,11 @@ export function MobileApp() {
   const [activeSessionTitle, setActiveSessionTitle] = useState('')
   const [selectedProvider, setSelectedProvider] = useState<HarnessId>('claude')
   const [selectedModel, setSelectedModel] = useState('')
+  const [selectedEffort, setSelectedEffort] = useState('')
+  const [selectedAcpAgentId, setSelectedAcpAgentId] = useState<string | null>(null)
   const [models, setModels] = useState<ModelRow[]>([])
+  const [efforts, setEfforts] = useState<RemoteEffortOption[]>([])
+  const [systemInfo, setSystemInfo] = useState<RemoteSystemInfo>({})
   const [gitInfo, setGitInfo] = useState<ShellGitInfo | null>(null)
   const [worktreeInfo, setWorktreeInfo] = useState<WorktreeInfo | null>(null)
   const [branches, setBranches] = useState<string[]>([])
@@ -146,6 +157,7 @@ export function MobileApp() {
   const draftRef = useRef('')
   const lastDraftChangeAtRef = useRef(0)
   const mentionRequestRef = useRef(0)
+  const systemInfoRequestRef = useRef(0)
   const auxiliaryReturnRef = useRef<'sessions' | 'chat'>('sessions')
   const suppressReconnectRef = useRef(false)
   const scanningRef = useRef(false)
@@ -438,10 +450,39 @@ export function MobileApp() {
     setGitInfo(git)
     setScreen('sessions')
   }
+
+  const applySystemInfo = (
+    provider: HarnessId,
+    info: RemoteSystemInfo,
+    current?: { model?: string; effort?: string; permissionMode?: string },
+  ) => {
+    const model = resolveSelectedModel(info, current?.model)
+    const nextEfforts = effortOptionsForModel(provider, info, model)
+    const effort = resolveSelectedEffort(nextEfforts, current?.effort ?? info.defaults?.effort)
+    const modes = info.permissionModes?.length
+      ? info.permissionModes
+      : info.permissionPresets ?? []
+    const permissionMode = current?.permissionMode && modes.includes(current.permissionMode)
+      ? current.permissionMode
+      : info.defaults?.permissionMode && modes.includes(info.defaults.permissionMode)
+        ? info.defaults.permissionMode
+        : modes[0] ?? 'default'
+
+    setSystemInfo(info)
+    setModels(info.models ?? [])
+    setSelectedModel(model)
+    setEfforts(nextEfforts)
+    setSelectedEffort(effort)
+    setSelectedAcpAgentId(provider === 'acp' ? info.acpAgentId ?? null : null)
+    setPermModes(modes.length ? modes : ['default'])
+    setPermMode(permissionMode)
+  }
+
   const loadShellDetails = async (provider: HarnessId = selectedProvider) => {
     const client = clientRef.current
     const p = project
     if (!client || !p) return
+    const request = ++systemInfoRequestRef.current
     const [git, resources, worktree, system, branchResult, checkedOutResult] = await Promise.all([
       client.request({ type: 'get_git_info', requestId: randomId(), projectPath: p.path } as RemoteCommand)
         .catch(() => null) as Promise<ShellGitInfo | null>,
@@ -458,17 +499,17 @@ export function MobileApp() {
         requestId: randomId(),
         projectPath: p.path,
         provider,
-      } as RemoteCommand).catch(() => null) as Promise<{ models?: ModelRow[]; defaults?: { model?: string | null } } | null>,
+      } as RemoteCommand).catch(() => null) as Promise<RemoteSystemInfo | null>,
       client.request({ type: 'get_git_branches', requestId: randomId(), projectPath: p.path } as RemoteCommand)
         .catch(() => null) as Promise<{ branches?: string[] } | null>,
       client.request({ type: 'get_checked_out_branches', requestId: randomId(), projectPath: p.path } as RemoteCommand)
         .catch(() => null) as Promise<{ branches?: string[] } | null>,
     ])
+    if (request !== systemInfoRequestRef.current) return
     setGitInfo(git)
     setWorkspaceDirs(resources?.workspaceDirs ?? [])
     setWorktreeInfo(worktree)
-    setModels(system?.models ?? [])
-    setSelectedModel(system?.defaults?.model ?? '')
+    if (system) applySystemInfo(provider, system)
     setBranches(branchResult?.branches ?? [])
     setCheckedOutBranches(checkedOutResult?.branches ?? [])
   }
@@ -603,10 +644,15 @@ export function MobileApp() {
     setScreen('chat')
     await runtime.open(p.path, row.sessionId)
     const info = await runtime.loadSystemInfo(provider)
-    setModels(info.models ?? [])
-    setSelectedModel(info.defaults?.model ?? '')
-    if (info.permissionModes?.length) setPermModes(info.permissionModes)
-    else if (info.permissionPresets?.length) setPermModes(info.permissionPresets)
+    applySystemInfo(provider, info, {
+      model: provider === 'codex'
+        ? runtime.session.selectedCodexModel
+        : runtime.session.selectedModel,
+      effort: provider === 'codex'
+        ? runtime.session.selectedCodexReasoningEffort
+        : runtime.session.selectedEffort,
+      permissionMode: runtime.permissionMode,
+    })
   }).catch(failSessionTransition)
 
   const createSession = () => {
@@ -626,7 +672,12 @@ export function MobileApp() {
       const runtime = bindRuntime(client)
       const id = await runtime.create(p.path, {
         provider: selectedProvider,
+        ...(selectedProvider === 'acp' && selectedAcpAgentId
+          ? { acpAgentId: selectedAcpAgentId }
+          : {}),
+        permissionMode: permMode,
         ...(selectedModel ? { model: selectedModel } : {}),
+        ...(selectedEffort ? { effort: selectedEffort } : {}),
         ...(selectedProvider === 'claude'
           ? buildWorktreeCreateOptions(worktreeSelection, gitInfo?.branch)
           : {}),
@@ -639,8 +690,11 @@ export function MobileApp() {
       setActiveSessionTitle('New session')
       setScreen('chat')
       const info = await runtime.loadSystemInfo(selectedProvider)
-      setModels(info.models ?? [])
-      if (info.permissionModes?.length) setPermModes(info.permissionModes)
+      applySystemInfo(selectedProvider, info, {
+        model: selectedModel,
+        effort: selectedEffort,
+        permissionMode: permMode,
+      })
     }).catch(failSessionTransition)
   }
 
@@ -649,7 +703,11 @@ export function MobileApp() {
     const runtime = runtimeRef.current
     if ((!text && attachments.length === 0) || !runtime) return
     try {
-      await runtime.send(text, { images: attachments, ...(selectedModel ? { model: selectedModel } : {}) })
+      await runtime.send(text, {
+        images: attachments,
+        ...(selectedModel ? { model: selectedModel } : {}),
+        ...(selectedEffort ? { effort: selectedEffort } : {}),
+      })
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'message failed')
       return
@@ -871,7 +929,9 @@ export function MobileApp() {
           onWorktreeSelectionChange={setWorktreeSelection}
           selectedProvider={selectedProvider}
           selectedModel={selectedModel}
+          selectedEffort={selectedEffort}
           models={models}
+          efforts={efforts}
           workspaceDirs={workspaceDirs}
           additionalDir={additionalDir}
           onAdditionalDirChange={setAdditionalDir}
@@ -879,10 +939,19 @@ export function MobileApp() {
             setSelectedProvider(provider)
             setHarness(provider)
             setSelectedModel('')
+            setSelectedEffort('')
+            setEfforts([])
+            setSelectedAcpAgentId(null)
             if (provider !== 'claude') setWorktreeSelection(LOCAL_WORKTREE_SELECTION)
             void loadShellDetails(provider)
           }}
-          onModelChange={setSelectedModel}
+          onModelChange={(model) => {
+            const nextEfforts = effortOptionsForModel(selectedProvider, systemInfo, model)
+            setSelectedModel(model)
+            setEfforts(nextEfforts)
+            setSelectedEffort(resolveSelectedEffort(nextEfforts, selectedEffort))
+          }}
+          onEffortChange={setSelectedEffort}
           onOpenFiles={openFiles}
           onAddDirectory={() => runUiAction(addWorkspaceDirectory, setStatus, 'failed to add directory')}
           onRemoveDirectory={(dir) => runUiAction(() => removeWorkspaceDirectory(dir), setStatus, 'failed to remove directory')}

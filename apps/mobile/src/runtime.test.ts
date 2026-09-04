@@ -54,18 +54,40 @@ describe('ChatRuntime', () => {
     expect(runtime.permissionMode).toBe('plan')
     await runtime.send('hello', {
       model: 'm',
+      effort: 'high',
       images: [{ name: 'a.png', mimeType: 'image/png', base64: 'AA==' }],
     })
     expect(client.sent).toContainEqual(expect.objectContaining({
       type: 'send_message',
       provider: 'claude',
       model: 'm',
+      effort: 'high',
       images: [{ name: 'a.png', mimeType: 'image/png', base64: 'AA==' }],
     }))
     expect(client.request).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'send_message' }))
     runtime.interrupt()
     expect(client.sent).toContainEqual(expect.objectContaining({ type: 'interrupt', sessionId: id }))
     expect(client.request).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'interrupt' }))
+  })
+
+  it('forwards the selected ACP agent when creating a session', async () => {
+    const client = fakeClient()
+    const runtime = new ChatRuntime(client as never, vi.fn())
+
+    await runtime.create('/p', {
+      provider: 'acp',
+      acpAgentId: 'grok-build',
+      model: 'grok-4',
+      effort: 'deep',
+    })
+
+    expect(client.sent).toContainEqual(expect.objectContaining({
+      type: 'create_session',
+      provider: 'acp',
+      acpAgentId: 'grok-build',
+      model: 'grok-4',
+      effort: 'deep',
+    }))
   })
 
   it('paints at most once per 33ms event batch', () => {

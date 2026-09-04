@@ -5,6 +5,7 @@ import type {
   ImageAttachment,
   PermissionRequest,
   RemoteCommand,
+  RemoteSystemInfo,
 } from '@superone/shared/agent-types'
 import { applyEventToSession, createDefaultChatCoreSession } from '@superone/chat-core'
 import { AGENT_EVENT_BATCH_MS } from '@superone/shared/agent-event-batcher'
@@ -21,19 +22,11 @@ export type ChatRuntimeHooks = {
   onSharedFileProgress?: (event: SharedFileProgressEvent) => void
 }
 
-export type SystemInfo = {
-  models?: { id?: string; name?: string }[]
-  userSlashCommands?: unknown[]
-  slashCommands?: unknown[]
-  permissionModes?: string[]
-  permissionPresets?: string[]
-  account?: unknown
-  defaults?: { model?: string | null; permissionMode?: string | null; effort?: string | null }
-  error?: string
-}
+export type SystemInfo = RemoteSystemInfo
 
 export type CreateSessionOptions = {
-  provider?: string
+  provider?: HarnessId
+  acpAgentId?: string
   permissionMode?: string
   effort?: string
   model?: string
@@ -118,6 +111,7 @@ export class ChatRuntime {
       sessionId,
       projectPath,
       ...(opts.provider ? { provider: opts.provider as HarnessId } : {}),
+      ...(opts.acpAgentId ? { acpAgentId: opts.acpAgentId } : {}),
       ...(opts.permissionMode ? { permissionMode: opts.permissionMode } : {}),
       ...(opts.effort ? { effort: opts.effort } : {}),
       ...(opts.model ? { model: opts.model } : {}),
@@ -175,7 +169,7 @@ export class ChatRuntime {
     this.dirty = false
   }
 
-  send(content: string, extra: { images?: ImageAttachment[]; model?: string } = {}): void {
+  send(content: string, extra: { images?: ImageAttachment[]; model?: string; effort?: string } = {}): void {
     const cmd: RemoteCommand = {
       type: 'send_message',
       sessionId: this.sessionId,
@@ -183,6 +177,7 @@ export class ChatRuntime {
       content,
       provider: this.provider as HarnessId,
       ...(extra.model ? { model: extra.model } : {}),
+      ...(extra.effort ? { effort: extra.effort } : {}),
       ...(extra.images?.length ? { images: extra.images } : {}),
     }
     this.client.send(cmd)

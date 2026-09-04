@@ -6,8 +6,9 @@ import { toast } from 'sonner'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { CommandShortcut } from '@superone/ui/components/ui/command'
-import { useBrowserStore } from '@/stores/browser'
+import { browserTabCanvas, useBrowserStore } from '@/stores/browser'
 import { browserCapture } from './browser-host-api'
+import { flattenBrowserCapture } from './browser-canvas'
 import { isBlankUrl } from './browser-url'
 import { BrowserOmnibox } from './BrowserOmnibox'
 import { BrowserMoreMenu } from './BrowserMoreMenu'
@@ -36,7 +37,7 @@ export function BrowserChrome({ browserId, onNavigate, onBack, onForward, onRelo
     try {
       const img = await browserCapture(browserId)
       if (!img || img.isEmpty()) return
-      const blob = await (await fetch(img.toDataURL())).blob()
+      const blob = await (await fetch(await flattenBrowserCapture(img, browserTabCanvas(browserId)))).blob()
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
       toast.success(t('chat.browser.screenshotCopied'))
     } catch {

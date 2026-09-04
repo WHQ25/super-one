@@ -330,3 +330,34 @@ describe('BrowserHostLayer mosaic visibility', () => {
     expect(host.style.borderBottomRightRadius).toBe('var(--radius-xl)')
   })
 })
+
+describe('BrowserHostLayer page canvas', () => {
+  const mountLoadedTab = async (probe: unknown) => {
+    const { browserExecJs } = await import('./browser-host-api')
+    vi.mocked(browserExecJs).mockResolvedValue(probe)
+    const { container } = render(<BrowserHostLayer />)
+    await act(async () => {
+      useBrowserStore.getState().ensure('browser-a', 'https://example.com')
+      useBrowserStore.getState().updateSlot('browser-a', 'panel', RECT)
+    })
+    return container.querySelector('[data-browser-id="browser-a"]') as HTMLElement
+  }
+
+  // The glass window has no background of its own, so a page that paints none
+  // either would show the app's vibrancy instead of a browser canvas.
+  it('paints the light canvas behind a page that declares no colour-scheme', async () => {
+    const host = await mountLoadedTab(['normal', true])
+    expect(host.style.backgroundColor).toBe('white')
+  })
+
+  it('paints the dark canvas behind a page whose used colour-scheme is dark', async () => {
+    const host = await mountLoadedTab(['light dark', true])
+    expect(host.style.backgroundColor).toBe('rgb(18, 18, 18)')
+  })
+
+  it('leaves the new-tab page on glass', async () => {
+    const host = await mountLoadedTab(['light dark', true])
+    await act(async () => useBrowserStore.getState().patch('browser-a', { url: 'about:blank' }))
+    expect(host.style.backgroundColor).toBe('')
+  })
+})

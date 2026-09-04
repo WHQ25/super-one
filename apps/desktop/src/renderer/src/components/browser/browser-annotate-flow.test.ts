@@ -14,7 +14,17 @@ const { mockStore } = vi.hoisted(() => ({
 vi.mock('@/stores/chat', () => ({ useChatStore: { getState: () => mockStore } }))
 vi.mock('./browser-host-api', () => ({
   browserExecJs: vi.fn().mockResolvedValue(undefined),
-  browserCapture: vi.fn().mockResolvedValue({ isEmpty: () => false, toDataURL: () => 'data:image/png;base64,YWJj' }),
+  browserCapture: vi.fn().mockResolvedValue({
+    isEmpty: () => false,
+    getSize: () => ({ width: 10, height: 10 }),
+    toDataURL: () => 'data:image/png;base64,YWJj',
+  }),
+}))
+// Compositing the canvas colour is covered in browser-canvas.test.ts; here it would
+// only re-encode the fixture and obscure what this file is about.
+vi.mock('./browser-canvas', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./browser-canvas')>()),
+  flattenBrowserCapture: (image: Electron.NativeImage) => Promise.resolve(image.toDataURL()),
 }))
 
 const RECT = { x: 0, y: 0, width: 10, height: 10 }

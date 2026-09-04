@@ -13,6 +13,7 @@ import { useBrowserAutomationHost } from './browser-automation-runtime'
 import { buildSessionScript, handleAnnotationMessage } from './browser-annotate-flow'
 import { ANNOTATE_CANCEL_SCRIPT, ANNOTATE_CTX_TRACKER_SCRIPT, ANNOTATE_MSG_PREFIX } from './browser-annotate-script'
 import { isBlankUrl, sameOrigin } from './browser-url'
+import { BROWSER_CANVAS_PROBE, BROWSER_LIGHT_CANVAS, browserCanvasColor, isBrowserCanvasProbe } from './browser-canvas'
 import { useBrowserContextMenu } from './browser-context-menu'
 import { openBrowserTab } from '@/components/activity/activity-panel-api'
 import { ACTIVITY_PANEL_TRANSITION } from '@/lib/layout-constants'
@@ -94,11 +95,8 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
     const tab = s.tabs[browserId]
     return isBlankUrl(tab?.url ?? '') && !tab?.hasCustomBlankContent
   })
-  const customBlank = useBrowserStore((s) => {
-    const tab = s.tabs[browserId]
-    return isBlankUrl(tab?.url ?? '') && tab?.hasCustomBlankContent === true
-  })
   const certErrored = useBrowserStore((s) => s.tabs[browserId]?.certError != null)
+  const canvas = useBrowserStore((s) => s.tabs[browserId]?.canvas ?? BROWSER_LIGHT_CANVAS)
   const webviewRef = useRef<Electron.WebviewTag>(null)
   const hostRef = useRef<HTMLDivElement>(null)
   const zoomLevelRef = useRef(0)
@@ -179,7 +177,24 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
       patch(browserId, { url, canGoBack: wv.canGoBack(), canGoForward: wv.canGoForward(), ...reset })
     }
     const onStart = () => patch(browserId, { loading: true })
+    // Chromium's canvas colour depends on the document's used colour-scheme, so it
+    // is re-read per navigation: at dom-ready for the common case, and again once
+    // loading settles for a page whose scheme arrives with a late stylesheet.
+    const syncCanvas = () => {
+      void browserExecJs(browserId, BROWSER_CANVAS_PROBE)
+        .then((probe) => {
+          // Patch only on a real change: `tabs` is a shared object, so rewriting it
+          // per navigation would re-render every tab subscriber for nothing.
+          const next = browserCanvasColor(isBrowserCanvasProbe(probe) ? probe : null)
+          if (useBrowserStore.getState().tabs[browserId]?.canvas !== next) patch(browserId, { canvas: next })
+        })
+        .catch(() => {
+          // webview mid-teardown, or a page that refuses script evaluation: keep the
+          // canvas we last resolved rather than flashing a different one
+        })
+    }
     const onStop = () => {
+      syncCanvas()
       patch(browserId, { loading: false })
       useBrowserStore.getState().markAutomationPreviewReady(browserId)
       syncNav()
@@ -202,10 +217,13 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
       if (e.isMainFrame && useBrowserStore.getState().tabs[browserId]?.certError) patch(browserId, { certError: null })
     }
     const onContextMenu = (e: Electron.ContextMenuEvent) => contextMenuRef.current(wv, e)
-    const injectCtxTracker = () => void browserExecJs(browserId, ANNOTATE_CTX_TRACKER_SCRIPT).catch(() => {})
+    const onDomReady = () => {
+      void browserExecJs(browserId, ANNOTATE_CTX_TRACKER_SCRIPT).catch(() => {})
+      syncCanvas()
+    }
 
-    injectCtxTracker()
-    wv.addEventListener('dom-ready', injectCtxTracker)
+    onDomReady()
+    wv.addEventListener('dom-ready', onDomReady)
     wv.addEventListener('console-message', onConsole)
     wv.addEventListener('context-menu', onContextMenu)
     wv.addEventListener('did-start-navigation', onNavigateClearConsole)
@@ -219,7 +237,7 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
     return () => {
       unregister()
       clearBrowserConsole(browserId)
-      wv.removeEventListener('dom-ready', injectCtxTracker)
+      wv.removeEventListener('dom-ready', onDomReady)
       wv.removeEventListener('console-message', onConsole)
       wv.removeEventListener('context-menu', onContextMenu)
       wv.removeEventListener('did-start-navigation', onNavigateClearConsole)
@@ -339,10 +357,12 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
           : `clip-path ${ACTIVITY_PANEL_TRANSITION.durationMs}ms ${ACTIVITY_PANEL_TRANSITION.easing}`,
         pointerEvents: visible && slot?.mode !== 'pip' && !resizing ? 'auto' : 'none',
         overflow: 'hidden',
-        // Electron composites about:blank transparency through the webview. Use the
-        // normal browser canvas colour behind injected content, without mutating the
-        // page or overriding a background the injected CSS deliberately supplies.
-        backgroundColor: customBlank ? 'white' : undefined,
+        // The glass window's background is transparent and Electron composites the
+        // guest straight through it, so a page that paints no background of its own
+        // would show the app's vibrancy. Paint the canvas Chromium would have painted
+        // instead — without mutating the page. The new-tab page, drawn above this in
+        // the React layer, is the one surface meant to read as glass.
+        backgroundColor: home ? undefined : canvas,
         borderTopLeftRadius: slot?.mode === 'pip' ? 'var(--radius-xl)' : undefined,
         borderTopRightRadius: slot?.mode === 'pip' ? 'var(--radius-xl)' : undefined,
         borderBottomLeftRadius: slot?.mode === 'pip' || (slot?.mode === 'panel' && roundLeft && activitySide === 'left') ? 'var(--radius-xl)' : undefined,

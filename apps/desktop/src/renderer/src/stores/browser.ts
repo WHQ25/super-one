@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { withoutKey } from '@/lib/record'
+import { BROWSER_LIGHT_CANVAS } from '@/components/browser/browser-canvas'
 
 export interface BrowserTabState {
   url: string
@@ -11,6 +12,21 @@ export interface BrowserTabState {
   canGoForward: boolean
   owner: string | null
   certError: { url: string; error: string } | null
+  /**
+   * The canvas colour Chromium would paint behind this page, resolved from the
+   * guest's used colour-scheme. Runtime fact, re-probed on every navigation —
+   * it backs both the on-screen webview and the flattening of its captures.
+   */
+  canvas: string
+}
+
+/**
+ * The canvas colour a tab's captures must be flattened onto. Lives here rather than
+ * in `browser-canvas` so capture paths outside React can read it without that module
+ * importing the store back (its constants seed `DEFAULT_TAB`).
+ */
+export function browserTabCanvas(id: string): string {
+  return useBrowserStore.getState().tabs[id]?.canvas ?? BROWSER_LIGHT_CANVAS
 }
 
 export type BrowserSlotMode = 'panel' | 'pip' | 'overlay'
@@ -85,6 +101,7 @@ const DEFAULT_TAB: BrowserTabState = {
   canGoForward: false,
   owner: null,
   certError: null,
+  canvas: BROWSER_LIGHT_CANVAS,
 }
 
 function incrementRef(refs: Record<string, number>, id: string): Record<string, number> {

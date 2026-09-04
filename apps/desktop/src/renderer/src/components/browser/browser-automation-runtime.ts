@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useBrowserStore } from '@/stores/browser'
+import { browserTabCanvas, useBrowserStore } from '@/stores/browser'
 import {
   browserExecJs,
   browserCapture,
@@ -18,6 +18,7 @@ import { isBlankUrl } from './browser-url'
 import { closeBrowserTab, openBrowserTab } from '@/components/activity/activity-panel-api'
 import { useAgentViewfinderStore } from '@/stores/agent-viewfinder'
 import { fitScreenshotWidth } from './screenshot-fit'
+import { decodeCaptureImage, flattenBrowserCapture } from './browser-canvas'
 import {
   analyzeBrowserCaptureProbe,
   BROWSER_CAPTURE_PROBE_RECT,
@@ -63,15 +64,6 @@ function recordingMimeType(): string {
   throw new Error('This Chromium build cannot encode WebM action recordings')
 }
 
-function loadCanvasImage(dataUrl: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const image = new Image()
-    image.onload = () => resolve(image)
-    image.onerror = () => reject(new Error('Failed to decode browser recording frame'))
-    image.src = dataUrl
-  })
-}
-
 async function paintRecordingFrame(recording: ActiveBrowserRecording): Promise<void> {
   if (recording.frameInFlight || recording.recorder.state === 'inactive') return
   recording.frameInFlight = true
@@ -84,7 +76,9 @@ async function paintRecordingFrame(recording: ActiveBrowserRecording): Promise<v
       recording.canvas.width = size.width
       recording.canvas.height = size.height
     }
-    const image = await loadCanvasImage(frame.toDataURL())
+    const image = await decodeCaptureImage(frame.toDataURL())
+    recording.context.fillStyle = browserTabCanvas(recording.tabId)
+    recording.context.fillRect(0, 0, recording.canvas.width, recording.canvas.height)
     recording.context.drawImage(image, 0, 0, recording.canvas.width, recording.canvas.height)
   } finally {
     recording.frameInFlight = false
@@ -112,7 +106,9 @@ async function startBrowserRecording(tabId: string): Promise<{ recordingId: stri
     canvas.height = size.height
     const context = canvas.getContext('2d')
     if (!context) throw new Error('Browser recording canvas is unavailable')
-    const image = await loadCanvasImage(sized.toDataURL())
+    const image = await decodeCaptureImage(sized.toDataURL())
+    context.fillStyle = browserTabCanvas(tabId)
+    context.fillRect(0, 0, size.width, size.height)
     context.drawImage(image, 0, 0, size.width, size.height)
 
     const recordingId = crypto.randomUUID()
@@ -777,7 +773,9 @@ async function readBrowserCapturePixels(image: Electron.NativeImage): Promise<{
   height: number
 }> {
   const size = image.getSize()
-  const element = await loadCanvasImage(image.toDataURL())
+  // Raw decode, deliberately unflattened: the readiness probe analyses the guest's
+  // own pixels, and a canvas colour composited under them would skew the match.
+  const element = await decodeCaptureImage(image.toDataURL())
   const canvas = document.createElement('canvas')
   canvas.width = size.width
   canvas.height = size.height
@@ -1022,7 +1020,7 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
         const target = fitScreenshotWidth(sized.width)
         const final = target === null ? image : image.resize({ width: target })
         const size = final.getSize()
-        const data = final.toDataURL().split(',')[1] ?? ''
+        const data = (await flattenBrowserCapture(final, browserTabCanvas(id))).split(',')[1] ?? ''
         return { mimeType: 'image/png' as const, data, width: size.width, height: size.height }
       } finally {
         store.endFullResolutionCapture(id)

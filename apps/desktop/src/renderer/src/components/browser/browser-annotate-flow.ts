@@ -1,6 +1,7 @@
 import { useChatStore } from '@/stores/chat'
-import type { AnnotateQuickMode } from '@/stores/browser'
+import { browserTabCanvas, type AnnotateQuickMode } from '@/stores/browser'
 import { browserExecJs, browserCapture } from './browser-host-api'
+import { flattenBrowserCapture } from './browser-canvas'
 import {
   buildAnnotateScript,
   ANNOTATE_HIDE_AND_WAIT_SCRIPT,
@@ -66,7 +67,9 @@ async function captureClean(browserId: string, rect: AnnotateMessage['rect']): P
   let base64: string | null = null
   try {
     const img = await browserCapture(browserId, r)
-    if (img && !img.isEmpty()) base64 = img.toDataURL().split(',')[1] ?? null
+    if (img && !img.isEmpty()) {
+      base64 = (await flattenBrowserCapture(img, browserTabCanvas(browserId))).split(',')[1] ?? null
+    }
   } finally {
     void browserExecJs(browserId, ANNOTATE_SHOW_SCRIPT)
   }

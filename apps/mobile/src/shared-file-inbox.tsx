@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react'
 import { File, Paths } from 'expo-file-system'
 import * as Sharing from 'expo-sharing'
-import { Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Image, Modal, Pressable, Text, View } from 'react-native'
 import { MAX_DOWNLOAD_BYTES, type RelayClient } from '@superone/relay-client'
 import type {
   AgentEvent,
@@ -12,6 +12,7 @@ import type {
 import { formatFileSize, safeSharedFileName } from './shared-file-state'
 import { randomId } from './ids'
 import { InFlightKeys } from './in-flight-keys'
+import { useMobileStyles } from './theme/context'
 
 type SharedFileEvent = Extract<AgentEvent, { type: 'shared_file' }>
 type InboxItem = {
@@ -133,45 +134,32 @@ export function useSharedFileInbox() {
 export function SharedFileSheet(props: {
   inbox: ReturnType<typeof useSharedFileInbox>
 }) {
+  const styles = useMobileStyles()
   const { current, pendingCount } = props.inbox
   const file = current?.event.file
   return (
     <Modal visible={!!current} transparent animationType="fade">
-      <View style={sheetStyles.backdrop}>
-        <View style={sheetStyles.card}>
-          <Text style={sheetStyles.title}>File received</Text>
-          <Text numberOfLines={2} style={sheetStyles.name}>{file?.name}</Text>
-          {file?.caption ? <Text style={sheetStyles.caption}>{file.caption}</Text> : null}
-          {file ? <Text style={sheetStyles.meta}>{formatFileSize(file.size)} · {file.mimeType}</Text> : null}
-          {current?.status === 'downloading' ? <Text style={sheetStyles.meta}>Downloading securely…</Text> : null}
-          {current?.error ? <Text style={sheetStyles.error}>{current.error}</Text> : null}
+      <View style={styles.modal}>
+        <View style={styles.settingsCard}>
+          <Text style={styles.sectionTitle}>File received</Text>
+          <Text numberOfLines={2} style={styles.rowTitle}>{file?.name}</Text>
+          {file?.caption ? <Text style={styles.rowMeta}>{file.caption}</Text> : null}
+          {file ? <Text style={styles.rowMeta}>{formatFileSize(file.size)} · {file.mimeType}</Text> : null}
+          {current?.status === 'downloading' ? <Text style={styles.rowMeta}>Downloading securely…</Text> : null}
+          {current?.error ? <Text style={styles.errorText}>{current.error}</Text> : null}
           {current?.status === 'ready' && current.uri && file?.mimeType.startsWith('image/') ? (
-            <Image resizeMode="contain" source={{ uri: current.uri }} style={sheetStyles.preview} />
+            <Image resizeMode="contain" source={{ uri: current.uri }} style={styles.sharedFilePreview} />
           ) : null}
           {current?.status === 'ready' ? (
-            <Pressable style={sheetStyles.primary} onPress={() => void props.inbox.open()}>
-              <Text style={sheetStyles.buttonText}>Open or share</Text>
+            <Pressable style={styles.btn} onPress={() => void props.inbox.open()}>
+              <Text style={styles.btnText}>Open or share</Text>
             </Pressable>
           ) : null}
-          <Pressable style={sheetStyles.secondary} onPress={props.inbox.dismiss}>
-            <Text style={sheetStyles.buttonText}>{pendingCount > 1 ? `Next (${pendingCount - 1})` : 'Dismiss'}</Text>
+          <Pressable style={styles.secondaryBtn} onPress={props.inbox.dismiss}>
+            <Text style={styles.secondaryBtnText}>{pendingCount > 1 ? `Next (${pendingCount - 1})` : 'Dismiss'}</Text>
           </Pressable>
         </View>
       </View>
     </Modal>
   )
 }
-
-const sheetStyles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: '#000000cc', justifyContent: 'center', padding: 24 },
-  card: { backgroundColor: '#18181b', borderRadius: 12, padding: 18, gap: 10 },
-  title: { color: '#f4f4f5', fontSize: 18, fontWeight: '600' },
-  name: { color: '#f4f4f5', fontSize: 16 },
-  caption: { color: '#d4d4d8', fontSize: 14 },
-  meta: { color: '#a1a1aa', fontSize: 12 },
-  error: { color: '#f87171', fontSize: 12 },
-  preview: { width: '100%', height: 260, borderRadius: 8, backgroundColor: '#09090b' },
-  primary: { backgroundColor: '#6d28d9', borderRadius: 8, alignItems: 'center', paddingVertical: 12 },
-  secondary: { backgroundColor: '#3f3f46', borderRadius: 8, alignItems: 'center', paddingVertical: 12 },
-  buttonText: { color: '#f4f4f5', fontWeight: '600' },
-})

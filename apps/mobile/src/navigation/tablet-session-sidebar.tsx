@@ -1,35 +1,13 @@
 import { FlatList, Pressable, Text, View } from 'react-native'
-import { styles } from './styles'
+import { useMobileStyles } from '../theme/context'
 
 export type TabletSessionRow = {
   sessionId: string
   title: string
   lastActiveAt?: string
   provider?: string
-}
-
-export function SessionList(props: {
-  sessions: TabletSessionRow[]
-  onOpenSession: (session: TabletSessionRow) => void
-  onCreateSession: () => void
-}) {
-  return (
-    <>
-      <Pressable style={styles.btn} onPress={props.onCreateSession}>
-        <Text style={styles.btnText}>New session</Text>
-      </Pressable>
-      <FlatList
-        data={props.sessions}
-        keyExtractor={(item) => item.sessionId}
-        renderItem={({ item }) => (
-          <Pressable style={styles.row} onPress={() => props.onOpenSession(item)}>
-            <Text style={styles.rowTitle}>{item.title || item.sessionId.slice(0, 8)}</Text>
-            <Text style={styles.rowMeta}>{item.provider ?? ''} {item.lastActiveAt ?? ''}</Text>
-          </Pressable>
-        )}
-      />
-    </>
-  )
+  messageCount?: number
+  gitBranch?: string
 }
 
 export function TabletSessionSidebar(props: {
@@ -40,6 +18,7 @@ export function TabletSessionSidebar(props: {
   onCreateSession: () => void
   onOpenSettings: () => void
 }) {
+  const styles = useMobileStyles()
   return (
     <View style={styles.tabletSidebar}>
       <Text numberOfLines={1} style={styles.sectionTitle}>{props.projectName}</Text>

@@ -1,11 +1,11 @@
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native'
 import type { HarnessId, WorktreeInfo, WorktreeMode } from '@superone/shared/agent-types'
-import { styles } from './styles'
+import { useMobileStyles, useMobileTheme } from '../theme/context'
 import {
   LOCAL_WORKTREE_SELECTION,
   worktreeSelectionError,
   type NewSessionWorktreeSelection,
-} from './worktree-state'
+} from '../worktree-state'
 
 export type ShellGitInfo = {
   branch: string | null
@@ -43,7 +43,9 @@ function selectionIs(
   return selection.kind === 'existing' && selection.path === path
 }
 
-export function ProjectSettings(props: Props) {
+export function SettingsScreen(props: Props) {
+  const styles = useMobileStyles()
+  const { tokens } = useMobileTheme()
   const selection = props.worktreeSelection
   const error = worktreeSelectionError(selection, props.branches, props.checkedOutBranches)
   const existing = (props.worktreeInfo?.entries ?? []).filter((entry) => !entry.isMain)
@@ -175,7 +177,7 @@ export function ProjectSettings(props: Props) {
                     value={selection.branchName}
                     onChangeText={(branchName) => patchCreate({ branchName })}
                     placeholder="New branch name, e.g. feat/mobile"
-                    placeholderTextColor="#52525b"
+                    placeholderTextColor={tokens.colors.mutedForeground}
                     autoCapitalize="none"
                     autoCorrect={false}
                   />
@@ -208,7 +210,7 @@ export function ProjectSettings(props: Props) {
         <TextInput
           style={styles.input}
           placeholder="Absolute directory path"
-          placeholderTextColor="#52525b"
+          placeholderTextColor={tokens.colors.mutedForeground}
           autoCapitalize="none"
           autoCorrect={false}
           value={props.additionalDir}

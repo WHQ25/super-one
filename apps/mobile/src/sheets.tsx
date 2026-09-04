@@ -6,13 +6,14 @@ import type {
   SessionAgentLaunchProposal,
 } from '@superone/shared/agent-types'
 import { buildCollaborationFormAnswers, collaborationLaunchLabel } from './collaboration-state'
-import { styles } from './styles'
+import { useMobileStyles } from './theme/context'
 
 export function PermissionSheet(props: {
   perm: PermissionRequest | null
   onAllow: (id: string, formAnswers?: Record<string, unknown>) => void
   onDeny: (id: string) => void
 }) {
+  const styles = useMobileStyles()
   const perm = props.perm
   const collab = perm?.requestKind === 'session_agents_confirm'
     ? perm.sessionAgentsConfirm
@@ -49,6 +50,7 @@ function CollaborationLaunch(props: {
   launch: SessionAgentLaunchProposal
   profileName?: string
 }) {
+  const styles = useMobileStyles()
   const launch = props.launch
   const name = launch.mode === 'link'
     ? launch.peerTitle || launch.name || launch.sessionId || 'session'
@@ -81,6 +83,7 @@ export function PlanSheet(props: {
   onApprove: (id: string) => void
   onReject: (id: string) => void
 }) {
+  const styles = useMobileStyles()
   const plan = props.plan
   return (
     <Modal visible={!!plan} transparent animationType="fade">
@@ -101,6 +104,7 @@ export function QuestionSheet(props: {
   onSubmit: (id: string) => void
   onDismiss: (id: string) => void
 }) {
+  const styles = useMobileStyles()
   const question = props.question
   return (
     <Modal visible={!!question} transparent animationType="fade">

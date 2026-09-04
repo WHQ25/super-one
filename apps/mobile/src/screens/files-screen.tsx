@@ -1,13 +1,14 @@
 import { FlatList, Pressable, Text, View } from 'react-native'
-import { directoryEntryAction, parentRemotePath, type RemoteDirectoryEntry } from './shell-state'
-import { styles } from './styles'
+import { directoryEntryAction, parentRemotePath, type RemoteDirectoryEntry } from '../shell-state'
+import { useMobileStyles } from '../theme/context'
 
-export function FileBrowser(props: {
+export function FilesScreen(props: {
   path: string
   items: RemoteDirectoryEntry[]
   onOpenDirectory: (path: string) => void
   onOpenFile: (path: string) => void
 }) {
+  const styles = useMobileStyles()
   return (
     <View style={styles.flex}>
       <View style={styles.pathBar}>

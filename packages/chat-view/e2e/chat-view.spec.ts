@@ -6,7 +6,9 @@ import {
   AGENT_TOOL_RECORDINGS,
   BROWSER_TOOL_RECORDING,
   CODEX_COLLAB_RECORDING,
+  CODEX_IMAGE_GALLERY_RECORDING,
   IMAGE_GENERATION_RECORDING,
+  INSIGHT_RECORDING,
   INTERACTIVE_TOOL_RECORDING,
   PLAN_RECORDINGS,
   SESSION_ARCHIVE_RECORDING,
@@ -576,4 +578,36 @@ test('40 renders session archive recordings with the shared presenter', async ({
   await expect(rows.nth(1)).toContainText('1 session')
   await rows.nth(1).locator('> div').first().click()
   await expect(rows.nth(1)).toContainText('Old investigation')
+})
+
+test('41 renders insight recordings with the shared markdown presenter', async ({ page }) => {
+  await send(page, { type: 'hydrate', messages: [INSIGHT_RECORDING] })
+
+  const turn = page.locator('[data-turn-id="recording-insight"]')
+  const insight = turn.locator('[class*="group/insight"]')
+  await expect(insight).toHaveCount(1)
+  await expect(insight).toContainText('Architecture')
+  await expect(insight).toContainText('shared presenter')
+  await expect(turn).toContainText('Before the insight.')
+  await expect(turn).toContainText('After the insight.')
+})
+
+test('42 renders Codex images through the host-backed native gallery', async ({ page }) => {
+  await send(page, { type: 'hydrate', messages: [CODEX_IMAGE_GALLERY_RECORDING] })
+
+  const turn = page.locator('[data-turn-id="recording-codex-image-gallery"]')
+  const gallery = turn.locator('[data-native-widget="image-gallery"]')
+  await expect(gallery).toContainText('Generated images')
+  await expect(gallery).toContainText('2')
+  await expect(gallery).toContainText('concept-a.png')
+  await gallery.getByRole('button', { name: /Open image/ }).first().click()
+  await expect.poll(() => page.evaluate(() => (
+    globalThis as typeof globalThis & {
+      __hostMessages: Array<{ type?: string; action?: string; payload?: { path?: string } }>
+    }
+  ).__hostMessages.some((item) => (
+    item.type === 'requestNative'
+      && item.action === 'previewFile'
+      && item.payload?.path === '/project/output/concept-a.png'
+  )))).toBe(true)
 })

@@ -122,6 +122,61 @@ export const IMAGE_GENERATION_RECORDING: ChatMessage = {
   providerId: 'claude',
 }
 
+/** Sanitized Codex recording whose completed images are collected into one turn gallery. */
+export const CODEX_IMAGE_GALLERY_RECORDING: ChatMessage = {
+  id: 'recording-codex-image-gallery',
+  role: 'assistant',
+  status: 'complete',
+  content: [],
+  createdAt: '2026-09-04T00:00:03.500Z',
+  providerId: 'codex',
+  metadata: {
+    codex: {
+      threadId: 'image-gallery-thread',
+      usage: null,
+      items: [
+        { id: 'gallery-text', type: 'agent_message', text: 'Here are the generated concepts.' },
+        {
+          id: 'gallery-image-a',
+          type: 'image_generation',
+          status: 'completed',
+          savedPath: '/project/output/concept-a.png',
+          previewPath: '/project/output/concept-a-preview.png',
+          revisedPrompt: 'Compact mobile chat interface',
+        },
+        {
+          id: 'gallery-image-b',
+          type: 'image_generation',
+          status: 'completed',
+          savedPath: '/project/output/concept-b.png',
+          revisedPrompt: 'Tablet master-detail chat interface',
+        },
+      ],
+    },
+  },
+}
+
+/** Sanitized assistant recording containing the shared insight marker grammar. */
+export const INSIGHT_RECORDING: ChatMessage = {
+  id: 'recording-insight',
+  role: 'assistant',
+  status: 'complete',
+  content: [{
+    type: 'text',
+    text: [
+      'Before the insight.',
+      '',
+      '`★ Architecture ─────────────────────────────`',
+      'The mobile transcript uses the same **shared presenter** as desktop.',
+      '`──────────────────────────────────────────`',
+      '',
+      'After the insight.',
+    ].join('\n'),
+  }],
+  createdAt: '2026-09-04T00:00:03.750Z',
+  providerId: 'claude',
+}
+
 export const VIDEO_GENERATION_RECORDING: ChatMessage = {
   id: 'recording-video-generation',
   role: 'assistant',

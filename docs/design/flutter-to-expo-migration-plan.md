@@ -787,6 +787,13 @@ Port order (highest mobile value first). Same two-step rule as §2.6: adapterize
 
 Still deferred (R6): `StandaloneToolBlock`, the `WidgetBlock` iframe, `ToolRendererFrame`, mini-app surfaces. `widget_show` keeps the native gallery path from WP-23.
 
+**Completed 2026-09-04.** All seven ordered tool families render through shared
+presenters with Desktop adapter shells; mini-app iframes remain the explicit R6
+non-goal. The offline WebView suite now has 42 scenarios, including direct recordings
+for Insight markers and Codex image galleries. Completed Codex images use the same
+host-backed native gallery and `previewFile` flow as native `widget_show` media rather
+than detouring through the remote file browser.
+
 #### WP-29 — T4: lean release
 
 | | |

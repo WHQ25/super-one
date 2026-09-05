@@ -11,6 +11,7 @@ import {
   resetComputerUsePermissionBaselineForTests,
 } from './computer-use-helper-lifecycle'
 import type { HelperDoctor } from './platform/helper-protocol'
+import { usePlatform } from '../../test/platform'
 
 function doctor(overrides: Partial<HelperDoctor> = {}): HelperDoctor {
   return {
@@ -251,6 +252,8 @@ describe('refreshComputerUsePermissionStatusAfterScreenGrant', () => {
 })
 
 describe('recheckComputerUsePermissionStatus', () => {
+  usePlatform('darwin')
+
   it('restarts helper, re-doctors, and advances baseline so next poll does not re-restart', async () => {
     let restarts = 0
     const client = {

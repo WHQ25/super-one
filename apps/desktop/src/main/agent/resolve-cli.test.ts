@@ -16,6 +16,7 @@ vi.mock('../logger', () => ({
 }))
 
 import { dedupePath, fixPath } from './resolve-cli'
+import { usePlatform } from '../../test/platform'
 
 const originalPath = process.env.PATH
 const originalShell = process.env.SHELL
@@ -88,6 +89,9 @@ describe('fixPath', () => {
 })
 
 describe('getNodeRuntime', () => {
+  // Electron Helper bundles only exist inside a macOS .app.
+  usePlatform('darwin')
+
   it('uses the named Electron Helper for packaged MCP bridge sidecars', async () => {
     mocks.electronToolkitIs.dev = false
     const { basename, dirname, join } = await import('node:path')

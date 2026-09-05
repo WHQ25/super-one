@@ -1,8 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { getDeviceAgentToolDescriptors, registerDeviceAgentTools } from './tools'
+import { usePlatform } from '../../test/platform'
 
 describe('registerDeviceAgentTools', () => {
+  // Registration is gated on a platform where a touch device can exist.
+  usePlatform('darwin')
+
   it('forwards the MCP request signal to device execution', async () => {
     let waitForHandler: ((args: Record<string, unknown>, extra: { signal: AbortSignal }) => Promise<unknown>) | undefined
     const server = {

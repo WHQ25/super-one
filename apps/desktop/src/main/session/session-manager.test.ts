@@ -19,6 +19,13 @@ vi.mock('fs', async (importActual) => {
   return { ...actual, existsSync: hoisted.existsSyncMock }
 })
 
+vi.mock('../sandbox-platform', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../sandbox-platform')>()),
+  // The suite runs on Linux in CI, where the default is 'off'; these tests
+  // describe Session on a platform where the sandbox is always available.
+  getSandboxCapability: () => ({ supportLevel: 'always', platform: 'darwin', defaultMode: 'on' }),
+}))
+
 vi.mock('./session-provider-repo', () => ({
   getSessionProvider: (id: string) => hoisted.providers.get(id) ?? null,
 }))

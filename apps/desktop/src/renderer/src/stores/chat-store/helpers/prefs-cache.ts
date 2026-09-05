@@ -78,9 +78,26 @@ export function resolveDefaultSandboxMode(stored: SandboxMode | null): SandboxMo
   return capability?.defaultMode ?? null
 }
 
+let appSettingsChangeSubscribed = false
+
+// config_apply writes settings in the main process, then broadcasts this event.
+// Keep future session initialization in sync even when no preferences page is open.
+// Registered from the loader, not at module init: importing this module must not
+// touch `window`, or every main-process-shaped test that reaches store-helpers
+// dies at import. The eager load below still subscribes on first evaluation.
+function subscribeToAppSettingsChanges(): void {
+  if (appSettingsChangeSubscribed) return
+  window.app.onAppSettingsChange?.((settings) => {
+    defaultPrefsLoadGeneration += 1
+    cacheCodexPreferences(settings)
+  })
+  appSettingsChangeSubscribed = true
+}
+
 export async function _loadDefaultSessionPrefs(): Promise<void> {
   const generation = ++defaultPrefsLoadGeneration
   try {
+    subscribeToAppSettingsChanges()
     const appSettings = await window.app.getAppSettings()
     if (generation !== defaultPrefsLoadGeneration) return
     const claude = appSettings.agentPreference?.claude
@@ -126,10 +143,3 @@ export function _clearDefaultPrefsCache(): void {
 
 // Eager load on module init — same side-effect as the original index.ts.
 void _loadDefaultSessionPrefs()
-
-// config_apply writes settings in the main process, then broadcasts this event.
-// Keep future session initialization in sync even when no preferences page is open.
-window.app.onAppSettingsChange?.((settings) => {
-  defaultPrefsLoadGeneration += 1
-  cacheCodexPreferences(settings)
-})

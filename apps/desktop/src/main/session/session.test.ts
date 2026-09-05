@@ -6,6 +6,13 @@ vi.mock('../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }))
 
+vi.mock('../sandbox-platform', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../sandbox-platform')>()),
+  // The suite runs on Linux in CI, where the default is 'off'; these tests
+  // describe Session on a platform where the sandbox is always available.
+  getSandboxCapability: () => ({ supportLevel: 'always', platform: 'darwin', defaultMode: 'on' }),
+}))
+
 const traceMock = vi.fn()
 vi.mock('../agent/event-trace', () => ({
   trace: (...args: unknown[]) => traceMock(...args),

@@ -35,3 +35,9 @@ updates:
       # into. Drop this once the SDK supports zod 4.5; 4.4.x patches still flow.
       - dependency-name: zod
         versions: [">=4.5.0"]
+      # @types/node describes a runtime, so it must not run ahead of one. The
+      # desktop app runs Electron 44's bundled Node 24.19.0 and the release
+      # workflows pin Node 22; types from 25+ would let code type check against
+      # APIs that exist in neither. Raise this in step with the Electron bump.
+      - dependency-name: "@types/node"
+        versions: [">=25"]

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const posthogMock = vi.hoisted(() => ({
   init: vi.fn(),
   capture: vi.fn(),
+  register: vi.fn(),
   identify: vi.fn(),
   reset: vi.fn(),
   opt_out_capturing: vi.fn(),
@@ -131,6 +132,42 @@ describe('analytics', () => {
       platform: 'darwin',
       $set: { app_version: '0.0.1', platform: 'darwin' },
     })
+  })
+
+  it('autocaptures renderer exceptions and registers version and platform as super properties', async () => {
+    const { initAnalytics } = await import('./analytics')
+    await initAnalytics()
+    fireLoaded()
+    expect(posthogMock.init.mock.calls[0][1]).toMatchObject({ capture_exceptions: true })
+    expect(posthogMock.register).toHaveBeenCalledWith({ app_version: '0.0.1', platform: 'darwin' })
+  })
+
+  it('reports app_updated once when the version changed since the last run', async () => {
+    store.set('superone.analytics.last_version', '0.0.0')
+    const { initAnalytics } = await import('./analytics')
+    await initAnalytics()
+    fireLoaded()
+    expect(posthogMock.capture).toHaveBeenCalledWith('app_updated', {
+      from_version: '0.0.0',
+      app_version: '0.0.1',
+      platform: 'darwin',
+    })
+    expect(store.get('superone.analytics.last_version')).toBe('0.0.1')
+  })
+
+  it('does not report app_updated on a first run or when the version is unchanged', async () => {
+    const { initAnalytics } = await import('./analytics')
+    await initAnalytics()
+    fireLoaded()
+    expect(posthogMock.capture).not.toHaveBeenCalledWith('app_updated', expect.anything())
+    expect(store.get('superone.analytics.last_version')).toBe('0.0.1')
+
+    vi.resetModules()
+    posthogMock.capture.mockClear()
+    const again = await import('./analytics')
+    await again.initAnalytics()
+    fireLoaded()
+    expect(posthogMock.capture).not.toHaveBeenCalledWith('app_updated', expect.anything())
   })
 
   it('flushes accumulated active time as one app_usage event per hour', async () => {

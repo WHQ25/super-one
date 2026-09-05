@@ -27,6 +27,8 @@ export default defineConfig(({ mode }) => {
   main: {
     define: {
       __CF_RELAY_URL__: JSON.stringify(env.SO_CF_RELAY_URL ?? ''),
+      __POSTHOG_PROJECT_TOKEN__: JSON.stringify(env.POSTHOG_PROJECT_TOKEN ?? ''),
+      __POSTHOG_HOST__: JSON.stringify(env.POSTHOG_HOST ?? ''),
     },
     build: {
       externalizeDeps: false,

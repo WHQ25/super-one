@@ -14,6 +14,7 @@ const FLUSH_MS = 60 * 60_000
 /** Windows shorter than this are noise; drop them instead of paying for an event. */
 const MIN_REPORT_MS = 60_000
 const ACTIVE_MS_KEY = 'superone.analytics.active_ms'
+const LAST_VERSION_KEY = 'superone.analytics.last_version'
 
 let ph: PostHog | null = null
 let activeMs = 0
@@ -61,6 +62,19 @@ function reportRecoveredUsage() {
   captureUsage(ms, true)
 }
 
+/**
+ * One `app_updated` per install per version change. Together with
+ * `app_opened` this gives update adoption over time and the lag between a
+ * release and its installs; `from_version` says which release people leave.
+ */
+function reportVersionChange(p: Pick<PostHog, 'capture'>) {
+  const previous = window.localStorage.getItem(LAST_VERSION_KEY)
+  window.localStorage.setItem(LAST_VERSION_KEY, __APP_VERSION__)
+  if (previous && previous !== __APP_VERSION__) {
+    p.capture('app_updated', { from_version: previous, ...baseProps() })
+  }
+}
+
 function startUsageTracking() {
   reportRecoveredUsage()
   tickTimer = setInterval(tick, TICK_MS)
@@ -87,13 +101,20 @@ export async function initAnalytics(distinctId?: string) {
     capture_pageview: false,
     capture_pageleave: false,
     persistence: 'localStorage',
+    // window.onerror / unhandledrejection in the renderer become `$exception`
+    // events; the main process reports its own through crash-telemetry.ts.
+    capture_exceptions: true,
     loaded: (p) => {
       if (distinctId) p.identify(distinctId)
       const props = baseProps()
+      // Super properties ride on every event, including autocaptured
+      // exceptions, so crash-free rate can be broken down by version.
+      p.register(props)
       // `$set` mirrors these onto the person, so a version/platform breakdown
       // buckets each user once by their current value instead of once per
       // version they happened to launch during the reporting window.
       p.capture('app_opened', { ...props, $set: props })
+      reportVersionChange(p)
       startUsageTracking()
     },
   })

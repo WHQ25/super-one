@@ -203,6 +203,7 @@ import { RemoteControlService } from './remote-control-service'
 import { readProjectPreferences, saveProjectPreferences } from './claude-preferences-service'
 import { readAppSettings, saveAppSettings } from './app-settings-service'
 import { getInstallId } from './install-id'
+import { reportMainException, reportProcessGone } from './crash-telemetry'
 import { systemDownloadDir } from './agent/browser-download-store'
 import type { AppSettings, AppSettingsPatch, GitInfo, ScheduledSendPatch, ScheduledSendSessionInit, ThemeMode, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
 import { MINI_WINDOW_SIZE } from '@superone/shared/agent-types'
@@ -237,6 +238,7 @@ process.on('uncaughtException', (err: Error & { code?: string }) => {
     arch: process.arch,
     electron: process.versions.electron,
   })
+  void reportMainException('uncaught_exception', err)
 })
 
 process.on('unhandledRejection', (reason) => {
@@ -249,6 +251,7 @@ process.on('unhandledRejection', (reason) => {
     appVersion: app.getVersion(),
     platform: process.platform,
   })
+  void reportMainException('unhandled_rejection', reason)
 })
 
 protocol.registerSchemesAsPrivileged([
@@ -1078,6 +1081,7 @@ function applyWindowAppearance(): void {
 function attachRendererDiagnostics(win: BrowserWindow, role: string): void {
   win.webContents.on('render-process-gone', (_e, details) => {
     log.error('[window] render-process-gone role=%s reason=%s exitCode=%s', role, details.reason, details.exitCode)
+    void reportProcessGone('renderer', details, { role })
   })
   win.webContents.on('did-fail-load', (_e, code, desc, url, isMainFrame) => {
     if (!isMainFrame) return
@@ -5770,6 +5774,7 @@ app.whenReady().then(async () => {
       details.exitCode,
       details.serviceName ?? '',
     )
+    void reportProcessGone(details.type, details)
   })
 
   createWindow()

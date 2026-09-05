@@ -27,3 +27,11 @@ updates:
       # explains why and fails the build if either moves.
       - dependency-name: vite
       - dependency-name: rolldown
+      # zod 4.5 changed the internal type shape @modelcontextprotocol/sdk types
+      # its tool inputs against: `Record<string, ZodTypeAny>` stops assigning to
+      # the SDK's `ZodRawShapeCompat`, and the JSON Schema it emits drifts, so
+      # every MCP tool definition fails typecheck and the descriptor tests. The
+      # SDK is already on its latest (1.30.0) — there is no version to upgrade
+      # into. Drop this once the SDK supports zod 4.5; 4.4.x patches still flow.
+      - dependency-name: zod
+        versions: [">=4.5.0"]

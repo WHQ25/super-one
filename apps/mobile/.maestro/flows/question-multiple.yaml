@@ -1,0 +1,45 @@
+appId: ${APP_ID}
+name: Multiple answers persist across tabs and toggles
+tags: [native, extended]
+---
+- runFlow:
+    file: ../helpers/open-scenario.yaml
+    env:
+      SCENARIO: question/multiple
+- assertVisible:
+    id: prompt-approve
+    enabled: false
+- tapOn:
+    id: prompt-option-Compact
+- assertVisible:
+    id: prompt-approve
+    enabled: false
+- tapOn:
+    id: prompt-option-Platforms
+- tapOn:
+    id: prompt-option-iOS
+- assertVisible:
+    id: prompt-approve
+    enabled: true
+- tapOn:
+    id: prompt-option-iOS
+- assertVisible:
+    id: prompt-approve
+    enabled: false
+- tapOn:
+    id: prompt-option-iOS
+- tapOn:
+    id: prompt-option-Android
+- tapOn:
+    id: prompt-option-Layout.*
+- tapOn:
+    id: prompt-option-Comfortable
+- tapOn:
+    id: prompt-approve
+- runFlow:
+    file: ../helpers/assert-action.yaml
+    env:
+      ACTION: submit
+      REQUEST_ID: preview-question-multiple
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.answers["Which layout should we use?"] === "Comfortable"}
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.answers["Which platforms should be checked? / 检查哪些平台？"] === "iOS, Android"}

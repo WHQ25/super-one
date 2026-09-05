@@ -1,0 +1,20 @@
+appId: ${APP_ID}
+name: Long plan keeps approval controls available
+tags: [smoke, native, visual]
+---
+- runFlow:
+    file: ../helpers/open-scenario.yaml
+    env:
+      SCENARIO: plan/long
+- assertVisible: "Plan review"
+- assertVisible:
+    id: prompt-approve
+- takeScreenshot: ${"plan-" + THEME}
+- tapOn:
+    id: prompt-option-Switch to Auto after approval
+- tapOn:
+    id: prompt-approve
+- copyTextFrom:
+    id: preview-last-action
+- assertTrue: ${JSON.parse(maestro.copiedText).action === "approve-and-continue"}
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.mode === "auto"}

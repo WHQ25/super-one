@@ -1,0 +1,23 @@
+appId: ${APP_ID}
+name: Question selection controls submission
+tags: [smoke, native]
+---
+- runFlow:
+    file: ../helpers/open-scenario.yaml
+    env:
+      SCENARIO: question/single
+- assertVisible:
+    id: prompt-approve
+    enabled: false
+- tapOn:
+    id: prompt-option-Compact
+- assertVisible: "Keep the conversation visible above the input."
+- assertVisible:
+    id: prompt-approve
+    enabled: true
+- takeScreenshot: ${"question-" + THEME}
+- tapOn:
+    id: prompt-approve
+- copyTextFrom:
+    id: preview-last-action
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.answers["Which layout should we use?"] === "Compact"}

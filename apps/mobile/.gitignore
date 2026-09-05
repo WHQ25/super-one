@@ -11,3 +11,6 @@ web-build/
 credentials.json
 *.orig.*
 npm-debug.*
+
+.tools/
+.maestro/artifacts/

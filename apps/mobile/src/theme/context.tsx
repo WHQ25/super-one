@@ -2,7 +2,7 @@ import { createContext, useContext, useMemo, useState, type ReactNode } from 're
 import { useColorScheme } from 'react-native'
 import type { HarnessId } from '@superone/shared/agent-types'
 import { createMobileStyles } from './styles'
-import { mobileThemeTokens, normalizeColorScheme, type MobileThemeTokens } from './tokens'
+import { mobileThemeTokens, normalizeColorScheme, type MobileThemeTokens, type MobileColorScheme } from './tokens'
 
 interface MobileThemeContextValue {
   tokens: MobileThemeTokens
@@ -11,8 +11,9 @@ interface MobileThemeContextValue {
 
 const MobileThemeContext = createContext<MobileThemeContextValue | null>(null)
 
-export function MobileThemeProvider({ children }: { children: ReactNode }) {
-  const scheme = normalizeColorScheme(useColorScheme())
+export function MobileThemeProvider({ children, colorScheme }: { children: ReactNode; colorScheme?: MobileColorScheme }) {
+  const systemScheme = useColorScheme()
+  const scheme = colorScheme ?? normalizeColorScheme(systemScheme)
   const [harness, setHarness] = useState<HarnessId>('claude')
   const tokens = useMemo(() => mobileThemeTokens(scheme, harness), [harness, scheme])
   const value = useMemo(() => ({ tokens, setHarness }), [tokens])

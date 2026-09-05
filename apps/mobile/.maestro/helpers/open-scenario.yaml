@@ -1,0 +1,17 @@
+appId: ${APP_ID}
+---
+- openLink:
+    autoVerify: true
+    link: ${"superone://native-preview?scenario=" + SCENARIO + "&theme=" + THEME + "&harness=claude"}
+- repeat:
+    times: 3
+    commands:
+      - runFlow:
+          when:
+            visible: 'Open in.*'
+          commands:
+            - tapOn: 'Open'
+- extendedWaitUntil:
+    visible:
+      id: prompt-title
+    timeout: 15000

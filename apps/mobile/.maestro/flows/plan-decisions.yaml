@@ -1,0 +1,45 @@
+appId: ${APP_ID}
+name: Plan rejection and continuation submit distinct actions
+tags: [native, extended]
+---
+- runFlow:
+    file: ../helpers/open-scenario.yaml
+    env:
+      SCENARIO: plan/default
+- tapOn:
+    id: prompt-feedback
+- inputText: "  Add Android verification  "
+- tapOn:
+    id: prompt-reject
+- runFlow:
+    file: ../helpers/assert-action.yaml
+    env:
+      ACTION: reject
+      REQUEST_ID: preview-plan
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.feedback === "Add Android verification"}
+- runFlow:
+    file: ../helpers/open-scenario.yaml
+    env:
+      SCENARIO: plan/default
+- tapOn:
+    id: prompt-approve
+- runFlow:
+    file: ../helpers/assert-action.yaml
+    env:
+      ACTION: approve
+      REQUEST_ID: preview-plan
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.mode === undefined}
+- runFlow:
+    file: ../helpers/open-scenario.yaml
+    env:
+      SCENARIO: plan/default
+- tapOn:
+    id: prompt-option-Switch to Accept edits after approval
+- tapOn:
+    id: prompt-approve
+- runFlow:
+    file: ../helpers/assert-action.yaml
+    env:
+      ACTION: approve-and-continue
+      REQUEST_ID: preview-plan
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.mode === "acceptEdits"}

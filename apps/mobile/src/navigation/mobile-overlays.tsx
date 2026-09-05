@@ -34,6 +34,11 @@ export function MobileOverlays(props: {
     <>
       <PermissionSheet
         perm={props.permission}
+        loadSystemInfo={async (harness) => {
+          const active = runtime()
+          if (!active) throw new Error("No active connection")
+          return active.loadSystemInfo(harness)
+        }}
         onAllow={(id, formAnswers, alwaysAllow, selectedSuggestions) => runUiAction(
           () => runtime()?.respondPermission(id, true, formAnswers, alwaysAllow, undefined, selectedSuggestions),
           props.setStatus,

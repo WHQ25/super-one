@@ -1,0 +1,84 @@
+appId: ${APP_ID}
+name: Session and persistent grants submit the chosen scope
+tags: [native, extended]
+---
+- runFlow:
+    file: ../helpers/open-scenario.yaml
+    env:
+      SCENARIO: permission/computer_use_grant
+- tapOn:
+    id: prompt-approve
+- runFlow:
+    file: ../helpers/assert-action.yaml
+    env:
+      ACTION: allow
+      REQUEST_ID: preview-computer_use_grant
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.alwaysAllow === false}
+- runFlow:
+    file: ../helpers/open-scenario.yaml
+    env:
+      SCENARIO: permission/computer_use_grant
+- tapOn:
+    id: prompt-option-Always allow this app
+- tapOn:
+    id: prompt-approve
+- runFlow:
+    file: ../helpers/assert-action.yaml
+    env:
+      ACTION: allow
+      REQUEST_ID: preview-computer_use_grant
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.alwaysAllow === true}
+- runFlow:
+    file: ../helpers/open-scenario.yaml
+    env:
+      SCENARIO: permission/device_control_confirm
+- tapOn:
+    id: prompt-approve
+- runFlow:
+    file: ../helpers/assert-action.yaml
+    env:
+      ACTION: allow
+      REQUEST_ID: preview-device_control_confirm
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.alwaysAllow === false}
+- runFlow:
+    file: ../helpers/open-scenario.yaml
+    env:
+      SCENARIO: permission/device_control_confirm
+- tapOn:
+    id: prompt-option-Always allow
+- tapOn:
+    id: prompt-approve
+- runFlow:
+    file: ../helpers/assert-action.yaml
+    env:
+      ACTION: allow
+      REQUEST_ID: preview-device_control_confirm
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.alwaysAllow === true}
+- runFlow:
+    file: ../helpers/open-scenario.yaml
+    env:
+      SCENARIO: permission/webmcp_trust_confirm
+- tapOn:
+    id: prompt-approve
+- runFlow:
+    file: ../helpers/assert-action.yaml
+    env:
+      ACTION: allow
+      REQUEST_ID: preview-webmcp_trust_confirm
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.alwaysAllow === false}
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.formAnswers.scope === "session"}
+- runFlow:
+    file: ../helpers/open-scenario.yaml
+    env:
+      SCENARIO: permission/webmcp_trust_confirm
+- tapOn:
+    id: prompt-option-Always trust this site
+- tapOn:
+    id: prompt-approve
+- runFlow:
+    file: ../helpers/assert-action.yaml
+    env:
+      ACTION: allow
+      REQUEST_ID: preview-webmcp_trust_confirm
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.alwaysAllow === true}
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.formAnswers.scope === "always"}

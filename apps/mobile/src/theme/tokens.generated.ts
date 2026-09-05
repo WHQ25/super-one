@@ -16,6 +16,9 @@ export type GeneratedThemeColors = {
   success: string
   warning: string
   error: string
+  successForeground: string
+  destructive: string
+  destructiveForeground: string
   scrim: string
 }
 
@@ -34,6 +37,9 @@ export const GENERATED_DARK_COLORS: GeneratedThemeColors = {
   "success": "#25984d",
   "warning": "#e7a13c",
   "error": "#ff6467",
+  "successForeground": "#fcfcfc",
+  "destructive": "#db423c",
+  "destructiveForeground": "#fcfcfc",
   "scrim": "#000000cc"
 }
 
@@ -51,6 +57,9 @@ export const GENERATED_LIGHT_COLORS: Record<HarnessId, GeneratedThemeColors> = {
     "secondary": "#e2dfde",
     "muted": "#e2dfde",
     "success": "#25984d",
+    "successForeground": "#fcfcfc",
+    "destructive": "#df0000",
+    "destructiveForeground": "#fcfcfc",
     "warning": "#c37806",
     "error": "#d40c1a",
     "scrim": "#000000cc"
@@ -68,6 +77,9 @@ export const GENERATED_LIGHT_COLORS: Record<HarnessId, GeneratedThemeColors> = {
     "secondary": "#dde0e2",
     "muted": "#dde0e2",
     "success": "#25984d",
+    "successForeground": "#fcfcfc",
+    "destructive": "#df0000",
+    "destructiveForeground": "#fcfcfc",
     "warning": "#c37806",
     "error": "#d40c1a",
     "scrim": "#000000cc"
@@ -85,6 +97,9 @@ export const GENERATED_LIGHT_COLORS: Record<HarnessId, GeneratedThemeColors> = {
     "secondary": "#dfdfe2",
     "muted": "#dfdfe2",
     "success": "#25984d",
+    "successForeground": "#fcfcfc",
+    "destructive": "#df0000",
+    "destructiveForeground": "#fcfcfc",
     "warning": "#c37806",
     "error": "#d40c1a",
     "scrim": "#000000cc"
@@ -102,6 +117,9 @@ export const GENERATED_LIGHT_COLORS: Record<HarnessId, GeneratedThemeColors> = {
     "secondary": "#dee0de",
     "muted": "#dee0de",
     "success": "#25984d",
+    "successForeground": "#fcfcfc",
+    "destructive": "#df0000",
+    "destructiveForeground": "#fcfcfc",
     "warning": "#c37806",
     "error": "#d40c1a",
     "scrim": "#000000cc"
@@ -119,6 +137,9 @@ export const GENERATED_LIGHT_COLORS: Record<HarnessId, GeneratedThemeColors> = {
     "secondary": "#dde0e1",
     "muted": "#dde0e1",
     "success": "#25984d",
+    "successForeground": "#fcfcfc",
+    "destructive": "#df0000",
+    "destructiveForeground": "#fcfcfc",
     "warning": "#c37806",
     "error": "#d40c1a",
     "scrim": "#000000cc"
@@ -136,6 +157,9 @@ export const GENERATED_LIGHT_COLORS: Record<HarnessId, GeneratedThemeColors> = {
     "secondary": "#dee0e2",
     "muted": "#dee0e2",
     "success": "#25984d",
+    "successForeground": "#fcfcfc",
+    "destructive": "#df0000",
+    "destructiveForeground": "#fcfcfc",
     "warning": "#c37806",
     "error": "#d40c1a",
     "scrim": "#000000cc"

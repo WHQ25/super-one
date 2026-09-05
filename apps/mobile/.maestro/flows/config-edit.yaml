@@ -1,0 +1,18 @@
+appId: ${APP_ID}
+name: Edited config is submitted
+tags: [smoke, native]
+---
+- runFlow:
+    file: ../helpers/open-scenario.yaml
+    env:
+      SCENARIO: permission/config_confirm
+- tapOn:
+    id: prompt-select-Theme
+- tapOn:
+    id: prompt-option-system
+- takeScreenshot: ${"config-edited-" + THEME}
+- tapOn:
+    id: prompt-approve
+- copyTextFrom:
+    id: preview-last-action
+- assertTrue: ${JSON.parse(JSON.parse(maestro.copiedText).payload.formAnswers.configJson).theme === "system"}

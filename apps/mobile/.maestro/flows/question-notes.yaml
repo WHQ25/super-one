@@ -1,0 +1,26 @@
+appId: ${APP_ID}
+name: Preview notes follow the selected option
+tags: [native, extended]
+---
+- runFlow:
+    file: ../helpers/open-scenario.yaml
+    env:
+      SCENARIO: question/preview
+- assertVisible:
+    id: prompt-approve
+    enabled: true
+- tapOn: Preview notes
+- inputText: "Keep compact spacing"
+- tapOn:
+    id: prompt-option-Comfortable
+- tapOn:
+    id: prompt-option-Compact
+- tapOn:
+    id: prompt-approve
+- runFlow:
+    file: ../helpers/assert-action.yaml
+    env:
+      ACTION: submit
+      REQUEST_ID: preview-question-notes
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.answers["Which layout should we use?"] === "Compact"}
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.annotations["Which layout should we use?"].notes === "Keep compact spacing"}

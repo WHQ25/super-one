@@ -1,0 +1,39 @@
+appId: ${APP_ID}
+name: Required elicitation fields gate typed submission
+tags: [native, extended]
+---
+- runFlow:
+    file: ../helpers/open-scenario.yaml
+    env:
+      SCENARIO: permission/mcp_elicitation
+- assertVisible:
+    id: prompt-approve
+    enabled: false
+- tapOn:
+    id: prompt-field-title
+- inputText: "Preview issue"
+- assertVisible:
+    id: prompt-approve
+    enabled: true
+- tapOn:
+    id: prompt-option-High
+- tapOn:
+    id: prompt-field-notify
+- scrollUntilVisible:
+    element:
+      id: prompt-field-estimate
+    direction: DOWN
+- tapOn:
+    id: prompt-field-estimate
+- inputText: "3"
+- tapOn:
+    id: prompt-approve
+- runFlow:
+    file: ../helpers/assert-action.yaml
+    env:
+      ACTION: allow
+      REQUEST_ID: preview-mcp_elicitation
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.formAnswers.title === "Preview issue"}
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.formAnswers.priority === "High"}
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.formAnswers.notify === true}
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.formAnswers.estimate === 3}

@@ -1,0 +1,8 @@
+appId: ${APP_ID}
+---
+- assertNotVisible:
+    id: prompt-title
+- copyTextFrom:
+    id: preview-last-action
+- assertTrue: ${JSON.parse(maestro.copiedText).action === ACTION}
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.id === REQUEST_ID}

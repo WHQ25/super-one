@@ -70,6 +70,9 @@ function lightPalette(harness: HarnessId): Palette {
     secondary: hex(tokens['--secondary']),
     muted: hex(tokens['--muted']),
     success: hex(parseOklch(rootScope, 'success')),
+    successForeground: hex(parseOklch(rootScope, 'success-foreground')),
+    destructive: hex(parseOklch(rootScope, 'destructive')),
+    destructiveForeground: hex(parseOklch(rootScope, 'destructive-foreground')),
     warning: hex(parseOklch(rootScope, 'warning')),
     error: hex(parseOklch(rootScope, 'error')),
     scrim: '#000000cc',
@@ -91,6 +94,9 @@ function darkPalette(): Palette {
     secondary: read('secondary'),
     muted: read('muted'),
     ...Object.fromEntries(statusTokens.map((token) => [token, read(token)])),
+    successForeground: read('success-foreground'),
+    destructive: read('destructive'),
+    destructiveForeground: read('destructive-foreground'),
     scrim: '#000000cc',
   }
 }

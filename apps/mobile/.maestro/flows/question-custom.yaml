@@ -1,0 +1,40 @@
+appId: ${APP_ID}
+name: Custom answers and dismissal remain distinct
+tags: [native, extended]
+---
+- runFlow:
+    file: ../helpers/open-scenario.yaml
+    env:
+      SCENARIO: question/single
+- tapOn: Other answer
+- inputText: "   "
+- assertVisible:
+    id: prompt-approve
+    enabled: false
+- inputText: "Adaptive layout"
+- assertVisible:
+    id: prompt-approve
+    enabled: true
+- tapOn:
+    id: prompt-approve
+- runFlow:
+    file: ../helpers/assert-action.yaml
+    env:
+      ACTION: submit
+      REQUEST_ID: preview-question-single
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.answers["Which layout should we use?"].trim() === "Adaptive layout"}
+- runFlow:
+    file: ../helpers/open-scenario.yaml
+    env:
+      SCENARIO: question/single
+- assertVisible:
+    id: prompt-approve
+    enabled: false
+- tapOn:
+    id: prompt-reject
+- runFlow:
+    file: ../helpers/assert-action.yaml
+    env:
+      ACTION: dismiss
+      REQUEST_ID: preview-question-single
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.answers === undefined}

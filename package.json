@@ -71,7 +71,9 @@
     "typecheck:node": "bun --filter @superone/desktop typecheck:node",
     "typecheck:web": "bun --filter @superone/desktop typecheck:web",
     "storybook": "bun --filter @superone/desktop storybook",
-    "build-storybook": "bun --filter @superone/desktop build-storybook"
+    "build-storybook": "bun --filter @superone/desktop build-storybook",
+    "preview:mobile": "bun --filter @superone/mobile preview",
+    "test:mobile:ui": "bun --filter @superone/mobile test:ui"
   },
   "dependencies": {
     "@lobehub/icons": "^5.16.0",

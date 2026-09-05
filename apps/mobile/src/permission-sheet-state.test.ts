@@ -71,6 +71,17 @@ describe('permission sheet state', () => {
     expect(elicitationAnswersAreValid(fields, { ...answers, note: 'ok' })).toBe(true)
   })
 
+  it('rejects non-finite numeric fields and undeclared enum options', () => {
+    const fields = [
+      { name: 'estimate', label: 'Estimate', type: 'number' as const, required: true },
+      { name: 'scope', label: 'Scope', type: 'enum' as const, required: true, enumOptions: ['session'] },
+    ]
+    expect(elicitationAnswersAreValid(fields, { estimate: '2.5', scope: 'session' })).toBe(true)
+    expect(elicitationAnswersAreValid(fields, { estimate: 'NaN', scope: 'session' })).toBe(false)
+    expect(elicitationAnswersAreValid(fields, { estimate: Infinity, scope: 'session' })).toBe(false)
+    expect(elicitationAnswersAreValid(fields, { estimate: 2, scope: 'forever' })).toBe(false)
+  })
+
   it('presents selectable permission suggestions in human terms', () => {
     expect(permissionSuggestionLabel({ type: 'setMode', mode: 'acceptEdits' })).toBe('Switch to acceptEdits')
     expect(permissionSuggestionLabel({

@@ -1,0 +1,23 @@
+appId: ${APP_ID}
+name: Permission feedback reaches the callback
+tags: [smoke, native]
+---
+- runFlow:
+    file: ../helpers/open-scenario.yaml
+    env:
+      SCENARIO: permission/command
+- assertVisible: "bun run typecheck"
+- tapOn:
+    id: prompt-feedback
+- inputText: "Use the scoped test"
+- assertVisible:
+    id: prompt-reject
+- takeScreenshot: ${"permission-keyboard-" + THEME}
+- tapOn:
+    id: prompt-reject
+- assertNotVisible:
+    id: prompt-title
+- copyTextFrom:
+    id: preview-last-action
+- assertTrue: ${JSON.parse(maestro.copiedText).action === "deny"}
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.reason === "Use the scoped test"}

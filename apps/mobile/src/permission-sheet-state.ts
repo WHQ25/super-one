@@ -231,9 +231,13 @@ export function elicitationAnswersAreValid(
   answers: Record<string, unknown>,
 ): boolean {
   return fields.every((field) => {
-    if (!field.required) return true
     const value = answers[field.name]
-    return field.type === 'boolean' ? typeof value === 'boolean' : value !== undefined && value !== null && String(value).trim() !== ''
+    const empty = value === undefined || value === null || String(value).trim() === ''
+    if (empty) return !field.required
+    if (field.type === 'boolean') return typeof value === 'boolean'
+    if (field.type === 'number') return (typeof value === 'number' || typeof value === 'string') && Number.isFinite(Number(value))
+    if (field.type === 'enum') return field.enumOptions?.includes(String(value)) ?? false
+    return typeof value === 'string'
   })
 }
 

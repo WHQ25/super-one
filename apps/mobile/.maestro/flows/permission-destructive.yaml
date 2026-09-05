@@ -1,0 +1,70 @@
+appId: ${APP_ID}
+name: Destructive confirmations keep cancellation separate from approval
+tags: [native, extended]
+---
+- runFlow:
+    file: ../helpers/open-scenario.yaml
+    env:
+      SCENARIO: permission/session_cleanup_confirm
+- tapOn:
+    id: prompt-reject
+- runFlow:
+    file: ../helpers/assert-action.yaml
+    env:
+      ACTION: deny
+      REQUEST_ID: preview-session_cleanup_confirm
+- runFlow:
+    file: ../helpers/open-scenario.yaml
+    env:
+      SCENARIO: permission/session_cleanup_confirm
+- tapOn:
+    id: prompt-approve
+- runFlow:
+    file: ../helpers/assert-action.yaml
+    env:
+      ACTION: allow
+      REQUEST_ID: preview-session_cleanup_confirm
+- runFlow:
+    file: ../helpers/open-scenario.yaml
+    env:
+      SCENARIO: permission/delete-config
+- tapOn:
+    id: prompt-reject
+- runFlow:
+    file: ../helpers/assert-action.yaml
+    env:
+      ACTION: deny
+      REQUEST_ID: preview-delete-config
+- runFlow:
+    file: ../helpers/open-scenario.yaml
+    env:
+      SCENARIO: permission/delete-config
+- tapOn:
+    id: prompt-approve
+- runFlow:
+    file: ../helpers/assert-action.yaml
+    env:
+      ACTION: allow
+      REQUEST_ID: preview-delete-config
+- runFlow:
+    file: ../helpers/open-scenario.yaml
+    env:
+      SCENARIO: permission/delete-automation
+- tapOn:
+    id: prompt-reject
+- runFlow:
+    file: ../helpers/assert-action.yaml
+    env:
+      ACTION: deny
+      REQUEST_ID: preview-delete-automation
+- runFlow:
+    file: ../helpers/open-scenario.yaml
+    env:
+      SCENARIO: permission/delete-automation
+- tapOn:
+    id: prompt-approve
+- runFlow:
+    file: ../helpers/assert-action.yaml
+    env:
+      ACTION: allow
+      REQUEST_ID: preview-delete-automation

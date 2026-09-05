@@ -1,0 +1,19 @@
+appId: ${APP_ID}
+name: Native diff renders and expands
+tags: [smoke, native, visual]
+---
+- runFlow:
+    file: ../helpers/open-scenario.yaml
+    env:
+      SCENARIO: permission/edit-diff
+- assertVisible: "config.ts"
+- assertVisible: ".*previewEnabled: false,.*"
+- assertVisible: ".*previewEnabled: true,.*"
+- takeScreenshot: ${"diff-" + THEME}
+- tapOn: "Expand diff"
+- assertVisible: "Collapse diff"
+- tapOn:
+    id: prompt-reject
+- copyTextFrom:
+    id: preview-last-action
+- assertTrue: ${JSON.parse(maestro.copiedText).scenario === "permission/edit-diff"}

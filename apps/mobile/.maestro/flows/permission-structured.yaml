@@ -1,0 +1,47 @@
+appId: ${APP_ID}
+name: Structured approvals preserve video agent and automation payloads
+tags: [native, extended]
+---
+- runFlow:
+    file: ../helpers/open-scenario.yaml
+    env:
+      SCENARIO: permission/video_gen_confirm
+- tapOn:
+    id: prompt-approve
+- runFlow:
+    file: ../helpers/assert-action.yaml
+    env:
+      ACTION: allow
+      REQUEST_ID: preview-video_gen_confirm
+- assertTrue: ${JSON.parse(JSON.parse(maestro.copiedText).payload.formAnswers.paramsJson).duration === 5}
+- assertTrue: ${JSON.parse(JSON.parse(maestro.copiedText).payload.formAnswers.paramsJson).prompt.indexOf("mountain lake") !== -1}
+- runFlow:
+    file: ../helpers/open-scenario.yaml
+    env:
+      SCENARIO: permission/session_agents_confirm
+- tapOn:
+    id: prompt-approve
+- runFlow:
+    file: ../helpers/assert-action.yaml
+    env:
+      ACTION: allow
+      REQUEST_ID: preview-session_agents_confirm
+- evalScript: ${output.launches = JSON.parse(JSON.parse(maestro.copiedText).payload.formAnswers.sessionAgentLaunchesJson)}
+- assertTrue: ${output.launches.length === 3}
+- assertTrue: ${output.launches[0].mode === "spawn" && output.launches[0].launchId === "preview-spawn"}
+- assertTrue: ${output.launches[1].mode === "handoff" && output.launches[1].launchId === "preview-handoff"}
+- assertTrue: ${output.launches[2].mode === "link" && output.launches[2].sessionId === "preview-peer"}
+- runFlow:
+    file: ../helpers/open-scenario.yaml
+    env:
+      SCENARIO: permission/automation_confirm
+- tapOn:
+    id: prompt-approve
+- runFlow:
+    file: ../helpers/assert-action.yaml
+    env:
+      ACTION: allow
+      REQUEST_ID: preview-automation_confirm
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.formAnswers.enabled === true}
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.formAnswers.agentConfig.type === "codex"}
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.formAnswers.agentConfig.permissionPreset === "default"}

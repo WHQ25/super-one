@@ -1,3 +1,19 @@
+# Dependency policy, in three tiers that are handled by three different things.
+#
+#   security  — Dependabot ALERTS, on in the repository's Security settings.
+#               Automated security PRs are deliberately OFF: this is a bun
+#               workspace, and that track detects apps/web as npm_and_yarn, so
+#               it edits package.json without bun.lock and its PRs can never
+#               pass `bun install --frozen-lockfile` (see #36). Alerts still
+#               fire; the fix is applied by hand.
+#   minor/patch — this file. One grouped PR per ecosystem per month.
+#   major     — raised by hand, when there is a reason to. Never below.
+#
+# Majors are ignored rather than merely grouped because a bot PR is the worst
+# place to judge one: the ones that matter here (vitest 5 across ~800 test
+# files, dockview 5 -> 8) need scheduling, and the ones that do not still cost a
+# review each. Nothing stops a manual bump; `bun outdated --filter '*'` lists
+# what is behind.
 version: 2
 updates:
   # Keep the SHA-pinned actions in .github/workflows current. Dependabot
@@ -5,28 +21,39 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     groups:
-      # Minor and patch bumps arrive as one PR. A major bump of an action that
-      # a release depends on (upload/download-artifact must agree on a
-      # version) arrives on its own so it gets read before it is merged.
       actions:
         patterns: ["*"]
-        update-types: [minor, patch]
+    ignore:
+      # Action majors are read and raised by hand. CI cannot judge them anyway:
+      # ci.yml is the only workflow with a `pull_request` trigger, so a PR that
+      # changes build-*.yml or promote.yml gets a green tick from checks that
+      # never ran it. upload-artifact and download-artifact must also agree on a
+      # version, and Dependabot splits them into separate PRs.
+      - dependency-name: "*"
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: bun
     directory: /
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
+      interval: monthly
+    open-pull-requests-limit: 3
     groups:
       minor-and-patch:
-        update-types: [minor, patch]
+        patterns: ["*"]
     ignore:
+      - dependency-name: "*"
+        update-types: [version-update:semver-major]
       # Pinned to vite 7 / Rollup on purpose; scripts/check-deps-lock.mjs
       # explains why and fails the build if either moves.
       - dependency-name: vite
       - dependency-name: rolldown
+      # The entries below are majors, so the blanket rule already covers them.
+      # They are kept because they record WHY, and they keep protecting if that
+      # rule is ever relaxed. zod is the exception that needs its own rule: its
+      # break arrived in a minor.
+      #
       # zod 4.5 changed the internal type shape @modelcontextprotocol/sdk types
       # its tool inputs against: `Record<string, ZodTypeAny>` stops assigning to
       # the SDK's `ZodRawShapeCompat`, and the JSON Schema it emits drifts, so

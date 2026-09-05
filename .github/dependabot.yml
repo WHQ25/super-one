@@ -41,3 +41,10 @@ updates:
       # APIs that exist in neither. Raise this in step with the Electron bump.
       - dependency-name: "@types/node"
         versions: [">=25"]
+      # eslint 10 changes the rule context API, and eslint-plugin-react 7.37.5 —
+      # pulled in by eslint-config-next, so not directly removable — still
+      # declares `eslint: ... || ^9.7` and crashes on it with
+      # `contextOrFilename.getFilename is not a function`. Lift once
+      # eslint-plugin-react ships an eslint 10 peer range.
+      - dependency-name: eslint
+        versions: [">=10"]

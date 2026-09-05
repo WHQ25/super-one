@@ -347,6 +347,10 @@ describe('PlanApprovalPrompt — integration', () => {
       expect(el).toBeTruthy()
       return el!
     })
+    // The sticky moves focus to the draft on the next animation frame, and
+    // ⌘/Ctrl+Enter only saves from the focused draft. Firing the key before
+    // that frame lands makes it a plain Enter and the sticky never closes.
+    await waitFor(() => expect(document.activeElement).toBe(draft))
     fireEvent.change(draft, { target: { value: 'make this async' } })
     // Sticky saves on ⌘/Ctrl+Enter (plain Enter is newline)
     fireEvent.keyDown(draft, { key: 'Enter', metaKey: true })

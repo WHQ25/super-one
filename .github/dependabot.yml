@@ -1,11 +1,12 @@
 # Dependency policy, in three tiers that are handled by three different things.
 #
-#   security  — Dependabot ALERTS, on in the repository's Security settings.
-#               Automated security PRs are deliberately OFF: this is a bun
-#               workspace, and that track detects apps/web as npm_and_yarn, so
-#               it edits package.json without bun.lock and its PRs can never
-#               pass `bun install --frozen-lockfile` (see #36). Alerts still
-#               fire; the fix is applied by hand.
+#   security  — Dependabot alerts AND automated security PRs, both on in the
+#               repository's Security settings, neither driven by this file.
+#               Expect the PR itself to be unmergeable for anything outside the
+#               root bun workspace: that track detects apps/web as npm_and_yarn
+#               and edits package.json without bun.lock, so it cannot pass
+#               `bun install --frozen-lockfile` (see #36). Read it for the
+#               advisory list and fixed version, then apply the bump by hand.
 #   minor/patch — this file. One grouped PR per ecosystem per month.
 #   major     — raised by hand, when there is a reason to. Never below.
 #

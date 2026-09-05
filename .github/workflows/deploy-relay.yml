@@ -10,6 +10,17 @@ on:
       message:
         description: 'Deploy message shown in Cloudflare dashboard history'
         required: false
+  workflow_call:
+    inputs:
+      ref:
+        description: Branch or commit SHA to deploy (defaults to main HEAD)
+        required: false
+        type: string
+        default: main
+      message:
+        description: Deploy message shown in Cloudflare dashboard history
+        required: false
+        type: string
 
 concurrency:
   group: deploy-relay

@@ -30,6 +30,28 @@ on:
         description: 'Branch or commit SHA to build'
         required: false
         default: 'main'
+  workflow_call:
+    inputs:
+      version:
+        description: 'Version to publish (default: root package.json version)'
+        required: false
+        type: string
+        default: ''
+      tag:
+        description: npm dist-tag (alpha | latest). Empty = derive from version.
+        required: false
+        type: string
+        default: ''
+      dry_run:
+        description: If true, pack only (npm pack); do not publish
+        required: false
+        type: boolean
+        default: false
+      ref:
+        description: Branch or commit SHA to build
+        required: false
+        type: string
+        default: main
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true

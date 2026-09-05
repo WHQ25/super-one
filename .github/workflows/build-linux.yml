@@ -17,6 +17,21 @@ on:
       version:
         description: 'Override the BASE version, e.g. cutting a release from an older commit. Plain release number — the variant appends its own -alpha. Blank = package.json.'
         required: false
+  workflow_call:
+    inputs:
+      ref:
+        description: Branch or commit SHA to build
+        required: false
+        type: string
+        default: main
+      variant:
+        description: Which side-by-side app to build
+        required: true
+        type: string
+      version:
+        description: Override the BASE version, e.g. cutting a release from an older commit. Plain release number — the variant appends its own -alpha. Blank = package.json.
+        required: false
+        type: string
 
 concurrency:
   group: build-linux-${{ inputs.variant }}-${{ inputs.ref }}

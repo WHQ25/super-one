@@ -1,0 +1,205 @@
+name: Release
+
+# One dispatch per release. Builds the three platforms, then promotes their
+# artifacts to a draft GitHub Release + R2 archive, with the CLI, harness
+# mirror and relay deploys as optional parallel legs. It stops there on
+# purpose: publishing the draft and running set-latest stay explicit steps
+# (see .agents/skills/release/SKILL.md), so nothing reaches a user's updater
+# from this workflow alone.
+#
+# Every leg is still its own reusable workflow and keeps its own
+# workflow_dispatch, so a single platform can be rebuilt and re-promoted by
+# hand exactly as before.
+
+on:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: 'Which side-by-side app to release'
+        required: true
+        type: choice
+        options:
+          - alpha
+          - stable
+      ref:
+        description: 'Branch or commit SHA to release (stable: the proven alpha commit)'
+        required: false
+        default: 'main'
+      version:
+        description: 'Override the BASE version (plain X.Y.Z, the variant appends its own tag). Blank = package.json at ref.'
+        required: false
+        default: ''
+      publish_cli:
+        description: 'Publish @super-one/cli at the same version (lockstep; needed for SSH registry install)'
+        required: false
+        type: boolean
+        default: true
+      publish_harness:
+        description: 'Refresh the harness R2 mirror + manifest for this channel (only when pins changed, or a stable cut)'
+        required: false
+        type: boolean
+        default: false
+      deploy_relay:
+        description: 'Deploy apps/relay to Cloudflare (only when apps/relay changed)'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: release-${{ inputs.variant }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  INPUT_REF: ${{ inputs.ref }}
+  INPUT_VARIANT: ${{ inputs.variant }}
+  INPUT_VERSION: ${{ inputs.version }}
+
+jobs:
+  # Derive everything the legs need from the ref, so the tag, the packaged
+  # version and the npm dist-tag cannot disagree with each other.
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      release_tag: ${{ steps.plan.outputs.release_tag }}
+      npm_tag: ${{ steps.plan.outputs.npm_tag }}
+      sha: ${{ steps.plan.outputs.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+      - name: Resolve version, tag and dist-tag
+        id: plan
+        run: |
+          set -euo pipefail
+          BASE="${INPUT_VERSION:-$(node -p "require('./package.json').version")}"
+          # Same derivation as electron-builder.config.cjs: variant owns the prerelease tag.
+          VERSION="$(node -e "
+            const v = require('./apps/desktop/variants.json')['$INPUT_VARIANT'];
+            if (!v) throw new Error('unknown variant $INPUT_VARIANT');
+            if (/-/.test('$BASE')) throw new Error('base version must be plain X.Y.Z, got $BASE');
+            console.log(v.prereleaseTag ? '$BASE-' + v.prereleaseTag : '$BASE');
+          ")"
+          case "$VERSION" in
+            *-alpha*) NPM_TAG=alpha ;;
+            *-*) echo "::error::unmapped prerelease $VERSION"; exit 1 ;;
+            *) NPM_TAG=latest ;;
+          esac
+          TAG="v${VERSION}"
+          # Tags are created by GitHub when the draft is published; a tag that
+          # already exists means this version shipped. Bump instead of re-cutting.
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "::error::${TAG} already exists on origin — this version has been published"
+            exit 1
+          fi
+          {
+            echo "version=${VERSION}"
+            echo "release_tag=${TAG}"
+            echo "npm_tag=${NPM_TAG}"
+            echo "sha=$(git rev-parse HEAD)"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "### Release plan"
+            echo
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| variant | \`${INPUT_VARIANT}\` |"
+            echo "| version | \`${VERSION}\` |"
+            echo "| tag | \`${TAG}\` |"
+            echo "| commit | \`$(git rev-parse HEAD)\` |"
+            echo "| npm dist-tag | \`${NPM_TAG}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  build-mac:
+    needs: plan
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/build-mac.yml
+    secrets: inherit
+    with:
+      ref: ${{ inputs.ref }}
+      variant: ${{ inputs.variant }}
+      version: ${{ inputs.version }}
+
+  build-win:
+    needs: plan
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/build-win.yml
+    secrets: inherit
+    with:
+      ref: ${{ inputs.ref }}
+      variant: ${{ inputs.variant }}
+      version: ${{ inputs.version }}
+
+  build-linux:
+    needs: plan
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/build-linux.yml
+    secrets: inherit
+    with:
+      ref: ${{ inputs.ref }}
+      variant: ${{ inputs.variant }}
+      version: ${{ inputs.version }}
+
+  # Draft GitHub Release + R2 archive. Artifacts come from this very run.
+  promote:
+    needs: [plan, build-mac, build-win, build-linux]
+    permissions:
+      contents: write
+      actions: write
+    uses: ./.github/workflows/promote.yml
+    secrets: inherit
+    with:
+      release_tag: ${{ needs.plan.outputs.release_tag }}
+      variant: ${{ inputs.variant }}
+      target_sha: ${{ needs.plan.outputs.sha }}
+      mac_run_id: ${{ github.run_id }}
+      win_run_id: ${{ github.run_id }}
+      linux_run_id: ${{ github.run_id }}
+
+  publish-cli:
+    if: ${{ inputs.publish_cli }}
+    needs: plan
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/publish-cli.yml
+    secrets: inherit
+    with:
+      ref: ${{ inputs.ref }}
+      version: ${{ needs.plan.outputs.version }}
+      tag: ${{ needs.plan.outputs.npm_tag }}
+      dry_run: false
+
+  publish-harness:
+    if: ${{ inputs.publish_harness }}
+    needs: plan
+    permissions:
+      contents: read
+    uses: ./.github/workflows/publish-harness.yml
+    secrets: inherit
+    with:
+      ref: ${{ inputs.ref }}
+      channel: ${{ inputs.variant }}
+      app_version: ${{ inputs.version }}
+      dry_run: false
+
+  deploy-relay:
+    if: ${{ inputs.deploy_relay }}
+    needs: plan
+    uses: ./.github/workflows/deploy-relay.yml
+    secrets: inherit
+    with:
+      ref: ${{ inputs.ref }}
+      message: ${{ needs.plan.outputs.release_tag }} (${{ needs.plan.outputs.sha }})

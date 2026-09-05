@@ -30,6 +30,34 @@ on:
         required: false
         type: boolean
         default: false
+      ref:
+        description: 'Branch or commit SHA to read pins from'
+        required: false
+        default: 'main'
+  workflow_call:
+    inputs:
+      channel:
+        description: Which app variant to publish harness runtimes for
+        required: true
+        type: string
+        default: alpha
+      app_version:
+        description: >-
+          Override app/harness-pins/<version>.json key. Default is derived: root package.json base + the channel variant prerelease tag (alpha -> X.Y.Z-alpha, stable -> X.Y.Z). Only needed when cutting
+          from a commit whose base differs.
+        required: false
+        type: string
+        default: ''
+      dry_run:
+        description: Stage only — do not upload to R2
+        required: false
+        type: boolean
+        default: false
+      ref:
+        description: Branch or commit SHA to read pins from
+        required: false
+        default: main
+        type: string
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -46,6 +74,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          ref: ${{ inputs.ref }}
           fetch-depth: 1
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0

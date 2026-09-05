@@ -23,7 +23,7 @@
   },
   "peerDependencies": {
     "@lobehub/icons": "*",
-    "diff": "^8.0.0",
+    "diff": "^9.0.0",
     "lucide-react": "*",
     "motion": "*",
     "react": "^19.0.0",

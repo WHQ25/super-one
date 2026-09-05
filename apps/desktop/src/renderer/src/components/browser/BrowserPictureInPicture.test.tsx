@@ -226,7 +226,8 @@ describe('browser picture in picture', () => {
         height: 800,
       } as DOMRectReadOnly)
     })
-    expect(pip).toHaveStyle({ width: '200px', height: `${200 / (560 / 800)}px` })
+    expect(pip).toHaveStyle({ width: '200px' })
+    expect(parseFloat(pip.style.height)).toBeCloseTo(200 / (560 / 800), 2)
   })
 
   it('waits for page readiness, stays between tool calls, and closes when the turn ends', async () => {

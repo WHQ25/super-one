@@ -63,7 +63,10 @@ describe('Computer Use picture in picture', () => {
     render(<ComputerUsePictureInPicture />)
 
     const pip = await screen.findByLabelText('Computer Use picture in picture')
-    expect(pip).toHaveStyle({ left: '888px', top: '62px', width: '200px', height: `${200 / (3 / 2)}px` })
+    expect(pip).toHaveStyle({ left: '888px', top: '62px', width: '200px' })
+    // jsdom serialises CSS lengths to three decimals, so the aspect-derived
+    // height is compared as a number rather than as an exact style string.
+    expect(parseFloat(pip.style.height)).toBeCloseTo(200 / (3 / 2), 2)
     expect(pip.querySelector('img')).toHaveAttribute('src', 'data:image/jpeg;base64,jpeg')
     await waitFor(() => {
       expect(resizeComputerUseViewfinder).toHaveBeenCalledWith('session-a', 42, 480, 320)

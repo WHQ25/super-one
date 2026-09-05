@@ -113,7 +113,7 @@ export function BrowserOmnibox({ browserId, url, isHome, onNavigate }: BrowserOm
               spellCheck={false}
               placeholder={t('chat.browser.addressPlaceholder')}
               className={cn(
-                'h-6 w-full rounded-md px-1.5 text-xs text-foreground outline-none transition-colors',
+                'h-7 w-full rounded-md px-2 text-xs text-foreground outline-none transition-colors',
                 showDropdown
                   ? 'rounded-b-none border border-b-0 border-border bg-popover/70 backdrop-blur-md backdrop-saturate-150 dark:bg-popover/85'
                   : 'bg-transparent hover:bg-muted',

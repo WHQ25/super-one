@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useShallow } from 'zustand/react/shallow'
 import { useBrowserStore } from '@/stores/browser'
 import { useActivityPanelStore } from '@/stores/activity-panel'
+import { panelCornersForSlot } from '@/components/activity/activity-panel-corners'
 import { useActivityPanelOnScreen } from '@/hooks/useActivityPanelOnScreen'
 import { useAppStore } from '@/stores/app'
 import { useSashResizing } from '@/hooks/useSashResizing'
@@ -90,6 +91,7 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
   const showSidebar = useAppStore((s) => s.showSidebar)
   const roundLeft = !isFullscreen || showSidebar
   const roundRight = !isFullscreen
+  const panelBounds = useActivityPanelStore((s) => s.bounds)
   const annotating = useBrowserStore((s) => s.annotatingId === browserId)
   const home = useBrowserStore((s) => {
     const tab = s.tabs[browserId]
@@ -261,6 +263,7 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
         : undefined
   const restingSlot = slot ?? panelSlot ?? overlaySlot ?? pipSlot
   const hasSlot = restingSlot != null && restingSlot.width > 0 && restingSlot.height > 0
+  const panelCorners = panelCornersForSlot(slot, panelBounds)
   const mounted = hasSlot
   const visible = slot != null && slot.width > 0 && slot.height > 0 && !home && !certErrored
   // A screenshot transiently pulls a hidden/background tab into the viewport and
@@ -365,8 +368,8 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
         backgroundColor: home ? undefined : canvas,
         borderTopLeftRadius: slot?.mode === 'pip' ? 'var(--radius-xl)' : undefined,
         borderTopRightRadius: slot?.mode === 'pip' ? 'var(--radius-xl)' : undefined,
-        borderBottomLeftRadius: slot?.mode === 'pip' || (slot?.mode === 'panel' && roundLeft && activitySide === 'left') ? 'var(--radius-xl)' : undefined,
-        borderBottomRightRadius: slot?.mode === 'pip' || (slot?.mode === 'panel' && roundRight && activitySide === 'right') ? 'var(--radius-xl)' : undefined,
+        borderBottomLeftRadius: slot?.mode === 'pip' || (slot?.mode === 'panel' && roundLeft && activitySide === 'left' && panelCorners.bottomLeft) ? 'var(--radius-xl)' : undefined,
+        borderBottomRightRadius: slot?.mode === 'pip' || (slot?.mode === 'panel' && roundRight && activitySide === 'right' && panelCorners.bottomRight) ? 'var(--radius-xl)' : undefined,
       }}
     >
       <webview

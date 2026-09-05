@@ -4,6 +4,14 @@ import { LAYOUT } from '@/lib/layout-constants'
 
 export type ActivityPanelSide = 'left' | 'right'
 
+/** Viewport-space bounds, in the same frame as the host-layer slot rects. */
+export interface ActivityPanelBounds {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
 interface ActivityPanelState {
   showPanel: boolean
   side: ActivityPanelSide
@@ -12,6 +20,12 @@ interface ActivityPanelState {
   userResized: boolean
   maximized: boolean
   maximizedGroupId: string | null
+  /**
+   * Where the panel is on screen. Published because the browser and mini-app
+   * webviews live in host layers OUTSIDE the panel's clipping box, so each one
+   * has to work out for itself whether it sits on the card's rounded corner.
+   */
+  bounds: ActivityPanelBounds | null
 
   setShowPanel: (show: boolean) => void
   setSide: (side: ActivityPanelSide) => void
@@ -21,6 +35,7 @@ interface ActivityPanelState {
   toggleSide: () => void
   setHasPanels: (has: boolean) => void
   setMaximizedGroup: (groupId: string | null) => void
+  setBounds: (bounds: ActivityPanelBounds | null) => void
 }
 
 export const useActivityPanelStore = create<ActivityPanelState>()(
@@ -33,6 +48,7 @@ export const useActivityPanelStore = create<ActivityPanelState>()(
       userResized: false,
       maximized: false,
       maximizedGroupId: null,
+      bounds: null,
 
       setShowPanel: (show) => set((state) => ({
         showPanel: show,
@@ -53,6 +69,15 @@ export const useActivityPanelStore = create<ActivityPanelState>()(
         maximized: groupId !== null && state.showPanel,
         maximizedGroupId: state.showPanel ? groupId : null,
       })),
+      // Measured every frame the layout moves, so it is compared before it is
+      // stored — consumers re-render on identity and the rect is usually equal.
+      setBounds: (bounds) => set((state) => {
+        const prev = state.bounds
+        if (prev === bounds) return state
+        if (prev && bounds && prev.left === bounds.left && prev.top === bounds.top
+          && prev.width === bounds.width && prev.height === bounds.height) return state
+        return { bounds }
+      }),
     }),
     {
       name: 'activity-panel',

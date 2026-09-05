@@ -313,11 +313,16 @@ describe('BrowserHostLayer mosaic visibility', () => {
     expect(host.style.left).toBe('120px')
   })
 
+  // RECT's bottom-left and bottom-right both land on this, so a single group
+  // filling the panel owns whichever corner the panel's side puts on the card.
+  const PANEL_BOUNDS = { left: RECT.left, top: 10, width: RECT.width, height: RECT.top + RECT.height - 10 }
+
   it('matches the outer bottom corner to the activity panel side', () => {
     const { container } = render(<BrowserHostLayer />)
     act(() => {
       useBrowserStore.getState().ensure('browser-a', 'https://example.com')
       useBrowserStore.getState().updateSlot('browser-a', 'panel', RECT)
+      useActivityPanelStore.getState().setBounds(PANEL_BOUNDS)
       useActivityPanelStore.getState().setSide('left')
     })
 
@@ -328,6 +333,37 @@ describe('BrowserHostLayer mosaic visibility', () => {
     act(() => useActivityPanelStore.getState().setSide('right'))
     expect(host.style.borderBottomLeftRadius).toBe('')
     expect(host.style.borderBottomRightRadius).toBe('var(--radius-xl)')
+  })
+
+  it('leaves a group that is not in the corner square, so a sash gets no notch', () => {
+    const { container } = render(<BrowserHostLayer />)
+    act(() => {
+      useBrowserStore.getState().ensure('browser-top', 'https://example.com')
+      // Upper half of a vertically split panel: same left edge, bottom stops at
+      // the sash rather than at the panel's own bottom.
+      useBrowserStore.getState().updateSlot('browser-top', 'panel', {
+        ...RECT,
+        height: RECT.height / 2,
+      } as DOMRectReadOnly)
+      useActivityPanelStore.getState().setBounds(PANEL_BOUNDS)
+      useActivityPanelStore.getState().setSide('left')
+    })
+
+    const host = container.querySelector('[data-browser-id="browser-top"]') as HTMLElement
+    expect(host.style.borderBottomLeftRadius).toBe('')
+
+    // The lower half of the same split does own the corner.
+    act(() => {
+      useBrowserStore.getState().ensure('browser-bottom', 'https://example.org')
+      useBrowserStore.getState().updateSlot('browser-bottom', 'panel', {
+        ...RECT,
+        top: RECT.top + RECT.height / 2,
+        height: RECT.height / 2,
+      } as DOMRectReadOnly)
+    })
+
+    const bottom = container.querySelector('[data-browser-id="browser-bottom"]') as HTMLElement
+    expect(bottom.style.borderBottomLeftRadius).toBe('var(--radius-xl)')
   })
 })
 

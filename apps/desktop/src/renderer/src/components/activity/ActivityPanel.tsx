@@ -11,6 +11,7 @@ import { useMiniAppStore } from '@/stores/miniapp'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { useActivityPanelOnScreen } from '@/hooks/useActivityPanelOnScreen'
 import { useResizeHandle } from '@/hooks/useResizeHandle'
+import { useSlotBounds } from '@/hooks/useSlotBounds'
 import { ACTIVITY_PANEL_TRANSITION, LAYOUT } from '@/lib/layout-constants'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
 import { ResizeHandleLine } from '@/components/ResizeHandleLine'
@@ -120,6 +121,22 @@ export function ActivityPanel({ getMaxWidth, transitionMs }: ActivityPanelProps)
     observer.observe(inner)
     resizeObserverRef.current = observer
   }, [])
+
+  // The webview host layers are composited outside this element, so they cannot
+  // inherit its rounded corners — they read these bounds to work out which of them
+  // is the one sitting on a corner. Measured the same way the slots themselves are,
+  // so both sides of that comparison move on the same frame.
+  useSlotBounds(
+    innerRef,
+    'activity-panel-bounds',
+    (rect) => useActivityPanelStore.getState().setBounds({
+      left: Math.round(rect.left),
+      top: Math.round(rect.top),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+    }),
+    () => useActivityPanelStore.getState().setBounds(null),
+  )
 
   const onResizeStart = useResizeHandle({
     getWidth,

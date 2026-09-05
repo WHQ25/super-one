@@ -46,7 +46,7 @@ export function BrowserChrome({ browserId, onNavigate, onBack, onForward, onRelo
   }, [browserId, t])
 
   return (
-    <div className="relative flex h-7 shrink-0 items-center gap-0.5 border-b border-border bg-transparent px-2">
+    <div className="relative flex h-9 shrink-0 items-center gap-0.5 border-b border-border bg-transparent px-2">
       <AnimatePresence>
         {loading && (
           <motion.div

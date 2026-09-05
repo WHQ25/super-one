@@ -4,6 +4,7 @@ import { PanelLeft, PanelRight, PanelTop, PanelBottom, SquarePlus } from 'lucide
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useActivityDropStore, type DropPosition } from '@/stores/activity-drop'
 import { useActivityPanelStore } from '@/stores/activity-panel'
+import { panelCornersForSlot } from '@/components/activity/activity-panel-corners'
 import { useActivityPanelOnScreen } from '@/hooks/useActivityPanelOnScreen'
 import { useAppStore } from '@/stores/app'
 import { useSashResizing } from '@/hooks/useSashResizing'
@@ -94,6 +95,10 @@ function PersistentMiniAppContainer({ instanceKey, dragging }: { instanceKey: st
   const showSidebar = useAppStore((s) => s.showSidebar)
   const roundLeft = !isFullscreen || showSidebar
   const roundRight = !isFullscreen
+  // Only the group actually sitting in the corner; every other group's bottom
+  // edge runs into a sash, where a radius reads as a notch.
+  const panelBounds = useActivityPanelStore((s) => s.bounds)
+  const panelCorners = panelCornersForSlot(slot, panelBounds)
 
   if (!appId) return null
 
@@ -112,8 +117,8 @@ function PersistentMiniAppContainer({ instanceKey, dragging }: { instanceKey: st
         display: mounted ? 'block' : 'none',
         pointerEvents: visible && !dragging ? 'auto' : 'none',
         overflow: 'hidden',
-        borderBottomLeftRadius: roundLeft && activitySide === 'left' ? 'var(--radius-xl)' : undefined,
-        borderBottomRightRadius: roundRight && activitySide === 'right' ? 'var(--radius-xl)' : undefined,
+        borderBottomLeftRadius: roundLeft && activitySide === 'left' && panelCorners.bottomLeft ? 'var(--radius-xl)' : undefined,
+        borderBottomRightRadius: roundRight && activitySide === 'right' && panelCorners.bottomRight ? 'var(--radius-xl)' : undefined,
       }}
     >
       <MiniAppView instanceKey={instanceKey} appId={appId} className="h-full w-full" />

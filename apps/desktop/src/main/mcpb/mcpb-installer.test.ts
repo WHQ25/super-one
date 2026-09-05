@@ -3,7 +3,7 @@ import { join } from 'path'
 import { mkdtemp, writeFile, mkdir, rm, readFile } from 'fs/promises'
 import { createWriteStream, existsSync } from 'fs'
 import { tmpdir } from 'os'
-import archiver from 'archiver'
+import { ZipArchive } from 'archiver'
 
 const { saveMcpConfigMock, deleteMcpConfigMock, saveCodexMcpConfigMock, deleteCodexMcpConfigMock, addBundleLibraryEntryMock, deleteLibraryEntryMock, safeStorageState } = vi.hoisted(() => ({
   saveMcpConfigMock: vi.fn(),
@@ -63,7 +63,7 @@ async function buildBundle(outDir: string, spec: BundleSpec, name: string = `${s
   const outPath = join(outDir, name)
   await new Promise<void>((resolve, reject) => {
     const output = createWriteStream(outPath)
-    const archive = archiver('zip', { zlib: { level: 9 } })
+    const archive = new ZipArchive({ zlib: { level: 9 } })
     output.on('close', () => resolve())
     archive.on('error', reject)
     archive.pipe(output)

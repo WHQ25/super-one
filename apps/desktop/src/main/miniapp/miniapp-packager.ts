@@ -2,7 +2,7 @@ import { createHash } from 'crypto'
 import { createWriteStream } from 'fs'
 import { readdir, readFile, writeFile, rm, stat, mkdir, cp } from 'fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'path'
-import archiver from 'archiver'
+import { ZipArchive } from 'archiver'
 import { app } from 'electron'
 import log from '../logger'
 import { extractZip } from '../zip-utils'
@@ -132,7 +132,7 @@ export async function packApp(appDir: string, outputDir: string): Promise<MiniAp
 
     return await new Promise((resolve, reject) => {
       const output = createWriteStream(outputPath)
-      const archive = archiver('zip', { zlib: { level: 9 } })
+      const archive = new ZipArchive({ zlib: { level: 9 } })
 
       output.on('close', () => {
         resolve({

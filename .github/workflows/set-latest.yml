@@ -26,6 +26,10 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  INPUT_FORCE: ${{ inputs.force }}
+  INPUT_LEGACY_ROOT: ${{ inputs.legacy_root }}
+  INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
+  INPUT_VARIANT: ${{ inputs.variant }}
 
 jobs:
   set-latest:
@@ -46,7 +50,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p manifests
-          gh release download "${{ inputs.release_tag }}" -D manifests -p '*.yml'
+          gh release download "${INPUT_RELEASE_TAG}" -D manifests -p '*.yml'
           echo "--- downloaded manifests ---"
           ls -la manifests/
 
@@ -59,15 +63,15 @@ jobs:
         run: |
           set -euo pipefail
           ENDPOINT="https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
-          VERSION="${{ inputs.release_tag }}"; VERSION="${VERSION#v}"
-          PREFIX="${{ inputs.variant }}/v${VERSION}"
+          VERSION="${INPUT_RELEASE_TAG}"; VERSION="${VERSION#v}"
+          PREFIX="${INPUT_VARIANT}/v${VERSION}"
           if [ -n "$(aws s3 ls "s3://super-one-releases/${PREFIX}/" --endpoint-url "$ENDPOINT" 2>/dev/null)" ]; then
             echo "${PREFIX}/ already on R2 — no backfill needed"
             exit 0
           fi
           echo "${PREFIX}/ missing on R2 — backfilling binaries from the GitHub Release"
           mkdir -p binstage
-          gh release download "${{ inputs.release_tag }}" -D binstage \
+          gh release download "${INPUT_RELEASE_TAG}" -D binstage \
             -p '*.dmg' -p '*.zip' -p '*.exe' -p '*.AppImage' -p '*.blockmap'
           echo "--- downloaded ---"; ls -la binstage/
           aws s3 cp binstage/ "s3://super-one-releases/${PREFIX}/" --recursive \
@@ -88,14 +92,14 @@ jobs:
         run: |
           set -euo pipefail
           bun scripts/set-latest.ts \
-            "${{ inputs.release_tag }}" \
-            "${{ inputs.variant }}" \
-            "${{ inputs.force }}" \
+            "${INPUT_RELEASE_TAG}" \
+            "${INPUT_VARIANT}" \
+            "${INPUT_FORCE}" \
             manifests \
             https://dl.super-one.dev \
             out \
             fixed-copies.json \
-            "${{ inputs.legacy_root }}"
+            "${INPUT_LEGACY_ROOT}"
           echo "--- staged manifests ---"
           ls -la out/ 2>/dev/null || echo "(none staged — semver guard held; rerun with force=true to override)"
           echo "--- fixed-link plan ---"
@@ -123,7 +127,7 @@ jobs:
               --endpoint-url "$ENDPOINT" --cache-control "public, max-age=300" \
               --copy-props none --no-progress
           done
-          echo "Set ${{ inputs.release_tag }} as latest of the ${{ inputs.variant }} app."
-          if [ "${{ inputs.legacy_root }}" = "true" ]; then
-            echo "::notice::Legacy bridge on — pre-variant clients polling the bucket root were pointed at ${{ inputs.variant }}/."
+          echo "Set ${INPUT_RELEASE_TAG} as latest of the ${INPUT_VARIANT} app."
+          if [ "${INPUT_LEGACY_ROOT}" = "true" ]; then
+            echo "::notice::Legacy bridge on — pre-variant clients polling the bucket root were pointed at ${INPUT_VARIANT}/."
           fi

@@ -33,6 +33,9 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  INPUT_APP_VERSION: ${{ inputs.app_version }}
+  INPUT_CHANNEL: ${{ inputs.channel }}
+  INPUT_DRY_RUN: ${{ inputs.dry_run }}
 
 jobs:
   publish:
@@ -60,18 +63,18 @@ jobs:
           AWS_DEFAULT_REGION: auto
         run: |
           set -euo pipefail
-          ARGS=(--channel "${{ inputs.channel }}" --out staging-harness)
-          if [ -n "${{ inputs.app_version }}" ]; then
-            ARGS+=(--app-version "${{ inputs.app_version }}")
+          ARGS=(--channel "${INPUT_CHANNEL}" --out staging-harness)
+          if [ -n "${INPUT_APP_VERSION}" ]; then
+            ARGS+=(--app-version "${INPUT_APP_VERSION}")
           fi
-          if [ "${{ inputs.dry_run }}" != "true" ]; then
+          if [ "${INPUT_DRY_RUN}" != "true" ]; then
             ARGS+=(--upload)
           fi
           bun scripts/publish-harness-artifacts.ts "${ARGS[@]}"
           echo "--- staged tree ---"
           find staging-harness -type f | sort
           echo "--- channel manifest (truncated) ---"
-          head -c 4000 "staging-harness/harness/manifest/${{ inputs.channel }}.json" || true
+          head -c 4000 "staging-harness/harness/manifest/${INPUT_CHANNEL}.json" || true
           echo
           echo "--- app harness pins ---"
           find staging-harness/app/harness-pins -type f -print -exec cat {} \; 2>/dev/null || true

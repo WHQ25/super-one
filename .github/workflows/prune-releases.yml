@@ -33,6 +33,10 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  INPUT_DRY_RUN: ${{ inputs.dry_run }}
+  INPUT_MODE: ${{ inputs.mode }}
+  INPUT_VARIANT: ${{ inputs.variant }}
+  INPUT_VERSION: ${{ inputs.version }}
 
 jobs:
   prune:
@@ -80,7 +84,7 @@ jobs:
           }
 
           for yml in latest-mac.yml latest.yml latest-linux.yml; do
-            key="${{ inputs.variant }}/${yml}"
+            key="${INPUT_VARIANT}/${yml}"
             set +e; fetch_manifest "$key" "${yml}.body"; rc=$?; set -e
             case "$rc" in
               0)
@@ -111,14 +115,14 @@ jobs:
             esac
             p="$(sed -n 's/^path:[[:space:]]*//p' "root-${yml}.body" | tr -d "'\"" | head -1)"
             case "$p" in
-              "${{ inputs.variant }}/"*) ;;
+              "${INPUT_VARIANT}/"*) ;;
               *) echo "root/${yml} -> ${p:-(no path)} — not this variant, ignoring"; continue ;;
             esac
             v="$(sed -n 's/^version:[[:space:]]*//p' "root-${yml}.body" | tr -d "'\"" | head -1)"
             if [ -z "$v" ]; then
               echo "::error::root/${yml} fetched but has no version field"; exit 1
             fi
-            echo "root/${yml} -> ${v} (legacy bridge into ${{ inputs.variant }}/)"
+            echo "root/${yml} -> ${v} (legacy bridge into ${INPUT_VARIANT}/)"
             LIVE="${LIVE:+$LIVE,}$v"
           done
 
@@ -136,33 +140,37 @@ jobs:
           # keys. --output json + jq keeps them intact, and the CLI paginates.
           aws s3api list-objects-v2 \
             --bucket super-one-releases \
-            --prefix "${{ inputs.variant }}/" \
+            --prefix "${INPUT_VARIANT}/" \
             --endpoint-url "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
             --query 'Contents[].Key' --output json | jq -r '.[]? // empty' > keys.txt
-          echo "$(wc -l < keys.txt) objects under ${{ inputs.variant }}/"
+          echo "$(wc -l < keys.txt) objects under ${INPUT_VARIANT}/"
 
       - name: Compute the prune plan
+        env:
+          LIVE_VERSIONS: ${{ steps.live.outputs.versions }}
         run: |
           set -euo pipefail
           bun scripts/prune-releases.ts \
-            "${{ inputs.mode }}" \
-            "${{ inputs.version }}" \
-            "${{ inputs.variant }}" \
+            "${INPUT_MODE}" \
+            "${INPUT_VERSION}" \
+            "${INPUT_VARIANT}" \
             keys.txt \
-            "${{ steps.live.outputs.versions }}" \
+            "${LIVE_VERSIONS}" \
             prune-plan.json | tee plan.log
 
       - name: Summarise
+        env:
+          LIVE_VERSIONS: ${{ steps.live.outputs.versions }}
         run: |
           {
-            echo "### Prune ${{ inputs.variant }} — ${{ inputs.mode }} \`${{ inputs.version }}\`"
+            echo "### Prune ${INPUT_VARIANT} — ${INPUT_MODE} \`${INPUT_VERSION}\`"
             echo
-            echo "Currently published: \`${{ steps.live.outputs.versions }}\`"
+            echo "Currently published: \`${LIVE_VERSIONS}\`"
             echo
             echo '```'
             cat plan.log
             echo '```'
-            if [ "${{ inputs.dry_run }}" = "true" ]; then
+            if [ "${INPUT_DRY_RUN}" = "true" ]; then
               echo
               echo '**Dry run — nothing was deleted.** Re-run with `dry_run=false` to apply.'
             fi
@@ -178,8 +186,8 @@ jobs:
           set -euo pipefail
           ENDPOINT="https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
           jq -r '.remove[]' prune-plan.json | while read -r v; do
-            echo "removing ${{ inputs.variant }}/v${v}/"
-            aws s3 rm "s3://super-one-releases/${{ inputs.variant }}/v${v}/" \
+            echo "removing ${INPUT_VARIANT}/v${v}/"
+            aws s3 rm "s3://super-one-releases/${INPUT_VARIANT}/v${v}/" \
               --recursive --endpoint-url "$ENDPOINT" --no-progress
           done
 

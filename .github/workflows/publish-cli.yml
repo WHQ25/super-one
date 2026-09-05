@@ -33,6 +33,9 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  INPUT_DRY_RUN: ${{ inputs.dry_run }}
+  INPUT_TAG: ${{ inputs.tag }}
+  INPUT_VERSION: ${{ inputs.version }}
 
 jobs:
   publish:
@@ -63,9 +66,9 @@ jobs:
         run: |
           set -euo pipefail
           ROOT_VER=$(node -p "require('./package.json').version")
-          VER="${{ inputs.version }}"
+          VER="${INPUT_VERSION}"
           if [ -z "$VER" ]; then VER="$ROOT_VER"; fi
-          TAG="${{ inputs.tag }}"
+          TAG="${INPUT_TAG}"
           if [ -z "$TAG" ]; then
             case "$VER" in
               *-alpha*|*-alpha.*) TAG=alpha ;;
@@ -83,7 +86,7 @@ jobs:
           esac
           echo "version=$VER" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Publishing plan: @super-one/cli@$VER (tag $TAG) dry_run=${{ inputs.dry_run }}"
+          echo "Publishing plan: @super-one/cli@$VER (tag $TAG) dry_run=${INPUT_DRY_RUN}"
 
       - name: CLI unit tests
         run: bun run test:cli
@@ -91,7 +94,7 @@ jobs:
       - name: Pack npm package
         run: |
           set -euo pipefail
-          bun --filter @superone/cli pack:npm -- --version "${{ steps.meta.outputs.version }}"
+          bun --filter @superone/cli pack:npm -- --version "${VER}"
           test -f apps/cli/dist/npm/package.json
           test -f apps/cli/dist/npm/lib/cli.mjs
           test -f apps/cli/dist/npm/bin/superone.mjs
@@ -129,9 +132,10 @@ jobs:
       - name: Publish to npm
         if: ${{ !inputs.dry_run }}
         working-directory: apps/cli/dist/npm
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
         run: |
           set -euo pipefail
-          TAG="${{ steps.meta.outputs.tag }}"
           # Trusted Publishing needs npm ≥11.5.1. Node 22 ships npm 10, which
           # signs provenance then fails the package PUT with a misleading E404.
           npm install -g npm@^11.5.1

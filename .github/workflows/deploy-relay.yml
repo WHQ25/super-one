@@ -17,6 +17,7 @@ concurrency:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  INPUT_MESSAGE: ${{ inputs.message }}
 
 jobs:
   deploy:
@@ -35,6 +36,9 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Relay unit tests
+        run: bun run test:relay
 
       - name: Inject official custom domain
         working-directory: apps/relay
@@ -61,8 +65,8 @@ jobs:
             echo "::error::CLOUDFLARE_API_TOKEN secret is not set. Create a fine-grained CF API token with Account: Workers Scripts:Edit + Account:Read, plus Zone: DNS:Edit + Zone: Workers Routes:Edit on the super-one.dev zone (needed for the relay.super-one.dev custom domain). Add it as a repo secret."
             exit 1
           fi
-          if [ -n "${{ inputs.message }}" ]; then
-            bunx wrangler deploy --message "${{ inputs.message }}"
+          if [ -n "${INPUT_MESSAGE}" ]; then
+            bunx wrangler deploy --message "${INPUT_MESSAGE}"
           else
             bunx wrangler deploy --message "deploy via gh actions: ${{ github.sha }}"
           fi

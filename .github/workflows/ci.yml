@@ -1,0 +1,70 @@
+name: CI
+
+# The gate in front of every release. The build-* workflows only package; this
+# is the only place the type checker and the test suites run in CI. Keep the
+# install line identical to build-*.yml so a green CI means the same tree the
+# builds will see.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  NODE_OPTIONS: --max-old-space-size=8192
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+      - run: bun install --frozen-lockfile --concurrent-scripts=1
+      - run: bun run check-deps-lock
+      - run: bun run typecheck
+
+  test-desktop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+      - run: bun install --frozen-lockfile --concurrent-scripts=1
+      # Desktop suite also covers packages/shared, packages/ui and scripts/
+      # (release tooling) through vitest.config.ts `include`.
+      - run: bun run test:quiet
+
+  test-node:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+      - run: bun install --frozen-lockfile --concurrent-scripts=1
+      - run: bun run test:runtime
+      - run: bun run test:cli
+      - run: bun run test:relay

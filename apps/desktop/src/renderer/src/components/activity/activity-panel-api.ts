@@ -1,4 +1,4 @@
-import type { DockviewApi, AddPanelPositionOptions, IDockviewPanel, SerializedDockview } from 'dockview-core'
+import type { DockviewApi, AddPanelPositionOptions, IDockviewPanel, IDockviewGroupPanel, SerializedDockview } from 'dockview-core'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useBrowserStore } from '@/stores/browser'
 import { useDeviceInstanceStore } from '@/stores/device-instances'
@@ -159,6 +159,30 @@ function execOrDefer(fn: () => void) {
 export function focusActivePanelContent(): void {
   const container = dockApi?.activeGroup?.element.querySelector<HTMLElement>('.dv-content-container')
   container?.focus({ preventScroll: true })
+}
+
+/**
+ * Run a tab-opening action so it lands in `group` rather than wherever the
+ * active tab happens to live.
+ *
+ * `addPanel` without an explicit `position` resolves against dockview's
+ * `activeGroup` (`_doAddPanel`: `else referenceGroup = this.activeGroup`), and
+ * dockview only activates a group from one of its tabs or its empty header
+ * space — `TabsContainer` attaches no such handler to the three header-action
+ * containers. So the "+" in a second group's header was opening its tab in the
+ * first group, and a launcher on an empty group did the same.
+ *
+ * Activating first rather than threading a `referenceGroup` through every
+ * `open*Tab` signature: clicking a group's "+" should focus that group anyway,
+ * and it is the one form that also survives an opener with an await in it
+ * (`openTerminalTab` spawns the pty before it adds its panel).
+ *
+ * `group` is undefined for the whole-dock watermark and for keyboard launches,
+ * which correctly keep targeting the active group.
+ */
+export function launchInGroup(group: IDockviewGroupPanel | undefined, launch: () => void): void {
+  if (group && !group.api.isActive) group.api.setActive()
+  launch()
 }
 
 /**

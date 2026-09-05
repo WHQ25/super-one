@@ -20,6 +20,7 @@ import {
   applyDockSnapshot,
   closeGhostSideChatPanel,
   isLayoutSwapping,
+  launchInGroup,
 } from './activity-panel-api'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useBrowserStore } from '@/stores/browser'
@@ -492,5 +493,58 @@ describe('closeGhostSideChatPanel', () => {
     closeGhostSideChatPanel((sessionId) => sessionId === 'live-side-chat')
 
     expect(close).not.toHaveBeenCalled()
+  })
+})
+
+describe('launchInGroup', () => {
+  /**
+   * Dockview resolves an `addPanel` that carries no `position` against its own
+   * `activeGroup` (dockviewComponent `_doAddPanel`: `else referenceGroup =
+   * this.activeGroup`). The fake models that rule so the test can assert where a
+   * tab actually lands rather than which arguments happened to be passed.
+   */
+  function seedTwoGroupDock() {
+    let activeGroupId = 'group-a'
+    const makeGroup = (id: string) => ({
+      id,
+      panels: [],
+      api: {
+        get isActive() { return activeGroupId === id },
+        setActive: () => { activeGroupId = id },
+      },
+    })
+    const groups = [makeGroup('group-a'), makeGroup('group-b')]
+    const landings: string[] = []
+    setDockApi({
+      panels: [],
+      groups,
+      activePanel: undefined,
+      addPanel: (options: { position?: { referenceGroup?: { id: string } } }) => {
+        landings.push(options.position?.referenceGroup?.id ?? activeGroupId)
+      },
+    } as never)
+    return { groups, landings }
+  }
+
+  beforeEach(() => {
+    useActivityPanelStore.setState({ showPanel: false, maximized: false, maximizedGroupId: null })
+    useBrowserStore.setState({ tabs: {}, slots: {} })
+    setCurrentSessionIdGetter(null)
+  })
+
+  it('opens the tab in the group the launcher belongs to, not the one holding the active tab', () => {
+    const { groups, landings } = seedTwoGroupDock()
+
+    launchInGroup(groups[1] as never, () => openBrowserTab('example.com', 'browser-from-b'))
+
+    expect(landings).toEqual(['group-b'])
+  })
+
+  it('falls back to the active group for a launcher that owns none, as ⌘T does', () => {
+    const { landings } = seedTwoGroupDock()
+
+    launchInGroup(undefined, () => openBrowserTab('example.com', 'browser-from-keyboard'))
+
+    expect(landings).toEqual(['group-a'])
   })
 })

@@ -1,7 +1,7 @@
 import { useRef, useCallback, useEffect } from 'react'
 import { Plus } from 'lucide-react'
 import { DockviewReact } from 'dockview-react'
-import type { DockviewReadyEvent, DockviewApi, DockviewTheme } from 'dockview-core'
+import type { DockviewReadyEvent, DockviewApi, DockviewTheme, IDockviewHeaderActionsProps, IWatermarkPanelProps } from 'dockview-core'
 import 'dockview/dist/styles/dockview.css'
 import { useAppStore } from '@/stores/app'
 import { useActivityPanelStore } from '@/stores/activity-panel'
@@ -15,7 +15,7 @@ import { ACTIVITY_PANEL_TRANSITION, LAYOUT } from '@/lib/layout-constants'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
 import { ResizeHandleLine } from '@/components/ResizeHandleLine'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuShortcut, DropdownMenuTrigger } from '@superone/ui/components/ui/dropdown-menu'
-import { isLayoutSwapping, setDockApi, SIDE_CHAT_PANEL_ID } from './activity-panel-api'
+import { isLayoutSwapping, launchInGroup, setDockApi, SIDE_CHAT_PANEL_ID } from './activity-panel-api'
 import { useActivityLaunchTypes } from './activity-launch-types'
 import { activityPanelComponents } from './panels'
 import { activityTabComponents } from './ActivityTab'
@@ -58,18 +58,18 @@ function ActivityPrefixActions() {
   )
 }
 
-function ActivityWatermark() {
+function ActivityWatermark({ group }: IWatermarkPanelProps) {
   return (
     <div className="relative h-full">
       <div className="absolute inset-x-0 top-0 z-10 h-[34px]">
         <ActivityPrefixActions />
       </div>
-      <ActivityLauncher />
+      <ActivityLauncher group={group} />
     </div>
   )
 }
 
-function ActivityNewTabAction() {
+function ActivityNewTabAction({ group }: IDockviewHeaderActionsProps) {
   const types = useActivityLaunchTypes()
   return (
     <div className="flex h-full items-center px-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
@@ -84,7 +84,7 @@ function ActivityNewTabAction() {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
           {types.map(({ id, icon: Icon, label, shortcut, disabled, onOpen }) => (
-            <DropdownMenuItem key={id} disabled={disabled} onSelect={() => onOpen()}>
+            <DropdownMenuItem key={id} disabled={disabled} onSelect={() => launchInGroup(group, onOpen)}>
               <Icon className="size-4" />
               {label}
               {shortcut && <DropdownMenuShortcut>{shortcut}</DropdownMenuShortcut>}

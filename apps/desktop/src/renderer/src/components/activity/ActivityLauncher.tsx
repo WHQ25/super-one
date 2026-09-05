@@ -1,7 +1,10 @@
+import type { IDockviewGroupPanel } from 'dockview-core'
 import { cn } from '@superone/ui/lib/utils'
 import { useActivityLaunchTypes } from './activity-launch-types'
+import { launchInGroup } from './activity-panel-api'
 
-export function ActivityLauncher() {
+/** `group` is absent when the watermark stands in for the whole empty dock. */
+export function ActivityLauncher({ group }: { group?: IDockviewGroupPanel }) {
   const types = useActivityLaunchTypes()
 
   return (
@@ -11,7 +14,7 @@ export function ActivityLauncher() {
           <button
             key={id}
             disabled={disabled}
-            onClick={() => onOpen()}
+            onClick={() => launchInGroup(group, onOpen)}
             className={cn(
               'flex items-center gap-3 rounded-lg border border-border px-3 py-2.5 text-left transition-colors',
               disabled ? 'opacity-40' : 'hover:border-primary/40 hover:bg-muted',

@@ -16,6 +16,21 @@ const warn = (ns: string, key: string) => {
 
 const offNoop = () => {}
 
+/**
+ * Properties read as VALUES rather than called as IPC.
+ *
+ * The proxy answers every key with a function, which silently defeats any
+ * feature gate that inspects a field instead of awaiting a call —
+ * `shouldApplyLiquidGlassClass` checks `typeof app.supportsLiquidGlass ===
+ * 'boolean'` and `app.platform === 'darwin'`, so glass could never turn on in
+ * Storybook no matter what the store said. Values win over the function
+ * fallback; stories still opt in through the store, so nothing changes for a
+ * story that leaves `liquidGlass` at its default `false`.
+ */
+const values: Record<string, Record<string, unknown>> = {
+  app: { platform: 'darwin', supportsLiquidGlass: true },
+}
+
 const proxyFor = (ns: string): Record<string, AnyFn> => {
   return new Proxy(
     {},
@@ -23,6 +38,7 @@ const proxyFor = (ns: string): Record<string, AnyFn> => {
       get(_target, prop: string) {
         if (prop === 'then') return undefined
         if (overrides[ns]?.[prop]) return overrides[ns][prop]
+        if (values[ns] && prop in values[ns]) return values[ns][prop] as AnyFn
         if (prop.startsWith('on')) {
           return (..._args: unknown[]) => offNoop
         }

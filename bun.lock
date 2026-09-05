@@ -347,6 +347,7 @@
         "@types/node": "^20",
         "@types/react": "^19",
         "@types/react-dom": "^19",
+        "@typescript/typescript6": "^6.0.2",
         "eslint": "^9",
         "eslint-config-next": "16.3.4",
         "tailwindcss": "^4",

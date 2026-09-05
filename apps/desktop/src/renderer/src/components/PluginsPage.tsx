@@ -14,7 +14,6 @@ import {
   Puzzle,
   Webhook,
   Server,
-  Github,
   Star,
   HardDrive,
   ArrowUpCircle,
@@ -26,6 +25,7 @@ import {
   Code,
   BookOpen,
 } from 'lucide-react'
+import { GithubIcon } from '@/components/GithubIcon'
 import { motion, AnimatePresence } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import { Streamdown } from 'streamdown'
@@ -1360,7 +1360,7 @@ function MarketplaceListCard({ mp, onClick }: { mp: MarketplaceSummary; onClick:
         {mp.source && (
           <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
             {isGithubSource(mp.source)
-              ? <Github className="size-3 shrink-0" />
+              ? <GithubIcon className="size-3 shrink-0" />
               : <HardDrive className="size-3 shrink-0" />}
             <span className="truncate">{mp.source}</span>
             {isGithubSource(mp.source) && <GithubStars source={mp.source} className="shrink-0" />}
@@ -1440,7 +1440,7 @@ function SourceLink({ source, size = 'sm' }: { source: string; size?: 'sm' | 'md
         onClick={(e) => { e.stopPropagation(); window.open(url) }}
         className={cn('inline-flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors', textClass)}
       >
-        <Github className={cn(iconClass, 'shrink-0')} />
+        <GithubIcon className={cn(iconClass, 'shrink-0')} />
         <span className="truncate">{source}</span>
         <ExternalLink className={cn(linkIconClass, 'shrink-0')} />
       </button>

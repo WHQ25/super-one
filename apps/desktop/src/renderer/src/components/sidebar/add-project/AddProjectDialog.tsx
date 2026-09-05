@@ -4,10 +4,10 @@ import {
   ArrowLeft,
   Folder,
   FolderPlus,
-  Github,
   Link2,
   Loader2,
 } from 'lucide-react'
+import { GithubIcon } from '@/components/GithubIcon'
 import { githubOwnerAvatarUrl, parseGitHubRepoInput } from '@superone/shared/git-remote'
 import { Button } from '@superone/ui/components/ui/button'
 import { Checkbox } from '@superone/ui/components/ui/checkbox'
@@ -52,7 +52,7 @@ interface AddProjectDialogProps {
 
 const SOURCE_ICONS: Record<AddProjectSource, ReactNode> = {
   local: <FolderPlus className="size-[18px]" />,
-  github: <Github className="size-[18px]" />,
+  github: <GithubIcon className="size-[18px]" />,
   url: <Link2 className="size-[18px]" />,
 }
 const DIRECTORY_ICON = <Folder className="size-3.5" />
@@ -518,7 +518,7 @@ export function AddProjectDialog({
                       {ref ? (
                         <GithubOwnerAvatar owner={ref.owner} className="size-8 rounded-md" />
                       ) : (
-                        <Github className="size-8 text-muted-foreground" />
+                        <GithubIcon className="size-8 text-muted-foreground" />
                       )}
                       <span className="text-sm text-foreground">
                         {ref ? `${ref.owner}/${ref.repo}` : flow.repoResolved.repoName}
@@ -560,7 +560,7 @@ export function AddProjectDialog({
                       {ref ? (
                         <GithubOwnerAvatar owner={ref.owner} className="size-8 rounded-md" />
                       ) : (
-                        <Github className="size-8 text-muted-foreground" />
+                        <GithubIcon className="size-8 text-muted-foreground" />
                       )}
                       <span className="text-sm text-foreground">
                         {ref ? `${ref.owner}/${ref.repo}` : flow.repoResolved.repoName}

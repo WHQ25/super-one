@@ -74,8 +74,15 @@ Every alpha release keeps its own notes on its GitHub Release.
   dark colour-scheme document — instead of bleeding the app's vibrancy.
   Screenshots, annotations and recordings are flattened onto the same
   canvas, so captures no longer carry a transparent hole.
-- Sidebar: attention and scheduled sessions stay visible in project lists
-  instead of being buried behind the pagination cutoff.
+- Sidebar: the session list holds its order and keeps the rows that matter
+  on screen. Sessions wanting attention and scheduled sessions are no
+  longer buried behind the pagination cutoff, and switching to an idle
+  session no longer reorders the list under the cursor.
+- Sidebar: harness marks stay legible on a selected row in light mode.
+  Each mark gains a hairline outline derived from the row's own fill, the
+  Grok mark follows the theme foreground instead of a hardcoded ink that
+  disappeared against the dark sidebar, and Codex's background status no
+  longer paints a dark square over itself on a selected row.
 - Remote nodes are served the current computer-use tool contract — the
   descriptor copy had drifted and lost `computer_snapshot`'s TOON outline
   semantics entirely.
@@ -87,6 +94,38 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 - Permission popovers share one width across every harness, so the menu
   no longer resizes when switching harness.
+- The selected sidebar row uses a calmer brand fill. It used to ride the
+  sRGB gamut ceiling, so its saturation surged or fell depending on the
+  brand hue.
+
+## [0.62.0-alpha] - 2026-09-05
+
+### Fixed
+
+- Sidebar: switching to an idle session no longer reorders the list under
+  the cursor. The foreground session keeps its natural position and is only
+  pinned into view when the display limit or a collapsed project row would
+  otherwise drop it.
+- Sidebar: harness marks stay legible on a selected row in light mode. Each
+  mark gains a hairline outline derived from the row's own fill; the Grok
+  mark now follows the theme foreground instead of a hardcoded ink that sat
+  at 1.27:1 against the dark sidebar; and Codex's background status breathes
+  the mark itself instead of fading an opaque sidebar-coloured rectangle
+  over it, which read as a dark square on a selected row.
+
+### Changed
+
+- The selected sidebar row uses a calmer brand fill (lightness 0.70, chroma
+  0.10). It used to ride the sRGB gamut ceiling, so its saturation surged or
+  fell depending on the brand hue.
+
+### Tests
+
+- Storybook: a bench for the harness mark treatments on a selected row —
+  all seven marks, every row surface, any brand hue, Liquid Glass either
+  way. Liquid Glass can now be switched on in Storybook at all; the
+  `window.app` mock answered platform checks with functions, so it silently
+  never applied.
 
 ## [0.61.1-alpha] - 2026-09-04
 

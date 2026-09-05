@@ -1,6 +1,5 @@
 import { ArrowRight, ChevronLeft } from "lucide-react"
 import { useTranslations } from "next-intl"
-import { cn } from "@superone/ui/lib/utils"
 import { Link } from "@/i18n/navigation"
 import type { Locale } from "@/i18n/routing"
 import { getCategory, type Feature } from "@/lib/features/taxonomy"

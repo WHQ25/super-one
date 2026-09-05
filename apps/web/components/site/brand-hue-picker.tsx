@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
 import { useTheme } from "next-themes"
+import { useHydrated } from "@/lib/use-hydrated"
 import { useTranslations } from "next-intl"
 import { Palette, RotateCcw } from "lucide-react"
 import { brandHueToOklch } from "@superone/shared/harness-brand"
@@ -23,9 +23,7 @@ export function BrandHuePicker() {
   const t = useTranslations("BrandHue")
   const { resolvedTheme } = useTheme()
   const { brandHue, setBrandHue, isCustom, reset } = useBrandHue()
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => setMounted(true), [])
+  const mounted = useHydrated()
 
   if (!mounted || resolvedTheme === "dark") return null
 

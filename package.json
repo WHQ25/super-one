@@ -60,6 +60,7 @@
     "test:watch": "bun --filter @superone/desktop test:watch",
     "test:coverage": "bun --filter @superone/desktop test:coverage",
     "test:e2e": "bun --filter @superone/desktop test:e2e",
+    "lint": "bun --filter @superone/web lint",
     "typecheck": "bun --filter '*' typecheck",
     "typecheck:node": "bun --filter @superone/desktop typecheck:node",
     "typecheck:web": "bun --filter @superone/desktop typecheck:web",

@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
 import { useTheme } from "next-themes"
+import { useHydrated } from "@/lib/use-hydrated"
 import { useTranslations } from "next-intl"
 import { Monitor, Moon, Sun } from "lucide-react"
 import { Button } from "@superone/ui/components/ui/button"
@@ -21,9 +21,7 @@ const ICON: Record<string, typeof Sun> = {
 export function ThemeToggle() {
   const t = useTranslations("Theme")
   const { theme, setTheme, resolvedTheme } = useTheme()
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => setMounted(true), [])
+  const mounted = useHydrated()
 
   const current = mounted ? (theme ?? "system") : "system"
   const Icon = mounted

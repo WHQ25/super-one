@@ -1,7 +1,7 @@
 "use client"
 
 import { useTranslations } from "next-intl"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Button } from "@superone/ui/components/ui/button"
 import { cn } from "@superone/ui/lib/utils"
 import {
@@ -9,6 +9,7 @@ import {
   downloadUrl,
   type DownloadTarget,
 } from "@/lib/download"
+import { useHydrated } from "@/lib/use-hydrated"
 import {
   detectPlatform,
   PLATFORM_LABELS,
@@ -25,13 +26,15 @@ function targetLabel(target: DownloadTarget): string {
 
 export function DownloadButton({ className }: { className?: string }) {
   const t = useTranslations("Home.download")
-  const [platform, setPlatform] = useState<DesktopPlatform | null>(null)
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    setPlatform(detectPlatform(navigator.userAgent))
-  }, [])
+  // The user agent only exists on the client, so the platform is resolved once
+  // hydration has happened rather than pushed in from an effect.
+  const hydrated = useHydrated()
+  const platform: DesktopPlatform | null = useMemo(
+    () => (hydrated ? detectPlatform(navigator.userAgent) : null),
+    [hydrated],
+  )
 
   useEffect(() => {
     if (!open) return

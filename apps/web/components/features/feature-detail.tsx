@@ -18,6 +18,8 @@ interface FeatureDetailProps {
 
 export function FeatureDetail({ locale, sub }: FeatureDetailProps) {
   const t = useTranslations("Features")
+  // getSubFeatureBody is a lookup into a module-level map, so Body is a stable
+  // reference across renders rather than a component built here.
   const Body = getSubFeatureBody(sub.category, sub.feature, sub.slug, locale)
   const category = getCategory(sub.category)
   const feature = getFeature(sub.category, sub.feature)
@@ -72,6 +74,8 @@ export function FeatureDetail({ locale, sub }: FeatureDetailProps) {
 
       {Body ? (
         <div className="text-foreground/90 max-w-3xl text-[15px]">
+          {/* eslint-disable-next-line react-hooks/static-components -- Body comes
+              from a module-level lookup, so its identity is stable. */}
           <Body />
         </div>
       ) : null}

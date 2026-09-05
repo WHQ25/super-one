@@ -87,6 +87,10 @@ export function Hero() {
   }, [])
 
   useEffect(() => {
+    // Seeded here rather than in useState because every cell is randomised, so a
+    // server-rendered value would not match hydration. This is one write on mount
+    // for a decorative grid, not the cascade the rule guards against.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCells(Array.from({ length: 7 }, () => makeCell()))
     const id = window.setInterval(() => {
       setCells((prev) => (prev.length >= 14 ? prev : [...prev, makeCell()]))

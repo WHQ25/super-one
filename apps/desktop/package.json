@@ -236,7 +236,7 @@
     "@superone/desktop-mocks": "workspace:*",
     "@tailwindcss/vite": "^4.1.18",
     "@tanstack/react-virtual": "^3.14.10",
-    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@tiptap/extension-placeholder": "^3.31.0",
     "@tiptap/pm": "^3.31.0",

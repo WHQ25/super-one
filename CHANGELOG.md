@@ -15,6 +15,81 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- Release health: SuperOne reports crashes and update adoption, so a bad
+  release shows up in monitoring rather than in user reports.
+
+### Fixed
+
+- Activity panel: the "+" in a group's tab bar opens the new tab in that
+  group instead of wherever the active tab happened to be — on a split
+  layout the tab used to appear in the wrong pane.
+- Activity panel: only the pane sitting on the panel's rounded corner
+  carries that radius, so a split no longer notches each pane's bottom
+  edge where it meets a divider.
+- Codex: launch settings approved in the dialog take effect on the first
+  turn.
+- Codex: the model chosen for a session survives restoring that session.
+
+### Changed
+
+- The browser address bar is taller, with real clearance above and below
+  the URL field.
+- Electron 44 (bundled Node 24.19.0), plus a sweep of dependency majors
+  across the docking, terminal, syntax-highlighting and PDF stacks.
+
+## [0.62.1-alpha] - 2026-09-05
+
+### Added
+
+- Release health: the app reports crashes and update adoption, so a bad
+  release surfaces in monitoring instead of in user reports.
+
+### Fixed
+
+- Activity panel: the "+" in a group's tab bar opens the new tab in that
+  group. It used to open in whichever group held the active tab, so on a
+  split layout the tab appeared in the wrong pane.
+- Activity panel: only the group sitting on the panel's rounded corner
+  carries that radius. Every group carried it, which notched each pane's
+  bottom edge where it met a divider.
+- Browser: the address bar row is 36px around a 28px field, up from 28px
+  around 24px — it had 2px of clearance above and below.
+- Codex: launch settings approved in the dialog are honoured on the first
+  turn instead of from the second turn onward.
+- Codex: the model chosen for a session survives session restoration.
+
+### Changed
+
+- Electron 44 (bundled Node 24.19.0); clipboard writes move to the W3C
+  async API.
+- Dependency majors swept in one pass: dockview 8, xterm 6, shiki 4,
+  pdfjs-dist 6, jsdom 30, lucide-react 1, diff 9, toon 4,
+  react-zoom-pan-pinch 4, react-day-picker 10, archiver 8, @types/node 24
+  and TypeScript 7.
+
+### Security
+
+- `next` moved to 16.3.x in the marketing site, closing four advisories.
+
+### CI
+
+- One `release.yml` dispatch runs build → promote plus the optional CLI,
+  harness and relay legs, instead of chaining workflows by run ID.
+- Dependabot now raises one grouped minor/patch PR per ecosystem per month
+  with majors raised by hand; automated security PRs stay on for their
+  advisory list.
+- `ci.yml` gained a lint job, and the six standing ESLint errors in
+  `apps/web` were fixed.
+
+### Tests
+
+- The desktop suite passes on Linux CI, and a sticky-draft focus test no
+  longer races the save keystroke.
+
+## [0.62.0] - 2026-09-05
+
+### Added
+
 - Claude multi-account: SuperOne now discovers every signed-in Claude
   account, shows each one's usage meters in Settings → Providers, and lets
   a session pick which subscription it runs on. Sign-in and sign-out go
@@ -97,129 +172,6 @@ Every alpha release keeps its own notes on its GitHub Release.
 - The selected sidebar row uses a calmer brand fill. It used to ride the
   sRGB gamut ceiling, so its saturation surged or fell depending on the
   brand hue.
-
-## [0.62.0-alpha] - 2026-09-05
-
-### Fixed
-
-- Sidebar: switching to an idle session no longer reorders the list under
-  the cursor. The foreground session keeps its natural position and is only
-  pinned into view when the display limit or a collapsed project row would
-  otherwise drop it.
-- Sidebar: harness marks stay legible on a selected row in light mode. Each
-  mark gains a hairline outline derived from the row's own fill; the Grok
-  mark now follows the theme foreground instead of a hardcoded ink that sat
-  at 1.27:1 against the dark sidebar; and Codex's background status breathes
-  the mark itself instead of fading an opaque sidebar-coloured rectangle
-  over it, which read as a dark square on a selected row.
-
-### Changed
-
-- The selected sidebar row uses a calmer brand fill (lightness 0.70, chroma
-  0.10). It used to ride the sRGB gamut ceiling, so its saturation surged or
-  fell depending on the brand hue.
-
-### Tests
-
-- Storybook: a bench for the harness mark treatments on a selected row —
-  all seven marks, every row surface, any brand hue, Liquid Glass either
-  way. Liquid Glass can now be switched on in Storybook at all; the
-  `window.app` mock answered platform checks with functions, so it silently
-  never applied.
-
-## [0.61.1-alpha] - 2026-09-04
-
-### Added
-
-- Claude multi-account: SuperOne now discovers every signed-in Claude
-  account, shows each one's usage meters in Settings → Providers, and lets
-  a session pick which subscription it runs on. Sign-in and sign-out go
-  through `claude auth login` / `logout`, and transcripts stay shared
-  across accounts so resuming still works. The provider dropdown only
-  splits the official row once a second account exists, so single-account
-  setups are unchanged.
-- Codex: adopted app-server 0.153 — structured async questions, live
-  reviewer updates and remote plugin reconciliation. The pinned Codex
-  runtime moves to 0.153.2.
-- Devices: starting a device and being allowed to drive it are now two
-  separate steps. The new `device_boot` tool powers a device on without a
-  prompt, so the ~20s cold boot no longer waits on a human, and the
-  control prompt appears with the device already on screen. That prompt
-  gains an "Always Allow" answer, recorded per device and honoured by
-  every later session; grants can be revoked from the device tab.
-- Markdown Preview now preserves the HTML a README depends on through the
-  edit round-trip: `<kbd>`, heading and paragraph alignment,
-  `<details>`/`<summary>`, task lists, footnotes, `<sub>`/`<sup>`/`<ins>`/
-  `<u>`/`<mark>`/`<small>`/`<abbr>`, comments, `<picture>`, named anchors,
-  and HTML tables with block content in cells. Authored image width and
-  height are honoured, and an image inside a link no longer opens the
-  lightbox over the link prompt.
-- Usage popover: the Claude and Codex gauges now use the harness brand
-  lockup as their title and name the account whose quota is being spent —
-  the Claude account, or the ChatGPT account for Codex sessions not
-  billing a third-party key.
-
-### Fixed
-
-- Markdown Preview no longer corrupts files it saves: code fences
-  accumulated a blank line on every save, a bare `-->` inside a fence
-  duplicated surrounding text, emphasis spanning two text nodes was
-  reopened mid-span, and a link mark on an image (or an explicit `alt=""`)
-  was dropped.
-- Usage: per-model weekly windows are read from Anthropic's new scoped
-  `limits` rows, so Fable's weekly window appears instead of nothing.
-- Usage: every rate-limit gauge is one width, so the popover no longer
-  resizes depending on which harness the session runs on.
-- Chat: the compact boundary anchors on the live reply, so goal-mode
-  threads no longer hide completed turns that were never compacted.
-- Chat: Codex threads with voice history interleave typed and realtime
-  turns chronologically instead of replacing the transcript with the
-  voice view.
-- Codex: tool rows left in flight when a turn is interrupted are now
-  sealed, in both the writers and on load, so an interrupted turn stops
-  rendering a tool as forever running. Existing affected messages heal
-  when read.
-- Computer Use: AX calls are bounded by an explicit messaging timeout, a
-  wall-clock budget on window listing, and concurrent dispatch of
-  read-only RPCs, so an app that is quitting or hung can no longer stall
-  the helper past the host's 30s timeout. Five frozen apps now take 3.7s
-  instead of 31.7s.
-- Computer Use: the software cursor no longer flickers during `observe`
-  and `wait_for`.
-- Browser: loaded pages get a real browser canvas — white, or dark for a
-  dark colour-scheme document — instead of bleeding the app's vibrancy.
-  Screenshots, annotations and recordings are flattened onto the same
-  canvas, so captures no longer carry a transparent hole.
-- Sidebar: attention and scheduled sessions stay visible in project lists
-  instead of being buried behind the pagination cutoff.
-- Remote nodes are served the current computer-use tool contract — the
-  descriptor copy had drifted and lost `computer_snapshot`'s TOON outline
-  semantics entirely.
-- Desktop: the variant icon is preserved after startup.
-- Widget guidelines no longer contradict themselves on emoji, and no
-  longer name Claude in text shipped to every harness.
-
-### Changed
-
-- Permission popovers share one width across every harness, so the menu
-  no longer resizes when switching harness.
-
-### Tests
-
-- Repaired two long-red tests: CLI suites now bind port 0 instead of
-  rolling overlapping random ports (a collision cost one release run to
-  EADDRINUSE), and the helper build-variant mismatch test can now
-  actually construct the mismatch it asserts.
-
-### CI
-
-- Release tooling: harness app-pins are keyed by the channel's app
-  version rather than the plain base, so alpha clients find their pins on
-  R2 instead of silently falling back; `set-latest` and `prune-releases`
-  ask the bucket via `s3api` instead of reading HTTP status off the public
-  URL, which could not distinguish "missing" from "forbidden"; and the
-  fixed download link names now match the arch suffixes builds actually
-  emit.
 
 ## [0.61.0] - 2026-09-03
 

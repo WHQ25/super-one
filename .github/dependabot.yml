@@ -1,0 +1,25 @@
+version: 2
+updates:
+  # Keep the SHA-pinned actions in .github/workflows current. Dependabot
+  # rewrites the pin and the trailing version comment together.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      # Pinned to vite 7 / Rollup on purpose; scripts/check-deps-lock.mjs
+      # explains why and fails the build if either moves.
+      - dependency-name: vite
+      - dependency-name: rolldown

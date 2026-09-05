@@ -213,7 +213,7 @@
     "qrcode.react": "^4.2.0",
     "react-day-picker": "^9.14.0",
     "react-i18next": "^17.0.4",
-    "react-zoom-pan-pinch": "^3.7.0",
+    "react-zoom-pan-pinch": "^4.1.0",
     "recharts": "^3.8.1",
     "remark": "^15.0.1",
     "remark-gfm": "^4.0.1",

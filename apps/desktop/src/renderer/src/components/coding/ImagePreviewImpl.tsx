@@ -67,7 +67,7 @@ export default function ImagePreviewImpl({ src, alt }: ImagePreviewProps) {
         case 'ArrowLeft':
         case 'ArrowRight': {
           e.preventDefault()
-          const { positionX, positionY, scale } = api.instance.transformState
+          const { positionX, positionY, scale } = api.instance.state
           const dx = e.key === 'ArrowLeft' ? PAN_STEP : e.key === 'ArrowRight' ? -PAN_STEP : 0
           const dy = e.key === 'ArrowUp' ? PAN_STEP : e.key === 'ArrowDown' ? -PAN_STEP : 0
           api.setTransform(positionX + dx, positionY + dy, scale)
@@ -87,7 +87,7 @@ export default function ImagePreviewImpl({ src, alt }: ImagePreviewProps) {
         maxScale={10}
         centerOnInit
         smooth
-        wheel={{ smoothStep: 0.012 }}
+        wheel={{ step: 0.012 }}
         pinch={{ step: 10 }}
       >
         <Controls />

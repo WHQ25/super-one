@@ -243,7 +243,7 @@
     "@tiptap/react": "^3.23.6",
     "@tiptap/starter-kit": "^3.23.6",
     "@types/archiver": "^7.0.0",
-    "@types/better-sqlite3": "^7.6.13",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/culori": "^4.0.1",
     "@types/diff": "^8.0.0",
     "@types/node": "^22.10.0",

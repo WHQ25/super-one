@@ -3903,15 +3903,21 @@ function registerIpcHandlers(): void {
     return clipboard.readText()
   })
 
+  // Electron 44 replaced the clipboard module with the async W3C API: writeText
+  // returns a promise now, so it has to be returned for the renderer's await to
+  // mean anything, and writeImage is gone in favour of write([ClipboardItem]).
   ipcMain.handle(AgentIpcChannels.CLIPBOARD_WRITE, (_event, text: string) => {
-    clipboard.writeText(text)
+    return clipboard.writeText(text)
   })
 
   ipcMain.handle(AgentIpcChannels.CLIPBOARD_WRITE_IMAGE, async (_event, absPath: string) => {
-    const { nativeImage } = await import('electron')
+    const { nativeImage, ClipboardItem } = await import('electron')
     const img = nativeImage.createFromPath(absPath)
     if (img.isEmpty()) return { ok: false, error: 'Failed to read image' }
-    clipboard.writeImage(img)
+    // Buffer is typed over ArrayBufferLike, which BlobPart does not accept; the
+    // PNG is a fresh allocation either way, so re-wrapping it costs one copy.
+    const png = new Uint8Array(img.toPNG())
+    await clipboard.write([new ClipboardItem({ 'image/png': new Blob([png], { type: 'image/png' }) })])
     return { ok: true }
   })
 

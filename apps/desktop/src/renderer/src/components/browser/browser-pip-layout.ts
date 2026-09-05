@@ -30,7 +30,7 @@ export const BROWSER_PIP_DEFAULT_MAX_HEIGHT = 360
 /** Used when a tab has no panel slot or device emulation yet. Matches the capture fallback. */
 export const BROWSER_FALLBACK_VIEWPORT = { width: 1280, height: 800 } as const
 
-const BROWSER_PIP_DIMENSIONS: PipDimensions = {
+export const BROWSER_PIP_DIMENSIONS: PipDimensions = {
   margin: BROWSER_PIP_MARGIN,
   defaultWidth: BROWSER_PIP_DEFAULT_WIDTH,
   defaultHeight: BROWSER_PIP_DEFAULT_HEIGHT,

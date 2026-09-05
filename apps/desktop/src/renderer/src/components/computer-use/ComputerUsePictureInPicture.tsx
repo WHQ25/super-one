@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { EyeOff } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -10,12 +10,12 @@ import { useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { useComputerViewfinderStore } from '@/stores/computer-viewfinder'
 import { useOwnsViewfinder } from '@/stores/agent-viewfinder'
 import { createDragCapture } from '@/lib/drag-capture'
-import type { PipBounds, PipLayout } from '@/lib/pip-layout'
+import { usePipPlacement } from '@/hooks/use-pip-placement'
 import {
+  COMPUTER_PIP_DIMENSIONS,
   clampComputerPipLayout,
   computerPipAspect,
   computerPipCaptureSize,
-  createDefaultComputerPipLayout,
 } from './computer-pip-layout'
 
 type ResizeCorner = 'nw' | 'ne' | 'sw' | 'se'
@@ -29,10 +29,6 @@ const RESIZE_CORNERS: Array<{ corner: ResizeCorner; className: string }> = [
 
 const CLICK_SLOP = 4
 const CAPTURE_RESIZE_DEBOUNCE_MS = 120
-
-function pipBoundary(): HTMLElement | null {
-  return document.querySelector<HTMLElement>('[data-chat-root]')
-}
 
 export function ComputerUsePictureInPicture() {
   const { t } = useTranslation()
@@ -63,32 +59,18 @@ export function ComputerUsePictureInPicture() {
       ? { width: target.sourceWidth, height: target.sourceHeight }
       : null)
 
-  const [bounds, setBounds] = useState<PipBounds | null>(null)
-  const [layout, setLayout] = useState<PipLayout | null>(null)
+  // The captured window is the preview's identity — the session alone would collide
+  // when one session is walked from one window to another.
+  const { bounds, layout, setLayout } = usePipPlacement({
+    key: target?.sessionId != null && target.windowId != null
+      ? `${target.sessionId}:${target.windowId}`
+      : null,
+    active: showPip,
+    aspect,
+    dims: COMPUTER_PIP_DIMENSIONS,
+  })
   const interactionCleanupRef = useRef<(() => void) | null>(null)
   const lastCaptureSizeRef = useRef('')
-
-  useLayoutEffect(() => {
-    if (!showPip) return
-    const boundary = pipBoundary()
-    if (!boundary) return
-    const measure = () => {
-      const rect = boundary.getBoundingClientRect()
-      const nextBounds = { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
-      setBounds(nextBounds)
-      setLayout((current) => current
-        ? clampComputerPipLayout(current, nextBounds, aspect)
-        : createDefaultComputerPipLayout(nextBounds, aspect))
-    }
-    measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(boundary)
-    window.addEventListener('resize', measure)
-    return () => {
-      observer.disconnect()
-      window.removeEventListener('resize', measure)
-    }
-  }, [aspect, currentSessionId, showPip, target?.windowId])
 
   useLayoutEffect(() => {
     if (!showPip) interactionCleanupRef.current?.()
@@ -201,10 +183,6 @@ export function ComputerUsePictureInPicture() {
       }, bounds, aspect))
     })
   }, [aspect, bounds, layout, startInteraction])
-
-  useEffect(() => {
-    if (!target) setLayout(null)
-  }, [target])
 
   const cursorVisible = target?.cursorX != null
     && target.cursorY != null

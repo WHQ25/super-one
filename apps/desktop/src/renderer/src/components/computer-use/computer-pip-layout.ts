@@ -12,7 +12,7 @@ export const COMPUTER_PIP_MIN_WIDTH = 200
 export const COMPUTER_PIP_MIN_CAPTURE_EDGE = 480
 export const COMPUTER_PIP_MAX_CAPTURE_EDGE = 1440
 
-const DIMENSIONS: PipDimensions = {
+export const COMPUTER_PIP_DIMENSIONS: PipDimensions = {
   margin: 12,
   defaultWidth: COMPUTER_PIP_DEFAULT_WIDTH,
   defaultHeight: 120,
@@ -28,7 +28,7 @@ export function computerPipAspect(source?: { width: number; height: number } | n
 }
 
 export function createDefaultComputerPipLayout(bounds: PipBounds, aspect: number): PipLayout {
-  return createDefaultPipLayout(bounds, DIMENSIONS, aspect)
+  return createDefaultPipLayout(bounds, COMPUTER_PIP_DIMENSIONS, aspect)
 }
 
 export function clampComputerPipLayout(
@@ -36,7 +36,7 @@ export function clampComputerPipLayout(
   bounds: PipBounds,
   aspect: number,
 ): PipLayout {
-  return clampPipLayout(layout, bounds, DIMENSIONS, aspect)
+  return clampPipLayout(layout, bounds, COMPUTER_PIP_DIMENSIONS, aspect)
 }
 
 export function computerPipCaptureSize(

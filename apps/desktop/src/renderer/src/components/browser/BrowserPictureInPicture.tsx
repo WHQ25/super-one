@@ -17,14 +17,12 @@ import { useOnTurnCompleted } from '@/hooks/useOnTurnCompleted'
 import { createDragCapture } from '@/lib/drag-capture'
 import { getDockApi } from '@/components/activity/activity-panel-api'
 import { BrowserView } from './BrowserView'
+import { usePipPlacement } from '@/hooks/use-pip-placement'
 import {
+  BROWSER_PIP_DIMENSIONS,
   browserPipAspect,
   clampBrowserPipLayout,
-  createDefaultBrowserPipLayout,
-  defaultBrowserPipMaxHeight,
   resolveBrowserPipViewport,
-  type BrowserPipBounds,
-  type BrowserPipLayout,
 } from './browser-pip-layout'
 
 type ResizeCorner = 'nw' | 'ne' | 'sw' | 'se'
@@ -44,10 +42,6 @@ const OVERLAY_BACKDROP_PANES: Array<{ key: string; style: React.CSSProperties }>
   { key: 'left', style: { left: 0, top: '5vh', width: '5vw', height: '90vh' } },
   { key: 'right', style: { right: 0, top: '5vh', width: '5vw', height: '90vh' } },
 ]
-
-function browserPipBoundary(): HTMLElement | null {
-  return document.querySelector<HTMLElement>('[data-chat-root]')
-}
 
 export function BrowserPictureInPicture() {
   const { t } = useTranslation()
@@ -89,11 +83,16 @@ export function BrowserPictureInPicture() {
   const shouldShow = wanted && owns
   const showPip = shouldShow && !expanded
 
-  const [bounds, setBounds] = useState<BrowserPipBounds | null>(null)
-  const [layout, setLayout] = useState<BrowserPipLayout | null>(null)
+  // The tab is the preview's identity: switching sessions parks this tab's position
+  // and restores the incoming tab's, instead of handing it these coordinates.
+  const { bounds, layout, setLayout } = usePipPlacement({
+    key: browserId,
+    active: showPip,
+    aspect: pipAspect,
+    dims: BROWSER_PIP_DIMENSIONS,
+  })
   const [interacting, setInteracting] = useState(false)
   const interactionCleanupRef = useRef<(() => void) | null>(null)
-  const pipAspectRef = useRef(pipAspect)
 
   useOnTurnCompleted(() => useBrowserStore.getState().clearAutomationPreview(currentSessionId ?? undefined))
 
@@ -110,36 +109,6 @@ export function BrowserPictureInPicture() {
       useBrowserStore.getState().clearManualPreview()
     }
   }, [currentSessionId, expandedBrowserId, mosaicMode, owner, pinnedPipBrowserId])
-
-  useLayoutEffect(() => {
-    if (!showPip) return
-    const boundary = browserPipBoundary()
-    if (!boundary) return
-
-    const measure = () => {
-      const rect = boundary.getBoundingClientRect()
-      const nextBounds = { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
-      const aspectChanged = pipAspectRef.current !== pipAspect
-      pipAspectRef.current = pipAspect
-      setBounds(nextBounds)
-      setLayout((current) => current
-        ? clampBrowserPipLayout(
-          current,
-          nextBounds,
-          pipAspect,
-          aspectChanged ? { maxHeight: defaultBrowserPipMaxHeight(nextBounds) } : undefined,
-        )
-        : createDefaultBrowserPipLayout(nextBounds, pipAspect))
-    }
-    measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(boundary)
-    window.addEventListener('resize', measure)
-    return () => {
-      observer.disconnect()
-      window.removeEventListener('resize', measure)
-    }
-  }, [showPip, currentSessionId, pipAspect])
 
   useLayoutEffect(() => {
     if (!showPip) interactionCleanupRef.current?.()

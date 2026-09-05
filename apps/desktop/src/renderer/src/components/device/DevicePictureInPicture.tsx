@@ -8,15 +8,14 @@ import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import { useDevicePipStore, type DevicePipDevice } from '@/stores/device-pip'
 import { createDragCapture } from '@/lib/drag-capture'
-import type { PipBounds, PipLayout } from '@/lib/pip-layout'
+import { usePipPlacement } from '@/hooks/use-pip-placement'
 import { DeviceView } from './DeviceView'
 import { DEVICE_EXPANDED_BOX } from './DeviceOverlaySurface'
 import { useDevicePreview } from './use-device-preview'
 import { useOwnsViewfinder } from '@/stores/agent-viewfinder'
 import {
+  DEVICE_PIP_DIMENSIONS,
   clampDevicePipLayout,
-  createDefaultDevicePipLayout,
-  defaultDevicePipMaxHeight,
   devicePipAspect,
 } from './device-pip-layout'
 
@@ -65,10 +64,6 @@ const RESIZE_CURSORS: Record<ResizeEdge, string> = {
  * what keeps a click from nudging it a pixel on the way to expanding.
  */
 const CLICK_SLOP = 4
-
-function pipBoundary(): HTMLElement | null {
-  return document.querySelector<HTMLElement>('[data-chat-root]')
-}
 
 /**
  * Apple's artwork for the bound device — read for its OUTLINE, not to draw with.
@@ -125,44 +120,16 @@ export function DevicePictureInPicture() {
   const chrome = useIosSimulatorChrome(device)
   const aspect = devicePipAspect(device, chrome)
 
-  const [bounds, setBounds] = useState<PipBounds | null>(null)
-  const [layout, setLayout] = useState<PipLayout | null>(null)
+  // The TAB is the preview's identity, as everywhere else here: a session can hold
+  // two devices, and swapping a tab's device must not take its position with it.
+  const { bounds, layout, setLayout } = usePipPlacement({
+    key: instanceId,
+    active: showPip,
+    aspect,
+    dims: DEVICE_PIP_DIMENSIONS,
+  })
   const [interacting, setInteracting] = useState(false)
   const interactionCleanupRef = useRef<(() => void) | null>(null)
-  const aspectRef = useRef(aspect)
-
-  useLayoutEffect(() => {
-    if (!showPip) return
-    const boundary = pipBoundary()
-    if (!boundary) return
-
-    const measure = () => {
-      const rect = boundary.getBoundingClientRect()
-      const nextBounds = { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
-      // A device turning on its side is a new shape, not a new size. Re-fitting it
-      // under the DEFAULT height ceiling is what keeps a landscape phone from
-      // inheriting a portrait box's height and spanning the whole chat.
-      const turned = aspectRef.current !== aspect
-      aspectRef.current = aspect
-      setBounds(nextBounds)
-      setLayout((current) => current
-        ? clampDevicePipLayout(
-          current,
-          nextBounds,
-          aspect,
-          turned ? { maxHeight: defaultDevicePipMaxHeight(nextBounds) } : undefined,
-        )
-        : createDefaultDevicePipLayout(nextBounds, aspect))
-    }
-    measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(boundary)
-    window.addEventListener('resize', measure)
-    return () => {
-      observer.disconnect()
-      window.removeEventListener('resize', measure)
-    }
-  }, [showPip, instanceId, aspect])
 
   useLayoutEffect(() => {
     if (!showPip) interactionCleanupRef.current?.()

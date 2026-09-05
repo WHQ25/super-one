@@ -28,7 +28,7 @@ import { iosSimulatorOuterBox } from './ios/ios-simulator-chrome-layout'
  */
 export const DEVICE_PIP_ASPECT = 1320 / 2868
 
-const DEVICE_PIP_DIMENSIONS: PipDimensions = {
+export const DEVICE_PIP_DIMENSIONS: PipDimensions = {
   margin: 12,
   defaultWidth: 200,
   defaultHeight: 360,

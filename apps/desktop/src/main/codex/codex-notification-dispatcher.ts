@@ -19,7 +19,16 @@ function summarizeThreadNotification(notif: AppServerNotification): string {
   if (notif.method === 'thread/settings/updated') {
     const settings = asRecord(params.threadSettings)
     const keys = settings ? Object.keys(settings).join(',') : ''
-    return `thread=${threadId} settings=[${keys}]`
+    // Only diagnostic scalar fields: never dump instructions, credentials, or paths.
+    const effective = {
+      model: readString(settings?.model),
+      effort: readString(settings?.effort),
+      serviceTier: readString(settings?.serviceTier),
+      approvalPolicy: readString(settings?.approvalPolicy) ?? readString(asRecord(settings?.approvalPolicy)?.type),
+      approvalsReviewer: readString(settings?.approvalsReviewer),
+      sandboxPolicy: readString(settings?.sandboxPolicy) ?? readString(asRecord(settings?.sandboxPolicy)?.type),
+    }
+    return `thread=${threadId} settings=[${keys}] effective=${JSON.stringify(effective)}`
   }
   return `thread=${threadId}`
 }

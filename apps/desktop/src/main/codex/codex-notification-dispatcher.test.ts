@@ -231,7 +231,11 @@ describe('NotificationDispatcher', () => {
 
     const { connection } = makeQueueConnection([
       { method: 'thread/status/changed', params: { threadId: 'obs-1', status: { type: 'active', activeFlags: ['x', 'y'] } } },
-      { method: 'thread/settings/updated', params: { threadId: 'obs-1', threadSettings: { model: 'gpt-5', effort: 'high' } } },
+      { method: 'thread/settings/updated', params: { threadId: 'obs-1', threadSettings: {
+        model: 'gpt-5.6-luna', effort: 'max', approvalPolicy: 'never',
+        sandboxPolicy: { type: 'dangerFullAccess' }, serviceTier: 'priority',
+        developerInstructions: 'private-instructions',
+      } } },
     ])
     const dispatcher = createNotificationDispatcher(connection)
     await dispatcher.mainInbox.next()
@@ -240,6 +244,11 @@ describe('NotificationDispatcher', () => {
     const messages = infoSpy.mock.calls.map((args) => args.map(String).join(' '))
     expect(messages.some((m) => m.includes('thread/status/changed') && m.includes('status=active') && m.includes('activeFlags=2'))).toBe(true)
     expect(messages.some((m) => m.includes('thread/settings/updated') && m.includes('model') && m.includes('effort'))).toBe(true)
+    const settingsLog = messages.find((m) => m.includes('thread/settings/updated'))!
+    expect(settingsLog).toContain('"model":"gpt-5.6-luna"')
+    expect(settingsLog).toContain('"approvalPolicy":"never"')
+    expect(settingsLog).toContain('"sandboxPolicy":"dangerFullAccess"')
+    expect(settingsLog).not.toContain('private-instructions')
     dispatcher.close()
   })
 })

@@ -1,3 +1,4 @@
+import { mapCodexPermissionMode, resolveCodexBackendSelection } from './codex-backend-selection'
 import type {
   AgentEvent,
   AskUserQuestionRequest,
@@ -12,7 +13,6 @@ import type {
   CodexThreadItem,
   CodexUsageInfo,
   ContextUsageInfo,
-  EffortLevel,
   McpServerInfo,
   PermissionMode,
   PermissionRequest,
@@ -90,15 +90,6 @@ export interface CodexServiceDeps {
   takeAppServerConnection?(projectPath: string, auth: CodexProjectAuth, apiProviderId?: string | null): Promise<AppServerConnectionHandle | null>
 }
 
-interface CodexBackendConfig {
-  apiKey?: string
-  baseUrl?: string
-  model?: string
-  extraEnv?: Record<string, string>
-  permissionPreset?: CodexPermissionPreset
-  reasoningEffort?: CodexReasoningEffort
-}
-
 interface WarmCodexHandle {
   handle: AppServerConnectionHandle
   auth: CodexProjectAuth
@@ -114,22 +105,6 @@ interface DurableQueuedMessage {
   submissionId: string | null
   request: SendMessageRequest
   input: Array<Record<string, unknown>>
-}
-
-function mapPermissionMode(mode: PermissionMode | undefined): CodexPermissionPreset {
-  if (mode === 'auto') return 'auto-review'
-  if (mode === 'bypassPermissions' || mode === 'acceptEdits') return 'full-access'
-  return 'default'
-}
-
-function mapEffort(effort: EffortLevel | undefined): CodexReasoningEffort | undefined {
-  if (!effort) return undefined
-  return effort
-}
-
-function readConfig(raw: unknown): CodexBackendConfig {
-  if (raw && typeof raw === 'object') return raw as CodexBackendConfig
-  return {}
 }
 
 function getCodexTraceTextLength(item: CodexThreadItem): number | undefined {
@@ -438,11 +413,8 @@ export class CodexBackend implements SessionBackend {
     permissionPreset: CodexPermissionPreset
     cwd: string
   } {
-    const config = readConfig(opts.config)
     return {
-      model: opts.model ?? config.model,
-      reasoningEffort: mapEffort(opts.effort) ?? config.reasoningEffort,
-      permissionPreset: config.permissionPreset ?? mapPermissionMode(opts.permissionMode),
+      ...resolveCodexBackendSelection(opts),
       cwd: opts.cwd || opts.projectPath,
     }
   }
@@ -685,18 +657,15 @@ export class CodexBackend implements SessionBackend {
     const startOpts = this.startOpts
     if (!startOpts) throw new Error('CodexBackend missing startOpts')
 
-    const config = readConfig(startOpts.config)
     const assistantMessageId = request.assistantMessageId
       ?? `codex_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     const mode = request.codex?.mode ?? 'run'
     const projectPath = startOpts.projectPath
-    const resolvedPermissionPreset = request.codex?.permissionPreset
-      ?? config.permissionPreset
-      ?? mapPermissionMode(startOpts.permissionMode)
-    const resolvedReasoningEffort = request.codex?.reasoningEffort
-      ?? mapEffort(request.effort)
-      ?? config.reasoningEffort
-    const resolvedModel = request.model ?? config.model
+    const {
+      permissionPreset: resolvedPermissionPreset,
+      reasoningEffort: resolvedReasoningEffort,
+      model: resolvedModel,
+    } = resolveCodexBackendSelection(startOpts, request)
     const resolvedServiceTier = request.codex?.serviceTier !== undefined
       ? request.codex.serviceTier
       : this.session
@@ -1097,7 +1066,7 @@ export class CodexBackend implements SessionBackend {
     const session = this.session
     if (!session) return
 
-    const permissionPreset = mapPermissionMode(mode)
+    const permissionPreset = mapCodexPermissionMode(mode, this.startOpts?.sandboxInfo)
     session.permissionPreset = permissionPreset
     const { connectionHandle, threadId, activeTurnId } = session
     if (!connectionHandle || !threadId || !activeTurnId) return

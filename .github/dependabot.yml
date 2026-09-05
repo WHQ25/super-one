@@ -7,8 +7,12 @@ updates:
     schedule:
       interval: weekly
     groups:
+      # Minor and patch bumps arrive as one PR. A major bump of an action that
+      # a release depends on (upload/download-artifact must agree on a
+      # version) arrives on its own so it gets read before it is merged.
       actions:
         patterns: ["*"]
+        update-types: [minor, patch]
 
   - package-ecosystem: bun
     directory: /

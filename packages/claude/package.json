@@ -27,7 +27,7 @@
     "@anthropic-ai/claude-agent-sdk-win32-arm64": "0.3.258"
   },
   "devDependencies": {
-    "typescript": "^5.8.3",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.11"
   },
   "engines": {

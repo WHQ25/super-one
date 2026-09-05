@@ -1,7 +1,7 @@
 import { useRef, useCallback, useEffect } from 'react'
 import { Plus } from 'lucide-react'
-import { DockviewReact } from 'dockview'
-import type { DockviewReadyEvent, DockviewApi } from 'dockview-core'
+import { DockviewReact } from 'dockview-react'
+import type { DockviewReadyEvent, DockviewApi, DockviewTheme } from 'dockview-core'
 import 'dockview/dist/styles/dockview.css'
 import { useAppStore } from '@/stores/app'
 import { useActivityPanelStore } from '@/stores/activity-panel'
@@ -21,6 +21,18 @@ import { activityPanelComponents } from './panels'
 import { activityTabComponents } from './ActivityTab'
 import { ActivityLauncher } from './ActivityLauncher'
 import { cn } from '@superone/ui/lib/utils'
+
+/**
+ * dockview 8 moved tab behaviour out of individual props and into a theme
+ * object. `className` still points at the stylesheet in dockview-theme.css;
+ * everything the theme leaves unset keeps the stylesheet's own default, which
+ * is what the custom CSS already drives.
+ */
+const SUPERONE_DOCKVIEW_THEME: DockviewTheme = {
+  name: 'superone',
+  className: 'dockview-theme-superone',
+  tabAnimation: 'smooth',
+}
 
 interface ActivityPanelProps {
   getMaxWidth: () => number
@@ -240,11 +252,10 @@ export function ActivityPanel({ getMaxWidth, transitionMs }: ActivityPanelProps)
         <div ref={innerRef} data-activity-inner="" tabIndex={-1} className="flex h-full flex-col overflow-hidden outline-none focus-visible:shadow-none" style={{ width: maximized ? '100%' : panelWidth }}>
           <div className="min-h-0 flex-1">
             <DockviewReact
-              className="dockview-theme-superone"
+              theme={SUPERONE_DOCKVIEW_THEME}
               disableAutoResizing
               disableDnd={maximized}
               disableFloatingGroups={maximized}
-              tabAnimation="smooth"
               scrollbars="native"
               disableTabsOverflowList
               onReady={onReady}

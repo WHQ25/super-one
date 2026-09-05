@@ -15,11 +15,11 @@
     "@superone/ui": "workspace:*",
     "hast-util-sanitize": "^5.0.2",
     "@superone/shared": "workspace:*",
-    "katex": "^0.16.38",
-    "mermaid": "^11.12.3",
-    "react-i18next": "^17.0.4",
+    "katex": "^0.18.5",
+    "mermaid": "^11.17.2",
+    "react-i18next": "^17.0.13",
     "rehype-sanitize": "^6.0.0",
-    "streamdown": "^2.1.0"
+    "streamdown": "^2.6.0"
   },
   "peerDependencies": {
     "@lobehub/icons": "*",

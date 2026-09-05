@@ -13,13 +13,13 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "^1.2.1",
+    "@agentclientprotocol/sdk": "^1.4.0",
     "@superone/runtime": "workspace:*",
     "@superone/shared": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.8.3",
-    "vitest": "^4.0.0"
+    "vitest": "^4.1.11"
   },
   "engines": {
     "node": ">=20"

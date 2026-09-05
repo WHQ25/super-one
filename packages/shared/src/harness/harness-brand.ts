@@ -162,11 +162,20 @@ export function inkForFill(fill: LCH): LCH {
  * Three decisive neutral surfaces (sunken sidebar / canvas / raised card) with
  * 0.03-0.04 lightness steps, plus exactly one hue in three tones: a deep fill at
  * L 0.55 for actions on light surfaces (carries LIGHT ink — see `inkForFill`), a
- * bright fill at L 0.68 for the sidebar's selected state (dark ground, so it
- * needs to run bright and carries DARK ink), and an ink tone at L 0.52 for rings.
- * Chroma is never a constant: each tone asks `maxChromaInSRGB` for the ceiling at
- * its own lightness AND hue, so orange reaches ~0.17 where cyan tops out at ~0.09
- * instead of every hue being flattened to one clipped value.
+ * bright fill at L 0.68 for brand marks on the dark sidebar (so it has to run
+ * bright, and carries DARK ink), and an ink tone at L 0.52 for rings. Those three
+ * ask `maxChromaInSRGB` for the ceiling at their own lightness AND hue, so orange
+ * reaches ~0.17 where cyan tops out at ~0.09 rather than every hue being
+ * flattened to one clipped value.
+ *
+ * `--sidebar-accent`, the selected-row fill, is the one that deliberately does
+ * NOT ride the ceiling. At L 0.68 against the gamut edge it came out at chroma
+ * 0.203 for orange — a fill so saturated it fought the harness marks sitting on
+ * it. Asking for a flat 0.10 at L 0.70 puts it below the ceiling for every
+ * harness hue (the tightest, dsh at 220, still allows 0.121), which means it also
+ * stops changing saturation as the user drags the hue: the same request now
+ * renders as the same weight at every angle instead of surging wherever sRGB
+ * happens to be roomy.
  * Everything else is near-achromatic on purpose — a tinted
  * ground would rob the one saturated colour of the contrast it needs to read as
  * vivid.
@@ -207,7 +216,7 @@ function buildHarnessDefaults(harness: HarnessId): Record<DesignToken, LCH> {
     // Sidebar runs dark so the content area can stay clean without dividers.
     '--sidebar': tinted(0.26, 0.020),
     '--sidebar-hover': tinted(0.34, 0.022),
-    '--sidebar-accent': vivid(0.68),
+    '--sidebar-accent': vivid(0.70, 0.10),
     '--sidebar-border': tinted(0.34, 0.018),
 
     // Foregrounds.

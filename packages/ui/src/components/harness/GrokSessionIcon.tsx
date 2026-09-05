@@ -8,15 +8,22 @@ const GROK_MARK =
 
 /**
  * Compact Grok/xAI brand mark for ACP sessions whose agent is Grok.
- * Status chrome comes from {@link HarnessIconFallback}; the mark itself is
- * ink black and inverted in dark mode so it stays readable on light/dark cards.
+ *
+ * Status chrome comes from {@link HarnessIconFallback}. The mark tracks
+ * `--foreground` rather than carrying its own ink, the way Cursor and OpenCode
+ * do. It used to be a hardcoded `#0a0a0a` plus `dark:invert`, which assumed
+ * light mode means a light surface — but the light-mode sidebar is a DARK
+ * island (`--sidebar` at L 0.26), so the mark landed near-black on near-black at
+ * 1.27:1 on every resting row. `currentColor` inherits the sidebar scope's
+ * remap of `--foreground` to `--sidebar-foreground`, and the plain light ink
+ * everywhere else, so both surfaces are right with no variant to maintain.
  */
 export function GrokSessionIcon({ status, size }: SessionIconProps) {
   const svg = harnessMarkSvgStyle(size)
 
   return (
-    <HarnessIconFallback status={status} size={size} title="Grok" markClassName="dark:invert">
-      <svg viewBox="0 0 24 24" className="w-3 h-3 text-[#0a0a0a]" style={svg} aria-hidden>
+    <HarnessIconFallback status={status} size={size} title="Grok">
+      <svg viewBox="0 0 24 24" className="w-3 h-3 text-foreground" style={svg} aria-hidden>
         <path fill="currentColor" fillRule="evenodd" d={GROK_MARK} />
       </svg>
     </HarnessIconFallback>

@@ -66,7 +66,7 @@
      carries the vivid SELECTED fill — one token could serve both only while the
      sidebar was a pale grey. */
   --sidebar-hover: oklch(var(--sidebar-hover-l, 0.34) var(--sidebar-hover-c, 0.022) var(--sidebar-hover-h, var(--brand-hue, 240)) / var(--sidebar-hover-a, 1));
-  --sidebar-accent: oklch(var(--sidebar-accent-l, 0.68) var(--sidebar-accent-c, 0.148) var(--sidebar-accent-h, var(--brand-hue, 240)) / var(--sidebar-accent-a, 1));
+  --sidebar-accent: oklch(var(--sidebar-accent-l, 0.70) var(--sidebar-accent-c, 0.10) var(--sidebar-accent-h, var(--brand-hue, 240)) / var(--sidebar-accent-a, 1));
   --sidebar-accent-foreground: oklch(var(--sidebar-accent-foreground-l, 0.20) var(--sidebar-accent-foreground-c, 0.006) var(--sidebar-accent-foreground-h, var(--brand-hue, 240)) / var(--sidebar-accent-foreground-a, 1));
   --sidebar-border: oklch(var(--sidebar-border-l, 0.34) var(--sidebar-border-c, 0.018) var(--sidebar-border-h, var(--brand-hue, 240)) / var(--sidebar-border-a, 1));
   --sidebar-ring: oklch(var(--sidebar-ring-l, 0.52) var(--sidebar-ring-c, 0.114) var(--sidebar-ring-h, var(--brand-hue, 240)) / var(--sidebar-ring-a, 1));
@@ -214,6 +214,60 @@
   --text-2xs--line-height: 0.875rem;
 }
 
+/* --- Separating a harness mark from the selected row ---
+   In LIGHT mode a SELECTED sidebar row is filled with `--sidebar-accent`: the
+   brand hue at L 0.70. Claude's body is that same hue at L 0.66 and Codex,
+   DeepSeek and ACP sit at similar levels, so the one row meant to stand out is
+   the row that dissolves its own mark — measured, Claude lands at 1.07:1 there.
+   Softening the fill (it used to ride the gamut ceiling at chroma 0.203) did not
+   help and could not: the collision is in LIGHTNESS, and the two are 0.04 apart.
+
+   The ink is DERIVED FROM THE FILL rather than authored: the fill mixed toward
+   black in oklab, which drops lightness and chroma together. Two things follow
+   and neither survives a fixed colour. It tracks any brand hue and any user
+   palette override for free. And because mixing toward black scales chroma
+   proportionally, it can never ask for more chroma than the fill already proved
+   reachable — an authored `oklch()` this deep would be gamut-clipped by Chromium
+   at paint time, shifting the hue we picked.
+
+   This is a SEAM, not a contrast fix. At 30% alpha over a 0.5px blur the halo
+   gives the glyph an edge to read against; it does not lift any mark to 3:1 on
+   its own, and the WCAG ratio is the wrong metric for a hairline anyway. An
+   opaque version was tried and reads as a sticker outline. If the marks ever
+   need real luminance separation, that is a change to `--sidebar-accent`, not
+   to this rule.
+
+   An outline rather than a disc behind the mark, because a disc has to MATCH the
+   surface to disappear on the rows that are already fine — and there is no
+   single surface to match. With Liquid Glass on, `--sidebar` drops to alpha 0.80
+   over the desktop frost and `--sidebar-hover` becomes a white overlay, so a
+   disc tuned to the opaque L 0.26 is a visible blob on every hovered row. An
+   outline only has to differ from the mark, so it holds under both.
+
+   Scoped to `.sidebar-selected`: the only surface where any mark is short. The
+   resting and hovered rows, and the popover and chat surfaces these marks also
+   reach, are left alone. Light mode only — dark mode's `--sidebar-accent` is a
+   neutral L 0.30 every mark already clears. */
+.session-icon-ground {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+html:not(.dark) [data-sidebar-inner] .sidebar-selected .session-icon-ground {
+  --mark-outline: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--sidebar-accent) 30%, black) 30%,
+    transparent
+  );
+  /* Three stacked zero-offset shadows: one 0.5px pass is too faint to read as an
+     edge, three build it up without needing a real stroke on art we do not own. */
+  filter:
+    drop-shadow(0 0 0.5px var(--mark-outline))
+    drop-shadow(0 0 0.5px var(--mark-outline))
+    drop-shadow(0 0 0.5px var(--mark-outline));
+}
+
 @keyframes claude-session-float {
   0%, 100% { transform: translate(0, 0); }
   25% { transform: translate(2px, -2px); }
@@ -355,15 +409,10 @@
   50%, 98% { opacity: 0; }
 }
 
-@keyframes codex-session-veil {
-  0%, 100% { opacity: 0.7; }
-  50% { opacity: 0.05; }
-}
-
-/* Same breathing as codex-session-veil, applied to the mark instead of to an
-   opaque cover over it. Compositing-wise the two are identical, but this one does
-   not need to know what colour it is sitting on, so it works away from the
-   sidebar. */
+/* Breathes the mark itself. There used to be a `codex-session-veil` beside this
+   that faded an opaque `--sidebar` rectangle over the mark instead — identical
+   compositing, but only on a row actually painted in the sidebar surface. It has
+   been removed; this is the only breathing left. */
 @keyframes codex-session-pulse {
   0%, 100% { opacity: 0.3; }
   50% { opacity: 0.95; }
@@ -411,14 +460,6 @@
 .codex-session-rotate {
   will-change: transform;
   animation: codex-session-rotate 2.5s linear infinite;
-}
-
-.codex-session-veil {
-  position: absolute;
-  inset: 0;
-  background: var(--sidebar, var(--background));
-  will-change: opacity;
-  animation: codex-session-veil 2.5s ease-in-out infinite;
 }
 
 .codex-session-pulse {

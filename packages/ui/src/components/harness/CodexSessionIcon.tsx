@@ -215,8 +215,13 @@ export function CodexSessionIcon({ status, size, renderLevel = 'rich' }: Session
   }
 
   if (status === 'background') {
+    // Breathes the mark itself rather than fading an opaque `--sidebar` rectangle
+    // over it. The old veil was compositing-equivalent ONLY on a row painted in
+    // the sidebar surface — on a selected row (`--sidebar-accent`, the brand hue
+    // at L 0.68) it read as a dark square sitting on the fill, and it was equally
+    // wrong on the popover and chat surfaces this mark also reaches.
     return (
-      <span className="codex-session-wrap w-3.5 h-3.5" style={wrapStyle(size)}>
+      <span className="codex-session-wrap codex-session-pulse w-3.5 h-3.5" style={wrapStyle(size)}>
         <span className="codex-session-layer codex-session-scale">
           <svg viewBox="1 1 22 22" className="w-3 h-3 overflow-visible" style={svgStyle(size)} aria-hidden>
             <Defs status="background" />
@@ -225,7 +230,6 @@ export function CodexSessionIcon({ status, size, renderLevel = 'rich' }: Session
             <path d={UNDERSCORE} fill="#fff" />
           </svg>
         </span>
-        <span className="codex-session-veil" />
       </span>
     )
   }

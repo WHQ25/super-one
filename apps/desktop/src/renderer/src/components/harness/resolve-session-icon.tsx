@@ -9,23 +9,37 @@ import { GrokSessionIcon } from '@superone/ui/components/harness/GrokSessionIcon
 import { OpenCodeSessionIcon } from '@superone/ui/components/harness/OpenCodeSessionIcon'
 import { CursorSessionIcon } from '@superone/ui/components/harness/CursorSessionIcon'
 import { DeepseekSessionIcon } from '@superone/ui/components/harness/DeepseekSessionIcon'
+import { withSessionIconGround } from '@superone/ui/components/harness/SessionIconGround'
 
 export type { SessionIconProps }
+
+/* Every mark resolved here is brand-coloured, and in light mode a selected row is
+   filled with that same brand hue — so they all get the same dark ground under
+   them (see `.session-icon-ground`). Grounding once at the resolve seam is what
+   keeps the four call sites (sidebar rows, pinned rows, session switcher, chat
+   banners) from each having to remember. */
+const Claude = withSessionIconGround(ClaudeSessionIcon)
+const Codex = withSessionIconGround(CodexSessionIcon)
+const OpenCode = withSessionIconGround(OpenCodeSessionIcon)
+const Cursor = withSessionIconGround(CursorSessionIcon)
+const Deepseek = withSessionIconGround(DeepseekSessionIcon)
+const Grok = withSessionIconGround(GrokSessionIcon)
+const Acp = withSessionIconGround(AcpSessionIcon)
 
 /** Pick the sidebar/session brand icon for a harness (+ ACP agent). */
 export function resolveSessionIcon(
   harnessId: HarnessId | string | null | undefined,
   acpAgentId?: string | null,
 ): ComponentType<SessionIconProps> | null {
-  if (harnessId === 'claude') return ClaudeSessionIcon
-  if (harnessId === 'codex') return CodexSessionIcon
-  if (harnessId === 'opencode') return OpenCodeSessionIcon
-  if (harnessId === 'cursor') return CursorSessionIcon
-  if (harnessId === 'dsh') return DeepseekSessionIcon
+  if (harnessId === 'claude') return Claude
+  if (harnessId === 'codex') return Codex
+  if (harnessId === 'opencode') return OpenCode
+  if (harnessId === 'cursor') return Cursor
+  if (harnessId === 'dsh') return Deepseek
   if (harnessId === 'acp') {
-    if (isGrokAcpAgent(acpAgentId)) return GrokSessionIcon
-    if (isOpenCodeAcpAgent(acpAgentId)) return OpenCodeSessionIcon
-    return AcpSessionIcon
+    if (isGrokAcpAgent(acpAgentId)) return Grok
+    if (isOpenCodeAcpAgent(acpAgentId)) return OpenCode
+    return Acp
   }
   return null
 }
@@ -35,14 +49,14 @@ export function resolveSessionIconFromBrandKey(
   brandKey: string | null | undefined,
 ): ComponentType<SessionIconProps> | null {
   if (!brandKey) return null
-  if (brandKey === 'claude') return ClaudeSessionIcon
-  if (brandKey === 'codex') return CodexSessionIcon
-  if (brandKey === 'opencode' || brandKey === 'acp-opencode') return OpenCodeSessionIcon
-  if (brandKey === 'cursor') return CursorSessionIcon
+  if (brandKey === 'claude') return Claude
+  if (brandKey === 'codex') return Codex
+  if (brandKey === 'opencode' || brandKey === 'acp-opencode') return OpenCode
+  if (brandKey === 'cursor') return Cursor
   // `dsh` is what resolveHarnessBrandKey actually emits (brandKey defaults to the
   // harness id for everything non-ACP); `deepseek` is kept as a display alias.
-  if (brandKey === 'dsh' || brandKey === 'deepseek') return DeepseekSessionIcon
-  if (brandKey === 'acp-grok' || brandKey.includes('grok')) return GrokSessionIcon
-  if (brandKey === 'acp' || brandKey.startsWith('acp')) return AcpSessionIcon
+  if (brandKey === 'dsh' || brandKey === 'deepseek') return Deepseek
+  if (brandKey === 'acp-grok' || brandKey.includes('grok')) return Grok
+  if (brandKey === 'acp' || brandKey.startsWith('acp')) return Acp
   return null
 }

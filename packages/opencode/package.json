@@ -13,13 +13,13 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@opencode-ai/sdk": "^1.18.4",
+    "@opencode-ai/sdk": "^1.18.26",
     "@superone/runtime": "workspace:*",
     "@superone/shared": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.8.3",
-    "vitest": "^4.0.0"
+    "vitest": "^4.1.11"
   },
   "engines": {
     "node": ">=20"

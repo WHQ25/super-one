@@ -13,22 +13,22 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@cursor/sdk": "1.0.27",
+    "@cursor/sdk": "1.0.30",
     "@superone/runtime": "workspace:*",
     "@superone/shared": "workspace:*",
     "better-sqlite3": "^13.0.1"
   },
   "optionalDependencies": {
-    "@cursor/sdk-darwin-arm64": "1.0.27",
-    "@cursor/sdk-darwin-x64": "1.0.27",
-    "@cursor/sdk-linux-arm64": "1.0.27",
-    "@cursor/sdk-linux-x64": "1.0.27",
-    "@cursor/sdk-win32-x64": "1.0.27"
+    "@cursor/sdk-darwin-arm64": "1.0.30",
+    "@cursor/sdk-darwin-x64": "1.0.30",
+    "@cursor/sdk-linux-arm64": "1.0.30",
+    "@cursor/sdk-linux-x64": "1.0.30",
+    "@cursor/sdk-win32-x64": "1.0.30"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "typescript": "^5.8.3",
-    "vitest": "^4.0.0"
+    "vitest": "^4.1.11"
   },
   "engines": {
     "node": ">=20"

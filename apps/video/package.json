@@ -11,8 +11,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@remotion/cli": "^4.0.0",
-    "@remotion/tailwind-v4": "^4.0.0",
+    "@remotion/cli": "^4.0.520",
+    "@remotion/tailwind-v4": "^4.0.520",
     "@superone/desktop-mocks": "workspace:*",
     "@superone/shared": "workspace:*",
     "@superone/ui": "workspace:*",
@@ -25,7 +25,7 @@
   "devDependencies": {
     "@superone/tsconfig": "workspace:*",
     "@types/react": "^19.2.0",
-    "@types/react-dom": "^19.2.0",
+    "@types/react-dom": "^19.2.5",
     "typescript": "^7.0.2"
   }
 }

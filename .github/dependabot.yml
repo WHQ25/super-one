@@ -91,12 +91,3 @@ updates:
       # changes the emitted code for every component; it needs its own task.
       - dependency-name: "@vitejs/plugin-react"
         versions: [">=6"]
-      # dockview 8 moves tabAnimation, gap, dnd overlay and drop-indicator style
-      # into a DockviewTheme object, replacing the className + custom stylesheet
-      # model this repo uses. The CSS variable contract survived intact, so the
-      # migration is tractable — but it is a theming redesign on the Activity
-      # panel, and no test covers layout behaviour.
-      - dependency-name: dockview
-        versions: [">=6"]
-      - dependency-name: dockview-react
-        versions: [">=6"]

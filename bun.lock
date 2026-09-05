@@ -161,7 +161,7 @@
         "@modelcontextprotocol/sdk": "^1.29.0",
         "@musistudio/llms": "1.0.53",
         "@openai/codex": "0.153.2",
-        "@opencode-ai/models": "^0.0.61",
+        "@opencode-ai/models": "^0.0.62",
         "@opencode-ai/sdk": "^1.18.26",
         "@streamdown/math": "^1.0.2",
         "@superone/claude": "workspace:*",
@@ -1472,7 +1472,7 @@
 
     "@openai/codex-win32-x64": ["@openai/codex@0.153.2-win32-x64", "", { "os": "win32", "cpu": "x64" }, "sha512-x1PnFo9Uy81NEIlPx3qxkP3PQgkfmJOY/2LqKCKlvxArWIL+PrEV9xKcmKeo9Yw23PPU2TDH3AyqcdeblqtNNg=="],
 
-    "@opencode-ai/models": ["@opencode-ai/models@0.0.61", "", { "peerDependencies": { "effect": "4.0.0-beta.83" }, "optionalPeers": ["effect"] }, "sha512-MCZg+2dgajf66qHfy5T+9MRFxQQ3Qqrwa9zrT9z5Z2lg3geqWg+p02DBqkj2JpPSWyx/hhaQ5+VbfrL0/6CjCQ=="],
+    "@opencode-ai/models": ["@opencode-ai/models@0.0.62", "", { "peerDependencies": { "effect": "4.0.0-beta.83" }, "optionalPeers": ["effect"] }, "sha512-8J9drlh5rxuboDUbOccRN5aJxnNL5piygE9MU4Av65ZxsScqgsUG7NZ4oXwFzzPUwlDrvFs1gI1Nyhwb0ANtIA=="],
 
     "@opencode-ai/sdk": ["@opencode-ai/sdk@1.18.26", "", { "dependencies": { "cross-spawn": "7.0.6" } }, "sha512-1TnlEZty7V2NTIZHbJOt2O+v6YsJ/Bt2pSYgXb98G/RkSVOjlDd/35+ewfYtM4fmMroaa6cEG6S58FihKO4K0w=="],
 

@@ -160,7 +160,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@musistudio/llms": "1.0.53",
     "@openai/codex": "0.153.2",
-    "@opencode-ai/models": "^0.0.61",
+    "@opencode-ai/models": "^0.0.62",
     "@opencode-ai/sdk": "^1.18.26",
     "@streamdown/math": "^1.0.2",
     "@superone/claude": "workspace:*",

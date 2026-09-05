@@ -271,6 +271,105 @@ function makeSnapshotEntry(overrides: Partial<{
 }
 
 describe('syncLiveSnapshots', () => {
+  it('keeps a model picked while a stale snapshot and its settings replay are in flight', async () => {
+    useChatStore.setState({ activeProject: '/p' })
+    mockGetLiveSnapshots.mockResolvedValueOnce([
+      makeSnapshotEntry({ harnessId: 'codex', selectedModel: 'gpt-5.6-sol', selectedEffort: 'high' }),
+    ])
+    await useChatStore.getState().syncLiveSnapshots()
+    let finish!: (entries: ReturnType<typeof makeSnapshotEntry>[]) => void
+    mockGetLiveSnapshots.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    const syncing = useChatStore.getState().syncLiveSnapshots()
+    Object.assign(window.agent, { broadcastSessionSetting: vi.fn().mockResolvedValue(undefined) })
+    useChatStore.getState().setSelectedCodexModel('gpt-6-astra')
+    finish([makeSnapshotEntry({
+      harnessId: 'codex',
+      selectedModel: 'gpt-5.6-sol',
+      uiSettings: { selectedCodexModel: 'gpt-5.6-sol' },
+      replayEvents: [{
+        type: 'agent_setting_change', projectPath: '/p', sessionId: 'sid-1',
+        patch: { selectedCodexModel: 'gpt-5.6-sol' },
+      }],
+    })])
+    await syncing
+    expect(useChatStore.getState().projectSessions['/p']._sessions['sid-1'].selectedCodexModel).toBe('gpt-6-astra')
+  })
+
+  it('restores the running Codex model from a live snapshot and keeps it through defaults refresh', async () => {
+    const { _reapplyAgentDefaultsToSessions } = await import('./chat-store/helpers/agent-defaults')
+    mockGetLiveSnapshots.mockResolvedValueOnce([
+      makeSnapshotEntry({
+        harnessId: 'codex',
+        selectedModel: 'gpt-6-astra',
+        selectedEffort: 'medium',
+      }),
+    ])
+
+    await useChatStore.getState().syncLiveSnapshots()
+    const restored = useChatStore.getState().projectSessions['/p']._sessions['sid-1']
+    expect(restored.selectedCodexModel).toBe('gpt-6-astra')
+    expect(restored.selectedCodexReasoningEffort).toBe('medium')
+
+    const priorDefaults = defaultPrefsCache.codexSelection
+    try {
+      defaultPrefsCache.codexSelection = { modelId: 'gpt-5.6-sol', reasoningEffort: 'high', fastMode: false }
+      useChatStore.getState().setHarnessResources('codex', {
+        models: [{ id: 'gpt-5.6-sol', name: 'Sol', description: '', isDefault: true }],
+        prompts: [],
+      })
+      _reapplyAgentDefaultsToSessions('codex')
+      const after = useChatStore.getState().projectSessions['/p']._sessions['sid-1']
+      expect(after.selectedCodexModel).toBe('gpt-6-astra')
+      expect(after.selectedCodexReasoningEffort).toBe('medium')
+    } finally {
+      defaultPrefsCache.codexSelection = priorDefaults
+    }
+  })
+
+  it('prefers an explicit Codex picker selection over the last running model in a snapshot', async () => {
+    mockGetLiveSnapshots.mockResolvedValueOnce([
+      makeSnapshotEntry({
+        harnessId: 'codex',
+        selectedModel: 'gpt-5.6-sol',
+        selectedEffort: 'high',
+        uiSettings: { selectedCodexModel: 'gpt-6-astra', selectedCodexReasoningEffort: 'medium' },
+      }),
+    ])
+
+    await useChatStore.getState().syncLiveSnapshots()
+    const restored = useChatStore.getState().projectSessions['/p']._sessions['sid-1']
+    expect(restored.selectedCodexModel).toBe('gpt-6-astra')
+    expect(restored.codexModelUserChosen).toBe(true)
+    expect(restored.selectedCodexReasoningEffort).toBe('medium')
+    expect(restored.codexReasoningEffortUserChosen).toBe(true)
+  })
+
+  it('keeps the snapshot model when its replay contains an older model change', async () => {
+    mockGetLiveSnapshots.mockResolvedValueOnce([makeSnapshotEntry({
+      harnessId: 'codex', selectedModel: 'gpt-6-astra',
+      uiSettings: { selectedCodexModel: 'gpt-6-astra' },
+      replayEvents: [{
+        type: 'agent_setting_change', projectPath: '/p', sessionId: 'sid-1',
+        patch: { selectedCodexModel: 'gpt-5.6-sol' },
+      }],
+    })])
+    await useChatStore.getState().syncLiveSnapshots()
+    expect(useChatStore.getState().projectSessions['/p']._sessions['sid-1'].selectedCodexModel).toBe('gpt-6-astra')
+  })
+
+  it('replaces a provisional default with the persisted live model', async () => {
+    mockGetLiveSnapshots.mockResolvedValueOnce([makeSnapshotEntry({ harnessId: 'codex', selectedModel: 'gpt-5.6-sol' })])
+    await useChatStore.getState().syncLiveSnapshots()
+    useChatStore.setState((state) => ({ projectSessions: { '/p': {
+      ...state.projectSessions['/p'], _sessions: { 'sid-1': {
+        ...state.projectSessions['/p']._sessions['sid-1'], codexModelUserChosen: false,
+      } },
+    } } }))
+    mockGetLiveSnapshots.mockResolvedValueOnce([makeSnapshotEntry({ harnessId: 'codex', selectedModel: 'gpt-6-astra' })])
+    await useChatStore.getState().syncLiveSnapshots()
+    expect(useChatStore.getState().projectSessions['/p']._sessions['sid-1'].selectedCodexModel).toBe('gpt-6-astra')
+  })
+
   it('applies the default Codex permission preset when hydrating an unknown live session', async () => {
     defaultPrefsCache.codexPermissionPreset = 'full-access'
     mockGetLiveSnapshots.mockResolvedValueOnce([

@@ -20,6 +20,7 @@ import { clearStreamingToolInputsForSession } from '../event-reducer/shared'
 import { shouldReviveStreaming } from '../event-reducer/stream-revive'
 import { applyCachedCodexPermissionPreset } from '../helpers/prefs-cache'
 import { startBashOutputLive } from '../helpers/bash-output-live'
+import { changedCodexSelection, omitCodexSelectionReplay } from '../helpers/codex-selection-replay'
 import {
   _computeHasPendingInteraction,
   _ensureSessionHydrated,
@@ -737,6 +738,7 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
   syncLiveSnapshots: async () => {
     const getSnap = window.agent.getLiveSnapshots
     if (!getSnap) return
+    const projectsAtRequest = get().projectSessions
     let entries
     try {
       entries = await getSnap()
@@ -747,6 +749,7 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
     if (!entries || entries.length === 0) return
 
     const activeByProject = new Map<string, string>()
+    const protectedCodexSessions = new Set<string>()
     for (const entry of entries) {
       if (entry.isActive) activeByProject.set(entry.projectPath, entry.sid)
     }
@@ -760,6 +763,21 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
         const provider: ChatProvider = inferProviderFromHarnessId(entry.snapshot.harnessId) ?? 'claude'
         const inferredStatus: AgentStatus = entry.isStreaming ? 'streaming' : prevSession.status === 'error' ? 'error' : 'idle'
         const fromUi = sessionPatchFromUiSettings(entry.uiSettings, prevSession)
+        const newerSelection = provider === 'codex'
+          ? changedCodexSelection(projectsAtRequest[entry.projectPath]?._sessions[entry.sid], prevProject._sessions[entry.sid])
+          : undefined
+        if (provider === 'codex') {
+          // Main persists the running model in harness-neutral fields. A live
+          // restore needs the same Codex mapping as DB hydration. Keep a picker
+          // choice made since the last turn ahead of that running-model fallback.
+          fromUi.selectedCodexModel ||= (prevSession.codexModelUserChosen ? prevSession.selectedCodexModel : '')
+            || entry.snapshot.selectedModel || fromUi.selectedModel || prevSession.selectedCodexModel || ''
+          fromUi.selectedCodexReasoningEffort ??= (prevSession.codexReasoningEffortUserChosen ? prevSession.selectedCodexReasoningEffort : undefined)
+            ?? (entry.snapshot.selectedEffort as CodexReasoningEffort | null | undefined)
+            ?? fromUi.selectedEffort ?? prevSession.selectedCodexReasoningEffort
+          if (fromUi.selectedCodexModel) fromUi.codexModelUserChosen = true
+          if (fromUi.selectedCodexReasoningEffort) fromUi.codexReasoningEffortUserChosen = true
+        }
         const mergedSession: PerSessionState = {
           ...prevSession,
           cwd: entry.snapshot.cwd,
@@ -797,7 +815,10 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
             ?? (entry.snapshot.selectedEffort as EffortLevel | null | undefined)
             ?? prevSession.selectedEffort,
           _historyHydrated: true,
+          ...newerSelection,
         }
+        // Replay predates this snapshot; it must not undo its model selection.
+        if (provider === 'codex' && mergedSession.selectedCodexModel) protectedCodexSessions.add(entry.sid)
         const nextSessions = { ...prevProject._sessions, [entry.sid]: mergedSession }
         const nextActiveSid = activeByProject.get(entry.projectPath) ?? prevProject._activeSessionId ?? entry.sid
         nextProjects[entry.projectPath] = {
@@ -812,7 +833,8 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
 
     for (const entry of entries) {
       for (const ev of entry.replayEvents) {
-        try { get().handleAgentEvent(ev as AgentEvent) } catch (err) { console.warn('[chat] replay event error:', err) }
+        const event = protectedCodexSessions.has(entry.sid) ? omitCodexSelectionReplay(ev as AgentEvent) : ev as AgentEvent
+        try { get().handleAgentEvent(event) } catch (err) { console.warn('[chat] replay event error:', err) }
       }
       for (const ev of entry.pendingInteractions) {
         try { get().handleAgentEvent(ev as AgentEvent) } catch (err) { console.warn('[chat] pending interaction error:', err) }

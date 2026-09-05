@@ -44,8 +44,8 @@ export function reducePermission(session: PerSessionState, event: PermissionEven
         patch.selectedEffort = merged.selectedEffort ?? undefined
         patch.effortUserChosen = true
       }
-      if (merged.selectedCodexModel !== undefined) {
-        patch.selectedCodexModel = merged.selectedCodexModel ?? ''
+      if (merged.selectedCodexModel) {
+        patch.selectedCodexModel = merged.selectedCodexModel
         patch.codexModelUserChosen = true
       }
       if (merged.selectedCodexReasoningEffort !== undefined) {

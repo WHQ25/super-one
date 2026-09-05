@@ -5,6 +5,37 @@ import { latestCodexTodoListFromMessages } from './codex-todo'
 import { findLatestCodexUsage } from './codex-usage'
 import { resolveActiveSessionId } from './store-helpers'
 
+function restorePersistedSelection(
+  session: PerSessionState,
+  provider: PerSessionState['sessionProvider'],
+  model: string | null | undefined,
+  effort: PerSessionState['selectedEffort'] | PerSessionState['selectedCodexReasoningEffort'] | null,
+  modelUserChosen = true,
+  effortUserChosen = true,
+): Partial<PerSessionState> {
+  if (provider === 'codex') {
+    return {
+      ...(!session.codexModelUserChosen && model
+        ? { selectedCodexModel: model, codexModelUserChosen: modelUserChosen }
+        : {}),
+      ...(!session.codexReasoningEffortUserChosen && effort
+        ? {
+            selectedCodexReasoningEffort: effort as NonNullable<PerSessionState['selectedCodexReasoningEffort']>,
+            codexReasoningEffortUserChosen: effortUserChosen,
+          }
+        : {}),
+    }
+  }
+  return {
+    ...(!session.modelUserChosen && model
+      ? { selectedModel: model, modelUserChosen }
+      : {}),
+    ...(!session.effortUserChosen && effort
+      ? { selectedEffort: effort as NonNullable<PerSessionState['selectedEffort']>, effortUserChosen }
+      : {}),
+  }
+}
+
 /** Legacy SuperOne session ids minted with a codex_local_ prefix (pre-UUID unification). */
 const LEGACY_CODEX_LOCAL_SESSION_PREFIX = 'codex_local_'
 
@@ -71,16 +102,10 @@ export function _mergePersistedSessionState(session: PerSessionState, saved: Per
     openCodeAgentId: session.openCodeAgentId
       ?? saved.messages.findLast((message) => message.role === 'assistant')?.metadata?.agent
       ?? null,
-    // Durable per-session model/effort. The default stub carries selectedModel: ''
-    // (falsy but NOT nullish), so `??` would keep the empty string and let
-    // applySessionAgentDefaults overwrite the restored pick with a catalog default.
-    // `*UserChosen` guards a live pick made while this hydration was in flight.
-    ...(!session.modelUserChosen && saved.selectedModel
-      ? { selectedModel: saved.selectedModel, modelUserChosen: true }
-      : {}),
-    ...(!session.effortUserChosen && saved.selectedEffort
-      ? { selectedEffort: saved.selectedEffort, effortUserChosen: true }
-      : {}),
+    // The DB uses harness-neutral model columns. Route them back to the active
+    // harness fields; Codex has separate picker state from Claude/ACP/OpenCode.
+    // User-chosen flags protect a newer live selection during async hydration.
+    ...restorePersistedSelection(session, persistedProvider, saved.selectedModel, saved.selectedEffort),
     // Rebuild derived UI fields — not persisted; cold restore must not leave the
     // todo popup blank or the Codex footer without a context window.
     _latestCodexTodoList: latestCodexTodoListFromMessages(mergedMessages),
@@ -102,6 +127,8 @@ export function _mergeHydratedSessionState(
   hydrated: PerSessionState,
 ): PerSessionState {
   const mergedMessages = _mergePersistedMessages(hydrated.messages, session.messages)
+  const restoredProvider = session.sessionProvider ?? hydrated.sessionProvider
+  const restoredIsCodex = restoredProvider === 'codex'
   return {
     ...session,
     _title: session._title ?? hydrated._title,
@@ -121,14 +148,16 @@ export function _mergeHydratedSessionState(
     apiProviderId: session.apiProviderId ?? hydrated.apiProviderId,
     acpAgentId: session.acpAgentId ?? hydrated.acpAgentId,
     openCodeAgentId: session.openCodeAgentId ?? hydrated.openCodeAgentId,
-    // Same restore as _mergePersistedSessionState — `hydrated` already carries the
-    // persisted pick, and `...session` above would otherwise pin the stub's ''.
-    ...(!session.modelUserChosen && hydrated.selectedModel
-      ? { selectedModel: hydrated.selectedModel, modelUserChosen: hydrated.modelUserChosen }
-      : {}),
-    ...(!session.effortUserChosen && hydrated.selectedEffort
-      ? { selectedEffort: hydrated.selectedEffort, effortUserChosen: hydrated.effortUserChosen }
-      : {}),
+    // Same restore as _mergePersistedSessionState — `...session` above would
+    // otherwise pin the stub's empty harness-specific fields.
+    ...restorePersistedSelection(
+      session,
+      restoredProvider,
+      restoredIsCodex ? hydrated.selectedCodexModel : hydrated.selectedModel,
+      restoredIsCodex ? hydrated.selectedCodexReasoningEffort : hydrated.selectedEffort,
+      restoredIsCodex ? hydrated.codexModelUserChosen : hydrated.modelUserChosen,
+      restoredIsCodex ? hydrated.codexReasoningEffortUserChosen : hydrated.effortUserChosen,
+    ),
     // Always re-derive: null means "cleared / all completed", not "unset".
     // `?? hydrated` would resurrect a finished list after a live clear.
     _latestCodexTodoList: latestCodexTodoListFromMessages(mergedMessages),

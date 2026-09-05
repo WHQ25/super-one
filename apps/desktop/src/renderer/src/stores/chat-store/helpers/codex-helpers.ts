@@ -275,6 +275,11 @@ export function resolveSessionCodexSelection(
   selectedCodexModel: string,
   selectedCodexReasoningEffort?: CodexReasoningEffort,
 ): { modelId: string; reasoningEffort?: CodexReasoningEffort; serviceTier?: string | null } {
+  // Catalogs can be stale, empty while loading, or scoped to another provider.
+  // A missing entry is not evidence that the session's selected model is invalid.
+  if (selectedCodexModel && !models.some((model) => model.id === selectedCodexModel)) {
+    return { modelId: selectedCodexModel, reasoningEffort: selectedCodexReasoningEffort }
+  }
   if (selectedCodexModel || selectedCodexReasoningEffort) {
     return resolveCodexModelSelection(models, selectedCodexModel, selectedCodexReasoningEffort)
   }

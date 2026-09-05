@@ -1,3 +1,4 @@
+import { broadcastSessionSettings } from './session-settings-broadcast'
 import type {
   AgentEvent,
   ChatMessage,
@@ -947,14 +948,16 @@ export class Session implements SessionContract {
   /**
    * Broadcast a generic settings patch to all listeners (multi-window sync).
    *
-   * Used for harness-specific settings that aren't owned by Session itself
-   * (e.g. codex collaborationMode/permissionPreset live in the renderer store).
-   * Main process here is just a transport bus — the patch is forwarded as-is.
+   * Codex model picks also update the durable selection before the next send.
+   * Other harness-specific settings are forwarded through the UI snapshot.
    */
   broadcastSettingsPatch(patch: import('@superone/shared/agent-types').SessionSettingsPatch): void {
-    if (!patch || Object.keys(patch).length === 0) return
-    this.mergeUiSettings(patch)
-    this.forwardEvent({ type: 'agent_setting_change', patch } as AgentEvent)
+    broadcastSessionSettings(patch, {
+      harnessId: this.harnessId,
+      setSelectedSettings: (settings) => this.setSelectedSettings(settings),
+      mergeUiSettings: (settings) => this.mergeUiSettings(settings),
+      forwardEvent: (event) => { this.forwardEvent(event) },
+    })
   }
 
   setSelectedSettings(opts: { model?: string | null; effort?: SendMessageRequest['effort'] | null; mode?: string | null }): void {

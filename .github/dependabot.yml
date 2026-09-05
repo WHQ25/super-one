@@ -76,3 +76,27 @@ updates:
       # eslint-plugin-react ships an eslint 10 peer range.
       - dependency-name: eslint
         versions: [">=10"]
+      # vitest 5 runs, but @testing-library/jest-dom 7 augments
+      # `declare module 'vitest' { interface Assertion<T = any> }`, and under
+      # vitest 5 that no longer merges — toBeInTheDocument and friends vanish
+      # from the type and typecheck fails in every component test. jest-dom 7.0.1
+      # is its latest. Lift when jest-dom supports vitest 5.
+      - dependency-name: vitest
+        versions: [">=5"]
+      - dependency-name: "@vitest/coverage-v8"
+        versions: [">=5"]
+      # @vitejs/plugin-react 6 removes the generic `babel` option, which is where
+      # babel-plugin-react-compiler is wired, in favour of a `compiler` option
+      # backed by oxc-transform-react. That swaps the React Compiler backend and
+      # changes the emitted code for every component; it needs its own task.
+      - dependency-name: "@vitejs/plugin-react"
+        versions: [">=6"]
+      # dockview 8 moves tabAnimation, gap, dnd overlay and drop-indicator style
+      # into a DockviewTheme object, replacing the className + custom stylesheet
+      # model this repo uses. The CSS variable contract survived intact, so the
+      # migration is tractable — but it is a theming redesign on the Activity
+      # panel, and no test covers layout behaviour.
+      - dependency-name: dockview
+        versions: [">=6"]
+      - dependency-name: dockview-react
+        versions: [">=6"]

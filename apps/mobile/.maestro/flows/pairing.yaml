@@ -1,0 +1,29 @@
+appId: ${APP_ID}
+name: Pairing code leads with the code itself
+tags: [smoke, native, visual]
+---
+- runFlow:
+    file: ../helpers/open-shell-preview.yaml
+- tapOn: "Preview page:.*"
+- tapOn: "Pairing"
+- extendedWaitUntil:
+    visible:
+      id: app-wordmark
+    timeout: 15000
+
+- assertVisible: "Confirm This Code"
+
+# Spelled out on purpose: VoiceOver reads a bare "123456" as a number, which is
+# useless for a code the user has to transcribe onto another machine.
+- assertVisible: "1 2 3 4 5 6"
+
+# The code sits between its heading and the instruction, so the instruction
+# reads as a caption rather than something to act on before seeing the code.
+- assertVisible:
+    text: "1 2 3 4 5 6"
+    below: "Confirm This Code"
+- assertVisible:
+    text: "Enter it in SuperOne on your computer to finish pairing."
+    below: "1 2 3 4 5 6"
+
+- takeScreenshot: ${"pairing-" + THEME}

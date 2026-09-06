@@ -73,9 +73,11 @@ export function PairingsScreen(props: {
       </View>
       {props.code ? (
         <View style={styles.emptyState}>
-          <Text style={styles.emptyTitle}>Confirm on your desktop</Text>
-          <Text style={styles.emptyBody}>Enter this code in SuperOne desktop to complete pairing.</Text>
-          <Text style={styles.code}>{props.code}</Text>
+          {/* The code is what the user has to read out, so it leads; the
+              instruction reads as a caption under it. */}
+          <Text style={styles.emptyTitle}>Confirm This Code</Text>
+          <Text accessibilityLabel={props.code.split('').join(' ')} style={styles.code}>{props.code}</Text>
+          <Text style={styles.emptyBody}>Enter it in SuperOne on your computer to finish pairing.</Text>
         </View>
       ) : props.pairings.length ? (
         <FlatList

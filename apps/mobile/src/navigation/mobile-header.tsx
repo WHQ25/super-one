@@ -10,7 +10,7 @@ import type { MobileRoute } from './mobile-navigator'
 
 const wordmark = require('../../assets/logo-text.png')
 /** Intrinsic 484×96; the height is the design input, the width follows it. */
-const WORDMARK_HEIGHT = 32
+const WORDMARK_HEIGHT = 40
 const WORDMARK_WIDTH = Math.round(WORDMARK_HEIGHT * (484 / 96))
 
 export function mobileHeaderTitle(

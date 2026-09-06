@@ -1,5 +1,5 @@
 import { ArrowLeft, Menu, MoreHorizontal, Settings, SquareTerminal } from 'lucide-react-native'
-import { Image, View } from 'react-native'
+import { View } from 'react-native'
 import { Text } from '../ui/text'
 import type { HarnessId } from '@superone/shared/agent-types'
 import { harnessDisplayName } from '../provider-state'
@@ -7,11 +7,6 @@ import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { IconButton, HarnessIcon } from '../ui'
 import { AnchoredMenu, MenuRow, MenuSeparator, useMenuAnchor } from '../ui/anchored-menu'
 import type { MobileRoute } from './mobile-navigator'
-
-const wordmark = require('../../assets/logo-text.png')
-/** Intrinsic 484×96; the height is the design input, the width follows it. */
-const WORDMARK_HEIGHT = 40
-const WORDMARK_WIDTH = Math.round(WORDMARK_HEIGHT * (484 / 96))
 
 export function mobileHeaderTitle(
   route: MobileRoute,
@@ -47,22 +42,8 @@ export function MobileHeader(props: {
   const chat = props.route === 'chat'
   const statusColor = props.connectionState === 'connected' ? tokens.colors.success
     : props.connectionState === 'reconnecting' ? tokens.colors.warning : tokens.colors.mutedForeground
-  // The device list is the app's front door and carries no back or overflow
-  // action, so the wordmark owns the whole bar rather than sitting flush left.
-  if (props.route === 'pair') {
-    return (
-      <View style={[styles.top, { justifyContent: 'center' }]}>
-        <Image
-          accessibilityLabel="SuperOne"
-          accessible
-          resizeMode="contain"
-          source={wordmark}
-          style={{ height: WORDMARK_HEIGHT, width: WORDMARK_WIDTH }}
-          testID="app-wordmark"
-        />
-      </View>
-    )
-  }
+  // The device list carries its own wordmark inside the page, so it has no bar.
+  if (props.route === 'pair') return null
   return (
     <View style={styles.top}>
       <IconButton icon={chat ? Menu : ArrowLeft}

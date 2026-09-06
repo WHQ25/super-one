@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native'
 import { Text } from '../ui/text'
 import { Button } from '../ui'
+import { Wordmark } from '../ui/wordmark'
 import { useMobileTheme } from '../theme/context'
 
 const DIGIT_TRACKING = 10
@@ -16,21 +17,24 @@ export function PairingCode(props: { code: string; onCancel: () => void }) {
   const { tokens } = useMobileTheme()
   return (
     <View style={styles.page}>
-      <Text style={styles.title}>Confirm This Code</Text>
-      <View style={styles.codeBox}>
-        <Text
-          // VoiceOver reads a bare "123456" as a number, which is useless for
-          // a code the user has to transcribe.
-          accessibilityLabel={props.code.split('').join(' ')}
-          style={styles.code}
-        >
-          {props.code}
-        </Text>
-      </View>
-      <Text style={styles.body}>Enter it in SuperOne on your computer to finish pairing.</Text>
-      <View style={styles.waiting}>
-        <ActivityIndicator size="small" color={tokens.colors.mutedForeground} />
-        <Text style={styles.waitingLabel}>Waiting for desktop confirmation…</Text>
+      <View style={styles.center}>
+        <Wordmark />
+        <Text style={styles.title}>Desktop Pairing Code</Text>
+        <View style={styles.codeBox}>
+          <Text
+            // VoiceOver reads a bare "123456" as a number, which is useless for
+            // a code the user has to transcribe.
+            accessibilityLabel={props.code.split('').join(' ')}
+            style={styles.code}
+          >
+            {props.code}
+          </Text>
+        </View>
+        <Text style={styles.body}>Enter it in SuperOne on your computer to finish pairing.</Text>
+        <View style={styles.waiting}>
+          <ActivityIndicator size="small" color={tokens.colors.mutedForeground} />
+          <Text style={styles.waitingLabel}>Waiting for desktop confirmation…</Text>
+        </View>
       </View>
       <Button label="Cancel" variant="secondary" onPress={props.onCancel} />
     </View>
@@ -42,13 +46,16 @@ function useStyles() {
   return useMemo(() => StyleSheet.create({
     page: {
       flex: 1,
-      justifyContent: 'center',
+      paddingBottom: tokens.spacing.md,
       paddingHorizontal: tokens.spacing.xl,
     },
+    /** Everything the user reads centres; the escape hatch sits at the bottom. */
+    center: { flex: 1, justifyContent: 'center' },
     title: {
       color: tokens.colors.foreground,
       fontSize: 18,
       fontWeight: '700',
+      marginTop: 24,
       textAlign: 'center',
     },
     codeBox: {
@@ -87,7 +94,6 @@ function useStyles() {
       gap: tokens.spacing.sm,
       justifyContent: 'center',
       marginTop: 32,
-      marginBottom: 32,
     },
     waitingLabel: { color: tokens.colors.mutedForeground, fontSize: 13 },
   }), [tokens])

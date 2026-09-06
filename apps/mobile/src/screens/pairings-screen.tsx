@@ -1,13 +1,14 @@
 import { CameraView, type BarcodeScanningResult } from 'expo-camera'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, Link2Off, QrCode, RefreshCw } from 'lucide-react-native'
-import { FlatList, Pressable, TextInput, View } from 'react-native'
+import { FlatList, Pressable, StyleSheet, TextInput, View } from 'react-native'
 import { Text } from '../ui/text'
 import type { SavedPairing } from '@superone/relay-client'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { Badge, Button, IconButton, ListRow, SectionHeader, Sheet } from '../ui'
 import { DeviceRow, deviceLabel } from '../ui/device-row'
 import { PairingCode } from './pairing-code'
+import { Wordmark } from '../ui/wordmark'
 import type { DeviceStatus, ReconnectInfo } from '../device-status'
 
 export function PairingsScreen(props: {
@@ -35,6 +36,7 @@ export function PairingsScreen(props: {
   onForget: (pairing: SavedPairing) => void
 }) {
   const styles = useMobileStyles()
+  const layout = useLayoutStyles()
   const { tokens } = useMobileTheme()
   const [editing, setEditing] = useState<SavedPairing | null>(null)
   const [developerOpen, setDeveloperOpen] = useState(false)
@@ -58,6 +60,10 @@ export function PairingsScreen(props: {
   if (props.code) return <PairingCode code={props.code} onCancel={props.onCancelPairing} />
   return (
     <View style={styles.screenSection}>
+      {/* The wordmark and the section title anchor the page; only the list
+          itself scrolls, so they stay put however many devices are saved. */}
+      <View style={layout.group}>
+      <Wordmark />
       <View style={styles.sectionHeader}>
         <SectionHeader
           title="My Devices"
@@ -75,6 +81,7 @@ export function PairingsScreen(props: {
         />
       </View>
       {props.pairings.length ? (
+        <View style={layout.list}>
         <FlatList
           // Rows are rebuilt with their status so a reachability change repaints
           // them; FlatList would otherwise skip cells whose `data` entry is ===.
@@ -92,13 +99,15 @@ export function PairingsScreen(props: {
             />
           )}
         />
+        </View>
       ) : (
-        <View style={styles.emptyState}>
+        <View style={layout.empty}>
           <Link2Off color={tokens.colors.border} size={54} />
           <Text style={styles.emptyTitle}>No devices yet</Text>
           <Text style={styles.emptyBody}>Scan the QR code from your desktop app to pair a device.</Text>
         </View>
       )}
+      </View>
       <Button label="Pair New Device" icon={QrCode} onPress={props.onOpenScanner} />
       {__DEV__ ? (
         <View style={styles.devPairing}>
@@ -151,4 +160,14 @@ export function PairingsScreen(props: {
       </Sheet>
     </View>
   )
+}
+
+function useLayoutStyles() {
+  const { tokens } = useMobileTheme()
+  return useMemo(() => StyleSheet.create({
+    /** Centres while the list is short; the list gives way once it is not. */
+    group: { flex: 1, gap: tokens.spacing.md, justifyContent: 'center' },
+    list: { flexShrink: 1 },
+    empty: { alignItems: 'center', gap: tokens.spacing.sm, padding: tokens.spacing.xl },
+  }), [tokens])
 }

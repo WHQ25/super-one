@@ -18,7 +18,11 @@ tags: [smoke, native, visual]
 - assertNotVisible: "Pair New Device"
 - assertNotVisible: "Developer pairing"
 
-- assertVisible: "Confirm This Code"
+- assertVisible: "Desktop Pairing Code"
+- assertVisible:
+    text: "Desktop Pairing Code"
+    below:
+      id: app-wordmark
 
 # Spelled out on purpose: VoiceOver reads a bare "123456" as a number, which is
 # useless for a code the user has to transcribe onto another machine.
@@ -28,7 +32,7 @@ tags: [smoke, native, visual]
 # reads as a caption rather than something to act on before seeing the code.
 - assertVisible:
     text: "1 2 3 4 5 6"
-    below: "Confirm This Code"
+    below: "Desktop Pairing Code"
 - assertVisible:
     text: "Enter it in SuperOne on your computer to finish pairing."
     below: "1 2 3 4 5 6"

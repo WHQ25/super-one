@@ -11,7 +11,12 @@ tags: [smoke, native, visual]
       id: app-wordmark
     timeout: 15000
 
-- assertVisible: "My Devices"
+# The wordmark now lives in the page, introducing the list rather than sitting
+# in a bar of its own.
+- assertVisible:
+    text: "My Devices"
+    below:
+      id: app-wordmark
 - assertVisible: "Refresh devices"
 
 # One row per connection state. Each row is a single accessibility element, so

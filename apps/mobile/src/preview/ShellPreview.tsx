@@ -59,7 +59,12 @@ const previewModels: ModelOption[] = [
   })),
 ]
 const project = { name: 'super-one', path: '/workspace/super-one' }
-const previewProjects = [project, { name: 'design-system', path: '/workspace/design-system' }]
+const previewProjects = [
+  project,
+  { name: 'design-system', path: '/workspace/design-system' },
+  // The field is sized by the selected name, so keep one that has to truncate.
+  { name: 'internal-platform-observability', path: '/workspace/internal-platform-observability' },
+]
 
 /** One saved device per connection state, so the whole status vocabulary is reviewable. */
 const previewDevices: { pairing: SavedPairing; status: DeviceStatus }[] = [
@@ -103,6 +108,7 @@ export function ShellPreview({ initialPage = 'New session', onClose, onTheme }: 
   const [mode, setMode] = useState('default')
   const [drawer, setDrawer] = useState(false)
   const [branch, setBranch] = useState(PREVIEW_GIT_INFO.branch ?? 'main')
+  const [projectPath, setProjectPath] = useState(project.path)
   const [selection, setSelection] = useState<ProjectSettingsProps['worktreeSelection']>({ kind: 'local' })
   const [worktreeDraft, setWorktreeDraft] = useState<ProjectSettingsProps['worktreeSelection']>({ kind: 'local' })
   const [model, setModel] = useState('preview-model')
@@ -159,7 +165,8 @@ export function ShellPreview({ initialPage = 'New session', onClose, onTheme }: 
         <View style={isFullBleedScreen(route) ? styles.mainPane : [styles.mainPane, styles.page]}>
           {chat ? <ChatScreen provider={provider} landing={page === 'New session' ? {
               provider, harnesses: MOBILE_HARNESS_IDS, onProvider: chooseAgent,
-              projects: previewProjects, activeProjectPath: project.path, onProject: () => {},
+              projects: previewProjects, activeProjectPath: projectPath,
+              onProject: (item) => setProjectPath(item.path),
               worktreeSelection: selection, worktreeInfo: PREVIEW_WORKTREE_INFO,
               branch, dirtyFiles: PREVIEW_GIT_INFO.dirty?.files,
               onWorktree: () => { setWorktreeDraft(selection); setPage('Worktree') }, onBranch: () => setPage('Branch'),

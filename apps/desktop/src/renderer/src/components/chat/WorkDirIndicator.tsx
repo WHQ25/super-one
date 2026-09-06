@@ -11,10 +11,7 @@ import { WorkDirLabel, workDirIcon, workDirTitle, type WorkDirState } from './wo
 import { WorktreeHandoffSection } from './WorktreeHandoffSection'
 import { WorktreeAssignBranchSection } from './WorktreeAssignBranchSection'
 import { WorktreeForkSection } from './WorktreeForkSection'
-import { DiffStat } from './DiffStat'
-
-const sameDirty = (a: GitDirtyStatus | undefined, b: GitDirtyStatus | undefined): boolean =>
-  a?.files === b?.files && a?.insertions === b?.insertions && a?.deletions === b?.deletions
+import { DiffStat, sameDirty } from './DiffStat'
 
 /** Match host path to UI activePath (may be remote:<conn>:<hostPath>). */
 function sameWorktreePath(a: string | null | undefined, b: string | null | undefined): boolean {
@@ -377,6 +374,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
             <WorktreeHandoffSection
               worktreePath={activePath}
               folderPath={currentFolder ?? undefined}
+              dirty={activeDirty}
               onDone={() => setPopoverOpen(false)}
             />
           )}

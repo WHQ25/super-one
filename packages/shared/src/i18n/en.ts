@@ -1765,6 +1765,7 @@ export type Messages = {
       forkButton: string
       handoffHeading: string
       handoffInfo: string
+      handoffCarries: string
       handoffButton: string
       handoffSuccess: string
       handoffErrorNoChanges: string
@@ -5458,6 +5459,7 @@ export const en: Messages = {
       forkButton: 'Fork session',
       handoffHeading: 'Hand off changes to main checkout',
       handoffInfo: "Copy this worktree's changes into the main checkout.",
+      handoffCarries: 'Will carry',
       handoffButton: 'Hand off',
       handoffSuccess: 'Changes handed off to main checkout',
       handoffErrorNoChanges: 'Nothing to hand off',

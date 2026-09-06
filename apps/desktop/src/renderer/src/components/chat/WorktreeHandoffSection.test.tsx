@@ -48,6 +48,29 @@ describe('WorktreeHandoffSection loading state', () => {
     expect(screen.getByRole('button')).toBeEnabled()
   })
 
+  it('hides its own stat when the handoff scope equals the uncommitted stat already in the header', async () => {
+    const dirty = { files: 2, insertions: 5, deletions: 1 }
+    render(<WorktreeHandoffSection worktreePath="/wt" dirty={dirty} onDone={() => {}} />)
+
+    await act(async () => {
+      deferred.resolve({ ...dirty })
+      await deferred.promise
+    })
+
+    expect(screen.queryByText(/Will carry/, { selector: 'p' })).toBeNull()
+  })
+
+  it('spells out the wider scope when a detached worktree hands off more than its uncommitted work', async () => {
+    render(<WorktreeHandoffSection worktreePath="/wt" dirty={{ files: 2, insertions: 5, deletions: 1 }} onDone={() => {}} />)
+
+    await act(async () => {
+      deferred.resolve({ files: 40, insertions: 900, deletions: 12 })
+      await deferred.promise
+    })
+
+    expect(screen.getByText(/Will carry/, { selector: 'p' })).toHaveTextContent('40 files+900-12')
+  })
+
   it('keeps the button disabled and shows no stat line when there is nothing to hand off', async () => {
     render(<WorktreeHandoffSection worktreePath="/wt" onDone={() => {}} />)
 

@@ -1872,6 +1872,7 @@ export const zh: Messages = {
       forkButton: 'Fork 会话',
       handoffHeading: '把改动交接回主工作区',
       handoffInfo: '把这个 worktree 的改动复制到主工作区。',
+      handoffCarries: '将带走',
       handoffButton: '交接',
       handoffSuccess: '改动已交接到主工作区',
       handoffErrorNoChanges: '没有可交接的改动',

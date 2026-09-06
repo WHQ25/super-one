@@ -3,12 +3,14 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { ArrowDownToLine, Loader2 } from 'lucide-react'
 import type { GitDirtyStatus, WorktreeHandoffResult } from '@superone/shared/agent-types'
-import { DiffStat } from './DiffStat'
+import { DiffStat, sameDirty } from './DiffStat'
 
 interface WorktreeHandoffSectionProps {
   worktreePath: string
   /** Project key (local path or remote:<conn>:<path>) for remote handoff routing. */
   folderPath?: string
+  /** Uncommitted stat already shown in the popover header — used to suppress a duplicate line. */
+  dirty?: GitDirtyStatus
   onDone: () => void
 }
 
@@ -23,7 +25,7 @@ const HANDOFF_ERROR_KEY: Record<HandoffFailure['reason'], string> = {
 }
 
 /** One-click handoff section — non-destructive; renders nothing when there is nothing to hand off. */
-export function WorktreeHandoffSection({ worktreePath, folderPath, onDone }: WorktreeHandoffSectionProps) {
+export function WorktreeHandoffSection({ worktreePath, folderPath, dirty, onDone }: WorktreeHandoffSectionProps) {
   const { t } = useTranslation()
   const [stat, setStat] = useState<GitDirtyStatus | null>(null)
   const [loading, setLoading] = useState(true)
@@ -59,6 +61,10 @@ export function WorktreeHandoffSection({ worktreePath, folderPath, onDone }: Wor
   }
 
   const hasChanges = !!stat && stat.files > 0
+  // On a branch the handoff carries only uncommitted work, so this stat repeats the
+  // header. Detached, base is the merge-base — worktree commits count too, and the
+  // wider scope is worth spelling out.
+  const showScope = hasChanges && !sameDirty(stat!, dirty)
 
   return (
     <div className="border-t p-3">
@@ -67,9 +73,9 @@ export function WorktreeHandoffSection({ worktreePath, folderPath, onDone }: Wor
         {t('chat.worktree.handoffHeading')}
       </div>
       <p className="mb-2 text-xs text-muted-foreground">{t('chat.worktree.handoffInfo')}</p>
-      {(loading || hasChanges) && (
+      {showScope && (
         <p className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-          {loading ? <Loader2 className="size-3 animate-spin" /> : <DiffStat stat={stat!} />}
+          {t('chat.worktree.handoffCarries')} <DiffStat stat={stat!} />
         </p>
       )}
       <button

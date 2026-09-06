@@ -297,11 +297,11 @@ describe('requestDeviceControl', () => {
     expect(port.booted).toEqual([{ sessionId: 's1', udid: 'pad' }])
   })
 
-  it('tells the agent not to open Apple\'s Simulator, without banning real work', async () => {
+  it('tells the agent not to open Apple\'s Simulator, and how to work without it', async () => {
     // This note is the ONLY thing standing between the agent and a duplicate window:
-    // `flutter emulators --launch` ends with a plain `open -a Simulator`, which
-    // un-hides the app the host hid, and an un-hide is indistinguishable from the user
-    // reaching for it -- so the host cannot take that one back.
+    // `open -a Simulator` un-hides the app the host hid, and an un-hide is
+    // indistinguishable from the user reaching for it -- so the host cannot take that
+    // one back. Enforcement was tried and deliberately dropped; see the note itself.
     const port = new FakePort([device({ udid: 'a', name: 'iPhone 16' })])
     const host = autoAnswer((requestId) => resolveDeviceControlConfirm(requestId, 'accept'))
 
@@ -312,10 +312,17 @@ describe('requestDeviceControl', () => {
     const note = String(result.note)
     expect(note).toMatch(/open -a Simulator/)
     expect(note).toMatch(/flutter emulators --launch/)
-    // Building and running is the whole point of holding a device. Only the commands
-    // whose sole effect is a window are off limits.
-    expect(note).not.toMatch(/expo run:ios/)
+    // Expo has to be named: every one of its launchers opens Apple's Simulator before
+    // it does anything else, so "build-and-run is fine" was quietly false for it.
+    expect(note).toMatch(/expo run:ios/)
+    // Naming it is only half the job -- an agent told to avoid the only launcher it
+    // knows will either stall or ignore the note. The replacement is what makes the
+    // instruction followable.
+    expect(note).toMatch(/simctl openurl/)
     expect(note).toMatch(/simctl install/)
+    // Building and running is the whole point of holding a device, and flutter's
+    // runner never opens that window, so it must not be swept up in the prohibition.
+    expect(note).toMatch(/flutter run -d [^`]*` needs no workaround/)
   })
 
   it('points an unmatched handle back at device_list instead of prompting', async () => {

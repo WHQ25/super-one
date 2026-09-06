@@ -136,15 +136,33 @@ export class IosSimulatorDevicePort implements DevicePlatformPort {
     const udid = parseDeviceId(device.id)?.native ?? device.id
     return `This session now controls the device. Install a build with \`xcrun simctl install ${udid} <path/to/.app>\` `
       + `and launch it with \`xcrun simctl launch ${udid} <bundle-id>\`, then use device_snapshot to see the screen. `
-      // The user is already watching this device here, so a command whose ONLY effect
-      // is to show Apple's Simulator window is pure duplication -- and one that merely
-      // un-hides an app the host had hidden is not something the host can quietly undo.
-      // Scoped to exactly those two: build-and-run commands (`flutter run`,
-      // `expo run:ios`) are real work and stay allowed, and neither of them puts a
-      // window up that this app cannot deal with on its own.
-      + 'The device is already booted and visible in this session, so never run a command whose only '
-      + 'job is to show Apple\'s Simulator window — no `open -a Simulator`, no `flutter emulators --launch`. '
-      + 'Build-and-run commands are fine.'
+      // The user is already watching this device here, so a second Apple window on the
+      // same screen is pure duplication -- and the host cannot quietly take it back,
+      // because an `open -a Simulator` UN-HIDES the app and macOS reports that
+      // identically to the user reaching for it. Prevention through this note is the
+      // whole mechanism; there is no enforcement behind it, by choice.
+      //
+      // Which commands actually open that window is not guessable, so it is read from
+      // the tools rather than assumed. Verified against flutter 3.35.7 and @expo/cli:
+      //
+      //   flutter run -d <udid>      no  -- on a booted device it goes through
+      //                                    simctl install + launch (simulators.dart)
+      //   flutter emulators --launch YES -- `open -n -a`, then plain `open -a` to
+      //                                    foreground it (ios_emulators.dart)
+      //   expo run:ios / start + i   YES -- every open path calls activateWindowAsync
+      //                                    -> `open -a Simulator`, with no flag to
+      //                                    skip it (PlatformManager, AppleDeviceManager)
+      //
+      // So Expo needs a replacement rather than a prohibition, and it has an exact
+      // one: `simctl openurl` is the very call Expo makes after activating the window.
+      + 'The device is already booted and visible in this session, so do not run commands that open '
+      + 'Apple\'s Simulator window: `open -a Simulator` and `flutter emulators --launch` exist only to '
+      + 'put that window up, and every Expo launcher (`expo run:ios`, or `expo start` then `i`) opens it '
+      + 'before doing anything else. '
+      + `Reach an installed dev client the way Expo itself does instead — \`npx expo start\`, then `
+      + `\`xcrun simctl openurl ${udid} <the URL it prints>\`. `
+      + '`flutter run -d ' + udid + '` needs no workaround: on a booted device it installs and launches '
+      + 'through simctl.'
   }
 
   emptyNote(installed: number): string {

@@ -22,6 +22,7 @@ interface ViewState {
   messages: ChatMessage[]
   todos: TodoItem[]
   labels: Record<string, string>
+  mentionArtwork: Record<string, string>
   pendingPermission: PendingPermission
   range: ChatWindowRange
   scheme: 'light' | 'dark'
@@ -35,6 +36,7 @@ const EMPTY_STATE: ViewState = {
   messages: [],
   todos: [],
   labels: {},
+  mentionArtwork: {},
   pendingPermission: null,
   range: { start: 0, end: 0 },
   scheme: 'dark',
@@ -48,6 +50,17 @@ const page = globalThis as unknown as Window
 function normalizeTodos(value: ReductionProjection['todos'], fallback: TodoItem[]): TodoItem[] {
   if (!value) return fallback
   return Array.isArray(value) ? value : Object.values(value)
+}
+
+function normalizeMentionArtwork(value: ReductionProjection['mentionArtwork'], fallback: Record<string, string>): Record<string, string> {
+  if (value === undefined) return fallback
+  if (!value || typeof value !== 'object') return {}
+  return Object.fromEntries(Object.entries(value).filter(([key, png]) =>
+    (key.startsWith('miniapp:') || key.startsWith('desktop-app:'))
+    && key.length <= 512
+    && typeof png === 'string'
+    && png.length <= 256_000
+    && /^[A-Za-z0-9+/]+={0,2}$/.test(png)))
 }
 
 function mergeHistory(older: ChatMessage[], current: ChatMessage[]): { messages: ChatMessage[]; added: number } {
@@ -76,6 +89,7 @@ function applyProjection(
     messages,
     todos: normalizeTodos(projection.todos, previous.todos),
     labels: projection.labels ?? previous.labels,
+    mentionArtwork: normalizeMentionArtwork(projection.mentionArtwork, previous.mentionArtwork),
     pendingPermission: projection.pendingPermission === undefined
       ? previous.pendingPermission
       : projection.pendingPermission,
@@ -322,6 +336,7 @@ export function ChatView() {
             message={message}
             scheme={state.scheme}
             pendingPermission={state.pendingPermission ?? null}
+            mentionArtwork={state.mentionArtwork}
             isLastAssistant={message.id === lastAssistantId}
           />
         ))}

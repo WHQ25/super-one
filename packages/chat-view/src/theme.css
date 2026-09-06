@@ -1,3 +1,4 @@
+@import "@superone/ui/styles/mention-chip.css";
 @import "@superone/ui/styles/base.css";
 @import "@superone/ui/styles/theme.css";
 @import "@superone/ui/styles/chat-md.css";
@@ -54,4 +55,14 @@ a {
   padding: 24px;
   color: var(--destructive);
   white-space: pre-wrap;
+}
+
+.chat-view-shell .portable-message-body {
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+.chat-view-shell .portable-user-message {
+  word-break: normal;
+  overflow-wrap: anywhere;
 }

@@ -72,10 +72,10 @@ export function ChatMessagePresenter({
           </div>
         )}
         <div className={cn(
-          'min-w-0 text-sm',
+          'portable-message-body min-w-0 text-sm',
           isUser
             ? cn(
-                'max-w-full overflow-hidden rounded-xl px-3 py-2 text-foreground break-all',
+                'portable-user-message max-w-full overflow-hidden rounded-xl px-3 py-2 text-foreground break-all',
                 isCollaboration
                   ? 'border border-primary/25 bg-primary/5'
                   : 'bg-muted/80',

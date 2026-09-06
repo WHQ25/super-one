@@ -1,6 +1,7 @@
 import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
 import { AlertTriangle, Bot, CircleStop, FileText, ImageIcon, RefreshCw } from 'lucide-react'
 import { ChatMessagePresenter } from './presenters/ChatMessage'
+import { PortableUserText } from './PortableUserText'
 import { PortableMarkdown } from './PortableMarkdown'
 import { PortableTool } from './PortableTool'
 import {
@@ -28,15 +29,17 @@ function PortableUserContent({
   message,
   scheme,
   pendingPermission,
+  mentionArtwork,
 }: {
   message: ChatMessage
   scheme: 'light' | 'dark'
   pendingPermission: PendingPermission | null
+  mentionArtwork: Record<string, string>
 }) {
   const results = resultsByTool(message.content)
   return message.content.map((block, index) => {
     if (block.type === 'text') {
-      return <PortableMarkdown key={index} text={block.text} isStreaming={false} scheme={scheme} />
+      return <PortableUserText key={index} text={block.text} mentionArtwork={mentionArtwork} />
     }
     if (block.type === 'image') {
       return (
@@ -94,11 +97,13 @@ export function PortableMessage({
   message,
   scheme,
   pendingPermission,
+  mentionArtwork = {},
   isLastAssistant = false,
 }: {
   message: ChatMessage
   scheme: 'light' | 'dark'
   pendingPermission: PendingPermission | null
+  mentionArtwork?: Record<string, string>
   isLastAssistant?: boolean
 }) {
   const isUser = message.role === 'user'
@@ -116,7 +121,7 @@ export function PortableMessage({
       </div>
     )
     : isUser
-      ? <PortableUserContent message={message} scheme={scheme} pendingPermission={pendingPermission} />
+      ? <PortableUserContent message={message} scheme={scheme} pendingPermission={pendingPermission} mentionArtwork={mentionArtwork} />
       : message.metadata?.codex
         ? <PortableCodexTurn message={message} isLastAssistant={isLastAssistant} />
         : <PortableClaudeTurn message={message} />

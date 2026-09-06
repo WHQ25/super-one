@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { pathToFileURL } from 'node:url'
 import { resolve } from 'node:path'
 import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
+import { wrapAgentMention } from '@superone/shared/agent-mention-tags'
 import {
   AGENT_TOOL_RECORDINGS,
   BROWSER_TOOL_RECORDING,
@@ -75,6 +76,30 @@ async function send(page: Page, envelope: unknown): Promise<void> {
 }
 
 test.beforeEach(async ({ page }) => openChat(page))
+
+test('provider mention brands retain visible artwork in both themes', async ({ page }, testInfo) => {
+  const refs = ['claude-base', 'codex-review', 'acp-base:grok-build', 'opencode-base', 'cursor-base', 'dsh-base', 'acp-base:custom']
+  await send(page, { type: 'hydrate', messages: refs.map((ref) => textMessage(ref, wrapAgentMention(ref, ref), { role: 'user' })) })
+  const chips = page.locator('[data-mention-kind="agent-profile"]')
+  await expect(chips).toHaveCount(refs.length)
+  for (const scheme of ['light', 'dark']) {
+    await send(page, { type: 'setTheme', scheme })
+    for (const chip of await chips.all()) {
+      await expect(chip).toBeVisible()
+      const bounds = await chip.locator('.mention-chip__icon').evaluate((icon) => {
+        const box = icon.getBoundingClientRect()
+        const svg = icon.querySelector('svg')!.getBoundingClientRect()
+        return { width: svg.width, height: svg.height, boxWidth: box.width, boxHeight: box.height }
+      })
+      expect(bounds.width).toBeGreaterThan(8)
+      expect(bounds.height).toBeGreaterThan(8)
+      expect(bounds.width).toBeLessThanOrEqual(bounds.boxWidth)
+      expect(bounds.height).toBeLessThanOrEqual(bounds.boxHeight)
+    }
+    await expect(chips.locator('.lucide-bot')).toHaveCount(0)
+    await page.screenshot({ path: testInfo.outputPath(`brand-mentions-${scheme}.png`) })
+  }
+})
 
 test('01 posts ready to the native host', async ({ page }) => {
   await expect.poll(() => page.evaluate(() => (

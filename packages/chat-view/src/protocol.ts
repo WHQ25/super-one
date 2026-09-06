@@ -5,6 +5,7 @@ export interface ReductionProjection {
   messages?: ChatMessage[]
   todos?: TodoItem[] | Record<string, TodoItem>
   labels?: Record<string, string>
+  mentionArtwork?: Record<string, string>
   pendingPermission?: {
     requestId: string
     toolName: string

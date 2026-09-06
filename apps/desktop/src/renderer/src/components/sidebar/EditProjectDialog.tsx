@@ -11,7 +11,7 @@ import {
 } from '@superone/ui/components/ui/dialog'
 import { MAX_PROJECT_EXTRA_DIRS } from '@superone/shared/project-extra-dirs'
 import type { RecentFolder } from '@superone/shared/agent-types'
-import { getBrowseDirectoryPath, isBrowseablePathQuery } from '@/lib/path-browse'
+import { getBrowseDirectoryPath, isBrowseablePathQuery } from '@superone/shared/path-browse'
 import { homePath } from '@/lib/path-utils'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 

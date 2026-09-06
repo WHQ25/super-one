@@ -4320,7 +4320,10 @@ export type RemoteCommand =
   | { type: 'set_permission_mode'; mode: string; projectPath?: string; sessionId: string }
   | { type: 'list_directory'; requestId: string; path: string; showHidden?: boolean }
   | { type: 'create_directory'; requestId: string; path: string; name: string }
-  | { type: 'add_project'; requestId: string; path: string }
+  | { type: 'add_project'; requestId: string; path: string; /** mkdir -p the path first (add-project "Create" row). */ createIfMissing?: boolean }
+  | { type: 'search_github_repos'; requestId: string; mode: GithubRepoSearchMode; value?: string; page?: number }
+  | { type: 'browse_host_directory'; requestId: string; path: string }
+  | { type: 'clone_repository'; requestId: string; remoteUrl: string; parentPath: string; directoryName?: string; shallow?: boolean }
   | { type: 'list_projects'; requestId: string }
   | { type: 'list_sessions'; requestId: string; projectPath: string; limit?: number; offset?: number }
   | { type: 'archive_session'; requestId: string; projectPath: string; sessionId: string }
@@ -4355,6 +4358,37 @@ export type RemoteCommand =
   | { type: 'terminal_release'; requestId: string; terminalId: string }
   | { type: 'terminal_input'; terminalId: string; data: string }
   | { type: 'terminal_resize'; terminalId: string; cols: number; rows: number }
+
+/**
+ * `mine` lists the authenticated user's repositories (needs the `gh` CLI),
+ * `owner` lists one account's, `query` is free-text search.
+ */
+export type GithubRepoSearchMode = 'mine' | 'owner' | 'query'
+
+export interface GithubRepoHit {
+  owner: string
+  name: string
+  fullName: string
+  description: string | null
+  private: boolean
+  stars: number | null
+}
+
+export type SearchGithubReposResponse =
+  | { repos: GithubRepoHit[]; hasMore?: boolean; /** `gh` missing or logged out. */ unavailable?: boolean }
+  | { error: string }
+
+/**
+ * Directory-only listing for the add-project browser. `path` is echoed back
+ * absolute (the host expands `~` against **its** home), which is what the typed
+ * query resolves against.
+ */
+export type BrowseHostDirectoryResponse =
+  | { path: string; entries: Array<{ name: string; path: string }> }
+  | { error: string }
+
+/** The cloned repository, already registered as a project on the host. */
+export type CloneRepositoryResponse = { path: string; name: string } | { error: string }
 
 export interface ReadDesktopFileMetadata {
   mimeType: string

@@ -5,16 +5,14 @@ import { poweredByHint } from '../provider-state'
 import type { NewSessionWorktreeSelection } from '../worktree-state'
 import { useMobileTheme } from '../theme/context'
 import { GitChips, HarnessIcon, HarnessTabs, ProjectSelect, ProviderBrand } from '../ui'
-import type { Project } from './projects-screen'
 
 export type NewSessionLandingProps = {
   provider: HarnessId
   harnesses: readonly HarnessId[]
   onProvider: (provider: HarnessId) => void
   activeProvider?: RemoteActiveProvider | null
-  projects: Project[]
-  activeProjectPath?: string
-  onProject: (project: Project) => void
+  projectName?: string
+  onOpenProject: () => void
   worktreeSelection: NewSessionWorktreeSelection
   worktreeInfo?: WorktreeInfo | null
   branch?: string | null
@@ -37,8 +35,8 @@ export function NewSessionLanding(props: NewSessionLandingProps) {
         </View>
       ) : null}
       <HarnessTabs harnesses={props.harnesses} value={props.provider} onChange={props.onProvider} />
-      <ProjectSelect projects={props.projects} activePath={props.activeProjectPath} onSelect={props.onProject} />
-      {props.activeProjectPath ? (
+      <ProjectSelect name={props.projectName} onOpen={props.onOpenProject} />
+      {props.projectName ? (
         <GitChips selection={props.worktreeSelection} worktreeInfo={props.worktreeInfo}
           branch={props.branch} dirty={!!props.dirtyFiles}
           onWorktree={props.onWorktree} onBranch={props.onBranch} />

@@ -34,7 +34,7 @@ import {
   isBrowseablePathQuery,
   joinBrowsePath,
   normalizeHomePrefixInput,
-} from '@/lib/path-browse'
+} from '@superone/shared/path-browse'
 import type { AddProjectListItem, AddProjectListSection } from './AddProjectList'
 import {
   ADD_PROJECT_SOURCES,
@@ -50,7 +50,7 @@ import {
   resolveRepoInput,
   type AddProjectSource,
   type AddProjectStep,
-} from './add-project-flow'
+} from '@superone/shared/add-project-flow'
 
 export { CREATE_ROW_KEY }
 

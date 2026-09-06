@@ -50,6 +50,7 @@ import { useRemoteDirectory } from './use-remote-directory'
 import { leaveMobileSession, sessionRemovalStatus } from '../session-exit'
 import { ProjectsScreen, type Project } from '../screens/projects-screen'
 import { BranchScreen } from '../screens/branch-screen'
+import { ProjectPickerScreen } from '../screens/project-picker-screen'
 import { WorktreeScreen } from '../screens/worktree-screen'
 import { runUiAction } from '../ui-action'
 import { FilesScreen } from '../screens/files-screen'
@@ -59,6 +60,7 @@ import { ConnectedTerminal } from './connected-terminal'
 import { SessionsScreen } from '../screens/sessions-screen'
 import { MobileNavigator, type MobileRoute as Screen } from './mobile-navigator'
 import { MobileHeader, mobileHeaderTitle } from './mobile-header'
+import { useAddProject } from './use-add-project'
 import { MobileOverlays } from './mobile-overlays'
 import { MobileKeyboardFrame } from './mobile-keyboard-frame'
 import { useHarnessSelection } from './use-harness-selection'
@@ -697,6 +699,27 @@ export function MobileApp() {
     setScreen('chat')
     runUiAction(() => loadShellDetails(selectedProvider, targetProject), setStatus, 'failed to load project settings')
   }
+  /** Open a project for a new session — the picker's only exit that keeps state. */
+  const chooseProject = (target: Project) =>
+    runUiAction(async () => { await openProject(target); startNewSession(target) },
+      setStatus, 'failed to open project')
+
+  const addProjectFlow = useAddProject({
+    request: (command) => {
+      const client = clientRef.current
+      if (!client) throw new Error('Connect to a desktop to browse projects')
+      return client.request(command)
+    },
+    projects,
+    onSelect: chooseProject,
+    onAdded: (path) => {
+      const name = path.split(/[\\/]/).filter(Boolean).pop() ?? path
+      const added = { path, name }
+      setProjects((current) => current.some((row) => row.path === path) ? current : [added, ...current])
+      chooseProject(added)
+    },
+  })
+
   /** Checkout or create a branch on the paired desktop, then re-read git state. */
   const changeBranch = async (branch: string, type: 'switch_git_branch' | 'create_git_branch') => {
     const client = clientRef.current
@@ -812,6 +835,12 @@ export function MobileApp() {
       setScreen(auxiliaryReturnRef.current)
       return
     }
+    if (screen === 'project-picker') {
+      // The picker walks its own steps first; only the source step leaves.
+      if (addProjectFlow.canGoBack) addProjectFlow.goBack()
+      else setScreen('chat')
+      return
+    }
     if (screen === 'terminal' || screen === 'worktree' || screen === 'branch') {
       setScreen('chat')
       return
@@ -855,7 +884,7 @@ export function MobileApp() {
       <MobileKeyboardFrame>
         <MobileHeader
         route={screen}
-        title={header}
+        title={screen === 'project-picker' ? addProjectFlow.title : header}
         subtitle={[project?.name, gitInfo?.branch].filter(Boolean).join(' · ')}
         provider={selectedProvider}
         hasSession={!!sessionId}
@@ -866,8 +895,13 @@ export function MobileApp() {
         onOpenSettings={openSettings}
         onConfirm={screen === 'worktree'
           ? () => { setWorktreeSelection(worktreeDraft); setScreen('chat') }
-          : undefined}
-        confirmDisabled={!!worktreeSelectionError(worktreeDraft, branches, checkedOutBranches)}
+          : screen === 'project-picker' && addProjectFlow.confirmLabel
+            ? addProjectFlow.confirm
+            : undefined}
+        confirmLabel={screen === 'project-picker' ? addProjectFlow.confirmLabel ?? undefined : undefined}
+        confirmDisabled={screen === 'project-picker'
+          ? addProjectFlow.busy
+          : !!worktreeSelectionError(worktreeDraft, branches, checkedOutBranches)}
         />
 
         <View style={styles.contentRow}>
@@ -973,9 +1007,8 @@ export function MobileApp() {
             harnesses: MOBILE_HARNESS_IDS,
             onProvider: selectProvider,
             activeProvider: harnessSelection.activeProvider,
-            projects,
-            activeProjectPath: project?.path,
-            onProject: (p) => runUiAction(async () => { await openProject(p); startNewSession(p) }, setStatus, 'failed to open project'),
+            projectName: project?.name,
+            onOpenProject: () => setScreen('project-picker'),
             worktreeSelection,
             worktreeInfo,
             branch: gitInfo?.branch,
@@ -1039,6 +1072,8 @@ export function MobileApp() {
           onStop={() => runUiAction(() => runtimeRef.current?.interrupt(), setStatus, 'interrupt failed')}
         />
       ) : null}
+
+      {route === 'project-picker' ? <ProjectPickerScreen flow={addProjectFlow} /> : null}
 
       {route === 'worktree' ? (
         <WorktreeScreen

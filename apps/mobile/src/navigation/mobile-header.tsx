@@ -23,6 +23,7 @@ export function mobileHeaderTitle(
   if (route === 'terminal') return terminalTitle
   if (route === 'worktree') return 'Worktree'
   if (route === 'branch') return 'Branch'
+  if (route === 'project-picker') return 'Add Project'
   if (route === 'settings') return 'Project settings'
   if (route === 'files') return 'Files'
   return 'SuperOne'
@@ -42,6 +43,8 @@ export function MobileHeader(props: {
   onOpenSettings: () => void
   /** Commits the screen's draft. Back discards it, so only routes with a draft pass this. */
   onConfirm?: () => void
+  /** Action label; defaults to `Confirm`. */
+  confirmLabel?: string
   confirmDisabled?: boolean
 }) {
   const styles = useMobileStyles()
@@ -73,12 +76,14 @@ export function MobileHeader(props: {
           </Text>
         </View> : null}
       </View>
-      {props.onConfirm ? <Pressable accessibilityRole="button" accessibilityLabel="Confirm"
+      {props.onConfirm ? <Pressable accessibilityRole="button" accessibilityLabel={props.confirmLabel ?? 'Confirm'}
         accessibilityState={{ disabled: props.confirmDisabled }} disabled={props.confirmDisabled}
         onPress={props.onConfirm}
         style={({ pressed }) => ({ minWidth: CONFIRM_SLOT_WIDTH, minHeight: 44, paddingHorizontal: 8,
           alignItems: 'flex-end', justifyContent: 'center', opacity: props.confirmDisabled ? 0.35 : pressed ? 0.6 : 1 })}>
-        <Text style={{ fontSize: 16, fontWeight: '600', color: tokens.colors.primary }}>Confirm</Text>
+        <Text style={{ fontSize: 16, fontWeight: '600', color: tokens.colors.primary }}>
+          {props.confirmLabel ?? 'Confirm'}
+        </Text>
       </Pressable>
         : chat ? <IconButton buttonRef={menu.ref} icon={MoreHorizontal} label="Session actions" onPress={menu.open} />
         : props.route === 'sessions' ? <IconButton icon={Settings} label="Settings" onPress={props.onOpenSettings} />

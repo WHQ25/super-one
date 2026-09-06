@@ -16,7 +16,7 @@ import {
   stepTitleKey,
   submitLabelKey,
   unwrapIpcInvokeError,
-} from './add-project-flow'
+} from '@superone/shared/add-project-flow'
 
 describe('source detection while typing', () => {
   it('reads an absolute, home or relative path as a local folder', () => {

@@ -1029,9 +1029,55 @@ export class AgentService {
       }
       case 'add_project': {
         try {
+          if (command.createIfMissing) await mkdir(command.path, { recursive: true })
           addRecentFolder(command.path)
           await this.openFolder(command.path)
           await respond?.(command.requestId, { success: true })
+        } catch (err) {
+          await respond?.(command.requestId, { error: (err as Error).message })
+        }
+        break
+      }
+      case 'search_github_repos': {
+        try {
+          // Same three services the desktop add-project dialog uses, so a phone
+          // and the sidebar see identical results.
+          if (command.mode === 'mine') {
+            const page = await listMyGithubRepos(command.page ?? 1, 20)
+            await respond?.(command.requestId, page)
+          } else if (command.mode === 'owner') {
+            const repos = await listGithubReposForOwner(command.value ?? '')
+            await respond?.(command.requestId, { repos })
+          } else {
+            const repos = await searchGithubRepositories(command.value ?? '')
+            await respond?.(command.requestId, { repos })
+          }
+        } catch (err) {
+          await respond?.(command.requestId, { error: (err as Error).message })
+        }
+        break
+      }
+      case 'browse_host_directory': {
+        try {
+          const { getEnvironmentHost } = await import('../environment/environment-host')
+          await respond?.(command.requestId, await getEnvironmentHost().browsePath('local', command.path))
+        } catch (err) {
+          await respond?.(command.requestId, { error: (err as Error).message })
+        }
+        break
+      }
+      case 'clone_repository': {
+        try {
+          const { cloneRepository } = await import('@superone/shared/git-clone')
+          const cloned = await cloneRepository({
+            remoteUrl: command.remoteUrl,
+            parentPath: command.parentPath,
+            directoryName: command.directoryName,
+            shallow: command.shallow,
+          })
+          addRecentFolder(cloned.path)
+          await this.openFolder(cloned.path)
+          await respond?.(command.requestId, { path: cloned.path, name: cloned.name })
         } catch (err) {
           await respond?.(command.requestId, { error: (err as Error).message })
         }

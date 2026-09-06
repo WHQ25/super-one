@@ -18,7 +18,7 @@ import {
   isBrowseablePathQuery,
   joinBrowsePath,
   trimTrailingPathSeparators,
-} from '@/lib/path-browse'
+} from './path-browse'
 
 /** Where a project comes from. `local` never clones; the other two always do. */
 export type AddProjectSource = 'local' | 'github' | 'url'

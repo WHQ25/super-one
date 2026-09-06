@@ -130,6 +130,14 @@ vi.mock('../plugins-service', () => ({
   installPlugin: vi.fn(),
   updatePlugin: vi.fn(),
   updateMarketplace: vi.fn(),
+  getGithubStars: vi.fn(),
+  listGithubReposForOwner: vi.fn(async () => [
+    { owner: 'vercel', name: 'next.js', fullName: 'vercel/next.js', description: null, private: false, stars: 1 },
+  ]),
+  searchGithubRepositories: vi.fn(async () => [
+    { owner: 'expo', name: 'expo', fullName: 'expo/expo', description: null, private: false, stars: 2 },
+  ]),
+  listMyGithubRepos: vi.fn(async () => ({ repos: [], hasMore: false, unavailable: true })),
 }))
 
 vi.mock('../mcp-library-service', () => ({
@@ -2359,6 +2367,40 @@ describe('AgentService.handleRemoteCommand', () => {
     await service.handleRemoteCommand({ type: 'add_project', requestId: 'r8', path: '/projects/new' }, respond)
     expect(addRecentFolder).toHaveBeenCalledWith('/projects/new')
     expect(respond).toHaveBeenCalledWith('r8', { success: true })
+  })
+
+  it('add_project creates the directory first when asked to', async () => {
+    const { addRecentFolder } = await import('../recent-folders')
+    const respond = vi.fn()
+    await new AgentService().handleRemoteCommand(
+      { type: 'add_project', requestId: 'r8b', path: '/projects/new', createIfMissing: true }, respond)
+    expect(mockMkdir).toHaveBeenCalledWith('/projects/new', { recursive: true })
+    expect(addRecentFolder).toHaveBeenCalledWith('/projects/new')
+    expect(respond).toHaveBeenCalledWith('r8b', { success: true })
+  })
+
+  it('search_github_repos routes each mode to its own service', async () => {
+    const { listGithubReposForOwner, searchGithubRepositories, listMyGithubRepos } =
+      await import('../plugins-service')
+    const service = new AgentService()
+
+    const owner = vi.fn()
+    await service.handleRemoteCommand(
+      { type: 'search_github_repos', requestId: 'g1', mode: 'owner', value: 'vercel' }, owner)
+    expect(listGithubReposForOwner).toHaveBeenCalledWith('vercel')
+    expect(owner).toHaveBeenCalledWith('g1', { repos: [expect.objectContaining({ fullName: 'vercel/next.js' })] })
+
+    const query = vi.fn()
+    await service.handleRemoteCommand(
+      { type: 'search_github_repos', requestId: 'g2', mode: 'query', value: 'expo' }, query)
+    expect(searchGithubRepositories).toHaveBeenCalledWith('expo')
+
+    const mine = vi.fn()
+    await service.handleRemoteCommand(
+      { type: 'search_github_repos', requestId: 'g3', mode: 'mine' }, mine)
+    expect(listMyGithubRepos).toHaveBeenCalledWith(1, 20)
+    // `unavailable` has to survive: it is what tells the phone to mention gh.
+    expect(mine).toHaveBeenCalledWith('g3', { repos: [], hasMore: false, unavailable: true })
   })
 
   it.each(Object.entries(BASE_SESSION_PROVIDERS))(

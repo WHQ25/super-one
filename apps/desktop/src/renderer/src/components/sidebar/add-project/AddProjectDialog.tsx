@@ -27,7 +27,7 @@ import {
   enterLabelKey,
   stepTitleKey,
   type AddProjectSource,
-} from './add-project-flow'
+} from '@superone/shared/add-project-flow'
 import { useAddProjectDialog } from './use-add-project-dialog'
 
 function GithubOwnerAvatar({ owner, className }: { owner: string; className?: string }) {

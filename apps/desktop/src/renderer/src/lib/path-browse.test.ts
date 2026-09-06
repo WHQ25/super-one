@@ -10,7 +10,7 @@ import {
   isBareHomePath,
   isBrowseablePathQuery,
   normalizeHomePrefixInput,
-} from './path-browse'
+} from '@superone/shared/path-browse'
 
 describe('bare home path (~)', () => {
   it('is a browseable complete directory, not a leaf named "~"', () => {

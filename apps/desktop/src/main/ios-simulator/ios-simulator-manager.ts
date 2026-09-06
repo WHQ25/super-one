@@ -696,11 +696,17 @@ export class IosSimulatorManager {
     return current.capture
   }
 
+  /** A control request needs a current keyframe even when the guest is static. */
+  subscribePreview(udid: string, listener: (frame: IosSimulatorFrame) => void): () => void {
+    return this.subscribe(udid, listener, 'native-h264', DEFAULT_IOS_SIMULATOR_PREVIEW_QUALITY, true)
+  }
+
   subscribe(
     udid: string,
     listener: (frame: IosSimulatorFrame) => void,
     preferredMode: 'native-framebuffer' | 'native-h264' = 'native-h264',
     quality: IosSimulatorPreviewQuality = DEFAULT_IOS_SIMULATOR_PREVIEW_QUALITY,
+    fresh = false,
   ): () => void {
     let stream = this.streams.get(udid)
     if (!stream) {
@@ -715,8 +721,8 @@ export class IosSimulatorManager {
     // this listener existed, and the helper will not send another until the stream
     // is torn down and reopened. Replaying it is the only way a second window's
     // decoder ever gets configured.
-    if (stream.lastConfigFrame) listener(stream.lastConfigFrame)
-    void this.startStream(udid)
+    if (!fresh && stream.lastConfigFrame) listener(stream.lastConfigFrame)
+    void this.startStream(udid, fresh)
     return () => {
       const current = this.streams.get(udid)
       current?.listeners.delete(listener)
@@ -846,14 +852,20 @@ export class IosSimulatorManager {
     return flight
   }
 
-  private startStream(udid: string): Promise<void> {
-    return this.queueStreamWork(udid, () => this.openStream(udid))
+  private startStream(udid: string, fresh = false): Promise<void> {
+    return this.queueStreamWork(udid, () => this.openStream(udid, fresh))
   }
 
-  private async openStream(udid: string): Promise<void> {
+  private async openStream(udid: string, fresh = false, retry = true): Promise<void> {
     const stream = this.streams.get(udid)
-    if (!stream || !this.owners.has(udid) || stream.started || stream.listeners.size === 0) return
+    if (!stream || !this.owners.has(udid) || stream.listeners.size === 0) return
+    if (!fresh && stream.started && this.nativeSessions.get(udid)?.client.alive) return
     try {
+      if (fresh && stream.started) {
+        await this.nativeSessions.get(udid)?.client.closeFrames()
+        stream.started = false
+        stream.lastConfigFrame = null
+      }
       const native = await this.ensureNativeSession(udid)
       if (!this.streams.has(udid)) return
       const info = await native.client.startFrames(
@@ -872,6 +884,13 @@ export class IosSimulatorManager {
       // trace anywhere: the stream simply never produced a frame.
       stream.started = false
       this.onStreamError(udid, error)
+      // A live process can hold an invalid display. Reattach once instead of
+      // retrying stream.start forever against the same cached native session.
+      if (retry) {
+        stream.lastConfigFrame = null
+        await this.disposeNativeSession(udid)
+        await this.openStream(udid, false, false)
+      }
     }
   }
 

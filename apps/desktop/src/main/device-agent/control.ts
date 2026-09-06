@@ -59,8 +59,10 @@ async function waitForPreview(
   } catch (cause) {
     const detail = cause instanceof Error ? cause.message : String(cause)
     throw new DeviceAgentError(
-      'NO_DEVICE',
-      `${device.name} is under control, but its live preview is not ready: ${detail}`,
+      signal?.aborted ? 'ABORTED' : 'PREVIEW_UNAVAILABLE',
+      `${device.name} remains under control, but its live preview is not ready: ${detail} `
+        + 'Control has been retained. You can try device_snapshot, or detach and reconnect '
+        + 'the device in the device panel without shutting it down.',
     )
   }
 }

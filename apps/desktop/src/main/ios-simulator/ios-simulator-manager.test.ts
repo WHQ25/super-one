@@ -13,6 +13,7 @@ import type {
   NativeFramePacket,
 } from './helper-client'
 import { IosSimulatorManager } from './ios-simulator-manager'
+import { IosSimulatorDevicePort } from './device-port'
 
 const status: IosSimulatorStatus = {
   supported: true,
@@ -815,6 +816,57 @@ describe('IosSimulatorManager stream lifetime', () => {
     expect(harness.nativeFactory).toHaveBeenCalledTimes(2)
     // The preview comes back with it instead of staying frozen on the last frame.
     await vi.waitFor(() => expect(harness.native.startFrames).toHaveBeenCalledTimes(2))
+  })
+
+  it.each(['dead helper', 'static screen'])('refreshes control frames with a panel still watching: %s', async (cause) => {
+    const harness = setup(device({ state: 'Booted', booted: true }))
+    const manager = bootedManager(harness)
+    await manager.bind('session-a', 'device-a')
+    const panel = vi.fn()
+    const stopPanel = manager.subscribe('device-a', panel)
+    await vi.waitFor(() => expect(harness.native.startFrames).toHaveBeenCalledTimes(1))
+    if (cause === 'dead helper') harness.crashHelper()
+    const ready = new IosSimulatorDevicePort(manager).waitForPreview('ios-sim:device-a')
+    await vi.waitFor(() => expect(harness.native.startFrames).toHaveBeenCalledTimes(2))
+    harness.emitFrame({ kind: 'h264', keyframe: true, timestampUs: 100, data: Buffer.from([1]) })
+    expect(panel).toHaveBeenCalled()
+    await ready
+    expect(harness.nativeFactory).toHaveBeenCalledTimes(cause === 'dead helper' ? 2 : 1)
+    expect(manager.devicesOf('session-a')).toEqual(['device-a'])
+    stopPanel()
+    await manager.dispose()
+  })
+
+  it('reattaches a live helper whose display disappears during stream startup', async () => {
+    const harness = setup(device({ state: 'Booted', booted: true }))
+    const manager = bootedManager(harness)
+    await manager.bind('session-a', 'device-a')
+    harness.native.startFrames.mockRejectedValueOnce(new Error('Framebuffer disappeared during attach.'))
+    const stop = manager.subscribePreview('device-a', () => undefined)
+    await vi.waitFor(() => expect(harness.native.startFrames).toHaveBeenCalledTimes(2))
+    expect(harness.nativeFactory).toHaveBeenCalledTimes(2)
+    expect(harness.native.attach).toHaveBeenCalledTimes(2)
+    expect(manager.devicesOf('session-a')).toEqual(['device-a'])
+    stop()
+    await manager.dispose()
+  })
+
+  it('stops rebuilding after a second startup failure and can retry later', async () => {
+    const harness = setup(device({ state: 'Booted', booted: true }))
+    const errors = vi.fn()
+    const manager = new IosSimulatorManager({ simctl: harness.simctl,
+      nativeFactory: harness.nativeFactory, attachAttempts: 1, onStreamError: errors })
+    await manager.bind('session-a', 'device-a')
+    harness.native.startFrames.mockRejectedValueOnce(new Error('display unavailable'))
+      .mockRejectedValueOnce(new Error('display still unavailable'))
+    const stop = manager.subscribePreview('device-a', () => undefined)
+    await vi.waitFor(() => expect(errors).toHaveBeenCalledTimes(2))
+    const stopRetry = manager.subscribePreview('device-a', () => undefined)
+    await vi.waitFor(() => expect(harness.native.startFrames).toHaveBeenCalledTimes(3))
+    expect(harness.nativeFactory).toHaveBeenCalledTimes(2)
+    stopRetry()
+    stop()
+    await manager.dispose()
   })
 
   it('replays the H.264 configuration to a listener that joins a running stream', async () => {

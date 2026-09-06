@@ -170,6 +170,7 @@ export type DeviceAgentErrorCode =
    */
   | 'DECLINED'
   | 'NO_DEVICE'
+  | 'PREVIEW_UNAVAILABLE'
   | 'STALE_STATE'
   | 'UNKNOWN_REF'
   | 'UNSUPPORTED'

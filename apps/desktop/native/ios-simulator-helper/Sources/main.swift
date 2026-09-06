@@ -238,7 +238,10 @@ private final class HelperSession {
     scale: Double
   ) throws -> [String: Any] {
     guard stream == nil else { throw RequestError.invalid("Frame stream is already running.") }
-    guard let display else { throw RequestError.unavailable("Attach before starting the stream.") }
+    guard let device else { throw RequestError.unavailable("Attach before starting the stream.") }
+    // A running guest can replace its display without killing this helper.
+    let display = try device.mainDisplayDescriptor()
+    self.display = display
     let stream = try FramebufferStream(
       descriptor: display,
       socketPath: socketPath,

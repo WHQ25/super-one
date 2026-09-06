@@ -73,7 +73,7 @@ class FakePort implements IosSimulatorCatalogSource {
     return chosen
   }
 
-  subscribe(_udid: string, listener: (frame: IosSimulatorFrame) => void): () => void {
+  subscribePreview(_udid: string, listener: (frame: IosSimulatorFrame) => void): () => void {
     this.previewListeners.add(listener)
     if (this.autoPreview) queueMicrotask(() => this.emitPreviewFrame())
     return () => { this.previewListeners.delete(listener) }
@@ -119,6 +119,19 @@ afterEach(() => {
 })
 
 describe('requestDeviceControl', () => {
+  it('reports preview failure without losing the grant and retries without asking again', async () => {
+    const port = new FakePort([device({ udid: 'cold', name: 'iPhone' })])
+    const host = autoAnswer((id) => resolveDeviceControlConfirm(id, 'accept'))
+    vi.spyOn(port.ports[0]!, 'waitForPreview').mockRejectedValueOnce(new Error('display unavailable'))
+    const options = { sessionId: 's1', ports: port.ports, emitHostEvent: host.emit,
+      request: { device: 'cold' } }
+    await expect(requestDeviceControl(options)).rejects.toMatchObject({ code: 'PREVIEW_UNAVAILABLE' })
+    expect((await port.listDevices())[0]?.boundSessionId).toBe('s1')
+    await expect(requestDeviceControl(options)).resolves.toMatchObject({ controlled: true, alreadyControlled: true })
+    expect(host.requests).toHaveLength(1)
+    expect(port.booted).toHaveLength(1)
+  })
+
   it('does not confirm control until the live preview has produced a frame', async () => {
     const port = new FakePort([device({ udid: 'cold', name: 'iPhone 16' })])
     port.autoPreview = false

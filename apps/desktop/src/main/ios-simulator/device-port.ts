@@ -22,7 +22,7 @@ export interface IosSimulatorCatalogSource {
     udid: string,
   ): Promise<{ phase: string; device?: IosSimulatorDevice | null }>
   power(udid: string): Promise<IosSimulatorDevice>
-  subscribe(udid: string, listener: (frame: IosSimulatorFrame) => void): () => void
+  subscribePreview(udid: string, listener: (frame: IosSimulatorFrame) => void): () => void
 }
 
 const KINDS: Array<{ kind: string; name: string; match: RegExp }> = [
@@ -127,7 +127,7 @@ export class IosSimulatorDevicePort implements DevicePlatformPort {
   waitForPreview(deviceId: string, signal?: AbortSignal): Promise<void> {
     const udid = parseDeviceId(deviceId)?.native ?? deviceId
     return waitForFirstDeviceFrame(
-      (listener) => this.source.subscribe(udid, listener as (frame: IosSimulatorFrame) => void),
+      (listener) => this.source.subscribePreview(udid, listener as (frame: IosSimulatorFrame) => void),
       signal,
     )
   }

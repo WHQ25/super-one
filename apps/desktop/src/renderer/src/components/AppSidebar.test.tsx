@@ -745,10 +745,10 @@ describe('AppSidebar interactions', () => {
     await screen.findByText('Long running session')
 
     expect(screen.queryByText('Recent session 5')).toBeNull()
-    expect(screen.getByText('Show more')).toBeInTheDocument()
+    expect(screen.getByText('Show More')).toBeInTheDocument()
   })
 
-  it('adds six sessions per Show more until pagination is exhausted and resets on collapse', async () => {
+  it('adds six sessions per Show More until pagination is exhausted and resets on collapse', async () => {
     chatState.activeProject = null
     sessionsByFolder = {
       '/project-a': Array.from({ length: 40 }, (_, index) => ({
@@ -774,14 +774,14 @@ describe('AppSidebar interactions', () => {
     expect(screen.queryByText('Paged session 6')).toBeNull()
 
     for (const lastVisibleIndex of [11, 17, 23, 29, 35, 39]) {
-      fireEvent.click(screen.getByText('Show more'))
+      fireEvent.click(screen.getByText('Show More'))
       await screen.findByText(`Paged session ${lastVisibleIndex}`)
     }
 
     await waitFor(() => {
-      expect(screen.queryByText('Show more')).toBeNull()
+      expect(screen.queryByText('Show More')).toBeNull()
     })
-    expect(screen.queryByText('Show less')).toBeNull()
+    expect(screen.queryByText('Show Less')).toBeNull()
     expect(mockEnvironment.listSessions).toHaveBeenCalledWith(
       'local',
       '/project-a',
@@ -849,7 +849,7 @@ describe('AppSidebar interactions', () => {
 
     expect(screen.queryByText('Normal fill session 0')).toBeNull()
 
-    fireEvent.click(screen.getByText('Show more'))
+    fireEvent.click(screen.getByText('Show More'))
     await Promise.all(normalSessions.map((session) => screen.findByText(session.title)))
   })
 

@@ -1,7 +1,8 @@
 import { Folder, FolderOpen } from 'lucide-react-native'
-import { FlatList, Text, View } from 'react-native'
+import { FlatList, View } from 'react-native'
+import { Text } from '../ui/text'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
-import { Badge, ListRow } from '../ui'
+import { ListRow } from '../ui'
 import type { ShellGitInfo } from './settings-screen'
 
 export type Project = { path: string; name: string; git?: ShellGitInfo }
@@ -14,6 +15,7 @@ export function ProjectsScreen(props: { projects: Project[]; onOpen: (project: P
       <View style={styles.emptyState}>
         <FolderOpen color={tokens.colors.border} size={48} />
         <Text style={styles.emptyTitle}>No projects yet</Text>
+        <Text style={styles.emptyBody}>Open a project in SuperOne desktop to find it here.</Text>
       </View>
     )
   }
@@ -25,13 +27,12 @@ export function ProjectsScreen(props: { projects: Project[]; onOpen: (project: P
         <ListRow
           title={item.name}
           subtitle={item.path}
-          leading={<Folder color={tokens.colors.primary} size={22} />}
+          leading={<Folder color={tokens.colors.mutedForeground} size={22} />}
           trailing={item.git ? (
             <View style={styles.projectIndicators}>
-              {item.git.branch ? <Badge label={item.git.branch} /> : null}
-              {item.git.ahead ? <Badge label={`↑${item.git.ahead}`} tone="success" /> : null}
-              {item.git.behind ? <Badge label={`↓${item.git.behind}`} tone="warning" /> : null}
-              {item.git.dirty?.files ? <Badge label={`${item.git.dirty.files} changed`} tone="warning" /> : null}
+              <Text numberOfLines={1} style={styles.rowMeta}>{item.git.branch}</Text>
+              {item.git.dirty?.files ? <Text style={{ color: tokens.colors.warning, fontSize: 12 }}>{item.git.dirty.files} changed</Text> : null}
+              {item.git.ahead || item.git.behind ? <Text style={styles.rowMeta}>↑{item.git.ahead ?? 0} ↓{item.git.behind ?? 0}</Text> : null}
             </View>
           ) : undefined}
           onPress={() => props.onOpen(item)}

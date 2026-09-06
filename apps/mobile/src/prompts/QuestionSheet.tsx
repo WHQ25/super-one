@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { ScrollView, Text, View } from 'react-native'
+import { ScrollView, View } from 'react-native'
+import { Text } from '../ui/text'
 import { MessageCircle } from 'lucide-react-native'
 import { WebView } from 'react-native-webview'
 import type { AskUserQuestionRequest, QuestionAnnotations } from '@superone/shared/agent-types'
@@ -31,7 +32,7 @@ export function QuestionSheet(props: {
   const noteKey = option && q ? questionNoteKey(q, option.label) : ''
   const answered = question.questions.filter((item) => answers[questionKey(item)]?.trim()).length
   return <PromptSheet title={question.questions.length === 1 ? 'Question' : 'Questions'} subtitle={question.questions.length > 1 ? `${answered} of ${question.questions.length} answered` : undefined} icon={MessageCircle} onDismiss={() => props.onDismiss(question.requestId)} footer={<PromptActions
-    approveLabel="Submit" rejectLabel="Dismiss" primary neutralReject
+    approveLabel="Submit" rejectLabel="Dismiss"
     disabled={!questionAnswersAreComplete(question.questions, answers)}
     onApprove={() => props.onSubmit(question.requestId, answers, buildQuestionAnnotations(question.questions, answers, notes))}
     onReject={() => props.onDismiss(question.requestId)}

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Text, View } from 'react-native'
+import { View } from 'react-native'
+import { Text } from '../ui/text'
 import { FilePenLine } from 'lucide-react-native'
 import type { PlanApprovalRequest } from '@superone/shared/agent-types'
 import { PromptSheet } from './PromptSheet'
@@ -25,7 +26,6 @@ export function PlanSheet(props: {
     approveLabel={continueAfter && props.continueMode ? `Approve & ${modeLabel}` : 'Approve'}
     rejectLabel={feedback.trim() ? 'Reject with feedback' : 'Reject'}
     feedback={{ value: feedback, onChange: setFeedback }}
-    primary={continueAfter}
     onApprove={() => continueAfter && props.continueMode ? props.onApproveAndContinue(plan.requestId, props.continueMode) : props.onApprove(plan.requestId)}
     onReject={reject}
   >{props.continueMode ? <PromptChoice multi label={`Switch to ${modeLabel} after approval`} selected={continueAfter} onPress={() => setContinueAfter(!continueAfter)} /> : null}</PromptActions>}>

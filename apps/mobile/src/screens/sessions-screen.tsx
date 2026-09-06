@@ -1,21 +1,10 @@
-import { MessageSquare } from 'lucide-react-native'
-import { FlatList, Text, View } from 'react-native'
+import { MessageSquare, Plus } from 'lucide-react-native'
+import { FlatList, View } from 'react-native'
+import { Text } from '../ui/text'
 import type { TabletSessionRow } from '../navigation/tablet-session-sidebar'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
-import { harnessDisplayName } from '../provider-state'
-import { Badge, Button, HarnessIcon, SwipeSessionRow } from '../ui'
-
-function relativeTime(value?: string): string {
-  if (!value) return ''
-  const time = Date.parse(value)
-  if (!Number.isFinite(time)) return ''
-  const minutes = Math.max(0, Math.floor((Date.now() - time) / 60_000))
-  if (minutes < 1) return 'Just now'
-  if (minutes < 60) return `${minutes}m`
-  if (minutes < 1_440) return `${Math.floor(minutes / 60)}h`
-  if (minutes < 10_080) return `${Math.floor(minutes / 1_440)}d`
-  return new Date(time).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' })
-}
+import { Button, SwipeSessionRow } from '../ui'
+import { SessionRowContent } from '../ui/session-row-content'
 
 export function SessionsScreen(props: {
   sessions: TabletSessionRow[]
@@ -28,7 +17,7 @@ export function SessionsScreen(props: {
   const { tokens } = useMobileTheme()
   return (
     <View style={styles.flex}>
-      <Button label="New session" onPress={props.onCreateSession} />
+      <View style={{ paddingBottom: 12 }}><Button label="New session" icon={Plus} variant="secondary" onPress={props.onCreateSession} /></View>
       {!props.sessions.length ? (
         <View style={styles.emptyState}>
           <MessageSquare color={tokens.colors.border} size={48} />
@@ -45,34 +34,10 @@ export function SessionsScreen(props: {
             onArchive={() => props.onArchiveSession(item)}
             onDelete={() => props.onDeleteSession(item)}
           >
-            <View style={[styles.sessionCard, isRecent(item.lastActiveAt) ? styles.sessionRecent : null]}>
-              <View style={styles.sessionTitleRow}>
-                <HarnessIcon
-                  provider={item.provider ?? 'claude'}
-                  acpAgentId={item.acpAgentId}
-                  status={item.status}
-                />
-                <Text numberOfLines={2} style={[styles.rowTitle, styles.flex]}>{item.title || 'Untitled'}</Text>
-              </View>
-              <View style={styles.sessionMeta}>
-                <Badge label={harnessDisplayName(item.provider ?? 'claude')} />
-                {item.selectedModel ? <Badge label={item.selectedModel} /> : null}
-                {item.status === 'streaming' ? <Badge label="Streaming" tone="success" /> : null}
-                {typeof item.messageCount === 'number' ? <Badge label={`${item.messageCount} messages`} /> : null}
-                {item.lastActiveAt ? <Badge label={relativeTime(item.lastActiveAt)} tone={isRecent(item.lastActiveAt) ? 'success' : 'neutral'} /> : null}
-                {item.gitBranch ? <Badge label={item.gitBranch} /> : null}
-                {item.tags?.map((tag) => <Badge key={tag} label={tag} />)}
-              </View>
-            </View>
+            <SessionRowContent session={item} />
           </SwipeSessionRow>
         )}
       />
     </View>
   )
-}
-
-function isRecent(value?: string): boolean {
-  if (!value) return false
-  const time = Date.parse(value)
-  return Number.isFinite(time) && Date.now() - time < 2 * 60 * 60 * 1_000
 }

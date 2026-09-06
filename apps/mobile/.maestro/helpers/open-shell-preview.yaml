@@ -1,0 +1,24 @@
+appId: ${APP_ID}
+---
+- runFlow:
+    when:
+      visible: "Close preview"
+    commands:
+      - tapOn: "Close preview"
+- runFlow:
+    when:
+      visible:
+        id: prompt-reject
+    commands:
+      - tapOn:
+          id: prompt-reject
+- extendedWaitUntil:
+    visible:
+      id: native-preview-ready
+    timeout: 60000
+- tapOn: ${THEME}
+- tapOn: "Preview app screens"
+- extendedWaitUntil:
+    visible:
+      id: phone-composer
+    timeout: 15000

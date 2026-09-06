@@ -1,5 +1,19 @@
 appId: ${APP_ID}
 ---
+- runFlow:
+    when:
+      visible: "Close preview"
+    commands:
+      - tapOn: "Close preview"
+- runFlow:
+    when:
+      notVisible:
+        id: prompt-title
+    commands:
+      - extendedWaitUntil:
+          visible:
+            id: native-preview-ready
+          timeout: 60000
 - openLink:
     autoVerify: true
     link: ${"superone://native-preview?scenario=" + SCENARIO + "&theme=" + THEME + "&harness=claude"}

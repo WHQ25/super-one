@@ -1,14 +1,9 @@
 import { useMemo, type ReactNode } from 'react'
-import { ChevronRight, type LucideIcon } from 'lucide-react-native'
-import {
-  Modal,
-  Pressable,
-  StyleSheet,
-  Text,
-  useWindowDimensions,
-  View,
-} from 'react-native'
+import { ChevronRight, SlidersHorizontal, type LucideIcon } from 'lucide-react-native'
+import { Pressable, StyleSheet, View } from 'react-native'
+import { Text } from './text'
 import { useMobileTheme } from '../theme/context'
+import { PromptSheet } from '../prompts/PromptSheet'
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
 
@@ -90,25 +85,10 @@ export function Sheet(props: {
   children: ReactNode
   onDismiss?: () => void
 }) {
-  const styles = usePrimitiveStyles()
-  const { width } = useWindowDimensions()
-  const tablet = width >= 768
-  return (
-    <Modal
-      animationType="fade"
-      onRequestClose={props.onDismiss}
-      presentationStyle="overFullScreen"
-      transparent
-      visible={props.visible}
-    >
-      <View style={[styles.scrim, tablet && styles.tabletScrim]}>
-        <View accessibilityViewIsModal style={[styles.sheet, tablet && styles.tabletSheet]}>
-          <SectionHeader title={props.title} />
-          {props.children}
-        </View>
-      </View>
-    </Modal>
-  )
+  if (!props.visible) return null
+  return <PromptSheet title={props.title} icon={SlidersHorizontal} onDismiss={props.onDismiss ?? (() => {})}>
+    {props.children}
+  </PromptSheet>
 }
 
 export function Chip(props: {
@@ -136,7 +116,7 @@ export function Badge(props: { label: string; tone?: 'neutral' | 'success' | 'wa
   const tone = props.tone ?? 'neutral'
   const color = tone === 'neutral' ? tokens.colors.mutedForeground : tokens.colors[tone]
   return (
-    <View style={[styles.badge, { borderColor: color }]}>
+    <View style={styles.badge}>
       <Text style={[styles.badgeLabel, { color }]}>{props.label}</Text>
     </View>
   )
@@ -148,7 +128,7 @@ function usePrimitiveStyles() {
     const { colors, radius, spacing, type } = tokens
     return StyleSheet.create({
       button: {
-        minHeight: 42,
+        minHeight: 44,
         borderRadius: radius.md,
         paddingHorizontal: 14,
         paddingVertical: 10,
@@ -161,7 +141,7 @@ function usePrimitiveStyles() {
       secondaryButton: { backgroundColor: colors.secondary },
       ghostButton: { backgroundColor: 'transparent' },
       dangerButton: { borderWidth: 1, borderColor: colors.error },
-      buttonLabel: { fontSize: type.body, fontWeight: '600' as const },
+      buttonLabel: { fontSize: type.body, fontWeight: '500' as const },
       pressed: { opacity: 0.7 },
       disabled: { opacity: 0.45 },
       listRow: {
@@ -179,25 +159,7 @@ function usePrimitiveStyles() {
       listSubtitle: { color: colors.mutedForeground, fontSize: type.meta, marginTop: spacing.xs },
       selected: { backgroundColor: colors.muted, borderRadius: radius.md },
       sectionHeader: { flexDirection: 'row', alignItems: 'center', minHeight: 32 },
-      sectionTitle: { color: colors.foreground, flex: 1, fontSize: type.title, fontWeight: '600' as const },
-      scrim: { flex: 1, backgroundColor: colors.scrim, justifyContent: 'flex-end' },
-      tabletScrim: { justifyContent: 'flex-start', alignItems: 'flex-end', paddingTop: 72, paddingRight: spacing.lg },
-      sheet: {
-        backgroundColor: colors.elevated,
-        borderTopLeftRadius: radius.lg,
-        borderTopRightRadius: radius.lg,
-        padding: spacing.lg,
-        paddingBottom: spacing.xl,
-        gap: spacing.md,
-        maxHeight: '88%',
-      },
-      tabletSheet: {
-        width: 520,
-        maxWidth: '60%',
-        borderRadius: radius.lg,
-        borderWidth: StyleSheet.hairlineWidth,
-        borderColor: colors.border,
-      },
+      sectionTitle: { color: colors.foreground, flex: 1, fontSize: type.title, fontWeight: '500' as const },
       chip: {
         borderWidth: 1,
         borderColor: colors.border,
@@ -207,8 +169,8 @@ function usePrimitiveStyles() {
       },
       selectedChip: { borderColor: colors.primary, backgroundColor: colors.muted },
       chipLabel: { color: colors.foreground, fontSize: type.meta },
-      badge: { borderWidth: 1, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 2 },
-      badgeLabel: { fontSize: type.meta, fontWeight: '600' as const },
+      badge: { backgroundColor: colors.muted, borderRadius: radius.sm, paddingHorizontal: 6, paddingVertical: 3 },
+      badgeLabel: { fontSize: type.meta, fontWeight: '500' as const },
     })
   }, [tokens])
 }

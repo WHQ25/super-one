@@ -34,3 +34,18 @@ export function directoryEntryAction(parent: string, entry: RemoteDirectoryEntry
     path: joinRemotePath(parent, entry.name),
   }
 }
+
+export function remoteBreadcrumbs(path: string): { path: string; label: string }[] {
+  const result: { path: string; label: string }[] = []
+  let current = path.replace(/\\/g, '/')
+  const seen = new Set<string>()
+  while (current && !seen.has(current)) {
+    seen.add(current)
+    const parent = parentRemotePath(current)
+    const root = current === parent
+    result.unshift({ path: current, label: root ? current : current.replace(/\/+$/, '').split('/').pop() || '/' })
+    if (root) break
+    current = parent
+  }
+  return result
+}

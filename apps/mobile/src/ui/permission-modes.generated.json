@@ -1,0 +1,239 @@
+{
+  "claude": [
+    {
+      "id": "default",
+      "label": "Normal",
+      "description": "Prompts for dangerous operations",
+      "icon": "Shield",
+      "triggerIcon": "Shield",
+      "light": "$mutedForeground",
+      "dark": "$mutedForeground"
+    },
+    {
+      "id": "plan",
+      "label": "Plan Mode",
+      "description": "Planning only, no actual execution",
+      "icon": "PenLine",
+      "triggerIcon": "PenLine",
+      "light": "#155dfc",
+      "dark": "#51a2ff"
+    },
+    {
+      "id": "auto",
+      "label": "Auto",
+      "description": "Model classifier decides each permission",
+      "icon": "Zap",
+      "triggerIcon": "Zap",
+      "light": "#fe9a00",
+      "dark": "#ffb900"
+    },
+    {
+      "id": "acceptEdits",
+      "label": "Accept Edits",
+      "description": "Auto-accept file edit operations",
+      "icon": "FastForward",
+      "triggerIcon": "FastForward",
+      "light": "#9810fa",
+      "dark": "#c27aff"
+    },
+    {
+      "id": "dontAsk",
+      "label": "Don't Ask",
+      "description": "Deny anything not pre-approved",
+      "icon": "Lock",
+      "triggerIcon": "Lock",
+      "light": "#ff6900",
+      "dark": "#ff8904"
+    },
+    {
+      "id": "bypassPermissions",
+      "label": "Bypass",
+      "description": "Bypass all permission checks",
+      "icon": "ShieldOff",
+      "triggerIcon": "ShieldOff",
+      "light": "$destructive",
+      "dark": "$destructive"
+    }
+  ],
+  "opencode": [
+    {
+      "id": "default",
+      "label": "Normal",
+      "description": "Prompts for dangerous operations",
+      "icon": "Shield",
+      "triggerIcon": "Shield",
+      "light": "$mutedForeground",
+      "dark": "$mutedForeground"
+    },
+    {
+      "id": "plan",
+      "label": "Plan Mode",
+      "description": "Planning only, no actual execution",
+      "icon": "PenLine",
+      "triggerIcon": "PenLine",
+      "light": "#155dfc",
+      "dark": "#51a2ff"
+    },
+    {
+      "id": "acceptEdits",
+      "label": "Accept Edits",
+      "description": "Auto-accept file edit operations",
+      "icon": "FastForward",
+      "triggerIcon": "FastForward",
+      "light": "#9810fa",
+      "dark": "#c27aff"
+    },
+    {
+      "id": "dontAsk",
+      "label": "Don't Ask",
+      "description": "Deny anything not pre-approved",
+      "icon": "Lock",
+      "triggerIcon": "Lock",
+      "light": "#ff6900",
+      "dark": "#ff8904"
+    },
+    {
+      "id": "bypassPermissions",
+      "label": "Bypass",
+      "description": "Bypass all permission checks",
+      "icon": "ShieldOff",
+      "triggerIcon": "ShieldOff",
+      "light": "$destructive",
+      "dark": "$destructive"
+    }
+  ],
+  "acp": [
+    {
+      "id": "default",
+      "label": "Ask",
+      "description": "Prompts for edits and shell commands",
+      "icon": "MessageCircle",
+      "triggerIcon": "MessageCircle",
+      "light": "$mutedForeground",
+      "dark": "$mutedForeground"
+    },
+    {
+      "id": "plan",
+      "label": "Plan",
+      "description": "Research and draft a plan; edits limited until you approve",
+      "icon": "ListTodo",
+      "triggerIcon": "ListTodo",
+      "light": "#2b7fff",
+      "dark": "#51a2ff"
+    },
+    {
+      "id": "auto",
+      "label": "Auto",
+      "description": "Classifier allows routine work, escalates the rest",
+      "icon": "Zap",
+      "triggerIcon": "Zap",
+      "light": "#fe9a00",
+      "dark": "#ffb900"
+    },
+    {
+      "id": "bypassPermissions",
+      "label": "Always Approve",
+      "description": "Skip ordinary prompts; deny rules still apply",
+      "icon": "LockOpen",
+      "triggerIcon": "LockOpen",
+      "light": "$destructive",
+      "dark": "$destructive"
+    }
+  ],
+  "cursor": [
+    {
+      "id": "agent",
+      "label": "Agent",
+      "description": "Auto-review allows or blocks tool calls (no interactive prompts)",
+      "icon": "FastForward",
+      "triggerIcon": "FastForward",
+      "light": "#fe9a00",
+      "dark": "#ffb900"
+    },
+    {
+      "id": "plan",
+      "label": "Plan",
+      "description": "Planning only, no execution",
+      "icon": "PenLine",
+      "triggerIcon": "PenLine",
+      "light": "#155dfc",
+      "dark": "#51a2ff"
+    },
+    {
+      "id": "bypassPermissions",
+      "label": "Full Access",
+      "description": "Run tools without auto-review",
+      "icon": "ShieldOff",
+      "triggerIcon": "ShieldOff",
+      "light": "$destructive",
+      "dark": "$destructive"
+    }
+  ],
+  "codex": [
+    {
+      "id": "read-only",
+      "label": "Read-Only",
+      "description": "Codex can only read files; no edits or commands",
+      "icon": "Eye",
+      "triggerIcon": "Eye",
+      "light": "$mutedForeground",
+      "dark": "$mutedForeground"
+    },
+    {
+      "id": "default",
+      "label": "Default",
+      "description": "Codex automatically runs commands in a sandbox",
+      "icon": "ShieldCheck",
+      "triggerIcon": "ShieldCheck",
+      "light": "$mutedForeground",
+      "dark": "$mutedForeground"
+    },
+    {
+      "id": "auto-review",
+      "label": "Approve for Me",
+      "description": "Codex reviews actions that need elevated permissions",
+      "icon": "Bot",
+      "triggerIcon": "Bot",
+      "light": "$primary",
+      "dark": "$primary"
+    },
+    {
+      "id": "full-access",
+      "label": "Full Access",
+      "description": "Codex has full access over your computer (elevated risk)",
+      "icon": "TriangleAlert",
+      "triggerIcon": "ShieldOff",
+      "light": "$destructive",
+      "dark": "$destructive"
+    }
+  ],
+  "dsh": [
+    {
+      "id": "plan",
+      "label": "Read-only",
+      "description": "No writes anywhere. Reading and searching stay free.",
+      "icon": "Eye",
+      "triggerIcon": "Eye",
+      "light": "#155dfc",
+      "dark": "#51a2ff"
+    },
+    {
+      "id": "default",
+      "label": "Workspace write",
+      "description": "Writes only inside this project and the temp folders, and asks first.",
+      "icon": "ShieldCheck",
+      "triggerIcon": "ShieldCheck",
+      "light": "$mutedForeground",
+      "dark": "$mutedForeground"
+    },
+    {
+      "id": "bypassPermissions",
+      "label": "Full access",
+      "description": "No sandbox and no questions. Anything the shell reaches is writable.",
+      "icon": "ShieldOff",
+      "triggerIcon": "ShieldOff",
+      "light": "$destructive",
+      "dark": "$destructive"
+    }
+  ]
+}

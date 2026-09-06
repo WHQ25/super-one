@@ -1,5 +1,4 @@
 import type { RefObject } from 'react'
-import { View } from 'react-native'
 import type {
   AskUserQuestionRequest,
   PermissionRequest,
@@ -8,10 +7,8 @@ import type {
 import type { ChatRuntime } from '../runtime'
 import { PermissionSheet, PlanSheet, QuestionSheet } from '../sheets'
 import { SharedFileSheet, type useSharedFileInbox } from '../shared-file-inbox'
-import { useMobileStyles } from '../theme/context'
-import { ListRow, Sheet } from '../ui'
 import { runUiAction } from '../ui-action'
-import type { TabletSessionRow } from './tablet-session-sidebar'
+import { WorkspaceDrawer, type WorkspaceDrawerProps } from './workspace-drawer'
 
 export function MobileOverlays(props: {
   runtimeRef: RefObject<ChatRuntime | null>
@@ -21,14 +18,9 @@ export function MobileOverlays(props: {
   question: AskUserQuestionRequest | null
   planContinueMode?: string
   onPlanContinueMode: (mode: string) => void
-  sessionSwitcherOpen: boolean
-  onDismissSessionSwitcher: () => void
-  sessions: TabletSessionRow[]
-  activeSessionId: string | null
-  onOpenSession: (session: TabletSessionRow) => void | Promise<void>
+  workspace: WorkspaceDrawerProps
   sharedFileInbox: ReturnType<typeof useSharedFileInbox>
 }) {
-  const styles = useMobileStyles()
   const runtime = () => props.runtimeRef.current
   return (
     <>
@@ -82,26 +74,7 @@ export function MobileOverlays(props: {
           'question response failed',
         )}
       />
-      <Sheet
-        visible={props.sessionSwitcherOpen}
-        title="Switch session"
-        onDismiss={props.onDismissSessionSwitcher}
-      >
-        <View style={styles.sessionSwitcherList}>
-          {props.sessions.map((session) => (
-            <ListRow
-              key={session.sessionId}
-              title={session.title || 'Untitled'}
-              subtitle={session.provider}
-              selected={session.sessionId === props.activeSessionId}
-              onPress={() => {
-                props.onDismissSessionSwitcher()
-                void props.onOpenSession(session)
-              }}
-            />
-          ))}
-        </View>
-      </Sheet>
+      <WorkspaceDrawer {...props.workspace} />
       <SharedFileSheet inbox={props.sharedFileInbox} />
     </>
   )

@@ -1,10 +1,11 @@
 import { CameraView, type BarcodeScanningResult } from 'expo-camera'
 import { useEffect, useState } from 'react'
-import { Laptop, Link2Off, MoreHorizontal, QrCode } from 'lucide-react-native'
-import { FlatList, Pressable, Text, TextInput, View } from 'react-native'
+import { Laptop, Link2Off, MoreHorizontal, QrCode, ChevronDown } from 'lucide-react-native'
+import { FlatList, Pressable, TextInput, View } from 'react-native'
+import { Text } from '../ui/text'
 import type { SavedPairing } from '@superone/relay-client'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
-import { Badge, Button, ListRow, SectionHeader, Sheet } from '../ui'
+import { Badge, Button, IconButton, ListRow, SectionHeader, Sheet } from '../ui'
 
 export function PairingsScreen(props: {
   scannerOpen: boolean
@@ -27,6 +28,7 @@ export function PairingsScreen(props: {
   const styles = useMobileStyles()
   const { tokens } = useMobileTheme()
   const [editing, setEditing] = useState<SavedPairing | null>(null)
+  const [developerOpen, setDeveloperOpen] = useState(false)
   const [name, setName] = useState('')
   useEffect(() => setName(editing?.name ?? editing?.hostName ?? ''), [editing])
   if (props.scannerOpen) {
@@ -39,7 +41,7 @@ export function PairingsScreen(props: {
           onBarcodeScanned={props.onBarcodeScanned}
         />
         <Pressable style={styles.scannerCancel} onPress={props.onCancelScanner}>
-          <Text style={styles.btnText}>Cancel scan</Text>
+          <Text style={styles.secondaryBtnText}>Cancel scan</Text>
         </Pressable>
       </View>
     )
@@ -74,9 +76,7 @@ export function PairingsScreen(props: {
                     label={props.activePairingId === item.id && props.connected ? 'Online' : 'Offline'}
                     tone={props.activePairingId === item.id && props.connected ? 'success' : 'neutral'}
                   />
-                  <Pressable accessibilityLabel={`Manage ${item.name || item.hostName || 'device'}`} onPress={() => setEditing(item)}>
-                    <MoreHorizontal color={tokens.colors.mutedForeground} size={21} />
-                  </Pressable>
+                  <IconButton icon={MoreHorizontal} label={`Manage ${item.name || item.hostName || 'device'}`} onPress={() => setEditing(item)} />
                 </View>
               )}
               onPress={() => props.onConnect(item)}
@@ -93,7 +93,10 @@ export function PairingsScreen(props: {
       <Button label="Pair New Device" icon={QrCode} onPress={props.onOpenScanner} />
       {__DEV__ ? (
         <View style={styles.devPairing}>
-          <Text style={styles.rowMeta}>Developer pairing</Text>
+          <Pressable accessibilityRole="button" accessibilityState={{ expanded: developerOpen }} onPress={() => setDeveloperOpen(!developerOpen)} style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text style={styles.rowMeta}>Developer pairing</Text><ChevronDown size={16} color={tokens.colors.mutedForeground} />
+          </Pressable>
+          {developerOpen ? <>
           <TextInput
             style={[styles.input, styles.multi]}
             placeholder={'superone://pair?…  or  {"relayUrl","secret"}'}
@@ -115,6 +118,7 @@ export function PairingsScreen(props: {
             onChangeText={props.onLanChange}
           />
           <Button label="Pair from link" onPress={props.onPair} variant="secondary" />
+          </> : null}
         </View>
       ) : null}
       <Sheet visible={!!editing} title="Device" onDismiss={() => setEditing(null)}>

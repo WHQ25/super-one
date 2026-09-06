@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { StatusBar } from 'expo-status-bar'
 import * as Clipboard from 'expo-clipboard'
 import { useCameraPermissions, type BarcodeScanningResult } from 'expo-camera'
-import { Linking, Pressable, Text, useWindowDimensions, View } from 'react-native'
+import { Linking, Pressable, useWindowDimensions, View } from 'react-native'
+import { Text } from '../ui/text'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { WebView } from 'react-native-webview'
 import type { HostOutbound } from '@superone/chat-view'
@@ -19,18 +20,18 @@ import { TerminalRuntime } from '../terminal-runtime'
 import { randomId } from '../ids'
 import { isPairingQrInput, normalizePairingInput } from '../pairing-input'
 import { usePairingDeepLink } from '../pairing-deep-link'
-import { mergeMentionItems, shouldSubmitFromKeyboard } from '../composer-state'
-import { CHAT_VIEW_STATE_KEY, parseStoredChatViewStates, type ChatViewState } from '../chat-view-state'
-import { filterSlashCommands } from '../slash'
-import { extractMentionQuery, insertMention, type MentionItem } from '../mentions'
+import { shouldSubmitFromKeyboard } from '../composer-state'
+import { CHAT_VIEW_STATE_KEY, parseStoredChatViewStates, restoredChatWindow, type ChatViewState } from '../chat-view-state'
+import { useComposerDraft } from './use-composer-draft'
+import { useComposerSuggestions } from './use-composer-suggestions'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { mobileWebViewTheme } from '../theme/tokens'
 import { harnessSupportsAdditionalDirs } from '../provider-state'
-import { parentRemotePath, resolveRemoteFilePath, type RemoteDirectoryEntry } from '../shell-state'
+import { parentRemotePath, resolveRemoteFilePath } from '../shell-state'
 import { loadOrCreateMobileId, mobileKv } from '../storage'
 import { registerFatalChatViewError } from '../chat-view-recovery'
 import { pickAndUploadProjectFile, pickChatImages, pickChatPdf, showAttachmentMenu } from '../attachments'
-import { SettingsScreen, type ShellGitInfo } from '../screens/settings-screen'
+import { SettingsScreen, type ProjectSettingsProps, type ShellGitInfo } from '../screens/settings-screen'
 import {
   buildWorktreeCreateOptions,
   LOCAL_WORKTREE_SELECTION,
@@ -44,12 +45,15 @@ import { useSharedFileInbox } from '../shared-file-inbox'
 import type { ReconnectController } from '../reconnect-controller'
 import { createMobileRelayConnection } from '../mobile-relay-connection'
 import { SessionTransition } from '../session-transition'
+import { readProjectSessions } from './workspace-data'
+import { useRemoteDirectory } from './use-remote-directory'
+import { leaveMobileSession, sessionRemovalStatus } from '../session-exit'
 import { ProjectsScreen, type Project } from '../screens/projects-screen'
 import { runUiAction } from '../ui-action'
 import { FilesScreen } from '../screens/files-screen'
 import { ChatScreen } from '../screens/chat-screen'
 import { PairingsScreen } from '../screens/pairings-screen'
-import { TerminalScreen } from '../screens/terminal-screen'
+import { ConnectedTerminal } from './connected-terminal'
 import { SessionsScreen } from '../screens/sessions-screen'
 import { MobileNavigator, type MobileRoute as Screen } from './mobile-navigator'
 import { MobileHeader, mobileHeaderTitle } from './mobile-header'
@@ -59,18 +63,21 @@ import { useHarnessSelection } from './use-harness-selection'
 import { fetchShellDetails } from './shell-details'
 import { useReconnectOnForeground } from '../use-reconnect-on-foreground'
 import { logRelayEventTypes } from '../relay-debug'
+import { Sheet } from '../ui'
+import { dynamicMentionArtworkRevision, dynamicMentionArtworkSnapshot } from '../ui/mention-dynamic-artwork'
 const kv = mobileKv
 export function MobileApp() {
   const styles = useMobileStyles()
   const { tokens, setHarness } = useMobileTheme()
   const webViewTheme = useMemo(() => mobileWebViewTheme(tokens), [tokens])
-  const { width } = useWindowDimensions()
+  const { width, fontScale } = useWindowDimensions()
   const [screen, setScreen] = useState<Screen>('pair')
   const [paste, setPaste] = useState('')
   const [lan, setLan] = useState('')
   const [status, setStatus] = useState('')
   const [code, setCode] = useState<string | null>(null)
   const [deviceId, setDeviceId] = useState('')
+  const [worktreeOpen, setWorktreeOpen] = useState(false)
   const [scannerOpen, setScannerOpen] = useState(false)
   const [cameraPermission, requestCameraPermission] = useCameraPermissions()
   const [pairings, setPairings] = useState<SavedPairing[]>([])
@@ -102,16 +109,14 @@ export function MobileApp() {
   const [worktreeSelection, setWorktreeSelection] = useState<NewSessionWorktreeSelection>(LOCAL_WORKTREE_SELECTION)
   const [workspaceDirs, setWorkspaceDirs] = useState<string[]>([])
   const [additionalDir, setAdditionalDir] = useState('')
-  const [directoryPath, setDirectoryPath] = useState('')
-  const [directoryItems, setDirectoryItems] = useState<RemoteDirectoryEntry[]>([])
-  const [draft, setDraft] = useState('')
+  const composerDraft = useComposerDraft()
+  const { draft, draftRef, lastDraftChangeAtRef } = composerDraft
   const [termDraft, setTermDraft] = useState('')
   const [terminalUi, setTerminalUi] = useState({ writable: false, title: 'Terminal' })
   const [streaming, setStreaming] = useState(false)
+  const [starting, setStarting] = useState(false)
   const [connectionState, setConnectionState] = useState<'connected' | 'reconnecting' | 'offline'>('offline')
   const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false)
-  const [slashHits, setSlashHits] = useState<ReturnType<typeof filterSlashCommands>>([])
-  const [mentionHits, setMentionHits] = useState<MentionItem[]>([])
   const [attachments, setAttachments] = useState<ImageAttachment[]>([])
   const [queuedMessages, setQueuedMessages] = useState<ChatMessage[]>([])
   const [todos, setTodos] = useState<Record<string, TodoItem>>({})
@@ -122,6 +127,8 @@ export function MobileApp() {
   const webRef = useRef<WebView>(null)
   const termRef = useRef<WebView>(null)
   const clientRef = useRef<RelayClient | null>(null)
+  const directory = useRemoteDirectory(clientRef)
+  const { load: loadDirectory, path: directoryPath, items: directoryItems } = directory
   const runtimeRef = useRef<ChatRuntime | null>(null)
   const termRuntimeRef = useRef<TerminalRuntime | null>(null)
   const reconnectControllerRef = useRef<ReconnectController | null>(null)
@@ -130,9 +137,9 @@ export function MobileApp() {
   const chatViewStatesRef = useRef<Record<string, ChatViewState>>({})
   const viewStateWriteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fatalReloadRef = useRef({ startedAt: 0, count: 0 })
-  const draftRef = useRef('')
-  const lastDraftChangeAtRef = useRef(0)
-  const mentionRequestRef = useRef(0)
+  const mentionArtworkRevisionRef = useRef(-1)
+  const suggestions = useComposerSuggestions(runtimeRef, `${activePairingId}:${project?.path}:${sessionId}:${selectedProvider}`, { client: clientRef, projectPath: project?.path })
+  const { slashHits, mentionHits } = suggestions
   const systemInfoRequestRef = useRef(0)
   const auxiliaryReturnRef = useRef<'sessions' | 'chat'>('sessions')
   const suppressReconnectRef = useRef(false)
@@ -151,13 +158,19 @@ export function MobileApp() {
     })
     return () => {
       if (viewStateWriteTimerRef.current != null) clearTimeout(viewStateWriteTimerRef.current)
+      suppressReconnectRef.current = true
       reconnectControllerRef.current?.cancel()
+      clientRef.current?.disconnect()
+      runtimeRef.current?.dispose()
     }
   }, [])
   useEffect(() => {
     inject(webRef, webViewTheme)
     inject(termRef, webViewTheme)
   }, [webViewTheme])
+  useEffect(() => {
+    inject(webRef, { type: 'setViewport', fontScale, locale: 'en' })
+  }, [fontScale])
   const syncSheets = (runtime: ChatRuntime, hydrate = false) => {
     if (connectionRef.current.epoch !== runtime.epoch) {
       connectionRef.current = { state: 'connected', epoch: runtime.epoch }
@@ -165,14 +178,19 @@ export function MobileApp() {
       inject(webRef, { type: 'setConnection', ...connectionRef.current })
     }
     const pending = runtime.session.pendingPermissions[0]
+    const mentionArtworkRevision = dynamicMentionArtworkRevision()
+    const includeMentionArtwork = hydrate || mentionArtworkRevision !== mentionArtworkRevisionRef.current
+    const mentionArtwork = includeMentionArtwork ? dynamicMentionArtworkSnapshot() : undefined
     inject(webRef, {
       type: hydrate ? 'hydrate' : 'applyReductionPatch',
       messages: runtime.session.messages,
       todos: runtime.session.todos,
+      ...(mentionArtwork ? { mentionArtwork } : {}),
       pendingPermission: pending
         ? { requestId: pending.requestId, toolName: pending.toolName, toolUseId: pending.toolUseId }
         : null,
     })
+    if (includeMentionArtwork) mentionArtworkRevisionRef.current = mentionArtworkRevision
     setStreaming(runtime.streaming)
     setQueuedMessages(runtime.session.queuedMessages)
     setTodos(runtime.session.todos)
@@ -244,11 +262,11 @@ export function MobileApp() {
     }
     if (message.type === 'ready' && runtimeRef.current) {
       inject(webRef, webViewTheme)
-      inject(webRef, { type: 'setViewport', fontScale: 1, locale: 'en' })
+      inject(webRef, { type: 'setViewport', fontScale, locale: 'en' })
       inject(webRef, { type: 'setConnection', ...connectionRef.current })
       syncSheets(runtimeRef.current, true)
-      const saved = chatViewStatesRef.current[runtimeRef.current.sessionId]
-      if (saved) inject(webRef, { type: 'setWindow', range: saved.range, anchorId: saved.anchorId })
+      const saved = restoredChatWindow(chatViewStatesRef.current[runtimeRef.current.sessionId])
+      if (saved) inject(webRef, saved)
       return
     }
     if (message.type === 'viewState') {
@@ -285,6 +303,8 @@ export function MobileApp() {
     const { client, reconnectController } = createMobileRelayConnection({
       onEvents: (events, epoch) => {
         logRelayEventTypes(events)
+        const removed = sessionRemovalStatus(events, runtimeRef.current, epoch)
+        if (removed) { clearActiveSession(); setScreen('sessions'); setStatus(removed); return }
         runtimeRef.current?.ingest(events, epoch)
       },
       onTerminal: (payload) => termRuntimeRef.current?.ingest(payload),
@@ -340,7 +360,8 @@ export function MobileApp() {
     if (res.error) throw new Error(res.error)
     const projectRows = res.projects ?? []
     setProjects(projectRows)
-    setScreen('projects')
+    if (projectRows[0]) { await openProject(projectRows[0]); startNewSession(projectRows[0]) }
+    else setScreen('projects')
     setStatus('')
     void Promise.all(projectRows.map(async (row) => {
       const git = await client.request({
@@ -409,18 +430,7 @@ export function MobileApp() {
     const client = clientRef.current
     if (!client) return
     setProject(p)
-    const res = await client.request({
-      type: 'list_sessions',
-      requestId: randomId(),
-      projectPath: p.path,
-      limit: 30,
-      offset: 0,
-    } as RemoteCommand) as { sessions?: SessionRow[]; error?: string }
-    if (res.error) {
-      setStatus(res.error)
-      return
-    }
-    setSessions(res.sessions ?? [])
+    setSessions(await readProjectSessions(client, p.path))
     const git = await client.request({
       type: 'get_git_info',
       requestId: randomId(),
@@ -430,9 +440,8 @@ export function MobileApp() {
     setScreen('sessions')
   }
 
-  const loadShellDetails = async (provider: HarnessId = selectedProvider) => {
+  const loadShellDetails = async (provider: HarnessId = selectedProvider, p = project) => {
     const client = clientRef.current
-    const p = project
     if (!client || !p) return
     const request = ++systemInfoRequestRef.current
     const details = await fetchShellDetails(client, p.path, provider)
@@ -440,32 +449,26 @@ export function MobileApp() {
     setGitInfo(details.git)
     setWorkspaceDirs(details.workspaceDirs)
     setWorktreeInfo(details.worktree)
-    if (details.system) applySystemInfo(provider, details.system)
+    if (details.system) applySystemInfo(provider, details.system, provider === selectedProvider
+      ? { model: selectedModel, effort: selectedEffort, permissionMode: permMode } : undefined)
     setBranches(details.branches)
     setCheckedOutBranches(details.checkedOutBranches)
+  }
+
+  const refreshModels = async () => {
+    const client = clientRef.current
+    if (!client || !project) throw new Error('Connect to a desktop to refresh models')
+    const request = ++systemInfoRequestRef.current
+    const info = await client.request({ type: 'get_system_info', requestId: randomId(), projectPath: project.path, provider: selectedProvider }) as import('@superone/shared/agent-types').RemoteSystemInfo
+    if (request !== systemInfoRequestRef.current || clientRef.current !== client) return
+    if (info.error) throw new Error(info.error)
+    applySystemInfo(selectedProvider, info, { model: selectedModel, effort: selectedEffort, permissionMode: permMode })
   }
 
   const openSettings = () => {
     auxiliaryReturnRef.current = screen === 'chat' ? 'chat' : 'sessions'
     setScreen('settings')
-    void loadShellDetails()
-  }
-
-  const loadDirectory = async (path: string): Promise<boolean> => {
-    const client = clientRef.current
-    if (!client) return false
-    const result = await client.request({
-      type: 'list_directory',
-      requestId: randomId(),
-      path,
-    } as RemoteCommand) as { items?: RemoteDirectoryEntry[]; error?: string }
-    if (result.error) {
-      setStatus(result.error)
-      return false
-    }
-    setDirectoryPath(path)
-    setDirectoryItems(result.items ?? [])
-    return true
+    runUiAction(() => loadShellDetails(), setStatus, 'failed to load settings')
   }
 
   const openFiles = () => {
@@ -531,6 +534,7 @@ export function MobileApp() {
   }
 
   const bindRuntime = (client: RelayClient) => {
+    setStatus('')
     runtimeRef.current?.dispose()
     const runtime = new ChatRuntime(client, () => {
       if (runtimeRef.current === runtime) syncSheets(runtime)
@@ -549,23 +553,35 @@ export function MobileApp() {
     return runtime
   }
 
-  const failSessionTransition = (error: unknown) => {
+  const clearActiveSession = () => {
     runtimeRef.current?.dispose()
     runtimeRef.current = null
     termRuntimeRef.current = null
     setSessionId(null)
     setActiveSessionTitle('')
+    setPerm(null)
+    setPlan(null)
+    setQuestion(null)
+    setStreaming(false)
+    setTodos({})
+    setQueuedMessages([])
+  }
+  const leaveActiveSession = () => {
+    runUiAction(() => {
+      try { leaveMobileSession(clientRef.current, runtimeRef) } finally { clearActiveSession() }
+    }, setStatus, 'leave session failed')
+  }
+  const failSessionTransition = (error: unknown) => {
+    clearActiveSession()
     setScreen('sessions')
     setStatus(error instanceof Error ? error.message : 'session transition failed')
   }
-  const openSession = (row: SessionRow) => sessionTransitionRef.current.run(async () => {
+  const openSession = (row: SessionRow, targetProject = project) => sessionTransitionRef.current.run(async () => {
     const client = clientRef.current
-    const p = project
+    const p = targetProject
     if (!client || !p) return
     const previousId = runtimeRef.current?.sessionId
-    if (previousId && previousId !== row.sessionId) {
-      client.send({ type: 'unsubscribe_session', sessionId: previousId })
-    }
+    if (previousId && previousId !== row.sessionId) client.send({ type: 'leave_session', sessionId: previousId })
     setSessionId(row.sessionId)
     setActiveSessionTitle(row.title || 'Untitled')
     const provider = (row.provider ?? 'claude') as HarnessId
@@ -600,17 +616,28 @@ export function MobileApp() {
 
     setSessions((current) => current.filter((item) => item.sessionId !== row.sessionId))
     if (sessionId === row.sessionId) {
-      client.send({ type: 'unsubscribe_session', sessionId: row.sessionId })
-      runtimeRef.current?.dispose()
-      runtimeRef.current = null
-      termRuntimeRef.current = null
-      setSessionId(null)
-      setActiveSessionTitle('')
+      leaveActiveSession()
       setScreen('sessions')
     }
   }
 
-  const createSession = () => {
+  const removeFromList = (row: SessionRow, type: 'archive_session' | 'delete_session') =>
+    runUiAction(() => removeSession(row, type), setStatus, 'failed to remove session')
+
+  const startNewSession = (targetProject = project) => {
+    leaveActiveSession()
+    setStatus('')
+    setActiveSessionTitle('New session')
+    setScreen('chat')
+    runUiAction(() => loadShellDetails(selectedProvider, targetProject), setStatus, 'failed to load project settings')
+  }
+  const selectProvider = (provider: HarnessId) => {
+    harnessSelection.resetForProvider(provider)
+    setHarness(provider)
+    if (provider !== 'claude') setWorktreeSelection(LOCAL_WORKTREE_SELECTION)
+    runUiAction(() => loadShellDetails(provider), setStatus, 'failed to load agent settings')
+  }
+  const createSession = async () => {
     const client = clientRef.current
     const p = project
     if (!client || !p) return
@@ -621,9 +648,9 @@ export function MobileApp() {
       setStatus(selectionError)
       return
     }
-    void sessionTransitionRef.current.run(async () => {
+    return sessionTransitionRef.current.run(async () => {
       const previousId = runtimeRef.current?.sessionId
-      if (previousId) client.send({ type: 'unsubscribe_session', sessionId: previousId })
+      if (previousId) client.send({ type: 'leave_session', sessionId: previousId })
       const runtime = bindRuntime(client)
       const id = await runtime.create(p.path, {
         provider: selectedProvider,
@@ -654,51 +681,34 @@ export function MobileApp() {
   }
 
   const send = async () => {
-    const text = draft.trim()
+    if (composerDraft.editorRef.current && !composerDraft.editorRef.current.canSubmit()) return
+    const sentDraft = composerDraft.capture()
+    const text = sentDraft.text.trim()
+    if ((!text && attachments.length === 0) || sessionTransitionRef.current.isActive) return
+    if (!runtimeRef.current) {
+      setStarting(true)
+      try { await createSession() } finally { setStarting(false) }
+    }
     const runtime = runtimeRef.current
-    if ((!text && attachments.length === 0) || !runtime) return
+    if (!runtime) return
     try {
       await runtime.send(text, {
         images: attachments,
         ...(selectedModel ? { model: selectedModel } : {}),
         ...(selectedEffort ? { effort: selectedEffort } : {}),
       })
+      if (!sessionId && !runtime.sessionTitle && text) setActiveSessionTitle(sentDraft.title.slice(0, 72))
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'message failed')
       return
     }
-    draftRef.current = ''
-    setDraft('')
-    setAttachments([])
-    setSlashHits([])
-    setMentionHits([])
+    if (composerDraft.clearSent(sentDraft.revision) && !composerDraft.editorRef.current) suggestions.update('')
+    setAttachments((current) => current.filter((item) => !attachments.includes(item)))
   }
 
   const onDraft = (text: string) => {
-    draftRef.current = text
-    lastDraftChangeAtRef.current = Date.now()
-    setDraft(text)
-    const runtime = runtimeRef.current
-    setSlashHits(filterSlashCommands(text, runtime?.slashCommands ?? []))
-    const q = extractMentionQuery(text, text.length)
-    const request = ++mentionRequestRef.current
-    if (!q) {
-      setMentionHits([])
-      return
-    }
-    setMentionHits(mergeMentionItems(q.query, []))
-    void runtime?.searchMentions(q.query).then((res) => {
-      if (mentionRequestRef.current !== request) return
-      const items = (res.items ?? []).map((row) => {
-        const r = row as Record<string, unknown>
-        return {
-          kind: String(r.kind ?? 'file'),
-          path: String(r.path ?? r.name ?? ''),
-          isDirectory: Boolean(r.isDirectory),
-        }
-      }).filter((m) => m.path)
-      setMentionHits(mergeMentionItems(q.query, items))
-    }).catch(() => { /* remote mention search is optional */ })
+    composerDraft.changeText(text)
+    suggestions.update(text)
   }
 
   const addAttachment = async (kind: 'image' | 'pdf') => {
@@ -731,8 +741,7 @@ export function MobileApp() {
       return
     }
     if (screen === 'chat') {
-      const sid = sessionId
-      if (sid) runUiAction(() => clientRef.current?.send({ type: 'unsubscribe_session', sessionId: sid }), setStatus, 'unsubscribe failed')
+      leaveActiveSession()
       setScreen('sessions')
       return
     }
@@ -749,6 +758,18 @@ export function MobileApp() {
     if (!term.terminalId) runUiAction(() => term.create(p.path, runtime?.sessionId), setStatus, 'terminal failed')
   }
 
+  const settingsProps: ProjectSettingsProps = {
+    activeSession: !!sessionId,
+    gitInfo, worktreeInfo, branches, checkedOutBranches, worktreeSelection,
+    onWorktreeSelectionChange: setWorktreeSelection,
+    selectedProvider, selectedModel, selectedEffort, models, efforts, workspaceDirs, additionalDir,
+    onAdditionalDirChange: setAdditionalDir, onProviderChange: selectProvider,
+    onModelChange: harnessSelection.selectModel, onEffortChange: setSelectedEffort,
+    onOpenFiles: openFiles,
+    onAddDirectory: () => runUiAction(addWorkspaceDirectory, setStatus, 'failed to add directory'),
+    onRemoveDirectory: (dir) => runUiAction(() => removeWorkspaceDirectory(dir), setStatus, 'failed to remove directory'),
+  }
+
   const header = mobileHeaderTitle(screen, project?.name, activeSessionTitle, terminalUi.title)
   const tabletMultiPane = shouldUseTabletMultiPane(width, screen, !!project)
 
@@ -759,6 +780,7 @@ export function MobileApp() {
         <MobileHeader
         route={screen}
         title={header}
+        subtitle={[project?.name, gitInfo?.branch].filter(Boolean).join(' · ')}
         provider={selectedProvider}
         acpAgentId={selectedAcpAgentId}
         streaming={streaming}
@@ -776,18 +798,10 @@ export function MobileApp() {
             sessions={sessions}
             activeSessionId={sessionId}
             onOpenSession={(row) => void openSession(row)}
-            onCreateSession={() => void createSession()}
+            onCreateSession={() => startNewSession()}
             onOpenSettings={openSettings}
-            onArchiveSession={(row) => runUiAction(
-              () => removeSession(row, 'archive_session'),
-              setStatus,
-              'failed to archive session',
-            )}
-            onDeleteSession={(row) => runUiAction(
-              () => removeSession(row, 'delete_session'),
-              setStatus,
-              'failed to delete session',
-            )}
+            onArchiveSession={(row) => removeFromList(row, 'archive_session')}
+            onDeleteSession={(row) => removeFromList(row, 'delete_session')}
           />
         ) : null}
           <View style={styles.mainPane}>
@@ -796,16 +810,12 @@ export function MobileApp() {
             auxiliaryReturn={auxiliaryReturnRef.current}
             onRouteChange={(route) => {
               if (screen === 'chat' && route === 'sessions' && sessionId) {
-                runUiAction(
-                  () => clientRef.current?.send({ type: 'unsubscribe_session', sessionId }),
-                  setStatus,
-                  'unsubscribe failed',
-                )
+                leaveActiveSession()
               }
               setScreen(route)
             }}
             renderScene={(route) => (
-              <>
+              <View style={route === 'chat' || route === 'terminal' ? styles.flex : styles.page}>
       {route === 'pair' ? (
         <PairingsScreen
           scannerOpen={scannerOpen}
@@ -848,62 +858,38 @@ export function MobileApp() {
       {route === 'sessions' ? (
         <SessionsScreen
           sessions={sessions}
-          onCreateSession={createSession}
+          onCreateSession={() => startNewSession()}
           onOpenSession={openSession}
-          onArchiveSession={(row) => runUiAction(
-            () => removeSession(row, 'archive_session'),
-            setStatus,
-            'failed to archive session',
-          )}
-          onDeleteSession={(row) => runUiAction(
-            () => removeSession(row, 'delete_session'),
-            setStatus,
-            'failed to delete session',
-          )}
+          onArchiveSession={(row) => removeFromList(row, 'archive_session')}
+          onDeleteSession={(row) => removeFromList(row, 'delete_session')}
         />
       ) : null}
 
       {route === 'settings' ? (
-        <SettingsScreen
-          gitInfo={gitInfo}
-          worktreeInfo={worktreeInfo}
-          branches={branches}
-          checkedOutBranches={checkedOutBranches}
-          worktreeSelection={worktreeSelection}
-          onWorktreeSelectionChange={setWorktreeSelection}
-          selectedProvider={selectedProvider}
-          selectedModel={selectedModel}
-          selectedEffort={selectedEffort}
-          models={models}
-          efforts={efforts}
-          workspaceDirs={workspaceDirs}
-          additionalDir={additionalDir}
-          onAdditionalDirChange={setAdditionalDir}
-          onProviderChange={(provider) => {
-            harnessSelection.resetForProvider(provider)
-            setHarness(provider)
-            if (provider !== 'claude') setWorktreeSelection(LOCAL_WORKTREE_SELECTION)
-            void loadShellDetails(provider)
-          }}
-          onModelChange={harnessSelection.selectModel}
-          onEffortChange={setSelectedEffort}
-          onOpenFiles={openFiles}
-          onAddDirectory={() => runUiAction(addWorkspaceDirectory, setStatus, 'failed to add directory')}
-          onRemoveDirectory={(dir) => runUiAction(() => removeWorkspaceDirectory(dir), setStatus, 'failed to remove directory')}
-        />
+        <SettingsScreen {...settingsProps} />
       ) : null}
 
       {route === 'files' ? (
         <FilesScreen
           path={directoryPath}
           items={directoryItems}
+          loading={directory.loading}
+          error={directory.error}
           onOpenDirectory={(path) => runUiAction(() => loadDirectory(path), setStatus, 'failed to load directory')}
           onOpenFile={(path) => runUiAction(() => previewFile(path), setStatus, 'failed to open file')}
         />
       ) : null}
 
       {route === 'chat' ? (
-        <ChatScreen
+        <ChatScreen provider={selectedProvider}
+          starting={starting}
+          landing={!sessionId ? { provider: selectedProvider, projectName: project?.name,
+            branch: worktreeSelection.kind === 'create' ? worktreeSelection.branchName || 'New worktree'
+              : worktreeSelection.kind === 'existing' ? worktreeSelection.branch || 'Worktree' : gitInfo?.branch ?? undefined, onProvider: selectProvider,
+            onProject: () => setSessionSwitcherOpen(true), onWorktree: () => setWorktreeOpen(true) } : undefined}
+          selection={{ model: selectedModel, models, providerName: harnessSelection.activeProviderName, onRefresh: refreshModels,
+            effort: selectedEffort, efforts,
+            onModel: harnessSelection.selectModel, onEffort: setSelectedEffort }}
           webRef={webRef}
           permissionModes={permModes}
           permissionMode={permMode}
@@ -921,11 +907,18 @@ export function MobileApp() {
             runtimeRef.current?.setPermissionMode(mode)
             setPermMode(mode)
           }, setStatus, 'permission mode failed')}
-          onSlash={(command) => { onDraft(`/${command} `); setSlashHits([]) }}
+          nativeDraft={{ controller: composerDraft.editorRef, document: composerDraft.document.current, onError: setStatus,
+            onChange: (snapshot) => { composerDraft.accept(snapshot); suggestions.updateNative(snapshot.text, snapshot, snapshot.composing) } }}
+          onSlash={(command) => {
+            if (composerDraft.editorRef.current) composerDraft.editorRef.current.replaceText(`/${command} `)
+            else onDraft(`/${command} `)
+            suggestions.clear()
+          }}
           onMention={(item) => {
-            const query = extractMentionQuery(draft, draft.length)
-            if (query) onDraft(insertMention(draft, query, item))
-            setMentionHits([])
+            if (composerDraft.editorRef.current) { composerDraft.editorRef.current.insertMention(item); return }
+            const value = suggestions.insert(item)
+            if (value === undefined) return
+            composerDraft.changeText(value)
           }}
           onRemoveAttachment={(attachment) => setAttachments((current) => current.filter((item) => item !== attachment))}
           onAttachmentMenu={() => showAttachmentMenu({
@@ -934,6 +927,10 @@ export function MobileApp() {
             file: () => void uploadProjectFile(),
           })}
           onDraft={onDraft}
+          onCursorChange={suggestions.select}
+          requestedCursor={suggestions.requestedCursor}
+          mentionSearch={suggestions.mentionSearch}
+          onMentionRetry={suggestions.retry}
           onSubmitFromKeyboard={() => {
             const hasContent = draftRef.current.trim().length > 0 || attachments.length > 0
             if (shouldSubmitFromKeyboard({
@@ -948,32 +945,19 @@ export function MobileApp() {
       ) : null}
 
       {route === 'terminal' ? (
-        <TerminalScreen
-          webRef={termRef}
-          draft={termDraft}
-          writable={terminalUi.writable}
-          onWebMessage={(raw) => {
-            try {
-              const message = JSON.parse(raw) as { type?: string }
-              if (message.type === 'terminalReady') inject(termRef, webViewTheme)
-            } catch { /* terminal runtime ignores malformed messages too */ }
-            termRuntimeRef.current?.handleViewMessage(raw)
-          }}
-          onDraft={setTermDraft}
-          onSubmit={(line) => {
-            runUiAction(() => { termRuntimeRef.current?.input(`${line}\n`); setTermDraft('') }, setStatus, 'terminal input failed')
-          }}
-          onClaim={() => runUiAction(() => termRuntimeRef.current?.claim(), setStatus, 'terminal claim failed')}
-          onKey={(data) => runUiAction(() => termRuntimeRef.current?.input(data), setStatus, 'terminal input failed')}
-        />
+        <ConnectedTerminal webRef={termRef} runtimeRef={termRuntimeRef} theme={webViewTheme}
+          draft={termDraft} writable={terminalUi.writable} onDraft={setTermDraft} onStatus={setStatus} />
       ) : null}
-              </>
+              </View>
             )}
             />
           </View>
         </View>
       </MobileKeyboardFrame>
       {status ? <Text style={styles.meta}>{status}</Text> : null}
+      <Sheet visible={worktreeOpen} title="Workspace for new session" onDismiss={() => setWorktreeOpen(false)}>
+        <SettingsScreen {...settingsProps} section="worktree" />
+      </Sheet>
       <MobileOverlays
         runtimeRef={runtimeRef}
         setStatus={setStatus}
@@ -984,11 +968,13 @@ export function MobileApp() {
           ? (permModes.includes('auto') ? 'auto' : 'acceptEdits')
           : undefined}
         onPlanContinueMode={setPermMode}
-        sessionSwitcherOpen={sessionSwitcherOpen}
-        onDismissSessionSwitcher={() => setSessionSwitcherOpen(false)}
-        sessions={sessions}
-        activeSessionId={sessionId}
-        onOpenSession={openSession}
+        workspace={{ visible: sessionSwitcherOpen, onDismiss: () => setSessionSwitcherOpen(false),
+          deviceName: pairings.find((item) => item.id === activePairingId)?.hostName ?? 'Desktop',
+          projects, activeProject: project, activeSessionId: sessionId, sessions,
+          loadSessions: (p) => clientRef.current ? readProjectSessions(clientRef.current, p.path) : Promise.reject(new Error('Not connected')),
+          onNewSession: (p) => runUiAction(async () => { await openProject(p); startNewSession(p) }, setStatus, 'failed to open project'),
+          onOpenSession: (p, row) => runUiAction(async () => { if (p.path !== project?.path) await openProject(p); await openSession(row, p) }, setStatus, 'failed to open session'),
+        }}
         sharedFileInbox={sharedFileInbox}
       />
     </SafeAreaView>

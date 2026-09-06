@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { FlatList, Keyboard, Linking, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native'
+import { FlatList, Keyboard, Linking, ScrollView, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native'
+import { Text } from '../ui/text'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar'
 import type { HarnessId } from '@superone/shared/agent-types'
@@ -8,8 +9,9 @@ import { PermissionSheet, PlanSheet, QuestionSheet } from '../sheets'
 import { MobileThemeProvider, useMobileTheme } from '../theme/context'
 import type { MobileColorScheme } from '../theme/tokens'
 import { Button, Chip, ListRow } from '../ui'
-import { parsePreviewRoute, type PreviewRoute } from './preview-route'
+import { parsePreviewRoute, type PreviewRoute, type ShellPreviewPage } from './preview-route'
 import { nativeScenarios, type NativeScenario } from './scenarios'
+import { ShellPreview } from './ShellPreview'
 
 type ThemeChoice = 'system' | MobileColorScheme
 const categories = ['All', 'Permissions', 'Questions', 'Plans'] as const
@@ -47,11 +49,17 @@ function NativeCatalog({ theme, onTheme, route }: { theme: ThemeChoice; onTheme:
   const [visible, setVisible] = useState(false)
   const [revision, setRevision] = useState(0)
   const [actions, setActions] = useState<string[]>([])
+  const [shellPreview, setShellPreview] = useState<ShellPreviewPage | null>(null)
   const list = useRef<FlatList<NativeScenario>>(null)
   useEffect(() => {
     if (!route) return
     Keyboard.dismiss()
     setHarness(route.harness); selectHarness(route.harness)
+    if (route.kind === 'shell') {
+      setShellPreview(route.page)
+      return
+    }
+    setShellPreview(null)
     setCategory('All'); setSearch(route.scenario.id); setActions([])
     setSelected(route.scenario); setRevision((value) => value + 1); setVisible(true)
     list.current?.scrollToOffset({ offset: 0, animated: false })
@@ -90,6 +98,7 @@ function NativeCatalog({ theme, onTheme, route }: { theme: ThemeChoice; onTheme:
     list.current?.scrollToOffset({ offset: 0, animated: false })
   }
 
+  if (shellPreview) return <ShellPreview key={route?.kind === 'shell' ? route.revision : 'manual'} initialPage={shellPreview} onClose={() => setShellPreview(null)} onTheme={() => onTheme(tokens.scheme === 'dark' ? 'light' : 'dark')} />
   return (
     <SafeAreaView style={styles.root}>
       <StatusBar style={tokens.scheme === 'dark' ? 'light' : 'dark'} />
@@ -103,6 +112,7 @@ function NativeCatalog({ theme, onTheme, route }: { theme: ThemeChoice; onTheme:
           <Text testID="native-preview-ready" style={styles.title}>Native preview</Text>
           <Text style={styles.meta}>Offline fixtures · production components · {nativeScenarios.length} scenarios</Text>
           <Text style={styles.meta}>{Math.round(width)} × {Math.round(height)} · font scale {fontScale.toFixed(2)}</Text>
+          <Button label="Preview app screens" variant="secondary" onPress={() => setShellPreview('New session')} />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
             {(['system', 'light', 'dark'] as const).map((value) => <Chip key={value} label={value} selected={theme === value} onPress={() => onTheme(value)} />)}
           </ScrollView>

@@ -8,9 +8,9 @@ describe('composer state', () => {
     expect(shouldSubmitFromKeyboard({ hasContent: false, lastTextChangeAt: 0, now: 10_000 })).toBe(false)
   })
 
-  it('includes frozen builtin and agent mentions before remote results', () => {
-    expect(mergeMentionItems('co', []).map((item) => item.path)).toEqual(['codex'])
+  it('includes capabilities before remote results without inventing provider targets', () => {
+    expect(mergeMentionItems('co', []).map((item) => item.path)).toEqual([])
     expect(mergeMentionItems('', [{ kind: 'file', path: 'src' }]).map((item) => item.path))
-      .toEqual(['widget', 'debug', 'claude', 'codex', 'grok', 'src'])
+      .toEqual(['widget', 'debug', 'src'])
   })
 })

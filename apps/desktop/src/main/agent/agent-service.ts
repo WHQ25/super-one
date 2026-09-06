@@ -968,9 +968,8 @@ export class AgentService {
       case 'search_mentions': {
         try {
           const cwd = this.sessionManager?.getActiveSession(command.projectPath)?.cwd ?? command.projectPath
-          const agents = discoverAllAgents(command.projectPath).map((a) => ({ name: a.name, model: a.model ?? '' }))
-          const items = searchMentions([cwd], command.query, agents, 20)
-          await respond?.(command.requestId, { items })
+          const { searchRemoteMentions } = await import('./remote-mention-search')
+          await respond?.(command.requestId, await searchRemoteMentions(command.projectPath, cwd, command.query))
         } catch (err) {
           await respond?.(command.requestId, { error: (err as Error).message })
         }

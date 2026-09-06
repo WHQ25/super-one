@@ -39,7 +39,7 @@ export function mobileThemeTokens(
     colors: scheme === 'dark' ? GENERATED_DARK_COLORS : GENERATED_LIGHT_COLORS[harness],
     spacing: { xs: 4, sm: 8, md: 12, lg: 16, xl: 24 },
     radius: { sm: 6, md: 8, lg: 12, pill: 999 },
-    type: { meta: 12, body: 16, title: 17, display: 24 },
+    type: { meta: 12, body: 15, title: 17, display: 24 },
   }
 }
 

@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Text, View } from 'react-native'
+import { View } from 'react-native'
+import { Text } from '../ui/text'
 import type { ConfigConfirmField, HarnessId, RemoteSystemInfo, PermissionRequest } from '@superone/shared/agent-types'
 import { CollaborationContent, Disclosure } from './PermissionContent'
 import { EditableField, SelectField } from './EditableField'

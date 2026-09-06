@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Pressable, ScrollView, Text, View } from 'react-native'
+import { Pressable, ScrollView, View } from 'react-native'
+import { Text } from '../ui/text'
 import type { PermissionRequest } from '@superone/shared/agent-types'
 import { useMobileTheme } from '../theme/context'
 import { parseNativeDiff } from './diff-state'

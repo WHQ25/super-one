@@ -51,6 +51,10 @@ export function useHarnessSelection() {
 
   const resetForProvider = (provider: HarnessId) => {
     setSelectedProvider(provider)
+    setSystemInfo({})
+    setModels([])
+    setPermissionModes([])
+    setPermissionMode('default')
     setSelectedModel('')
     setSelectedEffort('')
     setEfforts([])
@@ -71,6 +75,7 @@ export function useHarnessSelection() {
     selectedEffort,
     setSelectedEffort,
     selectedAcpAgentId,
+    activeProviderName: systemInfo.activeProvider?.name,
     models,
     efforts,
     permissionMode,

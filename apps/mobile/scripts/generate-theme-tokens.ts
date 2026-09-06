@@ -1,10 +1,9 @@
+import { hex, parseOklch } from './color-tokens'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import {
   HARNESS_DEFAULT_TOKENS,
   inkForFill,
-  oklchToLinearSRGB,
-  type LCH,
 } from '../../../packages/shared/src/harness/harness-brand'
 import type { HarnessId } from '../../../packages/shared/src/session-types'
 
@@ -14,28 +13,6 @@ const outputPath = resolve(appRoot, 'src/theme/tokens.generated.ts')
 const css = readFileSync(themeCssPath, 'utf8')
 
 type Palette = Record<string, string>
-
-function srgbChannel(value: number): number {
-  const clipped = Math.max(0, Math.min(1, value))
-  return clipped <= 0.0031308
-    ? 12.92 * clipped
-    : 1.055 * clipped ** (1 / 2.4) - 0.055
-}
-
-function hex(lch: LCH): string {
-  const channels = oklchToLinearSRGB(lch.l, lch.c, lch.h)
-    .map(srgbChannel)
-    .map((value) => Math.round(value * 255).toString(16).padStart(2, '0'))
-  const alpha = lch.a < 1 ? Math.round(lch.a * 255).toString(16).padStart(2, '0') : ''
-  return `#${channels.join('')}${alpha}`
-}
-
-function parseOklch(scope: string, token: string): LCH {
-  const match = scope.match(new RegExp(`--${token}:\\s*oklch\\(([-.\\d]+)\\s+([-.\\d]+)\\s+([-.\\d]+)(?:\\s*\\/\\s*([-.\\d]+)%?)?\\)`))
-  if (!match) throw new Error(`missing literal --${token} in desktop theme`)
-  const rawAlpha = match[4] == null ? 1 : Number(match[4])
-  return { l: Number(match[1]), c: Number(match[2]), h: Number(match[3]), a: rawAlpha > 1 ? rawAlpha / 100 : rawAlpha }
-}
 
 function scopeBody(selector: string): string {
   const start = css.indexOf(selector)

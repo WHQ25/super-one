@@ -95,7 +95,7 @@ export function filterSlashCommands(
   raw: unknown[],
   skillNames: Set<string> = new Set(),
 ): SlashCommandMatch[] {
-  if (!text.startsWith('/') || text.includes(' ')) return []
+  if (!text.startsWith('/') || /\s/.test(text)) return []
   const query = text.slice(1)
   const commands = raw
     .map((item) => parseSlashCommand(item, skillNames))

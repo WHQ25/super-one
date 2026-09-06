@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Text, View } from 'react-native'
+import { View } from 'react-native'
+import { Text } from '../ui/text'
 import type { HarnessId, RemoteSystemInfo, SessionAgentLaunchConfig, SessionAgentProfile } from '@superone/shared/agent-types'
 import { findCodexFastServiceTier } from '@superone/shared/codex-fast-mode'
 import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
@@ -33,7 +34,7 @@ export function AgentConfigFields({ harness, config, profile: suppliedProfile, l
     {profile?.models.length ? <SelectField label="Model" value={config.model ?? ''} options={profile.models.map((item) => ({ id: item.id, label: item.name }))} onChange={(value) => onChange({ model: value, fastMode: false })} /> : <EditableField field={{ label: 'Model', type: 'string' }} value={config.model} onChange={(value) => onChange({ model: String(value) || undefined })} />}
     {!config.apiProviderId && profile?.efforts.length ? select('Effort', config.effort ?? '', profile.efforts, (effort) => onChange({ effort })) : !profile && !config.apiProviderId ? <EditableField field={{ label: 'Effort', type: 'string' }} value={config.effort} onChange={(value) => onChange({ effort: String(value) || undefined })} /> : null}
     {fast ? <EditableField field={{ label: 'Fast mode', type: 'boolean' }} value={config.fastMode} onChange={(value) => onChange({ fastMode: value === true })} /> : null}
-    <SelectField label="Permission mode" value={config.permissionMode ?? options.permissionModes[0]} options={options.permissionModes.map((id) => ({ id, label: permissionModeLabel(id) }))} onChange={(permissionMode) => onChange({ permissionMode: permissionMode as SessionAgentLaunchConfig['permissionMode'] })} />
+    <SelectField label="Permission mode" value={config.permissionMode ?? options.permissionModes[0]} options={options.permissionModes.map((id) => ({ id, label: permissionModeLabel(id, harness) }))} onChange={(permissionMode) => onChange({ permissionMode: permissionMode as SessionAgentLaunchConfig['permissionMode'] })} />
     {options.sandboxModes.length ? select('Sandbox', config.sandboxMode ?? 'off', options.sandboxModes, (sandboxMode) => onChange({ sandboxMode: sandboxMode as SessionAgentLaunchConfig['sandboxMode'] })) : <Text style={styles.meta}>Execution isolation follows the agent’s permission settings.</Text>}
   </View>
 }

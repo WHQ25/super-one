@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Pressable, Switch, Text, View } from 'react-native'
+import { Pressable, Switch, View } from 'react-native'
+import { Text } from '../ui/text'
 import type { ConfigConfirmField } from '@superone/shared/agent-types'
 import { useMobileTheme } from '../theme/context'
 import { PromptInput, PromptPill } from './PromptControls'

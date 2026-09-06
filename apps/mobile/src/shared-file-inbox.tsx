@@ -2,7 +2,8 @@ import { useCallback, useRef, useState } from 'react'
 import { File, Paths } from 'expo-file-system'
 import * as Sharing from 'expo-sharing'
 import { CircleAlert, FileCheck2, FileDown } from 'lucide-react-native'
-import { ActivityIndicator, Image, Text, View } from 'react-native'
+import { ActivityIndicator, Image, View } from 'react-native'
+import { Text } from './ui/text'
 import { MAX_DOWNLOAD_BYTES, type RelayClient } from '@superone/relay-client'
 import type {
   AgentEvent,

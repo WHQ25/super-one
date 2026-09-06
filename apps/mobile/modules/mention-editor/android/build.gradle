@@ -1,0 +1,12 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'expo.modules.mentioneditor'
+version = '0.1.0'
+
+android {
+  namespace 'expo.modules.mentioneditor'
+  defaultConfig { versionCode 1; versionName '0.1.0' }
+}

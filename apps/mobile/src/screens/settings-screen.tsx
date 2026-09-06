@@ -1,4 +1,5 @@
-import { Pressable, ScrollView, Text, TextInput, View } from 'react-native'
+import { Pressable, ScrollView, TextInput, View } from 'react-native'
+import { Text } from '../ui/text'
 import type {
   HarnessId,
   ModelOption,
@@ -14,6 +15,8 @@ import {
   type NewSessionWorktreeSelection,
 } from '../worktree-state'
 import { harnessSupportsAdditionalDirs, MOBILE_HARNESS_IDS } from '../provider-state'
+import { Button, SelectionField } from '../ui'
+import { ModelPicker } from '../ui/model-picker'
 
 export type ShellGitInfo = {
   branch: string | null
@@ -24,7 +27,10 @@ export type ShellGitInfo = {
 
 export type ModelRow = ModelOption
 
-type Props = {
+export type ProjectSettingsProps = {
+  activeSession?: boolean
+  section?: 'worktree'
+
   gitInfo: ShellGitInfo | null
   worktreeInfo: WorktreeInfo | null
   branches: string[]
@@ -56,7 +62,7 @@ function selectionIs(
   return selection.kind === 'existing' && selection.path === path
 }
 
-export function SettingsScreen(props: Props) {
+export function SettingsScreen(props: ProjectSettingsProps) {
   const styles = useMobileStyles()
   const { tokens } = useMobileTheme()
   const selection = props.worktreeSelection
@@ -76,9 +82,8 @@ export function SettingsScreen(props: Props) {
     if (selection.kind === 'create') props.onWorktreeSelectionChange({ ...selection, ...patch })
   }
 
-  return (
-    <ScrollView style={styles.flex} contentContainerStyle={styles.settingsContent}>
-      <View style={styles.settingsCard}>
+  const content = <>
+      {!props.section ? <View style={styles.settingsCard}>
         <Text style={styles.sectionTitle}>Repository</Text>
         <Text style={styles.rowTitle}>{props.gitInfo?.branch ?? 'Not a Git repository'}</Text>
         {props.gitInfo?.dirty ? (
@@ -91,59 +96,20 @@ export function SettingsScreen(props: Props) {
             ? `Worktree · ${props.worktreeInfo.currentBranch ?? ''}`
             : 'Main worktree'}
         </Text>
-        <Pressable style={styles.secondaryBtn} onPress={props.onOpenFiles}>
-          <Text style={styles.btnText}>Browse project files</Text>
-        </Pressable>
-      </View>
+        <Button label="Browse project files" variant="secondary" onPress={props.onOpenFiles} />
+      </View> : null}
 
-      <View style={styles.settingsCard}>
-        <Text style={styles.sectionTitle}>New session provider</Text>
-        <View style={styles.chips}>
-          {MOBILE_HARNESS_IDS.map((provider) => (
-            <Pressable
-              key={provider}
-              style={[styles.chip, props.selectedProvider === provider ? styles.chipOn : null]}
-              onPress={() => props.onProviderChange(provider)}
-            >
-              <Text style={styles.rowTitle}>{HARNESS_CAPABILITIES[provider].displayName}</Text>
-            </Pressable>
-          ))}
-        </View>
-        {props.models.length ? (
-          <>
-            <Text style={styles.rowMeta}>Model</Text>
-            <ScrollView horizontal contentContainerStyle={styles.modelStrip}>
-              {props.models.map((model) => (
-                <Pressable
-                  key={model.id}
-                  style={[styles.chip, props.selectedModel === model.id ? styles.chipOn : null]}
-                  onPress={() => props.onModelChange(model.id)}
-                >
-                  <Text style={styles.rowMeta}>{model.name || model.id}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          </>
-        ) : <Text style={styles.rowMeta}>Default model</Text>}
-        {props.efforts.length > 1 ? (
-          <>
-            <Text style={styles.rowMeta}>Effort</Text>
-            <ScrollView horizontal contentContainerStyle={styles.modelStrip}>
-              {props.efforts.map((effort) => (
-                <Pressable
-                  key={effort.value}
-                  style={[styles.chip, props.selectedEffort === effort.value ? styles.chipOn : null]}
-                  onPress={() => props.onEffortChange(effort.value)}
-                >
-                  <Text style={styles.rowMeta}>{effort.label}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          </>
-        ) : null}
-      </View>
+      {!props.section ? <View style={styles.settingsCard}>
+        <Text style={styles.sectionTitle}>{props.activeSession ? 'Current session' : 'Session defaults'}</Text>
+        <Text style={styles.rowMeta}>{props.activeSession ? 'Model and effort apply to your next message.' : 'Choose how your next session starts.'}</Text>
+        {props.activeSession ? <Text style={styles.rowTitle}>{HARNESS_CAPABILITIES[props.selectedProvider].displayName}</Text> : <SelectionField label="Agent" value={props.selectedProvider}
+          options={MOBILE_HARNESS_IDS.map((provider) => ({ value: provider, label: HARNESS_CAPABILITIES[provider].displayName }))}
+          onChange={(value) => props.onProviderChange(value as HarnessId)} />}
+        <ModelPicker harness={props.selectedProvider} model={props.selectedModel} models={props.models}
+          effort={props.selectedEffort} efforts={props.efforts} onModel={props.onModelChange} onEffort={props.onEffortChange} />
+      </View> : null}
 
-      <View style={styles.settingsCard}>
+      <View style={props.section ? { gap: 12 } : styles.settingsCard}>
         <Text style={styles.sectionTitle}>New session worktree</Text>
         <Text style={styles.rowMeta}>Applies to the next Claude session.</Text>
         {props.selectedProvider !== 'claude' ? (
@@ -172,33 +138,15 @@ export function SettingsScreen(props: Props) {
             ))}
             {props.branches.length ? (
               <>
-                <Text style={styles.rowMeta}>Create from branch</Text>
-                <ScrollView horizontal contentContainerStyle={styles.modelStrip}>
-                  {props.branches.map((branch) => (
-                    <Pressable
-                      key={branch}
-                      style={[styles.chip, selection.kind === 'create' && selection.baseBranch === branch ? styles.chipOn : null]}
-                      onPress={() => chooseBase(branch)}
-                    >
-                      <Text style={styles.rowMeta}>{branch}</Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
+                <SelectionField label="Create from branch" value={selection.kind === 'create' ? selection.baseBranch : ''}
+                  options={props.branches.map((branch) => ({ value: branch, label: branch }))} onChange={chooseBase} />
               </>
             ) : null}
             {selection.kind === 'create' ? (
               <View style={styles.subCard}>
-                <View style={styles.chips}>
-                  {(['branch', 'attach', 'detach'] as WorktreeMode[]).map((mode) => (
-                    <Pressable
-                      key={mode}
-                      style={[styles.chip, selection.mode === mode ? styles.chipOn : null]}
-                      onPress={() => patchCreate({ mode })}
-                    >
-                      <Text style={styles.rowMeta}>{mode}</Text>
-                    </Pressable>
-                  ))}
-                </View>
+                <SelectionField label="Worktree mode" value={selection.mode}
+                  options={[{ value: 'branch', label: 'New branch' }, { value: 'attach', label: 'Attach branch' }, { value: 'detach', label: 'Detached' }]}
+                  onChange={(mode) => patchCreate({ mode: mode as WorktreeMode })} />
                 {selection.mode === 'branch' ? (
                   <TextInput
                     style={styles.input}
@@ -225,7 +173,7 @@ export function SettingsScreen(props: Props) {
         )}
       </View>
 
-      {harnessSupportsAdditionalDirs(props.selectedProvider) ? (
+      {!props.section && harnessSupportsAdditionalDirs(props.selectedProvider) ? (
         <View style={styles.settingsCard}>
           <Text style={styles.sectionTitle}>Additional directories</Text>
           {props.workspaceDirs.map((dir) => (
@@ -245,11 +193,9 @@ export function SettingsScreen(props: Props) {
             value={props.additionalDir}
             onChangeText={props.onAdditionalDirChange}
           />
-          <Pressable style={styles.btn} onPress={props.onAddDirectory}>
-            <Text style={styles.btnText}>Add directory</Text>
-          </Pressable>
+          <Button label="Add directory" variant="secondary" disabled={!props.additionalDir.trim()} onPress={props.onAddDirectory} />
         </View>
       ) : null}
-    </ScrollView>
-  )
+    </>
+  return props.section ? <View>{content}</View> : <ScrollView keyboardShouldPersistTaps="handled" style={styles.flex} contentContainerStyle={styles.settingsContent}>{content}</ScrollView>
 }

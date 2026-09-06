@@ -1,0 +1,20 @@
+appId: ${APP_ID}
+name: Phone composer exposes send and stop states
+tags: [smoke, native, visual]
+---
+- runFlow:
+    file: ../helpers/open-shell-preview.yaml
+- assertVisible:
+    id: phone-composer-status
+- assertVisible:
+    text: Send
+    enabled: false
+- tapOn: Message
+- inputText: hello
+- assertVisible:
+    text: Send
+    enabled: true
+- takeScreenshot: ${"composer-send-" + THEME}
+- tapOn: Send
+- assertVisible: Stop
+- takeScreenshot: ${"composer-stop-" + THEME}

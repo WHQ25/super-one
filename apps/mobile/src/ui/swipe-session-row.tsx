@@ -1,14 +1,7 @@
-import { useMemo, useRef, type ReactNode } from 'react'
+import { useMemo, useRef, useState, type ReactNode } from 'react'
 import { Archive, Trash2 } from 'lucide-react-native'
-import {
-  Alert,
-  Animated,
-  PanResponder,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native'
+import { Alert, Animated, PanResponder, Pressable, StyleSheet, View } from 'react-native'
+import { Text } from './text'
 import { useMobileTheme } from '../theme/context'
 
 const ACTION_WIDTH = 76
@@ -25,10 +18,12 @@ export function SwipeSessionRow(props: {
   const { tokens } = useMobileTheme()
   const offset = useRef(new Animated.Value(0)).current
   const opened = useRef(false)
+  const [revealed, setRevealed] = useState(false)
   const dragStart = useRef(0)
 
   const settle = (open: boolean) => {
     opened.current = open
+    setRevealed(open)
     Animated.spring(offset, {
       toValue: open ? -ACTIONS_WIDTH : 0,
       useNativeDriver: true,
@@ -42,6 +37,7 @@ export function SwipeSessionRow(props: {
       Math.abs(gesture.dx) > 8 && Math.abs(gesture.dx) > Math.abs(gesture.dy)
     ),
     onPanResponderGrant: () => {
+      setRevealed(true)
       dragStart.current = opened.current ? -ACTIONS_WIDTH : 0
     },
     onPanResponderMove: (_, gesture) => {
@@ -67,7 +63,7 @@ export function SwipeSessionRow(props: {
 
   return (
     <View style={styles.container}>
-      <View style={styles.actions}>
+      <View pointerEvents={revealed ? 'auto' : 'none'} accessibilityElementsHidden={!revealed} importantForAccessibility={revealed ? 'auto' : 'no-hide-descendants'} style={[styles.actions, !revealed && { opacity: 0 }]}>
         <Pressable
           accessibilityLabel={`Archive ${props.title || 'session'}`}
           accessibilityRole="button"
@@ -77,8 +73,8 @@ export function SwipeSessionRow(props: {
           }}
           style={({ pressed }) => [styles.action, styles.archive, pressed && styles.pressed]}
         >
-          <Archive color={tokens.colors.primaryForeground} size={18} />
-          <Text style={styles.actionLabel}>Archive</Text>
+          <Archive color={tokens.colors.foreground} size={18} />
+          <Text style={[styles.actionLabel, { color: tokens.colors.foreground }]}>Archive</Text>
         </Pressable>
         <Pressable
           accessibilityLabel={`Delete ${props.title || 'session'}`}
@@ -86,7 +82,7 @@ export function SwipeSessionRow(props: {
           onPress={confirmDelete}
           style={({ pressed }) => [styles.action, styles.remove, pressed && styles.pressed]}
         >
-          <Trash2 color={tokens.colors.primaryForeground} size={18} />
+          <Trash2 color={tokens.colors.destructiveForeground} size={18} />
           <Text style={styles.actionLabel}>Delete</Text>
         </Pressable>
       </View>
@@ -128,10 +124,10 @@ function useStyles() {
       gap: tokens.spacing.xs,
       width: ACTION_WIDTH,
     },
-    archive: { backgroundColor: tokens.colors.warning },
-    remove: { backgroundColor: tokens.colors.error },
+    archive: { backgroundColor: tokens.colors.secondary },
+    remove: { backgroundColor: tokens.colors.destructive },
     actionLabel: {
-      color: tokens.colors.primaryForeground,
+      color: tokens.colors.destructiveForeground,
       fontSize: tokens.type.meta,
       fontWeight: '600',
     },

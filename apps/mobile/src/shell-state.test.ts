@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { directoryEntryAction, joinRemotePath, parentRemotePath, resolveRemoteFilePath } from './shell-state'
+import { directoryEntryAction, joinRemotePath, parentRemotePath, remoteBreadcrumbs, resolveRemoteFilePath } from './shell-state'
 
 describe('remote path navigation', () => {
+  it('builds navigable breadcrumbs without escaping drive or share roots', () => {
+    expect(remoteBreadcrumbs('/repo/src').map((item) => item.path)).toEqual(['/', '/repo', '/repo/src'])
+    expect(remoteBreadcrumbs('C:\\repo\\src').map((item) => item.path)).toEqual(['C:/', 'C:/repo', 'C:/repo/src'])
+    expect(remoteBreadcrumbs('\\\\host\\share\\src')).toEqual([
+      { path: '//host/share', label: '//host/share' },
+      { path: '//host/share/src', label: 'src' },
+    ])
+  })
   it('joins and moves to a parent without escaping root', () => {
     expect(joinRemotePath('/repo/', 'src')).toBe('/repo/src')
     expect(parentRemotePath('/repo/src')).toBe('/repo')

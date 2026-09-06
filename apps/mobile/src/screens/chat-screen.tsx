@@ -1,33 +1,34 @@
+import type { NativeComposerBinding } from '../ui/native-composer-input'
+import type { ComposerCursor } from '../composer-cursor'
+import type { MentionSearchState } from '../navigation/use-composer-suggestions'
+import { LoadingOverlay } from '../ui/loading-overlay'
 import { useState, type RefObject } from 'react'
 import {
-  Bot,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   Circle,
-  Command,
-  File,
-  Folder,
   LoaderCircle,
-  Sparkles,
-  Wrench,
 } from 'lucide-react-native'
-import {
-  Pressable,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
-} from 'react-native'
+import { Pressable, ActivityIndicator, View } from 'react-native'
+import { Text } from '../ui/text'
 import { WebView } from 'react-native-webview'
 import { CHAT_VIEW_HTML } from '@superone/chat-view'
-import type { ChatMessage, ImageAttachment, TodoItem } from '@superone/shared/agent-types'
+import type { ChatMessage, HarnessId, ImageAttachment, TodoItem } from '@superone/shared/agent-types'
 import type { filterSlashCommands } from '../slash'
 import type { MentionItem } from '../mentions'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
-import { PermissionModeSelector } from '../ui'
+import { ChatComposer, type ComposerSelection } from './chat-composer'
+import { NewSessionLanding, type NewSessionLandingProps } from './new-session-landing'
+
+const CHAT_SOURCE = { html: CHAT_VIEW_HTML }
 
 export function ChatScreen(props: {
+  nativeDraft?: NativeComposerBinding
+  provider: HarnessId
+  landing?: NewSessionLandingProps
+  starting?: boolean
+  selection?: ComposerSelection
   webRef: RefObject<WebView | null>
   permissionModes: string[]
   permissionMode: string
@@ -37,6 +38,10 @@ export function ChatScreen(props: {
   additionalDirectories: string[]
   queuedMessages: ChatMessage[]
   todos: Record<string, TodoItem>
+  onCursorChange?: (selection: ComposerCursor) => void
+  requestedCursor?: ComposerCursor
+  mentionSearch?: MentionSearchState
+  onMentionRetry?: () => void
   draft: string
   streaming: boolean
   onWebMessage: (raw: string) => void
@@ -58,22 +63,19 @@ export function ChatScreen(props: {
   const completedTodos = todoItems.filter((todo) => todo.status === 'completed').length
   const activeTodo = todoItems.find((todo) => todo.status === 'in_progress')
     ?? todoItems.find((todo) => todo.status !== 'completed')
-  const mentionSections = [
-    { title: 'Agents', items: props.mentionHits.filter((item) => item.kind === 'agent') },
-    { title: 'Built-ins', items: props.mentionHits.filter((item) => item.kind === 'builtin') },
-    { title: 'Files & folders', items: props.mentionHits.filter((item) => item.kind !== 'agent' && item.kind !== 'builtin') },
-  ].filter((section) => section.items.length > 0)
   return (
     <View style={styles.flex}>
-      <WebView
+      {props.starting ? <View style={styles.emptyState}><ActivityIndicator color={tokens.colors.mutedForeground} /><Text style={styles.emptyBody}>Starting session…</Text></View> : props.landing ? <NewSessionLanding {...props.landing} /> : <WebView
         ref={props.webRef}
         originWhitelist={['*']}
-        source={{ html: CHAT_VIEW_HTML }}
+        source={CHAT_SOURCE}
+        startInLoadingState
+        renderLoading={() => <LoadingOverlay label="Loading conversation…" />}
         style={styles.flex}
         onMessage={(event) => props.onWebMessage(event.nativeEvent.data)}
         onContentProcessDidTerminate={() => props.onWebProcessError('content process terminated')}
         onRenderProcessGone={() => props.onWebProcessError('render process terminated')}
-      />
+      />}
       {todoItems.length ? (
         <View style={styles.todoPanel}>
           <Pressable
@@ -123,109 +125,7 @@ export function ChatScreen(props: {
           <Text numberOfLines={1} style={styles.rowMeta}>{props.queuedMessages.length} queued · waiting for the current turn</Text>
         </View>
       ) : null}
-      <View style={styles.composerControls}>
-        <PermissionModeSelector
-          modes={props.permissionModes}
-          value={props.permissionMode}
-          onChange={props.onPermissionMode}
-        />
-        {props.additionalDirectories.length ? (
-          <Text numberOfLines={1} style={styles.directoryHint}>+{props.additionalDirectories.length} directories</Text>
-        ) : null}
-      </View>
-      {props.slashHits.length ? (
-        <ScrollView style={styles.overlay}>
-          <Text style={styles.overlayHeader}>Commands</Text>
-          {props.slashHits.slice(0, 8).map((hit) => (
-            <Pressable
-              accessibilityRole="button"
-              key={hit.command.name}
-              style={styles.overlayRow}
-              onPress={() => props.onSlash(hit.command.name)}
-            >
-              <View style={styles.overlayIcon}>
-                {hit.command.isSkill
-                  ? <Sparkles color={tokens.colors.primary} size={17} />
-                  : <Command color={tokens.colors.mutedForeground} size={17} />}
-              </View>
-              <View style={styles.flex}>
-                <Text style={styles.rowTitle}>/{hit.command.name}</Text>
-                {hit.command.description || hit.command.argumentHint ? (
-                  <Text numberOfLines={2} style={styles.rowMeta}>
-                    {[hit.command.description, hit.command.argumentHint].filter(Boolean).join(' · ')}
-                  </Text>
-                ) : null}
-              </View>
-            </Pressable>
-          ))}
-        </ScrollView>
-      ) : null}
-      {props.mentionHits.length ? (
-        <ScrollView style={styles.overlay}>
-          {mentionSections.map((section) => (
-            <View key={section.title}>
-              <Text style={styles.overlayHeader}>{section.title}</Text>
-              {section.items.slice(0, 8).map((item) => {
-                const Icon = item.kind === 'agent'
-                  ? Bot
-                  : item.kind === 'builtin'
-                    ? Wrench
-                    : item.isDirectory
-                      ? Folder
-                      : File
-                return (
-                  <Pressable
-                    accessibilityRole="button"
-                    key={`${item.kind}:${item.path}`}
-                    style={styles.overlayRow}
-                    onPress={() => props.onMention(item)}
-                  >
-                    <View style={styles.overlayIcon}>
-                      <Icon color={item.kind === 'agent' ? tokens.colors.primary : tokens.colors.mutedForeground} size={17} />
-                    </View>
-                    <View style={styles.flex}>
-                      <Text numberOfLines={1} style={styles.rowTitle}>{item.label ?? item.path}</Text>
-                      <Text numberOfLines={1} style={styles.rowMeta}>{item.path}</Text>
-                    </View>
-                  </Pressable>
-                )
-              })}
-            </View>
-          ))}
-        </ScrollView>
-      ) : null}
-      {props.attachments.length ? (
-        <ScrollView horizontal style={styles.attachmentStrip} contentContainerStyle={styles.attachmentStripContent}>
-          {props.attachments.map((attachment) => (
-            <Pressable
-              key={attachment.id ?? attachment.name}
-              style={styles.attachmentChip}
-              onPress={() => props.onRemoveAttachment(attachment)}
-            >
-              <Text numberOfLines={1} style={styles.attachmentText}>{attachment.name} ×</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-      ) : null}
-      <View style={styles.composer}>
-        <Pressable style={styles.attach} onPress={props.onAttachmentMenu}>
-          <Text style={styles.btnText}>＋</Text>
-        </Pressable>
-        <TextInput
-          style={styles.composerInput}
-          placeholder={props.streaming ? 'Streaming…' : 'Message'}
-          placeholderTextColor={tokens.colors.mutedForeground}
-          value={props.draft}
-          onChangeText={props.onDraft}
-          multiline
-          submitBehavior="submit"
-          onSubmitEditing={props.onSubmitFromKeyboard}
-          autoCorrect
-        />
-        <Pressable style={styles.send} onPress={props.streaming ? props.onStop : props.onSend}>
-          <Text style={styles.btnText}>{props.streaming ? 'Stop' : 'Send'}</Text>
-        </Pressable>
-      </View>
+      <ChatComposer {...props} />
     </View>
   )
 }

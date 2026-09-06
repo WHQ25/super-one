@@ -1,5 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { Linking, ScrollView, Text, View } from 'react-native'
+import { Linking, ScrollView, View } from 'react-native'
+import { Text } from '../ui/text'
 import { Lexer, type Token, type Tokens } from 'marked'
 import { useMobileTheme } from '../theme/context'
 import { runUiAction } from '../ui-action'

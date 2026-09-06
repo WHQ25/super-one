@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Switch, Text, View } from 'react-native'
+import { Switch, View } from 'react-native'
+import { Text } from '../ui/text'
 import { Bot, CalendarClock, FilePenLine, FileText, Globe, Monitor, Plug, Settings2, ShieldAlert, Smartphone, Terminal, Trash2, Video, type LucideIcon } from 'lucide-react-native'
 import type { HarnessId, RemoteSystemInfo, PermissionRequest } from '@superone/shared/agent-types'
 import { elicitationAnswersAreValid, initialElicitationAnswers, permissionSheetPresentation, permissionSuggestionLabel } from '../permission-sheet-state'
@@ -54,7 +55,7 @@ export function PermissionSheet(props: {
     approveLabel={remember && allowRemember ? presentation.alwaysLabel! : `${presentation.approveLabel}${suggestions.size ? ` +${suggestions.size}` : ''}`}
     rejectLabel={feedback.trim() ? `${presentation.denyLabel} with feedback` : presentation.denyLabel}
     onApprove={approve} onReject={deny} disabled={!elicitationAnswersAreValid(fields, values) || !permissionEditsValid(perm) || Object.values(invalidFields).some(Boolean)}
-    destructive={presentation.destructive} primary={remember && allowRemember}
+    destructive={presentation.destructive}
     feedback={{ value: feedback, onChange: setFeedback }}
   >{allowRemember ? <PromptChoice multi label={presentation.alwaysLabel!} selected={remember} onPress={() => setRemember(!remember)} /> : null}</PromptActions>}>
     <PermissionContent request={perm} />

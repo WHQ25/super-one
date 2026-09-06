@@ -1,66 +1,33 @@
+import { memo } from 'react'
+import { View } from 'react-native'
 import type { HarnessId } from '@superone/shared/agent-types'
 import { isGrokAcpAgent, isOpenCodeAcpAgent } from '@superone/shared/acp-brand'
-import Svg, { Path, Rect } from 'react-native-svg'
 import { useMobileTheme } from '../theme/context'
-import { HARNESS_ICON_COLORS as colors, HARNESS_ICON_PATHS as paths } from './harness-icon-data'
+import { HarnessScene, harnessScenes } from './harness-scene'
+import type { IconBrand, IconState } from './harness-scene-types'
+import { useIconMotion } from './use-icon-motion'
 
-export function HarnessIcon(props: {
-  provider: HarnessId
-  acpAgentId?: string | null
-  status?: string
-  size?: number
+export function sessionIconState(status?: string): IconState {
+  if (status === 'running' || status === 'streaming' || status === 'starting') return 'running'
+  if (status === 'background' || status === 'unseen' || status === 'automation') return status
+  return 'default'
+}
+
+export function sessionIconBrand(provider: HarnessId, acpAgentId?: string | null): IconBrand {
+  if (provider !== 'acp') return provider
+  if (isGrokAcpAgent(acpAgentId)) return 'grok'
+  if (isOpenCodeAcpAgent(acpAgentId)) return 'opencode'
+  return 'acp'
+}
+
+export const HarnessIcon = memo(function HarnessIcon({ provider, acpAgentId, status, size = 20, renderLevel = 'compact' }: {
+  provider: HarnessId; acpAgentId?: string | null; status?: string; size?: number; renderLevel?: 'compact' | 'rich'
 }) {
   const { tokens } = useMobileTheme()
-  const size = props.size ?? 20
-  const opacity = props.status === 'ended' || props.status === 'disposed' ? 0.55 : 1
-
-  if (props.provider === 'claude') {
-    return (
-      <Svg accessible={false} height={size} opacity={opacity} viewBox="-3 -3 116 90" width={size}>
-        <Path d="M10 0H100V20H110V40H100V60H10V40H0V20H10Z" fill={colors.claude} />
-        <Rect fill={tokens.colors.foreground} height="10" width="10" x="20" y="20" />
-        <Rect fill={tokens.colors.foreground} height="10" width="10" x="80" y="20" />
-      </Svg>
-    )
-  }
-  if (props.provider === 'codex') {
-    return (
-      <Svg accessible={false} height={size} opacity={opacity} viewBox="1 1 22 22" width={size}>
-        <Path d={paths.codexCloud} fill={colors.codex} />
-        <Path d={paths.codexSlash} fill={colors.lightGlyph} />
-        <Path d={paths.codexUnderscore} fill={colors.lightGlyph} />
-      </Svg>
-    )
-  }
-
-  const acpOpenCode = props.provider === 'acp' && isOpenCodeAcpAgent(props.acpAgentId)
-  const acpGrok = props.provider === 'acp' && isGrokAcpAgent(props.acpAgentId)
-  if (props.provider === 'opencode' || acpOpenCode) {
-    return <MonoMark color={tokens.colors.foreground} path={paths.opencode} size={size} opacity={opacity} />
-  }
-  if (props.provider === 'cursor') {
-    return <MonoMark color={tokens.colors.foreground} path={paths.cursor} size={size} opacity={opacity} />
-  }
-  if (props.provider === 'dsh') {
-    return <MonoMark color={colors.deepseek} path={paths.deepseek} size={size} opacity={opacity} />
-  }
-  if (acpGrok) {
-    return <MonoMark color={tokens.colors.foreground} path={paths.grok} size={size} opacity={opacity} />
-  }
-  return (
-    <Svg accessible={false} height={size} opacity={opacity} viewBox="0 0 24 24" width={size}>
-      <Rect fill={colors.acp} height="8" rx="2" width="8" x="3" y="3" />
-      <Rect fill={colors.acp} height="8" opacity="0.55" rx="2" width="8" x="13" y="3" />
-      <Rect fill={colors.acp} height="8" opacity="0.55" rx="2" width="8" x="3" y="13" />
-      <Rect fill={colors.acp} height="8" opacity="0.35" rx="2" width="8" x="13" y="13" />
-    </Svg>
-  )
-}
-
-function MonoMark(props: { color: string; opacity: number; path: string; size: number }) {
-  return (
-    <Svg accessible={false} height={props.size} opacity={props.opacity} viewBox="0 0 24 24" width={props.size}>
-      <Path d={props.path} fill={props.color} fillRule="evenodd" />
-    </Svg>
-  )
-}
+  const animate = useIconMotion()
+  const brand = sessionIconBrand(provider, acpAgentId)
+  const node = harnessScenes.scenes[brand][sessionIconState(status)][renderLevel]
+  return <View accessible={false} style={{ width: size, height: size, opacity: status === 'ended' || status === 'disposed' ? 0.55 : 1 }}>
+    <HarnessScene node={node} size={size} color={tokens.colors.foreground} background={tokens.colors.background} motion={animate} />
+  </View>
+})

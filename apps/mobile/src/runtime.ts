@@ -1,3 +1,4 @@
+import { requestMentionSearch, type MentionSearchResult } from './mention-search'
 import type {
   AgentEvent,
   ChatMessage,
@@ -219,13 +220,8 @@ export class ChatRuntime {
     })
   }
 
-  searchMentions(query: string): Promise<{ items?: unknown[]; error?: string }> {
-    return this.client.request({
-      type: 'search_mentions',
-      requestId: randomId(),
-      projectPath: this.projectPath,
-      query,
-    } as RemoteCommand) as Promise<{ items?: unknown[]; error?: string }>
+  searchMentions(query: string): Promise<MentionSearchResult> {
+    return requestMentionSearch(this.client, this.projectPath, query)
   }
 
   respondPermission(

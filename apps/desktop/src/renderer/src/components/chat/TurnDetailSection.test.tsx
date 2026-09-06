@@ -20,11 +20,26 @@ describe('turn detail disclosure', () => {
     expect(screen.queryByText('tools-2')).not.toBeInTheDocument()
   })
 
-  it('shows one indicator, anchored at the first collapsed run', () => {
+  it('shows one indicator, at the top of the turn', () => {
     const { container } = render(<TurnDetailSection runs={runs} />)
     expect(container.querySelectorAll('.turn-detail-section')).toHaveLength(1)
     const children = [...container.firstElementChild!.parentElement!.children]
     expect(children[0]).toHaveClass('turn-detail-section')
+  })
+
+  it('keeps the indicator on top when the turn opens with pinned prose', () => {
+    const { container } = render(
+      <TurnDetailSection
+        runs={[
+          { key: 'intro', collapsible: false, content: <p>intro</p> },
+          { key: 'a', collapsible: true, content: <p>tools</p> },
+          { key: 'b', collapsible: false, content: <p>answer</p> },
+        ]}
+      />,
+    )
+    const children = [...container.firstElementChild!.parentElement!.children]
+    expect(children[0]).toHaveClass('turn-detail-section')
+    expect(children[1]).toHaveTextContent('intro')
   })
 
   it('hands the content\'s outer margins to the animating wrapper', async () => {

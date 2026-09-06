@@ -34,10 +34,10 @@ interface TurnDetailSectionProps {
 const fmt = (n: number) => n.toLocaleString()
 
 /**
- * Compact-mode process disclosure. A single indicator, anchored at the first
- * collapsed run, toggles every collapsible run at once; pinned runs (markdown,
- * widgets) render in place regardless, so expanding restores the turn's original
- * order rather than re-flowing it.
+ * Compact-mode process disclosure. A single indicator at the top of the turn
+ * toggles every collapsible run at once; pinned runs (markdown, widgets) render
+ * in place regardless, so expanding restores the turn's original order rather
+ * than re-flowing it.
  *
  * Each collapsible run animates its height (see TurnDetailRegion for how that stays
  * spacing-accurate).
@@ -137,10 +137,6 @@ export function TurnDetailSection({ runs, stats, workingSince, className }: Turn
         duration: formatCompactDuration(workingDuration, i18n.resolvedLanguage ?? i18n.language),
       })
     : t('chat.compactMode.detail')
-  // Anchor the indicator to the first collapsed run so a turn that opens with prose
-  // still reads top-down: intro, Detail (standing in for the tools), answer.
-  const firstCollapsible = runs.findIndex((run) => run.collapsible)
-
   const indicator = (
     <div className={cn('turn-detail-section mb-1.5', className)}>
       <button
@@ -196,14 +192,14 @@ export function TurnDetailSection({ runs, stats, workingSince, className }: Turn
     </div>
   )
 
+  // The indicator leads the turn: it stands for the whole process, so it reads as a
+  // header for everything below rather than as a divider between two pinned runs.
   return (
     <>
-      {runs.map((run, i) =>
+      {indicator}
+      {runs.map((run) =>
         run.collapsible ? (
-          <Fragment key={run.key}>
-            {i === firstCollapsible && indicator}
-            <TurnDetailRegion expanded={expanded}>{run.content}</TurnDetailRegion>
-          </Fragment>
+          <TurnDetailRegion key={run.key} expanded={expanded}>{run.content}</TurnDetailRegion>
         ) : (
           <Fragment key={run.key}>{run.content}</Fragment>
         ),

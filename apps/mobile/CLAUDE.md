@@ -121,7 +121,12 @@ Desktop `shared_file` events bypass chat reduction and enter the same native rec
 sheet. Inline payloads and encrypted relay downloads are size-checked, capped at 100 MiB,
 written under sanitized cache names, and deduplicated by `shareId` before preview/share.
 
-mDNS is **not** required this cycle (QR / relay + optional manual host:port). Terminal
+The device list discovers desktops over mDNS through the local `modules/lan-browser`
+Expo module (`_superone._tcp`, matched to a pairing by the `roomId` TXT key) and probes
+reachability without a raw socket: the relay's `/status` room endpoint for the cloud
+route, and an HTTP GET against the desktop LAN server — which answers `426 Upgrade
+Required` — for the local one. The native module is optional at import; a dev client
+built before it existed degrades to relay-only discovery. Terminal
 frames use `RelayClient.send` / `onTerminal` and never ACK. The separate terminal
 document embeds xterm.js, prefers the patched WebGL renderer, falls back to canvas,
 and reports input and bounded resize messages to RN.

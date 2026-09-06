@@ -16,6 +16,8 @@ import { TabletSessionSidebar } from '../navigation/tablet-session-sidebar'
 import { ChatScreen } from '../screens/chat-screen'
 import { FilesScreen } from '../screens/files-screen'
 import { PairingsScreen } from '../screens/pairings-screen'
+import type { SavedPairing } from '@superone/relay-client'
+import type { DeviceStatus } from '../device-status'
 import { ProjectsScreen } from '../screens/projects-screen'
 import { SessionsScreen } from '../screens/sessions-screen'
 import { SettingsScreen, type ProjectSettingsProps } from '../screens/settings-screen'
@@ -25,6 +27,7 @@ import { mobileWebViewTheme } from '../theme/tokens'
 import { injectHostMessage } from '../native-actions'
 import { Button, SelectionField, Sheet } from '../ui'
 import { IconGallery } from './IconGallery'
+import { LanBrowserPreview } from './LanBrowserPreview'
 import { effortOptionsForModel, resolveSelectedEffort } from '../model-selection-state'
 import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
 import { shellPreviewPages, type ShellPreviewPage as Page } from './preview-route'
@@ -42,6 +45,19 @@ const previewModels: ModelOption[] = [
   })),
 ]
 const project = { name: 'super-one', path: '/workspace/super-one' }
+
+/** One saved device per connection state, so the whole status vocabulary is reviewable. */
+const previewDevices: { pairing: SavedPairing; status: DeviceStatus }[] = [
+  { pairing: device('desk-lan-connected', 'Studio iMac', '192.168.1.9:8123'), status: 'connectedLan' },
+  { pairing: device('desk-lan', 'Workshop mini', '192.168.1.24:8123'), status: 'onlineLan' },
+  { pairing: device('desk-cloud', 'Office MacBook Pro'), status: 'onlineCloud' },
+  { pairing: device('desk-retry', 'Loft desktop'), status: 'connecting' },
+  { pairing: device('desk-offline', 'Old laptop'), status: 'offline' },
+]
+
+function device(id: string, hostName: string, lan?: string): SavedPairing {
+  return { id, hostName, lan, relayUrl: 'wss://relay.super-one.dev', secret: 'a'.repeat(64) }
+}
 const sessions = [
   { sessionId: 'preview-1', title: 'Review the mobile interface and accessibility', provider: 'claude' as const, gitBranch: 'feat/mobile-ui', status: 'streaming' },
   { sessionId: 'preview-2', title: '检查长标题与中文输入', provider: 'codex' as const, tags: ['mobile', 'review'] },
@@ -57,6 +73,7 @@ export function ShellPreview({ initialPage = 'New session', onClose, onTheme }: 
   const { tokens, setHarness } = useMobileTheme()
   const { width, fontScale } = useWindowDimensions()
   const [page, setPage] = useState<Page>(initialPage)
+  const [devicesRefreshing, setDevicesRefreshing] = useState(false)
   const [provider, setProvider] = useState<HarnessId>('claude')
   const [draft, setDraft] = useState('')
   const chatDraft = useComposerDraft()
@@ -126,13 +143,22 @@ export function ShellPreview({ initialPage = 'New session', onClose, onTheme }: 
             onRemoveAttachment={(item) => setAttachments((current) => current.filter((entry) => entry !== item))} onAttachmentMenu={() => setAttachments([{ id: 'pdf', name: 'mobile-design-review.pdf', mimeType: 'application/pdf', base64: '' }])}
             nativeDraft={{ controller: chatDraft.editorRef, document: chatDraft.document.current, onChange: acceptDraft, onError: setEditorError }}
             onDraft={chatDraft.changeText} onSubmitFromKeyboard={send} onSend={send} onStop={() => setPage('New session')} /> : null}
-          {page === 'Devices' || page === 'Pairing' ? <PairingsScreen scannerOpen={false} paste="" lan="" code={page === 'Pairing' ? '123456' : null} pairings={[]} activePairingId={null} connected={false} onBarcodeScanned={() => {}} onCancelScanner={() => {}} onPasteChange={() => {}} onLanChange={() => {}} onPair={() => {}} onOpenScanner={() => setPage('Pairing')} onConnect={() => {}} onRename={() => {}} onForget={() => {}} /> : null}
+          {page === 'Devices' || page === 'Pairing' ? <PairingsScreen scannerOpen={false} paste="" lan=""
+            code={page === 'Pairing' ? '123456' : null}
+            pairings={previewDevices.map((item) => item.pairing)}
+            statusOf={(item) => previewDevices.find((row) => row.pairing.id === item.id)?.status ?? 'offline'}
+            reconnect={{ attempting: false, waiting: true, delayMs: 16_000, nextAtMs: Date.now() + 9_000 }}
+            activePairingId="desk-retry" connectingPairingId={null}
+            refreshing={devicesRefreshing} onRefresh={() => setDevicesRefreshing((value) => !value)}
+            onBarcodeScanned={() => {}} onCancelScanner={() => {}} onPasteChange={() => {}} onLanChange={() => {}}
+            onPair={() => {}} onOpenScanner={() => setPage('Pairing')} onConnect={() => {}} onRename={() => {}} onForget={() => {}} /> : null}
           {page === 'Projects' ? <ProjectsScreen projects={[project, { name: 'design-system', path: '/workspace/design-system' }]} onOpen={() => setPage('Sessions')} /> : null}
           {page === 'Sessions' ? <SessionsScreen sessions={sessions} onOpenSession={() => setPage('Chat')} onCreateSession={() => setPage('New session')} onArchiveSession={() => {}} onDeleteSession={() => {}} /> : null}
           {page === 'Settings' ? <SettingsScreen {...settings} /> : null}
           {page === 'Icons' ? <IconGallery /> : null}
+          {page === 'LAN browser' ? <LanBrowserPreview /> : null}
           {page === 'Chip editor' ? <MentionEditorPreview /> : null}
-          {route === 'files' && page !== 'Icons' && page !== 'Chip editor' ? <FilesScreen path="/workspace/super-one/apps/mobile/src" items={page === 'Files' ? [{ name: 'screens', isDirectory: true }, { name: 'chat-screen.tsx', isDirectory: false }, { name: 'mobile-review.png', isDirectory: false }] : []} error={page === 'Folder error' ? 'Could not read this folder. Check the desktop connection.' : undefined} onOpenDirectory={() => setPage('Empty folder')} onOpenFile={() => {}} /> : null}
+          {route === 'files' && page !== 'Icons' && page !== 'Chip editor' && page !== 'LAN browser' ? <FilesScreen path="/workspace/super-one/apps/mobile/src" items={page === 'Files' ? [{ name: 'screens', isDirectory: true }, { name: 'chat-screen.tsx', isDirectory: false }, { name: 'mobile-review.png', isDirectory: false }] : []} error={page === 'Folder error' ? 'Could not read this folder. Check the desktop connection.' : undefined} onOpenDirectory={() => setPage('Empty folder')} onOpenFile={() => {}} /> : null}
           {page === 'Terminal' ? <TerminalScreen webRef={terminal} draft={draft} writable={writable} onDraft={setDraft} onClaim={() => { setWritable(true); injectHostMessage(terminal, { kind: 'meta', writableByMe: true }) }} onSubmit={(line) => { injectHostMessage(terminal, { kind: 'append', data: `\r\n$ ${line}\r\n[offline preview]\r\n` }); setDraft('') }} onKey={() => {}} onWebMessage={(raw) => {
             if (JSON.parse(raw).type !== 'terminalReady') return
             injectHostMessage(terminal, mobileWebViewTheme(tokens))

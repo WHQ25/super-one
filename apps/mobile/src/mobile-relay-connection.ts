@@ -1,5 +1,6 @@
 import { RelayClient, type OpenSocket } from '@superone/relay-client'
 import { ReconnectController, type ConnectionState } from './reconnect-controller'
+import type { ReconnectInfo } from './device-status'
 
 export type MobileRelayConnectionHooks = {
   onEvents: (events: unknown[], epoch: number) => void
@@ -8,6 +9,8 @@ export type MobileRelayConnectionHooks = {
   currentEpoch: (client: RelayClient) => number
   onConnection: (state: ConnectionState, epoch: number) => void
   onStatus: (message: string) => void
+  /** Backoff state for the device list's countdown; null once settled. */
+  onReconnectInfo?: (info: ReconnectInfo) => void
   onShutdown: () => void
   onKicked?: () => void
   suppressDisconnect: () => boolean
@@ -22,6 +25,7 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
   let stopped = false
   let peerLost = false
   let peerRestore: Promise<void> | null = null
+  let lastDelayMs = 0
   const report = hooks.onConnection
   const restore = () => hooks.restore(client)
   const reconnectController = new ReconnectController(
@@ -29,12 +33,26 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
     restore,
     {
       onState: (state, epoch) => {
-        if (state === 'connected') peerLost = false
+        if (state === 'connected') {
+          peerLost = false
+          lastDelayMs = 0
+          hooks.onReconnectInfo?.({ attempting: false, waiting: false, delayMs: 0, nextAtMs: null })
+        }
         report(state, epoch)
+      },
+      onAttempt: () => {
+        hooks.onReconnectInfo?.({ attempting: true, waiting: false, delayMs: lastDelayMs, nextAtMs: null })
       },
       onRetry: (error, delayMs) => {
         const reason = error instanceof Error ? error.message : 'connection failed'
+        lastDelayMs = delayMs
         hooks.onStatus(`${reason} — retrying in ${delayMs / 1_000}s`)
+        hooks.onReconnectInfo?.({
+          attempting: false,
+          waiting: true,
+          delayMs,
+          nextAtMs: Date.now() + delayMs,
+        })
       },
     },
   )

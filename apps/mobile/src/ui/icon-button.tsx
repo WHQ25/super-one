@@ -1,9 +1,10 @@
 import type { RefObject } from 'react'
 import type { LucideIcon } from 'lucide-react-native'
 import { Pressable, View, type StyleProp, type ViewStyle } from 'react-native'
+import { SpinningIcon } from './spinning-icon'
 import { useMobileTheme } from '../theme/context'
 
-export function IconButton({ icon: Icon, label, onPress, disabled, active, destructive, tone, chrome = 'default', iconSize = 20, style, buttonRef }: {
+export function IconButton({ icon: Icon, label, onPress, disabled, active, destructive, tone, chrome = 'default', iconSize = 20, spinning, style, buttonRef }: {
   buttonRef?: RefObject<View | null>
   icon: LucideIcon
   label: string
@@ -14,9 +15,14 @@ export function IconButton({ icon: Icon, label, onPress, disabled, active, destr
   tone?: 'muted' | 'primary' | 'danger'
   chrome?: 'default' | 'plain' | 'circle'
   iconSize?: number
+  /** Rotate the icon to show the action it triggers is still running. */
+  spinning?: boolean
   style?: StyleProp<ViewStyle>
 }) {
   const { tokens: { colors, radius } } = useMobileTheme()
+  const glyph = (color: string) => spinning
+    ? <SpinningIcon icon={Icon} size={iconSize} color={color} strokeWidth={1.8} />
+    : <Icon size={iconSize} strokeWidth={1.8} color={color} />
   const iconColor = tone === 'primary' ? colors.primary
     : tone === 'danger' || destructive ? colors.error
       : active ? colors.primaryForeground : colors.mutedForeground
@@ -36,8 +42,8 @@ export function IconButton({ icon: Icon, label, onPress, disabled, active, destr
     >
       {({ pressed }) => chrome === 'circle' ? <View style={{ width: 26, height: 26, borderRadius: 13, borderWidth: 1,
         borderColor: colors.border, backgroundColor: pressed ? colors.muted : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
-        <Icon size={iconSize} strokeWidth={1.8} color={iconColor} />
-      </View> : <Icon size={iconSize} strokeWidth={1.8} color={iconColor} />}
+        {glyph(iconColor)}
+      </View> : glyph(iconColor)}
     </Pressable>
   )
 }

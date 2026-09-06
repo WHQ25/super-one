@@ -1,0 +1,5 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": { "modules": ["LanBrowserModule"] },
+  "android": { "modules": ["expo.modules.lanbrowser.LanBrowserModule"] }
+}

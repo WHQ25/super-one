@@ -1,11 +1,13 @@
 import { CameraView, type BarcodeScanningResult } from 'expo-camera'
 import { useEffect, useState } from 'react'
-import { Laptop, Link2Off, MoreHorizontal, QrCode, ChevronDown } from 'lucide-react-native'
+import { ChevronDown, Link2Off, QrCode, RefreshCw } from 'lucide-react-native'
 import { FlatList, Pressable, TextInput, View } from 'react-native'
 import { Text } from '../ui/text'
 import type { SavedPairing } from '@superone/relay-client'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { Badge, Button, IconButton, ListRow, SectionHeader, Sheet } from '../ui'
+import { DeviceRow, deviceLabel } from '../ui/device-row'
+import type { DeviceStatus, ReconnectInfo } from '../device-status'
 
 export function PairingsScreen(props: {
   scannerOpen: boolean
@@ -13,8 +15,13 @@ export function PairingsScreen(props: {
   lan: string
   code: string | null
   pairings: SavedPairing[]
+  statusOf: (pairing: SavedPairing) => DeviceStatus
+  /** Backoff of the live socket; only the active device can be retrying. */
+  reconnect: ReconnectInfo | null
   activePairingId: string | null
-  connected: boolean
+  connectingPairingId: string | null
+  refreshing: boolean
+  onRefresh: () => void
   onBarcodeScanned: (result: BarcodeScanningResult) => void
   onCancelScanner: () => void
   onPasteChange: (value: string) => void
@@ -49,7 +56,22 @@ export function PairingsScreen(props: {
   return (
     <View style={styles.screenSection}>
       <View style={styles.sectionHeader}>
-        <SectionHeader title="My Devices" action={props.pairings.length ? <Badge label={`${props.pairings.length}`} /> : null} />
+        <SectionHeader
+          title="My Devices"
+          action={(
+            <View style={styles.pairingActions}>
+              {props.pairings.length ? <Badge label={`${props.pairings.length}`} /> : null}
+              <IconButton
+                icon={RefreshCw}
+                iconSize={16}
+                label="Refresh devices"
+                disabled={props.refreshing || props.pairings.length === 0}
+                spinning={props.refreshing}
+                onPress={props.onRefresh}
+              />
+            </View>
+          )}
+        />
       </View>
       {props.code ? (
         <View style={styles.emptyState}>
@@ -59,27 +81,19 @@ export function PairingsScreen(props: {
         </View>
       ) : props.pairings.length ? (
         <FlatList
-          data={props.pairings}
-          keyExtractor={(item) => item.id}
+          // Rows are rebuilt with their status so a reachability change repaints
+          // them; FlatList would otherwise skip cells whose `data` entry is ===.
+          data={props.pairings.map((pairing) => ({ pairing, status: props.statusOf(pairing) }))}
+          keyExtractor={(item) => item.pairing.id}
           renderItem={({ item }) => (
-            <ListRow
-              title={item.name || item.hostName || item.relayUrl}
-              subtitle={item.lan ?? item.relayUrl}
-              leading={(
-                <View style={styles.iconBox}>
-                  <Laptop color={tokens.colors.mutedForeground} size={23} />
-                </View>
-              )}
-              trailing={(
-                <View style={styles.pairingActions}>
-                  <Badge
-                    label={props.activePairingId === item.id && props.connected ? 'Online' : 'Offline'}
-                    tone={props.activePairingId === item.id && props.connected ? 'success' : 'neutral'}
-                  />
-                  <IconButton icon={MoreHorizontal} label={`Manage ${item.name || item.hostName || 'device'}`} onPress={() => setEditing(item)} />
-                </View>
-              )}
-              onPress={() => props.onConnect(item)}
+            <DeviceRow
+              pairing={item.pairing}
+              status={item.status}
+              reconnect={props.activePairingId === item.pairing.id ? props.reconnect : null}
+              disabled={props.connectingPairingId !== null && props.connectingPairingId !== item.pairing.id}
+              onPress={() => props.onConnect(item.pairing)}
+              onRename={() => setEditing(item.pairing)}
+              onForget={() => props.onForget(item.pairing)}
             />
           )}
         />
@@ -121,7 +135,8 @@ export function PairingsScreen(props: {
           </> : null}
         </View>
       ) : null}
-      <Sheet visible={!!editing} title="Device" onDismiss={() => setEditing(null)}>
+      <Sheet visible={!!editing} title="Rename device" onDismiss={() => setEditing(null)}>
+        {editing ? <ListRow title={deviceLabel(editing)} subtitle={editing.relayUrl} /> : null}
         <TextInput
           style={styles.input}
           placeholder="Device name"
@@ -135,15 +150,6 @@ export function PairingsScreen(props: {
           onPress={() => {
             if (!editing) return
             props.onRename(editing, name.trim())
-            setEditing(null)
-          }}
-        />
-        <Button
-          label="Forget device"
-          variant="danger"
-          onPress={() => {
-            if (!editing) return
-            props.onForget(editing)
             setEditing(null)
           }}
         />

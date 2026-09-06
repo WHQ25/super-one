@@ -62,6 +62,8 @@ import { MobileKeyboardFrame } from './mobile-keyboard-frame'
 import { useHarnessSelection } from './use-harness-selection'
 import { fetchShellDetails } from './shell-details'
 import { useReconnectOnForeground } from '../use-reconnect-on-foreground'
+import { useDeviceDiscovery } from './use-device-discovery'
+import { isReachable, type ReconnectInfo } from '../device-status'
 import { logRelayEventTypes } from '../relay-debug'
 import { Sheet } from '../ui'
 import { dynamicMentionArtworkRevision, dynamicMentionArtworkSnapshot } from '../ui/mention-dynamic-artwork'
@@ -82,6 +84,9 @@ export function MobileApp() {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions()
   const [pairings, setPairings] = useState<SavedPairing[]>([])
   const [activePairingId, setActivePairingId] = useState<string | null>(null)
+  const [connectingPairingId, setConnectingPairingId] = useState<string | null>(null)
+  const [activeTransport, setActiveTransport] = useState<'lan' | 'relay' | null>(null)
+  const [reconnect, setReconnect] = useState<ReconnectInfo | null>(null)
   const [projects, setProjects] = useState<Project[]>([])
   const [sessions, setSessions] = useState<SessionRow[]>([])
   const [project, setProject] = useState<Project | null>(null)
@@ -145,6 +150,13 @@ export function MobileApp() {
   const suppressReconnectRef = useRef(false)
   const scanningRef = useRef(false)
   useReconnectOnForeground(() => reconnectControllerRef.current?.force(connectionRef.current.epoch))
+  const discovery = useDeviceDiscovery({
+    pairings,
+    activePairingId,
+    activeTransport,
+    connectionState,
+    connectingPairingId,
+  })
   useEffect(() => {
     void loadPairings(kv).then(setPairings).catch((error) => {
       setStatus(error instanceof Error ? error.message : 'failed to load pairings')
@@ -323,6 +335,7 @@ export function MobileApp() {
         setStatus(state === 'connected' ? '' : 'disconnected — reconnecting')
       },
       onStatus: setStatus,
+      onReconnectInfo: setReconnect,
       onShutdown: () => {
         setConnectionState('offline')
         setStatus('desktop shut down')
@@ -344,6 +357,7 @@ export function MobileApp() {
     } else {
       await client.connectRelay({ relayUrl, masterSecret: secret, deviceId: activeDeviceId, deviceName: 'Expo' })
     }
+    setActiveTransport(client.transport)
     await rememberPairing({
       id: desktopDeviceId || hostName || relayUrl,
       relayUrl,
@@ -373,6 +387,32 @@ export function MobileApp() {
     })).then((rows) => {
       if (clientRef.current === client) setProjects(rows)
     }).catch(() => { /* Git indicators are best-effort. */ })
+  }
+
+  /**
+   * Tapping a device it could not reach used to fail with a transport error.
+   * Probe once first so an offline desktop is named as such, and prefer the
+   * address discovery just found over the one stored at pairing time.
+   */
+  const connectToPairing = async (item: SavedPairing) => {
+    if (connectingPairingId) return
+    setConnectingPairingId(item.id)
+    try {
+      if (!isReachable(discovery.statusOf(item))) {
+        await discovery.refresh({ reset: false })
+        if (!isReachable(discovery.statusOf(item))) {
+          setStatus('Desktop is unreachable. Make sure SuperOne is running on your computer.')
+          return
+        }
+      }
+      const discovered = discovery.lanAddressOf(item.id)
+      const lanHostPort = discovered ? `${discovered.host}:${discovered.port}` : item.lan || lan
+      await connectWithSecret(item.relayUrl, item.secret, lanHostPort, item.hostName, item.desktopDeviceId)
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'connect failed')
+    } finally {
+      setConnectingPairingId(null)
+    }
   }
 
   const onPair = async (value: string = paste) => {
@@ -823,16 +863,19 @@ export function MobileApp() {
           lan={lan}
           code={code}
           pairings={pairings}
+          statusOf={discovery.statusOf}
+          reconnect={reconnect}
           activePairingId={activePairingId}
-          connected={connectionState === 'connected'}
+          connectingPairingId={connectingPairingId}
+          refreshing={discovery.refreshing}
+          onRefresh={() => void discovery.refresh({ reset: true })}
           onBarcodeScanned={onBarcodeScanned}
           onCancelScanner={() => setScannerOpen(false)}
           onPasteChange={setPaste}
           onLanChange={setLan}
           onPair={() => void onPair()}
           onOpenScanner={() => runUiAction(openScanner, setStatus, 'camera failed')}
-          onConnect={(item) => void connectWithSecret(item.relayUrl, item.secret, item.lan || lan, item.hostName, item.desktopDeviceId)
-            .catch((error) => setStatus(error instanceof Error ? error.message : 'connect failed'))}
+          onConnect={(item) => void connectToPairing(item)}
           onRename={(item, name) => runUiAction(
             () => updatePairings((current) => current.map((pairing) => pairing.id === item.id ? { ...pairing, name } : pairing)),
             setStatus,
@@ -845,6 +888,8 @@ export function MobileApp() {
               clientRef.current?.disconnect()
               clientRef.current = null
               setActivePairingId(null)
+              setActiveTransport(null)
+              setReconnect(null)
               setConnectionState('offline')
             }
           }, setStatus, 'failed to forget device')}

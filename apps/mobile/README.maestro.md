@@ -76,9 +76,10 @@ bun run test:mobile:ui --platform android --device emulator-5554 --theme all
 | permission-structured | Video parameters, collaboration launch identities/modes, and automation config reach approval |
 | permission-destructive | Session cleanup, provider deletion, and automation deletion support distinct deny/allow callbacks |
 | composer-actions | Phone status controls remain above the input; send and streaming stop expose distinct states |
+| devices | The header carries the wordmark; each connection state, the retry countdown, swipe-to-forget confirmation and the disabled refresh control are visible |
 
-The 14 flows cover the phone composer actions plus at least one interaction for
-each of the nine explicit permission kinds. This is scenario coverage, not exhaustive branch coverage:
+The 15 flows cover the device list and the phone composer actions plus at least one
+interaction for each of the nine explicit permission kinds. This is scenario coverage, not exhaustive branch coverage:
 video/collaboration/automation edit permutations, HTML preview interaction,
 rotation, font scaling, and paired app navigation still need dedicated flows.
 The shared `assert-action.yaml` helper checks that the sheet closed and that the
@@ -184,3 +185,25 @@ release checks remain separate coverage gaps.
 
 See `../../docs/design/mobile-ui-redesign.md` for the page inventory,
 implementation map, paired checks and remaining verification limits.
+
+
+2026-09-06 · Device list · iPhone 17 Pro Max simulator · iOS 26.0:
+
+- Light 1/1 and dark 1/1 for the new `devices` flow (about 1 minute 3 seconds each).
+- Two flow-only fixes were needed and are worth remembering. `open-shell-preview.yaml`
+  did not clear iOS's "Open in SuperOne?" confirmation that the runner's own
+  development-client deep link raises, so the first run never reached the catalog;
+  it now dismisses it the way `open-scenario.yaml` does. And a device row is a
+  **single** accessibility element reading `"<name>, <status>"`, so `assertVisible`
+  and `swipe: from:` must use the composite text — Maestro anchors its text regex,
+  and a bare `"Old laptop"` matches nothing.
+- Evidence: `2026-09-06T07-26-58-977Z/light/report.xml` and
+  `2026-09-06T07-28-17-516Z/dark/report.xml` under `.maestro/artifacts/`.
+- The retry row counts down against a real deadline, so its screenshot digit varies.
+  Assert it as `Retrying in \d+s`; do not treat that screenshot as a pixel baseline.
+- The native mDNS module (`modules/lan-browser`) is **not** exercised by this flow,
+  and should not be: it needs a real desktop on the network, which CI does not have.
+  It is verified by hand through the **LAN browser** catalog page — see
+  `README.preview.md`. Re-running `devices` against the rebuilt development client
+  (light 1/1, 1 minute 12 seconds) confirmed the module's presence changes nothing
+  for the offline flows.

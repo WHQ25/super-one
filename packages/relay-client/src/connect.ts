@@ -2,6 +2,15 @@ import { computeHmacToken, computeRoomId, deriveKeys } from './crypto'
 
 export type TransportKind = 'relay' | 'lan'
 
+/**
+ * Bonjour service the desktop publishes for its LAN server. Must stay in step
+ * with `LAN_SERVICE_FQDN` in the desktop's `lan-advertiser.ts`, and with the
+ * `NSBonjourServices` entry in the mobile app config.
+ */
+export const LAN_SERVICE_TYPE = '_superone._tcp'
+/** TXT key carrying the room id, which is how a record is matched to a pairing. */
+export const LAN_TXT_ROOM_ID = 'roomId'
+
 export async function buildRelayWsUrl(opts: {
   relayUrl: string
   masterSecret: string

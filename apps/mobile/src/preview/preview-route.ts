@@ -2,7 +2,7 @@ import type { HarnessId } from '@superone/shared/agent-types'
 import { HARNESS_DEFAULT_BRAND_HUE } from '@superone/shared/harness-brand'
 import { nativeScenarios } from './scenarios'
 
-export const shellPreviewPages = ['New session', 'Chat', 'Icons', 'Chip editor', 'Devices', 'Pairing', 'Projects', 'Sessions', 'Settings', 'Files', 'Empty folder', 'Folder error', 'Terminal', 'Tool catalog'] as const
+export const shellPreviewPages = ['New session', 'Chat', 'Icons', 'Chip editor', 'Devices', 'Pairing', 'Projects', 'Sessions', 'Settings', 'Files', 'Empty folder', 'Folder error', 'Terminal', 'LAN browser', 'Tool catalog'] as const
 export type ShellPreviewPage = typeof shellPreviewPages[number]
 
 export function parsePreviewRoute(raw: string) {

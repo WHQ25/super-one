@@ -1,7 +1,16 @@
 export { PROCESSED_SEQ_CAP, SeqAckTracker, TransportAckRegistry } from './ack'
 export { BUFFER_FIRST_ORDER, EventBuffer } from './buffer'
 export { handleInboundFrame, makeDecrypt } from './frames'
-export { buildLanWsUrl, buildRelayWsUrl } from './connect'
+export { LAN_SERVICE_TYPE, LAN_TXT_ROOM_ID, buildLanWsUrl, buildRelayWsUrl } from './connect'
+export {
+  LAN_PROBE_TIMEOUT_MS,
+  RELAY_STATUS_TIMEOUT_MS,
+  checkLanReachable,
+  checkRelayDesktopOnline,
+  parseLanHostPort,
+  roomIdForSecret,
+} from './presence'
+export type { PresenceFetch, PresenceResponse } from './presence'
 export { RpcInbox } from './rpc'
 export { RelayClient } from './client'
 export type { MobileIdentity, OpenSocket, SocketLike } from './client'

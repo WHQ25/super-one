@@ -1,5 +1,15 @@
 appId: ${APP_ID}
 ---
+# The runner opens the development client through a deep link, and iOS asks to
+# confirm the first one. Clear it before looking for the preview.
+- repeat:
+    times: 3
+    commands:
+      - runFlow:
+          when:
+            visible: 'Open in.*'
+          commands:
+            - tapOn: 'Open'
 - runFlow:
     when:
       visible: "Close preview"

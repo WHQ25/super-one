@@ -1,0 +1,45 @@
+appId: ${APP_ID}
+name: Device list shows the wordmark and every connection state
+tags: [smoke, native, visual]
+---
+- runFlow:
+    file: ../helpers/open-shell-preview.yaml
+- tapOn: "Preview page:.*"
+- tapOn: "Devices"
+- extendedWaitUntil:
+    visible:
+      id: app-wordmark
+    timeout: 15000
+
+- assertVisible: "My Devices"
+- assertVisible: "Refresh devices"
+
+# One row per connection state. Each row is a single accessibility element, so
+# these also assert that the status is announced together with the device name.
+- assertVisible: "Studio iMac, Connected"
+- assertVisible: "Workshop mini, Online"
+- assertVisible: "Office MacBook Pro, Online"
+- assertVisible: "Loft desktop, Retrying in \\d+s"
+- assertVisible: "Old laptop, Offline"
+- takeScreenshot: ${"devices-" + THEME}
+
+# Forgetting is destructive, so it hides behind a swipe and asks first.
+- swipe:
+    from:
+      text: "Old laptop, Offline"
+    direction: LEFT
+- assertVisible: "Rename Old laptop"
+- assertVisible: "Forget Old laptop"
+- takeScreenshot: ${"devices-swipe-" + THEME}
+- tapOn: "Forget Old laptop"
+- assertVisible: "Forget device?"
+- assertVisible: "Remove “Old laptop” from your paired devices?"
+- tapOn: "Cancel"
+- assertVisible: "Old laptop, Offline"
+
+# Refresh disables its own control rather than queueing a second sweep.
+- tapOn: "Refresh devices"
+- assertVisible:
+    text: "Refresh devices"
+    enabled: false
+- takeScreenshot: ${"devices-refreshing-" + THEME}

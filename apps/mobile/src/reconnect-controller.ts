@@ -3,6 +3,8 @@ export type ConnectionState = 'reconnecting' | 'connected'
 export type ReconnectControllerHooks = {
   onState: (state: ConnectionState, epoch: number) => void
   onRetry?: (error: unknown, delayMs: number) => void
+  /** A dial is in flight. Pairs with onRetry to tell waiting from attempting apart. */
+  onAttempt?: () => void
 }
 
 /** Keep the Flutter-proven retry cadence: exponential backoff capped at 30s. */
@@ -65,6 +67,7 @@ export class ReconnectController {
   }
 
   private async run(generation: number): Promise<void> {
+    this.hooks.onAttempt?.()
     try {
       await this.reconnect()
       const epoch = await this.restore()

@@ -1,4 +1,4 @@
-import type { WorktreeMode } from '@superone/shared/agent-types'
+import type { WorktreeInfo, WorktreeMode } from '@superone/shared/agent-types'
 
 export type NewSessionWorktreeSelection =
   | { kind: 'local' }
@@ -61,4 +61,42 @@ export function worktreeSelectionError(
     return `Branch "${selection.baseBranch}" is already checked out.`
   }
   return null
+}
+
+/**
+ * Every way the working-directory chip can describe where a session will run.
+ * Mirrors the desktop `WorkDirState` in
+ * `apps/desktop/src/renderer/src/components/chat/work-dir-label.tsx` — keep the
+ * two speaking one language. The desktop's `local.host` axis has no mobile
+ * counterpart: every project a phone sees lives on the paired desktop.
+ */
+export type WorkDirChipState =
+  | { kind: 'local' }
+  | { kind: 'activeBranch'; name: string }
+  | { kind: 'activeDetached'; hash: string }
+  | { kind: 'createBranch'; name: string }
+  | { kind: 'attachTo'; base: string }
+  | { kind: 'createFrom'; base: string }
+
+/** Short HEAD of an already-existing worktree, for the detached label. */
+function shortHead(path: string, worktree?: WorktreeInfo | null): string {
+  const head = worktree?.entries.find((entry) => entry.path === path)?.head ?? ''
+  return head.slice(0, 7)
+}
+
+export function workDirChipState(
+  selection: NewSessionWorktreeSelection,
+  worktree?: WorktreeInfo | null,
+): WorkDirChipState {
+  if (selection.kind === 'existing') {
+    return selection.branch
+      ? { kind: 'activeBranch', name: selection.branch }
+      : { kind: 'activeDetached', hash: shortHead(selection.path, worktree) }
+  }
+  if (selection.kind === 'create') {
+    if (selection.mode === 'branch') return { kind: 'createBranch', name: selection.branchName.trim() }
+    if (selection.mode === 'attach') return { kind: 'attachTo', base: selection.baseBranch }
+    return { kind: 'createFrom', base: selection.baseBranch }
+  }
+  return { kind: 'local' }
 }

@@ -26,7 +26,7 @@ import { useComposerDraft } from './use-composer-draft'
 import { useComposerSuggestions } from './use-composer-suggestions'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { mobileWebViewTheme } from '../theme/tokens'
-import { harnessSupportsAdditionalDirs } from '../provider-state'
+import { harnessSupportsAdditionalDirs, MOBILE_HARNESS_IDS } from '../provider-state'
 import { parentRemotePath, resolveRemoteFilePath } from '../shell-state'
 import { loadOrCreateMobileId, mobileKv } from '../storage'
 import { registerFatalChatViewError } from '../chat-view-recovery'
@@ -49,6 +49,8 @@ import { readProjectSessions } from './workspace-data'
 import { useRemoteDirectory } from './use-remote-directory'
 import { leaveMobileSession, sessionRemovalStatus } from '../session-exit'
 import { ProjectsScreen, type Project } from '../screens/projects-screen'
+import { BranchScreen } from '../screens/branch-screen'
+import { WorktreeScreen } from '../screens/worktree-screen'
 import { runUiAction } from '../ui-action'
 import { FilesScreen } from '../screens/files-screen'
 import { ChatScreen } from '../screens/chat-screen'
@@ -63,9 +65,9 @@ import { useHarnessSelection } from './use-harness-selection'
 import { fetchShellDetails } from './shell-details'
 import { useReconnectOnForeground } from '../use-reconnect-on-foreground'
 import { useDeviceDiscovery } from './use-device-discovery'
+import { isFullBleedScreen } from '../layout-state'
 import { isReachable, type ReconnectInfo } from '../device-status'
 import { logRelayEventTypes } from '../relay-debug'
-import { Sheet } from '../ui'
 import { dynamicMentionArtworkRevision, dynamicMentionArtworkSnapshot } from '../ui/mention-dynamic-artwork'
 const kv = mobileKv
 export function MobileApp() {
@@ -79,7 +81,6 @@ export function MobileApp() {
   const [status, setStatus] = useState('')
   const [code, setCode] = useState<string | null>(null)
   const [deviceId, setDeviceId] = useState('')
-  const [worktreeOpen, setWorktreeOpen] = useState(false)
   const [scannerOpen, setScannerOpen] = useState(false)
   const [cameraPermission, requestCameraPermission] = useCameraPermissions()
   const [pairings, setPairings] = useState<SavedPairing[]>([])
@@ -109,9 +110,13 @@ export function MobileApp() {
   } = harnessSelection
   const [gitInfo, setGitInfo] = useState<ShellGitInfo | null>(null)
   const [worktreeInfo, setWorktreeInfo] = useState<WorktreeInfo | null>(null)
+  const [worktreeDirty, setWorktreeDirty] = useState<Record<string, number>>({})
   const [branches, setBranches] = useState<string[]>([])
   const [checkedOutBranches, setCheckedOutBranches] = useState<string[]>([])
   const [worktreeSelection, setWorktreeSelection] = useState<NewSessionWorktreeSelection>(LOCAL_WORKTREE_SELECTION)
+  // The worktree page edits a draft so that going back discards it; only the
+  // header's confirm writes it through.
+  const [worktreeDraft, setWorktreeDraft] = useState<NewSessionWorktreeSelection>(LOCAL_WORKTREE_SELECTION)
   const [workspaceDirs, setWorkspaceDirs] = useState<string[]>([])
   const [additionalDir, setAdditionalDir] = useState('')
   const composerDraft = useComposerDraft()
@@ -509,6 +514,7 @@ export function MobileApp() {
     setGitInfo(details.git)
     setWorkspaceDirs(details.workspaceDirs)
     setWorktreeInfo(details.worktree)
+    setWorktreeDirty(details.worktreeDirty)
     if (details.system) applySystemInfo(provider, details.system, provider === selectedProvider
       ? { model: selectedModel, effort: selectedEffort, permissionMode: permMode } : undefined)
     setBranches(details.branches)
@@ -691,6 +697,16 @@ export function MobileApp() {
     setScreen('chat')
     runUiAction(() => loadShellDetails(selectedProvider, targetProject), setStatus, 'failed to load project settings')
   }
+  /** Checkout or create a branch on the paired desktop, then re-read git state. */
+  const changeBranch = async (branch: string, type: 'switch_git_branch' | 'create_git_branch') => {
+    const client = clientRef.current
+    if (!client || !project) throw new Error('Connect to a desktop to change branches')
+    const result = await client.request({
+      type, requestId: randomId(), projectPath: project.path, branch,
+    } as RemoteCommand) as { ok?: boolean; error?: string }
+    if (result?.ok === false) throw new Error(result.error || 'Could not change branch')
+    await loadShellDetails()
+  }
   const selectProvider = (provider: HarnessId) => {
     harnessSelection.resetForProvider(provider)
     setHarness(provider)
@@ -796,7 +812,7 @@ export function MobileApp() {
       setScreen(auxiliaryReturnRef.current)
       return
     }
-    if (screen === 'terminal') {
+    if (screen === 'terminal' || screen === 'worktree' || screen === 'branch') {
       setScreen('chat')
       return
     }
@@ -820,7 +836,7 @@ export function MobileApp() {
 
   const settingsProps: ProjectSettingsProps = {
     activeSession: !!sessionId,
-    gitInfo, worktreeInfo, branches, checkedOutBranches, worktreeSelection,
+    gitInfo, worktreeInfo, worktreeDirty, branches, checkedOutBranches, worktreeSelection,
     onWorktreeSelectionChange: setWorktreeSelection,
     selectedProvider, selectedModel, selectedEffort, models, efforts, workspaceDirs, additionalDir,
     onAdditionalDirChange: setAdditionalDir, onProviderChange: selectProvider,
@@ -842,13 +858,16 @@ export function MobileApp() {
         title={header}
         subtitle={[project?.name, gitInfo?.branch].filter(Boolean).join(' · ')}
         provider={selectedProvider}
-        acpAgentId={selectedAcpAgentId}
-        streaming={streaming}
+        hasSession={!!sessionId}
         connectionState={connectionState}
         onBack={back}
         onSwitchSession={() => setSessionSwitcherOpen(true)}
         onOpenTerminal={openTerminal}
         onOpenSettings={openSettings}
+        onConfirm={screen === 'worktree'
+          ? () => { setWorktreeSelection(worktreeDraft); setScreen('chat') }
+          : undefined}
+        confirmDisabled={!!worktreeSelectionError(worktreeDraft, branches, checkedOutBranches)}
         />
 
         <View style={styles.contentRow}>
@@ -875,7 +894,7 @@ export function MobileApp() {
               setScreen(route)
             }}
             renderScene={(route) => (
-              <View style={route === 'chat' || route === 'terminal' ? styles.flex : styles.page}>
+              <View style={isFullBleedScreen(route) ? styles.flex : styles.page}>
       {route === 'pair' ? (
         <PairingsScreen
           scannerOpen={scannerOpen}
@@ -949,10 +968,21 @@ export function MobileApp() {
       {route === 'chat' ? (
         <ChatScreen provider={selectedProvider}
           starting={starting}
-          landing={!sessionId ? { provider: selectedProvider, projectName: project?.name,
-            branch: worktreeSelection.kind === 'create' ? worktreeSelection.branchName || 'New worktree'
-              : worktreeSelection.kind === 'existing' ? worktreeSelection.branch || 'Worktree' : gitInfo?.branch ?? undefined, onProvider: selectProvider,
-            onProject: () => setSessionSwitcherOpen(true), onWorktree: () => setWorktreeOpen(true) } : undefined}
+          landing={!sessionId ? {
+            provider: selectedProvider,
+            harnesses: MOBILE_HARNESS_IDS,
+            onProvider: selectProvider,
+            activeProvider: harnessSelection.activeProvider,
+            projects,
+            activeProjectPath: project?.path,
+            onProject: (p) => runUiAction(async () => { await openProject(p); startNewSession(p) }, setStatus, 'failed to open project'),
+            worktreeSelection,
+            worktreeInfo,
+            branch: gitInfo?.branch,
+            dirtyFiles: gitInfo?.dirty?.files,
+            onWorktree: () => { setWorktreeDraft(worktreeSelection); setScreen('worktree') },
+            onBranch: () => setScreen('branch'),
+          } : undefined}
           selection={{ model: selectedModel, models, providerName: harnessSelection.activeProviderName, onRefresh: refreshModels,
             effort: selectedEffort, efforts,
             onModel: harnessSelection.selectModel, onEffort: setSelectedEffort }}
@@ -1010,6 +1040,29 @@ export function MobileApp() {
         />
       ) : null}
 
+      {route === 'worktree' ? (
+        <WorktreeScreen
+          selection={worktreeDraft}
+          onSelectionChange={setWorktreeDraft}
+          gitInfo={gitInfo}
+          worktreeInfo={worktreeInfo}
+          worktreeDirty={worktreeDirty}
+          branches={branches}
+          checkedOutBranches={checkedOutBranches}
+        />
+      ) : null}
+
+      {route === 'branch' ? (
+        <BranchScreen
+          branches={branches}
+          currentBranch={gitInfo?.branch}
+          dirty={gitInfo?.dirty}
+          onSwitch={(branch) => changeBranch(branch, 'switch_git_branch')}
+          onCreate={(branch) => changeBranch(branch, 'create_git_branch')}
+          onDone={() => setScreen('chat')}
+        />
+      ) : null}
+
       {route === 'terminal' ? (
         <ConnectedTerminal webRef={termRef} runtimeRef={termRuntimeRef} theme={webViewTheme}
           draft={termDraft} writable={terminalUi.writable} onDraft={setTermDraft} onStatus={setStatus} />
@@ -1021,9 +1074,6 @@ export function MobileApp() {
         </View>
       </MobileKeyboardFrame>
       {status ? <Text style={styles.meta}>{status}</Text> : null}
-      <Sheet visible={worktreeOpen} title="Workspace for new session" onDismiss={() => setWorktreeOpen(false)}>
-        <SettingsScreen {...settingsProps} section="worktree" />
-      </Sheet>
       <MobileOverlays
         runtimeRef={runtimeRef}
         setStatus={setStatus}

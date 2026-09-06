@@ -10,6 +10,11 @@ describe('mobile route hierarchy', () => {
     expect(routeHierarchy('terminal', 'chat')).toEqual(['pair', 'projects', 'sessions', 'chat', 'terminal'])
   })
 
+  it('stacks the git pickers on top of the chat they were opened from', () => {
+    expect(routeHierarchy('worktree', 'sessions')).toEqual(['pair', 'projects', 'sessions', 'chat', 'worktree'])
+    expect(routeHierarchy('branch', 'sessions')).toEqual(['pair', 'projects', 'sessions', 'chat', 'branch'])
+  })
+
   it('returns settings and files to the owning sessions or chat route', () => {
     expect(routeHierarchy('settings', 'sessions')).toEqual(['pair', 'projects', 'sessions', 'settings'])
     expect(routeHierarchy('settings', 'chat')).toEqual(['pair', 'projects', 'sessions', 'chat', 'settings'])

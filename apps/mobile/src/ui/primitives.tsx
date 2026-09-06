@@ -87,11 +87,13 @@ export function SectionHeader(props: { title: string; badge?: ReactNode; action?
 export function Sheet(props: {
   visible: boolean
   title: string
+  /** Defaults to the generic settings glyph; pass the one that names the content. */
+  icon?: LucideIcon
   children: ReactNode
   onDismiss?: () => void
 }) {
   if (!props.visible) return null
-  return <PromptSheet title={props.title} icon={SlidersHorizontal} onDismiss={props.onDismiss ?? (() => {})}>
+  return <PromptSheet title={props.title} icon={props.icon ?? SlidersHorizontal} onDismiss={props.onDismiss ?? (() => {})}>
     {props.children}
   </PromptSheet>
 }

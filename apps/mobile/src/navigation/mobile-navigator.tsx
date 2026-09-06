@@ -82,6 +82,8 @@ export function MobileNavigator(props: {
           sessions: 1,
           chat: 1,
           terminal: 1,
+          worktree: 1,
+          branch: 1,
           settings: 1,
           files: 1,
         }) as MobileRoute[]).map((route) => (

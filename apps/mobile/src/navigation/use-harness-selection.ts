@@ -75,6 +75,7 @@ export function useHarnessSelection() {
     selectedEffort,
     setSelectedEffort,
     selectedAcpAgentId,
+    activeProvider: systemInfo.activeProvider ?? null,
     activeProviderName: systemInfo.activeProvider?.name,
     models,
     efforts,

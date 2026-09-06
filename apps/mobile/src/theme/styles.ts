@@ -18,9 +18,10 @@ export function createMobileStyles({ colors, radius, spacing, type }: MobileThem
     sidebarAction: { paddingVertical: 6 },
     top: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, minHeight: 64, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
     headerActions: { flexDirection: 'row', alignItems: 'center', gap: 0 },
-    headerTitleGroup: { flex: 1, minWidth: 0, gap: spacing.xs },
-    headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-    headerMetaRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+    headerTitleGroup: { flex: 1, minWidth: 0, alignItems: 'center', gap: spacing.xs },
+    headerTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
+    headerMetaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs },
+    headerTrailingSpacer: { width: 44 },
     back: { color: colors.primary, fontSize: type.body },
     title: { color: colors.foreground, fontSize: type.title, fontWeight: '500', flexShrink: 1 },
     input: {

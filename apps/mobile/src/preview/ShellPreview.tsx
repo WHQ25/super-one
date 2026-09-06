@@ -19,13 +19,27 @@ import { PairingsScreen } from '../screens/pairings-screen'
 import type { SavedPairing } from '@superone/relay-client'
 import type { DeviceStatus } from '../device-status'
 import { ProjectsScreen } from '../screens/projects-screen'
+import { BranchScreen } from '../screens/branch-screen'
+import { WorktreeScreen } from '../screens/worktree-screen'
+import { MOBILE_HARNESS_IDS } from '../provider-state'
 import { SessionsScreen } from '../screens/sessions-screen'
 import { SettingsScreen, type ProjectSettingsProps } from '../screens/settings-screen'
 import { TerminalScreen } from '../screens/terminal-screen'
+import { isFullBleedScreen } from '../layout-state'
+import { worktreeSelectionError } from '../worktree-state'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { mobileWebViewTheme } from '../theme/tokens'
 import { injectHostMessage } from '../native-actions'
 import { Button, SelectionField, Sheet } from '../ui'
+import { GitIndicatorGallery } from './GitIndicatorGallery'
+import {
+  PREVIEW_BRANCHES,
+  PREVIEW_CHECKED_OUT,
+  PREVIEW_GIT_INFO,
+  PREVIEW_WORKTREE_DIRTY,
+  PREVIEW_WORKTREE_INFO,
+  previewSwitchBranch,
+} from './git-fixtures'
 import { IconGallery } from './IconGallery'
 import { LanBrowserPreview } from './LanBrowserPreview'
 import { effortOptionsForModel, resolveSelectedEffort } from '../model-selection-state'
@@ -45,6 +59,7 @@ const previewModels: ModelOption[] = [
   })),
 ]
 const project = { name: 'super-one', path: '/workspace/super-one' }
+const previewProjects = [project, { name: 'design-system', path: '/workspace/design-system' }]
 
 /** One saved device per connection state, so the whole status vocabulary is reviewable. */
 const previewDevices: { pairing: SavedPairing; status: DeviceStatus }[] = [
@@ -87,8 +102,9 @@ export function ShellPreview({ initialPage = 'New session', onClose, onTheme }: 
   const [attachments, setAttachments] = useState<ImageAttachment[]>([])
   const [mode, setMode] = useState('default')
   const [drawer, setDrawer] = useState(false)
-  const [worktree, setWorktree] = useState(false)
+  const [branch, setBranch] = useState(PREVIEW_GIT_INFO.branch ?? 'main')
   const [selection, setSelection] = useState<ProjectSettingsProps['worktreeSelection']>({ kind: 'local' })
+  const [worktreeDraft, setWorktreeDraft] = useState<ProjectSettingsProps['worktreeSelection']>({ kind: 'local' })
   const [model, setModel] = useState('preview-model')
   const [effort, setEffort] = useState('medium')
   const catalog = { models: previewModels, efforts: [{ value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }] }
@@ -113,15 +129,18 @@ export function ShellPreview({ initialPage = 'New session', onClose, onTheme }: 
     chatDraft.clearSent(captured.revision); setAttachments([]); setPage('Chat')
   }
   const settings: ProjectSettingsProps = {
-    activeSession: page === 'Chat', gitInfo: { branch: 'feat/mobile-ui', dirty: { files: 3, insertions: 28, deletions: 12 } },
-    worktreeInfo: null, branches: ['main', 'feat/mobile-ui'], checkedOutBranches: ['main'], worktreeSelection: selection,
+    activeSession: page === 'Chat', gitInfo: { ...PREVIEW_GIT_INFO, branch },
+    worktreeInfo: PREVIEW_WORKTREE_INFO, worktreeDirty: PREVIEW_WORKTREE_DIRTY, branches: PREVIEW_BRANCHES,
+    checkedOutBranches: PREVIEW_CHECKED_OUT, worktreeSelection: selection,
     onWorktreeSelectionChange: setSelection, selectedProvider: provider, selectedModel: model, selectedEffort: effort,
     models: previewModels, efforts,
     workspaceDirs: ['/workspace/shared'], additionalDir: '', onAdditionalDirChange: () => {}, onProviderChange: chooseAgent,
     onModelChange: chooseModel, onEffortChange: setEffort, onOpenFiles: () => setPage('Files'), onAddDirectory: () => {}, onRemoveDirectory: () => {},
   }
   const chat = page === 'New session' || page === 'Chat'
-  const route = chat ? 'chat' : page === 'Devices' || page === 'Pairing' ? 'pair' : page === 'Terminal' ? 'terminal' : page === 'Settings' ? 'settings' : page === 'Projects' ? 'projects' : page === 'Sessions' ? 'sessions' : 'files'
+  // Standalone galleries share the catch-all 'files' route but draw themselves.
+  const gallery = page === 'Icons' || page === 'Git indicators' || page === 'Chip editor' || page === 'LAN browser'
+  const route = chat ? 'chat' : page === 'Worktree' ? 'worktree' : page === 'Branch' ? 'branch' : page === 'Devices' || page === 'Pairing' ? 'pair' : page === 'Terminal' ? 'terminal' : page === 'Settings' ? 'settings' : page === 'Projects' ? 'projects' : page === 'Sessions' ? 'sessions' : 'files'
   return <SafeAreaView style={styles.root}>
     <StatusBar style={tokens.scheme === 'dark' ? 'light' : 'dark'} />
     <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8 }}>
@@ -132,11 +151,19 @@ export function ShellPreview({ initialPage = 'New session', onClose, onTheme }: 
     <Text style={styles.meta}>Offline preview · {Math.round(width)} px · font {fontScale.toFixed(2)}</Text>
     {editorError ? <Text accessibilityRole="alert" style={{ color: tokens.colors.destructive }}>{editorError}</Text> : null}
     <MobileKeyboardFrame>
-      <MobileHeader route={route} title={page} subtitle="super-one · feat/mobile-ui" provider={provider} streaming={page === 'Chat'} connectionState="connected" onBack={() => setPage('New session')} onSwitchSession={() => setDrawer(true)} onOpenSettings={() => setPage('Settings')} onOpenTerminal={() => setPage('Terminal')} />
+      <MobileHeader route={route} title={page} subtitle="super-one · feat/mobile-ui" provider={provider} hasSession={page === 'Chat'} connectionState="connected" onBack={() => setPage('New session')} onSwitchSession={() => setDrawer(true)} onOpenSettings={() => setPage('Settings')} onOpenTerminal={() => setPage('Terminal')}
+        onConfirm={page === 'Worktree' ? () => { setSelection(worktreeDraft); setPage('New session') } : undefined}
+        confirmDisabled={!!worktreeSelectionError(worktreeDraft, PREVIEW_BRANCHES, PREVIEW_CHECKED_OUT)} />
       <View style={styles.contentRow}>
         {width >= 768 && (chat || page === 'Terminal' || page === 'Settings' || route === 'files') ? <TabletSessionSidebar projectName={project.name} sessions={sessions} activeSessionId="preview-1" onOpenSession={() => setPage('Chat')} onCreateSession={() => setPage('New session')} onOpenSettings={() => setPage('Settings')} onArchiveSession={() => {}} onDeleteSession={() => {}} /> : null}
-        <View style={chat || page === 'Terminal' ? styles.mainPane : [styles.mainPane, styles.page]}>
-          {chat ? <ChatScreen provider={provider} landing={page === 'New session' ? { provider, projectName: project.name, branch: 'feat/mobile-ui', onProvider: chooseAgent, onProject: () => setDrawer(true), onWorktree: () => setWorktree(true) } : undefined}
+        <View style={isFullBleedScreen(route) ? styles.mainPane : [styles.mainPane, styles.page]}>
+          {chat ? <ChatScreen provider={provider} landing={page === 'New session' ? {
+              provider, harnesses: MOBILE_HARNESS_IDS, onProvider: chooseAgent,
+              projects: previewProjects, activeProjectPath: project.path, onProject: () => {},
+              worktreeSelection: selection, worktreeInfo: PREVIEW_WORKTREE_INFO,
+              branch, dirtyFiles: PREVIEW_GIT_INFO.dirty?.files,
+              onWorktree: () => { setWorktreeDraft(selection); setPage('Worktree') }, onBranch: () => setPage('Branch'),
+            } : undefined}
             selection={{ model, models: settings.models, effort, efforts: settings.efforts, onModel: chooseModel, onEffort: setEffort }}
             webRef={web} permissionModes={['default', 'acceptEdits', 'plan']} permissionMode={mode} slashHits={[]} mentionHits={mentionHits} attachments={attachments} additionalDirectories={[]} queuedMessages={[]} todos={{}} draft={chatDraft.draft} streaming={page === 'Chat'}
             onWebMessage={(raw) => { if (JSON.parse(raw).type === 'ready') paintChat() }} onWebProcessError={() => {}} onPermissionMode={setMode} onSlash={() => {}} onMention={(item) => { chatDraft.editorRef.current?.insertMention(item) }}
@@ -152,13 +179,25 @@ export function ShellPreview({ initialPage = 'New session', onClose, onTheme }: 
             refreshing={devicesRefreshing} onRefresh={() => setDevicesRefreshing((value) => !value)}
             onBarcodeScanned={() => {}} onCancelScanner={() => {}} onPasteChange={() => {}} onLanChange={() => {}}
             onPair={() => {}} onCancelPairing={() => setPage('Devices')} onOpenScanner={() => setPage('Pairing')} onConnect={() => {}} onRename={() => {}} onForget={() => {}} /> : null}
-          {page === 'Projects' ? <ProjectsScreen projects={[project, { name: 'design-system', path: '/workspace/design-system' }]} onOpen={() => setPage('Sessions')} /> : null}
+          {page === 'Projects' ? <ProjectsScreen projects={previewProjects} onOpen={() => setPage('Sessions')} /> : null}
           {page === 'Sessions' ? <SessionsScreen sessions={sessions} onOpenSession={() => setPage('Chat')} onCreateSession={() => setPage('New session')} onArchiveSession={() => {}} onDeleteSession={() => {}} /> : null}
           {page === 'Settings' ? <SettingsScreen {...settings} /> : null}
+          {page === 'Worktree' ? <WorktreeScreen selection={worktreeDraft} onSelectionChange={setWorktreeDraft}
+            gitInfo={{ ...PREVIEW_GIT_INFO, branch }} worktreeInfo={PREVIEW_WORKTREE_INFO}
+            worktreeDirty={PREVIEW_WORKTREE_DIRTY} branches={PREVIEW_BRANCHES}
+            checkedOutBranches={PREVIEW_CHECKED_OUT} /> : null}
+          {page === 'Branch' ? <BranchScreen branches={PREVIEW_BRANCHES} currentBranch={branch}
+            dirty={PREVIEW_GIT_INFO.dirty}
+            onSwitch={async (next) => { await previewSwitchBranch(next); setBranch(next) }}
+            onCreate={async (next) => { setBranch(next) }}
+            onDone={() => setPage('New session')} /> : null}
           {page === 'Icons' ? <IconGallery /> : null}
+          {page === 'Git indicators' ? <GitIndicatorGallery
+            onOpenWorktree={(next) => { setWorktreeDraft(next); setPage('Worktree') }}
+            onOpenBranch={() => setPage('Branch')} /> : null}
           {page === 'LAN browser' ? <LanBrowserPreview /> : null}
           {page === 'Chip editor' ? <MentionEditorPreview /> : null}
-          {route === 'files' && page !== 'Icons' && page !== 'Chip editor' && page !== 'LAN browser' ? <FilesScreen path="/workspace/super-one/apps/mobile/src" items={page === 'Files' ? [{ name: 'screens', isDirectory: true }, { name: 'chat-screen.tsx', isDirectory: false }, { name: 'mobile-review.png', isDirectory: false }] : []} error={page === 'Folder error' ? 'Could not read this folder. Check the desktop connection.' : undefined} onOpenDirectory={() => setPage('Empty folder')} onOpenFile={() => {}} /> : null}
+          {route === 'files' && !gallery ? <FilesScreen path="/workspace/super-one/apps/mobile/src" items={page === 'Files' ? [{ name: 'screens', isDirectory: true }, { name: 'chat-screen.tsx', isDirectory: false }, { name: 'mobile-review.png', isDirectory: false }] : []} error={page === 'Folder error' ? 'Could not read this folder. Check the desktop connection.' : undefined} onOpenDirectory={() => setPage('Empty folder')} onOpenFile={() => {}} /> : null}
           {page === 'Terminal' ? <TerminalScreen webRef={terminal} draft={draft} writable={writable} onDraft={setDraft} onClaim={() => { setWritable(true); injectHostMessage(terminal, { kind: 'meta', writableByMe: true }) }} onSubmit={(line) => { injectHostMessage(terminal, { kind: 'append', data: `\r\n$ ${line}\r\n[offline preview]\r\n` }); setDraft('') }} onKey={() => {}} onWebMessage={(raw) => {
             if (JSON.parse(raw).type !== 'terminalReady') return
             injectHostMessage(terminal, mobileWebViewTheme(tokens))
@@ -168,6 +207,5 @@ export function ShellPreview({ initialPage = 'New session', onClose, onTheme }: 
       </View>
     </MobileKeyboardFrame>
     <WorkspaceDrawer visible={drawer} onDismiss={() => setDrawer(false)} deviceName="Preview desktop" projects={[project]} activeProject={project} activeSessionId="preview-1" sessions={sessions} loadSessions={async () => sessions} onNewSession={() => setPage('New session')} onOpenSession={() => setPage('Chat')} />
-    <Sheet visible={worktree} title="Workspace for new session" onDismiss={() => setWorktree(false)}><SettingsScreen {...settings} section="worktree" /></Sheet>
   </SafeAreaView>
 }

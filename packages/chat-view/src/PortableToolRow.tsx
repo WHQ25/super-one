@@ -1,5 +1,6 @@
 import { useContext, useMemo } from 'react'
 import { cn } from '@superone/ui/lib/utils'
+import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { requestNative } from './bridge'
 import { PortableMarkdown } from './PortableMarkdown'
 import { PortableNativeGallery } from './PortableNativeGallery'
@@ -12,54 +13,83 @@ import {
   type GenericToolRowProps,
 } from './presenters/GenericToolRow'
 import { AppToolBlockPresenter } from './presenters/AppToolBlock'
+import { FileChipShell } from './presenters/FileChipShell'
 import { AnsiText } from './presenters/ansi'
 import { ToolIcon } from './presenters/ToolIcon'
 import { BashTerminalPresenter } from './presenters/BashTerminalPresenter'
-import { parseNativeDiff } from './presenters/remote-diff'
+import { parseNativeDiff, type NativeDiffLine } from './presenters/remote-diff'
 import { tryPrettifyJson } from './presenters/tool-block-utils'
 import type { QuestionPreviewFormat } from '@superone/shared/agent-types'
 
-/** File name chip that hands the path to the native host instead of opening a desktop tab. */
+/**
+ * File name chip that hands the path to the native host instead of opening a desktop tab.
+ * The chrome and the file-type icon are the desktop's, so a tool row reads the same on
+ * both surfaces; only the tap target differs.
+ */
 function PortableFileChip({ name, title, filePath, className }: { name: string; title: string; filePath: string; className?: string }) {
   return (
-    <button
-      type="button"
-      className={cn('min-w-0 shrink truncate rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-primary', className)}
+    <FileChipShell
+      icon={<FileIcon name={filePath.split(/[/\\]/).pop() || name} size={12} />}
+      name={name}
       title={title}
+      className={className}
       onClick={(e) => { e.stopPropagation(); requestNative('openFile', { path: filePath }) }}
-    >
-      {name}
-    </button>
+    />
   )
 }
 
 /**
  * Edited-file view for the phone. The WebView never receives `old_string`/`new_string`,
  * so it draws the diff the desktop precomputed — tokens included — rather than re-diffing.
+ *
+ * The chrome mirrors the desktop `DiffView`: a 300px scroll window, a line-number gutter
+ * pinned outside the horizontal scroller, and the same `+`/`-` marker column. The desktop
+ * additionally virtualizes its rows; the phone renders them all, so a very large diff still
+ * costs a tall DOM even though the row itself no longer grows past 300px.
  */
+const DIFF_ROW_TINT: Record<NativeDiffLine['kind'], string> = {
+  added: 'bg-green-500/15',
+  removed: 'bg-red-500/15',
+  context: '',
+}
+
+const DIFF_MARKER: Record<NativeDiffLine['kind'], { glyph: string; className: string }> = {
+  added: { glyph: '+', className: 'text-green-600/60 dark:text-green-400/60' },
+  removed: { glyph: '-', className: 'text-red-600/60 dark:text-red-400/60' },
+  context: { glyph: ' ', className: 'text-transparent' },
+}
+
 function PortableFileDiff({ toolDiff, toolDiffTokens }: Pick<FileDiffPresenterProps, 'toolDiff' | 'toolDiffTokens'>) {
   const lines = useMemo(() => (toolDiff ? parseNativeDiff(toolDiff, toolDiffTokens) : []), [toolDiff, toolDiffTokens])
+  // Matches the desktop gutter: at least two columns, otherwise as wide as the last line.
+  const gutterCh = useMemo(
+    () => Math.max(2, String(lines.reduce((widest, line) => Math.max(widest, line.line), 0)).length),
+    [lines],
+  )
   if (lines.length === 0) return null
   return (
-    <div className="overflow-x-auto rounded bg-background/70 py-1 font-mono text-xs leading-relaxed">
-      {lines.map((line, index) => (
-        <div
-          key={index}
-          className={cn(
-            'flex gap-2 px-2 whitespace-pre',
-            line.kind === 'added' && 'bg-success/10 text-success',
-            line.kind === 'removed' && 'bg-error/10 text-error',
-            line.kind === 'context' && 'text-muted-foreground',
-          )}
-        >
-          <span className="shrink-0 select-none text-muted-foreground/50">{line.line}</span>
-          <span className="min-w-0">
-            {line.tokens
-              ? line.tokens.map(([text, color], i) => <span key={i} style={color ? { color } : undefined}>{text}</span>)
-              : line.text}
-          </span>
+    <div className="flex max-h-[300px] overflow-x-hidden overflow-y-auto rounded bg-background/70 py-2 font-mono text-[12px] leading-relaxed text-foreground">
+      <div className="shrink-0" style={{ width: `calc(${gutterCh}ch + 1.25rem)` }}>
+        {lines.map((line, index) => (
+          <div key={index} className={cn('whitespace-pre pr-2', DIFF_ROW_TINT[line.kind])}>
+            <span className="inline-block w-full select-none pr-1.5 text-right text-muted-foreground/50">{line.line}</span>
+          </div>
+        ))}
+      </div>
+      <div className="min-w-0 flex-1 overflow-x-auto">
+        <div className="w-max min-w-full">
+          {lines.map((line, index) => (
+            <div key={index} className={cn('whitespace-pre pr-2', DIFF_ROW_TINT[line.kind])}>
+              <span className={cn('mr-1 inline-block w-[1ch] select-none text-center', DIFF_MARKER[line.kind].className)}>
+                {DIFF_MARKER[line.kind].glyph}
+              </span>
+              {line.tokens
+                ? line.tokens.map(([text, color], i) => <span key={i} style={color ? { color } : undefined}>{text}</span>)
+                : (line.text || ' ')}
+            </div>
+          ))}
         </div>
-      ))}
+      </div>
     </div>
   )
 }

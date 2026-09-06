@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import { cn } from '@superone/ui/lib/utils'
+import { FileChipShell } from '@superone/chat-view/presenters/FileChipShell'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import { openFileTab } from '@/components/activity/activity-panel-api'
 import { DraggableFileIcon } from './DraggableFileIcon'
@@ -36,18 +36,14 @@ export function FileChip({ name, title, filePath, lineNumber, endLine, className
   }
 
   const chip = (
-    <span
-      role="button"
-      onClick={handleClick}
+    <FileChipShell
+      icon={<DraggableFileIcon name={name} filePath={targetPath} dragEndRef={dragEndRef} className="shrink-0" />}
+      name={name}
       title={title}
-      className="inline-flex min-w-0 cursor-pointer items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-foreground hover:bg-muted/80 transition-colors"
-    >
-      <DraggableFileIcon name={name} filePath={targetPath} dragEndRef={dragEndRef} className="shrink-0" />
-      <span className={cn('truncate', className)}>{name}</span>
-      {targetLineNumber != null && (
-        <span className="text-muted-foreground text-xs">{formatLineRange(targetLineNumber, targetEndLine)}</span>
-      )}
-    </span>
+      lineRange={targetLineNumber != null ? formatLineRange(targetLineNumber, targetEndLine) : undefined}
+      className={className}
+      onClick={handleClick}
+    />
   )
 
   if (menuItems.length === 0) return chip

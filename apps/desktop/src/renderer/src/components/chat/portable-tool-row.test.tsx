@@ -1,8 +1,9 @@
 /** @vitest-environment jsdom */
 
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { PortableToolRow } from '@superone/chat-view/PortableToolRow'
+import { FileChip } from './FileChip'
 
 /**
  * The WebView row the phone renders. It is the same presenter the desktop runs, so what
@@ -23,6 +24,24 @@ describe('portable tool row', () => {
     // The desktop row shows a file chip plus the line range, not a bare tool name.
     expect(screen.getByText('session.ts')).toBeInTheDocument()
     expect(screen.getByText('L20–59')).toBeInTheDocument()
+  })
+
+  it('dresses the file chip exactly like the desktop one, icon included', () => {
+    const portable = render(
+      <PortableToolRow
+        toolName="Read"
+        toolUseId="read-2"
+        input={JSON.stringify({ file_path: '/repo/src/session.ts' })}
+        status="complete"
+      />,
+    )
+    const chip = within(portable.container).getByText('session.ts').closest('[role="button"]')!
+    const desktop = render(<FileChip name="session.ts" title="session.ts" filePath="/repo/src/session.ts" />)
+    const desktopChip = within(desktop.container).getByText('session.ts').closest('[role="button"]')!
+
+    // Same shell — the phone used to print a mono, primary-coloured, icon-less button.
+    expect(chip.className).toBe(desktopChip.className)
+    expect(chip.querySelector('svg')).not.toBeNull()
   })
 
   it('draws an Edit from the transmitted diff when the bodies were stripped', () => {

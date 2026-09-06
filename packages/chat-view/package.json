@@ -6,6 +6,7 @@
   "description": "React DOM chat renderer hosted in a mobile WebView. Receives pre-reduced patches only.",
   "exports": {
     ".": "./src/index.ts",
+    "./PortableMessage": "./src/PortableMessage.tsx",
     "./PortableToolRow": "./src/PortableToolRow.tsx",
     "./TurnDetailSection": "./src/TurnDetailSection.tsx",
     "./fixtures/tool-catalog": "./src/fixtures/tool-catalog.ts",
@@ -31,6 +32,7 @@
     "./presenters/ConfigApplyBlock": "./src/presenters/ConfigApplyBlock.tsx",
     "./presenters/CopyableMarkdown": "./src/presenters/CopyableMarkdown.tsx",
     "./presenters/DeviceToolBlock": "./src/presenters/DeviceToolBlock.tsx",
+    "./presenters/FileChipShell": "./src/presenters/FileChipShell.tsx",
     "./presenters/GenericToolRow": "./src/presenters/GenericToolRow.tsx",
     "./presenters/ImageGenToolBlock": "./src/presenters/ImageGenToolBlock.tsx",
     "./presenters/ListAgentsToolBlock": "./src/presenters/ListAgentsToolBlock.tsx",

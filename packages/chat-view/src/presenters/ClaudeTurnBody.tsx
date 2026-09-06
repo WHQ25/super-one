@@ -190,6 +190,9 @@ export function ClaudeBlockPresenter({
           isError={errorToolIds?.has(block.toolUseId)}
           resultOutputPath={outputPathMap?.get(block.toolUseId)}
           autoExpand={runtime.isBackgroundTool(block) ? false : undefined}
+          toolDiff={block.toolDiff}
+          toolDiffTokens={block.toolDiffTokens}
+          toolLineDelta={block.toolLineDelta}
         />
       )
     case 'thinking':

@@ -1066,6 +1066,26 @@ export class AgentService {
         }
         break
       }
+      case 'get_default_clone_path': {
+        try {
+          // Keyed by connection like the sidebar dialog; a phone always drives
+          // the desktop's own environment, so it reads and writes `local`.
+          const saved = readAppSettings().defaultClonePaths?.local
+          await respond?.(command.requestId, { path: saved?.trim() ? saved.trim() : null })
+        } catch (err) {
+          await respond?.(command.requestId, { error: (err as Error).message })
+        }
+        break
+      }
+      case 'set_default_clone_path': {
+        try {
+          saveAppSettings({ defaultClonePaths: { local: command.path.trim() } })
+          await respond?.(command.requestId, { success: true })
+        } catch (err) {
+          await respond?.(command.requestId, { error: (err as Error).message })
+        }
+        break
+      }
       case 'clone_repository': {
         try {
           const { cloneRepository } = await import('@superone/shared/git-clone')

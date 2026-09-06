@@ -11,7 +11,6 @@ const ROW_ICONS: Record<AddProjectRowIcon, typeof Folder> = {
   url: Link2,
   directory: Folder,
   create: FolderPlus,
-  project: Folder,
 }
 
 /** `1.2k` / `24.5k`, matching the desktop star formatter. */

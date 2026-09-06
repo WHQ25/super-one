@@ -51,6 +51,7 @@ import { leaveMobileSession, sessionRemovalStatus } from '../session-exit'
 import { ProjectsScreen, type Project } from '../screens/projects-screen'
 import { BranchScreen } from '../screens/branch-screen'
 import { ProjectPickerScreen } from '../screens/project-picker-screen'
+import { AddProjectScreen } from '../screens/add-project-screen'
 import { WorktreeScreen } from '../screens/worktree-screen'
 import { runUiAction } from '../ui-action'
 import { FilesScreen } from '../screens/files-screen'
@@ -710,8 +711,6 @@ export function MobileApp() {
       if (!client) throw new Error('Connect to a desktop to browse projects')
       return client.request(command)
     },
-    projects,
-    onSelect: chooseProject,
     onAdded: (path) => {
       const name = path.split(/[\\/]/).filter(Boolean).pop() ?? path
       const added = { path, name }
@@ -835,10 +834,14 @@ export function MobileApp() {
       setScreen(auxiliaryReturnRef.current)
       return
     }
-    if (screen === 'project-picker') {
-      // The picker walks its own steps first; only the source step leaves.
+    if (screen === 'add-project') {
+      // The flow walks its own steps back first; only the source step leaves.
       if (addProjectFlow.canGoBack) addProjectFlow.goBack()
-      else setScreen('chat')
+      else setScreen('project-picker')
+      return
+    }
+    if (screen === 'project-picker') {
+      setScreen('chat')
       return
     }
     if (screen === 'terminal' || screen === 'worktree' || screen === 'branch') {
@@ -884,7 +887,7 @@ export function MobileApp() {
       <MobileKeyboardFrame>
         <MobileHeader
         route={screen}
-        title={screen === 'project-picker' ? addProjectFlow.title : header}
+        title={screen === 'add-project' ? addProjectFlow.title : header}
         subtitle={[project?.name, gitInfo?.branch].filter(Boolean).join(' · ')}
         provider={selectedProvider}
         hasSession={!!sessionId}
@@ -895,11 +898,12 @@ export function MobileApp() {
         onOpenSettings={openSettings}
         onConfirm={screen === 'worktree'
           ? () => { setWorktreeSelection(worktreeDraft); setScreen('chat') }
-          : screen === 'project-picker' && addProjectFlow.confirmLabel
+          : screen === 'add-project' && addProjectFlow.confirmLabel
             ? addProjectFlow.confirm
             : undefined}
-        confirmLabel={screen === 'project-picker' ? addProjectFlow.confirmLabel ?? undefined : undefined}
-        confirmDisabled={screen === 'project-picker'
+        confirmLabel={screen === 'add-project' ? addProjectFlow.confirmLabel ?? undefined : undefined}
+        onAddProject={screen === 'project-picker' ? () => setScreen('add-project') : undefined}
+        confirmDisabled={screen === 'add-project'
           ? addProjectFlow.busy
           : !!worktreeSelectionError(worktreeDraft, branches, checkedOutBranches)}
         />
@@ -1073,7 +1077,11 @@ export function MobileApp() {
         />
       ) : null}
 
-      {route === 'project-picker' ? <ProjectPickerScreen flow={addProjectFlow} /> : null}
+      {route === 'project-picker' ? (
+        <ProjectPickerScreen projects={projects} activePath={project?.path} onSelect={chooseProject} />
+      ) : null}
+
+      {route === 'add-project' ? <AddProjectScreen flow={addProjectFlow} /> : null}
 
       {route === 'worktree' ? (
         <WorktreeScreen

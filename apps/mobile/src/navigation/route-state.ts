@@ -3,8 +3,10 @@ export type MobileRoute =
   | 'projects'
   | 'sessions'
   | 'chat'
-  /** Pick or add the project a new session runs in. */
+  /** Pick which project the next session runs in. */
   | 'project-picker'
+  /** Add a project to the host — the desktop Add Project flow. */
+  | 'add-project'
   | 'terminal'
   | 'worktree'
   | 'branch'
@@ -20,13 +22,15 @@ export function routeHierarchy(route: MobileRoute, auxiliaryReturn: 'sessions' |
   if (route === 'sessions') return root
   // The project, worktree and branch pickers are only ever opened from a chat.
   const overChat = route === 'chat' || route === 'terminal' || route === 'worktree'
-    || route === 'branch' || route === 'project-picker'
+    || route === 'branch' || route === 'project-picker' || route === 'add-project'
   if (overChat || auxiliaryReturn === 'chat') root.push('chat')
   if (route === 'chat') return root
   if (route === 'terminal') return [...root, 'terminal']
   if (route === 'worktree') return [...root, 'worktree']
   if (route === 'branch') return [...root, 'branch']
   if (route === 'project-picker') return [...root, 'project-picker']
+  // Adding always happens on top of the picker it was opened from.
+  if (route === 'add-project') return [...root, 'project-picker', 'add-project']
   root.push('settings')
   if (route === 'settings') return root
   return [...root, 'files']

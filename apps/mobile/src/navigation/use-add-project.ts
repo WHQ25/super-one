@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   BrowseHostDirectoryResponse,
   CloneRepositoryResponse,
+  DefaultClonePathResponse,
   GithubRepoHit,
   GithubRepoSearchMode,
   RemoteCommand,
@@ -40,13 +41,11 @@ import {
   directoryRows,
   githubRows,
   githubSearchRows,
-  projectRows,
   sourceRows,
   type AddProjectRow,
   type AddProjectSectionModel,
 } from '../add-project-state'
 import { randomId } from '../ids'
-import type { Project } from '../screens/projects-screen'
 
 /** Where browsing starts when nothing has been typed; the host expands it. */
 const INITIAL_PATH = '~/'
@@ -70,6 +69,8 @@ export interface AddProjectFlow {
   clonePreview: { repoLabel: string; remoteUrl: string; path: string } | null
   shallowClone: boolean
   setShallowClone: (value: boolean) => void
+  saveAsDefault: boolean
+  setSaveAsDefault: (value: boolean) => void
   /** Header action label, or null when this step has nothing to commit. */
   confirmLabel: string | null
   confirm: () => void
@@ -84,14 +85,12 @@ export interface AddProjectFlow {
  *
  * Same four steps and the same pure helpers; what changes is that every
  * filesystem read happens on the paired desktop, and confirming is a header
- * button instead of ⇧↵. The source step also lists the projects the host
- * already has, because on the phone picking and adding are one screen.
+ * button instead of ⇧↵. Choosing among the projects the host already has is a
+ * different screen — this one only adds.
  */
 export function useAddProject(input: {
   /** Issues one command against the paired host; the preview supplies fixtures. */
   request: (command: RemoteCommand) => Promise<unknown>
-  projects: Project[]
-  onSelect: (project: Project) => void
   onAdded: (path: string) => void
 }): AddProjectFlow {
   const [step, setStep] = useState<AddProjectStep>({ kind: 'source' })
@@ -106,6 +105,7 @@ export function useAddProject(input: {
   const [githubSearching, setGithubSearching] = useState(false)
   const [githubUnavailable, setGithubUnavailable] = useState(false)
   const [shallowClone, setShallowClone] = useState(false)
+  const [saveAsDefault, setSaveAsDefault] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -122,6 +122,19 @@ export function useAddProject(input: {
   requestRef.current = input.request
   const request = useCallback(<T,>(command: RemoteCommand): Promise<T> =>
     requestRef.current(command) as Promise<T>, [])
+
+  // The clone parent the host remembers, shared with the desktop dialog.
+  const defaultClonePathRef = useRef<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    void request<DefaultClonePathResponse>({ type: 'get_default_clone_path', requestId: randomId() })
+      .then((result) => {
+        if (cancelled || 'error' in result) return
+        defaultClonePathRef.current = result.path
+      })
+      .catch(() => { /* An unsaved default is the normal case. */ })
+    return () => { cancelled = true }
+  }, [request])
 
   const isPathStep = step.kind === 'browse' || step.kind === 'destination'
   const isGithubStep = step.kind === 'repo' && step.source === 'github'
@@ -323,13 +336,23 @@ export function useAddProject(input: {
         shallow: shallowClone,
       })
       if ('error' in result) throw new Error(result.error)
+      // Persist or clear the remembered parent, exactly as the dialog does.
+      const currentDir = ensureBrowseDirectoryPath(query.trim() || resolved.path)
+      const saved = defaultClonePathRef.current
+      if (saveAsDefault && currentDir) {
+        await request({ type: 'set_default_clone_path', requestId: randomId(), path: currentDir })
+        defaultClonePathRef.current = currentDir
+      } else if (!saveAsDefault && saved && ensureBrowseDirectoryPath(saved) === currentDir) {
+        await request({ type: 'set_default_clone_path', requestId: randomId(), path: '' })
+        defaultClonePathRef.current = null
+      }
       input.onAdded(result.path)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
       setBusy(false)
     }
-  }, [step, resolved.path, shallowClone, request, input.onAdded])
+  }, [step, resolved.path, shallowClone, saveAsDefault, query, request, input.onAdded])
 
   const continueWithRepo = useCallback((
     source: Exclude<AddProjectSource, 'local'>,
@@ -338,19 +361,17 @@ export function useAddProject(input: {
     repoName: string,
   ) => {
     const ref = source === 'github' ? parseGitHubRepoInput(repoInput) : null
+    // Prefill with the saved default so the user can confirm without browsing.
+    const saved = defaultClonePathRef.current
     goToStep(
       { kind: 'destination', source, repoInput: ref ? `${ref.owner}/${ref.repo}` : repoInput, remoteUrl, repoName },
-      INITIAL_PATH,
+      saved ? ensureBrowseDirectoryPath(saved) : INITIAL_PATH,
     )
+    setSaveAsDefault(!!saved)
   }, [goToStep])
 
   const activate = useCallback((row: AddProjectRow) => {
     if (step.kind === 'source') {
-      if (row.icon === 'project') {
-        const project = input.projects.find((item) => item.path === row.key)
-        if (project) input.onSelect(project)
-        return
-      }
       const source = row.key as AddProjectSource
       if (source === 'local') {
         const carry = detectAddProjectSource(query) === 'local' ? query.trim() : ''
@@ -372,7 +393,7 @@ export function useAddProject(input: {
       return
     }
     setQuery((current) => appendBrowsePathSegment(current, row.key))
-  }, [step, isGithubStep, query, input.projects, input.onSelect, goToStep, continueWithRepo, addProject, cloneProject, resolved.path])
+  }, [step, isGithubStep, query, goToStep, continueWithRepo, addProject, cloneProject, resolved.path])
 
   const confirm = useCallback(() => {
     if (step.kind === 'browse') {
@@ -390,17 +411,8 @@ export function useAddProject(input: {
 
   const sections = useMemo((): AddProjectSectionModel[] => {
     if (step.kind === 'source') {
-      const detected = detectAddProjectSource(query)
-      const result: AddProjectSectionModel[] = []
-      const projects = projectRows(input.projects, query)
-      if (projects.length) {
-        result.push({ key: 'projects', label: ADD_PROJECT_TEXT.projects, rows: projects })
-      }
-      const sources = sourceRows(query, detected)
-      if (sources.length) {
-        result.push({ key: 'sources', label: ADD_PROJECT_TEXT.sources, rows: sources })
-      }
-      return result
+      const rows = sourceRows(query, detectAddProjectSource(query))
+      return rows.length ? [{ key: 'sources', label: ADD_PROJECT_TEXT.sources, rows }] : []
     }
     if (isGithubStep) {
       if (githubUrlQuery) return []
@@ -447,7 +459,7 @@ export function useAddProject(input: {
       return result
     }
     return []
-  }, [step, query, input.projects, isGithubStep, githubUrlQuery, repos, ownerSearch, isMyReposMode,
+  }, [step, query, isGithubStep, githubUrlQuery, repos, ownerSearch, isMyReposMode,
     nameQuery, githubSearching, searchHits, isPathStep, entries, willCreatePath])
 
   const rowCount = sections.reduce((total, section) => total + section.rows.length, 0)
@@ -497,6 +509,8 @@ export function useAddProject(input: {
     clonePreview,
     shallowClone,
     setShallowClone,
+    saveAsDefault,
+    setSaveAsDefault,
     confirmLabel,
     confirm,
     activate,

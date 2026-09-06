@@ -6,7 +6,6 @@ import {
   directoryRows,
   githubRows,
   githubSearchRows,
-  projectRows,
   sourceRows,
 } from './add-project-state'
 
@@ -44,24 +43,6 @@ describe('source rows', () => {
   it('fuzzy-filters when the text is a plain label search', () => {
     expect(sourceRows('hub', null).map((row) => row.key)).toEqual(['github'])
     expect(sourceRows('zzz', null)).toEqual([])
-  })
-})
-
-describe('project rows', () => {
-  const projects = [
-    { path: '/w/super-one', name: 'super-one' },
-    { path: '/w/design-system', name: 'design-system' },
-  ]
-
-  it('lists every project with its path as the subtitle', () => {
-    expect(projectRows(projects, '')).toEqual([
-      { key: '/w/super-one', icon: 'project', label: 'super-one', subtitle: '/w/super-one' },
-      { key: '/w/design-system', icon: 'project', label: 'design-system', subtitle: '/w/design-system' },
-    ])
-  })
-
-  it('ranks fuzzy hits and drops the rest', () => {
-    expect(projectRows(projects, 'design').map((row) => row.label)).toEqual(['design-system'])
   })
 })
 

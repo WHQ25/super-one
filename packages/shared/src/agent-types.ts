@@ -4323,6 +4323,9 @@ export type RemoteCommand =
   | { type: 'add_project'; requestId: string; path: string; /** mkdir -p the path first (add-project "Create" row). */ createIfMissing?: boolean }
   | { type: 'search_github_repos'; requestId: string; mode: GithubRepoSearchMode; value?: string; page?: number }
   | { type: 'browse_host_directory'; requestId: string; path: string }
+  | { type: 'get_default_clone_path'; requestId: string }
+  /** Empty string clears it. */
+  | { type: 'set_default_clone_path'; requestId: string; path: string }
   | { type: 'clone_repository'; requestId: string; remoteUrl: string; parentPath: string; directoryName?: string; shallow?: boolean }
   | { type: 'list_projects'; requestId: string }
   | { type: 'list_sessions'; requestId: string; projectPath: string; limit?: number; offset?: number }
@@ -4386,6 +4389,9 @@ export type SearchGithubReposResponse =
 export type BrowseHostDirectoryResponse =
   | { path: string; entries: Array<{ name: string; path: string }> }
   | { error: string }
+
+/** The host's saved clone parent, shared with the desktop add-project dialog. */
+export type DefaultClonePathResponse = { path: string | null } | { error: string }
 
 /** The cloned repository, already registered as a project on the host. */
 export type CloneRepositoryResponse = { path: string; name: string } | { error: string }

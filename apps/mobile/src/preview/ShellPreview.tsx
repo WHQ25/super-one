@@ -22,6 +22,7 @@ import { ProjectsScreen } from '../screens/projects-screen'
 import { BranchScreen } from '../screens/branch-screen'
 import { WorktreeScreen } from '../screens/worktree-screen'
 import { ProjectPickerScreen } from '../screens/project-picker-screen'
+import { AddProjectScreen } from '../screens/add-project-screen'
 import { useAddProject } from '../navigation/use-add-project'
 import { previewAddProjectRequest } from './add-project-fixtures'
 import { MOBILE_HARNESS_IDS } from '../provider-state'
@@ -117,8 +118,6 @@ export function ShellPreview({ initialPage = 'New session', onClose, onTheme }: 
   const [projectList, setProjectList] = useState(previewProjects)
   const addProject = useAddProject({
     request: previewAddProjectRequest,
-    projects: projectList,
-    onSelect: (item) => { setProjectPath(item.path); setPage('New session') },
     onAdded: (path) => {
       const name = path.split('/').filter(Boolean).pop() ?? path
       setProjectList((current) => current.some((item) => item.path === path)
@@ -164,7 +163,7 @@ export function ShellPreview({ initialPage = 'New session', onClose, onTheme }: 
   const chat = page === 'New session' || page === 'Chat'
   // Standalone galleries share the catch-all 'files' route but draw themselves.
   const gallery = page === 'Icons' || page === 'Git indicators' || page === 'Chip editor' || page === 'LAN browser'
-  const route = chat ? 'chat' : page === 'Project' ? 'project-picker' : page === 'Worktree' ? 'worktree' : page === 'Branch' ? 'branch' : page === 'Devices' || page === 'Pairing' ? 'pair' : page === 'Terminal' ? 'terminal' : page === 'Settings' ? 'settings' : page === 'Projects' ? 'projects' : page === 'Sessions' ? 'sessions' : 'files'
+  const route = chat ? 'chat' : page === 'Project' ? 'project-picker' : page === 'Add project' ? 'add-project' : page === 'Worktree' ? 'worktree' : page === 'Branch' ? 'branch' : page === 'Devices' || page === 'Pairing' ? 'pair' : page === 'Terminal' ? 'terminal' : page === 'Settings' ? 'settings' : page === 'Projects' ? 'projects' : page === 'Sessions' ? 'sessions' : 'files'
   return <SafeAreaView style={styles.root}>
     <StatusBar style={tokens.scheme === 'dark' ? 'light' : 'dark'} />
     <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8 }}>
@@ -175,14 +174,16 @@ export function ShellPreview({ initialPage = 'New session', onClose, onTheme }: 
     <Text style={styles.meta}>Offline preview · {Math.round(width)} px · font {fontScale.toFixed(2)}</Text>
     {editorError ? <Text accessibilityRole="alert" style={{ color: tokens.colors.destructive }}>{editorError}</Text> : null}
     <MobileKeyboardFrame>
-      <MobileHeader route={route} title={page === 'Project' ? addProject.title : page} subtitle="super-one · feat/mobile-ui" provider={provider} hasSession={page === 'Chat'} connectionState="connected" onBack={() => {
-          if (page === 'Project' && addProject.canGoBack) addProject.goBack()
+      <MobileHeader route={route} title={page === 'Add project' ? addProject.title : page === 'Project' ? 'Projects' : page} subtitle="super-one · feat/mobile-ui" provider={provider} hasSession={page === 'Chat'} connectionState="connected" onBack={() => {
+          if (page === 'Add project' && addProject.canGoBack) addProject.goBack()
+          else if (page === 'Add project') setPage('Project')
           else setPage('New session')
         }} onSwitchSession={() => setDrawer(true)} onOpenSettings={() => setPage('Settings')} onOpenTerminal={() => setPage('Terminal')}
         onConfirm={page === 'Worktree' ? () => { setSelection(worktreeDraft); setPage('New session') }
-          : page === 'Project' && addProject.confirmLabel ? addProject.confirm : undefined}
-        confirmLabel={page === 'Project' ? addProject.confirmLabel ?? undefined : undefined}
-        confirmDisabled={page === 'Project' ? addProject.busy
+          : page === 'Add project' && addProject.confirmLabel ? addProject.confirm : undefined}
+        confirmLabel={page === 'Add project' ? addProject.confirmLabel ?? undefined : undefined}
+        onAddProject={page === 'Project' ? () => setPage('Add project') : undefined}
+        confirmDisabled={page === 'Add project' ? addProject.busy
           : !!worktreeSelectionError(worktreeDraft, PREVIEW_BRANCHES, PREVIEW_CHECKED_OUT)} />
       <View style={styles.contentRow}>
         {width >= 768 && (chat || page === 'Terminal' || page === 'Settings' || route === 'files') ? <TabletSessionSidebar projectName={project.name} sessions={sessions} activeSessionId="preview-1" onOpenSession={() => setPage('Chat')} onCreateSession={() => setPage('New session')} onOpenSettings={() => setPage('Settings')} onArchiveSession={() => {}} onDeleteSession={() => {}} /> : null}
@@ -213,7 +214,9 @@ export function ShellPreview({ initialPage = 'New session', onClose, onTheme }: 
           {page === 'Projects' ? <ProjectsScreen projects={previewProjects} onOpen={() => setPage('Sessions')} /> : null}
           {page === 'Sessions' ? <SessionsScreen sessions={sessions} onOpenSession={() => setPage('Chat')} onCreateSession={() => setPage('New session')} onArchiveSession={() => {}} onDeleteSession={() => {}} /> : null}
           {page === 'Settings' ? <SettingsScreen {...settings} /> : null}
-          {page === 'Project' ? <ProjectPickerScreen flow={addProject} /> : null}
+          {page === 'Project' ? <ProjectPickerScreen projects={projectList} activePath={projectPath}
+            onSelect={(item) => { setProjectPath(item.path); setPage('New session') }} /> : null}
+          {page === 'Add project' ? <AddProjectScreen flow={addProject} /> : null}
           {page === 'Worktree' ? <WorktreeScreen selection={worktreeDraft} onSelectionChange={setWorktreeDraft}
             gitInfo={{ ...PREVIEW_GIT_INFO, branch }} worktreeInfo={PREVIEW_WORKTREE_INFO}
             worktreeDirty={PREVIEW_WORKTREE_DIRTY} branches={PREVIEW_BRANCHES}

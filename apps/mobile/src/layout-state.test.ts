@@ -20,6 +20,8 @@ describe('responsive shell layout', () => {
     expect(isFullBleedScreen('terminal')).toBe(true)
     expect(isFullBleedScreen('worktree')).toBe(true)
     expect(isFullBleedScreen('branch')).toBe(true)
+    expect(isFullBleedScreen('project-picker')).toBe(true)
+    expect(isFullBleedScreen('add-project')).toBe(true)
     expect(isFullBleedScreen('settings')).toBe(false)
     expect(isFullBleedScreen('projects')).toBe(false)
   })

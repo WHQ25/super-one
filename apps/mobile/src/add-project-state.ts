@@ -15,7 +15,6 @@ import { fuzzyMatch } from './slash'
  */
 export const ADD_PROJECT_TEXT = {
   sources: 'Sources',
-  projects: 'Projects',
   searchPlaceholder: 'Type a path, or pick a source...',
   pathPlaceholder: '~/Projects/',
   repoPlaceholderGithub: 'Name, owner/repo, or GitHub URL',
@@ -36,10 +35,10 @@ export const ADD_PROJECT_TEXT = {
   createSection: 'Create',
   createDirectory: 'Create Directory',
   shallowClone: 'Shallow Clone (--depth=1)',
+  saveAsDefaultClonePath: 'Save as Default Clone Path',
   pathRequired: 'Enter a project path.',
   directories: 'Directories',
   noDirectories: 'No directories here.',
-  noProjects: 'No projects yet',
   loading: 'Loading…',
 } as const
 
@@ -49,7 +48,7 @@ const SOURCE_COPY: Record<AddProjectSource, { label: string; hint: string }> = {
   url: { label: 'Git URL', hint: 'Clone from any git remote.' },
 }
 
-export type AddProjectRowIcon = AddProjectSource | 'directory' | 'create' | 'project'
+export type AddProjectRowIcon = AddProjectSource | 'directory' | 'create'
 
 export interface AddProjectRow {
   key: string
@@ -138,34 +137,6 @@ export function sourceRows(query: string, detected: AddProjectSource | null): Ad
     .filter(({ match }) => match.match)
     .sort((a, b) => b.match.score - a.match.score)
     .map(({ source, match }) => toRow(source, match.indices))
-}
-
-/**
- * Already-open projects, ranked by the same fuzzy match the sources use. This
- * section has no desktop counterpart in the dialog — on the phone the picker
- * and the sidebar list are one screen.
- */
-export function projectRows(
-  projects: ReadonlyArray<{ path: string; name: string }>,
-  query: string,
-): AddProjectRow[] {
-  const filter = query.trim().toLowerCase()
-  if (!filter) {
-    return projects.map((project) => ({
-      key: project.path, icon: 'project', label: project.name, subtitle: project.path,
-    }))
-  }
-  return projects
-    .map((project) => ({ project, match: fuzzyMatch(filter, project.name) }))
-    .filter(({ match }) => match.match)
-    .sort((a, b) => b.match.score - a.match.score)
-    .map(({ project, match }) => ({
-      key: project.path,
-      icon: 'project' as const,
-      label: project.name,
-      matchIndices: match.indices,
-      subtitle: project.path,
-    }))
 }
 
 /**

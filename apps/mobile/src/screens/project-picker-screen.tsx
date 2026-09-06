@@ -1,122 +1,46 @@
-import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from 'react-native'
-import { Check, Github, Link2, Search } from 'lucide-react-native'
-import { Image } from 'react-native'
+import { useState } from 'react'
+import { FolderOpen, Search } from 'lucide-react-native'
+import { TextInput, View } from 'react-native'
 import { Text } from '../ui/text'
-import { githubOwnerAvatarUrl, parseGitHubRepoInput } from '@superone/shared/git-remote'
-import { ADD_PROJECT_TEXT } from '../add-project-state'
-import type { AddProjectFlow } from '../navigation/use-add-project'
-import { useMobileTheme } from '../theme/context'
-import { AddProjectList } from '../ui/add-project-list'
-import { SCROLL_INDICATOR_GUTTER } from '../ui/scroll-gutter'
+import { filterProjects } from '../project-picker-state'
+import { useMobileStyles, useMobileTheme } from '../theme/context'
+import { ProjectsScreen, type Project } from './projects-screen'
 
 /**
- * Pick a project, or add one — the desktop Add Project dialog as a page.
+ * Choose which project the next session runs in.
  *
- * The single input carries every step: a project filter and path on the source
- * step, a folder path while browsing, a repository reference on the GitHub /
- * Git URL steps. The header supplies back and the confirm action the dialog
- * spends ⇧↵ on.
+ * Selection only — adding a project is its own flow behind the header action,
+ * the same split the desktop makes between its sidebar list and the Add Project
+ * dialog. Rows carry the branch and dirty-file indicators the sidebar shows.
  */
-export function ProjectPickerScreen(props: { flow: AddProjectFlow }) {
-  const { tokens: { colors, radius } } = useMobileTheme()
-  const flow = props.flow
-  const isPathStep = flow.step.kind === 'browse' || flow.step.kind === 'destination'
-  const preview = flow.clonePreview
-  const repoRef = preview && flow.step.kind === 'destination' && flow.step.source === 'github'
-    ? parseGitHubRepoInput(preview.repoLabel)
-    : null
-
+export function ProjectPickerScreen(props: {
+  projects: Project[]
+  activePath?: string
+  onSelect: (project: Project) => void
+}) {
+  const styles = useMobileStyles()
+  const { tokens: { colors } } = useMobileTheme()
+  const [query, setQuery] = useState('')
+  const matches = filterProjects(props.projects, query)
   return (
     <View style={{ flex: 1 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12,
         borderBottomWidth: 1, borderBottomColor: colors.border }}>
         <Search size={15} color={colors.mutedForeground} />
-        <TextInput value={flow.query} onChangeText={flow.setQuery}
-          accessibilityLabel={flow.placeholder}
-          placeholder={flow.placeholder} placeholderTextColor={colors.mutedForeground}
-          editable={!flow.busy} autoCapitalize="none" autoCorrect={false} spellCheck={false}
-          style={{ flex: 1, minHeight: 44, fontSize: 14, color: colors.foreground,
-            fontFamily: isPathStep ? 'Menlo' : undefined }} />
+        <TextInput value={query} onChangeText={setQuery} accessibilityLabel="Search projects"
+          placeholder="Search projects…" placeholderTextColor={colors.mutedForeground}
+          autoCapitalize="none" autoCorrect={false}
+          style={{ flex: 1, minHeight: 44, fontSize: 14, color: colors.foreground }} />
       </View>
-
-      {preview ? (
-        <View style={{ gap: 6, paddingHorizontal: 12, paddingVertical: 10,
-          borderBottomWidth: 1, borderBottomColor: colors.border }}>
-          <Text style={{ fontSize: 12, fontWeight: '500', color: colors.mutedForeground }}>
-            {ADD_PROJECT_TEXT.repository}
-          </Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            {repoRef
-              ? <Image source={{ uri: githubOwnerAvatarUrl(repoRef.owner, 80) }}
-                style={{ width: 32, height: 32, borderRadius: radius.sm }} />
-              : <View style={{ width: 32, alignItems: 'center' }}>
-                {flow.step.kind === 'destination' && flow.step.source === 'github'
-                  ? <Github size={18} color={colors.mutedForeground} />
-                  : <Link2 size={18} color={colors.mutedForeground} />}
-              </View>}
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text numberOfLines={1} style={{ fontSize: 14, color: colors.foreground }}>
-                {preview.repoLabel}
-              </Text>
-              <Text numberOfLines={1} style={{ fontSize: 11, fontFamily: 'Menlo', color: colors.mutedForeground }}>
-                {preview.remoteUrl}
-              </Text>
-            </View>
-          </View>
-          {preview.path ? (
-            <Text numberOfLines={1} style={{ fontSize: 11, fontFamily: 'Menlo', color: colors.mutedForeground }}>
-              {ADD_PROJECT_TEXT.clonesInto.replace('{{path}}', preview.path)}
-            </Text>
-          ) : null}
-          <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: flow.shallowClone }}
-            accessibilityLabel={ADD_PROJECT_TEXT.shallowClone}
-            onPress={() => flow.setShallowClone(!flow.shallowClone)}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 36 }}>
-            <View style={{ width: 18, height: 18, alignItems: 'center', justifyContent: 'center', borderRadius: 4,
-              borderWidth: 1, borderColor: flow.shallowClone ? colors.foreground : colors.mutedForeground,
-              backgroundColor: flow.shallowClone ? colors.foreground : 'transparent' }}>
-              {flow.shallowClone ? <Check size={12} color={colors.background} /> : null}
-            </View>
-            <Text style={{ flex: 1, fontSize: 13, color: colors.mutedForeground }}>
-              {ADD_PROJECT_TEXT.shallowClone}
-            </Text>
-          </Pressable>
-        </View>
-      ) : null}
-
-      {flow.loading ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-          <ActivityIndicator color={colors.mutedForeground} />
-          <Text style={{ fontSize: 12, color: colors.mutedForeground }}>{ADD_PROJECT_TEXT.loading}</Text>
-        </View>
-      ) : flow.emptyMessage ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 }}>
-          <Text style={{ fontSize: 12, textAlign: 'center', color: colors.mutedForeground }}>
-            {flow.emptyMessage}
-          </Text>
-        </View>
+      {matches.length ? (
+        <ProjectsScreen projects={matches} activePath={props.activePath} onOpen={props.onSelect} />
       ) : (
-        <ScrollView keyboardShouldPersistTaps="handled" style={{ flex: 1 }}
-          contentContainerStyle={{ paddingRight: SCROLL_INDICATOR_GUTTER, paddingBottom: 16 }}>
-          <AddProjectList sections={flow.sections} onActivate={flow.activate} />
-        </ScrollView>
-      )}
-
-      {flow.busy ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12,
-          paddingVertical: 8, borderTopWidth: 1, borderTopColor: colors.border }}>
-          <ActivityIndicator size="small" color={colors.mutedForeground} />
-          <Text style={{ fontSize: 12, color: colors.mutedForeground }}>
-            {flow.step.kind === 'destination' ? ADD_PROJECT_TEXT.cloning : ADD_PROJECT_TEXT.loading}
-          </Text>
+        <View style={styles.emptyState}>
+          <FolderOpen color={colors.border} size={48} />
+          <Text style={styles.emptyTitle}>{query.trim() ? 'No projects matched' : 'No projects yet'}</Text>
+          <Text style={styles.emptyBody}>Add one with the button in the top right.</Text>
         </View>
-      ) : null}
-      {flow.error ? (
-        <Text accessibilityRole="alert" style={{ paddingHorizontal: 12, paddingVertical: 8, fontSize: 12,
-          borderTopWidth: 1, borderTopColor: colors.border, color: colors.destructive }}>
-          {flow.error}
-        </Text>
-      ) : null}
+      )}
     </View>
   )
 }

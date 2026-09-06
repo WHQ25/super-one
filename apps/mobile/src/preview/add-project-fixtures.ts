@@ -63,6 +63,8 @@ export async function previewAddProjectRequest(command: RemoteCommand): Promise<
     }
     return { repos: SEARCH_HITS }
   }
+  if (command.type === 'get_default_clone_path') return { path: `${HOME}/Developer/Projects/` }
+  if (command.type === 'set_default_clone_path') return { success: true }
   if (command.type === 'add_project') return { success: true }
   if (command.type === 'clone_repository') {
     const name = command.directoryName ?? 'cloned-repo'

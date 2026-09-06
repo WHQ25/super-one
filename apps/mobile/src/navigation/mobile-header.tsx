@@ -1,4 +1,4 @@
-import { ArrowLeft, Menu, MoreHorizontal, Settings, SquareTerminal } from 'lucide-react-native'
+import { ArrowLeft, FolderPlus, Menu, MoreHorizontal, Settings, SquareTerminal } from 'lucide-react-native'
 import { Pressable, View } from 'react-native'
 import { Text } from '../ui/text'
 import type { HarnessId } from '@superone/shared/agent-types'
@@ -23,7 +23,8 @@ export function mobileHeaderTitle(
   if (route === 'terminal') return terminalTitle
   if (route === 'worktree') return 'Worktree'
   if (route === 'branch') return 'Branch'
-  if (route === 'project-picker') return 'Add Project'
+  if (route === 'project-picker') return 'Projects'
+  if (route === 'add-project') return 'Add Project'
   if (route === 'settings') return 'Project settings'
   if (route === 'files') return 'Files'
   return 'SuperOne'
@@ -41,6 +42,8 @@ export function MobileHeader(props: {
   onSwitchSession: () => void
   onOpenTerminal: () => void
   onOpenSettings: () => void
+  /** Trailing action that starts the add-project flow. */
+  onAddProject?: () => void
   /** Commits the screen's draft. Back discards it, so only routes with a draft pass this. */
   onConfirm?: () => void
   /** Action label; defaults to `Confirm`. */
@@ -85,6 +88,7 @@ export function MobileHeader(props: {
           {props.confirmLabel ?? 'Confirm'}
         </Text>
       </Pressable>
+        : props.onAddProject ? <IconButton icon={FolderPlus} label="Add project" onPress={props.onAddProject} />
         : chat ? <IconButton buttonRef={menu.ref} icon={MoreHorizontal} label="Session actions" onPress={menu.open} />
         : props.route === 'sessions' ? <IconButton icon={Settings} label="Settings" onPress={props.onOpenSettings} />
           // Balance the leading icon button so the title group stays optically centred.

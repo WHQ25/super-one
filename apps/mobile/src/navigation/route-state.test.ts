@@ -15,6 +15,13 @@ describe('mobile route hierarchy', () => {
     expect(routeHierarchy('branch', 'sessions')).toEqual(['pair', 'projects', 'sessions', 'chat', 'branch'])
   })
 
+  it('stacks adding a project on top of the picker it was opened from', () => {
+    expect(routeHierarchy('project-picker', 'sessions'))
+      .toEqual(['pair', 'projects', 'sessions', 'chat', 'project-picker'])
+    expect(routeHierarchy('add-project', 'sessions'))
+      .toEqual(['pair', 'projects', 'sessions', 'chat', 'project-picker', 'add-project'])
+  })
+
   it('returns settings and files to the owning sessions or chat route', () => {
     expect(routeHierarchy('settings', 'sessions')).toEqual(['pair', 'projects', 'sessions', 'settings'])
     expect(routeHierarchy('settings', 'chat')).toEqual(['pair', 'projects', 'sessions', 'chat', 'settings'])

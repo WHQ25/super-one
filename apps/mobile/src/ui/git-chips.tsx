@@ -50,9 +50,13 @@ export function GitChips(props: {
     <Text numberOfLines={1} style={strong}>{workDirValue(state)}</Text>
   </>)
   const showBranch = state.kind === 'local' && !!props.branch
-  if (!showBranch) return <View style={{ flexDirection: 'row', justifyContent: 'center' }}>{workDir}</View>
+  // `alignSelf: stretch` gives the row a width to shrink long names against;
+  // it is centred by its own `justifyContent`, not by the parent.
+  if (!showBranch) {
+    return <View style={{ alignSelf: 'stretch', flexDirection: 'row', justifyContent: 'center' }}>{workDir}</View>
+  }
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
       {workDir}
       <View style={{ width: 1, height: 16, marginHorizontal: 8, backgroundColor: colors.border }} />
       {chip(`Branch: ${props.branch}`, props.onBranch, <>

@@ -28,9 +28,11 @@ export function HarnessTabs(props: {
     if (fromMenu) setRememberedKey(option.key)
     if (option.key !== props.activeKey) props.onChange(option)
   }
+  // The switcher is the page's primary choice, so it carries more weight than
+  // the rows under it rather than reading as a compact segmented control.
   const slotStyle = (active: boolean) => ({
-    minHeight: 32, justifyContent: 'center' as const, alignItems: 'center' as const,
-    flexDirection: 'row' as const, gap: 4, paddingHorizontal: 16, borderRadius: radius.sm,
+    minHeight: 42, justifyContent: 'center' as const, alignItems: 'center' as const,
+    flexDirection: 'row' as const, gap: 5, paddingHorizontal: 22, borderRadius: radius.sm,
     backgroundColor: active ? colors.background : 'transparent',
   })
   return <>
@@ -39,7 +41,7 @@ export function HarnessTabs(props: {
       <Pressable accessibilityRole="tab" accessibilityState={{ selected: !menuActive, disabled: props.disabled }}
         accessibilityLabel={fixed.label} disabled={props.disabled}
         onPress={() => pick(fixed, false)} style={slotStyle(!menuActive)}>
-        <Text numberOfLines={1} style={{ fontSize: 13, fontWeight: '500', color: menuActive ? colors.mutedForeground : colors.foreground }}>
+        <Text numberOfLines={1} style={{ fontSize: 15, fontWeight: '600', color: menuActive ? colors.mutedForeground : colors.foreground }}>
           {fixed.label}
         </Text>
       </Pressable>
@@ -49,10 +51,10 @@ export function HarnessTabs(props: {
         // A single remaining harness is a plain tab; more than one opens the menu.
         onPress={() => { if (slots.menu.length === 1) pick(menuTab, true); else if (menuActive) menu.open(); else pick(menuTab, true) }}
         style={slotStyle(menuActive)}>
-        <Text numberOfLines={1} style={{ fontSize: 13, fontWeight: '500', color: menuActive ? colors.foreground : colors.mutedForeground }}>
+        <Text numberOfLines={1} style={{ fontSize: 15, fontWeight: '600', color: menuActive ? colors.foreground : colors.mutedForeground }}>
           {menuTab.label}
         </Text>
-        {slots.menu.length > 1 ? <ChevronDown size={14} color={colors.mutedForeground}
+        {slots.menu.length > 1 ? <ChevronDown size={16} color={colors.mutedForeground}
           style={{ transform: [{ rotate: menu.anchor ? '180deg' : '0deg' }] }} /> : null}
       </Pressable> : null}
     </View>

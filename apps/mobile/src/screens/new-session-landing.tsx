@@ -37,9 +37,9 @@ export function NewSessionLanding(props: NewSessionLandingProps) {
       contentContainerStyle={{ flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 16 }}>
       <HarnessIcon provider={props.provider} size={88} renderLevel="rich" />
       {hint ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Text style={{ fontSize: 12, color: colors.mutedForeground }}>Powered by</Text>
-          <ProviderBrand brandKey={hint.brandKey} name={hint.name} size={18} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+          <Text style={{ fontSize: 11, color: colors.mutedForeground }}>Powered by</Text>
+          <ProviderBrand brandKey={hint.brandKey} name={hint.name} size={14} />
         </View>
       ) : null}
       <HarnessTabs options={props.harnessOptions} activeKey={props.activeHarnessKey} onChange={props.onHarness} />

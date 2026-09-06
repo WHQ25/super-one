@@ -15,10 +15,15 @@ import {
   TriangleAlert,
 } from 'lucide-react'
 import { requestNative } from './bridge'
+import {
+  PortableTurnContext,
+  type PendingPermission,
+  type PortableTurnContextValue,
+} from './portable-turn-context'
 import { PortablePlanActions } from './PortablePlanActions'
 import { PortableMarkdown, PlainCode } from './PortableMarkdown'
 import { PortableNativeGallery } from './PortableNativeGallery'
-import { PortableTool } from './PortableTool'
+import { PortableToolRow } from './PortableToolRow'
 import {
   ClaudeTurnBodyPresenter,
   type ClaudeAppToolGroupPresenterProps,
@@ -84,21 +89,6 @@ import { summarizeClaudeProcess, summarizeCodexProcess } from './presenters/turn
 import { ToolGroupPresenter } from './presenters/ToolGroup'
 import { WorkflowBlockPresenter } from './presenters/WorkflowBlock'
 import { TurnDetailSection } from './TurnDetailSection'
-
-type PendingPermission = {
-  toolUseId?: string
-  toolName: string
-} | null
-
-interface PortableTurnContextValue {
-  scheme: 'light' | 'dark'
-  pendingPermission: PendingPermission
-}
-
-const PortableTurnContext = createContext<PortableTurnContextValue>({
-  scheme: 'dark',
-  pendingPermission: null,
-})
 
 const PORTABLE_COLORS: SubagentColorClasses = {
   text: 'text-primary',
@@ -340,13 +330,12 @@ function PortableClaudeTool(props: ClaudeToolPresenterProps) {
       />
     )
   }
-  return (
-    <PortableTool
-      {...props}
-      summary={props.toolSummary}
-      pendingPermission={isPermissionPending(pendingPermission, props.toolUseId, props.toolName)}
-    />
-  )
+  const awaitingPermission = isPermissionPending(pendingPermission, props.toolUseId, props.toolName)
+  const row = <PortableToolRow {...props} />
+  // The desktop surfaces a pending approval as its own prompt block; the phone marks the row.
+  return awaitingPermission
+    ? <div className="rounded ring-1 ring-inset ring-primary/30">{row}</div>
+    : row
 }
 
 function isImageGenerationTool(toolName: string): boolean {
@@ -457,6 +446,9 @@ function PortableToolGroup({ blocks, sealed }: ClaudeToolGroupPresenterProps) {
             elapsedSeconds={block.elapsedSeconds}
             result={result?.result}
             isError={result?.isError}
+            toolDiff={block.toolDiff}
+            toolDiffTokens={block.toolDiffTokens}
+            toolLineDelta={block.toolLineDelta}
           />
         )
       }}
@@ -496,16 +488,19 @@ function PortableSubagent({
       if (block.type !== 'tool_use') return []
       const childResult = results.get(block.toolUseId)
       return [(
-        <PortableTool
+        <PortableToolRow
           key={`${block.toolUseId}-${index}`}
           toolName={block.toolName}
           toolUseId={block.toolUseId}
           input={block.input}
-          summary={block.toolSummary}
+          toolSummary={block.toolSummary}
           status={block.status}
           result={childResult?.result}
           isError={childResult?.isError}
-          grouped
+          toolDiff={block.toolDiff}
+          toolDiffTokens={block.toolDiffTokens}
+          toolLineDelta={block.toolLineDelta}
+          allowExpand={false}
         />
       )]
     })
@@ -683,12 +678,11 @@ function PortableCodexItem(props: CodexItemPresenterProps) {
       return (
         <div className="space-y-0.5">
           {(item.changes.length ? item.changes : [{ path: '', kind: 'update' as const }]).map((change, changeIndex) => (
-            <PortableTool
+            <PortableToolRow
               key={`${item.id}-${changeIndex}`}
               toolName="FileChange"
               toolUseId={`${item.id}-${changeIndex}`}
               input={stringify({ file_path: change.path, kind: change.kind, diff: change.diff ?? '' })}
-              filePath={change.path}
               status="complete"
               result={item.status === 'failed' && changeIndex === 0 ? 'Failed to apply file changes.' : undefined}
               isError={item.status === 'failed'}
@@ -755,7 +749,7 @@ function PortableCodexItem(props: CodexItemPresenterProps) {
         )
       }
       return (
-        <PortableTool
+        <PortableToolRow
           toolName={fullToolName}
           toolUseId={item.id}
           input={stringify(item.arguments)}
@@ -767,11 +761,11 @@ function PortableCodexItem(props: CodexItemPresenterProps) {
     }
     case 'web_search':
       return (
-        <PortableTool
+        <PortableToolRow
           toolName="WebSearch"
           toolUseId={item.id}
           input={stringify({ query: item.query })}
-          summary={item.query}
+          toolSummary={item.query}
           status={item.status === 'in_progress' ? 'streaming' : 'complete'}
           isError={item.status === 'failed'}
         />
@@ -786,7 +780,7 @@ function PortableCodexItem(props: CodexItemPresenterProps) {
       return <div className="my-0.5 text-xs text-muted-foreground"><Check className="mr-1 inline size-3.5" />Context compacted</div>
     case 'collab_tool_call':
       return (
-        <PortableTool
+        <PortableToolRow
           toolName={`Collaboration · ${item.tool}`}
           toolUseId={item.id}
           input={stringify({ receivers: item.receiverThreadIds, prompt: item.prompt })}
@@ -809,12 +803,11 @@ function PortableCodexCommand({ item, isStreaming }: CodexCommandPresenterProps)
       ? { pattern: action?.query ?? '', path: action?.path }
       : { command: item.command }
   return (
-    <PortableTool
+    <PortableToolRow
       toolName={toolName}
       toolUseId={item.id}
       input={stringify(input)}
-      summary={action?.path ?? action?.query ?? item.command}
-      filePath={action?.path}
+      toolSummary={action?.path ?? action?.query ?? item.command}
       result={`${item.aggregatedOutput}${item.exitCode !== undefined ? `\n\nExit code ${item.exitCode}` : ''}`.trim() || undefined}
       status={isStreaming && item.status === 'in_progress' ? 'streaming' : 'complete'}
       isError={item.status === 'failed' || (item.exitCode != null && item.exitCode !== 0)}
@@ -833,21 +826,21 @@ function PortableCodexSubagent({ item }: CodexSubagentPresenterProps) {
         }
         if (child.type === 'file_change') {
           return (
-            <PortableTool
+            <PortableToolRow
               key={`${child.id}-${index}`}
               toolName="FileChange"
               toolUseId={child.id}
               input={stringify({ changes: child.changes })}
-              summary={child.changes[0]?.path}
+              toolSummary={child.changes[0]?.path}
               status="complete"
               isError={child.status === 'failed'}
-              grouped
+              allowExpand={false}
             />
           )
         }
         if (child.type === 'mcp_tool_call') {
           return (
-            <PortableTool
+            <PortableToolRow
               key={`${child.id}-${index}`}
               toolName={`mcp__${child.server}__${child.tool}`}
               toolUseId={child.id}
@@ -855,21 +848,21 @@ function PortableCodexSubagent({ item }: CodexSubagentPresenterProps) {
               result={codexMcpItemResultText(child)}
               status={child.status === 'in_progress' ? 'streaming' : 'complete'}
               isError={child.status === 'failed' || Boolean(child.error)}
-              grouped
+              allowExpand={false}
             />
           )
         }
         if (child.type !== 'web_search') return null
         return (
-          <PortableTool
+          <PortableToolRow
             key={`${child.id}-${index}`}
             toolName="WebSearch"
             toolUseId={child.id}
             input={stringify({ query: child.query })}
-            summary={child.query}
+            toolSummary={child.query}
             status={child.status === 'in_progress' ? 'streaming' : 'complete'}
             isError={child.status === 'failed'}
-            grouped
+            allowExpand={false}
           />
         )
       })}
@@ -937,7 +930,7 @@ const CODEX_PARTS: CodexTurnViewPresenterParts = {
   Command: PortableCodexCommand,
   Subagent: PortableCodexSubagent,
   Reasoning: ReasoningBlock,
-  Tool: PortableTool,
+  Tool: PortableToolRow,
   ImageGallery: PortableImageGallery,
   TurnDetail: TurnDetailSection,
   AppIcon: PortableAppIcon,

@@ -12,6 +12,7 @@ import { Button, Chip, ListRow } from '../ui'
 import { parsePreviewRoute, type PreviewRoute, type ShellPreviewPage } from './preview-route'
 import { nativeScenarios, type NativeScenario } from './scenarios'
 import { ShellPreview } from './ShellPreview'
+import { ToolCatalogPreview } from './ToolCatalogPreview'
 
 type ThemeChoice = 'system' | MobileColorScheme
 const categories = ['All', 'Permissions', 'Questions', 'Plans'] as const
@@ -98,6 +99,10 @@ function NativeCatalog({ theme, onTheme, route }: { theme: ThemeChoice; onTheme:
     list.current?.scrollToOffset({ offset: 0, animated: false })
   }
 
+  // The catalog needs no shell chrome — it is the chat document and a category filter.
+  if (shellPreview === 'Tool catalog') {
+    return <ToolCatalogPreview onClose={() => setShellPreview(null)} onTheme={() => onTheme(tokens.scheme === 'dark' ? 'light' : 'dark')} />
+  }
   if (shellPreview) return <ShellPreview key={route?.kind === 'shell' ? route.revision : 'manual'} initialPage={shellPreview} onClose={() => setShellPreview(null)} onTheme={() => onTheme(tokens.scheme === 'dark' ? 'light' : 'dark')} />
   return (
     <SafeAreaView style={styles.root}>
@@ -113,6 +118,7 @@ function NativeCatalog({ theme, onTheme, route }: { theme: ThemeChoice; onTheme:
           <Text style={styles.meta}>Offline fixtures · production components · {nativeScenarios.length} scenarios</Text>
           <Text style={styles.meta}>{Math.round(width)} × {Math.round(height)} · font scale {fontScale.toFixed(2)}</Text>
           <Button label="Preview app screens" variant="secondary" onPress={() => setShellPreview('New session')} />
+          <Button label="Tool catalog" variant="secondary" onPress={() => setShellPreview('Tool catalog')} />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
             {(['system', 'light', 'dark'] as const).map((value) => <Chip key={value} label={value} selected={theme === value} onPress={() => onTheme(value)} />)}
           </ScrollView>

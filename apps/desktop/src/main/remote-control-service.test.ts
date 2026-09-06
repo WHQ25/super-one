@@ -189,6 +189,19 @@ describe('stripProjectPath', () => {
 })
 
 describe('computeToolMeta', () => {
+  it('shortens the LS directory so a remote row does not print an absolute path', () => {
+    // The desktop shortens against its open checkout; the phone has none, so this is the
+    // only place the relative form can be produced.
+    expect(computeToolMeta(
+      toolUseBlock('LS', { path: '/proj/packages/chat-view/src/presenters' }),
+      '/proj',
+    ).toolSummary).toBe('packages/chat-view/src/presenters')
+    expect(computeToolMeta(
+      toolUseBlock('LS', { target_directory: '/proj/apps/mobile' }),
+      '/proj',
+    ).toolSummary).toBe('apps/mobile')
+  })
+
   describe('WebMCP browser tools', () => {
     it('humanizes the called page-tool name for the mobile summary', () => {
       const block = toolUseBlock('mcp__superone__browser_tools_call', {
@@ -567,20 +580,22 @@ describe('stripMessagesForRemote', () => {
       toolUseBlock('Read', { file_path: '/proj/src/file.ts' }),
     ])
     const [result] = stripMessagesForRemote([msg], '/proj')
-    expect(result.content[0]).toMatchObject({ type: 'read', input: '', toolFilePath: 'src/file.ts' })
+    expect(result.content[0]).toMatchObject({ type: 'read', toolFilePath: 'src/file.ts' })
+    expect(JSON.parse((result.content[0] as { input: string }).input)).toEqual({ file_path: '/proj/src/file.ts' })
   })
 
   it('keeps only presenter and native-action inputs after remote stripping', () => {
     const msg = makeMessage([
       toolUseBlock('mcp__superone__widget_show', { template: '@native/chart', data: { value: 7 } }, 'widget-1'),
       toolUseBlock('mcp__superone__mobile_share_file', { path: '/proj/report.pdf' }, 'share-1'),
-      toolUseBlock('Read', { file_path: '/proj/secret.ts' }, 'read-1'),
+      toolUseBlock('Edit', { file_path: '/proj/secret.ts', new_string: 'API_KEY=live' }, 'edit-1'),
     ])
 
     const [result] = stripMessagesForRemote([msg], '/proj')
     expect((result.content[0] as { input: string }).input).toContain('@native/chart')
     expect((result.content[1] as { input: string }).input).toContain('report.pdf')
-    expect((result.content[2] as { input: string }).input).toBe('')
+    // The row needs the path for its file chip; the edited body reaches it as `toolDiff`.
+    expect(JSON.parse((result.content[2] as { input: string }).input)).toEqual({ file_path: '/proj/secret.ts' })
   })
 
   it('keeps safe WebMCP routing metadata but strips page-tool arguments', () => {

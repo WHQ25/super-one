@@ -38,6 +38,10 @@ export interface ClaudeToolPresenterProps {
   isError?: boolean
   resultOutputPath?: string
   autoExpand?: boolean
+  /** Precomputed edit metadata; only remote surfaces receive these. */
+  toolDiff?: string
+  toolDiffTokens?: { added?: [string, string | null][][]; removed?: [string, string | null][][] }
+  toolLineDelta?: { added: number; removed: number }
 }
 
 export interface ClaudeReasoningPresenterProps {

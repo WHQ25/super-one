@@ -33,8 +33,58 @@ describe('remote tool input exemptions', () => {
     ))).toEqual({ description: 'Add item', name: 'add_to_cart' })
   })
 
-  it('continues stripping unrelated tool input', () => {
-    expect(sanitizeRemoteToolInput('Read', '{"file_path":"/private"}')).toBe('')
+  it('continues stripping tools no shared row reads', () => {
+    expect(sanitizeRemoteToolInput('SlashCommand', '{"command":"/deploy prod"}')).toBe('')
+    expect(sanitizeRemoteToolInput('mcp__other__do_thing', '{"secret":"x"}')).toBe('')
+  })
+
+  it('keeps the header fields the shared built-in tool rows read', () => {
+    expect(JSON.parse(sanitizeRemoteToolInput(
+      'Read',
+      JSON.stringify({ file_path: '/repo/src/app.ts', offset: 10, limit: 40 }),
+    ))).toEqual({ file_path: '/repo/src/app.ts', offset: 10, limit: 40 })
+    expect(JSON.parse(sanitizeRemoteToolInput(
+      'Bash',
+      JSON.stringify({ command: 'bun test', description: 'Run tests', timeout: 5000 }),
+    ))).toEqual({ command: 'bun test', description: 'Run tests', timeout: 5000 })
+    expect(JSON.parse(sanitizeRemoteToolInput(
+      'Grep',
+      JSON.stringify({ pattern: 'TODO', path: '/repo/src', output_mode: 'content' }),
+    ))).toEqual({ pattern: 'TODO', path: '/repo/src' })
+  })
+
+  it('drops edited file bodies — the row renders from the transmitted diff', () => {
+    expect(JSON.parse(sanitizeRemoteToolInput(
+      'Edit',
+      JSON.stringify({ file_path: '/repo/a.ts', old_string: 'secret-old', new_string: 'secret-new' }),
+    ))).toEqual({ file_path: '/repo/a.ts' })
+    expect(JSON.parse(sanitizeRemoteToolInput(
+      'Write',
+      JSON.stringify({ file_path: '/repo/a.ts', content: 'whole file body' }),
+    ))).toEqual({ file_path: '/repo/a.ts' })
+    expect(JSON.parse(sanitizeRemoteToolInput(
+      'Workflow',
+      JSON.stringify({ name: 'review', script: 'export const meta = {}', validate_only: true }),
+    ))).toEqual({ name: 'review', validate_only: true })
+  })
+
+  it('keeps the mini-app routing identity without the tool arguments', () => {
+    expect(JSON.parse(sanitizeRemoteToolInput(
+      'mcp__superone__miniapp_call',
+      JSON.stringify({ appId: 'notes', tool: 'create_note', input: { body: 'private note' } }),
+    ))).toEqual({ appId: 'notes', tool: 'create_note' })
+  })
+
+  it('keeps the AskUserQuestion count without the question text', () => {
+    expect(JSON.parse(sanitizeRemoteToolInput(
+      'AskUserQuestion',
+      JSON.stringify({
+        questions: [
+          { question: 'Which database?', header: 'DB', options: [{ label: 'Postgres' }] },
+          { question: 'Which region?', header: 'Region', options: [{ label: 'us-east' }] },
+        ],
+      }),
+    ))).toEqual({ questions: [{}, {}] })
   })
 
   it('keeps only presenter-routing metadata for device and computer tools', () => {

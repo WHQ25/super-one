@@ -1,3 +1,19 @@
+/**
+ * Block type a tool call is remapped to before it leaves for a remote surface, so the
+ * phone's reducer can group and route without re-deriving it from the tool name.
+ */
+const REMOTE_TOOL_BLOCK_TYPES: Record<string, string> = {
+  Read: 'read', Edit: 'edit', Write: 'write',
+  NotebookEdit: 'notebook_edit', FileChange: 'file_change',
+  Bash: 'bash', Grep: 'grep', Glob: 'glob',
+  WebSearch: 'web_search', WebFetch: 'web_fetch',
+  Agent: 'agent', Skill: 'skill', Workflow: 'workflow',
+}
+
+export function remoteToolBlockType(toolName: string): string {
+  return REMOTE_TOOL_BLOCK_TYPES[toolName] ?? 'tool_use'
+}
+
 const REMOTE_TOOL_INPUT_SUFFIXES = [
   '__widget_show',
   '__mobile_share_file',
@@ -11,6 +27,85 @@ const REMOTE_TOOL_INPUT_NAMES = new Set(['ReportFindings'])
 export function shouldKeepRemoteToolInput(toolName: string): boolean {
   return REMOTE_TOOL_INPUT_NAMES.has(toolName)
     || REMOTE_TOOL_INPUT_SUFFIXES.some((suffix) => toolName.endsWith(suffix))
+}
+
+/**
+ * Fields the shared tool row reads out of a built-in tool's input.
+ *
+ * Every field listed here already reaches the phone in another form — `computeToolMeta`
+ * folds `command`, `pattern`, `query`, `url` and the `Read` line range into `toolSummary`,
+ * `file_path` into `toolFilePath`, and the whole edited body into `toolDiff` — so naming
+ * them costs no privacy a lost phone did not already hold. It just spares the presenter
+ * from re-deriving what it was written to read.
+ *
+ * Content-bearing fields stay stripped: `old_string` / `new_string` / `content` (rows draw
+ * from `toolDiff`), `script`, question and option text, and every tool absent from this map.
+ */
+const BUILTIN_TOOL_INPUT_FIELDS: Record<string, readonly string[]> = {
+  Bash: ['command', 'description', 'timeout', 'run_in_background', 'background'],
+  Monitor: ['description', 'command'],
+  Read: ['file_path', 'offset', 'limit', 'pages'],
+  Edit: ['file_path'],
+  Write: ['file_path', 'notebook_path'],
+  NotebookEdit: ['file_path', 'notebook_path'],
+  Delete: ['file_path', 'path'],
+  FileChange: ['file_path', 'kind'],
+  Grep: ['pattern', 'path'],
+  Glob: ['pattern', 'path'],
+  LS: ['path', 'target_directory', 'directory'],
+  WebSearch: ['query'],
+  SemanticSearch: ['query'],
+  XSearch: ['query'],
+  MemorySearch: ['query', 'text'],
+  MemoryGet: ['path', 'file_path'],
+  WebFetch: ['url'],
+  Skill: ['skill'],
+  Agent: ['name', 'subagent_type', 'description', 'model', 'team_name', 'prompt', 'run_in_background'],
+  Task: ['name', 'subagent_type', 'description', 'model', 'team_name', 'prompt', 'run_in_background'],
+  Workflow: ['name', 'script_path', 'scriptPath', 'validate_only', 'validateOnly'],
+  TaskOutput: ['task_id', 'task_ids'],
+  KillTask: ['task_id', 'taskId'],
+  TaskCreate: ['subject'],
+  TaskUpdate: ['status', 'subject', 'taskId'],
+  TaskGet: ['taskId'],
+  TaskList: ['status'],
+  TodoList: ['total', 'completed'],
+  UpdateGoal: ['message', 'blocked_reason'],
+  Artifact: ['action', 'scope', 'title'],
+  SandboxNetworkAccess: ['host'],
+  ToolSearch: ['query'],
+  SearchTools: ['query'],
+  UseTool: ['tool_name', 'name', 'tool', 'server'],
+  Lsp: ['operation', 'method'],
+  DeployApp: ['name', 'url'],
+  ImageGen: ['prompt'],
+  ImageEdit: ['prompt'],
+}
+
+/**
+ * `AskUserQuestion` headers count the questions and nothing else — the answered
+ * pairs render from the tool result, which the phone already receives. Keeping the
+ * array's length while emptying its entries gives the row its count with no text.
+ */
+function sanitizeAskUserQuestionInput(source: Record<string, unknown>): Record<string, unknown> {
+  const safe: Record<string, unknown> = {}
+  if (Array.isArray(source.questions)) safe.questions = source.questions.map(() => ({}))
+  copyDefined(source, safe, ['previewFormat'])
+  return safe
+}
+
+function sanitizeBuiltinInput(toolName: string, input: string): string {
+  const fields = BUILTIN_TOOL_INPUT_FIELDS[toolName]
+  if ((!fields && toolName !== 'AskUserQuestion') || !input) return ''
+  let parsed: unknown
+  try { parsed = JSON.parse(input) } catch { return '' }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return ''
+  const source = parsed as Record<string, unknown>
+  const safe = toolName === 'AskUserQuestion'
+    ? sanitizeAskUserQuestionInput(source)
+    : {}
+  if (fields) copyDefined(source, safe, fields)
+  return Object.keys(safe).length > 0 ? JSON.stringify(safe) : ''
 }
 
 function superoneBareName(toolName: string): string | null {
@@ -161,6 +256,8 @@ function sanitizeWorkflowInput(toolName: string, input: string): string {
     'session_search',
     'session_read',
     'session_cleanup',
+    'miniapp_call',
+    'miniapp_dev_pack',
   ])
   if (!bare || !supported.has(bare) || !input) return ''
   let parsed: unknown
@@ -186,6 +283,11 @@ function sanitizeWorkflowInput(toolName: string, input: string): string {
     copyDefined(source, safe, ['harness'])
   } else if (bare === 'session_read') {
     copyDefined(source, safe, ['view'])
+  } else if (bare === 'miniapp_call') {
+    // The card names the app and the tool it ran; the tool's own arguments stay private.
+    copyDefined(source, safe, ['appId', 'tool'])
+  } else if (bare === 'miniapp_dev_pack') {
+    copyDefined(source, safe, ['appDir', 'outputDir'])
   } else if (bare === 'session_cleanup') {
     copyDefined(source, safe, ['action'])
     if (Array.isArray(source.sessionIds)) safe.sessionIds = source.sessionIds.map(() => '')
@@ -196,7 +298,8 @@ function sanitizeWorkflowInput(toolName: string, input: string): string {
 /** Privacy-preserving tool input projected into the remote transcript. */
 export function sanitizeRemoteToolInput(toolName: string, input: string): string {
   if (shouldKeepRemoteToolInput(toolName)) return input
-  return sanitizeBrowserInput(toolName, input)
+  return sanitizeBuiltinInput(toolName, input)
+    || sanitizeBrowserInput(toolName, input)
     || sanitizeInteractiveInput(toolName, input)
     || sanitizeCollabInput(toolName, input)
     || sanitizeWorkflowInput(toolName, input)

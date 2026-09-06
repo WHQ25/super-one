@@ -9,6 +9,10 @@ it('opens a named application-page fixture', () => {
   expect(parsePreviewRoute('superone://native-preview?page=New%20session&theme=light&harness=claude')).toEqual({ kind: 'shell', page: 'New session', theme: 'light', harness: 'claude' })
 })
 
+it('opens the tool catalog, so a screenshot run can address it directly', () => {
+  expect(parsePreviewRoute('superone://native-preview?page=Tool%20catalog&theme=dark&harness=codex')).toEqual({ kind: 'shell', page: 'Tool catalog', theme: 'dark', harness: 'codex' })
+})
+
 it('ignores production links, unknown fixtures, ambiguous routes and invalid options', () => {
   for (const url of ['superone://pair?secret=not-a-preview', 'https://native-preview?scenario=plan/default', 'superone://native-preview?scenario=missing', 'superone://native-preview?page=Missing', 'superone://native-preview?scenario=plan/default&page=Chat', 'superone://native-preview?scenario=plan/default&harness=unknown', 'superone://native-preview?scenario=plan/default&theme=invalid']) {
     expect(parsePreviewRoute(url)).toBeNull()

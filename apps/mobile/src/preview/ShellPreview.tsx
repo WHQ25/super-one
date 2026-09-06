@@ -27,7 +27,10 @@ import { Button, SelectionField, Sheet } from '../ui'
 import { IconGallery } from './IconGallery'
 import { effortOptionsForModel, resolveSelectedEffort } from '../model-selection-state'
 import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
-import { shellPreviewPages as pages, type ShellPreviewPage as Page } from './preview-route'
+import { shellPreviewPages, type ShellPreviewPage as Page } from './preview-route'
+
+// The tool catalog is its own screen, not a page of this shell — see ToolCatalogPreview.
+const pages = shellPreviewPages.filter((page) => page !== 'Tool catalog')
 import { dynamicMentionArtworkSnapshot } from '../ui/mention-dynamic-artwork'
 
 const previewModels: ModelOption[] = [

@@ -436,6 +436,7 @@
       "dependencies": {
         "@streamdown/code": "^1.0.1",
         "@streamdown/math": "^1.0.2",
+        "@superone/chat-core": "workspace:*",
         "@superone/shared": "workspace:*",
         "@superone/ui": "workspace:*",
         "@toon-format/toon": "^2.3.0",

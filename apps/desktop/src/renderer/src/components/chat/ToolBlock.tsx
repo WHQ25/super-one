@@ -36,7 +36,10 @@ import {
   type ToolFamilyRenderResult,
 } from './ToolBlockPresenter'
 import { BashTerminalPresenter } from './tool-block-presenters/BashTerminalPresenter'
-import { PrettyJSONCodeBlock } from './tool-result-views'
+import { PrettyJSONCodeBlock, QuestionPreviewContent } from './tool-result-views'
+import { AppToolBlockPresenter, AppToolHeader, type AppToolBlockPresenterProps } from '@superone/chat-view/presenters/AppToolBlock'
+import { ArtifactLinkChip } from './ArtifactLinkChip'
+import { RollingNumber } from './RollingNumber'
 import {
   CompactToolRow,
   ToolName,
@@ -57,55 +60,9 @@ function toolRowTone(isDenied?: boolean, isError?: boolean): ToolRowTone {
   return 'default'
 }
 
-function AppToolHeader({ appName, toolText, isStreaming, summary }: { appName?: string; toolText: string; isStreaming: boolean; summary: string }) {
-  return (
-    <>
-      {appName && <><span className="shrink-0 font-medium text-foreground">{appName}</span><span className="shrink-0 text-muted-foreground">·</span></>}
-      <ToolName streaming={isStreaming} className="font-normal">{isStreaming ? withStreamingEllipsis(toolText, true) : toolText}</ToolName>
-      {summary ? <ToolSummary>{summary}</ToolSummary> : null}
-    </>
-  )
-}
-
-function AppToolBlock({ icon, appName, toolText, summary, isStreaming, expandable, result }: {
-  icon: React.ReactNode
-  appName?: string
-  toolText: string
-  summary: string
-  isStreaming: boolean
-  expandable: boolean
-  result?: string
-}) {
-  const [expanded, setExpanded] = useState(false)
-  if (!expandable) {
-    return (
-      <CompactToolRow icon={icon}>
-        <AppToolHeader appName={appName} toolText={toolText} isStreaming={isStreaming} summary={summary} />
-      </CompactToolRow>
-    )
-  }
-  return (
-    <div className={cn('tool-node my-0.5 rounded bg-muted/20', 'cursor-pointer hover:bg-muted/40')}>
-      <div
-        className="flex items-center gap-1.5 px-2 py-1.5 text-xs"
-        onClick={() => setExpanded((e) => !e)}
-      >
-        {icon}
-        <AppToolHeader appName={appName} toolText={toolText} isStreaming={isStreaming} summary={summary} />
-        <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
-      </div>
-      <div
-        className="grid transition-[grid-template-rows] duration-200 ease-out"
-        style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}
-      >
-        <div className="overflow-hidden">
-          <div className="px-2 pb-1.5">
-            <PrettyJSONCodeBlock text={result!} />
-          </div>
-        </div>
-      </div>
-    </div>
-  )
+/** Desktop mini-app card: the shared header/result card with a highlighted JSON body. */
+function AppToolBlock(props: Omit<AppToolBlockPresenterProps, 'renderJson'>) {
+  return <AppToolBlockPresenter {...props} renderJson={(text) => <PrettyJSONCodeBlock text={text} />} />
 }
 
 function AppResultRendererBlock({ appId, toolUseId, toolName, appName, toolReadableName, summary, icon, templatePath, result, autoExpand }: {
@@ -372,6 +329,10 @@ export const ToolBlock = memo(function ToolBlock(props: ToolBlockProps) {
       if (toolName === 'Write') return <WriteDiff params={params} isStreaming={diffStreaming} />
       return <FileChangeDiff params={params} isStreaming={diffStreaming} />
     },
+    renderArtifactChip: ({ url, label }) => <ArtifactLinkChip url={url} label={label} />,
+    renderCount: (value) => <RollingNumber value={value} />,
+    renderJson: (text) => <PrettyJSONCodeBlock text={text} />,
+    renderQuestionPreview: (preview) => <QuestionPreviewContent {...preview} />,
     renderMobileShare: (shareProps) => <MobileShareFileBlock {...shareProps} />,
     renderExitPlanMode: (planResult) => <ExitPlanModeBlock result={planResult} />,
     renderMiniAppTool: (miniAppProps) => renderDesktopMiniAppTool(miniAppProps, {

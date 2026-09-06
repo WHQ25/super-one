@@ -3,7 +3,7 @@ import { AlertTriangle, Bot, CircleStop, FileText, ImageIcon, RefreshCw } from '
 import { ChatMessagePresenter } from './presenters/ChatMessage'
 import { PortableUserText } from './PortableUserText'
 import { PortableMarkdown } from './PortableMarkdown'
-import { PortableTool } from './PortableTool'
+import { PortableToolRow } from './PortableToolRow'
 import {
   PortableClaudeTurn,
   PortableCodexTurn,
@@ -58,18 +58,18 @@ function PortableUserContent({
     if ('toolName' in block && 'toolUseId' in block && 'input' in block) {
       const result = results.get(block.toolUseId)
       return (
-        <PortableTool
+        <PortableToolRow
           key={`${block.toolUseId}-${index}`}
           toolName={block.toolName}
           toolUseId={block.toolUseId}
           input={block.input}
-          summary={block.toolSummary}
+          toolSummary={block.toolSummary}
           status={block.status}
           result={result?.result}
           isError={result?.isError}
-          pendingPermission={pendingPermission?.toolUseId
-            ? pendingPermission.toolUseId === block.toolUseId
-            : pendingPermission?.toolName === block.toolName}
+          toolDiff={block.toolDiff}
+          toolDiffTokens={block.toolDiffTokens}
+          toolLineDelta={block.toolLineDelta}
         />
       )
     }

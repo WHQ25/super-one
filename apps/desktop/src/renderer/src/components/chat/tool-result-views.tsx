@@ -6,7 +6,8 @@ import DOMPurify from 'dompurify'
 import { cn } from '@superone/ui/lib/utils'
 import { HighlightedCodeBlock } from './CodeBlock'
 import { codePlugin, streamdownPlugins, streamdownRehypePlugins, streamdownControls, streamdownComponents, streamdownLinkSafety } from './chat-shared'
-import { tryPrettifyJson, parseQAPairs } from './tool-block-utils'
+import { tryPrettifyJson } from './tool-block-utils'
+import { AskUserQuestionResultPresenter } from '@superone/chat-view/presenters/AskUserQuestionResult'
 import type { QuestionAnnotations, QuestionPreviewFormat, UserQuestion } from '@superone/shared/agent-types'
 
 export function SectionLabel({ children }: { children: string }) {
@@ -172,51 +173,13 @@ export function QuestionPreviewContent({ content, format }: { content: string; f
   )
 }
 
-interface AnsweredQuestion {
-  question: string
-  answer: string
-  preview?: string
-}
-
-function extractAnsweredQuestions(params: Record<string, unknown>): AnsweredQuestion[] | null {
-  const questions = params.questions
-  const answers = params.answers
-  if (!Array.isArray(questions) || typeof answers !== 'object' || answers === null) return null
-  const annotations = (params.annotations && typeof params.annotations === 'object' ? params.annotations : {}) as QuestionAnnotations
-  const answerMap = answers as Record<string, string>
-  const result: AnsweredQuestion[] = []
-  for (const q of questions as UserQuestion[]) {
-    const answer = answerMap[q.question]
-    if (!answer) continue
-    result.push({ question: q.question, answer, preview: annotations[q.question]?.preview })
-  }
-  return result
-}
-
 /** Render AskUserQuestion result as Q&A pairs, with the selected option's preview shown inline when available. */
 export function AskUserQuestionResult({ text, params }: { text: string; params: Record<string, unknown> }) {
-  const previewFormat = (typeof params.previewFormat === 'string' ? params.previewFormat : 'markdown') as QuestionPreviewFormat
-  const answered: AnsweredQuestion[] = extractAnsweredQuestions(params) ?? parseQAPairs(text)
-  if (answered.length === 0) return null
-
   return (
-    <div className="space-y-1">
-      {answered.map((qa, i) => (
-        <div key={i} className="rounded bg-background/70 px-2 py-1.5 text-xs leading-relaxed">
-          <div className="text-muted-foreground">{qa.question}</div>
-          <div className="text-success">{qa.answer}</div>
-          {qa.preview && (
-            <div
-              className={cn(
-                'mt-1.5 overflow-y-auto rounded-md border border-border/50 text-xs',
-                previewFormat === 'html' ? 'max-h-[28rem] bg-transparent p-0' : 'max-h-64 bg-muted/30 p-2',
-              )}
-            >
-              <QuestionPreviewContent content={qa.preview} format={previewFormat} />
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
+    <AskUserQuestionResultPresenter
+      text={text}
+      params={params}
+      renderPreview={(preview) => <QuestionPreviewContent {...preview} />}
+    />
   )
 }

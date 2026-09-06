@@ -7,7 +7,7 @@ import { variant, variantId } from './variant'
 import { humanizePageToolName } from '@superone/shared/page-tool-name'
 import type { AgentEvent, RemoteCommand, ContentBlock, ChatMessage, CodexThreadItem, CodexCollabToolCallItem, RemoteDeviceConfig, TodoToolItem, TerminalEvent } from '@superone/shared/agent-types'
 import { isSubagentToolName } from '@superone/shared/tool-ui'
-import { sanitizeRemoteToolInput } from '@superone/shared/remote-tool-input'
+import { remoteToolBlockType, sanitizeRemoteToolInput } from '@superone/shared/remote-tool-input'
 
 export type { RemoteDeviceConfig }
 import { trace } from './agent/event-trace'
@@ -57,13 +57,6 @@ const WS_CHUNK_SIZE = 800_000
 const FILE_PATH_TOOLS = new Set(['Read', 'Edit', 'Write', 'NotebookEdit', 'FileChange'])
 const TODO_TOOLS = new Set(['TodoWrite', 'TaskCreate', 'TaskUpdate'])
 
-const TOOL_TYPE_MAP: Record<string, string> = {
-  Read: 'read', Edit: 'edit', Write: 'write',
-  NotebookEdit: 'notebook_edit', FileChange: 'file_change',
-  Bash: 'bash', Grep: 'grep', Glob: 'glob',
-  WebSearch: 'web_search', WebFetch: 'web_fetch',
-  Agent: 'agent', Skill: 'skill', Workflow: 'workflow',
-}
 
 interface WorkflowPhase {
   title: string
@@ -303,6 +296,13 @@ export function computeToolMeta(block: ContentBlock & { type: 'tool_use' }, proj
       case 'Glob':
         summary = String(p.pattern ?? '')
         break
+      case 'LS': {
+        // The desktop row shortens this against the open checkout. A remote surface has no
+        // checkout, so without a summary computed here its row prints the absolute path.
+        const dir = String(p.path ?? p.target_directory ?? p.directory ?? '')
+        summary = dir ? stripProjectPath(dir, projectPath) : ''
+        break
+      }
       case 'WebSearch':
         summary = String(p.query ?? '')
         break
@@ -398,7 +398,7 @@ function stripContentBlock(block: ContentBlock, bashCmds?: Map<string, string>, 
   if (block.type === 'thinking') return block
   if (block.type === 'tool_use') {
     const meta = computeToolMeta(block, projectPath)
-    const mappedType = TOOL_TYPE_MAP[block.toolName] ?? 'tool_use'
+    const mappedType = remoteToolBlockType(block.toolName)
     return { ...block, type: mappedType, input: sanitizeRemoteToolInput(block.toolName, block.input), toolSummary: block.toolSummary ?? meta.toolSummary, toolFilePath: block.toolFilePath ?? meta.toolFilePath, toolLineDelta: block.toolLineDelta ?? meta.toolLineDelta, toolDiff: block.toolDiff ?? meta.toolDiff, toolDiffTokens: block.toolDiffTokens ?? meta.toolDiffTokens, toolTodos: block.toolTodos ?? meta.toolTodos, subagentType: meta.subagentType, toolPrompt: meta.toolPrompt, runInBackground: meta.runInBackground, workflowName: meta.workflowName, workflowDescription: meta.workflowDescription, workflowPhases: meta.workflowPhases } as ContentBlock
   }
   if (block.type === 'tool_result') {

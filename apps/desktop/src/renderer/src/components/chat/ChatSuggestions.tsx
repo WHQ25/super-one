@@ -12,7 +12,7 @@ import {
   resolveMenuTabOption,
   suggestionHarnessKey,
   type SuggestionHarnessOption,
-} from '@/lib/suggestion-harness-order'
+} from '@superone/shared/suggestion-harness-order'
 import { ProjectSelector } from '@/components/coding/ProjectSelector'
 import { AddProjectDialog } from '@/components/sidebar/add-project/AddProjectDialog'
 import {

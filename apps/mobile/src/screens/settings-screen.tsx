@@ -4,12 +4,13 @@ import type {
   HarnessId,
   ModelOption,
   RemoteEffortOption,
+  RemoteHarnessOption,
   WorktreeInfo,
 } from '@superone/shared/agent-types'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness-capabilities'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import type { NewSessionWorktreeSelection } from '../worktree-state'
-import { harnessSupportsAdditionalDirs, MOBILE_HARNESS_IDS } from '../provider-state'
+import { harnessSupportsAdditionalDirs } from '../provider-state'
 import { Button, SelectionField } from '../ui'
 import { ModelPicker } from '../ui/model-picker'
 import { WorktreePicker } from '../ui/worktree-picker'
@@ -42,12 +43,25 @@ export type ProjectSettingsProps = {
   workspaceDirs: string[]
   additionalDir: string
   onAdditionalDirChange: (value: string) => void
-  onProviderChange: (provider: HarnessId) => void
+  /** Ordered and labelled by the host — same rows the switcher shows. */
+  harnessOptions: readonly RemoteHarnessOption[]
+  activeHarnessKey: string
+  onHarnessChange: (option: RemoteHarnessOption) => void
   onModelChange: (model: string) => void
   onEffortChange: (effort: string) => void
   onOpenFiles: () => void
   onAddDirectory: () => void
   onRemoveDirectory: (dir: string) => void
+}
+
+/**
+ * What the running session is. Prefer the host's own row label — the `acp`
+ * harness is called `Others` in the capability table, which is the group name,
+ * not the agent the session is actually on.
+ */
+function harnessLabel(props: ProjectSettingsProps): string {
+  return props.harnessOptions.find((option) => option.key === props.activeHarnessKey)?.label
+    ?? HARNESS_CAPABILITIES[props.selectedProvider].displayName
 }
 
 export function SettingsScreen(props: ProjectSettingsProps) {
@@ -73,9 +87,14 @@ export function SettingsScreen(props: ProjectSettingsProps) {
       {!props.section ? <View style={styles.settingsCard}>
         <Text style={styles.sectionTitle}>{props.activeSession ? 'Current session' : 'Session defaults'}</Text>
         <Text style={styles.rowMeta}>{props.activeSession ? 'Model and effort apply to your next message.' : 'Choose how your next session starts.'}</Text>
-        {props.activeSession ? <Text style={styles.rowTitle}>{HARNESS_CAPABILITIES[props.selectedProvider].displayName}</Text> : <SelectionField label="Agent" value={props.selectedProvider}
-          options={MOBILE_HARNESS_IDS.map((provider) => ({ value: provider, label: HARNESS_CAPABILITIES[provider].displayName }))}
-          onChange={(value) => props.onProviderChange(value as HarnessId)} />}
+        {props.activeSession
+          ? <Text style={styles.rowTitle}>{harnessLabel(props)}</Text>
+          : <SelectionField label="Agent" value={props.activeHarnessKey}
+            options={props.harnessOptions.map((option) => ({ value: option.key, label: option.label }))}
+            onChange={(value) => {
+              const option = props.harnessOptions.find((row) => row.key === value)
+              if (option) props.onHarnessChange(option)
+            }} />}
         <ModelPicker harness={props.selectedProvider} model={props.selectedModel} models={props.models}
           effort={props.selectedEffort} efforts={props.efforts} onModel={props.onModelChange} onEffort={props.onEffortChange} />
       </View> : null}

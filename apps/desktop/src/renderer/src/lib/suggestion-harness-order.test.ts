@@ -4,7 +4,7 @@ import {
   resolveMenuTabOption,
   suggestionHarnessKey,
   type SuggestionHarnessOption,
-} from './suggestion-harness-order'
+} from '@superone/shared/suggestion-harness-order'
 
 describe('suggestionHarnessKey', () => {
   it('keys top-level harnesses by provider id', () => {

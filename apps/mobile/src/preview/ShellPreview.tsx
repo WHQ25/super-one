@@ -8,7 +8,7 @@ import { Text } from '../ui/text'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar'
 import { WebView } from 'react-native-webview'
-import type { ChatMessage, HarnessId, ImageAttachment, ModelOption } from '@superone/shared/agent-types'
+import type { ChatMessage, HarnessId, ImageAttachment, ModelOption, RemoteHarnessOption } from '@superone/shared/agent-types'
 import { MobileHeader } from '../navigation/mobile-header'
 import { MobileKeyboardFrame } from '../navigation/mobile-keyboard-frame'
 import { WorkspaceDrawer } from '../navigation/workspace-drawer'
@@ -25,7 +25,7 @@ import { ProjectPickerScreen } from '../screens/project-picker-screen'
 import { AddProjectScreen } from '../screens/add-project-screen'
 import { useAddProject } from '../navigation/use-add-project'
 import { previewAddProjectRequest } from './add-project-fixtures'
-import { MOBILE_HARNESS_IDS } from '../provider-state'
+import { suggestionHarnessKey } from '@superone/shared/suggestion-harness-order'
 import { SessionsScreen } from '../screens/sessions-screen'
 import { SettingsScreen, type ProjectSettingsProps } from '../screens/settings-screen'
 import { TerminalScreen } from '../screens/terminal-screen'
@@ -63,6 +63,19 @@ const previewModels: ModelOption[] = [
   })),
 ]
 const project = { name: 'super-one', path: '/workspace/super-one' }
+/**
+ * What a real host answers `list_harness_options` with: ordered, labelled, and
+ * with the ACP harness expanded into one row per agent.
+ */
+const PREVIEW_HARNESS_OPTIONS: RemoteHarnessOption[] = [
+  { key: 'claude', provider: 'claude', acpAgentId: null, label: 'Claude Code' },
+  { key: 'codex', provider: 'codex', acpAgentId: null, label: 'Codex' },
+  { key: 'acp:grok-build', provider: 'acp', acpAgentId: 'grok-build', label: 'Grok Build' },
+  { key: 'opencode', provider: 'opencode', acpAgentId: null, label: 'OpenCode' },
+  { key: 'cursor', provider: 'cursor', acpAgentId: null, label: 'Cursor' },
+  { key: 'dsh', provider: 'dsh', acpAgentId: null, label: 'DeepSeek' },
+]
+
 const previewProjects = [
   project,
   { name: 'design-system', path: '/workspace/design-system' },
@@ -137,7 +150,9 @@ export function ShellPreview({ initialPage = 'New session', onClose, onTheme }: 
   const [messages, setMessages] = useState(initialMessages)
   const web = useRef<WebView>(null)
   const terminal = useRef<WebView>(null)
-  const chooseAgent = (value: HarnessId) => { setProvider(value); setHarness(value); setMode(HARNESS_LAUNCH_OPTIONS[value].permissionModes.includes('default') ? 'default' : HARNESS_LAUNCH_OPTIONS[value].permissionModes[0]!) }
+  const chooseAgent = (option: RemoteHarnessOption) => {
+    const value = option.provider
+    setProvider(value); setHarness(value); setMode(HARNESS_LAUNCH_OPTIONS[value].permissionModes.includes('default') ? 'default' : HARNESS_LAUNCH_OPTIONS[value].permissionModes[0]!) }
   const paintChat = () => {
     injectHostMessage(web, mobileWebViewTheme(tokens))
     injectHostMessage(web, { type: 'setViewport', fontScale, locale: 'en' })
@@ -157,7 +172,8 @@ export function ShellPreview({ initialPage = 'New session', onClose, onTheme }: 
     checkedOutBranches: PREVIEW_CHECKED_OUT, worktreeSelection: selection,
     onWorktreeSelectionChange: setSelection, selectedProvider: provider, selectedModel: model, selectedEffort: effort,
     models: previewModels, efforts,
-    workspaceDirs: ['/workspace/shared'], additionalDir: '', onAdditionalDirChange: () => {}, onProviderChange: chooseAgent,
+    workspaceDirs: ['/workspace/shared'], additionalDir: '', onAdditionalDirChange: () => {}, harnessOptions: PREVIEW_HARNESS_OPTIONS,
+            activeHarnessKey: suggestionHarnessKey(provider, null), onHarnessChange: chooseAgent,
     onModelChange: chooseModel, onEffortChange: setEffort, onOpenFiles: () => setPage('Files'), onAddDirectory: () => {}, onRemoveDirectory: () => {},
   }
   const chat = page === 'New session' || page === 'Chat'
@@ -189,12 +205,14 @@ export function ShellPreview({ initialPage = 'New session', onClose, onTheme }: 
         {width >= 768 && (chat || page === 'Terminal' || page === 'Settings' || route === 'files') ? <TabletSessionSidebar projectName={project.name} sessions={sessions} activeSessionId="preview-1" onOpenSession={() => setPage('Chat')} onCreateSession={() => setPage('New session')} onOpenSettings={() => setPage('Settings')} onArchiveSession={() => {}} onDeleteSession={() => {}} /> : null}
         <View style={isFullBleedScreen(route) ? styles.mainPane : [styles.mainPane, styles.page]}>
           {chat ? <ChatScreen provider={provider} landing={page === 'New session' ? {
-              provider, harnesses: MOBILE_HARNESS_IDS, onProvider: chooseAgent,
+              provider, harnessOptions: PREVIEW_HARNESS_OPTIONS,
+              activeHarnessKey: suggestionHarnessKey(provider, null), onHarness: chooseAgent,
               projectName: projectList.find((item) => item.path === projectPath)?.name,
               onOpenProject: () => setPage('Project'),
               worktreeSelection: selection, worktreeInfo: PREVIEW_WORKTREE_INFO,
               branch, dirtyFiles: PREVIEW_GIT_INFO.dirty?.files,
-              onWorktree: () => { setWorktreeDraft(selection); setPage('Worktree') }, onBranch: () => setPage('Branch'),
+              onWorktree: () => { setWorktreeDraft(selection); setPage('Worktree') },
+              onBranch: () => setPage('Branch'),
             } : undefined}
             selection={{ model, models: settings.models, effort, efforts: settings.efforts, onModel: chooseModel, onEffort: setEffort }}
             webRef={web} permissionModes={['default', 'acceptEdits', 'plan']} permissionMode={mode} slashHits={[]} mentionHits={mentionHits} attachments={attachments} additionalDirectories={[]} queuedMessages={[]} todos={{}} draft={chatDraft.draft} streaming={page === 'Chat'}

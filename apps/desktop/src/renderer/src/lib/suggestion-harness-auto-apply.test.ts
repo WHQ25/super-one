@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveAutoApplyHarness, type SuggestionHarnessOption } from './suggestion-harness-order'
+import { resolveAutoApplyHarness, type SuggestionHarnessOption } from '@superone/shared/suggestion-harness-order'
 
 const option = (provider: SuggestionHarnessOption['provider'], acpAgentId: string | null = null): SuggestionHarnessOption => ({
   key: acpAgentId ? `${provider}:${acpAgentId}` : provider,

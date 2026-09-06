@@ -4328,6 +4328,7 @@ export type RemoteCommand =
   | { type: 'set_default_clone_path'; requestId: string; path: string }
   | { type: 'clone_repository'; requestId: string; remoteUrl: string; parentPath: string; directoryName?: string; shallow?: boolean }
   | { type: 'list_projects'; requestId: string }
+  | { type: 'list_harness_options'; requestId: string }
   | { type: 'list_sessions'; requestId: string; projectPath: string; limit?: number; offset?: number }
   | { type: 'archive_session'; requestId: string; projectPath: string; sessionId: string }
   | { type: 'delete_session'; requestId: string; projectPath: string; sessionId: string }
@@ -4388,6 +4389,23 @@ export type SearchGithubReposResponse =
  */
 export type BrowseHostDirectoryResponse =
   | { path: string; entries: Array<{ name: string; path: string }> }
+  | { error: string }
+
+/**
+ * One row of the host's harness switcher, already ordered and labelled the way
+ * the desktop's `ChatSuggestions` shows it: the ACP harness is expanded into
+ * one row per agent (so Grok is `Grok Build`, not `Others`), and harnesses the
+ * user disabled in the catalog are absent.
+ */
+export interface RemoteHarnessOption {
+  key: string
+  provider: HarnessId
+  acpAgentId: string | null
+  label: string
+}
+
+export type ListHarnessOptionsResponse =
+  | { options: RemoteHarnessOption[] }
   | { error: string }
 
 /** The host's saved clone parent, shared with the desktop add-project dialog. */

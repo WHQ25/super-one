@@ -13,7 +13,8 @@ import {
 } from '@superone/relay-client'
 import type {
   AskUserQuestionRequest, ChatMessage, HarnessId, ImageAttachment, PermissionRequest,
-  PlanApprovalRequest, RemoteCommand, TodoItem, WorktreeInfo,
+  ListHarnessOptionsResponse, PlanApprovalRequest, RemoteCommand, RemoteHarnessOption,
+  TodoItem, WorktreeInfo,
 } from '@superone/shared/agent-types'
 import { ChatRuntime } from '../runtime'
 import { TerminalRuntime } from '../terminal-runtime'
@@ -26,7 +27,8 @@ import { useComposerDraft } from './use-composer-draft'
 import { useComposerSuggestions } from './use-composer-suggestions'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { mobileWebViewTheme } from '../theme/tokens'
-import { harnessSupportsAdditionalDirs, MOBILE_HARNESS_IDS } from '../provider-state'
+import { harnessSupportsAdditionalDirs } from '../provider-state'
+import { suggestionHarnessKey } from '@superone/shared/suggestion-harness-order'
 import { parentRemotePath, resolveRemoteFilePath } from '../shell-state'
 import { loadOrCreateMobileId, mobileKv } from '../storage'
 import { registerFatalChatViewError } from '../chat-view-recovery'
@@ -112,6 +114,8 @@ export function MobileApp() {
     applySystemInfo,
   } = harnessSelection
   const [gitInfo, setGitInfo] = useState<ShellGitInfo | null>(null)
+  // Empty until the host answers; the switcher hides itself below two rows.
+  const [harnessOptions, setHarnessOptions] = useState<RemoteHarnessOption[]>([])
   const [worktreeInfo, setWorktreeInfo] = useState<WorktreeInfo | null>(null)
   const [worktreeDirty, setWorktreeDirty] = useState<Record<string, number>>({})
   const [branches, setBranches] = useState<string[]>([])
@@ -384,6 +388,15 @@ export function MobileApp() {
     if (res.error) throw new Error(res.error)
     const projectRows = res.projects ?? []
     setProjects(projectRows)
+    // Which harnesses this host offers, already ordered and labelled the way its
+    // own new-session surface shows them.
+    void client.request({ type: 'list_harness_options', requestId: randomId() } as RemoteCommand)
+      .then((result) => {
+        const options = (result as ListHarnessOptionsResponse | null)
+        if (!options || 'error' in options || clientRef.current !== client) return
+        setHarnessOptions(options.options)
+      })
+      .catch(() => { /* An older desktop has no such command; keep the fallback. */ })
     if (projectRows[0]) { await openProject(projectRows[0]); startNewSession(projectRows[0]) }
     else setScreen('projects')
     setStatus('')
@@ -729,11 +742,12 @@ export function MobileApp() {
     if (result?.ok === false) throw new Error(result.error || 'Could not change branch')
     await loadShellDetails()
   }
-  const selectProvider = (provider: HarnessId) => {
-    harnessSelection.resetForProvider(provider)
-    setHarness(provider)
-    if (provider !== 'claude') setWorktreeSelection(LOCAL_WORKTREE_SELECTION)
-    runUiAction(() => loadShellDetails(provider), setStatus, 'failed to load agent settings')
+  /** Switcher pick: an ACP row also pins which agent it stood for. */
+  const selectHarness = (option: RemoteHarnessOption) => {
+    harnessSelection.resetForProvider(option.provider, option.acpAgentId)
+    setHarness(option.provider)
+    if (option.provider !== 'claude') setWorktreeSelection(LOCAL_WORKTREE_SELECTION)
+    runUiAction(() => loadShellDetails(option.provider), setStatus, 'failed to load agent settings')
   }
   const createSession = async () => {
     const client = clientRef.current
@@ -871,7 +885,9 @@ export function MobileApp() {
     gitInfo, worktreeInfo, worktreeDirty, branches, checkedOutBranches, worktreeSelection,
     onWorktreeSelectionChange: setWorktreeSelection,
     selectedProvider, selectedModel, selectedEffort, models, efforts, workspaceDirs, additionalDir,
-    onAdditionalDirChange: setAdditionalDir, onProviderChange: selectProvider,
+    onAdditionalDirChange: setAdditionalDir,
+    harnessOptions, activeHarnessKey: suggestionHarnessKey(selectedProvider, selectedAcpAgentId),
+    onHarnessChange: selectHarness,
     onModelChange: harnessSelection.selectModel, onEffortChange: setSelectedEffort,
     onOpenFiles: openFiles,
     onAddDirectory: () => runUiAction(addWorkspaceDirectory, setStatus, 'failed to add directory'),
@@ -1008,8 +1024,9 @@ export function MobileApp() {
           starting={starting}
           landing={!sessionId ? {
             provider: selectedProvider,
-            harnesses: MOBILE_HARNESS_IDS,
-            onProvider: selectProvider,
+            harnessOptions,
+            activeHarnessKey: suggestionHarnessKey(selectedProvider, selectedAcpAgentId),
+            onHarness: selectHarness,
             activeProvider: harnessSelection.activeProvider,
             projectName: project?.name,
             onOpenProject: () => setScreen('project-picker'),

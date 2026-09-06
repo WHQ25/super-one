@@ -77,6 +77,7 @@ import { authorizeHttpMcpServer } from '../mcp-oauth'
 import { listSkills, readSkillContent, readSkillFile, installSkill, deleteSkill, readCodexSkillContent, readCodexSkillFile, deleteCodexSkill } from '../skills-service'
 import { getSharedCodexSkillsService } from '../codex/codex-skills-rpc-singleton'
 import { readAppSettings, saveAppSettings } from '../app-settings-service'
+import { queryHarnessSessionRanks } from '../usage-stats-service'
 import { listCodexMcpConfigs } from '../codex-config-service'
 import { discoverAllAgents, discoverProjectCommands, readAgentFile } from './discover-resources'
 import { listPlugins, readPluginContent, readPluginFile, deletePlugin, listMarketplacePlugins, installPlugin, updatePlugin, updateMarketplace, addMarketplace, removeMarketplace, readMarketplacePluginContent, readMarketplacePluginFile, getGithubStars, listGithubReposForOwner, searchGithubRepositories, listMyGithubRepos } from '../plugins-service'
@@ -1033,6 +1034,46 @@ export class AgentService {
           addRecentFolder(command.path)
           await this.openFolder(command.path)
           await respond?.(command.requestId, { success: true })
+        } catch (err) {
+          await respond?.(command.requestId, { error: (err as Error).message })
+        }
+        break
+      }
+      case 'list_harness_options': {
+        try {
+          const [{ listHarnessInstallations }, { detectBuiltinAgents }, { orderSuggestionHarnesses }, { isGrokAcpAgent }] =
+            await Promise.all([
+              import('../harness/service'),
+              import('../acp/acp-detect'),
+              import('@superone/shared/suggestion-harness-order'),
+              import('@superone/shared/acp-brand'),
+            ])
+          const settings = readAppSettings()
+          const catalog = listHarnessInstallations()
+          const catalogOn = (id: string) => catalog.some((row) => row.id === id && row.enabled)
+          // Same visibility rules as the desktop `ChatSuggestions`: OpenCode has
+          // its own harness row, and a non-Grok ACP agent needs the experimental
+          // opt-in that names it.
+          const acpAgents = (await detectBuiltinAgents())
+            .filter((agent) => agent.id !== 'opencode' && (isGrokAcpAgent(agent.id)
+              ? catalogOn('acp-grok')
+              : settings.experimentalAgentsEnabled || settings.enabledExperimentalAgents.includes(agent.id)))
+            .map((agent) => ({ id: agent.id, name: agent.name }))
+          const options = orderSuggestionHarnesses({
+            ranks: queryHarnessSessionRanks(7),
+            acpAgents,
+            includeClaude: catalogOn('claude'),
+            includeCodex: catalogOn('codex'),
+            includeOpenCode: catalogOn('opencode') || settings.experimentalAgentsEnabled,
+            includeCursor: catalogOn('cursor'),
+            includeDeepseek: catalogOn('dsh'),
+            harnessOrder: settings.harnessOrder,
+            defaultHarness: settings.suggestionHarness,
+            secondaryHarness: settings.secondaryHarness,
+          })
+          await respond?.(command.requestId, {
+            options: options.map(({ key, provider, acpAgentId, label }) => ({ key, provider, acpAgentId, label })),
+          })
         } catch (err) {
           await respond?.(command.requestId, { error: (err as Error).message })
         }

@@ -44,7 +44,7 @@ import {
   type NodeHarnessId,
 } from '@superone/shared/environment/harness-installation'
 import type { HarnessId } from '@superone/shared/session-types'
-import { suggestionHarnessKey } from '@/lib/suggestion-harness-order'
+import { suggestionHarnessKey } from '@superone/shared/suggestion-harness-order'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore, type HarnessConfigSection } from '@/stores/app'
 import { ClaudeCodeTextInline } from '@/components/harness/ClaudeCodeTextInline'

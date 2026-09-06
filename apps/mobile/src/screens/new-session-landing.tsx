@@ -1,6 +1,8 @@
 import { ScrollView, View } from 'react-native'
 import { Text } from '../ui/text'
-import type { HarnessId, RemoteActiveProvider, WorktreeInfo } from '@superone/shared/agent-types'
+import type {
+  HarnessId, RemoteActiveProvider, RemoteHarnessOption, WorktreeInfo,
+} from '@superone/shared/agent-types'
 import { poweredByHint } from '../provider-state'
 import type { NewSessionWorktreeSelection } from '../worktree-state'
 import { useMobileTheme } from '../theme/context'
@@ -8,8 +10,10 @@ import { GitChips, HarnessIcon, HarnessTabs, ProjectSelect, ProviderBrand } from
 
 export type NewSessionLandingProps = {
   provider: HarnessId
-  harnesses: readonly HarnessId[]
-  onProvider: (provider: HarnessId) => void
+  /** Ordered and labelled by the host, so the switcher reads like the desktop's. */
+  harnessOptions: readonly RemoteHarnessOption[]
+  activeHarnessKey: string
+  onHarness: (option: RemoteHarnessOption) => void
   activeProvider?: RemoteActiveProvider | null
   projectName?: string
   onOpenProject: () => void
@@ -21,6 +25,10 @@ export type NewSessionLandingProps = {
   onBranch: () => void
 }
 
+/**
+ * What a new session needs before it starts: which harness, which provider is
+ * behind it, which project, and where in that project it runs.
+ */
 export function NewSessionLanding(props: NewSessionLandingProps) {
   const { tokens: { colors } } = useMobileTheme()
   const hint = poweredByHint(props.provider, props.activeProvider)
@@ -34,7 +42,7 @@ export function NewSessionLanding(props: NewSessionLandingProps) {
           <ProviderBrand brandKey={hint.brandKey} name={hint.name} size={18} />
         </View>
       ) : null}
-      <HarnessTabs harnesses={props.harnesses} value={props.provider} onChange={props.onProvider} />
+      <HarnessTabs options={props.harnessOptions} activeKey={props.activeHarnessKey} onChange={props.onHarness} />
       <ProjectSelect name={props.projectName} onOpen={props.onOpenProject} />
       {props.projectName ? (
         <GitChips selection={props.worktreeSelection} worktreeInfo={props.worktreeInfo}

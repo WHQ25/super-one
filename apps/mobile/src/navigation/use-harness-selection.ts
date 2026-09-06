@@ -44,12 +44,15 @@ export function useHarnessSelection() {
     setSelectedModel(model)
     setEfforts(nextEfforts)
     setSelectedEffort(effort)
-    setSelectedAcpAgentId(provider === 'acp' ? info.acpAgentId ?? null : null)
+    // A user-picked ACP agent outranks whatever the host happens to report:
+    // the switcher chose `Grok Build`, not "whichever agent is loaded".
+    setSelectedAcpAgentId((current) => provider === 'acp' ? current ?? info.acpAgentId ?? null : null)
     setPermissionModes(modes.length ? modes : ['default'])
     setPermissionMode(nextPermissionMode)
   }
 
-  const resetForProvider = (provider: HarnessId) => {
+  /** `acpAgentId` names which ACP agent the switcher row stood for. */
+  const resetForProvider = (provider: HarnessId, acpAgentId: string | null = null) => {
     setSelectedProvider(provider)
     setSystemInfo({})
     setModels([])
@@ -58,7 +61,7 @@ export function useHarnessSelection() {
     setSelectedModel('')
     setSelectedEffort('')
     setEfforts([])
-    setSelectedAcpAgentId(null)
+    setSelectedAcpAgentId(provider === 'acp' ? acpAgentId : null)
   }
 
   const selectModel = (model: string) => {

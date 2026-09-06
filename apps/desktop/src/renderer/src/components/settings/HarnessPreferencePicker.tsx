@@ -14,7 +14,7 @@ import type {
   HarnessId,
   SuggestionHarnessPreference,
 } from '@superone/shared/agent-types'
-import { suggestionHarnessKey } from '@/lib/suggestion-harness-order'
+import { suggestionHarnessKey } from '@superone/shared/suggestion-harness-order'
 import {
   isCatalogHarnessEnabled,
   isExperimentalAcpAgentEnabled,

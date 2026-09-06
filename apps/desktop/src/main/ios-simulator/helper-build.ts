@@ -1,8 +1,19 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { execFile } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+/**
+ * One build per cache key, however many callers ask for it at once.
+ *
+ * Two callers wanting the same helper is the normal case, not a corner: attaching to
+ * a device and starting the Simulator watcher happen in the same breath, and on a
+ * cold cache both would otherwise run `build.sh` into the same directory and clobber
+ * each other's object files — observed as `input file 'OrientationBridge.o' was
+ * modified during the build`, which fails the build for BOTH of them.
+ */
+const buildFlights = new Map<string, Promise<string>>()
 
 function execText(file: string, args: string[], env?: NodeJS.ProcessEnv): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -75,11 +86,52 @@ export async function ensureIosSimulatorHelper(cacheRoot: string): Promise<strin
   const binary = join(outputDir, 'superone-ios-simulator-helper')
   if (existsSync(binary)) return binary
 
-  mkdirSync(outputDir, { recursive: true, mode: 0o700 })
-  await execText('/bin/bash', [join(sourceRoot, 'build.sh'), outputDir], {
-    ...process.env,
-    DEVELOPER_DIR: identity.developerDirectory,
-  })
-  if (!existsSync(binary)) throw new Error('iOS Simulator helper build finished without a binary.')
-  return binary
+  const flight = buildFlights.get(outputDir)
+    ?? build(sourceRoot, identity.developerDirectory, outputDir, binary)
+      .finally(() => { buildFlights.delete(outputDir) })
+  buildFlights.set(outputDir, flight)
+  return flight
+}
+
+/**
+ * Build into a scratch directory and move it into place.
+ *
+ * The move is what makes `existsSync(binary)` a truthful reading: a directory under
+ * the cache key either does not exist or holds a finished build, never a link that is
+ * still being written. Belt to the in-process single flight's braces — that one
+ * cannot see a second SuperOne (a dev build beside an installed one) aimed at the
+ * same cache.
+ */
+async function build(
+  sourceRoot: string,
+  developerDirectory: string,
+  outputDir: string,
+  binary: string,
+): Promise<string> {
+  const scratch = `${outputDir}.building-${randomUUID().slice(0, 8)}`
+  mkdirSync(scratch, { recursive: true, mode: 0o700 })
+  try {
+    await execText('/bin/bash', [join(sourceRoot, 'build.sh'), scratch], {
+      ...process.env,
+      DEVELOPER_DIR: developerDirectory,
+    })
+    if (!existsSync(join(scratch, 'superone-ios-simulator-helper'))) {
+      throw new Error('iOS Simulator helper build finished without a binary.')
+    }
+    try {
+      renameSync(scratch, outputDir)
+    } catch {
+      // Something is already sitting on the key. A finished build is another process
+      // that won the same race, and its output is by construction identical -- use
+      // it. Anything else is rubble from a build that died partway, and leaving it
+      // would block every future build of this key forever, so clear the slot.
+      if (!existsSync(binary)) {
+        rmSync(outputDir, { recursive: true, force: true })
+        renameSync(scratch, outputDir)
+      }
+    }
+    return binary
+  } finally {
+    rmSync(scratch, { recursive: true, force: true })
+  }
 }

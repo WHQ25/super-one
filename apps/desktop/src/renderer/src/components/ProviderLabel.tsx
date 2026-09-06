@@ -40,6 +40,21 @@ const BRANDS: Record<string, BrandEntry> = {
   cursor: { Mono: Cursor, Text: Cursor.Text },
 }
 
+/** Every brand this component can draw. Consumed by the native brand generator. */
+export const PROVIDER_BRAND_KEYS: readonly string[] = Object.freeze(Object.keys(BRANDS))
+
+/**
+ * The marks `ProviderLabel` would combine for a brand, resolved by the same
+ * rules it uses. Exists so the native brand generator draws exactly what the
+ * desktop draws instead of re-deriving Color/Mono/combineMono itself.
+ */
+export function providerBrandMarks(brandKey: string): { Icon: IconType; Text?: IconType; extraLabel?: string } | null {
+  const brand = BRANDS[brandKey]
+  if (!brand) return null
+  const Icon = brand.combineMono ? brand.Mono : brand.Color ?? brand.Mono
+  return { Icon, ...(brand.Text ? { Text: brand.Text } : {}), ...(brand.extraLabel ? { extraLabel: brand.extraLabel } : {}) }
+}
+
 /** models.dev provider ids that don't match a `BRANDS` key 1:1. */
 const CATALOG_PROVIDER_BRAND: Record<string, string> = {
   zhipuai: 'zhipu',

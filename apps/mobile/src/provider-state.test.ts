@@ -1,27 +1,27 @@
 import { describe, expect, it } from 'vitest'
-import { harnessDisplayName, harnessSupportsAdditionalDirs, MOBILE_HARNESS_IDS } from './provider-state'
+import { poweredByHint } from './provider-state'
 
-describe('mobile provider state', () => {
-  it('exposes every desktop harness', () => {
-    expect(MOBILE_HARNESS_IDS).toEqual([
-      'claude',
-      'codex',
-      'acp',
-      'opencode',
-      'cursor',
-      'dsh',
-    ])
+const PROVIDER = { id: 'p1', name: 'Zhipu', presetKey: 'zhipu', modelEnv: {}, forcedEffort: null } as never
+
+describe('poweredByHint', () => {
+  it('shows nothing for harnesses that own their account', () => {
+    expect(poweredByHint('acp')).toBeNull()
+    expect(poweredByHint('opencode')).toBeNull()
+    expect(poweredByHint('cursor')).toBeNull()
+    expect(poweredByHint('dsh')).toBeNull()
   })
 
-  it('uses shared capability flags for additional directories', () => {
-    expect(harnessSupportsAdditionalDirs('claude')).toBe(true)
-    expect(harnessSupportsAdditionalDirs('codex')).toBe(true)
-    expect(harnessSupportsAdditionalDirs('opencode')).toBe(false)
-    expect(harnessSupportsAdditionalDirs('cursor')).toBe(false)
+  it('falls back to the official provider per harness', () => {
+    expect(poweredByHint('claude')).toEqual({ brandKey: 'claude', name: 'Claude Code (Official)' })
+    expect(poweredByHint('codex')).toEqual({ brandKey: 'openai', name: 'Codex (Official)' })
   })
 
-  it('uses desktop harness display names', () => {
-    expect(harnessDisplayName('dsh')).toBe('DeepSeek')
-    expect(harnessDisplayName('opencode')).toBe('OpenCode')
+  it('names the active provider when the session has one', () => {
+    expect(poweredByHint('claude', PROVIDER)).toEqual({ brandKey: 'zhipu', name: 'Zhipu' })
+  })
+
+  it('keeps the harness default brand when the provider has no preset', () => {
+    expect(poweredByHint('codex', { ...(PROVIDER as object), presetKey: null } as never))
+      .toEqual({ brandKey: 'openai', name: 'Zhipu' })
   })
 })

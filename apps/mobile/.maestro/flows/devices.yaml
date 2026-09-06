@@ -23,11 +23,11 @@ tags: [smoke, native, visual]
 - assertVisible: "Old laptop, Offline"
 - takeScreenshot: ${"devices-" + THEME}
 
-# Forgetting is destructive, so it hides behind a swipe and asks first.
+# Forgetting is destructive, so it hides behind a rightward swipe and asks first.
 - swipe:
     from:
       text: "Old laptop, Offline"
-    direction: LEFT
+    direction: RIGHT
 - assertVisible: "Rename Old laptop"
 - assertVisible: "Forget Old laptop"
 - takeScreenshot: ${"devices-swipe-" + THEME}

@@ -45,7 +45,8 @@ export function DeviceRow(props: {
         },
       ]}
     >
-      <View style={[styles.card, props.disabled && styles.disabled]}>
+      {({ revealed }) => (
+      <View style={[styles.card, revealed && styles.abutting, props.disabled && styles.disabled]}>
         <View style={styles.iconBox}>
           <Laptop color={tokens.colors.mutedForeground} size={24} />
         </View>
@@ -55,6 +56,7 @@ export function DeviceRow(props: {
         </View>
         <ChevronRight color={tokens.colors.mutedForeground} size={20} />
       </View>
+      )}
     </SwipeRow>
   )
 }
@@ -73,6 +75,8 @@ function useStyles() {
       paddingHorizontal: tokens.spacing.md,
       paddingVertical: 14,
     },
+    /** The strip sits on the left, so that edge loses its radius while revealed. */
+    abutting: { borderBottomLeftRadius: 0, borderTopLeftRadius: 0 },
     disabled: { opacity: 0.5 },
     iconBox: {
       alignItems: 'center',

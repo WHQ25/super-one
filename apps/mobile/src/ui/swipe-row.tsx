@@ -18,14 +18,18 @@ export type SwipeAction = {
 }
 
 /**
- * One row that hides actions behind a leftward swipe. The gesture, the reveal
+ * One row that hides actions behind a rightward swipe. The gesture, the reveal
  * animation and the VoiceOver equivalents live here so every list that needs
  * them — sessions, devices — behaves identically.
+ *
+ * `children` is a render prop because a revealed row has to square off the edge
+ * that now abuts the action strip; a row that kept its corner radius there would
+ * leave a rounded notch against the strip's straight edge.
  */
 export function SwipeRow(props: {
   subject: string
   actions: SwipeAction[]
-  children: ReactNode
+  children: (state: { revealed: boolean }) => ReactNode
   onPress: () => void
 }) {
   const styles = useStyles()
@@ -40,7 +44,7 @@ export function SwipeRow(props: {
     opened.current = open
     setRevealed(open)
     Animated.spring(offset, {
-      toValue: open ? -actionsWidth : 0,
+      toValue: open ? actionsWidth : 0,
       useNativeDriver: true,
       bounciness: 0,
       speed: 24,
@@ -53,13 +57,13 @@ export function SwipeRow(props: {
     ),
     onPanResponderGrant: () => {
       setRevealed(true)
-      dragStart.current = opened.current ? -actionsWidth : 0
+      dragStart.current = opened.current ? actionsWidth : 0
     },
     onPanResponderMove: (_, gesture) => {
-      offset.setValue(Math.max(-actionsWidth, Math.min(0, dragStart.current + gesture.dx)))
+      offset.setValue(Math.min(actionsWidth, Math.max(0, dragStart.current + gesture.dx)))
     },
     onPanResponderRelease: (_, gesture) => {
-      settle(dragStart.current + gesture.dx < -actionsWidth / 2)
+      settle(dragStart.current + gesture.dx > actionsWidth / 2)
     },
     onPanResponderTerminate: () => settle(opened.current),
   }), [offset, actionsWidth])
@@ -80,6 +84,10 @@ export function SwipeRow(props: {
     ])
   }
 
+  // Rendered outward from the row: the first declared action ends up nearest the
+  // content, so a destructive last action sits furthest from the resting edge.
+  const strip = [...props.actions].reverse()
+
   return (
     <View style={styles.container}>
       <View
@@ -88,7 +96,7 @@ export function SwipeRow(props: {
         importantForAccessibility={revealed ? 'auto' : 'no-hide-descendants'}
         style={[styles.actions, !revealed && { opacity: 0 }]}
       >
-        {props.actions.map((action) => {
+        {strip.map((action) => {
           const destructive = action.tone === 'destructive'
           const color = destructive ? tokens.colors.destructiveForeground : tokens.colors.foreground
           const Icon = action.icon
@@ -124,7 +132,7 @@ export function SwipeRow(props: {
           }}
           onPress={() => opened.current ? settle(false) : props.onPress()}
         >
-          {props.children}
+          {props.children({ revealed })}
         </Pressable>
       </Animated.View>
     </View>
@@ -143,7 +151,7 @@ function useStyles() {
       ...StyleSheet.absoluteFillObject,
       alignItems: 'stretch',
       flexDirection: 'row',
-      justifyContent: 'flex-end',
+      justifyContent: 'flex-start',
     },
     action: {
       alignItems: 'center',

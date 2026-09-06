@@ -30,7 +30,7 @@ export function SwipeSessionRow(props: {
         },
       ]}
     >
-      {props.children}
+      {() => props.children}
     </SwipeRow>
   )
 }

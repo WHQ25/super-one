@@ -58,18 +58,16 @@ export function PairingsScreen(props: {
       <View style={styles.sectionHeader}>
         <SectionHeader
           title="My Devices"
+          badge={props.pairings.length ? <Badge label={`${props.pairings.length}`} /> : null}
           action={(
-            <View style={styles.pairingActions}>
-              {props.pairings.length ? <Badge label={`${props.pairings.length}`} /> : null}
-              <IconButton
-                icon={RefreshCw}
-                iconSize={16}
-                label="Refresh devices"
-                disabled={props.refreshing || props.pairings.length === 0}
-                spinning={props.refreshing}
-                onPress={props.onRefresh}
-              />
-            </View>
+            <IconButton
+              icon={RefreshCw}
+              iconSize={16}
+              label="Refresh devices"
+              disabled={props.refreshing || props.pairings.length === 0}
+              spinning={props.refreshing}
+              onPress={props.onRefresh}
+            />
           )}
         />
       </View>

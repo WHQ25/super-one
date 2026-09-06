@@ -69,11 +69,16 @@ export function ListRow(props: {
   ) : <View style={style}>{content}</View>
 }
 
-export function SectionHeader(props: { title: string; action?: ReactNode }) {
+export function SectionHeader(props: { title: string; badge?: ReactNode; action?: ReactNode }) {
   const styles = usePrimitiveStyles()
+  // The badge qualifies the title, so it travels with it rather than drifting
+  // to the far edge beside the actions.
   return (
     <View style={styles.sectionHeader}>
-      <Text style={styles.sectionTitle}>{props.title}</Text>
+      <View style={styles.sectionTitleGroup}>
+        <Text style={styles.sectionTitle}>{props.title}</Text>
+        {props.badge}
+      </View>
       {props.action}
     </View>
   )
@@ -159,7 +164,8 @@ function usePrimitiveStyles() {
       listSubtitle: { color: colors.mutedForeground, fontSize: type.meta, marginTop: spacing.xs },
       selected: { backgroundColor: colors.muted, borderRadius: radius.md },
       sectionHeader: { flexDirection: 'row', alignItems: 'center', minHeight: 32 },
-      sectionTitle: { color: colors.foreground, flex: 1, fontSize: type.title, fontWeight: '500' as const },
+      sectionTitleGroup: { alignItems: 'center', flex: 1, flexDirection: 'row' as const, gap: spacing.xs, minWidth: 0 },
+      sectionTitle: { color: colors.foreground, flexShrink: 1, fontSize: type.title, fontWeight: '500' as const },
       chip: {
         borderWidth: 1,
         borderColor: colors.border,

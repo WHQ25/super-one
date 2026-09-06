@@ -75,7 +75,7 @@
     "diff": "^8.0.3",
     "i18next": "^26.0.6",
     "katex": "^0.16.38",
-    "lucide-react": "^0.563.0",
+    "lucide-react": "^1.41.0",
     "mermaid": "^11.12.3",
     "react-i18next": "^17.0.4",
     "streamdown": "^2.1.0",

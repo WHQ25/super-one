@@ -8,13 +8,16 @@ import { Text } from '../ui/text'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar'
 import { WebView } from 'react-native-webview'
-import type { ChatMessage, HarnessId, ImageAttachment, ModelOption, RemoteHarnessOption, RemoteSystemInfo } from '@superone/shared/agent-types'
+import type { ChatMessage, HarnessId, ImageAttachment, ModelOption, RemoteHarnessOption, RemoteSystemInfo, SandboxInfo } from '@superone/shared/agent-types'
 import { MobileHeader } from '../navigation/mobile-header'
 import { MobileKeyboardFrame } from '../navigation/mobile-keyboard-frame'
 import { WorkspaceDrawer } from '../navigation/workspace-drawer'
 import { TabletSessionSidebar } from '../navigation/tablet-session-sidebar'
 import { ChatScreen } from '../screens/chat-screen'
 import { FilesScreen } from '../screens/files-screen'
+import { FileFinderView } from '../screens/file-finder-view'
+import { buildGitToneMap } from '../navigation/use-project-git-status'
+import type { FileBrowserMode } from '../shell-state'
 import { PairingsScreen } from '../screens/pairings-screen'
 import type { SavedPairing } from '@superone/relay-client'
 import type { DeviceStatus } from '../device-status'
@@ -53,6 +56,38 @@ import { shellPreviewPages, type ShellPreviewPage as Page } from './preview-rout
 
 // The tool catalog is its own screen, not a page of this shell — see ToolCatalogPreview.
 const pages = shellPreviewPages.filter((page) => page !== 'Tool catalog')
+
+const PREVIEW_PROJECT_FILES = [
+  { name: 'screens', isDirectory: true },
+  { name: 'chat-screen.tsx', isDirectory: false },
+  { name: 'files-screen.tsx', isDirectory: false },
+  { name: 'runtime.ts', isDirectory: false },
+  { name: 'mobile-review.png', isDirectory: false },
+]
+const PREVIEW_COMPUTER_FILES = [
+  { name: 'Projects', isDirectory: true },
+  { name: 'Github', isDirectory: true },
+  { name: 'notes.md', isDirectory: false },
+]
+const PREVIEW_COMPLETIONS = [
+  { name: 'Developer', isDirectory: true },
+  { name: 'Devtools', isDirectory: true },
+]
+const PREVIEW_SEARCH_RESULTS = [
+  { path: '/workspace/super-one/apps/mobile/src/screens/chat-screen.tsx', isDirectory: false, matchIndices: [], score: 1 },
+  { path: '/workspace/super-one/apps/mobile/src/screens/chat-composer.tsx', isDirectory: false, matchIndices: [], score: 0.9 },
+  { path: '/workspace/super-one/packages/chat-view/src/index.ts', isDirectory: false, matchIndices: [], score: 0.7 },
+]
+// One of each tone, so the palette can be read at a glance in both schemes.
+const PREVIEW_GIT_TONES = buildGitToneMap([
+  // Unstaged: coloured but dimmed.
+  { path: 'apps/mobile/src/chat-screen.tsx', index: null, worktree: 'M' },
+  // Staged addition: full strength.
+  { path: 'apps/mobile/src/files-screen.tsx', index: 'A', worktree: null },
+  { path: 'apps/mobile/src/runtime.ts', index: 'M', worktree: 'M' },
+  // Only inside `screens/`, so the folder row is what carries it.
+  { path: 'apps/mobile/src/screens/gone.ts', index: 'D', worktree: null },
+])
 import { dynamicMentionArtworkSnapshot } from '../ui/mention-dynamic-artwork'
 
 const previewModels: ModelOption[] = [
@@ -162,6 +197,10 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
   }
   const [attachments, setAttachments] = useState<ImageAttachment[]>([])
   const [mode, setMode] = useState('default')
+  const [sandbox, setSandbox] = useState<SandboxInfo | null>({ enabled: true, autoAllowBash: false })
+  const previewBrowserMode: FileBrowserMode = page === 'Computer files' || page === 'Go to folder'
+    ? { kind: 'computer', name: 'studio-mbp' }
+    : { kind: 'project', root: '/workspace/super-one', name: 'super-one' }
   const [drawer, setDrawer] = useState(false)
   const [branch, setBranch] = useState(PREVIEW_GIT_INFO.branch ?? 'main')
   const [projectPath, setProjectPath] = useState(project.path)
@@ -248,11 +287,16 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
     <Text style={styles.meta}>Offline preview · {Math.round(width)} px · font {fontScale.toFixed(2)}</Text>
     {editorError ? <Text accessibilityRole="alert" style={{ color: tokens.colors.destructive }}>{editorError}</Text> : null}
     <MobileKeyboardFrame>
-      <MobileHeader route={route} title={page === 'Add project' ? addProject.title : page === 'Project' ? 'Projects' : page} subtitle="super-one · feat/mobile-ui" provider={provider} hasSession={page === 'Chat'} connectionState="connected" onBack={() => {
+      <MobileHeader route={route} title={page === 'Add project' ? addProject.title : page === 'Project' ? 'Projects' : route === 'files' ? previewBrowserMode.name : page} subtitle="super-one · feat/mobile-ui" provider={provider} hasSession={page === 'Chat'} connectionState="connected" onBack={() => {
           if (page === 'Add project' && addProject.canGoBack) addProject.goBack()
           else if (page === 'Add project') setPage('Project')
           else setPage('New session')
-        }} onSwitchSession={() => setDrawer(true)} onOpenSettings={() => setPage('Settings')} onOpenTerminal={() => setPage('Terminal')}
+        }} onSwitchSession={() => setDrawer(true)} onOpenSettings={() => setPage('Settings')} onOpenTerminal={() => setPage('Terminal')} onOpenFiles={() => setPage('Files')}
+          files={route === 'files' ? { kind: previewBrowserMode.kind,
+            finderOpen: page === 'File search' || page === 'Go to folder',
+            onToggleFinder: () => setPage(page === 'File search' ? 'Files'
+              : page === 'Go to folder' ? 'Computer files'
+                : previewBrowserMode.kind === 'computer' ? 'Go to folder' : 'File search') } : undefined}
         onConfirm={page === 'Worktree' ? () => { setSelection(worktreeDraft); setPage('New session') }
           : page === 'Add project' && addProject.confirmLabel ? addProject.confirm : undefined}
         confirmLabel={page === 'Add project' ? addProject.confirmLabel ?? undefined : undefined}
@@ -274,7 +318,9 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
             } : undefined}
             selection={{ ...pickerCatalogs, model, models: settings.models, effort, efforts: settings.efforts, onModel: chooseModel, onEffort: setEffort }}
             webRef={web} permissionModes={['default', 'acceptEdits', 'plan']} permissionMode={mode} slashHits={[]} mentionHits={mentionHits} attachments={attachments} additionalDirectories={[]} queuedMessages={[]} todos={{}} draft={chatDraft.draft} streaming={page === 'Chat'}
-            onWebMessage={(raw) => { if (JSON.parse(raw).type === 'ready') paintChat() }} onWebProcessError={() => {}} onPermissionMode={setMode} onSlash={() => {}} onMention={(item) => { chatDraft.editorRef.current?.insertMention(item) }}
+            sandboxInfo={sandbox} contextTokens={82_400} contextWindow={200_000} totalCostUsd={0.4213}
+            onWebMessage={(raw) => { if (JSON.parse(raw).type === 'ready') paintChat() }} onWebProcessError={() => {}} onPermissionMode={setMode}
+            onSandboxMode={(next) => setSandbox({ enabled: next !== 'off', autoAllowBash: next === 'auto' })} onSlash={() => {}} onMention={(item) => { chatDraft.editorRef.current?.insertMention(item) }}
             onRemoveAttachment={(item) => setAttachments((current) => current.filter((entry) => entry !== item))} onAttachmentMenu={() => setAttachments([{ id: 'pdf', name: 'mobile-design-review.pdf', mimeType: 'application/pdf', base64: '' }])}
             nativeDraft={{ controller: chatDraft.editorRef, document: chatDraft.document.current, onChange: acceptDraft, onError: setEditorError }}
             onDraft={chatDraft.changeText} onSubmitFromKeyboard={send} onSend={send} onStop={() => setPage('New session')} /> : null}
@@ -308,7 +354,21 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
             onOpenBranch={() => setPage('Branch')} /> : null}
           {page === 'LAN browser' ? <LanBrowserPreview /> : null}
           {page === 'Chip editor' ? <MentionEditorPreview /> : null}
-          {route === 'files' && !gallery ? <FilesScreen path="/workspace/super-one/apps/mobile/src" items={page === 'Files' ? [{ name: 'screens', isDirectory: true }, { name: 'chat-screen.tsx', isDirectory: false }, { name: 'mobile-review.png', isDirectory: false }] : []} error={page === 'Folder error' ? 'Could not read this folder. Check the desktop connection.' : undefined} onOpenDirectory={() => setPage('Empty folder')} onOpenFile={() => {}} /> : null}
+          {route === 'files' && !gallery ? (page === 'File search' ? <FileFinderView
+            query="chat" busy={false} onQuery={() => {}}
+            finder={{ kind: 'search', root: '/workspace/super-one', results: PREVIEW_SEARCH_RESULTS, searched: true,
+              onOpenDirectory: () => {}, onOpenFile: () => {} }} />
+            : page === 'Go to folder' ? <FileFinderView
+              query="/Users/dev/Dev" busy={false} onQuery={() => {}}
+              finder={{ kind: 'goto', suggestions: PREVIEW_COMPLETIONS, onComplete: () => {}, onSubmit: () => {} }} />
+            : <FilesScreen
+              mode={previewBrowserMode}
+              path={page === 'Computer files' ? '/Users/dev/Developer' : '/workspace/super-one/apps/mobile/src'}
+              items={page === 'Files' ? PREVIEW_PROJECT_FILES : page === 'Computer files' ? PREVIEW_COMPUTER_FILES : []}
+              gitTones={PREVIEW_GIT_TONES}
+              onRefresh={() => {}} onNewFolder={() => {}} onUploadFile={() => {}}
+              error={page === 'Folder error' ? 'Could not read this folder. Check the desktop connection.' : undefined}
+              onOpenDirectory={() => setPage('Empty folder')} onOpenFile={() => {}} />) : null}
           {page === 'Terminal' ? <TerminalScreen webRef={terminal} draft={draft} writable={writable} onDraft={setDraft} onClaim={() => { setWritable(true); injectHostMessage(terminal, { kind: 'meta', writableByMe: true }) }} onSubmit={(line) => { injectHostMessage(terminal, { kind: 'append', data: `\r\n$ ${line}\r\n[offline preview]\r\n` }); setDraft('') }} onKey={() => {}} onWebMessage={(raw) => {
             if (JSON.parse(raw).type !== 'terminalReady') return
             injectHostMessage(terminal, mobileWebViewTheme(tokens))

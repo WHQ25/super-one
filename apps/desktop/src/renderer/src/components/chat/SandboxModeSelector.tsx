@@ -9,6 +9,7 @@ import {
   coerceSandboxModeForHarness,
   harnessSandboxModes,
   harnessSandboxSupportLevel,
+  sandboxModeFromInfo,
 } from './sandboxHarness'
 
 export {
@@ -50,11 +51,6 @@ export const sandboxModes: { id: SandboxMode; label: string; triggerLabel: strin
     activeBg: 'bg-amber-500/15',
   },
 ]
-
-function getSandboxMode(info: { enabled: boolean; autoAllowBash: boolean }): SandboxMode {
-  if (!info.enabled) return 'off'
-  return info.autoAllowBash ? 'auto' : 'on'
-}
 
 interface SandboxModePopoverProps {
   compact?: boolean
@@ -179,7 +175,7 @@ export function SandboxModeSelector({ compact = false }: SandboxModeSelectorProp
     activeProvider,
     sandboxCapability?.supportLevel ?? 'always',
   )
-  const effectiveMode = coerceSandboxModeForHarness(activeProvider, getSandboxMode(sandboxInfo))
+  const effectiveMode = coerceSandboxModeForHarness(activeProvider, sandboxModeFromInfo(sandboxInfo))
 
   return (
     <SandboxModePopover

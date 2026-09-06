@@ -1,4 +1,4 @@
-import type { AgentEvent, ChatMessage, RemoteCommand } from '@superone/shared/agent-types'
+import type { AgentEvent, ChatMessage, RemoteCommand, SandboxInfo } from '@superone/shared/agent-types'
 import type { RelayClient } from './client'
 
 export type HistoryPage = {
@@ -14,6 +14,10 @@ export type SessionSnapshot = {
   pendingInteractions?: AgentEvent[]
   status?: string
   permissionMode?: string
+  /** Runtime fact — the sandbox this session's process is actually confined by. */
+  sandboxInfo?: SandboxInfo
+  contextTokens?: number
+  totalCostUsd?: number
   error?: string
 }
 

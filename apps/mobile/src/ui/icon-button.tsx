@@ -23,20 +23,25 @@ export function IconButton({ icon: Icon, label, onPress, disabled, active, destr
   const glyph = (color: string) => spinning
     ? <SpinningIcon icon={Icon} size={iconSize} color={color} strokeWidth={1.8} />
     : <Icon size={iconSize} strokeWidth={1.8} color={color} />
+  // `active` tints the glyph rather than filling the button: a toggle in a header
+  // row sits beside plain actions, and a solid block reads as a different kind of
+  // control rather than the same one in its on-state.
   const iconColor = tone === 'primary' ? colors.primary
     : tone === 'danger' || destructive ? colors.error
-      : active ? colors.primaryForeground : colors.mutedForeground
+      : active ? colors.primary : colors.mutedForeground
   return (
     <Pressable ref={buttonRef}
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ disabled: !!disabled }}
+      // `active` is a toggle's on-state, not just a tint — say so, or the only cue
+      // a screen reader gets for "search is open" is a colour it cannot see.
+      accessibilityState={{ disabled: !!disabled, ...(active === undefined ? {} : { selected: active }) }}
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => [{
         width: 44, height: 44, alignItems: 'center', justifyContent: 'center',
         borderRadius: radius.md,
-        backgroundColor: chrome === 'default' ? active ? colors.primary : pressed ? colors.muted : 'transparent' : 'transparent',
+        backgroundColor: chrome === 'default' && pressed ? colors.muted : 'transparent',
         opacity: disabled ? 0.35 : pressed ? 0.7 : 1,
       }, style]}
     >

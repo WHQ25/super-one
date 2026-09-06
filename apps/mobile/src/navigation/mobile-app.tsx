@@ -14,8 +14,9 @@ import {
 import type {
   AskUserQuestionRequest, ChatMessage, HarnessId, ImageAttachment, PermissionRequest,
   ListHarnessOptionsResponse, PlanApprovalRequest, RemoteCommand, RemoteHarnessOption,
-  TodoItem, WorktreeInfo,
+  SandboxInfo, SandboxMode, TodoItem, WorktreeInfo,
 } from '@superone/shared/agent-types'
+import { resolveRingContextWindow } from '@superone/shared/agent-types'
 import { ChatRuntime } from '../runtime'
 import { TerminalRuntime } from '../terminal-runtime'
 import { randomId } from '../ids'
@@ -29,7 +30,7 @@ import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { mobileWebViewTheme } from '../theme/tokens'
 import { harnessSupportsAdditionalDirs } from '../provider-state'
 import { suggestionHarnessKey } from '@superone/shared/suggestion-harness-order'
-import { parentRemotePath, resolveRemoteFilePath } from '../shell-state'
+import { fileBrowserHome, joinRemotePath, parentRemotePath, resolveRemoteFilePath, type FileBrowserMode } from '../shell-state'
 import { loadOrCreateMobileId, mobileKv } from '../storage'
 import { registerFatalChatViewError } from '../chat-view-recovery'
 import { pickAndUploadProjectFile, pickChatImages, pickChatPdf, showAttachmentMenu } from '../attachments'
@@ -49,6 +50,11 @@ import { createMobileRelayConnection } from '../mobile-relay-connection'
 import { SessionTransition } from '../session-transition'
 import { readProjectSessions } from './workspace-data'
 import { useRemoteDirectory } from './use-remote-directory'
+import { useProjectGitStatus } from './use-project-git-status'
+import { useFileSearch } from './use-file-search'
+import { completeTypedPath, usePathAutocomplete } from './use-path-autocomplete'
+import { NewFolderSheet } from '../prompts/NewFolderSheet'
+import { FileFinderView } from '../screens/file-finder-view'
 import { leaveMobileSession, sessionRemovalStatus } from '../session-exit'
 import { ProjectsScreen, type Project } from '../screens/projects-screen'
 import { BranchScreen } from '../screens/branch-screen'
@@ -61,7 +67,7 @@ import { ChatScreen } from '../screens/chat-screen'
 import { PairingsScreen } from '../screens/pairings-screen'
 import { ConnectedTerminal } from './connected-terminal'
 import { SessionsScreen } from '../screens/sessions-screen'
-import { MobileNavigator, type MobileRoute as Screen } from './mobile-navigator'
+import { MobileNavigator, type FilesOrigin, type MobileRoute as Screen } from './mobile-navigator'
 import { MobileHeader, mobileHeaderTitle } from './mobile-header'
 import { useAddProject } from './use-add-project'
 import { MobileOverlays } from './mobile-overlays'
@@ -137,6 +143,21 @@ export function MobileApp() {
   const [attachments, setAttachments] = useState<ImageAttachment[]>([])
   const [queuedMessages, setQueuedMessages] = useState<ChatMessage[]>([])
   const [todos, setTodos] = useState<Record<string, TodoItem>>({})
+  const [sandboxInfo, setSandboxInfo] = useState<SandboxInfo | null>(null)
+  const [usage, setUsage] = useState({ contextTokens: 0, contextWindow: null as number | null, totalCostUsd: 0 })
+  // The phone has no models.dev catalog, so the window comes from the harness's own
+  // model row, whatever a usage event reported, and Claude's built-in fallback.
+  const ringContextWindow = useMemo(() => {
+    const model = models.find((entry) => entry.id === selectedModel)
+    return resolveRingContextWindow({
+      harnessId: selectedProvider,
+      modelId: selectedModel,
+      resolvedModel: model?.resolvedModel,
+      harnessContextWindow: model?.contextWindow,
+      sessionContextWindow: usage.contextWindow,
+      claudeFallback: selectedProvider === 'claude',
+    })
+  }, [models, selectedModel, selectedProvider, usage.contextWindow])
   const [perm, setPerm] = useState<PermissionRequest | null>(null)
   const [plan, setPlan] = useState<PlanApprovalRequest | null>(null)
   const [question, setQuestion] = useState<AskUserQuestionRequest | null>(null)
@@ -146,6 +167,15 @@ export function MobileApp() {
   const clientRef = useRef<RelayClient | null>(null)
   const directory = useRemoteDirectory(clientRef)
   const { load: loadDirectory, path: directoryPath, items: directoryItems } = directory
+  // The browser is a project tree by default; computer mode is the folder-picking
+  // shape, unfenced and named after the machine.
+  const [browserKind, setBrowserKind] = useState<'project' | 'computer'>('project')
+  // One overlay, two questions: search a project by filename, or type a path on the
+  // machine. `gotoPath` is the field's own draft — it is not where the browser is.
+  const [finderOpen, setFinderOpen] = useState(false)
+  const [gotoPath, setGotoPath] = useState('')
+  const [folderPrompt, setFolderPrompt] = useState<{ value: string; error?: string } | null>(null)
+  const gitStatus = useProjectGitStatus(clientRef)
   const runtimeRef = useRef<ChatRuntime | null>(null)
   const termRuntimeRef = useRef<TerminalRuntime | null>(null)
   const reconnectControllerRef = useRef<ReconnectController | null>(null)
@@ -159,6 +189,9 @@ export function MobileApp() {
   const { slashHits, mentionHits } = suggestions
   const systemInfoRequestRef = useRef(0)
   const auxiliaryReturnRef = useRef<'sessions' | 'chat'>('sessions')
+  // Files hangs off Project settings or off the session menu; back has to unwind
+  // to whichever one actually opened it.
+  const [filesOrigin, setFilesOrigin] = useState<FilesOrigin>('settings')
   const suppressReconnectRef = useRef(false)
   const scanningRef = useRef(false)
   const pairingSocketRef = useRef<WebSocket | null>(null)
@@ -221,6 +254,14 @@ export function MobileApp() {
     setQueuedMessages(runtime.session.queuedMessages)
     setTodos(runtime.session.todos)
     setPermMode(runtime.permissionMode)
+    setSandboxInfo(runtime.sandboxInfo)
+    setUsage((current) => (
+      current.contextTokens === runtime.contextTokens
+        && current.contextWindow === runtime.contextWindow
+        && current.totalCostUsd === runtime.totalCostUsd
+        ? current
+        : { contextTokens: runtime.contextTokens, contextWindow: runtime.contextWindow, totalCostUsd: runtime.totalCostUsd }
+    ))
     setPerm(pending ?? null)
     setPlan(runtime.session.pendingPlanApproval)
     setQuestion(runtime.session.pendingQuestion)
@@ -261,6 +302,7 @@ export function MobileApp() {
         if (!project) throw new Error('no active project')
         const target = resolveRemoteFilePath(project.path, path)
         auxiliaryReturnRef.current = 'chat'
+        setFilesOrigin('session')
         setScreen('files')
         if (!await loadDirectory(parentRemotePath(target))) throw new Error(`cannot open ${path}`)
         setStatus(`Opened ${target}`)
@@ -577,11 +619,38 @@ export function MobileApp() {
     runUiAction(() => loadShellDetails(), setStatus, 'failed to load settings')
   }
 
-  const openFiles = () => {
+  const openFiles = (origin: FilesOrigin = 'settings') => {
     const p = project
     if (!p) return
+    if (origin === 'session') auxiliaryReturnRef.current = screen === 'chat' ? 'chat' : 'sessions'
+    setFilesOrigin(origin)
+    setBrowserKind('project')
+    setFinderOpen(false)
     setScreen('files')
     runUiAction(() => loadDirectory(p.path), setStatus, 'failed to load directory')
+    // Colours are a nicety, so a repo-less folder or a git hiccup must not stop the
+    // listing from appearing — this deliberately does not go through runUiAction.
+    void gitStatus.refresh(p.path).catch(() => {})
+  }
+
+  const refreshFiles = () => {
+    runUiAction(() => directory.reload(), setStatus, 'failed to refresh folder')
+    if (browserKind === 'project' && project) void gitStatus.refresh(project.path).catch(() => {})
+  }
+
+  const createFolder = (name: string) => {
+    const client = clientRef.current
+    if (!client) return
+    void client.request({
+      type: 'create_directory', requestId: randomId(), path: directoryPath, name,
+    } as RemoteCommand).then((response) => {
+      const error = (response as { error?: string }).error
+      if (error) { setFolderPrompt((current) => current && { ...current, error }); return }
+      setFolderPrompt(null)
+      runUiAction(() => directory.load(joinRemotePath(directoryPath, name)), setStatus, 'failed to open folder')
+    }).catch((cause) => {
+      setFolderPrompt((current) => current && { ...current, error: cause instanceof Error ? cause.message : 'Could not create folder' })
+    })
   }
 
   const previewFile = async (path: string) => {
@@ -671,6 +740,8 @@ export function MobileApp() {
     setStreaming(false)
     setTodos({})
     setQueuedMessages([])
+    setSandboxInfo(null)
+    setUsage({ contextTokens: 0, contextWindow: null, totalCostUsd: 0 })
   }
   const leaveActiveSession = () => {
     runUiAction(() => {
@@ -870,18 +941,22 @@ export function MobileApp() {
     } catch (error) { setStatus(error instanceof Error ? error.message : 'attachment failed') }
   }
 
-  const uploadProjectFile = async () => {
+  /** `targetDir` lands the file in the folder the browser is showing; the composer omits it. */
+  const uploadProjectFile = async (targetDir?: string) => {
     if (!project || !clientRef.current) return
     setStatus('Uploading file…')
     try {
-      const saved = await pickAndUploadProjectFile({ client: clientRef.current, projectPath: project.path, sessionId: sessionId ?? undefined })
+      const saved = await pickAndUploadProjectFile({ client: clientRef.current, projectPath: project.path,
+        sessionId: sessionId ?? undefined, ...(targetDir ? { targetDir } : {}) })
       setStatus(saved ? `Uploaded to ${saved}` : 'Upload cancelled')
+      // The new file only exists in the listing after a re-read.
+      if (targetDir && saved) await directory.reload()
     } catch (error) { setStatus(error instanceof Error ? error.message : 'upload failed') }
   }
 
   const back = () => {
     if (screen === 'files') {
-      setScreen('settings')
+      setScreen(filesOrigin === 'session' ? auxiliaryReturnRef.current : 'settings')
       return
     }
     if (screen === 'settings') {
@@ -941,12 +1016,26 @@ export function MobileApp() {
     harnessOptions, activeHarnessKey: suggestionHarnessKey(selectedProvider, selectedAcpAgentId),
     onHarnessChange: selectHarness,
     onModelChange: selectSessionModel, onEffortChange: selectSessionEffort,
-    onOpenFiles: openFiles,
+    onOpenFiles: () => openFiles('settings'),
     onAddDirectory: () => runUiAction(addWorkspaceDirectory, setStatus, 'failed to add directory'),
     onRemoveDirectory: (dir) => runUiAction(() => removeWorkspaceDirectory(dir), setStatus, 'failed to remove directory'),
   }
 
-  const header = mobileHeaderTitle(screen, project?.name, activeSessionTitle, terminalUi.title)
+  const deviceName = pairings.find((item) => item.id === activePairingId)?.hostName ?? 'Desktop'
+  const browserMode: FileBrowserMode = browserKind === 'computer'
+    ? { kind: 'computer', name: deviceName }
+    : { kind: 'project', root: project?.path ?? '', name: project?.name ?? 'Files' }
+  const fileSearch = useFileSearch(clientRef, browserKind === 'project' ? project?.path ?? '' : '')
+  const pathCompletion = usePathAutocomplete(clientRef, gotoPath, finderOpen && browserKind === 'computer')
+  const closeFinder = () => {
+    fileSearch.reset()
+    pathCompletion.reset()
+    setGotoPath('')
+    setFinderOpen(false)
+  }
+  const header = screen === 'files'
+    ? browserMode.name
+    : mobileHeaderTitle(screen, project?.name, activeSessionTitle, terminalUi.title)
   const tabletMultiPane = shouldUseTabletMultiPane(width, screen, !!project)
 
   return (
@@ -964,6 +1053,14 @@ export function MobileApp() {
         onSwitchSession={() => setSessionSwitcherOpen(true)}
         onOpenTerminal={openTerminal}
         onOpenSettings={openSettings}
+        onOpenFiles={() => openFiles('session')}
+        onOpenFilesRoot={() => runUiAction(() => loadDirectory(fileBrowserHome(browserMode, directoryPath)), setStatus, 'failed to load directory')}
+        files={screen === 'files' ? { kind: browserKind, finderOpen,
+          onToggleFinder: () => {
+            if (finderOpen) { closeFinder(); return }
+            if (browserKind === 'computer') setGotoPath(`${directoryPath.replace(/\/+$/, '')}/`)
+            setFinderOpen(true)
+          } } : undefined}
         onConfirm={screen === 'worktree'
           ? () => { setWorktreeSelection(worktreeDraft); setScreen('chat') }
           : screen === 'add-project' && addProjectFlow.confirmLabel
@@ -993,6 +1090,7 @@ export function MobileApp() {
             <MobileNavigator
             route={screen}
             auxiliaryReturn={auxiliaryReturnRef.current}
+            filesOrigin={filesOrigin}
             onRouteChange={(route) => {
               if (screen === 'chat' && route === 'sessions' && sessionId) {
                 leaveActiveSession()
@@ -1060,16 +1158,52 @@ export function MobileApp() {
         <SettingsScreen {...settingsProps} />
       ) : null}
 
-      {route === 'files' ? (
+      {route === 'files' ? (finderOpen ? (
+        browserKind === 'computer' ? <FileFinderView
+          query={gotoPath}
+          busy={pathCompletion.loading}
+          onQuery={setGotoPath}
+          finder={{
+            kind: 'goto',
+            suggestions: pathCompletion.suggestions,
+            onComplete: (name) => setGotoPath(completeTypedPath(gotoPath, name)),
+            onSubmit: () => {
+              const target = gotoPath.trim().replace(/\/+$/, '') || '/'
+              closeFinder()
+              runUiAction(() => loadDirectory(target), setStatus, 'failed to open folder')
+            },
+          }}
+        /> : <FileFinderView
+          query={fileSearch.query}
+          busy={fileSearch.searching}
+          onQuery={fileSearch.setQuery}
+          finder={{
+            kind: 'search',
+            root: project?.path ?? '',
+            results: fileSearch.results,
+            searched: fileSearch.searched,
+            onOpenDirectory: (path) => {
+              closeFinder()
+              runUiAction(() => loadDirectory(path), setStatus, 'failed to load directory')
+            },
+            onOpenFile: (path) => runUiAction(() => previewFile(path), setStatus, 'failed to open file'),
+          }}
+        />
+      ) : (
         <FilesScreen
+          mode={browserMode}
           path={directoryPath}
           items={directoryItems}
           loading={directory.loading}
           error={directory.error}
+          gitTones={gitStatus.tones}
+          onRefresh={refreshFiles}
+          onNewFolder={() => setFolderPrompt({ value: '' })}
+          onUploadFile={() => void uploadProjectFile(directoryPath)}
           onOpenDirectory={(path) => runUiAction(() => loadDirectory(path), setStatus, 'failed to load directory')}
           onOpenFile={(path) => runUiAction(() => previewFile(path), setStatus, 'failed to open file')}
         />
-      ) : null}
+      )) : null}
 
       {route === 'chat' ? (
         <ChatScreen provider={selectedProvider}
@@ -1104,6 +1238,10 @@ export function MobileApp() {
           webRef={webRef}
           permissionModes={permModes}
           permissionMode={permMode}
+          sandboxInfo={sandboxInfo}
+          contextTokens={usage.contextTokens}
+          contextWindow={ringContextWindow}
+          totalCostUsd={usage.totalCostUsd}
           slashHits={slashHits}
           mentionHits={mentionHits}
           attachments={attachments}
@@ -1118,6 +1256,11 @@ export function MobileApp() {
             runtimeRef.current?.setPermissionMode(mode)
             setPermMode(mode)
           }, setStatus, 'permission mode failed')}
+          onSandboxMode={(mode) => runUiAction(
+            () => runtimeRef.current?.setSandboxMode(mode),
+            setStatus,
+            'sandbox mode failed',
+          )}
           nativeDraft={{ controller: composerDraft.editorRef, document: composerDraft.document.current, onError: setStatus,
             onChange: (snapshot) => { composerDraft.accept(snapshot); suggestions.updateNative(snapshot.text, snapshot, snapshot.composing) } }}
           onSlash={(command) => {
@@ -1206,7 +1349,7 @@ export function MobileApp() {
           : undefined}
         onPlanContinueMode={setPermMode}
         workspace={{ visible: sessionSwitcherOpen, onDismiss: () => setSessionSwitcherOpen(false),
-          deviceName: pairings.find((item) => item.id === activePairingId)?.hostName ?? 'Desktop',
+          deviceName,
           projects, activeProject: project, activeSessionId: sessionId, sessions,
           loadSessions: (p) => clientRef.current ? readProjectSessions(clientRef.current, p.path) : Promise.reject(new Error('Not connected')),
           onNewSession: (p) => runUiAction(async () => { await openProject(p); startNewSession(p) }, setStatus, 'failed to open project'),
@@ -1214,6 +1357,14 @@ export function MobileApp() {
         }}
         sharedFileInbox={sharedFileInbox}
       />
+      {folderPrompt ? <NewFolderSheet
+        parent={directoryPath}
+        value={folderPrompt.value}
+        error={folderPrompt.error}
+        onChange={(value) => setFolderPrompt({ value, error: undefined })}
+        onSubmit={() => createFolder(folderPrompt.value.trim())}
+        onDismiss={() => setFolderPrompt(null)}
+      /> : null}
     </SafeAreaView>
   )
 }

@@ -12,36 +12,32 @@ import { openFileTab, openNewFileTab, openBrowserTab } from '@/components/activi
 import { toLocalFileUrl } from '@/lib/path-utils'
 import { isHtmlFilePath } from '@/lib/file-link'
 import type { GitFileStatus } from '@superone/shared/agent-types'
+import { gitFileTone, type GitFileTone } from '@superone/shared/git-file-status'
 
-const STATUS_COLOR: Record<GitFileStatus, string> = {
-  M: 'text-amber-700 dark:text-amber-400',
-  A: 'text-emerald-700 dark:text-emerald-400',
-  D: 'text-rose-700 dark:text-rose-400',
-  R: 'text-cyan-700 dark:text-cyan-400',
-  C: 'text-cyan-700 dark:text-cyan-400',
-  U: 'text-orange-700 dark:text-orange-400',
-  T: 'text-amber-700 dark:text-amber-400',
-  '?': 'text-emerald-700 dark:text-emerald-400',
-  '!': 'text-sidebar-foreground/50',
+/**
+ * Sidebar palette for each semantic role. The role itself is decided by
+ * `gitFileTone` in `@superone/shared`, which Remote Control's file browser also
+ * reads — the two trees paint different palettes but never disagree on meaning.
+ */
+const TONE_COLOR: Record<GitFileTone, string> = {
+  modified: 'text-amber-700 dark:text-amber-400',
+  added: 'text-emerald-700 dark:text-emerald-400',
+  deleted: 'text-rose-700 dark:text-rose-400',
+  renamed: 'text-cyan-700 dark:text-cyan-400',
+  conflict: 'text-orange-700 dark:text-orange-400',
+  ignored: 'text-sidebar-foreground/50',
 }
 
 export function getStatusClass(
   index: GitFileStatus | null | undefined,
   worktree: GitFileStatus | null | undefined,
 ): string {
-  if (index === '!' || worktree === '!') return STATUS_COLOR['!']
-
-  const hasIndex = index != null
-  const hasWorktree = worktree != null
-  if (!hasIndex && !hasWorktree) return 'text-sidebar-foreground'
-
-  const display = (hasIndex ? index : worktree) as GitFileStatus
-  const base = STATUS_COLOR[display] ?? 'text-sidebar-foreground'
-
-  if (hasIndex && hasWorktree) return `${base} italic`
-  if (hasIndex) return base
-  if (display === '?') return base
-  return `${base} opacity-60`
+  const state = gitFileTone(index, worktree)
+  if (!state) return 'text-sidebar-foreground'
+  const base = TONE_COLOR[state.tone]
+  if (state.tone === 'ignored') return base
+  if (state.partiallyStaged) return `${base} italic`
+  return state.staged ? base : `${base} opacity-60`
 }
 
 function InlineRenameInput({

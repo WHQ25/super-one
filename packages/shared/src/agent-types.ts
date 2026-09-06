@@ -4361,6 +4361,8 @@ export type RemoteCommand =
   | { type: 'leave_session'; sessionId: string }
   | { type: 'load_session_messages'; requestId: string; projectPath: string; sessionId: string; limit?: number; cursor?: number }
   | { type: 'set_permission_mode'; mode: string; projectPath?: string; sessionId: string }
+  /** Sandbox toggle on a running session (Claude / Cursor). Responds with the applied `SandboxInfo`. */
+  | { type: 'set_sandbox_mode'; requestId: string; mode: SandboxMode; projectPath: string; sessionId: string }
   /** Live model / effort / session-mode / preset change on a running session. */
   | { type: 'set_session_settings'; projectPath: string; sessionId: string; model?: string | null; effort?: string | null; mode?: string | null; agentPreset?: string | null }
   | { type: 'list_directory'; requestId: string; path: string; showHidden?: boolean }
@@ -4381,6 +4383,10 @@ export type RemoteCommand =
   | { type: 'get_system_info'; requestId: string; projectPath: string; provider: HarnessId }
   | { type: 'get_project_resources'; requestId: string; projectPath: string; provider: HarnessId }
   | { type: 'get_git_info'; requestId: string; projectPath: string }
+  /** Per-file git status for the file browser's colouring. */
+  | { type: 'get_git_file_status'; requestId: string; projectPath: string }
+  /** Fuzzy file search under one root, mirroring the desktop file-tree search. */
+  | { type: 'search_files'; requestId: string; root: string; query: string; limit?: number }
   | { type: 'get_git_branches'; requestId: string; projectPath: string }
   | { type: 'switch_git_branch'; requestId: string; projectPath: string; branch: string }
   | { type: 'create_git_branch'; requestId: string; projectPath: string; branch: string }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { directoryEntryAction, joinRemotePath, parentRemotePath, remoteBreadcrumbs, resolveRemoteFilePath } from './shell-state'
+import { directoryEntryAction, isWithinRemoteRoot, joinRemotePath, parentRemotePath, remoteBreadcrumbs, remoteBreadcrumbsWithin, resolveRemoteFilePath } from './shell-state'
 
 describe('remote path navigation', () => {
   it('builds navigable breadcrumbs without escaping drive or share roots', () => {
@@ -40,5 +40,41 @@ describe('remote path navigation', () => {
       .toEqual({ kind: 'directory', path: '/repo/src' })
     expect(directoryEntryAction('/repo', { name: 'report.pdf', isDirectory: false }))
       .toEqual({ kind: 'file', path: '/repo/report.pdf' })
+  })
+})
+
+describe('a file browser anchored to the project root', () => {
+  it('names only the folders below the root, because the header owns the root itself', () => {
+    expect(remoteBreadcrumbsWithin('/repo', '/repo/apps/mobile')).toEqual([
+      { path: '/repo/apps', label: 'apps' },
+      { path: '/repo/apps/mobile', label: 'mobile' },
+    ])
+  })
+
+  it('shows no crumbs while sitting on the root', () => {
+    expect(remoteBreadcrumbsWithin('/repo', '/repo')).toEqual([])
+    expect(remoteBreadcrumbsWithin('/repo/', '/repo')).toEqual([])
+  })
+
+  // A file the agent touched outside the project has no reading relative to the
+  // root, so the bar falls back to naming the whole path rather than going blank.
+  it('falls back to the absolute chain for a path outside the root', () => {
+    expect(remoteBreadcrumbsWithin('/repo', '/tmp/scratch').map((item) => item.path))
+      .toEqual(['/', '/tmp', '/tmp/scratch'])
+  })
+
+  it('treats separators and trailing slashes as the same path', () => {
+    expect(isWithinRemoteRoot('/repo', '/repo/src')).toBe(true)
+    expect(isWithinRemoteRoot('/repo/', '/repo')).toBe(true)
+    expect(isWithinRemoteRoot('C:\\repo', 'C:/repo/src')).toBe(true)
+    expect(remoteBreadcrumbsWithin('C:\\repo', 'C:\\repo\\src')).toEqual([
+      { path: 'C:/repo/src', label: 'src' },
+    ])
+  })
+
+  // `/repos/other` starts with `/repo` as a string but is a sibling, not a child.
+  it('does not mistake a sibling with a shared prefix for a child', () => {
+    expect(isWithinRemoteRoot('/repo', '/repository')).toBe(false)
+    expect(isWithinRemoteRoot('/repo', '/repo-backup/src')).toBe(false)
   })
 })

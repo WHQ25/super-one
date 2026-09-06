@@ -8,6 +8,8 @@ import type {
   PermissionRequest,
   RemoteCommand,
   RemoteSystemInfo,
+  SandboxInfo,
+  SandboxMode,
 } from '@superone/shared/agent-types'
 import { applyEventToSession, createDefaultChatCoreSession } from '@superone/chat-core'
 import { AGENT_EVENT_BATCH_MS } from '@superone/shared/agent-event-batcher'
@@ -50,6 +52,12 @@ export type CreateSessionOptions = {
 
 export class ChatRuntime {
   session: SessionState = createDefaultChatCoreSession()
+  /**
+   * A fact about the running process, not a setting — so it is only ever what the
+   * host told us (restore snapshot, `init_ready`, `agent_setting_change`). `null`
+   * means "not reported yet", which the chip renders as unknown rather than `off`.
+   */
+  sandboxInfo: SandboxInfo | null = null
   projectPath = ''
   sessionId = ''
   provider: HarnessId | string = 'claude'
@@ -86,6 +94,11 @@ export class ChatRuntime {
       if (restored.snapshot.status === 'streaming' || restored.snapshot.status === 'idle') {
         session.status = restored.snapshot.status
       }
+      // Usage only rides on the next turn's events, so a session opened cold would
+      // paint an empty ring until the user sends something.
+      session.contextTokens = restored.snapshot.contextTokens ?? 0
+      session.totalCostUsd = restored.snapshot.totalCostUsd ?? 0
+      this.sandboxInfo = restored.snapshot.sandboxInfo ?? null
       for (const msg of restored.snapshot.inProgressMessages ?? []) {
         if (!session.messages.some((m) => m.id === msg.id)) session.messages.push(msg)
       }
@@ -94,7 +107,9 @@ export class ChatRuntime {
         ...restored.liveBatches.flat() as AgentEvent[],
       ]
       for (const event of restoreEvents) {
-        if (!this.handleSideEvent(event)) session = this.reduce(session, event)
+        if (this.handleSideEvent(event)) continue
+        this.captureRuntimeFacts(event)
+        session = this.reduce(session, event)
       }
       this.session = session
       this.eventEpoch = restored.epoch
@@ -266,6 +281,31 @@ export class ChatRuntime {
     })
   }
 
+  /**
+   * Optimistic so the chip answers the tap, then reconciled against what the host
+   * actually applied — a host that cannot sandbox (no bubblewrap on Linux) rejects
+   * the change, and the guess would otherwise claim a confinement that is not there.
+   */
+  async setSandboxMode(mode: SandboxMode): Promise<void> {
+    if (!this.sessionId || !this.projectPath) return
+    this.sandboxInfo = { enabled: mode !== 'off', autoAllowBash: mode === 'auto' }
+    this.dirty = true
+    this.flush()
+    const res = await this.client.request({
+      type: 'set_sandbox_mode',
+      requestId: randomId(),
+      mode,
+      sessionId: this.sessionId,
+      projectPath: this.projectPath,
+    } as RemoteCommand) as { sandboxInfo?: SandboxInfo; error?: string }
+    if (res.sandboxInfo) {
+      this.sandboxInfo = res.sandboxInfo
+      this.dirty = true
+      this.flush()
+    }
+    if (res.error) throw new Error(res.error)
+  }
+
   searchMentions(query: string): Promise<MentionSearchResult> {
     return requestMentionSearch(this.client, this.projectPath, query)
   }
@@ -357,6 +397,18 @@ export class ChatRuntime {
     return String(this.session.permissionMode ?? 'default')
   }
 
+  get contextTokens(): number {
+    return this.session.contextTokens
+  }
+
+  get contextWindow(): number | null {
+    return this.session.contextWindow
+  }
+
+  get totalCostUsd(): number {
+    return this.session.totalCostUsd
+  }
+
   get todos(): SessionState['todos'] {
     return this.session.todos
   }
@@ -365,9 +417,22 @@ export class ChatRuntime {
     if (event.type === 'session_title_changed' && event.sessionId === this.sessionId) {
       this.sessionTitle = event.title
     }
+    this.captureRuntimeFacts(event)
     if (this.handleSideEvent(event)) return
     this.session = this.reduce(this.session, event)
     this.dirty = true
+  }
+
+  /**
+   * Session state the chat reducer does not carry. Runs on the restore replay too,
+   * which bypasses `apply()` — miss that and a resumed session shows the sandbox
+   * the snapshot reported instead of the one a later event corrected it to.
+   */
+  private captureRuntimeFacts(event: AgentEvent): void {
+    if (event.type === 'init_ready') this.sandboxInfo = event.sandboxInfo
+    if (event.type === 'agent_setting_change' && event.patch?.sandboxInfo) {
+      this.sandboxInfo = event.patch.sandboxInfo
+    }
   }
 
   private handleSideEvent(event: AgentEvent): boolean {

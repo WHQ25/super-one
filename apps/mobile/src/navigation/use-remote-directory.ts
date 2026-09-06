@@ -22,7 +22,9 @@ export function useRemoteDirectory(clientRef: RefObject<RelayClient | null>) {
     setError('')
     const promise = Promise.resolve().then(async () => {
       try {
-        const result = await client.request({ type: 'list_directory', requestId: randomId(), path: nextPath } as RemoteCommand) as { items?: RemoteDirectoryEntry[]; error?: string }
+        // Always on: a dotfile is a normal part of a repo (`.github`, `.claude`), and
+        // hiding them by default made the browser disagree with what the agent sees.
+        const result = await client.request({ type: 'list_directory', requestId: randomId(), path: nextPath, showHidden: true } as RemoteCommand) as { items?: RemoteDirectoryEntry[]; error?: string }
         if (result.error) throw new Error(result.error)
         if (request !== generation.current || client !== clientRef.current) return false
         setItems(result.items ?? [])
@@ -37,5 +39,10 @@ export function useRemoteDirectory(clientRef: RefObject<RelayClient | null>) {
     pending.current = { client, path: nextPath, promise }
     return promise
   }
-  return { path, items, loading, error, load }
+  /** Re-read the current folder — what pull-to-refresh runs. */
+  const reload = (): Promise<boolean> => {
+    pending.current = null
+    return load(path)
+  }
+  return { path, items, loading, error, load, reload }
 }

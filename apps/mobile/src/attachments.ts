@@ -81,6 +81,8 @@ export async function pickAndUploadProjectFile(opts: {
   client: RelayClient
   projectPath: string
   sessionId?: string
+  /** Folder the file lands in. Defaults to the project root. */
+  targetDir?: string
 }): Promise<string | null> {
   const result = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true, multiple: false })
   if (result.canceled) return null
@@ -95,7 +97,7 @@ export async function pickAndUploadProjectFile(opts: {
     requestId: randomId(),
     projectPath: opts.projectPath,
     ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
-    targetDir: opts.projectPath,
+    targetDir: opts.targetDir ?? opts.projectPath,
     name: asset.name,
     mimeType: asset.mimeType ?? 'application/octet-stream',
     bytes,

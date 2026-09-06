@@ -14,7 +14,7 @@ import { Pressable, ActivityIndicator, View } from 'react-native'
 import { Text } from '../ui/text'
 import { WebView } from 'react-native-webview'
 import { CHAT_VIEW_HTML } from '@superone/chat-view'
-import type { ChatMessage, HarnessId, ImageAttachment, TodoItem } from '@superone/shared/agent-types'
+import type { ChatMessage, HarnessId, ImageAttachment, SandboxInfo, SandboxMode, TodoItem } from '@superone/shared/agent-types'
 import type { filterSlashCommands } from '../slash'
 import type { MentionItem } from '../mentions'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
@@ -32,6 +32,10 @@ export function ChatScreen(props: {
   webRef: RefObject<WebView | null>
   permissionModes: string[]
   permissionMode: string
+  sandboxInfo: SandboxInfo | null
+  contextTokens: number
+  contextWindow: number | null
+  totalCostUsd: number
   slashHits: ReturnType<typeof filterSlashCommands>
   mentionHits: MentionItem[]
   attachments: ImageAttachment[]
@@ -47,6 +51,7 @@ export function ChatScreen(props: {
   onWebMessage: (raw: string) => void
   onWebProcessError: (message: string) => void
   onPermissionMode: (mode: string) => void
+  onSandboxMode: (mode: SandboxMode) => void
   onSlash: (command: string) => void
   onMention: (item: MentionItem) => void
   onRemoveAttachment: (attachment: ImageAttachment) => void

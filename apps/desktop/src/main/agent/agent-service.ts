@@ -805,6 +805,30 @@ export class AgentService {
         }
         break
       }
+      case 'set_sandbox_mode': {
+        if (!this.canAccessSession(command.projectPath, command.sessionId)) {
+          await respond?.(command.requestId, { error: this.buildSessionAccessError(command.projectPath, command.sessionId) })
+          break
+        }
+        const agent = this.findSessionBySid(command.projectPath, command.sessionId)
+        if (!agent) {
+          await respond?.(command.requestId, { error: 'session_not_found' })
+          break
+        }
+        // The applied info is echoed back, not just broadcast: a host that cannot
+        // sandbox at all (no bubblewrap on Linux) throws instead of emitting
+        // agent_setting_change, and a client left holding its optimistic guess
+        // would claim a confinement the agent does not have.
+        try {
+          await respond?.(command.requestId, { sandboxInfo: await agent.setSandboxMode(command.mode) })
+        } catch (err) {
+          await respond?.(command.requestId, {
+            error: err instanceof Error ? err.message : String(err),
+            sandboxInfo: agent.getCurrentSandboxInfo(),
+          })
+        }
+        break
+      }
       case 'subscribe_session': {
         const reqId = command.requestId
         if (!this.canAccessSession(command.projectPath, command.sessionId)) {
@@ -976,6 +1000,29 @@ export class AgentService {
         }
         break
       }
+      case 'search_files': {
+        try {
+          const { searchFiles } = await import('./fuzzy-file-search')
+          await respond?.(command.requestId, { results: searchFiles([command.root], command.query, command.limit ?? 30) })
+        } catch (err) {
+          await respond?.(command.requestId, { error: (err as Error).message })
+        }
+        break
+      }
+      case 'get_git_file_status': {
+        try {
+          const { parseGitPorcelain } = await import('@superone/shared/git-file-status')
+          // `--ignored` is deliberately omitted: listing every node_modules entry
+          // would dwarf the real changes and cost more than the colour is worth.
+          const output = await gitRun(command.projectPath, ['status', '--porcelain'])
+          await respond?.(command.requestId, { entries: parseGitPorcelain(output) })
+        } catch (err) {
+          // A folder that is not a repository is the normal case, not a failure —
+          // the browser just shows no colours.
+          await respond?.(command.requestId, { entries: [] })
+        }
+        break
+      }
       case 'search_mentions': {
         try {
           const cwd = this.sessionManager?.getActiveSession(command.projectPath)?.cwd ?? command.projectPath
@@ -1005,6 +1052,11 @@ export class AgentService {
           const status = session?.isStreaming() ? 'streaming' : 'idle'
           const permissionMode = session?.getCurrentPermissionMode()
           const snapshot = session?.snapshot
+          // ACP's sandbox is Grok's own, applied at process start from its env/config
+          // and never set by SuperOne — so it is observed, not read off the session.
+          const sandboxInfo = snapshot?.harnessId === 'acp'
+            ? await import('../acp/grok-sandbox').then((m) => m.currentGrokSandbox()).catch(() => undefined)
+            : session?.getCurrentSandboxInfo()
           trace('remote.cmd', 'get_session_state', {
             projectPath: command.projectPath,
             sessionId: command.sessionId,
@@ -1020,6 +1072,11 @@ export class AgentService {
             isWorktree: snapshot?.isWorktree ?? false,
             worktreePath: snapshot?.worktreePath ?? null,
             gitBranch: snapshot?.gitBranch ?? null,
+            // Status-bar facts a late subscriber cannot replay from events:
+            // usage only arrives with the next turn, and sandbox is a runtime fact.
+            ...(sandboxInfo ? { sandboxInfo } : {}),
+            contextTokens: snapshot?.contextTokens ?? 0,
+            totalCostUsd: snapshot?.totalCostUsd ?? 0,
           })
         } catch (err) {
           await respond?.(command.requestId, { error: (err as Error).message })

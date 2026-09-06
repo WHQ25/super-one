@@ -1,6 +1,6 @@
 import { useMemo, type ReactNode } from 'react'
 import { ChevronRight, SlidersHorizontal, type LucideIcon } from 'lucide-react-native'
-import { Pressable, StyleSheet, View } from 'react-native'
+import { Pressable, StyleSheet, View, type TextStyle } from 'react-native'
 import { Text } from './text'
 import { useMobileTheme } from '../theme/context'
 import { PromptSheet } from '../prompts/PromptSheet'
@@ -48,6 +48,11 @@ export function ListRow(props: {
   selected?: boolean
   leading?: ReactNode
   trailing?: ReactNode
+  /** Overrides the title colour — the file browser paints git state this way. */
+  titleColor?: string
+  /** Dims the row without changing its colour, for unstaged or ignored files. */
+  titleOpacity?: number
+  titleStyle?: TextStyle
 }) {
   const styles = usePrimitiveStyles()
   const { tokens } = useMobileTheme()
@@ -55,7 +60,8 @@ export function ListRow(props: {
     <>
       {props.leading}
       <View style={styles.listText}>
-        <Text numberOfLines={1} style={styles.listTitle}>{props.title}</Text>
+        <Text numberOfLines={1} style={[styles.listTitle, props.titleColor ? { color: props.titleColor } : null,
+          props.titleOpacity == null ? null : { opacity: props.titleOpacity }, props.titleStyle]}>{props.title}</Text>
         {props.subtitle ? <Text numberOfLines={2} style={styles.listSubtitle}>{props.subtitle}</Text> : null}
       </View>
       {props.trailing ?? (props.onPress ? <ChevronRight color={tokens.colors.mutedForeground} size={18} /> : null)}

@@ -13,7 +13,14 @@ export type MobileRoute =
   | 'settings'
   | 'files'
 
-export function routeHierarchy(route: MobileRoute, auxiliaryReturn: 'sessions' | 'chat'): MobileRoute[] {
+/** Where the Files browser was entered from; it is reachable from both. */
+export type FilesOrigin = 'settings' | 'session'
+
+export function routeHierarchy(
+  route: MobileRoute,
+  auxiliaryReturn: 'sessions' | 'chat',
+  filesOrigin: FilesOrigin = 'settings',
+): MobileRoute[] {
   const root: MobileRoute[] = ['pair']
   if (route === 'pair') return root
   root.push('projects')
@@ -31,6 +38,9 @@ export function routeHierarchy(route: MobileRoute, auxiliaryReturn: 'sessions' |
   if (route === 'project-picker') return [...root, 'project-picker']
   // Adding always happens on top of the picker it was opened from.
   if (route === 'add-project') return [...root, 'project-picker', 'add-project']
+  // Opened from the session menu, Files is a peer of settings, not a child of it —
+  // back has to land on the chat the user was reading, not on a screen they skipped.
+  if (route === 'files' && filesOrigin === 'session') return [...root, 'files']
   root.push('settings')
   if (route === 'settings') return root
   return [...root, 'files']

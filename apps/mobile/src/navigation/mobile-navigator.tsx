@@ -7,9 +7,9 @@ import {
 } from '@react-navigation/native'
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
 import { useMobileTheme } from '../theme/context'
-import { routeHierarchy, type MobileRoute } from './route-state'
+import { routeHierarchy, type FilesOrigin, type MobileRoute } from './route-state'
 
-export type { MobileRoute } from './route-state'
+export type { FilesOrigin, MobileRoute } from './route-state'
 
 type MobileStackParams = Record<MobileRoute, undefined>
 
@@ -27,17 +27,16 @@ function currentRouteName(state?: NavigationState | PartialState<NavigationState
 export function MobileNavigator(props: {
   route: MobileRoute
   auxiliaryReturn: 'sessions' | 'chat'
+  filesOrigin: FilesOrigin
   renderScene: (route: MobileRoute) => ReactNode
   onRouteChange: (route: MobileRoute) => void
 }) {
   const { tokens } = useMobileTheme()
   useEffect(() => {
     if (!navigationRef.isReady() || navigationRef.getCurrentRoute()?.name === props.route) return
-    navigationRef.reset({
-      index: routeHierarchy(props.route, props.auxiliaryReturn).length - 1,
-      routes: routeHierarchy(props.route, props.auxiliaryReturn).map((name) => ({ name })),
-    })
-  }, [props.auxiliaryReturn, props.route])
+    const routes = routeHierarchy(props.route, props.auxiliaryReturn, props.filesOrigin)
+    navigationRef.reset({ index: routes.length - 1, routes: routes.map((name) => ({ name })) })
+  }, [props.auxiliaryReturn, props.filesOrigin, props.route])
 
   return (
     <NavigationContainer
@@ -61,7 +60,7 @@ export function MobileNavigator(props: {
       }}
       onReady={() => {
         if (props.route === 'pair') return
-        const routes = routeHierarchy(props.route, props.auxiliaryReturn)
+        const routes = routeHierarchy(props.route, props.auxiliaryReturn, props.filesOrigin)
         navigationRef.reset({ index: routes.length - 1, routes: routes.map((name) => ({ name })) })
       }}
       onStateChange={(state) => {

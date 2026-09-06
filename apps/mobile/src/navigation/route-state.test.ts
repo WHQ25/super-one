@@ -27,4 +27,11 @@ describe('mobile route hierarchy', () => {
     expect(routeHierarchy('settings', 'chat')).toEqual(['pair', 'projects', 'sessions', 'chat', 'settings'])
     expect(routeHierarchy('files', 'chat')).toEqual(['pair', 'projects', 'sessions', 'chat', 'settings', 'files'])
   })
+
+  it('drops settings from the stack when files was opened from the session menu', () => {
+    expect(routeHierarchy('files', 'chat', 'session'))
+      .toEqual(['pair', 'projects', 'sessions', 'chat', 'files'])
+    expect(routeHierarchy('files', 'sessions', 'session'))
+      .toEqual(['pair', 'projects', 'sessions', 'files'])
+  })
 })

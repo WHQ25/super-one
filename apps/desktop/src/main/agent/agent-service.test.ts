@@ -226,7 +226,10 @@ vi.mock('child_process', async (importOriginal) => {
   return { ...actual, execFileSync: vi.fn(actual.execFileSync) }
 })
 
-vi.mock('../remote-control-service', () => ({}))
+vi.mock('../remote-control-service', () => ({
+  stripMessagesForRemote: (messages: unknown[]) => messages,
+  stripEventForRemote: (event: unknown) => event,
+}))
 
 vi.mock('../mcp/superone-mcp-server', () => ({
   clearProjectPendingCalls: vi.fn(),
@@ -1056,6 +1059,85 @@ describe('AgentService.handleRemoteCommand', () => {
         { path: '/projects/app-one', name: 'app-one' },
         { path: '/projects/app-two', name: 'app-two' },
       ],
+    })
+  })
+
+  describe('status-bar facts a mobile client cannot replay from events', () => {
+    function serviceWithSession(overrides: Record<string, unknown> = {}) {
+      const service = new AgentService()
+      const session = makeMockSession({
+        id: 'sid-1',
+        projectPath: '/p',
+        isStreaming: () => false,
+        getPendingInteractions: () => [],
+        getCurrentPermissionMode: () => 'default',
+        getCurrentSandboxInfo: () => ({ enabled: true, autoAllowBash: false }),
+        setSandboxMode: vi.fn(async () => ({ enabled: true, autoAllowBash: true })),
+        snapshot: {
+          harnessId: 'claude',
+          messages: [],
+          isWorktree: false,
+          worktreePath: null,
+          gitBranch: null,
+          contextTokens: 82_400,
+          totalCostUsd: 0.4213,
+        },
+        ...overrides,
+      })
+      ;(service as { sessionManager: unknown }).sessionManager = {
+        getSession: vi.fn(() => session),
+        getActiveSession: vi.fn(() => session),
+        forEachSession: (fn: (s: unknown) => void) => [session].forEach(fn),
+      }
+      return { service, session }
+    }
+
+    it('get_session_state carries context usage and sandbox alongside the transcript', async () => {
+      const { service } = serviceWithSession()
+      const respond = vi.fn()
+
+      await service.handleRemoteCommand(
+        { type: 'get_session_state', requestId: 'r1', projectPath: '/p', sessionId: 'sid-1' },
+        respond,
+      )
+
+      expect(respond).toHaveBeenCalledWith('r1', expect.objectContaining({
+        contextTokens: 82_400,
+        totalCostUsd: 0.4213,
+        sandboxInfo: { enabled: true, autoAllowBash: false },
+      }))
+    })
+
+    it('set_sandbox_mode echoes back the sandbox the session actually applied', async () => {
+      const { service, session } = serviceWithSession()
+      const respond = vi.fn()
+
+      await service.handleRemoteCommand(
+        { type: 'set_sandbox_mode', requestId: 'r2', projectPath: '/p', sessionId: 'sid-1', mode: 'auto' },
+        respond,
+      )
+
+      expect(session.setSandboxMode).toHaveBeenCalledWith('auto')
+      expect(respond).toHaveBeenCalledWith('r2', { sandboxInfo: { enabled: true, autoAllowBash: true } })
+    })
+
+    // A host that cannot sandbox throws instead of emitting agent_setting_change, so
+    // a client holding its optimistic guess would claim a confinement it does not have.
+    it('answers a refused sandbox change with the error and the unchanged state', async () => {
+      const { service } = serviceWithSession({
+        setSandboxMode: vi.fn(async () => { throw new Error('sandbox unsupported on this platform') }),
+      })
+      const respond = vi.fn()
+
+      await service.handleRemoteCommand(
+        { type: 'set_sandbox_mode', requestId: 'r3', projectPath: '/p', sessionId: 'sid-1', mode: 'on' },
+        respond,
+      )
+
+      expect(respond).toHaveBeenCalledWith('r3', {
+        error: 'sandbox unsupported on this platform',
+        sandboxInfo: { enabled: true, autoAllowBash: false },
+      })
     })
   })
 

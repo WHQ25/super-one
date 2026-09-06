@@ -1,14 +1,30 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import {
-  CODEX_PERMISSION_PRESETS,
-  DEFAULT_CODEX_PERMISSION_PRESET,
-  type SandboxInfo,
-  type SandboxMode,
-} from '@superone/shared/agent-types'
+import type { SandboxMode } from '@superone/shared/agent-types'
+import { resolveSandboxMode, sandboxModeFromInfo } from '@superone/shared/harness/harness-sandbox'
 import { useActiveSession, type ChatProvider } from '@/stores/chat'
 import { sandboxModes } from '../SandboxModeSelector'
-import { deepseekPermissionModeMeta } from '../deepseekPermissionModes'
+
+/**
+ * Grok applies its sandbox once at startup and cannot change it afterwards
+ * (irreversible by design), so a single read per mount is the whole story — there
+ * is no live value to subscribe to.
+ */
+function useObservedAcpSandbox(enabled: boolean): SandboxMode {
+  const [mode, setMode] = useState<SandboxMode>('off')
+
+  useEffect(() => {
+    if (!enabled) return
+    let alive = true
+    window.app.acpGetSandbox()
+      .then((info) => { if (alive) setMode(sandboxModeFromInfo(info)) })
+      // Report off rather than a guess — the same answer as no sandbox configured.
+      .catch(() => { if (alive) setMode('off') })
+    return () => { alive = false }
+  }, [enabled])
+
+  return mode
+}
 
 /**
  * Sandbox state for harnesses with no toggle of their own — display-only, because
@@ -25,33 +41,10 @@ import { deepseekPermissionModeMeta } from '../deepseekPermissionModes'
  *
  * Only on/off/auto is claimed. Codex, dsh and Grok all have finer vocabularies,
  * but that detail already shows in the permission chip next door.
+ *
+ * The mapping itself lives in `@superone/shared` so Remote Control's chip cannot
+ * report a different sandbox than this one for the same session.
  */
-function sandboxModeFrom(info: SandboxInfo): SandboxMode {
-  if (!info.enabled) return 'off'
-  return info.autoAllowBash ? 'auto' : 'on'
-}
-
-/**
- * Grok applies its sandbox once at startup and cannot change it afterwards
- * (irreversible by design), so a single read per mount is the whole story — there
- * is no live value to subscribe to.
- */
-function useObservedAcpSandbox(enabled: boolean): SandboxMode {
-  const [mode, setMode] = useState<SandboxMode>('off')
-
-  useEffect(() => {
-    if (!enabled) return
-    let alive = true
-    window.app.acpGetSandbox()
-      .then((info) => { if (alive) setMode(sandboxModeFrom(info)) })
-      // Report off rather than a guess — the same answer as no sandbox configured.
-      .catch(() => { if (alive) setMode('off') })
-    return () => { alive = false }
-  }, [enabled])
-
-  return mode
-}
-
 function useSandboxState(activeProvider: ChatProvider): SandboxMode {
   // Each branch reads the same store field that harness's permission chip reads,
   // so the two chips in the bar cannot disagree.
@@ -59,18 +52,12 @@ function useSandboxState(activeProvider: ChatProvider): SandboxMode {
   const permissionMode = useActiveSession((s) => s.permissionMode)
   const observedAcp = useObservedAcpSandbox(activeProvider === 'acp')
 
-  // Codex and dsh happen to share one vocabulary, so one comparison serves both.
-  // dsh's renderer-side map is used deliberately — `dshPresetForMode` lives in
-  // dsh's runtime, which must stay out of this bundle.
-  if (activeProvider === 'codex') {
-    const { sandboxMode } = CODEX_PERMISSION_PRESETS[codexPreset || DEFAULT_CODEX_PERMISSION_PRESET]
-    return sandboxMode === 'danger-full-access' ? 'off' : 'on'
-  }
-  if (activeProvider === 'dsh') {
-    return deepseekPermissionModeMeta(permissionMode).preset === 'danger-full-access' ? 'off' : 'on'
-  }
   if (activeProvider === 'acp') return observedAcp
-  return 'off'
+  return resolveSandboxMode({
+    harnessId: activeProvider,
+    permissionMode,
+    ...(activeProvider === 'codex' ? { codexPreset: codexPreset || null } : {}),
+  })
 }
 
 export function StatusBarDerivedSandbox({

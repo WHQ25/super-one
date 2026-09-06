@@ -10,6 +10,7 @@ import { useAppStore } from '@/stores/app'
 import { useSashResizing } from '@/hooks/useSashResizing'
 import { useGlobalDragging } from '@/hooks/useGlobalDragging'
 import { useFullscreen } from '@/hooks/useFullscreen'
+import { Z } from '@/lib/z-layers'
 import { useShallow } from 'zustand/react/shallow'
 import { MiniAppView } from './MiniAppView'
 
@@ -50,7 +51,7 @@ export function MiniAppHostLayer() {
         position: 'fixed',
         inset: 0,
         pointerEvents: 'none',
-        zIndex: 30,
+        zIndex: Z.HOST_MINIAPP,
       }}
     >
       {openInstanceKeys.map((instanceKey) => (

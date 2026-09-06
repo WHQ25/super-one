@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import { Bot, Loader2, MessageSquare, Smartphone } from 'lucide-react'
@@ -10,6 +11,7 @@ import { getPendingReason, isEphemeralSession, isLiveSession, resolveSessionTitl
 import { useStallLevel, getStallColor, useEllipsisRepaintKey, type StallLevel } from '@/lib/stall-utils'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { cn } from '@superone/ui/lib/utils'
+import { Z_CLASS } from '@/lib/z-layers'
 import type { AgentStatus, HarnessId, SessionHistoryEntry } from '@superone/shared/agent-types'
 
 interface SessionSwitcherPopupProps {
@@ -282,12 +284,21 @@ export function SessionSwitcherView({ rows, selectedIndex, isOpen, openDelayMs =
     return () => clearTimeout(timer)
   }, [isOpen, openDelayMs])
 
-  return (
+  // Portalled to the body, and above every host layer.
+  //
+  // The switcher renders from inside `CodingLayout`, which sits under the main-area
+  // wrapper's `z-20` stacking context — so a local `z-[60]` was only ever 60 *within*
+  // that context, and the whole context still painted below the device (40/51),
+  // browser (20/50) and mini-app (30) host layers. A simulator tab in the Activity
+  // panel covered the switcher. Escaping to the body is what makes the number mean
+  // anything; 300 then clears the host layers and the plan-review chrome (198-210)
+  // while staying under the cross-window drag ghost (9998/9999).
+  return createPortal(
     <AnimatePresence>
       {isVisible && rows.length > 0 ? (
         <motion.div
           key="session-switcher"
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          className={cn('fixed inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm', Z_CLASS.SESSION_SWITCHER)}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -314,7 +325,8 @@ export function SessionSwitcherView({ rows, selectedIndex, isOpen, openDelayMs =
           </motion.div>
         </motion.div>
       ) : null}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   )
 }
 

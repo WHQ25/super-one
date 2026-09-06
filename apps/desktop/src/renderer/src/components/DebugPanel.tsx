@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Bug, X } from 'lucide-react'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
+import { cn } from '@superone/ui/lib/utils'
+import { Z_CLASS } from '@/lib/z-layers'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useDevToolsStore } from '@/stores/dev-tools'
 import type { MiniAppPreviewResult } from '@superone/shared/miniapp-types'
@@ -159,7 +161,7 @@ export function DebugPanel() {
     return (
       <button
         onClick={toggle}
-        className="fixed bottom-3 right-3 z-[9999] flex items-center gap-1 rounded-full bg-orange-500 px-2.5 py-1 text-[11px] font-medium text-white shadow-lg transition-opacity hover:opacity-90"
+        className={cn('fixed bottom-3 right-3 flex items-center gap-1 rounded-full bg-orange-500 px-2.5 py-1 text-[11px] font-medium text-white shadow-lg transition-opacity hover:opacity-90', Z_CLASS.DEBUG_PANEL)}
       >
         <Bug className="size-3" />
         Debug
@@ -168,7 +170,7 @@ export function DebugPanel() {
   }
 
   return (
-    <div className="fixed bottom-3 right-3 z-[9999] w-72 rounded-lg border bg-background/95 shadow-xl backdrop-blur-sm">
+    <div className={cn('fixed bottom-3 right-3 w-72 rounded-lg border bg-background/95 shadow-xl backdrop-blur-sm', Z_CLASS.DEBUG_PANEL)}>
       <div className="flex items-center justify-between border-b px-3 py-2">
         <span className="flex items-center gap-1.5 text-xs font-medium">
           <Bug className="size-3.5 text-orange-500" />

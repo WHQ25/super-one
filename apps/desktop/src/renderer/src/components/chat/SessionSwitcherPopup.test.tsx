@@ -459,8 +459,9 @@ describe('SessionSwitcherPopup frozen order', () => {
     )
   }
 
-  function readVisibleOrder(container: HTMLElement): string[] {
-    const rows = container.querySelectorAll<HTMLElement>('[data-row-idx]')
+  // The popup portals to the body, so read from `baseElement`, not `container`.
+  function readVisibleOrder(root: HTMLElement): string[] {
+    const rows = root.querySelectorAll<HTMLElement>('[data-row-idx]')
     return Array.from(rows).map((row) => row.querySelector<HTMLElement>('.truncate')?.textContent?.trim() ?? '')
   }
 
@@ -480,14 +481,14 @@ describe('SessionSwitcherPopup frozen order', () => {
     }
     useChatStore.setState({ activeProject: '/p', projectSessions: { '/p': project }, remoteSessions: {} })
 
-    const { container } = render(<Harness />)
+    const { baseElement } = render(<Harness />)
 
     act(() => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', ctrlKey: true, bubbles: true, cancelable: true }))
     })
     act(() => { vi.advanceTimersByTime(220) })
 
-    const initialOrder = readVisibleOrder(container)
+    const initialOrder = readVisibleOrder(baseElement)
     // Current row ('s1' a.k.a. "one") is pinned to slot 0, the rest follow by lastEventAt desc.
     expect(initialOrder).toEqual(['one', 'three', 'two'])
 
@@ -502,7 +503,7 @@ describe('SessionSwitcherPopup frozen order', () => {
       useChatStore.setState({ projectSessions: { '/p': next } })
     })
 
-    expect(readVisibleOrder(container)).toEqual(initialOrder)
+    expect(readVisibleOrder(baseElement)).toEqual(initialOrder)
   })
 })
 

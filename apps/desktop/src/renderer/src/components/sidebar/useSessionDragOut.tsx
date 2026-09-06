@@ -1,5 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { cn } from '@superone/ui/lib/utils'
+import { Z_CLASS } from '@/lib/z-layers'
 import { SESSION_DRAG_MIME, useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { DragPreviewPill } from './SessionDragPreviewContent'
 
@@ -82,7 +84,7 @@ export function useSessionDragOut({ folderPath, sessionId, title }: UseSessionDr
 
   const dragPreview = visible
     ? createPortal(
-        <div ref={previewRef} className="pointer-events-none fixed left-0 top-0 z-[9999] will-change-transform">
+        <div ref={previewRef} className={cn('pointer-events-none fixed left-0 top-0 will-change-transform', Z_CLASS.DRAG_GHOST)}>
           <DragPreviewPill title={title} />
         </div>,
         document.body,

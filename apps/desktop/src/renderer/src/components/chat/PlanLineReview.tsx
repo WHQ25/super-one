@@ -31,6 +31,7 @@ import {
   strokeSeed,
 } from './plan-sticky-visuals'
 import { useIsDark } from '@/hooks/use-is-dark'
+import { Z_CLASS } from '@/lib/z-layers'
 import { CopyableMarkdown } from './CopyableMarkdown'
 
 export interface PlanLineReviewProps {
@@ -362,7 +363,7 @@ export function PlanLineReview({
             <div
               key={`stroke-${key}-${i}`}
               aria-hidden
-              className="pointer-events-none fixed z-[198]"
+              className={cn('pointer-events-none fixed', Z_CLASS.PLAN_MARKER)}
               style={{
                 top: b.top,
                 left: b.left - MARKER_OVERSHOOT,
@@ -389,7 +390,8 @@ export function PlanLineReview({
         data-plan-sticky-ui
         aria-label={`${t('chat.plan.comments')} · ${swatch.label}`}
         className={cn(
-          'fixed z-[200] flex cursor-pointer items-center justify-center',
+          'fixed flex cursor-pointer items-center justify-center',
+          Z_CLASS.PLAN_STICKY,
           'transition-[filter] hover:brightness-[1.06]',
         )}
         style={{
@@ -415,7 +417,7 @@ export function PlanLineReview({
     ? createPortal(
         <div
           data-plan-sticky-ui
-          className="fixed z-[210]"
+          className={cn('fixed', Z_CLASS.PLAN_NOTE)}
           style={{
             top: notePos?.top ?? 80,
             left: Math.max(8, Math.min(notePos?.left ?? 80, window.innerWidth - 220)),

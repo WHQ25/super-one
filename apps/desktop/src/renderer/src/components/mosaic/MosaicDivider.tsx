@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '@superone/ui/lib/utils'
 import { ResizeHandleLine } from '@/components/ResizeHandleLine'
+import { Z_CLASS } from '@/lib/z-layers'
 import { useMosaicStore } from './mosaic-store'
 import { clampRatioToMin, type MosaicPath } from './mosaic-tree'
 
@@ -56,7 +57,7 @@ export function MosaicDivider({ direction, path, firstMin, secondMin }: MosaicDi
         />
       </div>
       {dragging && createPortal(
-        <div className="fixed inset-0 z-[9998]" style={{ cursor: horizontal ? 'col-resize' : 'row-resize' }} />,
+        <div className={cn('fixed inset-0', Z_CLASS.DRAG_SCRIM)} style={{ cursor: horizontal ? 'col-resize' : 'row-resize' }} />,
         document.body,
       )}
     </>

@@ -28,6 +28,7 @@ import { MiniWindowHeader } from '@/components/MiniWindowApp'
 import { MiniAppHostLayer } from '@/components/miniapp/MiniAppHostLayer'
 import { BrowserHostLayer } from '@/components/browser/BrowserHostLayer'
 import { DeviceHostLayer } from '@/components/device/DeviceHostLayer'
+import { Z } from '@/lib/z-layers'
 import { ComputerUseHostLayer } from '@/components/computer-use/ComputerUseHostLayer'
 import { DebugPanel } from '@/components/DebugPanel'
 import { useResizeHandle } from '@/hooks/useResizeHandle'
@@ -770,7 +771,7 @@ function MosaicSingleDropOverlay({ wrapperRef, canRestoreMosaic }: { wrapperRef:
   }, [wrapperRef])
   if (!rect) return null
   return (
-    <div style={{ position: 'fixed', left: rect.left, top: rect.top, width: rect.width, height: rect.height, zIndex: 40 }}>
+    <div style={{ position: 'fixed', left: rect.left, top: rect.top, width: rect.width, height: rect.height, zIndex: Z.MOSAIC_DROP }}>
       {!canRestoreMosaic && (
         <MosaicDropZone tileId={null} onDropSession={(fp, sid, edge) => useMosaicStore.getState().addTile(fp, sid, { edge })} />
       )}

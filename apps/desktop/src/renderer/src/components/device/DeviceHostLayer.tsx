@@ -7,6 +7,7 @@ import {
 } from '@/stores/device-pip'
 import { useSashResizing } from '@/hooks/useSashResizing'
 import { useGlobalDragging } from '@/hooks/useGlobalDragging'
+import { Z } from '@/lib/z-layers'
 import { DevicePanel } from './DevicePanel'
 import { DeviceOverlaySurface } from './DeviceOverlaySurface'
 import { DevicePictureInPicture } from './DevicePictureInPicture'
@@ -62,9 +63,10 @@ export function DeviceHostLayer() {
         position: 'fixed',
         inset: 0,
         pointerEvents: 'none',
-        // Above the mini-app (30) and browser (20) layers at rest, and above the
-        // browser's expanded overlay (50) when this one is up.
-        zIndex: overlayOpen ? 51 : 40,
+        // Above every other host layer, at rest and expanded, and below the modal
+        // tier in both. `Z` records what an expanded layer that outranks the modals
+        // breaks.
+        zIndex: overlayOpen ? Z.HOST_DEVICE_EXPANDED : Z.HOST_DEVICE,
       }}
     >
       <DeviceOverlaySurface />

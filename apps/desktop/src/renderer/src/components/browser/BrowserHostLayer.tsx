@@ -18,6 +18,7 @@ import { BROWSER_CANVAS_PROBE, BROWSER_LIGHT_CANVAS, browserCanvasColor, isBrows
 import { useBrowserContextMenu } from './browser-context-menu'
 import { openBrowserTab } from '@/components/activity/activity-panel-api'
 import { ACTIVITY_PANEL_TRANSITION } from '@/lib/layout-constants'
+import { Z } from '@/lib/z-layers'
 import { BrowserPictureInPicture } from './BrowserPictureInPicture'
 import { BROWSER_FALLBACK_VIEWPORT, resolveBrowserPipViewport } from './browser-pip-layout'
 import { selectViewfinderTarget, useAgentViewfinderStore } from '@/stores/agent-viewfinder'
@@ -59,7 +60,8 @@ export function BrowserHostLayer() {
   }, [])
 
   return (
-    <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: overlayOpen ? 50 : 20 }}>
+    // Expanded still ranks below the modal tier — see `Z` for why that is not optional.
+    <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: overlayOpen ? Z.HOST_BROWSER_EXPANDED : Z.HOST_BROWSER }}>
       {ids.map((id) => (
         <PersistentBrowser key={id} browserId={id} resizing={resizing} />
       ))}

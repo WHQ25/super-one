@@ -50,7 +50,7 @@ export function createMobileStyles({ colors, radius, spacing, type }: MobileThem
     },
     btnText: { color: colors.primaryForeground, fontWeight: '500', fontSize: 14 },
     secondaryBtnText: { color: colors.foreground, fontWeight: '500', fontSize: 14 },
-    code: { color: colors.foreground, fontSize: 32, letterSpacing: 8, textAlign: 'center', marginVertical: spacing.lg },
+    code: { color: colors.foreground, fontSize: 44, fontWeight: '600', letterSpacing: 10, textAlign: 'center', marginVertical: spacing.lg },
     row: { paddingVertical: spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
     rowTitle: { color: colors.foreground, fontSize: type.body },
     rowMeta: { color: colors.mutedForeground, fontSize: type.meta, marginTop: spacing.xs },

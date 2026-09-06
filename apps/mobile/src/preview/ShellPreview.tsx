@@ -151,7 +151,7 @@ export function ShellPreview({ initialPage = 'New session', onClose, onTheme }: 
             activePairingId="desk-retry" connectingPairingId={null}
             refreshing={devicesRefreshing} onRefresh={() => setDevicesRefreshing((value) => !value)}
             onBarcodeScanned={() => {}} onCancelScanner={() => {}} onPasteChange={() => {}} onLanChange={() => {}}
-            onPair={() => {}} onOpenScanner={() => setPage('Pairing')} onConnect={() => {}} onRename={() => {}} onForget={() => {}} /> : null}
+            onPair={() => {}} onCancelPairing={() => setPage('Devices')} onOpenScanner={() => setPage('Pairing')} onConnect={() => {}} onRename={() => {}} onForget={() => {}} /> : null}
           {page === 'Projects' ? <ProjectsScreen projects={[project, { name: 'design-system', path: '/workspace/design-system' }]} onOpen={() => setPage('Sessions')} /> : null}
           {page === 'Sessions' ? <SessionsScreen sessions={sessions} onOpenSession={() => setPage('Chat')} onCreateSession={() => setPage('New session')} onArchiveSession={() => {}} onDeleteSession={() => {}} /> : null}
           {page === 'Settings' ? <SettingsScreen {...settings} /> : null}

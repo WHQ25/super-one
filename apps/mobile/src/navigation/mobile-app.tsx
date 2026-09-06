@@ -149,6 +149,8 @@ export function MobileApp() {
   const auxiliaryReturnRef = useRef<'sessions' | 'chat'>('sessions')
   const suppressReconnectRef = useRef(false)
   const scanningRef = useRef(false)
+  const pairingSocketRef = useRef<WebSocket | null>(null)
+  const pairingCancelledRef = useRef(false)
   useReconnectOnForeground(() => reconnectControllerRef.current?.force(connectionRef.current.epoch))
   const discovery = useDeviceDiscovery({
     pairings,
@@ -422,15 +424,23 @@ export function MobileApp() {
         const qr = parsePairQr(raw)
         const activeDeviceId = deviceId || await loadOrCreateMobileId()
         if (!deviceId) setDeviceId(activeDeviceId)
+        pairingCancelledRef.current = false
         const { code: c, done } = startPairingHandshake({
           qr,
           mobileDeviceId: activeDeviceId,
           deviceName: 'Expo',
-          openSocket: (url) => new WebSocket(url) as never,
+          // Held so Cancel can close the socket; the handshake exposes no other
+          // way to abort, and clearing the code alone would leave it running.
+          openSocket: (url) => {
+            const socket = new WebSocket(url)
+            pairingSocketRef.current = socket
+            return socket as never
+          },
         })
         setCode(c)
         setStatus('Confirm this code on the desktop')
         const paired = await done
+        pairingSocketRef.current = null
         setCode(null)
         await connectWithSecret(paired.relayUrl || qr.relayUrl, paired.masterSecret, undefined, paired.hostName, qr.desktopDeviceId)
         return
@@ -440,9 +450,19 @@ export function MobileApp() {
       if (!url || !json.secret) throw new Error('JSON needs relayUrl and secret')
       await connectWithSecret(url, json.secret)
     } catch (e) {
+      pairingSocketRef.current = null
       setCode(null)
-      setStatus(e instanceof Error ? e.message : 'pair failed')
+      // A cancelled handshake fails by design; do not report it as an error.
+      setStatus(pairingCancelledRef.current ? '' : e instanceof Error ? e.message : 'pair failed')
     }
+  }
+
+  const cancelPairing = () => {
+    pairingCancelledRef.current = true
+    pairingSocketRef.current?.close()
+    pairingSocketRef.current = null
+    setCode(null)
+    setStatus('')
   }
 
   usePairingDeepLink(onPair)
@@ -874,6 +894,7 @@ export function MobileApp() {
           onPasteChange={setPaste}
           onLanChange={setLan}
           onPair={() => void onPair()}
+          onCancelPairing={cancelPairing}
           onOpenScanner={() => runUiAction(openScanner, setStatus, 'camera failed')}
           onConnect={(item) => void connectToPairing(item)}
           onRename={(item, name) => runUiAction(

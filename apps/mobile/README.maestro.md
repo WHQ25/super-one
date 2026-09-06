@@ -77,7 +77,7 @@ bun run test:mobile:ui --platform android --device emulator-5554 --theme all
 | permission-destructive | Session cleanup, provider deletion, and automation deletion support distinct deny/allow callbacks |
 | composer-actions | Phone status controls remain above the input; send and streaming stop expose distinct states |
 | devices | The header carries the wordmark; each connection state, the retry countdown, swipe-to-forget confirmation and the disabled refresh control are visible |
-| pairing | The code sits between its heading and the instruction, and is spelled out digit by digit for VoiceOver |
+| pairing | Pairing owns the page: no list chrome or Pair New Device, a boxed code spelled out digit by digit for VoiceOver, a waiting indicator and a cancel action |
 
 The 16 flows cover the device list, the pairing code and the phone composer actions
 plus at least one interaction for each of the nine explicit permission kinds. This is scenario coverage, not exhaustive branch coverage:

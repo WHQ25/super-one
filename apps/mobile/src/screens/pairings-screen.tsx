@@ -7,6 +7,7 @@ import type { SavedPairing } from '@superone/relay-client'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { Badge, Button, IconButton, ListRow, SectionHeader, Sheet } from '../ui'
 import { DeviceRow, deviceLabel } from '../ui/device-row'
+import { PairingCode } from './pairing-code'
 import type { DeviceStatus, ReconnectInfo } from '../device-status'
 
 export function PairingsScreen(props: {
@@ -28,6 +29,7 @@ export function PairingsScreen(props: {
   onLanChange: (value: string) => void
   onPair: () => void
   onOpenScanner: () => void
+  onCancelPairing: () => void
   onConnect: (pairing: SavedPairing) => void
   onRename: (pairing: SavedPairing, name: string) => void
   onForget: (pairing: SavedPairing) => void
@@ -53,6 +55,7 @@ export function PairingsScreen(props: {
       </View>
     )
   }
+  if (props.code) return <PairingCode code={props.code} onCancel={props.onCancelPairing} />
   return (
     <View style={styles.screenSection}>
       <View style={styles.sectionHeader}>
@@ -71,15 +74,7 @@ export function PairingsScreen(props: {
           )}
         />
       </View>
-      {props.code ? (
-        <View style={styles.emptyState}>
-          {/* The code is what the user has to read out, so it leads; the
-              instruction reads as a caption under it. */}
-          <Text style={styles.emptyTitle}>Confirm This Code</Text>
-          <Text accessibilityLabel={props.code.split('').join(' ')} style={styles.code}>{props.code}</Text>
-          <Text style={styles.emptyBody}>Enter it in SuperOne on your computer to finish pairing.</Text>
-        </View>
-      ) : props.pairings.length ? (
+      {props.pairings.length ? (
         <FlatList
           // Rows are rebuilt with their status so a reachability change repaints
           // them; FlatList would otherwise skip cells whose `data` entry is ===.

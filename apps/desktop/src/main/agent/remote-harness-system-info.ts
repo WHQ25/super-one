@@ -1,13 +1,16 @@
 import type {
   AppSettings,
+  DeepseekPresetRoster,
   HarnessId,
   HarnessResourcesMap,
   ModelOption,
   RemoteActiveProvider,
+  RemoteProviderOption,
   RemoteSystemInfo,
 } from '@superone/shared/agent-types'
 import { BASE_SESSION_PROVIDERS } from '@superone/shared/session-provider-definitions'
 import { deriveSessionCatalog } from '../acp/acp-config'
+import { acpModeCatalog, deepseekModeCatalog, openCodeAgentCatalog } from './remote-selector-catalog'
 
 type ResourceReader = <H extends HarnessId>(harnessId: H) => HarnessResourcesMap[H] | null
 
@@ -18,6 +21,13 @@ export interface RemoteHarnessSystemInfoDependencies {
   listCodexModels?: (projectPath: string) => Promise<ModelOption[]>
   codexAccount?: (projectPath: string) => unknown
   activeProvider: (harnessId: 'claude' | 'codex') => RemoteActiveProvider | null
+  /** Credentials/accounts the harness can run on, already shaped for the client. */
+  providerCatalog?: (harnessId: HarnessId) => {
+    providers: RemoteProviderOption[]
+    selectedProviderId: string | null
+  }
+  /** DeepSeek preset roster. Project-level, so it names no live session. */
+  deepseekPresets?: () => Promise<DeepseekPresetRoster | null>
 }
 
 export const REMOTE_HARNESS_PERMISSION_MODES = {
@@ -99,6 +109,7 @@ export async function buildRemoteHarnessSystemInfo(
         permissionModes: [...REMOTE_HARNESS_PERMISSION_MODES.claude],
         sandboxModes: ['off', 'on', 'auto'],
         activeProvider: deps.activeProvider('claude'),
+        ...deps.providerCatalog?.('claude'),
         defaults: {
           model: present(preferences.claude.defaultModel) ?? model?.id ?? null,
           effort: preferredEffort(model, preferences.claude.defaultEffort),
@@ -126,6 +137,7 @@ export async function buildRemoteHarnessSystemInfo(
         permissionModes: [...REMOTE_HARNESS_PERMISSION_MODES.codex],
         permissionPresets: [...CODEX_PERMISSION_PRESETS],
         activeProvider: deps.activeProvider('codex'),
+        ...deps.providerCatalog?.('codex'),
         defaults: {
           model: present(preferences.codex.defaultModel) ?? model?.id ?? null,
           effort,
@@ -145,22 +157,26 @@ export async function buildRemoteHarnessSystemInfo(
       const sessionCatalog = catalog ? deriveSessionCatalog(catalog) : null
       const models = sessionCatalog?.models ?? []
       const model = preferredModel(models, sessionCatalog?.selectedModelId)
-      const efforts = (sessionCatalog?.modes ?? []).map((mode) => ({
-        value: mode.id,
-        label: mode.name || mode.id,
-        ...(mode.description ? { description: mode.description } : {}),
-      }))
+      // Only Grok-style extraModes are reasoning effort; real `configOptions`
+      // modes are a session mode the backend applies through set_session_mode.
+      const { efforts, modes, selectedModeId } = acpModeCatalog(sessionCatalog && {
+        modes: sessionCatalog.modes,
+        modeConfigId: sessionCatalog.modeConfigId,
+        selectedModeId: sessionCatalog.selectedModeId,
+      })
+      const selectedEffort = present(sessionCatalog?.selectedModeId)
       return {
         models,
         efforts,
+        ...(modes.length ? { modes, selectedModeId, modeLabel: 'Mode' } : {}),
         slashCommands: sessionCatalog?.slashCommands ?? [],
         permissionModes: [...REMOTE_HARNESS_PERMISSION_MODES.acp],
         acpAgentId,
         defaults: {
           model: model?.id ?? null,
-          effort: present(sessionCatalog?.selectedModeId)
-            ?? efforts.find((option) => option.value === 'medium')?.value
-            ?? efforts[0]?.value
+          effort: (selectedEffort && efforts.some((option) => option.value === selectedEffort)
+            ? selectedEffort
+            : efforts.find((option) => option.value === 'medium')?.value ?? efforts[0]?.value)
             ?? null,
           permissionMode: 'default',
         },
@@ -170,6 +186,7 @@ export async function buildRemoteHarnessSystemInfo(
       const cached = deps.getCachedResources('opencode')
       return {
         ...defaultInfo(cached?.models ?? [], REMOTE_HARNESS_PERMISSION_MODES.opencode),
+        ...openCodeAgentCatalog(cached),
         slashCommands: cached?.commands ?? [],
       }
     }
@@ -182,11 +199,23 @@ export async function buildRemoteHarnessSystemInfo(
       )
       return { ...info, account: cached?.user ?? null }
     }
-    case 'dsh':
-      return defaultInfo(
+    case 'dsh': {
+      const info = defaultInfo(
         deps.getCachedResources('dsh')?.models ?? [],
         REMOTE_HARNESS_PERMISSION_MODES.dsh,
       )
+      const { modes, selectedModeId, modesLocked } = deepseekModeCatalog(
+        (await deps.deepseekPresets?.()) ?? null,
+      )
+      if (modes.length === 0) return info
+      return {
+        ...info,
+        modes,
+        selectedModeId,
+        modeLabel: 'Preset',
+        ...(modesLocked ? { modesLocked } : {}),
+      }
+    }
     default: {
       const exhaustive: never = harnessId
       return exhaustive

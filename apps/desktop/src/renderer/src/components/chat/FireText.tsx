@@ -1,62 +1,27 @@
 import { useEffect, useRef, useState } from 'react'
+import { DARK_COLORS, FIRE_SWEEP_CENTERS, FIRE_SWEEP_S, LIGHT_COLORS, lerpColor } from '@superone/shared/effort-easter-egg-palette'
+import {
+  buildSpawnSchedule,
+  CORE_ALPHA,
+  DARK_SEED,
+  HALO_ALPHA,
+  HALO_RADIUS,
+  LIGHT_SEED,
+  particleAge,
+  particleAlpha,
+  particleRadius,
+  PERIOD_S,
+  PERIOD_STEPS,
+  spawnParticle,
+  stepParticle,
+  type FireParticle,
+} from '@superone/shared/fire-particles'
 
-export const DARK_COLORS = [
-  [255, 255, 200],
-  [255, 220, 50],
-  [255, 160, 20],
-  [255, 80, 0],
-  [200, 30, 0],
-]
+export { DARK_COLORS, LIGHT_COLORS, lerpColor }
 
-export const LIGHT_COLORS = [
-  [255, 220, 50],
-  [255, 160, 20],
-  [255, 80, 0],
-  [200, 30, 0],
-  [140, 20, 8],
-]
 
-export function lerpColor(colors: number[][], t: number): [number, number, number] {
-  const idx = t * (colors.length - 1)
-  const i = Math.min(Math.floor(idx), colors.length - 2)
-  const f = idx - i
-  return [
-    colors[i][0] + (colors[i + 1][0] - colors[i][0]) * f,
-    colors[i][1] + (colors[i + 1][1] - colors[i][1]) * f,
-    colors[i][2] + (colors[i + 1][2] - colors[i][2]) * f,
-  ]
-}
-
-const PHYS_HZ = 120
-const PERIOD_S = 2
-const PERIOD_STEPS = PHYS_HZ * PERIOD_S
 const MAX_STRIP_DEVICE_PX = 16000
 const PAD = 12
-
-function mulberry32(seed: number): () => number {
-  let a = seed >>> 0
-  return () => {
-    a = (a + 0x6d2b79f5) | 0
-    let t = Math.imul(a ^ (a >>> 15), 1 | a)
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
-
-interface SpawnEvent {
-  x: number
-  y: number
-  vx: number
-  vy: number
-  maxLife: number
-  size: number
-  seed: number
-}
-
-interface SimParticle extends SpawnEvent {
-  life: number
-  jitter: () => number
-}
 
 function buildStripCanvas(textW: number, textH: number, isDark: boolean, dpr: number): {
   canvas: HTMLCanvasElement
@@ -71,43 +36,22 @@ function buildStripCanvas(textW: number, textH: number, isDark: boolean, dpr: nu
     captureEvery *= 2
   }
   const frameCount = PERIOD_STEPS / captureEvery
-  const rng = mulberry32(isDark ? 0x9e3779b9 : 0x85ebca6b)
   const colors = isDark ? DARK_COLORS : LIGHT_COLORS
-
-  const spawns: (SpawnEvent | null)[] = []
-  for (let s = 0; s < PERIOD_STEPS; s++) {
-    spawns.push(
-      rng() < 0.6
-        ? {
-            x: PAD + rng() * textW,
-            y: PAD + textH * (0.1 + rng() * 0.5),
-            vx: (rng() - 0.5) * 0.15,
-            vy: -(0.05 + rng() * 0.12),
-            maxLife: 30 + rng() * 30,
-            size: 0.5 + rng() * 1.5,
-            seed: Math.imul(s + 1, 2654435761),
-          }
-        : null,
-    )
-  }
+  const spawns = buildSpawnSchedule(textW, textH, isDark ? DARK_SEED : LIGHT_SEED)
 
   const canvas = document.createElement('canvas')
   canvas.width = Math.ceil(frameW * frameCount * dpr)
   canvas.height = Math.ceil(frameH * dpr)
   const ctx = canvas.getContext('2d')!
 
-  let particles: SimParticle[] = []
+  let particles: FireParticle[] = []
+  // The first period is warm-up: by the time frames are captured the fire is
+  // already fully populated, so frame 0 loops seamlessly onto the last frame.
   for (let g = 0; g < PERIOD_STEPS * 2; g++) {
     const ev = spawns[g % PERIOD_STEPS]
-    if (ev) particles.push({ ...ev, life: 0, jitter: mulberry32(ev.seed) })
-    for (const p of particles) {
-      p.life++
-      p.x += p.vx
-      p.vy -= 0.005
-      p.y += p.vy
-      p.vx += (p.jitter() - 0.5) * 0.08
-    }
-    particles = particles.filter((p) => p.life / p.maxLife < 1)
+    if (ev) particles.push(spawnParticle(ev))
+    for (const p of particles) stepParticle(p)
+    particles = particles.filter((p) => particleAge(p) < 1)
 
     if (g < PERIOD_STEPS || (g - PERIOD_STEPS) % captureEvery !== 0) continue
     const f = (g - PERIOD_STEPS) / captureEvery
@@ -119,18 +63,18 @@ function buildStripCanvas(textW: number, textH: number, isDark: boolean, dpr: nu
     ctx.clip()
     ctx.globalCompositeOperation = isDark ? 'lighter' : 'source-over'
     for (const p of particles) {
-      const t = p.life / p.maxLife
+      const t = particleAge(p)
       const [r, gr, b] = lerpColor(colors, t)
-      const alpha = t < 0.1 ? t / 0.1 : 1 - (t - 0.1) / 0.9
-      const size = p.size * (1 - t * 0.5)
+      const alpha = particleAlpha(t)
+      const size = particleRadius(p.size, t)
       const rgb = `${r | 0},${gr | 0},${b | 0}`
       ctx.beginPath()
-      ctx.arc(p.x, p.y, size * 2, 0, Math.PI * 2)
-      ctx.fillStyle = `rgba(${rgb},${alpha * 0.12})`
+      ctx.arc(PAD + p.x, PAD + p.y, size * HALO_RADIUS, 0, Math.PI * 2)
+      ctx.fillStyle = `rgba(${rgb},${alpha * HALO_ALPHA})`
       ctx.fill()
       ctx.beginPath()
-      ctx.arc(p.x, p.y, size, 0, Math.PI * 2)
-      ctx.fillStyle = `rgba(${rgb},${alpha * 0.8})`
+      ctx.arc(PAD + p.x, PAD + p.y, size, 0, Math.PI * 2)
+      ctx.fillStyle = `rgba(${rgb},${alpha * CORE_ALPHA})`
       ctx.fill()
     }
     ctx.restore()
@@ -175,14 +119,6 @@ function useIsDarkClass(): boolean {
   return isDark
 }
 
-const SWEEP_S = 2.8
-const SWEEP_STOPS: [number, number][] = [
-  [50, 58],
-  [96, 40],
-  [58, 22],
-  [8, 48],
-]
-
 function sweepGradient(cx: number, cy: number): string {
   return `radial-gradient(circle at ${cx}% ${cy}%, #ffc24d, #f08c00 32%, #e8590c 58%, #b23c0a)`
 }
@@ -202,14 +138,14 @@ function TextLayers({ children, isDark, animate }: { children: string; isDark: b
     <span className="relative inline-block">
       <span aria-hidden className="fire-sprite-ember absolute left-0 top-0">{children}</span>
       <span className="fire-sprite-fill relative">{children}</span>
-      {animate && SWEEP_STOPS.map(([cx, cy], i) => (
+      {animate && FIRE_SWEEP_CENTERS.map(([cx, cy], i) => (
         <span
           key={i}
           aria-hidden
           className="fire-sprite-fill fire-sprite-sweep absolute left-0 top-0"
           style={{
             backgroundImage: sweepGradient(cx, cy),
-            animationDelay: `${(-i * SWEEP_S / SWEEP_STOPS.length).toFixed(2)}s`,
+            animationDelay: `${(-i * FIRE_SWEEP_S / FIRE_SWEEP_CENTERS.length).toFixed(2)}s`,
           }}
         >
           {children}

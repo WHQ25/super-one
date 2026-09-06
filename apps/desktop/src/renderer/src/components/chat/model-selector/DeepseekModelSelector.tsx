@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { EffortLevel } from '@superone/shared/agent-types'
+import { formatEffortLabel } from '@superone/shared/effort-labels'
 import { useActiveSession, useChatStore, useScopedSessionActions } from '@/stores/chat'
 import {
   deepseekPresetCopy,
@@ -15,14 +16,6 @@ import {
 } from './GroupedModelEffortSelector'
 
 const DEFAULT_MODEL = 'deepseek-v4-pro'
-
-const EFFORT_LABELS: Record<EffortLevel, string> = {
-  low: 'Low',
-  medium: 'Medium',
-  high: 'High',
-  xhigh: 'Extra High',
-  max: 'Max',
-}
 
 export function DeepseekModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Event) => void } = {}) {
   const { t } = useTranslation()
@@ -48,7 +41,7 @@ export function DeepseekModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?:
   const effortOptions = useMemo<SelectorEffortOption[]>(
     () => (current?.supportedEffortLevels ?? []).map((value) => ({
       value,
-      label: EFFORT_LABELS[value],
+      label: formatEffortLabel(value),
     })),
     [current],
   )

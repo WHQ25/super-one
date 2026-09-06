@@ -20,7 +20,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync } from 'fs'
 import { homedir } from 'os'
 import { getDb, getCachedHarnessResources } from '../database'
 import { resolveTestApiKey } from './provider-test-key'
-import { buildRemoteActiveService, resolveChatService } from '../providers/resolver'
+import { buildRemoteActiveService, platformName, resolveChatService, resolveServiceFromCredential } from '../providers/resolver'
 import { getPlatforms } from '../providers/registry'
 import { testServiceEndpoints } from '../providers/endpoint-test'
 import { discoverModels } from '../providers/model-discovery'
@@ -48,6 +48,8 @@ import { searchFiles, searchMentions, EXCLUDED_DIRS, type AgentEntry } from './f
 import { SessionClaimConflictError, SessionLockedError } from '../session/types'
 import type { Session as SessionContract } from '../session/types'
 import { installAcpRecapFocus } from '../acp/acp-recap-focus'
+import { harnessProviderCatalog } from './remote-selector-catalog'
+import { listAccounts as listClaudeAccounts } from './claude-account-service'
 import { buildRemoteHarnessSystemInfo } from './remote-harness-system-info'
 
 /** Resolve a path to its git common directory (shared across worktrees). */
@@ -474,7 +476,7 @@ export class AgentService {
     })
   }
 
-  private async runCodexRemoteTurn(projectPath: string, sessionId: string, deviceId: string, command: { content: string; model?: string; effort?: string; permissionPreset?: string; collaborationMode?: string; threadId?: string; images?: SendMessageRequest['images']; gitBranch?: string | null; worktreeBranch?: string | null }, isNewSession?: boolean): Promise<void> {
+  private async runCodexRemoteTurn(projectPath: string, sessionId: string, deviceId: string, command: { content: string; model?: string; effort?: string; serviceTier?: string | null; permissionPreset?: string; collaborationMode?: string; threadId?: string; images?: SendMessageRequest['images']; gitBranch?: string | null; worktreeBranch?: string | null }, isNewSession?: boolean): Promise<void> {
     const userMessageId = newMessageId('user')
     const assistantMessageId = newMessageId('remote')
     const mgr = this.requireSessionManager()
@@ -505,6 +507,7 @@ export class AgentService {
             collaborationMode: command.collaborationMode as CodexCollaborationMode | undefined,
             threadId: command.threadId,
             reasoningEffort: command.effort as CodexReasoningEffort | undefined,
+            ...(command.serviceTier !== undefined ? { serviceTier: command.serviceTier } : {}),
           },
         }, { providerOrigin: 'remote' })
       }, {
@@ -596,7 +599,7 @@ export class AgentService {
             } catch { /* branch may already be correct */ }
           }
 
-          mgr.createSession({
+          const created = mgr.createSession({
             projectPath,
             cwd,
             providerId: this.baseProviderIdForHarness(provider ?? 'claude'),
@@ -608,6 +611,11 @@ export class AgentService {
             acpAgentId: command.acpAgentId ?? null,
             ...(command.additionalDirectories?.length ? { additionalDirectories: command.additionalDirectories } : {}),
           })
+          // Session mode, DeepSeek preset and credential are not creation
+          // arguments — they are settings the picker chose on the draft.
+          if (command.mode) created.setSelectedSettings({ mode: command.mode })
+          if (command.agentPreset) created.setAgentPreset(command.agentPreset)
+          if (command.apiProviderId !== undefined) created.setApiProviderId(command.apiProviderId)
           await respond?.(command.requestId, { ok: true, sessionId, cwd, gitBranch: recordedGitBranch ?? null })
         } catch (err) {
           await respond?.(command.requestId, { ok: false, error: gitErrorMessage(err) })
@@ -651,6 +659,8 @@ export class AgentService {
               images: command.images,
               priority: command.priority,
               clientMessageId: command.clientMessageId,
+              ...(command.agent ? { agent: command.agent } : {}),
+              ...(command.modelParams ? { cursor: { params: command.modelParams } } : {}),
             }, { providerOrigin: 'remote' })
           })
         } catch (err) {
@@ -1239,6 +1249,11 @@ export class AgentService {
       case 'get_system_info': {
         try {
           const settings = readAppSettings()
+          // Only Claude expands its default row per account, and only when there
+          // is a second one; every other harness pays nothing for this.
+          const claudeAccounts = command.provider === 'claude'
+            ? (await listClaudeAccounts().catch(() => [])).filter((account) => account.loggedIn)
+            : []
           const info = await buildRemoteHarnessSystemInfo(command.projectPath, command.provider, {
             settings,
             getCachedResources: getCachedHarnessResources,
@@ -1253,6 +1268,43 @@ export class AgentService {
                 : resolveChatService('codex'),
               harnessId,
             ),
+            providerCatalog: (harnessId) => {
+              if (harnessId !== 'claude' && harnessId !== 'codex') return { providers: [], selectedProviderId: null }
+              // The credential store is optional context here: a client that
+              // cannot switch provider must still get its models and defaults.
+              try {
+              const credentials = listCredentials()
+              const byId = new Map(credentials.map((credential) => [credential.id, credential]))
+              const consumer = harnessId === 'codex' ? 'chat:codex' as const : 'chat:claude' as const
+              const options = { experimentalClaudeOpenAiChatEnabled: settings.experimentalClaudeOpenAiChatEnabled }
+              return harnessProviderCatalog(harnessId, {
+                credentials,
+                servesHarness: (credentialId) => {
+                  const credential = byId.get(credentialId)
+                  if (!credential) return null
+                  const resolved = resolveServiceFromCredential(consumer, credential, null, options)
+                  return resolved ? { brand: resolved.brand } : null
+                },
+                platformName,
+                claudeAccounts,
+                selectedProviderId: resolveChatService(harnessId, null, options)?.credentialId ?? null,
+              })
+              } catch (err) {
+                log.warn('[get_system_info] provider catalog unavailable: %s', err instanceof Error ? err.message : String(err))
+                return { providers: [], selectedProviderId: null }
+              }
+            },
+            deepseekPresets: async () => {
+              try {
+                const { getDeepseekRuntime } = await import('../deepseek/deepseek-runtime-host')
+                const { listDeepseekPresets } = await import('@superone/deepseek/presets')
+                const runtime = await getDeepseekRuntime()
+                return { presets: await listDeepseekPresets(runtime.context), current: null, switchable: true }
+              } catch (err) {
+                log.warn('[get_system_info] deepseek presets unavailable: %s', err instanceof Error ? err.message : String(err))
+                return null
+              }
+            },
           })
           await respond?.(command.requestId, info)
         } catch (err) {
@@ -1503,6 +1555,21 @@ export class AgentService {
         } catch (err) {
           await respond?.(command.requestId, { error: (err as Error).message })
         }
+        break
+      }
+      case 'set_session_settings': {
+        const session = this.sessionManager?.getSession(command.sessionId)
+        if (!session) break
+        if (!this.canAccessSession(command.projectPath, command.sessionId)) {
+          log.warn('[AgentService] %s', this.buildSessionAccessError(command.projectPath, command.sessionId))
+          break
+        }
+        session.setSelectedSettings({
+          ...(command.model !== undefined ? { model: command.model } : {}),
+          ...(command.effort !== undefined ? { effort: command.effort as SendMessageRequest['effort'] | null } : {}),
+          ...(command.mode !== undefined ? { mode: command.mode } : {}),
+        })
+        if (command.agentPreset !== undefined) session.setAgentPreset(command.agentPreset)
         break
       }
       case 'set_session_api_provider_id': {

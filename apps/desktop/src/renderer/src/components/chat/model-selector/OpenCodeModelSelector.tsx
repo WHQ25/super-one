@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import type { EffortLevel } from '@superone/shared/agent-types'
+import { formatEffortLabel } from '@superone/shared/effort-labels'
 import { selectOpenCodeAgents, useActiveSession, useChatStore, useScopedSessionActions } from '@/stores/chat'
 import { resolveDefaultOpenCodeAgent } from '@/stores/chat-store/harness/opencode-handler'
 import { groupModelsBySlashPrefix, resolveSlashModelLabel, splitSlashModelId } from '../ModelSelectorLists'
@@ -8,14 +9,6 @@ import {
   type SelectorAgentOption,
   type SelectorModelGroup,
 } from './GroupedModelEffortSelector'
-
-const EFFORT_LABELS: Record<EffortLevel, string> = {
-  low: 'Low',
-  medium: 'Medium',
-  high: 'High',
-  xhigh: 'Extra High',
-  max: 'Max',
-}
 
 function resolveEffortForModel(
   levels: EffortLevel[],
@@ -73,7 +66,7 @@ export function OpenCodeModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?:
 
   const effortOptions = (current?.supportedEffortLevels ?? []).map((value) => ({
     value,
-    label: EFFORT_LABELS[value],
+    label: formatEffortLabel(value),
   }))
 
   const selectModel = (modelId: string) => {

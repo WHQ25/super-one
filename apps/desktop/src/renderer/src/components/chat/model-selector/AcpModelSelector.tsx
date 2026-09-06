@@ -4,6 +4,7 @@ import { Loader2 } from 'lucide-react'
 import { useActiveSession, useChatStore, useScopedSessionActions } from '@/stores/chat'
 import type { AcpAgentDescriptor } from '@superone/shared/agent-types'
 import { acpAgentDisplayName } from '@superone/shared/acp-brand'
+import { formatEffortOptionLabel, sortEffortsAscending } from '@superone/shared/effort-labels'
 import {
   groupModelsBySlashPrefix,
   resolveSlashModelLabel,
@@ -22,11 +23,6 @@ function useGroupedSlashList(agentId: string | null): boolean {
   // OpenCode catalogs use `provider/model` ids; group by provider.
   if (agentId === 'opencode') return true
   return false
-}
-
-/** Compact trigger label: "High Effort" → "High" (matches Claude/Codex style). */
-function compactEffortLabel(name: string): string {
-  return name.replace(/\s+Effort$/i, '').trim() || name
 }
 
 export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Event) => void } = {}) {
@@ -77,31 +73,17 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
   const effortIsAcpModeCatalog = acpModeConfigId == null && acpModes.length > 0
   const effortOptions = useMemo<SelectorEffortOption[]>(() => {
     if (!effortIsAcpModeCatalog) return NO_EFFORT
-    const rank: Record<string, number> = {
-      minimal: 0, low: 1, medium: 2, high: 3, xhigh: 4, max: 5,
-    }
-    const ranked = acpModes.map((m, index) => {
-      const key = m.id.trim().toLowerCase()
-      const fromName = (m.name || '').trim().toLowerCase().replace(/\s+effort$/, '')
-      return { m, index, r: rank[key] ?? rank[fromName] }
-    })
-    ranked.sort((a, b) => {
-      if (a.r != null && b.r != null) return a.r - b.r
-      if (a.r != null) return -1
-      if (b.r != null) return 1
-      return a.index - b.index
-    })
-    return ranked.map(({ m }) => ({
+    return sortEffortsAscending(acpModes.map((m) => ({
       value: m.id,
-      label: compactEffortLabel(m.name || m.id),
+      label: formatEffortOptionLabel(m.name || m.id),
       description: m.description || undefined,
-    }))
+    })))
   }, [effortIsAcpModeCatalog, acpModes])
   const selectedEffort = effortIsAcpModeCatalog
     ? (selectedAcpModeId ?? acpModes[0]?.id ?? null)
     : null
   const selectedEffortLabel = effortIsAcpModeCatalog
-    ? compactEffortLabel(
+    ? formatEffortOptionLabel(
       acpModes.find((m) => m.id === selectedEffort)?.name
         ?? selectedEffort
         ?? '',

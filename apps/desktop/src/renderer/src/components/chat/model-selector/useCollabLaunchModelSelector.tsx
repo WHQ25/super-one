@@ -8,6 +8,7 @@ import type {
   ProviderModelEnv,
   SessionAgentProfile,
 } from '@superone/shared/agent-types'
+import { compactEffortLabel, formatEffortOptionLabel } from '@superone/shared/effort-labels'
 import { filterEnabledCursorModels } from '@superone/cursor/cursor-config'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
@@ -44,27 +45,9 @@ const EMPTY_PLATFORMS: never[] = []
 const EMPTY_CREDENTIALS: never[] = []
 const EMPTY_BINDINGS: never[] = []
 
-/** Same labels as ClaudeModelSelector / OpenCodeModelSelector. */
-export const CLAUDE_EFFORT_LABELS: Record<EffortLevel, string> = {
-  low: 'Low',
-  medium: 'Medium',
-  high: 'High',
-  xhigh: 'Extra High',
-  max: 'Max',
-}
-
-/** Compact ACP effort names: "High Effort" → "High" (matches AcpModelSelector). */
-export function compactEffortLabel(name: string): string {
-  return name.replace(/\s+Effort$/i, '').trim() || name
-}
-
-/** Claude / OpenCode effort chip labels; falls back to title-case id. */
-export function formatClaudeStyleEffortLabel(value: string): string {
-  if (value in CLAUDE_EFFORT_LABELS) {
-    return CLAUDE_EFFORT_LABELS[value as EffortLevel]
-  }
-  return compactEffortLabel(value)
-}
+/** Claude / OpenCode effort chip labels; shared with chat, the host and mobile. */
+export const formatClaudeStyleEffortLabel = formatEffortOptionLabel
+export { compactEffortLabel }
 
 /**
  * Merge profile-declared API keys with live settings credentials for the harness.

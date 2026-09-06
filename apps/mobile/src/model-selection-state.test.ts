@@ -42,23 +42,42 @@ describe('mobile model selection state', () => {
     expect(effortOptionsForModel('acp', info, 'grok-4')).toEqual(info.efforts)
   })
 
+  const claudeCatalog: RemoteSystemInfo = {
+    models: [{
+      id: 'sonnet',
+      name: 'Sonnet',
+      description: '',
+      supportedEffortLevels: ['low', 'medium', 'high'],
+    }],
+  }
+
   it('hides Claude effort when the model is owned by an API mapping', () => {
     const info: RemoteSystemInfo = {
-      models: [{
-        id: 'sonnet',
-        name: 'Sonnet',
-        description: '',
-        supportedEffortLevels: ['low', 'medium', 'high'],
-      }],
+      ...claudeCatalog,
       activeProvider: {
         id: 'mapped',
         name: 'Mapped provider',
+        presetKey: null,
+        modelEnv: { default: { id: 'kimi-k2' } },
+        forcedEffort: null,
+      },
+    }
+    expect(effortOptionsForModel('claude', info, 'sonnet')).toEqual([])
+  })
+
+  it('keeps Claude effort for a credential that remaps no models', () => {
+    const info: RemoteSystemInfo = {
+      ...claudeCatalog,
+      activeProvider: {
+        id: 'passthrough',
+        name: 'Anthropic-compatible endpoint',
         presetKey: null,
         modelEnv: {},
         forcedEffort: null,
       },
     }
-    expect(effortOptionsForModel('claude', info, 'sonnet')).toEqual([])
+    expect(effortOptionsForModel('claude', info, 'sonnet').map((option) => option.value))
+      .toEqual(['low', 'medium', 'high'])
   })
 
   it('falls back to the catalog default and medium effort', () => {

@@ -211,7 +211,7 @@ function parseForcedEffort(extraEnv: Record<string, string> | undefined): Effort
   return null
 }
 
-function platformName(platformId: string): string {
+export function platformName(platformId: string): string {
   return findPlatform(getPlatforms(), platformId)?.name ?? platformId
 }
 

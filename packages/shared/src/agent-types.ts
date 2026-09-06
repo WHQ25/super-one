@@ -4280,9 +4280,52 @@ export interface RemoteEffortOption {
 }
 
 /** Provider-specific catalog projected to Remote Control clients. */
+/** One primary-agent row (OpenCode build / plan / general). */
+export interface RemoteAgentOption {
+  id: string
+  name: string
+  description?: string
+}
+
+/**
+ * A session mode that is NOT reasoning effort: ACP `configOptions` modes and
+ * DeepSeek presets. Effort-shaped catalogs stay in `efforts` so clients can
+ * render them as a slider; these are a discrete pick.
+ */
+export interface RemoteModeOption {
+  id: string
+  name: string
+  description?: string
+  /** DeepSeek reports presets the account cannot enter. */
+  disabled?: boolean
+}
+
+/** One credential/account the harness can run on. `null` id is the host default. */
+export interface RemoteProviderOption {
+  id: string | null
+  name: string
+  brand?: string | null
+  /** Which key or account the row stands for, when several share a name. */
+  keyName?: string
+}
+
 export interface RemoteSystemInfo {
   models?: ModelOption[]
   efforts?: RemoteEffortOption[]
+  /** Primary agents; picking one is sent back as `send_message.agent`. */
+  agents?: RemoteAgentOption[]
+  selectedAgentId?: string | null
+  /** Discrete session modes / presets, applied through `set_session_settings`. */
+  modes?: RemoteModeOption[]
+  selectedModeId?: string | null
+  /** What the host calls the mode control — "Mode" for ACP, "Preset" for DeepSeek. */
+  modeLabel?: string
+  /** Set when the running session cannot change mode (DeepSeek locks after start). */
+  modesLocked?: boolean
+  modesLockedReason?: string
+  /** Credentials this harness can run on. Switching sends `set_session_api_provider_id`. */
+  providers?: RemoteProviderOption[]
+  selectedProviderId?: string | null
   userSlashCommands?: SlashCommandInfo[]
   slashCommands?: SlashCommandInfo[]
   permissionModes?: string[]
@@ -4304,8 +4347,8 @@ export interface RemoteSystemInfo {
 }
 
 export type RemoteCommand =
-  | { type: 'create_session'; requestId: string; sessionId: string; projectPath: string; provider?: HarnessId; acpAgentId?: string; permissionMode?: string; effort?: string; model?: string; gitBranch?: string; worktreePath?: string; worktreeBranch?: string; worktreeMode?: WorktreeMode; worktreeBranchName?: string; worktreeCarryLocalChanges?: boolean; additionalDirectories?: string[] }
-  | { type: 'send_message'; sessionId: string; projectPath: string; content: string; provider?: HarnessId; model?: string; effort?: string; images?: ImageAttachment[]; permissionPreset?: string; collaborationMode?: string; threadId?: string; clientMessageId?: string; priority?: 'now' | 'next' | 'later' }
+  | { type: 'create_session'; requestId: string; sessionId: string; projectPath: string; provider?: HarnessId; acpAgentId?: string; permissionMode?: string; effort?: string; model?: string; mode?: string; agentPreset?: string; apiProviderId?: string | null; gitBranch?: string; worktreePath?: string; worktreeBranch?: string; worktreeMode?: WorktreeMode; worktreeBranchName?: string; worktreeCarryLocalChanges?: boolean; additionalDirectories?: string[] }
+  | { type: 'send_message'; sessionId: string; projectPath: string; content: string; provider?: HarnessId; model?: string; effort?: string; images?: ImageAttachment[]; permissionPreset?: string; collaborationMode?: string; threadId?: string; clientMessageId?: string; priority?: 'now' | 'next' | 'later'; /** OpenCode primary agent for this turn. */ agent?: string; /** Codex service tier (`fast`). */ serviceTier?: string | null; /** Cursor catalog params (param id → value). */ modelParams?: Record<string, string> }
   | { type: 'dequeue_message'; clientMessageId: string; projectPath?: string; sessionId: string }
   | { type: 'interrupt'; projectPath?: string; sessionId: string }
   | { type: 'respond_permission'; requestId: string; decision: boolean; alwaysAllow?: boolean; reason?: string; selectedSuggestions?: number[]; formAnswers?: Record<string, unknown>; projectPath?: string; sessionId: string }
@@ -4318,6 +4361,8 @@ export type RemoteCommand =
   | { type: 'leave_session'; sessionId: string }
   | { type: 'load_session_messages'; requestId: string; projectPath: string; sessionId: string; limit?: number; cursor?: number }
   | { type: 'set_permission_mode'; mode: string; projectPath?: string; sessionId: string }
+  /** Live model / effort / session-mode / preset change on a running session. */
+  | { type: 'set_session_settings'; projectPath: string; sessionId: string; model?: string | null; effort?: string | null; mode?: string | null; agentPreset?: string | null }
   | { type: 'list_directory'; requestId: string; path: string; showHidden?: boolean }
   | { type: 'create_directory'; requestId: string; path: string; name: string }
   | { type: 'add_project'; requestId: string; path: string; /** mkdir -p the path first (add-project "Create" row). */ createIfMissing?: boolean }

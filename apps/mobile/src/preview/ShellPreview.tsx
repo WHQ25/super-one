@@ -8,7 +8,7 @@ import { Text } from '../ui/text'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar'
 import { WebView } from 'react-native-webview'
-import type { ChatMessage, HarnessId, ImageAttachment, ModelOption, RemoteHarnessOption } from '@superone/shared/agent-types'
+import type { ChatMessage, HarnessId, ImageAttachment, ModelOption, RemoteHarnessOption, RemoteSystemInfo } from '@superone/shared/agent-types'
 import { MobileHeader } from '../navigation/mobile-header'
 import { MobileKeyboardFrame } from '../navigation/mobile-keyboard-frame'
 import { WorkspaceDrawer } from '../navigation/workspace-drawer'
@@ -47,6 +47,7 @@ import {
 import { IconGallery } from './IconGallery'
 import { LanBrowserPreview } from './LanBrowserPreview'
 import { effortOptionsForModel, resolveSelectedEffort } from '../model-selection-state'
+import { optionParamsForModel } from '../model-picker-state'
 import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
 import { shellPreviewPages, type ShellPreviewPage as Page } from './preview-route'
 
@@ -55,13 +56,51 @@ const pages = shellPreviewPages.filter((page) => page !== 'Tool catalog')
 import { dynamicMentionArtworkSnapshot } from '../ui/mention-dynamic-artwork'
 
 const previewModels: ModelOption[] = [
-  { id: 'preview-model', name: 'Preview model', description: 'Balanced model · offline fixture', supportedEffortLevels: ['medium', 'high'], supportedReasoningEfforts: [{ value: 'medium', description: 'Balanced reasoning' }, { value: 'high', description: 'Deeper reasoning' }] },
+  { id: 'preview-model', name: 'Preview model', description: 'Balanced model · offline fixture', supportedEffortLevels: ['low', 'medium', 'high', 'xhigh', 'max'], supportedReasoningEfforts: [{ value: 'low', description: 'Quickest answers' }, { value: 'medium', description: 'Balanced reasoning' }, { value: 'high', description: 'Deeper reasoning' }, { value: 'max', description: 'Longest thinking budget' }],
+    serviceTiers: [{ id: 'priority', name: 'Fast', description: 'Faster responses' }],
+    parameters: [
+      { id: 'thinking', values: [{ value: 'true' }, { value: 'false' }] },
+      { id: 'optimize_for', values: [{ value: 'balanced' }, { value: 'speed', displayName: 'Speed' }, { value: 'quality', displayName: 'Quality' }] },
+    ] },
   { id: 'preview-fast', name: 'Preview fast', description: 'Quick replies · offline fixture' },
   ...Array.from({ length: 12 }, (_, index) => ({
     id: `preview-catalog-${index + 1}`, name: `Catalog model ${index + 1}`,
     description: 'Extended offline catalog for search, scrolling and large-text checks',
   })),
 ]
+type PreviewCatalog = Partial<Pick<RemoteSystemInfo, 'agents' | 'selectedAgentId' | 'modes' | 'selectedModeId' | 'modeLabel' | 'modesLocked' | 'providers' | 'selectedProviderId'>>
+
+const PREVIEW_CATALOGS: Partial<Record<HarnessId, PreviewCatalog>> = {
+  claude: {
+    providers: [
+      { id: null, name: 'Claude', brand: 'claude' },
+      { id: 'cred-kimi', name: 'Kimi · work key', brand: 'kimi', keyName: 'work key' },
+    ],
+    selectedProviderId: null,
+  },
+  opencode: {
+    agents: [
+      { id: 'build', name: 'build', description: 'Write and run code' },
+      { id: 'plan', name: 'plan', description: 'Read-only planning' },
+      { id: 'general', name: 'general', description: 'Broad tasks' },
+    ],
+    selectedAgentId: 'build',
+  },
+  acp: {
+    modes: [{ id: 'ask', name: 'Ask', description: 'Answer without editing' }, { id: 'code', name: 'Code', description: 'Edit files directly' }],
+    selectedModeId: 'code',
+    modeLabel: 'Mode',
+  },
+  dsh: {
+    modes: [
+      { id: 'default', name: 'Default', description: 'Shipped composition' },
+      { id: 'research', name: 'Research', description: 'Reads more before writing' },
+    ],
+    selectedModeId: 'default',
+    modeLabel: 'Preset',
+  },
+}
+
 const project = { name: 'super-one', path: '/workspace/super-one' }
 /**
  * What a real host answers `list_harness_options` with: ordered, labelled, and
@@ -105,7 +144,7 @@ const initialMessages: ChatMessage[] = [
 ]
 
 /** Offline visual review of production pages; callbacks never contact a desktop. */
-export function ShellPreview({ initialPage = 'New session', onClose, onTheme }: { initialPage?: Page; onClose: () => void; onTheme: () => void }) {
+export function ShellPreview({ initialPage = 'New session', initialEffort, onClose, onTheme }: { initialPage?: Page; initialEffort?: string; onClose: () => void; onTheme: () => void }) {
   const styles = useMobileStyles()
   const { tokens, setHarness } = useMobileTheme()
   const { width, fontScale } = useWindowDimensions()
@@ -142,7 +181,26 @@ export function ShellPreview({ initialPage = 'New session', onClose, onTheme }: 
   const [selection, setSelection] = useState<ProjectSettingsProps['worktreeSelection']>({ kind: 'local' })
   const [worktreeDraft, setWorktreeDraft] = useState<ProjectSettingsProps['worktreeSelection']>({ kind: 'local' })
   const [model, setModel] = useState('preview-model')
-  const [effort, setEffort] = useState('medium')
+  const [effort, setEffort] = useState(initialEffort ?? 'medium')
+  const catalogs: PreviewCatalog = PREVIEW_CATALOGS[provider] ?? {}
+  const [agent, setAgent] = useState<string | null>(null)
+  const [sessionMode, setSessionMode] = useState<string | null>(null)
+  const [providerId, setProviderId] = useState<string | null>(null)
+  const [serviceTier, setServiceTier] = useState<string | null>(null)
+  const [modelParams, setModelParams] = useState<Record<string, string>>({})
+  const optionParams = optionParamsForModel(provider, previewModels.find((item) => item.id === model), { serviceTier, params: modelParams })
+  const setOptionParam = (id: string, value: string) => {
+    if (provider === 'codex' && id === 'fast') { setServiceTier(value === 'true' ? 'priority' : null); return }
+    setModelParams((current) => ({ ...current, [id]: value }))
+  }
+  const pickerCatalogs = {
+    agents: catalogs.agents, agent: agent ?? catalogs.selectedAgentId ?? null, onAgent: setAgent,
+    modes: catalogs.modes, mode: sessionMode ?? catalogs.selectedModeId ?? null,
+    modeLabel: catalogs.modeLabel, onMode: setSessionMode,
+    optionParams, onOptionParam: setOptionParam,
+    providers: catalogs.providers, providerId: providerId ?? catalogs.selectedProviderId ?? null,
+    onProvider: setProviderId,
+  }
   const catalog = { models: previewModels, efforts: [{ value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }] }
   const efforts = effortOptionsForModel(provider, catalog, model)
   const chooseModel = (value: string) => { setModel(value); setEffort(resolveSelectedEffort(effortOptionsForModel(provider, catalog, value), effort)) }
@@ -171,7 +229,7 @@ export function ShellPreview({ initialPage = 'New session', onClose, onTheme }: 
     worktreeInfo: PREVIEW_WORKTREE_INFO, worktreeDirty: PREVIEW_WORKTREE_DIRTY, branches: PREVIEW_BRANCHES,
     checkedOutBranches: PREVIEW_CHECKED_OUT, worktreeSelection: selection,
     onWorktreeSelectionChange: setSelection, selectedProvider: provider, selectedModel: model, selectedEffort: effort,
-    models: previewModels, efforts,
+    models: previewModels, efforts, selection: pickerCatalogs,
     workspaceDirs: ['/workspace/shared'], additionalDir: '', onAdditionalDirChange: () => {}, harnessOptions: PREVIEW_HARNESS_OPTIONS,
             activeHarnessKey: suggestionHarnessKey(provider, null), onHarnessChange: chooseAgent,
     onModelChange: chooseModel, onEffortChange: setEffort, onOpenFiles: () => setPage('Files'), onAddDirectory: () => {}, onRemoveDirectory: () => {},
@@ -214,7 +272,7 @@ export function ShellPreview({ initialPage = 'New session', onClose, onTheme }: 
               onWorktree: () => { setWorktreeDraft(selection); setPage('Worktree') },
               onBranch: () => setPage('Branch'),
             } : undefined}
-            selection={{ model, models: settings.models, effort, efforts: settings.efforts, onModel: chooseModel, onEffort: setEffort }}
+            selection={{ ...pickerCatalogs, model, models: settings.models, effort, efforts: settings.efforts, onModel: chooseModel, onEffort: setEffort }}
             webRef={web} permissionModes={['default', 'acceptEdits', 'plan']} permissionMode={mode} slashHits={[]} mentionHits={mentionHits} attachments={attachments} additionalDirectories={[]} queuedMessages={[]} todos={{}} draft={chatDraft.draft} streaming={page === 'Chat'}
             onWebMessage={(raw) => { if (JSON.parse(raw).type === 'ready') paintChat() }} onWebProcessError={() => {}} onPermissionMode={setMode} onSlash={() => {}} onMention={(item) => { chatDraft.editorRef.current?.insertMention(item) }}
             onRemoveAttachment={(item) => setAttachments((current) => current.filter((entry) => entry !== item))} onAttachmentMenu={() => setAttachments([{ id: 'pdf', name: 'mobile-design-review.pdf', mimeType: 'application/pdf', base64: '' }])}

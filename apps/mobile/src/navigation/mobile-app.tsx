@@ -547,6 +547,30 @@ export function MobileApp() {
     applySystemInfo(selectedProvider, info, { model: selectedModel, effort: selectedEffort, permissionMode: permMode })
   }
 
+  // A live session applies picks immediately, the way the desktop selector does;
+  // a draft keeps them locally until create_session carries them.
+  const selectSessionModel = (model: string) => {
+    harnessSelection.selectModel(model)
+    runtimeRef.current?.setSessionSettings({ model })
+  }
+
+  const selectSessionEffort = (effort: string) => {
+    setSelectedEffort(effort)
+    runtimeRef.current?.setSessionSettings({ effort })
+  }
+
+  const selectSessionMode = (mode: string) => {
+    harnessSelection.selectMode(mode)
+    runtimeRef.current?.setSessionSettings(
+      selectedProvider === 'dsh' ? { agentPreset: mode } : { mode },
+    )
+  }
+
+  const selectSessionProvider = (apiProviderId: string | null) => {
+    harnessSelection.selectProvider(apiProviderId)
+    runtimeRef.current?.setSessionApiProviderId(apiProviderId)
+  }
+
   const openSettings = () => {
     auxiliaryReturnRef.current = screen === 'chat' ? 'chat' : 'sessions'
     setScreen('settings')
@@ -778,6 +802,15 @@ export function MobileApp() {
         ...(harnessSupportsAdditionalDirs(selectedProvider) && workspaceDirs.length
           ? { additionalDirectories: workspaceDirs }
           : {}),
+        // A mode is a session mode for ACP and a composition preset for DeepSeek.
+        ...(harnessSelection.selectedModeId
+          ? selectedProvider === 'dsh'
+            ? { agentPreset: harnessSelection.selectedModeId }
+            : { mode: harnessSelection.selectedModeId }
+          : {}),
+        ...(harnessSelection.selectedProviderId !== null
+          ? { apiProviderId: harnessSelection.selectedProviderId }
+          : {}),
       })
       setWorktreeSelection(LOCAL_WORKTREE_SELECTION)
       setSessionId(id)
@@ -808,6 +841,13 @@ export function MobileApp() {
         images: attachments,
         ...(selectedModel ? { model: selectedModel } : {}),
         ...(selectedEffort ? { effort: selectedEffort } : {}),
+        ...(selectedProvider === 'opencode' && harnessSelection.selectedAgentId
+          ? { agent: harnessSelection.selectedAgentId }
+          : {}),
+        ...(harnessSelection.serviceTier ? { serviceTier: harnessSelection.serviceTier } : {}),
+        ...(Object.keys(harnessSelection.modelParams).length
+          ? { modelParams: harnessSelection.modelParams }
+          : {}),
       })
       if (!sessionId && !runtime.sessionTitle && text) setActiveSessionTitle(sentDraft.title.slice(0, 72))
     } catch (error) {
@@ -885,10 +925,22 @@ export function MobileApp() {
     gitInfo, worktreeInfo, worktreeDirty, branches, checkedOutBranches, worktreeSelection,
     onWorktreeSelectionChange: setWorktreeSelection,
     selectedProvider, selectedModel, selectedEffort, models, efforts, workspaceDirs, additionalDir,
+    activeProvider: harnessSelection.activeProvider, providerName: harnessSelection.activeProviderName,
+    selection: {
+      acpAgentId: selectedAcpAgentId,
+      agents: harnessSelection.agents, agent: harnessSelection.selectedAgentId,
+      onAgent: harnessSelection.selectAgent,
+      modes: harnessSelection.modes, mode: harnessSelection.selectedModeId,
+      modeLabel: harnessSelection.modeLabel, modesLocked: harnessSelection.modesLocked,
+      onMode: selectSessionMode,
+      optionParams: harnessSelection.optionParams, onOptionParam: harnessSelection.setOptionParam,
+      providers: harnessSelection.providers, providerId: harnessSelection.selectedProviderId,
+      onProvider: selectSessionProvider,
+    },
     onAdditionalDirChange: setAdditionalDir,
     harnessOptions, activeHarnessKey: suggestionHarnessKey(selectedProvider, selectedAcpAgentId),
     onHarnessChange: selectHarness,
-    onModelChange: harnessSelection.selectModel, onEffortChange: setSelectedEffort,
+    onModelChange: selectSessionModel, onEffortChange: selectSessionEffort,
     onOpenFiles: openFiles,
     onAddDirectory: () => runUiAction(addWorkspaceDirectory, setStatus, 'failed to add directory'),
     onRemoveDirectory: (dir) => runUiAction(() => removeWorkspaceDirectory(dir), setStatus, 'failed to remove directory'),
@@ -1037,9 +1089,18 @@ export function MobileApp() {
             onWorktree: () => { setWorktreeDraft(worktreeSelection); setScreen('worktree') },
             onBranch: () => setScreen('branch'),
           } : undefined}
-          selection={{ model: selectedModel, models, providerName: harnessSelection.activeProviderName, onRefresh: refreshModels,
-            effort: selectedEffort, efforts,
-            onModel: harnessSelection.selectModel, onEffort: setSelectedEffort }}
+          selection={{ model: selectedModel, models, providerName: harnessSelection.activeProviderName,
+            activeProvider: harnessSelection.activeProvider, onRefresh: refreshModels,
+            effort: selectedEffort, efforts, acpAgentId: selectedAcpAgentId,
+            agents: harnessSelection.agents, agent: harnessSelection.selectedAgentId,
+            onAgent: harnessSelection.selectAgent,
+            modes: harnessSelection.modes, mode: harnessSelection.selectedModeId,
+            modeLabel: harnessSelection.modeLabel, modesLocked: harnessSelection.modesLocked,
+            onMode: selectSessionMode,
+            optionParams: harnessSelection.optionParams, onOptionParam: harnessSelection.setOptionParam,
+            providers: harnessSelection.providers, providerId: harnessSelection.selectedProviderId,
+            onProvider: selectSessionProvider,
+            onModel: selectSessionModel, onEffort: selectSessionEffort }}
           webRef={webRef}
           permissionModes={permModes}
           permissionMode={permMode}

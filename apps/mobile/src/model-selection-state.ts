@@ -1,12 +1,5 @@
 import type { HarnessId, ModelOption, RemoteEffortOption, RemoteSystemInfo } from '@superone/shared/agent-types'
-
-function labelForEffort(value: string): string {
-  return value
-    .split(/[-_]/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ')
-}
+import { formatEffortLabel } from '@superone/shared/effort-labels'
 
 export function resolveSelectedModel(info: RemoteSystemInfo, preferred = ''): string {
   const models = info.models ?? []
@@ -21,8 +14,10 @@ export function effortOptionsForModel(
   info: RemoteSystemInfo,
   modelId: string,
 ): RemoteEffortOption[] {
-  // Claude-compatible API mappings own their model/effort pairing in the host.
-  if (harnessId === 'claude' && info.activeProvider) return []
+  // A mapped provider owns the model/effort pairing in the host — but only a
+  // provider that actually remaps models. A credential with no mapping still
+  // runs the Claude catalog, and the desktop keeps effort for it.
+  if (harnessId === 'claude' && Object.keys(info.activeProvider?.modelEnv ?? {}).length > 0) return []
   if (harnessId === 'acp') return info.efforts ?? []
 
   const model: ModelOption | undefined = info.models?.find((candidate) => candidate.id === modelId)
@@ -30,13 +25,13 @@ export function effortOptionsForModel(
   if (harnessId === 'codex') {
     return (model.supportedReasoningEfforts ?? []).map((option) => ({
       value: option.value,
-      label: labelForEffort(option.value),
+      label: formatEffortLabel(option.value),
       ...(option.description ? { description: option.description } : {}),
     }))
   }
   return (model.supportedEffortLevels ?? []).map((value) => ({
     value,
-    label: labelForEffort(value),
+    label: formatEffortLabel(value),
   }))
 }
 

@@ -9,16 +9,27 @@ import { ModelPicker } from '../ui/model-picker'
 import { ArrowUp, Paperclip, Square } from 'lucide-react-native'
 import { ScrollView, TextInput, View, useWindowDimensions } from 'react-native'
 import { Text } from '../ui/text'
-import type { HarnessId, ModelOption, ImageAttachment } from '@superone/shared/agent-types'
+import type {
+  HarnessId, ModelOption, ImageAttachment, RemoteActiveProvider, RemoteAgentOption,
+  RemoteEffortOption, RemoteModeOption, RemoteProviderOption,
+} from '@superone/shared/agent-types'
+import type { SelectorCatalogParam } from '../model-picker-state'
 import type { filterSlashCommands } from '../slash'
 import type { MentionItem } from '../mentions'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
-import { IconButton, PermissionModeSelector, SelectionField, type SelectionOption } from '../ui'
+import { IconButton, PermissionModeSelector } from '../ui'
 
 export type ComposerSelection = {
-  model: string; models: ModelOption[]; effort: string; efforts: SelectionOption[]
-  providerName?: string; onRefresh?: () => Promise<void>
+  model: string; models: ModelOption[]; effort: string; efforts: RemoteEffortOption[]
+  providerName?: string; activeProvider?: RemoteActiveProvider | null; acpAgentId?: string | null
+  onRefresh?: () => Promise<void>
   onModel: (model: string) => void; onEffort: (effort: string) => void
+  /** Harness-native catalogs the desktop selector also shows. */
+  agents?: RemoteAgentOption[]; agent?: string | null; onAgent?: (agent: string) => void
+  modes?: RemoteModeOption[]; mode?: string | null; modeLabel?: string; modesLocked?: boolean
+  onMode?: (mode: string) => void
+  optionParams?: SelectorCatalogParam[]; onOptionParam?: (id: string, value: string) => void
+  providers?: RemoteProviderOption[]; providerId?: string | null; onProvider?: (id: string | null) => void
 }
 
 export type ChatComposerProps = {
@@ -47,8 +58,7 @@ export function ChatComposer(props: ChatComposerProps) {
   const controls = <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled"
     style={{ flex: 1 }} contentContainerStyle={{ alignItems: 'center' }}>
     {props.selection ? <>
-      <ModelPicker {...props.selection} harness={props.provider} compact combined={tablet} disabled={props.starting} />
-      {!tablet && props.selection.efforts.length ? <SelectionField compact disabled={props.starting} label="Effort" value={props.selection.effort} options={props.selection.efforts} onChange={props.selection.onEffort} /> : null}
+      <ModelPicker {...props.selection} harness={props.provider} compact disabled={props.starting} />
     </> : null}
     <PermissionModeSelector harness={props.provider} disabled={props.starting} modes={props.permissionModes} value={props.permissionMode} onChange={props.onPermissionMode} />
     {props.additionalDirectories.length ? <Text style={styles.directoryHint}>+{props.additionalDirectories.length} directories</Text> : null}

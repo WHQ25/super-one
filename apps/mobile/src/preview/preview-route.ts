@@ -1,4 +1,5 @@
 import type { HarnessId } from '@superone/shared/agent-types'
+import { isKnownEffortLevel } from '@superone/shared/effort-labels'
 import { HARNESS_DEFAULT_BRAND_HUE } from '@superone/shared/harness-brand'
 import { nativeScenarios } from './scenarios'
 
@@ -22,7 +23,12 @@ export function parsePreviewRoute(raw: string) {
     }
     if (pageName) {
       const page = shellPreviewPages.find((item) => item === pageName)
-      return page ? { kind: 'shell' as const, page, harness: harness as HarnessId, theme: theme as 'light' | 'dark' } : null
+      if (!page) return null
+      // `effort` reaches states that are otherwise three taps deep and reset on
+      // every reload — the two Claude easter eggs above all.
+      const effort = url.searchParams.get('effort')
+      if (effort && !isKnownEffortLevel(effort)) return null
+      return { kind: 'shell' as const, page, harness: harness as HarnessId, theme: theme as 'light' | 'dark', effort: effort ?? undefined }
     }
     return null
   } catch { return null }

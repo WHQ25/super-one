@@ -103,7 +103,9 @@ function NativeCatalog({ theme, onTheme, route }: { theme: ThemeChoice; onTheme:
   if (shellPreview === 'Tool catalog') {
     return <ToolCatalogPreview onClose={() => setShellPreview(null)} onTheme={() => onTheme(tokens.scheme === 'dark' ? 'light' : 'dark')} />
   }
-  if (shellPreview) return <ShellPreview key={route?.kind === 'shell' ? route.revision : 'manual'} initialPage={shellPreview} onClose={() => setShellPreview(null)} onTheme={() => onTheme(tokens.scheme === 'dark' ? 'light' : 'dark')} />
+  if (shellPreview) return <ShellPreview key={route?.kind === 'shell' ? route.revision : 'manual'} initialPage={shellPreview}
+    initialEffort={route?.kind === 'shell' ? route.effort : undefined}
+    onClose={() => setShellPreview(null)} onTheme={() => onTheme(tokens.scheme === 'dark' ? 'light' : 'dark')} />
   return (
     <SafeAreaView style={styles.root}>
       <StatusBar style={tokens.scheme === 'dark' ? 'light' : 'dark'} />

@@ -3,7 +3,11 @@ import { Text } from '../ui/text'
 import type {
   HarnessId,
   ModelOption,
+  RemoteActiveProvider,
+  RemoteAgentOption,
   RemoteEffortOption,
+  RemoteModeOption,
+  RemoteProviderOption,
   RemoteHarnessOption,
   WorktreeInfo,
 } from '@superone/shared/agent-types'
@@ -13,6 +17,7 @@ import type { NewSessionWorktreeSelection } from '../worktree-state'
 import { harnessSupportsAdditionalDirs } from '../provider-state'
 import { Button, SelectionField } from '../ui'
 import { ModelPicker } from '../ui/model-picker'
+import type { SelectorCatalogParam } from '../model-picker-state'
 import { WorktreePicker } from '../ui/worktree-picker'
 
 export type ShellGitInfo = {
@@ -40,6 +45,17 @@ export type ProjectSettingsProps = {
   selectedEffort: string
   models: ModelRow[]
   efforts: RemoteEffortOption[]
+  activeProvider?: RemoteActiveProvider | null
+  providerName?: string
+  /** Harness-native catalogs, forwarded to the one model picker. */
+  selection?: {
+    agents?: RemoteAgentOption[]; agent?: string | null; onAgent?: (agent: string) => void
+    modes?: RemoteModeOption[]; mode?: string | null; modeLabel?: string; modesLocked?: boolean
+    onMode?: (mode: string) => void
+    optionParams?: SelectorCatalogParam[]; onOptionParam?: (id: string, value: string) => void
+    providers?: RemoteProviderOption[]; providerId?: string | null; onProvider?: (id: string | null) => void
+    acpAgentId?: string | null
+  }
   workspaceDirs: string[]
   additionalDir: string
   onAdditionalDirChange: (value: string) => void
@@ -95,8 +111,9 @@ export function SettingsScreen(props: ProjectSettingsProps) {
               const option = props.harnessOptions.find((row) => row.key === value)
               if (option) props.onHarnessChange(option)
             }} />}
-        <ModelPicker harness={props.selectedProvider} model={props.selectedModel} models={props.models}
-          effort={props.selectedEffort} efforts={props.efforts} onModel={props.onModelChange} onEffort={props.onEffortChange} />
+        <ModelPicker {...props.selection} harness={props.selectedProvider} model={props.selectedModel} models={props.models}
+          effort={props.selectedEffort} efforts={props.efforts} onModel={props.onModelChange} onEffort={props.onEffortChange}
+          providerName={props.providerName} activeProvider={props.activeProvider} />
       </View> : null}
 
       <View style={props.section ? { gap: 12 } : styles.settingsCard}>

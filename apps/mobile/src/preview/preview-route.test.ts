@@ -18,3 +18,16 @@ it('ignores production links, unknown fixtures, ambiguous routes and invalid opt
     expect(parsePreviewRoute(url)).toBeNull()
   }
 })
+
+it('carries a known effort onto a shell page', () => {
+  expect(parsePreviewRoute('superone://native-preview?page=Chat&harness=claude&theme=dark&effort=max'))
+    .toMatchObject({ kind: 'shell', page: 'Chat', effort: 'max' })
+})
+
+it('leaves effort unset when the deep link omits it', () => {
+  expect(parsePreviewRoute('superone://native-preview?page=Chat')).toMatchObject({ kind: 'shell', page: 'Chat', effort: undefined })
+})
+
+it('rejects an effort level no harness offers', () => {
+  expect(parsePreviewRoute('superone://native-preview?page=Chat&effort=turbo')).toBeNull()
+})

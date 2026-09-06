@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Zap } from 'lucide-react'
 import type { EffortLevel } from '@superone/shared/agent-types'
+import { formatEffortLabel } from '@superone/shared/effort-labels'
 import { useActiveSession, useChatStore, useScopedSessionActions, selectClaudeModels } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
@@ -11,14 +12,6 @@ import { FireText } from '../FireText'
 import { resolveClaudeEntries, resolveClaudeDisplayName } from '../ModelSelectorLists'
 import { GroupedModelEffortSelector, type SelectorEffortOption, type SelectorModelOption } from './GroupedModelEffortSelector'
 import { useSelectorProviders } from './useSelectorProviders'
-
-const EFFORT_LABELS: Record<EffortLevel, string> = {
-  low: 'Low',
-  medium: 'Medium',
-  high: 'High',
-  xhigh: 'Extra High',
-  max: 'Max',
-}
 
 interface Props {
   onCloseAutoFocus?: (e: Event) => void
@@ -135,7 +128,7 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
 
   const effortOptions = useMemo<SelectorEffortOption[]>(() => {
     if (activeModelEnv) return []
-    return (currentModel?.supportedEffortLevels ?? []).map((level) => ({ value: level, label: EFFORT_LABELS[level] }))
+    return (currentModel?.supportedEffortLevels ?? []).map((level) => ({ value: level, label: formatEffortLabel(level) }))
   }, [activeModelEnv, currentModel])
 
   const eggName = (currentModelName ?? 'Model').toUpperCase()

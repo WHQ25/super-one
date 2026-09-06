@@ -40,6 +40,12 @@ export type CreateSessionOptions = {
   worktreeBranchName?: string
   worktreeCarryLocalChanges?: boolean
   additionalDirectories?: string[]
+  /** ACP session mode picked on the draft. */
+  mode?: string
+  /** DeepSeek preset picked on the draft. */
+  agentPreset?: string
+  /** Credential the draft resolved to; `null` is the host default. */
+  apiProviderId?: string | null
 }
 
 export class ChatRuntime {
@@ -129,6 +135,9 @@ export class ChatRuntime {
       ...(opts.additionalDirectories?.length
         ? { additionalDirectories: opts.additionalDirectories }
         : {}),
+      ...(opts.mode ? { mode: opts.mode } : {}),
+      ...(opts.agentPreset ? { agentPreset: opts.agentPreset } : {}),
+      ...(opts.apiProviderId !== undefined ? { apiProviderId: opts.apiProviderId } : {}),
     } as RemoteCommand) as { ok?: boolean; sessionId?: string; error?: string }
     if (res.error || res.ok === false) throw new Error(res.error ?? 'create_session failed')
     const id = res.sessionId ?? sessionId
@@ -187,7 +196,15 @@ export class ChatRuntime {
     this.dirty = false
   }
 
-  send(content: string, extra: { images?: ImageAttachment[]; model?: string; effort?: string } = {}): void {
+  send(content: string, extra: {
+    images?: ImageAttachment[]; model?: string; effort?: string
+    /** OpenCode primary agent for this turn. */
+    agent?: string | null
+    /** Codex Fast service tier. */
+    serviceTier?: string | null
+    /** Cursor catalog params (param id → value). */
+    modelParams?: Record<string, string>
+  } = {}): void {
     const cmd: RemoteCommand = {
       type: 'send_message',
       sessionId: this.sessionId,
@@ -197,8 +214,37 @@ export class ChatRuntime {
       ...(extra.model ? { model: extra.model } : {}),
       ...(extra.effort ? { effort: extra.effort } : {}),
       ...(extra.images?.length ? { images: extra.images } : {}),
+      ...(extra.agent ? { agent: extra.agent } : {}),
+      ...(extra.serviceTier ? { serviceTier: extra.serviceTier } : {}),
+      ...(extra.modelParams && Object.keys(extra.modelParams).length
+        ? { modelParams: extra.modelParams }
+        : {}),
     }
     this.client.send(cmd)
+  }
+
+  /**
+   * Live model / effort / mode change on a running session — the same write the
+   * desktop selector performs. A draft session carries its picks in `create`.
+   */
+  setSessionSettings(settings: { model?: string; effort?: string; mode?: string; agentPreset?: string }): void {
+    if (!this.sessionId || !this.projectPath) return
+    this.client.send({
+      type: 'set_session_settings',
+      projectPath: this.projectPath,
+      sessionId: this.sessionId,
+      ...settings,
+    })
+  }
+
+  setSessionApiProviderId(apiProviderId: string | null): void {
+    if (!this.sessionId || !this.projectPath) return
+    this.client.send({
+      type: 'set_session_api_provider_id',
+      projectPath: this.projectPath,
+      sessionId: this.sessionId,
+      apiProviderId,
+    })
   }
 
   interrupt(): void {

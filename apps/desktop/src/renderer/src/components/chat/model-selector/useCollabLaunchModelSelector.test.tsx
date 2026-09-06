@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ModelOption } from '@superone/shared/agent-types'
 import {
-  CLAUDE_EFFORT_LABELS,
   claudeModelsForProvider,
   codexModelsToSelectorOptions,
   compactEffortLabel,
@@ -117,13 +116,8 @@ describe('flatHarnessCatalog', () => {
 
 describe('effort labels', () => {
   it('matches Claude chat effort labels including Extra High and Max', () => {
-    expect(CLAUDE_EFFORT_LABELS).toEqual({
-      low: 'Low',
-      medium: 'Medium',
-      high: 'High',
-      xhigh: 'Extra High',
-      max: 'Max',
-    })
+    expect(['low', 'medium', 'high', 'xhigh', 'max'].map(formatClaudeStyleEffortLabel))
+      .toEqual(['Low', 'Medium', 'High', 'Extra High', 'Max'])
     expect(formatClaudeStyleEffortLabel('xhigh')).toBe('Extra High')
     expect(formatClaudeStyleEffortLabel('max')).toBe('Max')
     expect(formatClaudeStyleEffortLabel('high')).toBe('High')

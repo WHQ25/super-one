@@ -90,6 +90,23 @@ After changing native dependencies or config plugins, run `expo prebuild` before
 local native build; an existing ignored `ios/` directory is otherwise intentionally
 reused and may contain stale Info.plist entries or pods.
 
+CocoaPods crashes with `Encoding::CompatibilityError` under this repo's default
+shell locale. Prefix `pod install` **and** `expo run:ios` with
+`LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8`; without it `expo run:ios` exits on its own
+`pod install` before xcodebuild ever starts, which reads as a successful no-op.
+
+**Drawing.** `react-native-svg` covers gradients and masks over measured text.
+`@shopify/react-native-skia` (with `react-native-reanimated` and the
+`react-native-worklets/plugin` babel plugin, which must stay last) covers
+anything needing a real canvas — currently the `max` effort easter egg's particle
+fire, which needs `BlendMode.Plus`. RN views composite with plain alpha, so
+overlapping particles can only get muddier, never hotter; that is why the
+easter egg is not pure `Animated`. Skia work belongs in immediate mode
+(`Skia.PictureRecorder` inside `useDerivedValue`) with the expensive part
+precomputed on the JS thread — see `src/fire-sim.ts` and `src/ui/fire-embers.tsx`.
+Adding these was a native dependency change: pulling this commit requires a
+dev-client rebuild, not just a Metro restart.
+
 Pairing: scan or paste a `superone://pair?…` QR (shows a 6-digit code to confirm on desktop) or paste JSON `{ "relayUrl", "secret" }`. Then projects → sessions → chat WebView. Device ID, pairings, and chat `viewState` persist in AES-256 MMKV; its encryption key lives in platform SecureStore.
 
 The native shell also owns project Git/worktree status, remote file browsing,

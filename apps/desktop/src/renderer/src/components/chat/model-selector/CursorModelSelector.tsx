@@ -1,15 +1,14 @@
 import { useEffect, useMemo, useRef } from 'react'
 import type { EffortLevel, ModelOption } from '@superone/shared/agent-types'
+import { formatEffortLabel } from '@superone/shared/effort-labels'
 import { filterEnabledCursorModels } from '@superone/cursor/cursor-config'
 import {
-  cursorParamLabel,
-  cursorParamValueLabel,
   defaultCursorModelParams,
   findCursorEffortParam,
   isCursorEffortParam,
-  isCursorToggleParam,
   normalizeEffortValue,
 } from '@superone/cursor/cursor-model-selection'
+import { selectorCatalogParams } from '@superone/shared/model-option-params'
 import { useActiveSession, useChatStore, useScopedSessionActions } from '@/stores/chat'
 import {
   GroupedModelEffortSelector,
@@ -32,14 +31,6 @@ function cursorModelHasSideOptions(model: ModelOption | undefined): boolean {
       && param.id !== effortParam?.id
       && param.values.length > 0,
   )
-}
-
-const EFFORT_LABELS: Record<EffortLevel, string> = {
-  low: 'Low',
-  medium: 'Medium',
-  high: 'High',
-  xhigh: 'Extra High',
-  max: 'Max',
 }
 
 /**
@@ -91,33 +82,15 @@ export function CursorModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (
   const effortOptions = useMemo<SelectorEffortOption[]>(
     () => (current?.supportedEffortLevels ?? []).map((value) => ({
       value,
-      label: EFFORT_LABELS[value],
+      label: formatEffortLabel(value),
     })),
     [current],
   )
 
-  const optionParams = useMemo<SelectorCatalogParam[]>(() => {
-    const parameters = current?.parameters ?? []
-    const effortParam = findCursorEffortParam(parameters)
-    return parameters
-      .filter((param) => !isCursorEffortParam(param) && param.id !== effortParam?.id)
-      .filter((param) => param.values.length > 0)
-      .map((param) => {
-        const selected = cursorModelParams[param.id]
-          ?? defaultCursorModelParams(current)[param.id]
-          ?? param.values[0]!.value
-        return {
-          id: param.id,
-          label: cursorParamLabel(param),
-          kind: isCursorToggleParam(param) ? 'toggle' as const : 'choice' as const,
-          values: param.values.map((value) => ({
-            value: value.value,
-            label: cursorParamValueLabel(value.value, value.displayName),
-          })),
-          selected,
-        }
-      })
-  }, [current, cursorModelParams])
+  const optionParams = useMemo<SelectorCatalogParam[]>(
+    () => selectorCatalogParams(current, cursorModelParams),
+    [current, cursorModelParams],
+  )
 
   const selectModel = (modelId: string) => {
     setSelectedModel(modelId)

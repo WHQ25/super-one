@@ -2445,6 +2445,9 @@ describe('AgentService.handleRemoteCommand', () => {
       sessionId: 'session-1',
     }, respond)
 
+    // Both args are strings, so a swapped ownership check still type-checks and
+    // still passes a return-value-only assertion — pin the order explicitly.
+    expect(dbSessions.sessionBelongsToProject).toHaveBeenCalledWith('/project', 'session-1')
     expect(dbSessions.hideSession).toHaveBeenCalledWith('session-1', true)
     expect(dbSessions.deleteSession).not.toHaveBeenCalled()
     expect(respond).toHaveBeenCalledWith('archive-1', { ok: true })

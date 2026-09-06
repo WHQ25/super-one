@@ -1082,7 +1082,7 @@ export class AgentService {
         break
       }
       case 'archive_session': {
-        if (!sessionBelongsToProject(command.sessionId, command.projectPath)) {
+        if (!this.canAccessSession(command.projectPath, command.sessionId)) {
           await respond?.(command.requestId, {
             ok: false,
             error: this.buildSessionAccessError(command.projectPath, command.sessionId),
@@ -1095,7 +1095,7 @@ export class AgentService {
         break
       }
       case 'delete_session': {
-        if (!sessionBelongsToProject(command.sessionId, command.projectPath)) {
+        if (!this.canAccessSession(command.projectPath, command.sessionId)) {
           await respond?.(command.requestId, {
             ok: false,
             error: this.buildSessionAccessError(command.projectPath, command.sessionId),

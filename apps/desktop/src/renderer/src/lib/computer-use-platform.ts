@@ -1,3 +1,1 @@
-export function isComputerUseSupportedPlatform(platform: string): boolean {
-  return platform === 'darwin'
-}
+export { isComputerUseSupportedPlatform } from '@superone/shared/mention-capabilities'

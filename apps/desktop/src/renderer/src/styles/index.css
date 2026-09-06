@@ -1,3 +1,4 @@
+@import "@superone/ui/styles/mention-chip.css";
 @import "@superone/ui/styles/base.css";
 @import "@superone/ui/styles/theme.css";
 @import "@superone/ui/styles/chat-md.css";
@@ -590,85 +591,6 @@ html:not(.dark) [data-sidebar-inner] .is-scrolling::-webkit-scrollbar-thumb:hove
 
 .tiptap p {
   margin: 0;
-}
-
-/* TipTap ReactNodeView outer shell + shared mention chip chrome.
-   Chip is display:inline (NOT inline-flex): the label is real text, so the
-   chip's baseline IS the label baseline. inline-flex + items-center makes the
-   baseline the bottom of the box, which never lines up with adjacent "回复…".
-   Icon is inline-block + vertical-align length (em) — zoom-safe. */
-.mention-chip-wrapper {
-  display: inline;
-  line-height: inherit;
-}
-
-.mention-chip {
-  display: inline;
-  max-width: 100%;
-  font-size: inherit;
-  line-height: inherit;
-  white-space: nowrap;
-}
-.mention-chip--blended {
-  margin-left: 0.25em;
-  margin-right: 0.25em;
-  color: var(--muted-foreground);
-}
-.mention-chip--resource {
-  margin-left: 0.125em;
-  margin-right: 0.125em;
-  /* Horizontal only — vertical padding shifts the text baseline. */
-  padding-left: 0.35em;
-  padding-right: 0.35em;
-  border-radius: 0.25em;
-  background: var(--muted);
-  color: var(--foreground);
-}
-.mention-chip__icon {
-  display: inline-block;
-  width: 1em;
-  height: 1em;
-  margin-right: 0.25em;
-  /* Sink icon to optical center of the em box; scales with font / Cmd+=. */
-  vertical-align: -0.15em;
-  overflow: hidden;
-}
-.mention-chip__icon > svg,
-.mention-chip__icon > img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-/* Harness marks (@codex, @grok) ship as a wrapper <span> around their art, not
-   a bare <svg>, so the rule above misses them and the fixed 14px wrapper gets
-   clipped by the 1em box. Size the wrapper instead and let it centre its own
-   art — that keeps the mark scaling with font size / Cmd+= like every other
-   chip icon, without stretching the inner pixel art. */
-.mention-chip__icon > span {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-}
-.mention-chip__label {
-  /* Keep as inline text so it owns the chip baseline. */
-  white-space: nowrap;
-}
-
-/* Bubble: chip is display:inline (label owns baseline). Use normal inline
-   flow — NOT inline-flex + flex-wrap. Flex items wrap as whole units, so a
-   long rest segment ("派另一个 grok…") jumps below the collab chip instead of
-   continuing on the same line and wrapping mid-sentence. */
-.user-text-with-mentions {
-  display: inline;
-  max-width: 100%;
-  word-break: normal;
-  overflow-wrap: anywhere;
-}
-.user-text-with-mentions > .user-text-rest {
-  white-space: pre-wrap;
 }
 
 .paste-chip-wrapper {

@@ -1,6 +1,6 @@
 import { cn } from '@superone/ui/lib/utils'
+import { DefaultMiniAppIcon } from '@superone/ui/components/ui/DefaultMiniAppIcon'
 import { useMiniAppStore } from '@/stores/miniapp'
-import defaultIcon from '@/assets/default-app-icon.svg'
 
 interface MiniAppIconProps {
   appId: string
@@ -12,17 +12,16 @@ export function MiniAppIcon({ appId, className }: MiniAppIconProps) {
   const isDev = app?.manifest.isDev
   const logo = app?.manifest.logo
   const rev = useMiniAppStore((s) => isDev ? s._iconRev : 0)
-  const src = logo ? `superone-app://${appId}/${logo}${isDev ? `?v=${rev}` : ''}` : defaultIcon
+  const classes = cn('block rounded-[22%] object-contain', className)
+  if (!logo) return <DefaultMiniAppIcon className={classes} />
+  const src = `superone-app://${appId}/${logo}${isDev ? `?v=${rev}` : ''}`
   return (
     <img
       src={src}
       alt=""
       draggable={false}
-      className={cn(
-        // block: avoid replaced-element baseline gap that drops the chip below text.
-        'block rounded-[22%] object-contain',
-        className,
-      )}
+      // block: avoid replaced-element baseline gap that drops the chip below text.
+      className={classes}
     />
   )
 }

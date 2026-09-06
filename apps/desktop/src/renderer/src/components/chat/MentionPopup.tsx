@@ -7,7 +7,7 @@ import { HighlightedText } from '@superone/ui/components/ui/HighlightedText'
 import { useChatStore, useActiveSession, type MentionKind } from '@/stores/chat'
 import { useAppStore, useEffectiveProjectRoot } from '@/stores/app'
 import { useMiniAppStore } from '@/stores/miniapp'
-import { isComputerUseSupportedPlatform } from '@/lib/computer-use-platform'
+import { mentionCapabilityAvailability } from '@superone/shared/mention-capabilities'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { DesktopAppIcon } from './DesktopAppIcon'
 import { useTranslation } from 'react-i18next'
@@ -480,14 +480,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         cdpEnabled?: boolean
       } | null | undefined) => {
         if (cancelled || !settings) return
-        setCapabilityEnabled({
-          computer:
-            isComputerUseSupportedPlatform(window.app.platform)
-            && settings.computerUseEnabled === true,
-          browser: settings.cdpEnabled === true,
-          widget: true,
-          debug: true,
-        })
+        setCapabilityEnabled(mentionCapabilityAvailability(settings, window.app.platform))
       }
       void window.app?.getAppSettings?.()
         .then((settings) => {

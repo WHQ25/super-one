@@ -542,6 +542,42 @@ directly pulled `@superone/relay-client`'s AES chain into jest, where
 `@noble/ciphers` is ESM that CommonJS cannot parse — the whole component suite
 stopped running, which reads as tests silently disappearing rather than failing.
 
+**Vertical budget audit (2026-09-07).** Both overlays were checked chrome-by-chrome
+against the desktop, after the close button was found taking a row of its own.
+
+The overlay is 256 px and a touch row is 44 pt, so it holds about five rows.
+Anything that is not a row is competing with them, and the desktop is the
+measure of what is worth that space.
+
+| chrome | desktop | mobile before | verdict |
+|---|---|---|---|
+| suggestion row | `px-2 py-1.5` ≈ 28 px | `minHeight: 44` | Kept — 44 pt is the touch floor, not slack |
+| group header | `pt-2 pb-0.5` ≈ 26 px | ≈ 28 px | Already level |
+| close / dismiss | none — Escape closes it | **44 pt row of its own** | **Fixed** — rides the first row, drawn at 28 pt with `hitSlop` |
+| breadcrumb trail | `px-2 py-1` ≈ 24 px | `minHeight: 36` | Kept — every crumb is a tap target |
+| empty state | `px-2 py-3` ≈ 40 px | ≈ 32 px | Mobile already tighter |
+| searching | `px-2 py-1.5` ≈ 26 px | ≈ 32 px | Level enough |
+| search error | **none at all** | message + **44 pt retry row** | **Fixed** — retry moved beside the message |
+| next page | passive hint, auto-loads on scroll | **44 pt `Load more` row** | **Fixed** — auto-loads within 48 px of the end |
+
+Three of the eight were real, and they were the same mistake three times: a
+control the desktop either does not have or does not spend a row on was given a
+full 44 pt line, because that is the touch target of a *primary* action. None of
+these is primary. `hitSlop` decouples the two — the drawn box shrinks to 28 pt
+while the finger still gets 44 — and it is the tool for any control that has to
+share a row.
+
+Two mobile-only additions survive the audit and should not be read as drift.
+The error surface exists because the relay can drop where the desktop's local
+call cannot; it just no longer costs two rows. And the breadcrumb bar exists
+because the desktop walks directories with Tab and Backspace, which a phone
+does not have.
+
+Paging changed behaviour, not just height: mobile required a tap where the
+desktop loads within 48 px of the bottom (`MentionPopup.tsx:400`). It now does
+the same, guarded by `search.loading` — momentum fires the scroll handler many
+times and each one would otherwise start a page request.
+
 ## 5. Risks, reordered
 
 - **R1 (was R4) — the two editors are two products, not one with a fallback.**

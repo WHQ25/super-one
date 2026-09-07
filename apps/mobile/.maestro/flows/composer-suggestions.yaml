@@ -220,7 +220,7 @@ tags: [smoke, native, visual]
 - assertVisible: "Align the mention popup with desktop.*super-one.*claude"
 # A session with no title yet still has to be selectable, so it shows its id.
 - assertVisible: "sess-0c4d.*relay.*claude"
-- assertVisible: "Load more"
+- assertVisible: "Scroll for more"
 - takeScreenshot: ${"composer-suggestions-session-portal-" + THEME}
 
 - scrollUntilVisible:

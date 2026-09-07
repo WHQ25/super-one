@@ -194,7 +194,15 @@ export function MentionSuggestions({ rows, onSelect, search, onRetry, onLoadMore
   if (!rows.length && !search?.active) return null
   return <View testID="mention-suggestions" style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: colors.surface, overflow: 'hidden' }}>
     {breadcrumbs?.length ? <MentionBreadcrumbs trail={breadcrumbs} onSelect={onSelect} /> : null}
-    <ScrollView keyboardShouldPersistTaps="always" style={{ maxHeight: 256, flexGrow: 0 }} contentContainerStyle={{ padding: 6 }}>
+    <ScrollView testID="mention-list" keyboardShouldPersistTaps="always" style={{ maxHeight: 256, flexGrow: 0 }} contentContainerStyle={{ padding: 6 }}
+      // The next page arrives by scrolling, as on the desktop
+      // (`MentionPopup.tsx:400`), rather than by tapping a 44 pt row inside a
+      // 256 px list. `loading` is the guard: momentum fires this many times.
+      scrollEventThrottle={16}
+      onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
+        if (!search?.hasMore || search.loading || !onLoadMore) return
+        if (contentSize.height - contentOffset.y - layoutMeasurement.height < 48) onLoadMore()
+      }}>
       {groupMentionRows(rows).map((group) => <View key={group.key}>
         <SectionTitle title={groupLabels?.[group.key] ?? MENTION_GROUP_LABELS[group.key as MentionGroupKey]} count={group.items.length} />
         {group.items.map((row) => {
@@ -235,19 +243,22 @@ export function MentionSuggestions({ rows, onSelect, search, onRetry, onLoadMore
       {search?.loading ? <View accessibilityLiveRegion="polite" style={{ padding: 8, flexDirection: 'row', gap: 8 }}>
         <ActivityIndicator size="small" color={colors.mutedForeground} />
         <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>Searching…</Text>
-      </View> : search?.error ? <View style={{ padding: 8 }}>
-        <Text accessibilityRole="alert" style={{ color: colors.destructive, fontSize: 12 }}>{search.error}</Text>
-        {onRetry ? <Pressable accessibilityRole="button" onPress={onRetry} style={{ minHeight: 44, justifyContent: 'center' }}>
-          <Text style={{ color: colors.primary }}>Retry search</Text>
+      </View> : search?.error ? <View style={{ paddingHorizontal: 8, paddingVertical: 6, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        {/* Retry sits beside the message rather than under it. The desktop has
+            no retry at all — it is here because the relay can drop — but that
+            is no reason to spend two rows saying one thing. */}
+        <Text accessibilityRole="alert" style={{ flex: 1, color: colors.destructive, fontSize: 12 }}>{search.error}</Text>
+        {onRetry ? <Pressable accessibilityRole="button" accessibilityLabel="Retry search" onPress={onRetry} hitSlop={10}
+          style={({ pressed }) => ({ paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6, backgroundColor: pressed ? colors.muted : 'transparent' })}>
+          <Text style={{ color: colors.primary, fontSize: 12 }}>Retry</Text>
         </Pressable> : null}
       </View> : !rows.length ? <Text accessibilityLiveRegion="polite" style={{ padding: 8, color: colors.mutedForeground, fontSize: 12 }}>
         {/* What "nothing" means depends on what was asked: no projects match,
             no recent sessions, or no matches at all. */}
         {search?.emptyLabel ?? 'No matches'}
-      </Text> : search?.hasMore && onLoadMore ? <Pressable accessibilityRole="button" onPress={onLoadMore}
-        style={({ pressed }) => ({ minHeight: 44, justifyContent: 'center', paddingHorizontal: 8, borderRadius: 6, backgroundColor: pressed ? colors.muted : 'transparent' })}>
-        <Text style={{ color: colors.primary, fontSize: 13 }}>Load more</Text>
-      </Pressable> : null}
+      </Text> : search?.hasMore ? <Text style={{ paddingHorizontal: 8, paddingVertical: 4, color: colors.mutedForeground, fontSize: 11 }}>
+        Scroll for more
+      </Text> : null}
     </ScrollView>
   </View>
 }

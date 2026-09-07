@@ -77,8 +77,56 @@ test('offers a retry when the search failed', async () => {
     />,
   )
   expect(screen.getByText('Host unreachable')).toBeTruthy()
-  fireEvent.press(screen.getByText('Retry search'))
+  fireEvent.press(screen.getByLabelText('Retry search'))
   expect(retries).toBe(1)
+})
+
+/** One scroll event, positioned `fromBottom` px from the end of the list. */
+function scrollTo(fromBottom: number) {
+  return { nativeEvent: { contentOffset: { y: 1000 - fromBottom }, contentSize: { height: 1256 }, layoutMeasurement: { height: 256 } } }
+}
+
+test('fetches the next page on reaching the end of the list', async () => {
+  // The desktop loads within 48 px of the bottom (MentionPopup.tsx:400). A
+  // tappable row would spend a sixth of the overlay on what scrolling says.
+  let loads = 0
+  await renderWithTheme(
+    <MentionSuggestions rows={[row(file)]} onSelect={() => {}}
+      search={{ active: true, loading: false, hasMore: true }} onLoadMore={() => { loads += 1 }} />,
+  )
+  fireEvent.scroll(screen.getByTestId('mention-list'), scrollTo(10))
+  expect(loads).toBe(1)
+})
+
+test('leaves the next page alone while the list is far from its end', async () => {
+  let loads = 0
+  await renderWithTheme(
+    <MentionSuggestions rows={[row(file)]} onSelect={() => {}}
+      search={{ active: true, loading: false, hasMore: true }} onLoadMore={() => { loads += 1 }} />,
+  )
+  fireEvent.scroll(screen.getByTestId('mention-list'), scrollTo(400))
+  expect(loads).toBe(0)
+})
+
+test('does not stack a second fetch on top of the one in flight', async () => {
+  // Momentum keeps firing scroll events past the threshold; without the
+  // `loading` guard each one starts another page request.
+  let loads = 0
+  await renderWithTheme(
+    <MentionSuggestions rows={[row(file)]} onSelect={() => {}}
+      search={{ active: true, loading: true, hasMore: true }} onLoadMore={() => { loads += 1 }} />,
+  )
+  fireEvent.scroll(screen.getByTestId('mention-list'), scrollTo(10))
+  expect(loads).toBe(0)
+})
+
+test('says more is coming without spending a row on a button', async () => {
+  await renderWithTheme(
+    <MentionSuggestions rows={[row(file)]} onSelect={() => {}}
+      search={{ active: true, loading: false, hasMore: true }} onLoadMore={() => {}} />,
+  )
+  expect(screen.getByText('Scroll for more')).toBeTruthy()
+  expect(screen.queryByText('Load more')).toBeNull()
 })
 
 test('says there are no matches only once a search has settled', async () => {

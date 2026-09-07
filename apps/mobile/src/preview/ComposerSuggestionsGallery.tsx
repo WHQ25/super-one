@@ -181,7 +181,7 @@ export function ComposerSuggestionsGallery() {
       />
     </Section>
 
-    <Section title="Mention · @session recent" note="Scope chosen, nothing typed: project and harness ride at the end of the title line.">
+    <Section title="Mention · @session recent" note="Scope chosen, nothing typed: project and harness ride at the end of the title line. More pages arrive by scrolling.">
       <MentionSuggestions
         rows={buildMentionRows('', { remote: sessionItems(previewSessionRows, ''), agentProfiles: [], scoped: true })}
         onSelect={() => {}}

@@ -38,7 +38,6 @@ const chatState = {
 }
 
 const mockWindowApp = {
-  listPinnedSessions: vi.fn(async (): Promise<PinnedSessionEntry[]> => []),
   listSessionsForFolder: vi.fn(async (folderPath: string) => sessionsByFolder[folderPath] ?? []),
   listSessionsForFolderPage: vi.fn(async (folderPath: string, limit: number, offset: number) => (sessionsByFolder[folderPath] ?? []).slice(offset, offset + limit)),
   onSessionChanged: vi.fn(() => () => {}),
@@ -91,6 +90,9 @@ const mockEnvironment = {
     const offset = options?.offset ?? 0
     return offset > 0 ? rows.slice(offset) : rows
   }),
+  listPinnedSessions: vi.fn(
+    async (_connectionId: string): Promise<PinnedSessionEntry[]> => [],
+  ),
   listDrafts: vi.fn(async () => []),
   upsertDraft: vi.fn(async (draft: { id: string }) => draft),
   deleteDraft: vi.fn(async () => {}),
@@ -226,7 +228,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mockWindowApp.listPinnedSessions.mockResolvedValue([])
+  mockEnvironment.listPinnedSessions.mockResolvedValue([])
   appState.sidebarTab = 'sessions'
   appState.currentFolder = '/project-a'
   appState.recentFolders = [{ name: 'project-a', path: '/project-a', addedAt: '2026-03-02T00:00:00.000Z' }]
@@ -476,7 +478,7 @@ describe('AppSidebar interactions', () => {
 
   it('shows the normal session menu with unpin for a pinned session', async () => {
     chatState.activeProject = null
-    mockWindowApp.listPinnedSessions.mockResolvedValue([{
+    mockEnvironment.listPinnedSessions.mockResolvedValue([{
       sessionId: 'sid-pinned',
       title: 'Pinned Session',
       lastActiveAt: '2026-03-02T00:00:00.000Z',
@@ -499,6 +501,38 @@ describe('AppSidebar interactions', () => {
     expect(screen.getByRole('button', { name: 'Rename Session' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Hide Session' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument()
+  })
+
+  it('asks the selected host for its own pinned sessions instead of the local ones', async () => {
+    appState.currentFolder = null
+    appState.recentFolders = []
+    appState.selectedHostConnectionId = 'env-remote'
+    appState.experimentalRemoteNodesEnabled = true
+    chatState.activeProject = null
+    chatState.projectSessions = {}
+    mockEnvironment.listItems.mockResolvedValue([
+      { connectionId: 'env-remote', state: 'connected', label: 'remote lab' },
+    ])
+    mockEnvironment.listPinnedSessions.mockImplementation(async (connectionId: string) =>
+      connectionId === 'env-remote'
+        ? [{
+            sessionId: 'sid-remote-pin',
+            title: 'Remote Pinned',
+            lastActiveAt: '2026-03-02T00:00:00.000Z',
+            messageCount: 1,
+            provider: 'claude' as const,
+            isPinned: true,
+            folderPath: 'remote:env-remote:/work/remote-app',
+            folderName: 'remote-app',
+          }]
+        : [],
+    )
+
+    const { AppSidebar } = await import('./AppSidebar')
+    render(<AppSidebar />)
+
+    await screen.findByText('Remote Pinned')
+    expect(mockEnvironment.listPinnedSessions).toHaveBeenCalledWith('env-remote')
   })
 
   it('shows collapsed live session when awaitingAssistantReply is true', async () => {

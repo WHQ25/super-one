@@ -4091,6 +4091,8 @@ export const AgentIpcChannels = {
   ENVIRONMENT_UPDATE_PROJECT: 'environment:updateProject',
   /** List sessions for a remote project (local uses sessions:* DB IPC). */
   ENVIRONMENT_LIST_SESSIONS: 'environment:listSessions',
+  /** Cross-project pinned sessions for one environment (sidebar Pinned section). */
+  ENVIRONMENT_LIST_PINNED_SESSIONS: 'environment:listPinnedSessions',
   /** Unsent composer drafts, stored in the environment that owns the project. */
   ENVIRONMENT_LIST_DRAFTS: 'environment:listDrafts',
   ENVIRONMENT_UPSERT_DRAFT: 'environment:upsertDraft',

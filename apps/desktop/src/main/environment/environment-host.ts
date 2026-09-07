@@ -68,14 +68,15 @@ import { readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import type { ProjectExtraDirsPatch } from '@superone/shared/project-extra-dirs'
 import { getRecentFolders, addRecentFolder, removeRecentFolder, updateProject, getProjectId, getProjectPathById } from '../recent-folders'
-import { listSessionsForProjectId } from '../db-sessions'
+import { listSessionsForProjectId, listPinnedSessions as listLocalPinnedSessions } from '../db-sessions'
 import type {
   DraftListEntry,
   DraftRecord,
   DraftUpsertRequest,
   ProjectSnapshot,
 } from '@superone/shared/environment'
-import type { SessionHistoryEntry } from '@superone/shared/agent-types'
+import type { PinnedSessionEntry, SessionHistoryEntry } from '@superone/shared/agent-types'
+import { remoteProjectKey } from '@superone/shared/remote-resource-key'
 import { parseTagsJson } from '@superone/shared/session-tags'
 import {
   deletePendingDraft,
@@ -454,6 +455,45 @@ export class EnvironmentHost {
     return rows
       .map((r) => this.mapRemoteSessionEntry(r))
       .filter((r) => r.sessionId)
+      .sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt))
+  }
+
+  /**
+   * Pinned sessions for one environment, cross-project.
+   *
+   * The sidebar's Pinned section follows the selected host, so this returns the
+   * environment's own pins rather than always the local ones. Remote rows are
+   * keyed by `remote:<connectionId>:<path>` — the same project key the rest of
+   * the renderer uses — so clicking one routes back through the remote path
+   * with no extra lookup.
+   *
+   * A node too old to know `session.listPinned` answers `not_found`; an empty
+   * section is the honest rendering of "this host cannot tell us", and is
+   * better than falling back to the local list under a remote host's label.
+   */
+  async listPinnedSessions(connectionId: string): Promise<PinnedSessionEntry[]> {
+    if (connectionId === 'local') return listLocalPinnedSessions()
+
+    const { gateway, environmentId } = this.resolveRemote(connectionId)
+    if (typeof gateway.sessions.listPinned !== 'function') return []
+    let rows: unknown[]
+    try {
+      rows = await gateway.sessions.listPinned(environmentId)
+    } catch (err) {
+      if ((err as { code?: string })?.code === 'not_found') return []
+      throw err
+    }
+    return rows
+      .map((raw) => {
+        const r = (raw ?? {}) as { projectPath?: string; projectName?: string }
+        const projectPath = typeof r.projectPath === 'string' ? r.projectPath : ''
+        return {
+          ...this.mapRemoteSessionEntry(raw),
+          folderPath: projectPath ? remoteProjectKey(connectionId, projectPath) : '',
+          folderName: (typeof r.projectName === 'string' && r.projectName) || basename(projectPath),
+        }
+      })
+      .filter((r) => r.sessionId && r.folderPath)
       .sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt))
   }
 

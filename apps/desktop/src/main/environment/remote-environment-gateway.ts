@@ -1005,6 +1005,13 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
           offset: options.offset,
         })
       },
+      listPinned: async (environmentId: string, options) => {
+        this.assertEnv(environmentId)
+        const rows = await this.client.rpc<unknown[]>('session.listPinned', {
+          ...(options?.limit != null ? { limit: options.limit } : {}),
+        })
+        return Array.isArray(rows) ? rows : []
+      },
       listMessages: async (input) => {
         this.assertEnv(input.session.environmentId)
         return this.client.rpc<SessionMessagesListResult>('session.messages.list', {

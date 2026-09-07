@@ -85,6 +85,14 @@ export interface SessionGateway {
   get(ref: SessionRef): Promise<unknown | null>
   /** Product session list is always paginated (limit + offset required). */
   list(project: ProjectRef, options: ListSessionsOptions): Promise<unknown[]>
+  /**
+   * Pinned sessions across every project in one environment — cross-project by
+   * nature, so it takes no ProjectRef. Rows carry projectPath/projectName so
+   * the caller can key them without a separate project lookup.
+   *
+   * Optional: older nodes have no such RPC and the caller renders nothing.
+   */
+  listPinned?(environmentId: string, options?: { limit?: number }): Promise<unknown[]>
   send(input: SendMessageInput): Promise<void>
   /**
    * Persist turn defaults so subsequent send() calls need not re-send full options.

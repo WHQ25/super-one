@@ -1038,6 +1038,12 @@ export interface EnvironmentAPI {
       tags?: string[]
     }>
   >
+  /**
+   * Pinned sessions across every project of one environment — the sidebar's
+   * Pinned section, which follows the selected host. `folderPath` is already
+   * the renderer's project key (`remote:<connectionId>:<path>` for remotes).
+   */
+  listPinnedSessions(connectionId: string): Promise<PinnedSessionEntry[]>
   /** Create a session on a remote node project. */
   createSession(
     connectionId: string,

@@ -439,6 +439,8 @@ async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContex
       return handleSessionGet(payload, ctx)
     case 'session.list':
       return handleSessionList(payload, ctx)
+    case 'session.listPinned':
+      return handleSessionListPinned(payload, ctx)
     case 'session.acquireControl':
       return handleSessionAcquireControl(payload, ctx)
     case 'session.renewControl':
@@ -2024,6 +2026,36 @@ function handleSessionGet(payload: unknown, ctx: RpcContext): RpcResult {
   return { result: ctx.sessions.get(String(p.sessionId ?? '')) }
 }
 
+/**
+ * Metadata-only session row. Transcript body is NOT returned — count via
+ * messageCount; full messages via session.get / session.messages.list.
+ * providerResume + bare providerSessionId let desktop "Copy Session ID" match
+ * local (harness SDK/thread id, not the SuperOne session UUID).
+ */
+function mapSessionRow(s: ReturnType<SessionRuntime['list']>[number]) {
+  const providerResume = s.providerResume ?? null
+  const providerSessionId = providerSessionIdFromResume(providerResume)
+  return {
+    sessionId: s.sessionId,
+    projectId: s.projectId,
+    harnessId: s.harnessId,
+    providerId: s.providerId,
+    title: s.title,
+    status: s.status,
+    messageCount: Array.isArray(s.transcript) ? s.transcript.length : 0,
+    cwd: s.cwd,
+    createdAt: s.createdAt,
+    updatedAt: s.updatedAt,
+    isPinned: s.isPinned,
+    isHidden: s.isHidden,
+    isAutomation: s.isAutomation === true,
+    automationId: s.automationId ?? null,
+    providerResume,
+    ...(providerSessionId ? { providerSessionId } : {}),
+    tags: Array.isArray(s.tags) ? s.tags : [],
+  }
+}
+
 function handleSessionList(payload: unknown, ctx: RpcContext): RpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
   if (denied) return denied
@@ -2037,33 +2069,40 @@ function handleSessionList(payload: unknown, ctx: RpcContext): RpcResult {
   }
   const limit = Math.min(Math.max(Math.floor(p.limit), 0), 500)
   const offset = Math.max(Math.floor(p.offset), 0)
-  // Metadata only. Transcript body is NOT returned — count via messageCount;
-  // full messages via session.get / session.messages.list.
-  // providerResume + bare providerSessionId let desktop "Copy Session ID" match
-  // local (harness SDK/thread id, not the SuperOne session UUID).
   const rows = ctx.sessions.list(projectId, { limit, offset })
+  return { result: rows.map(mapSessionRow) }
+}
+
+/**
+ * Cross-project pinned sessions for this node — the sidebar's Pinned section.
+ * Cross-project by nature, so it cannot be scoped by the per-project access
+ * check `session.list` relies on; `readSession` gates the whole node instead.
+ *
+ * Each row carries projectPath/projectName because the client keys pinned rows
+ * by project path (`remote:<connectionId>:<path>`) and has no reason to hold a
+ * full project list just to resolve them.
+ */
+function handleSessionListPinned(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const limit =
+    typeof p.limit === 'number' && Number.isFinite(p.limit)
+      ? Math.min(Math.max(Math.floor(p.limit), 0), 500)
+      : 200
+  // Pass no projectId so SessionRuntime spans every project; it already sorts
+  // newest-first, so slicing after the filter keeps the freshest pins.
+  const rows = ctx.sessions
+    .list(undefined)
+    .filter((s) => s.isPinned === true && s.isHidden !== true)
+    .slice(0, limit)
   return {
     result: rows.map((s) => {
-      const providerResume = s.providerResume ?? null
-      const providerSessionId = providerSessionIdFromResume(providerResume)
+      const project = s.projectId ? ctx.projects.get(s.projectId) : null
       return {
-        sessionId: s.sessionId,
-        projectId: s.projectId,
-        harnessId: s.harnessId,
-        providerId: s.providerId,
-        title: s.title,
-        status: s.status,
-        messageCount: Array.isArray(s.transcript) ? s.transcript.length : 0,
-        cwd: s.cwd,
-        createdAt: s.createdAt,
-        updatedAt: s.updatedAt,
-        isPinned: s.isPinned,
-        isHidden: s.isHidden,
-        isAutomation: s.isAutomation === true,
-        automationId: s.automationId ?? null,
-        providerResume,
-        ...(providerSessionId ? { providerSessionId } : {}),
-        tags: Array.isArray(s.tags) ? s.tags : [],
+        ...mapSessionRow(s),
+        projectPath: project?.path ?? s.cwd ?? '',
+        projectName: project?.name ?? '',
       }
     }),
   }

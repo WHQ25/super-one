@@ -412,16 +412,37 @@ export const AppSidebar = memo(function AppSidebar() {
     }
   }, [hostProjects, loadFolderSessions, selectProject])
 
+  /**
+   * Which host the rows currently in `pinnedSessions` came from. Read only when
+   * a request resolves, so a slow node answering after the user switched away
+   * cannot paint its rows under another host's label.
+   */
+  const pinnedHostRef = useRef(selectedHostConnectionId)
   const refreshPinned = useCallback(() => {
-    window.app.listPinnedSessions().then(setPinnedSessions)
-  }, [])
+    const connectionId = selectedHostConnectionId
+    window.environment
+      .listPinnedSessions(connectionId)
+      .then((rows) => {
+        if (pinnedHostRef.current !== connectionId) return
+        setPinnedSessions(rows)
+      })
+      .catch(() => {
+        if (pinnedHostRef.current === connectionId) setPinnedSessions([])
+      })
+  }, [selectedHostConnectionId])
 
   const refreshFolderSessions = useCallback((folderPath: string) => {
     loadFolderSessions(folderPath, 'refresh')
   }, [loadFolderSessions])
 
-  // Load pinned sessions on mount
-  useEffect(() => { refreshPinned() }, [refreshPinned])
+  // Pinned follows the host switcher. Clear first: the previous host's pins
+  // point at projects on a different machine, so leaving them up while the new
+  // list loads would offer rows the selected host does not have.
+  useEffect(() => {
+    pinnedHostRef.current = selectedHostConnectionId
+    setPinnedSessions([])
+    refreshPinned()
+  }, [selectedHostConnectionId, refreshPinned])
 
   const currentSessionId = currentActiveSid
   const pinnedStatuses = useChatStore(useShallow((s) => {
@@ -490,6 +511,7 @@ export const AppSidebar = memo(function AppSidebar() {
     const remote = parseRemoteProjectKey(folderPath)
     if (remote) {
       await window.environment.setSessionUiFlags(remote.connectionId, sessionId, { isPinned: pinned })
+      refreshPinned()
       refreshFolderSessions(folderPath)
       return
     }

@@ -32,6 +32,9 @@ describe('environment preload ↔ Main IPC contract', () => {
     expect(AgentIpcChannels.ENVIRONMENT_OPEN_PROJECT).toBe('environment:openProject')
     expect(AgentIpcChannels.ENVIRONMENT_REMOVE_PROJECT).toBe('environment:removeProject')
     expect(AgentIpcChannels.ENVIRONMENT_LIST_SESSIONS).toBe('environment:listSessions')
+    expect(AgentIpcChannels.ENVIRONMENT_LIST_PINNED_SESSIONS).toBe(
+      'environment:listPinnedSessions',
+    )
     expect(AgentIpcChannels.ENVIRONMENT_CREATE_SESSION).toBe('environment:createSession')
     expect(AgentIpcChannels.ENVIRONMENT_GET_SESSION).toBe('environment:getSession')
     expect(AgentIpcChannels.ENVIRONMENT_SEND_SESSION_MESSAGE).toBe('environment:sendSessionMessage')
@@ -90,6 +93,7 @@ describe('environment preload ↔ Main IPC contract', () => {
       'ENVIRONMENT_OPEN_PROJECT',
       'ENVIRONMENT_REMOVE_PROJECT',
       'ENVIRONMENT_LIST_SESSIONS',
+      'ENVIRONMENT_LIST_PINNED_SESSIONS',
       'ENVIRONMENT_CREATE_SESSION',
       'ENVIRONMENT_GET_SESSION',
       'ENVIRONMENT_SEND_SESSION_MESSAGE',

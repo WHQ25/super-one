@@ -14,7 +14,8 @@ import type {
   RemoteEffortOption, RemoteModeOption, RemoteProviderOption, SandboxInfo, SandboxMode,
 } from '@superone/shared/agent-types'
 import type { SelectorCatalogParam } from '../model-picker-state'
-import type { filterSlashCommands } from '../slash'
+import type { MatchedSlashCommand } from '../slash'
+import type { SlashCatalogStatus } from '../slash-catalog'
 import type { MentionItem } from '../mentions'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { ContextRing, IconButton, PermissionModeSelector, SandboxSelector } from '../ui'
@@ -41,12 +42,13 @@ export type ChatComposerProps = {
   /** Runtime fact from the host; `null` until it has reported one. */
   sandboxInfo: SandboxInfo | null
   contextTokens: number; contextWindow: number | null; totalCostUsd: number
-  slashHits: ReturnType<typeof filterSlashCommands>; mentionHits: MentionItem[]
+  slashHits: MatchedSlashCommand[]; slashCatalogStatus: SlashCatalogStatus; mentionHits: MentionItem[]
   onDraft: (value: string) => void; onSend: () => void; onStop: () => void
   onSubmitFromKeyboard: () => void; onAttachmentMenu: () => void
   onRemoveAttachment: (attachment: ImageAttachment) => void
   onPermissionMode: (mode: string) => void; onSandboxMode: (mode: SandboxMode) => void
   onSlash: (command: string) => void
+  onSlashDismiss: () => void
   onMention: (item: MentionItem) => void; selection?: ComposerSelection
   onCursorChange?: (selection: ComposerCursor) => void
   requestedCursor?: ComposerCursor
@@ -81,7 +83,7 @@ export function ChatComposer(props: ChatComposerProps) {
   return <View style={{ paddingHorizontal: 12, paddingTop: 6, paddingBottom: 8, gap: 6, backgroundColor: colors.background }}>
     {props.above}
     {!tablet ? <View testID="phone-composer-status" style={{ flexDirection: 'row', minHeight: 44 }}>{controls}</View> : null}
-    <SlashSuggestions matches={props.slashHits} onSelect={props.onSlash} />
+    <SlashSuggestions matches={props.slashHits} status={props.slashCatalogStatus} onSelect={props.onSlash} onDismiss={props.onSlashDismiss} />
     <MentionSuggestions items={props.mentionHits} onSelect={props.onMention} search={props.mentionSearch} onRetry={props.onMentionRetry} />
     <View testID={tablet ? 'tablet-composer' : 'phone-composer'} style={tablet
       ? { borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, borderRadius: radius.lg, padding: 6 }

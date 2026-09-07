@@ -1,22 +1,13 @@
-import { fuzzyMatch } from '@superone/shared/fuzzy-match'
+import type { HarnessId, SlashCommandInfo } from '@superone/shared/agent-types'
+import { matchAndRankSlashCommands, type MatchedSlashCommand } from '@superone/shared/slash-command-match'
+import { firstLine } from './composer-first-line'
 
-export type SlashCommand = {
-  name: string
-  description?: string
-  argumentHint?: string
-  isSkill?: boolean
-}
+export type { MatchedSlashCommand, SlashCommandInfo }
 
-export type SlashCommandMatch = {
-  command: SlashCommand
-  nameIndices: number[]
-  score: number
-}
-
-const HIDDEN = new Set(['debug', 'keybindings-help'])
-
-export function parseSlashCommand(item: unknown, skillNames: Set<string> = new Set()): SlashCommand {
-  if (typeof item === 'string') return { name: item, isSkill: skillNames.has(item) }
+export function parseSlashCommand(item: unknown, skillNames: Set<string> = new Set()): SlashCommandInfo {
+  if (typeof item === 'string') {
+    return { name: item, description: '', argumentHint: '', isSkill: skillNames.has(item) }
+  }
   const map = (item ?? {}) as Record<string, unknown>
   const name = String(map.name ?? '')
   return {
@@ -31,8 +22,8 @@ export function mergeSlashCatalogs(
   systemCommands: unknown[],
   projectCommands: unknown[],
   skills: unknown[],
-): SlashCommand[] {
-  const merged = new Map<string, SlashCommand>()
+): SlashCommandInfo[] {
+  const merged = new Map<string, SlashCommandInfo>()
   const add = (items: unknown[], isSkill = false) => {
     for (const item of items) {
       const command = parseSlashCommand(item)
@@ -46,24 +37,27 @@ export function mergeSlashCatalogs(
   return [...merged.values()]
 }
 
-/** Overlay only while the draft is a single `/token` with no space. */
+/**
+ * Decide whether the draft is a command query, then rank it with the shared
+ * matcher — the same split the desktop uses, so the two cannot drift on which
+ * group leads or which characters highlight.
+ *
+ * Only the **first line** is a query. Later lines are message body: a draft of
+ * `/review\nlook at the diff` is still a command with context under it, and
+ * matching the whole string would close the overlay the moment the user pressed
+ * return.
+ *
+ * Codex is the one harness whose commands legitimately contain spaces
+ * (`auth auto`), and the only one that still shows `debug` / `keybindings-help`.
+ */
 export function filterSlashCommands(
   text: string,
-  raw: unknown[],
-  skillNames: Set<string> = new Set(),
-): SlashCommandMatch[] {
-  if (!text.startsWith('/') || /\s/.test(text)) return []
-  const query = text.slice(1)
-  const commands = raw
-    .map((item) => parseSlashCommand(item, skillNames))
-    .filter((c) => c.name && !HIDDEN.has(c.name))
-  if (query === '') return commands.map((command) => ({ command, nameIndices: [], score: 0 }))
-  const matches: SlashCommandMatch[] = []
-  for (const command of commands) {
-    const nameResult = fuzzyMatch(query, command.name)
-    if (!nameResult.match) continue
-    matches.push({ command, nameIndices: nameResult.indices, score: nameResult.score })
-  }
-  matches.sort((a, b) => b.score - a.score)
-  return matches
+  commands: readonly SlashCommandInfo[],
+  provider?: HarnessId | string,
+): MatchedSlashCommand[] {
+  if (!text.startsWith('/')) return []
+  const line = firstLine(text)
+  const isCodex = provider === 'codex'
+  if (!isCodex && line.includes(' ')) return []
+  return matchAndRankSlashCommands(line.slice(1).toLowerCase(), commands, { includeHidden: isCodex })
 }

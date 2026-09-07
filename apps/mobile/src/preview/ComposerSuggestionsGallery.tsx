@@ -47,7 +47,7 @@ export function ComposerSuggestionsGallery() {
       <SlashSuggestions matches={slash('/re')} onSelect={() => {}} />
     </Section>
 
-    <Section title="Slash · /rel" note="The skill scores highest. Desktop leads with Skills; mobile does not.">
+    <Section title="Slash · /rel" note="The skill scores highest, so Skills leads — the group order follows the matcher.">
       <SlashSuggestions matches={slash('/rel')} onSelect={() => {}} />
     </Section>
 
@@ -55,8 +55,24 @@ export function ComposerSuggestionsGallery() {
       <SlashSuggestions matches={slash('/tdd')} onSelect={() => {}} />
     </Section>
 
-    <Section title="Slash · no match" note="Renders nothing at all. There is no empty state today.">
+    <Section title="Slash · multi-line draft" note="A command with context under it. Only the first line is the query.">
+      <SlashSuggestions matches={slash('/re\nlook at the diff too')} onSelect={() => {}} />
+    </Section>
+
+    <Section title="Slash · no match" note="Renders nothing at all. There is no empty state for a settled catalog.">
       <SlashSuggestions matches={slash('/zzzz')} onSelect={() => {}} />
+    </Section>
+
+    <Section title="Slash · catalog loading" note="Never rendered as an empty list — that reads as 'this harness has no commands'.">
+      <SlashSuggestions matches={[]} status="loading" onSelect={() => {}} />
+    </Section>
+
+    <Section title="Slash · catalog failed" note="A host that could not answer says so.">
+      <SlashSuggestions matches={[]} status="error" onSelect={() => {}} />
+    </Section>
+
+    <Section title="Slash · dismissable" note="The overlay covers the draft, so there is a way out of it.">
+      <SlashSuggestions matches={slash('/re')} onSelect={() => {}} onDismiss={() => {}} />
     </Section>
 
     <Section title="Mention · every group" note="Group order and per-group counts. The list clips at 256 px, so the tail groups sit in the next section.">

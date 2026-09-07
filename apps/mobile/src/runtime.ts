@@ -16,7 +16,6 @@ import { AGENT_EVENT_BATCH_MS } from '@superone/shared/agent-event-batcher'
 import type { RelayClient } from '@superone/relay-client'
 import { restoreSession } from '@superone/relay-client'
 import { randomId } from './ids'
-import { mergeSlashCatalogs } from './slash'
 
 type SessionState = ReturnType<typeof createDefaultChatCoreSession>
 type SharedFileEvent = Extract<AgentEvent, { type: 'shared_file' }>
@@ -77,7 +76,6 @@ export class ChatRuntime {
   projectPath = ''
   sessionId = ''
   provider: HarnessId | string = 'claude'
-  slashCommands: unknown[] = []
   permissionModes: string[] = ['default', 'acceptEdits', 'plan', 'bypassPermissions']
   sessionTitle = ''
   models: { id?: string; name?: string }[] = []
@@ -201,11 +199,6 @@ export class ChatRuntime {
       }>,
     ])
     this.provider = provider
-    this.slashCommands = mergeSlashCatalogs(
-      info.userSlashCommands ?? info.slashCommands ?? [],
-      projectResources.projectSlashCommands ?? [],
-      projectResources.skills ?? [],
-    )
     if (info.permissionModes?.length) this.permissionModes = info.permissionModes
     else if (info.permissionPresets?.length) this.permissionModes = info.permissionPresets
     this.models = info.models ?? []

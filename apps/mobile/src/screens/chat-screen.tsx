@@ -15,7 +15,8 @@ import { Text } from '../ui/text'
 import { WebView } from 'react-native-webview'
 import { CHAT_VIEW_HTML } from '@superone/chat-view'
 import type { ChatMessage, HarnessId, ImageAttachment, SandboxInfo, SandboxMode, TodoItem } from '@superone/shared/agent-types'
-import type { filterSlashCommands } from '../slash'
+import type { MatchedSlashCommand } from '../slash'
+import type { SlashCatalogStatus } from '../slash-catalog'
 import type { MentionItem } from '../mentions'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { ChatComposer, type ComposerSelection } from './chat-composer'
@@ -36,7 +37,8 @@ export function ChatScreen(props: {
   contextTokens: number
   contextWindow: number | null
   totalCostUsd: number
-  slashHits: ReturnType<typeof filterSlashCommands>
+  slashHits: MatchedSlashCommand[]
+  slashCatalogStatus: SlashCatalogStatus
   mentionHits: MentionItem[]
   attachments: ImageAttachment[]
   additionalDirectories: string[]
@@ -53,6 +55,7 @@ export function ChatScreen(props: {
   onPermissionMode: (mode: string) => void
   onSandboxMode: (mode: SandboxMode) => void
   onSlash: (command: string) => void
+  onSlashDismiss: () => void
   onMention: (item: MentionItem) => void
   onRemoveAttachment: (attachment: ImageAttachment) => void
   onAttachmentMenu: () => void

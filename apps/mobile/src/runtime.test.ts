@@ -53,12 +53,9 @@ describe('ChatRuntime', () => {
       worktreeCarryLocalChanges: true,
       additionalDirectories: ['/shared'],
     }))
+    // Catalog assembly moved to `slash-catalog.ts`, which the composer owns and
+    // which is covered by its own suite — the runtime no longer holds a copy.
     const info = await runtime.loadSystemInfo('claude')
-    expect(runtime.slashCommands).toEqual([
-      { name: 'help', description: '', argumentHint: '', isSkill: false },
-      { name: 'project', description: '', argumentHint: '', isSkill: false },
-      { name: 'ship', description: 'Release', argumentHint: '', isSkill: true },
-    ])
     expect(info.permissionModes).toContain('plan')
     await runtime.setPermissionMode('plan')
     expect(runtime.permissionMode).toBe('plan')

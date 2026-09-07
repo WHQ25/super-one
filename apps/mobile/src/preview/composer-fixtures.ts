@@ -1,5 +1,5 @@
 import type { MentionItem } from '../mentions'
-import type { SlashCommand } from '../slash'
+import type { SlashCommandInfo } from '../slash'
 
 /**
  * Catalogs the composer overlays run against in the offline preview.
@@ -13,25 +13,24 @@ import type { SlashCommand } from '../slash'
  * The preview feeds these through the real `filterSlashCommands` and the real
  * row components, never through a copy.
  */
-export const previewSlashCatalog: SlashCommand[] = [
-  { name: 'clear', description: 'Clear the conversation and start over' },
-  { name: 'compact', description: 'Summarise the conversation to reclaim context', argumentHint: '[instructions]' },
-  { name: 'add-dir', description: 'Give the session another project directory', argumentHint: '[project|session] [dir]' },
-  { name: 'review', description: 'Review the current diff for correctness and cleanups' },
+export const previewSlashCatalog: SlashCommandInfo[] = [
+  { name: 'clear', description: 'Clear the conversation and start over', argumentHint: '', isSkill: false },
+  { name: 'compact', description: 'Summarise the conversation to reclaim context', argumentHint: '[instructions]', isSkill: false },
+  { name: 'add-dir', description: 'Give the session another project directory', argumentHint: '[project|session] [dir]', isSkill: false },
+  { name: 'review', description: 'Review the current diff for correctness and cleanups', argumentHint: '', isSkill: false },
   // Exists so one query can score a skill above every command: `/rel` matches
   // this only mid-word, while the `release` skill matches from index 0. The
-  // desktop popup puts the better-scoring group first; mobile always puts
-  // Commands first, and this row is what makes that difference visible.
-  { name: 'create-release-notes', description: 'Draft release notes from the commit range' },
-  { name: 'resume', description: '' },
+  // overlay must then lead with Skills — this row is what proves it does.
+  { name: 'create-release-notes', description: 'Draft release notes from the commit range', argumentHint: '', isSkill: false },
+  { name: 'resume', description: '', argumentHint: '', isSkill: false },
   {
     name: 'release',
     description: 'Version bump, per-platform build, npm publish, promote artifacts and publish the release',
     argumentHint: '[alpha|stable] [major|feature|patch]',
     isSkill: true,
   },
-  { name: 'tdd', description: 'Test-driven development workflow', isSkill: true },
-  { name: 'wiki', description: '为文件、模块、特性或整个仓库创建或更新 wiki 文档', isSkill: true },
+  { name: 'tdd', description: 'Test-driven development workflow', isSkill: true, argumentHint: '' },
+  { name: 'wiki', description: '为文件、模块、特性或整个仓库创建或更新 wiki 文档', isSkill: true, argumentHint: '' },
 ]
 
 export const previewMentionItems: MentionItem[] = [

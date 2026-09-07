@@ -1,8 +1,11 @@
 import { ActivityIndicator, Image, Pressable, ScrollView, View } from 'react-native'
 import { Text } from './text'
 import type { MentionSearchState } from '../navigation/use-composer-suggestions'
-import { Bot, AppWindow, Box, Wrench } from 'lucide-react-native'
-import type { SlashCommandMatch } from '../slash'
+import { Bot, AppWindow, Box, Wrench, X } from 'lucide-react-native'
+import { groupItems } from '@superone/shared/popup-groups'
+import type { MatchedSlashCommand } from '../slash'
+import type { SlashCatalogStatus } from '../slash-catalog'
+import { IconButton } from './icon-button'
 import type { MentionItem } from '../mentions'
 import { useMobileTheme } from '../theme/context'
 import { FileTypeIcon } from './file-icon'
@@ -35,25 +38,53 @@ function SectionTitle({ title, count }: { title: string; count: number }) {
   </View>
 }
 
-export function SlashSuggestions({ matches, onSelect }: { matches: SlashCommandMatch[]; onSelect: (command: string) => void }) {
+/**
+ * The matcher decides which group leads — a skill that outranks every command
+ * puts Skills on top. Rendering a fixed Commands-then-Skills order would
+ * silently contradict the ranking the highlight indices came from.
+ */
+function slashGroupOrder(matches: MatchedSlashCommand[]): string[] {
+  const order: string[] = []
+  for (const match of matches) {
+    const key = match.isSkill ? 'skill' : 'command'
+    if (!order.includes(key)) order.push(key)
+  }
+  return order
+}
+
+export function SlashSuggestions({ matches, status = 'ready', onSelect, onDismiss }: {
+  matches: MatchedSlashCommand[]
+  status?: SlashCatalogStatus
+  onSelect: (command: string) => void
+  onDismiss?: () => void
+}) {
   const { tokens: { colors } } = useMobileTheme()
-  if (!matches.length) return null
+  const groups = groupItems(matches, (match) => (match.isSkill ? 'skill' : 'command'), slashGroupOrder(matches))
+  // A catalog still loading has to say so. Rendering nothing is indistinguishable
+  // from "this harness has no commands", which is what it used to look like.
+  if (!matches.length && status === 'ready') return null
   return <ScrollView testID="slash-suggestions" keyboardShouldPersistTaps="always" style={{ maxHeight: 256, flexGrow: 0, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, borderRadius: 12 }} contentContainerStyle={{ padding: 6 }}>
-    {[false, true].map((skills) => {
-      const rows = matches.filter((match) => !!match.command.isSkill === skills)
-      if (!rows.length) return null
-      return <View key={String(skills)}>
-        <SectionTitle title={skills ? 'Skills' : 'Commands'} count={rows.length} />
-        {rows.map(({ command, nameIndices }) => <Pressable key={command.name} accessibilityRole="button" onPress={() => onSelect(command.name)}
-          style={({ pressed }) => ({ minHeight: 44, gap: 3, paddingHorizontal: 8, paddingVertical: 8, borderRadius: 6, backgroundColor: pressed ? colors.muted : 'transparent' })}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <MatchText text={`/${command.name}`} indices={[0, ...nameIndices.map((index) => index + 1)]} />
-            {command.argumentHint ? <Text numberOfLines={1} style={{ flex: 1, fontSize: 12, color: colors.mutedForeground }}>{command.argumentHint}</Text> : null}
-          </View>
-          {command.description ? <Text numberOfLines={2} style={{ color: colors.mutedForeground, fontSize: 12, lineHeight: 17 }}>{command.description}</Text> : null}
-        </Pressable>)}
-      </View>
-    })}
+    {onDismiss ? <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
+      <IconButton icon={X} label="Hide commands" chrome="plain" iconSize={16} onPress={onDismiss} />
+    </View> : null}
+    {status === 'loading' ? <View accessibilityLiveRegion="polite" style={{ padding: 8, flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+      <ActivityIndicator size="small" color={colors.mutedForeground} />
+      <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>Loading commands…</Text>
+    </View> : null}
+    {status === 'error' && !matches.length ? <Text accessibilityRole="alert" style={{ padding: 8, color: colors.destructive, fontSize: 12 }}>
+      Could not load commands
+    </Text> : null}
+    {groups.map((group) => <View key={group.key}>
+      <SectionTitle title={group.key === 'skill' ? 'Skills' : 'Commands'} count={group.items.length} />
+      {group.items.map((command) => <Pressable key={`${group.key}:${command.name}`} accessibilityRole="button" onPress={() => onSelect(command.name)}
+        style={({ pressed }) => ({ minHeight: 44, gap: 3, paddingHorizontal: 8, paddingVertical: 8, borderRadius: 6, backgroundColor: pressed ? colors.muted : 'transparent' })}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <MatchText text={`/${command.name}`} indices={[0, ...command.matchIndices.map((index) => index + 1)]} />
+          {command.argumentHint ? <Text numberOfLines={1} style={{ flex: 1, fontSize: 12, color: colors.mutedForeground }}>{command.argumentHint}</Text> : null}
+        </View>
+        {command.description ? <Text numberOfLines={2} style={{ color: colors.mutedForeground, fontSize: 12, lineHeight: 17 }}>{command.description}</Text> : null}
+      </Pressable>)}
+    </View>)}
   </ScrollView>
 }
 

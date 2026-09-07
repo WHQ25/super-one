@@ -48,10 +48,36 @@ tags: [smoke, native, visual]
 # caption is the only thing left on screen for that section.
 - scrollUntilVisible:
     element:
+      text: "Slash · multi-line draft"
+    direction: DOWN
+# The first line is the query; the rest is message body.
+- assertVisible: "/review, Review the current diff for correctness and cleanups"
+
+- scrollUntilVisible:
+    element:
       text: "Slash · no match"
     direction: DOWN
-- assertVisible: "Renders nothing at all. There is no empty state today."
+- assertVisible: "Renders nothing at all. There is no empty state for a settled catalog."
 - takeScreenshot: ${"composer-suggestions-ranking-" + THEME}
+
+# A catalog that has not answered yet must never render as an empty list — that
+# is indistinguishable from "this harness has no commands".
+- scrollUntilVisible:
+    element:
+      text: "Slash · catalog loading"
+    direction: DOWN
+- assertVisible: "Loading commands…"
+- scrollUntilVisible:
+    element:
+      text: "Slash · catalog failed"
+    direction: DOWN
+- assertVisible: "Could not load commands"
+- scrollUntilVisible:
+    element:
+      text: "Slash · dismissable"
+    direction: DOWN
+- assertVisible: "Hide commands"
+- takeScreenshot: ${"composer-suggestions-catalog-" + THEME}
 
 # Each suggestion list clips at 256 px, so only the first group of a full list
 # is on screen. Group *order* is asserted in the component test, which does not

@@ -5,10 +5,13 @@ import type { MentionEditorCommand, MentionEditorSnapshot } from '../mention-edi
 import { selectNativeMention } from '../mention-selection'
 import type { MentionItem } from '../mentions'
 import { rememberMentionArtwork } from './mention-dynamic-artwork'
+import { firstLineRange } from '../composer-first-line'
 
 export interface NativeComposerController {
   insertMention(item: MentionItem): boolean
   replaceText(text: string): boolean
+  /** Rewrite the command line only, keeping later lines and their chips. */
+  replaceFirstLine(text: string): boolean
   canSubmit(): boolean
 }
 export interface NativeComposerBinding {
@@ -35,6 +38,12 @@ export function NativeComposerInput({ binding, tablet, editable, placeholder, on
     setCommand(next)
     return true
   }
+  const replaceRange = (text: string, endOf: (current: MentionEditorSnapshot) => number) => {
+    const current = snapshot.current
+    if (!current || current.composing) return false
+    return issue({ id: commandId.current + 1, eventCount: current.eventCount, start: 0, end: endOf(current),
+      text: text.replaceAll('\uFFFC', '\uFFFD'), tokens: [] })
+  }
   useImperativeHandle(binding.controller, () => ({
     insertMention: (item) => {
       if (!snapshot.current) return false
@@ -43,12 +52,12 @@ export function NativeComposerInput({ binding, tablet, editable, placeholder, on
       rememberMentionArtwork(item)
       return true
     },
-    replaceText: (text) => {
-      const current = snapshot.current
-      if (!current || current.composing) return false
-      return issue({ id: commandId.current + 1, eventCount: current.eventCount, start: 0, end: current.text.length,
-        text: text.replaceAll('\uFFFC', '\uFFFD'), tokens: [] })
-    },
+    replaceText: (text) => replaceRange(text, (current) => current.text.length),
+    // Selecting a slash command rewrites the command line, not the draft. A
+    // whole-document replacement would delete every later line — and every
+    // mention chip on them — the moment the overlay learned to stay open past
+    // the first space.
+    replaceFirstLine: (text) => replaceRange(text, (current) => firstLineRange(current.text).end),
     canSubmit: () => !!snapshot.current && !snapshot.current.composing && !snapshot.current.rejection && pending.current === null,
   }))
   return <NativeMentionEditor command={command} editable={editable} placeholder={placeholder} accessibilityLabel="Message"

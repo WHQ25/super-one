@@ -5,6 +5,8 @@ import { MentionEditorPreview } from './MentionEditorPreview'
 import { ComposerSuggestionsGallery } from './ComposerSuggestionsGallery'
 import { previewMentionItems, previewSlashCatalog } from './composer-fixtures'
 import { filterSlashCommands } from '../slash'
+import type { SlashCatalogStatus } from '../slash-catalog'
+import { replaceFirstLine } from '../composer-first-line'
 import { useEffect, useRef, useState } from 'react'
 import { useWindowDimensions, View } from 'react-native'
 import { Text } from '../ui/text'
@@ -211,16 +213,22 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
   }
   const acceptDraft = (snapshot: MentionEditorSnapshot) => {
     chatDraft.accept(snapshot)
+    setSlashDismissed(false)
     updateMentionHits(snapshot.text, snapshot.end, snapshot.composing || snapshot.start !== snapshot.end)
   }
   const changeDraft = (text: string) => {
     chatDraft.changeText(text)
+    setSlashDismissed(false)
     updateMentionHits(text, text.length)
   }
   // The composer has two runtimes — the native chip editor and the plain
   // TextInput fallback — and they insert, serialise and send differently.
   // Reviewing only one of them is how a fallback-only regression ships.
   const [nativeEditor, setNativeEditor] = useState(true)
+  // The catalog is a fixture here, so the loading and error states have to be
+  // reachable on purpose — a healthy preview never produces them.
+  const [slashStatus, setSlashStatus] = useState<SlashCatalogStatus>('ready')
+  const [slashDismissed, setSlashDismissed] = useState(false)
   const [attachments, setAttachments] = useState<ImageAttachment[]>([])
   const [mode, setMode] = useState('default')
   const [sandbox, setSandbox] = useState<SandboxInfo | null>({ enabled: true, autoAllowBash: false })
@@ -311,6 +319,8 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
       <Text style={[styles.meta, { flex: 1 }]}>Offline preview · {Math.round(width)} px · font {fontScale.toFixed(2)}</Text>
       {chat ? <Button variant="ghost" label={nativeEditor ? 'Editor: native' : 'Editor: fallback'}
         onPress={() => setNativeEditor((value) => !value)} /> : null}
+      {chat ? <Button variant="ghost" label={`Catalog: ${slashStatus}`}
+        onPress={() => setSlashStatus((value) => value === 'ready' ? 'loading' : value === 'loading' ? 'error' : 'ready')} /> : null}
     </View>
     {editorError ? <Text accessibilityRole="alert" style={{ color: tokens.colors.destructive }}>{editorError}</Text> : null}
     <MobileKeyboardFrame>
@@ -344,16 +354,19 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
               onBranch: () => setPage('Branch'),
             } : undefined}
             selection={{ ...pickerCatalogs, model, models: previewModels, effort, efforts, onModel: chooseModel, onEffort: setEffort }}
-            webRef={web} permissionModes={['default', 'acceptEdits', 'plan']} permissionMode={mode} slashHits={filterSlashCommands(chatDraft.draft, previewSlashCatalog)} mentionHits={mentionHits} attachments={attachments} additionalDirectories={[]} queuedMessages={[]} todos={{}} draft={chatDraft.draft} streaming={page === 'Chat'}
+            webRef={web} permissionModes={['default', 'acceptEdits', 'plan']} permissionMode={mode} slashHits={slashDismissed ? [] : filterSlashCommands(chatDraft.draft, previewSlashCatalog, provider)} slashCatalogStatus={slashStatus} mentionHits={mentionHits} attachments={attachments} additionalDirectories={[]} queuedMessages={[]} todos={{}} draft={chatDraft.draft} streaming={page === 'Chat'}
             sandboxInfo={sandbox} contextTokens={82_400} contextWindow={200_000} totalCostUsd={0.4213}
             onWebMessage={(raw) => { if (JSON.parse(raw).type === 'ready') paintChat() }} onWebProcessError={() => {}} onPermissionMode={setMode}
             onSandboxMode={(next) => setSandbox({ enabled: next !== 'off', autoAllowBash: next === 'auto' })} onSlash={(command) => {
               // Mirror the shipping handler: with the fallback editor mounted there
               // is no controller to call, and dropping the else branch leaves the
-              // draft untouched and the overlay stuck open.
-              if (chatDraft.editorRef.current) chatDraft.editorRef.current.replaceText(`/${command} `)
-              else changeDraft(`/${command} `)
-            }} onMention={(item) => {
+              // draft untouched and the overlay stuck open. Only the command line
+              // is rewritten, so later lines and their chips survive.
+              const line = `/${command} `
+              if (chatDraft.editorRef.current) chatDraft.editorRef.current.replaceFirstLine(line)
+              else changeDraft(replaceFirstLine(chatDraft.draft, line))
+              setSlashDismissed(true)
+            }} onSlashDismiss={() => setSlashDismissed(true)} onMention={(item) => {
               if (nativeEditor) { chatDraft.editorRef.current?.insertMention(item); return }
               // Fallback inserts plain `@path` text — deliberately not the typed
               // chip the native editor produces. The difference is the point.

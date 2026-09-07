@@ -280,7 +280,34 @@ from a **pre-existing** failure in `packages/relay-client/src/presence.test.ts`
 (four `TS2493` tuple-index errors, present on a clean tree, introduced by
 `63c2e1c0`); not touched here.
 
-**Phase 3 — not started.**
+**Phase 3 — done (2026-09-07).** The slash surface is closed end to end, and
+this is the first phase that changes mobile behaviour.
+
+- **S10 first.** `onSlash` used to call `replaceText`, which the native editor
+  implements as a whole-document replacement with `tokens: []` — every later line
+  and every mention chip gone. It was invisible only because the overlay refused
+  to open once the draft held a space. `composer-first-line.ts` supplies the
+  range, the native controller gained `replaceFirstLine`, and only then were S2
+  and S4 relaxed.
+- **S9 / S6: the hook owns the catalog.** `requestSlashCatalog` takes a project
+  and a harness rather than a runtime, so the new-session landing has commands
+  too, and it carries a real `loading | ready | error` status. `slashHits` is now
+  *derived* from `(draft, catalog, provider, dismissed)` instead of recomputed on
+  keystrokes, which is what makes a catalog arriving one moment late still open
+  the overlay. `ChatRuntime.slashCommands` was deleted — two copies of the same
+  catalog is the drift this plan exists to prevent.
+- **S1 needs both halves.** The renderer derives its group order from the
+  matcher's output instead of hard-coding Commands-then-Skills; the shared
+  matcher supplies the order. Either half alone leaves the gap open.
+- **S3, S5.** Codex keeps its spaces and its hidden commands. Dismiss is a
+  labelled control rather than a keyboard escape, and any user edit re-arms it —
+  the desktop rule, which is "every non-programmatic edit", not "the next `/`".
+
+Preview gained multi-line, loading, failed and dismissable sections plus a
+catalog-state control; the Maestro gallery asserts all of them. Verified: mobile
+352 vitest + 23 jest, both flows green on iOS.
+
+**Phase 4 — not started.**
 
 ## 5. Risks, reordered
 

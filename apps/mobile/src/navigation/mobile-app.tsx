@@ -23,6 +23,7 @@ import { randomId } from '../ids'
 import { isPairingQrInput, normalizePairingInput } from '../pairing-input'
 import { usePairingDeepLink } from '../pairing-deep-link'
 import { shouldSubmitFromKeyboard } from '../composer-state'
+import { replaceFirstLine } from '../composer-first-line'
 import { CHAT_VIEW_STATE_KEY, parseStoredChatViewStates, restoredChatWindow, type ChatViewState } from '../chat-view-state'
 import { useComposerDraft } from './use-composer-draft'
 import { useComposerSuggestions } from './use-composer-suggestions'
@@ -192,7 +193,7 @@ export function MobileApp() {
   const viewStateWriteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fatalReloadRef = useRef({ startedAt: 0, count: 0 })
   const mentionArtworkRevisionRef = useRef(-1)
-  const suggestions = useComposerSuggestions(runtimeRef, `${activePairingId}:${project?.path}:${sessionId}:${selectedProvider}`, { client: clientRef, projectPath: project?.path })
+  const suggestions = useComposerSuggestions(runtimeRef, `${activePairingId}:${project?.path}:${sessionId}:${selectedProvider}`, { client: clientRef, projectPath: project?.path, provider: selectedProvider })
   const { slashHits, mentionHits } = suggestions
   const systemInfoRequestRef = useRef(0)
   // Files hangs off Project settings or off the session menu; back has to unwind
@@ -1228,6 +1229,7 @@ export function MobileApp() {
           contextWindow={ringContextWindow}
           totalCostUsd={usage.totalCostUsd}
           slashHits={slashHits}
+          slashCatalogStatus={suggestions.slashCatalogStatus}
           mentionHits={mentionHits}
           attachments={attachments}
           additionalDirectories={workspaceDirs}
@@ -1249,10 +1251,17 @@ export function MobileApp() {
           nativeDraft={{ controller: composerDraft.editorRef, document: composerDraft.document.current, onError: setStatus,
             onChange: (snapshot) => { composerDraft.accept(snapshot); suggestions.updateNative(snapshot.text, snapshot, snapshot.composing) } }}
           onSlash={(command) => {
-            if (composerDraft.editorRef.current) composerDraft.editorRef.current.replaceText(`/${command} `)
-            else onDraft(`/${command} `)
-            suggestions.clear()
+            // Only the command line is rewritten. Anything the user typed on a
+            // later line — including mention chips — has to survive.
+            const line = `/${command} `
+            if (composerDraft.editorRef.current) composerDraft.editorRef.current.replaceFirstLine(line)
+            else {
+              const next = replaceFirstLine(draftRef.current, line)
+              composerDraft.changeText(next)
+              suggestions.applyProgrammatic(next)
+            }
           }}
+          onSlashDismiss={suggestions.dismissSlash}
           onMention={(item) => {
             if (composerDraft.editorRef.current) { composerDraft.editorRef.current.insertMention(item); return }
             const value = suggestions.insert(item)

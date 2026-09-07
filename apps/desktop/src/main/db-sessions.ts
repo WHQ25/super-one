@@ -415,33 +415,61 @@ export function hideSession(sessionId: string, hidden: boolean): void {
   db.prepare('UPDATE sessions SET is_hidden = ? WHERE id = ?').run(hidden ? 1 : 0, sessionId)
 }
 
-/** List all pinned sessions across all projects. */
-export function listPinnedSessions(): PinnedSessionEntry[] {
-  const db = getDb()
-  const rows = db.prepare(`
-    SELECT s.id, s.title, s.created_at, s.is_worktree, s.is_automation, s.automation_id, s.provider_session_id,
-           s.provider_id, s.provider, s.acp_agent_id,
+/** Columns every cross-project session list needs, plus the project it lives in. */
+const CROSS_PROJECT_SESSION_SELECT = `
+    SELECT s.id, s.title, s.created_at, s.is_worktree, s.is_pinned, s.is_automation, s.automation_id,
+           s.provider_session_id, s.provider_id, s.provider, s.acp_agent_id,
            p.path AS folder_path, p.name AS folder_name,
            COALESCE(s.last_user_message_at, s.created_at) AS last_user_msg_at
     FROM sessions s
-    JOIN projects p ON p.id = s.project_id
-    WHERE s.is_pinned = 1 AND COALESCE(s.is_hidden, 0) = 0
-    ORDER BY last_user_msg_at DESC
-  `).all() as Array<{ id: string; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_automation: number | null; automation_id: string | null; provider_session_id: string | null; provider_id: string | null; provider: string | null; acp_agent_id: string | null; folder_path: string; folder_name: string }>
+    JOIN projects p ON p.id = s.project_id`
 
-  return rows.map((r) => ({
+type CrossProjectSessionRow = { id: string; title: string | null; created_at: string; last_user_msg_at: string; is_worktree: number | null; is_pinned: number | null; is_automation: number | null; automation_id: string | null; provider_session_id: string | null; provider_id: string | null; provider: string | null; acp_agent_id: string | null; folder_path: string; folder_name: string }
+
+function mapCrossProjectSession(r: CrossProjectSessionRow): PinnedSessionEntry {
+  return {
     sessionId: r.id,
     title: r.title ?? 'Untitled',
     lastActiveAt: r.last_user_msg_at,
     provider: deriveHarnessId(r),
     messageCount: 0,
     ...(r.is_worktree ? { isWorktree: true } : {}),
+    ...(r.is_pinned ? { isPinned: true } : {}),
     ...(r.is_automation ? { isAutomation: true } : {}),
     ...(r.automation_id ? { automationId: r.automation_id } : {}),
     ...(r.provider_session_id ? { providerSessionId: r.provider_session_id } : {}),
     ...(r.acp_agent_id ? { acpAgentId: r.acp_agent_id } : {}),
-    isPinned: true,
     folderPath: r.folder_path,
     folderName: r.folder_name,
-  }))
+  }
+}
+
+/** List all pinned sessions across all projects. */
+export function listPinnedSessions(): PinnedSessionEntry[] {
+  const rows = getDb().prepare(`
+    ${CROSS_PROJECT_SESSION_SELECT}
+    WHERE s.is_pinned = 1 AND COALESCE(s.is_hidden, 0) = 0
+    ORDER BY last_user_msg_at DESC
+  `).all() as CrossProjectSessionRow[]
+  return rows.map(mapCrossProjectSession)
+}
+
+/**
+ * Title search across every project, most recent first.
+ *
+ * Titles only, matching what the sidebar's history filter searches — the
+ * transcript-wide search with snippets is `session_search`, a different product
+ * surface with a different result shape.
+ */
+export function searchSessionsByTitle(query: string, limit = 50): PinnedSessionEntry[] {
+  const needle = query.trim().toLowerCase()
+  if (!needle) return []
+  const rows = getDb().prepare(`
+    ${CROSS_PROJECT_SESSION_SELECT}
+    WHERE COALESCE(s.is_hidden, 0) = 0
+      AND LOWER(COALESCE(s.title, '')) LIKE ? ESCAPE '\\'
+    ORDER BY last_user_msg_at DESC
+    LIMIT ?
+  `).all(`%${needle.replace(/[\\%_]/g, '\\$&')}%`, Math.max(1, Math.min(limit, 200))) as CrossProjectSessionRow[]
+  return rows.map(mapCrossProjectSession)
 }

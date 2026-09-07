@@ -88,7 +88,21 @@ function defaultInfo(
   }
 }
 
+/**
+ * A remote shell has no settings store of its own, so the brand hue the user set
+ * here travels with the harness catalog rather than as a second round trip. It is
+ * appended once, around the per-harness switch, so no branch can forget it.
+ */
 export async function buildRemoteHarnessSystemInfo(
+  projectPath: string,
+  harnessId: HarnessId,
+  deps: RemoteHarnessSystemInfoDependencies,
+): Promise<RemoteSystemInfo> {
+  const info = await harnessSystemInfo(projectPath, harnessId, deps)
+  return { ...info, brandHue: deps.settings.agentPreference[harnessId]?.brandHue ?? null }
+}
+
+async function harnessSystemInfo(
   projectPath: string,
   harnessId: HarnessId,
   deps: RemoteHarnessSystemInfoDependencies,

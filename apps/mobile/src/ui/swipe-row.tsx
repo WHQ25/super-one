@@ -4,7 +4,16 @@ import { Alert, Animated, PanResponder, Pressable, StyleSheet, View } from 'reac
 import { Text } from './text'
 import { useMobileTheme } from '../theme/context'
 
-const ACTION_WIDTH = 76
+/**
+ * `block` fills the revealed area with labelled tiles — right for a short list of
+ * chunky cards. `floating` drops the labels for round icon buttons sitting on the
+ * list's own ground, which is what a dense single-line row can afford: three
+ * labelled tiles would leave barely a third of the title readable.
+ */
+export type SwipeVariant = 'block' | 'floating'
+
+const FLOATING_BUTTON = 34
+const FLOATING_GAP = 8
 
 export type SwipeAction = {
   /** Also the VoiceOver action name, so it must be stable and unique in the row. */
@@ -29,12 +38,17 @@ export type SwipeAction = {
 export function SwipeRow(props: {
   subject: string
   actions: SwipeAction[]
+  variant?: SwipeVariant
   children: (state: { revealed: boolean }) => ReactNode
   onPress: () => void
 }) {
   const styles = useStyles()
   const { tokens } = useMobileTheme()
-  const actionsWidth = ACTION_WIDTH * props.actions.length
+  const floating = props.variant === 'floating'
+  const width = floating ? FLOATING_BUTTON : 76
+  const actionsWidth = floating
+    ? props.actions.length * (FLOATING_BUTTON + FLOATING_GAP) + FLOATING_GAP
+    : width * props.actions.length
   const offset = useRef(new Animated.Value(0)).current
   const opened = useRef(false)
   const [revealed, setRevealed] = useState(false)
@@ -94,12 +108,15 @@ export function SwipeRow(props: {
         pointerEvents={revealed ? 'auto' : 'none'}
         accessibilityElementsHidden={!revealed}
         importantForAccessibility={revealed ? 'auto' : 'no-hide-descendants'}
-        style={[styles.actions, !revealed && { opacity: 0 }]}
+        style={[styles.actions, floating && styles.floatingActions, !revealed && { opacity: 0 }]}
       >
-        {strip.map((action) => {
+        {strip.map((action, index) => {
           const destructive = action.tone === 'destructive'
           const color = destructive ? tokens.colors.destructiveForeground : tokens.colors.foreground
           const Icon = action.icon
+          // Same-tone neighbours would read as one block without a hairline.
+          const previous = strip[index - 1]
+          const divided = !floating && !!previous && (previous.tone ?? 'neutral') === (action.tone ?? 'neutral')
           return (
             <Pressable
               key={action.key}
@@ -107,13 +124,15 @@ export function SwipeRow(props: {
               accessibilityRole="button"
               onPress={() => run(action)}
               style={({ pressed }) => [
-                styles.action,
-                destructive ? styles.destructive : styles.neutral,
+                floating ? styles.floatingAction : styles.action,
+                { width },
+                destructive ? styles.destructive : floating ? styles.floatingNeutral : styles.neutral,
+                divided && styles.divided,
                 pressed && styles.pressed,
               ]}
             >
-              <Icon color={color} size={18} />
-              <Text style={[styles.actionLabel, { color }]}>{action.label}</Text>
+              <Icon color={destructive ? tokens.colors.destructiveForeground : color} size={17} />
+              {floating ? null : <Text style={[styles.actionLabel, { color }]}>{action.label}</Text>}
             </Pressable>
           )
         })}
@@ -157,8 +176,20 @@ function useStyles() {
       alignItems: 'center',
       justifyContent: 'center',
       gap: tokens.spacing.xs,
-      width: ACTION_WIDTH,
     },
+    floatingActions: {
+      alignItems: 'center',
+      gap: FLOATING_GAP,
+      paddingLeft: FLOATING_GAP,
+    },
+    floatingAction: {
+      alignItems: 'center',
+      borderRadius: FLOATING_BUTTON / 2,
+      height: FLOATING_BUTTON,
+      justifyContent: 'center',
+    },
+    floatingNeutral: { backgroundColor: tokens.colors.secondary },
+    divided: { borderLeftColor: tokens.colors.border, borderLeftWidth: StyleSheet.hairlineWidth },
     neutral: { backgroundColor: tokens.colors.secondary },
     destructive: { backgroundColor: tokens.colors.destructive },
     actionLabel: { fontSize: tokens.type.meta, fontWeight: '600' },

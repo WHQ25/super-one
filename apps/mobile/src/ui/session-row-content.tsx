@@ -1,34 +1,66 @@
-import { View } from 'react-native'
+import { ChevronDown, ChevronRight, CornerDownRight, Pin } from 'lucide-react-native'
+import { Pressable, View } from 'react-native'
 import { Text } from './text'
-import type { TabletSessionRow } from '../navigation/tablet-session-sidebar'
+import type { SessionListItem } from '../session-list-state'
 import { useMobileTheme } from '../theme/context'
-import { harnessDisplayName } from '../provider-state'
 import { HarnessIcon } from './harness-icon'
 
-function relativeTime(value?: string): string {
-  if (!value) return ''
-  const time = Date.parse(value)
-  if (!Number.isFinite(time)) return ''
-  const minutes = Math.max(0, Math.floor((Date.now() - time) / 60_000))
-  if (minutes < 1) return 'Now'
-  if (minutes < 60) return `${minutes}m`
-  if (minutes < 1_440) return `${Math.floor(minutes / 60)}h`
-  if (minutes < 10_080) return `${Math.floor(minutes / 1_440)}d`
-  return new Date(time).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-}
-
-export function SessionRowContent({ session, selected }: { session: TabletSessionRow; selected?: boolean }) {
+/**
+ * One session row: harness icon, title, and — on a collaboration parent — the
+ * expand toggle. Deliberately single-line and free of model/branch/tag detail,
+ * matching the desktop sidebar; the harness icon already carries run state.
+ *
+ * A child carries no extra padding either: like the desktop sidebar, the corner
+ * arrow is the whole nesting cue, and it already shifts the row by its own width.
+ */
+export function SessionRowContent({ item, selected, revealed, subtitle, surface = 'panel', onToggleChildren }: {
+  item: SessionListItem
+  selected?: boolean
+  /**
+   * Which neutral the list sits on. A swiped row slides across its actions, so
+   * it has to be opaque; it swaps to the *other* neutral while it does, which is
+   * also what marks it as the row being handled.
+   */
+  surface?: 'panel' | 'page'
+  /**
+   * Swipe actions are showing.
+   */
+  revealed?: boolean
+  /** Second line for cross-project lists (pinned, search): which project it is in. */
+  subtitle?: string
+  onToggleChildren?: () => void
+}) {
   const { tokens: { colors, radius } } = useMobileTheme()
-  const detail = [session.selectedModel && session.selectedModel !== 'default' ? session.selectedModel : harnessDisplayName(session.provider ?? 'claude'), session.gitBranch, session.tags?.slice(0, 2).join(' · ')].filter(Boolean).join(' · ')
-  return <View style={{ backgroundColor: selected ? colors.muted : colors.background, borderRadius: radius.md, padding: 12, gap: 6 }}>
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-      <HarnessIcon provider={session.provider ?? 'claude'} acpAgentId={session.acpAgentId} status={session.status} size={18} />
-      <Text numberOfLines={1} style={{ flex: 1, color: colors.foreground, fontSize: 15, fontWeight: selected ? '500' : '400' }}>{session.title || 'Untitled'}</Text>
-      <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{relativeTime(session.lastActiveAt)}</Text>
+  const { session } = item
+  const Chevron = item.collapsed ? ChevronRight : ChevronDown
+  const onPanel = surface === 'panel'
+  const ink = colors.foreground
+  const dim = colors.mutedForeground
+  const fill = revealed
+    ? onPanel ? colors.background : colors.surface
+    : selected ? colors.muted : onPanel ? colors.surface : colors.background
+  return <View style={{
+    flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 44,
+    backgroundColor: fill,
+    borderRadius: radius.md, paddingVertical: 8, paddingHorizontal: 12,
+  }}>
+    {item.child ? <CornerDownRight size={13} color={dim} /> : null}
+    <HarnessIcon provider={session.provider ?? 'claude'} acpAgentId={session.acpAgentId} status={session.status} size={18} />
+    <View style={{ flex: 1, minWidth: 0 }}>
+      <Text numberOfLines={1} style={{ color: ink, fontSize: 15, fontWeight: selected ? '500' : '400' }}>{session.title || 'Untitled'}</Text>
+      {subtitle ? <Text numberOfLines={1} style={{ color: dim, fontSize: 12, marginTop: 2 }}>{subtitle}</Text> : null}
     </View>
-    <View style={{ paddingLeft: 28, flexDirection: 'row', gap: 8 }}>
-      <Text numberOfLines={1} style={{ flex: 1, color: colors.mutedForeground, fontSize: 12 }}>{detail}</Text>
-      {session.status === 'streaming' ? <Text style={{ color: colors.primary, fontSize: 12 }}>Working</Text> : null}
-    </View>
+    {/* Pinned rows are promoted to the top; the glyph says why they moved. */}
+    {session.isPinned && !subtitle ? <Pin size={12} color={dim} accessibilityLabel="Pinned" /> : null}
+    {item.hasChildren && onToggleChildren ? <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${item.collapsed ? 'Show' : 'Hide'} sessions started by ${session.title || 'Untitled'}`}
+      accessibilityState={{ expanded: !item.collapsed }}
+      hitSlop={10}
+      onPress={onToggleChildren}
+      style={({ pressed }) => ({ padding: 4, opacity: pressed ? 0.6 : 1 })}
+    >
+      <Chevron size={15} color={dim} />
+    </Pressable> : null}
   </View>
 }

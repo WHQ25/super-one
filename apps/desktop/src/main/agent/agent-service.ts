@@ -64,7 +64,7 @@ function getGitRoot(cwd: string): string {
     return cwd // Fallback: not a git repo, use path itself
   }
 }
-import { listSessionsForFolder, createSession, createAutomationSession, renameSession as dbRenameSession, saveSessionState, loadSessionState, loadSessionMessagesPaginated, sessionBelongsToProject, deleteSession as dbDeleteSession, deleteSessionsOlderThan as dbDeleteSessionsOlderThan, pinSession as dbPinSession, hideSession as dbHideSession, listPinnedSessions } from '../db-sessions'
+import { listSessionsForFolder, createSession, createAutomationSession, renameSession as dbRenameSession, saveSessionState, loadSessionState, loadSessionMessagesPaginated, sessionBelongsToProject, deleteSession as dbDeleteSession, deleteSessionsOlderThan as dbDeleteSessionsOlderThan, pinSession as dbPinSession, hideSession as dbHideSession, listPinnedSessions, searchSessionsByTitle } from '../db-sessions'
 import { loadSessionMessages } from '../session-history'
 import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig } from '../mcp-config-service'
 import {
@@ -1247,12 +1247,49 @@ export class AgentService {
                 gitBranch: s.gitBranch ?? null,
                 isWorktree: s.isWorktree ?? false,
                 worktreePath: s.worktreePath ?? null,
+                isPinned: s.isPinned ?? false,
+                // Lets the remote list nest collaboration children under their
+                // parent the way the desktop sidebar does.
+                parentSessionId: s.parentSessionId ?? null,
               }
             }),
           })
         } catch (err) {
           await respond?.(command.requestId, { error: (err as Error).message })
         }
+        break
+      }
+      case 'list_pinned_sessions':
+      case 'search_sessions': {
+        // Both are cross-project by nature, so neither can be scoped by the
+        // per-project access check the single-session commands use.
+        try {
+          const rows = command.type === 'search_sessions'
+            ? searchSessionsByTitle(command.query, command.limit)
+            : listPinnedSessions()
+          await respond?.(command.requestId, {
+            sessions: rows.map(({ folderPath, folderName, ...session }) => ({
+              ...session,
+              projectPath: folderPath,
+              projectName: folderName,
+            })),
+          })
+        } catch (err) {
+          await respond?.(command.requestId, { error: (err as Error).message })
+        }
+        break
+      }
+      case 'pin_session': {
+        if (!this.canAccessSession(command.projectPath, command.sessionId)) {
+          await respond?.(command.requestId, {
+            ok: false,
+            error: this.buildSessionAccessError(command.projectPath, command.sessionId),
+          })
+          break
+        }
+        dbPinSession(command.sessionId, command.pinned)
+        this.emitSessionsChanged()
+        await respond?.(command.requestId, { ok: true })
         break
       }
       case 'archive_session': {
@@ -1412,6 +1449,14 @@ export class AgentService {
         try {
           const branch = await gitRun(command.projectPath, ['rev-parse', '--abbrev-ref', 'HEAD'])
             .catch(() => gitRun(command.projectPath, ['symbolic-ref', 'HEAD']).then((r) => r.replace('refs/heads/', '')))
+          // A detached HEAD makes `--abbrev-ref` answer the literal string `HEAD`.
+          // Reporting that as a branch name is how "HEAD" ends up in branch pickers
+          // and in `create_session.gitBranch`, so name the commit instead — the
+          // extra `rev-parse` only runs on the path that has no branch to report.
+          const detached = branch === 'HEAD'
+          const head = detached
+            ? await gitRun(command.projectPath, ['rev-parse', '--short=7', 'HEAD']).catch(() => null)
+            : null
           const status = await gitRun(command.projectPath, ['status', '--porcelain'])
           const files = status ? status.split('\n').filter(Boolean).length : 0
           let insertions = 0
@@ -1434,7 +1479,8 @@ export class AgentService {
             ahead = Number(aheadText) || 0
           } catch { /* no upstream */ }
           await respond?.(command.requestId, {
-            branch,
+            branch: detached ? null : branch,
+            ...(head ? { head } : {}),
             ahead,
             behind,
             ...(files > 0 ? { dirty: { files, insertions, deletions } } : {}),

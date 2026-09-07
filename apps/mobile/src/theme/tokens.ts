@@ -29,14 +29,28 @@ export function normalizeColorScheme(scheme: ColorSchemeName): MobileColorScheme
   return scheme === 'light' ? 'light' : 'dark'
 }
 
+/**
+ * A hue the host reported, or the built-in default. Only the transcript reads it
+ * (through `mobileWebViewTheme`); the shell stays neutral, so a bogus value from
+ * a host cannot repaint the app — but NaN would still reach the WebView's CSS.
+ */
+export function resolveBrandHue(harness: HarnessId, hostHue?: number | null): number {
+  if (typeof hostHue !== 'number' || !Number.isFinite(hostHue)) return HARNESS_DEFAULT_BRAND_HUE[harness]
+  return ((hostHue % 360) + 360) % 360
+}
+
 export function mobileThemeTokens(
   scheme: MobileColorScheme,
   harness: HarnessId = 'codex',
+  /** Host override for this harness's hue; omit to use the built-in default. */
+  brandHue?: number | null,
 ): MobileThemeTokens {
   return {
     scheme,
-    brandHue: HARNESS_DEFAULT_BRAND_HUE[harness],
-    colors: scheme === 'dark' ? GENERATED_DARK_COLORS : GENERATED_LIGHT_COLORS[harness],
+    brandHue: resolveBrandHue(harness, brandHue),
+    // Fixed in both schemes: only `brandHue` — and so only the transcript —
+    // follows the harness.
+    colors: scheme === 'dark' ? GENERATED_DARK_COLORS : GENERATED_LIGHT_COLORS,
     spacing: { xs: 4, sm: 8, md: 12, lg: 16, xl: 24 },
     radius: { sm: 6, md: 8, lg: 12, pill: 999 },
     type: { meta: 12, body: 15, title: 17, display: 24 },

@@ -1,56 +1,45 @@
-import { FlatList, View } from 'react-native'
+import { ScrollView, View } from 'react-native'
+import { Plus, Settings } from 'lucide-react-native'
 import { Text } from '../ui/text'
-import type { HarnessId } from '@superone/shared/agent-types'
-import { useMobileStyles } from '../theme/context'
-import { Button, SwipeSessionRow } from '../ui'
-import { SessionRowContent } from '../ui/session-row-content'
+import type { RelayClient } from '@superone/relay-client'
+import type { Project } from '../project-types'
+import type { SessionListRow } from '../session-list-state'
+import { useMobileStyles, useMobileTheme } from '../theme/context'
+import { IconButton, SessionListBody, type SessionListActions } from '../ui'
+import { useProjectSessions } from './use-project-sessions'
 
-export type TabletSessionRow = {
-  sessionId: string
-  title: string
-  lastActiveAt?: string
-  provider?: HarnessId
-  acpAgentId?: string | null
-  messageCount?: number
-  gitBranch?: string
-  selectedModel?: string | null
-  status?: string
-  tags?: string[]
-}
-
-export function TabletSessionSidebar(props: {
-  projectName: string
-  sessions: TabletSessionRow[]
+/** The master pane at tablet widths; same surface and rows as the drawer. */
+export function TabletSessionSidebar(props: SessionListActions & {
+  client: RelayClient | null
+  project: Project
+  sessions: SessionListRow[]
   activeSessionId: string | null
-  onOpenSession: (session: TabletSessionRow) => void
   onCreateSession: () => void
   onOpenSettings: () => void
-  onArchiveSession: (session: TabletSessionRow) => void
-  onDeleteSession: (session: TabletSessionRow) => void
 }) {
   const styles = useMobileStyles()
+  const { tokens: { colors } } = useMobileTheme()
+  const sessions = useProjectSessions(props.client, props.project, props.sessions, props.activeSessionId)
   return (
     <View style={styles.tabletSidebar}>
-      <Text numberOfLines={1} style={styles.sectionTitle}>{props.projectName}</Text>
-      <View style={[styles.rowBetween, { flexWrap: 'wrap' }]}>
-        <Button variant="ghost" label="New session" onPress={props.onCreateSession} />
-        <Button variant="ghost" label="Settings" onPress={props.onOpenSettings} />
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 8 }}>
+        <Text numberOfLines={1} style={{ flex: 1, color: colors.foreground, fontSize: 13, fontWeight: '600' }}>
+          {props.project.name}
+        </Text>
+        <IconButton icon={Plus} label="New session" onPress={props.onCreateSession} chrome="plain" color={colors.foreground} />
+        <IconButton icon={Settings} label="Settings" onPress={props.onOpenSettings} />
       </View>
-      <FlatList
-        style={styles.flex}
-        data={props.sessions}
-        keyExtractor={(item) => item.sessionId}
-        renderItem={({ item }) => (
-          <SwipeSessionRow
-            title={item.title}
-            onPress={() => props.onOpenSession(item)}
-            onArchive={() => props.onArchiveSession(item)}
-            onDelete={() => props.onDeleteSession(item)}
-          >
-            <SessionRowContent session={item} selected={props.activeSessionId === item.sessionId} />
-          </SwipeSessionRow>
-        )}
-      />
+      <ScrollView style={styles.flex} keyboardShouldPersistTaps="handled">
+        <SessionListBody
+          sessions={sessions}
+          surface="panel"
+          activeSessionId={props.activeSessionId}
+          onOpenSession={props.onOpenSession}
+          onPinSession={props.onPinSession}
+          onArchiveSession={props.onArchiveSession}
+          onDeleteSession={props.onDeleteSession}
+        />
+      </ScrollView>
     </View>
   )
 }

@@ -1,4 +1,4 @@
-import { ArrowLeft, Folder, FolderPlus, FolderTree, Menu, MonitorSmartphone, MoreHorizontal, Search, Settings, SquareTerminal, TextCursorInput } from 'lucide-react-native'
+import { ArrowLeft, Folder, FolderClosed, FolderPlus, Menu, MonitorSmartphone, MoreHorizontal, Search, SquareTerminal, TextCursorInput } from 'lucide-react-native'
 import { Pressable, View } from 'react-native'
 import { Text } from '../ui/text'
 import type { HarnessId } from '@superone/shared/agent-types'
@@ -6,6 +6,9 @@ import { harnessDisplayName } from '../provider-state'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { IconButton } from '../ui'
 import { AnchoredMenu, MenuRow, useMenuAnchor } from '../ui/anchored-menu'
+import { SessionMetaRow } from '../ui/session-meta-row'
+import { isConnected, type DeviceStatus, type ReconnectInfo } from '../device-status'
+import type { SessionGitView } from '../session-git-status'
 import type { MobileRoute } from './mobile-navigator'
 
 /** Width the confirm action and its balancing leading slot both reserve. */
@@ -17,15 +20,13 @@ export function mobileHeaderTitle(
   sessionTitle: string,
   terminalTitle: string,
 ): string {
-  if (route === 'projects') return 'Projects'
-  if (route === 'sessions') return projectName ?? 'Sessions'
   if (route === 'chat') return sessionTitle || 'Chat'
   if (route === 'terminal') return terminalTitle
   if (route === 'worktree') return 'Worktree'
   if (route === 'branch') return 'Branch'
   if (route === 'project-picker') return 'Projects'
   if (route === 'add-project') return 'Add Project'
-  if (route === 'settings') return 'Project settings'
+  if (route === 'settings') return 'Settings'
   // Files names whatever it is anchored to — a project folder or the machine —
   // and that name is the way back to the top of it.
   if (route === 'files') return projectName ?? 'Files'
@@ -39,11 +40,21 @@ export function MobileHeader(props: {
   provider: HarnessId
   /** False on the new-session landing, which names the project and branch itself. */
   hasSession?: boolean
-  connectionState: 'connected' | 'reconnecting' | 'offline'
+  /**
+   * The full status of the desktop we are paired with, not a three-state
+   * summary: the glyph is how the user learns *which* route the session takes
+   * (Wi-Fi on the LAN, cloud through the relay), which used to be invisible here.
+   */
+  deviceStatus: DeviceStatus
+  /** Drives the retry countdown while `deviceStatus` is `connecting`. */
+  reconnect?: ReconnectInfo | null
+  /** The running session's checkout; absent before it is known. */
+  git?: SessionGitView | null
+  /** Offered only for a plain branch — see `SessionGitChip`. */
+  onOpenBranch?: () => void
   onBack: () => void
   onSwitchSession: () => void
   onOpenTerminal: () => void
-  onOpenSettings: () => void
   /** Browse the project's file tree from the session menu. */
   onOpenFiles: () => void
   /** Files only: return to the folder the browser is anchored to. */
@@ -74,12 +85,11 @@ export function MobileHeader(props: {
   const files = props.route === 'files' ? props.files : undefined
   // The landing already shows project, branch and harness, so the header only
   // speaks up there when the connection needs attention.
-  const showMeta = (chat || props.route === 'terminal')
-    && (props.hasSession || props.connectionState !== 'connected')
-  const statusColor = props.connectionState === 'connected' ? tokens.colors.success
-    : props.connectionState === 'reconnecting' ? tokens.colors.warning : tokens.colors.mutedForeground
-  // The device list carries its own wordmark inside the page, so it has no bar.
-  if (props.route === 'pair') return null
+  const connected = isConnected(props.deviceStatus)
+  const showMeta = (chat || props.route === 'terminal') && (props.hasSession || !connected)
+  // The device list carries its own wordmark inside the page, and session search
+  // is a search field with a Cancel beside it — both own their whole screen.
+  if (props.route === 'pair' || props.route === 'session-search') return null
   return (
     <View style={styles.top}>
       <View style={props.onConfirm ? { minWidth: CONFIRM_SLOT_WIDTH, alignItems: 'flex-start' } : undefined}>
@@ -101,12 +111,9 @@ export function MobileHeader(props: {
             <Text numberOfLines={1} style={styles.title}>{props.title}</Text>
           </View>
         )}
-        {showMeta ? <View style={styles.headerMetaRow}>
-          <View accessibilityLabel={props.connectionState} style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: statusColor }} />
-          <Text numberOfLines={1} style={{ color: tokens.colors.mutedForeground, fontSize: 12, flexShrink: 1 }}>
-            {props.connectionState === 'connected' ? props.subtitle || harnessDisplayName(props.provider) : props.connectionState}
-          </Text>
-        </View> : null}
+        {showMeta ? <SessionMetaRow deviceStatus={props.deviceStatus} reconnect={props.reconnect}
+          subtitle={props.subtitle || harnessDisplayName(props.provider)}
+          git={props.git} onOpenBranch={props.onOpenBranch} /> : null}
       </View>
       {props.onConfirm ? <Pressable accessibilityRole="button" accessibilityLabel={props.confirmLabel ?? 'Confirm'}
         accessibilityState={{ disabled: props.confirmDisabled }} disabled={props.confirmDisabled}
@@ -127,12 +134,11 @@ export function MobileHeader(props: {
               ? files.finderOpen ? 'Close go to folder' : 'Go to folder'
               : files.finderOpen ? 'Close search' : 'Search files'}
             onPress={files.onToggleFinder} />
-        : props.route === 'sessions' ? <IconButton icon={Settings} label="Settings" onPress={props.onOpenSettings} />
-          // Balance the leading icon button so the title group stays optically centred.
-          : <View style={styles.headerTrailingSpacer} />}
+        // Balance the leading icon button so the title group stays optically centred.
+        : <View style={styles.headerTrailingSpacer} />}
       <AnchoredMenu anchor={menu.anchor} title="Session" onDismiss={menu.close} width={260}>
         <MenuRow label="Terminal" leading={<SquareTerminal size={18} color={tokens.colors.mutedForeground} />} onPress={() => { menu.close(); props.onOpenTerminal() }} />
-        <MenuRow label="Files" leading={<FolderTree size={18} color={tokens.colors.mutedForeground} />} onPress={() => { menu.close(); props.onOpenFiles() }} />
+        <MenuRow label="Files" leading={<FolderClosed size={18} color={tokens.colors.mutedForeground} />} onPress={() => { menu.close(); props.onOpenFiles() }} />
       </AnchoredMenu>
     </View>
   )

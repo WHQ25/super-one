@@ -23,6 +23,6 @@ describe('responsive shell layout', () => {
     expect(isFullBleedScreen('project-picker')).toBe(true)
     expect(isFullBleedScreen('add-project')).toBe(true)
     expect(isFullBleedScreen('settings')).toBe(false)
-    expect(isFullBleedScreen('projects')).toBe(false)
+    expect(isFullBleedScreen('pair')).toBe(false)
   })
 })

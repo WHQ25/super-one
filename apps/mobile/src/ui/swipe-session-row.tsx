@@ -1,11 +1,14 @@
 import type { ReactNode } from 'react'
-import { Archive, Trash2 } from 'lucide-react-native'
+import { Archive, Pin, PinOff, Trash2 } from 'lucide-react-native'
 import { SwipeRow } from './swipe-row'
 
 export function SwipeSessionRow(props: {
   title: string
-  children: ReactNode
+  pinned?: boolean
+  /** Receives the reveal state so the row can square the edge facing the strip. */
+  children: (state: { revealed: boolean }) => ReactNode
   onPress: () => void
+  onPin: () => void
   onArchive: () => void
   onDelete: () => void
 }) {
@@ -13,9 +16,16 @@ export function SwipeSessionRow(props: {
   return (
     <SwipeRow
       subject={subject}
+      variant="floating"
       onPress={props.onPress}
       actions={[
-        { key: 'archive', label: 'Archive', icon: Archive, onPress: props.onArchive },
+        {
+          key: 'pin',
+          label: props.pinned ? 'Unpin' : 'Pin',
+          icon: props.pinned ? PinOff : Pin,
+          onPress: props.onPin,
+        },
+        { key: 'archive', label: 'Hide', icon: Archive, onPress: props.onArchive },
         {
           key: 'delete',
           label: 'Delete',
@@ -30,7 +40,7 @@ export function SwipeSessionRow(props: {
         },
       ]}
     >
-      {() => props.children}
+      {props.children}
     </SwipeRow>
   )
 }

@@ -5,7 +5,7 @@ import { GENERATED_DARK_COLORS, GENERATED_LIGHT_COLORS } from '../theme/tokens.g
 
 describe('native provider mention artwork', () => {
   it('covers all mobile theme inks with transparent high-density PNGs', () => {
-    const themes = { light: Object.values(GENERATED_LIGHT_COLORS).map((theme) => theme.foreground), dark: [GENERATED_DARK_COLORS.foreground] }
+    const themes = { light: [GENERATED_LIGHT_COLORS.foreground], dark: [GENERATED_DARK_COLORS.foreground] }
     for (const [scheme, colors] of Object.entries(themes)) {
       for (const color of colors) {
         for (const ref of ['claude-base', 'codex-review', 'acp-base:grok-build', 'opencode-base', 'cursor-base', 'dsh-base', 'acp-base:custom', 'future-base']) {

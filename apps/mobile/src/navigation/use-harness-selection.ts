@@ -14,8 +14,10 @@ import {
   resolveSelectedModel,
 } from '../model-selection-state'
 import { optionParamsForModel } from '../model-picker-state'
+import { useMobileTheme } from '../theme/context'
 
 export function useHarnessSelection() {
+  const { setBrandHue } = useMobileTheme()
   const [selectedProvider, setSelectedProvider] = useState<HarnessId>('claude')
   const [selectedModel, setSelectedModel] = useState('')
   const [selectedEffort, setSelectedEffort] = useState('')
@@ -55,6 +57,10 @@ export function useHarnessSelection() {
         : modes[0] ?? 'default'
 
     setSystemInfo(info)
+    // The catalog is the only thing that carries the host's brand hue, so this is
+    // where the transcript's colour is kept honest — every path that refreshes a
+    // harness goes through here.
+    setBrandHue(provider, info.brandHue ?? null)
     setModels(info.models ?? [])
     setSelectedAgentId(info.selectedAgentId ?? null)
     setSelectedModeId(info.selectedModeId ?? null)

@@ -3,7 +3,7 @@ import { ActivityIndicator, Pressable, TextInput, View } from 'react-native'
 import { Text } from './text'
 import { Check, GitBranch, Plus, Search } from 'lucide-react-native'
 import { branchToCreate, filterBranches } from '../branch-picker-state'
-import type { ShellGitInfo } from '../screens/settings-screen'
+import type { ShellGitInfo } from '../project-types'
 import { useMobileTheme } from '../theme/context'
 
 const fmt = (n: number) => n.toLocaleString()

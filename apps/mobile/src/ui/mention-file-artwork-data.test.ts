@@ -6,7 +6,7 @@ import { mentionFileArtwork } from './mention-file-artwork-data'
 
 describe('native file artwork', () => {
   it('covers every desktop SVG for every mobile foreground color', () => {
-    const colors = new Set([GENERATED_DARK_COLORS.foreground, ...Object.values(GENERATED_LIGHT_COLORS).map((theme) => theme.foreground)])
+    const colors = new Set([GENERATED_DARK_COLORS.foreground, GENERATED_LIGHT_COLORS.foreground])
     const variants: Record<string, Record<string, string>> = data.variants
     const images: Record<string, string> = data.images
     for (const color of colors) {

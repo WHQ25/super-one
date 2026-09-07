@@ -1,8 +1,8 @@
 export type MobileRoute =
   | 'pair'
-  | 'projects'
-  | 'sessions'
   | 'chat'
+  /** Global session search, opened from the workspace drawer. */
+  | 'session-search'
   /** Pick which project the next session runs in. */
   | 'project-picker'
   /** Add a project to the host — the desktop Add Project flow. */
@@ -16,22 +16,20 @@ export type MobileRoute =
 /** Where the Files browser was entered from; it is reachable from both. */
 export type FilesOrigin = 'settings' | 'session'
 
+/**
+ * The stack under a route. Projects and sessions are not screens: the workspace
+ * drawer owns both lists, the way the desktop sidebar does, so chat sits
+ * directly on the device list.
+ */
 export function routeHierarchy(
   route: MobileRoute,
-  auxiliaryReturn: 'sessions' | 'chat',
   filesOrigin: FilesOrigin = 'settings',
 ): MobileRoute[] {
   const root: MobileRoute[] = ['pair']
   if (route === 'pair') return root
-  root.push('projects')
-  if (route === 'projects') return root
-  root.push('sessions')
-  if (route === 'sessions') return root
-  // The project, worktree and branch pickers are only ever opened from a chat.
-  const overChat = route === 'chat' || route === 'terminal' || route === 'worktree'
-    || route === 'branch' || route === 'project-picker' || route === 'add-project'
-  if (overChat || auxiliaryReturn === 'chat') root.push('chat')
+  root.push('chat')
   if (route === 'chat') return root
+  if (route === 'session-search') return [...root, 'session-search']
   if (route === 'terminal') return [...root, 'terminal']
   if (route === 'worktree') return [...root, 'worktree']
   if (route === 'branch') return [...root, 'branch']

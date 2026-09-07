@@ -19,7 +19,7 @@ const refs = {
   dsh: 'dsh-base', acp: 'acp-base:custom', '$unknown': 'unknown-base',
 }
 const themes = {
-  light: [...new Set(Object.values(GENERATED_LIGHT_COLORS).map((theme) => theme.foreground))].sort(),
+  light: [GENERATED_LIGHT_COLORS.foreground],
   dark: [GENERATED_DARK_COLORS.foreground],
 }
 const variants: Record<string, Record<string, Record<string, string>>> = {}

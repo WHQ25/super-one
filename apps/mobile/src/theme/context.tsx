@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
 import { useColorScheme } from 'react-native'
 import type { HarnessId } from '@superone/shared/agent-types'
 import { createMobileStyles } from './styles'
@@ -8,6 +8,12 @@ import { mobileThemeTokens, normalizeColorScheme, type MobileThemeTokens, type M
 interface MobileThemeContextValue {
   tokens: MobileThemeTokens
   setHarness: (harness: HarnessId) => void
+  /**
+   * The hue the connected host uses for this harness. Kept per harness because
+   * the desktop stores one per harness and a session can switch between them;
+   * `null` restores the built-in default.
+   */
+  setBrandHue: (harness: HarnessId, hue: number | null) => void
 }
 
 const MobileThemeContext = createContext<MobileThemeContextValue | null>(null)
@@ -16,8 +22,15 @@ export function MobileThemeProvider({ children, colorScheme }: { children: React
   const systemScheme = useColorScheme()
   const scheme = colorScheme ?? normalizeColorScheme(systemScheme)
   const [harness, setHarness] = useState<HarnessId>('claude')
-  const tokens = useMemo(() => mobileThemeTokens(scheme, harness), [harness, scheme])
-  const value = useMemo(() => ({ tokens, setHarness }), [tokens])
+  const [hostHues, setHostHues] = useState<Partial<Record<HarnessId, number | null>>>({})
+  const setBrandHue = useCallback((target: HarnessId, hue: number | null) => {
+    setHostHues((current) => current[target] === hue ? current : { ...current, [target]: hue })
+  }, [])
+  const tokens = useMemo(
+    () => mobileThemeTokens(scheme, harness, hostHues[harness]),
+    [harness, scheme, hostHues],
+  )
+  const value = useMemo(() => ({ tokens, setHarness, setBrandHue }), [tokens, setBrandHue])
   return <MobileThemeContext.Provider value={value}><MenuHost>{children}</MenuHost></MobileThemeContext.Provider>
 }
 

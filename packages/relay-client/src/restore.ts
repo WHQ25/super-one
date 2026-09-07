@@ -16,6 +16,15 @@ export type SessionSnapshot = {
   permissionMode?: string
   /** Runtime fact — the sandbox this session's process is actually confined by. */
   sandboxInfo?: SandboxInfo
+  /**
+   * Where the session's process actually runs. Only the host knows this — a
+   * remote shell cannot infer it from the project path — and it is the one
+   * source that stays right across a reconnect, since restore re-reads it.
+   */
+  isWorktree?: boolean
+  worktreePath?: string | null
+  /** Branch recorded when the session was created; a worktree's own branch. */
+  gitBranch?: string | null
   contextTokens?: number
   totalCostUsd?: number
   error?: string

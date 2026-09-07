@@ -26,7 +26,6 @@ function currentRouteName(state?: NavigationState | PartialState<NavigationState
 
 export function MobileNavigator(props: {
   route: MobileRoute
-  auxiliaryReturn: 'sessions' | 'chat'
   filesOrigin: FilesOrigin
   renderScene: (route: MobileRoute) => ReactNode
   onRouteChange: (route: MobileRoute) => void
@@ -34,9 +33,9 @@ export function MobileNavigator(props: {
   const { tokens } = useMobileTheme()
   useEffect(() => {
     if (!navigationRef.isReady() || navigationRef.getCurrentRoute()?.name === props.route) return
-    const routes = routeHierarchy(props.route, props.auxiliaryReturn, props.filesOrigin)
+    const routes = routeHierarchy(props.route, props.filesOrigin)
     navigationRef.reset({ index: routes.length - 1, routes: routes.map((name) => ({ name })) })
-  }, [props.auxiliaryReturn, props.filesOrigin, props.route])
+  }, [props.filesOrigin, props.route])
 
   return (
     <NavigationContainer
@@ -60,7 +59,7 @@ export function MobileNavigator(props: {
       }}
       onReady={() => {
         if (props.route === 'pair') return
-        const routes = routeHierarchy(props.route, props.auxiliaryReturn, props.filesOrigin)
+        const routes = routeHierarchy(props.route, props.filesOrigin)
         navigationRef.reset({ index: routes.length - 1, routes: routes.map((name) => ({ name })) })
       }}
       onStateChange={(state) => {
@@ -77,9 +76,10 @@ export function MobileNavigator(props: {
       >
         {(Object.keys({
           pair: 1,
-          projects: 1,
-          sessions: 1,
           chat: 1,
+          'session-search': 1,
+          'project-picker': 1,
+          'add-project': 1,
           terminal: 1,
           worktree: 1,
           branch: 1,

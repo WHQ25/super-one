@@ -14,7 +14,7 @@ import { GENERATED_DARK_COLORS, GENERATED_LIGHT_COLORS } from '../src/theme/toke
 // prepare enough pixels for enlarged text on high-density devices without any
 // hidden-view rendering or image conversion during typing.
 const pixels = 128
-const colors = [...new Set([GENERATED_DARK_COLORS.foreground, ...Object.values(GENERATED_LIGHT_COLORS).map((theme) => theme.foreground)])].sort()
+const colors = [...new Set([GENERATED_DARK_COLORS.foreground, GENERATED_LIGHT_COLORS.foreground])].sort()
 const variants: Record<string, Record<string, string>> = {}
 const images: Record<string, string> = {}
 for (const color of colors) {

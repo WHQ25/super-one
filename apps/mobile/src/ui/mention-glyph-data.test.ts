@@ -9,13 +9,13 @@ describe('desktop mention identities on mobile', () => {
     const glyphs: Record<string, { icon: string; light: string; dark: string }> = data.glyphs
     for (const [kind, expected] of Object.entries(desktopMentionGlyphs())) {
       expect(glyphs[kind]).toMatchObject(expected)
-      const light = mentionGlyphArtwork(kind, 'light', GENERATED_LIGHT_COLORS.claude.foreground)
+      const light = mentionGlyphArtwork(kind, 'light', GENERATED_LIGHT_COLORS.foreground)
       const dark = mentionGlyphArtwork(kind, 'dark', GENERATED_DARK_COLORS.foreground)
       expect(light).toBeTruthy()
       expect(dark).toBeTruthy()
       expect(light).not.toBe(dark)
     }
-    const miniApp = mentionGlyphArtwork('miniapp', 'light', GENERATED_LIGHT_COLORS.claude.foreground)
+    const miniApp = mentionGlyphArtwork('miniapp', 'light', GENERATED_LIGHT_COLORS.foreground)
     expect(miniApp).toBeTruthy()
     expect(miniApp).toBe(mentionGlyphArtwork('miniapp', 'dark', GENERATED_DARK_COLORS.foreground))
     expect(mentionGlyphArtwork('agent-profile', 'dark', GENERATED_DARK_COLORS.foreground)).toBeUndefined()

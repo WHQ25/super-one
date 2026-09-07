@@ -4335,6 +4335,12 @@ export interface RemoteSystemInfo {
   account?: unknown
   activeProvider?: RemoteActiveProvider | null
   acpAgentId?: string | null
+  /**
+   * The host's brand hue for this harness, so a remote shell paints the
+   * transcript the colour the user actually chose rather than the built-in
+   * default. Null means "no override"; absent means the host predates this.
+   */
+  brandHue?: number | null
   defaults?: {
     model?: string | null
     effort?: string | null
@@ -4378,6 +4384,9 @@ export type RemoteCommand =
   | { type: 'list_harness_options'; requestId: string }
   | { type: 'list_sessions'; requestId: string; projectPath: string; limit?: number; offset?: number }
   | { type: 'archive_session'; requestId: string; projectPath: string; sessionId: string }
+  | { type: 'pin_session'; requestId: string; projectPath: string; sessionId: string; pinned: boolean }
+  | { type: 'list_pinned_sessions'; requestId: string }
+  | { type: 'search_sessions'; requestId: string; query: string; limit?: number }
   | { type: 'delete_session'; requestId: string; projectPath: string; sessionId: string }
   | { type: 'list_models'; requestId: string; projectPath: string }
   | { type: 'get_system_info'; requestId: string; projectPath: string; provider: HarnessId }

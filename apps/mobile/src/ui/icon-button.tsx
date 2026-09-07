@@ -4,7 +4,7 @@ import { Pressable, View, type StyleProp, type ViewStyle } from 'react-native'
 import { SpinningIcon } from './spinning-icon'
 import { useMobileTheme } from '../theme/context'
 
-export function IconButton({ icon: Icon, label, onPress, disabled, active, destructive, tone, chrome = 'default', iconSize = 20, spinning, style, buttonRef }: {
+export function IconButton({ icon: Icon, label, onPress, disabled, active, destructive, tone, color, chrome = 'default', iconSize = 20, spinning, style, buttonRef }: {
   buttonRef?: RefObject<View | null>
   icon: LucideIcon
   label: string
@@ -13,6 +13,8 @@ export function IconButton({ icon: Icon, label, onPress, disabled, active, destr
   active?: boolean
   destructive?: boolean
   tone?: 'muted' | 'primary' | 'danger'
+  /** Explicit glyph colour for buttons on the sidebar, whose palette is its own. */
+  color?: string
   chrome?: 'default' | 'plain' | 'circle'
   iconSize?: number
   /** Rotate the icon to show the action it triggers is still running. */
@@ -28,7 +30,7 @@ export function IconButton({ icon: Icon, label, onPress, disabled, active, destr
   // control rather than the same one in its on-state.
   const iconColor = tone === 'primary' ? colors.primary
     : tone === 'danger' || destructive ? colors.error
-      : active ? colors.primary : colors.mutedForeground
+      : active ? colors.primary : color ?? colors.mutedForeground
   return (
     <Pressable ref={buttonRef}
       accessibilityRole="button"

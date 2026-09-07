@@ -37,6 +37,11 @@ export type DeviceStatusView = {
 /** A backoff this long means the desktop is not coming back on its own. */
 const SLOW_RETRY_MS = 8_000
 
+/** True only while this app holds the socket — `online*` is discovery, not us. */
+export function isConnected(status: DeviceStatus): boolean {
+  return status === 'connectedLan' || status === 'connectedCloud'
+}
+
 export function isReachable(status: DeviceStatus): boolean {
   return status !== 'offline' && status !== 'searchingLan' && status !== 'connecting'
 }

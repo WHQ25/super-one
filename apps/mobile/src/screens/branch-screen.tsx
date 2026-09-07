@@ -2,7 +2,7 @@ import { ScrollView } from 'react-native'
 import { useMobileStyles } from '../theme/context'
 import { BranchPicker } from '../ui/branch-picker'
 import { SCROLL_INDICATOR_GUTTER } from '../ui/scroll-gutter'
-import type { ShellGitInfo } from './settings-screen'
+import type { ShellGitInfo } from '../project-types'
 
 export type BranchScreenProps = {
   branches: string[]

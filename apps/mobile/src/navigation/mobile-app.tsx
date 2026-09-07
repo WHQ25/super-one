@@ -17,7 +17,7 @@ import type {
   SandboxInfo, SandboxMode, TodoItem, WorktreeInfo,
 } from '@superone/shared/agent-types'
 import { resolveRingContextWindow } from '@superone/shared/agent-types'
-import { ChatRuntime } from '../runtime'
+import { ChatRuntime, type SessionWorktreeFacts } from '../runtime'
 import { TerminalRuntime } from '../terminal-runtime'
 import { randomId } from '../ids'
 import { isPairingQrInput, normalizePairingInput } from '../pairing-input'
@@ -34,7 +34,9 @@ import { fileBrowserHome, joinRemotePath, parentRemotePath, resolveRemoteFilePat
 import { loadOrCreateMobileId, mobileKv } from '../storage'
 import { registerFatalChatViewError } from '../chat-view-recovery'
 import { pickAndUploadProjectFile, pickChatImages, pickChatPdf, showAttachmentMenu } from '../attachments'
-import { SettingsScreen, type ProjectSettingsProps, type ShellGitInfo } from '../screens/settings-screen'
+import { AppSettingsScreen } from '../screens/app-settings-screen'
+import type { ShellGitInfo } from '../project-types'
+import { describeSessionGit } from '../session-git-status'
 import {
   buildWorktreeCreateOptions,
   LOCAL_WORKTREE_SELECTION,
@@ -42,7 +44,8 @@ import {
   type NewSessionWorktreeSelection,
 } from '../worktree-state'
 import { shouldUseTabletMultiPane } from '../layout-state'
-import { TabletSessionSidebar, type TabletSessionRow as SessionRow } from './tablet-session-sidebar'
+import { TabletSessionSidebar } from './tablet-session-sidebar'
+import type { SessionListRow as SessionRow } from '../session-list-state'
 import { injectHostMessage as inject, resolveNativeRequest } from '../native-actions'
 import { useSharedFileInbox } from '../shared-file-inbox'
 import type { ReconnectController } from '../reconnect-controller'
@@ -56,9 +59,10 @@ import { completeTypedPath, usePathAutocomplete } from './use-path-autocomplete'
 import { NewFolderSheet } from '../prompts/NewFolderSheet'
 import { FileFinderView } from '../screens/file-finder-view'
 import { leaveMobileSession, sessionRemovalStatus } from '../session-exit'
-import { ProjectsScreen, type Project } from '../screens/projects-screen'
+import type { Project } from '../project-types'
 import { BranchScreen } from '../screens/branch-screen'
 import { ProjectPickerScreen } from '../screens/project-picker-screen'
+import { SessionSearchScreen } from '../screens/session-search-screen'
 import { AddProjectScreen } from '../screens/add-project-screen'
 import { WorktreeScreen } from '../screens/worktree-screen'
 import { runUiAction } from '../ui-action'
@@ -66,7 +70,6 @@ import { FilesScreen } from '../screens/files-screen'
 import { ChatScreen } from '../screens/chat-screen'
 import { PairingsScreen } from '../screens/pairings-screen'
 import { ConnectedTerminal } from './connected-terminal'
-import { SessionsScreen } from '../screens/sessions-screen'
 import { MobileNavigator, type FilesOrigin, type MobileRoute as Screen } from './mobile-navigator'
 import { MobileHeader, mobileHeaderTitle } from './mobile-header'
 import { useAddProject } from './use-add-project'
@@ -131,7 +134,6 @@ export function MobileApp() {
   // header's confirm writes it through.
   const [worktreeDraft, setWorktreeDraft] = useState<NewSessionWorktreeSelection>(LOCAL_WORKTREE_SELECTION)
   const [workspaceDirs, setWorkspaceDirs] = useState<string[]>([])
-  const [additionalDir, setAdditionalDir] = useState('')
   const composerDraft = useComposerDraft()
   const { draft, draftRef, lastDraftChangeAtRef } = composerDraft
   const [termDraft, setTermDraft] = useState('')
@@ -140,10 +142,15 @@ export function MobileApp() {
   const [starting, setStarting] = useState(false)
   const [connectionState, setConnectionState] = useState<'connected' | 'reconnecting' | 'offline'>('offline')
   const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false)
+  /** Where a session goes when it ends, fails or is removed: the workspace, open. */
+  const returnToWorkspace = () => { setScreen('chat'); setSessionSwitcherOpen(true) }
   const [attachments, setAttachments] = useState<ImageAttachment[]>([])
   const [queuedMessages, setQueuedMessages] = useState<ChatMessage[]>([])
   const [todos, setTodos] = useState<Record<string, TodoItem>>({})
   const [sandboxInfo, setSandboxInfo] = useState<SandboxInfo | null>(null)
+  const [sessionWorktree, setSessionWorktree] = useState<SessionWorktreeFacts & { removed: boolean }>(
+    { isWorktree: false, worktreePath: null, gitBranch: null, removed: false },
+  )
   const [usage, setUsage] = useState({ contextTokens: 0, contextWindow: null as number | null, totalCostUsd: 0 })
   // The phone has no models.dev catalog, so the window comes from the harness's own
   // model row, whatever a usage event reported, and Claude's built-in fallback.
@@ -188,7 +195,6 @@ export function MobileApp() {
   const suggestions = useComposerSuggestions(runtimeRef, `${activePairingId}:${project?.path}:${sessionId}:${selectedProvider}`, { client: clientRef, projectPath: project?.path })
   const { slashHits, mentionHits } = suggestions
   const systemInfoRequestRef = useRef(0)
-  const auxiliaryReturnRef = useRef<'sessions' | 'chat'>('sessions')
   // Files hangs off Project settings or off the session menu; back has to unwind
   // to whichever one actually opened it.
   const [filesOrigin, setFilesOrigin] = useState<FilesOrigin>('settings')
@@ -255,6 +261,13 @@ export function MobileApp() {
     setTodos(runtime.session.todos)
     setPermMode(runtime.permissionMode)
     setSandboxInfo(runtime.sandboxInfo)
+    setSessionWorktree((current) => {
+      const next = { ...runtime.worktree, removed: runtime.session._worktreeRemoved }
+      return current.isWorktree === next.isWorktree && current.worktreePath === next.worktreePath
+        && current.gitBranch === next.gitBranch && current.removed === next.removed
+        ? current
+        : next
+    })
     setUsage((current) => (
       current.contextTokens === runtime.contextTokens
         && current.contextWindow === runtime.contextWindow
@@ -301,7 +314,6 @@ export function MobileApp() {
       openFile: async (path) => {
         if (!project) throw new Error('no active project')
         const target = resolveRemoteFilePath(project.path, path)
-        auxiliaryReturnRef.current = 'chat'
         setFilesOrigin('session')
         setScreen('files')
         if (!await loadDirectory(parentRemotePath(target))) throw new Error(`cannot open ${path}`)
@@ -372,7 +384,7 @@ export function MobileApp() {
       onEvents: (events, epoch) => {
         logRelayEventTypes(events)
         const removed = sessionRemovalStatus(events, runtimeRef.current, epoch)
-        if (removed) { clearActiveSession(); setScreen('sessions'); setStatus(removed); return }
+        if (removed) { clearActiveSession(); returnToWorkspace(); setStatus(removed); return }
         runtimeRef.current?.ingest(events, epoch)
       },
       onTerminal: (payload) => termRuntimeRef.current?.ingest(payload),
@@ -440,7 +452,8 @@ export function MobileApp() {
       })
       .catch(() => { /* An older desktop has no such command; keep the fallback. */ })
     if (projectRows[0]) { await openProject(projectRows[0]); startNewSession(projectRows[0]) }
-    else setScreen('projects')
+    // Nothing to run a session in yet — land on the picker, which owns Add Project.
+    else setScreen('project-picker')
     setStatus('')
     void Promise.all(projectRows.map(async (row) => {
       const git = await client.request({
@@ -553,14 +566,13 @@ export function MobileApp() {
     const client = clientRef.current
     if (!client) return
     setProject(p)
-    setSessions(await readProjectSessions(client, p.path))
+    setSessions((await readProjectSessions(client, p.path)).sessions)
     const git = await client.request({
       type: 'get_git_info',
       requestId: randomId(),
       projectPath: p.path,
     } as RemoteCommand).catch(() => null) as ShellGitInfo | null
     setGitInfo(git)
-    setScreen('sessions')
   }
 
   const loadShellDetails = async (provider: HarnessId = selectedProvider, p = project) => {
@@ -613,16 +625,13 @@ export function MobileApp() {
     runtimeRef.current?.setSessionApiProviderId(apiProviderId)
   }
 
-  const openSettings = () => {
-    auxiliaryReturnRef.current = screen === 'chat' ? 'chat' : 'sessions'
-    setScreen('settings')
-    runUiAction(() => loadShellDetails(), setStatus, 'failed to load settings')
-  }
+  // App settings are host-independent, so this no longer warms the shell details
+  // the old project-settings screen needed.
+  const openSettings = () => setScreen('settings')
 
   const openFiles = (origin: FilesOrigin = 'settings') => {
     const p = project
     if (!p) return
-    if (origin === 'session') auxiliaryReturnRef.current = screen === 'chat' ? 'chat' : 'sessions'
     setFilesOrigin(origin)
     setBrowserKind('project')
     setFinderOpen(false)
@@ -660,54 +669,6 @@ export function MobileApp() {
     await sharedFileInbox.receiveDesktopFile(client, project.path, sessionId, path)
   }
 
-  const addWorkspaceDirectory = async () => {
-    const client = clientRef.current
-    const p = project
-    const dir = additionalDir.trim()
-    if (!client || !p || !dir) return
-    const validation = await client.request({
-      type: 'validate_add_dir',
-      requestId: randomId(),
-      projectPath: p.path,
-      candidate: dir,
-    } as RemoteCommand) as { ok?: boolean; reason?: string; error?: string }
-    if (!validation.ok) {
-      setStatus(validation.reason ?? validation.error ?? 'invalid directory')
-      return
-    }
-    const result = await client.request({
-      type: 'add_project_additional_dir',
-      requestId: randomId(),
-      projectPath: p.path,
-      dir,
-      provider: selectedProvider,
-    } as RemoteCommand) as { ok?: boolean; reason?: string }
-    if (!result.ok) {
-      setStatus(result.reason ?? 'failed to add directory')
-      return
-    }
-    setWorkspaceDirs((current) => current.includes(dir) ? current : [...current, dir])
-    setAdditionalDir('')
-  }
-
-  const removeWorkspaceDirectory = async (dir: string) => {
-    const client = clientRef.current
-    const p = project
-    if (!client || !p) return
-    const result = await client.request({
-      type: 'remove_project_additional_dir',
-      requestId: randomId(),
-      projectPath: p.path,
-      dir,
-      provider: selectedProvider,
-    } as RemoteCommand) as { ok?: boolean; reason?: string }
-    if (!result.ok) {
-      setStatus(result.reason ?? 'failed to remove directory')
-      return
-    }
-    setWorkspaceDirs((current) => current.filter((item) => item !== dir))
-  }
-
   const bindRuntime = (client: RelayClient) => {
     setStatus('')
     runtimeRef.current?.dispose()
@@ -734,6 +695,7 @@ export function MobileApp() {
     termRuntimeRef.current = null
     setSessionId(null)
     setActiveSessionTitle('')
+    setSessionWorktree({ isWorktree: false, worktreePath: null, gitBranch: null, removed: false })
     setPerm(null)
     setPlan(null)
     setQuestion(null)
@@ -750,7 +712,7 @@ export function MobileApp() {
   }
   const failSessionTransition = (error: unknown) => {
     clearActiveSession()
-    setScreen('sessions')
+    returnToWorkspace()
     setStatus(error instanceof Error ? error.message : 'session transition failed')
   }
   const openSession = (row: SessionRow, targetProject = project) => sessionTransitionRef.current.run(async () => {
@@ -779,9 +741,43 @@ export function MobileApp() {
     })
   }).catch(failSessionTransition)
 
-  const removeSession = async (row: SessionRow, type: 'archive_session' | 'delete_session') => {
+  /**
+   * Runs one session-list command. The list applies its own change only when
+   * this resolves true, so a rejected command leaves the row exactly as it was
+   * and the status line carries the reason.
+   */
+  const runSessionOp = async (op: () => Promise<unknown>, fallback: string): Promise<boolean> => {
+    try {
+      await op()
+      return true
+    } catch (error) {
+      setStatus(error instanceof Error && error.message ? error.message : fallback)
+      return false
+    }
+  }
+
+  const pinSession = async (row: SessionRow, pinned: boolean, targetProject = project) => {
     const client = clientRef.current
-    const p = project
+    const p = targetProject
+    if (!client || !p) throw new Error('no active project')
+    const result = await client.request({
+      type: 'pin_session',
+      requestId: randomId(),
+      projectPath: p.path,
+      sessionId: row.sessionId,
+      pinned,
+    } as RemoteCommand) as { ok?: boolean; error?: string }
+    if (!result.ok) throw new Error(result.error ?? `failed to ${pinned ? 'pin' : 'unpin'} session`)
+    if (p.path === project?.path) {
+      setSessions((current) => current.map((item) => (
+        item.sessionId === row.sessionId ? { ...item, isPinned: pinned } : item
+      )))
+    }
+  }
+
+  const removeSession = async (row: SessionRow, type: 'archive_session' | 'delete_session', targetProject = project) => {
+    const client = clientRef.current
+    const p = targetProject
     if (!client || !p) throw new Error('no active project')
     const result = await client.request({
       type,
@@ -791,15 +787,21 @@ export function MobileApp() {
     } as RemoteCommand) as { ok?: boolean; error?: string }
     if (!result.ok) throw new Error(result.error ?? `failed to ${type === 'archive_session' ? 'archive' : 'delete'} session`)
 
-    setSessions((current) => current.filter((item) => item.sessionId !== row.sessionId))
+    if (p.path === project?.path) setSessions((current) => current.filter((item) => item.sessionId !== row.sessionId))
     if (sessionId === row.sessionId) {
       leaveActiveSession()
-      setScreen('sessions')
+      returnToWorkspace()
     }
   }
 
-  const removeFromList = (row: SessionRow, type: 'archive_session' | 'delete_session') =>
-    runUiAction(() => removeSession(row, type), setStatus, 'failed to remove session')
+  const sessionListActions = {
+    onPinSession: (p: Project, row: SessionRow, pinned: boolean) =>
+      runSessionOp(() => pinSession(row, pinned, p), `failed to ${pinned ? 'pin' : 'unpin'} session`),
+    onArchiveSession: (p: Project, row: SessionRow) =>
+      runSessionOp(() => removeSession(row, 'archive_session', p), 'failed to hide session'),
+    onDeleteSession: (p: Project, row: SessionRow) =>
+      runSessionOp(() => removeSession(row, 'delete_session', p), 'failed to delete session'),
+  }
 
   const startNewSession = (targetProject = project) => {
     leaveActiveSession()
@@ -954,13 +956,31 @@ export function MobileApp() {
     } catch (error) { setStatus(error instanceof Error ? error.message : 'upload failed') }
   }
 
+  /** Drop the transport and everything hanging off it, back to the device list. */
+  const disconnectDevice = () => {
+    reconnectControllerRef.current?.cancel()
+    suppressReconnectRef.current = true
+    clientRef.current?.disconnect()
+    suppressReconnectRef.current = false
+    clientRef.current = null
+    runtimeRef.current?.dispose()
+    runtimeRef.current = null
+    termRuntimeRef.current = null
+    clearActiveSession()
+    setActivePairingId(null)
+    setActiveTransport(null)
+    setReconnect(null)
+    setConnectionState('offline')
+    setScreen('pair')
+  }
+
   const back = () => {
     if (screen === 'files') {
-      setScreen(filesOrigin === 'session' ? auxiliaryReturnRef.current : 'settings')
+      setScreen(filesOrigin === 'session' ? 'chat' : 'settings')
       return
     }
     if (screen === 'settings') {
-      setScreen(auxiliaryReturnRef.current)
+      setScreen('chat')
       return
     }
     if (screen === 'add-project') {
@@ -977,13 +997,9 @@ export function MobileApp() {
       setScreen('chat')
       return
     }
-    if (screen === 'chat') {
-      leaveActiveSession()
-      setScreen('sessions')
-      return
-    }
-    if (screen === 'sessions') setScreen('projects')
-    if (screen === 'projects') setScreen('pair')
+    // Chat is the root above the device list, so back opens the workspace the
+    // way the desktop keeps its sidebar there — it must not end the session.
+    if (screen === 'chat') setSessionSwitcherOpen(true)
   }
 
   const openTerminal = () => {
@@ -995,33 +1011,21 @@ export function MobileApp() {
     if (!term.terminalId) runUiAction(() => term.create(p.path, runtime?.sessionId), setStatus, 'terminal failed')
   }
 
-  const settingsProps: ProjectSettingsProps = {
-    activeSession: !!sessionId,
-    gitInfo, worktreeInfo, worktreeDirty, branches, checkedOutBranches, worktreeSelection,
-    onWorktreeSelectionChange: setWorktreeSelection,
-    selectedProvider, selectedModel, selectedEffort, models, efforts, workspaceDirs, additionalDir,
-    activeProvider: harnessSelection.activeProvider, providerName: harnessSelection.activeProviderName,
-    selection: {
-      acpAgentId: selectedAcpAgentId,
-      agents: harnessSelection.agents, agent: harnessSelection.selectedAgentId,
-      onAgent: harnessSelection.selectAgent,
-      modes: harnessSelection.modes, mode: harnessSelection.selectedModeId,
-      modeLabel: harnessSelection.modeLabel, modesLocked: harnessSelection.modesLocked,
-      onMode: selectSessionMode,
-      optionParams: harnessSelection.optionParams, onOptionParam: harnessSelection.setOptionParam,
-      providers: harnessSelection.providers, providerId: harnessSelection.selectedProviderId,
-      onProvider: selectSessionProvider,
-    },
-    onAdditionalDirChange: setAdditionalDir,
-    harnessOptions, activeHarnessKey: suggestionHarnessKey(selectedProvider, selectedAcpAgentId),
-    onHarnessChange: selectHarness,
-    onModelChange: selectSessionModel, onEffortChange: selectSessionEffort,
-    onOpenFiles: () => openFiles('settings'),
-    onAddDirectory: () => runUiAction(addWorkspaceDirectory, setStatus, 'failed to add directory'),
-    onRemoveDirectory: (dir) => runUiAction(() => removeWorkspaceDirectory(dir), setStatus, 'failed to remove directory'),
-  }
-
-  const deviceName = pairings.find((item) => item.id === activePairingId)?.hostName ?? 'Desktop'
+  const activePairing = pairings.find((item) => item.id === activePairingId)
+  const deviceName = activePairing?.hostName ?? 'Desktop'
+  const deviceStatus = activePairing ? discovery.statusOf(activePairing) : 'offline'
+  // Only meaningful inside a session: on the landing the same facts are the
+  // work-dir and branch chips, which the user is still choosing between.
+  const sessionGit = sessionId ? describeSessionGit({
+    isWorktree: sessionWorktree.isWorktree,
+    worktreePath: sessionWorktree.worktreePath,
+    worktreeRemoved: sessionWorktree.removed,
+    sessionBranch: sessionWorktree.gitBranch,
+    projectBranch: gitInfo?.branch ?? null,
+    projectHead: gitInfo?.head ?? null,
+    projectDirtyFiles: gitInfo?.dirty?.files ?? 0,
+    worktree: worktreeInfo,
+  }) : null
   const browserMode: FileBrowserMode = browserKind === 'computer'
     ? { kind: 'computer', name: deviceName }
     : { kind: 'project', root: project?.path ?? '', name: project?.name ?? 'Files' }
@@ -1045,14 +1049,16 @@ export function MobileApp() {
         <MobileHeader
         route={screen}
         title={screen === 'add-project' ? addProjectFlow.title : header}
-        subtitle={[project?.name, gitInfo?.branch].filter(Boolean).join(' · ')}
+        subtitle={project?.name}
         provider={selectedProvider}
         hasSession={!!sessionId}
-        connectionState={connectionState}
+        deviceStatus={deviceStatus}
+        reconnect={reconnect}
+        git={sessionGit}
+        onOpenBranch={() => setScreen('branch')}
         onBack={back}
         onSwitchSession={() => setSessionSwitcherOpen(true)}
         onOpenTerminal={openTerminal}
-        onOpenSettings={openSettings}
         onOpenFiles={() => openFiles('session')}
         onOpenFilesRoot={() => runUiAction(() => loadDirectory(fileBrowserHome(browserMode, directoryPath)), setStatus, 'failed to load directory')}
         files={screen === 'files' ? { kind: browserKind, finderOpen,
@@ -1076,25 +1082,26 @@ export function MobileApp() {
         <View style={styles.contentRow}>
         {tabletMultiPane && project ? (
           <TabletSessionSidebar
-            projectName={project.name}
+            client={clientRef.current}
+            project={project}
             sessions={sessions}
             activeSessionId={sessionId}
             onOpenSession={(row) => void openSession(row)}
             onCreateSession={() => startNewSession()}
             onOpenSettings={openSettings}
-            onArchiveSession={(row) => removeFromList(row, 'archive_session')}
-            onDeleteSession={(row) => removeFromList(row, 'delete_session')}
+            onPinSession={(row, pinned) => sessionListActions.onPinSession(project, row, pinned)}
+            onArchiveSession={(row) => sessionListActions.onArchiveSession(project, row)}
+            onDeleteSession={(row) => sessionListActions.onDeleteSession(project, row)}
           />
         ) : null}
           <View style={styles.mainPane}>
             <MobileNavigator
             route={screen}
-            auxiliaryReturn={auxiliaryReturnRef.current}
             filesOrigin={filesOrigin}
             onRouteChange={(route) => {
-              if (screen === 'chat' && route === 'sessions' && sessionId) {
-                leaveActiveSession()
-              }
+              // Swiping the chat off the stack lands on the device list, which has
+              // no session to show — release the one that was open.
+              if (screen === 'chat' && route === 'pair' && sessionId) leaveActiveSession()
               setScreen(route)
             }}
             renderScene={(route) => (
@@ -1127,35 +1134,13 @@ export function MobileApp() {
           )}
           onForget={(item) => runUiAction(async () => {
             await updatePairings((current) => current.filter((pairing) => pairing.id !== item.id))
-            if (activePairingId === item.id) {
-              reconnectControllerRef.current?.cancel()
-              clientRef.current?.disconnect()
-              clientRef.current = null
-              setActivePairingId(null)
-              setActiveTransport(null)
-              setReconnect(null)
-              setConnectionState('offline')
-            }
+            if (activePairingId === item.id) disconnectDevice()
           }, setStatus, 'failed to forget device')}
         />
       ) : null}
 
-      {route === 'projects' ? <ProjectsScreen projects={projects} onOpen={(item) => {
-        runUiAction(() => openProject(item), setStatus, 'failed to open project')
-      }} /> : null}
-
-      {route === 'sessions' ? (
-        <SessionsScreen
-          sessions={sessions}
-          onCreateSession={() => startNewSession()}
-          onOpenSession={openSession}
-          onArchiveSession={(row) => removeFromList(row, 'archive_session')}
-          onDeleteSession={(row) => removeFromList(row, 'delete_session')}
-        />
-      ) : null}
-
       {route === 'settings' ? (
-        <SettingsScreen {...settingsProps} />
+        <AppSettingsScreen />
       ) : null}
 
       {route === 'files' ? (finderOpen ? (
@@ -1298,6 +1283,20 @@ export function MobileApp() {
         />
       ) : null}
 
+      {route === 'session-search' ? (
+        <SessionSearchScreen
+          client={clientRef.current}
+          onCancel={() => setScreen('chat')}
+          onOpenSession={(row) => runUiAction(async () => {
+            const target = projects.find((item) => item.path === row.projectPath)
+              ?? (row.projectPath ? { path: row.projectPath, name: row.projectName ?? row.projectPath } : project)
+            if (!target) throw new Error('no project for this session')
+            if (target.path !== project?.path) await openProject(target)
+            await openSession(row, target)
+          }, setStatus, 'failed to open session')}
+        />
+      ) : null}
+
       {route === 'project-picker' ? (
         <ProjectPickerScreen projects={projects} activePath={project?.path} onSelect={chooseProject} />
       ) : null}
@@ -1350,10 +1349,17 @@ export function MobileApp() {
         onPlanContinueMode={setPermMode}
         workspace={{ visible: sessionSwitcherOpen, onDismiss: () => setSessionSwitcherOpen(false),
           deviceName,
+          client: clientRef.current,
           projects, activeProject: project, activeSessionId: sessionId, sessions,
-          loadSessions: (p) => clientRef.current ? readProjectSessions(clientRef.current, p.path) : Promise.reject(new Error('Not connected')),
           onNewSession: (p) => runUiAction(async () => { await openProject(p); startNewSession(p) }, setStatus, 'failed to open project'),
           onOpenSession: (p, row) => runUiAction(async () => { if (p.path !== project?.path) await openProject(p); await openSession(row, p) }, setStatus, 'failed to open session'),
+          ...sessionListActions,
+          onSearch: () => setScreen('session-search'),
+          deviceStatus,
+          reconnect,
+          onDisconnect: disconnectDevice,
+          onOpenAppSettings: openSettings,
+          onAddProject: () => setScreen('add-project'),
         }}
         sharedFileInbox={sharedFileInbox}
       />

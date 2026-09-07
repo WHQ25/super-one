@@ -4,7 +4,7 @@ import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { SCROLL_INDICATOR_GUTTER } from '../ui/scroll-gutter'
 import { WorktreePicker } from '../ui/worktree-picker'
 import type { NewSessionWorktreeSelection } from '../worktree-state'
-import type { ShellGitInfo } from './settings-screen'
+import type { ShellGitInfo } from '../project-types'
 
 export type WorktreeScreenProps = {
   /** The draft the owner holds; the header commits it, going back throws it away. */

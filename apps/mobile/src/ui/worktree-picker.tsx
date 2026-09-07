@@ -3,7 +3,7 @@ import { Check, GitBranch, GitCommitHorizontal, Laptop, Search } from 'lucide-re
 import { Pressable, TextInput, View } from 'react-native'
 import { Text } from './text'
 import type { WorktreeEntry, WorktreeInfo, WorktreeMode } from '@superone/shared/agent-types'
-import type { ShellGitInfo } from '../screens/settings-screen'
+import type { ShellGitInfo } from '../project-types'
 import { useMobileTheme } from '../theme/context'
 import {
   attachUnavailableReason,

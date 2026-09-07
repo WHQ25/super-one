@@ -23,6 +23,70 @@ expected flows. It is not a code source: nothing is ported from Dart, and its
 Never nest the chat WebView in an RN `ScrollView`. Input is native only.
 At widths below 768 px the shell is single-pane. At 768 px and above, chat,
 terminal, settings, and files retain the project/session sidebar as a master pane.
+**Projects and sessions are not screens.** `WorkspaceDrawer` owns both lists the way
+the desktop sidebar does, so `routeHierarchy` stacks chat directly on `pair`; back
+from a chat opens the drawer and must not end the session. New entry points for
+project or session navigation belong in the drawer, not in a new route.
+The list itself is `SessionListBody` over `useProjectSessions` — 30-row paging and
+swipe pin/hide/delete. A command applies to the list only when it resolves `true`;
+the shell reports the failure. Search is **not** in the list: it is global,
+host-side (`search_sessions`), and owns the `session-search` screen, which draws
+its own field plus Cancel and therefore gets no header bar. The drawer also
+carries a cross-project **Pinned** section above Projects (`list_pinned_sessions`),
+and the device it is connected to sits at the *bottom*, reporting its connection
+state with `ConnectionStatusIndicator` beside a disconnect and an app-settings
+action. Reaching another desktop means disconnecting first, so that row is a
+readout, not a link. There is **no project-settings screen**: every control it
+held is already on the chat surface (model, effort, permission mode, sandbox) or
+the new-session landing (harness, branch, worktree); `settings` is now the
+app-settings placeholder.
+Pinned rows are additionally promoted inside a project's list, which the desktop
+does not do — a pinned session below the loaded page will not surface until its
+page arrives.
+
+The line under the chat title is **two facts, not a subtitle**: how the phone is
+reaching the desktop, and which checkout the session runs in.
+
+- Connection is the same `ConnectionStatusIndicator` / `DeviceStatus` vocabulary the
+  device list uses, so the glyph names the *route* — Wi-Fi on the LAN, cloud through
+  the relay — and reconnection spells out its backoff (`Reconnecting…`,
+  `Retrying in Ns`, warning tone past 8s). It replaced a three-colour dot that could
+  not say any of that. A status whose glyph **spins** takes the whole row: the
+  project name and the checkout are both dropped, because a moving glyph beside
+  static text reads as though the static text were loading too. The condition is
+  `describeDeviceStatus(...).spin`, not a list of statuses, so a new animated
+  status inherits the behaviour.
+- The checkout comes from `describeSessionGit` (`session-git-status.ts`), which
+  covers branch, detached HEAD, worktree-on-a-branch, detached worktree, and a
+  worktree that was deleted under the session. Two rules there are load-bearing:
+  a **local** session shows the *live* project branch (switching branches under a
+  running session is allowed, so the snapshot goes stale), a **worktree** session
+  shows the *snapshot* branch (the worktree is pinned for its lifetime); and dirty
+  counts are local-only, because `get_git_info` counted the project checkout.
+  Only the plain-branch chip is tappable — a worktree cannot switch branches.
+
+`isWorktree` / `worktreePath` / `gitBranch` are host facts, read off the
+`get_session_state` snapshot (`ChatRuntime.worktree`) rather than inferred from the
+project path, so they survive a reconnect. `get_git_info` reports `branch: null` plus
+a short `head` on a detached HEAD — never the literal string `HEAD`, which used to
+reach the branch picker as a switchable name.
+
+Both halves have an isolated gallery in the offline preview, because the states
+worth reviewing are the ones a healthy session never reaches:
+`superone://native-preview?page=Session%20status` walks every connection state and
+every checkout state through the real `SessionMetaRow`, and
+`page=Git%20indicators` does the same for the new-session chips. Add a state to
+either union and add its row there — reproducing a deleted worktree or an 8s
+reconnect backoff by hand means breaking the desktop on purpose.
+
+**Do not port the desktop's `--sidebar-*` palette.** It was tried and reverted: in
+light mode those tokens are a dark inverted chrome, which at phone width reads as
+a second app rather than a panel of this one. The drawer and the tablet sidebar
+use the ordinary content neutrals (`surface` / `background` / `muted`), and
+`SessionRowContent` takes `surface: 'panel' | 'page'` only so a swiped row can
+swap to the opposite neutral while it covers its actions. Harness colour belongs
+to the transcript, which gets it through `mobileWebViewTheme`'s `hue` — not to the
+shell chrome.
 The app root is wrapped in `SafeAreaProvider`; keep screen chrome inside the
 `SafeAreaView`. Status-bar style follows the active theme (dark shell → light status
 bar, light shell → dark). Do not replace the insets with fixed top/bottom padding:
@@ -107,11 +171,12 @@ precomputed on the JS thread — see `src/fire-sim.ts` and `src/ui/fire-embers.t
 Adding these was a native dependency change: pulling this commit requires a
 dev-client rebuild, not just a Metro restart.
 
-Pairing: scan or paste a `superone://pair?…` QR (shows a 6-digit code to confirm on desktop) or paste JSON `{ "relayUrl", "secret" }`. Then projects → sessions → chat WebView. Device ID, pairings, and chat `viewState` persist in AES-256 MMKV; its encryption key lives in platform SecureStore.
+Pairing: scan or paste a `superone://pair?…` QR (shows a 6-digit code to confirm on desktop) or paste JSON `{ "relayUrl", "secret" }`. Connecting opens the first project's new-session landing directly; the workspace drawer is the way to any other project or session. Device ID, pairings, and chat `viewState` persist in AES-256 MMKV; its encryption key lives in platform SecureStore.
 
 The native shell also owns project Git/worktree status, remote file browsing,
-provider/model selection, additional-directory RPCs, slash/mention overlays, and the
-IME-safe composer. New Claude sessions may stay local, reuse an existing worktree, or
+provider/model selection, slash/mention overlays, and the IME-safe composer.
+Additional project directories are read-only here — the `validate_add_dir` /
+`add_project_additional_dir` RPCs went with the project-settings screen. New Claude sessions may stay local, reuse an existing worktree, or
 create branch/attach/detach worktrees; validate the selection before `create_session`.
 Structured collaboration confirms must send `sessionAgentLaunchesJson` through
 `respond_permission.formAnswers` so handoff launches retain their server-owned mode.
@@ -161,8 +226,8 @@ and reports input and bounded resize messages to RN.
   snapshot whenever the Chat WebView reports `ready` after a renderer reload.
 - Opening and creating sessions are mutually exclusive because every restore uses the
   client's single event buffer. Validate new-session worktree input before unsubscribing
-  the current session; on transition failure, dispose the incomplete runtime and return
-  to the session list instead of leaving a stale chat detail active.
+  the current session; on transition failure, dispose the incomplete runtime and reopen
+  the workspace drawer instead of leaving a stale chat detail active.
 - Released buffers assign the runtime epoch. Live batches from older epochs are
   dropped, and overlapping restores may only commit their newest generation.
 - Script-fatal errors and native iOS/Android WebView process exits reload and

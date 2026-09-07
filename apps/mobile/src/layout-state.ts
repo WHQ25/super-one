@@ -17,7 +17,7 @@ export function shouldUseTabletMultiPane(
  * page padding. Transcripts, terminals and the git pickers all own full-width
  * rows or separators, so an outer gutter would stack on top of their own.
  */
-const FULL_BLEED_SCREENS = new Set(['chat', 'terminal', 'worktree', 'branch', 'project-picker', 'add-project', 'files'])
+const FULL_BLEED_SCREENS = new Set(['chat', 'terminal', 'worktree', 'branch', 'project-picker', 'add-project', 'files', 'session-search'])
 
 export function isFullBleedScreen(screen: string): boolean {
   return FULL_BLEED_SCREENS.has(screen)

@@ -3,6 +3,7 @@ export { PermissionModeSelector, permissionModeLabel } from './permission-mode-s
 export { SandboxSelector } from './sandbox-selector'
 export { ContextRing } from './context-ring'
 export { SwipeSessionRow } from './swipe-session-row'
+export { SessionListBody, type SessionListActions } from './session-list-body'
 export { HarnessIcon } from './harness-icon'
 export { HarnessTabs } from './harness-tabs'
 export { GitChips } from './git-chips'

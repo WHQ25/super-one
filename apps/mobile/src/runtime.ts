@@ -29,6 +29,16 @@ export type ChatRuntimeHooks = {
 
 export type SystemInfo = RemoteSystemInfo
 
+/** The worktree half of the restore snapshot, kept together so it updates atomically. */
+export type SessionWorktreeFacts = {
+  isWorktree: boolean
+  worktreePath: string | null
+  /** Branch recorded at creation; for a worktree session, the worktree's own. */
+  gitBranch: string | null
+}
+
+const NO_WORKTREE: SessionWorktreeFacts = { isWorktree: false, worktreePath: null, gitBranch: null }
+
 export type CreateSessionOptions = {
   provider?: HarnessId
   acpAgentId?: string
@@ -58,6 +68,12 @@ export class ChatRuntime {
    * means "not reported yet", which the chip renders as unknown rather than `off`.
    */
   sandboxInfo: SandboxInfo | null = null
+  /**
+   * Where the host says this session's process runs. Like `sandboxInfo` this is
+   * a fact reported by the host, not something a phone can derive from the
+   * project path — and restore re-reads it, so it survives a reconnect.
+   */
+  worktree: SessionWorktreeFacts = NO_WORKTREE
   projectPath = ''
   sessionId = ''
   provider: HarnessId | string = 'claude'
@@ -99,6 +115,11 @@ export class ChatRuntime {
       session.contextTokens = restored.snapshot.contextTokens ?? 0
       session.totalCostUsd = restored.snapshot.totalCostUsd ?? 0
       this.sandboxInfo = restored.snapshot.sandboxInfo ?? null
+      this.worktree = {
+        isWorktree: restored.snapshot.isWorktree ?? false,
+        worktreePath: restored.snapshot.worktreePath ?? null,
+        gitBranch: restored.snapshot.gitBranch ?? null,
+      }
       for (const msg of restored.snapshot.inProgressMessages ?? []) {
         if (!session.messages.some((m) => m.id === msg.id)) session.messages.push(msg)
       }

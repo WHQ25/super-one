@@ -97,6 +97,9 @@ vi.mock('../codex-config-service', () => ({
   listCodexMcpConfigs: vi.fn(),
 }))
 
+const gitRunMock = vi.hoisted(() => vi.fn())
+vi.mock('../git-run', () => ({ gitRun: gitRunMock }))
+
 vi.mock('@superone/runtime/fs', () => ({
   listDshMcpConfigs: dshMcpMocks.list,
   saveDshMcpConfig: dshMcpMocks.save,
@@ -984,6 +987,45 @@ describe('AgentService.resolveInteractionSession', () => {
 })
 
 describe('AgentService.handleRemoteCommand', () => {
+  /** Answers one `gitRun` per argv prefix; anything unlisted rejects like git would. */
+  function stubGit(replies: Record<string, string>): void {
+    gitRunMock.mockImplementation((_cwd: string, args: string[]) => {
+      const hit = Object.entries(replies).find(([prefix]) => args.join(' ').startsWith(prefix))
+      return hit ? Promise.resolve(hit[1]) : Promise.reject(new Error(`no stub for git ${args.join(' ')}`))
+    })
+  }
+
+  it('get_git_info names the commit instead of a branch on a detached HEAD', async () => {
+    // `rev-parse --abbrev-ref` answers the literal string HEAD when detached, and
+    // passing that on is how "HEAD" reaches a branch picker as a switchable name.
+    stubGit({
+      'rev-parse --abbrev-ref HEAD': 'HEAD',
+      'rev-parse --short=7 HEAD': 'a1b2c3d',
+      'status --porcelain': '',
+    })
+    const respond = vi.fn()
+    await new AgentService().handleRemoteCommand(
+      { type: 'get_git_info', requestId: 'g1', projectPath: '/repo' }, respond,
+    )
+    expect(respond).toHaveBeenCalledWith('g1', expect.objectContaining({ branch: null, head: 'a1b2c3d' }))
+  })
+
+  it('get_git_info leaves out head on a checkout that is on a branch', async () => {
+    stubGit({
+      'rev-parse --abbrev-ref HEAD': 'feat/mobile-ui',
+      'status --porcelain': ' M src/a.ts',
+      'diff HEAD --shortstat': ' 1 file changed, 3 insertions(+), 1 deletion(-)',
+    })
+    const respond = vi.fn()
+    await new AgentService().handleRemoteCommand(
+      { type: 'get_git_info', requestId: 'g2', projectPath: '/repo' }, respond,
+    )
+    const payload = respond.mock.calls[0][1] as Record<string, unknown>
+    expect(payload.branch).toBe('feat/mobile-ui')
+    expect(payload).not.toHaveProperty('head')
+    expect(payload.dirty).toEqual({ files: 1, insertions: 3, deletions: 1 })
+  })
+
   it('list_directory returns sorted items with directories first', async () => {
     mockReaddir.mockResolvedValue([
       { name: 'zebra.txt', isDirectory: () => false },

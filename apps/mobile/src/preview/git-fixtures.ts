@@ -1,5 +1,5 @@
 import type { WorktreeInfo } from '@superone/shared/agent-types'
-import type { ShellGitInfo } from '../screens/settings-screen'
+import type { ShellGitInfo } from '../project-types'
 
 /**
  * One repository the whole preview agrees on, so the chips, the working

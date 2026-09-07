@@ -1,7 +1,7 @@
 import type { RelayClient } from '@superone/relay-client'
 import type { HarnessId, RemoteCommand, RemoteSystemInfo, WorktreeInfo } from '@superone/shared/agent-types'
 import { randomId } from '../ids'
-import type { ShellGitInfo } from '../screens/settings-screen'
+import type { ShellGitInfo } from '../project-types'
 
 export interface ShellDetails {
   git: ShellGitInfo | null

@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { FolderOpen, Search } from 'lucide-react-native'
-import { TextInput, View } from 'react-native'
+import { Check, Folder, FolderOpen, Search } from 'lucide-react-native'
+import { FlatList, TextInput, View } from 'react-native'
 import { Text } from '../ui/text'
+import type { Project } from '../project-types'
 import { filterProjects } from '../project-picker-state'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
-import { ProjectsScreen, type Project } from './projects-screen'
+import { ListRow } from '../ui'
 
 /**
  * Choose which project the next session runs in.
@@ -19,7 +20,8 @@ export function ProjectPickerScreen(props: {
   onSelect: (project: Project) => void
 }) {
   const styles = useMobileStyles()
-  const { tokens: { colors } } = useMobileTheme()
+  const { tokens } = useMobileTheme()
+  const { colors } = tokens
   const [query, setQuery] = useState('')
   const matches = filterProjects(props.projects, query)
   return (
@@ -33,7 +35,29 @@ export function ProjectPickerScreen(props: {
           style={{ flex: 1, minHeight: 44, fontSize: 14, color: colors.foreground }} />
       </View>
       {matches.length ? (
-        <ProjectsScreen projects={matches} activePath={props.activePath} onOpen={props.onSelect} />
+        <FlatList
+          data={matches}
+          keyExtractor={(item) => item.path}
+          renderItem={({ item }) => (
+            <ListRow
+              title={item.name}
+              subtitle={item.path}
+              leading={<Folder color={colors.mutedForeground} size={22} />}
+              trailing={item.path === props.activePath || item.git ? (
+                <View style={styles.projectIndicators}>
+                  {item.path === props.activePath
+                    ? <Check color={colors.primary} size={16} /> : null}
+                  {item.git ? <>
+                    <Text numberOfLines={1} style={styles.rowMeta}>{item.git.branch}</Text>
+                    {item.git.dirty?.files ? <Text style={{ color: colors.warning, fontSize: 12 }}>{item.git.dirty.files} changed</Text> : null}
+                    {item.git.ahead || item.git.behind ? <Text style={styles.rowMeta}>↑{item.git.ahead ?? 0} ↓{item.git.behind ?? 0}</Text> : null}
+                  </> : null}
+                </View>
+              ) : undefined}
+              onPress={() => props.onSelect(item)}
+            />
+          )}
+        />
       ) : (
         <View style={styles.emptyState}>
           <FolderOpen color={colors.border} size={48} />

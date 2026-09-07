@@ -16,6 +16,8 @@ import {
   MIN_PROCESS_SEGMENTS_TO_COLLAPSE,
   partitionTurnForCompactMode,
 } from './compact-chat-mode'
+import { isMediaGenerateImageTool, isMediaVideoStatusTool } from './media-generation'
+import { isAlwaysHiddenToolBlock, isHiddenToolBlock } from './tool-display'
 
 export interface CodexItemPresenterProps {
   item: CodexThreadItem
@@ -129,6 +131,19 @@ export function codexMcpItemResultText(item: CodexMcpToolCallItem): string | und
   if (item.error) chunks.push(`Error: ${item.error.message}`)
   const text = chunks.join('\n\n').trim()
   return text.length > 0 ? text : undefined
+}
+
+/**
+ * Codex counterpart of `isHiddenToolBlock`: a generation whose card the turn-end
+ * gallery will render loses its item, everything else keeps it. Result-dependent,
+ * so it cannot be answered from the tool name alone.
+ */
+export function isHiddenCodexMcpItem(item: CodexThreadItem): boolean {
+  if (item.type !== 'mcp_tool_call') return false
+  const toolName = `mcp__${item.server}__${item.tool}`
+  if (isAlwaysHiddenToolBlock(toolName)) return true
+  if (!isMediaGenerateImageTool(toolName) && !isMediaVideoStatusTool(toolName)) return false
+  return isHiddenToolBlock(toolName, codexMcpItemResultText(item))
 }
 
 interface CodexAppToolGroupProps {

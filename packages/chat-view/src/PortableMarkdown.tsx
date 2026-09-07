@@ -1,7 +1,9 @@
-import { createElement, useMemo, type ComponentProps, type ReactNode } from 'react'
+import { createElement, useContext, useMemo, type ComponentProps, type ReactNode } from 'react'
+import { FileText } from 'lucide-react'
 import type { CodeHighlighterPlugin } from '@streamdown/code'
 import { createMathPlugin } from '@streamdown/math'
 import { defaultRehypePlugins, type Components } from 'streamdown'
+import { harden, BlockPolicy } from 'rehype-harden'
 import type { PluggableList } from 'unified'
 import {
   CopyableMarkdownPresenter,
@@ -15,6 +17,9 @@ import {
   type StreamdownCodePresenterPorts,
 } from './presenters/CodeBlock'
 import { MermaidBlockPresenter } from './presenters/MermaidBlock'
+import { fileChipLabel } from './presenters/file-chip-label'
+import { formatLineRange, resolveProjectFileHref } from './presenters/file-link'
+import { PortableTurnContext } from './portable-turn-context'
 import { requestNative } from './bridge'
 
 function plainCodePlugin(theme: 'github-dark' | 'github-light'): CodeHighlighterPlugin {
@@ -33,7 +38,27 @@ function plainCodePlugin(theme: 'github-dark' | 'github-light'): CodeHighlighter
 const darkCodePlugin = plainCodePlugin('github-dark')
 const lightCodePlugin = plainCodePlugin('github-light')
 const mathPlugin = createMathPlugin({ singleDollarTextMath: false })
-const rehypePlugins = Object.values(defaultRehypePlugins) as PluggableList
+/**
+ * Streamdown's default harden config allows any link PREFIX but not any
+ * PROTOCOL, so a project file citation like `src/ToolRow.tsx:42` reads as an
+ * unknown scheme and is replaced with a "Blocked URL" stub — the chip never
+ * gets to render. Desktop already widens exactly this (see `chat-shared.ts`);
+ * matching it is what makes file citations work on both surfaces.
+ *
+ * Widening is safe here because a link in this WebView never navigates: every
+ * anchor goes through `NativeLink`, and the native side validates the scheme
+ * before acting on `openLink`.
+ */
+const rehypePlugins = Object.values({
+  ...defaultRehypePlugins,
+  harden: [harden, {
+    allowedLinkPrefixes: ['*'],
+    allowedImagePrefixes: ['*'],
+    allowedProtocols: ['*'],
+    allowDataImages: true,
+    linkBlockPolicy: BlockPolicy.textOnly,
+  }],
+}) as PluggableList
 
 async function copyText(text: string): Promise<boolean> {
   try {
@@ -45,7 +70,55 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
+/**
+ * Project file citation. The phone cannot open an editor tab, so the chip hands
+ * the resolved host path to the native `openFile` action — the same affordance
+ * the tool rows already use for a touched file.
+ */
+function NativeFileChip({
+  name,
+  filePath,
+  lineNumber,
+  endLine,
+}: {
+  name: string
+  filePath: string
+  lineNumber?: number
+  endLine?: number
+}) {
+  return (
+    <span
+      role="button"
+      title={filePath}
+      onClick={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        requestNative('openFile', { path: filePath, ...(lineNumber != null ? { line: lineNumber } : {}) })
+      }}
+      className="inline-flex items-center gap-0.5 rounded bg-muted px-1 align-baseline text-[0.9em] text-foreground whitespace-nowrap"
+    >
+      <FileText className="size-[0.9em] shrink-0" />
+      <span>{name}</span>
+      {lineNumber != null && (
+        <span className="text-[0.85em] text-muted-foreground">{formatLineRange(lineNumber, endLine)}</span>
+      )}
+    </span>
+  )
+}
+
 function NativeLink({ href, onClick, ...props }: ComponentProps<'a'>) {
+  const { projectPath } = useContext(PortableTurnContext)
+  const resolved = href ? resolveProjectFileHref(href, projectPath ?? '') : null
+  if (resolved) {
+    return (
+      <NativeFileChip
+        name={fileChipLabel(props.children, href, resolved.filePath)}
+        filePath={resolved.filePath}
+        lineNumber={resolved.lineNumber}
+        endLine={resolved.endLine}
+      />
+    )
+  }
   return (
     <a
       {...props}

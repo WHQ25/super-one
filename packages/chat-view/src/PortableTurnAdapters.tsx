@@ -4,8 +4,11 @@ import type {
   CodexCollabToolCallItem,
   ContentBlock,
   ImageGenerationItem,
+  VideoGenerationItem,
 } from '@superone/shared/agent-types'
 import { isAlwaysHiddenToolName, isSubagentToolName } from '@superone/shared/tool-ui'
+import { isHiddenToolBlock } from './presenters/tool-display'
+import { resolveMarkdownFileLinks } from './presenters/markdown-file-links'
 import {
   Check,
   FileText,
@@ -37,6 +40,7 @@ import {
 import {
   CodexTurnViewPresenter,
   codexMcpItemResultText,
+  isHiddenCodexMcpItem,
   type CodexCommandPresenterProps,
   type CodexItemPresenterProps,
   type CodexSubagentPresenterProps,
@@ -154,10 +158,16 @@ function PortableText({ text, isStreaming, afterThinking }: {
   isStreaming: boolean
   afterThinking?: boolean
 }) {
-  const { scheme } = useContext(PortableTurnContext)
+  const { scheme, projectPath } = useContext(PortableTurnContext)
+  // Same pre-parse rewrite the desktop does. Without it a project-relative
+  // citation never survives `rehype-harden` to reach the file chip.
+  const resolved = useMemo(
+    () => (projectPath ? resolveMarkdownFileLinks(text, projectPath) : text),
+    [text, projectPath],
+  )
   return (
     <div className={afterThinking ? 'mt-1 after-thinking' : undefined}>
-      <PortableMarkdown text={text} isStreaming={isStreaming} scheme={scheme} />
+      <PortableMarkdown text={resolved} isStreaming={isStreaming} scheme={scheme} />
     </div>
   )
 }
@@ -334,7 +344,7 @@ function PortableClaudeTool(props: ClaudeToolPresenterProps) {
   const row = <PortableToolRow {...props} />
   // The desktop surfaces a pending approval as its own prompt block; the phone marks the row.
   return awaitingPermission
-    ? <div className="rounded ring-1 ring-inset ring-primary/30">{row}</div>
+    ? <div data-permission-pending="true" className="rounded ring-1 ring-inset ring-primary/30">{row}</div>
     : row
 }
 
@@ -588,7 +598,7 @@ function PortableWorkflow({ toolBlock, resultBlock, isStreaming }: ClaudeWorkflo
 const GROUP_PORTS: GroupContentPorts = {
   isSubagentToolName,
   isWorkflowSmokeCheck,
-  isHiddenToolBlock: (toolName) => isAlwaysHiddenToolName(toolName),
+  isHiddenToolBlock,
   resolveAppTool: () => null,
 }
 
@@ -610,22 +620,50 @@ const CLAUDE_RUNTIME: ClaudeTurnBodyPresenterRuntime = {
     return block.toolName === 'Bash' && (params.run_in_background === true || params.background === true)
   },
   isPinnedSegment: (segment) => isClaudePinnedSegment(segment, { isWidgetShowTool }),
-  isHiddenTool: (toolName) => isAlwaysHiddenToolName(toolName),
+  isHiddenTool: isHiddenToolBlock,
   summarizeProcess: summarizeClaudeProcess,
 }
 
-export function PortableClaudeTurn({ message }: { message: ChatMessage }) {
-  const portableContent = useMemo(() => message.content.map((block): ContentBlock => (
+/**
+ * Remote turns carry harness-specific block types (`bash`, `todo`) that the
+ * shared grouping and gallery collectors only recognise as `tool_use`. Exported
+ * so the turn body and the turn-end galleries normalise identically — collecting
+ * from raw content would silently find no generated images.
+ */
+export function portableToolBlocks(content: ContentBlock[]): ContentBlock[] {
+  return content.map((block): ContentBlock => (
     'toolName' in block && block.type !== 'tool_use'
       ? { ...block, type: 'tool_use' }
       : block
-  )), [message.content])
+  ))
+}
+
+/** Tool result text by tool-use id, the shape the gallery collectors expect. */
+export function portableToolResultText(content: ContentBlock[]): Map<string, string> {
+  const map = new Map<string, string>()
+  for (const block of content) {
+    if (block.type === 'tool_result' && block.summary) map.set(block.toolUseId, block.summary)
+  }
+  return map
+}
+
+export function PortableClaudeTurn({
+  message,
+  isStreaming,
+}: {
+  message: ChatMessage
+  isStreaming: boolean
+}) {
+  const portableContent = useMemo(() => portableToolBlocks(message.content), [message.content])
   const grouped = useMemo(() => groupContentPresenter(portableContent, GROUP_PORTS), [portableContent])
   return (
     <ClaudeTurnBodyPresenter
       grouped={grouped}
-      isStreaming={message.status === 'streaming'}
+      isStreaming={isStreaming}
       detailChatMode={false}
+      // Desktop resolves project-relative media through this; the WebView has no
+      // transport for host files, so markdown srcs stay as written. File LINKS
+      // still resolve — through `projectPath` on PortableTurnContext.
       projectPath={null}
       parts={CLAUDE_PARTS}
       runtime={CLAUDE_RUNTIME}
@@ -883,7 +921,7 @@ function PortableCodexSubagent({ item }: CodexSubagentPresenterProps) {
   )
 }
 
-function PortableImageGallery({ items }: { items: ImageGenerationItem[] }) {
+export function PortableImageGallery({ items }: { items: ImageGenerationItem[] }) {
   const available = items.filter((item) => Boolean(item.savedPath))
   const unavailable = items.filter((item) => !item.savedPath)
   return (
@@ -920,6 +958,20 @@ function PortableImageGallery({ items }: { items: ImageGenerationItem[] }) {
   )
 }
 
+/**
+ * Turn-end video cards. Only a finished video has a path to preview; an
+ * in-flight one is represented by its still-visible submit tool row.
+ */
+export function PortableVideoGallery({ items }: { items: VideoGenerationItem[] }) {
+  const available = items.filter((item) => Boolean(item.savedPath))
+  if (available.length === 0) return null
+  return (
+    <PortableNativeGallery
+      payload={{ kind: 'native', nativeType: 'video-gallery', title: 'Generated videos', videos: available }}
+    />
+  )
+}
+
 function PortableAppIcon({ appId, className }: { appId: string; className?: string }) {
   return <Puzzle className={className} aria-label={appId} />
 }
@@ -937,10 +989,7 @@ const CODEX_PARTS: CodexTurnViewPresenterParts = {
 }
 
 const CODEX_RUNTIME: CodexTurnViewPresenterRuntime = {
-  isHiddenMcpItem(item) {
-    return item.type === 'mcp_tool_call'
-      && isAlwaysHiddenToolName(`mcp__${item.server}__${item.tool}`)
-  },
+  isHiddenMcpItem: isHiddenCodexMcpItem,
   isSpawnReady: (item: CodexCollabToolCallItem) => item.receiverThreadIds.length > 0,
   isSubagentFollowUp: (item: CodexCollabToolCallItem) => item.tool === 'sendInput' && item.receiverThreadIds.length > 0,
   isPinnedSegment: (segment, itemAt) => isCodexPinnedSegment(segment, itemAt, { isWidgetShowTool }),
@@ -949,9 +998,11 @@ const CODEX_RUNTIME: CodexTurnViewPresenterRuntime = {
 
 export function PortableCodexTurn({
   message,
+  isStreaming,
   isLastAssistant,
 }: {
   message: ChatMessage
+  isStreaming: boolean
   isLastAssistant: boolean
 }) {
   const respondToPlan = (status: 'approved' | 'rejected', feedback?: string): void => {
@@ -964,8 +1015,8 @@ export function PortableCodexTurn({
   return (
     <CodexTurnViewPresenter
       message={message}
-      isStreaming={message.status === 'streaming'}
-      isWorking={message.status === 'streaming'}
+      isStreaming={isStreaming}
+      isWorking={isStreaming}
       isLastAssistant={isLastAssistant}
       detailChatMode={false}
       canRespondToPlan
@@ -982,8 +1033,12 @@ export function PortableCodexTurn({
 export function PortableTurnProvider({
   scheme,
   pendingPermission,
+  projectPath,
   children,
 }: PortableTurnContextValue & { children: ReactNode }) {
-  const value = useMemo(() => ({ scheme, pendingPermission }), [scheme, pendingPermission])
+  const value = useMemo(
+    () => ({ scheme, pendingPermission, projectPath }),
+    [scheme, pendingPermission, projectPath],
+  )
   return <PortableTurnContext.Provider value={value}>{children}</PortableTurnContext.Provider>
 }

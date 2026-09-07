@@ -222,20 +222,47 @@ test('21 renders LaTeX with KaTeX', async ({ page }) => {
 })
 
 test('22 marks a streaming turn', async ({ page }) => {
-  await send(page, { type: 'hydrate', messages: [textMessage('live', 'typing', { status: 'streaming' })] })
+  await send(page, {
+    type: 'hydrate',
+    sessionStatus: 'streaming',
+    messages: [textMessage('live', 'typing', { status: 'streaming' })],
+  })
   await expect(page.locator('[data-turn-id="live"]')).toHaveAttribute('data-message-status', 'streaming')
-  await expect(page.getByText('Working…')).toBeVisible()
+  // The footer shows either the working label or the running clock depending on
+  // how long the turn has been open; the spinner is what says "live" in both.
+  await expect(page.locator('[data-turn-id="live"] .animate-spin')).toBeVisible()
+})
+
+// A turn's own status outlives an interrupt or a dropped connection, so without
+// the session gate the phone spun on a dead turn for the rest of the session.
+test('22b leaves a stale streaming turn alone once the session is idle', async ({ page }) => {
+  await send(page, {
+    type: 'hydrate',
+    sessionStatus: 'idle',
+    messages: [textMessage('stale', 'typing', { status: 'streaming' })],
+  })
+  await expect(page.locator('[data-turn-id="stale"]')).toHaveCount(1)
+  await expect(page.locator('[data-turn-id="stale"] .animate-spin')).toHaveCount(0)
+})
+
+test('22c renders a compaction marker as an indicator, not raw text', async ({ page }) => {
+  await send(page, {
+    type: 'hydrate',
+    messages: [textMessage('c1', '__compact__:auto:123456:2000:4500', { providerId: 'system' })],
+  })
+  await expect(page.getByText('Conversation compacted')).toBeVisible()
+  await expect(page.getByText('__compact__')).toHaveCount(0)
 })
 
 test('23 expands a tool result', async ({ page }) => {
   await send(page, {
     type: 'hydrate',
     messages: [message('tool', [
-      { type: 'tool_use', toolName: 'Read', toolUseId: 'tool-1', input: '{"file_path":"README.md"}', status: 'complete' },
+      { type: 'tool_use', toolName: 'Grep', toolUseId: 'tool-1', input: '{"pattern":"todo"}', status: 'complete' },
       { type: 'tool_result', toolUseId: 'tool-1', summary: 'file body' },
     ])],
   })
-  await page.locator('[data-tool-use-id="tool-1"] > button').click()
+  await page.locator('[data-tool-use-id="tool-1"] .tool-node-header').click()
   await expect(page.locator('[data-tool-use-id="tool-1"]')).toContainText('file body')
 })
 
@@ -247,8 +274,9 @@ test('24 shows pending permission on the matching tool', async ({ page }) => {
       { type: 'tool_use', toolName: 'Bash', toolUseId: 'tool-2', input: '{"command":"pwd"}', status: 'streaming' },
     ], { status: 'streaming' })],
   })
-  await expect(page.locator('[data-tool-use-id="tool-2"]')).toHaveAttribute('data-permission-pending', 'true')
-  await expect(page.locator('[data-tool-use-id="tool-2"]')).toContainText('Awaiting approval')
+  const pending = page.locator('[data-permission-pending="true"]')
+  await expect(pending).toHaveCount(1)
+  await expect(pending.locator('[data-tool-use-id="tool-2"]')).toContainText('pwd')
 })
 
 test('25 routes links through requestNative', async ({ page }) => {
@@ -257,6 +285,36 @@ test('25 routes links through requestNative', async ({ page }) => {
   await expect.poll(() => page.evaluate(() => (
     globalThis as typeof globalThis & { __hostMessages: Array<{ type?: string; action?: string }> }
   ).__hostMessages.some((item) => item.type === 'requestNative' && item.action === 'openLink'))).toBe(true)
+})
+
+test('25b turns a project file citation into a native openFile chip', async ({ page }) => {
+  await send(page, {
+    type: 'hydrate',
+    projectPath: '/Users/me/proj',
+    messages: [textMessage('cite', 'See [ToolRow.tsx](src/components/ToolRow.tsx:42)')],
+  })
+  await page.getByRole('button', { name: /ToolRow\.tsx/ }).click()
+  await expect.poll(() => page.evaluate(() => (
+    globalThis as typeof globalThis & {
+      __hostMessages: Array<{ type?: string; action?: string; payload?: { path?: string } }>
+    }
+  ).__hostMessages.some((item) => (
+    item.type === 'requestNative'
+      && item.action === 'openFile'
+      && item.payload?.path === '/Users/me/proj/src/components/ToolRow.tsx'
+  )))).toBe(true)
+})
+
+// A heading link is not a file, even though it is relative and the project root
+// is known — `<root>/#setup` names nothing.
+test('25c leaves an in-document anchor as a link', async ({ page }) => {
+  await send(page, {
+    type: 'hydrate',
+    projectPath: '/Users/me/proj',
+    messages: [textMessage('anchor', 'Jump to [Setup](#setup)')],
+  })
+  await expect(page.getByRole('link', { name: 'Setup' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Setup' })).toHaveCount(0)
 })
 
 test('26 scrolls to a turn outside the current window', async ({ page }) => {
@@ -289,8 +347,7 @@ test('28 opens a remotely stripped file tool from derived metadata', async ({ pa
     }])],
   })
 
-  await page.locator('[data-tool-use-id="remote-read-tool"] > button').click()
-  await page.getByRole('button', { name: 'Open in host' }).click()
+  await page.locator('[data-tool-use-id="remote-read-tool"]').getByRole('button', { name: 'App.tsx' }).click()
   await expect.poll(() => page.evaluate(() => (
     globalThis as typeof globalThis & {
       __hostMessages: Array<{ type?: string; action?: string; payload?: { path?: string } }>
@@ -329,7 +386,7 @@ test('29 renders native widget media as a host-backed gallery', async ({ page })
     ])],
   })
 
-  await expect(page.locator('[data-native-widget="image-gallery"]')).toContainText('Generated concepts')
+  await expect(page.locator('[data-native-widget="image-gallery"]')).toContainText('concept.png')
   await page.getByRole('button', { name: /Open image/ }).click()
   await expect.poll(() => page.evaluate(() => (
     globalThis as typeof globalThis & {

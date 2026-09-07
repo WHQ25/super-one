@@ -26,18 +26,11 @@ import { useMiniAppStore } from '@/stores/miniapp'
 import {
   CodexTurnViewPresenter,
   codexMcpItemResultText,
+  isHiddenCodexMcpItem,
   type CodexItemPresenterProps,
   type CodexTurnViewPresenterParts,
   type CodexTurnViewPresenterRuntime,
 } from './presenters/CodexTurnView'
-
-function isHiddenCodexMcpItem(item: CodexThreadItem): boolean {
-  if (item.type !== 'mcp_tool_call') return false
-  const toolName = `mcp__${item.server}__${item.tool}`
-  if (isAlwaysHiddenToolBlock(toolName)) return true
-  if (!isMediaGenerateImageTool(toolName) && !isMediaVideoStatusTool(toolName)) return false
-  return isHiddenToolBlock(toolName, codexMcpItemResultText(item))
-}
 
 function DesktopMarkdown({ text, isStreaming }: { text: string; isStreaming: boolean }) {
   return (

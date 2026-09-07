@@ -80,6 +80,13 @@ export interface GenericToolRowPorts {
 export interface GenericToolRowProps {
   toolName: string
   toolUseId?: string
+  /**
+   * File this tool touched, when the caller already knows it. A remote surface
+   * receives tools with `input` stripped, so the path cannot be parsed back out
+   * of the params — the sender forwards it here instead, the same bargain as
+   * `preferSentSummary` and `toolDiff`.
+   */
+  filePath?: string
   input: string
   toolSummary?: string
   status?: 'streaming' | 'complete'
@@ -148,6 +155,8 @@ function ToolResult({ text }: { text: string }) {
  */
 export function GenericToolRowPresenter({
   toolName,
+  toolUseId,
+  filePath,
   input,
   toolSummary,
   status,
@@ -171,7 +180,9 @@ export function GenericToolRowPresenter({
   const display = useMemo(() => getToolDisplay(toolName, params, ports.cwd, ports.homedir), [toolName, params, ports.cwd, ports.homedir])
   const mcpInfo = parseMcpToolName(toolName)
   const isMcp = mcpInfo !== null
-  const fileToolPath = FILE_PATH_TOOLS.has(toolName) ? String(params.file_path ?? params.notebook_path ?? '') : ''
+  const fileToolPath = FILE_PATH_TOOLS.has(toolName)
+    ? String(params.file_path ?? params.notebook_path ?? filePath ?? '')
+    : ''
   const fileToolName = fileToolPath ? fileToolPath.split('/').pop() || '' : ''
 
   const isDenied = !!result && result.startsWith('[denied] ')
@@ -261,6 +272,10 @@ export function GenericToolRowPresenter({
 
   return (
     <div
+      // The row's identity in the DOM. Both hosts key screenshots, e2e locators
+      // and event-trace lookups off it, so it has to survive here rather than be
+      // re-added by each caller.
+      data-tool-use-id={toolUseId}
       className={cn(
         'tool-node my-0.5 min-w-0 rounded transition-colors',
         isDenied ? 'denied bg-error/10' : isError ? 'errored bg-warning/10' : 'bg-muted/20',
@@ -269,7 +284,10 @@ export function GenericToolRowPresenter({
       )}
     >
       <div
-        className="flex min-w-0 items-center gap-1.5 px-2 py-1.5 text-xs"
+        // The row's clickable surface. It stays a div rather than a button
+        // because it contains the file chip, and a button inside a button is
+        // invalid — so the class is what gives it a stable handle.
+        className="tool-node-header flex min-w-0 items-center gap-1.5 px-2 py-1.5 text-xs"
         onClick={expandable ? () => setExpanded((e) => !e) : undefined}
       >
         {isDenied ? (

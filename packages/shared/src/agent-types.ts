@@ -4355,6 +4355,12 @@ export interface RemoteSystemInfo {
    * default. Null means "no override"; absent means the host predates this.
    */
   brandHue?: number | null
+  /**
+   * The locale the host resolved for the user. A remote shell has no settings
+   * store, so this rides the harness catalog alongside `brandHue` rather than
+   * as a second round trip. Absent means the host predates this.
+   */
+  locale?: Locale
   defaults?: {
     model?: string | null
     effort?: string | null

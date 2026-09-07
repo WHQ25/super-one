@@ -1,3 +1,4 @@
+import type { ContentBlock, ImageGenerationItem, VideoGenerationItem } from '@superone/shared/agent-types'
 import { shortenPath } from '@superone/shared/path-display'
 import { isAlwaysHiddenToolName } from '@superone/shared/tool-ui'
 import { DEVICE_AGENT_TOOL_NAMES } from '@superone/shared/superone-host-owned-tools'
@@ -11,6 +12,8 @@ import {
   nativeWidgetImages,
   nativeWidgetVideos,
   isVideoStatusStillRunning,
+  toImageGenerationItems,
+  toVideoStatusItems,
 } from './media-generation'
 import { topFindingSummary } from './report-findings-display'
 import { isWorkflowSmokeCheck, workflowToolTargetLabel } from './workflow-utils'
@@ -356,3 +359,60 @@ export function parseToolInput(input: string, toolName?: string): Record<string,
 }
 
 export { extractPartialToolInput }
+
+/**
+ * The generated images a turn should show in its turn-end gallery.
+ *
+ * Pairs with `isHiddenToolBlock`: a successful generation's tool row is hidden
+ * because this collects it instead. A surface that adopts one without the other
+ * either loses the images or shows them twice.
+ */
+export function collectGeneratedImages(
+  content: ContentBlock[],
+  toolResultMap: Map<string, string>,
+): ImageGenerationItem[] {
+  const items: ImageGenerationItem[] = []
+  for (const block of content) {
+    if (block.type !== 'tool_use') continue
+    // A native-template widget_show hands the gallery items the host already prepared, so an
+    // agent-written provider adapter lands in the same surface as a built-in generation.
+    if (isWidgetShowTool(block.toolName)) {
+      items.push(...nativeWidgetImages(toolResultMap.get(block.toolUseId)))
+      continue
+    }
+    if (!isMediaGenerateImageTool(block.toolName)) continue
+    items.push(...toImageGenerationItems(
+      block.toolUseId,
+      parseToolInput(block.input, block.toolName),
+      toolResultMap.get(block.toolUseId),
+    ))
+  }
+  return items
+}
+
+/**
+ * Collect the finished video cards for a turn.
+ *
+ * Only the completing status poll produces a card. A generation spans two tool calls and the poll
+ * usually lands in a later message than the submit, so a placeholder emitted at submit time would
+ * be stranded in an earlier message with no way to ever settle — the visible submit tool block is
+ * the progress affordance instead.
+ */
+export function collectGeneratedVideos(
+  content: ContentBlock[],
+  toolResultMap: Map<string, string>,
+): VideoGenerationItem[] {
+  const byId = new Map<string, VideoGenerationItem>()
+  for (const block of content) {
+    if (block.type !== 'tool_use') continue
+    const result = toolResultMap.get(block.toolUseId)
+    if (isWidgetShowTool(block.toolName)) {
+      for (const item of nativeWidgetVideos(result)) byId.set(item.id, item)
+      continue
+    }
+    // SuperOne async poll, or Grok native video tools that return a finished path.
+    if (!isMediaVideoStatusTool(block.toolName) && !isGrokVideoGenTool(block.toolName)) continue
+    for (const item of toVideoStatusItems(result)) byId.set(item.id, item)
+  }
+  return [...byId.values()]
+}

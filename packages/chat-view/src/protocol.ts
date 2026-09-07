@@ -1,7 +1,37 @@
-import type { ChatMessage, Locale, TodoItem } from '@superone/shared/agent-types'
+import type { AgentStatus, ChatMessage, Locale, TodoItem } from '@superone/shared/agent-types'
 import type { ChatWindowRange } from './chat-window'
 
-export interface ReductionProjection {
+/** Wire shape of the retry banner; mirrors what `ApiRetryIndicator` renders. */
+export interface ProjectedApiRetry {
+  attempt: number
+  maxRetries?: number
+  delayMs: number
+  message?: string
+}
+
+/**
+ * Session-level facts a turn cannot derive from its own `status`. Without them a
+ * turn left in `streaming` by a dropped connection spins forever, and the footer
+ * has no live token counter — see `PortableTurnFooter`.
+ */
+export interface SessionProjection {
+  /** Mirrors the host's session status; gates the live-turn spinner. */
+  sessionStatus?: AgentStatus
+  streamingTokens?: { input: number; output: number }
+  isCompacting?: boolean
+  compactingStartedAt?: number | null
+  isRecapping?: boolean
+  compactError?: string | null
+  apiRetry?: ProjectedApiRetry | null
+  /**
+   * Absolute project root on the host. Used only to turn project-relative
+   * markdown file links into paths `openFile` can act on — the WebView has no
+   * transport for host files, so media srcs are deliberately left alone.
+   */
+  projectPath?: string | null
+}
+
+export interface ReductionProjection extends SessionProjection {
   messages?: ChatMessage[]
   todos?: TodoItem[] | Record<string, TodoItem>
   labels?: Record<string, string>

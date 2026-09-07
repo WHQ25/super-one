@@ -117,6 +117,28 @@ describe('resolveProjectFileHref', () => {
     })
   })
 
+  it('never treats an in-document anchor as a project file', () => {
+    // `[Setup](#setup)` is a heading link, not `<root>/#setup`. The text-level
+    // rewrite in `resolveMarkdownFileLinks` already skips `#`-leading
+    // destinations; render-level resolution has to agree or the link silently
+    // turns into a file chip that opens nothing.
+    expect(resolveProjectFileHref('#setup', PROJECT)).toBeNull()
+    expect(resolveProjectFileHref('#', PROJECT)).toBeNull()
+    expect(resolveProjectFileHref('#section-2', PROJECT)).toBeNull()
+  })
+
+  it('only treats a leading hash as an anchor, not one inside a path', () => {
+    expect(resolveProjectFileHref('docs/guide.md', PROJECT)).toEqual({
+      filePath: `${PROJECT}/docs/guide.md`,
+    })
+    // A line citation still parses its line off the path rather than reading
+    // as an anchor.
+    expect(resolveProjectFileHref('docs/guide.md#L12', PROJECT)).toEqual({
+      filePath: `${PROJECT}/docs/guide.md`,
+      lineNumber: 12,
+    })
+  })
+
   it('never treats http(s) URLs as project files — including localhost', () => {
     expect(
       resolveProjectFileHref('https://localhost/apps/desktop/src/main/mcp/superone-mcp-server.ts', PROJECT),

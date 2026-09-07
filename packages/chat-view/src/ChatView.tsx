@@ -8,13 +8,24 @@ import {
   type ErrorInfo,
   type ReactNode,
 } from 'react'
-import type { ChatMessage, Locale, TodoItem } from '@superone/shared/agent-types'
+import type { AgentStatus, ChatMessage, Locale, TodoItem } from '@superone/shared/agent-types'
 import { ChevronUp, ListChecks, WifiOff } from 'lucide-react'
+import {
+  ApiRetryIndicator,
+  CompactErrorIndicator,
+  CompactIndicator,
+  CompactingIndicator,
+  findLastAssistantMessageId,
+  RecappingIndicator,
+  TurnMetaIndicator,
+} from './presenters/ChatMessageIndicators'
+import { transcriptRow } from './transcript-rows'
+import { ZERO_TURN_TOKENS } from './presenters/turn-footer-model'
 import { CHAT_WINDOW, initialChatWindow, loadPreviousChatWindow, normalizeChatWindow, type ChatWindowRange } from './chat-window'
 import { installHostBridge, postHost } from './bridge'
 import { setChatViewLocale } from './i18n'
 import { PortableMessage } from './PortableMessage'
-import type { HostInbound, ReductionProjection } from './protocol'
+import type { HostInbound, ReductionProjection, SessionProjection } from './protocol'
 
 type PendingPermission = ReductionProjection['pendingPermission']
 
@@ -24,6 +35,7 @@ interface ViewState {
   labels: Record<string, string>
   mentionArtwork: Record<string, string>
   pendingPermission: PendingPermission
+  session: SessionFacts
   range: ChatWindowRange
   scheme: 'light' | 'dark'
   hue: number
@@ -32,12 +44,40 @@ interface ViewState {
   scrollTarget?: { id: string; behavior: ScrollBehavior }
 }
 
+type SessionFacts = Required<Omit<SessionProjection, 'sessionStatus'>> & {
+  sessionStatus: AgentStatus
+}
+
+const EMPTY_SESSION: SessionFacts = {
+  sessionStatus: 'idle',
+  streamingTokens: ZERO_TURN_TOKENS,
+  isCompacting: false,
+  compactingStartedAt: null,
+  isRecapping: false,
+  compactError: null,
+  apiRetry: null,
+  projectPath: null,
+}
+
+/** Take only the session keys the host actually sent; a patch omits what did not change. */
+function mergeSessionFacts(previous: SessionFacts, projection: SessionProjection): SessionFacts {
+  let next = previous
+  for (const key of Object.keys(EMPTY_SESSION) as (keyof SessionFacts)[]) {
+    const value = projection[key]
+    if (value === undefined) continue
+    if (next === previous) next = { ...previous }
+    ;(next as Record<string, unknown>)[key] = value
+  }
+  return next
+}
+
 const EMPTY_STATE: ViewState = {
   messages: [],
   todos: [],
   labels: {},
   mentionArtwork: {},
   pendingPermission: null,
+  session: EMPTY_SESSION,
   range: { start: 0, end: 0 },
   scheme: 'dark',
   hue: 250,
@@ -93,6 +133,7 @@ function applyProjection(
     pendingPermission: projection.pendingPermission === undefined
       ? previous.pendingPermission
       : projection.pendingPermission,
+    session: mergeSessionFacts(previous.session, projection),
     range: projection.messages
       ? rangeAfterPatch(previous, messages, atBottom)
       : previous.range,
@@ -303,7 +344,11 @@ export function ChatView() {
   useEffect(() => { scheduleViewState() }, [state.range, scheduleViewState])
 
   const visible = state.messages.slice(state.range.start, state.range.end)
-  const lastAssistantId = state.messages.findLast((message) => message.role === 'assistant')?.id
+  // Compact / turn-meta markers persist as assistant rows but render as
+  // indicators, so the live turn is the last assistant message that is neither.
+  const lastAssistantId = findLastAssistantMessageId(state.messages)
+  const sessionStreaming = state.session.sessionStatus === 'streaming'
+    || state.session.sessionStatus === 'background'
   return (
     <main
       className="chat-view-shell"
@@ -330,16 +375,29 @@ export function ChatView() {
       </div>
       {visible.length === 0
         ? <p className="py-12 text-center text-sm text-muted-foreground">Waiting for session…</p>
-        : visible.map((message) => (
-          <PortableMessage
-            key={message.id}
-            message={message}
-            scheme={state.scheme}
-            pendingPermission={state.pendingPermission ?? null}
-            mentionArtwork={state.mentionArtwork}
-            isLastAssistant={message.id === lastAssistantId}
-          />
-        ))}
+        : visible.map((message) => {
+          const row = transcriptRow(message, state.messages)
+          if (row.kind === 'hidden') return null
+          if (row.kind === 'compact') return <CompactIndicator key={message.id} {...row.marker} />
+          if (row.kind === 'turn-meta') return <TurnMetaIndicator key={message.id} meta={row.meta} />
+          return (
+            <PortableMessage
+              key={message.id}
+              message={message}
+              scheme={state.scheme}
+              pendingPermission={state.pendingPermission ?? null}
+              mentionArtwork={state.mentionArtwork}
+              isLastAssistant={message.id === lastAssistantId}
+              sessionStreaming={sessionStreaming}
+              streamingTokens={state.session.streamingTokens}
+              projectPath={state.session.projectPath}
+            />
+          )
+        })}
+      {state.session.isCompacting && <CompactingIndicator startedAt={state.session.compactingStartedAt} />}
+      {state.session.compactError && <CompactErrorIndicator error={state.session.compactError} />}
+      {state.session.isRecapping && <RecappingIndicator />}
+      {state.session.apiRetry && <ApiRetryIndicator info={state.session.apiRetry} />}
     </main>
   )
 }

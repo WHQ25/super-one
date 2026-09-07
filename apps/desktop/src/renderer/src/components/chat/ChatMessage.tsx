@@ -6,13 +6,13 @@ import { FileText, Folder } from 'lucide-react'
 import { ToolBlock } from './ToolBlock'
 import { ToolGroup } from './ToolGroup'
 import { AppToolGroup } from './AppToolGroup'
-import { parseToolInput, isHiddenToolBlock } from './tool-display'
+import { parseToolInput, isHiddenToolBlock, collectGeneratedImages, collectGeneratedVideos } from './tool-display'
 import {
   isClaudePinnedSegment,
 } from './compact-chat-mode'
 import { summarizeClaudeProcess } from './turn-process-stats'
 import { TurnDetailSection } from './TurnDetailSection'
-import { toImageGenerationItems, toVideoStatusItems, isMediaGenerateImageTool, isMediaVideoStatusTool, isGrokVideoGenTool, isWidgetShowTool, nativeWidgetImages, nativeWidgetVideos, collectCodexGeneratedImages, collectCodexGeneratedVideos } from './media-generation'
+import { collectCodexGeneratedImages, collectCodexGeneratedVideos } from './media-generation'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { SubagentBlock } from './SubagentBlock'
 import { WorkflowBlock } from './WorkflowBlock'
@@ -45,6 +45,7 @@ import { useIsDark } from '@/hooks/use-is-dark'
 import type { ChatMessageContext } from '@superone/shared/agent-types'
 import { TurnSummaryAboveFooter } from './presenters/ChatMessageIndicators'
 import { DurationFooter } from './ChatMessageFooter'
+import { collaborationLabelKey } from '@superone/chat-view/presenters/collaboration-label'
 import { ChatMessagePresenter } from './presenters/ChatMessage'
 import {
   ClaudeBlockPresenter,
@@ -255,59 +256,6 @@ function MessageContextChips({ contexts }: { contexts: ChatMessageContext[] }) {
   )
 }
 
-function collectGeneratedImages(content: ContentBlock[], toolResultMap: Map<string, string>): ImageGenerationItem[] {
-  const items: ImageGenerationItem[] = []
-  for (const block of content) {
-    if (block.type !== 'tool_use') continue
-    // A native-template widget_show hands the gallery items the host already prepared, so an
-    // agent-written provider adapter lands in the same surface as a built-in generation.
-    if (isWidgetShowTool(block.toolName)) {
-      items.push(...nativeWidgetImages(toolResultMap.get(block.toolUseId)))
-      continue
-    }
-    if (!isMediaGenerateImageTool(block.toolName)) continue
-    items.push(...toImageGenerationItems(
-      block.toolUseId,
-      parseToolInput(block.input, block.toolName),
-      toolResultMap.get(block.toolUseId),
-    ))
-  }
-  return items
-}
-
-/**
- * Collect the finished video cards for a turn.
- *
- * Only the completing status poll produces a card. A generation spans two tool calls and the poll
- * usually lands in a later message than the submit, so a placeholder emitted at submit time would
- * be stranded in an earlier message with no way to ever settle — the visible submit tool block is
- * the progress affordance instead.
- */
-function collectGeneratedVideos(content: ContentBlock[], toolResultMap: Map<string, string>): VideoGenerationItem[] {
-  const byId = new Map<string, VideoGenerationItem>()
-  for (const block of content) {
-    if (block.type !== 'tool_use') continue
-    const result = toolResultMap.get(block.toolUseId)
-    if (isWidgetShowTool(block.toolName)) {
-      for (const item of nativeWidgetVideos(result)) byId.set(item.id, item)
-      continue
-    }
-    // SuperOne async poll, or Grok native video tools that return a finished path.
-    if (!isMediaVideoStatusTool(block.toolName) && !isGrokVideoGenTool(block.toolName)) continue
-    for (const item of toVideoStatusItems(result)) byId.set(item.id, item)
-  }
-  return [...byId.values()]
-}
-
-function collaborationLabelKey(message: ChatMessageType): string | null {
-  const source = message.metadata?.source
-  if (source === 'task-notification') return 'chat.collaboration.taskNotification'
-  if (source !== 'collaboration') return null
-  const collab = message.metadata?.collaboration
-  if (collab?.kind === 'initial_task') return 'chat.collaboration.initialTask'
-  if (collab?.direction === 'outbound') return 'chat.collaboration.toAgent'
-  return 'chat.collaboration.fromAgent'
-}
 
 /** Host wake for session_collab mailbox — agent sees full prompt; UI shows a compact inbox row. */
 function isCollabMailboxWakeText(text: string): boolean {

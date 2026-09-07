@@ -3,6 +3,7 @@ import type {
   DeepseekPresetRoster,
   HarnessId,
   HarnessResourcesMap,
+  Locale,
   ModelOption,
   RemoteActiveProvider,
   RemoteProviderOption,
@@ -16,6 +17,11 @@ type ResourceReader = <H extends HarnessId>(harnessId: H) => HarnessResourcesMap
 
 export interface RemoteHarnessSystemInfoDependencies {
   settings: AppSettings
+  /**
+   * Locale already resolved by main (`settings.locale` or the system fallback).
+   * Passed in rather than read here so this module stays free of electron.
+   */
+  currentLocale: Locale
   getCachedResources: ResourceReader
   fetchClaudeModels: (projectPath: string) => Promise<ModelOption[]>
   listCodexModels?: (projectPath: string) => Promise<ModelOption[]>
@@ -89,9 +95,10 @@ function defaultInfo(
 }
 
 /**
- * A remote shell has no settings store of its own, so the brand hue the user set
- * here travels with the harness catalog rather than as a second round trip. It is
- * appended once, around the per-harness switch, so no branch can forget it.
+ * A remote shell has no settings store of its own, so the brand hue and locale
+ * the user set here travel with the harness catalog rather than as a second
+ * round trip. They are appended once, around the per-harness switch, so no
+ * branch can forget them.
  */
 export async function buildRemoteHarnessSystemInfo(
   projectPath: string,
@@ -99,7 +106,11 @@ export async function buildRemoteHarnessSystemInfo(
   deps: RemoteHarnessSystemInfoDependencies,
 ): Promise<RemoteSystemInfo> {
   const info = await harnessSystemInfo(projectPath, harnessId, deps)
-  return { ...info, brandHue: deps.settings.agentPreference[harnessId]?.brandHue ?? null }
+  return {
+    ...info,
+    brandHue: deps.settings.agentPreference[harnessId]?.brandHue ?? null,
+    locale: deps.currentLocale,
+  }
 }
 
 async function harnessSystemInfo(

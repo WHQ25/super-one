@@ -1,0 +1,181 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { AlertTriangle, ArrowDown, ArrowUp, Check, ChevronDown, ChevronUp, Clock, Copy, Loader2 } from 'lucide-react'
+import type { ChatMessage } from '@superone/shared/agent-types'
+import { formatTokens } from '@superone/shared/format-tokens'
+import { cn } from '@superone/ui/lib/utils'
+import {
+  buildAgentErrorDetails,
+  resolveAgentErrorKind,
+} from './presenters/agent-error-presentation'
+import {
+  formatTerminalReason,
+  turnFooterModel,
+  ZERO_TURN_TOKENS,
+  type TurnTokenCounts,
+} from './presenters/turn-footer-model'
+import { requestNative } from './bridge'
+
+/**
+ * The failure explanation, inline rather than in a popover: a phone has no
+ * hover, and a tap target that hides the only description of what went wrong
+ * behind a second tap is worse than the two extra lines. The kind → title/hint
+ * mapping is the desktop one, so both surfaces name a failure identically.
+ */
+function PortableErrorBadge({ info }: { info: NonNullable<ChatMessage['metadata']>['errorInfo'] }) {
+  const { t } = useTranslation()
+  const kind = resolveAgentErrorKind(info!)
+  const rows = useMemo(() => buildAgentErrorDetails(info!), [info])
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div className="min-w-0 flex-1">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="flex items-center gap-1 text-warning"
+      >
+        <AlertTriangle className="size-3 shrink-0" />
+        <span>{t(`chat.error.title.${kind}`)}</span>
+        {open ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
+      </button>
+      {open && (
+        <div className="mt-1.5 rounded-md bg-muted/60 p-2 text-xs leading-relaxed text-muted-foreground">
+          <p className="text-foreground">{t(`chat.error.hint.${kind}`)}</p>
+          {rows.map((row) => (
+            <div key={row.label} className="mt-1 flex gap-2 font-mono">
+              <span className="w-24 shrink-0 opacity-60">{row.label}</span>
+              <span className="min-w-0 break-all">{row.value}</span>
+            </div>
+          ))}
+          <p className="mt-2 border-t pt-2 font-mono break-all whitespace-pre-wrap">{info!.raw}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Token({ value, direction }: { value: number; direction: 'up' | 'down' }) {
+  if (value <= 0) return null
+  return (
+    <span className="inline-flex items-center gap-0.5 tabular-nums">
+      {direction === 'up' ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" />}
+      <span>{formatTokens(value)}</span>
+    </span>
+  )
+}
+
+/** Elapsed ms for a live turn, anchored on `createdAt` so a remount does not restart it. */
+function useElapsedMs(message: ChatMessage, isStreaming: boolean): number {
+  const startRef = useRef<number | null>(null)
+  const [elapsed, setElapsed] = useState(0)
+  useEffect(() => {
+    if (!isStreaming) return
+    if (startRef.current == null) {
+      const created = message.createdAt ? new Date(message.createdAt).getTime() : 0
+      startRef.current = created > 0 ? created : Date.now()
+    }
+    const tick = () => setElapsed(Date.now() - startRef.current!)
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [isStreaming, message.createdAt])
+  return elapsed
+}
+
+export interface PortableTurnFooterProps {
+  message: ChatMessage
+  /** This turn is live AND the session is still producing it. */
+  isStreaming: boolean
+  streamingTokens: TurnTokenCounts
+  /** Plain-text transcript of the turn; omitted while streaming, which hides copy. */
+  copyText?: string
+}
+
+/**
+ * Remote-Control counterpart of the desktop `DurationFooter`. It renders the
+ * slice a phone can support — duration, spend, failure, copy — off the same
+ * `turnFooterModel` derivation, so the two never disagree about which number a
+ * turn is worth showing. Desktop-only affordances (fork, MCP startup, stall
+ * tinting, running slash command) are deliberately absent.
+ */
+export function PortableTurnFooter({
+  message,
+  isStreaming,
+  streamingTokens,
+  copyText,
+}: PortableTurnFooterProps) {
+  const { t } = useTranslation()
+  const elapsedMs = useElapsedMs(message, isStreaming)
+  const frozenRef = useRef(ZERO_TURN_TOKENS)
+  if (isStreaming && (streamingTokens.input > 0 || streamingTokens.output > 0)) {
+    frozenRef.current = streamingTokens
+  }
+  const footer = turnFooterModel({
+    message,
+    isStreaming,
+    streamingTokens,
+    frozenTokens: frozenRef.current,
+    elapsedMs,
+  })
+  const [copied, setCopied] = useState(false)
+  const showCopy = !isStreaming && Boolean(copyText)
+  // A turn under a second has no clock yet, and on the phone the footer is the
+  // only place a live turn announces itself — so the working label stands in
+  // until the clock is worth showing.
+  const showWorking = isStreaming && !footer.showDuration
+
+  if (footer.isEmpty && !showCopy && !showWorking) return null
+
+  const separator = <span aria-hidden>·</span>
+
+  return (
+    <div className={cn('mt-2 flex items-start gap-1.5 text-xs text-muted-foreground', message.metadata?.turnSummary && 'mt-1')}>
+      {showCopy && (
+        <button
+          type="button"
+          onClick={() => {
+            requestNative('copyText', { text: copyText })
+            setCopied(true)
+            setTimeout(() => setCopied(false), 1500)
+          }}
+          className="shrink-0"
+        >
+          {copied ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}
+        </button>
+      )}
+      {footer.showDuration && (
+        <>
+          {isStreaming ? <Loader2 className="size-3 animate-spin" /> : <Clock className="size-3" />}
+          <span>{footer.durationLabel}</span>
+        </>
+      )}
+      {showWorking && (
+        <>
+          <Loader2 className="size-3 animate-spin" />
+          <span>{t('chat.working')}</span>
+        </>
+      )}
+      {footer.hasTokens && (
+        <>
+          {(footer.showDuration || showWorking) && separator}
+          <Token value={footer.tokenInput} direction="up" />
+          <Token value={footer.tokenOutput} direction="down" />
+        </>
+      )}
+      {footer.showError && (
+        <>
+          {(footer.showDuration || footer.hasTokens) && separator}
+          <PortableErrorBadge info={footer.errorInfo} />
+        </>
+      )}
+      {footer.showTerminalReason && (
+        <>
+          {(footer.showDuration || footer.hasTokens) && separator}
+          <AlertTriangle className="size-3 text-warning" />
+          <span className="text-warning">{formatTerminalReason(footer.terminalReason!)}</span>
+        </>
+      )}
+    </div>
+  )
+}

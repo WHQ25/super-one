@@ -50,6 +50,7 @@ import type { Session as SessionContract } from '../session/types'
 import { installAcpRecapFocus } from '../acp/acp-recap-focus'
 import { harnessProviderCatalog } from './remote-selector-catalog'
 import { listAccounts as listClaudeAccounts } from './claude-account-service'
+import { getCurrentLocale } from '../i18n'
 import { buildRemoteHarnessSystemInfo } from './remote-harness-system-info'
 
 /** Resolve a path to its git common directory (shared across worktrees). */
@@ -1382,6 +1383,7 @@ export class AgentService {
             : []
           const info = await buildRemoteHarnessSystemInfo(command.projectPath, command.provider, {
             settings,
+            currentLocale: getCurrentLocale(),
             getCachedResources: getCachedHarnessResources,
             fetchClaudeModels: fetchModels,
             listCodexModels: this.codexListModels,

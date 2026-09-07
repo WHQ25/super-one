@@ -197,7 +197,7 @@ export function BashTerminalPresenter({
   }, [expanded, hasMore, isLive, loadMore, outputFull, outputPath])
 
   return (
-    <div className={cn(
+    <div data-tool-use-id={toolUseId || undefined} className={cn(
       'tool-node my-0.5 rounded transition-colors',
       allowExpand && 'cursor-pointer',
       isDenied

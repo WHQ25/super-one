@@ -12,6 +12,11 @@ import { isRealtimeVoiceMessage } from './codex-realtime-messages'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
 import { tryCopy } from '@/lib/clipboard'
 import { MessageErrorBadge } from './MessageErrorBadge'
+import {
+  formatTerminalReason,
+  turnFooterModel,
+  ZERO_TURN_TOKENS,
+} from '@superone/chat-view/presenters/turn-footer-model'
 
 /** Token value with ↑ or ↓ arrow. Highlights while value is actively changing, fades after 1s of inactivity. */
 function AnimatedToken({ value, direction, active }: { value: number; direction: 'up' | 'down'; active: boolean }) {
@@ -52,17 +57,7 @@ function AnimatedToken({ value, direction, active }: { value: number; direction:
   )
 }
 
-const TERMINAL_REASON_LABELS: Record<string, string> = {
-  max_turns: 'Max turns',
-  aborted_tools: 'Aborted',
-  blocking_limit: 'Blocked',
-  api_error: 'API Error',
-}
-function formatTerminalReason(reason: string): string {
-  return TERMINAL_REASON_LABELS[reason] ?? reason.replace(/_/g, ' ')
-}
-
-const ZERO_TOKENS = { input: 0, output: 0 }
+const ZERO_TOKENS = ZERO_TURN_TOKENS
 const STATIC_FOOTER = { isCompacting: false, pendingApproval: false, streamingTokens: ZERO_TOKENS }
 
 export function DurationFooter({
@@ -151,27 +146,14 @@ export function DurationFooter({
     return () => clearInterval(id)
   }, [isStreaming])
 
-  const durationMs = isStreaming ? elapsed : (message.metadata?.durationMs ?? (elapsed || undefined))
-  const ct = message.metadata?.consumedTokens
-  const metaUsage = message.metadata?.usage
-  const codexUsage = message.metadata?.codex?.usage
-  // History / ACP: prefer consumedTokens; fall back to metadata.usage (main
-  // runtime stores Grok/Claude turn spend there) then Codex last-turn usage.
-  const tokenInput = isStreaming
-    ? streamingTokens.input
-    : (ct?.input
-      ?? (metaUsage && (metaUsage.inputTokens > 0 || metaUsage.outputTokens > 0) ? metaUsage.inputTokens : undefined)
-      ?? (codexUsage ? Math.max(0, codexUsage.lastInputTokens - codexUsage.lastCachedInputTokens) : undefined)
-      ?? frozenTokensRef.current.input)
-  const tokenOutput = isStreaming
-    ? streamingTokens.output
-    : (ct?.output
-      ?? (metaUsage && (metaUsage.inputTokens > 0 || metaUsage.outputTokens > 0) ? metaUsage.outputTokens : undefined)
-      ?? codexUsage?.lastOutputTokens
-      ?? frozenTokensRef.current.output)
-  const hasTokens = tokenInput > 0 || tokenOutput > 0
-
-  const showDuration = durationMs && (isStreaming ? durationMs >= 1000 : durationMs >= 20000)
+  const footer = turnFooterModel({
+    message,
+    isStreaming,
+    streamingTokens,
+    frozenTokens: frozenTokensRef.current,
+    elapsedMs: elapsed,
+  })
+  const { tokenInput, tokenOutput, hasTokens, showDuration } = footer
   const [copied, setCopied] = useState(false)
   const handleCopy = async () => {
     if (!copyText) return
@@ -184,12 +166,7 @@ export function DurationFooter({
   // Voice segments carry a synthetic id with no truncation point in the backing
   // Codex thread, so a fork from one could never resolve.
   const showFork = !isStreaming && message.status !== 'error' && !isRealtimeVoiceMessage(message)
-  const errorInfo = message.metadata?.errorInfo
-  const showError = !isStreaming && !!errorInfo
-  const terminalReason = message.metadata?.terminalReason
-  // The error badge already names the failure; the bare terminal-reason chip
-  // would just repeat it in developer vocabulary.
-  const showTerminalReason = !isStreaming && !showError && !!terminalReason && terminalReason !== 'completed' && message.status !== 'interrupted'
+  const { errorInfo, showError, terminalReason, showTerminalReason } = footer
   const mcpStartup = message.metadata?.codex?.mcpStartup
   const mcpServers = mcpStartup ?? []
   const hasCodexItems = (message.metadata?.codex?.items?.length ?? 0) > 0
@@ -215,11 +192,6 @@ export function DurationFooter({
   const showSlashCommand = isStreaming && !!runningSlashCommand && !hasTurnOutput
   if (!showDuration && !hasTokens && !showCopy && !showTerminalReason && !showError && !showMcpStartup && !showMcpFailure && !showSlashCommand) return null
 
-  const seconds = durationMs ? Math.round(durationMs / 1000) : 0
-  const display = seconds < 60
-    ? `${seconds}s`
-    : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
-
   const stallColor = isStreaming ? getStallColor(stallLevel) : 'text-muted-foreground'
 
   return (
@@ -241,7 +213,7 @@ export function DurationFooter({
             ? <Loader2 className="size-3 animate-spin" />
             : <Clock className="size-3" />
           }
-          <span>{display}</span>
+          <span>{footer.durationLabel}</span>
         </>
       )}
       {showSlashCommand && (

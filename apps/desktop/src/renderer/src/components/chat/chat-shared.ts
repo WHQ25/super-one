@@ -19,6 +19,9 @@ import { mediaStyleFor } from './markdown-media-style'
 import { MarkdownTable } from './MarkdownTable'
 import { MarkdownRemoteMedia } from './markdown-remote-media'
 import { openBrowserTab } from '@/components/activity/activity-panel-api'
+import { resolveMarkdownFileLinks } from '@superone/chat-view/presenters/markdown-file-links'
+
+export { resolveMarkdownFileLinks }
 
 export { codePlugin, codePluginLight }
 
@@ -211,20 +214,9 @@ export const streamdownRehypePlugins: PluggableList = Object.values({
 
 const MD_IMAGE_RE =
   /!\[([^\]]*)\]\((?!https?:\/\/|data:|local-file:\/\/|remote-media:\/\/)([^)\s]+)([^)]*)\)/g
-const MD_FILE_LINK_RE =
-  /(?<!!)\[([^\]]*)\]\((?!https?:\/\/|mailto:|data:|#|local-file:\/\/|remote-media:\/\/)([^)\s]+)([^)]*)\)/g
 
 function resolveLocalSrc(src: string, projectPath: string): string {
   return resolveMediaSrcForProject(src, projectPath)
-}
-
-export function resolveMarkdownFileLinks(text: string, projectPath: string): string {
-  return text.replace(MD_FILE_LINK_RE, (match, label: string, src: string, rest: string) => {
-    if (src.startsWith('/') || /^[A-Za-z]:[\\/]/.test(src)) return match
-    if (/^[a-zA-Z][a-zA-Z0-9+.-]+:/.test(src)) return match
-    const cleanSrc = src.replace(/^\.\//, '')
-    return `[${label}](${projectPath}/${cleanSrc}${rest})`
-  })
 }
 
 export function resolveMarkdownMedia(text: string, projectPath: string): string {

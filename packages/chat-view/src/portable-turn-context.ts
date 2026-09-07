@@ -8,6 +8,12 @@ export type PendingPermission = {
 export interface PortableTurnContextValue {
   scheme: 'light' | 'dark'
   pendingPermission: PendingPermission
+  /**
+   * Host project root, or null when the host has not reported one. Only file
+   * links use it — markdown media stays untouched because the WebView has no
+   * transport that could fetch a host file.
+   */
+  projectPath: string | null
 }
 
 /**
@@ -17,4 +23,5 @@ export interface PortableTurnContextValue {
 export const PortableTurnContext = createContext<PortableTurnContextValue>({
   scheme: 'dark',
   pendingPermission: null,
+  projectPath: null,
 })

@@ -247,8 +247,8 @@ export function MobileApp() {
     inject(termRef, webViewTheme)
   }, [webViewTheme])
   useEffect(() => {
-    inject(webRef, { type: 'setViewport', fontScale, locale: 'en' })
-  }, [fontScale])
+    inject(webRef, { type: 'setViewport', fontScale, locale: harnessSelection.locale })
+  }, [fontScale, harnessSelection.locale])
   const syncSheets = (runtime: ChatRuntime, hydrate = false) => {
     if (connectionRef.current.epoch !== runtime.epoch) {
       connectionRef.current = { state: 'connected', epoch: runtime.epoch }
@@ -267,6 +267,17 @@ export function MobileApp() {
       pendingPermission: pending
         ? { requestId: pending.requestId, toolName: pending.toolName, toolUseId: pending.toolUseId }
         : null,
+      // Session-level facts the transcript cannot derive from a message: the
+      // live-turn gate, the footer's token counter, and the compact / retry
+      // indicators. Sent on every patch because each is a plain scalar.
+      sessionStatus: runtime.session.status,
+      streamingTokens: runtime.session.streamingTokens,
+      isCompacting: runtime.session.isCompacting,
+      compactingStartedAt: runtime.session.compactingStartedAt,
+      isRecapping: runtime.session.isRecapping,
+      compactError: runtime.session.compactError,
+      apiRetry: runtime.session.apiRetry,
+      projectPath: runtime.projectPath || null,
     })
     if (includeMentionArtwork) mentionArtworkRevisionRef.current = mentionArtworkRevision
     setStreaming(runtime.streaming)
@@ -356,7 +367,7 @@ export function MobileApp() {
     }
     if (message.type === 'ready' && runtimeRef.current) {
       inject(webRef, webViewTheme)
-      inject(webRef, { type: 'setViewport', fontScale, locale: 'en' })
+      inject(webRef, { type: 'setViewport', fontScale, locale: harnessSelection.locale })
       inject(webRef, { type: 'setConnection', ...connectionRef.current })
       syncSheets(runtimeRef.current, true)
       const saved = restoredChatWindow(chatViewStatesRef.current[runtimeRef.current.sessionId])

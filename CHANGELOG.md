@@ -17,6 +17,20 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 - Release health: SuperOne reports crashes and update adoption, so a bad
   release shows up in monitoring rather than in user reports.
+- Remote Control: the companion mobile app is rebuilt from the ground up.
+  Pairing leads with the code, the device list reports real reachability and
+  finds a LAN route over mDNS, projects are picked or added through the same
+  flow the desktop uses, and starting a session runs on the desktop's own
+  selectors — model and effort in one control, harnesses named the way the
+  host names them. The composer is native, with mentions, slash commands,
+  status chips and a file browser.
+- Remote Control chat handles the full interaction surface: plan approvals,
+  question answers, permission prompts including device control, and session
+  actions. Codex images open in the native gallery and the terminal follows
+  the host's theme.
+- Worktree: the handoff popover names its scope ("Will carry") only when it is
+  wider than the uncommitted work the header already reports — the detached
+  case, where the worktree's own commits travel too.
 
 ### Fixed
 
@@ -29,13 +43,98 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Codex: launch settings approved in the dialog take effect on the first
   turn.
 - Codex: the model chosen for a session survives restoring that session.
+- Codex: fewer duplicate plan approvals on a live session.
+- iOS Simulator: the preview recovers when CoreSimulator drops the
+  framebuffer. Asking to control a healthy, booted simulator could fail with
+  `NO_DEVICE` indefinitely, because every stream restarted against the dead
+  display found at attach time.
+- iOS Simulator: two callers asking for the helper at once no longer clobber
+  each other's build on a cold cache, which failed it for both.
+- Ctrl+Tab's session switcher opens above the device and browser previews
+  instead of behind them, and an expanded preview no longer covers dialogs.
+- Picture-in-picture previews stay where the user left them when switching
+  sessions, instead of drifting toward the top-left.
 
 ### Changed
 
 - The browser address bar is taller, with real clearance above and below
   the URL field.
+- The iOS Simulator control note now tells the agent how to reach an Expo dev
+  client without opening Simulator.app, rather than banning the window and
+  declaring build-and-run fine.
 - Electron 44 (bundled Node 24.19.0), plus a sweep of dependency majors
   across the docking, terminal, syntax-highlighting and PDF stacks.
+
+## [0.62.2-alpha] - 2026-09-07
+
+### Added
+
+- Remote Control: the companion mobile app is rebuilt on Expo, replacing the
+  Flutter client. Pairing is a full-page takeover led by the code; the device
+  list reports real reachability and discovers a LAN route over mDNS; picking
+  a project is separate from adding one, with the desktop Add Project flow as
+  its own page; new-session selection is built on the desktop's own selectors,
+  with model and effort merged into one control and harness names taken from
+  the host's switcher. The composer is native, with mentions, slash commands,
+  status chips, a file browser and an adaptive file inbox.
+- Remote Control chat reaches parity on interaction: plan approvals, question
+  answers, permission sheets including device control, session actions, and a
+  terminal that follows the host's theme. Codex images open in the native
+  gallery.
+- Relay transport gained envelope ACK, reset and buffer-first delivery, plus
+  upload and a terminal assembler.
+- Worktree: the handoff popover names its scope ("Will carry") only when it is
+  wider than the uncommitted work the header already reports — the detached
+  case, where the worktree's own commits travel too.
+
+### Fixed
+
+- iOS Simulator: the preview recovers when CoreSimulator drops the
+  framebuffer. `device_request_control` used to fail with `NO_DEVICE` forever
+  on a simulator that was demonstrably healthy, because every stream restarted
+  against the dead display captured at attach time.
+- iOS Simulator: two callers asking for the helper in the same breath no
+  longer clobber each other's build on a cold cache, which failed the build
+  for both.
+- iOS Simulator: the control note now tells the agent how to reach an Expo dev
+  client without opening Simulator.app — `npx expo start` plus
+  `xcrun simctl openurl` — instead of banning the window and calling
+  build-and-run fine.
+- Ctrl+Tab's session switcher opens above the device and browser host layers
+  instead of behind a simulator tab, and an expanded preview no longer covers
+  dialogs.
+- Picture-in-picture previews stay where the user left them when switching
+  sessions, instead of being pulled toward the top-left by a measurement taken
+  while the panel was still animating.
+- Remote session archive and delete were denied for every request — the
+  ownership check was called with its two string arguments swapped, which
+  type-checked. Both now go through the same guard as the other remote
+  commands.
+- Chat: the Detail disclosure leads the turn rather than sitting below any
+  opening prose.
+- Chat: a tool call rendered alone in its turn now carries its diff and
+  +/- counter on remote surfaces, and the diff scrolls inside a 300px window
+  with a pinned line-number gutter.
+- Codex: fewer duplicate plan approvals on a live session.
+- Sidebar: the Show More / Show Less toggle is title case, like every other
+  label around it.
+
+### Changed
+
+- Chat tool rows render from one shared presenter across the desktop and the
+  portable chat view; mention parsing and session icons moved into shared
+  packages, and user mentions render as chips in the portable view.
+- The English and Chinese READMEs gained a feature wall.
+
+### Tests
+
+- Remote-control crypto golden vectors, Maestro UI coverage for the mobile
+  app, and a desktop remote-shell test that waits for output under load.
+
+### CI
+
+- EAS Update builds and App Store Connect submission are configured for the
+  mobile app.
 
 ## [0.62.1-alpha] - 2026-09-05
 

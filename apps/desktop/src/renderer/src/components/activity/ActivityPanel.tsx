@@ -16,7 +16,7 @@ import { ACTIVITY_PANEL_TRANSITION, LAYOUT } from '@/lib/layout-constants'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
 import { ResizeHandleLine } from '@/components/ResizeHandleLine'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuShortcut, DropdownMenuTrigger } from '@superone/ui/components/ui/dropdown-menu'
-import { isLayoutSwapping, launchInGroup, setDockApi, SIDE_CHAT_PANEL_ID } from './activity-panel-api'
+import { isLayoutSwapping, launchInGroup, restorePanelWidthAfterSideChat, setDockApi, SIDE_CHAT_PANEL_ID } from './activity-panel-api'
 import { useActivityLaunchTypes } from './activity-launch-types'
 import { activityPanelComponents } from './panels'
 import { activityTabComponents } from './ActivityTab'
@@ -164,6 +164,9 @@ export function ActivityPanel({ getMaxWidth, transitionMs }: ActivityPanelProps)
       // session's layout removes every panel, and that is a stash, not a close.
       if (panel.id === SIDE_CHAT_PANEL_ID && !isLayoutSwapping()) {
         const { sessionId } = (panel.params ?? {}) as { sessionId?: string }
+        // Opening the side chat pinned the panel to its minimum width; a real
+        // close is what hands that width back.
+        restorePanelWidthAfterSideChat()
         void import('@/lib/side-chat-actions').then((m) => m.handleSideChatTabRemoved(sessionId))
       }
       if (event.api.panels.length === 0) {

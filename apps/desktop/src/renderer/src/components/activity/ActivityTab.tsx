@@ -304,13 +304,16 @@ export function SideChatTab(props: IDockviewPanelHeaderProps) {
   const title = usePanelTitle(props.api)
   // Closing is destructive, so the X asks first — `requestCloseSideChat` opens the
   // confirm dialog and only calls back into the dock once the user agrees.
+  //
+  // No maximize action, unlike every other tab: a side chat only means anything
+  // next to the thread it forked from, so covering that thread with it is never
+  // what the user wanted.
   return (
     <div className={tabChipClass(active)}>
       <HoverCloseSlot onClose={() => { void requestCloseSideChat() }}>
         <MessageCirclePlus className="size-3.5 shrink-0" />
       </HoverCloseSlot>
       <TabTitle>{title || t('sideChat.title')}</TabTitle>
-      <MaximizeTabAction api={props.api} active={active} />
     </div>
   )
 }

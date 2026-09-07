@@ -4,6 +4,7 @@ import { useBrowserStore } from '@/stores/browser'
 import { useDeviceInstanceStore } from '@/stores/device-instances'
 import { isBlankUrl, normalizeUrl } from '@/components/browser/browser-url'
 import { normalizeFileLinkTarget } from '@/lib/file-link'
+import { LAYOUT } from '@/lib/layout-constants'
 import { disposeActivityTermInstance } from './activity-terminal'
 
 let dockApi: DockviewApi | null = null
@@ -22,6 +23,38 @@ let currentSessionIdGetter: (() => string | null) | null = null
  * store, which reaches back into this module).
  */
 export const SIDE_CHAT_PANEL_ID = 'side-chat'
+
+/**
+ * Activity-panel width from before a side chat shrank it, or null when the side
+ * chat is not the reason the panel is at its current width.
+ *
+ * A side chat is a narrow companion column, not a workspace: opening one pins the
+ * panel to its floor so the main thread keeps the room. Closing it hands the width
+ * back — unless the user has since dragged the sash, which is why the restore
+ * checks that the width is still the one we set rather than trusting the memo.
+ */
+let widthBeforeSideChat: number | null = null
+
+function shrinkPanelForSideChat() {
+  const store = useActivityPanelStore.getState()
+  if (store.panelWidth <= LAYOUT.MIN_AP) return
+  // Only remember the width the FIRST time, so reopening a side chat over an
+  // already-shrunk panel cannot overwrite the user's real width with 400.
+  if (widthBeforeSideChat === null) widthBeforeSideChat = store.panelWidth
+  store.setPanelWidth(LAYOUT.MIN_AP)
+}
+
+/** Hand the width back once a side chat's tab is really gone (not merely parked). */
+export function restorePanelWidthAfterSideChat(): void {
+  const width = widthBeforeSideChat
+  widthBeforeSideChat = null
+  if (width === null) return
+  const store = useActivityPanelStore.getState()
+  // The user widened the panel while the side chat was open — that is a newer
+  // decision than ours, so leave it alone.
+  if (store.panelWidth !== LAYOUT.MIN_AP) return
+  store.setPanelWidth(width)
+}
 
 let mosaicOpenedPanels: { id: string; replay: () => void }[] = []
 let mosaicRecording = false
@@ -358,6 +391,7 @@ export function openSideChatTab(projectPath: string, sessionId: string, label: s
       // the slot is replaced rather than activated.
       existing.api.close()
     }
+    shrinkPanelForSideChat()
     const position = positionInMaximizedGroup()
     dockApi.addPanel({
       id: SIDE_CHAT_PANEL_ID,

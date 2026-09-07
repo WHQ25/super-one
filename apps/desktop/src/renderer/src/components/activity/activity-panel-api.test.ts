@@ -21,6 +21,8 @@ import {
   closeGhostSideChatPanel,
   isLayoutSwapping,
   launchInGroup,
+  openSideChatTab,
+  restorePanelWidthAfterSideChat,
 } from './activity-panel-api'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useBrowserStore } from '@/stores/browser'
@@ -493,6 +495,61 @@ describe('closeGhostSideChatPanel', () => {
     closeGhostSideChatPanel((sessionId) => sessionId === 'live-side-chat')
 
     expect(close).not.toHaveBeenCalled()
+  })
+})
+
+describe('side-chat panel width', () => {
+  function fakeDock(panels: unknown[] = []) {
+    const addPanel = vi.fn()
+    setDockApi({ panels, activePanel: undefined, addPanel } as never)
+    return addPanel
+  }
+
+  beforeEach(() => {
+    useActivityPanelStore.setState({ showPanel: false, side: 'left', panelWidth: 900 })
+  })
+
+  afterEach(() => {
+    // The module remembers the pre-side-chat width; drain it so one case cannot
+    // restore a width into the next.
+    restorePanelWidthAfterSideChat()
+  })
+
+  it('pins the panel to its minimum when a side chat opens', () => {
+    fakeDock()
+
+    openSideChatTab('/p', 's1', 'Side Chat')
+
+    expect(useActivityPanelStore.getState().panelWidth).toBe(400)
+  })
+
+  it('hands the previous width back when the side chat closes', () => {
+    fakeDock()
+    openSideChatTab('/p', 's1', 'Side Chat')
+
+    restorePanelWidthAfterSideChat()
+
+    expect(useActivityPanelStore.getState().panelWidth).toBe(900)
+  })
+
+  it('keeps a width the user chose while the side chat was open', () => {
+    fakeDock()
+    openSideChatTab('/p', 's1', 'Side Chat')
+    useActivityPanelStore.getState().setPanelWidthByUser(720)
+
+    restorePanelWidthAfterSideChat()
+
+    expect(useActivityPanelStore.getState().panelWidth).toBe(720)
+  })
+
+  it('does not shrink again when the same side chat is only re-surfaced', () => {
+    const setActive = vi.fn()
+    fakeDock([{ id: 'side-chat', params: { sessionId: 's1' }, api: { setActive, close: vi.fn() } }])
+
+    openSideChatTab('/p', 's1', 'Side Chat')
+
+    expect(setActive).toHaveBeenCalledOnce()
+    expect(useActivityPanelStore.getState().panelWidth).toBe(900)
   })
 })
 

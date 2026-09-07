@@ -235,25 +235,74 @@ tags: [smoke, native, visual]
       text: "Command · /mcp"
     direction: DOWN
     centerElement: true
-- tapOn: "Open MCP sheet: servers"
+- tapOn: "Open MCP panel: servers"
 - extendedWaitUntil:
     visible:
-      id: mcp-sheet
+      id: mcp-panel
     timeout: 10000
-- assertVisible: "filesystem"
-- assertVisible: "12 tools"
+# The panel scrolls at 256 px like every other composer layer, so this asserts
+# the rows a user sees first. Which line each status produces is pinned in
+# `mcp-status.test.ts`; what matters here is that it opens inline, above the
+# composer, with the draft and the keyboard still there.
+# Opening it grows the section, so bring the panel itself into view — the
+# gallery is one long scroll and the toggles sit above it.
+- scrollUntilVisible:
+    element:
+      text: "postgres"
+    direction: DOWN
+    centerElement: true
 # Not "failed" — the reason is the useful half.
 - assertVisible: "spawn postgres-mcp ENOENT"
 - assertVisible: "Needs sign-in on the desktop"
-- takeScreenshot: ${"composer-mcp-sheet-" + THEME}
-- tapOn:
-    id: prompt-close
+- takeScreenshot: ${"composer-mcp-panel-" + THEME}
+- tapOn: "Close MCP servers"
 
-- tapOn: "Open MCP sheet: empty"
+- tapOn: "Open MCP panel: empty"
 - extendedWaitUntil:
     visible:
-      id: mcp-sheet
+      id: mcp-panel
     timeout: 10000
-- assertVisible: "This session has no MCP servers configured."
-- tapOn:
-    id: prompt-close
+- scrollUntilVisible:
+    element:
+      text: "This session has no MCP servers configured."
+    direction: DOWN
+    centerElement: true
+- tapOn: "Close MCP servers"
+
+# `/workflows` is the other command that opens a surface. It reads the
+# transcript, so it needs no host round trip — and it is read-only: starting a
+# workflow spends tokens and is a different question.
+- scrollUntilVisible:
+    element:
+      text: "Command · /workflows"
+    direction: DOWN
+    centerElement: true
+- tapOn: "Open workflows panel: runs"
+- extendedWaitUntil:
+    visible:
+      id: workflows-panel
+    timeout: 10000
+# Newest first: the one still in question leads.
+- scrollUntilVisible:
+    element:
+      text: "migrate-tokens"
+    direction: DOWN
+    centerElement: true
+- assertVisible: "Running"
+- assertVisible: "review-changes"
+- assertVisible: "Finished"
+- assertVisible: "Audit → Rewrite → Verify"
+- takeScreenshot: ${"composer-workflows-panel-" + THEME}
+- tapOn: "Close Workflows"
+
+- tapOn: "Open workflows panel: empty"
+- extendedWaitUntil:
+    visible:
+      id: workflows-panel
+    timeout: 10000
+- scrollUntilVisible:
+    element:
+      text: "No workflows in this session yet"
+    direction: DOWN
+    centerElement: true
+- tapOn: "Close Workflows"

@@ -9,11 +9,13 @@ import { browseItems } from '../mention-browse'
 import { mentionBreadcrumbs } from '../mention-browse-state'
 import { sessionItems, sessionProjectItems, sessionProjectOptions } from '../session-mention'
 import { mcpServerRows } from '../mcp-status'
-import { McpSheet } from '../ui/mcp-sheet'
+import { McpPanel } from '../ui/mcp-panel'
+import { WorkflowsPanel } from '../ui/workflows-panel'
+import { workflowRunRows } from '../workflow-runs'
 import {
   previewAgentProfiles, previewCapabilityIds, previewLongMentionItems, previewMentionItems,
   previewMcpServers, previewNestedEntries, previewRootEntries, previewSessionProjects, previewSessionRows,
-  previewSlashCatalog,
+  previewSlashCatalog, previewWorkflowMessages,
 } from './composer-fixtures'
 
 /**
@@ -43,6 +45,7 @@ export function ComposerSuggestionsGallery() {
   // `/mcp` opens a surface rather than writing into the draft, so its states are
   // reachable here through the real sheet rather than a screenshot twin.
   const [mcp, setMcp] = useState<'closed' | 'servers' | 'empty' | 'error'>('closed')
+  const [workflows, setWorkflows] = useState<'closed' | 'runs' | 'empty'>('closed')
   const slash = (draft: string) => filterSlashCommands(draft, previewSlashCatalog)
   // Rows go through the shipping builder, so the ranking, the disabled
   // capabilities and the remapped highlights shown here are the real ones.
@@ -205,12 +208,12 @@ export function ComposerSuggestionsGallery() {
     <Section title="Command · /mcp" note="A read-only readout: a phone cannot finish an OAuth flow, so a server needing sign-in says where to do it.">
       <View style={{ flexDirection: 'row', gap: 8 }}>
         {(['servers', 'empty', 'error'] as const).map((state) => <Pressable key={state} accessibilityRole="button"
-          accessibilityLabel={`Open MCP sheet: ${state}`} onPress={() => setMcp(state)}
+          accessibilityLabel={`Open MCP panel: ${state}`} onPress={() => setMcp(state)}
           style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 8 }}>
           <Text style={{ color: colors.foreground, fontSize: 13 }}>MCP: {state}</Text>
         </Pressable>)}
       </View>
-      <McpSheet
+      <McpPanel
         visible={mcp !== 'closed'}
         loading={false}
         servers={mcp === 'servers' ? mcpServerRows(previewMcpServers) : []}
@@ -218,5 +221,20 @@ export function ComposerSuggestionsGallery() {
         onDismiss={() => setMcp('closed')}
       />
     </Section>
+    <Section title="Command · /workflows" note="Read-only, like the desktop popup: starting a workflow spends tokens and is a different question.">
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        {(['runs', 'empty'] as const).map((state) => <Pressable key={state} accessibilityRole="button"
+          accessibilityLabel={`Open workflows panel: ${state}`} onPress={() => setWorkflows(state)}
+          style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 8 }}>
+          <Text style={{ color: colors.foreground, fontSize: 13 }}>Workflows: {state}</Text>
+        </Pressable>)}
+      </View>
+      <WorkflowsPanel
+        visible={workflows !== 'closed'}
+        runs={workflows === 'runs' ? workflowRunRows(previewWorkflowMessages) : []}
+        onDismiss={() => setWorkflows('closed')}
+      />
+    </Section>
+
   </ScrollView>
 }

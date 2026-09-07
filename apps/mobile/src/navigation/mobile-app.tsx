@@ -21,8 +21,10 @@ import { ChatRuntime, type SessionWorktreeFacts } from '../runtime'
 import { TerminalRuntime } from '../terminal-runtime'
 import { randomId } from '../ids'
 import { mentionInsertText } from '../mentions'
-import { SlashOutputNotice } from '../ui/slash-output-notice'
-import { McpSheet } from '../ui/mcp-sheet'
+import { SlashOutputPanel } from '../ui/slash-output-panel'
+import { McpPanel } from '../ui/mcp-panel'
+import { WorkflowsPanel } from '../ui/workflows-panel'
+import { workflowRunRows } from '../workflow-runs'
 import { requestMcpServers, type McpServerRow } from '../mcp-status'
 import { mentionTokenFromItem } from '../mention-selection'
 import { isPairingQrInput, normalizePairingInput } from '../pairing-input'
@@ -157,6 +159,7 @@ export function MobileApp() {
   const [mcp, setMcp] = useState<{ open: boolean; loading: boolean; rows: McpServerRow[]; error?: string }>(
     { open: false, loading: false, rows: [] },
   )
+  const [workflowsOpen, setWorkflowsOpen] = useState(false)
   const [sandboxInfo, setSandboxInfo] = useState<SandboxInfo | null>(null)
   const [sessionWorktree, setSessionWorktree] = useState<SessionWorktreeFacts & { removed: boolean }>(
     { isWorktree: false, worktreePath: null, gitBranch: null, removed: false },
@@ -1285,6 +1288,10 @@ export function MobileApp() {
             // A few commands open a surface instead of writing themselves into
             // the draft — the desktop's `/mcp` popup, and its kin.
             if (command === 'mcp') { openMcp(); return }
+            if (command === 'workflows' && (selectedProvider === 'claude' || selectedProvider === 'acp')) {
+              setWorkflowsOpen(true)
+              return
+            }
             // Only the command line is rewritten. Anything the user typed on a
             // later line — including mention chips — has to survive.
             const line = `/${command} `
@@ -1319,10 +1326,16 @@ export function MobileApp() {
           onMentionRetry={suggestions.retry}
           onMentionLoadMore={suggestions.loadMore}
           mentionQuery={suggestions.mentionQuery}
+          // Everything the composer opens stacks here, above the input and
+          // below the transcript — never as a modal over the draft.
           above={<>
-            <SlashOutputNotice output={slashOutput} onDismiss={() => runtimeRef.current?.clearSlashCommandOutput()} />
-            <McpSheet visible={mcp.open} servers={mcp.rows} loading={mcp.loading} error={mcp.error}
+            <SlashOutputPanel output={slashOutput} onDismiss={() => runtimeRef.current?.clearSlashCommandOutput()} />
+            <McpPanel visible={mcp.open} servers={mcp.rows} loading={mcp.loading} error={mcp.error}
               onDismiss={() => setMcp((current) => ({ ...current, open: false }))} />
+            {/* Read from the transcript each time it opens, so a run that
+                finished while the panel was shut is not shown as still going. */}
+            <WorkflowsPanel visible={workflowsOpen} onDismiss={() => setWorkflowsOpen(false)}
+              runs={workflowsOpen ? workflowRunRows(runtimeRef.current?.session.messages ?? []) : []} />
           </>}
           onSubmitFromKeyboard={() => {
             const hasContent = draftRef.current.trim().length > 0 || attachments.length > 0

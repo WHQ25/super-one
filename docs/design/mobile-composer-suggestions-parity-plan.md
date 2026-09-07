@@ -433,6 +433,14 @@ Verified: mobile 417 vitest + 34 jest, desktop `remote-control-service` 75 and
 
 **Phase 8 — done (2026-09-07).** `/mcp` reports on the phone.
 
+- **Every composer surface is an inline layer, never a modal.** This was got
+  wrong first: `/mcp` shipped as a bottom sheet. Both references say otherwise —
+  Flutter's `slash_command_overlay.dart:166` and `mention_overlay.dart:99` are a
+  256 px card above the input, and the desktop's `/mcp` and `/workflows` are
+  `bottom-full` popovers over the composer (`ChatInput.tsx:1890`), not dialogs.
+  A sheet covers the draft it is about and dismisses the keyboard. There is now
+  one `ComposerPanel` container, and the suggestions, the command readouts and
+  the command output all wear it.
 - **Read-only, deliberately.** The desktop popup can reconnect a server and
   start an OAuth flow. A phone cannot finish one, and a button that begins
   something it cannot complete is worse than an honest readout — so a server
@@ -445,6 +453,24 @@ Verified: mobile 417 vitest + 34 jest, desktop `remote-control-service` 75 and
 - `/mcp` is not injected into the catalog: the harness reports it, as on the
   desktop. Only the routing is new — a command that opens a surface instead of
   writing itself into the draft.
+
+**Phase 9 — done (2026-09-07), with one part deliberately not built.**
+
+- **`/workflows` is the runs list**, read from the transcript rather than the
+  host: newest first, with each run's name, intent, declared phases and whether
+  it is still going. A workflow spawns dozens of agents over many minutes, and
+  once it has scrolled out of the transcript there is no other way to ask what
+  it is doing. `collect-session-workflows` moved into `@superone/chat-view`
+  beside the workflow presenters it already depended on; the desktop reaches it
+  through a shim.
+- It is offered in the ACP catalog only, which is the single gate the desktop
+  applies (`ChatInput.tsx:384`), and a same-named agent command wins over it.
+- **The `/workflow` argument builder in the plan was not built.** The desktop
+  has no such UI — `/workflow` writes itself into the draft and the agent takes
+  it from there, which mobile now does too. Building a phone-only launcher
+  would *exceed* parity, and a surface that starts a run spending tokens across
+  dozens of agents needs the permission story §4 said it needed and does not
+  have. Left out on purpose, not overlooked.
 
 ## 5. Risks, reordered
 

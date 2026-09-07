@@ -70,6 +70,7 @@
     "./presenters/tool-block-utils": "./src/presenters/tool-block-utils.ts",
     "./presenters/tool-display": "./src/presenters/tool-display.ts",
     "./presenters/turn-process-stats": "./src/presenters/turn-process-stats.ts",
+    "./presenters/collect-session-workflows": "./src/presenters/collect-session-workflows.ts",
     "./presenters/workflow-utils": "./src/presenters/workflow-utils.ts",
     "./terminal-html": "./src/terminal-html.ts"
   },

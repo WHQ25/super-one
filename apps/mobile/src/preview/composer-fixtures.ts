@@ -1,3 +1,4 @@
+import type { ContentBlock } from '@superone/shared/agent-types'
 import type { MentionItem } from '../mentions'
 import type { SlashCommandInfo } from '../slash'
 
@@ -99,9 +100,43 @@ export const previewSessionRows = [
 
 /** MCP servers in every state a healthy session never shows all at once. */
 export const previewMcpServers = [
-  { name: 'filesystem', status: 'connected' as const, toolCount: 12 },
-  { name: 'github', status: 'needs-auth' as const },
+  // Failures first: they are the states worth reviewing, and the panel scrolls.
   { name: 'postgres', status: 'failed' as const, error: 'spawn postgres-mcp ENOENT\n    at ChildProcess' },
+  { name: 'github', status: 'needs-auth' as const },
+  { name: 'filesystem', status: 'connected' as const, toolCount: 12 },
   { name: 'sentry', status: 'pending' as const },
   { name: 'legacy-notes', status: 'disabled' as const },
+]
+
+/** Workflow runs as the transcript records them: script in, result maybe back. */
+export const previewWorkflowMessages: { content: ContentBlock[] }[] = [
+  {
+    content: [
+      {
+        type: 'tool_use' as const,
+        toolName: 'Workflow',
+        toolUseId: 'wf-1',
+        input: JSON.stringify({
+          script: `export const meta = {
+  name: 'review-changes',
+  description: 'Review changed files across dimensions, then verify each finding',
+  phases: [{ title: 'Review' }, { title: 'Verify' }],
+}`,
+        }),
+      },
+      {
+        type: 'tool_use' as const,
+        toolName: 'Workflow',
+        toolUseId: 'wf-2',
+        input: JSON.stringify({
+          script: `export const meta = {
+  name: 'migrate-tokens',
+  description: 'Audit every colour literal and convert it to a semantic token',
+  phases: [{ title: 'Audit' }, { title: 'Rewrite' }, { title: 'Verify' }],
+}`,
+        }),
+      },
+    ],
+  },
+  { content: [{ type: 'tool_result' as const, toolUseId: 'wf-1', summary: 'ok', isError: false }] },
 ]

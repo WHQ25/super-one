@@ -1006,6 +1006,15 @@ export class AgentService {
         }
         break
       }
+      case 'list_mcp_servers': {
+        try {
+          const session = this.sessionManager?.getActiveSession(command.projectPath)
+          await respond?.(command.requestId, { servers: (await session?.getMcpServerStatus()) ?? [] })
+        } catch (err) {
+          await respond?.(command.requestId, { error: (err as Error).message })
+        }
+        break
+      }
       case 'search_files': {
         try {
           const { searchFiles } = await import('./fuzzy-file-search')

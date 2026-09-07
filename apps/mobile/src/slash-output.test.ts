@@ -26,7 +26,7 @@ const outputEvent = (messageId: string, content: string): AgentEvent =>
   ({ type: 'slash_command_output', messageId, content }) as AgentEvent
 
 const message = (id: string, role: 'user' | 'assistant', text: string): AgentEvent[] => [
-  { type: 'message_start', message: { id, role, content: [], status: 'streaming', createdAt: new Date(0).toISOString() } } as AgentEvent,
+  { type: 'message_start', message: { id, role, content: [], status: 'streaming', createdAt: new Date(0).toISOString(), providerId: 'claude' } } as AgentEvent,
   { type: 'content_delta', messageId: id, delta: { type: 'text', text } } as AgentEvent,
   { type: 'message_complete', messageId: id } as AgentEvent,
 ]

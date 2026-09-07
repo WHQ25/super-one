@@ -22,6 +22,8 @@ import { TerminalRuntime } from '../terminal-runtime'
 import { randomId } from '../ids'
 import { mentionInsertText } from '../mentions'
 import { SlashOutputNotice } from '../ui/slash-output-notice'
+import { McpSheet } from '../ui/mcp-sheet'
+import { requestMcpServers, type McpServerRow } from '../mcp-status'
 import { mentionTokenFromItem } from '../mention-selection'
 import { isPairingQrInput, normalizePairingInput } from '../pairing-input'
 import { usePairingDeepLink } from '../pairing-deep-link'
@@ -152,6 +154,9 @@ export function MobileApp() {
   const [queuedMessages, setQueuedMessages] = useState<ChatMessage[]>([])
   const [todos, setTodos] = useState<Record<string, TodoItem>>({})
   const [slashOutput, setSlashOutput] = useState<{ command: string; content: string } | null>(null)
+  const [mcp, setMcp] = useState<{ open: boolean; loading: boolean; rows: McpServerRow[]; error?: string }>(
+    { open: false, loading: false, rows: [] },
+  )
   const [sandboxInfo, setSandboxInfo] = useState<SandboxInfo | null>(null)
   const [sessionWorktree, setSessionWorktree] = useState<SessionWorktreeFacts & { removed: boolean }>(
     { isWorktree: false, worktreePath: null, gitBranch: null, removed: false },
@@ -943,6 +948,26 @@ export function MobileApp() {
     suggestions.update(text)
   }
 
+  /**
+   * `/mcp` reports rather than writes. The status is read each time it opens:
+   * a server that failed at launch may have been fixed on the desktop since,
+   * and a cached list would say otherwise.
+   */
+  const openMcp = () => {
+    const client = clientRef.current
+    if (!client || !project) return
+    setMcp({ open: true, loading: true, rows: [] })
+    void requestMcpServers(client, project.path)
+      .then(({ rows, error }) => {
+        if (clientRef.current !== client) return
+        setMcp({ open: true, loading: false, rows, ...(error ? { error } : {}) })
+      })
+      .catch((error: unknown) => {
+        if (clientRef.current !== client) return
+        setMcp({ open: true, loading: false, rows: [], error: error instanceof Error ? error.message : 'Could not read MCP status' })
+      })
+  }
+
   const addAttachment = async (kind: 'image' | 'pdf') => {
     try {
       const picked = kind === 'image' ? await pickChatImages(8 - attachments.length) : [await pickChatPdf()].filter(Boolean) as ImageAttachment[]
@@ -1257,6 +1282,9 @@ export function MobileApp() {
           nativeDraft={{ controller: composerDraft.editorRef, document: composerDraft.document.current, onError: setStatus,
             onChange: (snapshot) => { composerDraft.accept(snapshot); suggestions.updateNative(snapshot.text, snapshot, snapshot.composing) } }}
           onSlash={(command) => {
+            // A few commands open a surface instead of writing themselves into
+            // the draft — the desktop's `/mcp` popup, and its kin.
+            if (command === 'mcp') { openMcp(); return }
             // Only the command line is rewritten. Anything the user typed on a
             // later line — including mention chips — has to survive.
             const line = `/${command} `
@@ -1291,7 +1319,11 @@ export function MobileApp() {
           onMentionRetry={suggestions.retry}
           onMentionLoadMore={suggestions.loadMore}
           mentionQuery={suggestions.mentionQuery}
-          above={<SlashOutputNotice output={slashOutput} onDismiss={() => runtimeRef.current?.clearSlashCommandOutput()} />}
+          above={<>
+            <SlashOutputNotice output={slashOutput} onDismiss={() => runtimeRef.current?.clearSlashCommandOutput()} />
+            <McpSheet visible={mcp.open} servers={mcp.rows} loading={mcp.loading} error={mcp.error}
+              onDismiss={() => setMcp((current) => ({ ...current, open: false }))} />
+          </>}
           onSubmitFromKeyboard={() => {
             const hasContent = draftRef.current.trim().length > 0 || attachments.length > 0
             if (shouldSubmitFromKeyboard({

@@ -33,6 +33,8 @@ tags: [smoke, native, visual]
     element:
       text: "Slash · /rel"
     direction: DOWN
+    # A heading at the very bottom leaves its list below the fold.
+    centerElement: true
 - assertVisible: "/create-release-notes, Draft release notes from the commit range"
 - assertVisible: "/release.*Version bump.*"
 
@@ -42,6 +44,8 @@ tags: [smoke, native, visual]
     element:
       text: "Slash · /tdd"
     direction: DOWN
+    # A heading at the very bottom leaves its list below the fold.
+    centerElement: true
 - assertVisible: "/tdd, Test-driven development workflow"
 
 # There is deliberately no slash empty state today: the overlay unmounts. The
@@ -50,6 +54,8 @@ tags: [smoke, native, visual]
     element:
       text: "Slash · multi-line draft"
     direction: DOWN
+    # A heading at the very bottom leaves its list below the fold.
+    centerElement: true
 # The first line is the query; the rest is message body.
 - assertVisible: "/review, Review the current diff for correctness and cleanups"
 
@@ -57,6 +63,8 @@ tags: [smoke, native, visual]
     element:
       text: "Slash · no match"
     direction: DOWN
+    # A heading at the very bottom leaves its list below the fold.
+    centerElement: true
 - assertVisible: "Renders nothing at all. There is no empty state for a settled catalog."
 - takeScreenshot: ${"composer-suggestions-ranking-" + THEME}
 
@@ -66,16 +74,22 @@ tags: [smoke, native, visual]
     element:
       text: "Slash · catalog loading"
     direction: DOWN
+    # A heading at the very bottom leaves its list below the fold.
+    centerElement: true
 - assertVisible: "Loading commands…"
 - scrollUntilVisible:
     element:
       text: "Slash · catalog failed"
     direction: DOWN
+    # A heading at the very bottom leaves its list below the fold.
+    centerElement: true
 - assertVisible: "Could not load commands"
 - scrollUntilVisible:
     element:
       text: "Slash · dismissable"
     direction: DOWN
+    # A heading at the very bottom leaves its list below the fold.
+    centerElement: true
 - assertVisible: "Hide commands"
 - takeScreenshot: ${"composer-suggestions-catalog-" + THEME}
 
@@ -86,6 +100,8 @@ tags: [smoke, native, visual]
     element:
       text: "Mention · bare @"
     direction: DOWN
+    # A heading at the very bottom leaves its list below the fold.
+    centerElement: true
 - assertVisible: "Built-in"
 # Every capability is listed; the ones the desktop has switched off say so
 # instead of disappearing. The row composes into one label, so the state is
@@ -97,6 +113,8 @@ tags: [smoke, native, visual]
     element:
       text: "Mention · @co"
     direction: DOWN
+    # A heading at the very bottom leaves its list below the fold.
+    centerElement: true
 # Collaborators rank by slug, and they are their own group — not merged with
 # the project agents below them.
 - assertVisible: "Collaborators"
@@ -106,12 +124,16 @@ tags: [smoke, native, visual]
     element:
       text: "Mention · @safari"
     direction: DOWN
+    # A heading at the very bottom leaves its list below the fold.
+    centerElement: true
 - assertVisible: "Desktop Apps"
 
 - scrollUntilVisible:
     element:
       text: "Mention · @comp"
     direction: DOWN
+    # A heading at the very bottom leaves its list below the fold.
+    centerElement: true
 - assertVisible: "Files"
 - takeScreenshot: ${"composer-suggestions-groups-" + THEME}
 
@@ -119,12 +141,16 @@ tags: [smoke, native, visual]
     element:
       text: "Mention · search failed"
     direction: DOWN
+    # A heading at the very bottom leaves its list below the fold.
+    centerElement: true
 - assertVisible: "Could not reach the desktop"
 - assertVisible: "Retry search"
 - scrollUntilVisible:
     element:
       text: "Mention · no matches"
     direction: DOWN
+    # A heading at the very bottom leaves its list below the fold.
+    centerElement: true
 - assertVisible: "No matches"
 - takeScreenshot: ${"composer-suggestions-states-" + THEME}
 
@@ -200,3 +226,34 @@ tags: [smoke, native, visual]
     direction: DOWN
     centerElement: true
 - assertVisible: "No matching sessions"
+
+# `/mcp` opens a surface instead of writing into the draft. It is read-only:
+# the desktop popup can reconnect and sign in, and a phone that cannot finish
+# an OAuth flow must not offer to start one.
+- scrollUntilVisible:
+    element:
+      text: "Command · /mcp"
+    direction: DOWN
+    centerElement: true
+- tapOn: "Open MCP sheet: servers"
+- extendedWaitUntil:
+    visible:
+      id: mcp-sheet
+    timeout: 10000
+- assertVisible: "filesystem"
+- assertVisible: "12 tools"
+# Not "failed" — the reason is the useful half.
+- assertVisible: "spawn postgres-mcp ENOENT"
+- assertVisible: "Needs sign-in on the desktop"
+- takeScreenshot: ${"composer-mcp-sheet-" + THEME}
+- tapOn:
+    id: prompt-close
+
+- tapOn: "Open MCP sheet: empty"
+- extendedWaitUntil:
+    visible:
+      id: mcp-sheet
+    timeout: 10000
+- assertVisible: "This session has no MCP servers configured."
+- tapOn:
+    id: prompt-close

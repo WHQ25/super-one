@@ -4387,6 +4387,14 @@ export type RemoteCommand =
        */
       ignoreMode?: 'none' | 'excluded-dirs' | 'gitignore'
     }
+  /**
+   * MCP servers the active session is running, read-only.
+   *
+   * The desktop's `/mcp` popup can reconnect and authenticate; a phone cannot
+   * complete an OAuth flow, and offering to start one it could not finish is
+   * worse than reporting the state honestly.
+   */
+  | { type: 'list_mcp_servers'; requestId: string; projectPath: string }
   | { type: 'create_directory'; requestId: string; path: string; name: string }
   | { type: 'add_project'; requestId: string; path: string; /** mkdir -p the path first (add-project "Create" row). */ createIfMissing?: boolean }
   | { type: 'search_github_repos'; requestId: string; mode: GithubRepoSearchMode; value?: string; page?: number }

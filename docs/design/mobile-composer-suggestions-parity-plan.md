@@ -431,6 +431,21 @@ dark, slash-wiring flow green.
 Verified: mobile 417 vitest + 34 jest, desktop `remote-control-service` 75 and
 `vitest related` over the changed store helper — 162 files, 2213 tests, green.
 
+**Phase 8 — done (2026-09-07).** `/mcp` reports on the phone.
+
+- **Read-only, deliberately.** The desktop popup can reconnect a server and
+  start an OAuth flow. A phone cannot finish one, and a button that begins
+  something it cannot complete is worse than an honest readout — so a server
+  needing sign-in says *where* to sign in.
+- **The row's second line is the useful half.** "Connected" does not say whether
+  the server brought any tools, and "failed" does not say why; the count and the
+  first line of the error do.
+- A new `list_mcp_servers` command wraps the same `getMcpServerStatus()` the
+  desktop popup reads, so there is one source of truth for what is running.
+- `/mcp` is not injected into the catalog: the harness reports it, as on the
+  desktop. Only the routing is new — a command that opens a surface instead of
+  writing itself into the draft.
+
 ## 5. Risks, reordered
 
 - **R1 (was R4) — the two editors are two products, not one with a fallback.**

@@ -96,3 +96,12 @@ export const previewSessionRows = [
   { session: { sessionId: 'sess-0c4d', title: '', lastActiveAt: '', messageCount: 0 },
     projectKey: '/work/relay', projectLabel: 'relay' },
 ]
+
+/** MCP servers in every state a healthy session never shows all at once. */
+export const previewMcpServers = [
+  { name: 'filesystem', status: 'connected' as const, toolCount: 12 },
+  { name: 'github', status: 'needs-auth' as const },
+  { name: 'postgres', status: 'failed' as const, error: 'spawn postgres-mcp ENOENT\n    at ChildProcess' },
+  { name: 'sentry', status: 'pending' as const },
+  { name: 'legacy-notes', status: 'disabled' as const },
+]

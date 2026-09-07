@@ -1,4 +1,5 @@
-import { ScrollView, View } from 'react-native'
+import { useState } from 'react'
+import { Pressable, ScrollView, View } from 'react-native'
 import { Text } from '../ui/text'
 import { useMobileTheme } from '../theme/context'
 import { MentionSuggestions, SlashSuggestions } from '../ui/composer-suggestions'
@@ -7,9 +8,12 @@ import { buildMentionRows } from '../mention-rows'
 import { browseItems } from '../mention-browse'
 import { mentionBreadcrumbs } from '../mention-browse-state'
 import { sessionItems, sessionProjectItems, sessionProjectOptions } from '../session-mention'
+import { mcpServerRows } from '../mcp-status'
+import { McpSheet } from '../ui/mcp-sheet'
 import {
   previewAgentProfiles, previewCapabilityIds, previewLongMentionItems, previewMentionItems,
-  previewNestedEntries, previewRootEntries, previewSessionProjects, previewSessionRows, previewSlashCatalog,
+  previewMcpServers, previewNestedEntries, previewRootEntries, previewSessionProjects, previewSessionRows,
+  previewSlashCatalog,
 } from './composer-fixtures'
 
 /**
@@ -36,6 +40,9 @@ function Section({ title, note, children }: { title: string; note?: string; chil
 
 export function ComposerSuggestionsGallery() {
   const { tokens: { colors } } = useMobileTheme()
+  // `/mcp` opens a surface rather than writing into the draft, so its states are
+  // reachable here through the real sheet rather than a screenshot twin.
+  const [mcp, setMcp] = useState<'closed' | 'servers' | 'empty' | 'error'>('closed')
   const slash = (draft: string) => filterSlashCommands(draft, previewSlashCatalog)
   // Rows go through the shipping builder, so the ranking, the disabled
   // capabilities and the remapped highlights shown here are the real ones.
@@ -193,6 +200,22 @@ export function ComposerSuggestionsGallery() {
         rows={buildMentionRows('use', { remote: previewLongMentionItems, agentProfiles: [] })}
         onSelect={() => {}}
         search={{ active: true, loading: false }}
+      />
+    </Section>
+    <Section title="Command · /mcp" note="A read-only readout: a phone cannot finish an OAuth flow, so a server needing sign-in says where to do it.">
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        {(['servers', 'empty', 'error'] as const).map((state) => <Pressable key={state} accessibilityRole="button"
+          accessibilityLabel={`Open MCP sheet: ${state}`} onPress={() => setMcp(state)}
+          style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 8 }}>
+          <Text style={{ color: colors.foreground, fontSize: 13 }}>MCP: {state}</Text>
+        </Pressable>)}
+      </View>
+      <McpSheet
+        visible={mcp !== 'closed'}
+        loading={false}
+        servers={mcp === 'servers' ? mcpServerRows(previewMcpServers) : []}
+        error={mcp === 'error' ? 'Could not reach the desktop' : undefined}
+        onDismiss={() => setMcp('closed')}
       />
     </Section>
   </ScrollView>

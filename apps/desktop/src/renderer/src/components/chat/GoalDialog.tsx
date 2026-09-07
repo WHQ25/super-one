@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Target, Trash2 } from 'lucide-react'
 import { Button } from '@superone/ui/components/ui/button'
@@ -55,8 +55,18 @@ export function GoalDialog({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Seed on the open transition only. `existing` gets a fresh object identity
+  // every time the harness pushes a goal snapshot — Codex emits one per
+  // goal-driven turn — so re-seeding on its identity would wipe whatever the
+  // user has typed since opening the editor.
+  const seeded = useRef(false)
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      seeded.current = false
+      return
+    }
+    if (seeded.current) return
+    seeded.current = true
     setError(null)
     setObjective(prefill || existing?.objective || '')
   }, [open, prefill, existing])

@@ -253,4 +253,45 @@ describe('CodexGoalController', () => {
     await expect(harness.controller.get('other-thread')).rejects.toThrow(/thread mismatch/)
     expect(harness.connection.request).not.toHaveBeenCalled()
   })
+
+  it('stays quiet when a re-read returns a snapshot the renderer already has', async () => {
+    // The composer re-primes on every stream-status flip and the run loop
+    // re-reads before each turn, so identical reads are the common case; each
+    // announcement costs a store update and a frame to every paired phone.
+    const harness = makeHarness(async (method) => {
+      if (method === 'thread/goal/get') return { goal: goal('paused') }
+      throw new Error(`Unexpected method: ${method}`)
+    })
+
+    await harness.controller.get('thread-1')
+    await harness.controller.get('thread-1')
+    await harness.controller.get('thread-1')
+
+    expect(harness.onGoalChange).toHaveBeenCalledOnce()
+    expect(harness.onGoalChange).toHaveBeenCalledWith(goal('paused'))
+  })
+
+  it('announces a re-read whose counters moved, ignoring timestamps alone', async () => {
+    const reads = [
+      goal('active'),
+      // Same goal, later timestamp: nothing the renderer can see has changed.
+      { ...goal('active'), updatedAt: 99 },
+      { ...goal('active'), tokensUsed: 40 },
+    ]
+    let index = 0
+    const harness = makeHarness(async (method) => {
+      if (method === 'thread/goal/get') return { goal: reads[index++] ?? reads.at(-1) }
+      throw new Error(`Unexpected method: ${method}`)
+    })
+    // `get` schedules a run for an active goal; stop it before it drives turns.
+    harness.controller.stop()
+
+    await harness.controller.get('thread-1')
+    await harness.controller.get('thread-1')
+    await harness.controller.get('thread-1')
+
+    expect(harness.onGoalChange).toHaveBeenCalledTimes(2)
+    expect(harness.onGoalChange).toHaveBeenNthCalledWith(1, reads[0])
+    expect(harness.onGoalChange).toHaveBeenNthCalledWith(2, reads[2])
+  })
 })

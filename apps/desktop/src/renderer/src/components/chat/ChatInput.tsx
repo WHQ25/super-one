@@ -1082,7 +1082,7 @@ export function ChatInput() {
       ).catch((err) => {
         console.error('[ChatInput] sendMessage failed:', err)
       })
-    }, [activeProviderForResources, acpAgentId, canSend, sendMessage, serializeAndClear, sessionScope, text])
+    }, [goalCapability, canSend, sendMessage, serializeAndClear, sessionScope, text])
 
     const handleKeyDownCore = useCallback(
       (e: KeyboardEvent | React.KeyboardEvent): boolean => {

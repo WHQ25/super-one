@@ -66,6 +66,25 @@ export function sessionGoalFromCodex(goal: CodexGoal | null | undefined): Sessio
   }
 }
 
+/**
+ * True when two goals project onto the same `SessionGoal`.
+ *
+ * `thread/goal/get` is re-read before every goal-driven turn and again whenever
+ * the composer's stream status flips, so most reads return something the
+ * renderer already has. Comparing exactly the fields {@link sessionGoalFromCodex}
+ * carries — timestamps never reach the renderer, so they must not count as a
+ * change — keeps those reads from waking the store and every paired phone.
+ */
+export function sameSessionGoalProjection(a: CodexGoal | null, b: CodexGoal | null): boolean {
+  if (a === b) return true
+  if (!a || !b) return false
+  return a.objective === b.objective
+    && a.status === b.status
+    && a.tokensUsed === b.tokensUsed
+    && a.timeUsedSeconds === b.timeUsedSeconds
+    && a.tokenBudget === b.tokenBudget
+}
+
 export class CodexGoalService {
   constructor(private readonly codexService: CodexExperimentService) {}
 

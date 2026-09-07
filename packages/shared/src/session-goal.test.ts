@@ -2,28 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   goalComposerAction,
   isGoalLifecycleArg,
-  normalizeSessionGoalStatus,
   sessionGoalFromClaudeActive,
 } from './session-goal'
-
-describe('normalizeSessionGoalStatus', () => {
-  it('accepts the host enum verbatim', () => {
-    expect(normalizeSessionGoalStatus('active')).toBe('active')
-    expect(normalizeSessionGoalStatus('complete')).toBe('complete')
-  })
-
-  it('folds separator and case variants of the wire spelling', () => {
-    expect(normalizeSessionGoalStatus('budget_limited')).toBe('budgetLimited')
-    expect(normalizeSessionGoalStatus('usage-limited')).toBe('usageLimited')
-    expect(normalizeSessionGoalStatus('BudgetLimited')).toBe('budgetLimited')
-  })
-
-  it('falls back to paused rather than active for anything unrecognized', () => {
-    expect(normalizeSessionGoalStatus('mystery')).toBe('paused')
-    expect(normalizeSessionGoalStatus(undefined)).toBe('paused')
-    expect(normalizeSessionGoalStatus(42)).toBe('paused')
-  })
-})
 
 describe('sessionGoalFromClaudeActive', () => {
   it('maps a live condition onto an active goal', () => {

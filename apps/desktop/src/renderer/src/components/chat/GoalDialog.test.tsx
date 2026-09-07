@@ -112,4 +112,42 @@ describe('GoalDialog', () => {
     await waitFor(() => expect(screen.getByText('thread is gone')).toBeInTheDocument())
     expect(onOpenChange).not.toHaveBeenCalledWith(false)
   })
+
+  it('keeps what the user typed when a live goal snapshot arrives', () => {
+    // Codex re-reads `thread/goal/get` before every goal-driven turn, so an open
+    // editor sees a fresh `existing` object while the user is still typing.
+    const goal: SessionGoal = { objective: 'Migrate auth', status: 'active', tokensUsed: 10 }
+    const props = {
+      open: true,
+      onOpenChange: vi.fn(),
+      capability: OBJECTIVE,
+      harnessName: 'Codex',
+      prefill: 'Migrate auth',
+      onSave: vi.fn().mockResolvedValue(undefined),
+    }
+    const { rerender } = render(<GoalDialog {...props} existing={goal} />)
+
+    const box = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(box, { target: { value: 'Migrate auth and land the tests' } })
+    rerender(<GoalDialog {...props} existing={{ ...goal, tokensUsed: 20 }} />)
+
+    expect(box.value).toBe('Migrate auth and land the tests')
+  })
+
+  it('re-seeds from the goal the next time it opens', () => {
+    const props = {
+      onOpenChange: vi.fn(),
+      capability: OBJECTIVE,
+      harnessName: 'Codex',
+      existing: { objective: 'Migrate auth', status: 'active' } as SessionGoal,
+      onSave: vi.fn().mockResolvedValue(undefined),
+    }
+    const { rerender } = render(<GoalDialog {...props} open />)
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'abandoned draft' } })
+
+    rerender(<GoalDialog {...props} open={false} />)
+    rerender(<GoalDialog {...props} open />)
+
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('Migrate auth')
+  })
 })

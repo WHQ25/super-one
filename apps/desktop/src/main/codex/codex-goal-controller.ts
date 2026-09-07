@@ -2,7 +2,7 @@ import type { CodexGoal, CodexGoalStatus, CodexRunResult } from '@superone/share
 import type { CodexSession } from './codex-session'
 import type { AppServerConnection, CodexProjectAuth } from './app-server-connection'
 import { resolvePermissionProfile } from './app-server-connection'
-import { mapCodexGoal } from './codex-goal-service'
+import { mapCodexGoal, sameSessionGoalProjection } from './codex-goal-service'
 import {
   deriveFinalResponse,
   streamTurnEvents,
@@ -106,10 +106,15 @@ export class CodexGoalController {
   /**
    * Single write point for the goal, so no transition can update the field
    * without the renderer hearing about it.
+   *
+   * The field is always written — internal scheduling reads it — but the
+   * announcement is skipped when the snapshot is one the renderer already has,
+   * since a re-read that found nothing new should cost nothing downstream.
    */
   private setCurrentGoal(goal: CodexGoal | null): void {
+    const changed = !sameSessionGoalProjection(this.currentGoal, goal)
     this.currentGoal = goal
-    this.options.onGoalChange(goal)
+    if (changed) this.options.onGoalChange(goal)
   }
 
   private async requestGoal(

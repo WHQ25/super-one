@@ -43,28 +43,6 @@ export interface SessionGoal {
   phase?: string
 }
 
-const SESSION_GOAL_STATUSES: readonly SessionGoalStatus[] = [
-  'active',
-  'paused',
-  'blocked',
-  'usageLimited',
-  'budgetLimited',
-  'complete',
-]
-
-/**
- * Map an unknown wire status onto the host enum.
- *
- * Unknown values restore as `paused`, never as a self-driving `active` goal — a
- * status we failed to understand must not read as "keep going".
- */
-export function normalizeSessionGoalStatus(raw: unknown): SessionGoalStatus {
-  if (typeof raw !== 'string') return 'paused'
-  const status = raw.trim().toLowerCase().replace(/[-_]/g, '')
-  const match = SESSION_GOAL_STATUSES.find((s) => s.toLowerCase() === status)
-  return match ?? 'paused'
-}
-
 /** Shape of `SDKActiveGoalMessage.value` — the Claude Stop-hook goal snapshot. */
 export interface ClaudeActiveGoalValue {
   condition: string

@@ -123,6 +123,15 @@ module.exports = {
   productName: variant.productName,
   icon: variant.icon,
   extraResources,
+  // Do NOT add `cscLink` here (nor CSC_LINK to build-mac.yml). electron-builder
+  // branches on it: with a cscLink it runs its own createKeychain(), which
+  // passes CSC_KEY_PASSWORD — the *certificate* password — to
+  // `security set-key-partition-list -k`, where -k means the *keychain*
+  // password. security only checks -k when the keychain needs unlocking, so it
+  // passes ~95% of the time and then fails a release build outright. CI signs
+  // by building the keychain itself and handing over CSC_KEYCHAIN, which takes
+  // the branch that never calls createKeychain(). Adding cscLink back silently
+  // undoes that — nothing fails until a release does.
   mac: { ...base.mac, artifactName: `${artifactBase}-\${version}-\${arch}-mac.\${ext}` },
   dmg: { ...base.dmg, artifactName: `${artifactBase}-\${version}-\${arch}.\${ext}` },
   nsis: { ...base.nsis, artifactName: `${artifactBase}-\${version}-Setup.\${ext}` },

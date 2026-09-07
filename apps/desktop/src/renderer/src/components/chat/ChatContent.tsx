@@ -196,7 +196,7 @@ function ChatTranscript({
   // Model ids arrive raw on the wire; display names live in the harness catalogs.
   const claudeModels = useChatStore(selectClaudeModels)
   const {
-    messages, isCompacting, isRecapping, compactError, apiRetry,
+    messages, isCompacting, compactingStartedAt, isRecapping, compactError, apiRetry,
     displayedSessionId, historyHydrated,
     sessionStatus, lastAssistantMessageId, queuedMessages, awaitingAssistantReply, acpModels,
     sessionProvider, preferredProvider,
@@ -204,6 +204,7 @@ function ChatTranscript({
   } = useActiveSession(useShallow((s) => ({
     messages: s.messages,
     isCompacting: s.isCompacting,
+    compactingStartedAt: s.compactingStartedAt,
     isRecapping: s.isRecapping,
     compactError: s.compactError,
     apiRetry: s.apiRetry,
@@ -479,7 +480,7 @@ function ChatTranscript({
                 </div>
               </div>
             ))}
-            {isCompacting && <CompactingIndicator />}
+            {isCompacting && <CompactingIndicator startedAt={compactingStartedAt} />}
             {!isCompacting && compactError && <CompactErrorIndicator error={compactError} onDismiss={dismissCompactError} />}
             {isRecapping && <RecappingIndicator />}
             {apiRetry && <ApiRetryIndicator info={apiRetry} />}

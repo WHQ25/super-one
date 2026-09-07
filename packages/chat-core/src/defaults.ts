@@ -37,6 +37,7 @@ export function createDefaultChatCoreSession(): ChatCoreSession {
     codexUsageSnapshot: null,
     codexTurnLastUsage: null,
     isCompacting: false,
+    compactingStartedAt: null,
     isRecapping: false,
     compactError: null,
     _pendingCompactUserId: '',

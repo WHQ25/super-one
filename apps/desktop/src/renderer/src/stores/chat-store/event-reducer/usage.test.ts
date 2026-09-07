@@ -148,15 +148,25 @@ describe('reduceUsage: message_usage', () => {
 describe('reduceUsage: status_indicator', () => {
   it('toggles isCompacting=true and clears prior error for indicator=compacting', () => {
     const session = { ...createDefaultPerSessionState(), compactError: 'stale' }
-    expect(reduceUsage(session, {
+    const patch = reduceUsage(session, {
       type: 'status_indicator', indicator: 'compacting',
-    } as never)).toEqual({ isCompacting: true, compactError: null })
+    } as never)
+    expect(patch).toMatchObject({ isCompacting: true, compactError: null })
+    expect(patch.compactingStartedAt).toBeGreaterThan(0)
+  })
+
+  it('keeps the original start time when the indicator repeats mid-compaction', () => {
+    const session = { ...createDefaultPerSessionState(), isCompacting: true, compactingStartedAt: 1_000 }
+    const patch = reduceUsage(session, {
+      type: 'status_indicator', indicator: 'compacting',
+    } as never)
+    expect(patch.compactingStartedAt).toBeUndefined()
   })
 
   it('toggles isCompacting=false for indicator=null without a result', () => {
     expect(reduceUsage(createDefaultPerSessionState(), {
       type: 'status_indicator', indicator: null,
-    } as never)).toEqual({ isCompacting: false })
+    } as never)).toEqual({ isCompacting: false, compactingStartedAt: null })
   })
 
   it('records compactError and clears pending markers when compactResult=failed', () => {
@@ -164,6 +174,7 @@ describe('reduceUsage: status_indicator', () => {
       type: 'status_indicator', indicator: null, compactResult: 'failed', compactError: 'context too small',
     } as never)).toEqual({
       isCompacting: false,
+      compactingStartedAt: null,
       compactError: 'context too small',
       _pendingCompactUserId: '',
       _pendingSlashCommand: '',

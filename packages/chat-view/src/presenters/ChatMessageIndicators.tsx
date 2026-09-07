@@ -188,18 +188,18 @@ export function CompactIndicator({
   )
 }
 
-export function CompactingIndicator() {
-  const [elapsed, setElapsed] = useState(0)
-  const startRef = useRef(Date.now())
+export function CompactingIndicator({ startedAt }: { startedAt?: number | null }) {
+  // Mount time is only the fallback for callers that do not track the start in
+  // session state. Anchoring on it would restart the count every time the chat
+  // remounts — which is exactly what switching sessions and back does.
+  const mountedAtRef = useRef(Date.now())
+  const start = startedAt ?? mountedAtRef.current
+  const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
-    startRef.current = Date.now()
-    setElapsed(0)
-    const id = setInterval(
-      () => setElapsed(Math.floor((Date.now() - startRef.current) / 1000)),
-      1000,
-    )
+    const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
   }, [])
+  const elapsed = Math.max(0, Math.floor((now - start) / 1000))
   return (
     <div className="my-0.5 flex items-center gap-1.5 rounded bg-warning/10 px-2 py-1.5 text-xs">
       <Loader2 className="size-3 shrink-0 animate-spin text-warning" />

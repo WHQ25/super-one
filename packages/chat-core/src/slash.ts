@@ -208,6 +208,7 @@ export function reduceSlash(
       })
       return {
         isCompacting: false,
+        compactingStartedAt: null,
         compactError: null,
         messages: msgs,
         _pendingCompactUserId: '',

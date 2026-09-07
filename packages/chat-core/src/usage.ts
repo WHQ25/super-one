@@ -58,16 +58,25 @@ export function reduceUsage(
     }
 
     case 'status_indicator': {
-      if (event.indicator === 'compacting') return { isCompacting: true, compactError: null }
+      if (event.indicator === 'compacting') {
+        return {
+          isCompacting: true,
+          // Backends re-emit the indicator for every status frame of the same
+          // compaction, so only the transition starts the clock.
+          ...(session.isCompacting && session.compactingStartedAt ? {} : { compactingStartedAt: ports.now() }),
+          compactError: null,
+        }
+      }
       if (event.compactResult === 'failed') {
         return {
           isCompacting: false,
+          compactingStartedAt: null,
           compactError: event.compactError || 'Compaction failed',
           _pendingCompactUserId: '',
           _pendingSlashCommand: '',
         }
       }
-      return { isCompacting: false }
+      return { isCompacting: false, compactingStartedAt: null }
     }
 
     case 'rate_limit':

@@ -112,6 +112,12 @@ export interface ChatCoreSession {
   codexUsageSnapshot: CodexUsageInfo | null
   codexTurnLastUsage: CodexUsageInfo | null
   isCompacting: boolean
+  /**
+   * When the in-flight compaction started, so the elapsed counter survives the
+   * indicator unmounting — switching sessions and back must not restart it.
+   * Null whenever `isCompacting` is false.
+   */
+  compactingStartedAt: number | null
   isRecapping: boolean
   compactError: string | null
   _pendingCompactUserId: string

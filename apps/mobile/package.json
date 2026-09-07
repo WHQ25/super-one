@@ -63,7 +63,7 @@
     "@playwright/test": "1.62.1",
     "@superone/tsconfig": "workspace:*",
     "@types/react": "^19.2.13",
-    "@xmldom/xmldom": "0.8.14",
+    "@xmldom/xmldom": "0.8.15",
     "babel-preset-expo": "~54.0.0",
     "postcss": "8.5.26",
     "sharp": "0.35.3",

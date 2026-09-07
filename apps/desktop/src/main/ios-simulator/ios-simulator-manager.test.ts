@@ -6,7 +6,10 @@ import type {
   IosSimulatorPreviewQuality,
   IosSimulatorStatus,
 } from '@superone/shared/ios-simulator'
-import { isIosSimulatorLandscape } from '@superone/shared/ios-simulator'
+import {
+  IOS_SIMULATOR_INPUT_ERROR,
+  isIosSimulatorLandscape,
+} from '@superone/shared/ios-simulator'
 import type {
   IosSimulatorNativeAttachment,
   IosSimulatorNativeStreamInfo,
@@ -649,52 +652,112 @@ describe('IosSimulatorManager text input', () => {
       nativeFactory: harness.nativeFactory,
       helperProbe: async () => null,
       attachAttempts: 1,
+      // Real guests settle their focus in a few hundred milliseconds; the fake is
+      // already focused, so only the refusal cases ever spend this.
+      focusConfirmMs: 40,
+      focusPollMs: 5,
     })
     await manager.boot('session-a', 'device-a')
     harness.native.input.mockClear()
     return { ...harness, manager }
   }
 
-  it('sends a single keystroke as a keystroke', async () => {
+  /** What the helper says when the focused control refuses to be written to. */
+  const notEditable = { ok: false, error: 'refused', code: IOS_SIMULATOR_INPUT_ERROR.NOT_EDITABLE }
+  const notFocused = { ok: false, error: 'nothing focused', code: IOS_SIMULATOR_INPUT_ERROR.NOT_FOCUSED }
+
+  it('sends short ASCII through accessibility rather than as keystrokes', async () => {
     const { manager, native, simctl } = await readyManager()
 
-    await manager.input('device-a', { type: 'text', text: 'a' })
+    await manager.enterText('device-a', 'check')
 
-    expect(native.input).toHaveBeenCalledWith({ type: 'text', text: 'a' })
+    // The regression this guards: HID usage codes are fed to whatever input mode the
+    // guest has selected, so on a simulator set to Pinyin `check` reached the composer
+    // and arrived in the field as `chee c k`.
+    expect(native.input).toHaveBeenCalledWith({ type: 'insertText', text: 'check' })
+    expect(native.input).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'text' }))
     expect(simctl.writePasteboard).not.toHaveBeenCalled()
   })
 
   it('inserts text the simulated keyboard cannot spell into the focused control', async () => {
     const { manager, native, simctl } = await readyManager()
 
-    // The regression this guards: Indigo's keyboard channel only carries HID usage
-    // codes, so every one of these characters used to be counted as skipped and
-    // silently dropped.
-    await manager.input('device-a', { type: 'text', text: '你好' })
+    await manager.enterText('device-a', '你好')
 
     expect(simctl.writePasteboard).not.toHaveBeenCalled()
     expect(native.input).toHaveBeenCalledWith({ type: 'insertText', text: '你好' })
+  })
+
+  it('keeps control characters on the keyboard, so Return still submits', async () => {
+    const { manager, native } = await readyManager()
+
+    await manager.enterText('device-a', 'hi\nthere')
+
+    // Inserted as a value, a newline is a newline character and the app's submit
+    // handler never runs. The split is what keeps the keystroke a keystroke.
+    expect(native.input.mock.calls.map(([call]: [unknown]) => call)).toEqual([
+      { type: 'insertText', text: 'hi' },
+      { type: 'text', text: '\n' },
+      { type: 'insertText', text: 'there' },
+    ])
+  })
+
+  it('falls back to the keyboard when the control refuses to be written to', async () => {
+    const { manager, native } = await readyManager()
+    native.input.mockResolvedValueOnce(notEditable)
+
+    const result = await manager.enterText('device-a', 'long-password')
+
+    expect(result.ok).toBe(true)
+    expect(native.input).toHaveBeenNthCalledWith(1, { type: 'insertText', text: 'long-password' })
+    expect(native.input).toHaveBeenNthCalledWith(2, { type: 'text', text: 'long-password' })
+  })
+
+  it('reports an unfocused field instead of typing into nothing', async () => {
+    const { manager, native } = await readyManager()
+    native.input.mockResolvedValue(notFocused)
+
+    const result = await manager.enterText('device-a', 'check')
+
+    // Falling back here would be worse than failing: the keyboard accepts keystrokes
+    // with nothing focused, so the text would go nowhere and the call would succeed.
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('split the batch')
     expect(native.input).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'text' }))
   })
 
-  it('inserts a long ASCII block rather than holding the input queue for it', async () => {
-    const { manager, native, simctl } = await readyManager()
+  it('waits out a focus that has not landed yet', async () => {
+    const { manager, native } = await readyManager()
+    native.input
+      .mockResolvedValueOnce(notFocused)
+      .mockResolvedValueOnce(notFocused)
+      .mockResolvedValueOnce({ ok: true })
 
-    await manager.input('device-a', { type: 'text', text: 'the quick brown fox' })
+    const result = await manager.enterText('device-a', 'check')
 
-    expect(simctl.writePasteboard).not.toHaveBeenCalled()
-    expect(native.input).toHaveBeenCalledWith({ type: 'insertText', text: 'the quick brown fox' })
+    expect(result.ok).toBe(true)
+    expect(native.input).toHaveBeenCalledTimes(3)
   })
 
-  it('falls back to HID for typeable text when direct insertion is unavailable', async () => {
+  it('leaves a person\'s own keystrokes on the keyboard', async () => {
     const { manager, native } = await readyManager()
-    native.input.mockResolvedValueOnce({ ok: false, error: 'The focused control rejected AXValue.' })
 
-    const result = await manager.input('device-a', { type: 'text', text: 'long-password' })
+    await manager.input('device-a', { type: 'text', text: 'ni hao' })
 
-    expect(result).toEqual({ ok: true })
-    expect(native.input).toHaveBeenNthCalledWith(1, { type: 'insertText', text: 'long-password' })
-    expect(native.input).toHaveBeenNthCalledWith(2, { type: 'text', text: 'long-password' })
+    // The panel's raw input is not an agent's `type` and must not be routed like one:
+    // someone typing at a guest with Pinyin selected is typing Pinyin ON PURPOSE, and
+    // sending those letters past the composer takes away the only way to type Chinese
+    // by hand. Their keys also have to reach controls that are not text fields.
+    expect(native.input).toHaveBeenCalledWith({ type: 'text', text: 'ni hao' })
+    expect(native.input).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'insertText' }))
+  })
+
+  it('replaces the whole value for a setText, without reading it first', async () => {
+    const { manager, native } = await readyManager()
+
+    await manager.input('device-a', { type: 'insertText', text: '', replace: true })
+
+    expect(native.input).toHaveBeenCalledWith({ type: 'insertText', text: '', replace: true })
   })
 })
 

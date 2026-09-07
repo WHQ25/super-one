@@ -18,10 +18,12 @@ import log from '../../logger'
 import type { Adb } from './adb'
 import {
   readStreamHeader,
+  ScrcpyDeviceMessageParser,
   ScrcpyPacketParser,
   SCRCPY_DEVICE_PATH,
   SCRCPY_SERVER_SHA256,
   SCRCPY_SERVER_VERSION,
+  type ScrcpyDeviceMessage,
   type ScrcpyMediaPacket,
   type ScrcpySessionPacket,
 } from './scrcpy-protocol'
@@ -111,6 +113,8 @@ export interface ScrcpyConnection {
   /** Rotation, and the opening geometry. See `ScrcpySessionPacket`. */
   onSession(listener: (session: ScrcpySessionPacket) => void): () => void
   onClosed(listener: (reason: string) => void): () => void
+  /** The server's own messages, currently only clipboard pushes. */
+  onDeviceMessage(listener: (message: ScrcpyDeviceMessage) => void): () => void
   send(messages: Buffer | readonly Buffer[]): void
   close(): Promise<void>
 }
@@ -164,6 +168,17 @@ export async function connectScrcpy(options: ScrcpyConnectionOptions): Promise<S
   let backlog: ScrcpyMediaPacket[] | null = []
   const sessionListeners = new Set<(session: ScrcpySessionPacket) => void>()
   const closedListeners = new Set<(reason: string) => void>()
+  const deviceMessageListeners = new Set<(message: ScrcpyDeviceMessage) => void>()
+  const deviceMessages = new ScrcpyDeviceMessageParser()
+  /**
+   * The most recent clipboard push, replayed to whoever subscribes next.
+   *
+   * The server states the clipboard when the connection opens and again on every
+   * change, and a subscriber that attaches a moment later would otherwise have to wait
+   * for the user to copy something before it knew anything at all. Only the latest is
+   * kept: this is a value, not a stream of events.
+   */
+  let lastClipboard: ScrcpyDeviceMessage | null = null
   const screen = { width: 0, height: 0 }
   let controlFault: string | null = null
   let closed = false
@@ -220,6 +235,20 @@ export async function connectScrcpy(options: ScrcpyConnectionOptions): Promise<S
     video.resume()
     video.on('close', () => void cleanup('The video stream closed.'))
     video.on('error', (error) => void cleanup(`The video stream failed: ${error.message}`))
+    // The control socket is no longer write-only. The server pushes the device
+    // clipboard when the connection opens and on every change, and that push is the
+    // ONLY way this end can learn what to put back after a paste: `GET_CLIPBOARD` is
+    // implemented on the device by pressing copy or cut, so asking with no key set
+    // sends nothing back and asking with one would alter the selection.
+    //
+    // Draining this also stops the receive buffer growing for the life of a session,
+    // which it did while nothing read this side.
+    control.on('data', (chunk: Buffer) => {
+      for (const message of deviceMessages.push(chunk)) {
+        if (message.kind === 'clipboard') lastClipboard = message
+        for (const listener of deviceMessageListeners) listener(message)
+      }
+    })
     control.on('error', (error) => log.warn('[scrcpy] control socket error', error))
     child.on('close', () => void cleanup('The scrcpy server exited.'))
 
@@ -258,6 +287,11 @@ export async function connectScrcpy(options: ScrcpyConnectionOptions): Promise<S
       },
       onSession: (listener) => { sessionListeners.add(listener); return () => sessionListeners.delete(listener) },
       onClosed: (listener) => { closedListeners.add(listener); return () => closedListeners.delete(listener) },
+      onDeviceMessage: (listener) => {
+        if (lastClipboard) listener(lastClipboard)
+        deviceMessageListeners.add(listener)
+        return () => deviceMessageListeners.delete(listener)
+      },
       send: (messages) => {
         if (closed) return
         for (const message of Array.isArray(messages) ? messages : [messages as Buffer]) {
@@ -305,6 +339,10 @@ function startServer(
     // to fail during startup.
     'audio=false',
     'control=true',
+    // Explicit because it is NOT the server's default, whatever its name suggests:
+    // with this unset the control socket stayed completely silent — no clipboard
+    // pushes, no replies, nothing — and every paste silently ate the user's clipboard.
+    'clipboard_autosync=true',
     'tunnel_forward=true',
     'video_codec=h264',
     // A keyframe every second, instead of whenever the encoder feels like one.

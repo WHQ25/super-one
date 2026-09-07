@@ -20,6 +20,7 @@ import { createHash } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { DeviceOrientation, DeviceUiNode } from '@superone/shared/device-agent'
+import { splitDeviceText } from '@superone/shared/device'
 import { captureFileName } from '../device/capture-path'
 import {
   gestureDurationMs,
@@ -34,12 +35,16 @@ import type { AndroidDeviceManager } from '../device/android/android-device-mana
 import {
   encodeBare,
   encodeCancelTouches,
+  encodeControlKey,
+  encodeDelete,
   encodeKeyPress,
-  encodeTextInput,
+  encodeSelectAll,
+  encodeSetClipboard,
   encodeTouchStep,
   keycodeForButton,
   SCRCPY_MSG,
 } from '../device/android/scrcpy-control'
+import type { ScrcpyConnection } from '../device/android/scrcpy-server'
 import { uiautomatorToTree } from '../device/android/uiautomator'
 import {
   DeviceAgentError,
@@ -68,6 +73,9 @@ const ROTATION_FOR_ORIENTATION: Record<DeviceOrientation, number> = {
  * cadence is set by adb, not by this.
  */
 const SETTLE_INTERVAL_MS = 60
+
+/** Long enough for the paste to be handled before the next segment is sent. */
+const PASTE_SETTLE_MS = 60
 
 export class AndroidBackend implements TouchDeviceBackend {
   private deviceLabel = 'Android'
@@ -220,15 +228,8 @@ export class AndroidBackend implements TouchDeviceBackend {
           }),
           signal,
         )
-      case 'type': {
-        // Not one INJECT_TEXT: the server reverse-maps every character through the
-        // virtual keyboard's KeyCharacterMap, so Chinese, emoji and backspace all
-        // evaporate on that channel. `encodeTextInput` routes each of those the way
-        // the guest can actually receive it.
-        const connection = await this.connection()
-        connection.send(encodeTextInput(action.text))
-        return
-      }
+      case 'type': return this.enterText(action.text, { replace: false })
+      case 'setText': return this.enterText(action.text, { replace: true })
       case 'key': {
         const keycode = keycodeForButton(action.button)
         if (keycode === null) {
@@ -259,11 +260,94 @@ export class AndroidBackend implements TouchDeviceBackend {
    * observes an unchanged screen, and tries again — forever. Raising turns a loop into
    * one sentence the user can act on.
    */
+  /**
+   * Enter text the way an AGENT means it: through the clipboard, not the keyboard.
+   *
+   * `INJECT_TEXT` looks like a text channel and is not one. The server reverse-maps
+   * every character through `KeyCharacterMap` and injects the key events that would
+   * have produced it, and Android offers key events to the input method first. With
+   * Gboard on Pinyin, measured on an emulator: injecting `check` put nothing in the
+   * field at all — the letters went into the composition buffer, the tree kept
+   * reporting the field empty, and a later space committed them together with the
+   * NEXT injection as `audit你好`. Silent, delayed, and wrong.
+   *
+   * Pasting bypasses the input method entirely, which is the same reason iOS entry
+   * moved onto its accessibility bridge. The person driving the panel keeps
+   * `INJECT_TEXT` — see `encodeDeviceInput` — because someone typing Pinyin by hand is
+   * asking for the composer.
+   *
+   * Control characters still go as keys, so Return still submits. Paste is handled by
+   * the focused view directly while key events are injected asynchronously, so the
+   * paste cannot be overtaken by the key that follows it; the reverse order is what
+   * once landed `hi 中文` as `hi中文 `.
+   */
+  private async enterText(text: string, options: { replace: boolean }): Promise<void> {
+    const connection = await this.connection()
+    const segments = splitDeviceText(text)
+    // Read before anything is written, and only when there is something to write:
+    // typing must not cost the person driving whatever they had copied.
+    // Captured before anything is written, so the paste's own push cannot become the
+    // value being restored.
+    const saved = this.clipboard
+
+    if (options.replace) connection.send(encodeSelectAll())
+    if (options.replace && segments.length === 0) connection.send(encodeDelete())
+    for (const segment of segments) {
+      if (segment.kind === 'key') {
+        const keys = encodeControlKey(segment.text)
+        if (keys) connection.send(keys)
+        continue
+      }
+      connection.send(encodeSetClipboard(segment.text, true))
+      await waitForDeviceDelay(PASTE_SETTLE_MS)
+    }
+
+    // Null means the server has never reported a clipboard — an empty one, or a
+    // session too young to have been told — and there is nothing to put back. Sent
+    // with paste off, so restoring cannot itself type into the field.
+    if (saved !== null && segments.some((segment) => segment.kind === 'insert')) {
+      await waitForDeviceDelay(PASTE_SETTLE_MS)
+      connection.send(encodeSetClipboard(saved, false))
+    }
+  }
+
+  /**
+   * Keep track of what the device has on its clipboard.
+   *
+   * Watched rather than asked for. `GET_CLIPBOARD` exists in the protocol and cannot
+   * be used: the server implements it by pressing copy or cut and letting the change
+   * notification carry the result, so the only way to ASK is to alter the selection
+   * this is trying to leave alone — and asking with no key set sends nothing back at
+   * all. Measured against the pinned server; a GET with `copyKey=0` produced silence.
+   *
+   * `clipboard_autosync` is what makes this work, and it is NOT on by default in
+   * scrcpy 4.0 — with it unset the control socket stayed silent through every write.
+   *
+   * Nothing here has to suppress the echo of this backend's own writes. The paste
+   * replaces the tracked value and the restore replaces it back, so the last push
+   * always leaves this holding what the device really has.
+   */
+  private watchClipboard(connection: ScrcpyConnection): void {
+    if (this.clipboardWatchedOn === connection) return
+    this.clipboardWatchedOn = connection
+    connection.onDeviceMessage((message) => {
+      if (message.kind === 'clipboard') this.clipboard = message.text
+    })
+  }
+
+  /** The device clipboard as the server last pushed it. Null until it has said. */
+  private clipboard: string | null = null
+  private clipboardWatchedOn: ScrcpyConnection | null = null
+
   private connection() {
     return this.manager.connection(this.deviceId).then((connection) => {
       if (connection.controlFault) {
         throw new DeviceAgentError('UNSUPPORTED', connection.controlFault)
       }
+      // Attached here rather than where text is entered: the clipboard has to be known
+      // BEFORE the write that will overwrite it, and by then it is too late to start
+      // listening.
+      this.watchClipboard(connection)
       return connection
     }).catch((error: unknown) => {
       if (error instanceof DeviceAgentError) throw error

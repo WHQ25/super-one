@@ -169,7 +169,8 @@ export function encodeText(text: string): Buffer {
  * Put text on the device clipboard, optionally pasting it into the focused field.
  *
  * `sequence` is deliberately 0: a non-zero one makes the server answer with an
- * ACK_CLIPBOARD device message, and nothing on this end reads the control socket back.
+ * ACK_CLIPBOARD, and nothing here waits on one — the clipboard is tracked from the
+ * server's own pushes instead. See `AndroidBackend.watchClipboard`.
  */
 export function encodeSetClipboard(text: string, paste: boolean): Buffer {
   const payload = Buffer.from(text, 'utf8')
@@ -198,14 +199,21 @@ const TEXT_KEYCODE: Record<string, number> = {
   '\t': 61, // TAB
 }
 
+const KEYCODE_A = 29
+const KEYCODE_DEL = 67
+/** `KeyEvent.META_CTRL_ON`. What turns Ctrl+A into a shortcut rather than an `a`. */
+const META_CTRL_ON = 0x1000
+
 /**
  * Characters the virtual keyboard can actually spell.
  *
- * The Android counterpart of `canTypeIosSimulatorText`, and it exists for the mirror
- * image of the same reason: there, the HID channel carries usage codes; here, the far
- * side reverse-maps every character through a key character map. Either way anything
- * outside this set — Chinese, emoji, accented latin — has to reach the guest through
- * its clipboard instead.
+ * What a PERSON's keystrokes can spell on this channel: the far side reverse-maps
+ * every character through a key character map, so anything outside this set — Chinese,
+ * emoji, accented latin — reaches the guest through its clipboard instead.
+ *
+ * An agent's text does not come through here at all. `INJECT_TEXT` is key events, and
+ * Android offers key events to the input method first, so it composes them; see
+ * `AndroidBackend.enterText`.
  */
 function isInjectable(char: string): boolean {
   const code = char.codePointAt(0) ?? 0
@@ -219,12 +227,11 @@ function isInjectable(char: string): boolean {
  * channel — the text channel if the whole string can be spelled, the clipboard if any
  * part of it cannot.
  *
- * The all-or-nothing choice is the point, and it is the same one
- * `canTypeIosSimulatorText` makes. Splitting a string across both channels looks
- * tidier and does not survive contact with a device: injected characters are queued
- * asynchronously and then routed through the IME, while KEYCODE_PASTE is handled by
- * the focused view directly, so the two arrive out of order. `hi 中文` sent as
- * text + paste landed as `hi中文 ` — the space overtook the paste.
+ * The all-or-nothing choice is the point. Splitting a string across both channels
+ * looks tidier and does not survive contact with a device: injected characters are
+ * queued asynchronously and then routed through the IME, while KEYCODE_PASTE is
+ * handled by the focused view directly, so the two arrive out of order. `hi 中文` sent
+ * as text + paste landed as `hi中文 ` — the space overtook the paste.
  */
 export function encodeTextInput(text: string): Buffer[] {
   const messages: Buffer[] = []
@@ -254,6 +261,40 @@ export function encodeTextInput(text: string): Buffer[] {
   }
   flush()
   return messages
+}
+
+/**
+ * Select everything in the focused field, so what comes next replaces it.
+ *
+ * How a person does it, and unlike counting backspaces it needs no idea what the field
+ * held — which matters, because what a snapshot reports a field contains and what it
+ * actually contains are not reliably the same string.
+ *
+ * `TextView` turns Ctrl+A into `selectAll` off the event's meta state, so the modifier
+ * rides on the keycode rather than needing its own down/up pair around it.
+ */
+export function encodeSelectAll(): Buffer[] {
+  return [
+    encodeKeycode({ keycode: KEYCODE_A, action: KEY_DOWN, metaState: META_CTRL_ON }),
+    encodeKeycode({ keycode: KEYCODE_A, action: KEY_UP, metaState: META_CTRL_ON }),
+  ]
+}
+
+/** Delete the selection, which is how a field is emptied once it is all selected. */
+export function encodeDelete(): Buffer[] {
+  return encodeKeyPress(KEYCODE_DEL)
+}
+
+/**
+ * One control character as the keystroke it stands for, or null if it is not one.
+ *
+ * The keycode table stays private: which characters are keys is a fact about this
+ * transport, and a caller that had to know it would be deciding routing on a table it
+ * does not own.
+ */
+export function encodeControlKey(char: string): Buffer[] | null {
+  const keycode = TEXT_KEYCODE[char]
+  return keycode === undefined ? null : encodeKeyPress(keycode)
 }
 
 /** Messages that are their type byte and nothing else. */

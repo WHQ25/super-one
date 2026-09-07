@@ -2798,6 +2798,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
                   "pinch",
                   "press",
                   "type",
+                  "setText",
                   "key",
                   "rotate",
                   "keyboard"
@@ -2859,7 +2860,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
                 "maximum": 10000
               },
               "text": {
-                "description": "type: text to enter. Anything the simulated keyboard cannot spell (Chinese, emoji) is pasted automatically.",
+                "description": "type: text to insert at the cursor, in a field something has already focused. setText: the field's entire new value, replacing whatever is there; pass \"\" to clear it. Prefer setText when you mean \"make this field say X\" — type appends.",
                 "type": "string"
               },
               "button": {

@@ -122,7 +122,16 @@ export type ResolvedAction =
    * app actually labelled.
    */
   | { kind: 'press'; ref: string }
+  /** Insert text at the cursor, leaving whatever is already in the field. */
   | { kind: 'type'; text: string }
+  /**
+   * Make the focused field's value exactly this, whatever it held before.
+   *
+   * Separate from `type` because there was no way to undo a `type` at all: the field
+   * cannot be emptied by typing nothing, and clearing it by hand through the edit menu
+   * appends rather than replaces. An empty string is the clear.
+   */
+  | { kind: 'setText'; text: string }
   | { kind: 'key'; button: DeviceHardwareButton }
   | { kind: 'rotate'; orientation: DeviceOrientation }
   /**

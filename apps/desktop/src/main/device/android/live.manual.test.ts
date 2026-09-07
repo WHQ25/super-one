@@ -15,11 +15,13 @@
 
 import { writeFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import type { DeviceUiNode } from '@superone/shared/device-agent'
+import { encodeSetClipboard } from './scrcpy-control'
 import { listDeviceCatalog, type DeviceEntry } from '../../device-agent/device-catalog'
 import { detectAndroidToolchain, AndroidDeviceManager } from './android-device-manager'
 import { AndroidDevicePort } from './device-port'
 import { uiautomatorToTree } from './uiautomator'
-import { collectNodes, hasUsableSemantics } from '../tree'
+import { collectNodes, findNode, hasUsableSemantics } from '../tree'
 import { AndroidBackend } from '../../device-agent/android-backend'
 
 const live = process.env.ANDROID_LIVE === '1'
@@ -192,6 +194,128 @@ describe.skipIf(!live)('driving a real device through the backend', () => {
     const after = await backend.observe()
     report(`after swipe: hash changed = ${after.frameHash !== before.frameHash}`)
     expect(after.frameHash).not.toBe(before.frameHash)
+
+    await manager.dispose()
+  }, 180_000)
+})
+
+/**
+ * Text entry, against a device whose keyboard composes.
+ *
+ * The reason this exists is that the bug it guards is invisible without one. With
+ * Gboard on Pinyin, `INJECT_TEXT` put NOTHING in the field: the letters sat in the
+ * composition buffer, the tree kept reporting the field empty, and a later space
+ * committed them alongside the next injection as `audit你好`. Set the emulator up with
+ *
+ *   adb shell settings put secure selected_input_method_subtype <zh_CN subtype hash>
+ *
+ * (read the hash out of `adb shell dumpsys input_method`) to exercise that path; on an
+ * English keyboard these still pass, they just prove less.
+ */
+describe.skipIf(!live)('entering text on a real device', () => {
+  /** Settings' own search field: an EditText with a hint, on every Android build. */
+  const SEARCH_FIELD = 'open_search_view_edit_text'
+
+  async function searchScreen(manager: AndroidDeviceManager, serial: string) {
+    await manager.adb.shell(serial, ['am', 'force-stop', 'com.google.android.settings.intelligence'])
+    await manager.adb.shell(serial, ['am', 'start', '-a', 'android.settings.APP_SEARCH_SETTINGS'])
+    await new Promise((resolve) => setTimeout(resolve, 3000))
+  }
+
+  function fieldValue(observation: { root: DeviceUiNode }): string | undefined {
+    return findNode(observation.root, (node) => node.identifier?.endsWith(SEARCH_FIELD) === true)?.value
+  }
+
+  it('puts text in the field even when the keyboard would compose it', async () => {
+    const toolchain = detectAndroidToolchain()
+    const manager = new AndroidDeviceManager(toolchain!)
+    const running = (await manager.listDevices()).find((device) => device.running)
+    if (!running) { report('no running device'); return }
+    await manager.boot('live-text', running.id)
+    const serial = manager.serialFor(running.id)!
+    const backend = new AndroidBackend(manager, running.id, '/tmp/claude/live-captures')
+
+    const mode = (await manager.adb.execOut(serial, ['dumpsys', 'input_method']))
+      .toString('utf8').match(/current_input_method_entry: "([^"]*)"/)?.[1]
+    report(`guest keyboard: ${mode}`)
+
+    await searchScreen(manager, serial)
+    const before = await backend.observe()
+    // An empty hinted field reports its hint as `text` in the dump; the tree must not
+    // pass that off as a value somebody typed.
+    expect(fieldValue(before)).toBeUndefined()
+
+    await backend.perform({ kind: 'type', text: 'check' }, { observation: before })
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+    const after = await backend.observe()
+    report(`typed "check" -> ${JSON.stringify(fieldValue(after))}`)
+    expect(fieldValue(after)).toBe('check')
+
+    await manager.dispose()
+  }, 180_000)
+
+  it('replaces the field with setText, and clears it with an empty one', async () => {
+    const toolchain = detectAndroidToolchain()
+    const manager = new AndroidDeviceManager(toolchain!)
+    const running = (await manager.listDevices()).find((device) => device.running)
+    if (!running) return
+    await manager.boot('live-settext', running.id)
+    const serial = manager.serialFor(running.id)!
+    const backend = new AndroidBackend(manager, running.id, '/tmp/claude/live-captures')
+
+    await searchScreen(manager, serial)
+    let observation = await backend.observe()
+    await backend.perform({ kind: 'type', text: 'audit' }, { observation })
+    await new Promise((resolve) => setTimeout(resolve, 1200))
+
+    observation = await backend.observe()
+    await backend.perform({ kind: 'setText', text: 'theme' }, { observation })
+    await new Promise((resolve) => setTimeout(resolve, 1200))
+    observation = await backend.observe()
+    report(`setText -> ${JSON.stringify(fieldValue(observation))}`)
+    expect(fieldValue(observation)).toBe('theme')
+
+    await backend.perform({ kind: 'setText', text: '' }, { observation })
+    await new Promise((resolve) => setTimeout(resolve, 1200))
+    observation = await backend.observe()
+    report(`cleared -> ${JSON.stringify(fieldValue(observation))}`)
+    expect(fieldValue(observation)).toBeUndefined()
+
+    await manager.dispose()
+  }, 180_000)
+
+  it('gives the device its clipboard back after typing through it', async () => {
+    const toolchain = detectAndroidToolchain()
+    const manager = new AndroidDeviceManager(toolchain!)
+    const running = (await manager.listDevices()).find((device) => device.running)
+    if (!running) return
+    await manager.boot('live-clipboard', running.id)
+    const serial = manager.serialFor(running.id)!
+    const backend = new AndroidBackend(manager, running.id, '/tmp/claude/live-captures')
+
+    await searchScreen(manager, serial)
+    const observation = await backend.observe()
+    // Seeded through the same channel typing uses, so the read-back is proving the
+    // save/restore rather than the seeding.
+    const connection = await manager.connection(running.id)
+    connection.send(encodeSetClipboard('user-had-this-copied', false))
+    await new Promise((resolve) => setTimeout(resolve, 800))
+
+    await backend.perform({ kind: 'type', text: 'check' }, { observation })
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+
+    // Read off the connection's own last-known value, which is the only way to ask:
+    // GET_CLIPBOARD is implemented on the device by PRESSING copy, so using it would
+    // change the very thing under test.
+    // Subscribing replays the last clipboard synchronously, so this reads the value
+    // rather than waiting for a change that will never come.
+    let restored: string | null = null
+    const off = connection.onDeviceMessage((message) => {
+      if (message.kind === 'clipboard') restored = message.text
+    })
+    off()
+    report(`clipboard after typing: ${JSON.stringify(restored)}`)
+    expect(restored).toBe('user-had-this-copied')
 
     await manager.dispose()
   }, 180_000)

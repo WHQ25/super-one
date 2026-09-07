@@ -1,5 +1,5 @@
 import type { DeviceOrientation } from '@superone/shared/device-agent'
-import type { IosSimulatorInput } from '@superone/shared/ios-simulator'
+import type { IosSimulatorInput, IosSimulatorInputResult } from '@superone/shared/ios-simulator'
 import {
   fingerprintTree,
   findNode,
@@ -287,7 +287,14 @@ export class IosSimulatorBackend implements TouchDeviceBackend {
         return this.runGesture(synthesizePinch(action.x, action.y, action.scale, {
           ...(action.durationMs ? { durationMs: action.durationMs } : {}),
         }), signal)
-      case 'type': return this.send({ type: 'text', text: action.text })
+      // `enterText`, not a raw `text` input: this is an agent asking for a string to
+      // end up in a field, which is a different request from the panel's raw
+      // keystrokes even though both start as characters.
+      case 'type': return this.enterText(action.text)
+      // Replaces without reading first, which is what makes it safe to clear with: the
+      // read-modify-write behind `type` has an empty field's placeholder to trip over.
+      case 'setText':
+        return this.send({ type: 'insertText', text: action.text, replace: true })
       case 'key': {
         // Android-only buttons. Refused by name rather than silently ignored: an
         // agent told "iOS has no back button" reaches for the app's own control,
@@ -338,7 +345,14 @@ export class IosSimulatorBackend implements TouchDeviceBackend {
   }
 
   private async send(input: IosSimulatorInput): Promise<void> {
-    const result = await this.manager.input(this.udid, input)
+    this.assert(await this.manager.input(this.udid, input))
+  }
+
+  private async enterText(text: string): Promise<void> {
+    this.assert(await this.manager.enterText(this.udid, text))
+  }
+
+  private assert(result: IosSimulatorInputResult): void {
     if (!result.ok) {
       throw new DeviceAgentError('UNSUPPORTED', result.error ?? 'The device rejected the input.')
     }

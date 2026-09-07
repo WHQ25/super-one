@@ -8,6 +8,8 @@ import {
   encodePressure,
   encodeSetClipboard,
   encodeText,
+  encodeControlKey,
+  encodeSelectAll,
   encodeTextInput,
   encodeTouch,
   encodeTouchStep,
@@ -187,6 +189,25 @@ describe('encodeTextInput', () => {
     expect(encodeTextInput('\n')[0]!.readInt32BE(2)).toBe(66)
     expect(encodeTextInput('\r')[0]!.readInt32BE(2)).toBe(66)
     expect(encodeTextInput('\t')[0]!.readInt32BE(2)).toBe(61)
+  })
+
+  it('selects the whole field with Ctrl+A, so what follows replaces it', () => {
+    // How a person does it, and unlike counting backspaces it needs no idea what the
+    // field held — which matters, because what a snapshot says a field contains and
+    // what it contains are not reliably the same string.
+    const [down, up] = encodeSelectAll()
+    expect(down!.readUInt8(0)).toBe(SCRCPY_MSG.INJECT_KEYCODE)
+    expect(down!.readInt32BE(2)).toBe(29) // KEYCODE_A
+    // META_CTRL_ON is what makes TextView read this as `selectAll` and not as an `a`.
+    expect(down!.readInt32BE(10)).toBe(0x1000)
+    expect(up!.readUInt8(1)).toBe(1)
+  })
+
+  it('names the control characters that are keystrokes, and only those', () => {
+    expect(encodeControlKey('\n')![0]!.readInt32BE(2)).toBe(66) // ENTER
+    expect(encodeControlKey('\t')![0]!.readInt32BE(2)).toBe(61) // TAB
+    expect(encodeControlKey('\b')![0]!.readInt32BE(2)).toBe(67) // DEL
+    expect(encodeControlKey('a')).toBeNull()
   })
 
   it('never splits one string across both channels', () => {

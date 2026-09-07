@@ -161,6 +161,16 @@ export class MirrorBackend implements TouchDeviceBackend {
       case 'type':
         await typeMirrorText(snapshot, action.text)
         return
+      case 'setText':
+        // Replacing needs a way to select what is there first, and mirroring forwards
+        // only its own shortcuts — Cmd+1/2/3 — so there is nothing to select with.
+        // Named rather than degraded into an append, which is what an agent asking to
+        // clear a field would be least able to notice.
+        throw new DeviceAgentError(
+          'UNSUPPORTED',
+          'A mirrored iPhone cannot have a field replaced: mirroring forwards typing but no '
+          + 'select-all. Clear the field with taps and type, or drive an iOS Simulator instead.',
+        )
       case 'key': {
         const key = BUTTON_KEYS[action.button]
         if (!key) {

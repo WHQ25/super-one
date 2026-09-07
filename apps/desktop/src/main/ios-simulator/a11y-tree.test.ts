@@ -104,6 +104,48 @@ describe('normalizeAccessibilityTree', () => {
     expect(refs.get('@e2')).toBe(11)
   })
 
+  it('reads an empty field as empty, not as holding its own placeholder', () => {
+    // An empty UITextField answers AXValue with its placeholder — that is how
+    // VoiceOver reads one — so a search box nobody had typed in reported
+    // `value: 'Search all sessions…'`, which is enough to satisfy a textEquals wait
+    // for text that was never entered.
+    const { root } = normalizeAccessibilityTree(dump({
+      uid: 0,
+      role: 'AXApplication',
+      frame: [0, 0, 440, 956],
+      children: [{
+        uid: 10,
+        role: 'AXTextField',
+        value: 'Search all sessions…',
+        placeholder: 'Search all sessions…',
+      }],
+    }), 'portrait')
+    const field = root.children?.[0]
+    expect(field).not.toHaveProperty('value')
+    // The prompt still names the control, the way an EditText's hint does on Android.
+    expect(field?.label).toBe('Search all sessions…')
+  })
+
+  it('keeps a value that only resembles the placeholder in length', () => {
+    const { root } = normalizeAccessibilityTree(dump({
+      uid: 0,
+      role: 'AXApplication',
+      frame: [0, 0, 440, 956],
+      children: [{ uid: 10, role: 'AXTextField', value: 'audit', placeholder: 'Search all sessions…' }],
+    }), 'portrait')
+    expect(root.children?.[0]?.value).toBe('audit')
+  })
+
+  it('prefers the app\'s own label over the placeholder', () => {
+    const { root } = normalizeAccessibilityTree(dump({
+      uid: 0,
+      role: 'AXApplication',
+      frame: [0, 0, 440, 956],
+      children: [{ uid: 10, role: 'AXTextField', label: 'Search sessions', placeholder: 'Search all sessions…' }],
+    }), 'portrait')
+    expect(root.children?.[0]?.label).toBe('Search sessions')
+  })
+
   it('carries the identifier through, since it outlives copy changes', () => {
     const { root } = normalizeAccessibilityTree(sample, 'portrait')
     expect(root.children?.[0]?.identifier).toBe('Settings')

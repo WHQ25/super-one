@@ -91,6 +91,35 @@ Set `recording: true` to save a short video containing only this transaction.
 The result is `worked` / `didnt` / `unknown`. Pass `expect` to define what
 success means, and the tool waits for it rather than guessing.
 
+## Typing
+
+`type` inserts at the cursor. `setText` replaces the field's whole value, and
+`setText` with `text: ""` is how you clear one — typing an empty string is
+refused, because doing nothing and reporting success reads as "the field is now
+empty". Reach for `setText` whenever you mean "make this field say X"; `type`
+into a field that already has content appends to it.
+
+Both need something focused first. Tap the field in one action and type in the
+next — the batch inserts a short settle between a tap and the typing after it,
+and iOS additionally waits for the focus to land, but a field that never takes
+focus fails rather than typing into nowhere.
+
+Two things worth knowing when what arrives is not what you sent:
+
+- **The guest's keyboard cannot eat your text, but it can eat keystrokes.** Text
+  is delivered through a channel no input method sees — accessibility on iOS, the
+  clipboard on Android — while Return, Tab and Backspace go as real keys so submit
+  handlers fire. On iOS, a control that refuses to be written to falls back to
+  keystrokes for everything, and on a guest set to a composing keyboard (Pinyin,
+  Kana) that is reported as a failure naming the keyboard rather than silently
+  mangled.
+- **The device clipboard is borrowed, not taken.** Android types by pasting, and
+  puts back whatever was on the clipboard afterwards.
+
+`keyboard: {connected}` controls whether a hardware keyboard is *attached* — iOS
+raises its on-screen keyboard only when a field has focus and none is. It has no
+effect on which input method processes keys, so it will not fix mangled text.
+
 ## `device_wait_for`
 
 Use it instead of a snapshot loop. It distinguishes `preexisting` (already true

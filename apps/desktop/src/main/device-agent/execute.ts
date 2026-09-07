@@ -147,6 +147,33 @@ function aimsAtSnapshot(action: Record<string, unknown>): boolean {
     || typeof action.y === 'number'
 }
 
+/**
+ * Long enough for a field the previous action just tapped to become the focused one.
+ *
+ * Measured against nothing in particular — it is a settle, not a deadline, and the
+ * backends that can verify focus retry past it anyway. Its job is to keep the common
+ * case off the retry path rather than to be the guarantee.
+ */
+const FOCUS_SETTLE_MS = 250
+
+/** Actions after which the guest may still be deciding what has focus. */
+const MOVES_FOCUS = new Set(['press', 'tap', 'doubleTap', 'key'])
+const NEEDS_FOCUS = new Set(['type', 'setText'])
+
+/**
+ * Whether to let the screen catch up before typing.
+ *
+ * A batch runs its actions back to back, which is right for gestures and wrong the
+ * moment one of them is meant to focus a field: on iOS the text arrived before
+ * `AXFocusedUIElement` existed and the whole call failed, and on Android — where
+ * keystrokes need no focus to be accepted — it silently went wherever focus happened
+ * to be. Targeted rather than a blanket delay between every pair, so a batch of
+ * gestures still runs at full speed.
+ */
+function needsFocusSettle(previous: ResolvedAction | undefined, next: ResolvedAction): boolean {
+  return previous !== undefined && MOVES_FOCUS.has(previous.kind) && NEEDS_FOCUS.has(next.kind)
+}
+
 export class DeviceAgentSession {
   readonly store = new DeviceStateStore()
 
@@ -298,12 +325,17 @@ export class DeviceAgentSession {
     let applied = true
     let failure: string | undefined
     try {
+      let previous: ResolvedAction | undefined
       for (const action of actions) {
         throwIfDeviceOperationAborted(signal)
+        if (needsFocusSettle(previous, action)) {
+          await waitForDeviceDelay(FOCUS_SETTLE_MS, signal)
+        }
         await this.backend.perform(action, {
           observation: state.observation,
           ...(signal ? { signal } : {}),
         })
+        previous = action
       }
     } catch (error) {
       throwIfDeviceOperationAborted(signal)
@@ -499,7 +531,22 @@ export class DeviceAgentSession {
       }
       case 'type': {
         if (typeof raw.text !== 'string') throw new DeviceAgentError('INVALID_ACTION', 'type needs text.')
+        // Refused rather than sent. Typing nothing is nothing to do on every platform,
+        // so it used to reach the device, do exactly that, and report success — which
+        // reads to an agent trying to empty a field as though the field is now empty.
+        if (!raw.text) {
+          throw new DeviceAgentError(
+            'INVALID_ACTION',
+            'type needs text that is not empty. To empty a field use setText with text: "".',
+          )
+        }
         return { kind: 'type', text: raw.text }
+      }
+      case 'setText': {
+        if (typeof raw.text !== 'string') {
+          throw new DeviceAgentError('INVALID_ACTION', 'setText needs text; pass "" to clear the field.')
+        }
+        return { kind: 'setText', text: raw.text }
       }
       case 'key': {
         if (typeof raw.button !== 'string') throw new DeviceAgentError('INVALID_ACTION', 'key needs a button.')

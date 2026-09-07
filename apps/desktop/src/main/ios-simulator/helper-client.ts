@@ -110,6 +110,20 @@ interface PendingRequest {
 }
 
 /**
+ * A helper failure that kept the bridge's own reason code.
+ *
+ * The code is what lets a caller act on WHICH failure it was rather than on its
+ * wording — see `IOS_SIMULATOR_INPUT_ERROR`, where two codes ask for opposite
+ * responses from the same-looking error.
+ */
+class HelperRequestError extends Error {
+  constructor(message: string, readonly code?: number) {
+    super(message)
+    this.name = 'HelperRequestError'
+  }
+}
+
+/**
  * Reassembles the helper's length-prefixed frame records off the socket.
  *
  * Chunks are held in a list and joined once, when a whole record has arrived. The
@@ -316,7 +330,12 @@ export class IosSimulatorHelperRuntime {
     this.pending.delete(value.id)
     clearTimeout(pending.timer)
     if (value.ok === true) pending.resolve(value.result)
-    else pending.reject(new Error(typeof value.error === 'string' ? value.error : 'iOS helper request failed.'))
+    else {
+      pending.reject(new HelperRequestError(
+        typeof value.error === 'string' ? value.error : 'iOS helper request failed.',
+        typeof value.errorCode === 'number' ? value.errorCode : undefined,
+      ))
+    }
   }
 
   private request(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
@@ -503,7 +522,13 @@ export class IosSimulatorHelperRuntime {
         reason: error instanceof Error ? error.message : String(error),
         ...touchTrace(input),
       })
-      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+        ...(error instanceof HelperRequestError && error.code !== undefined
+          ? { code: error.code }
+          : {}),
+      }
     }
   }
 

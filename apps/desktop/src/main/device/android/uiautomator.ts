@@ -212,10 +212,16 @@ export function uiautomatorToTree(
     // visible text is what a person would call this control, and putting it in `label`
     // is what makes a query written against iOS find the same button here. An editable
     // field is the exception: its text is what the USER typed, which is a value.
+    const hint = attributes.hint?.trim() ?? ''
     if (EDITABLE.has(role)) {
       if (described) node.label = described
-      else if (attributes.hint?.trim()) node.label = attributes.hint.trim()
-      if (text) node.value = text
+      else if (hint) node.label = hint
+      // `text` is `AccessibilityNodeInfo.getText()`, and `TextView` fills that from
+      // the HINT when the field is empty — so an untouched search box reports its own
+      // prompt as the text someone typed, which is enough to satisfy a textEquals wait
+      // for a value that was never entered. The dump carries both, so the two are
+      // separable here; only iOS, which reports one attribute for both, is not.
+      if (text && text !== hint) node.value = text
     } else {
       const label = described || text
       if (label) node.label = label

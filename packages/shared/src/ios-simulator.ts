@@ -1,13 +1,15 @@
 import type { DeviceOrientation } from './device-agent'
+import type { DeviceTextSegment } from './device'
 import {
   DEVICE_MAX_TOUCH_CONTACTS,
   DEVICE_ORIENTATION_CYCLE,
   DEVICE_ROTATION_DEGREES,
   isDeviceLandscape,
+  splitDeviceText,
   stepDeviceOrientation,
 } from './device'
 
-export const IOS_SIMULATOR_PROTOCOL_VERSION = 9 as const
+export const IOS_SIMULATOR_PROTOCOL_VERSION = 10 as const
 /**
  * The neutral device vocabulary, under this platform's old names.
  *
@@ -22,6 +24,9 @@ export const IOS_SIMULATOR_ROTATION_DEGREES = DEVICE_ROTATION_DEGREES
 export const IOS_SIMULATOR_ORIENTATION_CYCLE = DEVICE_ORIENTATION_CYCLE
 export const isIosSimulatorLandscape = isDeviceLandscape
 export const stepIosSimulatorOrientation = stepDeviceOrientation
+/** Shared with Android: both platforms made the same routing mistake. */
+export type IosSimulatorTextSegment = DeviceTextSegment
+export const splitIosSimulatorText = splitDeviceText
 
 /**
  * Characters a simulated hardware keyboard can actually produce.
@@ -36,19 +41,8 @@ export const stepIosSimulatorOrientation = stepDeviceOrientation
 // eslint-disable-next-line no-control-regex
 const TYPEABLE = /^[\u0008\u0009\u000a\u000d\u0020-\u007e\u007f]*$/
 
-/**
- * Below this, a keystroke goes out as a keystroke. Above it direct text insertion is
- * faster and less fragile: the helper holds its serial input queue for ~22ms per
- * character, so replaying a paragraph would otherwise block touches for seconds.
- */
-export const IOS_SIMULATOR_MAX_TYPED_CHARACTERS = 8
-
 export function isIosSimulatorTextTypeable(text: string): boolean {
   return TYPEABLE.test(text)
-}
-
-export function canTypeIosSimulatorText(text: string): boolean {
-  return text.length <= IOS_SIMULATOR_MAX_TYPED_CHARACTERS && isIosSimulatorTextTypeable(text)
 }
 
 export type IosSimulatorPreviewMode = 'native-framebuffer' | 'native-h264'
@@ -157,8 +151,15 @@ export type IosSimulatorInput =
   | { type: 'tap'; xRatio: number; yRatio: number }
   | { type: 'drag'; startXRatio: number; startYRatio: number; endXRatio: number; endYRatio: number; durationMs?: number }
   | { type: 'text'; text: string }
-  /** Replace the focused editable control's selection without using the pasteboard. */
-  | { type: 'insertText'; text: string }
+  /**
+   * Write text into the focused editable control directly, past the guest's keyboard.
+   *
+   * `replace` decides whether the control's whole value is overwritten or the text is
+   * spliced into its selection. Overwriting is a write with no read, which is the only
+   * shape that cannot go wrong: an empty field reports its PLACEHOLDER as `AXValue`,
+   * so splicing into one used to commit the placeholder as real text.
+   */
+  | { type: 'insertText'; text: string; replace?: boolean }
   | { type: 'rotate'; orientation: IosSimulatorOrientation }
   | { type: 'button'; button: 'home' | 'lock' | 'side' | 'volume-up' | 'volume-down' }
   /**
@@ -172,7 +173,27 @@ export interface IosSimulatorInputResult {
   ok: boolean
   skippedCharacters?: number
   error?: string
+  /**
+   * The helper's own reason code, when it had one. See `IOS_SIMULATOR_INPUT_ERROR`.
+   *
+   * Carried separately from `error` because two of these mean opposite things to a
+   * caller — one says "try again in a moment", the other says "this control will never
+   * take text, use the keyboard" — and telling them apart by matching English prose is
+   * how a fallback silently starts firing on the wrong failure.
+   */
+  code?: number
 }
+
+/**
+ * Reason codes the helper's accessibility bridge reports, mirroring the `NSError`
+ * codes in `AccessibilityBridge.m`. Widen both together.
+ */
+export const IOS_SIMULATOR_INPUT_ERROR = {
+  /** Nothing has focus yet. Retryable: a tap's focus takes a moment to land. */
+  NOT_FOCUSED: 31,
+  /** The focused control refuses to be written to. Not retryable; use the keyboard. */
+  NOT_EDITABLE: 32,
+} as const
 
 /**
  * Preview-only knobs. Screenshots and recordings read the device display through

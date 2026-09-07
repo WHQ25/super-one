@@ -3,6 +3,7 @@ import { Adb, type AdbResult, type RunAdb } from '../device/android/adb'
 import { Avd } from '../device/android/avd'
 import { AndroidDeviceManager } from '../device/android/android-device-manager'
 import type { ScrcpyConnection } from '../device/android/scrcpy-server'
+import type { ScrcpyDeviceMessage } from '../device/android/scrcpy-protocol'
 import { MOTION, SCRCPY_MSG } from '../device/android/scrcpy-control'
 import { ANDROID_LAUNCHER_DUMP } from '../../test/fixtures/android-uiautomator'
 import { AndroidBackend, readPngSize } from './android-backend'
@@ -50,6 +51,8 @@ async function harness(options: {
   connectionScreen?: { width: number; height: number }
   /** A phone that refuses injected input — see `faultFromServerLog`. */
   controlFault?: string
+  /** What the device says is on its clipboard, when it has said anything. */
+  clipboard?: string
 } = {}): Promise<Harness> {
   const calls: string[][] = []
   const screens = options.screens ?? [png(1080, 2400)]
@@ -91,6 +94,12 @@ async function harness(options: {
     onMedia: () => () => {},
     onSession: () => () => {},
     onClosed: () => () => {},
+    // The server states the device clipboard on connect and on every change; the
+    // backend has to know it before it overwrites it to paste.
+    onDeviceMessage: (listener: (message: ScrcpyDeviceMessage) => void) => {
+      if (options.clipboard !== undefined) listener({ kind: 'clipboard', text: options.clipboard })
+      return () => {}
+    },
     send: (messages: Buffer | readonly Buffer[]) => {
       sent.push(...(Array.isArray(messages) ? messages : [messages as Buffer]))
     },
@@ -266,6 +275,81 @@ describe('performing actions', () => {
     const shell = calls.map((call) => call.join(' '))
     expect(shell.some((call) => call.includes('accelerometer_rotation 0'))).toBe(true)
     expect(shell.some((call) => call.includes('user_rotation 1'))).toBe(true)
+  })
+})
+
+describe('entering text as an agent means it', () => {
+  const observation = { root: { ref: '@e0', role: 'root' } } as never
+
+  function decode(sent: Buffer[]) {
+    return sent.map((message) => {
+      const type = message.readUInt8(0)
+      if (type === SCRCPY_MSG.SET_CLIPBOARD) {
+        return { type: 'clipboard', paste: message.readUInt8(9) === 1, text: message.subarray(14).toString('utf8') }
+      }
+      if (type === SCRCPY_MSG.INJECT_TEXT) return { type: 'text', text: message.subarray(5).toString('utf8') }
+      if (type === SCRCPY_MSG.INJECT_KEYCODE) {
+        return { type: 'key', keycode: message.readInt32BE(2), action: message.readUInt8(1), meta: message.readInt32BE(10) }
+      }
+      return { type: `unknown:${type}` }
+    })
+  }
+
+  it('pastes rather than typing, because the keyboard would compose it', async () => {
+    const { backend, sent } = await harness()
+    await backend.perform({ kind: 'type', text: 'check' }, { observation })
+
+    // INJECT_TEXT looks like a text channel and is not one: the server reverse-maps
+    // every character through KeyCharacterMap and injects key events, which Android
+    // offers to the input method first. Measured on an emulator with Gboard on Pinyin,
+    // injecting `check` put NOTHING in the field — the letters went into a composition
+    // buffer and a later space committed them as `audit你好`.
+    expect(decode(sent)).toEqual([{ type: 'clipboard', paste: true, text: 'check' }])
+  })
+
+  it('gives the device its clipboard back afterwards', async () => {
+    const { backend, sent } = await harness({ clipboard: 'user-had-this-copied' })
+    await backend.perform({ kind: 'type', text: 'check' }, { observation })
+
+    expect(decode(sent)).toEqual([
+      { type: 'clipboard', paste: true, text: 'check' },
+      { type: 'clipboard', paste: false, text: 'user-had-this-copied' },
+    ])
+  })
+
+  it('has nothing to put back when the device never said what it had', async () => {
+    const { backend, sent } = await harness()
+    await backend.perform({ kind: 'type', text: 'check' }, { observation })
+    expect(sent).toHaveLength(1)
+  })
+
+  it('keeps control characters as keystrokes, so Return still submits', async () => {
+    const { backend, sent } = await harness()
+    await backend.perform({ kind: 'type', text: 'check\n' }, { observation })
+
+    expect(decode(sent)).toEqual([
+      { type: 'clipboard', paste: true, text: 'check' },
+      { type: 'key', keycode: 66, action: 0, meta: 0 },
+      { type: 'key', keycode: 66, action: 1, meta: 0 },
+    ])
+  })
+
+  it('selects the field before replacing it', async () => {
+    const { backend, sent } = await harness()
+    await backend.perform({ kind: 'setText', text: 'theme' }, { observation })
+
+    const decoded = decode(sent)
+    expect(decoded[0]).toEqual({ type: 'key', keycode: 29, action: 0, meta: 0x1000 })
+    expect(decoded.at(-1)).toEqual({ type: 'clipboard', paste: true, text: 'theme' })
+  })
+
+  it('clears a field by selecting it and deleting, touching no clipboard', async () => {
+    const { backend, sent } = await harness({ clipboard: 'keep-me' })
+    await backend.perform({ kind: 'setText', text: '' }, { observation })
+
+    const decoded = decode(sent)
+    expect(decoded.map((message) => message.type)).toEqual(['key', 'key', 'key', 'key'])
+    expect(decoded[2]).toEqual({ type: 'key', keycode: 67, action: 0, meta: 0 })
   })
 })
 

@@ -183,3 +183,77 @@ function readPts(buffer: Buffer, offset: number): number {
   const raw = buffer.readBigUInt64BE(offset) & 0x1fff_ffff_ffff_ffffn
   return Number(raw)
 }
+
+/**
+ * What the server says back on the control socket.
+ *
+ * Only the clipboard is modelled. The server also sends acknowledgements and UHID
+ * output, and both are skipped rather than parsed: nothing here asks for either, but a
+ * stream that cannot step over an unknown message would resynchronize on a byte
+ * boundary halfway through one and never recover.
+ */
+export type ScrcpyDeviceMessage = { kind: 'clipboard'; text: string }
+
+const DEVICE_MSG = {
+  CLIPBOARD: 0,
+  ACK_CLIPBOARD: 1,
+  UHID_OUTPUT: 2,
+} as const
+
+/**
+ * Reassembles the server's own messages, the mirror of `ScrcpyPacketParser`.
+ *
+ * Kept separate because it reads a different socket with a different framing, and
+ * because until the clipboard needed saving nothing read this socket at all — the
+ * control channel was write-only, and the server's replies piled up in a receive
+ * buffer nobody drained.
+ */
+export class ScrcpyDeviceMessageParser {
+  private pending: Buffer<ArrayBufferLike> = Buffer.alloc(0)
+
+  push(chunk: Buffer): ScrcpyDeviceMessage[] {
+    this.pending = this.pending.length === 0 ? chunk : Buffer.concat([this.pending, chunk])
+    const messages: ScrcpyDeviceMessage[] = []
+    let offset = 0
+
+    for (;;) {
+      const available = this.pending.length - offset
+      if (available < 1) break
+      const type = this.pending[offset]!
+
+      if (type === DEVICE_MSG.CLIPBOARD) {
+        if (available < 5) break
+        const size = this.pending.readUInt32BE(offset + 1)
+        if (available < 5 + size) break
+        messages.push({
+          kind: 'clipboard',
+          text: this.pending.toString('utf8', offset + 5, offset + 5 + size),
+        })
+        offset += 5 + size
+        continue
+      }
+      if (type === DEVICE_MSG.ACK_CLIPBOARD) {
+        if (available < 9) break
+        offset += 9
+        continue
+      }
+      if (type === DEVICE_MSG.UHID_OUTPUT) {
+        if (available < 5) break
+        offset += 5 + this.pending.readUInt16BE(offset + 3)
+        continue
+      }
+      // A type this build does not know is not skippable — its length is part of the
+      // definition — so the only safe move is to stop reading. Dropping the remainder
+      // costs a clipboard restore; guessing a length costs every message after it.
+      offset = this.pending.length
+      break
+    }
+
+    this.pending = offset === 0 ? this.pending : this.pending.subarray(offset)
+    return messages
+  }
+
+  reset(): void {
+    this.pending = Buffer.alloc(0)
+  }
+}

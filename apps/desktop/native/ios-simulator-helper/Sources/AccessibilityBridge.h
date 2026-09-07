@@ -53,9 +53,15 @@ NS_ASSUME_NONNULL_BEGIN
                 error:(NSError **)error
     NS_SWIFT_NAME(perform(action:generation:uid:));
 
-/** Replace the focused editable control's current selection with text. */
-- (BOOL)insertText:(NSString *)text error:(NSError **)error
-    NS_SWIFT_NAME(insert(text:));
+/**
+ * Write text into the focused editable control, past the guest's keyboard.
+ *
+ * `replace` overwrites the whole value; otherwise the text is spliced into the
+ * current selection. Overwriting reads nothing first, which is why it is the only
+ * form that cannot commit a placeholder or a stale caret position into the field.
+ */
+- (BOOL)insertText:(NSString *)text replace:(BOOL)replace error:(NSError **)error
+    NS_SWIFT_NAME(insert(text:replace:));
 
 @end
 

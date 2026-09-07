@@ -22,7 +22,7 @@ static NSArray<NSString *> *S1NodeAttributes(void) {
   static dispatch_once_t once;
   dispatch_once(&once, ^{
     attributes = @[
-      @"AXRole", @"AXSubrole", @"AXDescription", @"AXValue",
+      @"AXRole", @"AXSubrole", @"AXDescription", @"AXValue", @"AXPlaceholderValue",
       @"AXIdentifier", @"AXEnabled", @"AXFocused", @"AXFrame"
     ];
   });
@@ -216,6 +216,14 @@ static NSError *S1AccessibilityError(NSInteger code, NSString *message) {
     NSString *text = [value isKindOfClass:NSString.class] ? value : [value description];
     if (text.length) node[@"value"] = text;
   }
+  // Reported alongside the value rather than folded into it. An empty UITextField
+  // answers AXValue with its PLACEHOLDER, so a consumer given only the value cannot
+  // tell an empty search box from one someone typed its own prompt into. Deciding
+  // that here would hide the ambiguity; `a11y-tree.ts` resolves it, and can be tested.
+  NSString *placeholder = values[@"AXPlaceholderValue"];
+  if ([placeholder isKindOfClass:NSString.class] && placeholder.length) {
+    node[@"placeholder"] = placeholder;
+  }
   if (values[@"AXEnabled"]) node[@"enabled"] = @([values[@"AXEnabled"] boolValue]);
   if (values[@"AXFocused"]) node[@"focused"] = @([values[@"AXFocused"] boolValue]);
 
@@ -344,41 +352,75 @@ static NSError *S1AccessibilityError(NSInteger code, NSString *message) {
   return YES;
 }
 
-- (BOOL)insertText:(NSString *)text error:(NSError **)error {
+- (BOOL)insertText:(NSString *)text replace:(BOOL)replace error:(NSError **)error {
   id application = [self frontmostApplicationElementWithError:error];
   if (!application) return NO;
 
   id focused = ((id (*)(id, SEL, id))objc_msgSend)(
       application, NSSelectorFromString(@"accessibilityAttributeValue:"), @"AXFocusedUIElement");
   if (!focused) {
+    // Code 31 is load-bearing: the host retries on this one and only this one,
+    // because a field focused by a tap takes a moment to become the focused element
+    // and the same call a beat later succeeds.
     if (error) *error = S1AccessibilityError(31, @"No guest input is focused.");
     return NO;
   }
 
-  BOOL settable = ((BOOL (*)(id, SEL, id))objc_msgSend)(
-      focused, NSSelectorFromString(@"accessibilityIsAttributeSettable:"), @"AXSelectedText");
-  if (settable) {
-    ((void (*)(id, SEL, id, id))objc_msgSend)(
-        focused, NSSelectorFromString(@"accessibilitySetValue:forAttribute:"), text, @"AXSelectedText");
+  SEL settableSelector = NSSelectorFromString(@"accessibilityIsAttributeSettable:");
+  SEL setSelector = NSSelectorFromString(@"accessibilitySetValue:forAttribute:");
+  BOOL valueSettable = ((BOOL (*)(id, SEL, id))objc_msgSend)(
+      focused, settableSelector, @"AXValue");
+
+  // Replacing is a write with NO read, which is the whole point of it. Every way the
+  // old read-modify-write went wrong came from trusting what it read back: an empty
+  // field answers AXValue with its placeholder, and a selection made from the edit
+  // menu comes back as a bare caret, so "clear this and type" appended twice over.
+  if (replace) {
+    if (!valueSettable) {
+      if (error) *error = S1AccessibilityError(32, @"The focused guest control cannot accept text.");
+      return NO;
+    }
+    ((void (*)(id, SEL, id, id))objc_msgSend)(focused, setSelector, text, @"AXValue");
+    return YES;
+  }
+
+  // UIKit's own insertion path, when the control offers it: it splices the selection
+  // for us, so there is nothing to read and nothing to get wrong.
+  BOOL selectionSettable = ((BOOL (*)(id, SEL, id))objc_msgSend)(
+      focused, settableSelector, @"AXSelectedText");
+  if (selectionSettable) {
+    ((void (*)(id, SEL, id, id))objc_msgSend)(focused, setSelector, text, @"AXSelectedText");
     return YES;
   }
 
   NSDictionary *values = ((id (*)(id, SEL, id))objc_msgSend)(
       focused, NSSelectorFromString(@"accessibilityMultipleAttributes:"),
-      @[ @"AXValue", @"AXSelectedTextRange" ]);
+      @[ @"AXValue", @"AXSelectedTextRange", @"AXPlaceholderValue" ]);
   NSString *value = [values[@"AXValue"] isKindOfClass:NSString.class] ? values[@"AXValue"] : nil;
   NSValue *rangeValue = [values[@"AXSelectedTextRange"] isKindOfClass:NSValue.class]
       ? values[@"AXSelectedTextRange"] : nil;
-  BOOL valueSettable = ((BOOL (*)(id, SEL, id))objc_msgSend)(
-      focused, NSSelectorFromString(@"accessibilityIsAttributeSettable:"), @"AXValue");
+  NSString *placeholder = [values[@"AXPlaceholderValue"] isKindOfClass:NSString.class]
+      ? values[@"AXPlaceholderValue"] : nil;
+  if (!valueSettable) {
+    if (error) *error = S1AccessibilityError(32, @"The focused guest control cannot accept text.");
+    return NO;
+  }
+  // An empty UITextField reports its placeholder as its value -- that is how
+  // VoiceOver reads an empty field -- so the string this would splice into is not
+  // text anybody typed. Inserting into an empty field is the same operation as
+  // replacing it.
+  BOOL showingPlaceholder = placeholder.length > 0 && [value isEqualToString:placeholder];
+  if (!value || showingPlaceholder) {
+    ((void (*)(id, SEL, id, id))objc_msgSend)(focused, setSelector, text, @"AXValue");
+    return YES;
+  }
   NSRange range = rangeValue.rangeValue;
-  if (!value || !rangeValue || !valueSettable || NSMaxRange(range) > value.length) {
+  if (!rangeValue || NSMaxRange(range) > value.length) {
     if (error) *error = S1AccessibilityError(32, @"The focused guest control cannot accept text.");
     return NO;
   }
   NSString *updated = [value stringByReplacingCharactersInRange:range withString:text];
-  ((void (*)(id, SEL, id, id))objc_msgSend)(
-      focused, NSSelectorFromString(@"accessibilitySetValue:forAttribute:"), updated, @"AXValue");
+  ((void (*)(id, SEL, id, id))objc_msgSend)(focused, setSelector, updated, @"AXValue");
   return YES;
 }
 

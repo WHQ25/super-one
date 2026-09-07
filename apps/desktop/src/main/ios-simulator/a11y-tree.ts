@@ -23,6 +23,13 @@ export interface IosSimulatorRawNode {
   subrole?: string
   label?: string
   value?: string
+  /**
+   * `AXPlaceholderValue` — the prompt an empty field draws, not anything a user typed.
+   *
+   * Carried separately because an empty `UITextField` answers `AXValue` with it, so
+   * the two arrive indistinguishable unless both are asked for.
+   */
+  placeholder?: string
   identifier?: string
   enabled?: boolean
   focused?: boolean
@@ -113,8 +120,16 @@ export function normalizeAccessibilityTree(
     const ref = `@e${next++}`
     refs.set(ref, raw.uid)
     const node: DeviceUiNode = { ref, role: raw.role ?? 'unknown' }
+    // A field's placeholder is the prompt it draws, so it names the control the way a
+    // person would — the same job `label` does everywhere else, and the same place
+    // Android puts an EditText's hint. It is only ever a fallback: an app that wrote
+    // its own accessibility label meant that one.
     if (raw.label) node.label = raw.label
-    if (raw.value) node.value = raw.value
+    else if (raw.placeholder) node.label = raw.placeholder
+    // An empty UITextField answers AXValue with its placeholder, which is how a search
+    // box nobody has typed in came back as `value="Search all sessions…"` — enough to
+    // satisfy a textEquals wait for text that was never entered.
+    if (raw.value && raw.value !== raw.placeholder) node.value = raw.value
     if (raw.identifier) node.identifier = raw.identifier
     if (raw.enabled === false) node.enabled = false
     if (raw.focused === true) node.focused = true

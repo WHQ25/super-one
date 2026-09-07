@@ -32,7 +32,7 @@ const targetFields = {
 const actionSchema = z.object({
   type: z.enum([
     'tap', 'doubleTap', 'longPress', 'swipe', 'pinch',
-    'press', 'type', 'key', 'rotate', 'keyboard',
+    'press', 'type', 'setText', 'key', 'rotate', 'keyboard',
   ]),
   ...targetFields,
   direction: z.enum(['up', 'down', 'left', 'right']).optional()
@@ -46,7 +46,9 @@ const actionSchema = z.object({
   durationMs: z.number().int().min(16).max(10_000).optional()
     .describe('How long the gesture takes. Short swipes flick and coast; long ones drag and stop.'),
   text: z.string().optional()
-    .describe('type: text to enter. Anything the simulated keyboard cannot spell (Chinese, emoji) is pasted automatically.'),
+    .describe('type: text to insert at the cursor, in a field something has already focused. '
+      + 'setText: the field\'s entire new value, replacing whatever is there; pass "" to clear it. '
+      + 'Prefer setText when you mean "make this field say X" — type appends.'),
   button: z.enum(['home', 'lock', 'side', 'volume-up', 'volume-down', 'back', 'app-switch'])
     .optional()
     .describe('key: a hardware button. `back` and `app-switch` are Android-only and are refused elsewhere.'),

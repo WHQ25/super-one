@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { DeviceUiNode } from '@superone/shared/device-agent'
 import { collectNodes, findNode, hasUsableSemantics } from '../tree'
-import { ANDROID_LAUNCHER_DUMP } from '../../../test/fixtures/android-uiautomator'
+import {
+  ANDROID_EMPTY_SEARCH_FIELD_DUMP,
+  ANDROID_LAUNCHER_DUMP,
+} from '../../../test/fixtures/android-uiautomator'
 import {
   orientationForRotation,
   parseBounds,
@@ -89,6 +92,48 @@ describe('label and value, when an app writes both', () => {
 
   it('prefers the description, which is what a screen reader would say', () => {
     expect(byLabel('Google Lens')).toBeDefined()
+  })
+})
+
+describe('an editable field, whose text is a value and not a label', () => {
+  function field(attributes: { text: string; hint?: string; 'content-desc'?: string }): DeviceUiNode {
+    const node = `<node index="0" class="android.widget.EditText" package="app" bounds="[0,0][100,50]" `
+      + Object.entries({ 'content-desc': '', hint: '', ...attributes })
+        .map(([key, value]) => `${key}="${value}"`).join(' ')
+      + ' />'
+    const dump = uiautomatorToTree(`<hierarchy rotation="0">${node}</hierarchy>`, { screen: SCREEN })
+    if (!dump) throw new Error('the field dump failed to parse')
+    return dump.tree.root
+  }
+
+  it('reads a real empty field as empty, not as holding its own hint', () => {
+    // The premise, from a device rather than from a guess: this node carries
+    // text="Search settings" hint="Search settings" with nothing typed into it.
+    const dump = uiautomatorToTree(ANDROID_EMPTY_SEARCH_FIELD_DUMP, { screen: SCREEN })
+    const input = findNode(dump!.tree.root, (node) => node.role === 'textfield')
+    expect(input?.value).toBeUndefined()
+    expect(input?.label).toBe('Search settings')
+  })
+
+  it('reads an empty field as empty, not as holding its own hint', () => {
+    // `text` is `AccessibilityNodeInfo.getText()`, and `TextView` fills that from the
+    // HINT when the field is empty — so an untouched search box reported its own
+    // prompt as the text someone typed, enough to satisfy a textEquals wait for a
+    // value that was never entered.
+    const node = field({ text: 'Search all sessions', hint: 'Search all sessions' })
+    expect(node.value).toBeUndefined()
+    expect(node.label).toBe('Search all sessions')
+  })
+
+  it('keeps text the user actually typed', () => {
+    const node = field({ text: 'audit', hint: 'Search all sessions' })
+    expect(node.value).toBe('audit')
+    expect(node.label).toBe('Search all sessions')
+  })
+
+  it('prefers the app\'s own description over the hint', () => {
+    const node = field({ text: '', hint: 'Search all sessions', 'content-desc': 'Search sessions' })
+    expect(node.label).toBe('Search sessions')
   })
 })
 

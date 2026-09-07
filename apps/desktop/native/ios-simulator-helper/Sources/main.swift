@@ -3,7 +3,7 @@ import Darwin
 import Foundation
 import IOSurface
 
-private let protocolVersion = 9
+private let protocolVersion = 10
 private let writeLock = NSLock()
 
 private func emit(_ value: Any) {
@@ -141,8 +141,21 @@ if CommandLine.arguments.contains("--watch-simulator-app") {
 private enum RequestError: Error, CustomStringConvertible {
   case invalid(String)
   case unavailable(String)
+  /// A bridge failure that carries its own reason code out to the host.
+  ///
+  /// Only worth using where the host must tell two failures apart — "nothing is
+  /// focused yet, try again" against "this control will never take text" — because
+  /// distinguishing those by matching the message text is how a fallback quietly
+  /// starts firing on the wrong one.
+  case failed(String, Int)
   var description: String {
-    switch self { case .invalid(let message), .unavailable(let message): return message }
+    switch self {
+    case .invalid(let message), .unavailable(let message), .failed(let message, _): return message
+    }
+  }
+  var code: Int? {
+    if case .failed(_, let code) = self { return code }
+    return nil
   }
 }
 
@@ -395,11 +408,13 @@ private final class HelperSession {
       guard let text = params["text"] as? String else {
         throw RequestError.invalid("insertText.text is required.")
       }
+      let replace = (params["replace"] as? NSNumber)?.boolValue ?? false
       let accessibility = try requireAccessibility()
       do {
-        try accessibility.insert(text: text)
+        try accessibility.insert(text: text, replace: replace)
       } catch {
-        throw RequestError.unavailable((error as NSError).localizedDescription)
+        let failure = error as NSError
+        throw RequestError.failed(failure.localizedDescription, failure.code)
       }
       return ["ok": true]
     case "rotate":
@@ -565,7 +580,9 @@ do {
         let result = try session.perform(method: method, params: request["params"] as? [String: Any] ?? [:])
         emit(["id": id, "ok": true, "result": result])
       } catch {
-        emit(["id": id, "ok": false, "error": String(describing: error)])
+        var failure: [String: Any] = ["id": id, "ok": false, "error": String(describing: error)]
+        if let code = (error as? RequestError)?.code { failure["errorCode"] = code }
+        emit(failure)
       }
     }
     session.stopStream()

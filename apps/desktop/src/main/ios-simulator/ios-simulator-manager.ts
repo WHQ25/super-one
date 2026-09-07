@@ -1,5 +1,6 @@
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import type {
   IosSimulatorCapture,
   IosSimulatorCaptureKind,
@@ -17,10 +18,11 @@ import type {
   IosSimulatorStatus,
 } from '@superone/shared/ios-simulator'
 import {
-  canTypeIosSimulatorText,
   DEFAULT_IOS_SIMULATOR_PREVIEW_QUALITY,
+  IOS_SIMULATOR_INPUT_ERROR,
   isIosSimulatorTextTypeable,
   isIosSimulatorLandscape,
+  splitIosSimulatorText,
 } from '@superone/shared/ios-simulator'
 import type { IosSimulatorAccessibilityDump, IosSimulatorRawNode } from './a11y-tree'
 import type {
@@ -104,6 +106,9 @@ interface ManagerOptions {
   /** How long to wait for the guest to actually turn before calling it a refusal. */
   rotationConfirmMs?: number
   rotationPollMs?: number
+  /** How long to keep re-offering text to a guest that has not settled its focus yet. */
+  focusConfirmMs?: number
+  focusPollMs?: number
 }
 
 interface NativeSession {
@@ -178,6 +183,8 @@ export class IosSimulatorManager {
   private stopExternalSimulatorWatch: (() => void) | null = null
   private readonly rotationConfirmMs: number
   private readonly rotationPollMs: number
+  private readonly focusConfirmMs: number
+  private readonly focusPollMs: number
   // Host-owned state changes reach the renderer through here. Without it a rotation
   // the agent asked for never left the main process, so the panel kept drawing the
   // device upright around a guest that had turned.
@@ -197,6 +204,8 @@ export class IosSimulatorManager {
     this.watchExternalSimulator = options.watchExternalSimulator ?? (() => () => undefined)
     this.rotationConfirmMs = options.rotationConfirmMs ?? 1_500
     this.rotationPollMs = options.rotationPollMs ?? 100
+    this.focusConfirmMs = options.focusConfirmMs ?? 600
+    this.focusPollMs = options.focusPollMs ?? 50
   }
 
   /**
@@ -473,21 +482,19 @@ export class IosSimulatorManager {
     }
   }
 
+  /**
+   * Raw input, as a PERSON produces it. `{type:'text'}` here is keystrokes.
+   *
+   * Deliberately not routed the way `enterText` routes: someone typing in the panel
+   * with a Pinyin keyboard selected is typing Pinyin ON PURPOSE, and sending their
+   * letters past the composer would take away the only way to type Chinese by hand.
+   * Their keys should also reach a control that is not a text field at all.
+   */
   async input(udid: string, input: IosSimulatorInput): Promise<IosSimulatorInputResult> {
     if (!this.owners.has(udid)) return { ok: false, error: `${udid} is not bound to a session.` }
     try {
       const native = await this.ensureNativeSession(udid)
-      // Long or non-ASCII text goes straight into the focused control. HID usage
-      // codes cannot spell Chinese or emoji, and replaying a paragraph as individual
-      // keys needlessly holds the serial input queue for seconds.
-      if (input.type === 'text' && !canTypeIosSimulatorText(input.text)) {
-        const inserted = await native.client.input({ type: 'insertText', text: input.text })
-        if (inserted.ok || !isIosSimulatorTextTypeable(input.text)) return inserted
-        // Secure/custom controls commonly reject AXValue even though ordinary HID
-        // keystrokes still work. Long ASCII is slower that way, but must not become
-        // impossible merely because the fast path is unavailable.
-        return native.client.input(input)
-      }
+      if (input.type === 'insertText') return this.insertText(udid, native, input)
       const result = await native.client.input(input)
       if (input.type === 'rotate') return this.settleRotation(udid, input.orientation, result)
       if (input.type === 'keyboard' && result.ok) {
@@ -497,6 +504,128 @@ export class IosSimulatorManager {
       return result
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  }
+
+  /**
+   * Enter text the way an AGENT means it, choosing a channel per character class.
+   *
+   * Text goes through accessibility and control characters go through the keyboard.
+   * The old rule sent anything short and ASCII as HID usage codes, which is the one
+   * channel the guest's input method sits on: with Pinyin selected, `check` reached
+   * the composer and arrived as `chee c k`, while Chinese — which HID cannot spell, so
+   * it took the other path — was always correct. Nothing about that was a property of
+   * the text; it was a property of the channel.
+   *
+   * Separate from `input` because the two callers want opposite things from the same
+   * keystrokes: an agent asked for the string to end up in the field, a person at the
+   * panel asked for the keys to be pressed. Only the first is a mistake to compose.
+   *
+   * Sent in order and awaited one at a time. Android measured that splitting a string
+   * across two transports lets the second overtake the first (`hi 中文` landed as
+   * `hi中文 `); here the accessibility write is a synchronous round trip to the guest,
+   * so it has already been applied before the next segment is built.
+   */
+  async enterText(udid: string, text: string): Promise<IosSimulatorInputResult> {
+    if (!this.owners.has(udid)) return { ok: false, error: `${udid} is not bound to a session.` }
+    try {
+      return await this.deliverText(udid, await this.ensureNativeSession(udid), text)
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  }
+
+  private async deliverText(
+    udid: string,
+    native: NativeSession,
+    text: string,
+  ): Promise<IosSimulatorInputResult> {
+    let result: IosSimulatorInputResult = { ok: true }
+    for (const segment of splitIosSimulatorText(text)) {
+      result = segment.kind === 'key'
+        ? await native.client.input({ type: 'text', text: segment.text })
+        : await this.insertText(udid, native, { type: 'insertText', text: segment.text })
+      if (!result.ok) return result
+    }
+    return result
+  }
+
+  /**
+   * Write text into the focused control, waiting out a focus that has not landed yet.
+   *
+   * Only `NOT_FOCUSED` is retried, and only `NOT_EDITABLE` falls back to the keyboard.
+   * Those are opposite situations wearing the same shape: one is a race that a beat
+   * later resolves itself, the other is a control that will never take a value. Before
+   * the helper reported codes this had to be guessed from the message, and falling
+   * back on the wrong one is worse than failing — HID accepts keystrokes with nothing
+   * focused, so the text goes nowhere and the tool still reports success.
+   */
+  private async insertText(
+    udid: string,
+    native: NativeSession,
+    input: Extract<IosSimulatorInput, { type: 'insertText' }>,
+  ): Promise<IosSimulatorInputResult> {
+    const deadline = Date.now() + this.focusConfirmMs
+    let result = await native.client.input(input)
+    while (!result.ok && result.code === IOS_SIMULATOR_INPUT_ERROR.NOT_FOCUSED) {
+      if (Date.now() >= deadline) {
+        return {
+          ...result,
+          error: 'No guest input is focused. If a tap or press earlier in this batch was '
+            + 'meant to focus a field, the screen had not settled yet — split the batch, '
+            + 'so the tap runs in one device_act and the typing in the next.',
+        }
+      }
+      await delay(this.focusPollMs)
+      result = await native.client.input(input)
+    }
+    if (result.ok || result.code !== IOS_SIMULATOR_INPUT_ERROR.NOT_EDITABLE) return result
+    // Secure and custom controls commonly refuse AXValue while ordinary keystrokes
+    // still work. Slower and exposed to the guest's input method, but a control that
+    // can only be typed into must not become one that cannot be typed into at all.
+    if (!isIosSimulatorTextTypeable(input.text)) return result
+    const typed = await native.client.input({ type: 'text', text: input.text })
+    if (!typed.ok) return typed
+    // The keystrokes went out, but on a guest with a composing input method they are
+    // not what arrives. Reported as a failure rather than a warning because there is
+    // nowhere for a warning to go — `perform` returns void, so a caveat attached to a
+    // success is a caveat nobody reads — and because silently mangled text is the
+    // exact failure this whole path exists to stop.
+    const composing = await this.composingKeyboardMode(udid)
+    if (!composing) return typed
+    return {
+      ok: false,
+      error: `That control refuses direct text, so it can only be typed into with `
+        + `keystrokes — and this guest's keyboard is ${composing}, which composes `
+        + 'keystrokes through its input method, so what landed in the field is probably '
+        + 'not what was sent. Switch the simulator\'s keyboard to English '
+        + '(Settings › General › Keyboard) and try again.',
+    }
+  }
+
+  /**
+   * The guest's current input mode, when it is one that composes keystrokes.
+   *
+   * Read off the guest's own preferences on disk — no guest interaction and no simctl
+   * spawn. It is whatever cfprefsd last flushed rather than live state, which is why
+   * it only ever annotates an answer and never decides one.
+   */
+  private async composingKeyboardMode(udid: string): Promise<string | null> {
+    try {
+      const raw = await readFile(join(
+        homedir(), 'Library/Developer/CoreSimulator/Devices', udid,
+        'data/Library/Preferences/com.apple.keyboard.preferences.plist',
+      ))
+      // Scanned rather than parsed: it is a binary plist, and the only thing wanted
+      // from it is one ASCII run. This file holds the current and last-used modes and
+      // not the installed list, so the first match is a mode the guest is actually on.
+      const mode = /[a-z]{2}_[A-Za-z]+(?:-[A-Za-z]+)?@sw=[A-Za-z-]+/
+        .exec(raw.toString('latin1'))?.[0]
+      // A Roman layout passes keystrokes through untouched; every other one is a
+      // candidate for eating them.
+      return mode && !/^en[_-]/i.test(mode) ? mode : null
+    } catch {
+      return null
     }
   }
 

@@ -343,6 +343,49 @@ export interface DeviceTouchContact {
  * instruction. Each backend translates these into its own transport — HID messages for
  * the simulator helper, `INJECT_*` for scrcpy.
  */
+/**
+ * The characters that are a KEYSTROKE rather than a character.
+ *
+ * Return submits, Tab moves on, Backspace deletes. Delivered as text, each produces
+ * its glyph and none of its behaviour, so these keep going out as keys.
+ */
+const CONTROL_KEYS = new Set(['\b', '\t', '\n', '\r', '\u007f'])
+
+export type DeviceTextSegment =
+  /** Delivered whole, through a channel the guest's input method does not sit on. */
+  | { kind: 'insert'; text: string }
+  /** Delivered as one keystroke, because the guest must react to the key itself. */
+  | { kind: 'key'; text: string }
+
+/**
+ * How an agent's text is delivered: which parts are text and which are keys.
+ *
+ * Shared because the mistake it prevents was made independently on both platforms, in
+ * mirror-image forms. Each routed text by what a channel COULD carry — short ASCII as
+ * HID usage codes on iOS, printable ASCII through `INJECT_TEXT` on Android — and each
+ * of those channels is the one the guest's input method owns. Measured on both: with
+ * Pinyin selected, iOS turned `check` into `chee c k`, and Android swallowed `check`
+ * whole into a composition buffer that later committed `nihao` as `\u4f60\u597d`. What can
+ * carry the text and what delivers it unaltered are different questions.
+ *
+ * Control characters are the exception in the other direction, and stay on the
+ * keyboard. With no letters left on that channel there is no composition in flight for
+ * them to disturb.
+ */
+export function splitDeviceText(text: string): DeviceTextSegment[] {
+  const segments: DeviceTextSegment[] = []
+  let run = ''
+  // Iterated by code point so an emoji's surrogate pair cannot be split in half.
+  for (const char of text) {
+    if (!CONTROL_KEYS.has(char)) { run += char; continue }
+    if (run) segments.push({ kind: 'insert', text: run })
+    run = ''
+    segments.push({ kind: 'key', text: char })
+  }
+  if (run) segments.push({ kind: 'insert', text: run })
+  return segments
+}
+
 export type DeviceInput =
   | { type: 'touch.update'; contacts: DeviceTouchContact[] }
   | { type: 'touch.cancel' }

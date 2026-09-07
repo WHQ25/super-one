@@ -203,9 +203,16 @@ export class SimctlClient {
   }
 
   /**
-   * Puts text on the device's own pasteboard. This is the only way arbitrary Unicode
-   * reaches a simulator: its keyboard channel speaks HID usage codes, which cannot
-   * express Chinese or emoji any more than a physical keyboard can.
+   * Puts text on the device's own pasteboard.
+   *
+   * Nothing calls this today — text reaches the guest through the helper's
+   * accessibility bridge, which needs no pasteboard and clobbers nothing. It is kept
+   * because it is the one remaining channel that goes through UIKit's REAL insertion
+   * path: if writing `AXValue` ever turns out not to notify the app (a controlled
+   * React Native field whose JS state never learns it changed would look exactly like
+   * that), pasteboard + a Cmd-V keystroke is the fallback, and rebuilding the stdin
+   * plumbing under it — see `runText`, which exists for this and for the locale
+   * handling that stops `pbcopy` mangling UTF-8 — would be the expensive part.
    */
   async writePasteboard(udid: string, text: string): Promise<void> {
     await this.runner.runText(['simctl', 'pbcopy', udid], text)

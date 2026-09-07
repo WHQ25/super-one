@@ -58,7 +58,11 @@ class FakeBackend implements TouchDeviceBackend {
   async perform(action: ResolvedAction, context?: PerformContext): Promise<void> {
     this.performed.push(action)
     this.addressed.push(context?.observation)
+    this.performedAt.push(Date.now())
   }
+
+  /** When each action reached the backend, so a settle between two is observable. */
+  readonly performedAt: number[] = []
 }
 
 function parse(reply: { content: Array<{ text: string }> }): Record<string, unknown> {
@@ -96,6 +100,55 @@ describe('device_act staleness', () => {
     })
     expect(result.isError).toBeUndefined()
     expect(backend.performed[0]).toEqual({ kind: 'tap', x: 0.2, y: 0.25 })
+  })
+})
+
+describe('device_act text entry', () => {
+  const field = () => screen([node('@e1', { role: 'AXTextField', label: 'Search' })])
+
+  async function act(actions: Array<Record<string, unknown>>) {
+    const backend = new FakeBackend([field()])
+    const session = new DeviceAgentSession(backend)
+    const snap = parse(await session.snapshot({}))
+    const reply = await session.act({ stateId: String(snap.stateId), actions })
+    return { backend, reply }
+  }
+
+  it('refuses an empty type instead of doing nothing and reporting success', async () => {
+    const { backend, reply } = await act([{ type: 'type', text: '' }])
+
+    // Typing nothing is nothing to do on every platform, so this used to reach the
+    // device, do exactly that, and come back ok — which reads to an agent trying to
+    // empty a field as though the field is now empty.
+    expect(reply.isError).toBe(true)
+    expect(reply.content[0]!.text).toContain('setText')
+    expect(backend.performed).toHaveLength(0)
+  })
+
+  it('accepts an empty setText, which is how a field is cleared', async () => {
+    const { backend } = await act([{ type: 'setText', text: '' }])
+    expect(backend.performed).toEqual([{ kind: 'setText', text: '' }])
+  })
+
+  it('lets focus settle between a tap and the typing meant to follow it', async () => {
+    const { backend } = await act([
+      { type: 'tap', ref: '@e1' },
+      { type: 'type', text: 'check' },
+    ])
+
+    expect(backend.performed.map((action) => action.kind)).toEqual(['tap', 'type'])
+    // Without the gap the text arrives before the field is the focused element: iOS
+    // failed the whole call, and Android — where keystrokes need no focus — silently
+    // sent it wherever focus happened to be.
+    expect(backend.performedAt[1]! - backend.performedAt[0]!).toBeGreaterThanOrEqual(200)
+  })
+
+  it('does not slow a batch of gestures that types nothing', async () => {
+    const { backend } = await act([
+      { type: 'tap', ref: '@e1' },
+      { type: 'tap', ref: '@e1' },
+    ])
+    expect(backend.performedAt[1]! - backend.performedAt[0]!).toBeLessThan(200)
   })
 })
 

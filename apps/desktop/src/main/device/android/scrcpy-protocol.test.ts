@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   readStreamHeader,
+  ScrcpyDeviceMessageParser,
   ScrcpyPacketParser,
   type ScrcpyMediaPacket,
   type ScrcpySessionPacket,
@@ -194,5 +195,53 @@ describe('reset', () => {
     expect(parser.buffered).toBe(0)
     const [packet] = parser.push(sessionPacket(1080, 2400))
     expect((packet as ScrcpySessionPacket).width).toBe(1080)
+  })
+})
+
+describe('ScrcpyDeviceMessageParser', () => {
+  function clipboard(text: string): Buffer {
+    const payload = Buffer.from(text, 'utf8')
+    const message = Buffer.alloc(5 + payload.length)
+    message.writeUInt8(0, 0)
+    message.writeUInt32BE(payload.length, 1)
+    payload.copy(message, 5)
+    return message
+  }
+
+  it('reads a clipboard push, which is the only way to learn what the device has', () => {
+    // Verbatim from a device: `00 00000014 <20 bytes>`. GET_CLIPBOARD cannot be used to
+    // ask — the server implements it by PRESSING copy — so these pushes are the whole
+    // channel, and they only arrive with `clipboard_autosync=true`, which is not the
+    // server's default.
+    const parser = new ScrcpyDeviceMessageParser()
+    expect(parser.push(clipboard('user-had-this-copied')))
+      .toEqual([{ kind: 'clipboard', text: 'user-had-this-copied' }])
+  })
+
+  it('waits for the rest of a message split across reads', () => {
+    const parser = new ScrcpyDeviceMessageParser()
+    const whole = clipboard('hello')
+    expect(parser.push(whole.subarray(0, 7))).toEqual([])
+    expect(parser.push(whole.subarray(7))).toEqual([{ kind: 'clipboard', text: 'hello' }])
+  })
+
+  it('counts bytes rather than characters, so Chinese survives the boundary', () => {
+    const parser = new ScrcpyDeviceMessageParser()
+    expect(parser.push(clipboard('中文'))).toEqual([{ kind: 'clipboard', text: '中文' }])
+  })
+
+  it('steps over the messages nothing here asked for', () => {
+    const parser = new ScrcpyDeviceMessageParser()
+    const ack = Buffer.alloc(9)
+    ack.writeUInt8(1, 0)
+    // A parser that could not skip an acknowledgement would resynchronize on a byte
+    // in the middle of one and never read a clipboard again.
+    expect(parser.push(Buffer.concat([ack, clipboard('after')])))
+      .toEqual([{ kind: 'clipboard', text: 'after' }])
+  })
+
+  it('stops rather than guessing the length of a message it does not know', () => {
+    const parser = new ScrcpyDeviceMessageParser()
+    expect(parser.push(Buffer.from([0x7f, 1, 2, 3]))).toEqual([])
   })
 })

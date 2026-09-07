@@ -1372,25 +1372,41 @@ export type Messages = {
       updating: string
       loadingHint: string
     }
-    acpGoal: {
+    goal: {
       label: string
+      /** `{{harness}} Goal` — the harness owns the goal, so it owns the title. */
       title: string
-      description: string
-      argumentHint: string
-      placeholder: string
+      /** Slash-command palette row; short, unlike the dialog description. */
+      commandDesc: string
+      noSession: string
       save: string
       edit: string
       pause: string
       resume: string
       clear: string
       status: string
+      iterations_one: string
+      iterations_other: string
+      lastReason: string
+      /** Copy for harnesses whose goal is something to pursue (Codex, Grok). */
+      objective: {
+        description: string
+        argumentHint: string
+        placeholder: string
+      }
+      /** Copy for harnesses whose goal is a condition to satisfy (Claude). */
+      condition: {
+        description: string
+        argumentHint: string
+        placeholder: string
+      }
       statuses: {
         active: string
         paused: string
         blocked: string
+        usageLimited: string
         budgetLimited: string
         complete: string
-        cleared: string
       }
     }
     dropToAttach: string
@@ -1683,27 +1699,6 @@ export type Messages = {
       codeExplored: string
       modelFallback: string
       permissionPreset: string
-      goal: {
-        label: string
-        title: string
-        description: string
-        noThread: string
-        placeholder: string
-        save: string
-        edit: string
-        pause: string
-        resume: string
-        clear: string
-        status: string
-        statuses: {
-          active: string
-          paused: string
-          blocked: string
-          usageLimited: string
-          budgetLimited: string
-          complete: string
-        }
-      }
     }
     image: {
       copyImage: string
@@ -2630,8 +2625,6 @@ export type Messages = {
       addDirDesc: string
       providerDesc: string
       mcpDesc: string
-      goalDesc: string
-      goalArg: string
     }
     addDir: {
       nextTurn: string
@@ -5041,25 +5034,37 @@ export const en: Messages = {
       updating: 'Updating slash commands…',
       loadingHint: 'Fetching slash commands from the agent',
     },
-    acpGoal: {
+    goal: {
       label: 'Goal',
-      title: 'Grok Goal',
-      description: 'Set an objective Grok will pursue until it is complete. Pause, resume, or clear it from the Goal control.',
-      argumentHint: '<objective>',
-      placeholder: 'e.g. Migrate the auth module to the new API and land the tests',
+      title: '{{harness}} Goal',
+      commandDesc: "Set or clear this session's goal",
+      noSession: 'Send a message first to start the session, then come back to set a goal.',
       save: 'Save goal',
       edit: 'Edit',
       pause: 'Pause',
       resume: 'Resume',
       clear: 'Clear goal',
       status: 'Status: {{status}}',
+      iterations_one: 'Checked once so far',
+      iterations_other: 'Checked {{count}} times so far',
+      lastReason: 'Latest check: {{reason}}',
+      objective: {
+        description: 'Set an objective {{harness}} will pursue until it is complete. Pause, resume, or clear it from the Goal control.',
+        argumentHint: '<objective>',
+        placeholder: 'e.g. Migrate the auth module to the new API and land the tests',
+      },
+      condition: {
+        description: 'Set a condition {{harness}} checks before it stops. It keeps working until a separate check confirms the condition is met.',
+        argumentHint: '<condition>',
+        placeholder: 'e.g. The auth module runs on the new API and the whole test suite passes',
+      },
       statuses: {
         active: 'Active',
         paused: 'Paused',
         blocked: 'Blocked',
+        usageLimited: 'Usage limited',
         budgetLimited: 'Budget limited',
         complete: 'Complete',
-        cleared: 'Cleared',
       },
     },
     dropToAttach: 'Drop images or PDFs to attach',
@@ -5377,27 +5382,6 @@ export const en: Messages = {
       codeExplored: 'Code Explored',
       modelFallback: 'Codex model',
       permissionPreset: 'Permission Preset',
-      goal: {
-        label: 'Goal',
-        title: 'Codex Goal',
-        description: 'Anchor what this Codex thread is trying to achieve. The model uses it to keep turns on track.',
-        noThread: 'Start a Codex session first (send a message), then come back to set a goal.',
-        placeholder: 'e.g. Refactor the auth middleware to use JWT and ship behind the legacy flag',
-        save: 'Save goal',
-        edit: 'Edit',
-        pause: 'Pause',
-        resume: 'Resume',
-        clear: 'Clear goal',
-        status: 'Status: {{status}}',
-        statuses: {
-          active: 'Active',
-          paused: 'Paused',
-          blocked: 'Blocked',
-          usageLimited: 'Usage limited',
-          budgetLimited: 'Budget limited',
-          complete: 'Complete',
-        },
-      },
     },
     image: {
       copyImage: 'Copy Image',
@@ -6316,8 +6300,6 @@ export const en: Messages = {
       addDirDesc: 'Manage additional working directories',
       providerDesc: 'Choose API provider for this session',
       mcpDesc: 'View MCP servers in this session',
-      goalDesc: 'Set or clear the goal for this Codex thread',
-      goalArg: '[objective]',
     },
     addDir: {
       nextTurn: 'Directory will be available to Codex on the next turn',

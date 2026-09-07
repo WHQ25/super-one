@@ -8,6 +8,7 @@
 import type { AgentEvent, MessageMetadata } from '@superone/shared/agent-types'
 import { mapModelFallbackWire } from '@superone/shared/model-fallback-wire'
 import { readTerminalSlashCommands } from '@superone/shared/slash-commands'
+import { sessionGoalFromClaudeActive } from '@superone/shared/session-goal'
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
 import { buildClaudeResultFailure, isClaudeResultError } from './result-failure'
 
@@ -524,6 +525,13 @@ export function createClaudeAgentEventMapper(
       }
 
       switch (raw.type) {
+        // `/goal` Stop-hook snapshot: a value while the condition is still
+        // unmet, null once it is met or cleared. The desktop mapper in
+        // `claude-query.ts` carries the same case — both paths must stay wired
+        // or the goal silently vanishes on whichever host misses it.
+        case 'active_goal':
+          emit({ type: 'session_goal', goal: sessionGoalFromClaudeActive(raw.value) })
+          break
         case 'system':
           applySystem(raw)
           break

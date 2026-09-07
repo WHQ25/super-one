@@ -66,6 +66,7 @@ function makeHarness(request: (method: string, params?: Record<string, unknown>)
   const onRunComplete = vi.fn()
   const onRunError = vi.fn()
   const onIdle = vi.fn()
+  const onGoalChange = vi.fn()
   const controller = new CodexGoalController({
     getSession: () => session,
     getAuth: () => ({ mode: 'auto' }),
@@ -76,8 +77,9 @@ function makeHarness(request: (method: string, params?: Record<string, unknown>)
     onRunComplete,
     onRunError,
     onIdle,
+    onGoalChange,
   })
-  return { connection, session, controller, onRunStart, onRunComplete, onRunError, onIdle }
+  return { connection, session, controller, onRunStart, onRunComplete, onRunError, onIdle, onGoalChange }
 }
 
 describe('CodexGoalController', () => {
@@ -119,6 +121,10 @@ describe('CodexGoalController', () => {
     )
     expect(harness.onRunError).not.toHaveBeenCalled()
     expect(harness.onIdle).toHaveBeenCalledOnce()
+    // The renderer never polls, so every transition the controller sees has to
+    // be announced — including the terminal one that ends the loop.
+    expect(harness.onGoalChange).toHaveBeenCalledWith(goal('active'))
+    expect(harness.onGoalChange).toHaveBeenLastCalledWith(goal('complete'))
   })
 
   it('waits for the current explicit turn before consuming goal continuation events', async () => {
@@ -140,6 +146,7 @@ describe('CodexGoalController', () => {
       onRunComplete: harness.onRunComplete,
       onRunError: harness.onRunError,
       onIdle: harness.onIdle,
+      onGoalChange: harness.onGoalChange,
     })
     turnMocks.streamTurnEvents.mockResolvedValue({ threadId: 'thread-1', turnId: 'turn-1', usage: null, items: [] })
 

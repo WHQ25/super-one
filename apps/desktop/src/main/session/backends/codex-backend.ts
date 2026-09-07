@@ -54,6 +54,7 @@ import {
 } from '../../codex/codex-turn'
 import { CodexTurnUsageAccumulator } from '../../codex/codex-usage-accumulator'
 import { CodexGoalController } from '../../codex/codex-goal-controller'
+import { sessionGoalFromCodex } from '../../codex/codex-goal-service'
 import {
   listCodexRealtimeTimeline,
   startCodexRealtime,
@@ -310,6 +311,9 @@ export class CodexBackend implements SessionBackend {
         this.emit({ type: 'status_change', status: 'idle' })
         this.currentMessageId = null
         this.flushPendingTaskNotifications()
+      },
+      onGoalChange: (goal) => {
+        this.emit({ type: 'session_goal', goal: sessionGoalFromCodex(goal) })
       },
     })
   }

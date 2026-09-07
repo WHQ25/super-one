@@ -1,5 +1,4 @@
 import type {
-  AcpGoal,
   AgentStatus,
   AskUserQuestionRequest,
   ChatMessage,
@@ -14,6 +13,7 @@ import type {
   PermissionMode,
   PermissionRequest,
   PlanApprovalRequest,
+  SessionGoal,
   SessionInfo,
   SlashCommandInfo,
   SubagentRetryInfo,
@@ -158,7 +158,8 @@ export interface ChatCoreSession {
   selectedAcpModeId: string | null
   acpSlashCommands: SlashCommandInfo[]
   acpSlashCommandsStatus: 'idle' | 'loading' | 'ready' | 'error'
-  acpGoal: AcpGoal | null
+  /** Harness-neutral goal for this session; null when there is none. */
+  sessionGoal: SessionGoal | null
   _latestCodexTodoList: CodexTodoListItem | null
 }
 

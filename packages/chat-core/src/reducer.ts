@@ -185,8 +185,8 @@ export function applyEventToSession(
       }
     }
 
-    case 'acp_goal':
-      return { acpGoal: event.goal }
+    case 'session_goal':
+      return { sessionGoal: event.goal }
   }
   return {}
 }

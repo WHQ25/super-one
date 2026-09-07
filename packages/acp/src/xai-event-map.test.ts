@@ -277,7 +277,7 @@ describe('ACP xAI AgentEvent mapping', () => {
     }))
   })
 
-  it('maps goal_updated onto acp_goal plus task progress', () => {
+  it('maps goal_updated onto session_goal plus task progress', () => {
     const state = createXaiCorrelationState()
     const mid = mapXaiSessionUpdate({
       sessionUpdate: 'goal_updated',
@@ -289,8 +289,8 @@ describe('ACP xAI AgentEvent mapping', () => {
       elapsed_ms: 1000,
     }, state)
     expect(mid[0]).toMatchObject({
-      type: 'acp_goal',
-      goal: { goalId: 'g1', objective: 'Ship feature', status: 'active' },
+      type: 'session_goal',
+      goal: { objective: 'Ship feature', status: 'active', phase: 'executing', tokensUsed: 100 },
     })
     expect(mid[1]).toMatchObject({ type: 'task_started', taskId: 'g1', taskType: 'goal' })
 
@@ -300,7 +300,7 @@ describe('ACP xAI AgentEvent mapping', () => {
       objective: 'Ship feature',
       status: 'cleared',
     }, state)
-    expect(cleared[0]).toEqual({ type: 'acp_goal', goal: null })
+    expect(cleared[0]).toEqual({ type: 'session_goal', goal: null })
   })
 
   it('maps background tasks and follow-up suggestions with deduplication', () => {

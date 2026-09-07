@@ -13,7 +13,7 @@ import type {
   ContextUsageInfo,
   EffortLevel,
 } from '@superone/shared/agent-types'
-import { normalizeAcpGoalStatus, type AcpGoal } from '@superone/shared/acp-goal'
+import { normalizeAcpGoalStatus, sessionGoalFromAcp, type AcpGoal } from '@superone/shared/acp-goal'
 import {
   isAlwaysHiddenToolName,
   resolveGrokStreamingToolName,
@@ -1085,7 +1085,7 @@ function mapGoalUpdated(u: Record<string, unknown>, state: XaiCorrelationState):
     ...(pauseMessage ? { pauseMessage } : {}),
     ...(phase ? { phase } : {}),
   }
-  events.push({ type: 'acp_goal', goal: goal.status === 'cleared' ? null : goal })
+  events.push({ type: 'session_goal', goal: sessionGoalFromAcp(goal) })
   if (!state.goalStarted.has(goalId)) {
     state.goalStarted.add(goalId)
     events.push({

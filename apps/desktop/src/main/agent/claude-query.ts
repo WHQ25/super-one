@@ -4,6 +4,7 @@ import { resolveMappedClaudeModelId } from '@superone/shared/agent-types'
 import type { AgentEvent, PermissionMode, QuestionPreviewFormat, SandboxInfo, SendMessageRequest } from '@superone/shared/agent-types'
 import { mapModelFallbackWire, MODEL_FALLBACK_SUBTYPES } from '@superone/shared/model-fallback-wire'
 import { readTerminalSlashCommands } from '@superone/shared/slash-commands'
+import { sessionGoalFromClaudeActive } from '@superone/shared/session-goal'
 import {
   buildClaudeResultFailure,
   buildClaudeResultMetadata,
@@ -402,6 +403,17 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
         if (state === 'started' || state === 'completed' || state === 'cancelled' || state === 'refused') {
           emit({ type: 'slash_command_lifecycle', state })
         }
+        continue
+      }
+
+      // Also undeclared: the `/goal` Stop hook pushes its verdict here after
+      // every turn — a value while the condition is still unmet, null once it is
+      // met or the user cleared it. `sdk.mjs` enqueues it onto the query stream
+      // even though `SDKMessage` does not name it.
+      if ((msg as any).type === 'active_goal') {
+        const goal = sessionGoalFromClaudeActive((msg as any).value)
+        log.info('[goal] active_goal iterations=%s objective=%s', goal?.iterations ?? '-', goal?.objective ?? '(cleared)')
+        emit({ type: 'session_goal', goal })
         continue
       }
 

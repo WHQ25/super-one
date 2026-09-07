@@ -25,8 +25,9 @@ import { DebugMentionDecoration, syncDebugMentionHint } from './debug-mention-de
 import { PromptSuggestion } from './prompt-suggestion'
 import { addBrowserImageToChat, extractDraggedImageUrl } from '../browser/browser-image'
 import type { MentionNodeAttrs } from './mention-node'
-import type { CodexGoal, SlashCommandInfo, ImageAttachment } from '@superone/shared/agent-types'
-import { grokGoalComposerAction } from '@superone/shared/acp-goal'
+import type { SlashCommandInfo, ImageAttachment } from '@superone/shared/agent-types'
+import { goalComposerAction } from '@superone/shared/session-goal'
+import { resolveGoalCapability } from '@superone/shared/harness/harness-capabilities'
 import { acpAgentDisplayName, isGrokAcpAgent } from '@superone/shared/acp-brand'
 import type { InputSegment } from '@/stores/chat-store/types'
 import { fuzzyMatch } from '@/lib/fuzzy-match'
@@ -67,12 +68,10 @@ import { plainTextToTiptapDoc, plainTextToTiptapParagraphContent } from './chat-
 import { resolveSlashCommandsForProvider } from './chat-input/resolveSlashCommandsForProvider'
 import { requestSideChat, useCanOpenSideChat } from '@/lib/side-chat-actions'
 import { resolveChatInputPlaceholder } from './chat-input/resolveChatInputPlaceholder'
-import { CodexGoalDialog } from './CodexGoalDialog'
-import { CodexGoalIndicator } from './CodexGoalIndicator'
 import { CodexRealtimeVoiceButton } from './CodexRealtimeVoiceButton'
 import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
-import { GrokGoalDialog } from './GrokGoalDialog'
-import { GrokGoalIndicator } from './GrokGoalIndicator'
+import { GoalDialog } from './GoalDialog'
+import { GoalIndicator } from './GoalIndicator'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 import { buildSessionProjectOptions, mentionQueryAllowsSpaces } from './session-mention-query'
 import { wrapPathRefMention } from './user-mention-parser'
@@ -319,21 +318,17 @@ export function ChatInput() {
     const openCodeSlashCommands = useChatStore(selectOpenCodeCommands)
     const cursorFsSlashItems = useChatStore(selectActiveCursorSlashItems)
     const codexThreadId = useActiveSession((s) => getLatestCodexThreadId(s.messages))
-    const [codexGoal, setCodexGoal] = useState<CodexGoal | null>(null)
     const [goalDialogState, setGoalDialogState] = useState<{ open: boolean; prefill: string }>({ open: false, prefill: '' })
 
+    /**
+     * Codex is the one harness whose goal does not arrive unprompted: the app
+     * server only reports it when asked. The read primes the store rather than
+     * local state — `CodexGoalController` emits `session_goal` off the same
+     * fetch, so everything downstream stays on the shared field.
+     */
     useEffect(() => {
-      if (activeProviderForResources !== 'codex' || !displayedSessionId || !codexThreadId) {
-        setCodexGoal(null)
-        return
-      }
-      let cancelled = false
-      void window.app.codexGetGoal(displayedSessionId, codexThreadId)
-        .then((goal) => {
-          if (!cancelled) setCodexGoal(goal)
-        })
-        .catch(() => {})
-      return () => { cancelled = true }
+      if (activeProviderForResources !== 'codex' || !displayedSessionId || !codexThreadId) return
+      void window.app.codexGetGoal(displayedSessionId, codexThreadId).catch(() => {})
     }, [activeProviderForResources, displayedSessionId, codexThreadId, status])
 
     /**
@@ -361,7 +356,6 @@ export function ChatInput() {
       // /provider command retired — provider selection moved into the model selector (kept for reference)
       // { name: 'provider', description: t('chat.codexCommands.providerDesc'), argumentHint: '', isSkill: false },
       { name: 'mcp', description: t('chat.codexCommands.mcpDesc'), argumentHint: '', isSkill: false },
-      { name: 'goal', description: t('chat.codexCommands.goalDesc'), argumentHint: t('chat.codexCommands.goalArg'), isSkill: false },
       ...codexPrompts,
       ...codexSkills.map((s): SlashCommandInfo => ({ name: s.name, description: s.description, argumentHint: '', isSkill: true })),
     ]), [t, resolvedCodexProviderId, codexPrompts, codexSkills])
@@ -369,12 +363,20 @@ export function ChatInput() {
     const acpSlashCommandsFromAgent = useActiveSession((s) => s.acpSlashCommands)
     const acpSlashCommandsStatus = useActiveSession((s) => s.acpSlashCommandsStatus)
     const acpAgentId = useActiveSession((s) => s.acpAgentId)
-    const acpGoal = useActiveSession((s) => s.acpGoal)
+    const sessionGoal = useActiveSession((s) => s.sessionGoal)
     const acpAgents = useChatStore((s) => s.harnessResources?.acp?.agents)
     const ensureAcpSlashCommands = useChatStore((s) => s.ensureAcpSlashCommands)
     // Catalog may be empty in a fresh mini-window; fall back to id-derived brand name.
     const acpAgentName = acpAgents?.find((a) => a.id === acpAgentId)?.name
       ?? (acpAgentId ? acpAgentDisplayName(acpAgentId) : null)
+
+    // `null` here is the single gate for the whole goal surface: command row,
+    // composer interception, indicator and dialog all hang off it.
+    const goalCapability = resolveGoalCapability(activeProviderForResources, acpAgentId)
+    // ACP is a container, so the brand a goal belongs to is the agent's.
+    const goalHarnessName = activeProviderForResources === 'acp'
+      ? acpAgentName ?? HARNESS_CAPABILITIES.acp.displayName
+      : HARNESS_CAPABILITIES[activeProviderForResources].displayName
     const acpSlashCommands = useMemo<SlashCommandInfo[]>(() => {
       const local: SlashCommandInfo[] = [
         { name: 'clear', description: t('chat.acpCommands.clearDesc'), argumentHint: '', isSkill: false },
@@ -391,12 +393,6 @@ export function ChatInput() {
           name: 'recap',
           description: t('chat.acpCommands.recapDesc'),
           argumentHint: '',
-          isSkill: false,
-        })
-        local.push({
-          name: 'goal',
-          description: t('chat.acpGoal.description'),
-          argumentHint: t('chat.acpGoal.argumentHint'),
           isSkill: false,
         })
       }
@@ -460,15 +456,25 @@ export function ChatInput() {
         // `/side` follows the same single-gate rule as `/add-dir`: a host command
         // over a harness-neutral capability, offered wherever that capability is
         // real rather than copied into each catalog.
-        if (!canOpenSideChat || withDirs.some((c) => c.name === 'side')) return withDirs
-        return [...withDirs, {
-          name: 'side',
-          description: t('sideChat.commandDesc'),
-          argumentHint: '',
+        const withSide = !canOpenSideChat || withDirs.some((c) => c.name === 'side')
+          ? withDirs
+          : [...withDirs, {
+            name: 'side',
+            description: t('sideChat.commandDesc'),
+            argumentHint: '',
+            isSkill: false,
+          }]
+        // `/goal` follows the same single-gate rule. Claude already reports its
+        // own `goal` command, so dedupe rather than offering the row twice.
+        if (!goalCapability || withSide.some((c) => c.name === 'goal')) return withSide
+        return [...withSide, {
+          name: 'goal',
+          description: t('chat.goal.commandDesc'),
+          argumentHint: t(`chat.goal.${goalCapability.semantics}.argumentHint`),
           isSkill: false,
         }]
       },
-      [t, supportsAdditionalDirs, canOpenSideChat, activeProviderForResources, slashCommands, codexSlashCommands, acpSlashCommands, openCodeSlashCommands, cursorSlashCommands, deepseekSlashCommands],
+      [t, supportsAdditionalDirs, canOpenSideChat, goalCapability, activeProviderForResources, slashCommands, codexSlashCommands, acpSlashCommands, openCodeSlashCommands, cursorSlashCommands, deepseekSlashCommands],
     )
 
     const matchingCommands = useMemo(
@@ -933,7 +939,7 @@ export function ChatInput() {
       return result
     }, [clearDraft, serializeDraft])
 
-    const sendGrokGoalSlash = useCallback(async (line: string) => {
+    const sendGoalSlash = useCallback(async (line: string) => {
       await sendMessage(
         line,
         [{ text: line, isPaste: false }],
@@ -942,6 +948,40 @@ export function ChatInput() {
         sessionScope ?? undefined,
       )
     }, [sendMessage, sessionScope])
+
+    /**
+     * Goal transitions, routed by transport rather than by harness.
+     *
+     * `slash` harnesses own the goal themselves and only need the `/goal …`
+     * line posted as a turn; Codex's goal lives in the app server, so each
+     * transition is an explicit call whose result comes back as a
+     * `session_goal` event.
+     */
+    const goalActions = useMemo(() => {
+      if (!goalCapability) return null
+      if (goalCapability.transport === 'slash') {
+        return {
+          save: (objective: string) => sendGoalSlash(`/goal ${objective}`),
+          clear: () => sendGoalSlash('/goal clear'),
+          pause: () => sendGoalSlash('/goal pause'),
+          resume: () => sendGoalSlash('/goal resume'),
+        }
+      }
+      // Codex cannot hold a goal before its thread exists.
+      if (!displayedSessionId || !codexThreadId) return null
+      const sid = displayedSessionId
+      const tid = codexThreadId
+      return {
+        save: async (objective: string) => { await window.app.codexSetGoal(sid, tid, objective) },
+        clear: async () => { await window.app.codexClearGoal(sid, tid) },
+        pause: async () => {
+          if (sessionGoal) await window.app.codexSetGoal(sid, tid, sessionGoal.objective, 'paused')
+        },
+        resume: async () => {
+          if (sessionGoal) await window.app.codexSetGoal(sid, tid, sessionGoal.objective, 'active')
+        },
+      }
+    }, [goalCapability, sendGoalSlash, displayedSessionId, codexThreadId, sessionGoal])
 
     /**
      * Plain text of the composer as the scheduler would send it — mentions in
@@ -1019,17 +1059,8 @@ export function ChatInput() {
     const handleSend = useCallback(() => {
       if (!canSend) return
       const trimmed = text.trim()
-      if (activeProviderForResources === 'codex') {
-        const goalMatch = /^\/goal(?:\s+([\s\S]*))?$/i.exec(trimmed)
-        if (goalMatch) {
-          const prefill = goalMatch[1]?.trim() ?? ''
-          serializeAndClear()
-          setGoalDialogState({ open: true, prefill })
-          return
-        }
-      }
-      if (isGrokAcpAgent(acpAgentId)) {
-        const action = grokGoalComposerAction(trimmed)
+      if (goalCapability) {
+        const action = goalComposerAction(trimmed, goalCapability.lifecycleArgs)
         if (action?.type === 'dialog') {
           serializeAndClear()
           setGoalDialogState({ open: true, prefill: action.prefill })
@@ -1958,22 +1989,15 @@ export function ChatInput() {
             </IconButton>
 
             <ModelSelector onCloseAutoFocus={(e) => { e.preventDefault(); if (editor && !editor.isDestroyed) editor.commands.focus() }} />
-            {activeProviderForResources === 'codex' && displayedSessionId && codexThreadId && codexGoal && (
-              <CodexGoalIndicator
-                sessionId={displayedSessionId}
-                threadId={codexThreadId}
-                goal={codexGoal}
-                onGoalChange={setCodexGoal}
-                onEdit={() => setGoalDialogState({ open: true, prefill: codexGoal.objective })}
-              />
-            )}
-            {activeProviderForResources === 'acp' && isGrokAcpAgent(acpAgentId) && acpGoal && (
-              <GrokGoalIndicator
-                goal={acpGoal}
-                onEdit={() => setGoalDialogState({ open: true, prefill: acpGoal.objective })}
-                onPause={() => sendGrokGoalSlash('/goal pause')}
-                onResume={() => sendGrokGoalSlash('/goal resume')}
-                onClear={() => sendGrokGoalSlash('/goal clear')}
+            {goalCapability && goalActions && sessionGoal && (
+              <GoalIndicator
+                goal={sessionGoal}
+                capability={goalCapability}
+                harnessName={goalHarnessName}
+                onEdit={() => setGoalDialogState({ open: true, prefill: sessionGoal.objective })}
+                onClear={goalActions.clear}
+                onPause={goalActions.pause}
+                onResume={goalActions.resume}
               />
             )}
           </div>
@@ -2010,24 +2034,17 @@ export function ChatInput() {
             <span className="text-xs font-medium text-primary">{t('chat.dropToAttach')}</span>
           </div>
         )}
-        {activeProject && activeProviderForResources === 'codex' && (
-          <CodexGoalDialog
+        {activeProject && goalCapability && (
+          <GoalDialog
             open={goalDialogState.open}
             onOpenChange={(open) => setGoalDialogState((s) => ({ ...s, open }))}
-            sessionId={displayedSessionId}
-            threadId={codexThreadId ?? null}
+            existing={sessionGoal}
+            capability={goalCapability}
+            harnessName={goalHarnessName}
             prefill={goalDialogState.prefill}
-            onGoalChange={setCodexGoal}
-          />
-        )}
-        {activeProject && isGrokAcpAgent(acpAgentId) && (
-          <GrokGoalDialog
-            open={goalDialogState.open}
-            onOpenChange={(open) => setGoalDialogState((s) => ({ ...s, open }))}
-            existing={acpGoal}
-            prefill={goalDialogState.prefill}
-            onSave={(objective) => sendGrokGoalSlash(`/goal ${objective}`)}
-            onClear={() => sendGrokGoalSlash('/goal clear')}
+            unavailable={!goalActions}
+            onSave={(objective) => goalActions?.save(objective) ?? Promise.resolve()}
+            onClear={goalActions ? goalActions.clear : undefined}
           />
         )}
         </div>

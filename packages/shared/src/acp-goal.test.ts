@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  grokGoalComposerAction,
-  isGrokGoalLifecycleArg,
-  normalizeAcpGoalStatus,
-} from './acp-goal'
+import { normalizeAcpGoalStatus, sessionGoalFromAcp } from './acp-goal'
 
 describe('normalizeAcpGoalStatus', () => {
   it('maps Grok wire statuses onto the host enum', () => {
@@ -22,39 +18,49 @@ describe('normalizeAcpGoalStatus', () => {
   })
 })
 
-describe('grokGoalComposerAction', () => {
-  it('opens the dialog for a bare /goal and an objective', () => {
-    expect(grokGoalComposerAction('/goal')).toEqual({ type: 'dialog', prefill: '' })
-    expect(grokGoalComposerAction('/goal  Fix login')).toEqual({
-      type: 'dialog',
-      prefill: 'Fix login',
+describe('sessionGoalFromAcp', () => {
+  it('carries the fields Grok actually reports', () => {
+    expect(
+      sessionGoalFromAcp({
+        goalId: 'g1',
+        objective: 'Migrate auth',
+        status: 'active',
+        tokensUsed: 4200,
+        elapsedMs: 61_000,
+        phase: 'implementing',
+      }),
+    ).toEqual({
+      objective: 'Migrate auth',
+      status: 'active',
+      tokensUsed: 4200,
+      elapsedMs: 61_000,
+      phase: 'implementing',
     })
   })
 
-  it('passes lifecycle subcommands through', () => {
-    expect(grokGoalComposerAction('/goal pause')).toEqual({ type: 'passthrough' })
-    expect(grokGoalComposerAction('/goal STATUS')).toEqual({ type: 'passthrough' })
-    expect(grokGoalComposerAction('/goal resume')).toEqual({ type: 'passthrough' })
-    expect(grokGoalComposerAction('/goal clear')).toEqual({ type: 'passthrough' })
+  it('surfaces a pause message as the shared last-reason field', () => {
+    expect(
+      sessionGoalFromAcp({
+        goalId: 'g1',
+        objective: 'Migrate auth',
+        status: 'paused',
+        tokensUsed: 0,
+        elapsedMs: 0,
+        pauseMessage: 'waiting on review',
+      })?.lastReason,
+    ).toBe('waiting on review')
   })
 
-  it('treats a reserved token inside an objective as a set, not lifecycle', () => {
-    expect(grokGoalComposerAction('/goal pause the rollout')).toEqual({
-      type: 'dialog',
-      prefill: 'pause the rollout',
-    })
-  })
-
-  it('ignores non-goal lines', () => {
-    expect(grokGoalComposerAction('/loop 30m ping')).toBeNull()
-    expect(grokGoalComposerAction('goal Fix login')).toBeNull()
-  })
-})
-
-describe('isGrokGoalLifecycleArg', () => {
-  it('matches the whole arg only', () => {
-    expect(isGrokGoalLifecycleArg('pause')).toBe(true)
-    expect(isGrokGoalLifecycleArg(' pause ')).toBe(true)
-    expect(isGrokGoalLifecycleArg('pause now')).toBe(false)
+  it('maps a cleared goal to no goal at all', () => {
+    expect(
+      sessionGoalFromAcp({
+        goalId: 'g1',
+        objective: 'Migrate auth',
+        status: 'cleared',
+        tokensUsed: 0,
+        elapsedMs: 0,
+      }),
+    ).toBeNull()
+    expect(sessionGoalFromAcp(null)).toBeNull()
   })
 })

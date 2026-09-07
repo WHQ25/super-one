@@ -35,7 +35,7 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     acpSlashCommands: [] as Array<{ name: string; description: string; argumentHint: string; isSkill: boolean }>,
     acpSlashCommandsStatus: 'idle' as 'idle' | 'loading' | 'ready' | 'error',
     acpAgentId: null as string | null,
-    acpGoal: null as { goalId: string; objective: string; status: string; tokensUsed: number; elapsedMs: number } | null,
+    sessionGoal: null as { objective: string; status: string } | null,
     agents: [] as Array<{ name: string }>,
     selectedCodexCollaborationMode: 'default' as const,
     codexPlanRejectHintActive: false,
@@ -353,26 +353,24 @@ vi.mock('./model-selector/useSelectorProviders', () => ({
   useResolvedProviderId: () => providerSelection.resolvedId,
 }))
 
-vi.mock('./CodexGoalIndicator', () => ({
-  CodexGoalIndicator: ({ goal }: { goal: { objective: string } }) => (
-    <div data-testid="codex-goal-indicator">{goal.objective}</div>
+vi.mock('./GoalIndicator', () => ({
+  GoalIndicator: ({ goal, harnessName }: { goal: { objective: string }; harnessName: string }) => (
+    <div data-testid="goal-indicator" data-harness={harnessName}>{goal.objective}</div>
   ),
 }))
 
-vi.mock('./GrokGoalIndicator', () => ({
-  GrokGoalIndicator: ({ goal }: { goal: { objective: string } }) => (
-    <div data-testid="grok-goal-indicator">{goal.objective}</div>
-  ),
-}))
-
-vi.mock('./GrokGoalDialog', () => ({
-  GrokGoalDialog: ({
+vi.mock('./GoalDialog', () => ({
+  GoalDialog: ({
     open,
     prefill,
+    harnessName,
   }: {
     open: boolean
     prefill?: string
-  }) => (open ? <div data-testid="grok-goal-dialog" data-prefill={prefill ?? ''} /> : null),
+    harnessName: string
+  }) => (open
+    ? <div data-testid="goal-dialog" data-prefill={prefill ?? ''} data-harness={harnessName} />
+    : null),
 }))
 
 vi.mock('./ProviderSlashPopup', () => ({
@@ -413,7 +411,7 @@ beforeEach(() => {
   activeSessionState.preferredProvider = 'claude'
   activeSessionState.sessionProvider = null
   activeSessionState.acpAgentId = null
-  activeSessionState.acpGoal = null
+  activeSessionState.sessionGoal = null
   chatActions._cursorSlashItems = []
   activeSessionState.showDirManager = false
   activeSessionState.showReviewPanel = false
@@ -514,26 +512,22 @@ describe('ChatInput', () => {
     }
   })
 
-  it('shows a persisted Goal next to the Codex model controls', async () => {
+  it('primes the Codex goal from the app server, then renders the shared snapshot', async () => {
+    // Codex is the one harness that has to be asked; the read lands in the store
+    // as a `session_goal` event, which is what the indicator actually reads.
     activeSessionState.preferredProvider = 'codex'
     goalState.threadId = 'thread-1'
-    goalState.getGoal.mockResolvedValue({
-      threadId: 'thread-1',
-      objective: 'Ship the goal UX',
-      status: 'active',
-      tokenBudget: null,
-      tokensUsed: 0,
-      timeUsedSeconds: 0,
-      createdAt: 1,
-      updatedAt: 1,
-    })
+    goalState.getGoal.mockResolvedValue(null)
+    activeSessionState.sessionGoal = { objective: 'Ship the goal UX', status: 'active' }
 
     render(<ChatInput />)
 
     await waitFor(() => {
       expect(goalState.getGoal).toHaveBeenCalledWith('session-1', 'thread-1')
     })
-    expect(screen.getByTestId('codex-goal-indicator')).toHaveTextContent('Ship the goal UX')
+    const indicator = screen.getByTestId('goal-indicator')
+    expect(indicator).toHaveTextContent('Ship the goal UX')
+    expect(indicator).toHaveAttribute('data-harness', 'Codex')
   })
 
   it('opens the Grok goal dialog instead of sending /goal', async () => {
@@ -553,7 +547,9 @@ describe('ChatInput', () => {
     fireEvent.click(send!)
 
     expect(chatActions.sendMessage).not.toHaveBeenCalled()
-    expect(screen.getByTestId('grok-goal-dialog')).toHaveAttribute('data-prefill', 'Ship login')
+    const dialog = screen.getByTestId('goal-dialog')
+    expect(dialog).toHaveAttribute('data-prefill', 'Ship login')
+    expect(dialog).toHaveAttribute('data-harness', 'Grok')
   })
 
   it('sends Grok /goal pause through as a prompt', async () => {
@@ -572,24 +568,62 @@ describe('ChatInput', () => {
     fireEvent.click(send!)
 
     expect(chatActions.sendMessage).toHaveBeenCalled()
-    expect(screen.queryByTestId('grok-goal-dialog')).toBeNull()
+    expect(screen.queryByTestId('goal-dialog')).toBeNull()
   })
 
   it('shows a live Grok goal next to the model controls', () => {
     activeSessionState.preferredProvider = 'acp'
     activeSessionState.sessionProvider = 'acp'
     activeSessionState.acpAgentId = 'grok-build'
-    activeSessionState.acpGoal = {
-      goalId: 'g1',
-      objective: 'Ship login',
-      status: 'active',
-      tokensUsed: 0,
-      elapsedMs: 0,
-    }
+    activeSessionState.sessionGoal = { objective: 'Ship login', status: 'active' }
 
     render(<ChatInput />)
 
-    expect(screen.getByTestId('grok-goal-indicator')).toHaveTextContent('Ship login')
+    const indicator = screen.getByTestId('goal-indicator')
+    expect(indicator).toHaveTextContent('Ship login')
+    expect(indicator).toHaveAttribute('data-harness', 'Grok')
+  })
+
+  it('keeps the goal surface out of a harness that has none', () => {
+    activeSessionState.preferredProvider = 'opencode'
+    activeSessionState.sessionProvider = 'opencode'
+    activeSessionState.sessionGoal = { objective: 'Ship login', status: 'active' }
+
+    render(<ChatInput />)
+
+    expect(screen.queryByTestId('goal-indicator')).toBeNull()
+  })
+
+  it('opens the Claude goal dialog instead of sending /goal', async () => {
+    activeSessionState.draftText = '/goal all tests pass'
+    editorState.text = '/goal all tests pass'
+
+    render(<ChatInput />)
+    await waitFor(() => expect(window.app.getScheduledSend).toHaveBeenCalled())
+
+    const send = document.querySelector('button .lucide-arrow-up')?.closest('button')
+    fireEvent.click(send!)
+
+    expect(chatActions.sendMessage).not.toHaveBeenCalled()
+    const dialog = screen.getByTestId('goal-dialog')
+    expect(dialog).toHaveAttribute('data-prefill', 'all tests pass')
+    expect(dialog).toHaveAttribute('data-harness', 'Claude')
+  })
+
+  it('sends Claude /goal clear through as a prompt', async () => {
+    // Claude has no pause, so `clear` is its whole lifecycle vocabulary — it must
+    // reach the CLI rather than reopen the editor on the word "clear".
+    activeSessionState.draftText = '/goal clear'
+    editorState.text = '/goal clear'
+
+    render(<ChatInput />)
+    await waitFor(() => expect(window.app.getScheduledSend).toHaveBeenCalled())
+
+    const send = document.querySelector('button .lucide-arrow-up')?.closest('button')
+    fireEvent.click(send!)
+
+    expect(chatActions.sendMessage).toHaveBeenCalled()
+    expect(screen.queryByTestId('goal-dialog')).toBeNull()
   })
 
   it('passes the mosaic session scope as the sendMessage target', async () => {
@@ -953,10 +987,10 @@ describe('ChatInput slash command grouping', () => {
 
     // Claude accepts extra roots, so the host `/add-dir` entry joins the
     // commands group — skills still come after every command.
-    expect(order.slice(0, 3).sort()).toEqual([
-      '/add-dir[project|session] [dir]', '/clear', '/compact',
+    expect(order.slice(0, 4).sort()).toEqual([
+      '/add-dir[project|session] [dir]', '/clear', '/compact', '/goal<condition>',
     ])
-    expect(order.slice(3, 5).sort()).toEqual(['/release', '/tdd'])
+    expect(order.slice(4, 6).sort()).toEqual(['/release', '/tdd'])
   })
 
   it('limits slash command and skill descriptions to two lines', () => {

@@ -70,7 +70,7 @@ export function createDefaultChatCoreSession(): ChatCoreSession {
     selectedAcpModeId: null,
     acpSlashCommands: [],
     acpSlashCommandsStatus: 'idle',
-    acpGoal: null,
+    sessionGoal: null,
     _latestCodexTodoList: null,
   }
 }

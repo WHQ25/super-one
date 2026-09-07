@@ -2,27 +2,54 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Target, Trash2 } from 'lucide-react'
 import { Button } from '@superone/ui/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@superone/ui/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@superone/ui/components/ui/dialog'
 import { Textarea } from '@superone/ui/components/ui/textarea'
-import type { AcpGoal } from '@superone/shared/agent-types'
+import type { SessionGoal } from '@superone/shared/agent-types'
+import type { GoalCapability } from '@superone/shared/harness/harness-capabilities'
 
-interface GrokGoalDialogProps {
+interface GoalDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  existing: AcpGoal | null
+  existing: SessionGoal | null
+  capability: GoalCapability
+  /** Brand name of whoever owns the goal — `Codex`, `Grok`, `Claude`. */
+  harnessName: string
   prefill?: string
+  /**
+   * Set when the harness cannot accept a goal yet — Codex needs a live thread,
+   * which only exists after the first turn. Blocks the editor and explains why
+   * instead of failing on save.
+   */
+  unavailable?: boolean
   onSave: (objective: string) => Promise<void>
   onClear?: () => Promise<void>
 }
 
-export function GrokGoalDialog({
+/**
+ * Set / replace / clear the session goal.
+ *
+ * The prompt wording follows `capability.semantics`: Codex and Grok take an
+ * objective to pursue, Claude takes a condition to satisfy. Same control, two
+ * genuinely different things to type.
+ */
+export function GoalDialog({
   open,
   onOpenChange,
   existing,
+  capability,
+  harnessName,
   prefill,
+  unavailable = false,
   onSave,
   onClear,
-}: GrokGoalDialogProps) {
+}: GoalDialogProps) {
   const { t } = useTranslation()
   const [objective, setObjective] = useState('')
   const [busy, setBusy] = useState(false)
@@ -34,34 +61,20 @@ export function GrokGoalDialog({
     setObjective(prefill || existing?.objective || '')
   }, [open, prefill, existing])
 
-  const handleSave = useCallback(async () => {
-    const trimmed = objective.trim()
-    if (!trimmed) return
+  const runAndClose = useCallback(async (action: () => Promise<void>) => {
     setBusy(true)
     setError(null)
     try {
-      await onSave(trimmed)
+      await action()
       onOpenChange(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
     setBusy(false)
-  }, [objective, onSave, onOpenChange])
+  }, [onOpenChange])
 
-  const handleClear = useCallback(async () => {
-    if (!onClear || !existing) return
-    setBusy(true)
-    setError(null)
-    try {
-      await onClear()
-      onOpenChange(false)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    }
-    setBusy(false)
-  }, [existing, onClear, onOpenChange])
-
-  const canSave = objective.trim().length > 0 && !busy
+  const trimmed = objective.trim()
+  const canSave = !unavailable && trimmed.length > 0 && !busy
   const canClear = !!existing && !!onClear && !busy
 
   return (
@@ -70,9 +83,13 @@ export function GrokGoalDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Target className="size-4" />
-            {t('chat.acpGoal.title')}
+            {t('chat.goal.title', { harness: harnessName })}
           </DialogTitle>
-          <DialogDescription>{t('chat.acpGoal.description')}</DialogDescription>
+          <DialogDescription>
+            {unavailable
+              ? t('chat.goal.noSession')
+              : t(`chat.goal.${capability.semantics}.description`, { harness: harnessName })}
+          </DialogDescription>
         </DialogHeader>
 
         {error && (
@@ -84,31 +101,31 @@ export function GrokGoalDialog({
         <Textarea
           value={objective}
           onChange={(e) => setObjective(e.target.value)}
-          placeholder={t('chat.acpGoal.placeholder')}
+          placeholder={t(`chat.goal.${capability.semantics}.placeholder`)}
           rows={4}
-          disabled={busy}
+          disabled={unavailable || busy}
           autoFocus
         />
 
         {existing && (
           <p className="text-xs text-muted-foreground">
-            {t('chat.acpGoal.status', { status: t(`chat.acpGoal.statuses.${existing.status}`) })}
+            {t('chat.goal.status', { status: t(`chat.goal.statuses.${existing.status}`) })}
           </p>
         )}
 
         <DialogFooter className="gap-2 sm:gap-2">
           {canClear && (
-            <Button variant="ghost" size="sm" onClick={() => void handleClear()} disabled={busy}>
+            <Button variant="ghost" size="sm" onClick={() => void runAndClose(onClear!)} disabled={busy}>
               <Trash2 className="size-3.5" />
-              {t('chat.acpGoal.clear')}
+              {t('chat.goal.clear')}
             </Button>
           )}
           <div className="flex-1" />
           <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} disabled={busy}>
             {t('common.cancel')}
           </Button>
-          <Button size="sm" onClick={() => void handleSave()} disabled={!canSave}>
-            {t('chat.acpGoal.save')}
+          <Button size="sm" onClick={() => void runAndClose(() => onSave(trimmed))} disabled={!canSave}>
+            {t('chat.goal.save')}
           </Button>
         </DialogFooter>
       </DialogContent>

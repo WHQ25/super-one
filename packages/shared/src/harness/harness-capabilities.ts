@@ -1,4 +1,38 @@
 import type { HarnessId } from './harness-id'
+import { isGrokAcpAgent } from './acp-brand'
+
+/**
+ * How a harness's session goal behaves. `null` on a harness means it has no goal
+ * concept at all, so the composer, the indicator and the dialog stay out.
+ *
+ * Only differences that gate a real branch live here. Which *fields* a goal
+ * carries (iterations, budget, phase) is self-describing on `SessionGoal` —
+ * present means reported — so it is not restated as a flag.
+ */
+export interface GoalCapability {
+  /**
+   * Whole-arg `/goal` tokens the harness interprets itself. The composer passes
+   * these through as plain text instead of opening the host dialog.
+   */
+  lifecycleArgs: readonly string[]
+  /**
+   * Has an explicit pause/resume lifecycle. False means the goal is either set
+   * or gone, so the indicator must omit those controls rather than disable them.
+   */
+  canPause: boolean
+  /**
+   * How a set/clear reaches the harness: `slash` sends `/goal …` as ordinary
+   * turn text, `rpc` calls a dedicated backend method.
+   */
+  transport: 'slash' | 'rpc'
+  /**
+   * What the user is actually writing. Claude wants a *condition* an evaluator
+   * checks ("all tests pass"); Codex and Grok want an *objective* to pursue
+   * ("migrate the auth module"). The two need different prompts and examples —
+   * asking a Claude user for an objective teaches the wrong mental model.
+   */
+  semantics: 'objective' | 'condition'
+}
 
 /**
  * Static capability flags per harness. These describe what each harness's
@@ -44,6 +78,14 @@ export interface HarnessCapabilities {
    * chat: offering them would look like it worked and silently lose everything.
    */
   supportsFork: boolean
+  /**
+   * Session-goal behaviour, or `null` when the harness has no goal concept.
+   *
+   * ACP is a container, not one agent: the entry here describes Grok, the only
+   * ACP agent that ships a goal. Resolve through {@link resolveGoalCapability}
+   * so the per-agent check lives in one named place.
+   */
+  goal: GoalCapability | null
   /** User-facing display name for this harness. */
   displayName: string
 }
@@ -61,6 +103,10 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsAdditionalDirs: true,
     // SDK `forkSession()` copies + remaps the transcript jsonl.
     supportsFork: true,
+    // Built-in `/goal <condition>`: a Stop hook re-checks the condition after
+    // each turn and keeps going until it is met, so there is no paused state —
+    // the goal is either live or cleared.
+    goal: { lifecycleArgs: ['clear'], canPause: false, transport: 'slash', semantics: 'condition' },
     displayName: 'Claude',
   },
   codex: {
@@ -75,6 +121,9 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsAdditionalDirs: true,
     // app-server thread fork, truncatable at a turn id.
     supportsFork: true,
+    // `thread/goal/{get,set,clear}` over the app server; SuperOne drives the
+    // follow-up turns itself, so every transition is an explicit RPC.
+    goal: { lifecycleArgs: [], canPause: true, transport: 'rpc', semantics: 'objective' },
     displayName: 'Codex',
   },
   acp: {
@@ -93,6 +142,14 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     // `session/fork` exists upstream but is UNSTABLE and unread here; the
     // current adapter returns a fresh uuid the agent never saw.
     supportsFork: false,
+    // Grok only — see `resolveGoalCapability`. The agent owns the loop and
+    // reports back over `goal_updated`; the host just posts `/goal …` lines.
+    goal: {
+      lifecycleArgs: ['status', 'pause', 'resume', 'clear'],
+      canPause: true,
+      transport: 'slash',
+      semantics: 'objective',
+    },
     displayName: 'Others',
   },
   opencode: {
@@ -107,6 +164,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsAdditionalDirs: false,
     // Server-side `forkSession(id, anchor)` + `moveSession`.
     supportsFork: true,
+    goal: null,
     displayName: 'OpenCode',
   },
   cursor: {
@@ -122,6 +180,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsAdditionalDirs: false,
     // SDK has no transcript-fork API; the adapter creates a blank agent.
     supportsFork: false,
+    goal: null,
     displayName: 'Cursor',
   },
   dsh: {
@@ -146,6 +205,26 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsAdditionalDirs: false,
     // `runtime.forkSession` copies the log prefix up to an event seq.
     supportsFork: true,
+    goal: null,
     displayName: 'DeepSeek',
   },
+}
+
+/**
+ * Goal capability for a session, accounting for ACP being a container.
+ *
+ * `HARNESS_CAPABILITIES.acp.goal` describes Grok; any other ACP agent has no
+ * goal surface, so it resolves to `null`. Every render/composer path should go
+ * through here rather than testing the harness id, so the one agent-level
+ * exception stays in a single named place.
+ */
+export function resolveGoalCapability(
+  harnessId: HarnessId | null | undefined,
+  acpAgentId?: string | null,
+): GoalCapability | null {
+  if (!harnessId) return null
+  if (harnessId === 'acp') {
+    return isGrokAcpAgent(acpAgentId) ? HARNESS_CAPABILITIES.acp.goal : null
+  }
+  return HARNESS_CAPABILITIES[harnessId]?.goal ?? null
 }

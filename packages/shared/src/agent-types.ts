@@ -1,7 +1,7 @@
 // Unified message format used across IPC. Zero SDK imports.
 
 import type { TokenOverrides } from './harness-brand'
-import type { AcpGoal } from './acp-goal'
+import type { SessionGoal } from './session-goal'
 import type { NotificationSettings } from './notifications'
 
 // --- Image attachments ---
@@ -1784,10 +1784,11 @@ export type AgentEventBase =
       agentId?: string | null
     }
   /**
-   * Grok `goal_updated` (and equivalent ACP goal snapshots).
-   * `goal: null` means the agent cleared the goal.
+   * Session goal snapshot, normalized across harnesses: Grok `goal_updated`,
+   * Claude `active_goal`, Codex `thread/goal` transitions.
+   * `goal: null` means there is no longer a goal (cleared, or condition met).
    */
-  | { type: 'acp_goal'; goal: AcpGoal | null }
+  | { type: 'session_goal'; goal: SessionGoal | null }
   | { type: 'realtime_started'; realtimeSessionId?: string; version: string }
   | { type: 'realtime_sdp'; sdp: string }
   | { type: 'realtime_transcript'; role: RealtimeTranscriptRole; text: string; final: boolean }
@@ -3090,6 +3091,7 @@ export interface CodexMarketplaceUpgradeResult {
 }
 
 export type { AcpGoal, AcpGoalStatus } from './acp-goal'
+export type { SessionGoal, SessionGoalStatus } from './session-goal'
 
 export type CodexGoalStatus = 'active' | 'paused' | 'blocked' | 'usageLimited' | 'budgetLimited' | 'complete'
 
@@ -4371,7 +4373,20 @@ export type RemoteCommand =
   | { type: 'set_sandbox_mode'; requestId: string; mode: SandboxMode; projectPath: string; sessionId: string }
   /** Live model / effort / session-mode / preset change on a running session. */
   | { type: 'set_session_settings'; projectPath: string; sessionId: string; model?: string | null; effort?: string | null; mode?: string | null; agentPreset?: string | null }
-  | { type: 'list_directory'; requestId: string; path: string; showHidden?: boolean }
+  | {
+      type: 'list_directory'
+      requestId: string
+      path: string
+      showHidden?: boolean
+      /**
+       * `excluded-dirs` (default) mirrors the desktop file picker's fixed
+       * exclusion set. `gitignore` additionally applies the project's ignore
+       * rules — a mention browse on a phone, where there is no keyboard to type
+       * past a wall of generated files. Additive: an older host lists
+       * everything and the client filters what it can.
+       */
+      ignoreMode?: 'none' | 'excluded-dirs' | 'gitignore'
+    }
   | { type: 'create_directory'; requestId: string; path: string; name: string }
   | { type: 'add_project'; requestId: string; path: string; /** mkdir -p the path first (add-project "Create" row). */ createIfMissing?: boolean }
   | { type: 'search_github_repos'; requestId: string; mode: GithubRepoSearchMode; value?: string; page?: number }
@@ -4402,7 +4417,20 @@ export type RemoteCommand =
   | { type: 'get_worktree_info'; requestId: string; projectPath: string }
   | { type: 'get_checked_out_branches'; requestId: string; projectPath: string }
   | { type: 'activate_worktree'; requestId: string; projectPath: string; baseBranch: string | null; mode?: WorktreeMode; branchName?: string; carryLocalChanges?: boolean }
-  | { type: 'search_mentions'; requestId: string; projectPath: string; query: string }
+  | {
+      type: 'search_mentions'
+      requestId: string
+      projectPath: string
+      query: string
+      /**
+       * Confine the search to this directory, relative to the session cwd.
+       * Additive: an older host ignores it and answers project-wide, which the
+       * client detects through `appliedOptions` rather than by guessing.
+       */
+      scopeDir?: string
+      /** Extra roots to search alongside the session cwd. Additive, as above. */
+      additionalDirs?: string[]
+    }
   | { type: 'get_session_state'; requestId: string; projectPath: string; sessionId: string }
   | { type: 'list_directory_for_add_dir'; requestId: string; projectPath: string; rawInput: string }
   | { type: 'validate_add_dir'; requestId: string; projectPath: string; candidate: string }

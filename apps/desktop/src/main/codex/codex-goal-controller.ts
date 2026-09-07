@@ -20,6 +20,12 @@ interface CodexGoalControllerOptions {
   onRunComplete: (messageId: string, result: CodexRunResult, startedAt: number) => void
   onRunError: (messageId: string, error: Error) => void
   onIdle: () => void
+  /**
+   * Every transition of the thread goal, so the backend can push it onto the
+   * event stream. Codex is the only harness whose goal is host-driven, so
+   * without this the renderer would have to poll to notice a status change.
+   */
+  onGoalChange: (goal: CodexGoal | null) => void
 }
 
 export class CodexGoalController {
@@ -43,7 +49,7 @@ export class CodexGoalController {
     const goal = await this.requestGoal(threadId, (connection, resolvedThreadId) =>
       connection.request('thread/goal/get', { threadId: resolvedThreadId }))
     const mapped = mapCodexGoal(goal.goal)
-    this.currentGoal = mapped
+    this.setCurrentGoal(mapped)
     if (mapped?.status === 'active') this.schedule()
     return mapped
   }
@@ -58,7 +64,7 @@ export class CodexGoalController {
         ...(status ? { status } : {}),
       }))
     const goal = mapCodexGoal(result.goal)
-    this.currentGoal = goal
+    this.setCurrentGoal(goal)
     if (goal?.status === 'active') this.schedule()
     return goal
   }
@@ -67,7 +73,7 @@ export class CodexGoalController {
     const result = await this.requestGoal(threadId, (connection, resolvedThreadId) =>
       connection.request('thread/goal/set', { threadId: resolvedThreadId, status }))
     const goal = mapCodexGoal(result.goal)
-    this.currentGoal = goal
+    this.setCurrentGoal(goal)
     if (goal?.status === 'active') this.schedule()
     return goal
   }
@@ -81,7 +87,7 @@ export class CodexGoalController {
   async clear(threadId: string): Promise<boolean> {
     const result = await this.requestGoal(threadId, (connection, resolvedThreadId) =>
       connection.request('thread/goal/clear', { threadId: resolvedThreadId }))
-    if (result.cleared === true) this.currentGoal = null
+    if (result.cleared === true) this.setCurrentGoal(null)
     return result.cleared === true
   }
 
@@ -95,6 +101,15 @@ export class CodexGoalController {
 
   async wait(): Promise<void> {
     await this.runPromise?.catch(() => {})
+  }
+
+  /**
+   * Single write point for the goal, so no transition can update the field
+   * without the renderer hearing about it.
+   */
+  private setCurrentGoal(goal: CodexGoal | null): void {
+    this.currentGoal = goal
+    this.options.onGoalChange(goal)
   }
 
   private async requestGoal(
@@ -155,7 +170,7 @@ export class CodexGoalController {
         return
       }
       const goal = mapCodexGoal(goalResult.goal)
-      this.currentGoal = goal
+      this.setCurrentGoal(goal)
       if (goal?.status !== 'active') return
 
       const messageId = `codex_goal_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`

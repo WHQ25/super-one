@@ -1,4 +1,5 @@
 import type { CodexGoal, CodexGoalStatus } from '@superone/shared/agent-types'
+import type { SessionGoal } from '@superone/shared/session-goal'
 import type { CodexExperimentService } from './codex-experiment-service'
 
 const GOAL_STATUSES: readonly CodexGoalStatus[] = [
@@ -45,6 +46,23 @@ export function mapCodexGoal(raw: unknown): CodexGoal | null {
     timeUsedSeconds: readNumber(rec.timeUsedSeconds) ?? 0,
     createdAt: readNumber(rec.createdAt) ?? 0,
     updatedAt: readNumber(rec.updatedAt) ?? 0,
+  }
+}
+
+/**
+ * Project a Codex thread goal onto the harness-neutral shape.
+ *
+ * `CodexGoalStatus` is already the host enum, so only the units differ: Codex
+ * reports seconds, the shared shape carries milliseconds.
+ */
+export function sessionGoalFromCodex(goal: CodexGoal | null | undefined): SessionGoal | null {
+  if (!goal) return null
+  return {
+    objective: goal.objective,
+    status: goal.status,
+    tokensUsed: goal.tokensUsed,
+    elapsedMs: goal.timeUsedSeconds * 1000,
+    tokenBudget: goal.tokenBudget,
   }
 }
 

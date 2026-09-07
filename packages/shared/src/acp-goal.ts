@@ -1,3 +1,10 @@
+import type { SessionGoal } from './session-goal'
+
+/**
+ * Grok's `goal_updated` wire shape. Kept as its own type because it is what the
+ * agent actually sends; render paths consume the harness-neutral `SessionGoal`
+ * produced by {@link sessionGoalFromAcp}.
+ */
 export type AcpGoalStatus =
   | 'active'
   | 'paused'
@@ -15,9 +22,6 @@ export interface AcpGoal {
   pauseMessage?: string
   phase?: string
 }
-
-/** Whole-arg `/goal` tokens Grok treats as lifecycle, not an objective. */
-export const GROK_GOAL_LIFECYCLE_ARGS = ['status', 'pause', 'resume', 'clear'] as const
 
 /**
  * Map a Grok `goal_updated.status` wire string onto the host enum.
@@ -50,22 +54,20 @@ export function normalizeAcpGoalStatus(raw: string): AcpGoalStatus {
   }
 }
 
-export function isGrokGoalLifecycleArg(args: string): boolean {
-  return (GROK_GOAL_LIFECYCLE_ARGS as readonly string[]).includes(args.trim().toLowerCase())
-}
-
-export type GrokGoalComposerAction =
-  | { type: 'dialog'; prefill: string }
-  | { type: 'passthrough' }
-
 /**
- * Decide whether a composer `/goal` line should open the host dialog or
- * pass through to Grok (lifecycle subcommands).
+ * Project a Grok goal onto the harness-neutral shape.
+ *
+ * `cleared` is a transition, not a state a goal can sit in, so it maps to "no
+ * goal" rather than to a status the indicator would have to render.
  */
-export function grokGoalComposerAction(text: string): GrokGoalComposerAction | null {
-  const match = /^\/goal(?:\s+([\s\S]*))?$/i.exec(text.trim())
-  if (!match) return null
-  const args = match[1]?.trim() ?? ''
-  if (isGrokGoalLifecycleArg(args)) return { type: 'passthrough' }
-  return { type: 'dialog', prefill: args }
+export function sessionGoalFromAcp(goal: AcpGoal | null | undefined): SessionGoal | null {
+  if (!goal || goal.status === 'cleared') return null
+  return {
+    objective: goal.objective,
+    status: goal.status,
+    tokensUsed: goal.tokensUsed,
+    elapsedMs: goal.elapsedMs,
+    ...(goal.pauseMessage ? { lastReason: goal.pauseMessage } : {}),
+    ...(goal.phase ? { phase: goal.phase } : {}),
+  }
 }

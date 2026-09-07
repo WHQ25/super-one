@@ -412,6 +412,25 @@ the file**, which surfaces as the *next* test rendering nothing.
 Verified: mobile 413 vitest + 34 jest, gallery flow green on iOS in light and
 dark, slash-wiring flow green.
 
+**Phase 7 — done (2026-09-07).** `slash_command_output` reaches the phone.
+
+- **The command name is learned at send time, and nowhere else.** Neither
+  `slash_command_lifecycle` nor `slash_command_output` carries it, so the rule
+  now lives in `pendingSlashCommandFrom` in chat-core and both surfaces call it.
+  Mobile never set it, which is why simply un-skipping the event would have
+  produced `Command / executed.` and mis-routed the compact branch.
+- **The host forwards it, bounded.** A review's stdout *is* the answer, so
+  dropping it before the wire made the command useless from a phone. `/doctor`
+  emits output the client discards, so it is capped at 200 KB rather than paid
+  for over the relay and then thrown away.
+- **A command whose output renders nowhere still has to be reachable.** The
+  desktop opens it in a panel; the phone gets a one-line notice above the
+  composer and a sheet, dismissible. Fetching output and silently dropping it
+  is the same as never sending it.
+
+Verified: mobile 417 vitest + 34 jest, desktop `remote-control-service` 75 and
+`vitest related` over the changed store helper — 162 files, 2213 tests, green.
+
 ## 5. Risks, reordered
 
 - **R1 (was R4) — the two editors are two products, not one with a fallback.**

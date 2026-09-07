@@ -20,6 +20,7 @@ import type { SlashCatalogStatus } from '../slash-catalog'
 import type { MentionItem } from '../mentions'
 import type { MentionRow } from '../mention-rows'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
+import type { ReactNode } from 'react'
 import { ChatComposer, type ComposerSelection } from './chat-composer'
 import { NewSessionLanding, type NewSessionLandingProps } from './new-session-landing'
 
@@ -50,6 +51,8 @@ export function ChatScreen(props: {
   mentionSearch?: MentionSearchState
   onMentionRetry?: () => void
   onMentionLoadMore?: () => void
+  /** Slot above the composer for notices the transcript cannot carry. */
+  above?: ReactNode
   mentionQuery?: string | null
   draft: string
   streaming: boolean

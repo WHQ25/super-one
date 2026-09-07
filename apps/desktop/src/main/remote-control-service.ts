@@ -44,8 +44,15 @@ const SKIPPED_EVENTS = new Set([
   'files_persisted', 'elicitation_complete', 'tool_input_delta',
   'subagent_usage', 'checkpoint_captured', 'hook_started', 'hook_complete', 'hook_progress',
   'queued_messages_restored',
-  'slash_command_output', 'stream_message_start', 'stream_message_stop',
+  'stream_message_start', 'stream_message_stop',
 ])
+/**
+ * A slash command's stdout can be the whole deliverable — a review is the
+ * answer the user asked for — so it is forwarded rather than dropped. It is
+ * still bounded: `/doctor`-style commands emit output the client discards, and
+ * a megabyte of it would be paid for over the relay before being thrown away.
+ */
+const MAX_SLASH_OUTPUT = 200_000
 const THROTTLED_EVENTS = new Set(['tool_progress'])
 const DRAIN_BEFORE_EVENTS = new Set(['message_complete', 'status_change', 'task_notification'])
 
@@ -1300,6 +1307,11 @@ export class RemoteControlService {
     }
 
     if (SKIPPED_EVENTS.has(event.type)) return
+
+    if (event.type === 'slash_command_output' && event.content.length > MAX_SLASH_OUTPUT) {
+      this.queueSend([{ ...event, content: `${event.content.slice(0, MAX_SLASH_OUTPUT)}\n\n… output truncated` }], targetDeviceIds)
+      return
+    }
 
     if (THROTTLED_EVENTS.has(event.type)) {
       const now = Date.now()

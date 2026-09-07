@@ -938,3 +938,35 @@ describe('RemoteControlService LAN frame seq', () => {
     expect(second.map((f) => f.seq)).toEqual([1, 2])
   })
 })
+
+describe('slash command output over the wire', () => {
+  function makeService(): { service: RemoteControlService; captured: AgentEvent[] } {
+    const captured: AgentEvent[] = []
+    const service = new RemoteControlService('wss://relay.example', { onCommand: vi.fn() })
+    const internals = service as unknown as {
+      keys: unknown
+      hasAnyMobileTransport: () => boolean
+      queueSend: (events: AgentEvent[], targets?: string[]) => void
+    }
+    internals.keys = { aesKey: {} }
+    internals.hasAnyMobileTransport = () => true
+    internals.queueSend = (events) => { captured.push(...events) }
+    return { service, captured }
+  }
+
+  it('forwards the output, because for some commands it is the whole answer', async () => {
+    // It used to be dropped before the wire, so a review run from a phone
+    // produced nothing the phone could show.
+    const { service, captured } = makeService()
+    await service.sendAgentEvent({ type: 'slash_command_output', messageId: 'm1', content: '## Findings' } as AgentEvent)
+    expect(captured).toEqual([{ type: 'slash_command_output', messageId: 'm1', content: '## Findings' }])
+  })
+
+  it('bounds it, because some commands emit output the client discards', async () => {
+    const { service, captured } = makeService()
+    await service.sendAgentEvent({ type: 'slash_command_output', messageId: 'm1', content: 'x'.repeat(250_000) } as AgentEvent)
+    const sent = captured[0] as Extract<AgentEvent, { type: 'slash_command_output' }>
+    expect(sent.content.length).toBeLessThan(250_000)
+    expect(sent.content.endsWith('… output truncated')).toBe(true)
+  })
+})

@@ -21,6 +21,7 @@ import { ChatRuntime, type SessionWorktreeFacts } from '../runtime'
 import { TerminalRuntime } from '../terminal-runtime'
 import { randomId } from '../ids'
 import { mentionInsertText } from '../mentions'
+import { SlashOutputNotice } from '../ui/slash-output-notice'
 import { mentionTokenFromItem } from '../mention-selection'
 import { isPairingQrInput, normalizePairingInput } from '../pairing-input'
 import { usePairingDeepLink } from '../pairing-deep-link'
@@ -150,6 +151,7 @@ export function MobileApp() {
   const [attachments, setAttachments] = useState<ImageAttachment[]>([])
   const [queuedMessages, setQueuedMessages] = useState<ChatMessage[]>([])
   const [todos, setTodos] = useState<Record<string, TodoItem>>({})
+  const [slashOutput, setSlashOutput] = useState<{ command: string; content: string } | null>(null)
   const [sandboxInfo, setSandboxInfo] = useState<SandboxInfo | null>(null)
   const [sessionWorktree, setSessionWorktree] = useState<SessionWorktreeFacts & { removed: boolean }>(
     { isWorktree: false, worktreePath: null, gitBranch: null, removed: false },
@@ -262,6 +264,7 @@ export function MobileApp() {
     setStreaming(runtime.streaming)
     setQueuedMessages(runtime.session.queuedMessages)
     setTodos(runtime.session.todos)
+    setSlashOutput(runtime.session.slashCommandOutput)
     setPermMode(runtime.permissionMode)
     setSandboxInfo(runtime.sandboxInfo)
     setSessionWorktree((current) => {
@@ -705,6 +708,7 @@ export function MobileApp() {
     setStreaming(false)
     setTodos({})
     setQueuedMessages([])
+    setSlashOutput(null)
     setSandboxInfo(null)
     setUsage({ contextTokens: 0, contextWindow: null, totalCostUsd: 0 })
   }
@@ -1287,6 +1291,7 @@ export function MobileApp() {
           onMentionRetry={suggestions.retry}
           onMentionLoadMore={suggestions.loadMore}
           mentionQuery={suggestions.mentionQuery}
+          above={<SlashOutputNotice output={slashOutput} onDismiss={() => runtimeRef.current?.clearSlashCommandOutput()} />}
           onSubmitFromKeyboard={() => {
             const hasContent = draftRef.current.trim().length > 0 || attachments.length > 0
             if (shouldSubmitFromKeyboard({

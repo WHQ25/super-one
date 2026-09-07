@@ -3,6 +3,7 @@ import type {
   ContentBlock,
   ImageAttachment,
 } from '@superone/shared/agent-types'
+import { pendingSlashCommandFrom } from '@superone/chat-core'
 import { newMessageId } from '@superone/shared/message-id'
 import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
 import { buildBrowserAnnotationText } from './browser-annotation'
@@ -1059,8 +1060,7 @@ export async function sendMessageImpl(
     }
   }
 
-  const slashMatch = finalContent.match(/^\/(\S+)/)
-  patchSession(() => ({ _pendingSlashCommand: slashMatch ? slashMatch[1] : '' }))
+  patchSession(() => ({ _pendingSlashCommand: pendingSlashCommandFrom(finalContent) }))
 
   const codexSessionId = resolvedCodexCommand
     ? (writeTarget?.sessionId ?? _getEffectiveSessionId(getProject(get(), projectPath)))

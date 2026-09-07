@@ -11,7 +11,7 @@ import type {
   SandboxInfo,
   SandboxMode,
 } from '@superone/shared/agent-types'
-import { applyEventToSession, createDefaultChatCoreSession } from '@superone/chat-core'
+import { applyEventToSession, createDefaultChatCoreSession, pendingSlashCommandFrom } from '@superone/chat-core'
 import { AGENT_EVENT_BATCH_MS } from '@superone/shared/agent-event-batcher'
 import type { RelayClient } from '@superone/relay-client'
 import { restoreSession } from '@superone/relay-client'
@@ -249,6 +249,9 @@ export class ChatRuntime {
         ? { modelParams: extra.modelParams }
         : {}),
     }
+    // The wire messages that report this command's output carry no name, so the
+    // only chance to learn it is here, from what the user actually sent.
+    this.session = { ...this.session, _pendingSlashCommand: pendingSlashCommandFrom(content) }
     this.client.send(cmd)
   }
 
@@ -430,6 +433,18 @@ export class ChatRuntime {
 
   get todos(): SessionState['todos'] {
     return this.session.todos
+  }
+
+  /** Stdout from a command that renders nowhere in the transcript. */
+  get slashCommandOutput(): SessionState['slashCommandOutput'] {
+    return this.session.slashCommandOutput
+  }
+
+  clearSlashCommandOutput(): void {
+    if (!this.session.slashCommandOutput) return
+    this.session = { ...this.session, slashCommandOutput: null }
+    this.dirty = true
+    this.flush()
   }
 
   private apply(event: AgentEvent): void {

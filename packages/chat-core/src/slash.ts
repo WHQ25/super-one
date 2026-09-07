@@ -18,6 +18,19 @@ export const TURN_META_PREFIX = '__turn_meta__:'
  */
 const REPORT_OUTPUT_COMMANDS = new Set(['code-review', 'security-review'])
 
+/**
+ * The command a sent message runs, or `''` for an ordinary message.
+ *
+ * The wire messages that follow — `slash_command_lifecycle`, then
+ * `slash_command_output` — carry no command name, so the only place it can be
+ * learned is the input the user actually sent. Every surface that sends has to
+ * record it or the output arrives unattributable, which is how mobile ended up
+ * showing `Command / executed.`
+ */
+export function pendingSlashCommandFrom(content: string): string {
+  return content.match(/^\/(\S+)/)?.[1] ?? ''
+}
+
 export type TurnMetaPayload =
   | { kind: 'summary'; text: string; promptId?: string }
   | { kind: 'recap'; text: string; auto?: boolean }

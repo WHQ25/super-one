@@ -507,6 +507,41 @@ Two things fell out of doing this properly:
   field, not as a description, so every agent row would have claimed `inherit`.
   The `session` harness badge was missing for the same reason.
 
+**Icons are content-addressed and cached on the device (2026-09-07).** Closes the
+icon half of R4/M11.
+
+Every keystroke re-ran `search_mentions`, and app artwork was most of what came
+back: up to a dozen desktop apps and a dozen mini-apps, each an inlined PNG data
+URI, re-encrypted and re-sent over the relay for images that had not changed in
+months. Two independent fixes, on the two sides that were each doing redundant
+work:
+
+- **Host, per keystroke:** mini-app logos were re-read and re-decoded from disk
+  on every search. `remote-mention-search.ts` now memoises them keyed by
+  `path:mtimeMs`, so an unchanged logo is decoded once per process and a changed
+  one still invalidates itself.
+- **Wire:** `search_mentions` takes an `iconsById` request flag. When set, a row
+  carries `iconId` — the first 16 hex of the SHA-256 of the data URI — instead of
+  the bytes, and `get_mention_icons` fetches ids the device has never seen.
+  `remote-mention-icons.ts` holds a bounded (256) LRU registry so an id the
+  client asks about can be answered.
+- **Device:** `MentionIconCache` (`mention-icon-cache.ts`) keeps up to 200 icons
+  in encrypted MMKV under `mention.icons.v1`, with a deferred and coalesced write
+  (1 s) so a burst of misses costs one write rather than one per icon.
+
+Two properties make this safe to leave unattended. The id **is** a hash of the
+bytes, so an entry is valid exactly as long as the artwork is — there is nothing
+to invalidate and no staleness to reason about. And the flag is echoed in
+`appliedOptions.iconsById`, so a host too old to understand it keeps inlining
+icons and the device simply never caches: capability negotiation, not a version
+check.
+
+The hook does **not** import the encrypted store. `iconStore` is a required field
+of `ComposerSuggestionSource`, injected by `mobile-app.tsx`. Importing `mobileKv`
+directly pulled `@superone/relay-client`'s AES chain into jest, where
+`@noble/ciphers` is ESM that CommonJS cannot parse — the whole component suite
+stopped running, which reads as tests silently disappearing rather than failing.
+
 ## 5. Risks, reordered
 
 - **R1 (was R4) — the two editors are two products, not one with a fallback.**

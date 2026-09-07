@@ -1006,6 +1006,15 @@ export class AgentService {
         }
         break
       }
+      case 'get_mention_icons': {
+        try {
+          const { lookupMentionIcons } = await import('./remote-mention-icons')
+          await respond?.(command.requestId, { icons: lookupMentionIcons(command.ids ?? []) })
+        } catch (err) {
+          await respond?.(command.requestId, { error: (err as Error).message })
+        }
+        break
+      }
       case 'list_mcp_servers': {
         try {
           const session = this.sessionManager?.getActiveSession(command.projectPath)
@@ -1049,6 +1058,7 @@ export class AgentService {
           await respond?.(command.requestId, await searchRemoteMentions(command.projectPath, cwd, command.query, {
             ...(command.scopeDir !== undefined ? { scopeDir: command.scopeDir } : {}),
             ...(additionalDirs?.length ? { additionalDirs } : {}),
+            ...(command.iconsById ? { iconsById: true } : {}),
           }))
         } catch (err) {
           await respond?.(command.requestId, { error: (err as Error).message })

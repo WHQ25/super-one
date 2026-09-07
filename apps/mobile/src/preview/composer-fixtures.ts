@@ -38,8 +38,10 @@ export const previewSlashCatalog: SlashCommandInfo[] = [
 export const previewMentionItems: MentionItem[] = [
   { kind: 'agent', path: 'reviewer', label: 'reviewer', badge: 'claude-opus-5' },
   { kind: 'session', path: 'sess-7f3c', label: 'Align the mention popup with desktop', description: 'super-one', badge: 'claude' },
-  { kind: 'miniapp', path: 'board', label: 'Board', description: 'Kanban mini-app' },
-  { kind: 'desktop-app', path: 'com.apple.Safari', label: 'Safari', description: 'com.apple.Safari' },
+  // Real bytes, so the preview proves the icon path works end to end rather
+  // than only the generic-glyph fallback.
+  { kind: 'miniapp', path: 'board', label: 'Board', description: 'Kanban mini-app', iconPng: 'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAFklEQVR4nGNQWlVOEmIY1TCqYfhqAABjAkMQV0dkUwAAAABJRU5ErkJggg==' },
+  { kind: 'desktop-app', path: 'com.apple.Safari', label: 'Safari', description: 'com.apple.Safari', iconPng: 'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAFklEQVR4nGMwnvmfJMQwqmFUw/DVAAA4MssQTFf6UAAAAABJRU5ErkJggg==' },
   { kind: 'directory', path: 'src/renderer/src/components', isDirectory: true, matchIndices: [17, 18, 19] },
   { kind: 'file', path: 'src/ui/composer-suggestions.tsx', matchIndices: [7, 8, 9] },
   { kind: 'file', path: 'docs/设计/移动端组合器说明.md' },

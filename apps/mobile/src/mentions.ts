@@ -52,6 +52,12 @@ export type MentionItem = {
   /** Validated PNG payload supplied by the paired desktop for dynamic app identities. */
   iconPng?: string
   /**
+   * Content id of this row's icon, when the host answered with ids instead of
+   * bytes. The bytes live in the device's icon cache; a row keeps its id so a
+   * later fetch can fill `iconPng` in without re-running the search.
+   */
+  iconId?: string
+  /**
    * Replace the query with this text and keep the popup open, instead of
    * committing a mention. A folder and a `@session` scope are both waypoints,
    * not answers — and expressing that as data rather than as a branch is what
@@ -73,6 +79,16 @@ export type MentionItem = {
 }
 
 const MAX_MENTION_ICON_DATA_URI_LENGTH = 256_000
+/**
+ * Accept only a bounded PNG data URI, wherever it arrived from.
+ *
+ * A host is trusted to be the user's own desktop, not to be well-behaved: this
+ * is what stops an oversized or non-PNG payload reaching an `<Image>` source.
+ */
+export function mentionIconPngPayload(value: unknown): string | undefined {
+  return mentionIconPng(value)
+}
+
 function mentionIconPng(value: unknown): string | undefined {
   if (typeof value !== 'string' || value.length > MAX_MENTION_ICON_DATA_URI_LENGTH) return
   const match = /^data:image\/png;base64,([A-Za-z0-9+/]+={0,2})$/.exec(value)
@@ -95,6 +111,7 @@ export function parseMentionItems(rows: unknown): MentionItem[] {
       matchIndices: Array.isArray(value.matchIndices)
         ? value.matchIndices.filter((index): index is number => Number.isInteger(index)) : undefined,
       iconPng: mentionIconPng(value.iconDataUri),
+      iconId: typeof value.iconId === 'string' && value.iconId ? value.iconId : undefined,
       // A project agent's model arrives on its own field, not as a description.
       // Dropping it left every agent row claiming to inherit.
       badge: typeof value.model === 'string' && value.model ? value.model : undefined,

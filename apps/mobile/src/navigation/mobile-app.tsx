@@ -205,7 +205,7 @@ export function MobileApp() {
   const viewStateWriteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fatalReloadRef = useRef({ startedAt: 0, count: 0 })
   const mentionArtworkRevisionRef = useRef(-1)
-  const suggestions = useComposerSuggestions(runtimeRef, `${activePairingId}:${project?.path}:${sessionId}:${selectedProvider}`, { client: clientRef, projectPath: project?.path, provider: selectedProvider, projects })
+  const suggestions = useComposerSuggestions(runtimeRef, `${activePairingId}:${project?.path}:${sessionId}:${selectedProvider}`, { client: clientRef, projectPath: project?.path, provider: selectedProvider, projects, iconStore: mobileKv })
   const { slashHits, mentionRows } = suggestions
   const systemInfoRequestRef = useRef(0)
   // Files hangs off Project settings or off the session menu; back has to unwind

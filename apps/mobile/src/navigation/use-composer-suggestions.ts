@@ -1,5 +1,6 @@
 import type { RelayClient } from '@superone/relay-client'
-import { requestMentionSearch, type MentionSearchResult } from '../mention-search'
+import { requestMentionIcons, requestMentionSearch, type MentionSearchResult } from '../mention-search'
+import { MentionIconCache, type MentionIconStore } from '../mention-icon-cache'
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import type { ChatRuntime } from '../runtime'
 import { cursorAfterEdit, type ComposerCursor } from '../composer-cursor'
@@ -53,6 +54,11 @@ export interface ComposerSuggestionSource {
   provider?: string
   /** Every project the host offers — the `@session` portal's scope choices. */
   projects?: readonly { path: string; name?: string }[]
+  /**
+   * Where fetched app icons live between searches and between runs. Injected
+   * rather than imported so this hook stays free of the encrypted native store.
+   */
+  iconStore: MentionIconStore
 }
 
 export function useComposerSuggestions(
@@ -86,6 +92,15 @@ export function useComposerSuggestions(
    * for more continues rather than re-fetching the first page.
    */
   const sessionPaging = useRef<{ query: string; state: SessionMentionLoadState; items: MentionItem[] } | null>(null)
+  /**
+   * App icons the device already holds, keyed by content id.
+   *
+   * Shared across every search and every run: the host now answers with ids,
+   * and re-receiving a dozen unchanged PNGs on each keystroke was most of what
+   * a mention search cost over the relay.
+   */
+  const icons = useRef(new MentionIconCache(host.iconStore)).current
+  const [iconRevision, setIconRevision] = useState(0)
 
   const clear = () => {
     generation.current++
@@ -232,6 +247,28 @@ export function useComposerSuggestions(
     }
   }
 
+  /**
+   * Fetch the icons these rows reference and nothing else.
+   *
+   * Best-effort by design: a row whose icon never arrives keeps the generic
+   * glyph it was already showing, which is what a failure should cost.
+   */
+  const fillIcons = (items: readonly MentionItem[], client: RelayClient | null) => {
+    if (!client) return
+    void icons.load().then(() => {
+      const missing = icons.missing(items.flatMap((item) => (item.iconId ? [item.iconId] : [])))
+      if (!missing.length) {
+        // Even with nothing to fetch, the first load can supply rows that were
+        // drawn before the cache was read.
+        setIconRevision((current) => current + 1)
+        return
+      }
+      return requestMentionIcons(client, missing).then((fetched) => {
+        if (icons.put(fetched)) setIconRevision((current) => current + 1)
+      })
+    }).catch(() => { /* Icons are decoration; the rows are the answer. */ })
+  }
+
   const searchMentions = () => {
     const runtime = runtimeRef.current
     const client = host.client.current
@@ -264,6 +301,7 @@ export function useComposerSuggestions(
         if (stale()) return
         setMentionResults(fetched)
         setMentionSearch({ active: true, loading: false, hasMore: fetched.hasMore, emptyLabel: fetched.emptyLabel })
+        fillIcons(fetched.remote, client)
       }).catch((error: unknown) => {
         if (stale()) return
         inFlightQuery.current = null
@@ -286,13 +324,22 @@ export function useComposerSuggestions(
     const session = isSessionMentionQuery(mentionQuery)
     return buildMentionRows(session || mode.kind === 'browse' ? '' : mode.needle, {
       ...mentionResults,
+      // Rows carry an icon id; the bytes come from the device's cache, which
+      // may have filled in after the search returned.
+      remote: mentionResults.remote.map((item) => {
+        if (!item.iconId || item.iconPng) return item
+        const png = icons.get(item.iconId)
+        return png ? { ...item, iconPng: png } : item
+      }),
       // A portal query is anchored the same way a path is: only its own rows apply.
       scoped: !!mentionScopeDir(mentionQuery) || session,
       // The desktop shows a path minus the directory already typed, so the two
       // surfaces truncate at the same place.
       ...(session ? {} : { scopeDir: mentionScopeDir(mentionQuery) }),
     })
-  }, [mentionQuery, mentionResults])
+    // `iconRevision` is what makes a late-arriving icon repaint the rows.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mentionQuery, mentionResults, iconRevision])
 
   /**
    * The sessions group is called *Recent* until a title is typed, because until

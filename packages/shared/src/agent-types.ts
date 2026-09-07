@@ -4438,7 +4438,24 @@ export type RemoteCommand =
       scopeDir?: string
       /** Extra roots to search alongside the session cwd. Additive, as above. */
       additionalDirs?: string[]
+      /**
+       * Send icons as content ids instead of bytes.
+       *
+       * A phone re-runs this on every keystroke, and app icons are the bulk of
+       * the response — up to a dozen desktop apps and a dozen mini-apps, each
+       * a PNG. A client that sets this caches the bytes itself and fetches only
+       * what it is missing through `get_mention_icons`. A client that does not
+       * keeps getting `iconDataUri`, so older mobiles are unaffected.
+       */
+      iconsById?: boolean
     }
+  /**
+   * Fetch icon bytes the client does not have yet, by the ids a search returned.
+   *
+   * Ids are content hashes, so a cached icon stays valid until the app itself
+   * changes its artwork — and an icon shared by two rows is fetched once.
+   */
+  | { type: 'get_mention_icons'; requestId: string; ids: string[] }
   | { type: 'get_session_state'; requestId: string; projectPath: string; sessionId: string }
   | { type: 'list_directory_for_add_dir'; requestId: string; projectPath: string; rawInput: string }
   | { type: 'validate_add_dir'; requestId: string; projectPath: string; candidate: string }

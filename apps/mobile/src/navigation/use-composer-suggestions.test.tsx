@@ -20,6 +20,15 @@ function deferredClient() {
   return { client, release: () => release?.() }
 }
 
+/** The device cache, without the encrypted native store behind it. */
+function memoryIconStore() {
+  const values = new Map<string, string>()
+  return {
+    get: async (key: string) => values.get(key) ?? null,
+    set: async (key: string, value: string) => { values.set(key, value) },
+  }
+}
+
 async function mount(client: unknown) {
   const runtimeRef = createRef<ChatRuntime>() as { current: ChatRuntime | null }
   const clientRef = { current: client as RelayClient | null }
@@ -29,6 +38,7 @@ async function mount(client: unknown) {
       client: clientRef,
       projectPath: '/work/app',
       provider: 'claude',
+      iconStore: memoryIconStore(),
     }),
   )
 }

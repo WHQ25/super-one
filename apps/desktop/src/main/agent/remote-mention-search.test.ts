@@ -64,10 +64,13 @@ describe('remote mention app results', () => {
 
     const result = await searchRemoteMentions('/project', '/project', '')
 
+    // An icon that could not be resolved is simply absent, rather than a key
+    // holding `undefined` that the wire would carry anyway.
     expect(result.items).toEqual([
-      expect.objectContaining({ kind: 'desktop-app', path: 'com.example.Editor', iconDataUri: undefined }),
+      expect.objectContaining({ kind: 'desktop-app', path: 'com.example.Editor' }),
       { kind: 'file', path: 'src/App.tsx' },
     ])
+    expect(result.items[0]).not.toHaveProperty('iconDataUri')
   })
 })
 
@@ -96,11 +99,59 @@ describe('scoped mention search', () => {
     // one otherwise, and the unscoped top-20 may hold no in-scope file at all.
     const result = await searchRemoteMentions('/project', '/worktree', 'app', { scopeDir: 'src/' })
     expect(result.cwd).toBe('/worktree')
-    expect(result.appliedOptions).toEqual({ scopeDir: true, additionalDirs: false })
+    expect(result.appliedOptions).toEqual({ scopeDir: true, additionalDirs: false, iconsById: false })
   })
 
   it('says it applied nothing when nothing was asked for', async () => {
     const result = await searchRemoteMentions('/project', '/project', 'app')
-    expect(result.appliedOptions).toEqual({ scopeDir: false, additionalDirs: false })
+    expect(result.appliedOptions).toEqual({ scopeDir: false, additionalDirs: false, iconsById: false })
+  })
+})
+
+describe('icons over the wire', () => {
+  beforeEach(async () => {
+    // The registry is process-wide; one case's ids would otherwise answer the next.
+    const { resetMentionIconRegistry } = await import('./remote-mention-icons')
+    resetMentionIconRegistry()
+    vi.clearAllMocks()
+    mocks.discoverApps.mockResolvedValue([])
+    mocks.discoverProjectApps.mockResolvedValue([])
+    mocks.listInstalledApps.mockResolvedValue([
+      { app: 'Editor', bundleId: 'com.example.Editor', path: '/Applications/Editor.app', aliases: [] },
+    ])
+    mocks.resolveAppIconDataUri.mockResolvedValue('data:image/png;base64,ZGVza3RvcA==')
+    mocks.searchMentions.mockReturnValue([])
+  })
+
+  it('inlines the bytes for a client that has nowhere to cache them', async () => {
+    const result = await searchRemoteMentions('/project', '/project', 'ed')
+    expect(result.items[0]).toMatchObject({ iconDataUri: 'data:image/png;base64,ZGVza3RvcA==' })
+    expect(result.items[0]).not.toHaveProperty('iconId')
+  })
+
+  it('sends an id instead once the client says it caches', async () => {
+    // A phone re-runs this on every keystroke; the icons are most of the answer.
+    const result = await searchRemoteMentions('/project', '/project', 'ed', { iconsById: true })
+    expect(result.items[0]).not.toHaveProperty('iconDataUri')
+    expect(result.items[0]).toMatchObject({ iconId: expect.stringMatching(/^[0-9a-f]{16}$/) })
+    expect(result.appliedOptions).toMatchObject({ iconsById: true })
+  })
+
+  it('gives the same artwork the same id, so two rows cost one fetch', async () => {
+    mocks.listInstalledApps.mockResolvedValue([
+      { app: 'Editor', bundleId: 'com.example.Editor', path: '/a.app', aliases: [] },
+      { app: 'Editor 2', bundleId: 'com.example.Editor2', path: '/b.app', aliases: [] },
+    ])
+    const result = await searchRemoteMentions('/project', '/project', 'ed', { iconsById: true })
+    const ids = result.items.map((item) => (item as { iconId?: string }).iconId)
+    expect(ids[0]).toBe(ids[1])
+  })
+
+  it('answers a later lookup with the bytes it registered', async () => {
+    const { lookupMentionIcons } = await import('./remote-mention-icons')
+    const result = await searchRemoteMentions('/project', '/project', 'ed', { iconsById: true })
+    const id = (result.items[0] as { iconId: string }).iconId
+    expect(lookupMentionIcons([id])).toEqual({ [id]: 'data:image/png;base64,ZGVza3RvcA==' })
+    expect(lookupMentionIcons(['never-registered'])).toEqual({})
   })
 })

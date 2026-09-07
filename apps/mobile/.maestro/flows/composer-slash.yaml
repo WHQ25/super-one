@@ -21,14 +21,14 @@ tags: [smoke, native, visual]
       id: slash-suggestions
     timeout: 10000
 # `/re` matches a command and a skill; both groups must be present.
-- assertVisible: "/review"
-- assertVisible: "/release"
+- assertVisible: "/review, Review the current diff for correctness and cleanups"
+- assertVisible: "/release.*Version bump.*"
 - assertVisible: "Commands"
 - assertVisible: "Skills"
 - takeScreenshot: ${"composer-slash-open-" + THEME}
 
 # Selecting completes the draft to `/name ` and closes the overlay.
-- tapOn: "/review"
+- tapOn: "/review, Review the current diff for correctness and cleanups"
 - assertNotVisible:
     id: slash-suggestions
 - takeScreenshot: ${"composer-slash-selected-" + THEME}
@@ -47,9 +47,9 @@ tags: [smoke, native, visual]
     visible:
       id: slash-suggestions
     timeout: 10000
-- assertVisible: "/review"
-- assertVisible: "/release"
+- assertVisible: "/review, Review the current diff for correctness and cleanups"
+- assertVisible: "/release.*Version bump.*"
 - takeScreenshot: ${"composer-slash-fallback-" + THEME}
-- tapOn: "/review"
+- tapOn: "/review, Review the current diff for correctness and cleanups"
 - assertNotVisible:
     id: slash-suggestions

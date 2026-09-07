@@ -2,6 +2,10 @@ appId: ${APP_ID}
 name: Composer suggestion overlays cover every reachable state
 tags: [smoke, native, visual]
 ---
+# Maestro matches a row's whole accessibility label, and each row composes into
+# one element — `/clear, Clear the conversation and start over`, not `/clear`.
+# That is deliberate: a row that announces its name, argument hint and
+# description separately reads as three unrelated items under VoiceOver.
 - runFlow:
     file: ../helpers/open-shell-preview.yaml
 - tapOn: "Preview page:.*"
@@ -14,41 +18,70 @@ tags: [smoke, native, visual]
 # Slash rows run through the shipping matcher, so these assert the real
 # grouping — not a fixture of what the grouping ought to be.
 - assertVisible: "Slash · bare /"
-- assertVisible: "/clear"
-- assertVisible: "\\[project\\|session\\] \\[dir\\]"
 - assertVisible: "Commands"
 - assertVisible: "Skills"
+- assertVisible: "/clear, Clear the conversation and start over"
+- assertVisible: "/add-dir.*Give the session another project directory"
+# A command with no description renders as the bare name.
+- assertVisible: "/resume"
+- takeScreenshot: ${"composer-suggestions-slash-" + THEME}
+
+# `/rel` scores the `release` skill above every command. Desktop leads with the
+# better-scoring group; mobile always leads with Commands. This section is what
+# makes that gap visible, so it is expected to show Commands first *today*.
+- scrollUntilVisible:
+    element:
+      text: "Slash · /rel"
+    direction: DOWN
+- assertVisible: "/create-release-notes, Draft release notes from the commit range"
+- assertVisible: "/release.*Version bump.*"
 
 # A skill-only query must drop the Commands header entirely rather than render
 # an empty group.
-- assertVisible: "Slash · /tdd"
-- assertVisible: "/tdd"
+- scrollUntilVisible:
+    element:
+      text: "Slash · /tdd"
+    direction: DOWN
+- assertVisible: "/tdd, Test-driven development workflow"
 
 # There is deliberately no slash empty state today: the overlay unmounts. The
 # caption is the only thing left on screen for that section.
-- assertVisible: "Slash · no match"
+- scrollUntilVisible:
+    element:
+      text: "Slash · no match"
+    direction: DOWN
 - assertVisible: "Renders nothing at all. There is no empty state today."
-- takeScreenshot: ${"composer-suggestions-slash-" + THEME}
+- takeScreenshot: ${"composer-suggestions-ranking-" + THEME}
 
+# Each suggestion list clips at 256 px, so only the first group of a full list
+# is on screen. Group *order* is asserted in the component test, which does not
+# clip; here the sections are split by group so every row is reviewable.
 - scrollUntilVisible:
     element:
       text: "Mention · every group"
     direction: DOWN
 - assertVisible: "Agents"
-- assertVisible: "Capabilities"
-- assertVisible: "Sessions"
-- assertVisible: "Apps"
+- assertVisible: "Codex, @codex"
+- takeScreenshot: ${"composer-suggestions-mention-" + THEME}
+
+- scrollUntilVisible:
+    element:
+      text: "Mention · files"
+    direction: DOWN
 - assertVisible: "Files & folders"
 # A CJK filename has to survive the basename split and the truncation.
-- assertVisible: "移动端组合器说明.md"
-- takeScreenshot: ${"composer-suggestions-mention-" + THEME}
+- assertVisible: "移动端组合器说明.md.*"
+- takeScreenshot: ${"composer-suggestions-groups-" + THEME}
 
 - scrollUntilVisible:
     element:
       text: "Mention · search failed"
     direction: DOWN
-- assertVisible: "Searching…"
 - assertVisible: "Could not reach the desktop"
 - assertVisible: "Retry search"
+- scrollUntilVisible:
+    element:
+      text: "Mention · no matches"
+    direction: DOWN
 - assertVisible: "No matches"
 - takeScreenshot: ${"composer-suggestions-states-" + THEME}

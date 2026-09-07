@@ -79,6 +79,16 @@ every checkout state through the real `SessionMetaRow`, and
 either union and add its row there — reproducing a deleted worktree or an 8s
 reconnect backoff by hand means breaking the desktop on purpose.
 
+Two things about running `test:ui` that cost real time to learn. **Maestro matches
+a whole accessibility label, not a substring**, and a suggestion row composes its
+name, argument hint and description into one element — so the assertion is
+`"/clear, Clear the conversation and start over"`, never `"/clear"`. And **do not
+edit source while a suite is running**: Metro's watcher fast-refreshes the app
+mid-flow, which resets `native-preview-ready` and fails unrelated flows in ways
+that read exactly like regressions. Conversely, starting the preview with `CI=1`
+disables the watcher, and Maestro then verifies a stale bundle — the edit you are
+testing is not in it.
+
 The composer overlays follow the same rule:
 `superone://native-preview?page=Composer%20suggestions` walks every slash and
 mention state — searching, failed + retry, no matches, skill-only match, CJK and

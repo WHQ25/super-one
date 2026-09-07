@@ -233,8 +233,20 @@ character typed after entering `@src/` needs it.
   and mention hits are now computed for both paths. This is the R1 mitigation:
   before it, the preview could only ever exercise the native editor.
 - Maestro flows `composer-suggestions.yaml` (gallery) and `composer-slash.yaml`
-  (wiring, both editors). **Written but not yet run** — no booted simulator or
-  Metro instance was available in this session.
+  (wiring, both editors). **Both pass on iOS in light and dark**; the full
+  18-flow suite passes too. Getting there required building the Expo dev client
+  (`expo run:ios`), which had never been built on this machine.
+- The fallback toggle earned its keep on its first run: `composer-slash.yaml`
+  caught that the preview's `onSlash` only handled the native branch, so with the
+  fallback editor mounted the draft never changed and the overlay stayed open.
+  That is precisely the R1 failure mode, found by the thing built to find it.
+- `previewSlashCatalog` gained `create-release-notes` so that `/rel` scores the
+  `release` **skill** above every command. Mobile still renders Commands first,
+  which makes the S1 gap visible in the preview today and will prove the fix in
+  Phase 3.
+
+**Phase 2 — not started.** Extract the identical helpers into `packages/shared`
+with desktop re-export shims, leaving mobile behaviour unchanged.
 
 ## 5. Risks, reordered
 

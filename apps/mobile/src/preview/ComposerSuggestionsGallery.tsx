@@ -3,6 +3,7 @@ import { Text } from '../ui/text'
 import { useMobileTheme } from '../theme/context'
 import { MentionSuggestions, SlashSuggestions } from '../ui/composer-suggestions'
 import { filterSlashCommands } from '../slash'
+import { mentionGroup } from '../ui/mention-glyph-data'
 import { previewLongMentionItems, previewMentionItems, previewSlashCatalog } from './composer-fixtures'
 
 /**
@@ -30,6 +31,9 @@ function Section({ title, note, children }: { title: string; note?: string; chil
 export function ComposerSuggestionsGallery() {
   const { tokens: { colors } } = useMobileTheme()
   const slash = (draft: string) => filterSlashCommands(draft, previewSlashCatalog)
+  // Each list clips at 256 px, so a section holding every group can only ever
+  // show its first few rows. Split by group rather than scroll inside a list.
+  const inGroup = (group: string) => previewMentionItems.filter((item) => mentionGroup(item.kind) === group)
   return <ScrollView testID="composer-suggestions-gallery" contentContainerStyle={{ padding: 16, gap: 20 }}>
     <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>
       Real overlays over a fixture catalog. Slash rows are ranked by the shipping matcher.
@@ -43,6 +47,10 @@ export function ComposerSuggestionsGallery() {
       <SlashSuggestions matches={slash('/re')} onSelect={() => {}} />
     </Section>
 
+    <Section title="Slash · /rel" note="The skill scores highest. Desktop leads with Skills; mobile does not.">
+      <SlashSuggestions matches={slash('/rel')} onSelect={() => {}} />
+    </Section>
+
     <Section title="Slash · /tdd" note="A skill-only match — the Commands header must disappear.">
       <SlashSuggestions matches={slash('/tdd')} onSelect={() => {}} />
     </Section>
@@ -51,8 +59,16 @@ export function ComposerSuggestionsGallery() {
       <SlashSuggestions matches={slash('/zzzz')} onSelect={() => {}} />
     </Section>
 
-    <Section title="Mention · every group" note="Group order and per-group counts.">
+    <Section title="Mention · every group" note="Group order and per-group counts. The list clips at 256 px, so the tail groups sit in the next section.">
       <MentionSuggestions items={previewMentionItems} onSelect={() => {}} search={{ active: true, loading: false }} />
+    </Section>
+
+    <Section title="Mention · apps" note="A group the section above cuts off. Mobile merges mini-apps and desktop apps here; desktop keeps them apart.">
+      <MentionSuggestions items={inGroup('Apps')} onSelect={() => {}} search={{ active: true, loading: false }} />
+    </Section>
+
+    <Section title="Mention · files" note="Directory first, then files. The CJK name has to survive the basename split.">
+      <MentionSuggestions items={inGroup('Files & folders')} onSelect={() => {}} search={{ active: true, loading: false }} />
     </Section>
 
     <Section title="Mention · searching" note="Rows already fetched stay visible under the spinner.">

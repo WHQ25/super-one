@@ -18,6 +18,11 @@ export const previewSlashCatalog: SlashCommand[] = [
   { name: 'compact', description: 'Summarise the conversation to reclaim context', argumentHint: '[instructions]' },
   { name: 'add-dir', description: 'Give the session another project directory', argumentHint: '[project|session] [dir]' },
   { name: 'review', description: 'Review the current diff for correctness and cleanups' },
+  // Exists so one query can score a skill above every command: `/rel` matches
+  // this only mid-word, while the `release` skill matches from index 0. The
+  // desktop popup puts the better-scoring group first; mobile always puts
+  // Commands first, and this row is what makes that difference visible.
+  { name: 'create-release-notes', description: 'Draft release notes from the commit range' },
   { name: 'resume', description: '' },
   {
     name: 'release',

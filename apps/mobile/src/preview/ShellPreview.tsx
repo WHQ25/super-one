@@ -307,8 +307,8 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
       <View style={styles.flex}><SelectionField compact label="Preview page" value={page} options={pages.map((value) => ({ value, label: value }))} onChange={(value) => setPage(value as Page)} /></View>
       <Button variant="ghost" label={tokens.scheme === 'dark' ? 'Light' : 'Dark'} onPress={onTheme} />
     </View>
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 8 }}>
-      <Text style={styles.meta}>Offline preview · {Math.round(width)} px · font {fontScale.toFixed(2)}</Text>
+    <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: tokens.colors.surface, paddingRight: 8 }}>
+      <Text style={[styles.meta, { flex: 1 }]}>Offline preview · {Math.round(width)} px · font {fontScale.toFixed(2)}</Text>
       {chat ? <Button variant="ghost" label={nativeEditor ? 'Editor: native' : 'Editor: fallback'}
         onPress={() => setNativeEditor((value) => !value)} /> : null}
     </View>
@@ -347,7 +347,13 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
             webRef={web} permissionModes={['default', 'acceptEdits', 'plan']} permissionMode={mode} slashHits={filterSlashCommands(chatDraft.draft, previewSlashCatalog)} mentionHits={mentionHits} attachments={attachments} additionalDirectories={[]} queuedMessages={[]} todos={{}} draft={chatDraft.draft} streaming={page === 'Chat'}
             sandboxInfo={sandbox} contextTokens={82_400} contextWindow={200_000} totalCostUsd={0.4213}
             onWebMessage={(raw) => { if (JSON.parse(raw).type === 'ready') paintChat() }} onWebProcessError={() => {}} onPermissionMode={setMode}
-            onSandboxMode={(next) => setSandbox({ enabled: next !== 'off', autoAllowBash: next === 'auto' })} onSlash={(command) => { chatDraft.editorRef.current?.replaceText(`/${command} `) }} onMention={(item) => {
+            onSandboxMode={(next) => setSandbox({ enabled: next !== 'off', autoAllowBash: next === 'auto' })} onSlash={(command) => {
+              // Mirror the shipping handler: with the fallback editor mounted there
+              // is no controller to call, and dropping the else branch leaves the
+              // draft untouched and the overlay stuck open.
+              if (chatDraft.editorRef.current) chatDraft.editorRef.current.replaceText(`/${command} `)
+              else changeDraft(`/${command} `)
+            }} onMention={(item) => {
               if (nativeEditor) { chatDraft.editorRef.current?.insertMention(item); return }
               // Fallback inserts plain `@path` text — deliberately not the typed
               // chip the native editor produces. The difference is the point.

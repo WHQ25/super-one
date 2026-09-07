@@ -4,12 +4,16 @@ import {
   checkRelayDesktopOnline,
   parseLanHostPort,
   roomIdForSecret,
+  type PresenceFetch,
 } from './presence'
 
 const SECRET = 'a'.repeat(64)
 
+// Typed as `PresenceFetch` rather than a bare `vi.fn(async () => …)`: without
+// the parameters the mock's call tuple is empty, so `mock.calls[0][0]` does not
+// type-check.
 function respond(body: unknown, init: { ok?: boolean; status?: number } = {}) {
-  return vi.fn(async () => ({
+  return vi.fn<PresenceFetch>(async () => ({
     ok: init.ok ?? true,
     status: init.status ?? 200,
     json: async () => body,

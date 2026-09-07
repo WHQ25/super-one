@@ -62,13 +62,45 @@ jobs:
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
       - run: bun install --frozen-lockfile --concurrent-scripts=1
       - run: bun run check-deps-lock
+      # Import the certificate ourselves rather than handing electron-builder
+      # CSC_LINK. Its own createKeychain() passes the *certificate* password to
+      # `security set-key-partition-list -k`, which wants the *keychain*
+      # password it generated itself. That only gets validated when the
+      # keychain needs unlocking, so it lies dormant until something relocks
+      # it mid-build and then fails the run outright. macPackager branches on
+      # cscLink, so the only way past it is to supply CSC_KEYCHAIN instead.
+      - name: Import signing certificate
+        env:
+          MAC_CERTS: ${{ secrets.MAC_CERTS }}
+          MAC_CERTS_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/superone-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 32)"
+          CERT_PATH="$RUNNER_TEMP/superone-certs.p12"
+
+          printf '%s' "$MAC_CERTS" | base64 --decode > "$CERT_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          # 6h timeout, far past any build, so nothing relocks it mid-run.
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$CERT_PATH" -k "$KEYCHAIN" -P "$MAC_CERTS_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security -f pkcs12
+          # The keychain password, which is what -k actually means.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s \
+            -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN" \
+            $(security list-keychains -d user | tr -d '"')
+
+          rm -f "$CERT_PATH"
+          echo "CSC_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+          security find-identity -v -p codesigning "$KEYCHAIN"
       - run: bun run build:mac -- --x64 --arm64 --publish never
         env:
           SUPERONE_VARIANT: ${{ inputs.variant }}
           SUPERONE_VERSION: ${{ inputs.version }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: ${{ secrets.MAC_CERTS }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}

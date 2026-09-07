@@ -167,6 +167,14 @@ jest-expo reuses the transform Metro already applies. Four things about it:
   React 19's `act()` scopes (it says so on stderr), and the corruption lands on
   the *next* test in the file, which then renders nothing and fails with
   "Unable to find an element". Split the walk into one press per test.
+- **A suite that cannot load reports as missing tests, not failing ones.**
+  `jest` prints `Test suite failed to run` and the total simply drops — six
+  tests once "disappeared" because a hook had grown an
+  `import { mobileKv } from '../storage'`, and `storage.ts` takes a *value*
+  from `@superone/relay-client`, dragging `@noble/ciphers` (pure ESM) into a
+  CommonJS parse. Fix it by not reaching for the encrypted store from a hook —
+  inject it, as `ComposerSuggestionSource.iconStore` does — rather than by
+  widening `transformIgnorePatterns`. Check the total, not just the exit code.
 - `jest.config.js` pins `^react$` to this workspace's copy. Bun leaves a nested
   `apps/mobile/node_modules/react` (pinned 19.1.0) beside the hoisted root one,
   and without the mapping `react-reconciler` and the components under test load

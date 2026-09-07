@@ -1,38 +1,13 @@
 import type { SlashCommandInfo } from '@superone/shared/agent-types'
+import { matchAndRankSlashCommands, type MatchedSlashCommand } from '@superone/shared/slash-command-match'
 import type { ChatProvider } from '@/stores/chat'
-import { fuzzyMatch } from '../../../lib/fuzzy-match'
 import { isWorkflowSlashArgsMode } from '../workflow-slash-suggest'
 
-const HIDDEN_COMMANDS = new Set(['keybindings-help', 'debug'])
-
-export interface MatchedSlashCommand extends SlashCommandInfo {
-  matchIndices: number[]
-  score: number
-  matched: boolean
-}
+export type { MatchedSlashCommand }
 
 /**
- * Order matched items into two contiguous groups (commands, skills) and put the
- * group that holds the best-scoring match first. Within a group items are
- * sorted by score. The flat result stays group-contiguous so the grouped popup
- * (groupItems + per-group startIndex) and keyboard navigation share one index
- * space. An empty query scores everything 0, so ties keep commands ahead of
- * skills — the default ordering when the user has only typed "/".
- */
-function rankAndGroup(matched: MatchedSlashCommand[]): MatchedSlashCommand[] {
-  const commands = matched.filter((c) => !c.isSkill).sort((a, b) => b.score - a.score)
-  const skills = matched.filter((c) => c.isSkill).sort((a, b) => b.score - a.score)
-  const bestCommand = commands[0]?.score ?? -Infinity
-  const bestSkill = skills[0]?.score ?? -Infinity
-  return bestSkill > bestCommand ? [...skills, ...commands] : [...commands, ...skills]
-}
-
-/**
- * Filter + score the slash-command list against the current input text.
- *
- * Matches by name only — the highlighted characters in the popup come from the
- * name match indices, so matching on description would surface items with no
- * visible highlight (a long description fuzzy-matches almost any short query).
+ * Decide whether the draft is a slash-command query, then hand the token after
+ * `/` to the shared matcher.
  *
  * Only the first line of `text` is treated as the command query — Tiptap's
  * `getText()` joins block nodes with `\n`, so a multi-line message must not let
@@ -40,7 +15,8 @@ function rankAndGroup(matched: MatchedSlashCommand[]): MatchedSlashCommand[] {
  *
  * `/add-dir …` always defers to its stateful popup. Non-Codex paths also bail
  * on any other command line with a space (argument input, not command search).
- * Codex commands legitimately contain spaces (`auth auto`).
+ * Codex commands legitimately contain spaces (`auth auto`), and Codex is also
+ * the one provider that still shows the otherwise-hidden commands.
  */
 export function computeMatchingSlashCommands(
   text: string,
@@ -57,18 +33,7 @@ export function computeMatchingSlashCommands(
     if (firstLine.includes(' ')) return []
   }
 
-  const query = firstLine.slice(1).toLowerCase()
-  const pool =
-    activeProvider === 'codex'
-      ? activeSlashCommands
-      : activeSlashCommands.filter((cmd) => !HIDDEN_COMMANDS.has(cmd.name))
-
-  const matched = pool
-    .map((cmd) => {
-      const r = fuzzyMatch(query, cmd.name)
-      return { ...cmd, matchIndices: r.indices, score: r.score, matched: r.match }
-    })
-    .filter((cmd) => cmd.matched)
-
-  return rankAndGroup(matched)
+  return matchAndRankSlashCommands(firstLine.slice(1).toLowerCase(), activeSlashCommands, {
+    includeHidden: activeProvider === 'codex',
+  })
 }

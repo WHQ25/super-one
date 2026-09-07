@@ -18,6 +18,11 @@ const ALLOWED = [
   'tool-ui',
   'agent-error',
   'harness-brand',
+  'fuzzy-match',
+  'mention-capability-match',
+  'popup-groups',
+  'session-mention-query',
+  'slash-command-match',
 ] as const
 
 const FORBIDDEN = ['attachment-store', 'git-clone'] as const

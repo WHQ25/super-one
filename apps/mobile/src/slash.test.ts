@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { filterSlashCommands, fuzzyMatch, mergeSlashCatalogs } from './slash'
+import { fuzzyMatch } from '@superone/shared/fuzzy-match'
+import { filterSlashCommands, mergeSlashCatalogs } from './slash'
 
 const RAW = [
   { name: 'help', description: 'Show help' },

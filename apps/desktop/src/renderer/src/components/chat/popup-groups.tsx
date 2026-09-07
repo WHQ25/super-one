@@ -1,28 +1,9 @@
-export interface PopupGroup<T> {
-  key: string
-  items: T[]
-  startIndex: number
-}
-
-export function groupItems<T>(
-  items: readonly T[],
-  getKey: (item: T) => string,
-  order: readonly string[],
-): PopupGroup<T>[] {
-  const buckets = new Map<string, T[]>()
-  for (const key of order) buckets.set(key, [])
-  for (const item of items) buckets.get(getKey(item))?.push(item)
-
-  const groups: PopupGroup<T>[] = []
-  let startIndex = 0
-  for (const key of order) {
-    const grouped = buckets.get(key)
-    if (!grouped || grouped.length === 0) continue
-    groups.push({ key, items: grouped, startIndex })
-    startIndex += grouped.length
-  }
-  return groups
-}
+/**
+ * `groupItems` moved to `@superone/shared/popup-groups` so the mobile overlays
+ * share one flat index space with the desktop popups. Re-exported here to keep
+ * the renderer's import sites unchanged.
+ */
+export { groupItems, type PopupGroup } from '@superone/shared/popup-groups'
 
 export function PopupSectionHeader({ label, count }: { label: string; count: number }) {
   return (

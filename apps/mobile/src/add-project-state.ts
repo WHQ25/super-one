@@ -6,7 +6,7 @@ import {
   type AddProjectStep,
 } from '@superone/shared/add-project-flow'
 import { githubOwnerAvatarUrl } from '@superone/shared/git-remote'
-import { fuzzyMatch } from './slash'
+import { fuzzyMatch } from '@superone/shared/fuzzy-match'
 
 /**
  * Copy taken verbatim from the desktop `sidebar.addProject` strings so the two

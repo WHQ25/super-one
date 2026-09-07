@@ -245,8 +245,42 @@ character typed after entering `@src/` needs it.
   which makes the S1 gap visible in the preview today and will prove the fix in
   Phase 3.
 
-**Phase 2 — not started.** Extract the identical helpers into `packages/shared`
-with desktop re-export shims, leaving mobile behaviour unchanged.
+**Phase 2 — done (2026-09-07).** Five leaf modules now live in
+`packages/shared`, desktop reaches them through shims, and **no behaviour
+changed on either side**.
+
+| Shared module | Desktop | Mobile |
+|---|---|---|
+| `fuzzy-match` | `lib/fuzzy-match.ts` re-exports (8 import sites untouched) | `slash.ts` deleted its byte-identical copy; `add-project-state` and `project-picker-state` now import it from its real home instead of from the slash module |
+| `mention-capability-match` | shim | not yet consumed (Phase 4) |
+| `popup-groups` | `popup-groups.tsx` re-exports `groupItems`, keeps `PopupSectionHeader` | not yet consumed (Phase 4) |
+| `session-mention-query` | shim binds the `window.environment` loader | not yet consumed (Phase 6) |
+| `slash-command-match` | `computeMatchingSlashCommands` shrank to policy + one call | not yet consumed (Phase 3) |
+
+Three decisions worth recording:
+
+- **The session loader is shared, the fetch is injected.** The scan/filter
+  algorithm is app-agnostic; only the page fetch differs. The injected
+  `SessionMentionPageLoader` returns `{ sessions, hasMore }` so a backend that
+  knows the total does not have to fake a full page to say "keep going" — the
+  old code inferred `hasMore` from `length >= limit`. That is the one shape
+  change, and Phase 6 depends on it.
+- **Mobile did not adopt the shared slash matcher.** Its call contract still
+  differs (raw vs lowercased query, which changes the exact-case scoring bonus),
+  and adopting it here would have been the behaviour change this phase promised
+  not to make. Phase 3 flips it.
+- **The grammar's ambiguities were pinned, not fixed.** Scope resolution matches
+  on display label, so duplicate leaf names, labels containing a space and a
+  project named `all` are all ambiguous. Documented at the call site with the
+  fix deferred to the popup that would offer the disambiguation.
+
+Verification: desktop `vitest related` over the five changed files — 167 files,
+2312 tests, green. Mobile 336 + 12, green. Full-workspace typecheck clean apart
+from a **pre-existing** failure in `packages/relay-client/src/presence.test.ts`
+(four `TS2493` tuple-index errors, present on a clean tree, introduced by
+`63c2e1c0`); not touched here.
+
+**Phase 3 — not started.**
 
 ## 5. Risks, reordered
 

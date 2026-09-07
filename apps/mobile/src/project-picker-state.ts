@@ -1,4 +1,5 @@
-import { fuzzyMatch } from './slash'
+import { fuzzyMatch } from '@superone/shared/fuzzy-match'
+
 
 /**
  * Rank the open projects against what was typed, dropping the misses.

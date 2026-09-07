@@ -328,7 +328,53 @@ the renderer only draws what it is handed.
 
 Verified: mobile 364 vitest + 26 jest, gallery flow green.
 
-**Phase 5 — not started.**
+**Phase 5 — done (2026-09-07).** `@` browses the project, and the trail is the
+way back out.
+
+- **The root is the session's cwd, not the project (M14, R3).** `ChatRuntime`
+  exposes `mentionRoot` (`worktreePath ?? projectPath`), and `search_mentions`
+  now echoes the `cwd` it used, which the hook prefers once it has heard it. A
+  worktree session browsing the project folder would list a checkout the agent
+  cannot see.
+- **Scoped search is a capability, not an option (D5, M7, R2).** The response
+  carries `appliedOptions`; an older host omits it. Detecting that matters
+  because a scoped request answered project-wide looks identical — and its
+  top-20 may have ranked every in-scope file out, so filtering it client-side
+  would show *less* than the directory holds. The fallback lists the directory
+  and matches inside it instead.
+- **Additional dirs are the host's fact.** The session already knows its extra
+  roots, so `search_mentions` defaults to `getAdditionalDirectoriesSnapshot()`
+  rather than making the phone send a list it could only ever have stale. That
+  is M7 closed with no mobile code.
+- **Browse is `list_directory`, not an empty search.** An empty query against a
+  scoped tree returns the first 20 entries of a *deep crawl*, not the folder's
+  children. `deriveMentionMode` decides which producer runs, from the query
+  alone — mode, scope and needle cannot disagree because none of them is stored.
+- **Gitignore filtering is opt-in per request (D6).** `remote-directory-ignores`
+  walks up to the repository root, as git does; walking to the filesystem root
+  would import the user's `~/.gitignore` into a project that never asked. The
+  desktop file picker is unchanged. A host too old to honour it says so, and the
+  client applies the fixed exclusion set itself.
+- **Navigate vs select, both runtimes (M13).** Tapping a folder opens it — the
+  desktop's Tab — and an `@` button on the row mentions the folder itself, the
+  desktop's Enter. Both already worked through `insertMention` and
+  `selectNativeMention`; the missing pieces were the second target and the
+  project root, which both paths were writing as `@/` — an absolute path.
+- **Inside a directory the list is files only.** `@src/app` is a path, and
+  offering a capability that happens to match `app` there answers a question the
+  user did not ask.
+- Found while reviewing the screenshot: every row in a listing was printing its
+  own directory under its name, and every root row was printing its own name
+  twice. A browse row now has no second line — the breadcrumb states the
+  directory once.
+
+Verified: mobile 389 vitest + 34 jest, desktop `remote-mention-search` and the
+new `remote-directory-ignores` suites green, `tsconfig.node.json` clean, gallery
+flow green on iOS in light and dark.
+
+One footgun found and recorded in `apps/mobile/CLAUDE.md`: **two
+`fireEvent.press` calls in one RNTL test corrupt `act()` for every later test in
+the file**, which surfaces as the *next* test rendering nothing.
 
 ## 5. Risks, reordered
 

@@ -990,11 +990,17 @@ export class AgentService {
       case 'list_directory': {
         try {
           const entries = await readdir(command.path, { withFileTypes: true })
+          const ignoreMode = command.ignoreMode ?? 'none'
+          const ignored = ignoreMode === 'gitignore'
+            ? await import('./remote-directory-ignores').then((m) => m.projectIgnoreFilter(command.path))
+            : null
           const items = entries
             .filter((e) => command.showHidden || !e.name.startsWith('.'))
+            .filter((e) => ignoreMode === 'none' || !EXCLUDED_DIRS.has(e.name))
+            .filter((e) => !ignored?.(e.name, e.isDirectory()))
             .map((e) => ({ name: e.name, isDirectory: e.isDirectory() }))
             .sort((a, b) => (a.isDirectory === b.isDirectory ? a.name.localeCompare(b.name) : a.isDirectory ? -1 : 1))
-          await respond?.(command.requestId, { items })
+          await respond?.(command.requestId, { items, appliedIgnoreMode: ignoreMode })
         } catch (err) {
           await respond?.(command.requestId, { error: (err as Error).message })
         }
@@ -1025,9 +1031,16 @@ export class AgentService {
       }
       case 'search_mentions': {
         try {
-          const cwd = this.sessionManager?.getActiveSession(command.projectPath)?.cwd ?? command.projectPath
+          const session = this.sessionManager?.getActiveSession(command.projectPath)
+          const cwd = session?.cwd ?? command.projectPath
+          // The session already knows its extra roots; a phone would have to ask
+          // for them in a separate round trip and could only ever be stale.
+          const additionalDirs = command.additionalDirs ?? session?.getAdditionalDirectoriesSnapshot()
           const { searchRemoteMentions } = await import('./remote-mention-search')
-          await respond?.(command.requestId, await searchRemoteMentions(command.projectPath, cwd, command.query))
+          await respond?.(command.requestId, await searchRemoteMentions(command.projectPath, cwd, command.query, {
+            ...(command.scopeDir !== undefined ? { scopeDir: command.scopeDir } : {}),
+            ...(additionalDirs?.length ? { additionalDirs } : {}),
+          }))
         } catch (err) {
           await respond?.(command.requestId, { error: (err as Error).message })
         }

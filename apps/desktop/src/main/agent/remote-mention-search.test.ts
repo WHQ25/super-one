@@ -70,3 +70,37 @@ describe('remote mention app results', () => {
     ])
   })
 })
+
+describe('scoped mention search', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.discoverApps.mockResolvedValue([])
+    mocks.discoverProjectApps.mockResolvedValue([])
+    mocks.listInstalledApps.mockResolvedValue([])
+    mocks.resolveAppIconDataUri.mockResolvedValue(null)
+    mocks.searchMentions.mockReturnValue([])
+  })
+
+  it('confines the crawl to the directory the client is browsing', async () => {
+    await searchRemoteMentions('/project', '/worktree', 'app', { scopeDir: 'src/' })
+    expect(mocks.searchMentions).toHaveBeenCalledWith(['/worktree'], 'app', [], 20, 'src/')
+  })
+
+  it('searches the session cwd alongside its extra roots, never twice', async () => {
+    await searchRemoteMentions('/project', '/worktree', 'app', { additionalDirs: ['/shared', '/worktree'] })
+    expect(mocks.searchMentions).toHaveBeenCalledWith(['/worktree', '/shared'], 'app', [], 20, undefined)
+  })
+
+  it('reports the cwd and the options it honoured', async () => {
+    // A client cannot tell a scoped answer from an older host's project-wide
+    // one otherwise, and the unscoped top-20 may hold no in-scope file at all.
+    const result = await searchRemoteMentions('/project', '/worktree', 'app', { scopeDir: 'src/' })
+    expect(result.cwd).toBe('/worktree')
+    expect(result.appliedOptions).toEqual({ scopeDir: true, additionalDirs: false })
+  })
+
+  it('says it applied nothing when nothing was asked for', async () => {
+    const result = await searchRemoteMentions('/project', '/project', 'app')
+    expect(result.appliedOptions).toEqual({ scopeDir: false, additionalDirs: false })
+  })
+})

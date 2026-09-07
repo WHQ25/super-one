@@ -29,6 +29,12 @@ export type MentionItem = {
   aliases?: string[]
   /** Validated PNG payload supplied by the paired desktop for dynamic app identities. */
   iconPng?: string
+  /**
+   * Which root a multi-root file result came from. The host sends it only when
+   * the search spanned more than one directory, and two roots can hold the same
+   * relative path — without it they collide into one row.
+   */
+  rootPath?: string
 }
 
 const MAX_MENTION_ICON_DATA_URI_LENGTH = 256_000
@@ -53,13 +59,16 @@ export function parseMentionItems(rows: unknown): MentionItem[] {
       // highlight while every desktop row did.
       matchIndices: Array.isArray(value.matchIndices)
         ? value.matchIndices.filter((index): index is number => Number.isInteger(index)) : undefined,
-      iconPng: mentionIconPng(value.iconDataUri) }]
+      iconPng: mentionIconPng(value.iconDataUri),
+      rootPath: typeof value.rootPath === 'string' && value.rootPath ? value.rootPath : undefined }]
   })
 }
 
 export function insertMention(text: string, query: MentionQuery, item: MentionItem): string {
+  // An empty directory path is the project root, and its query is a bare `@` —
+  // `@/` would read as an absolute path and browse the filesystem root.
   const insert = item.kind === 'dir-entry'
-    ? `@${item.path}${item.isDirectory ? '/' : ' '}`
+    ? item.isDirectory ? `@${item.path ? `${item.path.replace(/[/\\]+$/, '')}/` : ''}` : `@${item.path} `
     : `@${item.path} `
   return `${text.slice(0, query.atPosition)}${insert}${text.slice(query.atPosition + 1 + query.query.length)}`
 }
@@ -80,4 +89,20 @@ export function parseAgentMentionItems(raw: unknown): MentionItem[] {
       ? target.aliases.filter((alias): alias is string => typeof alias === 'string') : []
     return [{ kind: 'agent-profile', path: target.ref, label: target.displayName, description: `@${target.slug}`, aliases }]
   })
+}
+
+/** Directories arrive as browse rows *and* as search hits (`kind: 'file'` with
+ * `isDirectory`), and both have to offer the same two actions. */
+export function isMentionDirectory(item: MentionItem): boolean {
+  return item.isDirectory === true || item.kind === 'directory'
+}
+
+/** Descend into a directory: still editable `@path/` text, not a committed chip. */
+export function directoryNavigationItem(path: string, label?: string): MentionItem {
+  return { kind: 'dir-entry', path, isDirectory: true, ...(label ? { label } : {}) }
+}
+
+/** Mention the directory itself, ending the query. */
+export function directoryMentionItem(item: MentionItem): MentionItem {
+  return { ...item, kind: 'directory', isDirectory: true }
 }

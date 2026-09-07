@@ -17,6 +17,7 @@ import type { SelectorCatalogParam } from '../model-picker-state'
 import type { MatchedSlashCommand } from '../slash'
 import type { SlashCatalogStatus } from '../slash-catalog'
 import type { MentionItem } from '../mentions'
+import { mentionBreadcrumbs } from '../mention-browse-state'
 import type { MentionRow } from '../mention-rows'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { ContextRing, IconButton, PermissionModeSelector, SandboxSelector } from '../ui'
@@ -55,6 +56,8 @@ export type ChatComposerProps = {
   requestedCursor?: ComposerCursor
   mentionSearch?: MentionSearchState
   onMentionRetry?: () => void
+  /** The raw `@` query, so the overlay can show where in the tree it points. */
+  mentionQuery?: string | null
   placeholder?: string; above?: ReactNode
 }
 
@@ -85,7 +88,8 @@ export function ChatComposer(props: ChatComposerProps) {
     {props.above}
     {!tablet ? <View testID="phone-composer-status" style={{ flexDirection: 'row', minHeight: 44 }}>{controls}</View> : null}
     <SlashSuggestions matches={props.slashHits} status={props.slashCatalogStatus} onSelect={props.onSlash} onDismiss={props.onSlashDismiss} />
-    <MentionSuggestions rows={props.mentionRows} onSelect={props.onMention} search={props.mentionSearch} onRetry={props.onMentionRetry} />
+    <MentionSuggestions rows={props.mentionRows} onSelect={props.onMention} search={props.mentionSearch}
+      onRetry={props.onMentionRetry} breadcrumbs={mentionBreadcrumbs(props.mentionQuery ?? '')} />
     <View testID={tablet ? 'tablet-composer' : 'phone-composer'} style={tablet
       ? { borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, borderRadius: radius.lg, padding: 6 }
       : { flexDirection: 'row', alignItems: 'flex-end', gap: 4 }}>

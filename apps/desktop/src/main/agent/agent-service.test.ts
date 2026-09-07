@@ -1037,6 +1037,9 @@ describe('AgentService.handleRemoteCommand', () => {
     const service = new AgentService()
     await service.handleRemoteCommand({ type: 'list_directory', requestId: 'r1', path: '/test' }, respond)
     expect(respond).toHaveBeenCalledWith('r1', {
+      // Echoed so a client can tell an unfiltered answer from a host that
+      // predates the option entirely.
+      appliedIgnoreMode: 'none',
       items: [
         { name: 'docs', isDirectory: true },
         { name: 'src', isDirectory: true },
@@ -1055,6 +1058,7 @@ describe('AgentService.handleRemoteCommand', () => {
     const service = new AgentService()
     await service.handleRemoteCommand({ type: 'list_directory', requestId: 'r2', path: '/test' }, respond)
     expect(respond).toHaveBeenCalledWith('r2', {
+      appliedIgnoreMode: 'none',
       items: [{ name: 'src', isDirectory: true }],
     })
   })

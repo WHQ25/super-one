@@ -62,12 +62,40 @@ async function listRemoteMentionApps(projectPath: string, query: string, include
     iconDataUri: boundedPngDataUri(desktopIcons[index]?.status === 'fulfilled' ? desktopIcons[index].value : undefined) }))]
 }
 
+export interface RemoteMentionSearchOptions {
+  /** Directory to confine the search to, relative to `cwd`. */
+  scopeDir?: string
+  /** Extra roots to search alongside `cwd`. */
+  additionalDirs?: string[]
+}
+
 /** Search resources in the active cwd, but advertise only launchable provider
- * identities from the host's authoritative collaboration registry. */
-export async function searchRemoteMentions(projectPath: string, cwd: string, query: string) {
+ * identities from the host's authoritative collaboration registry.
+ *
+ * The response echoes `cwd` and which options were applied. A client cannot
+ * tell a scoped answer from an older host's project-wide one otherwise, and the
+ * difference matters: an unscoped top-20 may have ranked the in-scope results
+ * out entirely, so filtering it client-side would silently show less than the
+ * directory actually holds. */
+export async function searchRemoteMentions(
+  projectPath: string,
+  cwd: string,
+  query: string,
+  options: RemoteMentionSearchOptions = {},
+) {
   const { listAgentMentionTargets } = await import('../session/agent-profiles')
   const agents = discoverAllAgents(projectPath).map((agent) => ({ name: agent.name, model: agent.model ?? '' }))
   const capabilityIds = availableMentionCapabilityIds(readAppSettings(), process.platform)
   const apps = await listRemoteMentionApps(projectPath, query, capabilityIds.includes('computer'))
-  return { items: [...apps, ...searchMentions([cwd], query, agents, 20)], agentTargets: listAgentMentionTargets(), capabilityIds }
+  const roots = [cwd, ...(options.additionalDirs ?? []).filter((dir) => dir && dir !== cwd)]
+  return {
+    items: [...apps, ...searchMentions(roots, query, agents, 20, options.scopeDir)],
+    agentTargets: listAgentMentionTargets(),
+    capabilityIds,
+    cwd,
+    appliedOptions: {
+      scopeDir: options.scopeDir !== undefined,
+      additionalDirs: roots.length > 1,
+    },
+  }
 }

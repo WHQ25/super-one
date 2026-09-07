@@ -1279,6 +1279,7 @@ export function MobileApp() {
           requestedCursor={suggestions.requestedCursor}
           mentionSearch={suggestions.mentionSearch}
           onMentionRetry={suggestions.retry}
+          mentionQuery={suggestions.mentionQuery}
           onSubmitFromKeyboard={() => {
             const hasContent = draftRef.current.trim().length > 0 || attachments.length > 0
             if (shouldSubmitFromKeyboard({

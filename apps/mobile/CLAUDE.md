@@ -93,9 +93,11 @@ The composer overlays follow the same rule:
 `superone://native-preview?page=Composer%20suggestions` walks every slash and
 mention state — searching, failed + retry, no matches, skill-only match, CJK and
 truncating labels — through the real `SlashSuggestions` / `MentionSuggestions`
-and the real `filterSlashCommands`. The chat page itself carries an
-**Editor: native / Editor: fallback** toggle, because the native chip editor and
-the plain `TextInput` fallback insert and serialise differently; reviewing only
+and the real `filterSlashCommands` — including the three directory-browse
+states, where the breadcrumb is the only way back out of a nested folder. The
+chat page itself carries an **Editor: native / Editor: fallback** toggle,
+because the native chip editor and the plain `TextInput` fallback insert and
+serialise differently; reviewing only
 one of them is how a fallback-only regression ships.
 
 **Do not port the desktop's `--sidebar-*` palette.** It was tried and reverted: in
@@ -154,13 +156,17 @@ bun --filter @superone/mobile test:components   # jest only
 RN's `index.js` reaches its internals through lazy `require()` calls that escape
 Vite's ESM pipeline and arrive at Node as unparsable Flow source; no combination
 of `ssr.noExternal`, `server.deps.inline` or a babel plugin intercepts them.
-jest-expo reuses the transform Metro already applies. Three things about it:
+jest-expo reuses the transform Metro already applies. Four things about it:
 
 - **`render` is async** in React Native Testing Library 14 — React 19 renders
   concurrently and nothing is committed when the call returns. `await` it, or
   every query fails with `render function has not been called`.
 - Mount through `renderWithTheme` (`src/test-render.tsx`); `useMobileTheme`
   throws outside its provider.
+- **One `fireEvent.press` per test.** Two presses in a single test overlap
+  React 19's `act()` scopes (it says so on stderr), and the corruption lands on
+  the *next* test in the file, which then renders nothing and fails with
+  "Unable to find an element". Split the walk into one press per test.
 - `jest.config.js` pins `^react$` to this workspace's copy. Bun leaves a nested
   `apps/mobile/node_modules/react` (pinned 19.1.0) beside the hoisted root one,
   and without the mapping `react-reconciler` and the components under test load

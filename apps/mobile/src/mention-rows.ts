@@ -93,6 +93,12 @@ export interface MentionRowInput {
   agentProfiles: MentionItem[]
   /** Capability ids the desktop currently has switched on. */
   capabilityIds?: unknown
+  /**
+   * The query is anchored to a directory (`@src/` or `@src/app`), so it is a
+   * path and nothing else. A capability or collaborator that happens to match
+   * the last segment would be answering a question the user did not ask.
+   */
+  directoryScoped?: boolean
 }
 
 const DEFAULT_CAPABILITIES = ['widget', 'debug']
@@ -186,10 +192,12 @@ function agentProfileRows(query: string, profiles: MentionItem[]): MentionRow[] 
  */
 export function buildMentionRows(query: string, input: MentionRowInput): MentionRow[] {
   const hasQuery = !!query.trim()
-  const rows = [...capabilityRows(query, input.capabilityIds), ...agentProfileRows(query, input.agentProfiles)]
-  const seen = new Set(rows.map((row) => `${row.item.kind}:${row.item.path}`))
+  const rows = input.directoryScoped
+    ? []
+    : [...capabilityRows(query, input.capabilityIds), ...agentProfileRows(query, input.agentProfiles)]
+  const seen = new Set(rows.map((row) => mentionRowKey(row.item)))
   for (const item of input.remote) {
-    const key = `${item.kind}:${item.path}`
+    const key = mentionRowKey(item)
     if (seen.has(key)) continue
     if (item.kind === 'desktop-app' && !hasQuery) continue
     seen.add(key)
@@ -198,10 +206,36 @@ export function buildMentionRows(query: string, input: MentionRowInput): Mention
       item,
       labelIndices: remapIndices(item.path, display, item.matchIndices ?? []),
       keywordIndices: [],
-      detail: item.description || item.path,
+      // A browse row needs no second line: every row in a listing shares the
+      // same directory, and the breadcrumb above already names it. Elsewhere the
+      // path is worth showing unless it is the name again.
+      detail: rowDetail(item, display),
     })
   }
   return rows
+}
+
+/**
+ * Identity of a row, for de-duplication and for React.
+ *
+ * The path alone is not it: with additional directories in scope, two roots can
+ * each hold `src/index.ts`, and keying on the path would silently drop one of
+ * two genuinely different files.
+ */
+export function mentionRowKey(item: MentionItem): string {
+  return `${item.kind}:${item.rootPath ? `${item.rootPath}\0` : ''}${item.path}`
+}
+
+function rowDetail(item: MentionItem, display: string): string {
+  if (item.description) return item.description
+  // A browse row needs no second line: every row in a listing shares the same
+  // directory, and the breadcrumb above already names it.
+  if (item.kind === 'dir-entry') return ''
+  const path = display === item.path ? '' : item.path
+  // Which checkout a multi-root hit came from is the only thing telling two
+  // same-named files apart, so it leads the line.
+  const root = item.rootPath?.replace(/[/\\]+$/, '').split(/[/\\]/).pop()
+  return root ? `${root} · ${path || display}` : path
 }
 
 export function groupMentionRows(rows: MentionRow[]): PopupGroup<MentionRow>[] {

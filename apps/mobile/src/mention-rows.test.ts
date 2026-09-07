@@ -116,3 +116,24 @@ describe('buildMentionRows', () => {
       .toEqual(['capability', 'agent-profile', 'agent', 'miniapp', 'file'])
   })
 })
+
+describe('multi-root results', () => {
+  it('keeps two same-named files from different roots apart', () => {
+    // With additional directories in scope both roots can hold `src/index.ts`.
+    // Keying on the path alone silently dropped one of them.
+    const rows = buildMentionRows('index', {
+      remote: [
+        { kind: 'file', path: 'src/index.ts', rootPath: '/work/app' },
+        { kind: 'file', path: 'src/index.ts', rootPath: '/work/lib' },
+      ],
+      agentProfiles: [],
+    })
+    expect(rows).toHaveLength(2)
+    expect(rows.map((row) => row.detail)).toEqual(['app · src/index.ts', 'lib · src/index.ts'])
+  })
+
+  it('leaves single-root rows showing only their path', () => {
+    const [row] = buildMentionRows('index', { remote: [{ kind: 'file', path: 'src/index.ts' }], agentProfiles: [] })
+    expect(row?.detail).toBe('src/index.ts')
+  })
+})

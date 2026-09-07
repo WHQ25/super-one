@@ -16,4 +16,21 @@ describe('extractMentionQuery', () => {
   it('replaces the live token on insert', () => {
     expect(insertMention('@fi', { atPosition: 0, query: 'fi' }, { kind: 'file', path: 'src/a.ts' })).toBe('@src/a.ts ')
   })
+
+  it('leaves a directory query open so browsing can continue', () => {
+    expect(insertMention('@sr', { atPosition: 0, query: 'sr' }, { kind: 'dir-entry', path: 'src', isDirectory: true }))
+      .toBe('@src/')
+  })
+
+  it('writes a bare @ for the project root, never an absolute path', () => {
+    // `@/` would browse the filesystem root on the desktop, which is not what
+    // tapping the root crumb means.
+    expect(insertMention('@src/ui/', { atPosition: 0, query: 'src/ui/' }, { kind: 'dir-entry', path: '', isDirectory: true }))
+      .toBe('@')
+  })
+
+  it('ends the query when the directory itself is the mention', () => {
+    expect(insertMention('@src/u', { atPosition: 0, query: 'src/u' }, { kind: 'directory', path: 'src/ui', isDirectory: true }))
+      .toBe('@src/ui ')
+  })
 })

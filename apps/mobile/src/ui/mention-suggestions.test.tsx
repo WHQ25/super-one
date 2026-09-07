@@ -97,3 +97,72 @@ test('renders a desktop app only once something has been typed', async () => {
   expect(empty.some((r) => r.item.kind === 'desktop-app')).toBe(false)
   expect(typed.some((r) => r.item.kind === 'desktop-app')).toBe(true)
 })
+
+const directory: MentionItem = { kind: 'dir-entry', path: 'src/ui', isDirectory: true, label: 'ui' }
+
+// Opening a folder and mentioning it are the desktop's Tab and Enter. A tap can
+// only carry one of them, so the other needs a target of its own.
+test('opens a folder when its row is tapped', async () => {
+  const chosen: MentionItem[] = []
+  await renderWithTheme(<MentionSuggestions rows={[row(directory)]} onSelect={(item) => chosen.push(item)} />)
+  fireEvent.press(screen.getByText('ui'))
+  expect(chosen).toEqual([{ kind: 'dir-entry', path: 'src/ui', isDirectory: true, label: 'ui' }])
+})
+
+test('mentions the folder itself from a separate target', async () => {
+  const chosen: MentionItem[] = []
+  await renderWithTheme(<MentionSuggestions rows={[row(directory)]} onSelect={(item) => chosen.push(item)} />)
+  fireEvent.press(screen.getByLabelText('Mention ui'))
+  expect(chosen).toEqual([{ kind: 'directory', path: 'src/ui', isDirectory: true, label: 'ui' }])
+})
+
+test('treats a directory the host returned as a search hit the same way', async () => {
+  // Scoped search answers with `kind: 'file'` plus `isDirectory`; a folder found
+  // that way still has to be enterable.
+  const chosen: MentionItem[] = []
+  await renderWithTheme(
+    <MentionSuggestions rows={[row({ kind: 'file', path: 'src/ui', isDirectory: true })]} onSelect={(item) => chosen.push(item)} />,
+  )
+  fireEvent.press(screen.getByText('ui'))
+  expect(chosen[0]).toEqual({ kind: 'dir-entry', path: 'src/ui', isDirectory: true })
+})
+
+const trail = [{ label: 'src', query: 'src/' }, { label: 'ui', query: 'src/ui/' }]
+
+test('walks back out of a directory through the breadcrumb trail', async () => {
+  const chosen: MentionItem[] = []
+  await renderWithTheme(
+    <MentionSuggestions rows={[row(file)]} onSelect={(item) => chosen.push(item)} breadcrumbs={trail} />,
+  )
+  fireEvent.press(screen.getByLabelText('Browse src'))
+  expect(chosen).toEqual([{ kind: 'dir-entry', path: 'src', isDirectory: true, label: 'src' }])
+})
+
+test('returns to the project root from the trail', async () => {
+  const chosen: MentionItem[] = []
+  await renderWithTheme(
+    <MentionSuggestions rows={[row(file)]} onSelect={(item) => chosen.push(item)} breadcrumbs={trail} />,
+  )
+  fireEvent.press(screen.getByLabelText('Browse project root'))
+  expect(chosen).toEqual([{ kind: 'dir-entry', path: '', isDirectory: true }])
+})
+
+test('does not offer the directory already being listed as somewhere to go', async () => {
+  await renderWithTheme(<MentionSuggestions rows={[row(file)]} onSelect={() => {}} breadcrumbs={trail} />)
+  expect(screen.queryByLabelText('Browse ui')).toBeNull()
+})
+
+test('shows no trail at the project root', async () => {
+  await renderWithTheme(<MentionSuggestions rows={[row(file)]} onSelect={() => {}} breadcrumbs={[]} />)
+  expect(screen.queryByLabelText('Browse project root')).toBeNull()
+})
+
+test('does not print a row\'s own name under itself', async () => {
+  // A root-level browse row has nothing above it to name, and repeating the
+  // filename as its own second line reads as two different facts.
+  await renderWithTheme(
+    <MentionSuggestions rows={buildMentionRows('', { remote: [{ kind: 'dir-entry', path: 'apps', isDirectory: true, label: 'apps' }], agentProfiles: [] })}
+      onSelect={() => {}} />,
+  )
+  expect(screen.getAllByText('apps')).toHaveLength(1)
+})

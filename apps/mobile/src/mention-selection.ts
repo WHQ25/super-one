@@ -23,7 +23,8 @@ export function selectNativeMention(snapshot: MentionEditorSnapshot, item: Menti
   if (!query) return
   // Directory traversal is still editable @path text until a resource is selected.
   const replacement: MentionDocument = item.kind === 'dir-entry' && item.isDirectory
-    ? [{ text: `@${item.path.replace(/[/\\]+$/, '')}/` }]
+    // An empty path is the project root: a bare `@`, not `@/`.
+    ? [{ text: `@${item.path ? `${item.path.replace(/[/\\]+$/, '')}/` : ''}` }]
     : (() => {
       const token = mentionTokenFromItem(item)
       return token ? [{ mention: token }, { text: ' ' }] : []

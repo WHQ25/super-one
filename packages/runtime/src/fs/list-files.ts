@@ -2,23 +2,9 @@ import { existsSync, readdirSync, statSync, type Dirent } from 'node:fs'
 import { join } from 'node:path'
 import { resolveProjectPath } from './path-security'
 
-/** Same baseline excludes as desktop fuzzy-file-search (no .gitignore). */
-export const LIST_FILES_EXCLUDED = new Set([
-  '.git',
-  '.next',
-  '.nuxt',
-  '.turbo',
-  '.cache',
-  '.venv',
-  '.gradle',
-  '.cargo',
-  '.tox',
-  '.mypy_cache',
-  'node_modules',
-  'dist',
-  'build',
-  '__pycache__',
-])
+/** Re-exported from `@superone/shared` so the mobile composer can mirror it. */
+import { LIST_FILES_EXCLUDED } from '@superone/shared/list-files-excluded'
+export { LIST_FILES_EXCLUDED }
 
 export const MAX_LIST_FILES = 20_000
 export const DEFAULT_LIST_DEPTH = 10

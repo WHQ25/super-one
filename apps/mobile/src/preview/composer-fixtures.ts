@@ -63,3 +63,19 @@ export const previewLongMentionItems: MentionItem[] = [
   },
   { kind: 'file', path: 'no-label-so-the-basename-is-derived/from/the/path/report.md' },
 ]
+
+/** A directory listing as `list_directory` returns it, root then nested. */
+export const previewRootEntries = [
+  { name: 'apps', isDirectory: true },
+  { name: 'packages', isDirectory: true },
+  { name: 'docs', isDirectory: true },
+  { name: 'package.json', isDirectory: false },
+  { name: 'README.md', isDirectory: false },
+]
+
+export const previewNestedEntries = [
+  { name: 'composer-suggestions.tsx', isDirectory: false },
+  { name: 'native-composer-input.tsx', isDirectory: false },
+  { name: 'theme', isDirectory: true },
+  { name: '组件说明.md', isDirectory: false },
+]

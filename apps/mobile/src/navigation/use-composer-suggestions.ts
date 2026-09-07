@@ -1,10 +1,12 @@
 import type { RelayClient } from '@superone/relay-client'
-import { requestMentionSearch } from '../mention-search'
+import { requestMentionSearch, type MentionSearchResult } from '../mention-search'
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import type { ChatRuntime } from '../runtime'
 import { cursorAfterEdit, type ComposerCursor } from '../composer-cursor'
 import { extractMentionQuery, insertMention, parseMentionItems, parseAgentMentionItems, type MentionItem } from '../mentions'
 import { buildMentionRows, type MentionRow } from '../mention-rows'
+import { deriveMentionMode, mentionScopeDir } from '../mention-browse-state'
+import { filterBrowseItems, requestDirectory } from '../mention-browse'
 import { filterSlashCommands, type SlashCommandInfo } from '../slash'
 import { requestSlashCatalog, type SlashCatalogStatus } from '../slash-catalog'
 
@@ -13,6 +15,9 @@ const CLOSED: MentionSearchState = { active: false, loading: false }
 
 /** Matches the desktop popup's file-search debounce. */
 export const MENTION_SEARCH_DEBOUNCE_MS = 150
+
+/** One shape for both producers, so the caller never branches on which ran. */
+type MentionFetch = { remote: MentionItem[]; agentProfiles: MentionItem[]; capabilityIds?: unknown }
 
 /**
  * Where the composer's suggestions come from.
@@ -37,9 +42,7 @@ export function useComposerSuggestions(
   const [catalog, setCatalog] = useState<SlashCommandInfo[]>([])
   const [catalogStatus, setCatalogStatus] = useState<SlashCatalogStatus>('loading')
   const [mentionQuery, setMentionQuery] = useState<string | null>(null)
-  const [mentionResults, setMentionResults] = useState<{ remote: MentionItem[]; agentProfiles: MentionItem[]; capabilityIds?: unknown }>(
-    { remote: [], agentProfiles: [] },
-  )
+  const [mentionResults, setMentionResults] = useState<MentionFetch>({ remote: [], agentProfiles: [] })
   const [mentionSearch, setMentionSearch] = useState<MentionSearchState>(CLOSED)
   const [requestedCursor, setRequestedCursor] = useState<ComposerCursor>()
   const text = useRef('')
@@ -49,6 +52,12 @@ export function useComposerSuggestions(
   const mentionCatalog = useRef<{ agentProfiles: MentionItem[]; capabilityIds?: unknown }>({ agentProfiles: [] })
   const inFlightQuery = useRef<string | null>(null)
   const debounce = useRef<ReturnType<typeof setTimeout>>(undefined)
+  /**
+   * The directory the host says it is searching. A worktree session does not
+   * run in the project folder, so browsing the project would list a checkout
+   * the agent cannot see.
+   */
+  const cwd = useRef<string | null>(null)
 
   const clear = () => {
     generation.current++
@@ -59,6 +68,7 @@ export function useComposerSuggestions(
   }
   useEffect(() => {
     mentionCatalog.current = { agentProfiles: [] }
+    cwd.current = null
     clear()
     return () => { generation.current++ }
   }, [contextKey])
@@ -101,6 +111,62 @@ export function useComposerSuggestions(
     [draft, catalog, provider, slashDismissed],
   )
 
+  const carried = () => ({
+    agentProfiles: mentionCatalog.current.agentProfiles,
+    capabilityIds: mentionCatalog.current.capabilityIds,
+  })
+  const absorb = (result: MentionSearchResult): MentionFetch => {
+    if (typeof result.cwd === 'string' && result.cwd) cwd.current = result.cwd
+    const agentProfiles = parseAgentMentionItems(result.agentTargets)
+    mentionCatalog.current = { agentProfiles, capabilityIds: result.capabilityIds }
+    return { remote: parseMentionItems(result.items), agentProfiles, capabilityIds: result.capabilityIds }
+  }
+  const browseRoot = (runtime: ChatRuntime | null) => cwd.current || runtime?.mentionRoot || projectPath || ''
+
+  /**
+   * Pick the producer for what the user has typed.
+   *
+   * A trailing `/` means *browse* — list one directory, which fuzzy search
+   * cannot answer: an empty query against a scoped tree returns the first 20
+   * entries of a deep crawl, not the folder's own children.
+   */
+  const mentionLookup = (
+    query: string,
+    runtime: ChatRuntime | null,
+    client: RelayClient | null,
+  ): (() => Promise<MentionFetch>) | null => {
+    const mode = deriveMentionMode(query)
+    if (mode.kind === 'browse') {
+      const root = browseRoot(runtime)
+      if (!client || !root) return null
+      return async () => {
+        const { items, error } = await requestDirectory(client, root, mode.dir)
+        if (error) throw new Error(error)
+        return { remote: items, ...carried() }
+      }
+    }
+    const scoped = mode.scopeDir ? { scopeDir: mode.scopeDir } : {}
+    const search = runtime ? () => runtime.searchMentions(mode.needle, scoped)
+      : client && projectPath ? () => requestMentionSearch(client, projectPath, mode.needle, scoped) : null
+    if (!search) return null
+    return async () => {
+      const result = await search()
+      if (result.error) throw new Error(result.error)
+      // A host that predates scoped search answered project-wide, and its
+      // top-20 may have ranked every in-scope file out. Filtering that answer
+      // would show less than the directory actually holds, so list the
+      // directory instead and match inside it.
+      if (mode.scopeDir && !result.appliedOptions?.scopeDir) {
+        const fetched = absorb(result)
+        const root = browseRoot(runtime)
+        if (!client || !root) return fetched
+        const { items, error } = await requestDirectory(client, root, mode.scopeDir)
+        return error ? fetched : { ...fetched, remote: filterBrowseItems(items, mode.needle) }
+      }
+      return absorb(result)
+    }
+  }
+
   const searchMentions = () => {
     const runtime = runtimeRef.current
     const client = host.client.current
@@ -111,10 +177,9 @@ export function useComposerSuggestions(
       return
     }
     setMentionQuery(query.query)
-    const lookup = runtime ? () => runtime.searchMentions(query.query)
-      : client && projectPath ? () => requestMentionSearch(client, projectPath, query.query) : null
+    const lookup = mentionLookup(query.query, runtime, client)
     if (!lookup) {
-      setMentionResults({ remote: [], agentProfiles: mentionCatalog.current.agentProfiles, capabilityIds: mentionCatalog.current.capabilityIds })
+      setMentionResults({ remote: [], ...carried() })
       setMentionSearch({ active: true, loading: false })
       return
     }
@@ -124,19 +189,18 @@ export function useComposerSuggestions(
     if (inFlightQuery.current === query.query) return
     inFlightQuery.current = query.query
     const request = ++generation.current
-    setMentionResults((current) => ({ ...current, agentProfiles: mentionCatalog.current.agentProfiles, capabilityIds: mentionCatalog.current.capabilityIds }))
+    setMentionResults((current) => ({ ...current, ...carried() }))
     setMentionSearch({ active: true, loading: true })
     if (debounce.current) clearTimeout(debounce.current)
     debounce.current = setTimeout(() => {
-      void Promise.resolve().then(lookup).then((result) => {
-        if (request !== generation.current || runtime !== runtimeRef.current || (!runtime && client !== host.client.current)) return
-        if (result.error) throw new Error(result.error)
-        const agentProfiles = parseAgentMentionItems(result.agentTargets)
-        mentionCatalog.current = { agentProfiles, capabilityIds: result.capabilityIds }
-        setMentionResults({ remote: parseMentionItems(result.items), agentProfiles, capabilityIds: result.capabilityIds })
+      const stale = () => request !== generation.current || runtime !== runtimeRef.current
+        || (!runtime && client !== host.client.current)
+      void Promise.resolve().then(lookup).then((fetched) => {
+        if (stale()) return
+        setMentionResults(fetched)
         setMentionSearch({ active: true, loading: false })
       }).catch((error: unknown) => {
-        if (request !== generation.current || runtime !== runtimeRef.current || (!runtime && client !== host.client.current)) return
+        if (stale()) return
         inFlightQuery.current = null
         setMentionSearch({ active: true, loading: false, error: error instanceof Error ? error.message : 'Could not load mention suggestions' })
       })
@@ -146,11 +210,19 @@ export function useComposerSuggestions(
   /**
    * Rows are derived, so the catalog that arrives with a search result re-ranks
    * what is already on screen instead of waiting for another keystroke.
+   *
+   * Inside a directory the list is files only: `@src/app` is a path, and
+   * offering capabilities or collaborators that happen to match `app` there
+   * would be answering a question the user did not ask.
    */
-  const mentionRows = useMemo<MentionRow[]>(
-    () => (mentionQuery === null ? [] : buildMentionRows(mentionQuery, mentionResults)),
-    [mentionQuery, mentionResults],
-  )
+  const mentionRows = useMemo<MentionRow[]>(() => {
+    if (mentionQuery === null) return []
+    const mode = deriveMentionMode(mentionQuery)
+    return buildMentionRows(mode.kind === 'browse' ? '' : mode.needle, {
+      ...mentionResults,
+      directoryScoped: !!mentionScopeDir(mentionQuery),
+    })
+  }, [mentionQuery, mentionResults])
 
   /** Any edit the user made re-arms a dismissed overlay; a programmatic one does not. */
   const observe = (value: string, composing: boolean) => {
@@ -190,7 +262,10 @@ export function useComposerSuggestions(
     cursor.current = { start: end, end }
     setRequestedCursor(cursor.current)
     setDraft(value)
-    clear()
+    // Descending into a directory leaves the query open: the text now ends in a
+    // separator, so the next lookup browses it instead of closing the overlay.
+    if (item.kind === 'dir-entry' && item.isDirectory) searchMentions()
+    else clear()
     return value
   }
   /** Record a draft the app rewrote, without re-arming the slash overlay. */
@@ -204,6 +279,7 @@ export function useComposerSuggestions(
 
   return {
     slashHits, slashCatalogStatus: catalogStatus, mentionRows, mentionSearch, requestedCursor,
+    mentionQuery,
     update, updateNative, select, insert, clear, applyProgrammatic,
     dismissSlash: () => setSlashDismissed(true),
     retry: searchMentions,

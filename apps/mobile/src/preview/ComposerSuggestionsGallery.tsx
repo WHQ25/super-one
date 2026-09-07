@@ -4,7 +4,12 @@ import { useMobileTheme } from '../theme/context'
 import { MentionSuggestions, SlashSuggestions } from '../ui/composer-suggestions'
 import { filterSlashCommands } from '../slash'
 import { buildMentionRows } from '../mention-rows'
-import { previewAgentProfiles, previewCapabilityIds, previewLongMentionItems, previewMentionItems, previewSlashCatalog } from './composer-fixtures'
+import { browseItems } from '../mention-browse'
+import { mentionBreadcrumbs } from '../mention-browse-state'
+import {
+  previewAgentProfiles, previewCapabilityIds, previewLongMentionItems, previewMentionItems,
+  previewNestedEntries, previewRootEntries, previewSlashCatalog,
+} from './composer-fixtures'
 
 /**
  * Every state the two composer overlays can reach, in one scroll.
@@ -110,6 +115,47 @@ export function ComposerSuggestionsGallery() {
 
     <Section title="Mention · no matches" note="Settled search, nothing found.">
       <MentionSuggestions rows={[]} onSelect={() => {}} search={{ active: true, loading: false }} />
+    </Section>
+
+    <Section title="Mention · browsing the root" note="A bare @ lists the project alongside the capabilities. No trail yet — this is the root.">
+      <MentionSuggestions
+        rows={buildMentionRows('', {
+          remote: browseItems(previewRootEntries, ''),
+          agentProfiles: previewAgentProfiles,
+          capabilityIds: previewCapabilityIds,
+        })}
+        onSelect={() => {}}
+        search={{ active: true, loading: false }}
+        breadcrumbs={mentionBreadcrumbs('')}
+      />
+    </Section>
+
+    <Section title="Mention · inside src/ui" note="Files only: inside a directory the query is a path, so capabilities drop out. Tapping a folder opens it; the @ button mentions it.">
+      <MentionSuggestions
+        rows={buildMentionRows('', {
+          remote: browseItems(previewNestedEntries, 'src/ui/'),
+          agentProfiles: previewAgentProfiles,
+          capabilityIds: previewCapabilityIds,
+          directoryScoped: true,
+        })}
+        onSelect={() => {}}
+        search={{ active: true, loading: false }}
+        breadcrumbs={mentionBreadcrumbs('src/ui/')}
+      />
+    </Section>
+
+    <Section title="Mention · scoped search @src/ui/comp" note="The trail keeps the way out reachable while the last segment is still being typed.">
+      <MentionSuggestions
+        rows={buildMentionRows('comp', {
+          remote: [{ kind: 'file', path: 'src/ui/composer-suggestions.tsx', matchIndices: [7, 8, 9, 10] }],
+          agentProfiles: previewAgentProfiles,
+          capabilityIds: previewCapabilityIds,
+          directoryScoped: true,
+        })}
+        onSelect={() => {}}
+        search={{ active: true, loading: false }}
+        breadcrumbs={mentionBreadcrumbs('src/ui/comp')}
+      />
     </Section>
 
     <Section title="Mention · truncation" note="Long path, and a row with no label at all.">

@@ -1,4 +1,4 @@
-import { requestMentionSearch, type MentionSearchResult } from './mention-search'
+import { requestMentionSearch, type MentionSearchOptions, type MentionSearchResult } from './mention-search'
 import type {
   AgentEvent,
   ChatMessage,
@@ -320,8 +320,13 @@ export class ChatRuntime {
     if (res.error) throw new Error(res.error)
   }
 
-  searchMentions(query: string): Promise<MentionSearchResult> {
-    return requestMentionSearch(this.client, this.projectPath, query)
+  searchMentions(query: string, options?: MentionSearchOptions): Promise<MentionSearchResult> {
+    return requestMentionSearch(this.client, this.projectPath, query, options)
+  }
+
+  /** Root the composer browses: a worktree session is not the project folder. */
+  get mentionRoot(): string {
+    return this.worktree.worktreePath || this.projectPath
   }
 
   respondPermission(

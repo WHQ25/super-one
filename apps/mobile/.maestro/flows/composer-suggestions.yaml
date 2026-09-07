@@ -127,3 +127,45 @@ tags: [smoke, native, visual]
     direction: DOWN
 - assertVisible: "No matches"
 - takeScreenshot: ${"composer-suggestions-states-" + THEME}
+
+# Directory browsing. A phone has no Tab and no Backspace-to-parent, so the
+# trail is the only way back out of a nested folder — its absence at the root
+# and its presence below are both load-bearing.
+- scrollUntilVisible:
+    element:
+      text: "Mention · browsing the root"
+    direction: DOWN
+    # Stopping the moment the heading appears leaves its list below the fold.
+    centerElement: true
+- assertVisible: "apps"
+- assertVisible: "package.json"
+- takeScreenshot: ${"composer-suggestions-browse-root-" + THEME}
+
+- scrollUntilVisible:
+    element:
+      text: "Mention · inside src/ui"
+    direction: DOWN
+    # Stopping the moment the heading appears leaves its list below the fold.
+    centerElement: true
+# Inside a directory the query is a path, so only Files is left. That the
+# capability rows drop out is asserted in the component test — every section of
+# this gallery stays mounted, so a negative assertion here would read the
+# sections above.
+- assertVisible: "Files"
+- assertVisible: "Browse project root"
+- assertVisible: "Browse src"
+# The directory being listed is not somewhere to go.
+- assertNotVisible: "Browse ui"
+# Tapping a folder opens it; mentioning the folder itself needs its own target.
+- assertVisible: "Mention theme"
+- takeScreenshot: ${"composer-suggestions-browse-nested-" + THEME}
+
+- scrollUntilVisible:
+    element:
+      text: "Mention · scoped search.*"
+    direction: DOWN
+    # Stopping the moment the heading appears leaves its list below the fold.
+    centerElement: true
+- assertVisible: "composer-suggestions.tsx.*src/ui/composer-suggestions.tsx"
+- assertVisible: "Browse src"
+- takeScreenshot: ${"composer-suggestions-browse-scoped-" + THEME}

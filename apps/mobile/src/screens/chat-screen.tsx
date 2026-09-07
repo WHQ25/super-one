@@ -49,6 +49,7 @@ export function ChatScreen(props: {
   requestedCursor?: ComposerCursor
   mentionSearch?: MentionSearchState
   onMentionRetry?: () => void
+  mentionQuery?: string | null
   draft: string
   streaming: boolean
   onWebMessage: (raw: string) => void

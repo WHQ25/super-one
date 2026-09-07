@@ -1,13 +1,13 @@
 import { ActivityIndicator, Image, Pressable, ScrollView, View } from 'react-native'
 import { Text } from './text'
 import type { MentionSearchState } from '../navigation/use-composer-suggestions'
-import { Bot, AppWindow, Box, Wrench, X } from 'lucide-react-native'
+import { AtSign, Bot, AppWindow, Box, ChevronRight, FolderRoot, Wrench, X } from 'lucide-react-native'
 import { groupItems } from '@superone/shared/popup-groups'
 import type { MatchedSlashCommand } from '../slash'
 import type { SlashCatalogStatus } from '../slash-catalog'
 import { IconButton } from './icon-button'
-import type { MentionItem } from '../mentions'
-import { groupMentionRows, mentionDisplayName, mentionGroupKey, MENTION_GROUP_LABELS, type MentionGroupKey, type MentionRow } from '../mention-rows'
+import { directoryMentionItem, directoryNavigationItem, isMentionDirectory, type MentionItem } from '../mentions'
+import { groupMentionRows, mentionDisplayName, mentionGroupKey, mentionRowKey, MENTION_GROUP_LABELS, type MentionGroupKey, type MentionRow } from '../mention-rows'
 import { useMobileTheme } from '../theme/context'
 import { FileTypeIcon } from './file-icon'
 import { HarnessIcon } from './harness-icon'
@@ -112,46 +112,96 @@ export function MentionIdentity({ item, size = 16 }: { item: MentionItem; size?:
   return <Wrench size={size} color={colors.mutedForeground} />
 }
 
-export function MentionSuggestions({ rows, onSelect, search, onRetry }: {
+/**
+ * Where in the project the open `@` query is pointing, and the way back out.
+ *
+ * The desktop walks directories with Tab and Backspace. A phone has neither, so
+ * without this the only way out of `@src/ui/` is to delete the path by hand.
+ */
+function MentionBreadcrumbs({ trail, onSelect }: {
+  trail: { label: string; query: string }[]
+  onSelect: (item: MentionItem) => void
+}) {
+  const { tokens: { colors } } = useMobileTheme()
+  return <ScrollView horizontal keyboardShouldPersistTaps="always" showsHorizontalScrollIndicator={false}
+    style={{ flexGrow: 0, borderBottomWidth: 1, borderBottomColor: colors.border }}
+    contentContainerStyle={{ alignItems: 'center', paddingHorizontal: 8, paddingVertical: 6, gap: 2, minHeight: 36 }}>
+    <Pressable accessibilityRole="button" accessibilityLabel="Browse project root"
+      onPress={() => onSelect(directoryNavigationItem(''))}
+      style={({ pressed }) => ({ padding: 4, borderRadius: 6, backgroundColor: pressed ? colors.muted : 'transparent' })}>
+      <FolderRoot size={14} color={colors.mutedForeground} />
+    </Pressable>
+    {trail.map((crumb, index) => {
+      // The last crumb is the directory already being listed; making it look
+      // tappable would promise a move that goes nowhere.
+      const current = index === trail.length - 1
+      return <View key={crumb.query} style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <ChevronRight size={12} color={colors.mutedForeground} />
+        <Pressable accessibilityRole={current ? 'text' : 'button'} disabled={current}
+          accessibilityLabel={current ? undefined : `Browse ${crumb.label}`}
+          onPress={() => onSelect(directoryNavigationItem(crumb.query.replace(/\/$/, ''), crumb.label))}
+          style={({ pressed }) => ({ paddingHorizontal: 4, paddingVertical: 2, borderRadius: 6, backgroundColor: pressed ? colors.muted : 'transparent' })}>
+          <Text style={{ fontSize: 12, color: current ? colors.foreground : colors.mutedForeground, fontWeight: current ? '600' : '400' }}>{crumb.label}</Text>
+        </Pressable>
+      </View>
+    })}
+  </ScrollView>
+}
+
+export function MentionSuggestions({ rows, onSelect, search, onRetry, breadcrumbs }: {
   rows: MentionRow[]
   onSelect: (item: MentionItem) => void
   search?: MentionSearchState
   onRetry?: () => void
+  /** Directory trail of the open query; empty at the project root. */
+  breadcrumbs?: { label: string; query: string }[]
 }) {
   const { tokens: { colors } } = useMobileTheme()
   if (!rows.length && !search?.active) return null
-  return <ScrollView testID="mention-suggestions" keyboardShouldPersistTaps="always" style={{ maxHeight: 256, flexGrow: 0, borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: colors.surface }} contentContainerStyle={{ padding: 6 }}>
-    {groupMentionRows(rows).map((group) => <View key={group.key}>
-      <SectionTitle title={MENTION_GROUP_LABELS[group.key as MentionGroupKey]} count={group.items.length} />
-      {group.items.map(({ item, labelIndices, keyword, keywordIndices, detail, disabled }) => <Pressable
-        key={`${item.kind}:${item.path}`}
-        accessibilityRole="button"
-        accessibilityState={{ disabled: !!disabled }}
-        // A capability the desktop has switched off stays listed so the user
-        // learns it exists, but selecting it would insert a tag nothing answers.
-        disabled={disabled}
-        onPress={() => onSelect(item)}
-        style={({ pressed }) => ({ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8, padding: 8, borderRadius: 6, opacity: disabled ? 0.45 : 1, backgroundColor: pressed ? colors.muted : 'transparent' })}>
-        <MentionIdentity item={item} />
-        <View style={{ flex: 1, gap: 3 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
-            <MatchText text={mentionDisplayName(item)} indices={labelIndices} />
-            {keyword ? <MatchText text={keyword} indices={keywordIndices.map((index) => index + 1)} /> : null}
+  return <View testID="mention-suggestions" style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: colors.surface, overflow: 'hidden' }}>
+    {breadcrumbs?.length ? <MentionBreadcrumbs trail={breadcrumbs} onSelect={onSelect} /> : null}
+    <ScrollView keyboardShouldPersistTaps="always" style={{ maxHeight: 256, flexGrow: 0 }} contentContainerStyle={{ padding: 6 }}>
+      {groupMentionRows(rows).map((group) => <View key={group.key}>
+        <SectionTitle title={MENTION_GROUP_LABELS[group.key as MentionGroupKey]} count={group.items.length} />
+        {group.items.map(({ item, labelIndices, keyword, keywordIndices, detail, disabled }) => {
+          // Tapping a folder opens it — the desktop's Tab. Mentioning the folder
+          // itself is the desktop's Enter, and needs its own target here.
+          const directory = isMentionDirectory(item)
+          const name = mentionDisplayName(item)
+          return <View key={mentionRowKey(item)} style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ disabled: !!disabled }}
+              // A capability the desktop has switched off stays listed so the user
+              // learns it exists, but selecting it would insert a tag nothing answers.
+              disabled={disabled}
+              onPress={() => onSelect(directory ? directoryNavigationItem(item.path, item.label) : item)}
+              style={({ pressed }) => ({ flex: 1, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8, padding: 8, borderRadius: 6, opacity: disabled ? 0.45 : 1, backgroundColor: pressed ? colors.muted : 'transparent' })}>
+              <MentionIdentity item={item} />
+              <View style={{ flex: 1, gap: 3 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
+                  <MatchText text={name} indices={labelIndices} />
+                  {keyword ? <MatchText text={keyword} indices={keywordIndices.map((index) => index + 1)} /> : null}
+                </View>
+                {disabled || detail ? <Text numberOfLines={1} style={{ color: colors.mutedForeground, fontSize: 12 }}>
+                  {disabled ? 'Turned off on the desktop' : detail}
+                </Text> : null}
+              </View>
+            </Pressable>
+            {directory ? <IconButton icon={AtSign} label={`Mention ${name}`} chrome="plain" iconSize={15}
+              onPress={() => onSelect(directoryMentionItem(item))} /> : null}
           </View>
-          <Text numberOfLines={1} style={{ color: colors.mutedForeground, fontSize: 12 }}>
-            {disabled ? 'Turned off on the desktop' : detail}
-          </Text>
-        </View>
-      </Pressable>)}
-    </View>)}
-    {search?.loading ? <View accessibilityLiveRegion="polite" style={{ padding: 8, flexDirection: 'row', gap: 8 }}>
-      <ActivityIndicator size="small" color={colors.mutedForeground} />
-      <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>Searching…</Text>
-    </View> : search?.error ? <View style={{ padding: 8 }}>
-      <Text accessibilityRole="alert" style={{ color: colors.destructive, fontSize: 12 }}>{search.error}</Text>
-      {onRetry ? <Pressable accessibilityRole="button" onPress={onRetry} style={{ minHeight: 44, justifyContent: 'center' }}>
-        <Text style={{ color: colors.primary }}>Retry search</Text>
-      </Pressable> : null}
-    </View> : !rows.length ? <Text accessibilityLiveRegion="polite" style={{ padding: 8, color: colors.mutedForeground, fontSize: 12 }}>No matches</Text> : null}
-  </ScrollView>
+        })}
+      </View>)}
+      {search?.loading ? <View accessibilityLiveRegion="polite" style={{ padding: 8, flexDirection: 'row', gap: 8 }}>
+        <ActivityIndicator size="small" color={colors.mutedForeground} />
+        <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>Searching…</Text>
+      </View> : search?.error ? <View style={{ padding: 8 }}>
+        <Text accessibilityRole="alert" style={{ color: colors.destructive, fontSize: 12 }}>{search.error}</Text>
+        {onRetry ? <Pressable accessibilityRole="button" onPress={onRetry} style={{ minHeight: 44, justifyContent: 'center' }}>
+          <Text style={{ color: colors.primary }}>Retry search</Text>
+        </Pressable> : null}
+      </View> : !rows.length ? <Text accessibilityLiveRegion="polite" style={{ padding: 8, color: colors.mutedForeground, fontSize: 12 }}>No matches</Text> : null}
+    </ScrollView>
+  </View>
 }

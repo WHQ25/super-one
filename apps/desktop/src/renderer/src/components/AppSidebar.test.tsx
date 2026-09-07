@@ -943,6 +943,41 @@ describe('AppSidebar interactions', () => {
     expect(screen.getByText('Newer session 5')).toBeTruthy()
   })
 
+  it('does not expand the project when switching to a session shown while collapsed', async () => {
+    sessionsByFolder = {
+      '/project-a': [
+        ...Array.from({ length: 6 }, (_, index) => ({
+          sessionId: `sid-normal-${index}`,
+          title: `Normal session ${index}`,
+          lastActiveAt: new Date(2026, 8, 4, 11, 30 - index).toISOString(),
+          messageCount: 2,
+        })),
+        {
+          sessionId: 'sid-unseen',
+          title: 'Unseen completed session',
+          lastActiveAt: '2026-09-04T09:00:00.000Z',
+          messageCount: 2,
+        },
+      ],
+    }
+    chatState.projectSessions = {
+      '/project-a': {
+        _activeSessionId: 'sid-normal-0',
+        _sessions: {},
+        unseenCompletedSessions: new Set(['sid-unseen']),
+      },
+    }
+
+    const { AppSidebar } = await import('./AppSidebar')
+    render(<AppSidebar />)
+
+    // Collapsed rows are already reachable, so clicking one is a plain switch —
+    // it must not toggle the project open under the cursor.
+    fireEvent.click(await screen.findByText('Unseen completed session'))
+    await waitFor(() => expect(chatState.switchSession).toHaveBeenCalledWith('sid-unseen'))
+    expect(screen.queryByText('Normal session 1')).toBeNull()
+  })
+
   it('keeps showing a switched-away draft session while awaiting first reply', async () => {
     appState.currentFolder = '/project-b'
     appState.recentFolders = [

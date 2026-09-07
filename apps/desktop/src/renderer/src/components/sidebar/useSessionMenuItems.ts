@@ -6,7 +6,13 @@ import { chatInputAPI } from '@/components/chat/chat-input-api'
 import { buildSessionMenuItems } from '@/lib/session-menu-items'
 
 export interface SessionMenuCallbacks {
-  onSwitchSession: (folderPath: string, sessionId: string) => void
+  /**
+   * `revealProject: false` marks a click on a row that is already rendered
+   * under its project, so switching must not change the project's collapse
+   * state. Callers outside a project subtree (pinned list) omit it and get the
+   * default reveal.
+   */
+  onSwitchSession: (folderPath: string, sessionId: string, options?: { revealProject?: boolean }) => void
   onPinSession: (sessionId: string, pinned: boolean, folderPath: string) => void
   onHideSession: (sessionId: string, hidden: boolean, folderPath: string) => void
   onRenameSession: (target: { sessionId: string; title: string; folderPath: string }) => void

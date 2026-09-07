@@ -242,6 +242,13 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
     if (!isExpanded) setAdditionalNormalCount(0)
   }, [isExpanded])
 
+  /** Every session row below already sits under this project row, at whatever
+   *  collapse state the user chose — switching to one must not toggle it. */
+  const switchSessionInPlace = useCallback(
+    (folderPath: string, sessionId: string) => onSwitchSession(folderPath, sessionId, { revealProject: false }),
+    [onSwitchSession],
+  )
+
   const openHistory = useCallback(() => {
     setHistoryMode(true)
     if (!isExpanded) onToggleExpand(folder.path)
@@ -557,7 +564,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
             folderPath={folder.path}
             initialSessions={allSessions}
             onClose={() => setHistoryMode(false)}
-            onSwitchSession={onSwitchSession}
+            onSwitchSession={switchSessionInPlace}
             onPinSession={onPinSession}
             onHideSession={onHideSession}
             onRenameSession={onRenameSession}
@@ -581,7 +588,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                     hasChildren={hasChildren}
                     childrenCollapsed={childrenCollapsed}
                     onToggleChildren={hasChildren ? () => toggleChildrenExpanded(parent.sessionId) : undefined}
-                    onSwitchSession={onSwitchSession}
+                    onSwitchSession={switchSessionInPlace}
                     onPinSession={onPinSession}
                     onHideSession={onHideSession}
                     onRenameSession={onRenameSession}
@@ -593,7 +600,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                       session={child}
                       folderPath={folder.path}
                       childSession
-                      onSwitchSession={onSwitchSession}
+                      onSwitchSession={switchSessionInPlace}
                       onPinSession={onPinSession}
                       onHideSession={onHideSession}
                       onRenameSession={onRenameSession}

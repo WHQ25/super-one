@@ -457,12 +457,20 @@ export const AppSidebar = memo(function AppSidebar() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionListNonce])
 
-  const handleSwitchSession = useCallback(async (folderPath: string, sessionId: string) => {
+  const handleSwitchSession = useCallback(async (
+    folderPath: string,
+    sessionId: string,
+    options?: { revealProject?: boolean },
+  ) => {
     if (useMosaicStore.getState().focusOrReplaceFocused(folderPath, sessionId)) return
     const ps = useChatStore.getState().projectSessions[folderPath]
     const currentSid = ps?._activeSessionId
     if (folderPath === currentFolder && currentSid === sessionId) return
-    setExpandedFolders((prev) => prev.has(folderPath) ? prev : new Set([...prev, folderPath]))
+    // Rows rendered inside a collapsed project stay reachable on purpose;
+    // expanding on click would reshuffle the list the user just aimed at.
+    if (options?.revealProject !== false) {
+      setExpandedFolders((prev) => prev.has(folderPath) ? prev : new Set([...prev, folderPath]))
+    }
     if (!folderSessionsRef.current[folderPath]) {
       void loadFolderSessions(folderPath, 'switch')
     }

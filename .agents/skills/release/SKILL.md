@@ -46,6 +46,46 @@ Pointer ymls are written by **`set-latest`** (not promote); binaries under `<var
   - `feature`: `0.14.3-alpha` → `0.15.0-alpha`
   - `patch`: `0.14.3-alpha` → `0.14.4-alpha`
 
+### Which position to bump
+
+The argument stays authoritative — what you pass is what ships. But the position
+is **derivable**, because every commit in this repo carries a conventional-commit
+type, so Step 1 computes a recommendation and shows it beside what you passed.
+
+| Commits since the previous tag contain | Position |
+|---|---|
+| any `feat` | **feature** (minor) |
+| only `fix` / `perf` / `refactor` / `style` / `docs` / `test` / `ci` / `build` / `chore` | **patch** |
+| `feat!`, `fix!`, or a `BREAKING CHANGE:` footer | **feature** while pre-1.0; **major** after |
+
+Two things this buys, both of which the history says are worth buying.
+
+**The position stops being a judgement call made at release time.**
+`v0.62.2-alpha` shipped as a *patch* carrying 108 commits and 33 `feat`s — the
+largest release in the sampled history — two days after `v0.62.0-alpha` shipped
+as a *minor* carrying 4 commits and zero `feat`s. Across v0.53…v0.62, 19 of 32
+bumps were patches containing features. A rule that reads the commits cannot
+produce that pair.
+
+**It frees the patch position for stable hotfixes.** `0.61.1` and `0.62.1` have
+never existed as stable releases, because the alpha line consumes the patch
+position on every ship. Only 2 of those 32 releases were fix-only, so under this
+rule the alpha line almost always advances the minor, leaving `X.Y.1+` free to
+hotfix a shipped `X.Y.0` — the thing the stable line currently cannot do at all.
+
+The minor number will move faster: recomputing the sampled history under this
+rule lands near 0.80 rather than 0.62. That is the intended reading, not a cost.
+Pre-1.0 minors are cheap (Codex is past 0.154), and a fast-moving minor tells the
+truth about how much is landing. A 108-commit "patch" does not.
+
+**Known gap, accepted for now.** Because the alpha line still spends a version
+number per release, a fix-only alpha can still collide with a stable hotfix on
+the same `X.Y.Z` — e.g. `0.63.1-alpha` while `0.63.1` is wanted for hotfixing
+`0.63.0`. The fix is to move alpha to `X.Y.0-alpha.N` (Codex / Electron style),
+which needs `variants.json`, `resolveVersion()` in `electron-builder.config.cjs`
+and `release.yml`'s `plan` job to carry a sequence number. Deferred deliberately:
+only 2 of 32 releases were fix-only, so the collision is rare.
+
 ## CHANGELOG structure
 
 `CHANGELOG.md` has one canonical timeline — **the stable line**. Alpha is not a
@@ -89,8 +129,14 @@ This is the **only** human checkpoint in the pipeline. Do all of the following *
 
 1. Read `version` from `package.json`.
 2. Parse args; default to `alpha` + `patch`.
-3. Calculate the new version string. For `alpha` it keeps the `-alpha` suffix. For `stable` see **Cutting a stable release** below — it is not a bump of the alpha line.
-4. `git log --oneline --no-decorate v<previous-version>..HEAD` to enumerate commits since the last release tag.
+3. `git log --oneline --no-decorate v<previous-version>..HEAD` to enumerate commits since the last release tag, then derive the **recommended** position from their types (see **Which position to bump**):
+   ```bash
+   git log --oneline --no-decorate v<previous-version>..HEAD | grep -cE '^[0-9a-f]+ feat'
+   # >0 → recommend feature;  0 → recommend patch
+   # also check for `!` / BREAKING CHANGE: in the range
+   ```
+   The passed argument still decides what ships. The recommendation exists so a mismatch is a decision rather than an accident — never silently override the argument with it.
+4. Calculate the new version string, using the position that will actually ship. For `alpha` it keeps the `-alpha` suffix. For `stable` see **Cutting a stable release** below — it is not a bump of the alpha line.
 5. **Decide whether relay deploys this release**: run `git diff --quiet v<previous-version>..HEAD -- apps/relay/`. Non-empty diff → relay will be deployed and `apps/relay/package.json` will jump to the new version (skipping any intermediate versions where it wasn't deployed). Empty diff → relay is left alone.
 6. **Decide whether harness R2 publish runs this release**:
    ```bash
@@ -113,7 +159,10 @@ This is the **only** human checkpoint in the pipeline. Do all of the following *
      - Drop a fix whose bug only ever existed in an alpha — a stable user never met it.
      - Omit **Tests** and **CI**. Real work, but not a stable user's release notes.
 8. Show the user **all** of this in one plain markdown message — no tool call, just text in your reply:
-   - `Current: X.Y.Z-alpha → New: A.B.C-alpha`
+   - `Current: X.Y.Z-alpha → New: A.B.C-alpha` — name the position used, e.g. `(bump: patch, as passed)`
+   - **When the recommendation differs from the argument, give it its own line with the count that drove it**, e.g.
+     `⚠️ Recommended: feature — 33 feat commits since v0.62.1-alpha. Passed: patch → shipping as patch unless you say otherwise.`
+     Put it directly under the version line, not buried in prose.
    - `Relay deploy: yes (apps/relay/package.json: <previous-relay-version> → <new-version>)` **or** `Relay deploy: no (no apps/relay/ diff since v<previous-version>)`
    - `CLI npm: yes (@super-one/cli@A.B.C-alpha, dist-tag alpha)` — default for every release (required for SSH registry install). Only note skip if the user explicitly asks for a desktop-only release.
    - `Harness R2: yes (channel=<alpha|stable>, pins/script changed since v<previous>)` **or** `Harness R2: no (no managed pin / pack-script diff since v<previous>)` — when yes, note that Claude/Codex tarball mirrors + `harness/manifest/<channel>.json` will be rewritten on R2 (~1.2 GB pack, ~1–3 min CI).
@@ -406,6 +455,11 @@ gh workflow run prune-releases.yml --ref main \
 
 ## Invariants
 
+- **The bump position is derived from commit types, not decided at release time.**
+  Any `feat` in the range ⇒ minor; fix-only ⇒ patch (see **Which position to bump**).
+  The `/release` argument still wins, but Step 1 must surface the recommendation
+  and the count behind it whenever the two disagree — so shipping 108 commits and
+  33 features as a "patch" is at least a recorded decision rather than a default.
 - Local git never creates or force-pushes tags for releases. GitHub owns tag creation at publish time.
 - `CHANGELOG.md` entries describe only **verified** behavior — no "may fix" or speculative claims.
 - **`CHANGELOG.md`'s canonical timeline is the stable line.** `[Unreleased]` is the

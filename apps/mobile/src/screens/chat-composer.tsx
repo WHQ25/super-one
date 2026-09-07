@@ -17,6 +17,7 @@ import type { SelectorCatalogParam } from '../model-picker-state'
 import type { MatchedSlashCommand } from '../slash'
 import type { SlashCatalogStatus } from '../slash-catalog'
 import type { MentionItem } from '../mentions'
+import type { MentionRow } from '../mention-rows'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { ContextRing, IconButton, PermissionModeSelector, SandboxSelector } from '../ui'
 
@@ -42,7 +43,7 @@ export type ChatComposerProps = {
   /** Runtime fact from the host; `null` until it has reported one. */
   sandboxInfo: SandboxInfo | null
   contextTokens: number; contextWindow: number | null; totalCostUsd: number
-  slashHits: MatchedSlashCommand[]; slashCatalogStatus: SlashCatalogStatus; mentionHits: MentionItem[]
+  slashHits: MatchedSlashCommand[]; slashCatalogStatus: SlashCatalogStatus; mentionRows: MentionRow[]
   onDraft: (value: string) => void; onSend: () => void; onStop: () => void
   onSubmitFromKeyboard: () => void; onAttachmentMenu: () => void
   onRemoveAttachment: (attachment: ImageAttachment) => void
@@ -84,7 +85,7 @@ export function ChatComposer(props: ChatComposerProps) {
     {props.above}
     {!tablet ? <View testID="phone-composer-status" style={{ flexDirection: 'row', minHeight: 44 }}>{controls}</View> : null}
     <SlashSuggestions matches={props.slashHits} status={props.slashCatalogStatus} onSelect={props.onSlash} onDismiss={props.onSlashDismiss} />
-    <MentionSuggestions items={props.mentionHits} onSelect={props.onMention} search={props.mentionSearch} onRetry={props.onMentionRetry} />
+    <MentionSuggestions rows={props.mentionRows} onSelect={props.onMention} search={props.mentionSearch} onRetry={props.onMentionRetry} />
     <View testID={tablet ? 'tablet-composer' : 'phone-composer'} style={tablet
       ? { borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, borderRadius: radius.lg, padding: 6 }
       : { flexDirection: 'row', alignItems: 'flex-end', gap: 4 }}>

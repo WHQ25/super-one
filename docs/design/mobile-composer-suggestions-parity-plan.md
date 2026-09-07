@@ -307,7 +307,28 @@ Preview gained multi-line, loading, failed and dismissable sections plus a
 catalog-state control; the Maestro gallery asserts all of them. Verified: mobile
 352 vitest + 23 jest, both flows green on iOS.
 
-**Phase 4 — not started.**
+**Phase 4 — done (2026-09-07).** `mention-rows.ts` is now the row model, and
+the renderer only draws what it is handed.
+
+- **M3 needed a remap, not a forward.** The host scores whole paths; the row
+  shows a basename. `remapIndices` shifts them and drops what falls outside, and
+  gives up entirely rather than highlight the wrong characters.
+- **M4 ranks inside a group.** `@c` prefers Codex among collaborators while
+  capabilities still lead the list, and a bare `@` keeps catalog order.
+- **M5, M6.** A switched-off capability stays listed, greyed and unselectable,
+  saying why. Group order is the desktop's, and the two merged groups are split:
+  a project agent named `codex` is not the Codex collaborator.
+- **M10, M11.** Desktop apps need a query. Search is debounced 150 ms and skips
+  a refetch when the query has not changed — every keystroke used to make the
+  host re-enumerate installed applications and decode their icons.
+- Found while wiring it: the renderer was drawing a capability's *intent* with
+  highlight indices scored against its *id*. `keyword` and `detail` are now
+  decided by the builder, so the renderer cannot guess wrong.
+- Two duplicate vocabularies retired: `mergeMentionItems` and `mentionGroup`.
+
+Verified: mobile 364 vitest + 26 jest, gallery flow green.
+
+**Phase 5 — not started.**
 
 ## 5. Risks, reordered
 

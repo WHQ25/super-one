@@ -194,7 +194,7 @@ export function MobileApp() {
   const fatalReloadRef = useRef({ startedAt: 0, count: 0 })
   const mentionArtworkRevisionRef = useRef(-1)
   const suggestions = useComposerSuggestions(runtimeRef, `${activePairingId}:${project?.path}:${sessionId}:${selectedProvider}`, { client: clientRef, projectPath: project?.path, provider: selectedProvider })
-  const { slashHits, mentionHits } = suggestions
+  const { slashHits, mentionRows } = suggestions
   const systemInfoRequestRef = useRef(0)
   // Files hangs off Project settings or off the session menu; back has to unwind
   // to whichever one actually opened it.
@@ -1230,7 +1230,7 @@ export function MobileApp() {
           totalCostUsd={usage.totalCostUsd}
           slashHits={slashHits}
           slashCatalogStatus={suggestions.slashCatalogStatus}
-          mentionHits={mentionHits}
+          mentionRows={mentionRows}
           attachments={attachments}
           additionalDirectories={workspaceDirs}
           queuedMessages={queuedMessages}

@@ -23,6 +23,10 @@ export type MentionItem = {
   isDirectory?: boolean
   label?: string
   description?: string
+  /** Host match positions, over `path`. Remap before highlighting a shorter label. */
+  matchIndices?: number[]
+  /** Extra names a collaborator answers to; matched but never highlighted. */
+  aliases?: string[]
   /** Validated PNG payload supplied by the paired desktop for dynamic app identities. */
   iconPng?: string
 }
@@ -45,6 +49,10 @@ export function parseMentionItems(rows: unknown): MentionItem[] {
       isDirectory: value.isDirectory === true,
       label: typeof value.label === 'string' ? value.label : undefined,
       description: typeof value.description === 'string' ? value.description : undefined,
+      // The host already scored these; dropping them was why mobile rows had no
+      // highlight while every desktop row did.
+      matchIndices: Array.isArray(value.matchIndices)
+        ? value.matchIndices.filter((index): index is number => Number.isInteger(index)) : undefined,
       iconPng: mentionIconPng(value.iconDataUri) }]
   })
 }
@@ -57,17 +65,19 @@ export function insertMention(text: string, query: MentionQuery, item: MentionIt
 }
 
 /** Provider refs come from the connected host, never from a locally invented
- * harness/base-id table. Older hosts simply omit this additive response field. */
-export function parseAgentMentionItems(raw: unknown, query: string): MentionItem[] {
+ * harness/base-id table. Older hosts simply omit this additive response field.
+ *
+ * Filtering and ranking belong to `mention-rows.ts`, which applies the same
+ * slug-before-alias rule the desktop popup uses; this only parses. */
+export function parseAgentMentionItems(raw: unknown): MentionItem[] {
   if (!Array.isArray(raw)) return []
-  const needle = query.trim().toLowerCase()
   return raw.flatMap((entry): MentionItem[] => {
     if (!entry || typeof entry !== 'object') return []
     const target = entry as Record<string, unknown>
     if (typeof target.ref !== 'string' || !target.ref.trim() || typeof target.slug !== 'string'
       || !target.slug || typeof target.displayName !== 'string' || !target.displayName) return []
-    const aliases = Array.isArray(target.aliases) ? target.aliases.filter((alias): alias is string => typeof alias === 'string') : []
-    if (![target.slug, target.displayName, ...aliases].some((value) => value.toLowerCase().includes(needle))) return []
-    return [{ kind: 'agent-profile', path: target.ref, label: target.displayName, description: `@${target.slug}` }]
+    const aliases = Array.isArray(target.aliases)
+      ? target.aliases.filter((alias): alias is string => typeof alias === 'string') : []
+    return [{ kind: 'agent-profile', path: target.ref, label: target.displayName, description: `@${target.slug}`, aliases }]
   })
 }

@@ -3,7 +3,7 @@ import { extractMentionQuery, insertMention, type MentionItem } from '../mention
 import type { MentionEditorSnapshot } from '../mention-editor-state'
 import { MentionEditorPreview } from './MentionEditorPreview'
 import { ComposerSuggestionsGallery } from './ComposerSuggestionsGallery'
-import { previewMentionItems, previewSlashCatalog } from './composer-fixtures'
+import { previewAgentProfiles, previewCapabilityIds, previewMentionItems, previewSlashCatalog } from './composer-fixtures'
 import { filterSlashCommands } from '../slash'
 import type { SlashCatalogStatus } from '../slash-catalog'
 import { replaceFirstLine } from '../composer-first-line'
@@ -21,6 +21,7 @@ import { TabletSessionSidebar } from '../navigation/tablet-session-sidebar'
 import { ChatScreen } from '../screens/chat-screen'
 import { FilesScreen } from '../screens/files-screen'
 import { FileFinderView } from '../screens/file-finder-view'
+import { buildMentionRows, type MentionRow } from '../mention-rows'
 import { buildGitToneMap } from '../navigation/use-project-git-status'
 import type { FileBrowserMode } from '../shell-state'
 import { PairingsScreen } from '../screens/pairings-screen'
@@ -201,14 +202,13 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
   const [provider, setProvider] = useState<HarnessId>('claude')
   const [draft, setDraft] = useState('')
   const chatDraft = useComposerDraft()
-  const [mentionHits, setMentionHits] = useState<MentionItem[]>([])
+  const [mentionRows, setMentionRows] = useState<MentionRow[]>([])
   const [editorError, setEditorError] = useState('')
   /** Both editors feed this, so the fallback is not silently hit-free. */
   const updateMentionHits = (text: string, cursorEnd: number, composing = false) => {
     const query = !composing && extractMentionQuery(text, cursorEnd)
-    const needle = query ? query.query.toLowerCase() : ''
-    setMentionHits(query
-      ? previewMentionItems.filter((item) => `${item.label ?? ''} ${item.path}`.toLowerCase().includes(needle))
+    setMentionRows(query
+      ? buildMentionRows(query.query, { remote: previewMentionItems, agentProfiles: previewAgentProfiles, capabilityIds: previewCapabilityIds })
       : [])
   }
   const acceptDraft = (snapshot: MentionEditorSnapshot) => {
@@ -354,7 +354,7 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
               onBranch: () => setPage('Branch'),
             } : undefined}
             selection={{ ...pickerCatalogs, model, models: previewModels, effort, efforts, onModel: chooseModel, onEffort: setEffort }}
-            webRef={web} permissionModes={['default', 'acceptEdits', 'plan']} permissionMode={mode} slashHits={slashDismissed ? [] : filterSlashCommands(chatDraft.draft, previewSlashCatalog, provider)} slashCatalogStatus={slashStatus} mentionHits={mentionHits} attachments={attachments} additionalDirectories={[]} queuedMessages={[]} todos={{}} draft={chatDraft.draft} streaming={page === 'Chat'}
+            webRef={web} permissionModes={['default', 'acceptEdits', 'plan']} permissionMode={mode} slashHits={slashDismissed ? [] : filterSlashCommands(chatDraft.draft, previewSlashCatalog, provider)} slashCatalogStatus={slashStatus} mentionRows={mentionRows} attachments={attachments} additionalDirectories={[]} queuedMessages={[]} todos={{}} draft={chatDraft.draft} streaming={page === 'Chat'}
             sandboxInfo={sandbox} contextTokens={82_400} contextWindow={200_000} totalCostUsd={0.4213}
             onWebMessage={(raw) => { if (JSON.parse(raw).type === 'ready') paintChat() }} onWebProcessError={() => {}} onPermissionMode={setMode}
             onSandboxMode={(next) => setSandbox({ enabled: next !== 'off', autoAllowBash: next === 'auto' })} onSlash={(command) => {

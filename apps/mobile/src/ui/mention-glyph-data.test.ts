@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { desktopMentionGlyphs } from '../../scripts/mention-glyphs'
-import { mentionGlyphArtwork, mentionGroup } from './mention-glyph-data'
+import { mentionGlyphArtwork } from './mention-glyph-data'
 import data from './mention-artwork.generated.json'
 import { GENERATED_DARK_COLORS, GENERATED_LIGHT_COLORS } from '../theme/tokens.generated'
 
@@ -20,15 +20,5 @@ describe('desktop mention identities on mobile', () => {
     expect(miniApp).toBe(mentionGlyphArtwork('miniapp', 'dark', GENERATED_DARK_COLORS.foreground))
     expect(mentionGlyphArtwork('agent-profile', 'dark', GENERATED_DARK_COLORS.foreground)).toBeUndefined()
     expect(mentionGlyphArtwork('__proto__', 'dark', GENERATED_DARK_COLORS.foreground)).toBeUndefined()
-  })
-
-  it('keeps provider profiles, capabilities and sessions out of file results', () => {
-    expect(mentionGroup('agent-profile')).toBe('Agents')
-    for (const kind of ['builtin', 'computer', 'browser', 'widget', 'debug', 'collab']) expect(mentionGroup(kind)).toBe('Capabilities')
-    expect(mentionGroup('session')).toBe('Sessions')
-    expect(mentionGroup('miniapp')).toBe('Apps')
-    expect(mentionGroup('desktop-app')).toBe('Apps')
-    for (const kind of ['file', 'directory', 'dir-entry']) expect(mentionGroup(kind)).toBe('Files & folders')
-    expect(mentionGroup('future-kind')).toBe('Other')
   })
 })

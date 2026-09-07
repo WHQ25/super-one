@@ -18,6 +18,7 @@ import type { ChatMessage, HarnessId, ImageAttachment, SandboxInfo, SandboxMode,
 import type { MatchedSlashCommand } from '../slash'
 import type { SlashCatalogStatus } from '../slash-catalog'
 import type { MentionItem } from '../mentions'
+import type { MentionRow } from '../mention-rows'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { ChatComposer, type ComposerSelection } from './chat-composer'
 import { NewSessionLanding, type NewSessionLandingProps } from './new-session-landing'
@@ -39,7 +40,7 @@ export function ChatScreen(props: {
   totalCostUsd: number
   slashHits: MatchedSlashCommand[]
   slashCatalogStatus: SlashCatalogStatus
-  mentionHits: MentionItem[]
+  mentionRows: MentionRow[]
   attachments: ImageAttachment[]
   additionalDirectories: string[]
   queuedMessages: ChatMessage[]

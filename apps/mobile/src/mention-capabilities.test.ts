@@ -1,20 +1,35 @@
 import { describe, expect, it } from 'vitest'
 import { availableMentionCapabilityIds, mentionCapabilityAvailability } from '@superone/shared/mention-capabilities'
-import { mergeMentionItems } from './composer-state'
+import { buildMentionRows } from './mention-rows'
 import { mentionTokenFromItem } from './mention-selection'
 
+const paths = (query: string, capabilityIds?: unknown) =>
+  buildMentionRows(query, { remote: [], agentProfiles: [], capabilityIds }).map((row) => row.item.path)
+
+const enabled = (query: string, capabilityIds?: unknown) =>
+  buildMentionRows(query, { remote: [], agentProfiles: [], capabilityIds })
+    .filter((row) => !row.disabled).map((row) => row.item.path)
+
 describe('host capability settings to mobile mention menu', () => {
-  it('offers computer and browser only when enabled on the connected host', () => {
+  it('enables computer and browser only when the connected host has them on', () => {
     const ids = availableMentionCapabilityIds({ computerUseEnabled: true, cdpEnabled: true }, 'darwin')
-    const items = mergeMentionItems('', [], ids)
-    expect(items.map((item) => item.path)).toEqual(['computer', 'browser', 'widget', 'debug'])
-    expect(mentionTokenFromItem(mergeMentionItems('computer use', [], ids)[0]!)?.kind).toBe('computer')
-    expect(mergeMentionItems('browser', [], availableMentionCapabilityIds({ cdpEnabled: false }, 'darwin'))).toEqual([])
+    expect(enabled('', ids)).toEqual(['computer', 'browser', 'widget', 'debug'])
+    expect(mentionTokenFromItem(buildMentionRows('computer use', { remote: [], agentProfiles: [], capabilityIds: ids })[0]!.item)?.kind)
+      .toBe('computer')
+    expect(enabled('browser', availableMentionCapabilityIds({ cdpEnabled: false }, 'darwin'))).toEqual([])
   })
+
+  it('lists a disabled capability rather than hiding it', () => {
+    // Hiding it makes the feature look absent; the row says why it cannot be used.
+    const ids = availableMentionCapabilityIds({ cdpEnabled: false }, 'darwin')
+    expect(paths('browser', ids)).toEqual(['browser'])
+    expect(buildMentionRows('browser', { remote: [], agentProfiles: [], capabilityIds: ids })[0]?.disabled).toBe(true)
+  })
+
   it('uses the host platform and retains safe legacy-host behavior', () => {
     expect(mentionCapabilityAvailability({ computerUseEnabled: true }, 'win32').computer).toBe(false)
-    expect(mergeMentionItems('', []).map((item) => item.path)).toEqual(['widget', 'debug'])
-    expect(mergeMentionItems('', [], []).map((item) => item.path)).toEqual([])
-    expect(mergeMentionItems('', [], ['unknown', 'browser', null]).map((item) => item.path)).toEqual(['browser'])
+    expect(enabled('')).toEqual(['widget', 'debug'])
+    expect(enabled('', [])).toEqual([])
+    expect(enabled('', ['unknown', 'browser', null])).toEqual(['browser'])
   })
 })

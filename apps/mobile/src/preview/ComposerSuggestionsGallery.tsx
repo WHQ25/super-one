@@ -3,8 +3,8 @@ import { Text } from '../ui/text'
 import { useMobileTheme } from '../theme/context'
 import { MentionSuggestions, SlashSuggestions } from '../ui/composer-suggestions'
 import { filterSlashCommands } from '../slash'
-import { mentionGroup } from '../ui/mention-glyph-data'
-import { previewLongMentionItems, previewMentionItems, previewSlashCatalog } from './composer-fixtures'
+import { buildMentionRows } from '../mention-rows'
+import { previewAgentProfiles, previewCapabilityIds, previewLongMentionItems, previewMentionItems, previewSlashCatalog } from './composer-fixtures'
 
 /**
  * Every state the two composer overlays can reach, in one scroll.
@@ -31,9 +31,13 @@ function Section({ title, note, children }: { title: string; note?: string; chil
 export function ComposerSuggestionsGallery() {
   const { tokens: { colors } } = useMobileTheme()
   const slash = (draft: string) => filterSlashCommands(draft, previewSlashCatalog)
-  // Each list clips at 256 px, so a section holding every group can only ever
-  // show its first few rows. Split by group rather than scroll inside a list.
-  const inGroup = (group: string) => previewMentionItems.filter((item) => mentionGroup(item.kind) === group)
+  // Rows go through the shipping builder, so the ranking, the disabled
+  // capabilities and the remapped highlights shown here are the real ones.
+  const rows = (query: string) => buildMentionRows(query, {
+    remote: previewMentionItems,
+    agentProfiles: previewAgentProfiles,
+    capabilityIds: previewCapabilityIds,
+  })
   return <ScrollView testID="composer-suggestions-gallery" contentContainerStyle={{ padding: 16, gap: 20 }}>
     <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>
       Real overlays over a fixture catalog. Slash rows are ranked by the shipping matcher.
@@ -75,29 +79,29 @@ export function ComposerSuggestionsGallery() {
       <SlashSuggestions matches={slash('/re')} onSelect={() => {}} onDismiss={() => {}} />
     </Section>
 
-    <Section title="Mention · every group" note="Group order and per-group counts. The list clips at 256 px, so the tail groups sit in the next section.">
-      <MentionSuggestions items={previewMentionItems} onSelect={() => {}} search={{ active: true, loading: false }} />
+    <Section title="Mention · bare @" note="Capabilities and files. Desktop apps need a query, or an empty @ is a list of applications.">
+      <MentionSuggestions rows={rows('')} onSelect={() => {}} search={{ active: true, loading: false }} />
     </Section>
 
-    <Section title="Mention · apps" note="A group the section above cuts off. Mobile merges mini-apps and desktop apps here; desktop keeps them apart.">
-      <MentionSuggestions items={inGroup('Apps')} onSelect={() => {}} search={{ active: true, loading: false }} />
+    <Section title="Mention · @co" note="Collaborators rank by slug, so Codex leads — but capabilities still come first.">
+      <MentionSuggestions rows={rows('co')} onSelect={() => {}} search={{ active: true, loading: false }} />
     </Section>
 
-    <Section title="Mention · files" note="Directory first, then files. The CJK name has to survive the basename split.">
-      <MentionSuggestions items={inGroup('Files & folders')} onSelect={() => {}} search={{ active: true, loading: false }} />
+    <Section title="Mention · @safari" note="A desktop app, reachable only once something is typed.">
+      <MentionSuggestions rows={rows('safari')} onSelect={() => {}} search={{ active: true, loading: false }} />
+    </Section>
+
+    <Section title="Mention · @comp" note="Host indices are scored over the whole path and remapped onto the basename.">
+      <MentionSuggestions rows={rows('comp')} onSelect={() => {}} search={{ active: true, loading: false }} />
     </Section>
 
     <Section title="Mention · searching" note="Rows already fetched stay visible under the spinner.">
-      <MentionSuggestions
-        items={previewMentionItems.slice(0, 3)}
-        onSelect={() => {}}
-        search={{ active: true, loading: true }}
-      />
+      <MentionSuggestions rows={rows('co').slice(0, 3)} onSelect={() => {}} search={{ active: true, loading: true }} />
     </Section>
 
     <Section title="Mention · search failed" note="Message plus a retry the user can actually reach.">
       <MentionSuggestions
-        items={[]}
+        rows={[]}
         onSelect={() => {}}
         search={{ active: true, loading: false, error: 'Could not reach the desktop' }}
         onRetry={() => {}}
@@ -105,11 +109,15 @@ export function ComposerSuggestionsGallery() {
     </Section>
 
     <Section title="Mention · no matches" note="Settled search, nothing found.">
-      <MentionSuggestions items={[]} onSelect={() => {}} search={{ active: true, loading: false }} />
+      <MentionSuggestions rows={[]} onSelect={() => {}} search={{ active: true, loading: false }} />
     </Section>
 
     <Section title="Mention · truncation" note="Long path, and a row with no label at all.">
-      <MentionSuggestions items={previewLongMentionItems} onSelect={() => {}} search={{ active: true, loading: false }} />
+      <MentionSuggestions
+        rows={buildMentionRows('use', { remote: previewLongMentionItems, agentProfiles: [] })}
+        onSelect={() => {}}
+        search={{ active: true, loading: false }}
+      />
     </Section>
   </ScrollView>
 }

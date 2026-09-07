@@ -81,22 +81,38 @@ tags: [smoke, native, visual]
 
 # Each suggestion list clips at 256 px, so only the first group of a full list
 # is on screen. Group *order* is asserted in the component test, which does not
-# clip; here the sections are split by group so every row is reviewable.
+# clip; here the sections are split by query so every row is reviewable.
 - scrollUntilVisible:
     element:
-      text: "Mention · every group"
+      text: "Mention · bare @"
     direction: DOWN
-- assertVisible: "Agents"
-- assertVisible: "Codex, @codex"
+- assertVisible: "Built-in"
+# Every capability is listed; the ones the desktop has switched off say so
+# instead of disappearing. The row composes into one label, so the state is
+# asserted as part of it rather than as its own element.
+- assertVisible: "Computer Use.*Turned off on the desktop"
 - takeScreenshot: ${"composer-suggestions-mention-" + THEME}
 
 - scrollUntilVisible:
     element:
-      text: "Mention · files"
+      text: "Mention · @co"
     direction: DOWN
-- assertVisible: "Files & folders"
-# A CJK filename has to survive the basename split and the truncation.
-- assertVisible: "移动端组合器说明.md.*"
+# Collaborators rank by slug, and they are their own group — not merged with
+# the project agents below them.
+- assertVisible: "Collaborators"
+- assertVisible: "Codex.*@codex.*"
+
+- scrollUntilVisible:
+    element:
+      text: "Mention · @safari"
+    direction: DOWN
+- assertVisible: "Desktop Apps"
+
+- scrollUntilVisible:
+    element:
+      text: "Mention · @comp"
+    direction: DOWN
+- assertVisible: "Files"
 - takeScreenshot: ${"composer-suggestions-groups-" + THEME}
 
 - scrollUntilVisible:

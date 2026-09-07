@@ -3,13 +3,16 @@ import { requestMentionSearch } from '../mention-search'
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import type { ChatRuntime } from '../runtime'
 import { cursorAfterEdit, type ComposerCursor } from '../composer-cursor'
-import { mergeMentionItems } from '../composer-state'
 import { extractMentionQuery, insertMention, parseMentionItems, parseAgentMentionItems, type MentionItem } from '../mentions'
+import { buildMentionRows, type MentionRow } from '../mention-rows'
 import { filterSlashCommands, type SlashCommandInfo } from '../slash'
 import { requestSlashCatalog, type SlashCatalogStatus } from '../slash-catalog'
 
 export type MentionSearchState = { active: boolean; loading: boolean; error?: string }
 const CLOSED: MentionSearchState = { active: false, loading: false }
+
+/** Matches the desktop popup's file-search debounce. */
+export const MENTION_SEARCH_DEBOUNCE_MS = 150
 
 /**
  * Where the composer's suggestions come from.
@@ -33,22 +36,29 @@ export function useComposerSuggestions(
   const [slashDismissed, setSlashDismissed] = useState(false)
   const [catalog, setCatalog] = useState<SlashCommandInfo[]>([])
   const [catalogStatus, setCatalogStatus] = useState<SlashCatalogStatus>('loading')
-  const [mentionHits, setMentionHits] = useState<MentionItem[]>([])
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null)
+  const [mentionResults, setMentionResults] = useState<{ remote: MentionItem[]; agentProfiles: MentionItem[]; capabilityIds?: unknown }>(
+    { remote: [], agentProfiles: [] },
+  )
   const [mentionSearch, setMentionSearch] = useState<MentionSearchState>(CLOSED)
   const [requestedCursor, setRequestedCursor] = useState<ComposerCursor>()
   const text = useRef('')
   const cursor = useRef<ComposerCursor>({ start: 0, end: 0 })
   const generation = useRef(0)
   const catalogGeneration = useRef(0)
-  const mentionCatalog = useRef<{ agentTargets?: unknown; capabilityIds?: unknown }>({})
+  const mentionCatalog = useRef<{ agentProfiles: MentionItem[]; capabilityIds?: unknown }>({ agentProfiles: [] })
+  const inFlightQuery = useRef<string | null>(null)
+  const debounce = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   const clear = () => {
     generation.current++
-    setMentionHits([])
+    inFlightQuery.current = null
+    if (debounce.current) clearTimeout(debounce.current)
+    setMentionQuery(null)
     setMentionSearch(CLOSED)
   }
   useEffect(() => {
-    mentionCatalog.current = {}
+    mentionCatalog.current = { agentProfiles: [] }
     clear()
     return () => { generation.current++ }
   }, [contextKey])
@@ -92,32 +102,55 @@ export function useComposerSuggestions(
   )
 
   const searchMentions = () => {
-    const request = ++generation.current
     const runtime = runtimeRef.current
     const client = host.client.current
     const collapsed = cursor.current.start === cursor.current.end
     const query = collapsed ? extractMentionQuery(text.current, cursor.current.end) : null
     if (!query) {
-      setMentionHits([])
-      setMentionSearch(CLOSED)
+      clear()
       return
     }
+    setMentionQuery(query.query)
     const lookup = runtime ? () => runtime.searchMentions(query.query)
       : client && projectPath ? () => requestMentionSearch(client, projectPath, query.query) : null
-    setMentionHits(mergeMentionItems(query.query, parseAgentMentionItems(mentionCatalog.current.agentTargets, query.query), mentionCatalog.current.capabilityIds))
-    setMentionSearch({ active: true, loading: !!lookup })
-    if (!lookup) return
-    void Promise.resolve().then(lookup).then((result) => {
-      if (request !== generation.current || runtime !== runtimeRef.current || (!runtime && client !== host.client.current)) return
-      if (result.error) throw new Error(result.error)
-      mentionCatalog.current = { agentTargets: result.agentTargets, capabilityIds: result.capabilityIds }
-      setMentionHits(mergeMentionItems(query.query, [...parseAgentMentionItems(result.agentTargets, query.query), ...parseMentionItems(result.items)], result.capabilityIds))
+    if (!lookup) {
+      setMentionResults({ remote: [], agentProfiles: mentionCatalog.current.agentProfiles, capabilityIds: mentionCatalog.current.capabilityIds })
       setMentionSearch({ active: true, loading: false })
-    }).catch((error: unknown) => {
-      if (request !== generation.current || runtime !== runtimeRef.current || (!runtime && client !== host.client.current)) return
-      setMentionSearch({ active: true, loading: false, error: error instanceof Error ? error.message : 'Could not load mention suggestions' })
-    })
+      return
+    }
+    // Moving the caret inside an unchanged query must not refetch. Every
+    // keystroke used to fire an RPC, and each one made the host re-enumerate
+    // installed applications and decode their icons.
+    if (inFlightQuery.current === query.query) return
+    inFlightQuery.current = query.query
+    const request = ++generation.current
+    setMentionResults((current) => ({ ...current, agentProfiles: mentionCatalog.current.agentProfiles, capabilityIds: mentionCatalog.current.capabilityIds }))
+    setMentionSearch({ active: true, loading: true })
+    if (debounce.current) clearTimeout(debounce.current)
+    debounce.current = setTimeout(() => {
+      void Promise.resolve().then(lookup).then((result) => {
+        if (request !== generation.current || runtime !== runtimeRef.current || (!runtime && client !== host.client.current)) return
+        if (result.error) throw new Error(result.error)
+        const agentProfiles = parseAgentMentionItems(result.agentTargets)
+        mentionCatalog.current = { agentProfiles, capabilityIds: result.capabilityIds }
+        setMentionResults({ remote: parseMentionItems(result.items), agentProfiles, capabilityIds: result.capabilityIds })
+        setMentionSearch({ active: true, loading: false })
+      }).catch((error: unknown) => {
+        if (request !== generation.current || runtime !== runtimeRef.current || (!runtime && client !== host.client.current)) return
+        inFlightQuery.current = null
+        setMentionSearch({ active: true, loading: false, error: error instanceof Error ? error.message : 'Could not load mention suggestions' })
+      })
+    }, MENTION_SEARCH_DEBOUNCE_MS)
   }
+
+  /**
+   * Rows are derived, so the catalog that arrives with a search result re-ranks
+   * what is already on screen instead of waiting for another keystroke.
+   */
+  const mentionRows = useMemo<MentionRow[]>(
+    () => (mentionQuery === null ? [] : buildMentionRows(mentionQuery, mentionResults)),
+    [mentionQuery, mentionResults],
+  )
 
   /** Any edit the user made re-arms a dismissed overlay; a programmatic one does not. */
   const observe = (value: string, composing: boolean) => {
@@ -167,8 +200,10 @@ export function useComposerSuggestions(
     setSlashDismissed(true)
     clear()
   }
+  useEffect(() => () => { if (debounce.current) clearTimeout(debounce.current) }, [])
+
   return {
-    slashHits, slashCatalogStatus: catalogStatus, mentionHits, mentionSearch, requestedCursor,
+    slashHits, slashCatalogStatus: catalogStatus, mentionRows, mentionSearch, requestedCursor,
     update, updateNative, select, insert, clear, applyProgrammatic,
     dismissSlash: () => setSlashDismissed(true),
     retry: searchMentions,

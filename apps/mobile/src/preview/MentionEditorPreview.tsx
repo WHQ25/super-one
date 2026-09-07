@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { View } from 'react-native'
 import { Text } from '../ui/text'
 import { MentionSuggestions } from '../ui/composer-suggestions'
+import { buildMentionRows } from '../mention-rows'
 import { extractMentionQuery, type MentionItem } from '../mentions'
 import { selectNativeMention } from '../mention-selection'
 import { useMentionArtwork } from '../ui/mention-artwork'
@@ -46,7 +47,7 @@ export function MentionEditorPreview() {
     }} autoSize={{ minHeight: 42, maxHeight: 144 }}
       onChange={(value) => { setSnapshot(value); setError('') }} onError={setError}
       style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 12 }} />
-    <MentionSuggestions items={matches} onSelect={(item) => {
+    <MentionSuggestions rows={buildMentionRows(query?.query ?? '', { remote: matches, agentProfiles: [] })} onSelect={(item) => {
       const next = selectNativeMention(snapshot, item, command.id + 1)
       if (next) setCommand(next)
     }} />

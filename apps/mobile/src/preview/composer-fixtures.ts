@@ -33,18 +33,25 @@ export const previewSlashCatalog: SlashCommandInfo[] = [
   { name: 'wiki', description: '为文件、模块、特性或整个仓库创建或更新 wiki 文档', isSkill: true, argumentHint: '' },
 ]
 
+/** What the host returns: files, project agents, mini-apps, desktop apps. */
 export const previewMentionItems: MentionItem[] = [
-  { kind: 'agent-profile', path: 'codex-base', label: 'Codex', description: '@codex' },
   { kind: 'agent', path: 'reviewer', label: 'reviewer', description: 'claude-opus-5' },
-  { kind: 'builtin', path: 'browser', label: 'Browser', description: 'Drive the embedded browser' },
-  { kind: 'builtin', path: 'debug', label: 'Debug', description: 'Inspect SuperOne state' },
   { kind: 'session', path: 'sess-7f3c', label: 'Align the mention popup with desktop', description: 'super-one' },
   { kind: 'miniapp', path: 'board', label: 'Board', description: 'Kanban mini-app' },
   { kind: 'desktop-app', path: 'com.apple.Safari', label: 'Safari', description: 'com.apple.Safari' },
-  { kind: 'directory', path: 'src/renderer/src/components', label: 'components', isDirectory: true },
-  { kind: 'file', path: 'src/ui/composer-suggestions.tsx', label: 'composer-suggestions.tsx' },
-  { kind: 'file', path: 'docs/设计/移动端组合器说明.md', label: '移动端组合器说明.md' },
+  { kind: 'directory', path: 'src/renderer/src/components', isDirectory: true, matchIndices: [17, 18, 19] },
+  { kind: 'file', path: 'src/ui/composer-suggestions.tsx', matchIndices: [7, 8, 9] },
+  { kind: 'file', path: 'docs/设计/移动端组合器说明.md' },
 ]
+
+/** Launchable identities, which arrive on a separate response field. */
+export const previewAgentProfiles: MentionItem[] = [
+  { kind: 'agent-profile', path: 'codex-base', label: 'Codex', description: '@codex', aliases: ['gpt'] },
+  { kind: 'agent-profile', path: 'claude-base', label: 'Claude', description: '@claude', aliases: [] },
+]
+
+/** Only these are switched on, so the rest render disabled rather than absent. */
+export const previewCapabilityIds = ['widget', 'debug']
 
 /** Long enough that both the label and the second line have to truncate. */
 export const previewLongMentionItems: MentionItem[] = [

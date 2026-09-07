@@ -7,11 +7,12 @@ import type { MatchedSlashCommand } from '../slash'
 import type { SlashCatalogStatus } from '../slash-catalog'
 import { IconButton } from './icon-button'
 import type { MentionItem } from '../mentions'
+import { groupMentionRows, mentionDisplayName, mentionGroupKey, MENTION_GROUP_LABELS, type MentionGroupKey, type MentionRow } from '../mention-rows'
 import { useMobileTheme } from '../theme/context'
 import { FileTypeIcon } from './file-icon'
 import { HarnessIcon } from './harness-icon'
 import { brandKeyForAgentRef } from '@superone/shared/agent-mention-tags'
-import { mentionGlyphArtwork, mentionGroup } from './mention-glyph-data'
+import { mentionGlyphArtwork } from './mention-glyph-data'
 
 function MatchText({ text, indices = [] }: { text: string; indices?: number[] }) {
   const { tokens: { colors } } = useMobileTheme()
@@ -102,7 +103,7 @@ export function MentionIdentity({ item, size = 16 }: { item: MentionItem; size?:
     const png = mentionGlyphArtwork('agent', scheme, colors.foreground)
     return png ? <Image accessible={false} source={{ uri: `data:image/png;base64,${png}` }} style={{ width: size, height: size }} /> : <Bot size={size} color={colors.foreground} />
   }
-  if (mentionGroup(item.kind) === 'Files & folders') return <FileTypeIcon name={item.path} directory={item.isDirectory || item.kind === 'directory'} size={size} />
+  if (mentionGroupKey(item) === 'file') return <FileTypeIcon name={item.path} directory={item.isDirectory || item.kind === 'directory'} size={size} />
   const glyphKind = item.kind === 'builtin' ? item.path : item.kind === 'desktop-app' ? 'computer' : item.kind
   const glyph = mentionGlyphArtwork(glyphKind, scheme, colors.foreground)
   if (glyph) return <Image accessible={false} resizeMode="contain" source={{ uri: `data:image/png;base64,${glyph}` }} style={{ width: size, height: size, borderRadius: item.kind === 'miniapp' ? size * 0.22 : 0 }} />
@@ -111,23 +112,35 @@ export function MentionIdentity({ item, size = 16 }: { item: MentionItem; size?:
   return <Wrench size={size} color={colors.mutedForeground} />
 }
 
-export function MentionSuggestions({ items, onSelect, search, onRetry }: {
-  items: MentionItem[]; onSelect: (item: MentionItem) => void
-  search?: MentionSearchState; onRetry?: () => void
+export function MentionSuggestions({ rows, onSelect, search, onRetry }: {
+  rows: MentionRow[]
+  onSelect: (item: MentionItem) => void
+  search?: MentionSearchState
+  onRetry?: () => void
 }) {
   const { tokens: { colors } } = useMobileTheme()
-  if (!items.length && !search?.active) return null
-  const groups = ['Agents', 'Capabilities', 'Sessions', 'Apps', 'Files & folders', 'Other']
-    .map((title) => ({ title, rows: items.filter((item) => mentionGroup(item.kind) === title) }))
+  if (!rows.length && !search?.active) return null
   return <ScrollView testID="mention-suggestions" keyboardShouldPersistTaps="always" style={{ maxHeight: 256, flexGrow: 0, borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: colors.surface }} contentContainerStyle={{ padding: 6 }}>
-    {groups.filter((group) => group.rows.length).map((group) => <View key={group.title}>
-      <SectionTitle title={group.title} count={group.rows.length} />
-      {group.rows.map((item) => <Pressable key={`${item.kind}:${item.path}`} accessibilityRole="button" onPress={() => onSelect(item)}
-        style={({ pressed }) => ({ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8, padding: 8, borderRadius: 6, backgroundColor: pressed ? colors.muted : 'transparent' })}>
+    {groupMentionRows(rows).map((group) => <View key={group.key}>
+      <SectionTitle title={MENTION_GROUP_LABELS[group.key as MentionGroupKey]} count={group.items.length} />
+      {group.items.map(({ item, labelIndices, keyword, keywordIndices, detail, disabled }) => <Pressable
+        key={`${item.kind}:${item.path}`}
+        accessibilityRole="button"
+        accessibilityState={{ disabled: !!disabled }}
+        // A capability the desktop has switched off stays listed so the user
+        // learns it exists, but selecting it would insert a tag nothing answers.
+        disabled={disabled}
+        onPress={() => onSelect(item)}
+        style={({ pressed }) => ({ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8, padding: 8, borderRadius: 6, opacity: disabled ? 0.45 : 1, backgroundColor: pressed ? colors.muted : 'transparent' })}>
         <MentionIdentity item={item} />
         <View style={{ flex: 1, gap: 3 }}>
-          <Text numberOfLines={1} style={{ color: colors.foreground, fontSize: 13, fontWeight: '500' }}>{item.label || item.path.replace(/[/\\]+$/, '').split(/[/\\]/).pop() || item.path}</Text>
-          <Text numberOfLines={1} style={{ color: colors.mutedForeground, fontSize: 12 }}>{item.description || item.path}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
+            <MatchText text={mentionDisplayName(item)} indices={labelIndices} />
+            {keyword ? <MatchText text={keyword} indices={keywordIndices.map((index) => index + 1)} /> : null}
+          </View>
+          <Text numberOfLines={1} style={{ color: colors.mutedForeground, fontSize: 12 }}>
+            {disabled ? 'Turned off on the desktop' : detail}
+          </Text>
         </View>
       </Pressable>)}
     </View>)}
@@ -139,6 +152,6 @@ export function MentionSuggestions({ items, onSelect, search, onRetry }: {
       {onRetry ? <Pressable accessibilityRole="button" onPress={onRetry} style={{ minHeight: 44, justifyContent: 'center' }}>
         <Text style={{ color: colors.primary }}>Retry search</Text>
       </Pressable> : null}
-    </View> : !items.length ? <Text accessibilityLiveRegion="polite" style={{ padding: 8, color: colors.mutedForeground, fontSize: 12 }}>No matches</Text> : null}
+    </View> : !rows.length ? <Text accessibilityLiveRegion="polite" style={{ padding: 8, color: colors.mutedForeground, fontSize: 12 }}>No matches</Text> : null}
   </ScrollView>
 }

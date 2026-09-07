@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { buildAgentMentionTargets } from '@superone/shared/agent-mention-tags'
 import { parseUserMentions } from '@superone/shared/user-mention-parser'
 import { parseAgentMentionItems, parseMentionItems } from './mentions'
-import { mergeMentionItems } from './composer-state'
+import { buildMentionRows } from './mention-rows'
 import { mentionTokenFromItem } from './mention-selection'
 import { serializeMentionDocument } from './mention-document'
 
@@ -14,15 +14,19 @@ const targets = buildAgentMentionTargets([
 
 describe('remote provider search to structured message', () => {
   it('preserves host-issued custom and ACP refs through search, selection and serialization', () => {
-    const rows = parseAgentMentionItems(targets, '')
+    const rows = parseAgentMentionItems(targets)
     expect(rows.map((row) => row.path)).toEqual(['codex-work-review', 'acp-base:grok-build'])
     for (const item of rows) {
       const mention = mentionTokenFromItem(item)!
       const segments = parseUserMentions(serializeMentionDocument([{ mention }]))
       expect(segments).toEqual([expect.objectContaining({ kind: 'agent-profile', value: item.path })])
     }
-    expect(parseAgentMentionItems(targets, 'xai')[0]?.path).toBe('acp-base:grok-build')
-    expect(parseAgentMentionItems(targets, 'REVIEW')[0]?.path).toBe('codex-work-review')
+    // Filtering moved to the row builder: an alias matches, a display name matches.
+    const matched = (query: string) =>
+      buildMentionRows(query, { remote: [], agentProfiles: parseAgentMentionItems(targets) })
+        .filter((row) => row.item.kind === 'agent-profile').map((row) => row.item.path)
+    expect(matched('xai')[0]).toBe('acp-base:grok-build')
+    expect(matched('REVIEW')[0]).toBe('codex-work-review')
   })
   it('queries host targets before a chat session exists and selects their actual refs', async () => {
     const commands: unknown[] = []
@@ -32,18 +36,21 @@ describe('remote provider search to structured message', () => {
     } } as never, '/workspace/project', 'xai')
     expect(commands).toEqual([expect.objectContaining({ type: 'search_mentions', projectPath: '/workspace/project', query: 'xai' })])
     expect(commands[0]).not.toHaveProperty('sessionId')
-    const item = parseAgentMentionItems(result.agentTargets, 'xai')[0]!
+    const item = buildMentionRows('xai', { remote: [], agentProfiles: parseAgentMentionItems(result.agentTargets) })
+      .find((row) => row.item.kind === 'agent-profile')!.item
     expect(mentionTokenFromItem(item)).toEqual({ kind: 'agent-profile', value: 'acp-base:grok-build', displayName: 'Grok' })
   })
   it('keeps same-named project agents distinct and supports older hosts without targets', () => {
     const resource = parseMentionItems([{ kind: 'agent', path: 'codex' }])
-    const rows = mergeMentionItems('', [...parseAgentMentionItems(targets, ''), ...resource])
-    expect(rows.filter((row) => row.kind === 'agent')).toEqual(resource)
+    const rows = buildMentionRows('', { remote: resource, agentProfiles: parseAgentMentionItems(targets) })
+    // A project agent named `codex` is not the Codex collaborator, and the two
+    // land in different groups.
+    expect(rows.filter((row) => row.item.kind === 'agent').map((row) => row.item)).toEqual(resource)
     expect(mentionTokenFromItem(resource[0]!)?.kind).toBe('agent')
-    expect(mergeMentionItems('codex', parseAgentMentionItems(undefined, 'codex'))).toEqual([])
+    expect(buildMentionRows('codex', { remote: [], agentProfiles: parseAgentMentionItems(undefined) })).toEqual([])
   })
   it('rejects malformed target records without losing valid host identities', () => {
-    expect(parseAgentMentionItems([null, {}, { ref: '', slug: 'codex', displayName: 'Codex' }, ...targets], '')).toHaveLength(2)
+    expect(parseAgentMentionItems([null, {}, { ref: '', slug: 'codex', displayName: 'Codex' }, ...targets])).toHaveLength(2)
   })
   it('accepts bounded PNG app artwork and rejects untrusted image payloads', () => {
     const png = 'cG5n'

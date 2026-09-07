@@ -11,12 +11,3 @@ export function mentionGlyphArtwork(kind: string, scheme: MobileColorScheme, for
   const id = glyph.artwork[tone]
   return id ? images[id] : undefined
 }
-
-export function mentionGroup(kind: string): string {
-  if (kind === 'agent' || kind === 'agent-profile') return 'Agents'
-  if (kind === 'builtin' || ['collab', 'computer', 'browser', 'widget', 'debug'].includes(kind)) return 'Capabilities'
-  if (kind === 'session') return 'Sessions'
-  if (kind === 'miniapp' || kind === 'desktop-app') return 'Apps'
-  if (kind === 'file' || kind === 'directory' || kind === 'dir-entry') return 'Files & folders'
-  return 'Other'
-}

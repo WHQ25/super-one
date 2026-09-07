@@ -5,7 +5,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { useTranslation } from 'react-i18next'
-import { ArrowDown, GitFork, PenLine, Play, ShipWheel, Smartphone, Trash2 } from 'lucide-react'
+import { ArrowDown, ChevronsUp, GitFork, PenLine, Play, ShipWheel, Smartphone, Trash2 } from 'lucide-react'
 import {
   catalogIdForSessionProvider,
   isCatalogHarnessDisabled,
@@ -249,6 +249,7 @@ function ChatTranscript({
   const canSteerQueue = isLocalQueue
     && HARNESS_CAPABILITIES[queueProvider].supportsQueuedSteer
     && sessionStatus === 'streaming'
+  const canSteerQueueSoon = canSteerQueue && HARNESS_CAPABILITIES[queueProvider].supportsQueuedSteerSoon
   const isLocalCodexQueue = isLocalQueue && queueProvider === 'codex'
   const canStartCodexQueue = isLocalCodexQueue && sessionStatus !== 'streaming'
   // ChatTranscript doubles as the dev-only backing-thread view (see `showRealtime`).
@@ -465,8 +466,13 @@ function ChatTranscript({
                         <Play className="size-3" />
                       </IconButton>
                     )}
+                    {canSteerQueueSoon && (
+                      <IconButton size="xs" variant="nested" tooltip={t('chat.queuedActions.steerSoon')} onClick={() => void steerQueuedMessage(msg.id, queueTarget, 'next')}>
+                        <ChevronsUp />
+                      </IconButton>
+                    )}
                     {canSteerQueue && (
-                      <IconButton size="xs" variant="nested" tooltip={t('chat.queuedActions.steer')} onClick={() => void steerQueuedMessage(msg.id, queueTarget)}>
+                      <IconButton size="xs" variant="nested" tooltip={t('chat.queuedActions.steer')} onClick={() => void steerQueuedMessage(msg.id, queueTarget, 'now')}>
                         <ShipWheel />
                       </IconButton>
                     )}

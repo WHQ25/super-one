@@ -118,7 +118,10 @@ function QueueSteerDemo({ provider }: { provider: SteerProvider }) {
   return (
     <div className="flex w-[720px] flex-col gap-2">
       <p className="text-xs text-muted-foreground">
-        Hover a queued message, then click the forward icon to steer the active {provider === 'claude' ? 'Claude' : 'Codex'} turn.
+        Hover a queued message to steer the active {provider === 'claude' ? 'Claude' : 'Codex'} turn.
+        {provider === 'claude'
+          ? ' Claude offers both: the chevrons-up icon delivers at the next step boundary, the ship wheel interrupts the tool in flight.'
+          : ' Codex offers only the interrupting steer (ship wheel) — its Core queue has no non-aborting variant.'}
       </p>
       <div className="@container flex h-[460px] overflow-hidden rounded-xl border border-border bg-card shadow-sm">
         <ChatContent scrollViewportRef={scrollViewportRef} foreground={false} />
@@ -135,7 +138,7 @@ const meta: Meta<typeof QueueSteerDemo> = {
     docs: {
       description: {
         component:
-          'A local turn is streaming with two SuperOne-visible queued messages. Hover either message to reveal Steer, Edit, and Delete; Steer removes that message from the queue and injects it into the active Claude or Codex turn.',
+          'A local turn is streaming with two SuperOne-visible queued messages. Hover either message to reveal the steer actions plus Edit and Delete; steering removes that message from the queue and injects it into the active Claude or Codex turn. Claude additionally offers a non-interrupting steer (SDK priority `next`), which is why the Claude story shows one more icon than the Codex one.',
       },
     },
   },

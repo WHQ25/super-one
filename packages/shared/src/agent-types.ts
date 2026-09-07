@@ -1921,6 +1921,16 @@ export interface SessionSettingsPatch {
   apiProvider?: RemoteActiveProvider | null
 }
 
+/**
+ * How a queued message joins the Claude turn already in flight.
+ *
+ * - `now` — SDK `priority: 'now'`: cancels the tool in flight so the message is
+ *   read immediately. Costs whatever that tool was doing.
+ * - `next` — SDK `priority: 'next'`: parked in the CLI's command queue and read
+ *   at the turn's next step boundary. Nothing is cancelled.
+ */
+export type ClaudeSteerPriority = 'now' | 'next'
+
 export interface SendMessageRequest {
   content: string
   model?: string

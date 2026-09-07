@@ -1413,6 +1413,7 @@ export type Messages = {
     queuedActions: {
       start: string
       steer: string
+      steerSoon: string
       edit: string
       delete: string
     }
@@ -5071,6 +5072,7 @@ export const en: Messages = {
     queuedActions: {
       start: 'Start Queued Messages',
       steer: 'Steer Now',
+      steerSoon: 'Steer Soon (no interrupt)',
       edit: 'Edit Queued Message',
       delete: 'Delete Queued Message',
     },

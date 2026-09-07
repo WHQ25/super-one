@@ -88,7 +88,7 @@ import { resolveFavicon, cacheCapturedFavicon } from '../favicon'
 import { resolveSiteIdentity } from '../site-identity'
 import { backupMcpServers, listLibrary, deleteLibraryEntry, getLibraryEntry } from '../mcp-library-service'
 import { uninstallMcpbBundle } from '../mcpb/mcpb-installer'
-import type { HookSavePayload, SessionForkRequest, SideChatStartRequest, HarnessId, DshPluginInstallSource } from '@superone/shared/agent-types'
+import type { HookSavePayload, SessionForkRequest, SideChatStartRequest, HarnessId, DshPluginInstallSource, ClaudeSteerPriority } from '@superone/shared/agent-types'
 import { forkSession } from '../session/session-fork'
 import { closeSideChat, startSideChat } from '../session/side-chat'
 import { loadRealtimeTimeline, reconcileRealtimeTimeline } from '../session/realtime-timeline-repo'
@@ -2153,7 +2153,7 @@ export class AgentService {
       return session.dequeueMessage(clientMessageId)
     })
 
-    ipcMain.handle(AgentIpcChannels.STEER_QUEUED_MESSAGE, async (_event, projectPath: string, clientMessageId: string, sessionId?: string) => {
+    ipcMain.handle(AgentIpcChannels.STEER_QUEUED_MESSAGE, async (_event, projectPath: string, clientMessageId: string, sessionId?: string, priority?: ClaudeSteerPriority) => {
       this.throwIfRemoteLocked(projectPath)
       const session = sessionId
         ? this.sessionManager?.getSession(sessionId)
@@ -2161,10 +2161,14 @@ export class AgentService {
       if (!session || session.snapshot.projectPath !== projectPath) return false
       const harnessId = session.snapshot.harnessId
       if (harnessId !== 'claude' && harnessId !== 'codex') return false
-      await session.dispatchBackendCommand({
-        kind: harnessId === 'claude' ? 'claude.steer_queued' : 'codex.steer_queued',
-        clientMessageId,
-      })
+      // `priority` is Claude-only: Codex's Core queue item has no non-aborting
+      // variant, so a `next` request there would silently behave like `now`.
+      if (harnessId === 'codex' && priority === 'next') return false
+      await session.dispatchBackendCommand(
+        harnessId === 'claude'
+          ? { kind: 'claude.steer_queued', clientMessageId, priority: priority ?? 'now' }
+          : { kind: 'codex.steer_queued', clientMessageId },
+      )
       return true
     })
 

@@ -1492,6 +1492,7 @@ export const zh: Messages = {
     queuedActions: {
       start: '开始处理排队消息',
       steer: '立即引导',
+      steerSoon: '尽快插入（不打断当前工具）',
       edit: '编辑排队消息',
       delete: '删除排队消息',
     },

@@ -7,6 +7,7 @@ import type {
   AskUserQuestionRequest,
   ChatMessage,
   ClaudeResources,
+  ClaudeSteerPriority,
   CodexCollaborationMode,
   CodexPermissionPreset,
   CodexReasoningEffort,
@@ -431,7 +432,7 @@ export interface ChatStore {
 
   editQueuedMessage: (messageId: string, target?: SessionWriteTarget) => void
   deleteQueuedMessage: (messageId: string, target?: SessionWriteTarget) => void
-  steerQueuedMessage: (messageId: string, target?: SessionWriteTarget) => Promise<boolean>
+  steerQueuedMessage: (messageId: string, target?: SessionWriteTarget, priority?: ClaudeSteerPriority) => Promise<boolean>
   startQueuedMessages: (target?: SessionWriteTarget) => Promise<boolean>
 
   setDraftText: (text: string, target?: SessionWriteTarget, opts?: SetDraftTextOptions) => void

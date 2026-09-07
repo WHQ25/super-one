@@ -787,6 +787,49 @@ describe('ClaudeBackend', () => {
       expect(complete.metadata?.durationMs).toBe(42)
     })
 
+    it('steers with SDK priority next when asked not to interrupt', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      const firstSend = backend.send({ content: 'turn 1', clientMessageId: 'user_1' })
+      await new Promise((r) => setTimeout(r, 0))
+      await backend.send({ content: 'steer this', clientMessageId: 'user_2', priority: 'next' })
+
+      const bridgePushSpy = vi.spyOn(hoisted.captured.bridge as { push: (...args: unknown[]) => void }, 'push')
+      await backend.handleCommand({ kind: 'claude.steer_queued', clientMessageId: 'user_2', priority: 'next' })
+
+      const [message, tag] = bridgePushSpy.mock.calls[0]!
+      expect(tag).toBe('user_2')
+      expect(message).toMatchObject({ message: { content: 'steer this' }, priority: 'next' })
+
+      hoisted.captured.emit?.({
+        type: 'message_complete',
+        messageId: hoisted.captured.getCurrentMessageId?.() ?? '',
+        metadata: {},
+      })
+      await firstSend
+    })
+
+    it('keeps reporting aborted_tools after a priority-next steer, which cancels nothing', async () => {
+      const backend = new ClaudeBackend()
+      const events: AgentEvent[] = []
+      backend.onEvent((e) => events.push(e))
+      await backend.start(makeStartOpts())
+      const firstSend = backend.send({ content: 'turn 1', clientMessageId: 'user_1' })
+      await new Promise((r) => setTimeout(r, 0))
+      await backend.send({ content: 'steer this', clientMessageId: 'user_2', priority: 'next' })
+      await backend.handleCommand({ kind: 'claude.steer_queued', clientMessageId: 'user_2', priority: 'next' })
+
+      hoisted.captured.emit?.({
+        type: 'message_complete',
+        messageId: hoisted.captured.getCurrentMessageId?.() ?? '',
+        metadata: { terminalReason: 'aborted_tools' },
+      })
+      await firstSend
+
+      const complete = events.find((e) => e.type === 'message_complete') as Extract<AgentEvent, { type: 'message_complete' }>
+      expect(complete.metadata?.terminalReason).toBe('aborted_tools')
+    })
+
     it('still reports an aborted_tools turn that no steer caused', async () => {
       const backend = new ClaudeBackend()
       const events: AgentEvent[] = []

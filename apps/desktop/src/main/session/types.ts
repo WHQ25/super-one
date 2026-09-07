@@ -2,6 +2,7 @@ import type {
   AgentEvent,
   AgentInfo,
   ChatMessage,
+  ClaudeSteerPriority,
   CodexGoal,
   CodexGoalStatus,
   ContextUsageInfo,
@@ -185,6 +186,12 @@ export type BackendCommand =
   | {
       kind: 'claude.steer_queued'
       clientMessageId: string
+      /**
+       * SDK delivery priority. `now` (default) aborts the tool in flight;
+       * `next` parks the message in the CLI command queue so it lands at the
+       * turn's next safe boundary with nothing cancelled.
+       */
+      priority?: ClaudeSteerPriority
     }
   | {
       kind: 'codex.plan_approval'

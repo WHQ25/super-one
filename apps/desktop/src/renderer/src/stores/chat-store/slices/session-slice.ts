@@ -1,5 +1,5 @@
 import type { StateCreator } from 'zustand'
-import type { ContextUsageInfo, RewindFilesResult } from '@superone/shared/agent-types'
+import type { ClaudeSteerPriority, ContextUsageInfo, RewindFilesResult } from '@superone/shared/agent-types'
 import { useActivityViewStateStore } from '../../activity-view-state'
 import type { ChatStore, SessionWriteTarget, SetDraftTextOptions } from '../types'
 import { freshSubagentColorPool } from '../defaults'
@@ -27,7 +27,7 @@ export interface SessionSlice {
   previewRewind: (checkpointId: string) => Promise<RewindFilesResult>
   editQueuedMessage: (messageId: string, target?: SessionWriteTarget) => void
   deleteQueuedMessage: (messageId: string, target?: SessionWriteTarget) => void
-  steerQueuedMessage: (messageId: string, target?: SessionWriteTarget) => Promise<boolean>
+  steerQueuedMessage: (messageId: string, target?: SessionWriteTarget, priority?: ClaudeSteerPriority) => Promise<boolean>
   startQueuedMessages: (target?: SessionWriteTarget) => Promise<boolean>
   setDraftText: (text: string, target?: SessionWriteTarget, opts?: SetDraftTextOptions) => void
   setDraftJson: (json: object | null, target?: SessionWriteTarget) => void
@@ -110,13 +110,13 @@ export const createSessionSlice: StateCreator<ChatStore, [], [], SessionSlice> =
     })))
   },
 
-  steerQueuedMessage: async (messageId, target) => {
+  steerQueuedMessage: async (messageId, target, priority) => {
     const projectPath = target?.projectPath ?? get().activeProject
     if (!projectPath) return false
     const session = getScopedPerSession(get(), target)
     if (!session.queuedMessages.some((message) => message.id === messageId)) return false
     try {
-      return await window.agent.steerQueuedMessage(projectPath, messageId, target?.sessionId)
+      return await window.agent.steerQueuedMessage(projectPath, messageId, target?.sessionId, priority)
     } catch (error) {
       toastSendFailure(error)
       return false

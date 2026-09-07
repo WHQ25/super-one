@@ -722,13 +722,17 @@ export class ClaudeBackend implements SessionBackend {
     const taken = this.queuedUserMessages.take(cmd.clientMessageId)
     if (!taken) throw new Error(`Queued Claude message not found: ${cmd.clientMessageId}`)
 
+    const priority = cmd.priority ?? 'now'
     try {
       const userMsg = buildUserMessage(
-        { ...taken.request, priority: 'now' },
+        { ...taken.request, priority },
         this.providerSessionId ?? '',
       )
       this.bridge.push(userMsg, cmd.clientMessageId)
-      this.steeredTurnMessageId = this.currentMessageId || null
+      // Only `now` cancels tools, so only `now` produces the `aborted_tools`
+      // result `stripSteerAbort` exists to hide. Latching on `next` would swallow
+      // a genuine abort the user did not cause.
+      if (priority === 'now') this.steeredTurnMessageId = this.currentMessageId || null
     } catch (error) {
       this.queuedUserMessages.restore(taken)
       throw error

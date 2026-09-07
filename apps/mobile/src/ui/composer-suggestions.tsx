@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { ActivityIndicator, Image, Pressable, ScrollView, View } from 'react-native'
 import { Text } from './text'
 import type { MentionSearchState } from '../navigation/use-composer-suggestions'
@@ -33,11 +34,12 @@ function MatchText({ text, indices = [], muted }: { text: string; indices?: numb
   </Text>
 }
 
-function SectionTitle({ title, count }: { title: string; count: number }) {
+function SectionTitle({ title, count, action }: { title: string; count: number; action?: ReactNode }) {
   const { tokens: { colors } } = useMobileTheme()
   return <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 6, gap: 6 }}>
     <Text accessibilityRole="header" style={{ color: colors.mutedForeground, fontSize: 12 }}>{title}</Text>
-    <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>{count}</Text>
+    <Text style={{ flex: 1, color: colors.mutedForeground, fontSize: 11 }}>{count}</Text>
+    {action}
   </View>
 }
 
@@ -66,19 +68,33 @@ export function SlashSuggestions({ matches, status = 'ready', onSelect, onDismis
   // A catalog still loading has to say so. Rendering nothing is indistinguishable
   // from "this harness has no commands", which is what it used to look like.
   if (!matches.length && status === 'ready') return null
+  /**
+   * Dismiss rides the first row rather than taking one of its own.
+   *
+   * A 44 pt button on its own line spent a sixth of a 256 px overlay on a
+   * control the desktop does not even have — there, Escape closes the popup.
+   * Drawn at 28 pt with `hitSlop`, it costs no height at all and still answers
+   * a finger at 44.
+   */
+  const dismiss = onDismiss ? <IconButton icon={X} label="Hide commands" chrome="plain" iconSize={16}
+    style={{ width: 28, height: 28 }} hitSlop={8} onPress={onDismiss} /> : null
+  // Whichever row renders first carries it; the status rows precede the groups.
+  const statusRow = status === 'loading' || (status === 'error' && !matches.length)
   return <ScrollView testID="slash-suggestions" keyboardShouldPersistTaps="always" style={{ maxHeight: 256, flexGrow: 0, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, borderRadius: 12 }} contentContainerStyle={{ padding: 6 }}>
-    {onDismiss ? <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
-      <IconButton icon={X} label="Hide commands" chrome="plain" iconSize={16} onPress={onDismiss} />
-    </View> : null}
-    {status === 'loading' ? <View accessibilityLiveRegion="polite" style={{ padding: 8, flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+    {status === 'loading' ? <View accessibilityLiveRegion="polite" style={{ paddingHorizontal: 8, paddingVertical: 6, flexDirection: 'row', gap: 8, alignItems: 'center' }}>
       <ActivityIndicator size="small" color={colors.mutedForeground} />
-      <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>Loading commands…</Text>
+      <Text style={{ flex: 1, color: colors.mutedForeground, fontSize: 12 }}>Loading commands…</Text>
+      {dismiss}
     </View> : null}
-    {status === 'error' && !matches.length ? <Text accessibilityRole="alert" style={{ padding: 8, color: colors.destructive, fontSize: 12 }}>
-      Could not load commands
-    </Text> : null}
-    {groups.map((group) => <View key={group.key}>
-      <SectionTitle title={group.key === 'skill' ? 'Skills' : 'Commands'} count={group.items.length} />
+    {status === 'error' && !matches.length ? <View style={{ paddingHorizontal: 8, paddingVertical: 6, flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+      <Text accessibilityRole="alert" style={{ flex: 1, color: colors.destructive, fontSize: 12 }}>
+        Could not load commands
+      </Text>
+      {dismiss}
+    </View> : null}
+    {groups.map((group, index) => <View key={group.key}>
+      <SectionTitle title={group.key === 'skill' ? 'Skills' : 'Commands'} count={group.items.length}
+        action={!statusRow && index === 0 ? dismiss : undefined} />
       {group.items.map((command) => <Pressable key={`${group.key}:${command.name}`} accessibilityRole="button" onPress={() => onSelect(command.name)}
         style={({ pressed }) => ({ minHeight: 44, gap: 3, paddingHorizontal: 8, paddingVertical: 8, borderRadius: 6, backgroundColor: pressed ? colors.muted : 'transparent' })}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>

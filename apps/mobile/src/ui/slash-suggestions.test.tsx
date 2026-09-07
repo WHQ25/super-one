@@ -82,6 +82,36 @@ test('offers a way out of the overlay', async () => {
   expect(dismissed).toBe(1)
 })
 
+test('keeps the way out reachable while the catalog is still loading', async () => {
+  // Dismiss no longer has a row of its own — it rides whichever row comes
+  // first, and the status rows come before the groups. Attaching it to the
+  // wrong one makes it vanish in exactly the state a user wants it most.
+  await renderWithTheme(
+    <SlashSuggestions matches={[]} status="loading" onSelect={() => {}} onDismiss={() => {}} />,
+  )
+  expect(screen.getByLabelText('Hide commands')).toBeTruthy()
+})
+
+test('keeps the way out reachable when the catalog failed', async () => {
+  await renderWithTheme(
+    <SlashSuggestions matches={[]} status="error" onSelect={() => {}} onDismiss={() => {}} />,
+  )
+  expect(screen.getByLabelText('Hide commands')).toBeTruthy()
+})
+
+test('offers the way out exactly once, whatever the group order', async () => {
+  // It hangs off the *first* group's header, so a second group must not grow
+  // a second close button.
+  await renderWithTheme(
+    <SlashSuggestions
+      matches={[command('clear'), command('tdd', { isSkill: true })]}
+      onSelect={() => {}}
+      onDismiss={() => {}}
+    />,
+  )
+  expect(screen.getAllByLabelText('Hide commands')).toHaveLength(1)
+})
+
 test('renders nothing when a settled catalog has no matches', async () => {
   await renderWithTheme(<SlashSuggestions matches={[]} onSelect={() => {}} />)
   expect(screen.queryByTestId('slash-suggestions')).toBeNull()

@@ -4,7 +4,7 @@ import { Pressable, View, type StyleProp, type ViewStyle } from 'react-native'
 import { SpinningIcon } from './spinning-icon'
 import { useMobileTheme } from '../theme/context'
 
-export function IconButton({ icon: Icon, label, onPress, disabled, active, destructive, tone, color, chrome = 'default', iconSize = 20, spinning, style, buttonRef }: {
+export function IconButton({ icon: Icon, label, onPress, disabled, active, destructive, tone, color, chrome = 'default', iconSize = 20, spinning, style, hitSlop, buttonRef }: {
   buttonRef?: RefObject<View | null>
   icon: LucideIcon
   label: string
@@ -20,6 +20,12 @@ export function IconButton({ icon: Icon, label, onPress, disabled, active, destr
   /** Rotate the icon to show the action it triggers is still running. */
   spinning?: boolean
   style?: StyleProp<ViewStyle>
+  /**
+   * Grow the touch target past the drawn box. A button squeezed into a dense
+   * row — a section header, a breadcrumb — has to shrink visually, and this is
+   * what keeps it at 44 pt for a finger.
+   */
+  hitSlop?: number
 }) {
   const { tokens: { colors, radius } } = useMobileTheme()
   const glyph = (color: string) => spinning
@@ -39,6 +45,7 @@ export function IconButton({ icon: Icon, label, onPress, disabled, active, destr
       // a screen reader gets for "search is open" is a colour it cannot see.
       accessibilityState={{ disabled: !!disabled, ...(active === undefined ? {} : { selected: active }) }}
       disabled={disabled}
+      hitSlop={hitSlop}
       onPress={onPress}
       style={({ pressed }) => [{
         width: 44, height: 44, alignItems: 'center', justifyContent: 'center',

@@ -6,6 +6,11 @@
 @import "./markdown-table.css";
 @import "./dockview-theme.css";
 @source "../../../../../../node_modules/streamdown/dist/*.js";
+/* The chat presenters live in @superone/chat-view and reach the renderer through
+   a node_modules symlink, which Tailwind's automatic source detection skips. Any
+   utility used only there (ANSI terminal colors, `text-warning/60`, …) is
+   silently dropped from the build without this line. */
+@source "../../../../../../packages/chat-view/src/**/*.{ts,tsx}";
 @source "../../../../../web/components/**/*.{ts,tsx}";
 @source "../../../../../../packages/desktop-mocks/src/**/*.{ts,tsx}";
 @source "../../../../../../packages/video-compositions/src/**/*.{ts,tsx}";

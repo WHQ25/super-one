@@ -103,10 +103,10 @@ tags: [smoke, native, visual]
     # A heading at the very bottom leaves its list below the fold.
     centerElement: true
 - assertVisible: "Built-in"
-# Every capability is listed; the ones the desktop has switched off say so
-# instead of disappearing. The row composes into one label, so the state is
-# asserted as part of it rather than as its own element.
-- assertVisible: "Computer Use.*Turned off on the desktop"
+# Every capability is listed; a switched-off one says where to switch it on
+# instead of disappearing. That hint is the only second line any mention row
+# has — every other kind is a single line, as on the desktop.
+- assertVisible: "Computer Use.*Enable Computer Use in the desktop settings.*Off"
 - takeScreenshot: ${"composer-suggestions-mention-" + THEME}
 
 - scrollUntilVisible:
@@ -118,7 +118,8 @@ tags: [smoke, native, visual]
 # Collaborators rank by slug, and they are their own group — not merged with
 # the project agents below them.
 - assertVisible: "Collaborators"
-- assertVisible: "Codex.*@codex.*"
+# Name and slug on one line; the provider ref the tag carries is not shown.
+- assertVisible: "Codex.*@codex"
 
 - scrollUntilVisible:
     element:
@@ -192,7 +193,9 @@ tags: [smoke, native, visual]
     direction: DOWN
     # Stopping the moment the heading appears leaves its list below the fold.
     centerElement: true
-- assertVisible: "composer-suggestions.tsx.*src/ui/composer-suggestions.tsx"
+# Scoped rows show the path minus the directory already typed — one line, no
+# repeat of the prefix underneath.
+- assertVisible: "composer-suggestions.tsx"
 - assertVisible: "Browse src"
 - takeScreenshot: ${"composer-suggestions-browse-scoped-" + THEME}
 
@@ -214,9 +217,9 @@ tags: [smoke, native, visual]
     direction: DOWN
     centerElement: true
 - assertVisible: "Sessions"
-- assertVisible: "Align the mention popup with desktop, super-one"
+- assertVisible: "Align the mention popup with desktop.*super-one.*claude"
 # A session with no title yet still has to be selectable, so it shows its id.
-- assertVisible: "sess-0c4d, relay"
+- assertVisible: "sess-0c4d.*relay.*claude"
 - assertVisible: "Load more"
 - takeScreenshot: ${"composer-suggestions-session-portal-" + THEME}
 

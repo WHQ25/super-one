@@ -54,6 +54,7 @@ export function ChatScreen(props: {
   /** Slot above the composer for notices the transcript cannot carry. */
   above?: ReactNode
   mentionQuery?: string | null
+  mentionGroupLabels?: Partial<Record<string, string>>
   draft: string
   streaming: boolean
   onWebMessage: (raw: string) => void

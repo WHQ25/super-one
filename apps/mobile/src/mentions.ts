@@ -59,6 +59,12 @@ export type MentionItem = {
    */
   navigateTo?: string
   /**
+   * A short pill at the end of the row — the harness a session ran under, or a
+   * project agent's model. Not prose: it has to survive being truncated to a
+   * few characters beside the name.
+   */
+  badge?: string
+  /**
    * Which root a multi-root file result came from. The host sends it only when
    * the search spanned more than one directory, and two roots can hold the same
    * relative path — without it they collide into one row.
@@ -89,6 +95,9 @@ export function parseMentionItems(rows: unknown): MentionItem[] {
       matchIndices: Array.isArray(value.matchIndices)
         ? value.matchIndices.filter((index): index is number => Number.isInteger(index)) : undefined,
       iconPng: mentionIconPng(value.iconDataUri),
+      // A project agent's model arrives on its own field, not as a description.
+      // Dropping it left every agent row claiming to inherit.
+      badge: typeof value.model === 'string' && value.model ? value.model : undefined,
       rootPath: typeof value.rootPath === 'string' && value.rootPath ? value.rootPath : undefined }]
   })
 }

@@ -60,6 +60,7 @@ export type ChatComposerProps = {
   onMentionLoadMore?: () => void
   /** The raw `@` query, so the overlay can show where in the tree it points. */
   mentionQuery?: string | null
+  mentionGroupLabels?: Partial<Record<string, string>>
   placeholder?: string; above?: ReactNode
 }
 
@@ -91,7 +92,7 @@ export function ChatComposer(props: ChatComposerProps) {
     {!tablet ? <View testID="phone-composer-status" style={{ flexDirection: 'row', minHeight: 44 }}>{controls}</View> : null}
     <SlashSuggestions matches={props.slashHits} status={props.slashCatalogStatus} onSelect={props.onSlash} onDismiss={props.onSlashDismiss} />
     <MentionSuggestions rows={props.mentionRows} onSelect={props.onMention} search={props.mentionSearch}
-      onRetry={props.onMentionRetry} onLoadMore={props.onMentionLoadMore}
+      onRetry={props.onMentionRetry} onLoadMore={props.onMentionLoadMore} groupLabels={props.mentionGroupLabels}
       // A session title may contain a slash; only a path query has a trail.
       breadcrumbs={props.mentionQuery && !isSessionMentionQuery(props.mentionQuery)
         ? mentionBreadcrumbs(props.mentionQuery) : []} />

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildMentionRows, groupMentionRows, mentionGroupKey, MENTION_GROUP_ORDER, remapIndices } from './mention-rows'
+import { buildMentionRows, groupMentionRows, mentionDisplayName, mentionGroupKey, MENTION_GROUP_ORDER, shiftIndices } from './mention-rows'
 import type { MentionItem } from './mentions'
 
 const file = (path: string, matchIndices?: number[]): MentionItem => ({ kind: 'file', path, matchIndices })
@@ -24,21 +24,33 @@ describe('mentionGroupKey', () => {
   })
 })
 
-describe('remapIndices', () => {
-  it('shifts path indices onto the basename the row renders', () => {
-    expect(remapIndices('src/ui/app.ts', 'app.ts', [7, 8, 9])).toEqual([0, 1, 2])
+describe('what a file row shows', () => {
+  it('shows the whole relative path, as the desktop does', () => {
+    // Two files called `index.ts` are indistinguishable by basename, which is
+    // the case a path is there for.
+    expect(mentionDisplayName({ kind: 'file', path: 'src/ui/app.ts' })).toBe('src/ui/app.ts')
   })
 
-  it('drops indices that fall outside the displayed name', () => {
-    expect(remapIndices('src/ui/app.ts', 'app.ts', [0, 1, 7])).toEqual([0])
+  it('drops only the directory the query already names', () => {
+    expect(mentionDisplayName({ kind: 'file', path: 'src/ui/app.ts' }, 'src/ui/')).toBe('app.ts')
   })
 
-  it('passes indices through when the display is the whole path', () => {
-    expect(remapIndices('app.ts', 'app.ts', [0, 1])).toEqual([0, 1])
+  it('prefers a label the host supplied over any path', () => {
+    expect(mentionDisplayName({ kind: 'session', path: 'sess-1', label: 'Ship it' }, 'src/')).toBe('Ship it')
+  })
+})
+
+describe('shiftIndices', () => {
+  it('moves host indices onto the shortened display', () => {
+    expect(shiftIndices([7, 8, 9], 7, 6)).toEqual([0, 1, 2])
   })
 
-  it('gives up rather than highlight the wrong characters', () => {
-    expect(remapIndices('src/ui/app.ts', 'other.ts', [0])).toEqual([])
+  it('drops what falls outside rather than colouring the wrong characters', () => {
+    expect(shiftIndices([0, 1, 7], 7, 6)).toEqual([0])
+  })
+
+  it('passes indices through when nothing was dropped', () => {
+    expect(shiftIndices([0, 1], 0, 6)).toEqual([0, 1])
   })
 })
 
@@ -65,27 +77,39 @@ describe('buildMentionRows', () => {
   it('matches an alias but highlights only what the row shows', () => {
     const rows = buildMentionRows('gpt', { remote: [], agentProfiles: [profile('codex-base', 'Codex', 'codex', ['gpt'])] })
     expect(rows.map((row) => row.item.path)).toEqual(['codex-base'])
-    expect(rows[0]!.keywordIndices).toEqual([])
+    expect(rows[0]!.inlineIndices).toEqual([])
   })
 
-  it('gives a capability its id as the keyword and its intent as the detail', () => {
-    // The keyword indices are scored against the id. Drawing them over the
-    // intent — which is prose — highlights unrelated characters.
+  it('shows a working capability as one line: name and handle', () => {
+    // The desktop prints no description here. Prose under every built-in made
+    // the list twice as tall for something the name already said.
     const [row] = buildMentionRows('brow', { remote: [], agentProfiles: [], capabilityIds: ['browser'] })
-    expect(row!.keyword).toBe('@browser')
-    expect(row!.detail).not.toBe(row!.keyword)
-    expect(row!.detail).toContain('browser')
+    expect(row).toMatchObject({ label: 'Super Browser', inline: '@browser' })
+    expect(row!.hint).toBeUndefined()
   })
 
-  it('does not repeat a collaborator slug on both lines', () => {
+  it('replaces the handle with where to switch a capability back on', () => {
+    // The one row that earns a second line, and it is actionable rather than
+    // descriptive.
+    const [row] = buildMentionRows('brow', { remote: [], agentProfiles: [], capabilityIds: [] })
+    expect(row).toMatchObject({ disabled: true, badge: { text: 'Off', tone: 'muted' } })
+    expect(row!.hint).toBe('Enable Browser CDP in the desktop settings')
+    expect(row!.inline).toBeUndefined()
+  })
+
+  it('shows a collaborator as name and slug, without its ref', () => {
     const [row] = buildMentionRows('codex', { remote: [], agentProfiles: [profile('codex-base', 'Codex', 'codex')] })
-    expect(row!.keyword).toBe('@codex')
-    expect(row!.detail).toBe('codex-base')
+    expect(row).toMatchObject({ label: 'Codex', inline: '@codex' })
+    expect(row!.trailing).toBeUndefined()
   })
 
-  it('remaps host indices onto the displayed name', () => {
+  it('shifts host indices onto the path it displays', () => {
     const rows = buildMentionRows('app', { remote: [file('src/ui/app.ts', [7, 8, 9])], agentProfiles: [] })
-    expect(rows[0]!.labelIndices).toEqual([0, 1, 2])
+    expect(rows[0]!.label).toBe('src/ui/app.ts')
+    expect(rows[0]!.labelIndices).toEqual([7, 8, 9])
+    const scoped = buildMentionRows('app', { remote: [file('src/ui/app.ts', [7, 8, 9])], agentProfiles: [], scopeDir: 'src/ui/' })
+    expect(scoped[0]!.label).toBe('app.ts')
+    expect(scoped[0]!.labelIndices).toEqual([0, 1, 2])
   })
 
   it('withholds desktop apps until something is typed', () => {
@@ -129,11 +153,51 @@ describe('multi-root results', () => {
       agentProfiles: [],
     })
     expect(rows).toHaveLength(2)
-    expect(rows.map((row) => row.detail)).toEqual(['app · src/index.ts', 'lib · src/index.ts'])
+    // The checkout goes at the end of the line, where a session's project goes.
+    expect(rows.map((row) => row.trailing)).toEqual(['app', 'lib'])
   })
 
   it('leaves single-root rows showing only their path', () => {
     const [row] = buildMentionRows('index', { remote: [{ kind: 'file', path: 'src/index.ts' }], agentProfiles: [] })
-    expect(row?.detail).toBe('src/index.ts')
+    expect(row).toMatchObject({ label: 'src/index.ts' })
+    expect(row?.trailing).toBeUndefined()
+  })
+})
+
+describe('what each kind puts on its one line', () => {
+  // The desktop's rows are `flex items-center` — one line each, with what
+  // distinguishes the row pushed to its end. Mobile gave every kind a second
+  // line, which doubled the list's height to repeat the first.
+  const only = (item: MentionItem, query = '') =>
+    buildMentionRows(query, { remote: [item], agentProfiles: [], scoped: true })[0]!
+
+  it('puts a session in a project and a harness at the end of its title', () => {
+    const row = only({ kind: 'session', path: 'sess-1', label: 'Ship it', description: 'super-one', badge: 'claude' })
+    expect(row).toMatchObject({ label: 'Ship it', trailing: 'super-one', badge: { text: 'claude', tone: 'muted' } })
+    expect(row.hint).toBeUndefined()
+  })
+
+  it('shows a scope choice with its hint beside the name, not under it', () => {
+    const row = only({ kind: 'session-project', path: 'relay', label: 'relay', description: '/work/relay' })
+    expect(row).toMatchObject({ label: 'relay', inline: '/work/relay' })
+    expect(row.trailing).toBeUndefined()
+  })
+
+  it('badges a project agent with its model, and says inherit when it has none', () => {
+    expect(only({ kind: 'agent', path: 'reviewer', badge: 'claude-opus-5' }).badge)
+      .toEqual({ text: 'claude-opus-5', tone: 'muted' })
+    expect(only({ kind: 'agent', path: 'reviewer' }).badge).toEqual({ text: 'inherit', tone: 'muted' })
+  })
+
+  it('marks a desktop app as reachable only through Computer Use', () => {
+    // Desktop apps need a query at all, which is asserted separately.
+    expect(only({ kind: 'desktop-app', path: 'com.apple.Safari', label: 'Safari' }, 'saf').badge)
+      .toEqual({ text: 'Computer Use', tone: 'accent' })
+  })
+
+  it('leaves a mini-app as just its name', () => {
+    const row = only({ kind: 'miniapp', path: 'board', label: 'Board', description: 'Kanban mini-app' })
+    expect(row.label).toBe('Board')
+    expect(row.inline ?? row.trailing ?? row.badge).toBeUndefined()
   })
 })

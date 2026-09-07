@@ -283,12 +283,27 @@ export function useComposerSuggestions(
   const mentionRows = useMemo<MentionRow[]>(() => {
     if (mentionQuery === null) return []
     const mode = deriveMentionMode(mentionQuery)
-    return buildMentionRows(isSessionMentionQuery(mentionQuery) || mode.kind === 'browse' ? '' : mode.needle, {
+    const session = isSessionMentionQuery(mentionQuery)
+    return buildMentionRows(session || mode.kind === 'browse' ? '' : mode.needle, {
       ...mentionResults,
       // A portal query is anchored the same way a path is: only its own rows apply.
-      scoped: !!mentionScopeDir(mentionQuery) || isSessionMentionQuery(mentionQuery),
+      scoped: !!mentionScopeDir(mentionQuery) || session,
+      // The desktop shows a path minus the directory already typed, so the two
+      // surfaces truncate at the same place.
+      ...(session ? {} : { scopeDir: mentionScopeDir(mentionQuery) }),
     })
   }, [mentionQuery, mentionResults])
+
+  /**
+   * The sessions group is called *Recent* until a title is typed, because until
+   * then it is not a result — it is the archive's front page.
+   */
+  const mentionGroupLabels = useMemo<Partial<Record<string, string>>>(() => {
+    if (mentionQuery === null || !isSessionMentionQuery(mentionQuery)) return {}
+    const parsed = parseSessionQuery(mentionQuery, sessionProjects(), projectPath ?? null)
+    return parsed?.phase === 'need-title' ? { session: 'Recent' } : {}
+    // `host.projects` is stable per connection; the query is what moves.
+  }, [mentionQuery, projectPath])
 
   /** Any edit the user made re-arms a dismissed overlay; a programmatic one does not. */
   const observe = (value: string, composing: boolean) => {
@@ -345,7 +360,7 @@ export function useComposerSuggestions(
 
   return {
     slashHits, slashCatalogStatus: catalogStatus, mentionRows, mentionSearch, requestedCursor,
-    mentionQuery,
+    mentionQuery, mentionGroupLabels,
     update, updateNative, select, insert, clear, applyProgrammatic,
     dismissSlash: () => setSlashDismissed(true),
     retry: searchMentions,

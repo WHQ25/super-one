@@ -1,20 +1,20 @@
 import { ActivityIndicator, Image, Pressable, ScrollView, View } from 'react-native'
 import { Text } from './text'
 import type { MentionSearchState } from '../navigation/use-composer-suggestions'
-import { AtSign, Bot, AppWindow, Box, ChevronRight, FolderRoot, Wrench, X } from 'lucide-react-native'
+import { AtSign, Bot, AppWindow, Box, ChevronRight, FolderRoot, FolderTree, Wrench, X } from 'lucide-react-native'
 import { groupItems } from '@superone/shared/popup-groups'
 import type { MatchedSlashCommand } from '../slash'
 import type { SlashCatalogStatus } from '../slash-catalog'
 import { IconButton } from './icon-button'
 import { directoryMentionItem, directoryNavigationItem, isMentionDirectory, type MentionItem } from '../mentions'
-import { groupMentionRows, mentionDisplayName, mentionGroupKey, mentionRowKey, MENTION_GROUP_LABELS, type MentionGroupKey, type MentionRow } from '../mention-rows'
+import { groupMentionRows, mentionGroupKey, mentionRowKey, MENTION_GROUP_LABELS, type MentionGroupKey, type MentionRow } from '../mention-rows'
 import { useMobileTheme } from '../theme/context'
 import { FileTypeIcon } from './file-icon'
 import { HarnessIcon } from './harness-icon'
 import { brandKeyForAgentRef } from '@superone/shared/agent-mention-tags'
 import { mentionGlyphArtwork } from './mention-glyph-data'
 
-function MatchText({ text, indices = [] }: { text: string; indices?: number[] }) {
+function MatchText({ text, indices = [], muted }: { text: string; indices?: number[]; muted?: boolean }) {
   const { tokens: { colors } } = useMobileTheme()
   const matching = new Set(indices)
   const runs: { value: string; matched: boolean }[] = []
@@ -26,7 +26,9 @@ function MatchText({ text, indices = [] }: { text: string; indices?: number[] })
     else runs.push({ value: char, matched })
     offset += char.length
   }
-  return <Text style={{ color: colors.foreground, fontSize: 13, fontWeight: '500' }}>
+  return <Text numberOfLines={1} style={muted
+    ? { color: colors.mutedForeground, fontSize: 12 }
+    : { color: colors.foreground, fontSize: 13, fontWeight: '500' }}>
     {runs.map((run, index) => <Text key={index} style={run.matched ? { color: colors.primary, fontWeight: '700' } : undefined}>{run.value}</Text>)}
   </Text>
 }
@@ -106,10 +108,16 @@ export function MentionIdentity({ item, size = 16 }: { item: MentionItem; size?:
   if (mentionGroupKey(item) === 'file') return <FileTypeIcon name={item.path} directory={item.isDirectory || item.kind === 'directory'} size={size} />
   // The portal is a way into the session archive and a scope row is a folder,
   // so they borrow those glyphs rather than falling through to the generic one.
+  // `all` gets the stacked-folders glyph the desktop gives it, because it is
+  // every project rather than one.
+  if (item.kind === 'session-project') {
+    return item.navigateTo === 'session all '
+      ? <FolderTree size={size} color={colors.foreground} />
+      : <FileTypeIcon name={item.path} directory size={size} />
+  }
   const glyphKind = item.kind === 'builtin' ? item.path
     : item.kind === 'desktop-app' ? 'computer'
     : item.kind === 'session-portal' ? 'session'
-    : item.kind === 'session-project' ? 'directory'
     : item.kind
   const glyph = mentionGlyphArtwork(glyphKind, scheme, colors.foreground)
   if (glyph) return <Image accessible={false} resizeMode="contain" source={{ uri: `data:image/png;base64,${glyph}` }} style={{ width: size, height: size, borderRadius: item.kind === 'miniapp' ? size * 0.22 : 0 }} />
@@ -154,8 +162,10 @@ function MentionBreadcrumbs({ trail, onSelect }: {
   </ScrollView>
 }
 
-export function MentionSuggestions({ rows, onSelect, search, onRetry, onLoadMore, breadcrumbs }: {
+export function MentionSuggestions({ rows, onSelect, search, onRetry, onLoadMore, breadcrumbs, groupLabels }: {
   rows: MentionRow[]
+  /** Per-group overrides; the sessions group is *Recent* before a title query. */
+  groupLabels?: Partial<Record<string, string>>
   onSelect: (item: MentionItem) => void
   search?: MentionSearchState
   onRetry?: () => void
@@ -170,12 +180,12 @@ export function MentionSuggestions({ rows, onSelect, search, onRetry, onLoadMore
     {breadcrumbs?.length ? <MentionBreadcrumbs trail={breadcrumbs} onSelect={onSelect} /> : null}
     <ScrollView keyboardShouldPersistTaps="always" style={{ maxHeight: 256, flexGrow: 0 }} contentContainerStyle={{ padding: 6 }}>
       {groupMentionRows(rows).map((group) => <View key={group.key}>
-        <SectionTitle title={MENTION_GROUP_LABELS[group.key as MentionGroupKey]} count={group.items.length} />
-        {group.items.map(({ item, labelIndices, keyword, keywordIndices, detail, disabled }) => {
+        <SectionTitle title={groupLabels?.[group.key] ?? MENTION_GROUP_LABELS[group.key as MentionGroupKey]} count={group.items.length} />
+        {group.items.map((row) => {
+          const { item, label, labelIndices, inline, inlineIndices, trailing, badge, hint, disabled } = row
           // Tapping a folder opens it — the desktop's Tab. Mentioning the folder
           // itself is the desktop's Enter, and needs its own target here.
           const directory = isMentionDirectory(item)
-          const name = mentionDisplayName(item)
           return <View key={mentionRowKey(item)} style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Pressable
               accessibilityRole="button"
@@ -184,19 +194,24 @@ export function MentionSuggestions({ rows, onSelect, search, onRetry, onLoadMore
               // learns it exists, but selecting it would insert a tag nothing answers.
               disabled={disabled}
               onPress={() => onSelect(directory ? directoryNavigationItem(item.path, item.label) : item)}
-              style={({ pressed }) => ({ flex: 1, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8, padding: 8, borderRadius: 6, opacity: disabled ? 0.45 : 1, backgroundColor: pressed ? colors.muted : 'transparent' })}>
+              style={({ pressed }) => ({ flex: 1, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 8, paddingVertical: 6, borderRadius: 6, opacity: disabled ? 0.45 : 1, backgroundColor: pressed ? colors.muted : 'transparent' })}>
               <MentionIdentity item={item} />
-              <View style={{ flex: 1, gap: 3 }}>
+              {/* One line, as on the desktop: name, a quiet note beside it, and
+                  what distinguishes it pushed to the end. Only a switched-off
+                  capability adds a second line. */}
+              <View style={{ flex: 1, gap: 2 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
-                  <MatchText text={name} indices={labelIndices} />
-                  {keyword ? <MatchText text={keyword} indices={keywordIndices.map((index) => index + 1)} /> : null}
+                  <MatchText text={label} indices={labelIndices} />
+                  {inline ? <MatchText text={inline} indices={inline.startsWith('@') ? inlineIndices.map((index) => index + 1) : inlineIndices} muted /> : null}
                 </View>
-                {disabled || detail ? <Text numberOfLines={1} style={{ color: colors.mutedForeground, fontSize: 12 }}>
-                  {disabled ? 'Turned off on the desktop' : detail}
-                </Text> : null}
+                {hint ? <Text numberOfLines={1} style={{ color: colors.mutedForeground, fontSize: 12 }}>{hint}</Text> : null}
               </View>
+              {trailing ? <Text numberOfLines={1} style={{ maxWidth: 96, color: colors.mutedForeground, fontSize: 11 }}>{trailing}</Text> : null}
+              {badge ? <Text numberOfLines={1} style={{ fontSize: 11, paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4,
+                color: badge.tone === 'accent' ? colors.success : colors.mutedForeground,
+                backgroundColor: badge.tone === 'accent' ? `${colors.success}1f` : colors.muted }}>{badge.text}</Text> : null}
             </Pressable>
-            {directory ? <IconButton icon={AtSign} label={`Mention ${name}`} chrome="plain" iconSize={15}
+            {directory ? <IconButton icon={AtSign} label={`Mention ${label}`} chrome="plain" iconSize={15}
               onPress={() => onSelect(directoryMentionItem(item))} /> : null}
           </View>
         })}

@@ -36,8 +36,8 @@ export const previewSlashCatalog: SlashCommandInfo[] = [
 
 /** What the host returns: files, project agents, mini-apps, desktop apps. */
 export const previewMentionItems: MentionItem[] = [
-  { kind: 'agent', path: 'reviewer', label: 'reviewer', description: 'claude-opus-5' },
-  { kind: 'session', path: 'sess-7f3c', label: 'Align the mention popup with desktop', description: 'super-one' },
+  { kind: 'agent', path: 'reviewer', label: 'reviewer', badge: 'claude-opus-5' },
+  { kind: 'session', path: 'sess-7f3c', label: 'Align the mention popup with desktop', description: 'super-one', badge: 'claude' },
   { kind: 'miniapp', path: 'board', label: 'Board', description: 'Kanban mini-app' },
   { kind: 'desktop-app', path: 'com.apple.Safari', label: 'Safari', description: 'com.apple.Safari' },
   { kind: 'directory', path: 'src/renderer/src/components', isDirectory: true, matchIndices: [17, 18, 19] },
@@ -90,11 +90,11 @@ export const previewSessionProjects = [
 
 /** Sessions inside a scope, titled the way real ones are: long, and sometimes not at all. */
 export const previewSessionRows = [
-  { session: { sessionId: 'sess-7f3c', title: 'Align the mention popup with desktop', lastActiveAt: '', messageCount: 12 },
+  { session: { sessionId: 'sess-7f3c', title: 'Align the mention popup with desktop', lastActiveAt: '', messageCount: 12, provider: 'claude' as const },
     projectKey: '/work/super-one', projectLabel: 'super-one' },
-  { session: { sessionId: 'sess-91ab', title: 'Close the slash-command loop in the composer', lastActiveAt: '', messageCount: 40 },
+  { session: { sessionId: 'sess-91ab', title: 'Close the slash-command loop in the composer', lastActiveAt: '', messageCount: 40, provider: 'codex' as const },
     projectKey: '/work/super-one', projectLabel: 'super-one' },
-  { session: { sessionId: 'sess-0c4d', title: '', lastActiveAt: '', messageCount: 0 },
+  { session: { sessionId: 'sess-0c4d', title: '', lastActiveAt: '', messageCount: 0, provider: 'claude' as const },
     projectKey: '/work/relay', projectLabel: 'relay' },
 ]
 

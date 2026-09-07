@@ -11,7 +11,7 @@ const projectAgent: MentionItem = { kind: 'agent', path: 'reviewer', label: 'rev
 const desktopApp: MentionItem = { kind: 'desktop-app', path: 'com.apple.Safari', label: 'Safari' }
 
 const row = (item: MentionItem, extra: Partial<MentionRow> = {}): MentionRow =>
-  ({ item, labelIndices: [], keywordIndices: [], detail: item.description || item.path, ...extra })
+  ({ item, label: item.label || item.path, labelIndices: [], inlineIndices: [], ...extra })
 
 test('orders groups the way the desktop popup does', async () => {
   await renderWithTheme(
@@ -30,17 +30,19 @@ test('keeps collaborators and project agents apart', async () => {
   expect(screen.getByText('Agents')).toBeTruthy()
 })
 
-test('falls back to the path basename when an item has no label', async () => {
+test('shows a file as its whole path, not its basename', async () => {
+  // Two files called `nested.ts` are indistinguishable otherwise, and the
+  // desktop prints the path for exactly that reason.
   await renderWithTheme(
     <MentionSuggestions rows={[row({ kind: 'file', path: 'src/deep/nested.ts' })]} onSelect={() => {}} />,
   )
-  expect(screen.getByText('nested.ts')).toBeTruthy()
+  expect(screen.getByText('src/deep/nested.ts')).toBeTruthy()
 })
 
 test('passes the whole item to onSelect, not just its path', async () => {
   const selected: MentionItem[] = []
   await renderWithTheme(<MentionSuggestions rows={[row(file)]} onSelect={(item) => selected.push(item)} />)
-  fireEvent.press(screen.getByText('app.ts'))
+  fireEvent.press(screen.getByText('src/app.ts'))
   expect(selected).toEqual([file])
 })
 
@@ -51,7 +53,7 @@ test('shows a switched-off capability without letting it be selected', async () 
   const disabled = buildMentionRows('brow', { remote: [], agentProfiles: [], capabilityIds: ['widget'] })
   expect(disabled[0]?.disabled).toBe(true)
   await renderWithTheme(<MentionSuggestions rows={disabled} onSelect={() => { selections += 1 }} />)
-  expect(screen.getByText('Turned off on the desktop')).toBeTruthy()
+  expect(screen.getByText('Enable Browser CDP in the desktop settings')).toBeTruthy()
   fireEvent.press(screen.getByText('Super Browser'))
   expect(selections).toBe(0)
 })
@@ -61,7 +63,7 @@ test('reports an in-flight search while keeping the rows it already has', async 
     <MentionSuggestions rows={[row(file)]} onSelect={() => {}} search={{ active: true, loading: true }} />,
   )
   expect(screen.getByText('Searching…')).toBeTruthy()
-  expect(screen.getByText('app.ts')).toBeTruthy()
+  expect(screen.getByText('src/app.ts')).toBeTruthy()
 })
 
 test('offers a retry when the search failed', async () => {
@@ -123,7 +125,7 @@ test('treats a directory the host returned as a search hit the same way', async 
   await renderWithTheme(
     <MentionSuggestions rows={[row({ kind: 'file', path: 'src/ui', isDirectory: true })]} onSelect={(item) => chosen.push(item)} />,
   )
-  fireEvent.press(screen.getByText('ui'))
+  fireEvent.press(screen.getByText('src/ui'))
   expect(chosen[0]).toEqual(directoryNavigationItem('src/ui'))
 })
 

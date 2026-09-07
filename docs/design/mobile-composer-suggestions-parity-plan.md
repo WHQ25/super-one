@@ -472,6 +472,41 @@ Verified: mobile 417 vitest + 34 jest, desktop `remote-control-service` 75 and
   dozens of agents needs the permission story §4 said it needed and does not
   have. Left out on purpose, not overlooked.
 
+**Row shape correction (2026-09-07).** Every mention row is now a **single
+line**, as on the desktop.
+
+`MentionPopup.tsx:919` gives every row `flex items-center`: an icon, the name, a
+quiet note beside it, and at most a small pill at the end. Mobile had been
+giving each kind a second line — the path under a filename, the project under a
+session title, prose under a capability, the provider ref under a collaborator.
+That doubled the list's height to repeat what the first line already said, and
+in a 256 px overlay it halved how much was reachable without scrolling.
+
+What each kind actually shows, checked against `renderItem`:
+
+| kind | line | end of line |
+|---|---|---|
+| capability | name + `@id` | — |
+| capability (off) | name, **plus a second line**: where to switch it on | `Off` |
+| session portal | `Session` + `@session` | — |
+| collaborator | name + `@slug` | — |
+| scope choice | name + its path or `current project` | — |
+| session | title | project · harness |
+| project agent | name | model, or `inherit` |
+| desktop app | name | `Computer Use` |
+| mini-app / file / folder | name or path | — |
+
+Two things fell out of doing this properly:
+
+- **A file row shows its path, not its basename** (`MentionPopup.tsx:784`),
+  dropping only the directory the query already names. Two files called
+  `index.ts` are indistinguishable otherwise, which is the case a path is there
+  for. `remapIndices` (indices → basename) became `shiftIndices` (indices →
+  scope-relative path), which is what the host's re-based indices actually need.
+- **A project agent's model was being dropped.** It arrives on its own `model`
+  field, not as a description, so every agent row would have claimed `inherit`.
+  The `session` harness badge was missing for the same reason.
+
 ## 5. Risks, reordered
 
 - **R1 (was R4) — the two editors are two products, not one with a fallback.**

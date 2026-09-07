@@ -60,7 +60,10 @@ export function sessionItems(rows: SessionMentionRow[], titleQuery: string): Men
     kind: 'session',
     path: row.session.sessionId,
     label: row.session.title || row.session.sessionId,
+    // Both sit on the title's line, as on the desktop: which project it was in,
+    // then which harness ran it.
     description: row.projectLabel,
+    ...(row.session.provider ? { badge: row.session.provider } : {}),
     labelIndices: titleMatchIndices(row.session.title || '', titleQuery),
   }))
 }

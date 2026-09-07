@@ -1326,6 +1326,7 @@ export function MobileApp() {
           onMentionRetry={suggestions.retry}
           onMentionLoadMore={suggestions.loadMore}
           mentionQuery={suggestions.mentionQuery}
+          mentionGroupLabels={suggestions.mentionGroupLabels}
           // Everything the composer opens stacks here, above the input and
           // below the transcript — never as a modal over the draft.
           above={<>

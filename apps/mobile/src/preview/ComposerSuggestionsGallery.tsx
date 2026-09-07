@@ -107,7 +107,7 @@ export function ComposerSuggestionsGallery() {
       <MentionSuggestions rows={rows('safari')} onSelect={() => {}} search={{ active: true, loading: false }} />
     </Section>
 
-    <Section title="Mention · @comp" note="Host indices are scored over the whole path and remapped onto the basename.">
+    <Section title="Mention · @comp" note="One line per row: the whole path, with the host match indices over it.">
       <MentionSuggestions rows={rows('comp')} onSelect={() => {}} search={{ active: true, loading: false }} />
     </Section>
 
@@ -155,7 +155,7 @@ export function ComposerSuggestionsGallery() {
       />
     </Section>
 
-    <Section title="Mention · scoped search @src/ui/comp" note="The trail keeps the way out reachable while the last segment is still being typed.">
+    <Section title="Mention · scoped search @src/ui/comp" note="Scoped: the path drops the directory already typed, and the trail keeps the way out reachable.">
       <MentionSuggestions
         rows={buildMentionRows('comp', {
           remote: [{ kind: 'file', path: 'src/ui/composer-suggestions.tsx', matchIndices: [7, 8, 9, 10] }],
@@ -169,7 +169,7 @@ export function ComposerSuggestionsGallery() {
       />
     </Section>
 
-    <Section title="Mention · @session scope" note="Phase one: pick a project or all of them. Selecting one navigates — it does not mention anything yet.">
+    <Section title="Mention · @session scope" note="Phase one: pick a project or all of them. The hint sits beside the name, as on the desktop.">
       <MentionSuggestions
         rows={buildMentionRows('', {
           remote: sessionProjectItems(sessionProjectOptions(previewSessionProjects, '/work/super-one'), '', '/work/super-one'),
@@ -181,7 +181,7 @@ export function ComposerSuggestionsGallery() {
       />
     </Section>
 
-    <Section title="Mention · @session recent" note="Scope chosen, nothing typed: the most recent sessions, with more to fetch.">
+    <Section title="Mention · @session recent" note="Scope chosen, nothing typed: project and harness ride at the end of the title line.">
       <MentionSuggestions
         rows={buildMentionRows('', { remote: sessionItems(previewSessionRows, ''), agentProfiles: [], scoped: true })}
         onSelect={() => {}}

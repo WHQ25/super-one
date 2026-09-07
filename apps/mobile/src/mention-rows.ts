@@ -40,21 +40,39 @@ export const MENTION_GROUP_LABELS: Record<MentionGroupKey, string> = {
   file: 'Files',
 }
 
+/**
+ * One mention row, in the desktop popup's shape.
+ *
+ * Every row there is a **single line** (`MentionPopup.tsx:919` —
+ * `flex items-center`): an icon, the name, a quiet inline note beside it, and
+ * at most a small badge at the end. The one exception is a switched-off
+ * capability, which gets a second line saying where to switch it on.
+ *
+ * Mobile used to give every row a second line — the path under a filename, the
+ * project under a session title, prose under a capability. That is a different
+ * component wearing the same name, and it made the list twice as tall for
+ * information the first line already carried.
+ */
 export interface MentionRow {
   item: MentionItem
-  /** Highlight over the row's display name. */
+  /** What the row shows, with the highlight over it. */
+  label: string
   labelIndices: number[]
   /**
-   * The `@keyword` a built-in row shows beside its name, and the highlight over
-   * it. Decided here rather than derived in the renderer: a capability's keyword
-   * is its id while its description is prose, and highlighting the prose with
-   * indices scored against the id colours the wrong characters.
+   * Quiet text right after the name: an `@handle`, or a project's path. Decided
+   * here rather than in the renderer, which cannot know that a capability's
+   * handle is its id while its description is prose — highlighting the prose
+   * with indices scored against the id colours the wrong characters.
    */
-  keyword?: string
-  keywordIndices: number[]
-  /** The row's second line. */
-  detail: string
-  /** Visible but not selectable: the capability is switched off on the desktop. */
+  inline?: string
+  inlineIndices: number[]
+  /** Quiet text pushed to the end of the row — the project a session is in. */
+  trailing?: string
+  /** A small pill at the end: a model, a harness, or `Off`. */
+  badge?: { text: string; tone: 'muted' | 'accent' }
+  /** The only second line there is: where to switch a capability back on. */
+  hint?: string
+  /** Visible but not selectable. */
   disabled?: boolean
 }
 
@@ -71,25 +89,31 @@ export function mentionGroupKey(item: MentionItem): MentionGroupKey {
   return 'file'
 }
 
-/** What the row actually renders — a label if the host gave one, else the leaf. */
-export function mentionDisplayName(item: MentionItem): string {
-  return item.label || item.path.replace(/[/\\]+$/, '').split(/[/\\]/).pop() || item.path
+/**
+ * What a file row shows: the path, minus the directory already typed.
+ *
+ * The desktop shows the whole relative path and drops only the scope prefix
+ * (`MentionPopup.tsx:784`) — not the basename. Two files called `index.ts` are
+ * otherwise indistinguishable, which is the case the path is there for.
+ */
+export function mentionDisplayName(item: MentionItem, scopeDir = ''): string {
+  if (item.label) return item.label
+  const path = item.path
+  return scopeDir && path.startsWith(scopeDir) ? path.slice(scopeDir.length) : path
 }
 
 /**
- * Move host match indices from the path they were computed over onto the
- * shorter string the row displays.
+ * Shift host match indices onto the string the row shows.
  *
- * The host scores whole paths; a row shows a basename. Forwarding the indices
- * unchanged would highlight the wrong characters — off by the length of the
- * directory prefix — which is worse than not highlighting at all.
+ * The host scores the whole path and re-bases its indices onto it, so a scoped
+ * row displaying `app.ts` out of `src/app.ts` has to subtract the same prefix
+ * the display did. Indices that fall outside are dropped rather than drawn in
+ * the wrong place.
  */
-export function remapIndices(path: string, display: string, indices: readonly number[]): number[] {
+export function shiftIndices(indices: readonly number[], offset: number, length: number): number[] {
   if (!indices.length) return []
-  if (display === path) return [...indices]
-  const offset = path.lastIndexOf(display)
-  if (offset < 0) return []
-  return indices.map((index) => index - offset).filter((index) => index >= 0 && index < display.length)
+  if (!offset) return [...indices]
+  return indices.map((index) => index - offset).filter((index) => index >= 0 && index < length)
 }
 
 export interface MentionRowInput {
@@ -106,6 +130,8 @@ export interface MentionRowInput {
    * question the user did not ask.
    */
   scoped?: boolean
+  /** Directory prefix to drop from file paths, as the desktop does. */
+  scopeDir?: string
 }
 
 const DEFAULT_CAPABILITIES = ['widget', 'debug']
@@ -138,7 +164,13 @@ function rankBuiltins<T extends { row: MentionRow; keyword: string; rank: 0 | 1 
 const SESSION_PORTAL = {
   id: SESSION_MENTION_KEYWORD,
   displayName: 'Session',
-  intent: 'mention an earlier session by project and title',
+}
+
+/** Where a switched-off capability is switched back on. */
+function capabilityHint(id: string): string {
+  if (id === 'computer') return 'Enable Computer Use in the desktop settings'
+  if (id === 'browser') return 'Enable Browser CDP in the desktop settings'
+  return 'Enable it in the desktop settings'
 }
 
 function capabilityRows(query: string, capabilityIds: unknown): MentionRow[] {
@@ -160,14 +192,15 @@ function capabilityRows(query: string, capabilityIds: unknown): MentionRow[] {
           label: capability.displayName,
           description: capability.intent,
         } as MentionItem,
+        label: capability.displayName,
         labelIndices: scored.labelIndices,
-        keyword: `@${capability.id}`,
-        keywordIndices: scored.keywordIndices,
-        detail: capability.intent,
-        // Kept visible rather than filtered out: a capability that exists but is
-        // switched off is worth knowing about, and hiding it makes the feature
-        // look absent.
-        ...(available.has(capability.id) ? {} : { disabled: true }),
+        // A working capability shows its handle; a switched-off one shows why
+        // instead, which is the one row that earns a second line. Filtering it
+        // out entirely would make the feature look absent.
+        ...(available.has(capability.id)
+          ? { inline: `@${capability.id}`, inlineIndices: scored.keywordIndices }
+          : { inlineIndices: [], disabled: true, hint: capabilityHint(capability.id),
+              badge: { text: 'Off', tone: 'muted' as const } }),
       },
     }]
   })
@@ -183,10 +216,10 @@ function capabilityRows(query: string, capabilityIds: unknown): MentionRow[] {
           label: SESSION_PORTAL.displayName,
           navigateTo: SESSION_MENTION_NAV_PREFIX,
         } as MentionItem,
+        label: SESSION_PORTAL.displayName,
         labelIndices: portal.labelIndices,
-        keyword: `@${SESSION_PORTAL.id}`,
-        keywordIndices: portal.keywordIndices,
-        detail: SESSION_PORTAL.intent,
+        inline: `@${SESSION_PORTAL.id}`,
+        inlineIndices: portal.keywordIndices,
       },
     })
   }
@@ -212,12 +245,13 @@ function agentProfileRows(query: string, profiles: MentionItem[]): MentionRow[] 
       rank: scored.rank,
       row: {
         item,
+        label,
         labelIndices: scored.labelIndices,
-        keyword: `@${keyword}`,
-        keywordIndices: scored.keywordIndices,
-        // The slug is already on the first line; repeating it below would be
-        // the same string twice.
-        detail: item.path,
+        // The provider ref used to sit under the name. The desktop shows the
+        // slug beside it and nothing else — the ref is what gets inserted, not
+        // something the user picks by.
+        inline: `@${keyword}`,
+        inlineIndices: scored.keywordIndices,
       },
     }]
   })
@@ -242,18 +276,42 @@ export function buildMentionRows(query: string, input: MentionRowInput): Mention
     if (seen.has(key)) continue
     if (item.kind === 'desktop-app' && !hasQuery) continue
     seen.add(key)
-    const display = mentionDisplayName(item)
-    rows.push({
-      item,
-      labelIndices: item.labelIndices ?? remapIndices(item.path, display, item.matchIndices ?? []),
-      keywordIndices: [],
-      // A browse row needs no second line: every row in a listing shares the
-      // same directory, and the breadcrumb above already names it. Elsewhere the
-      // path is worth showing unless it is the name again.
-      detail: rowDetail(item, display),
-    })
+    rows.push(remoteRow(item, input.scopeDir ?? ''))
   }
   return rows
+}
+
+/**
+ * A row for something the host produced, in the shape its kind takes on the
+ * desktop: one line, with what distinguishes it pushed to the end.
+ */
+function remoteRow(item: MentionItem, scopeDir: string): MentionRow {
+  const label = mentionDisplayName(item, scopeDir)
+  const offset = item.label ? 0 : item.path.length - label.length
+  const labelIndices = item.labelIndices ?? shiftIndices(item.matchIndices ?? [], offset, label.length)
+  const row: MentionRow = { item, label, labelIndices, inlineIndices: [] }
+  if (item.kind === 'session') {
+    // Project on the left of the badge, harness on the right — both quiet, both
+    // on the same line as the title.
+    return { ...row, ...(item.description ? { trailing: item.description } : {}),
+      ...(item.badge ? { badge: { text: item.badge, tone: 'muted' } } : {}) }
+  }
+  if (item.kind === 'session-project') {
+    // `all projects` / `current project` / the path: the desktop shows it
+    // inline, not underneath.
+    return { ...row, ...(item.description ? { inline: item.description } : {}) }
+  }
+  if (item.kind === 'agent') {
+    // `inherit` is what the desktop prints for an agent that names no model.
+    return { ...row, badge: { text: item.badge || 'inherit', tone: 'muted' } }
+  }
+  if (item.kind === 'desktop-app') {
+    return { ...row, badge: { text: 'Computer Use', tone: 'accent' } }
+  }
+  // Which checkout a multi-root hit came from goes where a session's project
+  // goes — at the end of the same line, not under it.
+  const root = item.rootPath?.replace(/[/\\]+$/, '').split(/[/\\]/).pop()
+  return root ? { ...row, trailing: root } : row
 }
 
 /**
@@ -265,18 +323,6 @@ export function buildMentionRows(query: string, input: MentionRowInput): Mention
  */
 export function mentionRowKey(item: MentionItem): string {
   return `${item.kind}:${item.rootPath ? `${item.rootPath}\0` : ''}${item.path}`
-}
-
-function rowDetail(item: MentionItem, display: string): string {
-  if (item.description) return item.description
-  // A browse row needs no second line: every row in a listing shares the same
-  // directory, and the breadcrumb above already names it.
-  if (item.kind === 'dir-entry') return ''
-  const path = display === item.path ? '' : item.path
-  // Which checkout a multi-root hit came from is the only thing telling two
-  // same-named files apart, so it leads the line.
-  const root = item.rootPath?.replace(/[/\\]+$/, '').split(/[/\\]/).pop()
-  return root ? `${root} · ${path || display}` : path
 }
 
 export function groupMentionRows(rows: MentionRow[]): PopupGroup<MentionRow>[] {

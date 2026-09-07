@@ -110,3 +110,43 @@ export function serializeMentionDocument(document: MentionDocument): string {
     return ` ${tag} `
   }).join('').trim()
 }
+
+/** A mention the plain-text editor inserted, and the exact text it wrote. */
+export type MentionInsertion = { text: string; mention: MentionToken }
+
+/**
+ * Recover a structured document from flat text plus the mentions typed into it.
+ *
+ * The fallback editor has no spans — it is an ordinary `TextInput` — so what it
+ * sends used to be literally `@src/a.ts`. For a file that reads fine; for a
+ * session it was a bare UUID with no title and no instruction, and for a
+ * capability it was a word the host never expanded. Matching on the inserted
+ * text is what a plain editor can honestly offer: an insertion the user has
+ * since edited away simply stops being a mention.
+ */
+export function documentFromText(text: string, insertions: readonly MentionInsertion[]): MentionDocument {
+  if (!insertions.length || !text) return text ? [{ text }] : []
+  const document: MentionSegment[] = []
+  let cursor = 0
+  while (cursor < text.length) {
+    let at = -1
+    let hit: MentionInsertion | undefined
+    for (const insertion of insertions) {
+      if (!insertion.text) continue
+      const index = text.indexOf(insertion.text, cursor)
+      if (index < 0) continue
+      // Earliest wins; at the same spot the longer one does, so `@src/a.ts`
+      // is not shadowed by a recorded `@src`.
+      if (at < 0 || index < at || (index === at && insertion.text.length > (hit?.text.length ?? 0))) {
+        at = index
+        hit = insertion
+      }
+    }
+    if (!hit || at < 0) break
+    if (at > cursor) document.push({ text: text.slice(cursor, at) })
+    document.push({ mention: hit.mention })
+    cursor = at + hit.text.length
+  }
+  if (cursor < text.length) document.push({ text: text.slice(cursor) })
+  return document
+}

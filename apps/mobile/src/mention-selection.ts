@@ -21,10 +21,11 @@ export function selectNativeMention(snapshot: MentionEditorSnapshot, item: Menti
   if (snapshot.composing || snapshot.start !== snapshot.end) return
   const query = extractMentionQuery(snapshot.text, snapshot.end)
   if (!query) return
-  // Directory traversal is still editable @path text until a resource is selected.
-  const replacement: MentionDocument = item.kind === 'dir-entry' && item.isDirectory
-    // An empty path is the project root: a bare `@`, not `@/`.
-    ? [{ text: `@${item.path ? `${item.path.replace(/[/\\]+$/, '')}/` : ''}` }]
+  // A waypoint is still editable @text until a resource is selected. Which
+  // items are waypoints is decided once, in `mentions.ts`, so this path and the
+  // plain-text one cannot drift apart.
+  const replacement: MentionDocument = item.navigateTo !== undefined
+    ? [{ text: `@${item.navigateTo}` }]
     : (() => {
       const token = mentionTokenFromItem(item)
       return token ? [{ mention: token }, { text: ' ' }] : []

@@ -1,18 +1,34 @@
+import { mentionQueryAllowsSpaces } from '@superone/shared/session-mention-query'
+
 export type MentionQuery = { atPosition: number; query: string }
 
 const PLACEHOLDER = '\uFFFC'
 
-/** Mirror of Flutter `extractMentionQuery`: last `@` after whitespace, no space in the token. */
+/**
+ * The open `@` query at the caret: the nearest `@` that starts a word.
+ *
+ * A mention is a single token, so a space normally closes the query — that is
+ * what stops every word after `@src/a.ts` from being read as part of it. The
+ * `@session` portal is the exemption, because its grammar *is*
+ * `session <project> <title words>`; the query it produces is what decides,
+ * not a flag the caller has to remember to pass.
+ */
 export function extractMentionQuery(text: string, cursorPosition: number): MentionQuery | null {
   if (cursorPosition <= 0 || cursorPosition > text.length) return null
   const before = text.slice(0, cursorPosition)
+  let sawSpace = false
   for (let i = before.length - 1; i >= 0; i--) {
-    const ch = before[i]
+    const ch = before[i]!
+    // A chip and a line break both end the query outright: neither can be part
+    // of a mention token, and a portal query does not span lines.
+    if (ch === PLACEHOLDER || ch === '\n') return null
     if (ch === '@') {
       if (i > 0 && !/\s/.test(before[i - 1]!)) return null
-      return { atPosition: i, query: before.slice(i + 1) }
+      const query = before.slice(i + 1)
+      if (sawSpace && !mentionQueryAllowsSpaces(query)) return null
+      return { atPosition: i, query }
     }
-    if (/\s/.test(ch!) || ch === PLACEHOLDER) return null
+    if (/\s/.test(ch)) sawSpace = true
   }
   return null
 }
@@ -25,10 +41,23 @@ export type MentionItem = {
   description?: string
   /** Host match positions, over `path`. Remap before highlighting a shorter label. */
   matchIndices?: number[]
+  /**
+   * Match positions already scored over the row's **label**. A session title
+   * and a project name are matched as themselves, not as the id or token the
+   * row carries, so remapping from the path would drop the highlight entirely.
+   */
+  labelIndices?: number[]
   /** Extra names a collaborator answers to; matched but never highlighted. */
   aliases?: string[]
   /** Validated PNG payload supplied by the paired desktop for dynamic app identities. */
   iconPng?: string
+  /**
+   * Replace the query with this text and keep the popup open, instead of
+   * committing a mention. A folder and a `@session` scope are both waypoints,
+   * not answers — and expressing that as data rather than as a branch is what
+   * keeps the two editors from disagreeing about it.
+   */
+  navigateTo?: string
   /**
    * Which root a multi-root file result came from. The host sends it only when
    * the search spanned more than one directory, and two roots can hold the same
@@ -64,13 +93,13 @@ export function parseMentionItems(rows: unknown): MentionItem[] {
   })
 }
 
+/** Exactly what selecting this item writes into a plain-text draft. */
+export function mentionInsertText(item: MentionItem): string {
+  return item.navigateTo !== undefined ? `@${item.navigateTo}` : `@${item.path} `
+}
+
 export function insertMention(text: string, query: MentionQuery, item: MentionItem): string {
-  // An empty directory path is the project root, and its query is a bare `@` —
-  // `@/` would read as an absolute path and browse the filesystem root.
-  const insert = item.kind === 'dir-entry'
-    ? item.isDirectory ? `@${item.path ? `${item.path.replace(/[/\\]+$/, '')}/` : ''}` : `@${item.path} `
-    : `@${item.path} `
-  return `${text.slice(0, query.atPosition)}${insert}${text.slice(query.atPosition + 1 + query.query.length)}`
+  return `${text.slice(0, query.atPosition)}${mentionInsertText(item)}${text.slice(query.atPosition + 1 + query.query.length)}`
 }
 
 /** Provider refs come from the connected host, never from a locally invented
@@ -97,12 +126,23 @@ export function isMentionDirectory(item: MentionItem): boolean {
   return item.isDirectory === true || item.kind === 'directory'
 }
 
-/** Descend into a directory: still editable `@path/` text, not a committed chip. */
+/**
+ * Descend into a directory: still editable `@path/` text, not a committed chip.
+ *
+ * An empty path is the project root, whose query is a bare `@` — `@/` would
+ * read as an absolute path and browse the filesystem root.
+ */
 export function directoryNavigationItem(path: string, label?: string): MentionItem {
-  return { kind: 'dir-entry', path, isDirectory: true, ...(label ? { label } : {}) }
+  const clean = path.replace(/[/\\]+$/, '')
+  return {
+    kind: 'dir-entry', path: clean, isDirectory: true,
+    navigateTo: clean ? `${clean}/` : '',
+    ...(label ? { label } : {}),
+  }
 }
 
 /** Mention the directory itself, ending the query. */
 export function directoryMentionItem(item: MentionItem): MentionItem {
-  return { ...item, kind: 'directory', isDirectory: true }
+  const { navigateTo: _navigateTo, ...rest } = item
+  return { ...rest, kind: 'directory', isDirectory: true }
 }

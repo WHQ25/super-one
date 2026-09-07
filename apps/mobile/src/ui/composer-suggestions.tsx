@@ -104,7 +104,13 @@ export function MentionIdentity({ item, size = 16 }: { item: MentionItem; size?:
     return png ? <Image accessible={false} source={{ uri: `data:image/png;base64,${png}` }} style={{ width: size, height: size }} /> : <Bot size={size} color={colors.foreground} />
   }
   if (mentionGroupKey(item) === 'file') return <FileTypeIcon name={item.path} directory={item.isDirectory || item.kind === 'directory'} size={size} />
-  const glyphKind = item.kind === 'builtin' ? item.path : item.kind === 'desktop-app' ? 'computer' : item.kind
+  // The portal is a way into the session archive and a scope row is a folder,
+  // so they borrow those glyphs rather than falling through to the generic one.
+  const glyphKind = item.kind === 'builtin' ? item.path
+    : item.kind === 'desktop-app' ? 'computer'
+    : item.kind === 'session-portal' ? 'session'
+    : item.kind === 'session-project' ? 'directory'
+    : item.kind
   const glyph = mentionGlyphArtwork(glyphKind, scheme, colors.foreground)
   if (glyph) return <Image accessible={false} resizeMode="contain" source={{ uri: `data:image/png;base64,${glyph}` }} style={{ width: size, height: size, borderRadius: item.kind === 'miniapp' ? size * 0.22 : 0 }} />
   if (item.kind === 'miniapp') return <Box size={size} color={colors.foreground} />
@@ -148,11 +154,13 @@ function MentionBreadcrumbs({ trail, onSelect }: {
   </ScrollView>
 }
 
-export function MentionSuggestions({ rows, onSelect, search, onRetry, breadcrumbs }: {
+export function MentionSuggestions({ rows, onSelect, search, onRetry, onLoadMore, breadcrumbs }: {
   rows: MentionRow[]
   onSelect: (item: MentionItem) => void
   search?: MentionSearchState
   onRetry?: () => void
+  /** Fetch the next page; only offered while `search.hasMore`. */
+  onLoadMore?: () => void
   /** Directory trail of the open query; empty at the project root. */
   breadcrumbs?: { label: string; query: string }[]
 }) {
@@ -201,7 +209,14 @@ export function MentionSuggestions({ rows, onSelect, search, onRetry, breadcrumb
         {onRetry ? <Pressable accessibilityRole="button" onPress={onRetry} style={{ minHeight: 44, justifyContent: 'center' }}>
           <Text style={{ color: colors.primary }}>Retry search</Text>
         </Pressable> : null}
-      </View> : !rows.length ? <Text accessibilityLiveRegion="polite" style={{ padding: 8, color: colors.mutedForeground, fontSize: 12 }}>No matches</Text> : null}
+      </View> : !rows.length ? <Text accessibilityLiveRegion="polite" style={{ padding: 8, color: colors.mutedForeground, fontSize: 12 }}>
+        {/* What "nothing" means depends on what was asked: no projects match,
+            no recent sessions, or no matches at all. */}
+        {search?.emptyLabel ?? 'No matches'}
+      </Text> : search?.hasMore && onLoadMore ? <Pressable accessibilityRole="button" onPress={onLoadMore}
+        style={({ pressed }) => ({ minHeight: 44, justifyContent: 'center', paddingHorizontal: 8, borderRadius: 6, backgroundColor: pressed ? colors.muted : 'transparent' })}>
+        <Text style={{ color: colors.primary, fontSize: 13 }}>Load more</Text>
+      </Pressable> : null}
     </ScrollView>
   </View>
 }

@@ -1,7 +1,7 @@
 import { expect, test } from '@jest/globals'
 import { fireEvent, screen } from '@testing-library/react-native'
 import { renderWithTheme } from '../test-render'
-import type { MentionItem } from '../mentions'
+import { directoryNavigationItem, type MentionItem } from '../mentions'
 import { buildMentionRows, type MentionRow } from '../mention-rows'
 import { MentionSuggestions } from './composer-suggestions'
 
@@ -106,7 +106,7 @@ test('opens a folder when its row is tapped', async () => {
   const chosen: MentionItem[] = []
   await renderWithTheme(<MentionSuggestions rows={[row(directory)]} onSelect={(item) => chosen.push(item)} />)
   fireEvent.press(screen.getByText('ui'))
-  expect(chosen).toEqual([{ kind: 'dir-entry', path: 'src/ui', isDirectory: true, label: 'ui' }])
+  expect(chosen).toEqual([directoryNavigationItem('src/ui', 'ui')])
 })
 
 test('mentions the folder itself from a separate target', async () => {
@@ -124,7 +124,7 @@ test('treats a directory the host returned as a search hit the same way', async 
     <MentionSuggestions rows={[row({ kind: 'file', path: 'src/ui', isDirectory: true })]} onSelect={(item) => chosen.push(item)} />,
   )
   fireEvent.press(screen.getByText('ui'))
-  expect(chosen[0]).toEqual({ kind: 'dir-entry', path: 'src/ui', isDirectory: true })
+  expect(chosen[0]).toEqual(directoryNavigationItem('src/ui'))
 })
 
 const trail = [{ label: 'src', query: 'src/' }, { label: 'ui', query: 'src/ui/' }]
@@ -135,7 +135,7 @@ test('walks back out of a directory through the breadcrumb trail', async () => {
     <MentionSuggestions rows={[row(file)]} onSelect={(item) => chosen.push(item)} breadcrumbs={trail} />,
   )
   fireEvent.press(screen.getByLabelText('Browse src'))
-  expect(chosen).toEqual([{ kind: 'dir-entry', path: 'src', isDirectory: true, label: 'src' }])
+  expect(chosen).toEqual([directoryNavigationItem('src', 'src')])
 })
 
 test('returns to the project root from the trail', async () => {
@@ -144,7 +144,7 @@ test('returns to the project root from the trail', async () => {
     <MentionSuggestions rows={[row(file)]} onSelect={(item) => chosen.push(item)} breadcrumbs={trail} />,
   )
   fireEvent.press(screen.getByLabelText('Browse project root'))
-  expect(chosen).toEqual([{ kind: 'dir-entry', path: '', isDirectory: true }])
+  expect(chosen).toEqual([directoryNavigationItem('')])
 })
 
 test('does not offer the directory already being listed as somewhere to go', async () => {

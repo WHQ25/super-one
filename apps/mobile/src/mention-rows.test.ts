@@ -58,7 +58,7 @@ describe('buildMentionRows', () => {
 
   it('keeps catalog order for a bare @, and lists the switched-off ones too', () => {
     const rows = buildMentionRows('', { remote: [], agentProfiles: [], capabilityIds: ['debug', 'widget'] })
-    expect(rows.map((row) => row.item.path)).toEqual(['computer', 'browser', 'widget', 'debug'])
+    expect(rows.map((row) => row.item.path)).toEqual(['computer', 'browser', 'widget', 'debug', 'session'])
     expect(rows.filter((row) => row.disabled).map((row) => row.item.path)).toEqual(['computer', 'browser'])
   })
 

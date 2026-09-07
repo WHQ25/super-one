@@ -20,6 +20,8 @@ import { resolveRingContextWindow } from '@superone/shared/agent-types'
 import { ChatRuntime, type SessionWorktreeFacts } from '../runtime'
 import { TerminalRuntime } from '../terminal-runtime'
 import { randomId } from '../ids'
+import { mentionInsertText } from '../mentions'
+import { mentionTokenFromItem } from '../mention-selection'
 import { isPairingQrInput, normalizePairingInput } from '../pairing-input'
 import { usePairingDeepLink } from '../pairing-deep-link'
 import { shouldSubmitFromKeyboard } from '../composer-state'
@@ -193,7 +195,7 @@ export function MobileApp() {
   const viewStateWriteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fatalReloadRef = useRef({ startedAt: 0, count: 0 })
   const mentionArtworkRevisionRef = useRef(-1)
-  const suggestions = useComposerSuggestions(runtimeRef, `${activePairingId}:${project?.path}:${sessionId}:${selectedProvider}`, { client: clientRef, projectPath: project?.path, provider: selectedProvider })
+  const suggestions = useComposerSuggestions(runtimeRef, `${activePairingId}:${project?.path}:${sessionId}:${selectedProvider}`, { client: clientRef, projectPath: project?.path, provider: selectedProvider, projects })
   const { slashHits, mentionRows } = suggestions
   const systemInfoRequestRef = useRef(0)
   // Files hangs off Project settings or off the session menu; back has to unwind
@@ -1266,6 +1268,10 @@ export function MobileApp() {
             if (composerDraft.editorRef.current) { composerDraft.editorRef.current.insertMention(item); return }
             const value = suggestions.insert(item)
             if (value === undefined) return
+            // The plain editor cannot hold an identity, so the draft records
+            // what this insertion wrote and rebuilds the tag at send time.
+            const token = item.navigateTo === undefined ? mentionTokenFromItem(item) : undefined
+            if (token) composerDraft.recordMention(mentionInsertText(item), token)
             composerDraft.changeText(value)
           }}
           onRemoveAttachment={(attachment) => setAttachments((current) => current.filter((item) => item !== attachment))}
@@ -1279,6 +1285,7 @@ export function MobileApp() {
           requestedCursor={suggestions.requestedCursor}
           mentionSearch={suggestions.mentionSearch}
           onMentionRetry={suggestions.retry}
+          onMentionLoadMore={suggestions.loadMore}
           mentionQuery={suggestions.mentionQuery}
           onSubmitFromKeyboard={() => {
             const hasContent = draftRef.current.trim().length > 0 || attachments.length > 0

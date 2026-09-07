@@ -3,6 +3,7 @@ import { parseUserMentions } from '../../desktop/src/renderer/src/components/cha
 import { parseMentionEditorSnapshot } from './mention-editor-state'
 import { nativeMentionSpans, nativeMentionText, replaceMentionRange, documentFromNativeMentions, serializeMentionDocument } from './mention-document'
 import { mentionTokenFromItem, selectNativeMention } from './mention-selection'
+import { directoryNavigationItem } from './mentions'
 
 const snapshot = (text: string, cursor = text.length) => parseMentionEditorSnapshot({ text, tokens: [], start: cursor, end: cursor, eventCount: 4, composing: false })
 
@@ -28,9 +29,13 @@ describe('native suggestion selection to desktop message', () => {
 
   it('keeps folder traversal editable and rejects unknown identities or composing selections', () => {
     const draft = snapshot('@sr')
-    expect(selectNativeMention(draft, { kind: 'dir-entry', path: 'src/', isDirectory: true }, 1)).toMatchObject({ text: '@src/', tokens: [] })
+    expect(selectNativeMention(draft, directoryNavigationItem('src/'), 1)).toMatchObject({ text: '@src/', tokens: [] })
     // The project root is a bare `@`; `@/` would traverse to the filesystem root.
-    expect(selectNativeMention(draft, { kind: 'dir-entry', path: '', isDirectory: true }, 1)).toMatchObject({ text: '@', tokens: [] })
+    expect(selectNativeMention(draft, directoryNavigationItem(''), 1)).toMatchObject({ text: '@', tokens: [] })
+    // The same rule carries the `@session` scope, so the two editors cannot
+    // disagree about what a waypoint is.
+    expect(selectNativeMention(draft, { kind: 'session-project', path: 'all', navigateTo: 'session all ' }, 1))
+      .toMatchObject({ text: '@session all ', tokens: [] })
     expect(selectNativeMention(draft, { kind: 'future', path: 'thing' }, 1)).toBeUndefined()
     expect(selectNativeMention({ ...draft, composing: true }, { kind: 'file', path: 'src/a.ts' }, 1)).toBeUndefined()
     expect(selectNativeMention({ ...draft, start: 0 }, { kind: 'file', path: 'src/a.ts' }, 1)).toBeUndefined()

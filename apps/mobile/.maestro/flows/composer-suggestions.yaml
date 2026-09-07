@@ -169,3 +169,34 @@ tags: [smoke, native, visual]
 - assertVisible: "composer-suggestions.tsx.*src/ui/composer-suggestions.tsx"
 - assertVisible: "Browse src"
 - takeScreenshot: ${"composer-suggestions-browse-scoped-" + THEME}
+
+# The `@session` portal. Its three phases each answer a different question, so
+# each has its own empty state — a single "No matches" would be a lie in two of
+# them.
+- scrollUntilVisible:
+    element:
+      text: "Mention · @session scope"
+    direction: DOWN
+    centerElement: true
+- assertVisible: "Project scope"
+- assertVisible: "All Projects, all projects"
+- assertVisible: "super-one, current project"
+
+- scrollUntilVisible:
+    element:
+      text: "Mention · @session recent"
+    direction: DOWN
+    centerElement: true
+- assertVisible: "Sessions"
+- assertVisible: "Align the mention popup with desktop, super-one"
+# A session with no title yet still has to be selectable, so it shows its id.
+- assertVisible: "sess-0c4d, relay"
+- assertVisible: "Load more"
+- takeScreenshot: ${"composer-suggestions-session-portal-" + THEME}
+
+- scrollUntilVisible:
+    element:
+      text: "Mention · @session no matches"
+    direction: DOWN
+    centerElement: true
+- assertVisible: "No matching sessions"

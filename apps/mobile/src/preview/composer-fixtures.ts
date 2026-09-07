@@ -79,3 +79,20 @@ export const previewNestedEntries = [
   { name: 'theme', isDirectory: true },
   { name: '组件说明.md', isDirectory: false },
 ]
+
+/** Projects the `@session` portal offers as scopes. */
+export const previewSessionProjects = [
+  { path: '/work/super-one', name: 'super-one' },
+  { path: '/work/relay', name: 'relay' },
+  { path: '/work/一个很长的项目名称', name: '一个很长的项目名称' },
+]
+
+/** Sessions inside a scope, titled the way real ones are: long, and sometimes not at all. */
+export const previewSessionRows = [
+  { session: { sessionId: 'sess-7f3c', title: 'Align the mention popup with desktop', lastActiveAt: '', messageCount: 12 },
+    projectKey: '/work/super-one', projectLabel: 'super-one' },
+  { session: { sessionId: 'sess-91ab', title: 'Close the slash-command loop in the composer', lastActiveAt: '', messageCount: 40 },
+    projectKey: '/work/super-one', projectLabel: 'super-one' },
+  { session: { sessionId: 'sess-0c4d', title: '', lastActiveAt: '', messageCount: 0 },
+    projectKey: '/work/relay', projectLabel: 'relay' },
+]

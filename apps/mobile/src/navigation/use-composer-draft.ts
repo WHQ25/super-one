@@ -16,5 +16,5 @@ export function useComposerDraft() {
     return true
   }
   return { draft, draftRef: state.text, document: state.document, editorRef, lastDraftChangeAtRef: state.lastChangeAt,
-    changeText, accept, capture: () => state.capture(), clearSent }
+    changeText, accept, recordMention: state.recordMention.bind(state), capture: () => state.capture(), clearSent }
 }

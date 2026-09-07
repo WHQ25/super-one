@@ -7,17 +7,38 @@ import { extractMentionQuery, insertMention, parseMentionItems, parseAgentMentio
 import { buildMentionRows, type MentionRow } from '../mention-rows'
 import { deriveMentionMode, mentionScopeDir } from '../mention-browse-state'
 import { filterBrowseItems, requestDirectory } from '../mention-browse'
+import {
+  initialSessionMentionLoadState, isSessionMentionQuery, loadSessionMentionPage, parseSessionQuery,
+  sessionEmptyLabel, sessionItems, sessionPageLoader, sessionProjectItems, sessionProjectOptions,
+  type SessionMentionLoadState,
+} from '../session-mention'
 import { filterSlashCommands, type SlashCommandInfo } from '../slash'
 import { requestSlashCatalog, type SlashCatalogStatus } from '../slash-catalog'
 
-export type MentionSearchState = { active: boolean; loading: boolean; error?: string }
+export type MentionSearchState = {
+  active: boolean
+  loading: boolean
+  error?: string
+  /** A further page can be fetched. */
+  hasMore?: boolean
+  /** Phase-specific wording for an empty list. */
+  emptyLabel?: string
+}
 const CLOSED: MentionSearchState = { active: false, loading: false }
 
 /** Matches the desktop popup's file-search debounce. */
 export const MENTION_SEARCH_DEBOUNCE_MS = 150
 
-/** One shape for both producers, so the caller never branches on which ran. */
-type MentionFetch = { remote: MentionItem[]; agentProfiles: MentionItem[]; capabilityIds?: unknown }
+/** One shape for every producer, so the caller never branches on which ran. */
+type MentionFetch = {
+  remote: MentionItem[]
+  agentProfiles: MentionItem[]
+  capabilityIds?: unknown
+  /** Another page is available; only the session portal pages today. */
+  hasMore?: boolean
+  /** What this producer's "nothing found" means, when it is not just "no matches". */
+  emptyLabel?: string
+}
 
 /**
  * Where the composer's suggestions come from.
@@ -30,6 +51,8 @@ export interface ComposerSuggestionSource {
   client: RefObject<RelayClient | null>
   projectPath?: string
   provider?: string
+  /** Every project the host offers — the `@session` portal's scope choices. */
+  projects?: readonly { path: string; name?: string }[]
 }
 
 export function useComposerSuggestions(
@@ -58,6 +81,11 @@ export function useComposerSuggestions(
    * the agent cannot see.
    */
   const cwd = useRef<string | null>(null)
+  /**
+   * Where the session portal's scan has reached, kept per query so that asking
+   * for more continues rather than re-fetching the first page.
+   */
+  const sessionPaging = useRef<{ query: string; state: SessionMentionLoadState; items: MentionItem[] } | null>(null)
 
   const clear = () => {
     generation.current++
@@ -69,6 +97,7 @@ export function useComposerSuggestions(
   useEffect(() => {
     mentionCatalog.current = { agentProfiles: [] }
     cwd.current = null
+    sessionPaging.current = null
     clear()
     return () => { generation.current++ }
   }, [contextKey])
@@ -123,6 +152,41 @@ export function useComposerSuggestions(
   }
   const browseRoot = (runtime: ChatRuntime | null) => cwd.current || runtime?.mentionRoot || projectPath || ''
 
+  const sessionProjects = () => sessionProjectOptions(host.projects ?? [], projectPath ?? null)
+
+  /**
+   * The `@session` portal: pick a scope, then search titles inside it.
+   *
+   * Paging is continued rather than restarted when the query is unchanged, so
+   * "load more" adds a page instead of re-fetching the first one. A title
+   * search may skip most of a page, so the scan can cross several.
+   */
+  const sessionLookup = (query: string, client: RelayClient | null): (() => Promise<MentionFetch>) | null => {
+    const projects = sessionProjects()
+    const parsed = parseSessionQuery(query, projects, projectPath ?? null)
+    if (!parsed) return null
+    if (parsed.phase === 'pick-project') {
+      return async () => ({
+        remote: sessionProjectItems(projects, parsed.projectToken, projectPath ?? null),
+        ...carried(),
+        emptyLabel: sessionEmptyLabel(parsed.phase),
+      })
+    }
+    const scope = parsed.scope
+    if (!scope || !client) return null
+    return async () => {
+      const previous = sessionPaging.current?.query === query ? sessionPaging.current : null
+      const state = previous?.state ?? initialSessionMentionLoadState()
+      const { rows, next } = await loadSessionMentionPage({
+        scope, titleQuery: parsed.titleQuery, projects, state,
+        loadPage: sessionPageLoader(client, projectPath ?? ''),
+      })
+      const items = [...(previous?.items ?? []), ...sessionItems(rows, parsed.titleQuery)]
+      sessionPaging.current = { query, state: next, items }
+      return { remote: items, ...carried(), hasMore: next.hasMore, emptyLabel: sessionEmptyLabel(parsed.phase) }
+    }
+  }
+
   /**
    * Pick the producer for what the user has typed.
    *
@@ -135,6 +199,7 @@ export function useComposerSuggestions(
     runtime: ChatRuntime | null,
     client: RelayClient | null,
   ): (() => Promise<MentionFetch>) | null => {
+    if (isSessionMentionQuery(query)) return sessionLookup(query, client)
     const mode = deriveMentionMode(query)
     if (mode.kind === 'browse') {
       const root = browseRoot(runtime)
@@ -198,7 +263,7 @@ export function useComposerSuggestions(
       void Promise.resolve().then(lookup).then((fetched) => {
         if (stale()) return
         setMentionResults(fetched)
-        setMentionSearch({ active: true, loading: false })
+        setMentionSearch({ active: true, loading: false, hasMore: fetched.hasMore, emptyLabel: fetched.emptyLabel })
       }).catch((error: unknown) => {
         if (stale()) return
         inFlightQuery.current = null
@@ -218,9 +283,10 @@ export function useComposerSuggestions(
   const mentionRows = useMemo<MentionRow[]>(() => {
     if (mentionQuery === null) return []
     const mode = deriveMentionMode(mentionQuery)
-    return buildMentionRows(mode.kind === 'browse' ? '' : mode.needle, {
+    return buildMentionRows(isSessionMentionQuery(mentionQuery) || mode.kind === 'browse' ? '' : mode.needle, {
       ...mentionResults,
-      directoryScoped: !!mentionScopeDir(mentionQuery),
+      // A portal query is anchored the same way a path is: only its own rows apply.
+      scoped: !!mentionScopeDir(mentionQuery) || isSessionMentionQuery(mentionQuery),
     })
   }, [mentionQuery, mentionResults])
 
@@ -262,9 +328,9 @@ export function useComposerSuggestions(
     cursor.current = { start: end, end }
     setRequestedCursor(cursor.current)
     setDraft(value)
-    // Descending into a directory leaves the query open: the text now ends in a
-    // separator, so the next lookup browses it instead of closing the overlay.
-    if (item.kind === 'dir-entry' && item.isDirectory) searchMentions()
+    // A waypoint leaves the query open, so the next lookup browses where the
+    // user just moved to instead of closing the overlay.
+    if (item.navigateTo !== undefined) searchMentions()
     else clear()
     return value
   }
@@ -283,5 +349,10 @@ export function useComposerSuggestions(
     update, updateNative, select, insert, clear, applyProgrammatic,
     dismissSlash: () => setSlashDismissed(true),
     retry: searchMentions,
+    /** Fetch the next page of an already-open list, keeping what is on screen. */
+    loadMore: () => {
+      inFlightQuery.current = null
+      searchMentions()
+    },
   }
 }

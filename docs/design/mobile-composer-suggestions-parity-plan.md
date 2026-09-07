@@ -376,6 +376,42 @@ One footgun found and recorded in `apps/mobile/CLAUDE.md`: **two
 `fireEvent.press` calls in one RNTL test corrupt `act()` for every later test in
 the file**, which surfaces as the *next* test rendering nothing.
 
+**Phase 6 — done (2026-09-07).** `@session` reaches the archive from the phone.
+
+- **The query decides whether spaces are allowed.** `extractMentionQuery` used
+  to stop at the first space, which is right for a file and fatal for a grammar
+  that *is* `session <project> <title words>`. It now keeps scanning and asks
+  the shared `mentionQueryAllowsSpaces` about the query it found, so no caller
+  has to remember a flag. A chip or a line break still ends it outright.
+- **The portal is discovered among the capabilities**, ranked with them, exactly
+  as on the desktop. Hiding it in its own group would make it findable only by
+  people who already know it exists.
+- **Waypoints became data (M13).** A folder and a `@session` scope both replace
+  the query and keep the popup open. That was a `kind === 'dir-entry' &&
+  isDirectory` branch in *both* editors; it is now `item.navigateTo`, decided
+  once where the item is built. Two editors cannot disagree about a fact neither
+  of them derives.
+- **The fallback editor can finally send an identity (M13).** It is an ordinary
+  `TextInput` with nowhere to keep one, so every mention went out as the literal
+  `@text`. For a file that reads fine; a session went out as a bare UUID with no
+  title, and a capability as a word the host never expanded. The draft now
+  records what each insertion wrote and rebuilds the document at send time —
+  what a plain editor can honestly offer, since an insertion the user edits away
+  simply stops being a mention. This fixes files and capabilities in the
+  fallback too, not only sessions.
+- **Paging continues rather than restarts.** The scan state is kept per query,
+  so *Load more* adds a page; `hasMore` comes from the host's `totalCount`,
+  which is why the last page does not have to be short to end the scan.
+- **Three phases, three empty states (M9).** "No matching projects", "No recent
+  sessions" and "No matching sessions" are different answers, and one flat "No
+  matches" is a lie in two of them.
+- Match indices for a session title and a project name are scored over the
+  **label**, not the path, so the row model now takes them directly instead of
+  remapping from a sessionId they were never computed over.
+
+Verified: mobile 413 vitest + 34 jest, gallery flow green on iOS in light and
+dark, slash-wiring flow green.
+
 ## 5. Risks, reordered
 
 - **R1 (was R4) — the two editors are two products, not one with a fallback.**

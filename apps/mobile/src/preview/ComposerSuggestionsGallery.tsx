@@ -6,9 +6,10 @@ import { filterSlashCommands } from '../slash'
 import { buildMentionRows } from '../mention-rows'
 import { browseItems } from '../mention-browse'
 import { mentionBreadcrumbs } from '../mention-browse-state'
+import { sessionItems, sessionProjectItems, sessionProjectOptions } from '../session-mention'
 import {
   previewAgentProfiles, previewCapabilityIds, previewLongMentionItems, previewMentionItems,
-  previewNestedEntries, previewRootEntries, previewSlashCatalog,
+  previewNestedEntries, previewRootEntries, previewSessionProjects, previewSessionRows, previewSlashCatalog,
 } from './composer-fixtures'
 
 /**
@@ -136,7 +137,7 @@ export function ComposerSuggestionsGallery() {
           remote: browseItems(previewNestedEntries, 'src/ui/'),
           agentProfiles: previewAgentProfiles,
           capabilityIds: previewCapabilityIds,
-          directoryScoped: true,
+          scoped: true,
         })}
         onSelect={() => {}}
         search={{ active: true, loading: false }}
@@ -150,11 +151,40 @@ export function ComposerSuggestionsGallery() {
           remote: [{ kind: 'file', path: 'src/ui/composer-suggestions.tsx', matchIndices: [7, 8, 9, 10] }],
           agentProfiles: previewAgentProfiles,
           capabilityIds: previewCapabilityIds,
-          directoryScoped: true,
+          scoped: true,
         })}
         onSelect={() => {}}
         search={{ active: true, loading: false }}
         breadcrumbs={mentionBreadcrumbs('src/ui/comp')}
+      />
+    </Section>
+
+    <Section title="Mention · @session scope" note="Phase one: pick a project or all of them. Selecting one navigates — it does not mention anything yet.">
+      <MentionSuggestions
+        rows={buildMentionRows('', {
+          remote: sessionProjectItems(sessionProjectOptions(previewSessionProjects, '/work/super-one'), '', '/work/super-one'),
+          agentProfiles: [],
+          scoped: true,
+        })}
+        onSelect={() => {}}
+        search={{ active: true, loading: false }}
+      />
+    </Section>
+
+    <Section title="Mention · @session recent" note="Scope chosen, nothing typed: the most recent sessions, with more to fetch.">
+      <MentionSuggestions
+        rows={buildMentionRows('', { remote: sessionItems(previewSessionRows, ''), agentProfiles: [], scoped: true })}
+        onSelect={() => {}}
+        onLoadMore={() => {}}
+        search={{ active: true, loading: false, hasMore: true }}
+      />
+    </Section>
+
+    <Section title="Mention · @session no matches" note="Each phase says which question came back empty, rather than one flat 'No matches'.">
+      <MentionSuggestions
+        rows={[]}
+        onSelect={() => {}}
+        search={{ active: true, loading: false, emptyLabel: 'No matching sessions' }}
       />
     </Section>
 

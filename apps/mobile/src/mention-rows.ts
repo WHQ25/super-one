@@ -1,6 +1,7 @@
 import { BUILTIN_CAPABILITIES, isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
 import { compareBuiltinMentionMatches, matchBuiltinMention } from '@superone/shared/mention-capability-match'
 import { groupItems, type PopupGroup } from '@superone/shared/popup-groups'
+import { SESSION_MENTION_KEYWORD, SESSION_MENTION_NAV_PREFIX } from '@superone/shared/session-mention-query'
 import type { MentionItem } from './mentions'
 
 /**
@@ -18,6 +19,7 @@ import type { MentionItem } from './mentions'
 export const MENTION_GROUP_ORDER = [
   'capability',
   'agent-profile',
+  'session-project',
   'session',
   'desktop-app',
   'agent',
@@ -30,6 +32,7 @@ export type MentionGroupKey = typeof MENTION_GROUP_ORDER[number]
 export const MENTION_GROUP_LABELS: Record<MentionGroupKey, string> = {
   capability: 'Built-in',
   'agent-profile': 'Collaborators',
+  'session-project': 'Project scope',
   session: 'Sessions',
   'desktop-app': 'Desktop Apps',
   agent: 'Agents',
@@ -56,8 +59,11 @@ export interface MentionRow {
 }
 
 export function mentionGroupKey(item: MentionItem): MentionGroupKey {
-  if (item.kind === 'builtin' || isBuiltinCapabilityId(item.kind)) return 'capability'
+  // The session portal is a built-in the user reaches the same way, so it
+  // belongs in the same group and the same ranking.
+  if (item.kind === 'builtin' || item.kind === 'session-portal' || isBuiltinCapabilityId(item.kind)) return 'capability'
   if (item.kind === 'agent-profile') return 'agent-profile'
+  if (item.kind === 'session-project') return 'session-project'
   if (item.kind === 'session') return 'session'
   if (item.kind === 'desktop-app') return 'desktop-app'
   if (item.kind === 'agent') return 'agent'
@@ -94,11 +100,12 @@ export interface MentionRowInput {
   /** Capability ids the desktop currently has switched on. */
   capabilityIds?: unknown
   /**
-   * The query is anchored to a directory (`@src/` or `@src/app`), so it is a
-   * path and nothing else. A capability or collaborator that happens to match
-   * the last segment would be answering a question the user did not ask.
+   * The query is anchored — to a directory (`@src/app`) or to the session
+   * portal (`@session all …`) — so only the producer's own rows apply. A
+   * capability that happens to match the last segment would be answering a
+   * question the user did not ask.
    */
-  directoryScoped?: boolean
+  scoped?: boolean
 }
 
 const DEFAULT_CAPABILITIES = ['widget', 'debug']
@@ -121,11 +128,26 @@ function rankBuiltins<T extends { row: MentionRow; keyword: string; rank: 0 | 1 
   return matches.map((match) => match.row)
 }
 
+/**
+ * The `@session` portal, ranked among the capabilities rather than beside them.
+ *
+ * It is not a capability — selecting it navigates instead of inserting a tag —
+ * but it is discovered the same way, so hiding it in its own group would make
+ * it findable only by people who already know it exists.
+ */
+const SESSION_PORTAL = {
+  id: SESSION_MENTION_KEYWORD,
+  displayName: 'Session',
+  intent: 'mention an earlier session by project and title',
+}
+
 function capabilityRows(query: string, capabilityIds: unknown): MentionRow[] {
   const available = new Set(
     Array.isArray(capabilityIds) ? capabilityIds.filter(isBuiltinCapabilityId) : DEFAULT_CAPABILITIES,
   )
-  const matches = BUILTIN_CAPABILITIES.flatMap((capability) => {
+  // Typed up front: the portal joins this list and its keyword is not one of
+  // the capability ids.
+  const matches: { keyword: string; rank: 0 | 1 | 2; row: MentionRow }[] = BUILTIN_CAPABILITIES.flatMap((capability) => {
     const scored = matchBuiltinMention(capability.id, [capability.displayName], query)
     if (!scored) return []
     return [{
@@ -149,6 +171,25 @@ function capabilityRows(query: string, capabilityIds: unknown): MentionRow[] {
       },
     }]
   })
+  const portal = matchBuiltinMention(SESSION_PORTAL.id, [SESSION_PORTAL.displayName], query)
+  if (portal) {
+    matches.push({
+      keyword: SESSION_PORTAL.id,
+      rank: portal.rank,
+      row: {
+        item: {
+          kind: 'session-portal',
+          path: SESSION_PORTAL.id,
+          label: SESSION_PORTAL.displayName,
+          navigateTo: SESSION_MENTION_NAV_PREFIX,
+        } as MentionItem,
+        labelIndices: portal.labelIndices,
+        keyword: `@${SESSION_PORTAL.id}`,
+        keywordIndices: portal.keywordIndices,
+        detail: SESSION_PORTAL.intent,
+      },
+    })
+  }
   return rankBuiltins(matches, query)
 }
 
@@ -192,7 +233,7 @@ function agentProfileRows(query: string, profiles: MentionItem[]): MentionRow[] 
  */
 export function buildMentionRows(query: string, input: MentionRowInput): MentionRow[] {
   const hasQuery = !!query.trim()
-  const rows = input.directoryScoped
+  const rows = input.scoped
     ? []
     : [...capabilityRows(query, input.capabilityIds), ...agentProfileRows(query, input.agentProfiles)]
   const seen = new Set(rows.map((row) => mentionRowKey(row.item)))
@@ -204,7 +245,7 @@ export function buildMentionRows(query: string, input: MentionRowInput): Mention
     const display = mentionDisplayName(item)
     rows.push({
       item,
-      labelIndices: remapIndices(item.path, display, item.matchIndices ?? []),
+      labelIndices: item.labelIndices ?? remapIndices(item.path, display, item.matchIndices ?? []),
       keywordIndices: [],
       // A browse row needs no second line: every row in a listing shares the
       // same directory, and the breadcrumb above already names it. Elsewhere the

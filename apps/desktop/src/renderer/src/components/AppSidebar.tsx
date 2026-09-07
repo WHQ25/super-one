@@ -873,14 +873,14 @@ export const AppSidebar = memo(function AppSidebar() {
 
       <div className={cn('flex min-h-0 flex-1 flex-col', sidebarTab !== 'sessions' && 'hidden')}>
       {/* Host switcher — remote hosts only when experimentalRemoteNodesEnabled */}
-      <div className="flex items-center justify-between pl-3 pr-3 pt-1.5 pb-0.5">
+      <div className="flex items-center justify-between px-1.5 pt-1.5 pb-0.5">
         <div className="min-w-0 max-w-[70%]">
           {showHostSwitcher ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className="flex min-w-0 items-center gap-1 rounded-md px-1 py-0.5 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground"
+                  className="flex min-w-0 items-center gap-1 rounded-md px-2.5 py-0.5 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground"
                 >
                   <span className="truncate">{selectedHostLabel}</span>
                   <ChevronDown className="size-3.5 shrink-0 opacity-70" />
@@ -917,7 +917,7 @@ export const AppSidebar = memo(function AppSidebar() {
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <span className="truncate px-1 py-0.5 text-sm font-medium text-sidebar-foreground/70">
+            <span className="truncate px-1.5 py-0.5 text-sm font-medium text-sidebar-foreground/70">
               {t('sidebar.projects')}
             </span>
           )}

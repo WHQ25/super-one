@@ -1,0 +1,54 @@
+import type { MentionItem } from '../mentions'
+import type { SlashCommand } from '../slash'
+
+/**
+ * Catalogs the composer overlays run against in the offline preview.
+ *
+ * They are deliberately awkward: a skill that outranks every command, an
+ * argument hint long enough to collide with the command name, a CJK filename,
+ * and a description that has to wrap. A tidy fixture would let a layout bug
+ * ship — the states worth reviewing are the ones a healthy session never
+ * produces.
+ *
+ * The preview feeds these through the real `filterSlashCommands` and the real
+ * row components, never through a copy.
+ */
+export const previewSlashCatalog: SlashCommand[] = [
+  { name: 'clear', description: 'Clear the conversation and start over' },
+  { name: 'compact', description: 'Summarise the conversation to reclaim context', argumentHint: '[instructions]' },
+  { name: 'add-dir', description: 'Give the session another project directory', argumentHint: '[project|session] [dir]' },
+  { name: 'review', description: 'Review the current diff for correctness and cleanups' },
+  { name: 'resume', description: '' },
+  {
+    name: 'release',
+    description: 'Version bump, per-platform build, npm publish, promote artifacts and publish the release',
+    argumentHint: '[alpha|stable] [major|feature|patch]',
+    isSkill: true,
+  },
+  { name: 'tdd', description: 'Test-driven development workflow', isSkill: true },
+  { name: 'wiki', description: '为文件、模块、特性或整个仓库创建或更新 wiki 文档', isSkill: true },
+]
+
+export const previewMentionItems: MentionItem[] = [
+  { kind: 'agent-profile', path: 'codex-base', label: 'Codex', description: '@codex' },
+  { kind: 'agent', path: 'reviewer', label: 'reviewer', description: 'claude-opus-5' },
+  { kind: 'builtin', path: 'browser', label: 'Browser', description: 'Drive the embedded browser' },
+  { kind: 'builtin', path: 'debug', label: 'Debug', description: 'Inspect SuperOne state' },
+  { kind: 'session', path: 'sess-7f3c', label: 'Align the mention popup with desktop', description: 'super-one' },
+  { kind: 'miniapp', path: 'board', label: 'Board', description: 'Kanban mini-app' },
+  { kind: 'desktop-app', path: 'com.apple.Safari', label: 'Safari', description: 'com.apple.Safari' },
+  { kind: 'directory', path: 'src/renderer/src/components', label: 'components', isDirectory: true },
+  { kind: 'file', path: 'src/ui/composer-suggestions.tsx', label: 'composer-suggestions.tsx' },
+  { kind: 'file', path: 'docs/设计/移动端组合器说明.md', label: '移动端组合器说明.md' },
+]
+
+/** Long enough that both the label and the second line have to truncate. */
+export const previewLongMentionItems: MentionItem[] = [
+  {
+    kind: 'file',
+    path: 'apps/mobile/src/navigation/use-composer-suggestions-with-a-very-long-name.ts',
+    label: 'use-composer-suggestions-with-a-very-long-name.ts',
+    description: 'apps/mobile/src/navigation/use-composer-suggestions-with-a-very-long-name.ts',
+  },
+  { kind: 'file', path: 'no-label-so-the-basename-is-derived/from/the/path/report.md' },
+]

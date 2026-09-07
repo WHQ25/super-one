@@ -1,0 +1,55 @@
+appId: ${APP_ID}
+name: Typing a slash in the composer opens the command overlay
+tags: [smoke, native, visual]
+---
+# The gallery covers the overlay's own states. This covers the wiring: the
+# preview chat feeds the real matcher from the real draft, so a regression in
+# `filterSlashCommands` or in the draft plumbing shows up here.
+- runFlow:
+    file: ../helpers/open-shell-preview.yaml
+- tapOn: "Preview page:.*"
+- tapOn: "Chat"
+- extendedWaitUntil:
+    visible:
+      id: phone-composer
+    timeout: 15000
+
+- tapOn: Message
+- inputText: "/re"
+- extendedWaitUntil:
+    visible:
+      id: slash-suggestions
+    timeout: 10000
+# `/re` matches a command and a skill; both groups must be present.
+- assertVisible: "/review"
+- assertVisible: "/release"
+- assertVisible: "Commands"
+- assertVisible: "Skills"
+- takeScreenshot: ${"composer-slash-open-" + THEME}
+
+# Selecting completes the draft to `/name ` and closes the overlay.
+- tapOn: "/review"
+- assertNotVisible:
+    id: slash-suggestions
+- takeScreenshot: ${"composer-slash-selected-" + THEME}
+
+# The composer has two runtimes. The native chip editor and the plain TextInput
+# fallback insert and serialise differently, so the same walk has to pass on
+# both — a fallback-only regression is invisible otherwise.
+- tapOn: "Editor: native"
+- assertVisible: "Editor: fallback"
+- tapOn: Message
+# The draft survives the swap, and `/review ` has a space in it — which is
+# exactly what keeps the overlay shut. Clear it before typing again.
+- eraseText: 50
+- inputText: "/re"
+- extendedWaitUntil:
+    visible:
+      id: slash-suggestions
+    timeout: 10000
+- assertVisible: "/review"
+- assertVisible: "/release"
+- takeScreenshot: ${"composer-slash-fallback-" + THEME}
+- tapOn: "/review"
+- assertNotVisible:
+    id: slash-suggestions

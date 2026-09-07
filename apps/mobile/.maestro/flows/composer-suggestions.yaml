@@ -1,0 +1,54 @@
+appId: ${APP_ID}
+name: Composer suggestion overlays cover every reachable state
+tags: [smoke, native, visual]
+---
+- runFlow:
+    file: ../helpers/open-shell-preview.yaml
+- tapOn: "Preview page:.*"
+- tapOn: "Composer suggestions"
+- extendedWaitUntil:
+    visible:
+      id: composer-suggestions-gallery
+    timeout: 15000
+
+# Slash rows run through the shipping matcher, so these assert the real
+# grouping — not a fixture of what the grouping ought to be.
+- assertVisible: "Slash · bare /"
+- assertVisible: "/clear"
+- assertVisible: "\\[project\\|session\\] \\[dir\\]"
+- assertVisible: "Commands"
+- assertVisible: "Skills"
+
+# A skill-only query must drop the Commands header entirely rather than render
+# an empty group.
+- assertVisible: "Slash · /tdd"
+- assertVisible: "/tdd"
+
+# There is deliberately no slash empty state today: the overlay unmounts. The
+# caption is the only thing left on screen for that section.
+- assertVisible: "Slash · no match"
+- assertVisible: "Renders nothing at all. There is no empty state today."
+- takeScreenshot: ${"composer-suggestions-slash-" + THEME}
+
+- scrollUntilVisible:
+    element:
+      text: "Mention · every group"
+    direction: DOWN
+- assertVisible: "Agents"
+- assertVisible: "Capabilities"
+- assertVisible: "Sessions"
+- assertVisible: "Apps"
+- assertVisible: "Files & folders"
+# A CJK filename has to survive the basename split and the truncation.
+- assertVisible: "移动端组合器说明.md"
+- takeScreenshot: ${"composer-suggestions-mention-" + THEME}
+
+- scrollUntilVisible:
+    element:
+      text: "Mention · search failed"
+    direction: DOWN
+- assertVisible: "Searching…"
+- assertVisible: "Could not reach the desktop"
+- assertVisible: "Retry search"
+- assertVisible: "No matches"
+- takeScreenshot: ${"composer-suggestions-states-" + THEME}

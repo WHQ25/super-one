@@ -1,7 +1,10 @@
 import { useComposerDraft } from '../navigation/use-composer-draft'
-import { extractMentionQuery, type MentionItem } from '../mentions'
+import { extractMentionQuery, insertMention, type MentionItem } from '../mentions'
 import type { MentionEditorSnapshot } from '../mention-editor-state'
 import { MentionEditorPreview } from './MentionEditorPreview'
+import { ComposerSuggestionsGallery } from './ComposerSuggestionsGallery'
+import { previewMentionItems, previewSlashCatalog } from './composer-fixtures'
+import { filterSlashCommands } from '../slash'
 import { useEffect, useRef, useState } from 'react'
 import { useWindowDimensions, View } from 'react-native'
 import { Text } from '../ui/text'
@@ -198,11 +201,26 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
   const chatDraft = useComposerDraft()
   const [mentionHits, setMentionHits] = useState<MentionItem[]>([])
   const [editorError, setEditorError] = useState('')
+  /** Both editors feed this, so the fallback is not silently hit-free. */
+  const updateMentionHits = (text: string, cursorEnd: number, composing = false) => {
+    const query = !composing && extractMentionQuery(text, cursorEnd)
+    const needle = query ? query.query.toLowerCase() : ''
+    setMentionHits(query
+      ? previewMentionItems.filter((item) => `${item.label ?? ''} ${item.path}`.toLowerCase().includes(needle))
+      : [])
+  }
   const acceptDraft = (snapshot: MentionEditorSnapshot) => {
     chatDraft.accept(snapshot)
-    const query = !snapshot.composing && snapshot.start === snapshot.end ? extractMentionQuery(snapshot.text, snapshot.end) : null
-    setMentionHits(query ? [{ kind: 'file', path: 'src/中文 file.ts' }, { kind: 'builtin', path: 'debug', label: 'Debug' }].filter((item) => item.path.toLowerCase().includes(query.query.toLowerCase())) : [])
+    updateMentionHits(snapshot.text, snapshot.end, snapshot.composing || snapshot.start !== snapshot.end)
   }
+  const changeDraft = (text: string) => {
+    chatDraft.changeText(text)
+    updateMentionHits(text, text.length)
+  }
+  // The composer has two runtimes — the native chip editor and the plain
+  // TextInput fallback — and they insert, serialise and send differently.
+  // Reviewing only one of them is how a fallback-only regression ships.
+  const [nativeEditor, setNativeEditor] = useState(true)
   const [attachments, setAttachments] = useState<ImageAttachment[]>([])
   const [mode, setMode] = useState('default')
   const [sandbox, setSandbox] = useState<SandboxInfo | null>({ enabled: true, autoAllowBash: false })
@@ -280,7 +298,7 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
   }
   const chat = page === 'New session' || page === 'Chat' || page === 'Workspace'
   // Standalone galleries share the catch-all 'files' route but draw themselves.
-  const gallery = page === 'Icons' || page === 'Git indicators' || page === 'Session status' || page === 'Chip editor' || page === 'LAN browser'
+  const gallery = page === 'Icons' || page === 'Git indicators' || page === 'Session status' || page === 'Composer suggestions' || page === 'Chip editor' || page === 'LAN browser'
   const route = chat ? 'chat' : page === 'Project' ? 'project-picker' : page === 'Add project' ? 'add-project' : page === 'Worktree' ? 'worktree' : page === 'Branch' ? 'branch' : page === 'Devices' || page === 'Pairing' ? 'pair' : page === 'Terminal' ? 'terminal' : page === 'Session search' ? 'session-search' : page === 'Settings' ? 'settings' : 'files'
   return <SafeAreaView style={styles.root}>
     <StatusBar style={tokens.scheme === 'dark' ? 'light' : 'dark'} />
@@ -289,7 +307,11 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
       <View style={styles.flex}><SelectionField compact label="Preview page" value={page} options={pages.map((value) => ({ value, label: value }))} onChange={(value) => setPage(value as Page)} /></View>
       <Button variant="ghost" label={tokens.scheme === 'dark' ? 'Light' : 'Dark'} onPress={onTheme} />
     </View>
-    <Text style={styles.meta}>Offline preview · {Math.round(width)} px · font {fontScale.toFixed(2)}</Text>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 8 }}>
+      <Text style={styles.meta}>Offline preview · {Math.round(width)} px · font {fontScale.toFixed(2)}</Text>
+      {chat ? <Button variant="ghost" label={nativeEditor ? 'Editor: native' : 'Editor: fallback'}
+        onPress={() => setNativeEditor((value) => !value)} /> : null}
+    </View>
     {editorError ? <Text accessibilityRole="alert" style={{ color: tokens.colors.destructive }}>{editorError}</Text> : null}
     <MobileKeyboardFrame>
       <MobileHeader route={route} title={page === 'Add project' ? addProject.title : page === 'Project' ? 'Projects' : route === 'files' ? previewBrowserMode.name : page} subtitle="super-one" provider={provider} hasSession={page === 'Chat'} deviceStatus="connectedLan" git={page === 'Chat' ? previewSessionGit : null} onOpenBranch={() => setPage('Branch')} onBack={() => {
@@ -322,13 +344,19 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
               onBranch: () => setPage('Branch'),
             } : undefined}
             selection={{ ...pickerCatalogs, model, models: previewModels, effort, efforts, onModel: chooseModel, onEffort: setEffort }}
-            webRef={web} permissionModes={['default', 'acceptEdits', 'plan']} permissionMode={mode} slashHits={[]} mentionHits={mentionHits} attachments={attachments} additionalDirectories={[]} queuedMessages={[]} todos={{}} draft={chatDraft.draft} streaming={page === 'Chat'}
+            webRef={web} permissionModes={['default', 'acceptEdits', 'plan']} permissionMode={mode} slashHits={filterSlashCommands(chatDraft.draft, previewSlashCatalog)} mentionHits={mentionHits} attachments={attachments} additionalDirectories={[]} queuedMessages={[]} todos={{}} draft={chatDraft.draft} streaming={page === 'Chat'}
             sandboxInfo={sandbox} contextTokens={82_400} contextWindow={200_000} totalCostUsd={0.4213}
             onWebMessage={(raw) => { if (JSON.parse(raw).type === 'ready') paintChat() }} onWebProcessError={() => {}} onPermissionMode={setMode}
-            onSandboxMode={(next) => setSandbox({ enabled: next !== 'off', autoAllowBash: next === 'auto' })} onSlash={() => {}} onMention={(item) => { chatDraft.editorRef.current?.insertMention(item) }}
+            onSandboxMode={(next) => setSandbox({ enabled: next !== 'off', autoAllowBash: next === 'auto' })} onSlash={(command) => { chatDraft.editorRef.current?.replaceText(`/${command} `) }} onMention={(item) => {
+              if (nativeEditor) { chatDraft.editorRef.current?.insertMention(item); return }
+              // Fallback inserts plain `@path` text — deliberately not the typed
+              // chip the native editor produces. The difference is the point.
+              const query = extractMentionQuery(chatDraft.draft, chatDraft.draft.length)
+              if (query) changeDraft(insertMention(chatDraft.draft, query, item))
+            }}
             onRemoveAttachment={(item) => setAttachments((current) => current.filter((entry) => entry !== item))} onAttachmentMenu={() => setAttachments([{ id: 'pdf', name: 'mobile-design-review.pdf', mimeType: 'application/pdf', base64: '' }])}
-            nativeDraft={{ controller: chatDraft.editorRef, document: chatDraft.document.current, onChange: acceptDraft, onError: setEditorError }}
-            onDraft={chatDraft.changeText} onSubmitFromKeyboard={send} onSend={send} onStop={() => setPage('New session')} /> : null}
+            nativeDraft={nativeEditor ? { controller: chatDraft.editorRef, document: chatDraft.document.current, onChange: acceptDraft, onError: setEditorError } : undefined}
+            onDraft={changeDraft} onSubmitFromKeyboard={send} onSend={send} onStop={() => setPage('New session')} /> : null}
           {page === 'Devices' || page === 'Pairing' ? <PairingsScreen scannerOpen={false} paste="" lan=""
             code={page === 'Pairing' ? '123456' : null}
             pairings={previewDevices.map((item) => item.pairing)}
@@ -358,6 +386,7 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
             onOpenBranch={() => setPage('Branch')} /> : null}
           {page === 'Session status' ? <SessionStatusGallery onOpenBranch={() => setPage('Branch')} /> : null}
           {page === 'LAN browser' ? <LanBrowserPreview /> : null}
+          {page === 'Composer suggestions' ? <ComposerSuggestionsGallery /> : null}
           {page === 'Chip editor' ? <MentionEditorPreview /> : null}
           {route === 'files' && !gallery ? (page === 'File search' ? <FileFinderView
             query="chat" busy={false} onQuery={() => {}}

@@ -19,7 +19,8 @@
     "pretypecheck": "bun run build:chat-view",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "pretest": "bun run build:chat-view",
-    "test": "bun scripts/assert-shared-resolution.ts && bun scripts/assert-release-config.ts && bunx vitest run --config vitest.config.ts",
+    "test": "bun scripts/assert-shared-resolution.ts && bun scripts/assert-release-config.ts && bunx vitest run --config vitest.config.ts && bunx jest",
+    "test:components": "bunx jest",
     "prepreview": "bun run build:chat-view",
     "preview": "EXPO_PUBLIC_NATIVE_PREVIEW=1 expo start --dev-client",
     "setup:ui": "bun scripts/maestro.ts --install",
@@ -62,11 +63,15 @@
   "devDependencies": {
     "@playwright/test": "1.62.1",
     "@superone/tsconfig": "workspace:*",
+    "@testing-library/react-native": "^14.0.1",
     "@types/react": "^19.2.13",
     "@xmldom/xmldom": "0.8.14",
     "babel-preset-expo": "~54.0.0",
+    "jest": "^30",
+    "jest-expo": "~54.0.0",
     "postcss": "8.5.26",
     "sharp": "0.35.3",
+    "test-renderer": "^1.2.0",
     "typescript": "~5.9.2",
     "vitest": "^4.0.0"
   }

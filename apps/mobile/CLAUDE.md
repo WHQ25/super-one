@@ -79,6 +79,15 @@ every checkout state through the real `SessionMetaRow`, and
 either union and add its row there — reproducing a deleted worktree or an 8s
 reconnect backoff by hand means breaking the desktop on purpose.
 
+The composer overlays follow the same rule:
+`superone://native-preview?page=Composer%20suggestions` walks every slash and
+mention state — searching, failed + retry, no matches, skill-only match, CJK and
+truncating labels — through the real `SlashSuggestions` / `MentionSuggestions`
+and the real `filterSlashCommands`. The chat page itself carries an
+**Editor: native / Editor: fallback** toggle, because the native chip editor and
+the plain `TextInput` fallback insert and serialise differently; reviewing only
+one of them is how a fallback-only regression ships.
+
 **Do not port the desktop's `--sidebar-*` palette.** It was tried and reverted: in
 light mode those tokens are a dark inverted chrome, which at phone width reads as
 a second app rather than a panel of this one. The drawer and the tablet sidebar
@@ -125,8 +134,30 @@ Do **not** import `@superone/shared/attachment-store` or `@superone/shared/git-c
 bun --filter @superone/chat-view build   # first: emits the chat + terminal documents
 bun run dev:mobile                       # Expo dev-client Metro
 bun --filter @superone/mobile typecheck
-bun --filter @superone/mobile test
+bun --filter @superone/mobile test              # vitest (state) + jest (components)
+bun --filter @superone/mobile test:components   # jest only
 ```
+
+**Two test runners, on purpose.** `*.test.ts` (pure state modules) runs on
+**vitest**; `*.test.tsx` (React Native components) runs on **jest-expo**
+(`jest.config.js`). This is not indecision — vitest cannot load React Native.
+RN's `index.js` reaches its internals through lazy `require()` calls that escape
+Vite's ESM pipeline and arrive at Node as unparsable Flow source; no combination
+of `ssr.noExternal`, `server.deps.inline` or a babel plugin intercepts them.
+jest-expo reuses the transform Metro already applies. Three things about it:
+
+- **`render` is async** in React Native Testing Library 14 — React 19 renders
+  concurrently and nothing is committed when the call returns. `await` it, or
+  every query fails with `render function has not been called`.
+- Mount through `renderWithTheme` (`src/test-render.tsx`); `useMobileTheme`
+  throws outside its provider.
+- `jest.config.js` pins `^react$` to this workspace's copy. Bun leaves a nested
+  `apps/mobile/node_modules/react` (pinned 19.1.0) beside the hoisted root one,
+  and without the mapping `react-reconciler` and the components under test load
+  different React instances — every hook then sees a null dispatcher.
+
+Vitest itself resolves `localhost` at startup, so it fails under the default
+tool sandbox; jest does not.
 
 `packages/chat-view/src/generated-host-html.ts` and `generated-terminal-html.ts` are
 **build artifacts** (6 MB) — gitignored, never committed, produced by the chat-view build

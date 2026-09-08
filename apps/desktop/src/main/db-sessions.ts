@@ -28,6 +28,37 @@ interface DbChatMessage {
   resume_point_id: string | null
 }
 
+/**
+ * Told which project's session list just changed. Wired here, at the writes,
+ * rather than at the callers: the same seven mutations are reached from IPC, the
+ * session manager, automations and remote commands, and a notification hung off
+ * each of those would be missed by whichever call site is added next.
+ */
+export type SessionListWatcher = (projectPath: string) => void
+
+const sessionListWatchers = new Set<SessionListWatcher>()
+
+export function watchSessionList(watcher: SessionListWatcher): () => void {
+  sessionListWatchers.add(watcher)
+  return () => { sessionListWatchers.delete(watcher) }
+}
+
+function notifySessionList(projectPath: string | null): void {
+  if (!projectPath) return
+  for (const watcher of sessionListWatchers) watcher(projectPath)
+}
+
+/**
+ * The project a session belongs to. Most mutations are keyed by session id, and
+ * a delete has to resolve this *before* the row is gone.
+ */
+function projectPathOfSession(sessionId: string): string | null {
+  const row = getDb()
+    .prepare('SELECT p.path AS path FROM sessions s JOIN projects p ON p.id = s.project_id WHERE s.id = ?')
+    .get(sessionId) as { path: string } | undefined
+  return row?.path ?? null
+}
+
 /** List sessions for a project id from DB (Environment API / local gateway path). */
 export function listSessionsForProjectId(
   projectId: string,
@@ -118,6 +149,7 @@ export function createSession(folderPath: string, sessionId: string, title?: str
       worktree_path = COALESCE(excluded.worktree_path, worktree_path)
   `).run(sessionId, projectId, title ?? null, now, now, isWorktree ? 1 : 0, gitBranch ?? null, worktreePath ?? null)
 
+  notifySessionList(folderPath)
   return sessionId
 }
 
@@ -139,6 +171,7 @@ export function createAutomationSession(
     VALUES (?, ?, ?, ?, ?, 1, ?, ?, 1)
   `).run(sessionId, projectId, title, now, now, automationId, provider)
 
+  notifySessionList(folderPath)
   return sessionId
 }
 
@@ -149,6 +182,7 @@ export function renameSession(sessionId: string, title: string, source: 'user' |
   } else {
     db.prepare('UPDATE sessions SET title = ? WHERE id = ? AND is_user_renamed = 0').run(title, sessionId)
   }
+  notifySessionList(projectPathOfSession(sessionId))
 }
 
 export function isSessionUserRenamed(sessionId: string): boolean {
@@ -369,7 +403,10 @@ export function loadSessionMessagesPaginated(
 /** Delete a session and its messages (cascade). */
 export function deleteSession(sessionId: string): void {
   const db = getDb()
+  // Resolved while the row still exists; after the DELETE there is nothing to join.
+  const projectPath = projectPathOfSession(sessionId)
   db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId)
+  notifySessionList(projectPath)
 }
 
 /** Delete non-pinned sessions older than cutoffDate for a project. Returns deleted session IDs. */
@@ -393,6 +430,7 @@ export function deleteSessionsOlderThan(folderPath: string, cutoffDate: string):
   const placeholders = ids.map(() => '?').join(',')
   db.prepare(`DELETE FROM sessions WHERE id IN (${placeholders})`).run(...ids)
 
+  notifySessionList(folderPath)
   return ids
 }
 
@@ -400,6 +438,7 @@ export function deleteSessionsOlderThan(folderPath: string, cutoffDate: string):
 export function pinSession(sessionId: string, pinned: boolean): void {
   const db = getDb()
   db.prepare('UPDATE sessions SET is_pinned = ? WHERE id = ?').run(pinned ? 1 : 0, sessionId)
+  notifySessionList(projectPathOfSession(sessionId))
 }
 
 /** Hide or unhide a session. */
@@ -414,6 +453,7 @@ export function sessionHasMessages(sessionId: string): boolean {
 export function hideSession(sessionId: string, hidden: boolean): void {
   const db = getDb()
   db.prepare('UPDATE sessions SET is_hidden = ? WHERE id = ?').run(hidden ? 1 : 0, sessionId)
+  notifySessionList(projectPathOfSession(sessionId))
 }
 
 /** Columns every cross-project session list needs, plus the project it lives in. */

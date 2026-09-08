@@ -1743,6 +1743,15 @@ export type AgentEventBase =
   | { type: 'worktree_missing'; worktreePath: string; fallbackCwd: string }
   | { type: 'session_title_changed'; sessionId: string; title: string; source: 'user' | 'agent' }
   /**
+   * A project's session list gained, lost, or reordered a row — created, renamed,
+   * pinned, hidden or deleted. Deliberately carries no rows: it is an
+   * invalidation, so a remote client that is not looking at that list right now
+   * pays nothing, and one that is re-reads exactly what it needs. Carries no
+   * `sessionId` either, which is what makes `MobileBroadcaster` fan it out to
+   * every paired device rather than to one session's subscribers.
+   */
+  | { type: 'session_list_changed'; projectPath: string }
+  /**
    * Ultra-short one-line summary of the just-finished turn (Grok `last_turn_summary`).
    * Display-only meta — not part of the agent reply.
    */

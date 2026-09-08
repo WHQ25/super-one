@@ -78,6 +78,7 @@ import { TerminalBroadcaster } from './remote/terminal-broadcaster'
 import { nodePtySpawner } from './terminal/pty'
 import { DeviceRegistry } from './remote/device-registry'
 import { MobileBroadcaster } from './remote/mobile-broadcaster'
+import { watchSessionList } from './db-sessions'
 import { NotificationService } from './notifications/notification-service'
 import { DesktopNotificationChannel } from './notifications/desktop-notification-channel'
 import { PresenceCoordinator } from './remote/presence-coordinator'
@@ -4507,6 +4508,15 @@ function registerIpcHandlers(): void {
   const mobileBroadcaster = new MobileBroadcaster(sessionManager, remoteControlService)
   agentService.addEventSubscriber((event) => {
     void mobileBroadcaster.broadcast(event)
+  })
+  // A mobile client used to re-read a project's session list every time its
+  // drawer opened, because nothing told it when the list had changed. This is
+  // that signal: an invalidation carrying no rows, fanned out to every paired
+  // device (no `sessionId`, so `MobileBroadcaster` does not scope it to one
+  // session's subscribers). Wired here rather than inside `AgentService` so
+  // constructing the service in a test leaves no process-wide watcher behind.
+  watchSessionList((projectPath) => {
+    agentService.notifyEventSubscribers({ type: 'session_list_changed', projectPath })
   })
 
   const savedRemoteConfig = readRemoteConfig()

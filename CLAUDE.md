@@ -179,3 +179,18 @@ Repo-wide conventions. Workspace-specific conventions (sidebar tokens, animation
 - **Package manager**: bun (not npm/pnpm), use bunx instead of npx
 - **Module system**: ES modules (`"type": "module"`)
 - **Commit messages**: `<type>(<scope>): <description>` (e.g. `feat(mcp): add document tools`)
+
+
+### UI Storybook coverage (required)
+
+Every new or changed UI must include colocated Storybook stories (`*.stories.tsx`)
+that render the production component and show all applicable user-visible states.
+Cover default, empty, loading/submitting, success/completed, error/retry, disabled,
+and selected/expanded states as applicable, plus long content and narrow layouts.
+Include interactive stories for meaningful state transitions, and make each state
+reproducible without live services, credentials, or real side effects. Reuse the
+existing theme and locale controls to inspect light/dark and translated layouts.
+
+Add or update stories in the same change as the UI; UI work is not complete until
+its stories are available for review. Verify rendering and relevant interactions,
+and provide the Storybook location or direct preview link when handing off UI work.

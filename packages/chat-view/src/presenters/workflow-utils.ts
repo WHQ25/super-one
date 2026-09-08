@@ -3,6 +3,42 @@ import { extractJsonStringValue } from '@superone/shared/partial-json'
 export interface WorkflowPhase {
   title: string
   detail?: string
+  state?: string
+}
+
+/**
+ * Grok `workflow_updated` phases carry title+state only. Meta / script.rhai
+ * declare title+detail. Overlay details onto the live row list by title.
+ */
+export function mergeWorkflowPhaseRows(
+  live: WorkflowPhase[] | undefined,
+  ...detailSources: Array<WorkflowPhase[] | undefined>
+): WorkflowPhase[] {
+  const detailByTitle = new Map<string, string>()
+  for (const source of detailSources) {
+    if (!source?.length) continue
+    for (const phase of source) {
+      if (phase.detail && !detailByTitle.has(phase.title)) {
+        detailByTitle.set(phase.title, phase.detail)
+      }
+    }
+  }
+  if (live?.length) {
+    return live.map((phase) => ({
+      title: phase.title,
+      state: phase.state,
+      detail: phase.detail ?? detailByTitle.get(phase.title),
+    }))
+  }
+  for (const source of detailSources) {
+    if (!source?.length) continue
+    return source.map((phase) => ({
+      title: phase.title,
+      detail: phase.detail ?? detailByTitle.get(phase.title),
+      state: phase.state,
+    }))
+  }
+  return []
 }
 
 export interface WorkflowMeta {

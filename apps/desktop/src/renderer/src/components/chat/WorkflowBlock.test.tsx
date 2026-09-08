@@ -130,6 +130,7 @@ beforeEach(() => {
     },
   }
   hoisted.navOpen.mockClear()
+  delete (window as { app?: unknown }).app
 })
 
 describe('WorkflowBlock — Grok launch without transcript', () => {
@@ -144,6 +145,91 @@ describe('WorkflowBlock — Grok launch without transcript', () => {
     )
     expect(screen.getByText('Running…')).toBeInTheDocument()
     expect(screen.queryByText('Workflow complete')).not.toBeInTheDocument()
+  })
+
+  it('fills live Grok phase names with details declared in the script', () => {
+    const rhai = `let meta = #{
+    name: "grok-build-parity",
+    description: "Clone/update grok-build source",
+    phases: [
+        #{ title: "Source", detail: "ensure local grok-build checkout" },
+        #{ title: "Catalog", detail: "enumerate Grok Build capabilities from source + docs" },
+        #{ title: "Inventory", detail: "map SuperOne ACP/host coverage" },
+        #{ title: "Gap", detail: "diff, prioritize, write design + PR plan" },
+    ],
+};`
+    hoisted.sessionState.taskProgress = {
+      tc_wf: {
+        description: 'grok-build-parity: Clone/update grok-build source',
+        taskId: 'wf_live',
+        summary: 'phase: Catalog',
+        totalTokens: 50,
+        toolUses: 1,
+        durationMs: 12000,
+        completed: false,
+        toolHistory: [],
+        currentPhase: 'Catalog',
+        workflowPhases: [
+          { title: 'Source', state: 'done' },
+          { title: 'Catalog', state: 'active' },
+          { title: 'Inventory', state: 'pending' },
+          { title: 'Gap', state: 'pending' },
+        ],
+      },
+    }
+    render(
+      <WorkflowBlock
+        toolBlock={workflowTool({ script: rhai })}
+        resultBlock={grokResult()}
+        isStreaming={false}
+        defaultExpanded
+      />,
+    )
+    expect(screen.getByText('ensure local grok-build checkout')).toBeInTheDocument()
+    expect(screen.getByText('enumerate Grok Build capabilities from source + docs')).toBeInTheDocument()
+    expect(screen.getByText('map SuperOne ACP/host coverage')).toBeInTheDocument()
+    expect(screen.getByText('diff, prioritize, write design + PR plan')).toBeInTheDocument()
+  })
+
+  it('loads phase details from Grok script.rhai when the tool input is name-only', async () => {
+    const rhai = `let meta = #{
+    name: "grok-build-parity",
+    description: "Clone/update grok-build source",
+    phases: [
+        #{ title: "Source", detail: "ensure local grok-build checkout" },
+        #{ title: "Catalog", detail: "enumerate Grok Build capabilities" },
+    ],
+};`
+    Object.assign(window, {
+      app: { readWorkflowScript: vi.fn().mockResolvedValue(rhai) },
+    })
+    hoisted.sessionState.taskProgress = {
+      tc_wf: {
+        description: 'grok-build-parity',
+        taskId: 'wf_live',
+        summary: 'phase: Catalog',
+        totalTokens: 0,
+        toolUses: 0,
+        durationMs: 1000,
+        completed: false,
+        toolHistory: [],
+        currentPhase: 'Catalog',
+        workflowPhases: [
+          { title: 'Source', state: 'done' },
+          { title: 'Catalog', state: 'active' },
+        ],
+      },
+    }
+    render(
+      <WorkflowBlock
+        toolBlock={workflowTool({ name: 'grok-build-parity' })}
+        resultBlock={grokResult()}
+        isStreaming={false}
+        defaultExpanded
+      />,
+    )
+    expect(await screen.findByText('ensure local grok-build checkout')).toBeInTheDocument()
+    expect(screen.getByText('enumerate Grok Build capabilities')).toBeInTheDocument()
   })
 
   it('shows live phases/agents while running after parent turn is idle', () => {

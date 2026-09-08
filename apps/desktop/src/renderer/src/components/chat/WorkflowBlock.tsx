@@ -7,11 +7,14 @@ import { SubagentRetryBadge } from './SubagentRetryBadge'
 import {
   extractWorkflowScript,
   extractWorkflowScriptPath,
+  mergeWorkflowPhaseRows,
   parseWorkflowInput,
   parseWorkflowLaunch,
+  parseWorkflowScript,
   resolveGrokWorkflowDir,
   stripWorkflowNamePrefix,
   workflowArtifactPath,
+  type WorkflowMeta,
 } from './workflow-utils'
 import { useWorkflowAgents, type WorkflowAgentInfo } from './use-workflow-agents'
 import { useWorkflowOutput } from './use-workflow-output'
@@ -73,6 +76,7 @@ export function WorkflowBlock({
     () => extractWorkflowScriptPath(toolBlock.input),
     [toolBlock.input],
   )
+  const [diskMeta, setDiskMeta] = useState<WorkflowMeta | null>(null)
   const nav = useWorkflowNavigation()
 
   useEffect(() => {
@@ -91,6 +95,31 @@ export function WorkflowBlock({
   const scriptPath = launch.scriptPath
     ?? inputScriptPath
     ?? workflowArtifactPath(transcriptDir, 'script.rhai')
+  const inputHasPhaseDetails = meta.phases.some((phase) => !!phase.detail)
+  useEffect(() => {
+    if (inputHasPhaseDetails || !scriptPath) {
+      setDiskMeta(null)
+      return
+    }
+    const readScript = window.app?.readWorkflowScript
+    if (!readScript) {
+      setDiskMeta(null)
+      return
+    }
+    let cancelled = false
+    void Promise.resolve(readScript(scriptPath))
+      .then((src) => {
+        if (cancelled || typeof src !== 'string' || !src) return
+        const parsed = parseWorkflowScript(src)
+        if (!cancelled && parsed.phases.some((phase) => !!phase.detail)) {
+          setDiskMeta(parsed)
+        }
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [inputHasPhaseDetails, scriptPath])
   const hasTranscript = !!transcriptDir
   const hasLaunchIdentity = hasTranscript || !!runKey || !!progress?.taskId
   const launched = hasLaunchIdentity || !!progress
@@ -153,21 +182,10 @@ export function WorkflowBlock({
       ?? phaseFromSummary(progress?.summary ?? toolBlock.taskSummary)
     : undefined
   const livePhases = progress?.workflowPhases ?? toolBlock.workflowPhases
-  const phases = useMemo(() => {
-    const detailByTitle = new Map(meta.phases.map((phase) => [phase.title, phase.detail] as const))
-    if (livePhases?.length) {
-      return livePhases.map((phase) => ({
-        title: phase.title,
-        detail: phase.detail ?? detailByTitle.get(phase.title),
-        state: phase.state,
-      }))
-    }
-    return meta.phases.map((phase) => ({
-      title: phase.title,
-      detail: phase.detail,
-      state: undefined,
-    }))
-  }, [livePhases, meta.phases])
+  const phases = useMemo(
+    () => mergeWorkflowPhaseRows(livePhases, diskMeta?.phases, meta.phases, toolBlock.workflowPhases),
+    [diskMeta?.phases, livePhases, meta.phases, toolBlock.workflowPhases],
+  )
   const name = meta.name || toolBlock.workflowName || launch.name || undefined
   const description = stripWorkflowNamePrefix(
     meta.description || toolBlock.workflowDescription || progress?.description || undefined,

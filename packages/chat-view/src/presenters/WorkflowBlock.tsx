@@ -237,7 +237,7 @@ export function WorkflowBlockPresenter({
                   const showDone = phase.state === 'done'
                     || (!isRunning && isComplete && terminalStatus === 'completed' && !phase.state)
                   return (
-                    <div key={index} className="flex items-baseline gap-1.5 text-xs">
+                    <div key={index} className="flex w-full min-w-0 items-baseline gap-1.5 text-xs">
                       <span className={cn(
                         'shrink-0 font-medium',
                         showActive ? 'text-primary' : showDone ? 'text-muted-foreground' : 'text-foreground',
@@ -246,9 +246,13 @@ export function WorkflowBlockPresenter({
                         {showDone && !showActive && <Check className="mr-1 inline size-2.5 text-success" />}
                         {phase.title}
                       </span>
-                      {phase.detail && <span className="min-w-0 truncate text-muted-foreground">{phase.detail}</span>}
+                      {phase.detail && (
+                        <span className="min-w-0 flex-1 truncate text-muted-foreground" title={phase.detail}>
+                          {phase.detail}
+                        </span>
+                      )}
                       {isRunning && phase.state && phase.state !== 'done' && phase.state !== 'active' && (
-                        <span className="text-muted-foreground/80">({phase.state})</span>
+                        <span className="shrink-0 text-muted-foreground/80">({phase.state})</span>
                       )}
                     </div>
                   )

@@ -92,6 +92,7 @@ import {
 import { summarizeClaudeProcess, summarizeCodexProcess } from './presenters/turn-process-stats'
 import { ToolGroupPresenter } from './presenters/ToolGroup'
 import { WorkflowBlockPresenter } from './presenters/WorkflowBlock'
+import { mergeWorkflowPhaseRows } from './presenters/workflow-utils'
 import { TurnDetailSection } from './TurnDetailSection'
 
 const PORTABLE_COLORS: SubagentColorClasses = {
@@ -550,16 +551,18 @@ function PortableWorkflow({ toolBlock, resultBlock, isStreaming }: ClaudeWorkflo
   const [expanded, setExpanded] = useState(false)
   const params = parseRecord(toolBlock.input)
   const result = resultBlock?.type === 'tool_result' ? resultBlock : undefined
-  const phases = Array.isArray(toolBlock.workflowPhases)
-    ? toolBlock.workflowPhases.map((phase) => ({ ...phase }))
-    : Array.isArray(params.phases)
-      ? params.phases.flatMap((phase) => {
-          if (typeof phase === 'string') return [{ title: phase }]
-          if (!phase || typeof phase !== 'object' || Array.isArray(phase)) return []
-          const row = phase as Record<string, unknown>
-          return [{ title: String(row.title ?? row.name ?? ''), detail: String(row.detail ?? '') || undefined }]
-        }).filter((phase) => phase.title)
-      : []
+  const declaredPhases = Array.isArray(params.phases)
+    ? params.phases.flatMap((phase) => {
+        if (typeof phase === 'string') return [{ title: phase }]
+        if (!phase || typeof phase !== 'object' || Array.isArray(phase)) return []
+        const row = phase as Record<string, unknown>
+        return [{ title: String(row.title ?? row.name ?? ''), detail: String(row.detail ?? '') || undefined }]
+      }).filter((phase) => phase.title)
+    : []
+  const phases = mergeWorkflowPhaseRows(
+    Array.isArray(toolBlock.workflowPhases) ? toolBlock.workflowPhases : undefined,
+    declaredPhases,
+  )
   const agents = (toolBlock.workflowAgents ?? []).map((agent, index) => ({
     agentId: agent.agentId ?? `agent-${index}`,
     label: agent.label,

@@ -9,6 +9,7 @@ import {
   resolveGrokWorkflowDir,
   workflowArtifactPath,
   stripWorkflowNamePrefix,
+  mergeWorkflowPhaseRows,
 } from './workflow-utils'
 
 const REAL_SCRIPT = `export const meta = {
@@ -43,6 +44,55 @@ describe('parseWorkflowScript', () => {
   it('does not pull title values from objects outside the phases array', () => {
     const meta = parseWorkflowScript(REAL_SCRIPT)
     expect(meta.phases).toHaveLength(2)
+  })
+
+  it('extracts title+detail from Rhai #{ } phase maps', () => {
+    const meta = parseWorkflowScript(`let meta = #{
+    name: "grok-build-parity",
+    description: "Clone/update grok-build source",
+    phases: [
+        #{ title: "Source", detail: "ensure local grok-build checkout" },
+        #{ title: "Catalog", detail: "enumerate Grok Build capabilities from source + docs" },
+    ],
+};`)
+    expect(meta.name).toBe('grok-build-parity')
+    expect(meta.phases).toEqual([
+      { title: 'Source', detail: 'ensure local grok-build checkout' },
+      { title: 'Catalog', detail: 'enumerate Grok Build capabilities from source + docs' },
+    ])
+  })
+})
+
+describe('mergeWorkflowPhaseRows', () => {
+  it('overlays meta details onto live Grok title+state rows', () => {
+    expect(mergeWorkflowPhaseRows(
+      [
+        { title: 'Source', state: 'done' },
+        { title: 'Catalog', state: 'active' },
+        { title: 'Inventory', state: 'pending' },
+      ],
+      [
+        { title: 'Source', detail: 'ensure local grok-build checkout' },
+        { title: 'Catalog', detail: 'enumerate capabilities' },
+        { title: 'Inventory', detail: 'map SuperOne coverage' },
+        { title: 'Gap', detail: 'write the plan' },
+      ],
+    )).toEqual([
+      { title: 'Source', state: 'done', detail: 'ensure local grok-build checkout' },
+      { title: 'Catalog', state: 'active', detail: 'enumerate capabilities' },
+      { title: 'Inventory', state: 'pending', detail: 'map SuperOne coverage' },
+    ])
+  })
+
+  it('keeps live detail and falls back to declared phases when Grok has not sent rows yet', () => {
+    expect(mergeWorkflowPhaseRows(
+      [{ title: 'Source', state: 'active', detail: 'live override' }],
+      [{ title: 'Source', detail: 'from script' }],
+    )).toEqual([{ title: 'Source', state: 'active', detail: 'live override' }])
+    expect(mergeWorkflowPhaseRows(
+      undefined,
+      [{ title: 'Source', detail: 'from script' }],
+    )).toEqual([{ title: 'Source', detail: 'from script' }])
   })
 })
 

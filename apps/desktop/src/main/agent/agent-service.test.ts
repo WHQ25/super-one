@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TerminalManager } from '../terminal/terminal-manager'
+import { getSandboxCapability } from '../sandbox-platform'
 
 const { createdAgents } = vi.hoisted(() => ({
   createdAgents: [] as Array<{
@@ -2754,7 +2755,7 @@ describe('AgentService.handleRemoteCommand', () => {
       permissionMode: 'acceptEdits',
       // Unset preference, so the platform's own default answers — a remote client
       // configuring a session that does not exist yet has nothing else to read.
-      sandboxMode: 'on',
+      sandboxMode: getSandboxCapability().defaultMode,
     })
     // Asserted against the shared table rather than a second copy of it: the
     // catalog and the launch surfaces read the same list now.
@@ -2786,7 +2787,7 @@ describe('AgentService.handleRemoteCommand', () => {
       // Resolved, never null: an unconfigured harness answers with its own first
       // declared mode, which is what it would start in anyway.
       permissionMode: 'default',
-      sandboxMode: 'on',
+      sandboxMode: getSandboxCapability().defaultMode,
     })
   })
 

@@ -4,6 +4,7 @@ import { createRef, type RefObject } from 'react'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ButtonHTMLAttributes, ReactElement, ReactNode } from 'react'
+import type { PermissionRequest } from '@superone/shared/agent-types'
 import { ChatRootContext } from './is-focus-in-chat'
 
 const chatState = {
@@ -17,7 +18,7 @@ const activeSessionState = {
     toolName: 'Bash',
     input: { command: 'ls', cwd: '/repo' },
     allowAlwaysAllow: true,
-  }],
+  }] as PermissionRequest[],
   sessionProvider: 'codex',
   cwd: '/repo',
   homedir: '/Users/test',

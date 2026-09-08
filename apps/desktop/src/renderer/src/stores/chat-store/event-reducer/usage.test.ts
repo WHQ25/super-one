@@ -221,6 +221,6 @@ describe('reduceUsage: api_retry', () => {
       maxRetries: 5,
       delayMs: 750,
     } as never)
-    expect(patch.apiRetry).toEqual({ attempt: 2, maxRetries: 5, delayMs: 750 })
+    expect(patch.apiRetry).toEqual({ attempt: 2, maxRetries: 5, delayMs: 750, phase: 'retrying' })
   })
 })

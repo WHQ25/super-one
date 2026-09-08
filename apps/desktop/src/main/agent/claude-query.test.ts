@@ -152,7 +152,13 @@ describe('buildClaudeOptions allowedTools', () => {
 
   it('omits feature-gated computer_* so the list stays valid for any warm session', () => {
     const allowed = buildClaudeOptions({ projectPath: '/repo', cwd: '/repo', permissionMode: 'auto' }).allowedTools ?? []
-    expect(allowed.some((name) => name.startsWith('mcp__superone__computer_'))).toBe(false)
+    // computer_memory_* is a static builtin. computer_apps / snapshot / act / …
+    // are feature-gated and must not ride a warm session spawned with the flag off.
+    expect(allowed).toContain('mcp__superone__computer_memory_read')
+    expect(allowed).toContain('mcp__superone__computer_memory_write')
+    expect(allowed.some((name) =>
+      name.startsWith('mcp__superone__computer_') && !name.startsWith('mcp__superone__computer_memory_'),
+    )).toBe(false)
   })
 })
 

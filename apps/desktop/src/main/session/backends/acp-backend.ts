@@ -1233,7 +1233,7 @@ export class AcpBackend implements SessionBackend {
     this.emit({ type: 'status_change', status: 'streaming' })
     const checkpointId = request.clientMessageId
     if (checkpointId) {
-      this.emit({ type: 'checkpoint_captured', messageId, checkpointId })
+      this.emit({ type: 'checkpoint_captured', messageId, checkpointId, resumePointId: checkpointId })
     }
 
     let emittedTerminal = false
@@ -1729,8 +1729,12 @@ export class AcpBackend implements SessionBackend {
   }
 
   private noteBackgroundTaskLifecycle(event: AgentEvent): void {
-    if (event.type === 'task_started' || event.type === 'task_progress') {
+    if (event.type === 'task_started') {
       if (event.taskType && ACP_BACKGROUND_IDLE_TASK_TYPES.has(event.taskType)) return
+      if (event.taskId) this.liveBackgroundTaskIds.add(event.taskId)
+      return
+    }
+    if (event.type === 'task_progress') {
       if (event.taskId) this.liveBackgroundTaskIds.add(event.taskId)
       return
     }

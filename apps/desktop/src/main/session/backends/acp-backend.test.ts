@@ -1518,7 +1518,9 @@ describe('AcpBackend', () => {
     backend.onEvent((e) => events.push(e))
     await backend.start(startOpts({ agentId: 'grok-build' }))
     await backend.send({ content: 'hello', clientMessageId: 'u1', assistantMessageId: 'a1' })
-    expect(events.some((e) => e.type === 'checkpoint_captured' && e.checkpointId === 'u1' && e.messageId === 'a1')).toBe(true)
+    expect(events.some((e) =>
+      e.type === 'checkpoint_captured' && e.checkpointId === 'u1' && e.messageId === 'a1' && e.resumePointId === 'u1',
+    )).toBe(true)
     await backend.close()
   })
 })

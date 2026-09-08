@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { DeepseekRuntime, type DeepseekAgentHandle } from './runtime'
+import { SUPERONE_SYSTEM_PROMPT_APPEND } from '@superone/shared/superone-system-prompt'
 import { TEST_PRESET_OPTIONS } from './test-presets'
 
 /**
@@ -12,6 +13,7 @@ import { TEST_PRESET_OPTIONS } from './test-presets'
  */
 class MockAdapter extends LlmAdapter {
   async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    expect(JSON.stringify(options)).toContain(JSON.stringify(SUPERONE_SYSTEM_PROMPT_APPEND).slice(1, -1))
     const allText = JSON.stringify(options.messages)
     if (allText.includes('tool-result')) {
       yield { type: 'block-start', index: 0, blockType: 'text' }

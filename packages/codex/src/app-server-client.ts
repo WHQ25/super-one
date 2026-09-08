@@ -1,3 +1,4 @@
+import { superoneSystemPrompt } from '@superone/shared/superone-system-prompt'
 /**
  * Minimal Electron-free Codex App Server JSON-RPC client (Stage 4).
  *
@@ -425,7 +426,12 @@ export async function ensureCodexThread(opts: {
   signal?: AbortSignal
 }): Promise<string> {
   if (opts.signal?.aborted) throw new Error('Codex turn interrupted')
-  const configPayload = opts.threadConfig ? { config: opts.threadConfig } : {}
+  const configPayload = { config: {
+    ...opts.threadConfig,
+    developer_instructions: superoneSystemPrompt(
+      typeof opts.threadConfig?.developer_instructions === 'string' ? opts.threadConfig.developer_instructions : undefined,
+    ),
+  } }
   let threadId = opts.threadId ?? null
 
   if (threadId) {

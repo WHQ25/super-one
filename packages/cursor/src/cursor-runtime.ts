@@ -1,3 +1,4 @@
+import { superoneHostContext } from '@superone/shared/superone-system-prompt'
 import {
   Agent,
   AgentBusyError,
@@ -85,6 +86,7 @@ export interface CursorRuntimeOptions {
   /** Host user-data root for local agent SQLite store. */
   userDataRoot: string
   providerSessionId?: string
+  systemPromptAppend?: string
   permissionMode: PermissionMode
   /**
    * Session sandbox toggle (local only). Wins over `config.sandboxEnabled`.
@@ -361,6 +363,7 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
   let lastRunId: string | null = null
   let modelSelection = model
   let permissionMode = opts.permissionMode
+  let hostContextSent = false
   let disposed = false
   let lastMcpServers = mcpServers
 
@@ -409,15 +412,19 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
     async send(messageId, text, sendOpts) {
       if (disposed) throw new Error('Cursor runtime disposed')
       const permLocal = mapPermissionToCursorLocal(permissionMode)
+      // Cursor SDK has no system/developer instruction option. Send host context
+      // on the first regular turn of each runtime, including cold resumes.
+      const includeHostContext = !hostContextSent && !text.trimStart().startsWith('/')
+      const prompt = includeHostContext ? `${superoneHostContext(opts.systemPromptAppend)}\n\n${text}` : text
       const userMessage: string | SDKUserMessage = sendOpts?.images?.length
         ? {
-            text,
+            text: prompt,
             images: sendOpts.images.map((img) => ({
               data: img.data,
               mimeType: img.mimeType,
             })),
           }
-        : text
+        : prompt
 
       const servers = sendOpts?.mcpServers ?? lastMcpServers
       lastMcpServers = servers
@@ -496,6 +503,7 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
           throw formatCursorError(error)
         }
       }
+      if (includeHostContext) hostContextSent = true
       currentRun = run
       lastRunId = run.id
       log.info('[CursorRuntime] run started', {

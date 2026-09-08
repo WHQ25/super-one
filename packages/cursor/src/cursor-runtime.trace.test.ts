@@ -32,6 +32,7 @@ vi.mock('./cursor-store', () => ({
   getCursorAgentStore: () => ({}),
 }))
 
+import { superoneHostContext } from '@superone/shared/superone-system-prompt'
 import { createCursorRuntime } from './cursor-runtime'
 
 const delta = { type: 'text-delta', text: 'hi' } as const
@@ -106,7 +107,7 @@ describe('createCursorRuntime event-trace', () => {
     expect(onSdkTrace).toHaveBeenCalledWith(
       'agent.sdk',
       'user_send',
-      { text: 'hello' },
+      { text: `${superoneHostContext()}\n\nhello` },
       'msg-1',
     )
     expect(onSdkTrace).toHaveBeenCalledWith('agent.sdk', 'text-delta', delta, 'msg-1')
@@ -140,4 +141,20 @@ describe('createCursorRuntime event-trace', () => {
     })
     await expect(runtime.send('msg-1', 'hello')).resolves.toMatchObject({ runId: 'run-1' })
   })
+  it.each([undefined, 'resumed-agent'])('injects host context once per runtime, including resume %s', async (providerSessionId) => {
+    const runtime = await createCursorRuntime({
+      sessionId: 'sid', cwd: '/repo', userDataRoot: '/tmp/user',
+      providerSessionId, systemPromptAppend: 'session extra',
+      permissionMode: 'default', model: 'composer-1',
+      config: { apiKey: 'cursor_test_key' }, onEvent: () => undefined,
+    })
+    await runtime.send('slash', '/help')
+    expect(agentState.send.mock.calls[0][0]).toBe('/help')
+    await runtime.send('first', 'hello')
+    expect(agentState.send.mock.calls[1][0]).toBe(`${superoneHostContext('session extra')}\n\nhello`)
+    await runtime.send('next', 'continue')
+    expect(agentState.send.mock.calls[2][0]).toBe('continue')
+    await runtime.close()
+  })
+
 })

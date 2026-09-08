@@ -1,3 +1,4 @@
+import { superoneSystemPrompt } from '@superone/shared/superone-system-prompt'
 import type { PermissionRuleset, PermissionV2Request, QuestionV2Request, Todo } from '@opencode-ai/sdk/v2'
 import type {
   ContextUsageInfo,
@@ -300,7 +301,7 @@ export async function createOpenCodeRuntime(opts: OpenCodeRuntimeOptions): Promi
         variant: effort,
         images,
         agent: permissionMode === 'plan' ? 'plan' : agent,
-        system: opts.systemPromptAppend,
+        system: superoneSystemPrompt(opts.systemPromptAppend),
       }),
       command: (name, args, model, effort, images, agent) => client.command(session.id, {
         command: name,

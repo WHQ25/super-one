@@ -1,3 +1,4 @@
+import { SUPERONE_SYSTEM_PROMPT_APPEND } from '@superone/shared/superone-system-prompt'
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import type { NodeSessionRecord } from '@superone/runtime/session'
@@ -140,6 +141,7 @@ describe('ACP production turn runner AgentEvents', () => {
     })
 
     expect(result).toEqual({ finalText: 'hello ACP', providerResume: 'acp-session:acp-provider-1' })
+    expect(mocks.active.prompt).toHaveBeenCalledWith(expect.stringContaining(SUPERONE_SYSTEM_PROMPT_APPEND))
     expect(deltas).toEqual([])
     expect(events.map((event) => event.type)).toEqual([
       'message_start',

@@ -1,3 +1,4 @@
+import { SUPERONE_SYSTEM_PROMPT_APPEND } from '@superone/shared/superone-system-prompt'
 /**
  * One OpenCode agent turn via serve + SDK (electron-free).
  */
@@ -118,6 +119,7 @@ export function createOpenCodeAppServerTurnRunner(
       const stream = (await client.event.subscribe({}, { signal: input.signal })).stream
       await client.session.promptAsync({
         sessionID: sessionId,
+        system: SUPERONE_SYSTEM_PROMPT_APPEND,
         model: model ?? undefined,
         parts: input.text ? [{ type: 'text' as const, text: input.text }] : [],
       })

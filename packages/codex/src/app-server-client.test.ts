@@ -1,3 +1,4 @@
+import { SUPERONE_SYSTEM_PROMPT_APPEND } from '@superone/shared/superone-system-prompt'
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
@@ -94,6 +95,7 @@ describe('codex app-server client (Stage 4)', () => {
       onDelta: (d) => deltas.push(d),
       signal: new AbortController().signal,
       threadConfig: {
+        developer_instructions: 'caller extra',
         mcp_servers: {
           superone: {
             url: 'http://127.0.0.1:9/mcp',
@@ -107,6 +109,7 @@ describe('codex app-server client (Stage 4)', () => {
     await pump()
     const threadReq = JSON.parse(lines.find((l) => l.includes('"thread/start"'))!)
     expect(threadReq.params.approvalPolicy).toBe('never')
+    expect(threadReq.params.config.developer_instructions).toBe(`${SUPERONE_SYSTEM_PROMPT_APPEND}\n\ncaller extra`)
     expect(threadReq.params.config.mcp_servers.superone.url).toBe('http://127.0.0.1:9/mcp')
     child.stdout.write(
       `${JSON.stringify({
@@ -187,6 +190,7 @@ describe('codex app-server client (Stage 4)', () => {
     expect(lines.some((l) => l.includes('thread/resume'))).toBe(true)
     expect(lines.some((l) => l.includes('thread/start'))).toBe(false)
     const resumeReq = JSON.parse(lines.find((l) => l.includes('thread/resume'))!)
+    expect(resumeReq.params.config.developer_instructions).toContain(SUPERONE_SYSTEM_PROMPT_APPEND)
     child.stdout.write(
       `${JSON.stringify({
         jsonrpc: '2.0',
@@ -369,6 +373,7 @@ describe('codex app-server client (Stage 4)', () => {
 
     await pump()
     const resumeReq = JSON.parse(lines.find((l) => l.includes('thread/resume'))!)
+    expect(resumeReq.params.config.developer_instructions).toContain(SUPERONE_SYSTEM_PROMPT_APPEND)
     child.stdout.write(
       `${JSON.stringify({
         jsonrpc: '2.0',

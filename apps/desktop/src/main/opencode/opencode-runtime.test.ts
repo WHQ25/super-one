@@ -1,3 +1,4 @@
+import { SUPERONE_SYSTEM_PROMPT_APPEND } from '@superone/shared/superone-system-prompt'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -146,12 +147,14 @@ describe('opencode-runtime', () => {
       cwd: '/project',
       config: {},
       permissionMode: 'plan',
+      systemPromptAppend: 'caller extra',
       onEvent: vi.fn(),
     })
 
     await runtime.prompt('Plan this', 'openai/gpt-5', 'high', undefined, 'build')
     expect(mocks.promptAsync).toHaveBeenCalledWith('oc-session', {
       text: 'Plan this',
+      system: `${SUPERONE_SYSTEM_PROMPT_APPEND}\n\ncaller extra`,
       model: 'openai/gpt-5',
       variant: 'high',
       images: undefined,
@@ -175,6 +178,7 @@ describe('opencode-runtime', () => {
     await runtime.prompt('Build this', 'openai/gpt-5')
     expect(mocks.promptAsync).toHaveBeenLastCalledWith('oc-session', {
       text: 'Build this',
+      system: `${SUPERONE_SYSTEM_PROMPT_APPEND}\n\ncaller extra`,
       model: 'openai/gpt-5',
       variant: undefined,
       images: undefined,

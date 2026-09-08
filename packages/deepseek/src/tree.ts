@@ -1,3 +1,4 @@
+import { SUPERONE_SYSTEM_PROMPT_APPEND } from '@superone/shared/superone-system-prompt'
 import { Context } from '@deepseek-ai/cordis'
 import Timer from '@deepseek-ai/cordis-plugin-timer'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
@@ -163,6 +164,14 @@ export async function createDeepseekTree(options: DeepseekTreeOptions): Promise<
     includeHarnessIdentity: true,
     includeRuntimeContext: true,
     persona: options.persona ?? '',
+  })
+  // A separate section survives agent presets shadowing deployment:persona.
+  ctx.plugin({
+    name: 'superone-host-context',
+    inject: ['systemPrompt'],
+    apply(ctx: Context) {
+      ctx.systemPrompt.section({ name: 'superone:host', order: -50, text: SUPERONE_SYSTEM_PROMPT_APPEND })
+    },
   })
   ctx.plugin(ToolRuntime, {})
   ctx.plugin(AgentRegistry)

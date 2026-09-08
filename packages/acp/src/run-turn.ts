@@ -1,3 +1,4 @@
+import { superoneHostContext } from '@superone/shared/superone-system-prompt'
 /**
  * Node ACP agent turn: spawn process → initialize → buildSession → prompt.
  * Event projection includes standard ACP updates and Grok xAI notifications;
@@ -165,7 +166,10 @@ export function createAcpAgentTurnRunner(opts: RunAcpTurnOptions = {}): TurnRunn
       }
       pendingXaiNotifications.length = 0
       if (!agentEventMapper) input.onEvent?.({ kind: 'status', status: 'streaming' })
-      const promptPromise = active.prompt(input.text)
+      const prompt = input.text.trimStart().startsWith('/')
+        ? input.text
+        : `${superoneHostContext()}\n\n${input.text}`
+      const promptPromise = active.prompt(prompt)
       let stopReason = 'end_turn'
 
       try {

@@ -115,6 +115,7 @@ export class CursorBackend implements SessionBackend {
       sandboxEnabled: opts.sandboxInfo?.enabled ?? false,
       model: this.model ?? opts.model,
       agentName: opts.agentName,
+      systemPromptAppend: opts.systemPromptAppend,
       config: opts.config,
       onEvent: () => undefined,
     }).catch((error) => log.debug('[CursorBackend] official workspace prewarm failed:', error))
@@ -157,6 +158,7 @@ export class CursorBackend implements SessionBackend {
       model: modelId,
       modelSelection,
       agentName: opts.agentName,
+      systemPromptAppend: opts.systemPromptAppend,
       config: opts.config,
       onEvent: (event) => {
         if (event.type === 'message_usage') {

@@ -1,3 +1,4 @@
+import { SUPERONE_SYSTEM_PROMPT_APPEND } from '@superone/shared/superone-system-prompt'
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import type { NodeSessionRecord } from '@superone/runtime/session'
@@ -117,6 +118,7 @@ describe('OpenCode production turn runner AgentEvents', () => {
       signal: new AbortController().signal,
     })
 
+    expect(mocks.client.session.promptAsync).toHaveBeenCalledWith(expect.objectContaining({ system: SUPERONE_SYSTEM_PROMPT_APPEND }))
     expect(mocks.order).toEqual(['subscribe', 'prompt'])
     expect(result).toEqual({ finalText: 'hello OpenCode', providerResume: 'opencode:open-provider-1' })
     expect(deltas).toEqual([])

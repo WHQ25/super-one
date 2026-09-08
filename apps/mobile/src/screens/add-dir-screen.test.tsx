@@ -1,6 +1,7 @@
 import { expect, jest, test } from '@jest/globals'
 import { fireEvent, screen } from '@testing-library/react-native'
 import { renderWithTheme } from '../test-render'
+import { GENERATED_DARK_COLORS } from '../theme/tokens.generated'
 import { AddDirScreen, type AddDirScreenProps } from './add-dir-screen'
 
 const ENTRIES = [
@@ -51,20 +52,32 @@ test('an empty scope reads as a fact about it, not as a failure', async () => {
   expect(screen.getByText('none')).toBeTruthy()
 })
 
-test('the overview ends with the scope choice, and each says what it costs', async () => {
-  await renderWithTheme(page())
-
-  expect(screen.getByText('Add to')).toBeTruthy()
-  expect(screen.getByText(/Every session in this project/i)).toBeTruthy()
-  expect(screen.getByText(/Only this session/i)).toBeTruthy()
-})
-
 test('picking a scope is what opens the browser', async () => {
   const onBrowse = jest.fn()
   await renderWithTheme(page({ onBrowse }))
 
-  fireEvent.press(screen.getByLabelText('Session'))
+  fireEvent.press(screen.getByText('Add to session'))
   expect(onBrowse).toHaveBeenCalledWith('session')
+})
+
+test('session is the accented scope, project the quiet one', async () => {
+  // Deliberate: the folder being reached for is usually wanted for the
+  // conversation in progress, so that is the lit button. Asserted because the
+  // two variants are otherwise indistinguishable to every other test here.
+  await renderWithTheme(page())
+
+  const background = (label: string) =>
+    (screen.getByText(label).parent?.props?.style as { backgroundColor?: string }[])?.[1]?.backgroundColor
+  expect(background('Add to session')).toBe(GENERATED_DARK_COLORS.primary)
+  expect(background('Add to project')).toBe(GENERATED_DARK_COLORS.secondary)
+})
+
+test('a write in flight stops the scope buttons from starting another', async () => {
+  const onBrowse = jest.fn()
+  await renderWithTheme(page({ busy: true, onBrowse }))
+
+  fireEvent.press(screen.getByText('Add to project'))
+  expect(onBrowse).not.toHaveBeenCalled()
 })
 
 test('removing a folder names the scope it is leaving', async () => {

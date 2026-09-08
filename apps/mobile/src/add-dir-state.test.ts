@@ -1,19 +1,11 @@
 import { expect, test } from 'vitest'
-import { browseSections, scopeRows } from './add-dir-state'
+import { browseSections } from './add-dir-state'
 
 const ENTRIES = [
   { name: 'node_modules', path: '/Users/dev/node_modules' },
   { name: 'design-system', path: '/Users/dev/design-system' },
   { name: 'docs', path: '/Users/dev/docs' },
 ]
-
-test('the overview ends with the two scopes, each saying what it costs', () => {
-  const rows = scopeRows()
-
-  expect(rows.map((row) => row.key)).toEqual(['project', 'session'])
-  expect(rows[0].hint).toMatch(/every session in this project/i)
-  expect(rows[1].hint).toMatch(/only this session/i)
-})
 
 test('a trailing separator means the whole listing, unfiltered', () => {
   const [directories] = browseSections(ENTRIES, '~/Developer/')

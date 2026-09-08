@@ -1,4 +1,4 @@
-import type { AddProjectRow, AddProjectSectionModel } from './add-project-state'
+import type { AddProjectSectionModel } from './add-project-state'
 import { directoryRows } from './add-project-state'
 import { getBrowseLeafPathSegment } from '@superone/shared/path-browse'
 
@@ -33,35 +33,11 @@ export const ADD_DIR_TEXT = {
   adding: 'Adding folder…',
   noDirectories: 'No folders here',
   placeholder: 'Type a path, or tap a folder',
-  scopes: 'Add to',
   project: 'Project',
   session: 'Session',
-  projectHint: 'Every session in this project starts with it',
-  sessionHint: 'Only this session, and only until it ends',
+  addToProject: 'Add to project',
+  addToSession: 'Add to session',
 } as const
-
-const SCOPE_HINT: Record<AddDirScope, string> = {
-  project: ADD_DIR_TEXT.projectHint,
-  session: ADD_DIR_TEXT.sessionHint,
-}
-
-/**
- * The scope rows the overview ends with.
- *
- * They are rows in the same list the folders are, rather than a segmented
- * control: picking a scope is what *starts* the next step, so it reads as an
- * action — the way Add Project's own first step is a list of sources.
- */
-export function scopeRows(): AddProjectRow[] {
-  return (['project', 'session'] as AddDirScope[]).map((scope) => ({
-    key: scope,
-    icon: 'local',
-    label: scope === 'project' ? ADD_DIR_TEXT.project : ADD_DIR_TEXT.session,
-    hint: SCOPE_HINT[scope],
-    wrapLabel: true,
-    prominent: true,
-  }))
-}
 
 /** The listing, filtered by whatever segment follows the last separator. */
 export function browseSections(

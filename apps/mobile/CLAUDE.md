@@ -321,9 +321,14 @@ the draft. It is a **route** and not a width branch on purpose: `add-dir` is in
 and the page reads as a detail panel, while a phone gets a full screen — the deal
 `worktree` and `branch` already have.
 
-Two steps: the overview says what the session already has and offers the one
-real decision — which scope the next folder joins — and picking it opens **Add
-Project's local-folder browser**, which is shared rather than reimplemented.
+Two steps: the overview says what the session already has and ends in two
+side-by-side buttons — Add to project / Add to session — and picking one opens
+**Add Project's local-folder browser**, which is shared rather than
+reimplemented. The scope is a pair of buttons rather than list rows because it
+is the action the page exists for and must not be something to scroll past, and
+**session is the accented one** — the folder being reached for is usually wanted
+for the conversation in progress, while adding to the project is the deliberate,
+durable choice.
 `ui/browse-page.tsx` is that browser (field + grouped list + loading/empty/busy
 chrome, extracted from `AddProjectScreen`, which now renders through it), over
 `@superone/shared/path-browse`: the field *is* the path, everything before the

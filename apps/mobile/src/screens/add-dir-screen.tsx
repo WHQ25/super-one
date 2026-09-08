@@ -1,11 +1,9 @@
 import { ScrollView, View } from 'react-native'
 import { Folder, X } from 'lucide-react-native'
-import {
-  ADD_DIR_TEXT, browseSections, scopeRows, type AddDirScope, type AddDirStep,
-} from '../add-dir-state'
+import { ADD_DIR_TEXT, browseSections, type AddDirScope, type AddDirStep } from '../add-dir-state'
 import { Text } from '../ui/text'
+import { Button } from '../ui/primitives'
 import { IconButton } from '../ui/icon-button'
-import { AddProjectList } from '../ui/add-project-list'
 import { BrowsePage } from '../ui/browse-page'
 import { SCROLL_INDICATOR_GUTTER } from '../ui/scroll-gutter'
 import { useMobileTheme } from '../theme/context'
@@ -65,24 +63,30 @@ function Overview({ projectDirs, sessionDirs, busy, error, onBrowse, onRemove }:
   const { tokens: { colors, spacing } } = useMobileTheme()
   return <View style={{ flex: 1 }}>
     <ScrollView keyboardShouldPersistTaps="handled" style={{ flex: 1 }}
-      contentContainerStyle={{ paddingRight: SCROLL_INDICATOR_GUTTER, paddingBottom: spacing.lg }}>
+      contentContainerStyle={{ paddingRight: SCROLL_INDICATOR_GUTTER, paddingBottom: spacing.md }}>
       <Group label={ADD_DIR_TEXT.project.toUpperCase()} scope="project" dirs={projectDirs}
         busy={busy} onRemove={onRemove} />
       <Group label={ADD_DIR_TEXT.session.toUpperCase()} scope="session" dirs={sessionDirs}
         busy={busy} onRemove={onRemove} />
-      {/* The scope rows read as actions rather than settings, because that is
-          what they are: the choice is what opens the browser. */}
-      <View style={{ paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border,
-        marginTop: spacing.md }}>
-        <AddProjectList
-          sections={[{ key: 'scopes', label: ADD_DIR_TEXT.scopes, rows: scopeRows() }]}
-          onActivate={(row) => onBrowse(row.key as AddDirScope)} />
-      </View>
     </ScrollView>
     {error ? (
       <Text accessibilityRole="alert" style={{ paddingHorizontal: 12, paddingVertical: 8, fontSize: 12,
         borderTopWidth: 1, borderTopColor: colors.border, color: colors.destructive }}>{error}</Text>
     ) : null}
+    {/* Two buttons, not two list rows: picking a scope is the action this page
+        exists for, and it should not be something to scroll past. Session takes
+        the accent because it is the one being reached for — a folder wanted for
+        the conversation in progress. Project is the deliberate, durable choice. */}
+    <View style={{ flexDirection: 'row', gap: 10, padding: 12,
+      borderTopWidth: 1, borderTopColor: colors.border }}>
+      <View style={{ flex: 1 }}>
+        <Button label={ADD_DIR_TEXT.addToProject} variant="secondary" disabled={busy}
+          onPress={() => onBrowse('project')} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Button label={ADD_DIR_TEXT.addToSession} disabled={busy} onPress={() => onBrowse('session')} />
+      </View>
+    </View>
   </View>
 }
 

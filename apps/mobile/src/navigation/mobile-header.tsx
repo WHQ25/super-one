@@ -49,6 +49,8 @@ export function MobileHeader(props: {
   deviceStatus: DeviceStatus
   /** Drives the retry countdown while `deviceStatus` is `connecting`. */
   reconnect?: ReconnectInfo | null
+  /** The tablet sidebar owns the connection readout when present. */
+  connectionInSidebar?: boolean
   /** The running session's checkout; absent before it is known. */
   git?: SessionGitView | null
   /** Offered only for a plain branch — see `SessionGitChip`. */
@@ -84,10 +86,12 @@ export function MobileHeader(props: {
   const menu = useMenuAnchor()
   const chat = props.route === 'chat'
   const files = props.route === 'files' ? props.files : undefined
-  // The landing already shows project, branch and harness, so the header only
-  // speaks up there when the connection needs attention.
+  // Session pages always keep their checkout metadata. Every other native
+  // header adds this second line only while the connection needs attention.
   const connected = isConnected(props.deviceStatus)
-  const showMeta = (chat || props.route === 'terminal') && (props.hasSession || !connected)
+  const showConnectionStatus = !props.connectionInSidebar
+  const showMeta = ((chat || props.route === 'terminal') && props.hasSession)
+    || (showConnectionStatus && !connected)
   // The device list carries its own wordmark inside the page, and session search
   // is a search field with a Cancel beside it — both own their whole screen.
   if (props.route === 'pair' || props.route === 'session-search') return null
@@ -114,7 +118,8 @@ export function MobileHeader(props: {
         )}
         {showMeta ? <SessionMetaRow deviceStatus={props.deviceStatus} reconnect={props.reconnect}
           subtitle={props.subtitle || harnessDisplayName(props.provider)}
-          git={props.git} onOpenBranch={props.onOpenBranch} /> : null}
+          git={props.git} onOpenBranch={props.onOpenBranch}
+          showConnectionStatus={showConnectionStatus} /> : null}
       </View>
       {props.onConfirm ? <Pressable accessibilityRole="button" accessibilityLabel={props.confirmLabel ?? 'Confirm'}
         accessibilityState={{ disabled: props.confirmDisabled }} disabled={props.confirmDisabled}

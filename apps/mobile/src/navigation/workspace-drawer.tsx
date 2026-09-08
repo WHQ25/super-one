@@ -1,19 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Animated, Modal, PanResponder, Pressable, ScrollView, useWindowDimensions, View } from 'react-native'
 import { Text } from '../ui/text'
-import { FolderPlus, Laptop, Power, Search, Settings, SquarePen } from 'lucide-react-native'
+import { FolderPlus, Search, SquarePen } from 'lucide-react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { RelayClient } from '@superone/relay-client'
 import type { Project } from '../project-types'
 import type { DeviceStatus, ReconnectInfo } from '../device-status'
 import type { SessionListRow } from '../session-list-state'
 import { useMobileTheme } from '../theme/context'
-import { ConnectionStatusIndicator } from '../ui/connection-status'
 import { IconButton, SwipeSessionRow } from '../ui'
 import { SessionRowContent } from '../ui/session-row-content'
 import { SwipeRevealProvider, useSwipeRevealScope } from '../ui/swipe-reveal-scope'
 import { WorkspaceProjectRow } from './workspace-project-row'
 import { readPinnedSessions } from './workspace-data'
+import { SidebarDeviceFooter } from './sidebar-device-footer'
 
 export type WorkspaceDrawerProps = {
   visible: boolean; onDismiss: () => void; deviceName: string; projects: Project[]
@@ -217,19 +217,13 @@ export function WorkspaceDrawer(props: WorkspaceDrawerProps) {
             the task, so it must not be the first thing in the panel. Reaching
             another desktop means disconnecting from this one, so the row reports
             the link instead of offering to switch it. */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingLeft: 20, paddingRight: 6,
-          minHeight: 60, borderTopWidth: 1, borderTopColor: colors.border }}>
-          <Laptop size={20} color={colors.mutedForeground} />
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text numberOfLines={1} style={{ color: colors.foreground, fontSize: 14, fontWeight: '500' }}>{props.deviceName}</Text>
-            <ConnectionStatusIndicator status={props.deviceStatus} reconnect={props.reconnect} iconSize={12} fontSize={11} />
-          </View>
-          {/* One cluster: both act on the shell, not on the device named beside them. */}
-          <View style={{ flexDirection: 'row', marginRight: -8 }}>
-            <IconButton icon={Power} label="Disconnect" onPress={() => leave(props.onDisconnect)} />
-            <IconButton icon={Settings} label="Settings" onPress={() => leave(props.onOpenAppSettings)} />
-          </View>
-        </View>
+        <SidebarDeviceFooter
+          deviceName={props.deviceName}
+          deviceStatus={props.deviceStatus}
+          reconnect={props.reconnect}
+          onDisconnect={() => leave(props.onDisconnect)}
+          onOpenSettings={() => leave(props.onOpenAppSettings)}
+        />
         </SwipeRevealProvider>
       </Animated.View>
     </View>

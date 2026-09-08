@@ -334,6 +334,7 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
   // Standalone galleries share the catch-all 'files' route but draw themselves.
   const gallery = page === 'Icons' || page === 'Git indicators' || page === 'Session status' || page === 'Composer suggestions' || page === 'Chip editor' || page === 'LAN browser'
   const route = chat ? 'chat' : page === 'Project' ? 'project-picker' : page === 'Add project' ? 'add-project' : page === 'Worktree' ? 'worktree' : page === 'Branch' ? 'branch' : page === 'Additional folders' || page === 'Browse folders' ? 'add-dir' : page === 'Devices' || page === 'Pairing' ? 'pair' : page === 'Terminal' ? 'terminal' : page === 'Session search' ? 'session-search' : page === 'Settings' ? 'settings' : 'files'
+  const tabletSidebar = width >= 768 && (chat || page === 'Terminal' || page === 'Settings' || route === 'add-dir' || route === 'files')
   return <SafeAreaView style={styles.root}>
     <StatusBar style={tokens.scheme === 'dark' ? 'light' : 'dark'} />
     <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8 }}>
@@ -350,7 +351,7 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
     </View>
     {editorError ? <Text accessibilityRole="alert" style={{ color: tokens.colors.destructive }}>{editorError}</Text> : null}
     <MobileKeyboardFrame>
-      <MobileHeader route={route} title={page === 'Add project' ? addProject.title : page === 'Project' ? 'Projects' : route === 'files' ? previewBrowserMode.name : page} subtitle="super-one" provider={provider} hasSession={page === 'Chat'} deviceStatus="connectedLan" git={page === 'Chat' ? previewSessionGit : null} onOpenBranch={() => setPage('Branch')} onBack={() => {
+      <MobileHeader route={route} title={page === 'Add project' ? addProject.title : page === 'Project' ? 'Projects' : route === 'files' ? previewBrowserMode.name : page} subtitle="super-one" provider={provider} hasSession={page === 'Chat'} deviceStatus="connectedLan" connectionInSidebar={tabletSidebar} git={page === 'Chat' ? previewSessionGit : null} onOpenBranch={() => setPage('Branch')} onBack={() => {
           if (page === 'Add project' && addProject.canGoBack) addProject.goBack()
           else if (page === 'Add project') setPage('Project')
           // Browsing unwinds to the overview before the page itself leaves,
@@ -370,7 +371,7 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
         confirmDisabled={page === 'Add project' ? addProject.busy
           : !!worktreeSelectionError(worktreeDraft, PREVIEW_BRANCHES, PREVIEW_CHECKED_OUT)} />
       <View style={styles.contentRow}>
-        {width >= 768 && (chat || page === 'Terminal' || page === 'Settings' || route === 'add-dir' || route === 'files') ? <TabletSessionSidebar client={previewClient} project={project} sessions={sessions} activeSessionId="preview-1" onOpenSession={() => setPage('Chat')} onCreateSession={() => setPage('New session')} onOpenSettings={() => setPage('Settings')} onPinSession={previewSessionOp} onArchiveSession={previewSessionOp} onDeleteSession={previewSessionOp} /> : null}
+        {tabletSidebar ? <TabletSessionSidebar client={previewClient} project={project} sessions={sessions} activeSessionId="preview-1" deviceName="Preview desktop" deviceStatus="connectedLan" onOpenSession={() => setPage('Chat')} onCreateSession={() => setPage('New session')} onDisconnect={() => setPage('Devices')} onOpenSettings={() => setPage('Settings')} onPinSession={previewSessionOp} onArchiveSession={previewSessionOp} onDeleteSession={previewSessionOp} /> : null}
         <View style={isFullBleedScreen(route) ? styles.mainPane : [styles.mainPane, styles.page]}>
           {chat ? <ChatScreen provider={provider} onEdgeSwipe={() => setDrawer(true)} landing={page === 'New session' ? {
               provider, harnessOptions: PREVIEW_HARNESS_OPTIONS,

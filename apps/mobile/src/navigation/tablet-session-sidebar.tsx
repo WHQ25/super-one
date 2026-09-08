@@ -1,12 +1,14 @@
 import { ScrollView, View } from 'react-native'
-import { Plus, Settings } from 'lucide-react-native'
+import { Plus } from 'lucide-react-native'
 import { Text } from '../ui/text'
 import type { RelayClient } from '@superone/relay-client'
 import type { Project } from '../project-types'
 import type { SessionListRow } from '../session-list-state'
+import type { DeviceStatus, ReconnectInfo } from '../device-status'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { IconButton, SessionListBody, type SessionListActions } from '../ui'
 import { useProjectSessions } from './use-project-sessions'
+import { SidebarDeviceFooter } from './sidebar-device-footer'
 
 /** The master pane at tablet widths; same surface and rows as the drawer. */
 export function TabletSessionSidebar(props: SessionListActions & {
@@ -14,11 +16,15 @@ export function TabletSessionSidebar(props: SessionListActions & {
   project: Project
   sessions: SessionListRow[]
   activeSessionId: string | null
+  deviceName: string
+  deviceStatus: DeviceStatus
+  reconnect?: ReconnectInfo | null
   onCreateSession: () => void
+  onDisconnect: () => void
   onOpenSettings: () => void
 }) {
   const styles = useMobileStyles()
-  const { tokens: { colors } } = useMobileTheme()
+  const { tokens: { colors, spacing } } = useMobileTheme()
   const sessions = useProjectSessions(props.client, props.project, props.sessions, props.activeSessionId)
   return (
     <View style={styles.tabletSidebar}>
@@ -27,7 +33,6 @@ export function TabletSessionSidebar(props: SessionListActions & {
           {props.project.name}
         </Text>
         <IconButton icon={Plus} label="New session" onPress={props.onCreateSession} chrome="plain" color={colors.foreground} />
-        <IconButton icon={Settings} label="Settings" onPress={props.onOpenSettings} />
       </View>
       <ScrollView style={styles.flex} keyboardShouldPersistTaps="handled">
         <SessionListBody
@@ -40,6 +45,15 @@ export function TabletSessionSidebar(props: SessionListActions & {
           onDeleteSession={props.onDeleteSession}
         />
       </ScrollView>
+      <View style={{ marginHorizontal: -spacing.md, marginBottom: -spacing.md }}>
+        <SidebarDeviceFooter
+          deviceName={props.deviceName}
+          deviceStatus={props.deviceStatus}
+          reconnect={props.reconnect}
+          onDisconnect={props.onDisconnect}
+          onOpenSettings={props.onOpenSettings}
+        />
+      </View>
     </View>
   )
 }

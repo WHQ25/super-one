@@ -462,7 +462,12 @@ export function MobileApp() {
       onEvents: (events, epoch) => {
         logRelayEventTypes(events)
         const removed = sessionRemovalStatus(events, runtimeRef.current, epoch)
-        if (removed) { clearActiveSession(); returnToWorkspace(); setStatus(removed); return }
+        if (removed) {
+          clearActiveSession()
+          returnToWorkspace()
+          setStatus(removed === 'Desktop disconnected this session' ? '' : removed)
+          return
+        }
         // Read off the raw batch, before ChatRuntime: the drawer has to stay
         // current even when no session is open and there is no runtime to ingest.
         if (sessionListInvalidations(events).length) setSessionListRevision((n) => n + 1)
@@ -487,18 +492,20 @@ export function MobileApp() {
         connectionRef.current = { state, epoch }
         setConnectionState(state)
         inject(webRef, { type: 'setConnection', state, epoch })
-        setStatus(state === 'connected' ? '' : 'disconnected — reconnecting')
+        // Connection feedback has one structured home in the header/sidebar.
+        // Clear unrelated transient copy instead of painting a second status row.
+        setStatus('')
       },
-      onStatus: setStatus,
+      onStatus: () => { /* DeviceStatus + reconnect own connection feedback. */ },
       onReconnectInfo: setReconnect,
       onShutdown: () => {
         setConnectionState('offline')
-        setStatus('desktop shut down')
+        setStatus('')
         setScreen('pair')
       },
       onKicked: () => {
         setConnectionState('offline')
-        setStatus('this device was removed from the desktop')
+        setStatus('')
         setScreen('pair')
       },
       suppressDisconnect: () => suppressReconnectRef.current,
@@ -569,15 +576,15 @@ export function MobileApp() {
       if (!isReachable(discovery.statusOf(item))) {
         await discovery.refresh({ reset: false })
         if (!isReachable(discovery.statusOf(item))) {
-          setStatus('Desktop is unreachable. Make sure SuperOne is running on your computer.')
           return
         }
       }
       const discovered = discovery.lanAddressOf(item.id)
       const lanHostPort = discovered ? `${discovered.host}:${discovered.port}` : item.lan || lan
       await connectWithSecret(item.relayUrl, item.secret, lanHostPort, item.hostName, item.desktopDeviceId)
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'connect failed')
+    } catch {
+      // The device row moves from Connecting back to Offline; connection
+      // failures do not create a second, page-level status message.
     } finally {
       setConnectingPairingId(null)
     }
@@ -1277,6 +1284,7 @@ export function MobileApp() {
         hasSession={!!sessionId}
         deviceStatus={deviceStatus}
         reconnect={reconnect}
+        connectionInSidebar={tabletMultiPane}
         git={sessionGit}
         onOpenBranch={() => setScreen('branch')}
         onBack={back}
@@ -1318,8 +1326,12 @@ export function MobileApp() {
             project={project}
             sessions={sessions}
             activeSessionId={sessionId}
+            deviceName={deviceName}
+            deviceStatus={deviceStatus}
+            reconnect={reconnect}
             onOpenSession={(row) => void openSession(row)}
             onCreateSession={() => startNewSession()}
+            onDisconnect={disconnectDevice}
             onOpenSettings={openSettings}
             onPinSession={(row, pinned) => sessionListActions.onPinSession(project, row, pinned)}
             onArchiveSession={(row) => sessionListActions.onArchiveSession(project, row)}

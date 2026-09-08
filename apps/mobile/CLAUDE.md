@@ -111,8 +111,12 @@ being the ancestor — can only tell by asking. It is ref-backed, not state: the
 consumer is a gesture predicate and nothing paints it. A list mounted outside any
 scope (the tablet sidebar) gets a no-op.
 
-The line under the chat title is **two facts, not a subtitle**: how the phone is
-reaching the desktop, and which checkout the session runs in.
+Connection feedback has exactly one shell location. On a phone it is the second
+line under whichever native header is visible; in the workspace drawer and the
+persistent tablet sidebar it is the line under the device at the bottom. It is
+never copied into the page-level transient status row. Session headers keep two
+facts on that second line: how the phone is reaching the desktop, and which
+checkout the session runs in.
 
 - Connection is the same `ConnectionStatusIndicator` / `DeviceStatus` vocabulary the
   device list uses, so the glyph names the *route* — Wi-Fi on the LAN, cloud through

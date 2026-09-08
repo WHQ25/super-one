@@ -228,9 +228,12 @@ export async function runCodexCommand(
     )
     const renderedItems = pruneTransientCodexItems(result.items)
     const codexSession = getCodexSession()
-    const footerTokens = result.usage && codexSession
+    // message_complete can arrive before the IPC result. It has already sealed
+    // the turn's tokens and reset the live counters, so preserve that total.
+    const completedTokens = codexSession?.messages.find((m) => m.id === getTargetAssistantId())?.metadata?.consumedTokens
+    const footerTokens = completedTokens ?? (result.usage && codexSession
       ? accumulateCodexFooterTokens(codexSession.streamingTokens, result.usage, codexSession.codexTurnLastUsage)
-      : codexSession?.streamingTokens ?? { input: 0, output: 0 }
+      : codexSession?.streamingTokens ?? { input: 0, output: 0 })
     const consumedTokens = footerTokens.input > 0 || footerTokens.output > 0 ? footerTokens : undefined
     updateAssistant('complete', text, result.usage ? {
       durationMs: Date.now() - runStart,

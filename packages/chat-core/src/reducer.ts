@@ -88,6 +88,12 @@ export function applyEventToSession(
     case 'codex_plan_approval':
       return reduceCodex(session, event, ports)
 
+    case 'mcp_status':
+      return {
+        ...(event.servers ? { mcpServers: event.servers } : {}),
+        mcpInitProgress: event.init === undefined ? session.mcpInitProgress : event.init,
+      }
+
     case 'message_usage':
     case 'status_indicator':
     case 'rate_limit':
@@ -100,6 +106,7 @@ export function applyEventToSession(
     case 'auth_status':
     case 'files_persisted':
     case 'elicitation_complete':
+      return event.type === 'elicitation_complete' ? { waitingElicitation: null } : {}
     // The swap is rendered from the transcript row the main process appends for
     // it, so there is no session state to patch here.
     case 'model_fallback':
@@ -134,13 +141,17 @@ export function applyEventToSession(
         patch.selectedModel = event.selectedModelId
       } else if (event.selectedModelId && !session.selectedModel) {
         patch.selectedModel = event.selectedModelId
-      } else if (
+      }
+      const currentId = patch.selectedModel ?? session.selectedModel
+      if (
         event.models.length > 0
-        && session.selectedModel
-        && !event.models.some((m) => m.id === session.selectedModel)
-        && event.selectedModelId
+        && currentId
+        && !event.models.some((m) => m.id === currentId)
       ) {
-        patch.selectedModel = event.selectedModelId
+        patch.acpModels = [
+          ...event.models,
+          { id: currentId, name: currentId, description: 'Unavailable in current catalog' },
+        ]
       }
       return patch
     }

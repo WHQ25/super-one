@@ -119,6 +119,8 @@ export function mockAcpRuntime(overrides?: Partial<AcpRuntime>): AcpRuntime {
       cleanFiles: [],
       conflicts: [],
     }),
+    updateMcpServers: async () => {},
+    getSessionUsage: async () => null,
     ...overrides,
   }
 }

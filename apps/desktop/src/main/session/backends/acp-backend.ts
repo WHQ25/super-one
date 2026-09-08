@@ -22,6 +22,7 @@ import {
   asGrokReasoningEffort,
   extractModeConfig,
   extractModelConfig,
+  extractModelsFromAgentModelsField,
   type AcpModeConfig,
   type AcpModelConfig,
 } from '../../acp/acp-config'
@@ -69,6 +70,13 @@ import {
   rewindResultFromExecute,
   type GrokRewindMode,
 } from '../../acp/acp-xai-session-ops'
+import {
+  parseGrokMcpInitProgress,
+  parseGrokMcpServerStatus,
+  parseGrokMcpServersUpdated,
+  upsertMcpServer,
+} from '../../acp/acp-xai-mcp-status'
+import { buildAcpSessionMcpServers } from '../../acp/acp-mcp'
 
 export interface AcpBackendConfig {
   agentId?: string
@@ -217,6 +225,8 @@ export class AcpBackend implements SessionBackend {
   private readonly selfInterjectionIds = new Set<string>()
   /** True while a host `/compact` RPC is in flight (Grok may also emit auto_compact_*). */
   private compactingManual = false
+  private mcpServers: McpServerInfo[] = []
+  private mcpInit: { connected: number; total: number } | null = null
 
   private modelConfigId: string | null = null
   private modeConfigId: string | null = null
@@ -681,6 +691,7 @@ export class AcpBackend implements SessionBackend {
           request: (payload) => this.handleScheduledTaskInject(payload),
         },
         onSessionInterjection: (payload) => this.handleSessionInterjection(payload),
+        onMcpExt: (method, params) => this.handleMcpExt(method, params),
         onModelConfig: (cfg) => {
           // Early model discovery (initialize) before session/new configOptions land.
           this.emitModels(cfg, agentId, epoch)
@@ -948,10 +959,21 @@ export class AcpBackend implements SessionBackend {
   }
 
   private handleMcpElicitComplete(payload: GrokMcpElicitComplete): void {
+    this.emit({
+      type: 'elicitation_complete',
+      mcpServerName: payload.serverName ?? '',
+      elicitationId: payload.elicitationId,
+    })
     for (const [id, pending] of this.pendingElicitations) {
       if (pending.elicitationId !== payload.elicitationId) continue
       this.pendingElicitations.delete(id)
       pending.resolve({ kind: 'cancel' })
+      this.emit({
+        type: 'interaction_resolved',
+        interactionType: 'permission',
+        requestId: id,
+        approved: true,
+      })
     }
   }
 
@@ -1035,6 +1057,44 @@ export class AcpBackend implements SessionBackend {
    */
   private isTurnBusy(): boolean {
     return this.currentMessageId !== null || this.activePrompt !== null
+  }
+
+  private emitMcpStatus(): void {
+    this.emit({
+      type: 'mcp_status',
+      servers: [...this.mcpServers],
+      init: this.mcpInit,
+    })
+  }
+
+  private handleMcpExt(method: string, params: Record<string, unknown>): void {
+    const bare = method.replace(/^_/, '')
+    if (bare === 'x.ai/models/update') {
+      const cfg = extractModelsFromAgentModelsField(params)
+      if (cfg) this.emitModels(cfg, this.config.agentId ?? null, this.runtimeEpoch)
+      return
+    }
+    if (bare === 'x.ai/mcp/init_progress') {
+      this.mcpInit = parseGrokMcpInitProgress(params)
+      this.emitMcpStatus()
+      return
+    }
+    if (bare === 'x.ai/mcp_initialized') {
+      this.mcpInit = null
+      this.emitMcpStatus()
+      return
+    }
+    if (bare === 'x.ai/mcp/servers_updated') {
+      const list = parseGrokMcpServersUpdated(params)
+      if (list) this.mcpServers = list
+      this.emitMcpStatus()
+      return
+    }
+    if (bare === 'x.ai/mcp/server_status') {
+      const server = parseGrokMcpServerStatus(params)
+      if (server) this.mcpServers = upsertMcpServer(this.mcpServers, server)
+      this.emitMcpStatus()
+    }
   }
 
   private handleSessionInterjection(payload: {
@@ -1529,7 +1589,21 @@ export class AcpBackend implements SessionBackend {
   async getContextUsage(): Promise<ContextUsageInfo | null> {
     if (!this.runtime) return null
     try {
-      return await this.runtime.getContextUsage()
+      const live = await this.runtime.getContextUsage()
+      const session = typeof this.runtime.getSessionUsage === 'function'
+        ? await this.runtime.getSessionUsage()
+        : null
+      if (!live && !session) return null
+      if (!session) return live
+      const maxTokens = live?.maxTokens ?? 0
+      const totalTokens = session.totalTokens || live?.totalTokens || 0
+      return {
+        categories: live?.categories ?? [],
+        totalTokens,
+        maxTokens,
+        percentage: maxTokens > 0 ? Math.min(100, Math.round((totalTokens / maxTokens) * 100)) : (live?.percentage ?? 0),
+        model: live?.model ?? '',
+      }
     } catch {
       return null
     }
@@ -1563,7 +1637,7 @@ export class AcpBackend implements SessionBackend {
   }
 
   async getMcpServerStatus(): Promise<McpServerInfo[]> {
-    return []
+    return [...this.mcpServers]
   }
 
   async rewindFiles(userMessageId: string, opts?: { dryRun?: boolean; includeConversation?: boolean }): Promise<RewindFilesResult> {
@@ -1601,7 +1675,15 @@ export class AcpBackend implements SessionBackend {
 
   async toggleMcpServer(_serverName: string, _enabled: boolean): Promise<void> {}
 
-  async reloadMcpServers(): Promise<void> {}
+  async reloadMcpServers(): Promise<void> {
+    const runtime = this.runtime
+    if (!runtime?.updateMcpServers || !this.startOpts) return
+    const servers = buildAcpSessionMcpServers({
+      cwd: this.effectiveCwd(this.startOpts),
+      superoneSessionId: this.startOpts.sessionId,
+    })
+    await runtime.updateMcpServers(servers)
+  }
 
   async reloadPlugins(): Promise<boolean> {
     return false

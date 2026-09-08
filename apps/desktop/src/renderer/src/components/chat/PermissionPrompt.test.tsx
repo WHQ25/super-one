@@ -87,6 +87,12 @@ function renderInChat(ui: ReactElement) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  activeSessionState.pendingPermissions = [{
+    requestId: 'req-1',
+    toolName: 'Bash',
+    input: { command: 'ls', cwd: '/repo' },
+    allowAlwaysAllow: true,
+  }]
 })
 
 describe('PermissionPrompt', () => {
@@ -129,6 +135,32 @@ describe('PermissionPrompt', () => {
     fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
 
     expect(chatState.respondToPermission).toHaveBeenCalledWith('req-1', false, undefined, undefined, undefined, 'cancel')
+  })
+
+  it('opens a URL elicitation in the browser and keeps the waiting card', () => {
+    activeSessionState.pendingPermissions = [{
+      requestId: 'elicit-url',
+      toolName: 'github',
+      input: {},
+      allowAlwaysAllow: false,
+      requestKind: 'mcp_elicitation',
+      serverName: 'github',
+      message: 'Sign in to GitHub',
+      elicitationUrl: 'https://github.com/login/oauth',
+      elicitationId: 'e-1',
+    }]
+    const openExternal = vi.fn()
+    ;(window as unknown as { app: { openExternalLink: typeof openExternal } }).app = {
+      openExternalLink: openExternal,
+    }
+
+    renderInChat(<PermissionPrompt />)
+
+    fireEvent.click(screen.getByRole('button', { name: /open in browser/i }))
+    expect(openExternal).toHaveBeenCalledWith('https://github.com/login/oauth')
+    expect(chatState.respondToPermission).not.toHaveBeenCalled()
+    expect(screen.getByText(/waiting for authorization/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /reopen/i })).toBeInTheDocument()
   })
 
   it('ignores Escape when focus is in a sibling mosaic chat pane', () => {

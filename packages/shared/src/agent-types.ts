@@ -1006,6 +1006,9 @@ export interface PermissionRequest {
   serverName?: string
   message?: string
   subtitle?: string
+  /** URL-mode MCP elicitation (`x.ai/mcp/elicit` mode=url). */
+  elicitationUrl?: string
+  elicitationId?: string
   riskLevel?: 'low' | 'medium' | 'high'
   supportsAlwaysPersist?: boolean
   elicitationForm?: ElicitationFormField[]
@@ -1710,7 +1713,7 @@ export type AgentEventBase =
   | { type: 'checkpoint_captured'; messageId: string; checkpointId: string; resumePointId: string }
   | { type: 'init_ready'; skills: SlashCommandInfo[]; projectCommands: SlashCommandInfo[]; projectAgents: AgentInfo[]; additionalDirectories: string[]; cwd: string; homedir: string; sandboxInfo: SandboxInfo; permissionMode: PermissionMode; selectedModel?: string | null; selectedEffort?: EffortLevel | null; activeProvider?: RemoteActiveProvider | null }
   | { type: 'additional_dirs_changed'; additionalDirectories: string[]; /** SuperOne-owned project workspace folders — the same set for every harness. */ workspaceDirs: string[]; sessionAdditionalDirs: string[] }
-  | { type: 'prompt_suggestion'; suggestion: string }
+  | { type: 'prompt_suggestion'; suggestion: string; suggestions?: string[] }
   | { type: 'rate_limit'; status: 'allowed' | 'allowed_warning' | 'rejected'; resetsAt?: number; rateLimitType?: string; utilization?: number; overageStatus?: string; overageResetsAt?: number; overageDisabledReason?: string; isUsingOverage?: boolean; surpassedThreshold?: number; errorCode?: 'credits_required'; canUserPurchaseCredits?: boolean; hasChargeableSavedPaymentMethod?: boolean }
   | { type: 'hook_progress'; hook: HookEvent }
   | { type: 'files_persisted'; files: Array<{ filename: string; fileId: string }>; failed: Array<{ filename: string; error: string }>; processedAt: string }
@@ -1722,7 +1725,8 @@ export type AgentEventBase =
   | { type: 'interaction_resolved'; interactionType: 'permission' | 'question' | 'plan_approval'; requestId: string; approved?: boolean; feedback?: string }
   | { type: 'codex_collaboration_mode_change'; mode: string }
   | { type: 'codex_plan_approval'; messageId: string; status: 'approved' | 'rejected'; feedback?: string }
-  | { type: 'api_retry'; attempt: number; maxRetries?: number; delayMs: number; message?: string }
+  | { type: 'api_retry'; attempt: number; maxRetries?: number; delayMs: number; message?: string; phase?: 'retrying' | 'exhausted' | 'failed' }
+  | { type: 'mcp_status'; servers: McpServerInfo[]; init?: { connected: number; total: number } | null }
   | {
       type: 'model_fallback'
       trigger: string

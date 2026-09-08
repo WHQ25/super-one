@@ -9,6 +9,7 @@ import type {
   CodexUsageInfo,
   EffortLevel,
   HarnessId,
+  McpServerInfo,
   ModelOption,
   PermissionMode,
   PermissionRequest,
@@ -63,6 +64,15 @@ export interface ChatCoreSession {
   streamingTokens: { input: number; output: number }
   lastAssistantMessageId: string | null
   promptSuggestion: string | null
+  promptSuggestions: string[]
+  mcpServers: McpServerInfo[]
+  mcpInitProgress: { connected: number; total: number } | null
+  waitingElicitation: {
+    url: string
+    serverName: string
+    message: string
+    elicitationId?: string
+  } | null
   pendingPermissions: PermissionRequest[]
   pendingQuestion: AskUserQuestionRequest | null
   pendingPlanApproval: PlanApprovalRequest | null
@@ -73,6 +83,7 @@ export interface ChatCoreSession {
     maxRetries?: number
     delayMs: number
     message?: string
+    phase?: 'retrying' | 'exhausted' | 'failed'
   } | null
   session: SessionInfo | null
   _providerSessionId: string | null

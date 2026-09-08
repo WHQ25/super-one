@@ -348,6 +348,8 @@ export function reduceTool(
       const write = resolveTaskProgressWrite(session.taskProgress, event.toolUseId, event.taskId)
       if (!write) return {}
       const prev = write.prev
+      // A later progress frame must not resurrect a failed/stopped row as a spinner.
+      if (prev?.status === 'failed' || prev?.status === 'stopped') return {}
       // Chronological tool rows only from real toolEntries (Claude progress / explicit).
       // Grok no longer sends tools_used as toolEntries (distinct-name set); full rows
       // come from child chat_history.jsonl via outputFile — skip description-transition

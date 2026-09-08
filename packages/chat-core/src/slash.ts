@@ -171,8 +171,15 @@ export function reduceSlash(
   ports: ChatCorePorts = defaultChatCorePorts,
 ): Partial<ChatCoreSession> {
   switch (event.type) {
-    case 'prompt_suggestion':
-      return { promptSuggestion: event.suggestion }
+    case 'prompt_suggestion': {
+      const list = event.suggestions?.length
+        ? event.suggestions.filter((s) => s.trim().length > 0)
+        : [event.suggestion]
+      return {
+        promptSuggestion: list[0] ?? event.suggestion,
+        promptSuggestions: list.slice(0, 6),
+      }
+    }
 
     case 'turn_summary': {
       const summary = event.summary.trim()

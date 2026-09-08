@@ -83,12 +83,25 @@ export function nodePendingToPermissionRequest(
   }
   // Permission UI only — question/plan use dedicated mappers below.
   if (pending.kind && pending.kind !== 'permission') return null
+  const input = pending.input && typeof pending.input === 'object' ? pending.input : {}
+  const elicitationUrl = typeof input.elicitationUrl === 'string' ? input.elicitationUrl : undefined
+  const elicitationId = typeof input.elicitationId === 'string' ? input.elicitationId : undefined
+  const elicitationForm = Array.isArray(input.elicitationForm)
+    ? input.elicitationForm as PermissionRequest['elicitationForm']
+    : undefined
+  const requestKind = pending.requestKind === 'mcp_elicitation' ? 'mcp_elicitation' as const : undefined
   return {
     requestId: pending.interactionId,
     toolName: pending.toolName || 'tool',
     toolUseId: pending.toolUseId,
-    input: pending.input && typeof pending.input === 'object' ? pending.input : {},
-    allowAlwaysAllow: pending.allowAlwaysAllow !== false,
+    input,
+    allowAlwaysAllow: requestKind === 'mcp_elicitation' ? false : pending.allowAlwaysAllow !== false,
+    ...(requestKind ? { requestKind } : {}),
+    ...(pending.message ? { message: pending.message } : {}),
+    ...(pending.serverName ? { serverName: pending.serverName } : {}),
+    ...(elicitationUrl ? { elicitationUrl, subtitle: elicitationUrl } : {}),
+    ...(elicitationId ? { elicitationId } : {}),
+    ...(elicitationForm?.length ? { elicitationForm } : {}),
   }
 }
 

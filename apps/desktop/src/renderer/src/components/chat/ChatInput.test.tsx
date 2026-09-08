@@ -1091,6 +1091,8 @@ describe('ChatInput slash command grouping', () => {
       .filter(Boolean)
     expect(labels.some((label) => label.startsWith('/recap'))).toBe(true)
     expect(labels.some((label) => label.startsWith('/clear'))).toBe(true)
+    expect(labels.some((label) => label.startsWith('/mcp'))).toBe(true)
+    expect(labels.some((label) => label.startsWith('/workflows'))).toBe(true)
 
     activeSessionState.acpAgentId = 'opencode'
     rerender(<ChatInput />)

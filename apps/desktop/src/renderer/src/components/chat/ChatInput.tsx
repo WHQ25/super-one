@@ -136,7 +136,7 @@ export function ChatInput() {
     const {
       slashCommands, preferredProvider, sessionProvider, agents,
       selectedCodexCollaborationMode, codexPlanRejectHintActive, chatInputFocusNonce, chatInputRestoreFocusNonce,
-      promptSuggestion, showReviewPanel,
+      promptSuggestion, promptSuggestions, showReviewPanel,
       displayedSessionId,
     } = useActiveSession(useShallow((s) => ({
       slashCommands: s.slashCommands,
@@ -148,6 +148,7 @@ export function ChatInput() {
       chatInputFocusNonce: s.chatInputFocusNonce,
       chatInputRestoreFocusNonce: s.chatInputRestoreFocusNonce,
       promptSuggestion: s.promptSuggestion,
+      promptSuggestions: s.promptSuggestions ?? [],
       showReviewPanel: s.showReviewPanel,
       displayedSessionId: sessionScope?.sessionId ?? s._activeSessionId,
     })))
@@ -381,8 +382,14 @@ export function ChatInput() {
       const local: SlashCommandInfo[] = [
         { name: 'clear', description: t('chat.acpCommands.clearDesc'), argumentHint: '', isSkill: false },
         {
+          name: 'mcp',
+          description: t('chat.acpCommands.mcpDesc'),
+          argumentHint: '',
+          isSkill: false,
+        },
+        {
           name: 'workflows',
-          description: t('chat.acpCommands.workflowsDesc', 'Show workflow runs in this session'),
+          description: t('chat.acpCommands.workflowsDesc'),
           argumentHint: '',
           isSkill: false,
         },
@@ -1765,15 +1772,17 @@ export function ChatInput() {
       }
     }, [sessionProjectOptions, editor])
 
+    const ghostSuggestion = promptSuggestions.length > 1 ? null : promptSuggestion
+
     useEffect(() => {
       if (editor && !editor.isDestroyed) {
-        const active = status !== 'streaming' ? promptSuggestion : null
+        const active = status !== 'streaming' ? ghostSuggestion : null
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ;(editor.storage as any).promptSuggestion.suggestion = active
         editor.view.dom.classList.toggle('has-prompt-suggestion', !!active)
         editor.view.dispatch(editor.state.tr)
       }
-    }, [promptSuggestion, status, editor])
+    }, [ghostSuggestion, status, editor])
 
     useEffect(() => {
       if (editor && !editor.isDestroyed) {
@@ -1802,9 +1811,32 @@ export function ChatInput() {
       return () => window.removeEventListener('keydown', onKeyDown)
     }, [promptSuggestion, isStreaming, hasPendingInteraction])
 
+    const applySuggestion = useCallback((text: string) => {
+      const ed = editorRef.current
+      if (ed && !ed.isDestroyed) {
+        ed.commands.setContent(text)
+        ed.commands.focus('end')
+      }
+      setText(text)
+    }, [setText])
+
     return (
       <div className="relative">
         {(activeProviderForResources === 'claude' || activeProviderForResources === 'codex') && <ChatInputDirsHint />}
+        {promptSuggestions.length > 0 && status !== 'streaming' && (
+          <div className="mx-3 mb-1 flex flex-wrap gap-1.5">
+            {promptSuggestions.map((suggestion) => (
+              <button
+                key={suggestion}
+                type="button"
+                className="max-w-full truncate rounded-full border border-border bg-muted/40 px-2.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                onClick={() => applySuggestion(suggestion)}
+              >
+                {suggestion}
+              </button>
+            ))}
+          </div>
+        )}
         <div
           className={cn(
             'relative mx-3 mb-1 rounded-xl border border-border px-3 py-2',

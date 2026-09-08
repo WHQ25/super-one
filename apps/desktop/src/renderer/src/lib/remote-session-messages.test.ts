@@ -31,6 +31,30 @@ describe('nodePendingToPermissionRequest', () => {
     })
   })
 
+  it('maps Grok MCP elicitation onto PermissionRequest URL fields', () => {
+    const req = nodePendingToPermissionRequest({
+      interactionId: 'elicit-1',
+      kind: 'permission',
+      toolName: 'github',
+      requestKind: 'mcp_elicitation',
+      message: 'Sign in to GitHub',
+      serverName: 'github',
+      allowAlwaysAllow: false,
+      input: {
+        elicitationUrl: 'https://github.com/login',
+        elicitationId: 'e-1',
+      },
+    })
+    expect(req).toMatchObject({
+      requestId: 'elicit-1',
+      requestKind: 'mcp_elicitation',
+      elicitationUrl: 'https://github.com/login',
+      elicitationId: 'e-1',
+      subtitle: 'https://github.com/login',
+      allowAlwaysAllow: false,
+    })
+  })
+
   it('ignores non-permission kinds and empty ids', () => {
     expect(
       nodePendingToPermissionRequest({

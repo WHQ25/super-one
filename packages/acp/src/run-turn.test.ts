@@ -61,8 +61,19 @@ const mocks = vi.hoisted(() => {
     },
     close: vi.fn(),
   }
+  const requestHandlers = new Map<string, {
+    parse: (raw: unknown) => unknown
+    handle: (ctx: { params: unknown }) => Promise<unknown>
+  }>()
   const app = {
-    onRequest: vi.fn(),
+    onRequest: vi.fn((
+      method: string,
+      parse: (raw: unknown) => unknown,
+      handle: (ctx: { params: unknown }) => Promise<unknown>,
+    ) => {
+      requestHandlers.set(method, { parse, handle })
+      return app
+    }),
     onNotification: vi.fn((
       method: string,
       parse: (raw: unknown) => Record<string, unknown>,
@@ -73,12 +84,12 @@ const mocks = vi.hoisted(() => {
     }),
     connect: vi.fn(() => connection),
   }
-  app.onRequest.mockReturnValue(app)
   return {
     active,
     app,
     connection,
     notificationHandlers,
+    requestHandlers,
     kill: vi.fn(async () => undefined),
   }
 })
@@ -160,5 +171,40 @@ describe('ACP production turn runner AgentEvents', () => {
       currentPhase: 'Inspect',
     }))
     expect(mocks.notificationHandlers.size).toBe(XAI_EXT_NOTIFICATION_METHODS.length)
+  })
+
+  it('parks x.ai/mcp/elicit on onPermission instead of auto-cancelling', async () => {
+    mocks.active.nextUpdate.mockResolvedValue({ kind: 'stop', stopReason: 'end_turn' })
+    const onPermission = vi.fn(async () => 'allow' as const)
+    const runner = createAcpAgentTurnRunner({
+      launch: { command: '/fake/acp' },
+      resolveProjectPath: () => '/tmp',
+    })
+    const turn = runner({
+      session: session(),
+      messageId: 'message-elicit',
+      text: 'go',
+      onAgentEvent: () => {},
+      onDelta: () => {},
+      onPermission,
+      signal: new AbortController().signal,
+    })
+    await vi.waitFor(() => expect(mocks.requestHandlers.has('x.ai/mcp/elicit')).toBe(true))
+    const elicit = mocks.requestHandlers.get('x.ai/mcp/elicit')!
+    const result = await elicit.handle({
+      params: elicit.parse({
+        serverName: 'github',
+        message: 'Sign in',
+        url: 'https://github.com/login',
+        elicitationId: 'e-1',
+      }),
+    })
+    expect(onPermission).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'permission',
+      requestKind: 'mcp_elicitation',
+      serverName: 'github',
+    }))
+    expect(result).toEqual({ outcome: 'accept' })
+    await turn
   })
 })

@@ -517,6 +517,7 @@ describe('mapXaiSessionUpdate — session meta', () => {
       attempt: 2,
       maxRetries: 5,
       delayMs: 0,
+      phase: 'retrying',
       message: 'timeout',
     }])
   })
@@ -781,10 +782,11 @@ describe('mapXaiStandaloneNotification', () => {
         { label: 'Open PR' },
       ],
     }, state)
-    expect(follow).toEqual([
-      { type: 'prompt_suggestion', suggestion: 'Run tests' },
-      { type: 'prompt_suggestion', suggestion: 'Open PR' },
-    ])
+    expect(follow).toEqual([{
+      type: 'prompt_suggestion',
+      suggestion: 'Run tests',
+      suggestions: ['Run tests', 'Open PR'],
+    }])
   })
 
   it('maps goal_updated progress and complete', () => {

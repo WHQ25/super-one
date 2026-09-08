@@ -268,7 +268,7 @@ export interface PerSessionState extends ChatCoreSession {
   _sideChatParentId?: string | null
   additionalDirs: string[]
   additionalDirsDirty: boolean
-  apiRetry: { attempt: number; maxRetries?: number; delayMs: number; message?: string } | null
+  apiRetry: { attempt: number; maxRetries?: number; delayMs: number; message?: string; phase?: 'retrying' | 'exhausted' | 'failed' } | null
   lastEventAt: number
   queuedMessages: ChatMessage[]
   /**

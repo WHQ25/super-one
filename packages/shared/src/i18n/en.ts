@@ -1368,6 +1368,8 @@ export type Messages = {
     acpCommands: {
       clearDesc: string
       recapDesc: string
+      mcpDesc: string
+      workflowsDesc: string
       loading: string
       updating: string
       loadingHint: string
@@ -1801,6 +1803,11 @@ export type Messages = {
       alwaysAllow: string
       /** device_control_confirm only — persists the grant for every session. */
       alwaysAllowDevice: string
+      openUrl: string
+      copyUrl: string
+      reopenUrl: string
+      waitingElicitation: string
+      waitingElicitationHint: string
       sessionCleanupTitle: string
       sessionCleanupEmpty: string
       sessionCleanupDelete: string
@@ -2657,6 +2664,14 @@ export type Messages = {
       errorBadge: string
       authBadge: string
       authenticate: string
+      initProgress: string
+    }
+    apiRetry: {
+      retrying: string
+      retryingNoMax: string
+      exhausted: string
+      failed: string
+      tryAgain: string
     }
     slashCommand: {
       groupCommands: string
@@ -5032,6 +5047,8 @@ export const en: Messages = {
     acpCommands: {
       clearDesc: 'Clear the conversation and start fresh',
       recapDesc: 'Summarize what happened in this session',
+      mcpDesc: 'Show MCP servers for this session',
+      workflowsDesc: 'Show workflow runs in this session',
       loading: 'Loading slash commands…',
       updating: 'Updating slash commands…',
       loadingHint: 'Fetching slash commands from the agent',
@@ -5366,7 +5383,7 @@ export const en: Messages = {
       codexError: 'Codex Error',
       startReview: 'Start review',
       reviewComplete: 'Review complete',
-      conversationCompacted: 'Conversation compacted',
+      conversationCompacted: 'Conversation Compacted',
       sendingFollowUp: 'Sending follow-up',
       sendFollowUp: 'Send Follow-up',
       followUpSent: 'Follow-up Sent',
@@ -5485,6 +5502,11 @@ export const en: Messages = {
       denyReasonPlaceholder: 'Deny reason (optional, Enter to submit)',
       alwaysAllow: 'Always Allow',
       alwaysAllowDevice: 'Always Allow',
+      openUrl: 'Open in browser',
+      copyUrl: 'Copy link',
+      reopenUrl: 'Reopen',
+      waitingElicitation: 'Waiting for authorization',
+      waitingElicitationHint: 'Finish the flow in your browser, then this card will close.',
       sessionCleanupTitle: 'Permanently delete {{count}} session(s)?',
       sessionCleanupEmpty: 'No sessions selected.',
       sessionCleanupDelete: 'Delete',
@@ -6334,6 +6356,14 @@ export const en: Messages = {
       errorBadge: 'error',
       authBadge: 'auth',
       authenticate: 'Authenticate {{name}}',
+      initProgress: 'Connecting {{connected}}/{{total}}',
+    },
+    apiRetry: {
+      retrying: 'Retrying API request ({{attempt}}/{{max}})…',
+      retryingNoMax: 'Retrying API request ({{attempt}})…',
+      exhausted: 'API retries exhausted',
+      failed: 'API request failed',
+      tryAgain: 'Try Again',
     },
     slashCommand: {
       groupCommands: 'Slash commands',

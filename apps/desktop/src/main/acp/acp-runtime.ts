@@ -90,6 +90,11 @@ import {
   type GrokRewindPoint,
 } from './acp-xai-session-ops'
 import {
+  XAI_SESSION_USAGE,
+  XAI_UPDATE_MCP_SERVERS,
+  parseGrokSessionUsage,
+} from './acp-xai-mcp-status'
+import {
   XAI_EXT_NOTIFICATION_METHODS,
   XAI_SESSION_NOTIFICATION,
   XAI_SESSION_UPDATE,
@@ -226,6 +231,8 @@ export interface AcpRuntime {
     mode: GrokRewindMode
     force?: boolean
   }): Promise<GrokRewindExecuteResult>
+  updateMcpServers(servers: unknown[]): Promise<void>
+  getSessionUsage(): Promise<{ totalTokens: number; inputTokens: number; outputTokens: number } | null>
 }
 
 export interface AcpRuntimeOptions {
@@ -243,6 +250,8 @@ export interface AcpRuntimeOptions {
     text: string
     interjectionId?: string
   }) => void
+  /** Grok MCP liveness / models/update ext notifications. */
+  onMcpExt?: (method: string, params: Record<string, unknown>) => void
   /** Inject stream (in-process agent) instead of spawning a process. */
   streamFactory?: (launch: ResolvedAcpLaunch) => Promise<{ stream: Stream; dispose: () => void }>
   /** Called as soon as a model catalog is known (e.g. after initialize, before session/new). */
@@ -465,6 +474,17 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       if (bare === XAI_SESSION_INTERJECTION) {
         const payload = parseGrokSessionInterjection(ctx.params)
         if (payload) opts.onSessionInterjection?.(payload)
+        return
+      }
+      if (
+        bare === 'x.ai/mcp/server_status'
+        || bare === 'x.ai/mcp/init_progress'
+        || bare === 'x.ai/mcp/tools_changed'
+        || bare === 'x.ai/mcp_initialized'
+        || bare === 'x.ai/mcp/servers_updated'
+        || bare === 'x.ai/models/update'
+      ) {
+        opts.onMcpExt?.(bare, ctx.params)
         return
       }
       const events = mapXaiStandaloneNotification(
@@ -1411,6 +1431,22 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         mode: input.mode,
       })
       return parseGrokRewindExecute(raw)
+    },
+    async updateMcpServers(servers) {
+      await activeConnection.agent.request(xaiExtWireMethod(XAI_UPDATE_MCP_SERVERS), {
+        sessionId: activeSession.sessionId,
+        mcpServers: servers,
+      })
+    },
+    async getSessionUsage() {
+      try {
+        const raw = await activeConnection.agent.request(xaiExtWireMethod(XAI_SESSION_USAGE), {
+          sessionId: activeSession.sessionId,
+        })
+        return parseGrokSessionUsage(raw)
+      } catch {
+        return null
+      }
     },
     async close() {
       pumping = false

@@ -7,8 +7,11 @@ import type { McpServerInfo } from '@superone/shared/agent-types'
 vi.mock('@/stores/chat', () => {
   const state = {
     activeProject: '/project',
-    sessionProvider: null as 'claude' | 'codex' | 'opencode' | null,
-    preferredProvider: 'claude' as 'claude' | 'codex' | 'opencode',
+    sessionProvider: null as 'claude' | 'codex' | 'opencode' | 'acp' | null,
+    preferredProvider: 'claude' as 'claude' | 'codex' | 'opencode' | 'acp',
+    acpAgentId: null as string | null,
+    mcpServers: [] as Array<{ name: string; status: string }>,
+    mcpInitProgress: null as { connected: number; total: number } | null,
   }
   return {
     useChatStore: (selector: (s: typeof state) => unknown) => selector(state),
@@ -52,7 +55,14 @@ function mockWindow(agentStatus: McpServerInfo[], probeStatus: McpServerInfo[]) 
 
 describe('McpSlashPopup', () => {
   beforeEach(() => {
-    setChat({ activeProject: '/project', sessionProvider: null, preferredProvider: 'claude' })
+    setChat({
+      activeProject: '/project',
+      sessionProvider: null,
+      preferredProvider: 'claude',
+      acpAgentId: null,
+      mcpServers: [],
+      mcpInitProgress: null,
+    })
     navigateToMock.mockClear()
     setSettingsTabMock.mockClear()
     setSettingsProviderMock.mockClear()
@@ -241,5 +251,30 @@ describe('McpSlashPopup', () => {
     expect(await screen.findByText('context7')).toBeInTheDocument()
     expect((window as unknown as { app: { checkMcpServers: ReturnType<typeof vi.fn> } }).app.checkMcpServers)
       .toHaveBeenCalledWith('/project', 'claude')
+  })
+
+  it('shows the Grok live badge for an ACP Grok session', async () => {
+    setChat({ sessionProvider: 'acp', preferredProvider: 'acp', acpAgentId: 'grok-build' })
+    mockWindow([{ name: 'github', status: 'connected', toolCount: 2 }], [])
+
+    render(<McpSlashPopup onClose={vi.fn()} />)
+
+    expect(await screen.findByText(/Live · Grok session/)).toBeInTheDocument()
+  })
+
+  it('renders live Grok MCP status from the session store without waiting on probe', async () => {
+    setChat({
+      sessionProvider: 'acp',
+      preferredProvider: 'acp',
+      acpAgentId: 'grok-build',
+      mcpServers: [{ name: 'linear', status: 'connected' }],
+      mcpInitProgress: { connected: 1, total: 3 },
+    })
+    mockWindow([], [])
+
+    render(<McpSlashPopup onClose={vi.fn()} />)
+
+    expect(await screen.findByText('linear')).toBeInTheDocument()
+    expect(screen.getByText(/Connecting 1\/3/)).toBeInTheDocument()
   })
 })

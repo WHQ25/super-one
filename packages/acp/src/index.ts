@@ -51,6 +51,13 @@ export {
   type MapXaiNotifyContext,
 } from './xai-event-map'
 export {
+  formatGrokElicitOutcome,
+  formatGrokScheduledTaskPrompt,
+  grokElicitToPendingInteraction,
+  parseGrokElicitComplete,
+  parseGrokScheduledInject,
+} from './xai-elicit'
+export {
   XAI_EXT_NOTIFICATION_METHODS,
   XAI_FOLLOW_UPS,
   XAI_MONITOR_EVENT,

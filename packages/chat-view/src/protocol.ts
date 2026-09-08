@@ -7,6 +7,7 @@ export interface ProjectedApiRetry {
   maxRetries?: number
   delayMs: number
   message?: string
+  phase?: 'retrying' | 'exhausted' | 'failed'
 }
 
 /**

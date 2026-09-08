@@ -21,8 +21,17 @@ import { spawnAcpProcess, type AcpLaunch } from './process'
 import {
   XAI_EXT_NOTIFICATION_METHODS,
   XAI_MCP_ELICIT,
+  XAI_MCP_ELICIT_COMPLETE,
+  XAI_SCHEDULED_TASK_INJECT_PROMPT,
   parseXaiExtParams,
 } from './xai-state'
+import {
+  formatGrokElicitOutcome,
+  formatGrokScheduledTaskPrompt,
+  grokElicitToPendingInteraction,
+  parseGrokElicitComplete,
+  parseGrokScheduledInject,
+} from './xai-elicit'
 
 export interface RunAcpTurnOptions {
   /** Agent launch (command required for real turns). */
@@ -101,10 +110,31 @@ export function createAcpAgentTurnRunner(opts: RunAcpTurnOptions = {}): TurnRunn
       // ClientApp.connect → ClientConnection with `.agent` (ClientContext).
       // Do not call initialize/newSession/prompt on the connection root — those
       // are deprecated ClientSideConnection shapes and are not on ClientConnection.
-      const cancelElicit = async () => ({ outcome: 'cancel' as const })
+      let elicitResolve: ((value: { outcome: 'accept' | 'cancel' }) => void) | null = null
+      let elicitId: string | undefined
+      const pendingInjects: string[] = []
+      const handleElicit = async (ctx: { params: unknown }) => {
+        const parsed = grokElicitToPendingInteraction(ctx.params)
+        if (!parsed || !input.onPermission) return { outcome: 'cancel' as const }
+        return new Promise<{ outcome: 'accept' | 'cancel' }>((resolve) => {
+          elicitResolve = resolve
+          elicitId = parsed.elicitationId
+          void input.onPermission!(parsed.interaction).then((decision) => {
+            if (elicitResolve !== resolve) return
+            elicitResolve = null
+            elicitId = undefined
+            resolve(formatGrokElicitOutcome(decision === 'allow'))
+          }).catch(() => {
+            if (elicitResolve !== resolve) return
+            elicitResolve = null
+            elicitId = undefined
+            resolve({ outcome: 'cancel' })
+          })
+        })
+      }
       let clientBuilder = client({ name: opts.clientName ?? 'superone-node' })
-        .onRequest(XAI_MCP_ELICIT, (raw: unknown) => raw, cancelElicit)
-        .onRequest(`_${XAI_MCP_ELICIT}`, (raw: unknown) => raw, cancelElicit)
+        .onRequest(XAI_MCP_ELICIT, (raw: unknown) => raw, handleElicit)
+        .onRequest(`_${XAI_MCP_ELICIT}`, (raw: unknown) => raw, handleElicit)
         .onRequest(methods.client.session.requestPermission, async (ctx) => {
           const mapped = mapPermissionRequest(ctx.params)
           pendingOptions = mapped.options
@@ -128,6 +158,27 @@ export function createAcpAgentTurnRunner(opts: RunAcpTurnOptions = {}): TurnRunn
           registeredMethod,
           parseXaiExtParams,
           async (ctx) => {
+            const bare = registeredMethod.replace(/^_/, '')
+            if (bare === XAI_MCP_ELICIT_COMPLETE) {
+              const done = parseGrokElicitComplete(ctx.params)
+              if (done && elicitResolve && (!elicitId || elicitId === done.elicitationId)) {
+                elicitResolve({ outcome: 'cancel' })
+                elicitResolve = null
+                elicitId = undefined
+              }
+              return
+            }
+            if (bare === XAI_SCHEDULED_TASK_INJECT_PROMPT) {
+              const inject = parseGrokScheduledInject(ctx.params)
+              if (inject) {
+                pendingInjects.push(formatGrokScheduledTaskPrompt(
+                  inject.prompt,
+                  inject.taskId,
+                  inject.humanSchedule,
+                ))
+              }
+              return
+            }
             if (agentEventMapper) {
               agentEventMapper.applyXaiNotification(registeredMethod, ctx.params)
             } else if (input.onAgentEvent) {
@@ -212,6 +263,10 @@ export function createAcpAgentTurnRunner(opts: RunAcpTurnOptions = {}): TurnRunn
         const promptResult = await promptPromise
         stopReason = String(promptResult.stopReason ?? stopReason)
         if (input.signal.aborted) throw new Error('ACP turn interrupted')
+        for (const inject of pendingInjects) {
+          if (input.signal.aborted) break
+          await active.prompt(inject)
+        }
         agentEventMapper?.complete(stopReason)
         if (!agentEventMapper) input.onEvent?.({ kind: 'status', status: 'idle' })
       } catch (error) {

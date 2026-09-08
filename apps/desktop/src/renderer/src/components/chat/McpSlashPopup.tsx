@@ -7,6 +7,8 @@ import { useActiveSession, useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import type { McpServerInfo, McpServerMeta } from '@superone/shared/agent-types'
 import type { McpbInstalledEntry } from '@superone/shared/mcpb-types'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
+import { acpAgentDisplayName, isGrokAcpAgent } from '@superone/shared/acp-brand'
 
 function ServerIcon({ name, meta, bundle }: { name: string; meta?: McpServerMeta; bundle?: McpbInstalledEntry }) {
   const src = meta?.icons?.[0]?.src ?? bundle?.iconDataUrl
@@ -63,6 +65,9 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation()
   const activeProject = useChatStore((s) => s.activeProject)
   const harness = useActiveSession((s) => s.sessionProvider ?? s.preferredProvider)
+  const acpAgentId = useActiveSession((s) => s.acpAgentId)
+  const liveFromStore = useActiveSession((s) => s.mcpServers)
+  const initProgress = useActiveSession((s) => s.mcpInitProgress)
   const navigateTo = useAppStore((s) => s.navigateTo)
   const setSettingsTab = useAppStore((s) => s.setSettingsTab)
   const setSettingsProvider = useAppStore((s) => s.setSettingsProvider)
@@ -216,20 +221,34 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
     navigateTo('settings')
   }, [onClose, setSettingsProvider, setSettingsTab, navigateTo, harness])
 
-  const banner = useMemo(() => {
-    if (state.loading) return ''
-    if (state.error) return state.error
-    if (state.mode === 'live') {
-      const harnessLabel = harness === 'codex' ? 'Codex' : harness === 'opencode' ? 'OpenCode' : 'Claude'
-      return t('chat.mcpPopup.liveBadge', { harness: harnessLabel })
+  const harnessLabel = useMemo(() => {
+    if (harness === 'acp') {
+      if (isGrokAcpAgent(acpAgentId)) return 'Grok'
+      return acpAgentId ? acpAgentDisplayName(acpAgentId) : HARNESS_CAPABILITIES.acp.displayName
     }
-    if (state.mode === 'probe') return t('chat.mcpPopup.probeBadge')
+    return HARNESS_CAPABILITIES[harness]?.displayName ?? 'Claude'
+  }, [harness, acpAgentId])
+
+  const servers = liveFromStore.length > 0 ? liveFromStore : state.servers
+  const mode: Mode = liveFromStore.length > 0 ? 'live' : state.mode
+
+  const banner = useMemo(() => {
+    if (state.loading && liveFromStore.length === 0) return ''
+    if (state.error) return state.error
+    if (initProgress && initProgress.total > 0 && initProgress.connected < initProgress.total) {
+      return t('chat.mcpPopup.initProgress', {
+        connected: initProgress.connected,
+        total: initProgress.total,
+      })
+    }
+    if (mode === 'live') return t('chat.mcpPopup.liveBadge', { harness: harnessLabel })
+    if (mode === 'probe') return t('chat.mcpPopup.probeBadge')
     return t('chat.mcpPopup.noActiveSession')
-  }, [state.mode, state.loading, state.error, harness, t])
+  }, [state.loading, state.error, mode, harnessLabel, t, liveFromStore.length, initProgress])
 
   const bannerTone = state.error
     ? 'text-error'
-    : state.mode === 'live'
+    : mode === 'live'
     ? 'text-success'
     : 'text-muted-foreground'
 
@@ -275,25 +294,25 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-1">
-        {state.loading ? (
+        {state.loading && servers.length === 0 ? (
           <div className="flex items-center justify-center gap-2 px-3 py-6 text-xs text-muted-foreground">
             <RefreshCw className="size-3.5 animate-spin" />
             <span>{t('common.loading')}</span>
           </div>
-        ) : state.servers.length === 0 ? (
+        ) : servers.length === 0 ? (
           <div className="px-3 py-6 text-center">
             <p className="text-xs text-muted-foreground">{t('chat.mcpPopup.empty')}</p>
             <p className="mt-1 text-xs text-muted-foreground/70">{t('chat.mcpPopup.emptyHint')}</p>
           </div>
         ) : (
-          state.servers.map((server) => {
+          servers.map((server) => {
             const isExpanded = expanded.has(server.name)
             const tools = server.tools ?? []
-            const probe = state.mode === 'probe'
+            const probe = mode === 'probe'
             const isError = server.status === 'failed' || server.status === 'needs-auth'
             const hasErrorDetail = isError && !!server.error
             const canExpand = tools.length > 0 || hasErrorDetail
-            const canAuthenticate = state.mode === 'live'
+            const canAuthenticate = mode === 'live'
               && harness === 'opencode'
               && server.status === 'needs-auth'
             const isAuthenticating = authenticatingServer === server.name

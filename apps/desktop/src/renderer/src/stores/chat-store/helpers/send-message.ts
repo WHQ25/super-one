@@ -1126,10 +1126,11 @@ export async function sendMessageImpl(
     }
   }
 
-  // Host-only `/workflows` for Grok/ACP (same popup as Claude; never a prompt turn).
-  if (effectiveProvider === 'acp' && /^\/workflows$/.test(rawContent)) {
+  // Host-only `/workflows` and `/mcp` for Grok/ACP (same popups as Claude; never a prompt turn).
+  if (effectiveProvider === 'acp' && /^\/(workflows|mcp)$/.test(rawContent)) {
+    const name = rawContent.slice(1) as 'workflows' | 'mcp'
     patchSession(() => ({ _pendingSlashCommand: '' }))
-    await CLAUDE_INTERCEPTED_COMMANDS.workflows!()
+    await CLAUDE_INTERCEPTED_COMMANDS[name]!()
     return
   }
 

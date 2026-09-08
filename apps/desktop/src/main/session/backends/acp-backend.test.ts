@@ -870,6 +870,44 @@ describe('AcpBackend', () => {
     await backend.close()
   })
 
+  it('emits elicitation_complete and clears a URL elicit on grok complete', async () => {
+    let parked!: () => void
+    const gate = new Promise<void>((r) => { parked = r })
+    let captured: AcpRuntimeOptions | undefined
+    setAcpRuntimeFactory(async (opts) => {
+      captured = opts
+      return mockRuntime({
+        prompt: async () => {
+          const pending = opts.mcpElicit!.request({
+            toolCallId: 'elicit-url',
+            serverName: 'github',
+            message: 'Sign in',
+            mode: 'url',
+            url: 'https://github.com/login',
+            elicitationId: 'e-url',
+          })
+          parked()
+          await pending
+        },
+      })
+    })
+
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    const events: AgentEvent[] = []
+    backend.onEvent((e) => events.push(e))
+    const sendP = backend.send({ content: 'elicit', assistantMessageId: 'a-url' })
+    await gate
+    const req = events.find((e) => e.type === 'permission_request')
+    expect(req?.type === 'permission_request' && req.request.elicitationUrl).toBe('https://github.com/login')
+    captured!.mcpElicit!.complete({ elicitationId: 'e-url', serverName: 'github' })
+    await sendP
+    expect(events.some((e) => e.type === 'elicitation_complete' && e.elicitationId === 'e-url')).toBe(true)
+    expect(events.some((e) => e.type === 'interaction_resolved' && e.requestId === 'elicit-url')).toBe(true)
+    expect(backend.getPendingInteractions()).toEqual([])
+    await backend.close()
+  })
+
   it('cancels a parked mcp/elicit on interrupt', async () => {
     let parked!: () => void
     const gate = new Promise<void>((r) => { parked = r })

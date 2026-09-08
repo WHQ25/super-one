@@ -37,7 +37,20 @@ describe('reduceSlash: prompt_suggestion', () => {
       type: 'prompt_suggestion',
       suggestion: 'hello world',
     } as Extract<AgentEvent, { type: 'prompt_suggestion' }>)
-    expect(patch).toEqual({ promptSuggestion: 'hello world' })
+    expect(patch).toEqual({ promptSuggestion: 'hello world', promptSuggestions: ['hello world'] })
+  })
+
+  it('keeps multiple follow-up chips on promptSuggestions', () => {
+    const session = createDefaultPerSessionState()
+    const patch = reduceSlash(session, {
+      type: 'prompt_suggestion',
+      suggestion: 'Run tests',
+      suggestions: ['Run tests', 'Open PR'],
+    } as Extract<AgentEvent, { type: 'prompt_suggestion' }>)
+    expect(patch).toEqual({
+      promptSuggestion: 'Run tests',
+      promptSuggestions: ['Run tests', 'Open PR'],
+    })
   })
 })
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Switch, View } from 'react-native'
+import { Linking, Switch, View } from 'react-native'
 import { Text } from '../ui/text'
 import { Bot, CalendarClock, FilePenLine, FileText, Globe, Monitor, Plug, Settings2, ShieldAlert, Smartphone, Terminal, Trash2, Video, type LucideIcon } from 'lucide-react-native'
 import type { HarnessId, RemoteSystemInfo, PermissionRequest } from '@superone/shared/agent-types'
@@ -60,6 +60,13 @@ export function PermissionSheet(props: {
     destructive={presentation.destructive}
     feedback={{ value: feedback, onChange: setFeedback }}
   >{allowRemember ? <PromptChoice multi label={t(presentation.alwaysLabel!)} selected={remember} onPress={() => setRemember(!remember)} /> : null}</PromptActions>}>
+    {perm.elicitationUrl ? (
+      <PromptPill
+        label={t('Open in browser')}
+        selected={false}
+        onPress={() => { void Linking.openURL(perm.elicitationUrl!) }}
+      />
+    ) : null}
     <PermissionContent request={perm} />
     <PermissionEditors key={perm.requestId} loadSystemInfo={props.loadSystemInfo} request={perm} onChange={setDraft} onValidity={(key, valid) => setInvalidFields((current) => ({ ...current, [key]: !valid }))} />
     {fields.map((field) => <View key={field.name} style={styles.tight}>

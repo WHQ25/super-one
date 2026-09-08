@@ -58,6 +58,18 @@ export const XAI_EXT_NOTIFICATION_METHODS = [
   `_${XAI_SETTINGS_UPDATE}`,
   XAI_SESSION_INTERJECTION,
   `_${XAI_SESSION_INTERJECTION}`,
+  'x.ai/mcp/server_status',
+  '_x.ai/mcp/server_status',
+  'x.ai/mcp/init_progress',
+  '_x.ai/mcp/init_progress',
+  'x.ai/mcp/tools_changed',
+  '_x.ai/mcp/tools_changed',
+  'x.ai/mcp_initialized',
+  '_x.ai/mcp_initialized',
+  'x.ai/mcp/servers_updated',
+  '_x.ai/mcp/servers_updated',
+  'x.ai/models/update',
+  '_x.ai/models/update',
 ] as const
 
 // ── Correlation state ───────────────────────────────────────────────────────

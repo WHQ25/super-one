@@ -91,6 +91,7 @@ export function reduceUsage(
         apiRetry: {
           attempt: event.attempt,
           delayMs: event.delayMs,
+          phase: event.phase ?? 'retrying',
           ...(event.maxRetries === undefined ? {} : { maxRetries: event.maxRetries }),
           ...(event.message === undefined ? {} : { message: event.message }),
         },

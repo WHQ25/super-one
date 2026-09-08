@@ -1170,6 +1170,7 @@ function mapRetryState(u: Record<string, unknown>): AgentEvent[] {
     return [{
       type: 'api_retry',
       attempt,
+      phase: 'retrying',
       ...(maxRetries != null ? { maxRetries } : {}),
       delayMs: 0,
       ...(reason ? { message: reason } : {}),
@@ -1190,6 +1191,7 @@ function mapRetryState(u: Record<string, unknown>): AgentEvent[] {
       type: 'api_retry',
       attempt: attempts,
       delayMs: 0,
+      phase: 'exhausted',
       message: reason ?? 'retries exhausted',
     }]
   }
@@ -1199,6 +1201,7 @@ function mapRetryState(u: Record<string, unknown>): AgentEvent[] {
       type: 'api_retry',
       attempt: 0,
       delayMs: 0,
+      phase: 'failed',
       message,
     }]
   }
@@ -1226,6 +1229,7 @@ function mapAutoRecoveryExhausted(u: Record<string, unknown>): AgentEvent[] {
     type: 'api_retry',
     attempt: attempts,
     delayMs: 0,
+    phase: 'exhausted',
     message: error ?? 'auto-recovery exhausted',
   }]
 }
@@ -1239,20 +1243,18 @@ function mapFollowUps(u: Record<string, unknown>): AgentEvent[] {
   if (!responseId || responseId.length > 128) return []
 
   const suggestions = arrField(u, 'suggestions') ?? []
-  const events: AgentEvent[] = []
-  let count = 0
+  const labels: string[] = []
   for (const s of suggestions) {
-    if (count >= 6) break
+    if (labels.length >= 6) break
     const rec = asRecord(s)
     const label = (rec ? strField(rec, 'label') : typeof s === 'string' ? s : undefined)?.trim()
     if (!label) continue
-    // Strip control chars lightly
     const cleaned = label.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 256).trim()
     if (!cleaned) continue
-    events.push({ type: 'prompt_suggestion', suggestion: cleaned })
-    count += 1
+    labels.push(cleaned)
   }
-  return events
+  if (labels.length === 0) return []
+  return [{ type: 'prompt_suggestion', suggestion: labels[0]!, suggestions: labels }]
 }
 
 function toEffortLevel(v: string | undefined): EffortLevel | undefined {

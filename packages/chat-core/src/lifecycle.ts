@@ -76,6 +76,8 @@ export function reduceLifecycle(
       return {
         messages: nextMessages,
         promptSuggestion: null,
+        promptSuggestions: [],
+        apiRetry: null,
         awaitingAssistantReply: false,
         lastEventAt: ports.now(),
         ...(event.message.role === 'assistant'
@@ -172,7 +174,9 @@ export function reduceLifecycle(
       // above the reply it is waiting on. Consume is the source of truth.
       return {
         status: event.status,
-        ...(event.status === 'idle' ? { apiRetry: null } : {}),
+        ...(event.status === 'idle' && session.apiRetry?.phase !== 'exhausted' && session.apiRetry?.phase !== 'failed'
+          ? { apiRetry: null }
+          : {}),
         // Terminal state of an undeclared wire message can go missing; clearing on
         // any turn end guarantees the running indicator cannot get stranded.
         ...(event.status !== 'streaming' ? { runningSlashCommand: null } : {}),

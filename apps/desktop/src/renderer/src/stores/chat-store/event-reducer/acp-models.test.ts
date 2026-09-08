@@ -148,7 +148,7 @@ describe('applyEventToSession: acp_models', () => {
     expect(patch.selectedModel).toBeUndefined()
   })
 
-  it('resets selection when user-chosen model is no longer in catalog', () => {
+  it('keeps the current model and marks it when the catalog drops it', () => {
     const session = {
       ...createDefaultPerSessionState(),
       preferredProvider: 'acp' as const,
@@ -165,6 +165,7 @@ describe('applyEventToSession: acp_models', () => {
       configId: 'model',
       status: 'ready',
     })
-    expect(patch.selectedModel).toBe('opencode/big-pickle')
+    expect(patch.selectedModel).toBeUndefined()
+    expect(patch.acpModels?.some((m) => m.id === 'stale-model')).toBe(true)
   })
 })

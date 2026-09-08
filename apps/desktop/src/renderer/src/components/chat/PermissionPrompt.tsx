@@ -6,7 +6,8 @@ import { useChatStore, useActiveSession, selectClaudeModels, selectClaudeAccount
 import { useMiniAppStore } from '@/stores/miniapp'
 import { resolveMiniAppToolIdentity } from '@/lib/miniapp-tool-identity'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
-import { Circle, CheckCircle2, ChevronDown, ChevronUp, ShieldAlert, AlertTriangle } from 'lucide-react'
+import { Circle, CheckCircle2, ChevronDown, ChevronUp, ShieldAlert, AlertTriangle, ExternalLink, Copy, Loader2 } from 'lucide-react'
+import { requestOpenExternalLink } from '@/lib/external-link'
 import { ToolIcon } from './ToolIcon'
 import { getToolDisplay, getToolLabel, parseMcpToolName } from './tool-display'
 import { deviceToolVerbKey } from './device-tool-display'
@@ -156,6 +157,9 @@ export function PermissionPrompt() {
     || isSessionCleanupConfirm
     || isAutomationConfirm
   const elicitationForm = pendingPermission?.elicitationForm ?? []
+  const elicitationUrl = pendingPermission?.elicitationUrl
+  const [urlOpened, setUrlOpened] = useState(false)
+  useEffect(() => { setUrlOpened(false) }, [requestId])
   const supportsAlwaysPersist = pendingPermission?.supportsAlwaysPersist ?? false
   useRestoreChatInputFocus(!!requestId)
   const promptConfig = getPermissionPromptConfig(
@@ -288,6 +292,17 @@ export function PermissionPrompt() {
     if (!requestId) return
     respondToPermission(requestId, false)
   }, [requestId, respondToPermission])
+
+  const openElicitationUrl = useCallback(() => {
+    if (!elicitationUrl) return
+    requestOpenExternalLink(elicitationUrl)
+    setUrlOpened(true)
+  }, [elicitationUrl])
+
+  const copyElicitationUrl = useCallback(() => {
+    if (!elicitationUrl) return
+    void navigator.clipboard?.writeText(elicitationUrl)
+  }, [elicitationUrl])
 
   useEffect(() => {
     // VideoGenConfirmPrompt has its own window keydown listener (Tab/Enter/Escape).
@@ -451,6 +466,7 @@ export function PermissionPrompt() {
         ? 'text-amber-500'
         : 'text-muted-foreground'
     const formValid = isElicitationFormValid(elicitationForm, formValues)
+    const isUrlElicit = Boolean(elicitationUrl)
 
     return (
       <div className="mx-3 mb-2">
@@ -460,8 +476,12 @@ export function PermissionPrompt() {
             onClick={() => setIsCollapsed(false)}
             className="flex w-full cursor-pointer items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-accent"
           >
-            <AlertTriangle className={`size-3.5 shrink-0 ${riskColor}`} />
-            <span className="min-w-0 flex-1 truncate text-xs text-foreground">{message}</span>
+            {isUrlElicit && urlOpened
+              ? <Loader2 className={`size-3.5 shrink-0 animate-spin ${riskColor}`} />
+              : <AlertTriangle className={`size-3.5 shrink-0 ${riskColor}`} />}
+            <span className="min-w-0 flex-1 truncate text-xs text-foreground">
+              {isUrlElicit && urlOpened ? t('chat.permission.waitingElicitation') : message}
+            </span>
             <ChevronUp className="size-3.5 shrink-0 text-muted-foreground" />
           </button>
         ) : (
@@ -472,35 +492,65 @@ export function PermissionPrompt() {
               className="group mb-2 flex w-full cursor-pointer items-start justify-between gap-2 text-left"
             >
               <div className="flex items-start gap-1.5">
-                <AlertTriangle className={`mt-0.5 size-3.5 shrink-0 ${riskColor}`} />
+                {isUrlElicit && urlOpened
+                  ? <Loader2 className={`mt-0.5 size-3.5 shrink-0 animate-spin ${riskColor}`} />
+                  : <AlertTriangle className={`mt-0.5 size-3.5 shrink-0 ${riskColor}`} />}
                 <div className="min-w-0">
-                  <div className="text-xs font-medium text-foreground">{message}</div>
-                  {subtitle && (
+                  <div className="text-xs font-medium text-foreground">
+                    {isUrlElicit && urlOpened ? t('chat.permission.waitingElicitation') : message}
+                  </div>
+                  {isUrlElicit && urlOpened ? (
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                      {t('chat.permission.waitingElicitationHint')}
+                    </p>
+                  ) : subtitle ? (
                     <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{subtitle}</p>
-                  )}
+                  ) : null}
                 </div>
               </div>
               <ChevronDown className="size-3.5 shrink-0 text-muted-foreground group-hover:text-foreground" />
             </button>
-            {elicitationForm.length > 0 && (
-              <ElicitationForm fields={elicitationForm} value={formValues} onChange={setFormValues} />
-            )}
-            <div className="grid grid-cols-2 gap-2 @xl:grid-cols-4">
-              <PermissionActionButton tone="approve" disabled={!formValid} onClick={handleAllow}>
-                {t('chat.permission.allow')}
-              </PermissionActionButton>
-              {supportsAlwaysPersist && (
-                <PermissionActionButton tone="primary" disabled={!formValid} onClick={handleElicitationAlwaysAllow}>
-                  {t('chat.permission.alwaysAllow')}
+            {isUrlElicit ? (
+              <div className="grid grid-cols-2 gap-2 @xl:grid-cols-3">
+                <PermissionActionButton tone="approve" onClick={openElicitationUrl}>
+                  <span className="inline-flex items-center gap-1">
+                    <ExternalLink className="size-3" />
+                    {urlOpened ? t('chat.permission.reopenUrl') : t('chat.permission.openUrl')}
+                  </span>
                 </PermissionActionButton>
-              )}
-              <PermissionActionButton tone="reject" onClick={handleElicitationDecline}>
-                {t('chat.permission.decline')}
-              </PermissionActionButton>
-              <PermissionActionButton tone="neutral" onClick={handleCancel}>
-                {t('common.cancel')}
-              </PermissionActionButton>
-            </div>
+                <PermissionActionButton tone="neutral" onClick={copyElicitationUrl}>
+                  <span className="inline-flex items-center gap-1">
+                    <Copy className="size-3" />
+                    {t('chat.permission.copyUrl')}
+                  </span>
+                </PermissionActionButton>
+                <PermissionActionButton tone="reject" onClick={handleCancel}>
+                  {t('common.cancel')}
+                </PermissionActionButton>
+              </div>
+            ) : (
+              <>
+                {elicitationForm.length > 0 && (
+                  <ElicitationForm fields={elicitationForm} value={formValues} onChange={setFormValues} />
+                )}
+                <div className="grid grid-cols-2 gap-2 @xl:grid-cols-4">
+                  <PermissionActionButton tone="approve" disabled={!formValid} onClick={handleAllow}>
+                    {t('chat.permission.allow')}
+                  </PermissionActionButton>
+                  {supportsAlwaysPersist && (
+                    <PermissionActionButton tone="primary" disabled={!formValid} onClick={handleElicitationAlwaysAllow}>
+                      {t('chat.permission.alwaysAllow')}
+                    </PermissionActionButton>
+                  )}
+                  <PermissionActionButton tone="reject" onClick={handleElicitationDecline}>
+                    {t('chat.permission.decline')}
+                  </PermissionActionButton>
+                  <PermissionActionButton tone="neutral" onClick={handleCancel}>
+                    {t('common.cancel')}
+                  </PermissionActionButton>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>

@@ -350,7 +350,8 @@ export function buildMcpElicitPermissionRequest(
     requestKind: 'mcp_elicitation',
     serverName: params.serverName,
     message: params.message,
-    ...(params.url ? { subtitle: params.url } : {}),
+    ...(params.url ? { subtitle: params.url, elicitationUrl: params.url } : {}),
+    ...(params.elicitationId ? { elicitationId: params.elicitationId } : {}),
     ...(elicitationForm.length > 0 ? { elicitationForm } : {}),
   }
 }

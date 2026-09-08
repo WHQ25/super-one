@@ -489,7 +489,18 @@ function ChatTranscript({
             {isCompacting && <CompactingIndicator startedAt={compactingStartedAt} />}
             {!isCompacting && compactError && <CompactErrorIndicator error={compactError} onDismiss={dismissCompactError} />}
             {isRecapping && <RecappingIndicator />}
-            {apiRetry && <ApiRetryIndicator info={apiRetry} />}
+            {apiRetry && (
+              <ApiRetryIndicator
+                info={apiRetry}
+                onRetry={() => {
+                  const lastUser = [...displayMessages].reverse().find((m) => m.role === 'user')
+                  const text = lastUser?.content.find((block) => block.type === 'text')
+                  if (text && text.type === 'text' && text.text.trim()) {
+                    void useChatStore.getState().sendMessage(text.text)
+                  }
+                }}
+              />
+            )}
           </SelectionContextMenuZone>
         </ScrollArea>
       )}

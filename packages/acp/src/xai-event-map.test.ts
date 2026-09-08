@@ -336,10 +336,11 @@ describe('ACP xAI AgentEvent mapping', () => {
     expect(mapXaiStandaloneNotification(XAI_FOLLOW_UPS, {
       response_id: 'response-1',
       suggestions: [{ label: ' Run tests ' }, { label: 'Open PR' }],
-    }, state)).toEqual([
-      { type: 'prompt_suggestion', suggestion: 'Run tests' },
-      { type: 'prompt_suggestion', suggestion: 'Open PR' },
-    ])
+    }, state)).toEqual([{
+      type: 'prompt_suggestion',
+      suggestion: 'Run tests',
+      suggestions: ['Run tests', 'Open PR'],
+    }])
   })
 
   it('accumulates response_started/completed into mid-turn message_usage', () => {
@@ -476,6 +477,7 @@ describe('ACP xAI AgentEvent mapping', () => {
       attempt: 2,
       maxRetries: 5,
       delayMs: 0,
+      phase: 'retrying',
       message: 'timeout',
     }])
   })

@@ -167,25 +167,29 @@ export function CompactIndicator({
 }) {
   const pillClass = 'inline-flex items-center whitespace-nowrap rounded bg-primary/15 px-1.5 py-px text-xs text-primary/80'
   return (
-    <div className="my-0.5 flex items-start gap-1.5 rounded bg-primary/10 px-2 py-1.5 text-xs">
-      <Minimize2 className="mt-0.5 size-3 shrink-0 text-primary" />
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1">
-        <span className="font-medium text-primary">Conversation compacted</span>
-        <span className={pillClass}>{trigger === 'auto' ? 'auto' : 'manual'}</span>
-        {preTokens > 0 && (
-          <span className={pillClass}>
-            {formatCompactTokens(preTokens)}
-            {postTokens !== undefined ? ` → ${formatCompactTokens(postTokens)}` : ''}
-          </span>
-        )}
-        {durationMs !== undefined && durationMs > 0 && (
-          <span className={pillClass}>{formatCompactDuration(durationMs)}</span>
-        )}
+    <div className="my-0.5 flex items-center gap-1.5 rounded bg-primary/10 px-2 py-1.5 text-xs">
+      <Minimize2 className="size-3 shrink-0 text-primary" />
+      <span className="shrink-0 font-medium text-primary">Conversation Compacted</span>
+      {/* The leftover slot between the title and the toggle owns the pills.
+          When it cannot hold them, drop the whole group rather than wrapping. */}
+      <div className="@container min-w-0 flex-1 overflow-hidden">
+        <div className="compact-indicator-meta">
+          <span className={pillClass}>{trigger === 'auto' ? 'auto' : 'manual'}</span>
+          {preTokens > 0 && (
+            <span className={pillClass}>
+              {formatCompactTokens(preTokens)}
+              {postTokens !== undefined ? ` → ${formatCompactTokens(postTokens)}` : ''}
+            </span>
+          )}
+          {durationMs !== undefined && durationMs > 0 && (
+            <span className={pillClass}>{formatCompactDuration(durationMs)}</span>
+          )}
+        </div>
       </div>
       {onToggle && (
-        <button onClick={onToggle} className="flex shrink-0 items-center gap-0.5 text-primary/60 transition-colors hover:text-primary">
-          <ChevronRight className={expanded ? 'size-3 -rotate-90' : 'size-3 rotate-90'} />
+        <button type="button" aria-expanded={expanded ?? false} onClick={onToggle} className="flex shrink-0 items-center gap-1 text-primary/60 transition-colors hover:text-primary">
           <span>{expanded ? 'Hide history' : 'Show history'}</span>
+          <ChevronRight aria-hidden className={expanded ? 'size-3 -rotate-90' : 'size-3 rotate-90'} />
         </button>
       )}
     </div>
@@ -236,30 +240,64 @@ export function CompactErrorIndicator({
 
 export function ApiRetryIndicator({
   info,
+  onRetry,
 }: {
-  info: { attempt: number; maxRetries?: number; delayMs: number; message?: string }
+  info: {
+    attempt: number
+    maxRetries?: number
+    delayMs: number
+    message?: string
+    phase?: 'retrying' | 'exhausted' | 'failed'
+  }
+  onRetry?: () => void
 }) {
+  const { t } = useTranslation()
+  const phase = info.phase ?? 'retrying'
+  const terminal = phase === 'exhausted' || phase === 'failed'
   const [remaining, setRemaining] = useState(info.delayMs)
   const startRef = useRef(Date.now())
   useEffect(() => {
     startRef.current = Date.now()
     setRemaining(info.delayMs)
-    if (info.delayMs <= 0) return
+    if (terminal || info.delayMs <= 0) return
     const id = setInterval(() => {
       const left = Math.max(0, info.delayMs - (Date.now() - startRef.current))
       setRemaining(left)
       if (left <= 0) clearInterval(id)
     }, 1000)
     return () => clearInterval(id)
-  }, [info.attempt, info.delayMs])
+  }, [info.attempt, info.delayMs, terminal])
   const seconds = Math.ceil(remaining / 1000)
+  const label = terminal
+    ? t(phase === 'exhausted' ? 'chat.apiRetry.exhausted' : 'chat.apiRetry.failed')
+    : info.maxRetries
+      ? t('chat.apiRetry.retrying', { attempt: info.attempt, max: info.maxRetries })
+      : t('chat.apiRetry.retryingNoMax', { attempt: info.attempt })
   return (
-    <div className="my-0.5 flex items-center gap-1.5 rounded bg-warning/10 px-2 py-1.5 text-xs">
-      <Loader2 className="size-3 shrink-0 animate-spin text-warning" />
-      <span className="font-medium text-warning" title={info.message}>
-        Retrying API request ({info.attempt}{info.maxRetries ? `/${info.maxRetries}` : ''})…{' '}
-        {seconds > 0 && <>{seconds}s</>}
+    <div className={terminal
+      ? 'my-0.5 flex items-center gap-1.5 rounded bg-error/10 px-2 py-1.5 text-xs'
+      : 'my-0.5 flex items-center gap-1.5 rounded bg-warning/10 px-2 py-1.5 text-xs'}
+    >
+      {terminal
+        ? <AlertTriangle className="size-3 shrink-0 text-error" />
+        : <Loader2 className="size-3 shrink-0 animate-spin text-warning" />}
+      <span
+        className={terminal ? 'min-w-0 truncate font-medium text-error' : 'min-w-0 truncate font-medium text-warning'}
+        title={info.message}
+      >
+        {label}
+        {info.message ? ` — ${info.message}` : ''}
+        {!terminal && seconds > 0 && <> {seconds}s</>}
       </span>
+      {terminal && onRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="ml-auto shrink-0 text-error/80 underline-offset-2 transition-colors hover:text-error hover:underline"
+        >
+          {t('chat.apiRetry.tryAgain')}
+        </button>
+      )}
     </div>
   )
 }

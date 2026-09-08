@@ -489,6 +489,20 @@ describe('sendMessageImpl: intercepted commands', () => {
     expect(getActiveSession('/proj').messages).toEqual([])
   })
 
+  it('routes ACP /mcp to openMcpPopup and skips IPC send', async () => {
+    seedProject('/proj', 'sid-grok-mcp', {
+      sessionProvider: 'acp',
+      preferredProvider: 'acp',
+      acpAgentId: 'grok-build',
+    })
+
+    await useChatStore.getState().sendMessage('/mcp')
+
+    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(getActiveSession('/proj').slashCommandOutput).toEqual({ command: 'mcp', content: '' })
+    expect(getActiveSession('/proj').messages).toEqual([])
+  })
+
   it('routes Cursor /clear through host intercept and skips IPC send', async () => {
     seedProject('/proj', 'sid-cursor', {
       sessionProvider: 'cursor',

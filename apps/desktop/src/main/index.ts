@@ -1,3 +1,4 @@
+import { registerCollaborationMailboxIpc } from './session/collaboration-mailbox-ipc'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, powerMonitor, protocol, screen, session, shell, systemPreferences, webContents } from 'electron'
 import { join, dirname, basename, resolve, extname, relative, isAbsolute, sep } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
@@ -1611,6 +1612,7 @@ function attachEnvironmentStatusBridge(host: EnvironmentHost): void {
 }
 
 function registerIpcHandlers(): void {
+  registerCollaborationMailboxIpc()
   // Local harness catalog (Settings → Harnesses). Register before createWindow
   // so continueToMain's needsHarnessAlign invoke cannot race a dynamic import.
   registerHarnessIpcHandlers()

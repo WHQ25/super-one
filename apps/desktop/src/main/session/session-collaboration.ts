@@ -1,3 +1,4 @@
+import { notifyCollaborationMailboxChanged, readCollaborationMailbox } from './collaboration-mailbox'
 import { createHash, randomBytes, randomUUID } from 'crypto'
 import { existsSync, realpathSync, statSync } from 'fs'
 import { homedir } from 'os'
@@ -37,8 +38,6 @@ import {
  * collaboration module.
  */
 export { listSessionAgentProfiles } from './agent-profiles'
-
-const MAX_MESSAGES_PER_RETRIEVE = 100
 
 /** Returned by the mailbox tools when either side tries to use a handoff credential. */
 const HANDOFF_NO_MAILBOX =
@@ -1369,6 +1368,7 @@ async function deliverLinkOpening(
       .run(grant.credential_hash)
   })
   insert()
+  notifyCollaborationMailboxChanged(recipientSessionId)
   const initiatorRow = getDb().prepare('SELECT title FROM sessions WHERE id = ?')
     .get(grant.parent_session_id) as { title: string | null } | undefined
   const initiatorTitle = initiatorRow?.title?.trim() || grant.parent_session_id.slice(0, 8)
@@ -1488,6 +1488,7 @@ export async function sendSessionMessage(
   })()
 
   if (!insert.reused) {
+    notifyCollaborationMailboxChanged(recipientSessionId)
     // Mailbox traffic is already visible via session_send / session_retrieve tool UI.
     // Do not also inject collab transcript bubbles (that doubled the UI).
     void wakeCollaborationPeer(host, recipientSessionId, args.credential)
@@ -1501,60 +1502,6 @@ export async function sendSessionMessage(
     to: peer,
     peerSessionId: recipientSessionId,
   })
-}
-
-function readMailbox(callerSessionId: string, grants: AuthorizedGrant[]) {
-  return getDb().transaction(() => {
-    const perGrantLimit = Math.max(1, Math.floor(MAX_MESSAGES_PER_RETRIEVE / grants.length))
-    const messages: Array<{
-      credential: string
-      messageId: string
-      sequence: number
-      fromSessionId: string
-      content: string
-      createdAt: string
-      from: { name: string; role: string; title: string; sessionId: string }
-    }> = []
-    for (const grant of grants) {
-      const cursor = getDb().prepare(`
-        SELECT last_sequence FROM session_collaboration_cursors
-        WHERE credential_hash = ? AND session_id = ?
-      `).get(grant.credential_hash, callerSessionId) as { last_sequence: number } | undefined
-      const rows = getDb().prepare(`
-        SELECT * FROM session_collaboration_messages
-        WHERE credential_hash = ? AND recipient_session_id = ? AND sequence > ?
-        ORDER BY sequence LIMIT ?
-      `).all(grant.credential_hash, callerSessionId, cursor?.last_sequence ?? 0, perGrantLimit) as MessageRow[]
-      if (rows.length === 0) continue
-      const lastSequence = rows[rows.length - 1].sequence
-      const now = new Date().toISOString()
-      getDb().prepare(`
-        INSERT INTO session_collaboration_cursors (credential_hash, session_id, last_sequence)
-        VALUES (?, ?, ?)
-        ON CONFLICT(credential_hash, session_id) DO UPDATE SET last_sequence = excluded.last_sequence
-      `).run(grant.credential_hash, callerSessionId, lastSequence)
-      getDb().prepare(`
-        UPDATE session_collaboration_messages SET delivered_at = COALESCE(delivered_at, ?)
-        WHERE credential_hash = ? AND recipient_session_id = ? AND sequence <= ?
-      `).run(now, grant.credential_hash, callerSessionId, lastSequence)
-      const peer = describePeerForCaller(grant, callerSessionId)
-      for (const row of rows) {
-        messages.push({
-          credential: grant.credential,
-          messageId: row.id,
-          sequence: row.sequence,
-          fromSessionId: row.sender_session_id,
-          content: row.content,
-          createdAt: row.created_at,
-          from: {
-            ...peer,
-            sessionId: peer.sessionId!,
-          },
-        })
-      }
-    }
-    return messages.sort((a, b) => a.createdAt.localeCompare(b.createdAt)).slice(0, MAX_MESSAGES_PER_RETRIEVE)
-  })()
 }
 
 export interface SessionRetrieveArgs {
@@ -1601,8 +1548,15 @@ export async function retrieveSessionMessages(
     ...describePeerForCaller(grant, callerSessionId),
   }))
 
-  const messages = readMailbox(callerSessionId, grants)
-  if (messages.length > 0) return toolResult({ status: 'messages', messages, peers })
+  const messages = readCollaborationMailbox(callerSessionId, grants.map((grant) => ({
+    credentialHash: grant.credential_hash,
+    credential: grant.credential,
+    peer: describePeerForCaller(grant, callerSessionId),
+  })))
+  if (messages.length > 0) {
+    notifyCollaborationMailboxChanged(callerSessionId)
+    return toolResult({ status: 'messages', messages, peers })
+  }
   // Static tool descriptions decay in long contexts; repeat the "stop waiting"
   // rule in the payload the agent reads at the exact moment it wants to re-poll.
   return toolResult({ status: 'empty', messages: [], peers, hint: EMPTY_MAILBOX_HINT })

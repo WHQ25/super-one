@@ -1,3 +1,4 @@
+import type { CollaborationMailboxAPI } from '@superone/shared/collaboration-mailbox'
 import type { ElectronAPI } from '@electron-toolkit/preload'
 import type { AppMetricsSnapshot } from '@superone/shared/agent-types'
 import type { ComputerUseDisplayInfo, ComputerUseViewfinderClaim, ComputerUseViewfinderFrame } from '@superone/shared/agent-types'
@@ -76,6 +77,7 @@ interface AgentAPI {
 }
 
 interface AppAPI {
+  collaborationMailbox: CollaborationMailboxAPI
   platform: NodeJS.Platform
   supportsLiquidGlass: boolean
   connectClaude(force?: boolean): Promise<ClaudeResources>

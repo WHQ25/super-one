@@ -1,3 +1,4 @@
+import { StatusBarMailbox } from './chat-status-bar/StatusBarMailbox'
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -701,6 +702,8 @@ export function ChatStatusBar() {
             </button>
           </>
         )}
+
+        <StatusBarMailbox sessionId={activeSessionId} />
 
         {hiddenPipTarget && (
           <>

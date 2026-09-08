@@ -1,3 +1,4 @@
+import { listUnreadCollaborationMessages, onCollaborationMailboxChanged } from './collaboration-mailbox'
 import Database from 'better-sqlite3'
 import { mkdirSync, mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
@@ -1020,6 +1021,33 @@ describe('@agent mention targets', () => {
       source: 'collaboration',
       collaboration: expect.objectContaining({ kind: 'initial_task' }),
     }))
+  })
+
+  it('shows unread mail without consuming it and removes mail retrieved by the agent', async () => {
+    const parent = fakeSession('parent')
+    const { host } = fakeHost(parent)
+    const [grant] = await approveLaunches(parent, host)
+    const started = resultJson(await startSessionAgent('parent', grant.credential, host))
+    const childId = started.sessionId as string
+    const changed = vi.fn()
+    const unsubscribe = onCollaborationMailboxChanged(changed)
+    try {
+      await sendSessionMessage('parent', { credential: grant.credential, content: 'First', clientMessageId: 'first' }, host)
+      await sendSessionMessage('parent', { credential: grant.credential, content: 'Second' }, host)
+      await sendSessionMessage('parent', { credential: grant.credential, content: 'First', clientMessageId: 'first' }, host)
+      const unread = listUnreadCollaborationMessages(childId)
+      expect(unread.map((message) => message.content)).toEqual(['First', 'Second'])
+      expect(listUnreadCollaborationMessages(childId)).toEqual(unread)
+      expect(listUnreadCollaborationMessages('parent')).toEqual([])
+      expect(JSON.stringify(unread)).not.toContain(grant.credential)
+      expect(changed).toHaveBeenCalledTimes(2)
+      await retrieveSessionMessages(childId, { credentials: [grant.credential] })
+      expect(listUnreadCollaborationMessages(childId)).toEqual([])
+      expect(changed).toHaveBeenLastCalledWith(childId)
+      expect(changed).toHaveBeenCalledTimes(3)
+    } finally {
+      unsubscribe()
+    }
   })
 
   it('wakes the recipient even while streaming without duplicating collab transcript bubbles', async () => {

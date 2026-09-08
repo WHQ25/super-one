@@ -3253,30 +3253,30 @@ describe('Session ownership', () => {
     expect(backend.sendCalls[0].source).toBe('task-notification')
   })
 
-  it('backend-inlined wake still appends a redacted transcript bubble', async () => {
+  it.each([
+    'A collaboration mailbox message is ready. Call session_collab_retrieve.',
+    'A user-approved collaboration link is active with SuperOne session peer.',
+  ])('backend-inlined mailbox wake stays out of the transcript: %s', async (prompt) => {
     const { session, backend } = makeSession()
-    const secret = 's1sc_abcdefghijklmnopqrstuvwxyz0123456789'
-    const prompt = `A collaboration mailbox message is ready. Call session_collab_retrieve with credential ${JSON.stringify(secret)} to receive it.`
-    // Claude SDK push / Codex steer: delivered by the backend, never via Session.send.
-    backend.injectTaskNotification = async () => 'sent-inline'
+    backend.injectTaskNotification = vi.fn(async () => 'sent-inline' as const)
     const events: import('@superone/shared/agent-types').AgentEvent[] = []
-    session.on((e) => events.push(e))
-
+    session.on((event) => events.push(event))
     await session.injectTaskNotification(prompt)
+    expect(backend.injectTaskNotification).toHaveBeenCalledWith(prompt)
+    expect(events.some((event) => event.type === 'user_message_appended')).toBe(false)
+    expect(session.snapshot.messages).toEqual([])
+  })
 
-    expect(backend.sendCalls).toHaveLength(0)
-    const userEvent = events.find((e) => e.type === 'user_message_appended')
-    expect(userEvent?.type).toBe('user_message_appended')
-    if (userEvent && userEvent.type === 'user_message_appended') {
-      const text = userEvent.message.content
-        .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
-        .map((b) => b.text)
-        .join('')
-      // The renderer keys the "inbox has messages" row off this exact pair.
-      expect(userEvent.message.metadata?.source).toBe('task-notification')
-      expect(text).toMatch(/collaboration mailbox message is ready/i)
-      expect(text).not.toContain('s1sc_')
-    }
+  it('keeps unrelated background notifications in the transcript', async () => {
+    const { session, backend } = makeSession()
+    backend.injectTaskNotification = async () => 'sent-inline'
+    await session.injectTaskNotification('The background download has completed.')
+    expect(session.snapshot.messages).toEqual([
+      expect.objectContaining({
+        role: 'user',
+        content: [{ type: 'text', text: 'The background download has completed.' }],
+      }),
+    ])
   })
 
   it('backend-deferred wake does not append a bubble (the later flush does)', async () => {
@@ -3291,7 +3291,7 @@ describe('Session ownership', () => {
     expect(events.some((e) => e.type === 'user_message_appended')).toBe(false)
   })
 
-  it('task-notification transcript redacts collaboration credential', async () => {
+  it('queued mailbox wake reaches the agent without entering the transcript', async () => {
     const { session, backend } = makeSession()
     const secret = 's1sc_abcdefghijklmnopqrstuvwxyz0123456789'
     const prompt = `A collaboration mailbox message is ready. Call session_collab_retrieve with credential ${JSON.stringify(secret)} to receive it.`
@@ -3306,17 +3306,8 @@ describe('Session ownership', () => {
     await sendPromise
     // Agent still receives full prompt
     expect(backend.sendCalls[0].content).toContain(secret)
-    const userEvent = events.find((e) => e.type === 'user_message_appended')
-    expect(userEvent?.type).toBe('user_message_appended')
-    if (userEvent && userEvent.type === 'user_message_appended') {
-      const text = userEvent.message.content
-        .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
-        .map((b) => b.text)
-        .join('')
-      expect(text).not.toContain(secret)
-      expect(text).not.toContain('s1sc_')
-      expect(userEvent.message.metadata?.source).toBe('task-notification')
-    }
+    expect(events.some((event) => event.type === 'user_message_appended')).toBe(false)
+    expect(session.snapshot.messages.filter((message) => message.role === 'user')).toEqual([])
   })
 
   it('concurrent ensureStarted shares one backend.start (notification + user send)', async () => {

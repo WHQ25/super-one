@@ -239,9 +239,9 @@ export type SendProviderOrigin = 'local' | 'remote' | 'host'
 /**
  * How a backend disposed of a host wake (collab mailbox, download settle, …).
  *
- * The distinction matters because only `Session.send` appends the redacted user
- * bubble that renders the "inbox has messages" row — a backend that delivers the
- * wake itself leaves the transcript empty unless Session mirrors it.
+ * The distinction matters because `Session.send` owns transcript entries for
+ * host wakes. Inline delivery needs Session to mirror that entry. Collaboration
+ * mailbox wakes are excluded; their UI lives in the status-bar inbox.
  *
  * - `sent-inline`  — pushed straight into the live provider stream (Claude SDK
  *   push, Codex `turn/steer`). Session never sees a send, so Session appends the

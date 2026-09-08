@@ -223,3 +223,9 @@ export function redactTaskNotificationForDisplay(content: string): string {
     .replace(/\s{2,}/g, ' ')
     .trim()
 }
+
+/** Mailbox wakes are model instructions; the status-bar inbox owns their human UI. */
+export function isCollaborationMailboxNotification(request: SendMessageRequest): boolean {
+  return request.source === 'task-notification'
+    && /^(?:A collaboration mailbox message is ready\.|A user-approved collaboration link is active with SuperOne session )/i.test(request.content.trim())
+}

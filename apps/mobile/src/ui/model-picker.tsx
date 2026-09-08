@@ -15,8 +15,7 @@ import { useMobileTheme } from '../theme/context'
 import { AnchoredMenu, MenuDisclosureRow, MenuRow, MenuSeparator, useMenuAnchor } from './anchored-menu'
 import { EffortSlider } from './effort-slider'
 import { FireText, RainbowText } from './effort-easter-egg'
-import { RotatingChevron } from './rotating-chevron'
-import { CHIP_HEIGHT, CHIP_HIT_SLOP } from './chip-metrics'
+import { CHIP_HEIGHT, CHIP_HIT_SLOP, chipTriggerBackground } from './chip-metrics'
 import { AgentSection, ModeSection, OptionsSection, ProviderSection, SectionLabel } from './model-picker-sections'
 import {
   effortEasterEgg,
@@ -109,7 +108,8 @@ export function ModelPicker(props: ModelPickerProps) {
       accessibilityState={{ disabled: props.disabled, expanded: !!menu.anchor }} onPress={() => { collapse(); menu.open() }}
       hitSlop={CHIP_HIT_SLOP}
       style={({ pressed }) => ({ minHeight: CHIP_HEIGHT, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: props.compact ? 6 : 12,
-        borderRadius: 8, opacity: props.disabled ? 0.45 : 1, backgroundColor: pressed ? colors.muted : 'transparent' })}>
+        borderRadius: 8, opacity: props.disabled ? 0.45 : 1,
+        backgroundColor: chipTriggerBackground({ pressed, open: !!menu.anchor }, colors.muted) })}>
       {/* The eggs are SVG painted over a measured text box, so a capped width
           clips their tail glyphs outright instead of ellipsising. Let the egg
           keep its natural width — the composer's chip row scrolls. */}
@@ -127,7 +127,6 @@ export function ModelPicker(props: ModelPickerProps) {
           </View>)}
         </View>
       </View>
-      <RotatingChevron open={!!menu.anchor} size={12} color={colors.mutedForeground} />
     </Pressable>
     {/* Title row: `Models` plus refresh and search, as on desktop. The harness or
         provider name used to sit here too, but the Provider section below already

@@ -6,8 +6,7 @@ import type { HarnessId } from '@superone/shared/agent-types'
 import { useMobileTheme } from '../theme/context'
 import { AnchoredMenu, MenuSeparator, useMenuAnchor } from './anchored-menu'
 import { orderedPermissionModes, permissionPresentation } from './permission-mode-data'
-import { CHIP_HEIGHT, CHIP_HIT_SLOP } from './chip-metrics'
-import { RotatingChevron } from './rotating-chevron'
+import { CHIP_HEIGHT, CHIP_HIT_SLOP, chipTriggerBackground } from './chip-metrics'
 
 export { permissionModeLabel } from './permission-mode-data'
 const icons: Record<string, LucideIcon> = { AlertTriangle, Bot, Eye, FastForward, ListTodo, Lock, MessageCircle, PenLine, Shield, ShieldCheck, ShieldOff, Unlock, Zap }
@@ -30,10 +29,10 @@ export function PermissionModeSelector({ harness, modes, value, onChange, disabl
       accessibilityState={{ disabled: disabled || !modes.length, expanded: !!menu.anchor }} onPress={menu.open}
       hitSlop={CHIP_HIT_SLOP}
       style={({ pressed }) => ({ minHeight: CHIP_HEIGHT, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 4,
-        borderRadius: 8, opacity: disabled ? 0.45 : 1, backgroundColor: pressed ? colors.muted : 'transparent' })}>
+        borderRadius: 8, opacity: disabled ? 0.45 : 1,
+        backgroundColor: chipTriggerBackground({ pressed, open: !!menu.anchor }, colors.muted) })}>
       <TriggerIcon color={tone(selected)} size={14} />
       <Text style={{ color: tone(selected), fontSize: 12 }}>{selected.label}</Text>
-      <RotatingChevron open={!!menu.anchor} color={tone(selected)} size={12} />
     </Pressable>
     <AnchoredMenu anchor={menu.anchor} title="Permission mode" onDismiss={menu.close} width={300}>
       {available.map((mode) => {

@@ -5,6 +5,7 @@ import { Text } from '../ui/text'
 import { Button } from '../ui/primitives'
 import { IconButton } from '../ui/icon-button'
 import { BrowsePage } from '../ui/browse-page'
+import { remotePathName } from '../shell-state'
 import { SCROLL_INDICATOR_GUTTER } from '../ui/scroll-gutter'
 import { useMobileTheme } from '../theme/context'
 
@@ -122,16 +123,24 @@ function DirRow({ dir, scope, busy, onRemove }: {
   busy: boolean
   onRemove: () => void
 }) {
-  const { tokens: { colors } } = useMobileTheme()
-  return <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingLeft: 12,
-    paddingRight: 4, minHeight: 44 }}>
-    <View style={{ width: 32, alignItems: 'center' }}>
-      <Folder size={16} color={colors.mutedForeground} />
+  const { tokens: { colors, radius } } = useMobileTheme()
+  return <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+    paddingLeft: 12, paddingRight: 4, paddingVertical: 6 }}>
+    <View style={{ flex: 1, minWidth: 0, gap: 4, paddingTop: 5 }}>
+      {/* The desktop popup's chip: the name is what a folder is recognised by,
+          and the border is what stops it running into the path under it.
+          `alignSelf` keeps it the width of its label rather than the row's. */}
+      <View style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4,
+        borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm,
+        backgroundColor: colors.muted, paddingHorizontal: 6, paddingVertical: 3 }}>
+        <Folder size={13} color={colors.primary} />
+        <Text style={{ fontSize: 13, fontWeight: '500', color: colors.foreground }}>{remotePathName(dir)}</Text>
+      </View>
+      {/* Wraps rather than truncating: two folders can share a name, and on a
+          phone the part that tells them apart is exactly the part an ellipsis
+          eats. The desktop can scroll this line sideways; a finger cannot. */}
+      <Text style={{ fontSize: 11, lineHeight: 15, fontFamily: 'Menlo', color: colors.mutedForeground }}>{dir}</Text>
     </View>
-    {/* The full path is what tells two folders of the same name apart, so it is
-        the line that matters; the name leads because it is what is scanned. */}
-    <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, fontSize: 14, fontFamily: 'Menlo',
-      color: colors.foreground }}>{dir}</Text>
     <IconButton icon={X} label={`Remove ${dir} from ${scope}`} chrome="plain" iconSize={16} disabled={busy}
       style={{ width: 40, height: 40 }} hitSlop={6} onPress={onRemove} />
   </View>

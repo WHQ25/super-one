@@ -18,7 +18,8 @@ function composer(overrides: Partial<ChatComposerProps> = {}) {
     attachments: [],
     permissionModes: ['default'],
     permissionMode: 'default',
-    additionalDirectories: [],
+    projectDirs: [],
+    sessionDirs: [],
     onManageDirectories: () => {},
     sandboxInfo: null,
     contextTokens: 0,
@@ -47,6 +48,14 @@ function composer(overrides: Partial<ChatComposerProps> = {}) {
     insets: { top: 47, left: 0, right: 0, bottom: 34 },
   }}><ChatComposer {...props} /></SafeAreaProvider>
 }
+
+test('the folder count rides in the status row, counting both scopes', async () => {
+  // The row it replaced showed only the project's folders, so one added to the
+  // session on the landing appeared nowhere and read as a failed write.
+  await renderWithTheme(composer({ projectDirs: ['/a'], sessionDirs: ['/b'] }))
+
+  expect(screen.getByLabelText('Additional folders: 2')).toBeTruthy()
+})
 
 test('with no panel open the command list has the slot', async () => {
   await renderWithTheme(composer({ draft: '/cl', slashHits: [command('clear')] }))

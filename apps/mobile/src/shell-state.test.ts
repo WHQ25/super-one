@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { directoryEntryAction, isWithinRemoteRoot, joinRemotePath, parentRemotePath, remoteBreadcrumbs, remoteBreadcrumbsWithin, resolveRemoteFilePath } from './shell-state'
+import { directoryEntryAction, isWithinRemoteRoot, joinRemotePath, parentRemotePath, remoteBreadcrumbs, remoteBreadcrumbsWithin, remotePathName, resolveRemoteFilePath } from './shell-state'
 
 describe('remote path navigation', () => {
   it('builds navigable breadcrumbs without escaping drive or share roots', () => {
@@ -15,6 +15,16 @@ describe('remote path navigation', () => {
     expect(parentRemotePath('/repo/src')).toBe('/repo')
     expect(parentRemotePath('/repo')).toBe('/')
     expect(parentRemotePath('/')).toBe('/')
+  })
+
+  it('names a folder by its last segment, and a root by itself', () => {
+    expect(remotePathName('/Users/dev/work/design-system')).toBe('design-system')
+    expect(remotePathName('/Users/dev/work/')).toBe('work')
+    expect(remotePathName('C:\\repo\\src')).toBe('src')
+    // A root has no last segment; an empty label would read as a broken row.
+    expect(remotePathName('/')).toBe('/')
+    expect(remotePathName('C:/')).toBe('C:/')
+    expect(remotePathName('//host/share')).toBe('//host/share')
   })
 
   it('resolves metadata paths relative to the active project', () => {

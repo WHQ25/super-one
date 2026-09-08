@@ -46,7 +46,8 @@ export function ChatScreen(props: {
   slashCatalogStatus: SlashCatalogStatus
   mentionRows: MentionRow[]
   attachments: ImageAttachment[]
-  additionalDirectories: string[]
+  projectDirs: string[]
+  sessionDirs: string[]
   queuedMessages: ChatMessage[]
   todos: Record<string, TodoItem>
   onCursorChange?: (selection: ComposerCursor) => void

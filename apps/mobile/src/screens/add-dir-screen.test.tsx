@@ -46,6 +46,22 @@ test('the overview opens on what the session already has, in both scopes', async
   expect(screen.getByText('/tmp/scratch')).toBeTruthy()
 })
 
+test('a folder is named by its chip and located by its path, as on the desktop', async () => {
+  await renderWithTheme(page())
+
+  expect(screen.getByText('design-system')).toBeTruthy()
+  expect(screen.getByText('/Users/dev/work/design-system')).toBeTruthy()
+})
+
+test('the path wraps rather than truncating — it is what tells two folders apart', async () => {
+  // A phone cannot scroll this line sideways the way the desktop popup does, so
+  // an ellipsis would eat exactly the segment that disambiguates.
+  const long = '/Users/dev/Developer/Projects/super-one/packages/shared/design-system'
+  await renderWithTheme(page({ projectDirs: [long] }))
+
+  expect(screen.getByText(long).props.numberOfLines).toBeUndefined()
+})
+
 test('an empty scope reads as a fact about it, not as a failure', async () => {
   await renderWithTheme(page())
 

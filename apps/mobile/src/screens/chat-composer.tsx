@@ -23,7 +23,7 @@ import { mentionBreadcrumbs } from '../mention-browse-state'
 import { isSessionMentionQuery } from '../session-mention'
 import type { MentionRow } from '../mention-rows'
 import { useMobileTheme } from '../theme/context'
-import { AdditionalDirsHint, ContextRing, IconButton, PermissionModeSelector, SandboxSelector } from '../ui'
+import { AdditionalDirsChip, ContextRing, IconButton, PermissionModeSelector, SandboxSelector } from '../ui'
 
 export type ComposerSelection = {
   model: string; models: ModelOption[]; effort: string; efforts: RemoteEffortOption[]
@@ -45,12 +45,13 @@ export type ChatComposerProps = {
   starting?: boolean
   permissionModes: string[]; permissionMode: string
   /**
-   * Folders to advertise above the composer. Desktop and Flutter both show these
-   * only while the session is still being configured, so the caller passes an
-   * empty list once it has started rather than this row deciding for itself.
+   * The folders the agent sees beyond the project root, by scope — a launch-time
+   * readout, so the caller empties them once the session is running rather than
+   * this row deciding for itself.
    */
-  additionalDirectories: string[]
-  /** Opens the panel that lists and edits them — the same one `/add-dir` opens. */
+  projectDirs: string[]
+  sessionDirs: string[]
+  /** Opens the page that lists and edits them — the same one `/add-dir` opens. */
   onManageDirectories: () => void
   /** Runtime fact from the host; `null` until it has reported one. */
   sandboxInfo: SandboxInfo | null
@@ -98,6 +99,8 @@ export function ChatComposer(props: ChatComposerProps) {
   // they overflow, so a long model name still scrolls from the left edge.
   const controls = <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled"
     style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1, alignItems: 'center', justifyContent: 'center' }}>
+    <AdditionalDirsChip projectDirs={props.projectDirs} sessionDirs={props.sessionDirs}
+      onManage={props.onManageDirectories} />
     {props.selection ? <>
       <ModelPicker {...props.selection} harness={props.provider} compact disabled={props.starting} />
     </> : null}
@@ -113,7 +116,6 @@ export function ChatComposer(props: ChatComposerProps) {
     disabled={props.starting || (!props.streaming && !props.draft.trim() && !props.attachments.length)}
     onPress={props.streaming ? props.onStop : props.onSend} />
   return <View style={{ paddingHorizontal: 12, paddingTop: 4, paddingBottom: bottomGap, gap: 4, backgroundColor: colors.background }}>
-    <AdditionalDirsHint dirs={props.additionalDirectories} onPress={props.onManageDirectories} />
     {!tablet ? <View testID="phone-composer-status" style={{ flexDirection: 'row', minHeight: 36 }}>{controls}</View> : null}
     {props.overlay ?? <>
       <SlashSuggestions matches={props.slashHits} status={props.slashCatalogStatus} onSelect={props.onSlash} onDismiss={props.onSlashDismiss} />

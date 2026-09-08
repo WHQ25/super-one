@@ -10,7 +10,7 @@ import {
 import { Text } from './text'
 import { useMobileTheme } from '../theme/context'
 import { AnchoredMenu, useMenuAnchor } from './anchored-menu'
-import { CHIP_HEIGHT, CHIP_HIT_SLOP } from './chip-metrics'
+import { CHIP_HEIGHT, CHIP_HIT_SLOP, chipTriggerBackground } from './chip-metrics'
 
 type Presentation = {
   label: string
@@ -71,7 +71,7 @@ export function SandboxSelector({ harness, sandboxInfo, permissionMode, onChange
     <Pressable ref={menu.ref} accessibilityRole="button" accessibilityLabel={`Sandbox: ${current.label}`}
       accessibilityState={{ expanded: !!menu.anchor }} onPress={menu.open} hitSlop={CHIP_HIT_SLOP}
       style={({ pressed }) => ({ minHeight: CHIP_HEIGHT, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center',
-        borderRadius: 8, backgroundColor: pressed ? colors.muted : 'transparent' })}>
+        borderRadius: 8, backgroundColor: chipTriggerBackground({ pressed, open: !!menu.anchor }, colors.muted) })}>
       <CurrentIcon color={colors[current.tone]} size={16} />
     </Pressable>
     <AnchoredMenu anchor={menu.anchor} title="Sandbox" onDismiss={menu.close} width={280}>

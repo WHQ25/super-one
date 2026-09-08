@@ -314,7 +314,8 @@ each other, so the chain only settles ties. Stacking them is how a command list
 came to be painted under the panel that command had just opened.
 
 **Additional working directories are a page, not a composer panel.** `/add-dir`
-and the folder chips both open the `add-dir` route (`screens/add-dir-screen.tsx`);
+and the status row's folder chip both open the `add-dir` route
+(`screens/add-dir-screen.tsx`);
 `/mcp`'s rule applies — the command clears its own line rather than being left in
 the draft. It is a **route** and not a width branch on purpose: `add-dir` is in
 `DETAIL_SCREENS`, so at 768 pt and up the shell keeps the session list beside it
@@ -341,6 +342,22 @@ that Add Project may create a missing folder while `add-dir` gates its confirm
 on `resolved.exists`, because the host only accepts a directory that is there.
 Back walks out of browsing before it leaves the page (`additionalDirs.canGoBack`),
 the way Add Project walks its own steps.
+
+What the session already has is reported by `AdditionalDirsChip`, which **leads
+the composer's status row** — a folder glyph and a count, with the names and full
+paths one tap away in its popover, because that row is already spending its width
+on a model name. It is a launch-time readout like the chip row it replaced: the
+caller empties both lists once the session is running rather than the chip
+learning what a session is, and it hides at zero, so `/add-dir` is the entry
+point until there is one. It reports **both scopes** — its predecessor showed
+only `workspaceDirs`, so a folder added to the *session* on the landing appeared
+nowhere and read as a failed write.
+
+**The status chips have no disclosure arrows.** Model and permission dropped
+theirs for the width; what says a chip opens a menu — and that its menu is the
+one showing — is `chipTriggerBackground` in `ui/chip-metrics.ts`, which lights
+the chip while `pressed || open`. Every menu chip in the row uses it, so a new
+one inherits the affordance instead of reintroducing a chevron.
 
 Both scopes are editable, matching the desktop popup's PROJECT / SESSION groups.
 Project writes go to `setProjectExtraDirs` and reach a live session because

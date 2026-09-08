@@ -21,6 +21,22 @@ export function parentRemotePath(path: string): string {
   return normalized.slice(0, slash)
 }
 
+/**
+ * The name a folder is known by — its last segment.
+ *
+ * Separator- and trailing-slash tolerant like the rest of this module, and it
+ * returns a root (`/`, `C:/`, `//host/share`) as itself: a root has no last
+ * segment, and an empty label reads as a rendering bug rather than as the root.
+ */
+export function remotePathName(path: string): string {
+  const normalized = normalizeRemotePath(path)
+  const parent = parentRemotePath(normalized)
+  // A root is its own parent and has no last segment, so it answers with its
+  // canonical spelling — `parentRemotePath` is what knows that `C:` is `C:/`.
+  if (normalizeRemotePath(parent) === normalized) return parent
+  return normalized.split('/').pop() || normalized
+}
+
 export function resolveRemoteFilePath(projectPath: string, filePath: string): string {
   const absolute = filePath.startsWith('/')
     || filePath.startsWith('\\\\')

@@ -250,7 +250,7 @@ test('22c renders a compaction marker as an indicator, not raw text', async ({ p
     type: 'hydrate',
     messages: [textMessage('c1', '__compact__:auto:123456:2000:4500', { providerId: 'system' })],
   })
-  await expect(page.getByText('Conversation compacted')).toBeVisible()
+  await expect(page.getByText('Conversation Compacted')).toBeVisible()
   await expect(page.getByText('__compact__')).toHaveCount(0)
 })
 

@@ -287,3 +287,17 @@
 .codex-turn > .turn-process {
   margin-bottom: 0.25rem;
 }
+
+/* Compact indicator pills live in the leftover slot between the title and the
+   history toggle. Hide the whole group when that slot cannot hold them. */
+.compact-indicator-meta {
+  display: none;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+@container (min-width: 160px) {
+  .compact-indicator-meta {
+    display: flex;
+  }
+}

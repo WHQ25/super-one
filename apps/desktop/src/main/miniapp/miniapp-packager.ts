@@ -1,3 +1,4 @@
+import { superoneHome } from '../superone-home'
 import { createHash } from 'crypto'
 import { createWriteStream } from 'fs'
 import { readdir, readFile, writeFile, rm, stat, mkdir, cp } from 'fs/promises'
@@ -15,7 +16,7 @@ const INSTALL_META_FILE = 'install.json'
 const PREAPPROVED_FILE = 'preapproved.json'
 const S1APP_EXT = '.s1app'
 
-const userAppsDir = () => join(app.getPath('home'), '.superone', 'apps')
+const userAppsDir = () => join(superoneHome(), 'apps')
 
 async function collectFiles(dir: string, base?: string): Promise<string[]> {
   const root = base ?? dir

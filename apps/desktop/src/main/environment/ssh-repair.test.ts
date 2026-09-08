@@ -121,7 +121,7 @@ describe('repair pairing over SSH', () => {
     const call = (d.sshCapture as ReturnType<typeof vi.fn>).mock.calls[0]![0]
     expect(call.destination).toBe('user@host')
     expect(call.command).toContain('/home/u/.local/bin/superone')
-    expect(call.command).toContain('/home/u/.superone/node')
+    expect(call.command).toContain('/home/u/.superone/alpha/node')
     expect(call.command).toContain('pair-create')
     // Version-manager installs need their bin dir on PATH for the remote shell.
     expect(call.command).toContain('/home/u/.nvm/versions/node/v22/bin')

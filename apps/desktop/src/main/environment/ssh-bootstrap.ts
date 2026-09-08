@@ -1,5 +1,5 @@
-import { resolveNodeHome, DEFAULT_BIND_PORT } from '../../../../cli/src/config'
-import { renderSystemdUserUnit, SYSTEMD_USER_UNIT_NAME } from '../../../../cli/src/systemd/unit'
+import { remoteSuperoneHome, remoteNodePort, remoteSystemdUnitName } from './remote-data-path'
+import { renderSystemdUserUnit } from '../../../../cli/src/systemd/unit'
 import {
   findFreePort,
   sshCapture,
@@ -49,7 +49,7 @@ export interface SshBootstrapResult {
  */
 export async function bootstrapNodeOverSsh(opts: SshBootstrapOptions): Promise<SshBootstrapResult> {
   const warnings: string[] = []
-  const remotePort = opts.remotePort ?? DEFAULT_BIND_PORT
+  const remotePort = opts.remotePort ?? remoteNodePort()
   const sshOpts = {
     destination: opts.destination,
     extraArgs: opts.extraSshArgs,
@@ -84,7 +84,7 @@ export async function bootstrapNodeOverSsh(opts: SshBootstrapOptions): Promise<S
       ? requestedHome
       : requestedHome?.startsWith('~/') && remoteHome
         ? `${remoteHome}/${requestedHome.slice(2)}`
-        : `${remoteHome || '/tmp'}/.superone/node`
+        : `${remoteSuperoneHome(remoteHome || '/tmp')}/node`
 
   // Batch directory setup, node startup, health wait, and token creation into
   // one SSH session. This avoids triggering common SSH connection rate limits.
@@ -125,6 +125,7 @@ export async function bootstrapNodeOverSsh(opts: SshBootstrapOptions): Promise<S
   const unitPreview = renderSystemdUserUnit({
     execStart: opts.remoteExec,
     nodeHome: remoteAbsHome,
+    superoneHome: remoteSuperoneHome(remoteHome || '/home/user'),
     home: remoteHome || (homeMatch?.[1] || '').trim() || '/home/user',
     bindHost: '127.0.0.1',
     bindPort: remotePort,
@@ -310,7 +311,7 @@ export function buildRemoteRestartCommand(input: {
     [
       `mkdir -p ${nodeHome}/logs`,
       // Blocks until inactive (TimeoutStopSec=30) when the unit exists.
-      `systemctl --user stop ${SYSTEMD_USER_UNIT_NAME} >/dev/null 2>&1 || true`,
+      `systemctl --user stop ${remoteSystemdUnitName()} >/dev/null 2>&1 || true`,
       killMatching('TERM'),
       freeListenPort('TERM'),
       // Wait until health is down AND no matching node PID (~15s). Escalate to
@@ -320,9 +321,9 @@ export function buildRemoteRestartCommand(input: {
       freeListenPort('9'),
       // Brief settle so the kernel releases the listen socket / WAL lock.
       `sleep 0.3`,
-      `if ! systemctl --user start ${SYSTEMD_USER_UNIT_NAME} >/dev/null 2>&1; then nohup ${execPath} start --foreground --home ${nodeHome} --host 127.0.0.1 --port ${port} >>${nodeHome}/logs/upgrade.log 2>&1 & fi`,
+      `if ! systemctl --user start ${remoteSystemdUnitName()} >/dev/null 2>&1; then nohup ${execPath} start --foreground --home ${nodeHome} --host 127.0.0.1 --port ${port} >>${nodeHome}/logs/upgrade.log 2>&1 & fi`,
       // ~30s for cold start (managed harness probe can be slow on first boot).
-      `healthy=0; i=0; while [ "$i" -lt 150 ]; do if curl -fsS ${healthUrl} >/dev/null 2>&1; then healthy=1; break; fi; i=$((i + 1)); sleep 0.2; done; if [ "$healthy" -ne 1 ]; then echo "remote node did not come back after upgrade" >&2; tail -n 80 ${nodeHome}/logs/upgrade.log >&2 2>/dev/null || true; tail -n 40 ${nodeHome}/logs/bootstrap.log >&2 2>/dev/null || true; systemctl --user status ${SYSTEMD_USER_UNIT_NAME} --no-pager >&2 2>/dev/null || true; exit 1; fi`,
+      `healthy=0; i=0; while [ "$i" -lt 150 ]; do if curl -fsS ${healthUrl} >/dev/null 2>&1; then healthy=1; break; fi; i=$((i + 1)); sleep 0.2; done; if [ "$healthy" -ne 1 ]; then echo "remote node did not come back after upgrade" >&2; tail -n 80 ${nodeHome}/logs/upgrade.log >&2 2>/dev/null || true; tail -n 40 ${nodeHome}/logs/bootstrap.log >&2 2>/dev/null || true; systemctl --user status ${remoteSystemdUnitName()} --no-pager >&2 2>/dev/null || true; exit 1; fi`,
       `echo SUPERONE_RESTART_OK`,
     ].join('; ')
   )
@@ -337,7 +338,7 @@ export async function restartNodeOverSsh(opts: RemoteRestartOptions): Promise<vo
     command: buildRemoteRestartCommand({
       remoteExec: opts.remoteExec,
       remoteNodeHome: opts.remoteNodeHome,
-      remotePort: opts.remotePort ?? DEFAULT_BIND_PORT,
+      remotePort: opts.remotePort ?? remoteNodePort(),
       nodeBinDir: opts.nodeBinDir,
     }),
     timeoutMs: 120_000,
@@ -354,7 +355,7 @@ export function buildRemoteInstallCommands(input: {
   remotePort?: number
 }): string[] {
   const home = input.nodeHome
-  const port = input.remotePort ?? DEFAULT_BIND_PORT
+  const port = input.remotePort ?? remoteNodePort()
   return [
     `mkdir -p ${shellQuote(home)}/secrets ${shellQuote(home)}/logs`,
     `chmod 700 ${shellQuote(home)} ${shellQuote(home)}/secrets`,
@@ -362,6 +363,3 @@ export function buildRemoteInstallCommands(input: {
     `${input.remoteExec} pair-create --home ${shellQuote(home)}`,
   ]
 }
-
-// silence unused import when tree-shaken
-void resolveNodeHome

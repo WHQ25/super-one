@@ -46,7 +46,7 @@ Commands:
   systemd-status
   harness list|show|enable|disable|configure|doctor|repair …
 
-Harness data directory is $HOME/.superone/node (SUPERONE_NODE_HOME for tests only).
+Harness data directory is $SUPERONE_HOME/node (SUPERONE_NODE_HOME for tests only).
 `)
   process.exit(1)
 }

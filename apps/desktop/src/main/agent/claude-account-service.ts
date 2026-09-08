@@ -1,6 +1,6 @@
+import { superoneHome } from '../superone-home'
 import { execFile } from 'node:child_process'
 import { mkdirSync, readdirSync, rmSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { ClaudeAccount } from '@superone/shared/agent-types'
@@ -23,13 +23,9 @@ const STATUS_TIMEOUT_MS = 15_000
 /** Sign-in waits on a human in a browser, so it gets a far longer leash than a status read. */
 const LOGIN_TIMEOUT_MS = 5 * 60_000
 
-/**
- * `~/.superone/claude-accounts`. Deliberately not under `userData`: the keychain service name is a
- * hash of this path, and `userData` differs between dev and packaged builds, which would silently
- * strand every account added in the other build.
- */
+/** Managed credentials are isolated with the personal data root. */
 export function accountsRoot(): string {
-  return join(homedir(), '.superone', ACCOUNTS_DIRNAME)
+  return join(superoneHome(), ACCOUNTS_DIRNAME)
 }
 
 function authEnv(credentialDir: string | null): NodeJS.ProcessEnv {

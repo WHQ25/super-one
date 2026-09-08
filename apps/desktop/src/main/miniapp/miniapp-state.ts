@@ -3,7 +3,7 @@ import { dirname, join } from 'path'
 import Database from 'better-sqlite3'
 import type { Database as DatabaseType } from 'better-sqlite3'
 import { resolveMainWorktreeDir } from '../git/worktree-ops'
-import { getUserAppDir } from './miniapp-service'
+import { getProjectAppsDir, getUserAppDir } from './miniapp-service'
 
 export type MiniAppStateScope = 'workspace' | 'global'
 export type MiniAppStateOp = 'get' | 'update' | 'keys'
@@ -31,7 +31,7 @@ async function resolveProjectRoot(projectDir: string): Promise<string> {
 
 function storagePathsForRoot(projectRoot: string, appId: string): MiniAppStoragePaths {
   return {
-    workspaceStoragePath: join(projectRoot, '.superone', 'apps', appId, 'data'),
+    workspaceStoragePath: join(getProjectAppsDir(projectRoot), appId, 'data'),
     globalStoragePath: join(getUserAppDir(appId), 'data'),
   }
 }

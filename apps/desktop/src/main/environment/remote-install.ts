@@ -1,3 +1,4 @@
+import { remoteSuperoneHome, remoteCliName } from './remote-data-path'
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { basename } from 'node:path'
@@ -50,51 +51,55 @@ export interface RemoteHostProbe {
   distTarget: string | null
 }
 
-const PROBE_SCRIPT = [
-  'echo "SUPERONE_PROBE_BEGIN"',
-  'echo "os=$(uname -s)"',
-  'echo "arch=$(uname -m)"',
-  'echo "home=$HOME"',
-  // Alpine/musl needs the linuxmusl-* prebuild instead of linux-*.
-  `if [ -f /etc/alpine-release ] || (ldd --version 2>&1 | grep -qi musl); then echo "musl=1"; else echo "musl=0"; fi`,
-  // Non-interactive SSH shells skip nvm/fnm/asdf/mise initialization. Prefer
-  // the login shell, then scan common version-manager layouts directly.
-  `NODE_BIN="$(bash -lc 'command -v node' 2>/dev/null | tail -1)"`,
-  `NPM_BIN="$(bash -lc 'command -v npm' 2>/dev/null | tail -1)"`,
-  `if [ ! -x "$NODE_BIN" ]; then NODE_BIN="$(command -v node 2>/dev/null || true)"; fi`,
-  `if [ ! -x "$NPM_BIN" ]; then NPM_BIN="$(command -v npm 2>/dev/null || true)"; fi`,
-  `if [ ! -x "$NODE_BIN" ]; then FALLBACK_NODE=""; for c in "$HOME"/.nvm/versions/node/*/bin/node "$HOME"/.fnm/node-versions/*/installation/bin/node "$HOME"/.volta/bin/node "$HOME"/.asdf/shims/node "$HOME"/.local/share/mise/installs/node/*/bin/node; do if [ -x "$c" ]; then [ -n "$FALLBACK_NODE" ] || FALLBACK_NODE="$c"; candidate_major="$("$c" -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"; if [ "$candidate_major" -ge ${MIN_REMOTE_NODE_MAJOR} ] 2>/dev/null; then NODE_BIN="$c"; break; fi; fi; done; [ -x "$NODE_BIN" ] || NODE_BIN="$FALLBACK_NODE"; fi`,
-  `if [ -x "$NODE_BIN" ]; then NODE_NPM="$(dirname "$NODE_BIN")/npm"; if [ -x "$NODE_NPM" ]; then NPM_BIN="$NODE_NPM"; fi; fi`,
-  `NODE_BIN_DIR=""; if [ -x "$NODE_BIN" ]; then NODE_BIN_DIR="$(dirname "$NODE_BIN")"; export PATH="$NODE_BIN_DIR:$PATH"; fi`,
-  `echo "node_path=$NODE_BIN"`,
-  `echo "node_bin_dir=$NODE_BIN_DIR"`,
-  `echo "npm_path=$NPM_BIN"`,
-  `echo "shell_path=$PATH"`,
-  // Look on PATH first, then the locations our own installer uses.
-  `SUPERONE_BIN="$(command -v superone 2>/dev/null || true)"`,
-  `for c in "$HOME/.local/bin/superone" "$HOME/.superone/npm/bin/superone" "$HOME/.superone/current/bin/superone" /usr/local/bin/superone; do`,
-  `  [ -n "$SUPERONE_BIN" ] && break`,
-  `  [ -x "$c" ] && SUPERONE_BIN="$c"`,
-  'done',
-  'echo "superone=$SUPERONE_BIN"',
-  // Prefer `superone version` (product CLI release). Fallbacks: upload MANIFEST,
-  // then npm package.json for registry installs under ~/.superone/npm.
-  `SUPERONE_VER=""`,
-  `if [ -n "$SUPERONE_BIN" ]; then`,
-  `  SUPERONE_VER="$("$SUPERONE_BIN" version 2>/dev/null | head -1 | tr -d '\\r' | tr -d '[:space:]')"`,
-  `  if [ -z "$SUPERONE_VER" ] && [ -f "$HOME/.superone/current/MANIFEST.json" ]; then`,
-  `    SUPERONE_VER="$(sed -n 's/.*"version"[^"]*"\\([^"]*\\)".*/\\1/p' "$HOME/.superone/current/MANIFEST.json" | head -1)"`,
-  '  fi',
-  `  if [ -z "$SUPERONE_VER" ] && [ -f "$HOME/.superone/npm/lib/node_modules/@super-one/cli/package.json" ]; then`,
-  `    SUPERONE_VER="$(sed -n 's/.*"version"[^"]*"\\([^"]*\\)".*/\\1/p' "$HOME/.superone/npm/lib/node_modules/@super-one/cli/package.json" | head -1)"`,
-  '  fi',
-  `  echo "superone_version=$SUPERONE_VER"`,
-  'fi',
-  `if [ -x "$NODE_BIN" ]; then echo "node_major=$("$NODE_BIN" -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"; else echo "node_major="; fi`,
-  `if [ -x "$NPM_BIN" ]; then echo "npm=1"; else echo "npm=0"; fi`,
-  `if command -v systemctl >/dev/null 2>&1; then echo "systemd=1"; else echo "systemd=0"; fi`,
-  'echo "SUPERONE_PROBE_END"',
-].join('\n')
+export function remoteProbeScript(): string {
+  const root = remoteSuperoneHome('$HOME')
+  const bin = remoteCliName()
+  return [
+    'echo "SUPERONE_PROBE_BEGIN"',
+    'echo "os=$(uname -s)"',
+    'echo "arch=$(uname -m)"',
+    'echo "home=$HOME"',
+    // Alpine/musl needs the linuxmusl-* prebuild instead of linux-*.
+    `if [ -f /etc/alpine-release ] || (ldd --version 2>&1 | grep -qi musl); then echo "musl=1"; else echo "musl=0"; fi`,
+    // Non-interactive SSH shells skip nvm/fnm/asdf/mise initialization. Prefer
+    // the login shell, then scan common version-manager layouts directly.
+    `NODE_BIN="$(bash -lc 'command -v node' 2>/dev/null | tail -1)"`,
+    `NPM_BIN="$(bash -lc 'command -v npm' 2>/dev/null | tail -1)"`,
+    `if [ ! -x "$NODE_BIN" ]; then NODE_BIN="$(command -v node 2>/dev/null || true)"; fi`,
+    `if [ ! -x "$NPM_BIN" ]; then NPM_BIN="$(command -v npm 2>/dev/null || true)"; fi`,
+    `if [ ! -x "$NODE_BIN" ]; then FALLBACK_NODE=""; for c in "$HOME"/.nvm/versions/node/*/bin/node "$HOME"/.fnm/node-versions/*/installation/bin/node "$HOME"/.volta/bin/node "$HOME"/.asdf/shims/node "$HOME"/.local/share/mise/installs/node/*/bin/node; do if [ -x "$c" ]; then [ -n "$FALLBACK_NODE" ] || FALLBACK_NODE="$c"; candidate_major="$("$c" -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"; if [ "$candidate_major" -ge ${MIN_REMOTE_NODE_MAJOR} ] 2>/dev/null; then NODE_BIN="$c"; break; fi; fi; done; [ -x "$NODE_BIN" ] || NODE_BIN="$FALLBACK_NODE"; fi`,
+    `if [ -x "$NODE_BIN" ]; then NODE_NPM="$(dirname "$NODE_BIN")/npm"; if [ -x "$NODE_NPM" ]; then NPM_BIN="$NODE_NPM"; fi; fi`,
+    `NODE_BIN_DIR=""; if [ -x "$NODE_BIN" ]; then NODE_BIN_DIR="$(dirname "$NODE_BIN")"; export PATH="$NODE_BIN_DIR:$PATH"; fi`,
+    `echo "node_path=$NODE_BIN"`,
+    `echo "node_bin_dir=$NODE_BIN_DIR"`,
+    `echo "npm_path=$NPM_BIN"`,
+    `echo "shell_path=$PATH"`,
+    // Only discover installations owned by this release channel.
+    `SUPERONE_BIN=""`,
+    `for c in "${root}/npm/bin/superone" "${root}/current/bin/superone" "$HOME/.local/bin/${bin}"; do`,
+    `  [ -n "$SUPERONE_BIN" ] && break`,
+    `  [ -x "$c" ] && SUPERONE_BIN="$c"`,
+    'done',
+    'echo "superone=$SUPERONE_BIN"',
+    // Prefer `superone version` (product CLI release). Fallbacks: upload MANIFEST,
+    // then npm package.json for registry installs under ~/.superone/npm.
+    `SUPERONE_VER=""`,
+    `if [ -n "$SUPERONE_BIN" ]; then`,
+    `  SUPERONE_VER="$("$SUPERONE_BIN" version 2>/dev/null | head -1 | tr -d '\\r' | tr -d '[:space:]')"`,
+    `  if [ -z "$SUPERONE_VER" ] && [ -f "${root}/current/MANIFEST.json" ]; then`,
+    `    SUPERONE_VER="$(sed -n 's/.*"version"[^"]*"\\([^"]*\\)".*/\\1/p' "${root}/current/MANIFEST.json" | head -1)"`,
+    '  fi',
+    `  if [ -z "$SUPERONE_VER" ] && [ -f "${root}/npm/lib/node_modules/@super-one/cli/package.json" ]; then`,
+    `    SUPERONE_VER="$(sed -n 's/.*"version"[^"]*"\\([^"]*\\)".*/\\1/p' "${root}/npm/lib/node_modules/@super-one/cli/package.json" | head -1)"`,
+    '  fi',
+    `  echo "superone_version=$SUPERONE_VER"`,
+    'fi',
+    `if [ -x "$NODE_BIN" ]; then echo "node_major=$("$NODE_BIN" -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"; else echo "node_major="; fi`,
+    `if [ -x "$NPM_BIN" ]; then echo "npm=1"; else echo "npm=0"; fi`,
+    `if command -v systemctl >/dev/null 2>&1; then echo "systemd=1"; else echo "systemd=0"; fi`,
+    'echo "SUPERONE_PROBE_END"',
+  ].join('\n')
+}
 
 /** Parse `key=value` lines from the probe script into a typed result. */
 export function parseProbeOutput(stdout: string): RemoteHostProbe {
@@ -173,7 +178,7 @@ export async function probeRemoteHost(target: SshTarget): Promise<RemoteHostProb
     destination: target.destination,
     extraArgs: target.extraSshArgs,
     sshPath: target.sshPath,
-    command: PROBE_SCRIPT,
+    command: remoteProbeScript(),
     timeoutMs: 30_000,
   })
   if (!result.stdout.includes('SUPERONE_PROBE_BEGIN')) {
@@ -235,7 +240,7 @@ export async function installNodeOverSsh(options: InstallOptions): Promise<Insta
   const bytes = await readFile(options.tarballPath)
   const sha256 = createHash('sha256').update(bytes).digest('hex')
   const stageName = `superone-${options.version}-${options.distTarget}`
-  const root = `${options.remoteHome}/.superone`
+  const root = remoteSuperoneHome(options.remoteHome, options.version)
   const uploadPath = `${root}/downloads/${basename(options.tarballPath)}`
 
   options.onProgress?.('upload')
@@ -264,7 +269,7 @@ export async function installNodeOverSsh(options: InstallOptions): Promise<Insta
         `tar xzf ${shellQuote(uploadPath)} -C ${shellQuote(`${root}/versions`)}`,
         `chmod +x ${shellQuote(`${root}/versions/${stageName}/bin/superone`)}`,
         `ln -sfn ${shellQuote(`${root}/versions/${stageName}`)} ${shellQuote(`${root}/current`)}`,
-        `ln -sfn ${shellQuote(`${root}/current/bin/superone`)} ${shellQuote(`${options.remoteHome}/.local/bin/superone`)}`,
+        `ln -sfn ${shellQuote(`${root}/current/bin/superone`)} ${shellQuote(`${options.remoteHome}/.local/bin/${remoteCliName(options.version)}`)}`,
         `rm -f ${shellQuote(uploadPath)}`,
         `${shellQuote(`${root}/current/bin/superone`)} identity --home ${shellQuote(`${root}/node`)} >/dev/null`,
         'echo SUPERONE_UPLOAD_OK',
@@ -312,9 +317,11 @@ export async function installNodeFromRegistry(
   }
 
   const spec = `${packageName}@${version}`
-  const prefix = `${options.remoteHome}/.superone/npm`
+  const root = remoteSuperoneHome(options.remoteHome, version)
+  const prefix = `${root}/npm`
   const localBin = `${options.remoteHome}/.local/bin`
-  const remoteExec = `${localBin}/${PUBLIC_CLI_BIN}`
+  const remoteExec = `${prefix}/bin/${PUBLIC_CLI_BIN}`
+  const commandLink = `${localBin}/${remoteCliName(version)}`
   const remoteCommand = (command: string): string =>
     withRemoteNodePath(command, options.nodeBinDir)
 
@@ -324,9 +331,9 @@ export async function installNodeFromRegistry(
     [
       `mkdir -p ${shellQuote(prefix)} ${shellQuote(localBin)}`,
       `npm install -g --prefix ${shellQuote(prefix)} ${shellQuote(spec)}`,
-      `ln -sfn ${shellQuote(`${prefix}/bin/${PUBLIC_CLI_BIN}`)} ${shellQuote(remoteExec)}`,
+      `ln -sfn ${shellQuote(remoteExec)} ${shellQuote(commandLink)}`,
       // Prove the launcher is executable; identity is cheap and fails closed.
-      `${shellQuote(remoteExec)} identity --home ${shellQuote(`${options.remoteHome}/.superone/node`)} >/dev/null`,
+      `${shellQuote(remoteExec)} identity --home ${shellQuote(`${root}/node`)} >/dev/null`,
       `echo "SUPERONE_REGISTRY_OK=${remoteExec}"`,
     ].join(' && '),
   )

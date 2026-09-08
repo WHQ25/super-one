@@ -3,8 +3,8 @@
  *
  * Stage 2 scope:
  * - list / show / enable / disable / configure / doctor / probe / repair
- * - Public commands omit --home. Catalog/state: $HOME/.superone/node
- *   (SUPERONE_NODE_HOME for tests). Managed binaries: $HOME/.superone/harness
+ * - Public commands omit --home. Catalog/state: $SUPERONE_HOME/node
+ *   (SUPERONE_NODE_HOME for tests). Managed binaries: $SUPERONE_HOME/harness
  *   (SUPERONE_HARNESS_HOME for tests) — shared with the desktop app.
  * - Managed: --artifact (offline pin) or auto-detect SDK/host binary; signed
  *   CDN download is still deferred.
@@ -90,8 +90,8 @@ Commands:
   repair claude|codex --artifact <FILE> [--json]
 
 Notes:
-  Catalog/state: $HOME/.superone/node (SUPERONE_NODE_HOME for tests).
-  Managed binaries: $HOME/.superone/harness (SUPERONE_HARNESS_HOME for tests; shared with desktop).
+  Catalog/state: $SUPERONE_HOME/node (SUPERONE_NODE_HOME for tests).
+  Managed binaries: $SUPERONE_HOME/harness (SUPERONE_HARNESS_HOME for tests; shared with desktop).
   No public --home / --data-dir.
   Stage 2 deferred (rejected if passed): --env-file, --server-password-stdin,
   --clear-server-password, --clear-env, --startup-timeout, --initialize-timeout,

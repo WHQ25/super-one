@@ -1,7 +1,7 @@
 /**
  * Desktop host wiring for the harness kernel (`@superone/runtime/harness`).
  *
- * Supplies install root (prod: shared `~/.superone/harness`; dev: `.dev-data/harness`),
+ * Supplies install root (`<personal root>/harness`, isolated per variant),
  * app version pin, binary discovery (managed install → bundled SDK → env),
  * tarball installer, and provider-store auth probe.
  */

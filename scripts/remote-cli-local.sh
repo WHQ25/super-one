@@ -15,7 +15,9 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CLI_DIR="${ROOT}/apps/cli"
 
 # Isolated from production ~/.superone/node so lab state never clobbers a real install.
-LAB_HOME="${SUPERONE_NODE_HOME:-${HOME}/.superone/node-dev-lab}"
+export SUPERONE_VARIANT=dev
+export SUPERONE_HOME="${SUPERONE_HOME:-${HOME}/.superone/dev}"
+LAB_HOME="${SUPERONE_NODE_HOME:-${SUPERONE_HOME}/node-dev-lab}"
 # Default 7789 so Docker SSH-forward on 7788 can run at the same time.
 LAB_HOST="${SUPERONE_NODE_HOST:-127.0.0.1}"
 LAB_PORT="${SUPERONE_NODE_PORT:-7789}"
@@ -58,7 +60,7 @@ Commands:
   fg              Start in foreground (for debugging)
 
 Env (optional):
-  SUPERONE_NODE_HOME   data dir (default: ~/.superone/node-dev-lab)
+  SUPERONE_NODE_HOME   data dir (default: ~/.superone/dev/node-dev-lab)
   SUPERONE_NODE_HOST   bind host (default: 127.0.0.1)
   SUPERONE_NODE_PORT   bind port (default: 7789)
   SUPERONE_NODE_LABEL  node label (default: local-dev-lab)

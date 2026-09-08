@@ -1,7 +1,7 @@
 /**
  * Canonical harness filesystem root — shared by CLI node and desktop.
  *
- * Production default: `$HOME/.superone/harness`
+ * Default: `<personal root>/harness` (`~/.superone/alpha/harness` for alpha)
  *
  * Layout under the root (see `managed-layout.ts` / `managed-release.ts`):
  * ```
@@ -20,19 +20,20 @@
 
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { resolveSuperoneHome, SUPERONE_DIRNAME } from '../fs/superone-home'
 
 /** Relative segment under `~/.superone/`. */
 export const HARNESS_HOME_DIRNAME = 'harness'
 
 /** SuperOne product data dir under the user home. */
-export const SUPERONE_DIRNAME = '.superone'
+export { SUPERONE_DIRNAME }
 
 /**
  * Default absolute harness root: `~/.superone/harness`.
  * Does not read env — use `resolveHarnessHomeRoot` for overrides.
  */
 export function defaultHarnessHomeRoot(userHome: string = homedir()): string {
-  return join(userHome, SUPERONE_DIRNAME, HARNESS_HOME_DIRNAME)
+  return join(resolveSuperoneHome({ userHome, ignoreEnv: true, variant: 'stable' }), HARNESS_HOME_DIRNAME)
 }
 
 export interface ResolveHarnessHomeRootOptions {
@@ -50,7 +51,7 @@ export interface ResolveHarnessHomeRootOptions {
 /**
  * Resolve the harness install root used by every host.
  *
- * Order: `override` → `SUPERONE_HARNESS_HOME` → `~/.superone/harness`.
+ * Order: `override` → `SUPERONE_HARNESS_HOME` → `<personal root>/harness`.
  */
 export function resolveHarnessHomeRoot(opts: ResolveHarnessHomeRootOptions = {}): string {
   const explicit = opts.override?.trim()
@@ -61,5 +62,5 @@ export function resolveHarnessHomeRoot(opts: ResolveHarnessHomeRootOptions = {})
     if (fromEnv) return fromEnv
   }
 
-  return defaultHarnessHomeRoot(opts.userHome)
+  return join(resolveSuperoneHome({ userHome: opts.userHome, ignoreEnv: opts.ignoreEnv }), HARNESS_HOME_DIRNAME)
 }

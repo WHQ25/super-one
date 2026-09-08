@@ -1,12 +1,15 @@
 # Personal interaction experience
 
+Personal paths use `$SUPERONE_HOME`: `~/.superone` for stable, `~/.superone/alpha` for alpha, and `~/.superone/dev` for dev (or an explicit absolute override). Project paths use `<project>/.superone`, with `/alpha` or `/dev` for those variants. No cross-variant fallback or migration is performed.
+
+
 Three pairs of tools persist reusable experience on the node running the agent:
 
 | Surface | Tools | Identity | Personal directory |
 | --- | --- | --- | --- |
-| Browser | `browser_memory_read` / `browser_memory_write` | `domain` | `~/.superone/browser/memory/<hostname>/` |
-| Computer Use | `computer_memory_read` / `computer_memory_write` | `platform`, `appId` | `~/.superone/computer/memory/<platform>/<appId>/` |
-| Simulators and devices | `device_memory_read` / `device_memory_write` | `platform`, `appId` | `~/.superone/device/memory/<platform>/<appId>/` |
+| Browser | `browser_memory_read` / `browser_memory_write` | `domain` | `$SUPERONE_HOME/browser/memory/<hostname>/` |
+| Computer Use | `computer_memory_read` / `computer_memory_write` | `platform`, `appId` | `$SUPERONE_HOME/computer/memory/<platform>/<appId>/` |
+| Simulators and devices | `device_memory_read` / `device_memory_write` | `platform`, `appId` | `$SUPERONE_HOME/device/memory/<platform>/<appId>/` |
 
 Every topic is a Markdown file with metadata. Storage is shared across sessions
 and projects for the same node user. A remote agent uses its remote user's home,

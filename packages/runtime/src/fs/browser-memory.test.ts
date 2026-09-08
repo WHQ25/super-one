@@ -8,7 +8,7 @@ const homes: string[] = []
 async function fixture() {
   const home = await mkdtemp(join(tmpdir(), 'browser-memory-'))
   homes.push(home)
-  return { home, store: new BrowserMemoryStore(home) }
+  return { home, store: new BrowserMemoryStore(join(home, '.superone')) }
 }
 afterEach(async () => { await Promise.all(homes.splice(0).map(home => rm(home, { recursive: true, force: true }))) })
 const note = { domain: 'github.com', topic: 'issue-search', summary: 'Search issues', content: 'Wait for the results before reading them.' }
@@ -19,7 +19,7 @@ describe('personal browser memory', () => {
     expect(await store.read({ domain: note.domain })).toMatchObject({ count: 0, topics: [] })
     const saved = await store.write({ ...note, domain: 'https://GITHUB.COM./issues' })
     expect(await readFile(join(home, '.superone/browser/memory/github.com/issue-search.md'), 'utf8')).toContain(note.content)
-    expect(await new BrowserMemoryStore(home).read(note)).toMatchObject({ ...note, revision: saved.revision })
+    expect(await new BrowserMemoryStore(join(home, '.superone')).read(note)).toMatchObject({ ...note, revision: saved.revision })
     expect(await store.read({ domain: 'api.github.com' })).toMatchObject({ count: 0 })
     expect(await (await fixture()).store.read({ domain: note.domain })).toMatchObject({ count: 0 })
   })
@@ -28,7 +28,7 @@ describe('personal browser memory', () => {
     const { store, home } = await fixture()
     const saved = await store.write(note)
     await expect(store.write(note)).rejects.toThrow(/revision/i)
-    const writers = [store, new BrowserMemoryStore(home)]
+    const writers = [store, new BrowserMemoryStore(join(home, '.superone'))]
     const results = await Promise.allSettled(writers.map((s, i) => s.write({ ...note, content: `Change ${i}`, expectedRevision: saved.revision })))
     expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1)
     const current = await store.read(note)

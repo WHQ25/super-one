@@ -77,7 +77,16 @@ if ([string]::IsNullOrWhiteSpace($Version) -or $Version -match '\.\.|[/\\]') {
 }
 
 if ([string]::IsNullOrWhiteSpace($HarnessHome)) {
-  $HarnessHome = Join-Path $env:USERPROFILE '.superone\harness'
+  $PersonalRoot = $env:SUPERONE_HOME
+  if ([string]::IsNullOrWhiteSpace($PersonalRoot)) {
+    $PersonalRoot = Join-Path $env:USERPROFILE '.superone'
+    if ($env:SUPERONE_VARIANT -in @('alpha', 'dev')) {
+      $PersonalRoot = Join-Path $PersonalRoot $env:SUPERONE_VARIANT
+    } elseif ($env:SUPERONE_VARIANT -and $env:SUPERONE_VARIANT -ne 'stable') {
+      throw 'invalid SUPERONE_VARIANT'
+    }
+  }
+  $HarnessHome = Join-Path $PersonalRoot 'harness'
 }
 
 function Get-ClaudePackageName {

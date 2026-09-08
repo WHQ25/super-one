@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { lstat, mkdir, open, readdir, rename, rm } from 'node:fs/promises'
 import { constants } from 'node:fs'
-import { homedir } from 'node:os'
+import { resolveSuperoneHome } from './superone-home'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { parse, stringify } from 'yaml'
@@ -43,11 +43,12 @@ function indexEntry(note: Note) {
 
 /** Personal files belong to the executing node, independently of UI hosting. */
 export class InteractionMemoryStore {
-  constructor(private readonly userHome: string = homedir()) {}
+  constructor(private readonly root: string = resolveSuperoneHome()) {}
 
   private async directory(target: MemoryTarget, create: boolean): Promise<string | null> {
-    let path = this.userHome
-    for (const segment of ['.superone', ...target.segments]) {
+    let path = this.root
+    if (create) await mkdir(path, { recursive: true, mode: 0o700 })
+    for (const segment of ['', ...target.segments]) {
       path = join(path, segment)
       if (create) await mkdir(path, { mode: 0o700 }).catch(err => { if (err.code !== 'EEXIST') throw err })
       try {

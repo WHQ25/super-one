@@ -1,6 +1,6 @@
+import { superoneHome } from '../superone-home'
 import { readFile, writeFile, mkdir, rename, stat } from 'fs/promises'
 import { join, dirname } from 'path'
-import { app } from 'electron'
 import log from '../logger'
 import { devRegistryFileSchema, type DevRegistryFile } from './miniapp-schema'
 import type { DevRegistryEntry } from '@superone/shared/miniapp-types'
@@ -9,7 +9,7 @@ let testFileOverride: string | null = null
 
 function registryFile(): string {
   if (testFileOverride) return testFileOverride
-  return join(app.getPath('home'), '.superone', 'dev-registry.json')
+  return join(superoneHome(), 'dev-registry.json')
 }
 
 const EMPTY: DevRegistryFile = { version: 1, apps: [] }

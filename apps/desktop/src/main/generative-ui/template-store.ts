@@ -1,3 +1,4 @@
+import { projectSuperoneHome } from '../superone-home'
 import { randomUUID } from 'crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
@@ -36,8 +37,8 @@ export function isValidTemplateId(id: string): boolean {
   return TEMPLATE_ID_PATTERN.test(id) && id.length <= 128
 }
 
-function widgetDir(root: string): string {
-  return join(root, '.superone', 'widget')
+function widgetDir(root: string, scope: TemplateScope): string {
+  return scope === 'user' ? join(root, 'widget') : join(projectSuperoneHome(root), 'widget')
 }
 
 function scopeRoots(roots: TemplateRoots): Array<{ scope: TemplateScope; root: string }> {
@@ -54,7 +55,7 @@ function rootFor(roots: TemplateRoots, scope: TemplateScope): string {
 }
 
 function loadFrom(root: string, scope: TemplateScope, id: string): WidgetTemplate | null {
-  const dir = join(widgetDir(root), id)
+  const dir = join(widgetDir(root, scope), id)
   try {
     const meta = JSON.parse(readFileSync(join(dir, 'template.json'), 'utf-8')) as Partial<WidgetTemplate>
     const code = readFileSync(join(dir, 'widget.html'), 'utf-8')
@@ -88,7 +89,7 @@ export function listTemplates(roots: TemplateRoots): WidgetTemplate[] {
   for (const { scope, root } of scopeRoots(roots)) {
     let entries: string[]
     try {
-      entries = readdirSync(widgetDir(root), { withFileTypes: true })
+      entries = readdirSync(widgetDir(root, scope), { withFileTypes: true })
         .filter((e) => e.isDirectory())
         .map((e) => e.name)
     } catch {
@@ -140,12 +141,12 @@ export function allocateTemplateId(roots: TemplateRoots, requested: string, scop
 
 export function templateExists(roots: TemplateRoots, id: string, scope: TemplateScope): boolean {
   if (!isValidTemplateId(id)) return false
-  return existsSync(join(widgetDir(rootFor(roots, scope)), id, 'template.json'))
+  return existsSync(join(widgetDir(rootFor(roots, scope), scope), id, 'template.json'))
 }
 
 export function saveTemplate(roots: TemplateRoots, input: SaveTemplateInput): WidgetTemplate {
   if (!isValidTemplateId(input.id)) throw new Error(`invalid widget template id: ${input.id}`)
-  const dir = join(widgetDir(rootFor(roots, input.scope)), input.id)
+  const dir = join(widgetDir(rootFor(roots, input.scope), input.scope), input.id)
   const previous = loadFrom(rootFor(roots, input.scope), input.scope, input.id)
   const now = new Date().toISOString()
   const meta = {

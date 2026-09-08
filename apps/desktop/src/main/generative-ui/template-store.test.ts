@@ -22,7 +22,7 @@ function tmpRoot(prefix: string): string {
 }
 
 function seed(root: string, id: string, code: string, meta: Record<string, unknown> = {}): void {
-  const dir = join(root, '.superone', 'widget', id)
+  const dir = root === roots.user ? join(root, 'widget', id) : join(root, '.superone', 'dev', 'widget', id)
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'widget.html'), code)
   writeFileSync(join(dir, 'template.json'), JSON.stringify({ id, title: id, version: 1, ...meta }))
@@ -75,7 +75,7 @@ describe('widget template store', () => {
 
   it('skips a malformed template directory instead of failing the whole listing', () => {
     seed(roots.user!, 'good-aaaaaaaa', '<div>ok</div>')
-    const broken = join(roots.user!, '.superone', 'widget', 'broken-bbbbbbbb')
+    const broken = join(roots.user!, 'widget', 'broken-bbbbbbbb')
     mkdirSync(broken, { recursive: true })
     writeFileSync(join(broken, 'template.json'), '{ not json')
 

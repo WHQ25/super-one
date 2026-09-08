@@ -84,8 +84,8 @@ describe('ssh-bootstrap helpers', () => {
     // Scoped to this node home so a second node on the host survives.
     expect(command).toContain('start --foreground --home /home/u/.superone/node')
     // Both supervision styles this repo produces.
-    expect(command).toContain('systemctl --user stop superone.service')
-    expect(command).toContain('systemctl --user start superone.service')
+    expect(command).toContain('systemctl --user stop superone-alpha.service')
+    expect(command).toContain('systemctl --user start superone-alpha.service')
     // Longer cold-start window + diagnostics on failure.
     expect(command).toContain('while [ "$i" -lt 150 ]')
     expect(command).toContain('upgrade.log')

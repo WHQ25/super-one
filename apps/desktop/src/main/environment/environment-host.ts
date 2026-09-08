@@ -1,3 +1,4 @@
+import { remoteSuperoneHome, remoteNodePort } from './remote-data-path'
 import { app } from 'electron'
 import { join } from 'node:path'
 import type {
@@ -13,7 +14,6 @@ import type {
   ResourceProvider,
 } from '@superone/shared/environment'
 import {
-  DEFAULT_NODE_REMOTE_PORT,
   DEFAULT_REMOTE_INSTALL_SOURCE,
   DESKTOP_UPGRADE_REQUIRED,
   decideRemoteCliAction,
@@ -2805,7 +2805,7 @@ export class EnvironmentHost {
     warnings: string[]
     installed?: InstallResult
   }> {
-    const remotePort = input.remotePort ?? DEFAULT_NODE_REMOTE_PORT
+    const remotePort = input.remotePort ?? remoteNodePort()
     const extraSshArgs: string[] = []
     if (input.sshPort) extraSshArgs.push('-p', String(input.sshPort))
     if (input.identityFile) extraSshArgs.push('-i', input.identityFile)
@@ -3089,7 +3089,7 @@ export class EnvironmentHost {
       ...sshTarget,
       remoteExec: installed.remoteExec,
       // Prefer the home captured at pair time; legacy profiles fall back to default.
-      remoteNodeHome: storedNodeHome || `${probe.home}/.superone/node`,
+      remoteNodeHome: storedNodeHome || `${remoteSuperoneHome(probe.home)}/node`,
       remotePort: spec.remotePort,
       nodeBinDir: probe.nodeBinDir,
     })

@@ -1,3 +1,4 @@
+import { resolveSuperoneHome } from '@superone/runtime/fs/superone-home'
 /**
  * Local remote-node lab (monorepo dev): pair the desktop to a host-process
  * `superone` node on loopback — same protocol as a real remote environment.
@@ -9,7 +10,6 @@
 import { app } from 'electron'
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { EnvironmentHost } from './environment-host'
 
@@ -49,7 +49,7 @@ export function localLabDefaults(): LocalLabDefaults {
   const portRaw = process.env.SUPERONE_NODE_PORT?.trim() || '7789'
   const port = Number(portRaw) || 7789
   const nodeHome =
-    process.env.SUPERONE_NODE_HOME?.trim() || join(homedir(), '.superone', 'node-dev-lab')
+    process.env.SUPERONE_NODE_HOME?.trim() || join(resolveSuperoneHome({ variant: 'dev' }), 'node-dev-lab')
   const label = process.env.SUPERONE_NODE_LABEL?.trim() || 'local-dev-lab'
   return {
     host,

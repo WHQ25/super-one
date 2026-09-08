@@ -175,6 +175,7 @@ export async function buildDist(options: BuildDistOptions): Promise<BuildDistRes
     },
     banner: {
       js: [
+        `process.env.SUPERONE_VARIANT = ${JSON.stringify(/-alpha(?:[.-]|$)/.test(version) ? 'alpha' : 'stable')};`,
         // CJS deps inside the bundle expect these to exist under ESM.
         "import { createRequire as __superoneCreateRequire } from 'node:module';",
         "import { fileURLToPath as __superoneFileURLToPath } from 'node:url';",

@@ -1,5 +1,8 @@
 # Packaging & Distribution
 
+Personal paths use `$SUPERONE_HOME`: `~/.superone` for stable, `~/.superone/alpha` for alpha, and `~/.superone/dev` for dev (or an explicit absolute override). Project paths use `<project>/.superone`, with `/alpha` or `/dev` for those variants. No cross-variant fallback or migration is performed.
+
+
 Once the app is ready, package it as a `.s1app` file for sharing.
 
 ## Using the MCP Tool
@@ -35,7 +38,7 @@ Users install `.s1app` files by dragging them onto the **Apps panel** in the sid
 1. Extracts to a temp directory
 2. Validates manifest schema (Zod)
 3. Verifies file integrity (SHA-256 checksums)
-4. Copies to `~/.superone/apps/<appId>/`
+4. Copies to `$SUPERONE_HOME/apps/<appId>/`
 5. Writes `install.json` with installation metadata
 
 If the app is already installed with a different version, it is upgraded automatically.

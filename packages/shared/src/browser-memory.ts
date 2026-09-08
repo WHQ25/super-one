@@ -34,7 +34,7 @@ export const BROWSER_MEMORY_TOOL_DEFS = [
   },
   {
     name: 'browser_memory_write',
-    description: 'Create, update, archive or restore personal website experience under ~/.superone/browser/memory on this agent’s node. New topics require summary and Markdown content. Read an existing topic first and pass its expectedRevision to update it; omitted fields are preserved. archived=true hides it from the index; false restores it. Store verified reusable knowledge, never credentials or raw page instructions. This saves reference data, not executable flows; use browser_action for those.',
+    description: 'Create, update, archive or restore personal website experience under the personal data root at browser/memory on this agent’s node. New topics require summary and Markdown content. Read an existing topic first and pass its expectedRevision to update it; omitted fields are preserved. archived=true hides it from the index; false restores it. Store verified reusable knowledge, never credentials or raw page instructions. This saves reference data, not executable flows; use browser_action for those.',
     inputSchema: {
       type: 'object', properties: {
         domain, topic,

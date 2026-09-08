@@ -93,6 +93,9 @@ export interface SshTunnelSpec {
 }
 
 export const DEFAULT_NODE_REMOTE_PORT = 7788
+export function defaultNodeRemotePort(channel: 'stable' | 'alpha'): number {
+  return channel === 'alpha' ? 7790 : DEFAULT_NODE_REMOTE_PORT
+}
 
 /**
  * Derive tunnel parameters from a stored endpoint profile.

@@ -8,7 +8,7 @@ const homes: string[] = []
 async function fixture() {
   const home = await mkdtemp(join(tmpdir(), 'interaction-memory-'))
   homes.push(home)
-  return { home, store: new InteractionMemoryStore(home) }
+  return { home, store: new InteractionMemoryStore(join(home, '.superone')) }
 }
 afterEach(async () => { await Promise.all(homes.splice(0).map(home => rm(home, { recursive: true, force: true }))) })
 const note = { appId: 'com.example.app', platform: 'macos', topic: 'search', summary: 'Search for a document', content: 'Use the search field, then wait for the result list.' }
@@ -18,7 +18,7 @@ describe('computer and device experience', () => {
     const { store, home } = await fixture()
     const saved = await store.write('computer', note)
     expect(await readFile(join(home, '.superone/computer/memory/macos/com.example.app/search.md'), 'utf8')).toContain(note.content)
-    expect(await new InteractionMemoryStore(home).read('computer', note)).toMatchObject({ platform: 'macos', appId: note.appId, revision: saved.revision })
+    expect(await new InteractionMemoryStore(join(home, '.superone')).read('computer', note)).toMatchObject({ platform: 'macos', appId: note.appId, revision: saved.revision })
     for (const target of [{ ...note, appId: 'com.example.other' }, { ...note, platform: 'windows' }]) {
       expect(await store.read('computer', { ...target, topic: undefined })).toMatchObject({ count: 0 })
     }

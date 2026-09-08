@@ -1,3 +1,4 @@
+import { remoteSuperoneHome } from './remote-data-path'
 /**
  * Re-pair an existing SSH-reachable node without user-supplied secrets.
  *
@@ -103,7 +104,7 @@ export async function repairPairingOverSsh(
       remoteExec = probe.superonePath
     }
     if (!remoteNodeHome) {
-      remoteNodeHome = `${probe.home}/.superone/node`
+      remoteNodeHome = `${remoteSuperoneHome(probe.home)}/node`
     }
     if (!nodeBinDirStored) {
       nodeBinDir = probe.nodeBinDir?.trim() || ''

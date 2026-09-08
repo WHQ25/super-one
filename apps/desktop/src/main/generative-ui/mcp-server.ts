@@ -1,4 +1,4 @@
-import { homedir } from 'os'
+import { superoneHome } from '../superone-home'
 import { randomUUID } from 'crypto'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
@@ -15,7 +15,7 @@ interface WidgetToolsOptions {
 }
 
 function templateRoots(opts?: WidgetToolsOptions): TemplateRoots {
-  return { project: opts?.projectPath, user: homedir() }
+  return { project: opts?.projectPath, user: superoneHome() }
 }
 
 export async function listWidgetTemplatesHandler(opts?: WidgetToolsOptions) {

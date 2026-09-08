@@ -83,12 +83,12 @@ export const MINIAPP_GUIDE_TOPIC_DESCRIPTION =
 
 export const SETUP_MINI_APP_DEV_DESCRIPTION =
   'Scaffold and register a new mini-app after reading miniapp/overview and confirming its requirements, template, tools, directory, and scope with the user. ' +
-  'The tool creates source files, updates ~/.superone/dev-registry.json, and writes a project- or user-scoped .s1-dev.json pointer. ' +
+  'The tool creates source files, updates dev-registry.json in the variant-specific personal data root, and writes a project- or user-scoped .s1-dev.json pointer. ' +
   'Use miniapp_dev_register instead when source files already exist.'
 
 export const REGISTER_DEV_MINIAPP_DESCRIPTION =
   'Register an existing mini-app directory without modifying its source files. ' +
-  'Reads manifest.json from the directory or dist, updates ~/.superone/dev-registry.json, and optionally writes a project- or user-scoped .s1-dev.json pointer.'
+  'Reads manifest.json from the directory or dist, updates dev-registry.json in the variant-specific personal data root, and optionally writes a project- or user-scoped .s1-dev.json pointer.'
 
 export const PACK_MINI_APP_DESCRIPTION =
   'Package a mini-app directory into a .s1app file for distribution. The app directory must contain a valid manifest.json with a version field. Generates integrity checksums and creates a compressed archive.'

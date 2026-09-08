@@ -16,7 +16,7 @@ LOCAL_PORT="${SUPERONE_DOCKER_LOCAL_PORT:-7788}"
 REMOTE_NODE_PORT="${SUPERONE_NODE_PORT:-7788}"
 SSH_USER="${SUPERONE_SSH_USER:-superone}"
 SSH_HOST="${SUPERONE_SSH_HOST:-127.0.0.1}"
-NODE_HOME_IN_CT="${SUPERONE_NODE_HOME:-/home/superone/.superone/node}"
+NODE_HOME_IN_CT="${SUPERONE_NODE_HOME:-/home/superone/.superone/dev/node}"
 
 usage() {
   cat <<'EOF'

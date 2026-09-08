@@ -39,3 +39,35 @@ and the node CLI share one implementation.
 | Codex | `@superone/codex` | `forkCodexThread` |
 | ACP | `@superone/acp` | (not yet) |
 | OpenCode | `@superone/opencode` | (not yet) |
+
+## Variant-scoped storage
+
+`fs/superone-home` resolves the personal root. Stable uses `~/.superone`,
+alpha uses `~/.superone/alpha`, and dev uses `~/.superone/dev`.
+`SUPERONE_HOME` overrides the exact personal root and must be absolute.
+Project roots follow the same suffix under the project directory and never
+inherit a personal override. No legacy alpha data is read or migrated.
+
+Desktop uses its packaged variant identity, exports the resolved root to
+children, and resolves every personal child path relative to it. CLI bundles
+set their release channel before any module initializes; source/lab runs may
+set `SUPERONE_VARIANT`. Remote roots use the remote user's home, never the
+controlling desktop's filesystem path.
+
+| Child path | Scope |
+| --- | --- |
+| `browser/memory`, `computer/memory`, `device/memory` | Personal |
+| `harness` | Personal |
+| `apps` (including app state) | Personal or project |
+| `dev-registry.json` | Personal |
+| `widget` | Personal or project |
+| `mcpb`, `claude-accounts` | Personal |
+| `node`, `npm`, `versions`, `current`, `downloads` | Remote node personal |
+
+Electron's `userData` profiles already isolate stable/alpha/dev and retain
+their existing OS-specific locations. External provider homes such as
+`~/.claude` and `~/.codex` remain owned by those providers.
+
+Remote alpha uses the `superone-alpha` command link, `superone-alpha.service`,
+and port 7790; stable uses `superone`, `superone.service`, and port 7788.
+Explicit node/harness overrides remain available for labs and tests.

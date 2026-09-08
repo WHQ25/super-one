@@ -25,7 +25,7 @@ Linux over SSH?”.
         ▼
 [Host process: tsx apps/cli/src/cli.ts start]
    bind 127.0.0.1:7789 (default)
-   SUPERONE_NODE_HOME=~/.superone/node-dev-lab
+   SUPERONE_NODE_HOME=~/.superone/dev/node-dev-lab
    inherits host $HOME → provider CLIs see real credentials
 ```
 
@@ -60,7 +60,7 @@ bun run dev
 1. Open **Remote Control → Control Other Devices** (dev build).
 2. Use the **Local lab** card → **Connect lab**.
 3. Desktop probes `/health`, mints a pairing token against
-   `~/.superone/node-dev-lab`, and pairs over authenticated RPC.
+   `~/.superone/dev/node-dev-lab`, and pairs over authenticated RPC.
 
 If the card shows **Lab offline**, start the lab first (`bun run dev:cli:lab`).
 
@@ -103,7 +103,7 @@ Underlying helper: [`scripts/remote-cli-local.sh`](../../../scripts/remote-cli-l
 
 | Env | Default | Notes |
 |-----|---------|--------|
-| `SUPERONE_NODE_HOME` | `~/.superone/node-dev-lab` | Isolated from production `~/.superone/node` |
+| `SUPERONE_NODE_HOME` | `~/.superone/dev/node-dev-lab` | Isolated from production `~/.superone/node` |
 | `SUPERONE_NODE_HOST` | `127.0.0.1` | Loopback only |
 | `SUPERONE_NODE_PORT` | `7789` | Leaves `7788` free for Docker SSH forward |
 | `SUPERONE_NODE_LABEL` | `local-dev-lab` | Environment label after pair |
@@ -119,7 +119,7 @@ Underlying helper: [`scripts/remote-cli-local.sh`](../../../scripts/remote-cli-l
 
 - Lab process runs as **your** user with **host** `$HOME` so existing logins apply.
 - Managed harness install state lives under `SUPERONE_NODE_HOME` (lab:
-  `~/.superone/node-dev-lab`).
+  `~/.superone/dev/node-dev-lab`).
 - `dev:cli:lab` does **not** auto-set `SUPERONE_CLAUDE_BINARY` from `which claude`.
 
 | Env | Purpose |

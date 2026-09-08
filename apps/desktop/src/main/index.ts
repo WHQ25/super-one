@@ -1,3 +1,4 @@
+import { superoneHome } from './superone-home'
 import { registerCollaborationMailboxIpc } from './session/collaboration-mailbox-ipc'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, powerMonitor, protocol, screen, session, shell, systemPreferences, webContents } from 'electron'
 import { join, dirname, basename, resolve, extname, relative, isAbsolute, sep } from 'path'
@@ -19,7 +20,7 @@ import { packagedUserDataPath, resolveAndMigrateUserData } from './user-data-pat
 import { variant, variantId, variantDownloadUrl } from './variant'
 import { startMediaServer, getMediaServerPort } from './media-server'
 import { getMediaProviderStatuses } from './media-gen/settings-service'
-import { getAppBasePath, cacheAppEntry, generateCSP, readManifest, validatePath, discoverApps, discoverProjectApps, setAllowedMedia, clearAllowedMedia, isMediaAllowed, appIdFromUrl, listDevRegistryView, registerDevMiniApp, unregisterDevMiniApp, installDevPointer, removeDevPointer, setDevPointerEnabled } from './miniapp/miniapp-service'
+import { getProjectAppsDir, getAppBasePath, cacheAppEntry, generateCSP, readManifest, validatePath, discoverApps, discoverProjectApps, setAllowedMedia, clearAllowedMedia, isMediaAllowed, appIdFromUrl, listDevRegistryView, registerDevMiniApp, unregisterDevMiniApp, installDevPointer, removeDevPointer, setDevPointerEnabled } from './miniapp/miniapp-service'
 import * as devRegistry from './miniapp/dev-registry'
 import { registerMiniAppProtocolHandlers } from './miniapp/miniapp-protocol'
 import { attachMiniAppWebviewGuards } from './miniapp/miniapp-webview-guard'
@@ -265,6 +266,9 @@ protocol.registerSchemesAsPrivileged([
 // Packaged builds already carry this via extraMetadata.productName; setting it
 // here keeps unpackaged runs on the same identity.
 app.setName(variant().productName)
+// Children and shared runtime modules inherit the exact same personal root.
+process.env.SUPERONE_VARIANT = variantId()
+process.env.SUPERONE_HOME = superoneHome()
 if (is.dev) {
   // Honour SUPERONE_INSTANCE here too: the e2e harness passes one expecting an
   // isolated profile, and without it a test run writes into the developer's
@@ -5265,7 +5269,7 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.WIDGET_SAVE_TEMPLATE, async (_e, projectPath: string | null, input: SaveWidgetTemplateRequest) => {
     const { allocateTemplateId, saveTemplate } = await import('./generative-ui/template-store')
-    const roots = { project: projectPath ?? undefined, user: homedir() }
+    const roots = { project: projectPath ?? undefined, user: superoneHome() }
     if (input.scope === 'project' && !roots.project) throw new Error('no project open')
     const id = allocateTemplateId(roots, input.id, input.scope)
     const saved = saveTemplate(roots, { ...input, id })
@@ -5455,8 +5459,8 @@ function registerIpcHandlers(): void {
     return previewApp(s1appPath)
   })
 
-  ipcMain.handle(AgentIpcChannels.MINIAPP_CONFIRM_INSTALL, async (_e, tempDir: string, installDir?: string, preapprovedTools?: string[]) => {
-    return confirmInstall(tempDir, installDir, preapprovedTools)
+  ipcMain.handle(AgentIpcChannels.MINIAPP_CONFIRM_INSTALL, async (_e, tempDir: string, projectDir?: string, preapprovedTools?: string[]) => {
+    return confirmInstall(tempDir, projectDir ? getProjectAppsDir(projectDir) : undefined, preapprovedTools)
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_CANCEL_INSTALL, async (_e, tempDir: string) => {

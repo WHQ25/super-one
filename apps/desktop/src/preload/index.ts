@@ -2456,8 +2456,8 @@ const miniappAPI = {
   preview: (s1appPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_PREVIEW, s1appPath),
 
-  confirmInstall: (tempDir: string, installDir?: string, preapprovedTools?: string[]) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_CONFIRM_INSTALL, tempDir, installDir, preapprovedTools),
+  confirmInstall: (tempDir: string, projectDir?: string, preapprovedTools?: string[]) =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_CONFIRM_INSTALL, tempDir, projectDir, preapprovedTools),
 
   cancelInstall: (tempDir: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_CANCEL_INSTALL, tempDir) as Promise<void>,

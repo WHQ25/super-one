@@ -984,7 +984,7 @@ describe('add over SSH without a remote path', () => {
     // Restart must target the installed launcher, not the pre-upgrade path.
     expect(restarts).toHaveLength(1)
     expect(restarts[0]!.remoteExec).toBe('/home/superone/.local/bin/superone')
-    expect(restarts[0]!.remoteNodeHome).toBe('/home/superone/.superone/node')
+    expect(restarts[0]!.remoteNodeHome).toBe('/home/superone/.superone/alpha/node')
     expect(phases).toEqual(['probing', 'installing', 'starting'])
     // Pairing survives the restart: the same connection is live again.
     expect(host.connections.getSupervisor(added.connectionId)?.state).toBe('connected')

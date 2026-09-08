@@ -21,7 +21,7 @@ RUN apt-get update \
   && mkdir -p /var/run/sshd \
   && (id superone >/dev/null 2>&1 || useradd -m -s /bin/bash superone) \
   && echo 'superone:superone' | chpasswd \
-  && mkdir -p /home/superone/.ssh /home/superone/.superone/node /work \
+  && mkdir -p /home/superone/.ssh /home/superone/.superone/dev/node /work \
   && chown -R superone:superone /home/superone /work \
   && chmod 700 /home/superone/.ssh \
   && node --version && npm --version
@@ -32,7 +32,7 @@ COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh \
   && ssh-keygen -A
 
-ENV SUPERONE_NODE_HOME=/home/superone/.superone/node \
+ENV SUPERONE_NODE_HOME=/home/superone/.superone/dev/node \
     SUPERONE_NODE_HOST=127.0.0.1 \
     SUPERONE_NODE_PORT=7788 \
     SUPERONE_SSH_USER=superone \

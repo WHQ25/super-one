@@ -1,7 +1,8 @@
+import { superoneHome } from '../superone-home'
 import { createHash } from 'crypto'
 import { existsSync } from 'fs'
 import { mkdir, mkdtemp, rm, readFile, writeFile, readdir, cp } from 'fs/promises'
-import { tmpdir, homedir } from 'os'
+import { tmpdir } from 'os'
 import { join, relative, resolve, sep } from 'path'
 import { app, shell } from 'electron'
 import log from '../logger'
@@ -39,14 +40,11 @@ export interface InstallerPaths {
 }
 
 function defaultPaths(): InstallerPaths {
-  const home = (() => {
-    try { return app.getPath('home') } catch { return homedir() }
-  })()
   const temp = (() => {
     try { return app.getPath('temp') } catch { return tmpdir() }
   })()
   return {
-    rootDir: join(home, '.superone', 'mcpb'),
+    rootDir: join(superoneHome(), 'mcpb'),
     tempBaseDir: temp,
   }
 }

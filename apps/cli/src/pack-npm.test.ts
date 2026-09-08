@@ -7,13 +7,13 @@ import { packNpm, PUBLIC_CLI_PACKAGE } from '../scripts/pack-npm'
 const HERE = dirname(fileURLToPath(import.meta.url))
 
 describe('pack-npm', () => {
-  it('builds a publishable @super-one/cli package without workspace deps', async () => {
+  it.each(['0.0.0-test', '0.0.0-alpha.1'])('builds an isolated publishable CLI for %s', async (version) => {
     const outDir = join(HERE, '..', 'dist', 'npm-test-out')
     rmSync(outDir, { recursive: true, force: true })
 
-    const result = await packNpm({ version: '0.0.0-test', outDir })
+    const result = await packNpm({ version, outDir })
     expect(result.packageName).toBe(PUBLIC_CLI_PACKAGE)
-    expect(result.version).toBe('0.0.0-test')
+    expect(result.version).toBe(version)
 
     const pkg = JSON.parse(readFileSync(join(outDir, 'package.json'), 'utf8')) as {
       name: string
@@ -23,7 +23,7 @@ describe('pack-npm', () => {
       bin: Record<string, string>
     }
     expect(pkg.name).toBe('@super-one/cli')
-    expect(pkg.version).toBe('0.0.0-test')
+    expect(pkg.version).toBe(version)
     expect(pkg.bin.superone).toMatch(/bin\/superone\.mjs$/)
     expect(pkg.dependencies['better-sqlite3']).toBeTruthy()
     expect(pkg.dependencies['node-pty']).toBeTruthy()
@@ -45,13 +45,16 @@ describe('pack-npm', () => {
     expect(existsSync(join(outDir, 'MANIFEST.json'))).toBe(true)
 
     const bundle = readFileSync(join(outDir, 'lib', 'cli.mjs'), 'utf8')
+    const channel = version.includes('-alpha') ? 'alpha' : 'stable'
+    expect(bundle.indexOf(`process.env.SUPERONE_VARIANT = "${channel}";`)).toBeLessThan(bundle.indexOf('var DEFAULT_NODE_HOME'))
+    expect(bundle).toContain(`process.env.SUPERONE_VARIANT = "${channel}";`)
     // Bundled CLI should not leave monorepo package names as bare imports.
     expect(bundle.includes('from "@superone/runtime"')).toBe(false)
     expect(bundle.includes('from "@superone/shared"')).toBe(false)
     // Cursor SDK must stay external (native/platform package, not rebundled).
     expect(bundle.includes('from "@cursor/sdk"') || bundle.includes("from '@cursor/sdk'")).toBe(true)
     // Version inject for harness release coupling.
-    expect(bundle.includes('0.0.0-test')).toBe(true)
+    expect(bundle.includes(version)).toBe(true)
 
     rmSync(outDir, { recursive: true, force: true })
   }, 60_000)

@@ -1,3 +1,5 @@
+import { defaultNodeRemotePort } from '@superone/shared/environment/client-view'
+import { useAppStore } from '@/stores/app'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronDown, Loader2, Server } from 'lucide-react'
@@ -14,8 +16,6 @@ import {
 import { Input } from '@superone/ui/components/ui/input'
 import { Label } from '@superone/ui/components/ui/label'
 import { cn } from '@superone/ui/lib/utils'
-
-const DEFAULT_REMOTE_PORT = '7788'
 
 /** Mirrors main `SshConfigHost` / preload listSshConfigHosts(). */
 interface SshConfigHostEntry {
@@ -44,6 +44,8 @@ interface AddEnvironmentDialogProps {
  */
 export function AddEnvironmentDialog({ open, onOpenChange, onAdded }: AddEnvironmentDialogProps) {
   const { t } = useTranslation()
+  const appVariant = useAppStore(s => s.appVariant)
+  const defaultRemotePort = String(defaultNodeRemotePort(appVariant === 'stable' ? 'stable' : 'alpha'))
   const [mode, setMode] = useState<'ssh' | 'manual'>('ssh')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -78,7 +80,7 @@ export function AddEnvironmentDialog({ open, onOpenChange, onAdded }: AddEnviron
 
   // Advanced (optional node install path + port; local dist for dev)
   const [remoteExec, setRemoteExec] = useState('')
-  const [remotePort, setRemotePort] = useState(DEFAULT_REMOTE_PORT)
+  const [remotePort, setRemotePort] = useState(defaultRemotePort)
 
   useEffect(() => {
     if (!open) return
@@ -122,7 +124,7 @@ export function AddEnvironmentDialog({ open, onOpenChange, onAdded }: AddEnviron
     setUseLocalUpload(false)
     setDestination('')
     setRemoteExec('')
-    setRemotePort(DEFAULT_REMOTE_PORT)
+    setRemotePort(defaultRemotePort)
     setSshPort('')
     setIdentityFile('')
     setSshLabel('')
@@ -326,7 +328,7 @@ export function AddEnvironmentDialog({ open, onOpenChange, onAdded }: AddEnviron
                   label={t('settings.environments.add.remotePort')}
                   value={remotePort}
                   onChange={setRemotePort}
-                  placeholder={DEFAULT_REMOTE_PORT}
+                  placeholder={defaultRemotePort}
                 />
                 {import.meta.env.DEV && (
                   <label className="flex items-center gap-2 text-xs text-foreground">

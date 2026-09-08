@@ -1,5 +1,8 @@
 # SuperOne — debug, logs, and local paths
 
+Personal paths use `$SUPERONE_HOME`: `~/.superone` for stable, `~/.superone/alpha` for alpha, and `~/.superone/dev` for dev (or an explicit absolute override). Project paths use `<project>/.superone`, with `/alpha` or `/dev` for those variants. No cross-variant fallback or migration is performed.
+
+
 Use this when the user is stuck, sees a crash, or wrong behavior and you need **logs + source layout** to diagnose — including when they @-mentioned Debug. Combine with product/contribute when they want to file an issue or open a fix PR.
 
 For **issues and PRs** (bugs, features, improvements):  
@@ -77,7 +80,7 @@ Multi-instance: if `SUPERONE_INSTANCE` is set, userData nests one level deeper
 | `image-cache/` | Image cache |
 | `remote-config.json` | Remote control config |
 
-Dev registry (mini-app source pointers): `~/.superone/dev-registry.json`
+Dev registry (mini-app source pointers): `$SUPERONE_HOME/dev-registry.json`
 
 ## After you have a diagnosis
 

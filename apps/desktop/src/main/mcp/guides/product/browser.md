@@ -1,5 +1,8 @@
 # The embedded browser (`browser_*`)
 
+Personal paths use `$SUPERONE_HOME`: `~/.superone` for stable, `~/.superone/alpha` for alpha, and `~/.superone/dev` for dev (or an explicit absolute override). Project paths use `<project>/.superone`, with `/alpha` or `/dev` for those variants. No cross-variant fallback or migration is performed.
+
+
 Browser tools drive the browser inside SuperOne. Page tools take an optional
 `tab`; omit it and the session's current tab is used. Memory tools use an explicit
 website domain and run on the agent's node independently of the browser host.
@@ -26,7 +29,7 @@ are paginated; pass `nextOffset` back as `offset` when needed. Related executabl
 flows are discovered separately with `browser_action({action:"list",domain})`.
 
 Each topic is Markdown with YAML metadata under
-`~/.superone/browser/memory/<hostname>/<topic>.md`. This is personal data shared
+`$SUPERONE_HOME/browser/memory/<hostname>/<topic>.md`. This is personal data shared
 across projects and sessions **on the node running the agent**. A remote agent
 reads and writes its remote user's home, even when its browser is hosted by the
 desktop. There is no cross-node sync or fallback to the desktop's memory.

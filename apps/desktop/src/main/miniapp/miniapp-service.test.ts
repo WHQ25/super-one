@@ -75,13 +75,13 @@ beforeEach(() => {
 })
 
 describe('getProjectAppsDir', () => {
-  it('returns .superone/apps under project dir', () => {
-    expect(getProjectAppsDir('/projects/my-app')).toBe('/projects/my-app/.superone/apps')
+  it('returns .superone/dev/apps under project dir', () => {
+    expect(getProjectAppsDir('/projects/my-app')).toBe('/projects/my-app/.superone/dev/apps')
   })
 })
 
 describe('resolveAppEntry', () => {
-  const installDir = '/projects/test/.superone/apps/foo'
+  const installDir = '/projects/test/.superone/dev/apps/foo'
 
   it('returns null when no manifest and no .s1-dev.json exist', async () => {
     mockReadFile.mockRejectedValue(new Error('ENOENT'))
@@ -256,12 +256,12 @@ describe('discoverProjectApps', () => {
     )
     mockReadFile.mockImplementation((path: string) => {
       // prod vanilla: manifest at installDir
-      if (path === '/projects/p/.superone/apps/vanilla-prod/manifest.json')
+      if (path === '/projects/p/.superone/dev/apps/vanilla-prod/manifest.json')
         return Promise.resolve(JSON.stringify(mockManifest('vanilla-prod', 'Prod')))
-      if (path === '/projects/p/.superone/apps/vanilla-prod/.s1-dev.json')
+      if (path === '/projects/p/.superone/dev/apps/vanilla-prod/.s1-dev.json')
         return Promise.reject(new Error('ENOENT'))
       // dev-linked react: .s1-dev.json + manifest read from registry distDir
-      if (path === '/projects/p/.superone/apps/react-dev/.s1-dev.json')
+      if (path === '/projects/p/.superone/dev/apps/react-dev/.s1-dev.json')
         return Promise.resolve(JSON.stringify({ enabled: true }))
       if (path === '/src/react-dev/dist/manifest.json')
         return Promise.resolve(JSON.stringify(mockManifest('react-dev', 'React')))
@@ -271,9 +271,9 @@ describe('discoverProjectApps', () => {
     expect(result).toHaveLength(2)
     const prod = result.find((e) => e.id === 'vanilla-prod')!
     const dev = result.find((e) => e.id === 'react-dev')!
-    expect(prod.installDir).toBe('/projects/p/.superone/apps/vanilla-prod')
+    expect(prod.installDir).toBe('/projects/p/.superone/dev/apps/vanilla-prod')
     expect(prod.distDir).toBeUndefined()
-    expect(dev.installDir).toBe('/projects/p/.superone/apps/react-dev')
+    expect(dev.installDir).toBe('/projects/p/.superone/dev/apps/react-dev')
     expect(dev.distDir).toBe('/src/react-dev/dist')
   })
 
@@ -281,7 +281,7 @@ describe('discoverProjectApps', () => {
     mockReaddir.mockResolvedValue(['unknown-dev'])
     mockDevRegistryLookup.mockResolvedValue(undefined)
     mockReadFile.mockImplementation((path: string) => {
-      if (path === '/projects/p/.superone/apps/unknown-dev/.s1-dev.json')
+      if (path === '/projects/p/.superone/dev/apps/unknown-dev/.s1-dev.json')
         return Promise.resolve(JSON.stringify({ enabled: true }))
       return Promise.reject(new Error('ENOENT'))
     })
@@ -294,9 +294,9 @@ describe('discoverProjectApps', () => {
   it('falls back to prod manifest when dev link disabled, even with both files present (dev/prod coexist)', async () => {
     mockReaddir.mockResolvedValue(['both'])
     mockReadFile.mockImplementation((path: string) => {
-      if (path === '/projects/p/.superone/apps/both/.s1-dev.json')
+      if (path === '/projects/p/.superone/dev/apps/both/.s1-dev.json')
         return Promise.resolve(JSON.stringify({ enabled: false }))
-      if (path === '/projects/p/.superone/apps/both/manifest.json')
+      if (path === '/projects/p/.superone/dev/apps/both/manifest.json')
         return Promise.resolve(JSON.stringify(mockManifest('both', 'Prod Version')))
       return Promise.reject(new Error('ENOENT'))
     })
@@ -396,14 +396,14 @@ describe('createMiniApp', () => {
       expect(writtenPaths).toContain('/projects/test/tools/dashboard/index.html')
     })
 
-    it('writes .s1-dev.json (enabled only) to <projectDir>/.superone/apps/<appId>/ and registers absolute distDir in registry', async () => {
+    it('writes .s1-dev.json (enabled only) to <projectDir>/.superone/dev/apps/<appId>/ and registers absolute distDir in registry', async () => {
       await createMiniApp({
         name: 'Dashboard', slug: 'dashboard',
         directory: '/projects/test/tools/dashboard',
         projectDir: '/projects/test', scope: 'project', template: 'vanilla',
       })
       const devLinkCall = mockWriteFile.mock.calls.find((c: string[]) =>
-        c[0] === `/projects/test/.superone/apps/dashboard-${MOCK_TS_B36}/.s1-dev.json`,
+        c[0] === `/projects/test/.superone/dev/apps/dashboard-${MOCK_TS_B36}/.s1-dev.json`,
       )
       expect(devLinkCall).toBeDefined()
       const parsed = JSON.parse(devLinkCall![1])
@@ -445,7 +445,7 @@ describe('createMiniApp', () => {
         projectDir: '/projects/test', scope: 'project', template: 'react',
       })
       const devLinkCall = mockWriteFile.mock.calls.find((c: string[]) =>
-        c[0] === `/projects/test/.superone/apps/dashboard-${MOCK_TS_B36}/.s1-dev.json`,
+        c[0] === `/projects/test/.superone/dev/apps/dashboard-${MOCK_TS_B36}/.s1-dev.json`,
       )
       expect(devLinkCall).toBeDefined()
       expect(JSON.parse(devLinkCall![1])).toEqual({ enabled: true })
@@ -477,14 +477,14 @@ describe('createMiniApp', () => {
       expect(writtenPaths).toContain('/Users/me/code/notes/manifest.json')
     })
 
-    it('writes .s1-dev.json to ~/.superone/apps/<appId>/ and registers absolute distDir', async () => {
+    it('writes .s1-dev.json to ~/.superone/dev/apps/<appId>/ and registers absolute distDir', async () => {
       await createMiniApp({
         name: 'Notes', slug: 'notes',
         directory: '/Users/me/code/notes',
         scope: 'user', template: 'vanilla',
       })
       const devLinkCall = mockWriteFile.mock.calls.find((c: string[]) =>
-        c[0] === `/mock-home/.superone/apps/notes-${MOCK_TS_B36}/.s1-dev.json`,
+        c[0] === `/mock-home/.superone/dev/apps/notes-${MOCK_TS_B36}/.s1-dev.json`,
       )
       expect(devLinkCall).toBeDefined()
       expect(JSON.parse(devLinkCall![1])).toEqual({ enabled: true })

@@ -385,7 +385,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
   {
     "name": "miniapp_dev_setup",
-    "description": "Scaffold and register a new mini-app after reading miniapp/overview and confirming its requirements, template, tools, directory, and scope with the user. The tool creates source files, updates ~/.superone/dev-registry.json, and writes a project- or user-scoped .s1-dev.json pointer. Use miniapp_dev_register instead when source files already exist.",
+    "description": "Scaffold and register a new mini-app after reading miniapp/overview and confirming its requirements, template, tools, directory, and scope with the user. The tool creates source files, updates dev-registry.json in the variant-specific personal data root, and writes a project- or user-scoped .s1-dev.json pointer. Use miniapp_dev_register instead when source files already exist.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -436,7 +436,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
   {
     "name": "miniapp_dev_register",
-    "description": "Register an existing mini-app directory without modifying its source files. Reads manifest.json from the directory or dist, updates ~/.superone/dev-registry.json, and optionally writes a project- or user-scoped .s1-dev.json pointer.",
+    "description": "Register an existing mini-app directory without modifying its source files. Reads manifest.json from the directory or dist, updates dev-registry.json in the variant-specific personal data root, and optionally writes a project- or user-scoped .s1-dev.json pointer.",
     "inputSchema": {
       "type": "object",
       "properties": {

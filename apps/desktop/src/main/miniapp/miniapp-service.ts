@@ -1,6 +1,6 @@
+import { superoneHome, projectSuperoneHome } from '../superone-home'
 import { readdir, readFile, writeFile, stat, mkdir, rm, rmdir } from 'fs/promises'
 import { join, resolve, sep, relative, dirname, basename } from 'path'
-import { app } from 'electron'
 import log from '../logger'
 import { parseManifest, parseDevLink } from './miniapp-schema'
 import type { MiniAppEntry, MiniAppManifest, MiniAppMediaKind, DevAppInstallation, DevRegistryEntry } from '@superone/shared/miniapp-types'
@@ -9,7 +9,7 @@ import * as devRegistry from './dev-registry'
 
 const DEV_LINK_FILE = '.s1-dev.json'
 
-const userAppsDir = () => join(app.getPath('home'), '.superone', 'apps')
+const userAppsDir = () => join(superoneHome(), 'apps')
 
 const allowedMedia = new Map<string, Set<MiniAppMediaKind>>()
 
@@ -160,10 +160,8 @@ export interface CreateMiniAppResult {
   buildRequired: boolean
 }
 
-const PROJECT_APPS_DIR = '.superone/apps'
-
 export function getProjectAppsDir(projectDir: string): string {
-  return join(projectDir, PROJECT_APPS_DIR)
+  return join(projectSuperoneHome(projectDir), 'apps')
 }
 
 export async function discoverProjectApps(projectDir: string): Promise<MiniAppEntry[]> {

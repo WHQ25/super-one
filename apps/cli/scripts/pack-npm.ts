@@ -173,6 +173,7 @@ export async function packNpm(options: {
     },
     banner: {
       js: [
+        `process.env.SUPERONE_VARIANT = ${JSON.stringify(/-alpha(?:[.-]|$)/.test(version) ? 'alpha' : 'stable')};`,
         "import { createRequire as __superoneCreateRequire } from 'node:module';",
         "import { fileURLToPath as __superoneFileURLToPath } from 'node:url';",
         "import { dirname as __superoneDirname } from 'node:path';",

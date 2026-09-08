@@ -1,5 +1,8 @@
 # Mini-App Development Guide
 
+Personal paths use `$SUPERONE_HOME`: `~/.superone` for stable, `~/.superone/alpha` for alpha, and `~/.superone/dev` for dev (or an explicit absolute override). Project paths use `<project>/.superone`, with `/alpha` or `/dev` for those variants. No cross-variant fallback or migration is performed.
+
+
 A mini-app is a trusted Node.js module plus one or more full Electron WebViews. The MiniApp Host owns computation, agent-facing tools, and every host capability that needs no DOM coordinates; WebViews own rendering and the anchored surfaces (tooltip, context menu, popover, drag).
 
 ## Architecture
@@ -47,7 +50,7 @@ The React build emits both `dist/index.html` and `dist/node.js`.
 - `scope: "project"`: visible only for one project. The source directory must be inside `projectDir`.
 - `scope: "user"`: visible across projects on this machine.
 
-Development apps are resolved through `~/.superone/dev-registry.json`. A project or user app slot contains only a path-free `.s1-dev.json` enablement pointer, so local source paths are not committed.
+Development apps are resolved through `$SUPERONE_HOME/dev-registry.json`. A project or user app slot contains only a path-free `.s1-dev.json` enablement pointer, so local source paths are not committed.
 
 ## Do you need tools?
 

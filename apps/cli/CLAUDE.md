@@ -12,7 +12,7 @@ bun run dev:cli                 # Local foreground node (tsx) — production-ish
 bun run test:cli                # CLI vitest suite
 
 # Local remote lab (host process, remote protocol — preferred for harness/cred work)
-bun run dev:cli:lab             # start background lab on :7789, home ~/.superone/node-dev-lab
+bun run dev:cli:lab             # start background lab on :7789, home ~/.superone/dev/node-dev-lab
 bun run dev:cli:lab:smoke       # start + health + pair + DevTools snippet
 bun run dev:cli:lab:pair        # pair-create
 bun run dev:cli:lab:restart     # after CLI code changes
@@ -36,7 +36,7 @@ credentials. Docker does not see host `$HOME` logins and forces re-auth. Local l
 Use this when verifying remote protocol / harness / session work without Docker.
 
 ```bash
-# Terminal A — host-process node (loopback :7789, home ~/.superone/node-dev-lab)
+# Terminal A — host-process node (loopback :7789, home ~/.superone/dev/node-dev-lab)
 bun run dev:cli:lab
 
 # Terminal B — Electron (dev build only shows the Local lab card)

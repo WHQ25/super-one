@@ -77,7 +77,11 @@ if [[ -z "${VERSION}" || "${VERSION}" == *..* || "${VERSION}" == */* || "${VERSI
 fi
 
 if [[ -z "${HARNESS_HOME}" ]]; then
-  HARNESS_HOME="${HOME}/.superone/harness"
+  PERSONAL_ROOT="${SUPERONE_HOME:-${HOME}/.superone}"
+  if [[ -z "${SUPERONE_HOME:-}" && "${SUPERONE_VARIANT:-stable}" != stable ]]; then
+    case "${SUPERONE_VARIANT}" in alpha|dev) PERSONAL_ROOT="${PERSONAL_ROOT}/${SUPERONE_VARIANT}" ;; *) echo "invalid SUPERONE_VARIANT" >&2; exit 2 ;; esac
+  fi
+  HARNESS_HOME="${PERSONAL_ROOT}/harness"
 fi
 
 detect_pkg() {

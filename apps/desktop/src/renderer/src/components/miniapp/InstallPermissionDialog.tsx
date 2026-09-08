@@ -75,10 +75,10 @@ export function InstallPermissionDialog({ onInstalled, onError }: Props) {
 
   const handleConfirm = async () => {
     try {
-      const installDir = installTarget === 'project' && currentFolder
-        ? `${currentFolder}/.superone/apps`
+      const projectDir = installTarget === 'project' && currentFolder
+        ? currentFolder
         : undefined
-      const result = await confirmInstall(installDir, preapprovedToolNames.length > 0 ? preapprovedToolNames : undefined)
+      const result = await confirmInstall(projectDir, preapprovedToolNames.length > 0 ? preapprovedToolNames : undefined)
       onInstalled(result.entry.manifest.name, result.upgraded)
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Install failed')

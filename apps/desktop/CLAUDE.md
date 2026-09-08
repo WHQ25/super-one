@@ -236,7 +236,7 @@ before it constructs `AppInfo`, so it is the only seam that reaches the install 
   not move it. `packagedUserDataPath()` in `user-data-path.ts` builds it and
   `index.ts` calls `app.setPath('userData', …)` in both the dev and packaged branches
 - Anything else living at a fixed absolute path needs a per-variant scope too, and
-  the list is not obvious: the harness root (`~/.superone/<harnessDirName>`, because
+  the list is not obvious: the harness root (`$SUPERONE_HOME/harness`, because
   `pruneVersions` keeps only two versions and would delete the other variant's
   running binary), the Computer Use helper bundle id and install root, and the
   lid-keep-awake lease (now per-process: `<prefix>.<uid>.<pid>.lease`)
@@ -380,7 +380,7 @@ because a build with the wrong identity is worse than no build.
 - Output: `apps/desktop/dist/<variant>/`
 - `asarUnpack: "**/*.node"` — required for the `better-sqlite3` native module (harness
   platform binaries are **not** unpacked; they are installed on demand under
-  `~/.superone/<harnessDirName>`)
+  `$SUPERONE_HOME/harness`)
 - `publish`: `generic` against `https://dl.super-one.dev/<downloadPrefix>` with an
   explicit `channel: latest`. The explicit channel is what stops electron-builder
   deriving one from the version's prerelease tag, so every variant emits the same

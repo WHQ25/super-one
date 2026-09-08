@@ -72,7 +72,7 @@ interface MiniAppStoreState {
   fetchApps: (projectDir?: string) => Promise<void>
   refreshApps: (projectDir?: string) => Promise<void>
   previewInstall: (s1appPath: string) => Promise<MiniAppPreviewResult>
-  confirmInstall: (installDir?: string, preapprovedTools?: string[]) => Promise<MiniAppInstallResult>
+  confirmInstall: (projectDir?: string, preapprovedTools?: string[]) => Promise<MiniAppInstallResult>
   cancelInstall: () => Promise<void>
   uninstallApp: (appId: string, installDir?: string) => Promise<void>
 
@@ -137,11 +137,11 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
       set({ pendingInstall: preview })
       return preview
     },
-    confirmInstall: async (installDir?: string, preapprovedTools?: string[]) => {
+    confirmInstall: async (projectDir?: string, preapprovedTools?: string[]) => {
       const pending = get().pendingInstall
       if (!pending) throw new Error('No pending install')
       set({ pendingInstall: null })
-      const result = await window.miniapp.confirmInstall(pending.tempDir, installDir, preapprovedTools)
+      const result = await window.miniapp.confirmInstall(pending.tempDir, projectDir, preapprovedTools)
       await get().refreshApps(get()._lastProjectDir)
       return result
     },

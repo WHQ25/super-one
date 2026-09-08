@@ -2,7 +2,9 @@
 # Start superone on loopback (Node runtime), then sshd in the foreground.
 set -euo pipefail
 
-NODE_HOME="${SUPERONE_NODE_HOME:-/home/superone/.superone/node}"
+export SUPERONE_VARIANT=dev
+export SUPERONE_HOME="${SUPERONE_HOME:-/home/superone/.superone/dev}"
+NODE_HOME="${SUPERONE_NODE_HOME:-${SUPERONE_HOME}/node}"
 NODE_HOST="${SUPERONE_NODE_HOST:-127.0.0.1}"
 NODE_PORT="${SUPERONE_NODE_PORT:-7788}"
 WORK_DIR="${WORK_DIR:-/work}"

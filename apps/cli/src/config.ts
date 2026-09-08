@@ -1,12 +1,13 @@
-import { homedir } from 'node:os'
+import { defaultNodeRemotePort } from '@superone/shared/environment/client-view'
+import { resolveSuperoneHome } from '@superone/runtime/fs/superone-home'
 import { join } from 'node:path'
 
 /** Default node home: ~/.superone/node */
-export const DEFAULT_NODE_HOME = join(homedir(), '.superone', 'node')
+export const DEFAULT_NODE_HOME = join(resolveSuperoneHome(), 'node')
 
 /** Default loopback bind for SSH-forward deployments. */
 export const DEFAULT_BIND_HOST = '127.0.0.1'
-export const DEFAULT_BIND_PORT = 7788
+export const DEFAULT_BIND_PORT = defaultNodeRemotePort(process.env.SUPERONE_VARIANT === 'alpha' ? 'alpha' : 'stable')
 
 export interface NodeRuntimeConfig {
   nodeHome: string
@@ -16,7 +17,7 @@ export interface NodeRuntimeConfig {
 }
 
 export function resolveNodeHome(override?: string): string {
-  return override || process.env.SUPERONE_NODE_HOME || DEFAULT_NODE_HOME
+  return override || process.env.SUPERONE_NODE_HOME || join(resolveSuperoneHome(), 'node')
 }
 
 export function resolveRuntimeConfig(partial: Partial<NodeRuntimeConfig> = {}): NodeRuntimeConfig {

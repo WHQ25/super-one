@@ -2077,6 +2077,7 @@ export const zh: Messages = {
       collapseTask: '收起',
     },
     askUser: {
+      answered: '已回答',
       otherOption: '其他...',
       selectOptionPreview: '选择一个选项以预览',
       noteOptionalPlaceholder: '添加备注（可选）...',

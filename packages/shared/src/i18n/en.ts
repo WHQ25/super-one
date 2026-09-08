@@ -1981,6 +1981,7 @@ export type Messages = {
       collapseTask: string
     }
     askUser: {
+      answered: string
       otherOption: string
       selectOptionPreview: string
       noteOptionalPlaceholder: string
@@ -5674,6 +5675,7 @@ export const en: Messages = {
       collapseTask: 'Collapse',
     },
     askUser: {
+      answered: 'Answered',
       otherOption: 'Other...',
       selectOptionPreview: 'Select an option to preview',
       noteOptionalPlaceholder: 'Add a note (optional)...',

@@ -1,3 +1,4 @@
+import { dispatchBackendSteer } from './dispatch-backend-steer'
 import { broadcastSessionSettings } from './session-settings-broadcast'
 import type {
   AgentEvent,
@@ -1333,36 +1334,17 @@ export class Session implements SessionContract {
     this.assertNotDisposed()
     this.touchRuntimeActivity()
     switch (cmd.kind) {
-      case 'codex.steer': {
-        if (cmd.newUserMessageId && cmd.newUserText) this.appendSideChannelUserMessage(cmd.newUserMessageId, cmd.newUserText)
-        if (!this.backend.handleCommand) throw new Error(`Session ${this.id} harness=${this.harnessId} does not support backend commands`)
-        await this.backend.handleCommand(cmd)
-        return
-      }
-      case 'codex.steer_queued': {
-        if (this.harnessId !== 'codex' || !this.isStreaming()) {
-          throw new Error('Queued message can only steer an active Codex turn')
-        }
-        if (!this.backend.handleCommand) throw new Error(`Session ${this.id} harness=${this.harnessId} does not support backend commands`)
-        await this.backend.handleCommand(cmd)
-        return
-      }
-      case 'claude.steer_queued': {
-        if (this.harnessId !== 'claude' || !this.isStreaming()) {
-          throw new Error('Queued message can only steer an active Claude turn')
-        }
-        if (!this.backend.handleCommand) throw new Error(`Session ${this.id} harness=${this.harnessId} does not support backend commands`)
-        await this.backend.handleCommand(cmd)
-        return
-      }
-      case 'acp.steer_queued': {
-        if (this.harnessId !== 'acp' || !this.isStreaming()) {
-          throw new Error('Queued message can only steer an active ACP turn')
-        }
-        if (!this.backend.handleCommand) throw new Error(`Session ${this.id} harness=${this.harnessId} does not support backend commands`)
-        await this.backend.handleCommand(cmd)
-        return
-      }
+      case 'codex.steer':
+      case 'codex.steer_queued':
+      case 'claude.steer_queued':
+      case 'acp.steer_queued':
+        return dispatchBackendSteer(cmd, {
+          id: this.id,
+          harnessId: this.harnessId,
+          streaming: this.isStreaming(),
+          backend: this.backend,
+          appendUserMessage: (id, text) => this.appendSideChannelUserMessage(id, text),
+        })
       case 'codex.plan_approval': {
         this.applyCodexPlanApprovalToMessage(cmd.messageId, { status: cmd.status, ...(cmd.feedback ? { feedback: cmd.feedback } : {}) })
         this.forwardEvent({

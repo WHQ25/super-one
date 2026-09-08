@@ -2216,6 +2216,16 @@ describe('Session message accumulation', () => {
     expect(backend.commandCalls[0]).toMatchObject({ kind: 'codex.steer', input: 'keep going', newUserMessageId: 'user-steer-1' })
   })
 
+  it('does not persist an async answer when steer fails', async () => {
+    const { session, backend } = makeSession({ harnessId: 'codex' })
+    vi.spyOn(backend, 'handleCommand').mockRejectedValueOnce(new Error('No active turn'))
+    await expect(session.dispatchBackendCommand({
+      kind: 'codex.steer', input: 'Production',
+      newUserMessageId: 'codex_async_answer:question-1', newUserText: 'Production',
+    })).rejects.toThrow('No active turn')
+    expect(session.snapshot.messages).toHaveLength(0)
+  })
+
   it('dispatchBackendCommand(codex.steer) without user info skips append but still forwards', async () => {
     const { session, backend } = makeSession({ harnessId: 'codex' })
     await session.dispatchBackendCommand({ kind: 'codex.steer', input: 'raw' })

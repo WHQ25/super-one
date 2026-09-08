@@ -1,17 +1,10 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createElement } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const sendMessage = vi.hoisted(() => vi.fn(async () => {}))
-
-vi.mock('@/stores/chat', () => ({
-  useChatStore: (selector: (state: { sendMessage: () => Promise<void> }) => unknown) => selector({
-    sendMessage,
-  }),
-  useSessionScope: () => ({ projectPath: '/project', sessionId: 'session-1' }),
-}))
+const steer = vi.fn<(...args: unknown[]) => Promise<void>>(async () => {})
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -19,9 +12,29 @@ vi.mock('react-i18next', () => ({
 
 import { CodexAsyncQuestionBlock, formatCodexAsyncQuestionReply } from './CodexAsyncQuestionBlock'
 
+import { SessionScopeProvider, useChatStore } from '@/stores/chat'
+import { createDefaultPerSessionState, createDefaultProjectState } from '@/stores/chat-store/defaults'
+
 beforeEach(() => {
-  sendMessage.mockClear()
+  steer.mockReset()
+  window.app.codexSteer = steer
+  useChatStore.setState({
+    activeProject: '/project',
+    projectSessions: {
+      '/project': {
+        ...createDefaultProjectState(),
+        _activeSessionId: 'session-1',
+        _sessions: { 'session-1': { ...createDefaultPerSessionState(), status: 'streaming', sessionProvider: 'codex' } },
+      },
+    },
+  })
 })
+afterEach(cleanup)
+
+const question = {
+  id: 'question-1', type: 'agent_message' as const, text: '', delivery: 'async' as const,
+  questions: [{ title: 'Which environment?', options: ['Staging', 'Production'] }],
+}
 
 describe('formatCodexAsyncQuestionReply', () => {
   it('sends a single answer without repeating its question', () => {
@@ -41,7 +54,7 @@ describe('formatCodexAsyncQuestionReply', () => {
     )).toBe('Which environment?\nStaging\n\nWhat deadline?\nFriday')
   })
 
-  it('submits selected and free-text answers as a scoped user message', async () => {
+  it('steers answers immediately and renders an answered summary', async () => {
     render(createElement(CodexAsyncQuestionBlock, {
       item: {
         id: 'question-1',
@@ -61,12 +74,73 @@ describe('formatCodexAsyncQuestionReply', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: 'chat.askUser.submit' }))
 
-    await waitFor(() => expect(sendMessage).toHaveBeenCalledWith(
+    await waitFor(() => expect(steer).toHaveBeenCalledWith(
+      'session-1',
       'Which environment?\nProduction\n\nWhat deadline?\nFriday',
-      undefined,
-      undefined,
-      undefined,
-      { projectPath: '/project', sessionId: 'session-1' },
+      '',
+      'codex_async_answer:question-1',
+      'Which environment?\nProduction\n\nWhat deadline?\nFriday',
     ))
+    await waitFor(() => expect(screen.getByText('chat.askUser.answered')).toBeTruthy())
+    expect(screen.queryByRole('button', { name: 'chat.askUser.submit' })).toBeNull()
   })
+  it('keeps the question pending until steer succeeds and restores the answer on remount', async () => {
+    let accept!: () => void
+    steer.mockImplementationOnce(() => new Promise<void>((resolve) => { accept = resolve }))
+    const view = render(createElement(CodexAsyncQuestionBlock, { item: question }))
+    const submit = screen.getByRole('button', { name: 'chat.askUser.submit' })
+    fireEvent.click(submit)
+    fireEvent.click(submit)
+    expect(steer).toHaveBeenCalledTimes(1)
+    expect(submit).toBeDisabled()
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(useChatStore.getState().projectSessions['/project']._sessions['session-1'].messages).toHaveLength(0)
+    await act(async () => accept())
+    expect(screen.getByRole('status')).toHaveTextContent('chat.askUser.answered')
+    view.unmount()
+    render(createElement(CodexAsyncQuestionBlock, { item: question }))
+    expect(screen.getByRole('status')).toHaveTextContent('chat.askUser.answered')
+    expect(screen.getByText('Staging')).toBeTruthy()
+    expect(screen.queryByRole('button')).toBeNull()
+  })
+
+  it('preserves the answer for retry when the active turn rejects steer', async () => {
+    steer.mockRejectedValueOnce(new Error('No active Codex turn to steer'))
+    render(createElement(CodexAsyncQuestionBlock, { item: question }))
+    fireEvent.click(screen.getByRole('button', { name: 'Production' }))
+    fireEvent.click(screen.getByRole('button', { name: 'chat.askUser.submit' }))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('No active Codex turn to steer'))
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Production' })).toHaveAttribute('aria-pressed', 'true')
+    expect(useChatStore.getState().projectSessions['/project']._sessions['session-1'].messages).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: 'chat.askUser.submit' }))
+    await waitFor(() => expect(screen.getByRole('status')).toBeTruthy())
+    expect(steer).toHaveBeenCalledTimes(2)
+  })
+
+  it('steers the scoped pane and keeps its answer out of the foreground session', async () => {
+    useChatStore.setState((state) => ({
+      projectSessions: {
+        ...state.projectSessions,
+        '/project': {
+          ...state.projectSessions['/project'],
+          _sessions: {
+            ...state.projectSessions['/project']._sessions,
+            'session-2': { ...createDefaultPerSessionState(), status: 'streaming', sessionProvider: 'codex' },
+          },
+        },
+      },
+    }))
+    render(createElement(SessionScopeProvider, {
+      value: { projectPath: '/project', sessionId: 'session-2' },
+      children: createElement(CodexAsyncQuestionBlock, { item: question }),
+    }))
+    fireEvent.click(screen.getByRole('button', { name: 'chat.askUser.submit' }))
+    await waitFor(() => expect(screen.getByRole('status')).toBeTruthy())
+    expect(steer).toHaveBeenCalledWith('session-2', 'Staging', '', 'codex_async_answer:question-1', 'Staging')
+    const sessions = useChatStore.getState().projectSessions['/project']._sessions
+    expect(sessions['session-1'].messages).toHaveLength(0)
+    expect(sessions['session-2'].messages).toHaveLength(1)
+  })
+
 })

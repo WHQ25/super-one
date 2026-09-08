@@ -86,7 +86,15 @@ export function MobileNavigator(props: {
           settings: 1,
           files: 1,
         }) as MobileRoute[]).map((route) => (
-          <Stack.Screen key={route} name={route}>
+          <Stack.Screen
+            key={route}
+            name={route}
+            // Chat sits directly on the device list, so the back gesture would
+            // drop the connection's whole context to show a screen the user was
+            // not asking for. The workspace drawer owns that edge instead, and
+            // only its Disconnect button returns to the device list.
+            options={route === 'chat' ? { gestureEnabled: false } : undefined}
+          >
             {() => props.renderScene(route)}
           </Stack.Screen>
         ))}

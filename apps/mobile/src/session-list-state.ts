@@ -22,6 +22,16 @@ export type SessionListRow = {
 
 export type SessionListGroup = { parent: SessionListRow; children: SessionListRow[] }
 
+/**
+ * How many session groups a project shows before "Show more", and how many each
+ * reveal adds — the desktop sidebar's `INITIAL_EXPAND_LEVEL` / `EXPAND_STEP`.
+ *
+ * Deliberately unrelated to `SESSION_PAGE_SIZE`: reveal is a display step, the
+ * page is a network one. Over a relay, one 30-row request covering five reveals
+ * beats five requests, so the two must not be collapsed into a single number.
+ */
+export const SESSION_REVEAL_STEP = 6
+
 /** A parent row, or one of its collaboration children, in render order. */
 export type SessionListItem = {
   session: SessionListRow
@@ -64,9 +74,11 @@ export function flattenSessionGroups(
   rows: SessionListRow[],
   expandedIds: ReadonlySet<string>,
   activeSessionId?: string | null,
+  /** Groups to render before "Show more"; unbounded when omitted. */
+  groupLimit?: number,
 ): SessionListItem[] {
   const items: SessionListItem[] = []
-  for (const { parent, children } of groupSessionRows(rows)) {
+  for (const { parent, children } of visibleSessionGroups(groupSessionRows(rows), groupLimit, activeSessionId)) {
     const hasChildren = children.length > 0
     const collapsed = hasChildren && !expandedIds.has(parent.sessionId)
     items.push({ session: parent, child: false, hasChildren, collapsed })
@@ -78,4 +90,42 @@ export function flattenSessionGroups(
     }
   }
   return items
+}
+
+/**
+ * The first `limit` groups, plus the group holding the session the user is in.
+ * Desktop's rule: the current session must stay reachable in the list, and it
+ * keeps its natural position rather than being promoted, so switching sessions
+ * never reshuffles the list under the finger.
+ */
+export function visibleSessionGroups(
+  groups: SessionListGroup[],
+  limit?: number,
+  activeSessionId?: string | null,
+): SessionListGroup[] {
+  if (limit == null || groups.length <= limit) return groups
+  const visible = groups.slice(0, limit)
+  if (!activeSessionId || visible.some((group) => holdsSession(group, activeSessionId))) return visible
+  const active = groups.find((group) => holdsSession(group, activeSessionId))
+  return active ? [...visible, active] : visible
+}
+
+const holdsSession = (group: SessionListGroup, sessionId: string) =>
+  group.parent.sessionId === sessionId || group.children.some((child) => child.sessionId === sessionId)
+
+/**
+ * Project paths whose session list the host just reported as changed. Reading
+ * the raw batch rather than a typed event: this runs before the batch reaches
+ * `ChatRuntime`, which is the only way the drawer stays current while no
+ * session is open at all.
+ */
+export function sessionListInvalidations(events: unknown[]): string[] {
+  const paths: string[] = []
+  for (const event of events) {
+    if (!event || typeof event !== 'object') continue
+    const frame = event as { type?: unknown; projectPath?: unknown }
+    if (frame.type !== 'session_list_changed' || typeof frame.projectPath !== 'string') continue
+    if (!paths.includes(frame.projectPath)) paths.push(frame.projectPath)
+  }
+  return paths
 }

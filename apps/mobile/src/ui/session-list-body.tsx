@@ -36,9 +36,11 @@ export function SessionListBody(props: SessionListActions & {
     void op.then((confirmed) => { if (confirmed) apply() })
   }
   return <View>
-    {sessions.busy ? <ActivityIndicator style={{ padding: 12 }} color={colors.mutedForeground} /> : null}
+    {/* `!loaded` covers the frame before the request is even in flight; without
+        it the empty state flashes on every first paint. */}
+    {sessions.busy || !sessions.loaded ? <ActivityIndicator style={{ padding: 12 }} color={colors.mutedForeground} /> : null}
     {sessions.error ? <Text style={{ color: colors.error, padding: 12 }}>{sessions.error}</Text> : null}
-    {!sessions.busy && !sessions.error && !sessions.items.length
+    {sessions.loaded && !sessions.busy && !sessions.error && !sessions.items.length
       ? <Text style={{ color: colors.mutedForeground, fontSize: 13, padding: 12 }}>No sessions yet</Text>
       : null}
 

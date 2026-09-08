@@ -11,6 +11,10 @@ import type { MobileColorScheme } from './theme/tokens'
  * concurrently and the tree is not committed when the call returns. Always
  * await this.
  */
-export function renderWithTheme(ui: ReactElement, colorScheme: MobileColorScheme = 'dark') {
-  return render(<MobileThemeProvider colorScheme={colorScheme}>{ui}</MobileThemeProvider>)
+export async function renderWithTheme(ui: ReactElement, colorScheme: MobileColorScheme = 'dark') {
+  const wrap = (next: ReactElement) => <MobileThemeProvider colorScheme={colorScheme}>{next}</MobileThemeProvider>
+  const result = await render(wrap(ui))
+  // RNTL's own `rerender` replaces the whole tree, provider included, so a test
+  // driving a prop change would remount into a bare tree and throw. Re-wrap it.
+  return { ...result, rerender: (next: ReactElement) => result.rerender(wrap(next)) }
 }

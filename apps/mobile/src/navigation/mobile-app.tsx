@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { StatusBar } from 'expo-status-bar'
 import * as Clipboard from 'expo-clipboard'
 import { useCameraPermissions, type BarcodeScanningResult } from 'expo-camera'
-import { Linking, Pressable, useWindowDimensions, View } from 'react-native'
+import { BackHandler, Linking, Pressable, useWindowDimensions, View } from 'react-native'
 import { Text } from '../ui/text'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { WebView } from 'react-native-webview'
@@ -53,7 +53,7 @@ import {
 } from '../worktree-state'
 import { shouldUseTabletMultiPane } from '../layout-state'
 import { TabletSessionSidebar } from './tablet-session-sidebar'
-import type { SessionListRow as SessionRow } from '../session-list-state'
+import { sessionListInvalidations, type SessionListRow as SessionRow } from '../session-list-state'
 import { injectHostMessage as inject, resolveNativeRequest } from '../native-actions'
 import { useSharedFileInbox } from '../shared-file-inbox'
 import type { ReconnectController } from '../reconnect-controller'
@@ -150,6 +150,17 @@ export function MobileApp() {
   const [starting, setStarting] = useState(false)
   const [connectionState, setConnectionState] = useState<'connected' | 'reconnecting' | 'offline'>('offline')
   const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false)
+  /**
+   * Bumped whenever the host reports a session-list change, and once after a
+   * reconnect — events that landed while the socket was down were never
+   * delivered, so everything cached is suspect. The drawer re-reads on a bump
+   * instead of on every open.
+   *
+   * One counter rather than one per project: `useProjectSessions` only ever
+   * caches the project it currently has open, so a change elsewhere costs at
+   * most one extra request the next time the drawer is opened.
+   */
+  const [sessionListRevision, setSessionListRevision] = useState(0)
   /** Where a session goes when it ends, fails or is removed: the workspace, open. */
   const returnToWorkspace = () => { setScreen('chat'); setSessionSwitcherOpen(true) }
   const [attachments, setAttachments] = useState<ImageAttachment[]>([])
@@ -410,6 +421,9 @@ export function MobileApp() {
         logRelayEventTypes(events)
         const removed = sessionRemovalStatus(events, runtimeRef.current, epoch)
         if (removed) { clearActiveSession(); returnToWorkspace(); setStatus(removed); return }
+        // Read off the raw batch, before ChatRuntime: the drawer has to stay
+        // current even when no session is open and there is no runtime to ingest.
+        if (sessionListInvalidations(events).length) setSessionListRevision((n) => n + 1)
         runtimeRef.current?.ingest(events, epoch)
       },
       onTerminal: (payload) => termRuntimeRef.current?.ingest(payload),
@@ -422,6 +436,10 @@ export function MobileApp() {
       },
       currentEpoch: (activeClient) => runtimeRef.current?.epoch ?? activeClient.buffer.epoch,
       onConnection: (state, epoch) => {
+        // A socket that was down missed every invalidation sent meanwhile.
+        if (state === 'connected' && connectionRef.current?.state !== 'connected') {
+          setSessionListRevision((n) => n + 1)
+        }
         connectionRef.current = { state, epoch }
         setConnectionState(state)
         inject(webRef, { type: 'setConnection', state, epoch })
@@ -1088,6 +1106,15 @@ export function MobileApp() {
     : mobileHeaderTitle(screen, project?.name, activeSessionTitle, terminalUi.title)
   const tabletMultiPane = shouldUseTabletMultiPane(width, screen, !!project)
 
+  // Android's back button is the hardware twin of the swipe the navigator no
+  // longer accepts on chat, so it opens the workspace for the same reason.
+  // While the drawer is up the dialog consumes back itself and this never runs.
+  useEffect(() => {
+    if (screen !== 'chat' || tabletMultiPane) return
+    const back = BackHandler.addEventListener('hardwareBackPress', () => { setSessionSwitcherOpen(true); return true })
+    return () => back.remove()
+  }, [screen, tabletMultiPane])
+
   return (
     <SafeAreaView style={styles.root}>
       <StatusBar style={tokens.scheme === 'dark' ? 'light' : 'dark'} />
@@ -1145,8 +1172,9 @@ export function MobileApp() {
             route={screen}
             filesOrigin={filesOrigin}
             onRouteChange={(route) => {
-              // Swiping the chat off the stack lands on the device list, which has
-              // no session to show — release the one that was open.
+              // Chat cannot be swiped off the stack (see MobileNavigator), so
+              // reaching the device list means the transport is already gone —
+              // but a stray pop must still not leave a session held open.
               if (screen === 'chat' && route === 'pair' && sessionId) leaveActiveSession()
               setScreen(route)
             }}
@@ -1239,6 +1267,9 @@ export function MobileApp() {
       {route === 'chat' ? (
         <ChatScreen provider={selectedProvider}
           starting={starting}
+          // The tablet keeps the session list on screen, so it has nothing to
+          // pull out and the gutter stays free for the transcript.
+          onEdgeSwipe={tabletMultiPane ? undefined : () => setSessionSwitcherOpen(true)}
           landing={!sessionId ? {
             provider: selectedProvider,
             harnessOptions,
@@ -1433,6 +1464,7 @@ export function MobileApp() {
           onNewSession: (p) => runUiAction(async () => { await openProject(p); startNewSession(p) }, setStatus, 'failed to open project'),
           onOpenSession: (p, row) => runUiAction(async () => { if (p.path !== project?.path) await openProject(p); await openSession(row, p) }, setStatus, 'failed to open session'),
           ...sessionListActions,
+          listRevision: sessionListRevision,
           onSearch: () => setScreen('session-search'),
           deviceStatus,
           reconnect,

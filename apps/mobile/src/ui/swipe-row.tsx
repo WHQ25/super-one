@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState, type ReactNode } from 'react'
+import { useReportSwipeReveal } from './swipe-reveal-scope'
 import type { LucideIcon } from 'lucide-react-native'
 import { Alert, Animated, PanResponder, Pressable, StyleSheet, View } from 'react-native'
 import { Text } from './text'
@@ -53,10 +54,12 @@ export function SwipeRow(props: {
   const opened = useRef(false)
   const [revealed, setRevealed] = useState(false)
   const dragStart = useRef(0)
+  const reportReveal = useReportSwipeReveal()
 
   const settle = (open: boolean) => {
     opened.current = open
     setRevealed(open)
+    reportReveal(open)
     Animated.spring(offset, {
       toValue: open ? actionsWidth : 0,
       useNativeDriver: true,
@@ -66,11 +69,17 @@ export function SwipeRow(props: {
   }
 
   const panResponder = useMemo(() => PanResponder.create({
-    onMoveShouldSetPanResponder: (_, gesture) => (
-      Math.abs(gesture.dx) > 8 && Math.abs(gesture.dx) > Math.abs(gesture.dy)
-    ),
+    onMoveShouldSetPanResponder: (_, gesture) => {
+      if (Math.abs(gesture.dx) <= 8 || Math.abs(gesture.dx) <= Math.abs(gesture.dy)) return false
+      // Only the direction this row can actually travel. A closed row has
+      // nothing to reveal leftward, and claiming that drag anyway would swallow
+      // it before the panel behind the list — the drawer — could read it as a
+      // swipe to close.
+      return opened.current ? gesture.dx < 0 : gesture.dx > 0
+    },
     onPanResponderGrant: () => {
       setRevealed(true)
+      reportReveal(true)
       dragStart.current = opened.current ? actionsWidth : 0
     },
     onPanResponderMove: (_, gesture) => {
@@ -80,7 +89,7 @@ export function SwipeRow(props: {
       settle(dragStart.current + gesture.dx > actionsWidth / 2)
     },
     onPanResponderTerminate: () => settle(opened.current),
-  }), [offset, actionsWidth])
+  }), [offset, actionsWidth, reportReveal])
 
   const run = (action: SwipeAction) => {
     settle(false)
@@ -103,7 +112,7 @@ export function SwipeRow(props: {
   const strip = [...props.actions].reverse()
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, floating && styles.floatingContainer]}>
       <View
         pointerEvents={revealed ? 'auto' : 'none'}
         accessibilityElementsHidden={!revealed}
@@ -166,6 +175,9 @@ function useStyles() {
       marginBottom: tokens.spacing.sm,
       overflow: 'hidden',
     },
+    // A list of single-line rows reads as a list; the card gap would break it
+    // into a stack of separate objects and cost a third of the visible rows.
+    floatingContainer: { marginBottom: 2 },
     actions: {
       ...StyleSheet.absoluteFillObject,
       alignItems: 'stretch',

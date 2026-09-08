@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RelayClient } from '@superone/relay-client'
 import type { Project } from '../project-types'
-import { flattenSessionGroups, type SessionListItem, type SessionListRow } from '../session-list-state'
+import { flattenSessionGroups, groupSessionRows, SESSION_REVEAL_STEP, type SessionListItem, type SessionListRow } from '../session-list-state'
 import { readProjectSessions, SESSION_PAGE_SIZE } from './workspace-data'
 
 export type ProjectSessions = {
   items: SessionListItem[]
   busy: boolean
+  /**
+   * The first read has settled, one way or another. Emptiness cannot be inferred
+   * from `!busy`: `busy` only turns on inside the effect, which runs *after* the
+   * first commit, so the list would paint "No sessions yet" for a frame before
+   * it had asked anyone.
+   */
+  loaded: boolean
   loadingMore: boolean
   error: string
   hasMore: boolean
@@ -16,6 +23,13 @@ export type ProjectSessions = {
   forget: (sessionId: string) => void
   /** Apply a confirmed server-side change (pin) without refetching every page. */
   patch: (sessionId: string, changes: Partial<SessionListRow>) => void
+  /**
+   * Re-read what is already loaded, in place: no spinner, no wipe. The drawer
+   * calls this every time it opens, so a list it has seen before paints from
+   * cache and is corrected a moment later rather than being cleared and fetched
+   * again from scratch.
+   */
+  refresh: () => void
 }
 
 /**
@@ -35,11 +49,20 @@ export function useProjectSessions(
   const [rows, setRows] = useState<SessionListRow[]>([])
   const [total, setTotal] = useState(0)
   const [busy, setBusy] = useState(false)
+  const [loaded, setLoaded] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState('')
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(() => new Set())
+  // How many groups are revealed, which is *not* how many rows are loaded: the
+  // list shows six at a time the way the desktop sidebar does, over a network
+  // page five times that size.
+  const [revealed, setRevealed] = useState(SESSION_REVEAL_STEP)
   const generation = useRef(0)
   const path = project?.path ?? null
+  // How deep the user has paged, read by `refresh` without making it a
+  // dependency — the drawer holds `refresh` in an effect, and a callback that
+  // changed on every row change would re-fire it.
+  const loadedRef = useRef(0)
 
   const read = useCallback(async (offset: number) => {
     if (!client || !path) throw new Error('Not connected')
@@ -52,9 +75,11 @@ export function useProjectSessions(
     setTotal(seed.length)
     setError('')
     setExpandedIds(new Set())
+    setRevealed(SESSION_REVEAL_STEP)
+    setLoaded(false)
     // Without a transport the seed is all there is — an offline shell and the
     // offline preview both render the rows they were handed, not an error.
-    if (!client || !path) { setBusy(false); return }
+    if (!client || !path) { setBusy(false); setLoaded(true); return }
     setBusy(true)
     void read(0)
       .then((page) => {
@@ -66,16 +91,39 @@ export function useProjectSessions(
         if (request !== generation.current) return
         setError(cause instanceof Error ? cause.message : 'Could not load sessions')
       })
-      .finally(() => { if (request === generation.current) setBusy(false) })
+      .finally(() => { if (request !== generation.current) return; setBusy(false); setLoaded(true) })
     return () => { generation.current++ }
     // `seed` is a render-time array; the project path is what actually changes.
   }, [client, path, read])
 
-  const loaded = rows.length
+  const loadedCount = rows.length
+  useEffect(() => { loadedRef.current = loadedCount }, [loadedCount])
+
+  /**
+   * One request covering everything currently on screen, replacing it wholesale.
+   * Merging a fresh first page into older ones cannot be done honestly: the host
+   * orders by last activity, so a row that was on page 1 may now belong on
+   * page 2 and no merge rule puts it back in the right place.
+   */
+  const refresh = useCallback(() => {
+    if (!client || !path) return
+    const request = generation.current
+    void readProjectSessions(client, path, { limit: Math.max(loadedRef.current, SESSION_PAGE_SIZE), offset: 0 })
+      .then((page) => {
+        if (request !== generation.current) return
+        setRows(page.sessions)
+        setTotal(page.totalCount)
+        setError('')
+      })
+      // A failed background refresh leaves the cached list alone; the user did
+      // not ask for it and has nothing to retry.
+      .catch(() => {})
+  }, [client, path])
+
   const fetchPage = useCallback(() => {
     const request = generation.current
     setLoadingMore(true)
-    return read(loaded)
+    return read(loadedCount)
       .then((page) => {
         if (request !== generation.current) return
         setRows((current) => {
@@ -84,7 +132,7 @@ export function useProjectSessions(
         })
         // An empty page ends the list whatever the count said, so a host that
         // over-reports its total cannot leave "Show more" stuck on screen.
-        setTotal(page.sessions.length ? page.totalCount : loaded)
+        setTotal(page.sessions.length ? page.totalCount : loadedCount)
       })
       .catch((cause: unknown) => {
         if (request === generation.current) {
@@ -92,18 +140,31 @@ export function useProjectSessions(
         }
       })
       .finally(() => { if (request === generation.current) setLoadingMore(false) })
-  }, [read, loaded])
+  }, [read, loadedCount])
 
-  const hasMore = loaded < total
+  const groupCount = useMemo(() => groupSessionRows(rows).length, [rows])
+  // Either there are groups held back from the list, or the host is still
+  // holding rows this client has never asked for.
+  const hasMore = groupCount > revealed || loadedCount < total
 
   const items = useMemo(
-    () => flattenSessionGroups(rows, expandedIds, activeSessionId),
-    [rows, expandedIds, activeSessionId],
+    () => flattenSessionGroups(rows, expandedIds, activeSessionId, revealed),
+    [rows, expandedIds, activeSessionId, revealed],
   )
 
   return {
-    items, busy, loadingMore, error, hasMore,
-    loadMore: () => { if (!loadingMore && hasMore) void fetchPage() },
+    items, busy, loaded, loadingMore, error, hasMore, refresh,
+    loadMore: () => {
+      if (loadingMore || !hasMore) return
+      const next = revealed + SESSION_REVEAL_STEP
+      // Reveal is free until it runs past the loaded rows; only then does it
+      // cost a round trip, and the page it fetches covers several more reveals.
+      if (groupCount < next && loadedCount < total) {
+        void fetchPage().then(() => setRevealed(next))
+        return
+      }
+      setRevealed(next)
+    },
     toggleChildren: useCallback((sessionId: string) => setExpandedIds((current) => {
       const next = new Set(current)
       if (!next.delete(sessionId)) next.add(sessionId)

@@ -343,7 +343,7 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
       <View style={styles.contentRow}>
         {width >= 768 && (chat || page === 'Terminal' || page === 'Settings' || route === 'files') ? <TabletSessionSidebar client={previewClient} project={project} sessions={sessions} activeSessionId="preview-1" onOpenSession={() => setPage('Chat')} onCreateSession={() => setPage('New session')} onOpenSettings={() => setPage('Settings')} onPinSession={previewSessionOp} onArchiveSession={previewSessionOp} onDeleteSession={previewSessionOp} /> : null}
         <View style={isFullBleedScreen(route) ? styles.mainPane : [styles.mainPane, styles.page]}>
-          {chat ? <ChatScreen provider={provider} landing={page === 'New session' ? {
+          {chat ? <ChatScreen provider={provider} onEdgeSwipe={() => setDrawer(true)} landing={page === 'New session' ? {
               provider, harnessOptions: PREVIEW_HARNESS_OPTIONS,
               activeHarnessKey: suggestionHarnessKey(provider, null), onHarness: chooseAgent,
               projectName: projectList.find((item) => item.path === projectPath)?.name,
@@ -430,6 +430,6 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
         </View>
       </View>
     </MobileKeyboardFrame>
-    <WorkspaceDrawer visible={drawer || page === 'Workspace'} onDismiss={() => { setDrawer(false); if (page === 'Workspace') setPage('Chat') }} deviceName="Preview desktop" projects={previewProjects} activeProject={project} activeSessionId="preview-1" sessions={sessions} client={previewClient} onNewSession={() => setPage('New session')} onOpenSession={() => setPage('Chat')} onPinSession={previewSessionOp} onArchiveSession={previewSessionOp} onDeleteSession={previewSessionOp} onSearch={() => setPage('Session search')} deviceStatus="connectedLan" onDisconnect={() => setPage('Devices')} onAddProject={() => setPage('Add project')} onOpenAppSettings={() => setPage('Settings')} />
+    <WorkspaceDrawer visible={drawer || page === 'Workspace'} onDismiss={() => { setDrawer(false); if (page === 'Workspace') setPage('Chat') }} deviceName="Preview desktop" projects={previewProjects} activeProject={project} activeSessionId="preview-1" sessions={sessions} client={previewClient} onNewSession={() => setPage('New session')} onOpenSession={() => setPage('Chat')} onPinSession={previewSessionOp} onArchiveSession={previewSessionOp} onDeleteSession={previewSessionOp} onSearch={() => setPage('Session search')} listRevision={0} deviceStatus="connectedLan" onDisconnect={() => setPage('Devices')} onAddProject={() => setPage('Add project')} onOpenAppSettings={() => setPage('Settings')} />
   </SafeAreaView>
 }

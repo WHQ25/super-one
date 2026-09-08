@@ -27,8 +27,58 @@ terminal, settings, and files retain the project/session sidebar as a master pan
 the desktop sidebar does, so `routeHierarchy` stacks chat directly on `pair`; back
 from a chat opens the drawer and must not end the session. New entry points for
 project or session navigation belong in the drawer, not in a new route.
+Because `pair` is chat's stack root, the native back gesture there would show the
+device list — so chat sets `gestureEnabled: false` and `EdgeSwipeArea` (a
+`PanResponder` strip narrower than the transcript's own gutter, laid *over* the
+WebView, because an ancestor `View` gets no say in a WebView's native gestures)
+spends that edge on the drawer instead. Android's back button does the same. The
+drawer's Disconnect button is then the only way back to the device list. The
+drawer closes on the mirror gesture, a leftward drag anywhere on the panel — which
+only reaches it because `SwipeRow` claims a drag *only* in the direction that row
+can actually travel; a closed row that swallowed leftward drags would block the
+close over most of the list.
 The list itself is `SessionListBody` over `useProjectSessions` — 30-row paging and
-swipe pin/hide/delete. A command applies to the list only when it resolves `true`;
+swipe pin/hide/delete. **Reveal and paging are separate numbers.** A project shows
+`SESSION_REVEAL_STEP` (6) session *groups* and grows by 6, matching the desktop
+sidebar's `INITIAL_EXPAND_LEVEL` / `EXPAND_STEP`; `SESSION_PAGE_SIZE` (30) is the
+network page behind it, because over a relay one request covering five reveals
+beats five requests. Collapsing them into one number is how the phone ended up
+rendering a whole fetch page at once. The count is groups, not rows, so an
+expanded collaboration parent's children ride along instead of costing slots, and
+the group holding the active session is appended past the limit rather than
+promoted — switching sessions must not reshuffle the list under the finger.
+**Several projects stand open at once**, as on the desktop, so the session list is
+owned per row (`WorkspaceProjectRow`) rather than per drawer — one shared list
+state could only ever serve one project, which is what made this an accordion. A
+row mounts its list the first time it is expanded and keeps it mounted after;
+collapsing sets `display: 'none'`, which takes it out of the accessibility tree
+without dropping the loaded rows. Opening the drawer adds the active project to
+the expanded set without disturbing the rest.
+
+`ProjectSessions.loaded` is the "first read has settled" flag, and the empty state
+is gated on it. Do **not** infer emptiness from `!busy`: `busy` only turns on
+inside the effect, which runs after the first commit, so the list paints
+"No sessions yet" for a frame before it has asked anyone.
+
+The drawer keeps its loaded rows while it is closed:
+nulling the project on hide cleared the list and made every open pay for a fresh
+page-one fetch. **Re-reading is push-driven, not open-driven.** Every desktop
+write that adds, removes or reorders a row emits `session_list_changed`
+(projectPath, no rows — an invalidation, and no `sessionId`, which is what makes
+`MobileBroadcaster` fan it out to every paired device). The shell reads it off the
+raw event batch *before* `ChatRuntime`, because the drawer has to stay current
+while no session is open at all, and bumps one counter; the drawer re-reads only
+when that counter moves, which also covers the cross-project Pinned section. A
+reconnect bumps it once — events sent while the socket was down were never
+delivered. The re-read is `refresh()`: in place, no spinner, no wipe, and a
+failure leaves the cached list alone.
+
+The desktop half is wired at the **db layer** (`watchSessionList` in
+`db-sessions.ts`), not at the callers: the same seven mutations are reached from
+IPC, the session manager, automations and remote commands, so a notification hung
+off each call site would be missed by whichever one is added next. `deleteSession`
+resolves its project *before* the DELETE — afterwards there is no row to join
+through. A command applies to the list only when it resolves `true`;
 the shell reports the failure. Search is **not** in the list: it is global,
 host-side (`search_sessions`), and owns the `session-search` screen, which draws
 its own field plus Cancel and therefore gets no header bar. The drawer also
@@ -42,7 +92,18 @@ the new-session landing (harness, branch, worktree); `settings` is now the
 app-settings placeholder.
 Pinned rows are additionally promoted inside a project's list, which the desktop
 does not do — a pinned session below the loaded page will not surface until its
-page arrives.
+page arrives. They carry **no pin glyph**: the Pinned section states it once, and
+a badge on the row would say it twice. The Pinned rows are full `SwipeSessionRow`s
+themselves, so Unpin is reachable where the pin is visible rather than only in the
+project the session happens to live in.
+
+**A horizontal gesture on a container must stand down while a row inside it is
+open.** `SwipeRevealScope` (`ui/swipe-reveal-scope.tsx`) is how: the drawer creates
+one, provides it around the panel, and `SwipeRow` reports into it. With a row open
+a leftward drag means "put this row back", not "close the drawer", and the drawer —
+being the ancestor — can only tell by asking. It is ref-backed, not state: the sole
+consumer is a gesture predicate and nothing paints it. A list mounted outside any
+scope (the tablet sidebar) gets a no-op.
 
 The line under the chat title is **two facts, not a subtitle**: how the phone is
 reaching the desktop, and which checkout the session runs in.
@@ -167,6 +228,15 @@ jest-expo reuses the transform Metro already applies. Four things about it:
   React 19's `act()` scopes (it says so on stderr), and the corruption lands on
   the *next* test in the file, which then renders nothing and fails with
   "Unable to find an element". Split the walk into one press per test.
+- **`rerender` after a `fireEvent` in the same test does not commit.** Same act
+  overlap, different symptom: the press's scope is still open, so the rerender is
+  queued and never applied — an unmount you are asserting on simply has not
+  happened, and the test fails claiming the cleanup is broken when it is not.
+  `await act(async () => {})` between them does not help. Drive the state change
+  through a **prop** instead of a press when the test needs a rerender.
+- `renderWithTheme`'s `rerender` re-wraps the provider. RNTL's own replaces the
+  whole tree, so a bare `result.rerender` remounts into a tree with no
+  `MobileThemeProvider` and every themed component throws.
 - **A suite that cannot load reports as missing tests, not failing ones.**
   `jest` prints `Test suite failed to run` and the total simply drops — six
   tests once "disappeared" because a hook had grown an

@@ -2,6 +2,7 @@ import type { NativeComposerBinding } from '../ui/native-composer-input'
 import type { ComposerCursor } from '../composer-cursor'
 import type { MentionSearchState } from '../navigation/use-composer-suggestions'
 import { LoadingOverlay } from '../ui/loading-overlay'
+import { EdgeSwipeArea } from '../ui/edge-swipe'
 import { useState, type RefObject } from 'react'
 import {
   CheckCircle2,
@@ -53,6 +54,12 @@ export function ChatScreen(props: {
   onMentionLoadMore?: () => void
   /** Slot above the composer for notices the transcript cannot carry. */
   above?: ReactNode
+  /**
+   * Dragging in from the left edge of the transcript. Chat is the stack root's
+   * only child, so the native back gesture is turned off here — this is what
+   * takes its place, and it opens the workspace rather than leaving the device.
+   */
+  onEdgeSwipe?: () => void
   mentionQuery?: string | null
   mentionGroupLabels?: Partial<Record<string, string>>
   draft: string
@@ -80,6 +87,9 @@ export function ChatScreen(props: {
     ?? todoItems.find((todo) => todo.status !== 'completed')
   return (
     <View style={styles.flex}>
+      {/* The edge strip is scoped to the scrolling half of the screen: over the
+          composer it would swallow taps that land on the input's own padding. */}
+      <View style={styles.flex}>
       {props.starting ? <View style={styles.emptyState}><ActivityIndicator color={tokens.colors.mutedForeground} /><Text style={styles.emptyBody}>Starting session…</Text></View> : props.landing ? <NewSessionLanding {...props.landing} /> : <WebView
         ref={props.webRef}
         originWhitelist={['*']}
@@ -91,6 +101,8 @@ export function ChatScreen(props: {
         onContentProcessDidTerminate={() => props.onWebProcessError('content process terminated')}
         onRenderProcessGone={() => props.onWebProcessError('render process terminated')}
       />}
+      {props.onEdgeSwipe ? <EdgeSwipeArea onOpen={props.onEdgeSwipe} /> : null}
+      </View>
       {todoItems.length ? (
         <View style={styles.todoPanel}>
           <Pressable

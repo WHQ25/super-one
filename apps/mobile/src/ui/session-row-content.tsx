@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, CornerDownRight, Pin } from 'lucide-react-native'
+import { ChevronDown, ChevronRight, CornerDownRight } from 'lucide-react-native'
 import { Pressable, View } from 'react-native'
 import { Text } from './text'
 import type { SessionListItem } from '../session-list-state'
@@ -40,9 +40,13 @@ export function SessionRowContent({ item, selected, revealed, subtitle, surface 
     ? onPanel ? colors.background : colors.surface
     : selected ? colors.muted : onPanel ? colors.surface : colors.background
   return <View style={{
-    flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 44,
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    // A cross-project row carries a second line and sets its own height; a
+    // single-line row is sized to the text plus a touchable margin, not to the
+    // 44pt a standalone control would need.
+    minHeight: subtitle ? 44 : 38,
     backgroundColor: fill,
-    borderRadius: radius.md, paddingVertical: 8, paddingHorizontal: 12,
+    borderRadius: radius.md, paddingVertical: 6, paddingHorizontal: 12,
   }}>
     {item.child ? <CornerDownRight size={13} color={dim} /> : null}
     <HarnessIcon provider={session.provider ?? 'claude'} acpAgentId={session.acpAgentId} status={session.status} size={18} />
@@ -50,8 +54,8 @@ export function SessionRowContent({ item, selected, revealed, subtitle, surface 
       <Text numberOfLines={1} style={{ color: ink, fontSize: 15, fontWeight: selected ? '500' : '400' }}>{session.title || 'Untitled'}</Text>
       {subtitle ? <Text numberOfLines={1} style={{ color: dim, fontSize: 12, marginTop: 2 }}>{subtitle}</Text> : null}
     </View>
-    {/* Pinned rows are promoted to the top; the glyph says why they moved. */}
-    {session.isPinned && !subtitle ? <Pin size={12} color={dim} accessibilityLabel="Pinned" /> : null}
+    {/* No pin glyph: the drawer carries a Pinned section of its own, so a badge
+        on the row would state twice what the section above already says. */}
     {item.hasChildren && onToggleChildren ? <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${item.collapsed ? 'Show' : 'Hide'} sessions started by ${session.title || 'Untitled'}`}

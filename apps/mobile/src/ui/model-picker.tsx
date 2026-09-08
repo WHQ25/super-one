@@ -25,6 +25,7 @@ import {
   optionParamSummary,
   type SelectorCatalogParam,
 } from '../model-picker-state'
+import { useMobileLocale } from '../i18n/context'
 
 export type ModelPickerProps = {
   harness: HarnessId; models: ModelOption[]; model: string; onModel: (model: string) => void
@@ -50,15 +51,16 @@ type Section = 'models' | 'agents' | 'modes' | 'providers' | null
 export function ModelPicker(props: ModelPickerProps) {
   const menu = useMenuAnchor()
   const { tokens: { colors } } = useMobileTheme()
+  const { t } = useMobileLocale()
   const [query, setQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
   const [expanded, setExpanded] = useState<Section>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const selected = props.models.find((model) => model.id === props.model)
-  const modelLabel = selected?.name || props.model || 'Choose model'
+  const modelLabel = selected?.name || props.model || t('Choose model')
   const canSelectEffort = hasSelectableEffort(props.efforts)
-  const effortLabel = props.efforts.find((effort) => effort.value === props.effort)?.label ?? 'Effort'
+  const effortLabel = props.efforts.find((effort) => effort.value === props.effort)?.label ?? t('Effort')
   const agents = props.agents ?? []
   const modes = props.modes ?? []
   const optionParams = props.optionParams ?? []
@@ -88,7 +90,7 @@ export function ModelPicker(props: ModelPickerProps) {
   const refresh = async () => {
     if (!props.onRefresh || loading) return
     setLoading(true); setError('')
-    try { await props.onRefresh() } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not refresh models') }
+    try { await props.onRefresh() } catch (cause) { setError(cause instanceof Error ? cause.message : t('Could not refresh models')) }
     finally { setLoading(false) }
   }
   // Claude's two effort easter eggs replace the whole trigger, as on desktop.
@@ -104,7 +106,7 @@ export function ModelPicker(props: ModelPickerProps) {
   ]
   return <>
     <Pressable ref={menu.ref} disabled={props.disabled} accessibilityRole="button"
-      accessibilityLabel={`Model: ${egg ? eggLabel : triggerParts.map((part) => part.text).join(', ')}`}
+      accessibilityLabel={`${t('Model')}: ${egg ? eggLabel : triggerParts.map((part) => part.text).join(', ')}`}
       accessibilityState={{ disabled: props.disabled, expanded: !!menu.anchor }} onPress={() => { collapse(); menu.open() }}
       hitSlop={CHIP_HIT_SLOP}
       style={({ pressed }) => ({ minHeight: CHIP_HEIGHT, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: props.compact ? 6 : 12,
@@ -114,7 +116,7 @@ export function ModelPicker(props: ModelPickerProps) {
           clips their tail glyphs outright instead of ellipsising. Let the egg
           keep its natural width — the composer's chip row scrolls. */}
       <View style={props.compact ? (egg ? undefined : { maxWidth: 260 }) : { flex: 1 }}>
-        {!props.compact ? <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>Model</Text> : null}
+        {!props.compact ? <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{t('Model')}</Text> : null}
         {/* Truncation priority follows desktop: effort and options give way long before the model name. */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
           {egg === 'max' ? <FireText fontSize={props.compact ? 12 : 15}>{eggLabel}</FireText> : null}
@@ -133,11 +135,11 @@ export function ModelPicker(props: ModelPickerProps) {
         names it and the model groups are labelled with it. */}
     <AnchoredMenu anchor={menu.anchor} title="Models" onDismiss={close} width={320} titleAccessory={
       <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
-        {props.onRefresh ? <Pressable disabled={loading} accessibilityRole="button" accessibilityLabel="Refresh models" onPress={() => { void refresh() }}
+        {props.onRefresh ? <Pressable disabled={loading} accessibilityRole="button" accessibilityLabel={t('Refresh models')} onPress={() => { void refresh() }}
           style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
           {loading ? <ActivityIndicator size="small" color={colors.mutedForeground} /> : <RefreshCw size={15} color={colors.mutedForeground} />}
         </Pressable> : null}
-        {searchAvailable ? <Pressable accessibilityRole="button" accessibilityLabel={searchOpen ? 'Close search' : 'Search models'}
+        {searchAvailable ? <Pressable accessibilityRole="button" accessibilityLabel={t(searchOpen ? 'Close search' : 'Search models')}
           onPress={() => { setQuery(''); setSearchOpen(!searchOpen) }}
           style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
           {searchOpen ? <X size={15} color={colors.mutedForeground} /> : <Search size={15} color={colors.mutedForeground} />}
@@ -147,14 +149,14 @@ export function ModelPicker(props: ModelPickerProps) {
       {searchAvailable && searchOpen
         ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 8, borderBottomWidth: 1, borderColor: colors.border }}>
           <Search size={14} color={colors.mutedForeground} />
-          <TextInput value={query} onChangeText={setQuery} placeholder="Search models…" accessibilityLabel="Search models" autoFocus autoCorrect={false}
+          <TextInput value={query} onChangeText={setQuery} placeholder={t('Search models…')} accessibilityLabel={t('Search models')} autoFocus autoCorrect={false}
             placeholderTextColor={colors.mutedForeground} style={{ minHeight: 44, flex: 1, fontSize: 13, color: colors.foreground }} />
         </View>
         : null}
       {error ? <Text accessibilityRole="alert" style={{ padding: 8, color: colors.destructive, fontSize: 12 }}>{error}</Text> : null}
 
       {modes.length && (collapsed || expanded === 'modes') && props.onMode ? <ModeSection
-        label={props.modeLabel || 'Mode'} modes={modes} selected={props.mode ?? null} locked={props.modesLocked}
+        label={props.modeLabel || t('Mode')} modes={modes} selected={props.mode ?? null} locked={props.modesLocked}
         expanded={expanded === 'modes'} onExpand={() => setExpanded('modes')}
         onSelect={(id) => { props.onMode?.(id); setExpanded(null) }} /> : null}
 
@@ -172,7 +174,7 @@ export function ModelPicker(props: ModelPickerProps) {
                 selected={model.id === props.model} disabled={loading} onPress={() => selectModel(model.id)} />)}
             </View>)}
             {!groups.length ? <Text style={{ padding: 12, color: colors.mutedForeground, fontSize: 13 }}>
-              {loading ? 'Loading models…' : query ? 'No matching models' : 'No models available'}
+              {t(loading ? 'Loading models…' : query ? 'No matching models' : 'No models available')}
             </Text> : null}
           </>
           : <MenuDisclosureRow label={modelLabel} description={selected?.description} onPress={() => setExpanded('models')} />}
@@ -180,7 +182,7 @@ export function ModelPicker(props: ModelPickerProps) {
 
       {collapsed && canSelectEffort ? <>
         <MenuSeparator />
-        <EffortSlider label="Effort" options={props.efforts} value={props.effort} onChange={props.onEffort} disabled={loading} />
+        <EffortSlider label={t('Effort')} options={props.efforts} value={props.effort} onChange={props.onEffort} disabled={loading} />
       </> : null}
 
       {collapsed && props.onOptionParam

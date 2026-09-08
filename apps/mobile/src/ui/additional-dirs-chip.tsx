@@ -5,6 +5,7 @@ import { remotePathName } from '../shell-state'
 import { useMobileTheme } from '../theme/context'
 import { AnchoredMenu, MenuRow, MenuSeparator, useMenuAnchor } from './anchored-menu'
 import { CHIP_HEIGHT, CHIP_HIT_SLOP, chipTriggerBackground } from './chip-metrics'
+import { useMobileLocale } from '../i18n/context'
 
 export type AdditionalDirsChipProps = {
   /** Folders the project carries; every session in it inherits them. */
@@ -36,12 +37,13 @@ export type AdditionalDirsChipProps = {
 export function AdditionalDirsChip({ projectDirs, sessionDirs, onManage }: AdditionalDirsChipProps) {
   const menu = useMenuAnchor()
   const { tokens: { colors } } = useMobileTheme()
+  const { t } = useMobileLocale()
   const total = projectDirs.length + sessionDirs.length
   // No extra folders is the common case and says nothing worth a glyph; the
   // page is still reachable from `/add-dir`.
   if (!total) return null
   return <>
-    <Pressable ref={menu.ref} accessibilityRole="button" accessibilityLabel={`Additional folders: ${total}`}
+    <Pressable ref={menu.ref} accessibilityRole="button" accessibilityLabel={`${t('Additional folders')}: ${total}`}
       accessibilityState={{ expanded: !!menu.anchor }} onPress={menu.open} hitSlop={CHIP_HIT_SLOP}
       style={({ pressed }) => ({ minHeight: CHIP_HEIGHT, paddingHorizontal: 8, flexDirection: 'row',
         alignItems: 'center', gap: 4, borderRadius: 8,
@@ -65,9 +67,10 @@ export function AdditionalDirsChip({ projectDirs, sessionDirs, onManage }: Addit
  */
 export function AdditionalDirsMenu({ projectDirs, sessionDirs, onManage }: AdditionalDirsChipProps) {
   const { tokens: { colors } } = useMobileTheme()
+  const { t } = useMobileLocale()
   return <>
-    <Scope label="PROJECT" dirs={projectDirs} />
-    <Scope label="SESSION" dirs={sessionDirs} />
+    <Scope label={t('Project').toUpperCase()} dirs={projectDirs} />
+    <Scope label={t('Session').toUpperCase()} dirs={sessionDirs} />
     <MenuSeparator />
     <MenuRow label="Manage folders" onPress={onManage}
       leading={<FolderPlus size={15} color={colors.mutedForeground} />} />

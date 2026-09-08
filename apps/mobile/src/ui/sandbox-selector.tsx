@@ -11,6 +11,7 @@ import { Text } from './text'
 import { useMobileTheme } from '../theme/context'
 import { AnchoredMenu, useMenuAnchor } from './anchored-menu'
 import { CHIP_HEIGHT, CHIP_HIT_SLOP, chipTriggerBackground } from './chip-metrics'
+import { useMobileLocale } from '../i18n/context'
 
 type Presentation = {
   label: string
@@ -50,6 +51,7 @@ export type SandboxSelectorProps = {
 export function SandboxSelector({ harness, sandboxInfo, permissionMode, onChange, disabled = false, sandboxSupport = 'always' }: SandboxSelectorProps) {
   const menu = useMenuAnchor()
   const { tokens: { colors } } = useMobileTheme()
+  const { t } = useMobileLocale()
   const value = resolveSandboxMode({ harnessId: harness, sandboxInfo, permissionMode })
   const current = PRESENTATION[value]
   const CurrentIcon = current.icon
@@ -61,14 +63,14 @@ export function SandboxSelector({ harness, sandboxInfo, permissionMode, onChange
   // Glyph only: the mode's colour carries the state at a glance, and the label is a
   // tap away in the menu. The row already spends its width on the model name.
   if (!interactive) {
-    return <View accessibilityRole="text" accessibilityLabel={current.label}
+    return <View accessibilityRole="text" accessibilityLabel={t(current.label)}
       style={{ minHeight: CHIP_HEIGHT, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', opacity: disabled ? 0.45 : 1 }}>
       <CurrentIcon color={colors[current.tone]} size={16} />
     </View>
   }
 
   return <>
-    <Pressable ref={menu.ref} accessibilityRole="button" accessibilityLabel={`Sandbox: ${current.label}`}
+    <Pressable ref={menu.ref} accessibilityRole="button" accessibilityLabel={`${t('Sandbox')}: ${t(current.label)}`}
       accessibilityState={{ expanded: !!menu.anchor }} onPress={menu.open} hitSlop={CHIP_HIT_SLOP}
       style={({ pressed }) => ({ minHeight: CHIP_HEIGHT, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center',
         borderRadius: 8, backgroundColor: chipTriggerBackground({ pressed, open: !!menu.anchor }, colors.muted) })}>
@@ -85,9 +87,9 @@ export function SandboxSelector({ harness, sandboxInfo, permissionMode, onChange
           style={({ pressed }) => ({ minHeight: 44, padding: 8, gap: 4, borderRadius: 6, backgroundColor: active || pressed ? `${color}20` : 'transparent' })}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Icon color={color} size={14} />
-            <Text style={{ color, fontSize: 13, fontWeight: '500' }}>{entry.label}</Text>
+            <Text style={{ color, fontSize: 13, fontWeight: '500' }}>{t(entry.label)}</Text>
           </View>
-          <Text style={{ color: colors.mutedForeground, fontSize: 12, lineHeight: 18 }}>{entry.description}</Text>
+          <Text style={{ color: colors.mutedForeground, fontSize: 12, lineHeight: 18 }}>{t(entry.description)}</Text>
         </Pressable>
       })}
     </AnchoredMenu>

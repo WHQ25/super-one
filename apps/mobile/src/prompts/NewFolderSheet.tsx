@@ -4,6 +4,7 @@ import { Text } from '../ui/text'
 import { useMobileTheme } from '../theme/context'
 import { PromptSheet } from './PromptSheet'
 import { PromptActions, PromptInput } from './PromptControls'
+import { useMobileLocale } from '../i18n/context'
 
 /**
  * Name a folder to create inside the one on screen.
@@ -22,12 +23,13 @@ export function NewFolderSheet(props: {
   onDismiss: () => void
 }) {
   const { tokens: { colors } } = useMobileTheme()
+  const { t } = useMobileLocale()
   const trimmed = props.value.trim()
   const invalid = useMemo(() => {
-    if (!trimmed) return 'Enter a name'
-    if (/[\\/]/.test(trimmed)) return 'A folder name cannot contain a slash'
+    if (!trimmed) return t('Enter a name')
+    if (/[\\/]/.test(trimmed)) return t('A folder name cannot contain a slash')
     return null
-  }, [trimmed])
+  }, [trimmed, t])
 
   return (
     <PromptSheet

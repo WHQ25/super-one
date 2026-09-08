@@ -3,6 +3,7 @@ import type { LucideIcon } from 'lucide-react-native'
 import { Pressable, View, type StyleProp, type ViewStyle } from 'react-native'
 import { SpinningIcon } from './spinning-icon'
 import { useMobileTheme } from '../theme/context'
+import { useMobileLocale } from '../i18n/context'
 
 export function IconButton({ icon: Icon, label, onPress, disabled, active, destructive, tone, color, chrome = 'default', iconSize = 20, spinning, style, hitSlop, buttonRef }: {
   buttonRef?: RefObject<View | null>
@@ -28,6 +29,7 @@ export function IconButton({ icon: Icon, label, onPress, disabled, active, destr
   hitSlop?: number
 }) {
   const { tokens: { colors, radius } } = useMobileTheme()
+  const { t } = useMobileLocale()
   const glyph = (color: string) => spinning
     ? <SpinningIcon icon={Icon} size={iconSize} color={color} strokeWidth={1.8} />
     : <Icon size={iconSize} strokeWidth={1.8} color={color} />
@@ -40,7 +42,7 @@ export function IconButton({ icon: Icon, label, onPress, disabled, active, destr
   return (
     <Pressable ref={buttonRef}
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={t(label)}
       // `active` is a toggle's on-state, not just a tint — say so, or the only cue
       // a screen reader gets for "search is open" is a colour it cannot see.
       accessibilityState={{ disabled: !!disabled, ...(active === undefined ? {} : { selected: active }) }}

@@ -10,6 +10,7 @@ import { DeviceRow, deviceLabel } from '../ui/device-row'
 import { PairingCode } from './pairing-code'
 import { Wordmark } from '../ui/wordmark'
 import type { DeviceStatus, ReconnectInfo } from '../device-status'
+import { useMobileLocale } from '../i18n/context'
 
 export function PairingsScreen(props: {
   scannerOpen: boolean
@@ -38,6 +39,7 @@ export function PairingsScreen(props: {
   const styles = useMobileStyles()
   const layout = useLayoutStyles()
   const { tokens } = useMobileTheme()
+  const { t } = useMobileLocale()
   const [editing, setEditing] = useState<SavedPairing | null>(null)
   const [developerOpen, setDeveloperOpen] = useState(false)
   const [name, setName] = useState('')
@@ -52,7 +54,7 @@ export function PairingsScreen(props: {
           onBarcodeScanned={props.onBarcodeScanned}
         />
         <Pressable style={styles.scannerCancel} onPress={props.onCancelScanner}>
-          <Text style={styles.secondaryBtnText}>Cancel scan</Text>
+          <Text style={styles.secondaryBtnText}>{t('Cancel scan')}</Text>
         </Pressable>
       </View>
     )
@@ -103,8 +105,8 @@ export function PairingsScreen(props: {
       ) : (
         <View style={layout.empty}>
           <Link2Off color={tokens.colors.border} size={54} />
-          <Text style={styles.emptyTitle}>No devices yet</Text>
-          <Text style={styles.emptyBody}>Scan the QR code from your desktop app to pair a device.</Text>
+          <Text style={styles.emptyTitle}>{t('No devices yet')}</Text>
+          <Text style={styles.emptyBody}>{t('Scan the QR code from your desktop app to pair a device.')}</Text>
         </View>
       )}
       </View>
@@ -112,7 +114,7 @@ export function PairingsScreen(props: {
       {__DEV__ ? (
         <View style={styles.devPairing}>
           <Pressable accessibilityRole="button" accessibilityState={{ expanded: developerOpen }} onPress={() => setDeveloperOpen(!developerOpen)} style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Text style={styles.rowMeta}>Developer pairing</Text><ChevronDown size={16} color={tokens.colors.mutedForeground} />
+            <Text style={styles.rowMeta}>{t('Developer pairing')}</Text><ChevronDown size={16} color={tokens.colors.mutedForeground} />
           </Pressable>
           {developerOpen ? <>
           <TextInput
@@ -129,7 +131,7 @@ export function PairingsScreen(props: {
           />
           <TextInput
             style={styles.input}
-            placeholder="optional LAN host:port"
+            placeholder={t('optional LAN host:port')}
             placeholderTextColor={tokens.colors.mutedForeground}
             autoCapitalize="none"
             value={props.lan}
@@ -143,7 +145,7 @@ export function PairingsScreen(props: {
         {editing ? <ListRow title={deviceLabel(editing)} subtitle={editing.relayUrl} /> : null}
         <TextInput
           style={styles.input}
-          placeholder="Device name"
+          placeholder={t('Device name')}
           placeholderTextColor={tokens.colors.mutedForeground}
           value={name}
           onChangeText={setName}

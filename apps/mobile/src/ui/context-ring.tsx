@@ -5,6 +5,7 @@ import { Text } from './text'
 import { useMobileTheme } from '../theme/context'
 import { AnchoredMenu, useMenuAnchor } from './anchored-menu'
 import { CHIP_HEIGHT, CHIP_HIT_SLOP } from './chip-metrics'
+import { useMobileLocale } from '../i18n/context'
 
 // Sized so the ring reads at the same optical weight as the 16px lucide glyphs
 // beside it — a 16px box would draw a 12px circle and look like a smaller control.
@@ -32,6 +33,7 @@ export type ContextRingProps = {
 export function ContextRing({ tokens, contextWindow, costUsd }: ContextRingProps) {
   const menu = useMenuAnchor()
   const { tokens: theme } = useMobileTheme()
+  const { t } = useMobileLocale()
   const { colors } = theme
 
   if (tokens === 0 && costUsd === 0) return null
@@ -49,7 +51,7 @@ export function ContextRing({ tokens, contextWindow, costUsd }: ContextRingProps
 
   return <>
     <Pressable ref={menu.ref} accessibilityRole="button"
-      accessibilityLabel={hasWindow ? `Context used: ${percent}%` : `Context used: ${usedLabel} tokens`}
+      accessibilityLabel={hasWindow ? `${t('Context used:')} ${percent}%` : `${t('Context used:')} ${usedLabel} ${t('tokens')}`}
       accessibilityState={{ expanded: !!menu.anchor }} onPress={menu.open} hitSlop={CHIP_HIT_SLOP}
       style={({ pressed }) => ({ minHeight: CHIP_HEIGHT, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center',
         borderRadius: 8, backgroundColor: pressed ? colors.muted : 'transparent' })}>
@@ -65,24 +67,24 @@ export function ContextRing({ tokens, contextWindow, costUsd }: ContextRingProps
       <View style={{ padding: 8, gap: 8 }}>
         <View style={{ gap: 2 }}>
           <Text style={{ color: exceeded ? colors.error : colors.foreground, fontSize: 20, fontWeight: '500', fontVariant: ['tabular-nums'] }}>
-            {hasWindow ? `${percent}%` : `${usedLabel} tokens`}
+            {hasWindow ? `${percent}%` : `${usedLabel} ${t('tokens')}`}
           </Text>
           {maxLabel ? <Text style={{ color: colors.mutedForeground, fontSize: 12, fontVariant: ['tabular-nums'] }}>
-            {usedLabel} / {maxLabel} tokens
+            {usedLabel} / {maxLabel} {t('tokens')}
           </Text> : null}
         </View>
-        {exceeded ? <Text style={{ color: colors.error, fontSize: 12 }}>Exceeds the model’s context window</Text> : null}
+        {exceeded ? <Text style={{ color: colors.error, fontSize: 12 }}>{t('Exceeds the model’s context window')}</Text> : null}
         <View style={{ height: 6, borderRadius: 3, overflow: 'hidden', backgroundColor: colors.muted }}>
           <View style={{ width: `${hasWindow ? Math.round(occupancy * 100) : 100}%`, height: '100%', backgroundColor: fill }} />
         </View>
         {hasWindow ? <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
-          <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>Free</Text>
+          <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{t('Free')}</Text>
           <Text style={{ color: colors.foreground, fontSize: 12, fontVariant: ['tabular-nums'] }}>
             {formatTokens(Math.max(0, contextWindow - tokens))}
           </Text>
         </View> : null}
         {costUsd > 0 ? <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
-          <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>Cost</Text>
+          <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{t('Cost')}</Text>
           <Text style={{ color: colors.foreground, fontSize: 12, fontVariant: ['tabular-nums'] }}>${costUsd.toFixed(4)}</Text>
         </View> : null}
       </View>

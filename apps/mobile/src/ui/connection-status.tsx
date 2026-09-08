@@ -11,6 +11,7 @@ import {
   type DeviceStatusTone,
   type ReconnectInfo,
 } from '../device-status'
+import { useMobileLocale } from '../i18n/context'
 
 const GLYPHS: Record<DeviceStatusGlyph, LucideIcon> = {
   wifi: Wifi,
@@ -40,22 +41,24 @@ export function ConnectionStatusIndicator(props: {
   fontSize?: number
 }) {
   const { tokens } = useMobileTheme()
+  const { t } = useMobileLocale()
   const styles = useStyles()
   const waiting = props.reconnect?.waiting === true && props.reconnect.nextAtMs !== null
   const now = useSecondTicker(waiting)
   const view = describeDeviceStatus(props.status, { reconnect: props.reconnect, nowMs: now })
+  const label = t(view.label)
   const color = toneColor(view.tone, tokens.colors)
   const size = props.iconSize ?? 13
   const Icon = GLYPHS[view.glyph]
 
   return (
-    <View accessibilityLabel={view.label} style={styles.row}>
+    <View accessibilityLabel={label} style={styles.row}>
       {view.spin
         ? <SpinningIcon icon={Icon} size={size} color={color} />
         : <Icon color={color} size={size} />}
       {props.showLabel === false ? null : (
         <Text numberOfLines={1} style={[styles.label, { color, fontSize: props.fontSize ?? 12 }]}>
-          {view.label}
+          {label}
         </Text>
       )}
     </View>

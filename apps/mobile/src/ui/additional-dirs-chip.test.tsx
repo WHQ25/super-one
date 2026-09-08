@@ -17,14 +17,14 @@ test('the status row shows a count, not a list of names', async () => {
   // tap away, in the popover that can afford their full paths.
   await renderWithTheme(chip({ projectDirs: PROJECT, sessionDirs: SESSION }))
 
-  expect(screen.getByLabelText('Additional folders: 2')).toBeTruthy()
+  expect(screen.getByLabelText('Additional Folders: 2')).toBeTruthy()
   expect(screen.queryByText('design-system')).toBeNull()
 })
 
 test('the count spans both scopes, because the agent sees both', async () => {
   await renderWithTheme(chip({ projectDirs: ['/a', '/b'], sessionDirs: ['/c'] }))
 
-  expect(screen.getByLabelText('Additional folders: 3')).toBeTruthy()
+  expect(screen.getByLabelText('Additional Folders: 3')).toBeTruthy()
 })
 
 test('nothing is drawn when there are no extra folders', async () => {
@@ -76,6 +76,6 @@ test('the popover ends in the way to change any of it', async () => {
   const onManage = jest.fn()
   await renderWithTheme(menu({ onManage }))
 
-  fireEvent.press(screen.getByLabelText('Manage folders'))
+  fireEvent.press(screen.getByLabelText('Manage Folders'))
   expect(onManage).toHaveBeenCalled()
 })

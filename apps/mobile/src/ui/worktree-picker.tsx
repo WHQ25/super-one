@@ -5,6 +5,7 @@ import { Text } from './text'
 import type { WorktreeEntry, WorktreeInfo, WorktreeMode } from '@superone/shared/agent-types'
 import type { ShellGitInfo } from '../project-types'
 import { useMobileTheme } from '../theme/context'
+import { useMobileLocale } from '../i18n/context'
 import {
   attachUnavailableReason,
   filterWorktreeEntries,
@@ -39,6 +40,7 @@ export function WorktreePicker(props: {
   checkedOutBranches: string[]
 }) {
   const { tokens: { colors, radius } } = useMobileTheme()
+  const { locale, t } = useMobileLocale()
   const [query, setQuery] = useState('')
   const selection = props.selection
   const existing = filterWorktreeEntries(props.worktreeInfo, query)
@@ -72,20 +74,20 @@ export function WorktreePicker(props: {
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12,
         borderBottomWidth: 1, borderBottomColor: colors.border }}>
         <Search size={15} color={colors.mutedForeground} />
-        <TextInput value={query} onChangeText={setQuery} accessibilityLabel="Search worktrees and branches"
-          placeholder="Search worktrees and branches…" placeholderTextColor={colors.mutedForeground}
+        <TextInput value={query} onChangeText={setQuery} accessibilityLabel={t('Search worktrees and branches')}
+          placeholder={t('Search worktrees and branches…')} placeholderTextColor={colors.mutedForeground}
           autoCapitalize="none" autoCorrect={false}
           style={{ flex: 1, minHeight: 44, fontSize: 14, color: colors.foreground }} />
       </View>
       <View>
-        {row('local', 'Local', selection.kind === 'local' ? null : () => props.onSelectionChange(LOCAL_WORKTREE_SELECTION),
+        {row('local', t('Local'), selection.kind === 'local' ? null : () => props.onSelectionChange(LOCAL_WORKTREE_SELECTION),
           <Laptop size={16} color={colors.mutedForeground} />,
-          <Text numberOfLines={1} style={{ fontSize: 14, color: colors.foreground }}>Local</Text>,
+          <Text numberOfLines={1} style={{ fontSize: 14, color: colors.foreground }}>{t('Local')}</Text>,
           selection.kind === 'local' ? <Check size={16} color={colors.primary} /> : undefined)}
 
         {existing.length ? <>
           {separator}
-          {heading('Existing worktrees')}
+          {heading(t('Existing worktrees'))}
           {existing.map((entry) => (
             <ExistingRow key={entry.path} entry={entry} dirtyFiles={props.worktreeDirty?.[entry.path]}
               selected={selection.kind === 'existing' && selection.path === entry.path}
@@ -97,7 +99,7 @@ export function WorktreePicker(props: {
 
         {branches.length ? <>
           {separator}
-          {heading(worktreeBranchHeading(pending?.mode ?? null))}
+          {heading(t(worktreeBranchHeading(pending?.mode ?? null)))}
           {branches.map((branch) => {
             const reason = pending?.mode === 'attach' ? blocked(branch) : null
             return row(branch, branch, reason ? null : () => props.onSelectionChange({
@@ -111,32 +113,32 @@ export function WorktreePicker(props: {
         </> : null}
 
         {!existing.length && !branches.length && search ? (
-          <Text style={{ padding: 12, fontSize: 13, textAlign: 'center', color: colors.mutedForeground }}>No matches</Text>
+          <Text style={{ padding: 12, fontSize: 13, textAlign: 'center', color: colors.mutedForeground }}>{t('No matches')}</Text>
         ) : null}
       </View>
 
       {pending ? (
         <View style={{ gap: 10, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border }}>
           <Text style={{ fontSize: 12, color: colors.mutedForeground }}>
-            Base branch: <Text style={{ color: colors.foreground }}>{pending.baseBranch}</Text>
+            {t('Base branch:')} <Text style={{ color: colors.foreground }}>{pending.baseBranch}</Text>
           </Text>
           <View style={{ flexDirection: 'row', gap: 2, padding: 2, borderRadius: radius.md, backgroundColor: colors.muted }}>
             {MODES.filter((mode) => mode.value !== 'attach' || !blocked(pending.baseBranch)).map((mode) => (
               <Pressable key={mode.value} accessibilityRole="tab" accessibilityState={{ selected: pending.mode === mode.value }}
-                accessibilityLabel={mode.label} onPress={() => patch({ mode: mode.value })}
+                accessibilityLabel={t(mode.label)} onPress={() => patch({ mode: mode.value })}
                 style={{ flex: 1, minHeight: 32, alignItems: 'center', justifyContent: 'center', borderRadius: radius.sm,
                   backgroundColor: pending.mode === mode.value ? colors.background : 'transparent' }}>
                 <Text style={{ fontSize: 13, fontWeight: '500', color: pending.mode === mode.value ? colors.foreground : colors.mutedForeground }}>
-                  {mode.label}
+                  {t(mode.label)}
                 </Text>
               </Pressable>
             ))}
           </View>
           {pending.mode === 'branch' ? (
             <>
-              <Text style={{ fontSize: 12, color: colors.mutedForeground }}>New branch name</Text>
+              <Text style={{ fontSize: 12, color: colors.mutedForeground }}>{t('New branch name')}</Text>
               <TextInput value={pending.branchName} onChangeText={(branchName) => patch({ branchName })}
-                accessibilityLabel="New branch name" placeholder="e.g. fix/login-bug"
+                accessibilityLabel={t('New branch name')} placeholder="e.g. fix/login-bug"
                 placeholderTextColor={colors.mutedForeground} autoCapitalize="none" autoCorrect={false}
                 style={{ minHeight: 44, paddingHorizontal: 10, fontSize: 14, color: colors.foreground,
                   borderWidth: 1, borderRadius: radius.md, borderColor: error ? colors.destructive : colors.border }} />
@@ -145,14 +147,18 @@ export function WorktreePicker(props: {
             <Text style={{ padding: 10, fontSize: 12, lineHeight: 18, borderRadius: radius.md,
               backgroundColor: colors.muted, color: colors.mutedForeground }}>
               {pending.mode === 'attach'
-                ? `Worktree will check out ${pending.baseBranch}. Continue work on this existing branch in an isolated directory.`
-                : `Worktree will detach at ${pending.baseBranch}. No branch is created.`}
+                ? locale === 'zh'
+                  ? `工作树将检出 ${pending.baseBranch}，并在隔离目录中继续处理这个现有分支。`
+                  : `Worktree will check out ${pending.baseBranch}. Continue work on this existing branch in an isolated directory.`
+                : locale === 'zh'
+                  ? `工作树将在 ${pending.baseBranch} 处分离，不会创建分支。`
+                  : `Worktree will detach at ${pending.baseBranch}. No branch is created.`}
             </Text>
           )}
           {error ? <Text accessibilityRole="alert" style={{ fontSize: 12, color: colors.destructive }}>{error}</Text> : null}
           {props.gitInfo?.dirty?.files ? (
             <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: pending.carryLocalChanges }}
-              accessibilityLabel="Carry local changes"
+              accessibilityLabel={t('Carry local changes')}
               onPress={() => patch({ carryLocalChanges: !pending.carryLocalChanges })}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 36 }}>
               <View style={{ width: 18, height: 18, alignItems: 'center', justifyContent: 'center', borderRadius: 4,
@@ -160,7 +166,7 @@ export function WorktreePicker(props: {
                 backgroundColor: pending.carryLocalChanges ? colors.foreground : 'transparent' }}>
                 {pending.carryLocalChanges ? <Check size={12} color={colors.background} /> : null}
               </View>
-              <Text style={{ flex: 1, fontSize: 13, color: colors.foreground }}>Carry local changes</Text>
+              <Text style={{ flex: 1, fontSize: 13, color: colors.foreground }}>{t('Carry local changes')}</Text>
               <Text style={{ fontSize: 12, color: colors.mutedForeground }}>
                 {props.gitInfo.dirty.files} files
                 <Text style={{ color: colors.success }}> +{props.gitInfo.dirty.insertions}</Text>
@@ -168,7 +174,7 @@ export function WorktreePicker(props: {
               </Text>
             </Pressable>
           ) : null}
-          <Text style={{ fontSize: 12, color: colors.mutedForeground }}>Worktree will be created on next message</Text>
+          <Text style={{ fontSize: 12, color: colors.mutedForeground }}>{t('Worktree will be created on next message')}</Text>
         </View>
       ) : null}
     </View>
@@ -182,6 +188,7 @@ function ExistingRow(props: {
   onPress: () => void
 }) {
   const { tokens: { colors, radius } } = useMobileTheme()
+  const { t } = useMobileLocale()
   const detached = !props.entry.branch
   const files = props.dirtyFiles ?? 0
   return (
@@ -196,13 +203,13 @@ function ExistingRow(props: {
         : <GitBranch size={16} color={colors.mutedForeground} />}
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text numberOfLines={1} style={{ fontSize: 14, color: detached ? colors.mutedForeground : colors.foreground }}>
-          {detached ? 'Detached' : props.entry.branch}
+          {detached ? t('Detached') : props.entry.branch}
         </Text>
         <Text numberOfLines={1} style={{ fontSize: 12, color: colors.mutedForeground }}>{props.entry.head.slice(0, 7)}</Text>
       </View>
       {props.dirtyFiles === undefined ? null : (
         <Text style={{ fontSize: 12, color: files > 0 ? colors.warning : colors.mutedForeground }}>
-          {files > 0 ? `${files} ${files === 1 ? 'file' : 'files'}` : 'clean'}
+          {files > 0 ? `${files} ${t(files === 1 ? 'file' : 'files')}` : t('clean')}
         </Text>
       )}
       {props.selected ? <Check size={16} color={colors.primary} /> : null}

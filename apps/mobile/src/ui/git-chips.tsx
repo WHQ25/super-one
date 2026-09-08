@@ -5,6 +5,7 @@ import { Text } from './text'
 import type { WorktreeInfo } from '@superone/shared/agent-types'
 import { useMobileTheme } from '../theme/context'
 import { workDirChipState, type NewSessionWorktreeSelection, type WorkDirChipState } from '../worktree-state'
+import { useMobileLocale } from '../i18n/context'
 
 /**
  * The centred chips under the project field: where the session will
@@ -24,6 +25,7 @@ export function GitChips(props: {
   onBranch: () => void
 }) {
   const { tokens: { colors, radius } } = useMobileTheme()
+  const { t } = useMobileLocale()
   const state = workDirChipState(props.selection, props.worktreeInfo)
   // Android Fabric can measure Typeface.DEFAULT but draw the OEM system font.
   // An explicit family makes both paths agree (react-native#57950).
@@ -42,12 +44,12 @@ export function GitChips(props: {
   // Detached HEAD and a detached-worktree plan are commits; everything else on
   // a worktree is a branch. Same split as the desktop's `workDirIcon`.
   const Mark = state.kind === 'activeDetached' || state.kind === 'createFrom' ? GitCommitHorizontal : GitBranch
-  const workDir = chip(workDirChipLabel(state), props.onWorktree, state.kind === 'local' ? <>
+  const workDir = chip(localizedWorkDirChipLabel(state, t), props.onWorktree, state.kind === 'local' ? <>
     <Laptop size={18} color={colors.mutedForeground} />
-    <Text style={muted}>Local</Text>
+    <Text style={muted}>{t('Local')}</Text>
   </> : <>
     <Text style={state.kind === 'activeBranch' || state.kind === 'activeDetached' ? muted : { ...muted, fontSize: 13 }}>
-      {workDirPrefix(state)}
+      {t(workDirPrefix(state))}
     </Text>
     <Mark size={14} color={colors.mutedForeground} />
     <Text style={strong}>{workDirValue(state)}</Text>
@@ -63,10 +65,10 @@ export function GitChips(props: {
       {workDir}
       {showBranch ? <>
         <View style={{ width: 1, height: 16, marginHorizontal: 6, backgroundColor: colors.border }} />
-        {chip(`Branch: ${props.branch}`, props.onBranch, <>
+        {chip(`${t('Branch')}: ${props.branch}`, props.onBranch, <>
           <GitBranch size={18} color={colors.mutedForeground} />
           <Text style={muted}>{props.branch}</Text>
-          {props.dirty ? <View accessibilityLabel="Uncommitted changes"
+          {props.dirty ? <View accessibilityLabel={t('Uncommitted changes')}
             style={{ width: 7, height: 7, marginLeft: 2, borderRadius: 4, backgroundColor: colors.warning }} /> : null}
         </>)}
       </> : null}
@@ -97,4 +99,8 @@ function workDirValue(state: WorkDirChipState): string {
 /** Matches the desktop `workDirTitle` so screen readers hear the same sentence. */
 export function workDirChipLabel(state: WorkDirChipState): string {
   return state.kind === 'local' ? 'Local' : `${workDirPrefix(state)} ${workDirValue(state)}`
+}
+
+function localizedWorkDirChipLabel(state: WorkDirChipState, t: (source: string) => string): string {
+  return state.kind === 'local' ? t('Local') : `${t(workDirPrefix(state))} ${t(workDirValue(state))}`
 }

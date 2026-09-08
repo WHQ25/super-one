@@ -4,12 +4,16 @@ import { Text } from '../ui/text'
 import { Check, CheckCircle2, Circle, Square, SquareCheck, X, type LucideIcon } from 'lucide-react-native'
 import { useMobileTheme } from '../theme/context'
 import { usePromptStyles } from './styles'
+import { useMobileLocale } from '../i18n/context'
 
 export function PromptInput(props: TextInputProps) {
   const styles = usePromptStyles()
   const { tokens } = useMobileTheme()
+  const { t } = useMobileLocale()
   const [focused, setFocused] = useState(false)
-  return <TextInput {...props} placeholderTextColor={tokens.colors.mutedForeground} selectionColor={tokens.colors.primary} onFocus={(event) => { setFocused(true); props.onFocus?.(event) }} onBlur={(event) => { setFocused(false); props.onBlur?.(event) }} style={[styles.input, props.multiline && styles.multiline, focused && styles.focusedInput, props.style]} />
+  return <TextInput {...props} accessibilityLabel={typeof props.accessibilityLabel === 'string' ? t(props.accessibilityLabel) : props.accessibilityLabel}
+    placeholder={typeof props.placeholder === 'string' ? t(props.placeholder) : props.placeholder}
+    placeholderTextColor={tokens.colors.mutedForeground} selectionColor={tokens.colors.primary} onFocus={(event) => { setFocused(true); props.onFocus?.(event) }} onBlur={(event) => { setFocused(false); props.onBlur?.(event) }} style={[styles.input, props.multiline && styles.multiline, focused && styles.focusedInput, props.style]} />
 }
 
 export function PromptChoice({ label, description, selected, onPress, multi = false }: {
@@ -38,12 +42,13 @@ export function PromptActions({ onApprove, onReject, approveLabel, rejectLabel, 
   children?: ReactNode
 }) {
   const styles = usePromptStyles()
+  const { t } = useMobileLocale()
   return <View style={styles.footer}>
-    {feedback ? <PromptInput testID="prompt-feedback" accessibilityLabel={feedback.placeholder ?? 'Optional feedback'} placeholder={feedback.placeholder ?? 'Optional feedback'} value={feedback.value} onChangeText={feedback.onChange} returnKeyType="send" onSubmitEditing={onReject} /> : null}
+    {feedback ? <PromptInput testID="prompt-feedback" accessibilityLabel={feedback.placeholder ?? t('Optional feedback')} placeholder={feedback.placeholder ?? t('Optional feedback')} value={feedback.value} onChangeText={feedback.onChange} returnKeyType="send" onSubmitEditing={onReject} /> : null}
     {children}
     <View style={styles.row}>
-      <Action testID="prompt-approve" label={approveLabel} icon={Check} onPress={onApprove} disabled={disabled} tone={destructive ? 'reject' : 'primary'} />
-      <Action testID="prompt-reject" label={rejectLabel} icon={X} onPress={onReject} tone="neutral" />
+      <Action testID="prompt-approve" label={t(approveLabel)} icon={Check} onPress={onApprove} disabled={disabled} tone={destructive ? 'reject' : 'primary'} />
+      <Action testID="prompt-reject" label={t(rejectLabel)} icon={X} onPress={onReject} tone="neutral" />
     </View>
   </View>
 }

@@ -54,7 +54,7 @@ test('the folder count rides in the status row, counting both scopes', async () 
   // session on the landing appeared nowhere and read as a failed write.
   await renderWithTheme(composer({ projectDirs: ['/a'], sessionDirs: ['/b'] }))
 
-  expect(screen.getByLabelText('Additional folders: 2')).toBeTruthy()
+  expect(screen.getByLabelText('Additional Folders: 2')).toBeTruthy()
 })
 
 test('with no panel open the command list has the slot', async () => {

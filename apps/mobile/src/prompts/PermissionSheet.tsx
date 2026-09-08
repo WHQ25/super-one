@@ -12,6 +12,7 @@ import { PermissionEditors } from './PermissionEditors'
 import { editablePermission, editedPermissionAnswers, permissionEditsValid } from './permission-edit-state'
 import { showRememberPermission } from './prompt-content'
 import { usePromptStyles } from './styles'
+import { useMobileLocale } from '../i18n/context'
 
 const kindIcons: Record<NonNullable<PermissionRequest['requestKind']>, LucideIcon> = {
   mcp_elicitation: Plug, video_gen_confirm: Video, config_confirm: Settings2,
@@ -27,6 +28,7 @@ export function PermissionSheet(props: {
 }) {
   const styles = usePromptStyles()
   const { tokens } = useMobileTheme()
+  const { t } = useMobileLocale()
   const [draft, setDraft] = useState<PermissionRequest | null>(() => props.perm ? editablePermission(props.perm) : null)
   const [invalidFields, setInvalidFields] = useState<Record<string, boolean>>({})
   const perm = draft?.requestId === props.perm?.requestId ? draft : props.perm ? editablePermission(props.perm) : null
@@ -57,7 +59,7 @@ export function PermissionSheet(props: {
     onApprove={approve} onReject={deny} disabled={!elicitationAnswersAreValid(fields, values) || !permissionEditsValid(perm) || Object.values(invalidFields).some(Boolean)}
     destructive={presentation.destructive}
     feedback={{ value: feedback, onChange: setFeedback }}
-  >{allowRemember ? <PromptChoice multi label={presentation.alwaysLabel!} selected={remember} onPress={() => setRemember(!remember)} /> : null}</PromptActions>}>
+  >{allowRemember ? <PromptChoice multi label={t(presentation.alwaysLabel!)} selected={remember} onPress={() => setRemember(!remember)} /> : null}</PromptActions>}>
     <PermissionContent request={perm} />
     <PermissionEditors key={perm.requestId} loadSystemInfo={props.loadSystemInfo} request={perm} onChange={setDraft} onValidity={(key, valid) => setInvalidFields((current) => ({ ...current, [key]: !valid }))} />
     {fields.map((field) => <View key={field.name} style={styles.tight}>
@@ -68,7 +70,7 @@ export function PermissionSheet(props: {
           : <PromptInput testID={`prompt-field-${field.name}`} accessibilityLabel={field.label} value={String(values[field.name] ?? '')} keyboardType={field.type === 'number' ? 'numeric' : 'default'} onChangeText={(value) => setValues((current) => ({ ...current, [field.name]: value }))} />}
     </View>)}
     {!perm.requestKind && perm.suggestions?.length ? <View style={styles.tight}>
-      <Text style={styles.label}>Permissions to remember</Text>
+      <Text style={styles.label}>{t('Permissions to remember')}</Text>
       {perm.suggestions.map((suggestion, index) => <PromptChoice key={index} multi label={permissionSuggestionLabel(suggestion)} selected={suggestions.has(index)} onPress={() => setSuggestions((current) => {
         const next = new Set(current); if (next.has(index)) next.delete(index); else next.add(index); return next
       })} />)}

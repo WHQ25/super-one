@@ -101,7 +101,7 @@ test('offers a retry when the search failed', async () => {
     />,
   )
   expect(screen.getByText('Host unreachable')).toBeTruthy()
-  fireEvent.press(screen.getByLabelText('Retry search'))
+  fireEvent.press(screen.getByLabelText('Retry Search'))
   expect(retries).toBe(1)
 })
 
@@ -157,7 +157,7 @@ test('says there are no matches only once a search has settled', async () => {
   await renderWithTheme(
     <MentionSuggestions rows={[]} onSelect={() => {}} search={{ active: true, loading: false }} />,
   )
-  expect(screen.getByText('No matches')).toBeTruthy()
+  expect(screen.getByText('No Matches')).toBeTruthy()
 })
 
 test('stays out of the way when no mention query is open', async () => {
@@ -217,7 +217,7 @@ test('returns to the project root from the trail', async () => {
   await renderWithTheme(
     <MentionSuggestions rows={[row(file)]} onSelect={(item) => chosen.push(item)} breadcrumbs={trail} />,
   )
-  fireEvent.press(screen.getByLabelText('Browse project root'))
+  fireEvent.press(screen.getByLabelText('Browse Project Root'))
   expect(chosen).toEqual([directoryNavigationItem('')])
 })
 

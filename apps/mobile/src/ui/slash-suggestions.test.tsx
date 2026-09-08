@@ -78,7 +78,7 @@ test('offers a way out of the overlay', async () => {
   await renderWithTheme(
     <SlashSuggestions matches={[command('clear')]} onSelect={() => {}} onDismiss={() => { dismissed += 1 }} />,
   )
-  fireEvent.press(screen.getByLabelText('Hide commands'))
+  fireEvent.press(screen.getByLabelText('Hide Commands'))
   expect(dismissed).toBe(1)
 })
 
@@ -89,14 +89,14 @@ test('keeps the way out reachable while the catalog is still loading', async () 
   await renderWithTheme(
     <SlashSuggestions matches={[]} status="loading" onSelect={() => {}} onDismiss={() => {}} />,
   )
-  expect(screen.getByLabelText('Hide commands')).toBeTruthy()
+  expect(screen.getByLabelText('Hide Commands')).toBeTruthy()
 })
 
 test('keeps the way out reachable when the catalog failed', async () => {
   await renderWithTheme(
     <SlashSuggestions matches={[]} status="error" onSelect={() => {}} onDismiss={() => {}} />,
   )
-  expect(screen.getByLabelText('Hide commands')).toBeTruthy()
+  expect(screen.getByLabelText('Hide Commands')).toBeTruthy()
 })
 
 test('offers the way out exactly once, whatever the group order', async () => {
@@ -109,7 +109,7 @@ test('offers the way out exactly once, whatever the group order', async () => {
       onDismiss={() => {}}
     />,
   )
-  expect(screen.getAllByLabelText('Hide commands')).toHaveLength(1)
+  expect(screen.getAllByLabelText('Hide Commands')).toHaveLength(1)
 })
 
 test('renders nothing when a settled catalog has no matches', async () => {

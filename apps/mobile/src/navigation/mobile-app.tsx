@@ -101,7 +101,7 @@ const kv = mobileKv
 export function MobileApp() {
   const styles = useMobileStyles()
   const { tokens, setHarness } = useMobileTheme()
-  const { locale } = useMobileLocale()
+  const { locale, t } = useMobileLocale()
   const webViewTheme = useMemo(() => mobileWebViewTheme(tokens), [tokens])
   const { width, fontScale } = useWindowDimensions()
   const [screen, setScreen] = useState<Screen>('pair')
@@ -1244,7 +1244,7 @@ export function MobileApp() {
   }
   const header = screen === 'files'
     ? browserMode.name
-    : mobileHeaderTitle(screen, project?.name, activeSessionTitle, terminalUi.title)
+    : mobileHeaderTitle(screen, project?.name, activeSessionTitle, terminalUi.title, t)
   const tabletMultiPane = shouldUseTabletMultiPane(width, screen, !!project)
 
   // Android's back button is the hardware twin of the swipe the navigator no

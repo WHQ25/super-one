@@ -5,12 +5,14 @@ import type { SelectorCatalogParam } from '../model-picker-state'
 import { useMobileTheme } from '../theme/context'
 import { MenuDisclosureRow, MenuRow, MenuSeparator } from './anchored-menu'
 import { ProviderBrand } from './provider-brand'
+import { useMobileLocale } from '../i18n/context'
 
 /** The sections the model picker stacks around model + effort, in desktop order. */
 
 export function SectionLabel({ children }: { children: string }) {
   const { tokens: { colors } } = useMobileTheme()
-  return <Text style={{ paddingHorizontal: 8, paddingTop: 6, paddingBottom: 2, fontSize: 12, color: colors.mutedForeground }}>{children}</Text>
+  const { t } = useMobileLocale()
+  return <Text style={{ paddingHorizontal: 8, paddingTop: 6, paddingBottom: 2, fontSize: 12, color: colors.mutedForeground }}>{t(children)}</Text>
 }
 
 export function ModeSection({ label, modes, selected, locked, expanded, onExpand, onSelect }: {
@@ -18,6 +20,7 @@ export function ModeSection({ label, modes, selected, locked, expanded, onExpand
   expanded: boolean; onExpand: () => void; onSelect: (id: string) => void
 }) {
   const current = modes.find((mode) => mode.id === selected)
+  const { t } = useMobileLocale()
   if (expanded) {
     return <>
       <SectionLabel>{label}</SectionLabel>
@@ -26,8 +29,8 @@ export function ModeSection({ label, modes, selected, locked, expanded, onExpand
     </>
   }
   return <>
-    <SectionLabel>{locked ? `${label} · locked` : label}</SectionLabel>
-    <MenuDisclosureRow label={current?.name ?? label} description={locked ? 'This session has already started' : current?.description}
+    <SectionLabel>{locked ? `${t(label)} · ${t('locked')}` : label}</SectionLabel>
+    <MenuDisclosureRow label={current?.name ?? label} description={locked ? t('This session has already started') : current?.description}
       disabled={locked} onPress={onExpand} />
     <MenuSeparator />
   </>

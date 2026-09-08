@@ -72,7 +72,7 @@ test('picking a scope is what opens the browser', async () => {
   const onBrowse = jest.fn()
   await renderWithTheme(page({ onBrowse }))
 
-  fireEvent.press(screen.getByText('Add to session'))
+  fireEvent.press(screen.getByText('Add to Session'))
   expect(onBrowse).toHaveBeenCalledWith('session')
 })
 
@@ -84,15 +84,15 @@ test('session is the accented scope, project the quiet one', async () => {
 
   const background = (label: string) =>
     (screen.getByText(label).parent?.props?.style as { backgroundColor?: string }[])?.[1]?.backgroundColor
-  expect(background('Add to session')).toBe(GENERATED_DARK_COLORS.primary)
-  expect(background('Add to project')).toBe(GENERATED_DARK_COLORS.secondary)
+  expect(background('Add to Session')).toBe(GENERATED_DARK_COLORS.primary)
+  expect(background('Add to Project')).toBe(GENERATED_DARK_COLORS.secondary)
 })
 
 test('a write in flight stops the scope buttons from starting another', async () => {
   const onBrowse = jest.fn()
   await renderWithTheme(page({ busy: true, onBrowse }))
 
-  fireEvent.press(screen.getByText('Add to project'))
+  fireEvent.press(screen.getByText('Add to Project'))
   expect(onBrowse).not.toHaveBeenCalled()
 })
 

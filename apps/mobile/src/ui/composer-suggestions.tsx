@@ -14,6 +14,7 @@ import { FileTypeIcon } from './file-icon'
 import { HarnessIcon } from './harness-icon'
 import { brandKeyForAgentRef } from '@superone/shared/agent-mention-tags'
 import { mentionGlyphArtwork } from './mention-glyph-data'
+import { useMobileLocale } from '../i18n/context'
 
 function MatchText({ text, indices = [], muted }: { text: string; indices?: number[]; muted?: boolean }) {
   const { tokens: { colors } } = useMobileTheme()
@@ -36,8 +37,9 @@ function MatchText({ text, indices = [], muted }: { text: string; indices?: numb
 
 function SectionTitle({ title, count, action }: { title: string; count: number; action?: ReactNode }) {
   const { tokens: { colors } } = useMobileTheme()
+  const { t } = useMobileLocale()
   return <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 6, gap: 6 }}>
-    <Text accessibilityRole="header" style={{ color: colors.mutedForeground, fontSize: 12 }}>{title}</Text>
+    <Text accessibilityRole="header" style={{ color: colors.mutedForeground, fontSize: 12 }}>{t(title)}</Text>
     <Text style={{ flex: 1, color: colors.mutedForeground, fontSize: 11 }}>{count}</Text>
     {action}
   </View>
@@ -64,6 +66,7 @@ export function SlashSuggestions({ matches, status = 'ready', onSelect, onDismis
   onDismiss?: () => void
 }) {
   const { tokens: { colors } } = useMobileTheme()
+  const { t } = useMobileLocale()
   const groups = groupItems(matches, (match) => (match.isSkill ? 'skill' : 'command'), slashGroupOrder(matches))
   // A catalog still loading has to say so. Rendering nothing is indistinguishable
   // from "this harness has no commands", which is what it used to look like.
@@ -83,12 +86,12 @@ export function SlashSuggestions({ matches, status = 'ready', onSelect, onDismis
   return <ScrollView testID="slash-suggestions" keyboardShouldPersistTaps="always" style={{ maxHeight: 256, flexGrow: 0, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, borderRadius: 12 }} contentContainerStyle={{ padding: 6 }}>
     {status === 'loading' ? <View accessibilityLiveRegion="polite" style={{ paddingHorizontal: 8, paddingVertical: 6, flexDirection: 'row', gap: 8, alignItems: 'center' }}>
       <ActivityIndicator size="small" color={colors.mutedForeground} />
-      <Text style={{ flex: 1, color: colors.mutedForeground, fontSize: 12 }}>Loading commands…</Text>
+      <Text style={{ flex: 1, color: colors.mutedForeground, fontSize: 12 }}>{t('Loading commands…')}</Text>
       {dismiss}
     </View> : null}
     {status === 'error' && !matches.length ? <View style={{ paddingHorizontal: 8, paddingVertical: 6, flexDirection: 'row', gap: 8, alignItems: 'center' }}>
       <Text accessibilityRole="alert" style={{ flex: 1, color: colors.destructive, fontSize: 12 }}>
-        Could not load commands
+        {t('Could not load commands')}
       </Text>
       {dismiss}
     </View> : null}
@@ -153,10 +156,11 @@ function MentionBreadcrumbs({ trail, onSelect }: {
   onSelect: (item: MentionItem) => void
 }) {
   const { tokens: { colors } } = useMobileTheme()
+  const { t } = useMobileLocale()
   return <ScrollView horizontal keyboardShouldPersistTaps="always" showsHorizontalScrollIndicator={false}
     style={{ flexGrow: 0, borderBottomWidth: 1, borderBottomColor: colors.border }}
     contentContainerStyle={{ alignItems: 'center', paddingHorizontal: 8, paddingVertical: 6, gap: 2, minHeight: 36 }}>
-    <Pressable accessibilityRole="button" accessibilityLabel="Browse project root"
+    <Pressable accessibilityRole="button" accessibilityLabel={t('Browse project root')}
       onPress={() => onSelect(directoryNavigationItem(''))}
       style={({ pressed }) => ({ padding: 4, borderRadius: 6, backgroundColor: pressed ? colors.muted : 'transparent' })}>
       <FolderRoot size={14} color={colors.mutedForeground} />
@@ -191,6 +195,7 @@ export function MentionSuggestions({ rows, onSelect, search, onRetry, onLoadMore
   breadcrumbs?: { label: string; query: string }[]
 }) {
   const { tokens: { colors } } = useMobileTheme()
+  const { t } = useMobileLocale()
   if (!rows.length && !search?.active) return null
   return <View testID="mention-suggestions" style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: colors.surface, overflow: 'hidden' }}>
     {breadcrumbs?.length ? <MentionBreadcrumbs trail={breadcrumbs} onSelect={onSelect} /> : null}
@@ -247,22 +252,22 @@ export function MentionSuggestions({ rows, onSelect, search, onRetry, onLoadMore
       </View>)}
       {search?.loading ? <View accessibilityLiveRegion="polite" style={{ padding: 8, flexDirection: 'row', gap: 8 }}>
         <ActivityIndicator size="small" color={colors.mutedForeground} />
-        <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>Searching…</Text>
+        <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{t('Searching…')}</Text>
       </View> : search?.error ? <View style={{ paddingHorizontal: 8, paddingVertical: 6, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         {/* Retry sits beside the message rather than under it. The desktop has
             no retry at all — it is here because the relay can drop — but that
             is no reason to spend two rows saying one thing. */}
         <Text accessibilityRole="alert" style={{ flex: 1, color: colors.destructive, fontSize: 12 }}>{search.error}</Text>
-        {onRetry ? <Pressable accessibilityRole="button" accessibilityLabel="Retry search" onPress={onRetry} hitSlop={10}
+        {onRetry ? <Pressable accessibilityRole="button" accessibilityLabel={t('Retry search')} onPress={onRetry} hitSlop={10}
           style={({ pressed }) => ({ paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6, backgroundColor: pressed ? colors.muted : 'transparent' })}>
-          <Text style={{ color: colors.primary, fontSize: 12 }}>Retry</Text>
+          <Text style={{ color: colors.primary, fontSize: 12 }}>{t('Retry')}</Text>
         </Pressable> : null}
       </View> : !rows.length ? <Text accessibilityLiveRegion="polite" style={{ padding: 8, color: colors.mutedForeground, fontSize: 12 }}>
         {/* What "nothing" means depends on what was asked: no projects match,
             no recent sessions, or no matches at all. */}
-        {search?.emptyLabel ?? 'No matches'}
+        {t(search?.emptyLabel ?? 'No matches')}
       </Text> : search?.hasMore ? <Text style={{ paddingHorizontal: 8, paddingVertical: 4, color: colors.mutedForeground, fontSize: 11 }}>
-        Scroll for more
+        {t('Scroll for more')}
       </Text> : null}
     </ScrollView>
   </View>

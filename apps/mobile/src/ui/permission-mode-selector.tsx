@@ -7,6 +7,7 @@ import { useMobileTheme } from '../theme/context'
 import { AnchoredMenu, MenuSeparator, useMenuAnchor } from './anchored-menu'
 import { orderedPermissionModes, permissionPresentation } from './permission-mode-data'
 import { CHIP_HEIGHT, CHIP_HIT_SLOP, chipTriggerBackground } from './chip-metrics'
+import { useMobileLocale } from '../i18n/context'
 
 export { permissionModeLabel } from './permission-mode-data'
 const icons: Record<string, LucideIcon> = { AlertTriangle, Bot, Eye, FastForward, ListTodo, Lock, MessageCircle, PenLine, Shield, ShieldCheck, ShieldOff, Unlock, Zap }
@@ -16,6 +17,7 @@ export function PermissionModeSelector({ harness, modes, value, onChange, disabl
 }) {
   const menu = useMenuAnchor()
   const { tokens } = useMobileTheme()
+  const { t } = useMobileLocale()
   const { colors } = tokens
   const tone = (entry: ReturnType<typeof permissionPresentation>) => {
     const value = entry[tokens.scheme]
@@ -25,14 +27,14 @@ export function PermissionModeSelector({ harness, modes, value, onChange, disabl
   const TriggerIcon = icons[selected.triggerIcon] ?? Shield
   const available = orderedPermissionModes(harness, modes)
   return <>
-    <Pressable ref={menu.ref} disabled={disabled || !modes.length} accessibilityRole="button" accessibilityLabel={`Permission mode: ${selected.label}`}
+    <Pressable ref={menu.ref} disabled={disabled || !modes.length} accessibilityRole="button" accessibilityLabel={`${t('Permission mode')}: ${t(selected.label)}`}
       accessibilityState={{ disabled: disabled || !modes.length, expanded: !!menu.anchor }} onPress={menu.open}
       hitSlop={CHIP_HIT_SLOP}
       style={({ pressed }) => ({ minHeight: CHIP_HEIGHT, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 4,
         borderRadius: 8, opacity: disabled ? 0.45 : 1,
         backgroundColor: chipTriggerBackground({ pressed, open: !!menu.anchor }, colors.muted) })}>
       <TriggerIcon color={tone(selected)} size={14} />
-      <Text style={{ color: tone(selected), fontSize: 12 }}>{selected.label}</Text>
+      <Text style={{ color: tone(selected), fontSize: 12 }}>{t(selected.label)}</Text>
     </Pressable>
     <AnchoredMenu anchor={menu.anchor} title="Permission mode" onDismiss={menu.close} width={300}>
       {available.map((mode) => {
@@ -46,9 +48,9 @@ export function PermissionModeSelector({ harness, modes, value, onChange, disabl
             style={({ pressed }) => ({ minHeight: 44, padding: 8, gap: 4, borderRadius: 6, backgroundColor: active || pressed ? `${color}20` : 'transparent' })}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <Icon color={color} size={14} />
-              <Text style={{ color, fontSize: 13, fontWeight: '500' }}>{entry.label}</Text>
+              <Text style={{ color, fontSize: 13, fontWeight: '500' }}>{t(entry.label)}</Text>
             </View>
-            <Text style={{ color: colors.mutedForeground, fontSize: 12, lineHeight: 18 }}>{entry.description}</Text>
+            <Text style={{ color: colors.mutedForeground, fontSize: 12, lineHeight: 18 }}>{t(entry.description)}</Text>
           </Pressable>
         </Fragment>
       })}

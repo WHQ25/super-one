@@ -4,6 +4,7 @@ import { Text } from './text'
 import { ComposerPanel } from './composer-panel'
 import { useMobileTheme } from '../theme/context'
 import type { McpServerRow } from '../mcp-status'
+import { useMobileLocale } from '../i18n/context'
 
 /**
  * What `/mcp` shows: which servers this session is running and whether they
@@ -22,6 +23,7 @@ export function McpPanel({ visible, servers, loading, error, onDismiss }: {
   onDismiss: () => void
 }) {
   const { tokens: { colors } } = useMobileTheme()
+  const { t } = useMobileLocale()
   if (!visible) return null
   const dot = (tone: McpServerRow['tone']) =>
     tone === 'ok' ? colors.success : tone === 'warn' ? colors.warning
@@ -29,11 +31,11 @@ export function McpPanel({ visible, servers, loading, error, onDismiss }: {
   return <ComposerPanel title="MCP servers" icon={Plug} testID="mcp-panel" onClose={onDismiss}>
     {loading ? <View accessibilityLiveRegion="polite" style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 8 }}>
       <ActivityIndicator size="small" color={colors.mutedForeground} />
-      <Text style={{ color: colors.mutedForeground, fontSize: 13 }}>Reading server status…</Text>
+      <Text style={{ color: colors.mutedForeground, fontSize: 13 }}>{t('Reading server status…')}</Text>
     </View> : error ? <Text accessibilityRole="alert" style={{ padding: 8, color: colors.error, fontSize: 13 }}>{error}</Text>
     : !servers.length ? <Text style={{ padding: 8, color: colors.mutedForeground, fontSize: 13 }}>
       {/* An empty list is a fact about the session, not a failure. */}
-      This session has no MCP servers configured.
+      {t('This session has no MCP servers configured.')}
     </Text> : servers.map((server) => <View key={server.name}
       style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 4, paddingVertical: 6, minHeight: 44 }}>
       <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dot(server.tone) }} />

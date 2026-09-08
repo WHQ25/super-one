@@ -7,6 +7,7 @@ import { poweredByHint } from '../provider-state'
 import type { NewSessionWorktreeSelection } from '../worktree-state'
 import { useMobileTheme } from '../theme/context'
 import { GitChips, HarnessIcon, HarnessTabs, ProjectSelect, ProviderBrand } from '../ui'
+import { useMobileLocale } from '../i18n/context'
 
 export type NewSessionLandingProps = {
   provider: HarnessId
@@ -31,6 +32,7 @@ export type NewSessionLandingProps = {
  */
 export function NewSessionLanding(props: NewSessionLandingProps) {
   const { tokens: { colors } } = useMobileTheme()
+  const { t } = useMobileLocale()
   const hint = poweredByHint(props.provider, props.activeProvider)
   const activeHarness = props.harnessOptions.find((option) => option.key === props.activeHarnessKey)
   return (
@@ -41,7 +43,7 @@ export function NewSessionLanding(props: NewSessionLandingProps) {
         {/* Keep the same footprint for harnesses without a provider hint. */}
         <View style={{ height: 18, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
           {hint ? <>
-            <Text style={{ fontSize: 11, color: colors.mutedForeground }}>Powered by</Text>
+            <Text style={{ fontSize: 11, color: colors.mutedForeground }}>{t('Powered by')}</Text>
             <ProviderBrand brandKey={hint.brandKey} name={hint.name} size={14} />
           </> : null}
         </View>

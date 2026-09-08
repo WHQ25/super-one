@@ -34,7 +34,7 @@ test('shows nothing but a spinner before the first read has settled', async () =
 
 test('reports an empty project only once the read has settled', async () => {
   await renderWithTheme(body(sessions({ loaded: true })))
-  expect(screen.getByText('No sessions yet')).toBeTruthy()
+  expect(screen.getByText('No Sessions Yet')).toBeTruthy()
 })
 
 test('keeps the empty state away while a settled list is being re-read', async () => {

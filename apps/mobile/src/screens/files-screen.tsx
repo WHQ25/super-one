@@ -16,6 +16,7 @@ import type { GitToneMap } from '../navigation/use-project-git-status'
 import type { GitFileTone } from '@superone/shared/git-file-status'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { Button, ListRow } from '../ui'
+import { useMobileLocale } from '../i18n/context'
 
 /**
  * Semantic role → mobile palette. The role comes from `@superone/shared`, which
@@ -54,6 +55,7 @@ export function FilesScreen(props: {
 }) {
   const styles = useMobileStyles()
   const { tokens } = useMobileTheme()
+  const { t } = useMobileLocale()
   const insets = useSafeAreaInsets()
   const breadcrumbs = useRef<ScrollView>(null)
   const crumbs = fileBrowserCrumbs(props.mode, props.path)
@@ -97,7 +99,7 @@ export function FilesScreen(props: {
         contentContainerStyle={!props.items.length ? { flexGrow: 1 } : undefined}
         ListEmptyComponent={<View style={styles.emptyState}>
           {props.loading ? <ActivityIndicator color={tokens.colors.mutedForeground} /> : <FolderOpen size={36} color={tokens.colors.mutedForeground} />}
-          <Text style={props.error ? styles.errorText : styles.emptyBody}>{props.loading ? 'Loading folder…' : props.error || 'This folder is empty'}</Text>
+          <Text style={props.error ? styles.errorText : styles.emptyBody}>{props.loading ? t('Loading folder…') : props.error || t('This folder is empty')}</Text>
           {props.error ? <Button label="Try again" variant="secondary" onPress={() => props.onOpenDirectory(props.path)} /> : null}
         </View>}
         keyExtractor={(item) => `${item.isDirectory ? 'd' : 'f'}:${item.name}`}

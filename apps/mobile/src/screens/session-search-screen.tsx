@@ -8,6 +8,7 @@ import { searchSessions } from '../navigation/workspace-data'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useMobileTheme } from '../theme/context'
 import { SessionRowContent } from '../ui/session-row-content'
+import { useMobileLocale } from '../i18n/context'
 
 /** Long enough that a fast typist sends one request, short enough to feel live. */
 const DEBOUNCE_MS = 220
@@ -23,6 +24,7 @@ export function SessionSearchScreen(props: {
   onCancel: () => void
 }) {
   const { tokens: { colors, radius } } = useMobileTheme()
+  const { t } = useMobileLocale()
   const insets = useSafeAreaInsets()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SessionListRow[]>([])
@@ -66,14 +68,14 @@ export function SessionSearchScreen(props: {
       <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
         paddingHorizontal: 12, borderRadius: radius.md, backgroundColor: colors.muted }}>
         <Search size={16} color={dim} />
-        <TextInput value={query} onChangeText={setQuery} accessibilityLabel="Search sessions"
-          placeholder="Search all sessions…" placeholderTextColor={dim}
+        <TextInput value={query} onChangeText={setQuery} accessibilityLabel={t('Search sessions')}
+          placeholder={t('Search all sessions…')} placeholderTextColor={dim}
           autoCapitalize="none" autoCorrect={false} autoFocus returnKeyType="search"
           style={{ flex: 1, minHeight: 44, fontSize: 15, color: colors.foreground }} />
       </View>
-      <Pressable accessibilityRole="button" accessibilityLabel="Cancel search" onPress={props.onCancel}
+      <Pressable accessibilityRole="button" accessibilityLabel={t('Cancel search')} onPress={props.onCancel}
         style={({ pressed }) => ({ paddingVertical: 10, opacity: pressed ? 0.6 : 1 })}>
-        <Text style={{ color: colors.primary, fontSize: 15 }}>Cancel</Text>
+        <Text style={{ color: colors.primary, fontSize: 15 }}>{t('Cancel')}</Text>
       </Pressable>
     </View>
     {busy ? <ActivityIndicator style={{ padding: 16 }} color={dim} /> : null}
@@ -81,7 +83,7 @@ export function SessionSearchScreen(props: {
     {!busy && !error && trimmed && !items.length ? (
       <View style={{ alignItems: 'center', gap: 12, paddingTop: 48 }}>
         <SearchX color={colors.border} size={48} />
-        <Text style={{ color: dim }}>No sessions matched “{trimmed}”</Text>
+        <Text style={{ color: dim }}>{localeSessionMatch(t, trimmed)}</Text>
       </View>
     ) : null}
     <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 8, paddingBottom: 24 }}>
@@ -94,4 +96,8 @@ export function SessionSearchScreen(props: {
       ))}
     </ScrollView>
   </View>
+}
+
+function localeSessionMatch(t: (source: string) => string, query: string): string {
+  return t('No sessions matched “{{query}}”').replace('{{query}}', query)
 }

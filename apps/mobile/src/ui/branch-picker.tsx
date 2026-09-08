@@ -5,6 +5,7 @@ import { Check, GitBranch, Plus, Search } from 'lucide-react-native'
 import { branchToCreate, filterBranches } from '../branch-picker-state'
 import type { ShellGitInfo } from '../project-types'
 import { useMobileTheme } from '../theme/context'
+import { useMobileLocale } from '../i18n/context'
 
 const fmt = (n: number) => n.toLocaleString()
 
@@ -24,6 +25,7 @@ export function BranchPicker(props: {
   onDone: () => void
 }) {
   const { tokens: { colors, radius } } = useMobileTheme()
+  const { t } = useMobileLocale()
   const [query, setQuery] = useState('')
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
@@ -39,7 +41,7 @@ export function BranchPicker(props: {
       await action(branch)
       props.onDone()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not change branch')
+      setError(cause instanceof Error ? cause.message : t('Could not change branch'))
     } finally {
       setBusy('')
     }
@@ -61,15 +63,15 @@ export function BranchPicker(props: {
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 10,
         borderBottomWidth: 1, borderBottomColor: colors.border }}>
         <Search size={15} color={colors.mutedForeground} />
-        <TextInput value={query} onChangeText={setQuery} accessibilityLabel="Search branches"
-          placeholder="Search or create branch…" placeholderTextColor={colors.mutedForeground}
+        <TextInput value={query} onChangeText={setQuery} accessibilityLabel={t('Search branches')}
+          placeholder={t('Search or create branch…')} placeholderTextColor={colors.mutedForeground}
           autoCapitalize="none" autoCorrect={false}
           style={{ flex: 1, minHeight: 44, fontSize: 14, color: colors.foreground }} />
       </View>
       {error ? <Text accessibilityRole="alert" style={{ paddingHorizontal: 10, fontSize: 12, color: colors.destructive }}>{error}</Text> : null}
       <View>
         {!current && !others.length && !creatable ? (
-          <Text style={{ padding: 12, fontSize: 13, textAlign: 'center', color: colors.mutedForeground }}>No branches found</Text>
+          <Text style={{ padding: 12, fontSize: 13, textAlign: 'center', color: colors.mutedForeground }}>{t('No branches found')}</Text>
         ) : null}
         {current ? row(current, current, () => {}, true, (
           <>
@@ -84,14 +86,14 @@ export function BranchPicker(props: {
         </> : null}
         {creatable ? <>
           {current || others.length ? separator : null}
-          <Pressable accessibilityRole="button" accessibilityLabel={`Create branch ${creatable}`} disabled={!!busy}
+          <Pressable accessibilityRole="button" accessibilityLabel={`${t('Create branch')} ${creatable}`} disabled={!!busy}
             onPress={() => { void run(creatable, props.onCreate) }}
             style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44,
               paddingHorizontal: 10, borderRadius: radius.sm, opacity: busy && busy !== creatable ? 0.45 : 1,
               backgroundColor: pressed ? colors.muted : 'transparent' })}>
             <Plus size={16} color={colors.mutedForeground} />
             <Text numberOfLines={1} style={{ flex: 1, fontSize: 14, color: colors.mutedForeground }}>
-              Create branch: <Text style={{ fontWeight: '600', color: colors.foreground }}>{creatable}</Text>
+              {t('Create branch:')} <Text style={{ fontWeight: '600', color: colors.foreground }}>{creatable}</Text>
             </Text>
             {busy === creatable ? <ActivityIndicator size="small" color={colors.mutedForeground} /> : null}
           </Pressable>
@@ -104,9 +106,10 @@ export function BranchPicker(props: {
 /** `uncommitted: 27 files +1,231 -75`, exactly as the desktop popover reads. */
 function DirtySummary({ dirty }: { dirty: NonNullable<ShellGitInfo['dirty']> }) {
   const { tokens: { colors } } = useMobileTheme()
+  const { t } = useMobileLocale()
   return (
     <Text numberOfLines={1} style={{ fontSize: 12, color: colors.mutedForeground }}>
-      uncommitted: {fmt(dirty.files)} {dirty.files === 1 ? 'file' : 'files'}
+      {t('uncommitted:')} {fmt(dirty.files)} {t(dirty.files === 1 ? 'file' : 'files')}
       {dirty.insertions > 0 ? <Text style={{ color: colors.success }}> +{fmt(dirty.insertions)}</Text> : null}
       {dirty.deletions > 0 ? <Text style={{ color: colors.error }}> -{fmt(dirty.deletions)}</Text> : null}
     </Text>

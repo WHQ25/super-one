@@ -6,6 +6,7 @@ import type { Project } from '../project-types'
 import { filterProjects } from '../project-picker-state'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { ListRow } from '../ui'
+import { useMobileLocale } from '../i18n/context'
 
 /**
  * Choose which project the next session runs in.
@@ -22,6 +23,7 @@ export function ProjectPickerScreen(props: {
   const styles = useMobileStyles()
   const { tokens } = useMobileTheme()
   const { colors } = tokens
+  const { t } = useMobileLocale()
   const [query, setQuery] = useState('')
   const matches = filterProjects(props.projects, query)
   return (
@@ -29,8 +31,8 @@ export function ProjectPickerScreen(props: {
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12,
         borderBottomWidth: 1, borderBottomColor: colors.border }}>
         <Search size={15} color={colors.mutedForeground} />
-        <TextInput value={query} onChangeText={setQuery} accessibilityLabel="Search projects"
-          placeholder="Search projects…" placeholderTextColor={colors.mutedForeground}
+        <TextInput value={query} onChangeText={setQuery} accessibilityLabel={t('Search projects')}
+          placeholder={t('Search projects…')} placeholderTextColor={colors.mutedForeground}
           autoCapitalize="none" autoCorrect={false}
           style={{ flex: 1, minHeight: 44, fontSize: 14, color: colors.foreground }} />
       </View>
@@ -52,8 +54,8 @@ export function ProjectPickerScreen(props: {
       ) : (
         <View style={styles.emptyState}>
           <FolderOpen color={colors.border} size={48} />
-          <Text style={styles.emptyTitle}>{query.trim() ? 'No projects matched' : 'No projects yet'}</Text>
-          <Text style={styles.emptyBody}>Add one with the button in the top right.</Text>
+          <Text style={styles.emptyTitle}>{t(query.trim() ? 'No projects matched' : 'No projects yet')}</Text>
+          <Text style={styles.emptyBody}>{t('Add one with the button in the top right.')}</Text>
         </View>
       )}
     </View>

@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { X, type LucideIcon } from 'lucide-react-native'
 import { useMobileTheme } from '../theme/context'
 import { MenuHost } from '../ui/menu-host'
+import { useMobileLocale } from '../i18n/context'
 
 /** Native interaction shell: bounded body, persistent actions, and keyboard-safe layout. */
 export function PromptSheet({ title, subtitle, icon: Icon, children, footer, onDismiss, spacious = false }: {
@@ -12,6 +13,8 @@ export function PromptSheet({ title, subtitle, icon: Icon, children, footer, onD
   onDismiss: () => void; spacious?: boolean
 }) {
   const { tokens: { colors, radius, spacing } } = useMobileTheme()
+  const { t } = useMobileLocale()
+  const translatedTitle = t(title)
   const { width } = useWindowDimensions()
   const insets = useSafeAreaInsets()
   const tablet = width >= 768
@@ -31,7 +34,7 @@ export function PromptSheet({ title, subtitle, icon: Icon, children, footer, onD
     <Modal supportedOrientations={['portrait', 'portrait-upside-down', 'landscape-left', 'landscape-right']} transparent visible animationType="slide" presentationStyle="overFullScreen" statusBarTranslucent navigationBarTranslucent onRequestClose={onDismiss}>
       <MenuHost>
       <View style={{ flex: 1, backgroundColor: colors.scrim }}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Dismiss dialog" onPress={onDismiss} style={StyleSheet.absoluteFill} />
+        <Pressable accessibilityRole="button" accessibilityLabel={t('Dismiss dialog')} onPress={onDismiss} style={StyleSheet.absoluteFill} />
         <KeyboardAvoidingView pointerEvents="box-none" behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, paddingTop: insets.top + spacing.sm, paddingHorizontal: tablet ? spacing.lg : 0, paddingBottom: tablet ? insets.bottom + spacing.lg : 0, justifyContent: tablet ? 'center' : 'flex-end', alignItems: 'center' }}>
           <Animated.View accessibilityViewIsModal onAccessibilityEscape={onDismiss} style={{ width: '100%', maxWidth: tablet ? 620 : undefined, maxHeight: '100%', height: spacious ? '92%' : undefined, flexShrink: 1, backgroundColor: colors.elevated, borderTopLeftRadius: radius.lg + 8, borderTopRightRadius: radius.lg + 8, borderBottomLeftRadius: tablet ? radius.lg : 0, borderBottomRightRadius: tablet ? radius.lg : 0, overflow: 'hidden', transform: [{ translateY: offset }] }}>
             {!tablet ? <View {...pan.panHandlers} style={{ paddingTop: 10, paddingBottom: 4, alignItems: 'center' }}>
@@ -40,10 +43,10 @@ export function PromptSheet({ title, subtitle, icon: Icon, children, footer, onD
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: spacing.lg, paddingRight: 6, paddingVertical: tablet ? 8 : 2, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
               <Icon size={16} color={colors.mutedForeground} />
               <View style={{ flex: 1, minWidth: 0, paddingVertical: 6 }}>
-                <Text testID="prompt-title" style={{ color: colors.foreground, fontSize: 16, lineHeight: 22, fontWeight: '600' }}>{title}</Text>
+                <Text testID="prompt-title" style={{ color: colors.foreground, fontSize: 16, lineHeight: 22, fontWeight: '600' }}>{translatedTitle}</Text>
                 {subtitle ? <Text numberOfLines={1} style={{ color: colors.mutedForeground, fontSize: 12, lineHeight: 18 }}>{subtitle}</Text> : null}
               </View>
-              <Pressable accessibilityRole="button" testID="prompt-close" accessibilityLabel="Close dialog" onPress={onDismiss} style={{ minHeight: 44, width: 44, alignItems: 'center', justifyContent: 'center' }}>
+              <Pressable accessibilityRole="button" testID="prompt-close" accessibilityLabel={t('Close dialog')} onPress={onDismiss} style={{ minHeight: 44, width: 44, alignItems: 'center', justifyContent: 'center' }}>
                 <X size={16} color={colors.mutedForeground} />
               </Pressable>
             </View>

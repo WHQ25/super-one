@@ -19,18 +19,19 @@ export function mobileHeaderTitle(
   projectName: string | undefined,
   sessionTitle: string,
   terminalTitle: string,
+  translate: (source: string) => string = (source) => source,
 ): string {
-  if (route === 'chat') return sessionTitle || 'Chat'
+  if (route === 'chat') return sessionTitle || translate('Chat')
   if (route === 'terminal') return terminalTitle
-  if (route === 'worktree') return 'Worktree'
-  if (route === 'branch') return 'Branch'
-  if (route === 'add-dir') return 'Additional folders'
-  if (route === 'project-picker') return 'Projects'
-  if (route === 'add-project') return 'Add Project'
-  if (route === 'settings') return 'Settings'
+  if (route === 'worktree') return translate('Worktree')
+  if (route === 'branch') return translate('Branch')
+  if (route === 'add-dir') return translate('Additional folders')
+  if (route === 'project-picker') return translate('Projects')
+  if (route === 'add-project') return translate('Add project')
+  if (route === 'settings') return translate('Settings')
   // Files names whatever it is anchored to — a project folder or the machine —
   // and that name is the way back to the top of it.
-  if (route === 'files') return projectName ?? 'Files'
+  if (route === 'files') return projectName ?? translate('Files')
   return 'SuperOne'
 }
 

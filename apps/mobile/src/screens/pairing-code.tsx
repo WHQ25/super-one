@@ -4,6 +4,7 @@ import { Text } from '../ui/text'
 import { Button } from '../ui'
 import { Wordmark } from '../ui/wordmark'
 import { useMobileTheme } from '../theme/context'
+import { useMobileLocale } from '../i18n/context'
 
 const DIGIT_TRACKING = 10
 
@@ -15,11 +16,12 @@ const DIGIT_TRACKING = 10
 export function PairingCode(props: { code: string; onCancel: () => void }) {
   const styles = useStyles()
   const { tokens } = useMobileTheme()
+  const { t } = useMobileLocale()
   return (
     <View style={styles.page}>
       <View style={styles.center}>
         <Wordmark />
-        <Text style={styles.title}>Desktop Pairing Code</Text>
+        <Text style={styles.title}>{t('Desktop Pairing Code')}</Text>
         <View style={styles.codeBox}>
           <Text
             // VoiceOver reads a bare "123456" as a number, which is useless for
@@ -30,10 +32,10 @@ export function PairingCode(props: { code: string; onCancel: () => void }) {
             {props.code}
           </Text>
         </View>
-        <Text style={styles.body}>Enter it in SuperOne on your computer to finish pairing.</Text>
+        <Text style={styles.body}>{t('Enter it in SuperOne on your computer to finish pairing.')}</Text>
         <View style={styles.waiting}>
           <ActivityIndicator size="small" color={tokens.colors.mutedForeground} />
-          <Text style={styles.waitingLabel}>Waiting for desktop confirmation…</Text>
+          <Text style={styles.waitingLabel}>{t('Waiting for desktop confirmation…')}</Text>
         </View>
       </View>
       <Button label="Cancel" variant="secondary" onPress={props.onCancel} />

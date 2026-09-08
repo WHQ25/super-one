@@ -16,6 +16,7 @@ import { randomId } from './ids'
 import { InFlightKeys } from './in-flight-keys'
 import { useMobileStyles, useMobileTheme } from './theme/context'
 import { Badge, Button, Sheet } from './ui'
+import { useMobileLocale } from './i18n/context'
 
 type SharedFileEvent = Extract<AgentEvent, { type: 'shared_file' }>
 type InboxItem = {
@@ -139,13 +140,14 @@ export function SharedFileSheet(props: {
 }) {
   const styles = useMobileStyles()
   const { tokens } = useMobileTheme()
+  const { t } = useMobileLocale()
   const { current, pendingCount } = props.inbox
   const file = current?.event.file
   const statusLabel = current?.status === 'ready'
-    ? 'Ready'
+    ? t('Ready')
     : current?.status === 'error'
-      ? 'Failed'
-      : 'Downloading'
+      ? t('Failed')
+      : t('Downloading')
   const StatusIcon = current?.status === 'ready'
     ? FileCheck2
     : current?.status === 'error'
@@ -169,7 +171,7 @@ export function SharedFileSheet(props: {
           tone={current?.status === 'ready' ? 'success' : current?.status === 'error' ? 'error' : 'neutral'}
         />
       </View>
-      {current?.status === 'downloading' ? <Text style={styles.rowMeta}>Downloading securely…</Text> : null}
+      {current?.status === 'downloading' ? <Text style={styles.rowMeta}>{t('Downloading securely…')}</Text> : null}
       {current?.error ? <Text style={styles.errorText}>{current.error}</Text> : null}
       {current?.status === 'ready' && current.uri && file?.mimeType.startsWith('image/') ? (
         <Image resizeMode="contain" source={{ uri: current.uri }} style={styles.sharedFilePreview} />
@@ -179,7 +181,7 @@ export function SharedFileSheet(props: {
           <Button label="Open or share" onPress={() => void props.inbox.open()} />
         ) : null}
         <Button
-          label={pendingCount > 1 ? `Next file (${pendingCount - 1} queued)` : 'Dismiss'}
+          label={pendingCount > 1 ? `${t('Next file')} (${pendingCount - 1} ${t('queued')})` : t('Dismiss')}
           onPress={props.inbox.dismiss}
           variant="secondary"
         />

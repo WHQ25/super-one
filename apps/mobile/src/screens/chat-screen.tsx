@@ -24,6 +24,7 @@ import { useMobileStyles, useMobileTheme } from '../theme/context'
 import type { ReactNode } from 'react'
 import { ChatComposer, type ComposerSelection } from './chat-composer'
 import { NewSessionLanding, type NewSessionLandingProps } from './new-session-landing'
+import { useMobileLocale } from '../i18n/context'
 
 const CHAT_SOURCE = { html: CHAT_VIEW_HTML }
 
@@ -89,6 +90,7 @@ export function ChatScreen(props: {
 }) {
   const styles = useMobileStyles()
   const { tokens } = useMobileTheme()
+  const { t } = useMobileLocale()
   const [todosExpanded, setTodosExpanded] = useState(false)
   const todoItems = Object.values(props.todos)
   const completedTodos = todoItems.filter((todo) => todo.status === 'completed').length
@@ -99,12 +101,12 @@ export function ChatScreen(props: {
       {/* The edge strip is scoped to the scrolling half of the screen: over the
           composer it would swallow taps that land on the input's own padding. */}
       <View style={styles.flex}>
-      {props.starting ? <View style={styles.emptyState}><ActivityIndicator color={tokens.colors.mutedForeground} /><Text style={styles.emptyBody}>Starting session…</Text></View> : props.landing ? <NewSessionLanding {...props.landing} /> : <WebView
+      {props.starting ? <View style={styles.emptyState}><ActivityIndicator color={tokens.colors.mutedForeground} /><Text style={styles.emptyBody}>{t('Starting session…')}</Text></View> : props.landing ? <NewSessionLanding {...props.landing} /> : <WebView
         ref={props.webRef}
         originWhitelist={['*']}
         source={CHAT_SOURCE}
         startInLoadingState
-        renderLoading={() => <LoadingOverlay label="Loading conversation…" />}
+        renderLoading={() => <LoadingOverlay label={t('Loading conversation…')} />}
         style={[styles.flex, { backgroundColor: tokens.colors.background }]}
         containerStyle={{ backgroundColor: tokens.colors.background }}
         onMessage={(event) => props.onWebMessage(event.nativeEvent.data)}

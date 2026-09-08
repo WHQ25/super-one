@@ -5,10 +5,12 @@ import type { PermissionRequest } from '@superone/shared/agent-types'
 import { useMobileTheme } from '../theme/context'
 import { parseNativeDiff } from './diff-state'
 import { monospace, tint, usePromptStyles } from './styles'
+import { useMobileLocale } from '../i18n/context'
 
 export function NativeDiff({ diff, tokens }: { diff: string; tokens?: PermissionRequest['toolDiffTokens'] }) {
   const styles = usePromptStyles()
   const { tokens: { colors } } = useMobileTheme()
+  const { t } = useMobileLocale()
   const [expanded, setExpanded] = useState(false)
   const [visibleLines, setVisibleLines] = useState(200)
   const [width, setWidth] = useState(0)
@@ -19,8 +21,8 @@ export function NativeDiff({ diff, tokens }: { diff: string; tokens?: Permission
   const removals = lines.filter((line) => line.kind === 'removed').length
   return <View style={[styles.card, { padding: 0, overflow: 'hidden' }]} onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
     <View style={[styles.row, { paddingHorizontal: 10, paddingVertical: 6 }]}>
-      <Text style={[styles.meta, styles.grow]}>Changes <Text style={{ color: colors.success }}>+{additions}</Text> <Text style={{ color: colors.destructive }}>−{removals}</Text></Text>
-      <Pressable accessibilityRole="button" accessibilityLabel={expanded ? 'Collapse diff' : 'Expand diff'} onPress={() => setExpanded(!expanded)} hitSlop={8}><Text style={styles.meta}>{expanded ? 'Collapse' : 'Expand'}</Text></Pressable>
+      <Text style={[styles.meta, styles.grow]}>{t('Changes')} <Text style={{ color: colors.success }}>+{additions}</Text> <Text style={{ color: colors.destructive }}>−{removals}</Text></Text>
+      <Pressable accessibilityRole="button" accessibilityLabel={t(expanded ? 'Collapse diff' : 'Expand diff')} onPress={() => setExpanded(!expanded)} hitSlop={8}><Text style={styles.meta}>{t(expanded ? 'Collapse' : 'Expand')}</Text></Pressable>
     </View>
     <ScrollView nestedScrollEnabled style={{ maxHeight: expanded ? 440 : 200 }}>
       <ScrollView horizontal nestedScrollEnabled><View style={{ minWidth: width, paddingVertical: 6 }}>
@@ -34,6 +36,6 @@ export function NativeDiff({ diff, tokens }: { diff: string; tokens?: Permission
         })}
       </View></ScrollView>
     </ScrollView>
-    {lines.length > visibleLines ? <Pressable accessibilityRole="button" onPress={() => setVisibleLines((count) => count + 200)} style={{ padding: 10 }}><Text style={styles.meta}>Show more lines ({lines.length - visibleLines} remaining)</Text></Pressable> : null}
+    {lines.length > visibleLines ? <Pressable accessibilityRole="button" onPress={() => setVisibleLines((count) => count + 200)} style={{ padding: 10 }}><Text style={styles.meta}>{t('Show more lines')} ({lines.length - visibleLines} {t('remaining')})</Text></Pressable> : null}
   </View>
 }

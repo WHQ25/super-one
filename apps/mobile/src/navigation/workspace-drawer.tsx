@@ -14,6 +14,7 @@ import { SwipeRevealProvider, useSwipeRevealScope } from '../ui/swipe-reveal-sco
 import { WorkspaceProjectRow } from './workspace-project-row'
 import { readPinnedSessions } from './workspace-data'
 import { SidebarDeviceFooter } from './sidebar-device-footer'
+import { useMobileLocale } from '../i18n/context'
 
 export type WorkspaceDrawerProps = {
   visible: boolean; onDismiss: () => void; deviceName: string; projects: Project[]
@@ -51,6 +52,7 @@ export type WorkspaceDrawerProps = {
  */
 export function WorkspaceDrawer(props: WorkspaceDrawerProps) {
   const { tokens: { colors, radius } } = useMobileTheme()
+  const { t } = useMobileLocale()
   const { width } = useWindowDimensions()
   const insets = useSafeAreaInsets()
   // Several projects may stand open at once, as on the desktop. Opening the
@@ -141,7 +143,7 @@ export function WorkspaceDrawer(props: WorkspaceDrawerProps) {
 
   return <Modal visible={props.visible} transparent animationType="fade" onRequestClose={props.onDismiss} supportedOrientations={['portrait', 'landscape-left', 'landscape-right']}>
     <View style={{ flex: 1, backgroundColor: colors.scrim, flexDirection: 'row' }}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Close workspace" onPress={props.onDismiss} style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }} />
+      <Pressable accessibilityRole="button" accessibilityLabel={t('Close workspace')} onPress={props.onDismiss} style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }} />
       <Animated.View accessibilityViewIsModal {...drag.panHandlers}
         style={{ width: panelWidth, backgroundColor: colors.surface, paddingTop: insets.top, paddingBottom: insets.bottom,
           borderRightWidth: 1, borderRightColor: colors.border, transform: [{ translateX: slide }] }}>
@@ -149,12 +151,12 @@ export function WorkspaceDrawer(props: WorkspaceDrawerProps) {
         {/* Search is global and lives on its own screen, so this is a button that
             looks like a field, not a field. New session sits beside it. */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 }}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Search all sessions"
+          <Pressable accessibilityRole="button" accessibilityLabel={t('Search all sessions')}
             onPress={() => leave(props.onSearch)}
             style={({ pressed }) => ({ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 40,
               paddingHorizontal: 12, borderRadius: radius.md, backgroundColor: colors.muted, opacity: pressed ? 0.7 : 1 })}>
             <Search size={15} color={colors.mutedForeground} />
-            <Text style={{ color: colors.mutedForeground, fontSize: 14 }}>Search sessions</Text>
+            <Text style={{ color: colors.mutedForeground, fontSize: 14 }}>{t('Search sessions')}</Text>
           </Pressable>
           {props.activeProject ? <IconButton icon={SquarePen} label="New session"
             onPress={() => leave(() => void props.onNewSession(props.activeProject!))} chrome="plain" color={colors.foreground} /> : null}
@@ -162,7 +164,7 @@ export function WorkspaceDrawer(props: WorkspaceDrawerProps) {
 
         <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 8, paddingBottom: 16 }}>
           {pinned.length ? <View style={{ paddingBottom: 6 }}>
-            <Text style={{ paddingHorizontal: 12, paddingBottom: 2, color: colors.mutedForeground, fontSize: 12 }}>Pinned</Text>
+            <Text style={{ paddingHorizontal: 12, paddingBottom: 2, color: colors.mutedForeground, fontSize: 12 }}>{t('Pinned')}</Text>
             {/* The same swipe the project lists carry, so unpinning happens where
                 the pin is visible instead of only where the session lives. */}
             {pinned.map((session) => {
@@ -190,10 +192,10 @@ export function WorkspaceDrawer(props: WorkspaceDrawerProps) {
           </View> : null}
 
           <View style={{ flexDirection: 'row', alignItems: 'center', paddingLeft: 12, paddingRight: 2, paddingBottom: 2 }}>
-            <Text style={{ flex: 1, color: colors.mutedForeground, fontSize: 12 }}>Projects</Text>
+            <Text style={{ flex: 1, color: colors.mutedForeground, fontSize: 12 }}>{t('Projects')}</Text>
             <IconButton icon={FolderPlus} label="Add project" onPress={() => leave(props.onAddProject)} chrome="plain" color={colors.mutedForeground} />
           </View>
-          {!props.projects.length ? <Text style={{ color: colors.mutedForeground, fontSize: 13, padding: 12 }}>No projects yet. Add one to start a session.</Text> : null}
+          {!props.projects.length ? <Text style={{ color: colors.mutedForeground, fontSize: 13, padding: 12 }}>{t('No projects yet. Add one to start a session.')}</Text> : null}
           {props.projects.map((project) => <WorkspaceProjectRow
             key={project.path}
             client={client}

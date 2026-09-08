@@ -4,6 +4,7 @@ import type { LucideIcon } from 'lucide-react-native'
 import { Alert, Animated, PanResponder, Pressable, StyleSheet, View } from 'react-native'
 import { Text } from './text'
 import { useMobileTheme } from '../theme/context'
+import { useMobileLocale } from '../i18n/context'
 
 /**
  * `block` fills the revealed area with labelled tiles — right for a short list of
@@ -45,6 +46,7 @@ export function SwipeRow(props: {
 }) {
   const styles = useStyles()
   const { tokens } = useMobileTheme()
+  const { t } = useMobileLocale()
   const floating = props.variant === 'floating'
   const width = floating ? FLOATING_BUTTON : 76
   const actionsWidth = floating
@@ -97,10 +99,10 @@ export function SwipeRow(props: {
       action.onPress()
       return
     }
-    Alert.alert(action.confirm.title, action.confirm.message, [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t(action.confirm.title), action.confirm.message, [
+      { text: t('Cancel'), style: 'cancel' },
       {
-        text: action.confirm.confirmLabel,
+        text: t(action.confirm.confirmLabel),
         style: action.tone === 'destructive' ? 'destructive' : 'default',
         onPress: action.onPress,
       },
@@ -129,7 +131,7 @@ export function SwipeRow(props: {
           return (
             <Pressable
               key={action.key}
-              accessibilityLabel={`${action.label} ${props.subject}`}
+              accessibilityLabel={`${t(action.label)} ${props.subject}`}
               accessibilityRole="button"
               onPress={() => run(action)}
               style={({ pressed }) => [
@@ -141,7 +143,7 @@ export function SwipeRow(props: {
               ]}
             >
               <Icon color={destructive ? tokens.colors.destructiveForeground : color} size={17} />
-              {floating ? null : <Text style={[styles.actionLabel, { color }]}>{action.label}</Text>}
+              {floating ? null : <Text style={[styles.actionLabel, { color }]}>{t(action.label)}</Text>}
             </Pressable>
           )
         })}
@@ -150,7 +152,7 @@ export function SwipeRow(props: {
         <Pressable
           accessibilityActions={[
             { name: 'activate' },
-            ...props.actions.map((action) => ({ name: action.key, label: action.label })),
+            ...props.actions.map((action) => ({ name: action.key, label: t(action.label) })),
           ]}
           accessibilityRole="button"
           onAccessibilityAction={(event) => {

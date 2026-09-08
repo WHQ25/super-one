@@ -10,6 +10,7 @@ import { PromptSheet } from './PromptSheet'
 import { PromptActions, PromptInput, PromptPill } from './PromptControls'
 import { NativeMarkdown } from './NativeMarkdown'
 import { usePromptStyles } from './styles'
+import { useMobileLocale } from '../i18n/context'
 
 export function QuestionSheet(props: {
   question: AskUserQuestionRequest | null
@@ -18,6 +19,7 @@ export function QuestionSheet(props: {
 }) {
   const styles = usePromptStyles()
   const { tokens } = useMobileTheme()
+  const { t } = useMobileLocale()
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [otherTexts, setOtherTexts] = useState<Record<string, string>>({})
   const [notes, setNotes] = useState<Record<string, string>>({})
@@ -40,17 +42,17 @@ export function QuestionSheet(props: {
     {question.questions.length > 1 ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>{question.questions.map((item, index) => <PromptPill key={questionKey(item)} label={`${item.header}${answers[questionKey(item)]?.trim() ? ' ✓' : ''}`} selected={tab === index} onPress={() => setTab(index)} />)}</ScrollView> : null}
     {q ? <View style={styles.stack}>
       <NativeMarkdown content={q.question} />
-      {q.multiSelect ? <Text style={styles.meta}>Select one or more</Text> : null}
+      {q.multiSelect ? <Text style={styles.meta}>{t('Select one or more')}</Text> : null}
       <View style={styles.wrap}>{q.options.map((item) => <PromptPill key={item.label} label={item.label} multi={q.multiSelect} selected={selected.includes(item.label)} onPress={() => {
         setOtherTexts((current) => ({ ...current, [key]: '' })); setAnswers((current) => ({ ...current, [key]: toggleQuestionOption(q, current[key], item.label) }))
       }} />)}</View>
       {option?.description ? <View style={styles.note}><Text style={styles.body}>{option.description}</Text></View> : null}
       <PromptInput accessibilityLabel="Other answer" placeholder="Other…" value={otherTexts[key] ?? ''} onChangeText={(value) => { setOtherTexts((current) => ({ ...current, [key]: value })); setAnswers((current) => ({ ...current, [key]: value })) }} />
       {option?.preview ? <View style={styles.tight}>
-        <View style={styles.divider} /><Text style={styles.label}>Preview</Text>
+        <View style={styles.divider} /><Text style={styles.label}>{t('Preview')}</Text>
         {question.previewFormat === 'html' ? <WebView javaScriptEnabled={false} originWhitelist={[]} scrollEnabled nestedScrollEnabled source={{ html: option.preview }} style={{ height: 260, backgroundColor: tokens.colors.background }} /> : <NativeMarkdown content={option.preview} />}
         <PromptInput accessibilityLabel="Preview notes" placeholder="Add a note (optional)…" value={notes[noteKey] ?? ''} onChangeText={(value) => setNotes((current) => ({ ...current, [noteKey]: value }))} />
       </View> : null}
-    </View> : <Text style={styles.meta}>No questions to answer.</Text>}
+    </View> : <Text style={styles.meta}>{t('No questions to answer.')}</Text>}
   </PromptSheet>
 }

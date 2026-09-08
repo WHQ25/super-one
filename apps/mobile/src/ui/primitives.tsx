@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, View, type TextStyle } from 'react-native'
 import { Text } from './text'
 import { useMobileTheme } from '../theme/context'
 import { PromptSheet } from '../prompts/PromptSheet'
+import { useMobileLocale } from '../i18n/context'
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
 
@@ -16,6 +17,7 @@ export function Button(props: {
 }) {
   const styles = usePrimitiveStyles()
   const { tokens } = useMobileTheme()
+  const { t } = useMobileLocale()
   const variant = props.variant ?? 'primary'
   const Icon = props.icon
   const color = variant === 'primary'
@@ -36,7 +38,7 @@ export function Button(props: {
       ]}
     >
       {Icon ? <Icon color={color} size={17} strokeWidth={2} /> : null}
-      <Text style={[styles.buttonLabel, { color }]}>{props.label}</Text>
+      <Text style={[styles.buttonLabel, { color }]}>{t(props.label)}</Text>
     </Pressable>
   )
 }
@@ -79,12 +81,13 @@ export function ListRow(props: {
 
 export function SectionHeader(props: { title: string; badge?: ReactNode; action?: ReactNode }) {
   const styles = usePrimitiveStyles()
+  const { t } = useMobileLocale()
   // The badge qualifies the title, so it travels with it rather than drifting
   // to the far edge beside the actions.
   return (
     <View style={styles.sectionHeader}>
       <View style={styles.sectionTitleGroup}>
-        <Text style={styles.sectionTitle}>{props.title}</Text>
+        <Text style={styles.sectionTitle}>{t(props.title)}</Text>
         {props.badge}
       </View>
       {props.action}
@@ -100,8 +103,9 @@ export function Sheet(props: {
   children: ReactNode
   onDismiss?: () => void
 }) {
+  const { t } = useMobileLocale()
   if (!props.visible) return null
-  return <PromptSheet title={props.title} icon={props.icon ?? SlidersHorizontal} onDismiss={props.onDismiss ?? (() => {})}>
+  return <PromptSheet title={t(props.title)} icon={props.icon ?? SlidersHorizontal} onDismiss={props.onDismiss ?? (() => {})}>
     {props.children}
   </PromptSheet>
 }

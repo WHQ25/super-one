@@ -6,6 +6,7 @@ import { Check, ChevronRight } from 'lucide-react-native'
 import { useMobileTheme } from '../theme/context'
 import { popoverLayout, type AnchorRect } from './popover-layout'
 import { useMenuHost } from './menu-host'
+import { useMobileLocale } from '../i18n/context'
 
 export function useMenuAnchor() {
   const ref = useRef<View>(null)
@@ -45,6 +46,8 @@ export function AnchoredMenu(props: AnchoredMenuProps) {
 
 function MenuSurface({ anchor, title, onDismiss, children, width = 300, titleAccessory }: AnchoredMenuProps) {
   const { tokens: { colors, radius } } = useMobileTheme()
+  const { t } = useMobileLocale()
+  const translatedTitle = t(title)
   const viewport = useWindowDimensions()
   const insets = useSafeAreaInsets()
   const [keyboardTop, setKeyboardTop] = useState<number | null>(Keyboard.metrics()?.screenY ?? null)
@@ -75,7 +78,7 @@ function MenuSurface({ anchor, title, onDismiss, children, width = 300, titleAcc
     top: insets.top, bottom: keyboardTop == null ? insets.bottom : 0,
   }, width, contentHeight)
   return <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }} accessibilityViewIsModal onAccessibilityEscape={onDismiss}>
-      <Pressable accessibilityRole="button" accessibilityLabel={`Close ${title}`} onPress={onDismiss}
+      <Pressable accessibilityRole="button" accessibilityLabel={`${t('Close')} ${translatedTitle}`} onPress={onDismiss}
         style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }} />
       <View style={{ position: 'absolute', ...layout, borderWidth: 1, borderColor: colors.border,
         borderRadius: radius.lg, backgroundColor: colors.surface, shadowColor: colors.foreground,
@@ -83,7 +86,7 @@ function MenuSurface({ anchor, title, onDismiss, children, width = 300, titleAcc
         <ScrollView keyboardShouldPersistTaps="always" bounces={false}
           onContentSizeChange={(_, height) => setContentHeight(height + 2)} contentContainerStyle={{ padding: 4 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 8, paddingRight: titleAccessory ? 0 : 8 }}>
-            <Text ref={titleRef} accessible accessibilityRole="header" style={{ paddingVertical: 8, fontSize: 12, color: colors.mutedForeground }}>{title}</Text>
+            <Text ref={titleRef} accessible accessibilityRole="header" style={{ paddingVertical: 8, fontSize: 12, color: colors.mutedForeground }}>{translatedTitle}</Text>
             {titleAccessory}
           </View>
           {children}
@@ -101,16 +104,19 @@ export function MenuRow({ label, labelNode, description, leading, accessory, sel
   destructive?: boolean; onPress: () => void
 }) {
   const { tokens: { colors, radius } } = useMobileTheme()
+  const { t } = useMobileLocale()
+  const translatedLabel = t(label)
+  const translatedDescription = description ? t(description) : undefined
   const color = destructive ? colors.destructive : colors.foreground
-  return <Pressable accessibilityRole={selected === undefined ? 'button' : 'radio'} accessibilityLabel={label}
+  return <Pressable accessibilityRole={selected === undefined ? 'button' : 'radio'} accessibilityLabel={translatedLabel}
     accessibilityState={{ checked: selected, disabled }} disabled={disabled} onPress={onPress}
     style={({ pressed }) => ({ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8,
       paddingHorizontal: 8, paddingVertical: 8, borderRadius: radius.sm, opacity: disabled ? 0.45 : 1,
       backgroundColor: pressed || selected ? colors.muted : 'transparent' })}>
     {leading}
     <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
-      {labelNode ?? <Text style={{ color, fontSize: 13, fontWeight: '500' }}>{label}</Text>}
-      {description ? <Text style={{ color: colors.mutedForeground, fontSize: 12, lineHeight: 17 }}>{description}</Text> : null}
+      {labelNode ?? <Text style={{ color, fontSize: 13, fontWeight: '500' }}>{translatedLabel}</Text>}
+      {translatedDescription ? <Text style={{ color: colors.mutedForeground, fontSize: 12, lineHeight: 17 }}>{translatedDescription}</Text> : null}
     </View>
     {accessory}
     {selected ? <Check size={15} color={colors.primary} /> : null}
@@ -126,16 +132,19 @@ export function MenuDisclosureRow({ label, labelNode, description, accessory, di
   accessory?: ReactNode
 }) {
   const { tokens: { colors, radius } } = useMobileTheme()
+  const { t } = useMobileLocale()
+  const translatedLabel = t(label)
+  const translatedDescription = description ? t(description) : undefined
   // `labelNode` draws the label as artwork, so the name has to be spelled out
   // here — the composed one RN would derive from the children is gone with it.
-  return <Pressable accessibilityRole="button" accessibilityLabel={[label, description].filter(Boolean).join(', ')}
+  return <Pressable accessibilityRole="button" accessibilityLabel={[translatedLabel, translatedDescription].filter(Boolean).join(', ')}
     accessibilityState={{ disabled, expanded: false }} disabled={disabled} onPress={onPress}
     style={({ pressed }) => ({ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8,
       paddingHorizontal: 8, paddingVertical: 8, borderRadius: radius.sm, opacity: disabled ? 0.45 : 1,
       backgroundColor: pressed ? colors.muted : 'transparent' })}>
     <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
-      {labelNode ?? <Text style={{ color: colors.foreground, fontSize: 13, fontWeight: '500' }}>{label}</Text>}
-      {description ? <Text style={{ color: colors.mutedForeground, fontSize: 12, lineHeight: 17 }}>{description}</Text> : null}
+      {labelNode ?? <Text style={{ color: colors.foreground, fontSize: 13, fontWeight: '500' }}>{translatedLabel}</Text>}
+      {translatedDescription ? <Text style={{ color: colors.mutedForeground, fontSize: 12, lineHeight: 17 }}>{translatedDescription}</Text> : null}
     </View>
     {accessory}
     <ChevronRight size={15} color={colors.mutedForeground} />

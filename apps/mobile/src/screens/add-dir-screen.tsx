@@ -8,6 +8,7 @@ import { BrowsePage } from '../ui/browse-page'
 import { remotePathName } from '../shell-state'
 import { SCROLL_INDICATOR_GUTTER } from '../ui/scroll-gutter'
 import { useMobileTheme } from '../theme/context'
+import { useMobileLocale } from '../i18n/context'
 
 export type AddDirScreenProps = {
   step: AddDirStep
@@ -41,19 +42,20 @@ export type AddDirScreenProps = {
  * three worse ways of saying it.
  */
 export function AddDirScreen(props: AddDirScreenProps) {
+  const { t } = useMobileLocale()
   if (props.step.kind === 'browse') {
     return <BrowsePage
       query={props.query}
       onQuery={props.onQuery}
-      placeholder={ADD_DIR_TEXT.placeholder}
+      placeholder={t(ADD_DIR_TEXT.placeholder)}
       monospace
-      sections={browseSections(props.entries, props.query)}
+      sections={browseSections(props.entries, props.query).map((section) => ({ ...section, label: t(section.label) }))}
       onActivate={(row) => props.onEnter(row.key)}
       loading={props.loading}
-      loadingLabel={ADD_DIR_TEXT.loading}
-      emptyMessage={!props.loading && !props.entries.length ? ADD_DIR_TEXT.noDirectories : null}
+      loadingLabel={t(ADD_DIR_TEXT.loading)}
+      emptyMessage={!props.loading && !props.entries.length ? t(ADD_DIR_TEXT.noDirectories) : null}
       busy={props.busy}
-      busyLabel={ADD_DIR_TEXT.adding}
+      busyLabel={t(ADD_DIR_TEXT.adding)}
       error={props.error}
     />
   }
@@ -62,12 +64,13 @@ export function AddDirScreen(props: AddDirScreenProps) {
 
 function Overview({ projectDirs, sessionDirs, busy, error, onBrowse, onRemove }: AddDirScreenProps) {
   const { tokens: { colors, spacing } } = useMobileTheme()
+  const { t } = useMobileLocale()
   return <View style={{ flex: 1 }}>
     <ScrollView keyboardShouldPersistTaps="handled" style={{ flex: 1 }}
       contentContainerStyle={{ paddingRight: SCROLL_INDICATOR_GUTTER, paddingBottom: spacing.md }}>
-      <Group label={ADD_DIR_TEXT.project.toUpperCase()} scope="project" dirs={projectDirs}
+      <Group label={t(ADD_DIR_TEXT.project).toUpperCase()} scope="project" dirs={projectDirs}
         busy={busy} onRemove={onRemove} />
-      <Group label={ADD_DIR_TEXT.session.toUpperCase()} scope="session" dirs={sessionDirs}
+      <Group label={t(ADD_DIR_TEXT.session).toUpperCase()} scope="session" dirs={sessionDirs}
         busy={busy} onRemove={onRemove} />
     </ScrollView>
     {error ? (
@@ -99,6 +102,7 @@ function Group({ label, scope, dirs, busy, onRemove }: {
   onRemove: (dir: string, scope: AddDirScope) => void
 }) {
   const { tokens: { colors } } = useMobileTheme()
+  const { t } = useMobileLocale()
   return <View>
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
       paddingHorizontal: 12, paddingTop: 10, paddingBottom: 4 }}>
@@ -113,7 +117,7 @@ function Group({ label, scope, dirs, busy, onRemove }: {
       // An empty scope is a fact about it, not a failure — the desktop popup
       // says `none` here rather than explaining itself twice.
       : <Text style={{ paddingHorizontal: 12, paddingVertical: 6, color: colors.mutedForeground,
-        fontSize: 13, fontStyle: 'italic', opacity: 0.6 }}>none</Text>}
+        fontSize: 13, fontStyle: 'italic', opacity: 0.6 }}>{t('none')}</Text>}
   </View>
 }
 

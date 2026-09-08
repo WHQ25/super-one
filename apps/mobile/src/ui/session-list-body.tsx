@@ -5,6 +5,7 @@ import type { SessionListRow } from '../session-list-state'
 import { useMobileTheme } from '../theme/context'
 import { SessionRowContent } from './session-row-content'
 import { SwipeSessionRow } from './swipe-session-row'
+import { useMobileLocale } from '../i18n/context'
 
 /**
  * The three list commands resolve `true` only once the host confirmed them, so
@@ -31,6 +32,7 @@ export function SessionListBody(props: SessionListActions & {
   surface?: 'panel' | 'page'
 }) {
   const { tokens: { colors } } = useMobileTheme()
+  const { t } = useMobileLocale()
   const { sessions } = props
   const applyIfConfirmed = (op: Promise<boolean>, apply: () => void) => {
     void op.then((confirmed) => { if (confirmed) apply() })
@@ -41,7 +43,7 @@ export function SessionListBody(props: SessionListActions & {
     {sessions.busy || !sessions.loaded ? <ActivityIndicator style={{ padding: 12 }} color={colors.mutedForeground} /> : null}
     {sessions.error ? <Text style={{ color: colors.error, padding: 12 }}>{sessions.error}</Text> : null}
     {sessions.loaded && !sessions.busy && !sessions.error && !sessions.items.length
-      ? <Text style={{ color: colors.mutedForeground, fontSize: 13, padding: 12 }}>No sessions yet</Text>
+      ? <Text style={{ color: colors.mutedForeground, fontSize: 13, padding: 12 }}>{t('No sessions yet')}</Text>
       : null}
 
     {sessions.items.map((item) => <SwipeSessionRow
@@ -73,9 +75,9 @@ export function SessionListBody(props: SessionListActions & {
 
     {sessions.hasMore ? (sessions.loadingMore
       ? <ActivityIndicator style={{ padding: 12 }} color={colors.mutedForeground} />
-      : <Text accessibilityRole="button" accessibilityLabel="Show more sessions" onPress={sessions.loadMore}
+      : <Text accessibilityRole="button" accessibilityLabel={t('Show more sessions')} onPress={sessions.loadMore}
           style={{ color: colors.primary, fontSize: 13, paddingVertical: 12, paddingHorizontal: 12 }}>
-          Show more
+          {t('Show more')}
         </Text>
     ) : null}
   </View>

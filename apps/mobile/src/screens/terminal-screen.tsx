@@ -7,6 +7,7 @@ import { TERMINAL_VIEW_HTML } from '@superone/chat-view'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { Terminal } from 'lucide-react-native'
 import { Button } from '../ui'
+import { useMobileLocale } from '../i18n/context'
 
 const TERMINAL_SOURCE = { html: TERMINAL_VIEW_HTML }
 
@@ -19,6 +20,7 @@ export function TerminalScreen(props: {
 }) {
   const styles = useMobileStyles()
   const { tokens } = useMobileTheme()
+  const { t } = useMobileLocale()
   return (
     <View style={styles.flex}>
       <WebView
@@ -26,14 +28,14 @@ export function TerminalScreen(props: {
         originWhitelist={['*']}
         source={TERMINAL_SOURCE}
         startInLoadingState
-        renderLoading={() => <LoadingOverlay label="Loading terminal…" />}
+        renderLoading={() => <LoadingOverlay label={t('Loading terminal…')} />}
         style={[styles.flex, { backgroundColor: tokens.colors.background }]}
         containerStyle={{ backgroundColor: tokens.colors.background }}
         onMessage={(event) => props.onWebMessage(event.nativeEvent.data)}
       />
       <View style={{ paddingHorizontal: 16, paddingTop: 8, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: tokens.colors.surface }}>
         <Terminal size={14} color={tokens.colors.mutedForeground} />
-        <Text style={[styles.rowMeta, styles.flex]}>{props.writable ? 'Interactive terminal' : 'Read-only · another client has control'}</Text>
+        <Text style={[styles.rowMeta, styles.flex]}>{t(props.writable ? 'Interactive terminal' : 'Read-only · another client has control')}</Text>
         {!props.writable ? <Button label="Take control" variant="secondary" onPress={props.onClaim} /> : null}
       </View>
       <ScrollView

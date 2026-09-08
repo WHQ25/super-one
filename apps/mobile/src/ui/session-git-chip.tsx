@@ -3,6 +3,7 @@ import { Pressable, View } from 'react-native'
 import { Text } from './text'
 import { sessionGitLabel, type SessionGitView } from '../session-git-status'
 import { useMobileTheme } from '../theme/context'
+import { useMobileLocale } from '../i18n/context'
 
 /**
  * The checkout the running session is on, shown under the chat title.
@@ -19,6 +20,7 @@ export function SessionGitChip(props: {
   onPress?: () => void
 }) {
   const { tokens: { colors, radius } } = useMobileTheme()
+  const { t } = useMobileLocale()
   const fontSize = props.fontSize ?? 11
   const iconSize = props.iconSize ?? 12
   const missing = props.view.kind === 'worktreeMissing'
@@ -28,12 +30,12 @@ export function SessionGitChip(props: {
   const body = (
     <>
       {props.view.kind === 'worktreeBranch' || props.view.kind === 'worktreeDetached'
-        ? <Text style={{ color: colors.mutedForeground, fontSize }}>Worktree</Text>
+        ? <Text style={{ color: colors.mutedForeground, fontSize }}>{t('Worktree')}</Text>
         : null}
       <Mark view={props.view} size={iconSize} color={tint} />
-      <Text numberOfLines={1} style={{ color: tint, fontSize, flexShrink: 1 }}>{text(props.view)}</Text>
+      <Text numberOfLines={1} style={{ color: tint, fontSize, flexShrink: 1 }}>{t(text(props.view))}</Text>
       {props.view.kind === 'branch' && props.view.dirtyFiles > 0
-        ? <View accessibilityLabel="Uncommitted changes"
+        ? <View accessibilityLabel={t('Uncommitted changes')}
             style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.warning }} />
         : null}
     </>

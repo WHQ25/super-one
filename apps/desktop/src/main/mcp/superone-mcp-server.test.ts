@@ -500,7 +500,8 @@ describe('stdio SuperOne MCP tool surface', () => {
     const names = listSuperoneMcpTools(PROJ_A).map((tool) => tool.name)
     const result = await executeSuperoneMcpTool(PROJ_A, 'browser_snapshot', {})
 
-    expect(names.some((name) => name.startsWith('browser_'))).toBe(false)
+    // Personal reference files do not access the managed browser.
+    expect(names.filter((name) => name.startsWith('browser_')).sort()).toEqual(['browser_memory_read', 'browser_memory_write'])
     expect(result).toMatchObject({
       isError: true,
       content: [{ text: expect.stringMatching(/managed policy/i) }],

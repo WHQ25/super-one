@@ -1,3 +1,4 @@
+import { isNodeLocalSuperoneTool } from '@superone/shared/environment/host-action-browser-catalog'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -915,7 +916,7 @@ describe('compact browser surface', () => {
   // nothing else fails when the two drift — which is how the dump ended up carrying the
   // legacy 30 tools, a stale browser_tools_call schema, and no browser_perf at all.
   it('keeps the remote Host Action dump aligned with the advertised surface', () => {
-    const remote = HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS.filter((d) => d.name.startsWith('browser_'))
+    const remote = HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS.filter((d) => d.name.startsWith('browser_') && !isNodeLocalSuperoneTool(d.name))
     const desktop = getBrowserToolDescriptors()
     expect(remote.map((d) => d.name).sort()).toEqual(desktop.map((d) => d.name).sort())
     for (const d of desktop) {

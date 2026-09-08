@@ -1,3 +1,4 @@
+import { DEVICE_MEMORY_DISCOVERY_HINT, withMemoryDiscoveryHint } from '@superone/shared/interaction-memory'
 import { deviceCaptureDir } from '../media-output-paths'
 import { app } from 'electron'
 import type { AgentEvent } from '@superone/shared/agent-types'
@@ -255,7 +256,7 @@ export async function executeDeviceAgentTool(
     const session = sessionFor(sessionId, deviceId)
     switch (name) {
       case 'device_snapshot':
-        return await session.snapshot(args as { mode?: string; maxNodes?: number }, signal)
+        return withMemoryDiscoveryHint(await session.snapshot(args as { mode?: string; maxNodes?: number }, signal), DEVICE_MEMORY_DISCOVERY_HINT)
       case 'device_query':
         return await session.query(args as { stateId: string; op: string; text?: string; ref?: string })
       case 'device_act':

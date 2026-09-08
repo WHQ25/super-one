@@ -1,3 +1,4 @@
+import { InteractionMemoryToolBlock } from './InteractionMemoryToolBlock'
 import { useMemo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -99,7 +100,14 @@ function resultSummary(
   return { middle, right: '' }
 }
 
-export function ComputerUseToolBlockPresenter({
+export function ComputerUseToolBlockPresenter(props: ComputerUseToolBlockPresenterProps) {
+  if (props.op === 'memory_read' || props.op === 'memory_write') {
+    return <InteractionMemoryToolBlock {...props} family="computer" op={props.op} />
+  }
+  return <ComputerUseToolBlockOperation {...props} />
+}
+
+function ComputerUseToolBlockOperation({
   op,
   params,
   result,

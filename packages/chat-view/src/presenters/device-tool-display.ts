@@ -7,9 +7,11 @@
  */
 
 export type DeviceOp =
+  | 'memory_read' | 'memory_write'
   | 'list' | 'boot' | 'request_control' | 'snapshot' | 'query' | 'act' | 'wait_for'
 
 const DEVICE_OPS = new Set<DeviceOp>([
+  'memory_read', 'memory_write',
   'list', 'boot', 'request_control', 'snapshot', 'query', 'act', 'wait_for',
 ])
 
@@ -140,6 +142,9 @@ export function deviceVerbKey(
   params: Record<string, unknown>,
   streaming = false,
 ): string {
+  if (op === 'memory_read' || op === 'memory_write') {
+    return `memory.${op === 'memory_read' ? 'read' : params.archived === true ? 'archive' : params.archived === false ? 'restore' : 'write'}.${streaming ? 'streaming' : 'done'}`
+  }
   if (op === 'list') return streaming ? 'listing' : 'list'
   if (op === 'boot') return streaming ? 'booting' : 'boot'
   if (op === 'request_control') return streaming ? 'requestingControl' : 'requestControl'
@@ -255,6 +260,9 @@ export function formatDeviceCondition(value: unknown): string {
  */
 export function deviceInputSummary(op: DeviceOp, params: Record<string, unknown>): string {
   switch (op) {
+    case 'memory_read':
+    case 'memory_write':
+      return [params.platform, params.appId, params.topic].filter(value => typeof value === 'string').join('/')
     case 'list':
       return ''
     case 'boot':

@@ -15,6 +15,7 @@ import {
   MAX_BROWSER_ACTION_DEPTH,
   resolveBrowserActionTemplates,
   saveBrowserAction,
+  archiveBrowserAction,
 } from './browser-actions'
 import type { BrowserToolReply } from '../mcp/browser-mcp-replies'
 
@@ -461,5 +462,23 @@ describe('browser action execution', () => {
     const budget = await executeBrowserAction({ domain: 'example.com', name: 'loop_budget', executeTool })
     expect(budget).toMatchObject({ ok: false, stepsExecuted: 100, error: expect.stringContaining('maximum of 100 steps') })
     expect(executeTool).toHaveBeenCalledTimes(99)
+  })
+})
+
+
+describe('saved browser action maintenance', () => {
+  it('reads one definition and prevents archived actions from executing until restored', async () => {
+    const action = { domain: 'github.com', name: 'search', description: 'Search issues', steps: [{ kind: 'tool', tool: 'browser_snapshot', args: {} }] }
+    saveBrowserAction(action)
+    saveBrowserAction({ ...action, name: 'other' })
+    expect(listBrowserActions('github.com', { name: 'search' })).toHaveLength(1)
+    archiveBrowserAction('github.com', 'search', true)
+    expect(listBrowserActions('github.com', { name: 'search' })).toEqual([])
+    expect(listBrowserActions('github.com', { name: 'search', includeArchived: true })[0]?.archived).toBe(true)
+    const executeTool = vi.fn(async () => okReply())
+    expect(await executeBrowserAction({ domain: 'github.com', name: 'search', executeTool })).toMatchObject({ ok: false, stepsExecuted: 0 })
+    expect(executeTool).not.toHaveBeenCalled()
+    archiveBrowserAction('github.com', 'search', false)
+    expect(await executeBrowserAction({ domain: 'github.com', name: 'search', executeTool })).toMatchObject({ ok: true })
   })
 })

@@ -43,7 +43,7 @@ afterEach(() => {
 describe('browser action MCP tools', () => {
   it('registers list, save, and do', () => {
     const { tools } = buildTools()
-    expect([...tools.keys()]).toEqual(['browser_action_list', 'browser_action_save', 'browser_action_do'])
+    expect([...tools.keys()]).toEqual(['browser_action_list', 'browser_action_save', 'browser_action_archive', 'browser_action_do'])
   })
 
   it('saves an action and lists compact or complete definitions by exact domain', async () => {

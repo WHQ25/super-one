@@ -82,7 +82,8 @@ describe('getCodexSuperoneMcpConfig', () => {
       config_apply: { approval_mode: 'approve' },
       miniapp_call: { approval_mode: 'approve' },
     })
-    expect(Object.keys(tools ?? {}).some((name) => name.startsWith('computer_'))).toBe(false)
+    // Personal memory is static; live computer control stays feature-gated.
+    expect(Object.keys(tools ?? {}).filter((name) => name.startsWith('computer_')).sort()).toEqual(['computer_memory_read', 'computer_memory_write'])
     expect(tools).not.toHaveProperty('excalidraw__clear_canvas')
   })
 

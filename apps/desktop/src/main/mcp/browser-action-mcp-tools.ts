@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import {
   browserActionSchema,
+  archiveBrowserAction,
   executeBrowserAction,
   listBrowserActions,
   saveBrowserAction,
@@ -20,13 +21,15 @@ export function registerBrowserActionTools(
       description:
         'List saved semantic browser actions. Omit domain to list all actions, or pass a domain for an exact normalized-domain match. Returns compact summaries by default; set includeSteps:true before replacing an existing action when you need its complete definition.',
       inputSchema: {
+        name: z.string().optional(),
+        includeArchived: z.boolean().optional(),
         domain: z.string().optional().describe('Optional domain filter, e.g. github.com. Scheme, path, case, and a trailing dot are normalized away.'),
         includeSteps: z.boolean().default(false).describe('Include complete step definitions. Default false for a lean action catalog.'),
       },
     },
-    async ({ domain, includeSteps }) => {
+    async ({ domain, name, includeArchived, includeSteps }) => {
       try {
-        const actions = listBrowserActions(domain)
+        const actions = listBrowserActions(domain, { name, includeArchived })
         return browserTextReply({
           count: actions.length,
           actions: includeSteps ? actions : actions.map(summarizeBrowserAction),
@@ -61,6 +64,18 @@ export function registerBrowserActionTools(
       } catch (err) {
         return browserErrorReply(err)
       }
+    },
+  )
+
+  server.registerTool(
+    'browser_action_archive',
+    {
+      description: 'Archive or restore one saved browser action. Archived actions remain readable but cannot execute.',
+      inputSchema: { domain: z.string(), name: z.string(), archived: z.boolean().default(true) },
+    },
+    async ({ domain, name, archived }) => {
+      try { return browserTextReply({ ok: true, action: summarizeBrowserAction(archiveBrowserAction(domain, name, archived)) }) }
+      catch (err) { return browserErrorReply(err) }
     },
   )
 

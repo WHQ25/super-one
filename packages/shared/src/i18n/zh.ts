@@ -1,3 +1,4 @@
+import { interactionMemoryZh } from './interaction-memory'
 import type { Messages } from './en'
 
 export const zh: Messages = {
@@ -2355,6 +2356,7 @@ export const zh: Messages = {
       outputLines_one: '{{count}} 行输出',
       outputLines_other: '{{count}} 行输出',
       browser: {
+        memory: interactionMemoryZh,
         navigate: '导航',
         navigating: '正在导航',
         open: '打开标签页',
@@ -2468,6 +2470,7 @@ export const zh: Messages = {
         mockBody: '响应体',
       },
       computer: {
+        memory: interactionMemoryZh,
         apps: '应用列表',
         listingApps: '正在列出应用',
         focus: '聚焦应用',
@@ -2540,6 +2543,7 @@ export const zh: Messages = {
         },
       },
       device: {
+        memory: interactionMemoryZh,
         list: '列出设备',
         listing: '正在列出设备',
         boot: '启动设备',

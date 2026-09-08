@@ -52,6 +52,7 @@ export const BROWSER_PRIMITIVE_TOOL_NAMES = [
 export const BROWSER_ACTION_TOOL_NAMES = [
   'browser_action_list',
   'browser_action_save',
+  'browser_action_archive',
   'browser_action_do',
 ] as const
 
@@ -105,6 +106,12 @@ export const DEVICE_AGENT_TOOL_NAMES = [
  * Keep in sync with tools registered on the SuperOne MCP surface.
  */
 export const BUILT_IN_SUPERONE_TOOL_NAMES = [
+  'browser_memory_read',
+  'browser_memory_write',
+  'computer_memory_read',
+  'computer_memory_write',
+  'device_memory_read',
+  'device_memory_write',
   'read_manual',
   'miniapp_dev_setup',
   'miniapp_dev_register',

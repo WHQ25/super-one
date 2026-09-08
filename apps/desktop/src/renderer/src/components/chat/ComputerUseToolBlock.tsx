@@ -25,7 +25,14 @@ interface ComputerUseToolBlockProps extends Omit<
 }
 
 /** Desktop host adapter for app identity, media loading, and rich result sections. */
-export function ComputerUseToolBlock({
+export function ComputerUseToolBlock(props: ComputerUseToolBlockProps) {
+  if (props.op === 'memory_read' || props.op === 'memory_write') {
+    return <ComputerUseToolBlockPresenter {...props} />
+  }
+  return <DesktopComputerUseToolBlock {...props} />
+}
+
+function DesktopComputerUseToolBlock({
   op,
   params,
   result,

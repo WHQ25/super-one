@@ -1,3 +1,6 @@
+import { INTERACTION_MEMORY_TOOL_DEFS } from '@superone/shared/interaction-memory'
+import { BROWSER_TOOL_NAMES, DEVICE_AGENT_TOOL_NAMES, isStaticHostOwnedSuperoneBareName } from '@superone/shared/superone-host-owned-tools'
+import { isNodeLocalSuperoneTool, listHostActionSuperoneTools } from '@superone/shared/environment/host-action-browser-catalog'
 import { describe, expect, it } from 'vitest'
 import { getDeviceAgentToolDescriptors } from '../device-agent/tools'
 import { getComputerUseToolDescriptors } from '../computer-use/tools'
@@ -46,7 +49,7 @@ const SEPARATELY_DESCRIBED = ['browser_', 'widget_', 'device_']
 
 describe('built-in superone tool registration surfaces', () => {
   const describedNames = new Set(BUILT_IN_SUPERONE_TOOL_DEFS.map((def) => def.name))
-  const browserTools = BUILT_IN_SUPERONE_TOOL_NAMES.filter((name) => name.startsWith('browser_'))
+  const browserTools = BROWSER_TOOL_NAMES
   const widgetTools = BUILT_IN_SUPERONE_TOOL_NAMES.filter((name) => name.startsWith('widget_'))
 
   it('gives every tool name a JSON-Schema descriptor for the stdio bridge', () => {
@@ -60,7 +63,7 @@ describe('built-in superone tool registration surfaces', () => {
     // The failure this guards is invisible: a device_* name that is host-owned but
     // has no descriptor anywhere is simply missing in Codex / ACP, while Claude
     // keeps working, so nothing crashes and nobody notices.
-    const deviceTools = BUILT_IN_SUPERONE_TOOL_NAMES.filter((name) => name.startsWith('device_'))
+    const deviceTools = DEVICE_AGENT_TOOL_NAMES
     expect(deviceTools.length).toBeGreaterThan(0)
     const described = new Set(getDeviceAgentToolDescriptors().map((def) => def.name))
     expect(deviceTools.filter((name) => !described.has(name))).toEqual([])
@@ -345,5 +348,19 @@ describe('built-in superone tool registration surfaces', () => {
     expect(LAUNCH_MODE_DESCRIPTION).toMatch(/not nested/i)
     expect(LAUNCH_TASK_DESCRIPTION).toMatch(/self-contained/i)
     expect(SESSION_START_DESCRIPTION).toMatch(/handoff/i)
+  })
+})
+
+
+describe('browser memory registration policy', () => {
+  it('shares desktop and remote schemas while keeping remote execution node-local', () => {
+    for (const def of INTERACTION_MEMORY_TOOL_DEFS) {
+      expect(BUILT_IN_SUPERONE_TOOL_DEFS.find(d => d.name === def.name)).toEqual(def)
+      expect(HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS.find(d => d.name === def.name)).toEqual(def)
+      expect(isNodeLocalSuperoneTool(def.name)).toBe(true)
+      expect(listHostActionSuperoneTools().some(d => d.name === def.name)).toBe(false)
+      expect(BUILT_IN_SUPERONE_TOOL_NAMES).toContain(def.name)
+      expect(isStaticHostOwnedSuperoneBareName(def.name)).toBe(true)
+    }
   })
 })

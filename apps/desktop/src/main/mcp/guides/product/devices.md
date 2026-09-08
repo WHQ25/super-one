@@ -135,3 +135,12 @@ says what to compare — it never selects an element.
 
 After a grant, install and launch with the platform's own CLI, e.g.
 `xcrun simctl install <udid> <path>.app` then `xcrun simctl launch <udid> <bundleId>`.
+
+
+## Reusable app experience
+
+Use `device_memory_read` / `device_memory_write` with the guest `platform` and
+stable app bundle id/package name (`appId`). Experience is personal to the agent's
+node, independent of which simulator or physical device hosts the app. It grants
+no device control. Reuse procedures and stable identifiers, never stateId/@refs.
+See `read_manual({domain:"product",topic:"memory"})` for revisions and archiving.

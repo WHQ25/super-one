@@ -1,3 +1,4 @@
+import { interactionMemoryEn } from './interaction-memory'
 /**
  * One device-setup dialog's worth of copy.
  *
@@ -2263,6 +2264,7 @@ export type Messages = {
       outputLines_one: string
       outputLines_other: string
       browser: {
+        memory: typeof interactionMemoryEn
         navigate: string
         navigating: string
         open: string
@@ -2376,6 +2378,7 @@ export type Messages = {
         mockBody: string
       }
       computer: {
+        memory: typeof interactionMemoryEn
         apps: string
         listingApps: string
         focus: string
@@ -2448,6 +2451,7 @@ export type Messages = {
         }
       }
       device: {
+        memory: typeof interactionMemoryEn
         list: string
         listing: string
         boot: string
@@ -5956,6 +5960,7 @@ export const en: Messages = {
       outputLines_one: '{{count}} line of output',
       outputLines_other: '{{count}} lines of output',
       browser: {
+        memory: interactionMemoryEn,
         navigate: 'Navigate',
         navigating: 'Navigating',
         open: 'Open Tab',
@@ -6069,6 +6074,7 @@ export const en: Messages = {
         mockBody: 'Body',
       },
       computer: {
+        memory: interactionMemoryEn,
         apps: 'Apps',
         listingApps: 'Listing Apps',
         focus: 'Focus App',
@@ -6141,6 +6147,7 @@ export const en: Messages = {
         },
       },
       device: {
+        memory: interactionMemoryEn,
         list: 'List Devices',
         listing: 'Listing devices',
         boot: 'Boot Device',

@@ -1,5 +1,7 @@
 /** Pure display derivation shared by Desktop and the mobile chat document. */
 export type ComputerOp =
+  | 'memory_read'
+  | 'memory_write'
   | 'apps'
   | 'snapshot'
   | 'zoom'
@@ -8,6 +10,7 @@ export type ComputerOp =
   | 'wait_for'
 
 const COMPUTER_OPS = new Set<ComputerOp>([
+  'memory_read', 'memory_write',
   'apps',
   'snapshot',
   'zoom',
@@ -194,6 +197,9 @@ export function computerVerbKey(
   params: Record<string, unknown>,
   streaming = false,
 ): string {
+  if (op === 'memory_read' || op === 'memory_write') {
+    return `memory.${op === 'memory_read' ? 'read' : params.archived === true ? 'archive' : params.archived === false ? 'restore' : 'write'}.${streaming ? 'streaming' : 'done'}`
+  }
   if (op === 'apps') {
     const action =
       params.action === 'focus' || params.action === 'launch'
@@ -259,7 +265,7 @@ export function computerVerbKey(
   }
 
   const keys: Record<
-    Exclude<ComputerOp, 'apps' | 'query' | 'act'>,
+    Exclude<ComputerOp, 'apps' | 'query' | 'act' | 'memory_read' | 'memory_write'>,
     [string, string]
   > = {
     snapshot: ['snapshot', 'snapshotting'],
@@ -274,6 +280,9 @@ export function computerInputSummary(
   params: Record<string, unknown>,
 ): string {
   switch (op) {
+    case 'memory_read':
+    case 'memory_write':
+      return [params.platform, params.appId, params.topic].filter(value => typeof value === 'string').join('/')
     case 'apps':
       return params.action === 'focus' || params.action === 'launch'
         ? stringValue(params.app)

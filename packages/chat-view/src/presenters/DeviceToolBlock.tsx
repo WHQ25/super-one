@@ -1,3 +1,4 @@
+import { InteractionMemoryToolBlock } from './InteractionMemoryToolBlock'
 import { useMemo, useState, type MouseEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronRight, Code2, ImageIcon, Smartphone, Video } from 'lucide-react'
@@ -89,7 +90,14 @@ function CollapsedJsonRow({
   )
 }
 
-export function DeviceToolBlockPresenter({
+export function DeviceToolBlockPresenter(props: DeviceToolBlockPresenterProps) {
+  if (props.op === 'memory_read' || props.op === 'memory_write') {
+    return <InteractionMemoryToolBlock {...props} family="device" op={props.op} />
+  }
+  return <DeviceToolBlockOperation {...props} />
+}
+
+function DeviceToolBlockOperation({
   op,
   params,
   result,

@@ -1,32 +1,7 @@
+import { INTERACTION_MEMORY_TOOL_DEFS } from '@superone/shared/interaction-memory'
 import type { SuperoneMcpToolDescriptor } from './superone-mcp-types'
-import { WIDGET_GUIDELINE_MODULES } from '../generative-ui/guideline-modules'
-
-export const MEDIA_GUIDE_TOPICS = [
-  'overview',
-  'ark-image',
-  'ark-video',
-  'openai-image',
-  'openai-video',
-  'google-image',
-  'google-video',
-  'newapi-video',
-] as const
-
-export const MINIAPP_GUIDE_TOPICS = [
-  'overview',
-  'manifest',
-  'permissions',
-  'api-theme',
-  'api-locale',
-  'api-agent',
-  'api-system',
-  'api-ui',
-  'api-host',
-  'packaging',
-  'icon',
-  'recipes',
-  'tools',
-] as const
+import { READ_MANUAL_INPUT_SCHEMA } from './manual-tool-defs'
+export { MEDIA_GUIDE_TOPICS, MINIAPP_GUIDE_TOPICS, MANUAL_DOMAINS, PRODUCT_GUIDE_TOPICS, READ_MANUAL_INPUT_SCHEMA, type ManualDomain } from './manual-tool-defs'
 
 // Browser tool name lists live in @superone/shared so registration and
 // host-owned auto-approve share one source of truth (spread into BUILT_IN).
@@ -40,36 +15,6 @@ export {
   MOBILE_SHARE_FILE_TOOL_NAME,
   type BuiltInSuperoneToolName,
 } from '@superone/shared/superone-host-owned-tools'
-
-export const MANUAL_DOMAINS = ['product', 'miniapp', 'media', 'widget'] as const
-export type ManualDomain = (typeof MANUAL_DOMAINS)[number]
-
-export const PRODUCT_GUIDE_TOPICS = ['overview', 'contribute', 'debug', 'collaboration', 'sessions', 'automation', 'devices', 'browser'] as const
-
-export const READ_MANUAL_INPUT_SCHEMA = {
-  type: 'object',
-  properties: {
-    domain: {
-      type: 'string',
-      enum: MANUAL_DOMAINS,
-      description: 'Manual domain. Omit to list all domains and their topics.',
-    },
-    topic: {
-      type: 'string',
-      description: 'Topic in the selected domain. Pass the domain alone to list valid topics.',
-    },
-    modules: {
-      type: 'array',
-      minItems: 1,
-      maxItems: WIDGET_GUIDELINE_MODULES.length,
-      uniqueItems: true,
-      items: { type: 'string', enum: WIDGET_GUIDELINE_MODULES },
-      description: 'Widget only: one or more guideline modules. Mutually exclusive with topic.',
-    },
-  },
-  additionalProperties: false,
-} as const
-
 
 export const SESSION_ARCHIVE_TOOL_NAMES = [
   'project_list',
@@ -395,6 +340,7 @@ export const AUTOMATION_AGENT_CONFIG_INPUT_SCHEMA = {
 } as const
 
 export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
+  ...INTERACTION_MEMORY_TOOL_DEFS,
   {
     name: 'session_collab_list_agents',
     description: SESSION_LIST_AGENTS_DESCRIPTION,

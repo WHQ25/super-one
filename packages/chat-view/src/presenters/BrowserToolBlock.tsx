@@ -1,3 +1,4 @@
+import { InteractionMemoryToolBlock } from './InteractionMemoryToolBlock'
 import { useCallback, useMemo, useState, type MouseEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Download, Globe, ImageIcon, Video } from 'lucide-react'
@@ -105,6 +106,10 @@ export function BrowserToolBlockPresenter(props: BrowserToolBlockPresenterProps)
     downloadRuntime,
     pageTools,
   } = props
+
+  if (op === 'memory_read' || op === 'memory_write' || op === 'action_read' || op === 'action_archive') {
+    return <InteractionMemoryToolBlock {...props} op={op} icon={renderIcon?.('globe')} />
+  }
 
   if (op === 'tools_list' || op === 'tools_call') {
     const PageBlock = op === 'tools_list'

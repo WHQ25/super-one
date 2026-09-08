@@ -3,6 +3,9 @@
  * primitive handlers — no CDP / automation logic lives here.
  */
 
+import { BROWSER_MEMORY_DISCOVERY_HINT } from '@superone/shared/browser-memory'
+import { withMemoryDiscoveryHint } from '@superone/shared/interaction-memory'
+
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { browserErrorReply, browserTextReply, type BrowserToolReply } from './browser-mcp-replies'
@@ -182,7 +185,9 @@ const BROWSER_NETWORK_DESCRIPTION =
 
 export const BROWSER_ACTION_DESCRIPTION =
   'Saved semantic browser actions (dynamic catalog — list then do). '
-  + 'action=list (optional domain; includeSteps to see the full definition). '
+  + 'action=list (optional domain/name; includeArchived to find archived flows). '
+  + 'action=read returns one complete definition by domain+name. '
+  + 'action=archive hides a flow and prevents execution; archived=false restores it. '
   + 'action=do runs one saved action with input. '
   + 'action=save creates or replaces a named flow (domain+name) — read the manual first. '
   + 'This does not record prior browser calls. Use browser_act for one-off clicks/types.'
@@ -196,9 +201,15 @@ export const BROWSER_EVALUATE_DESCRIPTION =
 export function registerCompactBrowserTools(
   server: McpServer,
   sessionId: string,
-  runPrimitive: PrimitiveRunner,
+  primitiveRunner: PrimitiveRunner,
   webMcpEnabled: boolean,
 ): void {
+  const runPrimitive: PrimitiveRunner = async (name, args) => {
+    const result = await primitiveRunner(name, args)
+    const discover = name === 'browser_navigate' || name === 'browser_open'
+      || (name === 'browser_snapshot' && (!Array.isArray(args.include) || args.include.includes('meta')))
+    return discover ? withMemoryDiscoveryHint(result, BROWSER_MEMORY_DISCOVERY_HINT) : result
+  }
   if (webMcpEnabled) {
     server.registerTool(
       'browser_tools_list',
@@ -642,7 +653,9 @@ export function registerCompactBrowserTools(
     {
       description: BROWSER_ACTION_DESCRIPTION,
       inputSchema: {
-        action: z.enum(['list', 'save', 'do']).describe('list / save / do.'),
+        action: z.enum(['list', 'read', 'save', 'archive', 'do']).describe('list / read / save / archive / do.'),
+        includeArchived: z.boolean().optional(),
+        archived: z.boolean().optional(),
         domain: browserActionSchema.shape.domain.optional(),
         name: z.string().optional(),
         includeSteps: z.boolean().optional(),
@@ -660,9 +673,17 @@ export function registerCompactBrowserTools(
       },
     },
     async (args) => {
-      const action = args.action as 'list' | 'save' | 'do'
+      const action = args.action
       if (action === 'list') {
-        return runPrimitive('browser_action_list', { domain: args.domain, includeSteps: args.includeSteps })
+        return runPrimitive('browser_action_list', { domain: args.domain, name: args.name, includeArchived: args.includeArchived, includeSteps: args.includeSteps })
+      }
+      if (action === 'read' || action === 'archive') {
+        if (!args.domain || !args.name) return browserErrorReply(new Error('domain and name are required. Call browser_action with action=list first.'))
+        if (action === 'archive') return runPrimitive('browser_action_archive', { domain: args.domain, name: args.name, archived: args.archived ?? true })
+        const reply = await runPrimitive('browser_action_list', { domain: args.domain, name: args.name, includeArchived: true, includeSteps: true })
+        if (reply.isError) return reply
+        const parsed = parseJson(reply) as { actions?: unknown[] }
+        return parsed.actions?.[0] ? browserTextReply({ action: parsed.actions[0] }) : browserErrorReply(new Error('Browser action not found. Call browser_action with action=list first.'))
       }
       if (action === 'save') {
         return runPrimitive('browser_action_save', {

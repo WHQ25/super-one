@@ -178,8 +178,12 @@ function sanitizePresenterInput(bare: string, input: string): string {
       }
       break
     }
+    case 'browser_memory_read':
+    case 'browser_memory_write':
+      copyDefined(source, safe, ['domain', 'topic', 'archived'])
+      break
     case 'browser_action':
-      copyDefined(source, safe, ['action', 'domain', 'name'])
+      copyDefined(source, safe, ['action', 'domain', 'name', 'archived'])
       break
     case 'browser_tabs':
       copyDefined(source, safe, ['action'])
@@ -203,7 +207,9 @@ function sanitizeInteractiveInput(toolName: string, input: string): string {
   const safe: Record<string, unknown> = {}
   copyDefined(source, safe, ['description'])
 
-  if (bare === 'device_snapshot') copyDefined(source, safe, ['mode'])
+  if (['computer_memory_read', 'computer_memory_write', 'device_memory_read', 'device_memory_write'].includes(bare)) {
+    copyDefined(source, safe, ['platform', 'appId', 'topic', 'archived'])
+  } else if (bare === 'device_snapshot') copyDefined(source, safe, ['mode'])
   else if (bare === 'device_query') copyDefined(source, safe, ['op'])
   else if (bare === 'device_act' && Array.isArray(source.actions)) {
     safe.actions = actionTypes(source.actions, true)

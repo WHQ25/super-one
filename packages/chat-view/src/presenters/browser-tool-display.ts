@@ -1,5 +1,9 @@
 /** Browser tool presentation model shared by desktop and mobile hosts. */
 export type BrowserOp =
+  | 'memory_read'
+  | 'memory_write'
+  | 'action_read'
+  | 'action_archive'
   | 'snapshot'
   | 'query'
   | 'inspect'
@@ -36,6 +40,7 @@ export type BrowserOp =
   | 'tools_call'
 
 const BROWSER_OPS = new Set<BrowserOp>([
+  'memory_read', 'memory_write', 'action_read', 'action_archive',
   'snapshot', 'query', 'inspect', 'screenshot', 'click', 'hover', 'type', 'navigate',
   'wait_for', 'press', 'scroll', 'drag', 'select', 'open', 'close', 'evaluate', 'tabs', 'resize',
   'network_start', 'network_stop', 'network_wait', 'network_body', 'cookies', 'upload_file',
@@ -62,6 +67,8 @@ const NETWORK_ACTION_OP: Record<string, BrowserOp> = {
 }
 
 const ACTION_CATALOG_OP: Record<string, BrowserOp> = {
+  read: 'action_read',
+  archive: 'action_archive',
   list: 'action_list',
   save: 'action_save',
   do: 'action_do',
@@ -150,6 +157,10 @@ const VERB_BASE: Record<BrowserOp, string> = {
   list_downloads: 'listDownloads',
   emulate: 'emulate',
   mock: 'mock',
+  memory_read: 'memory.read.done',
+  memory_write: 'memory.write.done',
+  action_read: 'memory.actionRead.done',
+  action_archive: 'memory.actionArchive.done',
   action_list: 'actionList',
   action_save: 'actionSave',
   action_do: 'actionDo',
@@ -187,6 +198,10 @@ const VERB_STREAMING: Record<BrowserOp, string> = {
   list_downloads: 'listingDownloads',
   emulate: 'emulating',
   mock: 'mocking',
+  memory_read: 'memory.read.streaming',
+  memory_write: 'memory.write.streaming',
+  action_read: 'memory.actionRead.streaming',
+  action_archive: 'memory.actionArchive.streaming',
   action_list: 'listingActions',
   action_save: 'savingAction',
   action_do: 'doingAction',
@@ -354,6 +369,11 @@ export function browserInputSummary(op: BrowserOp, p: Record<string, unknown>): 
       return s(p.domain)
     case 'act':
       return ''
+    case 'memory_read':
+    case 'memory_write':
+      return [s(p.domain), s(p.topic)].filter(Boolean).join('/')
+    case 'action_read':
+    case 'action_archive':
     case 'action_save':
     case 'action_do':
       return [s(p.domain), s(p.name)].filter(Boolean).join('/')

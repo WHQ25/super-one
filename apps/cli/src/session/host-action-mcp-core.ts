@@ -5,9 +5,13 @@
  * in-process adapter register tools through this module.
  *
  * - Desktop-bound tools create Host Actions via `requestHostAction`.
+ * - Node-local *_memory_* tools read/write the node user’s personal files.
  * - Node-local session_collab_* tools call CollaborationService in-process
  *   (no Host Action claim on the desktop).
  */
+
+import { INTERACTION_MEMORY_TOOL_DEFS } from '@superone/shared/interaction-memory'
+import { InteractionMemoryStore, executeInteractionMemoryTool } from '@superone/runtime/fs/interaction-memory'
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import {
@@ -47,6 +51,7 @@ export interface NodeCollabToolHandlers {
 }
 
 export interface CreateHostActionMcpServerOptions {
+  memory?: InteractionMemoryStore
   collab?: NodeCollabToolHandlers
 }
 
@@ -102,6 +107,11 @@ export function createHostActionMcpServer(
 ): McpServer {
   const server = new McpServer({ name: 'superone-host-action', version: '1.0.0' })
   registerHostActionTools(server, superoneSessionId, requestHostAction)
+  const memory = opts?.memory ?? new InteractionMemoryStore()
+  for (const def of INTERACTION_MEMORY_TOOL_DEFS) {
+    server.registerTool(def.name, { description: def.description, inputSchema: jsonSchemaToZodShape(def.inputSchema) },
+      (args, extra) => executeInteractionMemoryTool(def.name, args, memory, extra.signal))
+  }
   if (opts?.collab) {
     registerNodeCollabTools(server, superoneSessionId, opts.collab)
   }

@@ -29,6 +29,7 @@ import productSessionsMd from './guides/product/sessions.md?raw'
 import productAutomationMd from './guides/product/automation.md?raw'
 import productDevicesMd from './guides/product/devices.md?raw'
 import productBrowserMd from './guides/product/browser.md?raw'
+import productMemoryMd from './guides/product/memory.md?raw'
 import {
   MANUAL_DOMAINS,
   MANUAL_READ_DESCRIPTION,
@@ -82,6 +83,7 @@ const PRODUCT_GUIDES = {
   automation: productAutomationMd,
   devices: productDevicesMd,
   browser: productBrowserMd,
+  memory: productMemoryMd,
 } satisfies Record<ProductGuideTopic, string>
 
 const MINIAPP_TOPIC_SUMMARIES: Record<MiniappGuideTopic, string> = {
@@ -173,6 +175,7 @@ function formatDomainIndex(domain: ManualDomain): string {
       '- automation — automation_apply schedule and agentConfig shapes, presets, and the approval dialog',
       '- devices — device_* loop for phones and tablets: grants, refs vs OCR, settling, batching, waits',
       '- browser — browser_* recording ladder, perf modes, and the saved-action step grammar',
+      '- memory — personal browser, computer and device experience: identities, revisions, archive and node isolation',
       '',
       'Call `read_manual({ domain: "product", topic: "contribute" })` for issues / PRs.',
       'Call `read_manual({ domain: "product", topic: "debug" })` for logs and local diagnosis.',

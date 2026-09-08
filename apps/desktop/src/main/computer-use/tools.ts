@@ -1,3 +1,4 @@
+import { COMPUTER_MEMORY_DISCOVERY_HINT, withMemoryDiscoveryHint } from '@superone/shared/interaction-memory'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z, toJSONSchema, type ZodTypeAny } from 'zod'
 import {
@@ -702,7 +703,7 @@ async function executeComputerUseToolInner(
           // Never auto-grant a different bundleId than the user-approved identity.
           const result = await service.apps(action, identity.bundleId)
           // Slim launch/focus payload — still TOON for consistency.
-          return toonReply(result)
+          return withMemoryDiscoveryHint(toonReply(result), COMPUTER_MEMORY_DISCOVERY_HINT)
         }
         const result = await service.apps('list', undefined, {
           query: typeof args.query === 'string' ? args.query : undefined,
@@ -710,7 +711,7 @@ async function executeComputerUseToolInner(
           limit: typeof args.limit === 'number' ? args.limit : undefined,
           includeRoots: args.includeRoots === true,
         })
-        return toonReply(result)
+        return withMemoryDiscoveryHint(toonReply(result), COMPUTER_MEMORY_DISCOVERY_HINT)
       }
       case 'computer_snapshot': {
         await ensureGrantForRoot(
@@ -731,7 +732,7 @@ async function executeComputerUseToolInner(
         }
         // Outline goes out as a TOON table, not nested JSON — see outline-toon.ts.
         // The envelope stays JSON so the chat UI keeps parsing stateId / bundleId.
-        return textReply({ ...agentResult, outline: outlineToToon(agentResult.outline) })
+        return withMemoryDiscoveryHint(textReply({ ...agentResult, outline: outlineToToon(agentResult.outline) }), COMPUTER_MEMORY_DISCOVERY_HINT)
       }
       case 'computer_zoom': {
         const region = args.region as [number, number, number, number]

@@ -51,10 +51,16 @@ const BROWSER_ACT_PREFIX = 'browser_'
 const COMPUTER_PREFIX = 'computer_'
 
 /**
- * Node-local SuperOne tools (SessionRuntime collab service).
+ * Node-local SuperOne tools (personal browser memory and session collaboration).
  * Never advertised as Host Actions — remote agents call them in-process on the node.
  */
 export const NODE_LOCAL_SUPERONE_TOOL_NAMES = [
+  'browser_memory_read',
+  'browser_memory_write',
+  'computer_memory_read',
+  'computer_memory_write',
+  'device_memory_read',
+  'device_memory_write',
   'session_collab_list_agents',
   'session_collab_request',
   'session_collab_start',

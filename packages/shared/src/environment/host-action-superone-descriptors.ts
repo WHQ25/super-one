@@ -7,6 +7,8 @@
  * the older contract with nothing failing — edit both in the same commit and let
  * superone-mcp-builtin-defs.test.ts hold the parity.
  */
+
+import { INTERACTION_MEMORY_TOOL_DEFS } from '../interaction-memory'
 export interface HostActionSuperoneToolDescriptor {
   name: string
   description: string
@@ -16,6 +18,7 @@ export interface HostActionSuperoneToolDescriptor {
 }
 
 export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescriptor[] = [
+  ...INTERACTION_MEMORY_TOOL_DEFS,
   {
     "name": "session_collab_list_agents",
     "description": "List the agent profiles available for user-approved child sessions. Only launchable agents are returned. Inspect each profile's harness and defaultConfig before session_collab_request. You may reuse one agentId for multiple launches. Skip this call when the user already named an agent with @ — that mention carries its agentId.",
@@ -1776,18 +1779,22 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   },
   {
     "name": "browser_action",
-    "description": "Saved semantic browser actions (dynamic catalog — list then do). action=list (optional domain; includeSteps to see the full definition). action=do runs one saved action with input. action=save creates or replaces a named flow (domain+name) — read the manual first. This does not record prior browser calls. Use browser_act for one-off clicks/types.",
+    "description": "Saved semantic browser actions (dynamic catalog — list then do). action=list (optional domain/name; includeArchived to find archived flows). action=read returns one complete definition by domain+name. action=archive hides a flow and prevents execution; archived=false restores it. action=do runs one saved action with input. action=save creates or replaces a named flow (domain+name) — read the manual first. This does not record prior browser calls. Use browser_act for one-off clicks/types.",
     "inputSchema": {
       "type": "object",
       "properties": {
+        "includeArchived": { "type": "boolean" },
+        "archived": { "type": "boolean" },
         "action": {
           "type": "string",
           "enum": [
             "list",
+            "read",
             "save",
+            "archive",
             "do"
           ],
-          "description": "list / save / do."
+          "description": "list / read / save / archive / do."
         },
         "domain": {
           "type": "string",

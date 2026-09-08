@@ -195,6 +195,7 @@ export const browserActionStepSchema: z.ZodType<BrowserActionStep> = z.lazy(() =
 ])).describe('A sequential tool, nested action, set, if, forEach, or repeat step. Control-flow child steps execute in order and count toward execution limits.')
 
 export const browserActionSchema = z.object({
+  archived: z.boolean().optional(),
   domain: z.string().min(1).max(500).describe('Semantic domain namespace, normally a hostname such as github.com.'),
   name: z.string().regex(ACTION_NAME_PATTERN, 'Action names must start with a lowercase letter and contain only lowercase letters, numbers, underscores, or hyphens.'),
   description: z.string().min(1).max(1000),
@@ -211,6 +212,7 @@ export type BrowserAction = z.infer<typeof browserActionSchema>
 export type BrowserActionParameter = z.infer<typeof browserActionParameterSchema>
 
 export interface BrowserActionSummary {
+  archived?: boolean
   domain: string
   name: string
   description: string
@@ -425,14 +427,26 @@ export function saveBrowserAction(input: unknown): { action: BrowserAction; crea
   const index = store.actions.findIndex((candidate) => actionKey(candidate.domain, candidate.name) === key)
   const created = index < 0
   if (created) store.actions.push(action)
-  else store.actions[index] = action
+  else {
+    action.archived ??= store.actions[index]?.archived
+    store.actions[index] = action
+  }
   assertNoKnownCycles(store.actions)
   writeStore(store.actions)
   return { action, created }
 }
 
-export function listBrowserActions(domain?: string): BrowserAction[] {
-  const actions = readStore().actions
+export function archiveBrowserAction(domain: string, name: string, archived = true): BrowserAction {
+  const store = readStore()
+  const action = store.actions.find(candidate => actionKey(candidate.domain, candidate.name) === actionKey(domain, name))
+  if (!action) throw new Error('Browser action not found. Call browser_action with action=list first.')
+  action.archived = archived
+  writeStore(store.actions)
+  return action
+}
+
+export function listBrowserActions(domain?: string, options: { name?: string; includeArchived?: boolean } = {}): BrowserAction[] {
+  const actions = readStore().actions.filter(action => (options.includeArchived || !action.archived) && (!options.name || action.name === options.name))
   if (domain == null) return actions
   const normalized = normalizeBrowserActionDomain(domain)
   return actions.filter((action) => action.domain === normalized)
@@ -445,6 +459,7 @@ export function summarizeBrowserAction(action: BrowserAction): BrowserActionSumm
     description: action.description,
     parameters: action.parameters,
     stepCount: validateActionStepStructure(action.steps),
+    ...(action.archived !== undefined ? { archived: action.archived } : {}),
   }
 }
 
@@ -797,8 +812,8 @@ async function runAction(
   }
 
   const action = state.actions.get(key)
-  if (!action) {
-    return { ok: false, action: state.stack[0] ?? key, stepsExecuted: state.stepsExecuted, error: `Browser action not found: ${key}`, callStack: [...state.stack, key] }
+  if (!action || action.archived) {
+    return { ok: false, action: state.stack[0] ?? key, stepsExecuted: state.stepsExecuted, error: `Browser action not found or archived: ${key}`, callStack: [...state.stack, key] }
   }
 
   let input: Record<string, unknown>

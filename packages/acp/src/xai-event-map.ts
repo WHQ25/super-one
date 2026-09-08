@@ -7,9 +7,11 @@ import {
 import {
   XAI_FOLLOW_UPS,
   XAI_MONITOR_EVENT,
+  XAI_MCP_ELICIT_COMPLETE,
   XAI_SCHEDULED_TASK_CREATED,
   XAI_SCHEDULED_TASK_DELETED,
   XAI_SCHEDULED_TASK_FIRED,
+  XAI_SCHEDULED_TASK_INJECT_PROMPT,
   XAI_SESSION_NOTIFICATION,
   XAI_SESSION_UPDATE,
   XAI_TASK_BACKGROUNDED,
@@ -172,6 +174,9 @@ export function mapXaiStandaloneNotification(
       return mapScheduledTaskFired(params, state)
     case XAI_SCHEDULED_TASK_DELETED:
       return mapScheduledTaskDeleted(params, state)
+    case XAI_SCHEDULED_TASK_INJECT_PROMPT:
+    case XAI_MCP_ELICIT_COMPLETE:
+      return []
     default:
       log.debug('[acp-xai] ignore standalone method=%s', method)
       return []

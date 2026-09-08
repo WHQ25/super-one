@@ -39,15 +39,22 @@ import { decideAcpPermission } from '../../acp/acp-permission-preapprove'
 import { grantParentMainThreadCall } from '../../mcp/main-thread-session-guard'
 import {
   buildAskUserQuestionRequest,
+  buildMcpElicitPermissionRequest,
   buildPlanApprovalRequest,
   consentGateToAskUserQuestion,
   formatGrokAskUserResponse,
   formatGrokExitPlanModeResponse,
+  formatGrokMcpElicitResponse,
+  formatGrokScheduledTaskPrompt,
   type GrokAskUserAnswer,
   type GrokAskUserQuestionParams,
   type GrokConsentGate,
   type GrokExitPlanModeAnswer,
   type GrokExitPlanModeParams,
+  type GrokMcpElicitAnswer,
+  type GrokMcpElicitComplete,
+  type GrokMcpElicitParams,
+  type GrokScheduledTaskInject,
 } from '../../acp/acp-xai-extensions'
 import {
   TaskNotificationFlush,
@@ -84,6 +91,36 @@ function sameDirSet(a: readonly string[] | undefined, b: readonly string[] | und
   return left.length === right.length && left.every((dir, i) => dir === right[i])
 }
 
+const ACP_BACKGROUND_IDLE_TASK_TYPES = new Set(['goal'])
+
+function strField(o: Record<string, unknown>, camel: string, snake: string): string | undefined {
+  const a = o[camel]
+  if (typeof a === 'string' && a.trim()) return a.trim()
+  const b = o[snake]
+  if (typeof b === 'string' && b.trim()) return b.trim()
+  return undefined
+}
+
+/** run_id / subagent_id from a Grok launch tool_result — fills the gap before ExtNotification. */
+function liveTaskIdsFromToolResultSummary(summary: string | undefined): string[] {
+  if (!summary) return []
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(summary)
+  } catch {
+    return []
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return []
+  const o = parsed as Record<string, unknown>
+  if (o.validate_only === true || o.validateOnly === true) return []
+  const ids: string[] = []
+  const runId = strField(o, 'run_id', 'runId')
+  if (runId) ids.push(runId)
+  const subagentId = strField(o, 'subagent_id', 'subagentId')
+  if (subagentId && subagentId !== runId) ids.push(subagentId)
+  return ids
+}
+
 export class AcpBackend implements SessionBackend {
   readonly kind: HarnessId = 'acp'
 
@@ -94,7 +131,17 @@ export class AcpBackend implements SessionBackend {
   async releaseRuntime(_reason: 'idle'): Promise<void> {
     if (this.activePrompt || this.pendingQueued.size > 0) return
     if (this.getPendingInteractions().length > 0) return
+    if (this.hasActiveBackgroundTasks()) return
     await this.teardownRuntime()
+  }
+
+  /**
+   * Grok workflows / subagents / monitors / scheduled loops keep `grok agent
+   * stdio` alive. Without this, SessionManager's idle reaper session/load's the
+   * actor and Grok marks the workflow `interrupted`.
+   */
+  hasActiveBackgroundTasks(): boolean {
+    return this.liveBackgroundTaskIds.size > 0 || this.cronTaskIds.size > 0
   }
 
   private started = false
@@ -149,6 +196,17 @@ export class AcpBackend implements SessionBackend {
     resolve: (answer: GrokExitPlanModeAnswer) => void
     event: AgentEvent
   }>()
+
+  private pendingElicitations = new Map<string, {
+    resolve: (answer: GrokMcpElicitAnswer) => void
+    event: AgentEvent
+    elicitationId?: string
+  }>()
+
+  /** Skip duplicate `x.ai/scheduled_task_inject_prompt` while that task is queued or running. */
+  private cronTaskIds = new Set<string>()
+  /** Live Grok background work (workflow / subagent / monitor / scheduled / bash). */
+  private liveBackgroundTaskIds = new Set<string>()
 
   private modelConfigId: string | null = null
   private modeConfigId: string | null = null
@@ -605,6 +663,13 @@ export class AcpBackend implements SessionBackend {
         consentNotice: {
           request: (gate) => this.handleConsentNotice(gate),
         },
+        mcpElicit: {
+          request: (params) => this.handleMcpElicit(params),
+          complete: (payload) => this.handleMcpElicitComplete(payload),
+        },
+        scheduledTaskInject: {
+          request: (payload) => this.handleScheduledTaskInject(payload),
+        },
         onModelConfig: (cfg) => {
           // Early model discovery (initialize) before session/new configOptions land.
           this.emitModels(cfg, agentId, epoch)
@@ -844,6 +909,78 @@ export class AcpBackend implements SessionBackend {
     })
   }
 
+  private handleMcpElicit(params: GrokMcpElicitParams): Promise<Record<string, unknown>> {
+    const requestId =
+      (typeof params.toolCallId === 'string' && params.toolCallId)
+      || `acp_elicit_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    // Grok TUI replaces a prior elicitation card; cancel the old reverse-request.
+    this.rejectPendingElicitations()
+    const request = buildMcpElicitPermissionRequest(params, requestId)
+    const event: AgentEvent = { type: 'permission_request', request }
+    log.info(
+      '[AcpBackend] mcp/elicit requestId=%s server=%s mode=%s',
+      requestId,
+      params.serverName,
+      params.mode,
+    )
+    return new Promise((resolve) => {
+      this.pendingElicitations.set(requestId, {
+        resolve: (answer) => resolve(formatGrokMcpElicitResponse(answer)),
+        event,
+        elicitationId: params.elicitationId,
+      })
+      this.emit(event)
+    })
+  }
+
+  private handleMcpElicitComplete(payload: GrokMcpElicitComplete): void {
+    for (const [id, pending] of this.pendingElicitations) {
+      if (pending.elicitationId !== payload.elicitationId) continue
+      this.pendingElicitations.delete(id)
+      pending.resolve({ kind: 'cancel' })
+    }
+  }
+
+  private handleScheduledTaskInject(payload: GrokScheduledTaskInject): void {
+    const prompt = payload.prompt.trim()
+    if (!prompt) return
+    if (this.cronTaskIds.has(payload.taskId)) {
+      log.debug('[AcpBackend] skip duplicate cron inject task=%s', payload.taskId)
+      return
+    }
+    this.cronTaskIds.add(payload.taskId)
+    const framed = formatGrokScheduledTaskPrompt(prompt, payload.taskId, payload.humanSchedule)
+    log.info(
+      '[AcpBackend] scheduled_task_inject_prompt task=%s schedule=%s',
+      payload.taskId,
+      payload.humanSchedule,
+    )
+    void this.deliverCronPrompt(framed, payload.taskId)
+  }
+
+  /**
+   * Idle → Session.send (status machine + user bubble). Busy → queue behind the
+   * live turn. Never `backend.send()` from this notification — that races Session.
+   */
+  private async deliverCronPrompt(framed: string, taskId: string): Promise<void> {
+    try {
+      const outcome = await this.injectTaskNotification(framed)
+      if (outcome === 'deferred') return
+      await this.taskNotificationSender(framed)
+    } catch (err) {
+      log.warn('[AcpBackend] cron inject send failed task=%s:', taskId, err)
+    } finally {
+      this.cronTaskIds.delete(taskId)
+    }
+  }
+
+  private rejectPendingElicitations(): void {
+    for (const [, pending] of this.pendingElicitations) {
+      pending.resolve({ kind: 'cancel' })
+    }
+    this.pendingElicitations.clear()
+  }
+
   private rejectPendingQuestions(): void {
     for (const [, pending] of this.pendingQuestions) {
       pending.resolve({ kind: 'cancelled' })
@@ -972,6 +1109,8 @@ export class AcpBackend implements SessionBackend {
     }
     this.rejectPendingQuestions()
     this.rejectPendingPlanApprovals('abandoned')
+    this.rejectPendingElicitations()
+    this.cronTaskIds.clear()
     if (!this.runtime && this.ensureRuntimePromise) {
       // send() is parked on ensureRuntime(); a stalled spawn (Grok retrying its
       // settings fetch) has no session to cancel, so abort the spawn instead —
@@ -994,6 +1133,9 @@ export class AcpBackend implements SessionBackend {
     }
     this.rejectPendingQuestions()
     this.rejectPendingPlanApprovals('abandoned')
+    this.rejectPendingElicitations()
+    this.cronTaskIds.clear()
+    this.liveBackgroundTaskIds.clear()
     const pending = this.ensureRuntimePromise
     const abortController = this.runtimeAbortController
     this.runtimeEpoch += 1
@@ -1203,11 +1345,20 @@ export class AcpBackend implements SessionBackend {
     _reason?: string,
     _selectedSuggestions?: number[],
     decision?: 'cancel',
+    formAnswers?: Record<string, unknown>,
   ): boolean {
     if (decision === 'cancel') {
       if (rejectComputerUseGrant(requestId, 'User cancelled')) return true
     }
     if (resolveComputerUseGrant(requestId, allow, alwaysAllow)) return true
+    const elicit = this.pendingElicitations.get(requestId)
+    if (elicit) {
+      this.pendingElicitations.delete(requestId)
+      if (decision === 'cancel') elicit.resolve({ kind: 'cancel' })
+      else if (allow) elicit.resolve({ kind: 'accept', content: formAnswers })
+      else elicit.resolve({ kind: 'decline' })
+      return true
+    }
     const pending = this.pendingPermissions.get(requestId)
     if (!pending) return false
     this.pendingPermissions.delete(requestId)
@@ -1308,6 +1459,7 @@ export class AcpBackend implements SessionBackend {
   getPendingInteractions(): AgentEvent[] {
     return [
       ...Array.from(this.pendingPermissions.values()).map((p) => p.event),
+      ...Array.from(this.pendingElicitations.values()).map((p) => p.event),
       ...Array.from(this.pendingQuestions.values()).map((p) => p.event),
       ...Array.from(this.pendingPlanApprovals.values()).map((p) => p.event),
     ]
@@ -1329,11 +1481,32 @@ export class AcpBackend implements SessionBackend {
   }
 
   private emit(event: AgentEvent): void {
+    this.noteBackgroundTaskLifecycle(event)
     for (const cb of this.eventListeners) {
       try {
         cb(event)
       } catch (err) {
         log.warn('[AcpBackend] event listener error:', err)
+      }
+    }
+  }
+
+  private noteBackgroundTaskLifecycle(event: AgentEvent): void {
+    if (event.type === 'task_started' || event.type === 'task_progress') {
+      if (event.taskType && ACP_BACKGROUND_IDLE_TASK_TYPES.has(event.taskType)) return
+      if (event.taskId) this.liveBackgroundTaskIds.add(event.taskId)
+      return
+    }
+    if (event.type === 'task_notification') {
+      const status = event.taskStatus
+      if (status === 'completed' || status === 'stopped' || status === 'failed') {
+        if (event.taskId) this.liveBackgroundTaskIds.delete(event.taskId)
+      }
+      return
+    }
+    if (event.type === 'content_delta' && event.delta.type === 'tool_result') {
+      for (const id of liveTaskIdsFromToolResultSummary(event.delta.summary)) {
+        this.liveBackgroundTaskIds.add(id)
       }
     }
   }

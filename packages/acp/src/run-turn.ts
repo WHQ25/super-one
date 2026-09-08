@@ -20,6 +20,7 @@ import { mapPermissionDecision, mapPermissionRequest } from './permission-map'
 import { spawnAcpProcess, type AcpLaunch } from './process'
 import {
   XAI_EXT_NOTIFICATION_METHODS,
+  XAI_MCP_ELICIT,
   parseXaiExtParams,
 } from './xai-state'
 
@@ -100,7 +101,10 @@ export function createAcpAgentTurnRunner(opts: RunAcpTurnOptions = {}): TurnRunn
       // ClientApp.connect → ClientConnection with `.agent` (ClientContext).
       // Do not call initialize/newSession/prompt on the connection root — those
       // are deprecated ClientSideConnection shapes and are not on ClientConnection.
+      const cancelElicit = async () => ({ outcome: 'cancel' as const })
       let clientBuilder = client({ name: opts.clientName ?? 'superone-node' })
+        .onRequest(XAI_MCP_ELICIT, (raw: unknown) => raw, cancelElicit)
+        .onRequest(`_${XAI_MCP_ELICIT}`, (raw: unknown) => raw, cancelElicit)
         .onRequest(methods.client.session.requestPermission, async (ctx) => {
           const mapped = mapPermissionRequest(ctx.params)
           pendingOptions = mapped.options

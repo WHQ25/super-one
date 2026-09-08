@@ -53,17 +53,27 @@ import {
   XAI_BILLING,
   XAI_CONSENT_RECORD,
   XAI_EXIT_PLAN_MODE,
+  XAI_MCP_ELICIT,
+  XAI_MCP_ELICIT_COMPLETE,
   XAI_RECAP,
+  XAI_SCHEDULED_TASK_INJECT_PROMPT,
   XAI_SETTINGS_UPDATE,
   XAI_YOLO_MODE_CHANGED,
   buildConsentRecordParams,
+  formatGrokExitPlanModeResponse,
+  formatGrokMcpElicitResponse,
   parseGrokConsentGate,
   parseGrokExitPlanModeParams,
-  formatGrokExitPlanModeResponse,
+  parseGrokMcpElicitComplete,
+  parseGrokMcpElicitParams,
+  parseGrokScheduledTaskInject,
   xaiExtWireMethod,
   type GrokAskUserQuestionParams,
   type GrokConsentGate,
   type GrokExitPlanModeParams,
+  type GrokMcpElicitComplete,
+  type GrokMcpElicitParams,
+  type GrokScheduledTaskInject,
 } from './acp-xai-extensions'
 import {
   XAI_EXT_NOTIFICATION_METHODS,
@@ -137,6 +147,17 @@ export interface AcpConsentNoticeGate {
   request(gate: GrokConsentGate): Promise<boolean>
 }
 
+/** Grok MCP elicitation reverse request (`x.ai/mcp/elicit`). */
+export interface AcpMcpElicitGate {
+  request(params: GrokMcpElicitParams): Promise<Record<string, unknown>>
+  complete?(payload: GrokMcpElicitComplete): void
+}
+
+/** Grok scheduled-task driver: host must session/prompt the framed turn. */
+export interface AcpScheduledTaskInjectGate {
+  request(payload: GrokScheduledTaskInject): void
+}
+
 export interface AcpRuntime {
   readonly sessionId: string
   readonly launch: ResolvedAcpLaunch
@@ -191,6 +212,8 @@ export interface AcpRuntimeOptions {
   askUserQuestion?: AcpAskUserQuestionGate
   exitPlanMode?: AcpExitPlanModeGate
   consentNotice?: AcpConsentNoticeGate
+  mcpElicit?: AcpMcpElicitGate
+  scheduledTaskInject?: AcpScheduledTaskInjectGate
   /** Inject stream (in-process agent) instead of spawning a process. */
   streamFactory?: (launch: ResolvedAcpLaunch) => Promise<{ stream: Stream; dispose: () => void }>
   /** Called as soon as a model catalog is known (e.g. after initialize, before session/new). */
@@ -377,6 +400,23 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
   ): Promise<void> => {
     try {
       const bare = method.replace(/^_/, '')
+      if (bare === XAI_MCP_ELICIT_COMPLETE) {
+        const payload = parseGrokMcpElicitComplete(ctx.params)
+        if (payload) {
+          opts.mcpElicit?.complete?.(payload)
+          xaiDeliver?.({
+            type: 'elicitation_complete',
+            mcpServerName: payload.serverName ?? '',
+            elicitationId: payload.elicitationId,
+          })
+        }
+        return
+      }
+      if (bare === XAI_SCHEDULED_TASK_INJECT_PROMPT) {
+        const payload = parseGrokScheduledTaskInject(ctx.params)
+        if (payload) opts.scheduledTaskInject?.request(payload)
+        return
+      }
       if (bare === XAI_SETTINGS_UPDATE) {
         const gate = parseGrokConsentGate(ctx.params)
         if (gate && opts.consentNotice) {
@@ -452,6 +492,19 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       }
       return opts.exitPlanMode.request(ctx.params)
     }
+    const mcpElicitParams = (raw: unknown): GrokMcpElicitParams =>
+      parseGrokMcpElicitParams(raw) ?? { serverName: 'mcp', message: '', mode: 'form' }
+    const mcpElicitHandler = async (ctx: { params: GrokMcpElicitParams }) => {
+      if (!opts.mcpElicit) {
+        log.warn('[acp-runtime] x.ai/mcp/elicit with no gate — cancelling')
+        return formatGrokMcpElicitResponse({ kind: 'cancel' })
+      }
+      if (!ctx.params.serverName && !ctx.params.message) {
+        log.warn('[acp-runtime] x.ai/mcp/elicit with empty params — cancelling')
+        return formatGrokMcpElicitResponse({ kind: 'cancel' })
+      }
+      return opts.mcpElicit.request(ctx.params)
+    }
 
     let clientBuilder = client({ name: 'superone' })
       .onRequest(methods.client.session.requestPermission, async (ctx) => {
@@ -476,6 +529,8 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       .onRequest(`_${XAI_ASK_USER_QUESTION}`, askUserParams, askUserHandler)
       .onRequest(XAI_EXIT_PLAN_MODE, exitPlanParams, exitPlanHandler)
       .onRequest(`_${XAI_EXIT_PLAN_MODE}`, exitPlanParams, exitPlanHandler)
+      .onRequest(XAI_MCP_ELICIT, mcpElicitParams, mcpElicitHandler)
+      .onRequest(`_${XAI_MCP_ELICIT}`, mcpElicitParams, mcpElicitHandler)
 
     // Grok progressive ExtNotification bus (workflow / subagent / bg / usage / …)
     for (const method of XAI_EXT_NOTIFICATION_METHODS) {

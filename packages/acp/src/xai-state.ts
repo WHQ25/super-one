@@ -21,6 +21,9 @@ export const XAI_FOLLOW_UPS = 'x.ai/follow_ups'
 export const XAI_SCHEDULED_TASK_CREATED = 'x.ai/scheduled_task_created'
 export const XAI_SCHEDULED_TASK_FIRED = 'x.ai/scheduled_task_fired'
 export const XAI_SCHEDULED_TASK_DELETED = 'x.ai/scheduled_task_deleted'
+export const XAI_SCHEDULED_TASK_INJECT_PROMPT = 'x.ai/scheduled_task_inject_prompt'
+export const XAI_MCP_ELICIT = 'x.ai/mcp/elicit'
+export const XAI_MCP_ELICIT_COMPLETE = 'x.ai/mcp/elicit_complete'
 export const XAI_SETTINGS_UPDATE = 'x.ai/settings/update'
 
 export const SUBAGENT_LIFECYCLE = new Set([
@@ -46,6 +49,10 @@ export const XAI_EXT_NOTIFICATION_METHODS = [
   XAI_SCHEDULED_TASK_CREATED,
   XAI_SCHEDULED_TASK_FIRED,
   XAI_SCHEDULED_TASK_DELETED,
+  XAI_SCHEDULED_TASK_INJECT_PROMPT,
+  `_${XAI_SCHEDULED_TASK_INJECT_PROMPT}`,
+  XAI_MCP_ELICIT_COMPLETE,
+  `_${XAI_MCP_ELICIT_COMPLETE}`,
   XAI_SETTINGS_UPDATE,
   `_${XAI_SETTINGS_UPDATE}`,
 ] as const

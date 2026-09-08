@@ -213,6 +213,9 @@ export function taskNotificationRequest(content: string): SendMessageRequest {
  */
 export function redactTaskNotificationForDisplay(content: string): string {
   return content
+    // Grok cron inject wraps the user prompt in `<system-reminder>`; the bubble
+    // should show only the scheduled prompt, matching Grok TUI's cron_prompt block.
+    .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/gi, '')
     // `with credential "s1sc_…"` or `'…'` (JSON.stringify / plain)
     .replace(/\s+with credential\s+(?:"[^"]*"|'[^']*')/gi, '')
     // Bare token if a harness rewrites the template

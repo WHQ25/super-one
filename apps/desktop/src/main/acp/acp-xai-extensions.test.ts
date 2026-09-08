@@ -2,13 +2,19 @@ import { describe, expect, it } from 'vitest'
 import {
   buildAskUserQuestionRequest,
   buildConsentRecordParams,
+  buildMcpElicitPermissionRequest,
   buildPlanApprovalRequest,
   consentGateToAskUserQuestion,
   formatGrokAskUserResponse,
   formatGrokExitPlanModeResponse,
+  formatGrokMcpElicitResponse,
+  formatGrokScheduledTaskPrompt,
   normalizeGrokQuestions,
   parseGrokConsentGate,
   parseGrokExitPlanModeParams,
+  parseGrokMcpElicitComplete,
+  parseGrokMcpElicitParams,
+  parseGrokScheduledTaskInject,
 } from './acp-xai-extensions'
 
 describe('normalizeGrokQuestions', () => {
@@ -174,6 +180,159 @@ describe('consentGateToAskUserQuestion', () => {
       noticeId: 'tos',
       version: 3,
     })
+  })
+})
+
+describe('parseGrokMcpElicitParams', () => {
+  it('parses form-mode camelCase wire', () => {
+    const parsed = parseGrokMcpElicitParams({
+      sessionId: 's1',
+      toolCallId: 'elicit-1',
+      serverName: 'github',
+      message: 'Need email',
+      mode: 'form',
+      requestedSchema: {
+        type: 'object',
+        properties: { email: { type: 'string', title: 'Email' } },
+        required: ['email'],
+      },
+    })
+    expect(parsed).toMatchObject({
+      sessionId: 's1',
+      toolCallId: 'elicit-1',
+      serverName: 'github',
+      message: 'Need email',
+      mode: 'form',
+    })
+    expect(parsed?.requestedSchema).toMatchObject({ type: 'object' })
+  })
+
+  it('parses url-mode snake_case and infers mode from url', () => {
+    expect(parseGrokMcpElicitParams({
+      session_id: 's2',
+      tool_call_id: 'elicit-2',
+      server_name: 'linear',
+      message: 'Authorize Linear',
+      url: 'https://linear.app/oauth',
+      elicitation_id: 'e-42',
+    })).toMatchObject({
+      sessionId: 's2',
+      toolCallId: 'elicit-2',
+      serverName: 'linear',
+      mode: 'url',
+      url: 'https://linear.app/oauth',
+      elicitationId: 'e-42',
+    })
+  })
+
+  it('returns null without server or message', () => {
+    expect(parseGrokMcpElicitParams(null)).toBeNull()
+    expect(parseGrokMcpElicitParams({})).toBeNull()
+  })
+})
+
+describe('formatGrokMcpElicitResponse', () => {
+  it('formats accept with optional content', () => {
+    expect(formatGrokMcpElicitResponse({ kind: 'accept', content: { email: 'a@b.c' } })).toEqual({
+      outcome: 'accept',
+      content: { email: 'a@b.c' },
+    })
+    expect(formatGrokMcpElicitResponse({ kind: 'accept' })).toEqual({ outcome: 'accept' })
+  })
+
+  it('formats decline and cancel', () => {
+    expect(formatGrokMcpElicitResponse({ kind: 'decline' })).toEqual({ outcome: 'decline' })
+    expect(formatGrokMcpElicitResponse({ kind: 'cancel' })).toEqual({ outcome: 'cancel' })
+  })
+})
+
+describe('buildMcpElicitPermissionRequest', () => {
+  it('maps form schema onto PermissionRequest elicitation fields', () => {
+    const req = buildMcpElicitPermissionRequest({
+      serverName: 'github',
+      message: 'Need email',
+      mode: 'form',
+      toolCallId: 'elicit-1',
+      requestedSchema: {
+        type: 'object',
+        properties: { email: { type: 'string', title: 'Email' } },
+        required: ['email'],
+      },
+    }, 'elicit-1')
+    expect(req).toMatchObject({
+      requestId: 'elicit-1',
+      requestKind: 'mcp_elicitation',
+      serverName: 'github',
+      message: 'Need email',
+      allowAlwaysAllow: false,
+    })
+    expect(req.elicitationForm).toEqual([
+      { name: 'email', type: 'string', label: 'Email', required: true },
+    ])
+  })
+
+  it('maps url mode as a consent card with the url as subtitle', () => {
+    const req = buildMcpElicitPermissionRequest({
+      serverName: 'linear',
+      message: 'Authorize Linear',
+      mode: 'url',
+      url: 'https://linear.app/oauth',
+      elicitationId: 'e-42',
+    }, 'elicit-url')
+    expect(req.subtitle).toBe('https://linear.app/oauth')
+    expect(req.elicitationForm).toBeUndefined()
+  })
+})
+
+describe('parseGrokMcpElicitComplete', () => {
+  it('requires elicitationId', () => {
+    expect(parseGrokMcpElicitComplete({
+      sessionId: 's',
+      elicitationId: 'e-1',
+      serverName: 'github',
+    })).toEqual({ sessionId: 's', elicitationId: 'e-1', serverName: 'github' })
+    expect(parseGrokMcpElicitComplete({ sessionId: 's' })).toBeNull()
+  })
+})
+
+describe('parseGrokScheduledTaskInject', () => {
+  it('parses camelCase and snake_case', () => {
+    expect(parseGrokScheduledTaskInject({
+      sessionId: 's1',
+      taskId: 'task-42',
+      prompt: '/pr-babysit check',
+      humanSchedule: 'every 5m',
+    })).toEqual({
+      sessionId: 's1',
+      taskId: 'task-42',
+      prompt: '/pr-babysit check',
+      humanSchedule: 'every 5m',
+    })
+    expect(parseGrokScheduledTaskInject({
+      task_id: 't2',
+      prompt: 'echo hi',
+      human_schedule: 'every 1m',
+    })).toEqual({
+      taskId: 't2',
+      prompt: 'echo hi',
+      humanSchedule: 'every 1m',
+    })
+  })
+
+  it('returns null without a prompt', () => {
+    expect(parseGrokScheduledTaskInject({ taskId: 't' })).toBeNull()
+    expect(parseGrokScheduledTaskInject(null)).toBeNull()
+  })
+})
+
+describe('formatGrokScheduledTaskPrompt', () => {
+  it('wraps the user prompt in system-reminder framing', () => {
+    const out = formatGrokScheduledTaskPrompt('do stuff', 'task-1', 'every 5m')
+    expect(out.startsWith('<system-reminder>')).toBe(true)
+    expect(out).toContain('task task-1')
+    expect(out).toContain('every 5m')
+    expect(out.endsWith('do stuff')).toBe(true)
+    expect(out).not.toContain('<user_query>')
   })
 })
 

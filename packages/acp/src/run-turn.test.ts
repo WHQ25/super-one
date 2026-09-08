@@ -97,6 +97,7 @@ vi.mock('./process', () => ({
 }))
 
 import { createAcpAgentTurnRunner } from './run-turn'
+import { XAI_EXT_NOTIFICATION_METHODS } from './xai-state'
 
 function session(): NodeSessionRecord {
   return {
@@ -158,6 +159,6 @@ describe('ACP production turn runner AgentEvents', () => {
       taskId: 'workflow-1',
       currentPhase: 'Inspect',
     }))
-    expect(mocks.notificationHandlers.size).toBe(11)
+    expect(mocks.notificationHandlers.size).toBe(XAI_EXT_NOTIFICATION_METHODS.length)
   })
 })

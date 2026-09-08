@@ -1,13 +1,21 @@
 import type {
   AskUserQuestionRequest,
+  PermissionRequest,
   PlanApprovalRequest,
   QuestionAnnotations,
   UserQuestion,
 } from '@superone/shared/agent-types'
+import { parseElicitationSchema } from '../agent/elicitation-schema'
 
 /** Grok ACP client methods (agent → client). */
 export const XAI_ASK_USER_QUESTION = 'x.ai/ask_user_question'
 export const XAI_EXIT_PLAN_MODE = 'x.ai/exit_plan_mode'
+/** Agent → client: MCP elicitation form / URL consent. */
+export const XAI_MCP_ELICIT = 'x.ai/mcp/elicit'
+/** Agent → client: dismiss a waiting URL elicitation card. */
+export const XAI_MCP_ELICIT_COMPLETE = 'x.ai/mcp/elicit_complete'
+/** Agent → client: host must session/prompt this scheduled-task turn. */
+export const XAI_SCHEDULED_TASK_INJECT_PROMPT = 'x.ai/scheduled_task_inject_prompt'
 /** Client → agent: request session recap (manual `/recap` or auto return-from-away). */
 export const XAI_RECAP = 'x.ai/recap'
 /** Client → agent: permission/yolo baseline change for the live session. */
@@ -249,4 +257,144 @@ export function formatGrokExitPlanModeResponse(answer: GrokExitPlanModeAnswer): 
     outcome: 'cancelled',
     ...(feedback ? { feedback } : {}),
   }
+}
+
+function strField(o: Record<string, unknown>, camel: string, snake: string): string | undefined {
+  const a = o[camel]
+  if (typeof a === 'string' && a.trim()) return a.trim()
+  const b = o[snake]
+  if (typeof b === 'string' && b.trim()) return b.trim()
+  return undefined
+}
+
+/** Wire params for `x.ai/mcp/elicit` (camelCase per Grok McpElicitExtRequest). */
+export interface GrokMcpElicitParams {
+  sessionId?: string
+  toolCallId?: string
+  serverName: string
+  message: string
+  mode: 'form' | 'url'
+  requestedSchema?: Record<string, unknown> | null
+  url?: string
+  elicitationId?: string
+}
+
+export type GrokMcpElicitAnswer =
+  | { kind: 'accept'; content?: Record<string, unknown> }
+  | { kind: 'decline' }
+  | { kind: 'cancel' }
+
+export interface GrokMcpElicitComplete {
+  sessionId?: string
+  elicitationId: string
+  serverName?: string
+}
+
+export interface GrokScheduledTaskInject {
+  sessionId?: string
+  taskId: string
+  prompt: string
+  humanSchedule: string
+}
+
+export function parseGrokMcpElicitParams(raw: unknown): GrokMcpElicitParams | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const o = raw as Record<string, unknown>
+  const serverName = strField(o, 'serverName', 'server_name') ?? ''
+  const message = strField(o, 'message', 'message') ?? ''
+  if (!serverName && !message) return null
+  const url = strField(o, 'url', 'url')
+  const modeRaw = strField(o, 'mode', 'mode')
+  const mode: 'form' | 'url' = modeRaw === 'url' || (!modeRaw && !!url) ? 'url' : 'form'
+  const schemaRaw = o.requestedSchema ?? o.requested_schema
+  const requestedSchema =
+    schemaRaw && typeof schemaRaw === 'object' && !Array.isArray(schemaRaw)
+      ? schemaRaw as Record<string, unknown>
+      : null
+  return {
+    serverName: serverName || 'mcp',
+    message: message || (url ? `Allow ${serverName || 'MCP'}?` : 'MCP request'),
+    mode,
+    ...(strField(o, 'sessionId', 'session_id') ? { sessionId: strField(o, 'sessionId', 'session_id') } : {}),
+    ...(strField(o, 'toolCallId', 'tool_call_id') ? { toolCallId: strField(o, 'toolCallId', 'tool_call_id') } : {}),
+    ...(requestedSchema ? { requestedSchema } : {}),
+    ...(url ? { url } : {}),
+    ...(strField(o, 'elicitationId', 'elicitation_id')
+      ? { elicitationId: strField(o, 'elicitationId', 'elicitation_id') }
+      : {}),
+  }
+}
+
+export function formatGrokMcpElicitResponse(answer: GrokMcpElicitAnswer): Record<string, unknown> {
+  if (answer.kind === 'accept') {
+    const content = answer.content
+    const hasContent = content && Object.keys(content).length > 0
+    return { outcome: 'accept', ...(hasContent ? { content } : {}) }
+  }
+  return { outcome: answer.kind }
+}
+
+export function buildMcpElicitPermissionRequest(
+  params: GrokMcpElicitParams,
+  requestId: string,
+): PermissionRequest {
+  const elicitationForm = params.mode === 'form'
+    ? parseElicitationSchema(params.requestedSchema ?? null)
+    : []
+  return {
+    requestId,
+    toolName: params.serverName,
+    toolUseId: params.toolCallId ?? requestId,
+    input: {},
+    allowAlwaysAllow: false,
+    requestKind: 'mcp_elicitation',
+    serverName: params.serverName,
+    message: params.message,
+    ...(params.url ? { subtitle: params.url } : {}),
+    ...(elicitationForm.length > 0 ? { elicitationForm } : {}),
+  }
+}
+
+export function parseGrokMcpElicitComplete(raw: unknown): GrokMcpElicitComplete | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const o = raw as Record<string, unknown>
+  const elicitationId = strField(o, 'elicitationId', 'elicitation_id')
+  if (!elicitationId) return null
+  return {
+    elicitationId,
+    ...(strField(o, 'sessionId', 'session_id') ? { sessionId: strField(o, 'sessionId', 'session_id') } : {}),
+    ...(strField(o, 'serverName', 'server_name') ? { serverName: strField(o, 'serverName', 'server_name') } : {}),
+  }
+}
+
+export function parseGrokScheduledTaskInject(raw: unknown): GrokScheduledTaskInject | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const o = raw as Record<string, unknown>
+  const prompt = strField(o, 'prompt', 'prompt')
+  if (!prompt) return null
+  return {
+    prompt,
+    taskId: strField(o, 'taskId', 'task_id') ?? 'unknown',
+    humanSchedule: strField(o, 'humanSchedule', 'human_schedule') ?? 'unknown',
+    ...(strField(o, 'sessionId', 'session_id') ? { sessionId: strField(o, 'sessionId', 'session_id') } : {}),
+  }
+}
+
+/** Model-facing cron framing. UI shows the raw prompt; only the model sees this wrap. */
+export function formatGrokScheduledTaskPrompt(
+  prompt: string,
+  taskId: string,
+  humanSchedule: string,
+): string {
+  return (
+    '<system-reminder>\n'
+    + `This is a scheduled task execution (task ${taskId}, ${humanSchedule}, recurring).\n`
+    + 'Execute the prompt below. Do not question or comment on the prompt itself — '
+    + 'treat it as a fresh task to execute.\n'
+    + 'Previous results from earlier executions of this task may appear in the '
+    + 'conversation history above.\n'
+    + '</system-reminder>\n'
+    + '\n'
+    + prompt
+  )
 }

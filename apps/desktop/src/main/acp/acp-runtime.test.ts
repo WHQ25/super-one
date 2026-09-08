@@ -9,7 +9,9 @@ import {
 import { createAcpRuntime } from './acp-runtime'
 import {
   XAI_CONSENT_RECORD,
+  XAI_MCP_ELICIT,
   XAI_RECAP,
+  XAI_SCHEDULED_TASK_INJECT_PROMPT,
   XAI_YOLO_MODE_CHANGED,
   xaiExtWireMethod,
 } from './acp-xai-extensions'
@@ -271,6 +273,110 @@ describe('createAcpRuntime (in-process agent)', () => {
     await vi.waitFor(() => {
       expect(consentRecords).toEqual([{ noticeId: 'tos', version: 2 }])
     })
+    await runtime.close()
+  })
+
+  it('answers x.ai/mcp/elicit reverse requests through the host gate', async () => {
+    const elicitWire = xaiExtWireMethod(XAI_MCP_ELICIT)
+    let elicitResult: unknown
+    const agentApp = agent({ name: 'elicit-agent' })
+      .onRequest(methods.agent.initialize, async () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: {},
+      }))
+      .onRequest(methods.agent.session.new, async (ctx) => {
+        queueMicrotask(() => {
+          void ctx.client.request(elicitWire as never, {
+            sessionId: 'elicit-session',
+            toolCallId: 'elicit-1',
+            serverName: 'github',
+            message: 'Need email',
+            mode: 'form',
+            requestedSchema: {
+              type: 'object',
+              properties: { email: { type: 'string' } },
+            },
+          } as never).then((result) => { elicitResult = result })
+        })
+        return { sessionId: 'elicit-session' }
+      })
+      .onRequest(methods.agent.session.prompt, async () => ({ stopReason: 'end_turn' as const }))
+      .onNotification(methods.agent.session.cancel, async () => {})
+    const clientToAgent = new TransformStream<Uint8Array>()
+    const agentToClient = new TransformStream<Uint8Array>()
+    agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
+    const clientStream = ndJsonStream(clientToAgent.writable, agentToClient.readable)
+    const runtime = await createAcpRuntime({
+      launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+      mcpElicit: {
+        request: async (params) => ({
+          outcome: 'accept',
+          content: { email: 'a@b.c', server: params.serverName },
+        }),
+      },
+      streamFactory: async () => ({
+        stream: clientStream,
+        dispose: () => {
+          try { void clientToAgent.writable.close().catch(() => undefined) } catch { /* */ }
+          try { void agentToClient.writable.close().catch(() => undefined) } catch { /* */ }
+        },
+      }),
+    })
+    await vi.waitFor(() => {
+      expect(elicitResult).toEqual({
+        outcome: 'accept',
+        content: { email: 'a@b.c', server: 'github' },
+      })
+    })
+    await runtime.close()
+  })
+
+  it('forwards x.ai/scheduled_task_inject_prompt to the host gate', async () => {
+    const injected: Array<{ taskId: string; prompt: string }> = []
+    let agentNotifyClient: {
+      notify: (method: string, params: unknown) => Promise<void>
+    } | null = null
+    const agentApp = agent({ name: 'cron-agent' })
+      .onRequest(methods.agent.initialize, async () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: {},
+      }))
+      .onRequest(methods.agent.session.new, async () => ({ sessionId: 'cron-session' }))
+      .onRequest(methods.agent.session.prompt, async (ctx) => {
+        agentNotifyClient = ctx.client
+        return { stopReason: 'end_turn' as const }
+      })
+      .onNotification(methods.agent.session.cancel, async () => {})
+    const clientToAgent = new TransformStream<Uint8Array>()
+    const agentToClient = new TransformStream<Uint8Array>()
+    agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
+    const clientStream = ndJsonStream(clientToAgent.writable, agentToClient.readable)
+    const runtime = await createAcpRuntime({
+      launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+      scheduledTaskInject: {
+        request: (payload) => { injected.push({ taskId: payload.taskId, prompt: payload.prompt }) },
+      },
+      streamFactory: async () => ({
+        stream: clientStream,
+        dispose: () => {
+          try { void clientToAgent.writable.close().catch(() => undefined) } catch { /* */ }
+          try { void agentToClient.writable.close().catch(() => undefined) } catch { /* */ }
+        },
+      }),
+    })
+    await runtime.prompt('hi', 'msg-cron', () => {})
+    expect(agentNotifyClient).toBeTruthy()
+    await agentNotifyClient!.notify(XAI_SCHEDULED_TASK_INJECT_PROMPT, {
+      sessionId: 'cron-session',
+      taskId: 'task-42',
+      prompt: '/pr-babysit check',
+      humanSchedule: 'every 5m',
+    })
+    await vi.waitFor(() => expect(injected).toEqual([
+      { taskId: 'task-42', prompt: '/pr-babysit check' },
+    ]))
     await runtime.close()
   })
 

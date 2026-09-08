@@ -79,6 +79,18 @@ describe('TaskNotificationQueue', () => {
     expect(redacted).toMatch(/collaboration mailbox message is ready/i)
     expect(redacted).toMatch(/session_collab_retrieve/i)
   })
+
+  it('redactTaskNotificationForDisplay strips Grok cron system-reminder framing', () => {
+    const framed = [
+      '<system-reminder>',
+      'This is a scheduled task execution (task task-1, every 5m, recurring).',
+      'Execute the prompt below.',
+      '</system-reminder>',
+      '',
+      '/pr-babysit check',
+    ].join('\n')
+    expect(redactTaskNotificationForDisplay(framed)).toBe('/pr-babysit check')
+  })
 })
 
 async function settleMicrotasks(): Promise<void> {

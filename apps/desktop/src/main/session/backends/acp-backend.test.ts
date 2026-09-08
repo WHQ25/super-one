@@ -52,6 +52,8 @@ describe('AcpBackend', () => {
     await backend.start({ ...startOpts({ agentId: 'grok-build' }), effort: 'xhigh' })
     expect(captured?.reasoningEffort).toBe('xhigh')
     expect(captured?.consentNotice).toBeDefined()
+    expect(captured?.mcpElicit).toBeDefined()
+    expect(captured?.scheduledTaskInject).toBeDefined()
     await backend.close()
   })
 
@@ -231,6 +233,90 @@ describe('AcpBackend', () => {
 
     expect(close).toHaveBeenCalledOnce()
     expect(backend.hasActiveRuntime()).toBe(false)
+  })
+
+  it('does not idle-release while a Grok workflow is live', async () => {
+    const close = vi.fn(async () => {})
+    let captured: AcpRuntimeOptions | undefined
+    setAcpRuntimeFactory(async (opts) => {
+      captured = opts
+      return mockRuntime({ close })
+    })
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await vi.waitFor(() => expect(captured?.onSessionEvent).toBeDefined())
+
+    captured!.onSessionEvent!({
+      type: 'task_started',
+      taskId: 'wf_1',
+      description: 'parity',
+      taskType: 'workflow',
+    })
+    expect(backend.hasActiveBackgroundTasks()).toBe(true)
+    await backend.releaseRuntime('idle')
+    expect(close).not.toHaveBeenCalled()
+    expect(backend.hasActiveRuntime()).toBe(true)
+
+    captured!.onSessionEvent!({
+      type: 'task_notification',
+      taskId: 'wf_1',
+      taskStatus: 'completed',
+      outputFile: '',
+      summary: 'done',
+    })
+    expect(backend.hasActiveBackgroundTasks()).toBe(false)
+    await backend.releaseRuntime('idle')
+    expect(close).toHaveBeenCalledOnce()
+    expect(backend.hasActiveRuntime()).toBe(false)
+  })
+
+  it('treats a workflow launch tool_result as live work before ExtNotification arrives', async () => {
+    let captured: AcpRuntimeOptions | undefined
+    setAcpRuntimeFactory(async (opts) => {
+      captured = opts
+      return mockRuntime()
+    })
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await vi.waitFor(() => expect(captured?.onSessionEvent).toBeDefined())
+
+    captured!.onSessionEvent!({
+      type: 'content_delta',
+      messageId: 'm1',
+      delta: {
+        type: 'tool_result',
+        toolUseId: 'tu_wf',
+        summary: JSON.stringify({ run_id: 'wf_live', name: 'review-changes' }),
+      },
+    })
+    expect(backend.hasActiveBackgroundTasks()).toBe(true)
+
+    captured!.onSessionEvent!({
+      type: 'content_delta',
+      messageId: 'm1',
+      delta: {
+        type: 'tool_result',
+        toolUseId: 'tu_smoke',
+        summary: JSON.stringify({ run_id: 'wf_smoke', validate_only: true }),
+      },
+    })
+    captured!.onSessionEvent!({
+      type: 'task_started',
+      taskId: 'goal-1',
+      description: 'goal',
+      taskType: 'goal',
+    })
+    expect(backend.hasActiveBackgroundTasks()).toBe(true)
+
+    captured!.onSessionEvent!({
+      type: 'task_notification',
+      taskId: 'wf_live',
+      taskStatus: 'failed',
+      outputFile: '',
+      summary: 'planner failed',
+    })
+    expect(backend.hasActiveBackgroundTasks()).toBe(false)
+    await backend.close()
   })
 
   it('waits for an old pending runtime to close without clearing a concurrent new runtime', async () => {
@@ -727,6 +813,124 @@ describe('AcpBackend', () => {
     })
     await new Promise((r) => setTimeout(r, 20))
     expect(cwds.at(-1)).toBe('/tmp/proj/.worktrees/feat')
+    await backend.close()
+  })
+
+  it('parks x.ai/mcp/elicit as mcp_elicitation and accepts form answers', async () => {
+    setAcpRuntimeFactory(async (opts) => mockRuntime({
+      prompt: async (_text, messageId, onEvent) => {
+        const response = await opts.mcpElicit!.request({
+          sessionId: 'acp-sess-1',
+          toolCallId: 'elicit-1',
+          serverName: 'github',
+          message: 'Need email',
+          mode: 'form',
+          requestedSchema: {
+            type: 'object',
+            properties: { email: { type: 'string', title: 'Email' } },
+            required: ['email'],
+          },
+        })
+        onEvent({
+          type: 'content_delta',
+          messageId,
+          delta: { type: 'text', text: JSON.stringify(response) },
+        })
+        onEvent({ type: 'message_complete', messageId })
+        onEvent({ type: 'status_change', status: 'idle' })
+      },
+    }))
+
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    const events: AgentEvent[] = []
+    backend.onEvent((e) => {
+      events.push(e)
+      if (e.type === 'permission_request' && e.request.requestKind === 'mcp_elicitation') {
+        backend.respondToPermission(
+          e.request.requestId,
+          true,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          { email: 'a@b.c' },
+        )
+      }
+    })
+    await backend.send({ content: 'elicit', assistantMessageId: 'a-elicit' })
+    const text = events
+      .filter((e): e is Extract<AgentEvent, { type: 'content_delta' }> => e.type === 'content_delta')
+      .map((e) => e.delta)
+      .filter((d): d is { type: 'text'; text: string } => d.type === 'text')
+      .map((d) => d.text)
+      .join('')
+    expect(JSON.parse(text)).toEqual({ outcome: 'accept', content: { email: 'a@b.c' } })
+    expect(backend.getPendingInteractions()).toEqual([])
+    await backend.close()
+  })
+
+  it('cancels a parked mcp/elicit on interrupt', async () => {
+    let parked!: () => void
+    const gate = new Promise<void>((r) => { parked = r })
+    setAcpRuntimeFactory(async (opts) => mockRuntime({
+      prompt: async (_text, messageId, onEvent) => {
+        const pending = opts.mcpElicit!.request({
+          toolCallId: 'elicit-int',
+          serverName: 'github',
+          message: 'Need email',
+          mode: 'form',
+        })
+        parked()
+        const response = await pending
+        onEvent({
+          type: 'content_delta',
+          messageId,
+          delta: { type: 'text', text: JSON.stringify(response) },
+        })
+        onEvent({ type: 'message_interrupted', messageId })
+        onEvent({ type: 'status_change', status: 'idle' })
+      },
+    }))
+
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    const sendP = backend.send({ content: 'elicit', assistantMessageId: 'a-elicit-int' })
+    await gate
+    expect(backend.getPendingInteractions().some((e) =>
+      e.type === 'permission_request' && e.request.requestKind === 'mcp_elicitation')).toBe(true)
+    await backend.interrupt()
+    await sendP
+    expect(backend.getPendingInteractions().every((e) =>
+      e.type !== 'permission_request')).toBe(true)
+    await backend.close()
+  })
+
+  it('injects a scheduled-task prompt through the Session send binding', async () => {
+    const sent: string[] = []
+    let captured: AcpRuntimeOptions | undefined
+    setAcpRuntimeFactory(async (opts) => {
+      captured = opts
+      return mockRuntime()
+    })
+    const backend = new AcpBackend()
+    backend.bindTaskNotificationSend(async (content) => { sent.push(content) })
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    captured!.scheduledTaskInject!.request({
+      sessionId: 'acp-sess-1',
+      taskId: 'task-42',
+      prompt: '/pr-babysit check',
+      humanSchedule: 'every 5m',
+    })
+    captured!.scheduledTaskInject!.request({
+      taskId: 'task-42',
+      prompt: '/pr-babysit check',
+      humanSchedule: 'every 5m',
+    })
+    await vi.waitFor(() => expect(sent).toHaveLength(1))
+    expect(sent[0]).toContain('<system-reminder>')
+    expect(sent[0]).toContain('task task-42')
+    expect(sent[0]).toContain('/pr-babysit check')
     await backend.close()
   })
 

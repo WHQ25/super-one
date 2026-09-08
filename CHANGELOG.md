@@ -19,18 +19,33 @@ Every alpha release keeps its own notes on its GitHub Release.
   release shows up in monitoring rather than in user reports.
 - Remote Control: the companion mobile app is rebuilt from the ground up.
   Pairing leads with the code, the device list reports real reachability and
-  finds a LAN route over mDNS, projects are picked or added through the same
-  flow the desktop uses, and starting a session runs on the desktop's own
-  selectors — model and effort in one control, harnesses named the way the
-  host names them. The composer is native, with mentions, slash commands,
-  status chips and a file browser.
-- Remote Control chat handles the full interaction surface: plan approvals,
-  question answers, permission prompts including device control, and session
-  actions. Codex images open in the native gallery and the terminal follows
-  the host's theme.
+  finds a LAN route over mDNS, and projects and sessions live in one
+  workspace drawer — edge-swipe to open, host-side search, nested collab
+  children, a cross-project pinned section. Starting a session runs on the
+  desktop's own selectors. The composer is native: mentions (including
+  `@session` and folder browse), slash commands with their output, `/mcp`
+  status, `/workflows` runs, status chips, a file browser, persisted theme
+  and language, and an English / Chinese native shell. Chat handles plan
+  approvals, question answers, permission prompts including device control,
+  session actions, Codex images and voice transcripts, and a terminal that
+  follows the host's theme.
 - Worktree: the handoff popover names its scope ("Will carry") only when it is
   wider than the uncommitted work the header already reports — the detached
   case, where the worktree's own commits travel too.
+- MCP: browser, computer and device experience is persisted on the executing
+  node so remote agents keep reusable procedures across sessions.
+- Grok sessions host the x.ai ops the agent already spoke: interject,
+  compact, rewind, fork, MCP elicitation, cron inject, and live workflows.
+  `/mcp` reports ACP server status.
+- SuperOne's own tools are preferred across harnesses, including Cursor
+  (injected on the first turn) and DeepSeek (kept out of the persona
+  section).
+- Claude: a queued message can be steered as "next" without cancelling the
+  in-flight tool. Session goals — Codex, Grok and Claude — share one
+  indicator and dialog; Claude's `/goal` condition is on that surface.
+- Sidebar: the Pinned section follows the selected host.
+- Side chat opens at the activity panel's floor and no longer offers to
+  cover the thread it forked from.
 
 ### Fixed
 
@@ -41,9 +56,10 @@ Every alpha release keeps its own notes on its GitHub Release.
   carries that radius, so a split no longer notches each pane's bottom
   edge where it meets a divider.
 - Codex: launch settings approved in the dialog take effect on the first
-  turn.
-- Codex: the model chosen for a session survives restoring that session.
-- Codex: fewer duplicate plan approvals on a live session.
+  turn. The model chosen for a session survives restoring that session.
+  Fast mode survives session switches. Answering an async question steers
+  the live turn. Turn token totals no longer shrink at completion. Fewer
+  duplicate plan approvals on a live session.
 - iOS Simulator: the preview recovers when CoreSimulator drops the
   framebuffer. Asking to control a healthy, booted simulator could fail with
   `NO_DEVICE` indefinitely, because every stream restarted against the dead
@@ -54,6 +70,19 @@ Every alpha release keeps its own notes on its GitHub Release.
   instead of behind them, and an expanded preview no longer covers dialogs.
 - Picture-in-picture previews stay where the user left them when switching
   sessions, instead of drifting toward the top-left.
+- Collaboration inbox notices live in a status-bar popover of unread mail,
+  instead of a transcript notice that could arrive after the agent had
+  already retrieved it.
+- Chat: the compacting timer tracks the compaction, not the render. Built-in
+  media artifacts resolve after Markdown parsing.
+- Device control: agent-injected text bypasses the guest input method, so
+  Pinyin no longer mangles ASCII on iOS or swallows it on Android.
+- Sidebar: a collapsed project stays collapsed when switching to a row it
+  still shows. The selected row is darker in dark glass mode.
+- Goal: a live snapshot no longer replaces text the user is editing.
+- Alpha and dev no longer read or overwrite stable memories, apps,
+  credentials or harness installs. Stable paths stay `~/.superone`;
+  alpha/dev move under `.superone/alpha` and `.superone/dev`.
 
 ### Changed
 
@@ -64,6 +93,110 @@ Every alpha release keeps its own notes on its GitHub Release.
   declaring build-and-run fine.
 - Electron 44 (bundled Node 24.19.0), plus a sweep of dependency majors
   across the docking, terminal, syntax-highlighting and PDF stacks.
+
+## [0.63.0-alpha] - 2026-09-08
+
+### Added
+
+- MCP: browser, computer and device experience is persisted on the executing
+  node, with revision checks so concurrent agents do not overwrite each
+  other. Browser references pair with readable saved actions so agents can
+  inspect and retire reusable procedures.
+- Grok: SuperOne now hosts the x.ai session ops Grok already spoke —
+  interject into a live turn, compact, rewind, fork with provider memory,
+  MCP form/URL elicitation (URL opens in the browser), cron inject, and
+  live workflow runs. `/mcp` shows ACP server status; exhausted retries
+  stay visible with Try Again; a Grok workflow or subagent keeps the
+  runtime from being reaped as idle.
+- SuperOne's own tools are preferred across harnesses. Cursor gets host
+  context on the first regular turn (including cold resumes); DeepSeek
+  keeps that guidance in a separate system section so a persona preset
+  cannot replace it.
+- Claude: a queued message can be steered as `next` instead of `now`.
+  `now` still cancels the in-flight tool; `next` parks the instruction in
+  the CLI queue and drains it at the next step boundary. Codex has no
+  non-aborting variant, so the IPC refuses `next` there rather than
+  silently running it as `now`.
+- Session goals are one surface. Codex, Grok and Claude share a
+  `session_goal` event, one indicator and one dialog; Claude's `/goal`
+  condition — which had a Stop-hook but no UI — is on that surface, with
+  evaluator count and the latest unmet reason in the popover.
+- Sidebar: the Pinned section follows the selected host. A node too old
+  to know the method shows an empty section rather than the local list
+  under a remote host's label.
+- Side chat no longer offers to maximize over the thread it forked from,
+  and opening one pins the activity panel to its floor. The previous
+  width is restored when the tab actually closes, unless the sash was
+  dragged in between.
+- Portable chat carries session-aware footers and file chips. Compact
+  and turn-meta markers no longer print as raw text on mobile, and a
+  dropped connection no longer leaves the last turn spinning.
+- Remote Control notifies paired phones when a project's session list
+  changes, so the workspace drawer re-reads only the project it is
+  looking at.
+- Remote Control: projects and sessions live in one workspace drawer.
+  Edge-swipe opens it; session rows match the desktop sidebar (pin /
+  hide / delete by swipe, nested collab children, host-side search,
+  a cross-project pinned section). The composer closes the slash-command
+  loop, browses `@` by a trailing `/`, mentions sessions, lists `/mcp`
+  servers and `/workflows` runs, and delivers slash-command output
+  instead of dropping it. Theme and language persist on the device;
+  the native shell is localized in English and Chinese. Codex voice
+  transcripts reach the phone. Additional folders report from a status
+  chip; add-dir scope is a fixed pair of buttons with Session accented.
+  Mention artwork is cached on the device by content hash.
+
+### Fixed
+
+- Variant storage: alpha and dev no longer share personal or project
+  data with stable. Memories, apps, credentials and harness installs
+  live under `.superone/alpha` or `.superone/dev`; remote alpha uses
+  `superone-alpha.service` and port 7790. Existing alpha data is not
+  migrated — copy what you need into the new roots and rename
+  `harness-alpha` to `alpha/harness`.
+- Codex: answering an async question steers the live turn instead of
+  waiting in the next-turn queue, and the answered state is persisted
+  only after acceptance.
+- Codex: Fast mode survives session switches, draft first-send, and
+  restore. Turn token totals no longer shrink when the completion event
+  races the run IPC result.
+- Collaboration inbox notices moved to a status-bar popover of unread
+  mail. Transcript notices were misleading once the agent had already
+  retrieved the mailbox.
+- Chat: the compacting timer is session state, so switching away and
+  back no longer restarts it from zero. Built-in media artifacts resolve
+  after Markdown parsing. Workflow phase details fill in after titles
+  when Grok's snapshot only carries title+state.
+- Device control: agent text bypasses the guest input method —
+  accessibility on iOS, clipboard on Android — so Pinyin no longer
+  mangles injected ASCII. Control characters still go as keys.
+- Sidebar: a collapsed project stays collapsed when switching to a row
+  it still shows. The selected row is darker in dark glass mode. The
+  projects header sits on the shared gutter.
+- Goal: a live snapshot no longer replaces text the user is editing, and
+  unchanged projections are not re-broadcast to every paired phone.
+- Remote Control: connection status stays in the header or sidebar
+  instead of duplicating into a page-level row. Mention rows are one
+  line; the composer's close button and mention overlay no longer spend
+  a row on secondary controls; effort-chip layout slack after the
+  easter-egg painters is gone.
+
+### Changed
+
+- Mention rows on mobile rank, group and highlight the way the desktop
+  does, including greyed-out capabilities the host has switched off.
+
+### Tests
+
+- Mobile composer overlays have a component harness, a preview page, and
+  passing iOS suggestion flows. The goal reducer follows the
+  `session_goal` rename.
+
+### CI
+
+- macOS signing owns its keychain instead of handing `CSC_LINK` to
+  electron-builder, which was passing the certificate password where
+  `security` wanted the keychain password.
 
 ## [0.62.2-alpha] - 2026-09-07
 

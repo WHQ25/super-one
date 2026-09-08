@@ -12,6 +12,7 @@ import {
   XAI_SCHEDULED_TASK_DELETED,
   XAI_SCHEDULED_TASK_FIRED,
   XAI_SCHEDULED_TASK_INJECT_PROMPT,
+  XAI_SESSION_INTERJECTION,
   XAI_SESSION_NOTIFICATION,
   XAI_SESSION_UPDATE,
   XAI_TASK_BACKGROUNDED,
@@ -177,6 +178,23 @@ export function mapXaiStandaloneNotification(
     case XAI_SCHEDULED_TASK_INJECT_PROMPT:
     case XAI_MCP_ELICIT_COMPLETE:
       return []
+    case XAI_SESSION_INTERJECTION: {
+      const text = strField(params, 'text', 'text')
+      if (!text) return []
+      const id = strField(params, 'interjectionId', 'interjection_id')
+        ?? `interject_${Date.now().toString(36)}`
+      return [{
+        type: 'user_message_appended',
+        message: {
+          id,
+          role: 'user',
+          status: 'complete',
+          content: [{ type: 'text', text }],
+          createdAt: new Date().toISOString(),
+          providerId: 'local',
+        },
+      }]
+    }
     default:
       log.debug('[acp-xai] ignore standalone method=%s', method)
       return []

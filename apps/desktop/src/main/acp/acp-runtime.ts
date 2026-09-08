@@ -76,6 +76,20 @@ import {
   type GrokScheduledTaskInject,
 } from './acp-xai-extensions'
 import {
+  XAI_COMPACT_CONVERSATION,
+  XAI_INTERJECT,
+  XAI_REWIND_EXECUTE,
+  XAI_REWIND_POINTS,
+  XAI_SESSION_INTERJECTION,
+  buildGrokInterjectParams,
+  parseGrokRewindExecute,
+  parseGrokRewindPoints,
+  parseGrokSessionInterjection,
+  type GrokRewindExecuteResult,
+  type GrokRewindMode,
+  type GrokRewindPoint,
+} from './acp-xai-session-ops'
+import {
   XAI_EXT_NOTIFICATION_METHODS,
   XAI_SESSION_NOTIFICATION,
   XAI_SESSION_UPDATE,
@@ -203,6 +217,15 @@ export interface AcpRuntime {
   ): Promise<void>
   cancel(): Promise<void>
   close(): Promise<void>
+  /** Mid-turn insert. Queues into the live turn at the next safe point. */
+  interject(text: string, interjectionId?: string, images?: ImageAttachment[]): Promise<void>
+  compactConversation(userContext?: string): Promise<void>
+  rewindPoints(): Promise<GrokRewindPoint[]>
+  rewindExecute(opts: {
+    targetPromptIndex: number
+    mode: GrokRewindMode
+    force?: boolean
+  }): Promise<GrokRewindExecuteResult>
 }
 
 export interface AcpRuntimeOptions {
@@ -214,6 +237,12 @@ export interface AcpRuntimeOptions {
   consentNotice?: AcpConsentNoticeGate
   mcpElicit?: AcpMcpElicitGate
   scheduledTaskInject?: AcpScheduledTaskInjectGate
+  /** Agent-broadcast mid-turn insert from another client (or our own echo). */
+  onSessionInterjection?: (payload: {
+    sessionId?: string
+    text: string
+    interjectionId?: string
+  }) => void
   /** Inject stream (in-process agent) instead of spawning a process. */
   streamFactory?: (launch: ResolvedAcpLaunch) => Promise<{ stream: Stream; dispose: () => void }>
   /** Called as soon as a model catalog is known (e.g. after initialize, before session/new). */
@@ -432,6 +461,11 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
             }
           }
         }
+      }
+      if (bare === XAI_SESSION_INTERJECTION) {
+        const payload = parseGrokSessionInterjection(ctx.params)
+        if (payload) opts.onSessionInterjection?.(payload)
+        return
       }
       const events = mapXaiStandaloneNotification(
         method,
@@ -1347,6 +1381,36 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         log.warn('[acp-runtime] no agent stop %dms after cancel — settling turn locally', fallbackMs)
         waiter('cancelled')
       }, fallbackMs).unref?.()
+    },
+    async interject(text, interjectionId, images) {
+      const params = buildGrokInterjectParams(
+        activeSession.sessionId,
+        text,
+        interjectionId,
+        images,
+      )
+      await activeConnection.agent.request(xaiExtWireMethod(XAI_INTERJECT), params)
+    },
+    async compactConversation(userContext) {
+      await activeConnection.agent.request(xaiExtWireMethod(XAI_COMPACT_CONVERSATION), {
+        sessionId: activeSession.sessionId,
+        ...(userContext ? { userContext } : {}),
+      })
+    },
+    async rewindPoints() {
+      const raw = await activeConnection.agent.request(xaiExtWireMethod(XAI_REWIND_POINTS), {
+        sessionId: activeSession.sessionId,
+      })
+      return parseGrokRewindPoints(raw)
+    },
+    async rewindExecute(input) {
+      const raw = await activeConnection.agent.request(xaiExtWireMethod(XAI_REWIND_EXECUTE), {
+        sessionId: activeSession.sessionId,
+        targetPromptIndex: input.targetPromptIndex,
+        force: input.force !== false,
+        mode: input.mode,
+      })
+      return parseGrokRewindExecute(raw)
     },
     async close() {
       pumping = false

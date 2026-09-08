@@ -59,20 +59,17 @@ describe('buildSessionMenuItems fork capability gate', () => {
       .map((e) => e.id)
   }
 
-  it('offers both fork modes on a harness that can fork', () => {
-    expect(idsFor({ ...base, provider: 'claude' })).toEqual(
+  it.each(['claude', 'acp'] as const)('offers both fork modes on %s', (provider) => {
+    expect(idsFor({ ...base, provider })).toEqual(
       expect.arrayContaining(['forkWorktree', 'forkLocal']),
     )
   })
 
-  it.each(['acp', 'cursor'] as const)(
-    'hides fork on %s, whose adapter returns a session the agent never saw',
-    (provider) => {
-      const ids = idsFor({ ...base, provider })
-      expect(ids).not.toContain('forkWorktree')
-      expect(ids).not.toContain('forkLocal')
-    },
-  )
+  it('hides fork on cursor, whose adapter returns a session the agent never saw', () => {
+    const ids = idsFor({ ...base, provider: 'cursor' })
+    expect(ids).not.toContain('forkWorktree')
+    expect(ids).not.toContain('forkLocal')
+  })
 
   it('keeps fork on a legacy row that never recorded its harness', () => {
     const { provider: _dropped, ...noProvider } = base

@@ -411,6 +411,10 @@ export function applyClaudeEventToRuntime(
       }
       return { ...runtime, messages }
     }
+    case 'user_message_appended': {
+      if (runtime.messages.some((message) => message.id === event.message.id)) return runtime
+      return { ...runtime, messages: [...runtime.messages, event.message] }
+    }
     case 'task_started': {
       if (!event.toolUseId) return runtime
       const tid = event.toolUseId

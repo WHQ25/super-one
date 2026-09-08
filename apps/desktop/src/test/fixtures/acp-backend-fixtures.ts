@@ -109,6 +109,16 @@ export function mockAcpRuntime(overrides?: Partial<AcpRuntime>): AcpRuntime {
     setPermissionMode: async () => {},
     cancel: async () => {},
     close: async () => {},
+    interject: async () => {},
+    compactConversation: async () => {},
+    rewindPoints: async () => [],
+    rewindExecute: async () => ({
+      success: true,
+      mode: 'all',
+      revertedFiles: [],
+      cleanFiles: [],
+      conflicts: [],
+    }),
     ...overrides,
   }
 }

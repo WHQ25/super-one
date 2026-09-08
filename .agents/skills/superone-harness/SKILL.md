@@ -54,9 +54,9 @@ File-level touchpoints for each row: `references/experiences.md`. Minimum event 
 | Todos | yes | no | plan entries → todo UI |
 | Subagents | yes | no | no |
 | Sandbox toggle | off/on/auto | folded into permission presets → selector returns `false` | none |
-| Compact | yes | yes | no |
+| Compact | yes | yes | yes (`x.ai/compact_conversation`) |
 | Recap | no | no | Grok extension |
-| Mid-turn steer | yes (`priority: now`) | yes | queue only |
+| Mid-turn steer | yes (`priority: now`) | yes | yes (`x.ai/interject`) |
 
 Flip `HARNESS_CAPABILITIES` only after the event is actually wired. Codex having no sandbox
 control is a deliverable, not a gap.

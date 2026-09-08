@@ -15,6 +15,11 @@ import {
   XAI_YOLO_MODE_CHANGED,
   xaiExtWireMethod,
 } from './acp-xai-extensions'
+import {
+  XAI_COMPACT_CONVERSATION,
+  XAI_INTERJECT,
+  XAI_REWIND_EXECUTE,
+} from './acp-xai-session-ops'
 import { setSuperoneMcpBridgeRuntime } from '../mcp/superone-mcp-stdio-state'
 import { deriveSuperoneMcpSessionToken } from '../mcp/superone-mcp-auth'
 import { ACP_SYSTEM_PROMPT_BLOCK } from '../agent/superone-system-prompt'
@@ -26,6 +31,9 @@ import type { AgentEvent } from '@superone/shared/agent-types'
 const XAI_RECAP_WIRE = xaiExtWireMethod(XAI_RECAP)
 const XAI_YOLO_MODE_CHANGED_WIRE = xaiExtWireMethod(XAI_YOLO_MODE_CHANGED)
 const XAI_CONSENT_RECORD_WIRE = xaiExtWireMethod(XAI_CONSENT_RECORD)
+const XAI_INTERJECT_WIRE = xaiExtWireMethod(XAI_INTERJECT)
+const XAI_COMPACT_WIRE = xaiExtWireMethod(XAI_COMPACT_CONVERSATION)
+const XAI_REWIND_EXECUTE_WIRE = xaiExtWireMethod(XAI_REWIND_EXECUTE)
 
 vi.mock('../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
@@ -226,6 +234,58 @@ describe('createAcpRuntime (in-process agent)', () => {
     expect(runtime.isSessionRecapAvailable()).toBe(true)
     await runtime.requestRecap(true)
     expect(recapCalls).toEqual([{ sessionId: 'recap-session', auto: true }])
+    await runtime.close()
+  })
+
+  it('sends interject / compact / rewind execute on the _x.ai wire', async () => {
+    const calls: Array<{ method: string; params: Record<string, unknown> }> = []
+    const agentApp = agent({ name: 'ops-agent' })
+      .onRequest(methods.agent.initialize, async () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: {},
+      }))
+      .onRequest(methods.agent.session.new, async () => ({ sessionId: 'ops-session' }))
+      .onRequest(methods.agent.session.prompt, async () => ({ stopReason: 'end_turn' as const }))
+      .onNotification(methods.agent.session.cancel, async () => {})
+      .onRequest(XAI_INTERJECT_WIRE, (raw: unknown) => raw, async (ctx) => {
+        calls.push({ method: 'interject', params: ctx.params as Record<string, unknown> })
+        return { status: 'queued' }
+      })
+      .onRequest(XAI_COMPACT_WIRE, (raw: unknown) => raw, async (ctx) => {
+        calls.push({ method: 'compact', params: ctx.params as Record<string, unknown> })
+        return {}
+      })
+      .onRequest(XAI_REWIND_EXECUTE_WIRE, (raw: unknown) => raw, async (ctx) => {
+        calls.push({ method: 'rewind', params: ctx.params as Record<string, unknown> })
+        return { success: true, mode: 'conversation_only', revertedFiles: [], cleanFiles: [], conflicts: [] }
+      })
+    const clientToAgent = new TransformStream<Uint8Array>()
+    const agentToClient = new TransformStream<Uint8Array>()
+    agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
+    const clientStream = ndJsonStream(clientToAgent.writable, agentToClient.readable)
+    const runtime = await createAcpRuntime({
+      launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+      streamFactory: async () => ({
+        stream: clientStream,
+        dispose: () => {
+          try { void clientToAgent.writable.close().catch(() => undefined) } catch { /* */ }
+          try { void agentToClient.writable.close().catch(() => undefined) } catch { /* */ }
+        },
+      }),
+    })
+    await runtime.interject('steer left', 'i1')
+    await runtime.compactConversation('keep auth')
+    const rewind = await runtime.rewindExecute({ targetPromptIndex: 2, mode: 'conversation_only' })
+    expect(rewind.success).toBe(true)
+    expect(calls).toEqual([
+      { method: 'interject', params: { sessionId: 'ops-session', text: 'steer left', interjectionId: 'i1' } },
+      { method: 'compact', params: { sessionId: 'ops-session', userContext: 'keep auth' } },
+      {
+        method: 'rewind',
+        params: { sessionId: 'ops-session', targetPromptIndex: 2, force: true, mode: 'conversation_only' },
+      },
+    ])
     await runtime.close()
   })
 

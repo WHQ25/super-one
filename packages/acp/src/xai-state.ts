@@ -25,6 +25,7 @@ export const XAI_SCHEDULED_TASK_INJECT_PROMPT = 'x.ai/scheduled_task_inject_prom
 export const XAI_MCP_ELICIT = 'x.ai/mcp/elicit'
 export const XAI_MCP_ELICIT_COMPLETE = 'x.ai/mcp/elicit_complete'
 export const XAI_SETTINGS_UPDATE = 'x.ai/settings/update'
+export const XAI_SESSION_INTERJECTION = 'x.ai/session/interjection'
 
 export const SUBAGENT_LIFECYCLE = new Set([
   'subagent_spawned',
@@ -55,6 +56,8 @@ export const XAI_EXT_NOTIFICATION_METHODS = [
   `_${XAI_MCP_ELICIT_COMPLETE}`,
   XAI_SETTINGS_UPDATE,
   `_${XAI_SETTINGS_UPDATE}`,
+  XAI_SESSION_INTERJECTION,
+  `_${XAI_SESSION_INTERJECTION}`,
 ] as const
 
 // ── Correlation state ───────────────────────────────────────────────────────

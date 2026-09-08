@@ -2199,14 +2199,16 @@ export class AgentService {
         : this.sessionManager?.getActiveSession(projectPath)
       if (!session || session.snapshot.projectPath !== projectPath) return false
       const harnessId = session.snapshot.harnessId
-      if (harnessId !== 'claude' && harnessId !== 'codex') return false
+      if (harnessId !== 'claude' && harnessId !== 'codex' && harnessId !== 'acp') return false
       // `priority` is Claude-only: Codex's Core queue item has no non-aborting
       // variant, so a `next` request there would silently behave like `now`.
       if (harnessId === 'codex' && priority === 'next') return false
       await session.dispatchBackendCommand(
         harnessId === 'claude'
           ? { kind: 'claude.steer_queued', clientMessageId, priority: priority ?? 'now' }
-          : { kind: 'codex.steer_queued', clientMessageId },
+          : harnessId === 'acp'
+            ? { kind: 'acp.steer_queued', clientMessageId }
+            : { kind: 'codex.steer_queued', clientMessageId },
       )
       return true
     })
@@ -2464,7 +2466,7 @@ export class AgentService {
     ipcMain.handle(AgentIpcChannels.REWIND_CODE_AND_CHAT, async (_event, projectPath: string, userMessageId: string) => {
       const session = this.sessionManager?.getActiveSession(projectPath)
       if (!session) return { canRewind: false, error: 'No active session' }
-      return session.rewindFiles(userMessageId)
+      return session.rewindFiles(userMessageId, { includeConversation: true })
     })
 
     ipcMain.handle(AgentIpcChannels.REWIND_CONVERSATION, async (_event, projectPath: string, userMessageId: string) => {

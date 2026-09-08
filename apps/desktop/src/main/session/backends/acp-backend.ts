@@ -62,7 +62,13 @@ import {
   taskNotificationRequest,
 } from '../task-notification-queue'
 import { QueuedUserMessageQueue } from '../queued-user-message-queue'
-import type { BackendStartOptions, HarnessId, SessionBackend, TaskNotificationInjectResult } from '../types'
+import type { BackendCommand, BackendStartOptions, HarnessId, SessionBackend, TaskNotificationInjectResult } from '../types'
+import {
+  parseGrokCompactSlash,
+  rewindPreviewFromPoints,
+  rewindResultFromExecute,
+  type GrokRewindMode,
+} from '../../acp/acp-xai-session-ops'
 
 export interface AcpBackendConfig {
   agentId?: string
@@ -150,7 +156,7 @@ export class AcpBackend implements SessionBackend {
   private config: AcpBackendConfig = {}
   private runtime: AcpRuntime | null = null
   private activePrompt: Promise<void> | null = null
-  /** ACP has no steer — mid-turn user messages run as their own turn afterwards. */
+  /** Fallback when `x.ai/interject` is unavailable — extra turn after the live one. */
   private readonly pendingQueued = new QueuedUserMessageQueue({
     isBusy: () => this.isTurnBusy(),
     isAlive: () => this.started && !this.disposed,
@@ -207,6 +213,10 @@ export class AcpBackend implements SessionBackend {
   private cronTaskIds = new Set<string>()
   /** Live Grok background work (workflow / subagent / monitor / scheduled / bash). */
   private liveBackgroundTaskIds = new Set<string>()
+  /** Client-minted ids so the `x.ai/session/interjection` echo is not painted twice. */
+  private readonly selfInterjectionIds = new Set<string>()
+  /** True while a host `/compact` RPC is in flight (Grok may also emit auto_compact_*). */
+  private compactingManual = false
 
   private modelConfigId: string | null = null
   private modeConfigId: string | null = null
@@ -670,6 +680,7 @@ export class AcpBackend implements SessionBackend {
         scheduledTaskInject: {
           request: (payload) => this.handleScheduledTaskInject(payload),
         },
+        onSessionInterjection: (payload) => this.handleSessionInterjection(payload),
         onModelConfig: (cfg) => {
           // Early model discovery (initialize) before session/new configOptions land.
           this.emitModels(cfg, agentId, epoch)
@@ -728,6 +739,9 @@ export class AcpBackend implements SessionBackend {
 
   private routeSessionEvent(event: AgentEvent, agentId: string | null, epoch: number): void {
     if (epoch !== this.runtimeEpoch) return
+    if (event.type === 'compact_boundary' || (event.type === 'status_indicator' && event.compactResult)) {
+      this.compactingManual = false
+    }
     if (event.type === 'session_recap') {
       // Stop further auto recap attempts for this session's away period.
       const sid = this.startOpts?.sessionId?.trim()
@@ -1001,7 +1015,7 @@ export class AcpBackend implements SessionBackend {
 
   /**
    * Mid-turn queue only. Idle synthetic turns are owned by Session.send.
-   * ACP has no mid-turn inject / steer.
+   * User-typed mid-turn follow-ups use `x.ai/interject`; host wakes stay queued.
    */
   async injectTaskNotification(content: string): Promise<TaskNotificationInjectResult> {
     if (!this.started || this.disposed) return 'deferred'
@@ -1023,12 +1037,122 @@ export class AcpBackend implements SessionBackend {
     return this.currentMessageId !== null || this.activePrompt !== null
   }
 
+  private handleSessionInterjection(payload: {
+    sessionId?: string
+    text: string
+    interjectionId?: string
+  }): void {
+    if (payload.interjectionId && this.selfInterjectionIds.has(payload.interjectionId)) {
+      this.selfInterjectionIds.delete(payload.interjectionId)
+      return
+    }
+    const id = payload.interjectionId ?? `interject_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
+    this.emit({
+      type: 'user_message_appended',
+      message: {
+        id,
+        role: 'user',
+        status: 'complete',
+        content: [{ type: 'text', text: payload.text }],
+        createdAt: new Date().toISOString(),
+        providerId: 'local',
+      },
+    })
+  }
+
+  /**
+   * Sync false when this is not a mid-turn follow-up — callers must not `await`
+   * that path, or `interrupt()` can win the race and get overwritten by
+   * `this.interrupted = false` on a new prompt.
+   */
+  private tryInterjectWhileBusy(request: SendMessageRequest): Promise<boolean> | false {
+    if (request.priority !== 'next' && request.priority !== 'later' && request.priority !== 'now') {
+      return false
+    }
+    if (!this.isTurnBusy()) return false
+    return this.interjectRequest(request)
+  }
+
+  private async interjectRequest(request: SendMessageRequest): Promise<boolean> {
+    const runtime = this.runtime
+    if (!runtime?.interject) return false
+    const id = request.clientMessageId ?? `interject_${Date.now().toString(36)}`
+    this.selfInterjectionIds.add(id)
+    try {
+      await runtime.interject(request.content, id, request.images)
+    } catch (err) {
+      this.selfInterjectionIds.delete(id)
+      log.warn('[AcpBackend] x.ai/interject failed — falling back to queue:', err)
+      return false
+    }
+    if (request.clientMessageId) {
+      this.emit({ type: 'queued_message_consumed', clientMessageId: request.clientMessageId })
+    }
+    return true
+  }
+
+  private async compactNow(userContext?: string): Promise<void> {
+    const runtime = await this.ensureRuntime()
+    const usage = await runtime.getContextUsage().catch(() => null)
+    this.compactingManual = true
+    this.emit({ type: 'status_indicator', indicator: 'compacting' })
+    try {
+      await runtime.compactConversation(userContext)
+      if (this.compactingManual) {
+        this.emit({
+          type: 'compact_boundary',
+          trigger: 'manual',
+          preTokens: usage?.totalTokens ?? 0,
+        })
+        this.emit({ type: 'status_indicator', indicator: null, compactResult: 'success' })
+      }
+    } catch (err) {
+      this.emit({
+        type: 'status_indicator',
+        indicator: null,
+        compactResult: 'failed',
+        compactError: err instanceof Error ? err.message : String(err),
+      })
+    } finally {
+      this.compactingManual = false
+    }
+  }
+
+  private async rewindAtPromptIndex(
+    index: number,
+    mode: GrokRewindMode,
+    dryRun: boolean,
+  ): Promise<RewindFilesResult> {
+    try {
+      const runtime = await this.ensureRuntime()
+      if (dryRun) {
+        const points = await runtime.rewindPoints()
+        return rewindPreviewFromPoints(points, index)
+      }
+      const result = await runtime.rewindExecute({ targetPromptIndex: index, mode, force: true })
+      return rewindResultFromExecute(result)
+    } catch (err) {
+      return {
+        canRewind: false,
+        supportsCodeOnly: true,
+        error: err instanceof Error ? err.message : String(err),
+      }
+    }
+  }
+
   private flushPendingTaskNotifications(): void {
     this.taskNotificationFlush.flush()
   }
 
   async send(request: SendMessageRequest): Promise<void> {
     if (!this.started || this.disposed) throw new Error('AcpBackend not started')
+    const compact = parseGrokCompactSlash(request.content)
+    if (compact) {
+      await this.compactNow(compact.userContext)
+      return
+    }
+    const interject = this.tryInterjectWhileBusy(request)
+    if (interject !== false && await interject) return
     if (this.pendingQueued.intercept(request)) return
     const messageId = request.assistantMessageId
       ?? `acp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
@@ -1047,6 +1171,10 @@ export class AcpBackend implements SessionBackend {
       },
     })
     this.emit({ type: 'status_change', status: 'streaming' })
+    const checkpointId = request.clientMessageId
+    if (checkpointId) {
+      this.emit({ type: 'checkpoint_captured', messageId, checkpointId })
+    }
 
     let emittedTerminal = false
     const onEvent = (event: AgentEvent) => {
@@ -1438,8 +1566,35 @@ export class AcpBackend implements SessionBackend {
     return []
   }
 
-  async rewindFiles(_userMessageId: string, _opts?: { dryRun?: boolean }): Promise<RewindFilesResult> {
-    return { canRewind: false, error: 'ACP harness does not support rewind yet' }
+  async rewindFiles(userMessageId: string, opts?: { dryRun?: boolean; includeConversation?: boolean }): Promise<RewindFilesResult> {
+    const index = Number.parseInt(userMessageId, 10)
+    if (!Number.isFinite(index) || index < 0) {
+      return { canRewind: false, error: 'Grok prompt boundary not found' }
+    }
+    const mode: GrokRewindMode = opts?.includeConversation ? 'all' : 'files_only'
+    return this.rewindAtPromptIndex(index, mode, opts?.dryRun === true)
+  }
+
+  async rewindConversation(beforeTurnId: string): Promise<RewindFilesResult> {
+    const index = Number.parseInt(beforeTurnId, 10)
+    if (!Number.isFinite(index) || index < 0) {
+      return { canRewind: false, error: 'Grok prompt boundary not found' }
+    }
+    return this.rewindAtPromptIndex(index, 'conversation_only', false)
+  }
+
+  async handleCommand(cmd: BackendCommand): Promise<void> {
+    if (cmd.kind !== 'acp.steer_queued') return
+    if (!this.isTurnBusy()) throw new Error('Queued message can only steer an active ACP turn')
+    const taken = this.pendingQueued.take(cmd.clientMessageId)
+    if (!taken) throw new Error(`Queued ACP message not found: ${cmd.clientMessageId}`)
+    try {
+      const ok = await this.interjectRequest(taken.request)
+      if (!ok) throw new Error('Grok interject is unavailable')
+    } catch (err) {
+      this.pendingQueued.restore(taken)
+      throw err
+    }
   }
 
   async reconnectMcp(_serverName: string): Promise<void> {}

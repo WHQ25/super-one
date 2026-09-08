@@ -23,15 +23,13 @@ import { acpStartOpts, mockAcpRuntime } from '../../../test/fixtures/acp-backend
 interface PromptCall {
   text: string
   messageId: string
-  /** Ends this turn the way the agent would. */
   finish: () => void
 }
 
-/**
- * Runtime whose turns stay open until the test ends them, so a queued send
- * lands while a prompt is genuinely in flight.
- */
-function manualTurnRuntime(calls: PromptCall[]) {
+function manualTurnRuntime(
+  calls: PromptCall[],
+  extras?: { interject?: (text: string, id?: string) => Promise<void> },
+) {
   return mockAcpRuntime({
     prompt: async (text, messageId, onEvent) => {
       await new Promise<void>((resolve) => {
@@ -46,11 +44,15 @@ function manualTurnRuntime(calls: PromptCall[]) {
         })
       })
     },
+    ...(extras?.interject ? { interject: extras.interject } : {}),
   })
 }
 
-async function startBackend(calls: PromptCall[]) {
-  setAcpRuntimeFactory(async () => manualTurnRuntime(calls))
+async function startBackend(
+  calls: PromptCall[],
+  extras?: { interject?: (text: string, id?: string) => Promise<void> },
+) {
+  setAcpRuntimeFactory(async () => manualTurnRuntime(calls, extras))
   const backend = new AcpBackend()
   const events: AgentEvent[] = []
   backend.onEvent((e) => events.push(e))
@@ -61,7 +63,7 @@ async function startBackend(calls: PromptCall[]) {
 const messageStarts = (events: AgentEvent[]): string[] =>
   events.filter((e) => e.type === 'message_start').map((e) => (e as { message: { id: string } }).message.id)
 
-describe('AcpBackend queued send', () => {
+describe('AcpBackend queued send / interject', () => {
   beforeEach(() => {
     setAcpRuntimeFactory(async () => mockAcpRuntime())
   })
@@ -70,54 +72,54 @@ describe('AcpBackend queued send', () => {
     setAcpRuntimeFactory(null)
   })
 
-  it('holds a queued message instead of prompting concurrently mid-turn', async () => {
+  it('interjects a mid-turn follow-up instead of prompting concurrently', async () => {
     const calls: PromptCall[] = []
-    const { backend, events } = await startBackend(calls)
+    const interjects: Array<{ text: string; id?: string }> = []
+    const { backend, events } = await startBackend(calls, {
+      interject: async (text, id) => { interjects.push({ text, id }) },
+    })
 
     void backend.send({ content: 'first', assistantMessageId: 'a1' })
     await vi.waitFor(() => expect(calls).toHaveLength(1))
 
     await backend.send({ content: 'second', clientMessageId: 'u2', priority: 'next' })
 
-    // A second concurrent session/prompt is what makes Grok cancel the live turn.
     expect(calls).toHaveLength(1)
+    expect(interjects).toEqual([{ text: 'second', id: 'u2' }])
     expect(messageStarts(events)).toEqual(['a1'])
-    expect(events.some((e) => e.type === 'queued_message_consumed')).toBe(false)
+    const consumed = events.filter((e) => e.type === 'queued_message_consumed')
+    expect(consumed).toHaveLength(1)
+    expect((consumed[0] as { clientMessageId: string }).clientMessageId).toBe('u2')
 
     calls[0].finish()
     await backend.close()
   })
 
-  it('consumes the queued message as its own turn once the live turn ends', async () => {
+  it('falls back to a queued extra turn when interject is unavailable', async () => {
     const calls: PromptCall[] = []
-    const { backend, events } = await startBackend(calls)
+    const { backend, events } = await startBackend(calls, {
+      interject: async () => { throw new Error('method not found') },
+    })
 
     void backend.send({ content: 'first', assistantMessageId: 'a1' })
     await vi.waitFor(() => expect(calls).toHaveLength(1))
     await backend.send({ content: 'second', clientMessageId: 'u2', priority: 'next' })
 
+    expect(calls).toHaveLength(1)
+    expect(events.some((e) => e.type === 'queued_message_consumed')).toBe(false)
+
     calls[0].finish()
     await vi.waitFor(() => expect(calls).toHaveLength(2))
-
     expect(calls[1].text).toContain('second')
-    // Session appends the user bubble only when this event lands.
     const consumed = events.filter((e) => e.type === 'queued_message_consumed')
     expect(consumed).toHaveLength(1)
     expect((consumed[0] as { clientMessageId: string }).clientMessageId).toBe('u2')
-    // The queued turn opens its own assistant bubble, after the first one.
-    const starts = messageStarts(events)
-    expect(starts).toHaveLength(2)
-    expect(starts[0]).toBe('a1')
-    expect(starts[1]).not.toBe('a1')
 
     calls[1].finish()
     await backend.close()
   })
 
   it('still reports consumption when the turn settled before the queued send arrived', async () => {
-    // Session decides `priority: 'next'` from its own streaming flag, which can
-    // lag the backend by a tick. Without the consumed event the user bubble
-    // would never leave Session's pending map.
     const calls: PromptCall[] = []
     const { backend, events } = await startBackend(calls)
 
@@ -134,7 +136,9 @@ describe('AcpBackend queued send', () => {
 
   it('drops a queued message that is dequeued before the turn ends', async () => {
     const calls: PromptCall[] = []
-    const { backend, events } = await startBackend(calls)
+    const { backend, events } = await startBackend(calls, {
+      interject: async () => { throw new Error('method not found') },
+    })
 
     void backend.send({ content: 'first', assistantMessageId: 'a1' })
     await vi.waitFor(() => expect(calls).toHaveLength(1))
@@ -152,7 +156,9 @@ describe('AcpBackend queued send', () => {
 
   it('discards queued messages when the turn is interrupted', async () => {
     const calls: PromptCall[] = []
-    const { backend, events } = await startBackend(calls)
+    const { backend, events } = await startBackend(calls, {
+      interject: async () => { throw new Error('method not found') },
+    })
 
     void backend.send({ content: 'first', assistantMessageId: 'a1' })
     await vi.waitFor(() => expect(calls).toHaveLength(1))

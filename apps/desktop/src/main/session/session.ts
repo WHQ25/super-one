@@ -49,6 +49,7 @@ import { resolveDeviceControlConfirm, rejectDeviceControlConfirm } from '../devi
 import { nextEventSeq } from './event-seq'
 import { notifySessionRecapForeground, notifySessionRecapSessionRemoved } from '../acp/acp-recap-focus'
 import { asEffortLevel } from '../acp/acp-config'
+import { grokPromptIndexForUserMessage } from '../acp/acp-xai-session-ops'
 import { collectChangedMessageIds } from './message-dirty'
 import { messageDialectFor } from './message-dialect'
 import {
@@ -1099,7 +1100,14 @@ export class Session implements SessionContract {
     return this.backend.authenticateMcp(serverName)
   }
 
-  async rewindFiles(userMessageId: string, opts?: { dryRun?: boolean }): Promise<RewindFilesResult> {
+  async rewindFiles(userMessageId: string, opts?: { dryRun?: boolean; includeConversation?: boolean }): Promise<RewindFilesResult> {
+    if (this.harnessId === 'acp') {
+      const index = grokPromptIndexForUserMessage(this._messages, userMessageId)
+      if (index == null) return { canRewind: false, error: 'Grok prompt boundary not found' }
+      await this.ensureStarted()
+      this.touchRuntimeActivity()
+      return this.backend.rewindFiles(String(index), opts)
+    }
     if (!this.backendStarted) return { canRewind: false, error: 'No active session' }
     this.touchRuntimeActivity()
     return this.backend.rewindFiles(userMessageId, opts)
@@ -1107,6 +1115,15 @@ export class Session implements SessionContract {
 
   async rewindConversation(userMessageId: string): Promise<RewindFilesResult> {
     this.assertNotDisposed()
+    if (this.harnessId === 'acp') {
+      const index = grokPromptIndexForUserMessage(this._messages, userMessageId)
+      if (index == null) return { canRewind: false, error: 'Grok prompt boundary not found' }
+      await this.ensureStarted()
+      if (!this.backend.rewindConversation) {
+        return { canRewind: false, error: 'Conversation rewind is not supported by ACP' }
+      }
+      return this.backend.rewindConversation(String(index))
+    }
     if (this.harnessId !== 'codex') return { canRewind: true }
     const userIndex = this._messages.findIndex((message) => message.id === userMessageId)
     const turnId = userIndex >= 0
@@ -1332,6 +1349,14 @@ export class Session implements SessionContract {
       case 'claude.steer_queued': {
         if (this.harnessId !== 'claude' || !this.isStreaming()) {
           throw new Error('Queued message can only steer an active Claude turn')
+        }
+        if (!this.backend.handleCommand) throw new Error(`Session ${this.id} harness=${this.harnessId} does not support backend commands`)
+        await this.backend.handleCommand(cmd)
+        return
+      }
+      case 'acp.steer_queued': {
+        if (this.harnessId !== 'acp' || !this.isStreaming()) {
+          throw new Error('Queued message can only steer an active ACP turn')
         }
         if (!this.backend.handleCommand) throw new Error(`Session ${this.id} harness=${this.harnessId} does not support backend commands`)
         await this.backend.handleCommand(cmd)

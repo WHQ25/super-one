@@ -101,8 +101,13 @@ describe('who may open a side chat', () => {
     expect(resolveSideChatTarget()).toEqual({ projectPath: PROJECT, sessionId: 'sid' })
   })
 
-  it.each(['acp', 'cursor'] as const)('refuses %s, which has no transcript fork', (provider) => {
-    seed({ provider })
+  it('accepts acp now that x.ai/session/fork copies Grok transcript', () => {
+    seed({ provider: 'acp' })
+    expect(resolveSideChatTarget()).toEqual({ projectPath: PROJECT, sessionId: 'sid' })
+  })
+
+  it('refuses cursor, which has no transcript fork', () => {
+    seed({ provider: 'cursor' })
     expect(resolveSideChatTarget()).toBeNull()
   })
 

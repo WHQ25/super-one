@@ -1378,4 +1378,109 @@ describe('AcpBackend', () => {
     expect(createN).toBeGreaterThanOrEqual(2)
     await backend.close()
   })
+
+  it('intercepts /compact as x.ai/compact_conversation', async () => {
+    const compactCalls: Array<string | undefined> = []
+    setAcpRuntimeFactory(async () => mockRuntime({
+      compactConversation: async (ctx) => { compactCalls.push(ctx) },
+      prompt: async () => { throw new Error('prompt should not run') },
+    }))
+    const backend = new AcpBackend()
+    const events: AgentEvent[] = []
+    backend.onEvent((e) => events.push(e))
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await backend.send({ content: '/compact keep the auth notes' })
+    expect(compactCalls).toEqual(['keep the auth notes'])
+    expect(events.some((e) => e.type === 'status_indicator' && e.indicator === 'compacting')).toBe(true)
+    expect(events.some((e) => e.type === 'compact_boundary' && e.trigger === 'manual')).toBe(true)
+    expect(events.some((e) => e.type === 'message_start')).toBe(false)
+    await backend.close()
+  })
+
+  it('rewinds files via prompt index with files_only, all, and conversation_only', async () => {
+    const executes: Array<{ index: number; mode: string }> = []
+    setAcpRuntimeFactory(async () => mockRuntime({
+      rewindPoints: async () => [
+        { promptIndex: 1, hasFileChanges: true, numFileSnapshots: 2 },
+      ],
+      rewindExecute: async (input) => {
+        executes.push({ index: input.targetPromptIndex, mode: input.mode })
+        return {
+          success: true,
+          mode: input.mode,
+          revertedFiles: ['src/a.ts'],
+          cleanFiles: [],
+          conflicts: [],
+        }
+      },
+    }))
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    const preview = await backend.rewindFiles('1', { dryRun: true })
+    expect(preview.canRewind).toBe(true)
+    expect(preview.supportsCodeOnly).toBe(true)
+    expect(preview.filesChanged).toHaveLength(2)
+
+    const files = await backend.rewindFiles('1')
+    expect(files.canRewind).toBe(true)
+    const both = await backend.rewindFiles('1', { includeConversation: true })
+    expect(both.canRewind).toBe(true)
+    const chat = await backend.rewindConversation('1')
+    expect(chat.canRewind).toBe(true)
+    expect(executes).toEqual([
+      { index: 1, mode: 'files_only' },
+      { index: 1, mode: 'all' },
+      { index: 1, mode: 'conversation_only' },
+    ])
+    await backend.close()
+  })
+
+  it('paints a foreign x.ai/session/interjection and skips a self-originated echo', async () => {
+    let captured: AcpRuntimeOptions | undefined
+    let finishFirst!: () => void
+    setAcpRuntimeFactory(async (opts) => {
+      captured = opts
+      return mockRuntime({
+        interject: async () => {},
+        prompt: async (_text, messageId, onEvent) => {
+          await new Promise<void>((resolve) => {
+            finishFirst = () => {
+              onEvent({ type: 'message_complete', messageId })
+              onEvent({ type: 'status_change', status: 'idle' })
+              resolve()
+            }
+          })
+        },
+      })
+    })
+    const backend = new AcpBackend()
+    const events: AgentEvent[] = []
+    backend.onEvent((e) => events.push(e))
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    const first = backend.send({ content: 'first', assistantMessageId: 'a1' })
+    await vi.waitFor(() => expect(events.some((e) => e.type === 'message_start')).toBe(true))
+
+    captured!.onSessionInterjection!({ text: 'from another pane', interjectionId: 'foreign-1' })
+    const painted = events.filter((e) => e.type === 'user_message_appended')
+    expect(painted).toHaveLength(1)
+    expect((painted[0] as { message: { content: Array<{ text?: string }> } }).message.content[0].text)
+      .toBe('from another pane')
+
+    await backend.send({ content: 'steer', clientMessageId: 'self-1', priority: 'next' })
+    captured!.onSessionInterjection!({ text: 'steer', interjectionId: 'self-1' })
+    expect(events.filter((e) => e.type === 'user_message_appended')).toHaveLength(1)
+    finishFirst()
+    await first
+    await backend.close()
+  })
+
+  it('stamps checkpoint_captured on a real prompt', async () => {
+    const backend = new AcpBackend()
+    const events: AgentEvent[] = []
+    backend.onEvent((e) => events.push(e))
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await backend.send({ content: 'hello', clientMessageId: 'u1', assistantMessageId: 'a1' })
+    expect(events.some((e) => e.type === 'checkpoint_captured' && e.checkpointId === 'u1' && e.messageId === 'a1')).toBe(true)
+    await backend.close()
+  })
 })

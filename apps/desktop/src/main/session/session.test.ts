@@ -211,7 +211,16 @@ class FakeBackend implements SessionBackend {
     return this.getRateLimitsResult
   }
   async getMcpServerStatus() { return [] }
-  async rewindFiles() { return { canRewind: false } }
+  rewindFilesCalls: Array<{ id: string; opts?: { dryRun?: boolean; includeConversation?: boolean } }> = []
+  async rewindFiles(id: string, opts?: { dryRun?: boolean; includeConversation?: boolean }) {
+    this.rewindFilesCalls.push({ id, opts })
+    return { canRewind: true, supportsCodeOnly: true }
+  }
+  rewindConversationCalls: string[] = []
+  async rewindConversation(id: string) {
+    this.rewindConversationCalls.push(id)
+    return { canRewind: true, supportsCodeOnly: true }
+  }
   async reconnectMcp(): Promise<void> {}
   async toggleMcpServer(): Promise<void> {}
   async reloadMcpServers(): Promise<void> {}
@@ -2254,6 +2263,58 @@ describe('Session message accumulation', () => {
     await expect(session.dispatchBackendCommand({ kind: 'claude.steer_queued', clientMessageId: 'queued-1' }))
       .rejects.toThrow('active Claude turn')
     expect(backend.commandCalls).toHaveLength(0)
+  })
+
+  it('dispatchBackendCommand(acp.steer_queued) only forwards during an active ACP turn', async () => {
+    const { session, backend } = makeSession({ harnessId: 'acp' })
+    const pending = session.send({ content: 'first' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    backend.emit({ type: 'status_change', status: 'streaming' })
+
+    await session.dispatchBackendCommand({ kind: 'acp.steer_queued', clientMessageId: 'queued-1' })
+    expect(backend.commandCalls[0]).toEqual({ kind: 'acp.steer_queued', clientMessageId: 'queued-1' })
+
+    backend.resolveSend?.()
+    await pending
+  })
+})
+
+describe('Session ACP rewind', () => {
+  it('maps a checkpointed user message onto Grok prompt index before rewindFiles', async () => {
+    const { session, backend } = makeSession({
+      harnessId: 'acp',
+      initialMessages: [
+        {
+          id: 'u0', role: 'user', status: 'complete', content: [], createdAt: '',
+          providerId: 'local', checkpointId: 'u0',
+        },
+        {
+          id: 'a0', role: 'assistant', status: 'complete', content: [], createdAt: '',
+          providerId: 'local',
+        },
+        {
+          id: 'u1', role: 'user', status: 'complete', content: [], createdAt: '',
+          providerId: 'local', checkpointId: 'u1',
+        },
+      ],
+    })
+    const result = await session.rewindFiles('u1', { includeConversation: true })
+    expect(result.canRewind).toBe(true)
+    expect(backend.rewindFilesCalls).toEqual([{ id: '1', opts: { includeConversation: true } }])
+  })
+
+  it('maps conversation rewind onto Grok prompt index', async () => {
+    const { session, backend } = makeSession({
+      harnessId: 'acp',
+      initialMessages: [
+        {
+          id: 'u0', role: 'user', status: 'complete', content: [], createdAt: '',
+          providerId: 'local', checkpointId: 'u0',
+        },
+      ],
+    })
+    await session.rewindConversation('u0')
+    expect(backend.rewindConversationCalls).toEqual(['0'])
   })
 })
 

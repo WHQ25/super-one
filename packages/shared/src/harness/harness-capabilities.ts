@@ -147,15 +147,16 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     // ACP session/update plan entries map to todo_write-style UI events.
     supportsTodos: true,
     supportsSubagents: false,
-    supportsCompact: false,
+    // Host intercepts `/compact` → `x.ai/compact_conversation`.
+    supportsCompact: true,
     supportsStreamingToolInput: false,
-    supportsQueuedSteer: false,
-    supportsQueuedSteerSoon: false,
+    // Mid-turn send / queued steer → `x.ai/interject` (next safe point, no abort).
+    supportsQueuedSteer: true,
+    supportsQueuedSteerSoon: true,
     // session/new additionalDirectories, gated per agent capability.
     supportsAdditionalDirs: true,
-    // `session/fork` exists upstream but is UNSTABLE and unread here; the
-    // current adapter returns a fresh uuid the agent never saw.
-    supportsFork: false,
+    // Cold `x.ai/session/fork` copies Grok session files; SuperOne then resumes the child.
+    supportsFork: true,
     // Grok only — see `resolveGoalCapability`. The agent owns the loop and
     // reports back over `goal_updated`; the host just posts `/goal …` lines.
     goal: {

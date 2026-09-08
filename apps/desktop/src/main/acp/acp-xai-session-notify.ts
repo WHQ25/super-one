@@ -35,6 +35,7 @@ export const XAI_SCHEDULED_TASK_DELETED = 'x.ai/scheduled_task_deleted'
 export const XAI_SCHEDULED_TASK_INJECT_PROMPT = 'x.ai/scheduled_task_inject_prompt'
 export const XAI_MCP_ELICIT_COMPLETE = 'x.ai/mcp/elicit_complete'
 export const XAI_SETTINGS_UPDATE = 'x.ai/settings/update'
+export const XAI_SESSION_INTERJECTION = 'x.ai/session/interjection'
 
 const SUBAGENT_LIFECYCLE = new Set([
   'subagent_spawned',
@@ -65,6 +66,8 @@ export const XAI_EXT_NOTIFICATION_METHODS = [
   `_${XAI_MCP_ELICIT_COMPLETE}`,
   XAI_SETTINGS_UPDATE,
   `_${XAI_SETTINGS_UPDATE}`,
+  XAI_SESSION_INTERJECTION,
+  `_${XAI_SESSION_INTERJECTION}`,
 ] as const
 
 // ── Correlation state ───────────────────────────────────────────────────────
@@ -634,6 +637,7 @@ export function mapXaiStandaloneNotification(
       return mapScheduledTaskDeleted(params, state)
     case XAI_SCHEDULED_TASK_INJECT_PROMPT:
     case XAI_MCP_ELICIT_COMPLETE:
+    case XAI_SESSION_INTERJECTION:
       // Driver-side: runtime/backend consume these; they are not transcript events.
       return []
     default:

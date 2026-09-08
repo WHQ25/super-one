@@ -9,7 +9,10 @@ describe('HARNESS_CAPABILITIES', () => {
     expect(acp.supportsTodos).toBe(true)
     // Not yet: host enter-plan does not require subagents/compact flags.
     expect(acp.supportsSubagents).toBe(false)
-    expect(acp.supportsCompact).toBe(false)
+    expect(acp.supportsCompact).toBe(true)
+    expect(acp.supportsQueuedSteer).toBe(true)
+    expect(acp.supportsQueuedSteerSoon).toBe(true)
+    expect(acp.supportsFork).toBe(true)
   })
 
   it('keeps Claude full-stack capabilities', () => {

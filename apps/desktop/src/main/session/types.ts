@@ -196,6 +196,10 @@ export type BackendCommand =
       priority?: ClaudeSteerPriority
     }
   | {
+      kind: 'acp.steer_queued'
+      clientMessageId: string
+    }
+  | {
       kind: 'codex.plan_approval'
       messageId: string
       status: 'approved' | 'rejected'
@@ -384,7 +388,7 @@ export interface SessionBackend {
   getRateLimits?(): Promise<ProviderRateLimits | null>
   getMcpServerStatus(): Promise<McpServerInfo[]>
   authenticateMcp?(serverName: string): Promise<void>
-  rewindFiles(userMessageId: string, opts?: { dryRun?: boolean }): Promise<RewindFilesResult>
+  rewindFiles(userMessageId: string, opts?: { dryRun?: boolean; includeConversation?: boolean }): Promise<RewindFilesResult>
   rewindConversation?(beforeTurnId: string): Promise<RewindFilesResult>
   reconnectMcp(serverName: string): Promise<void>
   toggleMcpServer(serverName: string, enabled: boolean): Promise<void>
@@ -474,7 +478,7 @@ export interface Session {
   getRateLimits(): Promise<ProviderRateLimits | null>
   getMcpServerStatus(): Promise<McpServerInfo[]>
   authenticateMcp(serverName: string): Promise<void>
-  rewindFiles(userMessageId: string, opts?: { dryRun?: boolean }): Promise<RewindFilesResult>
+  rewindFiles(userMessageId: string, opts?: { dryRun?: boolean; includeConversation?: boolean }): Promise<RewindFilesResult>
   rewindConversation(userMessageId: string): Promise<RewindFilesResult>
   reconnectMcp(serverName: string): Promise<void>
   toggleMcpServer(serverName: string, enabled: boolean): Promise<void>

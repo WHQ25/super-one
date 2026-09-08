@@ -39,12 +39,12 @@ same claim, and the two drift.
 | Plan mode | ✅ host | ✅ | ✅ agent-driven | ✅ | ✅ | ❌ |
 | Todos | ✅ | ❌ | ✅ via plan entries | ✅ | ✅ | ✅ |
 | Subagents | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ |
-| Compact | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ |
+| Compact | ✅ | ✅ | ✅ `/compact` → `x.ai/compact_conversation` | ✅ | ❌ | ❌ |
 | Streaming tool input | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | Sandbox toggle | ✅ off/on/auto | folded into presets | ❌ | ❌ | ✅ off/on | ❌ |
 | Slash commands | ✅ | ✅ | ✅ | ✅ | host + `.cursor` FS | ❌ |
 | Session recap | ❌ | ❌ | ✅ grok only | ❌ | ❌ | ❌ |
-| Steer mid-turn | ✅ `priority: now` | ✅ | ❌ queue only | — | — | — |
+| Steer mid-turn | ✅ `priority: now` | ✅ | ✅ `x.ai/interject` | — | — | — |
 | Typed failure code | ✅ SDK enum | ⚠️ text + retry count | ⚠️ JSON-RPC code + status | ⚠️ SDK error name | ⚠️ text only | ⚠️ text only |
 
 ---
@@ -280,10 +280,13 @@ Traps:
 
 Fork semantics differ sharply: Claude resume is cwd-scoped so forking into a worktree needs
 `forkSession()` plus relocating the `.jsonl`; Codex uses `thread/fork` + `lastTurnId` from
-`metadata.codex` with a `rollback` fallback for older sessions. Read the existing `*-fork.ts` before
-designing yours — "copy the transcript" is almost never right.
+`metadata.codex` with a `rollback` fallback for older sessions. Grok is a cold
+`x.ai/session/fork` (spawn + initialize, no `session/new`) that copies session files and
+returns `newSessionId`. Read the existing `*-fork.ts` before designing yours —
+"copy the transcript" is almost never right.
 
 `rewind_conversation` in the Claude SDK is still a placeholder; the current rewind is cosmetic.
+Grok rewind is real: `x.ai/rewind/execute` with `conversation_only` / `files_only` / `all`.
 
 ---
 

@@ -59,17 +59,19 @@ function baselineY(box: Box, fontSize: number): number {
 }
 
 /**
- * Room the painted string needs beyond the one RN measured.
+ * The width the painted string needs, beyond the one RN measured.
  *
  * `react-native-svg` lays a string out a few percent wider than RN's own text
- * engine measures it, and the SVG viewport is only as wide as the measured box
- * — so the last glyph comes out shaved. Reserving the difference in the layout
- * text keeps every derived geometry (viewport, scroll period, mask) consistent,
- * where widening the viewport alone would open a gap in the scrolling rect.
- * `textLength` would be the exact fix, but react-native-svg never forwards it.
+ * engine measures it, and a viewport only as wide as the measured box shaves the
+ * last glyph. The slack belongs to the SVG viewport alone: reserving it in the
+ * layout text pads the chip with a gap the label never fills. So every geometry
+ * derived from the paint — viewport, scroll period, mask — is built from this
+ * width, while the layout box stays the width of the text.
+ * `textLength` would be the exact fix, but react-native-svg drops it in
+ * `extractText` before it reaches the native view.
  */
-function svgBleed(text: string, fontSize: number): number {
-  return text.length * fontSize * 0.05
+function paintWidth(box: Box, text: string, fontSize: number): number {
+  return box.width + text.length * fontSize * 0.05
 }
 
 /**
@@ -94,7 +96,8 @@ const SWEEP_SAMPLES = [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1]
 function MoltenFill({ box, fontSize, children }: { box: Box; fontSize: number; children: string }) {
   const sweep = useLoop(FIRE_SWEEP_S * 1000)
   const y = baselineY(box, fontSize)
-  const radius = Math.hypot(box.width / 2, box.height * 0.55)
+  const width = paintWidth(box, children, fontSize)
+  const radius = Math.hypot(width / 2, box.height * 0.55)
   return <>
     {FIRE_SWEEP_CENTERS.map(([cx, cy], index) => <Animated.View key={index} pointerEvents="none" style={{
       ...StyleSheet.absoluteFillObject,
@@ -103,11 +106,11 @@ function MoltenFill({ box, fontSize, children }: { box: Box; fontSize: number; c
         outputRange: SWEEP_SAMPLES.map((point) => fireSweepOpacity(point + index / FIRE_SWEEP_CENTERS.length)),
       }),
     }}>
-      <Svg width={box.width} height={box.height}>
+      <Svg width={width} height={box.height}>
         <Defs>
           {/* `r="45%"` would resolve against the glyph bounds, not the box — spell it out. */}
           <RadialGradient id={`fire-${index}`} gradientUnits="userSpaceOnUse"
-            cx={box.width * cx / 100} cy={box.height * cy / 100} r={radius}>
+            cx={width * cx / 100} cy={box.height * cy / 100} r={radius}>
             {FIRE_FILL_STOPS.map(([offset, color]) => <Stop key={offset} offset={offset} stopColor={color} />)}
           </RadialGradient>
         </Defs>
@@ -144,7 +147,7 @@ export function FireText({ children, fontSize }: { children: string; fontSize: n
   }
 
   return <View onLayout={onLayout}>
-    <Text numberOfLines={1} style={{ ...layer, color: FIRE_EMBER, paddingRight: svgBleed(children, fontSize) }}>{children}</Text>
+    <Text numberOfLines={1} style={{ ...layer, color: FIRE_EMBER }}>{children}</Text>
     {box ? <MoltenFill box={box} fontSize={fontSize}>{children}</MoltenFill> : null}
     {box ? <FireEmbers width={box.width} height={box.height} dark={false} /> : null}
   </View>
@@ -155,7 +158,7 @@ export function RainbowText({ children, fontSize }: { children: string; fontSize
   const { tokens: { scheme, colors } } = useMobileTheme()
   const [box, onLayout] = useTextBox()
   const shift = useRef(new Animated.Value(0)).current
-  const width = box?.width ?? 0
+  const width = box ? paintWidth(box, children, fontSize) : 0
   useEffect(() => {
     if (!width) return
     shift.setValue(0)
@@ -184,16 +187,16 @@ export function RainbowText({ children, fontSize }: { children: string; fontSize
         drops a fully transparent text colour and falls back to the default ink
         — so hide the view instead, which still measures. */}
     <Text numberOfLines={1} style={{ fontSize, fontWeight: '500', color: colors.foreground,
-      paddingRight: svgBleed(children, fontSize), opacity: box ? 0 : 1 }}>{children}</Text>
+      opacity: box ? 0 : 1 }}>{children}</Text>
     {box ? <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      <Svg width={box.width} height={box.height}>
+      <Svg width={width} height={box.height}>
         <Defs>
           <LinearGradient id="rainbow" x1="0" y1="0" x2="1" y2="0">{stops}</LinearGradient>
           <Mask id="rainbow-mask">
             <SvgText x={0} y={baselineY(box, fontSize)} fontSize={fontSize} fontWeight="500" fill="#ffffff">{children}</SvgText>
           </Mask>
         </Defs>
-        <AnimatedRect x={shift} y={0} width={box.width * 2} height={box.height} fill="url(#rainbow)" mask="url(#rainbow-mask)" />
+        <AnimatedRect x={shift} y={0} width={width * 2} height={box.height} fill="url(#rainbow)" mask="url(#rainbow-mask)" />
       </Svg>
     </View> : null}
   </View>

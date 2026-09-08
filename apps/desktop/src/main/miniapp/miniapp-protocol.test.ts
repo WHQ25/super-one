@@ -12,7 +12,7 @@ vi.mock('../path-security', () => ({
   getReadableAssetRoots: () => ['/projects'],
 }))
 vi.mock('../media-readable-roots', () => ({
-  getMediaReadableRoots: () => ['/projects', '/userData/media-gen'],
+  isMediaPathReadable: () => true,
 }))
 vi.mock('../session/session-repo', () => ({ listWorktreePaths: () => [] }))
 vi.mock('../agent/event-trace', () => ({ trace: vi.fn() }))

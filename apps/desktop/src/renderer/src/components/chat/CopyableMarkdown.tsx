@@ -1,5 +1,6 @@
-import { memo, type ComponentType } from 'react'
-import type { Components } from 'streamdown'
+import { memo, useMemo, type ComponentType } from 'react'
+import { defaultRemarkPlugins, type Components } from 'streamdown'
+import { remarkMediaPaths } from './remark-media-paths'
 import { tryCopy } from '@/lib/clipboard'
 import {
   getMathPluginSync,
@@ -34,6 +35,7 @@ const desktopMarkdownRuntime: CopyableMarkdownRuntime = {
 
 export interface CopyableMarkdownProps {
   text: string
+  projectPath?: string | null
   isStreaming: boolean
   components?: Record<string, ComponentType<never>>
 }
@@ -42,13 +44,18 @@ export const CopyableMarkdown = memo(function CopyableMarkdown({
   text,
   isStreaming,
   components,
+  projectPath,
 }: CopyableMarkdownProps) {
+  const runtime = useMemo(() => projectPath ? {
+    ...desktopMarkdownRuntime,
+    remarkPlugins: [...Object.values(defaultRemarkPlugins), remarkMediaPaths(projectPath)],
+  } : desktopMarkdownRuntime, [projectPath])
   return (
     <CopyableMarkdownPresenter
       text={text}
       isStreaming={isStreaming}
       components={components as Components | undefined}
-      runtime={desktopMarkdownRuntime}
+      runtime={runtime}
     />
   )
 })

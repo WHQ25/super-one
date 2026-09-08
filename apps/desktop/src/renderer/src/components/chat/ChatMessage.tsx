@@ -29,7 +29,7 @@ import { PASTE_CHIP_LINE_THRESHOLD, PASTE_CHIP_CHAR_THRESHOLD } from './paste-ch
 import { useChatStore } from '@/stores/chat'
 import { useAppStore, selectEffectiveProjectRoot } from '@/stores/app'
 import { getAssistantCopyText } from './chat-message/getAssistantCopyText'
-import { resolveMarkdownLocalRefs } from './chat-shared'
+import { resolveMarkdownFileLinks } from './chat-shared'
 import { RewindButton } from './RewindButton'
 import { CopyableMarkdown } from './CopyableMarkdown'
 import { CollabTaskBubble } from './CollabTaskBubble'
@@ -70,19 +70,17 @@ interface ChatMessageProps {
   collapseEntireCodexTurn?: boolean
 }
 
-// Own component so the media-resolution regex is scoped to this block (memoized on text +
-// projectPath by the React Compiler): a completed text block no longer re-runs the scan when a
-// later block in the same streaming message mutates.
+// Keep file-link resolution and parsed media rendering scoped to this text block.
 function TextBlock({ text, isStreaming, projectPath, afterThinking }: {
   text: string
   isStreaming: boolean
   projectPath?: string | null
   afterThinking?: boolean
 }) {
-  const resolved = projectPath ? resolveMarkdownLocalRefs(text, projectPath) : text
+  const resolved = projectPath ? resolveMarkdownFileLinks(text, projectPath) : text
   return (
     <div className={afterThinking ? 'mt-1 after-thinking' : undefined}>
-      <CopyableMarkdown text={resolved} isStreaming={isStreaming} components={fileLinkComponents} />
+      <CopyableMarkdown projectPath={projectPath} text={resolved} isStreaming={isStreaming} components={fileLinkComponents} />
     </div>
   )
 }

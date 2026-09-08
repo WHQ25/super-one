@@ -1,4 +1,4 @@
-import { join } from 'node:path'
+import { deviceCaptureDir } from '../media-output-paths'
 import { app } from 'electron'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { formatDeviceId, parseDeviceId, type DeviceViewfinderClaim } from '@superone/shared/device'
@@ -100,11 +100,11 @@ function buildBackend(deviceId: string): TouchDeviceBackend {
   const parsed = parseDeviceId(deviceId)
   if (parsed?.provider === 'android') {
     const android = getAndroidDeviceManager()
-    if (android) return new AndroidBackend(android, deviceId, join(userData, 'android', 'captures'))
+    if (android) return new AndroidBackend(android, deviceId, deviceCaptureDir(userData, 'android'))
   }
   if (parsed?.provider === 'ios-mirror') {
     const mirror = getMirrorDeviceManager()
-    if (mirror) return new MirrorBackend(mirror, deviceId, join(userData, 'ios-mirror', 'captures'))
+    if (mirror) return new MirrorBackend(mirror, deviceId, deviceCaptureDir(userData, 'ios-mirror'))
   }
   return new IosSimulatorBackend(getIosSimulatorManager(userData), parsed?.native ?? deviceId)
 }

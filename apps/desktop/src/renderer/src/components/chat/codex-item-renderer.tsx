@@ -5,7 +5,7 @@ import { ToolBlock } from './ToolBlock'
 import { CopyableMarkdown } from './CopyableMarkdown'
 import { ReasoningBlock } from './ReasoningBlock'
 import { useActiveSession, useChatStore } from '@/stores/chat'
-import { resolveMarkdownLocalRefs } from './chat-shared'
+import { resolveMarkdownFileLinks } from './chat-shared'
 import { shortenPath } from './tool-display'
 import type { ToolIcon as ToolIconName } from './tool-display'
 import { ToolIcon } from './ToolIcon'
@@ -51,8 +51,8 @@ function toToolStatus(status: ItemStatus): 'streaming' | 'complete' {
 
 function StreamingAgentMessage({ text, isStreaming }: { text: string; isStreaming: boolean }) {
   const projectPath = useChatStore((s) => s.activeProject)
-  const resolved = projectPath ? resolveMarkdownLocalRefs(text, projectPath) : text
-  return <CopyableMarkdown text={resolved} isStreaming={isStreaming} components={fileLinkComponents} />
+  const resolved = projectPath ? resolveMarkdownFileLinks(text, projectPath) : text
+  return <CopyableMarkdown projectPath={projectPath} text={resolved} isStreaming={isStreaming} components={fileLinkComponents} />
 }
 
 export function getCommandDisplay(item: CodexCommandExecutionItem, cwd?: string, homedir?: string): { icon: ToolIconName; label: string; summary: string } {

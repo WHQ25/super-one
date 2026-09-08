@@ -1,23 +1,14 @@
 import { createServer, type Server } from 'http'
 import { createReadStream, statSync } from 'fs'
 import { extname } from 'path'
-import { resolveRealPath, isPathWithinAllowed } from './path-security'
-import { getMediaReadableRoots } from './media-readable-roots'
+import { resolveRealPath } from './path-security'
+import { isMediaPathReadable } from './media-readable-roots'
 import log from './logger'
 
-const MEDIA_MIME: Record<string, string> = {
-  '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.webm': 'video/webm', '.ogg': 'video/ogg', '.mov': 'video/quicktime',
-  '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.flac': 'audio/flac', '.aac': 'audio/aac', '.m4a': 'audio/mp4', '.opus': 'audio/ogg', '.weba': 'audio/webm',
-  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif',
-  '.webp': 'image/webp', '.svg': 'image/svg+xml', '.bmp': 'image/bmp', '.ico': 'image/x-icon', '.avif': 'image/avif',
-}
+import { MEDIA_MIME } from './media-mime'
 
 let server: Server | null = null
 let port = 0
-
-function getAllowedRoots(): string[] {
-  return getMediaReadableRoots()
-}
 
 export function startMediaServer(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -35,7 +26,7 @@ export function startMediaServer(): Promise<number> {
       const filePath = decodeURIComponent(req.url)
       const resolved = resolveRealPath(filePath)
 
-      if (!isPathWithinAllowed(resolved, getAllowedRoots())) {
+      if (!isMediaPathReadable(resolved)) {
         log.warn('[media-server] blocked:', resolved)
         res.writeHead(403, cors).end('Forbidden')
         return

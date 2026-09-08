@@ -1,3 +1,4 @@
+import { deviceCaptureDir } from '../media-output-paths'
 /**
  * Every platform this machine can actually offer, assembled once for the panel.
  *
@@ -15,7 +16,6 @@
  * routing behave exactly as they did before Android existed.
  */
 
-import { join } from 'node:path'
 import type { DeviceDescriptor } from '@superone/shared/device'
 import { getIosSimulatorManager } from '../ios-simulator'
 import { createIosSimulatorSurface } from '../ios-simulator/surface'
@@ -32,11 +32,11 @@ export function deviceSurfaces(userDataPath: string): DeviceSurface[] {
   ]
   const android = getAndroidDeviceManager()
   if (android) {
-    surfaces.push(createAndroidSurface(android, join(userDataPath, 'android', 'captures')))
+    surfaces.push(createAndroidSurface(android, deviceCaptureDir(userDataPath, 'android')))
   }
   const mirror = getMirrorDeviceManager()
   if (mirror) {
-    surfaces.push(createMirrorSurface(mirror, join(userDataPath, 'ios-mirror', 'captures')))
+    surfaces.push(createMirrorSurface(mirror, deviceCaptureDir(userDataPath, 'ios-mirror')))
   }
   return surfaces
 }

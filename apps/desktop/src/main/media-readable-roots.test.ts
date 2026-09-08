@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('./media-gen/paths', () => ({
-  mediaGenRoot: () => '/userData/media-gen',
+  mediaGenOutputRoot: () => '/userData/media-gen/outputs',
 }))
 vi.mock('./agent/action-recording-store', () => ({
   actionRecordingDir: () => '/userData/recordings',
@@ -19,6 +19,9 @@ vi.mock('./path-security', () => ({
   ],
 }))
 
+vi.mock('electron', () => ({ app: { getPath: () => '/userData' } }))
+import { builtInCaptureRoots } from './media-output-paths'
+
 import { getMediaReadableRoots } from './media-readable-roots'
 
 describe('getMediaReadableRoots', () => {
@@ -26,8 +29,9 @@ describe('getMediaReadableRoots', () => {
     expect(getMediaReadableRoots()).toEqual([
       '/projects/app',
       '/projects/app/.worktrees/x',
-      '/userData/media-gen',
+      '/userData/media-gen/outputs',
       '/userData/recordings',
+      ...builtInCaptureRoots('/userData'),
       '/Users/alice/.grok/sessions',
     ])
   })

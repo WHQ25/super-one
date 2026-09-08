@@ -1,5 +1,3 @@
-import { join } from 'path'
-import { tmpdir } from 'os'
 import {
   AGENT_SCREENSHOT_MAX_BYTES,
   needsAgentScreenshotOptimize,
@@ -9,11 +7,10 @@ import {
   type ScreenshotArtifactDeps,
 } from '../agent/screenshot-artifact'
 
-/**
- * Fixed directory for Computer Use captures (observe / zoom).
- * Optimization is shared with browser screenshots via agent/screenshot-artifact.
- */
-export const COMPUTER_USE_SCREENSHOT_DIR = join(tmpdir(), 'super-one-computer-use-screenshots')
+import { COMPUTER_USE_SCREENSHOT_DIR } from '../media-output-paths'
+
+/** Fixed directory shared with the chat media readers. */
+export { COMPUTER_USE_SCREENSHOT_DIR } from '../media-output-paths'
 
 /** @deprecated Use AGENT_SCREENSHOT_MAX_BYTES — kept for existing imports/tests. */
 export const CU_AGENT_MAX_BYTES = AGENT_SCREENSHOT_MAX_BYTES

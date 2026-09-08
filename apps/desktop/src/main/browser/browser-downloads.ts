@@ -4,6 +4,7 @@ import { writeFile } from 'fs/promises'
 import { Readable } from 'stream'
 import { pipeline } from 'stream/promises'
 import log from '../logger'
+import { mediaFileGrants } from '../media-file-grants'
 import { browserAutomationCall } from './browser-automation-bridge'
 import { filenameFor, reserveDownloadPath } from '../agent/browser-download-store'
 
@@ -105,6 +106,7 @@ export async function downloadUrl(url: string, opts: DownloadUrlOptions = {}): P
     const path = reserveDownloadPath(filename, dir)
     await writeFile(path, buf)
     onProgress?.({ bytes: buf.byteLength, totalBytes: buf.byteLength, filename, mimeType })
+    mediaFileGrants().add(path)
     return { path, filename, bytes: buf.byteLength, mimeType }
   }
 
@@ -120,6 +122,7 @@ export async function downloadUrl(url: string, opts: DownloadUrlOptions = {}): P
     const buf = Buffer.from(await resp.arrayBuffer())
     await writeFile(path, buf)
     onProgress?.({ bytes: buf.byteLength, totalBytes: buf.byteLength, filename, mimeType })
+    mediaFileGrants().add(path)
     return { path, filename, bytes: buf.byteLength, mimeType }
   }
 
@@ -138,6 +141,7 @@ export async function downloadUrl(url: string, opts: DownloadUrlOptions = {}): P
   await pipeline(nodeStream, createWriteStream(path))
   const { size } = await import('fs/promises').then((fs) => fs.stat(path))
   onProgress?.({ bytes: size, totalBytes: totalBytes ?? size, filename, mimeType })
+  mediaFileGrants().add(path)
   return { path, filename, bytes: size, mimeType }
 }
 
@@ -174,6 +178,9 @@ export function registerBrowserDownloadCapture(): void {
     item.once('done', (_doneEvent, state) => {
       record.state = state
       record.bytes = item.getReceivedBytes()
+      if (state === 'completed') {
+        try { mediaFileGrants().add(path) } catch (error) { log.warn('[browser-download] could not persist media grant', error) }
+      }
       if (state !== 'completed') log.warn(`[browser-download] ${state}: ${record.url}`)
       notifyWaiters()
     })

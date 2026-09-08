@@ -19,6 +19,7 @@ export interface CopyableMarkdownRuntime {
   linkSafety?: LinkSafetyConfig
   loadMathPlugin: () => Promise<MathPlugin>
   plugins: PluginConfig
+  remarkPlugins?: PluggableList
   rehypePlugins: PluggableList
   copyText: (text: string) => Promise<boolean>
 }
@@ -190,6 +191,7 @@ const InsightBlock = memo(function InsightBlock({ title, content, isStreaming, c
       <Streamdown
         className="chat-md"
         plugins={plugins}
+        remarkPlugins={runtime.remarkPlugins}
         rehypePlugins={runtime.rehypePlugins}
         components={merged}
         controls={runtime.controls}
@@ -220,6 +222,7 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ text, isStreaming, com
     <Streamdown
       className="chat-md"
       plugins={plugins}
+      remarkPlugins={runtime.remarkPlugins}
       rehypePlugins={runtime.rehypePlugins}
       components={merged}
       controls={runtime.controls}

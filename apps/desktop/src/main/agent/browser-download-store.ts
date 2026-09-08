@@ -1,12 +1,11 @@
 import { closeSync, mkdirSync, openSync } from 'fs'
 import { basename, extname, isAbsolute, join } from 'path'
-import { tmpdir } from 'os'
 import { randomUUID } from 'crypto'
 import { app } from 'electron'
 import { readAppSettings } from '../app-settings-service'
 import log from '../logger'
 
-const FALLBACK_DIR = join(tmpdir(), 'super-one-browser-downloads')
+import { BROWSER_DOWNLOAD_FALLBACK_DIR as FALLBACK_DIR } from '../media-output-paths'
 
 const MIME_EXT: Record<string, string> = {
   'image/jpeg': 'jpg',

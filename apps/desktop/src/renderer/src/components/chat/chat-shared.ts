@@ -126,9 +126,7 @@ function MediaImage(props: ComponentProps<'img'>) {
 }
 
 /**
- * Markdown `src` that already names its own transport — leave it alone. Mirrors
- * the negative lookahead in MD_IMAGE_RE so text-level and render-level
- * resolution agree on what counts as project-relative.
+ * Markdown `src` that already names its own transport — leave it alone.
  */
 const ABSOLUTE_MEDIA_SRC_RE = /^(?:https?:\/\/|data:|blob:|file:\/\/|local-file:\/\/|remote-media:\/\/)/
 
@@ -157,9 +155,7 @@ export function rebaseMarkdownSrc(src: string, baseDir: string): string {
 }
 
 /**
- * Render-time counterpart of `resolveMarkdownMedia`. Use this where the
- * markdown text is a live document (the .md editor) and must not be rewritten:
- * only the displayed src is resolved, the source keeps its relative path.
+ * Resolve parsed chat media and live document previews without rewriting source.
  */
 export function resolveMarkdownMediaSrc(src: string, projectPath: string | null | undefined): string {
   if (!src || !projectPath || ABSOLUTE_MEDIA_SRC_RE.test(src)) return src
@@ -211,23 +207,6 @@ export const streamdownRehypePlugins: PluggableList = Object.values({
     linkBlockPolicy: BlockPolicy.textOnly,
   }],
 }) as PluggableList
-
-const MD_IMAGE_RE =
-  /!\[([^\]]*)\]\((?!https?:\/\/|data:|local-file:\/\/|remote-media:\/\/)([^)\s]+)([^)]*)\)/g
-
-function resolveLocalSrc(src: string, projectPath: string): string {
-  return resolveMediaSrcForProject(src, projectPath)
-}
-
-export function resolveMarkdownMedia(text: string, projectPath: string): string {
-  return text.replace(MD_IMAGE_RE, (_, alt, src, rest) => {
-    return `![${alt}](${resolveLocalSrc(src, projectPath)}${rest})`
-  })
-}
-
-export function resolveMarkdownLocalRefs(text: string, projectPath: string): string {
-  return resolveMarkdownMedia(resolveMarkdownFileLinks(text, projectPath), projectPath)
-}
 
 /** Shared with Remote Control so both context rings read the same number. */
 export { formatTokens } from '@superone/shared/format-tokens'

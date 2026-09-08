@@ -21,7 +21,7 @@ vi.mock('./CodeBlock', () => ({ createStreamdownCodeComponent: () => ({}) }))
 vi.mock('./LinkSafetyModal', () => ({ LinkSafetyModal: () => null }))
 vi.mock('./markdown-image', () => ({ MarkdownImage: () => null }))
 
-import { rebaseMarkdownSrc, resolveMarkdownMedia, resolveMarkdownMediaSrc, resolveMarkdownFileLinks, resolveMarkdownLocalRefs, formatTokens } from './chat-shared'
+import { rebaseMarkdownSrc, resolveMarkdownMediaSrc, resolveMarkdownFileLinks, formatTokens } from './chat-shared'
 
 describe('formatTokens', () => {
   it('should return "0" for 0', () => {
@@ -139,109 +139,6 @@ describe('resolveMarkdownMediaSrc', () => {
   })
 })
 
-describe('resolveMarkdownMedia', () => {
-  const project = '/Users/foo/project'
-
-  it('should resolve relative image path', () => {
-    const input = '![alt](./image.png)'
-    const result = resolveMarkdownMedia(input, project)
-    expect(result).toBe('![alt](local-file:///Users/foo/project/image.png)')
-  })
-
-  it('should resolve remote project images to remote-media refs', () => {
-    const remote = 'remote:conn-1:/Users/foo/project'
-    const result = resolveMarkdownMedia('![alt](./shot.png)', remote)
-    expect(result.startsWith('![alt](remote-media://ref/')).toBe(true)
-    expect(result.endsWith(')')).toBe(true)
-  })
-
-  it('should resolve relative image path without ./', () => {
-    const input = '![alt](image.png)'
-    const result = resolveMarkdownMedia(input, project)
-    expect(result).toBe('![alt](local-file:///Users/foo/project/image.png)')
-  })
-
-  it('should resolve absolute image path', () => {
-    const input = '![alt](/Users/bar/image.png)'
-    const result = resolveMarkdownMedia(input, project)
-    expect(result).toBe('![alt](local-file:///Users/bar/image.png)')
-  })
-
-  it('should not modify https URLs', () => {
-    const input = '![alt](https://example.com/img.png)'
-    expect(resolveMarkdownMedia(input, project)).toBe(input)
-  })
-
-  it('should not modify data URLs', () => {
-    const input = '![alt](data:image/png;base64,abc)'
-    expect(resolveMarkdownMedia(input, project)).toBe(input)
-  })
-
-  it('should not modify already-resolved local-file URLs', () => {
-    const input = '![alt](local-file:///Users/foo/image.png)'
-    expect(resolveMarkdownMedia(input, project)).toBe(input)
-  })
-
-  it('should resolve various image extensions', () => {
-    for (const ext of ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'avif']) {
-      const input = `![img](./photo.${ext})`
-      expect(resolveMarkdownMedia(input, project)).toBe(
-        `![img](local-file:///Users/foo/project/photo.${ext})`,
-      )
-    }
-  })
-
-  it('should resolve video file in image syntax', () => {
-    const input = '![vid](./clip.mp4)'
-    expect(resolveMarkdownMedia(input, project)).toBe(
-      '![vid](local-file:///Users/foo/project/clip.mp4)',
-    )
-  })
-
-  it('should resolve audio file in image syntax', () => {
-    const input = '![aud](./song.mp3)'
-    expect(resolveMarkdownMedia(input, project)).toBe(
-      '![aud](local-file:///Users/foo/project/song.mp3)',
-    )
-  })
-
-  it('should not modify non-media markdown links', () => {
-    const input = '[readme](./README.md)'
-    expect(resolveMarkdownMedia(input, project)).toBe(input)
-  })
-
-  it('should not modify media markdown links', () => {
-    const input = '[photo](./photo.png)'
-    expect(resolveMarkdownMedia(input, project)).toBe(input)
-  })
-
-  it('should handle mixed content with multiple images', () => {
-    const input = 'Hello ![a](./a.png) world ![b](/tmp/b.jpg) end'
-    const result = resolveMarkdownMedia(input, project)
-    expect(result).toBe(
-      'Hello ![a](local-file:///Users/foo/project/a.png) world ![b](local-file:///tmp/b.jpg) end',
-    )
-  })
-
-  it('should return text unchanged when no media references', () => {
-    const input = 'Just some plain text with no images or links.'
-    expect(resolveMarkdownMedia(input, project)).toBe(input)
-  })
-
-  it('should handle nested directory paths', () => {
-    const input = '![img](./assets/images/photo.png)'
-    expect(resolveMarkdownMedia(input, project)).toBe(
-      '![img](local-file:///Users/foo/project/assets/images/photo.png)',
-    )
-  })
-
-  it('should preserve title in image syntax', () => {
-    const input = '![alt](./img.png "title")'
-    const result = resolveMarkdownMedia(input, project)
-    expect(result).toBe('![alt](local-file:///Users/foo/project/img.png "title")')
-  })
-})
-
 describe('resolveMarkdownFileLinks', () => {
   const project = '/Users/foo/project'
 
@@ -282,17 +179,6 @@ describe('resolveMarkdownFileLinks', () => {
     )
     expect(resolveMarkdownFileLinks('[x](src/x.ts "title")', project)).toBe(
       '[x](/Users/foo/project/src/x.ts "title")',
-    )
-  })
-})
-
-describe('resolveMarkdownLocalRefs', () => {
-  const project = '/Users/foo/project'
-
-  it('resolves both file links and media', () => {
-    const input = 'see [f](apps/a.ts) and ![i](./img.png)'
-    expect(resolveMarkdownLocalRefs(input, project)).toBe(
-      'see [f](/Users/foo/project/apps/a.ts) and ![i](local-file:///Users/foo/project/img.png)',
     )
   })
 })

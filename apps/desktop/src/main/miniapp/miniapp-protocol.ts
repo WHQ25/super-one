@@ -1,19 +1,16 @@
+import { MEDIA_MIME, STREAMED_MEDIA_EXTS } from '../media-mime'
 import type { Protocol } from 'electron'
 import { createReadStream, statSync } from 'fs'
 import { readFile } from 'fs/promises'
 import { Readable } from 'stream'
-import { resolveRealPath, isPathWithinAllowed } from '../path-security'
-import { getMediaReadableRoots } from '../media-readable-roots'
+import { resolveRealPath } from '../path-security'
+import { isMediaPathReadable } from '../media-readable-roots'
 import { trace } from '../agent/event-trace'
 import log from '../logger'
 import { getAppBasePath, generateCSP, readManifest, validatePath } from './miniapp-service'
 
 const LOCAL_FILE_MIME: Record<string, string> = {
-  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
-  svg: 'image/svg+xml', webp: 'image/webp', ico: 'image/x-icon', bmp: 'image/bmp',
   pdf: 'application/pdf',
-  mp4: 'video/mp4', webm: 'video/webm', ogg: 'video/ogg', mov: 'video/quicktime',
-  mp3: 'audio/mpeg', wav: 'audio/wav', flac: 'audio/flac', aac: 'audio/aac', m4a: 'audio/mp4',
   html: 'text/html', htm: 'text/html',
   css: 'text/css',
   js: 'text/javascript', mjs: 'text/javascript',
@@ -21,8 +18,6 @@ const LOCAL_FILE_MIME: Record<string, string> = {
   wasm: 'application/wasm',
   woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf', otf: 'font/otf',
 }
-
-const STREAMED_LOCAL_EXTS = new Set(['mp4', 'm4v', 'webm', 'ogg', 'mov', 'mp3', 'wav', 'flac', 'aac', 'm4a'])
 
 const MINIAPP_MIME: Record<string, string> = {
   html: 'text/html', htm: 'text/html', css: 'text/css', js: 'text/javascript',
@@ -42,18 +37,18 @@ export function registerMiniAppProtocolHandlers(proto: Protocol): void {
       const rawPath = decodeURIComponent(new URL(request.url).pathname)
       const filePath = rawPath.replace(/^\/([A-Za-z]:)/, '$1')
       const resolved = resolveRealPath(filePath)
-      if (!isPathWithinAllowed(resolved, getMediaReadableRoots())) {
+      if (!isMediaPathReadable(resolved)) {
         log.warn('[local-file] blocked path outside project folders:', resolved)
         return new Response('Forbidden', { status: 403 })
       }
       const ext = resolved.split('.').pop()?.toLowerCase() ?? ''
-      const contentType = LOCAL_FILE_MIME[ext] ?? 'application/octet-stream'
+      const contentType = MEDIA_MIME[`.${ext}`] ?? LOCAL_FILE_MIME[ext] ?? 'application/octet-stream'
       const range = request.headers.get('Range')
 
       // Videos/audio must stream. readFile() loads the whole clip on every Range
       // request and can freeze the main process when a restored session mounts
       // a <video preload="metadata"> against a tens-of-MB media-gen file.
-      if (STREAMED_LOCAL_EXTS.has(ext)) {
+      if (STREAMED_MEDIA_EXTS.has(ext)) {
         let fileSize: number
         try { fileSize = statSync(resolved).size } catch {
           return new Response('Not found', { status: 404 })

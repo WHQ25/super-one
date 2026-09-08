@@ -1,6 +1,9 @@
+import { app } from 'electron'
+import { builtInCaptureRoots } from './media-output-paths'
+import { mediaFileGrants } from './media-file-grants'
 import { actionRecordingDir } from './agent/action-recording-store'
-import { mediaGenRoot } from './media-gen/paths'
-import { getReadableAssetRoots } from './path-security'
+import { mediaGenOutputRoot } from './media-gen/paths'
+import { getReadableAssetRoots, isPathWithinAllowed } from './path-security'
 import { getRecentFolders } from './recent-folders'
 import { listWorktreePaths } from './session/session-repo'
 
@@ -18,7 +21,12 @@ export function getMediaReadableRoots(): string[] {
     // 403'd by both the media server and the local-file protocol.
     ...getRecentFolders().flatMap((f) => [f.path, ...(f.extraDirs ?? [])]),
     ...listWorktreePaths(),
-    mediaGenRoot(),
+    mediaGenOutputRoot(),
     actionRecordingDir(),
+    ...builtInCaptureRoots(app.getPath('userData')),
   ])
+}
+
+export function isMediaPathReadable(path: string): boolean {
+  return isPathWithinAllowed(path, getMediaReadableRoots()) || mediaFileGrants().has(path)
 }

@@ -1,12 +1,11 @@
-import { join } from 'path'
-import { tmpdir } from 'os'
 import {
   persistBase64Screenshot,
   type PersistedScreenshotArtifact,
   type ScreenshotArtifactDeps,
 } from './screenshot-artifact'
 
-export const BROWSER_SCREENSHOT_DIR = join(tmpdir(), 'super-one-browser-screenshots')
+import { BROWSER_SCREENSHOT_DIR } from '../media-output-paths'
+export { BROWSER_SCREENSHOT_DIR } from '../media-output-paths'
 
 /**
  * Persist a browser screenshot's base64 image to a temp file and return the

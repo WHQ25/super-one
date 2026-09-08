@@ -4,6 +4,7 @@ import { formatTokens } from '@superone/shared/format-tokens'
 import { Text } from './text'
 import { useMobileTheme } from '../theme/context'
 import { AnchoredMenu, useMenuAnchor } from './anchored-menu'
+import { CHIP_HEIGHT, CHIP_HIT_SLOP } from './chip-metrics'
 
 // Sized so the ring reads at the same optical weight as the 16px lucide glyphs
 // beside it — a 16px box would draw a 12px circle and look like a smaller control.
@@ -49,8 +50,8 @@ export function ContextRing({ tokens, contextWindow, costUsd }: ContextRingProps
   return <>
     <Pressable ref={menu.ref} accessibilityRole="button"
       accessibilityLabel={hasWindow ? `Context used: ${percent}%` : `Context used: ${usedLabel} tokens`}
-      accessibilityState={{ expanded: !!menu.anchor }} onPress={menu.open}
-      style={({ pressed }) => ({ minHeight: 44, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center',
+      accessibilityState={{ expanded: !!menu.anchor }} onPress={menu.open} hitSlop={CHIP_HIT_SLOP}
+      style={({ pressed }) => ({ minHeight: CHIP_HEIGHT, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center',
         borderRadius: 8, backgroundColor: pressed ? colors.muted : 'transparent' })}>
       <Svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`}>
         <Circle cx={CENTER} cy={CENTER} r={RADIUS} fill="none" stroke={colors.mutedForeground} strokeOpacity={0.35} strokeWidth={2} />

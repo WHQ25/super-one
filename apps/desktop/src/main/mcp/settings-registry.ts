@@ -1,4 +1,6 @@
-import type { AppSettings, AppSettingsPatch, ConfigConfirmField } from '@superone/shared/agent-types'
+import type { AppSettings, AppSettingsPatch, ConfigConfirmField, HarnessId } from '@superone/shared/agent-types'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
+import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
 import {
   parseSuggestionHarnessKey,
   serializeSuggestionHarness,
@@ -26,6 +28,63 @@ export interface SettingsDomainDef {
   description: string
   fields: SettingsFieldDef[]
 }
+
+/**
+ * Session defaults for the harnesses whose only app-level settings are these.
+ * Generated from the harness table rather than hand-listed, so adding a harness
+ * cannot silently leave it unconfigurable — which is how ACP, OpenCode and
+ * DeepSeek ended up with no way to set a permission mode at all.
+ *
+ * Claude and Codex are excluded because they own richer domains of their own.
+ */
+const SESSION_DEFAULT_HARNESSES = ['acp', 'cursor', 'dsh', 'opencode'] as const
+
+/**
+ * Heading per harness. Mostly the capability display name — except ACP, whose
+ * `displayName` is "Others", the harness switcher's word for the ACP bucket.
+ * That reads as a mistake at the top of a settings domain.
+ */
+const SESSION_DEFAULT_LABELS: Record<typeof SESSION_DEFAULT_HARNESSES[number], string> = {
+  acp: 'ACP Agent',
+  cursor: HARNESS_CAPABILITIES.cursor.displayName,
+  dsh: HARNESS_CAPABILITIES.dsh.displayName,
+  opencode: HARNESS_CAPABILITIES.opencode.displayName,
+}
+
+const SESSION_DEFAULT_DOMAINS: SettingsDomainDef[] = SESSION_DEFAULT_HARNESSES.map((harnessId) => ({
+  domain: `agent-${harnessId}`,
+  label: `${SESSION_DEFAULT_LABELS[harnessId]} Defaults`,
+  description: `Default settings for new ${SESSION_DEFAULT_LABELS[harnessId]} chat sessions.`,
+  fields: [
+    {
+      key: `${harnessId}DefaultPermissionMode`,
+      label: 'Default Permission Mode',
+      type: 'enum',
+      // Each harness advertises only the modes it can execute.
+      enumValues: HARNESS_LAUNCH_OPTIONS[harnessId].permissionModes,
+      clearTo: '',
+      note: 'Permission mode new sessions on this harness start in. Clear to use its own default.',
+      read: (s) => s.agentPreference[harnessId].defaultPermissionMode,
+      toPatch: (v) => ({
+        agentPreference: { [harnessId]: { defaultPermissionMode: (v ?? '') as PermissionModeValue } },
+      }),
+    },
+    ...(HARNESS_LAUNCH_OPTIONS[harnessId].sandboxModes.length > 0 ? [{
+      key: `${harnessId}DefaultSandboxMode`,
+      label: 'Default Sandbox Mode',
+      type: 'enum' as const,
+      enumValues: HARNESS_LAUNCH_OPTIONS[harnessId].sandboxModes,
+      clearTo: '' as const,
+      read: (s: AppSettings) => (s.agentPreference[harnessId] as { defaultSandboxMode?: string }).defaultSandboxMode ?? '',
+      toPatch: (v: ConfigValue) => ({
+        agentPreference: { [harnessId]: { defaultSandboxMode: (v ?? '') as SandboxModeValue } },
+      }),
+    }] : []),
+  ],
+}))
+
+type PermissionModeValue = AppSettings['agentPreference']['claude']['defaultPermissionMode']
+type SandboxModeValue = AppSettings['agentPreference']['claude']['defaultSandboxMode']
 
 const EFFORT_VALUES = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 const PERMISSION_VALUES = ['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto'] as const
@@ -348,7 +407,7 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
         key: 'claudeDefaultPermissionMode',
         label: 'Default Permission Mode',
         type: 'enum',
-        enumValues: PERMISSION_VALUES,
+        enumValues: HARNESS_LAUNCH_OPTIONS.claude.permissionModes,
         clearTo: '',
         note: 'Controls how much the agent may execute without asking. "bypassPermissions" removes prompts.',
         read: (s) => s.agentPreference.claude.defaultPermissionMode,
@@ -358,7 +417,7 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
         key: 'claudeDefaultSandboxMode',
         label: 'Default Sandbox Mode',
         type: 'enum',
-        enumValues: SANDBOX_VALUES,
+        enumValues: HARNESS_LAUNCH_OPTIONS.claude.sandboxModes,
         clearTo: '',
         read: (s) => s.agentPreference.claude.defaultSandboxMode,
         toPatch: (v) => ({ agentPreference: { claude: { defaultSandboxMode: (v ?? '') as AppSettings['agentPreference']['claude']['defaultSandboxMode'] } } }),
@@ -437,6 +496,7 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
       },
     ],
   },
+  ...SESSION_DEFAULT_DOMAINS,
 ]
 
 export function settingsDomainsForPlatform(platform: NodeJS.Platform): SettingsDomainDef[] {

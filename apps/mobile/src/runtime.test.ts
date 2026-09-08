@@ -111,7 +111,61 @@ describe('ChatRuntime', () => {
     expect(paint).not.toHaveBeenCalled()
     vi.advanceTimersByTime(1)
     expect(paint).toHaveBeenCalledTimes(1)
+    expect(paint).toHaveBeenLastCalledWith(runtime.session, false)
     expect(runtime.messages[0]?.content).toEqual([{ type: 'text', text: 'hi' }])
+  })
+
+  it('hydrates restored messages on open, reconnect, and same-connection session switches', async () => {
+    const base = fakeClient(7)
+    const client = {
+      ...base,
+      request: async (cmd: { type: string; sessionId?: string }) => {
+        if (cmd.type === 'load_session_messages') {
+          return {
+            messages: [{
+              id: `${cmd.sessionId}-history`, role: 'assistant', status: 'complete',
+              content: [{ type: 'text', text: 'Previously received answer' }],
+              createdAt: '', providerId: 'claude',
+            }],
+            hasMore: false,
+          }
+        }
+        return base.request(cmd)
+      },
+    }
+    const paint = vi.fn()
+    const runtime = new ChatRuntime(client as never, paint)
+
+    await runtime.open('/p', 'first')
+    await runtime.reopen()
+    await runtime.open('/p', 'second')
+
+    expect(paint.mock.calls.map(([session, hydrate]) => ({
+      messageId: session.messages[0]?.id, hydrate,
+    }))).toEqual([
+      { messageId: 'first-history', hydrate: true },
+      { messageId: 'first-history', hydrate: true },
+      { messageId: 'second-history', hydrate: true },
+    ])
+    expect(runtime.epoch).toBe(7)
+  })
+
+  it('cancels a pending live paint when restore replaces the transcript', async () => {
+    vi.useFakeTimers()
+    const paint = vi.fn()
+    const runtime = new ChatRuntime(fakeClient() as never, paint)
+    await runtime.open('/p', 's')
+    paint.mockClear()
+
+    runtime.ingest([{
+      type: 'message_start',
+      message: { id: 'pending', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'claude' },
+    }])
+    await runtime.reopen()
+    vi.advanceTimersByTime(33)
+
+    expect(paint).toHaveBeenCalledTimes(1)
+    expect(paint).toHaveBeenLastCalledWith(expect.objectContaining({ messages: [] }), true)
   })
 
   it('tracks generated session titles for native chrome', () => {

@@ -1,13 +1,13 @@
 import type { ReactNode } from 'react'
 import { ChevronDown, GitBranch, GitCommitHorizontal, Laptop } from 'lucide-react-native'
-import { Pressable, View } from 'react-native'
+import { Platform, Pressable, ScrollView, View } from 'react-native'
 import { Text } from './text'
 import type { WorktreeInfo } from '@superone/shared/agent-types'
 import { useMobileTheme } from '../theme/context'
 import { workDirChipState, type NewSessionWorktreeSelection, type WorkDirChipState } from '../worktree-state'
 
 /**
- * The pair of centred chips under the project field: where the session will
+ * The centred chips under the project field: where the session will
  * run, and which branch it starts on. Both mirror the desktop status bar —
  * `WorkDirIndicator` plus the branch popover trigger in `ChatStatusBar`. The
  * branch chip disappears in any worktree context for the same reason it does
@@ -25,12 +25,15 @@ export function GitChips(props: {
 }) {
   const { tokens: { colors, radius } } = useMobileTheme()
   const state = workDirChipState(props.selection, props.worktreeInfo)
-  const muted = { fontSize: 14, color: colors.mutedForeground }
-  const strong = { fontSize: 14, color: colors.foreground, flexShrink: 1 }
+  // Android Fabric can measure Typeface.DEFAULT but draw the OEM system font.
+  // An explicit family makes both paths agree (react-native#57950).
+  const typography = { fontSize: 14, ...(Platform.OS === 'android' ? { fontFamily: 'sans-serif' } : {}) }
+  const muted = { ...typography, color: colors.mutedForeground }
+  const strong = { ...typography, color: colors.foreground }
   const chip = (label: string, onPress: () => void, children: ReactNode) => (
     <Pressable accessibilityRole="button" accessibilityLabel={label}
       accessibilityState={{ disabled: props.locked }} disabled={props.locked} onPress={onPress}
-      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 36, flexShrink: 1,
+      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 36, flexShrink: 0,
         minWidth: 0, paddingHorizontal: 6, borderRadius: radius.sm, backgroundColor: pressed ? colors.muted : 'transparent' })}>
       {children}
       {props.locked ? null : <ChevronDown size={16} color={colors.mutedForeground} />}
@@ -43,29 +46,31 @@ export function GitChips(props: {
     <Laptop size={18} color={colors.mutedForeground} />
     <Text style={muted}>Local</Text>
   </> : <>
-    <Text numberOfLines={1} style={state.kind === 'activeBranch' || state.kind === 'activeDetached' ? muted : { fontSize: 13, color: colors.mutedForeground }}>
+    <Text style={state.kind === 'activeBranch' || state.kind === 'activeDetached' ? muted : { ...muted, fontSize: 13 }}>
       {workDirPrefix(state)}
     </Text>
     <Mark size={14} color={colors.mutedForeground} />
-    <Text numberOfLines={1} style={strong}>{workDirValue(state)}</Text>
+    <Text style={strong}>{workDirValue(state)}</Text>
   </>)
   const showBranch = state.kind === 'local' && !!props.branch
-  // `alignSelf: stretch` gives the row a width to shrink long names against;
-  // it is centred by its own `justifyContent`, not by the parent.
-  if (!showBranch) {
-    return <View style={{ alignSelf: 'stretch', flexDirection: 'row', justifyContent: 'center' }}>{workDir}</View>
-  }
+  // One native horizontal content row owns all text. No exact-fit text viewport,
+  // width estimates or ellipsis. It centres when it fits and
+  // scrolls as a single line when a long branch exceeds the available width.
   return (
-    <View style={{ alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} alwaysBounceHorizontal={false}
+      keyboardShouldPersistTaps="handled" style={{ alignSelf: 'stretch', flexGrow: 0, flexShrink: 0 }}
+      contentContainerStyle={{ flexGrow: 1, alignItems: 'center', justifyContent: 'center' }}>
       {workDir}
-      <View style={{ width: 1, height: 16, marginHorizontal: 8, backgroundColor: colors.border }} />
-      {chip(`Branch: ${props.branch}`, props.onBranch, <>
-        <GitBranch size={18} color={colors.mutedForeground} />
-        <Text numberOfLines={1} style={[muted, { flexShrink: 1 }]}>{props.branch}</Text>
-        {props.dirty ? <View accessibilityLabel="Uncommitted changes"
-          style={{ width: 7, height: 7, marginLeft: 2, borderRadius: 4, backgroundColor: colors.warning }} /> : null}
-      </>)}
-    </View>
+      {showBranch ? <>
+        <View style={{ width: 1, height: 16, marginHorizontal: 6, backgroundColor: colors.border }} />
+        {chip(`Branch: ${props.branch}`, props.onBranch, <>
+          <GitBranch size={18} color={colors.mutedForeground} />
+          <Text style={muted}>{props.branch}</Text>
+          {props.dirty ? <View accessibilityLabel="Uncommitted changes"
+            style={{ width: 7, height: 7, marginLeft: 2, borderRadius: 4, backgroundColor: colors.warning }} /> : null}
+        </>)}
+      </> : null}
+    </ScrollView>
   )
 }
 

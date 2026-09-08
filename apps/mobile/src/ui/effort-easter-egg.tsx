@@ -59,6 +59,20 @@ function baselineY(box: Box, fontSize: number): number {
 }
 
 /**
+ * Room the painted string needs beyond the one RN measured.
+ *
+ * `react-native-svg` lays a string out a few percent wider than RN's own text
+ * engine measures it, and the SVG viewport is only as wide as the measured box
+ * — so the last glyph comes out shaved. Reserving the difference in the layout
+ * text keeps every derived geometry (viewport, scroll period, mask) consistent,
+ * where widening the viewport alone would open a gap in the scrolling rect.
+ * `textLength` would be the exact fix, but react-native-svg never forwards it.
+ */
+function svgBleed(text: string, fontSize: number): number {
+  return text.length * fontSize * 0.05
+}
+
+/**
  * Desktop stacks three text-shadows per glow layer; RN allows one, so each layer
  * keeps the widest term of `fire-sprite-glow-a` / `-b` in `styles/index.css`.
  * Cross-fading two static layers reproduces the 0.8s shimmer without animating
@@ -130,7 +144,7 @@ export function FireText({ children, fontSize }: { children: string; fontSize: n
   }
 
   return <View onLayout={onLayout}>
-    <Text numberOfLines={1} style={{ ...layer, color: FIRE_EMBER }}>{children}</Text>
+    <Text numberOfLines={1} style={{ ...layer, color: FIRE_EMBER, paddingRight: svgBleed(children, fontSize) }}>{children}</Text>
     {box ? <MoltenFill box={box} fontSize={fontSize}>{children}</MoltenFill> : null}
     {box ? <FireEmbers width={box.width} height={box.height} dark={false} /> : null}
   </View>
@@ -164,7 +178,13 @@ export function RainbowText({ children, fontSize }: { children: string; fontSize
   })
 
   return <View onLayout={onLayout}>
-    <Text numberOfLines={1} style={{ fontSize, fontWeight: '500', color: box ? 'transparent' : colors.foreground }}>{children}</Text>
+    {/* The layout text has to stay for the box to be measured, but it must stop
+        painting once the SVG takes over, or the two runs read as one smeared,
+        unreadable label. `color: 'transparent'` does not do it — RN Android
+        drops a fully transparent text colour and falls back to the default ink
+        — so hide the view instead, which still measures. */}
+    <Text numberOfLines={1} style={{ fontSize, fontWeight: '500', color: colors.foreground,
+      paddingRight: svgBleed(children, fontSize), opacity: box ? 0 : 1 }}>{children}</Text>
     {box ? <View pointerEvents="none" style={StyleSheet.absoluteFill}>
       <Svg width={box.width} height={box.height}>
         <Defs>

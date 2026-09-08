@@ -215,6 +215,16 @@ export function platformName(platformId: string): string {
   return findPlatform(getPlatforms(), platformId)?.name ?? platformId
 }
 
+/**
+ * How a credential's platform is drawn in a picker: its name, plus the favicon a
+ * custom platform stands in with when the brand registry has no mark for it.
+ * Mirrors the renderer's `providerDisplayForCredential`.
+ */
+export function platformDisplay(platformId: string): { name: string; icon?: string } {
+  const platform = findPlatform(getPlatforms(), platformId)
+  return { name: platform?.name ?? platformId, ...(platform?.icon ? { icon: platform.icon } : {}) }
+}
+
 /** Build the mobile-facing active-provider descriptor from a resolved chat service (replaces buildRemoteActiveProvider). */
 export function buildRemoteActiveService(
   resolved: ResolvedService | null,

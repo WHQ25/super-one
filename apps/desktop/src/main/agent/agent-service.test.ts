@@ -54,6 +54,7 @@ vi.mock('../db-sessions', () => ({
   pinSession: vi.fn(),
   hideSession: vi.fn(),
   listPinnedSessions: vi.fn(),
+  readSessionHarnessId: vi.fn(() => null),
 }))
 
 vi.mock('../session-history', () => ({
@@ -253,6 +254,7 @@ const appSettings = await import('../app-settings-service')
 const claudeModels = await import('./claude-models')
 const database = await import('../database')
 const { BASE_SESSION_PROVIDERS } = await import('@superone/shared/session-provider-definitions')
+const { HARNESS_LAUNCH_OPTIONS } = await import('@superone/shared/launch-options')
 type MockSessionExtras = {
   owner: { kind: 'local' } | { kind: 'remote'; deviceId: string }
   subscribers: Set<string>
@@ -708,7 +710,9 @@ describe('AgentService Realtime Voice', () => {
     const handler = getRegisteredIpcHandler(AgentIpcChannels.START_REALTIME_VOICE)!
     const request = { sdp: 'offer' }
     const currentSettings = appSettings.readAppSettings()
-    vi.mocked(appSettings.readAppSettings).mockReturnValueOnce({
+    // Not `...Once`: creating the session reads the settings too, now that every
+    // harness resolves its own defaults, and a one-shot would be spent there.
+    vi.mocked(appSettings.readAppSettings).mockReturnValue({
       ...currentSettings,
       agentPreference: {
         ...currentSettings.agentPreference,
@@ -716,14 +720,18 @@ describe('AgentService Realtime Voice', () => {
       },
     })
 
-    await handler(null, '/repo/main', 'draft-voice', request)
+    try {
+      await handler(null, '/repo/main', 'draft-voice', request)
 
-    expect(createSession).toHaveBeenCalledWith(expect.objectContaining({
-      projectPath: '/repo/main',
-      providerId: 'codex-base',
-      id: 'draft-voice',
-    }))
-    expect(startRealtimeVoice).toHaveBeenCalledWith({ ...request, voice: 'juniper' })
+      expect(createSession).toHaveBeenCalledWith(expect.objectContaining({
+        projectPath: '/repo/main',
+        providerId: 'codex-base',
+        id: 'draft-voice',
+      }))
+      expect(startRealtimeVoice).toHaveBeenCalledWith({ ...request, voice: 'juniper' })
+    } finally {
+      vi.mocked(appSettings.readAppSettings).mockReturnValue(currentSettings)
+    }
   })
 })
 
@@ -2565,6 +2573,52 @@ describe('AgentService.handleRemoteCommand', () => {
     },
   )
 
+  it('create_session applies a sandbox picked before the session existed', async () => {
+    // The phone's chip has no session id to send `set_sandbox_mode` to on the
+    // new-session landing, so the pick has to ride creation or be lost silently.
+    const setSandboxMode = vi.fn().mockResolvedValue({ enabled: true, autoAllowBash: true })
+    const createSession = vi.fn().mockReturnValue({
+      setSelectedSettings: vi.fn(), setAgentPreset: vi.fn(), setApiProviderId: vi.fn(), setSandboxMode,
+    })
+    const respond = vi.fn()
+    const service = new AgentService()
+    ;(service as { sessionManager: unknown }).sessionManager = { createSession }
+
+    await service.handleRemoteCommand({
+      type: 'create_session',
+      requestId: 'create-sandbox',
+      sessionId: 'session-sandbox',
+      projectPath: '/project',
+      provider: 'claude',
+      sandboxMode: 'auto',
+    }, respond)
+
+    expect(setSandboxMode).toHaveBeenCalledWith('auto')
+    expect(respond).toHaveBeenCalledWith('create-sandbox', expect.objectContaining({ ok: true }))
+  })
+
+  it('create_session survives a sandbox the host refuses', async () => {
+    // The session already exists by then; answering `ok: false` would strand it.
+    const setSandboxMode = vi.fn().mockRejectedValue(new Error('当前平台不支持沙盒'))
+    const createSession = vi.fn().mockReturnValue({
+      setSelectedSettings: vi.fn(), setAgentPreset: vi.fn(), setApiProviderId: vi.fn(), setSandboxMode,
+    })
+    const respond = vi.fn()
+    const service = new AgentService()
+    ;(service as { sessionManager: unknown }).sessionManager = { createSession }
+
+    await service.handleRemoteCommand({
+      type: 'create_session',
+      requestId: 'create-sandbox-fail',
+      sessionId: 'session-sandbox-fail',
+      projectPath: '/project',
+      provider: 'claude',
+      sandboxMode: 'on',
+    }, respond)
+
+    expect(respond).toHaveBeenCalledWith('create-sandbox-fail', expect.objectContaining({ ok: true }))
+  })
+
   it('lists remote sessions with live model, status, tags, and ACP identity', async () => {
     vi.mocked(dbSessions.listSessionsForFolder).mockReturnValue([{
       sessionId: 'session-acp',
@@ -2698,13 +2752,16 @@ describe('AgentService.handleRemoteCommand', () => {
       model: 'claude-opus-4-8',
       effort: 'high',
       permissionMode: 'acceptEdits',
+      // Unset preference, so the platform's own default answers — a remote client
+      // configuring a session that does not exist yet has nothing else to read.
+      sandboxMode: 'on',
     })
-    expect(payload.permissionModes).toEqual([
-      'default', 'acceptEdits', 'auto', 'plan', 'bypassPermissions', 'dontAsk',
-    ])
+    // Asserted against the shared table rather than a second copy of it: the
+    // catalog and the launch surfaces read the same list now.
+    expect(payload.permissionModes).toEqual(HARNESS_LAUNCH_OPTIONS.claude.permissionModes)
   })
 
-  it('get_system_info returns null defaults when user has no preferences set', async () => {
+  it('get_system_info resolves defaults when the user has set no preferences', async () => {
     vi.mocked(appSettings.readAppSettings).mockReturnValue({
       analyticsEnabled: true,
       locale: '',
@@ -2723,7 +2780,14 @@ describe('AgentService.handleRemoteCommand', () => {
     )
 
     const [, payload] = respond.mock.calls[0] as [string, Record<string, unknown>]
-    expect(payload.defaults).toEqual({ model: null, effort: null, permissionMode: null })
+    expect(payload.defaults).toEqual({
+      model: null,
+      effort: null,
+      // Resolved, never null: an unconfigured harness answers with its own first
+      // declared mode, which is what it would start in anyway.
+      permissionMode: 'default',
+      sandboxMode: 'on',
+    })
   })
 
   it('get_system_info hides Claude terminal-bound slash commands from remote clients', async () => {

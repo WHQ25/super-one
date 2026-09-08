@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { ActivityIndicator, Pressable, TextInput, View } from 'react-native'
 import { Text } from './text'
-import { ChevronDown, RefreshCw, Search, X, Zap } from 'lucide-react-native'
+import { RefreshCw, Search, X, Zap } from 'lucide-react-native'
 import type {
   HarnessId,
   ModelOption,
@@ -12,10 +12,11 @@ import type {
   RemoteProviderOption,
 } from '@superone/shared/agent-types'
 import { useMobileTheme } from '../theme/context'
-import { harnessDisplayName } from '../provider-state'
 import { AnchoredMenu, MenuDisclosureRow, MenuRow, MenuSeparator, useMenuAnchor } from './anchored-menu'
 import { EffortSlider } from './effort-slider'
 import { FireText, RainbowText } from './effort-easter-egg'
+import { RotatingChevron } from './rotating-chevron'
+import { CHIP_HEIGHT, CHIP_HIT_SLOP } from './chip-metrics'
 import { AgentSection, ModeSection, OptionsSection, ProviderSection, SectionLabel } from './model-picker-sections'
 import {
   effortEasterEgg,
@@ -106,9 +107,13 @@ export function ModelPicker(props: ModelPickerProps) {
     <Pressable ref={menu.ref} disabled={props.disabled} accessibilityRole="button"
       accessibilityLabel={`Model: ${egg ? eggLabel : triggerParts.map((part) => part.text).join(', ')}`}
       accessibilityState={{ disabled: props.disabled, expanded: !!menu.anchor }} onPress={() => { collapse(); menu.open() }}
-      style={({ pressed }) => ({ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: props.compact ? 6 : 12,
+      hitSlop={CHIP_HIT_SLOP}
+      style={({ pressed }) => ({ minHeight: CHIP_HEIGHT, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: props.compact ? 6 : 12,
         borderRadius: 8, opacity: props.disabled ? 0.45 : 1, backgroundColor: pressed ? colors.muted : 'transparent' })}>
-      <View style={props.compact ? { maxWidth: 260 } : { flex: 1 }}>
+      {/* The eggs are SVG painted over a measured text box, so a capped width
+          clips their tail glyphs outright instead of ellipsising. Let the egg
+          keep its natural width — the composer's chip row scrolls. */}
+      <View style={props.compact ? (egg ? undefined : { maxWidth: 260 }) : { flex: 1 }}>
         {!props.compact ? <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>Model</Text> : null}
         {/* Truncation priority follows desktop: effort and options give way long before the model name. */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -122,13 +127,13 @@ export function ModelPicker(props: ModelPickerProps) {
           </View>)}
         </View>
       </View>
-      <ChevronDown size={12} color={colors.mutedForeground} style={{ transform: [{ rotate: menu.anchor ? '180deg' : '0deg' }] }} />
+      <RotatingChevron open={!!menu.anchor} size={12} color={colors.mutedForeground} />
     </Pressable>
+    {/* Title row: `Models` plus refresh and search, as on desktop. The harness or
+        provider name used to sit here too, but the Provider section below already
+        names it and the model groups are labelled with it. */}
     <AnchoredMenu anchor={menu.anchor} title="Models" onDismiss={close} width={320} titleAccessory={
       <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
-        <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 12, color: colors.mutedForeground }}>
-          {props.providerName || harnessDisplayName(props.harness)}
-        </Text>
         {props.onRefresh ? <Pressable disabled={loading} accessibilityRole="button" accessibilityLabel="Refresh models" onPress={() => { void refresh() }}
           style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
           {loading ? <ActivityIndicator size="small" color={colors.mutedForeground} /> : <RefreshCw size={15} color={colors.mutedForeground} />}

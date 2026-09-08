@@ -1,22 +1,19 @@
 import { LoadingOverlay } from '../ui/loading-overlay'
 import type { RefObject } from 'react'
-import { Pressable, ScrollView, TextInput, View } from 'react-native'
+import { Pressable, ScrollView, View } from 'react-native'
 import { Text } from '../ui/text'
 import { WebView } from 'react-native-webview'
 import { TERMINAL_VIEW_HTML } from '@superone/chat-view'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
-import { ArrowUp, Terminal } from 'lucide-react-native'
-import { Button, IconButton } from '../ui'
+import { Terminal } from 'lucide-react-native'
+import { Button } from '../ui'
 
 const TERMINAL_SOURCE = { html: TERMINAL_VIEW_HTML }
 
 export function TerminalScreen(props: {
   webRef: RefObject<WebView | null>
-  draft: string
   writable: boolean
   onWebMessage: (raw: string) => void
-  onDraft: (value: string) => void
-  onSubmit: (value: string) => void
   onClaim: () => void
   onKey: (data: string) => void
 }) {
@@ -30,12 +27,14 @@ export function TerminalScreen(props: {
         source={TERMINAL_SOURCE}
         startInLoadingState
         renderLoading={() => <LoadingOverlay label="Loading terminal…" />}
-        style={styles.flex}
+        style={[styles.flex, { backgroundColor: tokens.colors.background }]}
+        containerStyle={{ backgroundColor: tokens.colors.background }}
         onMessage={(event) => props.onWebMessage(event.nativeEvent.data)}
       />
       <View style={{ paddingHorizontal: 16, paddingTop: 8, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: tokens.colors.surface }}>
         <Terminal size={14} color={tokens.colors.mutedForeground} />
-        <Text style={styles.rowMeta}>{props.writable ? 'Interactive terminal' : 'Read-only · another client has control'}</Text>
+        <Text style={[styles.rowMeta, styles.flex]}>{props.writable ? 'Interactive terminal' : 'Read-only · another client has control'}</Text>
+        {!props.writable ? <Button label="Take control" variant="secondary" onPress={props.onClaim} /> : null}
       </View>
       <ScrollView
         horizontal
@@ -65,22 +64,6 @@ export function TerminalScreen(props: {
           </Pressable>
         ))}
       </ScrollView>
-      <View style={[styles.composer, { paddingHorizontal: 12, backgroundColor: tokens.colors.surface }]}>
-        <TextInput
-          accessibilityLabel="Terminal input"
-          editable={props.writable}
-          style={styles.composerInput}
-          placeholder={props.writable ? 'terminal input' : 'read-only'}
-          placeholderTextColor={tokens.colors.mutedForeground}
-          value={props.draft}
-          onChangeText={props.onDraft}
-          autoCapitalize="none"
-          autoCorrect={false}
-          onSubmitEditing={(event) => props.onSubmit(event.nativeEvent.text)}
-        />
-        {props.writable ? <IconButton icon={ArrowUp} label="Send terminal command" active disabled={!props.draft} onPress={() => props.onSubmit(props.draft)} />
-          : <Button label="Take control" variant="secondary" onPress={props.onClaim} />}
-      </View>
     </View>
   )
 }

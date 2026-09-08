@@ -1,11 +1,13 @@
 import { Fragment } from 'react'
-import { AlertTriangle, Bot, ChevronDown, Eye, FastForward, ListTodo, Lock, MessageCircle, PenLine, Shield, ShieldCheck, ShieldOff, Unlock, Zap, type LucideIcon } from 'lucide-react-native'
+import { AlertTriangle, Bot, Eye, FastForward, ListTodo, Lock, MessageCircle, PenLine, Shield, ShieldCheck, ShieldOff, Unlock, Zap, type LucideIcon } from 'lucide-react-native'
 import { Pressable, View } from 'react-native'
 import { Text } from './text'
 import type { HarnessId } from '@superone/shared/agent-types'
 import { useMobileTheme } from '../theme/context'
 import { AnchoredMenu, MenuSeparator, useMenuAnchor } from './anchored-menu'
 import { orderedPermissionModes, permissionPresentation } from './permission-mode-data'
+import { CHIP_HEIGHT, CHIP_HIT_SLOP } from './chip-metrics'
+import { RotatingChevron } from './rotating-chevron'
 
 export { permissionModeLabel } from './permission-mode-data'
 const icons: Record<string, LucideIcon> = { AlertTriangle, Bot, Eye, FastForward, ListTodo, Lock, MessageCircle, PenLine, Shield, ShieldCheck, ShieldOff, Unlock, Zap }
@@ -26,11 +28,12 @@ export function PermissionModeSelector({ harness, modes, value, onChange, disabl
   return <>
     <Pressable ref={menu.ref} disabled={disabled || !modes.length} accessibilityRole="button" accessibilityLabel={`Permission mode: ${selected.label}`}
       accessibilityState={{ disabled: disabled || !modes.length, expanded: !!menu.anchor }} onPress={menu.open}
-      style={({ pressed }) => ({ minHeight: 44, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 4,
+      hitSlop={CHIP_HIT_SLOP}
+      style={({ pressed }) => ({ minHeight: CHIP_HEIGHT, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 4,
         borderRadius: 8, opacity: disabled ? 0.45 : 1, backgroundColor: pressed ? colors.muted : 'transparent' })}>
       <TriggerIcon color={tone(selected)} size={14} />
       <Text style={{ color: tone(selected), fontSize: 12 }}>{selected.label}</Text>
-      <ChevronDown color={tone(selected)} size={12} style={{ transform: [{ rotate: menu.anchor ? '180deg' : '0deg' }] }} />
+      <RotatingChevron open={!!menu.anchor} color={tone(selected)} size={12} />
     </Pressable>
     <AnchoredMenu anchor={menu.anchor} title="Permission mode" onDismiss={menu.close} width={300}>
       {available.map((mode) => {

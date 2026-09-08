@@ -1,4 +1,5 @@
 import type { RelayClient } from '@superone/relay-client'
+import type { HarnessId } from '@superone/shared/agent-types'
 import { requestMentionIcons, requestMentionSearch, type MentionSearchResult } from '../mention-search'
 import { MentionIconCache, type MentionIconStore } from '../mention-icon-cache'
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
@@ -14,7 +15,7 @@ import {
   type SessionMentionLoadState,
 } from '../session-mention'
 import { filterSlashCommands, type SlashCommandInfo } from '../slash'
-import { requestSlashCatalog, type SlashCatalogStatus } from '../slash-catalog'
+import { peekSlashCatalog, requestSlashCatalog, type SlashCatalogStatus } from '../slash-catalog'
 
 export type MentionSearchState = {
   active: boolean
@@ -51,7 +52,7 @@ type MentionFetch = {
 export interface ComposerSuggestionSource {
   client: RefObject<RelayClient | null>
   projectPath?: string
-  provider?: string
+  provider?: HarnessId
   /** Every project the host offers — the `@session` portal's scope choices. */
   projects?: readonly { path: string; name?: string }[]
   /**
@@ -126,6 +127,12 @@ export function useComposerSuggestions(
     const client = host.client.current
     if (!client || !projectPath || !provider) {
       setCatalog([])
+      setCatalogStatus('ready')
+      return
+    }
+    const cached = peekSlashCatalog(client, projectPath, provider)
+    if (cached) {
+      setCatalog(cached)
       setCatalogStatus('ready')
       return
     }

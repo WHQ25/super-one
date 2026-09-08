@@ -1,14 +1,16 @@
 import { Box, PackageOpen } from 'lucide-react-native'
 import { Pressable, View } from 'react-native'
-import type { HarnessId, SandboxInfo, SandboxMode } from '@superone/shared/agent-types'
+import type { HarnessId, SandboxInfo, SandboxMode, SandboxSupportLevel } from '@superone/shared/agent-types'
 import {
   harnessSandboxModes,
+  harnessSandboxSupportLevel,
   harnessSupportsSandbox,
   resolveSandboxMode,
 } from '@superone/shared/harness/harness-sandbox'
 import { Text } from './text'
 import { useMobileTheme } from '../theme/context'
 import { AnchoredMenu, useMenuAnchor } from './anchored-menu'
+import { CHIP_HEIGHT, CHIP_HIT_SLOP } from './chip-metrics'
 
 type Presentation = {
   label: string
@@ -31,6 +33,12 @@ export type SandboxSelectorProps = {
   permissionMode: string
   onChange: (mode: SandboxMode) => void
   disabled?: boolean
+  /**
+   * What the *host* can sandbox, which the harness gate cannot answer: Windows
+   * has no sandbox at all, so a chip that still opened a menu there offered
+   * picks the desktop silently coerced back to `off`.
+   */
+  sandboxSupport?: SandboxSupportLevel
 }
 
 /**
@@ -39,28 +47,30 @@ export type SandboxSelectorProps = {
  * setting (or have none), so their chip is read-only and derived from that setting
  * rather than offering a switch that would contradict it.
  */
-export function SandboxSelector({ harness, sandboxInfo, permissionMode, onChange, disabled = false }: SandboxSelectorProps) {
+export function SandboxSelector({ harness, sandboxInfo, permissionMode, onChange, disabled = false, sandboxSupport = 'always' }: SandboxSelectorProps) {
   const menu = useMenuAnchor()
   const { tokens: { colors } } = useMobileTheme()
   const value = resolveSandboxMode({ harnessId: harness, sandboxInfo, permissionMode })
   const current = PRESENTATION[value]
   const CurrentIcon = current.icon
-  const interactive = harnessSupportsSandbox(harness) && !disabled
+  const interactive = harnessSupportsSandbox(harness)
+    && harnessSandboxSupportLevel(harness, sandboxSupport) !== 'unsupported'
+    && !disabled
   const available = harnessSandboxModes(harness)
 
   // Glyph only: the mode's colour carries the state at a glance, and the label is a
   // tap away in the menu. The row already spends its width on the model name.
   if (!interactive) {
     return <View accessibilityRole="text" accessibilityLabel={current.label}
-      style={{ minHeight: 44, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', opacity: disabled ? 0.45 : 1 }}>
+      style={{ minHeight: CHIP_HEIGHT, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', opacity: disabled ? 0.45 : 1 }}>
       <CurrentIcon color={colors[current.tone]} size={16} />
     </View>
   }
 
   return <>
     <Pressable ref={menu.ref} accessibilityRole="button" accessibilityLabel={`Sandbox: ${current.label}`}
-      accessibilityState={{ expanded: !!menu.anchor }} onPress={menu.open}
-      style={({ pressed }) => ({ minHeight: 44, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center',
+      accessibilityState={{ expanded: !!menu.anchor }} onPress={menu.open} hitSlop={CHIP_HIT_SLOP}
+      style={({ pressed }) => ({ minHeight: CHIP_HEIGHT, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center',
         borderRadius: 8, backgroundColor: pressed ? colors.muted : 'transparent' })}>
       <CurrentIcon color={colors[current.tone]} size={16} />
     </Pressable>

@@ -1,4 +1,5 @@
-import type { AgentEvent } from '@superone/shared/agent-types'
+import type { AgentEvent, RealtimeTimelineSegment } from '@superone/shared/agent-types'
+import { dedupeSegmentsByItem } from '@superone/shared/realtime-transcript'
 import type { ChatCorePatch, ChatCoreSession } from './types'
 import { defaultChatCorePorts, type ChatCorePorts } from './ports'
 export type { ChatCorePorts }
@@ -187,6 +188,34 @@ export function applyEventToSession(
 
     case 'session_goal':
       return { sessionGoal: event.goal }
+
+    // Codex realtime voice. Only a *completed* utterance is taken, mirroring what the
+    // desktop persists (`realtime-timeline-repo.ts`) — a partial has no durable id and
+    // the phone has no live-caption surface to spend a re-render on.
+    case 'realtime_started':
+      return { realtimeSessionId: event.realtimeSessionId ?? null }
+
+    case 'realtime_transcript_item': {
+      if (event.phase !== 'completed' || !event.text.trim() || !event.role) return {}
+      const realtimeSessionId = event.realtimeSessionId ?? session.realtimeSessionId
+      if (!realtimeSessionId) return {}
+      const arriving: RealtimeTimelineSegment = {
+        id: `live-${event.itemId}`,
+        sourceItemId: event.itemId,
+        realtimeSessionId,
+        role: event.role,
+        text: event.text,
+        provenance: event.role === 'assistant' ? 'realtime-assistant' : 'realtime-user',
+        ...(event.startedAtMs === undefined ? {} : { startedAtMs: event.startedAtMs }),
+      }
+      // The desktop persists before it broadcasts, so an event replayed out of the
+      // restore buffer is already in the snapshot the phone just fetched — under a
+      // `local-<uuid>` id. `dedupeSegmentsByItem` matches them on the provider item.
+      return { realtimeSegments: dedupeSegmentsByItem([...session.realtimeSegments, arriving]) }
+    }
+
+    case 'realtime_closed':
+      return { realtimeSessionId: null }
   }
   return {}
 }

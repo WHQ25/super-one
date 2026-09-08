@@ -8,6 +8,11 @@ describe('responsive shell layout', () => {
     expect(shouldUseTabletMultiPane(1024, 'settings', true)).toBe(true)
     expect(shouldUseTabletMultiPane(1024, 'worktree', true)).toBe(true)
     expect(shouldUseTabletMultiPane(1024, 'branch', true)).toBe(true)
+    // This is the whole reason additional folders is a route: on a tablet it
+    // reads as a panel beside the session list, on a phone as a page, with no
+    // width branch of its own.
+    expect(shouldUseTabletMultiPane(1024, 'add-dir', true)).toBe(true)
+    expect(shouldUseTabletMultiPane(TABLET_SPLIT_MIN_WIDTH - 1, 'add-dir', true)).toBe(false)
   })
 
   it('keeps onboarding and unselected projects single-pane', () => {
@@ -20,6 +25,7 @@ describe('responsive shell layout', () => {
     expect(isFullBleedScreen('terminal')).toBe(true)
     expect(isFullBleedScreen('worktree')).toBe(true)
     expect(isFullBleedScreen('branch')).toBe(true)
+    expect(isFullBleedScreen('add-dir')).toBe(true)
     expect(isFullBleedScreen('project-picker')).toBe(true)
     expect(isFullBleedScreen('add-project')).toBe(true)
     expect(isFullBleedScreen('settings')).toBe(false)

@@ -15,7 +15,7 @@ import { Pressable, ActivityIndicator, View } from 'react-native'
 import { Text } from '../ui/text'
 import { WebView } from 'react-native-webview'
 import { CHAT_VIEW_HTML } from '@superone/chat-view'
-import type { ChatMessage, HarnessId, ImageAttachment, SandboxInfo, SandboxMode, TodoItem } from '@superone/shared/agent-types'
+import type { ChatMessage, HarnessId, ImageAttachment, SandboxInfo, SandboxSupportLevel, SandboxMode, TodoItem } from '@superone/shared/agent-types'
 import type { MatchedSlashCommand } from '../slash'
 import type { SlashCatalogStatus } from '../slash-catalog'
 import type { MentionItem } from '../mentions'
@@ -37,6 +37,8 @@ export function ChatScreen(props: {
   permissionModes: string[]
   permissionMode: string
   sandboxInfo: SandboxInfo | null
+  /** Host platform sandbox capability, reported by the harness catalog. */
+  sandboxSupport?: SandboxSupportLevel
   contextTokens: number
   contextWindow: number | null
   totalCostUsd: number
@@ -52,8 +54,14 @@ export function ChatScreen(props: {
   mentionSearch?: MentionSearchState
   onMentionRetry?: () => void
   onMentionLoadMore?: () => void
-  /** Slot above the composer for notices the transcript cannot carry. */
-  above?: ReactNode
+  /** Opens the additional-folders panel — the chip row and `/add-dir` share it. */
+  onManageDirectories: () => void
+  /**
+   * The one overlay the composer may show — a command's panel. Set means it
+   * takes the slot from the slash and mention lists rather than stacking on
+   * them; see `ChatComposer`.
+   */
+  overlay?: ReactNode
   /**
    * Dragging in from the left edge of the transcript. Chat is the stack root's
    * only child, so the native back gesture is turned off here — this is what
@@ -96,7 +104,8 @@ export function ChatScreen(props: {
         source={CHAT_SOURCE}
         startInLoadingState
         renderLoading={() => <LoadingOverlay label="Loading conversation…" />}
-        style={styles.flex}
+        style={[styles.flex, { backgroundColor: tokens.colors.background }]}
+        containerStyle={{ backgroundColor: tokens.colors.background }}
         onMessage={(event) => props.onWebMessage(event.nativeEvent.data)}
         onContentProcessDidTerminate={() => props.onWebProcessError('content process terminated')}
         onRenderProcessGone={() => props.onWebProcessError('render process terminated')}

@@ -8,10 +8,12 @@ import { SlashSuggestions, MentionSuggestions } from '../ui/composer-suggestions
 import { ModelPicker } from '../ui/model-picker'
 import { ArrowUp, Paperclip, Square } from 'lucide-react-native'
 import { ScrollView, TextInput, View, useWindowDimensions } from 'react-native'
-import { Text } from '../ui/text'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { useKeyboardVisible } from '../ui/use-keyboard-visible'
 import type {
   HarnessId, ModelOption, ImageAttachment, RemoteActiveProvider, RemoteAgentOption,
   RemoteEffortOption, RemoteModeOption, RemoteProviderOption, SandboxInfo, SandboxMode,
+  SandboxSupportLevel,
 } from '@superone/shared/agent-types'
 import type { SelectorCatalogParam } from '../model-picker-state'
 import type { MatchedSlashCommand } from '../slash'
@@ -20,8 +22,8 @@ import type { MentionItem } from '../mentions'
 import { mentionBreadcrumbs } from '../mention-browse-state'
 import { isSessionMentionQuery } from '../session-mention'
 import type { MentionRow } from '../mention-rows'
-import { useMobileStyles, useMobileTheme } from '../theme/context'
-import { ContextRing, IconButton, PermissionModeSelector, SandboxSelector } from '../ui'
+import { useMobileTheme } from '../theme/context'
+import { AdditionalDirsHint, ContextRing, IconButton, PermissionModeSelector, SandboxSelector } from '../ui'
 
 export type ComposerSelection = {
   model: string; models: ModelOption[]; effort: string; efforts: RemoteEffortOption[]
@@ -41,9 +43,19 @@ export type ChatComposerProps = {
   provider: HarnessId
   draft: string; streaming: boolean; attachments: ImageAttachment[]
   starting?: boolean
-  permissionModes: string[]; permissionMode: string; additionalDirectories: string[]
+  permissionModes: string[]; permissionMode: string
+  /**
+   * Folders to advertise above the composer. Desktop and Flutter both show these
+   * only while the session is still being configured, so the caller passes an
+   * empty list once it has started rather than this row deciding for itself.
+   */
+  additionalDirectories: string[]
+  /** Opens the panel that lists and edits them — the same one `/add-dir` opens. */
+  onManageDirectories: () => void
   /** Runtime fact from the host; `null` until it has reported one. */
   sandboxInfo: SandboxInfo | null
+  /** Host platform sandbox capability, reported by the harness catalog. */
+  sandboxSupport?: SandboxSupportLevel
   contextTokens: number; contextWindow: number | null; totalCostUsd: number
   slashHits: MatchedSlashCommand[]; slashCatalogStatus: SlashCatalogStatus; mentionRows: MentionRow[]
   onDraft: (value: string) => void; onSend: () => void; onStop: () => void
@@ -61,13 +73,27 @@ export type ChatComposerProps = {
   /** The raw `@` query, so the overlay can show where in the tree it points. */
   mentionQuery?: string | null
   mentionGroupLabels?: Partial<Record<string, string>>
-  placeholder?: string; above?: ReactNode
+  placeholder?: string
+  /**
+   * The one overlay above the input, when a command owns it.
+   *
+   * Composer surfaces are mutually exclusive, not stacked: a command that opens
+   * a panel is answering the same keystrokes the suggestion lists are, and
+   * showing both is how `/add-dir` ended up drawn on top of a command list
+   * still offering `/add-dir`. Desktop and Flutter both pick exactly one.
+   */
+  overlay?: ReactNode
 }
 
 export function ChatComposer(props: ChatComposerProps) {
-  const styles = useMobileStyles()
   const { tokens: { colors, radius } } = useMobileTheme()
   const tablet = useWindowDimensions().width >= 768
+  // The app's root SafeAreaView already clears the home indicator, so a gap of
+  // our own on top of it left the composer a full input-height off the bottom.
+  // Raising the keyboard hides that inset behind it without shrinking it, and
+  // there the gap is ours to give.
+  const insets = useSafeAreaInsets()
+  const bottomGap = useKeyboardVisible() || !insets.bottom ? 8 : 0
   // `flexGrow` + `justifyContent` centre the chips while they fit and go inert once
   // they overflow, so a long model name still scrolls from the left edge.
   const controls = <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled"
@@ -77,9 +103,8 @@ export function ChatComposer(props: ChatComposerProps) {
     </> : null}
     <PermissionModeSelector harness={props.provider} disabled={props.starting} modes={props.permissionModes} value={props.permissionMode} onChange={props.onPermissionMode} />
     <ContextRing tokens={props.contextTokens} contextWindow={props.contextWindow} costUsd={props.totalCostUsd} />
-    {props.additionalDirectories.length ? <Text style={styles.directoryHint}>+{props.additionalDirectories.length} directories</Text> : null}
     <SandboxSelector harness={props.provider} disabled={props.starting} sandboxInfo={props.sandboxInfo}
-      permissionMode={props.permissionMode} onChange={props.onSandboxMode} />
+      sandboxSupport={props.sandboxSupport} permissionMode={props.permissionMode} onChange={props.onSandboxMode} />
   </ScrollView>
   const attach = <IconButton icon={Paperclip} label="Add attachment" disabled={props.starting} onPress={props.onAttachmentMenu} />
   const send = <IconButton icon={props.streaming ? Square : ArrowUp} label={props.streaming ? 'Stop' : 'Send'}
@@ -87,15 +112,17 @@ export function ChatComposer(props: ChatComposerProps) {
     iconSize={tablet ? 13 : props.streaming ? 22 : 20}
     disabled={props.starting || (!props.streaming && !props.draft.trim() && !props.attachments.length)}
     onPress={props.streaming ? props.onStop : props.onSend} />
-  return <View style={{ paddingHorizontal: 12, paddingTop: 6, paddingBottom: 8, gap: 6, backgroundColor: colors.background }}>
-    {props.above}
-    {!tablet ? <View testID="phone-composer-status" style={{ flexDirection: 'row', minHeight: 44 }}>{controls}</View> : null}
-    <SlashSuggestions matches={props.slashHits} status={props.slashCatalogStatus} onSelect={props.onSlash} onDismiss={props.onSlashDismiss} />
-    <MentionSuggestions rows={props.mentionRows} onSelect={props.onMention} search={props.mentionSearch}
-      onRetry={props.onMentionRetry} onLoadMore={props.onMentionLoadMore} groupLabels={props.mentionGroupLabels}
-      // A session title may contain a slash; only a path query has a trail.
-      breadcrumbs={props.mentionQuery && !isSessionMentionQuery(props.mentionQuery)
-        ? mentionBreadcrumbs(props.mentionQuery) : []} />
+  return <View style={{ paddingHorizontal: 12, paddingTop: 4, paddingBottom: bottomGap, gap: 4, backgroundColor: colors.background }}>
+    <AdditionalDirsHint dirs={props.additionalDirectories} onPress={props.onManageDirectories} />
+    {!tablet ? <View testID="phone-composer-status" style={{ flexDirection: 'row', minHeight: 36 }}>{controls}</View> : null}
+    {props.overlay ?? <>
+      <SlashSuggestions matches={props.slashHits} status={props.slashCatalogStatus} onSelect={props.onSlash} onDismiss={props.onSlashDismiss} />
+      <MentionSuggestions rows={props.mentionRows} onSelect={props.onMention} search={props.mentionSearch}
+        onRetry={props.onMentionRetry} onLoadMore={props.onMentionLoadMore} groupLabels={props.mentionGroupLabels}
+        // A session title may contain a slash; only a path query has a trail.
+        breadcrumbs={props.mentionQuery && !isSessionMentionQuery(props.mentionQuery)
+          ? mentionBreadcrumbs(props.mentionQuery) : []} />
+    </>}
     <View testID={tablet ? 'tablet-composer' : 'phone-composer'} style={tablet
       ? { borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, borderRadius: radius.lg, padding: 6 }
       : { flexDirection: 'row', alignItems: 'flex-end', gap: 4 }}>

@@ -1,7 +1,8 @@
 import type { RelayClient } from '@superone/relay-client'
-import type { HarnessId, RemoteCommand } from '@superone/shared/agent-types'
-import { randomId } from './ids'
+import type { HarnessId } from '@superone/shared/agent-types'
+import { peekHarnessResource, requestHarnessResource } from './harness-resource-cache'
 import { mergeSlashCatalogs, type SlashCommandInfo } from './slash'
+import { harnessSupportsAdditionalDirs } from './provider-state'
 
 export type SlashCatalogStatus = 'loading' | 'ready' | 'error'
 
@@ -21,6 +22,23 @@ const WORKFLOWS_COMMAND: SlashCommandInfo = {
   isSkill: false,
 }
 /**
+ * `/add-dir` is a host command too, over a harness-neutral folder set — the
+ * desktop offers it from one gate rather than copying it into every catalog
+ * that happens to accept extra roots, and so does this.
+ *
+ * Both scopes are editable, as in the desktop popup: project folders persist
+ * and every session inherits them, session folders end with the session. Either
+ * reaches a running session on its next turn, which recomputes its directory
+ * set — nothing has to be resent. The panel itself is a projection of this
+ * command's line; see `add-dir-state.ts`.
+ */
+const ADD_DIR_COMMAND: SlashCommandInfo = {
+  name: 'add-dir',
+  description: 'Manage additional working directories',
+  argumentHint: '',
+  isSkill: false,
+}
+/**
  * The command catalog for a project and harness, independent of any session.
  *
  * The composer needs it on the new-session landing too — a draft typed before
@@ -35,27 +53,40 @@ const WORKFLOWS_COMMAND: SlashCommandInfo = {
 export async function requestSlashCatalog(
   client: Pick<RelayClient, 'request'>,
   projectPath: string,
-  provider: HarnessId | string,
+  provider: HarnessId,
 ): Promise<SlashCommandInfo[]> {
   const [info, resources] = await Promise.all([
-    client.request({
-      type: 'get_system_info',
-      requestId: randomId(),
-      projectPath,
-      provider: provider as HarnessId,
-    } as RemoteCommand) as Promise<SystemInfoReply>,
-    client.request({
-      type: 'get_project_resources',
-      requestId: randomId(),
-      projectPath,
-      provider: provider as HarnessId,
-    } as RemoteCommand).catch(() => ({})) as Promise<ProjectResourcesReply>,
+    requestHarnessResource(client, 'get_system_info', projectPath, provider),
+    requestHarnessResource(client, 'get_project_resources', projectPath, provider).catch(() => ({})),
   ])
+  return buildCatalog(info, resources, provider)
+}
+
+export function peekSlashCatalog(client: Pick<RelayClient, 'request'>, projectPath: string, provider: HarnessId) {
+  const info = peekHarnessResource(client, 'get_system_info', projectPath, provider)
+  const resources = peekHarnessResource(client, 'get_project_resources', projectPath, provider)
+  return info && resources ? buildCatalog(info, resources, provider) : undefined
+}
+
+function buildCatalog(info: SystemInfoReply, resources: ProjectResourcesReply, provider: HarnessId): SlashCommandInfo[] {
   const catalog = mergeSlashCatalogs(
     info?.userSlashCommands ?? info?.slashCommands ?? [],
     resources?.projectSlashCommands ?? [],
     resources?.skills ?? [],
   )
-  if (provider !== 'acp' || catalog.some((command) => command.name === WORKFLOWS_COMMAND.name)) return catalog
-  return [...catalog, WORKFLOWS_COMMAND]
+  return withHostCommand(
+    withHostCommand(catalog, WORKFLOWS_COMMAND, provider === 'acp'),
+    ADD_DIR_COMMAND,
+    harnessSupportsAdditionalDirs(provider),
+  )
+}
+
+/** Offer a host command where the capability is real, and never twice. */
+function withHostCommand(
+  catalog: SlashCommandInfo[],
+  command: SlashCommandInfo,
+  offered: boolean,
+): SlashCommandInfo[] {
+  if (!offered || catalog.some((entry) => entry.name === command.name)) return catalog
+  return [...catalog, command]
 }

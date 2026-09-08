@@ -13,3 +13,24 @@ jest.mock('react-native-mmkv', () => {
     },
   }
 })
+
+/**
+ * Skia and Reanimated both reach every test that mounts the composer
+ * (`ModelPicker` → the `max` effort easter egg): Skia ships ESM that jest's
+ * CommonJS runtime cannot load, and Reanimated's worklets need a native runtime
+ * no test has. Nothing under test draws with either — the canvas is one
+ * particle effect — so both are stubbed rather than transformed, which would
+ * cost every suite for a component no assertion touches.
+ */
+jest.mock('@shopify/react-native-skia', () => ({
+  BlendMode: {},
+  Canvas: () => null,
+  Picture: () => null,
+  Skia: { PictureRecorder: class {} },
+  useClock: () => ({ value: 0 }),
+}))
+
+jest.mock('react-native-reanimated', () => ({
+  useDerivedValue: (fn: () => unknown) => ({ value: fn() }),
+  useSharedValue: (initial: unknown) => ({ value: initial }),
+}))

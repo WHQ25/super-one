@@ -20,7 +20,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync } from 'fs'
 import { homedir } from 'os'
 import { getDb, getCachedHarnessResources } from '../database'
 import { resolveTestApiKey } from './provider-test-key'
-import { buildRemoteActiveService, platformName, resolveChatService, resolveServiceFromCredential } from '../providers/resolver'
+import { buildRemoteActiveService, platformDisplay, resolveChatService, resolveServiceFromCredential } from '../providers/resolver'
 import { getPlatforms } from '../providers/registry'
 import { testServiceEndpoints } from '../providers/endpoint-test'
 import { discoverModels } from '../providers/model-discovery'
@@ -52,6 +52,7 @@ import { harnessProviderCatalog } from './remote-selector-catalog'
 import { listAccounts as listClaudeAccounts } from './claude-account-service'
 import { getCurrentLocale } from '../i18n'
 import { buildRemoteHarnessSystemInfo } from './remote-harness-system-info'
+import { sessionDefaultsForHarness } from '@superone/shared/harness/session-defaults'
 
 /** Resolve a path to its git common directory (shared across worktrees). */
 function getGitRoot(cwd: string): string {
@@ -65,7 +66,7 @@ function getGitRoot(cwd: string): string {
     return cwd // Fallback: not a git repo, use path itself
   }
 }
-import { listSessionsForFolder, createSession, createAutomationSession, renameSession as dbRenameSession, saveSessionState, loadSessionState, loadSessionMessagesPaginated, sessionBelongsToProject, deleteSession as dbDeleteSession, deleteSessionsOlderThan as dbDeleteSessionsOlderThan, pinSession as dbPinSession, hideSession as dbHideSession, listPinnedSessions, searchSessionsByTitle } from '../db-sessions'
+import { listSessionsForFolder, createSession, createAutomationSession, renameSession as dbRenameSession, saveSessionState, loadSessionState, loadSessionMessagesPaginated, sessionBelongsToProject, deleteSession as dbDeleteSession, deleteSessionsOlderThan as dbDeleteSessionsOlderThan, pinSession as dbPinSession, hideSession as dbHideSession, listPinnedSessions, searchSessionsByTitle, readSessionHarnessId } from '../db-sessions'
 import { loadSessionMessages } from '../session-history'
 import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig } from '../mcp-config-service'
 import {
@@ -617,6 +618,17 @@ export class AgentService {
           if (command.mode) created.setSelectedSettings({ mode: command.mode })
           if (command.agentPreset) created.setAgentPreset(command.agentPreset)
           if (command.apiProviderId !== undefined) created.setApiProviderId(command.apiProviderId)
+          // A sandbox picked before the session existed has no `set_sandbox_mode`
+          // to ride on — the client had no session id yet. A host that cannot
+          // sandbox rejects it, and that must not sink the session already made.
+          if (command.sandboxMode) {
+            try {
+              await created.setSandboxMode(command.sandboxMode)
+            } catch (err) {
+              log.warn('[AgentService] create_session: sandbox %s rejected: %s', command.sandboxMode,
+                err instanceof Error ? err.message : String(err))
+            }
+          }
           await respond?.(command.requestId, { ok: true, sessionId, cwd, gitBranch: recordedGitBranch ?? null })
         } catch (err) {
           await respond?.(command.requestId, { ok: false, error: gitErrorMessage(err) })
@@ -1090,6 +1102,7 @@ export class AgentService {
           const sandboxInfo = snapshot?.harnessId === 'acp'
             ? await import('../acp/grok-sandbox').then((m) => m.currentGrokSandbox()).catch(() => undefined)
             : session?.getCurrentSandboxInfo()
+          const realtimeTimeline = loadRealtimeTimeline(command.sessionId)
           trace('remote.cmd', 'get_session_state', {
             projectPath: command.projectPath,
             sessionId: command.sessionId,
@@ -1108,6 +1121,15 @@ export class AgentService {
             // Status-bar facts a late subscriber cannot replay from events:
             // usage only arrives with the next turn, and sandbox is a runtime fact.
             ...(sandboxInfo ? { sandboxInfo } : {}),
+            // Codex voice lives in its own table, so `load_session_messages` can never
+            // return it. Riding along here keeps it inside the restore buffer window —
+            // a later fetch would clobber live utterances the phone already applied.
+            // `threadMessages` is deliberately left behind: it is a stale provider
+            // cache that duplicates what chat_messages already carries.
+            ...(realtimeTimeline ? {
+              realtimeSegments: realtimeTimeline.segments,
+              activeRealtimeSessionId: realtimeTimeline.activeRealtimeSessionId,
+            } : {}),
             contextTokens: snapshot?.contextTokens ?? 0,
             totalCostUsd: snapshot?.totalCostUsd ?? 0,
           })
@@ -1413,7 +1435,7 @@ export class AgentService {
                   const resolved = resolveServiceFromCredential(consumer, credential, null, options)
                   return resolved ? { brand: resolved.brand } : null
                 },
-                platformName,
+                platformDisplay,
                 claudeAccounts,
                 selectedProviderId: resolveChatService(harnessId, null, options)?.credentialId ?? null,
               })
@@ -1422,6 +1444,11 @@ export class AgentService {
                 return { providers: [], selectedProviderId: null }
               }
             },
+            // Same answer `Session` reaches for at construction: the stored
+            // preference when there is one, the platform's own default otherwise.
+            defaultSandboxMode: () => this.readDefaultSessionPrefs(command.provider).sandboxMode
+              ?? getSandboxCapability().defaultMode,
+            sandboxSupport: () => getSandboxCapability().supportLevel,
             deepseekPresets: async () => {
               try {
                 const { getDeepseekRuntime } = await import('../deepseek/deepseek-runtime-host')
@@ -1934,10 +1961,11 @@ export class AgentService {
     const shouldApplyHint = (existing: import('../session/types').Session): boolean =>
       apiProviderHint !== null && existing.snapshot.apiProviderId !== apiProviderHint
     const expectedHarness = hint?.provider
+    // Every harness owns its defaults now, so this no longer special-cases
+    // Claude — a harness with nothing configured still resolves to its own
+    // first declared mode rather than to Claude's.
     const prefsFor = (provider: HarnessId | undefined) =>
-      provider === 'claude' || !provider
-        ? this.readDefaultSessionPrefs()
-        : { permissionMode: undefined as PermissionMode | undefined, sandboxMode: undefined as SandboxMode | undefined }
+      this.readDefaultSessionPrefs(provider ?? 'claude')
 
     if (requestedSid) {
       const existing = mgr.getSession(requestedSid)
@@ -2042,7 +2070,7 @@ export class AgentService {
     const harnessId = hint?.provider ?? 'claude'
     const activeCwd = mgr.getActiveSession(projectPath)?.cwd
     const cwd = hint?.worktreePath ?? activeCwd
-    const { permissionMode, sandboxMode } = this.readDefaultSessionPrefs()
+    const { permissionMode, sandboxMode } = this.readDefaultSessionPrefs(harnessId)
     const createOpts = {
       projectPath,
       cwd,
@@ -2115,13 +2143,22 @@ export class AgentService {
     return mgr.createSession(createOpts)
   }
 
-  /** Public so the scheduled-send service can revive a session with the same defaults. */
-  readDefaultSessionPrefs(): { permissionMode: PermissionMode; sandboxMode: SandboxMode | undefined } {
+  /**
+   * Defaults a new session on `harnessId` starts with. Public so the
+   * scheduled-send service can revive a session with the same ones.
+   *
+   * The permission mode is already validated against that harness's own
+   * vocabulary by `sessionDefaultsForHarness`; only the sandbox still needs the
+   * platform coercion, which is a fact this process owns.
+   */
+  readDefaultSessionPrefs(
+    harnessId: HarnessId = 'claude',
+  ): { permissionMode: PermissionMode; sandboxMode: SandboxMode | undefined } {
     const { agentPreference } = readAppSettings()
-    const storedSandboxMode = agentPreference.claude.defaultSandboxMode || undefined
+    const defaults = sessionDefaultsForHarness(agentPreference, harnessId)
     return {
-      permissionMode: agentPreference.claude.defaultPermissionMode || 'default',
-      sandboxMode: coerceSandboxModeForCapability(storedSandboxMode),
+      permissionMode: defaults.permissionMode,
+      sandboxMode: coerceSandboxModeForCapability(defaults.sandboxMode ?? undefined),
     }
   }
 
@@ -2393,9 +2430,7 @@ export class AgentService {
       })
       await mgr.disposeSession(sessionId)
       if (!newSessionId) return null
-      const prefs = harnessId === 'claude'
-        ? this.readDefaultSessionPrefs()
-        : { permissionMode: undefined, sandboxMode: undefined }
+      const prefs = this.readDefaultSessionPrefs(harnessId)
       const fresh = mgr.createSession({ projectPath, providerId, ...prefs, id: newSessionId })
       return { permissionMode: fresh.getCurrentPermissionMode(), sandboxInfo: fresh.getCurrentSandboxInfo() }
     })
@@ -3408,7 +3443,9 @@ export class AgentService {
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_RESUME, async (_event, projectPath: string, sessionId: string, worktreeCwd?: string, permissionMode?: PermissionMode) => {
       const mgr = this.requireSessionManager()
-      const defaults = this.readDefaultSessionPrefs()
+      // A stored session resumes on its own harness, so its defaults must come
+      // from there — not from whichever harness happens to be the fallback.
+      const defaults = this.readDefaultSessionPrefs(readSessionHarnessId(sessionId) ?? 'claude')
       const effectiveMode = permissionMode ?? defaults.permissionMode
       let session = mgr.getSession(sessionId)
       if (!session) {
@@ -3439,6 +3476,8 @@ export class AgentService {
     ipcMain.handle(AgentIpcChannels.PARK_SESSION, async (_event, projectPath: string) => {
       const mgr = this.requireSessionManager()
       mgr.clearActiveSession(projectPath)
+      // Parking has no harness to speak of, and every caller discards this
+      // reply — it is kept only so the IPC contract stays stable.
       const { permissionMode, sandboxMode } = this.readDefaultSessionPrefs()
       const sandboxInfo = sandboxMode !== undefined
         ? { enabled: sandboxMode !== 'off', autoAllowBash: sandboxMode === 'auto' }

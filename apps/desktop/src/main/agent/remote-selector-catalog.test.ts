@@ -107,7 +107,9 @@ describe('provider catalog', () => {
       { id: 'cred-2', name: 'video key', platformId: 'volcengine' },
     ],
     servesHarness: (id: string) => (id === 'cred-1' ? { brand: 'kimi' } : null),
-    platformName: (platformId: string) => (platformId === 'kimi' ? 'Kimi' : 'Volcengine'),
+    platformDisplay: (platformId: string) => (platformId === 'kimi'
+      ? { name: 'Kimi' }
+      : { name: 'Volcengine', icon: 'https://volcengine.example/favicon.ico' }),
   }
 
   it('lists the host default first, then only credentials that can serve the harness', () => {
@@ -115,8 +117,25 @@ describe('provider catalog', () => {
 
     expect(providers).toEqual([
       { id: null, name: 'Claude', brand: 'claude' },
-      { id: 'cred-1', name: 'Kimi · work key', brand: 'kimi', keyName: 'work key' },
+      { id: 'cred-1', name: 'Kimi', brand: 'kimi', keyName: 'work key' },
     ])
+  })
+
+  it('keeps the key out of the name and carries the platform favicon', () => {
+    // The row draws a brand lockup plus a key badge; a name of `Kimi · work key`
+    // spelled the key twice, and a custom platform lost its only mark.
+    const { providers } = harnessProviderCatalog('claude', {
+      ...source,
+      servesHarness: () => ({ brand: null }),
+    })
+
+    expect(providers[2]).toEqual({
+      id: 'cred-2',
+      name: 'Volcengine',
+      brand: null,
+      icon: 'https://volcengine.example/favicon.ico',
+      keyName: 'video key',
+    })
   })
 
   it('leaves harnesses without a credential story empty', () => {

@@ -91,6 +91,10 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@shikijs/core": "^4.4.3",
+    "@shikijs/engine-javascript": "^4.4.3",
+    "@shikijs/langs": "^4.4.3",
+    "@shikijs/themes": "^4.4.3",
     "@streamdown/code": "^1.0.1",
     "@streamdown/math": "^1.0.2",
     "@superone/chat-core": "workspace:*",

@@ -1,4 +1,10 @@
-import type { AgentEvent, ChatMessage, RemoteCommand, SandboxInfo } from '@superone/shared/agent-types'
+import type {
+  AgentEvent,
+  ChatMessage,
+  RealtimeTimelineSegment,
+  RemoteCommand,
+  SandboxInfo,
+} from '@superone/shared/agent-types'
 import type { RelayClient } from './client'
 
 export type HistoryPage = {
@@ -27,6 +33,12 @@ export type SessionSnapshot = {
   gitBranch?: string | null
   contextTokens?: number
   totalCostUsd?: number
+  /**
+   * Codex realtime ("voice") utterances. They are not chat messages — the host keeps
+   * them in their own table — so they ride the snapshot rather than the history pages.
+   */
+  realtimeSegments?: RealtimeTimelineSegment[]
+  activeRealtimeSessionId?: string | null
   error?: string
 }
 

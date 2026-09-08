@@ -45,8 +45,14 @@ export function loadPreviousChatWindow(
   total: number,
 ): ChatWindowRange {
   const current = normalizeChatWindow(range, total)
+  const start = Math.max(0, current.start - CHAT_WINDOW.loadMoreTurns)
   return normalizeChatWindow({
-    start: current.start - CHAT_WINDOW.loadMoreTurns,
-    end: current.end,
+    start,
+    end: Math.min(current.end, start + CHAT_WINDOW.maxMountedTurns),
   }, total)
+}
+
+export function loadNextChatWindow(range: ChatWindowRange, total: number): ChatWindowRange {
+  const current = normalizeChatWindow(range, total)
+  return normalizeChatWindow({ start: current.start, end: current.end + CHAT_WINDOW.loadMoreTurns }, total)
 }

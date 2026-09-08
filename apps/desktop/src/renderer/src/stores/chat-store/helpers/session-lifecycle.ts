@@ -27,7 +27,8 @@ import {
   _getSessionWorktreePath,
   _hydrateSessionState,
 } from './persistence'
-import { applyCachedCodexPermissionPreset, defaultPrefsCache, sandboxModeToInfo } from './prefs-cache'
+import { applyCachedCodexPermissionPreset, sandboxModeToInfo, sessionDefaultsFor } from './prefs-cache'
+import { DEFAULT_PROVIDER } from '../event-reducer/transformers'
 import {
   commitPerSession,
   getActivePerSession,
@@ -42,7 +43,6 @@ import {
 } from './store-helpers'
 import { resolveProvider } from './provider-routing'
 import { createDefaultPerSessionState, createDefaultProjectState, createSessionId, freshSubagentColorPool, getDefaultEffortForModel } from '../defaults'
-import { CURSOR_DEFAULT_PERMISSION_MODE } from '@/components/chat/cursorPermissionModes'
 import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { isRemoteSession, removeRemoteSession } from '../index'
 import type { ChatProvider, ChatStore, PerSessionState, SessionWriteTarget } from '../types'
@@ -223,7 +223,10 @@ export function ensureSessionImpl(
           new Set(s.disabledSkills),
         )
     project.codexModels = isRemote ? [] : (s.harnessResources.codex?.models ?? [])
-    if (defaultPrefsCache.sandboxMode) project.sandboxInfo = sandboxModeToInfo(defaultPrefsCache.sandboxMode)
+    // A fresh project opens a draft on the default harness, so its defaults are
+    // the ones that apply until the user switches.
+    const draftDefaults = sessionDefaultsFor(DEFAULT_PROVIDER)
+    if (draftDefaults.sandboxMode) project.sandboxInfo = sandboxModeToInfo(draftDefaults.sandboxMode)
 
     // Remote and local both need a per-session UI row so model/provider prefs stick.
     // Remote drafts use a renderer UUID that does not exist on the node yet;
@@ -234,7 +237,7 @@ export function ensureSessionImpl(
     project._activeSessionId = draftId
     const newSession = applyCachedCodexPermissionPreset(createDefaultPerSessionState())
     newSession.cwd = projectPath
-    if (defaultPrefsCache.permissionMode) newSession.permissionMode = defaultPrefsCache.permissionMode
+    if (draftDefaults.permissionMode) newSession.permissionMode = draftDefaults.permissionMode
     if (!isRemote) {
       applyDefaultModel(newSession, s.harnessResources.claude?.models ?? [])
       const codexSelection = resolveDefaultCodexSelection(project.codexModels)
@@ -580,8 +583,10 @@ export function resetSessionForWorktreeSwitchImpl(
         : (s.harnessResources.claude?.models ?? [])
       applyDefaultModel(newSession, claudeModels)
     }
-    if (defaultPrefsCache.permissionMode) newSession.permissionMode = defaultPrefsCache.permissionMode
-    if (nextProvider === 'cursor') newSession.permissionMode = CURSOR_DEFAULT_PERMISSION_MODE
+    // Every harness resolves its own mode now, Cursor's `agent` ladder included
+    // — the carve-out this line used to need is gone.
+    const switchedDefaults = sessionDefaultsFor(nextProvider)
+    if (switchedDefaults.permissionMode) newSession.permissionMode = switchedDefaults.permissionMode
     const codexSelection = resolveDefaultCodexSelection(proj.codexModels)
     newSession.selectedCodexModel = codexSelection.modelId
     newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
@@ -673,7 +678,8 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
     newSession.selectedCodexModel = codexSelection.modelId
     newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
     newSession.selectedCodexServiceTier = codexSelection.serviceTier
-    if (nextProvider === 'cursor') newSession.permissionMode = CURSOR_DEFAULT_PERMISSION_MODE
+    const harnessDefaults = sessionDefaultsFor(nextProvider)
+    if (harnessDefaults.permissionMode) newSession.permissionMode = harnessDefaults.permissionMode
     return {
       projectSessions: {
         ...s.projectSessions,
@@ -854,13 +860,14 @@ export function setPreferredProviderImpl(
 
   const draftSid = getProject(get(), activeProject)._activeSessionId
 
+  const switchedPermissionMode = sessionDefaultsFor(provider).permissionMode
   set((s) => updateActivePerSession(s, () => ({
     ...modelReset,
     ...emptyDraftHarnessReset,
     preferredProvider: provider,
     sessionProvider: provider,
     harnessUserChosen: opts?.userChosen === true,
-    ...(provider === 'cursor' ? { permissionMode: CURSOR_DEFAULT_PERMISSION_MODE } : {}),
+    ...(switchedPermissionMode ? { permissionMode: switchedPermissionMode } : {}),
   })))
 
   // Drop any in-memory main session for this sid (wrong harness / prewarmed prior).

@@ -1,7 +1,8 @@
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useContext, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Brain, ChevronRight } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
+import { TextRevealContext } from './text-reveal-context'
 
 export interface ReasoningBlockProps {
   text: string
@@ -23,9 +24,10 @@ export const ReasoningBlock = memo(function ReasoningBlock({
   isFirst = false,
 }: ReasoningBlockProps) {
   const { t } = useTranslation()
+  const { reasoning: isRevealing } = useContext(TextRevealContext)
   const [now, setNow] = useState(() => Date.now())
-  const [expanded, setExpanded] = useState(showContent && (!blockDone || !collapseOnDone))
-  const autoExpandedRef = useRef(showContent && !blockDone)
+  const [expanded, setExpanded] = useState(showContent && (!blockDone || !collapseOnDone || isRevealing))
+  const autoExpandedRef = useRef(showContent && (!blockDone || isRevealing))
   const scrollRef = useRef<HTMLDivElement>(null)
   const rafRef = useRef(0)
 
@@ -47,11 +49,11 @@ export const ReasoningBlock = memo(function ReasoningBlock({
   }, [blockDone, start])
 
   useEffect(() => {
-    if (showContent && !blockDone && !autoExpandedRef.current) {
+    if (showContent && (!blockDone || isRevealing) && !autoExpandedRef.current) {
       autoExpandedRef.current = true
       setExpanded(true)
     }
-  }, [showContent, blockDone])
+  }, [showContent, blockDone, isRevealing])
 
   useEffect(() => {
     if (!blockDone) return
@@ -61,8 +63,8 @@ export const ReasoningBlock = memo(function ReasoningBlock({
       fallbackEndRef.current = Date.now()
       setNow(fallbackEndRef.current)
     }
-    if (showContent && collapseOnDone) setExpanded(false)
-  }, [blockDone, showContent, collapseOnDone, startedAt, start])
+    if (showContent && collapseOnDone && !isRevealing) setExpanded(false)
+  }, [blockDone, showContent, collapseOnDone, startedAt, start, isRevealing])
 
   useEffect(() => {
     if (!showContent) return

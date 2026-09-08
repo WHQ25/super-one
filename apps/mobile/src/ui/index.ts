@@ -2,6 +2,7 @@ export { Badge, Button, Chip, ListRow, SectionHeader, Sheet } from './primitives
 export { PermissionModeSelector, permissionModeLabel } from './permission-mode-selector'
 export { SandboxSelector } from './sandbox-selector'
 export { ContextRing } from './context-ring'
+export { AdditionalDirsHint } from './additional-dirs-hint'
 export { SwipeSessionRow } from './swipe-session-row'
 export { SessionListBody, type SessionListActions } from './session-list-body'
 export { HarnessIcon } from './harness-icon'

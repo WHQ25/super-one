@@ -13,6 +13,7 @@ import type {
 } from '@superone/shared/agent-types'
 import { applyEventToSession, createDefaultChatCoreSession, pendingSlashCommandFrom } from '@superone/chat-core'
 import { AGENT_EVENT_BATCH_MS } from '@superone/shared/agent-event-batcher'
+import { sandboxInfoFromMode } from '@superone/shared/harness/harness-sandbox'
 import type { RelayClient } from '@superone/relay-client'
 import { restoreSession } from '@superone/relay-client'
 import { randomId } from './ids'
@@ -87,7 +88,7 @@ export class ChatRuntime {
 
   constructor(
     private readonly client: RelayClient,
-    private readonly onPaint: (session: SessionState) => void,
+    private readonly onPaint: (session: SessionState, hydrate: boolean) => void,
     private readonly hooks: ChatRuntimeHooks = {},
   ) {}
 
@@ -121,6 +122,11 @@ export class ChatRuntime {
       for (const msg of restored.snapshot.inProgressMessages ?? []) {
         if (!session.messages.some((m) => m.id === msg.id)) session.messages.push(msg)
       }
+      // Seeded before the replay below: the host persists a voice utterance before it
+      // broadcasts it, so a buffered event is a duplicate of something already here
+      // and the reducer needs the baseline present to recognise it as one.
+      session.realtimeSegments = restored.snapshot.realtimeSegments ?? []
+      session.realtimeSessionId = restored.snapshot.activeRealtimeSessionId ?? null
       const restoreEvents = [
         ...(restored.snapshot.pendingInteractions ?? []),
         ...restored.liveBatches.flat() as AgentEvent[],
@@ -134,7 +140,8 @@ export class ChatRuntime {
       this.eventEpoch = restored.epoch
       if (restored.provider) this.provider = restored.provider
       this.dirty = true
-      this.flush()
+      // Replayed history is a baseline, even when the connection epoch is unchanged.
+      this.flush(true)
     })
     this.restoreQueue = restore.catch(() => {})
     await restore
@@ -305,7 +312,7 @@ export class ChatRuntime {
    */
   async setSandboxMode(mode: SandboxMode): Promise<void> {
     if (!this.sessionId || !this.projectPath) return
-    this.sandboxInfo = { enabled: mode !== 'off', autoAllowBash: mode === 'auto' }
+    this.sandboxInfo = sandboxInfoFromMode(mode)
     this.dirty = true
     this.flush()
     const res = await this.client.request({
@@ -494,11 +501,11 @@ export class ChatRuntime {
     }, AGENT_EVENT_BATCH_MS)
   }
 
-  flush(): void {
+  flush(hydrate = false): void {
     if (this.timer) clearTimeout(this.timer)
     this.timer = null
     if (!this.dirty) return
     this.dirty = false
-    this.onPaint(this.session)
+    this.onPaint(this.session, hydrate)
   }
 }

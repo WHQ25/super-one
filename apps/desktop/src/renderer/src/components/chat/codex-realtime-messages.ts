@@ -1,25 +1,15 @@
 import type { ChatMessage, RealtimeTimelineSegment } from '@superone/shared/agent-types'
-import { isRealtimeDelegationText } from '@superone/shared/realtime-timeline'
+import {
+  isRealtimeDelegationMessage,
+  isRealtimeVoiceMessage,
+  realtimeSegmentsToMessage,
+  segmentKey,
+} from '@superone/shared/realtime-transcript'
 import type { CodexRealtimeSessionViewState } from '@/stores/codex-realtime-view'
 
-export function isRealtimeDelegationMessage(message: ChatMessage): boolean {
-  if (message.role !== 'user') return false
-  const text = message.content
-    .filter((block): block is Extract<ChatMessage['content'][number], { type: 'text' }> => block.type === 'text')
-    .map((block) => block.text)
-    .join('\n')
-  return isRealtimeDelegationText(text)
-}
-
-/**
- * A spoken transcript item projected onto ChatMessage — not a Codex turn. Its id is
- * synthetic, so anything that resolves a message id against the backing thread
- * (fork, rewind) has nothing to resolve and must not be offered.
- */
-export function isRealtimeVoiceMessage(message: ChatMessage): boolean {
-  const provenance = message.metadata?.codexTimeline?.provenance
-  return provenance === 'realtime-user' || provenance === 'realtime-assistant'
-}
+// The projection itself is shared with the phone, which shows the same spoken turns
+// in a single read-only transcript. Only the store-bound selectors stay here.
+export { isRealtimeDelegationMessage, isRealtimeVoiceMessage, realtimeSegmentsToMessage }
 
 function threadMessageKey(message: ChatMessage): string {
   const turnId = message.metadata?.codexTimeline?.turnId ?? message.metadata?.codex?.turnId
@@ -72,10 +62,6 @@ export function mergeCodexThreadMessages(
     }
   }
   return merged
-}
-
-function segmentKey(segment: RealtimeTimelineSegment): string {
-  return segment.sourceItemId ?? segment.id
 }
 
 /** Realtime-only transcript in stable provider/local order, including live deltas. */
@@ -149,39 +135,6 @@ export function isRealtimeConversationTail(
     ...ordinary.map((message) => timelineOrder(message) ?? Number.MIN_SAFE_INTEGER),
   )
   return latestVoiceOrder >= latestOrdinaryOrder
-}
-
-/**
- * Project spoken segments onto the ordinary ChatMessage shape so the voice line renders
- * through the same ChatMessage component as a typed turn. No `metadata.codex` on
- * purpose: CodexTurnView then falls back to plain markdown, which is all speech is.
- *
- * Consecutive segments from one speaker are a single utterance split by the realtime
- * item boundary, not separate turns — they join into one markdown block, and identity
- * follows the first segment so it stays stable as later items arrive.
- */
-export function realtimeSegmentsToMessage(segments: readonly RealtimeTimelineSegment[]): ChatMessage {
-  const head = segments[0]
-  return {
-    id: `codex-realtime-${segmentKey(head)}`,
-    role: head.role,
-    status: 'complete',
-    content: [{
-      type: 'text',
-      text: segments.map((segment) => segment.text.trim()).filter(Boolean).join('\n\n'),
-    }],
-    createdAt: '',
-    providerId: 'codex',
-    metadata: {
-      codexTimeline: {
-        provenance: head.role === 'assistant' ? 'realtime-assistant' : 'realtime-user',
-        realtimeSessionId: head.realtimeSessionId,
-        sourceItemId: segmentKey(head),
-        ...(head.position === undefined ? {} : { position: head.position }),
-        ...(head.localOrder === undefined ? {} : { localOrder: head.localOrder }),
-      },
-    },
-  }
 }
 
 export function realtimeSegmentToMessage(segment: RealtimeTimelineSegment): ChatMessage {

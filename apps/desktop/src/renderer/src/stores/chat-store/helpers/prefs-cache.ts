@@ -3,33 +3,59 @@ import type {
   CodexPermissionPreset,
   CodexReasoningEffort,
   EffortLevel,
+  HarnessId,
   PermissionMode,
   SandboxInfo,
   SandboxMode,
 } from '@superone/shared/agent-types'
 import { DEFAULT_CODEX_PERMISSION_PRESET } from '@superone/shared/agent-types'
+import { sandboxInfoFromMode } from '@superone/shared/harness/harness-sandbox'
+import { sessionDefaultsForHarness } from '@superone/shared/harness/session-defaults'
 import { useAppStore } from '../../app'
 import type { PerSessionState } from '../types'
 
 interface DefaultPrefsCache {
-  permissionMode: PermissionMode | null
-  sandboxMode: SandboxMode | null
+  /**
+   * The whole per-harness block rather than one resolved mode. Caching a single
+   * answer is precisely what let one harness's setting reach all the others;
+   * `sessionDefaultsForHarness` resolves it per harness at the point of use.
+   * `null` means "not loaded yet", which is not the same as "not configured".
+   */
+  agentPreference: AppSettings['agentPreference'] | null
   claudeSelection: { modelId: string; effort?: EffortLevel } | null
   codexSelection: { modelId: string; reasoningEffort?: CodexReasoningEffort; fastMode: boolean } | null
   codexPermissionPreset: CodexPermissionPreset
 }
 
 export const defaultPrefsCache: DefaultPrefsCache = {
-  permissionMode: null,
-  sandboxMode: null,
+  agentPreference: null,
   claudeSelection: null,
   codexSelection: null,
   codexPermissionPreset: DEFAULT_CODEX_PERMISSION_PRESET,
 }
 
+/**
+ * Session defaults for one harness, with the sandbox coerced for what this
+ * platform can provide. `null` fields mean the cache has not loaded yet — the
+ * callers leave the session on its own default rather than guessing.
+ */
+export function sessionDefaultsFor(harnessId: HarnessId): {
+  permissionMode: PermissionMode | null
+  sandboxMode: SandboxMode | null
+} {
+  const preferences = defaultPrefsCache.agentPreference
+  if (!preferences) return { permissionMode: null, sandboxMode: null }
+  const defaults = sessionDefaultsForHarness(preferences, harnessId)
+  return {
+    permissionMode: defaults.permissionMode,
+    sandboxMode: resolveDefaultSandboxMode(defaults.sandboxMode),
+  }
+}
+
 let defaultPrefsLoadGeneration = 0
 
 function cacheCodexPreferences(appSettings: Pick<AppSettings, 'agentPreference'>): void {
+  defaultPrefsCache.agentPreference = appSettings.agentPreference ?? null
   const codex = appSettings.agentPreference?.codex
   defaultPrefsCache.codexSelection = {
     modelId: typeof codex?.defaultModel === 'string' ? codex.defaultModel : '',
@@ -101,8 +127,7 @@ export async function _loadDefaultSessionPrefs(): Promise<void> {
     const appSettings = await window.app.getAppSettings()
     if (generation !== defaultPrefsLoadGeneration) return
     const claude = appSettings.agentPreference?.claude
-    defaultPrefsCache.permissionMode = (claude?.defaultPermissionMode as PermissionMode) || 'default'
-    defaultPrefsCache.sandboxMode = resolveDefaultSandboxMode((claude?.defaultSandboxMode as SandboxMode) || null)
+    defaultPrefsCache.agentPreference = appSettings.agentPreference ?? null
     defaultPrefsCache.claudeSelection = {
       modelId: typeof claude?.defaultModel === 'string' ? claude.defaultModel : '',
       effort: toEffortLevel(claude?.defaultEffort),
@@ -110,8 +135,7 @@ export async function _loadDefaultSessionPrefs(): Promise<void> {
     cacheCodexPreferences(appSettings)
   } catch {
     if (generation !== defaultPrefsLoadGeneration) return
-    defaultPrefsCache.permissionMode = 'default'
-    defaultPrefsCache.sandboxMode = null
+    defaultPrefsCache.agentPreference = null
     defaultPrefsCache.claudeSelection = { modelId: '', effort: undefined }
     defaultPrefsCache.codexSelection = { modelId: '', reasoningEffort: undefined, fastMode: false }
     defaultPrefsCache.codexPermissionPreset = DEFAULT_CODEX_PERMISSION_PRESET
@@ -123,19 +147,18 @@ export function applyCachedCodexPermissionPreset(session: PerSessionState): PerS
   return session
 }
 
-export async function _getDefaultPermissionMode(): Promise<PermissionMode> {
-  if (defaultPrefsCache.permissionMode === null) await _loadDefaultSessionPrefs()
-  return defaultPrefsCache.permissionMode ?? 'default'
+export async function _getDefaultPermissionMode(harnessId: HarnessId = 'claude'): Promise<PermissionMode> {
+  if (defaultPrefsCache.agentPreference === null) await _loadDefaultSessionPrefs()
+  return sessionDefaultsFor(harnessId).permissionMode ?? 'default'
 }
 
 export function sandboxModeToInfo(mode: SandboxMode): SandboxInfo {
-  return { enabled: mode !== 'off', autoAllowBash: mode === 'auto' }
+  return sandboxInfoFromMode(mode)
 }
 
 export function _clearDefaultPrefsCache(): void {
   defaultPrefsLoadGeneration += 1
-  defaultPrefsCache.permissionMode = null
-  defaultPrefsCache.sandboxMode = null
+  defaultPrefsCache.agentPreference = null
   defaultPrefsCache.claudeSelection = null
   defaultPrefsCache.codexSelection = null
   defaultPrefsCache.codexPermissionPreset = DEFAULT_CODEX_PERMISSION_PRESET

@@ -4,6 +4,7 @@ import { createRef } from 'react'
 import type { RelayClient } from '@superone/relay-client'
 import type { ChatRuntime } from '../runtime'
 import { useComposerSuggestions } from './use-composer-suggestions'
+import { preloadHarnessResources } from '../harness-resource-cache'
 
 type Command = { type: string }
 
@@ -64,7 +65,9 @@ test('loads a catalog with no session, for the new-session landing', async () =>
   const { result } = await mount(client)
   await waitFor(() => expect(result.current.slashCatalogStatus).toBe('ready'))
   await act(async () => { result.current.update('/') })
-  expect(result.current.slashHits.map((hit) => hit.name)).toEqual(['clear'])
+  // `/add-dir` rides along: the landing is exactly where the folders a session
+  // will start with are still worth changing.
+  expect(result.current.slashHits.map((hit) => hit.name)).toEqual(['clear', 'add-dir'])
 })
 
 test('reports a catalog the host could not answer for', async () => {
@@ -105,4 +108,15 @@ test('keeps matching once the draft grows a second line', async () => {
 
   await act(async () => { result.current.update('/cl\nand the diff') })
   expect(result.current.slashHits.map((hit) => hit.name)).toEqual(['clear'])
+})
+
+
+test('uses the connection-preloaded catalog without loading or another request', async () => {
+  const client = { request: jest.fn(async () => ({ userSlashCommands: [{ name: 'clear' }] })) }
+  await preloadHarnessResources(client, '/work/app', ['claude'])
+  const { result } = await mount(client)
+  expect(result.current.slashCatalogStatus).toBe('ready')
+  await act(async () => { result.current.update('/c') })
+  expect(result.current.slashHits.map((command) => command.name)).toEqual(['clear'])
+  expect(client.request).toHaveBeenCalledTimes(2)
 })

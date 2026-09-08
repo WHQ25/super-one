@@ -10,11 +10,26 @@ export type MobileRoute =
   | 'terminal'
   | 'worktree'
   | 'branch'
+  /** The folders a session gets beyond its project root. */
+  | 'add-dir'
   | 'settings'
   | 'files'
 
 /** Where the Files browser was entered from; it is reachable from both. */
 export type FilesOrigin = 'settings' | 'session'
+
+/** Preserve mounted scenes in the shared stack prefix when changing pages. */
+export function reconcileRoutes(
+  names: MobileRoute[],
+  current: readonly { name: string; key: string }[],
+): { name: MobileRoute; key?: string }[] {
+  let sharedPrefix = true
+  return names.map((name, index) => {
+    const previous = current[index]
+    sharedPrefix = sharedPrefix && previous?.name === name
+    return sharedPrefix ? { name, key: previous.key } : { name }
+  })
+}
 
 /**
  * The stack under a route. Projects and sessions are not screens: the workspace
@@ -33,6 +48,9 @@ export function routeHierarchy(
   if (route === 'terminal') return [...root, 'terminal']
   if (route === 'worktree') return [...root, 'worktree']
   if (route === 'branch') return [...root, 'branch']
+  // Opened from the composer — the chip row or `/add-dir` — so back lands on
+  // the chat that asked for it, never on a screen the user skipped past.
+  if (route === 'add-dir') return [...root, 'add-dir']
   if (route === 'project-picker') return [...root, 'project-picker']
   // Adding always happens on top of the picker it was opened from.
   if (route === 'add-project') return [...root, 'project-picker', 'add-project']

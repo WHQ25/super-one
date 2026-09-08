@@ -7,7 +7,7 @@ import {
 } from '@react-navigation/native'
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
 import { useMobileTheme } from '../theme/context'
-import { routeHierarchy, type FilesOrigin, type MobileRoute } from './route-state'
+import { reconcileRoutes, routeHierarchy, type FilesOrigin, type MobileRoute } from './route-state'
 
 export type { FilesOrigin, MobileRoute } from './route-state'
 
@@ -34,7 +34,7 @@ export function MobileNavigator(props: {
   useEffect(() => {
     if (!navigationRef.isReady() || navigationRef.getCurrentRoute()?.name === props.route) return
     const routes = routeHierarchy(props.route, props.filesOrigin)
-    navigationRef.reset({ index: routes.length - 1, routes: routes.map((name) => ({ name })) })
+    navigationRef.reset({ index: routes.length - 1, routes: reconcileRoutes(routes, navigationRef.getRootState()?.routes ?? []) })
   }, [props.filesOrigin, props.route])
 
   return (
@@ -60,7 +60,7 @@ export function MobileNavigator(props: {
       onReady={() => {
         if (props.route === 'pair') return
         const routes = routeHierarchy(props.route, props.filesOrigin)
-        navigationRef.reset({ index: routes.length - 1, routes: routes.map((name) => ({ name })) })
+        navigationRef.reset({ index: routes.length - 1, routes: reconcileRoutes(routes, navigationRef.getRootState()?.routes ?? []) })
       }}
       onStateChange={(state) => {
         const route = currentRouteName(state)
@@ -83,6 +83,7 @@ export function MobileNavigator(props: {
           terminal: 1,
           worktree: 1,
           branch: 1,
+          'add-dir': 1,
           settings: 1,
           files: 1,
         }) as MobileRoute[]).map((route) => (

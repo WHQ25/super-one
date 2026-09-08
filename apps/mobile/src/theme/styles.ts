@@ -57,7 +57,6 @@ export function createMobileStyles({ colors, radius, spacing, type }: MobileThem
     rowMeta: { color: colors.mutedForeground, fontSize: type.meta, marginTop: spacing.xs },
     composer: { flexDirection: 'row', gap: spacing.sm, paddingVertical: spacing.sm, alignItems: 'center' },
     composerControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
-    directoryHint: { color: colors.mutedForeground, flex: 1, fontSize: type.meta, textAlign: 'right' },
     queuedRow: { backgroundColor: colors.muted, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
     todoPanel: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, paddingVertical: spacing.sm },
     todoHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },

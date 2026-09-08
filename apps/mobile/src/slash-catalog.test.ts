@@ -29,12 +29,43 @@ describe('requestSlashCatalog', () => {
       'claude',
     )
 
-    expect(catalog).toEqual([
+    expect(catalog.slice(0, 3)).toEqual([
       { name: 'clear', description: '', argumentHint: '', isSkill: false },
       { name: 'deploy', description: 'Ship', argumentHint: '', isSkill: false },
       { name: 'tdd', description: '', argumentHint: '', isSkill: true },
     ])
     expect(seen.sort()).toEqual(['get_project_resources', 'get_system_info'])
+  })
+
+  it('offers /add-dir on a harness that accepts extra working roots', async () => {
+    // A host command over a harness-neutral folder set, injected from one gate
+    // the way the desktop does rather than copied into each harness catalog.
+    const catalog = await requestSlashCatalog(
+      client({ get_system_info: { userSlashCommands: [{ name: 'clear' }] } }),
+      '/work/super-one',
+      'claude',
+    )
+    expect(catalog.map((c) => c.name)).toEqual(['clear', 'add-dir'])
+  })
+
+  it('hides /add-dir on a harness that reads only its cwd', async () => {
+    const catalog = await requestSlashCatalog(
+      client({ get_system_info: { userSlashCommands: [{ name: 'clear' }] } }),
+      '/work/super-one',
+      'opencode',
+    )
+    expect(catalog.map((c) => c.name)).toEqual(['clear'])
+  })
+
+  it('lets the harness own add-dir when it reports one itself', async () => {
+    // Deduped rather than listed twice — the agent's own entry carries its real
+    // argument hint, and ours would shadow it.
+    const catalog = await requestSlashCatalog(
+      client({ get_system_info: { userSlashCommands: [{ name: 'add-dir', description: 'Harness owned' }] } }),
+      '/work/super-one',
+      'claude',
+    )
+    expect(catalog).toEqual([{ name: 'add-dir', description: 'Harness owned', argumentHint: '', isSkill: false }])
   })
 
   it('falls back to the legacy slashCommands field', async () => {
@@ -43,7 +74,7 @@ describe('requestSlashCatalog', () => {
       '/work/super-one',
       'claude',
     )
-    expect(catalog.map((c) => c.name)).toEqual(['resume'])
+    expect(catalog.map((c) => c.name)).toEqual(['resume', 'add-dir'])
   })
 
   it('keeps system commands when project resources cannot be read', async () => {
@@ -57,7 +88,7 @@ describe('requestSlashCatalog', () => {
       '/work/super-one',
       'claude',
     )
-    expect(catalog.map((c) => c.name)).toEqual(['clear'])
+    expect(catalog.map((c) => c.name)).toEqual(['clear', 'add-dir'])
   })
 
   it('rejects when system info itself fails', async () => {

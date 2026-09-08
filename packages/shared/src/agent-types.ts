@@ -2159,7 +2159,12 @@ export type ResourceScope = 'user' | 'project' | 'claudeai'
 
 // --- Settings provider ---
 
-export type SettingsProvider = 'claude' | 'codex' | 'cursor' | 'dsh'
+/**
+ * Harness whose settings page can be opened. Every harness qualifies now that
+ * session defaults are owned per harness — before that, ACP and OpenCode had no
+ * settings of their own and so no page to open.
+ */
+export type SettingsProvider = HarnessId
 
 // ─── Agent Run Config (automation / unattended runs — all harnesses) ───
 //
@@ -4328,6 +4333,8 @@ export interface RemoteProviderOption {
   id: string | null
   name: string
   brand?: string | null
+  /** Favicon for a custom provider the brand registry has no mark for. */
+  icon?: string
   /** Which key or account the row stands for, when several share a name. */
   keyName?: string
 }
@@ -4355,6 +4362,14 @@ export interface RemoteSystemInfo {
   /** Legacy Codex alias retained for older Remote Control clients. */
   permissionPresets?: string[]
   sandboxModes?: string[]
+  /**
+   * Whether the *host platform* can sandbox at all — Windows cannot, and a WSL1
+   * shell cannot either. A harness-level `harnessSupportsSandbox` check answers
+   * a different question, so a client that only asks that one offers a toggle
+   * the host would silently coerce back to `off`. Absent means the host predates
+   * this and is assumed capable, which is what every macOS host reports anyway.
+   */
+  sandboxSupport?: SandboxSupportLevel
   account?: unknown
   activeProvider?: RemoteActiveProvider | null
   acpAgentId?: string | null
@@ -4374,6 +4389,18 @@ export interface RemoteSystemInfo {
     model?: string | null
     effort?: string | null
     permissionMode?: string | null
+    /**
+     * Sandbox a new session starts in, for the harnesses that own a real toggle.
+     * A client configuring a session that does not exist yet has nothing else to
+     * read, and `off` would claim the host runs unconfined when it does not.
+     */
+    sandboxMode?: SandboxMode | null
+    /**
+     * Codex Fast for new sessions. Not a `serviceTier` id: the tier belongs to
+     * whichever model is selected, so the client resolves it against that model
+     * rather than pinning an id the next model switch would invalidate.
+     */
+    fastMode?: boolean | null
     /** Legacy Codex aliases retained for older Remote Control clients. */
     reasoningEffort?: string | null
     permissionPreset?: string | null
@@ -4382,7 +4409,7 @@ export interface RemoteSystemInfo {
 }
 
 export type RemoteCommand =
-  | { type: 'create_session'; requestId: string; sessionId: string; projectPath: string; provider?: HarnessId; acpAgentId?: string; permissionMode?: string; effort?: string; model?: string; mode?: string; agentPreset?: string; apiProviderId?: string | null; gitBranch?: string; worktreePath?: string; worktreeBranch?: string; worktreeMode?: WorktreeMode; worktreeBranchName?: string; worktreeCarryLocalChanges?: boolean; additionalDirectories?: string[] }
+  | { type: 'create_session'; requestId: string; sessionId: string; projectPath: string; provider?: HarnessId; acpAgentId?: string; permissionMode?: string; effort?: string; model?: string; mode?: string; agentPreset?: string; apiProviderId?: string | null; gitBranch?: string; worktreePath?: string; worktreeBranch?: string; worktreeMode?: WorktreeMode; worktreeBranchName?: string; worktreeCarryLocalChanges?: boolean; additionalDirectories?: string[]; /** Sandbox the picker chose before the session existed (Claude / Cursor). */ sandboxMode?: SandboxMode }
   | { type: 'send_message'; sessionId: string; projectPath: string; content: string; provider?: HarnessId; model?: string; effort?: string; images?: ImageAttachment[]; permissionPreset?: string; collaborationMode?: string; threadId?: string; clientMessageId?: string; priority?: 'now' | 'next' | 'later'; /** OpenCode primary agent for this turn. */ agent?: string; /** Codex service tier (`fast`). */ serviceTier?: string | null; /** Cursor catalog params (param id → value). */ modelParams?: Record<string, string> }
   | { type: 'dequeue_message'; clientMessageId: string; projectPath?: string; sessionId: string }
   | { type: 'interrupt'; projectPath?: string; sessionId: string }
@@ -4694,13 +4721,29 @@ export interface BrowserOpenTabRequest {
 }
 
 /**
- * A harness whose only app-level preference is brand theming. EVERY harness
- * needs a slot here even when it has nothing else to store: the renderer
- * persists hue/token edits per harness, and a missing slot means the write is
- * dropped by the sanitizer and then stomped by the settings broadcast — the
- * slider snaps back instead of failing loudly.
+ * Defaults a new session on this harness starts with. Owned per harness rather
+ * than globally: the permission vocabularies genuinely differ (Cursor says
+ * `agent`, Codex has no `acceptEdits`), so one shared value could only ever be
+ * right for the harness it was written for.
+ *
+ * `''` means "not configured" — the harness falls back to the first mode it
+ * declares in `HARNESS_LAUNCH_OPTIONS`. It is a distinct state from any real
+ * mode, and the readers rely on that: a stored value that the harness no longer
+ * offers is dropped rather than asserted.
  */
-export interface BrandOnlyAgentPreference {
+export interface HarnessSessionDefaults {
+  /** Must be one of this harness's own `HARNESS_LAUNCH_OPTIONS.permissionModes`. */
+  defaultPermissionMode: PermissionMode | ''
+}
+
+/**
+ * A harness whose only app-level preferences are brand theming and the session
+ * defaults above. EVERY harness needs a slot here even when it has nothing else
+ * to store: the renderer persists hue/token edits per harness, and a missing
+ * slot means the write is dropped by the sanitizer and then stomped by the
+ * settings broadcast — the slider snaps back instead of failing loudly.
+ */
+export interface BrandOnlyAgentPreference extends HarnessSessionDefaults {
   brandHue: number | null
   tokenOverrides: TokenOverrides
 }
@@ -4874,13 +4917,12 @@ export interface AppSettings {
       brandHue: number | null
       tokenOverrides: TokenOverrides
     }
-    acp: {
+    acp: BrandOnlyAgentPreference & {
       enabled: boolean
-      brandHue: number | null
-      tokenOverrides: TokenOverrides
       selectedAgentId: string | null
     }
-    cursor: BrandOnlyAgentPreference
+    /** Cursor owns a real sandbox toggle, so it stores one of its own. */
+    cursor: BrandOnlyAgentPreference & { defaultSandboxMode: SandboxMode | '' }
     dsh: BrandOnlyAgentPreference
     opencode: BrandOnlyAgentPreference
   }

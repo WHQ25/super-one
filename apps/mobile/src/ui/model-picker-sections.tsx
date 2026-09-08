@@ -53,6 +53,28 @@ export function AgentSection({ agents, selected, expanded, onExpand, onSelect, d
   </>
 }
 
+/**
+ * Which key or account a provider row runs on. The desktop keeps it on the
+ * provider's own line, hard against the right edge — a second line here would
+ * make the collapsed row twice as tall as every other row in the menu.
+ */
+function ProviderKeyBadge({ children }: { children: string }) {
+  const { tokens: { colors, radius } } = useMobileTheme()
+  return <View style={{ flexShrink: 0, maxWidth: 120, paddingHorizontal: 6, paddingVertical: 2,
+    borderRadius: radius.sm, backgroundColor: colors.muted }}>
+    <Text numberOfLines={1} style={{ fontSize: 11, color: colors.mutedForeground }}>{children}</Text>
+  </View>
+}
+
+/**
+ * The brand lockup the expanded list uses, so the collapsed row is the same row.
+ * A custom platform has no brand mark, so its favicon stands in — without it the
+ * row fell back to a generic globe and read as though it had no identity at all.
+ */
+function providerLabel(provider: RemoteProviderOption) {
+  return <ProviderBrand brandKey={provider.brand} name={provider.name} icon={provider.icon} size={15} />
+}
+
 export function ProviderSection({ providers, selected, expanded, onExpand, onSelect }: {
   providers: RemoteProviderOption[]; selected: string | null; expanded: boolean
   onExpand: () => void; onSelect: (id: string | null) => void
@@ -61,16 +83,20 @@ export function ProviderSection({ providers, selected, expanded, onExpand, onSel
   if (expanded) {
     return <>
       <SectionLabel>Provider</SectionLabel>
-      {providers.map((provider) => <MenuRow key={provider.id ?? '__default__'} label={provider.name}
-        labelNode={<ProviderBrand brandKey={provider.brand} name={provider.name} size={15} />}
-        description={provider.keyName}
+      {providers.map((provider) => <MenuRow key={provider.id ?? '__default__'}
+        label={[provider.name, provider.keyName].filter(Boolean).join(', ')}
+        labelNode={providerLabel(provider)}
+        accessory={provider.keyName ? <ProviderKeyBadge>{provider.keyName}</ProviderKeyBadge> : null}
         selected={(provider.id ?? null) === (selected ?? null)} onPress={() => onSelect(provider.id)} />)}
     </>
   }
   return <>
     <MenuSeparator />
     <SectionLabel>Provider</SectionLabel>
-    <MenuDisclosureRow label={current?.name ?? 'Default'} description={current?.keyName} onPress={onExpand} />
+    <MenuDisclosureRow label={[current?.name ?? 'Default', current?.keyName].filter(Boolean).join(', ')}
+      labelNode={current ? providerLabel(current) : undefined}
+      accessory={current?.keyName ? <ProviderKeyBadge>{current.keyName}</ProviderKeyBadge> : null}
+      onPress={onExpand} />
   </>
 }
 

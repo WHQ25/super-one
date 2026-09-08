@@ -52,6 +52,11 @@ export function sandboxModeFromInfo(info: SandboxInfo | null | undefined): Sandb
   return info.autoAllowBash ? 'auto' : 'on'
 }
 
+/** The inverse: what a picked mode means as runtime state, for optimistic UI. */
+export function sandboxInfoFromMode(mode: SandboxMode): SandboxInfo {
+  return { enabled: mode !== 'off', autoAllowBash: mode === 'auto' }
+}
+
 /**
  * Codex preset a shared `PermissionMode` stands for. Remote Control carries the
  * neutral mode, not Codex's own vocabulary, so the chip has to translate back.

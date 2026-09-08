@@ -57,6 +57,7 @@ import { PluginsPage } from './PluginsPage'
 import { DshPluginsPage } from './DshPluginsPage'
 import { PreferencesPage } from './PreferencesPage'
 import { CursorAuthSettings, type CursorSettingsSection } from './CursorAuthSettings'
+import { HarnessPreferencesPage } from './preferences/SessionDefaultsSection'
 import { CodexAuthSettings } from './CodexAuthSettings'
 
 interface CatalogRow {
@@ -135,6 +136,7 @@ const CATALOG_HARNESS_META = {
     labelKey: 'settings.harnesses.ids.opencode',
     descriptionKey: 'settings.harnesses.desc.opencode',
     experimental: true,
+    configProvider: 'opencode',
   },
   cursor: {
     provider: 'cursor',
@@ -148,6 +150,7 @@ const CATALOG_HARNESS_META = {
     labelKey: 'settings.harnesses.ids.acp-grok',
     descriptionKey: 'settings.harnesses.desc.acpGrok',
     experimental: false,
+    configProvider: 'acp',
   },
   dsh: {
     provider: 'dsh',
@@ -198,13 +201,21 @@ const CURSOR_CONFIG_TABS: HarnessConfigSection[] = [
   'cloud',
 ]
 
-const DSH_CONFIG_TABS: HarnessConfigSection[] = ['mcp', 'plugins']
+const DSH_CONFIG_TABS: HarnessConfigSection[] = ['preferences', 'mcp', 'plugins']
+
+/**
+ * Harnesses whose only app-level settings are their session defaults. They had
+ * no tabs at all before those defaults became per-harness, which is what made
+ * Grok's permission mode unconfigurable.
+ */
+const SESSION_DEFAULTS_ONLY_TABS: HarnessConfigSection[] = ['preferences']
 
 function configTabsFor(provider: SettingsProvider | undefined): HarnessConfigSection[] | null {
   if (provider === 'claude') return CLAUDE_CONFIG_TABS
   if (provider === 'codex') return CODEX_CONFIG_TABS
   if (provider === 'cursor') return CURSOR_CONFIG_TABS
   if (provider === 'dsh') return DSH_CONFIG_TABS
+  if (provider === 'acp' || provider === 'opencode') return SESSION_DEFAULTS_ONLY_TABS
   return null
 }
 
@@ -932,10 +943,15 @@ function HarnessDetail({
             })}
           </TabsList>
           {item.provider === 'cursor' ? (
-            <CursorAuthSettings
-              section={isCursorSettingsSection(activeTab) ? activeTab : 'account'}
-              onAuthChanged={onRefresh}
-            />
+            // Cursor keeps its own settings component; its session defaults are
+            // composed above it rather than duplicated inside it.
+            <div className="space-y-3">
+              {activeTab === 'preferences' && <HarnessPreferencesPage harnessId="cursor" />}
+              <CursorAuthSettings
+                section={isCursorSettingsSection(activeTab) ? activeTab : 'account'}
+                onAuthChanged={onRefresh}
+              />
+            </div>
           ) : (
             configTabs.map((section) => (
               <TabsContent key={section} value={section} className="mt-0 min-h-0 outline-none">

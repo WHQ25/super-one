@@ -23,6 +23,7 @@ import type {
 import { DEFAULT_NOTIFICATION_SETTINGS, NOTIFICATION_KINDS, normalizeNotificationSettings } from '@superone/shared/notifications'
 import { sanitizeOverrides } from '@superone/shared/harness-brand'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
+import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
 
 export type { AppSettings, AppSettingsPatch }
 
@@ -159,10 +160,11 @@ const defaults: AppSettings = {
       brandHue: null,
       tokenOverrides: {},
       selectedAgentId: null,
+      defaultPermissionMode: '',
     },
-    cursor: { brandHue: null, tokenOverrides: {} },
-    dsh: { brandHue: null, tokenOverrides: {} },
-    opencode: { brandHue: null, tokenOverrides: {} },
+    cursor: { brandHue: null, tokenOverrides: {}, defaultPermissionMode: '', defaultSandboxMode: '' },
+    dsh: { brandHue: null, tokenOverrides: {}, defaultPermissionMode: '' },
+    opencode: { brandHue: null, tokenOverrides: {}, defaultPermissionMode: '' },
   },
 }
 
@@ -268,6 +270,22 @@ function isEffortLevel(value: unknown): value is EffortLevel {
 
 function isPermissionMode(value: unknown): value is PermissionMode {
   return value === 'default' || value === 'acceptEdits' || value === 'bypassPermissions' || value === 'plan' || value === 'dontAsk' || value === 'auto'
+}
+
+/**
+ * A stored permission mode counts only while the harness still offers it.
+ * `HARNESS_LAUNCH_OPTIONS` is the one list of what each harness can actually
+ * execute, so a mode it dropped (or never had — Cursor's ladder shares no
+ * spelling with Claude's) degrades to "not configured" instead of being handed
+ * to a harness that would reject it.
+ */
+function readHarnessPermissionMode(
+  pref: Record<string, unknown> | undefined,
+  harnessId: HarnessId,
+): PermissionMode | '' {
+  const value = pref?.defaultPermissionMode
+  const offered: readonly string[] = HARNESS_LAUNCH_OPTIONS[harnessId].permissionModes
+  return typeof value === 'string' && offered.includes(value) ? value as PermissionMode : ''
 }
 
 function isSandboxMode(value: unknown): value is SandboxMode {
@@ -453,9 +471,7 @@ function readClaudePreference(data: Record<string, unknown>): ClaudePref {
     defaultEffort: claudePreference?.defaultEffort === '' || isEffortLevel(claudePreference?.defaultEffort)
       ? (claudePreference.defaultEffort as EffortLevel | '')
       : defaults.agentPreference.claude.defaultEffort,
-    defaultPermissionMode: claudePreference?.defaultPermissionMode === '' || isPermissionMode(claudePreference?.defaultPermissionMode)
-      ? (claudePreference.defaultPermissionMode as PermissionMode | '')
-      : defaults.agentPreference.claude.defaultPermissionMode,
+    defaultPermissionMode: readHarnessPermissionMode(claudePreference, 'claude'),
     defaultSandboxMode: claudePreference?.defaultSandboxMode === '' || isSandboxMode(claudePreference?.defaultSandboxMode)
       ? (claudePreference.defaultSandboxMode as SandboxMode | '')
       : defaults.agentPreference.claude.defaultSandboxMode,
@@ -526,21 +542,45 @@ function readAcpPreference(data: Record<string, unknown>): AcpPref {
     selectedAgentId: typeof acpPreference?.selectedAgentId === 'string'
       ? acpPreference.selectedAgentId
       : defaults.agentPreference.acp.selectedAgentId,
+    defaultPermissionMode: readHarnessPermissionMode(acpPreference, 'acp'),
   }
 }
 
-/** Harnesses that store nothing but brand theming (`cursor`, `dsh`, `opencode`). */
-function readBrandOnlyPreference(data: Record<string, unknown>, key: 'cursor' | 'dsh' | 'opencode'): BrandOnlyPref {
-  const agentPreference = data.agentPreference && typeof data.agentPreference === 'object'
-    ? data.agentPreference as Record<string, unknown>
-    : undefined
-  const pref = agentPreference?.[key] && typeof agentPreference[key] === 'object'
-    ? agentPreference[key] as Record<string, unknown>
-    : undefined
+/** Harnesses storing only brand theming plus their session defaults. */
+function readBrandOnlyPreference(data: Record<string, unknown>, key: 'dsh' | 'opencode'): BrandOnlyPref {
+  const pref = readAgentPreferenceSlot(data, key)
   return {
     brandHue: readBrandHue(pref?.brandHue),
     tokenOverrides: sanitizeOverrides(pref?.tokenOverrides),
+    defaultPermissionMode: readHarnessPermissionMode(pref, key),
   }
+}
+
+/** Cursor adds a sandbox toggle of its own on top of the brand-only shape. */
+function readCursorPreference(data: Record<string, unknown>): AppSettings['agentPreference']['cursor'] {
+  const pref = readAgentPreferenceSlot(data, 'cursor')
+  const sandboxMode = pref?.defaultSandboxMode
+  const offered: readonly string[] = HARNESS_LAUNCH_OPTIONS.cursor.sandboxModes
+  return {
+    brandHue: readBrandHue(pref?.brandHue),
+    tokenOverrides: sanitizeOverrides(pref?.tokenOverrides),
+    defaultPermissionMode: readHarnessPermissionMode(pref, 'cursor'),
+    defaultSandboxMode: typeof sandboxMode === 'string' && offered.includes(sandboxMode)
+      ? sandboxMode as SandboxMode
+      : '',
+  }
+}
+
+function readAgentPreferenceSlot(
+  data: Record<string, unknown>,
+  key: HarnessId,
+): Record<string, unknown> | undefined {
+  const agentPreference = data.agentPreference && typeof data.agentPreference === 'object'
+    ? data.agentPreference as Record<string, unknown>
+    : undefined
+  return agentPreference?.[key] && typeof agentPreference[key] === 'object'
+    ? agentPreference[key] as Record<string, unknown>
+    : undefined
 }
 
 function getSettingsPath(): string {
@@ -636,7 +676,7 @@ export function readAppSettings(): AppSettings {
         claude: readClaudePreference(data),
         codex: readCodexPreference(data),
         acp: readAcpPreference(data),
-        cursor: readBrandOnlyPreference(data, 'cursor'),
+        cursor: readCursorPreference(data),
         dsh: readBrandOnlyPreference(data, 'dsh'),
         opencode: readBrandOnlyPreference(data, 'opencode'),
       },

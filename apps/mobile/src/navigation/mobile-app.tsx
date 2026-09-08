@@ -14,15 +14,17 @@ import {
 import type {
   AskUserQuestionRequest, ChatMessage, HarnessId, ImageAttachment, PermissionRequest,
   ListHarnessOptionsResponse, PlanApprovalRequest, RemoteCommand, RemoteHarnessOption,
-  SandboxInfo, SandboxMode, TodoItem, WorktreeInfo,
+  RealtimeTimelineSegment, SandboxInfo, SandboxMode, TodoItem, WorktreeInfo,
 } from '@superone/shared/agent-types'
 import { resolveRingContextWindow } from '@superone/shared/agent-types'
+import { mergeRealtimeTranscript } from '@superone/shared/realtime-transcript'
 import { ChatRuntime, type SessionWorktreeFacts } from '../runtime'
 import { TerminalRuntime } from '../terminal-runtime'
 import { randomId } from '../ids'
 import { mentionInsertText } from '../mentions'
 import { SlashOutputPanel } from '../ui/slash-output-panel'
 import { McpPanel } from '../ui/mcp-panel'
+import { AddDirScreen } from '../screens/add-dir-screen'
 import { WorkflowsPanel } from '../ui/workflows-panel'
 import { workflowRunRows } from '../workflow-runs'
 import { requestMcpServers, type McpServerRow } from '../mcp-status'
@@ -37,6 +39,7 @@ import { useComposerSuggestions } from './use-composer-suggestions'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { mobileWebViewTheme } from '../theme/tokens'
 import { harnessSupportsAdditionalDirs } from '../provider-state'
+import { harnessSupportsSandbox, sandboxInfoFromMode } from '@superone/shared/harness/harness-sandbox'
 import { suggestionHarnessKey } from '@superone/shared/suggestion-harness-order'
 import { fileBrowserHome, joinRemotePath, parentRemotePath, resolveRemoteFilePath, type FileBrowserMode } from '../shell-state'
 import { loadOrCreateMobileId, mobileKv } from '../storage'
@@ -64,6 +67,7 @@ import { useRemoteDirectory } from './use-remote-directory'
 import { useProjectGitStatus } from './use-project-git-status'
 import { useFileSearch } from './use-file-search'
 import { completeTypedPath, usePathAutocomplete } from './use-path-autocomplete'
+import { useAdditionalDirs } from './use-additional-dirs'
 import { NewFolderSheet } from '../prompts/NewFolderSheet'
 import { FileFinderView } from '../screens/file-finder-view'
 import { leaveMobileSession, sessionRemovalStatus } from '../session-exit'
@@ -85,6 +89,7 @@ import { MobileOverlays } from './mobile-overlays'
 import { MobileKeyboardFrame } from './mobile-keyboard-frame'
 import { useHarnessSelection } from './use-harness-selection'
 import { fetchShellDetails } from './shell-details'
+import { refreshHarnessResources, peekHarnessResource, preloadHarnessResources, requestHarnessResource } from '../harness-resource-cache'
 import { useReconnectOnForeground } from '../use-reconnect-on-foreground'
 import { useDeviceDiscovery } from './use-device-discovery'
 import { isFullBleedScreen } from '../layout-state'
@@ -144,7 +149,6 @@ export function MobileApp() {
   const [workspaceDirs, setWorkspaceDirs] = useState<string[]>([])
   const composerDraft = useComposerDraft()
   const { draft, draftRef, lastDraftChangeAtRef } = composerDraft
-  const [termDraft, setTermDraft] = useState('')
   const [terminalUi, setTerminalUi] = useState({ writable: false, title: 'Terminal' })
   const [streaming, setStreaming] = useState(false)
   const [starting, setStarting] = useState(false)
@@ -172,10 +176,21 @@ export function MobileApp() {
   )
   const [workflowsOpen, setWorkflowsOpen] = useState(false)
   const [sandboxInfo, setSandboxInfo] = useState<SandboxInfo | null>(null)
+  /**
+   * A sandbox picked before the session exists. There is no runtime to push it
+   * to yet, so it is held here, drives the chip, and rides `create_session` —
+   * without it the tap on the landing screen resolved to nothing at all.
+   */
+  const [pendingSandboxMode, setPendingSandboxMode] = useState<SandboxMode | null>(null)
   const [sessionWorktree, setSessionWorktree] = useState<SessionWorktreeFacts & { removed: boolean }>(
     { isWorktree: false, worktreePath: null, gitBranch: null, removed: false },
   )
   const [usage, setUsage] = useState({ contextTokens: 0, contextWindow: null as number | null, totalCostUsd: 0 })
+  // A live session reports its own sandbox; before one exists the chip answers
+  // from the pick made here, falling back to the default the host would apply.
+  const composerSandboxInfo = sessionId
+    ? sandboxInfo
+    : sandboxInfoFromMode(pendingSandboxMode ?? harnessSelection.defaultSandboxMode ?? 'off')
   // The phone has no models.dev catalog, so the window comes from the harness's own
   // model row, whatever a usage event reported, and Claude's built-in fallback.
   const ringContextWindow = useMemo(() => {
@@ -207,6 +222,14 @@ export function MobileApp() {
   const [gotoPath, setGotoPath] = useState('')
   const [folderPrompt, setFolderPrompt] = useState<{ value: string; error?: string } | null>(null)
   const gitStatus = useProjectGitStatus(clientRef)
+  const additionalDirs = useAdditionalDirs({
+    clientRef, projectPath: project?.path, provider: selectedProvider, sessionId,
+    projectDirs: workspaceDirs, onDirs: setWorkspaceDirs,
+  })
+  // The relay's event callback is built once per connection, so it cannot close
+  // over this render's hook — the same reason `runtimeRef` exists.
+  const additionalDirsRef = useRef(additionalDirs)
+  additionalDirsRef.current = additionalDirs
   const runtimeRef = useRef<ChatRuntime | null>(null)
   const termRuntimeRef = useRef<TerminalRuntime | null>(null)
   const reconnectControllerRef = useRef<ReconnectController | null>(null)
@@ -219,6 +242,7 @@ export function MobileApp() {
   const suggestions = useComposerSuggestions(runtimeRef, `${activePairingId}:${project?.path}:${sessionId}:${selectedProvider}`, { client: clientRef, projectPath: project?.path, provider: selectedProvider, projects, iconStore: mobileKv })
   const { slashHits, mentionRows } = suggestions
   const systemInfoRequestRef = useRef(0)
+  const shellDetailsRequestRef = useRef(0)
   // Files hangs off Project settings or off the session menu; back has to unwind
   // to whichever one actually opened it.
   const [filesOrigin, setFilesOrigin] = useState<FilesOrigin>('settings')
@@ -260,6 +284,24 @@ export function MobileApp() {
   useEffect(() => {
     inject(webRef, { type: 'setViewport', fontScale, locale: harnessSelection.locale })
   }, [fontScale, harnessSelection.locale])
+  // Voice is woven in only on the way to the WebView. `session.messages` stays the
+  // host's own list: the projected voice rows carry synthetic `codex-realtime-*` ids
+  // that nothing on the host can resolve, and they would leak into `workflowRunRows`
+  // and the in-progress dedupe in `ChatRuntime.open`.
+  const transcriptCache = useRef<{
+    messages: ChatMessage[]
+    segments: RealtimeTimelineSegment[]
+    merged: ChatMessage[]
+  } | null>(null)
+  const transcriptFor = (session: ChatRuntime['session']): ChatMessage[] => {
+    const cached = transcriptCache.current
+    if (cached && cached.messages === session.messages && cached.segments === session.realtimeSegments) {
+      return cached.merged
+    }
+    const merged = mergeRealtimeTranscript(session.messages, session.realtimeSegments)
+    transcriptCache.current = { messages: session.messages, segments: session.realtimeSegments, merged }
+    return merged
+  }
   const syncSheets = (runtime: ChatRuntime, hydrate = false) => {
     if (connectionRef.current.epoch !== runtime.epoch) {
       connectionRef.current = { state: 'connected', epoch: runtime.epoch }
@@ -272,7 +314,7 @@ export function MobileApp() {
     const mentionArtwork = includeMentionArtwork ? dynamicMentionArtworkSnapshot() : undefined
     inject(webRef, {
       type: hydrate ? 'hydrate' : 'applyReductionPatch',
-      messages: runtime.session.messages,
+      messages: transcriptFor(runtime.session),
       todos: runtime.session.todos,
       ...(mentionArtwork ? { mentionArtwork } : {}),
       pendingPermission: pending
@@ -424,10 +466,12 @@ export function MobileApp() {
         // Read off the raw batch, before ChatRuntime: the drawer has to stay
         // current even when no session is open and there is no runtime to ingest.
         if (sessionListInvalidations(events).length) setSessionListRevision((n) => n + 1)
+        additionalDirsRef.current.ingest(events)
         runtimeRef.current?.ingest(events, epoch)
       },
       onTerminal: (payload) => termRuntimeRef.current?.ingest(payload),
       restore: async (activeClient) => {
+        await refreshHarnessResources(activeClient)
         const runtime = runtimeRef.current
         if (!runtime) return activeClient.releaseBuffer().epoch
         await runtime.reopen()
@@ -487,13 +531,16 @@ export function MobileApp() {
     setProjects(projectRows)
     // Which harnesses this host offers, already ordered and labelled the way its
     // own new-session surface shows them.
-    void client.request({ type: 'list_harness_options', requestId: randomId() } as RemoteCommand)
+    const options = await client.request({ type: 'list_harness_options', requestId: randomId() } as RemoteCommand)
       .then((result) => {
-        const options = (result as ListHarnessOptionsResponse | null)
-        if (!options || 'error' in options || clientRef.current !== client) return
-        setHarnessOptions(options.options)
-      })
-      .catch(() => { /* An older desktop has no such command; keep the fallback. */ })
+        const response = result as ListHarnessOptionsResponse | null
+        return response && !('error' in response) ? response.options : []
+      }).catch(() => [])
+    if (clientRef.current !== client) return
+    setHarnessOptions(options)
+    if (projectRows[0]) await preloadHarnessResources(client, projectRows[0].path,
+      [selectedProvider, ...options.map((option) => option.provider)])
+    if (clientRef.current !== client) return
     if (projectRows[0]) { await openProject(projectRows[0]); startNewSession(projectRows[0]) }
     // Nothing to run a session in yet — land on the picker, which owns Add Project.
     else setScreen('project-picker')
@@ -608,6 +655,10 @@ export function MobileApp() {
   const openProject = async (p: Project) => {
     const client = clientRef.current
     if (!client) return
+    systemInfoRequestRef.current++
+    const projectRequest = ++shellDetailsRequestRef.current
+    await preloadHarnessResources(client, p.path, [selectedProvider, ...harnessOptions.map((option) => option.provider)])
+    if (clientRef.current !== client || projectRequest !== shellDetailsRequestRef.current) return
     setProject(p)
     setSessions((await readProjectSessions(client, p.path)).sessions)
     const git = await client.request({
@@ -618,18 +669,21 @@ export function MobileApp() {
     setGitInfo(git)
   }
 
-  const loadShellDetails = async (provider: HarnessId = selectedProvider, p = project) => {
+  const loadShellDetails = async (provider: HarnessId = selectedProvider, p = project, refreshCatalog = false) => {
     const client = clientRef.current
     if (!client || !p) return
     const request = ++systemInfoRequestRef.current
-    const details = await fetchShellDetails(client, p.path, provider)
-    if (request !== systemInfoRequestRef.current) return
+    const shellRequest = ++shellDetailsRequestRef.current
+    const details = await fetchShellDetails(client, p.path, provider, refreshCatalog)
+    if (shellRequest !== shellDetailsRequestRef.current || clientRef.current !== client) return
     setGitInfo(details.git)
     setWorkspaceDirs(details.workspaceDirs)
     setWorktreeInfo(details.worktree)
     setWorktreeDirty(details.worktreeDirty)
-    if (details.system) applySystemInfo(provider, details.system, provider === selectedProvider
-      ? { model: selectedModel, effort: selectedEffort, permissionMode: permMode } : undefined)
+    // No `current` here: the hook already remembers what the user claimed on
+    // this harness, and handing it back its own rendered state is what used to
+    // make the desktop's configured defaults unreachable.
+    if (details.system && request === systemInfoRequestRef.current) applySystemInfo(provider, details.system)
     setBranches(details.branches)
     setCheckedOutBranches(details.checkedOutBranches)
   }
@@ -638,10 +692,10 @@ export function MobileApp() {
     const client = clientRef.current
     if (!client || !project) throw new Error('Connect to a desktop to refresh models')
     const request = ++systemInfoRequestRef.current
-    const info = await client.request({ type: 'get_system_info', requestId: randomId(), projectPath: project.path, provider: selectedProvider }) as import('@superone/shared/agent-types').RemoteSystemInfo
+    const info = await requestHarnessResource(client, 'get_system_info', project.path, selectedProvider, true)
     if (request !== systemInfoRequestRef.current || clientRef.current !== client) return
     if (info.error) throw new Error(info.error)
-    applySystemInfo(selectedProvider, info, { model: selectedModel, effort: selectedEffort, permissionMode: permMode })
+    applySystemInfo(selectedProvider, info)
   }
 
   // A live session applies picks immediately, the way the desktop selector does;
@@ -715,8 +769,8 @@ export function MobileApp() {
   const bindRuntime = (client: RelayClient) => {
     setStatus('')
     runtimeRef.current?.dispose()
-    const runtime = new ChatRuntime(client, () => {
-      if (runtimeRef.current === runtime) syncSheets(runtime)
+    const runtime = new ChatRuntime(client, (_session, hydrate) => {
+      if (runtimeRef.current === runtime) syncSheets(runtime, hydrate)
     }, { onSharedFile: (event) => void sharedFileInbox.receive(client, event) })
     runtimeRef.current = runtime
     setTerminalUi({ writable: false, title: 'Terminal' })
@@ -747,7 +801,11 @@ export function MobileApp() {
     setQueuedMessages([])
     setSlashOutput(null)
     setSandboxInfo(null)
+    setPendingSandboxMode(null)
     setUsage({ contextTokens: 0, contextWindow: null, totalCostUsd: 0 })
+    // Session-scoped folders belong to the session that had them. Left behind,
+    // they would ride into the next one the landing starts.
+    additionalDirsRef.current.clearSessionDirs()
   }
   const leaveActiveSession = () => {
     runUiAction(() => {
@@ -852,7 +910,9 @@ export function MobileApp() {
     setStatus('')
     setActiveSessionTitle('New session')
     setScreen('chat')
-    runUiAction(() => loadShellDetails(selectedProvider, targetProject), setStatus, 'failed to load project settings')
+    // Configuring a session is the one moment the host's configured defaults are
+    // read, so this is where the catalog cache is worth paying to bypass.
+    runUiAction(() => loadShellDetails(selectedProvider, targetProject, true), setStatus, 'failed to load project settings')
   }
   /** Open a project for a new session — the picker's only exit that keeps state. */
   const chooseProject = (target: Project) =>
@@ -885,10 +945,21 @@ export function MobileApp() {
   }
   /** Switcher pick: an ACP row also pins which agent it stood for. */
   const selectHarness = (option: RemoteHarnessOption) => {
-    harnessSelection.resetForProvider(option.provider, option.acpAgentId)
-    setHarness(option.provider)
-    if (option.provider !== 'claude') setWorktreeSelection(LOCAL_WORKTREE_SELECTION)
-    runUiAction(() => loadShellDetails(option.provider), setStatus, 'failed to load agent settings')
+    const client = clientRef.current
+    if (!client || !project) return
+    const request = ++systemInfoRequestRef.current
+    const apply = (info: import('@superone/shared/agent-types').RemoteSystemInfo) => {
+      if (request !== systemInfoRequestRef.current || clientRef.current !== client) return
+      harnessSelection.resetForProvider(option.provider, option.acpAgentId)
+      applySystemInfo(option.provider, info)
+      setHarness(option.provider)
+      if (option.provider !== 'claude') setWorktreeSelection(LOCAL_WORKTREE_SELECTION)
+    }
+    const cached = peekHarnessResource(client, 'get_system_info', project.path, option.provider)
+    if (cached) apply(cached)
+    else runUiAction(async () => {
+      apply(await requestHarnessResource(client, 'get_system_info', project.path, option.provider))
+    }, setStatus, 'failed to load agent settings')
   }
   const createSession = async () => {
     const client = clientRef.current
@@ -905,6 +976,7 @@ export function MobileApp() {
       const previousId = runtimeRef.current?.sessionId
       if (previousId) client.send({ type: 'leave_session', sessionId: previousId })
       const runtime = bindRuntime(client)
+      const startupDirs = [...new Set([...workspaceDirs, ...additionalDirs.sessionDirs])]
       const id = await runtime.create(p.path, {
         provider: selectedProvider,
         ...(selectedProvider === 'acp' && selectedAcpAgentId
@@ -916,8 +988,16 @@ export function MobileApp() {
         ...(selectedProvider === 'claude'
           ? buildWorktreeCreateOptions(worktreeSelection, gitInfo?.branch)
           : {}),
-        ...(harnessSupportsAdditionalDirs(selectedProvider) && workspaceDirs.length
-          ? { additionalDirectories: workspaceDirs }
+        // Project folders plus anything `/add-dir session …` collected before
+        // there was a session to write it to — the desktop's draft session does
+        // the same, and there is no other moment these could be handed over.
+        ...(harnessSupportsAdditionalDirs(selectedProvider) && startupDirs.length
+          ? { additionalDirectories: startupDirs }
+          : {}),
+        // Only an explicit pick travels: staying silent leaves the host on its
+        // own default rather than forcing whatever the chip happened to show.
+        ...(pendingSandboxMode && harnessSupportsSandbox(selectedProvider)
+          ? { sandboxMode: pendingSandboxMode }
           : {}),
         // A mode is a session mode for ACP and a composition preset for DeepSeek.
         ...(harnessSelection.selectedModeId
@@ -933,12 +1013,10 @@ export function MobileApp() {
       setSessionId(id)
       setActiveSessionTitle('New session')
       setScreen('chat')
+      // The picks made on the landing screen are already claimed in the hook —
+      // the session was just created from them.
       const info = await runtime.loadSystemInfo(selectedProvider)
-      applySystemInfo(selectedProvider, info, {
-        model: selectedModel,
-        effort: selectedEffort,
-        permissionMode: permMode,
-      })
+      applySystemInfo(selectedProvider, info)
     }).catch(failSessionTransition)
   }
 
@@ -981,6 +1059,21 @@ export function MobileApp() {
   }
 
   /**
+   * Rewrite the composer's command line and nothing else.
+   *
+   * Slash commands, the folder chips and `/add-dir`'s own navigation all land
+   * here: anything the user typed on a later line — including mention chips,
+   * which the plain editor cannot rebuild — has to survive being sent to a
+   * panel and back.
+   */
+  const writeCommandLine = (line: string) => {
+    if (composerDraft.editorRef.current) { composerDraft.editorRef.current.replaceFirstLine(line); return }
+    const next = replaceFirstLine(draftRef.current, line)
+    composerDraft.changeText(next)
+    suggestions.applyProgrammatic(next)
+  }
+
+  /**
    * `/mcp` reports rather than writes. The status is read each time it opens:
    * a server that failed at launch may have been fixed on the desktop since,
    * and a cached list would say otherwise.
@@ -988,6 +1081,7 @@ export function MobileApp() {
   const openMcp = () => {
     const client = clientRef.current
     if (!client || !project) return
+    closeComposerPanels()
     setMcp({ open: true, loading: true, rows: [] })
     void requestMcpServers(client, project.path)
       .then(({ rows, error }) => {
@@ -998,6 +1092,38 @@ export function MobileApp() {
         if (clientRef.current !== client) return
         setMcp({ open: true, loading: false, rows: [], error: error instanceof Error ? error.message : 'Could not read MCP status' })
       })
+  }
+
+  /**
+   * Read from the transcript each time it opens, so a run that finished while
+   * the panel was shut is not shown as still going.
+   */
+  /**
+   * Adding a working directory is browsing, and browsing is a page.
+   *
+   * A route rather than a width branch: at 768 pt and up the shell keeps the
+   * session list beside it, so this is a detail panel on a tablet and a full
+   * screen on a phone from one definition — as `worktree` and `branch` are.
+   */
+  const openAdditionalDirs = () => {
+    additionalDirs.reset()
+    setScreen('add-dir')
+  }
+
+  const openWorkflows = () => {
+    closeComposerPanels()
+    setWorkflowsOpen(true)
+  }
+
+  /**
+   * One panel at a time. These three are opened by a command, so opening the
+   * next one is the user saying they are done with the last — including the
+   * previous command's output, which would otherwise outrank both.
+   */
+  const closeComposerPanels = () => {
+    setMcp((current) => ({ ...current, open: false }))
+    setWorkflowsOpen(false)
+    runtimeRef.current?.clearSlashCommandOutput()
   }
 
   const addAttachment = async (kind: 'image' | 'pdf') => {
@@ -1055,6 +1181,12 @@ export function MobileApp() {
     }
     if (screen === 'project-picker') {
       setScreen('chat')
+      return
+    }
+    if (screen === 'add-dir') {
+      // The page walks back out of browsing first; only the overview leaves.
+      if (additionalDirs.canGoBack) additionalDirs.goBack()
+      else setScreen('chat')
       return
     }
     if (screen === 'terminal' || screen === 'worktree' || screen === 'branch') {
@@ -1115,6 +1247,24 @@ export function MobileApp() {
     return () => back.remove()
   }, [screen, tabletMultiPane])
 
+  /**
+   * The composer shows exactly one surface, chosen here.
+   *
+   * These are all panels a command opened, and they close each other, so the
+   * chain only has to settle ties. Below them the command list and the mention
+   * list take the same slot inside `ChatComposer` — which is what stops a
+   * command list from being painted under the panel that command opened.
+   */
+  const composerOverlay = slashOutput ? (
+    <SlashOutputPanel output={slashOutput} onDismiss={() => runtimeRef.current?.clearSlashCommandOutput()} />
+  ) : mcp.open ? (
+    <McpPanel visible servers={mcp.rows} loading={mcp.loading} error={mcp.error}
+      onDismiss={() => setMcp((current) => ({ ...current, open: false }))} />
+    ) : workflowsOpen ? (
+    <WorkflowsPanel visible onDismiss={() => setWorkflowsOpen(false)}
+      runs={workflowRunRows(runtimeRef.current?.session.messages ?? [])} />
+  ) : undefined
+
   return (
     <SafeAreaView style={styles.root}>
       <StatusBar style={tokens.scheme === 'dark' ? 'light' : 'dark'} />
@@ -1144,12 +1294,21 @@ export function MobileApp() {
           ? () => { setWorktreeSelection(worktreeDraft); setScreen('chat') }
           : screen === 'add-project' && addProjectFlow.confirmLabel
             ? addProjectFlow.confirm
-            : undefined}
-        confirmLabel={screen === 'add-project' ? addProjectFlow.confirmLabel ?? undefined : undefined}
+            // Only while browsing: the overview has nothing to commit, it hands
+            // off to the browser. Same slot Add Project commits from.
+            : screen === 'add-dir' && additionalDirs.canGoBack
+              ? () => runUiAction(additionalDirs.confirm, setStatus, 'could not add that folder')
+              : undefined}
+        confirmLabel={screen === 'add-project' ? addProjectFlow.confirmLabel ?? undefined
+          : screen === 'add-dir' && additionalDirs.canGoBack ? 'Add' : undefined}
         onAddProject={screen === 'project-picker' ? () => setScreen('add-project') : undefined}
         confirmDisabled={screen === 'add-project'
           ? addProjectFlow.busy
-          : !!worktreeSelectionError(worktreeDraft, branches, checkedOutBranches)}
+          // A folder the host has not confirmed exists cannot be added, so the
+          // action stays off rather than failing after the tap.
+          : screen === 'add-dir'
+            ? additionalDirs.busy || !additionalDirs.resolvedPath
+            : !!worktreeSelectionError(worktreeDraft, branches, checkedOutBranches)}
         />
 
         <View style={styles.contentRow}>
@@ -1300,7 +1459,8 @@ export function MobileApp() {
           webRef={webRef}
           permissionModes={permModes}
           permissionMode={permMode}
-          sandboxInfo={sandboxInfo}
+          sandboxInfo={composerSandboxInfo}
+          sandboxSupport={harnessSelection.sandboxSupport}
           contextTokens={usage.contextTokens}
           contextWindow={ringContextWindow}
           totalCostUsd={usage.totalCostUsd}
@@ -1308,7 +1468,10 @@ export function MobileApp() {
           slashCatalogStatus={suggestions.slashCatalogStatus}
           mentionRows={mentionRows}
           attachments={attachments}
-          additionalDirectories={workspaceDirs}
+          // Launch-time facts, as on desktop and in the Flutter app: the folder
+          // chips answer for a session being configured, not one already running.
+          additionalDirectories={sessionId ? [] : workspaceDirs}
+          onManageDirectories={openAdditionalDirs}
           queuedMessages={queuedMessages}
           todos={todos}
           draft={draft}
@@ -1320,29 +1483,33 @@ export function MobileApp() {
             setPermMode(mode)
           }, setStatus, 'permission mode failed')}
           onSandboxMode={(mode) => runUiAction(
-            () => runtimeRef.current?.setSandboxMode(mode),
+            () => {
+              setPendingSandboxMode(mode)
+              return runtimeRef.current?.setSandboxMode(mode)
+            },
             setStatus,
             'sandbox mode failed',
           )}
           nativeDraft={{ controller: composerDraft.editorRef, document: composerDraft.document.current, onError: setStatus,
             onChange: (snapshot) => { composerDraft.accept(snapshot); suggestions.updateNative(snapshot.text, snapshot, snapshot.composing) } }}
           onSlash={(command) => {
-            // A few commands open a surface instead of writing themselves into
-            // the draft — the desktop's `/mcp` popup, and its kin.
-            if (command === 'mcp') { openMcp(); return }
-            if (command === 'workflows' && (selectedProvider === 'claude' || selectedProvider === 'acp')) {
-              setWorkflowsOpen(true)
+            // `/mcp` and `/workflows` report rather than run: they open a panel
+            // and take their own command line back out of the draft, the way the
+            // desktop's `clearFirstLine` does. Leaving `/mcp` in the draft would
+            // both offer to send it and keep the command list matching it.
+            if (command === 'mcp') { writeCommandLine(''); openMcp(); return }
+            if (command === 'add-dir' && harnessSupportsAdditionalDirs(selectedProvider)) {
+              writeCommandLine('')
+              openAdditionalDirs()
               return
             }
-            // Only the command line is rewritten. Anything the user typed on a
-            // later line — including mention chips — has to survive.
-            const line = `/${command} `
-            if (composerDraft.editorRef.current) composerDraft.editorRef.current.replaceFirstLine(line)
-            else {
-              const next = replaceFirstLine(draftRef.current, line)
-              composerDraft.changeText(next)
-              suggestions.applyProgrammatic(next)
+            if (command === 'workflows' && (selectedProvider === 'claude' || selectedProvider === 'acp')) {
+              writeCommandLine('')
+              openWorkflows()
+              return
             }
+            // Everything else is written into the draft for the agent to run.
+            writeCommandLine(`/${command} `)
           }}
           onSlashDismiss={suggestions.dismissSlash}
           onMention={(item) => {
@@ -1369,17 +1536,7 @@ export function MobileApp() {
           onMentionLoadMore={suggestions.loadMore}
           mentionQuery={suggestions.mentionQuery}
           mentionGroupLabels={suggestions.mentionGroupLabels}
-          // Everything the composer opens stacks here, above the input and
-          // below the transcript — never as a modal over the draft.
-          above={<>
-            <SlashOutputPanel output={slashOutput} onDismiss={() => runtimeRef.current?.clearSlashCommandOutput()} />
-            <McpPanel visible={mcp.open} servers={mcp.rows} loading={mcp.loading} error={mcp.error}
-              onDismiss={() => setMcp((current) => ({ ...current, open: false }))} />
-            {/* Read from the transcript each time it opens, so a run that
-                finished while the panel was shut is not shown as still going. */}
-            <WorkflowsPanel visible={workflowsOpen} onDismiss={() => setWorkflowsOpen(false)}
-              runs={workflowsOpen ? workflowRunRows(runtimeRef.current?.session.messages ?? []) : []} />
-          </>}
+          overlay={composerOverlay}
           onSubmitFromKeyboard={() => {
             const hasContent = draftRef.current.trim().length > 0 || attachments.length > 0
             if (shouldSubmitFromKeyboard({
@@ -1436,9 +1593,26 @@ export function MobileApp() {
         />
       ) : null}
 
+      {route === 'add-dir' ? (
+        <AddDirScreen
+          step={additionalDirs.step}
+          projectDirs={workspaceDirs}
+          sessionDirs={additionalDirs.sessionDirs}
+          entries={additionalDirs.entries}
+          query={additionalDirs.query}
+          loading={additionalDirs.loading}
+          busy={additionalDirs.busy}
+          error={additionalDirs.error}
+          onQuery={additionalDirs.setQuery}
+          onEnter={additionalDirs.enter}
+          onBrowse={additionalDirs.browse}
+          onRemove={(dir, scope) => void additionalDirs.remove(dir, scope)}
+        />
+      ) : null}
+
       {route === 'terminal' ? (
         <ConnectedTerminal webRef={termRef} runtimeRef={termRuntimeRef} theme={webViewTheme}
-          draft={termDraft} writable={terminalUi.writable} onDraft={setTermDraft} onStatus={setStatus} />
+          writable={terminalUi.writable} onStatus={setStatus} />
       ) : null}
               </View>
             )}

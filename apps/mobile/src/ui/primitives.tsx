@@ -64,7 +64,9 @@ export function ListRow(props: {
           props.titleOpacity == null ? null : { opacity: props.titleOpacity }, props.titleStyle]}>{props.title}</Text>
         {props.subtitle ? <Text numberOfLines={2} style={styles.listSubtitle}>{props.subtitle}</Text> : null}
       </View>
-      {props.trailing ?? (props.onPress ? <ChevronRight color={tokens.colors.mutedForeground} size={18} /> : null)}
+      {props.trailing !== undefined
+        ? props.trailing
+        : props.onPress ? <ChevronRight color={tokens.colors.mutedForeground} size={18} /> : null}
     </>
   )
   const style = [styles.listRow, props.selected && styles.selected]

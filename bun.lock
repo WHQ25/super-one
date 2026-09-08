@@ -440,6 +440,10 @@
       "name": "@superone/chat-view",
       "version": "0.0.0",
       "dependencies": {
+        "@shikijs/core": "^4.4.3",
+        "@shikijs/engine-javascript": "^4.4.3",
+        "@shikijs/langs": "^4.4.3",
+        "@shikijs/themes": "^4.4.3",
         "@streamdown/code": "^1.0.1",
         "@streamdown/math": "^1.0.2",
         "@superone/chat-core": "workspace:*",
@@ -455,6 +459,7 @@
         "lucide-react": "^1.41.0",
         "mermaid": "^11.12.3",
         "react-i18next": "^17.0.4",
+        "rehype-harden": "^1.1.8",
         "streamdown": "^2.1.0",
         "unified": "^11.0.5",
       },

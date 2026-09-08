@@ -1,0 +1,98 @@
+.chat-scroll-indicator {
+  /* Resting width is just the tick's own footprint (6px bar + 4px inset) plus a
+     touch slop; the transcript reserves nothing for it. Scrubbing widens the
+     rail over the transcript instead of reflowing it. */
+  --rail-rest: 22px;
+  --rail-open: 36px;
+  --rail-surface: transparent;
+  --rail-fade: var(--background);
+  position: fixed;
+  inset: calc(8px + var(--safe-area-top)) var(--safe-area-right) calc(8px + var(--safe-area-bottom)) auto;
+  width: var(--rail-rest);
+  z-index: 20;
+  pointer-events: none;
+  transition: width 160ms ease;
+}
+.chat-scroll-indicator[data-open="true"] {
+  --rail-surface: var(--popover);
+  --rail-fade: var(--popover);
+  width: var(--rail-open);
+}
+.chat-scroll-strip {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: auto;
+}
+.chat-scroll-strip::-webkit-scrollbar { display: none; }
+.chat-scroll-strip[data-overflow="true"] { justify-content: flex-start; }
+/* The surface lives on the tick block, not the full-height track, so an open
+   rail hugs the ticks when they fit and fills the track once they overflow. */
+.chat-scroll-rail {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  padding-block: 6px;
+  border-radius: 999px;
+  background: var(--rail-surface);
+  transition: background-color 160ms ease, box-shadow 160ms ease;
+}
+.chat-scroll-indicator[data-open="true"] .chat-scroll-rail {
+  box-shadow: 0 2px 14px color-mix(in srgb, var(--foreground) 12%, transparent);
+}
+.chat-scroll-tick {
+  display: flex;
+  flex-shrink: 0;
+  justify-content: flex-end;
+  align-items: center;
+  width: 100%;
+  height: 8px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.chat-scroll-tick:focus-visible { outline: 1px solid var(--primary); outline-offset: -1px; }
+.chat-scroll-tick > span {
+  height: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 15%, transparent);
+  transition: width 150ms, background-color 150ms;
+}
+.chat-scroll-tick > span[data-hovered="true"] { background: color-mix(in srgb, var(--foreground) 80%, transparent); }
+.chat-scroll-tick > span[data-active="true"] { background: var(--primary); }
+.chat-scroll-tick > span[data-compact="true"] { background: color-mix(in srgb, var(--warning) 80%, transparent); }
+.chat-scroll-fade { position: absolute; inset-inline: 0; height: 20px; opacity: 0; pointer-events: none; }
+.chat-scroll-fade[data-visible="true"] { opacity: 1; }
+.chat-scroll-fade.top { top: 0; border-radius: 999px 999px 0 0; background: linear-gradient(var(--rail-fade), transparent); }
+.chat-scroll-fade.bottom { bottom: 0; border-radius: 0 0 999px 999px; background: linear-gradient(transparent, var(--rail-fade)); }
+.chat-scroll-preview {
+  position: absolute;
+  right: calc(var(--rail-open) + 4px);
+  width: min(256px, calc(100vw - var(--rail-open) - 20px - var(--safe-area-left) - var(--safe-area-right)));
+  transform: translateY(-50%);
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--foreground) 12%, transparent);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+.chat-scroll-preview p { display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; margin: 0; }
+.chat-scroll-preview-title { -webkit-line-clamp: 1; font-weight: 500; }
+.chat-scroll-preview p + p { margin-top: 4px; }
+.chat-scroll-preview-summary { -webkit-line-clamp: 2; color: var(--muted-foreground); }
+.chat-scroll-preview-reply { -webkit-line-clamp: 3; color: var(--muted-foreground); opacity: 0.8; }
+@media (prefers-reduced-motion: reduce) {
+  .chat-scroll-tick > span, .chat-scroll-indicator { transition: none; }
+}

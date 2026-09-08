@@ -1,13 +1,12 @@
-import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from 'react-native'
-import { Check, Github, Link2, Search } from 'lucide-react-native'
+import { Pressable, View } from 'react-native'
+import { Check, Github, Link2 } from 'lucide-react-native'
 import { Image } from 'react-native'
 import { Text } from '../ui/text'
 import { githubOwnerAvatarUrl, parseGitHubRepoInput } from '@superone/shared/git-remote'
 import { ADD_PROJECT_TEXT } from '../add-project-state'
 import type { AddProjectFlow } from '../navigation/use-add-project'
 import { useMobileTheme } from '../theme/context'
-import { AddProjectList } from '../ui/add-project-list'
-import { SCROLL_INDICATOR_GUTTER } from '../ui/scroll-gutter'
+import { BrowsePage } from '../ui/browse-page'
 
 /** Destination-step checkbox, in the dialog's own compact row shape. */
 function CloneOption(props: { label: string; checked: boolean; onToggle: (value: boolean) => void }) {
@@ -30,8 +29,10 @@ function CloneOption(props: { label: string; checked: boolean; onToggle: (value:
  * The desktop Add Project dialog as a page.
  *
  * The single input carries every step: a path while browsing, a repository
- * reference on the GitHub / Git URL steps. The header supplies back and the
- * confirm action the dialog spends ⇧↵ on.
+ * reference on the GitHub / Git URL steps. `BrowsePage` owns that field and the
+ * list — the additional-folders page browses through the same component — and
+ * what is left here is the one thing only cloning has: the destination preview.
+ * The header supplies back and the confirm action the dialog spends ⇧↵ on.
  */
 export function AddProjectScreen(props: { flow: AddProjectFlow }) {
   const { tokens: { colors, radius } } = useMobileTheme()
@@ -43,19 +44,20 @@ export function AddProjectScreen(props: { flow: AddProjectFlow }) {
     : null
 
   return (
-    <View style={{ flex: 1 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12,
-        borderBottomWidth: 1, borderBottomColor: colors.border }}>
-        <Search size={15} color={colors.mutedForeground} />
-        <TextInput value={flow.query} onChangeText={flow.setQuery}
-          accessibilityLabel={flow.placeholder}
-          placeholder={flow.placeholder} placeholderTextColor={colors.mutedForeground}
-          editable={!flow.busy} autoCapitalize="none" autoCorrect={false} spellCheck={false}
-          style={{ flex: 1, minHeight: 44, fontSize: 14, color: colors.foreground,
-            fontFamily: isPathStep ? 'Menlo' : undefined }} />
-      </View>
-
-      {preview ? (
+    <BrowsePage
+      query={flow.query}
+      onQuery={flow.setQuery}
+      placeholder={flow.placeholder}
+      monospace={isPathStep}
+      sections={flow.sections}
+      onActivate={flow.activate}
+      loading={flow.loading}
+      loadingLabel={ADD_PROJECT_TEXT.loading}
+      emptyMessage={flow.emptyMessage}
+      busy={flow.busy}
+      busyLabel={flow.step.kind === 'destination' ? ADD_PROJECT_TEXT.cloning : ADD_PROJECT_TEXT.loading}
+      error={flow.error}
+      header={preview ? (
         <View style={{ gap: 6, paddingHorizontal: 12, paddingVertical: 10,
           borderBottomWidth: 1, borderBottomColor: colors.border }}>
           <Text style={{ fontSize: 12, fontWeight: '500', color: colors.mutedForeground }}>
@@ -90,40 +92,6 @@ export function AddProjectScreen(props: { flow: AddProjectFlow }) {
             checked={flow.saveAsDefault} onToggle={flow.setSaveAsDefault} />
         </View>
       ) : null}
-
-      {flow.loading ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-          <ActivityIndicator color={colors.mutedForeground} />
-          <Text style={{ fontSize: 12, color: colors.mutedForeground }}>{ADD_PROJECT_TEXT.loading}</Text>
-        </View>
-      ) : flow.emptyMessage ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 }}>
-          <Text style={{ fontSize: 12, textAlign: 'center', color: colors.mutedForeground }}>
-            {flow.emptyMessage}
-          </Text>
-        </View>
-      ) : (
-        <ScrollView keyboardShouldPersistTaps="handled" style={{ flex: 1 }}
-          contentContainerStyle={{ paddingRight: SCROLL_INDICATOR_GUTTER, paddingBottom: 16 }}>
-          <AddProjectList sections={flow.sections} onActivate={flow.activate} />
-        </ScrollView>
-      )}
-
-      {flow.busy ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12,
-          paddingVertical: 8, borderTopWidth: 1, borderTopColor: colors.border }}>
-          <ActivityIndicator size="small" color={colors.mutedForeground} />
-          <Text style={{ fontSize: 12, color: colors.mutedForeground }}>
-            {flow.step.kind === 'destination' ? ADD_PROJECT_TEXT.cloning : ADD_PROJECT_TEXT.loading}
-          </Text>
-        </View>
-      ) : null}
-      {flow.error ? (
-        <Text accessibilityRole="alert" style={{ paddingHorizontal: 12, paddingVertical: 8, fontSize: 12,
-          borderTopWidth: 1, borderTopColor: colors.border, color: colors.destructive }}>
-          {flow.error}
-        </Text>
-      ) : null}
-    </View>
+    />
   )
 }

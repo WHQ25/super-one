@@ -54,9 +54,12 @@ describe('app-settings-service', () => {
     brandHue: null,
     tokenOverrides: {},
     selectedAgentId: null,
+    defaultPermissionMode: '',
   }
-  /** Harnesses whose only preference is brand theming. */
-  const defaultBrandOnly = { brandHue: null, tokenOverrides: {} }
+  /** Harnesses whose only preferences are brand theming and session defaults. */
+  const defaultBrandOnly = { brandHue: null, tokenOverrides: {}, defaultPermissionMode: '' }
+  /** Cursor adds a sandbox toggle of its own. */
+  const defaultCursor = { ...defaultBrandOnly, defaultSandboxMode: '' }
   const defaultSettings = {
     analyticsEnabled: true,
     notifications: {
@@ -110,7 +113,7 @@ describe('app-settings-service', () => {
       claude: defaultClaude,
       codex: defaultCodex,
       acp: defaultAcp,
-      cursor: defaultBrandOnly,
+      cursor: defaultCursor,
       dsh: defaultBrandOnly,
       opencode: defaultBrandOnly,
     },
@@ -242,7 +245,7 @@ describe('app-settings-service', () => {
             tokenOverrides: {},
           },
           acp: defaultAcp,
-          cursor: defaultBrandOnly,
+          cursor: defaultCursor,
           dsh: defaultBrandOnly,
           opencode: defaultBrandOnly,
         },
@@ -387,7 +390,7 @@ describe('app-settings-service', () => {
             tokenOverrides: {},
           },
           acp: defaultAcp,
-          cursor: defaultBrandOnly,
+          cursor: defaultCursor,
           dsh: defaultBrandOnly,
           opencode: defaultBrandOnly,
         },

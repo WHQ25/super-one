@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 import {
   Streamdown,
@@ -10,6 +10,7 @@ import {
 } from 'streamdown'
 import type { PluggableList } from 'unified'
 import { splitByInsightBlocks } from '@superone/shared/insight-markers'
+import { TextRevealContext } from './text-reveal-context'
 
 export interface CopyableMarkdownRuntime {
   components: Components
@@ -49,7 +50,7 @@ function useMathPluginForText(text: string, runtime: CopyableMarkdownRuntime): M
 
 const STREAMING_THROTTLE_MS = 33
 
-function useThrottledStreamingText(text: string, isStreaming: boolean): string {
+function useThrottledStreamingText(text: string, isStreaming: boolean, enabled = true): string {
   const [throttled, setThrottled] = useState(text)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastCommitRef = useRef(0)
@@ -57,12 +58,12 @@ function useThrottledStreamingText(text: string, isStreaming: boolean): string {
   latestTextRef.current = text
 
   useEffect(() => {
-    if (!isStreaming) {
+    if (!isStreaming || !enabled) {
       if (timerRef.current != null) {
         clearTimeout(timerRef.current)
         timerRef.current = null
       }
-      setThrottled(text)
+      if (enabled) setThrottled(text)
       return
     }
     const elapsed = performance.now() - lastCommitRef.current
@@ -76,13 +77,13 @@ function useThrottledStreamingText(text: string, isStreaming: boolean): string {
         setThrottled(latestTextRef.current)
       }, STREAMING_THROTTLE_MS - elapsed)
     }
-  }, [text, isStreaming])
+  }, [text, isStreaming, enabled])
 
   useEffect(() => () => {
     if (timerRef.current != null) clearTimeout(timerRef.current)
   }, [])
 
-  return throttled
+  return enabled ? throttled : text
 }
 export function splitByCodeFences(text: string): { content: string; isCode: boolean }[] {
   const segments: { content: string; isCode: boolean }[] = []
@@ -231,7 +232,10 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ text, isStreaming, com
 })
 
 export const CopyableMarkdownPresenter = memo(function CopyableMarkdownPresenter({ text, isStreaming, components, runtime }: CopyableMarkdownPresenterProps) {
-  const renderText = useThrottledStreamingText(text, isStreaming)
+  const { active: isRevealing, paced } = useContext(TextRevealContext)
+  isStreaming ||= isRevealing
+  // Mobile's display controller already paces text, including its final frame.
+  const renderText = useThrottledStreamingText(text, isStreaming, !paced)
   const segments = useMemo(() => splitByInsightBlocks(renderText, !isStreaming), [renderText, isStreaming])
   const hasInsight = segments.some((s) => s.type === 'insight')
 

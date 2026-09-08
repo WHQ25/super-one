@@ -207,6 +207,11 @@ export function MentionSuggestions({ rows, onSelect, search, onRetry, onLoadMore
         <SectionTitle title={groupLabels?.[group.key] ?? MENTION_GROUP_LABELS[group.key as MentionGroupKey]} count={group.items.length} />
         {group.items.map((row) => {
           const { item, label, labelIndices, inline, inlineIndices, trailing, badge, hint, disabled } = row
+          // Match desktop handles: include the typed @ only when the keyword
+          // matched, leaving display-name-only and alias matches unhighlighted.
+          const inlineMatchIndices = inline?.startsWith('@') && inlineIndices.length > 0
+            ? [0, ...inlineIndices.map((index) => index + 1)]
+            : inlineIndices
           // Tapping a folder opens it — the desktop's Tab. Mentioning the folder
           // itself is the desktop's Enter, and needs its own target here.
           const directory = isMentionDirectory(item)
@@ -226,7 +231,7 @@ export function MentionSuggestions({ rows, onSelect, search, onRetry, onLoadMore
               <View style={{ flex: 1, gap: 2 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
                   <MatchText text={label} indices={labelIndices} />
-                  {inline ? <MatchText text={inline} indices={inline.startsWith('@') ? inlineIndices.map((index) => index + 1) : inlineIndices} muted /> : null}
+                  {inline ? <MatchText text={inline} indices={inlineMatchIndices} muted /> : null}
                 </View>
                 {hint ? <Text numberOfLines={1} style={{ color: colors.mutedForeground, fontSize: 12 }}>{hint}</Text> : null}
               </View>

@@ -99,7 +99,8 @@ export interface ProviderCatalogSource {
   credentials: Array<{ id: string; name?: string; platformId: string }>
   /** Whether this credential can actually serve the harness's chat consumer. */
   servesHarness: (credentialId: string) => { brand?: string | null } | null
-  platformName: (platformId: string) => string
+  /** Platform name + favicon for a credential row, as the desktop picker draws it. */
+  platformDisplay: (platformId: string) => { name: string; icon?: string }
   /** Logged-in Claude accounts; only surfaced once there is more than one. */
   claudeAccounts?: ClaudeAccount[]
   /** Credential id the session currently resolves to, or null for the host default. */
@@ -133,11 +134,14 @@ export function harnessProviderCatalog(
   for (const credential of source.credentials) {
     const served = source.servesHarness(credential.id)
     if (!served) continue
-    const base = source.platformName(credential.platformId)
+    // The row is a brand lockup plus a key badge, so the name stays the platform's
+    // own. Folding the key into it too spelled the key twice on every row.
+    const platform = source.platformDisplay(credential.platformId)
     providers.push({
       id: credential.id,
-      name: credential.name && credential.name !== base ? `${base} · ${credential.name}` : base,
+      name: platform.name,
       brand: served.brand ?? null,
+      ...(platform.icon ? { icon: platform.icon } : {}),
       ...(credential.name ? { keyName: credential.name } : {}),
     })
   }

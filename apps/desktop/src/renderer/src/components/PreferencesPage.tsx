@@ -18,17 +18,13 @@ import {
 } from '@superone/ui/components/ui/dropdown-menu'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import { cn } from '@superone/ui/lib/utils'
-import { modes as permissionModes } from '@/components/chat/PermissionModeSelector'
-import { PermissionModeList } from '@/components/chat/PermissionModeList'
-import { PERMISSION_POPOVER_CLASS } from '@/components/chat/permissionPopoverStyles'
-import { sandboxModes } from '@/components/chat/SandboxModeSelector'
 import {
   ClaudeModelList,
   EffortList,
 } from '@/components/chat/ModelSelectorLists'
 import { checkAutoModePlanEligibility } from '@/lib/auto-mode-eligibility'
 import type { EffortLevel, PermissionMode, QuestionPreviewFormat, SandboxMode } from '@superone/shared/agent-types'
-import { SandboxStatusBlock } from '@/components/preferences/SandboxStatusBlock'
+import { HarnessPreferencesPage, SessionDefaultsSection } from '@/components/preferences/SessionDefaultsSection'
 
 function ClaudePreferencesPage() {
   const { t } = useTranslation()
@@ -40,9 +36,6 @@ function ClaudePreferencesPage() {
     max: t('settings.preferences.effort.levels.max'),
   }
   const currentFolder = useAppStore((s) => s.currentFolder)
-  const sandboxCapability = useAppStore((s) => s.sandboxCapability)
-  const sandboxProbe = useAppStore((s) => s.sandboxProbe)
-  const probeSandbox = useAppStore((s) => s.probeSandbox)
   const availableOutputStyles = useChatStore(selectClaudeOutputStyles)
   const availableModels = useChatStore(selectClaudeModels)
   const account = useChatStore(selectClaudeAccount)
@@ -50,15 +43,11 @@ function ClaudePreferencesPage() {
 
   const [scope, setScope] = useState<ResourceScopeView>('user')
   const [outputStyle, setOutputStyle] = useState('')
-  const [defaultPermissionMode, setDefaultPermissionMode] = useState<PermissionMode | ''>('')
-  const [defaultSandboxMode, setDefaultSandboxMode] = useState<SandboxMode | ''>('')
   const [defaultModel, setDefaultModel] = useState('')
   const [defaultEffort, setDefaultEffort] = useState<EffortLevel | ''>('')
   const [askPreviewFormat, setAskPreviewFormat] = useState<QuestionPreviewFormat>('markdown')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [permOpen, setPermOpen] = useState(false)
-  const [sandboxOpen, setSandboxOpen] = useState(false)
   const [modelOpen, setModelOpen] = useState(false)
   const [effortOpen, setEffortOpen] = useState(false)
 
@@ -72,8 +61,6 @@ function ClaudePreferencesPage() {
       if (!mounted) return
       if (projectPrefs) setOutputStyle(projectPrefs.outputStyle)
       const claude = appSettings.agentPreference.claude
-      setDefaultPermissionMode(claude.defaultPermissionMode)
-      setDefaultSandboxMode(claude.defaultSandboxMode)
       setDefaultModel(claude.defaultModel)
       setDefaultEffort(claude.defaultEffort)
       setAskPreviewFormat(claude.askUserQuestionPreviewFormat)
@@ -82,8 +69,6 @@ function ClaudePreferencesPage() {
   }, [currentFolder])
 
   async function saveClaudeDefaults(patch: {
-    defaultPermissionMode?: PermissionMode | ''
-    defaultSandboxMode?: SandboxMode | ''
     defaultModel?: string
     defaultEffort?: EffortLevel | ''
     askUserQuestionPreviewFormat?: QuestionPreviewFormat
@@ -94,8 +79,6 @@ function ClaudePreferencesPage() {
       const result = await window.app.saveAppSettings({
         agentPreference: {
           claude: {
-            defaultPermissionMode: patch.defaultPermissionMode ?? defaultPermissionMode,
-            defaultSandboxMode: patch.defaultSandboxMode ?? defaultSandboxMode,
             defaultModel: patch.defaultModel ?? defaultModel,
             defaultEffort: patch.defaultEffort ?? defaultEffort,
             askUserQuestionPreviewFormat: patch.askUserQuestionPreviewFormat ?? askPreviewFormat,
@@ -103,8 +86,6 @@ function ClaudePreferencesPage() {
         },
       })
       const claude = result.agentPreference.claude
-      setDefaultPermissionMode(claude.defaultPermissionMode)
-      setDefaultSandboxMode(claude.defaultSandboxMode)
       setDefaultModel(claude.defaultModel)
       setDefaultEffort(claude.defaultEffort)
       setAskPreviewFormat(claude.askUserQuestionPreviewFormat)
@@ -127,27 +108,6 @@ function ClaudePreferencesPage() {
       setSaving(false)
     } catch (e) {
       setSaving(false)
-      throw e
-    }
-  }
-
-  async function handlePermissionModeSelect(mode: PermissionMode) {
-    try {
-      await saveClaudeDefaults({ defaultPermissionMode: mode }, t('settings.preferences.permissionMode.updated'))
-      invalidateDefaultPermissionModeCache()
-      setPermOpen(false)
-    } catch (e) {
-      setPermOpen(false)
-      throw e
-    }
-  }
-
-  async function handleSandboxModeSelect(mode: SandboxMode) {
-    try {
-      await saveClaudeDefaults({ defaultSandboxMode: mode }, t('settings.preferences.sandbox.updated'))
-      setSandboxOpen(false)
-    } catch (e) {
-      setSandboxOpen(false)
       throw e
     }
   }
@@ -186,15 +146,6 @@ function ClaudePreferencesPage() {
   }
 
   const disabled = loading || saving
-  const sandboxSupportLevel = sandboxCapability?.supportLevel ?? 'always'
-  const fallbackSandboxMode: SandboxMode = sandboxCapability?.defaultMode ?? 'on'
-  const activePermMode = defaultPermissionMode || 'default'
-  const activeSandboxMode = defaultSandboxMode || fallbackSandboxMode
-  const currentPerm = permissionModes.find((m) => m.id === activePermMode) ?? permissionModes[0]
-  const currentSandbox = sandboxModes.find((m) => m.id === activeSandboxMode) ?? sandboxModes[1]
-  const sandboxOptionDisabled = (id: SandboxMode): boolean =>
-    id !== 'off' && sandboxSupportLevel === 'unsupported'
-  const sandboxTriggerDisabled = disabled || sandboxSupportLevel === 'unsupported'
   const pillTriggerClass = 'flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60'
 
   return (
@@ -250,88 +201,11 @@ function ClaudePreferencesPage() {
               description={t('settings.preferences.defaultProvider.description')}
               fallback={<ProviderOptionLabel brandKey="claude" />}
             />
-            <div className="flex items-center justify-between gap-4 border-b border-border p-4">
-              <div className="min-w-0">
-                <p className="text-sm font-medium">{t('settings.preferences.permissionMode.label')}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {t('settings.preferences.permissionMode.description')}
-                </p>
-              </div>
-              <Popover open={permOpen} onOpenChange={setPermOpen}>
-                <PopoverTrigger asChild>
-                  <button
-                    disabled={disabled}
-                    className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${currentPerm.color} ${currentPerm.hoverBg}`}
-                  >
-                    {currentPerm.icon}
-                    <span>{t(`chat.permissionModes.${currentPerm.id}.label`)}</span>
-                    <ChevronDown className={`size-3 transition-transform duration-200 ${permOpen ? 'rotate-180' : ''}`} />
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent align="end" side="bottom" className={cn(PERMISSION_POPOVER_CLASS, 'bg-card')}>
-                  <PermissionModeList
-                    activeMode={activePermMode}
-                    autoEligibility={autoPlanEligibility}
-                    onSelect={handlePermissionModeSelect}
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
-            <div className="flex items-center justify-between gap-4 border-b border-border p-4">
-              <div className="min-w-0">
-                <p className="text-sm font-medium">{t('settings.preferences.sandbox.label')}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {t('settings.preferences.sandbox.description')}
-                </p>
-              </div>
-              <Popover open={sandboxOpen} onOpenChange={setSandboxOpen}>
-                <PopoverTrigger asChild>
-                  <button
-                    disabled={sandboxTriggerDisabled}
-                    title={sandboxSupportLevel === 'unsupported' ? t('settings.preferences.sandbox.statusUnsupported') : undefined}
-                    className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${currentSandbox.color} ${currentSandbox.hoverBg}`}
-                  >
-                    {currentSandbox.icon}
-                    <span>{t(`chat.sandboxModes.${currentSandbox.id}.label`)}</span>
-                    <ChevronDown className={`size-3 transition-transform duration-200 ${sandboxOpen ? 'rotate-180' : ''}`} />
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent align="end" side="bottom" className="w-56 border-border bg-card p-1">
-                  <div className="px-2 py-1.5 text-xs text-muted-foreground">{t('settings.preferences.sandbox.menuTitle')}</div>
-                  {sandboxModes.map((mode) => {
-                    const isDisabled = sandboxOptionDisabled(mode.id)
-                    return (
-                      <button
-                        key={mode.id}
-                        disabled={isDisabled}
-                        aria-disabled={isDisabled}
-                        onClick={() => { if (!isDisabled) void handleSandboxModeSelect(mode.id) }}
-                        title={isDisabled ? t('settings.preferences.sandbox.statusUnsupported') : undefined}
-                        className={`w-full rounded px-2 py-1.5 text-left text-xs transition-colors ${
-                          mode.id === activeSandboxMode
-                            ? 'bg-muted text-foreground'
-                            : 'text-foreground hover:bg-muted/50'
-                        } ${isDisabled ? 'cursor-not-allowed opacity-50 hover:bg-transparent' : ''}`}
-                      >
-                        <div className={`flex items-center gap-1.5 font-medium ${mode.color}`}>
-                          {mode.icon}
-                          {t(`chat.sandboxModes.${mode.id}.label`)}
-                        </div>
-                        <div className="mt-0.5 text-[10px] text-muted-foreground">{t(`chat.sandboxModes.${mode.id}.description`)}</div>
-                      </button>
-                    )
-                  })}
-                </PopoverContent>
-              </Popover>
-            </div>
-            {sandboxSupportLevel !== 'always' && (
-              <SandboxStatusBlock
-                supportLevel={sandboxSupportLevel}
-                probe={sandboxProbe}
-                capabilityReason={sandboxCapability?.unsupportedReason}
-                onProbe={() => { void probeSandbox(true) }}
-              />
-            )}
+            {/* Permission mode and sandbox are per harness now, so both rows
+                come from the shared section every harness page renders. Auto's
+                plan-eligibility gate is Claude's own knowledge, so it is passed
+                in rather than rediscovered inside a generic component. */}
+            <SessionDefaultsSection harnessId="claude" autoEligibility={autoPlanEligibility} />
 
             <div className="flex items-center justify-between gap-4 border-b border-border p-4">
               <div className="min-w-0">
@@ -453,9 +327,9 @@ function ClaudePreferencesPage() {
 export function PreferencesPage() {
   const settingsProvider = useAppStore((s) => s.settingsProvider)
 
-  if (settingsProvider === 'codex') {
-    return <CodexPreferencesPage />
-  }
-
-  return <ClaudePreferencesPage />
+  if (settingsProvider === 'codex') return <CodexPreferencesPage />
+  if (settingsProvider === 'claude') return <ClaudePreferencesPage />
+  // Everything else has exactly one app-level setting group — its session
+  // defaults — so it renders the shared page rather than a bespoke one.
+  return <HarnessPreferencesPage harnessId={settingsProvider} />
 }

@@ -24,6 +24,7 @@ export function mobileHeaderTitle(
   if (route === 'terminal') return terminalTitle
   if (route === 'worktree') return 'Worktree'
   if (route === 'branch') return 'Branch'
+  if (route === 'add-dir') return 'Additional folders'
   if (route === 'project-picker') return 'Projects'
   if (route === 'add-project') return 'Add Project'
   if (route === 'settings') return 'Settings'

@@ -13,6 +13,30 @@ const desktopApp: MentionItem = { kind: 'desktop-app', path: 'com.apple.Safari',
 const row = (item: MentionItem, extra: Partial<MentionRow> = {}): MentionRow =>
   ({ item, label: item.label || item.path, labelIndices: [], inlineIndices: [], ...extra })
 
+test.each([
+  ['co', 'computer', '@co'],
+  ['se', 'session', '@se'],
+  ['co', 'codex-base', '@co'],
+  ['dex', 'codex-base', '@'],
+])('highlights @ with the matching handle for %s → %s', async (query, path, highlighted) => {
+  const rows = buildMentionRows(query, {
+    remote: [], agentProfiles: [agentProfile], capabilityIds: ['computer'],
+  }).filter((entry) => entry.item.path === path)
+  await renderWithTheme(<MentionSuggestions rows={rows} onSelect={() => {}} />)
+  expect(screen.getByText(highlighted)).toHaveStyle({ fontWeight: '700' })
+  if (query === 'dex') {
+    for (const match of screen.getAllByText('dex')) expect(match).toHaveStyle({ fontWeight: '700' })
+  }
+})
+
+test.each(['', 'Assistant', 'gpt'])('leaves the handle unhighlighted for query %s', async (query) => {
+  const rows = buildMentionRows(query, {
+    remote: [], agentProfiles: [{ ...agentProfile, label: 'Assistant', aliases: ['gpt'] }],
+  }).filter((entry) => entry.item.path === agentProfile.path)
+  await renderWithTheme(<MentionSuggestions rows={rows} onSelect={() => {}} />)
+  expect(screen.getByText('@codex')).not.toHaveStyle({ fontWeight: '700' })
+})
+
 test('orders groups the way the desktop popup does', async () => {
   await renderWithTheme(
     <MentionSuggestions rows={[row(file), row(projectAgent), row(agentProfile)]} onSelect={() => {}} />,

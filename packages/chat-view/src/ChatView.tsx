@@ -3,13 +3,14 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type ErrorInfo,
   type ReactNode,
 } from 'react'
 import type { AgentStatus, ChatMessage, Locale, TodoItem } from '@superone/shared/agent-types'
-import { ChevronUp, ListChecks, WifiOff } from 'lucide-react'
+import { ChevronDown, ChevronUp, ListChecks, WifiOff } from 'lucide-react'
 import {
   ApiRetryIndicator,
   CompactErrorIndicator,
@@ -21,10 +22,15 @@ import {
 } from './presenters/ChatMessageIndicators'
 import { transcriptRow } from './transcript-rows'
 import { ZERO_TURN_TOKENS } from './presenters/turn-footer-model'
-import { CHAT_WINDOW, initialChatWindow, loadPreviousChatWindow, normalizeChatWindow, type ChatWindowRange } from './chat-window'
+import { CHAT_WINDOW, initialChatWindow, loadPreviousChatWindow, loadNextChatWindow, normalizeChatWindow, type ChatWindowRange } from './chat-window'
 import { installHostBridge, postHost } from './bridge'
 import { setChatViewLocale } from './i18n'
 import { PortableMessage } from './PortableMessage'
+import { isRealtimeVoiceMessage } from '@superone/shared/realtime-transcript'
+import { extractTurnOutline } from '@superone/shared/turn-outline'
+import { ChatScrollIndicator } from './ChatScrollIndicator'
+import { captureScrollAnchor, compactMessageIndices, compactVisibleStart, jumpChatWindow, visibleChatWindow, type ScrollAnchor } from './chat-navigation'
+import { useSimulatedStream } from './use-simulated-stream'
 import type { HostInbound, ReductionProjection, SessionProjection } from './protocol'
 
 type PendingPermission = ReductionProjection['pendingPermission']
@@ -37,6 +43,8 @@ interface ViewState {
   pendingPermission: PendingPermission
   session: SessionFacts
   range: ChatWindowRange
+  expandLevel: number
+  transcriptEpoch: number
   scheme: 'light' | 'dark'
   hue: number
   locale: Locale
@@ -79,6 +87,8 @@ const EMPTY_STATE: ViewState = {
   pendingPermission: null,
   session: EMPTY_SESSION,
   range: { start: 0, end: 0 },
+  expandLevel: 0,
+  transcriptEpoch: 0,
   scheme: 'dark',
   hue: 250,
   locale: 'en',
@@ -110,12 +120,13 @@ function mergeHistory(older: ChatMessage[], current: ChatMessage[]): { messages:
 }
 
 function rangeAfterPatch(previous: ViewState, messages: ChatMessage[], atBottom: boolean): ChatWindowRange {
-  if (atBottom) return initialChatWindow(messages.length)
+  const minimum = compactVisibleStart(compactMessageIndices(messages), previous.expandLevel)
+  if (atBottom) return visibleChatWindow(initialChatWindow(messages.length), messages.length, minimum)
   const mounted = previous.range.end - previous.range.start
   const anchorId = previous.messages[previous.range.start]?.id
   const anchorIndex = anchorId ? messages.findIndex((message) => message.id === anchorId) : -1
   const start = anchorIndex >= 0 ? anchorIndex : previous.range.start
-  return normalizeChatWindow({ start, end: start + mounted }, messages.length)
+  return visibleChatWindow({ start, end: start + mounted }, messages.length, minimum)
 }
 
 function applyProjection(
@@ -160,10 +171,15 @@ function Todos({ todos }: { todos: TodoItem[] }) {
 
 export function ChatView() {
   const [state, setState] = useState<ViewState>(EMPTY_STATE)
+  const {
+    messages: displayedMessages, revealingIds, revealingReasoningIds,
+    reset: resetStream, update: updateStream, prepend: prependStream,
+  } = useSimulatedStream()
   const stateRef = useRef(state)
   const atBottomRef = useRef(true)
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const prependSnapshotRef = useRef<{ height: number; top: number } | null>(null)
+  const prependSnapshotRef = useRef<ScrollAnchor | null>(null)
+  const navigatingUntilRef = useRef(0)
   const loadingPreviousRef = useRef(false)
   const scrollToBottomRef = useRef(false)
   stateRef.current = state
@@ -187,38 +203,99 @@ export function ChatView() {
     }, CHAT_WINDOW.envelopeMs)
   }, [emitViewState])
 
-  const loadPrevious = useCallback(() => {
-    if (loadingPreviousRef.current) return
+  const changeWindow = useCallback((direction: 'previous' | 'next') => {
+    if (loadingPreviousRef.current || performance.now() < navigatingUntilRef.current) return
     const current = stateRef.current
-    if (current.range.start <= 0) return
+    const minimum = compactVisibleStart(compactMessageIndices(current.messages), current.expandLevel)
+    if (direction === 'previous' ? current.range.start <= minimum : current.range.end >= current.messages.length) return
     loadingPreviousRef.current = true
-    prependSnapshotRef.current = {
-      height: document.documentElement.scrollHeight,
-      top: page.scrollY,
-    }
+    atBottomRef.current = false
+    scrollToBottomRef.current = false
+    prependSnapshotRef.current = captureScrollAnchor()
     setState((previous) => ({
       ...previous,
-      range: loadPreviousChatWindow(previous.range, previous.messages.length),
+      range: visibleChatWindow(
+        (direction === 'previous' ? loadPreviousChatWindow : loadNextChatWindow)(previous.range, previous.messages.length),
+        previous.messages.length, minimum,
+      ),
     }))
   }, [])
+  const loadPrevious = useCallback(() => changeWindow('previous'), [changeWindow])
+  const loadNext = useCallback(() => changeWindow('next'), [changeWindow])
+
+  const prepareNavigation = useCallback(() => {
+    atBottomRef.current = false
+    scrollToBottomRef.current = false
+    prependSnapshotRef.current = null
+    loadingPreviousRef.current = false
+    navigatingUntilRef.current = performance.now() + 700
+  }, [])
+
+  const jumpToMessage = useCallback((id: string, behavior: ScrollBehavior = 'smooth') => {
+    if (!stateRef.current.messages.some((message) => message.id === id)) return
+    prepareNavigation()
+    setState((previous) => {
+      const index = previous.messages.findIndex((message) => message.id === id)
+      if (index < 0) return previous
+      const compact = compactMessageIndices(previous.messages)
+      const expandLevel = Math.max(previous.expandLevel, compact.filter((position) => position > index).length)
+      const mounted = index >= previous.range.start && index < previous.range.end
+      return {
+        ...previous, expandLevel,
+        range: mounted ? previous.range
+          : jumpChatWindow(index, previous.messages.length, compactVisibleStart(compact, expandLevel)),
+        // Replacing the DOM window invalidates the old scroll coordinates.
+        // Animate only when both positions belong to the same mounted window.
+        scrollTarget: { id, behavior: mounted ? behavior : 'auto' },
+      }
+    })
+  }, [prepareNavigation])
+
+  const setCompactExpansion = useCallback((level: number) => {
+    const anchor = captureScrollAnchor()
+    prepareNavigation()
+    setState((previous) => {
+      const compact = compactMessageIndices(previous.messages)
+      const minimum = compactVisibleStart(compact, level)
+      const anchorIndex = anchor ? previous.messages.findIndex((message) => message.id === anchor.id) : -1
+      const keepAnchor = anchorIndex >= minimum && anchorIndex >= previous.range.start && anchorIndex < previous.range.end
+      if (keepAnchor) prependSnapshotRef.current = anchor
+      return {
+        ...previous, expandLevel: level,
+        range: keepAnchor ? visibleChatWindow(previous.range, previous.messages.length, minimum)
+          : jumpChatWindow(minimum, previous.messages.length, minimum),
+        scrollTarget: keepAnchor ? undefined : previous.messages[minimum] ? { id: previous.messages[minimum]!.id, behavior: 'auto' } : undefined,
+      }
+    })
+  }, [prepareNavigation])
 
   const handleInbound = useCallback((message: HostInbound) => {
     switch (message.type) {
       case 'initialize':
       case 'hydrate':
+        prependSnapshotRef.current = null
+        loadingPreviousRef.current = false
+        navigatingUntilRef.current = 0
+        if (message.messages) resetStream(message.messages)
         scrollToBottomRef.current = true
         atBottomRef.current = true
         setState((previous) => {
           const next = applyProjection(previous, message, true)
-          return { ...next, range: initialChatWindow(next.messages.length) }
+          return {
+            ...next, expandLevel: 0, transcriptEpoch: previous.transcriptEpoch + 1, scrollTarget: undefined,
+            range: visibleChatWindow(initialChatWindow(next.messages.length), next.messages.length,
+              compactVisibleStart(compactMessageIndices(next.messages), 0)),
+          }
         })
         return
       case 'applyReductionPatch':
+        if (message.messages) updateStream(message.messages)
         if (atBottomRef.current && message.messages) scrollToBottomRef.current = true
         setState((previous) => applyProjection(previous, message, atBottomRef.current))
         return
       case 'prependHistory':
         if (!message.messages?.length) return
+        prependStream(message.messages)
         setState((previous) => {
           const merged = mergeHistory(message.messages ?? [], previous.messages)
           return {
@@ -232,8 +309,13 @@ export function ChatView() {
         })
         return
       case 'reset':
+        resetStream()
         atBottomRef.current = true
-        setState(EMPTY_STATE)
+        prependSnapshotRef.current = null
+        scrollToBottomRef.current = false
+        loadingPreviousRef.current = false
+        navigatingUntilRef.current = 0
+        setState((previous) => ({ ...EMPTY_STATE, transcriptEpoch: previous.transcriptEpoch + 1 }))
         return
       case 'setConnection':
         setState((previous) => ({ ...previous, connection: { state: message.state, epoch: message.epoch } }))
@@ -263,31 +345,25 @@ export function ChatView() {
         }
         return
       case 'setWindow':
-        setState((previous) => ({
-          ...previous,
-          range: normalizeChatWindow(message.range, previous.messages.length),
-          scrollTarget: message.anchorId
-            ? { id: message.anchorId, behavior: 'auto' }
-            : previous.scrollTarget,
-        }))
-        return
-      case 'scrollToTurn':
+        prepareNavigation()
         setState((previous) => {
-          const index = previous.messages.findIndex((item) => item.id === message.turnId)
-          if (index < 0) return previous
-          const end = Math.min(previous.messages.length, Math.max(index + 1, index + CHAT_WINDOW.initialTurns - 4))
+          const range = normalizeChatWindow(message.range, previous.messages.length)
+          const compact = compactMessageIndices(previous.messages)
           return {
-            ...previous,
-            range: normalizeChatWindow({ start: Math.max(0, end - CHAT_WINDOW.initialTurns), end }, previous.messages.length),
-            scrollTarget: { id: message.turnId, behavior: message.behavior ?? 'smooth' },
+            ...previous, range,
+            expandLevel: Math.max(previous.expandLevel, compact.filter((index) => index > range.start).length),
+            scrollTarget: message.anchorId ? { id: message.anchorId, behavior: 'auto' } : undefined,
           }
         })
+        return
+      case 'scrollToTurn':
+        jumpToMessage(message.turnId, message.behavior ?? 'smooth')
         return
       case 'nativeActionProgress':
       case 'nativeActionResult':
         return
     }
-  }, [])
+  }, [resetStream, updateStream, prependStream, prepareNavigation, jumpToMessage])
 
   useEffect(() => {
     const removeBridge = installHostBridge(handleInbound)
@@ -309,18 +385,19 @@ export function ChatView() {
   useLayoutEffect(() => {
     const snapshot = prependSnapshotRef.current
     if (snapshot) {
-      const delta = document.documentElement.scrollHeight - snapshot.height
-      page.scrollTo({ top: snapshot.top + delta, behavior: 'auto' })
+      const anchor = document.querySelector<HTMLElement>(`[data-turn-id="${CSS.escape(snapshot.id)}"]`)
+      if (anchor) page.scrollBy({ top: anchor.getBoundingClientRect().top - snapshot.top, behavior: 'auto' })
       prependSnapshotRef.current = null
       setTimeout(() => { loadingPreviousRef.current = false }, 60)
       scheduleViewState()
       return
     }
-    if (scrollToBottomRef.current) {
+    if (loadingPreviousRef.current) setTimeout(() => { loadingPreviousRef.current = false }, 60)
+    if (!state.scrollTarget && (scrollToBottomRef.current || atBottomRef.current)) {
       page.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'auto' })
       scrollToBottomRef.current = false
     }
-  }, [state.messages, state.range, scheduleViewState])
+  }, [displayedMessages, state.range, scheduleViewState])
 
   useLayoutEffect(() => {
     if (!state.scrollTarget) return
@@ -333,17 +410,30 @@ export function ChatView() {
   useEffect(() => {
     const handleScroll = () => {
       const root = document.documentElement
-      atBottomRef.current = root.scrollHeight - page.scrollY - page.innerHeight < 28
+      if (performance.now() < navigatingUntilRef.current) { scheduleViewState(); return }
+      const nearBottom = root.scrollHeight - page.scrollY - page.innerHeight < 28
+      atBottomRef.current = nearBottom && stateRef.current.range.end >= stateRef.current.messages.length
       if (page.scrollY < 72 && root.scrollHeight > page.innerHeight + 80) loadPrevious()
+      else if (nearBottom && !atBottomRef.current) loadNext()
       scheduleViewState()
     }
     page.addEventListener('scroll', handleScroll, { passive: true })
     return () => page.removeEventListener('scroll', handleScroll)
-  }, [loadPrevious, scheduleViewState])
+  }, [loadPrevious, loadNext, scheduleViewState])
 
   useEffect(() => { scheduleViewState() }, [state.range, scheduleViewState])
 
-  const visible = state.messages.slice(state.range.start, state.range.end)
+  // Outline identity stays stable during text deltas, matching desktop's memo.
+  const tailId = state.messages.at(-1)?.id
+  const compactIndices = useMemo(() => compactMessageIndices(state.messages),
+    [state.messages.length, tailId, state.transcriptEpoch])
+  const visibleStart = compactVisibleStart(compactIndices, state.expandLevel)
+  const outline = useMemo(() => extractTurnOutline(state.messages).filter((entry) => entry.index >= visibleStart),
+    [state.messages.length, tailId, state.session.sessionStatus, state.transcriptEpoch, visibleStart])
+  const hasCompact = compactIndices.length > 0
+  const compactExpanded = state.expandLevel >= compactIndices.length
+  const compactSplit = outline.filter((entry) => entry.index < (compactIndices.at(-1) ?? 0)).length
+  const visible = displayedMessages.slice(Math.max(visibleStart, state.range.start), state.range.end)
   // Compact / turn-meta markers persist as assistant rows but render as
   // indicators, so the live turn is the last assistant message that is neither.
   const lastAssistantId = findLastAssistantMessageId(state.messages)
@@ -353,9 +443,13 @@ export function ChatView() {
     <main
       className="chat-view-shell"
       data-mounted-turns={visible.length}
+      data-has-outline={outline.length > 1 || hasCompact}
       data-window-start={state.range.start}
       data-window-end={state.range.end}
     >
+      <ChatScrollIndicator entries={outline} range={state.range} hasCompact={hasCompact}
+        compactExpanded={compactExpanded} compactSplit={compactSplit} onJump={jumpToMessage}
+        onToggleCompact={() => setCompactExpansion(compactExpanded ? 0 : compactIndices.length)} />
       {state.connection.state !== 'connected' && (
         <div className="sticky top-2 z-20 mb-2 flex items-center gap-1.5 rounded-md bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
           <WifiOff className="size-3.5" /> {state.labels.disconnected ?? state.connection.state}
@@ -363,7 +457,7 @@ export function ChatView() {
       )}
       <Todos todos={state.todos} />
       <div className="chat-view-top-sentinel" data-testid="top-sentinel">
-        {state.range.start > 0 && (
+        {state.range.start > visibleStart && (
           <button
             type="button"
             className="mx-auto mb-2 flex items-center gap-1 rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground"
@@ -378,12 +472,21 @@ export function ChatView() {
         : visible.map((message) => {
           const row = transcriptRow(message, state.messages)
           if (row.kind === 'hidden') return null
-          if (row.kind === 'compact') return <CompactIndicator key={message.id} {...row.marker} />
+          if (row.kind === 'compact') {
+            const rank = compactIndices.length - 1 - compactIndices.indexOf(state.messages.findIndex((item) => item.id === message.id))
+            const expanded = rank < state.expandLevel
+            return <div key={message.id} data-turn-id={message.id}>
+              <CompactIndicator {...row.marker} expanded={expanded}
+                onToggle={() => setCompactExpansion(expanded ? rank : rank + 1)} />
+            </div>
+          }
           if (row.kind === 'turn-meta') return <TurnMetaIndicator key={message.id} meta={row.meta} />
           return (
             <PortableMessage
               key={message.id}
               message={message}
+              isRevealing={revealingIds.has(message.id)}
+              isReasoningRevealing={revealingReasoningIds.has(message.id)}
               scheme={state.scheme}
               pendingPermission={state.pendingPermission ?? null}
               mentionArtwork={state.mentionArtwork}
@@ -391,9 +494,14 @@ export function ChatView() {
               sessionStreaming={sessionStreaming}
               streamingTokens={state.session.streamingTokens}
               projectPath={state.session.projectPath}
+              hideCopyActions={isRealtimeVoiceMessage(message)}
             />
           )
         })}
+      {state.range.end < state.messages.length && <button type="button" onClick={loadNext}
+        className="mx-auto flex items-center gap-1 rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
+        <ChevronDown className="size-3" /> Load later
+      </button>}
       {state.session.isCompacting && <CompactingIndicator startedAt={state.session.compactingStartedAt} />}
       {state.session.compactError && <CompactErrorIndicator error={state.session.compactError} />}
       {state.session.isRecapping && <RecappingIndicator />}

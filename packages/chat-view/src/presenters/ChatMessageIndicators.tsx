@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AlertTriangle, ChevronRight, Loader2, Minimize2, X } from 'lucide-react'
+import { isRealtimeVoiceMessage } from '@superone/shared/realtime-transcript'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { formatCompactDuration } from './duration-format'
 
@@ -79,7 +80,10 @@ export function findLastAssistantMessageId(
   return messages.findLast(
     (message) => message.role === 'assistant'
       && !parseCompactMarker(message)
-      && !parseTurnMetaMarker(message),
+      && !parseTurnMetaMarker(message)
+      // A spoken reply is complete the moment it is transcribed. Letting one at the
+      // tail claim this would take the spinner off the Codex turn actually running.
+      && !isRealtimeVoiceMessage(message),
   )?.id
 }
 

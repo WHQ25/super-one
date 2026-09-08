@@ -676,6 +676,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     codex: FIRST_PROVIDER_TAB,
     cursor: FIRST_PROVIDER_TAB,
     dsh: 'mcp',
+    // Session defaults are all these two have, so that is where they open.
+    acp: 'preferences',
+    opencode: 'preferences',
   },
   harnessConfigSection: null,
   sidebarTab: 'sessions',

@@ -2,7 +2,7 @@ import { getDb } from './database'
 import { getProjectId } from './recent-folders'
 import { serializeMessageContent, rowToChatMessage, deriveHarnessId } from './session/session-repo'
 import { recordSessionStarted, recordMessageCounts, type HarnessKind } from './usage-stats-service'
-import type { ChatMessage, EffortLevel, SessionHistoryEntry, PinnedSessionEntry } from '@superone/shared/agent-types'
+import type { ChatMessage, EffortLevel, HarnessId, SessionHistoryEntry, PinnedSessionEntry } from '@superone/shared/agent-types'
 import { parseTagsJson } from '@superone/shared/session-tags'
 
 interface DbSession {
@@ -443,6 +443,18 @@ export function pinSession(sessionId: string, pinned: boolean): void {
 
 /** Hide or unhide a session. */
 /** True once the session holds any transcript at all. */
+/**
+ * Harness a stored session belongs to, without loading its transcript.
+ * `loadSessionState` answers the same thing but reads every message to do it,
+ * which is far too much for a caller that only needs to pick the right defaults.
+ */
+export function readSessionHarnessId(sessionId: string): HarnessId | null {
+  const row = getDb()
+    .prepare('SELECT provider, provider_id FROM sessions WHERE id = ?')
+    .get(sessionId) as { provider: string | null; provider_id: string | null } | undefined
+  return row ? deriveHarnessId(row) : null
+}
+
 export function sessionHasMessages(sessionId: string): boolean {
   const row = getDb()
     .prepare('SELECT 1 AS present FROM chat_messages WHERE session_id = ? LIMIT 1')

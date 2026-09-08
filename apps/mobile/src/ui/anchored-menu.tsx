@@ -92,10 +92,12 @@ function MenuSurface({ anchor, title, onDismiss, children, width = 300, titleAcc
     </View>
 }
 
-export function MenuRow({ label, labelNode, description, leading, selected, disabled, destructive, onPress }: {
+export function MenuRow({ label, labelNode, description, leading, accessory, selected, disabled, destructive, onPress }: {
   label: string; description?: string; leading?: ReactNode; selected?: boolean; disabled?: boolean
   /** Replaces the text label — e.g. a provider brand lockup. `label` stays the a11y name. */
   labelNode?: ReactNode
+  /** Trailing detail on the label's own line — e.g. which key a provider runs on. */
+  accessory?: ReactNode
   destructive?: boolean; onPress: () => void
 }) {
   const { tokens: { colors, radius } } = useMobileTheme()
@@ -106,27 +108,36 @@ export function MenuRow({ label, labelNode, description, leading, selected, disa
       paddingHorizontal: 8, paddingVertical: 8, borderRadius: radius.sm, opacity: disabled ? 0.45 : 1,
       backgroundColor: pressed || selected ? colors.muted : 'transparent' })}>
     {leading}
-    <View style={{ flex: 1, gap: 3 }}>
+    <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
       {labelNode ?? <Text style={{ color, fontSize: 13, fontWeight: '500' }}>{label}</Text>}
       {description ? <Text style={{ color: colors.mutedForeground, fontSize: 12, lineHeight: 17 }}>{description}</Text> : null}
     </View>
+    {accessory}
     {selected ? <Check size={15} color={colors.primary} /> : null}
   </Pressable>
 }
 
 /** A row that opens a deeper level of the same menu instead of committing a choice. */
-export function MenuDisclosureRow({ label, description, disabled, onPress }: {
+export function MenuDisclosureRow({ label, labelNode, description, accessory, disabled, onPress }: {
   label: string; description?: string; disabled?: boolean; onPress: () => void
+  /** Replaces the text label — e.g. a provider brand lockup. `label` stays the a11y name. */
+  labelNode?: ReactNode
+  /** Trailing detail on the label's own line — e.g. which key a provider runs on. */
+  accessory?: ReactNode
 }) {
   const { tokens: { colors, radius } } = useMobileTheme()
-  return <Pressable accessibilityRole="button" accessibilityState={{ disabled, expanded: false }} disabled={disabled} onPress={onPress}
+  // `labelNode` draws the label as artwork, so the name has to be spelled out
+  // here — the composed one RN would derive from the children is gone with it.
+  return <Pressable accessibilityRole="button" accessibilityLabel={[label, description].filter(Boolean).join(', ')}
+    accessibilityState={{ disabled, expanded: false }} disabled={disabled} onPress={onPress}
     style={({ pressed }) => ({ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8,
       paddingHorizontal: 8, paddingVertical: 8, borderRadius: radius.sm, opacity: disabled ? 0.45 : 1,
       backgroundColor: pressed ? colors.muted : 'transparent' })}>
-    <View style={{ flex: 1, gap: 3 }}>
-      <Text style={{ color: colors.foreground, fontSize: 13, fontWeight: '500' }}>{label}</Text>
+    <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+      {labelNode ?? <Text style={{ color: colors.foreground, fontSize: 13, fontWeight: '500' }}>{label}</Text>}
       {description ? <Text style={{ color: colors.mutedForeground, fontSize: 12, lineHeight: 17 }}>{description}</Text> : null}
     </View>
+    {accessory}
     <ChevronRight size={15} color={colors.mutedForeground} />
   </Pressable>
 }

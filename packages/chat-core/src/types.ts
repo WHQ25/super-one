@@ -13,6 +13,7 @@ import type {
   PermissionMode,
   PermissionRequest,
   PlanApprovalRequest,
+  RealtimeTimelineSegment,
   SessionGoal,
   SessionInfo,
   SlashCommandInfo,
@@ -160,6 +161,14 @@ export interface ChatCoreSession {
   acpSlashCommandsStatus: 'idle' | 'loading' | 'ready' | 'error'
   /** Harness-neutral goal for this session; null when there is none. */
   sessionGoal: SessionGoal | null
+  /**
+   * Codex realtime ("voice") utterances, which are not chat messages — the desktop
+   * keeps them in their own `session_realtime_timelines` row. Held here so a remote
+   * viewer can weave speech back into the transcript it renders; the desktop reads
+   * its own `codex-realtime-view` store instead and ignores these two fields.
+   */
+  realtimeSegments: RealtimeTimelineSegment[]
+  realtimeSessionId: string | null
   _latestCodexTodoList: CodexTodoListItem | null
 }
 

@@ -32,17 +32,21 @@ export type NewSessionLandingProps = {
 export function NewSessionLanding(props: NewSessionLandingProps) {
   const { tokens: { colors } } = useMobileTheme()
   const hint = poweredByHint(props.provider, props.activeProvider)
+  const activeHarness = props.harnessOptions.find((option) => option.key === props.activeHarnessKey)
   return (
     <ScrollView keyboardShouldPersistTaps="handled"
-      contentContainerStyle={{ flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 16 }}>
-      <HarnessIcon provider={props.provider} size={88} renderLevel="rich" />
-      {hint ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-          <Text style={{ fontSize: 11, color: colors.mutedForeground }}>Powered by</Text>
-          <ProviderBrand brandKey={hint.brandKey} name={hint.name} size={14} />
+      contentContainerStyle={{ flexGrow: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, paddingTop: 24, paddingBottom: 72, gap: 8 }}>
+      <View style={{ alignItems: 'center', gap: 0 }}>
+        <HarnessIcon provider={props.provider} acpAgentId={activeHarness?.acpAgentId} size={80} renderLevel="rich" />
+        {/* Keep the same footprint for harnesses without a provider hint. */}
+        <View style={{ height: 18, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+          {hint ? <>
+            <Text style={{ fontSize: 11, color: colors.mutedForeground }}>Powered by</Text>
+            <ProviderBrand brandKey={hint.brandKey} name={hint.name} size={14} />
+          </> : null}
         </View>
-      ) : null}
-      <HarnessTabs options={props.harnessOptions} activeKey={props.activeHarnessKey} onChange={props.onHarness} />
+        <HarnessTabs options={props.harnessOptions} activeKey={props.activeHarnessKey} onChange={props.onHarness} />
+      </View>
       <ProjectSelect name={props.projectName} onOpen={props.onOpenProject} />
       {props.projectName ? (
         <GitChips selection={props.worktreeSelection} worktreeInfo={props.worktreeInfo}

@@ -235,7 +235,9 @@ describe('settings registry — new field groups', () => {
   it('lists experimental and ACP fields under the general domain', () => {
     const domains = listDomainSummaries()
     expect(domains.find((d) => d.domain === 'general')).toBeTruthy()
-    expect(domains.find((d) => d.domain === 'agent-acp')).toBeFalsy()
+    // ACP owns a session-defaults domain now: every harness must be
+    // configurable, which is what the per-harness split is for.
+    expect(domains.find((d) => d.domain === 'agent-acp')).toBeTruthy()
     const guide = buildDomainGuide('general', makeSettings({
       experimentalAgentsEnabled: true,
       agentPreference: { ...makeSettings().agentPreference, acp: { enabled: true, brandHue: null, tokenOverrides: {}, selectedAgentId: 'gemini-cli' } },

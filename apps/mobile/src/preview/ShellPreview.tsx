@@ -46,6 +46,17 @@ import { mobileWebViewTheme } from '../theme/tokens'
 import { injectHostMessage } from '../native-actions'
 import { Button, SelectionField, Sheet } from '../ui'
 import { GitIndicatorGallery } from './GitIndicatorGallery'
+
+/** Two folders, one of them long enough to prove the hint row scrolls. */
+const PREVIEW_ADDITIONAL_DIRS = [
+  '/Users/dev/Developer/Projects/super-one-design-system',
+  '/Users/dev/Developer/Projects/shared-protocol-schemas',
+]
+
+/** What the folder browser lists offline, so both steps are reviewable. */
+const PREVIEW_FOLDER_ENTRIES = ['super-one', 'super-one-flutter', 'shared-protocol-schemas', 'scratch']
+  .map((name) => ({ name, path: `/Users/dev/Developer/Projects/${name}` }))
+
 import {
   PREVIEW_BRANCHES,
   PREVIEW_CHECKED_OUT,
@@ -55,6 +66,10 @@ import {
   previewSwitchBranch,
 } from './git-fixtures'
 import { IconGallery } from './IconGallery'
+import { sandboxInfoFromMode } from '@superone/shared/harness/harness-sandbox'
+import { AddDirScreen } from '../screens/add-dir-screen'
+import type { AddDirScope, AddDirStep } from '../add-dir-state'
+import { appendBrowsePathSegment } from '@superone/shared/path-browse'
 import { LanBrowserPreview } from './LanBrowserPreview'
 import { effortOptionsForModel, resolveSelectedEffort } from '../model-selection-state'
 import { optionParamsForModel } from '../model-picker-state'
@@ -190,6 +205,7 @@ const previewSessionOp = () => Promise.resolve(false)
 const initialMessages: ChatMessage[] = [
   { id: 'user', role: 'user', status: 'complete', content: [{ type: 'text', text: 'Review <superone-miniapp><appname>Board</appname><appid>board</appid></superone-miniapp> and <superone-miniapp><appname>Default app</appname><appid>missing-logo</appid></superone-miniapp> with <superone-desktop-app><name>Editor</name><bundleId>com.example.Editor</bundleId></superone-desktop-app>.' }], providerId: 'claude', createdAt: '2026-09-05T08:00:00Z' },
   { id: 'assistant', role: 'assistant', status: 'complete', content: [{ type: 'text', text: 'The native shell now shares one visual language.\n\n- Compact navigation\n- Contextual model selection\n- Keyboard-safe approval sheets\n\n`apps/mobile/src/screens/chat-screen.tsx`' }], providerId: 'claude', createdAt: '2026-09-05T08:00:01Z' },
+  { id: 'probe', role: 'assistant', status: 'complete', content: [{ type: 'text', text: '```ts\nexport function add(a: number, b: number): string {\n  // highlight probe\n  return `${a + b}`\n}\n```\n\n```python\ndef add(a: int, b: int) -> str:\n    return f"{a + b}"\n```' }], providerId: 'claude', createdAt: '2026-09-05T08:00:02Z' },
 ]
 
 /** Offline visual review of production pages; callbacks never contact a desktop. */
@@ -200,7 +216,7 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
   const [page, setPage] = useState<Page>(initialPage)
   const [devicesRefreshing, setDevicesRefreshing] = useState(false)
   const [provider, setProvider] = useState<HarnessId>('claude')
-  const [draft, setDraft] = useState('')
+  const [acpAgentId, setAcpAgentId] = useState<string | null>(null)
   const chatDraft = useComposerDraft()
   const [mentionRows, setMentionRows] = useState<MentionRow[]>([])
   const [editorError, setEditorError] = useState('')
@@ -232,6 +248,15 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
   const [attachments, setAttachments] = useState<ImageAttachment[]>([])
   const [mode, setMode] = useState('default')
   const [sandbox, setSandbox] = useState<SandboxInfo | null>({ enabled: true, autoAllowBash: false })
+  // `/add-dir` and the folder chips open the same page; its two steps are their
+  // own preview pages so both are reachable without a live host to browse.
+  const [previewDirs, setPreviewDirs] = useState<string[]>(PREVIEW_ADDITIONAL_DIRS)
+  const [previewSessionDirs, setPreviewSessionDirs] = useState<string[]>(['/Users/dev/scratch'])
+  const [previewAddDirScope, setPreviewAddDirScope] = useState<AddDirScope>('project')
+  const [previewAddDirQuery, setPreviewAddDirQuery] = useState('~/Developer/Projects/')
+  const addDirStep: AddDirStep = page === 'Browse folders'
+    ? { kind: 'browse', scope: previewAddDirScope }
+    : { kind: 'overview' }
   const previewBrowserMode: FileBrowserMode = page === 'Computer files' || page === 'Go to folder'
     ? { kind: 'computer', name: 'studio-mbp' }
     : { kind: 'project', root: '/workspace/super-one', name: 'super-one' }
@@ -290,6 +315,7 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
   const terminal = useRef<WebView>(null)
   const chooseAgent = (option: RemoteHarnessOption) => {
     const value = option.provider
+    setAcpAgentId(option.acpAgentId)
     setProvider(value); setHarness(value); setMode(HARNESS_LAUNCH_OPTIONS[value].permissionModes.includes('default') ? 'default' : HARNESS_LAUNCH_OPTIONS[value].permissionModes[0]!) }
   const paintChat = () => {
     injectHostMessage(web, mobileWebViewTheme(tokens))
@@ -307,7 +333,7 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
   const chat = page === 'New session' || page === 'Chat' || page === 'Workspace'
   // Standalone galleries share the catch-all 'files' route but draw themselves.
   const gallery = page === 'Icons' || page === 'Git indicators' || page === 'Session status' || page === 'Composer suggestions' || page === 'Chip editor' || page === 'LAN browser'
-  const route = chat ? 'chat' : page === 'Project' ? 'project-picker' : page === 'Add project' ? 'add-project' : page === 'Worktree' ? 'worktree' : page === 'Branch' ? 'branch' : page === 'Devices' || page === 'Pairing' ? 'pair' : page === 'Terminal' ? 'terminal' : page === 'Session search' ? 'session-search' : page === 'Settings' ? 'settings' : 'files'
+  const route = chat ? 'chat' : page === 'Project' ? 'project-picker' : page === 'Add project' ? 'add-project' : page === 'Worktree' ? 'worktree' : page === 'Branch' ? 'branch' : page === 'Additional folders' || page === 'Browse folders' ? 'add-dir' : page === 'Devices' || page === 'Pairing' ? 'pair' : page === 'Terminal' ? 'terminal' : page === 'Session search' ? 'session-search' : page === 'Settings' ? 'settings' : 'files'
   return <SafeAreaView style={styles.root}>
     <StatusBar style={tokens.scheme === 'dark' ? 'light' : 'dark'} />
     <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8 }}>
@@ -327,6 +353,9 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
       <MobileHeader route={route} title={page === 'Add project' ? addProject.title : page === 'Project' ? 'Projects' : route === 'files' ? previewBrowserMode.name : page} subtitle="super-one" provider={provider} hasSession={page === 'Chat'} deviceStatus="connectedLan" git={page === 'Chat' ? previewSessionGit : null} onOpenBranch={() => setPage('Branch')} onBack={() => {
           if (page === 'Add project' && addProject.canGoBack) addProject.goBack()
           else if (page === 'Add project') setPage('Project')
+          // Browsing unwinds to the overview before the page itself leaves,
+          // which is the step the shipping `back` walks too.
+          else if (page === 'Browse folders') setPage('Additional folders')
           else setPage('New session')
         }} onSwitchSession={() => setDrawer(true)} onOpenTerminal={() => setPage('Terminal')} onOpenFiles={() => setPage('Files')}
           files={route === 'files' ? { kind: previewBrowserMode.kind,
@@ -341,11 +370,11 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
         confirmDisabled={page === 'Add project' ? addProject.busy
           : !!worktreeSelectionError(worktreeDraft, PREVIEW_BRANCHES, PREVIEW_CHECKED_OUT)} />
       <View style={styles.contentRow}>
-        {width >= 768 && (chat || page === 'Terminal' || page === 'Settings' || route === 'files') ? <TabletSessionSidebar client={previewClient} project={project} sessions={sessions} activeSessionId="preview-1" onOpenSession={() => setPage('Chat')} onCreateSession={() => setPage('New session')} onOpenSettings={() => setPage('Settings')} onPinSession={previewSessionOp} onArchiveSession={previewSessionOp} onDeleteSession={previewSessionOp} /> : null}
+        {width >= 768 && (chat || page === 'Terminal' || page === 'Settings' || route === 'add-dir' || route === 'files') ? <TabletSessionSidebar client={previewClient} project={project} sessions={sessions} activeSessionId="preview-1" onOpenSession={() => setPage('Chat')} onCreateSession={() => setPage('New session')} onOpenSettings={() => setPage('Settings')} onPinSession={previewSessionOp} onArchiveSession={previewSessionOp} onDeleteSession={previewSessionOp} /> : null}
         <View style={isFullBleedScreen(route) ? styles.mainPane : [styles.mainPane, styles.page]}>
           {chat ? <ChatScreen provider={provider} onEdgeSwipe={() => setDrawer(true)} landing={page === 'New session' ? {
               provider, harnessOptions: PREVIEW_HARNESS_OPTIONS,
-              activeHarnessKey: suggestionHarnessKey(provider, null), onHarness: chooseAgent,
+              activeHarnessKey: suggestionHarnessKey(provider, acpAgentId), onHarness: chooseAgent,
               projectName: projectList.find((item) => item.path === projectPath)?.name,
               onOpenProject: () => setPage('Project'),
               worktreeSelection: selection, worktreeInfo: PREVIEW_WORKTREE_INFO,
@@ -354,10 +383,11 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
               onBranch: () => setPage('Branch'),
             } : undefined}
             selection={{ ...pickerCatalogs, model, models: previewModels, effort, efforts, onModel: chooseModel, onEffort: setEffort }}
-            webRef={web} permissionModes={['default', 'acceptEdits', 'plan']} permissionMode={mode} slashHits={slashDismissed ? [] : filterSlashCommands(chatDraft.draft, previewSlashCatalog, provider)} slashCatalogStatus={slashStatus} mentionRows={mentionRows} attachments={attachments} additionalDirectories={[]} queuedMessages={[]} todos={{}} draft={chatDraft.draft} streaming={page === 'Chat'}
+            webRef={web} permissionModes={['default', 'acceptEdits', 'plan']} permissionMode={mode} slashHits={slashDismissed ? [] : filterSlashCommands(chatDraft.draft, previewSlashCatalog, provider)} slashCatalogStatus={slashStatus} mentionRows={mentionRows} attachments={attachments} additionalDirectories={previewDirs} onManageDirectories={() => setPage('Additional folders')} queuedMessages={[]}
+todos={{}} draft={chatDraft.draft} streaming={page === 'Chat'}
             sandboxInfo={sandbox} contextTokens={82_400} contextWindow={200_000} totalCostUsd={0.4213}
             onWebMessage={(raw) => { if (JSON.parse(raw).type === 'ready') paintChat() }} onWebProcessError={() => {}} onPermissionMode={setMode}
-            onSandboxMode={(next) => setSandbox({ enabled: next !== 'off', autoAllowBash: next === 'auto' })} onSlash={(command) => {
+            onSandboxMode={(next) => setSandbox(sandboxInfoFromMode(next))} onSlash={(command) => {
               // Mirror the shipping handler: with the fallback editor mounted there
               // is no controller to call, and dropping the else branch leaves the
               // draft untouched and the overlay stuck open. Only the command line
@@ -390,6 +420,16 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
           {page === 'Project' ? <ProjectPickerScreen projects={projectList} activePath={projectPath}
             onSelect={(item) => { setProjectPath(item.path); setPage('New session') }} /> : null}
           {page === 'Add project' ? <AddProjectScreen flow={addProject} /> : null}
+          {page === 'Additional folders' || page === 'Browse folders' ? <AddDirScreen
+            step={addDirStep} projectDirs={previewDirs} sessionDirs={previewSessionDirs}
+            entries={PREVIEW_FOLDER_ENTRIES} query={previewAddDirQuery}
+            loading={false} busy={false}
+            error={previewAddDirQuery.endsWith('/nope') ? 'No folder at that path' : ''}
+            onQuery={setPreviewAddDirQuery}
+            onEnter={(name) => setPreviewAddDirQuery((current) => appendBrowsePathSegment(current, name))}
+            onBrowse={(scope) => { setPreviewAddDirScope(scope); setPage('Browse folders') }}
+            onRemove={(dir, scope) => (scope === 'session' ? setPreviewSessionDirs : setPreviewDirs)(
+              (current) => current.filter((entry) => entry !== dir))} /> : null}
           {page === 'Worktree' ? <WorktreeScreen selection={worktreeDraft} onSelectionChange={setWorktreeDraft}
             gitInfo={{ ...PREVIEW_GIT_INFO, branch }} worktreeInfo={PREVIEW_WORKTREE_INFO}
             worktreeDirty={PREVIEW_WORKTREE_DIRTY} branches={PREVIEW_BRANCHES}
@@ -422,8 +462,10 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
               onRefresh={() => {}} onNewFolder={() => {}} onUploadFile={() => {}}
               error={page === 'Folder error' ? 'Could not read this folder. Check the desktop connection.' : undefined}
               onOpenDirectory={() => setPage('Empty folder')} onOpenFile={() => {}} />) : null}
-          {page === 'Terminal' ? <TerminalScreen webRef={terminal} draft={draft} writable={writable} onDraft={setDraft} onClaim={() => { setWritable(true); injectHostMessage(terminal, { kind: 'meta', writableByMe: true }) }} onSubmit={(line) => { injectHostMessage(terminal, { kind: 'append', data: `\r\n$ ${line}\r\n[offline preview]\r\n` }); setDraft('') }} onKey={() => {}} onWebMessage={(raw) => {
-            if (JSON.parse(raw).type !== 'terminalReady') return
+          {page === 'Terminal' ? <TerminalScreen webRef={terminal} writable={writable} onClaim={() => { setWritable(true); injectHostMessage(terminal, { kind: 'meta', writableByMe: true }) }} onKey={(data) => { if (writable) injectHostMessage(terminal, { kind: 'append', data }) }} onWebMessage={(raw) => {
+            const message = JSON.parse(raw)
+            if (message.type === 'terminalInput' && writable) injectHostMessage(terminal, { kind: 'append', data: message.data })
+            if (message.type !== 'terminalReady') return
             injectHostMessage(terminal, mobileWebViewTheme(tokens))
             injectHostMessage(terminal, { kind: 'replace', ansi: '$ pwd\r\n/workspace/super-one\r\n$ ', snapshot: { writableByMe: writable } })
           }} /> : null}

@@ -21,6 +21,12 @@ expected flows. It is not a code source: nothing is ported from Dart, and its
 | **Terminal WebView** | xterm frames | Event ACK / seq |
 
 Never nest the chat WebView in an RN `ScrollView`. Input is native only.
+The conversation tick rail also lives in the chat WebView (`ChatScrollIndicator`),
+where it can measure and navigate the transcript without round-tripping through RN.
+Its turn outline and tick curve are shared with desktop. Touch scrubbing previews
+questions and replies, then jumps on release; compact ticks expand/collapse history.
+Navigation mounts a bounded neighborhood around the target, and paging moves in
+both directions while retaining a visible anchor and the 40-message DOM ceiling.
 At widths below 768 px the shell is single-pane. At 768 px and above, chat,
 terminal, settings, and files retain the project/session sidebar as a master pane.
 **Projects and sessions are not screens.** `WorkspaceDrawer` owns both lists the way
@@ -300,8 +306,50 @@ Pairing: scan or paste a `superone://pair?…` QR (shows a 6-digit code to confi
 
 The native shell also owns project Git/worktree status, remote file browsing,
 provider/model selection, slash/mention overlays, and the IME-safe composer.
-Additional project directories are read-only here — the `validate_add_dir` /
-`add_project_additional_dir` RPCs went with the project-settings screen. New Claude sessions may stay local, reuse an existing worktree, or
+**Composer surfaces are mutually exclusive, not stacked.** `ChatComposer` renders
+exactly one overlay above the input: `overlay` when a command owns the slot,
+otherwise the slash and mention lists. `MobileApp` picks it by priority from the
+panels a command opened — slash output, `/mcp`, `/workflows` — which also close
+each other, so the chain only settles ties. Stacking them is how a command list
+came to be painted under the panel that command had just opened.
+
+**Additional working directories are a page, not a composer panel.** `/add-dir`
+and the folder chips both open the `add-dir` route (`screens/add-dir-screen.tsx`);
+`/mcp`'s rule applies — the command clears its own line rather than being left in
+the draft. It is a **route** and not a width branch on purpose: `add-dir` is in
+`DETAIL_SCREENS`, so at 768 pt and up the shell keeps the session list beside it
+and the page reads as a detail panel, while a phone gets a full screen — the deal
+`worktree` and `branch` already have.
+
+Two steps: the overview says what the session already has and offers the one
+real decision — which scope the next folder joins — and picking it opens **Add
+Project's local-folder browser**, which is shared rather than reimplemented.
+`ui/browse-page.tsx` is that browser (field + grouped list + loading/empty/busy
+chrome, extracted from `AddProjectScreen`, which now renders through it), over
+`@superone/shared/path-browse`: the field *is* the path, everything before the
+last separator is the directory to list and what follows fuzzy-filters it, so a
+typed path, a tapped row and a pasted absolute path are one gesture. The version
+this replaced had breadcrumbs, its own search box and `..` buttons — three worse
+ways of saying the same thing. Both pages commit from the **header's confirm
+slot**, and both resolve the target with `resolveBrowsePath`; the difference is
+that Add Project may create a missing folder while `add-dir` gates its confirm
+on `resolved.exists`, because the host only accepts a directory that is there.
+Back walks out of browsing before it leaves the page (`additionalDirs.canGoBack`),
+the way Add Project walks its own steps.
+
+Both scopes are editable, matching the desktop popup's PROJECT / SESSION groups.
+Project writes go to `setProjectExtraDirs` and reach a live session because
+`resolveEffectiveDirs` recomputes the set every turn. Session writes go to
+`set_session_additional_dirs` — except before the session exists, where the
+landing holds them and hands them to `create_session`, the way the desktop's
+draft session does. Nothing in the protocol asks for a session's own folders, so
+they are read off the raw event batch (`additional-dirs-events.ts`): from
+`additional_dirs_changed` when it names *this* session, and from `init_ready`'s
+effective set minus the project's, which is the only moment the host volunteers
+them. `/add-dir` is injected from a single capability gate
+(`harnessSupportsAdditionalDirs`) rather than copied into each harness catalog —
+the desktop's rule for `/side` and `/goal` too.
+New Claude sessions may stay local, reuse an existing worktree, or
 create branch/attach/detach worktrees; validate the selection before `create_session`.
 Structured collaboration confirms must send `sessionAgentLaunchesJson` through
 `respond_permission.formAnswers` so handoff launches retain their server-owned mode.

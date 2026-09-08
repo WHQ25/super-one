@@ -120,8 +120,10 @@ export function useAddProject(input: {
   // listing effect on each render.
   const requestRef = useRef(input.request)
   requestRef.current = input.request
+  // An unpaired caller throws where the desktop would answer, and a throw from a
+  // listing effect tears the app down instead of reaching the `.catch` below.
   const request = useCallback(<T,>(command: RemoteCommand): Promise<T> =>
-    requestRef.current(command) as Promise<T>, [])
+    Promise.resolve().then(() => requestRef.current(command)) as Promise<T>, [])
 
   // The clone parent the host remembers, shared with the desktop dialog.
   const defaultClonePathRef = useRef<string | null>(null)

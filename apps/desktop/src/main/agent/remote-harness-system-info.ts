@@ -8,7 +8,16 @@ import type {
   RemoteActiveProvider,
   RemoteProviderOption,
   RemoteSystemInfo,
+  SandboxMode,
+  SandboxSupportLevel,
 } from '@superone/shared/agent-types'
+import { findCodexFastServiceTier } from '@superone/shared/codex-fast-mode'
+import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
+import { sessionDefaultsForHarness } from '@superone/shared/harness/session-defaults'
+import {
+  coerceSandboxModeForHarness,
+  harnessSandboxModes,
+} from '@superone/shared/harness/harness-sandbox'
 import { BASE_SESSION_PROVIDERS } from '@superone/shared/session-provider-definitions'
 import { deriveSessionCatalog } from '../acp/acp-config'
 import { acpModeCatalog, deepseekModeCatalog, openCodeAgentCatalog } from './remote-selector-catalog'
@@ -34,17 +43,19 @@ export interface RemoteHarnessSystemInfoDependencies {
   }
   /** DeepSeek preset roster. Project-level, so it names no live session. */
   deepseekPresets?: () => Promise<DeepseekPresetRoster | null>
+  /**
+   * Sandbox a new session would start in, already coerced to what this platform
+   * can actually provide. Passed in so this module stays free of the electron
+   * settings/capability probes behind it.
+   */
+  defaultSandboxMode?: () => SandboxMode | undefined
+  /**
+   * Whether this host can sandbox at all. Separate from `defaultSandboxMode`,
+   * which coerces to `off` on a platform without one — a client cannot tell
+   * "the user chose off" from "this host has no sandbox" out of that alone.
+   */
+  sandboxSupport?: () => SandboxSupportLevel
 }
-
-export const REMOTE_HARNESS_PERMISSION_MODES = {
-  claude: ['default', 'acceptEdits', 'auto', 'plan', 'bypassPermissions', 'dontAsk'],
-  // Codex's read-only preset has no shared PermissionMode spelling.
-  codex: ['default', 'auto', 'bypassPermissions'],
-  acp: ['default', 'plan', 'auto', 'bypassPermissions'],
-  opencode: ['default', 'plan', 'acceptEdits', 'dontAsk', 'bypassPermissions'],
-  cursor: ['agent', 'plan', 'bypassPermissions'],
-  dsh: ['plan', 'default', 'bypassPermissions'],
-} as const satisfies Record<HarnessId, readonly string[]>
 
 const CODEX_PERMISSION_PRESETS = ['read-only', 'default', 'auto-review', 'full-access'] as const
 
@@ -69,14 +80,9 @@ function preferredEffort(model: ModelOption | undefined, requested?: string | nu
   return values.includes('medium') ? 'medium' : values[0] ?? null
 }
 
-function codexPermissionMode(preset: string | null): string | null {
-  if (preset === 'auto-review') return 'auto'
-  if (preset === 'full-access') return 'bypassPermissions'
-  if (preset === 'default') return 'default'
-  return null
-}
-
 function defaultInfo(
+  harnessId: HarnessId,
+  preferences: AppSettings['agentPreference'],
   models: ModelOption[],
   permissionModes: readonly string[],
   requestedModel?: string | null,
@@ -89,16 +95,16 @@ function defaultInfo(
     defaults: {
       model: model?.id ?? null,
       effort: preferredEffort(model),
-      permissionMode: permissionModes[0] ?? null,
+      permissionMode: sessionDefaultsForHarness(preferences, harnessId).permissionMode,
     },
   }
 }
 
 /**
- * A remote shell has no settings store of its own, so the brand hue and locale
- * the user set here travel with the harness catalog rather than as a second
- * round trip. They are appended once, around the per-harness switch, so no
- * branch can forget them.
+ * A remote shell has no settings store of its own, so the brand hue, locale and
+ * sandbox capability of this host travel with the harness catalog rather than as
+ * a second round trip. They are appended once, around the per-harness switch, so
+ * no branch can forget them.
  */
 export async function buildRemoteHarnessSystemInfo(
   projectPath: string,
@@ -110,6 +116,7 @@ export async function buildRemoteHarnessSystemInfo(
     ...info,
     brandHue: deps.settings.agentPreference[harnessId]?.brandHue ?? null,
     locale: deps.currentLocale,
+    sandboxSupport: deps.sandboxSupport?.() ?? 'always',
   }
 }
 
@@ -131,14 +138,15 @@ async function harnessSystemInfo(
         models,
         userSlashCommands: (cached?.slashCommands ?? []).filter((command) => !command.terminalBound),
         account: cached?.account ?? null,
-        permissionModes: [...REMOTE_HARNESS_PERMISSION_MODES.claude],
-        sandboxModes: ['off', 'on', 'auto'],
+        permissionModes: [...HARNESS_LAUNCH_OPTIONS.claude.permissionModes],
+        sandboxModes: harnessSandboxModes('claude'),
         activeProvider: deps.activeProvider('claude'),
         ...deps.providerCatalog?.('claude'),
         defaults: {
           model: present(preferences.claude.defaultModel) ?? model?.id ?? null,
           effort: preferredEffort(model, preferences.claude.defaultEffort),
-          permissionMode: present(preferences.claude.defaultPermissionMode),
+          permissionMode: sessionDefaultsForHarness(preferences, 'claude').permissionMode,
+          sandboxMode: deps.defaultSandboxMode?.() ?? null,
         },
       }
     }
@@ -159,14 +167,17 @@ async function harnessSystemInfo(
           ...(cached?.prompts ?? []),
         ],
         account: deps.codexAccount?.(projectPath) ?? null,
-        permissionModes: [...REMOTE_HARNESS_PERMISSION_MODES.codex],
+        permissionModes: [...HARNESS_LAUNCH_OPTIONS.codex.permissionModes],
         permissionPresets: [...CODEX_PERMISSION_PRESETS],
         activeProvider: deps.activeProvider('codex'),
         ...deps.providerCatalog?.('codex'),
         defaults: {
           model: present(preferences.codex.defaultModel) ?? model?.id ?? null,
           effort,
-          permissionMode: codexPermissionMode(permissionPreset),
+          permissionMode: sessionDefaultsForHarness(preferences, 'codex').permissionMode,
+          // Same conjunction the desktop's own launch profiles use: the
+          // preference only means anything on a model that offers the tier.
+          fastMode: preferences.codex.defaultFastMode && !!findCodexFastServiceTier(model),
           reasoningEffort: effort,
           permissionPreset,
         },
@@ -195,7 +206,7 @@ async function harnessSystemInfo(
         efforts,
         ...(modes.length ? { modes, selectedModeId, modeLabel: 'Mode' } : {}),
         slashCommands: sessionCatalog?.slashCommands ?? [],
-        permissionModes: [...REMOTE_HARNESS_PERMISSION_MODES.acp],
+        permissionModes: [...HARNESS_LAUNCH_OPTIONS.acp.permissionModes],
         acpAgentId,
         defaults: {
           model: model?.id ?? null,
@@ -203,14 +214,19 @@ async function harnessSystemInfo(
             ? selectedEffort
             : efforts.find((option) => option.value === 'medium')?.value ?? efforts[0]?.value)
             ?? null,
-          permissionMode: 'default',
+          permissionMode: sessionDefaultsForHarness(preferences, 'acp').permissionMode,
         },
       }
     }
     case 'opencode': {
       const cached = deps.getCachedResources('opencode')
       return {
-        ...defaultInfo(cached?.models ?? [], REMOTE_HARNESS_PERMISSION_MODES.opencode),
+        ...defaultInfo(
+          'opencode',
+          preferences,
+          cached?.models ?? [],
+          HARNESS_LAUNCH_OPTIONS.opencode.permissionModes,
+        ),
         ...openCodeAgentCatalog(cached),
         slashCommands: cached?.commands ?? [],
       }
@@ -219,15 +235,30 @@ async function harnessSystemInfo(
       const cached = deps.getCachedResources('cursor')
       const disabled = new Set(cached?.disabledModelIds ?? [])
       const info = defaultInfo(
+        'cursor',
+        preferences,
         (cached?.models ?? []).filter((model) => !disabled.has(model.id)),
-        REMOTE_HARNESS_PERMISSION_MODES.cursor,
+        HARNESS_LAUNCH_OPTIONS.cursor.permissionModes,
       )
-      return { ...info, account: cached?.user ?? null }
+      // Cursor drives a real sandbox toggle, so it needs the same two facts
+      // Claude gets. It has no `auto`, hence the coercion.
+      const sandboxMode = deps.defaultSandboxMode?.()
+      return {
+        ...info,
+        sandboxModes: harnessSandboxModes('cursor'),
+        defaults: {
+          ...info.defaults,
+          sandboxMode: sandboxMode ? coerceSandboxModeForHarness('cursor', sandboxMode) : null,
+        },
+        account: cached?.user ?? null,
+      }
     }
     case 'dsh': {
       const info = defaultInfo(
+        'dsh',
+        preferences,
         deps.getCachedResources('dsh')?.models ?? [],
-        REMOTE_HARNESS_PERMISSION_MODES.dsh,
+        HARNESS_LAUNCH_OPTIONS.dsh.permissionModes,
       )
       const { modes, selectedModeId, modesLocked } = deepseekModeCatalog(
         (await deps.deepseekPresets?.()) ?? null,

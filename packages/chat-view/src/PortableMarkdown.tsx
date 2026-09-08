@@ -1,6 +1,5 @@
 import { createElement, useContext, useMemo, type ComponentProps, type ReactNode } from 'react'
 import { FileText } from 'lucide-react'
-import type { CodeHighlighterPlugin } from '@streamdown/code'
 import { createMathPlugin } from '@streamdown/math'
 import { defaultRehypePlugins, type Components } from 'streamdown'
 import { harden, BlockPolicy } from 'rehype-harden'
@@ -20,23 +19,11 @@ import { MermaidBlockPresenter } from './presenters/MermaidBlock'
 import { fileChipLabel } from './presenters/file-chip-label'
 import { formatLineRange, resolveProjectFileHref } from './presenters/file-link'
 import { PortableTurnContext } from './portable-turn-context'
+import { createPortableCodePlugin } from './portable-code-plugin'
 import { requestNative } from './bridge'
 
-function plainCodePlugin(theme: 'github-dark' | 'github-light'): CodeHighlighterPlugin {
-  return {
-    name: 'shiki',
-    type: 'code-highlighter',
-    getSupportedLanguages: () => [],
-    getThemes: () => [theme, theme],
-    supportsLanguage: () => false,
-    highlight: () => null,
-  }
-}
-
-// The mobile bundle deliberately keeps code monochrome: bundling every Shiki
-// grammar adds ~12 MB before the WebView has rendered its first turn.
-const darkCodePlugin = plainCodePlugin('github-dark')
-const lightCodePlugin = plainCodePlugin('github-light')
+const darkCodePlugin = createPortableCodePlugin('github-dark')
+const lightCodePlugin = createPortableCodePlugin('github-light')
 const mathPlugin = createMathPlugin({ singleDollarTextMath: false })
 /**
  * Streamdown's default harden config allows any link PREFIX but not any

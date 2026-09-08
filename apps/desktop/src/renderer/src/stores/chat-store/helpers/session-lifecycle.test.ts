@@ -1,7 +1,26 @@
 /** @vitest-environment jsdom */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { ChatMessage, ClaudeResources, CodexResources, ModelOption } from '@superone/shared/agent-types'
+import type { AppSettings, ChatMessage, ClaudeResources, CodexResources, HarnessId, ModelOption } from '@superone/shared/agent-types'
+import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
+
+/**
+ * Per-harness preference block carrying only what session defaults read.
+ * Each harness owns its own mode now, so a test has to say which one it means.
+ */
+function agentPreferenceWith(
+  modes: Partial<Record<HarnessId, string>> = {},
+): AppSettings['agentPreference'] {
+  return Object.fromEntries(
+    (Object.keys(HARNESS_LAUNCH_OPTIONS) as HarnessId[]).map((harnessId) => [harnessId, {
+      defaultPermissionMode: modes[harnessId] ?? '',
+      defaultSandboxMode: '',
+      defaultPermissionPreset: '',
+      brandHue: null,
+      tokenOverrides: {},
+    }]),
+  ) as unknown as AppSettings['agentPreference']
+}
 
 const mockSetActiveWorktree = vi.fn()
 const mockClearWorktree = vi.fn().mockResolvedValue(undefined)
@@ -204,8 +223,7 @@ beforeEach(() => {
   useCodexRealtimeViewStore.setState({ sessions: {} })
   vi.clearAllMocks()
   mockLocalStorage.clear()
-  defaultPrefsCache.permissionMode = null
-  defaultPrefsCache.sandboxMode = null
+  defaultPrefsCache.agentPreference = null
   defaultPrefsCache.claudeSelection = null
   defaultPrefsCache.codexSelection = null
 })
@@ -458,10 +476,10 @@ describe('resetSessionForWorktreeSwitchImpl', () => {
     expect(mockSeedFromCurrent).not.toHaveBeenCalled()
   })
 
-  it('applies defaultPrefsCache.permissionMode when set', () => {
+  it("applies the harness's own configured permission mode when set", () => {
     setupProject()
     patchSession({ messages: [userMsg('u1', 'claude')] })
-    defaultPrefsCache.permissionMode = 'plan'
+    defaultPrefsCache.agentPreference = agentPreferenceWith({ claude: 'plan' })
 
     useChatStore.getState().resetSessionForWorktreeSwitch(PATH, { wtPath: '/wt2', gitBranch: null })
 

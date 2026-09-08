@@ -24,8 +24,8 @@ export function ProjectSelect(props: {
     <View style={{ maxWidth: MAX_WIDTH }}>
       <Pressable accessibilityRole="button" accessibilityLabel={`Project: ${props.name ?? 'none'}`}
         accessibilityState={{ disabled: props.disabled }} disabled={props.disabled}
-        onPress={props.onOpen}
-        style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44,
+        onPress={props.onOpen} hitSlop={{ top: 4, bottom: 4 }}
+        style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 36,
           maxWidth: '100%', paddingHorizontal: 14, borderWidth: 1, borderColor: colors.border,
           borderRadius: radius.md, opacity: props.disabled ? 0.45 : 1,
           backgroundColor: pressed ? colors.muted : 'transparent' })}>

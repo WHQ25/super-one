@@ -1,8 +1,8 @@
-import { ChevronDown } from 'lucide-react-native'
 import { Pressable, View } from 'react-native'
 import { Text } from './text'
 import { useMobileTheme } from '../theme/context'
 import { AnchoredMenu, MenuRow, useMenuAnchor } from './anchored-menu'
+import { RotatingChevron } from './rotating-chevron'
 
 export type SelectionOption = { value: string; label: string; description?: string }
 
@@ -23,7 +23,7 @@ export function SelectionField({ label, value, options, onChange, compact = fals
         {!compact ? <Text style={{ color: colors.mutedForeground, fontSize: 12, marginBottom: 4 }}>{label}</Text> : null}
         <Text numberOfLines={1} style={{ color: compact ? colors.mutedForeground : colors.foreground, fontSize: compact ? 12 : 15 }}>{selected?.label ?? (value || (compact ? label : 'Choose…'))}</Text>
       </View>
-      <ChevronDown size={14} color={colors.mutedForeground} />
+      <RotatingChevron open={!!menu.anchor} size={14} color={colors.mutedForeground} />
     </Pressable>
     <AnchoredMenu anchor={menu.anchor} title={label} onDismiss={menu.close}>
       {hint ? <Text style={{ color: colors.mutedForeground, fontSize: 12, lineHeight: 18, padding: 8 }}>{hint}</Text> : null}

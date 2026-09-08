@@ -39,6 +39,13 @@ a {
 .chat-view-shell {
   box-sizing: border-box;
   min-height: 100vh;
+  /* Only the assistant half of a turn carries a bottom margin, so a user bubble
+     would otherwise sit flush against the reply it prompted. The desktop
+     transcript is a flex column with its own gap (`ChatContent`); this is that
+     gap, one step wider because a phone has no column margins to separate on. */
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   padding:
     calc(12px + var(--safe-area-top))
     calc(14px + var(--safe-area-right))
@@ -61,6 +68,11 @@ a {
   font-size: 0.9375rem;
   line-height: 1.6;
 }
+
+/* The assistant half of a turn carries its own bottom margin, so a turn used to
+   be separated from the next by two gaps but from its own reply by one. On a
+   phone that reads as cramped, so the user half matches. */
+.chat-view-shell > article[data-message-role="user"] { margin-bottom: 8px; }
 
 .chat-view-shell .portable-user-message {
   word-break: normal;

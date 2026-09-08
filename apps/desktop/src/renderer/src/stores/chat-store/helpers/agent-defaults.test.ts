@@ -97,8 +97,7 @@ const codexHigh: ModelOption = {
 beforeEach(() => {
   defaultPrefsCache.claudeSelection = null
   defaultPrefsCache.codexSelection = null
-  defaultPrefsCache.permissionMode = null
-  defaultPrefsCache.sandboxMode = null
+  defaultPrefsCache.agentPreference = null
   useChatStore.setState({
     projectSessions: {},
     activeProject: null,

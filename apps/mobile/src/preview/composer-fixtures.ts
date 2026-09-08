@@ -17,7 +17,7 @@ import type { SlashCommandInfo } from '../slash'
 export const previewSlashCatalog: SlashCommandInfo[] = [
   { name: 'clear', description: 'Clear the conversation and start over', argumentHint: '', isSkill: false },
   { name: 'compact', description: 'Summarise the conversation to reclaim context', argumentHint: '[instructions]', isSkill: false },
-  { name: 'add-dir', description: 'Give the session another project directory', argumentHint: '[project|session] [dir]', isSkill: false },
+  { name: 'add-dir', description: 'Manage additional working directories', argumentHint: '', isSkill: false },
   { name: 'review', description: 'Review the current diff for correctness and cleanups', argumentHint: '', isSkill: false },
   // Exists so one query can score a skill above every command: `/rel` matches
   // this only mid-word, while the `release` skill matches from index 0. The

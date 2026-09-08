@@ -12,7 +12,7 @@ import { ListRow } from '../ui'
  *
  * Selection only — adding a project is its own flow behind the header action,
  * the same split the desktop makes between its sidebar list and the Add Project
- * dialog. Rows carry the branch and dirty-file indicators the sidebar shows.
+ * dialog.
  */
 export function ProjectPickerScreen(props: {
   projects: Project[]
@@ -41,19 +41,10 @@ export function ProjectPickerScreen(props: {
           renderItem={({ item }) => (
             <ListRow
               title={item.name}
-              subtitle={item.path}
               leading={<Folder color={colors.mutedForeground} size={22} />}
-              trailing={item.path === props.activePath || item.git ? (
-                <View style={styles.projectIndicators}>
-                  {item.path === props.activePath
-                    ? <Check color={colors.primary} size={16} /> : null}
-                  {item.git ? <>
-                    <Text numberOfLines={1} style={styles.rowMeta}>{item.git.branch}</Text>
-                    {item.git.dirty?.files ? <Text style={{ color: colors.warning, fontSize: 12 }}>{item.git.dirty.files} changed</Text> : null}
-                    {item.git.ahead || item.git.behind ? <Text style={styles.rowMeta}>↑{item.git.ahead ?? 0} ↓{item.git.behind ?? 0}</Text> : null}
-                  </> : null}
-                </View>
-              ) : undefined}
+              trailing={item.path === props.activePath
+                ? <Check color={colors.primary} size={16} />
+                : null}
               onPress={() => props.onSelect(item)}
             />
           )}

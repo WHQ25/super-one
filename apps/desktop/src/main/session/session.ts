@@ -537,8 +537,12 @@ export class Session implements SessionContract {
       sandboxInfo: this.sandboxInfo,
       selectedModel: this.model ?? null,
       selectedEffort: this.effort ?? null,
-      selectedCodexServiceTier: opts.codexServiceTier ?? null,
       apiProviderId: this._apiProviderId,
+      // Only seeded when a tier is actually known. Replays send `_uiSettings`
+      // verbatim and the renderer reducer treats a present `null` as an explicit
+      // "Fast off", so seeding null here would let a session main has never been
+      // told about wipe the composer's Fast pick on every resume.
+      ...(opts.codexServiceTier != null ? { selectedCodexServiceTier: opts.codexServiceTier } : {}),
     }
     this.systemPromptAppend = opts.systemPromptAppend
     if (this.harnessId === 'acp' && this._acpAgentId) {
@@ -2187,6 +2191,7 @@ export class Session implements SessionContract {
         acpAgentId: this._acpAgentId,
         selectedModel: this.model ?? null,
         selectedEffort: this.effort ?? null,
+        codexServiceTier: this._uiSettings.selectedCodexServiceTier ?? null,
         providerSessionId: this._providerSessionId,
         messagePersistMode,
       })

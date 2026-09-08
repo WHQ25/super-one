@@ -98,6 +98,10 @@ export function _mergePersistedSessionState(session: PerSessionState, saved: Per
       mergedMessages.findLast((message) => message.role === 'assistant' && message.providerId !== 'system')?.id
       ?? session.lastAssistantMessageId,
     apiProviderId: session.apiProviderId ?? saved.apiProviderId ?? null,
+    // Codex Fast is per session, so a cold restore must bring it back. A live
+    // pick still outranks the row: hydration is async and the user may have
+    // toggled Fast while it was in flight.
+    selectedCodexServiceTier: session.selectedCodexServiceTier ?? saved.codexServiceTier ?? null,
     acpAgentId: session.acpAgentId ?? saved.acpAgentId ?? null,
     openCodeAgentId: session.openCodeAgentId
       ?? saved.messages.findLast((message) => message.role === 'assistant')?.metadata?.agent

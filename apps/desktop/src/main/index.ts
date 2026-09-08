@@ -404,6 +404,7 @@ const sessionManager = new SessionManagerImpl({
       acpAgentId: snapshot.acpAgentId,
       selectedModel: snapshot.selectedModel,
       selectedEffort: snapshot.selectedEffort,
+      codexServiceTier: snapshot.codexServiceTier,
       providerSessionId: snapshot.providerSessionId,
       messagePersistMode: snapshot.messagePersistMode,
     })
@@ -454,7 +455,7 @@ const sessionManager = new SessionManagerImpl({
       selectedEffort: loaded.record.selectedEffort,
       permissionMode: collaborationConfig?.permissionMode,
       sandboxMode: collaborationConfig?.sandboxMode,
-      codexServiceTier: collaborationConfig?.codexServiceTier,
+      codexServiceTier: collaborationConfig?.codexServiceTier ?? loaded.record.codexServiceTier,
       systemPromptAppend: getSessionCollaborationSystemPrompt(sessionId),
     }
   },
@@ -1490,7 +1491,13 @@ function setAppMediaPermissions(appId: string, manifest: { permissions?: { media
 }
 
 
-function getOrCreateCodexSession(sessionId: string, projectPath: string, cwd?: string, gitBranch?: string | null, apiProviderId?: string | null) {
+/**
+ * `serviceTier` is the Fast pick the turn was actually sent with. It has to be
+ * threaded in here because a pick made on a draft never reached main: the
+ * BROADCAST_SESSION_SETTING handler has no Session to merge it into yet, so the
+ * first send is the only place main can learn it.
+ */
+function getOrCreateCodexSession(sessionId: string, projectPath: string, cwd?: string, gitBranch?: string | null, apiProviderId?: string | null, serviceTier?: string | null) {
   const existing = sessionManager.getSession(sessionId)
   if (existing) {
     if (existing.snapshot.harnessId !== 'codex') {
@@ -1499,6 +1506,9 @@ function getOrCreateCodexSession(sessionId: string, projectPath: string, cwd?: s
     sessionManager.setActiveSession(projectPath, existing.snapshot.id)
     if (apiProviderId != null && existing.snapshot.apiProviderId !== apiProviderId) {
       existing.setApiProviderId(apiProviderId)
+    }
+    if (serviceTier !== undefined && existing.getUiSettings().selectedCodexServiceTier !== serviceTier) {
+      existing.broadcastSettingsPatch({ selectedCodexServiceTier: serviceTier })
     }
     return existing
   }
@@ -1509,6 +1519,7 @@ function getOrCreateCodexSession(sessionId: string, projectPath: string, cwd?: s
     cwd,
     gitBranch: gitBranch ?? null,
     apiProviderId: apiProviderId ?? null,
+    codexServiceTier: serviceTier,
   })
   return fresh
 }
@@ -2357,7 +2368,7 @@ function registerIpcHandlers(): void {
     ) => {
       const assistantMessageId = messageId ?? `codex_${Date.now()}`
       const persistedUserMessageId = userMessageId ?? newMessageId('user')
-      const session = getOrCreateCodexSession(sessionId, projectPath, cwd, gitBranch, extras?.apiProviderId)
+      const session = getOrCreateCodexSession(sessionId, projectPath, cwd, gitBranch, extras?.apiProviderId, extras?.serviceTier)
       return runCodexTurnViaSessionManager(session, assistantMessageId, {
         content: userMessageText ?? prompt,
         model,
@@ -2839,7 +2850,7 @@ function registerIpcHandlers(): void {
       extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[]; apiProviderId?: string | null; serviceTier?: string | null; additionalDirectories?: string[] },
     ) => {
       const assistantMessageId = messageId ?? `codex_${Date.now()}`
-      const session = getOrCreateCodexSession(sessionId, projectPath, cwd, gitBranch, extras?.apiProviderId)
+      const session = getOrCreateCodexSession(sessionId, projectPath, cwd, gitBranch, extras?.apiProviderId, extras?.serviceTier)
       return runCodexTurnViaSessionManager(session, assistantMessageId, {
         content: userMessageText ?? '/review',
         model,
@@ -2882,7 +2893,7 @@ function registerIpcHandlers(): void {
       extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[]; apiProviderId?: string | null; serviceTier?: string | null; additionalDirectories?: string[] },
     ) => {
       const assistantMessageId = messageId ?? `codex_${Date.now()}`
-      const session = getOrCreateCodexSession(sessionId, projectPath, cwd, gitBranch, extras?.apiProviderId)
+      const session = getOrCreateCodexSession(sessionId, projectPath, cwd, gitBranch, extras?.apiProviderId, extras?.serviceTier)
       return runCodexTurnViaSessionManager(session, assistantMessageId, {
         content: userMessageText ?? '/compact',
         model,

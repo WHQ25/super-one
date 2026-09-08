@@ -32,7 +32,7 @@ import { encryptSecret } from './crypto/secret-store'
  * every launch); it decides when a pre-migration snapshot is taken and lets a
  * build recognise a database written by a newer build.
  */
-export const SCHEMA_VERSION = 4
+export const SCHEMA_VERSION = 5
 
 /**
  * The oldest schema revision that can still read this database.
@@ -541,6 +541,12 @@ function applyMigrations(db: Database.Database): void {
   }
   if (!sessionColsPostRebuild.some((c) => c.name === 'tags_json')) {
     db.exec("ALTER TABLE sessions ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'")
+  }
+  // Codex Fast mode. Held per session, not per model: the picker turns it on for
+  // this chat, so a cold reopen must restore it rather than fall back to the
+  // harness default (which would silently downgrade a session the user set to Fast).
+  if (!sessionColsPostRebuild.some((c) => c.name === 'codex_service_tier')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN codex_service_tier TEXT')
   }
   const msgColsPostRebuild = db.prepare("PRAGMA table_info(chat_messages)").all() as Array<{ name: string }>
   if (!msgColsPostRebuild.some((c) => c.name === 'usage_counted_at')) {

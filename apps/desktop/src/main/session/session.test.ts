@@ -3441,6 +3441,40 @@ describe('Session ownership', () => {
     expect(event.patch?.selectedEffort).toBe('max')
   })
 
+  it('replaying a session with no known Codex tier omits selectedCodexServiceTier', () => {
+    // Same failure shape as selectedModel above, one field over. A resumed session
+    // is built without a tier, so seeding null here made every resume replay
+    // "Fast is off" and wipe the composer's Fast toggle.
+    const { session } = makeSession({ model: 'gpt-5.4-codex' })
+
+    const event = session.getReplayEvents().find((e) => e.type === 'agent_setting_change')
+
+    expect(event).toBeDefined()
+    if (!event || event.type !== 'agent_setting_change') throw new Error('unreachable')
+    expect(event.patch && 'selectedCodexServiceTier' in event.patch).toBe(false)
+  })
+
+  it('replays selectedCodexServiceTier once the session knows it', () => {
+    const { session } = makeSession({ model: 'gpt-5.4-codex', codexServiceTier: 'priority' })
+
+    const event = session.getReplayEvents().find((e) => e.type === 'agent_setting_change')
+
+    expect(event).toBeDefined()
+    if (!event || event.type !== 'agent_setting_change') throw new Error('unreachable')
+    expect(event.patch?.selectedCodexServiceTier).toBe('priority')
+  })
+
+  it('turning Fast off is replayed as an explicit null, not an omission', () => {
+    const { session } = makeSession({ model: 'gpt-5.4-codex', codexServiceTier: 'priority' })
+    session.broadcastSettingsPatch({ selectedCodexServiceTier: null })
+
+    const event = session.getReplayEvents().find((e) => e.type === 'agent_setting_change')
+
+    if (!event || event.type !== 'agent_setting_change') throw new Error('unreachable')
+    expect(event.patch && 'selectedCodexServiceTier' in event.patch).toBe(true)
+    expect(event.patch?.selectedCodexServiceTier).toBeNull()
+  })
+
   it('dispose clears subscribers, releases owner, emits closed event', async () => {
     const { session } = makeSession()
     session.claim({ kind: 'remote', deviceId: 'dev-A' })

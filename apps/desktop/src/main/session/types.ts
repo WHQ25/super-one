@@ -133,6 +133,8 @@ export interface SessionStateChange {
   acpAgentId: string | null
   selectedModel: string | null
   selectedEffort: SendMessageRequest['effort'] | null
+  /** Codex Fast mode (service tier id); null means Fast is off for this session. */
+  codexServiceTier: string | null
   /**
    * Provider/agent session id (e.g. Grok ACP). Persisted with the SuperOne
    * session row so cold resume can session/load after app restart.

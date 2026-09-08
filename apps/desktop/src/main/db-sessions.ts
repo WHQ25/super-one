@@ -294,12 +294,12 @@ export function saveSessionState(
 /** Load session state from DB */
 export function loadSessionState(
   sessionId: string,
-): { messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; isWorktree: boolean; gitBranch: string | null; worktreePath: string | null; provider: string; providerSessionId: string | null; apiProviderId: string | null; acpAgentId: string | null; selectedModel: string | null; selectedEffort: EffortLevel | null; title: string | null } | null {
+): { messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; isWorktree: boolean; gitBranch: string | null; worktreePath: string | null; provider: string; providerSessionId: string | null; apiProviderId: string | null; acpAgentId: string | null; selectedModel: string | null; selectedEffort: EffortLevel | null; codexServiceTier: string | null; title: string | null } | null {
   const db = getDb()
 
   const session = db.prepare(`
-    SELECT title, total_cost_usd, context_tokens, is_worktree, git_branch, worktree_path, provider, provider_id, provider_session_id, api_provider_id, acp_agent_id, selected_model, selected_effort FROM sessions WHERE id = ?
-  `).get(sessionId) as (DbSession & { is_worktree: number | null; git_branch: string | null; worktree_path: string | null; provider: string | null; provider_id: string | null; provider_session_id: string | null; api_provider_id: string | null; acp_agent_id: string | null; selected_model: string | null; selected_effort: string | null }) | undefined
+    SELECT title, total_cost_usd, context_tokens, is_worktree, git_branch, worktree_path, provider, provider_id, provider_session_id, api_provider_id, acp_agent_id, selected_model, selected_effort, codex_service_tier FROM sessions WHERE id = ?
+  `).get(sessionId) as (DbSession & { is_worktree: number | null; git_branch: string | null; worktree_path: string | null; provider: string | null; provider_id: string | null; provider_session_id: string | null; api_provider_id: string | null; acp_agent_id: string | null; selected_model: string | null; selected_effort: string | null; codex_service_tier: string | null }) | undefined
 
   if (!session) return null
 
@@ -325,6 +325,7 @@ export function loadSessionState(
     acpAgentId: session.acp_agent_id ?? null,
     selectedModel: session.selected_model ?? null,
     selectedEffort: (session.selected_effort as EffortLevel | null) ?? null,
+    codexServiceTier: session.codex_service_tier ?? null,
     title: session.title ?? null,
   }
 }

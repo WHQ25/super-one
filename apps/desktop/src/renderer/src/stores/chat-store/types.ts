@@ -363,6 +363,8 @@ export type PersistedSessionState = {
   acpAgentId?: string | null
   selectedModel?: string | null
   selectedEffort?: EffortLevel | null
+  /** Codex Fast mode (service tier id); null means Fast is off for this session. */
+  codexServiceTier?: string | null
   title?: string | null
 }
 

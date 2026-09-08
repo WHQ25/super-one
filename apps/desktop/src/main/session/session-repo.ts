@@ -100,6 +100,8 @@ export interface SessionRecord {
   acpAgentId: string | null
   selectedModel: string | null
   selectedEffort: EffortLevel | null
+  /** Codex Fast mode (service tier id); null means Fast is off for this session. */
+  codexServiceTier: string | null
 }
 
 function normalizeCodexThreadId(value: string | null | undefined): string | null {
@@ -144,6 +146,7 @@ interface SessionRow {
   acp_agent_id: string | null
   selected_model: string | null
   selected_effort: string | null
+  codex_service_tier: string | null
 }
 
 interface MessageRow {
@@ -184,6 +187,7 @@ function rowToRecord(row: SessionRow, projectPath: string): SessionRecord {
     acpAgentId: row.acp_agent_id ?? null,
     selectedModel: row.selected_model ?? null,
     selectedEffort: (row.selected_effort as EffortLevel | null) ?? null,
+    codexServiceTier: row.codex_service_tier ?? null,
   }
 }
 
@@ -321,6 +325,8 @@ export interface SaveSessionStateInput {
   acpAgentId?: string | null
   selectedModel?: string | null
   selectedEffort?: EffortLevel | null
+  /** Codex Fast mode (service tier id) picked for this session; null means off. */
+  codexServiceTier?: string | null
   /**
    * Provider/agent session id for cold resume (Grok ACP session/load).
    * Written on insert and on conflict when non-null so draft→first-message
@@ -347,9 +353,10 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
   const upsertSession = db.prepare(`
     INSERT INTO sessions (
       id, project_id, provider_id, provider, provider_session_id, title, created_at, last_user_message_at,
-      is_worktree, git_branch, worktree_path, api_provider_id, acp_agent_id, selected_model, selected_effort
+      is_worktree, git_branch, worktree_path, api_provider_id, acp_agent_id, selected_model, selected_effort,
+      codex_service_tier
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       provider_id = excluded.provider_id,
       provider = excluded.provider,
@@ -386,7 +393,10 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
       -- would need a dirty/known sentinel -- null alone cannot carry both, and
       -- honouring the explicit clear is the behaviour users actually hit.
       selected_model = excluded.selected_model,
-      selected_effort = excluded.selected_effort
+      selected_effort = excluded.selected_effort,
+      -- Same reasoning as selected_effort: turning Fast off is a UI-reachable
+      -- clear that sends null, so COALESCE here would resurrect Fast on cold restore.
+      codex_service_tier = excluded.codex_service_tier
   `)
 
   const upsertMsg = db.prepare(`
@@ -457,6 +467,7 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
       input.acpAgentId ?? null,
       input.selectedModel ?? null,
       input.selectedEffort ?? null,
+      input.codexServiceTier ?? null,
     )
     sessionCreatedAt = sessionRow?.created_at ?? now
 
@@ -631,8 +642,8 @@ export function forkSessionRecord(input: ForkSessionRecordInput): void {
       id, project_id, provider_id, provider, provider_session_id, title,
       created_at, last_user_message_at, total_cost_usd, context_tokens,
       is_worktree, git_branch, worktree_path, api_provider_id, acp_agent_id,
-      selected_model, selected_effort, usage_counted_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      selected_model, selected_effort, codex_service_tier, usage_counted_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `)
   const insMsg = db.prepare(`
     INSERT INTO chat_messages (id, session_id, sort_order, role, status, content_json, created_at, provider_id, metadata_json, usage_counted_at)
@@ -644,7 +655,7 @@ export function forkSessionRecord(input: ForkSessionRecordInput): void {
       input.newId, source.projectId, source.providerId, legacyProvider,
       input.providerSessionId, input.title, now, lastUserAt, source.contextTokens,
       input.worktreePath ? 1 : 0, input.gitBranch, input.worktreePath, source.apiProviderId,
-      source.acpAgentId, source.selectedModel, source.selectedEffort, now,
+      source.acpAgentId, source.selectedModel, source.selectedEffort, source.codexServiceTier, now,
     )
     srcMsgs.forEach((m, i) => {
       insMsg.run(

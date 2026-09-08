@@ -136,6 +136,7 @@ function makeFakeDb() {
             contextTokens: number, isWorktree: number, gitBranch: string | null, worktreePath: string | null,
             apiProviderId?: string | null, acpAgentId?: string | null,
             selectedModel?: string | null, selectedEffort?: string | null,
+            codexServiceTier?: string | null,
           ) => {
             sessionsRows.set(id, {
               id, project_id: projectId, provider_id: providerId, provider,
@@ -148,6 +149,7 @@ function makeFakeDb() {
               acp_agent_id: acpAgentId ?? null,
               selected_model: selectedModel ?? null,
               selected_effort: selectedEffort ?? null,
+              codex_service_tier: codexServiceTier ?? null,
             })
           },
         }
@@ -162,6 +164,7 @@ function makeFakeDb() {
             isWorktree: number, gitBranch: string | null, worktreePath: string | null,
             apiProviderId?: string | null, acpAgentId?: string | null,
             selectedModel?: string | null, selectedEffort?: string | null,
+            codexServiceTier?: string | null,
           ) => {
             const prev = sessionsRows.get(id)
             // Mirror SQL CASE: when provider_id changes, do not COALESCE-keep the
@@ -183,6 +186,7 @@ function makeFakeDb() {
               acp_agent_id: nextAcpAgentId,
               selected_model: selectedModel ?? null,
               selected_effort: selectedEffort ?? null,
+              codex_service_tier: codexServiceTier ?? null,
             })
           },
         }
@@ -530,6 +534,35 @@ describe('session-repo', () => {
       const loaded = loadSessionStateBySid('s-switch-model')
       expect(loaded?.record.selectedModel).toBeNull()
       expect(loaded?.record.selectedEffort).toBeNull()
+    })
+  })
+
+  describe('codex_service_tier persistence', () => {
+    const messages: ChatMessage[] = [
+      { id: 'u1', role: 'user', status: 'complete', content: [{ type: 'text', text: 'hi' }], createdAt: '2026-04-18T00:00:00Z', providerId: 'codex' },
+    ]
+
+    it('round-trips the per-session Codex Fast pick', () => {
+      saveSessionStateBySid({
+        sid: 's-fast', projectPath: '/tmp/proj', providerId: 'codex-base',
+        messages, totalCostUsd: 0, contextTokens: 0,
+        selectedModel: 'gpt-5.4-codex', codexServiceTier: 'priority',
+      })
+      expect(loadSessionStateBySid('s-fast')?.record.codexServiceTier).toBe('priority')
+    })
+
+    it('persists turning Fast off instead of resurrecting the old tier', () => {
+      saveSessionStateBySid({
+        sid: 's-fast-off', projectPath: '/tmp/proj', providerId: 'codex-base',
+        messages, totalCostUsd: 0, contextTokens: 0,
+        selectedModel: 'gpt-5.4-codex', codexServiceTier: 'priority',
+      })
+      saveSessionStateBySid({
+        sid: 's-fast-off', projectPath: '/tmp/proj', providerId: 'codex-base',
+        messages, totalCostUsd: 0, contextTokens: 10,
+        selectedModel: 'gpt-5.4-codex', codexServiceTier: null,
+      })
+      expect(loadSessionStateBySid('s-fast-off')?.record.codexServiceTier).toBeNull()
     })
   })
 

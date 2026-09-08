@@ -182,9 +182,6 @@ export function useHarnessSelection() {
   }
 
   return {
-    // The host resolved this from its own settings; the phone has no locale
-    // store of its own, and the chat WebView renders shared i18n strings.
-    locale: systemInfo.locale ?? 'en',
     selectedProvider,
     setSelectedProvider,
     selectedModel,

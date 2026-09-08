@@ -96,10 +96,12 @@ import { isFullBleedScreen } from '../layout-state'
 import { isReachable, type ReconnectInfo } from '../device-status'
 import { logRelayEventTypes } from '../relay-debug'
 import { dynamicMentionArtworkRevision, dynamicMentionArtworkSnapshot } from '../ui/mention-dynamic-artwork'
+import { useMobileLocale } from '../i18n/context'
 const kv = mobileKv
 export function MobileApp() {
   const styles = useMobileStyles()
   const { tokens, setHarness } = useMobileTheme()
+  const { locale } = useMobileLocale()
   const webViewTheme = useMemo(() => mobileWebViewTheme(tokens), [tokens])
   const { width, fontScale } = useWindowDimensions()
   const [screen, setScreen] = useState<Screen>('pair')
@@ -282,8 +284,8 @@ export function MobileApp() {
     inject(termRef, webViewTheme)
   }, [webViewTheme])
   useEffect(() => {
-    inject(webRef, { type: 'setViewport', fontScale, locale: harnessSelection.locale })
-  }, [fontScale, harnessSelection.locale])
+    inject(webRef, { type: 'setViewport', fontScale, locale })
+  }, [fontScale, locale])
   // Voice is woven in only on the way to the WebView. `session.messages` stays the
   // host's own list: the projected voice rows carry synthetic `codex-realtime-*` ids
   // that nothing on the host can resolve, and they would leak into `workflowRunRows`
@@ -420,7 +422,7 @@ export function MobileApp() {
     }
     if (message.type === 'ready' && runtimeRef.current) {
       inject(webRef, webViewTheme)
-      inject(webRef, { type: 'setViewport', fontScale, locale: harnessSelection.locale })
+      inject(webRef, { type: 'setViewport', fontScale, locale })
       inject(webRef, { type: 'setConnection', ...connectionRef.current })
       syncSheets(runtimeRef.current, true)
       const saved = restoredChatWindow(chatViewStatesRef.current[runtimeRef.current.sessionId])

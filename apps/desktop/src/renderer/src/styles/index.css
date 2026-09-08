@@ -537,25 +537,23 @@ html:not(.dark) [data-sidebar-inner] .is-scrolling::-webkit-scrollbar-thumb:hove
   display: none;
 }
 
+/*
+ * The ghost text and its Tab badge must share one inline flow so the badge
+ * trails the LAST line of a wrapped suggestion. An inline-flex container would
+ * make the text and the badge two flex items, parking the badge to the right of
+ * the whole (possibly multi-line) block instead.
+ */
 .prompt-suggestion-ghost {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  display: inline;
   color: var(--muted-foreground);
   opacity: 0.7;
   pointer-events: none;
-  white-space: nowrap;
-  max-width: 100%;
-  overflow: hidden;
-}
-
-.prompt-suggestion-ghost > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .prompt-suggestion-badge {
-  flex-shrink: 0;
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 6px;
   font-size: 10px;
   line-height: 1;
   padding: 2px 5px;

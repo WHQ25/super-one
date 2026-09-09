@@ -47,7 +47,7 @@
     },
     "apps/desktop": {
       "name": "@superone/desktop",
-      "version": "0.62.2",
+      "version": "0.63.0",
       "dependencies": {
         "@agentclientprotocol/sdk": "^1.4.0",
         "@ai-sdk/google": "^4.0.62",
@@ -321,6 +321,7 @@
         "expo-status-bar": "~3.0.8",
         "expo-system-ui": "~6.0.9",
         "expo-updates": "~29.0.20",
+        "lowlight": "^3.3.0",
         "lucide-react-native": "^0.563.0",
         "marked": "16.4.2",
         "react": "19.1.0",
@@ -337,6 +338,7 @@
         "@playwright/test": "1.62.1",
         "@superone/tsconfig": "workspace:*",
         "@testing-library/react-native": "^14.0.1",
+        "@types/hast": "^3.0.4",
         "@types/react": "^19.2.13",
         "@xmldom/xmldom": "0.8.14",
         "babel-preset-expo": "~54.0.0",

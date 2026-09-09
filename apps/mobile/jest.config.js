@@ -11,6 +11,12 @@ module.exports = {
   preset: 'jest-expo',
   testMatch: ['<rootDir>/src/**/*.test.tsx'],
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
+  // jest-expo's list plus the ESM-only highlighter (`lowlight` and its `devlop`
+  // assert helper); highlight.js itself ships CommonJS and needs no transform.
+  transformIgnorePatterns: [
+    '/node_modules/(?!(.pnpm|react-native|@react-native|@react-native-community|expo|@expo|@expo-google-fonts|react-navigation|@react-navigation|@sentry/react-native|native-base|lowlight|devlop))',
+    '/node_modules/react-native-reanimated/plugin/',
+  ],
   moduleNameMapper: {
     // This workspace pins react 19.1.0 while the hoisted root has a newer one,
     // so `react-reconciler` and our components would otherwise load different

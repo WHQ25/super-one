@@ -7,6 +7,7 @@ import { NativeMarkdown } from '../prompts/NativeMarkdown'
 import { monospace, tint } from '../prompts/styles'
 import { Text } from '../ui/text'
 import { Button } from '../ui/primitives'
+import { highlightLines } from '../ui/code-highlight'
 import { SCROLL_INDICATOR_GUTTER } from '../ui/scroll-gutter'
 import { useMobileTheme } from '../theme/context'
 import { useMobileLocale } from '../i18n/context'
@@ -81,24 +82,21 @@ export function FilePreviewScreen({ state, onStartTransfer, onRetry }: FilePrevi
     )
   }
 
-  return <CodeListing text={state.text} line={state.line} />
+  return <CodeListing text={state.text} name={state.name} line={state.line} />
 }
 
 /**
  * A numbered listing that scrolls both ways. One `Text` per row rather than a
  * single block, so the cited line can carry its own background and the gutter
  * can stay aligned with wrapped-off long lines — the horizontal scroller means
- * rows never wrap, which is what keeps the two columns in step.
+ * rows never wrap, which is what keeps the two columns in step. Tokens are
+ * nested `Text` runs inside the row, coloured from the GitHub palette that
+ * matches the current scheme.
  */
-function CodeListing({ text, line }: { text: string; line?: number }) {
-  const { tokens: { colors } } = useMobileTheme()
+function CodeListing({ text, name, line }: { text: string; name: string; line?: number }) {
+  const { tokens: { colors, scheme } } = useMobileTheme()
   const scrollRef = useRef<ScrollView>(null)
-  const lines = useMemo(() => {
-    const rows = text.split('\n')
-    // A trailing newline is a line terminator, not an empty last line.
-    if (rows.length > 1 && rows[rows.length - 1] === '') rows.pop()
-    return rows
-  }, [text])
+  const lines = useMemo(() => highlightLines(text, name, scheme), [text, name, scheme])
   const gutterWidth = `${lines.length}`.length
 
   // Anchor on the cited line once the rows exist; a few rows of context above
@@ -126,7 +124,24 @@ function CodeListing({ text, line }: { text: string; line?: number }) {
                 <Text selectable={false} style={[styles.code, styles.gutter, { color: colors.mutedForeground, width: gutterWidth * 8 + 16 }]}>
                   {`${number}`.padStart(gutterWidth, ' ')}
                 </Text>
-                <Text selectable style={[styles.code, { color: colors.foreground }]}>{row.length ? row : ' '}</Text>
+                <Text selectable style={[styles.code, { color: colors.foreground }]}>
+                  {row.length === 0
+                    ? ' '
+                    : row.map((span, spanIndex) => (
+                      <Text
+                        key={spanIndex}
+                        style={span.color || span.bold || span.italic
+                          ? {
+                            ...(span.color ? { color: span.color } : {}),
+                            ...(span.bold ? { fontWeight: '700' as const } : {}),
+                            ...(span.italic ? { fontStyle: 'italic' as const } : {}),
+                          }
+                          : undefined}
+                      >
+                        {span.text}
+                      </Text>
+                    ))}
+                </Text>
               </View>
             )
           })}

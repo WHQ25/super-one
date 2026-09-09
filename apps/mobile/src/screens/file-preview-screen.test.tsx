@@ -23,6 +23,20 @@ test('code renders one numbered row per line and marks the cited line', async ()
   expect(screen.getByTestId('file-preview-cited-line')).toBeTruthy()
 })
 
+test('code tokens carry the palette colour for the file language', async () => {
+  await renderWithTheme(page({
+    kind: 'text', path: PATH, name: 'App.tsx', size: 30, markdown: false,
+    text: 'const a = "x"\n',
+  }))
+
+  // `getByText` on the row matches the joined string; the keyword is its own nested run.
+  const row = screen.getByText('const a = "x"')
+  expect(row).toBeTruthy()
+  const keyword = screen.getByText('const')
+  expect(keyword.props.style).toMatchObject({ color: expect.stringMatching(/^#/) })
+  expect(screen.getByText('"x"').props.style.color).not.toBe(keyword.props.style.color)
+})
+
 test('markdown renders as prose, not as a listing', async () => {
   await renderWithTheme(page({
     kind: 'text', path: '/workspace/proj/README.md', name: 'README.md', size: 20, markdown: true,

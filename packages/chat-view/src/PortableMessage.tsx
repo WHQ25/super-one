@@ -6,7 +6,6 @@ import { ChatMessagePresenter } from './presenters/ChatMessage'
 import { collaborationLabelKey } from './presenters/collaboration-label'
 import { getAssistantCopyText } from './presenters/getAssistantCopyText'
 import { ZERO_TURN_TOKENS, type TurnTokenCounts } from './presenters/turn-footer-model'
-import { TextRevealContext } from './presenters/text-reveal-context'
 import { PortableUserText } from './PortableUserText'
 import { PortableToolRow } from './PortableToolRow'
 import { PortableTurnFooter } from './PortableTurnFooter'
@@ -141,8 +140,6 @@ export const PortableMessage = memo(function PortableMessage({
   mentionArtwork = {},
   isLastAssistant = false,
   sessionStreaming = false,
-  isRevealing = false,
-  isReasoningRevealing = false,
   streamingTokens = ZERO_TURN_TOKENS,
   projectPath = null,
   hideCopyActions = false,
@@ -154,9 +151,6 @@ export const PortableMessage = memo(function PortableMessage({
   isLastAssistant?: boolean
   /** The session itself is still producing output (status streaming or background). */
   sessionStreaming?: boolean
-  /** The host has received this text, but the mobile display is still playing it. */
-  isRevealing?: boolean
-  isReasoningRevealing?: boolean
   streamingTokens?: TurnTokenCounts
   projectPath?: string | null
   /** A spoken turn has a synthetic id and nothing to copy or resolve against. */
@@ -171,13 +165,6 @@ export const PortableMessage = memo(function PortableMessage({
   // gate the phone spins on it for the rest of the session. Same three-way test
   // the desktop bubble uses.
   const isStreaming = message.status === 'streaming' && sessionStreaming && isLastAssistant
-  const isDisplayingStream = isStreaming || isRevealing
-  const reveal = useMemo(() => ({ active: isRevealing, reasoning: isReasoningRevealing, paced: true }), [isRevealing, isReasoningRevealing])
-  // Codex's final-response fallback renders only once the real turn completes.
-  // Markdown still receives paint progress through TextRevealContext.
-  const codexBodyStreaming = isStreaming || (isRevealing && Boolean(message.metadata?.codex?.items.some(
-    (item) => item.type === 'agent_message' || item.type === 'plan',
-  )))
   const collabLabelKey = isUser ? collaborationLabelKey(message) : null
   const isCollaboration = collabLabelKey != null
   const fallback = message.metadata?.modelFallback
@@ -195,24 +182,24 @@ export const PortableMessage = memo(function PortableMessage({
     : isUser
       ? <PortableUserContent message={message} mentionArtwork={mentionArtwork} />
       : isCodex
-        ? <PortableCodexTurn message={message} isStreaming={codexBodyStreaming} isLastAssistant={isLastAssistant} />
-        : <PortableClaudeTurn message={message} isStreaming={isDisplayingStream} />
+        ? <PortableCodexTurn message={message} isStreaming={isStreaming} isLastAssistant={isLastAssistant} />
+        : <PortableClaudeTurn message={message} isStreaming={isStreaming} />
 
   // Copy text is only needed once the turn settles (the button hides while
   // streaming), so skip concatenating the whole turn on every delta.
   const copyText = useMemo(
-    () => (isUser || isDisplayingStream || hideCopyActions ? undefined : getAssistantCopyText(message)),
-    [isUser, isDisplayingStream, hideCopyActions, message],
+    () => (isUser || isStreaming || hideCopyActions ? undefined : getAssistantCopyText(message)),
+    [isUser, isStreaming, hideCopyActions, message],
   )
 
   return (
     <PortableTurnProvider scheme={scheme} pendingPermission={pendingPermission} projectPath={projectPath}>
-      <article data-turn-id={message.id} data-message-role={message.role} data-message-status={message.status} data-simulated-streaming={isRevealing || undefined}>
+      <article data-turn-id={message.id} data-message-role={message.role} data-message-status={message.status}>
         <ChatMessagePresenter
           isUser={isUser}
           isCollaboration={isCollaboration}
           collaborationLabel={collabLabelKey ? t(collabLabelKey) : undefined}
-          body={<TextRevealContext.Provider value={reveal}>{body}</TextRevealContext.Provider>}
+          body={body}
           imageGallery={
             <>
               <AttachmentGallery message={message} />

@@ -6,6 +6,7 @@ import { harden, BlockPolicy } from 'rehype-harden'
 import type { PluggableList } from 'unified'
 import {
   CopyableMarkdownPresenter,
+  InsightBlockPresenter,
   type CopyableMarkdownRuntime,
 } from './presenters/CopyableMarkdown'
 import {
@@ -221,6 +222,34 @@ export function PortableMarkdown({
   return (
     <CopyableMarkdownPresenter
       text={text}
+      isStreaming={isStreaming}
+      runtime={runtime}
+    />
+  )
+}
+
+/**
+ * Insight callout for a block the desktop already split out of the turn's text.
+ * The text path reaches the same card through `splitByInsightBlocks`; this entry
+ * point exists because the remote projection splits in the main process instead,
+ * so the markers never reach the markdown renderer that would have found them.
+ */
+export function PortableInsight({
+  title,
+  content,
+  isStreaming,
+  scheme,
+}: {
+  title: string
+  content: string
+  isStreaming: boolean
+  scheme: 'light' | 'dark'
+}) {
+  const runtime = useMemo(() => createMarkdownRuntime(scheme), [scheme])
+  return (
+    <InsightBlockPresenter
+      title={title}
+      content={content}
       isStreaming={isStreaming}
       runtime={runtime}
     />

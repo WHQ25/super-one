@@ -1,10 +1,9 @@
+import { PortableAsyncQuestion, AsyncQuestionTurnContext } from './PortableAsyncQuestion'
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
 import type {
   ChatMessage,
   CodexCollabToolCallItem,
   ContentBlock,
-  ImageGenerationItem,
-  VideoGenerationItem,
 } from '@superone/shared/agent-types'
 import { isAlwaysHiddenToolName, isSubagentToolName } from '@superone/shared/tool-ui'
 import { isHiddenToolBlock } from './presenters/tool-display'
@@ -24,8 +23,9 @@ import {
   type PortableTurnContextValue,
 } from './portable-turn-context'
 import { PortablePlanActions } from './PortablePlanActions'
-import { PortableMarkdown, PlainCode } from './PortableMarkdown'
-import { PortableNativeGallery } from './PortableNativeGallery'
+import { PortableMarkdown, PortableInsight, PlainCode } from './PortableMarkdown'
+import { PortableImageGallery, PortableVideoGallery } from './PortableMediaGalleries'
+export { PortableImageGallery, PortableVideoGallery } from './PortableMediaGalleries'
 import { PortableToolRow } from './PortableToolRow'
 import {
   ClaudeTurnBodyPresenter,
@@ -90,6 +90,9 @@ import {
   type SubagentColorClasses,
 } from './presenters/SubagentBlock'
 import { summarizeClaudeProcess, summarizeCodexProcess } from './presenters/turn-process-stats'
+import { SetupMiniAppDevBlockPresenter } from './presenters/SetupMiniAppDevBlock'
+import { SuperoneCompactToolRowPresenter } from './presenters/SuperoneCompactToolRow'
+import { superoneToolDescriptor } from './presenters/superone-tool-display'
 import { ToolGroupPresenter } from './presenters/ToolGroup'
 import { WorkflowBlockPresenter } from './presenters/WorkflowBlock'
 import { mergeWorkflowPhaseRows } from './presenters/workflow-utils'
@@ -171,6 +174,15 @@ function PortableText({ text, isStreaming, afterThinking }: {
       <PortableMarkdown text={resolved} isStreaming={isStreaming} scheme={scheme} />
     </div>
   )
+}
+
+function PortableInsightBlock({ title, content, isStreaming }: {
+  title: string
+  content: string
+  isStreaming: boolean
+}) {
+  const { scheme } = useContext(PortableTurnContext)
+  return <PortableInsight title={title} content={content} isStreaming={isStreaming} scheme={scheme} />
 }
 
 function PortableDocument({ name }: { name: string }) {
@@ -279,6 +291,39 @@ function PortableClaudeTool(props: ClaudeToolPresenterProps) {
         toolName={collabToolName}
         params={parseRecord(props.input)}
         result={isDenied ? props.result?.slice('[denied] '.length) : props.result}
+        isStreaming={props.status === 'streaming'}
+        isError={props.isError}
+        isDenied={isDenied}
+      />
+    )
+  }
+  if (collabToolName === 'miniapp_dev_setup') {
+    const isDenied = Boolean(props.result?.startsWith('[denied] '))
+    const params = parseRecord(props.input)
+    return (
+      <SetupMiniAppDevBlockPresenter
+        appName={typeof params.name === 'string' ? params.name : ''}
+        params={params}
+        // The phone's tool_result is truncated at 200 chars, so a longer setup payload
+        // parses to nothing and the card simply shows the fields the input already carries.
+        result={props.status === 'streaming' || isDenied || !props.result ? null : parseRecord(props.result)}
+        isStreaming={props.status === 'streaming'}
+        isError={props.isError}
+        isDenied={isDenied}
+        allowExpand
+      />
+    )
+  }
+  // Every SuperOne tool whose UI is a verb and a subject. Placed after the richer
+  // blocks above so a tool that has both keeps the richer one, and before the
+  // browser/device families so it never shadows an op-driven row.
+  if (collabToolName && superoneToolDescriptor(collabToolName)) {
+    const isDenied = Boolean(props.result?.startsWith('[denied] '))
+    return (
+      <SuperoneCompactToolRowPresenter
+        mcpToolName={collabToolName}
+        params={parseRecord(props.input)}
+        result={props.result ?? null}
         isStreaming={props.status === 'streaming'}
         isError={props.isError}
         isDenied={isDenied}
@@ -607,6 +652,7 @@ const GROUP_PORTS: GroupContentPorts = {
 
 const CLAUDE_PARTS: ClaudeTurnBodyPresenterParts = {
   Text: PortableText,
+  Insight: PortableInsightBlock,
   Document: PortableDocument,
   Tool: PortableClaudeTool,
   Reasoning: ReasoningBlock,
@@ -704,8 +750,10 @@ function PortablePlan({
 function PortableCodexItem(props: CodexItemPresenterProps) {
   const { item, index, isStreaming } = props
   switch (item.type) {
+    case 'command_execution':
+      return <PortableCodexCommand item={item} isStreaming={isStreaming} />
     case 'agent_message':
-      return <div className="my-0.5"><PortableCodexMarkdown text={item.text} isStreaming={isStreaming} /></div>
+      return item.questions?.length ? <PortableAsyncQuestion item={item} /> : <div className="my-0.5"><PortableCodexMarkdown text={item.text} isStreaming={isStreaming} /></div>
     case 'plan':
       return <PortablePlan {...props} />
     case 'review':
@@ -924,57 +972,6 @@ function PortableCodexSubagent({ item }: CodexSubagentPresenterProps) {
   )
 }
 
-export function PortableImageGallery({ items }: { items: ImageGenerationItem[] }) {
-  const available = items.filter((item) => Boolean(item.savedPath))
-  const unavailable = items.filter((item) => !item.savedPath)
-  return (
-    <>
-      {available.length > 0 ? (
-        <PortableNativeGallery
-          payload={{
-            kind: 'native',
-            nativeType: 'image-gallery',
-            title: available.some((item) => item.status === 'in_progress')
-              ? 'Generating images…'
-              : 'Generated images',
-            images: available,
-          }}
-        />
-      ) : null}
-      {unavailable.length > 0 ? (
-        <div className="my-2 grid grid-cols-2 gap-2" data-portable-image-placeholders>
-          {unavailable.map((item) => (
-            <button
-              type="button"
-              key={item.id}
-              className="min-h-20 rounded-lg border border-border/60 bg-muted/25 p-2 text-left text-xs"
-              disabled
-            >
-              <ImageIcon className="mb-2 size-5 text-muted-foreground" />
-              <span className="block truncate font-medium">Generated image</span>
-              <span className="block truncate text-muted-foreground">{item.revisedPrompt ?? item.status}</span>
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </>
-  )
-}
-
-/**
- * Turn-end video cards. Only a finished video has a path to preview; an
- * in-flight one is represented by its still-visible submit tool row.
- */
-export function PortableVideoGallery({ items }: { items: VideoGenerationItem[] }) {
-  const available = items.filter((item) => Boolean(item.savedPath))
-  if (available.length === 0) return null
-  return (
-    <PortableNativeGallery
-      payload={{ kind: 'native', nativeType: 'video-gallery', title: 'Generated videos', videos: available }}
-    />
-  )
-}
-
 function PortableAppIcon({ appId, className }: { appId: string; className?: string }) {
   return <Puzzle className={className} aria-label={appId} />
 }
@@ -1016,7 +1013,7 @@ export function PortableCodexTurn({
     })
   }
   return (
-    <CodexTurnViewPresenter
+    <AsyncQuestionTurnContext.Provider value={message.id}><CodexTurnViewPresenter
       message={message}
       isStreaming={isStreaming}
       isWorking={isStreaming}
@@ -1029,7 +1026,7 @@ export function PortableCodexTurn({
       appNameById={EMPTY_MAP}
       parts={CODEX_PARTS}
       runtime={CODEX_RUNTIME}
-    />
+    /></AsyncQuestionTurnContext.Provider>
   )
 }
 

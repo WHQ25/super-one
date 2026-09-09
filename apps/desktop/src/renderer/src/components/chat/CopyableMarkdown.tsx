@@ -13,6 +13,7 @@ import {
 } from './chat-shared'
 import {
   CopyableMarkdownPresenter,
+  InsightBlockPresenter,
   type CopyableMarkdownRuntime,
 } from './presenters/CopyableMarkdown'
 
@@ -32,6 +33,31 @@ const desktopMarkdownRuntime: CopyableMarkdownRuntime = {
   rehypePlugins: streamdownRehypePlugins,
   copyText: tryCopy,
 }
+
+/**
+ * Insight callout for a pre-split `insight` block. Desktop chat keeps the `★ … ───`
+ * markers inside the turn's text and lets `CopyableMarkdownPresenter` split them, so
+ * this only runs on a transcript that arrived already split — a session replayed from
+ * a remote node. Same card either way: both paths mount `InsightBlockPresenter`.
+ */
+export const InsightBlock = memo(function InsightBlock({
+  title,
+  content,
+  isStreaming,
+}: {
+  title: string
+  content: string
+  isStreaming: boolean
+}) {
+  return (
+    <InsightBlockPresenter
+      title={title}
+      content={content}
+      isStreaming={isStreaming}
+      runtime={desktopMarkdownRuntime}
+    />
+  )
+})
 
 export interface CopyableMarkdownProps {
   text: string

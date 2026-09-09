@@ -1,3 +1,4 @@
+import { isCodexAsyncAnswer } from '@superone/shared/codex-async-question'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import {
   isRedundantTurnSummaryMarker,
@@ -26,6 +27,7 @@ export type TranscriptRow =
  * that turn can sit outside the mounted range entirely.
  */
 export function transcriptRow(message: ChatMessage, all: readonly ChatMessage[]): TranscriptRow {
+  if (isCodexAsyncAnswer(message)) return { kind: 'hidden', message }
   const marker = parseCompactMarker(message)
   if (marker) return { kind: 'compact', message, marker }
   const meta = parseTurnMetaMarker(message)

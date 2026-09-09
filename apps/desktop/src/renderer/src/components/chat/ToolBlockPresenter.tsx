@@ -61,6 +61,8 @@ import {
   ConfigApplyBlock,
   SetupMiniAppDevBlock,
 } from './tool-block-presenters/ConfigToolBlocks'
+import { SuperoneCompactToolRowPresenter } from '@superone/chat-view/presenters/SuperoneCompactToolRow'
+import { superoneToolDescriptor } from '@superone/chat-view/presenters/superone-tool-display'
 
 function isCompleteJson(s: string): boolean {
   try { JSON.parse(s); return true } catch { return false }
@@ -326,13 +328,6 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
         />
       )
     }
-    const superoneToolDisplay: Record<string, { icon: ToolIconType; streaming: string; action: string; done: string; summaryField?: string }> = {
-      media_list_providers: { icon: 'image', streaming: t('chat.toolBlock.listingMediaProviders'), action: t('chat.toolBlock.listMediaProviders'), done: t('chat.toolBlock.listedMediaProviders') },
-      miniapp_dev_register: { icon: 'package', streaming: t('chat.toolBlock.registeringMiniApp'), action: t('chat.toolBlock.registerMiniApp'), done: t('chat.toolBlock.registeredMiniApp'), summaryField: 'name' },
-      miniapp_dev_update_types: { icon: 'wrench', streaming: t('chat.toolBlock.updatingMiniAppTypes'), action: t('chat.toolBlock.updateMiniAppTypes'), done: t('chat.toolBlock.updatedMiniAppTypes') },
-      widget_list_templates: { icon: 'canvas', streaming: t('chat.toolBlock.listingWidgetTemplates'), action: t('chat.toolBlock.listWidgetTemplates'), done: t('chat.toolBlock.listedWidgetTemplates') },
-      media_video_status: { icon: 'image', streaming: t('chat.toolBlock.checkingVideoStatus'), action: t('chat.toolBlock.checkVideoStatus'), done: t('chat.toolBlock.checkVideoStatus') },
-    }
     if (mcpInfo.mcpToolName === 'mobile_share_file') {
       return ports.renderMobileShare({
         params,
@@ -352,59 +347,6 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
           isError={!!isError}
           isDenied={isDenied}
           allowExpand={allowExpand}
-        />
-      )
-    }
-    if (mcpInfo.mcpToolName === 'config_read') {
-      const hasDomain = typeof params.domain === 'string' && params.domain.length > 0
-      let domainLabel = ''
-      if (!isStreaming && result) {
-        try {
-          const parsed = JSON.parse(result)
-          if (parsed && typeof parsed === 'object' && typeof parsed.label === 'string') domainLabel = parsed.label
-        } catch { /* ignore */ }
-      }
-      const summaryValue = domainLabel
-        || (hasDomain ? String(params.domain) : (!isStreaming ? t('chat.toolBlock.guideOverview') : ''))
-      return (
-        <CompactLabeledToolRow
-          icon={<ToolIcon icon="book-open" className="size-3 shrink-0 text-muted-foreground" />}
-          label={withStreamingEllipsis(
-            toolOutcomeLabel({
-              streaming: isStreaming,
-              interrupted: isDenied || !!isError,
-              streamingLabel: t('chat.toolBlock.readingConfig'),
-              actionLabel: t('chat.toolBlock.readSettings'),
-              doneLabel: t('chat.toolBlock.readConfig'),
-            }),
-            isStreaming,
-          )}
-          streaming={isStreaming}
-          tone={toolRowTone(isDenied, isError)}
-          summary={summaryValue || undefined}
-        />
-      )
-    }
-    if (mcpInfo.mcpToolName === 'read_manual') {
-      const domain = typeof params.domain === 'string' ? params.domain : ''
-      const topic = typeof params.topic === 'string' ? params.topic : ''
-      const summary = [domain, topic].filter(Boolean).join('/')
-      return (
-        <CompactLabeledToolRow
-          icon={<ToolIcon icon="book-open" className="size-3 shrink-0 text-muted-foreground" />}
-          label={withStreamingEllipsis(
-            toolOutcomeLabel({
-              streaming: isStreaming,
-              interrupted: isDenied || !!isError,
-              streamingLabel: t('chat.toolBlock.readingManual'),
-              actionLabel: t('chat.toolBlock.readManualAction'),
-              doneLabel: t('chat.toolBlock.readManual'),
-            }),
-            isStreaming,
-          )}
-          streaming={isStreaming}
-          tone={toolRowTone(isDenied, isError)}
-          summary={summary || undefined}
         />
       )
     }
@@ -477,36 +419,6 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
         />
       )
     }
-    if (mcpInfo.mcpToolName === 'session_tag') {
-      const added = Array.isArray(params.add) ? params.add.filter((tag): tag is string => typeof tag === 'string') : []
-      const removed = Array.isArray(params.remove) ? params.remove.filter((tag): tag is string => typeof tag === 'string') : []
-      const set = Array.isArray(params.set) ? params.set.filter((tag): tag is string => typeof tag === 'string') : []
-      const tagBits = added.length
-        ? added.join(', ')
-        : removed.length
-          ? removed.join(', ')
-          : set.length
-            ? set.join(', ')
-            : ''
-      const ids = Array.isArray(params.sessionIds) ? params.sessionIds.length : 0
-      const summary = [tagBits, ids > 1 ? `${ids}` : ''].filter(Boolean).join(' · ')
-      const label = toolOutcomeLabel({
-        streaming: isStreaming,
-        interrupted: isDenied || !!isError,
-        streamingLabel: t('chat.toolBlock.archive.taggingSession'),
-        actionLabel: t('chat.toolBlock.archive.tagSession'),
-        doneLabel: t('chat.toolBlock.archive.sessionTagged'),
-      })
-      return (
-        <CompactLabeledToolRow
-          icon={<ToolIcon icon="clipboard-list" className="size-3 shrink-0 text-muted-foreground" />}
-          label={withStreamingEllipsis(label, isStreaming)}
-          streaming={isStreaming}
-          tone={toolRowTone(isDenied, isError)}
-          summary={summary || undefined}
-        />
-      )
-    }
     if (isSessionArchiveToolName(mcpInfo.mcpToolName)) {
       return (
         <SessionArchiveToolBlock
@@ -551,33 +463,18 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
         />
       )
     }
-    const d = superoneToolDisplay[mcpInfo.mcpToolName]
-    if (d) {
-      const rawSummary = d.summaryField
-        ? String(params[d.summaryField] || params.directory || params.appDir || '').replace(/\s+/g, ' ').trim()
-        : mcpInfo.mcpToolName === 'miniapp_dev_update_types'
-          ? String(params.appDir ?? '').split('/').pop() ?? ''
-          : ''
-      const summaryValue = rawSummary.includes('/') ? rawSummary.split('/').pop() ?? rawSummary : rawSummary
-      return (
-        <CompactLabeledToolRow
-          icon={<ToolIcon icon={d.icon} className="size-3 shrink-0 text-muted-foreground" />}
-          label={withStreamingEllipsis(
-            toolOutcomeLabel({
-              streaming: isStreaming,
-              interrupted: isDenied || !!isError,
-              streamingLabel: d.streaming,
-              actionLabel: d.action,
-              doneLabel: d.done,
-            }),
-            isStreaming,
-          )}
-          streaming={isStreaming}
-          tone={toolRowTone(isDenied, isError)}
-          summary={summaryValue || undefined}
-        />
-      )
-    }
+    const compactRow = (
+      <SuperoneCompactToolRowPresenter
+        mcpToolName={mcpInfo.mcpToolName}
+        params={params}
+        result={result ?? null}
+        isStreaming={isStreaming}
+        isError={!!isError}
+        isDenied={isDenied}
+      />
+    )
+    if (superoneToolDescriptor(mcpInfo.mcpToolName)) return compactRow
+
     const miniAppTool = ports.renderMiniAppTool({
       mcpToolName: mcpInfo.mcpToolName,
       params,

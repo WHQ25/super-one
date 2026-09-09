@@ -2,19 +2,13 @@ import { useRef, useState, useMemo, useLayoutEffect, useEffect, useCallback } fr
 import { useTranslation } from 'react-i18next'
 import morphdom from 'morphdom'
 import { SVG_STYLES } from '@superone/shared/generative-ui/svg-styles'
-import { rewriteCdnUrls } from '@superone/shared/generative-ui/cdn-allowlist'
+import { buildWidgetSrcdoc, widgetBodyStyle } from '@superone/shared/generative-ui/widget-srcdoc'
 import type { WidgetData } from '@superone/shared/generative-ui/types'
 import { Download, Bookmark } from 'lucide-react'
 import { useChatStore } from '@/stores/chat'
 import { WidgetSaveDialog } from './WidgetSaveDialog'
 
 const THROTTLE_MS = 150
-
-function bodyStyle(isSVG: boolean): string {
-  return isSVG
-    ? 'margin:0;display:flex;align-items:center;justify-content:center;min-height:100%;background:transparent;color:var(--color-text-primary);'
-    : 'margin:0;font-family:system-ui,-apple-system,sans-serif;background:transparent;color:var(--color-text-primary);'
-}
 
 const SHADOW_STYLES = `*{box-sizing:border-box}
 @keyframes _fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
@@ -24,34 +18,6 @@ ${SVG_STYLES
   .replace(/\.dark\s*\{/g, ':host-context(.dark) {')
   .replace(/\.dark\s+svg/g, ':host-context(.dark) svg')
   .replace(/\.dark\s+input/g, ':host-context(.dark) input')}`
-
-const BRIDGE_SCRIPT = `<script>
-(function(){
-  window.addEventListener('message',function(e){
-    var d=e.data;
-    if(d&&d.type==='widget-theme')document.documentElement.classList.toggle('dark',!!d.dark)
-  });
-  window.sendPrompt=function(t){parent.postMessage({type:'widget-sendPrompt',text:String(t)},'*')};
-  window.openLink=function(u){parent.postMessage({type:'widget-openLink',url:String(u)},'*')};
-  document.addEventListener('click',function(e){
-    var a=e.target.closest('a[href]');
-    if(a&&/^https?:/.test(a.href)){e.preventDefault();openLink(a.href)}
-  });
-  new ResizeObserver(function(){var h=document.body.offsetHeight;if(h>0)parent.postMessage({type:'widget-resize',height:h},'*')}).observe(document.body);
-  document.documentElement.style.overflow='hidden';
-  document.body.style.overflow='hidden';
-  window.addEventListener('wheel',function(e){parent.postMessage({type:'widget-wheel',deltaX:e.deltaX,deltaY:e.deltaY,deltaMode:e.deltaMode},'*')},{passive:true});
-  parent.postMessage({type:'widget-ready'},'*');
-})();
-</script>`
-
-function buildSrcdoc(code: string, isSVG: boolean): string {
-  const safeCode = rewriteCdnUrls(code)
-  return `<!DOCTYPE html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
-<style>*{box-sizing:border-box}body{${bodyStyle(isSVG)}}${SVG_STYLES}</style>
-</head><body>${safeCode}${BRIDGE_SCRIPT}</body></html>`
-}
 
 function canvasToPlaceholder(_match: string, attrs: string): string {
   const id = attrs.match(/id\s*=\s*["']([^"']+)/i)?.[1]
@@ -113,7 +79,7 @@ function ShadowWidget({ html, isSVG }: { html: string; isSVG: boolean }) {
     shadow.appendChild(styleEl)
     const root = document.createElement('div')
     root.id = 'root'
-    root.style.cssText = bodyStyle(isSVG)
+    root.style.cssText = widgetBodyStyle(isSVG)
     shadow.appendChild(root)
     rootRef.current = root
   }, [isSVG])
@@ -239,7 +205,7 @@ function downloadWidget(srcdoc: string, title: string, e: { stopPropagation(): v
 export function WidgetBlock({ data, streaming }: WidgetBlockProps) {
   const { t } = useTranslation()
   const displayCode = useThrottledValue(data.widget_code, streaming ? THROTTLE_MS : 0)
-  const finalSrcdoc = useMemo(() => buildSrcdoc(data.widget_code, data.isSVG), [data.widget_code, data.isSVG])
+  const finalSrcdoc = useMemo(() => buildWidgetSrcdoc(data.widget_code, data.isSVG), [data.widget_code, data.isSVG])
   const [iframeReady, setIframeReady] = useState(false)
   const [mountIframe, setMountIframe] = useState(!streaming)
   const [saveOpen, setSaveOpen] = useState(false)

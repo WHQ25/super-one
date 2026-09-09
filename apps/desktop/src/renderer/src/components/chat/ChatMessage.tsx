@@ -31,7 +31,7 @@ import { useAppStore, selectEffectiveProjectRoot } from '@/stores/app'
 import { getAssistantCopyText } from './chat-message/getAssistantCopyText'
 import { resolveMarkdownFileLinks } from './chat-shared'
 import { RewindButton } from './RewindButton'
-import { CopyableMarkdown } from './CopyableMarkdown'
+import { CopyableMarkdown, InsightBlock } from './CopyableMarkdown'
 import { CollabTaskBubble } from './CollabTaskBubble'
 import { CopyButton, useCopyText } from './chat-message/copy-button'
 import { fileLinkComponents } from './chat-markdown-components'
@@ -91,6 +91,7 @@ function DesktopDocumentIcon({ name }: ClaudeDocumentPresenterProps) {
 
 const CLAUDE_TURN_PARTS: ClaudeTurnBodyPresenterParts = {
   Text: TextBlock,
+  Insight: InsightBlock,
   Document: DesktopDocumentIcon,
   Tool: ToolBlock,
   Reasoning: ReasoningBlock,

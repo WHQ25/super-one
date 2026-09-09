@@ -44,6 +44,12 @@ export interface ClaudeToolPresenterProps {
   toolLineDelta?: { added: number; removed: number }
 }
 
+export interface ClaudeInsightPresenterProps {
+  title: string
+  content: string
+  isStreaming: boolean
+}
+
 export interface ClaudeReasoningPresenterProps {
   text: string
   startedAt?: number
@@ -77,6 +83,11 @@ export interface ClaudeAppToolGroupPresenterProps extends ClaudeToolGroupPresent
 
 export interface ClaudeTurnBodyPresenterParts {
   Text: ComponentType<ClaudeTextPresenterProps>
+  /**
+   * Callout card for a pre-split `insight` block. Only remote surfaces receive one:
+   * desktop keeps the `★ … ───` markers inside `text` and splits at render time.
+   */
+  Insight: ComponentType<ClaudeInsightPresenterProps>
   Document: ComponentType<ClaudeDocumentPresenterProps>
   Tool: ComponentType<ClaudeToolPresenterProps>
   Reasoning: ComponentType<ClaudeReasoningPresenterProps>
@@ -150,7 +161,7 @@ export function ClaudeBlockPresenter({
   parts: ClaudeTurnBodyPresenterParts
   runtime: ClaudeTurnBodyPresenterRuntime
 }) {
-  const { Text, Document, Tool, Reasoning } = parts
+  const { Text, Insight, Document, Tool, Reasoning } = parts
   switch (block.type) {
     case 'text':
       return (
@@ -161,6 +172,8 @@ export function ClaudeBlockPresenter({
           afterThinking={prevBlockType === 'thinking'}
         />
       )
+    case 'insight':
+      return <Insight title={block.title} content={block.content} isStreaming={isStreaming} />
     case 'image':
       return (
         <div className="my-1 flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1 text-xs text-foreground">
@@ -206,7 +219,11 @@ export function ClaudeBlockPresenter({
           isFirst={prevBlockType === undefined}
         />
       )
+    // The phone's projection splits Bash and Todo results out of `tool_result`;
+    // all three fold into the row above rather than printing a block of their own.
     case 'tool_result':
+    case 'bash_result':
+    case 'todo_result':
       if (toolResultMap?.has(block.toolUseId) || !block.summary) return null
       return (
         <div className="my-0.5 overflow-x-auto whitespace-pre-wrap rounded bg-muted/50 px-2 py-1.5 font-mono text-xs leading-relaxed text-muted-foreground">

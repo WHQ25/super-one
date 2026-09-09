@@ -4,7 +4,9 @@ import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { requestNative } from './bridge'
 import { PortableMarkdown } from './PortableMarkdown'
 import { PortableNativeGallery } from './PortableNativeGallery'
+import { PortableWidgetBlock } from './PortableWidgetBlock'
 import { parsePortableNativeWidgetResult } from './portable-native-widget'
+import { parseWidgetResult } from '@superone/shared/generative-ui/types'
 import { PortableTurnContext } from './portable-turn-context'
 import {
   GenericToolRowPresenter,
@@ -111,7 +113,8 @@ function noRemoteOutputFile(): Promise<string> {
 
 /**
  * The desktop's terminal row, fed from the transport instead of the live output store.
- * `bash_result` carries the command echo and the truncated tail, which is exactly what
+ * `bash_result` carries only the truncated output; the presenter renders the command separately.
+ * This is what
  * the presenter falls back to when there is no streaming snapshot.
  */
 function PortableBashTool({
@@ -138,26 +141,32 @@ function PortableBashTool({
       return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
     } catch { return {} as Record<string, unknown> }
   }, [input])
-  const isDenied = Boolean(result?.startsWith('[denied] '))
   const command = typeof params.command === 'string' ? params.command : (toolSummary ?? '')
+  // Older remote histories include the transport's colored command echo.
+  // Match that exact format only: a program may legitimately print `$ command`.
+  const legacyEcho = `\x1b[32m$\x1b[0m ${command}`
+  const output = command && result?.startsWith(`${legacyEcho}\n`)
+    ? result.slice(legacyEcho.length + 1)
+    : command && result === legacyEcho ? '' : result
+  const isDenied = Boolean(output?.startsWith('[denied] '))
+  const isPendingPermission = Boolean(pendingPermission
+    && (pendingPermission.toolUseId ? pendingPermission.toolUseId === toolUseId : pendingPermission.toolName === 'Bash'))
   return (
     <BashTerminalPresenter
       toolUseId={toolUseId ?? ''}
       command={command}
       description={typeof params.description === 'string' ? params.description : undefined}
-      fallbackResult={isDenied ? undefined : result}
+      fallbackResult={isDenied ? undefined : output}
+      bashOutput={status === 'streaming' && !isDenied && !isPendingPermission
+        ? { content: output ?? '', finished: false }
+        : undefined}
       isStreaming={status === 'streaming'}
       isDenied={isDenied}
       isError={isError}
       timeoutMs={typeof params.timeout === 'number' ? params.timeout : undefined}
       runInBackground={params.run_in_background === true || params.background === true}
       allowExpand={allowExpand}
-      isPendingPermission={Boolean(
-        pendingPermission
-        && (pendingPermission.toolUseId
-          ? pendingPermission.toolUseId === toolUseId
-          : pendingPermission.toolName === 'Bash'),
-      )}
+      isPendingPermission={isPendingPermission}
       readOutputFile={noRemoteOutputFile}
       readOutputMore={noRemoteOutputFile}
       renderAnsiText={(text) => <AnsiText text={text} />}
@@ -250,14 +259,25 @@ export function PortableToolRow({ allowExpand = true, ...props }: PortableToolRo
     () => (props.toolName === 'mcp__superone__miniapp_call' ? parseMiniAppIdentity(props.input) : null),
     [props.toolName, props.input],
   )
+  const isWidgetTool = props.toolName === 'mcp__superone__widget_show'
   const nativeWidget = useMemo(
-    () => (props.toolName === 'mcp__superone__widget_show'
-      ? parsePortableNativeWidgetResult(props.result)
-      : null),
-    [props.toolName, props.result],
+    () => (isWidgetTool ? parsePortableNativeWidgetResult(props.result) : null),
+    [isWidgetTool, props.result],
+  )
+  // A code widget only ever arrives whole: `widget_code` is kept intact by
+  // `shouldKeepRemoteToolInput`, and the settled result is exempt from the 200-char
+  // tool-result truncation. So the phone parses the same result the desktop does —
+  // there is no partial-input path to mirror, and nothing to render until it lands.
+  const codeWidget = useMemo(
+    () => (isWidgetTool && !nativeWidget && props.result ? parseWidgetResult(props.result) : null),
+    [isWidgetTool, nativeWidget, props.result],
   )
   if (nativeWidget && props.status !== 'streaming' && !props.isError) {
     return <PortableNativeGallery payload={nativeWidget} toolUseId={props.toolUseId} />
+  }
+  // Denied and failed calls keep the ordinary row: it is the only one that says why.
+  if (codeWidget && props.status !== 'streaming' && !props.isError) {
+    return <PortableWidgetBlock data={codeWidget} />
   }
   // A projection that lost the appId cannot name the call, so it falls through to the
   // shared row rather than rendering a card with no identity.

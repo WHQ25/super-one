@@ -5,6 +5,22 @@ import { cn } from '@superone/ui/lib/utils'
 
 export type ToolRowTone = 'default' | 'error' | 'warning' | 'denied'
 
+/** Failure text under a tool row: the tool's own words, not a rendered stack. */
+export function ToolErrorText({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <div className={cn('whitespace-pre-wrap break-words text-xs text-warning/90', className)}>
+      {children}
+    </div>
+  )
+}
+
+/** The tone every tool row derives the same way: denied beats errored beats fine. */
+export function toolRowTone(isDenied?: boolean, isError?: boolean): ToolRowTone {
+  if (isDenied) return 'denied'
+  if (isError) return 'error'
+  return 'default'
+}
+
 export function toolNameToneClass(tone: ToolRowTone): string {
   if (tone === 'denied') return 'text-error'
   if (tone === 'error' || tone === 'warning') return 'text-warning'

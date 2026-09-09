@@ -1,5 +1,6 @@
 @import "@superone/ui/styles/mention-chip.css";
 @import "@superone/ui/styles/base.css";
+@import "@superone/ui/styles/animations.css";
 @import "@superone/ui/styles/theme.css";
 @import "@superone/ui/styles/chat-md.css";
 @import "katex/dist/katex.min.css";

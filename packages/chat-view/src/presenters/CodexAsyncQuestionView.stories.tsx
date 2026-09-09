@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useState } from 'react'
 import { CodexAsyncQuestionView, type CodexAsyncQuestionViewProps } from './CodexAsyncQuestionView'
-import { formatCodexAsyncQuestionReply } from './CodexAsyncQuestionBlock'
+import { formatCodexAsyncQuestionReply } from '@superone/shared/codex-async-question'
 
 /** Local interaction only: Storybook never steers a real agent. */
 function InteractiveQuestion(props: CodexAsyncQuestionViewProps) {
@@ -52,7 +52,7 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 export const Choices: Story = {
-  name: 'Choices · submit left / equal height',
+  name: 'Choices · input left / submit right',
 }
 
 export const FreeText: Story = {

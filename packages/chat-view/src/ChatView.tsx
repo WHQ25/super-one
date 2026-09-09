@@ -1,3 +1,4 @@
+import { AsyncQuestionMessagesContext } from './PortableAsyncQuestion'
 import {
   Component,
   useCallback,
@@ -30,7 +31,6 @@ import { isRealtimeVoiceMessage } from '@superone/shared/realtime-transcript'
 import { extractTurnOutline } from '@superone/shared/turn-outline'
 import { ChatScrollIndicator } from './ChatScrollIndicator'
 import { captureScrollAnchor, compactMessageIndices, compactVisibleStart, jumpChatWindow, visibleChatWindow, type ScrollAnchor } from './chat-navigation'
-import { useSimulatedStream } from './use-simulated-stream'
 import type { HostInbound, ReductionProjection, SessionProjection } from './protocol'
 
 type PendingPermission = ReductionProjection['pendingPermission']
@@ -171,10 +171,6 @@ function Todos({ todos }: { todos: TodoItem[] }) {
 
 export function ChatView() {
   const [state, setState] = useState<ViewState>(EMPTY_STATE)
-  const {
-    messages: displayedMessages, revealingIds, revealingReasoningIds,
-    reset: resetStream, update: updateStream, prepend: prependStream,
-  } = useSimulatedStream()
   const stateRef = useRef(state)
   const atBottomRef = useRef(true)
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -276,7 +272,6 @@ export function ChatView() {
         prependSnapshotRef.current = null
         loadingPreviousRef.current = false
         navigatingUntilRef.current = 0
-        if (message.messages) resetStream(message.messages)
         scrollToBottomRef.current = true
         atBottomRef.current = true
         setState((previous) => {
@@ -289,13 +284,11 @@ export function ChatView() {
         })
         return
       case 'applyReductionPatch':
-        if (message.messages) updateStream(message.messages)
         if (atBottomRef.current && message.messages) scrollToBottomRef.current = true
         setState((previous) => applyProjection(previous, message, atBottomRef.current))
         return
       case 'prependHistory':
         if (!message.messages?.length) return
-        prependStream(message.messages)
         setState((previous) => {
           const merged = mergeHistory(message.messages ?? [], previous.messages)
           return {
@@ -309,7 +302,6 @@ export function ChatView() {
         })
         return
       case 'reset':
-        resetStream()
         atBottomRef.current = true
         prependSnapshotRef.current = null
         scrollToBottomRef.current = false
@@ -363,7 +355,7 @@ export function ChatView() {
       case 'nativeActionResult':
         return
     }
-  }, [resetStream, updateStream, prependStream, prepareNavigation, jumpToMessage])
+  }, [prepareNavigation, jumpToMessage])
 
   useEffect(() => {
     const removeBridge = installHostBridge(handleInbound)
@@ -397,7 +389,7 @@ export function ChatView() {
       page.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'auto' })
       scrollToBottomRef.current = false
     }
-  }, [displayedMessages, state.range, scheduleViewState])
+  }, [state.messages, state.range, scheduleViewState])
 
   useLayoutEffect(() => {
     if (!state.scrollTarget) return
@@ -433,7 +425,7 @@ export function ChatView() {
   const hasCompact = compactIndices.length > 0
   const compactExpanded = state.expandLevel >= compactIndices.length
   const compactSplit = outline.filter((entry) => entry.index < (compactIndices.at(-1) ?? 0)).length
-  const visible = displayedMessages.slice(Math.max(visibleStart, state.range.start), state.range.end)
+  const visible = state.messages.slice(Math.max(visibleStart, state.range.start), state.range.end)
   // Compact / turn-meta markers persist as assistant rows but render as
   // indicators, so the live turn is the last assistant message that is neither.
   const lastAssistantId = findLastAssistantMessageId(state.messages)
@@ -467,6 +459,7 @@ export function ChatView() {
           </button>
         )}
       </div>
+      <AsyncQuestionMessagesContext.Provider value={state.messages}>
       {visible.length === 0
         ? <p className="py-12 text-center text-sm text-muted-foreground">Waiting for session…</p>
         : visible.map((message) => {
@@ -485,8 +478,6 @@ export function ChatView() {
             <PortableMessage
               key={message.id}
               message={message}
-              isRevealing={revealingIds.has(message.id)}
-              isReasoningRevealing={revealingReasoningIds.has(message.id)}
               scheme={state.scheme}
               pendingPermission={state.pendingPermission ?? null}
               mentionArtwork={state.mentionArtwork}
@@ -498,6 +489,7 @@ export function ChatView() {
             />
           )
         })}
+      </AsyncQuestionMessagesContext.Provider>
       {state.range.end < state.messages.length && <button type="button" onClick={loadNext}
         className="mx-auto flex items-center gap-1 rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
         <ChevronDown className="size-3" /> Load later

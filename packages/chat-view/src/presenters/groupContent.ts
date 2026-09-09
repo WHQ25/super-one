@@ -1,4 +1,5 @@
 import type { ContentBlock } from '@superone/shared/agent-types'
+import { isToolResultBlock } from '@superone/shared/content-delta'
 
 /** Host-specific classification needed by the otherwise pure grouping pass. */
 export interface GroupContentPorts {
@@ -56,14 +57,18 @@ export function groupContentPresenter(
   const taskToolUseIds = new Set<string>()
 
   for (const block of content) {
+    // `isToolResultBlock`, not `type === 'tool_result'`: the projection sent to
+    // the phone rewrites Bash and Todo outcomes into `bash_result` / `todo_result`.
+    // Indexing only the desktop shape left every projected Bash row resultless,
+    // shimmering "Running…" with its output rendered nowhere.
     if (block.type === 'tool_use') {
       toolNameMap.set(block.toolUseId, block.toolName)
       if (ports.isSubagentToolName(block.toolName)) taskToolUseIds.add(block.toolUseId)
-    } else if (block.type === 'tool_result') {
+    } else if (isToolResultBlock(block)) {
       if (block.summary) toolResultMap.set(block.toolUseId, block.summary)
-      if (block.isTimedOut) timedOutToolIds.add(block.toolUseId)
-      if (block.isError) errorToolIds.add(block.toolUseId)
-      if (block.outputPath) outputPathMap.set(block.toolUseId, block.outputPath)
+      if ('isTimedOut' in block && block.isTimedOut) timedOutToolIds.add(block.toolUseId)
+      if ('isError' in block && block.isError) errorToolIds.add(block.toolUseId)
+      if ('outputPath' in block && block.outputPath) outputPathMap.set(block.toolUseId, block.outputPath)
     }
   }
 
@@ -134,7 +139,7 @@ export function groupContentPresenter(
     // Background agents can emit their result before later child blocks, so keep
     // the collector open after attaching the result.
     if (
-      block.type === 'tool_result'
+      isToolResultBlock(block)
       && taskToolUseIds.has(block.toolUseId)
       && activeSubagents.has(block.toolUseId)
     ) {
@@ -157,7 +162,7 @@ export function groupContentPresenter(
       continue
     }
 
-    if (block.type === 'tool_result' && activeWorkflows.has(block.toolUseId)) {
+    if (isToolResultBlock(block) && activeWorkflows.has(block.toolUseId)) {
       activeWorkflows.get(block.toolUseId)!.resultBlock = block
       activeWorkflows.delete(block.toolUseId)
       continue
@@ -191,7 +196,7 @@ export function groupContentPresenter(
       appGroup.push(block)
       continue
     }
-    if (block.type === 'tool_result' && appToolIdToAppId.has(block.toolUseId)) {
+    if (isToolResultBlock(block) && appToolIdToAppId.has(block.toolUseId)) {
       appGroup.push(block)
       continue
     }
@@ -201,14 +206,14 @@ export function groupContentPresenter(
       if (group.length === 0) groupStart = index
       group.push(block)
     } else if (
-      block.type === 'tool_result'
+      isToolResultBlock(block)
       && COLLAPSIBLE_TOOLS.has(toolNameMap.get(block.toolUseId) ?? '')
     ) {
       group.push(block)
     } else if (
       (block.type === 'tool_use'
         && ports.isHiddenToolBlock(block.toolName, toolResultMap.get(block.toolUseId)))
-      || (block.type === 'tool_result'
+      || (isToolResultBlock(block)
         && ports.isHiddenToolBlock(
           toolNameMap.get(block.toolUseId) ?? '',
           toolResultMap.get(block.toolUseId),

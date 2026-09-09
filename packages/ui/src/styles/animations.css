@@ -1,0 +1,22 @@
+/* Animations shared by the desktop renderer and the chat-view WebView.
+
+   These live here rather than in the desktop's `index.css` because the chat
+   presenters in `@superone/chat-view` are rendered by BOTH surfaces: the desktop
+   bubble and the phone's WebView. A keyframe defined only on the desktop side
+   makes the class a no-op on the phone — the markup carries it, nothing moves. */
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* The in-flight tool verb ("Running…", "Taking snapshot…"). Paints the text with
+   a travelling gradient, so it needs `currentColor` from the row it sits in. */
+.animate-shimmer {
+  background: linear-gradient(90deg, currentColor 25%, oklch(0.7 0 0 / 0.6) 50%, currentColor 75%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 2s ease-in-out infinite;
+}

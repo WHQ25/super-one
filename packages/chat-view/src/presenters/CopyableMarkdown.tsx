@@ -1,4 +1,4 @@
-import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 import {
   Streamdown,
@@ -10,7 +10,6 @@ import {
 } from 'streamdown'
 import type { PluggableList } from 'unified'
 import { splitByInsightBlocks } from '@superone/shared/insight-markers'
-import { TextRevealContext } from './text-reveal-context'
 
 export interface CopyableMarkdownRuntime {
   components: Components
@@ -51,7 +50,7 @@ function useMathPluginForText(text: string, runtime: CopyableMarkdownRuntime): M
 
 const STREAMING_THROTTLE_MS = 33
 
-function useThrottledStreamingText(text: string, isStreaming: boolean, enabled = true): string {
+function useThrottledStreamingText(text: string, isStreaming: boolean): string {
   const [throttled, setThrottled] = useState(text)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastCommitRef = useRef(0)
@@ -59,12 +58,12 @@ function useThrottledStreamingText(text: string, isStreaming: boolean, enabled =
   latestTextRef.current = text
 
   useEffect(() => {
-    if (!isStreaming || !enabled) {
+    if (!isStreaming) {
       if (timerRef.current != null) {
         clearTimeout(timerRef.current)
         timerRef.current = null
       }
-      if (enabled) setThrottled(text)
+      setThrottled(text)
       return
     }
     const elapsed = performance.now() - lastCommitRef.current
@@ -78,13 +77,13 @@ function useThrottledStreamingText(text: string, isStreaming: boolean, enabled =
         setThrottled(latestTextRef.current)
       }, STREAMING_THROTTLE_MS - elapsed)
     }
-  }, [text, isStreaming, enabled])
+  }, [text, isStreaming])
 
   useEffect(() => () => {
     if (timerRef.current != null) clearTimeout(timerRef.current)
   }, [])
 
-  return enabled ? throttled : text
+  return isStreaming ? throttled : text
 }
 export function splitByCodeFences(text: string): { content: string; isCode: boolean }[] {
   const segments: { content: string; isCode: boolean }[] = []
@@ -154,7 +153,7 @@ export function normalizeCodeFences(text: string): string {
   }).join('\n')
 }
 
-const InsightBlock = memo(function InsightBlock({ title, content, isStreaming, components, runtime }: { title: string; content: string; isStreaming: boolean; components?: Components; runtime: CopyableMarkdownRuntime }) {
+export const InsightBlockPresenter = memo(function InsightBlock({ title, content, isStreaming, components, runtime }: { title: string; content: string; isStreaming: boolean; components?: Components; runtime: CopyableMarkdownRuntime }) {
   const [copied, setCopied] = useState(false)
   const normalized = useMemo(() => normalizeCodeFences(content), [content])
   const merged = useMemo(
@@ -235,10 +234,7 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ text, isStreaming, com
 })
 
 export const CopyableMarkdownPresenter = memo(function CopyableMarkdownPresenter({ text, isStreaming, components, runtime }: CopyableMarkdownPresenterProps) {
-  const { active: isRevealing, paced } = useContext(TextRevealContext)
-  isStreaming ||= isRevealing
-  // Mobile's display controller already paces text, including its final frame.
-  const renderText = useThrottledStreamingText(text, isStreaming, !paced)
+  const renderText = useThrottledStreamingText(text, isStreaming)
   const segments = useMemo(() => splitByInsightBlocks(renderText, !isStreaming), [renderText, isStreaming])
   const hasInsight = segments.some((s) => s.type === 'insight')
 
@@ -254,7 +250,7 @@ export const CopyableMarkdownPresenter = memo(function CopyableMarkdownPresenter
           return <MarkdownRenderer key={i} text={seg.content} isStreaming={isStreaming} components={components} runtime={runtime} />
         }
         return (
-          <InsightBlock key={i} title={seg.title} content={seg.content} isStreaming={isStreaming} components={components} runtime={runtime} />
+          <InsightBlockPresenter key={i} title={seg.title} content={seg.content} isStreaming={isStreaming} components={components} runtime={runtime} />
         )
       })}
     </>

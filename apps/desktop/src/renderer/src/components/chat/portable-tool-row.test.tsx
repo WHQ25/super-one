@@ -11,6 +11,21 @@ import { FileChip } from './FileChip'
  * target but no content, with the edited body arriving as precomputed `toolDiff` instead.
  */
 describe('portable tool row', () => {
+  it('keeps a command running as partial output arrives and finishes only on completion', () => {
+    const row = (result: string, status: 'streaming' | 'complete') => <PortableToolRow
+      toolName="Bash" toolUseId="live-command" input='{"command":"build"}' result={result} status={status} />
+    const view = render(row('first line', 'streaming'))
+    expect(screen.getByText('Running…')).toBeInTheDocument()
+    fireEvent.click(view.container.querySelector('.tool-node > div')!)
+    expect(screen.getByText(/first line/)).toBeInTheDocument()
+    view.rerender(row('first line\nsecond line', 'streaming'))
+    expect(screen.getByText('Running…')).toBeInTheDocument()
+    expect(screen.getByText(/second line/)).toBeInTheDocument()
+    view.rerender(row('first line\nsecond line', 'complete'))
+    expect(screen.queryByText('Running…')).not.toBeInTheDocument()
+    expect(screen.getByText(/second line/)).toBeInTheDocument()
+  })
+
   it('names a Read by its file even though the phone gets only the projected path', () => {
     render(
       <PortableToolRow
@@ -74,8 +89,8 @@ describe('portable tool row', () => {
         toolName="Bash"
         toolUseId="bash-1"
         input={JSON.stringify({ command: 'bun run typecheck' })}
-        // `bash_result` arrives with the command echo already prefixed by the desktop.
-        result={'[32m$[0m bun run typecheck\nExited with code 0'}
+        // The transport sends output only; the presenter owns the command line.
+        result={'Exited with code 0'}
         status="complete"
       />,
     )
@@ -85,6 +100,7 @@ describe('portable tool row', () => {
     // Terminal chrome, not the generic row's plain <pre> result dump.
     expect(container.querySelector('.bg-terminal-bg')).not.toBeNull()
     expect(screen.getByText(/Exited with code 0/)).toBeInTheDocument()
+    expect(container.textContent?.match(/bun run typecheck/g)).toHaveLength(1)
   })
 
   it('names a mini-app call by its app and tool', () => {
@@ -119,3 +135,13 @@ describe('portable tool row', () => {
     expect(container.textContent).toContain('miniapp call')
   })
 })
+
+it.each(['$ ls\nactual output', '\x1b[32m$\x1b[0m another-command\nactual output'])(
+  'preserves output that is not the exact legacy echo: %j', (result) => {
+    const { container } = render(<PortableToolRow toolName="Bash" toolUseId="preserve" input='{"command":"ls"}' result={result} status="complete" />)
+    fireEvent.click(container.querySelector('.tool-node > div')!)
+    for (const line of result.replace(/\x1b\[[0-9;]*m/g, '').split('\n')) {
+      expect(container.textContent).toContain(line)
+    }
+  },
+)

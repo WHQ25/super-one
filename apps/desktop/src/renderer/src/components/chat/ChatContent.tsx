@@ -1,3 +1,4 @@
+import { isCodexAsyncAnswer } from '@superone/shared/codex-async-question'
 import { useRef, useState, useEffect, useLayoutEffect, useMemo, useCallback, lazy, Suspense, memo } from 'react'
 import { useChatStore, useActiveSession, useIsRemoteLocked, useSessionScope } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
@@ -257,9 +258,9 @@ function ChatTranscript({
   // voice view hides.
   const showsBackingThread = import.meta.env.DEV && hasRealtimeTimeline && realtime.view === 'thread'
   const displayMessages = useMemo(
-    () => queueProvider === 'codex' && hasRealtimeTimeline
+    () => (queueProvider === 'codex' && hasRealtimeTimeline
       ? mergeCodexThreadMessages(messages, realtime, { keepDelegationPrompts: showsBackingThread })
-      : messages,
+      : messages).filter((message) => !isCodexAsyncAnswer(message)),
     [hasRealtimeTimeline, messages, queueProvider, realtime, showsBackingThread],
   )
   const displayLastAssistantMessageId = findLastAssistantMessageId(displayMessages)

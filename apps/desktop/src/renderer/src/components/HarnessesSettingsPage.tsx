@@ -161,6 +161,16 @@ const CATALOG_HARNESS_META = {
   },
 } satisfies Record<NodeHarnessId, CatalogHarnessMeta>
 
+/**
+ * Catalog list key for a nested-config `settingsProvider`.
+ * Grok is `acp` in the store and `acp-grok` in the list; every other
+ * first-party harness uses the same id in both places.
+ */
+export function listKeyForSettingsProvider(provider: SettingsProvider): string {
+  if (provider === 'acp') return 'acp-grok'
+  return provider
+}
+
 const CONFIG_TAB_META: Record<
   HarnessConfigSection,
   { labelKey: string; icon: ComponentType<{ className?: string }> }
@@ -320,7 +330,10 @@ export function HarnessesSettingsPage() {
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [progress, setProgress] = useState<Record<string, ProgressState>>({})
-  const [selectedKey, setSelectedKey] = useState<string | null>('claude')
+  const [selectedKey, setSelectedKey] = useState<string | null>(() => {
+    const { harnessListFocusKey: focusKey, settingsProvider: provider } = useAppStore.getState()
+    return focusKey ?? listKeyForSettingsProvider(provider)
+  })
   const [enabledExperimentalAgents, setEnabledExperimentalAgents] = useState<string[]>([])
   const [legacyExperimentalAll, setLegacyExperimentalAll] = useState(false)
   const [harnessOrder, setHarnessOrder] = useState<string[]>([])
@@ -404,13 +417,12 @@ export function HarnessesSettingsPage() {
   }, [refreshCatalog])
 
   // Deep links (MCP popup / sandbox → preferences) land with a config section;
-  // keep the list selection aligned with settingsProvider.
+  // keep the list selection aligned with settingsProvider. Grok (`acp`) and
+  // OpenCode must not fall through to Claude — that snapped their detail pane
+  // back to the Claude Code page on every click.
   useEffect(() => {
     if (!harnessConfigSection) return
-    if (settingsProvider === 'codex') setSelectedKey('codex')
-    else if (settingsProvider === 'cursor') setSelectedKey('cursor')
-    else if (settingsProvider === 'dsh') setSelectedKey('dsh')
-    else setSelectedKey('claude')
+    setSelectedKey(listKeyForSettingsProvider(settingsProvider))
   }, [harnessConfigSection, settingsProvider])
 
   // Chat "Re-enable" (and similar) open this page with a specific row focused.
@@ -671,6 +683,7 @@ export function HarnessesSettingsPage() {
           // Stable gutter: User↔Project height changes must not toggle the scrollbar and jank width.
           <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
             <HarnessDetail
+              key={selected.key}
               item={selected}
               catalog={selected.kind === 'catalog' ? catalogById.get(selected.catalogId) : undefined}
               enabled={isItemEnabled(selected)}
@@ -958,7 +971,9 @@ function HarnessDetail({
                 {section === 'account' && item.provider === 'codex' && (
                   <CodexAuthSettings onAuthChanged={onRefresh} />
                 )}
-                {section === 'preferences' && <PreferencesPage />}
+                {section === 'preferences' && (
+                  <PreferencesPage provider={item.configProvider} />
+                )}
                 {section === 'agents' && <AgentsPage />}
                 {section === 'skills' && <SkillsPage />}
                 {section === 'mcp' && <McpPage />}

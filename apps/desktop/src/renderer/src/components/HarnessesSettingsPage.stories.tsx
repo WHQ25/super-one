@@ -122,10 +122,10 @@ type Scenario = {
   seedProgressStepMs?: number
   /**
    * Align list selection via app-store deep-link fields
-   * (claude / codex / cursor — HarnessesSettingsPage listens to
-   * settingsProvider + harnessConfigSection).
+   * (`settingsProvider` + `harnessConfigSection`). Grok is `acp` in the
+   * store and `acp-grok` in the list.
    */
-  select?: 'claude' | 'codex' | 'cursor'
+  select?: 'claude' | 'codex' | 'cursor' | 'dsh' | 'opencode' | 'acp'
 }
 
 const listeners = new Set<ProgressListener>()
@@ -356,7 +356,7 @@ function StoryFrame({
     const select = scenario.select ?? 'claude'
     useAppStore.setState({
       settingsProvider: select,
-      // Non-null section triggers list selection sync for claude/codex.
+      // Non-null section triggers list selection sync for every catalog harness.
       harnessConfigSection: 'preferences',
     })
     return () => {
@@ -559,6 +559,54 @@ export const ReadyManaged: Story = {
               requiresAuth: true,
               runtimeVersion: '0.9.0',
               command: 'grok',
+            },
+          }),
+        }}
+      >
+        <Story />
+      </StoryFrame>
+    ),
+  ],
+}
+
+export const OpenCodePreferences: Story = {
+  name: 'OpenCode (session defaults only)',
+  decorators: [
+    (Story) => (
+      <StoryFrame
+        scenario={{
+          select: 'opencode',
+          catalog: baseCatalog({
+            opencode: {
+              enabled: true,
+              state: 'ready',
+              runtimeSource: 'managed',
+              runtimeVersion: '1.2.0',
+            },
+          }),
+        }}
+      >
+        <Story />
+      </StoryFrame>
+    ),
+  ],
+}
+
+export const GrokPreferences: Story = {
+  name: 'Grok (session defaults only)',
+  decorators: [
+    (Story) => (
+      <StoryFrame
+        scenario={{
+          select: 'acp',
+          catalog: baseCatalog({
+            'acp-grok': {
+              enabled: true,
+              state: 'ready',
+              runtimeSource: 'system',
+              runtimeVersion: '0.9.0',
+              command: 'grok',
+              requiresAuth: true,
             },
           }),
         }}

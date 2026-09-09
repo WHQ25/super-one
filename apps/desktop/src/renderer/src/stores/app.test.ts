@@ -854,6 +854,26 @@ describe('settings harness config navigation', () => {
     expect(useAppStore.getState().settingsProvider).toBe('dsh')
     expect(useAppStore.getState().harnessListFocusKey).toBe('dsh')
   })
+
+  it('openHarnessSettings aligns settingsProvider for OpenCode', () => {
+    seedSettings({ settingsProvider: 'claude' })
+
+    useAppStore.getState().openHarnessSettings('opencode')
+
+    expect(useAppStore.getState().settingsTab).toBe('harnesses')
+    expect(useAppStore.getState().settingsProvider).toBe('opencode')
+    expect(useAppStore.getState().harnessListFocusKey).toBe('opencode')
+  })
+
+  it('openHarnessSettings aligns settingsProvider for Grok', () => {
+    seedSettings({ settingsProvider: 'claude' })
+
+    useAppStore.getState().openHarnessSettings('acp-grok')
+
+    expect(useAppStore.getState().settingsTab).toBe('harnesses')
+    expect(useAppStore.getState().settingsProvider).toBe('acp')
+    expect(useAppStore.getState().harnessListFocusKey).toBe('acp-grok')
+  })
 })
 
 describe('update state catch-up', () => {

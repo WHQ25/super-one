@@ -23,7 +23,7 @@ import {
   EffortList,
 } from '@/components/chat/ModelSelectorLists'
 import { checkAutoModePlanEligibility } from '@/lib/auto-mode-eligibility'
-import type { EffortLevel, PermissionMode, QuestionPreviewFormat, SandboxMode } from '@superone/shared/agent-types'
+import type { EffortLevel, PermissionMode, QuestionPreviewFormat, SandboxMode, SettingsProvider } from '@superone/shared/agent-types'
 import { HarnessPreferencesPage, SessionDefaultsSection } from '@/components/preferences/SessionDefaultsSection'
 
 function ClaudePreferencesPage() {
@@ -324,8 +324,9 @@ function ClaudePreferencesPage() {
   )
 }
 
-export function PreferencesPage() {
-  const settingsProvider = useAppStore((s) => s.settingsProvider)
+export function PreferencesPage({ provider }: { provider?: SettingsProvider } = {}) {
+  const storeProvider = useAppStore((s) => s.settingsProvider)
+  const settingsProvider = provider ?? storeProvider
 
   if (settingsProvider === 'codex') return <CodexPreferencesPage />
   if (settingsProvider === 'claude') return <ClaudePreferencesPage />

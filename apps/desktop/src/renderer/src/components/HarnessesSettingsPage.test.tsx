@@ -7,11 +7,16 @@ import {
   NODE_HARNESS_IDS,
   type NodeHarnessId,
 } from '@superone/shared/environment/harness-installation'
-import { HarnessesSettingsPage } from './HarnessesSettingsPage'
+import { HarnessesSettingsPage, listKeyForSettingsProvider } from './HarnessesSettingsPage'
 
 const hoisted = vi.hoisted(() => ({
   enableHarness: vi.fn(),
   refreshHarnessCatalog: vi.fn(),
+  appState: {
+    settingsProvider: 'claude' as string,
+    harnessConfigSection: null as string | null,
+    harnessListFocusKey: null as string | null,
+  },
 }))
 
 const originalApp = window.app
@@ -30,18 +35,30 @@ vi.mock('@/stores/chat', () => ({
 
 vi.mock('@/stores/app', () => {
   const state = {
-    settingsProvider: 'claude',
-    setSettingsProvider: vi.fn(),
-    harnessConfigSection: null,
-    setHarnessConfigSection: vi.fn(),
-    harnessListFocusKey: null,
+    get settingsProvider() {
+      return hoisted.appState.settingsProvider
+    },
+    setSettingsProvider: (provider: string) => {
+      hoisted.appState.settingsProvider = provider
+    },
+    get harnessConfigSection() {
+      return hoisted.appState.harnessConfigSection
+    },
+    setHarnessConfigSection: (section: string | null) => {
+      hoisted.appState.harnessConfigSection = section
+    },
+    get harnessListFocusKey() {
+      return hoisted.appState.harnessListFocusKey
+    },
     refreshHarnessCatalog: hoisted.refreshHarnessCatalog,
   }
   const useAppStore = Object.assign(
     (selector: (value: typeof state) => unknown) => selector(state),
     {
       getState: () => state,
-      setState: vi.fn(),
+      setState: (patch: Partial<typeof hoisted.appState>) => {
+        Object.assign(hoisted.appState, patch)
+      },
     },
   )
   return { useAppStore }
@@ -52,9 +69,27 @@ vi.mock('./SkillsPage', () => ({ SkillsPage: () => null }))
 vi.mock('./McpPage', () => ({ McpPage: () => null }))
 vi.mock('./HooksPage', () => ({ HooksPage: () => null }))
 vi.mock('./PluginsPage', () => ({ PluginsPage: () => null }))
-vi.mock('./PreferencesPage', () => ({ PreferencesPage: () => null }))
+vi.mock('./PreferencesPage', () => ({
+  PreferencesPage: ({ provider }: { provider?: string }) => (
+    <div>preferences-for-{provider ?? 'store'}</div>
+  ),
+}))
 vi.mock('./CursorAuthSettings', () => ({ CursorAuthSettings: () => null }))
 vi.mock('./CodexAuthSettings', () => ({ CodexAuthSettings: () => <div>Codex account settings</div> }))
+
+describe('listKeyForSettingsProvider', () => {
+  it('maps acp to the Grok catalog row', () => {
+    expect(listKeyForSettingsProvider('acp')).toBe('acp-grok')
+  })
+
+  it('keeps first-party catalog ids unchanged', () => {
+    expect(listKeyForSettingsProvider('claude')).toBe('claude')
+    expect(listKeyForSettingsProvider('codex')).toBe('codex')
+    expect(listKeyForSettingsProvider('opencode')).toBe('opencode')
+    expect(listKeyForSettingsProvider('cursor')).toBe('cursor')
+    expect(listKeyForSettingsProvider('dsh')).toBe('dsh')
+  })
+})
 
 const HARNESS_LABELS = {
   claude: /Claude Code/i,
@@ -68,6 +103,9 @@ const HARNESS_LABELS = {
 describe('first-party harness settings entries', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    hoisted.appState.settingsProvider = 'claude'
+    hoisted.appState.harnessConfigSection = null
+    hoisted.appState.harnessListFocusKey = null
     hoisted.enableHarness.mockResolvedValue({ ok: true })
     hoisted.refreshHarnessCatalog.mockResolvedValue(undefined)
 
@@ -140,4 +178,25 @@ describe('first-party harness settings entries', () => {
     expect(screen.getByRole('tab', { name: /Account|账号/i })).toHaveAttribute('data-state', 'active')
     expect(screen.getByText('Codex account settings')).toBeInTheDocument()
   })
+
+  it.each(['opencode', 'acp-grok'] as const)(
+    'keeps %s selected instead of snapping back to Claude Code',
+    async (harnessId) => {
+      const user = userEvent.setup()
+      render(<HarnessesSettingsPage />)
+
+      await user.click(await screen.findByRole('button', { name: HARNESS_LABELS[harnessId] }))
+
+      await waitFor(() => {
+        expect(screen.queryByRole('tab', { name: /Subagents/i })).not.toBeInTheDocument()
+      })
+      expect(screen.getByRole('tab', { name: /Preferences/i })).toBeInTheDocument()
+      expect(screen.getAllByRole('tab')).toHaveLength(1)
+      expect(
+        screen.getByText(
+          harnessId === 'acp-grok' ? 'preferences-for-acp' : 'preferences-for-opencode',
+        ),
+      ).toBeInTheDocument()
+    },
+  )
 })

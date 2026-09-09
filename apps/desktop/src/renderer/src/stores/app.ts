@@ -1118,7 +1118,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       view: 'settings',
     }
     // Nested config panes key off settingsProvider — keep them aligned.
-    if (listKey === 'claude' || listKey === 'codex' || listKey === 'cursor' || listKey === 'dsh') {
+    if (listKey === 'acp-grok') {
+      patch.settingsProvider = 'acp'
+    } else if (
+      listKey === 'claude'
+      || listKey === 'codex'
+      || listKey === 'cursor'
+      || listKey === 'dsh'
+      || listKey === 'opencode'
+    ) {
       patch.settingsProvider = listKey
     }
     set(patch)

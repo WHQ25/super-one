@@ -23,6 +23,7 @@ import { SlashDecoration } from './slash-decoration'
 import { SessionMentionDecoration, syncSessionMentionDismissed } from './session-mention-decoration'
 import { DebugMentionDecoration, syncDebugMentionHint } from './debug-mention-decoration'
 import { PromptSuggestion } from './prompt-suggestion'
+import { PromptSuggestionChips } from './PromptSuggestionChips'
 import { addBrowserImageToChat, extractDraggedImageUrl } from '../browser/browser-image'
 import type { MentionNodeAttrs } from './mention-node'
 import type { SlashCommandInfo, ImageAttachment } from '@superone/shared/agent-types'
@@ -1772,7 +1773,15 @@ export function ChatInput() {
       }
     }, [sessionProjectOptions, editor])
 
-    const ghostSuggestion = promptSuggestions.length > 1 ? null : promptSuggestion
+    // The first suggestion always takes the ghost slot (Tab accepts it), matching the
+    // single-suggestion harnesses. Only the *alternatives* a multi-option harness offers
+    // — currently just xAI/Grok, which emits `suggestions` — get a chip, so no string is
+    // ever shown on both surfaces at once.
+    const ghostSuggestion = promptSuggestion
+    const alternateSuggestions = useMemo(
+      () => promptSuggestions.filter((s) => s !== promptSuggestion),
+      [promptSuggestions, promptSuggestion],
+    )
 
     useEffect(() => {
       if (editor && !editor.isDestroyed) {
@@ -1823,19 +1832,8 @@ export function ChatInput() {
     return (
       <div className="relative">
         {(activeProviderForResources === 'claude' || activeProviderForResources === 'codex') && <ChatInputDirsHint />}
-        {promptSuggestions.length > 0 && status !== 'streaming' && (
-          <div className="mx-3 mb-1 flex flex-wrap gap-1.5">
-            {promptSuggestions.map((suggestion) => (
-              <button
-                key={suggestion}
-                type="button"
-                className="max-w-full truncate rounded-full border border-border bg-muted/40 px-2.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                onClick={() => applySuggestion(suggestion)}
-              >
-                {suggestion}
-              </button>
-            ))}
-          </div>
+        {status !== 'streaming' && (
+          <PromptSuggestionChips suggestions={alternateSuggestions} onSelect={applySuggestion} />
         )}
         <div
           className={cn(

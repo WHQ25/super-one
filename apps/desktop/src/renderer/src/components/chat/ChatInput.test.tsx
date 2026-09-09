@@ -42,6 +42,7 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     chatInputFocusNonce: 0,
     chatInputRestoreFocusNonce: 0,
     promptSuggestion: null as string | null,
+    promptSuggestions: [] as string[],
     showDirManager: false,
     showReviewPanel: false,
     _activeSessionId: 'session-1',
@@ -412,6 +413,8 @@ beforeEach(() => {
   activeSessionState.sessionProvider = null
   activeSessionState.acpAgentId = null
   activeSessionState.sessionGoal = null
+  activeSessionState.promptSuggestion = null
+  activeSessionState.promptSuggestions = []
   chatActions._cursorSlashItems = []
   activeSessionState.showDirManager = false
   activeSessionState.showReviewPanel = false
@@ -445,6 +448,14 @@ beforeEach(() => {
   })
   mentionPopup.props = null
 })
+
+/** The mock editor is held as `unknown`; the ghost lives in extension storage. */
+function ghostSuggestion(): string | null {
+  const editor = editorState.editor as
+    | { storage: { promptSuggestion: { suggestion: string | null } } }
+    | null
+  return editor?.storage.promptSuggestion.suggestion ?? null
+}
 
 function typeInEditor(value: string) {
   const editor = screen.getByTestId('editor')
@@ -703,6 +714,56 @@ describe('ChatInput', () => {
     })
 
     expect(screen.queryByText('extra')).toBeNull()
+  })
+})
+
+describe('ChatInput prompt suggestions', () => {
+  // Claude emits a single `suggestion`; xAI/Grok emits a `suggestions` list. The first
+  // entry always takes the ghost slot so Tab-to-accept works the same in both harnesses;
+  // only the alternatives beyond it get a chip. No string appears on both surfaces.
+  it('renders a single suggestion as ghost text only, without a chip row', () => {
+    activeSessionState.promptSuggestion = 'Add a pending count to the Projects header'
+    activeSessionState.promptSuggestions = ['Add a pending count to the Projects header']
+
+    render(<ChatInput />)
+
+    expect(ghostSuggestion()).toBe('Add a pending count to the Projects header')
+    expect(
+      screen.queryByRole('button', { name: 'Add a pending count to the Projects header' }),
+    ).toBeNull()
+  })
+
+  it('keeps the first of a multi-option set as ghost text and chips only the rest', () => {
+    activeSessionState.promptSuggestion = 'Ship it'
+    activeSessionState.promptSuggestions = ['Ship it', 'Explain the diff first', 'Run the tests']
+
+    render(<ChatInput />)
+
+    expect(ghostSuggestion()).toBe('Ship it')
+    expect(screen.queryByRole('button', { name: 'Ship it' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Explain the diff first' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Run the tests' })).toBeTruthy()
+  })
+
+  it('applies the clicked suggestion chip to the composer', async () => {
+    activeSessionState.promptSuggestion = 'Ship it'
+    activeSessionState.promptSuggestions = ['Ship it', 'Explain the diff first']
+
+    render(<ChatInput />)
+    fireEvent.click(screen.getByRole('button', { name: 'Explain the diff first' }))
+
+    await waitFor(() => expect(editorState.text).toBe('Explain the diff first'))
+  })
+
+  it('hides both suggestion surfaces while a turn is streaming', () => {
+    activeSessionState.status = 'streaming'
+    activeSessionState.promptSuggestion = 'Ship it'
+    activeSessionState.promptSuggestions = ['Ship it', 'Explain the diff first']
+
+    render(<ChatInput />)
+
+    expect(ghostSuggestion()).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Ship it' })).toBeNull()
   })
 })
 

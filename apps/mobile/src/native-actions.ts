@@ -8,8 +8,13 @@ type NativeResult = Extract<HostInbound, { type: 'nativeActionResult' }>
 
 export interface NativeActionPorts {
   openLink(url: string): Promise<void>
+  /** Reveal the file's folder in the native browser — the chip's secondary action. */
   openFile(path: string): Promise<void>
-  previewFile(path: string): Promise<void>
+  /**
+   * Show the file itself: small text in the preview page, anything else through
+   * the receive/share sheet. `line` is the cited line a chip was tapped on.
+   */
+  previewFile(path: string, line?: number): Promise<void>
   copyText(text: string): Promise<void>
   /**
    * Write text into the composer without sending it. This is a widget's
@@ -69,7 +74,12 @@ export async function resolveNativeRequest(
     } else if (message.action === 'openFile' || message.action === 'showInFolder') {
       await ports.openFile(payloadString(message, 'path'))
     } else if (message.action === 'previewFile') {
-      await ports.previewFile(payloadString(message, 'path'))
+      const line = (message.payload as Record<string, unknown> | undefined)?.line
+      // A malformed line is dropped, not fatal: the file still opens, just unanchored.
+      await ports.previewFile(
+        payloadString(message, 'path'),
+        typeof line === 'number' && Number.isInteger(line) && line > 0 ? line : undefined,
+      )
     } else if (message.action === 'copyText') {
       await ports.copyText(payloadString(message, 'text'))
     } else if (message.action === 'setDraft') {

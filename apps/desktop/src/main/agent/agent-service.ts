@@ -1767,20 +1767,10 @@ export class AgentService {
       return
     }
 
-    if (command.statOnly) {
-      await respond(command.requestId, {
-        ok: true,
-        statOnly: true,
-        mimeType: authorized.mimeType,
-        name: authorized.name,
-        size: authorized.size,
-        modifiedAt: authorized.modifiedAt,
-      })
-      return
-    }
-
     // Small text rides back in the response itself: no LAN URL to sign and, over
     // the relay, no encrypted R2 round-trip for a file the phone only wants to read.
+    // Checked before `statOnly` so one request can ask "give me the text if it is
+    // small, otherwise just tell me about the file" and get either answer.
     if (command.preferInline) {
       try {
         const text = await readInlinePreviewText(authorized)
@@ -1800,6 +1790,18 @@ export class AgentService {
         await respond(command.requestId, { ok: false, error: 'internal_error', message: (err as Error).message })
         return
       }
+    }
+
+    if (command.statOnly) {
+      await respond(command.requestId, {
+        ok: true,
+        statOnly: true,
+        mimeType: authorized.mimeType,
+        name: authorized.name,
+        size: authorized.size,
+        modifiedAt: authorized.modifiedAt,
+      })
+      return
     }
 
     const transport = source?.transport ?? 'relay'

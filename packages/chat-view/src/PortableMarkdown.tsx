@@ -60,8 +60,8 @@ async function copyText(text: string): Promise<boolean> {
 
 /**
  * Project file citation. The phone cannot open an editor tab, so the chip hands
- * the resolved host path to the native `openFile` action — the same affordance
- * the tool rows already use for a touched file.
+ * the resolved host path (and cited line) to the native `previewFile` action —
+ * the same affordance the tool rows use for a touched file.
  *
  * The icon is resolved from the PATH's basename, not the link label: markdown
  * may caption a file with prose, and the desktop `InlineFileChip` makes the same
@@ -85,7 +85,7 @@ function NativeFileChip({
       onClick={(event) => {
         event.preventDefault()
         event.stopPropagation()
-        requestNative('openFile', { path: filePath, ...(lineNumber != null ? { line: lineNumber } : {}) })
+        requestNative('previewFile', { path: filePath, ...(lineNumber != null ? { line: lineNumber } : {}) })
       }}
       className="inline-flex items-center gap-0.5 rounded bg-muted px-1 align-baseline text-[0.9em] text-foreground whitespace-nowrap"
     >

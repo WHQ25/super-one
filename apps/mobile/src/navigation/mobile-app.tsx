@@ -69,6 +69,9 @@ import { useProjectGitStatus } from './use-project-git-status'
 import { useFileSearch } from './use-file-search'
 import { completeTypedPath, usePathAutocomplete } from './use-path-autocomplete'
 import { useAdditionalDirs } from './use-additional-dirs'
+import { useFilePreview } from './use-file-preview'
+import { FILE_PREVIEW_TEXT } from '../file-preview-state'
+import { FilePreviewScreen } from '../screens/file-preview-screen'
 import { NewFolderSheet } from '../prompts/NewFolderSheet'
 import { FileFinderView } from '../screens/file-finder-view'
 import { leaveMobileSession, sessionRemovalStatus } from '../session-exit'
@@ -214,6 +217,14 @@ export function MobileApp() {
   const webRef = useRef<WebView>(null)
   const termRef = useRef<WebView>(null)
   const clientRef = useRef<RelayClient | null>(null)
+  const filePreview = useFilePreview({
+    clientRef,
+    transport: activeTransport,
+    project,
+    sessionId,
+    receiveDesktopFile: sharedFileInbox.receiveDesktopFile,
+    openScreen: () => setScreen('file-preview'),
+  })
   const workspaceActivity = useWorkspaceActivity(clientRef.current, connectionState === 'connected', sessionListRevision, screen === 'chat' && !sessionSwitcherOpen ? sessionId : null)
   const directory = useRemoteDirectory(clientRef)
   const { load: loadDirectory, path: directoryPath, items: directoryItems } = directory
@@ -404,11 +415,7 @@ export function MobileApp() {
         if (!runtime) throw new Error('no active session')
         runtime.respondCodexPlan(messageId, status, feedback)
       },
-      previewFile: async (path) => {
-        const client = clientRef.current
-        if (!client || !project) throw new Error('no active project')
-        await sharedFileInbox.receiveDesktopFile(client, project.path, sessionId, path)
-      },
+      previewFile: (path, line) => filePreview.open(path, line),
       openFile: async (path) => {
         if (!project) throw new Error('no active project')
         const target = resolveRemoteFilePath(project.path, path)
@@ -787,12 +794,9 @@ export function MobileApp() {
     })
   }
 
-  const previewFile = async (path: string) => {
-    const client = clientRef.current
-    if (!client || !project) throw new Error('no active project')
-    setStatus(`Opening ${path.split('/').pop() ?? path}…`)
-    await sharedFileInbox.receiveDesktopFile(client, project.path, sessionId, path)
-  }
+  // File rows in the browser take the same path as a transcript chip: small text
+  // opens the preview page, anything else goes through the receive sheet.
+  const previewFile = (path: string) => filePreview.open(path)
 
   const bindRuntime = (client: RelayClient) => {
     setStatus('')
@@ -1217,7 +1221,7 @@ export function MobileApp() {
       else setScreen('chat')
       return
     }
-    if (screen === 'terminal' || screen === 'worktree' || screen === 'branch') {
+    if (screen === 'terminal' || screen === 'worktree' || screen === 'branch' || screen === 'file-preview') {
       setScreen('chat')
       return
     }
@@ -1263,7 +1267,17 @@ export function MobileApp() {
   }
   const header = screen === 'files'
     ? browserMode.name
-    : mobileHeaderTitle(screen, project?.name, activeSessionTitle, terminalUi.title, t)
+    : screen === 'file-preview' && filePreview.state
+      ? filePreview.state.name
+      : mobileHeaderTitle(screen, project?.name, activeSessionTitle, terminalUi.title, t)
+  /** The chip's secondary action: reveal the previewed file in the Files browser. */
+  const revealPreviewedFile = () => {
+    const target = filePreview.state?.path
+    if (!target) return
+    setFilesOrigin('session')
+    setScreen('files')
+    runUiAction(() => loadDirectory(parentRemotePath(target)), setStatus, 'failed to open folder')
+  }
   const tabletMultiPane = shouldUseTabletMultiPane(width, screen, !!project)
 
   // Android's back button is the hardware twin of the swipe the navigator no
@@ -1330,9 +1344,12 @@ export function MobileApp() {
             // off to the browser. Same slot Add Project commits from.
             : screen === 'add-dir' && additionalDirs.canGoBack
               ? () => runUiAction(additionalDirs.confirm, setStatus, 'could not add that folder')
-              : undefined}
+              : screen === 'file-preview' && filePreview.state
+                ? revealPreviewedFile
+                : undefined}
         confirmLabel={screen === 'add-project' ? addProjectFlow.confirmLabel ?? undefined
-          : screen === 'add-dir' && additionalDirs.canGoBack ? 'Add' : undefined}
+          : screen === 'add-dir' && additionalDirs.canGoBack ? 'Add'
+            : screen === 'file-preview' ? t(FILE_PREVIEW_TEXT.showInFolder) : undefined}
         onAddProject={screen === 'project-picker' ? () => setScreen('add-project') : undefined}
         confirmDisabled={screen === 'add-project'
           ? addProjectFlow.busy
@@ -1646,6 +1663,14 @@ export function MobileApp() {
           onEnter={additionalDirs.enter}
           onBrowse={additionalDirs.browse}
           onRemove={(dir, scope) => void additionalDirs.remove(dir, scope)}
+        />
+      ) : null}
+
+      {route === 'file-preview' && filePreview.state ? (
+        <FilePreviewScreen
+          state={filePreview.state}
+          onStartTransfer={filePreview.startTransfer}
+          onRetry={filePreview.retry}
         />
       ) : null}
 

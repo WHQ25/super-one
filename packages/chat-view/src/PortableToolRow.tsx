@@ -26,7 +26,8 @@ import type { QuestionPreviewFormat } from '@superone/shared/agent-types'
 /**
  * File name chip that hands the path to the native host instead of opening a desktop tab.
  * The chrome and the file-type icon are the desktop's, so a tool row reads the same on
- * both surfaces; only the tap target differs.
+ * both surfaces; only the tap target differs: the phone previews the file in place
+ * (`previewFile`), the way the desktop opens it in a tab.
  */
 function PortableFileChip({ name, title, filePath, className }: { name: string; title: string; filePath: string; className?: string }) {
   return (
@@ -35,7 +36,7 @@ function PortableFileChip({ name, title, filePath, className }: { name: string; 
       name={name}
       title={title}
       className={className}
-      onClick={(e) => { e.stopPropagation(); requestNative('openFile', { path: filePath }) }}
+      onClick={(e) => { e.stopPropagation(); requestNative('previewFile', { path: filePath }) }}
     />
   )
 }

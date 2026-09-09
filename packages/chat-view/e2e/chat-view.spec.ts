@@ -287,7 +287,7 @@ test('25 routes links through requestNative', async ({ page }) => {
   ).__hostMessages.some((item) => item.type === 'requestNative' && item.action === 'openLink'))).toBe(true)
 })
 
-test('25b turns a project file citation into a native openFile chip', async ({ page }) => {
+test('25b turns a project file citation into a native previewFile chip', async ({ page }) => {
   await send(page, {
     type: 'hydrate',
     projectPath: '/Users/me/proj',
@@ -301,12 +301,13 @@ test('25b turns a project file citation into a native openFile chip', async ({ p
   await chip.click()
   await expect.poll(() => page.evaluate(() => (
     globalThis as typeof globalThis & {
-      __hostMessages: Array<{ type?: string; action?: string; payload?: { path?: string } }>
+      __hostMessages: Array<{ type?: string; action?: string; payload?: { path?: string; line?: number } }>
     }
   ).__hostMessages.some((item) => (
     item.type === 'requestNative'
-      && item.action === 'openFile'
+      && item.action === 'previewFile'
       && item.payload?.path === '/Users/me/proj/src/components/ToolRow.tsx'
+      && item.payload?.line === 42
   )))).toBe(true)
 })
 
@@ -359,7 +360,7 @@ test('28 opens a remotely stripped file tool from derived metadata', async ({ pa
     }
   ).__hostMessages.some((item) => (
     item.type === 'requestNative'
-      && item.action === 'openFile'
+      && item.action === 'previewFile'
       && item.payload?.path === 'apps/mobile/App.tsx'
   )))).toBe(true)
 
@@ -615,7 +616,7 @@ test('38 renders agent roster and review findings with shared presenters', async
     }
   ).__hostMessages.some((item) => (
     item.type === 'requestNative'
-      && item.action === 'openFile'
+      && item.action === 'previewFile'
       && item.payload?.path === 'packages/chat-view/src/PortableTurnAdapters.tsx'
   )))).toBe(true)
 

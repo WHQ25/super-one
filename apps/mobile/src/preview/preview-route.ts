@@ -3,7 +3,7 @@ import { isKnownEffortLevel } from '@superone/shared/effort-labels'
 import { HARNESS_DEFAULT_BRAND_HUE } from '@superone/shared/harness-brand'
 import { nativeScenarios } from './scenarios'
 
-export const shellPreviewPages = ['New session', 'Chat', 'Project', 'Add project', 'Worktree', 'Branch', 'Additional folders', 'Browse folders', 'Icons', 'Git indicators', 'Session status', 'Composer suggestions', 'Chip editor', 'Devices', 'Pairing', 'Workspace', 'Session search', 'Settings', 'Files', 'Computer files', 'File search', 'Go to folder', 'Empty folder', 'Folder error', 'Terminal', 'LAN browser', 'Tool catalog'] as const
+export const shellPreviewPages = ['New session', 'Chat', 'Project', 'Add project', 'Worktree', 'Branch', 'Additional folders', 'Browse folders', 'File preview', 'Icons', 'Git indicators', 'Session status', 'Composer suggestions', 'Chip editor', 'Devices', 'Pairing', 'Workspace', 'Session search', 'Settings', 'Files', 'Computer files', 'File search', 'Go to folder', 'Empty folder', 'Folder error', 'Terminal', 'LAN browser', 'Tool catalog'] as const
 export type ShellPreviewPage = typeof shellPreviewPages[number]
 
 export function parsePreviewRoute(raw: string) {

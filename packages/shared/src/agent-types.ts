@@ -4540,7 +4540,8 @@ export type RemoteCommand =
   /**
    * `preferInline`: when the file is small text (see `@superone/shared/file-preview`),
    * return its UTF-8 content in the response instead of staging it for download.
-   * Anything else falls back to the URL path exactly as if the flag were absent.
+   * Anything else falls back to `statOnly` / the URL path exactly as if the flag
+   * were absent, so `{ preferInline, statOnly }` yields text or metadata in one trip.
    */
   | { type: 'read_desktop_file'; requestId: string; projectPath?: string; sessionId?: string; path: string; maxBytes?: number; statOnly?: boolean; preferInline?: boolean }
   | { type: 'upload_file'; requestId: string; projectPath?: string; sessionId?: string; targetDir: string; name: string; mimeType: string; size: number; inlineBase64?: string }

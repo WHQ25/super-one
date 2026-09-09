@@ -46,6 +46,7 @@ import { mobileWebViewTheme } from '../theme/tokens'
 import { injectHostMessage } from '../native-actions'
 import { Button, SelectionField, Sheet } from '../ui'
 import { GitIndicatorGallery } from './GitIndicatorGallery'
+import { FilePreviewGallery } from './FilePreviewGallery'
 
 /** Two folders, one of them long enough to prove the hint row scrolls. */
 const PREVIEW_ADDITIONAL_DIRS = [
@@ -334,8 +335,8 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
   const chat = page === 'New session' || page === 'Chat' || page === 'Workspace'
   // Standalone galleries share the catch-all 'files' route but draw themselves.
   const gallery = page === 'Icons' || page === 'Git indicators' || page === 'Session status' || page === 'Composer suggestions' || page === 'Chip editor' || page === 'LAN browser'
-  const route = chat ? 'chat' : page === 'Project' ? 'project-picker' : page === 'Add project' ? 'add-project' : page === 'Worktree' ? 'worktree' : page === 'Branch' ? 'branch' : page === 'Additional folders' || page === 'Browse folders' ? 'add-dir' : page === 'Devices' || page === 'Pairing' ? 'pair' : page === 'Terminal' ? 'terminal' : page === 'Session search' ? 'session-search' : page === 'Settings' ? 'settings' : 'files'
-  const tabletSidebar = width >= 768 && (chat || page === 'Terminal' || page === 'Settings' || route === 'add-dir' || route === 'files')
+  const route = chat ? 'chat' : page === 'Project' ? 'project-picker' : page === 'Add project' ? 'add-project' : page === 'Worktree' ? 'worktree' : page === 'Branch' ? 'branch' : page === 'Additional folders' || page === 'Browse folders' ? 'add-dir' : page === 'File preview' ? 'file-preview' : page === 'Devices' || page === 'Pairing' ? 'pair' : page === 'Terminal' ? 'terminal' : page === 'Session search' ? 'session-search' : page === 'Settings' ? 'settings' : 'files'
+  const tabletSidebar = width >= 768 && (chat || page === 'Terminal' || page === 'Settings' || route === 'add-dir' || route === 'file-preview' || route === 'files')
   return <SafeAreaView style={styles.root}>
     <StatusBar style={tokens.scheme === 'dark' ? 'light' : 'dark'} />
     <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8 }}>
@@ -366,8 +367,10 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
               : page === 'Go to folder' ? 'Computer files'
                 : previewBrowserMode.kind === 'computer' ? 'Go to folder' : 'File search') } : undefined}
         onConfirm={page === 'Worktree' ? () => { setSelection(worktreeDraft); setPage('New session') }
-          : page === 'Add project' && addProject.confirmLabel ? addProject.confirm : undefined}
-        confirmLabel={page === 'Add project' ? addProject.confirmLabel ?? undefined : undefined}
+          : page === 'Add project' && addProject.confirmLabel ? addProject.confirm
+            : page === 'File preview' ? () => setPage('Files') : undefined}
+        confirmLabel={page === 'Add project' ? addProject.confirmLabel ?? undefined
+          : page === 'File preview' ? 'Folder' : undefined}
         onAddProject={page === 'Project' ? () => setPage('Add project') : undefined}
         confirmDisabled={page === 'Add project' ? addProject.busy
           : !!worktreeSelectionError(worktreeDraft, PREVIEW_BRANCHES, PREVIEW_CHECKED_OUT)} />
@@ -441,6 +444,7 @@ todos={{}} draft={chatDraft.draft} streaming={page === 'Chat'}
             onSwitch={async (next) => { await previewSwitchBranch(next); setBranch(next) }}
             onCreate={async (next) => { setBranch(next) }}
             onDone={() => setPage('New session')} /> : null}
+          {page === 'File preview' ? <FilePreviewGallery /> : null}
           {page === 'Icons' ? <IconGallery /> : null}
           {page === 'Git indicators' ? <GitIndicatorGallery
             onOpenWorktree={(next) => { setWorktreeDraft(next); setPage('Worktree') }}

@@ -224,7 +224,7 @@ function PortableClaudeTool(props: ClaudeToolPresenterProps) {
             type="button"
             className="max-w-56 truncate rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-primary"
             title={finding.line != null ? `${finding.file}:${finding.line}` : finding.file}
-            onClick={() => requestNative('openFile', { path: finding.file })}
+            onClick={() => requestNative('previewFile', { path: finding.file, ...(finding.line != null ? { line: finding.line } : {}) })}
             aria-label={`Open ${finding.file}`}
           >
             {finding.file.split('/').pop() || finding.file}

@@ -384,11 +384,15 @@ Route every user-triggered RPC or fire-and-forget transport command through
 It must catch both synchronous `RelayClient.send` failures and rejected promises; never
 discard either with a bare `void` from a press or submit handler.
 Chat WebView native requests route HTTPS links, clipboard copies, and stripped remote
-file-tool metadata through RN. `openFile` resolves relative `toolFilePath` values against
-the active project and opens the containing directory; `previewFile` requests a signed
-desktop URL, verifies/decrypts the bytes for the active LAN/relay transport, and opens the
-native receive/share sheet. The native file browser uses that same path for file rows;
-directory rows navigate only. Remote path helpers must preserve POSIX roots, Windows
+file-tool metadata through RN. `previewFile` is the file chip's primary action (with the
+cited `line` when there is one) and is owned by `navigation/use-file-preview.ts`: it asks
+`read_desktop_file` with `preferInline` + `statOnly` in one trip, shows small text/Markdown
+on the `file-preview` route (`screens/file-preview-screen.tsx`, policy in
+`@superone/shared/file-preview`), and otherwise hands the file to the receive/share sheet
+— on its own over LAN, after a Download confirmation over the relay (`file-preview-state.ts`
+decides both). `openFile` is the secondary action: resolve the path against the active
+project and open the containing directory. The native file browser uses `previewFile` for
+file rows; directory rows navigate only. Remote path helpers must preserve POSIX roots, Windows
 drive roots, and UNC share roots. Coalesce concurrent reads of the same project/session/path
 until the first request settles. Unsupported actions must return an error response, never
 `{ ok: true }`.

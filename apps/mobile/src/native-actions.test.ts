@@ -79,7 +79,19 @@ describe('native chat actions', () => {
     }, target)).resolves.toMatchObject({ result: { ok: true } })
     expect(target.openLink).toHaveBeenCalledWith('https://example.com')
     expect(target.openFile).toHaveBeenCalledWith('src/App.tsx')
-    expect(target.previewFile).toHaveBeenCalledWith('art/output.png')
+    expect(target.previewFile).toHaveBeenCalledWith('art/output.png', undefined)
+  })
+
+  it('carries a cited line into the preview and drops a malformed one', async () => {
+    const target = ports()
+    await resolveNativeRequest({
+      type: 'requestNative', requestId: 'p1', action: 'previewFile', payload: { path: 'src/App.tsx', line: 42 },
+    }, target)
+    await resolveNativeRequest({
+      type: 'requestNative', requestId: 'p2', action: 'previewFile', payload: { path: 'src/App.tsx', line: '42' },
+    }, target)
+    expect(target.previewFile).toHaveBeenNthCalledWith(1, 'src/App.tsx', 42)
+    expect(target.previewFile).toHaveBeenNthCalledWith(2, 'src/App.tsx', undefined)
   })
 
   it('routes validated Codex plan decisions to the active runtime', async () => {

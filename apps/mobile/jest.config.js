@@ -18,5 +18,8 @@ module.exports = {
     // version the app actually ships.
     '^react$': '<rootDir>/node_modules/react',
     '^react/(.*)$': '<rootDir>/node_modules/react/$1',
+    // `marked` publishes ESM-only under `main`; jest-expo leaves node_modules
+    // untransformed, so the UMD build stands in for the markdown renderer.
+    '^marked$': '<rootDir>/../../node_modules/marked/lib/marked.umd.js',
   },
 }

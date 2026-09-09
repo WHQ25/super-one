@@ -26,7 +26,7 @@ export interface SessionProjection {
   apiRetry?: ProjectedApiRetry | null
   /**
    * Absolute project root on the host. Used only to turn project-relative
-   * markdown file links into paths `openFile` can act on — the WebView has no
+   * markdown file links into paths `previewFile` can act on — the WebView has no
    * transport for host files, so media srcs are deliberately left alone.
    */
   projectPath?: string | null

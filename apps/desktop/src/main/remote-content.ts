@@ -367,10 +367,50 @@ function stripContentBlock(block: ContentBlock, bashCmds?: Map<string, string>, 
       return block
     }
     if (!agentIds?.has(block.toolUseId) && block.summary.length > TOOL_RESULT_MAX_LEN) {
-      return { ...block, summary: block.summary.slice(0, TOOL_RESULT_MAX_LEN) + '…' }
+      return { ...block, summary: compactMediaToolResult(block.summary) ?? block.summary.slice(0, TOOL_RESULT_MAX_LEN) + '…' }
     }
   }
   return block
+}
+
+/**
+ * Top-level result fields the phone's screenshot and media presenters read.
+ * Everything else in an oversized JSON result (accessibility outlines, app
+ * lists, generation hints) is dropped rather than truncated, so the JSON stays
+ * parseable and the image path survives.
+ */
+const MEDIA_RESULT_KEYS = ['ok', 'status', 'error', 'path', 'width', 'height', 'stateId', 'bundleId', 'app', 'title', 'savedPaths', 'previewPaths', 'provider', 'model', 'warnings'] as const
+/** `root` names the app behind a computer-use snapshot; its outline is what makes the result big. */
+const ROOT_IDENTITY_KEYS = ['app', 'bundleId', 'title'] as const
+
+/**
+ * Shrink a tool result that carries an image path down to the fields that
+ * locate the image. Returns `null` when the summary is not such a result, in
+ * which case the caller falls back to plain character truncation.
+ */
+export function compactMediaToolResult(summary: string): string | null {
+  if (summary.charCodeAt(0) !== 123 /* { */) return null
+  let parsed: unknown
+  try { parsed = JSON.parse(summary) } catch { return null }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+  const obj = parsed as Record<string, unknown>
+  const image = obj.image && typeof obj.image === 'object' && !Array.isArray(obj.image)
+    ? (obj.image as Record<string, unknown>)
+    : null
+  const hasImage = typeof obj.path === 'string'
+    || typeof image?.path === 'string'
+    || (Array.isArray(obj.savedPaths) && obj.savedPaths.length > 0)
+  if (!hasImage) return null
+  const compact: Record<string, unknown> = {}
+  for (const key of MEDIA_RESULT_KEYS) if (key in obj) compact[key] = obj[key]
+  if (image) compact.image = typeof image.path === 'string' ? { path: image.path, ...(typeof image.mimeType === 'string' ? { mimeType: image.mimeType } : {}) } : image
+  const root = obj.root && typeof obj.root === 'object' && !Array.isArray(obj.root) ? (obj.root as Record<string, unknown>) : null
+  if (root) {
+    const identity: Record<string, unknown> = {}
+    for (const key of ROOT_IDENTITY_KEYS) if (typeof root[key] === 'string') identity[key] = root[key]
+    compact.root = identity
+  }
+  return JSON.stringify(compact)
 }
 
 function enrichPermissionRequest(event: AgentEvent & { type: 'permission_request' }): AgentEvent {

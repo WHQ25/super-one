@@ -584,6 +584,52 @@ describe('stripMessagesForRemote', () => {
     expect(result.content[0]).toMatchObject({ type: 'text', text: 'Hello world' })
   })
 
+  it('keeps the screenshot path of an oversized computer-use result parseable', () => {
+    const outline = Array.from({ length: 40 }, (_, i) => ({ role: 'button', name: `Button ${i}`, frame: [i, i, 10, 10] }))
+    const summary = JSON.stringify({
+      stateId: 's-9',
+      image: { path: '/tmp/superone/computer/shot.png', mimeType: 'image/png', width: 1440, height: 900 },
+      root: { app: 'Safari', bundleId: 'com.apple.Safari', title: 'Checkout', children: outline },
+    })
+    expect(summary.length).toBeGreaterThan(200)
+    const [result] = stripMessagesForRemote([makeMessage([
+      toolUseBlock('mcp__superone__computer_snapshot', {}, 'tu-shot'),
+      { type: 'tool_result', toolUseId: 'tu-shot', summary },
+    ])])
+    const stripped = result.content[1] as ContentBlock & { type: 'tool_result' }
+    const parsed = JSON.parse(stripped.summary)
+    expect(parsed.image).toEqual({ path: '/tmp/superone/computer/shot.png', mimeType: 'image/png' })
+    expect(parsed.root).toEqual({ app: 'Safari', bundleId: 'com.apple.Safari', title: 'Checkout' })
+    expect(parsed.stateId).toBe('s-9')
+    expect(stripped.summary.length).toBeLessThan(summary.length)
+  })
+
+  it('keeps generated-image paths and drops the rest of an oversized media result', () => {
+    const summary = JSON.stringify({
+      status: 'ok',
+      provider: 'openai',
+      savedPaths: ['/proj/media/gen-1.png', '/proj/media/gen-2.png'],
+      hint: 'x'.repeat(400),
+    })
+    const [result] = stripMessagesForRemote([makeMessage([
+      toolUseBlock('mcp__superone__media_generate_image', {}, 'tu-gen'),
+      { type: 'tool_result', toolUseId: 'tu-gen', summary },
+    ])])
+    const parsed = JSON.parse((result.content[1] as ContentBlock & { type: 'tool_result' }).summary)
+    expect(parsed).toEqual({ status: 'ok', provider: 'openai', savedPaths: ['/proj/media/gen-1.png', '/proj/media/gen-2.png'] })
+  })
+
+  it('still truncates oversized results that carry no image path', () => {
+    const summary = JSON.stringify({ items: Array.from({ length: 50 }, (_, i) => `item-${i}`) })
+    const [result] = stripMessagesForRemote([makeMessage([
+      toolUseBlock('mcp__superone__project_list', {}, 'tu-list'),
+      { type: 'tool_result', toolUseId: 'tu-list', summary },
+    ])])
+    const stripped = (result.content[1] as ContentBlock & { type: 'tool_result' }).summary
+    expect(stripped.length).toBe(201)
+    expect(stripped.endsWith('…')).toBe(true)
+  })
+
   it('should pass through thinking blocks', () => {
     const msg = makeMessage([{ type: 'thinking', thinking: 'Let me think...' }])
     const [result] = stripMessagesForRemote([msg])

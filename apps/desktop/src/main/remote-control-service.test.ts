@@ -463,13 +463,28 @@ describe('RemoteControlService content_delta ordering', () => {
     return { service, captured }
   }
 
+  it.each(['file1\nfile2', '', '[denied] Not allowed', '$ ls\nreal command output'])(
+    'keeps live Bash output unchanged: %j', async (summary) => {
+      const { service, captured } = makeService()
+      await service.sendAgentEvent({ type: 'content_delta', messageId: 'm1',
+        delta: toolUseBlock('Bash', { command: 'ls' }, 'bash-1') })
+      await service.sendAgentEvent({ type: 'content_delta', messageId: 'm1',
+        delta: { type: 'tool_result', toolUseId: 'bash-1', summary } })
+      expect(captured).toContainEqual(expect.objectContaining({
+        type: 'content_delta', delta: expect.objectContaining({
+          type: 'bash_result', toolUseId: 'bash-1', summary,
+        }),
+      }))
+    },
+  )
+
   function deltaSig(e: AgentEvent): string {
     if (e.type !== 'content_delta') return e.type
     const d = (e as Extract<AgentEvent, { type: 'content_delta' }>).delta
     return `content_delta:${d.type}`
   }
 
-  it('preserves thinking-before-text ordering when a short thinking is followed by text that flushes early on \\n\\n', async () => {
+  it('preserves thinking-before-text ordering across paragraph boundaries', async () => {
     const { service, captured } = makeService()
 
     await service.sendAgentEvent({ type: 'content_delta', messageId: 'm1', delta: { type: 'thinking', thinking: 'short reasoning', parentToolUseId: null } } as AgentEvent)
@@ -485,7 +500,7 @@ describe('RemoteControlService content_delta ordering', () => {
     expect(thinkingIdx).toBeLessThan(firstTextIdx)
   })
 
-  it('flushes pending thinking before starting to accumulate text on the same message so output reflects emit-time order', async () => {
+  it('preserves thinking-before-text arrival order', async () => {
     const { service, captured } = makeService()
 
     await service.sendAgentEvent({ type: 'content_delta', messageId: 'm1', delta: { type: 'thinking', thinking: 'reasoning A', parentToolUseId: null } } as AgentEvent)
@@ -500,7 +515,7 @@ describe('RemoteControlService content_delta ordering', () => {
     expect(lastThinking).toBeLessThan(firstText)
   })
 
-  it('flushes pending text before starting to accumulate thinking when text precedes thinking on the same message', async () => {
+  it('preserves text-before-thinking arrival order', async () => {
     const { service, captured } = makeService()
 
     await service.sendAgentEvent({ type: 'content_delta', messageId: 'm1', delta: { type: 'text', text: 'preamble', parentToolUseId: null } } as AgentEvent)
@@ -612,7 +627,7 @@ describe('stripMessagesForRemote', () => {
     expect(JSON.parse((result.content[0] as { input: string }).input)).toEqual({ name: 'add-todo' })
   })
 
-  it('should convert Bash tool_result to bash_result with command prefix', () => {
+  it('keeps Bash output separate from the command in history', () => {
     const msg = makeMessage([
       toolUseBlock('Bash', { command: 'ls' }, 'bash-1'),
       { type: 'tool_result', toolUseId: 'bash-1', summary: 'file1\nfile2' } as ContentBlock,
@@ -620,8 +635,7 @@ describe('stripMessagesForRemote', () => {
     const [result] = stripMessagesForRemote([msg])
     const bashResult = result.content.find((b) => (b as { toolUseId?: string }).toolUseId === 'bash-1' && b.type === 'bash_result')
     expect(bashResult).toBeDefined()
-    expect((bashResult as { summary: string }).summary).toContain('ls')
-    expect((bashResult as { summary: string }).summary).toContain('file1')
+    expect((bashResult as { summary: string }).summary).toBe('file1\nfile2')
   })
 
   it('should truncate long tool_result summary', () => {
@@ -648,16 +662,16 @@ describe('stripMessagesForRemote', () => {
     expect((todoResult as { toolTodos: unknown[] }).toolTodos).toHaveLength(1)
   })
 
-  it('should strip codex metadata', () => {
+  it('preserves codex metadata as the baseline for live item patches', () => {
     const msg = makeMessage([{ type: 'text', text: 'done' }], {
       metadata: { codex: { items: [] } as unknown as ChatMessage['metadata'] & { codex: unknown } } as ChatMessage['metadata'],
     })
     const [result] = stripMessagesForRemote([msg])
     expect(result.metadata).toBeDefined()
-    expect((result.metadata as Record<string, unknown>).codex).toBeUndefined()
+    expect(result.metadata?.codex).toEqual(msg.metadata?.codex)
   })
 
-  it('converts a codex todo_list item into a TodoWrite todo_result block for mobile', () => {
+  it('preserves native Codex todo items on restore', () => {
     const msg = makeMessage([], {
       providerId: 'codex',
       metadata: {
@@ -676,19 +690,11 @@ describe('stripMessagesForRemote', () => {
       } as unknown as ChatMessage['metadata'],
     })
     const [result] = stripMessagesForRemote([msg])
-    const todoResult = result.content.find((b) => b.type === 'todo_result') as {
-      todoToolName: string
-      toolTodos: { content: string; status: string }[]
-    }
-    expect(todoResult).toBeDefined()
-    expect(todoResult.todoToolName).toBe('TodoWrite')
-    expect(todoResult.toolTodos).toEqual([
-      { content: 'first task', status: 'pending' },
-      { content: 'second task', status: 'completed' },
-    ])
+    expect(result.metadata?.codex?.items).toEqual(msg.metadata?.codex?.items)
+    expect(result.content).toEqual([])
   })
 
-  it('converts a Codex Browser MCP item into a portable tool and result pair', () => {
+  it('preserves Codex MCP items for the native item presenter', () => {
     const msg = makeMessage([], {
       providerId: 'codex',
       metadata: {
@@ -710,17 +716,8 @@ describe('stripMessagesForRemote', () => {
     })
 
     const [result] = stripMessagesForRemote([msg])
-    expect(result.content).toHaveLength(2)
-    expect(result.content[0]).toMatchObject({
-      type: 'tool_use',
-      toolName: 'mcp__superone__browser_snapshot',
-      input: '{"include":["screenshot"]}',
-    })
-    expect(result.content[1]).toMatchObject({
-      type: 'tool_result',
-      toolUseId: 'browser-shot',
-      summary: '{"ok":true,"path":"/project/shot.png"}',
-    })
+    expect(result.metadata?.codex?.items).toEqual(msg.metadata?.codex?.items)
+    expect(result.content).toEqual([])
   })
 
   it('should handle empty messages array', () => {
@@ -729,7 +726,7 @@ describe('stripMessagesForRemote', () => {
 })
 
 describe('stripEventForRemote codex todo_list streaming', () => {
-  it('rewrites a codex_item_delta todo_list into a content_delta todo_result event', () => {
+  it('keeps Codex todo events and their sequence envelope intact', () => {
     const event: AgentEvent = {
       type: 'codex_item_delta',
       messageId: 'msg-1',
@@ -740,15 +737,7 @@ describe('stripEventForRemote codex todo_list streaming', () => {
         items: [{ text: 'do the thing', completed: false }],
       },
     } as AgentEvent
-    const result = stripEventForRemote(event) as AgentEvent & { type: 'content_delta' }
-    expect(result.type).toBe('content_delta')
-    expect(result.messageId).toBe('msg-1')
-    expect(result.delta).toMatchObject({
-      type: 'todo_result',
-      toolUseId: 'todo_abc',
-      todoToolName: 'TodoWrite',
-      toolTodos: [{ content: 'do the thing', status: 'pending' }],
-    })
+    expect(stripEventForRemote(event)).toBe(event)
   })
 
   it('leaves non-todo codex_item_delta events untouched', () => {

@@ -1,3 +1,4 @@
+import { SESSION_ACTIVITY_EVENTS, summarizeSessionActivity } from '@superone/shared/session-activity'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import type { SessionManager } from '../session/types'
 import { trace } from '../agent/event-trace'
@@ -21,6 +22,17 @@ export class MobileBroadcaster {
     if (!session) {
       trace('remote.broadcast', 'drop:no-session', { type: event.type, sessionId: event.sessionId })
       return
+    }
+    if (!session.ephemeral && SESSION_ACTIVITY_EVENTS.has(event.type)) {
+      await this.transport.sendAgentEvent({
+        type: 'session_activity',
+        activity: summarizeSessionActivity({
+          ...session.snapshot,
+          // Backend liveness can change before the awaited send updates the snapshot.
+          ...(event.type === 'status_change' ? { status: event.status } : {}),
+        }, session.getPendingInteractions()),
+        ...(event.type === 'status_change' && event.status === 'idle' ? { completed: true } : {}),
+      })
     }
     const targets = new Set<string>(session.subscribers)
     if (session.owner.kind === 'remote') targets.add(session.owner.deviceId)

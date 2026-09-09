@@ -1,3 +1,5 @@
+import { summarizeSessionActivity, type SessionActivity } from '@superone/shared/session-activity'
+import { answerRemoteAsyncQuestion } from './remote-async-question'
 import { randomUUID } from 'crypto'
 import { newMessageId } from '@superone/shared/message-id'
 import { execFileSync } from 'child_process'
@@ -52,6 +54,7 @@ import { harnessProviderCatalog } from './remote-selector-catalog'
 import { listAccounts as listClaudeAccounts } from './claude-account-service'
 import { getCurrentLocale } from '../i18n'
 import { buildRemoteHarnessSystemInfo } from './remote-harness-system-info'
+import { buildRemoteSessionSnapshot } from './remote-session-snapshot'
 import { sessionDefaultsForHarness } from '@superone/shared/harness/session-defaults'
 
 /** Resolve a path to its git common directory (shared across worktrees). */
@@ -790,6 +793,18 @@ export class AgentService {
         }
         break
       }
+      case 'codex_async_question_answer': {
+        try {
+          if (!this.canAccessSession(command.projectPath, command.sessionId)) {
+            throw new Error(this.buildSessionAccessError(command.projectPath, command.sessionId))
+          }
+          const reply = await answerRemoteAsyncQuestion(this.findSessionBySid(command.projectPath, command.sessionId), command)
+          await respond?.(command.requestId, { ok: true, reply })
+        } catch (error) {
+          await respond?.(command.requestId, { error: error instanceof Error ? error.message : String(error) })
+        }
+        break
+      }
       case 'codex_plan_approval': {
         if (!command.sessionId) break
         const session = this.sessionManager?.getSession(command.sessionId)
@@ -815,6 +830,22 @@ export class AgentService {
           await agent.setPermissionMode(command.mode as PermissionMode)
         } else {
           log.warn('[AgentService] set_permission_mode: no agent for session %s', command.sessionId)
+        }
+        break
+      }
+      case 'save_widget_template': {
+        // The store is reached the same way the renderer's own dialog reaches it, so a
+        // template saved from a phone is indistinguishable from one saved on the desktop.
+        try {
+          const { allocateTemplateId, saveTemplate } = await import('../generative-ui/template-store')
+          const { superoneHome } = await import('../superone-home')
+          const roots = { project: command.projectPath ?? undefined, user: superoneHome() }
+          if (command.input.scope === 'project' && !roots.project) throw new Error('no project open')
+          const id = allocateTemplateId(roots, command.input.id, command.input.scope)
+          const saved = saveTemplate(roots, { ...command.input, id })
+          await respond?.(command.requestId, { template: { id: saved.id, scope: saved.scope, version: saved.version } })
+        } catch (err) {
+          await respond?.(command.requestId, { error: err instanceof Error ? err.message : String(err) })
         }
         break
       }
@@ -1085,54 +1116,15 @@ export class AgentService {
         }
         try {
           const session = this.findSessionBySid(command.projectPath, command.sessionId)
-          const inProgressMessages = session
-            ? stripMessagesForRemote(
-                session.snapshot.messages.filter((m) => m.status === 'streaming'),
-                command.projectPath,
-              )
-            : []
-          const pendingInteractions = session
-            ? session.getPendingInteractions().map((e) => stripEventForRemote(e, command.projectPath))
-            : []
-          const status = session?.isStreaming() ? 'streaming' : 'idle'
-          const permissionMode = session?.getCurrentPermissionMode()
-          const snapshot = session?.snapshot
-          // ACP's sandbox is Grok's own, applied at process start from its env/config
-          // and never set by SuperOne — so it is observed, not read off the session.
-          const sandboxInfo = snapshot?.harnessId === 'acp'
-            ? await import('../acp/grok-sandbox').then((m) => m.currentGrokSandbox()).catch(() => undefined)
-            : session?.getCurrentSandboxInfo()
-          const realtimeTimeline = loadRealtimeTimeline(command.sessionId)
+          const state = await buildRemoteSessionSnapshot(session, command.projectPath, command.sessionId)
           trace('remote.cmd', 'get_session_state', {
             projectPath: command.projectPath,
             sessionId: command.sessionId,
-            inProgressCount: inProgressMessages.length,
-            pendingCount: pendingInteractions.length,
-            status,
+            inProgressCount: state.inProgressMessages.length,
+            pendingCount: state.pendingInteractions.length,
+            status: state.status,
           })
-          await respond?.(command.requestId, {
-            inProgressMessages,
-            pendingInteractions,
-            status,
-            permissionMode,
-            isWorktree: snapshot?.isWorktree ?? false,
-            worktreePath: snapshot?.worktreePath ?? null,
-            gitBranch: snapshot?.gitBranch ?? null,
-            // Status-bar facts a late subscriber cannot replay from events:
-            // usage only arrives with the next turn, and sandbox is a runtime fact.
-            ...(sandboxInfo ? { sandboxInfo } : {}),
-            // Codex voice lives in its own table, so `load_session_messages` can never
-            // return it. Riding along here keeps it inside the restore buffer window —
-            // a later fetch would clobber live utterances the phone already applied.
-            // `threadMessages` is deliberately left behind: it is a stale provider
-            // cache that duplicates what chat_messages already carries.
-            ...(realtimeTimeline ? {
-              realtimeSegments: realtimeTimeline.segments,
-              activeRealtimeSessionId: realtimeTimeline.activeRealtimeSessionId,
-            } : {}),
-            contextTokens: snapshot?.contextTokens ?? 0,
-            totalCostUsd: snapshot?.totalCostUsd ?? 0,
-          })
+          await respond?.(command.requestId, state)
         } catch (err) {
           await respond?.(command.requestId, { error: (err as Error).message })
         }
@@ -1272,6 +1264,14 @@ export class AgentService {
           projects: folders.map((f) => ({ path: f.path, name: basename(f.path) })),
         })
         log.info('[CONN-DESK] list_projects done elapsed=%dms count=%d', Date.now() - cmdStart, folders.length)
+        break
+      }
+      case 'list_session_activity': {
+        const sessions: SessionActivity[] = []
+        this.sessionManager?.forEachSession((session) => {
+          if (!session.ephemeral) sessions.push(summarizeSessionActivity({ ...session.snapshot, status: session.isStreaming() ? 'streaming' : session.snapshot.status }, session.getPendingInteractions()))
+        })
+        await respond?.(command.requestId, { sessions })
         break
       }
       case 'list_sessions': {

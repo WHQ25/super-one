@@ -16,6 +16,7 @@ export type HistoryPage = {
 }
 
 export type SessionSnapshot = {
+  /** Authoritative live turn, including completed rows not yet in persisted history. */
   inProgressMessages?: ChatMessage[]
   pendingInteractions?: AgentEvent[]
   status?: string

@@ -3564,6 +3564,18 @@ describe('Session ownership', () => {
 })
 
 describe('pending interactions survive window reopen', () => {
+  it('restores host confirmations before a backend starts and removes resolved requests', () => {
+    const { session } = makeSession({ id: 'host-prompt', projectPath: '/project' })
+    session.emitHostEvent({ type: 'permission_request', request: {
+      requestId: 'host-1', toolName: 'config_apply', input: {},
+    } } as AgentEvent)
+    expect(session.getPendingInteractions()).toEqual([expect.objectContaining({
+      type: 'permission_request', sessionId: 'host-prompt', projectPath: '/project',
+    })])
+    session.emitHostEvent({ type: 'interaction_resolved', interactionType: 'permission', requestId: 'host-1' })
+    expect(session.getPendingInteractions()).toEqual([])
+  })
+
   async function startBackend(session: Session, backend: FakeBackend): Promise<void> {
     void session.send({ content: 'go' })
     await new Promise((r) => setTimeout(r, 0))

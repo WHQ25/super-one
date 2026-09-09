@@ -1,3 +1,4 @@
+import { hostPendingInteractions, trackHostInteraction } from './host-pending-interactions'
 import { dispatchBackendSteer } from './dispatch-backend-steer'
 import { broadcastSessionSettings } from './session-settings-broadcast'
 import type {
@@ -1296,8 +1297,9 @@ export class Session implements SessionContract {
   }
 
   getPendingInteractions(): AgentEvent[] {
-    if (!this.backendStarted) return []
-    return this.backend.getPendingInteractions().map((event) => {
+    if (this._status === 'disposed') return []
+    const events = [...(this.backendStarted ? this.backend.getPendingInteractions() : []), ...hostPendingInteractions(this)]
+    return events.map((event) => {
       const existingProjectPath = (event as { projectPath?: string }).projectPath
       return { ...event, sessionId: this.id, projectPath: existingProjectPath ?? this.projectPath } as AgentEvent
     })
@@ -2237,6 +2239,7 @@ export class Session implements SessionContract {
 
   emitHostEvent(event: AgentEvent): void {
     if (this._status === 'disposed') return
+    trackHostInteraction(this, event)
     this.forwardEvent(event)
   }
 

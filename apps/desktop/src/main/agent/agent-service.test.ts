@@ -2620,6 +2620,27 @@ describe('AgentService.handleRemoteCommand', () => {
     expect(respond).toHaveBeenCalledWith('create-sandbox-fail', expect.objectContaining({ ok: true }))
   })
 
+  it('restores cross-project pending summaries without subscribing to chats', async () => {
+    const service = new AgentService()
+    const session = {
+      snapshot: { id: 'background', projectPath: '/other', harnessId: 'codex', status: 'idle' },
+      isStreaming: () => false,
+      getPendingInteractions: () => [{ type: 'ask_user_question', request: { requestId: 'q1', questions: [{ question: 'Which file?' }] } }],
+    }
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      forEachSession: (visit: (session: unknown) => void) => {
+        visit(session)
+        visit({ ...session, ephemeral: true })
+      },
+    }
+    const respond = vi.fn()
+    await service.handleRemoteCommand({ type: 'list_session_activity', requestId: 'activity' }, respond)
+    expect(respond).toHaveBeenCalledWith('activity', { sessions: [expect.objectContaining({
+      sessionId: 'background', projectPath: '/other', pendingCount: 1,
+      pendingReason: { en: 'Which file?', zh: 'Which file?' },
+    })] })
+  })
+
   it('lists remote sessions with live model, status, tags, and ACP identity', async () => {
     vi.mocked(dbSessions.listSessionsForFolder).mockReturnValue([{
       sessionId: 'session-acp',

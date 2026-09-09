@@ -1,5 +1,5 @@
 import { createElement, useContext, useMemo, type ComponentProps, type ReactNode } from 'react'
-import { FileText } from 'lucide-react'
+import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { createMathPlugin } from '@streamdown/math'
 import { defaultRehypePlugins, type Components } from 'streamdown'
 import { harden, BlockPolicy } from 'rehype-harden'
@@ -62,6 +62,10 @@ async function copyText(text: string): Promise<boolean> {
  * Project file citation. The phone cannot open an editor tab, so the chip hands
  * the resolved host path to the native `openFile` action — the same affordance
  * the tool rows already use for a touched file.
+ *
+ * The icon is resolved from the PATH's basename, not the link label: markdown
+ * may caption a file with prose, and the desktop `InlineFileChip` makes the same
+ * choice so a citation reads identically on both surfaces.
  */
 function NativeFileChip({
   name,
@@ -85,7 +89,7 @@ function NativeFileChip({
       }}
       className="inline-flex items-center gap-0.5 rounded bg-muted px-1 align-baseline text-[0.9em] text-foreground whitespace-nowrap"
     >
-      <FileText className="size-[0.9em] shrink-0" />
+      <FileIcon name={filePath.split(/[/\\]/).pop() || name} size={12} />
       <span>{name}</span>
       {lineNumber != null && (
         <span className="text-[0.85em] text-muted-foreground">{formatLineRange(lineNumber, endLine)}</span>

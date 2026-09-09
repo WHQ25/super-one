@@ -293,7 +293,12 @@ test('25b turns a project file citation into a native openFile chip', async ({ p
     projectPath: '/Users/me/proj',
     messages: [textMessage('cite', 'See [ToolRow.tsx](src/components/ToolRow.tsx:42)')],
   })
-  await page.getByRole('button', { name: /ToolRow\.tsx/ }).click()
+  const chip = page.getByRole('button', { name: /ToolRow\.tsx/ })
+  // The icon must be the file-type glyph (react-symbols), not lucide's generic
+  // document — that generic glyph is the regression this test pins.
+  await expect(chip.locator('svg')).toHaveCount(1)
+  await expect(chip.locator('svg.lucide')).toHaveCount(0)
+  await chip.click()
   await expect.poll(() => page.evaluate(() => (
     globalThis as typeof globalThis & {
       __hostMessages: Array<{ type?: string; action?: string; payload?: { path?: string } }>

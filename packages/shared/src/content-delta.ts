@@ -1,5 +1,38 @@
 import type { ChatMessage, ContentBlock } from './agent-types'
 
+/**
+ * Every block that reports the outcome of a tool call, keyed by `toolUseId`.
+ *
+ * The desktop only ever sees `tool_result`. The remote projection sent to the
+ * phone rewrites two of them into richer shapes — `bash_result` carries the
+ * command echo plus pre-tokenised ANSI, `todo_result` carries the parsed todo
+ * list — because the phone cannot recompute either from a stripped input.
+ *
+ * Anything that asks "did this tool finish, and what did it say" must accept all
+ * three. Matching `tool_result` alone silently loses the result on mobile AND
+ * leaves the row shimmering forever, since only a matched result seals a
+ * `tool_use` out of `streaming`.
+ */
+export type ToolResultBlock = Extract<
+  ContentBlock,
+  { type: 'tool_result' | 'bash_result' | 'todo_result' }
+>
+
+export function isToolResultBlock(block: ContentBlock): block is ToolResultBlock {
+  return block.type === 'tool_result' || block.type === 'bash_result' || block.type === 'todo_result'
+}
+
+/**
+ * A tool call, under either the desktop's `tool_use` type or one of the remote
+ * projection's per-tool types (`bash`, `edit`, `read`, …). `toolName` is what
+ * every one of them carries and no result block does.
+ */
+export type ToolUseLikeBlock = Extract<ContentBlock, { toolName: string }>
+
+export function isToolUseBlock(block: ContentBlock): block is ToolUseLikeBlock {
+  return 'toolName' in block
+}
+
 /** Fields that carry UI-facing summary text for tool rows. */
 const SUMMARY_INPUT_KEYS = [
   'query', 'pattern', 'command', 'description', 'file_path', 'path',
@@ -92,11 +125,16 @@ function sameParent(a: ContentBlock, b: ContentBlock): boolean {
 //     between two deltas of the SAME thinking block (same content_block index).
 // A same-stream tool_use is NOT skipped: it is a real reasoning boundary, so
 // thinking before vs. after an agent's own tool call stays in separate blocks.
+// A result is only skippable while that call is still in the turn to act as the
+// boundary. The remote projection drops the TodoWrite call and forwards only
+// `todo_result`, so there the result IS the boundary — skipping it merged the
+// agent's narration around six todo updates into one paragraph, printed before
+// the lists it described.
 function lastMergeTargetIndex(content: ContentBlock[], delta: ContentBlock): number {
   for (let i = content.length - 1; i >= 0; i--) {
     const b = content[i]
     if (!sameParent(b, delta)) continue
-    if (b.type === 'tool_result') continue
+    if (isToolResultBlock(b) && content.some((c) => isToolUseBlock(c) && c.toolUseId === b.toolUseId)) continue
     return i
   }
   return -1
@@ -135,11 +173,15 @@ export function applyContentDelta(
       return content.map((b, i) => (i === idx ? { ...target, thinking: target.thinking + delta.thinking, endedAt: delta.endedAt ?? target.endedAt } : b))
     }
   }
-  if (delta.type === 'tool_use') {
-    const idx = content.findIndex((b) => b.type === 'tool_use' && b.toolUseId === delta.toolUseId)
+  // `isToolUseBlock`, not `type === 'tool_use'`: the remote projection types the
+  // call by its tool (`bash`, `read`, …). Claude opens a tool block with an empty
+  // input and fills it in a second delta, so matching the desktop shape alone
+  // appended both — the phone drew the same call twice, once summary-less.
+  if (isToolUseBlock(delta)) {
+    const idx = content.findIndex((b) => isToolUseBlock(b) && b.toolUseId === delta.toolUseId)
     if (idx !== -1) {
       const existing = content[idx]
-      if (existing.type !== 'tool_use') {
+      if (!isToolUseBlock(existing)) {
         return content.map((b, i) => (i === idx ? { ...delta, startedAt: now() } : b))
       }
       // Sparse ACP updates (status/content only, or backend web_search without query)
@@ -166,9 +208,9 @@ export function applyContentDelta(
     }
     return [...content, { ...delta, startedAt: now() }]
   }
-  if (delta.type === 'tool_result') {
+  if (isToolResultBlock(delta)) {
     const updated = content.map((b) =>
-      b.type === 'tool_use' && b.toolUseId === delta.toolUseId ? { ...b, status: 'complete' as const } : b,
+      isToolUseBlock(b) && b.toolUseId === delta.toolUseId ? { ...b, status: 'complete' as const } : b,
     )
     return [...updated, delta]
   }
@@ -192,7 +234,7 @@ export function applyContentDelta(
 export function sealStreamingTools(content: ContentBlock[]): ContentBlock[] {
   let changed = false
   const next = content.map((block) => {
-    if (block.type !== 'tool_use' || block.status !== 'streaming') return block
+    if (!isToolUseBlock(block) || block.status !== 'streaming') return block
     changed = true
     return { ...block, status: 'complete' as const }
   })

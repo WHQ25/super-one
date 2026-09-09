@@ -250,6 +250,49 @@ function sanitizeCollabInput(toolName: string, input: string): string {
   return launches.length > 0 ? JSON.stringify({ launches }) : ''
 }
 
+/**
+ * Fields the shared SuperOne compact tool rows read out of their input
+ * (`SUPERONE_TOOL_DESCRIPTORS` in `@superone/chat-view/presenters/superone-tool-display`).
+ *
+ * The rows show a verb and a short subject — a settings domain, a manual topic, a
+ * mini-app name. Everything here is already the tool's *subject* rather than its
+ * content, which is the same line `BUILTIN_TOOL_INPUT_FIELDS` draws. Adding a
+ * descriptor without adding its fields here renders a labelled row with an empty
+ * subject on the phone and a complete one on the desktop.
+ */
+const SUPERONE_TOOL_SUMMARY_FIELDS: Record<string, readonly string[]> = {
+  config_read: ['domain'],
+  read_manual: ['domain', 'topic'],
+  miniapp_dev_register: ['name', 'directory', 'appDir'],
+  miniapp_dev_update_types: ['appDir'],
+  miniapp_dev_setup: ['name', 'directory', 'description'],
+}
+
+/** Tag lists and the session count the `session_tag` row shows; ids stay opaque. */
+function sanitizeSessionTagInput(source: Record<string, unknown>): Record<string, unknown> {
+  const safe: Record<string, unknown> = {}
+  for (const key of ['add', 'remove', 'set'] as const) {
+    const value = source[key]
+    if (Array.isArray(value)) safe[key] = value.filter((tag) => typeof tag === 'string')
+  }
+  if (Array.isArray(source.sessionIds)) safe.sessionIds = source.sessionIds.map(() => '')
+  return safe
+}
+
+function sanitizeSuperoneRowInput(toolName: string, input: string): string {
+  const bare = superoneBareName(toolName)
+  if (!bare || !input) return ''
+  const fields = SUPERONE_TOOL_SUMMARY_FIELDS[bare]
+  if (!fields && bare !== 'session_tag') return ''
+  let parsed: unknown
+  try { parsed = JSON.parse(input) } catch { return '' }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return ''
+  const source = parsed as Record<string, unknown>
+  const safe = bare === 'session_tag' ? sanitizeSessionTagInput(source) : {}
+  if (fields) copyDefined(source, safe, fields)
+  return Object.keys(safe).length > 0 ? JSON.stringify(safe) : ''
+}
+
 function sanitizeWorkflowInput(toolName: string, input: string): string {
   const bare = superoneBareName(toolName)
   const supported = new Set([
@@ -305,6 +348,7 @@ function sanitizeWorkflowInput(toolName: string, input: string): string {
 export function sanitizeRemoteToolInput(toolName: string, input: string): string {
   if (shouldKeepRemoteToolInput(toolName)) return input
   return sanitizeBuiltinInput(toolName, input)
+    || sanitizeSuperoneRowInput(toolName, input)
     || sanitizeBrowserInput(toolName, input)
     || sanitizeInteractiveInput(toolName, input)
     || sanitizeCollabInput(toolName, input)

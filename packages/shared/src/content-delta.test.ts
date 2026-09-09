@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { CodexThreadItem, ContentBlock } from './agent-types'
-import { applyContentDelta, mergeToolUseInputJson, sealCodexItems } from './content-delta'
+import { applyContentDelta, mergeToolUseInputJson, sealCodexItems, sealStreamingTools } from './content-delta'
 
 const thinking = (text: string, parent?: string | null): ContentBlock =>
   ({ type: 'thinking', thinking: text, ...(parent !== undefined ? { parentToolUseId: parent } : {}) }) as ContentBlock
@@ -162,5 +162,115 @@ describe('sealCodexItems', () => {
     expect(sealed[0].status).toBe('completed')
     const child = (sealed[0] as unknown as { childItems: Record<string, CodexThreadItem[]> }).childItems.t1[0]
     expect(child.status).toBe('completed')
+  })
+})
+
+/**
+ * The remote projection sent to the phone rewrites a Bash `tool_result` into
+ * `bash_result` (command echo + pre-tokenised ANSI) and a Todo one into
+ * `todo_result`, and types the CALL by its tool (`bash`) instead of `tool_use`.
+ * Matching only the desktop shapes left the row shimmering "Running…" forever
+ * with its output nowhere on screen.
+ */
+describe('applyContentDelta: projected result blocks seal their call', () => {
+  const bashCall: ContentBlock = {
+    type: 'bash', toolName: 'Bash', toolUseId: 'bash-1', status: 'streaming',
+    input: JSON.stringify({ command: 'ls -la' }),
+  } as ContentBlock
+
+  it('completes a projected bash call when its bash_result lands', () => {
+    const result = { type: 'bash_result', toolUseId: 'bash-1', summary: '$ ls -la\nfoo.ts' } as ContentBlock
+    const content = applyContentDelta([bashCall], result)
+
+    expect(content).toHaveLength(2)
+    expect((content[0] as { status?: string }).status).toBe('complete')
+  })
+
+  it('completes a projected todo call when its todo_result lands', () => {
+    const call = { ...bashCall, toolName: 'TodoWrite', toolUseId: 'todo-1', type: 'tool_use' } as ContentBlock
+    const result = { type: 'todo_result', toolUseId: 'todo-1', summary: 'ok', toolTodos: [] } as ContentBlock
+
+    expect((applyContentDelta([call], result)[0] as { status?: string }).status).toBe('complete')
+  })
+
+  it('leaves an unrelated call streaming', () => {
+    const other = { ...bashCall, toolUseId: 'bash-2' } as ContentBlock
+    const result = { type: 'bash_result', toolUseId: 'bash-1', summary: 'done' } as ContentBlock
+
+    expect((applyContentDelta([other], result)[0] as { status?: string }).status).toBe('streaming')
+  })
+
+  it('does not treat a projected result as a boundary for the block it interleaves', () => {
+    // A Bash result arrives asynchronously and can land between two deltas of the
+    // SAME thinking block. Its call is already in the turn and is the real
+    // boundary, so the result must be skipped — the exemption `tool_result` has.
+    const content = [
+      bashCall,
+      { type: 'thinking', thinking: 'Reading the ' } as ContentBlock,
+      { type: 'bash_result', toolUseId: 'bash-1', summary: 'done' } as ContentBlock,
+      { type: 'thinking', thinking: 'listing.' } as ContentBlock,
+    ].reduce<ContentBlock[]>((acc, delta) => applyContentDelta(acc, delta), [])
+
+    const thoughts = content.filter((b) => b.type === 'thinking')
+    expect(thoughts).toHaveLength(1)
+    expect((thoughts[0] as { thinking: string }).thinking).toBe('Reading the listing.')
+  })
+
+  it('treats a call-less result as a boundary, because nothing else can be one', () => {
+    // The projection drops the TodoWrite call and forwards only `todo_result`,
+    // so exempting it merged the agent's narration around six todo updates into
+    // one paragraph, printed above every list it was describing.
+    const content = applyContentDelta(
+      applyContentDelta(
+        [{ type: 'text', text: 'Step one.' } as ContentBlock],
+        { type: 'todo_result', toolUseId: 'todo-1', summary: 'ok' } as ContentBlock,
+      ),
+      { type: 'text', text: 'Step two.' } as ContentBlock,
+    )
+
+    expect(content.filter((b) => b.type === 'text')).toHaveLength(2)
+  })
+})
+
+/**
+ * The same projection types the CALL by its tool name (`bash`, `read`, `edit`, …).
+ * Claude opens a tool block with an empty input and fills it in a second delta,
+ * so a reducer that only merges `type === 'tool_use'` appends both: the phone
+ * drew the command twice, once as an empty summary row and once with the real
+ * command.
+ */
+describe('applyContentDelta: projected tool calls merge by toolUseId', () => {
+  const open = (type: string): ContentBlock =>
+    ({ type, toolName: 'Bash', toolUseId: 'bash-1', input: '', status: 'streaming' }) as ContentBlock
+  const filled = (type: string): ContentBlock =>
+    ({ type, toolName: 'Bash', toolUseId: 'bash-1', status: 'streaming',
+      input: JSON.stringify({ command: 'ls -la' }), toolSummary: 'ls -la' }) as ContentBlock
+
+  it('merges the opening and filled deltas of a projected bash call', () => {
+    const content = applyContentDelta(applyContentDelta([], open('bash')), filled('bash'))
+
+    expect(content).toHaveLength(1)
+    expect((content[0] as { input: string }).input).toContain('ls -la')
+    expect((content[0] as { type: string }).type).toBe('bash')
+  })
+
+  it('keeps the desktop tool_use shape merging as before', () => {
+    const content = applyContentDelta(applyContentDelta([], open('tool_use')), filled('tool_use'))
+
+    expect(content).toHaveLength(1)
+    expect((content[0] as { input: string }).input).toContain('ls -la')
+  })
+
+  it('still appends a different projected call', () => {
+    const other = { ...(filled('read') as object), toolName: 'Read', toolUseId: 'read-1' } as ContentBlock
+    const content = applyContentDelta(applyContentDelta([], open('bash')), other)
+
+    expect(content).toHaveLength(2)
+  })
+
+  it('seals a projected call left streaming by an interrupt', () => {
+    const sealed = sealStreamingTools([open('bash')])
+
+    expect((sealed[0] as { status?: string }).status).toBe('complete')
   })
 })

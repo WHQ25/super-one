@@ -1,3 +1,4 @@
+import { isCodexAsyncAnswer } from './codex-async-question'
 import type { ChatMessage } from './agent-types'
 
 export interface TurnOutlineEntry {
@@ -17,7 +18,7 @@ function textOf(message: ChatMessage): string {
 }
 
 function isUserTurn(message: ChatMessage): boolean {
-  return message.role === 'user' && message.providerId !== 'system'
+  return message.role === 'user' && message.providerId !== 'system' && !isCodexAsyncAnswer(message)
 }
 
 export function extractTurnOutline(messages: ChatMessage[]): TurnOutlineEntry[] {

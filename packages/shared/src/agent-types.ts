@@ -109,6 +109,13 @@ interface ToolUseBase {
 export type ContentBlock =
   | { type: 'text'; text: string; parentToolUseId?: string | null; codeBlockTokens?: Array<{ language: string; tokens: DiffTokenLine[] | null }>; isPaste?: boolean }
   | { type: 'thinking'; thinking: string; parentToolUseId?: string | null; startedAt?: number; endedAt?: number }
+  /**
+   * Callout the desktop splits out of assistant text before it leaves for a remote
+   * surface (`splitTextIntoBlocks`), so the phone renders a card instead of the raw
+   * `★ … ───` marker lines. Desktop chat never stores one: it keeps the markers in
+   * the text and splits at render time in `CopyableMarkdownPresenter`.
+   */
+  | { type: 'insight'; title: string; content: string; parentToolUseId?: string | null; codeBlockTokens?: Array<{ language: string; tokens: DiffTokenLine[] | null }> }
   | { type: 'tool_use' } & ToolUseBase & ToolMeta & AgentTaskData & WorkflowData
   | { type: RemoteToolType } & ToolUseBase & ToolMeta & AgentTaskData & WorkflowData
   | { type: 'tool_result'; toolUseId: string; summary: string; outputPath?: string; isTimedOut?: boolean; isError?: boolean; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[]; todoToolName?: string; toolTodos?: TodoToolItem[] }
@@ -1755,6 +1762,7 @@ export type AgentEventBase =
    * every paired device rather than to one session's subscribers.
    */
   | { type: 'session_list_changed'; projectPath: string }
+  | { type: 'session_activity'; activity: import('./session-activity').SessionActivity; completed?: boolean }
   /**
    * Ultra-short one-line summary of the just-finished turn (Grok `last_turn_summary`).
    * Display-only meta — not part of the agent reply.
@@ -4413,6 +4421,7 @@ export interface RemoteSystemInfo {
 }
 
 export type RemoteCommand =
+  | import('./codex-async-question').CodexAsyncQuestionAnswerCommand
   | { type: 'create_session'; requestId: string; sessionId: string; projectPath: string; provider?: HarnessId; acpAgentId?: string; permissionMode?: string; effort?: string; model?: string; mode?: string; agentPreset?: string; apiProviderId?: string | null; gitBranch?: string; worktreePath?: string; worktreeBranch?: string; worktreeMode?: WorktreeMode; worktreeBranchName?: string; worktreeCarryLocalChanges?: boolean; additionalDirectories?: string[]; /** Sandbox the picker chose before the session existed (Claude / Cursor). */ sandboxMode?: SandboxMode }
   | { type: 'send_message'; sessionId: string; projectPath: string; content: string; provider?: HarnessId; model?: string; effort?: string; images?: ImageAttachment[]; permissionPreset?: string; collaborationMode?: string; threadId?: string; clientMessageId?: string; priority?: 'now' | 'next' | 'later'; /** OpenCode primary agent for this turn. */ agent?: string; /** Codex service tier (`fast`). */ serviceTier?: string | null; /** Cursor catalog params (param id → value). */ modelParams?: Record<string, string> }
   | { type: 'dequeue_message'; clientMessageId: string; projectPath?: string; sessionId: string }
@@ -4427,6 +4436,13 @@ export type RemoteCommand =
   | { type: 'leave_session'; sessionId: string }
   | { type: 'load_session_messages'; requestId: string; projectPath: string; sessionId: string; limit?: number; cursor?: number }
   | { type: 'set_permission_mode'; mode: string; projectPath?: string; sessionId: string }
+  /**
+   * Save a widget the phone is looking at as a reusable template. The template store
+   * is the host's disk (`<project>/.superone` or `$SUPERONE_HOME`), so the phone can
+   * only ask — which is also why `scope: 'project'` is rejected rather than silently
+   * downgraded when the command names no project.
+   */
+  | { type: 'save_widget_template'; requestId: string; projectPath: string | null; input: SaveWidgetTemplateRequest }
   /** Sandbox toggle on a running session (Claude / Cursor). Responds with the applied `SandboxInfo`. */
   | { type: 'set_sandbox_mode'; requestId: string; mode: SandboxMode; projectPath: string; sessionId: string }
   /** Live model / effort / session-mode / preset change on a running session. */
@@ -4463,6 +4479,7 @@ export type RemoteCommand =
   | { type: 'clone_repository'; requestId: string; remoteUrl: string; parentPath: string; directoryName?: string; shallow?: boolean }
   | { type: 'list_projects'; requestId: string }
   | { type: 'list_harness_options'; requestId: string }
+  | { type: 'list_session_activity'; requestId: string }
   | { type: 'list_sessions'; requestId: string; projectPath: string; limit?: number; offset?: number }
   | { type: 'archive_session'; requestId: string; projectPath: string; sessionId: string }
   | { type: 'pin_session'; requestId: string; projectPath: string; sessionId: string; pinned: boolean }

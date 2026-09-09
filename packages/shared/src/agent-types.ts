@@ -4537,7 +4537,12 @@ export type RemoteCommand =
   | { type: 'add_project_additional_dir'; requestId: string; projectPath: string; dir: string; provider?: HarnessId }
   | { type: 'remove_project_additional_dir'; requestId: string; projectPath: string; dir: string; provider?: HarnessId }
   | { type: 'set_session_additional_dirs'; requestId: string; projectPath: string; sessionId: string; dirs: string[] }
-  | { type: 'read_desktop_file'; requestId: string; projectPath?: string; sessionId?: string; path: string; maxBytes?: number; statOnly?: boolean }
+  /**
+   * `preferInline`: when the file is small text (see `@superone/shared/file-preview`),
+   * return its UTF-8 content in the response instead of staging it for download.
+   * Anything else falls back to the URL path exactly as if the flag were absent.
+   */
+  | { type: 'read_desktop_file'; requestId: string; projectPath?: string; sessionId?: string; path: string; maxBytes?: number; statOnly?: boolean; preferInline?: boolean }
   | { type: 'upload_file'; requestId: string; projectPath?: string; sessionId?: string; targetDir: string; name: string; mimeType: string; size: number; inlineBase64?: string }
   | { type: 'upload_file_complete'; requestId: string }
   | { type: 'list_providers'; requestId: string }
@@ -4611,6 +4616,8 @@ export interface ReadDesktopFileMetadata {
 
 export type ReadDesktopFileResponse = ReadDesktopFileMetadata & (
   | { ok: true; statOnly: true }
+  /** Small text returned in-band; only when the request set `preferInline`. */
+  | { ok: true; inline: true; text: string }
   | {
       ok: true
       url: string

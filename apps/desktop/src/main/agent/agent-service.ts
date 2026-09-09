@@ -41,7 +41,7 @@ import {
 } from '../providers/credential-store'
 import type { CapabilityTask, ConsumerBinding, ConsumerId, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
 import { sanitizeGitRef } from '../path-security'
-import { authorizeAndStat, FileBridgeError, type AuthorizedFile } from '../file-bridge'
+import { authorizeAndStat, FileBridgeError, readInlinePreviewText, type AuthorizedFile } from '../file-bridge'
 import { tmpdir } from 'os'
 import { app } from 'electron'
 import { activateWorktree, getCheckedOutBranches, getWorktreeInfo, gitErrorMessage } from '../git/worktree-ops'
@@ -1777,6 +1777,29 @@ export class AgentService {
         modifiedAt: authorized.modifiedAt,
       })
       return
+    }
+
+    // Small text rides back in the response itself: no LAN URL to sign and, over
+    // the relay, no encrypted R2 round-trip for a file the phone only wants to read.
+    if (command.preferInline) {
+      try {
+        const text = await readInlinePreviewText(authorized)
+        if (text !== null) {
+          await respond(command.requestId, {
+            ok: true,
+            inline: true,
+            text,
+            mimeType: authorized.mimeType,
+            name: authorized.name,
+            size: authorized.size,
+            modifiedAt: authorized.modifiedAt,
+          })
+          return
+        }
+      } catch (err) {
+        await respond(command.requestId, { ok: false, error: 'internal_error', message: (err as Error).message })
+        return
+      }
     }
 
     const transport = source?.transport ?? 'relay'

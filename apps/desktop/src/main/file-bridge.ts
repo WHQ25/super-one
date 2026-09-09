@@ -1,6 +1,7 @@
 import { promises as fs, statSync, existsSync } from 'node:fs'
 import { realpath } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, normalize, resolve } from 'node:path'
+import { INLINE_PREVIEW_MAX_BYTES, isInlinePreviewCandidate, looksBinary } from '@superone/shared/file-preview'
 import { isPathAtOrWithinAllowed, isPathWithinAllowed, resolveRealPath } from './path-security'
 
 const FILE_BRIDGE_MIME: Record<string, string> = {
@@ -128,6 +129,23 @@ export async function authorizeAndStat(
     modifiedAt: Math.floor(stat.mtimeMs),
     name: basename(realPath),
   }
+}
+
+/**
+ * Read an already-authorized file as UTF-8 text for an in-band preview, or
+ * return `null` when it should take the download path instead.
+ *
+ * The name decides eligibility and the bytes get the final say: a `.txt` that
+ * contains a NUL is binary whatever it is called. A `null` here is not an error —
+ * the caller falls back to the signed-URL / relay upload path.
+ */
+export async function readInlinePreviewText(file: AuthorizedFile): Promise<string | null> {
+  if (!isInlinePreviewCandidate(file.name, file.size)) return null
+  // `size` came from a stat moments ago; re-check after the read so a file that
+  // grew in between cannot push an oversized payload onto the RPC channel.
+  const bytes = await fs.readFile(file.realPath)
+  if (bytes.byteLength > INLINE_PREVIEW_MAX_BYTES || looksBinary(bytes)) return null
+  return bytes.toString('utf8')
 }
 
 export interface AuthorizedWriteTarget {

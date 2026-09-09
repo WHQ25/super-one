@@ -2,7 +2,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, realpathSyn
 import { tmpdir } from 'node:os'
 import { join, basename } from 'node:path'
 import { afterAll, beforeAll, describe, it, expect } from 'vitest'
-import { authorizeAndStat, authorizeWriteTarget, FileBridgeError, inferMimeType, canonicalizeRoots } from './file-bridge'
+import { INLINE_PREVIEW_MAX_BYTES } from '@superone/shared/file-preview'
+import { authorizeAndStat, authorizeWriteTarget, FileBridgeError, inferMimeType, canonicalizeRoots, readInlinePreviewText } from './file-bridge'
 
 let workspace: string
 let projectRoot: string
@@ -16,6 +17,9 @@ beforeAll(() => {
   writeFileSync(join(projectRoot, 'big.bin'), Buffer.alloc(64 * 1024, 0xaa))
   writeFileSync(join(projectRoot, '.env'), 'SECRET=1')
   writeFileSync(join(projectRoot, 'cert.pem'), 'pem content')
+  writeFileSync(join(projectRoot, 'main.ts'), 'const 中文 = "ok"\n')
+  writeFileSync(join(projectRoot, 'fake.txt'), Buffer.from([0x68, 0x69, 0x00, 0x21]))
+  writeFileSync(join(projectRoot, 'huge.md'), Buffer.alloc(INLINE_PREVIEW_MAX_BYTES + 1, 0x61))
 
   mkdirSync(join(projectRoot, '.ssh'), { recursive: true })
   writeFileSync(join(projectRoot, '.ssh', 'id_rsa'), 'fake key')
@@ -172,5 +176,30 @@ describe('authorizeAndStat', () => {
     await expect(
       authorizeAndStat(join(projectRoot, 'image.png'), { allowedRoots: [] }),
     ).rejects.toMatchObject({ code: 'forbidden_path' })
+  })
+})
+
+describe('readInlinePreviewText', () => {
+  const ctx = { allowedRoots: [] as string[] }
+  const opts = { skipRootCheck: true }
+
+  it('returns UTF-8 text for a small source file', async () => {
+    const file = await authorizeAndStat(join(projectRoot, 'main.ts'), ctx, opts)
+    expect(await readInlinePreviewText(file)).toBe('const 中文 = "ok"\n')
+  })
+
+  it('declines a file whose name says text but whose bytes hold a NUL', async () => {
+    const file = await authorizeAndStat(join(projectRoot, 'fake.txt'), ctx, opts)
+    expect(await readInlinePreviewText(file)).toBeNull()
+  })
+
+  it('declines an image without reading it', async () => {
+    const file = await authorizeAndStat(join(projectRoot, 'image.png'), ctx, opts)
+    expect(await readInlinePreviewText(file)).toBeNull()
+  })
+
+  it('declines text past the inline byte limit', async () => {
+    const file = await authorizeAndStat(join(projectRoot, 'huge.md'), ctx, opts)
+    expect(await readInlinePreviewText(file)).toBeNull()
   })
 })

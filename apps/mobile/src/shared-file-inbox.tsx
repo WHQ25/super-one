@@ -78,7 +78,7 @@ export function useSharedFileInbox() {
         maxBytes: MAX_DOWNLOAD_BYTES,
       } as RemoteCommand, 180_000) as ReadDesktopFileResponse | ReadDesktopFileError
       if (!response.ok) throw new Error(response.message ?? response.error)
-      if ('statOnly' in response) throw new Error('desktop returned metadata without file data')
+      if ('statOnly' in response || 'inline' in response) throw new Error('desktop returned metadata without file data')
       const event: SharedFileEvent = {
         type: 'shared_file',
         shareId,

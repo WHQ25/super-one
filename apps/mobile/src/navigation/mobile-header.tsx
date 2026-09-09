@@ -1,6 +1,8 @@
-import { ArrowLeft, Folder, FolderClosed, FolderPlus, Menu, MonitorSmartphone, MoreHorizontal, Search, SquareTerminal, TextCursorInput } from 'lucide-react-native'
+import { WorkspaceButton } from '../ui/workspace-button'
+import { ArrowLeft, Folder, FolderClosed, FolderPlus, MonitorSmartphone, MoreHorizontal, Search, SquareTerminal, TextCursorInput } from 'lucide-react-native'
 import { Pressable, View } from 'react-native'
 import { Text } from '../ui/text'
+import { AnimatedSessionTitle } from '../ui/animated-session-title'
 import type { HarnessId } from '@superone/shared/agent-types'
 import { harnessDisplayName } from '../provider-state'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
@@ -37,11 +39,13 @@ export function mobileHeaderTitle(
 
 export function MobileHeader(props: {
   route: MobileRoute
+  pendingCount?: number
   title: string
   subtitle?: string
   provider: HarnessId
   /** False on the new-session landing, which names the project and branch itself. */
   hasSession?: boolean
+  sessionId?: string | null
   /**
    * The full status of the desktop we are paired with, not a three-state
    * summary: the glyph is how the user learns *which* route the session takes
@@ -99,8 +103,8 @@ export function MobileHeader(props: {
   return (
     <View style={styles.top}>
       <View style={props.onConfirm ? { minWidth: CONFIRM_SLOT_WIDTH, alignItems: 'flex-start' } : undefined}>
-        <IconButton icon={chat ? Menu : ArrowLeft}
-          label={chat ? 'Open workspace' : 'Back'} onPress={chat ? props.onSwitchSession : props.onBack} />
+        {chat ? <WorkspaceButton pendingCount={props.pendingCount} onPress={props.onSwitchSession} />
+          : <IconButton icon={ArrowLeft} label="Back" onPress={props.onBack} />}
       </View>
       <View style={styles.headerTitleGroup}>
         {props.route === 'files' ? (
@@ -114,7 +118,9 @@ export function MobileHeader(props: {
           </Pressable>
         ) : (
           <View style={styles.headerTitleRow}>
-            <Text numberOfLines={1} style={styles.title}>{props.title}</Text>
+            {chat && props.hasSession
+              ? <AnimatedSessionTitle key={props.sessionId} title={props.title} style={[styles.title, { fontSize: 15, textAlign: 'center' }]} />
+              : <Text numberOfLines={1} style={styles.title}>{props.title}</Text>}
           </View>
         )}
         {showMeta ? <SessionMetaRow deviceStatus={props.deviceStatus} reconnect={props.reconnect}

@@ -1,14 +1,17 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useInsertionEffect, useRef, useState } from 'react'
 import { cn } from '@superone/ui/lib/utils'
 import { useHoverMarquee } from '@superone/ui/components/ui/marquee-text'
 import { useEllipsisRepaintKey } from '@/lib/stall-utils'
 import { useChatStore } from '@/stores/chat'
 import { resolveSessionTitle } from './session-state-utils'
 
-const OUT_MS = 220
-const CHAR_STAGGER_MS = 55
-const FLIP_DURATION_MS = 360
-const IN_TAIL_MS = 120
+import {
+  sessionTitleAnimationCss,
+  SESSION_TITLE_OUT_MS as OUT_MS,
+  SESSION_TITLE_STAGGER_MS as CHAR_STAGGER_MS,
+  SESSION_TITLE_FLIP_MS as FLIP_DURATION_MS,
+  SESSION_TITLE_TAIL_MS as IN_TAIL_MS,
+} from '@superone/shared/session-title-animation'
 
 type Phase = 'idle' | 'out' | 'in'
 
@@ -27,6 +30,13 @@ interface SessionTitleAnimatedProps {
 }
 
 export function SessionTitleAnimated({ sessionId, fallback, className }: SessionTitleAnimatedProps) {
+  useInsertionEffect(() => {
+    if (document.getElementById('session-title-animation-style')) return
+    const style = document.createElement('style')
+    style.id = 'session-title-animation-style'
+    style.textContent = sessionTitleAnimationCss
+    document.head.appendChild(style)
+  }, [])
   const targetTitle = useSessionTitleByAgent(sessionId, fallback)
   const [displayTitle, setDisplayTitle] = useState(targetTitle)
   const [phase, setPhase] = useState<Phase>('idle')

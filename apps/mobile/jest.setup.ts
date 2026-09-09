@@ -34,3 +34,14 @@ jest.mock('react-native-reanimated', () => ({
   useDerivedValue: (fn: () => unknown) => ({ value: fn() }),
   useSharedValue: (initial: unknown) => ({ value: initial }),
 }))
+
+/** The title's temporary WebView is driven through its native message callbacks
+ * in component tests; its actual CSS/JS is exercised in browser integration tests. */
+jest.mock('react-native-webview', () => {
+  const React = require('react')
+  const { View } = require('react-native')
+  return { WebView: React.forwardRef((props: object, ref: unknown) => {
+    React.useImperativeHandle(ref, () => ({ injectJavaScript: jest.fn() }))
+    return React.createElement(View, props)
+  }) }
+})

@@ -45,7 +45,7 @@ export function AnchoredMenu(props: AnchoredMenuProps) {
 }
 
 function MenuSurface({ anchor, title, onDismiss, children, width = 300, titleAccessory }: AnchoredMenuProps) {
-  const { tokens: { colors, radius } } = useMobileTheme()
+  const { tokens: { colors, radius, shadows } } = useMobileTheme()
   const { t } = useMobileLocale()
   const translatedTitle = t(title)
   const viewport = useWindowDimensions()
@@ -81,8 +81,7 @@ function MenuSurface({ anchor, title, onDismiss, children, width = 300, titleAcc
       <Pressable accessibilityRole="button" accessibilityLabel={`${t('Close')} ${translatedTitle}`} onPress={onDismiss}
         style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }} />
       <View style={{ position: 'absolute', ...layout, borderWidth: 1, borderColor: colors.border,
-        borderRadius: radius.lg, backgroundColor: colors.surface, shadowColor: colors.foreground,
-        shadowOpacity: 0.15, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 8 }}>
+        borderRadius: radius.lg, backgroundColor: colors.surface, ...shadows.popover }}>
         <ScrollView keyboardShouldPersistTaps="always" bounces={false}
           onContentSizeChange={(_, height) => setContentHeight(height + 2)} contentContainerStyle={{ padding: 4 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 8, paddingRight: titleAccessory ? 0 : 8 }}>

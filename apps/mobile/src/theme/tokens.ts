@@ -15,6 +15,15 @@ export interface MobileThemeTokens {
   colors: GeneratedThemeColors
   spacing: { xs: number; sm: number; md: number; lg: number; xl: number }
   radius: { sm: number; md: number; lg: number; pill: number }
+  shadows: {
+    popover: {
+      shadowColor: string
+      shadowOpacity: number
+      shadowRadius: number
+      shadowOffset: { width: number; height: number }
+      elevation: number
+    }
+  }
   type: { meta: number; body: number; title: number; display: number }
 }
 
@@ -53,6 +62,16 @@ export function mobileThemeTokens(
     colors: scheme === 'dark' ? GENERATED_DARK_COLORS : GENERATED_LIGHT_COLORS,
     spacing: { xs: 4, sm: 8, md: 12, lg: 16, xl: 24 },
     radius: { sm: 6, md: 8, lg: 12, pill: 999 },
+    shadows: {
+      // Shadows absorb light in both schemes; foreground becomes a white halo in dark mode.
+      popover: {
+        shadowColor: '#000000',
+        shadowOpacity: scheme === 'dark' ? 0.28 : 0.12,
+        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 4 },
+        elevation: 4,
+      },
+    },
     type: { meta: 12, body: 15, title: 17, display: 24 },
   }
 }

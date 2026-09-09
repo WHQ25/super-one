@@ -1,5 +1,8 @@
+import { SessionUnseenGallery } from './SessionUnseenGallery'
+import { SessionAttentionGallery } from './SessionAttentionGallery'
 import { useEffect, useMemo, useState } from 'react'
 import { ScrollView, View } from 'react-native'
+import { SessionTitleGallery } from './SessionTitleGallery'
 import { Text } from '../ui/text'
 import { SessionMetaRow } from '../ui/session-meta-row'
 import { useMobileTheme } from '../theme/context'
@@ -85,6 +88,9 @@ export function SessionStatusGallery(props: { onOpenBranch: () => void }) {
   const rows = useMemo(() => buildRows(deadline), [deadline])
   return (
     <ScrollView contentContainerStyle={{ padding: 12, gap: 4 }}>
+      <SessionAttentionGallery />
+      <SessionUnseenGallery />
+      <SessionTitleGallery />
       <Text accessibilityRole="header" style={{ fontSize: 17, fontWeight: '500', color: colors.foreground }}>
         Connection and checkout
       </Text>

@@ -7,6 +7,7 @@ import {
   groupModels,
   hasSelectableEffort,
   keepsOpenAfterModelSelect,
+  modelPickerLabel,
   optionParamSummary,
   optionParamsForModel,
 } from './model-picker-state'
@@ -19,6 +20,25 @@ const openCodeModels: ModelOption[] = [
   { id: 'anthropic/claude-opus-5', name: 'Opus 5', description: '' },
   { id: 'openai/gpt-5.6', name: 'GPT-5.6', description: '' },
 ]
+
+describe('Codex model labels', () => {
+  it('uses desktop labels for catalog names and missing catalog entries', () => {
+    expect(modelPickerLabel('codex', 'gpt-5.6-sol', 'gpt-5.6-sol')).toBe('GPT5.6 Sol')
+    expect(modelPickerLabel('codex', 'gpt-6-astra')).toBe('GPT6 Astra')
+    expect(modelPickerLabel('codex', 'gpt-6-astra', 'Custom model')).toBe('Custom model')
+    expect(modelPickerLabel('codex', '')).toBe('')
+    expect(modelPickerLabel('opencode', 'openai/gpt-5.6', 'GPT-5.6')).toBe('GPT-5.6')
+  })
+
+  it('searches display names and original ids without changing the catalog', () => {
+    const models = [{ id: 'gpt-5.6-sol', name: 'gpt-5.6-sol', description: 'Reasoning' }]
+    for (const query of ['GPT5.6 Sol', 'gpt-5.6-sol']) {
+      const groups = groupModels(models, { harness: 'codex', query })
+      expect(groups[0]?.models).toEqual([{ ...models[0], name: 'GPT5.6 Sol' }])
+    }
+    expect(models[0]?.name).toBe('gpt-5.6-sol')
+  })
+})
 
 describe('effort visibility', () => {
   it('only offers effort when there is more than one level', () => {

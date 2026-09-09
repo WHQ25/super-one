@@ -10,6 +10,8 @@ export type SessionListRow = {
   messageCount?: number
   gitBranch?: string
   selectedModel?: string | null
+  isUnseen?: boolean
+  pendingCount?: number
   status?: string
   tags?: string[]
   /** Collaboration parent (`session_collab_start` spawn); groups the row on desktop. */
@@ -42,13 +44,12 @@ export type SessionListItem = {
 }
 
 /**
- * Mirrors the desktop sidebar's `groupSidebarSessions`, then promotes pinned
- * groups. A child whose parent is outside the loaded window stays a root, so
- * paging never drops a session; a pinned child stays under its parent, because
- * lifting it out would hide who spawned it.
+ * Mirrors the desktop sidebar's `groupSidebarSessions`. A child whose parent is
+ * outside the loaded window stays a root, so paging never drops a session.
  *
- * Promotion only orders what is already loaded. The desktop has no equivalent:
- * it keeps a cross-project pinned section and never reorders a project's list.
+ * Pinning does not reorder here, matching desktop: a pin surfaces the session in
+ * the drawer's cross-project Pinned section, and an expanded project keeps the
+ * host's recency order so expanding never reshuffles rows under the finger.
  */
 export function groupSessionRows(rows: SessionListRow[]): SessionListGroup[] {
   const ids = new Set(rows.map((row) => row.sessionId))
@@ -57,18 +58,15 @@ export function groupSessionRows(rows: SessionListRow[]): SessionListGroup[] {
     if (!row.parentSessionId || !ids.has(row.parentSessionId)) continue
     children.set(row.parentSessionId, [...(children.get(row.parentSessionId) ?? []), row])
   }
-  const groups = rows
+  return rows
     .filter((row) => !row.parentSessionId || !ids.has(row.parentSessionId))
     .map((parent) => ({ parent, children: children.get(parent.sessionId) ?? [] }))
-  // Array.prototype.sort is stable, so unpinned groups keep the host's order.
-  return groups.sort((a, b) => Number(!!b.parent.isPinned) - Number(!!a.parent.isPinned))
 }
 
 
 /**
  * Flattens groups for a flat list. Collapsed groups still show the session the
- * user is currently in — desktop's `isVisibleWhenCollapsed`, minus the pending
- * states the remote row payload does not carry.
+ * user is currently in, plus children waiting for input.
  */
 export function flattenSessionGroups(
   rows: SessionListRow[],
@@ -83,7 +81,7 @@ export function flattenSessionGroups(
     const collapsed = hasChildren && !expandedIds.has(parent.sessionId)
     items.push({ session: parent, child: false, hasChildren, collapsed })
     const visible = collapsed
-      ? children.filter((child) => child.sessionId === activeSessionId)
+      ? children.filter((child) => child.sessionId === activeSessionId || (child.pendingCount ?? 0) > 0 || child.isUnseen)
       : children
     for (const child of visible) {
       items.push({ session: child, child: true, hasChildren: false, collapsed: false })
@@ -105,9 +103,9 @@ export function visibleSessionGroups(
 ): SessionListGroup[] {
   if (limit == null || groups.length <= limit) return groups
   const visible = groups.slice(0, limit)
-  if (!activeSessionId || visible.some((group) => holdsSession(group, activeSessionId))) return visible
-  const active = groups.find((group) => holdsSession(group, activeSessionId))
-  return active ? [...visible, active] : visible
+  return [...visible, ...groups.slice(limit).filter(group =>
+    (activeSessionId && holdsSession(group, activeSessionId))
+    || [group.parent, ...group.children].some(session => (session.pendingCount ?? 0) > 0 || session.isUnseen))]
 }
 
 const holdsSession = (group: SessionListGroup, sessionId: string) =>

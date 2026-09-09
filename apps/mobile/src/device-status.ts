@@ -23,8 +23,8 @@ export type ReconnectInfo = {
 }
 
 export type DeviceStatusTone = 'success' | 'danger' | 'warning' | 'muted' | 'foreground'
-/** Semantic glyph name; the renderer maps it to a lucide icon. */
-export type DeviceStatusGlyph = 'wifi' | 'cloud' | 'cloud-off' | 'sync' | 'radar'
+/** Semantic glyph name; the renderer maps it to a lucide icon or cycle. */
+export type DeviceStatusGlyph = 'wifi' | 'wifi-search' | 'cloud' | 'cloud-off' | 'sync'
 
 export type DeviceStatusView = {
   status: DeviceStatus
@@ -93,7 +93,7 @@ export function describeDeviceStatus(
     case 'offline':
       return { status, label: 'Offline', tone: 'danger', glyph: 'cloud-off', spin: false }
     case 'searchingLan':
-      return { status, label: 'Searching local network…', tone: 'muted', glyph: 'radar', spin: true }
+      return { status, label: 'Searching local network…', tone: 'muted', glyph: 'wifi-search', spin: true }
     case 'onlineLan':
       return { status, label: 'Online', tone: 'success', glyph: 'wifi', spin: false }
     case 'onlineCloud':

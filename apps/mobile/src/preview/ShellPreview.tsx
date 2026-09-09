@@ -184,6 +184,7 @@ const previewProjects = [
 /** One saved device per connection state, so the whole status vocabulary is reviewable. */
 const previewDevices: { pairing: SavedPairing; status: DeviceStatus }[] = [
   { pairing: device('desk-lan-connected', 'Studio iMac', '192.168.1.9:8123'), status: 'connectedLan' },
+  { pairing: device('desk-search', 'MacBook Pro', '192.168.1.18:8123'), status: 'searchingLan' },
   { pairing: device('desk-lan', 'Workshop mini', '192.168.1.24:8123'), status: 'onlineLan' },
   { pairing: device('desk-cloud', 'Office MacBook Pro'), status: 'onlineCloud' },
   { pairing: device('desk-retry', 'Loft desktop'), status: 'connecting' },

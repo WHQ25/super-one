@@ -48,13 +48,15 @@ describe('flattenSessionGroups', () => {
   })
 })
 
-describe('pinned promotion', () => {
-  it('lifts a pinned group above unpinned ones without disturbing the rest', () => {
+describe('pinning does not reorder a project list', () => {
+  // Desktop surfaces pins in its cross-project Pinned section only; an expanded
+  // project keeps the host's recency order. The drawer does the same.
+  it('leaves a pinned group in its host-given position', () => {
     const rows: SessionListRow[] = [row('a'), { ...row('b'), isPinned: true }, row('c')]
-    expect(groupSessionRows(rows).map((group) => group.parent.sessionId)).toEqual(['b', 'a', 'c'])
+    expect(groupSessionRows(rows).map((group) => group.parent.sessionId)).toEqual(['a', 'b', 'c'])
   })
 
-  it('keeps a pinned child under its parent instead of promoting it', () => {
+  it('keeps a pinned child under its parent', () => {
     const rows: SessionListRow[] = [row('a'), { ...row('a1', 'a'), isPinned: true }, row('b')]
     const items = flattenSessionGroups(rows, new Set(['a']))
     expect(items.map((item) => item.session.sessionId)).toEqual(['a', 'a1', 'b'])
@@ -123,4 +125,20 @@ describe('sessionListInvalidations', () => {
       { type: 'session_list_changed', projectPath: 42 },
     ])).toEqual([])
   })
+})
+
+it('keeps pending children and groups beyond the reveal limit reachable', () => {
+  const rows = [
+    { sessionId: 'first', title: 'First' },
+    { sessionId: 'parent', title: 'Parent' },
+    { sessionId: 'child', title: 'Needs input', parentSessionId: 'parent', pendingCount: 1 },
+  ]
+  expect(flattenSessionGroups(rows, new Set(), null, 1).map(item => item.session.sessionId))
+    .toEqual(['first', 'parent', 'child'])
+})
+
+it('keeps unseen children visible even when their group is collapsed and beyond the reveal limit', () => {
+  const rows = [row('first'), row('parent'), { ...row('unread', 'parent'), isUnseen: true }]
+  expect(flattenSessionGroups(rows, NONE, null, 1).map(item => item.session.sessionId))
+    .toEqual(['first', 'parent', 'unread'])
 })

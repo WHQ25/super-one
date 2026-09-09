@@ -1,3 +1,4 @@
+import { SessionActivityContext, useWorkspaceActivity } from './use-session-activity'
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { StatusBar } from 'expo-status-bar'
 import * as Clipboard from 'expo-clipboard'
@@ -213,6 +214,7 @@ export function MobileApp() {
   const webRef = useRef<WebView>(null)
   const termRef = useRef<WebView>(null)
   const clientRef = useRef<RelayClient | null>(null)
+  const workspaceActivity = useWorkspaceActivity(clientRef.current, connectionState === 'connected', sessionListRevision, screen === 'chat' && !sessionSwitcherOpen ? sessionId : null)
   const directory = useRemoteDirectory(clientRef)
   const { load: loadDirectory, path: directoryPath, items: directoryItems } = directory
   // The browser is a project tree by default; computer mode is the folder-picking
@@ -381,6 +383,22 @@ export function MobileApp() {
     const result = await resolveNativeRequest(message, {
       openLink: async (url) => { await Linking.openURL(url) },
       copyText: async (text) => { await Clipboard.setStringAsync(text) },
+      // Mirrors `clearSent`: the native editor owns the text when it is mounted,
+      // and writing through `changeText` instead would leave the two out of sync.
+      saveWidgetTemplate: async (input) => {
+        const runtime = runtimeRef.current
+        if (!runtime) throw new Error('no active session')
+        await runtime.saveWidgetTemplate(input)
+      },
+      setDraft: async (text) => {
+        if (composerDraft.editorRef.current) composerDraft.editorRef.current.replaceText(text)
+        else composerDraft.changeText(text)
+      },
+      codexAsyncQuestionAnswer: async (messageId, itemId, answers) => {
+        const runtime = runtimeRef.current
+        if (!runtime) throw new Error('no active session')
+        await runtime.answerCodexAsyncQuestion(messageId, itemId, answers)
+      },
       codexPlanApproval: async (messageId, status, feedback) => {
         const runtime = runtimeRef.current
         if (!runtime) throw new Error('no active session')
@@ -463,6 +481,7 @@ export function MobileApp() {
     const { client, reconnectController } = createMobileRelayConnection({
       onEvents: (events, epoch) => {
         logRelayEventTypes(events)
+        workspaceActivity.ingest(events)
         const removed = sessionRemovalStatus(events, runtimeRef.current, epoch)
         if (removed) {
           clearActiveSession()
@@ -1275,15 +1294,18 @@ export function MobileApp() {
   ) : undefined
 
   return (
+    <SessionActivityContext.Provider value={workspaceActivity.sessions}>
     <SafeAreaView style={styles.root}>
       <StatusBar style={tokens.scheme === 'dark' ? 'light' : 'dark'} />
       <MobileKeyboardFrame>
         <MobileHeader
+        pendingCount={workspaceActivity.pendingCount}
         route={screen}
         title={screen === 'add-project' ? addProjectFlow.title : header}
         subtitle={project?.name}
         provider={selectedProvider}
         hasSession={!!sessionId}
+        sessionId={sessionId}
         deviceStatus={deviceStatus}
         reconnect={reconnect}
         connectionInSidebar={tabletMultiPane}
@@ -1674,5 +1696,6 @@ export function MobileApp() {
         onDismiss={() => setFolderPrompt(null)}
       /> : null}
     </SafeAreaView>
+    </SessionActivityContext.Provider>
   )
 }

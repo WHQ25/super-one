@@ -7,11 +7,65 @@ function ports(): NativeActionPorts {
     openFile: vi.fn(),
     previewFile: vi.fn(),
     copyText: vi.fn(),
+    setDraft: vi.fn(),
+    saveWidgetTemplate: vi.fn(),
     codexPlanApproval: vi.fn(),
+    codexAsyncQuestionAnswer: vi.fn(),
   }
 }
 
 describe('native chat actions', () => {
+  it("writes a widget's sendPrompt into the composer draft", async () => {
+    const target = ports()
+    await expect(resolveNativeRequest({
+      type: 'requestNative', requestId: 'draft', action: 'setDraft', payload: { text: 'What if the rate were 10%?' },
+    }, target)).resolves.toMatchObject({ result: { ok: true } })
+    expect(target.setDraft).toHaveBeenCalledWith('What if the rate were 10%?')
+  })
+
+  it('forwards a widget template save with its scope intact', async () => {
+    const target = ports()
+    await expect(resolveNativeRequest({
+      type: 'requestNative',
+      requestId: 'tpl',
+      action: 'saveWidgetTemplate',
+      payload: { id: 'composer-options', title: 'Composer options', code: '<div/>', scope: 'project', description: 'Layout comparison' },
+    }, target)).resolves.toMatchObject({ result: { ok: true } })
+    expect(target.saveWidgetTemplate).toHaveBeenCalledWith({
+      id: 'composer-options',
+      title: 'Composer options',
+      code: '<div/>',
+      scope: 'project',
+      description: 'Layout comparison',
+    })
+  })
+
+  it('rejects a widget template save with a scope the store would not accept', async () => {
+    await expect(resolveNativeRequest({
+      type: 'requestNative',
+      requestId: 'tpl',
+      action: 'saveWidgetTemplate',
+      payload: { id: 'x', title: 'x', code: '<div/>', scope: 'global' },
+    }, ports())).resolves.toMatchObject({ error: 'invalid saveWidgetTemplate scope' })
+  })
+
+  it('drops an empty description instead of storing a blank one', async () => {
+    const target = ports()
+    await resolveNativeRequest({
+      type: 'requestNative',
+      requestId: 'tpl',
+      action: 'saveWidgetTemplate',
+      payload: { id: 'x', title: 'x', code: '<div/>', scope: 'user', description: '' },
+    }, target)
+    expect(target.saveWidgetTemplate).toHaveBeenCalledWith({ id: 'x', title: 'x', code: '<div/>', scope: 'user' })
+  })
+
+  it('rejects a setDraft with no text rather than clearing the composer', async () => {
+    await expect(resolveNativeRequest({
+      type: 'requestNative', requestId: 'draft', action: 'setDraft', payload: { text: '' },
+    }, ports())).resolves.toMatchObject({ error: 'invalid setDraft payload' })
+  })
+
   it('routes validated links and files to native ports', async () => {
     const target = ports()
     await expect(resolveNativeRequest({
@@ -37,6 +91,21 @@ describe('native chat actions', () => {
       payload: { messageId: 'assistant-1', status: 'rejected', feedback: 'Revise step 2' },
     }, target)).resolves.toMatchObject({ result: { ok: true } })
     expect(target.codexPlanApproval).toHaveBeenCalledWith('assistant-1', 'rejected', 'Revise step 2')
+  })
+
+  it('waits for async answers and propagates rejection to the question card', async () => {
+    const target = ports()
+    const request = {
+      type: 'requestNative' as const, requestId: 'async', action: 'codexAsyncQuestionAnswer',
+      payload: { messageId: 'turn', itemId: 'question', answers: ['Production'] },
+    }
+    await expect(resolveNativeRequest(request, target)).resolves.toMatchObject({ result: { ok: true } })
+    expect(target.codexAsyncQuestionAnswer).toHaveBeenCalledWith('turn', 'question', ['Production'])
+    vi.mocked(target.codexAsyncQuestionAnswer).mockRejectedValueOnce(new Error('No active turn'))
+    await expect(resolveNativeRequest(request, target)).resolves.toMatchObject({ error: 'No active turn' })
+    await expect(resolveNativeRequest({ ...request, payload: { ...request.payload, answers: [''] } }, target))
+      .resolves.toMatchObject({ error: 'invalid codexAsyncQuestionAnswer answers' })
+    expect(target.codexAsyncQuestionAnswer).toHaveBeenCalledTimes(2)
   })
 
   it('reports invalid or unsupported actions instead of false success', async () => {

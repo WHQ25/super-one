@@ -181,7 +181,7 @@ export function WorkspaceDrawer(props: WorkspaceDrawerProps) {
                 onDelete={() => { void actions.onDeleteSession(session) }}
               >
                 {({ revealed }) => <SessionRowContent
-                  item={{ session, child: false, hasChildren: false, collapsed: false }}
+                  item={{ session: { ...session, isPinned: true }, child: false, hasChildren: false, collapsed: false }}
                   selected={session.sessionId === props.activeSessionId}
                   surface="panel"
                   revealed={revealed}

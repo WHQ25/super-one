@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Cloud, CloudOff, Radar, RefreshCw, Wifi, type LucideIcon } from 'lucide-react-native'
+import { Cloud, CloudOff, RefreshCw, Wifi, type LucideIcon } from 'lucide-react-native'
 import { StyleSheet, View } from 'react-native'
 import { Text } from './text'
 import { SpinningIcon } from './spinning-icon'
+import { WifiCycleIcon } from './wifi-cycle-icon'
 import { useMobileTheme } from '../theme/context'
 import {
   describeDeviceStatus,
@@ -13,12 +14,11 @@ import {
 } from '../device-status'
 import { useMobileLocale } from '../i18n/context'
 
-const GLYPHS: Record<DeviceStatusGlyph, LucideIcon> = {
+const GLYPHS: Record<Exclude<DeviceStatusGlyph, 'wifi-search'>, LucideIcon> = {
   wifi: Wifi,
   cloud: Cloud,
   'cloud-off': CloudOff,
   sync: RefreshCw,
-  radar: Radar,
 }
 
 /** Re-render once a second, only while a countdown is actually on screen. */
@@ -49,13 +49,9 @@ export function ConnectionStatusIndicator(props: {
   const label = t(view.label)
   const color = toneColor(view.tone, tokens.colors)
   const size = props.iconSize ?? 13
-  const Icon = GLYPHS[view.glyph]
-
   return (
     <View accessibilityLabel={label} style={styles.row}>
-      {view.spin
-        ? <SpinningIcon icon={Icon} size={size} color={color} />
-        : <Icon color={color} size={size} />}
+      <StatusGlyph glyph={view.glyph} spin={view.spin} size={size} color={color} />
       {props.showLabel === false ? null : (
         <Text numberOfLines={1} style={[styles.label, { color, fontSize: props.fontSize ?? 12 }]}>
           {label}
@@ -63,6 +59,21 @@ export function ConnectionStatusIndicator(props: {
       )}
     </View>
   )
+}
+
+function StatusGlyph(props: {
+  glyph: DeviceStatusGlyph
+  spin: boolean
+  size: number
+  color: string
+}) {
+  if (props.glyph === 'wifi-search') {
+    return <WifiCycleIcon size={props.size} color={props.color} />
+  }
+  const Icon = GLYPHS[props.glyph]
+  return props.spin
+    ? <SpinningIcon icon={Icon} size={props.size} color={props.color} />
+    : <Icon color={props.color} size={props.size} />
 }
 
 function toneColor(

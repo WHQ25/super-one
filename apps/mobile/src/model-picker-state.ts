@@ -1,5 +1,6 @@
 import type { HarnessId, ModelOption, RemoteEffortOption, RemoteSystemInfo } from '@superone/shared/agent-types'
 import { findCodexFastServiceTier } from '@superone/shared/codex-fast-mode'
+import { formatCodexModelName } from '@superone/shared/codex-model-label'
 import { selectorCatalogParams, type SelectorCatalogParam } from '@superone/shared/model-option-params'
 import { effortOptionsForModel } from './model-selection-state'
 import { harnessDisplayName } from './provider-state'
@@ -7,6 +8,10 @@ import { harnessDisplayName } from './provider-state'
 /** Effort is only worth surfacing when there is more than one level to pick. */
 export function hasSelectableEffort(options: RemoteEffortOption[]): boolean {
   return options.length > 1
+}
+
+export function modelPickerLabel(harness: HarnessId, id: string, name?: string): string {
+  return harness === 'codex' ? formatCodexModelName(name, id) : name || id
 }
 
 export function matchesModelSearch(model: ModelOption, query: string): boolean {
@@ -30,7 +35,10 @@ export function groupModels(
   const slashGrouped = options.harness === 'opencode'
     || (options.harness === 'acp' && options.acpAgentId === 'opencode')
   const groups = new Map<string, ModelOption[]>()
-  for (const model of models) {
+  for (const entry of models) {
+    const model = options.harness === 'codex'
+      ? { ...entry, name: modelPickerLabel(options.harness, entry.id, entry.name) }
+      : entry
     if (query && !matchesModelSearch(model, query)) continue
     const name = slashGrouped && model.id.includes('/')
       ? model.id.split('/')[0]!

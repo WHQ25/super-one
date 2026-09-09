@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { SessionActivityContext } from './use-session-activity'
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { RelayClient } from '@superone/relay-client'
 import type { Project } from '../project-types'
 import { flattenSessionGroups, groupSessionRows, SESSION_REVEAL_STEP, type SessionListItem, type SessionListRow } from '../session-list-state'
@@ -46,6 +47,7 @@ export function useProjectSessions(
   seed: SessionListRow[] = [],
   activeSessionId?: string | null,
 ): ProjectSessions {
+  const activity = useContext(SessionActivityContext)
   const [rows, setRows] = useState<SessionListRow[]>([])
   const [total, setTotal] = useState(0)
   const [busy, setBusy] = useState(false)
@@ -148,8 +150,8 @@ export function useProjectSessions(
   const hasMore = groupCount > revealed || loadedCount < total
 
   const items = useMemo(
-    () => flattenSessionGroups(rows, expandedIds, activeSessionId, revealed),
-    [rows, expandedIds, activeSessionId, revealed],
+    () => flattenSessionGroups(rows.map(row => ({ ...row, ...activity[row.sessionId] })), expandedIds, activeSessionId, revealed),
+    [rows, activity, expandedIds, activeSessionId, revealed],
   )
 
   return {

@@ -75,6 +75,15 @@ describe('device status presentation', () => {
     expect(describeDeviceStatus('onlineCloud')).toMatchObject({ label: 'Online', glyph: 'cloud', tone: 'success' })
   })
 
+  it('keeps the search busy so the wifi cycle takes the whole meta row', () => {
+    expect(describeDeviceStatus('searchingLan')).toMatchObject({
+      label: 'Searching local network…',
+      glyph: 'wifi-search',
+      tone: 'muted',
+      spin: true,
+    })
+  })
+
   it('marks offline as the one danger tone in the list', () => {
     expect(describeDeviceStatus('offline')).toMatchObject({ label: 'Offline', tone: 'danger', glyph: 'cloud-off' })
   })

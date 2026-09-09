@@ -1,14 +1,18 @@
-import { ChevronDown, ChevronRight, CornerDownRight } from 'lucide-react-native'
+import { sessionActivityIconStatus } from '../session-activity-state'
+import { useSessionActivity } from '../navigation/use-session-activity'
+import { useMobileLocale } from '../i18n/context'
+import { Bot, ChevronDown, ChevronRight, CornerDownRight, MessageSquare } from 'lucide-react-native'
 import { Pressable, View } from 'react-native'
 import { Text } from './text'
 import type { SessionListItem } from '../session-list-state'
 import { useMobileTheme } from '../theme/context'
-import { HarnessIcon } from './harness-icon'
+import { AnimatedSessionTitle } from './animated-session-title'
+import { HarnessIcon, sessionIconState } from './harness-icon'
 
 /**
  * One session row: harness icon, title, and — on a collaboration parent — the
  * expand toggle. Deliberately single-line and free of model/branch/tag detail,
- * matching the desktop sidebar; the harness icon already carries run state.
+ * matching the desktop sidebar; idle pinned sessions retain their harness brand.
  *
  * A child carries no extra padding either: like the desktop sidebar, the corner
  * arrow is the whole nesting cue, and it already shifts the row by its own width.
@@ -31,7 +35,11 @@ export function SessionRowContent({ item, selected, revealed, subtitle, surface 
   onToggleChildren?: () => void
 }) {
   const { tokens: { colors, radius } } = useMobileTheme()
-  const { session } = item
+  const activity = useSessionActivity(item.session.sessionId)
+  const { locale } = useMobileLocale()
+  const session = { ...item.session, ...activity }
+  const iconStatus = sessionActivityIconStatus(session)
+  const pendingReason = activity?.pendingReason[locale]
   const Chevron = item.collapsed ? ChevronRight : ChevronDown
   const onPanel = surface === 'panel'
   const ink = colors.foreground
@@ -39,7 +47,7 @@ export function SessionRowContent({ item, selected, revealed, subtitle, surface 
   const fill = revealed
     ? onPanel ? colors.background : colors.surface
     : selected ? colors.muted : onPanel ? colors.surface : colors.background
-  return <View style={{
+  return <View style={{ backgroundColor: fill, borderRadius: radius.md }}><View style={{
     flexDirection: 'row', alignItems: 'center', gap: 10,
     // A cross-project row carries a second line and sets its own height; a
     // single-line row is sized to the text plus a touchable margin, not to the
@@ -49,9 +57,11 @@ export function SessionRowContent({ item, selected, revealed, subtitle, surface 
     borderRadius: radius.md, paddingVertical: 6, paddingHorizontal: 12,
   }}>
     {item.child ? <CornerDownRight size={13} color={dim} /> : null}
-    <HarnessIcon provider={session.provider ?? 'claude'} acpAgentId={session.acpAgentId} status={session.status} size={18} />
+    {!session.isPinned && sessionIconState(iconStatus) === 'default'
+      ? <MessageSquare size={18} color={dim} />
+      : <HarnessIcon provider={session.provider ?? 'claude'} acpAgentId={session.acpAgentId} status={iconStatus} size={18} />}
     <View style={{ flex: 1, minWidth: 0 }}>
-      <Text numberOfLines={1} style={{ color: ink, fontSize: 15, fontWeight: selected ? '500' : '400' }}>{session.title || 'Untitled'}</Text>
+      <AnimatedSessionTitle key={session.sessionId} title={session.title || 'Untitled'} style={{ color: ink, fontSize: 15, fontWeight: selected ? '500' : '400' }} />
       {subtitle ? <Text numberOfLines={1} style={{ color: dim, fontSize: 12, marginTop: 2 }}>{subtitle}</Text> : null}
     </View>
     {/* No pin glyph: the drawer carries a Pinned section of its own, so a badge
@@ -66,5 +76,14 @@ export function SessionRowContent({ item, selected, revealed, subtitle, surface 
     >
       <Chevron size={15} color={dim} />
     </Pressable> : null}
+  </View>
+    {pendingReason ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
+      marginLeft: item.child ? 35 : 12, marginRight: 4, marginTop: 2, marginBottom: 4,
+      paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.sm,
+      backgroundColor: `${colors.success}26`,
+    }}>
+      <Bot size={12} color={colors.success} />
+      <Text numberOfLines={1} style={{ flex: 1, fontSize: 11, color: colors.success }}>{pendingReason}</Text>
+    </View> : null}
   </View>
 }

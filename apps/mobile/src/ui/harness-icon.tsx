@@ -8,7 +8,7 @@ import type { IconBrand, IconState } from './harness-scene-types'
 import { useIconMotion } from './use-icon-motion'
 
 export function sessionIconState(status?: string): IconState {
-  if (status === 'running' || status === 'streaming' || status === 'starting') return 'running'
+  if (status === 'running' || status === 'streaming' || status === 'starting' || status === 'interrupting') return 'running'
   if (status === 'background' || status === 'unseen' || status === 'automation') return status
   return 'default'
 }
@@ -27,7 +27,7 @@ export const HarnessIcon = memo(function HarnessIcon({ provider, acpAgentId, sta
   const animate = useIconMotion()
   const brand = sessionIconBrand(provider, acpAgentId)
   const node = harnessScenes.scenes[brand][sessionIconState(status)][renderLevel]
-  return <View accessible={false} style={{ width: size, height: size, opacity: status === 'ended' || status === 'disposed' ? 0.55 : 1 }}>
+  return <View testID={`harness-icon-${sessionIconState(status)}`} accessible={false} style={{ width: size, height: size, opacity: status === 'ended' || status === 'disposed' ? 0.55 : 1 }}>
     <HarnessScene node={node} size={size} color={tokens.colors.foreground} background={tokens.colors.background} motion={animate} />
   </View>
 })

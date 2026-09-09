@@ -1,3 +1,4 @@
+import { codexAsyncAnswerId } from '@superone/shared/codex-async-question'
 import { requestMentionSearch, type MentionSearchOptions, type MentionSearchResult } from './mention-search'
 import type {
   AgentEvent,
@@ -9,6 +10,8 @@ import type {
   RemoteCommand,
   RemoteSystemInfo,
   SandboxInfo,
+  SaveWidgetTemplateRequest,
+  SavedWidgetTemplate,
   SandboxMode,
 } from '@superone/shared/agent-types'
 import { applyEventToSession, createDefaultChatCoreSession, pendingSlashCommandFrom } from '@superone/chat-core'
@@ -119,8 +122,16 @@ export class ChatRuntime {
         worktreePath: restored.snapshot.worktreePath ?? null,
         gitBranch: restored.snapshot.gitBranch ?? null,
       }
-      for (const msg of restored.snapshot.inProgressMessages ?? []) {
-        if (!session.messages.some((m) => m.id === msg.id)) session.messages.push(msg)
+      const liveMessages = restored.snapshot.inProgressMessages ?? []
+      const liveIds = new Set(liveMessages.map((message) => message.id))
+      session.messages = [...session.messages.filter((message) => !liveIds.has(message.id)), ...liveMessages]
+      // Usage events predating the snapshot are intentionally deduplicated.
+      // Restore the denominator from persisted usage before releasing live data.
+      for (let i = session.messages.length - 1; i >= 0; i--) {
+        const metadata = session.messages[i]?.metadata
+        const window = metadata?.codex?.usage?.contextWindow
+          || Math.max(0, ...Object.values(metadata?.modelUsage ?? {}).map((usage) => usage.contextWindow ?? 0))
+        if (window > 0) { session.contextWindow = window; break }
       }
       // Seeded before the replay below: the host persists a voice utterance before it
       // broadcasts it, so a buffered event is a duplicate of something already here
@@ -286,6 +297,22 @@ export class ChatRuntime {
     })
   }
 
+  async answerCodexAsyncQuestion(messageId: string, itemId: string, answers: string[]): Promise<void> {
+    const { projectPath, sessionId } = this
+    if (!projectPath || !sessionId) throw new Error('No active session')
+    if (!this.session.messages.some(message => message.id === messageId)) throw new Error('Question session is no longer active')
+    const result = await this.client.request({
+      type: 'codex_async_question_answer', requestId: randomId(), projectPath, sessionId, messageId, itemId, answers,
+    }) as { ok?: boolean; reply?: string; error?: string }
+    if (result.error || !result.ok || typeof result.reply !== 'string') throw new Error(result.error ?? 'Answer was not accepted')
+    if (this.sessionId !== sessionId || this.projectPath !== projectPath) return
+    this.ingest([{ type: 'user_message_appended', message: {
+      id: codexAsyncAnswerId(itemId), role: 'user', status: 'complete', providerId: 'codex',
+      createdAt: new Date().toISOString(), content: [{ type: 'text', text: result.reply }],
+    } }])
+    this.flush()
+  }
+
   interrupt(): void {
     const cmd: RemoteCommand = {
       type: 'interrupt',
@@ -327,6 +354,17 @@ export class ChatRuntime {
       this.dirty = true
       this.flush()
     }
+    if (res.error) throw new Error(res.error)
+  }
+
+  /** Save the widget the phone is looking at into the host's template store. */
+  async saveWidgetTemplate(input: SaveWidgetTemplateRequest): Promise<void> {
+    const res = await this.client.request({
+      type: 'save_widget_template',
+      requestId: randomId(),
+      projectPath: this.projectPath,
+      input,
+    } as RemoteCommand) as { template?: SavedWidgetTemplate; error?: string }
     if (res.error) throw new Error(res.error)
   }
 

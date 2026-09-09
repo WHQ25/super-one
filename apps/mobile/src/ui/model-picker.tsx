@@ -22,6 +22,7 @@ import {
   groupModels,
   hasSelectableEffort,
   keepsOpenAfterModelSelect,
+  modelPickerLabel,
   optionParamSummary,
   type SelectorCatalogParam,
 } from '../model-picker-state'
@@ -58,7 +59,7 @@ export function ModelPicker(props: ModelPickerProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const selected = props.models.find((model) => model.id === props.model)
-  const modelLabel = selected?.name || props.model || t('Choose model')
+  const modelLabel = modelPickerLabel(props.harness, props.model, selected?.name) || t('Choose model')
   const canSelectEffort = hasSelectableEffort(props.efforts)
   const effortLabel = props.efforts.find((effort) => effort.value === props.effort)?.label ?? t('Effort')
   const agents = props.agents ?? []

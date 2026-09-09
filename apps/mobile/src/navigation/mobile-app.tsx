@@ -70,6 +70,7 @@ import { useFileSearch } from './use-file-search'
 import { completeTypedPath, usePathAutocomplete } from './use-path-autocomplete'
 import { useAdditionalDirs } from './use-additional-dirs'
 import { useFilePreview } from './use-file-preview'
+import { loadInlineImage } from '../inline-images'
 import { FILE_PREVIEW_TEXT } from '../file-preview-state'
 import { FilePreviewScreen } from '../screens/file-preview-screen'
 import { NewFolderSheet } from '../prompts/NewFolderSheet'
@@ -416,6 +417,11 @@ export function MobileApp() {
         runtime.respondCodexPlan(messageId, status, feedback)
       },
       previewFile: (path, line) => filePreview.open(path, line),
+      loadImage: async (path, confirmed) => {
+        const client = clientRef.current
+        if (!client || !project) throw new Error('no active project')
+        return loadInlineImage({ host: client, transport: activeTransport, projectPath: project.path, sessionId, path, confirmed })
+      },
       openFile: async (path) => {
         if (!project) throw new Error('no active project')
         const target = resolveRemoteFilePath(project.path, path)

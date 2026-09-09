@@ -7,6 +7,7 @@ import { getComputerOp, type ComputerOp } from './presenters/computer-tool-displ
 import { DeviceToolBlockPresenter } from './presenters/DeviceToolBlock'
 import { getDeviceOp, type DeviceOp } from './presenters/device-tool-display'
 import { ToolScreenshotViewPresenter } from './presenters/ToolScreenshotView'
+import { PortableHostImage } from './PortableHostImage'
 
 function portableToolParams(input: unknown): Record<string, unknown> {
   if (typeof input === 'string') {
@@ -74,6 +75,8 @@ function PortableToolScreenshot({
       label={label}
       unavailableLabel={unavailableLabel}
       onPreview={(previewPath) => requestNative('previewFile', { path: previewPath })}
+      // The host image owns the chip too, so the row is identical until the bytes land.
+      thumbnail={<PortableHostImage path={path} label={label} />}
     />
   )
 }

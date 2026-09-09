@@ -2,6 +2,7 @@ import type { NativeWidgetPayload } from '@superone/shared/generative-ui/native-
 import { ExternalLink, ImageIcon, Video } from 'lucide-react'
 import { requestNative } from './bridge'
 import { portableFileName } from './portable-native-widget'
+import { PortableHostImage } from './PortableHostImage'
 
 export function PortableNativeGallery(props: {
   payload: NativeWidgetPayload
@@ -26,6 +27,27 @@ export function PortableNativeGallery(props: {
       <div className="grid grid-cols-2 gap-2">
         {items.map((item) => {
           const path = item.savedPath!
+          if (kind === 'image') {
+            const name = portableFileName(path)
+            return (
+              <PortableHostImage
+                key={item.id || path}
+                path={path}
+                label={name}
+                className="flex min-h-20 w-full flex-col items-center justify-center gap-1.5 overflow-hidden rounded-md border border-border/50 bg-background/60 p-2 text-center"
+                fallback={(
+                  <>
+                    <ImageIcon className="size-6 text-primary" />
+                    <span className="max-w-full truncate text-xs text-foreground">{name}</span>
+                    <span className="flex items-center gap-1 text-[11px] text-primary">
+                      Open image <ExternalLink className="size-3" />
+                    </span>
+                  </>
+                )}
+                caption={<span className="block max-w-full truncate text-xs text-muted-foreground">{name}</span>}
+              />
+            )
+          }
           return (
             <button
               key={item.id || path}
@@ -33,12 +55,10 @@ export function PortableNativeGallery(props: {
               className="flex min-h-20 flex-col items-center justify-center gap-1.5 rounded-md border border-border/50 bg-background/60 p-2 text-center"
               onClick={() => requestNative('previewFile', { path })}
             >
-              {kind === 'image'
-                ? <ImageIcon className="size-6 text-primary" />
-                : <Video className="size-6 text-primary" />}
+              <Video className="size-6 text-primary" />
               <span className="max-w-full truncate text-xs text-foreground">{portableFileName(path)}</span>
               <span className="flex items-center gap-1 text-[11px] text-primary">
-                Open {kind} <ExternalLink className="size-3" />
+                Open video <ExternalLink className="size-3" />
               </span>
             </button>
           )

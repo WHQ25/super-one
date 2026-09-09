@@ -15,6 +15,12 @@ export interface NativeActionPorts {
    * the receive/share sheet. `line` is the cited line a chip was tapped on.
    */
   previewFile(path: string, line?: number): Promise<void>
+  /**
+   * Fetch an image for the transcript to show inline. Resolves to the data URI,
+   * or to `confirmRequired` when the transport wants the user to approve the
+   * transfer first; `confirmed` is that approval on the second request.
+   */
+  loadImage(path: string, confirmed: boolean): Promise<Record<string, unknown>>
   copyText(text: string): Promise<void>
   /**
    * Write text into the composer without sending it. This is a widget's
@@ -67,6 +73,8 @@ export async function resolveNativeRequest(
   ports: NativeActionPorts,
 ): Promise<NativeResult> {
   try {
+    // Most actions only acknowledge; the few that answer merge their fields in.
+    let result: Record<string, unknown> = {}
     if (message.action === 'openLink') {
       const url = payloadString(message, 'url')
       if (!/^https?:\/\//i.test(url)) throw new Error('unsupported link')
@@ -80,6 +88,9 @@ export async function resolveNativeRequest(
         payloadString(message, 'path'),
         typeof line === 'number' && Number.isInteger(line) && line > 0 ? line : undefined,
       )
+    } else if (message.action === 'loadImage') {
+      const confirmed = (message.payload as Record<string, unknown> | undefined)?.confirmed === true
+      result = await ports.loadImage(payloadString(message, 'path'), confirmed)
     } else if (message.action === 'copyText') {
       await ports.copyText(payloadString(message, 'text'))
     } else if (message.action === 'setDraft') {
@@ -107,7 +118,7 @@ export async function resolveNativeRequest(
     } else {
       throw new Error(`${message.action} is not available on mobile`)
     }
-    return { type: 'nativeActionResult', requestId: message.requestId, result: { ok: true } }
+    return { type: 'nativeActionResult', requestId: message.requestId, result: { ok: true, ...result } }
   } catch (error) {
     return {
       type: 'nativeActionResult',

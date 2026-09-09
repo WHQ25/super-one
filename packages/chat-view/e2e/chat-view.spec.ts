@@ -561,6 +561,46 @@ test('36 renders Browser, page-tool, and download recordings with shared present
   )))).toBe(true)
 })
 
+test('36b shows a tool screenshot inline once the host answers loadImage', async ({ page }) => {
+  await send(page, { type: 'hydrate', messages: [BROWSER_TOOL_RECORDING] })
+
+  const turn = page.locator('[data-turn-id="recording-browser-tools"]')
+  await turn.getByRole('button', { name: /Detail/ }).click()
+  const row = turn.locator('.tool-node').nth(0)
+  await row.locator('> div').first().click()
+
+  // Expanding the row asks the host for the bytes; the chip stays until it answers.
+  type HostRequest = { type?: string; requestId?: string; action?: string; payload?: { path?: string; confirmed?: boolean } }
+  const readRequests = () => page.evaluate(() => (
+    globalThis as typeof globalThis & { __hostMessages: HostRequest[] }
+  ).__hostMessages.filter((item) => item.type === 'requestNative' && item.action === 'loadImage'))
+  await expect.poll(async () => (await readRequests()).some((item) => item.payload?.path === '/project/browser-checkout.png')).toBe(true)
+  await expect(row.locator('[data-host-image="loading"]')).toBeVisible()
+  await expect(row.getByRole('button', { name: 'Preview Screenshot' })).toBeVisible()
+
+  // Relay: the host declines until the user confirms, and the row offers a Load button.
+  const [first] = await readRequests()
+  await send(page, { type: 'nativeActionResult', requestId: first.requestId, result: { ok: true, confirmRequired: true, size: 204800 } })
+  const load = row.getByRole('button', { name: 'Load Screenshot' })
+  await expect(load).toBeVisible()
+  await expect(load).toContainText('200 KB')
+  await load.click()
+  await expect.poll(async () => (await readRequests()).some((item) => item.payload?.confirmed === true)).toBe(true)
+
+  // Bytes arrive: the chip becomes the picture, still opening the full file on tap.
+  const confirmed = (await readRequests()).find((item) => item.payload?.confirmed === true)!
+  const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+  await send(page, { type: 'nativeActionResult', requestId: confirmed.requestId, result: { ok: true, dataUri: pixel } })
+  const picture = row.locator('[data-host-image="ready"] img')
+  await expect(picture).toBeVisible()
+  await expect(picture).toHaveAttribute('src', pixel)
+  await expect(row.getByRole('button', { name: 'Load Screenshot' })).toHaveCount(0)
+  await row.getByRole('button', { name: 'Preview Screenshot' }).click()
+  await expect.poll(() => page.evaluate(() => (
+    globalThis as typeof globalThis & { __hostMessages: HostRequest[] }
+  ).__hostMessages.some((item) => item.action === 'previewFile' && item.payload?.path === '/project/browser-checkout.png'))).toBe(true)
+})
+
 test('37 renders Device and Computer Use recordings with shared presenters', async ({ page }) => {
   await send(page, { type: 'hydrate', messages: [INTERACTIVE_TOOL_RECORDING] })
 

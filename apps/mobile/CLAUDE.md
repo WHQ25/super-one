@@ -395,7 +395,14 @@ project and open the containing directory. The native file browser uses `preview
 file rows; directory rows navigate only. Remote path helpers must preserve POSIX roots, Windows
 drive roots, and UNC share roots. Coalesce concurrent reads of the same project/session/path
 until the first request settles. Unsupported actions must return an error response, never
-`{ ok: true }`.
+`{ ok: true }`. The code listing on `file-preview` is highlighted by `ui/code-highlight.ts`
+(lowlight `common` grammars, GitHub palettes per scheme); grammar is chosen from the file
+name only, and unknown or >128 KiB files render plain.
+`loadImage` is how tool screenshots and generated images get onto the transcript: the
+WebView's `PortableHostImage` asks for a path, `inline-images.ts` answers with a data URI
+over LAN, and over the relay answers `confirmRequired` (+ size from a `statOnly` read)
+until the request carries `confirmed: true` — the row shows a Load button in between.
+Decoded images are cached per project/path (48 MiB LRU) so re-mounted rows never re-fetch.
 Images and PDFs use the `ImageAttachment` message path. Project file upload uses inline
 RPC through 256 KiB, raw LAN PUT when connected locally, or chunk-encrypted relay R2
 PUT plus completion through 100 MiB. Picker-reported sizes are optional metadata, not a

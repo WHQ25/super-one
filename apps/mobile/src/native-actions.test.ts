@@ -6,6 +6,7 @@ function ports(): NativeActionPorts {
     openLink: vi.fn(),
     openFile: vi.fn(),
     previewFile: vi.fn(),
+    loadImage: vi.fn(async () => ({ dataUri: 'data:image/png;base64,AA==' })),
     copyText: vi.fn(),
     setDraft: vi.fn(),
     saveWidgetTemplate: vi.fn(),
@@ -92,6 +93,18 @@ describe('native chat actions', () => {
     }, target)
     expect(target.previewFile).toHaveBeenNthCalledWith(1, 'src/App.tsx', 42)
     expect(target.previewFile).toHaveBeenNthCalledWith(2, 'src/App.tsx', undefined)
+  })
+
+  it('answers loadImage with the port fields merged into the result', async () => {
+    const target = ports()
+    await expect(resolveNativeRequest({
+      type: 'requestNative', requestId: 'img', action: 'loadImage', payload: { path: 'shots/a.png' },
+    }, target)).resolves.toMatchObject({ result: { ok: true, dataUri: 'data:image/png;base64,AA==' } })
+    expect(target.loadImage).toHaveBeenCalledWith('shots/a.png', false)
+    await resolveNativeRequest({
+      type: 'requestNative', requestId: 'img2', action: 'loadImage', payload: { path: 'shots/a.png', confirmed: true },
+    }, target)
+    expect(target.loadImage).toHaveBeenLastCalledWith('shots/a.png', true)
   })
 
   it('routes validated Codex plan decisions to the active runtime', async () => {

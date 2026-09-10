@@ -31,6 +31,9 @@ const base: ChatComposerProps = {
   onStop: noop,
   onSubmitFromKeyboard: noop,
   onAttachmentMenu: noop,
+  onAttachImage: noop,
+  onAttachPdf: noop,
+  onInsertSnippet: noop,
   onRemoveAttachment: noop,
   onPermissionMode: noop,
   onSandboxMode: noop,
@@ -64,10 +67,12 @@ export default {
   title: 'Mobile/ChatComposer',
   component: ChatComposer,
   render: Preview,
-  args: base,
+  args: { ...base, tablet: false },
 }
 
-export const Default = {}
+export const Default = {
+  name: 'Phone · compact empty hides send',
+}
 
 /** A landscape phone is wide enough for the sidebar but keeps this compact field. */
 /**
@@ -105,13 +110,57 @@ export const TabletStatusRowGroups = {
 }
 
 export const LandscapePhone = {
+  args: { tablet: false },
+  name: 'Landscape phone · compact empty hides send',
+}
+
+export const PhoneCompactWithDraft = {
   args: { tablet: false, draft: 'Keep the input short' },
-  name: 'Landscape phone · compact input',
+  name: 'Phone · compact send on the input row',
+}
+
+export const PhoneFocusedActionBar = {
+  args: { tablet: false, focused: true, draft: 'Ask about the diff' },
+  name: 'Phone · focused action bar',
+}
+
+export const PhoneFocusedStop = {
+  args: { tablet: false, focused: true, streaming: true, draft: 'queue this' },
+  name: 'Phone · focused send and stop',
+}
+
+export const PhoneFocusedStreamingEmpty = {
+  args: {
+    tablet: false, focused: true, streaming: true,
+    canSteer: true, canSteerSoon: true,
+  },
+  name: 'Phone · streaming empty hides send and steer',
+}
+
+export const PhoneFocusedClaudeSteer = {
+  args: {
+    tablet: false, focused: true, streaming: true, draft: 'steer this',
+    canSteer: true, canSteerSoon: true,
+  },
+  name: 'Phone · focused Claude steer',
+}
+
+export const PhoneFocusedCodexSteer = {
+  args: {
+    tablet: false, focused: true, streaming: true, draft: 'steer this',
+    canSteer: true, canSteerSoon: false,
+  },
+  name: 'Phone · focused Codex steer only',
 }
 
 export const Tablet = {
   args: { tablet: true, draft: 'Boxed input with chips inside the card' },
   name: 'Tablet · boxed input',
+}
+
+export const TabletEmpty = {
+  args: { tablet: true },
+  name: 'Tablet · empty hides send',
 }
 
 export const LoadingConversation = {

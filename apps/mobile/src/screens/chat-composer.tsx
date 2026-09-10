@@ -2,11 +2,11 @@ import { NativeComposerInput, composerInputMinHeight, COMPOSER_INPUT_MAX_HEIGHT,
 import { nativeMentionEditorAvailable } from '../ui/native-mention-editor'
 import type { ComposerCursor } from '../composer-cursor'
 import type { MentionSearchState } from '../navigation/use-composer-suggestions'
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { AttachmentStrip } from '../ui/attachment-strip'
 import { SlashSuggestions, MentionSuggestions, PromptSuggestions } from '../ui/composer-suggestions'
 import { ModelPicker } from '../ui/model-picker'
-import { ArrowUp, Paperclip, Square } from 'lucide-react-native'
+import { ArrowUp, AtSign, ChevronsUp, FileText, Image as ImageIcon, Paperclip, ShipWheel, Square } from 'lucide-react-native'
 import { ScrollView, TextInput, View, useWindowDimensions } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { shouldUseTabletComposer } from '../layout-state'
@@ -73,7 +73,15 @@ export type ChatComposerProps = {
   promptSuggestions?: string[]
   onPromptSuggestion?: (suggestion: string) => void
   onDraft: (value: string) => void; onSend: () => void; onStop: () => void
+  onSteer?: () => void
+  onSteerSoon?: () => void
+  canSteer?: boolean
+  canSteerSoon?: boolean
   onSubmitFromKeyboard: () => void; onAttachmentMenu: () => void
+  onAttachImage: () => void
+  onAttachPdf: () => void
+  /** Phone action-bar `/` and `@` — parent writes them at the caret. */
+  onInsertSnippet: (snippet: string) => void
   onRemoveAttachment: (attachment: ImageAttachment) => void
   onPermissionMode: (mode: string) => void; onSandboxMode: (mode: SandboxMode) => void
   onSlash: (command: string) => void
@@ -95,6 +103,11 @@ export type ChatComposerProps = {
    */
   tablet?: boolean
   /**
+   * Pin the focused phone action bar for stories. Unset in production — the
+   * input's focus and the keyboard decide.
+   */
+  focused?: boolean
+  /**
    * The one overlay above the input, when a command owns it.
    *
    * Composer surfaces are mutually exclusive, not stacked: a command that opens
@@ -109,12 +122,18 @@ export function ChatComposer(props: ChatComposerProps) {
   const { tokens: { colors, radius } } = useMobileTheme()
   const { width, height } = useWindowDimensions()
   const tablet = props.tablet ?? shouldUseTabletComposer(width, height)
+  const [inputFocused, setInputFocused] = useState(false)
   // The app's root SafeAreaView already clears the home indicator, so a gap of
   // our own on top of it left the composer a full input-height off the bottom.
   // Raising the keyboard hides that inset behind it without shrinking it, and
   // there the gap is ours to give.
   const insets = useSafeAreaInsets()
-  const bottomGap = useKeyboardVisible() || !insets.bottom ? 8 : 0
+  const keyboardVisible = useKeyboardVisible()
+  const bottomGap = keyboardVisible || !insets.bottom ? 8 : 0
+  const focused = props.focused ?? (inputFocused || keyboardVisible)
+  const phoneActions = !tablet && focused
+  const onFocus = () => setInputFocused(true)
+  const onBlur = () => setInputFocused(false)
   // Two anchored groups, not one centred line. The left group is what the next
   // turn will *do* — model, effort, permission mode — and reads from the same
   // edge as the message above it; the right group is what the session currently
@@ -140,15 +159,37 @@ export function ChatComposer(props: ChatComposerProps) {
     </View>
   </View>
   const attach = <IconButton icon={Paperclip} label="Add attachment" onPress={props.onAttachmentMenu} />
-  const send = <IconButton icon={props.streaming ? Square : ArrowUp} label={props.streaming ? 'Stop' : 'Send'}
-    tone={props.streaming ? 'danger' : tablet ? 'muted' : 'primary'} chrome={tablet ? 'circle' : 'plain'}
-    iconSize={tablet ? 13 : props.streaming ? 22 : 20}
-    disabled={props.loadingConversation || (!props.streaming && !props.draft.trim() && !props.attachments.length)}
-    onPress={props.streaming ? props.onStop : props.onSend} />
+  const empty = !props.draft.trim() && !props.attachments.length
+  // Hide send/steer when there is nothing to deliver; Stop still belongs mid-turn.
+  const send = empty ? null : <IconButton icon={ArrowUp} label="Send"
+    tone={tablet ? 'muted' : 'primary'} chrome={tablet ? 'circle' : 'plain'}
+    iconSize={tablet ? 13 : 20}
+    disabled={props.loadingConversation}
+    onPress={props.onSend} />
+  const stop = props.streaming ? <IconButton icon={Square} label="Stop" tone="danger"
+    chrome={tablet ? 'circle' : 'plain'} iconSize={tablet ? 13 : 22} onPress={props.onStop} /> : null
+  const steer = !empty && props.streaming && props.canSteer
+    ? <IconButton icon={ShipWheel} label="Steer now" chrome={tablet ? 'circle' : 'plain'}
+      iconSize={tablet ? 13 : 18} onPress={() => props.onSteer?.()} /> : null
+  const steerSoon = !empty && props.streaming && props.canSteerSoon
+    ? <IconButton icon={ChevronsUp} label="Steer soon" chrome={tablet ? 'circle' : 'plain'}
+      iconSize={tablet ? 13 : 18} onPress={() => props.onSteerSoon?.()} /> : null
+  const sendCluster = <>{steerSoon}{steer}{send}{stop}</>
+  const actionBar = phoneActions ? <View testID="phone-composer-actions" style={{ flexDirection: 'row', alignItems: 'center' }}>
+    <IconButton icon={ImageIcon} label="Add image" onPress={props.onAttachImage} />
+    <IconButton icon={FileText} label="Add PDF" onPress={props.onAttachPdf} />
+    <IconButton glyph="/" label="Insert slash command" onPress={() => props.onInsertSnippet('/')} />
+    <IconButton icon={AtSign} label="Insert mention" onPress={() => props.onInsertSnippet('@')} />
+    <View style={{ flex: 1 }} />
+    {sendCluster}
+  </View> : null
   // Header, transcript, todo strip and input are **one background**; the input's
   // own edge is a border, not a fill. Desktop's `ChatInput` is `border
   // border-border` with no `bg-` class for the same reason — a filled input
   // turns the chat column into stacked planes instead of one sheet.
+  //
+  // `keyboardShouldPersistTaps` keeps `/` and `@` from dismissing the keyboard
+  // before they can write into the still-focused field.
   return <View style={{ paddingHorizontal: 12, paddingTop: 4, paddingBottom: bottomGap, gap: 4, backgroundColor: colors.background }}>
     {!tablet && !props.loadingConversation ? <View testID="phone-composer-status" style={{ flexDirection: 'row', minHeight: CHIP_HEIGHT }}>{controls}</View> : null}
     {props.overlay ?? <>
@@ -165,24 +206,29 @@ export function ChatComposer(props: ChatComposerProps) {
         breadcrumbs={props.mentionQuery && !isSessionMentionQuery(props.mentionQuery)
           ? mentionBreadcrumbs(props.mentionQuery) : []} />
     </>}
-    <View testID={tablet ? 'tablet-composer' : 'phone-composer'} style={tablet
-      ? { borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: 6 }
-      : { flexDirection: 'row', alignItems: 'flex-end', gap: 4 }}>
-      {!tablet ? attach : null}
-      <View style={tablet ? undefined : { flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 20, overflow: 'hidden' }}>
-        {props.attachments.length ? <View style={{ padding: 6 }}><AttachmentStrip attachments={props.attachments} onRemove={props.onRemoveAttachment} /></View> : null}
-        {props.nativeDraft && nativeMentionEditorAvailable ? <NativeComposerInput key={props.nativeDraft.generation ?? 0} binding={props.nativeDraft} tablet={tablet}
-          editable placeholder={props.placeholder ?? 'Ask anything…'} onSubmit={props.onSubmitFromKeyboard} /> : <TextInput
-          accessibilityLabel="Message"
-          style={{ color: colors.foreground, fontSize: 15, lineHeight: 22, minHeight: composerInputMinHeight(tablet), maxHeight: COMPOSER_INPUT_MAX_HEIGHT, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 10, textAlignVertical: 'top' }}
-          placeholder={props.placeholder ?? 'Ask anything…'} placeholderTextColor={colors.mutedForeground}
-          value={props.draft} onChangeText={props.onDraft} multiline submitBehavior={tablet ? 'submit' : 'newline'}
-          selection={props.requestedCursor}
-          onSelectionChange={(event) => props.onCursorChange?.(event.nativeEvent.selection)}
-          onSubmitEditing={props.onSubmitFromKeyboard} autoCorrect
-        />}
+    <ScrollView keyboardShouldPersistTaps="always" scrollEnabled={false} style={{ flexGrow: 0 }}>
+      {actionBar}
+      <View testID={tablet ? 'tablet-composer' : 'phone-composer'} style={tablet
+        ? { borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: 6 }
+        : { flexDirection: 'row', alignItems: 'flex-end', gap: 4 }}>
+        <View style={tablet ? undefined : { flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 20, overflow: 'hidden' }}>
+          {props.attachments.length ? <View style={{ padding: 6 }}><AttachmentStrip attachments={props.attachments} onRemove={props.onRemoveAttachment} /></View> : null}
+          {props.nativeDraft && nativeMentionEditorAvailable ? <NativeComposerInput key={props.nativeDraft.generation ?? 0} binding={props.nativeDraft} tablet={tablet}
+            editable placeholder={props.placeholder ?? 'Ask anything…'} onSubmit={props.onSubmitFromKeyboard}
+            onFocus={onFocus} onBlur={onBlur} /> : <TextInput
+            accessibilityLabel="Message"
+            style={{ color: colors.foreground, fontSize: 15, lineHeight: 22, minHeight: composerInputMinHeight(tablet), maxHeight: COMPOSER_INPUT_MAX_HEIGHT, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 10, textAlignVertical: 'top' }}
+            placeholder={props.placeholder ?? 'Ask anything…'} placeholderTextColor={colors.mutedForeground}
+            value={props.draft} onChangeText={props.onDraft} multiline submitBehavior={tablet ? 'submit' : 'newline'}
+            selection={props.requestedCursor}
+            onSelectionChange={(event) => props.onCursorChange?.(event.nativeEvent.selection)}
+            onFocus={onFocus} onBlur={onBlur}
+            onSubmitEditing={props.onSubmitFromKeyboard} autoCorrect
+          />}
+        </View>
+        {tablet ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>{attach}{props.loadingConversation ? null : controls}{sendCluster}</View>
+          : phoneActions ? null : <>{send}{stop}</>}
       </View>
-      {tablet ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>{attach}{props.loadingConversation ? null : controls}{send}</View> : send}
-    </View>
+    </ScrollView>
   </View>
 }

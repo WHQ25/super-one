@@ -107,12 +107,10 @@ export async function pickAndUploadProjectFile(opts: {
 export function showAttachmentMenu(actions: {
   image(): void
   pdf(): void
-  file(): void
 }): void {
   Alert.alert('Attach', undefined, [
     { text: 'Image · send to AI', onPress: actions.image },
     { text: 'PDF · send to AI', onPress: actions.pdf },
-    { text: 'File · upload to project', onPress: actions.file },
     { text: 'Cancel', style: 'cancel' },
   ])
 }

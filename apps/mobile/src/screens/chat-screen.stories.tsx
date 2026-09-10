@@ -49,6 +49,9 @@ const base: ComponentProps<typeof ChatScreen> = {
   onMention: noop,
   onRemoveAttachment: noop,
   onAttachmentMenu: noop,
+  onAttachImage: noop,
+  onAttachPdf: noop,
+  onInsertSnippet: noop,
   onDraft: noop,
   onSubmitFromKeyboard: noop,
   onSend: noop,
@@ -95,4 +98,19 @@ export const LandingKeyboardUp = {
 export const RestoringSession = {
   args: { loadingConversation: true },
   name: 'Session switch · cover over the renderer, no white flash',
+}
+
+export const QueuedWhileStreaming = {
+  args: {
+    streaming: true,
+    canSteer: true,
+    canSteerSoon: true,
+    queuedMessages: [{
+      id: 'q1', role: 'user' as const, status: 'complete' as const,
+      content: [{ type: 'text' as const, text: 'fix the queue first' }],
+      createdAt: '', providerId: 'local',
+    }],
+    draft: 'another thought',
+  },
+  name: 'Streaming · queued user messages',
 }

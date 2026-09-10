@@ -2,12 +2,15 @@ import type { RefObject } from 'react'
 import type { LucideIcon } from 'lucide-react-native'
 import { Pressable, View, type StyleProp, type ViewStyle } from 'react-native'
 import { SpinningIcon } from './spinning-icon'
+import { Text } from './text'
 import { useMobileTheme } from '../theme/context'
 import { useMobileLocale } from '../i18n/context'
 
-export function IconButton({ icon: Icon, label, onPress, disabled, active, destructive, tone, color, chrome = 'default', iconSize = 20, spinning, style, hitSlop, buttonRef }: {
+export function IconButton({ icon: Icon, glyph, label, onPress, disabled, active, destructive, tone, color, chrome = 'default', iconSize = 20, spinning, style, hitSlop, buttonRef }: {
   buttonRef?: RefObject<View | null>
-  icon: LucideIcon
+  icon?: LucideIcon
+  /** A typed character (e.g. `/`) when a Lucide mark would read as the wrong symbol. */
+  glyph?: string
   label: string
   onPress: () => void
   disabled?: boolean
@@ -30,9 +33,15 @@ export function IconButton({ icon: Icon, label, onPress, disabled, active, destr
 }) {
   const { tokens: { colors, radius } } = useMobileTheme()
   const { t } = useMobileLocale()
-  const glyph = (color: string) => spinning
-    ? <SpinningIcon icon={Icon} size={iconSize} color={color} strokeWidth={1.8} />
-    : <Icon size={iconSize} strokeWidth={1.8} color={color} />
+  const mark = (color: string) => {
+    if (glyph) {
+      return <Text style={{ color, fontSize: iconSize, fontWeight: '500', lineHeight: iconSize, includeFontPadding: false }}>{glyph}</Text>
+    }
+    if (!Icon) return null
+    return spinning
+      ? <SpinningIcon icon={Icon} size={iconSize} color={color} strokeWidth={1.8} />
+      : <Icon size={iconSize} strokeWidth={1.8} color={color} />
+  }
   // `active` tints the glyph rather than filling the button: a toggle in a header
   // row sits beside plain actions, and a solid block reads as a different kind of
   // control rather than the same one in its on-state.
@@ -58,8 +67,8 @@ export function IconButton({ icon: Icon, label, onPress, disabled, active, destr
     >
       {({ pressed }) => chrome === 'circle' ? <View style={{ width: 26, height: 26, borderRadius: 13, borderWidth: 1,
         borderColor: colors.border, backgroundColor: pressed ? colors.muted : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
-        {glyph(iconColor)}
-      </View> : glyph(iconColor)}
+        {mark(iconColor)}
+      </View> : mark(iconColor)}
     </Pressable>
   )
 }

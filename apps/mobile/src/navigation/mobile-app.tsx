@@ -27,6 +27,8 @@ import { mergeRealtimeTranscript } from '@superone/shared/realtime-transcript'
 import { ChatRuntime, type SessionWorktreeFacts } from '../runtime'
 import { TerminalRuntime } from '../terminal-runtime'
 import { randomId } from '../ids'
+import { newMessageId } from '@superone/shared/message-id'
+import { canSteerQueued, canSteerQueuedSoon, composerQueuedSendFields, queuedMessageText } from '../queued-send'
 import { mentionInsertText } from '../mentions'
 import { SlashOutputPanel } from '../ui/slash-output-panel'
 import { McpPanel } from '../ui/mcp-panel'
@@ -1160,7 +1162,10 @@ export function MobileApp() {
     }).catch(failSessionTransition)
   }
 
+  const pendingSendKind = useRef<'send' | 'steer' | 'soon'>('send')
   const send = useComposerSend(composerDraft.editorRef, `${activePairingId}:${project?.path}:${sessionId}`, async () => {
+    const kind = pendingSendKind.current
+    pendingSendKind.current = 'send'
     const sentDraft = composerDraft.capture()
     const text = sentDraft.text.trim()
     if (!text && attachments.length === 0) return
@@ -1178,6 +1183,8 @@ export function MobileApp() {
     if (!runtimeRef.current) await createSession()
     const runtime = runtimeRef.current
     if (!runtime) return
+    const { needsClientMessageId } = composerQueuedSendFields(runtime.session.status, selectedProvider, kind)
+    const clientMessageId = needsClientMessageId ? newMessageId('user') : undefined
     try {
       await runtime.send(text, {
         images: attachments,
@@ -1190,7 +1197,10 @@ export function MobileApp() {
         ...(Object.keys(harnessSelection.modelParams).length
           ? { modelParams: harnessSelection.modelParams }
           : {}),
+        ...(clientMessageId ? { clientMessageId, priority: 'next' } : {}),
       })
+      if (kind === 'steer' && clientMessageId) await runtime.steerQueuedMessage(clientMessageId, 'now')
+      if (kind === 'soon' && clientMessageId) await runtime.steerQueuedMessage(clientMessageId, 'next')
       if (!sessionId && !runtime.sessionTitle && text) setActiveSessionTitle(sentDraft.title.slice(0, 72))
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'message failed')
@@ -1659,6 +1669,20 @@ export function MobileApp() {
           sessionDirs={sessionId ? [] : additionalDirs.sessionDirs}
           onManageDirectories={openAdditionalDirs}
           queuedMessages={queuedMessages}
+          canSteer={canSteerQueued(selectedProvider)}
+          canSteerSoon={canSteerQueuedSoon(selectedProvider)}
+          onEditQueued={(messageId) => {
+            const runtime = runtimeRef.current
+            const message = runtime?.session.queuedMessages.find((item) => item.id === messageId)
+            if (!runtime || !message) return
+            runtime.dequeueMessage(messageId)
+            const text = queuedMessageText(message)
+            composerDraft.changeText(text)
+            suggestions.update(text)
+            if (message.attachments?.length) setAttachments(message.attachments)
+          }}
+          onSteerQueued={(messageId) => runUiAction(() => runtimeRef.current?.steerQueuedMessage(messageId, 'now'), setStatus, 'steer failed')}
+          onSteerQueuedSoon={(messageId) => runUiAction(() => runtimeRef.current?.steerQueuedMessage(messageId, 'next'), setStatus, 'steer failed')}
           todos={todos}
           draft={draft}
           streaming={streaming}
@@ -1719,8 +1743,16 @@ export function MobileApp() {
           onAttachmentMenu={() => showAttachmentMenu({
             image: () => void addAttachment('image'),
             pdf: () => void addAttachment('pdf'),
-            file: () => void uploadProjectFile(),
           })}
+          onAttachImage={() => void addAttachment('image')}
+          onAttachPdf={() => void addAttachment('pdf')}
+          onInsertSnippet={(snippet) => {
+            if (composerDraft.editorRef.current) {
+              composerDraft.editorRef.current.insertText(snippet)
+              return
+            }
+            composerDraft.changeText(suggestions.insertSnippet(snippet))
+          }}
           onDraft={onDraft}
           onCursorChange={suggestions.select}
           requestedCursor={suggestions.requestedCursor}
@@ -1738,7 +1770,9 @@ export function MobileApp() {
               now: Date.now(),
             })) void send()
           }}
-          onSend={() => void send()}
+          onSend={() => { pendingSendKind.current = 'send'; void send() }}
+          onSteer={() => { pendingSendKind.current = 'steer'; void send() }}
+          onSteerSoon={() => { pendingSendKind.current = 'soon'; void send() }}
           onStop={() => runUiAction(() => runtimeRef.current?.interrupt(), setStatus, 'interrupt failed')}
         />
       ) : null}

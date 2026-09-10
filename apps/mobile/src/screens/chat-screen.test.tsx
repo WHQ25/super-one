@@ -60,6 +60,9 @@ function screenUi(overrides: {
       onMention={noop}
       onRemoveAttachment={noop}
       onAttachmentMenu={noop}
+      onAttachImage={noop}
+      onAttachPdf={noop}
+      onInsertSnippet={noop}
       onDraft={noop}
       onSubmitFromKeyboard={noop}
       onSend={noop}

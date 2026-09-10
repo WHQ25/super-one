@@ -425,7 +425,11 @@ todos={page === 'Chat' ? previewTodos : {}} draft={chatDraft.draft} streaming={p
               const query = extractMentionQuery(chatDraft.draft, chatDraft.draft.length)
               if (query) changeDraft(insertMention(chatDraft.draft, query, item))
             }}
-            onRemoveAttachment={(item) => setAttachments((current) => current.filter((entry) => entry !== item))} onAttachmentMenu={() => setAttachments([{ id: 'pdf', name: 'mobile-design-review.pdf', mimeType: 'application/pdf', base64: '' }])}
+            onRemoveAttachment={(item) => setAttachments((current) => current.filter((entry) => entry !== item))}
+            onAttachmentMenu={() => setAttachments([{ id: 'pdf', name: 'mobile-design-review.pdf', mimeType: 'application/pdf', base64: '' }])}
+            onAttachImage={() => setAttachments((current) => [...current, { id: 'img', name: 'shot.png', mimeType: 'image/png', base64: '' }])}
+            onAttachPdf={() => setAttachments((current) => [...current, { id: 'pdf', name: 'mobile-design-review.pdf', mimeType: 'application/pdf', base64: '' }])}
+            onInsertSnippet={(snippet) => changeDraft(`${chatDraft.draft}${snippet}`)}
             nativeDraft={nativeEditor ? { controller: chatDraft.editorRef, document: chatDraft.document.current, generation: chatDraft.generation, onChange: acceptDraft, onError: setEditorError } : undefined}
             onDraft={changeDraft} onSubmitFromKeyboard={send} onSend={send} onStop={() => setPage('New session')} /> : null}
           {page === 'Devices' || page === 'Pairing' ? <PairingsScreen scannerOpen={false} paste="" lan=""

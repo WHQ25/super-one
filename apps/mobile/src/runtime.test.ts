@@ -72,11 +72,31 @@ describe('ChatRuntime', () => {
       images: [{ name: 'a.png', mimeType: 'image/png', base64: 'AA==' }],
     }))
     expect(client.request).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'send_message' }))
+    runtime.session = { ...runtime.session, status: 'streaming' }
+    runtime.send('later', { clientMessageId: 'user_q', priority: 'next' })
+    expect(runtime.session.queuedMessages.map((message) => message.id)).toEqual(['user_q'])
+    expect(paints.at(-1)).toMatchObject({ queuedMessages: [expect.objectContaining({ id: 'user_q' })] })
+    expect(client.sent).toContainEqual(expect.objectContaining({
+      type: 'send_message', clientMessageId: 'user_q', priority: 'next',
+    }))
     runtime.interrupt()
     expect(client.sent).toContainEqual(expect.objectContaining({ type: 'interrupt', sessionId: id }))
     expect(client.request).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'interrupt' }))
     expect(client.sent.some((c) => (c as { type: string }).type === 'subscribe_session')).toBe(true)
     expect(client.sent.some((c) => (c as { type: string }).type === 'load_session_messages')).toBe(false)
+  })
+
+  it('paints a dequeue so a parked bubble can return to the composer', () => {
+    const paint = vi.fn()
+    const runtime = new ChatRuntime(fakeClient() as never, paint)
+    runtime.projectPath = '/p'
+    runtime.sessionId = 's'
+    runtime.session = { ...runtime.session, status: 'streaming' }
+    runtime.send('later', { clientMessageId: 'user_q', priority: 'next' })
+    paint.mockClear()
+    runtime.dequeueMessage('user_q')
+    expect(runtime.session.queuedMessages).toEqual([])
+    expect(paint).toHaveBeenCalledTimes(1)
   })
 
   it('throws the host create_session error so the shell can show it', async () => {

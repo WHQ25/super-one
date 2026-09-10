@@ -346,6 +346,8 @@ export class ChatRuntime {
     serviceTier?: string | null
     /** Cursor catalog params (param id → value). */
     modelParams?: Record<string, string>
+    clientMessageId?: string
+    priority?: 'now' | 'next' | 'later'
   } = {}): void {
     const cmd: RemoteCommand = {
       type: 'send_message',
@@ -361,11 +363,61 @@ export class ChatRuntime {
       ...(extra.modelParams && Object.keys(extra.modelParams).length
         ? { modelParams: extra.modelParams }
         : {}),
+      ...(extra.clientMessageId ? { clientMessageId: extra.clientMessageId } : {}),
+      ...(extra.priority ? { priority: extra.priority } : {}),
     }
     // The wire messages that report this command's output carry no name, so the
     // only chance to learn it is here, from what the user actually sent.
-    this.session = { ...this.session, _pendingSlashCommand: pendingSlashCommandFrom(content) }
+    const queued = extra.priority === 'next' && extra.clientMessageId
+      ? {
+          id: extra.clientMessageId,
+          role: 'user' as const,
+          status: 'complete' as const,
+          content: [{ type: 'text' as const, text: content }],
+          createdAt: new Date().toISOString(),
+          providerId: 'local',
+          ...(extra.images?.length ? { attachments: extra.images } : {}),
+        }
+      : null
+    this.session = {
+      ...this.session,
+      _pendingSlashCommand: pendingSlashCommandFrom(content),
+      ...(queued ? { queuedMessages: [...this.session.queuedMessages, queued] } : {}),
+    }
+    if (queued) {
+      this.dirty = true
+      this.flush()
+    }
     this.client.send(cmd)
+  }
+
+  dequeueMessage(clientMessageId: string): void {
+    this.session = {
+      ...this.session,
+      queuedMessages: this.session.queuedMessages.filter((message) => message.id !== clientMessageId),
+    }
+    this.dirty = true
+    this.flush()
+    this.client.send({
+      type: 'dequeue_message',
+      clientMessageId,
+      projectPath: this.projectPath,
+      sessionId: this.sessionId,
+    })
+  }
+
+  async steerQueuedMessage(clientMessageId: string, priority: 'now' | 'next' = 'now'): Promise<boolean> {
+    if (!this.sessionId || !this.projectPath) return false
+    const result = await this.client.request({
+      type: 'steer_queued_message',
+      requestId: randomId(),
+      projectPath: this.projectPath,
+      sessionId: this.sessionId,
+      clientMessageId,
+      priority,
+    } as RemoteCommand) as { ok?: boolean; error?: string }
+    if (result.error || result.ok === false) throw new Error(result.error ?? 'steer failed')
+    return result.ok === true
   }
 
   /**

@@ -33,6 +33,9 @@ function composer(overrides: Partial<ChatComposerProps> = {}) {
     onStop: () => {},
     onSubmitFromKeyboard: () => {},
     onAttachmentMenu: () => {},
+    onAttachImage: () => {},
+    onAttachPdf: () => {},
+    onInsertSnippet: () => {},
     onRemoveAttachment: () => {},
     onPermissionMode: () => {},
     onSandboxMode: () => {},
@@ -129,6 +132,105 @@ test('prompt suggestions stay off while a turn is streaming', async () => {
   await renderWithTheme(composer({ promptSuggestions: FOLLOW_UPS, streaming: true }))
 
   expect(screen.queryByTestId('prompt-suggestions')).toBeNull()
+})
+
+test('a phone drops the paperclip and keeps Send on the input row until focus', async () => {
+  await renderWithTheme(composer({ tablet: false, draft: 'hello' }))
+
+  expect(screen.queryByLabelText('Add Attachment')).toBeNull()
+  expect(screen.queryByTestId('phone-composer-actions')).toBeNull()
+  expect(screen.getByLabelText('Send')).toBeTruthy()
+})
+
+test('an empty composer hides Send until there is something to send', async () => {
+  await renderWithTheme(composer({ tablet: false }))
+
+  expect(screen.queryByTestId('phone-composer-actions')).toBeNull()
+  expect(screen.queryByLabelText('Send')).toBeNull()
+})
+
+test('an empty tablet composer hides Send inside the boxed row', async () => {
+  await renderWithTheme(composer({ tablet: true }))
+
+  expect(screen.queryByLabelText('Send')).toBeNull()
+  expect(screen.getByLabelText('Add Attachment')).toBeTruthy()
+})
+
+test('an empty unfocused streaming phone keeps Stop on the input row without Send', async () => {
+  await renderWithTheme(composer({ tablet: false, streaming: true }))
+
+  expect(screen.queryByTestId('phone-composer-actions')).toBeNull()
+  expect(screen.queryByLabelText('Send')).toBeNull()
+  expect(screen.getByLabelText('Stop')).toBeTruthy()
+})
+
+test('focusing the phone input opens the action bar and moves Send onto it', async () => {
+  const inserted: string[] = []
+  await renderWithTheme(composer({
+    tablet: false,
+    focused: true,
+    draft: 'hello',
+    onInsertSnippet: (snippet) => { inserted.push(snippet) },
+  }))
+
+  expect(screen.getByTestId('phone-composer-actions')).toBeTruthy()
+  expect(screen.getByLabelText('Add Image')).toBeTruthy()
+  expect(screen.getByLabelText('Add PDF')).toBeTruthy()
+  expect(screen.getByLabelText('Insert Slash Command')).toBeTruthy()
+  expect(screen.getByLabelText('Insert Mention')).toBeTruthy()
+  expect(screen.getByLabelText('Send')).toBeTruthy()
+  expect(screen.queryByLabelText('Add Attachment')).toBeNull()
+
+  fireEvent.press(screen.getByLabelText('Insert Slash Command'))
+  expect(inserted).toEqual(['/'])
+})
+
+test('a focused streaming phone keeps Send as queue and shows Stop beside it', async () => {
+  await renderWithTheme(composer({ tablet: false, focused: true, streaming: true, draft: 'hello' }))
+
+  expect(screen.getByTestId('phone-composer-actions')).toBeTruthy()
+  expect(screen.getByLabelText('Send')).toBeTruthy()
+  expect(screen.getByLabelText('Stop')).toBeTruthy()
+})
+
+test('a streaming Claude action bar offers steer now and steer soon', async () => {
+  await renderWithTheme(composer({
+    tablet: false, focused: true, streaming: true, draft: 'hello',
+    canSteer: true, canSteerSoon: true,
+  }))
+
+  expect(screen.getByLabelText('Steer Now')).toBeTruthy()
+  expect(screen.getByLabelText('Steer Soon')).toBeTruthy()
+})
+
+test('a streaming Codex action bar offers steer now only', async () => {
+  await renderWithTheme(composer({
+    tablet: false, focused: true, streaming: true, draft: 'hello',
+    canSteer: true, canSteerSoon: false,
+  }))
+
+  expect(screen.getByLabelText('Steer Now')).toBeTruthy()
+  expect(screen.queryByLabelText('Steer Soon')).toBeNull()
+})
+
+test('a streaming action bar hides send and steer until the input has content', async () => {
+  await renderWithTheme(composer({
+    tablet: false, focused: true, streaming: true,
+    canSteer: true, canSteerSoon: true,
+  }))
+
+  expect(screen.queryByLabelText('Send')).toBeNull()
+  expect(screen.queryByLabelText('Steer Now')).toBeNull()
+  expect(screen.queryByLabelText('Steer Soon')).toBeNull()
+  expect(screen.getByLabelText('Stop')).toBeTruthy()
+})
+
+test('a tablet keeps the paperclip and boxed send row, without the phone action bar', async () => {
+  await renderWithTheme(composer({ tablet: true, focused: true, draft: 'hello' }))
+
+  expect(screen.getByLabelText('Add Attachment')).toBeTruthy()
+  expect(screen.queryByTestId('phone-composer-actions')).toBeNull()
+  expect(screen.getByLabelText('Send')).toBeTruthy()
 })
 
 test('a landscape phone keeps the compact input, not the boxed tablet card', async () => {

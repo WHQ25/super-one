@@ -9,6 +9,7 @@ function makeFakeSession(props: { id: string; owner?: Session['owner']; subscrib
   const owner = props.owner ?? { kind: 'local' }
   return {
     id: props.id,
+    snapshot: { messages: [] },
     get owner() { return owner },
     get subscribers() { return subscribers },
   } as unknown as Session

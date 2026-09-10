@@ -315,6 +315,46 @@ describe('computeToolMeta', () => {
     })
   })
 
+  describe('Cursor Edit (unified diff on the result, no old/new strings)', () => {
+    // Cursor's `edit` args carry only `path`; the mapper folds `result.diffString` and
+    // `linesAdded` / `linesRemoved` into the input. The phone has no other diff source,
+    // so without this branch its row shows no delta and expands to an empty body.
+    const diff = '@@ -1,2 +1,3 @@\n line1\n-line2\n+line2b\n+line3'
+
+    it('forwards the unified diff and counts its hunk lines', () => {
+      const block = toolUseBlock('Edit', {
+        path: '/proj/file.ts',
+        file_path: '/proj/file.ts',
+        diffString: diff,
+        diff,
+        linesAdded: 2,
+        linesRemoved: 1,
+      })
+      const result = computeToolMeta(block, '/proj')
+      expect(result.toolFilePath).toBe('file.ts')
+      expect(result.toolDiff).toBe(diff)
+      expect(result.toolLineDelta).toEqual({ added: 2, removed: 1 })
+    })
+
+    it('falls back to linesAdded/linesRemoved when the diff has no hunk lines', () => {
+      const block = toolUseBlock('Edit', {
+        file_path: '/proj/file.ts',
+        diff: '--- a\n+++ b\n',
+        linesAdded: 4,
+        linesRemoved: 0,
+      })
+      const result = computeToolMeta(block, '/proj')
+      expect(result.toolLineDelta).toEqual({ added: 4, removed: 0 })
+    })
+
+    it('leaves the phone row bare when the result carried nothing', () => {
+      const block = toolUseBlock('Edit', { file_path: '/proj/file.ts' })
+      const result = computeToolMeta(block, '/proj')
+      expect(result.toolDiff).toBeUndefined()
+      expect(result.toolLineDelta).toBeUndefined()
+    })
+  })
+
   describe('Write', () => {
     it('should compute line delta for new file', () => {
       const block = toolUseBlock('Write', {
@@ -582,6 +622,18 @@ describe('stripMessagesForRemote', () => {
     const [result] = stripMessagesForRemote([msg])
     expect(result.content).toHaveLength(1)
     expect(result.content[0]).toMatchObject({ type: 'text', text: 'Hello world' })
+  })
+
+  it('keeps a browser screenshot path out of an MCP envelope', () => {
+    const inner = JSON.stringify({ path: '/tmp/google.png', width: 960, height: 1636, outline: 'x'.repeat(400) })
+    const summary = JSON.stringify({ content: [{ type: 'text', text: inner }], isError: false })
+    expect(summary.length).toBeGreaterThan(200)
+    const [result] = stripMessagesForRemote([makeMessage([
+      toolUseBlock('mcp__superone__browser_snapshot', { include: ['screenshot'] }, 'tu-shot'),
+      { type: 'tool_result', toolUseId: 'tu-shot', summary },
+    ])])
+    const stripped = result.content[1] as ContentBlock & { type: 'tool_result' }
+    expect(JSON.parse(stripped.summary)).toEqual({ path: '/tmp/google.png', width: 960, height: 1636 })
   })
 
   it('keeps the screenshot path of an oversized computer-use result parseable', () => {

@@ -2579,13 +2579,13 @@ describe('AgentService.handleRemoteCommand', () => {
     expect(respond).toHaveBeenCalledWith('plan-1', false, 'needs more detail')
   })
 
-  it('load_session_messages returns an error when session does not belong to the project', async () => {
+  it.each(['load_session_messages', 'get_session_history_index'] as const)('%s returns an error when session does not belong to the project', async (type) => {
     vi.mocked(dbSessions.sessionBelongsToProject).mockReturnValue(false)
     const respond = vi.fn()
     const service = new AgentService()
 
     await service.handleRemoteCommand({
-      type: 'load_session_messages',
+      type,
       requestId: 'r9',
       projectPath: '/project',
       sessionId: 'session-X',

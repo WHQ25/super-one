@@ -95,7 +95,9 @@ interface ToolUseBase {
   parentToolUseId?: string | null
 }
 
-export type ContentBlock =
+export type ContentBlock = ContentBlockData & { remoteDetail?: string }
+
+type ContentBlockData =
   | { type: 'text'; text: string; parentToolUseId?: string | null; codeBlockTokens?: Array<{ language: string; tokens: DiffTokenLine[] | null }>; isPaste?: boolean }
   | { type: 'thinking'; thinking: string; parentToolUseId?: string | null; startedAt?: number; endedAt?: number }
   /**
@@ -240,6 +242,7 @@ export interface CodexAsyncUserInputQuestion {
 export interface CodexReasoningItem {
   id: string
   type: 'reasoning'
+  remoteDetail?: string
   text: string
   startedAt?: number
   endedAt?: number
@@ -260,6 +263,7 @@ export interface CodexCommandAction {
 }
 
 export interface CodexCommandExecutionItem {
+  remoteDetail?: string
   id: string
   type: 'command_execution'
   command: string
@@ -276,6 +280,9 @@ export interface CodexFileUpdateChange {
 }
 
 export interface CodexFileChangeItem {
+  remoteDetail?: string
+  /** Collapsed remote header; the patch bodies stay behind `remoteDetail`. */
+  toolLineDelta?: { added: number; removed: number }
   id: string
   type: 'file_change'
   changes: CodexFileUpdateChange[]
@@ -283,6 +290,7 @@ export interface CodexFileChangeItem {
 }
 
 export interface CodexMcpToolCallItem {
+  remoteDetail?: string
   id: string
   type: 'mcp_tool_call'
   server: string
@@ -381,6 +389,7 @@ export interface CodexCollabAgentState {
 }
 
 export interface CodexCollabToolCallItem {
+  remoteDetail?: string
   id: string
   type: 'collab_tool_call'
   tool: CodexCollabTool
@@ -1610,6 +1619,7 @@ export interface SubagentRetryInfo {
 }
 
 export type AgentEventBase =
+  | { type: 'remote_detail'; subscriptionId: string; revision: number; offset: number; text: string }
   | { type: 'message_start'; message: ChatMessage }
   | { type: 'user_message_appended'; message: ChatMessage }
   | { type: 'content_delta'; messageId: string; delta: ContentBlock; isSynthetic?: boolean; isReplay?: boolean }
@@ -1826,7 +1836,7 @@ export type AgentEventBase =
   | { type: 'realtime_error'; error: string }
   | { type: 'realtime_closed'; reason?: string }
 
-export type AgentEvent = AgentEventBase & { projectPath?: string; sessionId?: string; draftSessionId?: string; seq?: number; epoch?: number }
+export type AgentEvent = AgentEventBase & { remoteView?: 'summary'; projectPath?: string; sessionId?: string; draftSessionId?: string; seq?: number; epoch?: number }
 
 export type AgentStatus = 'idle' | 'streaming' | 'background' | 'error'
 
@@ -4423,10 +4433,13 @@ export type RemoteCommand =
   | { type: 'dismiss_question'; requestId: string; projectPath?: string; sessionId: string }
   | { type: 'respond_plan_approval'; requestId: string; approved: boolean; feedback?: string; projectPath?: string; sessionId: string }
   | { type: 'codex_plan_approval'; messageId: string; status: 'approved' | 'rejected'; feedback?: string; projectPath?: string; sessionId: string }
-  | { type: 'subscribe_session'; projectPath: string; sessionId: string; requestId?: string }
+  | { type: 'subscribe_session'; projectPath: string; sessionId: string; requestId?: string; progressive?: boolean }
   | { type: 'unsubscribe_session'; sessionId?: string }
   | { type: 'leave_session'; sessionId: string }
-  | { type: 'load_session_messages'; requestId: string; projectPath: string; sessionId: string; limit?: number; cursor?: number }
+  | { type: 'subscribe_detail'; requestId: string; projectPath: string; sessionId: string; detailRef: string; subscriptionId: string }
+  | { type: 'unsubscribe_detail'; requestId: string; projectPath: string; sessionId: string; subscriptionId: string }
+  | { type: 'get_session_history_index'; requestId: string; projectPath: string; sessionId: string }
+  | { type: 'load_session_messages'; requestId: string; projectPath: string; sessionId: string; limit?: number; cursor?: number; anchorId?: string; direction?: 'around' | 'before' | 'after' }
   | { type: 'set_permission_mode'; mode: string; projectPath?: string; sessionId: string }
   /**
    * Save a widget the phone is looking at as a reusable template. The template store

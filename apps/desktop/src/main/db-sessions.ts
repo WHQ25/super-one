@@ -383,16 +383,15 @@ export function loadSessionMessagesPaginated(
   cursor?: number,
 ): { messages: ChatMessage[]; cursor: number | null; hasMore: boolean } {
   const db = getDb()
-  const rows = db.prepare(`
+  const count = (db.prepare('SELECT COUNT(*) AS count FROM chat_messages WHERE session_id = ?').get(sessionId) as { count: number }).count
+  const endIndex = Math.min(count, Math.max(0, Math.floor(cursor ?? count)))
+  const pageSize = Math.min(200, Math.max(1, Math.floor(limit)))
+  const startIndex = Math.max(0, endIndex - pageSize)
+  const slice = db.prepare(`
     SELECT id, sort_order, role, status, content_json, created_at, provider_id, metadata_json, checkpoint_id, resume_point_id
-    FROM chat_messages
-    WHERE session_id = ?
-    ORDER BY sort_order ASC
-  `).all(sessionId) as (DbChatMessage & { sort_order: number })[]
-
-  const endIndex = cursor ?? rows.length
-  const startIndex = Math.max(0, endIndex - limit)
-  const slice = rows.slice(startIndex, endIndex)
+    FROM chat_messages WHERE session_id = ?
+    ORDER BY sort_order ASC LIMIT ? OFFSET ?
+  `).all(sessionId, endIndex - startIndex, startIndex) as DbChatMessage[]
   const hasMore = startIndex > 0
 
   const messages: ChatMessage[] = slice.map(rowToChatMessage)

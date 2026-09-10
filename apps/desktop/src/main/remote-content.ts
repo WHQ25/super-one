@@ -1,7 +1,7 @@
 import { diffLines } from 'diff'
 import { humanizePageToolName } from '@superone/shared/page-tool-name'
 import type { AgentEvent, ContentBlock, ChatMessage, TodoToolItem } from '@superone/shared/agent-types'
-import { isSubagentToolName } from '@superone/shared/tool-ui'
+import { isSubagentToolName, normalizeTranscriptTool } from '@superone/shared/tool-ui'
 import { remoteToolBlockType, sanitizeRemoteToolInput } from '@superone/shared/remote-tool-input'
 import { readOutputFile } from './agent/claude-session-runtime'
 import { listWorkflowAgentsSync } from './workflow-transcripts'
@@ -156,6 +156,70 @@ export function countEditDelta(oldStr: string, newStr: string): { added: number;
   return { added, removed }
 }
 
+/**
+ * Count `+` / `-` lines of a unified or prefixed diff, ignoring the `+++` / `---`
+ * file headers. Returns undefined when the diff carries no changed line.
+ */
+function countDiffTextDelta(diff: string): { added: number; removed: number } | undefined {
+  let added = 0, removed = 0
+  for (const line of diff.split('\n')) {
+    if (line.startsWith('+') && !line.startsWith('+++')) added++
+    else if (line.startsWith('-') && !line.startsWith('---')) removed++
+  }
+  return added > 0 || removed > 0 ? { added, removed } : undefined
+}
+
+/** Cursor reports edit totals on the result; use them when the diff text itself has no hunk lines. */
+function reportedLineDelta(p: Record<string, unknown>): { added: number; removed: number } | undefined {
+  const added = Number(p.linesAdded)
+  const removed = Number(p.linesRemoved)
+  const hasAdded = Number.isFinite(added) && added > 0
+  const hasRemoved = Number.isFinite(removed) && removed > 0
+  if (!hasAdded && !hasRemoved) return undefined
+  return { added: hasAdded ? added : 0, removed: hasRemoved ? removed : 0 }
+}
+
+/**
+ * Header `+N -M` only — no unified diff, no highlighter. Progressive summary rows
+ * need this without paying for the bodies `computeToolMeta` builds on expansion.
+ */
+function lineDeltaFromParams(toolName: string, p: Record<string, unknown>): { added: number; removed: number } | undefined {
+  if (toolName === 'Write') {
+    const content = String(p.content ?? '')
+    return content ? { added: countLines(content), removed: 0 } : undefined
+  }
+  if (toolName === 'Edit') {
+    const oldStr = String(p.old_string ?? '')
+    const newStr = String(p.new_string ?? '')
+    if (oldStr || newStr) {
+      const delta = countEditDelta(oldStr, newStr)
+      return delta.added > 0 || delta.removed > 0 ? delta : undefined
+    }
+    const diff = String(p.diff ?? p.diffString ?? '')
+    return (diff ? countDiffTextDelta(diff) : undefined) ?? reportedLineDelta(p)
+  }
+  if (toolName === 'FileChange') {
+    const diff = String(p.diff ?? '')
+    const kind = String(p.kind ?? '')
+    if (!diff) return undefined
+    if (kind === 'add') return { added: countLines(diff), removed: 0 }
+    if (kind === 'delete') return { added: 0, removed: countLines(diff) }
+    return countDiffTextDelta(diff)
+  }
+  return undefined
+}
+
+export function computeToolLineDelta(toolName: string, input: string): { added: number; removed: number } | undefined {
+  try {
+    const p = JSON.parse(input)
+    if (!p || typeof p !== 'object' || Array.isArray(p)) return undefined
+    const normalized = normalizeTranscriptTool(toolName, p)
+    return lineDeltaFromParams(normalized.toolName, normalized.input)
+  } catch {
+    return undefined
+  }
+}
+
 export function stripProjectPath(value: string, projectPath?: string): string {
   if (!projectPath) return value
   const prefix = projectPath.endsWith('/') ? projectPath : projectPath + '/'
@@ -191,9 +255,8 @@ export function computeToolMeta(block: ContentBlock & { type: 'tool_use' }, proj
       case 'Edit': {
         const oldStr = String(p.old_string ?? '')
         const newStr = String(p.new_string ?? '')
+        toolLineDelta = lineDeltaFromParams('Edit', p)
         if (oldStr || newStr) {
-          const delta = countEditDelta(oldStr, newStr)
-          if (delta.added > 0 || delta.removed > 0) toolLineDelta = delta
           const changes = diffLines(oldStr, newStr)
           const parts: string[] = []
           for (const change of changes) {
@@ -207,13 +270,20 @@ export function computeToolMeta(block: ContentBlock & { type: 'tool_use' }, proj
             const removedTokens = oldStr ? highlightCodeSync(oldStr, filePath) : undefined
             if (addedTokens || removedTokens) toolDiffTokens = { added: addedTokens ?? undefined, removed: removedTokens ?? undefined }
           }
+          break
         }
+        // Cursor Edit: args carry only the path; the mapper folds `result.diffString`
+        // (as `diff`) and `linesAdded` / `linesRemoved` into the input. The phone never
+        // sees these fields (input is sanitized down to `file_path`), so this is its
+        // only diff source. No tokens: the full old/new bodies are not available.
+        const diff = String(p.diff ?? p.diffString ?? '')
+        if (diff) toolDiff = diff
         break
       }
       case 'Write': {
         const content = String(p.content ?? '')
         if (content) {
-          toolLineDelta = { added: countLines(content), removed: 0 }
+          toolLineDelta = lineDeltaFromParams('Write', p)
           toolDiff = content.split('\n').map((l: string) => `+${l}`).join('\n')
           if (filePath) {
             const addedTokens = highlightCodeSync(content, filePath)
@@ -226,19 +296,12 @@ export function computeToolMeta(block: ContentBlock & { type: 'tool_use' }, proj
         const diff = String(p.diff ?? '')
         const kind = String(p.kind ?? '')
         if (diff) {
+          toolLineDelta = lineDeltaFromParams('FileChange', p)
           if (kind === 'add') {
-            toolLineDelta = { added: countLines(diff), removed: 0 }
             toolDiff = diff.split('\n').map((l: string) => `+${l}`).join('\n')
           } else if (kind === 'delete') {
-            toolLineDelta = { added: 0, removed: countLines(diff) }
             toolDiff = diff.split('\n').map((l: string) => `-${l}`).join('\n')
           } else {
-            let added = 0, removed = 0
-            for (const line of diff.split('\n')) {
-              if (line.startsWith('+') && !line.startsWith('+++')) added++
-              else if (line.startsWith('-') && !line.startsWith('---')) removed++
-            }
-            if (added > 0 || removed > 0) toolLineDelta = { added, removed }
             toolDiff = diff
           }
         }
@@ -353,6 +416,7 @@ function stripContentBlock(block: ContentBlock, bashCmds?: Map<string, string>, 
     return block
   }
   if (block.type === 'thinking') return block
+  if (block.type === 'tool_use' && block.remoteDetail) return block
   if (block.type === 'tool_use') {
     const meta = computeToolMeta(block, projectPath)
     const mappedType = remoteToolBlockType(block.toolName)
@@ -383,28 +447,61 @@ const MEDIA_RESULT_KEYS = ['ok', 'status', 'error', 'path', 'width', 'height', '
 /** `root` names the app behind a computer-use snapshot; its outline is what makes the result big. */
 const ROOT_IDENTITY_KEYS = ['app', 'bundleId', 'title'] as const
 
+const MCP_ENVELOPE_KEYS = new Set(['content', 'isError', 'structuredContent', '_meta'])
+
+/** Claude stores MCP outcomes as the reply envelope; the image path lives inside `content`. */
+function unwrapMcpEnvelope(summary: string): string {
+  if (summary.charCodeAt(0) !== 123 /* { */) return summary
+  let data: unknown
+  try { data = JSON.parse(summary) } catch { return summary }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return summary
+  const envelope = data as Record<string, unknown>
+  if (!Array.isArray(envelope.content)) return summary
+  if (Object.keys(envelope).some((key) => !MCP_ENVELOPE_KEYS.has(key))) return summary
+  const parts: string[] = []
+  for (const item of envelope.content) {
+    if (!item || typeof item !== 'object') continue
+    const text = (item as { text?: unknown }).text
+    if (typeof text === 'string') parts.push(text)
+    else if (text && typeof text === 'object' && typeof (text as { text?: unknown }).text === 'string') {
+      parts.push((text as { text: string }).text)
+    }
+  }
+  return parts.length > 0 ? parts.join('\n') : summary
+}
+
+function mediaObject(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
 /**
  * Shrink a tool result that carries an image path down to the fields that
  * locate the image. Returns `null` when the summary is not such a result, in
  * which case the caller falls back to plain character truncation.
  */
 export function compactMediaToolResult(summary: string): string | null {
-  if (summary.charCodeAt(0) !== 123 /* { */) return null
+  const text = unwrapMcpEnvelope(summary)
+  if (text.charCodeAt(0) !== 123 /* { */) return null
   let parsed: unknown
-  try { parsed = JSON.parse(summary) } catch { return null }
+  try { parsed = JSON.parse(text) } catch { return null }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
   const obj = parsed as Record<string, unknown>
-  const image = obj.image && typeof obj.image === 'object' && !Array.isArray(obj.image)
-    ? (obj.image as Record<string, unknown>)
-    : null
+  const image = mediaObject(obj.image)
+  const screenshot = mediaObject(obj.screenshot)
   const hasImage = typeof obj.path === 'string'
     || typeof image?.path === 'string'
+    || typeof screenshot?.path === 'string'
     || (Array.isArray(obj.savedPaths) && obj.savedPaths.length > 0)
   if (!hasImage) return null
   const compact: Record<string, unknown> = {}
   for (const key of MEDIA_RESULT_KEYS) if (key in obj) compact[key] = obj[key]
   if (image) compact.image = typeof image.path === 'string' ? { path: image.path, ...(typeof image.mimeType === 'string' ? { mimeType: image.mimeType } : {}) } : image
-  const root = obj.root && typeof obj.root === 'object' && !Array.isArray(obj.root) ? (obj.root as Record<string, unknown>) : null
+  if (screenshot && typeof screenshot.path === 'string') {
+    compact.screenshot = { path: screenshot.path, ...(typeof screenshot.width === 'number' ? { width: screenshot.width } : {}), ...(typeof screenshot.height === 'number' ? { height: screenshot.height } : {}) }
+  }
+  const root = mediaObject(obj.root)
   if (root) {
     const identity: Record<string, unknown> = {}
     for (const key of ROOT_IDENTITY_KEYS) if (typeof root[key] === 'string') identity[key] = root[key]

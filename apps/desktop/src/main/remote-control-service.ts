@@ -54,7 +54,7 @@ const THROTTLED_EVENTS = new Set(['tool_progress'])
 
 const WS_CHUNK_SIZE = 800_000
 import { TODO_TOOLS, stripEventForRemote, truncateBashOutput, resolveTodoToolTodos, parseWorkflowTranscriptDir, stripProjectPath } from './remote-content'
-export { computeTodoItems, countLines, countEditDelta, stripProjectPath, computeToolMeta, truncateBashOutput, stripEventForRemote, stripMessagesForRemote, parseWorkflowMeta, parseWorkflowTranscriptDir, resolveTodoToolTodos } from './remote-content'
+export { computeTodoItems, countLines, countEditDelta, stripProjectPath, computeToolMeta, computeToolLineDelta, truncateBashOutput, stripEventForRemote, stripMessagesForRemote, parseWorkflowMeta, parseWorkflowTranscriptDir, resolveTodoToolTodos } from './remote-content'
 export type { TextSegment, SplitResult } from './split-text-blocks'
 
 const THROTTLE_INTERVAL_MS = 2_000
@@ -716,14 +716,14 @@ export class RemoteControlService {
     }
 
     let enriched = event
-    if (event.type === 'task_progress' && event.toolUseId) {
+    if (event.remoteView !== 'summary' && event.type === 'task_progress' && event.toolUseId) {
       const outputFile = this.agentOutputFiles.get(event.toolUseId)
       if (outputFile) {
         const { resultText: activityText, toolEntries } = readOutputFile(outputFile, event.projectPath)
         enriched = { ...event, ...(activityText ? { activityText } : {}), ...(toolEntries.length > 0 ? { toolEntries } : {}) }
       }
     }
-    if ((enriched.type === 'task_progress' || enriched.type === 'task_notification') && enriched.toolUseId && this.workflowToolIds.has(enriched.toolUseId)) {
+    if (event.remoteView !== 'summary' && (enriched.type === 'task_progress' || enriched.type === 'task_notification') && enriched.toolUseId && this.workflowToolIds.has(enriched.toolUseId)) {
       const dir = this.workflowTranscriptDirs.get(enriched.toolUseId)
       if (dir) {
         const workflowAgents = listWorkflowAgentsSync(dir)

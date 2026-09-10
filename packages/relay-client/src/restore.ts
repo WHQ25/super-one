@@ -8,6 +8,7 @@ import type {
 import type { RelayClient } from './client'
 
 export type HistoryPage = {
+  navigationAvailable?: boolean
   messages: ChatMessage[]
   hasMore: boolean
   cursor: number | null
@@ -44,11 +45,15 @@ export type SessionSnapshot = {
 }
 
 export type RestoredSession = {
+  navigationAvailable?: boolean
   messages: ChatMessage[]
   snapshot: SessionSnapshot
   liveBatches: unknown[][]
   epoch: number
   provider?: string
+  hasMore: boolean
+  cursor: number | null
+  metrics: { subscribeMs: number; historyMs: number; snapshotMs: number; totalMs: number; historyBytes: number; snapshotBytes: number }
 }
 
 function rid(): string {
@@ -60,37 +65,35 @@ export async function restoreSession(
   projectPath: string,
   sessionId: string,
 ): Promise<RestoredSession> {
+  const started = performance.now()
   client.startBuffering()
-  await client.request({ type: 'subscribe_session', projectPath, sessionId } as RemoteCommand)
-
-  const messages: ChatMessage[] = []
-  let cursor: number | undefined
-  let provider: string | undefined
-  for (let i = 0; i < 50; i++) {
-    const page = await client.request({
-      type: 'load_session_messages',
-      requestId: rid(),
-      projectPath,
-      sessionId,
-      limit: 50,
-      ...(cursor != null ? { cursor } : {}),
+  try {
+    const subscribed = await client.request({ type: 'subscribe_session', projectPath, sessionId, progressive: true } as RemoteCommand) as { error?: string; historyPage?: HistoryPage; snapshot?: SessionSnapshot }
+    if (subscribed.error) throw new Error(subscribed.error)
+    const subscribedAt = performance.now()
+    // Only the newest page belongs to restore. Older pages are user-driven.
+    const page = subscribed.historyPage ?? await client.request({
+      type: 'load_session_messages', requestId: rid(), projectPath, sessionId, limit: 8,
     } as RemoteCommand) as HistoryPage
     if (page.error) throw new Error(page.error)
-    messages.unshift(...(page.messages ?? []))
-    provider = page.provider ?? provider
-    if (!page.hasMore) break
-    cursor = page.cursor ?? undefined
-    if (cursor == null) break
+    const historyAt = performance.now()
+    const snapshot = subscribed.snapshot ?? await client.request({
+      type: 'get_session_state', requestId: rid(), projectPath, sessionId,
+    } as RemoteCommand) as SessionSnapshot
+    if (snapshot.error) throw new Error(snapshot.error)
+    const snapshotAt = performance.now()
+    const { epoch, batches } = client.releaseBuffer()
+    return {
+      messages: page.messages ?? [], snapshot, liveBatches: batches, epoch,
+      provider: page.provider, hasMore: page.hasMore && page.cursor != null,
+      cursor: page.cursor ?? null, navigationAvailable: page.navigationAvailable,
+      metrics: { subscribeMs: subscribedAt - started, historyMs: historyAt - subscribedAt,
+        snapshotMs: snapshotAt - historyAt, totalMs: snapshotAt - started,
+        historyBytes: new TextEncoder().encode(JSON.stringify(page)).length,
+        snapshotBytes: new TextEncoder().encode(JSON.stringify(snapshot)).length },
+    }
+  } catch (error) {
+    client.releaseBuffer()
+    throw error
   }
-
-  const snapshot = await client.request({
-    type: 'get_session_state',
-    requestId: rid(),
-    projectPath,
-    sessionId,
-  } as RemoteCommand) as SessionSnapshot
-  if (snapshot.error) throw new Error(snapshot.error)
-
-  const { epoch, batches } = client.releaseBuffer()
-  return { messages, snapshot, liveBatches: batches, epoch, provider }
 }

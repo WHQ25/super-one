@@ -1,3 +1,7 @@
+import { loadSessionHistoryIndex, loadSessionMessageWindow } from '../session/history-navigation'
+import { buildProgressiveBootstrap } from './progressive-bootstrap'
+import { isProgressiveSession, projectProgressiveMessage, setProgressiveSession } from '../remote/progressive-session'
+import { handleDetailCommand } from '../remote/detail-command'
 import { summarizeSessionActivity, type SessionActivity } from '@superone/shared/session-activity'
 import { answerRemoteAsyncQuestion } from './remote-async-question'
 import { randomUUID } from 'crypto'
@@ -940,6 +944,7 @@ export class AgentService {
           }
           throw err
         }
+        setProgressiveSession(deviceId, command.progressive ? command.sessionId : undefined)
         this.releaseDeviceFromOtherSessions(deviceId, command.sessionId)
         for (const event of subSession.getReplayEvents()) {
           try {
@@ -948,10 +953,17 @@ export class AgentService {
             log.warn('[AgentService] subscribe_session: replay event failed sid=%s type=%s: %s', command.sessionId, event.type, err instanceof Error ? err.message : String(err))
           }
         }
-        if (reqId) await respond?.(reqId, { ok: true })
+        if (reqId) {
+          try {
+            await respond?.(reqId, command.progressive ? await buildProgressiveBootstrap(subSession, command.projectPath, command.sessionId) : { ok: true })
+          } catch (error) {
+            await respond?.(reqId, { error: error instanceof Error ? error.message : String(error) })
+          }
+        }
         break
       }
       case 'unsubscribe_session': {
+        if (!command.sessionId || isProgressiveSession(deviceId, command.sessionId)) setProgressiveSession(deviceId)
         const targetSessionId = command.sessionId
         if (targetSessionId) {
           const s = this.sessionManager?.getSession(targetSessionId)
@@ -962,6 +974,7 @@ export class AgentService {
         break
       }
       case 'leave_session': {
+        if (isProgressiveSession(deviceId, command.sessionId)) setProgressiveSession(deviceId)
         const session = this.sessionManager?.getSession(command.sessionId)
         if (!session) break
         if (session.owner.kind === 'remote' && session.owner.deviceId === deviceId) {
@@ -1046,15 +1059,41 @@ export class AgentService {
         this.terminalManager?.kill(command.terminalId)
         break
       }
+      case 'subscribe_detail':
+      case 'unsubscribe_detail': {
+        if (!this.canAccessSession(command.projectPath, command.sessionId)) {
+          await respond?.(command.requestId, { error: 'Session access denied' })
+          break
+        }
+        try {
+          await respond?.(command.requestId, handleDetailCommand(command, deviceId,
+            this.findSessionBySid(command.projectPath, command.sessionId)))
+        } catch (error) {
+          await respond?.(command.requestId, { error: error instanceof Error ? error.message : String(error) })
+        }
+        break
+      }
+      case 'get_session_history_index': {
+        if (!this.canAccessSession(command.projectPath, command.sessionId)) {
+          await respond?.(command.requestId, { error: this.buildSessionAccessError(command.projectPath, command.sessionId) })
+          break
+        }
+        try { await respond?.(command.requestId, loadSessionHistoryIndex(command.sessionId)) }
+        catch (error) { await respond?.(command.requestId, { error: error instanceof Error ? error.message : String(error) }) }
+        break
+      }
       case 'load_session_messages': {
         if (!this.canAccessSession(command.projectPath, command.sessionId)) {
           await respond?.(command.requestId, { error: this.buildSessionAccessError(command.projectPath, command.sessionId) })
           break
         }
         try {
-          const result = loadSessionMessagesPaginated(command.sessionId, command.limit ?? 10, command.cursor)
-          const stripped = stripMessagesForRemote(result.messages, command.projectPath)
-          const sessionProvider = loadSessionState(command.sessionId)?.provider ?? 'claude'
+          if (command.direction && !['around', 'before', 'after'].includes(command.direction)) throw new Error('Invalid history direction')
+          const result = command.anchorId
+            ? loadSessionMessageWindow(command.sessionId, command.anchorId, command.direction ?? 'around', command.limit)
+            : loadSessionMessagesPaginated(command.sessionId, command.limit ?? 10, command.cursor)
+          const stripped = stripMessagesForRemote(isProgressiveSession(deviceId, command.sessionId) ? result.messages.map(projectProgressiveMessage) : result.messages, command.projectPath)
+          const sessionProvider = readSessionHarnessId(command.sessionId) ?? 'claude'
           trace('remote.cmd', 'load_session_messages_result', { projectPath: command.projectPath, sessionId: command.sessionId, messageCount: stripped.length, hasMore: result.hasMore, cursor: result.cursor, provider: sessionProvider })
           await respond?.(command.requestId, { messages: stripped, hasMore: result.hasMore, cursor: result.cursor, provider: sessionProvider })
         } catch (err) {
@@ -1148,7 +1187,7 @@ export class AgentService {
         }
         try {
           const session = this.findSessionBySid(command.projectPath, command.sessionId)
-          const state = await buildRemoteSessionSnapshot(session, command.projectPath, command.sessionId)
+          const state = await buildRemoteSessionSnapshot(session, command.projectPath, command.sessionId, isProgressiveSession(deviceId, command.sessionId))
           trace('remote.cmd', 'get_session_state', {
             projectPath: command.projectPath,
             sessionId: command.sessionId,

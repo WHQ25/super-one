@@ -9,7 +9,15 @@ import type {
   SendMessageRequest,
 } from '@superone/shared/agent-types'
 import { buildAgentErrorInfo } from '@superone/shared/agent-error'
-import { buildCursorModelSelection, mapCursorContextUsageInfo, resolveCursorContextWindow } from '@superone/cursor'
+import {
+  buildCursorModelSelection,
+  CursorInteractionRegistry,
+  cursorPlanFollowUpText,
+  mapCursorContextUsageInfo,
+  resolveCursorContextWindow,
+  type CursorPlanDecision,
+  type CursorRuntimeInteractions,
+} from '@superone/cursor'
 import log from '../../logger'
 import { DEADLINE_EXCEEDED, INTERRUPT_CANCEL_TIMEOUT_MS, withDeadline } from '../../promise-deadline'
 import { mapPermissionToCursorLocal } from '../../cursor/cursor-auth'
@@ -60,11 +68,21 @@ export class CursorBackend implements SessionBackend {
   private disposed = false
   private interrupted = false
   private currentMessageId: string | null = null
-  private activeTurn: { messageId: string; resolve: () => void } | null = null
+  private activeTurn: { messageId: string; resolve: () => void; done: Promise<void> } | null = null
   private terminalMessageId: string | null = null
   private eventListeners = new Set<(event: AgentEvent) => void>()
   private providerSessionListeners = new Set<(id: string) => void>()
   private permissionModeListeners = new Set<(mode: PermissionMode) => void>()
+  /**
+   * Pending host-driven interactions (questions via SDK customTools, plan
+   * approvals from `createPlan`). Owned by the backend, not the runtime, so a
+   * plan decision survives the runtime rebuild that approving it triggers.
+   */
+  private readonly interactions = new CursorInteractionRegistry((event) => this.emit(event))
+  /** Session.send bound by `bindTaskNotificationSend`; carries plan decisions back as a host turn. */
+  private taskSend: ((content: string) => Promise<void>) | null = null
+  /** In-flight `setPermissionMode` rebuild, awaited before a plan follow-up turn starts. */
+  private modeChange: Promise<void> | null = null
 
   async start(opts: BackendStartOptions): Promise<void> {
     if (this.disposed) throw new Error('CursorBackend already disposed')
@@ -158,6 +176,7 @@ export class CursorBackend implements SessionBackend {
       agentName: opts.agentName,
       systemPromptAppend: opts.systemPromptAppend,
       config: opts.config,
+      interactions: this.runtimeInteractions(),
       onEvent: (event) => {
         if (event.type === 'message_usage' && typeof event.contextTokens === 'number' && event.contextTokens > 0) {
           this.lastContextTokens = event.contextTokens
@@ -221,9 +240,12 @@ export class CursorBackend implements SessionBackend {
       })
       if (selection) runtime.setModel(selection)
 
-      const turnComplete = new Promise<void>((resolve) => {
-        this.activeTurn = { messageId, resolve }
-      })
+      // A fresh user turn moots any plan still awaiting a decision; the host
+      // follow-up that carries that decision is the one send that keeps it.
+      if (request.source !== 'task-notification') this.interactions.cancelPlans('superseded by a new turn')
+      let resolveTurn: () => void = () => undefined
+      const turnComplete = new Promise<void>((resolve) => { resolveTurn = resolve })
+      this.activeTurn = { messageId, resolve: resolveTurn, done: turnComplete }
 
       const images = request.images
         ?.map((img) => ({ data: img.base64, mimeType: img.mimeType || 'image/png' }))
@@ -272,6 +294,9 @@ export class CursorBackend implements SessionBackend {
     if (cancelled === DEADLINE_EXCEEDED) {
       log.warn('[CursorBackend] runtime.cancel() did not answer within %dms; settling the turn locally', INTERRUPT_CANCEL_TIMEOUT_MS)
     }
+    // The run no longer waits on its custom-tool call; unblock the resolver
+    // and clear the indicator instead of leaving a dead prompt behind.
+    this.interactions.cancelQuestions('interrupted')
     if (this.currentMessageId) this.complete(this.currentMessageId, true)
   }
 
@@ -281,6 +306,9 @@ export class CursorBackend implements SessionBackend {
     this.runtimePromise = null
     const runtime = this.runtime ?? await pending?.catch(() => null) ?? null
     this.runtime = null
+    // Questions belong to the run that asked them; plan approvals are post-turn
+    // decisions and survive a rebuild (approving one is what triggers it).
+    this.interactions.cancelQuestions('runtime closed')
     if (runtime) await runtime.close().catch((error) => log.debug('[CursorBackend] runtime close failed:', error))
   }
 
@@ -288,6 +316,7 @@ export class CursorBackend implements SessionBackend {
     this.disposed = true
     this.started = false
     if (this.currentMessageId) this.complete(this.currentMessageId, true)
+    this.interactions.cancelAll('session closed')
     await this.closeRuntime()
     this.eventListeners.clear()
     this.providerSessionListeners.clear()
@@ -324,8 +353,13 @@ export class CursorBackend implements SessionBackend {
       && (prev.autoReview !== next.autoReview || prev.mode !== next.mode)
       && this.opts
     ) {
+      const rebuild = this.rebuild(this.opts)
+      const tracked: Promise<void> = rebuild.catch(() => undefined).finally(() => {
+        if (this.modeChange === tracked) this.modeChange = null
+      })
+      this.modeChange = tracked
       try {
-        await this.rebuild(this.opts)
+        await rebuild
       } catch (error) {
         this.permissionMode = prevMode
         if (this.opts) this.opts.permissionMode = prevMode
@@ -364,19 +398,79 @@ export class CursorBackend implements SessionBackend {
     }
   }
 
+  /**
+   * Cursor never raises native tool approvals: `@cursor/sdk` local runs use a
+   * hardcoded auto-approving `pendingDecisionProvider` and cloud runs expose no
+   * approval hook at all, so no Cursor-owned `permission_request` ever reaches
+   * the host. Host-tool confirms are resolved by `Session` before it gets here.
+   */
   respondToPermission(): boolean {
     return false
   }
 
   respondToQuestion(
-    _requestId: string,
-    _answers: Record<string, string>,
-    _annotations?: QuestionAnnotations,
-  ): void {}
+    requestId: string,
+    answers: Record<string, string>,
+    annotations?: QuestionAnnotations,
+  ): void {
+    this.interactions.respondToQuestion(requestId, answers, annotations)
+  }
 
-  dismissQuestion(_requestId: string): void {}
+  dismissQuestion(requestId: string): void {
+    this.interactions.dismissQuestion(requestId)
+  }
 
-  respondToPlanApproval(_requestId: string, _approved: boolean, _feedback?: string): void {}
+  respondToPlanApproval(requestId: string, approved: boolean, feedback?: string): void {
+    this.interactions.respondToPlanApproval(requestId, approved, feedback)
+  }
+
+  bindTaskNotificationSend(send: (content: string) => Promise<void>): void {
+    this.taskSend = send
+  }
+
+  /**
+   * Bridge handed to the runtime. Questions block the SDK custom-tool call
+   * until the user answers; plan approvals are raised after the turn settles
+   * and then carried back to Cursor by `applyPlanDecision`.
+   */
+  private runtimeInteractions(): CursorRuntimeInteractions {
+    return {
+      askQuestion: (request) => this.interactions.askQuestion(request),
+      requestPlanApproval: async (request) => {
+        const decision = await this.interactions.requestPlanApproval(request)
+        void this.applyPlanDecision(decision).catch((error) => {
+          log.warn('[CursorBackend] plan decision follow-up failed:', error)
+        })
+        return decision
+      },
+      cancelQuestions: (reason) => this.interactions.cancelQuestions(reason),
+    }
+  }
+
+  /**
+   * Carry a plan decision back to Cursor. The SDK already auto-resolved the
+   * `createPlan` call, so the only channel left is a follow-up turn: approving
+   * first leaves plan mode (the renderer does the same switch; it is a no-op
+   * by the time it arrives), then a host-origin message tells the agent to
+   * implement — or, on rejection with feedback, to revise the plan.
+   */
+  private async applyPlanDecision(decision: CursorPlanDecision): Promise<void> {
+    const followUp = cursorPlanFollowUpText(decision)
+    if (!followUp || this.disposed) return
+    await this.activeTurn?.done
+    if (decision.kind === 'approved' && this.permissionMode === 'plan') {
+      // `agent` is Cursor's own ladder id; the renderer's generic `default`
+      // that may follow maps to the same SDK config and skips the rebuild.
+      await this.setPermissionMode('agent')
+    }
+    await this.modeChange
+    if (this.disposed) return
+    if (!this.taskSend) {
+      log.warn('[CursorBackend] plan decision dropped: no task-notification sender bound')
+      return
+    }
+    await this.taskSend(followUp)
+  }
 
   async getContextUsage(): Promise<ContextUsageInfo | null> {
     if (this.lastContextTokens <= 0) return null
@@ -451,7 +545,7 @@ export class CursorBackend implements SessionBackend {
   }
 
   getPendingInteractions(): AgentEvent[] {
-    return []
+    return this.interactions.pending()
   }
 
   onEvent(handler: (event: AgentEvent) => void): () => void {

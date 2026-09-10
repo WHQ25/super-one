@@ -25,10 +25,14 @@ vi.mock('../../database', () => ({
   getCachedHarnessResources: () => null,
 }))
 
-vi.mock('@superone/cursor', () => ({
-  buildCursorModelSelection: () => undefined,
-  parseCursorContextWindow: () => null,
-}))
+vi.mock('@superone/cursor', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@superone/cursor')>()
+  return {
+    ...actual,
+    buildCursorModelSelection: () => undefined,
+    parseCursorContextWindow: () => null,
+  }
+})
 
 import { CursorBackend } from './cursor-backend'
 

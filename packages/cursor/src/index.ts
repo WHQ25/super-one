@@ -44,7 +44,19 @@ export {
 
 export {
   buildCursorCustomTools,
+  CURSOR_ASK_USER_QUESTION_TOOL,
+  type CursorCustomToolsContext,
 } from './cursor-custom-tools'
+
+export {
+  CursorInteractionRegistry,
+  buildCursorAskUserQuestionRequest,
+  buildCursorPlanApprovalRequest,
+  cursorPlanFollowUpText,
+  formatCursorQuestionResult,
+  type CursorPlanDecision,
+  type CursorQuestionAnswer,
+} from './cursor-interactions'
 
 export {
   mapInteractionUpdate,
@@ -123,6 +135,7 @@ export {
   getCursorRuntimeFactory,
   CursorIntegrationError,
   type CursorRuntime,
+  type CursorRuntimeInteractions,
   type CursorRuntimeOptions,
   type CursorRuntimeFactory,
   type CursorSendOptions,

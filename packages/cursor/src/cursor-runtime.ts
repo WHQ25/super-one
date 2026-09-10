@@ -12,7 +12,13 @@ import {
   type SDKUserMessage,
   type SendOptions,
 } from '@cursor/sdk'
-import type { AgentEvent, McpServerInfo, PermissionMode } from '@superone/shared/agent-types'
+import type {
+  AgentEvent,
+  AskUserQuestionRequest,
+  McpServerInfo,
+  PermissionMode,
+  PlanApprovalRequest,
+} from '@superone/shared/agent-types'
 import {
   buildCloudOptions,
   mapPermissionToCursorLocal,
@@ -21,14 +27,20 @@ import {
 } from './cursor-config'
 import { resolveCursorLocalSessionPlan } from './cursor-local-options'
 import { withCursorNetworkRetries } from './cursor-network-retry'
-import { buildCursorCustomTools } from './cursor-custom-tools'
+import { buildCursorCustomTools, CURSOR_ASK_USER_QUESTION_TOOL } from './cursor-custom-tools'
 import {
   CursorTurnCallIdBridge,
   CursorTurnUsage,
+  extractToolCallParts,
   mapConversationStep,
   mapInteractionUpdate,
   mapSdkMessageLifecycle,
 } from './cursor-event-map'
+import {
+  buildCursorPlanApprovalRequest,
+  type CursorPlanDecision,
+  type CursorQuestionAnswer,
+} from './cursor-interactions'
 import { mcpServersToStatus } from './cursor-mcp-map'
 import { resolveCursorContextWindow } from './cursor-model-selection'
 import {
@@ -80,6 +92,26 @@ function formatCursorError(error: unknown): Error {
   return new Error(String(error))
 }
 
+/**
+ * Host-driven interactions the runtime can raise (see `cursor-interactions.ts`).
+ *
+ * `@cursor/sdk` has no native approval/question hook: the local executor
+ * auto-approves tool calls and rejects the built-in `askQuestion` query, and
+ * cloud runs only expose a REST stream. Questions therefore ride the SDK's
+ * `customTools` callback surface (local agents only) and plan approvals are
+ * raised when a `createPlan` tool call completes in plan mode.
+ */
+export interface CursorRuntimeInteractions {
+  askQuestion(request: AskUserQuestionRequest): Promise<CursorQuestionAnswer>
+  requestPlanApproval(request: PlanApprovalRequest): Promise<CursorPlanDecision>
+  /** Questions are turn-scoped: unanswered ones are dropped once the run ends. */
+  cancelQuestions(reason: string): void
+}
+
+/** Prompt hint so the model reaches for the working question bridge. */
+const CURSOR_QUESTION_TOOL_HINT =
+  `To ask the user a question, call the \`${CURSOR_ASK_USER_QUESTION_TOOL}\` tool from the custom-user-tools server and wait for its result. The built-in askQuestion tool is not available in this host.`
+
 export interface CursorRuntimeOptions {
   sessionId: string
   cwd: string
@@ -88,6 +120,8 @@ export interface CursorRuntimeOptions {
   providerSessionId?: string
   systemPromptAppend?: string
   permissionMode: PermissionMode
+  /** Optional host interaction bridge; omitted by prewarm / headless callers. */
+  interactions?: CursorRuntimeInteractions
   /**
    * Session sandbox toggle (local only). Wins over `config.sandboxEnabled`.
    * Cloud agents ignore this — they already run in an isolated VM.
@@ -220,9 +254,18 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
   const mcpServers = plan.mcpServers
   const config = plan.config
   const buildMcpServers = opts.buildMcpServers ?? (() => ({}))
+  const interactions = opts.interactions
   const customTools = isCloud
     ? undefined
-    : buildCursorCustomTools({ sessionId: opts.sessionId, cwd: opts.cwd })
+    : buildCursorCustomTools({
+        sessionId: opts.sessionId,
+        cwd: opts.cwd,
+        ...(interactions ? { askUser: (request) => interactions.askQuestion(request) } : {}),
+      })
+  // customTools are local-only, so the hint must not promise cloud agents a tool they lack.
+  const hostContextExtra = !isCloud && interactions
+    ? [opts.systemPromptAppend?.trim(), CURSOR_QUESTION_TOOL_HINT].filter(Boolean).join('\n\n')
+    : opts.systemPromptAppend
   const agentName = opts.agentName?.trim() || undefined
   // tools / disallowedTools are local-only in SDK 1.0.27 (cloud throws ConfigurationError).
   // Cloud rejects tools/disallowedTools — resolve empty for cloud.
@@ -421,7 +464,7 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
       // Cursor SDK has no system/developer instruction option. Send host context
       // on the first regular turn of each runtime, including cold resumes.
       const includeHostContext = !hostContextSent && !text.trimStart().startsWith('/')
-      const prompt = includeHostContext ? `${superoneHostContext(opts.systemPromptAppend)}\n\n${text}` : text
+      const prompt = includeHostContext ? `${superoneHostContext(hostContextExtra)}\n\n${text}` : text
       const userMessage: string | SDKUserMessage = sendOpts?.images?.length
         ? {
             text: prompt,
@@ -440,6 +483,11 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
       // The prompt (host context included) is the first thing this turn adds to the
       // window; the previous occupancy lets the solve calibrate itself (see class docs).
       const turnUsage = new CursorTurnUsage(prompt, sendOpts?.previousContextTokens ?? 0)
+      // The SDK auto-resolves `createPlan` (no planUri, no decision channel), so the
+      // plan is captured here and raised as `plan_approval` once the run settles.
+      // Holder object: a plain `let` assigned inside onDelta stays narrowed to
+      // `null` for the code after the await.
+      const completedPlan: { current: { callId: string; args: unknown } | null } = { current: null }
 
       const sendStarted = Date.now()
       log.info('[CursorRuntime] send start', { messageId })
@@ -459,6 +507,12 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
           callIdBridge.observeDelta(update)
           for (const event of mapInteractionUpdate(messageId, update, { contextWindow, turnUsage })) {
             opts.onEvent(event)
+          }
+          if (interactions && permLocal.mode === 'plan' && update.type === 'tool-call-completed') {
+            const parts = extractToolCallParts(update)
+            if (parts.toolType === 'createPlan' && parts.callId && !parts.isError) {
+              completedPlan.current = { callId: parts.callId, args: parts.args }
+            }
           }
         },
         onStep: ({ step }) => {
@@ -560,10 +614,24 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
           name: error instanceof Error ? error.name : 'Error',
         }, messageId)
         throw formatCursorError(error)
+      } finally {
+        // A question the run stopped waiting for (cancel, custom-tool timeout,
+        // transport error) must not survive as a stale pending indicator.
+        interactions?.cancelQuestions('turn ended')
       }
       tracer.sdk('result', result, messageId)
       currentRun = null
       lastRunId = result.id || lastRunId
+
+      const plan = completedPlan.current
+      if (plan && interactions && result.status !== 'error') {
+        const request = buildCursorPlanApprovalRequest(plan.callId, plan.args)
+        if (request) {
+          tracer.runtime('plan_approval_raised', { requestId: request.requestId }, messageId)
+          // Decision handling belongs to the owner of the registry (backend).
+          void interactions.requestPlanApproval(request)
+        }
+      }
 
       if (result.usage) {
         turnUsage.applyRunTotals(result.usage)

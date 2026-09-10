@@ -48,6 +48,17 @@ function useMathPluginForText(text: string, runtime: CopyableMarkdownRuntime): M
   return needsMath ? plugin : null
 }
 
+/**
+ * Streamdown repairs the tail of a streaming chunk through `remend`, and its
+ * `htmlTags` handler drops everything from the last unclosed `<tag` to the end
+ * of the text. It never checks whether that `<` sits inside math or code, so a
+ * single `\sum_{j<k}` silently swallows the rest of the turn — the remaining
+ * `$$` then gets auto-closed and KaTeX renders a muted parse error where the
+ * answer should be. Chat markdown carries almost no raw HTML, so losing the
+ * repair costs at most one frame of a half-typed tag rendered as text.
+ */
+const REMEND_OPTIONS = { htmlTags: false }
+
 const STREAMING_THROTTLE_MS = 33
 
 function useThrottledStreamingText(text: string, isStreaming: boolean): string {
@@ -195,6 +206,7 @@ export const InsightBlockPresenter = memo(function InsightBlock({ title, content
         components={merged}
         controls={runtime.controls}
         linkSafety={runtime.linkSafety}
+        remend={REMEND_OPTIONS}
         isAnimating={isStreaming}
       >
         {normalized}
@@ -226,6 +238,7 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ text, isStreaming, com
       components={merged}
       controls={runtime.controls}
       linkSafety={runtime.linkSafety}
+      remend={REMEND_OPTIONS}
       isAnimating={isStreaming}
     >
       {normalized}

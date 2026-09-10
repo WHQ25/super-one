@@ -7,9 +7,9 @@ import {
 } from '@react-navigation/native'
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
 import { useMobileTheme } from '../theme/context'
-import { reconcileRoutes, routeHierarchy, type FilesOrigin, type MobileRoute } from './route-state'
+import { reconcileRoutes, routeHierarchy, type AddProjectOrigin, type FilesOrigin, type MobileRoute } from './route-state'
 
-export type { FilesOrigin, MobileRoute } from './route-state'
+export type { AddProjectOrigin, FilesOrigin, MobileRoute } from './route-state'
 
 type MobileStackParams = Record<MobileRoute, undefined>
 
@@ -27,15 +27,16 @@ function currentRouteName(state?: NavigationState | PartialState<NavigationState
 export function MobileNavigator(props: {
   route: MobileRoute
   filesOrigin: FilesOrigin
+  addProjectOrigin: AddProjectOrigin
   renderScene: (route: MobileRoute) => ReactNode
   onRouteChange: (route: MobileRoute) => void
 }) {
   const { tokens } = useMobileTheme()
   useEffect(() => {
     if (!navigationRef.isReady() || navigationRef.getCurrentRoute()?.name === props.route) return
-    const routes = routeHierarchy(props.route, props.filesOrigin)
+    const routes = routeHierarchy(props.route, props.filesOrigin, props.addProjectOrigin)
     navigationRef.reset({ index: routes.length - 1, routes: reconcileRoutes(routes, navigationRef.getRootState()?.routes ?? []) })
-  }, [props.filesOrigin, props.route])
+  }, [props.addProjectOrigin, props.filesOrigin, props.route])
 
   return (
     <NavigationContainer
@@ -59,7 +60,7 @@ export function MobileNavigator(props: {
       }}
       onReady={() => {
         if (props.route === 'pair') return
-        const routes = routeHierarchy(props.route, props.filesOrigin)
+        const routes = routeHierarchy(props.route, props.filesOrigin, props.addProjectOrigin)
         navigationRef.reset({ index: routes.length - 1, routes: reconcileRoutes(routes, navigationRef.getRootState()?.routes ?? []) })
       }}
       onStateChange={(state) => {

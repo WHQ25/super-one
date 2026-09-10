@@ -92,7 +92,7 @@ import { FilesScreen } from '../screens/files-screen'
 import { ChatScreen } from '../screens/chat-screen'
 import { PairingsScreen } from '../screens/pairings-screen'
 import { ConnectedTerminal } from './connected-terminal'
-import { MobileNavigator, type FilesOrigin, type MobileRoute as Screen } from './mobile-navigator'
+import { MobileNavigator, type AddProjectOrigin, type FilesOrigin, type MobileRoute as Screen } from './mobile-navigator'
 import { MobileHeader, mobileHeaderTitle } from './mobile-header'
 import { useAddProject } from './use-add-project'
 import { MobileOverlays } from './mobile-overlays'
@@ -275,6 +275,7 @@ export function MobileApp() {
   // Files hangs off Project settings or off the session menu; back has to unwind
   // to whichever one actually opened it.
   const [filesOrigin, setFilesOrigin] = useState<FilesOrigin>('settings')
+  const [addProjectOrigin, setAddProjectOrigin] = useState<AddProjectOrigin>('workspace')
   const suppressReconnectRef = useRef(false)
   const scanningRef = useRef(false)
   const pairingSocketRef = useRef<WebSocket | null>(null)
@@ -1057,6 +1058,17 @@ export function MobileApp() {
     },
   })
 
+  /**
+   * Close the Add Project flow onto whatever opened it. From the workspace that
+   * is the drawer itself — it closed to make room for the flow, so back has to
+   * put it back rather than drop the user on a project list.
+   */
+  const leaveAddProject = () => {
+    if (addProjectOrigin === 'picker') { setScreen('project-picker'); return }
+    setScreen('chat')
+    if (!shouldUseTabletMultiPane(width, height, 'chat', !!project)) setSessionSwitcherOpen(true)
+  }
+
   /** Checkout or create a branch on the paired desktop, then re-read git state. */
   const changeBranch = async (branch: string, type: 'switch_git_branch' | 'create_git_branch') => {
     const client = clientRef.current
@@ -1311,7 +1323,7 @@ export function MobileApp() {
     if (screen === 'add-project') {
       // The flow walks its own steps back first; only the source step leaves.
       if (addProjectFlow.canGoBack) addProjectFlow.goBack()
-      else setScreen('project-picker')
+      else leaveAddProject()
       return
     }
     if (screen === 'project-picker') {
@@ -1388,7 +1400,7 @@ export function MobileApp() {
     onOpenSession: (p: Project, row: SessionRow) => runUiAction(async () => { if (p.path !== project?.path) await openProject(p); await openSession(row, p) }, setStatus, 'failed to open session'),
     ...sessionListActions,
     onSearch: () => setScreen('session-search'),
-    onAddProject: () => setScreen('add-project'),
+    onAddProject: () => { setAddProjectOrigin('workspace'); setScreen('add-project') },
   }
 
   const tabletMultiPane = shouldUseTabletMultiPane(width, height, screen, !!project)
@@ -1474,7 +1486,9 @@ export function MobileApp() {
               : undefined}
         confirmLabel={screen === 'add-project' ? addProjectFlow.confirmLabel ?? undefined
           : screen === 'add-dir' && additionalDirs.canGoBack ? 'Add' : undefined}
-        onAddProject={screen === 'project-picker' ? () => setScreen('add-project') : undefined}
+        onAddProject={screen === 'project-picker'
+          ? () => { setAddProjectOrigin('picker'); setScreen('add-project') }
+          : undefined}
         confirmDisabled={screen === 'add-project'
           ? addProjectFlow.busy
           // A folder the host has not confirmed exists cannot be added, so the
@@ -1487,7 +1501,14 @@ export function MobileApp() {
             <MobileNavigator
             route={screen}
             filesOrigin={filesOrigin}
+            addProjectOrigin={addProjectOrigin}
             onRouteChange={(route) => {
+              // A swipe out of Add Project pops to chat without going through
+              // `back`, so the drawer it was opened from is restored here too.
+              if (screen === 'add-project' && route === 'chat' && addProjectOrigin === 'workspace') {
+                leaveAddProject()
+                return
+              }
               // Chat cannot be swiped off the stack (see MobileNavigator), so
               // reaching the device list means the transport is already gone —
               // but a stray pop must still not leave a session held open.

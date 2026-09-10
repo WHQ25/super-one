@@ -18,6 +18,14 @@ export type MobileRoute =
 /** Where the Files browser was entered from; it is reachable from both. */
 export type FilesOrigin = 'settings' | 'session'
 
+/**
+ * Where the Add Project flow was opened from. The workspace drawer owns the
+ * project list the way the desktop sidebar does, so opening Add Project from it
+ * must not conjure the picker underneath — back closes the flow and returns to
+ * the workspace, not to a list the user never asked for.
+ */
+export type AddProjectOrigin = 'workspace' | 'picker'
+
 /** Preserve mounted scenes in the shared stack prefix when changing pages. */
 export function reconcileRoutes(
   names: MobileRoute[],
@@ -39,6 +47,7 @@ export function reconcileRoutes(
 export function routeHierarchy(
   route: MobileRoute,
   filesOrigin: FilesOrigin = 'settings',
+  addProjectOrigin: AddProjectOrigin = 'workspace',
 ): MobileRoute[] {
   const root: MobileRoute[] = ['pair']
   if (route === 'pair') return root
@@ -52,8 +61,13 @@ export function routeHierarchy(
   // the chat that asked for it, never on a screen the user skipped past.
   if (route === 'add-dir') return [...root, 'add-dir']
   if (route === 'project-picker') return [...root, 'project-picker']
-  // Adding always happens on top of the picker it was opened from.
-  if (route === 'add-project') return [...root, 'project-picker', 'add-project']
+  // Only the picker stacks Add Project on itself; from the workspace there is
+  // nothing in between, so back leaves the flow outright.
+  if (route === 'add-project') {
+    return addProjectOrigin === 'picker'
+      ? [...root, 'project-picker', 'add-project']
+      : [...root, 'add-project']
+  }
   // Opened from the session menu, Files is a peer of settings, not a child of it —
   // back has to land on the chat the user was reading, not on a screen they skipped.
   if (route === 'files' && filesOrigin === 'session') return [...root, 'files']

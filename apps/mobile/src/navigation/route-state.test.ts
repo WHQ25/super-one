@@ -51,7 +51,13 @@ describe('routeHierarchy', () => {
 
   it('puts add-project on top of the picker it starts from', () => {
     expect(routeHierarchy('project-picker')).toEqual(['pair', 'chat', 'project-picker'])
-    expect(routeHierarchy('add-project')).toEqual(['pair', 'chat', 'project-picker', 'add-project'])
+    expect(routeHierarchy('add-project', 'settings', 'picker'))
+      .toEqual(['pair', 'chat', 'project-picker', 'add-project'])
+  })
+
+  it('leaves the picker out when the workspace opened add-project', () => {
+    expect(routeHierarchy('add-project')).toEqual(['pair', 'chat', 'add-project'])
+    expect(routeHierarchy('add-project', 'settings', 'workspace')).toEqual(['pair', 'chat', 'add-project'])
   })
 
   it('nests settings and the files browser under the chat', () => {

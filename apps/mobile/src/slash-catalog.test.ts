@@ -91,6 +91,25 @@ describe('requestSlashCatalog', () => {
     expect(catalog.map((c) => c.name)).toEqual(['clear', 'add-dir'])
   })
 
+  it('offers /recap only for Grok ACP', async () => {
+    const grok = await requestSlashCatalog(
+      client({ get_system_info: { userSlashCommands: [{ name: 'clear' }] } }),
+      '/work/super-one',
+      'acp',
+      'grok-build',
+    )
+    expect(grok.map((c) => c.name)).toContain('recap')
+    expect(grok.map((c) => c.name)).toContain('workflows')
+
+    const other = await requestSlashCatalog(
+      client({ get_system_info: { userSlashCommands: [{ name: 'clear' }] } }),
+      '/work/super-one',
+      'acp',
+      'opencode',
+    )
+    expect(other.map((c) => c.name)).not.toContain('recap')
+  })
+
   it('rejects when system info itself fails', async () => {
     await expect(requestSlashCatalog(
       client({ get_system_info: new Error('offline') }),

@@ -883,6 +883,105 @@ describe('AgentService SEND_MESSAGE', () => {
     await expect(handler(null, 'missing')).resolves.toBe(false)
   })
 
+  it('request_session_recap remote command calls session.requestSessionRecap(false)', async () => {
+    const service = new AgentService()
+    const requestSessionRecap = vi.fn().mockResolvedValue(true)
+    const existing = makeMockSession({
+      id: 'sid-grok',
+      projectPath: '/p',
+      requestSessionRecap,
+    })
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn(() => existing),
+    }
+    const respond = vi.fn()
+
+    await service.handleRemoteCommand(
+      { type: 'request_session_recap', requestId: 'r-recap', projectPath: '/p', sessionId: 'sid-grok' },
+      respond,
+    )
+
+    expect(requestSessionRecap).toHaveBeenCalledWith(false)
+    expect(respond).toHaveBeenCalledWith('r-recap', { ok: true })
+  })
+
+  it('request_session_recap remote command with auto true calls requestSessionRecap(true)', async () => {
+    const service = new AgentService()
+    const requestSessionRecap = vi.fn().mockResolvedValue(true)
+    const existing = makeMockSession({
+      id: 'sid-grok',
+      projectPath: '/p',
+      requestSessionRecap,
+    })
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn(() => existing),
+    }
+    const respond = vi.fn()
+
+    await service.handleRemoteCommand(
+      { type: 'request_session_recap', requestId: 'r-recap', projectPath: '/p', sessionId: 'sid-grok', auto: true },
+      respond,
+    )
+
+    expect(requestSessionRecap).toHaveBeenCalledWith(true)
+    expect(respond).toHaveBeenCalledWith('r-recap', { ok: true })
+  })
+
+  it('request_session_recap remote auto shares in-flight with the focus tracker', async () => {
+    const { claimAutoRecapDispatch, installAcpRecapFocus } = await import('../acp/acp-recap-focus')
+    const controller = installAcpRecapFocus({ requestAutoRecap: async () => true })
+    try {
+      expect(claimAutoRecapDispatch('sid-grok')).toBe(true)
+      const service = new AgentService()
+      const requestSessionRecap = vi.fn().mockResolvedValue(true)
+      const existing = makeMockSession({
+        id: 'sid-grok',
+        projectPath: '/p',
+        requestSessionRecap,
+      })
+      ;(service as { sessionManager: unknown }).sessionManager = {
+        getSession: vi.fn(() => existing),
+      }
+      const respond = vi.fn()
+
+      await service.handleRemoteCommand(
+        { type: 'request_session_recap', requestId: 'r-recap', projectPath: '/p', sessionId: 'sid-grok', auto: true },
+        respond,
+      )
+
+      expect(requestSessionRecap).not.toHaveBeenCalled()
+      expect(respond).toHaveBeenCalledWith('r-recap', { ok: false })
+    } finally {
+      controller.dispose()
+    }
+  })
+
+  it('request_session_recap remote command refuses a session from another project', async () => {
+    vi.mocked(dbSessions.sessionBelongsToProject).mockReturnValue(false)
+    const service = new AgentService()
+    const requestSessionRecap = vi.fn().mockResolvedValue(true)
+    const existing = makeMockSession({
+      id: 'sid-grok',
+      projectPath: '/other',
+      requestSessionRecap,
+    })
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn(() => existing),
+    }
+    const respond = vi.fn()
+
+    await service.handleRemoteCommand(
+      { type: 'request_session_recap', requestId: 'r-recap', projectPath: '/p', sessionId: 'sid-grok' },
+      respond,
+    )
+
+    expect(requestSessionRecap).not.toHaveBeenCalled()
+    expect(respond).toHaveBeenCalledWith('r-recap', {
+      ok: false,
+      error: 'Session sid-grok does not belong to project /p',
+    })
+  })
+
   it('prewarm switches existing session cwd when worktreePath differs', async () => {
     const service = new AgentService()
     const switchCwd = vi.fn().mockResolvedValue(undefined)

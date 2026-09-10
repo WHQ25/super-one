@@ -4411,6 +4411,11 @@ export type RemoteCommand =
   | import('./codex-async-question').CodexAsyncQuestionAnswerCommand
   | { type: 'create_session'; requestId: string; sessionId: string; projectPath: string; provider?: HarnessId; acpAgentId?: string; permissionMode?: string; effort?: string; model?: string; mode?: string; agentPreset?: string; apiProviderId?: string | null; gitBranch?: string; worktreePath?: string; worktreeBranch?: string; worktreeMode?: WorktreeMode; worktreeBranchName?: string; worktreeCarryLocalChanges?: boolean; additionalDirectories?: string[]; /** Sandbox the picker chose before the session existed (Claude / Cursor). */ sandboxMode?: SandboxMode }
   | { type: 'send_message'; sessionId: string; projectPath: string; content: string; provider?: HarnessId; model?: string; effort?: string; images?: ImageAttachment[]; permissionPreset?: string; collaborationMode?: string; threadId?: string; clientMessageId?: string; priority?: 'now' | 'next' | 'later'; /** OpenCode primary agent for this turn. */ agent?: string; /** Codex service tier (`fast`). */ serviceTier?: string | null; /** Cursor catalog params (param id → value). */ modelParams?: Record<string, string> }
+  /**
+   * Grok ACP session recap → `x.ai/recap`.
+   * `auto` defaults false (manual `/recap`). Mobile/desktop auto recap pass true.
+   */
+  | { type: 'request_session_recap'; requestId: string; projectPath: string; sessionId: string; auto?: boolean }
   | { type: 'dequeue_message'; clientMessageId: string; projectPath?: string; sessionId: string }
   | { type: 'interrupt'; projectPath?: string; sessionId: string }
   | { type: 'respond_permission'; requestId: string; decision: boolean; alwaysAllow?: boolean; reason?: string; selectedSuggestions?: number[]; formAnswers?: Record<string, unknown>; projectPath?: string; sessionId: string }

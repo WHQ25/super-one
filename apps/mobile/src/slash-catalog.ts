@@ -1,5 +1,6 @@
 import type { RelayClient } from '@superone/relay-client'
 import type { HarnessId } from '@superone/shared/agent-types'
+import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { peekHarnessResource, requestHarnessResource } from './harness-resource-cache'
 import { mergeSlashCatalogs, type SlashCommandInfo } from './slash'
 import { harnessSupportsAdditionalDirs } from './provider-state'
@@ -39,6 +40,16 @@ const ADD_DIR_COMMAND: SlashCommandInfo = {
   isSkill: false,
 }
 /**
+ * Host-only Grok `/recap` (x.ai/recap) — not an agent available_command.
+ * Other ACP agents do not get it; sending `/recap` there is a prompt turn.
+ */
+const RECAP_COMMAND: SlashCommandInfo = {
+  name: 'recap',
+  description: 'Summarize what happened in this session',
+  argumentHint: '',
+  isSkill: false,
+}
+/**
  * The command catalog for a project and harness, independent of any session.
  *
  * The composer needs it on the new-session landing too — a draft typed before
@@ -54,28 +65,43 @@ export async function requestSlashCatalog(
   client: Pick<RelayClient, 'request'>,
   projectPath: string,
   provider: HarnessId,
+  acpAgentId?: string | null,
 ): Promise<SlashCommandInfo[]> {
   const [info, resources] = await Promise.all([
     requestHarnessResource(client, 'get_system_info', projectPath, provider),
     requestHarnessResource(client, 'get_project_resources', projectPath, provider).catch(() => ({})),
   ])
-  return buildCatalog(info, resources, provider)
+  return buildCatalog(info, resources, provider, acpAgentId)
 }
 
-export function peekSlashCatalog(client: Pick<RelayClient, 'request'>, projectPath: string, provider: HarnessId) {
+export function peekSlashCatalog(
+  client: Pick<RelayClient, 'request'>,
+  projectPath: string,
+  provider: HarnessId,
+  acpAgentId?: string | null,
+) {
   const info = peekHarnessResource(client, 'get_system_info', projectPath, provider)
   const resources = peekHarnessResource(client, 'get_project_resources', projectPath, provider)
-  return info && resources ? buildCatalog(info, resources, provider) : undefined
+  return info && resources ? buildCatalog(info, resources, provider, acpAgentId) : undefined
 }
 
-function buildCatalog(info: SystemInfoReply, resources: ProjectResourcesReply, provider: HarnessId): SlashCommandInfo[] {
+function buildCatalog(
+  info: SystemInfoReply,
+  resources: ProjectResourcesReply,
+  provider: HarnessId,
+  acpAgentId?: string | null,
+): SlashCommandInfo[] {
   const catalog = mergeSlashCatalogs(
     info?.userSlashCommands ?? info?.slashCommands ?? [],
     resources?.projectSlashCommands ?? [],
     resources?.skills ?? [],
   )
   return withHostCommand(
-    withHostCommand(catalog, WORKFLOWS_COMMAND, provider === 'acp'),
+    withHostCommand(
+      withHostCommand(catalog, WORKFLOWS_COMMAND, provider === 'acp'),
+      RECAP_COMMAND,
+      provider === 'acp' && isGrokAcpAgent(acpAgentId),
+    ),
     ADD_DIR_COMMAND,
     harnessSupportsAdditionalDirs(provider),
   )

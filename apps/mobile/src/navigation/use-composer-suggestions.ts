@@ -53,6 +53,8 @@ export interface ComposerSuggestionSource {
   client: RefObject<RelayClient | null>
   projectPath?: string
   provider?: HarnessId
+  /** Names the ACP agent so Grok-only host commands (`/recap`) can join the catalog. */
+  acpAgentId?: string | null
   /** Every project the host offers — the `@session` portal's scope choices. */
   projects?: readonly { path: string; name?: string }[]
   /**
@@ -121,7 +123,7 @@ export function useComposerSuggestions(
   // Catalog load is keyed on the same context as everything else, so switching
   // project, harness or device refetches rather than showing the last one's
   // commands.
-  const { projectPath, provider } = host
+  const { projectPath, provider, acpAgentId } = host
   useEffect(() => {
     const request = ++catalogGeneration.current
     const client = host.client.current
@@ -130,7 +132,7 @@ export function useComposerSuggestions(
       setCatalogStatus('ready')
       return
     }
-    const cached = peekSlashCatalog(client, projectPath, provider)
+    const cached = peekSlashCatalog(client, projectPath, provider, acpAgentId)
     if (cached) {
       setCatalog(cached)
       setCatalogStatus('ready')
@@ -138,7 +140,7 @@ export function useComposerSuggestions(
     }
     setCatalog([])
     setCatalogStatus('loading')
-    void requestSlashCatalog(client, projectPath, provider).then((commands) => {
+    void requestSlashCatalog(client, projectPath, provider, acpAgentId).then((commands) => {
       if (request !== catalogGeneration.current) return
       setCatalog(commands)
       setCatalogStatus('ready')
@@ -150,7 +152,7 @@ export function useComposerSuggestions(
     return () => { catalogGeneration.current++ }
     // `contextKey` also covers the connected device, which the two values below
     // cannot express on their own.
-  }, [contextKey, projectPath, provider])
+  }, [contextKey, projectPath, provider, acpAgentId])
 
   /**
    * Derived rather than stored, so a catalog that lands *after* the user typed

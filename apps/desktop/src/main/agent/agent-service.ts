@@ -49,7 +49,7 @@ import { coerceSandboxModeForCapability, getSandboxCapability } from '../sandbox
 import { searchFiles, searchMentions, EXCLUDED_DIRS, type AgentEntry } from './fuzzy-file-search'
 import { SessionClaimConflictError, SessionLockedError } from '../session/types'
 import type { Session as SessionContract } from '../session/types'
-import { installAcpRecapFocus } from '../acp/acp-recap-focus'
+import { claimAutoRecapDispatch, finishAutoRecapDispatch, installAcpRecapFocus } from '../acp/acp-recap-focus'
 import { harnessProviderCatalog } from './remote-selector-catalog'
 import { listAccounts as listClaudeAccounts } from './claude-account-service'
 import { getCurrentLocale } from '../i18n'
@@ -703,6 +703,38 @@ export class AgentService {
         }
         const agent = this.findSessionBySid(projectPath, command.sessionId)
         if (agent) await agent.interrupt()
+        break
+      }
+      case 'request_session_recap': {
+        try {
+          if (!this.canAccessSession(command.projectPath, command.sessionId)) {
+            await respond?.(command.requestId, {
+              ok: false,
+              error: this.buildSessionAccessError(command.projectPath, command.sessionId),
+            })
+            break
+          }
+          const session = this.sessionManager?.getSession(command.sessionId)
+          if (!session?.requestSessionRecap) {
+            await respond?.(command.requestId, { ok: false })
+            break
+          }
+          const auto = command.auto === true
+          if (auto && !claimAutoRecapDispatch(command.sessionId)) {
+            await respond?.(command.requestId, { ok: false })
+            break
+          }
+          try {
+            const ok = await session.requestSessionRecap(auto)
+            if (auto) finishAutoRecapDispatch(command.sessionId, ok)
+            await respond?.(command.requestId, { ok })
+          } catch (err) {
+            if (auto) finishAutoRecapDispatch(command.sessionId, false)
+            throw err
+          }
+        } catch (err) {
+          await respond?.(command.requestId, { ok: false, error: (err as Error).message })
+        }
         break
       }
       case 'respond_permission': {

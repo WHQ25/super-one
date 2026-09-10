@@ -1,20 +1,113 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-
-vi.mock('../logger', () => ({
-  default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
-}))
-
 import {
+  AUTO_RECAP_RETRY_INTERVAL_MS,
+  FocusTracker,
   LOSE_DEBOUNCE_MS,
-  claimAutoRecapDispatch,
-  finishAutoRecapDispatch,
-  installAcpRecapFocus,
-  notifySessionRecapReceived,
-  type AcpRecapFocusController,
-} from './acp-recap-focus'
+  createRecapFocusController,
+  type RecapFocusController,
+} from './recap-focus'
 
-describe('installAcpRecapFocus (per-session)', () => {
-  let controller: AcpRecapFocusController | null = null
+describe('FocusTracker', () => {
+  it('is focused by default and not recap-due', () => {
+    const t = new FocusTracker(30_000, () => 0)
+    expect(t.isFocused()).toBe(true)
+    expect(t.recapDue()).toBe(false)
+  })
+
+  it('is not due immediately after focus lost', () => {
+    let now = 1_000
+    const t = new FocusTracker(30_000, () => now)
+    t.onFocusLost()
+    expect(t.isFocused()).toBe(false)
+    expect(t.recapDue()).toBe(false)
+  })
+
+  it('is due after away threshold', () => {
+    let now = 1_000
+    const t = new FocusTracker(5_000, () => now)
+    t.onFocusLost()
+    now = 1_000 + 5_000
+    expect(t.recapDue()).toBe(true)
+  })
+
+  it('stops after markRecapShown until a new away period', () => {
+    let now = 0
+    const t = new FocusTracker(0, () => now)
+    t.onFocusLost()
+    expect(t.recapDue()).toBe(true)
+    t.markRecapShown()
+    expect(t.recapDue()).toBe(false)
+    t.onFocusGained()
+    t.onFocusLost()
+    now = 1
+    expect(t.recapDue()).toBe(true)
+  })
+
+  it('backs off after successful endRecapRequest until retry interval', () => {
+    let now = 0
+    const t = new FocusTracker(0, () => now)
+    t.onFocusLost()
+    expect(t.recapDue()).toBe(true)
+    expect(t.beginRecapRequest()).toBe(true)
+    expect(t.recapDue()).toBe(false)
+    t.endRecapRequest(true)
+    expect(t.recapDue()).toBe(false)
+    now = AUTO_RECAP_RETRY_INTERVAL_MS - 1
+    expect(t.recapDue()).toBe(false)
+    now = AUTO_RECAP_RETRY_INTERVAL_MS
+    expect(t.recapDue()).toBe(true)
+  })
+
+  it('does not backoff when endRecapRequest(sent=false)', () => {
+    let now = 0
+    const t = new FocusTracker(0, () => now)
+    t.onFocusLost()
+    t.beginRecapRequest()
+    t.endRecapRequest(false)
+    expect(t.recapDue()).toBe(true)
+  })
+
+  it('preserves shown when recap lands during pending lose debounce', () => {
+    let now = 0
+    const t = new FocusTracker(0, () => now)
+    t.onFocusGained()
+    t.markPendingLose()
+    t.markRecapShown()
+    t.onFocusLost()
+    expect(t.isFocused()).toBe(false)
+    // Still marked shown — would not re-request immediately.
+    expect(t.recapDue()).toBe(false)
+  })
+
+  it('keeps retry backoff across a new away period', () => {
+    let now = 0
+    const t = new FocusTracker(0, () => now)
+    t.onFocusLost()
+    expect(t.beginRecapRequest()).toBe(true)
+    t.endRecapRequest(true)
+    t.onFocusGained()
+    t.onFocusLost()
+    expect(t.recapDue()).toBe(false)
+    expect(t.beginRecapRequest()).toBe(false)
+    now = AUTO_RECAP_RETRY_INTERVAL_MS
+    expect(t.recapDue()).toBe(true)
+    expect(t.beginRecapRequest()).toBe(true)
+  })
+
+  it('beginRecapRequest refuses during retry backoff', () => {
+    let now = 0
+    const t = new FocusTracker(0, () => now)
+    t.onFocusLost()
+    expect(t.beginRecapRequest()).toBe(true)
+    t.endRecapRequest(true)
+    expect(t.beginRecapRequest()).toBe(false)
+    now = AUTO_RECAP_RETRY_INTERVAL_MS
+    expect(t.beginRecapRequest()).toBe(true)
+  })
+})
+
+describe('createRecapFocusController', () => {
+  let controller: RecapFocusController | null = null
   let now = 0
   const requests = vi.fn(async (_sessionId: string) => true)
 
@@ -22,7 +115,7 @@ describe('installAcpRecapFocus (per-session)', () => {
     now = 0
     requests.mockReset()
     requests.mockImplementation(async () => true)
-    controller = installAcpRecapFocus({
+    controller = createRecapFocusController({
       requestAutoRecap: requests,
       recapThresholdSecs: 0,
       now: () => now,
@@ -82,8 +175,8 @@ describe('installAcpRecapFocus (per-session)', () => {
     controller!.onSessionForeground('a', false)
     controller!.onSessionForeground('b', false)
     vi.advanceTimersByTime(LOSE_DEBOUNCE_MS)
-    notifySessionRecapReceived('a')
-    notifySessionRecapReceived('   ')
+    controller!.markRecapShown('a')
+    controller!.markRecapShown('   ')
     expect(controller!.getTracker('a').recapDue()).toBe(false)
     expect(controller!.getTracker('b').recapDue()).toBe(true)
   })
@@ -137,12 +230,5 @@ describe('installAcpRecapFocus (per-session)', () => {
     controller!.maybePregenerate()
     await Promise.resolve()
     expect(requests).not.toHaveBeenCalled()
-  })
-
-  it('shares in-flight and backoff with remote auto recap claims', () => {
-    expect(claimAutoRecapDispatch('sid')).toBe(true)
-    expect(claimAutoRecapDispatch('sid')).toBe(false)
-    finishAutoRecapDispatch('sid', true)
-    expect(claimAutoRecapDispatch('sid')).toBe(false)
   })
 })

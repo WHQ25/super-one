@@ -19,6 +19,12 @@ export function createMobileStyles({ colors, radius, spacing, type }: MobileThem
     },
     sidebarAction: { paddingVertical: 6 },
     top: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, minHeight: 64, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, overflow: 'visible', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+    // Chat only: the WebView under the bar paints a background → transparent
+    // wash across its own top edge (`chat-view-edge-fade`), which is the same
+    // separator desktop uses and the reason desktop's header carries no rule
+    // either. Every other route is an RN list with nothing to soften the seam,
+    // so those keep the hairline.
+    topBorderless: { borderBottomWidth: 0 },
     headerActions: { flexDirection: 'row', alignItems: 'center', gap: 0 },
     headerTitleGroup: { flex: 1, minWidth: 0, alignItems: 'center', gap: spacing.xs },
     headerTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },

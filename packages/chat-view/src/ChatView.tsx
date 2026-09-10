@@ -574,6 +574,8 @@ export function ChatView() {
       data-window-end={state.range.end}
       data-connection={state.connection.state}
     >
+      <div className="chat-view-edge-fade" data-edge="top" aria-hidden="true" />
+      <div className="chat-view-edge-fade" data-edge="bottom" aria-hidden="true" />
       <ChatScrollIndicator entries={outline} range={navigation ? globalHistoryRange(state.messages, navigation, state.range) : state.range} hasCompact={hasCompact}
         compactMarkers={navigation?.compacts}
         compactExpanded={compactExpanded} compactSplit={compactSplit} onJump={jumpToMessage}

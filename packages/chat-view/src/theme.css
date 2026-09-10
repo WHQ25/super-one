@@ -67,6 +67,37 @@ a {
   scroll-margin-top: calc(8px + var(--safe-area-top));
 }
 
+/* Desktop softens both ends of its transcript with a 24px `--card` → transparent
+   wash — above by the window header (`App.tsx`), below by the composer
+   (`ChatContent`), both skipped in liquid-glass mode. This document is the same
+   scrolling half on a phone, and its two edges butt against the RN header and
+   the todo strip / composer with nothing to break the scroll. `--background` is
+   the token the shell paints from too (see the `--background-h` note above), so
+   the wash lands on the seam rather than beside it. Fixed, because the body is
+   the scroller; z-index stays under the scroll rail's 20 so ticks read clean.
+
+   16px rather than desktop's 24: this document sets a 15px body at 1.6, so a
+   24px band washes a whole line of the transcript, and it costs a phone viewport
+   far more of its height than the same band costs a window. */
+.chat-view-edge-fade {
+  position: fixed;
+  left: 0;
+  right: 0;
+  height: 16px;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.chat-view-edge-fade[data-edge="top"] {
+  top: 0;
+  background: linear-gradient(to bottom, var(--background), transparent);
+}
+
+.chat-view-edge-fade[data-edge="bottom"] {
+  bottom: 0;
+  background: linear-gradient(to top, var(--background), transparent);
+}
+
 .chat-view-fatal {
   padding: 24px;
   color: var(--destructive);

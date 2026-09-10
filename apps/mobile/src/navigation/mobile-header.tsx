@@ -105,7 +105,7 @@ export function MobileHeader(props: {
   // is a search field with a Cancel beside it — both own their whole screen.
   if (props.route === 'pair' || props.route === 'session-search') return null
   return (
-    <View style={styles.top}>
+    <View style={chat ? [styles.top, styles.topBorderless] : styles.top}>
       <View style={props.onConfirm ? { minWidth: CONFIRM_SLOT_WIDTH, alignItems: 'flex-start' } : undefined}>
         {chat
           // Balances the trailing session menu; the sidebar is already the way out.

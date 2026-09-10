@@ -150,7 +150,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     // Host intercepts `/compact` → `x.ai/compact_conversation`.
     supportsCompact: true,
     supportsStreamingToolInput: false,
-    // Mid-turn send / queued steer → `x.ai/interject` (next safe point, no abort).
+    // Mid-turn send queues; steer inserts via `x.ai/interject` (no abort).
     supportsQueuedSteer: true,
     supportsQueuedSteerSoon: true,
     // session/new additionalDirectories, gated per agent capability.

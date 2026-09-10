@@ -4427,6 +4427,7 @@ export type RemoteCommand =
    */
   | { type: 'request_session_recap'; requestId: string; projectPath: string; sessionId: string; auto?: boolean }
   | { type: 'dequeue_message'; clientMessageId: string; projectPath?: string; sessionId: string }
+  | { type: 'steer_queued_message'; requestId: string; projectPath: string; sessionId: string; clientMessageId: string; priority?: 'now' | 'next' }
   | { type: 'interrupt'; projectPath?: string; sessionId: string }
   | { type: 'respond_permission'; requestId: string; decision: boolean; alwaysAllow?: boolean; reason?: string; selectedSuggestions?: number[]; formAnswers?: Record<string, unknown>; projectPath?: string; sessionId: string }
   | { type: 'answer_question'; requestId: string; answers: Record<string, string>; annotations?: QuestionAnnotations; projectPath?: string; sessionId: string }

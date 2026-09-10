@@ -190,6 +190,12 @@ export class AcpBackend implements SessionBackend {
   )
   private interrupted = false
   private currentMessageId: string | null = null
+  /** Assistant bubble the live `session/prompt` is currently streaming into. */
+  private liveAssistantId: string | null = null
+  /** Ids minted for this prompt (primary + sealed/folded segments). */
+  private readonly promptMessageIds = new Set<string>()
+  /** After steer-insert, extra runtime `message_start`s fold into the live segment. */
+  private interjectSplit = false
 
   private eventListeners = new Set<(e: AgentEvent) => void>()
   private providerSessionIdListeners = new Set<(id: string) => void>()
@@ -1037,7 +1043,7 @@ export class AcpBackend implements SessionBackend {
 
   /**
    * Mid-turn queue only. Idle synthetic turns are owned by Session.send.
-   * User-typed mid-turn follow-ups use `x.ai/interject`; host wakes stay queued.
+   * User-typed follow-ups park until steer (`x.ai/interject`); host wakes stay queued.
    */
   async injectTaskNotification(content: string): Promise<TaskNotificationInjectResult> {
     if (!this.started || this.disposed) return 'deferred'
@@ -1120,19 +1126,6 @@ export class AcpBackend implements SessionBackend {
     })
   }
 
-  /**
-   * Sync false when this is not a mid-turn follow-up — callers must not `await`
-   * that path, or `interrupt()` can win the race and get overwritten by
-   * `this.interrupted = false` on a new prompt.
-   */
-  private tryInterjectWhileBusy(request: SendMessageRequest): Promise<boolean> | false {
-    if (request.priority !== 'next' && request.priority !== 'later' && request.priority !== 'now') {
-      return false
-    }
-    if (!this.isTurnBusy()) return false
-    return this.interjectRequest(request)
-  }
-
   private async interjectRequest(request: SendMessageRequest): Promise<boolean> {
     const runtime = this.runtime
     if (!runtime?.interject) return false
@@ -1145,10 +1138,65 @@ export class AcpBackend implements SessionBackend {
       log.warn('[AcpBackend] x.ai/interject failed — falling back to queue:', err)
       return false
     }
+    this.splitLiveAssistantAfterInterject(request)
+    return true
+  }
+
+  /**
+   * Seal the current assistant, splice the steered user message, then open a
+   * new assistant shell so later chunks land after the insert — not in the
+   * next turn and not still growing the sealed bubble.
+   */
+  private splitLiveAssistantAfterInterject(request: SendMessageRequest): void {
+    const sealedId = this.currentMessageId
+    if (sealedId) {
+      this.emit({
+        type: 'message_complete',
+        messageId: sealedId,
+        metadata: { queuedTurnCount: 1 },
+      })
+    }
     if (request.clientMessageId) {
       this.emit({ type: 'queued_message_consumed', clientMessageId: request.clientMessageId })
     }
-    return true
+    if (!sealedId) return
+    const nextId = request.assistantMessageId && request.assistantMessageId !== sealedId
+      ? request.assistantMessageId
+      : `acp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    this.promptMessageIds.add(sealedId)
+    this.promptMessageIds.add(nextId)
+    this.currentMessageId = nextId
+    this.liveAssistantId = nextId
+    this.interjectSplit = true
+    if (this.lastGrokUsageRecorded?.messageId === sealedId) {
+      this.lastGrokUsageRecorded = { ...this.lastGrokUsageRecorded, messageId: nextId }
+    }
+    this.emit({
+      type: 'message_start',
+      message: {
+        id: nextId,
+        role: 'assistant',
+        status: 'streaming',
+        content: [],
+        createdAt: new Date().toISOString(),
+        providerId: 'acp',
+      },
+    })
+    this.emit({ type: 'status_change', status: 'streaming' })
+  }
+
+  /** After steer, rewrite leftover runtime events onto the live assistant segment. */
+  private retargetPromptEvent(event: AgentEvent): AgentEvent | null {
+    const live = this.liveAssistantId
+    if (!live) return event
+    if (event.type === 'message_start') {
+      if (!this.interjectSplit || event.message.id === live) return event
+      this.promptMessageIds.add(event.message.id)
+      return null
+    }
+    if (!('messageId' in event) || typeof event.messageId !== 'string') return event
+    if (event.messageId === live || !this.promptMessageIds.has(event.messageId)) return event
+    return { ...event, messageId: live }
   }
 
   private async compactNow(userContext?: string): Promise<void> {
@@ -1211,13 +1259,20 @@ export class AcpBackend implements SessionBackend {
       await this.compactNow(compact.userContext)
       return
     }
-    const interject = this.tryInterjectWhileBusy(request)
-    if (interject !== false && await interject) return
     if (this.pendingQueued.intercept(request)) return
+    // Concurrent session/prompt cancels Grok's live turn. Park even `now`.
+    if (this.isTurnBusy()) {
+      const parked = this.pendingQueued.intercept({ ...request, priority: 'next' })
+      if (parked) return
+    }
     const messageId = request.assistantMessageId
       ?? `acp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     this.interrupted = false
     this.currentMessageId = messageId
+    this.liveAssistantId = messageId
+    this.promptMessageIds.clear()
+    this.promptMessageIds.add(messageId)
+    this.interjectSplit = false
 
     this.emit({
       type: 'message_start',
@@ -1238,14 +1293,16 @@ export class AcpBackend implements SessionBackend {
 
     let emittedTerminal = false
     const onEvent = (event: AgentEvent) => {
+      const routed = this.retargetPromptEvent(event)
+      if (!routed) return
       if (
-        event.type === 'message_complete'
-        || event.type === 'message_interrupted'
-        || event.type === 'message_error'
+        routed.type === 'message_complete'
+        || routed.type === 'message_interrupted'
+        || routed.type === 'message_error'
       ) {
         emittedTerminal = true
       }
-      this.routeSessionEvent(event, this.config.agentId ?? null, this.runtimeEpoch)
+      this.routeSessionEvent(routed, this.config.agentId ?? null, this.runtimeEpoch)
     }
 
     try {
@@ -1266,21 +1323,25 @@ export class AcpBackend implements SessionBackend {
       this.activePrompt = turn
       await turn
     } catch (err) {
+      const failId = this.liveAssistantId ?? messageId
       if (this.interrupted) {
         if (!emittedTerminal) {
-          this.emit({ type: 'message_interrupted', messageId })
+          this.emit({ type: 'message_interrupted', messageId: failId })
           this.emit({ type: 'status_change', status: 'idle' })
         }
         return
       }
       if (!emittedTerminal) {
         const errorInfo = describeAcpRequestFailure(err)
-        this.emit({ type: 'message_error', messageId, error: errorInfo.raw, errorInfo })
+        this.emit({ type: 'message_error', messageId: failId, error: errorInfo.raw, errorInfo })
         this.emit({ type: 'status_change', status: 'error' })
       }
     } finally {
       this.activePrompt = null
       this.currentMessageId = null
+      this.liveAssistantId = null
+      this.promptMessageIds.clear()
+      this.interjectSplit = false
       // User-typed messages outrank host task notifications; the notification
       // flush re-queues itself while the queued turn holds the runtime.
       this.pendingQueued.flush()

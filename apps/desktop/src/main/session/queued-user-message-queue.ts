@@ -1,10 +1,11 @@
 import type { AgentEvent, SendMessageRequest } from '@superone/shared/agent-types'
 
 /**
- * Host-owned mid-turn queue for user-typed messages. ACP/Grok and OpenCode
- * always run a queued message as its own turn once the live one settles. Claude
- * does the same by default, but can remove one item and inject it into the live
- * SDK stream as `priority: 'now'`. Codex owns a separate durable Core queue.
+ * Host-owned mid-turn queue for user-typed messages. OpenCode always runs a
+ * queued message as its own turn once the live one settles. ACP/Grok does the
+ * same by default; `acp.steer_queued` can pull one item and `x.ai/interject`
+ * it into the live prompt. Claude queues too, then injects as SDK
+ * `priority: 'now'` / `'next'`. Codex owns a separate durable Core queue.
  * Sending concurrently is actively harmful — Grok cancels the live turn and
  * OpenCode rejects the send outright.
  *

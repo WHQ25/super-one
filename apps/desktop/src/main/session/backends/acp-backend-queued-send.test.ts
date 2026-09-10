@@ -23,6 +23,7 @@ import { acpStartOpts, mockAcpRuntime } from '../../../test/fixtures/acp-backend
 interface PromptCall {
   text: string
   messageId: string
+  onEvent: (event: AgentEvent) => void
   finish: () => void
 }
 
@@ -36,6 +37,7 @@ function manualTurnRuntime(
         calls.push({
           text: typeof text === 'string' ? text : String(text),
           messageId,
+          onEvent,
           finish: () => {
             onEvent({ type: 'message_complete', messageId })
             onEvent({ type: 'status_change', status: 'idle' })
@@ -72,7 +74,7 @@ describe('AcpBackend queued send / interject', () => {
     setAcpRuntimeFactory(null)
   })
 
-  it('interjects a mid-turn follow-up instead of prompting concurrently', async () => {
+  it('queues a mid-turn follow-up instead of prompting concurrently', async () => {
     const calls: PromptCall[] = []
     const interjects: Array<{ text: string; id?: string }> = []
     const { backend, events } = await startBackend(calls, {
@@ -85,13 +87,85 @@ describe('AcpBackend queued send / interject', () => {
     await backend.send({ content: 'second', clientMessageId: 'u2', priority: 'next' })
 
     expect(calls).toHaveLength(1)
-    expect(interjects).toEqual([{ text: 'second', id: 'u2' }])
+    expect(interjects).toEqual([])
     expect(messageStarts(events)).toEqual(['a1'])
+    expect(events.some((e) => e.type === 'queued_message_consumed')).toBe(false)
+
+    calls[0].finish()
+    await vi.waitFor(() => expect(calls).toHaveLength(2))
+    expect(calls[1].text).toContain('second')
     const consumed = events.filter((e) => e.type === 'queued_message_consumed')
     expect(consumed).toHaveLength(1)
     expect((consumed[0] as { clientMessageId: string }).clientMessageId).toBe('u2')
 
+    calls[1].finish()
+    await backend.close()
+  })
+
+  it('steers a queued follow-up into the live turn and splits the assistant', async () => {
+    const calls: PromptCall[] = []
+    const interjects: Array<{ text: string; id?: string }> = []
+    const { backend, events } = await startBackend(calls, {
+      interject: async (text, id) => { interjects.push({ text, id }) },
+    })
+
+    void backend.send({ content: 'first', assistantMessageId: 'a1' })
+    await vi.waitFor(() => expect(calls).toHaveLength(1))
+    await backend.send({
+      content: 'second',
+      clientMessageId: 'u2',
+      assistantMessageId: 'a2',
+      priority: 'next',
+    })
+
+    await backend.handleCommand({ kind: 'acp.steer_queued', clientMessageId: 'u2' })
+
+    expect(calls).toHaveLength(1)
+    expect(interjects).toEqual([{ text: 'second', id: 'u2' }])
+    const completeAt = events.findIndex((e) => e.type === 'message_complete' && e.messageId === 'a1')
+    const consumedAt = events.findIndex((e) => e.type === 'queued_message_consumed')
+    const startA2 = events.findIndex((e) => e.type === 'message_start' && e.message.id === 'a2')
+    expect(completeAt).toBeGreaterThanOrEqual(0)
+    expect(consumedAt).toBeGreaterThan(completeAt)
+    expect(startA2).toBeGreaterThan(consumedAt)
+    expect(messageStarts(events)).toEqual(['a1', 'a2'])
+    expect((events[consumedAt] as { clientMessageId: string }).clientMessageId).toBe('u2')
+
+    calls[0].onEvent({
+      type: 'content_delta',
+      messageId: 'a1',
+      delta: { type: 'text', text: 'after-steer' },
+    })
+    const deltas = events.filter((e) => e.type === 'content_delta')
+    expect(deltas).toContainEqual(expect.objectContaining({
+      messageId: 'a2',
+      delta: { type: 'text', text: 'after-steer' },
+    }))
+    expect(deltas.filter((e) => e.messageId === 'a1')).toEqual([])
+
     calls[0].finish()
+    await backend.close()
+  })
+
+  it('restores the queued message when steer interject fails', async () => {
+    const calls: PromptCall[] = []
+    const { backend, events } = await startBackend(calls, {
+      interject: async () => { throw new Error('method not found') },
+    })
+
+    void backend.send({ content: 'first', assistantMessageId: 'a1' })
+    await vi.waitFor(() => expect(calls).toHaveLength(1))
+    await backend.send({ content: 'second', clientMessageId: 'u2', priority: 'next' })
+
+    await expect(backend.handleCommand({ kind: 'acp.steer_queued', clientMessageId: 'u2' }))
+      .rejects.toThrow(/interject is unavailable/)
+    expect(events.some((e) => e.type === 'queued_message_consumed')).toBe(false)
+
+    calls[0].finish()
+    await vi.waitFor(() => expect(calls).toHaveLength(2))
+    expect(calls[1].text).toContain('second')
+
+    calls[1].finish()
     await backend.close()
   })
 

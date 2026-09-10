@@ -485,7 +485,7 @@ export class AgentService {
     })
   }
 
-  private async runCodexRemoteTurn(projectPath: string, sessionId: string, deviceId: string, command: { content: string; model?: string; effort?: string; serviceTier?: string | null; permissionPreset?: string; collaborationMode?: string; threadId?: string; images?: SendMessageRequest['images']; gitBranch?: string | null; worktreeBranch?: string | null }, isNewSession?: boolean): Promise<void> {
+  private async runCodexRemoteTurn(projectPath: string, sessionId: string, deviceId: string, command: { content: string; model?: string; effort?: string; serviceTier?: string | null; permissionPreset?: string; collaborationMode?: string; threadId?: string; images?: SendMessageRequest['images']; gitBranch?: string | null; worktreeBranch?: string | null; clientMessageId?: string; priority?: 'now' | 'next' | 'later' }, isNewSession?: boolean): Promise<void> {
     const userMessageId = newMessageId('user')
     const assistantMessageId = newMessageId('remote')
     const mgr = this.requireSessionManager()
@@ -506,8 +506,9 @@ export class AgentService {
       await this.ensureRemoteOwnership(deviceId, session, async () => {
         await session!.send({
           content: command.content,
-          clientMessageId: userMessageId,
+          clientMessageId: command.clientMessageId ?? userMessageId,
           assistantMessageId,
+          ...(command.priority ? { priority: command.priority } : {}),
           images: command.images,
           model: command.model,
           effort: command.effort as SendMessageRequest['effort'] | undefined,
@@ -696,6 +697,42 @@ export class AgentService {
         if (!command.projectPath) break
         const session = this.findSessionBySid(command.projectPath, command.sessionId)
         if (session) await session.dequeueMessage(command.clientMessageId)
+        break
+      }
+      case 'steer_queued_message': {
+        try {
+          if (!this.canAccessSession(command.projectPath, command.sessionId)) {
+            await respond?.(command.requestId, {
+              ok: false,
+              error: this.buildSessionAccessError(command.projectPath, command.sessionId),
+            })
+            break
+          }
+          const session = this.findSessionBySid(command.projectPath, command.sessionId)
+          if (!session) {
+            await respond?.(command.requestId, { ok: false, error: 'session not found' })
+            break
+          }
+          const harnessId = session.snapshot.harnessId
+          if (harnessId !== 'claude' && harnessId !== 'codex' && harnessId !== 'acp') {
+            await respond?.(command.requestId, { ok: false, error: 'steer is not supported on this harness' })
+            break
+          }
+          if (harnessId === 'codex' && command.priority === 'next') {
+            await respond?.(command.requestId, { ok: false, error: 'Codex cannot steer without interrupting' })
+            break
+          }
+          await session.dispatchBackendCommand(
+            harnessId === 'claude'
+              ? { kind: 'claude.steer_queued', clientMessageId: command.clientMessageId, priority: command.priority ?? 'now' }
+              : harnessId === 'acp'
+                ? { kind: 'acp.steer_queued', clientMessageId: command.clientMessageId }
+                : { kind: 'codex.steer_queued', clientMessageId: command.clientMessageId },
+          )
+          await respond?.(command.requestId, { ok: true })
+        } catch (err) {
+          await respond?.(command.requestId, { ok: false, error: err instanceof Error ? err.message : String(err) })
+        }
         break
       }
       case 'interrupt': {

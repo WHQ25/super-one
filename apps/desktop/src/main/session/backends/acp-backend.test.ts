@@ -1505,6 +1505,7 @@ describe('AcpBackend', () => {
       .toBe('from another pane')
 
     await backend.send({ content: 'steer', clientMessageId: 'self-1', priority: 'next' })
+    await backend.handleCommand({ kind: 'acp.steer_queued', clientMessageId: 'self-1' })
     captured!.onSessionInterjection!({ text: 'steer', interjectionId: 'self-1' })
     expect(events.filter((e) => e.type === 'user_message_appended')).toHaveLength(1)
     finishFirst()

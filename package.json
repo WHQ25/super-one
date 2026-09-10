@@ -23,6 +23,8 @@
     "dev:web": "bun --filter @superone/web dev",
     "build:chat-view": "bun --filter @superone/chat-view build",
     "dev:mobile": "bun --filter @superone/mobile dev",
+    "rebuild:mobile:ios": "bun --cwd apps/mobile scripts/rebuild-dev-client.ts --platform ios",
+    "rebuild:mobile:android": "bun --cwd apps/mobile scripts/rebuild-dev-client.ts --platform android",
     "dev:relay": "bun --filter @superone/relay dev",
     "dev:cli": "bun --filter @superone/cli dev",
     "dev:cli:pair": "bun --filter @superone/cli pair",

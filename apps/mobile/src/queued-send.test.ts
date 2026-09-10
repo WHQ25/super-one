@@ -33,13 +33,13 @@ describe('queued composer send', () => {
     })
   })
 
-  it('offers steer on Claude, Codex and Grok, and soon only where the SDK can park without aborting', () => {
+  it('offers steer on Claude, Codex and Grok, and soon only on Claude', () => {
     expect(canSteerQueued('claude')).toBe(true)
     expect(canSteerQueued('codex')).toBe(true)
     expect(canSteerQueued('acp')).toBe(true)
     expect(canSteerQueued('opencode')).toBe(false)
     expect(canSteerQueuedSoon('claude')).toBe(true)
-    expect(canSteerQueuedSoon('acp')).toBe(true)
+    expect(canSteerQueuedSoon('acp')).toBe(false)
     expect(canSteerQueuedSoon('codex')).toBe(false)
   })
 

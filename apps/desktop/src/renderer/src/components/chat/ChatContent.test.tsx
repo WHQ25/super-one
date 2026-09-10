@@ -248,6 +248,7 @@ afterEach(() => {
   hoisted.sessionState.queuedMessages = []
   hoisted.sessionState.sessionProvider = 'claude'
   hoisted.sessionState.preferredProvider = 'claude'
+  hoisted.sessionState.acpAgentId = null
   hoisted.sessionState._providerSessionId = null
   hoisted.sessionState.status = 'idle'
 })
@@ -856,6 +857,25 @@ describe('ChatContent Codex queue has no non-interrupting steer', () => {
     }]
     hoisted.sessionState.sessionProvider = 'codex'
     hoisted.sessionState.preferredProvider = 'codex'
+    hoisted.sessionState.status = 'streaming'
+
+    renderContent()
+
+    expect(screen.getByRole('button', { name: 'Steer Now' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Steer Soon (no interrupt)' })).toBeNull()
+  })
+})
+
+describe('ChatContent ACP queue has no non-interrupting steer', () => {
+  it('hides the steer-soon action for a streaming Grok turn', () => {
+    hoisted.steerQueuedMessage.mockClear()
+    hoisted.sessionState.messages = [{ id: 'm1' }]
+    hoisted.sessionState.queuedMessages = [{
+      id: 'u2', role: 'user', status: 'complete', content: [{ type: 'text', text: 'steer this' }], createdAt: '', providerId: 'acp',
+    }]
+    hoisted.sessionState.sessionProvider = 'acp'
+    hoisted.sessionState.preferredProvider = 'acp'
+    hoisted.sessionState.acpAgentId = 'grok-build'
     hoisted.sessionState.status = 'streaming'
 
     renderContent()

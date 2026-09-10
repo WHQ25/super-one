@@ -153,6 +153,15 @@ export const PhoneFocusedCodexSteer = {
   name: 'Phone · focused Codex steer only',
 }
 
+export const PhoneFocusedGrokSteer = {
+  args: {
+    provider: 'acp',
+    tablet: false, focused: true, streaming: true, draft: 'steer this',
+    canSteer: true, canSteerSoon: false,
+  },
+  name: 'Phone · focused Grok steer only',
+}
+
 export const Tablet = {
   args: { tablet: true, draft: 'Boxed input with chips inside the card' },
   name: 'Tablet · boxed input',

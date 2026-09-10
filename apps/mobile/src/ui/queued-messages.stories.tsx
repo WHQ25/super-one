@@ -40,3 +40,4 @@ export default {
 
 export const Claude = { render: () => <Preview />, name: 'Claude · steer and steer soon' }
 export const Codex = { render: () => <Preview canSteerSoon={false} />, name: 'Codex · steer only' }
+export const Grok = { render: () => <Preview canSteerSoon={false} />, name: 'Grok · steer only' }

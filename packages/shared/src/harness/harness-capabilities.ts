@@ -68,7 +68,9 @@ export interface HarnessCapabilities {
    * Claude only: the SDK's `priority: 'next'` parks the message in the CLI's own
    * command queue, which drains between steps. `priority: 'now'` (plain steer)
    * aborts instead. Codex's steer has no such middle setting — its Core queue
-   * item either interrupts or waits for the whole turn.
+   * item either interrupts or waits for the whole turn. Grok's `x.ai/interject`
+   * is also a single shape (next safe point, no abort), so it is plain steer,
+   * not a second "soon" action.
    */
   supportsQueuedSteerSoon: boolean
   /**
@@ -151,8 +153,10 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsCompact: true,
     supportsStreamingToolInput: false,
     // Mid-turn send queues; steer inserts via `x.ai/interject` (no abort).
+    // Interject has no now/next split — Claude's "soon" is a second SDK
+    // priority, which Grok does not have.
     supportsQueuedSteer: true,
-    supportsQueuedSteerSoon: true,
+    supportsQueuedSteerSoon: false,
     // session/new additionalDirectories, gated per agent capability.
     supportsAdditionalDirs: true,
     // Cold `x.ai/session/fork` copies Grok session files; SuperOne then resumes the child.

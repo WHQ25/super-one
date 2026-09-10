@@ -11,7 +11,7 @@ describe('HARNESS_CAPABILITIES', () => {
     expect(acp.supportsSubagents).toBe(false)
     expect(acp.supportsCompact).toBe(true)
     expect(acp.supportsQueuedSteer).toBe(true)
-    expect(acp.supportsQueuedSteerSoon).toBe(true)
+    expect(acp.supportsQueuedSteerSoon).toBe(false)
     expect(acp.supportsFork).toBe(true)
   })
 

@@ -22,6 +22,7 @@ import { formatLineRange, resolveProjectFileHref } from './presenters/file-link'
 import { PortableTurnContext } from './portable-turn-context'
 import { createPortableCodePlugin } from './portable-code-plugin'
 import { requestNative } from './bridge'
+import { isPreviewableImageSource, previewImage } from './image-preview'
 
 const darkCodePlugin = createPortableCodePlugin('github-dark')
 const lightCodePlugin = createPortableCodePlugin('github-light')
@@ -125,8 +126,26 @@ function NativeLink({ href, onClick, ...props }: ComponentProps<'a'>) {
   )
 }
 
+/**
+ * A markdown image. One the WebView can actually display — inline bytes or a
+ * public URL — opens fullscreen on tap; a relative host path has nothing to
+ * show and stays a plain (broken) picture, as before.
+ */
 function NativeImage(props: ComponentProps<'img'>) {
-  return <img {...props} className="max-h-80 max-w-full rounded-lg object-contain" />
+  const picture = <img {...props} className="max-h-80 max-w-full rounded-lg object-contain" />
+  if (!isPreviewableImageSource(props.src)) return picture
+  const src = props.src
+  const label = typeof props.alt === 'string' && props.alt ? props.alt : 'image'
+  return (
+    <button
+      type="button"
+      className="inline-block max-w-full overflow-hidden rounded-lg align-top"
+      onClick={() => previewImage(src, { label })}
+      aria-label={`Preview ${label}`}
+    >
+      {picture}
+    </button>
+  )
 }
 
 function FullscreenMermaid({

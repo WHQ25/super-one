@@ -24,6 +24,7 @@ import {
   collectCodexGeneratedVideos,
 } from './presenters/media-generation'
 import { collectGeneratedImages, collectGeneratedVideos } from './presenters/tool-display'
+import { previewImage } from './image-preview'
 import type { ReductionProjection } from './protocol'
 
 type PendingPermission = NonNullable<ReductionProjection['pendingPermission']>
@@ -99,14 +100,23 @@ function AttachmentGallery({ message }: { message: ChatMessage }) {
   if (!message.attachments?.length) return null
   return (
     <div className="mt-2 grid grid-cols-2 gap-2">
-      {message.attachments.map((attachment, index) => (
-        <img
-          key={attachment.id ?? index}
-          src={`data:${attachment.mimeType};base64,${attachment.base64}`}
-          alt={attachment.name}
-          className="max-h-64 w-full rounded-lg object-contain"
-        />
-      ))}
+      {message.attachments.map((attachment, index) => {
+        const src = `data:${attachment.mimeType};base64,${attachment.base64}`
+        const picture = <img src={src} alt={attachment.name} className="max-h-64 w-full rounded-lg object-contain" />
+        // Only a real picture opens the viewer; a PDF attachment has no bitmap to show.
+        if (!attachment.mimeType.startsWith('image/')) return <div key={attachment.id ?? index}>{picture}</div>
+        return (
+          <button
+            key={attachment.id ?? index}
+            type="button"
+            className="block w-full overflow-hidden rounded-lg"
+            onClick={() => previewImage(src, { label: attachment.name })}
+            aria-label={`Preview ${attachment.name}`}
+          >
+            {picture}
+          </button>
+        )
+      })}
     </div>
   )
 }

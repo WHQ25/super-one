@@ -587,7 +587,7 @@ test('36b shows a tool screenshot inline once the host answers loadImage', async
   await load.click()
   await expect.poll(async () => (await readRequests()).some((item) => item.payload?.confirmed === true)).toBe(true)
 
-  // Bytes arrive: the chip becomes the picture, still opening the full file on tap.
+  // Bytes arrive: the chip becomes the picture, and a tap opens those same bytes fullscreen.
   const confirmed = (await readRequests()).find((item) => item.payload?.confirmed === true)!
   const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
   await send(page, { type: 'nativeActionResult', requestId: confirmed.requestId, result: { ok: true, dataUri: pixel } })
@@ -597,8 +597,12 @@ test('36b shows a tool screenshot inline once the host answers loadImage', async
   await expect(row.getByRole('button', { name: 'Load Screenshot' })).toHaveCount(0)
   await row.getByRole('button', { name: 'Preview Screenshot' }).click()
   await expect.poll(() => page.evaluate(() => (
-    globalThis as typeof globalThis & { __hostMessages: HostRequest[] }
-  ).__hostMessages.some((item) => item.action === 'previewFile' && item.payload?.path === '/project/browser-checkout.png'))).toBe(true)
+    globalThis as typeof globalThis & { __hostMessages: Array<HostRequest & { payload?: { src?: string } }> }
+  ).__hostMessages.some((item) => (
+    item.action === 'previewImage'
+      && item.payload?.path === '/project/browser-checkout.png'
+      && item.payload?.src === 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+  )))).toBe(true)
 })
 
 test('37 renders Device and Computer Use recordings with shared presenters', async ({ page }) => {

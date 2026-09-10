@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Download, ImageIcon } from 'lucide-react'
 import { requestNative, requestNativeAsync } from './bridge'
+import { previewImage } from './image-preview'
 
 /** What the host answers a `loadImage` request with. */
 export type LoadImageResult =
@@ -74,7 +75,9 @@ function formatSize(bytes: number): string {
  * A host that cannot answer at all leaves the plain preview chip in place, so
  * the transcript is never worse than before.
  *
- * Tapping the picture itself opens the full file through `previewFile`.
+ * Tapping the picture opens the bytes already on the phone in the fullscreen
+ * viewer (`previewImage`); only the chip without a picture yet still goes
+ * through `previewFile`, because there is nothing to show until the file lands.
  */
 export function PortableHostImage({ path, label, className, fallback, caption }: {
   path: string
@@ -118,7 +121,7 @@ export function PortableHostImage({ path, label, className, fallback, caption }:
       <button
         type="button"
         className={className ?? 'block w-full overflow-hidden rounded border border-border/60 bg-muted/25'}
-        onClick={() => requestNative('previewFile', { path })}
+        onClick={() => previewImage(phase.dataUri, { label, path })}
         aria-label={ariaLabel}
         title={path}
         data-host-image="ready"

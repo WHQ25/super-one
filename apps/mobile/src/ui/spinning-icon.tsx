@@ -15,16 +15,19 @@ export function SpinningIcon(props: {
   size: number
   color: string
   strokeWidth?: number
+  /** Slower than a busy spinner when the icon marks state rather than waiting. */
+  durationMs?: number
 }) {
   const animate = useIconMotion()
   const spin = useRef(new Animated.Value(0)).current
   const Icon = props.icon
+  const duration = props.durationMs ?? SPIN_DURATION_MS
 
   useEffect(() => {
     if (!animate) return
     const loop = Animated.loop(Animated.timing(spin, {
       toValue: 1,
-      duration: SPIN_DURATION_MS,
+      duration,
       easing: Easing.linear,
       useNativeDriver: true,
     }))
@@ -33,7 +36,7 @@ export function SpinningIcon(props: {
       loop.stop()
       spin.setValue(0)
     }
-  }, [animate, spin])
+  }, [animate, duration, spin])
 
   const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] })
   return (

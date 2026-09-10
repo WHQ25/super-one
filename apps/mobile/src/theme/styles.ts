@@ -60,10 +60,6 @@ export function createMobileStyles({ colors, radius, spacing, type }: MobileThem
     composer: { flexDirection: 'row', gap: spacing.sm, paddingVertical: spacing.sm, alignItems: 'center' },
     composerControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
     queuedRow: { backgroundColor: colors.muted, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
-    todoPanel: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, paddingVertical: spacing.sm },
-    todoHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-    todoList: { gap: spacing.xs, paddingLeft: spacing.xl, paddingTop: spacing.sm },
-    todoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
     composerInput: {
       flex: 1,
       borderWidth: 1,

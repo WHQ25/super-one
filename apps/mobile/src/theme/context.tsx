@@ -1,11 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { useColorScheme } from 'react-native'
+import { Appearance, useColorScheme } from 'react-native'
 import type { HarnessId, Locale, ThemeMode } from '@superone/shared/agent-types'
 import type { Kv } from '@superone/relay-client'
 import { createMobileStyles } from './styles'
 import { MenuHost } from '../ui/menu-host'
 import { mobileThemeTokens, normalizeColorScheme, type MobileThemeTokens, type MobileColorScheme } from './tokens'
-import { loadThemeMode, saveThemeMode } from '../mobile-preferences'
+import { DEFAULT_THEME_MODE, loadThemeMode, saveThemeMode } from '../mobile-preferences'
 import { MobileLocaleProvider } from '../i18n/context'
 
 interface MobileThemeContextValue {
@@ -31,7 +31,7 @@ export function MobileThemeProvider({ children, colorScheme, store, locale }: {
   locale?: Locale
 }) {
   const systemScheme = useColorScheme()
-  const [mode, setModeState] = useState<ThemeMode>(colorScheme ?? 'system')
+  const [mode, setModeState] = useState<ThemeMode>(colorScheme ?? DEFAULT_THEME_MODE)
   const changed = useRef(false)
   useEffect(() => {
     if (colorScheme) { setModeState(colorScheme); return }
@@ -47,6 +47,16 @@ export function MobileThemeProvider({ children, colorScheme, store, locale }: {
     void saveThemeMode(store, next).catch(() => {})
   }, [store])
   const scheme = colorScheme ?? (mode === 'system' ? normalizeColorScheme(systemScheme) : mode)
+  // Native chrome the shell does not paint — keyboards, action sheets, system
+  // menus — reads the app-level appearance, not our tokens. Since the app now
+  // ships dark regardless of the OS, pin it here or a light device gets a light
+  // keyboard under a dark shell. `null` hands the choice back to the OS, which
+  // is exactly what `system` means. Skipped when `colorScheme` is forced, so
+  // previews and component tests never mutate a process-wide setting.
+  useEffect(() => {
+    if (colorScheme) return
+    Appearance.setColorScheme(mode === 'system' ? null : mode)
+  }, [colorScheme, mode])
   const [harness, setHarness] = useState<HarnessId>('claude')
   const [hostHues, setHostHues] = useState<Partial<Record<HarnessId, number | null>>>({})
   const setBrandHue = useCallback((target: HarnessId, hue: number | null) => {

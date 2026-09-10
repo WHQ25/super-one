@@ -6,6 +6,9 @@ export const MOBILE_THEME_MODE_KEY = 'mobile.themeMode'
 export const MOBILE_LOCALE_KEY = 'mobile.locale'
 
 const THEME_MODES: readonly ThemeMode[] = ['system', 'light', 'dark']
+
+/** Ships dark; `system` stays available but is an explicit opt-in from settings. */
+export const DEFAULT_THEME_MODE: ThemeMode = 'dark'
 const LOCALES: readonly Locale[] = ['en', 'zh']
 
 export function systemLocale(): Locale {
@@ -18,7 +21,7 @@ export function systemLocale(): Locale {
 
 export async function loadThemeMode(store: Pick<Kv, 'get'> | null | undefined): Promise<ThemeMode> {
   const stored = await store?.get(MOBILE_THEME_MODE_KEY)
-  return THEME_MODES.includes(stored as ThemeMode) ? stored as ThemeMode : 'system'
+  return THEME_MODES.includes(stored as ThemeMode) ? stored as ThemeMode : DEFAULT_THEME_MODE
 }
 
 export async function saveThemeMode(store: Pick<Kv, 'set'> | null | undefined, mode: ThemeMode): Promise<void> {

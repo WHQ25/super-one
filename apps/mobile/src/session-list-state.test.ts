@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { flattenSessionGroups, groupSessionRows, sessionListInvalidations, visibleSessionGroups, type SessionListRow } from './session-list-state'
+import {
+  flattenSessionGroups,
+  groupSessionRows,
+  mergeActivityIntoRows,
+  partitionSessionGroups,
+  sessionListInvalidations,
+  visibleSessionGroups,
+  type SessionListRow,
+} from './session-list-state'
 
 function row(sessionId: string, parentSessionId?: string): SessionListRow {
   return { sessionId, title: sessionId, ...(parentSessionId ? { parentSessionId } : {}) }
@@ -127,18 +135,69 @@ describe('sessionListInvalidations', () => {
   })
 })
 
-it('keeps pending children and groups beyond the reveal limit reachable', () => {
+it('promotes pending groups ahead of recency, like the desktop sidebar', () => {
   const rows = [
     { sessionId: 'first', title: 'First' },
     { sessionId: 'parent', title: 'Parent' },
     { sessionId: 'child', title: 'Needs input', parentSessionId: 'parent', pendingCount: 1 },
   ]
   expect(flattenSessionGroups(rows, new Set(), null, 1).map(item => item.session.sessionId))
-    .toEqual(['first', 'parent', 'child'])
+    .toEqual(['parent', 'child'])
 })
 
 it('keeps unseen children visible even when their group is collapsed and beyond the reveal limit', () => {
   const rows = [row('first'), row('parent'), { ...row('unread', 'parent'), isUnseen: true }]
   expect(flattenSessionGroups(rows, NONE, null, 1).map(item => item.session.sessionId))
-    .toEqual(['first', 'parent', 'unread'])
+    .toEqual(['parent', 'unread'])
+})
+
+describe('attention partition', () => {
+  it('puts pending and unseen groups in attention, in host order', () => {
+    const groups = groupSessionRows([
+      row('idle-a'),
+      { ...row('pending'), pendingCount: 1 },
+      row('idle-b'),
+      { ...row('unread'), isUnseen: true },
+    ])
+    const sections = partitionSessionGroups(groups)
+    expect(sections.attention.map((group) => group.parent.sessionId)).toEqual(['pending', 'unread'])
+    expect(sections.normal.map((group) => group.parent.sessionId)).toEqual(['idle-a', 'idle-b'])
+  })
+
+  it('shows only attention groups while the project is collapsed', () => {
+    const groups = groupSessionRows([
+      row('idle'),
+      { ...row('pending'), pendingCount: 2 },
+      { ...row('unread'), isUnseen: true },
+    ])
+    expect(visibleSessionGroups(groups, 0).map((group) => group.parent.sessionId))
+      .toEqual(['pending', 'unread'])
+  })
+
+  it('keeps the active session reachable while a project is collapsed', () => {
+    const groups = groupSessionRows([row('idle'), { ...row('pending'), pendingCount: 1 }, row('current')])
+    expect(visibleSessionGroups(groups, 0, 'current').map((group) => group.parent.sessionId))
+      .toEqual(['pending', 'current'])
+  })
+})
+
+describe('mergeActivityIntoRows', () => {
+  it('overlays pending counts onto listed rows and inserts missing attention sessions', () => {
+    const rows: SessionListRow[] = [row('listed'), row('other-project')]
+    const merged = mergeActivityIntoRows(rows, {
+      listed: {
+        sessionId: 'listed', projectPath: '/repo', status: 'idle', pendingCount: 1, provider: 'codex',
+      },
+      missing: {
+        sessionId: 'missing', projectPath: '/repo', status: 'idle', pendingCount: 1,
+        title: 'Allow Bash?', provider: 'claude',
+      },
+      elsewhere: {
+        sessionId: 'elsewhere', projectPath: '/other', status: 'idle', pendingCount: 1, title: 'Other',
+      },
+    }, '/repo')
+    expect(merged.map((session) => session.sessionId)).toEqual(['missing', 'listed', 'other-project'])
+    expect(merged[0]).toMatchObject({ title: 'Allow Bash?', pendingCount: 1, provider: 'claude' })
+    expect(merged[1]?.pendingCount).toBe(1)
+  })
 })

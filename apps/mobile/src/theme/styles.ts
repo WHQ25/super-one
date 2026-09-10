@@ -8,15 +8,17 @@ export function createMobileStyles({ colors, radius, spacing, type }: MobileThem
     page: { flex: 1, paddingHorizontal: spacing.lg, paddingTop: spacing.md },
     contentRow: { flex: 1, flexDirection: 'row' },
     mainPane: { flex: 1, minWidth: 0 },
+    // No padding: `WorkspaceList` carries the drawer's own gutters, so the pane
+    // and the drawer stay the same surface rather than drifting apart by one inset.
     tabletSidebar: {
       width: 280,
+      alignSelf: 'stretch',
       borderRightWidth: StyleSheet.hairlineWidth,
       borderRightColor: colors.border,
-      padding: spacing.md,
       backgroundColor: colors.surface,
     },
     sidebarAction: { paddingVertical: 6 },
-    top: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, minHeight: 64, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+    top: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, minHeight: 64, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, overflow: 'visible', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
     headerActions: { flexDirection: 'row', alignItems: 'center', gap: 0 },
     headerTitleGroup: { flex: 1, minWidth: 0, alignItems: 'center', gap: spacing.xs },
     headerTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },

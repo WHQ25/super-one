@@ -19,7 +19,7 @@ export function SessionAttentionGallery() {
         {[0, resolved ? 0 : 3, 120].map((count, index) => <WorkspaceButton key={index} pendingCount={count} onPress={() => setResolved(value => !value)} />)}
       </View>
       {rows.map((_, index) => <Pressable key={index} onPress={() => setResolved(value => !value)}>
-        <SessionRowContent item={{ session: { sessionId: String(index), title: ['Pinned Claude', 'Pinned Codex with a long title', 'Plan review'][index], isPinned: true }, child: false, hasChildren: false, collapsed: false }} selected={index === 1} />
+        <SessionRowContent branded item={{ session: { sessionId: String(index), title: ['Pinned Claude', 'Pinned Codex with a long title', 'Plan review'][index], isPinned: true }, child: false, hasChildren: false, collapsed: false }} selected={index === 1} />
       </Pressable>)}
       <Text>Tap a row to resolve / restore requests</Text>
     </View>

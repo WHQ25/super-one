@@ -27,15 +27,67 @@ test('shows an offline connection on the second line of every native header', as
   expect(screen.getByText('Offline')).toBeTruthy()
 })
 
+test('shows reconnecting under the session title', async () => {
+  await renderWithTheme(header({
+    route: 'chat',
+    title: 'Session',
+    hasSession: true,
+    deviceStatus: 'connecting',
+    reconnect: { attempting: true, waiting: false, delayMs: 500, nextAtMs: null },
+  }))
+
+  expect(screen.getByText('Session')).toBeTruthy()
+  expect(screen.getByText('Reconnecting…')).toBeTruthy()
+})
+
 test('leaves connection feedback to the persistent sidebar on tablet', async () => {
   await renderWithTheme(header({
     route: 'chat',
     title: 'Session',
     hasSession: true,
     deviceStatus: 'offline',
-    connectionInSidebar: true,
+    sidebarVisible: true,
   }))
 
   expect(screen.getByText('super-one')).toBeTruthy()
   expect(screen.queryByText('Offline')).toBeNull()
+})
+
+test('does not duplicate reconnecting in the header while the sidebar is visible', async () => {
+  await renderWithTheme(header({
+    route: 'chat',
+    title: 'Session',
+    hasSession: true,
+    deviceStatus: 'connecting',
+    reconnect: { attempting: true, waiting: false, delayMs: 500, nextAtMs: null },
+    sidebarVisible: true,
+  }))
+
+  expect(screen.getByText('super-one')).toBeTruthy()
+  expect(screen.queryByText('Reconnecting…')).toBeNull()
+})
+
+test('badges the workspace menu with the number of pending requests', async () => {
+  await renderWithTheme(header({
+    route: 'chat',
+    title: 'Session',
+    hasSession: true,
+    pendingCount: 2,
+  }))
+
+  expect(screen.getByTestId('workspace-pending-badge')).toBeTruthy()
+  expect(screen.getByText('2')).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Open workspace, 2 pending requests' })).toBeTruthy()
+})
+
+test('hides the workspace badge when nothing is waiting', async () => {
+  await renderWithTheme(header({
+    route: 'chat',
+    title: 'Session',
+    hasSession: true,
+    pendingCount: 0,
+  }))
+
+  expect(screen.queryByTestId('workspace-pending-badge')).toBeNull()
+  expect(screen.getByRole('button', { name: 'Open Workspace' })).toBeTruthy()
 })

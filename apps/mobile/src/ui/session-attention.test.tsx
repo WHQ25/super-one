@@ -32,19 +32,39 @@ test('opens the workspace with a pending count accessible to screen readers', as
 
 test('clears the badge when all requests resolve', async () => {
   const result = await renderWithTheme(<WorkspaceButton pendingCount={120} onPress={() => {}} />)
+  expect(screen.getByTestId('workspace-pending-badge')).toBeTruthy()
   expect(screen.getByText('99+')).toBeTruthy()
   await result.rerender(<WorkspaceButton pendingCount={0} onPress={() => {}} />)
+  expect(screen.queryByTestId('workspace-pending-badge')).toBeNull()
   expect(screen.queryByText('99+')).toBeNull()
   expect(screen.getByRole('button', { name: 'Open Workspace' })).toBeTruthy()
 })
 
 test('renders the unseen harness state and restores the pinned idle icon after reading', async () => {
   const renderRow = (isUnseen: boolean) => <SessionActivityContext.Provider value={{ one: { ...activity, isUnseen } }}>
-    <SessionRowContent item={{ session: { sessionId: 'one', title: 'Pinned', isPinned: true, provider: 'codex' }, child: false, hasChildren: false, collapsed: false }} />
+    <SessionRowContent branded item={{ session: { sessionId: 'one', title: 'Pinned', isPinned: true, provider: 'codex' }, child: false, hasChildren: false, collapsed: false }} />
   </SessionActivityContext.Provider>
   const result = await renderWithTheme(renderRow(true))
   expect(screen.getByTestId('harness-icon-unseen')).toBeTruthy()
   await result.rerender(renderRow(false))
   expect(screen.queryByTestId('harness-icon-unseen')).toBeNull()
   expect(screen.getByTestId('harness-icon-default')).toBeTruthy()
+})
+
+test('a pinned session in the project list uses the idle list glyph, not the harness mark', async () => {
+  await renderWithTheme(<SessionRowContent
+    item={{ session: { sessionId: 'one', title: 'Pinned', isPinned: true, provider: 'codex' }, child: false, hasChildren: false, collapsed: false }}
+  />)
+  expect(screen.getByTestId('session-list-icon')).toBeTruthy()
+  expect(screen.queryByTestId('harness-icon-default')).toBeNull()
+})
+
+test('the cross-project pinned section keeps the harness mark while idle', async () => {
+  await renderWithTheme(<SessionRowContent branded
+    item={{ session: { sessionId: 'one', title: 'Pinned', isPinned: true, provider: 'codex' }, child: false, hasChildren: false, collapsed: false }}
+  />)
+  const icon = screen.getByTestId('harness-icon-default')
+  expect(icon).toBeTruthy()
+  expect(icon).toHaveStyle({ width: 22, height: 22 })
+  expect(screen.queryByTestId('session-list-icon')).toBeNull()
 })

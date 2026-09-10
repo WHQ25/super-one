@@ -22,3 +22,9 @@ export function sessionActivityIconStatus(session: { status?: string; isUnseen?:
   if (['running', 'streaming', 'starting', 'interrupting', 'background'].includes(session.status ?? '')) return session.status
   return session.isUnseen ? 'unseen' : session.status
 }
+
+/** A project row stays open enough to show work that is waiting on the user. */
+export function projectHasAttention(activity: WorkspaceActivity, projectPath: string): boolean {
+  return Object.values(activity).some((session) =>
+    session.projectPath === projectPath && ((session.pendingCount ?? 0) > 0 || !!session.isUnseen))
+}

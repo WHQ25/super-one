@@ -2,8 +2,20 @@ import { SessionActivityContext } from './use-session-activity'
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { RelayClient } from '@superone/relay-client'
 import type { Project } from '../project-types'
-import { flattenSessionGroups, groupSessionRows, SESSION_REVEAL_STEP, type SessionListItem, type SessionListRow } from '../session-list-state'
+import { flattenSessionGroups, groupSessionRows, mergeActivityIntoRows, SESSION_REVEAL_STEP, type SessionListItem, type SessionListRow } from '../session-list-state'
 import { readProjectSessions, SESSION_PAGE_SIZE } from './workspace-data'
+
+/**
+ * A dropped socket is reported under the device name, not as a project's list
+ * failure. Painting "Not connected" inside an expanded project is a second
+ * connection readout.
+ */
+function listErrorFrom(cause: unknown, fallback: string): string {
+  const message = cause instanceof Error ? cause.message : fallback
+  const normalized = message.toLowerCase()
+  if (normalized === 'not connected' || normalized === 'disconnected') return ''
+  return message
+}
 
 export type ProjectSessions = {
   items: SessionListItem[]
@@ -46,6 +58,11 @@ export function useProjectSessions(
   /** Rows the shell already holds for the active project; avoids an empty flash. */
   seed: SessionListRow[] = [],
   activeSessionId?: string | null,
+  /**
+   * False while the project row is collapsed. Attention groups still render —
+   * desktop keeps those reachable without expanding the folder.
+   */
+  listExpanded = true,
 ): ProjectSessions {
   const activity = useContext(SessionActivityContext)
   const [rows, setRows] = useState<SessionListRow[]>([])
@@ -91,7 +108,7 @@ export function useProjectSessions(
       })
       .catch((cause: unknown) => {
         if (request !== generation.current) return
-        setError(cause instanceof Error ? cause.message : 'Could not load sessions')
+        setError(listErrorFrom(cause, 'Could not load sessions'))
       })
       .finally(() => { if (request !== generation.current) return; setBusy(false); setLoaded(true) })
     return () => { generation.current++ }
@@ -138,7 +155,7 @@ export function useProjectSessions(
       })
       .catch((cause: unknown) => {
         if (request === generation.current) {
-          setError(cause instanceof Error ? cause.message : 'Could not load more sessions')
+          setError(listErrorFrom(cause, 'Could not load more sessions'))
         }
       })
       .finally(() => { if (request === generation.current) setLoadingMore(false) })
@@ -150,12 +167,17 @@ export function useProjectSessions(
   const hasMore = groupCount > revealed || loadedCount < total
 
   const items = useMemo(
-    () => flattenSessionGroups(rows.map(row => ({ ...row, ...activity[row.sessionId] })), expandedIds, activeSessionId, revealed),
-    [rows, activity, expandedIds, activeSessionId, revealed],
+    () => flattenSessionGroups(
+      mergeActivityIntoRows(rows, activity, path),
+      expandedIds,
+      activeSessionId,
+      listExpanded ? revealed : 0,
+    ),
+    [rows, activity, path, expandedIds, activeSessionId, listExpanded, revealed],
   )
 
   return {
-    items, busy, loaded, loadingMore, error, hasMore, refresh,
+    items, busy, loaded, loadingMore, error, hasMore: listExpanded && hasMore, refresh,
     loadMore: () => {
       if (loadingMore || !hasMore) return
       const next = revealed + SESSION_REVEAL_STEP

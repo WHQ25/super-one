@@ -5,7 +5,6 @@ import { Text } from '../ui/text'
 import type { RelayClient } from '@superone/relay-client'
 import type { SessionListRow } from '../session-list-state'
 import { searchSessions } from '../navigation/workspace-data'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useMobileTheme } from '../theme/context'
 import { SessionRowContent } from '../ui/session-row-content'
 import { useMobileLocale } from '../i18n/context'
@@ -23,15 +22,11 @@ export function SessionSearchScreen(props: {
   onOpenSession: (session: SessionListRow) => void
   onCancel: () => void
 }) {
-  const { tokens: { colors, radius } } = useMobileTheme()
-  const { t } = useMobileLocale()
-  const insets = useSafeAreaInsets()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SessionListRow[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const generation = useRef(0)
-  const dim = colors.mutedForeground
   const trimmed = query.trim()
 
   useEffect(() => {
@@ -56,21 +51,54 @@ export function SessionSearchScreen(props: {
     return () => { clearTimeout(timer); generation.current++ }
   }, [trimmed, props.client])
 
+  return <SessionSearchView
+    query={query}
+    onQuery={setQuery}
+    busy={busy}
+    error={error}
+    results={results}
+    autoFocus
+    onOpenSession={props.onOpenSession}
+    onCancel={props.onCancel}
+  />
+}
+
+/**
+ * Search field + results. Split from the host fetch so stories can pin every
+ * visible state without a live desktop or the debounce.
+ */
+export function SessionSearchView(props: {
+  query: string
+  onQuery: (value: string) => void
+  busy: boolean
+  error: string
+  results: SessionListRow[]
+  /** Live route focuses the field; stories and tests leave it alone. */
+  autoFocus?: boolean
+  onOpenSession: (session: SessionListRow) => void
+  onCancel: () => void
+}) {
+  const { tokens: { colors, radius } } = useMobileTheme()
+  const { t } = useMobileLocale()
+  const dim = colors.mutedForeground
+  const trimmed = props.query.trim()
   const items = useMemo(
-    () => results.map((session) => ({ session, child: false, hasChildren: false, collapsed: false })),
-    [results],
+    () => props.results.map((session) => ({ session, child: false, hasChildren: false, collapsed: false })),
+    [props.results],
   )
 
   // The field IS the screen: no header, because a title bar over a search box
-  // that already says what it does would cost a third of the results.
-  return <View style={{ flex: 1, paddingTop: insets.top }}>
+  // that already says what it does would cost a third of the results. The
+  // shell's root SafeAreaView already clears the notch — padding it here a
+  // second time dropped the field a full status-bar height.
+  return <View testID="session-search-screen" style={{ flex: 1 }}>
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 8 }}>
       <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
         paddingHorizontal: 12, borderRadius: radius.md, backgroundColor: colors.muted }}>
         <Search size={16} color={dim} />
-        <TextInput value={query} onChangeText={setQuery} accessibilityLabel={t('Search sessions')}
+        <TextInput value={props.query} onChangeText={props.onQuery} accessibilityLabel={t('Search sessions')}
           placeholder={t('Search all sessions…')} placeholderTextColor={dim}
-          autoCapitalize="none" autoCorrect={false} autoFocus returnKeyType="search"
+          autoCapitalize="none" autoCorrect={false} autoFocus={props.autoFocus} returnKeyType="search"
           style={{ flex: 1, minHeight: 44, fontSize: 15, color: colors.foreground }} />
       </View>
       <Pressable accessibilityRole="button" accessibilityLabel={t('Cancel search')} onPress={props.onCancel}
@@ -78,9 +106,9 @@ export function SessionSearchScreen(props: {
         <Text style={{ color: colors.primary, fontSize: 15 }}>{t('Cancel')}</Text>
       </Pressable>
     </View>
-    {busy ? <ActivityIndicator style={{ padding: 16 }} color={dim} /> : null}
-    {error ? <Text style={{ color: colors.error, padding: 16 }}>{error}</Text> : null}
-    {!busy && !error && trimmed && !items.length ? (
+    {props.busy ? <ActivityIndicator style={{ padding: 16 }} color={dim} /> : null}
+    {props.error ? <Text style={{ color: colors.error, padding: 16 }}>{props.error}</Text> : null}
+    {!props.busy && !props.error && trimmed && !items.length ? (
       <View style={{ alignItems: 'center', gap: 12, paddingTop: 48 }}>
         <SearchX color={colors.border} size={48} />
         <Text style={{ color: dim }}>{localeSessionMatch(t, trimmed)}</Text>

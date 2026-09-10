@@ -1,6 +1,9 @@
-import { expect, test } from '@jest/globals'
-import { screen } from '@testing-library/react-native'
+import { expect, jest, test } from '@jest/globals'
+import { screen, waitFor } from '@testing-library/react-native'
+import type { RelayClient } from '@superone/relay-client'
+import type { SessionActivity } from '@superone/shared/session-activity'
 import { renderWithTheme } from '../test-render'
+import { SessionActivityContext } from './use-session-activity'
 import { WorkspaceProjectRow, type WorkspaceProjectRowProps } from './workspace-project-row'
 import type { SessionListRow } from '../session-list-state'
 
@@ -33,6 +36,20 @@ test('does not mount a list for a project that has never been expanded', async (
   expect(screen.queryByText('Fix the drawer')).toBeNull()
 })
 
+test('shows a pending session under a collapsed project', async () => {
+  const pending: SessionActivity = {
+    sessionId: 'ask', projectPath: '/repo', status: 'idle', provider: 'codex',
+    pendingCount: 1, pendingReason: { en: 'Allow Bash?', zh: '允许 Bash？' }, title: 'Needs input',
+  }
+  await renderWithTheme(
+    <SessionActivityContext.Provider value={{ ask: pending }}>
+      {row({ seed: [] })}
+    </SessionActivityContext.Provider>,
+  )
+  expect(screen.getByText('Needs input')).toBeTruthy()
+  expect(screen.getByText('Allow Bash?')).toBeTruthy()
+})
+
 test('shows the sessions once expanded', async () => {
   await renderWithTheme(row({ expanded: true }))
   expect(screen.getByText('Fix the drawer')).toBeTruthy()
@@ -43,10 +60,25 @@ test('keeps the loaded list mounted across a collapse, so re-expanding costs no 
   expect(screen.getByText('Fix the drawer')).toBeTruthy()
 
   await rerender(row({ expanded: false }))
-  // Hidden, not dropped: `display: 'none'` takes it out of the accessibility
-  // tree — so VoiceOver does not read a collapsed project's sessions — while the
-  // hook holding the loaded rows stays mounted. Unmounting it is what used to
-  // make re-expanding refetch the whole first page.
+  // Ordinary rows leave the tree while collapsed — desktop only keeps
+  // attention visible then. The hook holding the loaded rows stays mounted,
+  // so expanding again does not refetch.
   expect(screen.queryByText('Fix the drawer')).toBeNull()
-  expect(screen.getByText('Fix the drawer', { includeHiddenElements: true })).toBeTruthy()
+
+  await rerender(row({ expanded: true }))
+  expect(screen.getByText('Fix the drawer')).toBeTruthy()
+})
+
+test('keeps the seed and does not paint a dropped-transport error in the list', async () => {
+  const request = jest.fn(() => Promise.reject(new Error('not connected')))
+  await renderWithTheme(row({ expanded: true, client: { request } as unknown as RelayClient }))
+  await waitFor(() => expect(request).toHaveBeenCalled())
+  expect(screen.getByText('Fix the drawer')).toBeTruthy()
+  expect(screen.queryByText(/not connected/i)).toBeNull()
+})
+
+test('still reports a host failure that is not a dropped transport', async () => {
+  const request = jest.fn(() => Promise.reject(new Error('no such project')))
+  await renderWithTheme(row({ expanded: true, client: { request } as unknown as RelayClient, seed: [] }))
+  await waitFor(() => expect(screen.getByText('no such project')).toBeTruthy())
 })

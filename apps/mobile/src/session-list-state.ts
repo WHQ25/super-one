@@ -72,7 +72,11 @@ export function flattenSessionGroups(
   rows: SessionListRow[],
   expandedIds: ReadonlySet<string>,
   activeSessionId?: string | null,
-  /** Groups to render before "Show more"; unbounded when omitted. */
+  /**
+   * Groups to render before "Show more". `0` is a collapsed project: only
+   * attention (and the active session) stay visible, matching desktop.
+   * Unbounded when omitted.
+   */
   groupLimit?: number,
 ): SessionListItem[] {
   const items: SessionListItem[] = []
@@ -81,7 +85,7 @@ export function flattenSessionGroups(
     const collapsed = hasChildren && !expandedIds.has(parent.sessionId)
     items.push({ session: parent, child: false, hasChildren, collapsed })
     const visible = collapsed
-      ? children.filter((child) => child.sessionId === activeSessionId || (child.pendingCount ?? 0) > 0 || child.isUnseen)
+      ? children.filter((child) => child.sessionId === activeSessionId || sessionNeedsAttention(child))
       : children
     for (const child of visible) {
       items.push({ session: child, child: true, hasChildren: false, collapsed: false })
@@ -90,26 +94,112 @@ export function flattenSessionGroups(
   return items
 }
 
+export function sessionNeedsAttention(session: Pick<SessionListRow, 'pendingCount' | 'isUnseen'>): boolean {
+  return (session.pendingCount ?? 0) > 0 || !!session.isUnseen
+}
+
+const groupNeedsAttention = (group: SessionListGroup) =>
+  sessionNeedsAttention(group.parent) || group.children.some(sessionNeedsAttention)
+
 /**
- * The first `limit` groups, plus the group holding the session the user is in.
- * Desktop's rule: the current session must stay reachable in the list, and it
- * keeps its natural position rather than being promoted, so switching sessions
- * never reshuffles the list under the finger.
+ * Desktop partitions first: work waiting on the user stays at the top of the
+ * project, and a collapsed project still shows those groups. The session the
+ * user is in is appended, not promoted, so switching never reshuffles the list.
+ */
+export function partitionSessionGroups(groups: SessionListGroup[]): {
+  attention: SessionListGroup[]
+  normal: SessionListGroup[]
+} {
+  const attention: SessionListGroup[] = []
+  const normal: SessionListGroup[] = []
+  for (const group of groups) {
+    if (groupNeedsAttention(group)) attention.push(group)
+    else normal.push(group)
+  }
+  return { attention, normal }
+}
+
+/**
+ * The first `limit` groups after attention, plus the group holding the session
+ * the user is in. `limit === 0` is a collapsed project.
  */
 export function visibleSessionGroups(
   groups: SessionListGroup[],
   limit?: number,
   activeSessionId?: string | null,
 ): SessionListGroup[] {
-  if (limit == null || groups.length <= limit) return groups
-  const visible = groups.slice(0, limit)
-  return [...visible, ...groups.slice(limit).filter(group =>
-    (activeSessionId && holdsSession(group, activeSessionId))
-    || [group.parent, ...group.children].some(session => (session.pendingCount ?? 0) > 0 || session.isUnseen))]
+  const { attention, normal } = partitionSessionGroups(groups)
+  const visible = limit === 0
+    ? [...attention]
+    : limit == null
+      ? [...attention, ...normal]
+      : [...attention, ...normal.slice(0, Math.max(0, limit - attention.length))]
+  return appendActiveGroup(visible, groups, activeSessionId)
+}
+
+function appendActiveGroup(
+  visible: SessionListGroup[],
+  groups: SessionListGroup[],
+  activeSessionId?: string | null,
+): SessionListGroup[] {
+  if (!activeSessionId) return visible
+  const shown = new Set(visible.map((group) => group.parent.sessionId))
+  return [...visible, ...groups.filter((group) => !shown.has(group.parent.sessionId) && holdsSession(group, activeSessionId))]
 }
 
 const holdsSession = (group: SessionListGroup, sessionId: string) =>
   group.parent.sessionId === sessionId || group.children.some((child) => child.sessionId === sessionId)
+
+/**
+ * Overlay live activity onto listed rows, and insert a pending/unseen session
+ * the host has not paged in yet so the sidebar can still name it.
+ */
+export function mergeActivityIntoRows(
+  rows: SessionListRow[],
+  activity: Readonly<Record<string, {
+    sessionId: string
+    projectPath: string
+    status: string
+    provider?: SessionListRow['provider']
+    acpAgentId?: string | null
+    title?: string | null
+    pendingCount: number
+    isUnseen?: boolean
+  }>>,
+  projectPath?: string | null,
+): SessionListRow[] {
+  const merged = rows.map((row) => {
+    const extra = activity[row.sessionId]
+    if (!extra) return row
+    return {
+      ...row,
+      pendingCount: extra.pendingCount,
+      isUnseen: extra.isUnseen,
+      status: extra.status,
+      ...(extra.title ? { title: extra.title } : {}),
+      ...(extra.provider ? { provider: extra.provider } : {}),
+      ...(extra.acpAgentId !== undefined ? { acpAgentId: extra.acpAgentId } : {}),
+    }
+  })
+  const known = new Set(merged.map((row) => row.sessionId))
+  const extras: SessionListRow[] = []
+  for (const session of Object.values(activity)) {
+    if (projectPath && session.projectPath !== projectPath) continue
+    if (known.has(session.sessionId)) continue
+    if (!sessionNeedsAttention(session)) continue
+    extras.push({
+      sessionId: session.sessionId,
+      title: session.title || '',
+      provider: session.provider,
+      acpAgentId: session.acpAgentId,
+      pendingCount: session.pendingCount,
+      isUnseen: session.isUnseen,
+      status: session.status,
+      projectPath: session.projectPath,
+    })
+  }
+  return extras.length ? [...extras, ...merged] : merged
+}
 
 /**
  * Project paths whose session list the host just reported as changed. Reading

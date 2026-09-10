@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useRef, useState } from 'react'
 import { Pressable, View } from 'react-native'
 import { ChevronDown, ChevronRight, Folder } from 'lucide-react-native'
 import type { RelayClient } from '@superone/relay-client'
@@ -6,7 +6,9 @@ import { Text } from '../ui/text'
 import { SessionListBody, type SessionListActions } from '../ui'
 import type { Project } from '../project-types'
 import type { SessionListRow } from '../session-list-state'
+import { projectHasAttention } from '../session-activity-state'
 import { useMobileTheme } from '../theme/context'
+import { SessionActivityContext } from './use-session-activity'
 import { useProjectSessions } from './use-project-sessions'
 
 export type WorkspaceProjectRowProps = SessionListActions & {
@@ -33,11 +35,13 @@ export type WorkspaceProjectRowProps = SessionListActions & {
  */
 export function WorkspaceProjectRow(props: WorkspaceProjectRowProps) {
   const { tokens: { colors } } = useMobileTheme()
+  const needsAttention = projectHasAttention(useContext(SessionActivityContext), props.project.path)
   // Mounted the first time this project is expanded, and kept mounted after.
-  // Collapsing hides the list instead of dropping it, so re-expanding costs no
-  // request — while a project the user never opened costs none either.
-  const [armed, setArmed] = useState(props.expanded)
-  useEffect(() => { if (props.expanded) setArmed(true) }, [props.expanded])
+  // Collapsing hides the ordinary list instead of dropping it, so re-expanding
+  // costs no request. Attention is the desktop exception: a collapsed project
+  // still shows sessions waiting on the user, so those rows arm the list too.
+  const [armed, setArmed] = useState(props.expanded || needsAttention)
+  useEffect(() => { if (props.expanded || needsAttention) setArmed(true) }, [props.expanded, needsAttention])
   const Chevron = props.expanded ? ChevronDown : ChevronRight
 
   return <View>
@@ -58,7 +62,13 @@ export function WorkspaceProjectRow(props: WorkspaceProjectRowProps) {
  * the drawer the moment it opened.
  */
 function ProjectSessions(props: WorkspaceProjectRowProps) {
-  const sessions = useProjectSessions(props.client, props.project, props.seed ?? [], props.activeSessionId)
+  const sessions = useProjectSessions(
+    props.client,
+    props.project,
+    props.seed ?? [],
+    props.activeSessionId,
+    props.expanded,
+  )
   const { refresh } = sessions
   // The mount load is the first read; from then on only an invalidation the host
   // sent, applied when this row is both on screen and open.
@@ -70,10 +80,12 @@ function ProjectSessions(props: WorkspaceProjectRowProps) {
     refresh()
   }, [visible, expanded, listRevision, refresh])
 
-  return <View style={{ paddingLeft: 8, paddingBottom: 4, display: props.expanded ? 'flex' : 'none' }}>
+  const showList = props.expanded || sessions.items.length > 0
+  return <View style={{ paddingLeft: 8, paddingBottom: 4, display: showList ? 'flex' : 'none' }}>
     <SessionListBody
       sessions={sessions}
       surface="panel"
+      collapsed={!props.expanded}
       activeSessionId={props.activeSessionId}
       onOpenSession={props.onOpenSession}
       onPinSession={props.onPinSession}

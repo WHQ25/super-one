@@ -30,19 +30,24 @@ export function SessionListBody(props: SessionListActions & {
   activeSessionId?: string | null
   /** Which neutral this list sits on; rows pick their fills from it. */
   surface?: 'panel' | 'page'
+  /**
+   * A collapsed project only paints attention rows, the way the desktop
+   * sidebar does. Spinner, empty copy and "Show more" belong to the expanded list.
+   */
+  collapsed?: boolean
 }) {
   const { tokens: { colors } } = useMobileTheme()
   const { t } = useMobileLocale()
-  const { sessions } = props
+  const { sessions, collapsed } = props
   const applyIfConfirmed = (op: Promise<boolean>, apply: () => void) => {
     void op.then((confirmed) => { if (confirmed) apply() })
   }
   return <View>
     {/* `!loaded` covers the frame before the request is even in flight; without
         it the empty state flashes on every first paint. */}
-    {sessions.busy || !sessions.loaded ? <ActivityIndicator style={{ padding: 12 }} color={colors.mutedForeground} /> : null}
-    {sessions.error ? <Text style={{ color: colors.error, padding: 12 }}>{sessions.error}</Text> : null}
-    {sessions.loaded && !sessions.busy && !sessions.error && !sessions.items.length
+    {!collapsed && (sessions.busy || !sessions.loaded) ? <ActivityIndicator style={{ padding: 12 }} color={colors.mutedForeground} /> : null}
+    {!collapsed && sessions.error ? <Text style={{ color: colors.error, padding: 12 }}>{sessions.error}</Text> : null}
+    {!collapsed && sessions.loaded && !sessions.busy && !sessions.error && !sessions.items.length
       ? <Text style={{ color: colors.mutedForeground, fontSize: 13, padding: 12 }}>{t('No sessions yet')}</Text>
       : null}
 
@@ -73,7 +78,7 @@ export function SessionListBody(props: SessionListActions & {
       />}
     </SwipeSessionRow>)}
 
-    {sessions.hasMore ? (sessions.loadingMore
+    {!collapsed && sessions.hasMore ? (sessions.loadingMore
       ? <ActivityIndicator style={{ padding: 12 }} color={colors.mutedForeground} />
       : <Text accessibilityRole="button" accessibilityLabel={t('Show more sessions')} onPress={sessions.loadMore}
           style={{ color: colors.primary, fontSize: 13, paddingVertical: 12, paddingHorizontal: 12 }}>

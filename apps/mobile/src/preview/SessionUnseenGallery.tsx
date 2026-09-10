@@ -12,10 +12,10 @@ export function SessionUnseenGallery() {
   return <SessionActivityContext.Provider value={{ [initial.sessionId]: activity }}>
     <View style={{ maxWidth: 300, gap: 8, padding: 8 }}>
       <Text>Unseen · running → completed → viewed</Text>
-      {[false, true].map(pinned => <Pressable key={String(pinned)} accessibilityRole="button"
-        accessibilityLabel={pinned ? 'View pinned completion' : 'View completion'}
+      {[false, true].map(branded => <Pressable key={String(branded)} accessibilityRole="button"
+        accessibilityLabel={branded ? 'View pinned completion' : 'View completion'}
         onPress={() => setActivity(current => mergeSessionActivity(current, current, current.sessionId))}>
-        <SessionRowContent item={{ session: { sessionId: initial.sessionId, title: pinned ? 'Pinned completed session with a long title' : 'Completed session', isPinned: pinned }, child: false, hasChildren: false, collapsed: false }} />
+        <SessionRowContent branded={branded} item={{ session: { sessionId: initial.sessionId, title: branded ? 'Pinned completed session with a long title' : 'Completed session', isPinned: branded }, child: false, hasChildren: false, collapsed: false }} />
       </Pressable>)}
       <Pressable accessibilityRole="button" accessibilityLabel="Complete background session" style={{ padding: 8 }}
         onPress={() => setActivity(current => mergeSessionActivity(current, { ...current, status: 'idle', completedMessageId: String(Date.now()) }, null, true))}>

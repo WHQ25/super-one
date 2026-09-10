@@ -16,7 +16,7 @@ export function SidebarDeviceFooter(props: {
 }) {
   const { tokens: { colors } } = useMobileTheme()
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingLeft: 20, paddingRight: 6,
+    <View testID="sidebar-device-footer" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingLeft: 20, paddingRight: 6,
       minHeight: 60, borderTopWidth: 1, borderTopColor: colors.border }}>
       <Laptop size={20} color={colors.mutedForeground} />
       <View style={{ flex: 1, minWidth: 0 }}>

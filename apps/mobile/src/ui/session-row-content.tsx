@@ -10,14 +10,20 @@ import { AnimatedSessionTitle } from './animated-session-title'
 import { HarnessIcon, sessionIconState } from './harness-icon'
 
 /**
- * One session row: harness icon, title, and — on a collaboration parent — the
- * expand toggle. Deliberately single-line and free of model/branch/tag detail,
- * matching the desktop sidebar; idle pinned sessions retain their harness brand.
+ * One session row: icon, title, and — on a collaboration parent — the expand
+ * toggle. Deliberately single-line and free of model/branch/tag detail, matching
+ * the desktop sidebar.
+ *
+ * Icon chrome matches desktop too: the cross-project Pinned section (`branded`)
+ * always shows the larger harness mark (`PinnedSessionRow`). The project list
+ * uses a message glyph when idle — even if the same session is pinned above —
+ * and only swaps to the harness mark for running / background / unseen /
+ * automation.
  *
  * A child carries no extra padding either: like the desktop sidebar, the corner
  * arrow is the whole nesting cue, and it already shifts the row by its own width.
  */
-export function SessionRowContent({ item, selected, revealed, subtitle, surface = 'panel', onToggleChildren }: {
+export function SessionRowContent({ item, selected, revealed, subtitle, surface = 'panel', branded, onToggleChildren }: {
   item: SessionListItem
   selected?: boolean
   /**
@@ -32,6 +38,11 @@ export function SessionRowContent({ item, selected, revealed, subtitle, surface 
   revealed?: boolean
   /** Second line for cross-project lists (pinned, search): which project it is in. */
   subtitle?: string
+  /**
+   * Cross-project Pinned section: always the harness brand, like desktop
+   * `PinnedSessionRow`. Project lists omit this and follow session-list rules.
+   */
+  branded?: boolean
   onToggleChildren?: () => void
 }) {
   const { tokens: { colors, radius } } = useMobileTheme()
@@ -39,7 +50,7 @@ export function SessionRowContent({ item, selected, revealed, subtitle, surface 
   const { locale } = useMobileLocale()
   const session = { ...item.session, ...activity }
   const iconStatus = sessionActivityIconStatus(session)
-  const pendingReason = activity?.pendingReason[locale]
+  const pendingReason = activity?.pendingReason?.[locale]
   const Chevron = item.collapsed ? ChevronRight : ChevronDown
   const onPanel = surface === 'panel'
   const ink = colors.foreground
@@ -57,9 +68,11 @@ export function SessionRowContent({ item, selected, revealed, subtitle, surface 
     borderRadius: radius.md, paddingVertical: 6, paddingHorizontal: 12,
   }}>
     {item.child ? <CornerDownRight size={13} color={dim} /> : null}
-    {!session.isPinned && sessionIconState(iconStatus) === 'default'
-      ? <MessageSquare size={18} color={dim} />
-      : <HarnessIcon provider={session.provider ?? 'claude'} acpAgentId={session.acpAgentId} status={iconStatus} size={18} />}
+    {branded || sessionIconState(iconStatus) !== 'default'
+      ? <HarnessIcon provider={session.provider ?? 'claude'} acpAgentId={session.acpAgentId} status={iconStatus} size={branded ? 22 : 18} />
+      : <View testID="session-list-icon" accessible={false} style={{ width: 18, height: 18 }}>
+          <MessageSquare size={18} color={dim} />
+        </View>}
     <View style={{ flex: 1, minWidth: 0 }}>
       <AnimatedSessionTitle key={session.sessionId} title={session.title || 'Untitled'} style={{ color: ink, fontSize: 15, fontWeight: selected ? '500' : '400' }} />
       {subtitle ? <Text numberOfLines={1} style={{ color: dim, fontSize: 12, marginTop: 2 }}>{subtitle}</Text> : null}

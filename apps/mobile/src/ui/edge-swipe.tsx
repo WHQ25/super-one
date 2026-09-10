@@ -40,6 +40,8 @@ export function EdgeSwipeArea({ onOpen }: { onOpen: () => void }) {
 
   return <View
     {...responder.panHandlers}
-    style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: EDGE_WIDTH }}
+    // Landing/restore covers sit at elevation 4; this strip has to stay above
+    // them or the drawer gesture dies on Android while the cover is up.
+    style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: EDGE_WIDTH, zIndex: 2, elevation: 6 }}
   />
 }

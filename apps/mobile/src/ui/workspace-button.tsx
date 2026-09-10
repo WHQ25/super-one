@@ -10,10 +10,10 @@ export function WorkspaceButton({ pendingCount = 0, onPress }: { pendingCount?: 
   const { locale } = useMobileLocale()
   const count = Math.max(0, Math.floor(pendingCount))
   const label = count ? locale === 'zh' ? `打开工作区，${count} 项待处理` : `Open workspace, ${count} pending requests` : 'Open workspace'
-  return <View>
+  return <View style={{ overflow: 'visible' }}>
     <IconButton icon={Menu} label={label} onPress={onPress} />
-    {count > 0 ? <View pointerEvents="none" accessible={false} style={{
-      position: 'absolute', right: 0, top: 0, minWidth: 18, height: 18,
+    {count > 0 ? <View testID="workspace-pending-badge" pointerEvents="none" accessible={false} style={{
+      position: 'absolute', right: 2, top: 2, zIndex: 1, minWidth: 18, height: 18,
       paddingHorizontal: 4, borderRadius: 9, alignItems: 'center', justifyContent: 'center',
       backgroundColor: colors.success,
     }}>

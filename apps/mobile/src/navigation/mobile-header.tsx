@@ -54,8 +54,12 @@ export function MobileHeader(props: {
   deviceStatus: DeviceStatus
   /** Drives the retry countdown while `deviceStatus` is `connecting`. */
   reconnect?: ReconnectInfo | null
-  /** The tablet sidebar owns the connection readout when present. */
-  connectionInSidebar?: boolean
+  /**
+   * A persistent workspace sidebar is on screen. It owns both the connection
+   * readout and the way into the project/session lists, so the header drops its
+   * own copies of each rather than opening a drawer on top of the same lists.
+   */
+  sidebarVisible?: boolean
   /** The running session's checkout; absent before it is known. */
   git?: SessionGitView | null
   /** Offered only for a plain branch — see `SessionGitChip`. */
@@ -94,7 +98,7 @@ export function MobileHeader(props: {
   // Session pages always keep their checkout metadata. Every other native
   // header adds this second line only while the connection needs attention.
   const connected = isConnected(props.deviceStatus)
-  const showConnectionStatus = !props.connectionInSidebar
+  const showConnectionStatus = !props.sidebarVisible
   const showMeta = ((chat || props.route === 'terminal') && props.hasSession)
     || (showConnectionStatus && !connected)
   // The device list carries its own wordmark inside the page, and session search
@@ -103,7 +107,10 @@ export function MobileHeader(props: {
   return (
     <View style={styles.top}>
       <View style={props.onConfirm ? { minWidth: CONFIRM_SLOT_WIDTH, alignItems: 'flex-start' } : undefined}>
-        {chat ? <WorkspaceButton pendingCount={props.pendingCount} onPress={props.onSwitchSession} />
+        {chat
+          // Balances the trailing session menu; the sidebar is already the way out.
+          ? props.sidebarVisible ? <View style={styles.headerTrailingSpacer} />
+            : <WorkspaceButton pendingCount={props.pendingCount} onPress={props.onSwitchSession} />
           : <IconButton icon={ArrowLeft} label="Back" onPress={props.onBack} />}
       </View>
       <View style={styles.headerTitleGroup}>

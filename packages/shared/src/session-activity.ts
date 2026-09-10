@@ -9,6 +9,8 @@ export interface SessionActivity {
   status: string
   provider: HarnessId
   acpAgentId?: string | null
+  /** Live title so a remote sidebar can render an attention row it has not listed yet. */
+  title?: string | null
   /** Latest finished assistant message, used by each client to track unread completions. */
   completedMessageId?: string | null
   pendingCount: number
@@ -16,7 +18,7 @@ export interface SessionActivity {
 }
 
 export function summarizeSessionActivity(
-  snapshot: { id: string; projectPath: string; status: string; harnessId: HarnessId; acpAgentId?: string | null; messages?: readonly ChatMessage[] },
+  snapshot: { id: string; projectPath: string; status: string; harnessId: HarnessId; acpAgentId?: string | null; title?: string | null; messages?: readonly ChatMessage[] },
   interactions: AgentEvent[],
 ): SessionActivity {
   const permissions = interactions.flatMap(event => event.type === 'permission_request' ? [event.request] : [])
@@ -30,6 +32,7 @@ export function summarizeSessionActivity(
   return {
     sessionId: snapshot.id, projectPath: snapshot.projectPath, status: snapshot.status,
     provider: snapshot.harnessId, acpAgentId: snapshot.acpAgentId,
+    ...(snapshot.title ? { title: snapshot.title } : {}),
     ...(snapshot.messages ? { completedMessageId: lastCompletedMessageId(snapshot.messages) } : {}),
     pendingCount: new Set([...permissions.map(request => `permission:${request.requestId}`), ...questions.map(request => `question:${request.requestId}`), ...plans.map(request => `plan:${request.requestId}`)]).size,
     pendingReason: { en: reason('en'), zh: reason('zh') },

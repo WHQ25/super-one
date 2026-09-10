@@ -4,6 +4,7 @@ import { SvgXml } from 'react-native-svg'
 import { Text } from './text'
 import { useMobileTheme } from '../theme/context'
 import data from './provider-brands.generated.json'
+import { tintSvgCurrentColor } from './tint-svg-current-color'
 
 type Mark = { svg: string; aspect: number }
 type Brand = { icon: Mark; text?: Mark; extra?: string }
@@ -44,17 +45,19 @@ export function ProviderBrand(props: {
   // `contain`: the longer side gets the full size, so mixed marks stay optically equal.
   const longest = Math.max(brand.icon.aspect, 1)
   const textSize = size * TEXT_MULTIPLE
+  const ink = colors.foreground
+  const iconXml = tintSvgCurrentColor(brand.icon.svg, ink)
   return (
     <View accessible accessibilityLabel={props.name}
       style={{ flexDirection: 'row', alignItems: 'center', gap: size * SPACE_MULTIPLE }}>
-      <SvgXml xml={brand.icon.svg} color={colors.foreground}
+      <SvgXml key={`${props.brandKey}-icon-${ink}`} xml={iconXml} color={ink}
         width={size * (brand.icon.aspect / longest)} height={size / longest} />
       {brand.text
-        ? <SvgXml xml={brand.text.svg} color={colors.foreground}
+        ? <SvgXml key={`${props.brandKey}-text-${ink}`} xml={tintSvgCurrentColor(brand.text.svg, ink)} color={ink}
           width={textSize * brand.text.aspect} height={textSize} />
         : brand.extra
-          ? <Text numberOfLines={1} style={{ fontSize: textSize * 0.95, color: colors.foreground }}>{brand.extra}</Text>
-          : <Text numberOfLines={1} style={{ fontSize: textSize, color: colors.foreground }}>{props.name}</Text>}
+          ? <Text numberOfLines={1} style={{ fontSize: textSize * 0.95, color: ink }}>{brand.extra}</Text>
+          : <Text numberOfLines={1} style={{ fontSize: textSize, color: ink }}>{props.name}</Text>}
     </View>
   )
 }

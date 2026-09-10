@@ -37,3 +37,22 @@ it.each(options)('passes the selected $label identity to the landing icon', asyn
     renderLevel: 'rich',
   }), undefined)
 })
+
+it('fills its parent so the harness mark can sit in the transcript, not against the composer', async () => {
+  const view = await renderWithTheme(<NewSessionLanding
+    provider="claude"
+    harnessOptions={options}
+    activeHarnessKey="claude"
+    onHarness={jest.fn()}
+    onOpenProject={jest.fn()}
+    worktreeSelection={{ kind: 'local' }}
+    onWorktree={jest.fn()}
+    onBranch={jest.fn()}
+  />)
+  const scroll = view.getByTestId('new-session-landing-scroll')
+  expect(scroll).toHaveStyle({ flex: 1 })
+  expect(scroll.props.contentContainerStyle).toEqual(expect.objectContaining({
+    flexGrow: 1,
+    justifyContent: 'center',
+  }))
+})

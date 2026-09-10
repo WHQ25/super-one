@@ -36,7 +36,7 @@ export function NewSessionLanding(props: NewSessionLandingProps) {
   const hint = poweredByHint(props.provider, props.activeProvider)
   const activeHarness = props.harnessOptions.find((option) => option.key === props.activeHarnessKey)
   return (
-    <ScrollView keyboardShouldPersistTaps="handled"
+    <ScrollView testID="new-session-landing-scroll" keyboardShouldPersistTaps="handled" style={{ flex: 1 }}
       contentContainerStyle={{ flexGrow: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, paddingTop: 24, paddingBottom: 72, gap: 8 }}>
       <View style={{ alignItems: 'center', gap: 0 }}>
         <HarnessIcon provider={props.provider} acpAgentId={activeHarness?.acpAgentId} size={80} renderLevel="rich" />

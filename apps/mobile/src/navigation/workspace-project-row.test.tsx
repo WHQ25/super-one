@@ -36,6 +36,14 @@ test('does not mount a list for a project that has never been expanded', async (
   expect(screen.queryByText('Fix the drawer')).toBeNull()
 })
 
+test('uses the same title and icon size as a session row', async () => {
+  await renderWithTheme(row({ expanded: true }))
+  expect(screen.getByText('repo')).toHaveStyle({ fontSize: 15 })
+  expect(screen.getByText('Fix the drawer')).toHaveStyle({ fontSize: 15 })
+  expect(screen.getByTestId('project-list-icon')).toHaveStyle({ width: 18, height: 18 })
+  expect(screen.getByTestId('session-list-icon')).toHaveStyle({ width: 18, height: 18 })
+})
+
 test('shows a pending session under a collapsed project', async () => {
   const pending: SessionActivity = {
     sessionId: 'ask', projectPath: '/repo', status: 'idle', provider: 'codex',

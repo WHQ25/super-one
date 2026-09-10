@@ -47,10 +47,12 @@ export function WorkspaceProjectRow(props: WorkspaceProjectRowProps) {
   return <View>
     <Pressable accessibilityRole="button" accessibilityState={{ expanded: props.expanded }}
       onPress={props.onToggle}
-      style={{ minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12 }}>
-      <Folder size={16} color={colors.mutedForeground} />
-      <Text numberOfLines={1} style={{ color: colors.foreground, fontSize: 14, flex: 1 }}>{props.project.name}</Text>
-      <Chevron size={14} color={colors.mutedForeground} />
+      style={{ minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12 }}>
+      <View testID="project-list-icon" accessible={false} style={{ width: 18, height: 18 }}>
+        <Folder size={18} color={colors.mutedForeground} />
+      </View>
+      <Text numberOfLines={1} style={{ color: colors.foreground, fontSize: 15, flex: 1 }}>{props.project.name}</Text>
+      <Chevron size={15} color={colors.mutedForeground} />
     </Pressable>
     {armed ? <ProjectSessions {...props} /> : null}
   </View>

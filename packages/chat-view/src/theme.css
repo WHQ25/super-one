@@ -58,7 +58,7 @@ a {
   padding:
     calc(12px + var(--safe-area-top))
     calc(14px + var(--safe-area-right))
-    calc(56px + var(--safe-area-bottom))
+    calc(28px + var(--safe-area-bottom))
     calc(14px + var(--safe-area-left));
 }
 

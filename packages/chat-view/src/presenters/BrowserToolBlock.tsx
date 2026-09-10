@@ -55,6 +55,9 @@ export interface BrowserToolBlockPresenterProps {
   recording?: ReactNode
   downloadRuntime?: BrowserDownloadRuntime
   pageTools?: Pick<BrowserPageToolsBlockPresenterProps, 'renderPageIcon' | 'renderJson'>
+  onExpandedChange?: (expanded: boolean) => void
+  /** Lets a remote surface expand before the full result has arrived. */
+  pendingDetails?: ReactNode
 }
 
 function defaultIcon(kind: 'globe' | 'download') {
@@ -105,6 +108,8 @@ export function BrowserToolBlockPresenter(props: BrowserToolBlockPresenterProps)
     recording,
     downloadRuntime,
     pageTools,
+    onExpandedChange,
+    pendingDetails,
   } = props
 
   if (op === 'memory_read' || op === 'memory_write' || op === 'action_read' || op === 'action_archive') {
@@ -154,6 +159,8 @@ export function BrowserToolBlockPresenter(props: BrowserToolBlockPresenterProps)
       onSaveFile={onSaveFile}
       recording={recording}
       downloadRuntime={downloadRuntime}
+      onExpandedChange={onExpandedChange}
+      pendingDetails={pendingDetails}
     />
   )
 }
@@ -175,6 +182,8 @@ function BrowserOperationBlock({
   renderFile,
   onSaveFile,
   recording,
+  onExpandedChange,
+  pendingDetails,
 }: BrowserToolBlockPresenterProps) {
   const { t } = useTranslation()
   const verb = t(`chat.toolBlock.browser.${browserVerbKey(op, isStreaming)}`)
@@ -199,7 +208,7 @@ function BrowserOperationBlock({
   const isMockDetail = op === 'mock' && params.clear !== true && !failed
   const expandable = allowExpand
     && !isStreaming
-    && (isMockDetail || (!!result && (isReadBrowserOp(op) || info.status === 'error' || denied || hasScreenshot || !!recording)))
+    && (isMockDetail || pendingDetails != null || (!!result && (isReadBrowserOp(op) || info.status === 'error' || denied || hasScreenshot || !!recording)))
   let details: ReactNode = null
   if (recording) {
     details = recording
@@ -209,6 +218,8 @@ function BrowserOperationBlock({
       t('chat.toolBlock.browser.screenshot'),
       t('chat.toolBlock.browser.screenshotUnavailable'),
     )
+  } else if (pendingDetails != null && !result) {
+    details = pendingDetails
   } else if (op === 'list_downloads' && result) {
     details = (
       <BrowserListDownloadsViewPresenter
@@ -239,6 +250,7 @@ function BrowserOperationBlock({
       details={details}
       detailsClassName="px-2 pb-1.5"
       mountDetails="expanded"
+      onExpandedChange={onExpandedChange}
       trailing={(
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
           {rightCount ? <span className="text-muted-foreground/70">{rightCount}</span> : null}

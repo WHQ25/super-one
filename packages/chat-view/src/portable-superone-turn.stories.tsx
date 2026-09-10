@@ -121,6 +121,43 @@ export const WideMarkdownTable: Story = {
   },
 }
 
+export const BrowserScreenshot: Story = {
+  name: 'Browser screenshot · desktop row, not MCP group',
+  args: {
+    content: [
+      {
+        type: 'tool_use',
+        toolName: 'mcp__superone__browser_tabs',
+        toolUseId: 'tabs',
+        status: 'complete',
+        input: sanitizeRemoteToolInput('mcp__superone__browser_tabs', JSON.stringify({
+          action: 'open',
+          url: 'https://www.google.com',
+          description: '打开谷歌首页',
+        })),
+        remoteDetail: '["superone-turn","tool","tabs"]',
+      } as ContentBlock,
+      { type: 'tool_result', toolUseId: 'tabs', summary: JSON.stringify({ ok: true, url: 'https://www.google.com/' }) } as ContentBlock,
+      {
+        type: 'tool_use',
+        toolName: 'mcp__superone__browser_snapshot',
+        toolUseId: 'shot',
+        status: 'complete',
+        input: sanitizeRemoteToolInput('mcp__superone__browser_snapshot', JSON.stringify({
+          include: ['screenshot'],
+          description: '截取谷歌首页',
+        })),
+        remoteDetail: '["superone-turn","tool","shot"]',
+      } as ContentBlock,
+      {
+        type: 'tool_result',
+        toolUseId: 'shot',
+        summary: JSON.stringify({ path: '/tmp/google.png', width: 960, height: 1636 }),
+      } as ContentBlock,
+    ],
+  },
+}
+
 export const ToolRowsOnly: Story = {
   name: 'Compact rows · four SuperOne tools in a row',
   args: {

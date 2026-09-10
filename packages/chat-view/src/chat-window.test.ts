@@ -7,8 +7,8 @@ import {
 } from './chat-window'
 
 describe('chat DOM window', () => {
-  it('starts at the latest 24 turns', () => {
-    expect(initialChatWindow(60)).toEqual({ start: 36, end: 60 })
+  it('starts at the latest eight messages', () => {
+    expect(initialChatWindow(60)).toEqual({ start: 52, end: 60 })
     expect(initialChatWindow(8)).toEqual({ start: 0, end: 8 })
   })
 

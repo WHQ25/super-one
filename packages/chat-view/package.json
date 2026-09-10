@@ -11,6 +11,7 @@
     "./PortableToolRow": "./src/PortableToolRow.tsx",
     "./PortableTurnFooter": "./src/PortableTurnFooter.tsx",
     "./TurnDetailSection": "./src/TurnDetailSection.tsx",
+    "./bridge": "./src/bridge.ts",
     "./fixtures/tool-catalog": "./src/fixtures/tool-catalog.ts",
     "./host-html": "./src/host-html.ts",
     "./markdown": "./src/markdown.ts",

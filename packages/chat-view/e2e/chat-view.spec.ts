@@ -149,9 +149,11 @@ test('09 applies the host locale', async ({ page }) => {
   await expect(page.locator('html')).toHaveAttribute('lang', 'zh')
 })
 
-test('10 mounts only the latest 24 turns on hydrate', async ({ page }) => {
+test('10 mounts the latest eight messages and opens at the bottom', async ({ page }) => {
   await send(page, { type: 'hydrate', messages: tallMessages(60) })
-  await expect(page.locator('main')).toHaveAttribute('data-mounted-turns', '24')
+  await expect(page.locator('main')).toHaveAttribute('data-mounted-turns', '8')
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollHeight - window.scrollY - window.innerHeight)).toBeLessThan(2)
+  await expect(page.locator('[data-turn-id="turn-59"]')).toBeInViewport()
 })
 
 test('11 excludes old turns from the initial DOM', async ({ page }) => {
@@ -163,7 +165,7 @@ test('11 excludes old turns from the initial DOM', async ({ page }) => {
 test('12 loads eight older turns', async ({ page }) => {
   await send(page, { type: 'hydrate', messages: tallMessages(60) })
   await page.getByRole('button', { name: 'Load earlier' }).click()
-  await expect(page.locator('main')).toHaveAttribute('data-mounted-turns', '32')
+  await expect(page.locator('main')).toHaveAttribute('data-mounted-turns', '16')
 })
 
 test('13 caps a host window at 40 turns', async ({ page }) => {
@@ -186,9 +188,10 @@ test('15 resets the transcript', async ({ page }) => {
   await expect(page.getByText('Waiting for session…')).toBeVisible()
 })
 
-test('16 renders degraded connection state', async ({ page }) => {
+test('16 applies a degraded connection without painting a transcript banner', async ({ page }) => {
   await send(page, { type: 'setConnection', state: 'reconnecting', epoch: 2 })
-  await expect(page.getByText('reconnecting')).toBeVisible()
+  await expect(page.locator('main')).toHaveAttribute('data-connection', 'reconnecting')
+  await expect(page.getByText('reconnecting')).toHaveCount(0)
 })
 
 test('17 renders reduced todo state', async ({ page }) => {
@@ -327,15 +330,16 @@ test('26 scrolls to a turn outside the current window', async ({ page }) => {
   await send(page, { type: 'hydrate', messages: tallMessages(60) })
   await send(page, { type: 'scrollToTurn', turnId: 'turn-4', behavior: 'auto' })
   await expect(page.locator('[data-turn-id="turn-4"]')).toHaveCount(1)
-  await expect(page.locator('main')).toHaveAttribute('data-mounted-turns', '24')
+  await expect(page.locator('main')).toHaveAttribute('data-mounted-turns', '8')
 })
 
 test('27 keeps a mixed 200-turn transcript inside the initial render window', async ({ page }) => {
   await send(page, { type: 'hydrate', messages: stressMessages(200) })
 
-  await expect(page.locator('main')).toHaveAttribute('data-mounted-turns', '24')
+  await expect(page.locator('main')).toHaveAttribute('data-mounted-turns', '8')
   await expect(page.locator('[data-turn-id="stress-0"]')).toHaveCount(0)
   await expect(page.locator('[data-turn-id="stress-199"]')).toContainText('const turn199 = 199')
+  await send(page, { type: 'scrollToTurn', turnId: 'stress-180', behavior: 'auto' })
   await expect(page.locator('[data-turn-id="stress-180"] svg[id^="mermaid-"]')).toBeVisible({ timeout: 12_000 })
 })
 
@@ -559,6 +563,68 @@ test('36 renders Browser, page-tool, and download recordings with shared present
       && item.action === 'previewFile'
       && item.payload?.path === '/project/receipt.pdf'
   )))).toBe(true)
+})
+
+test('36c progressive browser screenshot uses the desktop row and loads the image', async ({ page }) => {
+  const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+  await page.evaluate(() => {
+    Object.assign(globalThis, {
+      __hostMessages: [],
+      ReactNativeWebView: {
+        postMessage(raw: string) {
+          const request = JSON.parse(raw) as { type?: string; requestId?: string; action?: string; payload?: { path?: string } }
+          ;(globalThis as typeof globalThis & { __hostMessages: unknown[] }).__hostMessages.push(request)
+          if (request.action === 'loadImage' && request.requestId) {
+            ;(globalThis as typeof globalThis & { __applyHost: (message: unknown) => void }).__applyHost({
+              type: 'nativeActionResult',
+              requestId: request.requestId,
+              result: {
+                ok: true,
+                dataUri: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+              },
+            })
+          }
+        },
+      },
+    })
+  })
+  await send(page, {
+    type: 'hydrate',
+    messages: [message('progressive-screenshot', [
+      {
+        type: 'tool_use',
+        toolName: 'mcp__superone__browser_snapshot',
+        toolUseId: 'shot',
+        input: JSON.stringify({ include: ['screenshot'], description: 'Google home' }),
+        status: 'complete',
+        remoteDetail: '["progressive-screenshot","tool","shot"]',
+      },
+      {
+        type: 'tool_result',
+        toolUseId: 'shot',
+        summary: JSON.stringify({ path: '/tmp/google.png', width: 960, height: 1636 }),
+      },
+    ])],
+  })
+
+  const turn = page.locator('article[data-turn-id="progressive-screenshot"]')
+  const row = turn.locator('.tool-node').first()
+  await expect(row).toContainText('Screenshot')
+  await expect(row).toContainText('Google home')
+  await expect(row).not.toContainText('superone')
+  await row.locator('> div').first().click()
+  await expect.poll(() => page.evaluate(() => (
+    globalThis as typeof globalThis & {
+      __hostMessages: Array<{ type?: string; action?: string; payload?: { path?: string } }>
+    }
+  ).__hostMessages.some((item) => (
+    item.type === 'requestNative'
+      && item.action === 'loadImage'
+      && item.payload?.path === '/tmp/google.png'
+  )))).toBe(true)
+  const picture = row.locator('[data-host-image="ready"] img')
+  await expect(picture).toBeVisible()
+  await expect(picture).toHaveAttribute('src', pixel)
 })
 
 test('36b shows a tool screenshot inline once the host answers loadImage', async ({ page }) => {

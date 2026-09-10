@@ -126,6 +126,9 @@ function PortableBashTool({
   status,
   isError,
   allowExpand,
+  onExpandedChange,
+  detailStatus,
+  onDetailRetry,
 }: {
   toolUseId?: string
   input: string
@@ -134,6 +137,9 @@ function PortableBashTool({
   status?: 'streaming' | 'complete'
   isError?: boolean
   allowExpand: boolean
+  onExpandedChange?: (expanded: boolean) => void
+  detailStatus?: string
+  onDetailRetry?: () => void
 }) {
   const { pendingPermission } = useContext(PortableTurnContext)
   const params = useMemo(() => {
@@ -143,6 +149,9 @@ function PortableBashTool({
     } catch { return {} as Record<string, unknown> }
   }, [input])
   const command = typeof params.command === 'string' ? params.command : (toolSummary ?? '')
+  const description = typeof params.description === 'string' && params.description.trim()
+    ? params.description
+    : (typeof params.command === 'string' && toolSummary && toolSummary !== params.command ? toolSummary : undefined)
   // Older remote histories include the transport's colored command echo.
   // Match that exact format only: a program may legitimately print `$ command`.
   const legacyEcho = `\x1b[32m$\x1b[0m ${command}`
@@ -156,7 +165,7 @@ function PortableBashTool({
     <BashTerminalPresenter
       toolUseId={toolUseId ?? ''}
       command={command}
-      description={typeof params.description === 'string' ? params.description : undefined}
+      description={description}
       fallbackResult={isDenied ? undefined : output}
       bashOutput={status === 'streaming' && !isDenied && !isPendingPermission
         ? { content: output ?? '', finished: false }
@@ -168,6 +177,9 @@ function PortableBashTool({
       runInBackground={params.run_in_background === true || params.background === true}
       allowExpand={allowExpand}
       isPendingPermission={isPendingPermission}
+      onExpandedChange={onExpandedChange}
+      detailStatus={detailStatus}
+      onDetailRetry={onDetailRetry}
       readOutputFile={noRemoteOutputFile}
       readOutputMore={noRemoteOutputFile}
       renderAnsiText={(text) => <AnsiText text={text} />}
@@ -302,6 +314,9 @@ export function PortableToolRow({ allowExpand = true, ...props }: PortableToolRo
         status={props.status}
         isError={props.isError}
         allowExpand={allowExpand}
+        onExpandedChange={props.onExpandedChange}
+        detailStatus={props.detailStatus}
+        onDetailRetry={props.onDetailRetry}
       />
     )
   }

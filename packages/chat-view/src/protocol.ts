@@ -1,4 +1,4 @@
-import type { AgentStatus, ChatMessage, Locale, TodoItem } from '@superone/shared/agent-types'
+import type { AgentStatus, ChatMessage, Locale } from '@superone/shared/agent-types'
 import type { ChatWindowRange } from './chat-window'
 
 /** Wire shape of the retry banner; mirrors what `ApiRetryIndicator` renders. */
@@ -29,14 +29,18 @@ export interface SessionProjection {
    * markdown file links into paths `previewFile` can act on — the WebView has no
    * transport for host files, so media srcs are deliberately left alone. Tool
    * screenshots and generated images are the one exception: `PortableHostImage`
-   * asks the host for them through the `loadImage` native action.
+   * asks the host for them through the `loadImage` native action. Any picture
+   * the transcript does display opens fullscreen through `previewImage`.
    */
   projectPath?: string | null
 }
 
 export interface ReductionProjection extends SessionProjection {
+  messagePatches?: ChatMessage[]
+  messageOrder?: string[]
+  hasMoreHistory?: boolean
+  historyNavigation?: boolean
   messages?: ChatMessage[]
-  todos?: TodoItem[] | Record<string, TodoItem>
   labels?: Record<string, string>
   mentionArtwork?: Record<string, string>
   pendingPermission?: {
@@ -47,6 +51,7 @@ export interface ReductionProjection extends SessionProjection {
 }
 
 export type HostInbound =
+  | ({ type: 'detailUpdate' } & import('./detail-stream').DetailUpdate)
   | ({ type: 'initialize' | 'hydrate' } & ReductionProjection)
   | ({ type: 'applyReductionPatch' } & ReductionProjection)
   | ({ type: 'prependHistory' } & ReductionProjection)

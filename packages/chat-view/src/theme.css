@@ -9,6 +9,14 @@
 
 :root {
   --brand-hue: 250;
+  /* The page background stays on the neutral hue while `--brand-hue` keeps
+     driving accents. This document is one half of a two-runtime screen: the RN
+     shell around it (header, todo strip, composer) paints from a precomputed
+     neutral palette and cannot follow the harness, so a brand-tinted background
+     here — even at chroma 0.002 — puts a visible seam where the WebView meets
+     the shell. Desktop has no such seam because its whole window shifts hue
+     together. Dark mode is already chroma 0 and unaffected. */
+  --background-h: 240;
   --safe-area-top: 0px;
   --safe-area-right: 0px;
   --safe-area-bottom: 0px;

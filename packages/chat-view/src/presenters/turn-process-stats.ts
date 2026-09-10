@@ -23,6 +23,8 @@ type ClaudeProcessToolBlock = {
   toolName?: string
   toolUseId?: string
   input?: string
+  toolFilePath?: string
+  toolLineDelta?: { added: number; removed: number }
 }
 
 export type ClaudeProcessStatsSeg = {
@@ -101,12 +103,13 @@ function accumulateMutation(
   files: Set<string>,
   toolName: string,
   rawInput: Record<string, unknown>,
+  projected?: { path?: string; delta?: { added: number; removed: number } },
 ): void {
   const normalized = normalizeTranscriptTool(toolName, rawInput)
   if (!FILE_MUTATION_TOOLS.has(normalized.toolName)) return
-  const path = mutationFilePath(normalized.input)
+  const path = mutationFilePath(normalized.input) || projected?.path || ''
   if (path) files.add(path)
-  const delta = lineDeltaForMutation(normalized.toolName, normalized.input)
+  const delta = lineDeltaForMutation(normalized.toolName, normalized.input) ?? projected?.delta ?? null
   if (!delta) return
   stats.added += delta.added
   stats.removed += delta.removed
@@ -131,7 +134,10 @@ export function summarizeClaudeProcess(
       if (opts.isHiddenTool(toolName, result)) continue
       stats.toolCalls += 1
       if (opts.isErrorTool?.(toolUseId) || result?.startsWith('[denied] ')) continue
-      accumulateMutation(stats, files, toolName, parseToolInput(block.input ?? ''))
+      accumulateMutation(stats, files, toolName, parseToolInput(block.input ?? ''), {
+        path: block.toolFilePath,
+        delta: block.toolLineDelta,
+      })
     }
   }
   return finishStats(stats, files)
@@ -166,9 +172,11 @@ export function summarizeCodexProcess(
       case 'collab_tool_call':
         stats.toolCalls += 1
         break
-      case 'file_change':
+      case 'file_change': {
         stats.toolCalls += 1
         if (item.status === 'failed') break
+        const addedBefore = stats.added
+        const removedBefore = stats.removed
         for (const change of item.changes) {
           if (change.path) files.add(change.path)
           accumulateMutation(stats, files, 'FileChange', {
@@ -177,7 +185,16 @@ export function summarizeCodexProcess(
             diff: change.diff ?? '',
           })
         }
+        if (
+          stats.added === addedBefore
+          && stats.removed === removedBefore
+          && item.toolLineDelta
+        ) {
+          stats.added += item.toolLineDelta.added
+          stats.removed += item.toolLineDelta.removed
+        }
         break
+      }
       default:
         break
     }

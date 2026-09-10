@@ -1,4 +1,5 @@
 import { FileText } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { requestNative } from './bridge'
 import { BrowserToolBlockPresenter } from './presenters/BrowserToolBlock'
 import { getBrowserOp, type BrowserOp } from './presenters/browser-tool-display'
@@ -6,6 +7,7 @@ import { ComputerUseToolBlockPresenter } from './presenters/ComputerUseToolBlock
 import { getComputerOp, type ComputerOp } from './presenters/computer-tool-display'
 import { DeviceToolBlockPresenter } from './presenters/DeviceToolBlock'
 import { getDeviceOp, type DeviceOp } from './presenters/device-tool-display'
+import { unwrapMcpResultText } from './presenters/tool-block-utils'
 import { ToolScreenshotViewPresenter } from './presenters/ToolScreenshotView'
 import { PortableHostImage } from './PortableHostImage'
 
@@ -87,13 +89,16 @@ interface PortableInteractiveToolProps {
   toolSummary?: string
   isStreaming: boolean
   isError?: boolean
+  onExpandedChange?: (expanded: boolean) => void
+  pendingDetails?: ReactNode
 }
 
 function portableResult(result: string | undefined) {
   const isDenied = Boolean(result?.startsWith('[denied] '))
+  const raw = isDenied ? result?.slice('[denied] '.length) : result
   return {
     isDenied,
-    cleanResult: isDenied ? result?.slice('[denied] '.length) : result,
+    cleanResult: raw ? unwrapMcpResultText(raw) : raw,
   }
 }
 
@@ -104,6 +109,8 @@ export function PortableBrowserTool({
   toolSummary,
   isStreaming,
   isError,
+  onExpandedChange,
+  pendingDetails,
 }: PortableInteractiveToolProps & { op: BrowserOp }) {
   const outcome = portableResult(result)
   return (
@@ -115,6 +122,8 @@ export function PortableBrowserTool({
       isStreaming={isStreaming}
       isError={isError}
       isDenied={outcome.isDenied}
+      onExpandedChange={onExpandedChange}
+      pendingDetails={pendingDetails}
       renderScreenshot={(path, label, unavailableLabel) => (
         <PortableToolScreenshot path={path} label={label} unavailableLabel={unavailableLabel} />
       )}
@@ -130,6 +139,8 @@ export function PortableComputerTool({
   toolSummary,
   isStreaming,
   isError,
+  onExpandedChange,
+  pendingDetails,
 }: PortableInteractiveToolProps & { op: ComputerOp }) {
   const outcome = portableResult(result)
   return (
@@ -141,6 +152,8 @@ export function PortableComputerTool({
       isStreaming={isStreaming}
       isError={isError}
       isDenied={outcome.isDenied}
+      onExpandedChange={onExpandedChange}
+      pendingDetails={pendingDetails}
       renderScreenshot={(path, label, unavailableLabel) => (
         <PortableToolScreenshot path={path} label={label} unavailableLabel={unavailableLabel} />
       )}
@@ -155,6 +168,8 @@ export function PortableDeviceTool({
   toolSummary,
   isStreaming,
   isError,
+  onExpandedChange,
+  pendingDetails,
 }: PortableInteractiveToolProps & { op: DeviceOp }) {
   const outcome = portableResult(result)
   return (
@@ -166,6 +181,8 @@ export function PortableDeviceTool({
       isStreaming={isStreaming}
       isError={isError}
       isDenied={outcome.isDenied}
+      onExpandedChange={onExpandedChange}
+      pendingDetails={pendingDetails}
       renderScreenshot={(path, label, unavailableLabel) => (
         <PortableToolScreenshot path={path} label={label} unavailableLabel={unavailableLabel} />
       )}

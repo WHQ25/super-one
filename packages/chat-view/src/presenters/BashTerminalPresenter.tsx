@@ -46,6 +46,9 @@ export interface BashTerminalPresenterProps {
   bashOutput?: BashOutputSnapshot
   taskProgress?: BashTaskSnapshot
   isPendingPermission?: boolean
+  onExpandedChange?: (expanded: boolean) => void
+  detailStatus?: string
+  onDetailRetry?: () => void
   readOutputFile: (path: string, lines: number) => Promise<string>
   readOutputMore: (toolUseId: string, lines: number) => Promise<string>
   renderAnsiText: (text: string) => ReactNode
@@ -70,6 +73,9 @@ export function BashTerminalPresenter({
   bashOutput,
   taskProgress,
   isPendingPermission,
+  onExpandedChange,
+  detailStatus,
+  onDetailRetry,
   readOutputFile,
   readOutputMore,
   renderAnsiText,
@@ -110,6 +116,8 @@ export function BashTerminalPresenter({
     }
     setExpanded(autoExpand ? autoExpanded : false)
   }, [allowExpand, autoExpand, autoExpanded])
+
+  useEffect(() => { onExpandedChange?.(expanded) }, [expanded, onExpandedChange])
 
   useEffect(() => {
     if (!expanded) setOutputFull(false)
@@ -274,6 +282,19 @@ export function BashTerminalPresenter({
         >
           {outputExpired && restoredContent === null ? (
             <div className="animate-shimmer text-terminal-dim">{t('common.loading')}</div>
+          ) : detailStatus && !content ? (
+            <div className="text-terminal-dim" role="status">
+              {detailStatus}
+              {onDetailRetry && (
+                <button
+                  type="button"
+                  className="ml-2 underline"
+                  onClick={(event) => { event.stopPropagation(); onDetailRetry() }}
+                >
+                  {t('common.retry')}
+                </button>
+              )}
+            </div>
           ) : content ? (
             <div className={showError ? 'text-amber-300' : 'text-terminal-muted'}>
               {renderAnsiText(showError ? extractToolError(content) : content)}

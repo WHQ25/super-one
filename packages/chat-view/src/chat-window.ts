@@ -1,6 +1,6 @@
 /** Fail-closed limits shared by the WebView renderer and its native host. */
 export const CHAT_WINDOW = {
-  initialTurns: 24,
+  initialTurns: 8,
   loadMoreTurns: 8,
   maxMountedTurns: 40,
   envelopeMs: 33,

@@ -4,6 +4,9 @@ import { Brain, ChevronRight } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 
 export interface ReasoningBlockProps {
+  onRetry?: () => void
+  autoExpand?: boolean
+  onExpandedChange?: (expanded: boolean) => void
   text: string
   blockDone: boolean
   startedAt?: number
@@ -14,6 +17,9 @@ export interface ReasoningBlockProps {
 }
 
 export const ReasoningBlock = memo(function ReasoningBlock({
+  onRetry,
+  autoExpand = true,
+  onExpandedChange,
   text,
   blockDone,
   startedAt,
@@ -25,8 +31,8 @@ export const ReasoningBlock = memo(function ReasoningBlock({
   const { t } = useTranslation()
   const [now, setNow] = useState(() => Date.now())
   // Expansion follows the real block lifecycle on both desktop and mobile.
-  const [expanded, setExpanded] = useState(showContent && (!blockDone || !collapseOnDone))
-  const autoExpandedRef = useRef(showContent && !blockDone)
+  const [expanded, setExpanded] = useState(autoExpand && showContent && (!blockDone || !collapseOnDone))
+  const autoExpandedRef = useRef(autoExpand && showContent && !blockDone)
   const scrollRef = useRef<HTMLDivElement>(null)
   const rafRef = useRef(0)
 
@@ -48,11 +54,11 @@ export const ReasoningBlock = memo(function ReasoningBlock({
   }, [blockDone, start])
 
   useEffect(() => {
-    if (showContent && !blockDone && !autoExpandedRef.current) {
+    if (autoExpand && showContent && !blockDone && !autoExpandedRef.current) {
       autoExpandedRef.current = true
       setExpanded(true)
     }
-  }, [showContent, blockDone])
+  }, [autoExpand, showContent, blockDone])
 
   useEffect(() => {
     if (!blockDone) return
@@ -74,6 +80,8 @@ export const ReasoningBlock = memo(function ReasoningBlock({
     })
     return () => cancelAnimationFrame(rafRef.current)
   }, [expanded, showContent, text])
+
+  useEffect(() => { onExpandedChange?.(expanded) }, [expanded, onExpandedChange])
 
   const active = !blockDone
   const label = active
@@ -104,6 +112,7 @@ export const ReasoningBlock = memo(function ReasoningBlock({
           className="thinking-content mt-1 max-h-32 overflow-y-auto pl-2 text-xs leading-relaxed text-muted-foreground/80 whitespace-pre-wrap"
         >
           {text}
+          {onRetry && <button type="button" className="ml-2 underline" onClick={onRetry}>{t('common.retry')}</button>}
         </div>
       )}
     </div>

@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { render, screen, fireEvent, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { PortableToolRow } from '@superone/chat-view/PortableToolRow'
 import { FileChip } from './FileChip'
 
@@ -83,6 +83,76 @@ describe('portable tool row', () => {
     expect(screen.getByText('const enabled = false')).toBeInTheDocument()
   })
 
+  it('keeps the header delta on a deferred Edit and does not dump raw params after expand', () => {
+    const { container } = render(
+      <PortableToolRow
+        toolName="Edit"
+        toolUseId="edit-deferred"
+        input={JSON.stringify({
+          file_path: '/repo/src/app.ts',
+          old_string: 'const enabled = false',
+          new_string: 'const enabled = true',
+        })}
+        status="complete"
+        toolDiff={'-const enabled = false\n+const enabled = true'}
+        toolLineDelta={{ added: 1, removed: 1 }}
+        hasDeferredDetails
+      />,
+    )
+
+    expect(container.querySelector('.text-success')?.textContent).toBe('+1')
+    expect(container.querySelector('.text-error')?.textContent).toBe('-1')
+    expect(container.textContent).not.toContain('old_string')
+    expect(container.textContent).not.toContain('new_string')
+
+    fireEvent.click(container.querySelector('.tool-node > div')!)
+    expect(screen.getByText('const enabled = true')).toBeInTheDocument()
+    expect(screen.getByText('const enabled = false')).toBeInTheDocument()
+    expect(container.textContent).not.toContain('old_string')
+    expect(container.textContent).not.toContain('new_string')
+  })
+
+  it('shows a Write header delta without expanding onto the file body JSON', () => {
+    const { container } = render(
+      <PortableToolRow
+        toolName="Write"
+        toolUseId="write-deferred"
+        input={JSON.stringify({ file_path: '/repo/docs/note.md', content: '# Title\n\nBody' })}
+        status="complete"
+        toolDiff={'+# Title\n+\n+Body'}
+        toolLineDelta={{ added: 3, removed: 0 }}
+        hasDeferredDetails
+      />,
+    )
+
+    expect(container.querySelector('.text-success')?.textContent).toBe('+3')
+    expect(container.textContent).not.toContain('"content"')
+    fireEvent.click(container.querySelector('.tool-node > div')!)
+    expect(screen.getByText('# Title')).toBeInTheDocument()
+    expect(container.textContent).not.toContain('"content"')
+  })
+
+  it('shows a FileChange header delta without dumping the patch JSON', () => {
+    const { container } = render(
+      <PortableToolRow
+        toolName="FileChange"
+        toolUseId="change-deferred"
+        input={JSON.stringify({ file_path: '/repo/a.ts', kind: 'update', diff: 'huge patch body' })}
+        status="complete"
+        toolDiff={'@@ -1 +1 @@\n-old line\n+new line'}
+        toolLineDelta={{ added: 1, removed: 1 }}
+        hasDeferredDetails
+      />,
+    )
+
+    expect(container.querySelector('.text-success')?.textContent).toBe('+1')
+    expect(container.querySelector('.text-error')?.textContent).toBe('-1')
+    expect(container.textContent).not.toContain('huge patch body')
+    fireEvent.click(container.querySelector('.tool-node > div')!)
+    expect(screen.getByText('new line')).toBeInTheDocument()
+    expect(container.textContent).not.toContain('huge patch body')
+  })
+
   it('renders Bash as the terminal view, with the transported tail as its output', () => {
     const { container } = render(
       <PortableToolRow
@@ -101,6 +171,72 @@ describe('portable tool row', () => {
     expect(container.querySelector('.bg-terminal-bg')).not.toBeNull()
     expect(screen.getByText(/Exited with code 0/)).toBeInTheDocument()
     expect(container.textContent?.match(/bun run typecheck/g)).toHaveLength(1)
+  })
+
+  it('keeps a Grok Bash description in the deferred header and expands to a terminal', () => {
+    const onExpandedChange = vi.fn()
+    const { container } = render(
+      <PortableToolRow
+        toolName="Bash"
+        toolUseId="grok-bash"
+        input={JSON.stringify({ command: 'ls -la', description: 'List workspace files' })}
+        // ACP titles must not replace the agent-written description in the header.
+        toolSummary="Run Command"
+        result={'file.ts\nreadme.md'}
+        status="complete"
+        hasDeferredDetails
+        onExpandedChange={onExpandedChange}
+      />,
+    )
+
+    expect(screen.getByText('List workspace files')).toBeInTheDocument()
+    expect(container.textContent).not.toContain('Run Command')
+    expect(container.querySelector('.bg-terminal-bg')).toBeNull()
+
+    fireEvent.click(container.querySelector('.tool-node > div')!)
+    expect(onExpandedChange).toHaveBeenCalledWith(true)
+    expect(container.querySelector('.bg-terminal-bg')).not.toBeNull()
+    expect(screen.getByText('ls -la')).toBeInTheDocument()
+    expect(screen.getByText(/file.ts/)).toBeInTheDocument()
+    expect(container.textContent).not.toContain('"command"')
+    expect(container.textContent).not.toContain('"description"')
+    expect(container.textContent).not.toContain('"role"')
+  })
+
+  it('shows a deferred browser description in the header without dumping args JSON', () => {
+    const { container } = render(
+      <PortableToolRow
+        toolName="mcp__superone__browser_snapshot"
+        toolUseId="shot"
+        input={JSON.stringify({ include: ['screenshot'], description: 'Google home' })}
+        toolSummary="Google home"
+        status="complete"
+        hasDeferredDetails
+      />,
+    )
+
+    expect(screen.getByText('Google home')).toBeInTheDocument()
+    fireEvent.click(container.querySelector('.tool-node > div')!)
+    expect(container.textContent).not.toContain('"include"')
+  })
+
+  it('keeps a deferred Grep header from the pattern and does not dump args JSON', () => {
+    const { container } = render(
+      <PortableToolRow
+        toolName="Grep"
+        toolUseId="grep-deferred"
+        input={JSON.stringify({ pattern: 'TODO', path: '/repo/src' })}
+        toolSummary="TODO in src"
+        result={'src/a.ts:1:TODO fix this'}
+        status="complete"
+        hasDeferredDetails
+      />,
+    )
+
+    expect(screen.getByText('TODO in src')).toBeInTheDocument()
+    fireEvent.click(container.querySelector('.tool-node > div')!)
+    expect(screen.getByText(/src\/a.ts:1:TODO fix this/)).toBeInTheDocument()
+    expect(container.textContent).not.toContain('"pattern"')
   })
 
   it('names a mini-app call by its app and tool', () => {

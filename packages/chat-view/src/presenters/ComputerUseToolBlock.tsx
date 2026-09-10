@@ -34,6 +34,8 @@ export interface ComputerUseToolBlockPresenterProps {
   renderScreenshot?: (path: string, label: string, unavailableLabel: string) => ReactNode
   renderResult?: (text: string) => ReactNode
   recording?: ReactNode
+  onExpandedChange?: (expanded: boolean) => void
+  pendingDetails?: ReactNode
 }
 
 function defaultResult(text: string) {
@@ -122,6 +124,8 @@ function ComputerUseToolBlockOperation({
   renderScreenshot,
   renderResult = defaultResult,
   recording,
+  onExpandedChange,
+  pendingDetails,
 }: ComputerUseToolBlockPresenterProps) {
   const { t } = useTranslation()
   const info = useMemo(
@@ -161,8 +165,7 @@ function ComputerUseToolBlockOperation({
   const expandable =
     allowExpand
     && !isStreaming
-    && !!result
-    && (failed || hasScreenshot || isReadComputerOp(op, params) || op === 'act')
+    && (pendingDetails != null || (!!result && (failed || hasScreenshot || isReadComputerOp(op, params) || op === 'act')))
 
   return (
     <ToolRow
@@ -171,6 +174,7 @@ function ComputerUseToolBlockOperation({
       expandable={expandable}
       mountDetails="expanded"
       detailsClassName="px-2 pb-1.5"
+      onExpandedChange={onExpandedChange}
       details={expandable ? (
         <div className="flex flex-col gap-1.5">
           {hasScreenshot && info.imagePath && (
@@ -188,6 +192,7 @@ function ComputerUseToolBlockOperation({
           )}
           {recording}
           {hasResultJson && result && renderResult(result)}
+          {!result && pendingDetails}
         </div>
       ) : undefined}
       trailing={(

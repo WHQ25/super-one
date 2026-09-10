@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Ban, ChevronRight, TriangleAlert } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
@@ -78,6 +78,11 @@ export interface GenericToolRowPorts {
 }
 
 export interface GenericToolRowProps {
+  deferredContent?: ReactNode
+  hasDeferredDetails?: boolean
+  onDetailRetry?: () => void
+  detailStatus?: string
+  onExpandedChange?: (expanded: boolean) => void
   toolName: string
   toolUseId?: string
   /**
@@ -154,6 +159,11 @@ function ToolResult({ text }: { text: string }) {
  * same row the desktop does — the differences live entirely in `ports`.
  */
 export function GenericToolRowPresenter({
+  deferredContent,
+  hasDeferredDetails,
+  detailStatus,
+  onDetailRetry,
+  onExpandedChange,
   toolName,
   toolUseId,
   filePath,
@@ -228,6 +238,7 @@ export function GenericToolRowPresenter({
   )
   const hasDiff = hasCompleteDiff || hasStreamingDiffContent
   const [expanded, setExpanded] = useState(false)
+  useEffect(() => { onExpandedChange?.(expanded) }, [expanded, onExpandedChange])
   const gridRef = useRef<HTMLDivElement>(null)
 
   useLayoutEffect(() => {
@@ -246,9 +257,9 @@ export function GenericToolRowPresenter({
   }, [isError])
 
   const isQuestionDismissed = toolName === 'AskUserQuestion' && !!result && (isDenied || result.includes('dismissed'))
-  const hasResult = !!cleanResult && !isStreaming && !isDenied && toolName !== 'Read' && toolName !== 'Skill' && toolName !== 'AskUserQuestion'
+  const hasResult = !!cleanResult && (hasDeferredDetails || (!isStreaming && !isDenied && toolName !== 'Read' && toolName !== 'Skill' && toolName !== 'AskUserQuestion'))
   const hasQA = toolName === 'AskUserQuestion' && !!cleanResult && !isStreaming && !isQuestionDismissed
-  const expandable = allowExpand && (hasDiff || hasResult || hasQA)
+  const expandable = allowExpand && (hasDeferredDetails || hasDiff || hasResult || hasQA)
 
   // Prefer parsed input summary; fall back to ACP/main toolSummary (Grok title / raw_output).
   // Remote surfaces invert that — see `preferSentSummary`.
@@ -378,8 +389,13 @@ export function GenericToolRowPresenter({
         >
           <div className="overflow-hidden">
             <div className="px-2 pb-1.5">
-              {expanded && (
+              {expanded && (deferredContent ?? (
                 <>
+                  {detailStatus && <div role="status">{detailStatus}{onDetailRetry && <button type="button" className="ml-2 underline" onClick={onDetailRetry}>{t('common.retry')}</button>}</div>}
+                  {/* Header already names the call; dumping the same args as JSON repeats it. */}
+                  {hasDeferredDetails && input !== '{}' && !DIFF_TOOLS.has(toolName) && toolName !== 'NotebookEdit' && !summary && (
+                    <div className="mb-2">{ports.renderJson(input)}</div>
+                  )}
                   {DIFF_TOOLS.has(toolName) && ports.renderFileDiff({
                     toolName: toolName as FileDiffPresenterProps['toolName'],
                     params,
@@ -414,7 +430,7 @@ export function GenericToolRowPresenter({
                     </div>
                   )}
                 </>
-              )}
+              ))}
             </div>
           </div>
         </div>

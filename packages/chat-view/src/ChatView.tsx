@@ -1,3 +1,8 @@
+import { NavigationFeedback } from './NavigationFeedback'
+import { contiguousHistoryRange, needsHistoryPage, globalHistoryRange } from './history-navigation'
+import { extendHistoryIndex, mergeIndexedHistory, type SessionHistoryIndex } from '@superone/shared/session-history-index'
+import { HistoryPageButton } from './HistoryPageButton'
+import { deliverDetail } from './detail-stream'
 import { AsyncQuestionMessagesContext } from './PortableAsyncQuestion'
 import {
   Component,
@@ -10,8 +15,8 @@ import {
   type ErrorInfo,
   type ReactNode,
 } from 'react'
-import type { AgentStatus, ChatMessage, Locale, TodoItem } from '@superone/shared/agent-types'
-import { ChevronDown, ChevronUp, ListChecks, WifiOff } from 'lucide-react'
+import type { AgentStatus, ChatMessage, Locale } from '@superone/shared/agent-types'
+import { ChevronDown } from 'lucide-react'
 import {
   ApiRetryIndicator,
   CompactErrorIndicator,
@@ -24,7 +29,7 @@ import {
 import { transcriptRow } from './transcript-rows'
 import { ZERO_TURN_TOKENS } from './presenters/turn-footer-model'
 import { CHAT_WINDOW, initialChatWindow, loadPreviousChatWindow, loadNextChatWindow, normalizeChatWindow, type ChatWindowRange } from './chat-window'
-import { installHostBridge, postHost } from './bridge'
+import { installHostBridge, postHost, requestNativeAsync } from './bridge'
 import { setChatViewLocale } from './i18n'
 import { PortableMessage } from './PortableMessage'
 import { isRealtimeVoiceMessage } from '@superone/shared/realtime-transcript'
@@ -37,7 +42,9 @@ type PendingPermission = ReductionProjection['pendingPermission']
 
 interface ViewState {
   messages: ChatMessage[]
-  todos: TodoItem[]
+  hasMoreHistory: boolean
+  historyNavigation: boolean
+  navigation: SessionHistoryIndex | null
   labels: Record<string, string>
   mentionArtwork: Record<string, string>
   pendingPermission: PendingPermission
@@ -81,7 +88,9 @@ function mergeSessionFacts(previous: SessionFacts, projection: SessionProjection
 
 const EMPTY_STATE: ViewState = {
   messages: [],
-  todos: [],
+  hasMoreHistory: false,
+  historyNavigation: false,
+  navigation: null,
   labels: {},
   mentionArtwork: {},
   pendingPermission: null,
@@ -96,11 +105,6 @@ const EMPTY_STATE: ViewState = {
 }
 
 const page = globalThis as unknown as Window
-
-function normalizeTodos(value: ReductionProjection['todos'], fallback: TodoItem[]): TodoItem[] {
-  if (!value) return fallback
-  return Array.isArray(value) ? value : Object.values(value)
-}
 
 function normalizeMentionArtwork(value: ReductionProjection['mentionArtwork'], fallback: Record<string, string>): Record<string, string> {
   if (value === undefined) return fallback
@@ -126,7 +130,7 @@ function rangeAfterPatch(previous: ViewState, messages: ChatMessage[], atBottom:
   const anchorId = previous.messages[previous.range.start]?.id
   const anchorIndex = anchorId ? messages.findIndex((message) => message.id === anchorId) : -1
   const start = anchorIndex >= 0 ? anchorIndex : previous.range.start
-  return visibleChatWindow({ start, end: start + mounted }, messages.length, minimum)
+  return contiguousHistoryRange(messages, previous.navigation, visibleChatWindow({ start, end: start + mounted }, messages.length, minimum), start)
 }
 
 function applyProjection(
@@ -134,39 +138,25 @@ function applyProjection(
   projection: ReductionProjection,
   atBottom: boolean,
 ): ViewState {
-  const messages = projection.messages ?? previous.messages
+  const mergedRows = projection.messagePatches?.length || projection.messageOrder
+    ? new Map([...previous.messages, ...(projection.messagePatches ?? [])].map(message => [message.id, message])) : null
+  const messages = projection.messages ?? (mergedRows
+    ? (projection.messageOrder ?? previous.messages.map(message => message.id)).flatMap(id => mergedRows.has(id) ? [mergedRows.get(id)!] : []) : previous.messages)
   return {
     ...previous,
     messages,
-    todos: normalizeTodos(projection.todos, previous.todos),
+    hasMoreHistory: projection.hasMoreHistory ?? previous.hasMoreHistory,
+    historyNavigation: projection.historyNavigation ?? previous.historyNavigation,
     labels: projection.labels ?? previous.labels,
     mentionArtwork: normalizeMentionArtwork(projection.mentionArtwork, previous.mentionArtwork),
     pendingPermission: projection.pendingPermission === undefined
       ? previous.pendingPermission
       : projection.pendingPermission,
     session: mergeSessionFacts(previous.session, projection),
-    range: projection.messages
+    range: messages !== previous.messages
       ? rangeAfterPatch(previous, messages, atBottom)
       : previous.range,
   }
-}
-
-function Todos({ todos }: { todos: TodoItem[] }) {
-  if (todos.length === 0) return null
-  return (
-    <section className="mb-3 rounded-lg border border-border/60 bg-muted/25 p-2 text-xs" data-testid="todo-list">
-      <div className="mb-1 flex items-center gap-1.5 font-medium text-foreground">
-        <ListChecks className="size-3.5" /> Tasks
-      </div>
-      <ul className="space-y-1 text-muted-foreground">
-        {todos.map((todo) => (
-          <li key={todo.id} data-todo-status={todo.status}>
-            {todo.status === 'completed' ? '✓' : todo.status === 'in_progress' ? '▶' : '○'} {todo.subject}
-          </li>
-        ))}
-      </ul>
-    </section>
-  )
 }
 
 export function ChatView() {
@@ -177,7 +167,14 @@ export function ChatView() {
   const prependSnapshotRef = useRef<ScrollAnchor | null>(null)
   const navigatingUntilRef = useRef(0)
   const loadingPreviousRef = useRef(false)
+  const fetchingHistoryRef = useRef(false)
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState(false)
   const scrollToBottomRef = useRef(false)
+  const navigationRequest = useRef(0)
+  const [navigationLoading, setNavigationLoading] = useState(false)
+  const [navigationRetry, setNavigationRetry] = useState<(() => void) | null>(null)
+  const [indexAttempt, setIndexAttempt] = useState(0)
   stateRef.current = state
 
   const emitViewState = useCallback(() => {
@@ -199,6 +196,59 @@ export function ChatView() {
     }, CHAT_WINDOW.envelopeMs)
   }, [emitViewState])
 
+  useEffect(() => {
+    if (!state.historyNavigation) return
+    let cancelled = false
+    setNavigationLoading(true)
+    setNavigationRetry(null)
+    void requestNativeAsync('loadNavigationIndex').then((result) => {
+      if (cancelled) return
+      const index = result as SessionHistoryIndex
+      if (!Array.isArray(index.messageIds) || !Array.isArray(index.entries) || !Array.isArray(index.compacts)) throw new Error('Invalid history index')
+      setState(previous => ({ ...previous, navigation: index }))
+    }).catch(() => {
+      if (!cancelled) setNavigationRetry(() => () => setIndexAttempt(value => value + 1))
+    }).finally(() => { if (!cancelled) setNavigationLoading(false) })
+    return () => { cancelled = true }
+  }, [state.transcriptEpoch, state.historyNavigation, indexAttempt])
+
+  const requestHistoryWindow = useCallback(async (anchorId: string, direction: 'around' | 'before' | 'after') => {
+    const epoch = stateRef.current.transcriptEpoch
+    const request = ++navigationRequest.current
+    atBottomRef.current = false
+    scrollToBottomRef.current = false
+    setNavigationLoading(true)
+    setNavigationRetry(null)
+    try {
+      const result = await requestNativeAsync('loadHistoryWindow', { anchorId, direction }) as { messages: ChatMessage[] }
+      if (epoch !== stateRef.current.transcriptEpoch || request !== navigationRequest.current) return
+      if (direction !== 'around') prependSnapshotRef.current = captureScrollAnchor()
+      else { prependSnapshotRef.current = null; navigatingUntilRef.current = performance.now() + 700 }
+      setState(previous => {
+        if (!previous.navigation) return previous
+        const messages = mergeIndexedHistory(previous.navigation, result.messages, previous.messages)
+        const anchor = messages.findIndex(message => message.id === anchorId)
+        if (anchor < 0) return previous
+        const oldStart = messages.findIndex(message => message.id === previous.messages[previous.range.start]?.id)
+        const oldEnd = messages.findIndex(message => message.id === previous.messages[previous.range.end - 1]?.id) + 1
+        const range = direction === 'around' ? jumpChatWindow(anchor, messages.length)
+          : normalizeChatWindow(direction === 'before'
+            ? { start: Math.max(0, anchor - CHAT_WINDOW.loadMoreTurns),
+                end: Math.min(oldEnd, Math.max(0, anchor - CHAT_WINDOW.loadMoreTurns) + CHAT_WINDOW.maxMountedTurns) }
+            : { start: Math.max(0, oldStart), end: Math.min(messages.length, anchor + 1 + CHAT_WINDOW.loadMoreTurns) }, messages.length)
+        return { ...previous, messages,
+          range: contiguousHistoryRange(messages, previous.navigation, range, anchor),
+          expandLevel: compactMessageIndices(messages).length,
+          scrollTarget: direction === 'around' ? { id: anchorId, behavior: 'auto' } : undefined }
+      })
+    } catch {
+      if (epoch === stateRef.current.transcriptEpoch && request === navigationRequest.current)
+        setNavigationRetry(() => () => { void requestHistoryWindow(anchorId, direction) })
+    } finally {
+      if (epoch === stateRef.current.transcriptEpoch && request === navigationRequest.current) setNavigationLoading(false)
+    }
+  }, [])
+
   const changeWindow = useCallback((direction: 'previous' | 'next') => {
     if (loadingPreviousRef.current || performance.now() < navigatingUntilRef.current) return
     const current = stateRef.current
@@ -210,16 +260,65 @@ export function ChatView() {
     prependSnapshotRef.current = captureScrollAnchor()
     setState((previous) => ({
       ...previous,
-      range: visibleChatWindow(
+      range: contiguousHistoryRange(previous.messages, previous.navigation, visibleChatWindow(
         (direction === 'previous' ? loadPreviousChatWindow : loadNextChatWindow)(previous.range, previous.messages.length),
         previous.messages.length, minimum,
-      ),
+      ), direction === 'previous' ? previous.range.start : previous.range.end - 1),
     }))
   }, [])
-  const loadPrevious = useCallback(() => changeWindow('previous'), [changeWindow])
-  const loadNext = useCallback(() => changeWindow('next'), [changeWindow])
+  const loadPrevious = useCallback(async () => {
+    const current = stateRef.current
+    if (current.navigation && needsHistoryPage(current.messages, current.navigation, current.range, 'before')) {
+      if (!navigationLoading) await requestHistoryWindow(current.messages[current.range.start]!.id, 'before')
+      return
+    }
+    if (current.navigation || current.range.start > 0 || !current.hasMoreHistory) {
+      changeWindow('previous')
+      return
+    }
+    if (fetchingHistoryRef.current) return
+    fetchingHistoryRef.current = true
+    setHistoryLoading(true)
+    setHistoryError(false)
+    const epoch = current.transcriptEpoch
+    const navigationGeneration = navigationRequest.current
+    try {
+      const result = await requestNativeAsync('loadEarlier') as ReductionProjection
+      if (stateRef.current.transcriptEpoch !== epoch || navigationRequest.current !== navigationGeneration) return
+      atBottomRef.current = false
+      scrollToBottomRef.current = false
+      prependSnapshotRef.current = captureScrollAnchor()
+      setState(previous => {
+        if (previous.transcriptEpoch !== epoch) return previous
+        const merged = mergeHistory(result.messages ?? [], previous.messages)
+        return {
+          ...previous, messages: merged.messages, hasMoreHistory: result.hasMoreHistory ?? false,
+          range: normalizeChatWindow({
+            start: Math.max(0, previous.range.start + merged.added - CHAT_WINDOW.loadMoreTurns),
+            end: previous.range.end + merged.added,
+          }, merged.messages.length),
+        }
+      })
+    } catch {
+      if (stateRef.current.transcriptEpoch === epoch) setHistoryError(true)
+    } finally {
+      if (stateRef.current.transcriptEpoch === epoch) {
+        fetchingHistoryRef.current = false
+        setHistoryLoading(false)
+      }
+    }
+  }, [changeWindow, navigationLoading, requestHistoryWindow])
+  const loadNext = useCallback(() => {
+    const current = stateRef.current
+    if (current.navigation && needsHistoryPage(current.messages, current.navigation, current.range, 'after')) {
+      if (!navigationLoading) void requestHistoryWindow(current.messages[current.range.end - 1]!.id, 'after')
+    } else changeWindow('next')
+  }, [changeWindow, navigationLoading, requestHistoryWindow])
 
   const prepareNavigation = useCallback(() => {
+    navigationRequest.current++
+    setNavigationLoading(false)
+    setNavigationRetry(null)
     atBottomRef.current = false
     scrollToBottomRef.current = false
     prependSnapshotRef.current = null
@@ -228,7 +327,10 @@ export function ChatView() {
   }, [])
 
   const jumpToMessage = useCallback((id: string, behavior: ScrollBehavior = 'smooth') => {
-    if (!stateRef.current.messages.some((message) => message.id === id)) return
+    if (!stateRef.current.messages.some((message) => message.id === id)) {
+      if (stateRef.current.navigation?.messageIds.includes(id)) void requestHistoryWindow(id, 'around')
+      return
+    }
     prepareNavigation()
     setState((previous) => {
       const index = previous.messages.findIndex((message) => message.id === id)
@@ -239,13 +341,13 @@ export function ChatView() {
       return {
         ...previous, expandLevel,
         range: mounted ? previous.range
-          : jumpChatWindow(index, previous.messages.length, compactVisibleStart(compact, expandLevel)),
+          : contiguousHistoryRange(previous.messages, previous.navigation, jumpChatWindow(index, previous.messages.length, compactVisibleStart(compact, expandLevel)), index),
         // Replacing the DOM window invalidates the old scroll coordinates.
         // Animate only when both positions belong to the same mounted window.
         scrollTarget: { id, behavior: mounted ? behavior : 'auto' },
       }
     })
-  }, [prepareNavigation])
+  }, [prepareNavigation, requestHistoryWindow])
 
   const setCompactExpansion = useCallback((level: number) => {
     const anchor = captureScrollAnchor()
@@ -267,8 +369,17 @@ export function ChatView() {
 
   const handleInbound = useCallback((message: HostInbound) => {
     switch (message.type) {
+      case 'detailUpdate':
+        deliverDetail(message)
+        return
       case 'initialize':
       case 'hydrate':
+        navigationRequest.current++
+        setNavigationLoading(false)
+        setNavigationRetry(null)
+        fetchingHistoryRef.current = false
+        setHistoryLoading(false)
+        setHistoryError(false)
         prependSnapshotRef.current = null
         loadingPreviousRef.current = false
         navigatingUntilRef.current = 0
@@ -277,14 +388,15 @@ export function ChatView() {
         setState((previous) => {
           const next = applyProjection(previous, message, true)
           return {
-            ...next, expandLevel: 0, transcriptEpoch: previous.transcriptEpoch + 1, scrollTarget: undefined,
+            ...next, navigation: null, historyNavigation: message.historyNavigation ?? false,
+            hasMoreHistory: message.hasMoreHistory ?? false, expandLevel: 0, transcriptEpoch: previous.transcriptEpoch + 1, scrollTarget: undefined,
             range: visibleChatWindow(initialChatWindow(next.messages.length), next.messages.length,
               compactVisibleStart(compactMessageIndices(next.messages), 0)),
           }
         })
         return
       case 'applyReductionPatch':
-        if (atBottomRef.current && message.messages) scrollToBottomRef.current = true
+        if (atBottomRef.current && (message.messages || message.messagePatches)) scrollToBottomRef.current = true
         setState((previous) => applyProjection(previous, message, atBottomRef.current))
         return
       case 'prependHistory':
@@ -302,6 +414,12 @@ export function ChatView() {
         })
         return
       case 'reset':
+        navigationRequest.current++
+        setNavigationLoading(false)
+        setNavigationRetry(null)
+        fetchingHistoryRef.current = false
+        setHistoryLoading(false)
+        setHistoryError(false)
         atBottomRef.current = true
         prependSnapshotRef.current = null
         scrollToBottomRef.current = false
@@ -409,8 +527,21 @@ export function ChatView() {
       else if (nearBottom && !atBottomRef.current) loadNext()
       scheduleViewState()
     }
+    // Programmatic jump suppression must not swallow the user's next swipe.
+    // At a window edge the wheel/touch may produce no further scroll event.
+    const resumeUserScroll = (event: Event) => {
+      if ((event.target as Element | null)?.closest?.('.chat-scroll-indicator')) return
+      navigatingUntilRef.current = 0
+      handleScroll()
+    }
     page.addEventListener('scroll', handleScroll, { passive: true })
-    return () => page.removeEventListener('scroll', handleScroll)
+    page.addEventListener('wheel', resumeUserScroll, { passive: true })
+    page.addEventListener('touchmove', resumeUserScroll, { passive: true })
+    return () => {
+      page.removeEventListener('scroll', handleScroll)
+      page.removeEventListener('wheel', resumeUserScroll)
+      page.removeEventListener('touchmove', resumeUserScroll)
+    }
   }, [loadPrevious, loadNext, scheduleViewState])
 
   useEffect(() => { scheduleViewState() }, [state.range, scheduleViewState])
@@ -420,8 +551,11 @@ export function ChatView() {
   const compactIndices = useMemo(() => compactMessageIndices(state.messages),
     [state.messages.length, tailId, state.transcriptEpoch])
   const visibleStart = compactVisibleStart(compactIndices, state.expandLevel)
-  const outline = useMemo(() => extractTurnOutline(state.messages).filter((entry) => entry.index >= visibleStart),
+  const localOutline = useMemo(() => extractTurnOutline(state.messages).filter((entry) => entry.index >= visibleStart),
     [state.messages.length, tailId, state.session.sessionStatus, state.transcriptEpoch, visibleStart])
+  const navigation = useMemo(() => state.navigation ? extendHistoryIndex(state.navigation, state.messages) : null,
+    [state.navigation, state.messages.length, tailId, state.session.sessionStatus, state.transcriptEpoch])
+  const outline = navigation?.entries ?? localOutline
   const hasCompact = compactIndices.length > 0
   const compactExpanded = state.expandLevel >= compactIndices.length
   const compactSplit = outline.filter((entry) => entry.index < (compactIndices.at(-1) ?? 0)).length
@@ -438,25 +572,16 @@ export function ChatView() {
       data-has-outline={outline.length > 1 || hasCompact}
       data-window-start={state.range.start}
       data-window-end={state.range.end}
+      data-connection={state.connection.state}
     >
-      <ChatScrollIndicator entries={outline} range={state.range} hasCompact={hasCompact}
+      <ChatScrollIndicator entries={outline} range={navigation ? globalHistoryRange(state.messages, navigation, state.range) : state.range} hasCompact={hasCompact}
+        compactMarkers={navigation?.compacts}
         compactExpanded={compactExpanded} compactSplit={compactSplit} onJump={jumpToMessage}
         onToggleCompact={() => setCompactExpansion(compactExpanded ? 0 : compactIndices.length)} />
-      {state.connection.state !== 'connected' && (
-        <div className="sticky top-2 z-20 mb-2 flex items-center gap-1.5 rounded-md bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
-          <WifiOff className="size-3.5" /> {state.labels.disconnected ?? state.connection.state}
-        </div>
-      )}
-      <Todos todos={state.todos} />
+      <NavigationFeedback loading={navigationLoading} error={!!navigationRetry} onRetry={() => navigationRetry?.()} />
       <div className="chat-view-top-sentinel" data-testid="top-sentinel">
-        {state.range.start > visibleStart && (
-          <button
-            type="button"
-            className="mx-auto mb-2 flex items-center gap-1 rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground"
-            onClick={loadPrevious}
-          >
-            <ChevronUp className="size-3" /> Load earlier
-          </button>
+        {(state.range.start > visibleStart || (state.navigation ? needsHistoryPage(state.messages, state.navigation, state.range, 'before') : visibleStart === 0 && state.hasMoreHistory)) && (
+          <HistoryPageButton loading={historyLoading} error={historyError} onLoad={loadPrevious} />
         )}
       </div>
       <AsyncQuestionMessagesContext.Provider value={state.messages}>
@@ -473,7 +598,13 @@ export function ChatView() {
                 onToggle={() => setCompactExpansion(expanded ? rank : rank + 1)} />
             </div>
           }
-          if (row.kind === 'turn-meta') return <TurnMetaIndicator key={message.id} meta={row.meta} />
+          if (row.kind === 'turn-meta') {
+            return (
+              <div key={message.id} data-turn-id={message.id}>
+                <TurnMetaIndicator meta={row.meta} />
+              </div>
+            )
+          }
           return (
             <PortableMessage
               key={message.id}

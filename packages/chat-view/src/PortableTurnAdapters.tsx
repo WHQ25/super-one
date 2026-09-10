@@ -1,3 +1,5 @@
+import { DeferredInteractiveTool, isPortableInteractiveTool } from './DeferredInteractiveTool'
+import { DeferredTool, DeferredCodexTool, DeferredDetailStatus, useDeferredToolDetail } from './DeferredTool'
 import { PortableAsyncQuestion, AsyncQuestionTurnContext } from './PortableAsyncQuestion'
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
 import type {
@@ -52,7 +54,7 @@ import {
   isCodexPinnedSegment,
 } from './presenters/compact-chat-mode'
 import { groupContentPresenter, type GroupContentPorts } from './presenters/groupContent'
-import { ReasoningBlock } from './presenters/ReasoningBlock'
+import { DeferredReasoning } from './DeferredReasoning'
 import { CodexPlanBlockPresenter } from './presenters/CodexPlanBlock'
 import {
   CodexCollabBlockPresenter,
@@ -87,6 +89,7 @@ import {
 } from './PortableInteractiveTools'
 import {
   SubagentBlockPresenter,
+  SubagentScrollArea,
   type SubagentColorClasses,
 } from './presenters/SubagentBlock'
 import { summarizeClaudeProcess, summarizeCodexProcess } from './presenters/turn-process-stats'
@@ -191,6 +194,34 @@ function PortableDocument({ name }: { name: string }) {
 
 function PortableClaudeTool(props: ClaudeToolPresenterProps) {
   const { pendingPermission } = useContext(PortableTurnContext)
+  if (isPortableInteractiveTool(props.toolName, props.input)) return <DeferredInteractiveTool {...props} />
+  if (props.remoteDetail) {
+    // `DeferredTool` is already a generic row. Only a tool with its own presenter gets a
+    // `renderDetail` that mounts that presenter inside it; every other tool leaves it unset so
+    // the row shows the fetched result itself. Rendering a second `PortableClaudeTool` for a
+    // tool that would fall through to `PortableToolRow` nested one generic row inside another.
+    const dedicated = renderDedicatedTool(props) !== null
+    return <DeferredTool {...props} remoteDetail={props.remoteDetail}
+      renderDetail={dedicated
+        ? detail => <PortableClaudeTool {...props} {...detail} remoteDetail={undefined} autoExpand />
+        : undefined} />
+  }
+  const dedicated = renderDedicatedTool(props)
+  if (dedicated) return dedicated
+  const awaitingPermission = isPermissionPending(pendingPermission, props.toolUseId, props.toolName)
+  const row = <PortableToolRow {...props} />
+  // The desktop surfaces a pending approval as its own prompt block; the phone marks the row.
+  return awaitingPermission
+    ? <div data-permission-pending="true" className="rounded ring-1 ring-inset ring-primary/30">{row}</div>
+    : row
+}
+
+/**
+ * Presenters that replace the generic tool row for a given tool. Returns `null` when the tool has
+ * none and must render as `PortableToolRow`; the deferred path relies on that answer to decide
+ * whether a shell needs a nested presenter at all.
+ */
+function renderDedicatedTool(props: ClaudeToolPresenterProps): ReactNode | null {
   const browserOp = portableBrowserOp(props.toolName, props.input)
   const computerOp = portableComputerOp(props.toolName)
   const deviceOp = portableDeviceOp(props.toolName)
@@ -386,12 +417,7 @@ function PortableClaudeTool(props: ClaudeToolPresenterProps) {
       />
     )
   }
-  const awaitingPermission = isPermissionPending(pendingPermission, props.toolUseId, props.toolName)
-  const row = <PortableToolRow {...props} />
-  // The desktop surfaces a pending approval as its own prompt block; the phone marks the row.
-  return awaitingPermission
-    ? <div data-permission-pending="true" className="rounded ring-1 ring-inset ring-primary/30">{row}</div>
-    : row
+  return null
 }
 
 function isImageGenerationTool(toolName: string): boolean {
@@ -494,6 +520,7 @@ function PortableToolGroup({ blocks, sealed }: ClaudeToolGroupPresenterProps) {
         return (
           <PortableClaudeTool
             key={`${block.toolUseId}-${index}`}
+            remoteDetail={block.remoteDetail}
             toolName={block.toolName}
             toolUseId={block.toolUseId}
             input={block.input}
@@ -516,25 +543,41 @@ function PortableAppToolGroup({ blocks, sealed }: ClaudeAppToolGroupPresenterPro
   return <PortableToolGroup blocks={blocks} sealed={sealed} />
 }
 
-function portableTaskInput(input: string) {
+function portableTaskInput(input: string, toolSummary?: string) {
   const params = parseRecord(input)
   return {
     name: String(params.name ?? params.agent_name ?? ''),
     teamName: String(params.team_name ?? params.teamName ?? ''),
-    description: String(params.description ?? ''),
+    // A progressive projection drops the input once the prompt pushes it past the
+    // size cap, keeping only the agent-written description as `toolSummary`; without
+    // this fallback the card would show the spawning placeholder and never expand.
+    description: String(params.description ?? '') || toolSummary || '',
     subagentType: String(params.subagent_type ?? params.subagentType ?? ''),
     prompt: String(params.prompt ?? ''),
     model: typeof params.model === 'string' ? params.model : undefined,
   }
 }
 
+/**
+ * Subagent card for the phone. Under progressive loading the transcript carries only
+ * the collapsed shell (`remoteDetail`); the prompt, child tool rows and result are
+ * fetched when the card itself is expanded, so the card stays the single chrome —
+ * the desktop never wraps a subagent in a generic tool row and neither does this.
+ */
 function PortableSubagent({
   taskBlock,
-  childBlocks,
-  resultBlock,
+  childBlocks: shellChildBlocks,
+  resultBlock: shellResultBlock,
   isStreaming,
 }: ClaudeSubagentPresenterProps) {
   const [expanded, setExpanded] = useState(false)
+  const shellComplete = Boolean(shellResultBlock || taskBlock.taskResultText)
+  const { detail, status: detailStatus, retry } = useDeferredToolDetail(taskBlock.remoteDetail, expanded, shellComplete || !isStreaming)
+  const input = detail.input ?? taskBlock.input
+  const childBlocks = detail.childBlocks ?? shellChildBlocks
+  const resultBlock: ContentBlock | undefined = detail.result
+    ? { type: 'tool_result', toolUseId: taskBlock.toolUseId, summary: detail.result }
+    : shellResultBlock
   const result = resultBlock?.type === 'tool_result' ? resultBlock : undefined
   const complete = Boolean(resultBlock || taskBlock.taskResultText)
   const failed = Boolean(result?.isError)
@@ -543,6 +586,9 @@ function PortableSubagent({
     return childBlocks.flatMap((block, index): ReactNode[] => {
       if (block.type !== 'tool_use') return []
       const childResult = results.get(block.toolUseId)
+      if (block.remoteDetail) return [<DeferredTool key={`${block.toolUseId}-${index}`} remoteDetail={block.remoteDetail}
+        toolName={block.toolName} toolUseId={block.toolUseId} input={block.input} status={block.status}
+        toolSummary={block.toolSummary} filePath={block.toolFilePath} toolLineDelta={block.toolLineDelta} />]
       return [(
         <PortableToolRow
           key={`${block.toolUseId}-${index}`}
@@ -569,7 +615,7 @@ function PortableSubagent({
   return (
     <SubagentBlockPresenter
       toolUseId={taskBlock.toolUseId}
-      taskInput={portableTaskInput(taskBlock.input)}
+      taskInput={portableTaskInput(input, taskBlock.toolSummary)}
       colors={PORTABLE_COLORS}
       isAsync={false}
       isRunning={!complete && isStreaming}
@@ -583,7 +629,12 @@ function PortableSubagent({
       initialElapsed={0}
       completionElapsed={completionElapsed}
       stats={{ toolCalls: children.length }}
-      childContent={children.length > 0 ? <div className="space-y-0.5 px-2 py-1">{children}</div> : undefined}
+      activityContent={<DeferredDetailStatus status={detailStatus} onRetry={retry} />}
+      childContent={children.length > 0 ? (
+        <SubagentScrollArea maxHeightClass="max-h-60" className="space-y-0.5 px-2 py-1">
+          {children}
+        </SubagentScrollArea>
+      ) : undefined}
       diagnostic={failed ? result?.summary : undefined}
       resultText={!failed ? (result?.summary ?? taskBlock.taskResultText) : undefined}
       formatTokens={formatTokens}
@@ -592,9 +643,14 @@ function PortableSubagent({
   )
 }
 
-function PortableWorkflow({ toolBlock, resultBlock, isStreaming }: ClaudeWorkflowPresenterProps) {
+/** Workflow card; like the subagent card it fetches its deferred input/result on expand. */
+function PortableWorkflow({ toolBlock, resultBlock: shellResultBlock, isStreaming }: ClaudeWorkflowPresenterProps) {
   const [expanded, setExpanded] = useState(false)
-  const params = parseRecord(toolBlock.input)
+  const { detail } = useDeferredToolDetail(toolBlock.remoteDetail, expanded, Boolean(shellResultBlock) || !isStreaming)
+  const params = parseRecord(detail.input ?? toolBlock.input)
+  const resultBlock: ContentBlock | undefined = detail.result
+    ? { type: 'tool_result', toolUseId: toolBlock.toolUseId, summary: detail.result }
+    : shellResultBlock
   const result = resultBlock?.type === 'tool_result' ? resultBlock : undefined
   const declaredPhases = Array.isArray(params.phases)
     ? params.phases.flatMap((phase) => {
@@ -655,7 +711,7 @@ const CLAUDE_PARTS: ClaudeTurnBodyPresenterParts = {
   Insight: PortableInsightBlock,
   Document: PortableDocument,
   Tool: PortableClaudeTool,
-  Reasoning: ReasoningBlock,
+  Reasoning: DeferredReasoning,
   Subagent: PortableSubagent,
   Workflow: PortableWorkflow,
   ToolGroup: PortableToolGroup,
@@ -749,6 +805,21 @@ function PortablePlan({
 
 function PortableCodexItem(props: CodexItemPresenterProps) {
   const { item, index, isStreaming } = props
+  if (item.type === 'mcp_tool_call' && isPortableInteractiveTool(`mcp__${item.server}__${item.tool}`, item.arguments)) {
+    return (
+      <DeferredInteractiveTool
+        toolName={`mcp__${item.server}__${item.tool}`}
+        toolUseId={item.id}
+        input={typeof item.arguments === 'string' ? item.arguments : JSON.stringify(item.arguments ?? {})}
+        result={codexMcpItemResultText(item)}
+        status={item.status === 'in_progress' ? 'streaming' : 'complete'}
+        isError={item.status === 'failed' || Boolean(item.error)}
+        remoteDetail={item.remoteDetail}
+      />
+    )
+  }
+  if ('remoteDetail' in item && item.remoteDetail) return <DeferredCodexTool item={item} isStreaming={isStreaming}
+    renderItem={item.type === 'command_execution' ? undefined : loaded => <PortableCodexItem {...props} item={loaded} />} />
   switch (item.type) {
     case 'command_execution':
       return <PortableCodexCommand item={item} isStreaming={isStreaming} />
@@ -884,6 +955,7 @@ function PortableCodexItem(props: CodexItemPresenterProps) {
 }
 
 function PortableCodexCommand({ item, isStreaming }: CodexCommandPresenterProps) {
+  if (item.remoteDetail) return <DeferredCodexTool item={item} isStreaming={isStreaming} />
   const action = item.commandActions?.[0]
   const toolName = action?.type === 'read' ? 'Read' : action?.type === 'search' ? 'Grep' : 'Bash'
   const input = toolName === 'Read'
@@ -904,12 +976,20 @@ function PortableCodexCommand({ item, isStreaming }: CodexCommandPresenterProps)
   )
 }
 
-function PortableCodexSubagent({ item }: CodexSubagentPresenterProps) {
+/**
+ * Codex collab card for the phone. A projected `collab_tool_call` keeps only the shell
+ * (prompt / child items stripped); the full item is fetched on expand and swapped in,
+ * so the card is never nested inside a generic tool row.
+ */
+function PortableCodexSubagent({ item: shellItem }: CodexSubagentPresenterProps) {
   const [expanded, setExpanded] = useState(false)
+  const { detail, status: detailStatus, retry } = useDeferredToolDetail(shellItem.remoteDetail, expanded, shellItem.status !== 'in_progress')
+  const item = detail.item?.type === 'collab_tool_call' ? detail.item : shellItem
   const view = codexCollabViewModel(item)
-  const childContent = view.activityItems.length > 0 ? (
-    <div className="space-y-0.5 border-t border-border/30 px-2 py-1">
+  const activityContent = view.activityItems.length > 0 ? (
+    <SubagentScrollArea maxHeightClass="max-h-60" className="space-y-0.5 border-t border-border/30 px-2 py-1">
       {view.activityItems.map((child, index) => {
+        if ('remoteDetail' in child && child.remoteDetail) return <DeferredCodexTool key={`${child.id}-${index}`} item={child} isStreaming={view.isRunning} />
         if (child.type === 'command_execution') {
           return <PortableCodexCommand key={`${child.id}-${index}`} item={child} isStreaming={view.isRunning} />
         }
@@ -955,7 +1035,14 @@ function PortableCodexSubagent({ item }: CodexSubagentPresenterProps) {
           />
         )
       })}
-    </div>
+    </SubagentScrollArea>
+  ) : undefined
+  // The collab presenter has a single body slot, so the deferred-load status shares it.
+  const childContent = detailStatus || activityContent ? (
+    <>
+      <DeferredDetailStatus status={detailStatus} onRetry={retry} />
+      {activityContent}
+    </>
   ) : undefined
   return (
     <CodexCollabBlockPresenter
@@ -981,8 +1068,8 @@ const CODEX_PARTS: CodexTurnViewPresenterParts = {
   CodexItem: PortableCodexItem,
   Command: PortableCodexCommand,
   Subagent: PortableCodexSubagent,
-  Reasoning: ReasoningBlock,
-  Tool: PortableToolRow,
+  Reasoning: DeferredReasoning,
+  Tool: (props) => props.remoteDetail ? <DeferredTool {...props} remoteDetail={props.remoteDetail} /> : <PortableToolRow {...props} />,
   ImageGallery: PortableImageGallery,
   TurnDetail: TurnDetailSection,
   AppIcon: PortableAppIcon,

@@ -26,6 +26,7 @@ export interface ClaudeDocumentPresenterProps {
 }
 
 export interface ClaudeToolPresenterProps {
+  remoteDetail?: string
   toolName: string
   toolUseId?: string
   input: string
@@ -51,6 +52,7 @@ export interface ClaudeInsightPresenterProps {
 }
 
 export interface ClaudeReasoningPresenterProps {
+  remoteDetails?: string[]
   text: string
   startedAt?: number
   endedAt?: number
@@ -191,6 +193,7 @@ export function ClaudeBlockPresenter({
     case 'tool_use':
       return (
         <Tool
+          remoteDetail={block.remoteDetail}
           toolName={block.toolName}
           toolUseId={block.toolUseId}
           input={block.input}
@@ -211,11 +214,12 @@ export function ClaudeBlockPresenter({
     case 'thinking':
       return (
         <Reasoning
+          remoteDetails={block.remoteDetail ? [block.remoteDetail] : undefined}
           text={block.thinking}
           startedAt={block.startedAt}
           endedAt={block.endedAt}
           blockDone={!isStreaming || !!nextBlockType}
-          showContent={block.thinking.trim().length > 0}
+          showContent={Boolean(block.remoteDetail) || block.thinking.trim().length > 0}
           isFirst={prevBlockType === undefined}
         />
       )
@@ -306,11 +310,12 @@ function renderSegments(
       return (
         <parts.Reasoning
           key={`th-${segment.startIndex}`}
+          remoteDetails={segment.blocks.some(block => block.remoteDetail) ? segment.blocks.flatMap(block => block.remoteDetail ? [block.remoteDetail] : []) : undefined}
           text={text}
           startedAt={first.type === 'thinking' ? first.startedAt : undefined}
           endedAt={last.type === 'thinking' ? last.endedAt : undefined}
           blockDone={sealed}
-          showContent={text.trim().length > 0}
+          showContent={segment.blocks.some(block => block.remoteDetail) || text.trim().length > 0}
           isFirst={segmentIndex === 0}
         />
       )

@@ -36,6 +36,8 @@ export interface DeviceToolBlockPresenterProps {
   renderScreenshot?: (path: string, label: string, unavailableLabel: string) => ReactNode
   renderJson?: (text: string) => ReactNode
   recording?: ReactNode
+  onExpandedChange?: (expanded: boolean) => void
+  pendingDetails?: ReactNode
 }
 
 function defaultJson(text: string) {
@@ -111,6 +113,8 @@ function DeviceToolBlockOperation({
   renderScreenshot,
   renderJson = defaultJson,
   recording,
+  onExpandedChange,
+  pendingDetails,
 }: DeviceToolBlockPresenterProps) {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
@@ -158,8 +162,8 @@ function DeviceToolBlockOperation({
   // showed the user what they were approving, and the result body is prose written
   // for the agent. A refusal is the exception: its reason has to be readable
   // somewhere, and the header truncates.
-  const expandable = !isStreaming && !!result
-    && ((op !== 'request_control' && op !== 'boot') || failed)
+  const expandable = !isStreaming
+    && (pendingDetails != null || (!!result && ((op !== 'request_control' && op !== 'boot') || failed)))
 
   return (
     <ToolRow
@@ -167,7 +171,10 @@ function DeviceToolBlockOperation({
       tone={tone}
       expandable={expandable}
       expanded={expanded}
-      onExpandedChange={setExpanded}
+      onExpandedChange={(next) => {
+        setExpanded(next)
+        onExpandedChange?.(next)
+      }}
       detailsClassName="border-t border-border/40 px-2 py-2 text-xs"
       details={expandable ? (
         <div className="flex flex-col gap-1.5">
@@ -206,6 +213,7 @@ function DeviceToolBlockOperation({
             </div>
           )}
           {expanded && !rich && result && renderJson(result)}
+          {expanded && !result && pendingDetails}
         </div>
       ) : undefined}
       trailing={(

@@ -39,6 +39,7 @@ export interface CodexSubagentPresenterProps {
 }
 
 export interface CodexReasoningPresenterProps {
+  remoteDetails?: string[]
   text: string
   blockDone: boolean
   startedAt?: number
@@ -48,6 +49,7 @@ export interface CodexReasoningPresenterProps {
 }
 
 export interface CodexToolPresenterProps {
+  remoteDetail?: string
   toolName: string
   toolUseId?: string
   input: string
@@ -213,7 +215,8 @@ const CodexAppToolGroup = memo(function CodexAppToolGroup({
             <Tool
               key={item.id}
               toolName={`mcp__${item.server}__${item.tool}`}
-              toolUseId={item.id}
+              remoteDetail={item.type === 'mcp_tool_call' ? item.remoteDetail : undefined}
+                  toolUseId={item.id}
               input={safeStringify(item.arguments)}
               status={codexMcpToolStatus(item.status)}
               result={codexMcpItemResultText(item)}
@@ -487,11 +490,12 @@ const CodexReasoningSegment = memo(function CodexReasoningSegment({
   const last = items[items.length - 1]
   return (
     <Reasoning
+      remoteDetails={items.some(item => item.remoteDetail) ? items.flatMap(item => item.remoteDetail ? [item.remoteDetail] : []) : undefined}
       text={text}
       startedAt={first.startedAt}
       endedAt={last.endedAt}
       blockDone={!isStreaming || blockDone}
-      showContent={text.trim().length > 0}
+      showContent={items.some(item => item.remoteDetail) || text.trim().length > 0}
       isFirst={isFirst}
     />
   )

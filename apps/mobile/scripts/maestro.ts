@@ -5,6 +5,7 @@ import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { delimiter, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { devApplicationId } from '../app-variant.js'
 
 const mobile = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const version = '2.10.0'
@@ -80,7 +81,13 @@ async function test() {
   if (!/^\d+$/.test(port) || Number(port) < 1 || Number(port) > 65535) throw new Error('Invalid --metro-port')
   if (!await metroReady(port)) throw new Error(`Start the preview first: bun run preview --port ${port}`)
   const app = JSON.parse(await readFile(join(mobile, 'app.json'), 'utf8')).expo
-  const appId: string = platform === 'ios' ? app.ios.bundleIdentifier : app.android.package
+  // Always the development variant: this suite needs Metro and the dev
+  // launcher, which only that build has. The suffix comes from app-variant.js
+  // rather than being spelled again here -- a second copy drifts, and the
+  // symptom is a suite that silently drives the release app instead.
+  const appId: string = devApplicationId(
+    platform === 'ios' ? app.ios.bundleIdentifier : app.android.package,
+  )
   if (!args.includes('--skip-launch')) {
     const metroHost = platform === 'ios' ? '127.0.0.1' : '10.0.2.2'
     const url = `exp+superone://expo-development-client/?url=${encodeURIComponent(`http://${metroHost}:${port}`)}`

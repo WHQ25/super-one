@@ -194,6 +194,30 @@ function javaHome() {
   ].find((path) => path && existsSync(join(path, 'bin/java')))
 }
 
+/**
+ * The environment every local rebuild runs under.
+ *
+ * Exported so the two pins here are covered by a test rather than by reading:
+ * the UTF-8 locale (CocoaPods dies with `Encoding::CompatibilityError` without
+ * it) and the development variant. Dropping `APP_VARIANT` would quietly rebuild
+ * the *release* application id, which Android then refuses to install over the
+ * EAS-signed APK -- a signature error that reads like a broken build.
+ *
+ * Annotated rather than inferred: spreading `process.env` into a bare object
+ * literal drops its index signature, which is what made the JAVA_HOME and
+ * ADB_MDNS_AUTO_CONNECT assignments in the caller fail to type-check. Expo
+ * augments this interface with a required `NODE_ENV`, so a test literal has to
+ * carry one.
+ */
+export function baseRebuildEnv(source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return {
+    ...source,
+    LANG: 'en_US.UTF-8',
+    LC_ALL: 'en_US.UTF-8',
+    APP_VARIANT: 'development',
+  }
+}
+
 export async function rebuildDevClient(options: RebuildOptions, hostPlatform = process.platform) {
   if (options.help) {
     console.log(helpText())
@@ -202,11 +226,7 @@ export async function rebuildDevClient(options: RebuildOptions, hostPlatform = p
   if (options.platform === 'ios' && hostPlatform !== 'darwin') {
     throw new Error('iOS rebuild requires macOS')
   }
-  const env = {
-    ...process.env,
-    LANG: 'en_US.UTF-8',
-    LC_ALL: 'en_US.UTF-8',
-  }
+  const env = baseRebuildEnv()
   if (options.platform === 'android') {
     const java = javaHome()
     if (!java) throw new Error('Set JAVA_HOME to a Java 17+ installation (Android Studio includes one).')

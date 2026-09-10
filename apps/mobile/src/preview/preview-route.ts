@@ -6,10 +6,21 @@ import { nativeScenarios } from './scenarios'
 export const shellPreviewPages = ['New session', 'Chat', 'Project', 'Add project', 'Worktree', 'Branch', 'Additional folders', 'Browse folders', 'File preview', 'Icons', 'Git indicators', 'Session status', 'Composer suggestions', 'Chip editor', 'Devices', 'Pairing', 'Workspace', 'Session search', 'Settings', 'Files', 'Computer files', 'File search', 'Go to folder', 'Empty folder', 'Folder error', 'Terminal', 'LAN browser', 'Tool catalog', 'Update'] as const
 export type ShellPreviewPage = typeof shellPreviewPages[number]
 
+/**
+ * Both schemes, because the app has two identities.
+ *
+ * The dev variant answers `superone-dev://` so two installed builds do not
+ * raise an Android disambiguation chooser on every preview link (see
+ * `app-variant.js`). `superone:` stays accepted: the preview also runs inside
+ * a release-identity build during a bisect, and rejecting it there would look
+ * like the deep link is broken.
+ */
+const PREVIEW_PROTOCOLS = ['superone:', 'superone-dev:']
+
 export function parsePreviewRoute(raw: string) {
   try {
     const url = new URL(raw)
-    if (url.protocol !== 'superone:' || url.hostname !== 'native-preview') return null
+    if (!PREVIEW_PROTOCOLS.includes(url.protocol) || url.hostname !== 'native-preview') return null
     const harness = url.searchParams.get('harness') ?? 'claude'
     if (!Object.hasOwn(HARNESS_DEFAULT_BRAND_HUE, harness)) return null
     const theme = url.searchParams.get('theme') ?? 'light'

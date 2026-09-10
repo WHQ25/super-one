@@ -31,3 +31,11 @@ it('leaves effort unset when the deep link omits it', () => {
 it('rejects an effort level no harness offers', () => {
   expect(parsePreviewRoute('superone://native-preview?page=Chat&effort=turbo')).toBeNull()
 })
+
+it('accepts the development variant scheme', () => {
+  // The dev build answers `superone-dev://` so two installed identities do not
+  // raise an Android chooser on every preview link. Maestro drives that one.
+  expect(parsePreviewRoute('superone-dev://native-preview?page=Chat&theme=dark&harness=claude'))
+    .toEqual({ kind: 'shell', page: 'Chat', theme: 'dark', harness: 'claude', effort: undefined })
+  expect(parsePreviewRoute('superone-evil://native-preview?page=Chat')).toBeNull()
+})

@@ -348,6 +348,46 @@ Update — Metro serves JS — so `plugins/with-dev-client-updates.js` sets
 checked before the file open) and makes `create*UpdatesResources` out of date
 when the asset is missing, so a local release build cannot repeat the crash.
 
+## Two app identities
+
+The locally built dev client and the EAS `internal` APK have to sit on one phone
+at once, and they cannot share a package name: one is signed with
+`~/.android/debug.keystore`, the other with the EAS project keystore, and Android
+refuses to install either over the other (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`).
+So the development variant takes a `.dev` suffix and its own name and scheme.
+
+`app-variant.js` is the only copy of that rule. `app.json` stays the base config
+*and the release identity*, so every static assertion in
+`assert-release-config.ts` keeps reading the JSON directly; `app.config.js` is a
+thin overlay Expo hands `app.json` to, and it only rewrites the identity when
+`APP_VARIANT=development`. Everything else — updates URL, permissions, plugins,
+the runtime-version policy — is deliberately shared, so the dev client exercises
+the same native surface the release build ships.
+
+- Both entry points set the variable, and both are covered rather than trusted:
+  `eas.json`'s `development` profile through `env`, and local rebuilds through
+  `baseRebuildEnv()` in `scripts/rebuild-dev-client.ts`. Dropping either one
+  rebuilds the *release* application id and the install fails with a signature
+  error that reads like a broken build. `assert-release-config.ts` asserts the
+  split still produces different ids and different schemes.
+- **The scheme splits too.** Two installed builds both answering `superone://`
+  raise an Android disambiguation chooser on every deep link, and the Maestro
+  suite cannot answer a chooser. The dev variant answers `superone-dev://`;
+  `parsePreviewRoute` accepts both, and `.maestro/helpers/open-scenario.yaml`
+  uses the dev one. Pairing is unaffected — that path is the in-app camera and
+  the paste field, not the OS deep link.
+- `scripts/maestro.ts` always targets the dev identity, because that suite needs
+  Metro and the dev launcher. It imports `devApplicationId` rather than
+  re-appending the suffix; a second copy drifts, and the symptom is a UI suite
+  silently driving the wrong app.
+- Importing `app-variant.js` from TypeScript needs the **explicit `.js`
+  extension**. Without it bun resolves the sibling `app-variant.d.ts` first and
+  erases the import as type-only, leaving the binding `undefined` at runtime
+  while `tsc` stays green.
+- Changing the application id is a native change: rebuild with `--clean`. The
+  previously installed build keeps the old id, so it has to be uninstalled once
+  — after that the two coexist permanently.
+
 ## Native-binary updates
 
 EAS Update swaps the JS bundle; anything touching the native runtime needs a new

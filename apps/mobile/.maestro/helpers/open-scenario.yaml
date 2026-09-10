@@ -16,7 +16,7 @@ appId: ${APP_ID}
           timeout: 60000
 - openLink:
     autoVerify: true
-    link: ${"superone://native-preview?scenario=" + SCENARIO + "&theme=" + THEME + "&harness=claude"}
+    link: ${"superone-dev://native-preview?scenario=" + SCENARIO + "&theme=" + THEME + "&harness=claude"}
 - repeat:
     times: 3
     commands:

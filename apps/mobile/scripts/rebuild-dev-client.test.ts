@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   adbConnectSucceeded,
+  baseRebuildEnv,
   parseAdbDevices,
   parseMdnsConnectTargets,
   parseRebuildArgs,
@@ -89,5 +90,18 @@ describe('adbConnectSucceeded', () => {
     expect(adbConnectSucceeded('connected to 192.168.124.2:33025')).toBe(true)
     expect(adbConnectSucceeded('already connected to 192.168.124.2:33025')).toBe(true)
     expect(adbConnectSucceeded("failed to connect to '192.168.124.2:38393': Connection refused")).toBe(false)
+  })
+})
+
+describe('baseRebuildEnv', () => {
+  it('pins the UTF-8 locale and the development variant', () => {
+    // NODE_ENV is required: Expo augments NodeJS.ProcessEnv with it.
+    const env = baseRebuildEnv({ PATH: '/usr/bin', NODE_ENV: 'test' })
+    expect(env.PATH).toBe('/usr/bin')
+    expect(env.LANG).toBe('en_US.UTF-8')
+    expect(env.LC_ALL).toBe('en_US.UTF-8')
+    // Without this the local build takes the release application id and then
+    // cannot install over the EAS-signed APK.
+    expect(env.APP_VARIANT).toBe('development')
   })
 })

@@ -272,6 +272,27 @@ function estimateTokens(text: string): number {
   return (text.length - nonAscii) / ASCII_CHARS_PER_TOKEN + nonAscii / NON_ASCII_CHARS_PER_TOKEN
 }
 
+/**
+ * Plausible range for the per-turn calibration of tool-result estimates. Outside
+ * it the chain is broken (compaction, model/window switch, revived session).
+ */
+const CHAIN_ALPHA_MIN = 0.4
+const CHAIN_ALPHA_MAX = 2.5
+/** Residual tolerated when no tool result was observed but the chain says a little was appended. */
+const CHAIN_ZERO_TOLERANCE = 0.02
+
+/** Result of one turn's occupancy solve. */
+export interface CursorOccupancyEstimate {
+  /** Context occupancy after this turn (what the next prompt carries). */
+  occupancy: number
+  /** Input-side growth this turn: prompt plus tool results. */
+  inputGrowth: number
+  /** True when the previous turn's occupancy anchored the solve. */
+  chained: boolean
+  /** Calibration applied to tool-result estimates (1 when unchained or exact). */
+  alpha: number
+}
+
 /** `modelCallId` is `<runUuid>-<index>-<rand>`; `index` counts model calls in the run. */
 const MODEL_CALL_INDEX_RE = /-(\d+)-[^-]+$/
 
@@ -299,8 +320,16 @@ export function modelCallIndexFromId(modelCallId: unknown): number | null {
  * `modelCallId` indices) and `Δ_k` is the content each call appended (its text,
  * tool args and tool results — all of which stream through this mapper).
  *
+ * When the previous turn's occupancy `C` is known, `p_1 = C + prompt` is known
+ * too, so `I − n·p_1` pins the weighted sum of increments *exactly* and the
+ * char-based estimates only decide how it is distributed: the chars→tokens
+ * ratio calibrates itself every turn (`alpha`). Output-side increments are
+ * rescaled to the exact `outputTokens` total. A turn with a single model call
+ * re-anchors the chain exactly; an implausible calibration (compaction, model
+ * or window switch, revived session) falls back to the single-turn solve.
+ *
  * Footer semantics: `input` is how much the *input side* grew the window this
- * turn (user prompt + tool results, estimated), `output` is the model's output
+ * turn (user prompt + tool results), `output` is the model's output
  * (`token-delta` live, exact `outputTokens` at turn end).
  */
 export class CursorTurnUsage {
@@ -308,15 +337,25 @@ export class CursorTurnUsage {
   output = 0
   /** Estimated context occupancy after this turn (0 until `turn-ended`). */
   context = 0
-  /** Estimated tokens appended by each model call, indexed by model-call index. */
-  private readonly callTokens: number[] = []
+  /** How the last `applyInternalTurn` arrived at `context`; for logs and tests. */
+  lastEstimate: CursorOccupancyEstimate | null = null
+  private readonly promptTokens: number
+  private readonly previousOccupancy: number
+  /** Tokens appended by each model call, indexed by model-call index. */
+  private readonly calls: Array<{ out: number; result: number }> = []
   /** Text streamed since the last tool call; belongs to the next call seen. */
   private pendingTextTokens = 0
   private currentCallIndex = 0
   private sawToolCallComplete = false
 
-  constructor(prompt = '') {
-    this.input = Math.round(estimateTokens(prompt))
+  /**
+   * @param prompt Full prompt text sent this turn (host context included).
+   * @param previousOccupancy Occupancy after the previous turn, 0 when unknown.
+   */
+  constructor(prompt = '', previousOccupancy = 0) {
+    this.promptTokens = Math.round(estimateTokens(prompt))
+    this.previousOccupancy = Number.isFinite(previousOccupancy) && previousOccupancy > 0 ? previousOccupancy : 0
+    this.input = this.promptTokens
   }
 
   addTokenDelta(tokens: number): void {
@@ -331,7 +370,7 @@ export class CursorTurnUsage {
   /** A tool call was issued: the text streamed before it belongs to the same model call. */
   observeToolCallStarted(modelCallId: unknown): void {
     const index = this.resolveCallIndex(modelCallId, true)
-    this.bumpCall(index, this.pendingTextTokens)
+    this.callAt(index).out += this.pendingTextTokens
     this.pendingTextTokens = 0
   }
 
@@ -341,15 +380,22 @@ export class CursorTurnUsage {
    */
   observeToolCallCompleted(modelCallId: unknown, args: string, result: string): void {
     const index = this.resolveCallIndex(modelCallId, false)
+    const call = this.callAt(index)
     const resultTokens = estimateTokens(result)
-    this.bumpCall(index, estimateTokens(args) + resultTokens)
+    call.out += estimateTokens(args)
+    call.result += resultTokens
     this.sawToolCallComplete = true
     this.input += Math.round(resultTokens)
   }
 
   applyInternalTurn(usage: CursorUsageFields): void {
     if (usage.outputTokens > this.output) this.output = usage.outputTokens
-    this.context = this.estimateOccupancy(usage.inputTokens)
+    // Reasoning is billed as output but not carried into the next prompt.
+    const outputText = Math.max(0, usage.outputTokens - (usage.reasoningTokens ?? 0))
+    const estimate = this.estimateOccupancy(usage.inputTokens, outputText)
+    this.lastEstimate = estimate
+    this.context = estimate.occupancy
+    this.input = estimate.inputGrowth
   }
 
   /** Run totals only refine output; billed input never reaches the footer. */
@@ -358,24 +404,74 @@ export class CursorTurnUsage {
   }
 
   /**
-   * Solve the last prompt from the summed prompts and the observed increments,
-   * then add the final answer so the value is what the *next* prompt carries.
+   * Solve the occupancy the *next* prompt will carry.
+   *
+   * @param inputTokens Cursor's summed prompt tokens for this run (exact).
+   * @param outputText Exact output tokens that stay in context (0 when unknown).
    */
-  estimateOccupancy(inputTokens: number): number {
-    const increments = this.callTokens.map((tokens) => tokens ?? 0)
+  estimateOccupancy(inputTokens: number, outputText = 0): CursorOccupancyEstimate {
+    const calls = this.calls.map((call) => ({ out: call.out, result: call.result }))
     // The final answer is its own model call unless nothing at all was seen.
-    if (this.pendingTextTokens > 0 || increments.length === 0) {
-      increments.push(this.pendingTextTokens)
+    if (this.pendingTextTokens > 0 || calls.length === 0) {
+      calls.push({ out: this.pendingTextTokens, result: 0 })
     }
-    const n = increments.length
-    let summedPrefixes = 0
-    let prefix = 0
-    for (const inc of increments) {
-      summedPrefixes += prefix
-      prefix += inc
+    const n = calls.length
+    // Output side: the total is exact, so estimates only decide the split per call.
+    let estimatedOut = 0
+    let totalResult = 0
+    for (const call of calls) {
+      estimatedOut += call.out
+      totalResult += call.result
     }
-    const firstPrompt = Math.max(0, (inputTokens - summedPrefixes) / n)
-    return Math.round(firstPrompt + prefix)
+    const beta = outputText > 0 && estimatedOut > 0 ? outputText / estimatedOut : 1
+    const retainedOutput = outputText > 0 ? outputText : estimatedOut
+    // Σ_k Σ_{j<k} Δ_j split by side: prompts re-send everything appended before them.
+    let weightedOut = 0
+    let weightedResult = 0
+    let prefixOut = 0
+    let prefixResult = 0
+    for (const call of calls) {
+      weightedOut += prefixOut
+      weightedResult += prefixResult
+      prefixOut += call.out * beta
+      prefixResult += call.result
+    }
+
+    const previous = this.previousOccupancy
+    if (previous > 0) {
+      if (n === 1) {
+        // The only prompt is I itself: exact re-anchor. The growth stays the visible
+        // prompt so a correction of the previous estimate is not shown as user input.
+        return {
+          occupancy: Math.round(inputTokens + retainedOutput),
+          inputGrowth: this.promptTokens,
+          chained: true,
+          alpha: 1,
+        }
+      }
+      const firstPrompt = previous + this.promptTokens
+      const weightedResultTrue = inputTokens - n * firstPrompt - weightedOut
+      const alpha = weightedResult > 0
+        ? weightedResultTrue / weightedResult
+        : Math.abs(weightedResultTrue) <= CHAIN_ZERO_TOLERANCE * inputTokens ? 1 : Number.NaN
+      if (Number.isFinite(alpha) && alpha >= CHAIN_ALPHA_MIN && alpha <= CHAIN_ALPHA_MAX) {
+        return {
+          occupancy: Math.round(firstPrompt + alpha * totalResult + retainedOutput),
+          inputGrowth: Math.round(this.promptTokens + alpha * totalResult),
+          chained: true,
+          alpha,
+        }
+      }
+    }
+
+    // Single-turn solve: p_1 from I with the increments taken at face value.
+    const firstPrompt = Math.max(0, (inputTokens - weightedOut - weightedResult) / n)
+    return {
+      occupancy: Math.round(firstPrompt + totalResult + retainedOutput),
+      inputGrowth: this.input,
+      chained: false,
+      alpha: 1,
+    }
   }
 
   private resolveCallIndex(modelCallId: unknown, isStart: boolean): number {
@@ -394,9 +490,9 @@ export class CursorTurnUsage {
     return this.currentCallIndex
   }
 
-  private bumpCall(index: number, tokens: number): void {
-    while (this.callTokens.length <= index) this.callTokens.push(0)
-    this.callTokens[index] = (this.callTokens[index] ?? 0) + tokens
+  private callAt(index: number): { out: number; result: number } {
+    while (this.calls.length <= index) this.calls.push({ out: 0, result: 0 })
+    return this.calls[index]!
   }
 }
 

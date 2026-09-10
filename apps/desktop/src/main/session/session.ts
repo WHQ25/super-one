@@ -1720,6 +1720,7 @@ export class Session implements SessionContract {
       apiProviderId: this._apiProviderId,
       systemPromptAppend: this.systemPromptAppend,
       agentName: this.computeTitle()?.trim() || undefined,
+      contextTokens: this._contextTokens,
     }
   }
 

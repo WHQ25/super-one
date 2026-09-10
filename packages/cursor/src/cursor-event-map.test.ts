@@ -213,8 +213,8 @@ describe('mapInteractionUpdate', () => {
       inputTokens: 10,
       outputTokens: 25,
       cacheReadTokens: 2_000_000,
-      // Single model call: exact prompt plus the streamed answer (70 chars ≈ 20 tokens).
-      contextTokens: 50_020,
+      // Single model call: exact prompt plus the exact retained output (25 − 3 reasoning).
+      contextTokens: 50_022,
       contextWindow: 100_000,
     })
     expect(ended[1]).toEqual({ type: 'status_change', status: 'idle' })
@@ -871,6 +871,46 @@ describe('CursorTurnUsage occupancy', () => {
     turn.addText('中'.repeat(150)) // 1.5 chars per token → 100
     turn.applyInternalTurn(usage(1_000))
     expect(turn.context).toBe(1_100)
+  })
+
+  it('re-anchors exactly on a single-call turn when the previous occupancy is known', () => {
+    // The previous estimate was 400 short; the occupancy re-anchors on I while the
+    // footer keeps showing only the prompt the user actually sent.
+    const turn = new CursorTurnUsage(chars(100), 30_000)
+    turn.addText(chars(80))
+    turn.applyInternalTurn({ inputTokens: 30_500, outputTokens: 90, reasoningTokens: 10, cacheReadTokens: 0, cacheWriteTokens: 0 })
+    expect(turn.lastEstimate).toMatchObject({ chained: true, alpha: 1 })
+    expect(turn.context).toBe(30_580)
+    expect(turn.input).toBe(100)
+    expect(turn.output).toBe(90)
+  })
+
+  it('calibrates under-estimated tool results from the previous occupancy', () => {
+    // Truth: p1 = 10_100, call 0 appends 150 output + 350 result, final answer 200.
+    // We only *see* 250 tokens of result (Cursor wraps tool output), so the
+    // single-turn solve would be 100 short; the chain pins the total exactly.
+    const turn = new CursorTurnUsage(chars(100), 10_000)
+    turn.addText(chars(100))
+    turn.observeToolCallStarted('run-0-a')
+    turn.observeToolCallCompleted('run-0-a', chars(50), chars(250))
+    turn.addText(chars(200))
+    turn.applyInternalTurn({ inputTokens: 20_700, outputTokens: 350, cacheReadTokens: 0, cacheWriteTokens: 0 })
+    expect(turn.lastEstimate).toMatchObject({ chained: true })
+    expect(turn.lastEstimate?.alpha).toBeCloseTo(1.4)
+    expect(turn.context).toBe(10_800)
+    expect(turn.input).toBe(450)
+  })
+
+  it('falls back to the single-turn solve when the chain is implausible', () => {
+    // Previous occupancy says 50k but the run only summed 20.5k: context was compacted.
+    const turn = new CursorTurnUsage('', 50_000)
+    turn.addText(chars(100))
+    turn.observeToolCallStarted('run-0-a')
+    turn.observeToolCallCompleted('run-0-a', chars(50), chars(350))
+    turn.addText(chars(200))
+    turn.applyInternalTurn(usage(20_500))
+    expect(turn.lastEstimate).toMatchObject({ chained: false, alpha: 1 })
+    expect(turn.context).toBe(10_700)
   })
 
   it('never lets run totals push billed input into the footer', () => {

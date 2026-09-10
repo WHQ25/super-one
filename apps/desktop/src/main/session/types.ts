@@ -163,6 +163,8 @@ export interface BackendStartOptions {
   systemPromptAppend?: string
   /** Human-readable session title (Cursor agent name, etc.). */
   agentName?: string
+  /** Persisted context occupancy from the last turn; seeds harnesses that solve occupancy across turns. */
+  contextTokens?: number
 }
 
 export interface PrewarmHint {

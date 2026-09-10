@@ -120,6 +120,11 @@ export interface CursorSendOptions {
   idempotencyKey?: string
   /** Per-send MCP override (else uses last synced servers). */
   mcpServers?: Record<string, McpServerConfig>
+  /**
+   * Context occupancy after the previous turn (the host's last `contextTokens`).
+   * Anchors this turn's occupancy solve; omit or 0 when unknown.
+   */
+  previousContextTokens?: number
 }
 
 export interface CursorSendResult {
@@ -432,8 +437,9 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
       const contextWindow = resolveContextWindow(modelSelection)
       // Bridge real callIds from onDelta → onStep (SDK ConversationStep.toolCall has no callId).
       const callIdBridge = new CursorTurnCallIdBridge()
-      // The prompt (host context included) is the first thing this turn adds to the window.
-      const turnUsage = new CursorTurnUsage(prompt)
+      // The prompt (host context included) is the first thing this turn adds to the
+      // window; the previous occupancy lets the solve calibrate itself (see class docs).
+      const turnUsage = new CursorTurnUsage(prompt, sendOpts?.previousContextTokens ?? 0)
 
       const sendStarted = Date.now()
       log.info('[CursorRuntime] send start', { messageId })
@@ -561,6 +567,14 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
 
       if (result.usage) {
         turnUsage.applyRunTotals(result.usage)
+        if (turnUsage.lastEstimate) {
+          log.debug('[CursorRuntime] context estimate', {
+            messageId,
+            inputTokens: result.usage.inputTokens,
+            previous: sendOpts?.previousContextTokens ?? 0,
+            ...turnUsage.lastEstimate,
+          })
+        }
         opts.onEvent({
           type: 'message_usage',
           messageId,

@@ -72,6 +72,9 @@ export class CursorBackend implements SessionBackend {
     this.permissionMode = opts.permissionMode
     this.model = opts.model
     this.effort = opts.effort
+    // The occupancy chain follows the session: revived sessions resume from the
+    // persisted value, a cleared session starts over from 0.
+    if (opts.contextTokens !== undefined) this.lastContextTokens = opts.contextTokens
     this.started = true
     // Do not await Agent.create here — it often takes several seconds (sandbox
     // policy, Statsig, workspace scan). Session.send waits on start() before
@@ -234,6 +237,7 @@ export class CursorBackend implements SessionBackend {
         images: images.length ? images : undefined,
         force: force || undefined,
         idempotencyKey,
+        previousContextTokens: this.lastContextTokens,
       })
 
       if (this.interrupted) this.complete(messageId, true)

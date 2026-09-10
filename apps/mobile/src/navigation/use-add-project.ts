@@ -4,7 +4,6 @@ import type {
   CloneRepositoryResponse,
   DefaultClonePathResponse,
   GithubRepoHit,
-  GithubRepoSearchMode,
   RemoteCommand,
   SearchGithubReposResponse,
 } from '@superone/shared/agent-types'
@@ -101,8 +100,8 @@ export function useAddProject(input: {
   const [browseError, setBrowseError] = useState('')
   const [repos, setRepos] = useState<GithubRepoHit[]>([])
   const [searchHits, setSearchHits] = useState<GithubRepoHit[]>([])
-  const [githubLoading, setGithubLoading] = useState(false)
-  const [githubSearching, setGithubSearching] = useState(false)
+  const [githubResultKey, setGithubResultKey] = useState<string | null>(null)
+  const [githubSearchResultKey, setGithubSearchResultKey] = useState<string | null>(null)
   const [githubUnavailable, setGithubUnavailable] = useState(false)
   const [shallowClone, setShallowClone] = useState(false)
   const [saveAsDefault, setSaveAsDefault] = useState(false)
@@ -110,8 +109,6 @@ export function useAddProject(input: {
   const [error, setError] = useState('')
 
   const browseGeneration = useRef(0)
-  const githubGeneration = useRef(0)
-  const searchGeneration = useRef(0)
   const searchSentAt = useRef(0)
   const ownerCache = useRef(new Map<string, GithubRepoHit[]>())
   const searchCache = useRef(new Map<string, GithubRepoHit[]>())
@@ -152,8 +149,8 @@ export function useAddProject(input: {
     if (!(next.kind === 'repo' && next.source === 'github')) {
       setRepos([])
       setSearchHits([])
-      setGithubLoading(false)
-      setGithubSearching(false)
+      setGithubResultKey(null)
+      setGithubSearchResultKey(null)
       setGithubUnavailable(false)
     }
   }, [])
@@ -199,87 +196,97 @@ export function useAddProject(input: {
     [isMyReposMode, query],
   )
 
-  const loadRepos = useCallback((mode: GithubRepoSearchMode, value: string) => {
-    const generation = ++githubGeneration.current
-    setGithubLoading(true)
-    setGithubUnavailable(false)
-    void request<SearchGithubReposResponse>({
-      type: 'search_github_repos', requestId: randomId(), mode, value,
-    }).then((result) => {
-      if (generation !== githubGeneration.current) return
-      if ('error' in result) {
-        setRepos([])
-        return
-      }
-      if (mode === 'owner') ownerCache.current.set(value.toLowerCase(), result.repos)
-      setRepos(result.repos)
-      setGithubUnavailable(!!result.unavailable)
-    }).catch(() => {
-      if (generation === githubGeneration.current) setRepos([])
-    }).finally(() => {
-      if (generation === githubGeneration.current) setGithubLoading(false)
-    })
-  }, [request])
+  const githubOwner = ownerSearch?.owner.toLowerCase() ?? ''
+  const githubKey = isMyReposMode ? 'mine' : githubOwner ? `owner:${githubOwner}` : null
+  const nameKey = nameQuery?.toLowerCase() ?? null
+  // A query is pending from its first render, including the debounce before
+  // an effect issues the request. Only a result for that query can settle it.
+  const githubLoading = githubKey !== null && githubResultKey !== githubKey
+  const githubSearching = nameKey !== null && githubSearchResultKey !== nameKey
 
   // `owner/` lists that account's repositories; a bare step lists the user's own.
   useEffect(() => {
-    if (githubUrlQuery) {
-      setRepos([])
+    if (!githubKey) {
+      setRepos((current) => current.length ? [] : current)
+      setGithubResultKey(null)
       return
     }
-    if (isMyReposMode) {
-      loadRepos('mine', '')
-      return
-    }
-    if (!ownerSearch) return
-    const owner = ownerSearch.owner
-    const cached = ownerCache.current.get(owner.toLowerCase())
+    setGithubUnavailable(false)
+    const cached = githubOwner ? ownerCache.current.get(githubOwner) : undefined
     if (cached) {
       setRepos(cached)
-      setGithubLoading(false)
+      setGithubResultKey(githubKey)
       return
     }
-    const timer = setTimeout(() => loadRepos('owner', owner), OWNER_SEARCH_MS)
-    return () => clearTimeout(timer)
-  }, [githubUrlQuery, isMyReposMode, ownerSearch?.owner, loadRepos])
+    setGithubResultKey(null)
+    let cancelled = false
+    const load = () => {
+      void request<SearchGithubReposResponse>({
+        type: 'search_github_repos', requestId: randomId(),
+        mode: githubOwner ? 'owner' : 'mine', value: githubOwner,
+      }).then((result) => {
+        if (cancelled) return
+        if ('error' in result) {
+          setRepos([])
+          return
+        }
+        if (githubOwner) ownerCache.current.set(githubOwner, result.repos)
+        setRepos(result.repos)
+        setGithubUnavailable(!!result.unavailable)
+      }).catch(() => {
+        if (!cancelled) setRepos([])
+      }).finally(() => {
+        if (!cancelled) setGithubResultKey(githubKey)
+      })
+    }
+    const timer = githubOwner ? setTimeout(load, OWNER_SEARCH_MS) : undefined
+    if (!githubOwner) load()
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [githubKey, githubOwner, request])
 
   // Free-text search runs alongside the local "your repos" filter.
   useEffect(() => {
-    if (!nameQuery) {
+    if (!nameKey) {
       setSearchHits((current) => (current.length ? [] : current))
-      setGithubSearching(false)
+      setGithubSearchResultKey(null)
       return
     }
-    const key = nameQuery.toLowerCase()
+    const key = nameKey
     const cached = searchCache.current.get(key)
     if (cached) {
       setSearchHits(cached)
-      setGithubSearching(false)
+      setGithubSearchResultKey(key)
       return
     }
     // Reuse a shorter query's hits so the list is never empty while typing.
     const prefix = longestPrefixCacheHits(searchCache.current, key)
     setSearchHits(prefix ? filterGithubHitsByPrefix(prefix, key) : [])
+    setGithubSearchResultKey(null)
 
-    const generation = ++searchGeneration.current
-    setGithubSearching(true)
+    let cancelled = false
     const timer = setTimeout(() => {
       searchSentAt.current = Date.now()
       void request<SearchGithubReposResponse>({
-        type: 'search_github_repos', requestId: randomId(), mode: 'query', value: nameQuery,
+        type: 'search_github_repos', requestId: randomId(), mode: 'query', value: key,
       }).then((result) => {
-        if (generation !== searchGeneration.current) return
+        if (cancelled) return
         const hits = 'error' in result ? [] : result.repos
         searchCache.current.set(key, hits)
         setSearchHits(hits)
       }).catch(() => {
-        if (generation === searchGeneration.current) setSearchHits([])
+        if (!cancelled) setSearchHits([])
       }).finally(() => {
-        if (generation === searchGeneration.current) setGithubSearching(false)
+        if (!cancelled) setGithubSearchResultKey(key)
       })
     }, githubRepoNameSearchDelay(Date.now(), searchSentAt.current))
-    return () => clearTimeout(timer)
-  }, [nameQuery, request])
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [nameKey, request])
 
   // Typing a concrete path on the source step jumps straight into browsing.
   useEffect(() => {
@@ -468,7 +475,7 @@ export function useAddProject(input: {
   const loading = (isPathStep && browseLoading && rowCount === 0) || (isGithubStep && githubLoading)
 
   const emptyMessage = useMemo(() => {
-    if (rowCount || loading) return null
+    if (rowCount || loading || githubSearching) return null
     if (step.kind === 'repo') {
       if (repoResolved) return null
       if (step.source === 'url') return ADD_PROJECT_TEXT.repoInvalidUrl
@@ -479,7 +486,7 @@ export function useAddProject(input: {
     }
     if (isPathStep) return browseError || ADD_PROJECT_TEXT.noDirectories
     return null
-  }, [rowCount, loading, step, repoResolved, githubUnavailable, ownerSearch, isMyReposMode, isPathStep, browseError])
+  }, [rowCount, loading, githubSearching, step, repoResolved, githubUnavailable, ownerSearch, isMyReposMode, isPathStep, browseError])
 
   const clonePreview = step.kind === 'destination'
     ? {

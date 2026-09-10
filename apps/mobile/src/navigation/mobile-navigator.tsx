@@ -84,7 +84,6 @@ export function MobileNavigator(props: {
           worktree: 1,
           branch: 1,
           'add-dir': 1,
-          'file-preview': 1,
           settings: 1,
           files: 1,
         }) as MobileRoute[]).map((route) => (

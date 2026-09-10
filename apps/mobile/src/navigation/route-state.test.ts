@@ -42,7 +42,6 @@ describe('routeHierarchy', () => {
     // The chip row and `/add-dir` both sit on the composer, so back has to land
     // on that conversation rather than on settings the user never opened.
     expect(routeHierarchy('add-dir')).toEqual(['pair', 'chat', 'add-dir'])
-    expect(routeHierarchy('file-preview')).toEqual(['pair', 'chat', 'file-preview'])
   })
 
   it('opens the git pickers over the chat they were started from', () => {

@@ -12,8 +12,6 @@ export type MobileRoute =
   | 'branch'
   /** The folders a session gets beyond its project root. */
   | 'add-dir'
-  /** A project file opened from a transcript chip — the desktop's file tab. */
-  | 'file-preview'
   | 'settings'
   | 'files'
 
@@ -53,8 +51,6 @@ export function routeHierarchy(
   // Opened from the composer — the chip row or `/add-dir` — so back lands on
   // the chat that asked for it, never on a screen the user skipped past.
   if (route === 'add-dir') return [...root, 'add-dir']
-  // Opened from a chip in the transcript, so back returns to the reading position.
-  if (route === 'file-preview') return [...root, 'file-preview']
   if (route === 'project-picker') return [...root, 'project-picker']
   // Adding always happens on top of the picker it was opened from.
   if (route === 'add-project') return [...root, 'project-picker', 'add-project']

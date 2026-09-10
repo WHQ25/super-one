@@ -4,10 +4,12 @@ import type {
   PermissionRequest,
   PlanApprovalRequest,
 } from '@superone/shared/agent-types'
+import type { MediaPorts } from '../media-ports'
 import type { ChatRuntime } from '../runtime'
 import { PermissionSheet, PlanSheet, QuestionSheet } from '../sheets'
-import { SharedFileSheet, type useSharedFileInbox } from '../shared-file-inbox'
 import { runUiAction } from '../ui-action'
+import { FilePreviewModal } from '../ui/file-preview'
+import type { useFilePreview } from './use-file-preview'
 import { WorkspaceDrawer, type WorkspaceDrawerProps } from './workspace-drawer'
 
 export function MobileOverlays(props: {
@@ -19,7 +21,9 @@ export function MobileOverlays(props: {
   planContinueMode?: string
   onPlanContinueMode: (mode: string) => void
   workspace: WorkspaceDrawerProps
-  sharedFileInbox: ReturnType<typeof useSharedFileInbox>
+  /** The fullscreen preview every picture and file opens into. */
+  filePreview: ReturnType<typeof useFilePreview>
+  mediaPorts: MediaPorts
 }) {
   const runtime = () => props.runtimeRef.current
   return (
@@ -75,7 +79,13 @@ export function MobileOverlays(props: {
         )}
       />
       <WorkspaceDrawer {...props.workspace} />
-      <SharedFileSheet inbox={props.sharedFileInbox} />
+      <FilePreviewModal
+        state={props.filePreview.state}
+        ports={props.mediaPorts}
+        onDismiss={props.filePreview.close}
+        onStartTransfer={props.filePreview.startTransfer}
+        onRetry={props.filePreview.retry}
+      />
     </>
   )
 }

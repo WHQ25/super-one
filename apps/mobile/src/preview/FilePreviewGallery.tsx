@@ -1,35 +1,49 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { View } from 'react-native'
-import { FilePreviewScreen } from '../screens/file-preview-screen'
+import { FilePreviewModal } from '../ui/file-preview'
 import type { FilePreviewState } from '../file-preview-state'
-import { SelectionField } from '../ui'
+import { Button, SelectionField } from '../ui'
+import { createFakeMediaPorts, type FakeSaveBehaviour } from './fake-media-ports'
 import { FILE_PREVIEW_FIXTURES } from './file-preview-fixtures'
 
+const SAVE_OUTCOMES: FakeSaveBehaviour[] = ['saved', 'cancelled', 'denied', 'throw']
+
 /**
- * Every state the file preview page can reach, one at a time.
- *
- * The page fills the pane, so the states are switched rather than stacked. The
- * two relay transfer rows are the ones worth reviewing here: reproducing them
- * against a live desktop means pairing through the relay on purpose and tapping
- * a large file — this gets there in one pick.
+ * Every state the fullscreen preview can reach, one at a time, with fake media
+ * ports so the menu's outcomes — saved, cancelled, permission denied, a native
+ * failure — can be seen without a photo library or a folder picker. The two
+ * relay transfer rows are the ones worth reviewing here: reproducing them
+ * against a live desktop means pairing through the relay on purpose and
+ * tapping a large file — this gets there in one pick.
  */
 export function FilePreviewGallery() {
   const [label, setLabel] = useState(FILE_PREVIEW_FIXTURES[0].label)
-  const [started, setStarted] = useState(false)
+  const [saveOutcome, setSaveOutcome] = useState<FakeSaveBehaviour>('saved')
+  const [open, setOpen] = useState(false)
+  const [phase, setPhase] = useState<'idle' | 'downloading' | null>(null)
   const fixture = FILE_PREVIEW_FIXTURES.find((item) => item.label === label) ?? FILE_PREVIEW_FIXTURES[0]
-  // The Download button flips the real card into its started state so the
+  // The Download button flips the real card into its downloading state so the
   // transition can be seen, not just its two ends.
-  const state: FilePreviewState = fixture.state.kind === 'transfer' && started
-    ? { ...fixture.state, started: true }
+  const state: FilePreviewState = fixture.state.kind === 'transfer' && phase
+    ? { ...fixture.state, phase }
     : fixture.state
+  const ports = useMemo(() => createFakeMediaPorts({ save: saveOutcome, delayMs: 600 }), [saveOutcome])
   return (
-    <View style={{ flex: 1 }}>
-      <View style={{ paddingHorizontal: 12, paddingVertical: 6 }}>
-        <SelectionField compact label="State" value={label}
-          options={FILE_PREVIEW_FIXTURES.map((item) => ({ value: item.label, label: item.label }))}
-          onChange={(next) => { setLabel(next); setStarted(false) }} />
-      </View>
-      <FilePreviewScreen state={state} onStartTransfer={() => setStarted(true)} onRetry={() => setStarted(false)} />
+    <View style={{ flex: 1, gap: 8, paddingHorizontal: 12, paddingVertical: 6 }}>
+      <SelectionField compact label="State" value={label}
+        options={FILE_PREVIEW_FIXTURES.map((item) => ({ value: item.label, label: item.label }))}
+        onChange={(next) => { setLabel(next); setPhase(null) }} />
+      <SelectionField compact label="Save outcome" value={saveOutcome}
+        options={SAVE_OUTCOMES.map((value) => ({ value, label: value }))}
+        onChange={(next) => setSaveOutcome(next as FakeSaveBehaviour)} />
+      <Button label="Open preview" onPress={() => setOpen(true)} />
+      <FilePreviewModal
+        state={open ? state : null}
+        ports={ports}
+        onDismiss={() => setOpen(false)}
+        onStartTransfer={() => setPhase('downloading')}
+        onRetry={() => setPhase(null)}
+      />
     </View>
   )
 }

@@ -39,17 +39,27 @@ const inline = size <= INLINE_PREVIEW_MAX_BYTES
 > Anything else becomes a transfer card. Over the relay the user confirms it first.
 `
 
-const PATH = '/workspace/super-one/packages/chat-view/src/PortableToolRow.tsx'
+/** A 2×2 PNG so the fixtures need no asset pipeline. */
+export const TINY_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR42mNk+M9Qz8DAwMDAwAAAFQ4C/1K5pFcAAAAASUVORK5CYII='
 
-/** Every state the preview page can reach, keyed by the label the gallery shows. */
+const PATH = '/workspace/super-one/packages/chat-view/src/PortableToolRow.tsx'
+const HERO = { path: '/workspace/super-one/art/hero.png', name: 'hero.png', size: 4_820_113, mimeType: 'image/png' }
+
+/** Every state the preview can reach, keyed by the label the gallery shows. */
 export const FILE_PREVIEW_FIXTURES: ReadonlyArray<{ label: string; state: FilePreviewState }> = [
+  { label: 'Image · tool screenshot', state: { kind: 'image', path: '/Users/me/shots/screen.png', name: 'screen.png', label: 'Screenshot', src: TINY_PNG, mimeType: 'image/png' } },
+  { label: 'Image · attachment, no path', state: { kind: 'image', name: 'photo.png', label: 'photo.png', src: TINY_PNG, mimeType: 'image/png' } },
+  { label: 'Image · downloaded file', state: { kind: 'image', ...HERO, src: 'file:///cache/file-preview/hero.png' } },
+  { label: 'Image · remote URL (nothing to save)', state: { kind: 'image', name: 'image.jpg', src: 'https://picsum.photos/seed/superone/1200/800', mimeType: 'image/jpeg' } },
+  { label: 'Image · broken', state: { kind: 'image', name: 'broken.png', src: 'data:image/png;base64,AAAA', mimeType: 'image/png' } },
   { label: 'Code · cited line 16', state: { kind: 'text', path: PATH, name: 'PortableToolRow.tsx', text: CODE, size: CODE.length, markdown: false, line: 16 } },
   { label: 'Code · no anchor', state: { kind: 'text', path: PATH, name: 'PortableToolRow.tsx', text: CODE, size: CODE.length, markdown: false } },
   { label: 'Markdown', state: { kind: 'text', path: '/workspace/super-one/docs/preview.md', name: 'preview.md', text: MARKDOWN, size: MARKDOWN.length, markdown: true } },
   { label: 'Empty file', state: { kind: 'text', path: '/workspace/super-one/.gitkeep', name: '.gitkeep', text: '', size: 0, markdown: false } },
   { label: 'Loading', state: { kind: 'loading', path: PATH, name: 'PortableToolRow.tsx', line: 16 } },
-  { label: 'Transfer · relay, awaiting confirm', state: { kind: 'transfer', path: '/workspace/super-one/art/hero.png', name: 'hero.png', size: 4_820_113, mimeType: 'image/png', needsConfirm: true, started: false } },
-  { label: 'Transfer · relay, started', state: { kind: 'transfer', path: '/workspace/super-one/art/hero.png', name: 'hero.png', size: 4_820_113, mimeType: 'image/png', needsConfirm: true, started: true } },
-  { label: 'Transfer · LAN, auto-started', state: { kind: 'transfer', path: '/workspace/super-one/logs/dev.log', name: 'dev.log', size: 1_204_988, mimeType: 'application/octet-stream', needsConfirm: false, started: true } },
+  { label: 'Transfer · relay, awaiting confirm', state: { kind: 'transfer', ...HERO, needsConfirm: true, phase: 'idle' } },
+  { label: 'Transfer · downloading', state: { kind: 'transfer', ...HERO, needsConfirm: true, phase: 'downloading' } },
+  { label: 'Transfer · LAN, downloading', state: { kind: 'transfer', path: '/workspace/super-one/logs/dev.log', name: 'dev.log', size: 1_204_988, mimeType: 'application/octet-stream', needsConfirm: false, phase: 'downloading' } },
+  { label: 'Transfer · ready to save', state: { kind: 'transfer', path: '/workspace/super-one/docs/spec.pdf', name: 'spec.pdf', size: 2_310_000, mimeType: 'application/pdf', needsConfirm: true, phase: 'ready', localUri: 'file:///cache/file-preview/spec.pdf' } },
   { label: 'Error', state: { kind: 'error', path: '/workspace/super-one/.env', name: '.env', message: 'path matches blacklist' } },
 ]

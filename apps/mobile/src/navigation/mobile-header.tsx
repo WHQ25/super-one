@@ -28,8 +28,6 @@ export function mobileHeaderTitle(
   if (route === 'worktree') return translate('Worktree')
   if (route === 'branch') return translate('Branch')
   if (route === 'add-dir') return translate('Additional folders')
-  // The caller substitutes the file name; this is only the fallback.
-  if (route === 'file-preview') return translate('Preview')
   if (route === 'project-picker') return translate('Projects')
   if (route === 'add-project') return translate('Add project')
   if (route === 'settings') return translate('Settings')

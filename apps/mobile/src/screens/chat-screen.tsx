@@ -1,17 +1,9 @@
 import type { NativeComposerBinding } from '../ui/native-composer-input'
 import type { ComposerCursor } from '../composer-cursor'
 import type { MentionSearchState } from '../navigation/use-composer-suggestions'
-import { LoadingOverlay } from '../ui/loading-overlay'
 import { EdgeSwipeArea } from '../ui/edge-swipe'
-import { useState, type RefObject } from 'react'
-import {
-  CheckCircle2,
-  ChevronDown,
-  ChevronRight,
-  Circle,
-  LoaderCircle,
-} from 'lucide-react-native'
-import { Pressable, ActivityIndicator, View } from 'react-native'
+import { useEffect, useRef, useState, type RefObject } from 'react'
+import { ActivityIndicator, StyleSheet, View } from 'react-native'
 import { Text } from '../ui/text'
 import { WebView } from 'react-native-webview'
 import { CHAT_VIEW_HTML } from '@superone/chat-view'
@@ -24,6 +16,9 @@ import { useMobileStyles, useMobileTheme } from '../theme/context'
 import type { ReactNode } from 'react'
 import { ChatComposer, type ComposerSelection } from './chat-composer'
 import { NewSessionLanding, type NewSessionLandingProps } from './new-session-landing'
+import { chatViewPrePaintScript, hostMessageIsReady } from './chat-webview-boot'
+import { injectHostMessage } from '../native-actions'
+import { TodoPanel } from '../ui/todo-panel'
 import { useMobileLocale } from '../i18n/context'
 
 const CHAT_SOURCE = { html: CHAT_VIEW_HTML }
@@ -32,7 +27,11 @@ export function ChatScreen(props: {
   nativeDraft?: NativeComposerBinding
   provider: HarnessId
   landing?: NewSessionLandingProps
-  starting?: boolean
+  /**
+   * Switching to an existing session: drop the previous transcript immediately
+   * rather than leaving it on screen until restore finishes.
+   */
+  loadingConversation?: boolean
   selection?: ComposerSelection
   webRef: RefObject<WebView | null>
   permissionModes: string[]
@@ -46,6 +45,9 @@ export function ChatScreen(props: {
   slashHits: MatchedSlashCommand[]
   slashCatalogStatus: SlashCatalogStatus
   mentionRows: MentionRow[]
+  /** End-of-turn follow-ups; the composer renders every one as a tappable chip. */
+  promptSuggestions?: string[]
+  onPromptSuggestion?: (suggestion: string) => void
   attachments: ImageAttachment[]
   projectDirs: string[]
   sessionDirs: string[]
@@ -91,75 +93,81 @@ export function ChatScreen(props: {
   const styles = useMobileStyles()
   const { tokens } = useMobileTheme()
   const { t } = useMobileLocale()
-  const [todosExpanded, setTodosExpanded] = useState(false)
-  const todoItems = Object.values(props.todos)
-  const completedTodos = todoItems.filter((todo) => todo.status === 'completed').length
-  const activeTodo = todoItems.find((todo) => todo.status === 'in_progress')
-    ?? todoItems.find((todo) => todo.status !== 'completed')
+  // The WebView stays mounted (opacity 0) under the landing and under restore
+  // so the first send and a session switch both reveal an already-themed
+  // document instead of remounting onto WKWebView's white default.
+  const showLanding = Boolean(props.landing) && !props.loadingConversation
+  const [rendererReady, setRendererReady] = useState(false)
+  const [coverUntilReady, setCoverUntilReady] = useState(false)
+  const [hold, setHold] = useState(false)
+  useEffect(() => {
+    if (props.loadingConversation) {
+      setCoverUntilReady(true)
+      setHold(true)
+      return
+    }
+    const timer = setTimeout(() => setHold(false), 64)
+    return () => clearTimeout(timer)
+  }, [props.loadingConversation])
+  useEffect(() => {
+    if (!showLanding) return
+    injectHostMessage(props.webRef, { type: 'reset' })
+  }, [showLanding, props.webRef])
+  const coveringRestore = props.loadingConversation || hold || (coverUntilReady && !rendererReady)
+  const hideRenderer = coveringRestore || showLanding || !rendererReady
+  // Captured on first mount: changing `injectedJavaScriptBeforeContentLoaded`
+  // remounts WKWebView and would flash the white default we are covering.
+  const prePaint = useRef(chatViewPrePaintScript(tokens.colors.background, tokens.scheme)).current
   return (
     <View style={styles.flex}>
       {/* The edge strip is scoped to the scrolling half of the screen: over the
           composer it would swallow taps that land on the input's own padding. */}
-      <View style={styles.flex}>
-      {props.starting ? <View style={styles.emptyState}><ActivityIndicator color={tokens.colors.mutedForeground} /><Text style={styles.emptyBody}>{t('Starting session…')}</Text></View> : props.landing ? <NewSessionLanding {...props.landing} /> : <WebView
+      <View style={[styles.flex, { backgroundColor: tokens.colors.background }]}>
+      <View collapsable={false} pointerEvents={hideRenderer ? 'none' : 'auto'} style={[styles.flex, { backgroundColor: tokens.colors.background, opacity: hideRenderer ? 0 : 1 }]}>
+        <WebView
+        testID="chat-webview"
         ref={props.webRef}
         originWhitelist={['*']}
         source={CHAT_SOURCE}
-        startInLoadingState
-        renderLoading={() => <LoadingOverlay label={t('Loading conversation…')} />}
+        opaque={false}
+        injectedJavaScriptBeforeContentLoaded={prePaint}
         style={[styles.flex, { backgroundColor: tokens.colors.background }]}
         containerStyle={{ backgroundColor: tokens.colors.background }}
-        onMessage={(event) => props.onWebMessage(event.nativeEvent.data)}
-        onContentProcessDidTerminate={() => props.onWebProcessError('content process terminated')}
-        onRenderProcessGone={() => props.onWebProcessError('render process terminated')}
-      />}
-      {props.onEdgeSwipe ? <EdgeSwipeArea onOpen={props.onEdgeSwipe} /> : null}
+        onMessage={(event) => {
+          const raw = event.nativeEvent.data
+          props.onWebMessage(raw)
+          if (hostMessageIsReady(raw)) setRendererReady(true)
+        }}
+        onContentProcessDidTerminate={() => {
+          setRendererReady(false)
+          setCoverUntilReady(true)
+          setHold(true)
+          props.onWebProcessError('content process terminated')
+        }}
+        onRenderProcessGone={() => {
+          setRendererReady(false)
+          setCoverUntilReady(true)
+          setHold(true)
+          props.onWebProcessError('render process terminated')
+        }}
+      />
       </View>
-      {todoItems.length ? (
-        <View style={styles.todoPanel}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ expanded: todosExpanded }}
-            onPress={() => setTodosExpanded((expanded) => !expanded)}
-            style={styles.todoHeader}
-          >
-            {todosExpanded
-              ? <ChevronDown color={tokens.colors.mutedForeground} size={16} />
-              : <ChevronRight color={tokens.colors.mutedForeground} size={16} />}
-            <View style={styles.flex}>
-              <Text style={styles.rowMeta}>{completedTodos}/{todoItems.length} tasks</Text>
-              <Text numberOfLines={1} style={styles.rowTitle}>
-                {activeTodo?.activeForm ?? activeTodo?.subject ?? 'Tasks complete'}
-              </Text>
-            </View>
-          </Pressable>
-          {todosExpanded ? (
-            <View style={styles.todoList}>
-              {todoItems.map((todo) => {
-                const Icon = todo.status === 'completed'
-                  ? CheckCircle2
-                  : todo.status === 'in_progress'
-                    ? LoaderCircle
-                    : Circle
-                const color = todo.status === 'completed'
-                  ? tokens.colors.success
-                  : todo.status === 'in_progress'
-                    ? tokens.colors.primary
-                    : tokens.colors.mutedForeground
-                return (
-                  <View key={todo.id} style={styles.todoRow}>
-                    <Icon color={color} size={15} />
-                    <Text numberOfLines={2} style={styles.rowMeta}>
-                      {todo.status === 'in_progress' ? todo.activeForm || todo.subject : todo.subject}
-                    </Text>
-                  </View>
-                )
-              })}
-            </View>
-          ) : null}
+      {coveringRestore ? (
+        <View testID="conversation-loading" collapsable={false} style={[StyleSheet.absoluteFillObject, styles.emptyState, { backgroundColor: tokens.colors.background, zIndex: 1, elevation: 4 }]}>
+          <ActivityIndicator color={tokens.colors.mutedForeground} />
+          <Text style={styles.emptyBody}>{t('Loading conversation…')}</Text>
+        </View>
+      ) : showLanding && props.landing ? (
+        // The renderer stays mounted at opacity 0 and still occupies flex
+        // space, so a sibling landing would sit just above the composer.
+        <View testID="new-session-landing" collapsable={false} style={[StyleSheet.absoluteFillObject, { backgroundColor: tokens.colors.background, zIndex: 1, elevation: 4 }]}>
+          <NewSessionLanding {...props.landing} />
         </View>
       ) : null}
-      {props.queuedMessages.length ? (
+      {props.onEdgeSwipe ? <EdgeSwipeArea onOpen={props.onEdgeSwipe} /> : null}
+      </View>
+      {!props.loadingConversation ? <TodoPanel todos={props.todos} /> : null}
+      {!props.loadingConversation && props.queuedMessages.length ? (
         <View style={styles.queuedRow}>
           <Text numberOfLines={1} style={styles.rowMeta}>{props.queuedMessages.length} queued · waiting for the current turn</Text>
         </View>

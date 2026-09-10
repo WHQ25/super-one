@@ -7,7 +7,9 @@ function ports(): NativeActionPorts {
     openFile: vi.fn(),
     previewFile: vi.fn(),
     loadImage: vi.fn(async () => ({ dataUri: 'data:image/png;base64,AA==' })),
+    previewImage: vi.fn(),
     copyText: vi.fn(),
+    haptic: vi.fn(),
     setDraft: vi.fn(),
     saveWidgetTemplate: vi.fn(),
     codexPlanApproval: vi.fn(),
@@ -16,6 +18,20 @@ function ports(): NativeActionPorts {
 }
 
 describe('native chat actions', () => {
+  it('plays the requested haptic impact', async () => {
+    const target = ports()
+    await expect(resolveNativeRequest({
+      type: 'requestNative', requestId: 'tap', action: 'haptic', payload: { style: 'light' },
+    }, target)).resolves.toMatchObject({ result: { ok: true } })
+    expect(target.haptic).toHaveBeenCalledWith('light')
+  })
+
+  it('falls back to a medium impact for an unknown haptic style', async () => {
+    const target = ports()
+    await resolveNativeRequest({ type: 'requestNative', requestId: 'tap', action: 'haptic', payload: { style: 'boom' } }, target)
+    expect(target.haptic).toHaveBeenCalledWith('medium')
+  })
+
   it("writes a widget's sendPrompt into the composer draft", async () => {
     const target = ports()
     await expect(resolveNativeRequest({
@@ -107,6 +123,27 @@ describe('native chat actions', () => {
     expect(target.loadImage).toHaveBeenLastCalledWith('shots/a.png', true)
   })
 
+  it('opens the fullscreen viewer for a picture the transcript already shows', async () => {
+    const target = ports()
+    await expect(resolveNativeRequest({
+      type: 'requestNative', requestId: 'view', action: 'previewImage',
+      payload: { src: 'data:image/png;base64,AA==', label: 'Screenshot', path: '/tmp/shot.png' },
+    }, target)).resolves.toMatchObject({ result: { ok: true } })
+    expect(target.previewImage).toHaveBeenCalledWith({ src: 'data:image/png;base64,AA==', label: 'Screenshot', path: '/tmp/shot.png' })
+    await resolveNativeRequest({
+      type: 'requestNative', requestId: 'view2', action: 'previewImage', payload: { src: 'https://example.com/a.png', label: '' },
+    }, target)
+    expect(target.previewImage).toHaveBeenLastCalledWith({ src: 'https://example.com/a.png' })
+  })
+
+  it('refuses a viewer source that is not an image the phone can show', async () => {
+    const target = ports()
+    await expect(resolveNativeRequest({
+      type: 'requestNative', requestId: 'bad', action: 'previewImage', payload: { src: 'file:///etc/passwd' },
+    }, target)).resolves.toMatchObject({ error: 'unsupported image source' })
+    expect(target.previewImage).not.toHaveBeenCalled()
+  })
+
   it('routes validated Codex plan decisions to the active runtime', async () => {
     const target = ports()
     await expect(resolveNativeRequest({
@@ -142,4 +179,17 @@ describe('native chat actions', () => {
       type: 'requestNative', requestId: 'unknown', action: 'unknown',
     }, target)).resolves.toMatchObject({ error: 'unknown is not available on mobile' })
   })
+})
+
+
+it('forwards navigation requests and rejects invalid paging directions', async () => {
+  const target = ports()
+  target.loadNavigationIndex = vi.fn(async () => ({ messageIds: ['old'], entries: [], compacts: [] }))
+  target.loadHistoryWindow = vi.fn(async () => ({ messages: [] }))
+  const base = { type: 'requestNative' as const, requestId: 'nav' }
+  await expect(resolveNativeRequest({ ...base, action: 'loadNavigationIndex' }, target)).resolves.toMatchObject({ result: { messageIds: ['old'] } })
+  await resolveNativeRequest({ ...base, action: 'loadHistoryWindow', payload: { anchorId: 'old', direction: 'before' } }, target)
+  expect(target.loadHistoryWindow).toHaveBeenCalledWith('old', 'before')
+  await expect(resolveNativeRequest({ ...base, action: 'loadHistoryWindow', payload: { anchorId: 'old', direction: 'sideways' } }, target)).resolves.toMatchObject({ error: 'Invalid history direction' })
+  expect(target.loadHistoryWindow).toHaveBeenCalledTimes(1)
 })

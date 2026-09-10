@@ -2,11 +2,21 @@ import type { RefObject } from 'react'
 import type { WebView } from 'react-native-webview'
 import type { HostInbound, HostOutbound } from '@superone/chat-view'
 import type { SaveWidgetTemplateRequest } from '@superone/shared/agent-types'
+import { isPreviewableImageSource } from './image-preview-state'
 
 type NativeRequest = Extract<HostOutbound, { type: 'requestNative' }>
 type NativeResult = Extract<HostInbound, { type: 'nativeActionResult' }>
 
+/** Impact strengths the transcript may ask for; mirrors expo-haptics' impact styles. */
+export type HapticStyle = 'light' | 'medium' | 'heavy'
+const HAPTIC_STYLES: ReadonlySet<string> = new Set<HapticStyle>(['light', 'medium', 'heavy'])
+
 export interface NativeActionPorts {
+  subscribeDetail?(detailRef: string, subscriptionId: string): Promise<Record<string, unknown>>
+  unsubscribeDetail?(subscriptionId: string): Promise<void>
+  loadNavigationIndex?(): Promise<import('@superone/shared/session-history-index').SessionHistoryIndex>
+  loadHistoryWindow?(anchorId: string, direction: 'around' | 'before' | 'after'): Promise<Record<string, unknown>>
+  loadEarlier?(): Promise<Record<string, unknown>>
   openLink(url: string): Promise<void>
   /** Reveal the file's folder in the native browser — the chip's secondary action. */
   openFile(path: string): Promise<void>
@@ -21,7 +31,18 @@ export interface NativeActionPorts {
    * transfer first; `confirmed` is that approval on the second request.
    */
   loadImage(path: string, confirmed: boolean): Promise<Record<string, unknown>>
+  /**
+   * Show a picture the transcript is already displaying on the fullscreen
+   * viewer. `src` is the data URI or public URL the `<img>` was painted from,
+   * so no second transfer happens; `path` is the desktop path when there is one.
+   */
+  previewImage(target: { src: string; label?: string; path?: string }): Promise<void>
   copyText(text: string): Promise<void>
+  /**
+   * Play a Taptic impact. The WebView cannot reach the haptic engine, so a
+   * gesture it recognises (a long press on a bubble) asks the shell to confirm it.
+   */
+  haptic(style: HapticStyle): Promise<void>
   /**
    * Write text into the composer without sending it. This is a widget's
    * `sendPrompt(...)`, which on the desktop fills the draft rather than
@@ -75,7 +96,23 @@ export async function resolveNativeRequest(
   try {
     // Most actions only acknowledge; the few that answer merge their fields in.
     let result: Record<string, unknown> = {}
-    if (message.action === 'openLink') {
+    if (message.action === 'subscribeDetail') {
+      if (!ports.subscribeDetail) throw new Error('Details unavailable')
+      result = await ports.subscribeDetail(payloadString(message, 'detailRef'), payloadString(message, 'subscriptionId'))
+    } else if (message.action === 'unsubscribeDetail') {
+      await ports.unsubscribeDetail?.(payloadString(message, 'subscriptionId'))
+    } else if (message.action === 'loadNavigationIndex') {
+      if (!ports.loadNavigationIndex) throw new Error('Navigation unavailable')
+      result = { ...await ports.loadNavigationIndex() }
+    } else if (message.action === 'loadHistoryWindow') {
+      if (!ports.loadHistoryWindow) throw new Error('History unavailable')
+      const direction = payloadString(message, 'direction')
+      if (direction !== 'around' && direction !== 'before' && direction !== 'after') throw new Error('Invalid history direction')
+      result = await ports.loadHistoryWindow(payloadString(message, 'anchorId'), direction)
+    } else if (message.action === 'loadEarlier') {
+      if (!ports.loadEarlier) throw new Error('History is unavailable')
+      result = await ports.loadEarlier()
+    } else if (message.action === 'openLink') {
       const url = payloadString(message, 'url')
       if (!/^https?:\/\//i.test(url)) throw new Error('unsupported link')
       await ports.openLink(url)
@@ -91,8 +128,21 @@ export async function resolveNativeRequest(
     } else if (message.action === 'loadImage') {
       const confirmed = (message.payload as Record<string, unknown> | undefined)?.confirmed === true
       result = await ports.loadImage(payloadString(message, 'path'), confirmed)
+    } else if (message.action === 'previewImage') {
+      const src = payloadString(message, 'src')
+      if (!isPreviewableImageSource(src)) throw new Error('unsupported image source')
+      const payload = (message.payload ?? {}) as Record<string, unknown>
+      await ports.previewImage({
+        src,
+        ...(typeof payload.label === 'string' && payload.label ? { label: payload.label } : {}),
+        ...(typeof payload.path === 'string' && payload.path ? { path: payload.path } : {}),
+      })
     } else if (message.action === 'copyText') {
       await ports.copyText(payloadString(message, 'text'))
+    } else if (message.action === 'haptic') {
+      const style = (message.payload as Record<string, unknown> | undefined)?.style
+      // An unknown strength still ticks: feedback is better than a silent gesture.
+      await ports.haptic(typeof style === 'string' && HAPTIC_STYLES.has(style) ? style as HapticStyle : 'medium')
     } else if (message.action === 'setDraft') {
       await ports.setDraft(payloadString(message, 'text'))
     } else if (message.action === 'saveWidgetTemplate') {

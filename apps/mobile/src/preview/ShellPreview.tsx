@@ -1,3 +1,4 @@
+import { useComposerSend } from '../navigation/use-composer-send'
 import { useComposerDraft } from '../navigation/use-composer-draft'
 import { extractMentionQuery, insertMention, type MentionItem } from '../mentions'
 import type { MentionEditorSnapshot } from '../mention-editor-state'
@@ -8,16 +9,16 @@ import { filterSlashCommands } from '../slash'
 import type { SlashCatalogStatus } from '../slash-catalog'
 import { replaceFirstLine } from '../composer-first-line'
 import { useEffect, useRef, useState } from 'react'
-import { useWindowDimensions, View } from 'react-native'
+import { Alert, useWindowDimensions, View } from 'react-native'
 import { Text } from '../ui/text'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar'
 import { WebView } from 'react-native-webview'
-import type { ChatMessage, HarnessId, ImageAttachment, ModelOption, RemoteHarnessOption, RemoteSystemInfo, SandboxInfo } from '@superone/shared/agent-types'
+import type { ChatMessage, HarnessId, ImageAttachment, ModelOption, RemoteHarnessOption, RemoteSystemInfo, SandboxInfo, TodoItem } from '@superone/shared/agent-types'
 import { MobileHeader } from '../navigation/mobile-header'
 import { MobileKeyboardFrame } from '../navigation/mobile-keyboard-frame'
 import { WorkspaceDrawer } from '../navigation/workspace-drawer'
-import { TabletSessionSidebar } from '../navigation/tablet-session-sidebar'
+import { WorkspaceSidebar } from '../navigation/workspace-sidebar'
 import { ChatScreen } from '../screens/chat-screen'
 import { FilesScreen } from '../screens/files-screen'
 import { FileFinderView } from '../screens/file-finder-view'
@@ -39,7 +40,7 @@ import { suggestionHarnessKey } from '@superone/shared/suggestion-harness-order'
 import { AppSettingsScreen } from '../screens/app-settings-screen'
 import type { NewSessionWorktreeSelection } from '../worktree-state'
 import { TerminalScreen } from '../screens/terminal-screen'
-import { isFullBleedScreen } from '../layout-state'
+import { isFullBleedScreen, shouldUseTabletMultiPane } from '../layout-state'
 import { worktreeSelectionError } from '../worktree-state'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { mobileWebViewTheme } from '../theme/tokens'
@@ -161,6 +162,16 @@ const PREVIEW_CATALOGS: Partial<Record<HarnessId, PreviewCatalog>> = {
   },
 }
 
+/** Every row shape the strip has to survive: done, running with live commentary,
+ *  a delegated row, and one gated by two unfinished todos. */
+const previewTodos: Record<string, TodoItem> = Object.fromEntries(([
+  { id: '1', subject: 'chat-view: drop the duplicated Tasks card', description: '', status: 'completed' },
+  { id: '2', subject: 'Port the Flutter todo strip', activeForm: 'Porting the Flutter todo strip', description: 'Row chrome, blockers and the 140 pt scroll cap', status: 'in_progress' },
+  { id: '3', subject: 'Give the tablet the desktop card', description: 'Inset, rounded, hairlined', status: 'pending' },
+  { id: '4', subject: 'Hand the sub-plan to a worker', description: '', status: 'pending', owner: 'codex-worker', blockedBy: ['2'] },
+  { id: '5', subject: 'typecheck + scoped tests', description: '', status: 'pending', blockedBy: ['3', '4'] },
+] satisfies TodoItem[]).map((item) => [item.id, item]))
+
 const project = { name: 'super-one', path: '/workspace/super-one' }
 /**
  * What a real host answers `list_harness_options` with: ordered, labelled, and
@@ -214,7 +225,7 @@ const initialMessages: ChatMessage[] = [
 export function ShellPreview({ initialPage = 'New session', initialEffort, onClose, onTheme }: { initialPage?: Page; initialEffort?: string; onClose: () => void; onTheme: () => void }) {
   const styles = useMobileStyles()
   const { tokens, setHarness } = useMobileTheme()
-  const { width, fontScale } = useWindowDimensions()
+  const { width, height, fontScale } = useWindowDimensions()
   const [page, setPage] = useState<Page>(initialPage)
   const [devicesRefreshing, setDevicesRefreshing] = useState(false)
   const [provider, setProvider] = useState<HarnessId>('claude')
@@ -325,18 +336,25 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
     injectHostMessage(web, { type: 'hydrate', messages, mentionArtwork: dynamicMentionArtworkSnapshot() })
   }
   useEffect(() => { paintChat(); injectHostMessage(terminal, mobileWebViewTheme(tokens)) }, [tokens, fontScale, messages])
-  const send = () => {
-    if (chatDraft.editorRef.current && !chatDraft.editorRef.current.canSubmit()) return
+  const send = useComposerSend(chatDraft.editorRef, page, () => {
     const captured = chatDraft.capture()
     if (!captured.text.trim() && !attachments.length) return
     setMessages((current) => [...current, { ...initialMessages[0], id: `preview-${current.length}`, content: [{ type: 'text', text: captured.text }], attachments }])
     chatDraft.clearSent(captured.revision); setAttachments([]); setPage('Chat')
-  }
+  }, (message) => Alert.alert('Could not send', message))
   const chat = page === 'New session' || page === 'Chat' || page === 'Workspace'
   // Standalone galleries share the catch-all 'files' route but draw themselves.
   const gallery = page === 'Icons' || page === 'Git indicators' || page === 'Session status' || page === 'Composer suggestions' || page === 'Chip editor' || page === 'LAN browser'
-  const route = chat ? 'chat' : page === 'Project' ? 'project-picker' : page === 'Add project' ? 'add-project' : page === 'Worktree' ? 'worktree' : page === 'Branch' ? 'branch' : page === 'Additional folders' || page === 'Browse folders' ? 'add-dir' : page === 'File preview' ? 'file-preview' : page === 'Devices' || page === 'Pairing' ? 'pair' : page === 'Terminal' ? 'terminal' : page === 'Session search' ? 'session-search' : page === 'Settings' ? 'settings' : 'files'
-  const tabletSidebar = width >= 768 && (chat || page === 'Terminal' || page === 'Settings' || route === 'add-dir' || route === 'file-preview' || route === 'files')
+  const route = chat ? 'chat' : page === 'Project' ? 'project-picker' : page === 'Add project' ? 'add-project' : page === 'Worktree' ? 'worktree' : page === 'Branch' ? 'branch' : page === 'Additional folders' || page === 'Browse folders' ? 'add-dir' : page === 'Devices' || page === 'Pairing' ? 'pair' : page === 'Terminal' ? 'terminal' : page === 'Session search' ? 'session-search' : page === 'Settings' ? 'settings' : 'files'
+  /** One workspace, two mounts: the drawer below and the sidebar in the row. */
+  const previewWorkspace = {
+    client: previewClient, projects: previewProjects, activeProject: project,
+    activeSessionId: 'preview-1', sessions, listRevision: 0,
+    onNewSession: () => setPage('New session'), onOpenSession: () => setPage('Chat'),
+    onPinSession: previewSessionOp, onArchiveSession: previewSessionOp, onDeleteSession: previewSessionOp,
+    onSearch: () => setPage('Session search'), onAddProject: () => setPage('Add project'),
+  }
+  const tabletSidebar = shouldUseTabletMultiPane(width, height, route, true)
   return <SafeAreaView style={styles.root}>
     <StatusBar style={tokens.scheme === 'dark' ? 'light' : 'dark'} />
     <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8 }}>
@@ -353,7 +371,10 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
     </View>
     {editorError ? <Text accessibilityRole="alert" style={{ color: tokens.colors.destructive }}>{editorError}</Text> : null}
     <MobileKeyboardFrame>
-      <MobileHeader route={route} title={page === 'Add project' ? addProject.title : page === 'Project' ? 'Projects' : route === 'files' ? previewBrowserMode.name : page} subtitle="super-one" provider={provider} hasSession={page === 'Chat'} deviceStatus="connectedLan" connectionInSidebar={tabletSidebar} git={page === 'Chat' ? previewSessionGit : null} onOpenBranch={() => setPage('Branch')} onBack={() => {
+      <View style={styles.contentRow}>
+        {tabletSidebar ? <WorkspaceSidebar {...previewWorkspace} deviceName="Preview desktop" deviceStatus="connectedLan" onDisconnect={() => setPage('Devices')} onOpenSettings={() => setPage('Settings')} /> : null}
+        <View style={styles.mainPane}>
+      <MobileHeader route={route} title={page === 'Add project' ? addProject.title : page === 'Project' ? 'Projects' : route === 'files' ? previewBrowserMode.name : page} subtitle="super-one" provider={provider} hasSession={page === 'Chat'} deviceStatus="connectedLan" sidebarVisible={tabletSidebar} git={page === 'Chat' ? previewSessionGit : null} onOpenBranch={() => setPage('Branch')} onBack={() => {
           if (page === 'Add project' && addProject.canGoBack) addProject.goBack()
           else if (page === 'Add project') setPage('Project')
           // Browsing unwinds to the overview before the page itself leaves,
@@ -367,16 +388,12 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
               : page === 'Go to folder' ? 'Computer files'
                 : previewBrowserMode.kind === 'computer' ? 'Go to folder' : 'File search') } : undefined}
         onConfirm={page === 'Worktree' ? () => { setSelection(worktreeDraft); setPage('New session') }
-          : page === 'Add project' && addProject.confirmLabel ? addProject.confirm
-            : page === 'File preview' ? () => setPage('Files') : undefined}
-        confirmLabel={page === 'Add project' ? addProject.confirmLabel ?? undefined
-          : page === 'File preview' ? 'Folder' : undefined}
+          : page === 'Add project' && addProject.confirmLabel ? addProject.confirm : undefined}
+        confirmLabel={page === 'Add project' ? addProject.confirmLabel ?? undefined : undefined}
         onAddProject={page === 'Project' ? () => setPage('Add project') : undefined}
         confirmDisabled={page === 'Add project' ? addProject.busy
           : !!worktreeSelectionError(worktreeDraft, PREVIEW_BRANCHES, PREVIEW_CHECKED_OUT)} />
-      <View style={styles.contentRow}>
-        {tabletSidebar ? <TabletSessionSidebar client={previewClient} project={project} sessions={sessions} activeSessionId="preview-1" deviceName="Preview desktop" deviceStatus="connectedLan" onOpenSession={() => setPage('Chat')} onCreateSession={() => setPage('New session')} onDisconnect={() => setPage('Devices')} onOpenSettings={() => setPage('Settings')} onPinSession={previewSessionOp} onArchiveSession={previewSessionOp} onDeleteSession={previewSessionOp} /> : null}
-        <View style={isFullBleedScreen(route) ? styles.mainPane : [styles.mainPane, styles.page]}>
+        <View style={isFullBleedScreen(route) ? styles.flex : styles.page}>
           {chat ? <ChatScreen provider={provider} onEdgeSwipe={() => setDrawer(true)} landing={page === 'New session' ? {
               provider, harnessOptions: PREVIEW_HARNESS_OPTIONS,
               activeHarnessKey: suggestionHarnessKey(provider, acpAgentId), onHarness: chooseAgent,
@@ -389,7 +406,7 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
             } : undefined}
             selection={{ ...pickerCatalogs, model, models: previewModels, effort, efforts, onModel: chooseModel, onEffort: setEffort }}
             webRef={web} permissionModes={['default', 'acceptEdits', 'plan']} permissionMode={mode} slashHits={slashDismissed ? [] : filterSlashCommands(chatDraft.draft, previewSlashCatalog, provider)} slashCatalogStatus={slashStatus} mentionRows={mentionRows} attachments={attachments} projectDirs={page === 'New session' ? previewDirs : []} sessionDirs={page === 'New session' ? previewSessionDirs : []} onManageDirectories={() => setPage('Additional folders')} queuedMessages={[]}
-todos={{}} draft={chatDraft.draft} streaming={page === 'Chat'}
+todos={page === 'Chat' ? previewTodos : {}} draft={chatDraft.draft} streaming={page === 'Chat'}
             sandboxInfo={sandbox} contextTokens={82_400} contextWindow={200_000} totalCostUsd={0.4213}
             onWebMessage={(raw) => { if (JSON.parse(raw).type === 'ready') paintChat() }} onWebProcessError={() => {}} onPermissionMode={setMode}
             onSandboxMode={(next) => setSandbox(sandboxInfoFromMode(next))} onSlash={(command) => {
@@ -409,7 +426,7 @@ todos={{}} draft={chatDraft.draft} streaming={page === 'Chat'}
               if (query) changeDraft(insertMention(chatDraft.draft, query, item))
             }}
             onRemoveAttachment={(item) => setAttachments((current) => current.filter((entry) => entry !== item))} onAttachmentMenu={() => setAttachments([{ id: 'pdf', name: 'mobile-design-review.pdf', mimeType: 'application/pdf', base64: '' }])}
-            nativeDraft={nativeEditor ? { controller: chatDraft.editorRef, document: chatDraft.document.current, onChange: acceptDraft, onError: setEditorError } : undefined}
+            nativeDraft={nativeEditor ? { controller: chatDraft.editorRef, document: chatDraft.document.current, generation: chatDraft.generation, onChange: acceptDraft, onError: setEditorError } : undefined}
             onDraft={changeDraft} onSubmitFromKeyboard={send} onSend={send} onStop={() => setPage('New session')} /> : null}
           {page === 'Devices' || page === 'Pairing' ? <PairingsScreen scannerOpen={false} paste="" lan=""
             code={page === 'Pairing' ? '123456' : null}
@@ -476,8 +493,9 @@ todos={{}} draft={chatDraft.draft} streaming={page === 'Chat'}
             injectHostMessage(terminal, { kind: 'replace', ansi: '$ pwd\r\n/workspace/super-one\r\n$ ', snapshot: { writableByMe: writable } })
           }} /> : null}
         </View>
+        </View>
       </View>
     </MobileKeyboardFrame>
-    <WorkspaceDrawer visible={drawer || page === 'Workspace'} onDismiss={() => { setDrawer(false); if (page === 'Workspace') setPage('Chat') }} deviceName="Preview desktop" projects={previewProjects} activeProject={project} activeSessionId="preview-1" sessions={sessions} client={previewClient} onNewSession={() => setPage('New session')} onOpenSession={() => setPage('Chat')} onPinSession={previewSessionOp} onArchiveSession={previewSessionOp} onDeleteSession={previewSessionOp} onSearch={() => setPage('Session search')} listRevision={0} deviceStatus="connectedLan" onDisconnect={() => setPage('Devices')} onAddProject={() => setPage('Add project')} onOpenAppSettings={() => setPage('Settings')} />
+    <WorkspaceDrawer {...previewWorkspace} visible={drawer || page === 'Workspace'} onDismiss={() => { setDrawer(false); if (page === 'Workspace') setPage('Chat') }} deviceName="Preview desktop" deviceStatus="connectedLan" onDisconnect={() => setPage('Devices')} onOpenAppSettings={() => setPage('Settings')} />
   </SafeAreaView>
 }

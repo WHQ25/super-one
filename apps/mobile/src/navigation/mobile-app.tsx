@@ -1,7 +1,11 @@
+import { refreshSessionCatalog } from '../session-catalog-refresh'
+import { useComposerSend } from './use-composer-send'
+import { TranscriptProjection } from '../transcript-projection'
 import { SessionActivityContext, useWorkspaceActivity } from './use-session-activity'
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { StatusBar } from 'expo-status-bar'
 import * as Clipboard from 'expo-clipboard'
+import * as Haptics from 'expo-haptics'
 import { useCameraPermissions, type BarcodeScanningResult } from 'expo-camera'
 import { BackHandler, Linking, Pressable, useWindowDimensions, View } from 'react-native'
 import { Text } from '../ui/text'
@@ -40,6 +44,8 @@ import { useComposerSuggestions } from './use-composer-suggestions'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { mobileWebViewTheme } from '../theme/tokens'
 import { harnessSupportsAdditionalDirs } from '../provider-state'
+import { isManualRecapCommand, shouldInterceptGrokRecap } from '../recap-command'
+import { useAutoRecap } from './use-auto-recap'
 import { harnessSupportsSandbox, sandboxInfoFromMode } from '@superone/shared/harness/harness-sandbox'
 import { suggestionHarnessKey } from '@superone/shared/suggestion-harness-order'
 import { fileBrowserHome, joinRemotePath, parentRemotePath, resolveRemoteFilePath, type FileBrowserMode } from '../shell-state'
@@ -56,10 +62,10 @@ import {
   type NewSessionWorktreeSelection,
 } from '../worktree-state'
 import { shouldUseTabletMultiPane } from '../layout-state'
-import { TabletSessionSidebar } from './tablet-session-sidebar'
+import { WorkspaceSidebar } from './workspace-sidebar'
 import { sessionListInvalidations, type SessionListRow as SessionRow } from '../session-list-state'
 import { injectHostMessage as inject, resolveNativeRequest } from '../native-actions'
-import { useSharedFileInbox } from '../shared-file-inbox'
+import { createMediaPorts } from '../media-ports'
 import type { ReconnectController } from '../reconnect-controller'
 import { createMobileRelayConnection } from '../mobile-relay-connection'
 import { SessionTransition } from '../session-transition'
@@ -71,8 +77,6 @@ import { completeTypedPath, usePathAutocomplete } from './use-path-autocomplete'
 import { useAdditionalDirs } from './use-additional-dirs'
 import { useFilePreview } from './use-file-preview'
 import { loadInlineImage } from '../inline-images'
-import { FILE_PREVIEW_TEXT } from '../file-preview-state'
-import { FilePreviewScreen } from '../screens/file-preview-screen'
 import { NewFolderSheet } from '../prompts/NewFolderSheet'
 import { FileFinderView } from '../screens/file-finder-view'
 import { leaveMobileSession, sessionRemovalStatus } from '../session-exit'
@@ -102,13 +106,15 @@ import { isReachable, type ReconnectInfo } from '../device-status'
 import { logRelayEventTypes } from '../relay-debug'
 import { dynamicMentionArtworkRevision, dynamicMentionArtworkSnapshot } from '../ui/mention-dynamic-artwork'
 import { useMobileLocale } from '../i18n/context'
+import { useOrientationLock } from './use-orientation-lock'
 const kv = mobileKv
 export function MobileApp() {
+  useOrientationLock()
   const styles = useMobileStyles()
   const { tokens, setHarness } = useMobileTheme()
   const { locale, t } = useMobileLocale()
   const webViewTheme = useMemo(() => mobileWebViewTheme(tokens), [tokens])
-  const { width, fontScale } = useWindowDimensions()
+  const { width, height, fontScale } = useWindowDimensions()
   const [screen, setScreen] = useState<Screen>('pair')
   const [paste, setPaste] = useState('')
   const [lan, setLan] = useState('')
@@ -158,7 +164,8 @@ export function MobileApp() {
   const { draft, draftRef, lastDraftChangeAtRef } = composerDraft
   const [terminalUi, setTerminalUi] = useState({ writable: false, title: 'Terminal' })
   const [streaming, setStreaming] = useState(false)
-  const [starting, setStarting] = useState(false)
+  const [sessionLoading, setSessionLoading] = useState(false)
+  const [hasTranscript, setHasTranscript] = useState(false)
   const [connectionState, setConnectionState] = useState<'connected' | 'reconnecting' | 'offline'>('offline')
   const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false)
   /**
@@ -177,6 +184,7 @@ export function MobileApp() {
   const [attachments, setAttachments] = useState<ImageAttachment[]>([])
   const [queuedMessages, setQueuedMessages] = useState<ChatMessage[]>([])
   const [todos, setTodos] = useState<Record<string, TodoItem>>({})
+  const [promptSuggestions, setPromptSuggestions] = useState<string[]>([])
   const [slashOutput, setSlashOutput] = useState<{ command: string; content: string } | null>(null)
   const [mcp, setMcp] = useState<{ open: boolean; loading: boolean; rows: McpServerRow[]; error?: string }>(
     { open: false, loading: false, rows: [] },
@@ -214,18 +222,17 @@ export function MobileApp() {
   const [perm, setPerm] = useState<PermissionRequest | null>(null)
   const [plan, setPlan] = useState<PlanApprovalRequest | null>(null)
   const [question, setQuestion] = useState<AskUserQuestionRequest | null>(null)
-  const sharedFileInbox = useSharedFileInbox()
+  const mediaPorts = useMemo(() => createMediaPorts(), [])
   const webRef = useRef<WebView>(null)
   const termRef = useRef<WebView>(null)
   const clientRef = useRef<RelayClient | null>(null)
-  const filePreview = useFilePreview({
+  const autoRecap = useAutoRecap({
     clientRef,
-    transport: activeTransport,
-    project,
     sessionId,
-    receiveDesktopFile: sharedFileInbox.receiveDesktopFile,
-    openScreen: () => setScreen('file-preview'),
+    projectPath: project?.path ?? null,
+    eligible: shouldInterceptGrokRecap(selectedProvider, selectedAcpAgentId) && hasTranscript,
   })
+  const filePreview = useFilePreview({ clientRef, transport: activeTransport, project, sessionId })
   const workspaceActivity = useWorkspaceActivity(clientRef.current, connectionState === 'connected', sessionListRevision, screen === 'chat' && !sessionSwitcherOpen ? sessionId : null)
   const directory = useRemoteDirectory(clientRef)
   const { load: loadDirectory, path: directoryPath, items: directoryItems } = directory
@@ -255,7 +262,7 @@ export function MobileApp() {
   const viewStateWriteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fatalReloadRef = useRef({ startedAt: 0, count: 0 })
   const mentionArtworkRevisionRef = useRef(-1)
-  const suggestions = useComposerSuggestions(runtimeRef, `${activePairingId}:${project?.path}:${sessionId}:${selectedProvider}`, { client: clientRef, projectPath: project?.path, provider: selectedProvider, projects, iconStore: mobileKv })
+  const suggestions = useComposerSuggestions(runtimeRef, `${activePairingId}:${project?.path}:${sessionId}:${selectedProvider}:${selectedAcpAgentId ?? ''}`, { client: clientRef, projectPath: project?.path, provider: selectedProvider, acpAgentId: selectedAcpAgentId, projects, iconStore: mobileKv })
   const { slashHits, mentionRows } = suggestions
   const systemInfoRequestRef = useRef(0)
   const shellDetailsRequestRef = useRef(0)
@@ -318,11 +325,15 @@ export function MobileApp() {
     transcriptCache.current = { messages: session.messages, segments: session.realtimeSegments, merged }
     return merged
   }
+  const transcriptProjectionRef = useRef<{ runtime: ChatRuntime; projection: TranscriptProjection } | null>(null)
   const syncSheets = (runtime: ChatRuntime, hydrate = false) => {
     if (connectionRef.current.epoch !== runtime.epoch) {
       connectionRef.current = { state: 'connected', epoch: runtime.epoch }
       setConnectionState('connected')
       inject(webRef, { type: 'setConnection', ...connectionRef.current })
+    }
+    if (transcriptProjectionRef.current?.runtime !== runtime) {
+      transcriptProjectionRef.current = { runtime, projection: new TranscriptProjection() }
     }
     const pending = runtime.session.pendingPermissions[0]
     const mentionArtworkRevision = dynamicMentionArtworkRevision()
@@ -330,8 +341,9 @@ export function MobileApp() {
     const mentionArtwork = includeMentionArtwork ? dynamicMentionArtworkSnapshot() : undefined
     inject(webRef, {
       type: hydrate ? 'hydrate' : 'applyReductionPatch',
-      messages: transcriptFor(runtime.session),
-      todos: runtime.session.todos,
+      ...transcriptProjectionRef.current.projection.project(transcriptFor(runtime.session), hydrate),
+      hasMoreHistory: runtime.hasMoreHistory,
+      historyNavigation: runtime.navigationAvailable,
       ...(mentionArtwork ? { mentionArtwork } : {}),
       pendingPermission: pending
         ? { requestId: pending.requestId, toolName: pending.toolName, toolUseId: pending.toolUseId }
@@ -349,9 +361,11 @@ export function MobileApp() {
       projectPath: runtime.projectPath || null,
     })
     if (includeMentionArtwork) mentionArtworkRevisionRef.current = mentionArtworkRevision
+    setHasTranscript(runtime.session.messages.length > 0)
     setStreaming(runtime.streaming)
     setQueuedMessages(runtime.session.queuedMessages)
     setTodos(runtime.session.todos)
+    setPromptSuggestions(runtime.session.promptSuggestions)
     setSlashOutput(runtime.session.slashCommandOutput)
     setPermMode(runtime.permissionMode)
     setSandboxInfo(runtime.sandboxInfo)
@@ -393,8 +407,42 @@ export function MobileApp() {
   }
   const handleNativeRequest = async (message: Extract<HostOutbound, { type: 'requestNative' }>) => {
     const result = await resolveNativeRequest(message, {
+      subscribeDetail: async (detailRef, subscriptionId) => {
+        const runtime = runtimeRef.current
+        if (!runtime) throw new Error('no active session')
+        return runtime.subscribeDetail(detailRef, subscriptionId)
+      },
+      unsubscribeDetail: async (subscriptionId) => { await runtimeRef.current?.unsubscribeDetail(subscriptionId) },
+      loadNavigationIndex: async () => {
+        const runtime = runtimeRef.current
+        if (!runtime) throw new Error('no active session')
+        const index = await runtime.loadNavigationIndex()
+        if (runtimeRef.current !== runtime) throw new Error('Session changed')
+        return index
+      },
+      loadHistoryWindow: async (anchorId, direction) => {
+        const runtime = runtimeRef.current
+        if (!runtime) throw new Error('no active session')
+        const result = await runtime.loadHistoryWindow(anchorId, direction)
+        if (runtimeRef.current !== runtime) throw new Error('Session changed')
+        return result
+      },
+      loadEarlier: async () => {
+        const runtime = runtimeRef.current
+        if (!runtime) throw new Error('no active session')
+        const messages = await runtime.loadEarlier()
+        if (runtimeRef.current !== runtime) throw new Error('Session changed')
+        return { messages, hasMoreHistory: runtime.hasMoreHistory }
+      },
       openLink: async (url) => { await Linking.openURL(url) },
       copyText: async (text) => { await Clipboard.setStringAsync(text) },
+      haptic: async (style) => {
+        await Haptics.impactAsync(
+          style === 'light' ? Haptics.ImpactFeedbackStyle.Light
+            : style === 'heavy' ? Haptics.ImpactFeedbackStyle.Heavy
+              : Haptics.ImpactFeedbackStyle.Medium,
+        )
+      },
       // Mirrors `clearSent`: the native editor owns the text when it is mounted,
       // and writing through `changeText` instead would leave the two out of sync.
       saveWidgetTemplate: async (input) => {
@@ -417,6 +465,7 @@ export function MobileApp() {
         runtime.respondCodexPlan(messageId, status, feedback)
       },
       previewFile: (path, line) => filePreview.open(path, line),
+      previewImage: async (target) => { filePreview.showImage(target) },
       loadImage: async (path, confirmed) => {
         const client = clientRef.current
         if (!client || !project) throw new Error('no active project')
@@ -451,10 +500,13 @@ export function MobileApp() {
     } catch {
       return
     }
-    if (message.type === 'ready' && runtimeRef.current) {
+    if (message.type === 'ready') {
       inject(webRef, webViewTheme)
       inject(webRef, { type: 'setViewport', fontScale, locale })
       inject(webRef, { type: 'setConnection', ...connectionRef.current })
+      // The renderer can come up while a new session is still being created.
+      // Theme still has to land; hydrate waits until the runtime exists.
+      if (!runtimeRef.current) return
       syncSheets(runtimeRef.current, true)
       const saved = restoredChatWindow(chatViewStatesRef.current[runtimeRef.current.sessionId])
       if (saved) inject(webRef, saved)
@@ -800,8 +852,8 @@ export function MobileApp() {
     })
   }
 
-  // File rows in the browser take the same path as a transcript chip: small text
-  // opens the preview page, anything else goes through the receive sheet.
+  // File rows in the browser take the same path as a transcript chip: every
+  // file opens the fullscreen preview, which decides how to show it.
   const previewFile = (path: string) => filePreview.open(path)
 
   const bindRuntime = (client: RelayClient) => {
@@ -809,7 +861,10 @@ export function MobileApp() {
     runtimeRef.current?.dispose()
     const runtime = new ChatRuntime(client, (_session, hydrate) => {
       if (runtimeRef.current === runtime) syncSheets(runtime, hydrate)
-    }, { onSharedFile: (event) => void sharedFileInbox.receive(client, event) })
+    }, {
+      onDetail: (event) => { if (runtimeRef.current === runtime) inject(webRef, { ...event, type: 'detailUpdate' }) },
+      onSessionRecap: (sid) => autoRecap.markRecapShown(sid),
+    })
     runtimeRef.current = runtime
     setTerminalUi({ writable: false, title: 'Terminal' })
     const term = new TerminalRuntime(client, (paints) => {
@@ -824,23 +879,42 @@ export function MobileApp() {
     return runtime
   }
 
+  const refreshRuntimeCatalog = (runtime: ChatRuntime, provider: HarnessId, restoreSelection = false) => {
+    const request = ++systemInfoRequestRef.current
+    refreshSessionCatalog(() => runtime.loadSystemInfo(provider),
+      () => request === systemInfoRequestRef.current && runtimeRef.current === runtime,
+      (info) => applySystemInfo(provider, info, restoreSelection ? {
+        model: provider === 'codex' ? runtime.session.selectedCodexModel : runtime.session.selectedModel,
+        effort: provider === 'codex' ? runtime.session.selectedCodexReasoningEffort : runtime.session.selectedEffort,
+        permissionMode: runtime.permissionMode,
+      } : undefined),
+      (error) => setStatus(error instanceof Error ? error.message : 'Could not load agent settings'))
+  }
+  const resetSessionChrome = () => {
+    systemInfoRequestRef.current++
+    setSessionWorktree({ isWorktree: false, worktreePath: null, gitBranch: null, removed: false })
+    setPerm(null)
+    setPlan(null)
+    setQuestion(null)
+    setStreaming(false)
+    setHasTranscript(false)
+    setTodos({})
+    setPromptSuggestions([])
+    setQueuedMessages([])
+    setSlashOutput(null)
+    setSandboxInfo(null)
+    setPendingSandboxMode(null)
+    setUsage({ contextTokens: 0, contextWindow: null, totalCostUsd: 0 })
+  }
   const clearActiveSession = () => {
     runtimeRef.current?.dispose()
     runtimeRef.current = null
     termRuntimeRef.current = null
     setSessionId(null)
     setActiveSessionTitle('')
-    setSessionWorktree({ isWorktree: false, worktreePath: null, gitBranch: null, removed: false })
-    setPerm(null)
-    setPlan(null)
-    setQuestion(null)
-    setStreaming(false)
-    setTodos({})
-    setQueuedMessages([])
-    setSlashOutput(null)
-    setSandboxInfo(null)
-    setPendingSandboxMode(null)
-    setUsage({ contextTokens: 0, contextWindow: null, totalCostUsd: 0 })
+    setSessionLoading(false)
+    setHasTranscript(false)
+    resetSessionChrome()
     // Session-scoped folders belong to the session that had them. Left behind,
     // they would ride into the next one the landing starts.
     additionalDirsRef.current.clearSessionDirs()
@@ -859,26 +933,32 @@ export function MobileApp() {
     const client = clientRef.current
     const p = targetProject
     if (!client || !p) return
-    const previousId = runtimeRef.current?.sessionId
-    if (previousId && previousId !== row.sessionId) client.send({ type: 'leave_session', sessionId: previousId })
-    setSessionId(row.sessionId)
-    setActiveSessionTitle(row.title || 'Untitled')
-    const provider = (row.provider ?? 'claude') as HarnessId
-    setSelectedProvider(provider)
-    setHarness(provider)
-    const runtime = bindRuntime(client)
-    setScreen('chat')
-    await runtime.open(p.path, row.sessionId)
-    const info = await runtime.loadSystemInfo(provider)
-    applySystemInfo(provider, info, {
-      model: provider === 'codex'
-        ? runtime.session.selectedCodexModel
-        : runtime.session.selectedModel,
-      effort: provider === 'codex'
-        ? runtime.session.selectedCodexReasoningEffort
-        : runtime.session.selectedEffort,
-      permissionMode: runtime.permissionMode,
-    })
+    if (runtimeRef.current?.sessionId === row.sessionId && runtimeRef.current.projectPath === p.path) {
+      setScreen('chat')
+      return
+    }
+    setSessionLoading(true)
+    try {
+      const previousId = runtimeRef.current?.sessionId
+      if (previousId && previousId !== row.sessionId) client.send({ type: 'leave_session', sessionId: previousId })
+      resetSessionChrome()
+      setSessionId(row.sessionId)
+      setActiveSessionTitle(row.title || 'Untitled')
+      const provider = (row.provider ?? 'claude') as HarnessId
+      // Until the new catalog arrives, omit model overrides and let this
+      // session retain its host-owned settings instead of sending the last
+      // session's model/effort with a quick first message.
+      harnessSelection.resetForProvider(provider, row.acpAgentId ?? null)
+      setHarness(provider)
+      const runtime = bindRuntime(client)
+      setScreen('chat')
+      await runtime.open(p.path, row.sessionId)
+      setSessionLoading(false)
+      console.info('[SessionRestore]', runtime.restoreMetrics)
+      refreshRuntimeCatalog(runtime, provider, true)
+    } finally {
+      setSessionLoading(false)
+    }
   }).catch(failSessionTransition)
 
   /**
@@ -1015,7 +1095,14 @@ export function MobileApp() {
       if (previousId) client.send({ type: 'leave_session', sessionId: previousId })
       const runtime = bindRuntime(client)
       const startupDirs = [...new Set([...workspaceDirs, ...additionalDirs.sessionDirs])]
-      const id = await runtime.create(p.path, {
+      const id = randomId()
+      // Leave the landing immediately — the first send should look like desktop,
+      // not a "Starting session…" wait. Host errors still land on the status line.
+      setSessionId(id)
+      setActiveSessionTitle('New session')
+      setScreen('chat')
+      await runtime.create(p.path, {
+        sessionId: id,
         provider: selectedProvider,
         ...(selectedProvider === 'acp' && selectedAcpAgentId
           ? { acpAgentId: selectedAcpAgentId }
@@ -1048,25 +1135,29 @@ export function MobileApp() {
           : {}),
       })
       setWorktreeSelection(LOCAL_WORKTREE_SELECTION)
-      setSessionId(id)
-      setActiveSessionTitle('New session')
-      setScreen('chat')
+      if (runtime.sessionId !== id) setSessionId(runtime.sessionId)
       // The picks made on the landing screen are already claimed in the hook —
       // the session was just created from them.
-      const info = await runtime.loadSystemInfo(selectedProvider)
-      applySystemInfo(selectedProvider, info)
+      refreshRuntimeCatalog(runtime, selectedProvider)
     }).catch(failSessionTransition)
   }
 
-  const send = async () => {
-    if (composerDraft.editorRef.current && !composerDraft.editorRef.current.canSubmit()) return
+  const send = useComposerSend(composerDraft.editorRef, `${activePairingId}:${project?.path}:${sessionId}`, async () => {
     const sentDraft = composerDraft.capture()
     const text = sentDraft.text.trim()
-    if ((!text && attachments.length === 0) || sessionTransitionRef.current.isActive) return
-    if (!runtimeRef.current) {
-      setStarting(true)
-      try { await createSession() } finally { setStarting(false) }
+    if (!text && attachments.length === 0) return
+    if (sessionTransitionRef.current.isActive) {
+      setStatus('The conversation is still loading. Please send again when it is ready.')
+      return
     }
+    if (isManualRecapCommand(text) && shouldInterceptGrokRecap(selectedProvider, selectedAcpAgentId)) {
+      const runtime = runtimeRef.current
+      if (!runtime?.sessionId) return
+      if (composerDraft.clearSent(sentDraft.revision) && !composerDraft.editorRef.current) suggestions.update('')
+      void runtime.requestRecap()
+      return
+    }
+    if (!runtimeRef.current) await createSession()
     const runtime = runtimeRef.current
     if (!runtime) return
     try {
@@ -1089,7 +1180,7 @@ export function MobileApp() {
     }
     if (composerDraft.clearSent(sentDraft.revision) && !composerDraft.editorRef.current) suggestions.update('')
     setAttachments((current) => current.filter((item) => !attachments.includes(item)))
-  }
+  }, setStatus)
 
   const onDraft = (text: string) => {
     composerDraft.changeText(text)
@@ -1227,7 +1318,7 @@ export function MobileApp() {
       else setScreen('chat')
       return
     }
-    if (screen === 'terminal' || screen === 'worktree' || screen === 'branch' || screen === 'file-preview') {
+    if (screen === 'terminal' || screen === 'worktree' || screen === 'branch') {
       setScreen('chat')
       return
     }
@@ -1273,18 +1364,28 @@ export function MobileApp() {
   }
   const header = screen === 'files'
     ? browserMode.name
-    : screen === 'file-preview' && filePreview.state
-      ? filePreview.state.name
-      : mobileHeaderTitle(screen, project?.name, activeSessionTitle, terminalUi.title, t)
-  /** The chip's secondary action: reveal the previewed file in the Files browser. */
-  const revealPreviewedFile = () => {
-    const target = filePreview.state?.path
-    if (!target) return
-    setFilesOrigin('session')
-    setScreen('files')
-    runUiAction(() => loadDirectory(parentRemotePath(target)), setStatus, 'failed to open folder')
+    : mobileHeaderTitle(screen, project?.name, activeSessionTitle, terminalUi.title, t)
+  /**
+   * Everything the workspace shows, wherever it is mounted: the modal drawer on
+   * a phone in portrait, the persistent sidebar once the window is wide enough.
+   * One object because they are one surface — a project reachable from only one
+   * of them is the bug this replaced.
+   */
+  const workspaceList = {
+    client: clientRef.current,
+    projects,
+    activeProject: project,
+    activeSessionId: sessionId,
+    sessions,
+    listRevision: sessionListRevision,
+    onNewSession: (p: Project) => runUiAction(async () => { await openProject(p); startNewSession(p) }, setStatus, 'failed to open project'),
+    onOpenSession: (p: Project, row: SessionRow) => runUiAction(async () => { if (p.path !== project?.path) await openProject(p); await openSession(row, p) }, setStatus, 'failed to open session'),
+    ...sessionListActions,
+    onSearch: () => setScreen('session-search'),
+    onAddProject: () => setScreen('add-project'),
   }
-  const tabletMultiPane = shouldUseTabletMultiPane(width, screen, !!project)
+
+  const tabletMultiPane = shouldUseTabletMultiPane(width, height, screen, !!project)
 
   // Android's back button is the hardware twin of the swipe the navigator no
   // longer accepts on chat, so it opens the workspace for the same reason.
@@ -1318,6 +1419,20 @@ export function MobileApp() {
     <SafeAreaView style={styles.root}>
       <StatusBar style={tokens.scheme === 'dark' ? 'light' : 'dark'} />
       <MobileKeyboardFrame>
+        {/* Header lives in the detail column so the persistent sidebar can
+            occupy the full window height. On a phone the column is the whole
+            frame, so the bar still sits at the top. */}
+        <View style={styles.contentRow}>
+        {tabletMultiPane && project ? (
+          <WorkspaceSidebar {...workspaceList}
+            deviceName={deviceName}
+            deviceStatus={deviceStatus}
+            reconnect={reconnect}
+            onDisconnect={disconnectDevice}
+            onOpenSettings={openSettings}
+          />
+        ) : null}
+          <View style={styles.mainPane}>
         <MobileHeader
         pendingCount={workspaceActivity.pendingCount}
         route={screen}
@@ -1328,7 +1443,7 @@ export function MobileApp() {
         sessionId={sessionId}
         deviceStatus={deviceStatus}
         reconnect={reconnect}
-        connectionInSidebar={tabletMultiPane}
+        sidebarVisible={tabletMultiPane}
         git={sessionGit}
         onOpenBranch={() => setScreen('branch')}
         onBack={back}
@@ -1350,12 +1465,9 @@ export function MobileApp() {
             // off to the browser. Same slot Add Project commits from.
             : screen === 'add-dir' && additionalDirs.canGoBack
               ? () => runUiAction(additionalDirs.confirm, setStatus, 'could not add that folder')
-              : screen === 'file-preview' && filePreview.state
-                ? revealPreviewedFile
-                : undefined}
+              : undefined}
         confirmLabel={screen === 'add-project' ? addProjectFlow.confirmLabel ?? undefined
-          : screen === 'add-dir' && additionalDirs.canGoBack ? 'Add'
-            : screen === 'file-preview' ? t(FILE_PREVIEW_TEXT.showInFolder) : undefined}
+          : screen === 'add-dir' && additionalDirs.canGoBack ? 'Add' : undefined}
         onAddProject={screen === 'project-picker' ? () => setScreen('add-project') : undefined}
         confirmDisabled={screen === 'add-project'
           ? addProjectFlow.busy
@@ -1365,27 +1477,7 @@ export function MobileApp() {
             ? additionalDirs.busy || !additionalDirs.resolvedPath
             : !!worktreeSelectionError(worktreeDraft, branches, checkedOutBranches)}
         />
-
-        <View style={styles.contentRow}>
-        {tabletMultiPane && project ? (
-          <TabletSessionSidebar
-            client={clientRef.current}
-            project={project}
-            sessions={sessions}
-            activeSessionId={sessionId}
-            deviceName={deviceName}
-            deviceStatus={deviceStatus}
-            reconnect={reconnect}
-            onOpenSession={(row) => void openSession(row)}
-            onCreateSession={() => startNewSession()}
-            onDisconnect={disconnectDevice}
-            onOpenSettings={openSettings}
-            onPinSession={(row, pinned) => sessionListActions.onPinSession(project, row, pinned)}
-            onArchiveSession={(row) => sessionListActions.onArchiveSession(project, row)}
-            onDeleteSession={(row) => sessionListActions.onDeleteSession(project, row)}
-          />
-        ) : null}
-          <View style={styles.mainPane}>
+            <View style={styles.flex}>
             <MobileNavigator
             route={screen}
             filesOrigin={filesOrigin}
@@ -1484,7 +1576,7 @@ export function MobileApp() {
 
       {route === 'chat' ? (
         <ChatScreen provider={selectedProvider}
-          starting={starting}
+          loadingConversation={sessionLoading}
           // The tablet keeps the session list on screen, so it has nothing to
           // pull out and the gutter stays free for the transcript.
           onEdgeSwipe={tabletMultiPane ? undefined : () => setSessionSwitcherOpen(true)}
@@ -1525,6 +1617,11 @@ export function MobileApp() {
           totalCostUsd={usage.totalCostUsd}
           slashHits={slashHits}
           slashCatalogStatus={suggestions.slashCatalogStatus}
+          promptSuggestions={promptSuggestions}
+          // `writeCommandLine` rather than a whole-draft overwrite: it is the one
+          // path that also drives the native editor, and it leaves anything the
+          // user typed on a later line — mention chips included — in place.
+          onPromptSuggestion={(suggestion) => writeCommandLine(suggestion)}
           mentionRows={mentionRows}
           attachments={attachments}
           // A launch-time readout, as on desktop and in the Flutter app: the
@@ -1552,7 +1649,7 @@ export function MobileApp() {
             setStatus,
             'sandbox mode failed',
           )}
-          nativeDraft={{ controller: composerDraft.editorRef, document: composerDraft.document.current, onError: setStatus,
+          nativeDraft={{ controller: composerDraft.editorRef, document: composerDraft.document.current, generation: composerDraft.generation, onError: setStatus,
             onChange: (snapshot) => { composerDraft.accept(snapshot); suggestions.updateNative(snapshot.text, snapshot, snapshot.composing) } }}
           onSlash={(command) => {
             // `/mcp` and `/workflows` report rather than run: they open a panel
@@ -1568,6 +1665,13 @@ export function MobileApp() {
             if (command === 'workflows' && (selectedProvider === 'claude' || selectedProvider === 'acp')) {
               writeCommandLine('')
               openWorkflows()
+              return
+            }
+            if (command === 'recap' && shouldInterceptGrokRecap(selectedProvider, selectedAcpAgentId)) {
+              writeCommandLine('')
+              const runtime = runtimeRef.current
+              if (!runtime?.sessionId) return
+              void runUiAction(() => runtime.requestRecap(), setStatus, 'recap failed')
               return
             }
             // Everything else is written into the draft for the agent to run.
@@ -1672,14 +1776,6 @@ export function MobileApp() {
         />
       ) : null}
 
-      {route === 'file-preview' && filePreview.state ? (
-        <FilePreviewScreen
-          state={filePreview.state}
-          onStartTransfer={filePreview.startTransfer}
-          onRetry={filePreview.retry}
-        />
-      ) : null}
-
       {route === 'terminal' ? (
         <ConnectedTerminal webRef={termRef} runtimeRef={termRuntimeRef} theme={webViewTheme}
           writable={terminalUi.writable} onStatus={setStatus} />
@@ -1687,6 +1783,7 @@ export function MobileApp() {
               </View>
             )}
             />
+            </View>
           </View>
         </View>
       </MobileKeyboardFrame>
@@ -1701,22 +1798,17 @@ export function MobileApp() {
           ? (permModes.includes('auto') ? 'auto' : 'acceptEdits')
           : undefined}
         onPlanContinueMode={setPermMode}
-        workspace={{ visible: sessionSwitcherOpen, onDismiss: () => setSessionSwitcherOpen(false),
+        workspace={{ ...workspaceList,
+          visible: sessionSwitcherOpen,
+          onDismiss: () => setSessionSwitcherOpen(false),
           deviceName,
-          client: clientRef.current,
-          projects, activeProject: project, activeSessionId: sessionId, sessions,
-          onNewSession: (p) => runUiAction(async () => { await openProject(p); startNewSession(p) }, setStatus, 'failed to open project'),
-          onOpenSession: (p, row) => runUiAction(async () => { if (p.path !== project?.path) await openProject(p); await openSession(row, p) }, setStatus, 'failed to open session'),
-          ...sessionListActions,
-          listRevision: sessionListRevision,
-          onSearch: () => setScreen('session-search'),
           deviceStatus,
           reconnect,
           onDisconnect: disconnectDevice,
           onOpenAppSettings: openSettings,
-          onAddProject: () => setScreen('add-project'),
         }}
-        sharedFileInbox={sharedFileInbox}
+        filePreview={filePreview}
+        mediaPorts={mediaPorts}
       />
       {folderPrompt ? <NewFolderSheet
         parent={directoryPath}

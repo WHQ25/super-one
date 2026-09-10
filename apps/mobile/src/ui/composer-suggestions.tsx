@@ -272,3 +272,31 @@ export function MentionSuggestions({ rows, onSelect, search, onRetry, onLoadMore
     </ScrollView>
   </View>
 }
+
+/**
+ * The follow-ups a harness offers at the end of a turn.
+ *
+ * Desktop puts the first one in the composer as ghost text and accepts it with Tab;
+ * there is no Tab here, so every suggestion — including the first — is a chip the
+ * user taps. A tap fills the composer rather than sending, so it stays editable.
+ *
+ * Like the slash and mention lists this sits above the input, but it answers no
+ * keystroke: those lists take the slot back the moment the user types `/` or `@`.
+ */
+export function PromptSuggestions({ suggestions, onSelect }: {
+  suggestions: string[]
+  onSelect: (suggestion: string) => void
+}) {
+  const { tokens: { colors } } = useMobileTheme()
+  if (!suggestions.length) return null
+  return <ScrollView testID="prompt-suggestions" horizontal showsHorizontalScrollIndicator={false}
+    keyboardShouldPersistTaps="always" style={{ flexGrow: 0 }}
+    contentContainerStyle={{ flexDirection: 'row', gap: 6, paddingTop: 6, paddingBottom: 2 }}>
+    {suggestions.map((suggestion) => <Pressable key={suggestion} accessibilityRole="button" accessibilityLabel={suggestion}
+      onPress={() => onSelect(suggestion)}
+      style={({ pressed }) => ({ maxWidth: 280, minHeight: 32, justifyContent: 'center', paddingHorizontal: 12, paddingVertical: 6,
+        borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: pressed ? colors.muted : colors.surface })}>
+      <Text numberOfLines={1} style={{ color: colors.mutedForeground, fontSize: 13 }}>{suggestion}</Text>
+    </Pressable>)}
+  </ScrollView>
+}

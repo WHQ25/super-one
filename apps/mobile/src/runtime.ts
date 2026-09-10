@@ -1,3 +1,4 @@
+import { extendHistoryIndex, mergeIndexedHistory, type SessionHistoryIndex } from '@superone/shared/session-history-index'
 import { codexAsyncAnswerId } from '@superone/shared/codex-async-question'
 import { requestMentionSearch, type MentionSearchOptions, type MentionSearchResult } from './mention-search'
 import type {
@@ -22,12 +23,10 @@ import { restoreSession } from '@superone/relay-client'
 import { randomId } from './ids'
 
 type SessionState = ReturnType<typeof createDefaultChatCoreSession>
-type SharedFileEvent = Extract<AgentEvent, { type: 'shared_file' }>
-type SharedFileProgressEvent = Extract<AgentEvent, { type: 'shared_file_progress' }>
 
 export type ChatRuntimeHooks = {
-  onSharedFile?: (event: SharedFileEvent) => void
-  onSharedFileProgress?: (event: SharedFileProgressEvent) => void
+  onDetail?: (event: Extract<AgentEvent, { type: 'remote_detail' }>) => void
+  onSessionRecap?: (sessionId: string) => void
 }
 
 export type SystemInfo = RemoteSystemInfo
@@ -43,6 +42,8 @@ export type SessionWorktreeFacts = {
 const NO_WORKTREE: SessionWorktreeFacts = { isWorktree: false, worktreePath: null, gitBranch: null }
 
 export type CreateSessionOptions = {
+  /** Client-chosen id so the shell can leave the landing before the host answers. */
+  sessionId?: string
   provider?: HarnessId
   acpAgentId?: string
   permissionMode?: string
@@ -85,9 +86,18 @@ export class ChatRuntime {
   models: { id?: string; name?: string }[] = []
   private timer: ReturnType<typeof setTimeout> | null = null
   private dirty = false
+  restoreMetrics: Awaited<ReturnType<typeof restoreSession>>['metrics'] | null = null
+  hasMoreHistory = false
+  navigationAvailable = false
+  private navigationIndex: SessionHistoryIndex | null = null
+  private navigationRequest: Promise<SessionHistoryIndex> | null = null
+  private historyCursor: number | null = null
+  private historyRequest: Promise<ChatMessage[]> | null = null
   private eventEpoch = 0
   private restoreGeneration = 0
   private restoreQueue: Promise<void> = Promise.resolve()
+  /** Request ids the phone already answered, so a replayed `ask_user_question` cannot reopen the sheet. */
+  private resolvedQuestionIds = new Set<string>()
 
   constructor(
     private readonly client: RelayClient,
@@ -98,11 +108,19 @@ export class ChatRuntime {
   async open(projectPath: string, sessionId: string): Promise<void> {
     this.projectPath = projectPath
     this.sessionId = sessionId
+    this.resolvedQuestionIds.clear()
+    this.historyRequest = null
+    this.navigationIndex = null
+    this.navigationRequest = null
     const generation = ++this.restoreGeneration
     const restore = this.restoreQueue.then(async () => {
       if (generation !== this.restoreGeneration) return
       const restored = await restoreSession(this.client, projectPath, sessionId)
       if (generation !== this.restoreGeneration) return
+      this.restoreMetrics = restored.metrics
+      this.navigationAvailable = restored.navigationAvailable === true
+      this.hasMoreHistory = restored.hasMore
+      this.historyCursor = restored.cursor
       let session = createDefaultChatCoreSession()
       session.messages = [...restored.messages]
       if (restored.provider) session.sessionProvider = restored.provider as SessionState['sessionProvider']
@@ -143,8 +161,10 @@ export class ChatRuntime {
         ...restored.liveBatches.flat() as AgentEvent[],
       ]
       for (const event of restoreEvents) {
+        if (event.sessionId && event.sessionId !== this.sessionId) continue
         if (this.handleSideEvent(event)) continue
         this.captureRuntimeFacts(event)
+        if (!this.shouldApplyEvent(event)) continue
         session = this.reduce(session, event)
       }
       this.session = session
@@ -158,14 +178,86 @@ export class ChatRuntime {
     await restore
   }
 
+  /** Fetch one page without replacing live messages received during the request. */
+  loadEarlier(): Promise<ChatMessage[]> {
+    if (this.historyRequest) return this.historyRequest
+    if (!this.hasMoreHistory || this.historyCursor == null) return Promise.resolve([])
+    const generation = this.restoreGeneration
+    const cursor = this.historyCursor
+    const request = (async () => {
+      const page = await this.client.request({
+        type: 'load_session_messages', requestId: randomId(),
+        projectPath: this.projectPath, sessionId: this.sessionId, limit: 24, cursor,
+      }) as { messages?: ChatMessage[]; hasMore?: boolean; cursor?: number | null; error?: string }
+      if (page.error) throw new Error(page.error)
+      if (generation !== this.restoreGeneration) return []
+      const ids = new Set(this.session.messages.map(message => message.id))
+      const older = (page.messages ?? []).filter(message => !ids.has(message.id))
+      this.session = { ...this.session, messages: this.navigationIndex
+        ? mergeIndexedHistory(this.navigationIndex, older, this.session.messages) : [...older, ...this.session.messages] }
+      this.historyCursor = page.cursor ?? null
+      this.hasMoreHistory = Boolean(page.hasMore && this.historyCursor != null && this.historyCursor !== cursor)
+      return older
+    })()
+    this.historyRequest = request
+    void request.finally(() => { if (this.historyRequest === request) this.historyRequest = null }).catch(() => {})
+    return request
+  }
+
+  loadNavigationIndex(): Promise<SessionHistoryIndex> {
+    if (this.navigationRequest) return this.navigationRequest
+    if (this.navigationIndex) return Promise.resolve(extendHistoryIndex(this.navigationIndex, this.session.messages))
+    const generation = this.restoreGeneration
+    const request = (async () => {
+      const result = await this.client.request({ type: 'get_session_history_index', requestId: randomId(),
+        projectPath: this.projectPath, sessionId: this.sessionId }) as SessionHistoryIndex & { error?: string }
+      if (result.error) throw new Error(result.error)
+      if (generation !== this.restoreGeneration) throw new Error('Session changed')
+      if (!Array.isArray(result.messageIds) || !Array.isArray(result.entries) || !Array.isArray(result.compacts)) throw new Error('Navigation index unavailable')
+      this.navigationIndex = extendHistoryIndex(result, this.session.messages)
+      return this.navigationIndex
+    })()
+    this.navigationRequest = request
+    void request.finally(() => { if (this.navigationRequest === request) this.navigationRequest = null }).catch(() => {})
+    return request
+  }
+
+  async loadHistoryWindow(anchorId: string, direction: 'around' | 'before' | 'after') {
+    const generation = this.restoreGeneration
+    const index = await this.loadNavigationIndex()
+    if (generation !== this.restoreGeneration) throw new Error('Session changed')
+    const result = await this.client.request({ type: 'load_session_messages', requestId: randomId(),
+      projectPath: this.projectPath, sessionId: this.sessionId, anchorId, direction, limit: 8,
+    }) as { messages?: ChatMessage[]; error?: string }
+    if (result.error) throw new Error(result.error)
+    if (generation !== this.restoreGeneration) throw new Error('Session changed')
+    if (!Array.isArray(result.messages)) throw new Error('History is unavailable')
+    this.session = { ...this.session, messages: mergeIndexedHistory(index, result.messages, this.session.messages) }
+    return { messages: result.messages }
+  }
+
+  async subscribeDetail(detailRef: string, subscriptionId: string): Promise<Record<string, unknown>> {
+    const result = await this.client.request({ type: 'subscribe_detail', requestId: randomId(),
+      projectPath: this.projectPath, sessionId: this.sessionId, detailRef, subscriptionId }) as Record<string, unknown>
+    if (result.error) throw new Error(String(result.error))
+    return result
+  }
+
+  async unsubscribeDetail(subscriptionId: string): Promise<void> {
+    await this.client.request({ type: 'unsubscribe_detail', requestId: randomId(),
+      projectPath: this.projectPath, sessionId: this.sessionId, subscriptionId })
+  }
+
   reopen(): Promise<void> {
     if (!this.projectPath || !this.sessionId) return Promise.resolve()
     return this.open(this.projectPath, this.sessionId)
   }
 
   async create(projectPath: string, opts: CreateSessionOptions = {}): Promise<string> {
-    const sessionId = randomId()
+    const sessionId = opts.sessionId ?? randomId()
     if (opts.provider) this.provider = opts.provider
+    this.projectPath = projectPath
+    this.sessionId = sessionId
     const res = await this.client.request({
       type: 'create_session',
       requestId: randomId(),
@@ -193,29 +285,32 @@ export class ChatRuntime {
     } as RemoteCommand) as { ok?: boolean; sessionId?: string; error?: string }
     if (res.error || res.ok === false) throw new Error(res.error ?? 'create_session failed')
     const id = res.sessionId ?? sessionId
-    await this.open(projectPath, id)
+    this.sessionId = id
+    // A brand-new session has no history. Subscribe for live events without the
+    // restore round-trip `open()` uses when switching to an existing transcript.
+    this.client.startBuffering()
+    try {
+      const subscribed = await this.client.request({
+        type: 'subscribe_session', projectPath, sessionId: id, progressive: true,
+      } as RemoteCommand) as { error?: string }
+      if (subscribed.error) throw new Error(subscribed.error)
+      const { epoch, batches } = this.client.releaseBuffer()
+      this.eventEpoch = epoch
+      for (const batch of batches) this.ingest(batch as AgentEvent[], epoch)
+    } catch (error) {
+      this.client.releaseBuffer()
+      throw error
+    }
     return id
   }
 
   async loadSystemInfo(provider: string = String(this.provider)): Promise<SystemInfo> {
     if (!this.projectPath) return {}
-    const [info, projectResources] = await Promise.all([
-      this.client.request({
-        type: 'get_system_info',
-        requestId: randomId(),
-        projectPath: this.projectPath,
-        provider: provider as HarnessId,
-      } as RemoteCommand) as Promise<SystemInfo>,
-      this.client.request({
-        type: 'get_project_resources',
-        requestId: randomId(),
-        projectPath: this.projectPath,
-        provider: provider as HarnessId,
-      } as RemoteCommand).catch(() => ({})) as Promise<{
-        projectSlashCommands?: unknown[]
-        skills?: unknown[]
-      }>,
-    ])
+    const info = await this.client.request({
+      type: 'get_system_info', requestId: randomId(), projectPath: this.projectPath,
+      provider: provider as HarnessId,
+    } as RemoteCommand) as SystemInfo
+
     this.provider = provider
     if (info.permissionModes?.length) this.permissionModes = info.permissionModes
     else if (info.permissionPresets?.length) this.permissionModes = info.permissionPresets
@@ -271,6 +366,38 @@ export class ChatRuntime {
     // only chance to learn it is here, from what the user actually sent.
     this.session = { ...this.session, _pendingSlashCommand: pendingSlashCommandFrom(content) }
     this.client.send(cmd)
+  }
+
+  /**
+   * Grok manual `/recap` — host RPC, never a user message. Optimistic
+   * `isRecapping` paints the generating line until `session_recap` arrives
+   * (or the host says it did not send the RPC).
+   */
+  async requestRecap(): Promise<boolean> {
+    if (!this.sessionId || !this.projectPath) return false
+    this.session = { ...this.session, isRecapping: true }
+    this.dirty = true
+    this.flush()
+    try {
+      const result = await this.client.request({
+        type: 'request_session_recap',
+        requestId: randomId(),
+        sessionId: this.sessionId,
+        projectPath: this.projectPath,
+      }) as { ok?: boolean; error?: string }
+      const ok = result.ok === true
+      if (!ok) {
+        this.session = { ...this.session, isRecapping: false }
+        this.dirty = true
+        this.flush()
+      }
+      return ok
+    } catch {
+      this.session = { ...this.session, isRecapping: false }
+      this.dirty = true
+      this.flush()
+      return false
+    }
   }
 
   /**
@@ -436,6 +563,7 @@ export class ChatRuntime {
       projectPath: this.projectPath,
     }
     this.client.send(cmd)
+    this.resolveQuestionLocally(requestId)
   }
 
   dismissQuestion(requestId: string): void {
@@ -446,6 +574,17 @@ export class ChatRuntime {
       projectPath: this.projectPath,
     }
     this.client.send(cmd)
+    this.resolveQuestionLocally(requestId)
+  }
+
+  /**
+   * The native sheet is a blocking Modal. Desktop continues as soon as the
+   * command is sent; waiting for `interaction_resolved` left the phone stuck
+   * on the question while the host was already streaming.
+   */
+  private resolveQuestionLocally(requestId: string): void {
+    this.ingest([{ type: 'interaction_resolved', interactionType: 'question', requestId }])
+    this.flush()
   }
 
   get pendingPermission(): PermissionRequest | undefined {
@@ -493,13 +632,23 @@ export class ChatRuntime {
   }
 
   private apply(event: AgentEvent): void {
+    if (event.sessionId && event.sessionId !== this.sessionId) return
     if (event.type === 'session_title_changed' && event.sessionId === this.sessionId) {
       this.sessionTitle = event.title
     }
     this.captureRuntimeFacts(event)
     if (this.handleSideEvent(event)) return
+    if (!this.shouldApplyEvent(event)) return
     this.session = this.reduce(this.session, event)
     this.dirty = true
+    if (event.type === 'session_recap') this.hooks.onSessionRecap?.(this.sessionId)
+  }
+
+  private shouldApplyEvent(event: AgentEvent): boolean {
+    if (event.type === 'interaction_resolved' && event.interactionType === 'question') {
+      this.resolvedQuestionIds.add(event.requestId)
+    }
+    return !(event.type === 'ask_user_question' && this.resolvedQuestionIds.has(event.request.requestId))
   }
 
   /**
@@ -515,12 +664,8 @@ export class ChatRuntime {
   }
 
   private handleSideEvent(event: AgentEvent): boolean {
-    if (event.type === 'shared_file') {
-      this.hooks.onSharedFile?.(event)
-      return true
-    }
-    if (event.type === 'shared_file_progress') {
-      this.hooks.onSharedFileProgress?.(event)
+    if (event.type === 'remote_detail') {
+      if (event.sessionId === this.sessionId) this.hooks.onDetail?.(event)
       return true
     }
     return false

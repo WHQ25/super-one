@@ -21,18 +21,43 @@ expected flows. It is not a code source: nothing is ported from Dart, and its
 | **Terminal WebView** | xterm frames | Event ACK / seq |
 
 Never nest the chat WebView in an RN `ScrollView`. Input is native only.
+`Loading conversation…` is only for switching to an existing session: the
+previous transcript must not stay on screen while restore runs. Keep the
+WebView mounted at opacity 0 under that cover *and* under the new-session
+landing (`opaque={false}`, themed background, pre-paint script) so the first
+send and a session switch both reveal an already-themed document. Unmounting
+it remounts onto WKWebView's white default and flashes in dark mode. Leaving
+the landing injects `reset` so a previous transcript cannot leak into the
+next first send. The first send itself has no "Starting session…" / loading
+copy. Create failures still surface on the status line from the host
+`create_session` error.
 The conversation tick rail also lives in the chat WebView (`ChatScrollIndicator`),
 where it can measure and navigate the transcript without round-tripping through RN.
 Its turn outline and tick curve are shared with desktop. Touch scrubbing previews
 questions and replies, then jumps on release; compact ticks expand/collapse history.
 Navigation mounts a bounded neighborhood around the target, and paging moves in
 both directions while retaining a visible anchor and the 40-message DOM ceiling.
-At widths below 768 px the shell is single-pane. At 768 px and above, chat,
-terminal, settings, and files retain the project/session sidebar as a master pane.
-**Projects and sessions are not screens.** `WorkspaceDrawer` owns both lists the way
+At widths below 768 px the shell is single-pane. At 768 px and above a tablet
+keeps the workspace beside chat, terminal, settings, files, and the git pickers.
+A landscape phone is wide enough for that pane but only ~390 pt tall, so it
+keeps the sidebar on **chat only** — File Preview, Files, Terminal and the rest
+take the full width (`shouldUseTabletMultiPane`). The composer follows the same
+height gate (`shouldUseTabletComposer`): compact on a landscape phone, boxed
+card on a tablet.
+**Projects and sessions are not screens.** `WorkspaceList` owns both lists the way
 the desktop sidebar does, so `routeHierarchy` stacks chat directly on `pair`; back
 from a chat opens the drawer and must not end the session. New entry points for
-project or session navigation belong in the drawer, not in a new route.
+project or session navigation belong in that list, not in a new route.
+**`WorkspaceDrawer` and `WorkspaceSidebar` are two mounts of one surface**, not two
+surfaces: the drawer adds a scrim, a slide and a close drag, the sidebar a 280 pt
+pane, and both render the same `WorkspaceList` from the same props object
+(`workspaceList` in `MobileApp`). The header lives in the detail column, so that
+pane is full window height rather than sitting under the session title. That pane
+used to be a *session* list for the active project alone, which meant a landscape
+phone could only switch project by opening a modal drawer on top of the list
+already on screen — so while the sidebar is up the header drops its
+`WorkspaceButton` as well as its connection line; one `sidebarVisible` prop covers
+both. Only the drawer passes `onLeave`, because only it has something to close.
 Because `pair` is chat's stack root, the native back gesture there would show the
 device list — so chat sets `gestureEnabled: false` and `EdgeSwipeArea` (a
 `PanResponder` strip narrower than the transcript's own gutter, laid *over* the
@@ -53,13 +78,20 @@ rendering a whole fetch page at once. The count is groups, not rows, so an
 expanded collaboration parent's children ride along instead of costing slots, and
 the group holding the active session is appended past the limit rather than
 promoted — switching sessions must not reshuffle the list under the finger.
+Attention is the exception, matching the desktop sidebar: groups with a pending
+request or an unread completion are partitioned to the top of the project, and
+a collapsed project still renders those rows (plus the active session) instead
+of hiding the whole list. `session_activity` / `list_session_activity` supply
+the pending copy; the header menu badge is the same count so a closed drawer
+still says work is waiting.
 **Several projects stand open at once**, as on the desktop, so the session list is
 owned per row (`WorkspaceProjectRow`) rather than per drawer — one shared list
 state could only ever serve one project, which is what made this an accordion. A
-row mounts its list the first time it is expanded and keeps it mounted after;
-collapsing sets `display: 'none'`, which takes it out of the accessibility tree
-without dropping the loaded rows. Opening the drawer adds the active project to
-the expanded set without disturbing the rest.
+row mounts its list the first time it is expanded, or as soon as a session in it
+needs attention, and keeps it mounted after; collapsing hides ordinary rows
+(`display: 'none'` when nothing is waiting) without dropping the loaded list.
+Opening the drawer adds the active project to the expanded set without disturbing
+the rest.
 
 `ProjectSessions.loaded` is the "first read has settled" flag, and the empty state
 is gated on it. Do **not** infer emptiness from `!busy`: `busy` only turns on
@@ -89,9 +121,10 @@ the shell reports the failure. Search is **not** in the list: it is global,
 host-side (`search_sessions`), and owns the `session-search` screen, which draws
 its own field plus Cancel and therefore gets no header bar. The drawer also
 carries a cross-project **Pinned** section above Projects (`list_pinned_sessions`),
-and the device it is connected to sits at the *bottom*, reporting its connection
-state with `ConnectionStatusIndicator` beside a disconnect and an app-settings
-action. Reaching another desktop means disconnecting first, so that row is a
+and search plus new session sit at the *top*. The device it is connected to
+sits at the *bottom*, reporting its connection state with
+`ConnectionStatusIndicator` beside a disconnect and an app-settings action.
+Reaching another desktop means disconnecting first, so that row is a
 readout, not a link. There is **no project-settings screen**: every control it
 held is already on the chat surface (model, effort, permission mode, sandbox) or
 the new-session landing (harness, branch, worktree); `settings` is now the
@@ -109,11 +142,12 @@ one, provides it around the panel, and `SwipeRow` reports into it. With a row op
 a leftward drag means "put this row back", not "close the drawer", and the drawer —
 being the ancestor — can only tell by asking. It is ref-backed, not state: the sole
 consumer is a gesture predicate and nothing paints it. A list mounted outside any
-scope (the tablet sidebar) gets a no-op.
+scope gets a no-op — which is why `WorkspaceSidebar` provides none: a permanent
+pane has no competing gesture to stand down.
 
 Connection feedback has exactly one shell location. On a phone it is the second
 line under whichever native header is visible; in the workspace drawer and the
-persistent tablet sidebar it is the line under the device at the bottom. It is
+persistent workspace sidebar it is the line under the device at the bottom. It is
 never copied into the page-level transient status row. Session headers keep two
 facts on that second line: how the phone is reaching the desktop, and which
 checkout the session runs in.
@@ -173,7 +207,7 @@ one of them is how a fallback-only regression ships.
 
 **Do not port the desktop's `--sidebar-*` palette.** It was tried and reverted: in
 light mode those tokens are a dark inverted chrome, which at phone width reads as
-a second app rather than a panel of this one. The drawer and the tablet sidebar
+a second app rather than a panel of this one. The drawer and the workspace sidebar
 use the ordinary content neutrals (`surface` / `background` / `muted`), and
 `SessionRowContent` takes `surface: 'panel' | 'page'` only so a swiped row can
 swap to the opposite neutral while it covers its actions. Harness colour belongs
@@ -216,6 +250,7 @@ Do **not** import `@superone/shared/attachment-store` or `@superone/shared/git-c
 ```bash
 bun --filter @superone/chat-view build   # first: emits the chat + terminal documents
 bun run dev:mobile                       # Expo dev-client Metro
+bun run rebuild:mobile:ios               # prebuild + UTF-8 locale + expo run
 bun --filter @superone/mobile typecheck
 bun --filter @superone/mobile test              # vitest (state) + jest (components)
 bun --filter @superone/mobile test:components   # jest only
@@ -227,13 +262,24 @@ bun --filter @superone/mobile test:components   # jest only
 RN's `index.js` reaches its internals through lazy `require()` calls that escape
 Vite's ESM pipeline and arrive at Node as unparsable Flow source; no combination
 of `ssr.noExternal`, `server.deps.inline` or a babel plugin intercepts them.
-jest-expo reuses the transform Metro already applies. Four things about it:
+jest-expo reuses the transform Metro already applies. What it costs to use:
 
 - **`render` is async** in React Native Testing Library 14 — React 19 renders
   concurrently and nothing is committed when the call returns. `await` it, or
   every query fails with `render function has not been called`.
 - Mount through `renderWithTheme` (`src/test-render.tsx`); `useMobileTheme`
   throws outside its provider.
+- **A tree holding `useSyncExternalStore` swallows a bare `fireEvent`.** React 19
+  defers the discrete update, and RNTL's implicit synchronous act around
+  `fireEvent` never flushes the follow-up pass — the component simply stays in
+  its old state and every query below the press fails as though the handler were
+  never wired. Wrap it: `await act(async () => { fireEvent.press(el) })`. This
+  reaches further than it looks, because `useIconMotion` (the Reduce Motion gate
+  behind `SpinningIcon` and every pulsing label) is one of those stores.
+  Wrapping also lifts the one-press rule — each press gets its own settled scope.
+- **A nested `<Text>` is one text node to RNTL.** `#3 Ship it` rendered as a muted
+  `<Text>#3 </Text>` inside the sentence composes to `"#3 Ship it"`, so
+  `getByText('Ship it')` finds nothing. Query the composed string.
 - **One `fireEvent.press` per test.** Two presses in a single test overlap
   React 19's `act()` scopes (it says so on stderr), and the corruption lands on
   the *next* test in the file, which then renders nothing and fails with
@@ -284,13 +330,16 @@ received file, iPad rotation with a sheet open) plus a single RSS sanity run of 
 result as a short Markdown note under gitignored `docs/temp/`. Screenshots and videos
 never enter git.
 
-Needs a **dev client** (`expo run:ios` / `expo run:android`), not Expo Go.
-After changing native dependencies or config plugins, run `expo prebuild` before the
-local native build; an existing ignored `ios/` directory is otherwise intentionally
-reused and may contain stale Info.plist entries or pods.
+Needs a **dev client** (`bun run rebuild:mobile:ios` / `rebuild:mobile:android`),
+not Expo Go. That script builds chat-view, runs `expo prebuild`, then `expo run`
+with `LANG=en_US.UTF-8`. After changing native dependencies or config plugins,
+pass `--clean` so the ignored `ios/` / `android/` trees are not reused with stale
+Info.plist entries or pods. `--no-bundler` skips Metro when `dev:mobile` is
+already running.
 
 CocoaPods crashes with `Encoding::CompatibilityError` under this repo's default
-shell locale. Prefix `pod install` **and** `expo run:ios` with
+shell locale. The rebuild script sets `LANG` / `LC_ALL` for you. If you invoke
+`pod install` or `expo run:ios` by hand, prefix both with
 `LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8`; without it `expo run:ios` exits on its own
 `pod install` before xcodebuild ever starts, which reads as a successful no-op.
 
@@ -304,7 +353,10 @@ easter egg is not pure `Animated`. Skia work belongs in immediate mode
 (`Skia.PictureRecorder` inside `useDerivedValue`) with the expensive part
 precomputed on the JS thread — see `src/fire-sim.ts` and `src/ui/fire-embers.tsx`.
 Adding these was a native dependency change: pulling this commit requires a
-dev-client rebuild, not just a Metro restart.
+dev-client rebuild, not just a Metro restart. The same applies to
+`expo-media-library` (Save to Photos in the file preview): its config plugin writes
+the add-only photo-library usage string, and `app.json` blocks the read-side Android
+media permissions it would otherwise request.
 
 Pairing: scan or paste a `superone://pair?…` QR (shows a 6-digit code to confirm on desktop) or paste JSON `{ "relayUrl", "secret" }`. Connecting opens the first project's new-session landing directly; the workspace drawer is the way to any other project or session. Device ID, pairings, and chat `viewState` persist in AES-256 MMKV; its encryption key lives in platform SecureStore.
 
@@ -317,14 +369,32 @@ panels a command opened — slash output, `/mcp`, `/workflows` — which also cl
 each other, so the chain only settles ties. Stacking them is how a command list
 came to be painted under the panel that command had just opened.
 
+**The session's todos have exactly one surface**: `ui/todo-panel.tsx`, a strip
+between the transcript and the composer, matching Flutter and the desktop's
+`TodoPopup`. The chat WebView used to paint a second copy at the top of the
+transcript; it was removed along with the `todos` field on `ReductionProjection`,
+because the same `runtime.session.todos` fed both and a six-item plan was drawn
+twice on a phone screen. Collapsed it is one line — `Todos (n/m)` beside a glyph
+that breathes while a todo runs. The glyph, not the count: desktop pulses the
+text, but at phone size a fading number reads as the number being unreliable.
+Expanded it scrolls inside 140 pt rather than pushing the composer
+off screen, and keeps the running row centred as the agent walks the list. Rows
+carry `#id`, the active form while running, an owner, and a blocker badge built
+from **both** directions of the dependency graph (`blockedBy` plus the inverted
+`blocks` edges — reading one side drops half the gates). Row shaping is pure and
+lives in `todo-panel-state.ts`; the component only paints. The phone gets a
+full-bleed strip between two hairlines and a tablet gets the desktop's inset
+card, off the same `shouldUseTabletComposer` gate the composer uses. Neither is
+filled — see the rule below.
+
 **Additional working directories are a page, not a composer panel.** `/add-dir`
 and the status row's folder chip both open the `add-dir` route
 (`screens/add-dir-screen.tsx`);
 `/mcp`'s rule applies — the command clears its own line rather than being left in
 the draft. It is a **route** and not a width branch on purpose: `add-dir` is in
-`DETAIL_SCREENS`, so at 768 pt and up the shell keeps the session list beside it
-and the page reads as a detail panel, while a phone gets a full screen — the deal
-`worktree` and `branch` already have.
+`DETAIL_SCREENS`, so a tall tablet keeps the session list beside it and the page
+reads as a detail panel, while a phone — portrait or landscape — gets a full
+screen, the deal `worktree` and `branch` already have.
 
 Two steps: the overview says what the session already has and ends in two
 side-by-side buttons — Add to project / Add to session — and picking one opens
@@ -347,15 +417,49 @@ on `resolved.exists`, because the host only accepts a directory that is there.
 Back walks out of browsing before it leaves the page (`additionalDirs.canGoBack`),
 the way Add Project walks its own steps.
 
-What the session already has is reported by `AdditionalDirsChip`, which **leads
-the composer's status row** — a folder glyph and a count, with the names and full
-paths one tap away in its popover, because that row is already spending its width
-on a model name. It is a launch-time readout like the chip row it replaced: the
+What the session already has is reported by `AdditionalDirsChip`, which sits on
+the **outer right edge of the composer's status row** — a folder glyph and a
+count, with the names and full paths one tap away in its popover, because that
+row is already spending its width on a model name. Outermost because it is the
+only chip in that group that comes and goes: anywhere else, its arrival shifts
+the two beside it. It is a launch-time readout like the chip row it replaced: the
 caller empties both lists once the session is running rather than the chip
 learning what a session is, and it hides at zero, so `/add-dir` is the entry
 point until there is one. It reports **both scopes** — its predecessor showed
 only `workspaceDirs`, so a folder added to the *session* on the landing appeared
 nowhere and read as a failed write.
+
+**The chat column is one background; every boundary in it is a border.** Header,
+transcript, todo strip, status row and the input all sit on `colors.background`,
+and the input's edge is `borderWidth` + `colors.border` with **no fill** — the
+same treatment desktop gives `ChatInput` and `TodoPopup`, both of which are
+`border border-border` with no `bg-` class. Filling any one of them (a `surface`
+input pill, a `surface` todo strip) turns the column into stacked planes and the
+filled element reads as a panel dropped on top of the chat rather than part of
+it. A Flutter token name like `surfaceContainerHighest` is not a licence to fill:
+it says "raised surface", not "raised above *this* neighbour".
+
+The transcript is the other half of that background and it is **not** brand
+tinted, which is a mobile-only divergence from desktop. `--background` resolves
+through `oklch(0.975 0.002 var(--brand-hue))`, so on desktop the whole window
+shifts hue together and nothing seams. Here the RN shell paints from the two
+precomputed neutral palettes in `theme/tokens.generated.ts` and cannot follow the
+harness, so a tinted document background put a measurable edge where the WebView
+met the header — `#f8f6f6` against `#f6f7f8` at Claude's hue. `chat-view`'s
+`theme.css` pins `--background-h: 240` for that reason; `--brand-hue` still
+drives every accent in the transcript, and dark mode is chroma 0 either way.
+Check this with pixels, not eyes: 2/255 on one channel is invisible in isolation
+and obvious as a seam.
+
+**The status row is two anchored groups, not one line.** Left, scrolling: the
+model / effort chip and the permission mode — what the next turn will *do*, read
+from the same edge as the message above it. Right, fixed: context ring, sandbox,
+additional folders — what the session currently *is*, against the side the send
+button is on. `flex: 1` on the left group's `ScrollView` is what pins the right
+group; it holds whether the left is one chip or three, and a 60-character model
+name scrolls under a clipped permission chip rather than pushing a readout off
+the screen. The tablet card gets the same split between its attach and send
+buttons. Adding a chip means choosing a group, not appending to the row.
 
 **The status chips have no disclosure arrows.** Model and permission dropped
 theirs for the width; what says a chip opens a menu — and that its menu is the
@@ -384,18 +488,27 @@ Route every user-triggered RPC or fire-and-forget transport command through
 It must catch both synchronous `RelayClient.send` failures and rejected promises; never
 discard either with a bare `void` from a press or submit handler.
 Chat WebView native requests route HTTPS links, clipboard copies, and stripped remote
-file-tool metadata through RN. `previewFile` is the file chip's primary action (with the
-cited `line` when there is one) and is owned by `navigation/use-file-preview.ts`: it asks
-`read_desktop_file` with `preferInline` + `statOnly` in one trip, shows small text/Markdown
-on the `file-preview` route (`screens/file-preview-screen.tsx`, policy in
-`@superone/shared/file-preview`), and otherwise hands the file to the receive/share sheet
-— on its own over LAN, after a Download confirmation over the relay (`file-preview-state.ts`
-decides both). `openFile` is the secondary action: resolve the path against the active
-project and open the containing directory. The native file browser uses `previewFile` for
-file rows; directory rows navigate only. Remote path helpers must preserve POSIX roots, Windows
-drive roots, and UNC share roots. Coalesce concurrent reads of the same project/session/path
+file-tool metadata through RN. Every preview — file chip or picture — lands in the one
+fullscreen `ui/file-preview.tsx` modal (`FilePreviewModal`, its own `MenuHost`) whose only
+chrome is Close, the title, and a **More** menu with *Save to Photos* / *Save to Files* and
+*Share*. `file-preview-state.ts` owns the state machine (`loading | image | text | transfer |
+error`) and decides which menu rows are enabled; `media-ports.ts` (`MediaPorts`) is the
+only place that touches `expo-file-system` / `expo-sharing` / `expo-media-library`, so
+tests, stories, and the gallery inject `preview/fake-media-ports.ts` instead. Saving to
+Photos asks for add-only library permission and surfaces a denied state with an Open
+Settings button; saving to Files goes through `Directory.pickDirectoryAsync`.
+`previewFile` is the file chip's primary action (with the cited `line` when there is one)
+and is owned by `navigation/use-file-preview.ts`: it asks `read_desktop_file` with
+`preferInline` + `statOnly` in one trip, shows small text/Markdown inline (policy in
+`@superone/shared/file-preview`), and otherwise enters the `transfer` state — downloading
+on its own over LAN, after a Download confirmation over the relay. Downloaded images swap
+into the image body; other files stay on a "Downloaded" card so the menu can save or share
+them. `openFile` is the secondary action: resolve the path against the active project and
+open the containing directory. The native file browser uses `previewFile` for file rows;
+directory rows navigate only. Remote path helpers must preserve POSIX roots, Windows drive
+roots, and UNC share roots. Coalesce concurrent reads of the same project/session/path
 until the first request settles. Unsupported actions must return an error response, never
-`{ ok: true }`. The code listing on `file-preview` is highlighted by `ui/code-highlight.ts`
+`{ ok: true }`. The text body's code listing is highlighted by `ui/code-highlight.ts`
 (lowlight `common` grammars, GitHub palettes per scheme); grammar is chosen from the file
 name only, and unknown or >128 KiB files render plain.
 `loadImage` is how tool screenshots and generated images get onto the transcript: the
@@ -403,15 +516,21 @@ WebView's `PortableHostImage` asks for a path, `inline-images.ts` answers with a
 over LAN, and over the relay answers `confirmRequired` (+ size from a `statOnly` read)
 until the request carries `confirmed: true` — the row shows a Load button in between.
 Decoded images are cached per project/path (48 MiB LRU) so re-mounted rows never re-fetch.
+Tapping any picture the transcript *displays* — a loaded host image, a user attachment, a
+markdown image — sends `previewImage` with the `src` already painted, and the shell opens
+the same modal in its `image` state: a pinch/double-tap viewer over the same bytes, whose
+menu saves to Photos or shares from the cache. It never re-downloads (remote `http(s)`
+sources have both rows disabled). `previewFile` remains the path for a chip *without* a
+picture yet, and for non-image files.
 Images and PDFs use the `ImageAttachment` message path. Project file upload uses inline
 RPC through 256 KiB, raw LAN PUT when connected locally, or chunk-encrypted relay R2
 PUT plus completion through 100 MiB. Picker-reported sizes are optional metadata, not a
 security boundary: check `File.size` before reading a whole PDF or project file, then
 enforce the exact decoded byte count for base64 image/PDF payloads. Reject missing or
 malformed base64 instead of treating it as an empty attachment.
-Desktop `shared_file` events bypass chat reduction and enter the same native receive
-sheet. Inline payloads and encrypted relay downloads are size-checked, capped at 100 MiB,
-written under sanitized cache names, and deduplicated by `shareId` before preview/share.
+There is no desktop→phone "send file" push: the agent links the file in Markdown and the
+chip opens the preview above. Encrypted relay downloads are size-checked, capped at
+100 MiB, and written under sanitized cache names (`safeCacheFileName`) before save/share.
 
 The device list discovers desktops over mDNS through the local `modules/lan-browser`
 Expo module (`_superone._tcp`, matched to a pairing by the `roomId` TXT key) and probes

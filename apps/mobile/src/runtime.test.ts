@@ -75,6 +75,61 @@ describe('ChatRuntime', () => {
     runtime.interrupt()
     expect(client.sent).toContainEqual(expect.objectContaining({ type: 'interrupt', sessionId: id }))
     expect(client.request).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'interrupt' }))
+    expect(client.sent.some((c) => (c as { type: string }).type === 'subscribe_session')).toBe(true)
+    expect(client.sent.some((c) => (c as { type: string }).type === 'load_session_messages')).toBe(false)
+  })
+
+  it('throws the host create_session error so the shell can show it', async () => {
+    const client = fakeClient()
+    client.request.mockImplementation(async (cmd: { type: string }) => {
+      if (cmd.type === 'create_session') return { ok: false, error: 'Worktree path not found' }
+      return { ok: true }
+    })
+    const runtime = new ChatRuntime(client as never, vi.fn())
+    await expect(runtime.create('/p')).rejects.toThrow('Worktree path not found')
+  })
+
+  it('requests a Grok recap without sending a turn', async () => {
+    const client = fakeClient()
+    const paint = vi.fn()
+    const runtime = new ChatRuntime(client as never, paint)
+    const id = await runtime.create('/p', { provider: 'acp', acpAgentId: 'grok-build' })
+    client.request.mockImplementation(async (cmd: { type: string }) => {
+      client.sent.push(cmd)
+      if (cmd.type === 'request_session_recap') return { ok: true }
+      return { ok: true, sessionId: id }
+    })
+
+    await expect(runtime.requestRecap()).resolves.toBe(true)
+    expect(client.request).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'request_session_recap',
+      sessionId: id,
+      projectPath: '/p',
+    }))
+    const recapCmd = client.sent.find((c) => (c as { type: string }).type === 'request_session_recap') as { auto?: boolean }
+    expect(recapCmd.auto).toBeUndefined()
+    expect(client.sent.some((c) => (c as { type: string }).type === 'send_message')).toBe(false)
+    expect(runtime.session.isRecapping).toBe(true)
+    expect(paint).toHaveBeenCalled()
+  })
+
+  it('notifies when a session recap arrives', async () => {
+    const client = fakeClient()
+    const onSessionRecap = vi.fn()
+    const runtime = new ChatRuntime(client as never, vi.fn(), { onSessionRecap })
+    const id = await runtime.create('/p', { provider: 'acp', acpAgentId: 'grok-build' })
+    runtime.ingest([{ type: 'session_recap', summary: 'We wired recap.', auto: true }])
+    expect(onSessionRecap).toHaveBeenCalledWith(id)
+  })
+
+  it('clears the recap spinner when the host skips the RPC', async () => {
+    const client = fakeClient()
+    const runtime = new ChatRuntime(client as never, vi.fn())
+    await runtime.create('/p', { provider: 'acp', acpAgentId: 'grok-build' })
+    client.request.mockResolvedValue({ ok: false })
+
+    await expect(runtime.requestRecap()).resolves.toBe(false)
+    expect(runtime.session.isRecapping).toBe(false)
   })
 
   it('forwards the selected ACP agent when creating a session', async () => {
@@ -226,6 +281,7 @@ describe('ChatRuntime', () => {
     runtime.respondPlan('plan', false, 'change it')
     runtime.respondCodexPlan('assistant-1', 'rejected', 'revise it')
     runtime.answerQuestion('question', { Scope: 'All' }, { Scope: { notes: 'Include tests' } })
+    expect(runtime.session.pendingQuestion).toBeNull()
     expect(client.sent).toEqual(expect.arrayContaining([
       expect.objectContaining({
         type: 'respond_permission',
@@ -251,30 +307,56 @@ describe('ChatRuntime', () => {
     ]))
   })
 
-  it('routes shared-file side events without adding transcript state', () => {
+  it('closes the native question sheet as soon as the phone answers or dismisses', async () => {
     vi.useFakeTimers()
     const paint = vi.fn()
-    const onSharedFile = vi.fn()
-    const onSharedFileProgress = vi.fn()
-    const runtime = new ChatRuntime(fakeClient() as never, paint, {
-      onSharedFile,
-      onSharedFileProgress,
-    })
-    const event = {
-      type: 'shared_file' as const,
-      shareId: 'share-1',
-      sentAt: 123,
-      file: { name: 'report.pdf', mimeType: 'application/pdf', size: 1, inlineBase64: 'AA==' },
+    const runtime = new ChatRuntime(fakeClient() as never, paint)
+    runtime.projectPath = '/p'
+    runtime.sessionId = 's'
+    const question = {
+      requestId: 'question',
+      questions: [{ header: 'Scope', question: 'Scope', options: [{ label: 'All', description: '' }], multiSelect: false }],
     }
-    runtime.ingest([
-      event,
-      { type: 'shared_file_progress', path: 'report.pdf', loaded: 1, total: 2 },
-    ])
+    runtime.ingest([{ type: 'ask_user_question', request: question }])
     vi.advanceTimersByTime(33)
+    paint.mockClear()
 
-    expect(onSharedFile).toHaveBeenCalledWith(event)
-    expect(onSharedFileProgress).toHaveBeenCalledWith(expect.objectContaining({ loaded: 1, total: 2 }))
-    expect(runtime.messages).toEqual([])
-    expect(paint).not.toHaveBeenCalled()
+    runtime.answerQuestion('question', { Scope: 'All' })
+    expect(runtime.session.pendingQuestion).toBeNull()
+    expect(paint).toHaveBeenCalled()
+
+    runtime.ingest([{ type: 'ask_user_question', request: question }])
+    vi.advanceTimersByTime(33)
+    expect(runtime.session.pendingQuestion).toBeNull()
+
+    runtime.ingest([{ type: 'ask_user_question', request: { ...question, requestId: 'question-2' } }])
+    vi.advanceTimersByTime(33)
+    expect(runtime.session.pendingQuestion?.requestId).toBe('question-2')
+    paint.mockClear()
+    runtime.dismissQuestion('question-2')
+    expect(runtime.session.pendingQuestion).toBeNull()
+    expect(paint).toHaveBeenCalled()
   })
+})
+
+it('pages older history without dropping live messages or requesting the same page twice', async () => {
+  const base = fakeClient()
+  let resolvePage!: (value: unknown) => void
+  let reads = 0
+  const row = (id: string) => ({ id, role: 'assistant', status: 'complete', content: [], createdAt: '', providerId: 'claude' })
+  const client = { ...base, request: vi.fn(async (command: { type: string }) => {
+    if (command.type !== 'load_session_messages') return base.request(command)
+    if (++reads === 1) return { messages: [row('latest')], hasMore: true, cursor: 24 }
+    return new Promise(resolve => { resolvePage = resolve })
+  }) }
+  const runtime = new ChatRuntime(client as never, vi.fn())
+  await runtime.open('/p', 's')
+  const first = runtime.loadEarlier()
+  expect(runtime.loadEarlier()).toBe(first)
+  runtime.ingest([{ type: 'message_start', message: row('live') }])
+  resolvePage({ messages: [row('older'), row('latest')], hasMore: false, cursor: null })
+  await expect(first).resolves.toEqual([row('older')])
+  expect(runtime.messages.map(message => message.id)).toEqual(['older', 'latest', 'live'])
+  expect(runtime.hasMoreHistory).toBe(false)
+  runtime.dispose()
 })

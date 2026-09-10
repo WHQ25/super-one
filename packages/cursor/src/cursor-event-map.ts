@@ -318,13 +318,13 @@ const CURSOR_USAGE_CATEGORY_COLORS = {
 
 /**
  * SDK TokenUsage has no context-window field. Categories are the billed
- * breakdown; `maxTokens` is only set when the host already knows a window
- * (catalog `context` param). Percentage is occupancy of the last prompt
- * (input + cache), never invented from billed total alone.
+ * breakdown (may sum across a tool loop). `totalTokens` is last-prompt
+ * occupancy: prefer `occupancyTokens` from the host, else input+cache of
+ * this usage record. Never use billed-run totals as the ring numerator.
  */
 export function mapCursorContextUsageInfo(
   usage: CursorUsageFields,
-  extras?: { maxTokens?: number | null; model?: string },
+  extras?: { maxTokens?: number | null; model?: string; occupancyTokens?: number | null },
 ): ContextUsageInfo {
   const categories: ContextUsageCategory[] = []
   if (usage.inputTokens > 0) {
@@ -339,14 +339,15 @@ export function mapCursorContextUsageInfo(
   if (usage.cacheWriteTokens > 0) {
     categories.push({ name: 'cacheWrite', tokens: usage.cacheWriteTokens, color: CURSOR_USAGE_CATEGORY_COLORS.cacheWrite })
   }
-  const billed = usage.inputTokens + usage.outputTokens + usage.cacheReadTokens + usage.cacheWriteTokens
-  const prompt = contextTokensFromUsage(usage)
+  const occupancy = extras?.occupancyTokens && extras.occupancyTokens > 0
+    ? extras.occupancyTokens
+    : contextTokensFromUsage(usage)
   const maxTokens = extras?.maxTokens && extras.maxTokens > 0 ? extras.maxTokens : 0
   return {
     categories,
-    totalTokens: maxTokens > 0 ? prompt : billed,
+    totalTokens: occupancy,
     maxTokens,
-    percentage: maxTokens > 0 ? Math.min(100, Math.round((prompt / maxTokens) * 1000) / 10) : 0,
+    percentage: maxTokens > 0 ? Math.min(100, Math.round((occupancy / maxTokens) * 1000) / 10) : 0,
     model: extras?.model ?? '',
   }
 }

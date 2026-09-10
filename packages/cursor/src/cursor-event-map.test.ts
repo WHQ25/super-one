@@ -785,7 +785,7 @@ describe('mapCursorContextUsageInfo', () => {
 
   it('returns billed categories without inventing a percentage when no window is known', () => {
     expect(mapCursorContextUsageInfo(usage)).toMatchObject({
-      totalTokens: 1_407_100,
+      totalTokens: 1_407_080,
       maxTokens: 0,
       percentage: 0,
       categories: [
@@ -797,12 +797,22 @@ describe('mapCursorContextUsageInfo', () => {
     })
   })
 
-  it('uses prompt occupancy (input + cache) against a known window', () => {
-    expect(mapCursorContextUsageInfo(usage, { maxTokens: 300_000, model: 'opus' })).toMatchObject({
-      totalTokens: 1_407_080,
+  it('uses host occupancy against a known window, not billed cache', () => {
+    expect(mapCursorContextUsageInfo(usage, {
       maxTokens: 300_000,
-      percentage: 100,
+      model: 'opus',
+      occupancyTokens: 80_000,
+    })).toMatchObject({
+      totalTokens: 80_000,
+      maxTokens: 300_000,
+      percentage: 26.7,
       model: 'opus',
     })
+    expect(mapCursorContextUsageInfo(usage, {
+      maxTokens: 300_000,
+      occupancyTokens: 80_000,
+    }).categories).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'cacheRead', tokens: 1_400_000 }),
+    ]))
   })
 })

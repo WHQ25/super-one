@@ -393,8 +393,9 @@ export class CursorBackend implements SessionBackend {
   async getContextUsage(): Promise<ContextUsageInfo | null> {
     if (!this.lastUsage && this.lastContextTokens <= 0) return null
     const maxTokens = this.resolveContextWindow()
+    const occupancy = this.lastContextTokens
     const usage = this.lastUsage ?? {
-      inputTokens: this.lastContextTokens,
+      inputTokens: occupancy,
       outputTokens: 0,
       cacheReadTokens: 0,
       cacheWriteTokens: 0,
@@ -402,6 +403,8 @@ export class CursorBackend implements SessionBackend {
     return mapCursorContextUsageInfo(usage, {
       maxTokens,
       model: this.model,
+      // Last prompt occupancy — not billed input+cache from run.wait().
+      occupancyTokens: occupancy > 0 ? occupancy : undefined,
     })
   }
 

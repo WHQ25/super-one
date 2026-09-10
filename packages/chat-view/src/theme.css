@@ -131,3 +131,13 @@ a {
   -webkit-user-select: none;
   user-select: none;
 }
+
+/* Lists are indented 1.5em by the shared `.chat-md` sheet, which is tuned for a
+   desktop chat column. A phone column is roughly half as wide, so that indent
+   eats a visible share of every nested line; halving it buys back the width
+   without losing the marker (`list-inside` keeps the bullet in the content box).
+   This file is only loaded by the WebView document, so desktop keeps 1.5em. */
+.chat-md [data-streamdown="unordered-list"],
+.chat-md [data-streamdown="ordered-list"] {
+  padding-left: 0.75em;
+}

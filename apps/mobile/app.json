@@ -33,7 +33,11 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#111111"
-      }
+      },
+      "blockedPermissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED"
+      ]
     },
     "plugins": [
       "expo-dev-client",
@@ -52,6 +56,15 @@
           "photosPermission": "Allow SuperOne to attach images to chat.",
           "cameraPermission": "Allow SuperOne to scan desktop pairing QR codes.",
           "microphonePermission": false
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow SuperOne to attach images to chat.",
+          "savePhotosPermission": "Allow SuperOne to save images from the desktop to your photo library.",
+          "isAccessMediaLocationEnabled": false,
+          "granularPermissions": []
         }
       ]
     ],

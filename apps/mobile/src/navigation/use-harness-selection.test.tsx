@@ -115,6 +115,17 @@ const codexInfo: RemoteSystemInfo = {
   defaults: { model: 'gpt-6-astra', effort: 'high', permissionMode: 'auto', fastMode: true },
 }
 
+test.each([{ models: [] }, { models: codexInfo.models }])('keeps an opened Codex model and effort when the catalog omits it ($models)', async ({ models }) => {
+  const { result } = await mount()
+  await act(async () => { result.current.resetForProvider('codex') })
+  await act(async () => {
+    result.current.applySystemInfo('codex', { ...codexInfo, models }, { model: 'gpt-5.6-sol', effort: 'xhigh' })
+  })
+  await act(async () => { result.current.applySystemInfo('codex', { ...codexInfo, models }) })
+  expect(result.current.selectedModel).toBe('gpt-5.6-sol')
+  expect(result.current.selectedEffort).toBe('xhigh')
+})
+
 /** Codex's Fast row is a service tier, so the host default has to name one. */
 test('the host Codex Fast default arms the model service tier', async () => {
   const { result } = await mount()

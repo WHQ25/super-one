@@ -74,9 +74,14 @@ export function useHarnessSelection() {
     const claimedEffort = current?.effort || claimed.current.effort || ''
     const claimedPermissionMode = current?.permissionMode || claimed.current.permissionMode || ''
 
-    const model = resolveSelectedModel(info, claimedModel)
+    // A refreshed Codex catalog may omit a working model. It is discovery data,
+    // not permission to replace the model the user or restored session selected.
+    const model = provider === 'codex' && claimedModel ? claimedModel : resolveSelectedModel(info, claimedModel)
     const nextEfforts = effortOptionsForModel(provider, info, model)
-    const effort = resolveSelectedEffort(nextEfforts, claimedEffort || info.defaults?.effort)
+    const missingCodexModel = provider === 'codex' && !info.models?.some(candidate => candidate.id === model)
+    const effort = missingCodexModel && claimedEffort
+      ? claimedEffort
+      : resolveSelectedEffort(nextEfforts, claimedEffort || info.defaults?.effort)
     const modes = info.permissionModes?.length
       ? info.permissionModes
       : info.permissionPresets ?? []

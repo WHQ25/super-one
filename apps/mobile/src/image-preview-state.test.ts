@@ -3,6 +3,7 @@ import {
   DOUBLE_TAP_SCALE,
   IDENTITY_TRANSFORM,
   MAX_SCALE,
+  angleDelta,
   clampTranslate,
   doubleTapTransform,
   fitImage,
@@ -10,7 +11,11 @@ import {
   isPreviewableImageSource,
   parseImageDataUri,
   pinchTransform,
+  quarterTurnTransform,
+  rotatedFit,
+  rotationFitScale,
   settleTransform,
+  snapRotation,
 } from './image-preview-state'
 
 const viewport = { width: 400, height: 800 }
@@ -51,8 +56,9 @@ describe('image preview geometry', () => {
   })
 
   it('pinches around the fingers so the point under them stays put', () => {
-    const start = { ...IDENTITY_TRANSFORM, focal: { x: 100, y: 50 }, distance: 100 }
-    const next = pinchTransform(start, { focal: { x: 100, y: 50 }, distance: 200 })
+    const fitted = { width: 400, height: 200 }
+    const start = { ...IDENTITY_TRANSFORM, focal: { x: 100, y: 50 }, distance: 100, angle: 0 }
+    const next = pinchTransform(start, { focal: { x: 100, y: 50 }, distance: 200, angle: 0 }, viewport, fitted)
     expect(next.scale).toBe(2)
     // Picture point under the focal was (100, 50); at scale 2 it must still land there.
     expect(next.translate.x + next.scale * 100).toBeCloseTo(100)
@@ -61,11 +67,11 @@ describe('image preview geometry', () => {
 
   it('lets a pinch overshoot elastically and settles back inside the limits', () => {
     const fitted = { width: 400, height: 200 }
-    const start = { ...IDENTITY_TRANSFORM, focal: { x: 0, y: 0 }, distance: 10 }
-    const over = pinchTransform(start, { focal: { x: 0, y: 0 }, distance: 1000 })
+    const start = { ...IDENTITY_TRANSFORM, focal: { x: 0, y: 0 }, distance: 10, angle: 0 }
+    const over = pinchTransform(start, { focal: { x: 0, y: 0 }, distance: 1000, angle: 0 }, viewport, fitted)
     expect(over.scale).toBeGreaterThan(MAX_SCALE)
     expect(settleTransform(over, viewport, fitted).scale).toBe(MAX_SCALE)
-    const under = pinchTransform(start, { focal: { x: 0, y: 0 }, distance: 5 })
+    const under = pinchTransform(start, { focal: { x: 0, y: 0 }, distance: 5, angle: 0 }, viewport, fitted)
     expect(under.scale).toBeLessThan(1)
     expect(settleTransform(under, viewport, fitted)).toEqual(IDENTITY_TRANSFORM)
   })
@@ -84,5 +90,75 @@ describe('image preview geometry', () => {
     const zoomed = doubleTapTransform(IDENTITY_TRANSFORM, { x: 200, y: 400 }, viewport, fitted)
     const maxX = (fitted.width * zoomed.scale - viewport.width) / 2
     expect(Math.abs(zoomed.translate.x)).toBeLessThanOrEqual(maxX + 1e-9)
+  })
+})
+
+describe('image preview rotation', () => {
+  // A portrait picture filling a portrait viewport: on its side it has to shrink.
+  const portrait = { width: 400, height: 800 }
+  const landscape = { width: 400, height: 200 }
+
+  it('leaves an upright picture alone and refits a turned one', () => {
+    expect(rotationFitScale(0, viewport, portrait)).toBe(1)
+    expect(rotationFitScale(180, viewport, portrait)).toBeCloseTo(1)
+    // Laid on its side the 800 pt edge has 400 pt of width to live in.
+    expect(rotationFitScale(90, viewport, portrait)).toBeCloseTo(0.5)
+    // A wide picture stood on its end grows into the height it now has.
+    expect(rotationFitScale(90, viewport, landscape)).toBeCloseTo(2)
+  })
+
+  it('reports the turned on-screen box, which is what the pan clamp measures', () => {
+    expect(rotatedFit(0, viewport, portrait)).toEqual(portrait)
+    const sideways = rotatedFit(90, viewport, portrait)
+    expect(sideways.width).toBeCloseTo(400)
+    expect(sideways.height).toBeCloseTo(200)
+    // Whatever the angle, the box never leaves the viewport.
+    for (const angle of [17, 45, 63, 128, 271]) {
+      const box = rotatedFit(angle, viewport, portrait)
+      expect(box.width).toBeLessThanOrEqual(viewport.width + 1e-9)
+      expect(box.height).toBeLessThanOrEqual(viewport.height + 1e-9)
+    }
+  })
+
+  it('turns around the fingers and settles on the nearest quarter', () => {
+    const start = { ...IDENTITY_TRANSFORM, focal: { x: 0, y: 0 }, distance: 100, angle: 10 }
+    const turned = pinchTransform(start, { focal: { x: 0, y: 0 }, distance: 100, angle: 100 }, viewport, portrait)
+    expect(turned.rotation).toBeCloseTo(90)
+    expect(settleTransform(turned, viewport, portrait).rotation).toBe(90)
+    // A gesture abandoned short of halfway falls back to where it started.
+    const nudged = pinchTransform(start, { focal: { x: 0, y: 0 }, distance: 100, angle: 40 }, viewport, portrait)
+    expect(settleTransform(nudged, viewport, portrait).rotation).toBe(0)
+  })
+
+  it('takes the shortest way round when the fingers cross the ±180° seam', () => {
+    expect(angleDelta(170, -170)).toBe(20)
+    expect(angleDelta(-170, 170)).toBe(-20)
+    expect(snapRotation(-46)).toBe(-90)
+    expect(snapRotation(44)).toBe(0)
+  })
+
+  it('keeps a settled rotation through a zoom, a pan and a double tap', () => {
+    const turned = { scale: 1, translate: { x: 0, y: 0 }, rotation: 90 }
+    expect(settleTransform({ ...turned, scale: 9 }, viewport, portrait).rotation).toBe(90)
+    expect(doubleTapTransform(turned, { x: 0, y: 0 }, viewport, portrait).rotation).toBe(90)
+  })
+
+  it('clamps a zoomed turned picture against its turned box, not its upright one', () => {
+    const turned = { scale: 2, translate: { x: 1000, y: 1000 }, rotation: 90 }
+    const settled = settleTransform(turned, viewport, portrait)
+    const box = rotatedFit(90, viewport, portrait)
+    expect(settled.translate.x).toBeCloseTo((box.width * 2 - viewport.width) / 2)
+    // Sideways the picture is 400 pt tall against an 800 pt screen even at 2×,
+    // so it stays centred vertically — the upright box would have panned here.
+    expect(box.height * 2).toBeLessThan(viewport.height)
+    expect(settled.translate.y).toBe(0)
+  })
+
+  it('the rotate buttons step whole quarters from wherever the picture rests', () => {
+    expect(quarterTurnTransform(IDENTITY_TRANSFORM, 1).rotation).toBe(90)
+    expect(quarterTurnTransform(IDENTITY_TRANSFORM, -1).rotation).toBe(-90)
+    // A press mid-gesture snaps first, so four presses are always a full turn.
+    expect(quarterTurnTransform({ scale: 3, translate: { x: 40, y: 5 }, rotation: 88 }, 1))
+      .toEqual({ scale: 1, translate: { x: 0, y: 0 }, rotation: 180 })
   })
 })

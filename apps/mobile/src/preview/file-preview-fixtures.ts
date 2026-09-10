@@ -51,6 +51,9 @@ export const FILE_PREVIEW_FIXTURES: ReadonlyArray<{ label: string; state: FilePr
   { label: 'Image · attachment, no path', state: { kind: 'image', name: 'photo.png', label: 'photo.png', src: TINY_PNG, mimeType: 'image/png' } },
   { label: 'Image · downloaded file', state: { kind: 'image', ...HERO, src: 'file:///cache/file-preview/hero.png' } },
   { label: 'Image · remote URL (nothing to save)', state: { kind: 'image', name: 'image.jpg', src: 'https://picsum.photos/seed/superone/1200/800', mimeType: 'image/jpeg' } },
+  // Rotation is not symmetric: a portrait picture has to shrink to lie down,
+  // and the landscape one above has to grow to stand up. Both need reviewing.
+  { label: 'Image · tall portrait (turn it)', state: { kind: 'image', name: 'tall.jpg', label: 'Tall screenshot', src: 'https://picsum.photos/seed/superone-tall/800/1600', mimeType: 'image/jpeg' } },
   { label: 'Image · broken', state: { kind: 'image', name: 'broken.png', src: 'data:image/png;base64,AAAA', mimeType: 'image/png' } },
   { label: 'Code · cited line 16', state: { kind: 'text', path: PATH, name: 'PortableToolRow.tsx', text: CODE, size: CODE.length, markdown: false, line: 16 } },
   { label: 'Code · no anchor', state: { kind: 'text', path: PATH, name: 'PortableToolRow.tsx', text: CODE, size: CODE.length, markdown: false } },

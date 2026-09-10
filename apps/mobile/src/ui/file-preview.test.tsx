@@ -57,21 +57,36 @@ function mount(
 
 test('shows nothing until something is requested', async () => {
   await mount(null)
-  expect(screen.queryByLabelText('Close')).toBeNull()
+  expect(screen.queryByLabelText('Back')).toBeNull()
 })
 
-test('a picture shows its label with close and the more menu', async () => {
+test('a picture shows its label with back, rotation and the more menu', async () => {
   await mount(IMAGE)
   expect(screen.getByText('Screenshot')).toBeTruthy()
-  expect(screen.getByLabelText('Close')).toBeTruthy()
+  expect(screen.getByLabelText('Back')).toBeTruthy()
   expect(screen.getByLabelText('More')).toBeTruthy()
+  expect(screen.getByLabelText('Rotate Left')).toBeTruthy()
+  expect(screen.getByLabelText('Rotate Right')).toBeTruthy()
 })
 
-test('the close button dismisses the viewer', async () => {
+test('the back button dismisses the viewer', async () => {
   const onDismiss = jest.fn()
   await mount(IMAGE, { onDismiss })
-  fireEvent.press(screen.getByLabelText('Close'))
+  fireEvent.press(screen.getByLabelText('Back'))
   expect(onDismiss).toHaveBeenCalledTimes(1)
+})
+
+test('turning the picture keeps the viewer open', async () => {
+  const onDismiss = jest.fn()
+  await mount(IMAGE, { onDismiss })
+  await act(async () => { fireEvent.press(screen.getByLabelText('Rotate Right')) })
+  expect(onDismiss).not.toHaveBeenCalled()
+  expect(screen.getByLabelText('Screenshot')).toBeTruthy()
+})
+
+test('a file body has no rotation controls', async () => {
+  await mount(TEXT)
+  expect(screen.queryByLabelText('Rotate Left')).toBeNull()
 })
 
 test('the menu saves a picture to Photos and reports it', async () => {
@@ -173,7 +188,8 @@ test('an error offers a retry', async () => {
 
 test('translates its chrome and menu', async () => {
   await mount(IMAGE, { locale: 'zh' })
-  expect(screen.getByLabelText('关闭')).toBeTruthy()
+  expect(screen.getByLabelText('返回')).toBeTruthy()
+  expect(screen.getByLabelText('向左旋转')).toBeTruthy()
   await act(async () => { fireEvent.press(screen.getByLabelText('更多')) })
   expect(await screen.findByText('保存到相册')).toBeTruthy()
   expect(screen.getByText('分享')).toBeTruthy()

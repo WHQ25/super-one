@@ -57,7 +57,7 @@ export default {
   },
 }
 
-/** Inline bytes from a tool screenshot: the menu offers Save to Photos and Share. */
+/** Inline bytes from a tool screenshot: back, the label, rotate, and the menu. */
 export const Screenshot = {}
 /** Same picture in the light shell. */
 export const LightScheme = { args: { scheme: 'light' } }
@@ -69,6 +69,8 @@ export const Attachment = { args: { state: fixture('Image · attachment, no path
 export const DownloadedImage = { args: { state: fixture('Image · downloaded file') } }
 /** A markdown image by URL: both menu rows disabled, the picture streams in. */
 export const RemoteUrl = { args: { state: fixture('Image · remote URL (nothing to save)') } }
+/** Turn it with the bar at the bottom: a portrait picture shrinks to lie down. */
+export const TallPortrait = { args: { state: fixture('Image · tall portrait (turn it)') } }
 /** A source that cannot decode shows the failure copy instead of a spinner forever. */
 export const Broken = { args: { state: fixture('Image · broken') } }
 /** Save reports the permission was denied and offers Settings. */

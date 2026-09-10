@@ -81,6 +81,8 @@ export const FILE_PREVIEW_TEXT = {
   openSettings: 'Open Settings',
   sharingUnavailable: 'Sharing is unavailable on this device',
   imageFailed: 'Image failed to load',
+  rotateLeft: 'Rotate left',
+  rotateRight: 'Rotate right',
 } as const
 
 /** The last path segment, which is what the page's title shows. */

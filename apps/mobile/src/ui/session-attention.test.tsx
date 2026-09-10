@@ -1,10 +1,11 @@
 import { expect, test, jest } from '@jest/globals'
-import { screen, fireEvent } from '@testing-library/react-native'
+import { act, screen, fireEvent } from '@testing-library/react-native'
 import { renderWithTheme } from '../test-render'
 import { SessionActivityContext } from '../navigation/use-session-activity'
 import { WorkspaceButton } from './workspace-button'
 import { SessionRowContent } from './session-row-content'
 import type { SessionActivity } from '@superone/shared/session-activity'
+import { SessionAttentionGallery } from '../preview/SessionAttentionGallery'
 
 const activity: SessionActivity = { sessionId: 'one', projectPath: '/project', status: 'idle', provider: 'codex', pendingCount: 1, pendingReason: { en: 'Allow Bash?', zh: '允许 Bash？' } }
 const row = (pending = true) => <SessionActivityContext.Provider value={pending ? { one: activity } : {}}>
@@ -23,20 +24,40 @@ test('uses the localized pending reason', async () => {
   expect(screen.getByText('允许 Bash？')).toBeTruthy()
 })
 
-test('opens the workspace with a pending count accessible to screen readers', async () => {
+test('opens the workspace and announces waiting sessions to screen readers', async () => {
   const onPress = jest.fn()
   await renderWithTheme(<WorkspaceButton pendingCount={3} onPress={onPress} />)
-  await fireEvent.press(screen.getByRole('button', { name: 'Open workspace, 3 pending requests' }))
+  expect(screen.getByTestId('workspace-pending-badge')).toHaveStyle({ width: 8, height: 8 })
+  expect(screen.queryByText('3')).toBeNull()
+  await fireEvent.press(screen.getByRole('button', { name: 'Open Workspace, Sessions Need Attention' }))
   expect(onPress).toHaveBeenCalledTimes(1)
+})
+
+test('renders and clears the story with multiple requests and an unread session', async () => {
+  await renderWithTheme(<SessionAttentionGallery />)
+  expect(screen.getByText('Allow Bash?')).toBeTruthy()
+  expect(screen.getByText('Review plan')).toBeTruthy()
+  expect(screen.getByTestId('harness-icon-unseen')).toBeTruthy()
+  await act(async () => {
+    fireEvent.press(screen.getByRole('button', { name: 'Open Workspace, Sessions Need Attention' }))
+  })
+  expect(screen.queryByText('Allow Bash?')).toBeNull()
+  expect(screen.queryByText('Review plan')).toBeNull()
+  expect(screen.queryByTestId('harness-icon-unseen')).toBeNull()
+  expect(screen.queryByTestId('workspace-pending-badge')).toBeNull()
+})
+
+test('announces waiting sessions in Chinese', async () => {
+  await renderWithTheme(<WorkspaceButton pendingCount={2} onPress={() => {}} />, 'dark', 'zh')
+  expect(screen.getByRole('button', { name: '打开工作区，有会话需要关注' })).toBeTruthy()
 })
 
 test('clears the badge when all requests resolve', async () => {
   const result = await renderWithTheme(<WorkspaceButton pendingCount={120} onPress={() => {}} />)
   expect(screen.getByTestId('workspace-pending-badge')).toBeTruthy()
-  expect(screen.getByText('99+')).toBeTruthy()
+  expect(screen.queryByText('99+')).toBeNull()
   await result.rerender(<WorkspaceButton pendingCount={0} onPress={() => {}} />)
   expect(screen.queryByTestId('workspace-pending-badge')).toBeNull()
-  expect(screen.queryByText('99+')).toBeNull()
   expect(screen.getByRole('button', { name: 'Open Workspace' })).toBeTruthy()
 })
 

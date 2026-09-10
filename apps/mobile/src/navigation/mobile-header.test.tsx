@@ -67,7 +67,7 @@ test('does not duplicate reconnecting in the header while the sidebar is visible
   expect(screen.queryByText('Reconnecting…')).toBeNull()
 })
 
-test('badges the workspace menu with the number of pending requests', async () => {
+test('dots the workspace menu when sessions need attention', async () => {
   await renderWithTheme(header({
     route: 'chat',
     title: 'Session',
@@ -76,8 +76,8 @@ test('badges the workspace menu with the number of pending requests', async () =
   }))
 
   expect(screen.getByTestId('workspace-pending-badge')).toBeTruthy()
-  expect(screen.getByText('2')).toBeTruthy()
-  expect(screen.getByRole('button', { name: 'Open workspace, 2 pending requests' })).toBeTruthy()
+  expect(screen.queryByText('2')).toBeNull()
+  expect(screen.getByRole('button', { name: 'Open Workspace, Sessions Need Attention' })).toBeTruthy()
 })
 
 test('hides the workspace badge when nothing is waiting', async () => {

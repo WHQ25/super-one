@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import type { RelayClient } from '@superone/relay-client'
 import type { SessionActivity } from '@superone/shared/session-activity'
 import { AppState } from 'react-native'
-import { mergeSessionActivity, type MobileSessionActivity, type WorkspaceActivity } from '../session-activity-state'
+import { countAttentionSessions, mergeSessionActivity, type MobileSessionActivity, type WorkspaceActivity } from '../session-activity-state'
 import { randomId } from '../ids'
 
 export const SessionActivityContext = createContext<WorkspaceActivity>({})
@@ -68,5 +68,5 @@ export function useWorkspaceActivity(client: RelayClient | null, connected: bool
     }).catch(() => {})
     return () => { active = false }
   }, [client, connected, revision, visibleSession])
-  return { sessions, ingest, pendingCount: Object.values(sessions).reduce((sum, session) => sum + session.pendingCount, 0) }
+  return { sessions, ingest, pendingCount: countAttentionSessions(sessions) }
 }

@@ -1,23 +1,16 @@
 import { Menu } from 'lucide-react-native'
 import { View } from 'react-native'
 import { IconButton } from './icon-button'
-import { Text } from './text'
 import { useMobileTheme } from '../theme/context'
-import { useMobileLocale } from '../i18n/context'
 
 export function WorkspaceButton({ pendingCount = 0, onPress }: { pendingCount?: number; onPress: () => void }) {
   const { tokens: { colors } } = useMobileTheme()
-  const { locale } = useMobileLocale()
-  const count = Math.max(0, Math.floor(pendingCount))
-  const label = count ? locale === 'zh' ? `打开工作区，${count} 项待处理` : `Open workspace, ${count} pending requests` : 'Open workspace'
+  const waiting = pendingCount > 0
   return <View style={{ overflow: 'visible' }}>
-    <IconButton icon={Menu} label={label} onPress={onPress} />
-    {count > 0 ? <View testID="workspace-pending-badge" pointerEvents="none" accessible={false} style={{
-      position: 'absolute', right: 2, top: 2, zIndex: 1, minWidth: 18, height: 18,
-      paddingHorizontal: 4, borderRadius: 9, alignItems: 'center', justifyContent: 'center',
-      backgroundColor: colors.success,
-    }}>
-      <Text style={{ fontSize: 10, fontWeight: '700', color: colors.successForeground }}>{count > 99 ? '99+' : count}</Text>
-    </View> : null}
+    <IconButton icon={Menu} label={waiting ? 'Open workspace, sessions need attention' : 'Open workspace'} onPress={onPress} />
+    {waiting ? <View testID="workspace-pending-badge" pointerEvents="none" accessible={false} style={{
+      position: 'absolute', right: 10, top: 10, zIndex: 1, width: 8, height: 8, borderRadius: 4,
+      backgroundColor: colors.error,
+    }} /> : null}
   </View>
 }

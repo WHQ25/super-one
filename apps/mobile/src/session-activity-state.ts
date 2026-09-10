@@ -3,6 +3,15 @@ import type { SessionActivity } from '@superone/shared/session-activity'
 export type MobileSessionActivity = SessionActivity & { isUnseen?: boolean }
 export type WorkspaceActivity = Readonly<Record<string, MobileSessionActivity>>
 
+function sessionNeedsAttention(session: MobileSessionActivity): boolean {
+  return session.pendingCount > 0 || !!session.isUnseen
+}
+
+/** Count sessions, even when one session has several requests and an unread reply. */
+export function countAttentionSessions(activity: WorkspaceActivity): number {
+  return Object.values(activity).filter(sessionNeedsAttention).length
+}
+
 export function mergeSessionActivity(
   previous: MobileSessionActivity | undefined,
   incoming: SessionActivity,
@@ -26,5 +35,5 @@ export function sessionActivityIconStatus(session: { status?: string; isUnseen?:
 /** A project row stays open enough to show work that is waiting on the user. */
 export function projectHasAttention(activity: WorkspaceActivity, projectPath: string): boolean {
   return Object.values(activity).some((session) =>
-    session.projectPath === projectPath && ((session.pendingCount ?? 0) > 0 || !!session.isUnseen))
+    session.projectPath === projectPath && sessionNeedsAttention(session))
 }

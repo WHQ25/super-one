@@ -82,7 +82,7 @@ Attention is the exception, matching the desktop sidebar: groups with a pending
 request or an unread completion are partitioned to the top of the project, and
 a collapsed project still renders those rows (plus the active session) instead
 of hiding the whole list. `session_activity` / `list_session_activity` supply
-the pending copy; the header menu badge is the same count so a closed drawer
+the pending copy; the header menu shows a red attention dot so a closed drawer
 still says work is waiting.
 **Several projects stand open at once**, as on the desktop, so the session list is
 owned per row (`WorkspaceProjectRow`) rather than per drawer — one shared list

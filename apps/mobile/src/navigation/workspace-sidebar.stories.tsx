@@ -4,6 +4,7 @@ import type { SessionActivity } from '@superone/shared/session-activity'
 import { MobileThemeProvider } from '../theme/context'
 import { Text } from '../ui/text'
 import type { SessionListRow } from '../session-list-state'
+import { countAttentionSessions } from '../session-activity-state'
 import { MobileHeader } from './mobile-header'
 import { SessionActivityContext } from './use-session-activity'
 import { WorkspaceSidebar, type WorkspaceSidebarProps } from './workspace-sidebar'
@@ -106,7 +107,7 @@ const pending: Record<string, SessionActivity> = {
     status: 'idle',
     provider: 'claude',
     title: 'Landscape sidebar should fill the window height',
-    pendingCount: 1,
+    pendingCount: 2,
     pendingReason: { en: 'Allow Bash?', zh: '允许 Bash？' },
   },
   ask: {
@@ -144,7 +145,7 @@ export const PhoneMenuBadge = {
           provider="codex"
           hasSession
           sessionId="s1"
-          pendingCount={3}
+          pendingCount={countAttentionSessions(pending)}
           deviceStatus="connectedLan"
           onBack={noop}
           onSwitchSession={noop}
@@ -154,7 +155,7 @@ export const PhoneMenuBadge = {
       </View>
     </MobileThemeProvider>
   ),
-  name: 'Phone · menu badge for pending sessions',
+  name: 'Phone · attention dot on the menu',
 }
 
 function LandscapeFrame(props: WorkspaceSidebarProps) {

@@ -3,4 +3,4 @@ import { SessionAttentionGallery } from '../preview/SessionAttentionGallery'
 
 export default { title: 'Mobile/SessionAttention', component: SessionAttentionGallery,
   render: () => <MobileThemeProvider><SessionAttentionGallery /></MobileThemeProvider> }
-export const PendingAndResolved = {}
+export const PendingAndResolved = { name: 'Pending and unread sessions · count once and clear' }

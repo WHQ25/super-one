@@ -1,9 +1,10 @@
 import { expect, test } from '@jest/globals'
-import { fireEvent, screen } from '@testing-library/react-native'
+import { act, fireEvent, render, screen } from '@testing-library/react-native'
 import { renderWithTheme } from '../test-render'
 import { directoryNavigationItem, type MentionItem } from '../mentions'
 import { buildMentionRows, type MentionRow } from '../mention-rows'
 import { MentionSuggestions } from './composer-suggestions'
+import mentionStories, { Failed } from './composer-suggestions.stories'
 
 const file: MentionItem = { kind: 'file', path: 'src/app.ts' }
 const agentProfile: MentionItem = { kind: 'agent-profile', path: 'codex-base', label: 'Codex', description: '@codex' }
@@ -239,4 +240,26 @@ test('does not print a row\'s own name under itself', async () => {
       onSelect={() => {}} />,
   )
   expect(screen.getAllByText('apps')).toHaveLength(1)
+})
+
+test.each([
+  ['Codex', 'agent-profile: codex-base'],
+  ['Board', 'miniapp: board'],
+])('selects %s from the bare @ story with its typed identity', async (label, identity) => {
+  const Preview = mentionStories.render
+  await render(<Preview {...mentionStories.args} />)
+  expect(screen.getAllByRole('header').map((node) => node.props.children))
+    .toEqual(['Built-in', 'Collaborators', 'Agents', 'Mini apps', 'Files'])
+  await act(async () => { fireEvent.press(screen.getByText(label)) })
+  expect(screen.getByText(identity)).toBeTruthy()
+})
+
+test('retries the failed catalog story and shows collaborators and miniapps', async () => {
+  const Preview = mentionStories.render
+  await render(<Preview {...mentionStories.args} {...Failed.args} />)
+  expect(screen.getByText('Host unavailable')).toBeTruthy()
+  await act(async () => { fireEvent.press(screen.getByLabelText('Retry Search')) })
+  expect(screen.queryByText('Host unavailable')).toBeNull()
+  expect(screen.getByText('Codex')).toBeTruthy()
+  expect(screen.getByText('Board')).toBeTruthy()
 })

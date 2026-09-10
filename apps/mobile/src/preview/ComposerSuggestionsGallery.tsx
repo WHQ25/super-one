@@ -14,7 +14,7 @@ import { WorkflowsPanel } from '../ui/workflows-panel'
 import { workflowRunRows } from '../workflow-runs'
 import {
   previewAgentProfiles, previewCapabilityIds, previewLongMentionItems, previewMentionItems,
-  previewMcpServers, previewNestedEntries, previewRootEntries, previewSessionProjects, previewSessionRows,
+  previewMcpServers, previewNestedEntries, previewRootMentionItems, previewSessionProjects, previewSessionRows,
   previewSlashCatalog, previewWorkflowMessages,
 } from './composer-fixtures'
 
@@ -50,7 +50,7 @@ export function ComposerSuggestionsGallery() {
   // Rows go through the shipping builder, so the ranking, the disabled
   // capabilities and the remapped highlights shown here are the real ones.
   const rows = (query: string) => buildMentionRows(query, {
-    remote: previewMentionItems,
+    remote: query ? previewMentionItems : previewRootMentionItems,
     agentProfiles: previewAgentProfiles,
     capabilityIds: previewCapabilityIds,
   })
@@ -95,7 +95,7 @@ export function ComposerSuggestionsGallery() {
       <SlashSuggestions matches={slash('/re')} onSelect={() => {}} onDismiss={() => {}} />
     </Section>
 
-    <Section title="Mention · bare @" note="Capabilities and files. Desktop apps need a query, or an empty @ is a list of applications.">
+    <Section title="Mention · bare @" note="The first @ loads collaborators, mini-apps and project agents alongside capabilities and root files.">
       <MentionSuggestions rows={rows('')} onSelect={() => {}} search={{ active: true, loading: false }} />
     </Section>
 
@@ -128,10 +128,10 @@ export function ComposerSuggestionsGallery() {
       <MentionSuggestions rows={[]} onSelect={() => {}} search={{ active: true, loading: false }} />
     </Section>
 
-    <Section title="Mention · browsing the root" note="A bare @ lists the project alongside the capabilities. No trail yet — this is the root.">
+    <Section title="Mention · browsing the root" note="Returning to the root restores collaborators and mini-apps alongside the project's immediate children.">
       <MentionSuggestions
         rows={buildMentionRows('', {
-          remote: browseItems(previewRootEntries, ''),
+          remote: previewRootMentionItems,
           agentProfiles: previewAgentProfiles,
           capabilityIds: previewCapabilityIds,
         })}

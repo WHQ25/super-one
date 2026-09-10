@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cursorAfterEdit } from './composer-cursor'
+import { cursorAfterEdit, insertAtCursor } from './composer-cursor'
 import { extractMentionQuery, insertMention, parseMentionItems } from './mentions'
 
 describe('composer cursor', () => {
@@ -22,6 +22,26 @@ describe('composer cursor', () => {
     expect(cursorAfterEdit('@src rest', '@sr rest', { start: 4, end: 4 })).toEqual({ start: 3, end: 3 })
     expect(cursorAfterEdit('你好 rest', '🙂 rest', { start: 0, end: 2 })).toEqual({ start: 2, end: 2 })
     expect(cursorAfterEdit('nihao rest', '你好 rest', { start: 5, end: 5 })).toEqual({ start: 2, end: 2 })
+  })
+})
+
+describe('insert at cursor', () => {
+  it('inserts at the caret and replaces a selection', () => {
+    expect(insertAtCursor('', { start: 0, end: 0 }, '/')).toEqual({
+      draft: '/', cursor: { start: 1, end: 1 },
+    })
+    expect(insertAtCursor('hello', { start: 5, end: 5 }, '@')).toEqual({
+      draft: 'hello@', cursor: { start: 6, end: 6 },
+    })
+    expect(insertAtCursor('ab', { start: 0, end: 2 }, '/')).toEqual({
+      draft: '/', cursor: { start: 1, end: 1 },
+    })
+  })
+
+  it('clamps a stale caret rather than throwing', () => {
+    expect(insertAtCursor('hi', { start: 9, end: 12 }, '/')).toEqual({
+      draft: 'hi/', cursor: { start: 3, end: 3 },
+    })
   })
 })
 

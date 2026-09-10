@@ -1,5 +1,17 @@
 export type ComposerCursor = { start: number; end: number }
 
+/** Insert at the caret (or replace the selection) and park the caret after it. */
+export function insertAtCursor(draft: string, cursor: ComposerCursor, snippet: string): {
+  draft: string
+  cursor: ComposerCursor
+} {
+  const start = Math.max(0, Math.min(cursor.start, draft.length))
+  const end = Math.max(start, Math.min(cursor.end, draft.length))
+  const next = draft.slice(0, start) + snippet + draft.slice(end)
+  const caret = start + snippet.length
+  return { draft: next, cursor: { start: caret, end: caret } }
+}
+
 /** Native text events can precede selection events. Infer the end of the edit,
  * retaining the previous caret when repeated characters make the diff ambiguous. */
 export function cursorAfterEdit(before: string, after: string, selection: ComposerCursor): ComposerCursor {

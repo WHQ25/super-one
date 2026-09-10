@@ -1,5 +1,6 @@
 import type { ContentBlock } from '@superone/shared/agent-types'
 import type { MentionItem } from '../mentions'
+import { browseItems } from '../mention-browse'
 import type { SlashCommandInfo } from '../slash'
 
 /**
@@ -74,6 +75,11 @@ export const previewRootEntries = [
   { name: 'docs', isDirectory: true },
   { name: 'package.json', isDirectory: false },
   { name: 'README.md', isDirectory: false },
+]
+
+export const previewRootMentionItems: MentionItem[] = [
+  ...previewMentionItems.filter((item) => item.kind === 'agent' || item.kind === 'miniapp'),
+  ...browseItems(previewRootEntries, ''),
 ]
 
 export const previewNestedEntries = [

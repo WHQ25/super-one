@@ -12,6 +12,8 @@ export interface NativeComposerController {
   replaceText(text: string): boolean
   /** Rewrite the command line only, keeping later lines and their chips. */
   replaceFirstLine(text: string): boolean
+  /** Insert at the native caret (or replace the selection). */
+  insertText(text: string): boolean
   canSubmit(): boolean
   /** Commit IME composition and synchronize the authoritative native draft. */
   prepareSubmit(): Promise<void>
@@ -42,8 +44,10 @@ export function composerInputMinHeight(tablet: boolean): number {
 
 export const COMPOSER_INPUT_MAX_HEIGHT = 144
 
-export function NativeComposerInput({ binding, tablet, editable, placeholder, onSubmit }: {
+export function NativeComposerInput({ binding, tablet, editable, placeholder, onSubmit, onFocus, onBlur }: {
   binding: NativeComposerBinding; tablet: boolean; editable: boolean; placeholder: string; onSubmit(): void
+  onFocus?: () => void
+  onBlur?: () => void
 }) {
   const [command, setCommand] = useState<MentionEditorCommand>(() => ({ id: 0, eventCount: 0, start: 0, end: 0,
     text: nativeMentionText(binding.document), tokens: nativeMentionSpans(binding.document) }))
@@ -117,10 +121,17 @@ export function NativeComposerInput({ binding, tablet, editable, placeholder, on
     // mention chip on them — the moment the overlay learned to stay open past
     // the first space.
     replaceFirstLine: (text) => replaceRange(text, (current) => firstLineRange(current.text).end),
+    insertText: (text) => {
+      const current = snapshot.current
+      if (!current || current.composing) return false
+      return issue({ id: commandId.current + 1, eventCount: current.eventCount, start: current.start, end: current.end,
+        text: text.replaceAll('\uFFFC', '\uFFFD'), tokens: [] })
+    },
     prepareSubmit,
     canSubmit: () => !!snapshot.current && !snapshot.current.composing && !snapshot.current.rejection && pending.current === null,
   }))
   return <NativeMentionEditor command={command} editable={editable} placeholder={placeholder} accessibilityLabel="Message"
+    onFocus={onFocus} onBlur={onBlur}
     autoSize={{ minHeight: composerInputMinHeight(tablet), maxHeight: COMPOSER_INPUT_MAX_HEIGHT }} submitBehavior={tablet ? 'submit' : 'newline'}
     onSubmit={() => { if (pending.current === null) onSubmit() }}
     onError={(message) => { finishSubmission(new Error(message)); snapshot.current = null; pending.current = null; binding.onError(message) }}

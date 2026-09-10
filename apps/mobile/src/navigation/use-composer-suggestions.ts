@@ -4,7 +4,7 @@ import { requestMentionIcons, requestMentionSearch, type MentionSearchResult } f
 import { MentionIconCache, type MentionIconStore } from '../mention-icon-cache'
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import type { ChatRuntime } from '../runtime'
-import { cursorAfterEdit, type ComposerCursor } from '../composer-cursor'
+import { cursorAfterEdit, insertAtCursor, type ComposerCursor } from '../composer-cursor'
 import { extractMentionQuery, insertMention, parseMentionItems, parseAgentMentionItems, type MentionItem } from '../mentions'
 import { buildMentionRows, type MentionRow } from '../mention-rows'
 import { deriveMentionMode, mentionScopeDir } from '../mention-browse-state'
@@ -225,18 +225,30 @@ export function useComposerSuggestions(
   ): (() => Promise<MentionFetch>) | null => {
     if (isSessionMentionQuery(query)) return sessionLookup(query, client)
     const mode = deriveMentionMode(query)
+    const needle = mode.kind === 'search' ? mode.needle : ''
+    const scoped = mode.kind === 'search' && mode.scopeDir ? { scopeDir: mode.scopeDir } : {}
+    const search = runtime ? () => runtime.searchMentions(needle, scoped)
+      : client && projectPath ? () => requestMentionSearch(client, projectPath, needle, scoped) : null
     if (mode.kind === 'browse') {
       const root = browseRoot(runtime)
       if (!client || !root) return null
       return async () => {
-        const { items, error } = await requestDirectory(client, root, mode.dir)
+        // Bare @ needs the host catalog even before the first keyword search.
+        // Keep directory browsing authoritative for files: search results may
+        // include deep descendants and duplicate the root's immediate entries.
+        const [{ items, error }, catalog] = await Promise.all([
+          requestDirectory(client, root, mode.dir),
+          !mode.dir && search ? search() : null,
+        ])
         if (error) throw new Error(error)
-        return { remote: items, ...carried() }
+        if (catalog?.error) throw new Error(catalog.error)
+        const fetched = catalog ? absorb(catalog) : { remote: [], ...carried() }
+        return { ...fetched, remote: [
+          ...fetched.remote.filter((item) => item.kind === 'agent' || item.kind === 'miniapp'),
+          ...items,
+        ] }
       }
     }
-    const scoped = mode.scopeDir ? { scopeDir: mode.scopeDir } : {}
-    const search = runtime ? () => runtime.searchMentions(mode.needle, scoped)
-      : client && projectPath ? () => requestMentionSearch(client, projectPath, mode.needle, scoped) : null
     if (!search) return null
     return async () => {
       const result = await search()
@@ -405,6 +417,17 @@ export function useComposerSuggestions(
     else clear()
     return value
   }
+  /** Toolbar `/` and `@` — same path as a keystroke, so the overlay can open. */
+  const insertSnippet = (snippet: string): string => {
+    const next = insertAtCursor(text.current, cursor.current, snippet)
+    text.current = next.draft
+    cursor.current = next.cursor
+    setRequestedCursor(next.cursor)
+    setDraft(next.draft)
+    setSlashDismissed(false)
+    searchMentions()
+    return next.draft
+  }
   /** Record a draft the app rewrote, without re-arming the slash overlay. */
   const applyProgrammatic = (value: string) => {
     text.current = value
@@ -417,7 +440,7 @@ export function useComposerSuggestions(
   return {
     slashHits, slashCatalogStatus: catalogStatus, mentionRows, mentionSearch, requestedCursor,
     mentionQuery, mentionGroupLabels,
-    update, updateNative, select, insert, clear, applyProgrammatic,
+    update, updateNative, select, insert, insertSnippet, clear, applyProgrammatic,
     dismissSlash: () => setSlashDismissed(true),
     retry: searchMentions,
     /** Fetch the next page of an already-open list, keeping what is on screen. */

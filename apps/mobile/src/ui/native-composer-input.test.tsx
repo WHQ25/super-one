@@ -96,6 +96,15 @@ test('a prepareSubmit acknowledgement still sends when the IME re-marks the draf
   await pending
 })
 
+test('inserts at the native caret once composition has settled', async () => {
+  const { controller, change } = await setup()
+  await change({ composing: true })
+  expect(controller.current!.insertText('/')).toBe(false)
+  await change({ composing: false })
+  await act(() => { expect(controller.current!.insertText('/')).toBe(true) })
+  expect(mockProps.command).toEqual(expect.objectContaining({ text: '/', start: 2, end: 2 }))
+})
+
 test('does not replace the native draft while composition is still marked', async () => {
   const { controller, change } = await setup()
   await change({ composing: true })

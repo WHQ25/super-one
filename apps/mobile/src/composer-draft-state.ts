@@ -9,6 +9,9 @@ export class ComposerDraftState {
   readonly lastChangeAt = { current: 0 }
   private revision = 0
   private snapshot: MentionEditorSnapshot | null = null
+  /** Native text at the last `capture()`. IME may bump the revision without
+   * changing it (composing spans, restartInput); that is still the sent draft. */
+  private capturedVisible: string | null = null
   /**
    * Mentions the plain-text editor wrote. The native editor keeps identities in
    * its own spans; the fallback has nowhere to put them, so they live here and
@@ -52,7 +55,12 @@ export class ComposerDraftState {
     return true
   }
   capture() {
+    this.capturedVisible = this.text.current
     return { text: serializeMentionDocument(this.document.current), title: plainMentionText(this.document.current).trim(), revision: this.revision }
   }
   isCurrent(revision: number) { return this.revision === revision }
+  /** True when nothing the user typed has replaced the captured draft. */
+  holdsCaptured(revision: number) {
+    return this.revision === revision || this.text.current === this.capturedVisible
+  }
 }

@@ -243,6 +243,13 @@ final class MentionEditorView: ExpoView, UITextViewDelegate {
   func applyCommand(_ command: [String: Any]) {
     guard let id = command["id"] as? Int, id > lastCommand else { return }
     lastCommand = id
+    // An explicit Send tap commits the IME and reads native text; it must not
+    // replace the draft using a potentially stale JS event count.
+    if command["action"] as? String == "prepareSubmit" {
+      editor.unmarkText()
+      publish(submissionId: id)
+      return
+    }
     guard let expected = command["eventCount"] as? Int else { return }
     guard expected == eventCount, editor.markedTextRange == nil else { publish(rejection: "stale-or-composing"); return }
     guard let start = command["start"] as? Int, let end = command["end"] as? Int,
@@ -274,7 +281,7 @@ final class MentionEditorView: ExpoView, UITextViewDelegate {
     return selected.string
   }
 
-  private func publish(rejection: String? = nil) {
+  private func publish(rejection: String? = nil, submissionId: Int? = nil) {
     placeholderLabel.isHidden = editor.textStorage.length > 0
     setNeedsLayout()
     var tokens: [[String: Any]] = []
@@ -285,8 +292,9 @@ final class MentionEditorView: ExpoView, UITextViewDelegate {
     }
     let selection = editor.selectedRange
     var event: [String: Any] = ["text": editor.textStorage.string, "tokens": tokens, "eventCount": eventCount,
-      "start": selection.location, "end": selection.location + selection.length, "composing": editor.markedTextRange != nil]
+      "start": selection.location, "end": selection.location + selection.length, "composing": editor.markedTextRange != nil, "supportsPrepareSubmit": true]
     if let rejection { event["rejection"] = rejection }
+    if let submissionId { event["submissionId"] = submissionId }
     onDocumentChange(event)
   }
 }

@@ -17,6 +17,7 @@ import android.text.style.ReplacementSpan
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.view.inputmethod.BaseInputConnection
 import android.widget.EditText
 import android.util.Base64
@@ -86,6 +87,7 @@ class MentionEditorView(context: Context, appContext: AppContext) : ExpoView(con
       }
     }
     editor.background = null
+    applyImeOptions()
     editor.hint = "Ask anything…"
     val density = resources.displayMetrics.density
     editor.setPadding((12 * density).toInt(), (10 * density).toInt(), (12 * density).toInt(), (10 * density).toInt())
@@ -101,10 +103,25 @@ class MentionEditorView(context: Context, appContext: AppContext) : ExpoView(con
   fun setForeground(color: String) { editor.setTextColor(Color.parseColor(color)); editor.setHintTextColor(mutedForeground) }
   fun setChipBackground(color: String) { chipColor = Color.parseColor(color); refreshChipSpans() }
 
+  /**
+   * IME flags for the editor. Applied at construction as well, because the
+   * `submitOnReturn` prop may never change from its default and the flags must
+   * not depend on that.
+   *
+   * `IME_FLAG_NO_FULLSCREEN` matters in landscape: without it most keyboards
+   * enter fullscreen mode and cover the whole window, and since
+   * `IME_FLAG_NO_EXTRACT_UI` also hides the keyboard's own text field the user
+   * can't see what they type. React Native's TextInput sets the same flag.
+   */
+  private fun applyImeOptions() {
+    editor.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN or EditorInfo.IME_FLAG_NO_EXTRACT_UI or
+      (if (submitOnReturn) EditorInfo.IME_ACTION_SEND else EditorInfo.IME_FLAG_NO_ENTER_ACTION)
+  }
+
   fun setSubmitOnReturn(value: Boolean) {
     if (submitOnReturn == value) return
     submitOnReturn = value
-    editor.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI or (if (value) EditorInfo.IME_ACTION_SEND else EditorInfo.IME_FLAG_NO_ENTER_ACTION)
+    applyImeOptions()
     if (editor.hasFocus()) {
       val keyboard = context.getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
       keyboard.restartInput(editor)
@@ -179,8 +196,14 @@ class MentionEditorView(context: Context, appContext: AppContext) : ExpoView(con
     val id = (command["id"] as? Number)?.toInt() ?: return
     if (id <= lastCommand) return
     lastCommand = id
-    val expected = (command["eventCount"] as? Number)?.toInt() ?: return
     val value = editor.text ?: return
+    if (command["action"] == "prepareSubmit") {
+      BaseInputConnection.removeComposingSpans(value)
+      (context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)?.restartInput(editor)
+      publish(submissionId = id)
+      return
+    }
+    val expected = (command["eventCount"] as? Number)?.toInt() ?: return
     if (expected != eventCount || BaseInputConnection.getComposingSpanStart(value) >= 0) {
       publish("stale-or-composing")
       return
@@ -216,7 +239,7 @@ class MentionEditorView(context: Context, appContext: AppContext) : ExpoView(con
     onContentHeightChange(mapOf("height" to pixels / resources.displayMetrics.density))
   }
 
-  private fun publish(rejection: String? = null) {
+  private fun publish(rejection: String? = null, submissionId: Int? = null) {
     editor.post { publishContentHeight() }
     val value = editor.text ?: return
     val tokens = value.getSpans(0, value.length, ChipSpan::class.java).mapNotNull { span ->
@@ -224,9 +247,11 @@ class MentionEditorView(context: Context, appContext: AppContext) : ExpoView(con
       if (offset < 0 || offset >= value.length || value[offset] != '\uFFFC') null
       else mapOf("kind" to span.kind, "value" to span.value, "displayName" to span.label, "offset" to offset)
     }
-    onDocumentChange(mapOf("text" to value.toString(), "tokens" to tokens,
+    val event = mutableMapOf<String, Any?>("text" to value.toString(), "tokens" to tokens,
       "eventCount" to eventCount, "start" to editor.selectionStart, "end" to editor.selectionEnd,
-      "composing" to (BaseInputConnection.getComposingSpanStart(value) >= 0), "rejection" to rejection))
+      "composing" to (BaseInputConnection.getComposingSpanStart(value) >= 0), "rejection" to rejection, "supportsPrepareSubmit" to true)
+    if (submissionId != null) event["submissionId"] = submissionId
+    onDocumentChange(event)
   }
 
   private inner class ChipSpan(val kind: String, val value: String, val label: String) : ReplacementSpan() {

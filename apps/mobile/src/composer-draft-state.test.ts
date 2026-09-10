@@ -44,4 +44,16 @@ describe('structured composer draft lifecycle', () => {
     state.changeText('new draft', 300)
     expect(state.isCurrent(sent.revision)).toBe(false)
   })
+
+  it('still holds a captured draft when IME only bumps the native event count', () => {
+    const state = new ComposerDraftState()
+    const draft = fileDraft('a.ts', 1)
+    state.accept(draft, 100)
+    const sent = state.capture()
+    expect(state.accept({ ...draft, eventCount: 2, composing: true }, 200)).toBe(true)
+    expect(state.isCurrent(sent.revision)).toBe(false)
+    expect(state.holdsCaptured(sent.revision)).toBe(true)
+    state.changeText('typed after send', 300)
+    expect(state.holdsCaptured(sent.revision)).toBe(false)
+  })
 })

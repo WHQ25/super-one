@@ -5,10 +5,11 @@ export type NativeMentionSpan = MentionToken & { offset: number }
 export type MentionEditorCommand = {
   id: number; eventCount: number; start: number; end: number
   text: string; tokens: NativeMentionSpan[]
+  action?: 'prepareSubmit'
 }
 export type MentionEditorSnapshot = {
   text: string; tokens: NativeMentionSpan[]; document: MentionSegment[]
-  eventCount: number; start: number; end: number; composing: boolean; rejection?: string
+  eventCount: number; start: number; end: number; composing: boolean; rejection?: string; submissionId?: number; supportsPrepareSubmit?: boolean
 }
 
 const tokenKinds = new Set(['file', 'directory', 'agent', 'agent-profile', 'miniapp', 'desktop-app', 'session'])
@@ -43,5 +44,7 @@ export function parseMentionEditorSnapshot(raw: unknown): MentionEditorSnapshot 
     throw new TypeError('Native mention is missing its identity')
   }
   return { text, tokens, document, start: Math.min(start, end), end: Math.max(start, end), eventCount, composing: value.composing,
-    ...(typeof value.rejection === 'string' ? { rejection: value.rejection } : {}) }
+    ...(typeof value.rejection === 'string' ? { rejection: value.rejection } : {}),
+    ...(value.supportsPrepareSubmit === true ? { supportsPrepareSubmit: true } : {}),
+    ...(value.submissionId === undefined ? {} : { submissionId: integer(value.submissionId) }) }
 }

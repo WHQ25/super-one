@@ -20,17 +20,6 @@ export interface ShareFileEncryption {
   key: string
 }
 
-export interface ShareFilePayload {
-  name: string
-  mimeType: string
-  size: number
-  caption?: string
-  inlineBase64?: string
-  downloadUrl?: string
-  expiresAt?: number
-  encryption?: ShareFileEncryption
-}
-
 // --- Content blocks ---
 
 type RemoteToolType = 'read' | 'edit' | 'write' | 'notebook_edit' | 'file_change' | 'bash' | 'grep' | 'glob' | 'web_search' | 'web_fetch' | 'agent' | 'skill' | 'workflow'
@@ -1775,8 +1764,6 @@ export type AgentEventBase =
   | { type: 'session_recap'; summary: string; auto?: boolean }
   /** Grok could not produce a recap (manual `/recap` spinner clear). */
   | { type: 'session_recap_unavailable' }
-  | { type: 'shared_file'; shareId: string; file: ShareFilePayload; sentAt: number }
-  | { type: 'shared_file_progress'; path: string; loaded: number; total: number }
   /** ACP session/new or set_config_option model catalog for the active session. */
   | {
       type: 'acp_models'

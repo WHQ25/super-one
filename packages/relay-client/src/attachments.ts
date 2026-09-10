@@ -4,6 +4,7 @@ import type {
   UploadFileResponse,
 } from '@superone/shared/agent-types'
 import { bytesToBase64String, encryptBytesChunked } from './crypto'
+import { substituteLanHost } from './lan-url'
 
 export const INLINE_UPLOAD_MAX_BYTES = 256 * 1_024
 export const MAX_UPLOAD_BYTES = 100 * 1_024 * 1_024
@@ -37,13 +38,7 @@ function checkedUrl(raw: string, protocols: readonly string[]): string {
 }
 
 export function resolveLanUploadUrl(raw: string, lanHost?: string): string {
-  let resolved = raw
-  if (resolved.includes('{lanHost}')) {
-    if (!lanHost) throw new Error('upload: LAN host is unavailable')
-    const host = lanHost.includes(':') && !lanHost.startsWith('[') ? `[${lanHost}]` : lanHost
-    resolved = resolved.replaceAll('{lanHost}', host)
-  }
-  return checkedUrl(resolved, ['http:', 'https:'])
+  return checkedUrl(substituteLanHost(raw, lanHost, 'upload'), ['http:', 'https:'])
 }
 
 function parseUploadResponse(value: unknown): UploadFileResponse {

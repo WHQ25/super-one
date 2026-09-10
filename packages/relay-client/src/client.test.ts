@@ -333,6 +333,34 @@ describe('RelayClient', () => {
     expect(sockets[1].sent.some((frame) => frame.includes('"ack"'))).toBe(false)
   })
 
+  it('downloads a desktop file over LAN by resolving {lanHost} to the connected host', async () => {
+    const client = new RelayClient({
+      openSocket: () => {
+        const socket = new MockSocket()
+        queueMicrotask(() => socket.onopen?.())
+        return socket
+      },
+    })
+    await client.connectLan('192.0.2.1', 7788, MASTER)
+
+    const bytes = new TextEncoder().encode('png')
+    const get = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      arrayBuffer: async () => bytes.slice().buffer as ArrayBuffer,
+    }))
+    await expect(client.downloadDesktopFile({
+      ok: true,
+      url: 'http://{lanHost}:7788/files/token',
+      name: 'shot.png',
+      mimeType: 'image/png',
+      size: bytes.byteLength,
+      modifiedAt: 1,
+      expiresAt: Date.now() + 60_000,
+    }, get)).resolves.toEqual(bytes)
+    expect(get).toHaveBeenCalledWith('http://192.0.2.1:7788/files/token')
+  })
+
   it('rejects an RPC response that cannot be decrypted', async () => {
     let sock: MockSocket | null = null
     const client = new RelayClient({

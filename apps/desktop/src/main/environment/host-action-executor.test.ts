@@ -51,11 +51,9 @@ vi.mock('../computer-use/tools', () => ({
 }))
 vi.mock('../mcp/superone-mcp-server', () => ({
   dispatchAppToolCall: vi.fn(),
-  executeMobileShareFileTool: vi.fn(),
   getAppToolDefs: () => new Map(),
   getSessionHost: () => null,
   getAppSettingsApplier: () => () => {},
-  isMobileShareToolEnabled: () => false,
   notifyDevAppReady: vi.fn(),
 }))
 vi.mock('../mcp/superone-mcp-builtins', () => ({

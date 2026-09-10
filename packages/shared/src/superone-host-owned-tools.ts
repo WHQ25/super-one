@@ -160,19 +160,16 @@ export function isMainThreadOnlySuperoneTool(name: string): boolean {
   return (MAIN_THREAD_ONLY_SUPERONE_TOOL_NAMES as readonly string[]).includes(superoneBareToolName(name))
 }
 
-export const MOBILE_SHARE_FILE_TOOL_NAME = 'mobile_share_file' as const
-
 /** Fixed mini-app MCP tools — both host-owned at the harness layer. */
 export const MINIAPP_LIST_BARE_NAME = 'miniapp_list' as const
 export const MINIAPP_CALL_BARE_NAME = 'miniapp_call' as const
 
 /**
- * Bare names that are always SuperOne host system tools (static builtins + mobile share + miniapp).
+ * Bare names that are always SuperOne host system tools (static builtins + miniapp).
  * Does not include feature-gated computer_* (desktop gates those separately).
  */
 export function isStaticHostOwnedSuperoneBareName(bare: string): boolean {
   if ((BUILT_IN_SUPERONE_TOOL_NAMES as readonly string[]).includes(bare)) return true
-  if (bare === MOBILE_SHARE_FILE_TOOL_NAME) return true
   if (bare === MINIAPP_LIST_BARE_NAME) return true
   if (bare === MINIAPP_CALL_BARE_NAME) return true
   return false
@@ -223,7 +220,6 @@ export function isNeverAutoAllowSuperoneBareName(bare: string): boolean {
 
 export const STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES: readonly string[] = [
   ...BUILT_IN_SUPERONE_TOOL_NAMES,
-  MOBILE_SHARE_FILE_TOOL_NAME,
   MINIAPP_LIST_BARE_NAME,
   MINIAPP_CALL_BARE_NAME,
 ]

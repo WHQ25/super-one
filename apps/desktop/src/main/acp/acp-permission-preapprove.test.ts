@@ -13,10 +13,7 @@ import { isHiddenAcpPermissionSlashCommand } from './acp-slash-filter'
 
 // Avoid importing superone-mcp-server (pulls electron). Mirror real built-in names.
 vi.mock('../mcp/superone-mcp-server', () => {
-  const builtins = new Set([
-    ...BUILT_IN_SUPERONE_TOOL_NAMES.map((n) => `mcp__superone__${n}`),
-    'mcp__superone__mobile_share_file',
-  ])
+  const builtins = new Set(BUILT_IN_SUPERONE_TOOL_NAMES.map((n) => `mcp__superone__${n}`))
   return {
     isBuiltInSuperoneTool: (name: string) => builtins.has(name) || name === 'mcp__superone__miniapp_list',
     isToolPreapproved: (name: string, input: Record<string, unknown> = {}) => {

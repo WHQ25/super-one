@@ -26,10 +26,11 @@ export {
 export {
   MAX_DOWNLOAD_BYTES,
   downloadDesktopFileBytes,
-  downloadSharedFileBytes,
+  downloadEncryptedFileBytes,
   type DesktopFileResponse,
   type DownloadDesktopFileOptions,
-  type DownloadSharedFileOptions,
+  type DownloadEncryptedFileOptions,
+  type EncryptedFile,
   type HttpGet,
   type HttpGetResponse,
 } from './downloads'

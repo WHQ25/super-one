@@ -648,15 +648,13 @@ describe('stripMessagesForRemote', () => {
   it('keeps only presenter and native-action inputs after remote stripping', () => {
     const msg = makeMessage([
       toolUseBlock('mcp__superone__widget_show', { template: '@native/chart', data: { value: 7 } }, 'widget-1'),
-      toolUseBlock('mcp__superone__mobile_share_file', { path: '/proj/report.pdf' }, 'share-1'),
       toolUseBlock('Edit', { file_path: '/proj/secret.ts', new_string: 'API_KEY=live' }, 'edit-1'),
     ])
 
     const [result] = stripMessagesForRemote([msg], '/proj')
     expect((result.content[0] as { input: string }).input).toContain('@native/chart')
-    expect((result.content[1] as { input: string }).input).toContain('report.pdf')
     // The row needs the path for its file chip; the edited body reaches it as `toolDiff`.
-    expect(JSON.parse((result.content[2] as { input: string }).input)).toEqual({ file_path: '/proj/secret.ts' })
+    expect(JSON.parse((result.content[1] as { input: string }).input)).toEqual({ file_path: '/proj/secret.ts' })
   })
 
   it('keeps safe WebMCP routing metadata but strips page-tool arguments', () => {

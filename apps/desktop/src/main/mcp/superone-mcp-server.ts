@@ -7,17 +7,11 @@ import type { MiniAppToolDefinition, MiniAppToolInterceptOpenRequest } from '@su
 import { AgentIpcChannels } from '@superone/shared/agent-types'
 import { getPreapprovedByPath } from '../miniapp/miniapp-packager'
 import { trace } from '../agent/event-trace'
-import { jsonSchemaToZodShape } from './json-schema-zod'
 import {
   registerSuperoneTools,
   type BuiltInSuperoneToolDeps,
   type SessionTitleHost,
 } from './superone-mcp-builtins'
-import {
-  MOBILE_SHARE_FILE_TOOL_NAME,
-  MOBILE_SHARE_FILE_DESCRIPTION,
-  MOBILE_SHARE_FILE_INPUT_SCHEMA,
-} from './superone-mcp-builtin-defs'
 import { registerWidgetTools } from '../generative-ui/mcp-server'
 import {
   clearBrowserToolHandlers,
@@ -40,32 +34,6 @@ import {
   registerMiniappTools,
   type MiniappToolDeps,
 } from './miniapp-mcp-tools'
-
-export interface MobileShareToolResult {
-  ok: boolean
-  error?: string
-  shareId?: string
-  name?: string
-  size?: number
-  mimeType?: string
-  deviceName?: string
-  sentAt?: number
-  path?: string
-  transport?: 'inline' | 'relay'
-  expiresAt?: number
-}
-
-export interface MobileShareToolDeps {
-  shareFile(req: { sessionId: string; path: string; caption?: string }): Promise<MobileShareToolResult>
-}
-
-let mobileShareDeps: MobileShareToolDeps | null = null
-
-export function setMobileShareToolDeps(deps: MobileShareToolDeps | null): void {
-  mobileShareDeps = deps
-}
-
-const mobileShareEnabled = new Set<string>()
 
 const TOOL_INTERCEPT_TIMEOUT_MS = 10_000
 
@@ -296,10 +264,6 @@ export function createSuperoneMcpServer(sessionId: string, projectPath?: string)
   }
   set.add(state)
 
-  if (mobileShareEnabled.has(sessionId)) {
-    registerMobileShareToolOnState(state, sessionId)
-  }
-
   const innerServer = (server as unknown as { server?: { onclose?: () => void } }).server
   if (innerServer) {
     const previousOnclose = innerServer.onclose
@@ -347,75 +311,6 @@ function executeInMiniAppHost(
 ): Promise<unknown> {
   if (!appToolExecutor) throw new Error('Mini-app MiniApp Host is unavailable')
   return appToolExecutor(projectDir, appId, toolName, args)
-}
-
-function registerMobileShareToolOnState(state: ProjectServerState, sessionId: string): void {
-  if (state.registeredTools.has(MOBILE_SHARE_FILE_TOOL_NAME)) return
-  const zodShape = jsonSchemaToZodShape(MOBILE_SHARE_FILE_INPUT_SCHEMA)
-  const registered = state.server.registerTool(
-    MOBILE_SHARE_FILE_TOOL_NAME,
-    { description: MOBILE_SHARE_FILE_DESCRIPTION, inputSchema: zodShape },
-    async (args: Record<string, unknown>) => executeMobileShareFileTool(sessionId, args),
-  )
-  state.registeredTools.set(MOBILE_SHARE_FILE_TOOL_NAME, registered)
-}
-
-export function isMobileShareToolEnabled(sessionId: string): boolean {
-  return mobileShareEnabled.has(sessionId)
-}
-
-/** Execute mobile_share_file for ACP/stdio bridge (same handler as in-process MCP). */
-export async function executeMobileShareFileTool(
-  sessionId: string,
-  args: Record<string, unknown>,
-): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> {
-  if (!mobileShareDeps) {
-    return {
-      content: [{ type: 'text', text: '[Error] Mobile sharing is unavailable.' }],
-      isError: true,
-    }
-  }
-  const result = await mobileShareDeps.shareFile({
-    sessionId,
-    path: String(args.path ?? ''),
-    caption: args.caption != null ? String(args.caption) : undefined,
-  })
-  if (!result.ok) {
-    return {
-      content: [{ type: 'text', text: `[Error] ${result.error ?? 'Failed to share file.'}` }],
-      isError: true,
-    }
-  }
-  return { content: [{ type: 'text', text: JSON.stringify(result) }] }
-}
-
-export function registerMobileShareTool(sessionId: string): void {
-  if (mobileShareEnabled.has(sessionId)) return
-  mobileShareEnabled.add(sessionId)
-  log.debug('[superone-mcp] enable mobile_share_file for sessionId=%s', sessionId)
-  emitToolsChanged(sessionId)
-  const states = sessionServers.get(sessionId)
-  if (!states) return
-  for (const state of states) {
-    registerMobileShareToolOnState(state, sessionId)
-    if (state.server.isConnected()) state.server.sendToolListChanged()
-  }
-}
-
-export function unregisterMobileShareTool(sessionId: string): void {
-  if (!mobileShareEnabled.delete(sessionId)) return
-  log.debug('[superone-mcp] disable mobile_share_file for sessionId=%s', sessionId)
-  emitToolsChanged(sessionId)
-  const states = sessionServers.get(sessionId)
-  if (!states) return
-  for (const state of states) {
-    const registered = state.registeredTools.get(MOBILE_SHARE_FILE_TOOL_NAME)
-    if (registered) {
-      try { registered.remove() } catch (err) { log.debug('[superone-mcp] mobile_share_file remove error: %s', err instanceof Error ? err.message : String(err)) }
-      state.registeredTools.delete(MOBILE_SHARE_FILE_TOOL_NAME)
-    }
-    if (state.server.isConnected()) state.server.sendToolListChanged()
-  }
 }
 
 /**

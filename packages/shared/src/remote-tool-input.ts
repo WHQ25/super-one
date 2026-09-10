@@ -16,7 +16,6 @@ export function remoteToolBlockType(toolName: string): string {
 
 const REMOTE_TOOL_INPUT_SUFFIXES = [
   '__widget_show',
-  '__mobile_share_file',
   '__media_generate_image',
   '__media_generate_video',
 ] as const

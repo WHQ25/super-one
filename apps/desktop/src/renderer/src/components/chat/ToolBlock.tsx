@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronRight, Smartphone, Upload } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import { diffLines } from 'diff'
 import { cn } from '@superone/ui/lib/utils'
 import {
@@ -17,7 +17,7 @@ import { AnsiText } from '@/lib/ansi'
 import { useStallLevel } from '@/lib/stall-utils'
 import { resolveMiniAppToolIdentity } from '@/lib/miniapp-tool-identity'
 import { useAppStore } from '@/stores/app'
-import { useChatStore, useActiveSession, useBashOutput, useShareProgress } from '@/stores/chat'
+import { useChatStore, useActiveSession, useBashOutput } from '@/stores/chat'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useSettingsStore } from '@/stores/settings'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
@@ -333,7 +333,6 @@ export const ToolBlock = memo(function ToolBlock(props: ToolBlockProps) {
     renderCount: (value) => <RollingNumber value={value} />,
     renderJson: (text) => <PrettyJSONCodeBlock text={text} />,
     renderQuestionPreview: (preview) => <QuestionPreviewContent {...preview} />,
-    renderMobileShare: (shareProps) => <MobileShareFileBlock {...shareProps} />,
     renderExitPlanMode: (planResult) => <ExitPlanModeBlock result={planResult} />,
     renderMiniAppTool: (miniAppProps) => renderDesktopMiniAppTool(miniAppProps, {
       apps: miniApps,
@@ -356,122 +355,6 @@ export const ToolBlock = memo(function ToolBlock(props: ToolBlockProps) {
 
 export { FileChip }
 export { DebugToolBlock, ToolBlockPresenter } from './ToolBlockPresenter'
-
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(n < 10 * 1024 ? 1 : 0)} KB`
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`
-}
-
-interface MobileShareResult {
-  ok?: boolean
-  name?: string
-  size?: number
-  mimeType?: string
-  deviceName?: string
-  sentAt?: number
-  path?: string
-  transport?: 'inline' | 'relay'
-  expiresAt?: number
-}
-
-function MobileShareFileBlock({ params, result, isStreaming, isDenied, isError, allowExpand }: {
-  params: Record<string, unknown>
-  result: string | null
-  isStreaming: boolean
-  isDenied?: boolean
-  isError?: boolean
-  allowExpand: boolean
-}) {
-  const [expanded, setExpanded] = useState(false)
-  const path = String(params.path ?? '')
-  const fileName = path.split('/').pop() || path
-  const progress = useShareProgress(path)
-
-  let parsed: MobileShareResult | null = null
-  if (!isStreaming && result) {
-    try { parsed = JSON.parse(result) as MobileShareResult } catch { /* not JSON */ }
-  }
-  const done = !!parsed?.ok
-  const failed = !isStreaming && !done
-  const denied = !!isDenied || (!!result && result.startsWith('[denied] '))
-  const tone = toolRowTone(denied, failed || isError)
-  const errorText = failed && !denied
-    ? (result ?? '').replace(/^\[Error\]\s*/, '').replace(/^\[denied\]\s*/, '').trim()
-    : ''
-
-  const fileChip = <FileChip name={fileName} title={path} filePath={path} className="max-w-45" />
-
-  const header = (
-    <div
-      className={cn('flex items-center gap-1.5 px-2 py-1.5 text-xs', done && allowExpand && 'cursor-pointer')}
-      onClick={done && allowExpand ? () => setExpanded((e) => !e) : undefined}
-    >
-      <ToolStatusIcon
-        tone={tone}
-        fallback={done
-          ? <Smartphone className="size-3 shrink-0 text-muted-foreground" />
-          : <Upload className="size-3 shrink-0 text-primary" />}
-      />
-      <ToolName streaming={isStreaming && !failed} tone={tone}>
-        {isStreaming ? 'Sending…' : 'File Sent'}
-      </ToolName>
-      {fileChip}
-      {done && parsed?.deviceName && (
-        <>
-          <span className="shrink-0 text-muted-foreground">to</span>
-          <span className="min-w-0 truncate text-foreground">{parsed.deviceName}</span>
-        </>
-      )}
-      {errorText ? <ToolSummary>{errorText}</ToolSummary> : null}
-      <ToolStatusBadge tone={tone} />
-      {!done && !failed && progress && (
-        <span className="ml-auto shrink-0 tabular-nums text-primary">
-          {formatBytes(progress.loaded)} / {formatBytes(progress.total)}
-        </span>
-      )}
-      {done && allowExpand && (
-        <ChevronRight className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')} />
-      )}
-    </div>
-  )
-
-  if (!done || !allowExpand) {
-    return <div className={toolRowSurfaceClass(tone)}>{header}</div>
-  }
-
-  const sentAt = parsed?.sentAt ? new Date(parsed.sentAt) : null
-  const rows: Array<{ label: string; value: React.ReactNode }> = []
-  if (sentAt) rows.push({ label: 'Sent at', value: <span className="tabular-nums">{sentAt.toLocaleString()}</span> })
-  rows.push({ label: 'Path', value: <span className="font-mono text-xs text-primary break-all">{parsed?.path ?? path}</span> })
-  if (parsed?.size != null) rows.push({ label: 'Size', value: `${formatBytes(parsed.size)}${parsed.mimeType ? ` · ${parsed.mimeType}` : ''}` })
-  rows.push({
-    label: 'Delivery',
-    value: parsed?.transport === 'relay'
-      ? <span className="text-muted-foreground">Encrypted link{parsed.expiresAt ? ` · expires ${new Date(parsed.expiresAt).toLocaleTimeString()}` : ''}</span>
-      : <span className="text-muted-foreground">Delivered inline · encrypted</span>,
-  })
-
-  return (
-    <div className={toolRowSurfaceClass(tone, true)}>
-      {header}
-      <div className="grid transition-[grid-template-rows] duration-200 ease-out" style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}>
-        <div className="overflow-hidden">
-          <div className="border-t border-border/60 px-2 py-2">
-            <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
-              {rows.map((r) => (
-                <div key={r.label} className="contents">
-                  <span className="text-muted-foreground">{r.label}</span>
-                  <span className="min-w-0 text-foreground">{r.value}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 function readBashOutputFile(path: string, lines: number): Promise<string> {
   return window.app.readBashOutputFile(path, lines)

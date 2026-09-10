@@ -1101,7 +1101,6 @@ export {
   getActiveSessionView,
   useIsRemoteLocked,
   useBashOutput,
-  useShareProgress,
   selectClaudeResources,
   selectCodexResources,
   selectClaudeModels,

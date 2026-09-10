@@ -1,4 +1,4 @@
-import type { ReadDesktopFileResponse, RemoteCommand, ShareFilePayload } from '@superone/shared/agent-types'
+import type { ReadDesktopFileResponse, RemoteCommand } from '@superone/shared/agent-types'
 import { SeqAckTracker } from './ack'
 import { EventBuffer } from './buffer'
 import { buildLanWsUrl, buildRelayWsUrl, type TransportKind } from './connect'
@@ -6,7 +6,7 @@ import { decryptPayload, deriveKeys, encryptPayload } from './crypto'
 import { handleInboundFrame, makeDecrypt, type InboundFrame, type RelayControlFrame } from './frames'
 import { RpcInbox } from './rpc'
 import { uploadBytes, type HttpPut, type UploadBytesOptions } from './attachments'
-import { downloadDesktopFileBytes, downloadSharedFileBytes, type HttpGet } from './downloads'
+import { downloadDesktopFileBytes, type HttpGet } from './downloads'
 
 export type SocketLike = {
   send(data: string): void
@@ -145,15 +145,6 @@ export class RelayClient {
     })
   }
 
-  downloadSharedFile(file: ShareFilePayload, get?: HttpGet): Promise<Uint8Array> {
-    return downloadSharedFileBytes({
-      file,
-      aesKeyBytes: this.aesKeyBytes,
-      channelKeyHex: this.channelKeyHex,
-      ...(get ? { get } : {}),
-    })
-  }
-
   downloadDesktopFile(
     file: Extract<ReadDesktopFileResponse, { url: string }>,
     get?: HttpGet,
@@ -161,6 +152,7 @@ export class RelayClient {
     return downloadDesktopFileBytes({
       file,
       transport: this.kind,
+      lanHost: this.last?.kind === 'lan' ? this.last.host : undefined,
       aesKeyBytes: this.aesKeyBytes,
       channelKeyHex: this.channelKeyHex,
       ...(get ? { get } : {}),

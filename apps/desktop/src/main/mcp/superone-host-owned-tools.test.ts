@@ -29,22 +29,15 @@ describe('superone host-owned tool auto-approve matrix', () => {
     gates.webmcp = false
   })
 
-  it('lists every static builtin + mobile_share + computer tools for recognition', () => {
+  it('lists every static builtin + computer tools for recognition', () => {
     const names = listAllHostOwnedSuperoneBareNamesForRecognition()
     for (const n of BUILT_IN_SUPERONE_TOOL_NAMES) {
       expect(names).toContain(n)
     }
-    expect(names).toContain('mobile_share_file')
     for (const n of COMPUTER_USE_TOOL_NAMES) {
       expect(names).toContain(n)
     }
     expect(names).toContain('computer_observe')
-  })
-
-  it('treats mobile_share_file as host-owned (not only static BUILT_IN list)', () => {
-    expect(isStaticHostOwnedSuperoneBareName('mobile_share_file')).toBe(true)
-    expect(isHostOwnedSuperoneBareName('mobile_share_file')).toBe(true)
-    expect(isBuiltInSuperoneToolQualified('mcp__superone__mobile_share_file')).toBe(true)
   })
 
   it('gates computer auto-allow on feature flag but still recognizes bare names', () => {
@@ -116,11 +109,11 @@ describe('superone host-owned tool auto-approve matrix', () => {
   })
 
   describe('OpenCode allow-name list', () => {
-    it('includes static builtins + mobile_share always; computer only when enabled', () => {
+    it('includes static builtins always; computer only when enabled', () => {
       setComputerUseEnabledForTests(false)
       gates.webmcp = true
       const off = listOpenCodeAutoAllowSuperoneBareNames()
-      for (const bare of [...BUILT_IN_SUPERONE_TOOL_NAMES, 'mobile_share_file']) {
+      for (const bare of BUILT_IN_SUPERONE_TOOL_NAMES) {
         if (bare === 'browser_tools_call') continue // never auto-allowed, by design
         expect(off).toContain(bare)
       }

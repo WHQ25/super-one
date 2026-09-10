@@ -1,6 +1,6 @@
 /**
  * SuperOne MCP tool descriptors served to remote nodes for Host Action discovery.
- * Combined from desktop listSuperoneMcpTools + computer use + widgets + mobile share.
+ * Combined from desktop listSuperoneMcpTools + computer use + widgets.
  *
  * Hand-maintained: there is no generator. This is a second copy of the tool prompt
  * surface, so a description edited only on the desktop side leaves remote sessions on
@@ -2597,27 +2597,6 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
         }
       },
       "required": ["ids"],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "mobile_share_file",
-    "description": "Share a file from the desktop to the mobile device that is currently viewing this session, so the user can open or save it on their phone. This tool is ONLY available while a mobile device is subscribed to the session \u2014 if it is not in your tool list, no phone is connected. The file is delivered end-to-end encrypted and appears as a file card in the mobile chat. The path MUST point to a file inside the current project directory. Use it when the user asks to send, share, or get a file onto their phone.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "description": "Path to the file to send. Absolute, or relative to the project directory. Must resolve inside the project."
-        },
-        "caption": {
-          "type": "string",
-          "description": "Optional short note shown next to the file on the phone."
-        }
-      },
-      "required": [
-        "path"
-      ],
       "additionalProperties": false
     }
   },

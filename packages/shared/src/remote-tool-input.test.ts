@@ -4,7 +4,6 @@ import { sanitizeRemoteToolInput, shouldKeepRemoteToolInput } from './remote-too
 describe('remote tool input exemptions', () => {
   it('keeps only inputs needed by native mobile actions', () => {
     expect(shouldKeepRemoteToolInput('mcp__superone__widget_show')).toBe(true)
-    expect(shouldKeepRemoteToolInput('mcp__superone__mobile_share_file')).toBe(true)
     expect(shouldKeepRemoteToolInput('mcp__superone__media_generate_image')).toBe(true)
     expect(shouldKeepRemoteToolInput('mcp__superone__media_generate_video')).toBe(true)
     expect(shouldKeepRemoteToolInput('ReportFindings')).toBe(true)

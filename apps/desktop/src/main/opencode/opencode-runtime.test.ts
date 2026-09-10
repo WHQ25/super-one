@@ -363,13 +363,4 @@ describe('opencode-runtime', () => {
       action: 'allow',
     })
   })
-
-  it('auto-allows mobile_share_file even when computer use is off', () => {
-    setComputerUseEnabledForTests(false)
-    expect(buildOpenCodePermissionRules('default')).toContainEqual({
-      permission: 'superone_mobile_share_file',
-      pattern: '*',
-      action: 'allow',
-    })
-  })
 })

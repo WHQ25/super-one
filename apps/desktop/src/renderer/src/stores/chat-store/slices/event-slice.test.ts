@@ -81,7 +81,6 @@ function resetStore() {
     _previousFocusedSession: null,
     agentTitles: {},
     _bashOutputs: {},
-    _shareProgress: {},
   })
 }
 
@@ -205,21 +204,6 @@ describe('mounted session eviction protection', () => {
     expect(bg).toBeDefined()
     expect(bg.status).toBe('idle')
     expect(bg.messages.map((m) => m.id)).toEqual(['asst-keep'])
-  })
-})
-
-describe('shared_file_progress', () => {
-  it('records upload progress keyed by file path without needing a session entry', () => {
-    useChatStore.getState().handleAgentEvent({
-      type: 'shared_file_progress',
-      path: '/p/assets/screenshot.png',
-      loaded: 112,
-      total: 180,
-      projectPath: '/p',
-      sessionId: 'sess-A',
-    } as AgentEvent)
-
-    expect(useChatStore.getState()._shareProgress['/p/assets/screenshot.png']).toEqual({ loaded: 112, total: 180 })
   })
 })
 

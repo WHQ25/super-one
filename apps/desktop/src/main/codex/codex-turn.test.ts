@@ -703,12 +703,6 @@ describe('extractSuperoneMiniAppToolName', () => {
     ).toBe('mcp__superone__computer_observe')
   })
 
-  it('extracts mobile_share_file (session-gated host tool, not in static builtin list)', () => {
-    expect(
-      extractSuperoneMiniAppToolName('Allow the superone MCP server to run tool "mobile_share_file"?'),
-    ).toBe('mcp__superone__mobile_share_file')
-  })
-
   it('returns null when tool is neither a built-in nor a namespaced mini-app tool', () => {
     // open-computer-use external tools (not SuperOne host tools)
     expect(

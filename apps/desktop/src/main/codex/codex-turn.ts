@@ -92,7 +92,7 @@ export const CHILD_THREAD_DISALLOWED_SUPERONE_TOOLS = new Set<string>([...MAIN_T
  * Rewrite Codex MCP elicitation messages into Claude-style qualified names so
  * processServerRequest can auto-accept SuperOne-owned tools.
  *
- * Host-owned names (static builtins, mobile_share_file, computer_*, miniapp_list)
+ * Host-owned names (static builtins, computer_*, miniapp_list)
  * come from superone-host-owned-tools. Fixed miniapp_call and legacy mini-app
  * tools (`appId__tool`) always rewrite so isToolPreapproved can match.
  */

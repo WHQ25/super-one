@@ -121,15 +121,6 @@ export interface BashToolPresenterProps {
   trailingAction?: ReactNode
 }
 
-export interface MobileSharePresenterProps {
-  params: Record<string, unknown>
-  result: string | null
-  isStreaming: boolean
-  isDenied?: boolean
-  isError?: boolean
-  allowExpand: boolean
-}
-
 export interface MiniAppToolPresenterProps {
   mcpToolName: string
   params: Record<string, unknown>
@@ -151,7 +142,6 @@ export interface ToolBlockPresenterPorts extends GenericToolRowPorts {
   onOpenSession: (sessionId: string) => void | Promise<void>
   onWidgetInputComplete?: (data: { title?: string; inputLength: number }) => void
   renderBash: (props: BashToolPresenterProps) => ReactNode
-  renderMobileShare: (props: MobileSharePresenterProps) => ReactNode
   renderExitPlanMode: (result?: string) => ReactNode
   renderMiniAppTool: (props: MiniAppToolPresenterProps) => ToolFamilyRenderResult
 }
@@ -327,16 +317,6 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
           allowExpand={allowExpand}
         />
       )
-    }
-    if (mcpInfo.mcpToolName === 'mobile_share_file') {
-      return ports.renderMobileShare({
-        params,
-        result: !isStreaming ? (result ?? null) : null,
-        isStreaming,
-        isDenied,
-        isError: !!isError,
-        allowExpand,
-      })
     }
     if (mcpInfo.mcpToolName === 'config_apply') {
       return (

@@ -1,21 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { ShareFilePayload } from '@superone/shared/agent-types'
 import { deriveKeys, encryptBytesChunked } from './crypto'
-import { MAX_DOWNLOAD_BYTES, downloadDesktopFileBytes, downloadSharedFileBytes } from './downloads'
+import { MAX_DOWNLOAD_BYTES, downloadDesktopFileBytes, downloadEncryptedFileBytes, type EncryptedFile } from './downloads'
 
 const MASTER = '0123456789abcdef'.repeat(8)
 
-describe('downloadSharedFileBytes', () => {
-  it('decodes inline files and verifies their declared size', async () => {
-    await expect(downloadSharedFileBytes({
-      file: { name: 'hello.txt', mimeType: 'text/plain', size: 5, inlineBase64: 'aGVsbG8=' },
-    })).resolves.toEqual(new TextEncoder().encode('hello'))
-
-    await expect(downloadSharedFileBytes({
-      file: { name: 'bad.txt', mimeType: 'text/plain', size: 4, inlineBase64: 'aGVsbG8=' },
-    })).rejects.toThrow('size mismatch')
-  })
-
+describe('downloadEncryptedFileBytes', () => {
   it('downloads and authenticates encrypted relay files', async () => {
     const plain = new TextEncoder().encode('shared from desktop')
     const keys = deriveKeys(MASTER)
@@ -25,16 +14,14 @@ describe('downloadSharedFileBytes', () => {
       status: 200,
       arrayBuffer: async () => envelope.slice().buffer as ArrayBuffer,
     }))
-    const file: ShareFilePayload = {
-      name: 'report.txt',
-      mimeType: 'text/plain',
+    const file: EncryptedFile = {
       size: plain.byteLength,
       downloadUrl: 'https://files.example.test/share',
       expiresAt: 2_000,
       encryption: { version: 1, format: 'chunked-v1', key: 'share/key' },
     }
 
-    await expect(downloadSharedFileBytes({
+    await expect(downloadEncryptedFileBytes({
       file,
       aesKeyBytes: keys.aesKeyBytes,
       channelKeyHex: keys.channelKeyHex,
@@ -45,9 +32,7 @@ describe('downloadSharedFileBytes', () => {
   })
 
   it('rejects expired, insecure, malformed, and oversized downloads', async () => {
-    const base: ShareFilePayload = {
-      name: 'a.bin',
-      mimeType: 'application/octet-stream',
+    const base: EncryptedFile = {
       size: 1,
       downloadUrl: 'https://files.example.test/a',
       expiresAt: 10,
@@ -56,27 +41,27 @@ describe('downloadSharedFileBytes', () => {
     const keys = deriveKeys(MASTER)
     const get = vi.fn(async () => ({ ok: false, status: 404, arrayBuffer: async () => new ArrayBuffer(0) }))
 
-    await expect(downloadSharedFileBytes({ file: base, now: () => 10 })).rejects.toThrow('expired')
-    await expect(downloadSharedFileBytes({
+    await expect(downloadEncryptedFileBytes({ file: base, now: () => 10 })).rejects.toThrow('expired')
+    await expect(downloadEncryptedFileBytes({
       file: { ...base, expiresAt: undefined, downloadUrl: 'http://files.example.test/a' },
       aesKeyBytes: keys.aesKeyBytes,
       channelKeyHex: keys.channelKeyHex,
       get,
     })).rejects.toThrow('rejected http:')
-    await expect(downloadSharedFileBytes({
+    await expect(downloadEncryptedFileBytes({
       file: { ...base, expiresAt: undefined, encryption: { version: 2, format: 'chunked-v1', key: 'k' } },
       aesKeyBytes: keys.aesKeyBytes,
       channelKeyHex: keys.channelKeyHex,
       get,
     })).rejects.toThrow('unsupported encryption')
-    await expect(downloadSharedFileBytes({
+    await expect(downloadEncryptedFileBytes({
       file: { ...base, expiresAt: undefined },
       aesKeyBytes: keys.aesKeyBytes,
       channelKeyHex: keys.channelKeyHex,
       get,
     })).rejects.toThrow('Download failed (404)')
-    await expect(downloadSharedFileBytes({
-      file: { name: 'huge', mimeType: 'x', size: MAX_DOWNLOAD_BYTES + 1, inlineBase64: '' },
+    await expect(downloadEncryptedFileBytes({
+      file: { ...base, size: MAX_DOWNLOAD_BYTES + 1 },
     })).rejects.toThrow('100 MB')
   })
 
@@ -109,5 +94,48 @@ describe('downloadSharedFileBytes', () => {
       get,
       now: () => 1_000,
     })).rejects.toThrow('unencrypted relay file rejected')
+  })
+
+  it('fills the desktop {lanHost} placeholder with the connected LAN host before fetching', async () => {
+    const bytes = new TextEncoder().encode('screenshot')
+    const file = {
+      ok: true as const,
+      url: 'http://{lanHost}:7788/files/token',
+      name: 'shot.png',
+      mimeType: 'image/png',
+      size: bytes.byteLength,
+      modifiedAt: 1,
+      expiresAt: 2_000,
+    }
+    const get = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      arrayBuffer: async () => bytes.slice().buffer as ArrayBuffer,
+    }))
+
+    await expect(downloadDesktopFileBytes({
+      file,
+      transport: 'lan',
+      lanHost: '192.0.2.4',
+      get,
+      now: () => 1_000,
+    })).resolves.toEqual(bytes)
+    expect(get).toHaveBeenCalledWith('http://192.0.2.4:7788/files/token')
+
+    await expect(downloadDesktopFileBytes({
+      file,
+      transport: 'lan',
+      lanHost: 'fe80::1',
+      get,
+      now: () => 1_000,
+    })).resolves.toEqual(bytes)
+    expect(get).toHaveBeenLastCalledWith('http://[fe80::1]:7788/files/token')
+
+    await expect(downloadDesktopFileBytes({
+      file,
+      transport: 'lan',
+      get,
+      now: () => 1_000,
+    })).rejects.toThrow('LAN host is unavailable')
   })
 })

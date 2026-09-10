@@ -1,4 +1,4 @@
-import type { ReadDesktopFileResponse, ShareFilePayload } from '@superone/shared/agent-types'
+import type { ReadDesktopFileResponse, ShareFileEncryption } from '@superone/shared/agent-types'
 import {
   FILE_CHUNK_SIZE,
   FILE_ENVELOPE_HEADER_SIZE,
@@ -6,6 +6,7 @@ import {
   FILE_GCM_TAG_SIZE,
   decryptBytesChunked,
 } from './crypto'
+import { substituteLanHost } from './lan-url'
 
 export const MAX_DOWNLOAD_BYTES = 100 * 1_024 * 1_024
 
@@ -17,8 +18,16 @@ export type HttpGetResponse = {
 
 export type HttpGet = (url: string) => Promise<HttpGetResponse>
 
-export type DownloadSharedFileOptions = {
-  file: ShareFilePayload
+/** A file the desktop staged encrypted on the relay: where it is and how to open it. */
+export type EncryptedFile = {
+  size: number
+  downloadUrl: string
+  expiresAt?: number
+  encryption: ShareFileEncryption
+}
+
+export type DownloadEncryptedFileOptions = {
+  file: EncryptedFile
   aesKeyBytes?: Uint8Array | null
   channelKeyHex?: string | null
   get?: HttpGet
@@ -27,9 +36,11 @@ export type DownloadSharedFileOptions = {
 
 export type DesktopFileResponse = Extract<ReadDesktopFileResponse, { url: string }>
 
-export type DownloadDesktopFileOptions = Omit<DownloadSharedFileOptions, 'file'> & {
+export type DownloadDesktopFileOptions = Omit<DownloadEncryptedFileOptions, 'file'> & {
   file: DesktopFileResponse
   transport: 'lan' | 'relay'
+  /** LAN host the phone is connected to; fills the desktop's `{lanHost}` URL placeholder. */
+  lanHost?: string
 }
 
 function validateSize(size: number): void {
@@ -39,17 +50,6 @@ function validateSize(size: number): void {
   if (size > MAX_DOWNLOAD_BYTES) {
     throw new Error('File too large to download (max 100 MB)')
   }
-}
-
-function decodeBase64(data: string): Uint8Array {
-  if (data.length % 4 !== 0 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data)) {
-    throw new Error('download: invalid inline base64')
-  }
-  if (typeof Buffer !== 'undefined') return new Uint8Array(Buffer.from(data, 'base64'))
-  const binary = atob(data)
-  const out = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i)
-  return out
 }
 
 function checkedDownloadUrl(raw: string, protocols: readonly string[] = ['https:']): string {
@@ -70,16 +70,10 @@ function encryptedSize(plaintextSize: number): number {
 
 const defaultGet: HttpGet = async (url) => fetch(url)
 
-/** Download and authenticate a file delivered by the desktop mobile-share service. */
-export async function downloadSharedFileBytes(opts: DownloadSharedFileOptions): Promise<Uint8Array> {
+/** Download and authenticate a file the desktop staged encrypted on the relay. */
+export async function downloadEncryptedFileBytes(opts: DownloadEncryptedFileOptions): Promise<Uint8Array> {
   const { file } = opts
   validateSize(file.size)
-
-  if (file.inlineBase64 !== undefined) {
-    const bytes = decodeBase64(file.inlineBase64)
-    if (bytes.byteLength !== file.size) throw new Error('download: inline size mismatch')
-    return bytes
-  }
 
   if (!file.downloadUrl || !file.encryption) {
     throw new Error('download: missing file data')
@@ -119,15 +113,8 @@ export async function downloadDesktopFileBytes(opts: DownloadDesktopFileOptions)
   const { file } = opts
   validateSize(file.size)
   if (file.encryption) {
-    return downloadSharedFileBytes({
-      file: {
-        name: file.name,
-        mimeType: file.mimeType,
-        size: file.size,
-        downloadUrl: file.url,
-        expiresAt: file.expiresAt,
-        encryption: file.encryption,
-      },
+    return downloadEncryptedFileBytes({
+      file: { size: file.size, downloadUrl: file.url, expiresAt: file.expiresAt, encryption: file.encryption },
       aesKeyBytes: opts.aesKeyBytes,
       channelKeyHex: opts.channelKeyHex,
       get: opts.get,
@@ -136,7 +123,9 @@ export async function downloadDesktopFileBytes(opts: DownloadDesktopFileOptions)
   }
   if (opts.transport !== 'lan') throw new Error('download: unencrypted relay file rejected')
   if ((opts.now ?? Date.now)() >= file.expiresAt) throw new Error('download: link expired')
-  const response = await (opts.get ?? defaultGet)(checkedDownloadUrl(file.url, ['http:', 'https:']))
+  // Desktop signs LAN URLs as `http://{lanHost}:port/...`; resolve against the connected host first.
+  const url = checkedDownloadUrl(substituteLanHost(file.url, opts.lanHost, 'download'), ['http:', 'https:'])
+  const response = await (opts.get ?? defaultGet)(url)
   if (!response.ok) throw new Error(`Download failed (${response.status})`)
   const bytes = new Uint8Array(await response.arrayBuffer())
   if (bytes.byteLength !== file.size) throw new Error('download: file size mismatch')

@@ -9,7 +9,7 @@
 
 /**
  * Upper bound for a file the host may return inline as UTF-8 text.
- * Matches the inline threshold already used for uploads and `mobile_share_file`,
+ * Matches the inline threshold already used for uploads,
  * so one number governs every "small enough to ride the RPC channel" decision.
  */
 export const INLINE_PREVIEW_MAX_BYTES = 256 * 1024

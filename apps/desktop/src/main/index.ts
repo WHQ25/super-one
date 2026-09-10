@@ -35,10 +35,8 @@ import { detachAllCdp } from './browser/browser-cdp'
 import { registerBrowserPopupRedirect } from './browser-popup-redirect'
 import { fetchBrowserBytes, registerBrowserDownloadCapture } from './browser/browser-downloads'
 import { setBrowserDownloadTaskHost } from './browser/browser-download-tasks'
-import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregisterAppAcrossSessions, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearSessionPendingCalls as clearSessionPendingMiniAppCalls, disposeSuperoneMcpServer, setSessionHostProvider, setAppSettingsApplier, isAppStillAuthorizedInProject, addToolsChangedListener, setAppToolExecutor, setMobileShareToolDeps, registerMobileShareTool, unregisterMobileShareTool } from './mcp/superone-mcp-server'
-import { MobileShareService, type MobileShareTarget } from './remote/mobile-share-service'
+import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregisterAppAcrossSessions, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearSessionPendingCalls as clearSessionPendingMiniAppCalls, disposeSuperoneMcpServer, setSessionHostProvider, setAppSettingsApplier, isAppStillAuthorizedInProject, addToolsChangedListener, setAppToolExecutor } from './mcp/superone-mcp-server'
 import { MobileReceiveService, type MobileReceiveTarget } from './remote/mobile-receive-service'
-import { MobileShareToolCoordinator } from './remote/mobile-share-tool-coordinator'
 import { startSuperoneMcpStdioBridge, stopSuperoneMcpStdioBridge } from './mcp/superone-mcp-stdio-ipc'
 import {
   getComputerUsePermissionStatus,
@@ -732,35 +730,6 @@ new PresenceCoordinator(sessionManager, {
   sendToMobile: (event, targetDeviceIds) => remoteControlService.sendEventToMobile(event, targetDeviceIds),
 })
 
-const mobileShareService = new MobileShareService({
-  resolveTarget: (sessionId): MobileShareTarget | null => {
-    const session = sessionManager.getSession(sessionId)
-    if (!session) return null
-    const deviceId = session.owner.kind === 'remote'
-      ? session.owner.deviceId
-      : session.subscribers.values().next().value
-    if (!deviceId) return null
-    return {
-      deviceId,
-      projectPath: session.projectPath,
-      allowedRoots: [
-        session.projectPath,
-        // Read from the catalog, not just the session snapshot: before the
-        // first send the snapshot is still empty.
-        ...getProjectExtraDirs(session.projectPath),
-        ...session.getAdditionalDirectoriesSnapshot(),
-      ],
-    }
-  },
-  resolveDeviceName: (deviceId) => remoteControlService.getOnlineDevices().get(deviceId)?.name ?? null,
-  uploadFileToRelay: (realPath, meta, sessionId, onProgress) =>
-    remoteControlService.uploadFileToRelay(realPath, meta, sessionId, onProgress),
-  sendAgentEvent: (event, targetDeviceIds) => remoteControlService.sendAgentEvent(event, targetDeviceIds),
-  emitToRenderer: (event) => safeSend(AgentIpcChannels.EVENT, event),
-  now: () => Date.now(),
-})
-setMobileShareToolDeps({ shareFile: (req) => mobileShareService.shareFile(req) })
-
 const mobileReceiveService = new MobileReceiveService({
   resolveTarget: (sessionId): MobileReceiveTarget | null => {
     if (!sessionId) return null
@@ -792,11 +761,6 @@ const mobileReceiveService = new MobileReceiveService({
   now: () => Date.now(),
 })
 agentService.setMobileReceiveService(mobileReceiveService)
-
-new MobileShareToolCoordinator(sessionManager, {
-  enable: registerMobileShareTool,
-  disable: unregisterMobileShareTool,
-})
 
 const terminalManager = new TerminalManager({
   spawner: nodePtySpawner,

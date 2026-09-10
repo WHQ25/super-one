@@ -63,6 +63,7 @@ export interface AddProjectRow {
   stars?: number | null
   /** Owner avatar for a repository row. */
   avatarUrl?: string
+  avatarOwner?: string
   /** Show the whole label, wrapped — the create-missing-path row needs it. */
   wrapLabel?: boolean
   /** Taller row with a larger glyph, used by the source picker. */
@@ -169,6 +170,7 @@ function repoRow(repo: GithubRepoHit, matchIndices: number[]): AddProjectRow {
     subtitle: repo.description ?? (repo.private ? ADD_PROJECT_TEXT.githubPrivate : ''),
     stars: repo.stars,
     avatarUrl: githubOwnerAvatarUrl(repo.owner, 80),
+    avatarOwner: repo.owner,
   }
 }
 

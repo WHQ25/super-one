@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Folder, FolderPlus, Github, Link2, Search, Star, User } from 'lucide-react-native'
-import { Image, Pressable, View } from 'react-native'
+import { Pressable, View } from 'react-native'
 import { Text } from './text'
 import type { AddProjectRow, AddProjectRowIcon, AddProjectSectionModel } from '../add-project-state'
 import { useMobileTheme } from '../theme/context'
+import { RepoOwnerAvatar } from './repo-owner-avatar'
 
 const ROW_ICONS: Record<AddProjectRowIcon, typeof Folder> = {
   local: FolderPlus,
@@ -90,8 +91,7 @@ export function AddProjectList(props: {
                     backgroundColor: pressed ? colors.muted : 'transparent',
                   })}>
                   {row.avatarUrl
-                    ? <Image source={{ uri: row.avatarUrl }}
-                      style={{ width: 32, height: 32, borderRadius: radius.sm }} />
+                    ? <RepoOwnerAvatar owner={row.avatarOwner ?? row.label.split('/')[0]} uri={row.avatarUrl} />
                     : <View style={{ width: 32, alignItems: 'center' }}>
                       <RowIcon size={iconSize} color={colors.mutedForeground} />
                     </View>}

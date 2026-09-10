@@ -1,7 +1,7 @@
 import { expect, jest, test } from '@jest/globals'
-import { fireEvent, screen } from '@testing-library/react-native'
+import { act, fireEvent, screen } from '@testing-library/react-native'
 import { renderWithTheme } from '../test-render'
-import { ADD_PROJECT_TEXT } from '../add-project-state'
+import { ADD_PROJECT_TEXT, githubRows } from '../add-project-state'
 import type { AddProjectFlow } from '../navigation/use-add-project'
 import { AddProjectScreen } from './add-project-screen'
 
@@ -75,6 +75,41 @@ test('the destination step keeps its clone preview, which is not shared', async 
 
   expect(screen.getByText('anthropics/claude-code')).toBeTruthy()
   expect(screen.getByText('https://github.com/anthropics/claude-code.git')).toBeTruthy()
+  expect(screen.getByText('A')).toBeTruthy()
+})
+
+function repositoryFlow(owner = 'expo') {
+  return flow({
+    step: { kind: 'repo', source: 'github' },
+    sections: [{ key: 'repos', label: 'Repositories', rows: githubRows([{
+      owner, name: 'sdk', fullName: `${owner}/sdk`, description: null, private: false, stars: 10,
+    }], { ownerPrefix: null, query: '' }) }],
+  })
+}
+
+test('a repository shows the owner initial until its avatar finishes loading', async () => {
+  await renderWithTheme(<AddProjectScreen flow={repositoryFlow()} />)
+  expect(screen.getByText('E')).toBeTruthy()
+  await act(async () => { fireEvent(screen.getByTestId('repo-owner-avatar-image'), 'load') })
+  expect(screen.queryByText('E')).toBeNull()
+})
+
+test('a failed avatar keeps the owner initial visible', async () => {
+  await renderWithTheme(<AddProjectScreen flow={repositoryFlow()} />)
+  await act(async () => { fireEvent(screen.getByTestId('repo-owner-avatar-image'), 'error', { nativeEvent: { error: 'Offline' } }) })
+  expect(screen.getByText('E')).toBeTruthy()
+})
+
+test('changing the clone destination owner restores the new initial while its avatar loads', async () => {
+  const previewFlow = (owner: string) => flow({
+    step: { ...DESTINATION, repoInput: `${owner}/sdk` },
+    clonePreview: { repoLabel: `${owner}/sdk`, remoteUrl: `https://github.com/${owner}/sdk.git`, path: '~/sdk' },
+  })
+  const { rerender } = await renderWithTheme(<AddProjectScreen flow={previewFlow('expo')} />)
+  await act(async () => { fireEvent(screen.getByTestId('repo-owner-avatar-image'), 'load') })
+  await rerender(<AddProjectScreen flow={previewFlow('anthropics')} />)
+  expect(screen.getByText('A')).toBeTruthy()
+  expect(screen.queryByText('E')).toBeNull()
 })
 
 test('a clone in flight says so rather than only disabling the header', async () => {

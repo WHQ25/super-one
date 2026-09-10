@@ -1,12 +1,12 @@
 import { Pressable, View } from 'react-native'
 import { Check, Github, Link2 } from 'lucide-react-native'
-import { Image } from 'react-native'
 import { Text } from '../ui/text'
 import { githubOwnerAvatarUrl, parseGitHubRepoInput } from '@superone/shared/git-remote'
 import { ADD_PROJECT_TEXT } from '../add-project-state'
 import type { AddProjectFlow } from '../navigation/use-add-project'
 import { useMobileTheme } from '../theme/context'
 import { BrowsePage } from '../ui/browse-page'
+import { RepoOwnerAvatar } from '../ui/repo-owner-avatar'
 
 /** Destination-step checkbox, in the dialog's own compact row shape. */
 function CloneOption(props: { label: string; checked: boolean; onToggle: (value: boolean) => void }) {
@@ -35,7 +35,7 @@ function CloneOption(props: { label: string; checked: boolean; onToggle: (value:
  * The header supplies back and the confirm action the dialog spends ⇧↵ on.
  */
 export function AddProjectScreen(props: { flow: AddProjectFlow }) {
-  const { tokens: { colors, radius } } = useMobileTheme()
+  const { tokens: { colors } } = useMobileTheme()
   const flow = props.flow
   const isPathStep = flow.step.kind === 'browse' || flow.step.kind === 'destination'
   const preview = flow.clonePreview
@@ -65,8 +65,7 @@ export function AddProjectScreen(props: { flow: AddProjectFlow }) {
           </Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             {repoRef
-              ? <Image source={{ uri: githubOwnerAvatarUrl(repoRef.owner, 80) }}
-                style={{ width: 32, height: 32, borderRadius: radius.sm }} />
+              ? <RepoOwnerAvatar owner={repoRef.owner} uri={githubOwnerAvatarUrl(repoRef.owner, 80)} />
               : <View style={{ width: 32, alignItems: 'center' }}>
                 {flow.step.kind === 'destination' && flow.step.source === 'github'
                   ? <Github size={18} color={colors.mutedForeground} />

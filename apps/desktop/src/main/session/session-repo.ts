@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { getDb } from '../database'
 import log from '../logger'
 import { getProjectId } from '../recent-folders'
+import { notifySessionList } from '../session-list-watch'
 import { recordSessionStarted, recordMessageCounts, type HarnessKind } from '../usage-stats-service'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { sealCodexMetadata, sealStreamingTools } from '@superone/shared/content-delta'
@@ -254,6 +255,9 @@ export function insertSessionRecord(input: InsertSessionInput): void {
     input.worktreePath ?? null,
     input.isHidden ? 1 : 0,
   )
+  // A hidden row is deliberately absent from every session list, so it is not a
+  // change any list can show.
+  if (!input.isHidden) notifySessionList(input.projectPath)
 }
 
 
@@ -445,11 +449,15 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
   const newlyCountedMessages: Array<{ role: string; createdAt: string }> = []
   let countSessionStarted = false
   let sessionCreatedAt = now
+  // A draft holds no `sessions` row: the upsert below is what makes the session
+  // exist for everything that reads the list.
+  let sessionRowCreated = false
 
   const tx = db.transaction(() => {
     const sessionRow = db.prepare(`
       SELECT created_at, usage_counted_at FROM sessions WHERE id = ?
     `).get(input.sid) as { created_at: string; usage_counted_at: string | null } | undefined
+    sessionRowCreated = !sessionRow
 
     upsertSession.run(
       input.sid,
@@ -534,6 +542,12 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
   })
 
   tx()
+
+  // Only the first persist, not every one: this runs on each state change of a
+  // streaming turn, and clients answer the signal by re-reading the whole list.
+  // The row's other list-visible fields have their own notifications
+  // (`renameSession`, `pinSession`, `hideSession`).
+  if (sessionRowCreated) notifySessionList(input.projectPath)
 
   // Activity stats are best-effort and must not fail the message persist
   // acknowledgement: usage_counted_at is already committed above, so a throw
@@ -667,6 +681,8 @@ export function forkSessionRecord(input: ForkSessionRecordInput): void {
       )
     })
   })()
+
+  notifySessionList(source.projectPath)
 }
 
 export interface LoadedSessionState {

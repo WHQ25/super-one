@@ -18,8 +18,8 @@ import {
   hideSession,
   pinSession,
   renameSession,
-  watchSessionList,
 } from './db-sessions'
+import { watchSessionList } from './session-list-watch'
 
 /**
  * A session row's project is resolved by joining `projects`; every other

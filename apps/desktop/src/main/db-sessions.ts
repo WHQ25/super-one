@@ -4,6 +4,7 @@ import { serializeMessageContent, rowToChatMessage, deriveHarnessId } from './se
 import { recordSessionStarted, recordMessageCounts, type HarnessKind } from './usage-stats-service'
 import type { ChatMessage, EffortLevel, HarnessId, SessionHistoryEntry, PinnedSessionEntry } from '@superone/shared/agent-types'
 import { parseTagsJson } from '@superone/shared/session-tags'
+import { notifySessionList } from './session-list-watch'
 
 interface DbSession {
   id: string
@@ -26,26 +27,6 @@ interface DbChatMessage {
   metadata_json: string | null
   checkpoint_id: string | null
   resume_point_id: string | null
-}
-
-/**
- * Told which project's session list just changed. Wired here, at the writes,
- * rather than at the callers: the same seven mutations are reached from IPC, the
- * session manager, automations and remote commands, and a notification hung off
- * each of those would be missed by whichever call site is added next.
- */
-export type SessionListWatcher = (projectPath: string) => void
-
-const sessionListWatchers = new Set<SessionListWatcher>()
-
-export function watchSessionList(watcher: SessionListWatcher): () => void {
-  sessionListWatchers.add(watcher)
-  return () => { sessionListWatchers.delete(watcher) }
-}
-
-function notifySessionList(projectPath: string | null): void {
-  if (!projectPath) return
-  for (const watcher of sessionListWatchers) watcher(projectPath)
 }
 
 /**

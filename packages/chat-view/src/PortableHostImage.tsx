@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Download, ImageIcon } from 'lucide-react'
+import { Download, ImageIcon, Loader2 } from 'lucide-react'
 import { requestNative, requestNativeAsync } from './bridge'
 import { previewImage } from './image-preview'
 
@@ -115,6 +115,25 @@ export function PortableHostImage({ path, label, className, fallback, caption }:
   const chipClass = className ?? 'flex min-h-24 w-full items-center justify-center rounded border border-border/60 bg-muted/25 text-primary'
   // A custom chip names itself through its content; the default chip is icon-only.
   const ariaLabel = fallback ? undefined : `Preview ${label}`
+
+  // The row fetches on its own, so while it is fetching it says so. It used to
+  // show the file-name chip here, which is the *fallback* affordance — a row
+  // that was about to paint a picture looked exactly like one that never would,
+  // and the picture then replaced a name the reader had started to read.
+  if (phase.kind === 'loading') {
+    return (
+      <div
+        className={`${chipClass} animate-pulse`}
+        data-host-image="loading"
+        role="status"
+        aria-busy="true"
+        aria-label={`Loading ${label}`}
+        title={path}
+      >
+        <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden />
+      </div>
+    )
+  }
 
   if (phase.kind === 'ready') {
     return (

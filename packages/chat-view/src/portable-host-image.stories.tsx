@@ -4,7 +4,7 @@ import { installHostBridge } from './bridge'
 import { PortableHostImage } from './PortableHostImage'
 import { PortableNativeGallery } from './PortableNativeGallery'
 
-type HostMode = 'lan' | 'relay' | 'unavailable' | 'slow'
+type HostMode = 'lan' | 'relay' | 'unavailable' | 'slow' | 'pending'
 
 interface MockHostWindow extends Window {
   ReactNativeWebView?: { postMessage(message: string): void }
@@ -44,6 +44,8 @@ function MockHost({ mode, children }: { mode: HostMode; children: React.ReactNod
           host.__applyHost?.({ type: 'nativeActionResult', requestId: message.requestId, ...body })
         const path = message.payload?.path ?? ''
         if (mode === 'unavailable') { reply({ error: 'loadImage is not available on mobile' }); return }
+        // Never answers: holds the row in its loading state for review.
+        if (mode === 'pending') return
         if (mode === 'relay' && !message.payload?.confirmed) { reply({ result: { ok: true, confirmRequired: true, size: 412_000 } }); return }
         setTimeout(() => reply({ result: { ok: true, dataUri: samplePng(path) } }), mode === 'slow' ? 2500 : 120)
       },
@@ -68,7 +70,7 @@ const meta = {
   title: 'Chat/SuperOne/Host image',
   component: HostImageStory,
   parameters: { layout: 'padded' },
-  argTypes: { mode: { control: 'radio', options: ['lan', 'relay', 'unavailable', 'slow'] } },
+  argTypes: { mode: { control: 'radio', options: ['lan', 'relay', 'unavailable', 'slow', 'pending'] } },
   decorators: [(Story, context) => (
     <MockHost key={String(context.args.mode)} mode={context.args.mode}>
       <div className="w-[390px] text-sm"><Story /></div>
@@ -95,8 +97,22 @@ export const Unavailable: Story = {
 }
 
 export const Slow: Story = {
-  name: 'Slow host · chip until the bytes land',
+  name: 'Slow host · skeleton until the bytes land',
   args: { mode: 'slow', path: `/Users/me/proj/.superone/screenshots/slow-${Date.now()}.png` },
+}
+
+export const Loading: Story = {
+  name: 'Loading · the skeleton on its own',
+  args: { mode: 'pending', path: '/Users/me/proj/.superone/screenshots/pending.png' },
+}
+
+export const LoadingGalleryTile: Story = {
+  name: 'Loading · in a gallery tile, which is shorter',
+  args: {
+    mode: 'pending',
+    path: '/Users/me/proj/media/pending-tile.png',
+    className: 'flex min-h-20 w-full flex-col items-center justify-center gap-1.5 overflow-hidden rounded-md border border-border/50 bg-background/60 p-2 text-center',
+  },
 }
 
 export const Gallery: Story = {

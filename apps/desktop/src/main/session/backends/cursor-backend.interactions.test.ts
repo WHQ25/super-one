@@ -467,6 +467,33 @@ describe('CursorBackend host interactions through Session + MobileBroadcaster', 
     expect(events.some((e) => e.type === 'message_error')).toBe(false)
   })
 
+  it('plan: disposing while the old runtime closes for the approval rebuild cannot revive the turn', async () => {
+    const runtimes = installRuntimeFactory()
+    const { session, backend } = makeSession('plan')
+    await session.send({ content: 'plan it', assistantMessageId: 'a1' })
+    // The plan-mode runtime is slow to shut down; disposal lands while the
+    // approval follow-up is still waiting on that close inside rebuild().
+    let releaseClose: (() => void) | null = null
+    const closing = new Promise<void>((resolve) => { releaseClose = resolve })
+    runtimes[0]!.close.mockImplementationOnce(() => closing)
+    void runtimes[0]!.interactions.requestPlanApproval(PLAN)
+    session.respondToPlanApproval('call-plan', true)
+    for (let i = 0; i < 6; i++) await tick()
+    expect(runtimes[0]!.close).toHaveBeenCalledTimes(1)
+    const factoryCallsBeforeDispose = factoryMock.mock.calls.length
+
+    await session.dispose()
+    releaseClose?.()
+    for (let i = 0; i < 12; i++) await tick()
+
+    // Disposal is terminal: no replacement runtime, no implementation turn.
+    expect(factoryMock.mock.calls.length).toBe(factoryCallsBeforeDispose)
+    expect(runtimes).toHaveLength(1)
+    expect(backend.hasActiveRuntime()).toBe(false)
+    expect(runtimes.flatMap((r) => r.sends).filter((s) => /approved the plan/i.test(s.content))).toEqual([])
+    await expect(backend.send({ content: 'after disposal' })).rejects.toThrow()
+  })
+
   it('plan: two queued follow-ups keep their own approval identity', async () => {
     const runtimes = installRuntimeFactory()
     const { session, backend } = makeSession('plan')

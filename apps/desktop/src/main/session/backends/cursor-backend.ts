@@ -119,7 +119,12 @@ export class CursorBackend implements SessionBackend {
   }
 
   async rebuild(opts: BackendStartOptions): Promise<void> {
+    // Rebuilding an already-closed backend is the supported revival path; a
+    // close() that lands while the old runtime is still shutting down is not —
+    // disposal is terminal for in-flight work and must not be undone here.
+    const revival = this.disposed
     await this.closeRuntime()
+    if (!revival && this.disposed) throw new Error('CursorBackend closed during rebuild')
     this.disposed = false
     this.started = false
     await this.start(opts)
@@ -373,6 +378,7 @@ export class CursorBackend implements SessionBackend {
   async close(): Promise<void> {
     this.disposed = true
     this.started = false
+    if (this.activeSendOp) this.activeSendOp.cancelled = true
     if (this.currentMessageId) this.complete(this.currentMessageId, true)
     this.planGeneration += 1
     this.planFollowUps.clear()

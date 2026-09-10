@@ -178,13 +178,16 @@ export function canonicalizeCursorHostTool(
   toolType: string,
   args: unknown,
   result?: unknown,
-): { toolType: string; args: unknown; resultSummary?: string } {
+): { toolType: string; args: unknown; resultSummary?: string; resultIsError?: boolean } {
   if (!isCursorQuestionTool(toolType)) return { toolType, args }
   const shaped = cursorQuestionToolPresentation(args, result)
   return {
     toolType: 'AskUserQuestion',
     args: shaped.input,
     ...(shaped.summary ? { resultSummary: shaped.summary } : {}),
+    // The SDK keeps the outer status `success` for a rejected custom-tool call;
+    // the real flag lives inside the MCP envelope.
+    ...(shaped.isError ? { resultIsError: true } : {}),
   }
 }
 
@@ -262,17 +265,17 @@ function toolResultEvent(
   args?: unknown,
 ): AgentEvent {
   // Host question results carry the `"q"="a"` text the shared presenter parses.
-  const summary = toolType != null
-    ? canonicalizeCursorHostTool(unwrapCursorMcpTool(toolType, args).toolType, args, result).resultSummary
-    : undefined
+  const host = toolType != null
+    ? canonicalizeCursorHostTool(unwrapCursorMcpTool(toolType, args).toolType, args, result)
+    : null
   return {
     type: 'content_delta',
     messageId,
     delta: {
       type: 'tool_result',
       toolUseId: callId,
-      summary: summary ?? (formatTranscriptToolResult(result) || stringifyPayload(result)),
-      isError,
+      summary: host?.resultSummary ?? (formatTranscriptToolResult(result) || stringifyPayload(result)),
+      isError: isError || host?.resultIsError === true,
     },
   }
 }

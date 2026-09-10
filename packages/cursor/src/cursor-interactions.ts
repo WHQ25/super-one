@@ -10,10 +10,14 @@ import { buildAnsweredQuestionInput } from '@superone/shared/ask-user-question'
 /**
  * Host-side pending-interaction registry for the Cursor harness.
  *
- * `@cursor/sdk` 1.0.30 exposes no native approval or question hook for local
- * or cloud runs (the local executor auto-approves tool calls and rejects the
- * built-in `askQuestion` query; see `cursor-runtime.ts`). The two interactions
- * SuperOne *can* honor are therefore host-driven:
+ * `@cursor/sdk` 1.0.30 exposes no public approval or question hook for local
+ * or cloud runs. The local executor (esm/357.js) resolves approvals itself:
+ * custom tools are auto-approved, and a native action outside the configured
+ * sandbox / auto-review policy is rejected non-interactively (`K.requestApproval`
+ * answers `approved:false` with a "cannot request interactive approval" reason)
+ * — neither path ever reaches the host. The built-in `askQuestion` query is
+ * likewise rejected in local runs (see `cursor-runtime.ts`). The two
+ * interactions SuperOne *can* honor are therefore host-driven:
  *
  * - questions raised through the SDK `customTools` callback surface, whose
  *   `execute` awaits the user's answer;
@@ -169,7 +173,8 @@ export interface CursorAskUserQuestionInput {
   questions: Array<{
     question: string
     header?: string
-    options?: Array<{ label: string; description?: string }>
+    /** Required: 2–4 choices, matching the advertised schema and the parser. */
+    options: Array<{ label: string; description?: string }>
     multiSelect?: boolean
   }>
 }
@@ -295,9 +300,52 @@ export function formatCursorQuestionResult(answer: CursorQuestionAnswer): Record
   return { outcome: 'cancelled', reason: answer.reason }
 }
 
-/** True for the wire spelling Cursor reports (`mcp__custom-user-tools__<tool>`) or the bare name. */
+/** MCP server id the SDK registers `LocalAgentOptions.customTools` under (esm/357.js). */
+export const CURSOR_CUSTOM_TOOLS_SERVER = 'custom-user-tools'
+
+/**
+ * Exact host identity only: the bare callback name or the SDK's wire spelling
+ * `mcp__custom-user-tools__<tool>`. A third-party server that happens to expose
+ * a same-named tool is not the host bridge and keeps its generic row.
+ */
 export function isCursorQuestionTool(toolName: string): boolean {
-  return toolName === CURSOR_ASK_USER_QUESTION_TOOL || toolName.endsWith(`__${CURSOR_ASK_USER_QUESTION_TOOL}`)
+  return toolName === CURSOR_ASK_USER_QUESTION_TOOL
+    || toolName === `mcp__${CURSOR_CUSTOM_TOOLS_SERVER}__${CURSOR_ASK_USER_QUESTION_TOOL}`
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
+}
+
+/**
+ * Normalize what the installed SDK reports for a custom-tool result.
+ *
+ * The local executor (esm/357.js) wraps the callback's return value into the
+ * MCP success envelope `{ content: [{ text: { text } }], isError, structuredContent? }`:
+ * a plain object becomes one JSON text block (plus `structuredContent` in the
+ * protobuf, which the interaction adapter may or may not surface), a
+ * `{ content, isError }` return is passed through, and the outer result status
+ * stays `success` even when `isError` is true. Prefer `structuredContent`,
+ * fall back to parsing the first text block, and carry the embedded flag out.
+ */
+export function unwrapCursorHostToolResult(result: unknown): { payload: unknown; isError: boolean } {
+  const rec = asRecord(result)
+  if (!rec || !Array.isArray(rec.content)) return { payload: result, isError: false }
+  const isError = rec.isError === true
+  const structured = asRecord(rec.structuredContent)
+  if (structured) return { payload: structured, isError }
+  const first = asRecord(rec.content[0])
+  // SDK shape nests the string (`{ text: { text } }`); the MCP wire shape is `{ type, text }`.
+  const nestedText = asRecord(first?.text)
+  const text = typeof nestedText?.text === 'string' ? nestedText.text
+    : typeof first?.text === 'string' ? first.text
+      : ''
+  if (!text) return { payload: undefined, isError }
+  try {
+    return { payload: JSON.parse(text) as unknown, isError }
+  } catch {
+    return { payload: text, isError }
+  }
 }
 
 /**
@@ -305,31 +353,39 @@ export function isCursorQuestionTool(toolName: string): boolean {
  * The answered input mirrors what Claude's `canUseTool` back-fills
  * (`questions` + `answers` + `annotations`) so the same Q&A card renders; the
  * summary is the `"question"="answer"` text the phone's count-only projection
- * parses when the input is not available.
+ * parses when the input is not available. `isError` is the embedded MCP flag
+ * (input rejected by the host), which the outer result status does not carry.
  */
 export function cursorQuestionToolPresentation(
   args: unknown,
   result: unknown,
-): { input: Record<string, unknown>; summary: string | null } {
-  const rec = args && typeof args === 'object' && !Array.isArray(args) ? args as Record<string, unknown> : {}
+): { input: Record<string, unknown>; summary: string | null; isError: boolean } {
+  const rec = asRecord(args) ?? {}
   const questions = Array.isArray(rec.questions) ? rec.questions : []
-  const res = result && typeof result === 'object' && !Array.isArray(result) ? result as Record<string, unknown> : null
+  const { payload, isError } = unwrapCursorHostToolResult(result)
+  if (isError) {
+    return { input: { questions }, summary: typeof payload === 'string' ? payload : null, isError }
+  }
+  const res = asRecord(payload)
   const outcome = typeof res?.outcome === 'string' ? res.outcome : null
-  if (outcome === 'answered' && res?.answers && typeof res.answers === 'object') {
-    const answers = res.answers as Record<string, string>
-    const notes = res.notes && typeof res.notes === 'object' ? res.notes as Record<string, string> : {}
+  if (outcome === 'answered' && asRecord(res?.answers)) {
+    const answers = res!.answers as Record<string, string>
+    const notes = asRecord(res!.notes) as Record<string, string> | null
     const annotations: QuestionAnnotations = {}
-    for (const [question, text] of Object.entries(notes)) annotations[question] = { notes: text }
+    for (const [question, text] of Object.entries(notes ?? {})) {
+      if (typeof text === 'string') annotations[question] = { notes: text }
+    }
     return {
       input: buildAnsweredQuestionInput({ questions: questions as QuestionLike[], answers, annotations }),
       summary: Object.entries(answers).map(([q, a]) => `"${q}"="${a}"`).join(', ') || null,
+      isError: false,
     }
   }
-  if (outcome === 'dismissed') return { input: { questions }, summary: 'User dismissed the question without answering.' }
+  if (outcome === 'dismissed') return { input: { questions }, summary: 'User dismissed the question without answering.', isError: false }
   if (outcome === 'cancelled') {
-    return { input: { questions }, summary: `Question cancelled: ${typeof res?.reason === 'string' ? res.reason : 'turn ended'}.` }
+    return { input: { questions }, summary: `Question cancelled: ${typeof res?.reason === 'string' ? res.reason : 'turn ended'}.`, isError: false }
   }
-  return { input: { questions }, summary: null }
+  return { input: { questions }, summary: null, isError: false }
 }
 
 type QuestionLike = Parameters<typeof buildAnsweredQuestionInput>[0]['questions'][number]

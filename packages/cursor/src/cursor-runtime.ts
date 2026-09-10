@@ -95,9 +95,11 @@ function formatCursorError(error: unknown): Error {
 /**
  * Host-driven interactions the runtime can raise (see `cursor-interactions.ts`).
  *
- * `@cursor/sdk` has no native approval/question hook: the local executor
- * auto-approves tool calls and rejects the built-in `askQuestion` query, and
- * cloud runs only expose a REST stream. Questions therefore ride the SDK's
+ * `@cursor/sdk` has no public approval/question hook: the local executor
+ * decides approvals itself (custom tools auto-approved; native actions outside
+ * the sandbox / auto-review policy rejected non-interactively), rejects the
+ * built-in `askQuestion` query, and cloud runs only expose a REST stream.
+ * Questions therefore ride the SDK's
  * `customTools` callback surface (local agents only) and plan approvals are
  * raised when a `createPlan` tool call completes in plan mode.
  */

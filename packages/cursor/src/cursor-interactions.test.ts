@@ -8,6 +8,7 @@ import {
   cursorQuestionToolPresentation,
   formatCursorQuestionResult,
   isCursorQuestionTool,
+  unwrapCursorHostToolResult,
 } from './cursor-interactions'
 
 function question(requestId = 'q1'): AskUserQuestionRequest {
@@ -188,23 +189,42 @@ describe('question / plan request builders', () => {
     expect(isCursorQuestionTool('mcp__custom-user-tools__superone_ask_user_question')).toBe(true)
     expect(isCursorQuestionTool('superone_ask_user_question')).toBe(true)
     expect(isCursorQuestionTool('mcp__superone__widget_show')).toBe(false)
+    // Exact host identity: another server's same-named tool is not the bridge.
+    expect(isCursorQuestionTool('mcp__vendor__superone_ask_user_question')).toBe(false)
 
+    // The installed executor serializes the callback's return into one MCP text block.
+    const envelope = (payload: unknown, isError = false) => ({
+      content: [{ text: { text: typeof payload === 'string' ? payload : JSON.stringify(payload) } }],
+      isError,
+    })
     const questions = [{ question: 'Pick one', header: 'Pick', multiSelect: false, options: [{ label: 'A', description: '' }, { label: 'B', description: '' }] }]
     const answered = cursorQuestionToolPresentation(
       { questions },
-      { outcome: 'answered', answers: { 'Pick one': 'B' }, notes: { 'Pick one': 'because' } },
+      envelope({ outcome: 'answered', answers: { 'Pick one': 'B' }, notes: { 'Pick one': 'because' } }),
     )
     expect(answered.input).toEqual({ questions, answers: { 'Pick one': 'B' }, annotations: { 'Pick one': { notes: 'because' } } })
     expect(answered.summary).toBe('"Pick one"="B"')
+    expect(answered.isError).toBe(false)
 
-    const dismissed = cursorQuestionToolPresentation({ questions }, { outcome: 'dismissed', note: 'x' })
+    const dismissed = cursorQuestionToolPresentation({ questions }, envelope({ outcome: 'dismissed', note: 'x' }))
     expect(dismissed.input).toEqual({ questions })
     expect(dismissed.summary).toMatch(/dismissed/)
 
-    // Streaming call (no result yet) and invalid-input errors keep the bare questions.
-    expect(cursorQuestionToolPresentation({ questions }, undefined)).toEqual({ input: { questions }, summary: null })
-    expect(cursorQuestionToolPresentation({ questions }, { content: [{ type: 'text', text: 'Invalid input' }], isError: true }))
-      .toEqual({ input: { questions }, summary: null })
+    // Streaming call (no result yet) keeps the bare questions; rejected input is an error row.
+    expect(cursorQuestionToolPresentation({ questions }, undefined)).toEqual({ input: { questions }, summary: null, isError: false })
+    expect(cursorQuestionToolPresentation({ questions }, envelope('Invalid input: questions[0].question must be a non-empty string.', true)))
+      .toEqual({ input: { questions }, summary: 'Invalid input: questions[0].question must be a non-empty string.', isError: true })
+  })
+
+  it('unwraps the SDK MCP envelope: structuredContent first, then JSON text, then raw text', () => {
+    expect(unwrapCursorHostToolResult({ content: [{ text: { text: '{"a":1}' } }], isError: false, structuredContent: { a: 2 } }))
+      .toEqual({ payload: { a: 2 }, isError: false })
+    expect(unwrapCursorHostToolResult({ content: [{ text: { text: '{"a":1}' } }], isError: false })).toEqual({ payload: { a: 1 }, isError: false })
+    // MCP wire shape (`{ type, text }`) as returned by a `{ content }` callback.
+    expect(unwrapCursorHostToolResult({ content: [{ type: 'text', text: 'plain' }], isError: true })).toEqual({ payload: 'plain', isError: true })
+    expect(unwrapCursorHostToolResult({ content: [], isError: true })).toEqual({ payload: undefined, isError: true })
+    // Not an envelope: passed through, never flagged.
+    expect(unwrapCursorHostToolResult({ outcome: 'answered' })).toEqual({ payload: { outcome: 'answered' }, isError: false })
   })
 
   it('maps createPlan args onto PlanApprovalRequest', () => {

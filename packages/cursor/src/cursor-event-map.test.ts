@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { SDKToolUseMessage, ToolCallCompletedUpdate, ToolCallStartedUpdate } from '@cursor/sdk'
 import { applyContentDelta } from '@superone/shared/content-delta'
 import type { AgentEvent, ContentBlock } from '@superone/shared/agent-types'
 import {
@@ -355,54 +356,88 @@ describe('mapInteractionUpdate', () => {
     })
   })
 
-  it('presents the host question custom tool as the shared AskUserQuestion row', () => {
+  describe('host question custom tool → shared AskUserQuestion row', () => {
     const questions = [{ question: 'Which database?', header: 'Database', multiSelect: false, options: [{ label: 'Postgres', description: '' }, { label: 'SQLite', description: '' }] }]
-    const envelope = (result?: unknown) => ({
-      type: 'mcp',
-      args: { providerIdentifier: 'custom-user-tools', toolName: 'superone_ask_user_question', args: { questions } },
-      ...(result !== undefined ? { result } : {}),
+    const args = { providerIdentifier: 'custom-user-tools', toolName: 'superone_ask_user_question', args: { questions } }
+    /**
+     * What the installed local executor (esm/357.js) reports for a custom tool:
+     * the callback's return value serialized into one MCP text block, outer status
+     * `success` even when the callback flagged `isError`. Typed against the SDK's
+     * `ToolCallCompletedUpdate` so the fixture cannot drift from the real shape.
+     */
+    const mcpEnvelope = (payload: unknown, isError = false) => ({
+      status: 'success' as const,
+      value: { content: [{ text: { text: typeof payload === 'string' ? payload : JSON.stringify(payload) } }], isError },
+    })
+    const completed = (callId: string, result: ReturnType<typeof mcpEnvelope>): ToolCallCompletedUpdate => ({
+      type: 'tool-call-completed',
+      callId,
+      modelCallId: 'mc1',
+      toolCall: { type: 'mcp', args, result },
     })
 
-    // Streaming: same canonical name as Claude's native tool, bare questions as input.
-    const started = mapInteractionUpdate('m1', { type: 'tool-call-started', callId: 'q1', toolCall: envelope() } as never)
-    expect(started[0]).toMatchObject({
-      delta: { type: 'tool_use', toolName: 'AskUserQuestion', toolUseId: 'q1', status: 'streaming', input: JSON.stringify({ questions }) },
+    it('streams the call under the canonical name with the bare questions', () => {
+      const started: ToolCallStartedUpdate = { type: 'tool-call-started', callId: 'q1', modelCallId: 'mc1', toolCall: { type: 'mcp', args } }
+      expect(mapInteractionUpdate('m1', started)[0]).toMatchObject({
+        delta: { type: 'tool_use', toolName: 'AskUserQuestion', toolUseId: 'q1', status: 'streaming', input: JSON.stringify({ questions }) },
+      })
     })
 
-    // Answered: answers/notes ride the input (desktop Q&A card) and the "q"="a" text
-    // rides the result (phone projection parses the transcript text).
-    const answered = mapInteractionUpdate('m1', {
-      type: 'tool-call-completed',
-      callId: 'q1',
-      toolCall: envelope({ status: 'success', value: { outcome: 'answered', answers: { 'Which database?': 'SQLite' }, notes: { 'Which database?': 'keep it embedded' } } }),
-    } as never)
-    expect(answered[0]).toMatchObject({
-      delta: {
-        type: 'tool_use',
-        toolName: 'AskUserQuestion',
-        status: 'complete',
-        input: JSON.stringify({ questions, answers: { 'Which database?': 'SQLite' }, annotations: { 'Which database?': { notes: 'keep it embedded' } } }),
-      },
+    it('answered: answers/notes ride the input, "q"="a" text rides the result', () => {
+      const events = mapInteractionUpdate('m1', completed('q1', mcpEnvelope({
+        outcome: 'answered', answers: { 'Which database?': 'SQLite' }, notes: { 'Which database?': 'embedded' },
+      })))
+      expect(events[0]).toMatchObject({
+        delta: {
+          type: 'tool_use',
+          toolName: 'AskUserQuestion',
+          status: 'complete',
+          input: JSON.stringify({ questions, answers: { 'Which database?': 'SQLite' }, annotations: { 'Which database?': { notes: 'embedded' } } }),
+        },
+      })
+      expect(events[1]).toMatchObject({ delta: { type: 'tool_result', toolUseId: 'q1', summary: '"Which database?"="SQLite"', isError: false } })
     })
-    expect(answered[1]).toMatchObject({ delta: { type: 'tool_result', toolUseId: 'q1', summary: '"Which database?"="SQLite"', isError: false } })
 
-    // Dismissed: the presenter keys off "dismissed" in the result text; no answer is fabricated.
-    const dismissed = mapInteractionUpdate('m1', {
-      type: 'tool-call-completed',
-      callId: 'q2',
-      toolCall: envelope({ status: 'success', value: { outcome: 'dismissed', note: 'n/a' } }),
-    } as never)
-    expect(dismissed[0]).toMatchObject({ delta: { type: 'tool_use', toolName: 'AskUserQuestion', input: JSON.stringify({ questions }) } })
-    expect(dismissed[1]).toMatchObject({ delta: { type: 'tool_result', summary: expect.stringContaining('dismissed') } })
+    it('prefers structuredContent when the adapter surfaces it', () => {
+      const result = { ...mcpEnvelope('not json'), value: { ...mcpEnvelope('not json').value, structuredContent: { outcome: 'answered', answers: { 'Which database?': 'Postgres' } } } }
+      const events = mapInteractionUpdate('m1', { type: 'tool-call-completed', callId: 'q1', modelCallId: 'mc1', toolCall: { type: 'mcp', args, result } } as ToolCallCompletedUpdate)
+      expect(events[1]).toMatchObject({ delta: { type: 'tool_result', summary: '"Which database?"="Postgres"' } })
+    })
 
-    // Invalid input: stays an AskUserQuestion row in error state, no synthetic Q&A.
-    const invalid = mapInteractionUpdate('m1', {
-      type: 'tool-call-completed',
-      callId: 'q3',
-      toolCall: envelope({ status: 'error', error: 'Invalid input: questions[0].options must contain 2–4 options (got 1).' }),
-    } as never)
-    expect(invalid[0]).toMatchObject({ delta: { type: 'tool_use', toolName: 'AskUserQuestion' } })
-    expect(invalid[1]).toMatchObject({ delta: { type: 'tool_result', isError: true, summary: expect.stringContaining('Invalid input') } })
+    it('dismissed: no answer is fabricated and the presenter sees "dismissed"', () => {
+      const events = mapInteractionUpdate('m1', completed('q2', mcpEnvelope({ outcome: 'dismissed', note: 'n/a' })))
+      expect(events[0]).toMatchObject({ delta: { type: 'tool_use', toolName: 'AskUserQuestion', input: JSON.stringify({ questions }) } })
+      expect(events[1]).toMatchObject({ delta: { type: 'tool_result', summary: expect.stringContaining('dismissed'), isError: false } })
+    })
+
+    it('rejected input: the embedded MCP isError becomes the row error even though the outer status is success', () => {
+      const events = mapInteractionUpdate('m1', completed('q3', mcpEnvelope('Invalid input: questions[0].options must contain 2–4 options (got 1).', true)))
+      expect(events[0]).toMatchObject({ delta: { type: 'tool_use', toolName: 'AskUserQuestion', input: JSON.stringify({ questions }) } })
+      expect(events[1]).toMatchObject({ delta: { type: 'tool_result', isError: true, summary: 'Invalid input: questions[0].options must contain 2–4 options (got 1).' } })
+    })
+
+    it('maps the SDKMessage tool_call path the same way', () => {
+      const message: SDKToolUseMessage = {
+        type: 'tool_call', agent_id: 'a', run_id: 'r', call_id: 'q1', name: 'mcp', status: 'completed',
+        args,
+        result: mcpEnvelope({ outcome: 'answered', answers: { 'Which database?': 'SQLite' } }).value,
+      }
+      const events = mapSdkMessageLifecycle('m1', message, { includeContent: true })
+      expect(events.find((e) => e.type === 'content_delta' && e.delta.type === 'tool_use')).toMatchObject({
+        delta: { toolName: 'AskUserQuestion', input: JSON.stringify({ questions, answers: { 'Which database?': 'SQLite' } }) },
+      })
+      expect(events.find((e) => e.type === 'content_delta' && e.delta.type === 'tool_result')).toMatchObject({
+        delta: { summary: '"Which database?"="SQLite"', isError: false },
+      })
+      const rejected = mapSdkMessageLifecycle('m1', { ...message, result: mcpEnvelope('Invalid input: x', true).value }, { includeContent: true })
+      expect(rejected.find((e) => e.type === 'content_delta' && e.delta.type === 'tool_result')).toMatchObject({ delta: { isError: true, summary: 'Invalid input: x' } })
+    })
+
+    it('leaves a same-named tool from another MCP server as a generic row', () => {
+      const foreign = completed('q9', mcpEnvelope({ outcome: 'answered', answers: { 'Which database?': 'SQLite' } }))
+      const events = mapInteractionUpdate('m1', { ...foreign, toolCall: { ...foreign.toolCall, args: { ...args, providerIdentifier: 'vendor' } } } as ToolCallCompletedUpdate)
+      expect(events[0]).toMatchObject({ delta: { type: 'tool_use', toolName: 'mcp__vendor__superone_ask_user_question' } })
+    })
   })
 
   it('does not remap SuperOne MCP names through native tool aliases', () => {

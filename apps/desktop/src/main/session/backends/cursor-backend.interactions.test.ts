@@ -360,6 +360,84 @@ describe('CursorBackend host interactions through Session + MobileBroadcaster', 
     expect(events.some((e) => e.type === 'permission_mode_change')).toBe(false)
   })
 
+  it('plan: Stop invalidates an accepted decision before the provider cancel answers', async () => {
+    let releaseRun: (() => void) | null = null
+    let releaseCancel: (() => void) | null = null
+    const runtimes = installRuntimeFactory((runtime, index) => {
+      if (index !== 0) return
+      runtime.onSend = () => {
+        void runtime.interactions.requestPlanApproval(PLAN)
+        return new Promise<void>((resolve) => { releaseRun = resolve })
+      }
+      // Provider cancel that takes its time — the run settles first.
+      runtime.cancel.mockImplementation(() => new Promise<void>((resolve) => { releaseCancel = resolve }))
+    })
+    const { session, events } = makeSession('plan')
+    const first = session.send({ content: 'plan it', assistantMessageId: 'a1' })
+    await tick()
+    await tick()
+    session.respondToPlanApproval('call-plan', true)
+    await tick()
+    expect(session.getPendingInteractions()).toEqual([])
+
+    // Stop begins; cancel() is still pending when the active send settles.
+    const stopping = session.interrupt()
+    await tick()
+    releaseRun?.()
+    await first
+    for (let i = 0; i < 6; i++) await tick()
+    releaseCancel?.()
+    await stopping
+    for (let i = 0; i < 6; i++) await tick()
+
+    expect(runtimes).toHaveLength(1)
+    expect(runtimes[0]!.permissionMode).toBe('plan')
+    expect(runtimes[0]!.sends.map((s) => s.content)).toEqual(['plan it'])
+    expect(events.some((e) => e.type === 'permission_mode_change')).toBe(false)
+    expect(events.some((e) => e.type === 'message_error')).toBe(false)
+    // The already-queued host follow-up is dequeued and declined, not implemented.
+    expect(events.some((e) => e.type === 'content_delta' && e.delta.type === 'text' && /superseded/.test(e.delta.text))).toBe(true)
+  })
+
+  it('plan: a user turn queued ahead of the approval follow-up makes the follow-up stale at delivery', async () => {
+    let releaseRun: (() => void) | null = null
+    const runtimes = installRuntimeFactory((runtime, index) => {
+      if (index !== 0) return
+      runtime.onSend = (_id, content) => {
+        if (content !== 'plan it') return Promise.resolve()
+        void runtime.interactions.requestPlanApproval(PLAN)
+        return new Promise<void>((resolve) => { releaseRun = resolve })
+      }
+    })
+    const { session, events } = makeSession('plan')
+    const first = session.send({ content: 'plan it', assistantMessageId: 'a1' })
+    await tick()
+    await tick()
+    expect(session.getPendingInteractions()).toHaveLength(1)
+
+    // User types a new instruction (queued behind the streaming turn), then
+    // approves the still-pending plan; the approval is queued behind that turn.
+    const newer = session.send({ content: 'do X instead', assistantMessageId: 'a2' })
+    await tick()
+    session.respondToPlanApproval('call-plan', true)
+    await tick()
+    releaseRun?.()
+    await first
+    await newer
+    for (let i = 0; i < 10; i++) await tick()
+
+    expect(runtimes).toHaveLength(1)
+    expect(runtimes[0]!.permissionMode).toBe('plan')
+    expect(runtimes[0]!.sends.map((s) => s.content)).toEqual(['plan it', 'do X instead'])
+    expect(events.some((e) => e.type === 'permission_mode_change')).toBe(false)
+    expect(events.some((e) => e.type === 'message_error')).toBe(false)
+    expect(events.some((e) => e.type === 'content_delta' && e.delta.type === 'text' && /superseded/.test(e.delta.text))).toBe(true)
+    // Every turn that started also ended.
+    const starts = events.filter((e) => e.type === 'message_start').length
+    const ends = events.filter((e) => e.type === 'message_complete' || e.type === 'message_interrupted').length
+    expect(ends).toBe(starts)
+  })
+
   it('plan: a continuation that cannot start surfaces a transcript error instead of looking settled', async () => {
     const runtimes = installRuntimeFactory()
     const { session, events } = makeSession('plan')
@@ -372,9 +450,11 @@ describe('CursorBackend host interactions through Session + MobileBroadcaster', 
     session.respondToPlanApproval('call-plan', true)
     for (let i = 0; i < 12; i++) await tick()
 
+    // The rebuild runs inside the follow-up turn, so the failure is that turn's own
+    // message_error — right under the "approved the plan" host bubble.
     const failure = events.find((e) => e.type === 'message_error')
     expect(failure).toBeDefined()
-    expect(failure && failure.type === 'message_error' ? failure.error : '').toMatch(/did not start the plan implementation.*agent boot failed.*retry/is)
+    expect(failure && failure.type === 'message_error' ? failure.error : '').toMatch(/leave plan mode.*agent boot failed.*retry/is)
     // Failure is stated once, no automatic re-send, and the session is back in plan mode.
     expect(events.filter((e) => e.type === 'message_error')).toHaveLength(1)
     expect(runtimes.every((r) => r.sends.every((s) => !/approved the plan/i.test(s.content)))).toBe(true)

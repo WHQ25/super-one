@@ -81,15 +81,20 @@ export class CursorBackend implements SessionBackend {
   private readonly interactions = new CursorInteractionRegistry((event) => this.emit(event))
   /** Session.send bound by `bindTaskNotificationSend`; carries plan decisions back as a host turn. */
   private taskSend: ((content: string) => Promise<void>) | null = null
-  /** In-flight `setPermissionMode` rebuild, awaited before a plan follow-up turn starts. */
-  private modeChange: Promise<void> | null = null
   /**
    * Bumped whenever the conversation moves past the plan a decision refers to
-   * (new user turn, interrupt, close). `applyPlanDecision` re-checks it after
-   * every await so a stale approval can neither rebuild the runtime under a
-   * newer turn nor queue an implementation turn nobody asked for.
+   * (new user turn, interrupt, close). Checked when a decision is queued and
+   * again when its follow-up is dequeued, so a stale approval can neither
+   * rebuild the runtime under a newer turn nor run an implementation turn
+   * nobody asked for.
    */
   private planGeneration = 0
+  /**
+   * Plan-decision follow-up handed to `Session.send` but not yet consumed by
+   * `send()`. The chain may run newer turns first, so the mode switch and the
+   * staleness check happen when the request is dequeued, not when it is queued.
+   */
+  private planFollowUp: { content: string; generation: number; decision: CursorPlanDecision } | null = null
 
   async start(opts: BackendStartOptions): Promise<void> {
     if (this.disposed) throw new Error('CursorBackend already disposed')
@@ -232,6 +237,32 @@ export class CursorBackend implements SessionBackend {
     this.emit({ type: 'status_change', status: 'streaming' })
 
     try {
+      const followUp = this.takePlanFollowUp(request)
+      if (followUp === 'stale') {
+        // The chain ran a newer user turn (or a Stop) between queueing and now;
+        // say so instead of implementing a plan the conversation moved past.
+        this.emit({
+          type: 'content_delta',
+          messageId,
+          delta: { type: 'text', text: 'Skipped: the plan decision was superseded by a newer message before its follow-up turn started.' },
+        })
+        this.complete(messageId, false)
+        return
+      }
+      if (followUp?.decision.kind === 'approved' && this.permissionMode === 'plan') {
+        // Leaving plan mode rebuilds the runtime. Doing it here — inside the
+        // serialized turn — means no other turn can be running underneath.
+        // `agent` is Cursor's own ladder id; the renderer's generic `default`
+        // that may follow maps to the same SDK config and skips the rebuild.
+        try {
+          await this.setPermissionMode('agent')
+        } catch (error) {
+          // Reported by this turn's own fail(); the mode was reverted to plan.
+          const detail = error instanceof Error ? error.message : String(error)
+          throw new Error(`Could not leave plan mode to implement the approved plan: ${detail}. `
+            + 'Send a message such as "Implement the approved plan" to retry.')
+        }
+      }
       const runtime = await this.ensureRuntime()
       if (request.model) this.model = request.model
       if (request.effort !== undefined) this.effort = request.effort
@@ -293,6 +324,13 @@ export class CursorBackend implements SessionBackend {
 
   async interrupt(): Promise<void> {
     this.interrupted = true
+    // Invalidate plan decisions *before* awaiting the provider: the active send
+    // may settle while cancel() is still pending, and its continuation must
+    // already see the bump. Questions go too — the run stopped waiting on them.
+    // The queued follow-up record is kept on purpose: `takePlanFollowUp` needs
+    // it to recognise — and skip — the stale request when the chain gets there.
+    this.planGeneration += 1
+    this.interactions.cancelAll('interrupted')
     // The terminal event below is what releases the UI, so the provider cancel
     // must never be able to hold it hostage.
     const cancelled = this.runtime
@@ -304,12 +342,6 @@ export class CursorBackend implements SessionBackend {
     if (cancelled === DEADLINE_EXCEEDED) {
       log.warn('[CursorBackend] runtime.cancel() did not answer within %dms; settling the turn locally', INTERRUPT_CANCEL_TIMEOUT_MS)
     }
-    // The run no longer waits on its custom-tool call; unblock the resolver
-    // and clear the indicator instead of leaving a dead prompt behind. An
-    // explicit interrupt also voids any plan awaiting a decision — the user
-    // stopped that turn, so its plan is not something to act on later.
-    this.planGeneration += 1
-    this.interactions.cancelAll('interrupted')
     if (this.currentMessageId) this.complete(this.currentMessageId, true)
   }
 
@@ -367,13 +399,8 @@ export class CursorBackend implements SessionBackend {
       && (prev.autoReview !== next.autoReview || prev.mode !== next.mode)
       && this.opts
     ) {
-      const rebuild = this.rebuild(this.opts)
-      const tracked: Promise<void> = rebuild.catch(() => undefined).finally(() => {
-        if (this.modeChange === tracked) this.modeChange = null
-      })
-      this.modeChange = tracked
       try {
-        await rebuild
+        await this.rebuild(this.opts)
       } catch (error) {
         this.permissionMode = prevMode
         if (this.opts) this.opts.permissionMode = prevMode
@@ -413,10 +440,13 @@ export class CursorBackend implements SessionBackend {
   }
 
   /**
-   * Cursor never raises native tool approvals: `@cursor/sdk` local runs use a
-   * hardcoded auto-approving `pendingDecisionProvider` and cloud runs expose no
-   * approval hook at all, so no Cursor-owned `permission_request` ever reaches
-   * the host. Host-tool confirms are resolved by `Session` before it gets here.
+   * Cursor never raises native tool approvals to the host: the `@cursor/sdk`
+   * local executor decides them itself — custom tools are auto-approved, and a
+   * native action outside the configured sandbox / auto-review policy is
+   * rejected non-interactively ("Local SDK runs cannot request interactive
+   * approval") — and cloud runs expose no approval hook at all. So no
+   * Cursor-owned `permission_request` ever exists to answer. Host-tool confirms
+   * are resolved by `Session` before it gets here.
    */
   respondToPermission(): boolean {
     return false
@@ -457,7 +487,7 @@ export class CursorBackend implements SessionBackend {
         const generation = this.planGeneration
         const decision = await this.interactions.requestPlanApproval(request)
         void this.applyPlanDecision(decision, generation).catch((error) => {
-          this.reportPlanFollowUpFailure(decision, error)
+          this.reportPlanFollowUpFailure(decision, generation, error)
         })
         return decision
       },
@@ -467,48 +497,53 @@ export class CursorBackend implements SessionBackend {
 
   /**
    * Carry a plan decision back to Cursor. The SDK already auto-resolved the
-   * `createPlan` call, so the only channel left is a follow-up turn: approving
-   * first leaves plan mode (the renderer does the same switch; it is a no-op
-   * by the time it arrives), then a host-origin message tells the agent to
-   * implement — or, on rejection with feedback, to revise the plan.
+   * `createPlan` call, so the only channel left is a follow-up turn through
+   * `Session.send`. Nothing is applied here beyond queueing: the mode switch
+   * (approval leaves plan mode) and the final staleness check run in `send()`
+   * when the chain dequeues the request, so a newer user turn that was queued
+   * ahead can neither be rebuilt underneath nor followed by stale content.
    */
   private async applyPlanDecision(decision: CursorPlanDecision, generation: number): Promise<void> {
     const followUp = cursorPlanFollowUpText(decision)
     if (!followUp || this.disposed) return
-    const stillCurrent = (): boolean => !this.disposed && this.planGeneration === generation
-    await this.activeTurn?.done
-    if (!stillCurrent()) {
-      log.info('[CursorBackend] plan decision superseded before continuation; skipping follow-up')
-      return
-    }
-    if (decision.kind === 'approved' && this.permissionMode === 'plan') {
-      // `agent` is Cursor's own ladder id; the renderer's generic `default`
-      // that may follow maps to the same SDK config and skips the rebuild.
-      await this.setPermissionMode('agent')
-    }
-    await this.modeChange
-    if (!stillCurrent()) {
-      log.info('[CursorBackend] plan decision superseded during mode change; skipping follow-up')
+    if (this.planGeneration !== generation) {
+      log.info('[CursorBackend] plan decision superseded before it was queued; skipping follow-up')
       return
     }
     if (!this.taskSend) throw new Error('no task-notification sender bound')
+    this.planFollowUp = { content: followUp, generation, decision }
     await this.taskSend(followUp)
   }
 
   /**
-   * A plan decision whose continuation never started must not look settled:
-   * the pending prompt is already gone, so raise a transcript-visible error
-   * (same `message_error` path as a failed turn) that tells the user how to
-   * retry by hand. Nothing is re-sent automatically — the failed step may have
-   * partially applied (e.g. the mode switch), so the retry stays deliberate.
+   * Match a dequeued task-notification against the queued plan follow-up.
+   * Returns the record when it is still current, `'stale'` when the plan
+   * generation moved on while it waited in the chain, `null` for any other send.
    */
-  private reportPlanFollowUpFailure(decision: CursorPlanDecision, error: unknown): void {
+  private takePlanFollowUp(
+    request: SendMessageRequest,
+  ): { content: string; generation: number; decision: CursorPlanDecision } | 'stale' | null {
+    const pending = this.planFollowUp
+    if (!pending || request.source !== 'task-notification' || request.content !== pending.content) return null
+    this.planFollowUp = null
+    return pending.generation === this.planGeneration ? pending : 'stale'
+  }
+
+  /**
+   * A plan decision whose follow-up could not even be queued must not look
+   * settled: the pending prompt is already gone, so raise a transcript-visible
+   * error (same `message_error` path as a failed turn) with a manual retry hint.
+   * Failures *inside* the follow-up turn (mode rebuild, provider send) are
+   * reported by that turn's own `fail()`. Skipped when the conversation has
+   * moved past the plan — a stale failure must not mark a newer turn as failed.
+   */
+  private reportPlanFollowUpFailure(decision: CursorPlanDecision, generation: number, error: unknown): void {
     const detail = error instanceof Error ? error.message : String(error)
     log.warn('[CursorBackend] plan decision follow-up failed:', detail)
-    if (this.disposed) return
-    const action = decision.kind === 'approved' ? 'implementation' : 'revision'
-    const text = `Cursor did not start the plan ${action}: ${detail}. `
-      + 'Send a message such as "Implement the approved plan" to retry.'
+    if (this.disposed || this.planGeneration !== generation || this.activeTurn) return
+    const text = decision.kind === 'approved'
+      ? `Cursor did not start the plan implementation: ${detail}. Send a message such as "Implement the approved plan" to retry.`
+      : `Cursor did not start the plan revision: ${detail}. Send your feedback as a message to have the plan revised.`
     const messageId = `cursor_plan_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     this.emit({
       type: 'message_start',

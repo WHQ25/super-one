@@ -56,6 +56,8 @@ export {
   cursorQuestionToolPresentation,
   formatCursorQuestionResult,
   isCursorQuestionTool,
+  unwrapCursorHostToolResult,
+  CURSOR_CUSTOM_TOOLS_SERVER,
   type CursorPlanDecision,
   type CursorQuestionAnswer,
   type CursorQuestionParse,

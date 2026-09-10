@@ -19,7 +19,9 @@ import { topFindingSummary } from './report-findings-display'
 import { isWorkflowSmokeCheck, workflowToolTargetLabel } from './workflow-utils'
 
 const TOOL_VERBS: Record<string, string> = {
-  Bash: 'Running command',
+  // Same copy as BashTerminalPresenter (`chat.toolBlock.running`). The portable
+  // Bash row uses that presenter for live and deferred calls alike.
+  Bash: 'Running',
   Read: 'Reading',
   Edit: 'Editing',
   Write: 'Writing',

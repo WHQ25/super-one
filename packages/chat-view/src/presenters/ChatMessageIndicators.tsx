@@ -87,29 +87,45 @@ export function findLastAssistantMessageId(
   )?.id
 }
 
+/** Shared “Summary:” / “Recap:” chrome — same label weight and colon on both surfaces. */
+function TurnMetaChrome({
+  kind,
+  label,
+  text,
+  className,
+}: {
+  kind: 'summary' | 'recap'
+  label: string
+  text: string
+  className: string
+}) {
+  return (
+    <div className={className} data-turn-meta={kind} role="note">
+      <span className="mr-1.5 font-medium text-muted-foreground/80">{label}</span>
+      {text}
+    </div>
+  )
+}
+
 export function TurnMetaIndicator({ meta }: { meta: TurnMetaMarker }) {
   const { t } = useTranslation()
   if (meta.kind === 'recap') {
     return (
-      <div
+      <TurnMetaChrome
+        kind="recap"
+        label={t('chat.turnMeta.recapLabel')}
+        text={meta.text}
         className="mt-0.5 mb-2.5 text-xs leading-snug text-muted-foreground"
-        data-turn-meta="recap"
-        role="note"
-      >
-        <span className="mr-1.5 font-medium text-muted-foreground/80">{t('chat.turnMeta.recapLabel')}</span>
-        {meta.text}
-      </div>
+      />
     )
   }
   return (
-    <div
+    <TurnMetaChrome
+      kind="summary"
+      label={t('chat.turnMeta.summaryLabel')}
+      text={meta.text}
       className="my-0.5 text-xs leading-snug text-muted-foreground"
-      data-turn-meta="summary"
-      role="note"
-    >
-      <span className="mr-1.5 font-medium text-muted-foreground/80">{t('chat.turnMeta.summaryLabel')}</span>
-      {meta.text}
-    </div>
+    />
   )
 }
 
@@ -133,14 +149,12 @@ export function TurnSummaryAboveFooter({ summary }: { summary: string }) {
   const text = summary.trim()
   if (!text) return null
   return (
-    <div
+    <TurnMetaChrome
+      kind="summary"
+      label={t('chat.turnMeta.summaryLabel')}
+      text={text}
       className="mt-2 text-xs leading-snug text-muted-foreground"
-      data-turn-meta="summary"
-      role="note"
-    >
-      <span className="mr-1.5 font-medium text-muted-foreground/80">{t('chat.turnMeta.summaryLabel')}</span>
-      {text}
-    </div>
+    />
   )
 }
 

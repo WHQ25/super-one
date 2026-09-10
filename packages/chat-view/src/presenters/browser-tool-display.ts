@@ -468,8 +468,15 @@ export function parseBrowserResult(op: BrowserOp, result: string | undefined, is
     case 'inspect':
       if (obj && obj.exists === false) return { status: 'neutral', notFound: true }
       return { status: 'neutral' }
-    case 'screenshot':
-      return { status: 'ok', imagePath: typeof obj?.path === 'string' ? obj.path : undefined }
+    case 'screenshot': {
+      const nested = obj?.screenshot && typeof obj.screenshot === 'object' && !Array.isArray(obj.screenshot)
+        ? (obj.screenshot as Record<string, unknown>).path
+        : undefined
+      return {
+        status: 'ok',
+        imagePath: typeof obj?.path === 'string' ? obj.path : typeof nested === 'string' ? nested : undefined,
+      }
+    }
     case 'close': {
       // A partly-failed batch already returned above on `ok === false`, so anything
       // reaching here closed everything it was asked to.

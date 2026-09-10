@@ -70,6 +70,13 @@ a {
   line-height: 1.6;
 }
 
+/* Summary / recap chrome is 12px on desktop. The assistant body is 15px here,
+   and inheritance would blow the prefix up to match if we did not lock it. */
+.chat-view-shell [data-turn-meta] {
+  font-size: 0.75rem;
+  line-height: 1.375;
+}
+
 /* The assistant half of a turn carries its own bottom margin, so a turn used to
    be separated from the next by two gaps but from its own reply by one. On a
    phone that reads as cramped, so the user half matches. */

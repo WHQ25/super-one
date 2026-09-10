@@ -227,6 +227,11 @@ describe('parseBrowserResult', () => {
     expect(info.imagePath).toBe('/tmp/shot.png')
   })
 
+  it('extracts a nested screenshot.path when the top-level path is absent', () => {
+    const info = parseBrowserResult('screenshot', JSON.stringify({ screenshot: { path: '/tmp/nested.png', width: 800, height: 600 } }), false)
+    expect(info.imagePath).toBe('/tmp/nested.png')
+  })
+
   it('counts network requests and cookies, and marks CDP actions ok', () => {
     expect(parseBrowserResult('network_stop', 'count: 3\nrequests[3]{requestId,method}:\n  a,GET', false).count).toEqual({ kind: 'requests', n: 3 })
     expect(parseBrowserResult('network_start', 'recordingId: r\ncapturing: true', false).status).toBe('ok')

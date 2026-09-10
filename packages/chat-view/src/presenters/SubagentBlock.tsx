@@ -67,6 +67,55 @@ export interface SubagentBlockPresenterProps {
   Markdown: ComponentType<SubagentMarkdownProps>
 }
 
+/**
+ * Bounded, bottom-following list for a subagent's nested tool rows.
+ *
+ * A running subagent can emit dozens of tool calls; without a cap the card grows
+ * to fill the transcript. The list follows new rows only while the user is already
+ * at the bottom, so scrolling back up to read an earlier row is not undone by the
+ * next call. Mirrors the desktop `SubagentScrollArea` with no desktop dependencies.
+ */
+export function SubagentScrollArea({
+  children,
+  borderClass,
+  maxHeightClass = 'max-h-25',
+  className,
+}: {
+  children: ReactNode
+  borderClass?: string
+  maxHeightClass?: string
+  className?: string
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const isNearBottomRef = useRef(true)
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const handleScroll = (): void => {
+      isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 30
+    }
+    el.addEventListener('scroll', handleScroll, { passive: true })
+    return () => el.removeEventListener('scroll', handleScroll)
+  }, [])
+
+  // Runs after every render: a new child row lands, and the list keeps the tail in view.
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || !isNearBottomRef.current) return
+    el.scrollTop = el.scrollHeight
+  })
+
+  return (
+    <div
+      ref={scrollRef}
+      className={cn('overflow-y-auto', borderClass && 'ml-3 border-l-2 pl-2.5 py-1', maxHeightClass, borderClass, className)}
+    >
+      {children}
+    </div>
+  )
+}
+
 function formatElapsed(seconds: number): string {
   if (seconds < 60) return `${Math.round(seconds)}s`
   const mins = Math.floor(seconds / 60)

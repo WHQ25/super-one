@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
 import { CircleStop, FileText, ImageIcon, RefreshCw } from 'lucide-react'
 import { ChatMessagePresenter } from './presenters/ChatMessage'
+import { TurnSummaryAboveFooter } from './presenters/ChatMessageIndicators'
 import { collaborationLabelKey } from './presenters/collaboration-label'
 import { getAssistantCopyText } from './presenters/getAssistantCopyText'
 import { ZERO_TURN_TOKENS, type TurnTokenCounts } from './presenters/turn-footer-model'
@@ -212,7 +213,7 @@ export const PortableMessage = memo(function PortableMessage({
           interrupted={message.status === 'interrupted'}
           interruptedLabel={INTERRUPTED_LABEL}
           turnSummary={message.metadata?.turnSummary
-            ? <div className="mt-2 text-xs text-muted-foreground">{message.metadata.turnSummary}</div>
+            ? <TurnSummaryAboveFooter summary={message.metadata.turnSummary} />
             : undefined}
           assistantFooter={isUser
             ? undefined

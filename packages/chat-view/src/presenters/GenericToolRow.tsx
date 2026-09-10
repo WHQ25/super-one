@@ -303,7 +303,9 @@ export function GenericToolRowPresenter({
           streaming={isStreaming}
           tone={isDenied && toolName !== 'AskUserQuestion' ? 'denied' : isError ? 'error' : 'default'}
         >
-          {isStreaming ? <>{getToolVerb(toolName)}…</> : toolName === 'AskUserQuestion' ? `Asked${display.summary ? ` ${display.summary}` : ''}` : displayName}
+          {isStreaming
+            ? toolName === 'Bash' ? t('chat.toolBlock.running') : <>{getToolVerb(toolName)}…</>
+            : toolName === 'AskUserQuestion' ? `Asked${display.summary ? ` ${display.summary}` : ''}` : displayName}
         </ToolName>
         {isQuestionDismissed ? (
           <span className="shrink-0 rounded bg-muted px-1 py-px text-xs text-muted-foreground">{t('chat.toolBlock.dismissed')}</span>

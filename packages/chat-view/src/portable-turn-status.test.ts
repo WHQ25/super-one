@@ -60,6 +60,42 @@ describe('the live-turn indicator', () => {
   })
 })
 
+describe('Grok live reasoning then text', () => {
+  it('paints the text that follows reasoning while the turn is still streaming', () => {
+    const html = render(turn({
+      content: [
+        { type: 'thinking', thinking: 'Check the mapper before answering.' },
+        { type: 'text', text: 'The token block is visible.' },
+      ],
+    }), { isLastAssistant: true, sessionStreaming: true })
+    expect(html).toContain('thinking-node')
+    expect(html).toContain('The token block is visible.')
+    expect(html).toContain('after-thinking')
+  })
+
+  it('keeps reasoning live when it is still the last segment', () => {
+    const html = render(turn({
+      content: [{ type: 'thinking', thinking: 'Still reasoning.' }],
+    }), { isLastAssistant: true, sessionStreaming: true })
+    expect(html).not.toContain('Still reasoning.')
+    expect(html).toContain('thinking-node')
+    expect(html).toContain('animate-pulse')
+    expect(html).not.toContain('after-thinking')
+  })
+})
+
+describe('Grok turn summary chrome', () => {
+  it('prefixes the summary the same way the desktop footer does', () => {
+    const html = render(turn({
+      status: 'complete',
+      metadata: { durationMs: 12_000, turnSummary: 'Fixed the footer inset' },
+    }))
+    expect(html).toContain('Summary:')
+    expect(html).toContain('Fixed the footer inset')
+    expect(html).toContain('data-turn-meta="summary"')
+  })
+})
+
 describe('the settled turn footer', () => {
   it('shows the recorded spend and duration a turn actually cost', () => {
     const html = render(turn({

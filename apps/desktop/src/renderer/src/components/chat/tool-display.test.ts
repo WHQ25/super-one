@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   getToolDisplay,
   getToolLabel,
+  getToolVerb,
   isAlwaysHiddenToolBlock,
   parseMcpToolName,
   parseToolInput,
@@ -37,6 +38,12 @@ describe('getToolDisplay: Artifact', () => {
     expect(getToolDisplay('Artifact', { action: 'read_asset', asset_id: 'abc123' }).summary).toBe('read asset')
     expect(getToolDisplay('Artifact', { action: 'delete_asset', asset_id: 'abc123' }).summary).toBe('delete asset')
     expect(getToolDisplay('Artifact', { action: 'list', scope: 'all' }).summary).toBe('list · all')
+  })
+})
+
+describe('getToolVerb', () => {
+  it('keeps a live Bash row on Running, matching the terminal presenter', () => {
+    expect(getToolVerb('Bash')).toBe('Running')
   })
 })
 

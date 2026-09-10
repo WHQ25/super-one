@@ -22,3 +22,24 @@ export function useKeyboardVisible(): boolean {
   }, [])
   return visible
 }
+
+/**
+ * Height of the software keyboard in dp, `0` while it is down.
+ *
+ * Read straight off the keyboard events rather than derived from a stored
+ * frame: a value that has to be subtracted from a "first measured height"
+ * goes stale the moment the window changes shape (rotation), which is how
+ * `KeyboardAvoidingView`'s Android `height` mode ended up sizing a landscape
+ * shell to a portrait frame minus a portrait keyboard.
+ */
+export function useKeyboardHeight(): number {
+  const [height, setHeight] = useState(() => Keyboard.metrics()?.height ?? 0)
+  useEffect(() => {
+    const ios = Platform.OS === 'ios'
+    const show = Keyboard.addListener(ios ? 'keyboardWillShow' : 'keyboardDidShow',
+      (event) => setHeight(event.endCoordinates.height))
+    const hide = Keyboard.addListener(ios ? 'keyboardWillHide' : 'keyboardDidHide', () => setHeight(0))
+    return () => { show.remove(); hide.remove() }
+  }, [])
+  return height
+}

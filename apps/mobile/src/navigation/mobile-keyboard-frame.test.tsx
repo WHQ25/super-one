@@ -14,7 +14,7 @@ const keyboardEvent = (screenY: number, height: number) => ({
   startCoordinates: { screenX: 0, screenY: 850, width: 400, height: 0 },
 })
 
-test('releases stale height after the first Android keyboard cycle without remounting the scene', async () => {
+test('pads Android by the live keyboard height and clears it on hide without remounting the scene', async () => {
   Platform.OS = 'android'
   const mounted = jest.fn()
   function Scene() {
@@ -23,18 +23,31 @@ test('releases stale height after the first Android keyboard cycle without remou
   }
   const screen = await renderWithTheme(<MobileKeyboardFrame><Scene /></MobileKeyboardFrame>)
   const frame = () => screen.getByText('Composer').parent!
-  const layout = async (height: number) => {
-    await fireEvent(frame(), 'layout', { nativeEvent: { layout: { x: 0, y: 24, width: 400, height } }, persist() {} })
-  }
-  // The first frame precedes safe-area resolution. Height mode must not restore it.
-  await layout(850)
-  await layout(800)
+  expect(StyleSheet.flatten(frame().props.style)).toEqual({ flex: 1, paddingBottom: 0 })
   await act(async () => { DeviceEventEmitter.emit('keyboardDidShow', keyboardEvent(500, 350)) })
-  expect(StyleSheet.flatten(frame().props.style).flex).toBe(0)
-  await layout(526)
+  expect(StyleSheet.flatten(frame().props.style)).toEqual({ flex: 1, paddingBottom: 350 })
   await act(async () => { DeviceEventEmitter.emit('keyboardDidHide', keyboardEvent(850, 0)) })
-  expect(StyleSheet.flatten(frame().props.style)).toEqual({ flex: 1 })
+  expect(StyleSheet.flatten(frame().props.style)).toEqual({ flex: 1, paddingBottom: 0 })
   expect(mounted).toHaveBeenCalledTimes(1)
+})
+
+test('Android frame keeps flex layout through a rotation after a keyboard cycle', async () => {
+  Platform.OS = 'android'
+  const screen = await renderWithTheme(<MobileKeyboardFrame><Text>Composer</Text></MobileKeyboardFrame>)
+  const frame = () => screen.getByText('Composer').parent!
+  const layout = async (height: number) => {
+    await fireEvent(frame(), 'layout', { nativeEvent: { layout: { x: 0, y: 45, width: 384, height } }, persist() {} })
+  }
+  // Portrait: first frame, keyboard up, keyboard down.
+  await layout(792)
+  await act(async () => { DeviceEventEmitter.emit('keyboardDidShow', keyboardEvent(536, 301)) })
+  await layout(491)
+  await act(async () => { DeviceEventEmitter.emit('keyboardDidHide', keyboardEvent(837, 0)) })
+  await layout(792)
+  // Rotate to landscape with the keyboard down: the frame must stay flex-sized,
+  // never `portraitFrame - portraitKeyboard` (491) with `flex: 0`.
+  await layout(339)
+  expect(StyleSheet.flatten(frame().props.style)).toEqual({ flex: 1, paddingBottom: 0 })
 })
 
 test('clears iOS keyboard padding on hide', async () => {

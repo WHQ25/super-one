@@ -6,9 +6,10 @@ import { getBrowseLeafPathSegment } from '@superone/shared/path-browse'
  * The two steps of adding a working directory.
  *
  * A **page**, not a composer popup, and a route rather than a width branch:
- * `add-dir` is in `DETAIL_SCREENS`, so at 768 pt and up the shell keeps the
- * session list beside it and this reads as a detail panel, while a phone gets a
- * full screen — the deal `worktree` and `branch` already have.
+ * `add-dir` is in `DETAIL_SCREENS`, so a tall tablet keeps the session list
+ * beside it and this reads as a detail panel. A phone — portrait or landscape —
+ * gets a full screen, the deal `worktree` and `branch` already have. Landscape
+ * phones only keep the sidebar on chat.
  *
  * Browsing is not reimplemented here. It is Add Project's local-folder browser
  * (`ui/browse-page.tsx` over `@superone/shared/path-browse`), where the field

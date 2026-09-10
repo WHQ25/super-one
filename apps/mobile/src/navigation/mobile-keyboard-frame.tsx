@@ -1,6 +1,6 @@
 import type { PropsWithChildren } from 'react'
-import { KeyboardAvoidingView, Platform } from 'react-native'
-import { useKeyboardVisible } from '../ui/use-keyboard-visible'
+import { KeyboardAvoidingView, Platform, View } from 'react-native'
+import { useKeyboardHeight } from '../ui/use-keyboard-visible'
 import { useMobileStyles } from '../theme/context'
 
 /**
@@ -8,25 +8,38 @@ import { useMobileStyles } from '../theme/context'
  *
  * This must sit outside the navigator. A KeyboardAvoidingView inside a native-stack
  * scene receives the keyboard event but the screen container keeps its original
- * frame, leaving the composer behind the keyboard. iOS needs padding while
- * Android edge-to-edge windows need the container height reduced explicitly.
+ * frame, leaving the composer behind the keyboard.
  *
- * Android must leave height mode entirely when the keyboard hides. Disabling
- * KeyboardAvoidingView only zeroes its offset: its height branch can still apply
- * the first measured height and `flex: 0`. That measurement can precede safe-area
- * layout, so restoring it places the composer below the current available frame.
- * Removing the behavior restores flex layout without remounting the navigator.
+ * iOS uses `KeyboardAvoidingView`'s padding mode. Android does **not** use the
+ * component at all: its `height` mode keeps two pieces of internal state — the
+ * first frame height it ever measured and the last keyboard offset — and both
+ * survive a keyboard cycle once the view is disabled (`_setBottom` skips
+ * `setState` while `enabled` is false). Rotate a phone after typing in portrait
+ * and a layout pass re-applies `portraitFrame - portraitKeyboard` with `flex: 0`
+ * to a landscape window, pushing the composer and the sidebar footer off screen.
+ * Padding the frame by the live keyboard height has no such memory: the window
+ * is edge-to-edge and does not resize for the IME, so the padding is exactly the
+ * space the keyboard covers, and it is `0` the moment the keyboard is down.
  */
 export function MobileKeyboardFrame({ children }: PropsWithChildren) {
   const styles = useMobileStyles()
-  const keyboardUp = useKeyboardVisible()
+  if (Platform.OS === 'ios') {
+    return (
+      <KeyboardAvoidingView behavior="padding" style={styles.flex}>
+        {children}
+      </KeyboardAvoidingView>
+    )
+  }
+  return <AndroidKeyboardFrame>{children}</AndroidKeyboardFrame>
+}
+
+/** Android half: a plain flex container padded by the current keyboard height. */
+function AndroidKeyboardFrame({ children }: PropsWithChildren) {
+  const styles = useMobileStyles()
+  const keyboardHeight = useKeyboardHeight()
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : keyboardUp ? 'height' : undefined}
-      enabled={Platform.OS !== 'android' || keyboardUp}
-      style={styles.flex}
-    >
+    <View style={[styles.flex, { paddingBottom: keyboardHeight }]}>
       {children}
-    </KeyboardAvoidingView>
+    </View>
   )
 }

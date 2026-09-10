@@ -3,8 +3,14 @@ import { resolveSystemLocale } from '@superone/shared/i18n'
 import {
   MOBILE_LOCALE_KEY,
   MOBILE_THEME_MODE_KEY,
+  MOBILE_UPDATE_DISMISSED_BUILD_KEY,
+  MOBILE_UPDATE_LAST_CHECKED_KEY,
+  loadDismissedUpdateBuild,
+  loadLastUpdateCheckAt,
   loadLocale,
   loadThemeMode,
+  saveDismissedUpdateBuild,
+  saveLastUpdateCheckAt,
   saveLocale,
   saveThemeMode,
   systemLocale,
@@ -55,5 +61,30 @@ describe('mobile preferences', () => {
 
     expect(store.values.get(MOBILE_THEME_MODE_KEY)).toBe('light')
     expect(store.values.get(MOBILE_LOCALE_KEY)).toBe('zh')
+  })
+})
+
+describe('update preferences', () => {
+  it('round-trips the dismissed build and the last check', async () => {
+    const store = memoryStore()
+    await saveDismissedUpdateBuild(store, 48)
+    await saveLastUpdateCheckAt(store, 1_800_000_000_123.7)
+    expect(store.values.get(MOBILE_UPDATE_DISMISSED_BUILD_KEY)).toBe('48')
+    // Floored, so a fractional clock reading cannot round-trip as NaN.
+    expect(store.values.get(MOBILE_UPDATE_LAST_CHECKED_KEY)).toBe('1800000000123')
+    expect(await loadDismissedUpdateBuild(store)).toBe(48)
+    expect(await loadLastUpdateCheckAt(store)).toBe(1_800_000_000_123)
+  })
+
+  it('reads absent or corrupt values as never', async () => {
+    // Both feed comparisons that must not become NaN: a NaN dismissal would
+    // never match, and a NaN timestamp would re-check on every foreground.
+    const store = memoryStore({
+      [MOBILE_UPDATE_DISMISSED_BUILD_KEY]: 'latest',
+      [MOBILE_UPDATE_LAST_CHECKED_KEY]: '-1',
+    })
+    expect(await loadDismissedUpdateBuild(store)).toBeNull()
+    expect(await loadLastUpdateCheckAt(store)).toBeNull()
+    expect(await loadDismissedUpdateBuild(memoryStore())).toBeNull()
   })
 })

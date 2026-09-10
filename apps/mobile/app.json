@@ -5,7 +5,7 @@
     "scheme": "superone",
     "version": "1.0.0",
     "runtimeVersion": {
-      "policy": "appVersion"
+      "policy": "fingerprint"
     },
     "orientation": "default",
     "icon": "./assets/icon.png",
@@ -30,6 +30,9 @@
     },
     "android": {
       "package": "com.superone.superone_remote",
+      "permissions": [
+        "android.permission.REQUEST_INSTALL_PACKAGES"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#111111"
@@ -66,7 +69,8 @@
           "isAccessMediaLocationEnabled": false,
           "granularPermissions": []
         }
-      ]
+      ],
+      "./plugins/with-dev-client-updates.js"
     ],
     "extra": {
       "supportsExpoGo": false,

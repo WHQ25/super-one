@@ -1,0 +1,332 @@
+name: Release Mobile
+
+# Build the mobile app on EAS and publish a native-binary update pointer to R2.
+#
+# Android is the platform that can actually self-update: the APK goes to an
+# immutable key under `mobile/android/` and `mobile/android/latest.json` points
+# at it, so the installed app can fetch and install a newer build itself.
+#
+# iOS cannot install anything from outside the App Store, so its leg submits to
+# TestFlight and then publishes a manifest carrying only the numbers the app
+# needs -- to nag, or to hard-gate a build below `minSupportedBuildCode`.
+#
+# What this deliberately does NOT do: raise the hard gate on its own. Leaving
+# `min_supported_build_code` blank inherits whatever is already published.
+# Raising it locks every older build out with no client-side way back, so it
+# only ever moves when someone types a number here.
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Which platform(s) to build and publish'
+        required: true
+        type: choice
+        options:
+          - android
+          - ios
+          - both
+        default: android
+      profile:
+        description: 'EAS build profile. `internal` is the self-hosted APK; `production` is the store/TestFlight build.'
+        required: true
+        type: choice
+        options:
+          - internal
+          - production
+        default: internal
+      min_supported_build_code:
+        description: 'Raise (or lower) the hard gate. BLANK INHERITS the published value — only set this when old builds must be blocked.'
+        required: false
+        type: string
+        default: ''
+      testflight_url:
+        description: 'Public TestFlight join link, required when publishing the iOS manifest.'
+        required: false
+        type: string
+        default: ''
+      dry_run:
+        description: 'Build and stage only — do not upload to R2'
+        required: false
+        type: boolean
+        default: true
+      ref:
+        description: 'Branch or commit SHA to build'
+        required: false
+        default: 'main'
+  workflow_call:
+    inputs:
+      platform:
+        description: Which platform(s) to build and publish
+        required: true
+        type: string
+        default: android
+      profile:
+        description: EAS build profile
+        required: true
+        type: string
+        default: internal
+      min_supported_build_code:
+        description: Raise the hard gate. Blank inherits the published value.
+        required: false
+        type: string
+        default: ''
+      testflight_url:
+        description: Public TestFlight join link, required for the iOS manifest.
+        required: false
+        type: string
+        default: ''
+      dry_run:
+        description: Build and stage only — do not upload to R2
+        required: false
+        type: boolean
+        default: true
+      ref:
+        description: Branch or commit SHA to build
+        required: false
+        default: main
+        type: string
+
+concurrency:
+  group: release-mobile-${{ inputs.platform }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # Pinned, not `@latest`: a CLI that changes its --json shape under us would
+  # silently publish the wrong artifact URL.
+  EAS_CLI_VERSION: '24.0.0'
+  INPUT_PLATFORM: ${{ inputs.platform }}
+  INPUT_PROFILE: ${{ inputs.profile }}
+  INPUT_MIN_SUPPORTED: ${{ inputs.min_supported_build_code }}
+  INPUT_TESTFLIGHT_URL: ${{ inputs.testflight_url }}
+  INPUT_DRY_RUN: ${{ inputs.dry_run }}
+
+jobs:
+  android:
+    if: ${{ inputs.platform == 'android' || inputs.platform == 'both' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+
+      - name: Install
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Build APK on EAS
+        id: build
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${EXPO_TOKEN:-}" ]; then
+            echo "::error::EXPO_TOKEN secret is not set — an EAS build cannot authenticate"
+            exit 1
+          fi
+          # --json implies --non-interactive; logs go to stderr, so stdout is
+          # the machine-readable half.
+          bunx "eas-cli@${EAS_CLI_VERSION}" build \
+            --platform android \
+            --profile "${INPUT_PROFILE}" \
+            --non-interactive \
+            --wait \
+            --json > build.json
+          # eas-cli has printed both a bare object and an array here across
+          # versions, and the artifact field has two spellings. Normalise both
+          # rather than index blindly.
+          NORMALISED='(if type=="array" then . else [.] end)
+            | map(select(.platform == "ANDROID" and .status == "FINISHED"))
+            | .[0]'
+          URL="$(jq -r "${NORMALISED} | .artifacts.applicationArchiveUrl // .artifacts.buildUrl // empty" build.json)"
+          BUILD_CODE="$(jq -r "${NORMALISED} | .appBuildVersion // empty" build.json)"
+          APP_VERSION="$(jq -r "${NORMALISED} | .appVersion // empty" build.json)"
+          if [ -z "${URL}" ] || [ -z "${BUILD_CODE}" ] || [ -z "${APP_VERSION}" ]; then
+            echo "::error::could not read a finished Android build out of eas-cli --json output"
+            head -c 4000 build.json
+            exit 1
+          fi
+          case "${BUILD_CODE}" in
+            ''|*[!0-9]*)
+              echo "::error::appBuildVersion ${BUILD_CODE} is not a version code"
+              exit 1
+              ;;
+          esac
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+          echo "build_code=${BUILD_CODE}" >> "$GITHUB_OUTPUT"
+          echo "app_version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Built ${APP_VERSION} (${BUILD_CODE})"
+
+      - name: Download APK
+        env:
+          # Signed and short-lived, so it is fetched in the same job that
+          # produced it rather than passed between jobs.
+          ARTIFACT_URL: ${{ steps.build.outputs.url }}
+        run: |
+          set -euo pipefail
+          curl -fSL --retry 3 --retry-delay 5 -o superone.apk "${ARTIFACT_URL}"
+          ls -l superone.apk
+
+      - name: Publish to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          AWS_DEFAULT_REGION: auto
+          APP_VERSION: ${{ steps.build.outputs.app_version }}
+          BUILD_CODE: ${{ steps.build.outputs.build_code }}
+        run: |
+          set -euo pipefail
+          ARGS=(--platform android --version "${APP_VERSION}" --build-code "${BUILD_CODE}"
+                --apk superone.apk --out staging-mobile)
+          if [ -n "${INPUT_MIN_SUPPORTED}" ]; then
+            ARGS+=(--min-supported-build-code "${INPUT_MIN_SUPPORTED}")
+          fi
+          if [ "${INPUT_DRY_RUN}" != "true" ]; then
+            ARGS+=(--upload)
+          fi
+          bun scripts/publish-mobile-update.ts "${ARGS[@]}" | tee publish.log
+          {
+            echo "### Android ${APP_VERSION} (${BUILD_CODE})"
+            echo
+            echo '```'
+            cat publish.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload staged tree (debug artifact)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mobile-android-${{ github.run_id }}
+          path: |
+            staging-mobile/mobile/android/latest.json
+            apps/mobile/build.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  ios:
+    if: ${{ inputs.platform == 'ios' || inputs.platform == 'both' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+
+      - name: Install
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Check inputs
+        run: |
+          set -euo pipefail
+          if [ -z "${INPUT_TESTFLIGHT_URL}" ]; then
+            echo "::error::testflight_url is required to publish the iOS manifest"
+            exit 1
+          fi
+          case "${INPUT_TESTFLIGHT_URL}" in
+            https://testflight.apple.com/*) ;;
+            *) echo "::error::testflight_url must be a https://testflight.apple.com/ link"; exit 1 ;;
+          esac
+
+      - name: Build on EAS
+        id: build
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${EXPO_TOKEN:-}" ]; then
+            echo "::error::EXPO_TOKEN secret is not set — an EAS build cannot authenticate"
+            exit 1
+          fi
+          bunx "eas-cli@${EAS_CLI_VERSION}" build \
+            --platform ios \
+            --profile "${INPUT_PROFILE}" \
+            --non-interactive \
+            --wait \
+            --json > build.json
+          NORMALISED='(if type=="array" then . else [.] end)
+            | map(select(.platform == "IOS" and .status == "FINISHED"))
+            | .[0]'
+          BUILD_CODE="$(jq -r "${NORMALISED} | .appBuildVersion // empty" build.json)"
+          APP_VERSION="$(jq -r "${NORMALISED} | .appVersion // empty" build.json)"
+          if [ -z "${BUILD_CODE}" ] || [ -z "${APP_VERSION}" ]; then
+            echo "::error::could not read a finished iOS build out of eas-cli --json output"
+            head -c 4000 build.json
+            exit 1
+          fi
+          case "${BUILD_CODE}" in
+            ''|*[!0-9]*)
+              echo "::error::appBuildVersion ${BUILD_CODE} is not a build number"
+              exit 1
+              ;;
+          esac
+          echo "build_code=${BUILD_CODE}" >> "$GITHUB_OUTPUT"
+          echo "app_version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Submit to TestFlight
+        if: ${{ inputs.dry_run != true }}
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          bunx "eas-cli@${EAS_CLI_VERSION}" submit \
+            --platform ios \
+            --profile production \
+            --latest \
+            --non-interactive
+
+      - name: Publish manifest to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          AWS_DEFAULT_REGION: auto
+          APP_VERSION: ${{ steps.build.outputs.app_version }}
+          BUILD_CODE: ${{ steps.build.outputs.build_code }}
+        run: |
+          set -euo pipefail
+          ARGS=(--platform ios --version "${APP_VERSION}" --build-code "${BUILD_CODE}"
+                --testflight-url "${INPUT_TESTFLIGHT_URL}" --out staging-mobile)
+          if [ -n "${INPUT_MIN_SUPPORTED}" ]; then
+            ARGS+=(--min-supported-build-code "${INPUT_MIN_SUPPORTED}")
+          fi
+          if [ "${INPUT_DRY_RUN}" != "true" ]; then
+            ARGS+=(--upload)
+          fi
+          bun scripts/publish-mobile-update.ts "${ARGS[@]}" | tee publish.log
+          {
+            echo "### iOS ${APP_VERSION} (${BUILD_CODE})"
+            echo
+            echo '```'
+            cat publish.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

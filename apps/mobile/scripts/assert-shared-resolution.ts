@@ -23,6 +23,7 @@ const ALLOWED = [
   'popup-groups',
   'session-mention-query',
   'slash-command-match',
+  'mobile-updates',
 ] as const
 
 const FORBIDDEN = ['attachment-store', 'git-clone'] as const

@@ -38,6 +38,7 @@ import { useAddProject } from '../navigation/use-add-project'
 import { previewAddProjectRequest } from './add-project-fixtures'
 import { suggestionHarnessKey } from '@superone/shared/suggestion-harness-order'
 import { AppSettingsScreen } from '../screens/app-settings-screen'
+import { UpdatePromptGallery } from './UpdatePromptGallery'
 import type { NewSessionWorktreeSelection } from '../worktree-state'
 import { TerminalScreen } from '../screens/terminal-screen'
 import { isFullBleedScreen, shouldUseTabletMultiPane } from '../layout-state'
@@ -442,7 +443,8 @@ todos={page === 'Chat' ? previewTodos : {}} draft={chatDraft.draft} streaming={p
             onBarcodeScanned={() => {}} onCancelScanner={() => {}} onPasteChange={() => {}} onLanChange={() => {}}
             onPair={() => {}} onCancelPairing={() => setPage('Devices')} onOpenScanner={() => setPage('Pairing')} onConnect={() => {}} onRename={() => {}} onForget={() => {}} /> : null}
           {page === 'Session search' ? <SessionSearchScreen client={previewClient} onOpenSession={() => setPage('Chat')} onCancel={() => setPage('Chat')} /> : null}
-          {page === 'Settings' ? <AppSettingsScreen /> : null}
+          {page === 'Settings' ? <AppSettingsScreen update={{ version: '1.0.0', buildCode: 42 }} /> : null}
+          {page === 'Update' ? <UpdatePromptGallery /> : null}
           {page === 'Project' ? <ProjectPickerScreen projects={projectList} activePath={projectPath}
             onSelect={(item) => { setProjectPath(item.path); setPage('New session') }} /> : null}
           {page === 'Add project' ? <AddProjectScreen flow={addProject} /> : null}

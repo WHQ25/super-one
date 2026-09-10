@@ -55,7 +55,7 @@ import { fileBrowserHome, joinRemotePath, parentRemotePath, resolveRemoteFilePat
 import { loadOrCreateMobileId, mobileKv } from '../storage'
 import { registerFatalChatViewError } from '../chat-view-recovery'
 import { pickAndUploadProjectFile, pickChatImages, pickChatPdf, showAttachmentMenu } from '../attachments'
-import { AppSettingsScreen } from '../screens/app-settings-screen'
+import { ConnectedAppSettingsScreen } from '../screens/app-settings-screen'
 import type { ShellGitInfo } from '../project-types'
 import { describeSessionGit } from '../session-git-status'
 import {
@@ -1561,7 +1561,7 @@ export function MobileApp() {
       ) : null}
 
       {route === 'settings' ? (
-        <AppSettingsScreen />
+        <ConnectedAppSettingsScreen />
       ) : null}
 
       {route === 'files' ? (finderOpen ? (

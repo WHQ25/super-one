@@ -1611,6 +1611,10 @@ export type Messages = {
       addToChat: string
       askInSideChat: string
     }
+    messageMenu: {
+      copy: string
+      copied: string
+    }
     error: {
       detailsToggle: string
       copy: string
@@ -5314,6 +5318,10 @@ export const en: Messages = {
       copy: 'Copy',
       addToChat: 'Add to Chat',
       askInSideChat: 'Ask in Side Chat',
+    },
+    messageMenu: {
+      copy: 'Copy',
+      copied: 'Copied',
     },
     error: {
       detailsToggle: 'Error Details',

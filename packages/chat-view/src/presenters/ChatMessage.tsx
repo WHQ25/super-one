@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { HTMLAttributes, ReactNode } from 'react'
 import { Bot, Inbox, OctagonX } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 
@@ -9,6 +9,10 @@ export interface ChatMessagePresenterProps {
   mailboxLabel?: string
   initialTask?: ReactNode
   body: ReactNode
+  /** Gesture handlers spread onto the user bubble itself (long-press menu). */
+  userBubbleProps?: HTMLAttributes<HTMLDivElement>
+  /** Floating menu anchored to the user bubble's wrapper; rendered when open. */
+  userMenu?: ReactNode
   imageGallery?: ReactNode
   videoGallery?: ReactNode
   interrupted: boolean
@@ -28,6 +32,8 @@ export function ChatMessagePresenter({
   mailboxLabel,
   initialTask,
   body,
+  userBubbleProps,
+  userMenu,
   imageGallery,
   videoGallery,
   interrupted,
@@ -71,17 +77,20 @@ export function ChatMessagePresenter({
             <span>{collaborationLabel}</span>
           </div>
         )}
-        <div className={cn(
-          'portable-message-body min-w-0 text-sm',
-          isUser
-            ? cn(
-                'portable-user-message max-w-full overflow-hidden rounded-xl px-3 py-2 text-foreground break-all',
-                isCollaboration
-                  ? 'border border-primary/25 bg-primary/5'
-                  : 'bg-muted/80',
-              )
-            : 'assistant-reply w-full text-foreground',
-        )}>
+        <div
+          {...(isUser ? userBubbleProps : undefined)}
+          className={cn(
+            'portable-message-body min-w-0 text-sm',
+            isUser
+              ? cn(
+                  'portable-user-message max-w-full overflow-hidden rounded-xl px-3 py-2 text-foreground break-all',
+                  isCollaboration
+                    ? 'border border-primary/25 bg-primary/5'
+                    : 'bg-muted/80',
+                )
+              : 'assistant-reply w-full text-foreground',
+          )}
+        >
           {body}
           {!isUser && imageGallery}
           {!isUser && videoGallery}
@@ -96,6 +105,7 @@ export function ChatMessagePresenter({
         </div>
         {isUser && contexts && <div className="mt-1.5">{contexts}</div>}
         {isUser && userActions}
+        {isUser && userMenu}
       </div>
     </div>
   )

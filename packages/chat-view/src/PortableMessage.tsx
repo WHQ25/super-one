@@ -26,6 +26,7 @@ import {
 import { collectGeneratedImages, collectGeneratedVideos } from './presenters/tool-display'
 import { previewImage } from './image-preview'
 import type { ReductionProjection } from './protocol'
+import { useUserMessageMenu } from './use-user-message-menu'
 
 type PendingPermission = NonNullable<ReductionProjection['pendingPermission']>
 
@@ -202,6 +203,11 @@ export const PortableMessage = memo(function PortableMessage({
     () => (isUser || isStreaming || hideCopyActions ? undefined : getAssistantCopyText(message)),
     [isUser, isStreaming, hideCopyActions, message],
   )
+  // A collaboration bubble sits on the left, so its menu hugs that edge too.
+  const userMenu = useUserMessageMenu(message, {
+    enabled: isUser && !hideCopyActions && !fallback,
+    align: isCollaboration ? 'start' : 'end',
+  })
 
   return (
     <PortableTurnProvider scheme={scheme} pendingPermission={pendingPermission} projectPath={projectPath}>
@@ -211,6 +217,8 @@ export const PortableMessage = memo(function PortableMessage({
           isCollaboration={isCollaboration}
           collaborationLabel={collabLabelKey ? t(collabLabelKey) : undefined}
           body={body}
+          userBubbleProps={userMenu.bubbleProps}
+          userMenu={userMenu.menu}
           imageGallery={
             <>
               <AttachmentGallery message={message} />

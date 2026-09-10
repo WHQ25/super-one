@@ -85,4 +85,10 @@ a {
 .chat-view-shell .portable-user-message {
   word-break: normal;
   overflow-wrap: anywhere;
+  /* The bubble owns its long press (copy menu). Without these, WKWebView's
+     text callout and Android's selection handles race the menu on the same
+     gesture and the two overlap. */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }

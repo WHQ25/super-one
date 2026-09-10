@@ -1714,6 +1714,10 @@ export const zh: Messages = {
       addToChat: '添加到聊天',
       askInSideChat: '在临时对话中提问',
     },
+    messageMenu: {
+      copy: '复制',
+      copied: '已复制',
+    },
     error: {
       detailsToggle: '错误细节',
       copy: '复制',

@@ -355,6 +355,56 @@ describe('mapInteractionUpdate', () => {
     })
   })
 
+  it('presents the host question custom tool as the shared AskUserQuestion row', () => {
+    const questions = [{ question: 'Which database?', header: 'Database', multiSelect: false, options: [{ label: 'Postgres', description: '' }, { label: 'SQLite', description: '' }] }]
+    const envelope = (result?: unknown) => ({
+      type: 'mcp',
+      args: { providerIdentifier: 'custom-user-tools', toolName: 'superone_ask_user_question', args: { questions } },
+      ...(result !== undefined ? { result } : {}),
+    })
+
+    // Streaming: same canonical name as Claude's native tool, bare questions as input.
+    const started = mapInteractionUpdate('m1', { type: 'tool-call-started', callId: 'q1', toolCall: envelope() } as never)
+    expect(started[0]).toMatchObject({
+      delta: { type: 'tool_use', toolName: 'AskUserQuestion', toolUseId: 'q1', status: 'streaming', input: JSON.stringify({ questions }) },
+    })
+
+    // Answered: answers/notes ride the input (desktop Q&A card) and the "q"="a" text
+    // rides the result (phone projection parses the transcript text).
+    const answered = mapInteractionUpdate('m1', {
+      type: 'tool-call-completed',
+      callId: 'q1',
+      toolCall: envelope({ status: 'success', value: { outcome: 'answered', answers: { 'Which database?': 'SQLite' }, notes: { 'Which database?': 'keep it embedded' } } }),
+    } as never)
+    expect(answered[0]).toMatchObject({
+      delta: {
+        type: 'tool_use',
+        toolName: 'AskUserQuestion',
+        status: 'complete',
+        input: JSON.stringify({ questions, answers: { 'Which database?': 'SQLite' }, annotations: { 'Which database?': { notes: 'keep it embedded' } } }),
+      },
+    })
+    expect(answered[1]).toMatchObject({ delta: { type: 'tool_result', toolUseId: 'q1', summary: '"Which database?"="SQLite"', isError: false } })
+
+    // Dismissed: the presenter keys off "dismissed" in the result text; no answer is fabricated.
+    const dismissed = mapInteractionUpdate('m1', {
+      type: 'tool-call-completed',
+      callId: 'q2',
+      toolCall: envelope({ status: 'success', value: { outcome: 'dismissed', note: 'n/a' } }),
+    } as never)
+    expect(dismissed[0]).toMatchObject({ delta: { type: 'tool_use', toolName: 'AskUserQuestion', input: JSON.stringify({ questions }) } })
+    expect(dismissed[1]).toMatchObject({ delta: { type: 'tool_result', summary: expect.stringContaining('dismissed') } })
+
+    // Invalid input: stays an AskUserQuestion row in error state, no synthetic Q&A.
+    const invalid = mapInteractionUpdate('m1', {
+      type: 'tool-call-completed',
+      callId: 'q3',
+      toolCall: envelope({ status: 'error', error: 'Invalid input: questions[0].options must contain 2–4 options (got 1).' }),
+    } as never)
+    expect(invalid[0]).toMatchObject({ delta: { type: 'tool_use', toolName: 'AskUserQuestion' } })
+    expect(invalid[1]).toMatchObject({ delta: { type: 'tool_result', isError: true, summary: expect.stringContaining('Invalid input') } })
+  })
+
   it('does not remap SuperOne MCP names through native tool aliases', () => {
     // session_read contains "read"; session_search contains "search".
     const read = mapInteractionUpdate('m1', {

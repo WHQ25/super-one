@@ -38,7 +38,10 @@ vi.mock('./cursor-store', () => ({
 import { CURSOR_ASK_USER_QUESTION_TOOL } from './cursor-custom-tools'
 import { createCursorRuntime, type CursorRuntimeInteractions } from './cursor-runtime'
 
-function mockRun(status: 'finished' | 'error' = 'finished'): Run {
+/** Terminal statuses of the installed SDK's `RunResultStatus` (`dist/esm/run.d.ts`). */
+type RunResultStatus = 'finished' | 'error' | 'cancelled'
+
+function mockRun(status: RunResultStatus = 'finished', hooks?: { onCancel?: () => void; release?: Promise<void> }): Run {
   return {
     id: 'run-1',
     agentId: 'agent-1',
@@ -48,10 +51,10 @@ function mockRun(status: 'finished' | 'error' = 'finished'): Run {
     stream: async function* () {},
     conversation: async () => [],
     wait: async () => {
-      await new Promise<void>((resolve) => setImmediate(resolve))
+      await (hooks?.release ?? new Promise<void>((resolve) => setImmediate(resolve)))
       return { id: 'run-1', status, result: '', durationMs: 1 }
     },
-    cancel: async () => undefined,
+    cancel: async () => { hooks?.onCancel?.() },
     onDidChangeStatus: () => () => undefined,
   } as unknown as Run
 }
@@ -173,6 +176,50 @@ describe('createCursorRuntime host interactions bridge', () => {
     expect(interactions.calls.plan).toEqual([
       { requestId: 'call-plan', planContent: '# The plan', planFilePath: '', allowedPrompts: [] },
     ])
+  })
+
+  it('does not raise plan_approval for a run the SDK reports as cancelled', async () => {
+    const interactions = makeInteractions()
+    const { runtime } = await makeRuntime(interactions, 'plan')
+    agentState.send.mockImplementationOnce(async (_message, options) => {
+      options?.onDelta?.({
+        update: {
+          type: 'tool-call-completed',
+          callId: 'call-plan',
+          toolCall: { type: 'createPlan', args: { plan: '# The plan' }, result: { status: 'success', value: {} } },
+        },
+      })
+      return mockRun('cancelled')
+    })
+    await runtime.send('msg-1', 'make a plan')
+    expect(interactions.calls.plan).toEqual([])
+  })
+
+  it('does not let a late `finished` result raise a plan after an explicit cancel', async () => {
+    const interactions = makeInteractions()
+    const { runtime } = await makeRuntime(interactions, 'plan')
+    let release: () => void = () => undefined
+    const released = new Promise<void>((resolve) => { release = resolve })
+    let sdkCancelled = false
+    agentState.send.mockImplementationOnce(async (_message, options) => {
+      options?.onDelta?.({
+        update: {
+          type: 'tool-call-completed',
+          callId: 'call-plan',
+          toolCall: { type: 'createPlan', args: { plan: '# The plan' }, result: { status: 'success', value: {} } },
+        },
+      })
+      // The SDK may still settle as `finished` when cancel lands after the last tool call.
+      return mockRun('finished', { onCancel: () => { sdkCancelled = true }, release: released })
+    })
+    const turn = runtime.send('msg-1', 'make a plan')
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    await runtime.cancel()
+    expect(sdkCancelled).toBe(true)
+    release()
+    await turn
+    expect(interactions.calls.plan).toEqual([])
+    expect(interactions.calls.cancel).toEqual(['turn ended'])
   })
 
   it('does not raise plan_approval outside plan mode or when the run errored', async () => {

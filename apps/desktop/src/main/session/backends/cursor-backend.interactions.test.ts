@@ -284,6 +284,104 @@ describe('CursorBackend host interactions through Session + MobileBroadcaster', 
     expect(events.some((e) => e.type === 'interaction_resolved' && e.requestId === 'call-plan-2' && e.approved === false)).toBe(true)
   })
 
+  it('interrupt: voids the pending plan and refuses a plan the interrupted run raises late', async () => {
+    const runtimes = installRuntimeFactory()
+    const { session, events } = makeSession('plan')
+    let release: (() => void) | null = null
+    let planPromise: Promise<unknown> | null = null
+    const sendDone = session.send({ content: 'plan it', assistantMessageId: 'a1' })
+    await tick()
+    const runtime = runtimes[0]!
+    runtime.onSend = () => new Promise<void>((resolve) => { release = resolve })
+    const second = (async () => { await sendDone; return session.send({ content: 'plan more', assistantMessageId: 'a2' }) })()
+    await tick()
+    await tick()
+    planPromise = runtime.interactions.requestPlanApproval(PLAN)
+    await tick()
+    expect(session.getPendingInteractions()).toHaveLength(1)
+
+    // Stop: the plan of the stopped turn is not something to act on later.
+    await session.interrupt()
+    await expect(planPromise).resolves.toEqual({ kind: 'cancelled', reason: 'interrupted' })
+    expect(session.getPendingInteractions()).toEqual([])
+    expect(events.some((e) => e.type === 'interaction_resolved' && e.requestId === 'call-plan' && e.approved === false)).toBe(true)
+
+    // The SDK may still settle the cancelled run as `finished`; a plan raised from
+    // that late result must not re-create a pending decision.
+    const late = await runtime.interactions.requestPlanApproval({ ...PLAN, requestId: 'call-plan-late' })
+    expect(late).toEqual({ kind: 'cancelled', reason: 'interrupted' })
+    expect(session.getPendingInteractions()).toEqual([])
+    expect(events.some((e) => e.type === 'plan_approval' && e.request.requestId === 'call-plan-late')).toBe(false)
+
+    release?.()
+    await second
+    // Nothing switched modes or queued an implementation turn.
+    expect(events.some((e) => e.type === 'permission_mode_change')).toBe(false)
+    expect(runtimes).toHaveLength(1)
+    expect(runtime.sends.map((s) => s.content)).toEqual(['plan it', 'plan more'])
+  })
+
+  it('plan: an approval superseded before its continuation runs neither rebuilds nor sends', async () => {
+    let release: (() => void) | null = null
+    const runtimes = installRuntimeFactory((runtime, index) => {
+      if (index !== 0) return
+      // The plan is raised while the run is still settling, so the decision has to
+      // wait for the turn — long enough for the user to change their mind.
+      runtime.onSend = () => {
+        void runtime.interactions.requestPlanApproval(PLAN)
+        return new Promise<void>((resolve) => { release = resolve })
+      }
+    })
+    const { session, events } = makeSession('plan')
+    const first = session.send({ content: 'plan it', assistantMessageId: 'a1' })
+    await tick()
+    await tick()
+    expect(session.getPendingInteractions()).toHaveLength(1)
+
+    session.respondToPlanApproval('call-plan', true)
+    await tick()
+    expect(session.getPendingInteractions()).toEqual([])
+    // Continuation is parked on the active turn; the user stops that turn instead.
+    await session.interrupt()
+    release?.()
+    await first
+    for (let i = 0; i < 10; i++) await tick()
+
+    expect(events.some((e) => e.type === 'permission_mode_change')).toBe(false)
+    expect(events.some((e) => e.type === 'message_error')).toBe(false)
+    expect(runtimes).toHaveLength(1)
+    expect(runtimes[0]!.sends.map((s) => s.content)).toEqual(['plan it'])
+
+    // The newer turn still runs in plan mode on the untouched runtime.
+    runtimes[0]!.onSend = async () => undefined
+    await session.send({ content: 'different idea', assistantMessageId: 'a2' })
+    expect(runtimes[0]!.permissionMode).toBe('plan')
+    expect(runtimes[0]!.sends.map((s) => s.content)).toEqual(['plan it', 'different idea'])
+    expect(events.some((e) => e.type === 'permission_mode_change')).toBe(false)
+  })
+
+  it('plan: a continuation that cannot start surfaces a transcript error instead of looking settled', async () => {
+    const runtimes = installRuntimeFactory()
+    const { session, events } = makeSession('plan')
+    await session.send({ content: 'plan it', assistantMessageId: 'a1' })
+    // The post-approval rebuild (plan → agent) fails once; the revive succeeds.
+    factoryMock.mockImplementationOnce(async () => { throw new Error('agent boot failed') })
+    void runtimes[0]!.interactions.requestPlanApproval(PLAN)
+    await tick()
+
+    session.respondToPlanApproval('call-plan', true)
+    for (let i = 0; i < 12; i++) await tick()
+
+    const failure = events.find((e) => e.type === 'message_error')
+    expect(failure).toBeDefined()
+    expect(failure && failure.type === 'message_error' ? failure.error : '').toMatch(/did not start the plan implementation.*agent boot failed.*retry/is)
+    // Failure is stated once, no automatic re-send, and the session is back in plan mode.
+    expect(events.filter((e) => e.type === 'message_error')).toHaveLength(1)
+    expect(runtimes.every((r) => r.sends.every((s) => !/approved the plan/i.test(s.content)))).toBe(true)
+    expect(events.filter((e) => e.type === 'permission_mode_change').map((e) => e.type === 'permission_mode_change' && e.mode)).toEqual(['agent', 'plan'])
+    expect(session.getPendingInteractions()).toEqual([])
+  })
+
   it('close: releases every pending resolver and clears the summary', async () => {
     const runtimes = installRuntimeFactory()
     const { session, transport } = makeSession()

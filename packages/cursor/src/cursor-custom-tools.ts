@@ -3,12 +3,12 @@ import type { AskUserQuestionRequest } from '@superone/shared/agent-types'
 import {
   buildCursorAskUserQuestionRequest,
   CURSOR_ASK_USER_QUESTION_SCHEMA,
+  CURSOR_ASK_USER_QUESTION_TOOL,
   formatCursorQuestionResult,
   type CursorQuestionAnswer,
 } from './cursor-interactions'
 
-/** Name the model sees for the host question bridge (`custom-user-tools` server). */
-export const CURSOR_ASK_USER_QUESTION_TOOL = 'superone_ask_user_question'
+export { CURSOR_ASK_USER_QUESTION_TOOL }
 
 export interface CursorCustomToolsContext {
   sessionId: string
@@ -58,17 +58,16 @@ export function buildCursorCustomTools(ctx: CursorCustomToolsContext): Record<st
       execute: async (args, context) => {
         const requestId = context.toolCallId
           || `cursor_ask_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-        const request = buildCursorAskUserQuestionRequest(requestId, args)
-        if (!request) {
+        const parsed = buildCursorAskUserQuestionRequest(requestId, args)
+        if (!parsed.ok) {
+          // Schema-level rejection: the model gets the exact violation and the
+          // user is never shown a partially valid prompt.
           return {
-            content: [{
-              type: 'text',
-              text: 'Invalid input: provide at least one question with two or more options.',
-            }],
+            content: [{ type: 'text', text: `Invalid input: ${parsed.error}` }],
             isError: true,
           }
         }
-        const answer = await askUser(request)
+        const answer = await askUser(parsed.request)
         return formatCursorQuestionResult(answer) as Record<string, SDKJsonValue>
       },
     }

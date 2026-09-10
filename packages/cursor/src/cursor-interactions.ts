@@ -5,6 +5,7 @@ import type {
   QuestionAnnotations,
   UserQuestion,
 } from '@superone/shared/agent-types'
+import { buildAnsweredQuestionInput } from '@superone/shared/ask-user-question'
 
 /**
  * Host-side pending-interaction registry for the Cursor harness.
@@ -23,6 +24,15 @@ import type {
  * *before* its `AgentEvent` is broadcast. `Session.getPendingInteractions()`
  * (and through it `MobileBroadcaster` / `list_session_activity`) reads the map
  * synchronously while the event is still in flight, so the order matters.
+ *
+ * Lifecycle (owner: `CursorBackend`):
+ * - questions live for one run — answered, dismissed, or cancelled when the
+ *   run settles, is interrupted, or the runtime is rebuilt/closed;
+ * - a plan is raised only for a run whose SDK status is `finished` and that was
+ *   not cancelled/closed meanwhile; it stays pending across an ordinary turn end
+ *   and a mode rebuild, and is cancelled by a newer plan, a new user turn, an
+ *   explicit interrupt, or session close. A decision whose continuation
+ *   (mode switch + host follow-up turn) fails is reported as a transcript error.
  */
 
 export type CursorQuestionAnswer =
@@ -148,6 +158,12 @@ export class CursorInteractionRegistry {
   }
 }
 
+/** Name the model sees for the host question bridge (`custom-user-tools` server). */
+export const CURSOR_ASK_USER_QUESTION_TOOL = 'superone_ask_user_question'
+
+/** Bounds advertised in the schema and enforced before a prompt is raised. */
+export const CURSOR_QUESTION_LIMITS = { maxQuestions: 4, minOptions: 2, maxOptions: 4 } as const
+
 /** Input accepted by the host `superone_ask_user_question` custom tool. */
 export interface CursorAskUserQuestionInput {
   questions: Array<{
@@ -165,7 +181,7 @@ export const CURSOR_ASK_USER_QUESTION_SCHEMA = {
     questions: {
       type: 'array',
       minItems: 1,
-      maxItems: 4,
+      maxItems: CURSOR_QUESTION_LIMITS.maxQuestions,
       items: {
         type: 'object',
         properties: {
@@ -173,8 +189,8 @@ export const CURSOR_ASK_USER_QUESTION_SCHEMA = {
           header: { type: 'string', description: 'Short label (≤ 12 chars) shown as the question chip.' },
           options: {
             type: 'array',
-            minItems: 2,
-            maxItems: 4,
+            minItems: CURSOR_QUESTION_LIMITS.minOptions,
+            maxItems: CURSOR_QUESTION_LIMITS.maxOptions,
             items: {
               type: 'object',
               properties: {
@@ -182,11 +198,13 @@ export const CURSOR_ASK_USER_QUESTION_SCHEMA = {
                 description: { type: 'string' },
               },
               required: ['label'],
+              additionalProperties: false,
             },
           },
           multiSelect: { type: 'boolean', description: 'Allow more than one option to be selected.' },
         },
         required: ['question', 'options'],
+        additionalProperties: false,
       },
     },
   },
@@ -194,33 +212,44 @@ export const CURSOR_ASK_USER_QUESTION_SCHEMA = {
   additionalProperties: false,
 } as const
 
+export type CursorQuestionParse =
+  | { ok: true; request: AskUserQuestionRequest }
+  | { ok: false; error: string }
+
 /**
- * Normalize loosely-typed tool args into the shared `AskUserQuestionRequest`.
- * Returns null when nothing askable survives (no question text or fewer than
- * two options), so the tool can answer the model with a usage error instead
- * of parking an empty prompt in the UI.
+ * Validate tool args against the advertised schema and build the shared
+ * `AskUserQuestionRequest`. Validation is all-or-nothing: a payload that is
+ * partially malformed is rejected with an actionable message instead of being
+ * trimmed into a prompt the model never asked for.
  */
-export function buildCursorAskUserQuestionRequest(
-  requestId: string,
-  args: unknown,
-): AskUserQuestionRequest | null {
-  const rec = args && typeof args === 'object' ? args as Record<string, unknown> : {}
-  const rawQuestions = Array.isArray(rec.questions) ? rec.questions : []
+export function buildCursorAskUserQuestionRequest(requestId: string, args: unknown): CursorQuestionParse {
+  const { maxQuestions, minOptions, maxOptions } = CURSOR_QUESTION_LIMITS
+  const rec = args && typeof args === 'object' && !Array.isArray(args) ? args as Record<string, unknown> : null
+  if (!rec || !Array.isArray(rec.questions)) return { ok: false, error: '`questions` must be an array.' }
+  if (rec.questions.length === 0) return { ok: false, error: 'Provide at least one question.' }
+  if (rec.questions.length > maxQuestions) {
+    return { ok: false, error: `Ask at most ${maxQuestions} questions per call (got ${rec.questions.length}).` }
+  }
   const questions: UserQuestion[] = []
-  for (const raw of rawQuestions) {
-    if (!raw || typeof raw !== 'object') continue
+  for (const [index, raw] of rec.questions.entries()) {
+    const at = `questions[${index}]`
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, error: `${at} must be an object.` }
     const row = raw as Record<string, unknown>
     const question = typeof row.question === 'string' ? row.question.trim() : ''
-    if (!question) continue
-    const options = (Array.isArray(row.options) ? row.options : [])
-      .flatMap((opt) => {
-        if (!opt || typeof opt !== 'object') return []
-        const o = opt as Record<string, unknown>
-        const label = typeof o.label === 'string' ? o.label.trim() : ''
-        if (!label) return []
-        return [{ label, description: typeof o.description === 'string' ? o.description : '' }]
-      })
-    if (options.length < 2) continue
+    if (!question) return { ok: false, error: `${at}.question must be a non-empty string.` }
+    if (!Array.isArray(row.options)) return { ok: false, error: `${at}.options must be an array.` }
+    if (row.options.length < minOptions || row.options.length > maxOptions) {
+      return { ok: false, error: `${at}.options must contain ${minOptions}–${maxOptions} options (got ${row.options.length}).` }
+    }
+    const options: UserQuestion['options'] = []
+    for (const [optIndex, opt] of row.options.entries()) {
+      const optAt = `${at}.options[${optIndex}]`
+      if (!opt || typeof opt !== 'object' || Array.isArray(opt)) return { ok: false, error: `${optAt} must be an object.` }
+      const o = opt as Record<string, unknown>
+      const label = typeof o.label === 'string' ? o.label.trim() : ''
+      if (!label) return { ok: false, error: `${optAt}.label must be a non-empty string.` }
+      options.push({ label, description: typeof o.description === 'string' ? o.description : '' })
+    }
     questions.push({
       question,
       header: typeof row.header === 'string' && row.header.trim() ? row.header.trim() : question.slice(0, 12),
@@ -228,24 +257,82 @@ export function buildCursorAskUserQuestionRequest(
       multiSelect: row.multiSelect === true,
     })
   }
-  if (questions.length === 0) return null
-  return { requestId, questions }
+  return { ok: true, request: { requestId, questions } }
 }
 
-/** Serialize the user's answer for the model (custom tool result payload). */
+/** Free-text notes the user attached per question (previews are host UI, not model input). */
+function questionNotes(annotations: QuestionAnnotations | undefined): Record<string, string> {
+  const notes: Record<string, string> = {}
+  for (const [question, annotation] of Object.entries(annotations ?? {})) {
+    const text = annotation?.notes?.trim()
+    if (text) notes[question] = text
+  }
+  return notes
+}
+
+/**
+ * Serialize the user's answer for the model (custom tool result payload).
+ * Dismissal is reported neutrally: it is neither consent nor an error, so the
+ * model is told to weigh whether the missing answer blocks the request.
+ */
 export function formatCursorQuestionResult(answer: CursorQuestionAnswer): Record<string, unknown> {
   if (answer.kind === 'answered') {
     const answers: Record<string, string> = {}
     for (const [key, value] of Object.entries(answer.answers)) {
       if (value) answers[key] = value
     }
-    return { outcome: 'answered', answers }
+    const notes = questionNotes(answer.annotations)
+    return { outcome: 'answered', answers, ...(Object.keys(notes).length > 0 ? { notes } : {}) }
   }
   if (answer.kind === 'dismissed') {
-    return { outcome: 'dismissed', note: 'The user dismissed the question without answering. Proceed with your best judgment.' }
+    return {
+      outcome: 'dismissed',
+      note: 'The user dismissed the question without answering. This is not approval. '
+        + 'If the answer is required for the requested action, stop and say what you still need; '
+        + 'otherwise continue only with work that does not depend on it.',
+    }
   }
   return { outcome: 'cancelled', reason: answer.reason }
 }
+
+/** True for the wire spelling Cursor reports (`mcp__custom-user-tools__<tool>`) or the bare name. */
+export function isCursorQuestionTool(toolName: string): boolean {
+  return toolName === CURSOR_ASK_USER_QUESTION_TOOL || toolName.endsWith(`__${CURSOR_ASK_USER_QUESTION_TOOL}`)
+}
+
+/**
+ * Shape a question tool call for the shared `AskUserQuestion` presenter.
+ * The answered input mirrors what Claude's `canUseTool` back-fills
+ * (`questions` + `answers` + `annotations`) so the same Q&A card renders; the
+ * summary is the `"question"="answer"` text the phone's count-only projection
+ * parses when the input is not available.
+ */
+export function cursorQuestionToolPresentation(
+  args: unknown,
+  result: unknown,
+): { input: Record<string, unknown>; summary: string | null } {
+  const rec = args && typeof args === 'object' && !Array.isArray(args) ? args as Record<string, unknown> : {}
+  const questions = Array.isArray(rec.questions) ? rec.questions : []
+  const res = result && typeof result === 'object' && !Array.isArray(result) ? result as Record<string, unknown> : null
+  const outcome = typeof res?.outcome === 'string' ? res.outcome : null
+  if (outcome === 'answered' && res?.answers && typeof res.answers === 'object') {
+    const answers = res.answers as Record<string, string>
+    const notes = res.notes && typeof res.notes === 'object' ? res.notes as Record<string, string> : {}
+    const annotations: QuestionAnnotations = {}
+    for (const [question, text] of Object.entries(notes)) annotations[question] = { notes: text }
+    return {
+      input: buildAnsweredQuestionInput({ questions: questions as QuestionLike[], answers, annotations }),
+      summary: Object.entries(answers).map(([q, a]) => `"${q}"="${a}"`).join(', ') || null,
+    }
+  }
+  if (outcome === 'dismissed') return { input: { questions }, summary: 'User dismissed the question without answering.' }
+  if (outcome === 'cancelled') {
+    return { input: { questions }, summary: `Question cancelled: ${typeof res?.reason === 'string' ? res.reason : 'turn ended'}.` }
+  }
+  return { input: { questions }, summary: null }
+}
+
+type QuestionLike = Parameters<typeof buildAnsweredQuestionInput>[0]['questions'][number]
 
 /** Build the shared plan approval request from a completed `createPlan` call. */
 export function buildCursorPlanApprovalRequest(requestId: string, args: unknown): PlanApprovalRequest | null {

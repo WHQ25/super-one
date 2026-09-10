@@ -39,6 +39,27 @@ describe('progressive file-edit projection', () => {
     expect(wire).not.toContain('const enabled')
   })
 
+  it('sends a Cursor host question (canonicalized to AskUserQuestion) to the phone in full, like Claude\'s', () => {
+    // cursor-event-map presents `mcp__custom-user-tools__superone_ask_user_question`
+    // as `AskUserQuestion`, so the phone gets the same decision prompt shape.
+    const block = {
+      type: 'tool_use' as const,
+      toolName: 'AskUserQuestion',
+      toolUseId: 'q1',
+      input: JSON.stringify({
+        questions: [{ question: 'Which database?', header: 'Database', multiSelect: false, options: [{ label: 'Postgres', description: '' }, { label: 'SQLite', description: '' }] }],
+        answers: { 'Which database?': 'SQLite' },
+        annotations: { 'Which database?': { notes: 'keep it embedded' } },
+      }),
+      status: 'complete' as const,
+    }
+    const projected = projectTool(block, '["m","tool","q1"]')
+    expect(projected).toBe(block)
+    expect(projected).not.toHaveProperty('remoteDetail')
+    // The raw wire name would have been folded away as generic MCP detail.
+    expect(projectTool({ ...block, toolName: 'mcp__custom-user-tools__superone_ask_user_question' }, 'ref')).toMatchObject({ remoteDetail: 'ref' })
+  })
+
   it('puts Write line counts on the collapsed shell without the file contents', () => {
     const projected = projectTool({
       type: 'tool_use',

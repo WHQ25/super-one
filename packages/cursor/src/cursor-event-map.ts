@@ -7,6 +7,7 @@ import type {
 import type { AgentEvent, ContextUsageInfo } from '@superone/shared/agent-types'
 import { buildAgentErrorInfo } from '@superone/shared/agent-error'
 import { formatTranscriptToolResult, normalizeTranscriptTool } from '@superone/shared/tool-ui'
+import { cursorQuestionToolPresentation, isCursorQuestionTool } from './cursor-interactions'
 
 /** Map Cursor toolCall.type (and free-form names) to SuperOne tool display names. */
 export function toolDisplayName(name: string): string {
@@ -166,14 +167,37 @@ function mapTodosPayload(todos: unknown): AgentEvent | null {
   }
 }
 
+/**
+ * The host question bridge is executed by Cursor as an ordinary custom tool
+ * (`mcp__custom-user-tools__superone_ask_user_question`). Present it as the
+ * shared `AskUserQuestion` row so the desktop card, compact mode and the
+ * phone projection all reuse the existing question UI; the wire identity the
+ * SDK executes under is untouched.
+ */
+export function canonicalizeCursorHostTool(
+  toolType: string,
+  args: unknown,
+  result?: unknown,
+): { toolType: string; args: unknown; resultSummary?: string } {
+  if (!isCursorQuestionTool(toolType)) return { toolType, args }
+  const shaped = cursorQuestionToolPresentation(args, result)
+  return {
+    toolType: 'AskUserQuestion',
+    args: shaped.input,
+    ...(shaped.summary ? { resultSummary: shaped.summary } : {}),
+  }
+}
+
 function toolUseEvent(
   messageId: string,
   callId: string,
   toolType: string,
   args: unknown,
   status: 'streaming' | 'complete',
+  result?: unknown,
 ): AgentEvent {
-  const unwrapped = unwrapCursorMcpTool(toolType, args)
+  const mcp = unwrapCursorMcpTool(toolType, args)
+  const unwrapped = canonicalizeCursorHostTool(mcp.toolType, mcp.args, result)
   const toolName = toolDisplayName(unwrapped.toolType)
   return {
     type: 'content_delta',
@@ -234,14 +258,20 @@ function toolResultEvent(
   callId: string,
   result: unknown,
   isError: boolean,
+  toolType?: string,
+  args?: unknown,
 ): AgentEvent {
+  // Host question results carry the `"q"="a"` text the shared presenter parses.
+  const summary = toolType != null
+    ? canonicalizeCursorHostTool(unwrapCursorMcpTool(toolType, args).toolType, args, result).resultSummary
+    : undefined
   return {
     type: 'content_delta',
     messageId,
     delta: {
       type: 'tool_result',
       toolUseId: callId,
-      summary: formatTranscriptToolResult(result) || stringifyPayload(result),
+      summary: summary ?? (formatTranscriptToolResult(result) || stringifyPayload(result)),
       isError,
     },
   }
@@ -640,8 +670,8 @@ export function mapInteractionUpdate(
         stringifyPayload(parts.result),
       )
       const args = mergeCursorToolResultArgs(parts.toolType, parts.args, parts.result)
-      events.push(toolUseEvent(messageId, parts.callId, parts.toolType, args, 'complete'))
-      events.push(toolResultEvent(messageId, parts.callId, parts.result, parts.isError))
+      events.push(toolUseEvent(messageId, parts.callId, parts.toolType, args, 'complete', parts.result))
+      events.push(toolResultEvent(messageId, parts.callId, parts.result, parts.isError, parts.toolType, parts.args))
       if (parts.toolType === 'updateTodos' || parts.toolType === 'update_todos') {
         const todos = asRecord(parts.args)?.todos ?? asRecord(parts.result)?.todos
         const todoEvent = mapTodosPayload(todos)
@@ -957,10 +987,10 @@ function mapToolCallMessage(messageId: string, message: SDKToolUseMessage): Agen
     ? mergeCursorToolResultArgs(message.name, message.args, message.result)
     : message.args
   const events: AgentEvent[] = [
-    toolUseEvent(messageId, message.call_id, message.name, args, status),
+    toolUseEvent(messageId, message.call_id, message.name, args, status, status === 'complete' ? message.result : undefined),
   ]
   if (message.status === 'completed' || message.status === 'error') {
-    events.push(toolResultEvent(messageId, message.call_id, message.result, message.status === 'error'))
+    events.push(toolResultEvent(messageId, message.call_id, message.result, message.status === 'error', message.name, message.args))
   }
   return events
 }

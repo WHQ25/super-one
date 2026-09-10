@@ -105,3 +105,89 @@ export const LegacyWithoutPreview: Story = {
     />
   ),
 }
+
+/**
+ * Cursor has no native question tool; the host bridge `superone_ask_user_question`
+ * (cursor-event-map → `canonicalizeCursorHostTool`) is presented through this same
+ * row. Inputs/results below are the exact shapes that mapping produces.
+ */
+const CURSOR_QUESTIONS = [
+  {
+    question: 'Which database?',
+    header: 'Database',
+    multiSelect: false,
+    options: [
+      { label: 'Postgres', description: 'Managed instance' },
+      { label: 'SQLite', description: 'Embedded file' },
+    ],
+  },
+]
+
+export const CursorBridgePending: Story = {
+  name: 'Cursor bridge · waiting for the user',
+  render: () => (
+    <ToolBlock
+      toolName="AskUserQuestion"
+      status="streaming"
+      input={JSON.stringify({ questions: CURSOR_QUESTIONS })}
+    />
+  ),
+}
+
+export const CursorBridgeAnsweredWithNotes: Story = {
+  name: 'Cursor bridge · answered with notes',
+  render: () => (
+    <ToolBlock
+      toolName="AskUserQuestion"
+      status="complete"
+      input={JSON.stringify({
+        questions: CURSOR_QUESTIONS,
+        answers: { 'Which database?': 'SQLite' },
+        annotations: { 'Which database?': { notes: 'Keep it embedded for the demo build' } },
+      })}
+      result={'"Which database?"="SQLite"'}
+    />
+  ),
+}
+
+export const CursorBridgeDismissed: Story = {
+  name: 'Cursor bridge · dismissed (not approval)',
+  render: () => (
+    <ToolBlock
+      toolName="AskUserQuestion"
+      status="complete"
+      input={JSON.stringify({ questions: CURSOR_QUESTIONS })}
+      result="User dismissed the question without answering."
+    />
+  ),
+}
+
+export const CursorBridgeInvalidInput: Story = {
+  name: 'Cursor bridge · rejected input',
+  render: () => (
+    <ToolBlock
+      toolName="AskUserQuestion"
+      status="complete"
+      isError
+      input={JSON.stringify({ questions: [{ question: 'Which database?', options: [{ label: 'Postgres' }] }] })}
+      result="Invalid input: questions[0].options must contain 2–4 options (got 1)."
+    />
+  ),
+}
+
+export const CursorBridgeNarrow: Story = {
+  name: 'Cursor bridge · narrow layout',
+  decorators: [(Story) => <StoryShell width={320}><Story /></StoryShell>],
+  render: () => (
+    <ToolBlock
+      toolName="AskUserQuestion"
+      status="complete"
+      input={JSON.stringify({
+        questions: CURSOR_QUESTIONS,
+        answers: { 'Which database?': 'Postgres' },
+        annotations: { 'Which database?': { notes: 'Use the shared staging cluster and rotate the credentials before the release branch is cut.' } },
+      })}
+      result={'"Which database?"="Postgres"'}
+    />
+  ),
+}

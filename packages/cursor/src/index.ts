@@ -53,9 +53,12 @@ export {
   buildCursorAskUserQuestionRequest,
   buildCursorPlanApprovalRequest,
   cursorPlanFollowUpText,
+  cursorQuestionToolPresentation,
   formatCursorQuestionResult,
+  isCursorQuestionTool,
   type CursorPlanDecision,
   type CursorQuestionAnswer,
+  type CursorQuestionParse,
 } from './cursor-interactions'
 
 export {
@@ -67,6 +70,7 @@ export {
   extractToolCallParts,
   toolDisplayName,
   unwrapCursorMcpTool,
+  canonicalizeCursorHostTool,
   stableIdField,
   CursorTurnCallIdBridge,
   CursorTurnUsage,

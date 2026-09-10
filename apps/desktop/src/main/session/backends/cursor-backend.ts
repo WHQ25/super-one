@@ -83,6 +83,13 @@ export class CursorBackend implements SessionBackend {
   private taskSend: ((content: string) => Promise<void>) | null = null
   /** In-flight `setPermissionMode` rebuild, awaited before a plan follow-up turn starts. */
   private modeChange: Promise<void> | null = null
+  /**
+   * Bumped whenever the conversation moves past the plan a decision refers to
+   * (new user turn, interrupt, close). `applyPlanDecision` re-checks it after
+   * every await so a stale approval can neither rebuild the runtime under a
+   * newer turn nor queue an implementation turn nobody asked for.
+   */
+  private planGeneration = 0
 
   async start(opts: BackendStartOptions): Promise<void> {
     if (this.disposed) throw new Error('CursorBackend already disposed')
@@ -242,7 +249,10 @@ export class CursorBackend implements SessionBackend {
 
       // A fresh user turn moots any plan still awaiting a decision; the host
       // follow-up that carries that decision is the one send that keeps it.
-      if (request.source !== 'task-notification') this.interactions.cancelPlans('superseded by a new turn')
+      if (request.source !== 'task-notification') {
+        this.planGeneration += 1
+        this.interactions.cancelPlans('superseded by a new turn')
+      }
       let resolveTurn: () => void = () => undefined
       const turnComplete = new Promise<void>((resolve) => { resolveTurn = resolve })
       this.activeTurn = { messageId, resolve: resolveTurn, done: turnComplete }
@@ -295,8 +305,11 @@ export class CursorBackend implements SessionBackend {
       log.warn('[CursorBackend] runtime.cancel() did not answer within %dms; settling the turn locally', INTERRUPT_CANCEL_TIMEOUT_MS)
     }
     // The run no longer waits on its custom-tool call; unblock the resolver
-    // and clear the indicator instead of leaving a dead prompt behind.
-    this.interactions.cancelQuestions('interrupted')
+    // and clear the indicator instead of leaving a dead prompt behind. An
+    // explicit interrupt also voids any plan awaiting a decision — the user
+    // stopped that turn, so its plan is not something to act on later.
+    this.planGeneration += 1
+    this.interactions.cancelAll('interrupted')
     if (this.currentMessageId) this.complete(this.currentMessageId, true)
   }
 
@@ -316,6 +329,7 @@ export class CursorBackend implements SessionBackend {
     this.disposed = true
     this.started = false
     if (this.currentMessageId) this.complete(this.currentMessageId, true)
+    this.planGeneration += 1
     this.interactions.cancelAll('session closed')
     await this.closeRuntime()
     this.eventListeners.clear()
@@ -437,9 +451,13 @@ export class CursorBackend implements SessionBackend {
     return {
       askQuestion: (request) => this.interactions.askQuestion(request),
       requestPlanApproval: async (request) => {
+        // A run the user interrupted may still settle as `finished`; its plan
+        // must not resurface after the interrupt already cleared the UI.
+        if (this.interrupted || this.disposed) return { kind: 'cancelled', reason: 'interrupted' }
+        const generation = this.planGeneration
         const decision = await this.interactions.requestPlanApproval(request)
-        void this.applyPlanDecision(decision).catch((error) => {
-          log.warn('[CursorBackend] plan decision follow-up failed:', error)
+        void this.applyPlanDecision(decision, generation).catch((error) => {
+          this.reportPlanFollowUpFailure(decision, error)
         })
         return decision
       },
@@ -454,22 +472,57 @@ export class CursorBackend implements SessionBackend {
    * by the time it arrives), then a host-origin message tells the agent to
    * implement — or, on rejection with feedback, to revise the plan.
    */
-  private async applyPlanDecision(decision: CursorPlanDecision): Promise<void> {
+  private async applyPlanDecision(decision: CursorPlanDecision, generation: number): Promise<void> {
     const followUp = cursorPlanFollowUpText(decision)
     if (!followUp || this.disposed) return
+    const stillCurrent = (): boolean => !this.disposed && this.planGeneration === generation
     await this.activeTurn?.done
+    if (!stillCurrent()) {
+      log.info('[CursorBackend] plan decision superseded before continuation; skipping follow-up')
+      return
+    }
     if (decision.kind === 'approved' && this.permissionMode === 'plan') {
       // `agent` is Cursor's own ladder id; the renderer's generic `default`
       // that may follow maps to the same SDK config and skips the rebuild.
       await this.setPermissionMode('agent')
     }
     await this.modeChange
-    if (this.disposed) return
-    if (!this.taskSend) {
-      log.warn('[CursorBackend] plan decision dropped: no task-notification sender bound')
+    if (!stillCurrent()) {
+      log.info('[CursorBackend] plan decision superseded during mode change; skipping follow-up')
       return
     }
+    if (!this.taskSend) throw new Error('no task-notification sender bound')
     await this.taskSend(followUp)
+  }
+
+  /**
+   * A plan decision whose continuation never started must not look settled:
+   * the pending prompt is already gone, so raise a transcript-visible error
+   * (same `message_error` path as a failed turn) that tells the user how to
+   * retry by hand. Nothing is re-sent automatically — the failed step may have
+   * partially applied (e.g. the mode switch), so the retry stays deliberate.
+   */
+  private reportPlanFollowUpFailure(decision: CursorPlanDecision, error: unknown): void {
+    const detail = error instanceof Error ? error.message : String(error)
+    log.warn('[CursorBackend] plan decision follow-up failed:', detail)
+    if (this.disposed) return
+    const action = decision.kind === 'approved' ? 'implementation' : 'revision'
+    const text = `Cursor did not start the plan ${action}: ${detail}. `
+      + 'Send a message such as "Implement the approved plan" to retry.'
+    const messageId = `cursor_plan_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    this.emit({
+      type: 'message_start',
+      message: {
+        id: messageId,
+        role: 'assistant',
+        status: 'streaming',
+        content: [],
+        createdAt: new Date().toISOString(),
+        providerId: 'cursor',
+      },
+    })
+    this.emit({ type: 'message_error', messageId, error: text, errorInfo: buildAgentErrorInfo(text) })
+    this.emit({ type: 'status_change', status: 'error' })
   }
 
   async getContextUsage(): Promise<ContextUsageInfo | null> {

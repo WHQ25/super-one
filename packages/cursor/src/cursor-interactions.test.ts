@@ -5,7 +5,9 @@ import {
   buildCursorPlanApprovalRequest,
   CursorInteractionRegistry,
   cursorPlanFollowUpText,
+  cursorQuestionToolPresentation,
   formatCursorQuestionResult,
+  isCursorQuestionTool,
 } from './cursor-interactions'
 
 function question(requestId = 'q1'): AskUserQuestionRequest {
@@ -14,7 +16,7 @@ function question(requestId = 'q1'): AskUserQuestionRequest {
     questions: [{
       question: 'Which database?',
       header: 'Database',
-      options: [{ label: 'Postgres' }, { label: 'SQLite' }],
+      options: [{ label: 'Postgres', description: '' }, { label: 'SQLite', description: '' }],
       multiSelect: false,
     }],
   }
@@ -129,31 +131,80 @@ describe('CursorInteractionRegistry', () => {
 })
 
 describe('question / plan request builders', () => {
-  it('builds an AskUserQuestionRequest from custom-tool args and drops malformed questions', () => {
-    const request = buildCursorAskUserQuestionRequest('call-1', {
+  it('builds an AskUserQuestionRequest from valid custom-tool args', () => {
+    expect(buildCursorAskUserQuestionRequest('call-1', {
       questions: [
         { question: 'Pick one', options: [{ label: 'A' }, { label: 'B', description: 'second' }], multiSelect: true },
-        { question: 'Only one option', options: [{ label: 'X' }] },
-        { question: '', options: [{ label: 'A' }, { label: 'B' }] },
       ],
+    })).toEqual({
+      ok: true,
+      request: {
+        requestId: 'call-1',
+        questions: [{
+          question: 'Pick one',
+          header: 'Pick one',
+          options: [{ label: 'A', description: '' }, { label: 'B', description: 'second' }],
+          multiSelect: true,
+        }],
+      },
     })
-    expect(request).toEqual({
-      requestId: 'call-1',
-      questions: [{
-        question: 'Pick one',
-        header: 'Pick one',
-        options: [{ label: 'A', description: '' }, { label: 'B', description: 'second' }],
-        multiSelect: true,
-      }],
-    })
-    expect(buildCursorAskUserQuestionRequest('call-2', { questions: [] })).toBeNull()
-    expect(buildCursorAskUserQuestionRequest('call-3', null)).toBeNull()
+  })
+
+  it('rejects malformed or out-of-bounds payloads instead of trimming them', () => {
+    const twoOptions = [{ label: 'A' }, { label: 'B' }]
+    const reject = (args: unknown) => {
+      const parsed = buildCursorAskUserQuestionRequest('call-x', args)
+      expect(parsed.ok).toBe(false)
+      return parsed.ok ? '' : parsed.error
+    }
+    expect(reject(null)).toMatch(/questions/)
+    expect(reject({ questions: [] })).toMatch(/at least one/)
+    expect(reject({ questions: Array.from({ length: 5 }, () => ({ question: 'Q', options: twoOptions })) })).toMatch(/at most 4/)
+    // One bad question fails the whole call — the valid sibling is not asked alone.
+    expect(reject({ questions: [{ question: 'Pick one', options: twoOptions }, { question: 'Only one', options: [{ label: 'X' }] }] }))
+      .toMatch(/questions\[1\]\.options must contain 2–4/)
+    expect(reject({ questions: [{ question: 'Q', options: Array.from({ length: 5 }, (_, i) => ({ label: `O${i}` })) }] }))
+      .toMatch(/2–4 options \(got 5\)/)
+    expect(reject({ questions: [{ question: '   ', options: twoOptions }] })).toMatch(/question must be a non-empty string/)
+    expect(reject({ questions: [{ question: 'Q', options: [{ label: 'A' }, { label: '' }] }] })).toMatch(/options\[1\]\.label/)
   })
 
   it('formats every answer kind as a tool result the model can read', () => {
     expect(formatCursorQuestionResult({ kind: 'answered', answers: { Q: 'A' } })).toEqual({ outcome: 'answered', answers: { Q: 'A' } })
-    expect(formatCursorQuestionResult({ kind: 'dismissed' })).toMatchObject({ outcome: 'dismissed' })
+    // Free-text notes reach the model; option previews are host UI and stay out.
+    expect(formatCursorQuestionResult({
+      kind: 'answered',
+      answers: { Q: 'Other' },
+      annotations: { Q: { notes: 'Use the staging bucket', preview: '<b>x</b>' } },
+    })).toEqual({ outcome: 'answered', answers: { Q: 'Other' }, notes: { Q: 'Use the staging bucket' } })
+    const dismissed = formatCursorQuestionResult({ kind: 'dismissed' })
+    expect(dismissed).toMatchObject({ outcome: 'dismissed' })
+    expect(String(dismissed.note)).toMatch(/not approval/)
+    expect(String(dismissed.note)).not.toMatch(/best judgment/)
     expect(formatCursorQuestionResult({ kind: 'cancelled', reason: 'turn ended' })).toEqual({ outcome: 'cancelled', reason: 'turn ended' })
+  })
+
+  it('shapes the custom tool call for the shared AskUserQuestion presenter', () => {
+    expect(isCursorQuestionTool('mcp__custom-user-tools__superone_ask_user_question')).toBe(true)
+    expect(isCursorQuestionTool('superone_ask_user_question')).toBe(true)
+    expect(isCursorQuestionTool('mcp__superone__widget_show')).toBe(false)
+
+    const questions = [{ question: 'Pick one', header: 'Pick', multiSelect: false, options: [{ label: 'A', description: '' }, { label: 'B', description: '' }] }]
+    const answered = cursorQuestionToolPresentation(
+      { questions },
+      { outcome: 'answered', answers: { 'Pick one': 'B' }, notes: { 'Pick one': 'because' } },
+    )
+    expect(answered.input).toEqual({ questions, answers: { 'Pick one': 'B' }, annotations: { 'Pick one': { notes: 'because' } } })
+    expect(answered.summary).toBe('"Pick one"="B"')
+
+    const dismissed = cursorQuestionToolPresentation({ questions }, { outcome: 'dismissed', note: 'x' })
+    expect(dismissed.input).toEqual({ questions })
+    expect(dismissed.summary).toMatch(/dismissed/)
+
+    // Streaming call (no result yet) and invalid-input errors keep the bare questions.
+    expect(cursorQuestionToolPresentation({ questions }, undefined)).toEqual({ input: { questions }, summary: null })
+    expect(cursorQuestionToolPresentation({ questions }, { content: [{ type: 'text', text: 'Invalid input' }], isError: true }))
+      .toEqual({ input: { questions }, summary: null })
   })
 
   it('maps createPlan args onto PlanApprovalRequest', () => {

@@ -409,6 +409,8 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
   opts.onEvent({ type: 'provider_session_id', providerSessionId: agent.agentId })
 
   let currentRun: Run | null = null
+  /** Cancel flag of the send in flight; flipped by `cancel()` / `close()`. */
+  let activeCancelToken: { cancelled: boolean } | null = null
   let lastRunId: string | null = null
   let modelSelection = model
   let permissionMode = opts.permissionMode
@@ -488,6 +490,11 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
       // Holder object: a plain `let` assigned inside onDelta stays narrowed to
       // `null` for the code after the await.
       const completedPlan: { current: { callId: string; args: unknown } | null } = { current: null }
+      // Explicit cancel/close during this send must never let a late `run.wait()`
+      // result raise a plan — the SDK may still report `finished` for a run that
+      // was cancelled after its last tool call settled.
+      const cancelToken = { cancelled: false }
+      activeCancelToken = cancelToken
 
       const sendStarted = Date.now()
       log.info('[CursorRuntime] send start', { messageId })
@@ -624,7 +631,9 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
       lastRunId = result.id || lastRunId
 
       const plan = completedPlan.current
-      if (plan && interactions && result.status !== 'error') {
+      // Only a run that finished on its own terms is a plan turn the user can act on;
+      // `cancelled` / `error` results (RunResultStatus) and interrupted sends are not.
+      if (plan && interactions && result.status === 'finished' && !cancelToken.cancelled && !disposed) {
         const request = buildCursorPlanApprovalRequest(plan.callId, plan.args)
         if (request) {
           tracer.runtime('plan_approval_raised', { requestId: request.requestId }, messageId)
@@ -685,6 +694,7 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
     },
 
     async cancel() {
+      if (activeCancelToken) activeCancelToken.cancelled = true
       try {
         await currentRun?.cancel()
       } catch (error) {
@@ -694,6 +704,7 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
 
     async close() {
       disposed = true
+      if (activeCancelToken) activeCancelToken.cancelled = true
       try {
         await currentRun?.cancel()
       } catch {

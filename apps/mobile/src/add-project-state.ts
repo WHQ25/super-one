@@ -1,7 +1,6 @@
 import type { GithubRepoHit } from '@superone/shared/agent-types'
 import {
   ADD_PROJECT_SOURCES,
-  describeDetectedSource,
   type AddProjectSource,
   type AddProjectStep,
 } from '@superone/shared/add-project-flow'
@@ -15,7 +14,6 @@ import { fuzzyMatch } from '@superone/shared/fuzzy-match'
  */
 export const ADD_PROJECT_TEXT = {
   sources: 'Sources',
-  searchPlaceholder: 'Type a path, or pick a source...',
   pathPlaceholder: '~/Projects/',
   repoPlaceholderGithub: 'Name, owner/repo, or GitHub URL',
   repoPlaceholderUrl: 'https://github.com/owner/repo.git',
@@ -64,6 +62,8 @@ export interface AddProjectRow {
   /** Owner avatar for a repository row. */
   avatarUrl?: string
   avatarOwner?: string
+  /** Pin the avatar face for stories; production infers it from the image. */
+  avatarStatus?: 'loading' | 'ready' | 'failed'
   /** Show the whole label, wrapped — the create-missing-path row needs it. */
   wrapLabel?: boolean
   /** Taller row with a larger glyph, used by the source picker. */
@@ -89,9 +89,10 @@ export function addProjectStepTitle(step: AddProjectStep): string {
   }
 }
 
-export function addProjectPlaceholder(step: AddProjectStep): string {
+/** Field label for the current step, or null where the step has no field. */
+export function addProjectPlaceholder(step: AddProjectStep): string | null {
   switch (step.kind) {
-    case 'source': return ADD_PROJECT_TEXT.searchPlaceholder
+    case 'source': return null
     case 'browse': return ADD_PROJECT_TEXT.pathPlaceholder
     case 'repo':
       return step.source === 'github'
@@ -102,42 +103,20 @@ export function addProjectPlaceholder(step: AddProjectStep): string {
 }
 
 /**
- * The three sources. A recognised path floats `local` to the top and shows what
- * the text resolves to; anything else that looks like content (a slash, a URL)
- * keeps every source visible so GitHub / Git URL stay one tap away.
+ * The three sources, always all three in a fixed order.
+ *
+ * The desktop dialog filters this list against what was typed; the phone has no
+ * field here, so the step is a pick with nothing to rank — where the path or the
+ * repository gets typed is the step after.
  */
-export function sourceRows(query: string, detected: AddProjectSource | null): AddProjectRow[] {
-  const toRow = (source: AddProjectSource, matchIndices: number[] = [], subtitle?: string): AddProjectRow => ({
+export function sourceRows(): AddProjectRow[] {
+  return ADD_PROJECT_SOURCES.map((source) => ({
     key: source,
     icon: source,
     label: SOURCE_COPY[source].label,
-    matchIndices,
     prominent: true,
-    subtitle: subtitle ?? SOURCE_COPY[source].hint,
-  })
-
-  if (detected) {
-    return [...ADD_PROJECT_SOURCES]
-      .sort((a, b) => Number(b === detected) - Number(a === detected))
-      .map((source) => toRow(
-        source,
-        [],
-        source === detected ? describeDetectedSource(source, query) ?? undefined : undefined,
-      ))
-  }
-
-  const filter = query.trim().toLowerCase()
-  const looksLikeContent = !filter
-    || /[/\\:@]/.test(filter)
-    || filter.startsWith('~')
-    || filter.startsWith('.')
-  if (looksLikeContent) return ADD_PROJECT_SOURCES.map((source) => toRow(source))
-
-  return ADD_PROJECT_SOURCES
-    .map((source) => ({ source, match: fuzzyMatch(filter, SOURCE_COPY[source].label) }))
-    .filter(({ match }) => match.match)
-    .sort((a, b) => b.match.score - a.match.score)
-    .map(({ source, match }) => toRow(source, match.indices))
+    subtitle: SOURCE_COPY[source].hint,
+  }))
 }
 
 /**

@@ -223,8 +223,12 @@ Android edge-to-edge navigation will cover footer/composer content.
 - **Tokens, not hex.** Colours, spacing and type come from `src/theme/` (generated from
   `@superone/ui/styles/theme.css` OKLch values plus the per-harness hue from
   `@superone/shared/harness-brand`). No raw hex in components; `styles.ts` is being
-  retired. Dark and light both follow system appearance; the same token module feeds
-  `setTheme` for the chat and terminal WebViews.
+  retired. The app **ships dark** (`DEFAULT_THEME_MODE` in `mobile-preferences.ts`);
+  `system` is still offered in app settings but is an opt-in, so nothing may assume the
+  shell follows the OS appearance. The same token module feeds `setTheme` for the chat
+  and terminal WebViews. Language defaults the same way: `systemLocale()` resolves the
+  device locale through `resolveSystemLocale`, which answers `en` for anything outside
+  `supportedLocales`.
 - **Screens live under `src/screens/`**, navigation under `src/navigation/` (expo-router),
   primitives under `src/ui/`. `App.tsx` stays under 300 lines; state modules stay in
   `src/*-state.ts` with unit tests, as today.
@@ -408,8 +412,11 @@ durable choice.
 chrome, extracted from `AddProjectScreen`, which now renders through it), over
 `@superone/shared/path-browse`: the field *is* the path, everything before the
 last separator is the directory to list and what follows fuzzy-filters it, so a
-typed path, a tapped row and a pasted absolute path are one gesture. The version
-this replaced had breadcrumbs, its own search box and `..` buttons — three worse
+typed path, a tapped row and a pasted absolute path are one gesture. A **null
+`placeholder` drops the field entirely**, which is how Add Project's source step
+renders: three rows to tap is not something to type at, and a field there raised
+the keyboard over most of the list. The version this replaced had breadcrumbs,
+its own search box and `..` buttons — three worse
 ways of saying the same thing. Both pages commit from the **header's confirm
 slot**, and both resolve the target with `resolveBrowsePath`; the difference is
 that Add Project may create a missing folder while `add-dir` gates its confirm

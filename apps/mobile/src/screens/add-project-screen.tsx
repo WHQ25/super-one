@@ -28,11 +28,13 @@ function CloneOption(props: { label: string; checked: boolean; onToggle: (value:
 /**
  * The desktop Add Project dialog as a page.
  *
- * The single input carries every step: a path while browsing, a repository
- * reference on the GitHub / Git URL steps. `BrowsePage` owns that field and the
- * list — the additional-folders page browses through the same component — and
- * what is left here is the one thing only cloning has: the destination preview.
- * The header supplies back and the confirm action the dialog spends ⇧↵ on.
+ * The single input carries every step that has one: a path while browsing, a
+ * repository reference on the GitHub / Git URL steps. The source step has none —
+ * picking among three rows is a tap, and a field there only raised the keyboard.
+ * `BrowsePage` owns the field and the list — the additional-folders page browses
+ * through the same component — and what is left here is the one thing only
+ * cloning has: the destination preview. The header supplies back and the confirm
+ * action the dialog spends ⇧↵ on.
  */
 export function AddProjectScreen(props: { flow: AddProjectFlow }) {
   const { tokens: { colors } } = useMobileTheme()

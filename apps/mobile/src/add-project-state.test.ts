@@ -19,30 +19,19 @@ describe('add-project step chrome', () => {
     expect(addProjectStepTitle({ kind: 'browse' })).toBe('Open or Create a Folder')
     expect(addProjectStepTitle({ kind: 'repo', source: 'github' })).toBe('Search GitHub')
     expect(addProjectStepTitle({ kind: 'repo', source: 'url' })).toBe('Enter a Git URL')
-    expect(addProjectPlaceholder({ kind: 'source' })).toBe('Type a path, or pick a source...')
     expect(addProjectPlaceholder({ kind: 'repo', source: 'url' })).toBe('https://github.com/owner/repo.git')
+    // The source step is a pick, so it has no field to label.
+    expect(addProjectPlaceholder({ kind: 'source' })).toBeNull()
   })
 })
 
 describe('source rows', () => {
-  it('offers all three sources when nothing is typed', () => {
-    expect(sourceRows('', null).map((row) => row.key)).toEqual(['local', 'github', 'url'])
+  it('always offers all three sources, in a fixed order', () => {
+    expect(sourceRows().map((row) => row.key)).toEqual(['local', 'github', 'url'])
   })
 
-  it('floats the detected source first without hiding the others', () => {
-    const rows = sourceRows('~/Developer', 'local')
-    expect(rows[0]!.key).toBe('local')
-    expect(rows).toHaveLength(3)
-  })
-
-  it('keeps every source visible for text that is content, not a label search', () => {
-    // A half-typed URL must not filter GitHub / Git URL out of reach.
-    expect(sourceRows('git@github.com:o/r', null)).toHaveLength(3)
-  })
-
-  it('fuzzy-filters when the text is a plain label search', () => {
-    expect(sourceRows('hub', null).map((row) => row.key)).toEqual(['github'])
-    expect(sourceRows('zzz', null)).toEqual([])
+  it('describes each source, since the row is the only thing to go on', () => {
+    expect(sourceRows().every((row) => !!row.subtitle && row.prominent)).toBe(true)
   })
 })
 

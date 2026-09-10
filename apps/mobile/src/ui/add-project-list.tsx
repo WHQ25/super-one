@@ -91,7 +91,8 @@ export function AddProjectList(props: {
                     backgroundColor: pressed ? colors.muted : 'transparent',
                   })}>
                   {row.avatarUrl
-                    ? <RepoOwnerAvatar owner={row.avatarOwner ?? row.label.split('/')[0]} uri={row.avatarUrl} />
+                    ? <RepoOwnerAvatar owner={row.avatarOwner ?? row.label.split('/')[0]}
+                      uri={row.avatarUrl} status={row.avatarStatus} />
                     : <View style={{ width: 32, alignItems: 'center' }}>
                       <RowIcon size={iconSize} color={colors.mutedForeground} />
                     </View>}

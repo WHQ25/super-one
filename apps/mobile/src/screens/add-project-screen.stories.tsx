@@ -7,19 +7,25 @@ import { MobileThemeProvider } from '../theme/context'
 import { AddProjectScreen } from './add-project-screen'
 
 const noop = () => {}
-// Invalid inline bytes exercise the initial fallback without any live network.
+// Invalid inline bytes exercise the failed fallback without any live network.
 const unavailableAvatar = 'data:image/png;base64,invalid'
+const loadedPixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
 const rows = githubRows([
   { owner: 'expo', name: 'expo', fullName: 'expo/expo', description: 'Universal native apps.', private: false, stars: 39600 },
   { owner: 'engineering-platform', name: 'internal-observability-development-tools',
     fullName: 'engineering-platform/internal-observability-development-tools',
     description: 'A long description that should truncate without squeezing out the owner initial.', private: true, stars: null },
-], { ownerPrefix: null, query: '' }).map((row) => ({ ...row, avatarUrl: unavailableAvatar }))
+], { ownerPrefix: null, query: '' })
+
+function avatarSection(status: 'loading' | 'ready' | 'failed', avatarUrl = unavailableAvatar) {
+  return [{ key: 'mine', label: ADD_PROJECT_TEXT.githubYourRepos, icon: 'user' as const,
+    rows: rows.map((row) => ({ ...row, avatarUrl, avatarStatus: status })) }]
+}
 
 const base: AddProjectFlow = {
   step: { kind: 'repo', source: 'github' }, title: 'Search GitHub',
   placeholder: ADD_PROJECT_TEXT.repoPlaceholderGithub, query: '', setQuery: noop,
-  sections: [{ key: 'mine', label: ADD_PROJECT_TEXT.githubYourRepos, icon: 'user', rows }],
+  sections: avatarSection('failed'),
   emptyMessage: null, loading: false, busy: false, error: '', clonePreview: null,
   shallowClone: false, setShallowClone: noop, saveAsDefault: false, setSaveAsDefault: noop,
   confirmLabel: null, confirm: noop, activate: noop, canGoBack: true, goBack: noop,
@@ -35,10 +41,12 @@ export default {
   title: 'Mobile/AddProject', component: AddProjectScreen, render: Preview, args: { flow: base },
 }
 
-export const OwnerInitials = {}
+export const FailedAvatars = {}
+export const LoadingAvatars = { args: { flow: { ...base, sections: avatarSection('loading') } } }
+export const LoadedAvatars = { args: { flow: { ...base, sections: avatarSection('ready', loadedPixel) } } }
 export const Sources = { args: { flow: { ...base, step: { kind: 'source' },
-  placeholder: ADD_PROJECT_TEXT.searchPlaceholder,
-  sections: [{ key: 'sources', label: ADD_PROJECT_TEXT.sources, rows: sourceRows('', null) }],
+  placeholder: null,
+  sections: [{ key: 'sources', label: ADD_PROJECT_TEXT.sources, rows: sourceRows() }],
 } } }
 export const Loading = { args: { flow: { ...base, sections: [], loading: true } } }
 export const Searching = { args: { flow: { ...base, query: 'expo', sections: [{

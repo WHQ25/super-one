@@ -8,9 +8,7 @@ import type {
   SearchGithubReposResponse,
 } from '@superone/shared/agent-types'
 import {
-  autoAdvanceFromSourceQuery,
   CREATE_ROW_KEY,
-  detectAddProjectSource,
   filterGithubHitsByPrefix,
   formatAddProjectError,
   githubRepoNameSearchDelay,
@@ -48,14 +46,13 @@ import { randomId } from '../ids'
 
 /** Where browsing starts when nothing has been typed; the host expands it. */
 const INITIAL_PATH = '~/'
-/** Settle a multi-character paste into one step jump. */
-const AUTO_ADVANCE_MS = 120
 const OWNER_SEARCH_MS = 200
 
 export interface AddProjectFlow {
   step: AddProjectStep
   title: string
-  placeholder: string
+  /** Null on the source step, which is a pick with no field. */
+  placeholder: string | null
   query: string
   setQuery: (value: string) => void
   sections: AddProjectSectionModel[]
@@ -288,15 +285,6 @@ export function useAddProject(input: {
     }
   }, [nameKey, request])
 
-  // Typing a concrete path on the source step jumps straight into browsing.
-  useEffect(() => {
-    if (step.kind !== 'source') return
-    const advance = autoAdvanceFromSourceQuery(query, INITIAL_PATH)
-    if (!advance) return
-    const timer = setTimeout(() => goToStep(advance.step, advance.query), AUTO_ADVANCE_MS)
-    return () => clearTimeout(timer)
-  }, [step.kind, query, goToStep])
-
   const resolved = useMemo(
     () => resolveBrowsePath({ query, listedPath, entries }),
     [query, listedPath, entries],
@@ -382,12 +370,8 @@ export function useAddProject(input: {
   const activate = useCallback((row: AddProjectRow) => {
     if (step.kind === 'source') {
       const source = row.key as AddProjectSource
-      if (source === 'local') {
-        const carry = detectAddProjectSource(query) === 'local' ? query.trim() : ''
-        goToStep({ kind: 'browse' }, carry || INITIAL_PATH)
-        return
-      }
-      goToStep({ kind: 'repo', source }, '')
+      if (source === 'local') goToStep({ kind: 'browse' }, INITIAL_PATH)
+      else goToStep({ kind: 'repo', source }, '')
       return
     }
     if (isGithubStep) {
@@ -402,7 +386,7 @@ export function useAddProject(input: {
       return
     }
     setQuery((current) => appendBrowsePathSegment(current, row.key))
-  }, [step, isGithubStep, query, goToStep, continueWithRepo, addProject, cloneProject, resolved.path])
+  }, [step, isGithubStep, goToStep, continueWithRepo, addProject, cloneProject, resolved.path])
 
   const confirm = useCallback(() => {
     if (step.kind === 'browse') {
@@ -420,8 +404,7 @@ export function useAddProject(input: {
 
   const sections = useMemo((): AddProjectSectionModel[] => {
     if (step.kind === 'source') {
-      const rows = sourceRows(query, detectAddProjectSource(query))
-      return rows.length ? [{ key: 'sources', label: ADD_PROJECT_TEXT.sources, rows }] : []
+      return [{ key: 'sources', label: ADD_PROJECT_TEXT.sources, rows: sourceRows() }]
     }
     if (isGithubStep) {
       if (githubUrlQuery) return []

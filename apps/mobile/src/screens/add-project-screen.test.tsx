@@ -1,7 +1,7 @@
 import { expect, jest, test } from '@jest/globals'
 import { act, fireEvent, screen } from '@testing-library/react-native'
 import { renderWithTheme } from '../test-render'
-import { ADD_PROJECT_TEXT, githubRows } from '../add-project-state'
+import { ADD_PROJECT_TEXT, githubRows, sourceRows } from '../add-project-state'
 import type { AddProjectFlow } from '../navigation/use-add-project'
 import { AddProjectScreen } from './add-project-screen'
 
@@ -48,8 +48,21 @@ function flow(overrides: Partial<AddProjectFlow> = {}): AddProjectFlow {
 test('the field carries the path and the list follows it', async () => {
   await renderWithTheme(<AddProjectScreen flow={flow()} />)
 
+  expect(screen.getByPlaceholderText('Type a path')).toBeTruthy()
   expect(screen.getByDisplayValue('~/Developer/')).toBeTruthy()
   expect(screen.getByLabelText('super-one')).toBeTruthy()
+})
+
+test('the source step is a pick with no field, so it raises no keyboard', async () => {
+  await renderWithTheme(<AddProjectScreen flow={flow({
+    step: { kind: 'source' }, placeholder: null, query: '', confirmLabel: null, canGoBack: false,
+    sections: [{ key: 'sources', label: ADD_PROJECT_TEXT.sources, rows: sourceRows() }],
+  })} />)
+
+  expect(screen.queryByPlaceholderText(/./)).toBeNull()
+  expect(screen.getByLabelText('Local Folder')).toBeTruthy()
+  expect(screen.getByLabelText('GitHub Repository')).toBeTruthy()
+  expect(screen.getByLabelText('Git URL')).toBeTruthy()
 })
 
 test('tapping a row reaches the flow rather than the shared component', async () => {
@@ -75,7 +88,8 @@ test('the destination step keeps its clone preview, which is not shared', async 
 
   expect(screen.getByText('anthropics/claude-code')).toBeTruthy()
   expect(screen.getByText('https://github.com/anthropics/claude-code.git')).toBeTruthy()
-  expect(screen.getByText('A')).toBeTruthy()
+  expect(screen.getByTestId('repo-owner-avatar-skeleton')).toBeTruthy()
+  expect(screen.queryByText('A')).toBeNull()
 })
 
 function repositoryFlow(owner = 'expo') {
@@ -87,20 +101,22 @@ function repositoryFlow(owner = 'expo') {
   })
 }
 
-test('a repository shows the owner initial until its avatar finishes loading', async () => {
+test('a repository shows a skeleton until its avatar finishes loading', async () => {
   await renderWithTheme(<AddProjectScreen flow={repositoryFlow()} />)
-  expect(screen.getByText('E')).toBeTruthy()
-  await act(async () => { fireEvent(screen.getByTestId('repo-owner-avatar-image'), 'load') })
+  expect(screen.getByTestId('repo-owner-avatar-skeleton')).toBeTruthy()
   expect(screen.queryByText('E')).toBeNull()
+  await act(async () => { fireEvent(screen.getByTestId('repo-owner-avatar-image'), 'load') })
+  expect(screen.queryByTestId('repo-owner-avatar-skeleton')).toBeNull()
 })
 
-test('a failed avatar keeps the owner initial visible', async () => {
+test('a failed avatar falls back to the owner initial', async () => {
   await renderWithTheme(<AddProjectScreen flow={repositoryFlow()} />)
   await act(async () => { fireEvent(screen.getByTestId('repo-owner-avatar-image'), 'error', { nativeEvent: { error: 'Offline' } }) })
+  expect(screen.queryByTestId('repo-owner-avatar-skeleton')).toBeNull()
   expect(screen.getByText('E')).toBeTruthy()
 })
 
-test('changing the clone destination owner restores the new initial while its avatar loads', async () => {
+test('changing the clone destination owner returns to a skeleton while the new avatar loads', async () => {
   const previewFlow = (owner: string) => flow({
     step: { ...DESTINATION, repoInput: `${owner}/sdk` },
     clonePreview: { repoLabel: `${owner}/sdk`, remoteUrl: `https://github.com/${owner}/sdk.git`, path: '~/sdk' },
@@ -108,7 +124,8 @@ test('changing the clone destination owner restores the new initial while its av
   const { rerender } = await renderWithTheme(<AddProjectScreen flow={previewFlow('expo')} />)
   await act(async () => { fireEvent(screen.getByTestId('repo-owner-avatar-image'), 'load') })
   await rerender(<AddProjectScreen flow={previewFlow('anthropics')} />)
-  expect(screen.getByText('A')).toBeTruthy()
+  expect(screen.getByTestId('repo-owner-avatar-skeleton')).toBeTruthy()
+  expect(screen.queryByText('A')).toBeNull()
   expect(screen.queryByText('E')).toBeNull()
 })
 

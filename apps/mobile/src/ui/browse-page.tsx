@@ -11,7 +11,8 @@ export type BrowsePageProps = {
   /** The whole path, typed or built by tapping rows. */
   query: string
   onQuery: (value: string) => void
-  placeholder: string
+  /** Null on a step that is a pure pick — the field is dropped entirely. */
+  placeholder: string | null
   /** Monospace while the field holds a path rather than a search term. */
   monospace?: boolean
   sections: AddProjectSectionModel[]
@@ -41,21 +42,27 @@ export type BrowsePageProps = {
  * Committing is not here: both pages spend the header's confirm slot on it, so
  * the action sits where every other page's does rather than as a button the
  * list can push off-screen.
+ *
+ * A step with a null placeholder renders no field at all: on a phone an input
+ * nobody should type into still raises the keyboard and eats a third of the
+ * list, so a pure pick shows only its rows.
  */
 export function BrowsePage(props: BrowsePageProps) {
   const { tokens: { colors } } = useMobileTheme()
   return (
     <View style={{ flex: 1 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12,
-        borderBottomWidth: 1, borderBottomColor: colors.border }}>
-        <Search size={15} color={colors.mutedForeground} />
-        <TextInput value={props.query} onChangeText={props.onQuery}
-          accessibilityLabel={props.placeholder}
-          placeholder={props.placeholder} placeholderTextColor={colors.mutedForeground}
-          editable={!props.busy} autoCapitalize="none" autoCorrect={false} spellCheck={false}
-          style={{ flex: 1, minHeight: 44, fontSize: 14, color: colors.foreground,
-            fontFamily: props.monospace ? 'Menlo' : undefined }} />
-      </View>
+      {props.placeholder != null ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12,
+          borderBottomWidth: 1, borderBottomColor: colors.border }}>
+          <Search size={15} color={colors.mutedForeground} />
+          <TextInput value={props.query} onChangeText={props.onQuery}
+            accessibilityLabel={props.placeholder}
+            placeholder={props.placeholder} placeholderTextColor={colors.mutedForeground}
+            editable={!props.busy} autoCapitalize="none" autoCorrect={false} spellCheck={false}
+            style={{ flex: 1, minHeight: 44, fontSize: 14, color: colors.foreground,
+              fontFamily: props.monospace ? 'Menlo' : undefined }} />
+        </View>
+      ) : null}
 
       {props.header}
 

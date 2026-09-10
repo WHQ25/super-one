@@ -30,7 +30,7 @@ vi.mock('@superone/cursor', async (importOriginal) => {
   return {
     ...actual,
     buildCursorModelSelection: () => undefined,
-    resolveCursorSelectedContextWindow: () => 300_000,
+    resolveCursorContextWindow: () => 300_000,
   }
 })
 
@@ -74,7 +74,7 @@ describe('CursorBackend getContextUsage', () => {
     prewarmMock.mockReset().mockResolvedValue(undefined)
   })
 
-  it('uses last-prompt occupancy, not billed run cache', async () => {
+  it('uses estimated occupancy and reports no billed categories', async () => {
     let onEvent: ((event: AgentEvent) => void) | undefined
     factoryMock.mockImplementation(async (opts: { onEvent: (event: AgentEvent) => void }) => {
       onEvent = opts.onEvent
@@ -99,9 +99,7 @@ describe('CursorBackend getContextUsage', () => {
       maxTokens: 300_000,
       percentage: 26.7,
       model: 'opus',
-      categories: expect.arrayContaining([
-        expect.objectContaining({ name: 'cacheRead', tokens: 1_400_000 }),
-      ]),
+      categories: [],
     })
     await backend.close()
   })

@@ -189,7 +189,8 @@ export function ContextUsage() {
     [isCursor, selectedModel, currentModel?.resolvedModel, detailedUsage?.model, catalogModels],
   )
   // Codex GPT-5.6 uses its managed 272k window; other models prefer models.dev.
-  // Cursor uses the per-turn `context` param (300k / 1m) and never models.dev.
+  // Cursor uses the per-turn `context` param (300k / 1m), else the model row's
+  // default (200k / 272k for GPT-5.6, set by mapCursorModel) and never models.dev.
   const contextWindow = resolveRingContextWindow({
     harnessId: activeProvider,
     modelId: selectedModel,

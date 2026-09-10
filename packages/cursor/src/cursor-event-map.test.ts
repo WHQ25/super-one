@@ -184,52 +184,70 @@ describe('mapInteractionUpdate', () => {
       outputTokens: 3,
     })
     expect(tokenEvents[0]).not.toHaveProperty('contextTokens')
+  })
 
+  it('reports no usage on turn-ended without a per-send accumulator', () => {
+    // The billed aggregate alone cannot be turned into context numbers.
+    const ended = mapInteractionUpdate('m1', {
+      type: 'turn-ended',
+      usage: { inputTokens: 10, outputTokens: 5, cacheReadTokens: 2_000_000, cacheWriteTokens: 1 },
+    } as never, { contextWindow: 100_000 })
+    expect(ended).toEqual([{ type: 'status_change', status: 'idle' }])
+  })
+
+  it('reports context occupancy on turn-ended, never billed input or cache', () => {
+    const turnUsage = new CursorTurnUsage('x'.repeat(35)) // 10 prompt tokens
+    mapInteractionUpdate('m1', { type: 'text-delta', text: 'x'.repeat(70) } as never, { turnUsage })
     const ended = mapInteractionUpdate('m1', {
       type: 'turn-ended',
       usage: {
-        inputTokens: 10,
-        outputTokens: 5,
+        inputTokens: 50_000,
+        outputTokens: 25,
         cacheReadTokens: 2_000_000,
         cacheWriteTokens: 1,
         reasoningTokens: 3,
       },
-    } as never, { contextWindow: 100_000 })
+    } as never, { contextWindow: 100_000, turnUsage })
     expect(ended[0]).toMatchObject({
       type: 'message_usage',
       inputTokens: 10,
-      outputTokens: 5,
+      outputTokens: 25,
       cacheReadTokens: 2_000_000,
-      contextTokens: 2_000_011,
+      // Single model call: exact prompt plus the streamed answer (70 chars ≈ 20 tokens).
+      contextTokens: 50_020,
       contextWindow: 100_000,
     })
     expect(ended[1]).toEqual({ type: 'status_change', status: 'idle' })
   })
 
   it('accumulates token-delta output without wiping input', () => {
-    const turnUsage = new CursorTurnUsage()
-    mapInteractionUpdate('m1', {
-      type: 'turn-ended',
-      usage: {
-        inputTokens: 80,
-        outputTokens: 4,
-        cacheReadTokens: 5_000_000,
-        cacheWriteTokens: 20,
-      },
-    } as never, { turnUsage })
-
+    const turnUsage = new CursorTurnUsage('x'.repeat(280)) // 80 prompt tokens
     const first = mapInteractionUpdate('m1', { type: 'token-delta', tokens: 1 } as never, { turnUsage })
     const second = mapInteractionUpdate('m1', { type: 'token-delta', tokens: 2 } as never, { turnUsage })
-    expect(first[0]).toMatchObject({
-      type: 'message_usage',
-      inputTokens: 80,
-      outputTokens: 5,
-    })
-    expect(second[0]).toMatchObject({
-      type: 'message_usage',
-      inputTokens: 80,
-      outputTokens: 7,
-    })
+    expect(first[0]).toMatchObject({ type: 'message_usage', inputTokens: 80, outputTokens: 1 })
+    expect(second[0]).toMatchObject({ type: 'message_usage', inputTokens: 80, outputTokens: 3 })
+
+    mapInteractionUpdate('m1', {
+      type: 'turn-ended',
+      usage: { inputTokens: 80, outputTokens: 4, cacheReadTokens: 5_000_000, cacheWriteTokens: 20 },
+    } as never, { turnUsage })
+    expect(turnUsage.output).toBe(4)
+    expect(turnUsage.input).toBe(80)
+  })
+
+  it('grows footer input by tool results and keeps sub-agent traffic out', () => {
+    const turnUsage = new CursorTurnUsage()
+    const completed = {
+      type: 'tool-call-completed',
+      callId: 'c1',
+      modelCallId: 'run-0-abc',
+      toolCall: { type: 'read', args: { path: 'a.ts' }, result: { status: 'success', value: { content: 'x'.repeat(340) } } },
+    } as never
+    mapInteractionUpdate('m1', completed, { turnUsage, parentToolUseId: 'task-1' })
+    expect(turnUsage.input).toBe(0)
+    mapInteractionUpdate('m1', completed, { turnUsage })
+    // Serialized result value (~353 chars) ≈ 101 tokens.
+    expect(turnUsage.input).toBe(101)
   })
 
   it('ignores shell-output-delta entirely (final result comes from tool-call-completed)', () => {
@@ -776,43 +794,90 @@ describe('mapSdkMessageLifecycle', () => {
 })
 
 describe('mapCursorContextUsageInfo', () => {
-  const usage = {
-    inputTokens: 80,
-    outputTokens: 20,
-    cacheReadTokens: 1_400_000,
-    cacheWriteTokens: 7_000,
-  }
-
-  it('returns billed categories without inventing a percentage when no window is known', () => {
-    expect(mapCursorContextUsageInfo(usage)).toMatchObject({
-      totalTokens: 1_407_080,
+  it('reports occupancy without inventing a percentage when no window is known', () => {
+    expect(mapCursorContextUsageInfo(80_000)).toEqual({
+      categories: [],
+      totalTokens: 80_000,
       maxTokens: 0,
       percentage: 0,
-      categories: [
-        { name: 'input', tokens: 80 },
-        { name: 'output', tokens: 20 },
-        { name: 'cacheRead', tokens: 1_400_000 },
-        { name: 'cacheWrite', tokens: 7_000 },
-      ],
+      model: '',
     })
   })
 
-  it('uses host occupancy against a known window, not billed cache', () => {
-    expect(mapCursorContextUsageInfo(usage, {
-      maxTokens: 300_000,
-      model: 'opus',
-      occupancyTokens: 80_000,
-    })).toMatchObject({
+  it('reports occupancy against a known window', () => {
+    expect(mapCursorContextUsageInfo(80_000, { maxTokens: 300_000, model: 'opus' })).toMatchObject({
       totalTokens: 80_000,
       maxTokens: 300_000,
       percentage: 26.7,
       model: 'opus',
     })
-    expect(mapCursorContextUsageInfo(usage, {
-      maxTokens: 300_000,
-      occupancyTokens: 80_000,
-    }).categories).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: 'cacheRead', tokens: 1_400_000 }),
-    ]))
+  })
+})
+
+describe('CursorTurnUsage occupancy', () => {
+  // 3.5 chars per token throughout.
+  const chars = (tokens: number) => 'x'.repeat(tokens * 3.5)
+  const usage = (inputTokens: number) => ({ inputTokens, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 })
+
+  it('is exact for a single model call: prompt plus the answer', () => {
+    const turn = new CursorTurnUsage()
+    turn.addText(chars(100))
+    turn.applyInternalTurn(usage(40_000))
+    expect(turn.context).toBe(40_100)
+  })
+
+  it('inverts the summed prompts across a tool loop', () => {
+    // p1 = 10_000; call 0 emits 100 tokens of text + 50 of args, its result adds 350
+    // → p2 = 10_500; call 1 answers with 200 tokens. Cursor reports I = p1 + p2.
+    const turn = new CursorTurnUsage()
+    turn.addText(chars(100))
+    turn.observeToolCallStarted('run-0-a')
+    turn.observeToolCallCompleted('run-0-a', chars(50), chars(350))
+    turn.addText(chars(200))
+    turn.applyInternalTurn(usage(20_500))
+    expect(turn.context).toBe(10_700)
+    expect(turn.input).toBe(350)
+  })
+
+  it('counts text-only model calls when the id index skips ahead', () => {
+    // Call 0 tool, call 1 text-only (no id seen), call 2 tool, call 3 final answer.
+    const turn = new CursorTurnUsage()
+    turn.observeToolCallStarted('run-0-a')
+    turn.observeToolCallCompleted('run-0-a', '', chars(100))
+    turn.addText(chars(10))
+    turn.observeToolCallStarted('run-2-b')
+    turn.observeToolCallCompleted('run-2-b', '', chars(100))
+    turn.addText(chars(10))
+    // Prompts: 1000, 1100, 1110, 1210 → I = 4420, truth 1220. The text-only
+    // call's 10 tokens are attributed to the next call, which costs ~3 tokens.
+    turn.applyInternalTurn(usage(4_420))
+    expect(turn.context).toBe(1_223)
+  })
+
+  it('opens a new model call on started-after-completed when ids are unparseable', () => {
+    const turn = new CursorTurnUsage()
+    turn.observeToolCallStarted(undefined)
+    turn.observeToolCallCompleted(undefined, '', chars(100))
+    turn.observeToolCallStarted(undefined)
+    turn.observeToolCallCompleted(undefined, '', chars(100))
+    turn.addText(chars(20))
+    // Prompts: 1000, 1100, 1200 → I = 3300.
+    turn.applyInternalTurn(usage(3_300))
+    expect(turn.context).toBe(1_220)
+  })
+
+  it('counts non-ASCII text denser than ASCII', () => {
+    const turn = new CursorTurnUsage()
+    turn.addText('中'.repeat(150)) // 1.5 chars per token → 100
+    turn.applyInternalTurn(usage(1_000))
+    expect(turn.context).toBe(1_100)
+  })
+
+  it('never lets run totals push billed input into the footer', () => {
+    const turn = new CursorTurnUsage('x'.repeat(35))
+    turn.applyInternalTurn({ inputTokens: 100, outputTokens: 4, cacheReadTokens: 0, cacheWriteTokens: 0 })
+    turn.applyRunTotals({ inputTokens: 4_000_000, outputTokens: 9, cacheReadTokens: 0, cacheWriteTokens: 0 })
+    expect(turn.input).toBe(10)
+    expect(turn.output).toBe(9)
   })
 })

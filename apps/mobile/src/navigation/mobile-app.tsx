@@ -22,6 +22,7 @@ import type {
   RealtimeTimelineSegment, SandboxInfo, SandboxMode, TodoItem, WorktreeInfo,
 } from '@superone/shared/agent-types'
 import { resolveRingContextWindow } from '@superone/shared/agent-types'
+import { selectedCatalogContextWindow } from '@superone/shared/model-option-params'
 import { mergeRealtimeTranscript } from '@superone/shared/realtime-transcript'
 import { ChatRuntime, type SessionWorktreeFacts } from '../runtime'
 import { TerminalRuntime } from '../terminal-runtime'
@@ -208,6 +209,8 @@ export function MobileApp() {
     : sandboxInfoFromMode(pendingSandboxMode ?? harnessSelection.defaultSandboxMode ?? 'off')
   // The phone has no models.dev catalog, so the window comes from the harness's own
   // model row, whatever a usage event reported, and Claude's built-in fallback.
+  // Cursor's picked `context` param (300k / 1m) wins; the model row carries the default.
+  const cursorContextParam = harnessSelection.modelParams.context
   const ringContextWindow = useMemo(() => {
     const model = models.find((entry) => entry.id === selectedModel)
     return resolveRingContextWindow({
@@ -217,8 +220,11 @@ export function MobileApp() {
       harnessContextWindow: model?.contextWindow,
       sessionContextWindow: usage.contextWindow,
       claudeFallback: selectedProvider === 'claude',
+      selectedContextWindow: selectedProvider === 'cursor'
+        ? selectedCatalogContextWindow(cursorContextParam, model)
+        : null,
     })
-  }, [models, selectedModel, selectedProvider, usage.contextWindow])
+  }, [models, selectedModel, selectedProvider, usage.contextWindow, cursorContextParam])
   const [perm, setPerm] = useState<PermissionRequest | null>(null)
   const [plan, setPlan] = useState<PlanApprovalRequest | null>(null)
   const [question, setQuestion] = useState<AskUserQuestionRequest | null>(null)

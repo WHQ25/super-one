@@ -50,8 +50,8 @@ export {
   mapInteractionUpdate,
   mapConversationStep,
   mapSdkMessageLifecycle,
-  mapCursorTokenUsage,
   mapCursorContextUsageInfo,
+  modelCallIndexFromId,
   extractToolCallParts,
   toolDisplayName,
   unwrapCursorMcpTool,
@@ -86,6 +86,7 @@ export {
   parseCursorContextWindow,
   firstParseableCursorContextValue,
   resolveCursorSelectedContextWindow,
+  resolveCursorContextWindow,
   type BuildCursorModelSelectionInput,
 } from './cursor-model-selection'
 

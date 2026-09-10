@@ -9,6 +9,7 @@ import {
   mapCursorModel,
   normalizeEffortValue,
   parseCursorContextWindow,
+  resolveCursorContextWindow,
   resolveCursorSelectedContextWindow,
 } from './cursor-model-selection'
 
@@ -195,10 +196,22 @@ describe('cursor-model-selection', () => {
         { id: 'context', values: [{ value: 'auto' }, { value: '300k' }, { value: '1m' }] },
       ],
     })
+    expect(model.contextWindow).toBe(300_000)
     expect(resolveCursorSelectedContextWindow('1m', model)).toBe(1_000_000)
     expect(resolveCursorSelectedContextWindow('auto', model)).toBe(300_000)
     expect(resolveCursorSelectedContextWindow(undefined, model)).toBe(300_000)
-    expect(resolveCursorSelectedContextWindow('auto', null)).toBeNull()
+  })
+
+  it('falls back to Cursor model defaults when no context param exists', () => {
+    const plain = mapCursorModel({ id: 'default', displayName: 'Default', parameters: [] })
+    expect(plain.contextWindow).toBe(200_000)
+    // The selected window stays null so a session-reported window can still win.
+    expect(resolveCursorSelectedContextWindow('auto', plain)).toBeNull()
+    expect(resolveCursorContextWindow('auto', plain, 'default')).toBe(200_000)
+    expect(resolveCursorContextWindow(undefined, null, 'gpt-5.6')).toBe(272_000)
+    expect(resolveCursorContextWindow(undefined, null, 'gpt-5.6-codex-high')).toBe(272_000)
+    expect(resolveCursorContextWindow(undefined, null, 'gpt-5.5')).toBe(200_000)
+    expect(resolveCursorContextWindow('1m', null, 'gpt-5.5')).toBe(1_000_000)
   })
 
   it('omits params when catalog has none and no fast flag', () => {

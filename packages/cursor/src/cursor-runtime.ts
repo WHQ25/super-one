@@ -30,7 +30,7 @@ import {
   mapSdkMessageLifecycle,
 } from './cursor-event-map'
 import { mcpServersToStatus } from './cursor-mcp-map'
-import { parseCursorContextWindow } from './cursor-model-selection'
+import { resolveCursorContextWindow } from './cursor-model-selection'
 import {
   isCursorSandboxUnsupportedError,
   withCursorPlatformLookup,
@@ -161,9 +161,10 @@ export function getCursorRuntimeFactory(): CursorRuntimeFactory {
   return runtimeFactory
 }
 
-function resolveContextWindow(modelSelection: ModelSelection | undefined): number | null {
+/** Ring denominator for this send: selected `context` param, else Cursor's model default. */
+function resolveContextWindow(modelSelection: ModelSelection | undefined): number {
   const contextParam = modelSelection?.params?.find((p) => p.id === 'context')
-  return parseCursorContextWindow(contextParam?.value)
+  return resolveCursorContextWindow(contextParam?.value, null, modelSelection?.id)
 }
 
 /**
@@ -431,7 +432,8 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
       const contextWindow = resolveContextWindow(modelSelection)
       // Bridge real callIds from onDelta → onStep (SDK ConversationStep.toolCall has no callId).
       const callIdBridge = new CursorTurnCallIdBridge()
-      const turnUsage = new CursorTurnUsage()
+      // The prompt (host context included) is the first thing this turn adds to the window.
+      const turnUsage = new CursorTurnUsage(prompt)
 
       const sendStarted = Date.now()
       log.info('[CursorRuntime] send start', { messageId })
@@ -530,7 +532,6 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
             tracer.sdk(cursorSdkType(message, 'stream'), message, messageId)
             for (const event of mapSdkMessageLifecycle(messageId, message, {
               includeContent: false,
-              contextWindow,
             })) {
               opts.onEvent(event)
             }

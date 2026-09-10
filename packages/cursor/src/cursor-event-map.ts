@@ -4,7 +4,7 @@ import type {
   SDKMessage,
   SDKToolUseMessage,
 } from '@cursor/sdk'
-import type { AgentEvent, ContextUsageCategory, ContextUsageInfo } from '@superone/shared/agent-types'
+import type { AgentEvent, ContextUsageInfo } from '@superone/shared/agent-types'
 import { buildAgentErrorInfo } from '@superone/shared/agent-error'
 import { formatTranscriptToolResult, normalizeTranscriptTool } from '@superone/shared/tool-ui'
 
@@ -255,96 +255,164 @@ type CursorUsageFields = {
   reasoningTokens?: number
 }
 
-/** Last prompt size for the context ring (includes cache hits). */
-function contextTokensFromUsage(usage: CursorUsageFields): number {
-  return usage.inputTokens + usage.cacheReadTokens + usage.cacheWriteTokens
+/**
+ * Rough chars→tokens ratios for the content we can see (prose, code, JSON tool
+ * payloads). ASCII text runs ~3.5 chars per token; CJK and other non-ASCII
+ * scripts tokenize far denser. Only the *growth within a turn* is estimated
+ * with these; the anchor (`inputTokens`) is exact, so the error stays bounded.
+ */
+const ASCII_CHARS_PER_TOKEN = 3.5
+const NON_ASCII_CHARS_PER_TOKEN = 1.5
+const NON_ASCII_RE = /[^\x00-\x7f]/g
+
+/** Estimated token count of streamed text or a serialized tool payload. */
+function estimateTokens(text: string): number {
+  if (!text) return 0
+  const nonAscii = text.match(NON_ASCII_RE)?.length ?? 0
+  return (text.length - nonAscii) / ASCII_CHARS_PER_TOKEN + nonAscii / NON_ASCII_CHARS_PER_TOKEN
+}
+
+/** `modelCallId` is `<runUuid>-<index>-<rand>`; `index` counts model calls in the run. */
+const MODEL_CALL_INDEX_RE = /-(\d+)-[^-]+$/
+
+/** Zero-based model-call index carried by a tool-call delta's `modelCallId`, if parseable. */
+export function modelCallIndexFromId(modelCallId: unknown): number | null {
+  if (typeof modelCallId !== 'string') return null
+  const match = MODEL_CALL_INDEX_RE.exec(modelCallId)
+  if (!match) return null
+  const index = Number(match[1])
+  return Number.isInteger(index) && index >= 0 ? index : null
 }
 
 /**
- * Per-send live usage. Cursor `token-delta.tokens` is an increment (often 1),
- * not a running total and not a context fill — accumulating it as output keeps
- * the footer moving without wiping input. Footer ↑ is raw `inputTokens` only
- * (cache write stays on the context ring). Authoritative turn/run usage raises
- * the totals; cache reads stay on `contextTokens` only.
+ * Per-send usage with *context* semantics rather than billing semantics.
+ *
+ * Cursor reports one `turn-ended.usage` per send whose `inputTokens` is the sum
+ * of every model call's prompt in the tool loop (each call re-sends the whole
+ * context), and `inputTokens` already includes cache reads/writes. It is
+ * therefore neither the context occupancy nor "what this turn added". The SDK
+ * exposes no per-call usage, so occupancy is solved from what we do have:
+ *
+ *   I = Σ p_k,  p_k = p_1 + Σ_{j<k} Δ_j
+ *
+ * where `I` is the exact `inputTokens`, `n` is the model-call count (from
+ * `modelCallId` indices) and `Δ_k` is the content each call appended (its text,
+ * tool args and tool results — all of which stream through this mapper).
+ *
+ * Footer semantics: `input` is how much the *input side* grew the window this
+ * turn (user prompt + tool results, estimated), `output` is the model's output
+ * (`token-delta` live, exact `outputTokens` at turn end).
  */
 export class CursorTurnUsage {
-  input = 0
+  input: number
   output = 0
+  /** Estimated context occupancy after this turn (0 until `turn-ended`). */
   context = 0
+  /** Estimated tokens appended by each model call, indexed by model-call index. */
+  private readonly callTokens: number[] = []
+  /** Text streamed since the last tool call; belongs to the next call seen. */
+  private pendingTextTokens = 0
+  private currentCallIndex = 0
+  private sawToolCallComplete = false
+
+  constructor(prompt = '') {
+    this.input = Math.round(estimateTokens(prompt))
+  }
 
   addTokenDelta(tokens: number): void {
     if (Number.isFinite(tokens) && tokens > 0) this.output += tokens
   }
 
+  /** Streamed assistant text (thinking is not re-sent to the model, skip it). */
+  addText(text: string): void {
+    this.pendingTextTokens += estimateTokens(text)
+  }
+
+  /** A tool call was issued: the text streamed before it belongs to the same model call. */
+  observeToolCallStarted(modelCallId: unknown): void {
+    const index = this.resolveCallIndex(modelCallId, true)
+    this.bumpCall(index, this.pendingTextTokens)
+    this.pendingTextTokens = 0
+  }
+
+  /**
+   * A tool call finished: its final args (model output) and result (input-side
+   * growth for the next call) both land in the context.
+   */
+  observeToolCallCompleted(modelCallId: unknown, args: string, result: string): void {
+    const index = this.resolveCallIndex(modelCallId, false)
+    const resultTokens = estimateTokens(result)
+    this.bumpCall(index, estimateTokens(args) + resultTokens)
+    this.sawToolCallComplete = true
+    this.input += Math.round(resultTokens)
+  }
+
   applyInternalTurn(usage: CursorUsageFields): void {
-    this.input += usage.inputTokens
     if (usage.outputTokens > this.output) this.output = usage.outputTokens
-    this.context = contextTokensFromUsage(usage)
+    this.context = this.estimateOccupancy(usage.inputTokens)
   }
 
+  /** Run totals only refine output; billed input never reaches the footer. */
   applyRunTotals(usage: CursorUsageFields): void {
-    if (usage.inputTokens > this.input) this.input = usage.inputTokens
     if (usage.outputTokens > this.output) this.output = usage.outputTokens
   }
-}
 
-export function mapCursorTokenUsage(
-  messageId: string,
-  usage: CursorUsageFields,
-  extras?: { contextWindow?: number | null; contextTokens?: number | null },
-): AgentEvent {
-  const contextTokens = extras?.contextTokens && extras.contextTokens > 0
-    ? extras.contextTokens
-    : contextTokensFromUsage(usage)
-  return {
-    type: 'message_usage',
-    messageId,
-    inputTokens: usage.inputTokens,
-    outputTokens: usage.outputTokens,
-    cacheReadTokens: usage.cacheReadTokens,
-    contextTokens,
-    ...(extras?.contextWindow && extras.contextWindow > 0
-      ? { contextWindow: extras.contextWindow }
-      : {}),
+  /**
+   * Solve the last prompt from the summed prompts and the observed increments,
+   * then add the final answer so the value is what the *next* prompt carries.
+   */
+  estimateOccupancy(inputTokens: number): number {
+    const increments = this.callTokens.map((tokens) => tokens ?? 0)
+    // The final answer is its own model call unless nothing at all was seen.
+    if (this.pendingTextTokens > 0 || increments.length === 0) {
+      increments.push(this.pendingTextTokens)
+    }
+    const n = increments.length
+    let summedPrefixes = 0
+    let prefix = 0
+    for (const inc of increments) {
+      summedPrefixes += prefix
+      prefix += inc
+    }
+    const firstPrompt = Math.max(0, (inputTokens - summedPrefixes) / n)
+    return Math.round(firstPrompt + prefix)
+  }
+
+  private resolveCallIndex(modelCallId: unknown, isStart: boolean): number {
+    const parsed = modelCallIndexFromId(modelCallId)
+    if (parsed != null) {
+      this.currentCallIndex = Math.max(this.currentCallIndex, parsed)
+      this.sawToolCallComplete = false
+      return parsed
+    }
+    // No parseable id: a call *started* after some result landed opens a new
+    // model call; parallel tool batches (start, start, done, done) stay together.
+    if (isStart && this.sawToolCallComplete) {
+      this.currentCallIndex += 1
+      this.sawToolCallComplete = false
+    }
+    return this.currentCallIndex
+  }
+
+  private bumpCall(index: number, tokens: number): void {
+    while (this.callTokens.length <= index) this.callTokens.push(0)
+    this.callTokens[index] = (this.callTokens[index] ?? 0) + tokens
   }
 }
-
-const CURSOR_USAGE_CATEGORY_COLORS = {
-  input: '#22c55e',
-  output: '#f59e0b',
-  cacheRead: '#06b6d4',
-  cacheWrite: '#8b5cf6',
-} as const
 
 /**
- * SDK TokenUsage has no context-window field. Categories are the billed
- * breakdown (may sum across a tool loop). `totalTokens` is last-prompt
- * occupancy: prefer `occupancyTokens` from the host, else input+cache of
- * this usage record. Never use billed-run totals as the ring numerator.
+ * Context ring payload. The SDK has no context-window field and its usage
+ * breakdown is billing (summed across the tool loop), so no categories are
+ * reported — the host falls back to a single "tokens" segment.
  */
 export function mapCursorContextUsageInfo(
-  usage: CursorUsageFields,
-  extras?: { maxTokens?: number | null; model?: string; occupancyTokens?: number | null },
+  occupancyTokens: number,
+  extras?: { maxTokens?: number | null; model?: string },
 ): ContextUsageInfo {
-  const categories: ContextUsageCategory[] = []
-  if (usage.inputTokens > 0) {
-    categories.push({ name: 'input', tokens: usage.inputTokens, color: CURSOR_USAGE_CATEGORY_COLORS.input })
-  }
-  if (usage.outputTokens > 0) {
-    categories.push({ name: 'output', tokens: usage.outputTokens, color: CURSOR_USAGE_CATEGORY_COLORS.output })
-  }
-  if (usage.cacheReadTokens > 0) {
-    categories.push({ name: 'cacheRead', tokens: usage.cacheReadTokens, color: CURSOR_USAGE_CATEGORY_COLORS.cacheRead })
-  }
-  if (usage.cacheWriteTokens > 0) {
-    categories.push({ name: 'cacheWrite', tokens: usage.cacheWriteTokens, color: CURSOR_USAGE_CATEGORY_COLORS.cacheWrite })
-  }
-  const occupancy = extras?.occupancyTokens && extras.occupancyTokens > 0
-    ? extras.occupancyTokens
-    : contextTokensFromUsage(usage)
+  const occupancy = occupancyTokens > 0 ? occupancyTokens : 0
   const maxTokens = extras?.maxTokens && extras.maxTokens > 0 ? extras.maxTokens : 0
   return {
-    categories,
+    categories: [],
     totalTokens: occupancy,
     maxTokens,
     percentage: maxTokens > 0 ? Math.min(100, Math.round((occupancy / maxTokens) * 1000) / 10) : 0,
@@ -387,11 +455,15 @@ export function mapInteractionUpdate(
   const events: AgentEvent[] = []
   const type = String((update as { type?: string }).type ?? '')
   const rec = asRecord(update) ?? {}
+  // Nested sub-agent traffic lives in the sub-agent's own context; only the
+  // top-level stream grows this session's window.
+  const turnUsage = options?.parentToolUseId ? undefined : options?.turnUsage
 
   switch (type) {
     case 'text-delta': {
       const text = strField(update, 'text')
       if (text) {
+        turnUsage?.addText(text)
         events.push({ type: 'content_delta', messageId, delta: { type: 'text', text } })
       }
       break
@@ -425,6 +497,7 @@ export function mapInteractionUpdate(
     case 'partial-tool-call': {
       const parts = extractToolCallParts(update)
       if (!parts.callId) break
+      if (type === 'tool-call-started') turnUsage?.observeToolCallStarted(rec.modelCallId)
       events.push(toolUseEvent(messageId, parts.callId, parts.toolType, parts.args, 'streaming'))
       if (parts.toolType === 'updateTodos' || parts.toolType === 'update_todos') {
         const todos = asRecord(parts.args)?.todos
@@ -465,6 +538,11 @@ export function mapInteractionUpdate(
     case 'tool-call-completed': {
       const parts = extractToolCallParts(update)
       if (!parts.callId) break
+      turnUsage?.observeToolCallCompleted(
+        rec.modelCallId,
+        stringifyPayload(parts.args),
+        stringifyPayload(parts.result),
+      )
       const args = mergeCursorToolResultArgs(parts.toolType, parts.args, parts.result)
       events.push(toolUseEvent(messageId, parts.callId, parts.toolType, args, 'complete'))
       events.push(toolResultEvent(messageId, parts.callId, parts.result, parts.isError))
@@ -492,7 +570,6 @@ export function mapInteractionUpdate(
     case 'token-delta': {
       const tokens = Number((update as { tokens?: number }).tokens)
       if (Number.isFinite(tokens) && tokens > 0) {
-        const turnUsage = options?.turnUsage
         if (turnUsage) turnUsage.addTokenDelta(tokens)
         events.push({
           type: 'message_usage',
@@ -505,24 +582,21 @@ export function mapInteractionUpdate(
     }
     case 'turn-ended': {
       const usage = (update as { usage?: CursorUsageFields }).usage
-      if (usage) {
-        const turnUsage = options?.turnUsage
-        if (turnUsage) {
-          turnUsage.applyInternalTurn(usage)
-          events.push({
-            type: 'message_usage',
-            messageId,
-            inputTokens: turnUsage.input,
-            outputTokens: turnUsage.output,
-            cacheReadTokens: usage.cacheReadTokens,
-            contextTokens: turnUsage.context,
-            ...(options?.contextWindow && options.contextWindow > 0
-              ? { contextWindow: options.contextWindow }
-              : {}),
-          })
-        } else {
-          events.push(mapCursorTokenUsage(messageId, usage, { contextWindow: options?.contextWindow }))
-        }
+      // Without a per-send accumulator the billed aggregate cannot be turned into
+      // context numbers, so nothing is reported rather than something 4–8× off.
+      if (usage && turnUsage) {
+        turnUsage.applyInternalTurn(usage)
+        events.push({
+          type: 'message_usage',
+          messageId,
+          inputTokens: turnUsage.input,
+          outputTokens: turnUsage.output,
+          cacheReadTokens: usage.cacheReadTokens,
+          contextTokens: turnUsage.context,
+          ...(options?.contextWindow && options.contextWindow > 0
+            ? { contextWindow: options.contextWindow }
+            : {}),
+        })
       }
       events.push({ type: 'status_change', status: 'idle' })
       break
@@ -694,7 +768,7 @@ export class CursorTurnCallIdBridge {
 export function mapSdkMessageLifecycle(
   messageId: string,
   message: SDKMessage,
-  options?: { includeContent?: boolean; contextWindow?: number | null },
+  options?: { includeContent?: boolean },
 ): AgentEvent[] {
   const events: AgentEvent[] = []
   const includeContent = options?.includeContent === true
@@ -719,14 +793,8 @@ export function mapSdkMessageLifecycle(
       break
     }
     case 'usage': {
-      const u = message.usage
-      events.push(mapCursorTokenUsage(messageId, {
-        inputTokens: u.inputTokens,
-        outputTokens: u.outputTokens,
-        cacheReadTokens: u.cacheReadTokens,
-        cacheWriteTokens: u.cacheWriteTokens,
-        reasoningTokens: u.reasoningTokens,
-      }, { contextWindow: options?.contextWindow }))
+      // Same billed aggregate as `turn-ended`, which the delta path already turned
+      // into context numbers; re-emitting the raw sum here would overwrite them.
       break
     }
     case 'thinking': {

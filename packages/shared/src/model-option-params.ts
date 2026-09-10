@@ -1,4 +1,4 @@
-import type { ModelOption } from './agent-types'
+import { CODEX_GPT_5_6_CONTEXT_WINDOW, DEFAULT_CONTEXT_WINDOW, type ModelOption } from './agent-types'
 
 /**
  * Harness-native catalog parameters (`ModelOption.parameters`), and how a model
@@ -86,6 +86,44 @@ export function firstParseableContextValue(
     if (parseCatalogContextWindow(item.value) != null) return item.value
   }
   return null
+}
+
+const GPT_5_6_MODEL_RE = /(^|[/-])gpt-5\.6(?:$|-)/i
+
+/**
+ * Window Cursor applies when a model exposes no `context` parameter: 200k for
+ * everything except the GPT-5.6 family, which Cursor runs at its 272k default.
+ * The SDK catalog carries no context-window field, so this is the only source.
+ */
+export function defaultCatalogContextWindow(modelId: string | null | undefined): number {
+  return modelId && GPT_5_6_MODEL_RE.test(modelId) ? CODEX_GPT_5_6_CONTEXT_WINDOW : DEFAULT_CONTEXT_WINDOW
+}
+
+/**
+ * Window the user picked: the selected `context` value, else the first parseable
+ * catalog value. `null` when the model exposes no `context` param.
+ */
+export function selectedCatalogContextWindow(
+  selected: string | null | undefined,
+  model: Pick<ModelOption, 'parameters'> | null | undefined,
+): number | null {
+  const parsed = parseCatalogContextWindow(selected)
+  if (parsed != null) return parsed
+  return parseCatalogContextWindow(
+    firstParseableContextValue(model?.parameters?.find((param) => param.id === 'context')?.values),
+  )
+}
+
+/**
+ * Context-ring denominator for a catalog-driven harness (Cursor): the selected
+ * window, else the model default. Never null.
+ */
+export function resolveCatalogContextWindow(
+  selected: string | null | undefined,
+  model: Pick<ModelOption, 'parameters'> | null | undefined,
+  modelId: string | null | undefined,
+): number {
+  return selectedCatalogContextWindow(selected, model) ?? defaultCatalogContextWindow(modelId)
 }
 
 /** Human label for a catalog param id. */

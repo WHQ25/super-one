@@ -9,7 +9,7 @@ import type {
   SendMessageRequest,
 } from '@superone/shared/agent-types'
 import { buildAgentErrorInfo } from '@superone/shared/agent-error'
-import { buildCursorModelSelection, mapCursorContextUsageInfo, resolveCursorSelectedContextWindow } from '@superone/cursor'
+import { buildCursorModelSelection, mapCursorContextUsageInfo, resolveCursorContextWindow } from '@superone/cursor'
 import log from '../../logger'
 import { DEADLINE_EXCEEDED, INTERRUPT_CANCEL_TIMEOUT_MS, withDeadline } from '../../promise-deadline'
 import { mapPermissionToCursorLocal } from '../../cursor/cursor-auth'
@@ -54,13 +54,8 @@ export class CursorBackend implements SessionBackend {
   private model: string | undefined
   private effort: string | undefined
   private modelParams: Record<string, string> = {}
+  /** Estimated context occupancy after the last completed turn (see CursorTurnUsage). */
   private lastContextTokens = 0
-  private lastUsage: {
-    inputTokens: number
-    outputTokens: number
-    cacheReadTokens: number
-    cacheWriteTokens: number
-  } | null = null
   private started = false
   private disposed = false
   private interrupted = false
@@ -130,10 +125,10 @@ export class CursorBackend implements SessionBackend {
     await this.closeRuntime()
   }
 
-  private resolveContextWindow(): number | null {
+  private resolveContextWindow(): number {
     const catalog = getCachedHarnessResources('cursor')
     const model = catalog?.models.find((m) => m.id === this.model)
-    return resolveCursorSelectedContextWindow(this.modelParams.context, model)
+    return resolveCursorContextWindow(this.modelParams.context, model, this.model)
   }
 
   private async ensureRuntime(): Promise<CursorRuntime> {
@@ -161,19 +156,8 @@ export class CursorBackend implements SessionBackend {
       systemPromptAppend: opts.systemPromptAppend,
       config: opts.config,
       onEvent: (event) => {
-        if (event.type === 'message_usage') {
-          if (typeof event.contextTokens === 'number' && event.contextTokens > 0) {
-            this.lastContextTokens = event.contextTokens
-            this.lastUsage = {
-              inputTokens: event.inputTokens,
-              outputTokens: event.outputTokens,
-              cacheReadTokens: event.cacheReadTokens ?? 0,
-              cacheWriteTokens: Math.max(
-                0,
-                event.contextTokens - event.inputTokens - (event.cacheReadTokens ?? 0),
-              ),
-            }
-          }
+        if (event.type === 'message_usage' && typeof event.contextTokens === 'number' && event.contextTokens > 0) {
+          this.lastContextTokens = event.contextTokens
         }
         this.emit(event)
       },
@@ -391,20 +375,10 @@ export class CursorBackend implements SessionBackend {
   respondToPlanApproval(_requestId: string, _approved: boolean, _feedback?: string): void {}
 
   async getContextUsage(): Promise<ContextUsageInfo | null> {
-    if (!this.lastUsage && this.lastContextTokens <= 0) return null
-    const maxTokens = this.resolveContextWindow()
-    const occupancy = this.lastContextTokens
-    const usage = this.lastUsage ?? {
-      inputTokens: occupancy,
-      outputTokens: 0,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
-    }
-    return mapCursorContextUsageInfo(usage, {
-      maxTokens,
+    if (this.lastContextTokens <= 0) return null
+    return mapCursorContextUsageInfo(this.lastContextTokens, {
+      maxTokens: this.resolveContextWindow(),
       model: this.model,
-      // Last prompt occupancy — not billed input+cache from run.wait().
-      occupancyTokens: occupancy > 0 ? occupancy : undefined,
     })
   }
 

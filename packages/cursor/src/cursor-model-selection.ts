@@ -11,6 +11,8 @@ import {
   isToggleCatalogParam as isCursorToggleParam,
   normalizeCatalogEffortValue as normalizeEffortValue,
   parseCatalogContextWindow as parseCursorContextWindow,
+  resolveCatalogContextWindow,
+  selectedCatalogContextWindow,
 } from '@superone/shared/model-option-params'
 
 type EffortLevel = NonNullable<ModelOption['supportedEffortLevels']>[number]
@@ -33,17 +35,27 @@ export {
 }
 
 /**
- * Window for the Context ring: selected param, else first parseable catalog value.
+ * Window picked by the user for the Context ring: selected param, else first
+ * parseable catalog value. `null` when the model has no `context` param, so a
+ * session-reported window can still win over the model default.
  */
 export function resolveCursorSelectedContextWindow(
   selected: string | null | undefined,
   model: Pick<ModelOption, 'parameters'> | null | undefined,
 ): number | null {
-  const parsed = parseCursorContextWindow(selected)
-  if (parsed != null) return parsed
-  return parseCursorContextWindow(
-    firstParseableCursorContextValue(model?.parameters?.find((param) => param.id === 'context')?.values),
-  )
+  return selectedCatalogContextWindow(selected, model)
+}
+
+/**
+ * Window the runtime/backends report: the selected window, else Cursor's
+ * per-model default (200k; 272k for the GPT-5.6 family). Never null.
+ */
+export function resolveCursorContextWindow(
+  selected: string | null | undefined,
+  model: Pick<ModelOption, 'parameters'> | null | undefined,
+  modelId: string | null | undefined,
+): number {
+  return resolveCatalogContextWindow(selected, model, modelId)
 }
 
 /**
@@ -62,6 +74,8 @@ export function mapCursorModel(item: ModelListItem): ModelOption {
     id: item.id,
     name: item.displayName || item.id,
     description: item.description ?? '',
+    // Default window before any `context` param is picked; the selected param wins later.
+    contextWindow: resolveCatalogContextWindow(null, { parameters }, item.id),
     supportsFastMode: supportsFastMode || undefined,
     supportsEffort: uniqueEfforts.length > 0 || undefined,
     supportedEffortLevels: uniqueEfforts.length ? uniqueEfforts : undefined,

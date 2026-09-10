@@ -515,8 +515,11 @@ export class Session implements SessionContract {
     this.backend = opts.backend
     // Idle task-notification flushes must take Session.send / _sendChain — never
     // backend.send alone (races status machine and concurrent user sends).
-    this.backend.bindTaskNotificationSend?.((content) =>
-      this.send(taskNotificationRequest(content), { providerOrigin: 'host' }),
+    this.backend.bindTaskNotificationSend?.((content, opts) =>
+      this.send(
+        { ...taskNotificationRequest(content), ...(opts?.clientMessageId ? { clientMessageId: opts.clientMessageId } : {}) },
+        { providerOrigin: 'host' },
+      ),
     )
     this.permissionMode = opts.permissionMode ?? 'default'
     this.sandboxInfo = coerceSandboxInfo(opts.sandboxInfo ?? getDefaultSandbox())

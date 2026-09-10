@@ -367,8 +367,10 @@ export interface SessionBackend {
   /**
    * Redirect idle flushes of queued task notifications through Session.send
    * (so they take `_sendChain` / status machine) instead of backend.send.
+   * `opts.clientMessageId` lets a backend correlate the request it later
+   * receives from the chain with the host action that queued it.
    */
-  bindTaskNotificationSend?(send: (content: string) => Promise<void>): void
+  bindTaskNotificationSend?(send: (content: string, opts?: { clientMessageId?: string }) => Promise<void>): void
   respondToPermission(
     requestId: string,
     allow: boolean,

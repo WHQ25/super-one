@@ -80,7 +80,9 @@ export class CursorBackend implements SessionBackend {
    */
   private readonly interactions = new CursorInteractionRegistry((event) => this.emit(event))
   /** Session.send bound by `bindTaskNotificationSend`; carries plan decisions back as a host turn. */
-  private taskSend: ((content: string) => Promise<void>) | null = null
+  private taskSend: ((content: string, opts?: { clientMessageId?: string }) => Promise<void>) | null = null
+  /** Identity of the send in flight; `interrupt()` flips it so async preparation cannot dispatch. */
+  private activeSendOp: { cancelled: boolean } | null = null
   /**
    * Bumped whenever the conversation moves past the plan a decision refers to
    * (new user turn, interrupt, close). Checked when a decision is queued and
@@ -90,11 +92,12 @@ export class CursorBackend implements SessionBackend {
    */
   private planGeneration = 0
   /**
-   * Plan-decision follow-up handed to `Session.send` but not yet consumed by
-   * `send()`. The chain may run newer turns first, so the mode switch and the
-   * staleness check happen when the request is dequeued, not when it is queued.
+   * Plan-decision follow-ups handed to `Session.send` but not yet consumed by
+   * `send()`, keyed by the request's clientMessageId. The chain may run newer
+   * turns first, so the mode switch and the staleness check happen when each
+   * request is dequeued; every queued decision keeps its own identity until then.
    */
-  private planFollowUp: { content: string; generation: number; decision: CursorPlanDecision } | null = null
+  private planFollowUps = new Map<string, { generation: number; decision: CursorPlanDecision }>()
 
   async start(opts: BackendStartOptions): Promise<void> {
     if (this.disposed) throw new Error('CursorBackend already disposed')
@@ -222,6 +225,8 @@ export class CursorBackend implements SessionBackend {
     this.currentMessageId = messageId
     this.interrupted = false
     this.terminalMessageId = null
+    const op = { cancelled: false }
+    this.activeSendOp = op
 
     this.emit({
       type: 'message_start',
@@ -264,6 +269,12 @@ export class CursorBackend implements SessionBackend {
         }
       }
       const runtime = await this.ensureRuntime()
+      // Stop (or dispose) may have landed while the rebuild / runtime boot above
+      // was pending: the turn is already terminal, so settle without dispatching.
+      if (op.cancelled || this.disposed) {
+        this.complete(messageId, true)
+        return
+      }
       if (request.model) this.model = request.model
       if (request.effort !== undefined) this.effort = request.effort
       if (request.cursor?.params) this.modelParams = { ...request.cursor.params }
@@ -319,16 +330,18 @@ export class CursorBackend implements SessionBackend {
     } finally {
       this.activeTurn = null
       this.currentMessageId = null
+      if (this.activeSendOp === op) this.activeSendOp = null
     }
   }
 
   async interrupt(): Promise<void> {
     this.interrupted = true
+    if (this.activeSendOp) this.activeSendOp.cancelled = true
     // Invalidate plan decisions *before* awaiting the provider: the active send
     // may settle while cancel() is still pending, and its continuation must
     // already see the bump. Questions go too — the run stopped waiting on them.
-    // The queued follow-up record is kept on purpose: `takePlanFollowUp` needs
-    // it to recognise — and skip — the stale request when the chain gets there.
+    // Queued follow-up records are kept on purpose: `takePlanFollowUp` needs
+    // them to recognise — and skip — the stale requests when the chain gets there.
     this.planGeneration += 1
     this.interactions.cancelAll('interrupted')
     // The terminal event below is what releases the UI, so the provider cancel
@@ -362,6 +375,7 @@ export class CursorBackend implements SessionBackend {
     this.started = false
     if (this.currentMessageId) this.complete(this.currentMessageId, true)
     this.planGeneration += 1
+    this.planFollowUps.clear()
     this.interactions.cancelAll('session closed')
     await this.closeRuntime()
     this.eventListeners.clear()
@@ -468,7 +482,7 @@ export class CursorBackend implements SessionBackend {
     this.interactions.respondToPlanApproval(requestId, approved, feedback)
   }
 
-  bindTaskNotificationSend(send: (content: string) => Promise<void>): void {
+  bindTaskNotificationSend(send: (content: string, opts?: { clientMessageId?: string }) => Promise<void>): void {
     this.taskSend = send
   }
 
@@ -511,21 +525,34 @@ export class CursorBackend implements SessionBackend {
       return
     }
     if (!this.taskSend) throw new Error('no task-notification sender bound')
-    this.planFollowUp = { content: followUp, generation, decision }
-    await this.taskSend(followUp)
+    // The correlation id is the authorization identity of this decision — the
+    // follow-up text is shared by every approval and must never stand in for it.
+    const clientMessageId = `cursor-plan-${generation}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    // Consumed by send() when the chain delivers the request — however late, so
+    // a stale record is still recognised (and declined) rather than executed as
+    // an ordinary host message. Only a failed hand-off drops it early.
+    this.planFollowUps.set(clientMessageId, { generation, decision })
+    try {
+      await this.taskSend(followUp, { clientMessageId })
+    } catch (error) {
+      this.planFollowUps.delete(clientMessageId)
+      throw error
+    }
   }
 
   /**
-   * Match a dequeued task-notification against the queued plan follow-up.
-   * Returns the record when it is still current, `'stale'` when the plan
-   * generation moved on while it waited in the chain, `null` for any other send.
+   * Match a dequeued task-notification against its queued plan follow-up by
+   * correlation id. Returns the record when it is still current, `'stale'` when
+   * the plan generation moved on while it waited in the chain, `null` for any
+   * other send (including host messages that merely read like a follow-up).
    */
   private takePlanFollowUp(
     request: SendMessageRequest,
-  ): { content: string; generation: number; decision: CursorPlanDecision } | 'stale' | null {
-    const pending = this.planFollowUp
-    if (!pending || request.source !== 'task-notification' || request.content !== pending.content) return null
-    this.planFollowUp = null
+  ): { generation: number; decision: CursorPlanDecision } | 'stale' | null {
+    if (request.source !== 'task-notification' || !request.clientMessageId) return null
+    const pending = this.planFollowUps.get(request.clientMessageId)
+    if (!pending) return null
+    this.planFollowUps.delete(request.clientMessageId)
     return pending.generation === this.planGeneration ? pending : 'stale'
   }
 

@@ -438,6 +438,63 @@ describe('CursorBackend host interactions through Session + MobileBroadcaster', 
     expect(ends).toBe(starts)
   })
 
+  it('plan: Stop during the approval mode rebuild never starts implementation, and the next send still works', async () => {
+    const runtimes = installRuntimeFactory()
+    const { session, events } = makeSession('plan')
+    await session.send({ content: 'plan it', assistantMessageId: 'a1' })
+    // The agent-mode runtime takes its time to boot; Stop lands in the middle.
+    const normalFactory = factoryMock.getMockImplementation()!
+    let releaseBoot: (() => void) | null = null
+    const boot = new Promise<void>((resolve) => { releaseBoot = resolve })
+    factoryMock.mockImplementationOnce(async (opts) => { await boot; return normalFactory(opts) })
+    void runtimes[0]!.interactions.requestPlanApproval(PLAN)
+    session.respondToPlanApproval('call-plan', true)
+    for (let i = 0; i < 8; i++) await tick()
+    expect(factoryMock).toHaveBeenCalledTimes(2)
+    expect(events.some((e) => e.type === 'permission_mode_change' && e.mode === 'agent')).toBe(true)
+
+    await session.interrupt()
+    releaseBoot?.()
+    for (let i = 0; i < 12; i++) await tick()
+    expect(runtimes.flatMap((r) => r.sends).filter((s) => /approved the plan/i.test(s.content))).toEqual([])
+    const starts = events.filter((e) => e.type === 'message_start').length
+    const ends = events.filter((e) => e.type === 'message_complete' || e.type === 'message_interrupted').length
+    expect(ends).toBe(starts)
+
+    // The chain is free: a fresh user message goes through on the rebuilt runtime.
+    await session.send({ content: 'now do Y', assistantMessageId: 'a3' })
+    expect(runtimes.at(-1)!.sends.map((s) => s.content)).toEqual(['now do Y'])
+    expect(events.some((e) => e.type === 'message_error')).toBe(false)
+  })
+
+  it('plan: two queued follow-ups keep their own approval identity', async () => {
+    const runtimes = installRuntimeFactory()
+    const { session, backend } = makeSession('plan')
+    await session.send({ content: 'plan it', assistantMessageId: 'a1' })
+    // Hold the host notifications instead of delivering them, as a busy chain would.
+    const held: Array<{ content: string; clientMessageId?: string }> = []
+    backend.bindTaskNotificationSend(async (content, opts) => { held.push({ content, clientMessageId: opts?.clientMessageId }) })
+
+    void runtimes[0]!.interactions.requestPlanApproval(PLAN)
+    session.respondToPlanApproval('call-plan', true)
+    await tick()
+    await session.send({ content: 'different plan', assistantMessageId: 'a2' })
+    void runtimes[0]!.interactions.requestPlanApproval({ ...PLAN, requestId: 'plan-b' })
+    session.respondToPlanApproval('plan-b', true)
+    await tick()
+    expect(held).toHaveLength(2)
+    // Same text for both approvals; only the correlation id tells them apart.
+    expect(held[0]!.content).toBe(held[1]!.content)
+    expect(held[0]!.clientMessageId).not.toBe(held[1]!.clientMessageId)
+
+    for (const { content, clientMessageId } of held) {
+      await session.send({ content, clientMessageId, source: 'task-notification' })
+    }
+    // Stale A is declined, current B is implemented — exactly once.
+    expect(runtimes.flatMap((r) => r.sends).filter((s) => /approved the plan/i.test(s.content))).toHaveLength(1)
+    expect(runtimes.at(-1)!.permissionMode).toBe('agent')
+  })
+
   it('plan: a continuation that cannot start surfaces a transcript error instead of looking settled', async () => {
     const runtimes = installRuntimeFactory()
     const { session, events } = makeSession('plan')

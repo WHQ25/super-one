@@ -1,7 +1,7 @@
 import { expect, test } from '@jest/globals'
 import { screen } from '@testing-library/react-native'
 import { renderWithTheme } from '../test-render'
-import { MobileHeader } from './mobile-header'
+import { MobileHeader, mobileHeaderTitle } from './mobile-header'
 
 const noop = () => {}
 
@@ -90,4 +90,11 @@ test('hides the workspace badge when nothing is waiting', async () => {
 
   expect(screen.queryByTestId('workspace-pending-badge')).toBeNull()
   expect(screen.getByRole('button', { name: 'Open Workspace' })).toBeTruthy()
+})
+
+test('runs the new-session placeholder through the dictionary but leaves real titles alone', () => {
+  const t = (source: string) => (source === 'New session' ? 'New Session' : source)
+
+  expect(mobileHeaderTitle('chat', 'super-one', 'New session', '', t)).toBe('New Session')
+  expect(mobileHeaderTitle('chat', 'super-one', 'Fix the relay ACK', '', t)).toBe('Fix the relay ACK')
 })

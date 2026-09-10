@@ -23,7 +23,9 @@ export function mobileHeaderTitle(
   terminalTitle: string,
   translate: (source: string) => string = (source) => source,
 ): string {
-  if (route === 'chat') return sessionTitle || translate('Chat')
+  // A session title is host data and stays verbatim; the new-session placeholder
+  // is our own copy, so it follows the dictionary's casing and locale.
+  if (route === 'chat') return sessionTitle === 'New session' ? translate(sessionTitle) : sessionTitle || translate('Chat')
   if (route === 'terminal') return terminalTitle
   if (route === 'worktree') return translate('Worktree')
   if (route === 'branch') return translate('Branch')

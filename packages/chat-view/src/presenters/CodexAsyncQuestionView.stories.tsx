@@ -98,8 +98,13 @@ export const Failed: Story = {
 }
 
 export const Unavailable: Story = {
-  name: 'Unavailable session · submit disabled',
-  args: { canSubmit: false },
+  name: 'Unavailable session · inputs disabled',
+  args: { canSubmit: false, disabled: true },
+}
+
+export const MobileControlled: Story = {
+  name: 'Mobile control · desktop read-only',
+  args: { disabled: true },
 }
 
 export const NarrowLongContent: Story = {

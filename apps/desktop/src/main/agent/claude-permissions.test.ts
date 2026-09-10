@@ -30,15 +30,82 @@ import {
   respondToPlanApproval,
   rejectAllPending,
   createCanUseTool,
+  createOnElicitation,
+  type PendingElicitation,
   type PendingPermission,
   type PendingQuestion,
   type PendingPlanApproval,
 } from './claude-permissions'
 import type { AgentEvent } from '@superone/shared/agent-types'
+import { MobileBroadcaster } from '../remote/mobile-broadcaster'
+import type { Session, SessionManager } from '../session/types'
 
 function makeSignal(aborted = false): AbortSignal {
   return { aborted } as AbortSignal
 }
+
+describe('mobile attention from Claude prompts', () => {
+  const cases = ['Read', 'AskUserQuestion', 'ExitPlanMode', 'elicitation'] as const
+
+  function setup() {
+    const permissions = new Map<string, PendingPermission>()
+    const questions = new Map<string, PendingQuestion>()
+    const plans = new Map<string, PendingPlanApproval>()
+    const elicitations = new Map<string, PendingElicitation>()
+    const sent: AgentEvent[] = []
+    const broadcasts: Promise<void>[] = []
+    const session = {
+      id: 'background', owner: { kind: 'local' }, subscribers: new Set(),
+      snapshot: { id: 'background', projectPath: '/project', harnessId: 'claude', status: 'streaming', messages: [] },
+      getPendingInteractions: () => [
+        ...permissions.values(), ...questions.values(), ...plans.values(), ...elicitations.values(),
+      ].map(entry => entry.event),
+    } as unknown as Session
+    const broadcaster = new MobileBroadcaster({ getSession: () => session } as unknown as SessionManager, {
+      sendAgentEvent: async (event, targets) => {
+        // The phone has never opened this session, so only global summaries reach it.
+        expect(targets).toBeUndefined()
+        sent.push(event)
+      },
+    })
+    const emit = (event: AgentEvent) => {
+      broadcasts.push(broadcaster.broadcast({ ...event, sessionId: session.id }))
+    }
+    const { canUseTool } = createCanUseTool(permissions, questions, plans, emit)
+    const onElicitation = createOnElicitation(elicitations, emit)
+    const open = (kind: typeof cases[number], aborted = false) => kind === 'elicitation'
+      ? onElicitation({ mode: 'form', serverName: 'server', message: 'Choose environment', requestedSchema: { type: 'object', properties: {} } }, { signal: makeSignal(aborted) })
+      : canUseTool(kind, kind === 'AskUserQuestion' ? { questions: [{ question: 'Choose environment' }] } : {}, { toolUseID: 'tool', signal: makeSignal(aborted) })
+    const cancel = () => rejectAllPending(permissions, questions, plans, elicitations)
+    return { sent, broadcasts, session, open, cancel, emit }
+  }
+
+  it.each(cases)('broadcasts pending %s before the user opens the session and clears it on resolution', async (kind) => {
+    const flow = setup()
+    const waiting = flow.open(kind)
+    await Promise.all(flow.broadcasts)
+    const pending = flow.sent[0]
+    flow.cancel()
+    await waiting
+    expect(pending).toMatchObject({ type: 'session_activity', activity: {
+      sessionId: 'background', pendingCount: 1,
+      pendingReason: { en: expect.any(String), zh: expect.any(String) },
+    } })
+    flow.emit({ type: 'interaction_resolved', interactionType: kind === 'AskUserQuestion' ? 'question' : kind === 'ExitPlanMode' ? 'plan_approval' : 'permission', requestId: 'resolved' })
+    await Promise.all(flow.broadcasts)
+    expect(flow.sent.at(-1)).toMatchObject({ type: 'session_activity', activity: {
+      pendingCount: 0, pendingReason: { en: null, zh: null },
+    } })
+  })
+
+  it.each(cases)('does not publish an unanswerable %s after cancellation', async (kind) => {
+    const flow = setup()
+    await flow.open(kind, true)
+    await Promise.all(flow.broadcasts)
+    expect(flow.session.getPendingInteractions()).toEqual([])
+    expect(flow.sent).toEqual([])
+  })
+})
 
 describe('respondToPermission', () => {
   it('should resolve pending permission with correct args', () => {

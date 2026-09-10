@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { useMemo, useState, type ReactNode } from 'react'
 import type { CodexThreadItem, ContentBlock } from '@superone/shared/agent-types'
+import { isCodexCommandToolError } from '@superone/shared/codex-command-status'
 import { PortableToolRow, type PortableToolRowProps } from './PortableToolRow'
 import { useDeferredText } from './use-deferred-text'
 
@@ -61,5 +62,6 @@ export function DeferredCodexTool({ item, isStreaming, renderItem }: { item: Cod
   return <DeferredTool remoteDetail={item.remoteDetail} toolName={toolName} toolUseId={item.id}
     renderDetail={renderItem ? detail => detail.item ? renderItem(detail.item) : null : undefined}
     input={input} filePath={fileChange?.path} toolLineDelta={item.type === 'file_change' ? item.toolLineDelta : undefined}
-    status={active ? 'streaming' : 'complete'} isError={'status' in item && item.status === 'failed'} />
+    status={active ? 'streaming' : 'complete'}
+    isError={item.type === 'command_execution' ? isCodexCommandToolError(item) : 'status' in item && item.status === 'failed'} />
 }

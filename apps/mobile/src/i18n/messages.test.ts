@@ -14,5 +14,6 @@ describe('mobile translations', () => {
   it('translates mobile shell copy into Chinese', () => {
     expect(translateMobileText('zh', 'Language & Region')).toBe('语言与地区')
     expect(translateMobileText('zh', 'No projects yet')).toBe('还没有项目')
+    expect(translateMobileText('zh', 'Open workspace, sessions need attention')).toBe('打开工作区，有会话需要关注')
   })
 })

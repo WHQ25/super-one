@@ -34,6 +34,12 @@ export function reducePermission(session: ChatCoreSession, event: PermissionEven
         permissionMode: eventPatch.permissionMode,
         apiProviderId: eventPatch.apiProviderId,
       }
+      // Host session settings are harness-neutral. Codex selectors keep aliases,
+      // which may still contain an older desktop pick when mobile changes it.
+      if (session.sessionProvider === 'codex') {
+        if (merged.selectedModel) merged.selectedCodexModel = merged.selectedModel
+        if (merged.selectedEffort !== undefined) merged.selectedCodexReasoningEffort = merged.selectedEffort
+      }
       // `null` means the emitter has no model (a session created before its first send
       // never learned one) — no caller ever means "clear the selection", so keep ours.
       if (merged.selectedModel != null) {

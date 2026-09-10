@@ -7,7 +7,7 @@ export function deferTool(name: string): boolean {
   return !/widget_show|media_|imagegen|image_gen|video_gen|AskUserQuestion|Todo|TaskCreate|TaskUpdate|EnterPlanMode|ExitPlanMode/.test(name)
 }
 
-function projectedToolSummary(block: ContentBlock & { toolName: string }): string | undefined {
+function projectedToolSummary(block: Extract<ContentBlock, { toolName: string }>): string | undefined {
   const existing = block.toolSummary?.slice(0, 160)
   if (typeof block.input !== 'string') return existing
   try {

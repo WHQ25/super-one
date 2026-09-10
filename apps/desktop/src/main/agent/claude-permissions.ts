@@ -40,8 +40,8 @@ export interface PendingElicitation {
 
 /**
  * Factory for the SDK's Options.onElicitation callback. Mirrors createCanUseTool's
- * emit-then-suspend pattern: emit a permission_request event, park the Promise in
- * pendingElicitations, and let respondToElicitation() (driven by the renderer over the
+ * register-then-emit pattern: park the Promise in pendingElicitations before
+ * publishing the request, and let respondToElicitation() (driven by the renderer over the
  * shared PERMISSION_RESPONSE IPC channel) resolve it.
  *
  * The SDK auto-declines every elicitation when no onElicitation is provided
@@ -76,10 +76,6 @@ export function createOnElicitation(
         ...(elicitationForm.length > 0 ? { elicitationForm } : {}),
       },
     }
-    trace('permission.flow', 'elicit_emit', { serverName: request.serverName }, requestId)
-    log.info('[onElicitation] emit permission_request requestId=%s serverName=%s', requestId, request.serverName)
-    emit(permEvent)
-
     return new Promise<ElicitationResult>((resolve) => {
       if (options.signal.aborted) {
         trace('permission.flow', 'elicit_resolve', { source: 'signal_already_aborted' }, requestId)
@@ -87,6 +83,9 @@ export function createOnElicitation(
         return
       }
       pendingElicitations.set(requestId, { resolve, event: permEvent })
+      trace('permission.flow', 'elicit_emit', { serverName: request.serverName }, requestId)
+      log.info('[onElicitation] emit permission_request requestId=%s serverName=%s', requestId, request.serverName)
+      emit(permEvent)
       // Note: no listener for future abort events, same as createCanUseTool —
       // cleanup is handled by rejectAllPending() on session reset/interrupt.
     })
@@ -212,10 +211,6 @@ export function createCanUseTool(
         suggestions: context.suggestions as Array<Record<string, unknown>> | undefined,
       },
     }
-    trace('permission.flow', 'emit_request', { toolName, toolUseId: context.toolUseID, signalAborted: context.signal.aborted }, requestId)
-    log.info('[canUseTool] emit permission_request requestId=%s toolName=%s toolUseId=%s', requestId, toolName, context.toolUseID)
-    emit(permEvent)
-
     const result = await new Promise<{ allow: boolean; alwaysAllow?: boolean; reason?: string; selectedSuggestions?: number[] }>((resolve) => {
       if (context.signal.aborted) {
         trace('permission.flow', 'resolve', { source: 'signal_already_aborted', allow: false }, requestId)
@@ -229,6 +224,11 @@ export function createCanUseTool(
         toolUseID: context.toolUseID,
         event: permEvent,
       })
+      // Subscribers synchronously read pending interactions for mobile summaries.
+      // Publish only after the request is registered and can be answered.
+      trace('permission.flow', 'emit_request', { toolName, toolUseId: context.toolUseID, signalAborted: context.signal.aborted }, requestId)
+      log.info('[canUseTool] emit permission_request requestId=%s toolName=%s toolUseId=%s', requestId, toolName, context.toolUseID)
+      emit(permEvent)
       // Note: We intentionally do NOT listen for future abort events.
       // The SDK may fire abort while the user is still deciding on the
       // permission prompt. Cleanup is handled by rejectAllPending() on
@@ -286,8 +286,6 @@ async function handleAskUserQuestion(
     type: 'ask_user_question',
     request: { requestId, questions, previewFormat },
   }
-  emit(questionEvent)
-
   const response = await new Promise<QuestionResponse | null>((resolve) => {
     if (context.signal.aborted) {
       resolve(null)
@@ -295,6 +293,7 @@ async function handleAskUserQuestion(
     }
 
     pendingQuestions.set(requestId, { resolve, event: questionEvent })
+    emit(questionEvent)
     // Note: We intentionally do NOT listen for future abort events.
     // Cleanup is handled by rejectAllPending() on session reset/interrupt.
   })
@@ -356,14 +355,13 @@ async function handlePlanApproval(
       allowedPrompts,
     },
   }
-  emit(planEvent)
-
   const result = await new Promise<{ approved: boolean; feedback?: string }>((resolve) => {
     if (context.signal.aborted) {
       resolve({ approved: false, feedback: 'Aborted' })
       return
     }
     pendingPlanApprovals.set(requestId, { resolve, event: planEvent })
+    emit(planEvent)
   })
 
   if (result.approved) {

@@ -1344,11 +1344,18 @@ export class Session implements SessionContract {
       case 'claude.steer_queued':
       case 'acp.steer_queued':
         return dispatchBackendSteer(cmd, {
+          session: this,
           id: this.id,
           harnessId: this.harnessId,
           streaming: this.isStreaming(),
           backend: this.backend,
-          appendUserMessage: (id, text) => this.appendSideChannelUserMessage(id, text),
+          appendUserMessage: (message) => {
+            if (this._messages.some((m) => m.id === message.id)) return
+            this.replaceMessages([...this._messages, message])
+            this._lastUserMessageAt = Date.now()
+            this.notifyStateChange()
+            this.forwardEvent({ type: 'user_message_appended', message })
+          },
         })
       case 'codex.plan_approval': {
         this.applyCodexPlanApprovalToMessage(cmd.messageId, { status: cmd.status, ...(cmd.feedback ? { feedback: cmd.feedback } : {}) })
@@ -1398,21 +1405,6 @@ export class Session implements SessionContract {
         return
       }
     }
-  }
-
-  private appendSideChannelUserMessage(messageId: string, text: string): void {
-    if (this._messages.some((m) => m.id === messageId)) return
-    const userMsg: ChatMessage = {
-      id: messageId,
-      role: 'user',
-      status: 'complete',
-      content: [{ type: 'text', text }],
-      createdAt: new Date().toISOString(),
-      providerId: this.harnessId,
-    }
-    this.replaceMessages([...this._messages, userMsg])
-    this._lastUserMessageAt = Date.now()
-    this.notifyStateChange()
   }
 
   private applyCodexPlanApprovalToMessage(

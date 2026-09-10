@@ -1,3 +1,4 @@
+import { PortableCodexCommand } from './PortableCodexCommand'
 import { DeferredInteractiveTool, isPortableInteractiveTool } from './DeferredInteractiveTool'
 import { DeferredTool, DeferredCodexTool, DeferredDetailStatus, useDeferredToolDetail } from './DeferredTool'
 import { PortableAsyncQuestion, AsyncQuestionTurnContext } from './PortableAsyncQuestion'
@@ -43,7 +44,6 @@ import {
   CodexTurnViewPresenter,
   codexMcpItemResultText,
   isHiddenCodexMcpItem,
-  type CodexCommandPresenterProps,
   type CodexItemPresenterProps,
   type CodexSubagentPresenterProps,
   type CodexTurnViewPresenterParts,
@@ -952,28 +952,6 @@ function PortableCodexItem(props: CodexItemPresenterProps) {
     default:
       return <div key={`${item.id}-${index}`} />
   }
-}
-
-function PortableCodexCommand({ item, isStreaming }: CodexCommandPresenterProps) {
-  if (item.remoteDetail) return <DeferredCodexTool item={item} isStreaming={isStreaming} />
-  const action = item.commandActions?.[0]
-  const toolName = action?.type === 'read' ? 'Read' : action?.type === 'search' ? 'Grep' : 'Bash'
-  const input = toolName === 'Read'
-    ? { file_path: action?.path ?? item.command }
-    : toolName === 'Grep'
-      ? { pattern: action?.query ?? '', path: action?.path }
-      : { command: item.command }
-  return (
-    <PortableToolRow
-      toolName={toolName}
-      toolUseId={item.id}
-      input={stringify(input)}
-      toolSummary={action?.path ?? action?.query ?? item.command}
-      result={`${item.aggregatedOutput}${item.exitCode !== undefined ? `\n\nExit code ${item.exitCode}` : ''}`.trim() || undefined}
-      status={isStreaming && item.status === 'in_progress' ? 'streaming' : 'complete'}
-      isError={item.status === 'failed' || (item.exitCode != null && item.exitCode !== 0)}
-    />
-  )
 }
 
 /**

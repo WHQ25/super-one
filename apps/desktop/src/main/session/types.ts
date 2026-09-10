@@ -182,6 +182,8 @@ export type BackendCommand =
       newAssistantMessageId?: string
       newUserMessageId?: string
       newUserText?: string
+      /** Origin of an async answer that may start a new turn after completion. */
+      providerOrigin?: SendProviderOrigin
     }
   | {
       kind: 'codex.steer_queued'

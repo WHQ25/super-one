@@ -12,12 +12,13 @@ export interface CodexAsyncQuestionViewProps {
   submittedReply: string | null
   error: string | null
   canSubmit: boolean
+  disabled?: boolean
   onAnswerChange: (index: number, answer: string) => void
   onSubmit: () => void
 }
 
 export function CodexAsyncQuestionView({
-  questions, answers, submitting, submittedReply, error, canSubmit, onAnswerChange, onSubmit,
+  questions, answers, submitting, submittedReply, error, canSubmit, disabled, onAnswerChange, onSubmit,
 }: CodexAsyncQuestionViewProps) {
   const { t } = useTranslation()
   if (submittedReply !== null) {
@@ -36,7 +37,7 @@ export function CodexAsyncQuestionView({
   return (
     <div className="my-2 flex flex-col gap-3 rounded-lg border border-border/70 bg-muted/20 p-3">
       {questions.map((question, questionIndex) => (
-        <fieldset key={questionIndex} disabled={submitting} className="flex flex-col gap-2">
+        <fieldset key={questionIndex} disabled={disabled || submitting} className="flex flex-col gap-2">
           <legend className="text-sm font-medium text-foreground">{question.title}</legend>
           {question.options && (
             <div className="flex flex-wrap gap-1.5">
@@ -65,7 +66,7 @@ export function CodexAsyncQuestionView({
               value={question.options?.includes(answers[questionIndex] ?? '') ? '' : (answers[questionIndex] ?? '')}
               onChange={(event) => onAnswerChange(questionIndex, event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.nativeEvent.isComposing && canSubmit && !submitting) onSubmit()
+                if (event.key === 'Enter' && !event.nativeEvent.isComposing && canSubmit && !disabled && !submitting) onSubmit()
               }}
               placeholder={t('chat.askUser.otherOption')}
               className="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"

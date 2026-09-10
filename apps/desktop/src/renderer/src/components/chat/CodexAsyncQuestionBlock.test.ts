@@ -19,6 +19,7 @@ beforeEach(() => {
   steer.mockReset()
   window.app.codexSteer = steer
   useChatStore.setState({
+    remoteSessions: {},
     activeProject: '/project',
     projectSessions: {
       '/project': {
@@ -118,8 +119,39 @@ describe('formatCodexAsyncQuestionReply', () => {
     expect(steer).toHaveBeenCalledTimes(2)
   })
 
+  it('locks every input when mobile takes control and unlocks after release', () => {
+    render(createElement(CodexAsyncQuestionBlock, { item: question }))
+    fireEvent.click(screen.getByRole('button', { name: 'Production' }))
+    act(() => useChatStore.setState({ remoteSessions: { '/project': ['session-1'] } }))
+    expect(screen.getByRole('button', { name: 'Production' })).toBeDisabled()
+    expect(screen.getByRole('textbox')).toBeDisabled()
+    const submit = screen.getByRole('button', { name: 'chat.askUser.submit' })
+    expect(submit).toBeDisabled()
+    fireEvent.click(submit)
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
+    expect(steer).not.toHaveBeenCalled()
+    act(() => useChatStore.setState({ remoteSessions: {} }))
+    expect(submit).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Production' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('updates the mounted read-only question when a mobile answer arrives', () => {
+    useChatStore.setState({ remoteSessions: { '/project': ['session-1'] } })
+    render(createElement(CodexAsyncQuestionBlock, { item: question }))
+    act(() => useChatStore.getState().handleAgentEvent({
+      type: 'user_message_appended', projectPath: '/project', sessionId: 'session-1',
+      message: { id: 'codex_async_answer:question-1', role: 'user', status: 'complete',
+        content: [{ type: 'text', text: 'Production' }], createdAt: '', providerId: 'codex' },
+    }))
+    expect(screen.getByRole('status')).toHaveTextContent('chat.askUser.answered')
+    expect(screen.getByText('Production')).toBeTruthy()
+    expect(screen.queryByRole('button')).toBeNull()
+    expect(steer).not.toHaveBeenCalled()
+  })
+
   it('steers the scoped pane and keeps its answer out of the foreground session', async () => {
     useChatStore.setState((state) => ({
+      remoteSessions: { '/project': ['session-1'] },
       projectSessions: {
         ...state.projectSessions,
         '/project': {

@@ -22,6 +22,7 @@ export async function answerRemoteAsyncQuestion(session: Session | null | undefi
   const reply = formatCodexAsyncQuestionReply(item.questions, command.answers)
   const request = session.dispatchBackendCommand({
     kind: 'codex.steer', input: reply, newAssistantMessageId: '', newUserMessageId: replyId, newUserText: reply,
+    providerOrigin: 'remote',
   }).then(() => reply)
   requests.set(replyId, request)
   try { return await request } finally { requests.delete(replyId) }

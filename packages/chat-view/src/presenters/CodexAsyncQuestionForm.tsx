@@ -33,7 +33,7 @@ export function CodexAsyncQuestionForm({ questions, submittedReply, disabled, on
     }
   }
   return <CodexAsyncQuestionView questions={questions} answers={answers} submitting={submitting}
-    submittedReply={reply} error={error} canSubmit={canSubmit}
+    submittedReply={reply} error={error} canSubmit={canSubmit} disabled={disabled}
     onAnswerChange={(index, answer) => setAnswers(current => current.map((value, i) => i === index ? answer : value))}
     onSubmit={() => void submit()} />
 }

@@ -2218,6 +2218,7 @@ describe('Session message accumulation', () => {
 
   it('does not persist an async answer when steer fails', async () => {
     const { session, backend } = makeSession({ harnessId: 'codex' })
+    backend.emit({ type: 'status_change', status: 'streaming' })
     vi.spyOn(backend, 'handleCommand').mockRejectedValueOnce(new Error('No active turn'))
     await expect(session.dispatchBackendCommand({
       kind: 'codex.steer', input: 'Production',

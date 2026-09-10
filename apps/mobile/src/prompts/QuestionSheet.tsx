@@ -24,20 +24,28 @@ export function QuestionSheet(props: {
   const [otherTexts, setOtherTexts] = useState<Record<string, string>>({})
   const [notes, setNotes] = useState<Record<string, string>>({})
   const [tab, setTab] = useState(0)
-  useEffect(() => { setAnswers(initialQuestionAnswers(props.question?.questions ?? [])); setOtherTexts({}); setNotes({}); setTab(0) }, [props.question?.requestId])
+  const [closed, setClosed] = useState(false)
+  useEffect(() => {
+    setAnswers(initialQuestionAnswers(props.question?.questions ?? []))
+    setOtherTexts({})
+    setNotes({})
+    setTab(0)
+    setClosed(false)
+  }, [props.question?.requestId])
   const question = props.question
-  if (!question) return null
+  if (!question || closed) return null
   const q = question.questions[tab] ?? question.questions[0]
   const key = q ? questionKey(q) : ''
   const selected = selectedQuestionOptions(answers[key])
   const option = q?.options.find((item) => item.label === selected.at(-1))
   const noteKey = option && q ? questionNoteKey(q, option.label) : ''
   const answered = question.questions.filter((item) => answers[questionKey(item)]?.trim()).length
-  return <PromptSheet title={question.questions.length === 1 ? 'Question' : 'Questions'} subtitle={question.questions.length > 1 ? `${answered} of ${question.questions.length} answered` : undefined} icon={MessageCircle} onDismiss={() => props.onDismiss(question.requestId)} footer={<PromptActions
+  const close = (action: () => void) => { setClosed(true); action() }
+  return <PromptSheet title={question.questions.length === 1 ? 'Question' : 'Questions'} subtitle={question.questions.length > 1 ? `${answered} of ${question.questions.length} answered` : undefined} icon={MessageCircle} onDismiss={() => close(() => props.onDismiss(question.requestId))} footer={<PromptActions
     approveLabel="Submit" rejectLabel="Dismiss"
     disabled={!questionAnswersAreComplete(question.questions, answers)}
-    onApprove={() => props.onSubmit(question.requestId, answers, buildQuestionAnnotations(question.questions, answers, notes))}
-    onReject={() => props.onDismiss(question.requestId)}
+    onApprove={() => close(() => props.onSubmit(question.requestId, answers, buildQuestionAnnotations(question.questions, answers, notes)))}
+    onReject={() => close(() => props.onDismiss(question.requestId))}
   />}>
     {question.questions.length > 1 ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>{question.questions.map((item, index) => <PromptPill key={questionKey(item)} label={`${item.header}${answers[questionKey(item)]?.trim() ? ' ✓' : ''}`} selected={tab === index} onPress={() => setTab(index)} />)}</ScrollView> : null}
     {q ? <View style={styles.stack}>

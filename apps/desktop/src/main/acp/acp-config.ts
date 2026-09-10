@@ -194,12 +194,51 @@ export function extractModeConfig(
   }
 }
 
+function overlayModelOption(primary: ModelOption, extra: ModelOption | undefined): ModelOption {
+  if (!extra) return primary
+  return {
+    ...primary,
+    ...(primary.contextWindow == null && extra.contextWindow != null
+      ? { contextWindow: extra.contextWindow }
+      : {}),
+    ...(primary.supportsEffort == null && extra.supportsEffort != null
+      ? { supportsEffort: extra.supportsEffort }
+      : {}),
+    ...(primary.supportedEffortLevels == null && extra.supportedEffortLevels != null
+      ? { supportedEffortLevels: extra.supportedEffortLevels }
+      : {}),
+  }
+}
+
+function overlayModelList(primary: ModelOption[], extras: ModelOption[]): ModelOption[] {
+  if (extras.length === 0) return primary
+  const byId = new Map(extras.map((model) => [model.id, model]))
+  return primary.map((model) => overlayModelOption(model, byId.get(model.id)))
+}
+
+/**
+ * Keep the winner's picker list / configId / selection, and fill window / effort
+ * metadata from later catalogs. Grok `session/new` now ships both ACP
+ * `configOptions` (no window) and `models` (`_meta.totalContextTokens`).
+ */
+export function mergeModelConfig(
+  primary: AcpModelConfig,
+  ...sources: Array<AcpModelConfig | null | undefined>
+): AcpModelConfig {
+  let models = primary.models
+  for (const source of sources) {
+    if (source?.models.length) models = overlayModelList(models, source.models)
+  }
+  return models === primary.models ? primary : { ...primary, models }
+}
+
 /** Build session-facing catalog from a persisted agent config snapshot. */
 export function deriveSessionCatalog(catalog: AcpAgentConfigCatalog): AcpSessionCatalog {
   const fromOptions = extractModelConfig(catalog.configOptions)
+  const extras = catalog.extraModels ?? []
   const models = fromOptions?.models.length
-    ? fromOptions.models
-    : (catalog.extraModels ?? [])
+    ? overlayModelList(fromOptions.models, extras)
+    : extras
   const selectedModelId =
     (fromOptions?.selectedModelId
       ?? catalog.selectedModelId
@@ -506,20 +545,17 @@ export function extractModelsFromNewSessionResult(result: unknown): AcpModelConf
   const r = result as Record<string, unknown>
 
   const fromConfig = extractModelConfig(r.configOptions as SessionConfigOption[] | undefined)
-  if (fromConfig) return fromConfig
-
   const fromModels = extractModelsFromAgentModelsField(r.models)
-  if (fromModels) return fromModels
-
-  return extractModelsFromXaiSessionConfig(r._meta)
+  const fromXai = extractModelsFromXaiSessionConfig(r._meta)
+  if (fromConfig) return mergeModelConfig(fromConfig, fromModels, fromXai)
+  return fromModels ?? fromXai
 }
 
-/** First non-null extraction wins (standard ACP → Grok fields). */
+/** First non-empty catalog wins the picker; later catalogs fill missing metadata. */
 export function coalesceModelConfig(...candidates: Array<AcpModelConfig | null | undefined>): AcpModelConfig | null {
-  for (const c of candidates) {
-    if (c && c.models.length > 0) return c
-  }
-  return null
+  const present = candidates.filter((c): c is AcpModelConfig => !!c && c.models.length > 0)
+  if (present.length === 0) return null
+  return mergeModelConfig(present[0]!, ...present.slice(1))
 }
 
 export interface AcpSetModelOptions {

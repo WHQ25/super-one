@@ -32,6 +32,7 @@ const activeSessionState = {
   status: 'idle' as string,
   detailedUsage: null as unknown,
   _activeSessionId: 'sid-1' as string | null,
+  acpModels: [] as Array<{ id: string; name: string; description: string; contextWindow?: number }>,
 }
 
 let getContextUsageMock = vi.fn(async (_projectPath: string, _sessionId?: string) => null as unknown)
@@ -95,6 +96,7 @@ beforeEach(() => {
   activeSessionState.status = 'idle'
   activeSessionState.detailedUsage = null
   activeSessionState._activeSessionId = 'sid-1'
+  activeSessionState.acpModels = []
   modelCatalog = null
   getContextUsageMock = vi.fn(async (_projectPath: string, _sessionId?: string) => null)
   Object.defineProperty(window, 'agent', {
@@ -276,8 +278,9 @@ describe('ContextUsage', () => {
     expect(chatState.setDetailedUsage).toHaveBeenCalledWith('/test', 'sid-1', expect.objectContaining({ maxTokens: 500_000 }))
   })
 
-  it('uses model.contextWindow for acp when session window is missing', () => {
-    chatState.availableModels = [{ id: 'grok-4.5', name: 'Grok 4.5', description: '', contextWindow: 500_000 } as never]
+  it('uses acpModels.contextWindow for acp when session window is missing', () => {
+    chatState.availableModels = [{ id: 'grok-4.5', name: 'Not Grok', description: '', contextWindow: 200_000 } as never]
+    activeSessionState.acpModels = [{ id: 'grok-4.5', name: 'Grok 4.5', description: '', contextWindow: 500_000 }]
     activeSessionState.contextTokens = 50_000
     activeSessionState.selectedModel = 'grok-4.5'
     activeSessionState.preferredProvider = 'acp' as never
@@ -288,6 +291,7 @@ describe('ContextUsage', () => {
 
     expect(screen.getByText('10%')).toBeTruthy()
     expect(screen.getByText('50.0k / 500.0k')).toBeTruthy()
+    expect(screen.queryByText(/200\.0k/)).toBeNull()
   })
 
   it('prefers models.dev catalog contextWindow over session and detailed maxTokens', () => {

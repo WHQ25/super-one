@@ -1589,21 +1589,11 @@ export class AcpBackend implements SessionBackend {
   async getContextUsage(): Promise<ContextUsageInfo | null> {
     if (!this.runtime) return null
     try {
-      const live = await this.runtime.getContextUsage()
-      const session = typeof this.runtime.getSessionUsage === 'function'
-        ? await this.runtime.getSessionUsage()
-        : null
-      if (!live && !session) return null
-      if (!session) return live
-      const maxTokens = live?.maxTokens ?? 0
-      const totalTokens = session.totalTokens || live?.totalTokens || 0
-      return {
-        categories: live?.categories ?? [],
-        totalTokens,
-        maxTokens,
-        percentage: maxTokens > 0 ? Math.min(100, Math.round((totalTokens / maxTokens) * 100)) : (live?.percentage ?? 0),
-        model: live?.model ?? '',
-      }
+      // Occupancy only — `x.ai/session/usage` is a cumulative billed ledger
+      // (every model call's prompt+completion). Mixing it into totalTokens made
+      // the context ring jump after idle. Live `_meta.totalTokens` is the
+      // current window fill (same number Grok CLI `/context` uses).
+      return await this.runtime.getContextUsage()
     } catch {
       return null
     }

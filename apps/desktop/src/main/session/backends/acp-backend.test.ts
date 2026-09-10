@@ -1523,4 +1523,54 @@ describe('AcpBackend', () => {
     )).toBe(true)
     await backend.close()
   })
+
+  it('getContextUsage uses live occupancy, not session billed totals', async () => {
+    const getSessionUsage = vi.fn(async () => ({
+      totalTokens: 500_000,
+      inputTokens: 400_000,
+      outputTokens: 100_000,
+    }))
+    setAcpRuntimeFactory(async () => mockRuntime({
+      getContextUsage: async () => ({
+        categories: [],
+        totalTokens: 42_000,
+        maxTokens: 500_000,
+        percentage: 8,
+        model: 'grok-4.6',
+      }),
+      getSessionUsage,
+    }))
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await vi.waitFor(async () => {
+      expect(await backend.getContextUsage()).toMatchObject({
+        totalTokens: 42_000,
+        maxTokens: 500_000,
+        percentage: 8,
+      })
+    })
+    expect(getSessionUsage).not.toHaveBeenCalled()
+    await backend.close()
+  })
+
+  it('getContextUsage does not fall back to session billed when live occupancy is missing', async () => {
+    const getContextUsage = vi.fn(async () => null)
+    const getSessionUsage = vi.fn(async () => ({
+      totalTokens: 500_000,
+      inputTokens: 400_000,
+      outputTokens: 100_000,
+    }))
+    setAcpRuntimeFactory(async () => mockRuntime({
+      getContextUsage,
+      getSessionUsage,
+    }))
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await vi.waitFor(async () => {
+      expect(await backend.getContextUsage()).toBeNull()
+      expect(getContextUsage).toHaveBeenCalled()
+    })
+    expect(getSessionUsage).not.toHaveBeenCalled()
+    await backend.close()
+  })
 })

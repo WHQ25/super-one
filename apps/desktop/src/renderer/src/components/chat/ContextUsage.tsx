@@ -128,6 +128,7 @@ export function ContextUsage() {
   const detailedUsage = useActiveSession((s) => s.detailedUsage)
   const activeSessionId = useActiveSession((s) => scope?.sessionId ?? s._activeSessionId)
   const availableModels = useChatStore(selectClaudeModels)
+  const acpModels = useActiveSession((s) => s.acpModels)
   // Must be a cached snapshot — `?? []` mints a new array when Cursor is
   // unloaded, so React 19's useSyncExternalStore treats every store tick as a
   // change and hits #185 (Maximum update depth exceeded).
@@ -170,9 +171,12 @@ export function ContextUsage() {
 
   const activeProvider = sessionProvider ?? preferredProvider
   const isCursor = activeProvider === 'cursor'
+  const isAcp = activeProvider === 'acp'
   const currentModel = isCursor
     ? cursorModels.find((m) => m.id === selectedModel)
-    : availableModels.find((m) => m.id === selectedModel)
+    : isAcp
+      ? acpModels.find((m) => m.id === selectedModel)
+      : availableModels.find((m) => m.id === selectedModel)
   const detailedTokens = detailedUsage?.totalTokens ?? 0
   const effectiveTokens = detailedTokens > 0 ? detailedTokens : contextTokens
   const catalogContextWindow = useMemo(

@@ -11,6 +11,8 @@ import {
   asGrokReasoningEffort,
   extractModelsFromInitializeResult,
   extractModelsFromNewSessionResult,
+  coalesceModelConfig,
+  mergeModelConfig,
   serializeConfigOptions,
 } from './acp-config'
 
@@ -188,6 +190,23 @@ describe('serializeConfigOptions + deriveSessionCatalog', () => {
     expect(session.modes[0]?.id).toBe('ask')
   })
 
+  it('overlays extraModels contextWindow onto configOptions models', () => {
+    const session = deriveSessionCatalog({
+      configOptions: [{
+        id: 'model',
+        name: 'Model',
+        category: 'model',
+        type: 'select',
+        currentValue: 'grok-4.6',
+        options: [{ value: 'grok-4.6', name: 'Grok 4.6' }],
+      }],
+      extraModels: [{ id: 'grok-4.6', name: 'Grok 4.6', description: '', contextWindow: 500_000 }],
+      selectedModelId: 'grok-4.6',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    })
+    expect(session.models[0]).toMatchObject({ id: 'grok-4.6', contextWindow: 500_000 })
+  })
+
   it('uses extraModes with null modeConfigId for Grok effort', () => {
     const session = deriveSessionCatalog({
       configOptions: [],
@@ -310,6 +329,65 @@ describe('extractModelsFromNewSessionResult (Grok)', () => {
     })
     expect(result?.models.map((m) => m.id)).toEqual(['a', 'b'])
     expect(result?.selectedModelId).toBe('b')
+  })
+
+  it('keeps configOptions as the picker and fills contextWindow from models meta', () => {
+    const result = extractModelsFromNewSessionResult({
+      sessionId: 's1',
+      configOptions: [{
+        id: 'model',
+        name: 'Model',
+        category: 'model',
+        type: 'select',
+        currentValue: 'grok-4.6',
+        options: [
+          { value: 'grok-4.6', name: 'Grok 4.6' },
+          { value: 'grok-4.5', name: 'Grok 4.5' },
+        ],
+      }],
+      models: {
+        currentModelId: 'grok-4.6',
+        availableModels: [
+          { modelId: 'grok-4.6', name: 'Grok 4.6', _meta: { totalContextTokens: 500_000 } },
+          { modelId: 'grok-4.5', name: 'Grok 4.5', _meta: { totalContextTokens: 500_000 } },
+        ],
+      },
+    })
+    expect(result?.configId).toBe('model')
+    expect(result?.selectedModelId).toBe('grok-4.6')
+    expect(result?.models).toEqual([
+      { id: 'grok-4.6', name: 'Grok 4.6', description: '', contextWindow: 500_000 },
+      { id: 'grok-4.5', name: 'Grok 4.5', description: '', contextWindow: 500_000 },
+    ])
+  })
+})
+
+describe('coalesceModelConfig', () => {
+  it('overlays initialize window onto session/new configOptions', () => {
+    const merged = coalesceModelConfig(
+      {
+        configId: 'model',
+        selectedModelId: 'grok-4.6',
+        models: [{ id: 'grok-4.6', name: 'Grok 4.6', description: '' }],
+      },
+      {
+        configId: null,
+        selectedModelId: 'grok-4.6',
+        models: [{ id: 'grok-4.6', name: 'Grok 4.6', description: '', contextWindow: 500_000 }],
+      },
+    )
+    expect(merged).toMatchObject({
+      configId: 'model',
+      selectedModelId: 'grok-4.6',
+      models: [{ id: 'grok-4.6', contextWindow: 500_000 }],
+    })
+  })
+
+  it('does not overwrite a window the winner already has', () => {
+    expect(mergeModelConfig(
+      { configId: null, selectedModelId: 'a', models: [{ id: 'a', name: 'A', description: '', contextWindow: 200_000 }] },
+      { configId: null, selectedModelId: 'a', models: [{ id: 'a', name: 'A', description: '', contextWindow: 500_000 }] },
+    ).models[0]?.contextWindow).toBe(200_000)
   })
 })
 

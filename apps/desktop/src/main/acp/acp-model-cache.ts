@@ -128,13 +128,14 @@ export function catalogFromConfigOptions(
   modeFallback?: AcpModeConfig | null,
 ): AcpAgentConfigCatalog {
   const serialized = serializeConfigOptions(configOptions)
-  const hasModelInOptions = serialized.some((o) => o.category === 'model' || o.id === 'model')
   const hasModeInOptions = serialized.some((o) => o.category === 'mode' || o.id === 'mode')
   const useExtraModes = Boolean(modeFallback?.modes.length) && !hasModeInOptions
   return {
     configOptions: serialized,
+    // Keep even when configOptions already list models: Grok stamps
+    // totalContextTokens on the models field, not on the select options.
     extraModels:
-      modelFallback && modelFallback.models.length > 0 && !hasModelInOptions
+      modelFallback && modelFallback.models.length > 0
         ? modelFallback.models
         : undefined,
     selectedModelId: modelFallback?.selectedModelId ?? null,

@@ -10,6 +10,8 @@
  * - retry backoff 90s while the shell gates auto recap (e.g. <3 min since last turn)
  * - mark shown only when a SessionRecap notification arrives for that session
  * - in-flight guard so poll/focus-gained cannot double-fire while RPC is pending
+ * - desktop pre-generates while away; mobile waits for focus-gained so the
+ *   recap paints on return instead of landing in a backgrounded transcript
  */
 
 /** Minimum unfocused time before auto recap is eligible (Grok default). */
@@ -148,6 +150,13 @@ export interface RecapFocusControllerOptions {
   now?: () => number
   onDispatch?: (sessionId: string, reason: string) => void
   onError?: (sessionId: string, err: unknown) => void
+  /**
+   * When true (default), poll away sessions and request recap before they
+   * regain focus. Desktop uses this so a mosaic tile is ready on switch.
+   * Mobile sets false: request only on focus-gained so the recap appears
+   * when the user comes back, not while the chat is still in the background.
+   */
+  pregenerateWhileAway?: boolean
 }
 
 export interface RecapFocusController {
@@ -170,6 +179,7 @@ export interface RecapFocusController {
 export function createRecapFocusController(opts: RecapFocusControllerOptions): RecapFocusController {
   const thresholdMs = Math.max(0, opts.recapThresholdSecs ?? DEFAULT_SESSION_RECAP_THRESHOLD_SECS) * 1000
   const now = opts.now ?? Date.now
+  const pregenerateWhileAway = opts.pregenerateWhileAway !== false
   const trackers = new Map<string, FocusTracker>()
   /** Debounce rapid foreground flips (e.g. mosaic remount / session switch). */
   const loseTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -219,7 +229,7 @@ export function createRecapFocusController(opts: RecapFocusControllerOptions): R
   }
 
   const maybePregenerate = (): void => {
-    if (disposed) return
+    if (disposed || !pregenerateWhileAway) return
     for (const [sessionId, tracker] of trackers) {
       if (tracker.isFocused()) continue
       fireAutoRecap(sessionId, 'session-away-pregenerate', tracker.recapDue())
@@ -227,7 +237,7 @@ export function createRecapFocusController(opts: RecapFocusControllerOptions): R
   }
 
   const ensurePoll = (): void => {
-    if (pollTimer || disposed) return
+    if (!pregenerateWhileAway || pollTimer || disposed) return
     const anyAway = [...trackers.values()].some((t) => !t.isFocused())
     if (!anyAway) return
     pollTimer = setInterval(() => maybePregenerate(), AWAY_RECAP_POLL_MS)

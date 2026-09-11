@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   AUTO_RECAP_RETRY_INTERVAL_MS,
+  AWAY_RECAP_POLL_MS,
   FocusTracker,
   LOSE_DEBOUNCE_MS,
   createRecapFocusController,
@@ -230,5 +231,26 @@ describe('createRecapFocusController', () => {
     controller!.maybePregenerate()
     await Promise.resolve()
     expect(requests).not.toHaveBeenCalled()
+  })
+
+  it('does not pregenerate while away when pregenerateWhileAway is false', async () => {
+    controller?.dispose()
+    controller = createRecapFocusController({
+      requestAutoRecap: requests,
+      recapThresholdSecs: 0,
+      now: () => now,
+      pregenerateWhileAway: false,
+    })
+    vi.useFakeTimers()
+    controller.onSessionForeground('sid', false)
+    vi.advanceTimersByTime(LOSE_DEBOUNCE_MS)
+    vi.advanceTimersByTime(AWAY_RECAP_POLL_MS * 2)
+    controller.maybePregenerate()
+    await Promise.resolve()
+    expect(requests).not.toHaveBeenCalled()
+    controller.onSessionForeground('sid', true)
+    await Promise.resolve()
+    expect(requests).toHaveBeenCalledTimes(1)
+    expect(requests).toHaveBeenCalledWith('sid')
   })
 })

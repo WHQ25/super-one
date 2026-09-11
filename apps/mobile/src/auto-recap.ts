@@ -46,8 +46,8 @@ export type MobileAutoRecap = {
 
 /**
  * Mobile auto recap: same FocusTracker as desktop, owned by the phone.
- * Pregenerate can target a session the runtime is no longer subscribed to,
- * so the RPC carries that session's id/path rather than the open chat's.
+ * Unlike desktop mosaic, the phone has one visible chat — pregenerate would
+ * insert the recap into a backgrounded transcript. Request only on return.
  */
 export function createMobileAutoRecap(opts: {
   requestAutoRecap: (sessionId: string, projectPath: string) => boolean | Promise<boolean>
@@ -60,6 +60,7 @@ export function createMobileAutoRecap(opts: {
   const controller: RecapFocusController = createRecapFocusController({
     recapThresholdSecs: opts.recapThresholdSecs,
     now: opts.now,
+    pregenerateWhileAway: false,
     requestAutoRecap: (sessionId) => {
       const projectPath = paths.get(sessionId)
       if (!projectPath) return false

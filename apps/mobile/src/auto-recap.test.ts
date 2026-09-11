@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { LOSE_DEBOUNCE_MS } from '@superone/shared/recap-focus'
+import { AWAY_RECAP_POLL_MS, LOSE_DEBOUNCE_MS } from '@superone/shared/recap-focus'
 import { createMobileAutoRecap, requestAutoSessionRecap } from './auto-recap'
 
 describe('requestAutoSessionRecap', () => {
@@ -66,12 +66,25 @@ describe('createMobileAutoRecap', () => {
     expect(requests).toHaveBeenCalledWith('sid', '/p')
   })
 
-  it('pregenerates the previous session while another chat is open', async () => {
+  it('does not request recap while the app stays in the background', async () => {
+    vi.useFakeTimers()
+    recap.sync({ sessionId: 'sid', projectPath: '/p' }, true, true)
+    recap.sync({ sessionId: 'sid', projectPath: '/p' }, false, true)
+    vi.advanceTimersByTime(LOSE_DEBOUNCE_MS)
+    vi.advanceTimersByTime(AWAY_RECAP_POLL_MS * 2)
+    await Promise.resolve()
+    expect(requests).not.toHaveBeenCalled()
+  })
+
+  it('does not pregenerate while another chat is open — waits for return', async () => {
     vi.useFakeTimers()
     recap.sync({ sessionId: 'a', projectPath: '/p' }, true, true)
     recap.sync({ sessionId: 'b', projectPath: '/q' }, true, true)
     vi.advanceTimersByTime(LOSE_DEBOUNCE_MS)
     recap.maybePregenerate()
+    await Promise.resolve()
+    expect(requests).not.toHaveBeenCalled()
+    recap.sync({ sessionId: 'a', projectPath: '/p' }, true, true)
     await Promise.resolve()
     expect(requests).toHaveBeenCalledTimes(1)
     expect(requests).toHaveBeenCalledWith('a', '/p')
@@ -104,9 +117,11 @@ describe('createMobileAutoRecap', () => {
     recap.sync({ sessionId: 'sid', projectPath: '/p' }, true, true)
     recap.sync({ sessionId: 'sid', projectPath: '/p' }, false, true)
     vi.advanceTimersByTime(LOSE_DEBOUNCE_MS)
-    recap.maybePregenerate()
+    recap.sync({ sessionId: 'sid', projectPath: '/p' }, true, true)
     await Promise.resolve()
     expect(requests).toHaveBeenCalledTimes(1)
+    recap.sync({ sessionId: 'sid', projectPath: '/p' }, false, true)
+    vi.advanceTimersByTime(LOSE_DEBOUNCE_MS)
     expect(recap.getTracker('sid').recapDue()).toBe(true)
   })
 })

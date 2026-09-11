@@ -3,7 +3,8 @@ import { AppState } from 'react-native'
 import type { RelayClient } from '@superone/relay-client'
 import { createMobileAutoRecap, requestAutoSessionRecap } from '../auto-recap'
 
-/** Grok auto recap: session switch and app background/inactive both count as away. */
+/** Grok auto recap: session switch and app background/inactive both count as away.
+ * Recap is requested on return, not while the chat is still in the background. */
 export function useAutoRecap(opts: {
   clientRef: { current: RelayClient | null }
   sessionId: string | null

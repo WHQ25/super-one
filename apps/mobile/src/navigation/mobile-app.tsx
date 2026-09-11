@@ -52,6 +52,7 @@ import { useAutoRecap } from './use-auto-recap'
 import { harnessSupportsSandbox, sandboxInfoFromMode } from '@superone/shared/harness/harness-sandbox'
 import { suggestionHarnessKey } from '@superone/shared/suggestion-harness-order'
 import { fileBrowserHome, joinRemotePath, parentRemotePath, resolveRemoteFilePath, type FileBrowserMode } from '../shell-state'
+import { getMobileDeviceName } from '../mobile-device-name'
 import { loadOrCreateMobileId, mobileKv } from '../storage'
 import { registerFatalChatViewError } from '../chat-view-recovery'
 import { pickAndUploadProjectFile, pickChatImages, pickChatPdf, showAttachmentMenu } from '../attachments'
@@ -618,9 +619,17 @@ export function MobileApp() {
     const hp = (lanHostPort ?? lan).trim()
     if (hp.includes(':')) {
       const [host, port] = hp.split(':')
-      await client.connectLan(host, Number(port), secret, { deviceId: activeDeviceId, deviceName: 'Expo' })
+      await client.connectLan(host, Number(port), secret, {
+        deviceId: activeDeviceId,
+        deviceName: getMobileDeviceName(),
+      })
     } else {
-      await client.connectRelay({ relayUrl, masterSecret: secret, deviceId: activeDeviceId, deviceName: 'Expo' })
+      await client.connectRelay({
+        relayUrl,
+        masterSecret: secret,
+        deviceId: activeDeviceId,
+        deviceName: getMobileDeviceName(),
+      })
     }
     setActiveTransport(client.transport)
     await rememberPairing({
@@ -705,7 +714,7 @@ export function MobileApp() {
         const { code: c, done } = startPairingHandshake({
           qr,
           mobileDeviceId: activeDeviceId,
-          deviceName: 'Expo',
+          deviceName: getMobileDeviceName(),
           // Held so Cancel can close the socket; the handshake exposes no other
           // way to abort, and clearing the code alone would leave it running.
           openSocket: (url) => {

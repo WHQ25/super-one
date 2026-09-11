@@ -2,6 +2,7 @@ import { webcrypto } from 'node:crypto'
 import { hostname } from 'node:os'
 import WebSocket from 'ws'
 import log from './logger'
+import { resolvePairedDeviceDisplayName } from './paired-device-name'
 import { variant, variantId } from './variant'
 import type { AgentEvent, RemoteCommand, ContentBlock, ChatMessage, RemoteDeviceConfig, TerminalEvent } from '@superone/shared/agent-types'
 import { isSubagentToolName } from '@superone/shared/tool-ui'
@@ -555,7 +556,7 @@ export class RemoteControlService {
     return { channelId, tempKeyHex, relayUrl: this.relayUrl }
   }
 
-  async confirmPairing(enteredCode: string, masterSecret: string): Promise<void> {
+  async confirmPairing(enteredCode: string, masterSecret: string, deviceName?: string): Promise<void> {
     const session = this.pairingSession
     if (!session || session.pendingCode === null) throw new Error('No pairing request received yet')
     if (session.pendingCode !== enteredCode) throw new Error('Incorrect pairing code')
@@ -568,9 +569,9 @@ export class RemoteControlService {
     session.ws?.send(JSON.stringify({ type: 'pair_response', data: encrypted }))
 
     const mobileDeviceId = session.pendingMobileDeviceId!
-    const deviceName = session.pendingDeviceName!
-    log.info('[RemoteControl] Pairing confirmed for:', deviceName)
-    this.callbacks.onPairingConfirmed?.({ mobileDeviceId, deviceName })
+    const name = resolvePairedDeviceDisplayName(deviceName, session.pendingDeviceName ?? '')
+    log.info('[RemoteControl] Pairing confirmed for:', name)
+    this.callbacks.onPairingConfirmed?.({ mobileDeviceId, deviceName: name })
     await this.cancelPairing()
   }
 

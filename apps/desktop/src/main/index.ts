@@ -183,7 +183,7 @@ import { disposeIosSimulatorManager } from './ios-simulator'
 import { disposeAndroidDeviceManager } from './device/android'
 import { disposeMirrorDeviceManager } from './device/ios-mirror'
 import { attachDeviceGestureEvents } from './device/gesture-events'
-import { getDb, closeDb, getCachedHarnessResources, setCachedHarnessResources, upsertPairedDevice, listPairedDevices, deletePairedDevice, isPairedDevice } from './database'
+import { getDb, closeDb, getCachedHarnessResources, setCachedHarnessResources, upsertPairedDevice, recordPairedDeviceSeen, listPairedDevices, deletePairedDevice, isPairedDevice } from './database'
 import { connectWithHarnessResourceCache, getFreshHarnessResources } from './harness/resource-cache'
 import { backfillFromHistory, getBackfillStatus, queryCounts, queryHarnessSessionRanks, queryUsage } from './usage-stats-service'
 import { discoverUserSkills, discoverUserCommands, discoverUserAgents, discoverCodexUserPrompts } from './agent/discover-resources'
@@ -554,8 +554,8 @@ const remoteCallbacks: RemoteControlCallbacks = {
     }
   },
   onClientRegistered: ({ deviceName, deviceId, transport, firstConnect }) => {
-    upsertPairedDevice(deviceId, deviceName)
-    safeSend(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, { id: deviceId, online: true, name: deviceName, transport, firstConnect })
+    const name = recordPairedDeviceSeen(deviceId, deviceName)
+    safeSend(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, { id: deviceId, online: true, name, transport, firstConnect })
   },
   onClientDisconnected: ({ deviceId }) => {
     safeSend(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, { id: deviceId, online: false })
@@ -4464,10 +4464,10 @@ function registerIpcHandlers(): void {
     if (!config) throw new Error('Remote control not configured')
     return remoteControlService.startPairing()
   })
-  ipcMain.handle(AgentIpcChannels.REMOTE_CONFIRM_PAIRING, async (_, code: string) => {
+  ipcMain.handle(AgentIpcChannels.REMOTE_CONFIRM_PAIRING, async (_, code: string, deviceName?: string) => {
     const config = readRemoteConfig()
     if (!config) throw new Error('Remote control not configured')
-    await remoteControlService.confirmPairing(code, config.masterSecret)
+    await remoteControlService.confirmPairing(code, config.masterSecret, deviceName)
   })
   ipcMain.handle(AgentIpcChannels.REMOTE_CANCEL_PAIRING, async () => {
     await remoteControlService.cancelPairing()

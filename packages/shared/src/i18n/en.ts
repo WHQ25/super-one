@@ -3387,6 +3387,8 @@ export type Messages = {
       copyLink: string
       linkCopied: string
       codePrompt: string
+      deviceNameLabel: string
+      deviceNameHint: string
       confirming: string
       confirm: string
       codeError: string
@@ -7086,7 +7088,9 @@ export const en: Messages = {
       stepCode: 'Enter the 6-digit code shown on your phone',
       copyLink: 'Copy Pairing Link',
       linkCopied: 'Pairing link copied',
-      codePrompt: 'Enter the 6-digit code shown on',
+      codePrompt: 'Enter the 6-digit code shown on your phone',
+      deviceNameLabel: 'Device name',
+      deviceNameHint: 'Shown on this computer. You can change it.',
       confirming: 'Confirming…',
       confirm: 'Confirm',
       codeError: 'Incorrect code. Please check your phone and try again.',

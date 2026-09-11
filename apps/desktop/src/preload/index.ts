@@ -2298,8 +2298,8 @@ const appAPI = {
   },
   startPairing: (): Promise<{ channelId: string; tempKeyHex: string; relayUrl: string }> =>
     ipcRenderer.invoke(AgentIpcChannels.REMOTE_START_PAIRING),
-  confirmPairing: (code: string): Promise<void> =>
-    ipcRenderer.invoke(AgentIpcChannels.REMOTE_CONFIRM_PAIRING, code),
+  confirmPairing: (code: string, deviceName?: string): Promise<void> =>
+    ipcRenderer.invoke(AgentIpcChannels.REMOTE_CONFIRM_PAIRING, code, deviceName),
   cancelPairing: (): Promise<void> =>
     ipcRenderer.invoke(AgentIpcChannels.REMOTE_CANCEL_PAIRING),
   onPairingCodeReceived: (callback: (info: { code: string; deviceName: string }) => void) => {

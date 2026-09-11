@@ -137,6 +137,24 @@ export function upsertPairedDevice(id: string, name: string): void {
   `).run(id, name, new Date().toISOString(), new Date().toISOString())
 }
 
+/**
+ * Refresh last_seen on reconnect. Keep the stored name so a desktop pairing
+ * override is not replaced by whatever the phone reports next.
+ * Returns the name the UI should show.
+ */
+export function recordPairedDeviceSeen(id: string, incomingName: string): string {
+  const now = new Date().toISOString()
+  const existing = getDb().prepare('SELECT name FROM paired_devices WHERE id = ?').get(id) as
+    | { name: string }
+    | undefined
+  if (existing) {
+    getDb().prepare('UPDATE paired_devices SET last_seen_at = ? WHERE id = ?').run(now, id)
+    return existing.name
+  }
+  upsertPairedDevice(id, incomingName)
+  return incomingName
+}
+
 export function listPairedDevices(): PairedDeviceRow[] {
   return getDb().prepare('SELECT * FROM paired_devices ORDER BY paired_at DESC').all() as PairedDeviceRow[]
 }

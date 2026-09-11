@@ -11,6 +11,7 @@ import { useAppStore } from '@/stores/app'
 import { useRemoteStatus } from '@/hooks/useRemoteStatus'
 import type { PairedDevice } from '@superone/shared/agent-types'
 import { EnvironmentsPage } from './settings/environments/EnvironmentsPage'
+import { PairingCodeConfirm } from './PairingCodeConfirm'
 
 function deviceClientKind(device: PairedDevice): 'mobile' | 'desktop' {
   return device.clientKind === 'desktop' ? 'desktop' : 'mobile'
@@ -127,12 +128,15 @@ function ThisDevicePanel() {
       setPairingStep('idle')
       setQrValue('')
       setCodeInput('')
+      setPendingDeviceName('')
       setCodeError(t('resources.remote.sessionExpired'))
     })
 
     const unsubAlreadyPaired = window.app.onPairingAlreadyPaired(({ deviceName }) => {
       setPairingStep('idle')
       setQrValue('')
+      setCodeInput('')
+      setPendingDeviceName('')
       toast.warning(t('resources.remote.alreadyPaired', { name: deviceName }))
     })
 
@@ -161,11 +165,12 @@ function ThisDevicePanel() {
     setConfirming(true)
     setCodeError('')
     try {
-      await window.app.confirmPairing(codeInput)
+      await window.app.confirmPairing(codeInput, pendingDeviceName)
       await window.app.listPairedDevices().then(setPairedDevices)
       setPairingStep('idle')
       setQrValue('')
       setCodeInput('')
+      setPendingDeviceName('')
     } catch {
       setCodeError(t('resources.remote.codeError'))
     }
@@ -177,6 +182,7 @@ function ThisDevicePanel() {
     setPairingStep('idle')
     setQrValue('')
     setCodeInput('')
+    setPendingDeviceName('')
     setCodeError('')
   }
 
@@ -319,37 +325,16 @@ function ThisDevicePanel() {
           )}
 
           {config?.enabled && pairingStep === 'waiting_code' && (
-            <div className="flex flex-col items-center space-y-3 border-t border-border pt-4 text-center">
-              <p className="text-sm font-medium">
-                {t('resources.remote.codePrompt')}{' '}
-                <span className="text-foreground">{pendingDeviceName}</span>
-              </p>
-              <div className="flex items-center justify-center gap-2">
-                <input
-                  className="w-40 rounded-md border border-border bg-background px-3 py-2 text-center font-mono text-lg tracking-widest focus:outline-none focus:ring-1 focus:ring-ring"
-                  maxLength={6}
-                  value={codeInput}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                    setCodeInput(e.target.value.replace(/\D/g, ''))
-                  }
-                  placeholder="000000"
-                  autoFocus
-                  onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) =>
-                    e.key === 'Enter' && handleConfirmPairing()
-                  }
-                />
-                <Button
-                  onClick={handleConfirmPairing}
-                  disabled={confirming || codeInput.length !== 6}
-                >
-                  {confirming ? t('resources.remote.confirming') : t('resources.remote.confirm')}
-                </Button>
-                <Button variant="ghost" size="sm" onClick={handleCancelPairing}>
-                  {t('common.cancel')}
-                </Button>
-              </div>
-              {codeError && <p className="text-xs text-destructive">{codeError}</p>}
-            </div>
+            <PairingCodeConfirm
+              deviceName={pendingDeviceName}
+              onDeviceNameChange={setPendingDeviceName}
+              code={codeInput}
+              onCodeChange={setCodeInput}
+              error={codeError}
+              confirming={confirming}
+              onConfirm={() => { void handleConfirmPairing() }}
+              onCancel={() => { void handleCancelPairing() }}
+            />
           )}
 
           {codeError && pairingStep === 'idle' && (

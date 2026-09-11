@@ -737,7 +737,7 @@ interface AppAPI {
   onDeviceStatusChanged(callback: (device: import('@superone/shared/agent-types').RemoteDeviceStatus) => void): () => void
   onUploadProgress(callback: (progress: import('@superone/shared/agent-types').MobileUploadProgress) => void): () => void
   startPairing(): Promise<{ channelId: string; tempKeyHex: string; relayUrl: string }>
-  confirmPairing(code: string): Promise<void>
+  confirmPairing(code: string, deviceName?: string): Promise<void>
   cancelPairing(): Promise<void>
   onPairingCodeReceived(callback: (info: { code: string; deviceName: string }) => void): () => void
   onPairingExpired(callback: () => void): () => void

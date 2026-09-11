@@ -3,6 +3,7 @@ import { contiguousHistoryRange, needsHistoryPage, globalHistoryRange } from './
 import { extendHistoryIndex, mergeIndexedHistory, type SessionHistoryIndex } from '@superone/shared/session-history-index'
 import { HistoryPageButton } from './HistoryPageButton'
 import { deliverDetail } from './detail-stream'
+import { applyDocumentTheme, initialDocumentScheme } from './document-theme'
 import { AsyncQuestionMessagesContext } from './PortableAsyncQuestion'
 import {
   Component,
@@ -160,7 +161,7 @@ function applyProjection(
 }
 
 export function ChatView() {
-  const [state, setState] = useState<ViewState>(EMPTY_STATE)
+  const [state, setState] = useState<ViewState>(() => ({ ...EMPTY_STATE, scheme: initialDocumentScheme(document.documentElement) }))
   const stateRef = useRef(state)
   const atBottomRef = useRef(true)
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -425,7 +426,16 @@ export function ChatView() {
         scrollToBottomRef.current = false
         loadingPreviousRef.current = false
         navigatingUntilRef.current = 0
-        setState((previous) => ({ ...EMPTY_STATE, transcriptEpoch: previous.transcriptEpoch + 1 }))
+        // Theme, locale and connection are host-owned and only re-sent when they
+        // change, so a transcript reset must not roll them back to the defaults.
+        setState((previous) => ({
+          ...EMPTY_STATE,
+          transcriptEpoch: previous.transcriptEpoch + 1,
+          scheme: previous.scheme,
+          hue: previous.hue,
+          locale: previous.locale,
+          connection: previous.connection,
+        }))
         return
       case 'setConnection':
         setState((previous) => ({ ...previous, connection: { state: message.state, epoch: message.epoch } }))
@@ -486,10 +496,7 @@ export function ChatView() {
   }, [handleInbound])
 
   useEffect(() => {
-    const root = document.documentElement
-    root.style.setProperty('--brand-hue', String(state.hue))
-    root.classList.toggle('dark', state.scheme === 'dark')
-    root.style.colorScheme = state.scheme
+    applyDocumentTheme(document.documentElement, document.body, { hue: state.hue, scheme: state.scheme })
   }, [state.hue, state.scheme])
 
   useLayoutEffect(() => {

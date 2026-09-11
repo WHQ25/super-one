@@ -5,7 +5,10 @@ import './theme.css'
 
 // Brand hue is present before the first React paint; setTheme can override it later.
 document.documentElement.style.setProperty('--brand-hue', '250')
-document.documentElement.classList.add('dark')
+// The mobile host pre-paints its scheme (`chatViewPrePaintScript`) before this
+// runs and leaves `color-scheme` inline as the marker; only fall back to dark
+// when no host did (dev server, Storybook).
+if (!document.documentElement.style.colorScheme) document.documentElement.classList.add('dark')
 
 async function start(): Promise<void> {
   await initializeChatViewI18n('en')

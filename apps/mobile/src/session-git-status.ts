@@ -27,7 +27,7 @@ export type SessionGitFacts = {
   worktreeRemoved: boolean
   /** Snapshot branch — for a worktree session this is the worktree's own branch. */
   sessionBranch: string | null
-  /** Live `get_git_info` on the project, refreshed as the user switches branches. */
+  /** Live `get_git_info` on the project — turn end, session switch-back, branch page. */
   projectBranch: string | null
   /** Live short HEAD, present only when the project checkout is detached. */
   projectHead: string | null

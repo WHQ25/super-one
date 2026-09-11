@@ -77,6 +77,7 @@ import { SessionTransition } from '../session-transition'
 import { readProjectSessions } from './workspace-data'
 import { useRemoteDirectory } from './use-remote-directory'
 import { useProjectGitStatus } from './use-project-git-status'
+import { useProjectGitInfo } from './use-project-git-info'
 import { useFileSearch } from './use-file-search'
 import { completeTypedPath, usePathAutocomplete } from './use-path-autocomplete'
 import { useAdditionalDirs } from './use-additional-dirs'
@@ -154,7 +155,6 @@ export function MobileApp() {
     permissionModes: permModes,
     applySystemInfo,
   } = harnessSelection
-  const [gitInfo, setGitInfo] = useState<ShellGitInfo | null>(null)
   // Empty until the host answers; the switcher hides itself below two rows.
   const [harnessOptions, setHarnessOptions] = useState<RemoteHarnessOption[]>([])
   const [worktreeInfo, setWorktreeInfo] = useState<WorktreeInfo | null>(null)
@@ -259,6 +259,12 @@ export function MobileApp() {
   const [gotoPath, setGotoPath] = useState('')
   const [folderPrompt, setFolderPrompt] = useState<{ value: string; error?: string } | null>(null)
   const gitStatus = useProjectGitStatus(clientRef)
+  const { gitInfo, refresh: refreshGitInfo, replace: replaceGitInfo } = useProjectGitInfo({
+    clientRef,
+    projectPath: project?.path,
+    sessionId,
+    streaming,
+  })
   const additionalDirs = useAdditionalDirs({
     clientRef, projectPath: project?.path, provider: selectedProvider, sessionId,
     projectDirs: workspaceDirs, onDirs: setWorkspaceDirs,
@@ -804,12 +810,7 @@ export function MobileApp() {
     if (clientRef.current !== client || projectRequest !== shellDetailsRequestRef.current) return
     setProject(p)
     setSessions((await readProjectSessions(client, p.path)).sessions)
-    const git = await client.request({
-      type: 'get_git_info',
-      requestId: randomId(),
-      projectPath: p.path,
-    } as RemoteCommand).catch(() => null) as ShellGitInfo | null
-    setGitInfo(git)
+    await refreshGitInfo(p.path)
   }
 
   const loadShellDetails = async (provider: HarnessId = selectedProvider, p = project, refreshCatalog = false) => {
@@ -819,7 +820,7 @@ export function MobileApp() {
     const shellRequest = ++shellDetailsRequestRef.current
     const details = await fetchShellDetails(client, p.path, provider, refreshCatalog)
     if (shellRequest !== shellDetailsRequestRef.current || clientRef.current !== client) return
-    setGitInfo(details.git)
+    replaceGitInfo(details.git)
     setWorkspaceDirs(details.workspaceDirs)
     setWorktreeInfo(details.worktree)
     setWorktreeDirty(details.worktreeDirty)
@@ -1007,6 +1008,9 @@ export function MobileApp() {
       setSessionLoading(false)
       console.info('[SessionRestore]', runtime.restoreMetrics)
       refreshRuntimeCatalog(runtime, provider, true)
+      // A turn may have ended while this session was not on screen — the chip
+      // only watches the open session, so coming back has to re-read the tree.
+      void refreshGitInfo(p.path).catch(() => {})
     } finally {
       setSessionLoading(false)
     }
@@ -1113,6 +1117,17 @@ export function MobileApp() {
     if (addProjectOrigin === 'picker') { setScreen('project-picker'); return }
     setScreen('chat')
     if (!shouldUseTabletMultiPane(width, height, 'chat', !!project)) setSessionSwitcherOpen(true)
+  }
+
+  /**
+   * The branch page is the only surface that shows file counts and diff stats.
+   * Refresh here so an external checkout or a turn we weren't watching cannot
+   * leave the dirty summary stale. The header chip only needs dirty/clean, and
+   * that is kept current by turn-end and session-switch reads.
+   */
+  const openGitPage = () => {
+    setScreen('branch')
+    void refreshGitInfo(project?.path).catch(() => {})
   }
 
   /** Checkout or create a branch on the paired desktop, then re-read git state. */
@@ -1518,7 +1533,7 @@ export function MobileApp() {
         reconnect={reconnect}
         sidebarVisible={tabletMultiPane}
         git={sessionGit}
-        onOpenBranch={() => setScreen('branch')}
+        onOpenBranch={openGitPage}
         onBack={back}
         onSwitchSession={() => setSessionSwitcherOpen(true)}
         onOpenTerminal={openTerminal}
@@ -1678,7 +1693,7 @@ export function MobileApp() {
             branch: gitInfo?.branch,
             dirtyFiles: gitInfo?.dirty?.files,
             onWorktree: () => { setWorktreeDraft(worktreeSelection); setScreen('worktree') },
-            onBranch: () => setScreen('branch'),
+            onBranch: openGitPage,
           } : undefined}
           selection={{ model: selectedModel, models, providerName: harnessSelection.activeProviderName,
             activeProvider: harnessSelection.activeProvider, onRefresh: refreshModels,

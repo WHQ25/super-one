@@ -8,7 +8,7 @@ import * as Clipboard from 'expo-clipboard'
 import * as Haptics from 'expo-haptics'
 import { useCameraPermissions, type BarcodeScanningResult } from 'expo-camera'
 import { BackHandler, Linking, Pressable, useWindowDimensions, View } from 'react-native'
-import { Text } from '../ui/text'
+import { StatusBanner } from '../ui/status-banner'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { WebView } from 'react-native-webview'
 import type { HostOutbound } from '@superone/chat-view'
@@ -1263,9 +1263,10 @@ export function MobileApp() {
           ? { modelParams: harnessSelection.modelParams }
           : {}),
         ...(clientMessageId ? { clientMessageId, priority: 'next' } : {}),
+        // Fold Stair into this send so it cannot race a follow-up steer RPC.
+        ...(kind === 'steer' && clientMessageId ? { steer: 'now' as const } : {}),
+        ...(kind === 'soon' && clientMessageId ? { steer: 'next' as const } : {}),
       })
-      if (kind === 'steer' && clientMessageId) await runtime.steerQueuedMessage(clientMessageId, 'now')
-      if (kind === 'soon' && clientMessageId) await runtime.steerQueuedMessage(clientMessageId, 'next')
       if (!sessionId && !runtime.sessionTitle && text) setActiveSessionTitle(sentDraft.title.slice(0, 72))
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'message failed')
@@ -1578,6 +1579,7 @@ export function MobileApp() {
             ? additionalDirs.busy || !additionalDirs.resolvedPath
             : !!worktreeSelectionError(worktreeDraft, branches, checkedOutBranches)}
         />
+        <StatusBanner message={status} onDismiss={() => setStatus('')} />
             <View style={styles.flex}>
             <MobileNavigator
             route={screen}
@@ -1921,7 +1923,6 @@ export function MobileApp() {
           </View>
         </View>
       </MobileKeyboardFrame>
-      {status ? <Text style={styles.meta}>{status}</Text> : null}
       <MobileOverlays
         runtimeRef={runtimeRef}
         setStatus={setStatus}

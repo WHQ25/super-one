@@ -383,6 +383,8 @@ export class ChatRuntime {
     modelParams?: Record<string, string>
     clientMessageId?: string
     priority?: 'now' | 'next' | 'later'
+    /** Park then steer in one host command — composer Stair. */
+    steer?: 'now' | 'next'
   } = {}): void {
     const cmd: RemoteCommand = {
       type: 'send_message',
@@ -400,6 +402,7 @@ export class ChatRuntime {
         : {}),
       ...(extra.clientMessageId ? { clientMessageId: extra.clientMessageId } : {}),
       ...(extra.priority ? { priority: extra.priority } : {}),
+      ...(extra.steer ? { steer: extra.steer } : {}),
     }
     // The wire messages that report this command's output carry no name, so the
     // only chance to learn it is here, from what the user actually sent.

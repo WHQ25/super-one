@@ -51,8 +51,7 @@ import { app } from 'electron'
 import { activateWorktree, getCheckedOutBranches, getWorktreeInfo, gitErrorMessage } from '../git/worktree-ops'
 import { coerceSandboxModeForCapability, getSandboxCapability } from '../sandbox-platform'
 import { searchFiles, searchMentions, EXCLUDED_DIRS, type AgentEntry } from './fuzzy-file-search'
-import { SessionClaimConflictError, SessionLockedError } from '../session/types'
-import type { Session as SessionContract } from '../session/types'
+import { SessionClaimConflictError, SessionLockedError, type BackendCommand, type Session as SessionContract } from '../session/types'
 import { claimAutoRecapDispatch, finishAutoRecapDispatch, installAcpRecapFocus } from '../acp/acp-recap-focus'
 import { harnessProviderCatalog } from './remote-selector-catalog'
 import { listAccounts as listClaudeAccounts } from './claude-account-service'
@@ -114,6 +113,13 @@ export class AgentService {
   private deviceRegistry?: import('../remote/device-registry').DeviceRegistry
   private terminalManager?: import('../terminal/terminal-manager').TerminalManager
   private warmupManager = new WarmupManager()
+  /**
+   * Serializes queued send / steer / dequeue per session. Remote `onCommand`
+   * is not awaited by the transport, so a composer Stair (`send_message` then
+   * `steer_queued_message`) would otherwise look up the park before `send()`
+   * had written it — `Queued ACP message not found`.
+   */
+  private sessionQueueOps = new Map<string, Promise<void>>()
 
   setCodexListModels(fn: (projectPath: string) => Promise<ModelOption[]>): void {
     this.codexListModels = fn
@@ -654,8 +660,15 @@ export class AgentService {
         }
 
         const saved = loadSessionState(sessionId)
+        const queueOp = command.priority === 'next' || command.priority === 'later' || Boolean(command.steer)
         if (command.provider === 'codex' || saved?.provider === 'codex') {
-          await this.runCodexRemoteTurn(projectPath, sessionId, deviceId, command)
+          const run = async () => {
+            await this.runCodexRemoteTurn(projectPath, sessionId, deviceId, command)
+            const session = this.findSessionBySid(projectPath, sessionId)
+            if (session) await this.steerQueuedFromSend(session, command)
+          }
+          if (queueOp) await this.enqueueSessionQueueOp(sessionId, run)
+          else await run()
           break
         }
 
@@ -671,32 +684,40 @@ export class AgentService {
         }
 
         trace('remote.debug', 'send_message:dispatch', { sid: sessionId, projectPath, deviceId })
-        try {
-          await this.ensureRemoteOwnership(deviceId, session, async () => {
-            await session.send({
-              content: command.content,
-              model: command.model,
-              effort: command.effort as SendMessageRequest['effort'] | undefined,
-              images: command.images,
-              priority: command.priority,
-              clientMessageId: command.clientMessageId,
-              ...(command.agent ? { agent: command.agent } : {}),
-              ...(command.modelParams ? { cursor: { params: command.modelParams } } : {}),
-            }, { providerOrigin: 'remote' })
-          })
-        } catch (err) {
-          if (err instanceof SessionClaimConflictError) {
-            await this.notifySessionLocked(deviceId, sessionId, err.currentOwnerDeviceId)
-            break
+        const deliver = async () => {
+          try {
+            await this.ensureRemoteOwnership(deviceId, session, async () => {
+              await session.send({
+                content: command.content,
+                model: command.model,
+                effort: command.effort as SendMessageRequest['effort'] | undefined,
+                images: command.images,
+                priority: command.priority,
+                clientMessageId: command.clientMessageId,
+                ...(command.agent ? { agent: command.agent } : {}),
+                ...(command.modelParams ? { cursor: { params: command.modelParams } } : {}),
+              }, { providerOrigin: 'remote' })
+              await this.steerQueuedFromSend(session, command)
+            })
+          } catch (err) {
+            if (err instanceof SessionClaimConflictError) {
+              await this.notifySessionLocked(deviceId, sessionId, err.currentOwnerDeviceId)
+              return
+            }
+            throw err
           }
-          throw err
         }
+        if (queueOp) await this.enqueueSessionQueueOp(sessionId, deliver)
+        else await deliver()
         break
       }
       case 'dequeue_message': {
         if (!command.projectPath) break
         const session = this.findSessionBySid(command.projectPath, command.sessionId)
-        if (session) await session.dequeueMessage(command.clientMessageId)
+        if (!session) break
+        await this.enqueueSessionQueueOp(command.sessionId, async () => {
+          await session.dequeueMessage(command.clientMessageId)
+        })
         break
       }
       case 'steer_queued_message': {
@@ -722,13 +743,14 @@ export class AgentService {
             await respond?.(command.requestId, { ok: false, error: 'Codex cannot steer without interrupting' })
             break
           }
-          await session.dispatchBackendCommand(
-            harnessId === 'claude'
-              ? { kind: 'claude.steer_queued', clientMessageId: command.clientMessageId, priority: command.priority ?? 'now' }
-              : harnessId === 'acp'
-                ? { kind: 'acp.steer_queued', clientMessageId: command.clientMessageId }
-                : { kind: 'codex.steer_queued', clientMessageId: command.clientMessageId },
-          )
+          const steer = this.queuedSteerCommand(harnessId, command.clientMessageId, command.priority ?? 'now')
+          if (!steer) {
+            await respond?.(command.requestId, { ok: false, error: 'steer is not supported on this harness' })
+            break
+          }
+          await this.enqueueSessionQueueOp(command.sessionId, async () => {
+            await session.dispatchBackendCommand(steer)
+          })
           await respond?.(command.requestId, { ok: true })
         } catch (err) {
           await respond?.(command.requestId, { ok: false, error: err instanceof Error ? err.message : String(err) })
@@ -2000,6 +2022,45 @@ export class AgentService {
     if (!session) return undefined
     if (session.projectPath !== projectPath) return undefined
     return session
+  }
+
+  private enqueueSessionQueueOp(sessionId: string, op: () => Promise<void>): Promise<void> {
+    const prev = this.sessionQueueOps.get(sessionId) ?? Promise.resolve()
+    const next = prev.then(op, op)
+    this.sessionQueueOps.set(sessionId, next)
+    void next.finally(() => {
+      if (this.sessionQueueOps.get(sessionId) === next) this.sessionQueueOps.delete(sessionId)
+    })
+    return next
+  }
+
+  private queuedSteerCommand(
+    harnessId: string,
+    clientMessageId: string,
+    priority: ClaudeSteerPriority,
+  ): Extract<BackendCommand, { kind: 'claude.steer_queued' | 'acp.steer_queued' | 'codex.steer_queued' }> | null {
+    if (harnessId === 'claude') return { kind: 'claude.steer_queued', clientMessageId, priority }
+    if (harnessId === 'acp') return { kind: 'acp.steer_queued', clientMessageId }
+    if (harnessId === 'codex' && priority !== 'next') return { kind: 'codex.steer_queued', clientMessageId }
+    return null
+  }
+
+  private async steerQueuedFromSend(
+    session: SessionContract,
+    command: Extract<RemoteCommand, { type: 'send_message' }>,
+  ): Promise<void> {
+    if (!command.steer || !command.clientMessageId) return
+    const steer = this.queuedSteerCommand(session.snapshot.harnessId, command.clientMessageId, command.steer)
+    if (!steer) return
+    try {
+      await session.dispatchBackendCommand(steer)
+    } catch (err) {
+      log.warn(
+        '[AgentService] send_message steer failed sid=%s: %s',
+        session.id,
+        err instanceof Error ? err.message : err,
+      )
+    }
   }
 
   private resolveInteractionSession(projectPath: string, sessionId: string | undefined): import('../session/types').Session | null {

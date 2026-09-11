@@ -47,6 +47,7 @@ import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { mobileWebViewTheme } from '../theme/tokens'
 import { injectHostMessage } from '../native-actions'
 import { Button, SelectionField, Sheet } from '../ui'
+import { StatusBanner } from '../ui/status-banner'
 import { GitIndicatorGallery } from './GitIndicatorGallery'
 import { FilePreviewGallery } from './FilePreviewGallery'
 
@@ -370,7 +371,6 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
       {chat ? <Button variant="ghost" label={`Catalog: ${slashStatus}`}
         onPress={() => setSlashStatus((value) => value === 'ready' ? 'loading' : value === 'loading' ? 'error' : 'ready')} /> : null}
     </View>
-    {editorError ? <Text accessibilityRole="alert" style={{ color: tokens.colors.destructive }}>{editorError}</Text> : null}
     <MobileKeyboardFrame>
       <View style={styles.contentRow}>
         {tabletSidebar ? <WorkspaceSidebar {...previewWorkspace} deviceName="Preview desktop" deviceStatus="connectedLan" onDisconnect={() => setPage('Devices')} onOpenSettings={() => setPage('Settings')} /> : null}
@@ -397,6 +397,7 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
         onAddProject={page === 'Project' ? () => setPage('Add project') : undefined}
         confirmDisabled={page === 'Add project' ? addProject.busy
           : !!worktreeSelectionError(worktreeDraft, PREVIEW_BRANCHES, PREVIEW_CHECKED_OUT)} />
+        <StatusBanner message={editorError} onDismiss={() => setEditorError('')} />
         <View style={isFullBleedScreen(route) ? styles.flex : styles.page}>
           {chat ? <ChatScreen provider={provider} onEdgeSwipe={() => setDrawer(true)} landing={page === 'New session' ? {
               provider, harnessOptions: PREVIEW_HARNESS_OPTIONS,

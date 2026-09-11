@@ -1539,6 +1539,89 @@ describe('AgentService.handleRemoteCommand', () => {
     expect(SessionClaimConflictError).toBeDefined()
   })
 
+  function acpQueueSession(opts?: {
+    send?: () => Promise<void>
+    dispatchBackendCommand?: () => Promise<void>
+  }) {
+    const send = vi.fn(opts?.send ?? (async () => {}))
+    const dispatchBackendCommand = vi.fn(opts?.dispatchBackendCommand ?? (async () => {}))
+    const session = makeMockSession({
+      id: 'sid-1',
+      projectPath: '/p',
+      snapshot: { harnessId: 'acp' },
+      send,
+      dispatchBackendCommand,
+    })
+    const service = new AgentService()
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getActiveSession: vi.fn(() => session),
+      getSession: vi.fn(() => session),
+      resumeSession: vi.fn(() => session),
+      forEachSession: vi.fn(),
+    }
+    return { service, session, send, dispatchBackendCommand }
+  }
+
+  it('send_message.steer parks then steers in the same command', async () => {
+    const { service, send, dispatchBackendCommand } = acpQueueSession()
+    const order: string[] = []
+    send.mockImplementation(async () => { order.push('send') })
+    dispatchBackendCommand.mockImplementation(async () => { order.push('steer') })
+
+    await service.handleRemoteCommand({
+      type: 'send_message',
+      projectPath: '/p',
+      sessionId: 'sid-1',
+      content: 'nudge',
+      clientMessageId: 'user_1',
+      priority: 'next',
+      steer: 'now',
+    }, undefined, { deviceId: 'mobile-A', transport: 'lan' })
+
+    expect(send).toHaveBeenCalled()
+    expect(dispatchBackendCommand).toHaveBeenCalledWith({
+      kind: 'acp.steer_queued',
+      clientMessageId: 'user_1',
+    })
+    expect(order).toEqual(['send', 'steer'])
+  })
+
+  it('holds steer_queued_message until an in-flight queued send parks', async () => {
+    let releaseSend!: () => void
+    const { service, send, dispatchBackendCommand } = acpQueueSession({
+      send: () => new Promise<void>((resolve) => { releaseSend = resolve }),
+    })
+    const respond = vi.fn()
+
+    const sending = service.handleRemoteCommand({
+      type: 'send_message',
+      projectPath: '/p',
+      sessionId: 'sid-1',
+      content: 'nudge',
+      clientMessageId: 'user_1',
+      priority: 'next',
+    }, undefined, { deviceId: 'mobile-A', transport: 'lan' })
+    await vi.waitFor(() => expect(send).toHaveBeenCalled())
+
+    const steering = service.handleRemoteCommand({
+      type: 'steer_queued_message',
+      requestId: 'r-steer',
+      projectPath: '/p',
+      sessionId: 'sid-1',
+      clientMessageId: 'user_1',
+    }, respond, { deviceId: 'mobile-A', transport: 'lan' })
+    await Promise.resolve()
+    expect(dispatchBackendCommand).not.toHaveBeenCalled()
+
+    releaseSend()
+    await Promise.all([sending, steering])
+    expect(dispatchBackendCommand).toHaveBeenCalledWith({
+      kind: 'acp.steer_queued',
+      clientMessageId: 'user_1',
+    })
+    expect(respond).toHaveBeenCalledWith('r-steer', { ok: true })
+  })
+
   it('subscribe_session (legacy fire-and-forget) notifies via session_locked_by_other_device on conflict', async () => {
     const service = new AgentService()
     const session = makeMockSession({ id: 'sid-1', projectPath: '/p' })

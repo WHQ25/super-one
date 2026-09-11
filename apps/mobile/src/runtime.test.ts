@@ -87,6 +87,22 @@ describe('ChatRuntime', () => {
     expect(client.sent.some((c) => (c as { type: string }).type === 'load_session_messages')).toBe(false)
   })
 
+  it('folds composer Stair into the queued send so the host can steer atomically', () => {
+    const client = fakeClient()
+    const runtime = new ChatRuntime(client as never, vi.fn())
+    runtime.projectPath = '/p'
+    runtime.sessionId = 's'
+    runtime.session = { ...runtime.session, status: 'streaming' }
+    runtime.send('nudge', { clientMessageId: 'user_steer', priority: 'next', steer: 'now' })
+    expect(client.sent).toContainEqual(expect.objectContaining({
+      type: 'send_message',
+      clientMessageId: 'user_steer',
+      priority: 'next',
+      steer: 'now',
+    }))
+    expect(runtime.session.queuedMessages.map((message) => message.id)).toEqual(['user_steer'])
+  })
+
   it('paints a dequeue so a parked bubble can return to the composer', () => {
     const paint = vi.fn()
     const runtime = new ChatRuntime(fakeClient() as never, paint)

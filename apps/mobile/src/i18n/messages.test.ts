@@ -18,6 +18,7 @@ describe('mobile translations', () => {
     expect(translateMobileText('zh', 'No projects yet')).toBe('还没有项目')
     expect(translateMobileText('zh', 'Open workspace, sessions need attention')).toBe('打开工作区，有会话需要关注')
     expect(translateMobileText('zh', 'File actions')).toBe('文件操作')
+    expect(translateMobileText('zh', 'Copy')).toBe('复制')
     expect(translateMobileText('zh', 'Search files')).toBe('搜索文件')
   })
 })

@@ -2,7 +2,7 @@ import { NativeComposerInput, composerInputMinHeight, COMPOSER_INPUT_MAX_HEIGHT,
 import { nativeMentionEditorAvailable } from '../ui/native-mention-editor'
 import type { ComposerCursor } from '../composer-cursor'
 import type { MentionSearchState } from '../navigation/use-composer-suggestions'
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { AttachmentStrip } from '../ui/attachment-strip'
 import { SlashSuggestions, MentionSuggestions, PromptSuggestions } from '../ui/composer-suggestions'
 import { ModelPicker } from '../ui/model-picker'
@@ -129,6 +129,11 @@ export function ChatComposer(props: ChatComposerProps) {
   // there the gap is ours to give.
   const insets = useSafeAreaInsets()
   const keyboardVisible = useKeyboardVisible()
+  // Session switch (and swipe-dismiss) hide the keyboard without a blur from
+  // the native editor, so the phone action bar would otherwise stay expanded.
+  useEffect(() => {
+    if (!keyboardVisible) setInputFocused(false)
+  }, [keyboardVisible])
   const bottomGap = keyboardVisible || !insets.bottom ? 8 : 0
   const focused = props.focused ?? (inputFocused || keyboardVisible)
   const phoneActions = !tablet && focused

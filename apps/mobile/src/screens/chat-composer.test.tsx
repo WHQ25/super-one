@@ -1,6 +1,6 @@
 import { expect, test } from '@jest/globals'
-import { fireEvent, screen } from '@testing-library/react-native'
-import { Text } from 'react-native'
+import { act, fireEvent, screen } from '@testing-library/react-native'
+import { DeviceEventEmitter, Text } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { renderWithTheme } from '../test-render'
 import type { MatchedSlashCommand } from '../slash'
@@ -162,6 +162,22 @@ test('an empty unfocused streaming phone keeps Stop on the input row without Sen
   expect(screen.queryByTestId('phone-composer-actions')).toBeNull()
   expect(screen.queryByLabelText('Send')).toBeNull()
   expect(screen.getByLabelText('Stop')).toBeTruthy()
+})
+
+test('hiding the keyboard collapses the phone action bar', async () => {
+  await renderWithTheme(composer({ tablet: false, draft: 'hello' }))
+  await act(async () => {
+    fireEvent(screen.getByLabelText('Message'), 'focus')
+    DeviceEventEmitter.emit('keyboardWillShow', { endCoordinates: { screenY: 500, height: 350 } })
+    DeviceEventEmitter.emit('keyboardDidShow', { endCoordinates: { screenY: 500, height: 350 } })
+  })
+  expect(screen.getByTestId('phone-composer-actions')).toBeTruthy()
+
+  await act(async () => {
+    DeviceEventEmitter.emit('keyboardWillHide', { endCoordinates: { screenY: 850, height: 0 } })
+    DeviceEventEmitter.emit('keyboardDidHide', { endCoordinates: { screenY: 850, height: 0 } })
+  })
+  expect(screen.queryByTestId('phone-composer-actions')).toBeNull()
 })
 
 test('focusing the phone input opens the action bar and moves Send onto it', async () => {

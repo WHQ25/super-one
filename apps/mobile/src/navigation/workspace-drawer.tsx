@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
-import { Animated, Modal, PanResponder, Pressable, useWindowDimensions, View } from 'react-native'
+import { Animated, Keyboard, Modal, PanResponder, Pressable, useWindowDimensions, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { DeviceStatus, ReconnectInfo } from '../device-status'
 import { useMobileTheme } from '../theme/context'
@@ -53,6 +53,11 @@ export function WorkspaceDrawer(props: WorkspaceDrawerProps) {
     slide.setValue(-panelWidth)
     if (props.visible) settleOpen()
   }, [props.visible, panelWidth, settleOpen, slide])
+  useEffect(() => {
+    // The drawer sits over the still-mounted composer. Leaving the keyboard up
+    // covers the session list — the same unfocus Flutter's drawer does.
+    if (props.visible) Keyboard.dismiss()
+  }, [props.visible])
   const reveal = useSwipeRevealScope()
   const drag = useMemo(() => PanResponder.create({
     // Leftward only: a rightward drag belongs to a session row's swipe actions,

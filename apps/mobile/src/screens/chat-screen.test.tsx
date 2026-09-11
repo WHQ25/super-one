@@ -1,5 +1,6 @@
-import { expect, test } from '@jest/globals'
+import { expect, jest, test } from '@jest/globals'
 import { createRef } from 'react'
+import { Keyboard } from 'react-native'
 import { screen } from '@testing-library/react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import type { WebView } from 'react-native-webview'
@@ -101,6 +102,26 @@ test('the new-session landing is not a conversation restore', async () => {
   // The renderer boots hidden under the landing so the first send does not
   // remount onto WKWebView's white default.
   expect(screen.getByTestId('chat-webview')).toBeTruthy()
+})
+
+test('dismisses the keyboard when restoring a session or opening the landing', async () => {
+  const dismiss = jest.spyOn(Keyboard, 'dismiss').mockImplementation(() => {})
+  const view = await renderWithTheme(screenUi())
+  dismiss.mockClear()
+
+  await view.rerender(screenUi({ loadingConversation: true }))
+  expect(dismiss).toHaveBeenCalled()
+
+  dismiss.mockClear()
+  await view.rerender(screenUi({ landing }))
+  expect(dismiss).toHaveBeenCalled()
+
+  // The first send leaves the landing for a live transcript. That is not a
+  // session switch — the keyboard stays so the next message can be typed.
+  dismiss.mockClear()
+  await view.rerender(screenUi())
+  expect(dismiss).not.toHaveBeenCalled()
+  dismiss.mockRestore()
 })
 
 test('the new-session landing covers the hidden renderer instead of stacking below it', async () => {

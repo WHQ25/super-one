@@ -3,7 +3,7 @@ import type { ComposerCursor } from '../composer-cursor'
 import type { MentionSearchState } from '../navigation/use-composer-suggestions'
 import { EdgeSwipeArea } from '../ui/edge-swipe'
 import { useEffect, useRef, useState, type RefObject } from 'react'
-import { ActivityIndicator, StyleSheet, View } from 'react-native'
+import { ActivityIndicator, Keyboard, StyleSheet, View } from 'react-native'
 import { Text } from '../ui/text'
 import { WebView } from 'react-native-webview'
 import { CHAT_VIEW_HTML } from '@superone/chat-view'
@@ -132,6 +132,13 @@ export function ChatScreen(props: {
     if (!showLanding) return
     injectHostMessage(props.webRef, { type: 'reset' })
   }, [showLanding, props.webRef])
+  // One composer stays mounted across sessions, so the previous first
+  // responder would otherwise keep the keyboard up after a switch. The first
+  // send (landing → live transcript) is not a switch: both of these are then
+  // false, and the keyboard stays for the next message.
+  useEffect(() => {
+    if (showLanding || props.loadingConversation) Keyboard.dismiss()
+  }, [showLanding, props.loadingConversation])
   const coveringRestore = props.loadingConversation || hold || (coverUntilReady && !rendererReady)
   const hideRenderer = coveringRestore || showLanding || !rendererReady
   // Captured on first mount: changing `injectedJavaScriptBeforeContentLoaded`

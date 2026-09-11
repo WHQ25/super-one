@@ -179,12 +179,18 @@ function buildOptions(opts: RunClaudeSdkTurnOptions, timing: { pausedMs: number 
     ...(asQuestionPreviewFormat(opts.askUserQuestionPreviewFormat)
       ? { toolConfig: { askUserQuestion: { previewFormat: asQuestionPreviewFormat(opts.askUserQuestionPreviewFormat) } } }
       : {}),
+    // SDK 0.3.267+ records the rendered system prompt on the first request and
+    // replays it verbatim on every later launch of the same session until
+    // compaction. SuperOne's append changes across app versions and the
+    // collaboration block carries a per-grant credential, so keep per-request
+    // rendering: a resumed session must see the current append, not a stale one.
     systemPrompt: {
       type: 'preset',
       preset: 'claude_code',
       append: [SUPERONE_SYSTEM_PROMPT_APPEND, opts.systemPromptAppend]
         .filter(Boolean)
         .join('\n\n'),
+      snapshot: false,
     },
     ...(opts.sessionId ? { resume: opts.sessionId } : {}),
     ...(opts.resumeSessionAt ? { resumeSessionAt: opts.resumeSessionAt } : {}),

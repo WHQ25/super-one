@@ -133,10 +133,16 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
         }
       },
     }),
+    // SDK 0.3.267+ records the rendered system prompt on the first request and
+    // replays it verbatim on every later launch of the same session until
+    // compaction. SuperOne's append changes across app versions and the
+    // collaboration block carries a per-grant credential, so keep per-request
+    // rendering: a resumed session must see the current append, not a stale one.
     systemPrompt: {
       type: 'preset',
       preset: 'claude_code',
       append: [SUPERONE_SYSTEM_PROMPT_APPEND, opts.systemPromptAppend].filter(Boolean).join('\n\n'),
+      snapshot: false,
     },
     hooks: { PreToolUse: [{ hooks: [denySubagentSessionRename] }] },
     mcpServers: { 'superone': createSuperoneMcpServer(opts.superoneSessionId, opts.projectPath) },

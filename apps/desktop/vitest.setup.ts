@@ -1,5 +1,11 @@
 import { vi } from 'vitest'
 
+// A SuperOne-launched shell (e.g. a chat session inside the alpha app) exports
+// SUPERONE_HOME / SUPERONE_VARIANT, and resolveSuperoneHome honours them ahead of
+// the mocked Electron home. Strip them so path assertions match CI.
+delete process.env.SUPERONE_HOME
+delete process.env.SUPERONE_VARIANT
+
 // Default stubs so files that import electron / @electron-toolkit/utils
 // (via harness/home.ts) can load under vitest. Per-file vi.mock() still wins.
 vi.mock('electron', () => ({

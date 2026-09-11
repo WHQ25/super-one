@@ -20,17 +20,23 @@ function packagedVersion(config: Record<string, unknown>): string {
 }
 
 /** The config reads env and package.json at require time, so reload per case. */
-function loadConfig(variant?: string, versionOverride?: string): Record<string, unknown> {
+function loadConfig(
+  variant?: string,
+  versionOverride?: string,
+  prereleaseN?: string,
+): Record<string, unknown> {
   delete require_.cache[CONFIG_PATH]
   const previous = { ...process.env }
   if (variant === undefined) delete process.env.SUPERONE_VARIANT
   else process.env.SUPERONE_VARIANT = variant
   if (versionOverride === undefined) delete process.env.SUPERONE_VERSION
   else process.env.SUPERONE_VERSION = versionOverride
+  if (prereleaseN === undefined) delete process.env.SUPERONE_PRERELEASE_N
+  else process.env.SUPERONE_PRERELEASE_N = prereleaseN
   try {
     return require_(CONFIG_PATH) as Record<string, unknown>
   } finally {
-    for (const key of ['SUPERONE_VARIANT', 'SUPERONE_VERSION']) {
+    for (const key of ['SUPERONE_VARIANT', 'SUPERONE_VERSION', 'SUPERONE_PRERELEASE_N']) {
       if (previous[key] === undefined) delete process.env[key]
       else process.env[key] = previous[key]
     }
@@ -123,6 +129,32 @@ describe('electron-builder variant config', () => {
 
     it('rejects an override that is not valid semver', () => {
       expect(() => loadConfig(someVariant, 'v99')).toThrow(/is not a valid semver version/)
+    })
+  })
+
+  describe('prerelease sequence', () => {
+    it('appends tag.N when SUPERONE_PRERELEASE_N is set', () => {
+      expect(packagedVersion(loadConfig(alpha, undefined, '1'))).toBe(
+        `${baseVersion}-${VARIANTS[alpha].prereleaseTag}.1`,
+      )
+      expect(packagedVersion(loadConfig(alpha, '99.0.0', '2'))).toBe(
+        `99.0.0-${VARIANTS[alpha].prereleaseTag}.2`,
+      )
+    })
+
+    it('treats blank and 0 as no sequence', () => {
+      expect(packagedVersion(loadConfig(alpha, undefined, ''))).toBe(
+        `${baseVersion}-${VARIANTS[alpha].prereleaseTag}`,
+      )
+      expect(packagedVersion(loadConfig(alpha, undefined, '0'))).toBe(
+        `${baseVersion}-${VARIANTS[alpha].prereleaseTag}`,
+      )
+    })
+
+    it('rejects a sequence on a variant with no prerelease tag', () => {
+      expect(() => loadConfig(stable, undefined, '1')).toThrow(
+        /only valid for prerelease variants/,
+      )
     })
   })
 

@@ -23,6 +23,7 @@
  */
 
 import { createHash } from 'node:crypto'
+import { createRequire } from 'node:module'
 import {
   copyFileSync,
   existsSync,
@@ -123,30 +124,33 @@ function readRootVersion(): string {
   return raw.version.trim()
 }
 
+const require_ = createRequire(import.meta.url)
+const { resolvePackagedVersion } = require_('../apps/desktop/packaged-version.cjs') as {
+  resolvePackagedVersion: (
+    packageVersion: string,
+    variantId: string,
+    options?: { versionOverride?: string; prereleaseN?: unknown },
+  ) => string
+}
+
 /**
  * The version the SHIPPED app will report, which is the key the updater looks
  * `app/harness-pins/<appVersion>.json` up under.
  *
- * Root package.json carries the plain BASE ("0.61.0"); the variant appends its
- * own prerelease tag at package time, so the alpha app runs as "0.61.0-alpha"
- * and asks for that key. Defaulting to the base wrote the pins under "0.61.0"
- * instead, which no alpha client ever requests -- a miss the updater then
- * papers over by falling back to its compiled-in pins, so nothing fails and the
- * R2 mirror is simply bypassed.
- *
- * The channel IS the variant id, so this is the same derivation
- * `electron-builder.config.cjs` does at package time, off the same table. Do
- * not reintroduce a default that reads the base version directly.
+ * Same derivation as electron-builder.config.cjs / release.yml's plan job, off
+ * packaged-version.cjs. A `build` bump keys pins under `0.63.0-alpha.1` so the
+ * updater asks for the version `app.getVersion()` actually reports.
  */
 export function appVersionForChannel(
   channel: HarnessManifestChannel,
   baseVersion: string,
+  prereleaseN?: unknown,
 ): string {
   const variant = (VARIANTS as Record<string, { prereleaseTag: string | null } | undefined>)[channel]
   if (!variant) {
     throw new Error(`no variant declares channel "${channel}" in apps/desktop/variants.json`)
   }
-  return variant.prereleaseTag ? `${baseVersion}-${variant.prereleaseTag}` : baseVersion
+  return resolvePackagedVersion(baseVersion, channel, { prereleaseN })
 }
 
 /** `npm pack name@version` → absolute path to the produced .tgz */

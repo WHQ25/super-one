@@ -10,6 +10,7 @@ describe('appVersionForChannel', () => {
     // no client ever requests.
     expect(appVersionForChannel('alpha', '0.61.0')).toBe('0.61.0-alpha')
     expect(appVersionForChannel('stable', '0.61.0')).toBe('0.61.0')
+    expect(appVersionForChannel('alpha', '0.63.0', 1)).toBe('0.63.0-alpha.1')
   })
 
   it('rejects a channel no variant declares', () => {

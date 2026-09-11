@@ -248,8 +248,8 @@ before it constructs `AppInfo`, so it is the only seam that reaches the install 
 Three independent workflows; they do not call each other. All take a `variant`.
 
 1. **`build-{mac,win,linux}.yml`** — `workflow_dispatch` with `ref`, `variant`,
-   optional `version`. Sets `SUPERONE_VARIANT` / `SUPERONE_VERSION` and uploads from
-   `apps/desktop/dist/<variant>/`.
+   optional `version` / `prerelease_n`. Sets `SUPERONE_VARIANT` / `SUPERONE_VERSION`
+   / `SUPERONE_PRERELEASE_N` and uploads from `apps/desktop/dist/<variant>/`.
 2. **`promote.yml` (archive only)** — uploads the artifacts **flat** to a draft
    GitHub Release (changelog mirror + the legacy GitHub-provider bridge), then moves
    the binaries to `<variant>/v${VERSION}/` on R2 and drops the ymls. **Promote never
@@ -395,14 +395,18 @@ Local builds: `SUPERONE_VARIANT=alpha bun run build:mac`.
 ### Versioning
 
 `package.json` carries the **base** version — a plain release number, no prerelease
-tag. `electron-builder.config.cjs` appends the variant's `prereleaseTag`, so one base
-of `0.61.0` packages as `0.61.0` for stable and `0.61.0-alpha` for alpha. Neither
-normal path needs an override, and there is no input that expresses "stable build
+tag. `packaged-version.cjs` (used by `electron-builder.config.cjs` and
+`release.yml`'s plan job) appends the variant's `prereleaseTag`, so one base of
+`0.63.0` packages as `0.63.0` for stable and `0.63.0-alpha` for alpha. A `build`
+bump sets `SUPERONE_PRERELEASE_N=1` (or 2, …) and ships `0.63.0-alpha.1` without
+moving the base — that keeps `0.63.1` free for a stable hotfix. Neither normal
+path needs an override, and there is no input that expresses "stable build
 carrying an -alpha version".
 
 `SUPERONE_VERSION` (and the `version` workflow input) override the **base**, for
 cutting a release from an older commit without a bump commit. Passing a base that
-already has a prerelease tag is an error.
+already has a prerelease tag is an error. `SUPERONE_PRERELEASE_N` is rejected on
+stable.
 
 Note the direction: the variant is authoritative and the version is derived from it.
 Nothing at runtime may go the other way and infer the variant from the version string.

@@ -119,7 +119,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
-      contents: read
+      # Tagging the published build, not pushing to a branch.
+      contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -195,10 +196,15 @@ jobs:
               exit 1
               ;;
           esac
+          # The build's own commit, not this checkout: reusing an existing
+          # build publishes an artifact from an older tree, and the tag has to
+          # name that tree rather than whatever main happens to be.
+          BUILD_COMMIT="$(jq -r "${NORMALISED} | .gitCommitHash // empty" build.json)"
           echo "url=${URL}" >> "$GITHUB_OUTPUT"
           echo "build_code=${BUILD_CODE}" >> "$GITHUB_OUTPUT"
           echo "app_version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Built ${APP_VERSION} (${BUILD_CODE})"
+          echo "build_commit=${BUILD_COMMIT}" >> "$GITHUB_OUTPUT"
+          echo "Built ${APP_VERSION} (${BUILD_CODE}) from ${BUILD_COMMIT:-unknown}"
 
       - name: Download APK
         env:
@@ -237,6 +243,36 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Tag the published build
+        if: ${{ inputs.dry_run != true }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUILD_COMMIT: ${{ steps.build.outputs.build_commit }}
+          APP_VERSION: ${{ steps.build.outputs.app_version }}
+          BUILD_CODE: ${{ steps.build.outputs.build_code }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BUILD_COMMIT}" ]; then
+            echo "::warning::EAS reported no commit for this build; skipping the tag"
+            exit 0
+          fi
+          # Per platform, and not in the `v*` namespace. `v*` belongs to the
+          # desktop line, where a mobile `v1.0.0` would be a valid semver above
+          # every desktop version and would collide with a future release. The
+          # platform segment is required too: the two platforms share one build
+          # code but are built from whatever main was at their own dispatch, so
+          # one code does not imply one commit.
+          TAG="mobile/android/v${APP_VERSION}-build${BUILD_CODE}"
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
+            echo "${TAG} already exists -- re-publishing the same build, nothing to tag"
+            exit 0
+          fi
+          # Through the API rather than `git tag`: this checkout is --depth=1
+          # and does not hold the build's commit object.
+          gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f ref="refs/tags/${TAG}" -f sha="${BUILD_COMMIT}" >/dev/null
+          echo "Tagged ${TAG} -> ${BUILD_COMMIT}"
+
       - name: Upload staged tree (debug artifact)
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -253,7 +289,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
-      contents: read
+      # Tagging the published build, not pushing to a branch.
+      contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -327,8 +364,11 @@ jobs:
               exit 1
               ;;
           esac
+          BUILD_COMMIT="$(jq -r "${NORMALISED} | .gitCommitHash // empty" build.json)"
           echo "build_code=${BUILD_CODE}" >> "$GITHUB_OUTPUT"
           echo "app_version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "build_commit=${BUILD_COMMIT}" >> "$GITHUB_OUTPUT"
+          echo "Built ${APP_VERSION} (${BUILD_CODE}) from ${BUILD_COMMIT:-unknown}"
 
       - name: Submit to TestFlight
         if: ${{ inputs.dry_run != true }}
@@ -369,3 +409,33 @@ jobs:
             cat publish.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Tag the published build
+        if: ${{ inputs.dry_run != true }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUILD_COMMIT: ${{ steps.build.outputs.build_commit }}
+          APP_VERSION: ${{ steps.build.outputs.app_version }}
+          BUILD_CODE: ${{ steps.build.outputs.build_code }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BUILD_COMMIT}" ]; then
+            echo "::warning::EAS reported no commit for this build; skipping the tag"
+            exit 0
+          fi
+          # Per platform, and not in the `v*` namespace. `v*` belongs to the
+          # desktop line, where a mobile `v1.0.0` would be a valid semver above
+          # every desktop version and would collide with a future release. The
+          # platform segment is required too: the two platforms share one build
+          # code but are built from whatever main was at their own dispatch, so
+          # one code does not imply one commit.
+          TAG="mobile/ios/v${APP_VERSION}-build${BUILD_CODE}"
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
+            echo "${TAG} already exists -- re-publishing the same build, nothing to tag"
+            exit 0
+          fi
+          # Through the API rather than `git tag`: this checkout is --depth=1
+          # and does not hold the build's commit object.
+          gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f ref="refs/tags/${TAG}" -f sha="${BUILD_COMMIT}" >/dev/null
+          echo "Tagged ${TAG} -> ${BUILD_COMMIT}"

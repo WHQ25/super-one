@@ -110,13 +110,12 @@ jobs:
         run: |
           set -euo pipefail
           case "${INPUT_PLATFORM}" in
-            android) LIST="android"; EAS="android" ;;
-            ios)     LIST="ios";     EAS="ios" ;;
-            both)    LIST="android ios"; EAS="all" ;;
+            android) LIST="android" ;;
+            ios)     LIST="ios" ;;
+            both)    LIST="android ios" ;;
             *) echo "::error::unknown platform ${INPUT_PLATFORM}"; exit 1 ;;
           esac
           echo "list=${LIST}" >> "$GITHUB_OUTPUT"
-          echo "eas=${EAS}" >> "$GITHUB_OUTPUT"
 
       - name: Verify a shipped build runs this runtime
         working-directory: apps/mobile
@@ -175,13 +174,17 @@ jobs:
         if: ${{ inputs.dry_run == true }}
         working-directory: apps/mobile
         env:
-          EAS_PLATFORM: ${{ steps.platforms.outputs.eas }}
+          PLATFORMS: ${{ steps.platforms.outputs.list }}
         run: |
           set -euo pipefail
           # What `eas update` would bundle, without publishing it. Catches a
           # bundler failure on the runner rather than at the real dispatch.
-          bunx expo export --platform "${EAS_PLATFORM}" --output-dir export-dry-run
-          du -sh export-dry-run
+          # Per platform: `--platform all` would also try web, which this app
+          # does not ship.
+          for PLATFORM in ${PLATFORMS}; do
+            bunx expo export --platform "${PLATFORM}" --output-dir "export-${PLATFORM}"
+            du -sh "export-${PLATFORM}"
+          done
           echo "Dry run: bundle exported, nothing published" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publish update

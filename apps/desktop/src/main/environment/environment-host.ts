@@ -356,6 +356,7 @@ export class EnvironmentHost {
       providerSessionId?: string | null
       /** Prefixed resume token from node SessionRuntime. */
       providerResume?: string | null
+      acpAgentId?: string | null
       tags?: unknown
     }
     const sessionId = String(s.sessionId ?? '')
@@ -372,11 +373,17 @@ export class EnvironmentHost {
       (typeof s.providerSessionId === 'string' && s.providerSessionId.trim()
         ? s.providerSessionId.trim()
         : null) ?? providerSessionIdFromResume(s.providerResume)
-    const harness = String(s.harnessId || s.providerId || 'claude')
+    const rawHarness = String(s.harnessId || s.providerId || 'claude')
     const provider =
-      harness === 'claude' || harness === 'codex' || harness === 'acp' || harness === 'opencode'
-        ? harness
-        : 'claude'
+      rawHarness === 'acp-grok'
+        ? 'acp'
+        : rawHarness === 'claude' || rawHarness === 'codex' || rawHarness === 'acp' || rawHarness === 'opencode'
+          ? rawHarness
+          : 'claude'
+    const listedAgentId = typeof s.acpAgentId === 'string' && s.acpAgentId.trim()
+      ? s.acpAgentId.trim()
+      : null
+    const acpAgentId = listedAgentId ?? (rawHarness === 'acp-grok' ? 'grok-build' : null)
     const tags = parseTagsJson(s.tags)
     return {
       sessionId,
@@ -390,6 +397,7 @@ export class EnvironmentHost {
       worktreePath: cwd ?? undefined,
       isWorktree: Boolean(cwd),
       ...(providerSessionId ? { providerSessionId } : {}),
+      ...(acpAgentId ? { acpAgentId } : {}),
       ...(tags.length ? { tags } : {}),
     }
   }

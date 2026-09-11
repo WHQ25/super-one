@@ -1726,7 +1726,7 @@ export type AgentEventBase =
   | { type: 'elicitation_complete'; mcpServerName: string; elicitationId: string }
   | { type: 'stream_message_start'; messageId: string; apiMessageId: string; model: string; parentToolUseId?: string | null }
   | { type: 'stream_message_stop'; messageId: string; parentToolUseId?: string | null }
-  | { type: 'remote_session_start'; remoteProjectPath: string; remoteSessionId: string; isSubscribe?: boolean; harnessId?: HarnessId }
+  | { type: 'remote_session_start'; remoteProjectPath: string; remoteSessionId: string; isSubscribe?: boolean; harnessId?: HarnessId; /** ACP agent (e.g. grok-build) so desktop can brand a mobile-owned session. */ acpAgentId?: string | null }
   | { type: 'remote_session_end'; remoteProjectPath: string; remoteSessionId: string; isSubscribe?: boolean }
   | { type: 'interaction_resolved'; interactionType: 'permission' | 'question' | 'plan_approval'; requestId: string; approved?: boolean; feedback?: string }
   | { type: 'codex_collaboration_mode_change'; mode: string }

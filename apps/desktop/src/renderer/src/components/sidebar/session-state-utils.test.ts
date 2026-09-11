@@ -4,6 +4,7 @@ import {
   isLiveSession,
   getSessionTitle,
   resolveSessionTitle,
+  withLiveSessionBrand,
   DEFAULT_SESSION_TITLE,
   type PendingReasonT,
 } from './session-state-utils'
@@ -353,6 +354,34 @@ describe('getSessionTitle', () => {
   it('returns null for empty messages', () => {
     expect(getSessionTitle([])).toBeNull()
     expect(getSessionTitle(undefined)).toBeNull()
+  })
+})
+
+describe('withLiveSessionBrand', () => {
+  const entry = {
+    sessionId: 's1',
+    title: 'Grok turn',
+    lastActiveAt: '2026-01-01T00:00:00.000Z',
+    provider: 'acp' as const,
+    messageCount: 1,
+  }
+
+  it('fills acpAgentId from live state when the history row omitted it', () => {
+    expect(withLiveSessionBrand(entry, { sessionProvider: 'acp', acpAgentId: 'grok-build' }).acpAgentId)
+      .toBe('grok-build')
+  })
+
+  it('keeps a history-row acpAgentId ahead of live', () => {
+    expect(withLiveSessionBrand(
+      { ...entry, acpAgentId: 'kimi' },
+      { sessionProvider: 'acp', acpAgentId: 'grok-build' },
+    ).acpAgentId).toBe('kimi')
+  })
+
+  it('fills provider from live when the history row has none', () => {
+    const unbranded = { sessionId: entry.sessionId, title: entry.title, lastActiveAt: entry.lastActiveAt, messageCount: 1 }
+    expect(withLiveSessionBrand(unbranded, { sessionProvider: 'acp', acpAgentId: 'grok-build' }).provider)
+      .toBe('acp')
   })
 })
 

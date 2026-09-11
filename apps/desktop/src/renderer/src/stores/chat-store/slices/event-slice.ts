@@ -116,9 +116,15 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
           ...applyCachedCodexPermissionPreset(createDefaultPerSessionState()),
           _historyHydrated: !event.isSubscribe,
         }
-        const nextSession = remoteProvider && !baseSession.sessionProvider
-          ? { ...baseSession, sessionProvider: remoteProvider, preferredProvider: remoteProvider }
-          : baseSession
+        const nextSession = {
+          ...baseSession,
+          ...(remoteProvider && !baseSession.sessionProvider
+            ? { sessionProvider: remoteProvider, preferredProvider: remoteProvider }
+            : {}),
+          // Mobile Grok sessions arrive as harnessId=acp; without the agent id
+          // the sidebar brands them as the generic ACP fallback.
+          acpAgentId: baseSession.acpAgentId ?? event.acpAgentId ?? null,
+        }
         return {
           remoteSessions: event.isSubscribe
             ? addRemoteSession(s.remoteSessions, projectPath, sessionId)

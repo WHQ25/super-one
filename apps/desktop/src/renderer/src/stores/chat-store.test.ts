@@ -5709,6 +5709,41 @@ describe('remote session interaction routing', () => {
     expect(after._sessions['mobile-claude-1'].preferredProvider).toBe('claude')
   })
 
+  it('carries acpAgentId so a mobile Grok session is branded instead of ACP fallback', () => {
+    setupProject('/test')
+    useChatStore.getState().handleAgentEvent({
+      type: 'remote_session_start',
+      remoteProjectPath: '/test',
+      remoteSessionId: 'mobile-grok-1',
+      harnessId: 'acp',
+      acpAgentId: 'grok-build',
+    } as AgentEvent)
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(after._sessions['mobile-grok-1'].sessionProvider).toBe('acp')
+    expect(after._sessions['mobile-grok-1'].preferredProvider).toBe('acp')
+    expect(after._sessions['mobile-grok-1'].acpAgentId).toBe('grok-build')
+  })
+
+  it('does not overwrite an already-set acpAgentId on later remote_session_start', () => {
+    setupProject('/test')
+    useChatStore.getState().handleAgentEvent({
+      type: 'remote_session_start',
+      remoteProjectPath: '/test',
+      remoteSessionId: 'mobile-grok-2',
+      harnessId: 'acp',
+      acpAgentId: 'grok-build',
+    } as AgentEvent)
+    useChatStore.getState().handleAgentEvent({
+      type: 'remote_session_start',
+      remoteProjectPath: '/test',
+      remoteSessionId: 'mobile-grok-2',
+      harnessId: 'acp',
+      isSubscribe: true,
+    } as AgentEvent)
+    const after = useChatStore.getState().projectSessions['/test']
+    expect(after._sessions['mobile-grok-2'].acpAgentId).toBe('grok-build')
+  })
+
   it('does not overwrite an already-set sessionProvider on later remote_session_start (e.g. subscribe replay)', () => {
     setupProject('/test')
     useChatStore.getState().handleAgentEvent({

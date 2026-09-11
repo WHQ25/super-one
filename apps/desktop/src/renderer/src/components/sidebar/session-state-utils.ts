@@ -1,8 +1,10 @@
 import type {
   AskUserQuestionRequest,
   ChatMessage,
+  HarnessId,
   PermissionRequest,
   PlanApprovalRequest,
+  SessionHistoryEntry,
 } from '@superone/shared/agent-types'
 import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
 
@@ -75,6 +77,29 @@ export function getSessionTitle(messages: ChatMessage[] | undefined): string | n
 }
 
 export const DEFAULT_SESSION_TITLE = 'New session'
+
+/**
+ * Overlay live session brand onto a history row. Mobile-created ACP sessions
+ * often land in the sidebar from `_sessions` before (or without) a DB row that
+ * carries `acpAgentId` — without this, Grok paints as the generic ACP fallback.
+ */
+export function withLiveSessionBrand(
+  entry: SessionHistoryEntry,
+  live?: {
+    sessionProvider?: HarnessId | null
+    acpAgentId?: string | null
+  } | null,
+): SessionHistoryEntry {
+  if (!live) return entry
+  const provider = entry.provider ?? live.sessionProvider ?? undefined
+  const acpAgentId = entry.acpAgentId || live.acpAgentId || undefined
+  if (provider === entry.provider && acpAgentId === (entry.acpAgentId ?? undefined)) return entry
+  return {
+    ...entry,
+    ...(provider ? { provider } : {}),
+    ...(acpAgentId ? { acpAgentId } : {}),
+  }
+}
 
 /**
  * Canonical session-title precedence, shared by every surface that renders a

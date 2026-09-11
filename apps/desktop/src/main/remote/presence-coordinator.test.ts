@@ -5,21 +5,21 @@ vi.mock('../logger', () => ({
 }))
 
 import { PresenceCoordinator, type PresenceTransport, type PresenceSessionSource } from './presence-coordinator'
-import type { AgentEvent } from '@superone/shared/agent-types'
+import type { AgentEvent, HarnessId } from '@superone/shared/agent-types'
 import type { Session, SessionLifecycleEvent } from '../session/types'
 
 class FakeSession {
   readonly id: string
   readonly projectPath: string
-  readonly snapshot: { harnessId: 'claude' | 'codex' }
+  readonly snapshot: { harnessId: HarnessId; acpAgentId?: string | null }
   owner: { kind: 'local' } | { kind: 'remote'; deviceId: string } = { kind: 'local' }
   subscribers = new Set<string>()
   private listeners = new Set<(e: SessionLifecycleEvent) => void>()
 
-  constructor(id: string, projectPath: string, harnessId: 'claude' | 'codex' = 'claude') {
+  constructor(id: string, projectPath: string, harnessId: HarnessId = 'claude', acpAgentId?: string | null) {
     this.id = id
     this.projectPath = projectPath
-    this.snapshot = { harnessId }
+    this.snapshot = { harnessId, ...(acpAgentId ? { acpAgentId } : {}) }
   }
 
   onLifecycle(handler: (e: SessionLifecycleEvent) => void): () => void {
@@ -78,6 +78,28 @@ describe('PresenceCoordinator', () => {
     })
     expect(transport.sent).toEqual([
       { type: 'remote_session_start', remoteProjectPath: '/proj/A', remoteSessionId: 's1', harnessId: 'claude' },
+    ])
+  })
+
+  it('carries acpAgentId so desktop can brand a mobile Grok session', () => {
+    const source = makeSource()
+    const transport = makeTransport()
+    new PresenceCoordinator(source, transport)
+    const s = new FakeSession('s-grok', '/proj/A', 'acp', 'grok-build')
+    source.add(s)
+    s.emit({
+      type: 'owner_changed', sessionId: 's-grok',
+      previous: { kind: 'local' },
+      current: { kind: 'remote', deviceId: 'dev-A' },
+    })
+    expect(transport.sent).toEqual([
+      {
+        type: 'remote_session_start',
+        remoteProjectPath: '/proj/A',
+        remoteSessionId: 's-grok',
+        harnessId: 'acp',
+        acpAgentId: 'grok-build',
+      },
     ])
   })
 

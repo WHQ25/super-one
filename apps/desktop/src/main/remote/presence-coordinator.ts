@@ -41,18 +41,24 @@ export class PresenceCoordinator {
     this.unsubBySession.set(session.id, unsub)
   }
 
+  private remoteStartEvent(session: Session, extra?: { isSubscribe?: boolean }): AgentEvent {
+    return {
+      type: 'remote_session_start',
+      remoteProjectPath: session.projectPath,
+      remoteSessionId: session.id,
+      harnessId: session.snapshot.harnessId,
+      ...(session.snapshot.acpAgentId ? { acpAgentId: session.snapshot.acpAgentId } : {}),
+      ...extra,
+    }
+  }
+
   private handle(session: Session, evt: SessionLifecycleEvent): void {
     const sessionId = session.id
     const projectPath = session.projectPath
     switch (evt.type) {
       case 'owner_changed': {
         if (evt.previous.kind === 'local' && evt.current.kind === 'remote') {
-          this.transport.broadcastToRenderer({
-            type: 'remote_session_start',
-            remoteProjectPath: projectPath,
-            remoteSessionId: sessionId,
-            harnessId: session.snapshot.harnessId,
-          })
+          this.transport.broadcastToRenderer(this.remoteStartEvent(session))
         } else if (evt.previous.kind === 'remote' && evt.current.kind === 'local') {
           this.transport.broadcastToRenderer({
             type: 'remote_session_end',
@@ -64,24 +70,13 @@ export class PresenceCoordinator {
           evt.previous.kind === 'remote' && evt.current.kind === 'remote' &&
           evt.previous.deviceId !== evt.current.deviceId
         ) {
-          this.transport.broadcastToRenderer({
-            type: 'remote_session_start',
-            remoteProjectPath: projectPath,
-            remoteSessionId: sessionId,
-            harnessId: session.snapshot.harnessId,
-          })
+          this.transport.broadcastToRenderer(this.remoteStartEvent(session))
           this.notifyMobileLeave(sessionId, evt.previous.deviceId, evt.reason)
         }
         return
       }
       case 'subscriber_added':
-        this.transport.broadcastToRenderer({
-          type: 'remote_session_start',
-          remoteProjectPath: projectPath,
-          remoteSessionId: sessionId,
-          isSubscribe: true,
-          harnessId: session.snapshot.harnessId,
-        })
+        this.transport.broadcastToRenderer(this.remoteStartEvent(session, { isSubscribe: true }))
         return
       case 'subscriber_removed':
         this.transport.broadcastToRenderer({

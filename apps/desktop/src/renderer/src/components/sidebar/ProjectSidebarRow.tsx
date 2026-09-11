@@ -14,7 +14,7 @@ import { MiniAppHostGroup } from './MiniAppHostGroup'
 import { cn } from '@superone/ui/lib/utils'
 import { homePath } from '@/lib/path-utils'
 import type { Automation, RecentFolder, ScheduledSend, SessionHistoryEntry } from '@superone/shared/agent-types'
-import { DEFAULT_SESSION_TITLE, getSessionTitle, isEphemeralSession, isLiveSession } from './session-state-utils'
+import { DEFAULT_SESSION_TITLE, getSessionTitle, isEphemeralSession, isLiveSession, withLiveSessionBrand } from './session-state-utils'
 import { AutomationDialog } from '../AutomationDialog'
 import { SessionRow, type SessionRowCallbacks } from './SessionRow'
 import { ProjectHistoryList } from './ProjectHistoryList'
@@ -211,6 +211,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           data.pendingPlanApproval ? 1 : 0,
           data.awaitingAssistantReply ? 1 : 0,
           data.sessionProvider ?? '',
+          data.acpAgentId ?? '',
           data.session?.sessionId ?? '',
           data._gitBranch ?? '',
           data._worktreePath ?? '',
@@ -281,6 +282,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           title: title ?? DEFAULT_SESSION_TITLE,
           lastActiveAt: new Date().toISOString(),
           provider: data.sessionProvider ?? undefined,
+          ...(data.acpAgentId ? { acpAgentId: data.acpAgentId } : {}),
           providerSessionId: data._providerSessionId ?? undefined,
           messageCount: data.messages.length,
           isWorktree: !!data._gitBranch,
@@ -290,6 +292,10 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
       }
       if (live.length > 0) sessions = [...live, ...sessions]
     }
+
+    sessions = sessions.map((entry) =>
+      withLiveSessionBrand(entry, projectSession?._sessions?.[entry.sessionId]),
+    )
 
     // Ordering priority is about work that wants the user — not about where the
     // user already is. The foreground session is pinned visible instead (see

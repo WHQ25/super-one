@@ -139,14 +139,9 @@ function PreviewBody({ state, chromeVisible, onToggleChrome, onStartTransfer, on
         <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{formatFileSize(state.size)} · {state.mimeType}</Text>
         {state.phase === 'ready'
           ? <Text style={{ color: colors.mutedForeground, fontSize: 13, lineHeight: 19, textAlign: 'center' }}>{t(FILE_PREVIEW_TEXT.ready)}</Text>
-          : <Text style={{ color: colors.mutedForeground, fontSize: 13, lineHeight: 19, textAlign: 'center' }}>
-            {t(state.needsConfirm ? FILE_PREVIEW_TEXT.relayNotice : FILE_PREVIEW_TEXT.lanNotice)}
-          </Text>}
+          : null}
         {state.phase === 'downloading'
-          ? <View style={styles.inline}>
-            <ActivityIndicator color={colors.mutedForeground} size="small" />
-            <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{t(FILE_PREVIEW_TEXT.downloading)}</Text>
-          </View>
+          ? <TransferProgress receivedBytes={state.receivedBytes ?? 0} size={state.size} />
           : state.phase === 'idle' && state.needsConfirm
             ? <Button label={FILE_PREVIEW_TEXT.download} icon={FileDown} onPress={onStartTransfer} />
             : null}
@@ -164,6 +159,31 @@ function PreviewBody({ state, chromeVisible, onToggleChrome, onStartTransfer, on
   }
 
   return <CodeListing text={state.text} name={state.name} line={state.line} topInset={offset?.paddingTop ?? 0} />
+}
+
+function TransferProgress({ receivedBytes, size }: { receivedBytes: number; size: number }) {
+  const { tokens: { colors } } = useMobileTheme()
+  const { t } = useMobileLocale()
+  const received = Math.max(0, Math.min(size, receivedBytes))
+  const percent = size > 0 ? Math.round((received / size) * 100) : 0
+  return (
+    <View
+      style={styles.progress}
+      accessibilityRole="progressbar"
+      accessibilityValue={{ min: 0, max: 100, now: percent }}
+      testID="file-preview-download-progress"
+    >
+      <View style={styles.progressRow}>
+        <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{t(FILE_PREVIEW_TEXT.downloading)}</Text>
+        <Text style={{ color: colors.foreground, fontSize: 12 }}>
+          {formatFileSize(received)} / {formatFileSize(size)}
+        </Text>
+      </View>
+      <View style={[styles.track, { backgroundColor: colors.muted }]}>
+        <View style={[styles.fill, { width: `${percent}%`, backgroundColor: colors.primary }]} />
+      </View>
+    </View>
+  )
 }
 
 /** Back, title and the more menu, laid over the body inside the safe area. */
@@ -247,7 +267,10 @@ function PreviewChrome({ state, ports, onDismiss, visible }: { state: FilePrevie
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 16 },
-  inline: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  progress: { width: 280, maxWidth: '100%', gap: 8 },
+  progressRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
+  track: { height: 4, borderRadius: 999, overflow: 'hidden' },
+  fill: { height: 4, borderRadius: 999 },
   chrome: { position: 'absolute', top: 0, left: 0, right: 0 },
   chromeRow: { flexDirection: 'row', alignItems: 'center', gap: 4, height: CHROME_ROW_HEIGHT },
   title: { flex: 1, textAlign: 'center', fontSize: 14, fontWeight: '600' },

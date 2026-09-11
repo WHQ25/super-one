@@ -138,4 +138,39 @@ describe('downloadEncryptedFileBytes', () => {
       now: () => 1_000,
     })).rejects.toThrow('LAN host is unavailable')
   })
+
+  it('reports incremental progress from a streamed body', async () => {
+    const payload = new Uint8Array([1, 2, 3, 4, 5])
+    const progress: Array<[number, number]> = []
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(payload.subarray(0, 2))
+        controller.enqueue(payload.subarray(2))
+        controller.close()
+      },
+    })
+    const get = async () => ({
+      ok: true,
+      status: 200,
+      body,
+      arrayBuffer: async () => payload.slice().buffer as ArrayBuffer,
+    })
+
+    await expect(downloadDesktopFileBytes({
+      file: {
+        ok: true,
+        url: 'http://192.0.2.4:7788/file/token',
+        name: 'a.bin',
+        mimeType: 'application/octet-stream',
+        size: payload.byteLength,
+        modifiedAt: 1,
+        expiresAt: 2_000,
+      },
+      transport: 'lan',
+      get,
+      onProgress: (received, total) => progress.push([received, total]),
+      now: () => 1_000,
+    })).resolves.toEqual(payload)
+    expect(progress).toEqual([[2, 5], [5, 5]])
+  })
 })

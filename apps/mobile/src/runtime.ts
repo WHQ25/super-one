@@ -18,15 +18,22 @@ import type {
 import { applyEventToSession, createDefaultChatCoreSession, pendingSlashCommandFrom } from '@superone/chat-core'
 import { AGENT_EVENT_BATCH_MS } from '@superone/shared/agent-event-batcher'
 import { sandboxInfoFromMode } from '@superone/shared/harness/harness-sandbox'
-import type { RelayClient } from '@superone/relay-client'
+import type { CachedTranscript, RelayClient } from '@superone/relay-client'
 import { restoreSession } from '@superone/relay-client'
 import { randomId } from './ids'
 
 type SessionState = ReturnType<typeof createDefaultChatCoreSession>
 
+export type SessionTranscriptCache = {
+  get(pairingId: string, projectPath: string, sessionId: string): CachedTranscript | null
+  put(pairingId: string, projectPath: string, sessionId: string, transcript: CachedTranscript): void
+}
+
 export type ChatRuntimeHooks = {
   onDetail?: (event: Extract<AgentEvent, { type: 'remote_detail' }>) => void
   onSessionRecap?: (sessionId: string) => void
+  transcripts?: SessionTranscriptCache
+  pairingId?: () => string | null
 }
 
 export type SystemInfo = RemoteSystemInfo
@@ -106,6 +113,7 @@ export class ChatRuntime {
   ) {}
 
   async open(projectPath: string, sessionId: string): Promise<void> {
+    this.persistTranscript()
     this.projectPath = projectPath
     this.sessionId = sessionId
     this.resolvedQuestionIds.clear()
@@ -115,7 +123,8 @@ export class ChatRuntime {
     const generation = ++this.restoreGeneration
     const restore = this.restoreQueue.then(async () => {
       if (generation !== this.restoreGeneration) return
-      const restored = await restoreSession(this.client, projectPath, sessionId)
+      const cached = this.readTranscript(projectPath, sessionId)
+      const restored = await restoreSession(this.client, projectPath, sessionId, cached)
       if (generation !== this.restoreGeneration) return
       this.restoreMetrics = restored.metrics
       this.navigationAvailable = restored.navigationAvailable === true
@@ -173,6 +182,7 @@ export class ChatRuntime {
       this.dirty = true
       // Replayed history is a baseline, even when the connection epoch is unchanged.
       this.flush(true)
+      this.persistTranscript()
     })
     this.restoreQueue = restore.catch(() => {})
     await restore
@@ -197,6 +207,7 @@ export class ChatRuntime {
         ? mergeIndexedHistory(this.navigationIndex, older, this.session.messages) : [...older, ...this.session.messages] }
       this.historyCursor = page.cursor ?? null
       this.hasMoreHistory = Boolean(page.hasMore && this.historyCursor != null && this.historyCursor !== cursor)
+      this.persistTranscript()
       return older
     })()
     this.historyRequest = request
@@ -332,10 +343,34 @@ export class ChatRuntime {
   }
 
   dispose(): void {
+    this.persistTranscript()
     this.restoreGeneration += 1
     if (this.timer) clearTimeout(this.timer)
     this.timer = null
     this.dirty = false
+  }
+
+  private pairingId(): string | null {
+    return this.hooks.pairingId?.() ?? null
+  }
+
+  private readTranscript(projectPath: string, sessionId: string): CachedTranscript | null {
+    const pairingId = this.pairingId()
+    if (!pairingId || !this.hooks.transcripts) return null
+    return this.hooks.transcripts.get(pairingId, projectPath, sessionId)
+  }
+
+  private persistTranscript(): void {
+    const pairingId = this.pairingId()
+    if (!pairingId || !this.hooks.transcripts || !this.projectPath || !this.sessionId) return
+    if (this.session.messages.length === 0) return
+    this.hooks.transcripts.put(pairingId, this.projectPath, this.sessionId, {
+      messages: this.session.messages.filter((message) => !message.status || message.status === 'complete'),
+      provider: String(this.provider),
+      hasMore: this.hasMoreHistory,
+      cursor: this.historyCursor,
+      navigationAvailable: this.navigationAvailable,
+    })
   }
 
   send(content: string, extra: {

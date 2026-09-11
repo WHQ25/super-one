@@ -89,7 +89,7 @@ export const EmptyFile = { args: { state: fixture('Empty file') } }
 export const Loading = { args: { state: fixture('Loading') } }
 /** A relay transfer waiting for the Download tap; the menu is disabled until bytes arrive. */
 export const TransferAwaitingConfirm = { args: { state: fixture('Transfer · relay, awaiting confirm') } }
-/** Bytes on their way. */
+/** Bytes on their way; the bar reflects how far the transfer has got. */
 export const TransferDownloading = { args: { state: fixture('Transfer · downloading') } }
 /** A non-image file that finished downloading: Save to Files and Share are live. */
 export const TransferReady = { args: { state: fixture('Transfer · ready to save') } }

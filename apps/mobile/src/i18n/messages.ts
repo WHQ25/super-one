@@ -99,8 +99,7 @@ const en: Copy = {
   'Download': 'Download',
   'Loading file…': 'Loading file…',
   'Downloaded. Use the menu to save or share it.': 'Downloaded. Use the menu to save or share it.',
-  'This file is not small text, so it cannot be shown here. Downloading it over the relay stages an encrypted copy on the relay server first.': 'This file is not small text, so it cannot be shown here. Downloading it over the relay stages an encrypted copy on the relay server first.',
-  'This file is not small text, so it cannot be shown here. It is downloading directly from your desktop.': 'This file is not small text, so it cannot be shown here. It is downloading directly from your desktop.',
+
   'Manage folders': 'Manage Folders',
   'Add to project': 'Add to Project',
   'Add to session': 'Add to Session',
@@ -187,7 +186,7 @@ const en: Copy = {
   'Remove': 'Remove',
   'Add': 'Add',
   '+ Add item': '+ Add Item',
-  'Downloading securely…': 'Downloading securely…',
+
   'Image preview': 'Image Preview',
   'Image failed to load': 'Image failed to load',
   'Rotate left': 'Rotate Left',
@@ -461,8 +460,7 @@ const zh: Copy = {
   'Download': '下载',
   'Loading file…': '正在加载文件…',
   'Downloaded. Use the menu to save or share it.': '已下载。可通过菜单保存或分享。',
-  'This file is not small text, so it cannot be shown here. Downloading it over the relay stages an encrypted copy on the relay server first.': '此文件不是小型文本文件，无法在此直接显示。通过中继下载会先在中继服务器上暂存一份加密副本。',
-  'This file is not small text, so it cannot be shown here. It is downloading directly from your desktop.': '此文件不是小型文本文件，无法在此直接显示。正在直接从桌面端下载。',
+
   'Manage folders': '管理文件夹',
   'Add to project': '添加到项目',
   'Add to session': '添加到会话',
@@ -549,7 +547,7 @@ const zh: Copy = {
   'Remove': '移除',
   'Add': '添加',
   '+ Add item': '+ 添加项目',
-  'Downloading securely…': '正在安全下载…',
+
   'Image preview': '图片预览',
   'Image failed to load': '图片加载失败',
   'Rotate left': '向左旋转',

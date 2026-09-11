@@ -5,6 +5,9 @@ import {
   filePreviewMenu,
   formatFileSize,
   imagePreviewState,
+  mapTransferProgress,
+  mermaidPreviewState,
+  previewChromeIconName,
   previewFileName,
   previewLocalSource,
   reducePreviewResponse,
@@ -32,10 +35,26 @@ describe('file preview naming', () => {
     expect(safeCacheFileName('s', 'folder\\notes.txt')).toBe('s-notes.txt')
   })
 
+  it('resolves the chrome icon from the file name, not a mermaid diagram', () => {
+    expect(previewChromeIconName(loading)).toBe('App.tsx')
+    expect(previewChromeIconName({
+      kind: 'image', path: '/shots/a.png', name: 'a.png', label: 'Screenshot', src: PNG, mimeType: 'image/png',
+    })).toBe('a.png')
+    expect(previewChromeIconName(mermaidPreviewState('<svg></svg>'))).toBeNull()
+  })
+
   it('formats byte sizes for the transfer card', () => {
     expect(formatFileSize(12)).toBe('12 B')
     expect(formatFileSize(1_536)).toBe('1.5 KB')
     expect(formatFileSize(2 * 1_024 * 1_024)).toBe('2.0 MB')
+  })
+
+  it('maps HTTP progress onto the plaintext size', () => {
+    expect(mapTransferProgress(50, 100, 1_000)).toBe(500)
+    expect(mapTransferProgress(200, 100, 1_000)).toBe(1_000)
+    expect(mapTransferProgress(250, 0, 1_000)).toBe(250)
+    expect(mapTransferProgress(-1, 100, 1_000)).toBe(0)
+    expect(mapTransferProgress(10, 100, 0)).toBe(0)
   })
 })
 
@@ -73,7 +92,7 @@ describe('file preview response reduction', () => {
 
   it('turns metadata into an idle transfer that needs confirmation only over the relay', () => {
     const stat = { ok: true as const, statOnly: true as const, ...meta, size: 5_000_000, mimeType: 'image/png' }
-    expect(reducePreviewResponse(loading, stat, 'relay')).toMatchObject({ kind: 'transfer', needsConfirm: true, phase: 'idle', size: 5_000_000 })
+    expect(reducePreviewResponse(loading, stat, 'relay')).toMatchObject({ kind: 'transfer', needsConfirm: true, phase: 'idle', size: 5_000_000, modifiedAt: 1 })
     expect(reducePreviewResponse(loading, stat, 'lan')).toMatchObject({ kind: 'transfer', needsConfirm: false })
   })
 
@@ -116,6 +135,15 @@ describe('image preview state', () => {
   it('guesses the type of a URL picture from its name and leaves the title to the label', () => {
     expect(imagePreviewState({ src: 'https://x/y.jpg', label: 'y.jpg' })).toMatchObject({ name: 'y.jpg', mimeType: 'image/jpeg' })
     expect(imagePreviewState({ src: 'https://x/y' })).toMatchObject({ name: 'image.img', mimeType: 'image/*' })
+  })
+})
+
+describe('mermaid preview state', () => {
+  it('opens a diagram page with nothing to save or share', () => {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>'
+    expect(mermaidPreviewState(svg)).toEqual({ kind: 'mermaid', svg, name: 'Mermaid' })
+    expect(filePreviewMenu(mermaidPreviewState(svg))).toEqual({ save: { enabled: false, toPhotos: false }, share: { enabled: false } })
+    expect(previewLocalSource(mermaidPreviewState(svg))).toBeNull()
   })
 })
 

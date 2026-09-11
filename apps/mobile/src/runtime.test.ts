@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { CachedTranscript } from '@superone/relay-client'
 import { ChatRuntime } from './runtime'
 
 function fakeClient(epoch = 1) {
@@ -223,6 +224,55 @@ describe('ChatRuntime', () => {
       { messageId: 'second-history', hydrate: true },
     ])
     expect(runtime.epoch).toBe(7)
+  })
+
+  it('reopens from the connection cache without reloading the whole history page', async () => {
+    const history = [{
+      id: 'm1', role: 'assistant' as const, status: 'complete' as const,
+      content: [{ type: 'text' as const, text: 'cached' }], createdAt: '', providerId: 'claude',
+    }]
+    const store = new Map<string, CachedTranscript>()
+    const client = fakeClient()
+    client.request.mockImplementation(async (cmd: { type: string }) => {
+      client.sent.push(cmd)
+      if (cmd.type === 'subscribe_session') {
+        return { ok: true, historyPage: { messages: history, hasMore: false, cursor: null }, snapshot: { status: 'idle' } }
+      }
+      return { ok: true }
+    })
+    const runtime = new ChatRuntime(client as never, vi.fn(), {
+      pairingId: () => 'desk-1',
+      transcripts: {
+        get: (_pairing, project, session) => store.get(`${project}\0${session}`) ?? null,
+        put: (_pairing, project, session, transcript) => { store.set(`${project}\0${session}`, transcript) },
+      },
+    })
+    await runtime.open('/p', 's1')
+    expect(store.get('/p\0s1')?.messages).toEqual(history)
+    client.sent.length = 0
+    await runtime.open('/p', 's1')
+    expect(client.sent.map((cmd) => (cmd as { type: string }).type)).toEqual(['subscribe_session'])
+  })
+
+  it('does not persist an in-flight assistant turn into the connection cache', async () => {
+    const store = new Map<string, CachedTranscript>()
+    const runtime = new ChatRuntime(fakeClient() as never, vi.fn(), {
+      pairingId: () => 'desk-1',
+      transcripts: {
+        get: (_pairing, project, session) => store.get(`${project}\0${session}`) ?? null,
+        put: (_pairing, project, session, transcript) => { store.set(`${project}\0${session}`, transcript) },
+      },
+    })
+    await runtime.open('/p', 's1')
+    runtime.session = {
+      ...runtime.session,
+      messages: [
+        { id: 'done', role: 'user', status: 'complete', content: [{ type: 'text', text: 'q' }], createdAt: '', providerId: 'claude' },
+        { id: 'live', role: 'assistant', status: 'streaming', content: [{ type: 'text', text: 'half' }], createdAt: '', providerId: 'claude' },
+      ],
+    }
+    runtime.dispose()
+    expect(store.get('/p\0s1')?.messages.map((row) => row.id)).toEqual(['done'])
   })
 
   it('cancels a pending live paint when restore replaces the transcript', async () => {

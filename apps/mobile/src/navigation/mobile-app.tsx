@@ -82,6 +82,8 @@ import { useFileSearch } from './use-file-search'
 import { completeTypedPath, usePathAutocomplete } from './use-path-autocomplete'
 import { useAdditionalDirs } from './use-additional-dirs'
 import { useFilePreview } from './use-file-preview'
+import { clearFilePreviewCache } from '../file-preview-cache-store'
+import { sessionTranscriptCache } from '../session-transcript-cache'
 import { loadInlineImage } from '../inline-images'
 import { NewFolderSheet } from '../prompts/NewFolderSheet'
 import { FileFinderView } from '../screens/file-finder-view'
@@ -132,6 +134,8 @@ export function MobileApp() {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions()
   const [pairings, setPairings] = useState<SavedPairing[]>([])
   const [activePairingId, setActivePairingId] = useState<string | null>(null)
+  const activePairingIdRef = useRef(activePairingId)
+  activePairingIdRef.current = activePairingId
   const [connectingPairingId, setConnectingPairingId] = useState<string | null>(null)
   const [activeTransport, setActiveTransport] = useState<'lan' | 'relay' | null>(null)
   const [reconnect, setReconnect] = useState<ReconnectInfo | null>(null)
@@ -246,7 +250,7 @@ export function MobileApp() {
     projectPath: project?.path ?? null,
     eligible: shouldInterceptGrokRecap(selectedProvider, selectedAcpAgentId) && hasTranscript,
   })
-  const filePreview = useFilePreview({ clientRef, transport: activeTransport, project, sessionId })
+  const filePreview = useFilePreview({ clientRef, transport: activeTransport, project, sessionId, pairingId: activePairingId })
   const workspaceActivity = useWorkspaceActivity(clientRef.current, connectionState === 'connected', sessionListRevision, screen === 'chat' && !sessionSwitcherOpen ? sessionId : null)
   const directory = useRemoteDirectory(clientRef)
   const { load: loadDirectory, path: directoryPath, items: directoryItems } = directory
@@ -914,6 +918,8 @@ export function MobileApp() {
     }, {
       onDetail: (event) => { if (runtimeRef.current === runtime) inject(webRef, { ...event, type: 'detailUpdate' }) },
       onSessionRecap: (sid) => autoRecap.markRecapShown(sid),
+      transcripts: sessionTranscriptCache,
+      pairingId: () => activePairingIdRef.current,
     })
     runtimeRef.current = runtime
     setTerminalUi({ writable: false, title: 'Terminal' })
@@ -1364,15 +1370,17 @@ export function MobileApp() {
 
   /** Drop the transport and everything hanging off it, back to the device list. */
   const disconnectDevice = () => {
+    filePreview.close()
+    runtimeRef.current?.dispose()
+    runtimeRef.current = null
+    termRuntimeRef.current = null
+    if (activePairingId) clearFilePreviewCache(activePairingId)
     switchComposerDraft(null)
     reconnectControllerRef.current?.cancel()
     suppressReconnectRef.current = true
     clientRef.current?.disconnect()
     suppressReconnectRef.current = false
     clientRef.current = null
-    runtimeRef.current?.dispose()
-    runtimeRef.current = null
-    termRuntimeRef.current = null
     clearActiveSession()
     setActivePairingId(null)
     setActiveTransport(null)
@@ -1617,6 +1625,7 @@ export function MobileApp() {
             'failed to rename device',
           )}
           onForget={(item) => runUiAction(async () => {
+            clearFilePreviewCache(item.id)
             await updatePairings((current) => current.filter((pairing) => pairing.id !== item.id))
             if (activePairingId === item.id) disconnectDevice()
           }, setStatus, 'failed to forget device')}

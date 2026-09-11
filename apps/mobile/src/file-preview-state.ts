@@ -13,6 +13,8 @@ import { imagePreviewFileName, parseImageDataUri, type ImagePreviewTarget } from
  * - `image` — a zoomable picture. Its `src` is whatever bytes the phone already
  *   holds: the data URI the transcript painted, a cache file a transfer wrote,
  *   or a public URL (which the phone cannot save or share).
+ * - `mermaid` — a rendered diagram the transcript already holds as SVG. It
+ *   opens a page of its own so pinch-zoom cannot scale the chat WebView.
  * - `text` — small text or Markdown that rode back inside the RPC.
  * - `transfer` — a file that must move as bytes first. Over the relay a file
  *   larger than the RPC cap needs confirmation (the desktop stages an encrypted
@@ -32,6 +34,12 @@ export type FilePreviewState =
       /** `data:image/*`, `file://` or `http(s)://`. */
       src: string
       mimeType: string
+    }
+  | {
+      kind: 'mermaid'
+      /** The SVG mermaid.render already painted in the transcript. */
+      svg: string
+      name: string
     }
   | {
       kind: 'text'
@@ -57,6 +65,10 @@ export type FilePreviewState =
        */
       needsConfirm: boolean
       phase: 'idle' | 'downloading' | 'ready'
+      /** Host mtime; a later edit misses the on-phone cache. */
+      modifiedAt?: number
+      /** Bytes on the phone so far, mapped onto `size`. Only while downloading. */
+      receivedBytes?: number
       /** The cache file the bytes were written to, once `phase` is `ready`. */
       localUri?: string
       /** In-band bytes from the RPC; the hook writes them instead of downloading. */
@@ -66,10 +78,8 @@ export type FilePreviewState =
 
 export const FILE_PREVIEW_TEXT = {
   loading: 'Loading file…',
-  relayNotice: 'This file is not small text, so it cannot be shown here. Downloading it over the relay stages an encrypted copy on the relay server first.',
-  lanNotice: 'This file is not small text, so it cannot be shown here. It is downloading directly from your desktop.',
   download: 'Download',
-  downloading: 'Downloading securely…',
+  downloading: 'Downloading…',
   ready: 'Downloaded. Use the menu to save or share it.',
   retry: 'Try again',
   more: 'More',
@@ -85,11 +95,21 @@ export const FILE_PREVIEW_TEXT = {
   imageFailed: 'Image failed to load',
   rotateLeft: 'Rotate left',
   rotateRight: 'Rotate right',
+  mermaid: 'Mermaid',
 } as const
 
 /** The last path segment, which is what the page's title shows. */
 export function previewFileName(path: string): string {
   return path.split(/[\\/]/).pop() || path
+}
+
+/**
+ * Filename the chrome FileTypeIcon resolves against — the same Symbols artwork
+ * a file chip uses. Mermaid is a rendered diagram, not a file, so it has none.
+ */
+export function previewChromeIconName(state: FilePreviewState): string | null {
+  if (state.kind === 'mermaid') return null
+  return state.name
 }
 
 /**
@@ -111,6 +131,23 @@ export function formatFileSize(size: number): string {
   if (size < 1_024) return `${size} B`
   if (size < 1_024 * 1_024) return `${(size / 1_024).toFixed(1)} KB`
   return `${(size / (1_024 * 1_024)).toFixed(1)} MB`
+}
+
+/**
+ * Map an HTTP progress event onto the file's plaintext `size`, so the bar
+ * never overshoots even when the on-the-wire payload is an encrypted envelope.
+ */
+export function mapTransferProgress(received: number, total: number, size: number): number {
+  if (!Number.isFinite(received) || received <= 0 || !Number.isFinite(size) || size <= 0) return 0
+  if (Number.isFinite(total) && total > 0) {
+    return Math.min(size, Math.round((received / total) * size))
+  }
+  return Math.min(size, Math.round(received))
+}
+
+/** The state a mermaid diagram the transcript already rendered opens into. */
+export function mermaidPreviewState(svg: string): Extract<FilePreviewState, { kind: 'mermaid' }> {
+  return { kind: 'mermaid', svg, name: FILE_PREVIEW_TEXT.mermaid }
 }
 
 /** The state a picture the transcript is already displaying opens into. */
@@ -177,6 +214,7 @@ export function reducePreviewResponse(
         mimeType: response.mimeType,
         needsConfirm: false,
         phase: 'idle',
+        modifiedAt: response.modifiedAt,
         inlineBase64: response.base64,
       }
     }
@@ -189,6 +227,7 @@ export function reducePreviewResponse(
     mimeType: response.mimeType,
     needsConfirm: transport !== 'lan',
     phase: 'idle',
+    modifiedAt: response.modifiedAt,
   }
 }
 

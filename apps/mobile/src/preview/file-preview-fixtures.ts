@@ -55,14 +55,15 @@ export const FILE_PREVIEW_FIXTURES: ReadonlyArray<{ label: string; state: FilePr
   // and the landscape one above has to grow to stand up. Both need reviewing.
   { label: 'Image · tall portrait (turn it)', state: { kind: 'image', name: 'tall.jpg', label: 'Tall screenshot', src: 'https://picsum.photos/seed/superone-tall/800/1600', mimeType: 'image/jpeg' } },
   { label: 'Image · broken', state: { kind: 'image', name: 'broken.png', src: 'data:image/png;base64,AAAA', mimeType: 'image/png' } },
+  { label: 'Mermaid', state: { kind: 'mermaid', name: 'Mermaid', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 80" width="240" height="80"><rect width="240" height="80" rx="10" fill="#1e1e2e"/><text x="120" y="48" text-anchor="middle" fill="#cdd6f4" font-size="16" font-family="system-ui">Start → End</text></svg>' } },
   { label: 'Code · cited line 16', state: { kind: 'text', path: PATH, name: 'PortableToolRow.tsx', text: CODE, size: CODE.length, markdown: false, line: 16 } },
   { label: 'Code · no anchor', state: { kind: 'text', path: PATH, name: 'PortableToolRow.tsx', text: CODE, size: CODE.length, markdown: false } },
   { label: 'Markdown', state: { kind: 'text', path: '/workspace/super-one/docs/preview.md', name: 'preview.md', text: MARKDOWN, size: MARKDOWN.length, markdown: true } },
   { label: 'Empty file', state: { kind: 'text', path: '/workspace/super-one/.gitkeep', name: '.gitkeep', text: '', size: 0, markdown: false } },
   { label: 'Loading', state: { kind: 'loading', path: PATH, name: 'PortableToolRow.tsx', line: 16 } },
   { label: 'Transfer · relay, awaiting confirm', state: { kind: 'transfer', ...HERO, needsConfirm: true, phase: 'idle' } },
-  { label: 'Transfer · downloading', state: { kind: 'transfer', ...HERO, needsConfirm: true, phase: 'downloading' } },
-  { label: 'Transfer · LAN, downloading', state: { kind: 'transfer', path: '/workspace/super-one/logs/dev.log', name: 'dev.log', size: 1_204_988, mimeType: 'application/octet-stream', needsConfirm: false, phase: 'downloading' } },
+  { label: 'Transfer · downloading', state: { kind: 'transfer', ...HERO, needsConfirm: true, phase: 'downloading', receivedBytes: 2_410_056 } },
+  { label: 'Transfer · LAN, downloading', state: { kind: 'transfer', path: '/workspace/super-one/logs/dev.log', name: 'dev.log', size: 1_204_988, mimeType: 'application/octet-stream', needsConfirm: false, phase: 'downloading', receivedBytes: 402_000 } },
   { label: 'Transfer · ready to save', state: { kind: 'transfer', path: '/workspace/super-one/docs/spec.pdf', name: 'spec.pdf', size: 2_310_000, mimeType: 'application/pdf', needsConfirm: true, phase: 'ready', localUri: 'file:///cache/file-preview/spec.pdf' } },
   { label: 'Error', state: { kind: 'error', path: '/workspace/super-one/.env', name: '.env', message: 'path matches blacklist' } },
 ]

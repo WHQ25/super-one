@@ -14,7 +14,8 @@ export type { PresenceFetch, PresenceResponse } from './presence'
 export { RpcInbox } from './rpc'
 export { RelayClient } from './client'
 export type { MobileIdentity, OpenSocket, SocketLike } from './client'
-export { restoreSession } from './restore'
+export { restoreSession, mergeCachedHistory, appendHistory, dropIncompleteTail } from './restore'
+export type { CachedTranscript, HistoryPage, RestoredSession, SessionSnapshot } from './restore'
 export {
   INLINE_UPLOAD_MAX_BYTES,
   MAX_UPLOAD_BYTES,
@@ -30,6 +31,7 @@ export {
   type DesktopFileResponse,
   type DownloadDesktopFileOptions,
   type DownloadEncryptedFileOptions,
+  type DownloadProgress,
   type EncryptedFile,
   type HttpGet,
   type HttpGetResponse,

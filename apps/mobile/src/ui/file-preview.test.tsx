@@ -1,6 +1,6 @@
 import { beforeAll, expect, jest, test } from '@jest/globals'
 import { act, fireEvent, screen } from '@testing-library/react-native'
-import { View } from 'react-native'
+import { Animated, View } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import type { Locale } from '@superone/shared/agent-types'
 import type { FilePreviewState } from '../file-preview-state'
@@ -23,6 +23,10 @@ const RELAY_TRANSFER: FilePreviewState = {
 beforeAll(() => {
   const proto = View.prototype as unknown as { measureInWindow: jest.Mock<(cb: (x: number, y: number, w: number, h: number) => void) => void> }
   proto.measureInWindow.mockImplementation((callback) => callback(340, 50, 40, 40))
+  const animation = { start: (cb?: (result: { finished: boolean }) => void) => { cb?.({ finished: true }) }, stop: () => {}, reset: () => {} }
+  jest.spyOn(Animated, 'timing').mockReturnValue(animation as Animated.CompositeAnimation)
+  jest.spyOn(Animated, 'spring').mockReturnValue(animation as Animated.CompositeAnimation)
+  jest.spyOn(Animated, 'parallel').mockReturnValue(animation as Animated.CompositeAnimation)
 })
 
 /** Open the more menu and tap one of its rows, letting the async action settle. */
@@ -152,20 +156,26 @@ test('a relay transfer shows the size and waits for the Download tap', async () 
   const onStartTransfer = jest.fn()
   await mount(RELAY_TRANSFER, { onStartTransfer })
   expect(screen.getByText('4.6 MB · image/png')).toBeTruthy()
+  expect(screen.queryByText(/not small text/)).toBeNull()
   fireEvent.press(screen.getByText('Download'))
   expect(onStartTransfer).toHaveBeenCalledTimes(1)
 })
 
-test('a downloading transfer swaps the button for progress copy', async () => {
-  await mount({ ...RELAY_TRANSFER, phase: 'downloading' })
+test('a downloading transfer swaps the button for a progress bar', async () => {
+  await mount({ ...RELAY_TRANSFER, phase: 'downloading', receivedBytes: 2_410_056 })
   expect(screen.queryByText('Download')).toBeNull()
-  expect(screen.getByText('Downloading securely…')).toBeTruthy()
+  expect(screen.queryByText(/not small text/)).toBeNull()
+  expect(screen.getByText('Downloading…')).toBeTruthy()
+  expect(screen.getByText('2.3 MB / 4.6 MB')).toBeTruthy()
+  expect(screen.getByTestId('file-preview-download-progress')).toBeTruthy()
 })
 
 test('a LAN transfer never shows a Download button', async () => {
   await mount({ kind: 'transfer', path: '/workspace/proj/logs/dev.log', name: 'dev.log', size: 2_048, mimeType: 'application/octet-stream', needsConfirm: false, phase: 'downloading' })
   expect(screen.queryByText('Download')).toBeNull()
-  expect(screen.getByText(/downloading directly from your desktop/)).toBeTruthy()
+  expect(screen.queryByText(/not small text/)).toBeNull()
+  expect(screen.getByText('Downloading…')).toBeTruthy()
+  expect(screen.getByText('0 B / 2.0 KB')).toBeTruthy()
 })
 
 test('a finished transfer points at the menu, which now saves to a folder', async () => {

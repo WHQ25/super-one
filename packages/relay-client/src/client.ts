@@ -6,7 +6,7 @@ import { decryptPayload, deriveKeys, encryptPayload } from './crypto'
 import { handleInboundFrame, makeDecrypt, type InboundFrame, type RelayControlFrame } from './frames'
 import { RpcInbox } from './rpc'
 import { uploadBytes, type HttpPut, type UploadBytesOptions } from './attachments'
-import { downloadDesktopFileBytes, type HttpGet } from './downloads'
+import { downloadDesktopFileBytes, type DownloadProgress, type HttpGet } from './downloads'
 
 export type SocketLike = {
   send(data: string): void
@@ -148,6 +148,7 @@ export class RelayClient {
   downloadDesktopFile(
     file: Extract<ReadDesktopFileResponse, { url: string }>,
     get?: HttpGet,
+    onProgress?: DownloadProgress,
   ): Promise<Uint8Array> {
     return downloadDesktopFileBytes({
       file,
@@ -156,6 +157,7 @@ export class RelayClient {
       aesKeyBytes: this.aesKeyBytes,
       channelKeyHex: this.channelKeyHex,
       ...(get ? { get } : {}),
+      ...(onProgress ? { onProgress } : {}),
     })
   }
 

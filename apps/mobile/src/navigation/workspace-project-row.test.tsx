@@ -58,6 +58,36 @@ test('shows a pending session under a collapsed project', async () => {
   expect(screen.getByText('Allow Bash?')).toBeTruthy()
 })
 
+test('shows a running session under a collapsed project', async () => {
+  const running: SessionActivity = {
+    sessionId: 'run', projectPath: '/repo', status: 'streaming', provider: 'claude',
+    pendingCount: 0, pendingReason: { en: null, zh: null }, title: 'Long running task',
+  }
+  await renderWithTheme(
+    <SessionActivityContext.Provider value={{ run: running }}>
+      {row({ seed: [{ sessionId: 'idle', title: 'Idle session' }, { sessionId: 'run', title: 'Long running task' }] })}
+    </SessionActivityContext.Provider>,
+  )
+  expect(screen.getByText('Long running task')).toBeTruthy()
+  expect(screen.queryByText('Idle session')).toBeNull()
+})
+
+test('shows an unseen session under a collapsed project', async () => {
+  await renderWithTheme(
+    <SessionActivityContext.Provider value={{
+      unread: {
+        sessionId: 'unread', projectPath: '/repo', status: 'idle', provider: 'codex',
+        pendingCount: 0, pendingReason: { en: null, zh: null }, title: 'Unseen completed session',
+        isUnseen: true,
+      },
+    }}>
+      {row({ seed: [{ sessionId: 'idle', title: 'Idle session' }, { sessionId: 'unread', title: 'Unseen completed session' }] })}
+    </SessionActivityContext.Provider>,
+  )
+  expect(screen.getByText('Unseen completed session')).toBeTruthy()
+  expect(screen.queryByText('Idle session')).toBeNull()
+})
+
 test('shows the sessions once expanded', async () => {
   await renderWithTheme(row({ expanded: true }))
   expect(screen.getByText('Fix the drawer')).toBeTruthy()
@@ -68,9 +98,9 @@ test('keeps the loaded list mounted across a collapse, so re-expanding costs no 
   expect(screen.getByText('Fix the drawer')).toBeTruthy()
 
   await rerender(row({ expanded: false }))
-  // Ordinary rows leave the tree while collapsed — desktop only keeps
-  // attention visible then. The hook holding the loaded rows stays mounted,
-  // so expanding again does not refetch.
+  // Ordinary rows leave the tree while collapsed — desktop only keeps live,
+  // unseen, pending and the active session visible then. The hook holding
+  // the loaded rows stays mounted, so expanding again does not refetch.
   expect(screen.queryByText('Fix the drawer')).toBeNull()
 
   await rerender(row({ expanded: true }))

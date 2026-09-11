@@ -151,27 +151,35 @@ it('keeps unseen children visible even when their group is collapsed and beyond 
     .toEqual(['parent', 'unread'])
 })
 
+it('keeps a running child visible while its group is collapsed and beyond the reveal limit', () => {
+  const rows = [row('first'), row('parent'), { ...row('running', 'parent'), status: 'streaming' }]
+  expect(flattenSessionGroups(rows, NONE, null, 1).map(item => item.session.sessionId))
+    .toEqual(['parent', 'running'])
+})
+
 describe('attention partition', () => {
-  it('puts pending and unseen groups in attention, in host order', () => {
+  it('puts live, pending and unseen groups in attention, in host order', () => {
     const groups = groupSessionRows([
       row('idle-a'),
       { ...row('pending'), pendingCount: 1 },
       row('idle-b'),
       { ...row('unread'), isUnseen: true },
+      { ...row('running'), status: 'streaming' },
     ])
     const sections = partitionSessionGroups(groups)
-    expect(sections.attention.map((group) => group.parent.sessionId)).toEqual(['pending', 'unread'])
+    expect(sections.attention.map((group) => group.parent.sessionId)).toEqual(['pending', 'unread', 'running'])
     expect(sections.normal.map((group) => group.parent.sessionId)).toEqual(['idle-a', 'idle-b'])
   })
 
-  it('shows only attention groups while the project is collapsed', () => {
+  it('shows live, pending and unseen groups while the project is collapsed', () => {
     const groups = groupSessionRows([
       row('idle'),
       { ...row('pending'), pendingCount: 2 },
       { ...row('unread'), isUnseen: true },
+      { ...row('running'), status: 'streaming' },
     ])
     expect(visibleSessionGroups(groups, 0).map((group) => group.parent.sessionId))
-      .toEqual(['pending', 'unread'])
+      .toEqual(['pending', 'unread', 'running'])
   })
 
   it('keeps the active session reachable while a project is collapsed', () => {
@@ -199,5 +207,22 @@ describe('mergeActivityIntoRows', () => {
     expect(merged.map((session) => session.sessionId)).toEqual(['missing', 'listed', 'other-project'])
     expect(merged[0]).toMatchObject({ title: 'Allow Bash?', pendingCount: 1, provider: 'claude' })
     expect(merged[1]?.pendingCount).toBe(1)
+  })
+
+  it('inserts a running session the host has not paged in yet', () => {
+    const merged = mergeActivityIntoRows([row('listed')], {
+      listed: {
+        sessionId: 'listed', projectPath: '/repo', status: 'idle', pendingCount: 0,
+      },
+      running: {
+        sessionId: 'running', projectPath: '/repo', status: 'streaming', pendingCount: 0,
+        title: 'Long running task',
+      },
+      idle: {
+        sessionId: 'idle', projectPath: '/repo', status: 'idle', pendingCount: 0, title: 'Idle elsewhere',
+      },
+    }, '/repo')
+    expect(merged.map((session) => session.sessionId)).toEqual(['running', 'listed'])
+    expect(merged[0]).toMatchObject({ title: 'Long running task', status: 'streaming' })
   })
 })

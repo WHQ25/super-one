@@ -38,8 +38,9 @@ export function WorkspaceProjectRow(props: WorkspaceProjectRowProps) {
   const needsAttention = projectHasAttention(useContext(SessionActivityContext), props.project.path)
   // Mounted the first time this project is expanded, and kept mounted after.
   // Collapsing hides the ordinary list instead of dropping it, so re-expanding
-  // costs no request. Attention is the desktop exception: a collapsed project
-  // still shows sessions waiting on the user, so those rows arm the list too.
+  // costs no request. Live work is the desktop exception: a collapsed project
+  // still shows running, unseen, and pending sessions, so those rows arm the
+  // list too.
   const [armed, setArmed] = useState(props.expanded || needsAttention)
   useEffect(() => { if (props.expanded || needsAttention) setArmed(true) }, [props.expanded, needsAttention])
   const Chevron = props.expanded ? ChevronDown : ChevronRight

@@ -1,4 +1,5 @@
 import type { HarnessId } from '@superone/shared/agent-types'
+import { sessionIsLive } from './session-activity-state'
 
 /** One row of a remote project's session list, as `list_sessions` returns it. */
 export type SessionListRow = {
@@ -66,7 +67,7 @@ export function groupSessionRows(rows: SessionListRow[]): SessionListGroup[] {
 
 /**
  * Flattens groups for a flat list. Collapsed groups still show the session the
- * user is currently in, plus children waiting for input.
+ * user is currently in, plus live / unseen / pending children.
  */
 export function flattenSessionGroups(
   rows: SessionListRow[],
@@ -74,8 +75,8 @@ export function flattenSessionGroups(
   activeSessionId?: string | null,
   /**
    * Groups to render before "Show more". `0` is a collapsed project: only
-   * attention (and the active session) stay visible, matching desktop.
-   * Unbounded when omitted.
+   * live, unseen, pending, and the active session stay visible, matching
+   * desktop. Unbounded when omitted.
    */
   groupLimit?: number,
 ): SessionListItem[] {
@@ -85,7 +86,7 @@ export function flattenSessionGroups(
     const collapsed = hasChildren && !expandedIds.has(parent.sessionId)
     items.push({ session: parent, child: false, hasChildren, collapsed })
     const visible = collapsed
-      ? children.filter((child) => child.sessionId === activeSessionId || sessionNeedsAttention(child))
+      ? children.filter((child) => child.sessionId === activeSessionId || sessionIsLive(child))
       : children
     for (const child of visible) {
       items.push({ session: child, child: true, hasChildren: false, collapsed: false })
@@ -94,17 +95,14 @@ export function flattenSessionGroups(
   return items
 }
 
-export function sessionNeedsAttention(session: Pick<SessionListRow, 'pendingCount' | 'isUnseen'>): boolean {
-  return (session.pendingCount ?? 0) > 0 || !!session.isUnseen
-}
-
-const groupNeedsAttention = (group: SessionListGroup) =>
-  sessionNeedsAttention(group.parent) || group.children.some(sessionNeedsAttention)
+const groupIsLive = (group: SessionListGroup) =>
+  sessionIsLive(group.parent) || group.children.some(sessionIsLive)
 
 /**
- * Desktop partitions first: work waiting on the user stays at the top of the
- * project, and a collapsed project still shows those groups. The session the
- * user is in is appended, not promoted, so switching never reshuffles the list.
+ * Desktop partitions first: live, unseen, and pending work stays at the top of
+ * the project, and a collapsed project still shows those groups. The session
+ * the user is in is appended, not promoted, so switching never reshuffles the
+ * list.
  */
 export function partitionSessionGroups(groups: SessionListGroup[]): {
   attention: SessionListGroup[]
@@ -113,7 +111,7 @@ export function partitionSessionGroups(groups: SessionListGroup[]): {
   const attention: SessionListGroup[] = []
   const normal: SessionListGroup[] = []
   for (const group of groups) {
-    if (groupNeedsAttention(group)) attention.push(group)
+    if (groupIsLive(group)) attention.push(group)
     else normal.push(group)
   }
   return { attention, normal }
@@ -151,8 +149,8 @@ const holdsSession = (group: SessionListGroup, sessionId: string) =>
   group.parent.sessionId === sessionId || group.children.some((child) => child.sessionId === sessionId)
 
 /**
- * Overlay live activity onto listed rows, and insert a pending/unseen session
- * the host has not paged in yet so the sidebar can still name it.
+ * Overlay live activity onto listed rows, and insert a live/unseen/pending
+ * session the host has not paged in yet so the sidebar can still name it.
  */
 export function mergeActivityIntoRows(
   rows: SessionListRow[],
@@ -186,7 +184,7 @@ export function mergeActivityIntoRows(
   for (const session of Object.values(activity)) {
     if (projectPath && session.projectPath !== projectPath) continue
     if (known.has(session.sessionId)) continue
-    if (!sessionNeedsAttention(session)) continue
+    if (!sessionIsLive(session)) continue
     extras.push({
       sessionId: session.sessionId,
       title: session.title || '',

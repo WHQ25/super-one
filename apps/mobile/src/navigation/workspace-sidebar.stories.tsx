@@ -1,10 +1,9 @@
 import type { ReactNode } from 'react'
 import { View } from 'react-native'
-import type { SessionActivity } from '@superone/shared/session-activity'
 import { MobileThemeProvider } from '../theme/context'
 import { Text } from '../ui/text'
 import type { SessionListRow } from '../session-list-state'
-import { countAttentionSessions } from '../session-activity-state'
+import { countAttentionSessions, type MobileSessionActivity } from '../session-activity-state'
 import { MobileHeader } from './mobile-header'
 import { SessionActivityContext } from './use-session-activity'
 import { WorkspaceSidebar, type WorkspaceSidebarProps } from './workspace-sidebar'
@@ -100,7 +99,7 @@ export const Narrow = {
   ),
 }
 
-const pending: Record<string, SessionActivity> = {
+const pending: Record<string, MobileSessionActivity> = {
   s2: {
     sessionId: 's2',
     projectPath: '/repo',
@@ -119,6 +118,25 @@ const pending: Record<string, SessionActivity> = {
     pendingCount: 1,
     pendingReason: { en: 'Review plan', zh: '审查计划' },
   },
+  run: {
+    sessionId: 'run',
+    projectPath: '/other',
+    status: 'streaming',
+    provider: 'claude',
+    title: 'Long running task',
+    pendingCount: 0,
+    pendingReason: { en: null, zh: null },
+  },
+  unread: {
+    sessionId: 'unread',
+    projectPath: '/other',
+    status: 'idle',
+    provider: 'codex',
+    title: 'Unseen completed session',
+    pendingCount: 0,
+    isUnseen: true,
+    pendingReason: { en: null, zh: null },
+  },
 }
 
 export const NeedsAttention = {
@@ -131,7 +149,7 @@ export const NeedsAttention = {
       </SessionActivityContext.Provider>
     </MobileThemeProvider>
   ),
-  name: 'Attention · pending strip, including a collapsed project',
+  name: 'Attention · pending, running and unseen, including a collapsed project',
 }
 
 export const PhoneMenuBadge = {

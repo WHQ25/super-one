@@ -31,8 +31,9 @@ export function SessionListBody(props: SessionListActions & {
   /** Which neutral this list sits on; rows pick their fills from it. */
   surface?: 'panel' | 'page'
   /**
-   * A collapsed project only paints attention rows, the way the desktop
-   * sidebar does. Spinner, empty copy and "Show more" belong to the expanded list.
+   * A collapsed project only paints live, unseen, pending, and the active
+   * session, the way the desktop sidebar does. Spinner, empty copy and
+   * "Show more" belong to the expanded list.
    */
   collapsed?: boolean
 }) {

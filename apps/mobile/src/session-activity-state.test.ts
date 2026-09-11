@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionActivity } from '@superone/shared/session-activity'
-import { mergeSessionActivity, projectHasAttention, sessionActivityIconStatus } from './session-activity-state'
+import { countAttentionSessions, mergeSessionActivity, projectHasAttention, sessionActivityIconStatus } from './session-activity-state'
 
 const idle: SessionActivity = { sessionId: 'other', projectPath: '/project', provider: 'codex', status: 'idle', completedMessageId: 'reply-1', pendingCount: 0, pendingReason: { en: null, zh: null } }
 
@@ -29,11 +29,22 @@ describe('unseen session completion', () => {
 })
 
 describe('projectHasAttention', () => {
-  it('is true when a session in that project is pending or unseen', () => {
+  it('is true when a session in that project is live, pending or unseen', () => {
     const pending = { ...idle, sessionId: 'ask', projectPath: '/repo', pendingCount: 1 }
     expect(projectHasAttention({ ask: pending }, '/repo')).toBe(true)
     expect(projectHasAttention({ ask: pending }, '/other')).toBe(false)
     expect(projectHasAttention({ other: { ...idle, isUnseen: true } }, '/project')).toBe(true)
+    expect(projectHasAttention({ other: { ...idle, status: 'streaming' } }, '/project')).toBe(true)
     expect(projectHasAttention({ other: idle }, '/project')).toBe(false)
+  })
+})
+
+describe('countAttentionSessions', () => {
+  it('counts pending and unseen, not a running turn the user is not needed for', () => {
+    expect(countAttentionSessions({
+      ask: { ...idle, sessionId: 'ask', pendingCount: 1 },
+      unread: { ...idle, sessionId: 'unread', isUnseen: true },
+      running: { ...idle, sessionId: 'running', status: 'streaming' },
+    })).toBe(2)
   })
 })

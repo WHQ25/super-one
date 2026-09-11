@@ -78,18 +78,19 @@ rendering a whole fetch page at once. The count is groups, not rows, so an
 expanded collaboration parent's children ride along instead of costing slots, and
 the group holding the active session is appended past the limit rather than
 promoted — switching sessions must not reshuffle the list under the finger.
-Attention is the exception, matching the desktop sidebar: groups with a pending
-request or an unread completion are partitioned to the top of the project, and
-a collapsed project still renders those rows (plus the active session) instead
-of hiding the whole list. `session_activity` / `list_session_activity` supply
-the pending copy; the header menu shows a red attention dot so a closed drawer
-still says work is waiting.
+Live work is the exception, matching the desktop sidebar: groups that are
+running, unseen, or waiting on the user are partitioned to the top of the
+project, and a collapsed project still renders those rows (plus the active
+session) instead of hiding the whole list. `session_activity` /
+`list_session_activity` supply the live status and pending copy; the header
+menu shows a red attention dot only for pending/unseen work so a closed drawer
+still says the user is needed.
 **Several projects stand open at once**, as on the desktop, so the session list is
 owned per row (`WorkspaceProjectRow`) rather than per drawer — one shared list
 state could only ever serve one project, which is what made this an accordion. A
 row mounts its list the first time it is expanded, or as soon as a session in it
-needs attention, and keeps it mounted after; collapsing hides ordinary rows
-(`display: 'none'` when nothing is waiting) without dropping the loaded list.
+is live, unseen, or pending, and keeps it mounted after; collapsing hides ordinary
+rows (`display: 'none'` when nothing is live) without dropping the loaded list.
 Opening the drawer adds the active project to the expanded set without disturbing
 the rest.
 

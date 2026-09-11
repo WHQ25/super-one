@@ -59,8 +59,8 @@ export function useProjectSessions(
   seed: SessionListRow[] = [],
   activeSessionId?: string | null,
   /**
-   * False while the project row is collapsed. Attention groups still render —
-   * desktop keeps those reachable without expanding the folder.
+   * False while the project row is collapsed. Live, unseen, and pending groups
+   * still render — desktop keeps those reachable without expanding the folder.
    */
   listExpanded = true,
 ): ProjectSessions {

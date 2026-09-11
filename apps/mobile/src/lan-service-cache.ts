@@ -36,24 +36,32 @@ export function collectLanServices(records: readonly NativeLanRecord[]): LanServ
   return services
 }
 
+function addressKey(service: LanService): string {
+  return `${service.host}:${service.port}`
+}
+
 /**
- * The rooms currently visible on this network. Notifies only when the set
+ * The rooms currently visible on this network, with every address each one is
+ * advertised at. A desktop that restarted without a Bonjour goodbye is seen at
+ * its old port and its new one until the old record expires — and the name it
+ * comes back under may differ — so a room keeps all of its candidates and
+ * discovery probes them rather than guessing. Notifies only when the set
  * meaningfully changes, so a browser that re-reports the same services on every
  * network blip cannot drive a probe storm.
  */
 export class LanServiceCache {
-  private services = new Map<string, LanService>()
+  private rooms = new Map<string, LanService[]>()
 
   get size(): number {
-    return this.services.size
+    return this.rooms.size
   }
 
-  lookup(roomId: string): LanService | null {
-    return this.services.get(roomId) ?? null
+  lookup(roomId: string): LanService[] {
+    return this.rooms.get(roomId) ?? []
   }
 
   list(): LanService[] {
-    return [...this.services.values()]
+    return [...this.rooms.values()].flat()
   }
 
   clear(): boolean {
@@ -62,18 +70,24 @@ export class LanServiceCache {
 
   /** Returns whether anything changed. */
   replace(records: readonly NativeLanRecord[]): boolean {
-    const next = new Map<string, LanService>()
-    for (const service of collectLanServices(records)) next.set(service.roomId, service)
+    const next = new Map<string, LanService[]>()
+    for (const service of collectLanServices(records)) {
+      const candidates = next.get(service.roomId) ?? []
+      if (!candidates.some((other) => addressKey(other) === addressKey(service))) candidates.push(service)
+      next.set(service.roomId, candidates)
+    }
     if (!this.changed(next)) return false
-    this.services = next
+    this.rooms = next
     return true
   }
 
-  private changed(next: Map<string, LanService>): boolean {
-    if (next.size !== this.services.size) return true
-    for (const [roomId, service] of this.services) {
+  private changed(next: Map<string, LanService[]>): boolean {
+    if (next.size !== this.rooms.size) return true
+    for (const [roomId, candidates] of this.rooms) {
       const other = next.get(roomId)
-      if (!other || other.host !== service.host || other.port !== service.port) return true
+      if (!other || other.length !== candidates.length) return true
+      const keys = new Set(other.map(addressKey))
+      if (candidates.some((service) => !keys.has(addressKey(service)))) return true
     }
     return false
   }

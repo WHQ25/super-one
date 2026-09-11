@@ -7,14 +7,15 @@ function pairing(id: string, extra: Partial<SavedPairing> = {}): SavedPairing {
 }
 
 function harness(overrides: Partial<DiscoveryPorts> = {}) {
-  const services = new Map<string, LanService>()
+  const services = new Map<string, LanService[]>()
   const ports: DiscoveryPorts = {
     roomIdFor: (secret) => `room-${secret}`,
     lanAddressOf: (item) => (item.lan ? { host: item.lan.split(':')[0], port: Number(item.lan.split(':')[1]) } : null),
     checkRelay: vi.fn(async () => false),
     checkLan: vi.fn(async () => false),
     ensureBrowsing: vi.fn(async () => {}),
-    lookupLan: (roomId) => services.get(roomId) ?? null,
+    restartBrowsing: vi.fn(async () => {}),
+    lookupLan: (roomId) => services.get(roomId) ?? [],
     ...overrides,
   }
   const onChange = vi.fn()
@@ -36,7 +37,7 @@ describe('device discovery refresh', () => {
   it('probes the mDNS address over the one stored at pairing time', async () => {
     const checkLan = vi.fn(async () => true)
     const { discovery, services } = harness({ checkLan })
-    services.set('room-secret-desk-1', { roomId: 'room-secret-desk-1', host: '10.0.0.5', port: 9000 })
+    services.set('room-secret-desk-1', [{ roomId: 'room-secret-desk-1', host: '10.0.0.5', port: 9000 }])
     discovery.setPairings([pairing('desk-1', { lan: '192.168.1.9:8123' })])
     await discovery.refresh({ reset: true })
     expect(checkLan).toHaveBeenCalledExactlyOnceWith('10.0.0.5', 9000)
@@ -85,7 +86,24 @@ describe('device discovery refresh', () => {
     const { discovery, ports, onChange } = harness()
     await discovery.refresh({ reset: true })
     expect(ports.ensureBrowsing).not.toHaveBeenCalled()
+    expect(ports.restartBrowsing).not.toHaveBeenCalled()
     expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('restarts the browse on a reset refresh so a restarted desktop is re-resolved', async () => {
+    const { discovery, ports } = harness()
+    discovery.setPairings([pairing('desk-1')])
+    await discovery.refresh({ reset: true })
+    expect(ports.restartBrowsing).toHaveBeenCalledTimes(1)
+    expect(ports.ensureBrowsing).not.toHaveBeenCalled()
+  })
+
+  it('only keeps the browse alive on an incremental refresh', async () => {
+    const { discovery, ports } = harness()
+    discovery.setPairings([pairing('desk-1')])
+    await discovery.refresh({ reset: false })
+    expect(ports.ensureBrowsing).toHaveBeenCalledTimes(1)
+    expect(ports.restartBrowsing).not.toHaveBeenCalled()
   })
 
   it('clears prior results on a reset refresh so a stale route cannot linger', async () => {
@@ -144,7 +162,7 @@ describe('mDNS cache updates', () => {
     await discovery.refresh({ reset: true })
     expect(checkLan).not.toHaveBeenCalled()
 
-    services.set('room-secret-desk-1', { roomId: 'room-secret-desk-1', host: '10.0.0.5', port: 9000 })
+    services.set('room-secret-desk-1', [{ roomId: 'room-secret-desk-1', host: '10.0.0.5', port: 9000 }])
     discovery.handleLanCacheUpdated()
     await vi.waitFor(() => expect(discovery.reachabilityOf('desk-1').lan).toBe(true))
     expect(checkLan).toHaveBeenCalledExactlyOnceWith('10.0.0.5', 9000)
@@ -153,11 +171,60 @@ describe('mDNS cache updates', () => {
   it('does not re-probe a device already known to be on the LAN', async () => {
     const checkLan = vi.fn(async () => true)
     const { discovery, services } = harness({ checkLan })
-    services.set('room-secret-desk-1', { roomId: 'room-secret-desk-1', host: '10.0.0.5', port: 9000 })
+    services.set('room-secret-desk-1', [{ roomId: 'room-secret-desk-1', host: '10.0.0.5', port: 9000 }])
     discovery.setPairings([pairing('desk-1')])
     await discovery.refresh({ reset: true })
     discovery.handleLanCacheUpdated()
     expect(checkLan).toHaveBeenCalledTimes(1)
+  })
+
+  it('re-probes a device on the LAN whose advertised port changed', async () => {
+    const checkLan = vi.fn(async () => true)
+    const { discovery, services } = harness({ checkLan })
+    services.set('room-secret-desk-1', [{ roomId: 'room-secret-desk-1', host: '10.0.0.5', port: 9000 }])
+    discovery.setPairings([pairing('desk-1')])
+    await discovery.refresh({ reset: true })
+    expect(discovery.lanAddressOf('desk-1')).toEqual({ host: '10.0.0.5', port: 9000 })
+
+    // The desktop restarted: same name, new ephemeral port.
+    services.set('room-secret-desk-1', [{ roomId: 'room-secret-desk-1', host: '10.0.0.5', port: 9001 }])
+    discovery.handleLanCacheUpdated()
+    await vi.waitFor(() => expect(discovery.lanAddressOf('desk-1')).toEqual({ host: '10.0.0.5', port: 9001 }))
+    expect(checkLan).toHaveBeenCalledTimes(2)
+    expect(checkLan).toHaveBeenLastCalledWith('10.0.0.5', 9001)
+  })
+
+  it('probes every advertised address for a room and keeps the one that answers', async () => {
+    const checkLan = vi.fn(async (_host: string, port: number) => port === 9001)
+    const { discovery, services } = harness({ checkLan })
+    // An unclean restart: the dead port is still advertised beside the live one.
+    services.set('room-secret-desk-1', [
+      { roomId: 'room-secret-desk-1', host: '10.0.0.5', port: 9000 },
+      { roomId: 'room-secret-desk-1', host: '10.0.0.5', port: 9001 },
+    ])
+    discovery.setPairings([pairing('desk-1')])
+    await discovery.refresh({ reset: true })
+    expect(checkLan).toHaveBeenCalledTimes(2)
+    expect(discovery.reachabilityOf('desk-1').lan).toBe(true)
+    expect(discovery.lanAddressOf('desk-1')).toEqual({ host: '10.0.0.5', port: 9001 })
+  })
+
+  it('does not let a dead candidate demote a room another candidate answered for', async () => {
+    let failDead = () => {}
+    const dead = new Promise<boolean>((resolve) => { failDead = () => resolve(false) })
+    const checkLan = vi.fn((_host: string, port: number) => (port === 9000 ? dead : Promise.resolve(true)))
+    const { discovery, services } = harness({ checkLan })
+    services.set('room-secret-desk-1', [
+      { roomId: 'room-secret-desk-1', host: '10.0.0.5', port: 9000 },
+      { roomId: 'room-secret-desk-1', host: '10.0.0.5', port: 9001 },
+    ])
+    discovery.setPairings([pairing('desk-1')])
+    const refresh = discovery.refresh({ reset: true })
+    await vi.waitFor(() => expect(discovery.reachabilityOf('desk-1').lan).toBe(true))
+    failDead()
+    await refresh
+    expect(discovery.reachabilityOf('desk-1').lan).toBe(true)
+    expect(discovery.lanAddressOf('desk-1')).toEqual({ host: '10.0.0.5', port: 9001 })
   })
 
   it('collapses concurrent probes of the same address into one request', async () => {
@@ -165,7 +232,7 @@ describe('mDNS cache updates', () => {
     const gate = new Promise<void>((resolve) => { release = resolve })
     const checkLan = vi.fn(async () => { await gate; return true })
     const { discovery, services } = harness({ checkLan })
-    services.set('room-secret-desk-1', { roomId: 'room-secret-desk-1', host: '10.0.0.5', port: 9000 })
+    services.set('room-secret-desk-1', [{ roomId: 'room-secret-desk-1', host: '10.0.0.5', port: 9000 }])
     discovery.setPairings([pairing('desk-1')])
     discovery.handleLanCacheUpdated()
     discovery.handleLanCacheUpdated()
@@ -181,7 +248,7 @@ describe('forgetting a device', () => {
       checkRelay: vi.fn(async () => true),
       checkLan: vi.fn(async () => true),
     })
-    services.set('room-secret-desk-1', { roomId: 'room-secret-desk-1', host: '10.0.0.5', port: 9000 })
+    services.set('room-secret-desk-1', [{ roomId: 'room-secret-desk-1', host: '10.0.0.5', port: 9000 }])
     discovery.setPairings([pairing('desk-1')])
     await discovery.refresh({ reset: true })
     expect(discovery.reachabilityOf('desk-1')).toEqual({ lan: true, relay: true })

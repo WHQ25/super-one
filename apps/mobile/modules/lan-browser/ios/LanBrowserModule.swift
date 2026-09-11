@@ -32,13 +32,30 @@ public class LanBrowserModule: Module {
         let descriptor = NWBrowser.Descriptor.bonjourWithTXTRecord(type: serviceType, domain: nil)
         let browser = NWBrowser(for: descriptor, using: parameters)
 
+        // Settle exactly once: the handler keeps firing for the browser's whole
+        // life, and every non-ready outcome has to answer JS too — a browser
+        // left in `.waiting` (Local Network access denied, or no interface yet)
+        // never becomes ready on its own, and an unsettled promise here would
+        // hold every refresh behind it forever.
+        var settled = false
+        let settle: (Error?) -> Void = { error in
+          guard !settled else { return }
+          settled = true
+          if let error {
+            self.queue.async { self.teardown() }
+            promise.reject("ERR_LAN_BROWSER", "Bonjour browse failed: \(error.localizedDescription)")
+          } else {
+            promise.resolve(nil)
+          }
+        }
         browser.stateUpdateHandler = { state in
           switch state {
           case .ready:
-            promise.resolve(nil)
-          case .failed(let error):
-            self.queue.async { self.teardown() }
-            promise.reject("ERR_LAN_BROWSER", "Bonjour browse failed: \(error.localizedDescription)")
+            settle(nil)
+          case .waiting(let error), .failed(let error):
+            settle(error)
+          case .cancelled:
+            settle(NWError.posix(.ECANCELED))
           default:
             break
           }

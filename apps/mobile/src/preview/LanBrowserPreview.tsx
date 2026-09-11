@@ -33,7 +33,7 @@ export function LanBrowserPreview() {
     browser.ensureBrowsing()
       .then(() => setServices(browser.services()))
       .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
-    return () => browser.stop()
+    return () => { void browser.stop() }
   }, [])
 
   const probeAll = async () => {

@@ -44,7 +44,7 @@ describe('LAN service cache', () => {
   it('reports a change the first time a room appears', () => {
     const cache = new LanServiceCache()
     expect(cache.replace([record()])).toBe(true)
-    expect(cache.lookup('room-a')).toMatchObject({ host: '192.168.1.9', port: 9000 })
+    expect(cache.lookup('room-a')).toMatchObject([{ host: '192.168.1.9', port: 9000 }])
   })
 
   it('stays quiet when the browser re-reports the same services', () => {
@@ -57,20 +57,34 @@ describe('LAN service cache', () => {
     const cache = new LanServiceCache()
     cache.replace([record()])
     expect(cache.replace([record({ addresses: ['192.168.1.22'] })])).toBe(true)
-    expect(cache.lookup('room-a')?.host).toBe('192.168.1.22')
+    expect(cache.lookup('room-a').map((service) => service.host)).toEqual(['192.168.1.22'])
   })
 
   it('reports a change when a desktop stops advertising', () => {
     const cache = new LanServiceCache()
     cache.replace([record()])
     expect(cache.replace([])).toBe(true)
-    expect(cache.lookup('room-a')).toBeNull()
+    expect(cache.lookup('room-a')).toEqual([])
   })
 
-  it('keeps one entry per room when a desktop is seen on several interfaces', () => {
+  it('keeps every address a room is advertised at, deduplicated', () => {
     const cache = new LanServiceCache()
-    cache.replace([record(), record({ addresses: ['192.168.1.10'] })])
+    cache.replace([record(), record({ addresses: ['192.168.1.10'] }), record()])
     expect(cache.size).toBe(1)
+    expect(cache.lookup('room-a').map((service) => service.host)).toEqual(['192.168.1.9', '192.168.1.10'])
+  })
+
+  it('stays quiet when the same candidates are re-reported in another order', () => {
+    const cache = new LanServiceCache()
+    cache.replace([record({ port: 9000 }), record({ port: 9001 })])
+    expect(cache.replace([record({ port: 9001 }), record({ port: 9000 })])).toBe(false)
+  })
+
+  it('reports a change when a restarted desktop appears beside its stale record', () => {
+    const cache = new LanServiceCache()
+    cache.replace([record({ port: 9000 })])
+    expect(cache.replace([record({ port: 9000 }), record({ port: 9001 })])).toBe(true)
+    expect(cache.lookup('room-a').map((service) => service.port)).toEqual([9000, 9001])
   })
 
   it('treats an unparseable record as an absent one', () => {

@@ -45,6 +45,7 @@ function harness(records: NativeLanRecord[]) {
     checkRelay: async () => false,
     checkLan,
     ensureBrowsing: async () => {},
+    restartBrowsing: async () => {},
     lookupLan: (roomId) => cache.lookup(roomId),
   }, () => {})
   return { cache, checkLan, discovery }

@@ -47,6 +47,7 @@ export function useDeviceDiscovery(input: {
       }).catch(() => false),
       checkLan: (host, port) => checkLanReachable({ host, port }),
       ensureBrowsing: () => browser.ensureBrowsing(),
+      restartBrowsing: () => browser.restartBrowsing(),
       lookupLan: (roomId) => browser.lookup(roomId),
     }, notify)
   }
@@ -78,7 +79,7 @@ export function useDeviceDiscovery(input: {
     return () => subscription.remove()
   }, [refresh])
 
-  useEffect(() => () => browserRef.current?.stop(), [])
+  useEffect(() => () => { void browserRef.current?.stop() }, [])
 
   const statusOf = useCallback((pairing: SavedPairing): DeviceStatus => deriveDeviceStatus({
     pairingId: pairing.id,

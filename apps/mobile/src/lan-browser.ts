@@ -59,7 +59,17 @@ export class LanBrowser {
     }
   }
 
-  lookup(roomId: string): LanService | null {
+  /**
+   * Start over with an empty record set. Neither platform re-resolves a service
+   * it has already reported, so this is the only way to learn the new port of a
+   * desktop that restarted under the same Bonjour name.
+   */
+  async restartBrowsing(): Promise<void> {
+    await this.stop()
+    await this.ensureBrowsing()
+  }
+
+  lookup(roomId: string): LanService[] {
     return this.cache.lookup(roomId)
   }
 
@@ -68,11 +78,12 @@ export class LanBrowser {
     return this.cache.list()
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
+    if (this.starting) await this.starting
     this.subscription?.remove()
     this.subscription = null
     this.started = false
-    if (this.cache.clear()) this.onCacheUpdated()
-    void native?.stop().catch(() => {})
+    this.cache.clear()
+    await native?.stop().catch(() => {})
   }
 }

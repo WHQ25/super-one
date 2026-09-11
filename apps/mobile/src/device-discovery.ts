@@ -16,8 +16,14 @@ export type DiscoveryPorts = {
   checkLan: (host: string, port: number) => Promise<boolean>
   /** Keep the mDNS browser running; resolves once it is up (or gave up). */
   ensureBrowsing: () => Promise<void>
-  /** Newest mDNS record for a room, or null when the desktop is not advertising. */
-  lookupLan: (roomId: string) => LanService | null
+  /** Tear the mDNS browser down and start it from nothing, forgetting every record. */
+  restartBrowsing: () => Promise<void>
+  /** Every mDNS record for a room; empty when the desktop is not advertising. */
+  lookupLan: (roomId: string) => LanService[]
+}
+
+function sameAddress(a: LanAddress, b: LanAddress): boolean {
+  return a.host === b.host && a.port === b.port
 }
 
 const UNREACHABLE: DeviceReachability = { lan: false, relay: false }
@@ -73,6 +79,11 @@ export class DeviceDiscovery {
    * `reset` clears what was known first, so a refresh the user asked for after
    * moving networks cannot keep showing a route that no longer exists. The
    * incremental refresh behind a device tap passes false to avoid flicker.
+   *
+   * A reset also restarts the mDNS browse. The desktop's LAN port is ephemeral,
+   * so a desktop that restarted keeps its Bonjour name but answers on a new
+   * port — and neither platform re-resolves a name it has already reported, so
+   * a browse left running would hand back the dead port on every refresh.
    */
   async refresh({ reset }: { reset: boolean }): Promise<void> {
     if (this.refreshing) return
@@ -85,7 +96,7 @@ export class DeviceDiscovery {
     this.onChange()
     const pairings = this.pairings
     try {
-      await this.ports.ensureBrowsing()
+      await (reset ? this.ports.restartBrowsing() : this.ports.ensureBrowsing())
       const lanProbes = this.probeKnownLanAddresses(pairings)
       const relayProbes = pairings.map(async (pairing) => {
         const online = await this.ports.checkRelay(pairing)
@@ -104,30 +115,43 @@ export class DeviceDiscovery {
   }
 
   private probeKnownLanAddresses(pairings: SavedPairing[]): Promise<void>[] {
-    return pairings.flatMap((pairing) => {
-      if (this.reachability.get(pairing.id)?.lan) return []
-      const address = this.resolveLanAddress(pairing)
-      if (!address) return []
+    return pairings.flatMap((pairing) => this.lanCandidates(pairing).flatMap((address) => {
+      // Already reachable there — but an advertised port that differs from the
+      // one that answered means the desktop restarted, and needs re-probing.
+      const known = this.addresses.get(pairing.id)
+      if (this.reachability.get(pairing.id)?.lan && known && sameAddress(known, address)) return []
       const key = `${pairing.id}|${address.host}:${address.port}`
       if (this.inFlightLanProbes.has(key)) return []
       this.inFlightLanProbes.add(key)
       return [this.ports.checkLan(address.host, address.port)
         .then((reachable) => {
-          if (reachable) this.addresses.set(pairing.id, address)
-          this.apply(pairing.id, { lan: reachable })
+          if (reachable) {
+            this.addresses.set(pairing.id, address)
+            this.apply(pairing.id, { lan: true })
+            return
+          }
+          // Another candidate may already have answered; only a failure of the
+          // address being relied on — or of the only one there was — is offline.
+          const current = this.addresses.get(pairing.id)
+          if (current && !sameAddress(current, address)) return
+          this.addresses.delete(pairing.id)
+          this.apply(pairing.id, { lan: false })
         })
         .finally(() => { this.inFlightLanProbes.delete(key) })]
-    })
+    }))
   }
 
   /**
-   * mDNS wins over the address stored at pairing time: a desktop's IP changes
-   * with its network, and the advertised record is the one that is current.
+   * mDNS wins over the address stored at pairing time: a desktop's IP and port
+   * change with every launch, and the advertised records are the current ones.
+   * All of them are candidates — after an unclean restart the dead port is still
+   * advertised beside the live one until its record expires.
    */
-  private resolveLanAddress(pairing: SavedPairing): LanAddress | null {
-    const hit = this.ports.lookupLan(this.ports.roomIdFor(pairing.secret))
-    if (hit) return { host: hit.host, port: hit.port }
-    return this.ports.lanAddressOf(pairing)
+  private lanCandidates(pairing: SavedPairing): LanAddress[] {
+    const hits = this.ports.lookupLan(this.ports.roomIdFor(pairing.secret))
+    if (hits.length > 0) return hits.map(({ host, port }) => ({ host, port }))
+    const stored = this.ports.lanAddressOf(pairing)
+    return stored ? [stored] : []
   }
 
   private apply(pairingId: string, patch: Partial<DeviceReachability>): void {

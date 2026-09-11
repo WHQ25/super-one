@@ -698,7 +698,18 @@ LAN socket are plain `http://` / `ws://`, so the release Android build needs
 `android:usesCleartextTraffic="true"` on the *main* manifest — Expo only writes it into
 the debug variants, which is why LAN worked in the dev client and silently fell back to
 relay in the `internal` APK. `expo-build-properties` in `app.json` owns that flag; iOS
-already allows it through ATS `NSAllowsLocalNetworking`. Terminal
+already allows it through ATS `NSAllowsLocalNetworking`.
+**The desktop's LAN port is ephemeral** (`port: 0`), so the address stored at pairing
+time is dead after the next desktop launch and mDNS is the only way to the live one —
+and neither platform re-resolves a Bonjour name it has already reported: Android's
+`DiscoveryListener` fires `onServiceFound` once and a one-shot `resolveService` answers
+from the system's mDNS cache (which can still hold the old SRV), `NWBrowser` on iOS
+never revisits a result whose TXT is unchanged. So the Android module keeps a
+`ServiceInfoCallback` per service (API 34+, `onServiceUpdated` carries the new port),
+a `reset` refresh (mount, foreground, pull-to-refresh) **restarts** the browse rather
+than reusing it, and `LanServiceCache` keeps *every* address a room is advertised at —
+after an unclean desktop restart the dead port sits beside the live one (often under
+`name (2)`) until its record expires — and discovery probes all of them. Terminal
 frames use `RelayClient.send` / `onTerminal` and never ACK. The separate terminal
 document embeds xterm.js, prefers the patched WebGL renderer, falls back to canvas,
 and reports input and bounded resize messages to RN.

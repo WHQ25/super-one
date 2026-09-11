@@ -1,0 +1,228 @@
+name: Update Mobile (OTA)
+
+# Publish a JS-only update to the installed mobile apps through EAS Update.
+#
+# This is the counterpart of `release-mobile.yml`, not a mode of it: that
+# workflow ships native binaries (APK to R2, IPA to TestFlight) and moves the
+# pointers those binaries self-update from; this one ships a bundle to apps that
+# are already installed and touches none of that. It cannot roll a native
+# change out, which is exactly the trap it guards against below.
+#
+# The runtime version is a fingerprint of everything shaping the native binary
+# (see apps/mobile/CLAUDE.md). `eas update` computes it from the checkout and
+# publishes regardless of whether any shipped build has that runtime -- an
+# update for a runtime nobody runs succeeds, lands nowhere, and looks shipped.
+# So before publishing, each platform's fingerprint is looked up among the
+# finished builds on its channel, and a miss fails the run: the change needs a
+# native release first.
+#
+# Channels are per platform because the two ship differently: Android's
+# installable APK lives on `internal`, iOS goes to TestFlight/App Store on
+# `production`. Both can be pointed elsewhere for a one-off.
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Which platform(s) to publish the update for'
+        required: true
+        type: choice
+        options:
+          - android
+          - ios
+          - both
+        default: both
+      android_channel:
+        description: 'EAS Update channel for Android. `internal` is the self-hosted APK.'
+        required: true
+        type: choice
+        options:
+          - internal
+          - production
+        default: internal
+      ios_channel:
+        description: 'EAS Update channel for iOS. `production` is TestFlight / App Store.'
+        required: true
+        type: choice
+        options:
+          - production
+          - internal
+        default: production
+      message:
+        description: 'Update message recorded on the EAS update group (what changed, for whoever reads `eas update:list` later)'
+        required: true
+        type: string
+      dry_run:
+        description: 'Verify the runtime match and export the bundle only — do not publish'
+        required: false
+        type: boolean
+        default: true
+      ref:
+        description: 'Branch or commit SHA to publish'
+        required: false
+        default: 'main'
+
+concurrency:
+  group: update-mobile
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # Pinned to the same CLI as release-mobile.yml: the --json shapes read below
+  # are what this version prints.
+  EAS_CLI_VERSION: '24.0.0'
+  INPUT_PLATFORM: ${{ inputs.platform }}
+  INPUT_ANDROID_CHANNEL: ${{ inputs.android_channel }}
+  INPUT_IOS_CHANNEL: ${{ inputs.ios_channel }}
+  INPUT_MESSAGE: ${{ inputs.message }}
+  INPUT_DRY_RUN: ${{ inputs.dry_run }}
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+
+      - name: Install
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      # `expo export` bundles the chat WebView document, which is a gitignored
+      # build artifact. EAS builds produce it through the eas-build-post-install
+      # hook; an update is bundled on this runner, so it is built here.
+      - name: Build chat-view
+        run: bun run build:chat-view
+
+      - name: Resolve platforms
+        id: platforms
+        run: |
+          set -euo pipefail
+          case "${INPUT_PLATFORM}" in
+            android) LIST="android"; EAS="android" ;;
+            ios)     LIST="ios";     EAS="ios" ;;
+            both)    LIST="android ios"; EAS="all" ;;
+            *) echo "::error::unknown platform ${INPUT_PLATFORM}"; exit 1 ;;
+          esac
+          echo "list=${LIST}" >> "$GITHUB_OUTPUT"
+          echo "eas=${EAS}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify a shipped build runs this runtime
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          PLATFORMS: ${{ steps.platforms.outputs.list }}
+        run: |
+          set -euo pipefail
+          if [ -z "${EXPO_TOKEN:-}" ]; then
+            echo "::error::EXPO_TOKEN secret is not set — EAS cannot authenticate"
+            exit 1
+          fi
+          {
+            echo "### Runtime check"
+            echo
+            echo "| Platform | Channel | Fingerprint | Shipped build |"
+            echo "|---|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          FAILED=0
+          for PLATFORM in ${PLATFORMS}; do
+            case "${PLATFORM}" in
+              android) CHANNEL="${INPUT_ANDROID_CHANNEL}" ;;
+              ios)     CHANNEL="${INPUT_IOS_CHANNEL}" ;;
+            esac
+            # The same computation EAS ran for the build: ios/ and android/ are
+            # gitignored, so the tree is `managed` on both sides and hashes
+            # neither. This is @expo/fingerprint from the lockfile, not @latest.
+            HASH="$(bunx @expo/fingerprint fingerprint:generate --platform "${PLATFORM}" | jq -r '.hash')"
+            if [ -z "${HASH}" ]; then
+              echo "::error::could not compute the ${PLATFORM} fingerprint"
+              exit 1
+            fi
+            # Ask EAS for a finished build on this channel with exactly this
+            # runtime, rather than comparing against "the latest build": the
+            # latest may be a failed or a differently-profiled one.
+            bunx "eas-cli@${EAS_CLI_VERSION}" build:list \
+              --platform "${PLATFORM}" \
+              --channel "${CHANNEL}" \
+              --status finished \
+              --fingerprint-hash "${HASH}" \
+              --limit 1 \
+              --json --non-interactive > "builds-${PLATFORM}.json"
+            BUILD="$(jq -r '(if type=="array" then . else [.] end) | .[0] | select(. != null) | "\(.appVersion) (\(.appBuildVersion))"' "builds-${PLATFORM}.json")"
+            if [ -z "${BUILD}" ]; then
+              echo "::error::no finished ${PLATFORM} build on channel ${CHANNEL} runs runtime ${HASH} — this change needs a native release (release-mobile.yml) before it can go out over the air"
+              echo "| ${PLATFORM} | ${CHANNEL} | \`${HASH}\` | **none** |" >> "$GITHUB_STEP_SUMMARY"
+              FAILED=1
+              continue
+            fi
+            echo "${PLATFORM}: runtime ${HASH} is shipped as ${BUILD} on ${CHANNEL}"
+            echo "| ${PLATFORM} | ${CHANNEL} | \`${HASH}\` | ${BUILD} |" >> "$GITHUB_STEP_SUMMARY"
+          done
+          exit "${FAILED}"
+
+      - name: Export bundle (dry run)
+        if: ${{ inputs.dry_run == true }}
+        working-directory: apps/mobile
+        env:
+          EAS_PLATFORM: ${{ steps.platforms.outputs.eas }}
+        run: |
+          set -euo pipefail
+          # What `eas update` would bundle, without publishing it. Catches a
+          # bundler failure on the runner rather than at the real dispatch.
+          bunx expo export --platform "${EAS_PLATFORM}" --output-dir export-dry-run
+          du -sh export-dry-run
+          echo "Dry run: bundle exported, nothing published" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish update
+        if: ${{ inputs.dry_run != true }}
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          PLATFORMS: ${{ steps.platforms.outputs.list }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### Published"
+            echo
+            echo "| Platform | Channel | Update group | Runtime |"
+            echo "|---|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          # One publish per platform because the channels differ; a shared
+          # channel would take a single `--platform all` call instead.
+          for PLATFORM in ${PLATFORMS}; do
+            case "${PLATFORM}" in
+              android) CHANNEL="${INPUT_ANDROID_CHANNEL}" ;;
+              ios)     CHANNEL="${INPUT_IOS_CHANNEL}" ;;
+            esac
+            bunx "eas-cli@${EAS_CLI_VERSION}" update \
+              --channel "${CHANNEL}" \
+              --platform "${PLATFORM}" \
+              --message "${INPUT_MESSAGE}" \
+              --non-interactive \
+              --json > "update-${PLATFORM}.json"
+            jq -r '(if type=="array" then . else [.] end) | .[] | "| \(.platform) | '"${CHANNEL}"' | `\(.group)` | `\(.runtimeVersion)` |"' \
+              "update-${PLATFORM}.json" >> "$GITHUB_STEP_SUMMARY"
+            jq -r '(if type=="array" then . else [.] end) | .[] | "\(.platform): group \(.group) on '"${CHANNEL}"' (runtime \(.runtimeVersion))"' "update-${PLATFORM}.json"
+          done
+
+      - name: Upload EAS responses (debug artifact)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mobile-update-${{ github.run_id }}
+          path: |
+            apps/mobile/builds-*.json
+            apps/mobile/update-*.json
+          if-no-files-found: ignore
+          retention-days: 14

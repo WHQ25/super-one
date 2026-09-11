@@ -405,6 +405,17 @@ one copy, because `scripts/publish-mobile-update.ts` writes exactly what the app
 `.github/workflows/release-mobile.yml` drives an EAS build, downloads the artifact and
 runs that script; it needs an `EXPO_TOKEN` secret and defaults `dry_run` to true.
 
+JS-only changes go out through `.github/workflows/update-mobile.yml` instead — `eas
+update`, one publish per platform because the channels differ (Android APK on
+`internal`, iOS on `production`). Its one job beyond the publish is the **runtime
+guard**: `eas update` computes the fingerprint from the checkout and publishes even when
+no shipped build has that runtime, so the workflow first asks
+`eas build:list --fingerprint-hash <hash> --channel <channel> --status finished` per
+platform and fails on a miss — that change needs `release-mobile.yml` first. The
+default `dry_run: true` runs the guard and `expo export` without publishing. Installed
+apps pick an update up on the next launch and apply it on the launch after that; there
+is no in-app `checkForUpdateAsync`.
+
 - **The floor (`minSupportedBuildCode`) is the one move with no client-side way back.**
   It is inherited unless a number is typed into the workflow, `<= buildCode` is enforced
   on both sides, and the *hard gate is checked before the dismissal* so saying "Later"

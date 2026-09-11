@@ -52,4 +52,8 @@ artifacts, screenshots, and videos out of git.
    smoke checklist. Run the 10-second airplane-mode recovery manually; simulator
    automation is not used for this timing-sensitive gate.
 6. Publish one matching EAS Update and verify that both installed builds receive it.
+   Dispatch `.github/workflows/update-mobile.yml` (`dry_run` first): it checks that a
+   finished build on each platform's channel runs the checkout's fingerprint before
+   `eas update` is allowed to publish, then records the update group ids in the run
+   summary.
 7. Archive `super-one-flutter` read-only after both platform smokes pass.

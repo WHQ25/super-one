@@ -841,16 +841,15 @@ export function MobileApp() {
     applySystemInfo(selectedProvider, info)
   }
 
-  // A live session applies picks immediately, the way the desktop selector does;
-  // a draft keeps them locally until create_session carries them.
+  // Model and effort ride the next send. Writing them through
+  // set_session_settings made a visit-local pick look like the session's
+  // identity after switching away and back.
   const selectSessionModel = (model: string) => {
     harnessSelection.selectModel(model)
-    runtimeRef.current?.setSessionSettings({ model })
   }
 
   const selectSessionEffort = (effort: string) => {
     setSelectedEffort(effort)
-    runtimeRef.current?.setSessionSettings({ effort })
   }
 
   const selectSessionMode = (mode: string) => {

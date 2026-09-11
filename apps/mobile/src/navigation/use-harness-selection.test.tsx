@@ -84,6 +84,26 @@ test('switching harness drops the previous picks and takes the new host defaults
  * They are authoritative — but a session that never set one sends `''`, which
  * must fall through to the host default rather than blanking the row.
  */
+/**
+ * A model pick is a visit-local override. Leaving the session (reset) must
+ * drop it so the next open restores that session's stored model, not the pick
+ * made while looking at a different one.
+ */
+test('switching session restores the opened session model, not the previous visit pick', async () => {
+  const { result } = await mount()
+  await act(async () => {
+    result.current.applySystemInfo('claude', claudeInfo, { model: 'opus-4-8' })
+  })
+  await act(async () => { result.current.selectModel('sonnet-4-6') })
+
+  await act(async () => { result.current.resetForProvider('claude') })
+  await act(async () => {
+    result.current.applySystemInfo('claude', claudeInfo, { model: 'opus-4-8' })
+  })
+
+  expect(result.current.selectedModel).toBe('opus-4-8')
+})
+
 test('an opened session overrides the defaults, and its unset fields fall through', async () => {
   const { result } = await mount()
 

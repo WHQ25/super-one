@@ -1,18 +1,22 @@
 /** @vitest-environment jsdom */
 
-import { render } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { PortableMessage } from '@superone/chat-view/PortableMessage'
 import { applyContentDelta } from '@superone/shared/content-delta'
 import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
 
-/** Completed reasoning stays collapsed while the current block receives deltas. */
-function reasoningTurn(): ChatMessage {
+/**
+ * Mobile reasoning is deferred: a live block starts collapsed so a growing
+ * thought stream never opens a detail subscription on its own, and only a
+ * manual tap reveals it. Completed reasoning stays collapsed as on desktop.
+ */
+function reasoningTurn(currentThinking = 'current reasoning'): ChatMessage {
   const startedAt = Date.now() - 9_000
   const content = [
     { type: 'thinking', thinking: 'earlier reasoning', startedAt, endedAt: startedAt + 4_000 } as ContentBlock,
     { type: 'text', text: 'Checking the tree.' } as ContentBlock,
-    { type: 'thinking', thinking: 'current reasoning', startedAt: startedAt + 5_000 } as ContentBlock,
+    { type: 'thinking', thinking: currentThinking, startedAt: startedAt + 5_000 } as ContentBlock,
   ].reduce<ContentBlock[]>((acc, block) => applyContentDelta(acc, block), [])
 
   return {
@@ -44,16 +48,28 @@ describe('reasoning blocks during live streaming', () => {
     expect(container.textContent).not.toContain('earlier reasoning')
   })
 
-  it('keeps the current reasoning block open', () => {
+  it('starts the current reasoning block collapsed', () => {
     const { container } = renderTurn()
 
-    expect(container.textContent).toContain('current reasoning')
+    expect(container.textContent).not.toContain('current reasoning')
   })
 
-  it('matches the settled turn, where only the live block is open', () => {
-    const { container } = renderTurn()
+  it('reveals the current reasoning block on tap and keeps it open across deltas', () => {
+    const { container, rerender } = renderTurn()
 
-    expect(container.textContent).not.toContain('earlier reasoning')
+    fireEvent.click(screen.getByText(/^Thinking/))
     expect(container.textContent).toContain('current reasoning')
+
+    rerender(
+      <PortableMessage
+        message={reasoningTurn('current reasoning, continued')}
+        scheme="dark"
+        pendingPermission={null}
+        isLastAssistant
+        sessionStreaming
+      />,
+    )
+    expect(container.textContent).toContain('current reasoning, continued')
+    expect(container.textContent).not.toContain('earlier reasoning')
   })
 })

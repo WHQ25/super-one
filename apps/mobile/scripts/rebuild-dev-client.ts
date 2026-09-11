@@ -13,7 +13,22 @@ export type RebuildOptions = {
   dryRun: boolean
   platform: RebuildPlatform
   clean: boolean
+  host?: string
+  port?: number
   runArgs: string[]
+}
+
+function takeValue(argv: string[], i: number, flag: string) {
+  const value = argv[i + 1]
+  if (!value || value.startsWith('--')) throw new Error(`Missing value for ${flag}`)
+  return value
+}
+
+export function parseAdbPort(value: string) {
+  if (!/^\d+$/.test(value)) throw new Error('--port must be an integer')
+  const port = Number(value)
+  if (port < 1 || port > 65535) throw new Error('--port must be between 1 and 65535')
+  return port
 }
 
 export function parseRebuildArgs(argv: string[], hostPlatform = process.platform): RebuildOptions {
@@ -24,6 +39,8 @@ export function parseRebuildArgs(argv: string[], hostPlatform = process.platform
   let platform: RebuildPlatform | undefined
   let clean = false
   let dryRun = false
+  let host: string | undefined
+  let port: number | undefined
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '--clean') {
@@ -35,10 +52,19 @@ export function parseRebuildArgs(argv: string[], hostPlatform = process.platform
       continue
     }
     if (arg === '--platform') {
-      const value = argv[i + 1]
-      if (!value || value.startsWith('--')) throw new Error('Missing value for --platform')
+      const value = takeValue(argv, i, '--platform')
       if (value !== 'ios' && value !== 'android') throw new Error('--platform must be ios or android')
       platform = value
+      i += 1
+      continue
+    }
+    if (arg === '--host') {
+      host = takeValue(argv, i, '--host')
+      i += 1
+      continue
+    }
+    if (arg === '--port') {
+      port = parseAdbPort(takeValue(argv, i, '--port'))
       i += 1
       continue
     }
@@ -49,6 +75,8 @@ export function parseRebuildArgs(argv: string[], hostPlatform = process.platform
     dryRun,
     platform: platform ?? (hostPlatform === 'darwin' ? 'ios' : 'android'),
     clean,
+    host,
+    port,
     runArgs,
   }
 }
@@ -64,6 +92,7 @@ export function rebuildCommands(options: RebuildOptions) {
 export type AdbDevice = {
   serial: string
   state: string
+  model?: string
 }
 
 const ADB_DEVICE_LINE = /^(.+?)\s+(device|offline|unauthorized|no permissions)(?:\s|$)/
@@ -75,7 +104,9 @@ export function parseAdbDevices(output: string): AdbDevice[] {
     const trimmed = line.trim()
     if (!trimmed || trimmed.startsWith('List of devices')) continue
     const match = trimmed.match(ADB_DEVICE_LINE)
-    if (match) devices.push({ serial: match[1], state: match[2] })
+    if (!match) continue
+    const model = trimmed.match(/\bmodel:(\S+)/)?.[1]
+    devices.push({ serial: match[1], state: match[2], ...(model ? { model } : {}) })
   }
   return devices
 }
@@ -88,6 +119,43 @@ export function serialsExpoCannotAddress(devices: AdbDevice[]): string[] {
 
 export function parseMdnsConnectTargets(output: string): string[] {
   return [...new Set([...output.matchAll(MDNS_CONNECT_TARGET)].map((match) => match[1]))]
+}
+
+const IPV4_SERIAL = /^(\d+\.\d+\.\d+\.\d+):\d+$/
+
+export function hostsFromConnectHints(mdnsTargets: string[], devices: AdbDevice[]): string[] {
+  const hosts: string[] = []
+  const add = (host: string) => {
+    if (host && !hosts.includes(host)) hosts.push(host)
+  }
+  for (const target of mdnsTargets) add(target.split(':')[0] ?? '')
+  for (const device of devices) {
+    const match = device.serial.match(IPV4_SERIAL)
+    if (match) add(match[1])
+  }
+  return hosts
+}
+
+/** Prefer `--host --port` / remapped tcpip ports, then the ephemeral mDNS ports. */
+export function wirelessConnectTargets(opts: {
+  mdnsTargets: string[]
+  devices?: AdbDevice[]
+  host?: string
+  port?: number
+}): string[] {
+  const mdns = opts.host
+    ? opts.mdnsTargets.filter((target) => target.startsWith(`${opts.host}:`))
+    : opts.mdnsTargets
+  const preferred: string[] = []
+  if (opts.port != null) {
+    if (opts.host) preferred.push(`${opts.host}:${opts.port}`)
+    else {
+      for (const host of hostsFromConnectHints(opts.mdnsTargets, opts.devices ?? [])) {
+        preferred.push(`${host}:${opts.port}`)
+      }
+    }
+  }
+  return [...new Set([...preferred, ...mdns])]
 }
 
 export function adbConnectSucceeded(output: string) {
@@ -108,16 +176,47 @@ function expoSafeAttached(devices: AdbDevice[]) {
   return devices.filter((device) => device.state === 'device' && !/\s/.test(device.serial))
 }
 
+/** Prefer `IP:port` from `adb devices` so Expo does not pick a spaced mDNS serial. */
+export function pickExpoAndroidDevice(devices: AdbDevice[]): AdbDevice | undefined {
+  const safe = expoSafeAttached(devices)
+  return safe.find((device) => IPV4_SERIAL.test(device.serial))
+    ?? safe.find((device) => device.serial.startsWith('emulator-'))
+    ?? safe[0]
+}
+
+/**
+ * Expo `run:android --device` matches `Device.name`, which for a phone is the
+ * `model:` field from `adb devices -l` (e.g. `2410DPN6CC`). The adb serial
+ * `192.168.124.2:43481` is pid, and looking it up as a name 404s.
+ */
+export function expoRunDeviceName(device: AdbDevice | undefined): string | undefined {
+  if (!device?.model || device.serial.startsWith('emulator-')) return undefined
+  return device.model
+}
+
+export function runArgsHaveDevice(runArgs: string[]) {
+  return runArgs.some((arg) => arg === '--device' || arg.startsWith('--device='))
+}
+
+export function pinAndroidDevice(runArgs: string[], expoName: string | undefined): string[] {
+  if (!expoName || runArgsHaveDevice(runArgs)) return runArgs
+  return ['--device', expoName, ...runArgs]
+}
+
 export function helpText() {
   return `Rebuild the Expo development client after native deps or config plugins change.
 
 Usage:
   bun run rebuild:mobile:ios
   bun run rebuild:mobile:android
+  bun run rebuild:mobile:android -- --port 5555
+  bun run rebuild:mobile:android -- --host 192.168.124.2 --port 5555
   bun run rebuild:mobile:ios -- --clean
   bun run rebuild:mobile:ios -- --device <udid> --no-bundler
 
 --clean      regenerate the native project from scratch
+--port N     wireless adb connect port (\`adb tcpip 5555\`, or the current wireless-debugging port)
+--host IP    phone LAN address; if omitted, IPs come from mDNS / attached serials
 --no-bundler skip Metro when bun run dev:mobile is already running
 --dry-run    print commands without executing
 Other flags are forwarded to expo run:<platform>.`
@@ -155,22 +254,49 @@ function capture(command: string[], env = process.env) {
 }
 
 async function connectMdnsTargets(adb: string, env: NodeJS.ProcessEnv, targets: string[]) {
+  // Try every advertised port. mDNS often lists a stale connect port first
+  // (`Connection refused`) and a live one second; returning on the first
+  // attempt would skip the phone Expo can actually address.
   for (const target of targets) {
     console.log(`Connecting wireless ADB as ${target}`)
     const output = await capture([adb, 'connect', target], env).catch((error) =>
       error instanceof Error ? error.message : String(error),
     )
-    if (adbConnectSucceeded(output)) return
+    if (adbConnectSucceeded(output)) console.log(`Connected wireless ADB at ${target}`)
   }
 }
 
-async function sanitizeAndroidDevices(env = process.env) {
+export function missingAndroidDeviceError(devices: AdbDevice[], targets: string[]) {
+  const attached = devices.filter((device) => device.state === 'device')
+  if (attached.length === 0) {
+    const tried = targets.length > 0 ? ` Tried wireless connect to ${targets.join(', ')}.` : ''
+    return `No Android device Expo can address. adb lists none.${tried} Plug in USB, start an emulator, or enable Wireless debugging and run adb connect IP:PORT.`
+  }
+  return 'No Android device Expo can address. Wireless ADB sometimes lists a duplicate serial with a space (e.g. "adb-xxx (2)._adb-tls-connect._tcp"), which Expo CLI misparses as `adb -s adb-xxx`. Plug in USB, start an emulator, or reconnect with `adb connect IP:PORT`.'
+}
+
+async function sanitizeAndroidDevices(
+  env = process.env,
+  options: { host?: string; port?: number } = {},
+): Promise<AdbDevice | undefined> {
   const adb = adbBin()
   const listed = parseAdbDevices(await capture([adb, 'devices', '-l'], env))
-  const unsafe = serialsExpoCannotAddress(listed)
-  if (unsafe.length === 0 && expoSafeAttached(listed).length > 0) return
+  const already = pickExpoAndroidDevice(listed)
+  // `192.168.124.2:43481` is already the address Expo can pass to `adb -s`.
+  // Keep that socket, drop spaced mDNS duplicates, and pin Expo to `model:`.
+  if (already) {
+    await disconnectOtherWireless(adb, env, already.serial)
+    return already
+  }
 
-  const targets = parseMdnsConnectTargets(await capture([adb, 'mdns', 'services'], env).catch(() => ''))
+  const mdnsTargets = parseMdnsConnectTargets(await capture([adb, 'mdns', 'services'], env).catch(() => ''))
+  const targets = wirelessConnectTargets({
+    mdnsTargets,
+    devices: listed,
+    host: options.host,
+    port: options.port,
+  })
+  const unsafe = serialsExpoCannotAddress(listed)
   if (unsafe.length > 0) {
     // mDNS auto-connects the duplicate again within seconds unless the daemon
     // is restarted with auto-connect off. Expo then picks the spaced serial.
@@ -179,11 +305,24 @@ async function sanitizeAndroidDevices(env = process.env) {
     await capture([adb, 'start-server'], env)
   }
   await connectMdnsTargets(adb, env, targets)
-  if (expoSafeAttached(parseAdbDevices(await capture([adb, 'devices', '-l'], env))).length > 0) return
+  const after = parseAdbDevices(await capture([adb, 'devices', '-l'], env))
+  const device = pickExpoAndroidDevice(after)
+  if (device) {
+    await disconnectOtherWireless(adb, env, device.serial)
+    return device
+  }
 
-  throw new Error(
-    'No Android device Expo can address. Wireless ADB sometimes lists a duplicate serial with a space (e.g. "adb-xxx (2)._adb-tls-connect._tcp"), which Expo CLI misparses as `adb -s adb-xxx`. Plug in USB, start an emulator, or reconnect with `adb connect IP:PORT`.',
-  )
+  throw new Error(missingAndroidDeviceError(after, targets))
+}
+
+async function disconnectOtherWireless(adb: string, env: NodeJS.ProcessEnv, keepSerial: string) {
+  const listed = parseAdbDevices(await capture([adb, 'devices', '-l'], env))
+  for (const device of listed) {
+    if (device.serial === keepSerial) continue
+    if (!/\s/.test(device.serial) && !device.serial.includes('_adb-tls-connect')) continue
+    console.log(`Disconnecting Expo-incompatible serial ${device.serial}`)
+    await capture([adb, 'disconnect', device.serial], env).catch(() => undefined)
+  }
 }
 
 function javaHome() {
@@ -232,7 +371,14 @@ export async function rebuildDevClient(options: RebuildOptions, hostPlatform = p
     if (!java) throw new Error('Set JAVA_HOME to a Java 17+ installation (Android Studio includes one).')
     env.JAVA_HOME = java
     env.ADB_MDNS_AUTO_CONNECT = '0'
-    if (!options.dryRun) await sanitizeAndroidDevices(env)
+    if (!options.dryRun) {
+      const device = await sanitizeAndroidDevices(env, { host: options.host, port: options.port })
+      const expoName = expoRunDeviceName(device)
+      options = { ...options, runArgs: pinAndroidDevice(options.runArgs, expoName) }
+      if (device) {
+        console.log(`Using Android device ${expoName ?? device.serial}${expoName ? ` (${device.serial})` : ''}`)
+      }
+    }
   }
 
   for (const command of rebuildCommands(options)) {

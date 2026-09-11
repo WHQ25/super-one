@@ -690,7 +690,12 @@ Expo module (`_superone._tcp`, matched to a pairing by the `roomId` TXT key) and
 reachability without a raw socket: the relay's `/status` room endpoint for the cloud
 route, and an HTTP GET against the desktop LAN server — which answers `426 Upgrade
 Required` — for the local one. The native module is optional at import; a dev client
-built before it existed degrades to relay-only discovery. Terminal
+built before it existed degrades to relay-only discovery. Both the probe and the
+LAN socket are plain `http://` / `ws://`, so the release Android build needs
+`android:usesCleartextTraffic="true"` on the *main* manifest — Expo only writes it into
+the debug variants, which is why LAN worked in the dev client and silently fell back to
+relay in the `internal` APK. `expo-build-properties` in `app.json` owns that flag; iOS
+already allows it through ATS `NSAllowsLocalNetworking`. Terminal
 frames use `RelayClient.send` / `onTerminal` and never ACK. The separate terminal
 document embeds xterm.js, prefers the patched WebGL renderer, falls back to canvas,
 and reports input and bounded resize messages to RN.

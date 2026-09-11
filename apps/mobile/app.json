@@ -46,6 +46,14 @@
       "expo-dev-client",
       "expo-secure-store",
       [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
+      [
         "expo-camera",
         {
           "cameraPermission": "Allow SuperOne to scan desktop pairing QR codes.",

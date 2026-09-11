@@ -46,10 +46,10 @@ on:
         type: string
         default: ''
       testflight_url:
-        description: 'Public TestFlight join link, required when publishing the iOS manifest.'
+        description: 'Public TestFlight join link baked into the iOS manifest. Defaults to the SuperOne-Remote-Beta public link; only override to point testers somewhere else.'
         required: false
         type: string
-        default: ''
+        default: 'https://testflight.apple.com/join/3VVS4EsT'
       dry_run:
         description: 'Build and stage only — do not upload to R2'
         required: false
@@ -82,10 +82,10 @@ on:
         type: string
         default: ''
       testflight_url:
-        description: Public TestFlight join link, required for the iOS manifest.
+        description: Public TestFlight join link baked into the iOS manifest.
         required: false
         type: string
-        default: ''
+        default: 'https://testflight.apple.com/join/3VVS4EsT'
       dry_run:
         description: Build and stage only — do not upload to R2
         required: false
@@ -283,6 +283,12 @@ jobs:
             echo "::error::testflight_url is required to publish the iOS manifest"
             exit 1
           fi
+          # A typo still satisfies the prefix check below and would ship a dead
+          # link to every iOS user, so the working link is the default rather
+          # than something retyped each release. It comes from App Store
+          # Connect -> TestFlight -> SuperOne-Remote-Beta -> Public Link.
+          echo "TestFlight link: ${INPUT_TESTFLIGHT_URL}"
+
           case "${INPUT_TESTFLIGHT_URL}" in
             https://testflight.apple.com/*) ;;
             *) echo "::error::testflight_url must be a https://testflight.apple.com/ link"; exit 1 ;;

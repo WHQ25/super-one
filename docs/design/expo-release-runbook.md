@@ -49,7 +49,9 @@ artifacts, screenshots, and videos out of git.
 2. Configure signing and `expo-updates`; keep app version as the runtime compatibility
    boundary and regenerate native projects after config changes.
 3. Run `bun test`, `bunx expo install --check`, and `bunx expo config --type public`.
-4. Build the Android internal APK and iOS production artifact:
+4. Build the Android internal APK and iOS production artifact: one dispatch of
+   `.github/workflows/release-mobile.yml` with `platform=both` (profiles default to
+   `internal` / `production`). By hand, the equivalent is
    `bunx eas-cli build --platform android --profile internal` and
    `bunx eas-cli build --platform ios --profile production`.
 5. Install the APK, submit the iOS artifact to TestFlight, and complete the physical

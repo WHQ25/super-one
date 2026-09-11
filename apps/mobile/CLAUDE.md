@@ -402,8 +402,10 @@ mobile/ios/latest.json        numbers + a TestFlight link; iOS installs nothing 
 
 Key layout, parsing and the verdict rule live in `@superone/shared/mobile-updates` —
 one copy, because `scripts/publish-mobile-update.ts` writes exactly what the app reads.
-`.github/workflows/release-mobile.yml` drives an EAS build, downloads the artifact and
-runs that script; it needs an `EXPO_TOKEN` secret and defaults `dry_run` to true.
+`.github/workflows/release-mobile.yml` drives an EAS build per platform (`android_profile`
+`internal` → APK, `ios_profile` `production` → TestFlight; `platform=both` is one dispatch),
+downloads the artifact and runs that script; it needs an `EXPO_TOKEN` secret and defaults
+`dry_run` to true.
 
 JS-only changes go out through `.github/workflows/update-mobile.yml` instead — `eas
 update`, one publish per platform because the channels differ (Android APK on

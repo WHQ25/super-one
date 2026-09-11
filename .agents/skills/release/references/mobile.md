@@ -124,10 +124,10 @@ after — there is no in-app "update now".
 
 ## Native (`/release mobile major|feature|patch|build`)
 
-A version bump commit, then **two dispatches** of `release-mobile.yml` — one per
-platform, because the workflow takes a single `profile` and the platforms need
-different ones (`internal` for the APK, `production` for TestFlight). Both use the
-same `ref`, so the two `mobile/<platform>/…` tags name one commit.
+A version bump commit, then **one dispatch** of `release-mobile.yml` with
+`platform=both`. The workflow carries a profile per platform (`android_profile`
+defaults to `internal`, `ios_profile` to `production`), builds the two in
+parallel from the same `ref`, and tags both `mobile/<platform>/…` at that commit.
 
 ### Step 1: Confirm (single turn)
 
@@ -155,8 +155,8 @@ same `ref`, so the two `mobile/<platform>/…` tags name one commit.
    builds out; blank inherits the published floor. Raising it has no client-side
    way back — it is a decision, never a default.
 5. Show: `1.0.0 (22) → 1.0.1 (23)` with the position used, the recommendation
-   if it differs, the commit list, the floor (`inherit <N>`), and that two
-   dispatches follow (android/internal, ios/production). Ask "Proceed?".
+   if it differs, the commit list, the floor (`inherit <N>`), and the profiles
+   (android/internal, ios/production). Ask "Proceed?".
 
 ### Step 2: Bump, commit, push
 
@@ -172,23 +172,22 @@ same `ref`, so the two `mobile/<platform>/…` tags name one commit.
    SHA=$(git rev-parse HEAD)
    ```
 
-### Step 3: Dispatch — twice, same `ref`
+### Step 3: Dispatch
 
 ```bash
-gh workflow run release-mobile.yml --ref main -f platform=android -f profile=internal   -f ref="$SHA" -f dry_run=false
-gh workflow run release-mobile.yml --ref main -f platform=ios     -f profile=production -f ref="$SHA" -f dry_run=false
-sleep 8; gh run list --workflow=release-mobile.yml --limit 2 --json databaseId,url,displayTitle
+gh workflow run release-mobile.yml --ref main -f platform=both -f ref="$SHA" -f dry_run=false
+sleep 8; gh run list --workflow=release-mobile.yml --limit 1 --json databaseId,url -q '.[0]'
 ```
 
-Leave `min_supported_build_code` and `testflight_url` at their defaults unless
-Step 1 said otherwise. The concurrency group is per platform, so the two runs
-proceed in parallel.
+Leave `android_profile` / `ios_profile`, `min_supported_build_code` and
+`testflight_url` at their defaults unless Step 1 said otherwise. The two platform
+jobs run in parallel inside the one run; each holds its own concurrency group,
+so a later single-platform re-dispatch still queues behind it.
 
 ### Step 4: Monitor
 
 ```bash
-gh run watch <android-run-id> --exit-status
-gh run watch <ios-run-id> --exit-status
+gh run watch <run-id> --exit-status
 ```
 
 Wall clock is the EAS queue plus the build: Android typically 15–25 min, iOS
@@ -211,7 +210,7 @@ immutable `superone-v<version>-build<N+1>.apk`.
 
 ### Step 6: Report
 
-Both run URLs, the two tags, the manifests' `version (buildCode)`, and that
+The run URL, the two tags, the manifests' `version (buildCode)`, and that
 Android installs prompt from the manifest while iOS users install from
 TestFlight once processing completes. If the reason for the binary was a
 fingerprint move, say that OTA is unblocked again from this build onward.
@@ -222,9 +221,9 @@ fingerprint move, say that OTA is unblocked again from this build onward.
 |---|---|
 | `build code <N+1> does not advance the published <M>` | Step 2 was skipped or a newer binary shipped in between. Bump `build-code.js` past `M`, commit, re-dispatch with the new `ref` |
 | App Store Connect rejects the build number | Same cause on the iOS side (a `CFBundleVersion` it has seen). Bump again; the Android run is unaffected |
-| Android run green, iOS run red (or vice versa) | They are independent. Fix and re-dispatch only the red platform with the **same `ref`** so both tags still name one commit |
-| Need to re-point Android at an older build (rollback) | `gh workflow run release-mobile.yml -f platform=android -f profile=internal -f build_id=<older EAS build id> -f dry_run=false` — skips the EAS queue and rewrites `latest.json` at that build. iOS has no equivalent; TestFlight keeps every build |
-| `profile` was `internal` on the iOS dispatch | An ad-hoc IPA that `eas submit` cannot send to TestFlight. Re-dispatch iOS with `profile=production`; nothing was published |
+| One platform job red, the other green | They are independent jobs. `gh run rerun <run-id> --failed` re-runs the red one on the same `ref` (same build code, same commit for both tags). If the fix has to be in the tree, bump the build code again and dispatch fresh — the green platform's build code must not be reused either |
+| Need to re-point Android at an older build (rollback) | `gh workflow run release-mobile.yml -f platform=android -f build_id=<older EAS build id> -f dry_run=false` — `platform=android` only: `build_id` is refused by the iOS job. Skips the EAS queue and rewrites `latest.json` at that build. iOS has no equivalent; TestFlight keeps every build |
+| iOS job fails at `Check inputs` with `cannot be submitted to TestFlight` | `ios_profile` was not `production`. Nothing was queued; re-dispatch with the default |
 | Wrong `min_supported_build_code` published | Re-dispatch with `build_id=<same build>` and the corrected number — lowering is allowed; that is how a floor set too high is undone |
 
 ---
@@ -236,8 +235,9 @@ fingerprint move, say that OTA is unblocked again from this build onward.
   the answer precedes the confirmation, not the CI failure.
 - **One build code, both platforms, bumped by hand** in `build-code.js`. Never
   turn `autoIncrement` back on and never bump only one platform's number.
-- **Both native dispatches use the same `ref`**, so
+- **One dispatch builds both platforms from one `ref`**, so
   `mobile/android/v…` and `mobile/ios/v…` for one build code name one commit.
+  A single-platform dispatch is for recovery and rollback, not for releasing.
 - **Android `internal`, iOS `production`** — for builds and for update channels
   alike. A one-off elsewhere is a typed workflow input, never a default.
 - **`min_supported_build_code` is inherited unless typed.** Raising it locks

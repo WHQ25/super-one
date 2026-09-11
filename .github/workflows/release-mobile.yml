@@ -26,15 +26,23 @@ on:
           - android
           - ios
           - both
-        default: android
-      profile:
-        description: 'EAS build profile. `internal` is the self-hosted APK; `production` is the store/TestFlight build.'
+        default: both
+      android_profile:
+        description: 'EAS build profile for Android. `internal` is the self-hosted APK; `production` is the Play Store AAB (which no phone can install from R2).'
         required: true
         type: choice
         options:
           - internal
           - production
         default: internal
+      ios_profile:
+        description: 'EAS build profile for iOS. `production` is the TestFlight / App Store build; `internal` is an ad-hoc IPA that cannot be submitted.'
+        required: true
+        type: choice
+        options:
+          - production
+          - internal
+        default: production
       build_id:
         description: 'Publish an existing EAS build instead of starting a new one (Android only). Use this to re-point latest.json at an older build — that is the rollback.'
         required: false
@@ -65,12 +73,17 @@ on:
         description: Which platform(s) to build and publish
         required: true
         type: string
-        default: android
-      profile:
-        description: EAS build profile
-        required: true
+        default: both
+      android_profile:
+        description: EAS build profile for Android
+        required: false
         type: string
         default: internal
+      ios_profile:
+        description: EAS build profile for iOS
+        required: false
+        type: string
+        default: production
       build_id:
         description: Publish an existing EAS build instead of starting a new one (Android only).
         required: false
@@ -97,17 +110,14 @@ on:
         default: main
         type: string
 
-concurrency:
-  group: release-mobile-${{ inputs.platform }}
-  cancel-in-progress: false
-
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   # Pinned, not `@latest`: a CLI that changes its --json shape under us would
   # silently publish the wrong artifact URL.
   EAS_CLI_VERSION: '24.0.0'
   INPUT_PLATFORM: ${{ inputs.platform }}
-  INPUT_PROFILE: ${{ inputs.profile }}
+  INPUT_ANDROID_PROFILE: ${{ inputs.android_profile }}
+  INPUT_IOS_PROFILE: ${{ inputs.ios_profile }}
   INPUT_BUILD_ID: ${{ inputs.build_id }}
   INPUT_MIN_SUPPORTED: ${{ inputs.min_supported_build_code }}
   INPUT_TESTFLIGHT_URL: ${{ inputs.testflight_url }}
@@ -117,6 +127,12 @@ jobs:
   android:
     if: ${{ inputs.platform == 'android' || inputs.platform == 'both' }}
     runs-on: ubuntu-latest
+    # Per platform job rather than per dispatch: a `both` run and an
+    # `android` re-dispatch must still queue behind each other on the same
+    # latest.json, while the two platforms stay free to build in parallel.
+    concurrency:
+      group: release-mobile-android
+      cancel-in-progress: false
     timeout-minutes: 90
     permissions:
       # Tagging the published build, not pushing to a branch.
@@ -161,7 +177,7 @@ jobs:
             # the machine-readable half.
             bunx "eas-cli@${EAS_CLI_VERSION}" build \
               --platform android \
-              --profile "${INPUT_PROFILE}" \
+              --profile "${INPUT_ANDROID_PROFILE}" \
               --non-interactive \
               --wait \
               --json > build.json
@@ -287,6 +303,9 @@ jobs:
   ios:
     if: ${{ inputs.platform == 'ios' || inputs.platform == 'both' }}
     runs-on: ubuntu-latest
+    concurrency:
+      group: release-mobile-ios
+      cancel-in-progress: false
     timeout-minutes: 120
     permissions:
       # Tagging the published build, not pushing to a branch.
@@ -320,6 +339,13 @@ jobs:
             echo "::error::testflight_url is required to publish the iOS manifest"
             exit 1
           fi
+          # `eas submit` only accepts an app-store distribution build; an
+          # `internal` (ad-hoc) IPA would build for 30 minutes and then fail
+          # to submit. Catch it before the queue, not after.
+          if [ "${INPUT_DRY_RUN}" != "true" ] && [ "${INPUT_IOS_PROFILE}" != "production" ]; then
+            echo "::error::ios_profile=${INPUT_IOS_PROFILE} cannot be submitted to TestFlight; use production, or dry_run=true to only build"
+            exit 1
+          fi
           # A typo still satisfies the prefix check below and would ship a dead
           # link to every iOS user, so the working link is the default rather
           # than something retyped each release. It comes from App Store
@@ -344,7 +370,7 @@ jobs:
           fi
           bunx "eas-cli@${EAS_CLI_VERSION}" build \
             --platform ios \
-            --profile "${INPUT_PROFILE}" \
+            --profile "${INPUT_IOS_PROFILE}" \
             --non-interactive \
             --wait \
             --json > build.json

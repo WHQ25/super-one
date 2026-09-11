@@ -13,10 +13,20 @@
  *
  * Shared by electron-builder.config.cjs and release.yml's plan job so the
  * tag, the installer and the npm package cannot disagree.
+ *
+ * Dependency-free on purpose. release.yml's plan job is a checkout and a
+ * `node -e` with no install step -- it is the gate that runs before the
+ * builds, so it stays fast. `require('semver')` there fails with
+ * MODULE_NOT_FOUND, and the shapes involved are narrow enough to match
+ * directly.
  */
 
-const semver = require('semver')
 const VARIANTS = require('./variants.json')
+
+/** Plain `X.Y.Z` -- no prerelease, no build metadata. */
+const PLAIN_VERSION = /^(\d+)\.(\d+)\.(\d+)$/
+/** `X.Y.Z-<tag>` or `X.Y.Z-<tag>.<n>` -- every version this repo ships. */
+const TAGGED_VERSION = /^(\d+)\.(\d+)\.(\d+)-([0-9A-Za-z-]+)(?:\.(\d+))?$/
 
 function parsePrereleaseN(raw) {
   if (raw == null) return null
@@ -37,13 +47,14 @@ function resolvePackagedVersion(packageVersion, variantId, options = {}) {
   const override =
     typeof options.versionOverride === 'string' ? options.versionOverride.trim() : ''
   const base = override || packageVersion
-  if (!semver.valid(base)) {
-    throw new Error(`Base version "${base}" is not a valid semver version`)
-  }
-  if (semver.prerelease(base)) {
+  if (!PLAIN_VERSION.test(base)) {
+    const tagged = TAGGED_VERSION.exec(base)
+    if (!tagged) {
+      throw new Error(`Base version "${base}" is not a valid semver version`)
+    }
     throw new Error(
       `Base version "${base}" must be a plain release version — the variant adds ` +
-        `its own prerelease tag. Pass "${semver.coerce(base)?.version ?? base}" instead.`,
+        `its own prerelease tag. Pass "${base.slice(0, base.indexOf('-'))}" instead.`,
     )
   }
   const tag = VARIANTS[variantId].prereleaseTag
@@ -64,19 +75,20 @@ function resolvePackagedVersion(packageVersion, variantId, options = {}) {
  * the X.Y.Z base. `0.63.0-alpha` → `.1`; `0.63.0-alpha.1` → `.2`.
  */
 function nextAlphaBuild(packagedVersion) {
-  const parsed = semver.parse(String(packagedVersion).replace(/^v/i, ''))
-  if (!parsed) {
+  const clean = String(packagedVersion).replace(/^v/i, '')
+  const m = TAGGED_VERSION.exec(clean)
+  if (!m) {
+    if (PLAIN_VERSION.test(clean)) {
+      throw new Error(`nextAlphaBuild expects an -alpha version, got "${packagedVersion}"`)
+    }
     throw new Error(`"${packagedVersion}" is not a valid semver version`)
   }
-  if (parsed.prerelease[0] !== 'alpha') {
+  const [, major, minor, patch, tag, seq] = m
+  if (tag !== 'alpha') {
     throw new Error(`nextAlphaBuild expects an -alpha version, got "${packagedVersion}"`)
   }
-  const seq = parsed.prerelease[1]
-  if (parsed.prerelease.length > 2 || (seq !== undefined && typeof seq !== 'number')) {
-    throw new Error(`unsupported alpha prerelease "${packagedVersion}"`)
-  }
-  const n = typeof seq === 'number' ? seq + 1 : 1
-  const base = `${parsed.major}.${parsed.minor}.${parsed.patch}`
+  const n = seq === undefined ? 1 : Number(seq) + 1
+  const base = `${major}.${minor}.${patch}`
   return { base, prereleaseN: n, version: `${base}-alpha.${n}` }
 }
 

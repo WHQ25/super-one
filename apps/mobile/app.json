@@ -78,7 +78,8 @@
           "granularPermissions": []
         }
       ],
-      "./plugins/with-dev-client-updates.js"
+      "./plugins/with-dev-client-updates.js",
+      "./plugins/with-android-adaptive-icon-inset.js"
     ],
     "extra": {
       "supportsExpoGo": false,

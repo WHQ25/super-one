@@ -1,8 +1,8 @@
 ---
 name: release
-description: "Automate the SuperOne release process: version bump, commit, per-platform build, CLI npm publish, harness R2 mirror (when pins change), promote artifacts to draft release, and publish. Trigger with /release [alpha|stable] [major|feature|patch]. Use this skill whenever the user wants to release, publish, ship, or deploy a new version of the app."
-arguments: "[alpha|stable] [major|feature|patch]"
-argument-hint: "[alpha|stable] [major|feature|patch]"
+description: "Automate the SuperOne release process: version bump, commit, per-platform build, CLI npm publish, harness R2 mirror (when pins change), promote artifacts to draft release, and publish. Trigger with /release [alpha|stable] [major|feature|patch|build]. Use this skill whenever the user wants to release, publish, ship, or deploy a new version of the app."
+arguments: "[alpha|stable] [major|feature|patch|build]"
+argument-hint: "[alpha|stable] [major|feature|patch|build]"
 compatibility: "Requires git, gh, bun, npm, curl, GitHub Actions access, and network approval for GitHub, npm, and dl.super-one.dev."
 ---
 
@@ -10,7 +10,7 @@ compatibility: "Requires git, gh, bun, npm, curl, GitHub Actions access, and net
 
 Automate the SuperOne release pipeline. One `release.yml` dispatch runs build → promote plus the optional CLI / harness / relay legs; publish and set-latest stay explicit steps afterwards. Every leg is still its own workflow with its own `workflow_dispatch`, so any one of them can be re-run by hand:
 
-- `release.yml` — **the one dispatch per release.** A `plan` job reads `package.json` at `ref` (or the `version` override), derives the packaged version from the variant (`0.62.0` → `0.62.0-alpha` for alpha), the tag `v<version>`, the npm dist-tag, and refuses a tag that already exists on origin. Then: the three platform builds in parallel → `promote` on their artifacts (same run, no run IDs to copy) → **stops**. `publish_cli` / `publish_harness` / `deploy_relay` are boolean inputs that run the corresponding legs in parallel with the builds. Nothing this workflow does reaches a user's updater.
+- `release.yml` — **the one dispatch per release.** A `plan` job reads `package.json` at `ref` (or the `version` override), derives the packaged version from the variant plus optional `prerelease_n` (`0.63.0` → `0.63.0-alpha`, or `0.63.0-alpha.1` when `prerelease_n=1`) via `apps/desktop/packaged-version.cjs`, the tag `v<version>`, the npm dist-tag, and refuses a tag that already exists on origin. Then: the three platform builds in parallel → `promote` on their artifacts (same run, no run IDs to copy) → **stops**. `publish_cli` / `publish_harness` / `deploy_relay` are boolean inputs that run the corresponding legs in parallel with the builds. Nothing this workflow does reaches a user's updater.
 - `build-mac.yml` / `build-win.yml` / `build-linux.yml` — each builds one platform, uploads artifacts to Actions storage (7-day retention). No release side effects.
 - `publish-cli.yml` — packs and publishes **`@super-one/cli`** to the public npm registry at the **same version string** as desktop (lockstep). Desktop **Other Devices → SSH → registry install** pins `@super-one/cli@<app-version>`; if this step is skipped, remote SSH bootstrap cannot install that version from npm. Auth: npm **Trusted Publishing (OIDC)** for this repo (preferred) or optional `NPM_TOKEN` secret. Independent of desktop electron-builder — fires in parallel with builds at Step 3.
 - `publish-harness.yml` — **conditional**. When Claude/Codex managed pin constants (or the pack script) changed since the previous tag, `npm pack`s the pinned platform tarballs, SHA-256s them, and `aws s3 sync`s byte-exact mirrors + `harness/manifest/<channel>.json` to R2 (`https://dl.super-one.dev/harness/...`). Desktop install tries R2 first, npm registry fallback, same digest. Auth: same R2 secrets as promote (`R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_ACCOUNT_ID`). Independent of electron-builder — fires in parallel with builds at Step 3 when Step 1 said yes. **Not every app release** — only when harness pins move (see Invariants).
@@ -24,7 +24,7 @@ Tags are created by GitHub at publish time, never pushed from local. A failing b
 
 **Variant, not channel.** SuperOne ships as two side-by-side apps built from one codebase — `stable` and `alpha` — with different `appId`, `productName`, package.json `name`, userData directory and Computer Use helper identity, all declared in `apps/desktop/variants.json`. They install alongside each other and never share data.
 
-Every build therefore needs `SUPERONE_VARIANT`; `electron-builder.config.cjs` has **no default** and fails without it. It also asserts the version's prerelease tag matches the variant (`stable` ⇒ no prerelease, `alpha` ⇒ `-alpha`), because `@super-one/cli`, the harness manifest channel and the GitHub prerelease flag are all still derived from the version string.
+Every build therefore needs `SUPERONE_VARIANT`; `electron-builder.config.cjs` has **no default** and fails without it. It also asserts the version's prerelease tag matches the variant (`stable` ⇒ no prerelease, `alpha` ⇒ `-alpha` or `-alpha.N`), because `@super-one/cli`, the harness manifest channel and the GitHub prerelease flag are all still derived from the version string.
 
 Each variant sets `publish.channel: latest` explicitly, so electron-builder emits the same `latest-mac.yml` / `latest.yml` / `latest-linux.yml` for both and the **variant lives in the R2 prefix**:
 
@@ -41,10 +41,14 @@ Pointer ymls are written by **`set-latest`** (not promote); binaries under `<var
 ## Arguments
 
 - **variant**: `alpha` (default) or `stable`. This is which app is being released, not a channel of one app.
-- **bump**: `patch` (default). `major` / `feature` / `patch` drive semver position:
+- **bump**: `patch` (default). `major` / `feature` / `patch` / `build`:
   - `major`: `0.14.3-alpha` → `1.0.0-alpha`
   - `feature`: `0.14.3-alpha` → `0.15.0-alpha`
   - `patch`: `0.14.3-alpha` → `0.14.4-alpha`
+  - `build`: bump the **latest shipped alpha**'s prerelease sequence, without moving X.Y.Z. `/release alpha build` is this:
+    - `0.63.0-alpha` → `0.63.0-alpha.1`
+    - `0.63.0-alpha.1` → `0.63.0-alpha.2`
+    Source of truth is the newest origin tag matching `vX.Y.Z-alpha` / `vX.Y.Z-alpha.N`, not `package.json`. The first alpha of a new base (a `major` / `feature` / `patch` bump) is still `X.Y.Z-alpha` with no `.N`. `build` is invalid for `stable`.
 
 ### Which position to bump
 
@@ -78,13 +82,13 @@ rule lands near 0.80 rather than 0.62. That is the intended reading, not a cost.
 Pre-1.0 minors are cheap (Codex is past 0.154), and a fast-moving minor tells the
 truth about how much is landing. A 108-commit "patch" does not.
 
-**Known gap, accepted for now.** Because the alpha line still spends a version
-number per release, a fix-only alpha can still collide with a stable hotfix on
-the same `X.Y.Z` — e.g. `0.63.1-alpha` while `0.63.1` is wanted for hotfixing
-`0.63.0`. The fix is to move alpha to `X.Y.0-alpha.N` (Codex / Electron style),
-which needs `variants.json`, `resolveVersion()` in `electron-builder.config.cjs`
-and `release.yml`'s `plan` job to carry a sequence number. Deferred deliberately:
-only 2 of 32 releases were fix-only, so the collision is rare.
+**`build` is how alpha iterates on a base without spending the patch.** After
+`0.63.0-alpha` is live, `/release alpha build` ships `0.63.0-alpha.1` (then
+`.2`, …) so `0.63.1` stays free to hotfix a later `0.63.0` stable. The sequence
+is `SUPERONE_PRERELEASE_N` / `release.yml`'s `prerelease_n` input, derived by
+`apps/desktop/packaged-version.cjs` (`nextAlphaBuild` of the latest shipped
+alpha tag). `package.json` stays at the plain base. A `major` / `feature` /
+`patch` bump still opens a new base as `X.Y.Z-alpha` (no `.N`).
 
 ## CHANGELOG structure
 
@@ -136,7 +140,20 @@ This is the **only** human checkpoint in the pipeline. Do all of the following *
    # also check for `!` / BREAKING CHANGE: in the range
    ```
    The passed argument still decides what ships. The recommendation exists so a mismatch is a decision rather than an accident — never silently override the argument with it.
-4. Calculate the new version string, using the position that will actually ship. For `alpha` it keeps the `-alpha` suffix. For `stable` see **Cutting a stable release** below — it is not a bump of the alpha line.
+4. Calculate the new version string, using the position that will actually ship. For `alpha` a `major` / `feature` / `patch` bump keeps the `-alpha` suffix on the new base (`0.64.0-alpha`, `prerelease_n` blank). For `build`, read the latest shipped alpha tag and run `nextAlphaBuild` from `apps/desktop/packaged-version.cjs`:
+   ```bash
+   node -e "
+     const { execSync } = require('node:child_process');
+     const semver = require('semver');
+     const { nextAlphaBuild } = require('./apps/desktop/packaged-version.cjs');
+     const tags = execSync('git tag -l \"v*\"', { encoding: 'utf8' }).trim().split('\\n')
+       .map((t) => t.replace(/^v/, ''))
+       .filter((v) => semver.valid(v) && semver.prerelease(v)?.[0] === 'alpha');
+     const latest = tags.sort(semver.rcompare)[0];
+     console.log(JSON.stringify({ latest, ...nextAlphaBuild(latest) }));
+   "
+   ```
+   That object is `{ latest, base, prereleaseN, version }` — e.g. latest `0.63.0-alpha` → `0.63.0-alpha.1` with `prereleaseN=1`. The root/desktop `package.json` base must already equal `base`; do not bump X.Y.Z. `build` is invalid for `stable`. For `stable` see **Cutting a stable release** below — it is not a bump of the alpha line.
 5. **Decide whether relay deploys this release**: run `git diff --quiet v<previous-version>..HEAD -- apps/relay/`. Non-empty diff → relay will be deployed and `apps/relay/package.json` will jump to the new version (skipping any intermediate versions where it wasn't deployed). Empty diff → relay is left alone.
 6. **Decide whether harness R2 publish runs this release**:
    ```bash
@@ -159,7 +176,7 @@ This is the **only** human checkpoint in the pipeline. Do all of the following *
      - Drop a fix whose bug only ever existed in an alpha — a stable user never met it.
      - Omit **Tests** and **CI**. Real work, but not a stable user's release notes.
 8. Show the user **all** of this in one plain markdown message — no tool call, just text in your reply:
-   - `Current: X.Y.Z-alpha → New: A.B.C-alpha` — name the position used, e.g. `(bump: patch, as passed)`
+   - `Current: X.Y.Z-alpha → New: A.B.C-alpha` (or `X.Y.Z-alpha.N` for `build`) — name the position used, e.g. `(bump: build, as passed)`
    - **When the recommendation differs from the argument, give it its own line with the count that drove it**, e.g.
      `⚠️ Recommended: feature — 33 feat commits since v0.62.1-alpha. Passed: patch → shipping as patch unless you say otherwise.`
      Put it directly under the version line, not buried in prose.
@@ -179,7 +196,7 @@ After this confirmation, **everything below runs without further prompting** unl
 
 1. Rewrite the top of `CHANGELOG.md`, right after the header block, with the two confirmed blocks: `## [Unreleased]` first, then `## [<new-version>] - <YYYY-MM-DD>` below it. `[Unreleased]` is **replaced wholesale** by the merged version, never appended to.
 2. **If a stable release was cut since the previous alpha**, do its pending fold-down in this same commit (this is the only place it happens — see **Cutting a stable release**): rename the then-current `## [Unreleased]` to `## [<stable-version>] - <that release's date>`, delete every `-alpha` entry it covers, and build the new `## [Unreleased]` above it from this release's changes alone.
-3. Update `version` in **both** `package.json` (root) and `apps/desktop/package.json` to the new value — these always lockstep. It is the **base** version: a plain release number with **no** `-alpha` suffix. The alpha variant appends its own at package time, so one base of `0.61.0` yields `0.61.0-alpha` and `0.61.0`. A base carrying a prerelease tag fails the build. `release.yml` derives the CLI version (`<X.Y.Z>-alpha` / `<X.Y.Z>`) and dist-tag from the same base and passes them to `publish-cli` itself; only a by-hand `publish-cli.yml` dispatch still needs `-f version=<X.Y.Z>-alpha -f tag=alpha`, because it packs the root `package.json` version verbatim. Do **not** change workspace `apps/cli/package.json` (`@superone/cli` stays private `0.0.0` — the public name is `@super-one/cli` from `pack-npm`).
+3. Update `version` in **both** `package.json` (root) and `apps/desktop/package.json` to the new **base** — these always lockstep. It is a plain release number with **no** `-alpha` suffix. The alpha variant appends its own at package time, so one base of `0.63.0` yields `0.63.0-alpha` / `0.63.0-alpha.1` (when `prerelease_n` is set) and `0.63.0`. A base carrying a prerelease tag fails the build. **`build` does not change `package.json`** — the base is already correct; only CHANGELOG (and relay, if deploying) moves. `release.yml` derives the CLI version (`<X.Y.Z>-alpha` / `<X.Y.Z>-alpha.N` / `<X.Y.Z>`) and dist-tag from the same base + `prerelease_n` and passes them to `publish-cli` itself; only a by-hand `publish-cli.yml` dispatch still needs `-f version=<packaged-version> -f tag=alpha`, because it packs the root `package.json` version verbatim. Do **not** change workspace `apps/cli/package.json` (`@superone/cli` stays private `0.0.0` — the public name is `@super-one/cli` from `pack-npm`).
 4. **If Step 1 decided relay deploys this release**: also update `apps/relay/package.json` `version` to the same new value. The relay version skips intermediate releases where it had no diff, so this jump may be larger than a single semver step (e.g. `0.29.1-alpha` → `0.35.0-alpha`). That's intentional — it preserves the invariant that `apps/relay/package.json` reflects the version actually deployed to Cloudflare.
 5. Do NOT modify `bun.lock` (version bumps don't touch deps).
 6. Stage and commit in one shot:
@@ -202,6 +219,7 @@ gh workflow run release.yml --ref main \
   -f variant=<alpha|stable> \
   -f ref=<main, or the proven alpha SHA for a stable cut> \
   -f version=<blank, or the BASE override — see "Cutting a stable release"> \
+  -f prerelease_n=<blank, or N for a build bump — 1 → 0.63.0-alpha.1> \
   -f publish_cli=<true|false> \
   -f publish_harness=<true|false> \
   -f deploy_relay=<true|false>
@@ -211,7 +229,7 @@ gh run list --workflow=release.yml --limit 5 --json databaseId,headSha,createdAt
 ```
 
 - `variant` is required — the builder config has no default on purpose, since a silent default ships a build under the wrong identity.
-- `version`, the npm dist-tag and the release tag are all derived in the `plan` job from the same base, so they cannot disagree. `publish_cli` therefore needs no `-f version=` / `-f tag=` of its own any more.
+- `version` is the BASE override; `prerelease_n` is the alpha sequence. The packaged version, npm dist-tag and release tag are all derived in the `plan` job from the same `packaged-version.cjs` call, so they cannot disagree. `publish_cli` therefore needs no `-f version=` / `-f tag=` of its own any more. Pass `-f prerelease_n=<N>` only for a `build` bump; leave it blank for the first alpha of a new base.
 - `publish_cli` defaults to **true** (required for SSH registry install); pass `false` only for an explicitly desktop-only release.
 - `publish_harness` is **yes** when Step 1 found a pin / pack-script diff, on a manual refresh, and on **every stable cut** (see below). The harness channel is the variant id.
 - `deploy_relay` is **yes** only when Step 1 found an `apps/relay/` diff (and you bumped `apps/relay/package.json` in Step 2).
@@ -430,7 +448,7 @@ gh workflow run prune-releases.yml --ref main \
 
 | Failure | Action |
 |---|---|
-| `release.yml` `plan` fails with `already exists on origin` | That version has been **published** (tag exists). Bump to a new version; never re-cut a shipped tag |
+| `release.yml` `plan` fails with `already exists on origin` | That version has been **published** (tag exists). Bump to a new version; never re-cut a shipped tag. If this was `/release alpha build` and the refused tag is `vX.Y.Z-alpha` with no `.N`, the dispatch omitted `-f prerelease_n=` |
 | One job of `release.yml` fails | `gh run rerun <run-id> --failed` re-runs it and its dependents with the other legs' artifacts intact. If the fix has to be in the build itself, dispatch a fresh `release.yml` — the draft is `--clobber`ed |
 | Build workflow fails on one platform (by-hand path) | Dispatch that platform's own `build-*.yml` (same `variant` / `version`), then `promote.yml` with that run ID plus the release run's ID for the other two platforms |
 | Build fails immediately with `SUPERONE_VARIANT is required` | The dispatch omitted `-f variant=`. There is no default by design — a silent one ships a build under the wrong identity |
@@ -445,6 +463,7 @@ gh workflow run prune-releases.yml --ref main \
 | Need harness refresh without a release | Outside this skill: `gh workflow run publish-harness.yml --ref main -f channel=alpha -f dry_run=false` (or `dry_run=true` for pack-only smoke) |
 | `deploy-relay.yml` fails | Inspect `gh run view <id> --log-failed`. Most common cause: `CLOUDFLARE_API_TOKEN` repo secret missing, expired, or scoped wrong (needs `Account: Workers Scripts:Edit` + `Account:Read`). Fix the secret in repo Settings → Secrets, then re-run the workflow — wrangler deploys are idempotent so the new run just supersedes the prior partial state. Build/promote/publish are independent and can proceed regardless |
 | Promote workflow fails mid-upload (GitHub side) | Re-trigger promote with the same tag — `--clobber` replaces any partial assets |
+| Promote fails creating the draft with `HTTP 403: Resource not accessible by integration` on `POST /releases`, permissions show `Contents: write` | A workflow file changed on `main` **after** the release's target SHA. `gh release create --target <sha>` makes GitHub compare `<sha>..HEAD`; if that range touches `.github/workflows/**`, the API demands `workflows: write`, which `GITHUB_TOKEN` cannot be granted (`permissions:` has no such key). Confirm with `git log --oneline <target-sha>..origin/main -- .github/workflows/`. Recover in two steps: create the draft yourself with your user token — `gh api repos/<owner>/<repo>/releases -f tag_name=v<ver> -f target_commitish=<target-sha> -f name=v<ver> -F draft=true -F prerelease=<true\|false>` — then `gh run rerun <release-run-id> --failed`; promote's `already exists` branch uploads with `--clobber` and the R2 sync runs as normal (uploading to an existing draft needs only `contents: write`). Do **not** drop `--target` from promote to dodge this, and do not pre-create the tag: both break the invariant that GitHub materializes the tag at publish time |
 | Promote workflow fails on R2 sync step | The GitHub Release upload happens before the R2 sync step in promote.yml, so the GitHub side can be intact while R2 is empty. Re-trigger promote with the same tag — `aws s3 sync` is idempotent (same key = update); the GitHub upload step uses `--clobber` |
 | Promote fails with `getaddrinfo ENOTFOUND sts.<region>.amazonaws.com` | Do **NOT** use `aws-actions/configure-aws-credentials@v4` for R2 — its default STS credential validation tries to call AWS STS, which doesn't apply to Cloudflare R2 (region `auto` produces `sts.auto.amazonaws.com` NXDOMAIN). promote.yml injects R2 creds as `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_DEFAULT_REGION` env vars directly on the sync step, no action wrapper. If you see this error, someone re-introduced the action — remove it |
 | R2 pointer yml has stale paths (no `v${VERSION}/` prefix) | The prefix is applied by `prefixVersionPaths` (`scripts/lib/channels.ts`) inside **set-latest**, not promote. If the live `<variant>/latest-mac.yml` lacks the `v<version>/` prefix, re-run `set-latest` for that tag/variant |
@@ -460,7 +479,11 @@ gh workflow run prune-releases.yml --ref main \
   The `/release` argument still wins, but Step 1 must surface the recommendation
   and the count behind it whenever the two disagree — so shipping 108 commits and
   33 features as a "patch" is at least a recorded decision rather than a default.
+  `build` is not in that table: it does not move X.Y.Z. When the user passes
+  `build`, still show the commit-type recommendation (so choosing sequence over
+  a new minor is a recorded decision) and ship `X.Y.Z-alpha.N`.
 - Local git never creates or force-pushes tags for releases. GitHub owns tag creation at publish time.
+- **Do not push `.github/workflows/**` to `main` while a release is in flight** (from dispatch until promote is green). `gh release create --target <sha>` makes GitHub compare `<sha>..HEAD`, and any workflow change in that range requires `workflows: write` — a scope `GITHUB_TOKEN` can never hold — so promote fails with a 403 that looks like a permissions bug. Other pushes are fine; the target SHA pins the build regardless. See Recovery Patterns for the two-step recovery if it happens anyway.
 - `CHANGELOG.md` entries describe only **verified** behavior — no "may fix" or speculative claims.
 - **`CHANGELOG.md`'s canonical timeline is the stable line.** `[Unreleased]` is the
   stable candidate and is updated by every alpha's bump commit; `-alpha` entries are

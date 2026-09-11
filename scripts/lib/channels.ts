@@ -90,26 +90,40 @@ export const LEGACY_ROOT_YML_NAMES: Record<string, string[]> = {
   linux: ['alpha-linux.yml', 'beta-linux.yml', 'latest-linux.yml'],
 }
 
-// Strip the release number (and its leading separator) from an artifact
-// filename to produce a stable "latest" download name.
-// "SuperOne-0.61.0-alpha-arm64.dmg" -> "SuperOne-alpha-arm64.dmg"
-// "SuperOne-0.62.0-arm64.dmg"       -> "SuperOne-arm64.dmg"
+// Strip the packaged version from an artifact filename to produce a stable
+// "latest" download name.
+// "SuperOne-0.61.0-alpha-arm64.dmg"   -> "SuperOne-alpha-arm64.dmg"
+// "SuperOne-0.63.0-alpha.1-arm64.dmg" -> "SuperOne-alpha-arm64.dmg"
+// "SuperOne-0.62.0-arm64.dmg"         -> "SuperOne-arm64.dmg"
 //
-// Only the semver CORE goes. The prerelease tag stays, and that is what keeps
-// the two variants' fixed links apart: both build their installers from the
-// same base name now, so stripping the whole version would publish
-// `stable/latest/SuperOne-arm64.dmg` and `alpha/latest/SuperOne-arm64.dmg` --
-// identical filenames, distinguished only by a prefix the browser drops. Two
-// downloads in one folder would then be `SuperOne-arm64.dmg` and
-// `SuperOne-arm64 (1).dmg` with nothing to tell them apart.
+// The full version goes, then only the first prerelease ident (the variant
+// tag) is put back. The sequence on a `build` bump must not move the
+// permanent link. That tag is what keeps the two variants' fixed links apart:
+// both build their installers from the same base name now, so stripping the
+// whole version would publish `stable/latest/SuperOne-arm64.dmg` and
+// `alpha/latest/SuperOne-arm64.dmg` -- identical filenames, distinguished
+// only by a prefix the browser drops. Two downloads in one folder would then
+// be `SuperOne-arm64.dmg` and `SuperOne-arm64 (1).dmg` with nothing to tell
+// them apart.
 //
 // The consuming half is `fixedInstallerName` in
 // `@superone/shared/download-links`, which the desktop app and the marketing
 // site both read. Change one and the other 404s with nothing failing in CI.
 export function fixedLinkName(filename: string, version: string): string {
-  const core = version.trim().replace(/^v/i, '').split('-')[0]
-  const escaped = core.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const withoutVersion = filename.replace(new RegExp(`[ ._-]?${escaped}`), '')
+  // Strip the full version, then put back only the first prerelease ident
+  // (the variant tag). A build bump (`0.63.0-alpha.1`) must not move the
+  // permanent link from SuperOne-alpha-arm64.dmg to SuperOne-alpha.1-arm64.dmg
+  // — that filename is what `fixedInstallerName` (and the marketing site)
+  // request, and it is keyed on variants.json's prereleaseTag, not the
+  // sequence.
+  const clean = version.trim().replace(/^v/i, '')
+  const dash = clean.indexOf('-')
+  const tag = dash === -1 ? '' : clean.slice(dash + 1).split('.')[0]
+  const escaped = clean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const withoutVersion = filename.replace(
+    new RegExp(`[ ._-]?${escaped}`),
+    tag ? `-${tag}` : '',
+  )
   if (!withoutVersion.toLowerCase().endsWith('.exe')) return withoutVersion
   const stem = withoutVersion.slice(0, -'.exe'.length).replaceAll('.', ' ')
   return `${stem}.exe`

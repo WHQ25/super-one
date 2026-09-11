@@ -17,6 +17,10 @@ on:
       version:
         description: 'Override the BASE version, e.g. cutting a release from an older commit. Plain release number — the variant appends its own -alpha. Blank = package.json.'
         required: false
+      prerelease_n:
+        description: 'Alpha/dev sequence after the tag (1 → X.Y.Z-alpha.1). Blank/0 = no suffix.'
+        required: false
+        default: ''
   workflow_call:
     inputs:
       ref:
@@ -32,6 +36,11 @@ on:
         description: Override the BASE version, e.g. cutting a release from an older commit. Plain release number — the variant appends its own -alpha. Blank = package.json.
         required: false
         type: string
+      prerelease_n:
+        description: Alpha/dev sequence after the tag (1 → X.Y.Z-alpha.1). Blank/0 = no suffix.
+        required: false
+        type: string
+        default: ''
 
 concurrency:
   group: build-linux-${{ inputs.variant }}-${{ inputs.ref }}
@@ -66,6 +75,7 @@ jobs:
         env:
           SUPERONE_VARIANT: ${{ inputs.variant }}
           SUPERONE_VERSION: ${{ inputs.version }}
+          SUPERONE_PRERELEASE_N: ${{ inputs.prerelease_n }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           POSTHOG_PROJECT_TOKEN: ${{ secrets.POSTHOG_PROJECT_TOKEN }}
       # Signed SLSA provenance for every installer, verifiable with

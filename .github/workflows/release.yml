@@ -29,6 +29,10 @@ on:
         description: 'Override the BASE version (plain X.Y.Z, the variant appends its own tag). Blank = package.json at ref.'
         required: false
         default: ''
+      prerelease_n:
+        description: 'Alpha/dev sequence after the tag (1 → 0.63.0-alpha.1). Blank/0 = no suffix. Ignored — and rejected — for stable.'
+        required: false
+        default: ''
       publish_cli:
         description: 'Publish @super-one/cli at the same version (lockstep; needed for SSH registry install)'
         required: false
@@ -54,6 +58,7 @@ env:
   INPUT_REF: ${{ inputs.ref }}
   INPUT_VARIANT: ${{ inputs.variant }}
   INPUT_VERSION: ${{ inputs.version }}
+  INPUT_PRERELEASE_N: ${{ inputs.prerelease_n }}
 
 jobs:
   # Derive everything the legs need from the ref, so the tag, the packaged
@@ -75,13 +80,14 @@ jobs:
         id: plan
         run: |
           set -euo pipefail
-          BASE="${INPUT_VERSION:-$(node -p "require('./package.json').version")}"
-          # Same derivation as electron-builder.config.cjs: variant owns the prerelease tag.
+          # Same derivation as electron-builder.config.cjs (packaged-version.cjs).
           VERSION="$(node -e "
-            const v = require('./apps/desktop/variants.json')['$INPUT_VARIANT'];
-            if (!v) throw new Error('unknown variant $INPUT_VARIANT');
-            if (/-/.test('$BASE')) throw new Error('base version must be plain X.Y.Z, got $BASE');
-            console.log(v.prereleaseTag ? '$BASE-' + v.prereleaseTag : '$BASE');
+            const { resolvePackagedVersion } = require('./apps/desktop/packaged-version.cjs');
+            const pkg = require('./package.json');
+            process.stdout.write(resolvePackagedVersion(pkg.version, process.env.INPUT_VARIANT, {
+              versionOverride: process.env.INPUT_VERSION,
+              prereleaseN: process.env.INPUT_PRERELEASE_N,
+            }));
           ")"
           case "$VERSION" in
             *-alpha*) NPM_TAG=alpha ;;
@@ -108,6 +114,7 @@ jobs:
             echo "| --- | --- |"
             echo "| variant | \`${INPUT_VARIANT}\` |"
             echo "| version | \`${VERSION}\` |"
+            echo "| prerelease_n | \`${INPUT_PRERELEASE_N:-}\` |"
             echo "| tag | \`${TAG}\` |"
             echo "| commit | \`$(git rev-parse HEAD)\` |"
             echo "| npm dist-tag | \`${NPM_TAG}\` |"
@@ -125,6 +132,7 @@ jobs:
       ref: ${{ inputs.ref }}
       variant: ${{ inputs.variant }}
       version: ${{ inputs.version }}
+      prerelease_n: ${{ inputs.prerelease_n }}
 
   build-win:
     needs: plan
@@ -138,6 +146,7 @@ jobs:
       ref: ${{ inputs.ref }}
       variant: ${{ inputs.variant }}
       version: ${{ inputs.version }}
+      prerelease_n: ${{ inputs.prerelease_n }}
 
   build-linux:
     needs: plan
@@ -151,6 +160,7 @@ jobs:
       ref: ${{ inputs.ref }}
       variant: ${{ inputs.variant }}
       version: ${{ inputs.version }}
+      prerelease_n: ${{ inputs.prerelease_n }}
 
   # Draft GitHub Release + R2 archive. Artifacts come from this very run.
   promote:
@@ -192,7 +202,7 @@ jobs:
     with:
       ref: ${{ inputs.ref }}
       channel: ${{ inputs.variant }}
-      app_version: ${{ inputs.version }}
+      app_version: ${{ needs.plan.outputs.version }}
       dry_run: false
 
   deploy-relay:

@@ -21,6 +21,7 @@ describe('compareVersions', () => {
 
   it('ranks a prerelease below the same core version', () => {
     expect(compareVersions('1.0.0-alpha', '1.0.0')).toBe(-1)
+    expect(compareVersions('1.0.0-alpha', '1.0.0-alpha.1')).toBe(-1)
     expect(compareVersions('1.0.0-alpha.2', '1.0.0-alpha.10')).toBe(-1)
   })
 
@@ -40,6 +41,11 @@ describe('shouldPublish', () => {
 
   it('refuses to clobber a newer live version', () => {
     expect(shouldPublish('1.0.0', '1.1.0')).toBe(false)
+  })
+
+  it('lets a build bump replace the unsequenced alpha of the same base', () => {
+    expect(shouldPublish('0.63.0-alpha.1', '0.63.0-alpha')).toBe(true)
+    expect(shouldPublish('0.63.0-alpha', '0.63.0-alpha.1')).toBe(false)
   })
 })
 
@@ -122,6 +128,18 @@ describe('fixedLinkName', () => {
       'SuperOne Setup-alpha.exe',
     )
   })
+
+  it('strips the sequence so a build bump does not move the fixed link', () => {
+    expect(fixedLinkName('SuperOne-0.63.0-alpha.1-arm64.dmg', '0.63.0-alpha.1')).toBe(
+      'SuperOne-alpha-arm64.dmg',
+    )
+    expect(fixedLinkName('SuperOne-0.63.0-alpha.1-Setup.exe', '0.63.0-alpha.1')).toBe(
+      'SuperOne-alpha-Setup.exe',
+    )
+    expect(fixedLinkName('SuperOne-0.63.0-alpha.1-x86_64.AppImage', '0.63.0-alpha.1')).toBe(
+      'SuperOne-alpha-x86_64.AppImage',
+    )
+  })
 })
 
 describe('fixed link name agreement between the producing and consuming halves', () => {
@@ -148,6 +166,14 @@ describe('fixed link name agreement between the producing and consuming halves',
       }
     })
   }
+
+  it('agrees on a sequenced alpha installer too', () => {
+    for (const { file, platform, arch } of artifacts('0.63.0-alpha.1')) {
+      expect(fixedLinkName(file, '0.63.0-alpha.1')).toBe(
+        fixedInstallerName('SuperOne', platform, arch, TAGS.alpha),
+      )
+    }
+  })
 
   it('never lets the two variants collide on one filename', () => {
     for (const { platform, arch } of artifacts('0.0.0')) {

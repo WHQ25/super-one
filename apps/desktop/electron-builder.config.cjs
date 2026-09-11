@@ -25,9 +25,9 @@
 const { readFileSync } = require('node:fs')
 const { join } = require('node:path')
 const yaml = require('js-yaml')
-const semver = require('semver')
 
 const VARIANTS = require('./variants.json')
+const { resolvePackagedVersion } = require('./packaged-version.cjs')
 const VARIANT_IDS = Object.keys(VARIANTS)
 
 function resolveVariantId() {
@@ -45,38 +45,17 @@ function resolveVariantId() {
 }
 
 /**
- * Effective packaging version = base version + the variant's prerelease tag.
- *
- * The base is the plain release number ("0.61.0"); the variant decides whether
- * it ships as that or as "0.61.0-alpha". Deriving rather than asserting is what
- * makes a mismatch impossible instead of merely caught: there is no input that
- * expresses "stable build carrying an -alpha version".
- *
- * Note the direction. Identity is never read off the version anywhere in this
- * app -- that coupling is exactly what the variant split removed. This is the
- * inverse and is sound: the variant is authoritative, and the version string is
- * one of its outputs.
- *
- * SUPERONE_VERSION overrides the BASE, so cutting stable from a validated alpha
- * commit needs no bump commit -- otherwise the stable binary would be "the
- * validated tree plus a commit nobody ran". It lives here rather than on the
- * command line (`-c.extraMetadata.version`) because electron-builder merges CLI
- * `-c` overrides *after* this config returns, which would let a caller bypass
- * the derivation.
+ * Effective packaging version = base + the variant's prerelease tag + optional
+ * sequence. See packaged-version.cjs. SUPERONE_VERSION overrides the BASE;
+ * SUPERONE_PRERELEASE_N is the `build` bump (1 → 0.63.0-alpha.1). Both live
+ * here rather than on `-c.extraMetadata.version` because electron-builder
+ * merges CLI `-c` overrides *after* this config returns.
  */
 function resolveVersion(packageVersion, id) {
-  const base = process.env.SUPERONE_VERSION?.trim() || packageVersion
-  if (!semver.valid(base)) {
-    throw new Error(`Base version "${base}" is not a valid semver version`)
-  }
-  if (semver.prerelease(base)) {
-    throw new Error(
-      `Base version "${base}" must be a plain release version — the variant adds ` +
-        `its own prerelease tag. Pass "${semver.coerce(base)?.version ?? base}" instead.`,
-    )
-  }
-  const tag = VARIANTS[id].prereleaseTag
-  return tag ? `${base}-${tag}` : base
+  return resolvePackagedVersion(packageVersion, id, {
+    versionOverride: process.env.SUPERONE_VERSION,
+    prereleaseN: process.env.SUPERONE_PRERELEASE_N,
+  })
 }
 
 const variantId = resolveVariantId()

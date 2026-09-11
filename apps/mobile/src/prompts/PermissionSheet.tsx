@@ -57,7 +57,6 @@ export function PermissionSheet(props: {
     approveLabel={remember && allowRemember ? presentation.alwaysLabel! : `${presentation.approveLabel}${suggestions.size ? ` +${suggestions.size}` : ''}`}
     rejectLabel={feedback.trim() ? `${presentation.denyLabel} with feedback` : presentation.denyLabel}
     onApprove={approve} onReject={deny} disabled={!elicitationAnswersAreValid(fields, values) || !permissionEditsValid(perm) || Object.values(invalidFields).some(Boolean)}
-    destructive={presentation.destructive}
     feedback={{ value: feedback, onChange: setFeedback }}
   >{allowRemember ? <PromptChoice multi label={t(presentation.alwaysLabel!)} selected={remember} onPress={() => setRemember(!remember)} /> : null}</PromptActions>}>
     {perm.elicitationUrl ? (

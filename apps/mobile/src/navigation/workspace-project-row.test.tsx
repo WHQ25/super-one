@@ -93,6 +93,13 @@ test('shows the sessions once expanded', async () => {
   expect(screen.getByText('Fix the drawer')).toBeTruthy()
 })
 
+test('reports expanded state on the project row', async () => {
+  const { rerender } = await renderWithTheme(row())
+  expect(screen.getByRole('button', { name: 'repo', expanded: false })).toBeTruthy()
+  await rerender(row({ expanded: true }))
+  expect(screen.getByRole('button', { name: 'repo', expanded: true })).toBeTruthy()
+})
+
 test('keeps the loaded list mounted across a collapse, so re-expanding costs no request', async () => {
   const { rerender } = await renderWithTheme(row({ expanded: true }))
   expect(screen.getByText('Fix the drawer')).toBeTruthy()

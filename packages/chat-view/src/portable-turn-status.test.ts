@@ -33,7 +33,7 @@ function render(message: ChatMessage, props: Partial<Parameters<typeof PortableM
 describe('the live-turn indicator', () => {
   it('spins for the last turn while the session is producing it', () => {
     const html = render(turn(), { isLastAssistant: true, sessionStreaming: true })
-    expect(html).toContain('Working…')
+    expect(html).toContain('Sending…')
   })
 
   it('announces a live turn before its clock is worth showing', () => {
@@ -43,7 +43,7 @@ describe('the live-turn indicator', () => {
       isLastAssistant: true,
       sessionStreaming: true,
     })
-    expect(html).toContain('Working…')
+    expect(html).toContain('Sending…')
   })
 
   // The bug: an interrupt or a dropped connection can leave a turn marked
@@ -51,12 +51,12 @@ describe('the live-turn indicator', () => {
   // status made the phone spin on it forever.
   it('does not spin on a stale streaming turn once the session is idle', () => {
     const html = render(turn(), { isLastAssistant: true, sessionStreaming: false })
-    expect(html).not.toContain('Working…')
+    expect(html).not.toContain('Sending…')
   })
 
   it('does not spin on an older turn while a newer one streams', () => {
     const html = render(turn(), { isLastAssistant: false, sessionStreaming: true })
-    expect(html).not.toContain('Working…')
+    expect(html).not.toContain('Sending…')
   })
 })
 

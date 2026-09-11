@@ -104,6 +104,68 @@ export const BrowserScreenshot: Story = {
   ),
 }
 
+/**
+ * A projected SuperOne session_list: the dedicated archive row is the chrome.
+ * There must be no generic `superone · session list` shell wrapping it.
+ */
+function ProgressiveSessionList() {
+  useEffect(() => {
+    const host = globalThis as typeof globalThis & { ReactNativeWebView?: { postMessage(raw: string): void }; __applyHost?: (value: unknown) => void }
+    const previous = host.ReactNativeWebView
+    const remove = installHostBridge(message => { if (message.type === 'detailUpdate') deliverDetail(message) })
+    host.ReactNativeWebView = { postMessage(raw) {
+      const request = JSON.parse(raw)
+      if (request.action !== 'subscribeDetail') return
+      host.__applyHost?.({
+        type: 'nativeActionResult',
+        requestId: request.requestId,
+        result: {
+          subscriptionId: request.payload.subscriptionId,
+          revision: 0,
+          offset: 0,
+          text: JSON.stringify({
+            input: JSON.stringify({ harness: 'acp' }),
+            result: JSON.stringify({ sessions: [], count: 0 }),
+          }),
+        },
+      })
+    } }
+    return () => { remove(); host.ReactNativeWebView = previous }
+  }, [])
+  return (
+    <div className="mx-auto max-w-[390px] p-4">
+      <PortableMessage
+        message={{
+          id: 'progressive-session-list',
+          role: 'assistant',
+          status: 'complete',
+          providerId: 'acp',
+          createdAt: '2026-09-11T00:00:00Z',
+          content: [
+            {
+              type: 'tool_use',
+              toolName: 'mcp__superone__session_list',
+              toolUseId: 'list',
+              input: JSON.stringify({ harness: 'acp' }),
+              status: 'complete',
+              remoteDetail: 'story-session-list',
+            },
+          ],
+        }}
+        scheme="dark"
+        pendingPermission={null}
+        isLastAssistant
+        sessionStreaming={false}
+      />
+    </div>
+  )
+}
+
+export const SessionListDedicated: Story = {
+  name: 'session_list · dedicated row, no generic shell',
+  render: () => <ProgressiveSessionList />,
+}
+
 export const EditExpandedDiff: Story = {
   args: { state: 'edit' },
   play: async ({ canvasElement }) => {

@@ -6,6 +6,7 @@ import { createContext, useContext, useMemo, useState, type ReactNode } from 're
 import type {
   ChatMessage,
   CodexCollabToolCallItem,
+  CodexMcpToolCallItem,
   ContentBlock,
 } from '@superone/shared/agent-types'
 import { isAlwaysHiddenToolName, isSubagentToolName, parseMcpToolName } from '@superone/shared/tool-ui'
@@ -198,15 +199,13 @@ function PortableClaudeTool(props: ClaudeToolPresenterProps) {
   const brandIconSrc = resolveMcpServerIconFromMap('superone', mcpIcons)
   if (isPortableInteractiveTool(props.toolName, props.input)) return <DeferredInteractiveTool {...props} />
   if (props.remoteDetail) {
-    // `DeferredTool` is already a generic row. Only a tool with its own presenter gets a
-    // `renderDetail` that mounts that presenter inside it; every other tool leaves it unset so
-    // the row shows the fetched result itself. Rendering a second `PortableClaudeTool` for a
-    // tool that would fall through to `PortableToolRow` nested one generic row inside another.
-    const dedicated = renderDedicatedTool(props, brandIconSrc) !== null
-    return <DeferredTool {...props} remoteDetail={props.remoteDetail}
-      renderDetail={dedicated
-        ? detail => <PortableClaudeTool {...props} {...detail} remoteDetail={undefined} autoExpand />
-        : undefined} />
+    // Dedicated presenters own their chrome — same contract as DeferredInteractiveTool
+    // and PortableSubagent. Nesting them in DeferredTool painted a generic
+    // `superone · session list` shell around the real row (Grok/Cursor/Claude on the phone).
+    if (renderDedicatedTool(props, brandIconSrc) !== null) {
+      return <DeferredDedicatedClaudeTool {...props} brandIconSrc={brandIconSrc} />
+    }
+    return <DeferredTool {...props} remoteDetail={props.remoteDetail} />
   }
   const dedicated = renderDedicatedTool(props, brandIconSrc)
   if (dedicated) return dedicated
@@ -219,9 +218,37 @@ function PortableClaudeTool(props: ClaudeToolPresenterProps) {
 }
 
 /**
+ * Progressive-loading shell for a tool that has its own presenter. Fetches the
+ * projected detail on mount so the dedicated row can show its real header
+ * (`Sessions Listed`, `Settings Read`, …) instead of a generic MCP fallback.
+ */
+function DeferredDedicatedClaudeTool({
+  brandIconSrc,
+  ...props
+}: ClaudeToolPresenterProps & { brandIconSrc?: string }) {
+  const complete = props.status !== 'streaming'
+  const { detail, text, error, status, retry } = useDeferredToolDetail(props.remoteDetail, true, complete)
+  const ready = Boolean(text) || Boolean(error)
+  const merged: ClaudeToolPresenterProps = {
+    ...props,
+    ...detail,
+    remoteDetail: undefined,
+    // Keep the dedicated chrome in its in-flight state until the payload lands —
+    // otherwise session_list flashes "0 sessions" from an empty parse.
+    status: ready ? props.status : 'streaming',
+  }
+  return (
+    <>
+      {renderDedicatedTool(merged, brandIconSrc)}
+      <DeferredDetailStatus status={error ? status : undefined} onRetry={retry} />
+    </>
+  )
+}
+
+/**
  * Presenters that replace the generic tool row for a given tool. Returns `null` when the tool has
- * none and must render as `PortableToolRow`; the deferred path relies on that answer to decide
- * whether a shell needs a nested presenter at all.
+ * none and must render as `PortableToolRow`. The deferred path uses that answer to choose
+ * `DeferredDedicatedClaudeTool` (own chrome) vs `DeferredTool` (generic row, result in-place).
  */
 function renderDedicatedTool(props: ClaudeToolPresenterProps, brandIconSrc?: string): ReactNode | null {
   const browserOp = portableBrowserOp(props.toolName, props.input)
@@ -805,20 +832,45 @@ function PortablePlan({
   )
 }
 
+function claudePropsFromCodexMcp(item: CodexMcpToolCallItem): ClaudeToolPresenterProps {
+  return {
+    toolName: `mcp__${item.server}__${item.tool}`,
+    toolUseId: item.id,
+    input: typeof item.arguments === 'string' ? item.arguments : stringify(item.arguments ?? {}),
+    result: codexMcpItemResultText(item),
+    status: item.status === 'in_progress' ? 'streaming' : 'complete',
+    isError: item.status === 'failed' || Boolean(item.error),
+  }
+}
+
+/**
+ * Codex MCP detail is item-shaped (`{ item, input, result }`), not the Claude
+ * `{ input, result }` payload `DeferredDedicatedClaudeTool` reads. Fetch here,
+ * then hand the loaded call to `PortableClaudeTool` with no `remoteDetail` so
+ * the dedicated presenter is the chrome — never a generic row wrapping it.
+ */
+function DeferredCodexMcp({ item }: { item: CodexMcpToolCallItem }) {
+  const complete = item.status !== 'in_progress'
+  const { detail, text, error, status, retry } = useDeferredToolDetail(item.remoteDetail, true, complete)
+  const loaded = detail.item?.type === 'mcp_tool_call' ? detail.item : null
+  const ready = Boolean(text) || Boolean(error)
+  const src = loaded ?? item
+  return (
+    <>
+      <PortableClaudeTool
+        {...claudePropsFromCodexMcp(src)}
+        status={!ready || src.status === 'in_progress' ? 'streaming' : 'complete'}
+      />
+      <DeferredDetailStatus status={error ? status : undefined} onRetry={retry} />
+    </>
+  )
+}
+
 function PortableCodexItem(props: CodexItemPresenterProps) {
   const { item, index, isStreaming } = props
-  if (item.type === 'mcp_tool_call' && isPortableInteractiveTool(`mcp__${item.server}__${item.tool}`, item.arguments)) {
-    return (
-      <DeferredInteractiveTool
-        toolName={`mcp__${item.server}__${item.tool}`}
-        toolUseId={item.id}
-        input={typeof item.arguments === 'string' ? item.arguments : JSON.stringify(item.arguments ?? {})}
-        result={codexMcpItemResultText(item)}
-        status={item.status === 'in_progress' ? 'streaming' : 'complete'}
-        isError={item.status === 'failed' || Boolean(item.error)}
-        remoteDetail={item.remoteDetail}
-      />
-    )
+  if (item.type === 'mcp_tool_call') {
+    if (item.remoteDetail) return <DeferredCodexMcp item={item} />
+    return <PortableClaudeTool {...claudePropsFromCodexMcp(item)} />
   }
   if ('remoteDetail' in item && item.remoteDetail) return <DeferredCodexTool item={item} isStreaming={isStreaming}
     renderItem={item.type === 'command_execution' ? undefined : loaded => <PortableCodexItem {...props} item={loaded} />} />
@@ -852,75 +904,6 @@ function PortableCodexItem(props: CodexItemPresenterProps) {
           ))}
         </div>
       )
-    case 'mcp_tool_call': {
-      const fullToolName = `mcp__${item.server}__${item.tool}`
-      const browserOp = portableBrowserOp(fullToolName, item.arguments)
-      const computerOp = portableComputerOp(fullToolName)
-      const deviceOp = portableDeviceOp(fullToolName)
-      if (browserOp) {
-        return (
-          <PortableBrowserTool
-            op={browserOp}
-            input={item.arguments}
-            result={codexMcpItemResultText(item)}
-            isStreaming={item.status === 'in_progress'}
-            isError={item.status === 'failed' || Boolean(item.error)}
-          />
-        )
-      }
-      if (computerOp) {
-        return (
-          <PortableComputerTool
-            op={computerOp}
-            input={item.arguments}
-            result={codexMcpItemResultText(item)}
-            isStreaming={item.status === 'in_progress'}
-            isError={item.status === 'failed' || Boolean(item.error)}
-          />
-        )
-      }
-      if (deviceOp) {
-        return (
-          <PortableDeviceTool
-            op={deviceOp}
-            input={item.arguments}
-            result={codexMcpItemResultText(item)}
-            isStreaming={item.status === 'in_progress'}
-            isError={item.status === 'failed' || Boolean(item.error)}
-          />
-        )
-      }
-      if (isImageGenerationTool(fullToolName)) {
-        return (
-          <PortableImageGenTool
-            input={stringify(item.arguments)}
-            result={codexMcpItemResultText(item)}
-            isStreaming={item.status === 'in_progress'}
-            isError={item.status === 'failed' || Boolean(item.error)}
-          />
-        )
-      }
-      if (isVideoGenerationTool(fullToolName)) {
-        return (
-          <PortableVideoGenTool
-            input={stringify(item.arguments)}
-            result={codexMcpItemResultText(item)}
-            isStreaming={item.status === 'in_progress'}
-            isError={item.status === 'failed' || Boolean(item.error)}
-          />
-        )
-      }
-      return (
-        <PortableToolRow
-          toolName={fullToolName}
-          toolUseId={item.id}
-          input={stringify(item.arguments)}
-          result={codexMcpItemResultText(item)}
-          status={item.status === 'in_progress' ? 'streaming' : 'complete'}
-          isError={item.status === 'failed' || Boolean(item.error)}
-        />
-      )
-    }
     case 'web_search':
       return (
         <PortableToolRow

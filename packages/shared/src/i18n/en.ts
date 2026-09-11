@@ -1673,7 +1673,7 @@ export type Messages = {
       explainOffer: string
     }
     runningCommand: string
-    working: string
+    sending: string
     codex: {
       statusRunning: string
       statusReading: string
@@ -5386,7 +5386,7 @@ export const en: Messages = {
       explainOffer: 'Send draft text or "{{fallback}}"',
     },
     runningCommand: 'Running /{{command}}…',
-    working: 'Working…',
+    sending: 'Sending…',
     codex: {
       statusRunning: 'Running',
       statusReading: 'Reading',

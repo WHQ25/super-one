@@ -15,12 +15,12 @@ jest.mock('react-native-mmkv', () => {
 })
 
 /**
- * Skia and Reanimated both reach every test that mounts the composer
- * (`ModelPicker` → the `max` effort easter egg): Skia ships ESM that jest's
- * CommonJS runtime cannot load, and Reanimated's worklets need a native runtime
- * no test has. Nothing under test draws with either — the canvas is one
- * particle effect — so both are stubbed rather than transformed, which would
- * cost every suite for a component no assertion touches.
+ * Skia and Reanimated both reach tests that mount the composer or the
+ * workspace list: Skia ships ESM that jest's CommonJS runtime cannot load, and
+ * Reanimated's worklets need a native runtime no test has. The canvas is one
+ * particle effect; layout animations become plain Views. Both are stubbed
+ * rather than transformed, which would cost every suite for a native runtime
+ * no assertion can exercise.
  */
 jest.mock('@shopify/react-native-skia', () => ({
   BlendMode: {},
@@ -30,10 +30,29 @@ jest.mock('@shopify/react-native-skia', () => ({
   useClock: () => ({ value: 0 }),
 }))
 
-jest.mock('react-native-reanimated', () => ({
-  useDerivedValue: (fn: () => unknown) => ({ value: fn() }),
-  useSharedValue: (initial: unknown) => ({ value: initial }),
-}))
+jest.mock('react-native-reanimated', () => {
+  const chain = () => {
+    const api: Record<string, () => unknown> = {}
+    const self = () => api
+    for (const key of ['delay', 'duration', 'easing', 'withInitialValues', 'reduceMotion', 'build']) {
+      api[key] = self
+    }
+    return api
+  }
+  return {
+    __esModule: true,
+    default: { View: 'View', Text: 'Text', createAnimatedComponent: (component: unknown) => component },
+    useDerivedValue: (fn: () => unknown) => ({ value: fn() }),
+    useSharedValue: (initial: unknown) => ({ value: initial }),
+    useAnimatedStyle: (fn: () => unknown) => fn(),
+    withTiming: (to: unknown) => to,
+    Easing: { bezier: () => (t: number) => t },
+    FadeInDown: chain(),
+    FadeOut: chain(),
+    LinearTransition: chain(),
+    ReduceMotion: { System: 'system', Always: 'always', Never: 'never' },
+  }
+})
 
 /** The title's temporary WebView is driven through its native message callbacks
  * in component tests; its actual CSS/JS is exercised in browser integration tests. */

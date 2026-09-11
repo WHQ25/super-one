@@ -21,7 +21,7 @@ expected flows. It is not a code source: nothing is ported from Dart, and its
 | **Terminal WebView** | xterm frames | Event ACK / seq |
 
 Never nest the chat WebView in an RN `ScrollView`. Input is native only.
-`Loading conversation…` is only for switching to an existing session: the
+`Loading…` is only for switching to an existing session: the
 previous transcript must not stay on screen while restore runs. Keep the
 WebView mounted at opacity 0 under that cover *and* under the new-session
 landing (`opaque={false}`, themed background, pre-paint script) so the first
@@ -90,7 +90,9 @@ owned per row (`WorkspaceProjectRow`) rather than per drawer — one shared list
 state could only ever serve one project, which is what made this an accordion. A
 row mounts its list the first time it is expanded, or as soon as a session in it
 is live, unseen, or pending, and keeps it mounted after; collapsing hides ordinary
-rows (`display: 'none'` when nothing is live) without dropping the loaded list.
+rows without dropping the loaded list. Expanding unfolds the rows (height 240ms
++ staggered fade/slide) rather than snapping them in; collapse is 180ms with no
+stagger. Reduced motion skips both.
 Opening the drawer adds the active project to the expanded set without disturbing
 the rest.
 

@@ -1,9 +1,12 @@
 import { useContext, useEffect, useRef, useState } from 'react'
 import { Pressable, View } from 'react-native'
-import { ChevronDown, ChevronRight, Folder } from 'lucide-react-native'
+import { ChevronRight, Folder } from 'lucide-react-native'
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated'
 import type { RelayClient } from '@superone/relay-client'
 import { Text } from '../ui/text'
 import { SessionListBody, type SessionListActions } from '../ui'
+import { SESSION_UNFOLD } from '../ui/session-unfold'
+import { useIconMotion } from '../ui/use-icon-motion'
 import type { Project } from '../project-types'
 import type { SessionListRow } from '../session-list-state'
 import { projectHasAttention } from '../session-activity-state'
@@ -43,7 +46,6 @@ export function WorkspaceProjectRow(props: WorkspaceProjectRowProps) {
   // list too.
   const [armed, setArmed] = useState(props.expanded || needsAttention)
   useEffect(() => { if (props.expanded || needsAttention) setArmed(true) }, [props.expanded, needsAttention])
-  const Chevron = props.expanded ? ChevronDown : ChevronRight
 
   return <View>
     <Pressable accessibilityRole="button" accessibilityState={{ expanded: props.expanded }}
@@ -53,10 +55,30 @@ export function WorkspaceProjectRow(props: WorkspaceProjectRowProps) {
         <Folder size={18} color={colors.mutedForeground} />
       </View>
       <Text numberOfLines={1} style={{ color: colors.foreground, fontSize: 15, flex: 1 }}>{props.project.name}</Text>
-      <Chevron size={15} color={colors.mutedForeground} />
+      <ProjectChevron expanded={props.expanded} color={colors.mutedForeground} />
     </Pressable>
     {armed ? <ProjectSessions {...props} /> : null}
   </View>
+}
+
+function ProjectChevron({ expanded, color }: { expanded: boolean; color: string }) {
+  const motion = useIconMotion()
+  const rotation = useSharedValue(expanded ? 90 : 0)
+  const previous = useRef(expanded)
+  useEffect(() => {
+    if (previous.current === expanded) return
+    previous.current = expanded
+    rotation.value = motion
+      ? withTiming(expanded ? 90 : 0, {
+        duration: SESSION_UNFOLD.chevronMs,
+        easing: Easing.bezier(...SESSION_UNFOLD.easing),
+      })
+      : expanded ? 90 : 0
+  }, [expanded, motion, rotation])
+  const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${rotation.value}deg` }] }))
+  return <Animated.View style={style}>
+    <ChevronRight size={15} color={color} />
+  </Animated.View>
 }
 
 /**
@@ -84,7 +106,7 @@ function ProjectSessions(props: WorkspaceProjectRowProps) {
   }, [visible, expanded, listRevision, refresh])
 
   const showList = props.expanded || sessions.items.length > 0
-  return <View style={{ paddingLeft: 8, paddingBottom: 4, display: showList ? 'flex' : 'none' }}>
+  return <View style={{ paddingLeft: 8, paddingBottom: showList ? 4 : 0 }}>
     <SessionListBody
       sessions={sessions}
       surface="panel"

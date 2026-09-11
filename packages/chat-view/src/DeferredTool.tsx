@@ -12,8 +12,9 @@ export type DeferredToolDetail = Partial<PortableToolRowProps> & { item?: CodexT
  * is expanded. `detail` is `{}` until the text lands; `status` carries the loading or
  * error copy the host row should show, and `retry` re-subscribes after a failure.
  *
- * Presenters that own their own card chrome (subagent, workflow, Codex collab) call this
- * directly so they are not wrapped in a second generic tool row.
+ * Presenters that own their own card chrome (subagent, workflow, Codex collab,
+ * dedicated SuperOne tools) call this directly so they are not wrapped in a
+ * second generic tool row.
  */
 export function useDeferredToolDetail(remoteDetail: string | undefined, expanded: boolean, complete: boolean) {
   const { t } = useTranslation()

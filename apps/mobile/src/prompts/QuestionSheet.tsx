@@ -42,7 +42,7 @@ export function QuestionSheet(props: {
   const answered = question.questions.filter((item) => answers[questionKey(item)]?.trim()).length
   const close = (action: () => void) => { setClosed(true); action() }
   return <PromptSheet title={question.questions.length === 1 ? 'Question' : 'Questions'} subtitle={question.questions.length > 1 ? `${answered} of ${question.questions.length} answered` : undefined} icon={MessageCircle} onDismiss={() => close(() => props.onDismiss(question.requestId))} footer={<PromptActions
-    approveLabel="Submit" rejectLabel="Dismiss"
+    approveLabel="Submit" rejectLabel="Dismiss" tone="submit"
     disabled={!questionAnswersAreComplete(question.questions, answers)}
     onApprove={() => close(() => props.onSubmit(question.requestId, answers, buildQuestionAnnotations(question.questions, answers, notes)))}
     onReject={() => close(() => props.onDismiss(question.requestId))}

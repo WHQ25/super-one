@@ -1776,7 +1776,7 @@ export const zh: Messages = {
       explainOffer: '发送输入区草稿或“继续”',
     },
     runningCommand: '正在执行 /{{command}}…',
-    working: '工作中…',
+    sending: '发送中…',
     codex: {
       statusRunning: '执行中',
       statusReading: '读取中',

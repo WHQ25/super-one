@@ -101,7 +101,102 @@ describe('deferred tool rows on the phone', () => {
     const { container } = render(
       <PortableMessage message={deferredTurn('ListAgents')} scheme="dark" pendingPermission={null} />,
     )
-    const row = await expandRow(container)
-    await waitFor(() => expect(row.textContent).toContain('reviewer'))
+    await waitFor(() => expect(container.textContent).toContain('reviewer'))
+    // Dedicated chrome, not GenericToolRow ("ListAgents") wrapping the real card.
+    expect(container.textContent).not.toContain('ListAgents')
+    expect(container.querySelectorAll('.tool-node')).toHaveLength(1)
+    expect(container.querySelector('.tool-node .tool-node')).toBeNull()
+  })
+
+  it('renders session_list as the archive row, not a superone · session list shell', async () => {
+    restore = installFakeHost({
+      [detailRef('mcp__superone__session_list')]: JSON.stringify({
+        input: JSON.stringify({ harness: 'acp' }),
+        result: JSON.stringify({ sessions: [], count: 0 }),
+      }),
+    })
+    const { container } = render(
+      <PortableMessage
+        message={deferredTurn('mcp__superone__session_list')}
+        scheme="dark"
+        pendingPermission={null}
+      />,
+    )
+    await waitFor(() => expect(container.textContent).toMatch(/Sessions Listed/i))
+    expect(container.textContent).toMatch(/0 sessions/i)
+    expect(container.textContent).not.toMatch(/superone\s*·\s*session list/i)
+    expect(container.querySelectorAll('.tool-node')).toHaveLength(1)
+    expect(container.querySelector('.tool-node .tool-node')).toBeNull()
+  })
+
+  it('renders a compact SuperOne tool as its verb row, not a generic MCP shell', async () => {
+    restore = installFakeHost({
+      [detailRef('mcp__superone__config_read')]: JSON.stringify({
+        input: JSON.stringify({ domain: 'appearance' }),
+        result: JSON.stringify({ label: 'Appearance' }),
+      }),
+    })
+    const { container } = render(
+      <PortableMessage
+        message={deferredTurn('mcp__superone__config_read')}
+        scheme="dark"
+        pendingPermission={null}
+      />,
+    )
+    await waitFor(() => expect(container.textContent).toContain('Appearance'))
+    expect(container.textContent).not.toMatch(/superone\s*·\s*config read/i)
+    expect(container.querySelectorAll('.tool-node')).toHaveLength(1)
+  })
+
+  it('renders a Codex SuperOne MCP call as the archive row, not a nested generic shell', async () => {
+    const payload = JSON.stringify({ sessions: [], count: 0 })
+    restore = installFakeHost({
+      [detailRef('mcp__superone__session_list')]: JSON.stringify({
+        item: {
+          type: 'mcp_tool_call',
+          id: 'call-1',
+          server: 'superone',
+          tool: 'session_list',
+          arguments: { harness: 'acp' },
+          status: 'completed',
+          result: { content: [{ type: 'text', text: payload }], structuredContent: null },
+        },
+        input: JSON.stringify({ harness: 'acp' }),
+        result: payload,
+      }),
+    })
+    const { container } = render(
+      <PortableMessage
+        message={{
+          id: 'turn-1',
+          role: 'assistant',
+          status: 'complete',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          providerId: 'codex',
+          content: [],
+          metadata: {
+            codex: {
+              threadId: 'thread',
+              usage: null,
+              items: [{
+                type: 'mcp_tool_call',
+                id: 'call-1',
+                server: 'superone',
+                tool: 'session_list',
+                arguments: { harness: 'acp' },
+                status: 'completed',
+                remoteDetail: detailRef('mcp__superone__session_list'),
+              }],
+            },
+          },
+        } as ChatMessage}
+        scheme="dark"
+        pendingPermission={null}
+      />,
+    )
+    await waitFor(() => expect(container.textContent).toMatch(/Sessions Listed/i))
+    expect(container.textContent).not.toMatch(/superone\s*·\s*session list/i)
+    expect(container.querySelectorAll('.tool-node')).toHaveLength(1)
+    expect(container.querySelector('.tool-node .tool-node')).toBeNull()
   })
 })

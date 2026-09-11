@@ -221,3 +221,92 @@ export const Narrow: Story = {
     </Phone>
   ),
 }
+
+/**
+ * Footer row alignment. Every icon (copy, clock, spinner, warning, token
+ * arrows) is 12px inside a 16px text line; each story exists to show them
+ * sitting on the text's centre rather than 2px above it.
+ */
+function footerTurn(overrides: Partial<ChatMessage> = {}) {
+  return assistant({ metadata: { durationMs: 45_000, consumedTokens: { input: 18_400, output: 2_600 } }, ...overrides })
+}
+
+export const FooterSending: Story = {
+  name: 'Footer · sending',
+  render: () => (
+    <Phone>
+      <PortableMessage
+        message={footerTurn({ status: 'streaming', createdAt: new Date().toISOString(), metadata: {} })}
+        scheme="dark"
+        pendingPermission={null}
+        isLastAssistant
+        sessionStreaming
+      />
+    </Phone>
+  ),
+}
+
+export const FooterLiveClock: Story = {
+  name: 'Footer · live clock',
+  render: () => (
+    <Phone>
+      <PortableMessage
+        message={footerTurn({ status: 'streaming', metadata: {} })}
+        scheme="dark"
+        pendingPermission={null}
+        isLastAssistant
+        sessionStreaming
+      />
+    </Phone>
+  ),
+}
+
+export const FooterSettled: Story = {
+  name: 'Footer · settled with copy',
+  render: () => (
+    <Phone>
+      <PortableMessage
+        message={footerTurn()}
+        scheme="dark"
+        pendingPermission={null}
+        isLastAssistant
+        sessionStreaming={false}
+      />
+    </Phone>
+  ),
+}
+
+export const FooterFailed: Story = {
+  name: 'Footer · failed (expandable badge)',
+  render: () => (
+    <Phone>
+      <PortableMessage
+        message={footerTurn({
+          status: 'error',
+          metadata: { durationMs: 45_000, errorInfo: { raw: 'Overloaded', httpStatus: 529 } },
+        })}
+        scheme="dark"
+        pendingPermission={null}
+        isLastAssistant
+        sessionStreaming={false}
+      />
+    </Phone>
+  ),
+}
+
+export const FooterStopped: Story = {
+  name: 'Footer · stopped by terminal reason',
+  render: () => (
+    <Phone>
+      <PortableMessage
+        message={footerTurn({
+          metadata: { durationMs: 45_000, consumedTokens: { input: 18_400, output: 2_600 }, terminalReason: 'max_tokens' },
+        })}
+        scheme="dark"
+        pendingPermission={null}
+        isLastAssistant
+        sessionStreaming={false}
+      />
+    </Phone>
+  ),
+}

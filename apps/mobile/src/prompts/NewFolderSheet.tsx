@@ -39,6 +39,7 @@ export function NewFolderSheet(props: {
       onDismiss={props.onDismiss}
       footer={<PromptActions
         approveLabel="Create"
+        tone="submit"
         rejectLabel="Cancel"
         disabled={!!invalid}
         onApprove={props.onSubmit}

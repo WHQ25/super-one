@@ -180,7 +180,7 @@ export function ChatScreen(props: {
       {coveringRestore ? (
         <View testID="conversation-loading" collapsable={false} style={[StyleSheet.absoluteFillObject, styles.emptyState, coverStyle, { backgroundColor: tokens.colors.background }]}>
           <ActivityIndicator color={tokens.colors.mutedForeground} />
-          <Text style={styles.emptyBody}>{t('Loading conversation…')}</Text>
+          <Text style={styles.emptyBody}>{t('Loading…')}</Text>
         </View>
       ) : showLanding && props.landing ? (
         // The renderer stays mounted at opacity 0 and still occupies flex

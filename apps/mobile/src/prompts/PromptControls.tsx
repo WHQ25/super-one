@@ -35,9 +35,17 @@ export function PromptPill({ label, selected, onPress, multi = false }: { label:
   </Pressable>
 }
 
-export function PromptActions({ onApprove, onReject, approveLabel, rejectLabel, disabled, destructive, feedback, children }: {
+/**
+ * `decision` is the desktop's approve / reject pair — success green against
+ * destructive red, whatever the prompt is confirming. `submit` is for a form
+ * whose primary action is not a verdict (answer a question, create a folder):
+ * brand fill beside a neutral cancel, as the desktop draws those.
+ */
+export type PromptActionsTone = 'decision' | 'submit'
+
+export function PromptActions({ onApprove, onReject, approveLabel, rejectLabel, disabled, tone = 'decision', feedback, children }: {
   onApprove: () => void; onReject: () => void; approveLabel: string; rejectLabel: string
-  disabled?: boolean; destructive?: boolean
+  disabled?: boolean; tone?: PromptActionsTone
   feedback?: { value: string; onChange: (text: string) => void; placeholder?: string }
   children?: ReactNode
 }) {
@@ -47,17 +55,22 @@ export function PromptActions({ onApprove, onReject, approveLabel, rejectLabel, 
     {feedback ? <PromptInput testID="prompt-feedback" accessibilityLabel={feedback.placeholder ?? t('Optional feedback')} placeholder={feedback.placeholder ?? t('Optional feedback')} value={feedback.value} onChangeText={feedback.onChange} returnKeyType="send" onSubmitEditing={onReject} /> : null}
     {children}
     <View style={styles.row}>
-      <Action testID="prompt-approve" label={t(approveLabel)} icon={Check} onPress={onApprove} disabled={disabled} tone={destructive ? 'reject' : 'primary'} />
-      <Action testID="prompt-reject" label={t(rejectLabel)} icon={X} onPress={onReject} tone="neutral" />
+      <Action testID="prompt-approve" label={t(approveLabel)} icon={Check} onPress={onApprove} disabled={disabled} tone={tone === 'decision' ? 'approve' : 'primary'} />
+      <Action testID="prompt-reject" label={t(rejectLabel)} icon={X} onPress={onReject} tone={tone === 'decision' ? 'reject' : 'neutral'} />
     </View>
   </View>
 }
 
-function Action({ testID, label, icon: Icon, onPress, disabled, tone }: { testID: string; label: string; icon: LucideIcon; onPress: () => void; disabled?: boolean; tone: 'reject' | 'primary' | 'neutral' }) {
+function Action({ testID, label, icon: Icon, onPress, disabled, tone }: { testID: string; label: string; icon: LucideIcon; onPress: () => void; disabled?: boolean; tone: 'approve' | 'reject' | 'primary' | 'neutral' }) {
   const styles = usePromptStyles()
   const { tokens: { colors } } = useMobileTheme()
-  const backgroundColor = tone === 'reject' ? colors.destructive : tone === 'primary' ? colors.primary : colors.background
-  const color = tone === 'reject' ? colors.destructiveForeground : tone === 'primary' ? colors.primaryForeground : colors.mutedForeground
+  const fill = {
+    approve: [colors.success, colors.successForeground],
+    reject: [colors.destructive, colors.destructiveForeground],
+    primary: [colors.primary, colors.primaryForeground],
+    neutral: [colors.background, colors.mutedForeground],
+  }[tone]
+  const [backgroundColor, color] = fill
   return <Pressable testID={testID} accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.action, { backgroundColor, borderWidth: tone === 'neutral' ? 1 : 0, borderColor: colors.border }, disabled && styles.disabled, pressed && styles.pressed]}>
     <Icon size={14} color={color} /><Text style={[styles.actionText, { color }]}>{label}</Text>
   </Pressable>

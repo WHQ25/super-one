@@ -1,10 +1,13 @@
-import { ActivityIndicator, View } from 'react-native'
+import { ActivityIndicator } from 'react-native'
+import Animated from 'react-native-reanimated'
 import { Text } from './text'
 import type { ProjectSessions } from '../navigation/use-project-sessions'
 import type { SessionListRow } from '../session-list-state'
 import { useMobileTheme } from '../theme/context'
 import { SessionRowContent } from './session-row-content'
+import { sessionListLayout, sessionRowEntering, sessionRowExiting } from './session-unfold-motion'
 import { SwipeSessionRow } from './swipe-session-row'
+import { useIconMotion } from './use-icon-motion'
 import { useMobileLocale } from '../i18n/context'
 
 /**
@@ -39,11 +42,15 @@ export function SessionListBody(props: SessionListActions & {
 }) {
   const { tokens: { colors } } = useMobileTheme()
   const { t } = useMobileLocale()
+  const motion = useIconMotion()
   const { sessions, collapsed } = props
   const applyIfConfirmed = (op: Promise<boolean>, apply: () => void) => {
     void op.then((confirmed) => { if (confirmed) apply() })
   }
-  return <View>
+  return <Animated.View
+    style={{ overflow: 'hidden' }}
+    layout={motion ? sessionListLayout(!!collapsed) : undefined}
+  >
     {/* `!loaded` covers the frame before the request is even in flight; without
         it the empty state flashes on every first paint. */}
     {!collapsed && (sessions.busy || !sessions.loaded) ? <ActivityIndicator style={{ padding: 12 }} color={colors.mutedForeground} /> : null}
@@ -52,32 +59,37 @@ export function SessionListBody(props: SessionListActions & {
       ? <Text style={{ color: colors.mutedForeground, fontSize: 13, padding: 12 }}>{t('No sessions yet')}</Text>
       : null}
 
-    {sessions.items.map((item) => <SwipeSessionRow
+    {sessions.items.map((item, index) => <Animated.View
       key={item.session.sessionId}
-      title={item.session.title}
-      pinned={item.session.isPinned}
-      onPress={() => props.onOpenSession(item.session)}
-      onPin={() => applyIfConfirmed(
-        props.onPinSession(item.session, !item.session.isPinned),
-        () => sessions.patch(item.session.sessionId, { isPinned: !item.session.isPinned }),
-      )}
-      onArchive={() => applyIfConfirmed(
-        props.onArchiveSession(item.session),
-        () => sessions.forget(item.session.sessionId),
-      )}
-      onDelete={() => applyIfConfirmed(
-        props.onDeleteSession(item.session),
-        () => sessions.forget(item.session.sessionId),
-      )}
+      entering={motion ? sessionRowEntering(index) : undefined}
+      exiting={motion ? sessionRowExiting : undefined}
     >
-      {({ revealed }) => <SessionRowContent
-        item={item}
-        surface={props.surface}
-        revealed={revealed}
-        selected={item.session.sessionId === props.activeSessionId}
-        onToggleChildren={() => sessions.toggleChildren(item.session.sessionId)}
-      />}
-    </SwipeSessionRow>)}
+      <SwipeSessionRow
+        title={item.session.title}
+        pinned={item.session.isPinned}
+        onPress={() => props.onOpenSession(item.session)}
+        onPin={() => applyIfConfirmed(
+          props.onPinSession(item.session, !item.session.isPinned),
+          () => sessions.patch(item.session.sessionId, { isPinned: !item.session.isPinned }),
+        )}
+        onArchive={() => applyIfConfirmed(
+          props.onArchiveSession(item.session),
+          () => sessions.forget(item.session.sessionId),
+        )}
+        onDelete={() => applyIfConfirmed(
+          props.onDeleteSession(item.session),
+          () => sessions.forget(item.session.sessionId),
+        )}
+      >
+        {({ revealed }) => <SessionRowContent
+          item={item}
+          surface={props.surface}
+          revealed={revealed}
+          selected={item.session.sessionId === props.activeSessionId}
+          onToggleChildren={() => sessions.toggleChildren(item.session.sessionId)}
+        />}
+      </SwipeSessionRow>
+    </Animated.View>)}
 
     {!collapsed && sessions.hasMore ? (sessions.loadingMore
       ? <ActivityIndicator style={{ padding: 12 }} color={colors.mutedForeground} />
@@ -86,5 +98,5 @@ export function SessionListBody(props: SessionListActions & {
           {t('Show more')}
         </Text>
     ) : null}
-  </View>
+  </Animated.View>
 }

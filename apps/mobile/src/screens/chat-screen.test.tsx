@@ -76,7 +76,7 @@ test('covers the previous transcript while restore runs, without unmounting the 
   await renderWithTheme(screenUi({ loadingConversation: true, todos: true }))
 
   expect(screen.getByTestId('conversation-loading')).toBeTruthy()
-  expect(screen.getByText('Loading conversation…')).toBeTruthy()
+  expect(screen.getByText('Loading…')).toBeTruthy()
   // Booting under the cover is what stops WKWebView's white default from
   // flashing the moment restore finishes.
   expect(screen.getByTestId('chat-webview')).toBeTruthy()
@@ -89,7 +89,7 @@ test('the first send of a new session is just the live transcript, with no start
 
   expect(screen.getByTestId('chat-webview')).toBeTruthy()
   expect(screen.queryByText('Starting session…')).toBeNull()
-  expect(screen.queryByText('Loading conversation…')).toBeNull()
+  expect(screen.queryByText('Loading…')).toBeNull()
   expect(screen.queryByTestId('conversation-loading')).toBeNull()
   expect(screen.queryByTestId('session-starting')).toBeNull()
 })
@@ -97,7 +97,7 @@ test('the first send of a new session is just the live transcript, with no start
 test('the new-session landing is not a conversation restore', async () => {
   await renderWithTheme(screenUi({ landing }))
 
-  expect(screen.queryByText('Loading conversation…')).toBeNull()
+  expect(screen.queryByText('Loading…')).toBeNull()
   expect(screen.queryByTestId('conversation-loading')).toBeNull()
   // The renderer boots hidden under the landing so the first send does not
   // remount onto WKWebView's white default.

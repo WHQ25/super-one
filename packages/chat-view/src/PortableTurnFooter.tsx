@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AlertTriangle, ArrowDown, ArrowUp, Check, ChevronDown, ChevronUp, Clock, Copy, Loader2 } from 'lucide-react'
 import type { ChatMessage } from '@superone/shared/agent-types'
@@ -53,6 +53,16 @@ function PortableErrorBadge({ info }: { info: NonNullable<ChatMessage['metadata'
       )}
     </div>
   )
+}
+
+/**
+ * One icon + label pair, sized to the row's 16px text line. The row itself is
+ * top-aligned so an expanded error badge grows downward without dragging the
+ * other items to its middle — but that leaves a bare 12px icon riding 2px
+ * high against 16px text, so every pair centres itself inside its own line.
+ */
+function Meta({ children, className }: { children: ReactNode; className?: string }) {
+  return <span className={cn('inline-flex h-4 shrink-0 items-center gap-1.5', className)}>{children}</span>
 }
 
 function Token({ value, direction }: { value: number; direction: 'up' | 'down' }) {
@@ -121,11 +131,11 @@ export function PortableTurnFooter({
   const [copied, setCopied] = useState(false)
   const showCopy = !isStreaming && Boolean(copyText)
   // A turn under a second has no clock yet, and on the phone the footer is the
-  // only place a live turn announces itself — so the working label stands in
+  // only place a live turn announces itself — so the sending label stands in
   // until the clock is worth showing.
-  const showWorking = isStreaming && !footer.showDuration
+  const showSending = isStreaming && !footer.showDuration
 
-  if (footer.isEmpty && !showCopy && !showWorking) return null
+  if (footer.isEmpty && !showCopy && !showSending) return null
 
   const separator = <span aria-hidden>·</span>
 
@@ -139,26 +149,26 @@ export function PortableTurnFooter({
             setCopied(true)
             setTimeout(() => setCopied(false), 1500)
           }}
-          className="shrink-0"
+          className="flex h-4 shrink-0 items-center"
         >
           {copied ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}
         </button>
       )}
       {footer.showDuration && (
-        <>
+        <Meta>
           {isStreaming ? <Loader2 className="size-3 animate-spin" /> : <Clock className="size-3" />}
           <span>{footer.durationLabel}</span>
-        </>
+        </Meta>
       )}
-      {showWorking && (
-        <>
+      {showSending && (
+        <Meta>
           <Loader2 className="size-3 animate-spin" />
-          <span>{t('chat.working')}</span>
-        </>
+          <span>{t('chat.sending')}</span>
+        </Meta>
       )}
       {footer.hasTokens && (
         <>
-          {(footer.showDuration || showWorking) && separator}
+          {(footer.showDuration || showSending) && separator}
           <Token value={footer.tokenInput} direction="up" />
           <Token value={footer.tokenOutput} direction="down" />
         </>
@@ -172,8 +182,10 @@ export function PortableTurnFooter({
       {footer.showTerminalReason && (
         <>
           {(footer.showDuration || footer.hasTokens) && separator}
-          <AlertTriangle className="size-3 text-warning" />
-          <span className="text-warning">{formatTerminalReason(footer.terminalReason!)}</span>
+          <Meta className="text-warning">
+            <AlertTriangle className="size-3" />
+            <span>{formatTerminalReason(footer.terminalReason!)}</span>
+          </Meta>
         </>
       )}
     </div>

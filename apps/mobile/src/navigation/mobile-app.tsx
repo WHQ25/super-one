@@ -1552,7 +1552,10 @@ export function MobileApp() {
             if (finderOpen) { closeFinder(); return }
             if (browserKind === 'computer') setGotoPath(`${directoryPath.replace(/\/+$/, '')}/`)
             setFinderOpen(true)
-          } } : undefined}
+          },
+          onUploadFile: () => void uploadProjectFile(directoryPath),
+          onNewFolder: () => setFolderPrompt({ value: '' }),
+        } : undefined}
         onConfirm={screen === 'worktree'
           ? () => { setWorktreeSelection(worktreeDraft); setScreen('chat') }
           : screen === 'add-project' && addProjectFlow.confirmLabel
@@ -1676,8 +1679,6 @@ export function MobileApp() {
           error={directory.error}
           gitTones={gitStatus.tones}
           onRefresh={refreshFiles}
-          onNewFolder={() => setFolderPrompt({ value: '' })}
-          onUploadFile={() => void uploadProjectFile(directoryPath)}
           onOpenDirectory={(path) => runUiAction(() => loadDirectory(path), setStatus, 'failed to load directory')}
           onOpenFile={(path) => runUiAction(() => previewFile(path), setStatus, 'failed to open file')}
         />

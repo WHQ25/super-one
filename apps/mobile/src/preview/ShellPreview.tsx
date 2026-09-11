@@ -101,9 +101,9 @@ const PREVIEW_COMPLETIONS = [
   { name: 'Devtools', isDirectory: true },
 ]
 const PREVIEW_SEARCH_RESULTS = [
-  { path: '/workspace/super-one/apps/mobile/src/screens/chat-screen.tsx', isDirectory: false, matchIndices: [], score: 1 },
-  { path: '/workspace/super-one/apps/mobile/src/screens/chat-composer.tsx', isDirectory: false, matchIndices: [], score: 0.9 },
-  { path: '/workspace/super-one/packages/chat-view/src/index.ts', isDirectory: false, matchIndices: [], score: 0.7 },
+  { path: 'apps/mobile/src/screens/chat-screen.tsx', isDirectory: false, matchIndices: [24, 25, 26, 27], score: 1 },
+  { path: 'apps/mobile/src/screens/chat-composer.tsx', isDirectory: false, matchIndices: [24, 25, 26, 27], score: 0.9 },
+  { path: 'packages/chat-view/src/index.ts', isDirectory: false, matchIndices: [9, 10, 11, 12], score: 0.7 },
 ]
 // One of each tone, so the palette can be read at a glance in both schemes.
 const PREVIEW_GIT_TONES = buildGitToneMap([
@@ -387,7 +387,10 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
             finderOpen: page === 'File search' || page === 'Go to folder',
             onToggleFinder: () => setPage(page === 'File search' ? 'Files'
               : page === 'Go to folder' ? 'Computer files'
-                : previewBrowserMode.kind === 'computer' ? 'Go to folder' : 'File search') } : undefined}
+                : previewBrowserMode.kind === 'computer' ? 'Go to folder' : 'File search'),
+            onUploadFile: () => {},
+            onNewFolder: () => {},
+          } : undefined}
         onConfirm={page === 'Worktree' ? () => { setSelection(worktreeDraft); setPage('New session') }
           : page === 'Add project' && addProject.confirmLabel ? addProject.confirm : undefined}
         confirmLabel={page === 'Add project' ? addProject.confirmLabel ?? undefined : undefined}
@@ -488,7 +491,7 @@ todos={page === 'Chat' ? previewTodos : {}} draft={chatDraft.draft} streaming={p
               path={page === 'Computer files' ? '/Users/dev/Developer' : '/workspace/super-one/apps/mobile/src'}
               items={page === 'Files' ? PREVIEW_PROJECT_FILES : page === 'Computer files' ? PREVIEW_COMPUTER_FILES : []}
               gitTones={PREVIEW_GIT_TONES}
-              onRefresh={() => {}} onNewFolder={() => {}} onUploadFile={() => {}}
+              onRefresh={() => {}}
               error={page === 'Folder error' ? 'Could not read this folder. Check the desktop connection.' : undefined}
               onOpenDirectory={() => setPage('Empty folder')} onOpenFile={() => {}} />) : null}
           {page === 'Terminal' ? <TerminalScreen webRef={terminal} writable={writable} onClaim={() => { setWritable(true); injectHostMessage(terminal, { kind: 'meta', writableByMe: true }) }} onKey={(data) => { if (writable) injectHostMessage(terminal, { kind: 'append', data }) }} onWebMessage={(raw) => {

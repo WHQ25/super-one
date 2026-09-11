@@ -1,8 +1,7 @@
-import { ChevronRight, FolderOpen, FolderPlus, Upload } from 'lucide-react-native'
+import { ChevronRight, FolderOpen } from 'lucide-react-native'
 import { FileTypeIcon } from '../ui/file-icon'
 import { useRef } from 'react'
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, ScrollView, View } from 'react-native'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Text } from '../ui/text'
 import {
   directoryEntryAction,
@@ -38,6 +37,7 @@ function toneColor(tone: GitFileTone, colors: ReturnType<typeof useMobileTheme>[
  * Project mode is fenced to one working directory the way the desktop's tree is:
  * there is no "up" past the root, and the header's folder name is the only way
  * back to it. Computer mode drops the fence for the folder-picking cases.
+ * Upload and new-folder live on the header menu, not under the listing.
  */
 export function FilesScreen(props: {
   mode: FileBrowserMode
@@ -48,15 +48,12 @@ export function FilesScreen(props: {
   /** Git state keyed by repo-relative path; empty outside a repository. */
   gitTones?: GitToneMap
   onRefresh: () => void
-  onNewFolder: () => void
-  onUploadFile: () => void
   onOpenDirectory: (path: string) => void
   onOpenFile: (path: string) => void
 }) {
   const styles = useMobileStyles()
   const { tokens } = useMobileTheme()
   const { t } = useMobileLocale()
-  const insets = useSafeAreaInsets()
   const breadcrumbs = useRef<ScrollView>(null)
   const crumbs = fileBrowserCrumbs(props.mode, props.path)
   const gitRoot = props.mode.kind === 'project' ? props.mode.root : null
@@ -122,10 +119,6 @@ export function FilesScreen(props: {
           )
         }}
       />
-      <View style={[styles.fileActionBar, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-        <View style={styles.flex}><Button label="Upload file" variant="secondary" icon={Upload} onPress={props.onUploadFile} /></View>
-        <View style={styles.flex}><Button label="New folder" variant="secondary" icon={FolderPlus} onPress={props.onNewFolder} /></View>
-      </View>
     </View>
   )
 }

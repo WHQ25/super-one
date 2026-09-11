@@ -1,5 +1,5 @@
 import { WorkspaceButton } from '../ui/workspace-button'
-import { ArrowLeft, Folder, FolderClosed, FolderPlus, MonitorSmartphone, MoreHorizontal, Search, SquareTerminal, TextCursorInput } from 'lucide-react-native'
+import { ArrowLeft, Folder, FolderClosed, FolderPlus, MonitorSmartphone, MoreHorizontal, SquareTerminal, X } from 'lucide-react-native'
 import { Pressable, View } from 'react-native'
 import { Text } from '../ui/text'
 import { AnimatedSessionTitle } from '../ui/animated-session-title'
@@ -12,6 +12,7 @@ import { SessionMetaRow } from '../ui/session-meta-row'
 import { isConnected, type DeviceStatus, type ReconnectInfo } from '../device-status'
 import type { SessionGitView } from '../session-git-status'
 import type { MobileRoute } from './mobile-navigator'
+import { FilesMenuBody } from '../ui/files-menu'
 
 /** Width the confirm action and its balancing leading slot both reserve. */
 const CONFIRM_SLOT_WIDTH = 76
@@ -74,15 +75,17 @@ export function MobileHeader(props: {
   /** Files only: return to the folder the browser is anchored to. */
   onOpenFilesRoot?: () => void
   /**
-   * Files only. The finder toggle is the one action that belongs in the bar:
-   * everything else the browser can do is anchored to the folder on screen, so it
-   * lives down there with it — pull to refresh, buttons at the bottom.
+   * Files only. Search, upload and new-folder live in the trailing menu — the
+   * same pattern as the session and terminal headers. While the finder is open
+   * that control becomes the way back out.
    */
   files?: {
     /** `computer` browses the whole host and names the machine instead of a project. */
     kind: 'project' | 'computer'
     finderOpen: boolean
     onToggleFinder: () => void
+    onUploadFile: () => void
+    onNewFolder: () => void
   }
   /** Trailing action that starts the add-project flow. */
   onAddProject?: () => void
@@ -148,19 +151,28 @@ export function MobileHeader(props: {
       </Pressable>
         : props.onAddProject ? <IconButton icon={FolderPlus} label="Add project" onPress={props.onAddProject} />
         : chat ? <IconButton buttonRef={menu.ref} icon={MoreHorizontal} label="Session actions" onPress={menu.open} />
-        : files ? <IconButton
-            // A project is searched by filename; a whole machine is navigated by path.
-            icon={files.kind === 'computer' ? TextCursorInput : Search}
-            active={files.finderOpen}
-            label={files.kind === 'computer'
-              ? files.finderOpen ? 'Close go to folder' : 'Go to folder'
-              : files.finderOpen ? 'Close search' : 'Search files'}
-            onPress={files.onToggleFinder} />
+        : files ? files.finderOpen
+          ? <IconButton
+              icon={X}
+              label={files.kind === 'computer' ? 'Close go to folder' : 'Close search'}
+              onPress={files.onToggleFinder} />
+          : <IconButton buttonRef={menu.ref} icon={MoreHorizontal} label="File actions" onPress={menu.open} />
         // Balance the leading icon button so the title group stays optically centred.
         : <View style={styles.headerTrailingSpacer} />}
-      <AnchoredMenu anchor={menu.anchor} title="Session" onDismiss={menu.close} width={260}>
-        <MenuRow label="Terminal" leading={<SquareTerminal size={18} color={tokens.colors.mutedForeground} />} onPress={() => { menu.close(); props.onOpenTerminal() }} />
-        <MenuRow label="Files" leading={<FolderClosed size={18} color={tokens.colors.mutedForeground} />} onPress={() => { menu.close(); props.onOpenFiles() }} />
+      <AnchoredMenu anchor={menu.anchor} title={files ? 'Files' : 'Session'} onDismiss={menu.close} width={260}>
+        {files ? (
+          <FilesMenuBody
+            kind={files.kind}
+            onSearch={() => { menu.close(); files.onToggleFinder() }}
+            onUploadFile={() => { menu.close(); files.onUploadFile() }}
+            onNewFolder={() => { menu.close(); files.onNewFolder() }}
+          />
+        ) : (
+          <>
+            <MenuRow label="Terminal" leading={<SquareTerminal size={18} color={tokens.colors.mutedForeground} />} onPress={() => { menu.close(); props.onOpenTerminal() }} />
+            <MenuRow label="Files" leading={<FolderClosed size={18} color={tokens.colors.mutedForeground} />} onPress={() => { menu.close(); props.onOpenFiles() }} />
+          </>
+        )}
       </AnchoredMenu>
     </View>
   )

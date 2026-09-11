@@ -180,7 +180,6 @@ export function createMobileStyles({ colors, radius, spacing, type }: MobileThem
     rowBetween: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: 6 },
     directoryText: { color: colors.mutedForeground, flex: 1, fontSize: 13 },
     pathBar: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, minHeight: 48, paddingRight: spacing.xs, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
-    fileActionBar: { flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, backgroundColor: colors.background },
     pathUp: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
     terminalToolbar: { flexGrow: 0, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
     terminalToolbarContent: { gap: spacing.xs, paddingVertical: spacing.sm },

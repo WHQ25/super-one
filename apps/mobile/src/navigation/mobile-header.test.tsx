@@ -98,3 +98,33 @@ test('runs the new-session placeholder through the dictionary but leaves real ti
   expect(mobileHeaderTitle('chat', 'super-one', 'New session', '', t)).toBe('New Session')
   expect(mobileHeaderTitle('chat', 'super-one', 'Fix the relay ACK', '', t)).toBe('Fix the relay ACK')
 })
+
+test('files puts search, upload and new folder in a trailing menu', async () => {
+  await renderWithTheme(header({
+    files: {
+      kind: 'project',
+      finderOpen: false,
+      onToggleFinder: noop,
+      onUploadFile: noop,
+      onNewFolder: noop,
+    },
+  }))
+
+  expect(screen.getByLabelText('File Actions')).toBeTruthy()
+  expect(screen.queryByLabelText('Search Files')).toBeNull()
+})
+
+test('files replaces the menu with close while search is open', async () => {
+  await renderWithTheme(header({
+    files: {
+      kind: 'project',
+      finderOpen: true,
+      onToggleFinder: () => {},
+      onUploadFile: () => {},
+      onNewFolder: () => {},
+    },
+  }))
+
+  expect(screen.getByLabelText('Close Search')).toBeTruthy()
+  expect(screen.queryByLabelText('File Actions')).toBeNull()
+})

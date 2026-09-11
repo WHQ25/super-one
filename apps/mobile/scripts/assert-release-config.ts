@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 // Explicit extension: without it bun resolves the sibling `.d.ts` first and
 // erases the import as type-only, leaving the binding undefined at runtime.
 import { applyAppVariant } from '../app-variant.js'
+import { BUILD_CODE, applyBuildCode } from '../build-code.js'
 
 const mobileRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 const repoRoot = join(mobileRoot, '../..')
@@ -47,23 +48,59 @@ if (!bunVersion || eas.build?.base?.bun !== bunVersion) {
   throw new Error('EAS Bun version must match the root packageManager')
 }
 
-if (eas.cli?.appVersionSource !== 'remote') {
-  throw new Error('EAS build numbers must use the remote version source')
+// EAS keeps one remote counter per (project, platform, applicationId), so a
+// remote source cannot hold Android and iOS on the same number -- and did not:
+// they drifted to 5 and 21. The published manifest carries a single
+// `buildCode`, so both platforms have to read it the same way.
+if (eas.cli?.appVersionSource !== 'local') {
+  throw new Error('EAS build numbers must come from build-code.js, not a per-platform remote counter')
+}
+
+// With a local source, `autoIncrement` bumps the number by rewriting app.json
+// on the builder, where the edit dies with the job. Leaving it on would look
+// like automation while silently republishing the same code.
+for (const [name, profile] of Object.entries(eas.build ?? {})) {
+  if (profile.autoIncrement !== undefined) {
+    throw new Error(`EAS profile ${name} must not set autoIncrement with a local version source`)
+  }
 }
 
 const internal = eas.build?.internal
 if (
   internal?.distribution !== 'internal'
   || internal.channel !== 'internal'
-  || internal.autoIncrement !== true
   || internal.android?.buildType !== 'apk'
 ) {
-  throw new Error('internal profile must produce an auto-incremented Android APK on the internal channel')
+  throw new Error('internal profile must produce an Android APK on the internal channel')
 }
 
 const production = eas.build?.production
-if (production?.channel !== 'production' || production.autoIncrement !== true) {
-  throw new Error('production profile must auto-increment on the production channel')
+if (production?.channel !== 'production') {
+  throw new Error('production profile must build on the production channel')
+}
+
+if (!Number.isSafeInteger(BUILD_CODE) || BUILD_CODE <= 0) {
+  throw new Error(`build code must be a positive integer (got ${BUILD_CODE})`)
+}
+
+// The point of the shared constant is that one number reaches two
+// differently-named fields. Assert the fan-out rather than the constant.
+const versioned = applyBuildCode({ ios: {}, android: {} }) as {
+  ios: { buildNumber?: string }
+  android: { versionCode?: number }
+}
+if (
+  versioned.android.versionCode !== BUILD_CODE
+  || versioned.ios.buildNumber !== String(BUILD_CODE)
+) {
+  throw new Error('android versionCode and ios buildNumber must both come from BUILD_CODE')
+}
+
+// Without this, the build code reaches the fingerprint through the resolved
+// config and through build-code.js itself, so every release would get a
+// runtime version of its own and no OTA update could ever reach an install.
+if (!existsSync(join(mobileRoot, 'fingerprint.config.js'))) {
+  throw new Error('fingerprint.config.js must keep the build code out of the runtime version')
 }
 
 if (!/^\d+$/.test(eas.submit?.production?.ios?.ascAppId ?? '')) {

@@ -1,6 +1,6 @@
 {
   "cli": {
-    "appVersionSource": "remote"
+    "appVersionSource": "local"
   },
   "build": {
     "base": {
@@ -20,15 +20,13 @@
       "extends": "base",
       "distribution": "internal",
       "channel": "internal",
-      "autoIncrement": true,
       "android": {
         "buildType": "apk"
       }
     },
     "production": {
       "extends": "base",
-      "channel": "production",
-      "autoIncrement": true
+      "channel": "production"
     }
   },
   "submit": {

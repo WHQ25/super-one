@@ -200,6 +200,25 @@ describe('reduceSlash: turn_summary / session_recap', () => {
     })
   })
 
+  it('does not duplicate a recap already at the tail', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [
+      makeMessage('a1', { role: 'assistant' }),
+      makeMessage('session_recap_1', {
+        role: 'assistant',
+        providerId: 'system',
+        content: [{ type: 'text', text: '__turn_meta__:' + JSON.stringify({ kind: 'recap', text: 'You fixed the parser.', auto: true }) }],
+      }),
+    ]
+    session.isRecapping = true
+    const patch = reduceSlash(session, {
+      type: 'session_recap',
+      summary: 'You fixed the parser.',
+      auto: true,
+    } as never)
+    expect(patch).toEqual({ isRecapping: false })
+  })
+
   it('clears isRecapping on session_recap_unavailable', () => {
     const session = createDefaultPerSessionState()
     session.isRecapping = true

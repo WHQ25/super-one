@@ -73,6 +73,47 @@ function upsertMessage(messages: ChatMessage[], next: ChatMessage): ChatMessage[
   return messages
 }
 
+/** Same encoding chat-core mints for recap rows (`__turn_meta__:{kind:recap}`). */
+const TURN_META_PREFIX = '__turn_meta__:'
+
+function parseRecapMarker(message: ChatMessage): { text: string; auto?: boolean } | null {
+  if (message.providerId !== 'system') return null
+  const first = message.content[0]
+  if (!first || first.type !== 'text' || !first.text.startsWith(TURN_META_PREFIX)) return null
+  try {
+    const raw = JSON.parse(first.text.slice(TURN_META_PREFIX.length)) as Record<string, unknown>
+    const text = typeof raw.text === 'string' ? raw.text.trim() : ''
+    if (raw.kind !== 'recap' || !text) return null
+    return {
+      text,
+      ...(typeof raw.auto === 'boolean' ? { auto: raw.auto } : {}),
+    }
+  } catch {
+    return null
+  }
+}
+
+function appendSessionRecap(
+  runtime: ClaudeSessionRuntime,
+  summary: string,
+  auto?: boolean,
+): ClaudeSessionRuntime {
+  const payload: { kind: 'recap'; text: string; auto?: boolean } = { kind: 'recap', text: summary }
+  if (auto !== undefined) payload.auto = auto
+  const last = runtime.messages[runtime.messages.length - 1]
+  const existing = last ? parseRecapMarker(last) : null
+  if (existing && existing.text === summary && existing.auto === payload.auto) return runtime
+  const message: ChatMessage = {
+    id: `session_recap_${Date.now().toString(36)}`,
+    role: 'assistant',
+    status: 'complete',
+    content: [{ type: 'text', text: `${TURN_META_PREFIX}${JSON.stringify(payload)}` }],
+    createdAt: new Date().toISOString(),
+    providerId: 'system',
+  }
+  return { ...runtime, messages: [...runtime.messages, message] }
+}
+
 export function createClaudeRuntime(
   projectPath: string,
   sessionId: string | null,
@@ -363,6 +404,14 @@ export function applyClaudeEventToRuntime(
         },
       }
       return { ...runtime, messages }
+    }
+    case 'session_recap': {
+      // Recap is a standalone History row, not assistant metadata. Persist it
+      // as the same `__turn_meta__` system marker chat-core/mobile render, or
+      // load_session_messages has nothing to show when the phone opens later.
+      const summary = typeof event.summary === 'string' ? event.summary.trim() : ''
+      if (!summary) return runtime
+      return appendSessionRecap(runtime, summary, event.auto)
     }
     case 'message_interrupted':
       return {

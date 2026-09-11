@@ -87,4 +87,28 @@ describe('Grok UX reducer slices', () => {
     const patch = applyEventToSession(session, { type: 'status_change', status: 'idle' })
     expect(patch.apiRetry).toBeUndefined()
   })
+
+  it('mints a recap row and does not duplicate it on replay', () => {
+    const session = createDefaultChatCoreSession()
+    const first = applyEventToSession(session, {
+      type: 'session_recap',
+      summary: 'Wired recap onto mobile restore.',
+      auto: true,
+    })
+    expect(first.messages).toHaveLength(1)
+    const recap = first.messages![0]
+    expect(recap.providerId).toBe('system')
+    const text = (recap.content[0] as { text: string }).text
+    expect(JSON.parse(text.slice('__turn_meta__:'.length))).toEqual({
+      kind: 'recap',
+      text: 'Wired recap onto mobile restore.',
+      auto: true,
+    })
+    Object.assign(session, first)
+    expect(applyEventToSession(session, {
+      type: 'session_recap',
+      summary: 'Wired recap onto mobile restore.',
+      auto: true,
+    })).toEqual({ isRecapping: false })
+  })
 })

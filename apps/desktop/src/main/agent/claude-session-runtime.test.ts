@@ -415,6 +415,52 @@ describe('turn_summary persistence', () => {
   })
 })
 
+describe('session_recap persistence', () => {
+  it('appends a recap system marker so history restore keeps the row', () => {
+    let rt = createClaudeRuntime('/tmp/project', 'session-grok', {
+      messages: [{
+        id: 'msg-a',
+        role: 'assistant',
+        status: 'complete',
+        content: [{ type: 'text', text: 'done' }],
+        createdAt: new Date().toISOString(),
+        providerId: 'acp',
+      }],
+    })
+    rt = applyClaudeEventToRuntime(rt, {
+      type: 'session_recap',
+      summary: '  Wired recap onto mobile restore.  ',
+      auto: true,
+    })
+    expect(rt.messages).toHaveLength(2)
+    const recap = rt.messages[1]
+    expect(recap.providerId).toBe('system')
+    expect(recap.id).toMatch(/^session_recap_/)
+    const text = (recap.content[0] as { type: 'text'; text: string }).text
+    expect(JSON.parse(text.slice('__turn_meta__:'.length))).toEqual({
+      kind: 'recap',
+      text: 'Wired recap onto mobile restore.',
+      auto: true,
+    })
+  })
+
+  it('does not mint an empty recap', () => {
+    let rt = createClaudeRuntime('/tmp/project', 'session-grok')
+    rt = applyClaudeEventToRuntime(rt, { type: 'session_recap', summary: '  ' })
+    expect(rt.messages).toEqual([])
+  })
+
+  it('does not duplicate the same recap on replay', () => {
+    let rt = createClaudeRuntime('/tmp/project', 'session-grok')
+    const event = { type: 'session_recap' as const, summary: 'Same recap', auto: true }
+    rt = applyClaudeEventToRuntime(rt, event)
+    const first = rt.messages
+    rt = applyClaudeEventToRuntime(rt, event)
+    expect(rt.messages).toBe(first)
+    expect(rt.messages).toHaveLength(1)
+  })
+})
+
 describe('message_timestamp', () => {
   it('patches createdAt when the SDK origin timestamp arrives', () => {
     let rt = createClaudeRuntime('/test', 'sess-1', {

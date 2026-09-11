@@ -83,6 +83,18 @@ function appendSystemTurnMeta(
   return { messages: [...session.messages, msg] }
 }
 
+/** True when `message` is already the recap row this event would mint. */
+function isMatchingRecapMarker(
+  message: ChatMessage,
+  payload: Extract<TurnMetaPayload, { kind: 'recap' }>,
+): boolean {
+  if (message.providerId !== 'system') return false
+  const first = message.content[0]
+  if (!first || first.type !== 'text') return false
+  const parsed = parseTurnMetaText(first.text)
+  return parsed?.kind === 'recap' && parsed.text === payload.text && parsed.auto === payload.auto
+}
+
 /** True when `message` is a legacy system marker for this turn summary text. */
 function isMatchingTurnSummaryMarker(message: ChatMessage, summary: string): boolean {
   if (message.providerId !== 'system') return false
@@ -190,12 +202,15 @@ export function reduceSlash(
     case 'session_recap': {
       const summary = event.summary.trim()
       if (!summary) return { isRecapping: false }
+      const payload: Extract<TurnMetaPayload, { kind: 'recap' }> = {
+        kind: 'recap',
+        text: summary,
+        ...(event.auto != null ? { auto: event.auto } : {}),
+      }
+      const last = session.messages[session.messages.length - 1]
+      if (last && isMatchingRecapMarker(last, payload)) return { isRecapping: false }
       return {
-        ...appendSystemTurnMeta(session, {
-          kind: 'recap',
-          text: summary,
-          ...(event.auto != null ? { auto: event.auto } : {}),
-        }, 'session_recap', ports),
+        ...appendSystemTurnMeta(session, payload, 'session_recap', ports),
         isRecapping: false,
       }
     }

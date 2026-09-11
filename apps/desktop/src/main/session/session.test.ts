@@ -2444,6 +2444,33 @@ describe('Session persist hook', () => {
     await promise
   })
 
+  it('persists session_recap as a system marker for remote history restore', () => {
+    const calls: SessionStateChange[] = []
+    const { backend } = makeSession({
+      harnessId: 'acp',
+      onStateChange: (s) => calls.push(s),
+      initialMessages: [
+        { id: 'u0', role: 'user', status: 'complete', content: [{ type: 'text', text: 'seed' }], createdAt: '', providerId: 'local' },
+        { id: 'a0', role: 'assistant', status: 'complete', content: [{ type: 'text', text: 'done' }], createdAt: '', providerId: 'acp' },
+      ],
+    })
+    const preCount = calls.length
+    backend.emit({
+      type: 'session_recap',
+      summary: 'Wired recap onto mobile restore.',
+      auto: true,
+    })
+    expect(calls.length).toBe(preCount + 1)
+    const recap = calls[calls.length - 1].messages.find((m) => m.providerId === 'system')
+    expect(recap).toBeDefined()
+    const text = (recap!.content[0] as { type: 'text'; text: string }).text
+    expect(JSON.parse(text.slice('__turn_meta__:'.length))).toEqual({
+      kind: 'recap',
+      text: 'Wired recap onto mobile restore.',
+      auto: true,
+    })
+  })
+
   it('fires onStateChange on message_interrupted and message_error', () => {
     const calls: SessionStateChange[] = []
     const { session, backend } = makeSession({

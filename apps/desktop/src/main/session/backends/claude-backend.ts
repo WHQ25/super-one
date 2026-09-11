@@ -199,6 +199,7 @@ export class ClaudeBackend implements SessionBackend {
       enabledSkills,
       askUserQuestionPreviewFormat: claudePref.askUserQuestionPreviewFormat,
       systemPromptAppend: opts.systemPromptAppend,
+      unattended: opts.unattended,
     }
   }
 

@@ -297,6 +297,7 @@ export class AgentService {
       sandboxMode,
       apiProviderId: apiProviderId ?? null,
       acpAgentId: acpAgentId ?? null,
+      unattended: true,
     })
 
     const clientMessageId = newMessageId('auto')

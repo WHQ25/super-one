@@ -73,6 +73,13 @@ export interface SessionCreateOptions {
   /** Harness-specific system/developer instructions appended by SuperOne. */
   systemPromptAppend?: string
   /**
+   * Nobody will answer a permission prompt for this session (automation runs).
+   * Claude: the harness's mode, rules and auto-mode classifier still decide;
+   * whatever would have prompted is denied at once instead of hanging the run.
+   * Runtime-only — a resumed session is attended by definition.
+   */
+  unattended?: boolean
+  /**
    * Provider/agent session id to resume (e.g. Grok ACP session/load).
    * When omitted but `id` matches a DB row for the same provider, SessionManager
    * hydrates this from the stored `provider_session_id`.
@@ -161,6 +168,8 @@ export interface BackendStartOptions {
   providerSessionId?: string
   apiProviderId?: string | null
   systemPromptAppend?: string
+  /** See SessionCreateOptions.unattended. */
+  unattended?: boolean
   /** Human-readable session title (Cursor agent name, etc.). */
   agentName?: string
   /** Persisted context occupancy from the last turn; seeds harnesses that solve occupancy across turns. */

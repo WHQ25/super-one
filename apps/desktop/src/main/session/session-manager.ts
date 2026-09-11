@@ -240,6 +240,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       apiProviderId,
       acpAgentId: opts.acpAgentId ?? null,
       systemPromptAppend: opts.systemPromptAppend,
+      unattended: opts.unattended,
       firstTurnPreamble: opts.firstTurnPreamble,
       resumedProviderSessionId: resumedProviderSessionId ?? undefined,
       homedir: homedir(),

@@ -58,6 +58,8 @@ export interface SessionQueryOptions {
   enabledSkills?: string[]
   askUserQuestionPreviewFormat?: QuestionPreviewFormat
   systemPromptAppend?: string
+  /** No approval surface: SDK `permissionPrompts: 'none'` (0.3.259+). */
+  unattended?: boolean
 }
 
 export const denySubagentSessionRename: HookCallback = async (input) => {
@@ -102,6 +104,7 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
     allowedTools: [...STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES],
     allowDangerouslySkipPermissions: true,
     canUseTool: opts.canUseTool,
+    ...(opts.unattended ? { permissionPrompts: 'none' as const } : {}),
     onElicitation: opts.onElicitation,
     sandbox: opts.sandboxInfo?.enabled && getSandboxCapability().supportLevel !== 'unsupported'
       ? { enabled: true, autoAllowBashIfSandboxed: opts.sandboxInfo.autoAllowBash, failIfUnavailable: false }

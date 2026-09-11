@@ -1840,6 +1840,22 @@ describe('Session - passes provider config into backend.start', () => {
     backend.resolveSend?.()
     await promise
   })
+
+  it('forwards the unattended flag only when set (automation runs)', async () => {
+    const attended = makeSession()
+    const p1 = attended.session.send({ content: 'hi' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(attended.backend.startOpts).not.toHaveProperty('unattended')
+    attended.backend.resolveSend?.()
+    await p1
+
+    const unattended = makeSession({ unattended: true })
+    const p2 = unattended.session.send({ content: 'hi' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(unattended.backend.startOpts?.unattended).toBe(true)
+    unattended.backend.resolveSend?.()
+    await p2
+  })
 })
 
 describe('Session message accumulation', () => {

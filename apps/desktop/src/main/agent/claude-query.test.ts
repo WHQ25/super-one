@@ -106,6 +106,14 @@ describe('buildClaudeOptions permissionMode', () => {
     expect(buildClaudeOptions({ projectPath: '/repo', cwd: '/repo', permissionMode: 'dontAsk' }).allowDangerouslySkipPermissions).toBe(true)
     expect(buildClaudeOptions({ projectPath: '/repo', cwd: '/repo', permissionMode: 'plan' }).allowDangerouslySkipPermissions).toBe(true)
   })
+
+  it('turns off the permission prompt surface only for unattended (automation) sessions', () => {
+    const base = { projectPath: '/repo', cwd: '/repo', permissionMode: 'auto' as const }
+    expect(buildClaudeOptions({ ...base, unattended: true }).permissionPrompts).toBe('none')
+    // Attended sessions keep the default (host answers) — the key stays absent so a
+    // caller override via `options` is not clobbered.
+    expect('permissionPrompts' in buildClaudeOptions(base)).toBe(false)
+  })
 })
 
 describe('buildClaudeOptions model', () => {

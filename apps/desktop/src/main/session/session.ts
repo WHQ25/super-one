@@ -106,6 +106,7 @@ export interface SessionConstructorOptions {
   apiProviderId?: string | null
   acpAgentId?: string | null
   systemPromptAppend?: string
+  unattended?: boolean
   homedir?: string
   getProjectResources?: (cwd: string) => ProjectResources
   /**
@@ -273,6 +274,7 @@ export class Session implements SessionContract {
   private _apiProviderId: string | null = null
   private _acpAgentId: string | null = null
   private systemPromptAppend: string | undefined
+  private readonly unattended: boolean
 
   private homedir: string
   private getProjectResources?: (cwd: string) => ProjectResources
@@ -552,6 +554,7 @@ export class Session implements SessionContract {
       ...(opts.codexServiceTier != null ? { selectedCodexServiceTier: opts.codexServiceTier } : {}),
     }
     this.systemPromptAppend = opts.systemPromptAppend
+    this.unattended = opts.unattended === true
     if (this.harnessId === 'acp' && this._acpAgentId) {
       this.providerConfig = withAgentId(this.providerConfig, this._acpAgentId)
     }
@@ -1229,6 +1232,7 @@ export class Session implements SessionContract {
       providerSessionId: this._providerSessionId ?? undefined,
       apiProviderId: this._apiProviderId,
       systemPromptAppend: this.systemPromptAppend,
+      ...(this.unattended ? { unattended: true } : {}),
       agentName: this.computeTitle()?.trim() || undefined,
     }
     if (this._runtimeRelease) {
@@ -1714,6 +1718,7 @@ export class Session implements SessionContract {
       providerSessionId: this._providerSessionId ?? undefined,
       apiProviderId: this._apiProviderId,
       systemPromptAppend: this.systemPromptAppend,
+      ...(this.unattended ? { unattended: true } : {}),
       agentName: this.computeTitle()?.trim() || undefined,
       contextTokens: this._contextTokens,
     }

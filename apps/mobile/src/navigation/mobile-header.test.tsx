@@ -97,6 +97,7 @@ test('runs the new-session placeholder through the dictionary but leaves real ti
 
   expect(mobileHeaderTitle('chat', 'super-one', 'New session', '', t)).toBe('New Session')
   expect(mobileHeaderTitle('chat', 'super-one', 'Fix the relay ACK', '', t)).toBe('Fix the relay ACK')
+  expect(mobileHeaderTitle('terminal', 'super-one', 'New session', 'npm run dev', t)).toBe('npm run dev')
 })
 
 test('files puts search, upload and new folder in a trailing menu', async () => {
@@ -127,4 +128,30 @@ test('files replaces the menu with close while search is open', async () => {
 
   expect(screen.getByLabelText('Close Search')).toBeTruthy()
   expect(screen.queryByLabelText('File Actions')).toBeNull()
+})
+
+test('puts terminal tabs in a trailing menu instead of a tab row', async () => {
+  await renderWithTheme(header({
+    route: 'terminal',
+    title: 'npm run dev',
+    hasSession: true,
+    git: { kind: 'branch', branch: 'main', dirtyFiles: 0 },
+    terminal: {
+      tabs: [
+        { terminalId: 'a', title: 'npm run dev', status: 'running' },
+        { terminalId: 'b', title: 'vim', status: 'running' },
+      ],
+      activeId: 'a',
+      onSelect: noop,
+      onCreate: noop,
+      onClose: noop,
+    },
+  }))
+
+  expect(screen.getByText('npm run dev')).toBeTruthy()
+  expect(screen.getByLabelText('Terminal Actions')).toBeTruthy()
+  expect(screen.queryByRole('tab')).toBeNull()
+  expect(screen.queryByText('vim')).toBeNull()
+  expect(screen.queryByText('super-one')).toBeNull()
+  expect(screen.queryByText('main')).toBeNull()
 })

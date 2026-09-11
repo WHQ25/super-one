@@ -1046,11 +1046,19 @@ export class AgentService {
         const mgr = this.terminalManager
         if (!mgr) { await this.sendTerminalResult(deviceId, command.requestId, false, undefined, 'no_terminal'); break }
         const cwd = (command.sessionId ? this.sessionManager?.getSession(command.sessionId)?.cwd : undefined) ?? command.projectPath
-        const term = mgr.create({ cwd, title: basename(cwd) || 'Terminal' })
+        const term = mgr.create({ cwd, projectPath: command.projectPath, title: basename(cwd) || 'Terminal' })
         term.ownership.subscribe(deviceId)
         term.ownership.claim(deviceId)
+        mgr.notifyCreated(term.terminalId)
         await this.sendTerminalResult(deviceId, command.requestId, true, term.terminalId)
         await this.sendTerminalSnapshot(term, deviceId)
+        break
+      }
+      case 'terminal_list': {
+        const sessionCwd = command.sessionId ? this.sessionManager?.getSession(command.sessionId)?.cwd : undefined
+        await respond?.(command.requestId, {
+          terminals: this.terminalManager?.listForProject(command.projectPath, sessionCwd) ?? [],
+        })
         break
       }
       case 'terminal_subscribe': {

@@ -29,9 +29,11 @@ interface TerminalStore {
   setOpen: (sessionId: string | null, open: boolean) => void
   toggleOpen: (sessionId: string | null) => void
   addTab: (projectPath: string, item: TerminalListItem) => void
+  upsertTab: (projectPath: string, item: TerminalListItem, activate?: boolean) => void
   removeTab: (projectPath: string, terminalId: string) => void
   setActive: (projectPath: string, terminalId: string) => void
   renameTab: (terminalId: string, title: string) => void
+  setTabOwner: (terminalId: string, ownerDeviceId: string | null) => void
   reorderTabs: (projectPath: string, fromId: string, toId: string) => void
 }
 
@@ -64,6 +66,34 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
       }
     }),
 
+  upsertTab: (projectPath, item, activate = false) =>
+    set((s) => {
+      const cur = s.byProject[projectPath] ?? { tabs: EMPTY_TABS, activeId: null }
+      const idx = cur.tabs.findIndex((tab) => tab.terminalId === item.terminalId)
+      if (idx === -1) {
+        return {
+          byProject: {
+            ...s.byProject,
+            [projectPath]: {
+              tabs: [...cur.tabs, item],
+              activeId: activate || !cur.activeId ? item.terminalId : cur.activeId,
+            },
+          },
+        }
+      }
+      const tabs = cur.tabs.slice()
+      tabs[idx] = { ...tabs[idx], ...item }
+      return {
+        byProject: {
+          ...s.byProject,
+          [projectPath]: {
+            tabs,
+            activeId: activate ? item.terminalId : cur.activeId,
+          },
+        },
+      }
+    }),
+
   removeTab: (projectPath, terminalId) =>
     set((s) => {
       const cur = s.byProject[projectPath]
@@ -90,6 +120,19 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
         if (!trimmed || pt.tabs[idx].title === trimmed) return s
         const tabs = pt.tabs.slice()
         tabs[idx] = { ...tabs[idx], title: trimmed }
+        return { byProject: { ...s.byProject, [path]: { ...pt, tabs } } }
+      }
+      return s
+    }),
+
+  setTabOwner: (terminalId, ownerDeviceId) =>
+    set((s) => {
+      for (const [path, pt] of Object.entries(s.byProject)) {
+        const idx = pt.tabs.findIndex((t) => t.terminalId === terminalId)
+        if (idx === -1) continue
+        if (pt.tabs[idx].ownerDeviceId === ownerDeviceId) return s
+        const tabs = pt.tabs.slice()
+        tabs[idx] = { ...tabs[idx], ownerDeviceId }
         return { byProject: { ...s.byProject, [path]: { ...pt, tabs } } }
       }
       return s

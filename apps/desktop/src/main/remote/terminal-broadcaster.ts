@@ -19,6 +19,16 @@ export class TerminalBroadcaster {
     ) {
       return
     }
+    // List metadata is not gated on subscribers of that PTY — every paired
+    // phone needs create / close / title, even while watching another tab.
+    if (
+      event.type === 'terminal_title_changed'
+      || event.type === 'terminal_created'
+      || event.type === 'terminal_exited'
+    ) {
+      await this.transport.sendTerminalFrame(event)
+      return
+    }
     const session = this.terminalManager.get(event.terminalId)
     if (!session) return
     const ownership = session.ownership

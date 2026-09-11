@@ -83,6 +83,35 @@ describe('TerminalSession resize', () => {
   })
 })
 
+describe('TerminalSession title', () => {
+  it('promotes an OSC title into terminal_title_changed and the snapshot', async () => {
+    const { session, pty, events } = makeSession()
+    pty.emitData('\x1b]0;npm run dev\x07')
+    await tick(20)
+    expect(events.find((e) => e.type === 'terminal_title_changed')).toMatchObject({
+      type: 'terminal_title_changed',
+      terminalId: 't1',
+      title: 'npm run dev',
+    })
+    expect(session.title).toBe('npm run dev')
+    const snap = await session.snapshot('local')
+    expect(snap.title).toBe('npm run dev')
+    session.kill()
+  })
+})
+
+describe('TerminalSession kill', () => {
+  it('emits terminal_exited immediately so other clients can drop the tab', () => {
+    const { session, events } = makeSession()
+    session.kill()
+    expect(events.find((e) => e.type === 'terminal_exited')).toMatchObject({
+      type: 'terminal_exited',
+      terminalId: 't1',
+    })
+    expect(session.status).toBe('exited')
+  })
+})
+
 describe('TerminalSession exit', () => {
   it('emits terminal_exited and kills the pty', async () => {
     const { session, pty, events } = makeSession()

@@ -45,6 +45,21 @@ describe('TerminalManager lifecycle', () => {
     expect(manager.list('/proj/.worktrees/feat')).toHaveLength(1)
   })
 
+  it('lists a project together with its session checkout and nested worktree', () => {
+    const { manager } = makeManager()
+    manager.create({ cwd: '/proj' })
+    manager.create({ cwd: '/proj/.worktrees/feat' })
+    manager.create({ cwd: '/other' })
+    manager.create({ cwd: '/worktrees/feat' })
+    expect(manager.listForProject('/proj')).toHaveLength(2)
+    expect(manager.listForProject('/proj', '/worktrees/feat')).toHaveLength(3)
+    expect(manager.listForProject('/proj', '/worktrees/feat').map((t) => t.cwd).sort()).toEqual([
+      '/proj',
+      '/proj/.worktrees/feat',
+      '/worktrees/feat',
+    ])
+  })
+
   it('keeps terminals alive independent of any chat session (no session coupling)', () => {
     const { manager } = makeManager()
     const t = manager.create({ cwd: '/proj' })

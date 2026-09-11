@@ -3635,4 +3635,25 @@ describe('AgentService terminal remote commands', () => {
     await service.handleRemoteCommand({ type: 'terminal_kill', terminalId: termId }, undefined, src('dev-a'))
     expect(tm.get(termId)).toBeUndefined()
   })
+
+  it('terminal_list returns project terminals including a session checkout', async () => {
+    const { service, tm, src } = setup()
+    tm.create({ cwd: '/p', title: 'root' })
+    tm.create({ cwd: '/p/.worktrees/feat', title: 'feat' })
+    tm.create({ cwd: '/other', title: 'other' })
+    const respond = vi.fn()
+    await service.handleRemoteCommand(
+      { type: 'terminal_list', requestId: 'l1', projectPath: '/p' },
+      respond,
+      src('dev-a'),
+    )
+    expect(respond).toHaveBeenCalledWith('l1', {
+      terminals: expect.arrayContaining([
+        expect.objectContaining({ cwd: '/p', title: 'root' }),
+        expect.objectContaining({ cwd: '/p/.worktrees/feat', title: 'feat' }),
+      ]),
+    })
+    const payload = respond.mock.calls[0][1] as { terminals: Array<{ cwd: string }> }
+    expect(payload.terminals).toHaveLength(2)
+  })
 })

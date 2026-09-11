@@ -25,7 +25,7 @@ import { resolveRingContextWindow } from '@superone/shared/agent-types'
 import { selectedCatalogContextWindow } from '@superone/shared/model-option-params'
 import { mergeRealtimeTranscript } from '@superone/shared/realtime-transcript'
 import { ChatRuntime, type SessionWorktreeFacts } from '../runtime'
-import { TerminalRuntime } from '../terminal-runtime'
+import { TerminalRuntime, type TerminalUi } from '../terminal-runtime'
 import { randomId } from '../ids'
 import { newMessageId } from '@superone/shared/message-id'
 import { canSteerQueued, canSteerQueuedSoon, composerQueuedSendFields, queuedMessageText } from '../queued-send'
@@ -173,7 +173,7 @@ export function MobileApp() {
   const composerDraft = useComposerDraft()
   const { draft, draftRef, lastDraftChangeAtRef } = composerDraft
   const sessionDrafts = useRef(new SessionComposerDrafts()).current
-  const [terminalUi, setTerminalUi] = useState({ writable: false, title: 'Terminal' })
+  const [terminalUi, setTerminalUi] = useState<TerminalUi>({ writable: false, title: 'Terminal', tabs: [], activeId: '' })
   const [streaming, setStreaming] = useState(false)
   const [sessionLoading, setSessionLoading] = useState(false)
   const [hasTranscript, setHasTranscript] = useState(false)
@@ -922,15 +922,19 @@ export function MobileApp() {
       pairingId: () => activePairingIdRef.current,
     })
     runtimeRef.current = runtime
-    setTerminalUi({ writable: false, title: 'Terminal' })
+    setTerminalUi({ writable: false, title: 'Terminal', tabs: [], activeId: '' })
     const term = new TerminalRuntime(client, (paints) => {
       for (const p of paints) inject(termRef, p)
-      setTerminalUi((current) => (
-        current.writable === term.writable && current.title === term.title
+      setTerminalUi((current) => {
+        const next = term.ui
+        return current.writable === next.writable
+          && current.title === next.title
+          && current.activeId === next.activeId
+          && current.tabs === next.tabs
           ? current
-          : { writable: term.writable, title: term.title }
-      ))
-    })
+          : next
+      })
+    }, { onEmpty: () => setScreen('chat') })
     termRuntimeRef.current = term
     return runtime
   }
@@ -1430,7 +1434,7 @@ export function MobileApp() {
     const term = termRuntimeRef.current
     if (!p || !term) return
     setScreen('terminal')
-    if (!term.terminalId) runUiAction(() => term.create(p.path, runtime?.sessionId), setStatus, 'terminal failed')
+    runUiAction(() => term.open(p.path, runtime?.sessionId), setStatus, 'terminal failed')
   }
 
   const activePairing = pairings.find((item) => item.id === activePairingId)
@@ -1546,6 +1550,17 @@ export function MobileApp() {
         onBack={back}
         onSwitchSession={() => setSessionSwitcherOpen(true)}
         onOpenTerminal={openTerminal}
+        terminal={screen === 'terminal' ? {
+          tabs: terminalUi.tabs,
+          activeId: terminalUi.activeId,
+          onSelect: (terminalId) => termRuntimeRef.current?.select(terminalId),
+          onCreate: () => {
+            const p = project
+            if (!p) return
+            runUiAction(() => termRuntimeRef.current?.create(p.path, runtimeRef.current?.sessionId), setStatus, 'terminal failed')
+          },
+          onClose: (terminalId) => termRuntimeRef.current?.closeTab(terminalId),
+        } : undefined}
         onOpenFiles={() => openFiles('session')}
         onOpenFilesRoot={() => runUiAction(() => loadDirectory(fileBrowserHome(browserMode, directoryPath)), setStatus, 'failed to load directory')}
         files={screen === 'files' ? { kind: browserKind, finderOpen,

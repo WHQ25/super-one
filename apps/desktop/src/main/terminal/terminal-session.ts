@@ -17,6 +17,7 @@ const { SerializeAddon } = nodeRequire('@xterm/addon-serialize') as typeof impor
 export interface TerminalSessionOptions {
   terminalId: string
   cwd: string
+  projectPath?: string
   title: string
   cols: number
   rows: number
@@ -35,6 +36,7 @@ const DEFAULT_SNAPSHOT_SOFT_LIMIT = 256 * 1024
 export class TerminalSession {
   readonly terminalId: string
   readonly cwd: string
+  readonly projectPath: string
   readonly ownership: TerminalOwnership
   title: string
   lastAnsi = ''
@@ -56,10 +58,12 @@ export class TerminalSession {
   private flushTimer: ReturnType<typeof setTimeout> | null = null
   private snapshotting = false
   private deferred: TerminalEvent[] = []
+  private titleDisposable: { dispose(): void } | null = null
 
   constructor(opts: TerminalSessionOptions) {
     this.terminalId = opts.terminalId
     this.cwd = opts.cwd
+    this.projectPath = opts.projectPath ?? opts.cwd
     this.title = opts.title
     this.ownership = opts.ownership
     this.onEvent = opts.onEvent
@@ -71,6 +75,7 @@ export class TerminalSession {
     this.term = new Terminal({ cols: opts.cols, rows: opts.rows, allowProposedApi: true })
     this.serializer = new SerializeAddon()
     this.term.loadAddon(this.serializer as unknown as Parameters<XTermHeadless['loadAddon']>[0])
+    this.titleDisposable = this.term.onTitleChange((title) => this.applyTitle(title))
 
     this.pty = opts.spawner.spawn({
       cwd: opts.cwd,
@@ -100,6 +105,7 @@ export class TerminalSession {
     return {
       terminalId: this.terminalId,
       cwd: this.cwd,
+      projectPath: this.projectPath,
       title: this.title,
       status: this._status,
       ownerDeviceId: this.ownership.ownerDeviceId,
@@ -185,11 +191,17 @@ export class TerminalSession {
   }
 
   kill(): void {
+    if (this._status === 'exited') {
+      this.disposeTerm()
+      return
+    }
     if (this.flushTimer) {
       clearTimeout(this.flushTimer)
       this.flushTimer = null
     }
-    if (this._status === 'running') this.pty.kill()
+    this._status = 'exited'
+    this.rawEmit({ type: 'terminal_exited', terminalId: this.terminalId, exitCode: null, signal: null })
+    this.pty.kill()
     this.disposeTerm()
   }
 
@@ -236,13 +248,27 @@ export class TerminalSession {
   }
 
   private onPtyExit(exitCode: number, signal: number | null): void {
+    if (this._status === 'exited') return
     this.flushBuffer(false)
     this._status = 'exited'
     this.emit({ type: 'terminal_exited', terminalId: this.terminalId, exitCode, signal })
     this.disposeTerm()
   }
 
+  private applyTitle(title: string): void {
+    const next = title.trim()
+    if (!next || next === this.title) return
+    this.title = next
+    this.emit({ type: 'terminal_title_changed', terminalId: this.terminalId, title: next })
+  }
+
   private disposeTerm(): void {
+    try {
+      this.titleDisposable?.dispose()
+    } catch {
+      /* already disposed */
+    }
+    this.titleDisposable = null
     try {
       this.term.dispose()
     } catch {

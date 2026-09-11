@@ -94,12 +94,14 @@ function MenuSurface({ anchor, title, onDismiss, children, width = 300, titleAcc
     </View>
 }
 
-export function MenuRow({ label, labelNode, description, leading, accessory, selected, disabled, destructive, onPress }: {
+export function MenuRow({ label, labelNode, description, leading, accessory, selected, showCheck = true, disabled, destructive, onPress }: {
   label: string; description?: string; leading?: ReactNode; selected?: boolean; disabled?: boolean
   /** Replaces the text label — e.g. a provider brand lockup. `label` stays the a11y name. */
   labelNode?: ReactNode
   /** Trailing detail on the label's own line — e.g. which key a provider runs on. */
   accessory?: ReactNode
+  /** Selected rows already tint the background; the check is optional. */
+  showCheck?: boolean
   destructive?: boolean; onPress: () => void
 }) {
   const { tokens: { colors, radius } } = useMobileTheme()
@@ -118,7 +120,7 @@ export function MenuRow({ label, labelNode, description, leading, accessory, sel
       {translatedDescription ? <Text style={{ color: colors.mutedForeground, fontSize: 12, lineHeight: 17 }}>{translatedDescription}</Text> : null}
     </View>
     {accessory}
-    {selected ? <Check size={15} color={colors.primary} /> : null}
+    {selected && showCheck ? <Check size={15} color={colors.primary} /> : null}
   </Pressable>
 }
 

@@ -804,7 +804,9 @@ interface TerminalAPI {
   write(terminalId: string, data: string): Promise<void>
   resize(terminalId: string, cols: number, rows: number): Promise<void>
   kill(terminalId: string): Promise<void>
+  claim(terminalId: string): Promise<void>
   onTerminalEvent(callback: (event: TerminalEvent) => void): () => void
+}
 }
 
 /** Multi-environment / remote node — Main EnvironmentHost product path. */

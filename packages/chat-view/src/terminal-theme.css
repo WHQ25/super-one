@@ -20,21 +20,12 @@ body {
 }
 
 #meta {
-  box-sizing: border-box;
-  height: 28px;
-  overflow: hidden;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--terminal-border);
-  background: var(--terminal-surface);
-  color: var(--terminal-muted-foreground);
-  font: 11px/15px system-ui, sans-serif;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: none;
 }
 
 #terminal {
   box-sizing: border-box;
-  height: calc(100% - 28px);
+  height: 100%;
   padding: 8px 6px;
 }
 

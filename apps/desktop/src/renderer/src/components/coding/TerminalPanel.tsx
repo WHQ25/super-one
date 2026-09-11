@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Terminal as TerminalIcon, Plus, PanelBottomClose } from 'lucide-react'
+import { Terminal as TerminalIcon, Plus, PanelBottomClose, Smartphone } from 'lucide-react'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
@@ -14,6 +14,8 @@ import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
 import { EMPTY_TABS, useTerminalStore } from '@/stores/terminal'
 import { useTerminalPanel } from '@/hooks/useTerminalPanel'
+import { tabBelongsToProject } from '@/hooks/useTerminalSync'
+import { TerminalRemoteBanner } from './TerminalRemoteBanner'
 import { HoverCloseSlot } from '@/components/activity/ActivityTab'
 import { SelectionMenu } from '@/components/chat/SelectionContextMenu'
 
@@ -50,7 +52,9 @@ function SortableTerminalTab({
       } ${isDragging ? 'z-10 opacity-80' : ''}`}
     >
       <HoverCloseSlot onClose={onClose}>
-        <TerminalIcon className="size-3 shrink-0" />
+        {tab.ownerDeviceId
+          ? <Smartphone className="size-3 shrink-0" />
+          : <TerminalIcon className="size-3 shrink-0" />}
       </HoverCloseSlot>
       <span className="max-w-40 truncate text-xs">{tab.title}</span>
     </div>
@@ -66,6 +70,7 @@ export function TerminalPanel() {
   const tabs = useTerminalStore((s) => (projectPath ? s.byProject[projectPath]?.tabs : null) ?? EMPTY_TABS)
   const activeId = useTerminalStore((s) => (projectPath ? s.byProject[projectPath]?.activeId : null) ?? null)
   const addTab = useTerminalStore((s) => s.addTab)
+  const upsertTab = useTerminalStore((s) => s.upsertTab)
   const removeTab = useTerminalStore((s) => s.removeTab)
   const setActive = useTerminalStore((s) => s.setActive)
   const renameTab = useTerminalStore((s) => s.renameTab)
@@ -175,8 +180,7 @@ export function TerminalPanel() {
     const off = window.terminal.onTerminalEvent((event: TerminalEvent) => {
       if (!event.terminalId) return
       const inst = instances.get(event.terminalId)
-      if (!inst) return
-      applyTerminalEvent(inst, event)
+      if (inst) applyTerminalEvent(inst, event)
     })
     return off
   }, [instances])
@@ -218,10 +222,20 @@ export function TerminalPanel() {
   }, [createTerminal])
 
   useEffect(() => {
-    if (open && projectPath && tabs.length === 0 && !creatingRef.current) {
-      void createTerminal()
-    }
-  }, [open, projectPath, tabs.length, createTerminal])
+    if (!open || !projectPath) return
+    let cancelled = false
+    void window.terminal.list().then((items) => {
+      if (cancelled) return
+      for (const item of items) {
+        if (tabBelongsToProject(item, projectPath)) upsertTab(projectPath, item)
+      }
+      const existing = useTerminalStore.getState().byProject[projectPath]?.tabs ?? EMPTY_TABS
+      if (existing.length === 0) void createTerminal()
+    }).catch(() => {
+      if (!cancelled) void createTerminal()
+    })
+    return () => { cancelled = true }
+  }, [open, projectPath, createTerminal, upsertTab])
 
   useEffect(() => {
     const host = hostRef.current
@@ -316,10 +330,10 @@ export function TerminalPanel() {
           {projectPath ? 'No terminal — click + to start one' : 'Open a project to use the terminal'}
         </div>
       ) : (
-        <div className="relative min-h-0 flex-1">
+        <div className="relative flex min-h-0 flex-1 flex-col">
           <div
             ref={hostRef}
-            className="h-full overflow-hidden p-1"
+            className="min-h-0 flex-1 overflow-hidden p-1"
             onContextMenu={(e) => {
               const sel = (activeId ? instances.get(activeId) : null)?.xterm.getSelection().trim()
               if (!sel) return
@@ -338,6 +352,9 @@ export function TerminalPanel() {
               inputRef={findInputRef}
             />
           )}
+          {tabs.find((tab) => tab.terminalId === activeId)?.ownerDeviceId ? (
+            <TerminalRemoteBanner onDisconnect={() => { if (activeId) void window.terminal.claim(activeId) }} />
+          ) : null}
         </div>
       )}
       {menu && (

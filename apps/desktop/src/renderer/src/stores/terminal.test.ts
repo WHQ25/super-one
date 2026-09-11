@@ -94,6 +94,30 @@ describe('terminal tabs reorder by drag', () => {
   })
 })
 
+describe('tabs upserted from a remote create keep the current tab', () => {
+  beforeEach(() => {
+    useTerminalStore.setState({ openBySession: {}, byProject: {}, instances: new Map() })
+  })
+
+  it('appends a new terminal without stealing the active tab', () => {
+    const s = useTerminalStore.getState()
+    s.addTab('/proj', item('t1', 'zsh'))
+    s.upsertTab('/proj', item('t2', 'npm run dev'))
+    const proj = useTerminalStore.getState().byProject['/proj']
+    expect(proj.tabs.map((t) => t.terminalId)).toEqual(['t1', 't2'])
+    expect(proj.activeId).toBe('t1')
+  })
+
+  it('marks a phone as the owner of a tab', () => {
+    const s = useTerminalStore.getState()
+    s.addTab('/proj', item('t1'))
+    s.setTabOwner('t1', 'phone-1')
+    expect(useTerminalStore.getState().byProject['/proj'].tabs[0].ownerDeviceId).toBe('phone-1')
+    s.setTabOwner('t1', null)
+    expect(useTerminalStore.getState().byProject['/proj'].tabs[0].ownerDeviceId).toBeNull()
+  })
+})
+
 describe('tab title auto-updates from the shell OSC title sequence', () => {
   beforeEach(() => {
     useTerminalStore.setState({ openBySession: {}, byProject: {}, instances: new Map() })

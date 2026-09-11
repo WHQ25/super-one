@@ -144,6 +144,10 @@ host.addEventListener('message', (event) => {
 })
 
 terminal.onData((data) => post({ type: 'terminalInput', data }))
+terminal.onTitleChange((title) => {
+  const next = title.trim()
+  if (next) post({ type: 'terminalTitle', title: next })
+})
 let lastSize = ''
 function refit(): void {
   fit.fit()

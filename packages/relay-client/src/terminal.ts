@@ -1,4 +1,4 @@
-import type { TerminalEvent, TerminalSnapshot } from '@superone/shared/agent-types'
+import type { TerminalEvent, TerminalListItem, TerminalSnapshot } from '@superone/shared/agent-types'
 
 export type TerminalPaint =
   | { kind: 'replace'; ansi: string; snapshot: TerminalSnapshot }
@@ -7,6 +7,8 @@ export type TerminalPaint =
   | { kind: 'exited'; exitCode: number | null; signal: number | null }
   | { kind: 'error'; code: string; message: string }
   | { kind: 'result'; requestId: string; ok: boolean; terminalId?: string; message?: string }
+  | { kind: 'title'; terminalId: string; title: string }
+  | { kind: 'created'; item: TerminalListItem }
 
 type ChunkAcc = {
   total: number
@@ -132,6 +134,30 @@ export class TerminalAssembler {
       case 'terminal_command_result': {
         const e = ev as { requestId: string; ok: boolean; terminalId?: string; message?: string }
         return [{ kind: 'result', requestId: e.requestId, ok: e.ok, terminalId: e.terminalId, message: e.message }]
+      }
+      case 'terminal_title_changed': {
+        const e = ev as { terminalId: string; title: string }
+        if (typeof e.terminalId !== 'string' || typeof e.title !== 'string' || !e.title.trim()) return []
+        if (this.snapshot?.terminalId === e.terminalId) {
+          this.snapshot = { ...this.snapshot, title: e.title }
+        }
+        return [{ kind: 'title', terminalId: e.terminalId, title: e.title }]
+      }
+      case 'terminal_created': {
+        const e = ev as { item?: { terminalId?: string; cwd?: string; projectPath?: string; title?: string; status?: string; ownerDeviceId?: string | null } }
+        const item = e.item
+        if (!item || typeof item.terminalId !== 'string' || typeof item.cwd !== 'string') return []
+        return [{
+          kind: 'created',
+          item: {
+            terminalId: item.terminalId,
+            cwd: item.cwd,
+            ...(typeof item.projectPath === 'string' ? { projectPath: item.projectPath } : {}),
+            title: typeof item.title === 'string' ? item.title : 'Terminal',
+            status: item.status === 'exited' || item.status === 'error' ? item.status : 'running',
+            ownerDeviceId: typeof item.ownerDeviceId === 'string' ? item.ownerDeviceId : null,
+          },
+        }]
       }
       default:
         return []

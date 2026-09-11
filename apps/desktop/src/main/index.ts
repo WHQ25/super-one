@@ -2207,6 +2207,7 @@ function registerIpcHandlers(): void {
       const cwd = resolveTerminalCwd(opts.projectPath, opts.sessionId)
       const session = terminalManager.create({
         cwd,
+        projectPath: opts.projectPath,
         title: opts.title ?? (basename(cwd) || 'Terminal'),
         cols: opts.cols,
         rows: opts.rows,
@@ -2249,6 +2250,10 @@ function registerIpcHandlers(): void {
       return
     }
     terminalManager.kill(terminalId)
+  })
+  ipcMain.handle(AgentIpcChannels.TERMINAL_CLAIM, (_e, terminalId: string) => {
+    if (remoteTerminalController.has(terminalId)) return
+    terminalManager.get(terminalId)?.ownership.reclaimLocal()
   })
 
 

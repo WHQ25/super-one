@@ -6,6 +6,7 @@ import { useAppStore } from '@/stores/app'
 import { useTerminalStore } from '@/stores/terminal'
 import { useChatKeyboardShortcuts } from '@/hooks/useChatKeyboardShortcuts'
 import { useTerminalPanel } from '@/hooks/useTerminalPanel'
+import { useTerminalSync } from '@/hooks/useTerminalSync'
 import { closeActiveTerminal, createNewTerminal } from '@/components/coding/terminal-panel-api'
 import { getDockApi, closeBrowserTab, closeActivityTerminalTab } from '@/components/activity/activity-panel-api'
 import { useMiniAppStore } from '@/stores/miniapp'
@@ -44,6 +45,7 @@ export const CodingLayout = memo(function CodingLayout({ foreground = true, scop
   useChatKeyboardShortcuts()
 
   const { open: termOpen, toggle: toggleTerminal } = useTerminalPanel()
+  useTerminalSync()
   const [termHeight, setTermHeight] = useState(300)
   const currentFolder = useAppStore((s) => s.currentFolder)
   const hasTerminals = useTerminalStore((s) => (currentFolder ? (s.byProject[currentFolder]?.tabs.length ?? 0) : 0) > 0)

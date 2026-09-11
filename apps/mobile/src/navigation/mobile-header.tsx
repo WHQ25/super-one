@@ -12,7 +12,9 @@ import { SessionMetaRow } from '../ui/session-meta-row'
 import { isConnected, type DeviceStatus, type ReconnectInfo } from '../device-status'
 import type { SessionGitView } from '../session-git-status'
 import type { MobileRoute } from './mobile-navigator'
+import { TerminalMenuBody } from '../ui/terminal-menu'
 import { FilesMenuBody } from '../ui/files-menu'
+import type { TerminalTabUi } from '../terminal-runtime'
 
 /** Width the confirm action and its balancing leading slot both reserve. */
 const CONFIRM_SLOT_WIDTH = 76
@@ -89,6 +91,14 @@ export function MobileHeader(props: {
   }
   /** Trailing action that starts the add-project flow. */
   onAddProject?: () => void
+  /** Terminal only: the trailing menu lists, creates and closes tabs. */
+  terminal?: {
+    tabs: TerminalTabUi[]
+    activeId: string
+    onSelect: (terminalId: string) => void
+    onCreate: () => void
+    onClose: (terminalId: string) => void
+  }
   /** Commits the screen's draft. Back discards it, so only routes with a draft pass this. */
   onConfirm?: () => void
   /** Action label; defaults to `Confirm`. */
@@ -104,7 +114,8 @@ export function MobileHeader(props: {
   // header adds this second line only while the connection needs attention.
   const connected = isConnected(props.deviceStatus)
   const showConnectionStatus = !props.sidebarVisible
-  const showMeta = ((chat || props.route === 'terminal') && props.hasSession)
+  const terminal = props.route === 'terminal' ? props.terminal : undefined
+  const showMeta = (chat && props.hasSession)
     || (showConnectionStatus && !connected)
   // The device list carries its own wordmark inside the page, and session search
   // is a search field with a Cancel beside it — both own their whole screen.
@@ -136,8 +147,8 @@ export function MobileHeader(props: {
           </View>
         )}
         {showMeta ? <SessionMetaRow deviceStatus={props.deviceStatus} reconnect={props.reconnect}
-          subtitle={props.subtitle || harnessDisplayName(props.provider)}
-          git={props.git} onOpenBranch={props.onOpenBranch}
+          subtitle={terminal ? undefined : props.subtitle || harnessDisplayName(props.provider)}
+          git={terminal ? null : props.git} onOpenBranch={terminal ? undefined : props.onOpenBranch}
           showConnectionStatus={showConnectionStatus} /> : null}
       </View>
       {props.onConfirm ? <Pressable accessibilityRole="button" accessibilityLabel={props.confirmLabel ?? 'Confirm'}
@@ -151,6 +162,7 @@ export function MobileHeader(props: {
       </Pressable>
         : props.onAddProject ? <IconButton icon={FolderPlus} label="Add project" onPress={props.onAddProject} />
         : chat ? <IconButton buttonRef={menu.ref} icon={MoreHorizontal} label="Session actions" onPress={menu.open} />
+        : terminal ? <IconButton buttonRef={menu.ref} icon={MoreHorizontal} label="Terminal actions" onPress={menu.open} />
         : files ? files.finderOpen
           ? <IconButton
               icon={X}
@@ -159,13 +171,21 @@ export function MobileHeader(props: {
           : <IconButton buttonRef={menu.ref} icon={MoreHorizontal} label="File actions" onPress={menu.open} />
         // Balance the leading icon button so the title group stays optically centred.
         : <View style={styles.headerTrailingSpacer} />}
-      <AnchoredMenu anchor={menu.anchor} title={files ? 'Files' : 'Session'} onDismiss={menu.close} width={260}>
+      <AnchoredMenu anchor={menu.anchor} title={files ? 'Files' : terminal ? 'Terminal' : 'Session'} onDismiss={menu.close} width={260}>
         {files ? (
           <FilesMenuBody
             kind={files.kind}
             onSearch={() => { menu.close(); files.onToggleFinder() }}
             onUploadFile={() => { menu.close(); files.onUploadFile() }}
             onNewFolder={() => { menu.close(); files.onNewFolder() }}
+          />
+        ) : terminal ? (
+          <TerminalMenuBody
+            tabs={terminal.tabs}
+            activeId={terminal.activeId}
+            onSelect={(terminalId) => { menu.close(); terminal.onSelect(terminalId) }}
+            onCreate={() => { menu.close(); terminal.onCreate() }}
+            onClose={terminal.onClose}
           />
         ) : (
           <>

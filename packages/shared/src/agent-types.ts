@@ -4294,6 +4294,8 @@ export interface TerminalSnapshot {
 export interface TerminalListItem {
   terminalId: string
   cwd: string
+  /** Project folder this tab belongs to — used to sync desktop/mobile lists. */
+  projectPath?: string
   title: string
   status: TerminalStatus
   ownerDeviceId: string | null
@@ -4310,6 +4312,10 @@ export type TerminalEvent =
   | { type: 'terminal_command_result'; requestId: string; ok: boolean; terminalId?: string; code?: TerminalCommandResultCode; message?: string }
   | { type: 'terminal_exited'; terminalId: string; exitCode: number | null; signal: number | null }
   | { type: 'terminal_error'; terminalId: string; code: TerminalErrorCode; message: string }
+  /** OSC title from the PTY — the running command, not the cwd basename. */
+  | { type: 'terminal_title_changed'; terminalId: string; title: string }
+  /** A PTY appeared — desktop tabs and other phones add it without re-listing. */
+  | { type: 'terminal_created'; terminalId: string; item: TerminalListItem }
 
 export interface RemoteEffortOption {
   value: string
@@ -4563,6 +4569,11 @@ export type RemoteCommand =
   | { type: 'list_providers'; requestId: string }
   | { type: 'set_session_api_provider_id'; projectPath: string; sessionId: string; apiProviderId: string | null }
   | { type: 'terminal_create'; requestId: string; projectPath: string; sessionId?: string }
+  /**
+   * Terminals whose cwd is the project, the session checkout, or a path under
+   * the project — the same set the desktop panel keeps under one folder.
+   */
+  | { type: 'terminal_list'; requestId: string; projectPath: string; sessionId?: string }
   | { type: 'terminal_kill'; terminalId: string }
   | { type: 'terminal_subscribe'; requestId: string; terminalId: string }
   | { type: 'terminal_unsubscribe'; terminalId?: string }

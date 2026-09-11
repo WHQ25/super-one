@@ -5,7 +5,6 @@ import { Text } from '../ui/text'
 import { WebView } from 'react-native-webview'
 import { TERMINAL_VIEW_HTML } from '@superone/chat-view'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
-import { Terminal } from 'lucide-react-native'
 import { Button } from '../ui'
 import { useMobileLocale } from '../i18n/context'
 
@@ -33,11 +32,12 @@ export function TerminalScreen(props: {
         containerStyle={{ backgroundColor: tokens.colors.background }}
         onMessage={(event) => props.onWebMessage(event.nativeEvent.data)}
       />
-      <View style={{ paddingHorizontal: 16, paddingTop: 8, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: tokens.colors.surface }}>
-        <Terminal size={14} color={tokens.colors.mutedForeground} />
-        <Text style={[styles.rowMeta, styles.flex]}>{t(props.writable ? 'Interactive terminal' : 'Read-only · another client has control')}</Text>
-        {!props.writable ? <Button label="Take control" variant="secondary" onPress={props.onClaim} /> : null}
-      </View>
+      {!props.writable ? (
+        <View style={{ paddingHorizontal: 16, paddingTop: 8, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: tokens.colors.surface }}>
+          <Text style={[styles.rowMeta, styles.flex]}>{t('Read-only · another client has control')}</Text>
+          <Button label="Take control" variant="secondary" onPress={props.onClaim} />
+        </View>
+      ) : null}
       <ScrollView
         horizontal
         keyboardShouldPersistTaps="always"

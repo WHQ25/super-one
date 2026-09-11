@@ -325,6 +325,12 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
   const efforts = effortOptionsForModel(provider, catalog, model)
   const chooseModel = (value: string) => { setModel(value); setEffort(resolveSelectedEffort(effortOptionsForModel(provider, catalog, value), effort)) }
   const [writable, setWritable] = useState(false)
+  const [terminalTab, setTerminalTab] = useState('dev')
+  const previewTerminalTabs = [
+    { terminalId: 'dev', title: 'npm run dev', status: 'running' as const },
+    { terminalId: 'vim', title: 'vim', status: 'running' as const },
+    { terminalId: 'git', title: 'git status', status: 'running' as const },
+  ]
   const [messages, setMessages] = useState(initialMessages)
   const web = useRef<WebView>(null)
   const terminal = useRef<WebView>(null)
@@ -375,7 +381,13 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
       <View style={styles.contentRow}>
         {tabletSidebar ? <WorkspaceSidebar {...previewWorkspace} deviceName="Preview desktop" deviceStatus="connectedLan" onDisconnect={() => setPage('Devices')} onOpenSettings={() => setPage('Settings')} /> : null}
         <View style={styles.mainPane}>
-      <MobileHeader route={route} title={page === 'Add project' ? addProject.title : page === 'Project' ? 'Projects' : route === 'files' ? previewBrowserMode.name : page} subtitle="super-one" provider={provider} hasSession={page === 'Chat'} deviceStatus="connectedLan" sidebarVisible={tabletSidebar} git={page === 'Chat' ? previewSessionGit : null} onOpenBranch={() => setPage('Branch')} onBack={() => {
+      <MobileHeader route={route} title={page === 'Add project' ? addProject.title : page === 'Project' ? 'Projects' : page === 'Terminal' ? (previewTerminalTabs.find((tab) => tab.terminalId === terminalTab)?.title ?? 'Terminal') : route === 'files' ? previewBrowserMode.name : page} subtitle="super-one" provider={provider} hasSession={page === 'Chat'} deviceStatus="connectedLan" sidebarVisible={tabletSidebar} git={page === 'Chat' ? previewSessionGit : null} terminal={page === 'Terminal' ? {
+          tabs: previewTerminalTabs,
+          activeId: terminalTab,
+          onSelect: setTerminalTab,
+          onCreate: () => {},
+          onClose: () => {},
+        } : undefined} onOpenBranch={() => setPage('Branch')} onBack={() => {
           if (page === 'Add project' && addProject.canGoBack) addProject.goBack()
           else if (page === 'Add project') setPage('Project')
           // Browsing unwinds to the overview before the page itself leaves,

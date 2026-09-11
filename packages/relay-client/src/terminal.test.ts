@@ -62,6 +62,24 @@ describe('TerminalAssembler', () => {
     ])
   })
 
+  it('records a title change on the live snapshot', () => {
+    const a = new TerminalAssembler()
+    a.apply({ type: 'terminal_snapshot', terminalId: 't1', snapshot: snap, ansi: '' })
+    expect(a.apply({ type: 'terminal_title_changed', terminalId: 't1', title: 'npm run dev' })).toEqual([
+      { kind: 'title', terminalId: 't1', title: 'npm run dev' },
+    ])
+    expect(a.snapshot?.title).toBe('npm run dev')
+    expect(a.apply({ type: 'terminal_title_changed', terminalId: 't1', title: '   ' })).toEqual([])
+  })
+
+  it('surfaces a newly created terminal as a list item', () => {
+    const a = new TerminalAssembler()
+    const item = { terminalId: 't2', cwd: '/p', title: 'zsh', status: 'running' as const, ownerDeviceId: 'phone' }
+    expect(a.apply({ type: 'terminal_created', terminalId: 't2', item })).toEqual([
+      { kind: 'created', item },
+    ])
+  })
+
   it('drops malformed and inconsistent snapshot chunks', () => {
     const a = new TerminalAssembler()
     const apply = (value: object) => a.apply({ type: 'terminal_snapshot_chunk', terminalId: 't1', ...value })

@@ -12,8 +12,15 @@ export interface TerminalManagerOptions {
   snapshotSoftLimit?: number
 }
 
+export function terminalMatchesProject(cwd: string, projectPath: string, sessionCwd?: string): boolean {
+  if (cwd === projectPath || (sessionCwd !== undefined && cwd === sessionCwd)) return true
+  const root = projectPath.endsWith('/') ? projectPath : `${projectPath}/`
+  return cwd.startsWith(root)
+}
+
 export interface CreateTerminalOptions {
   cwd: string
+  projectPath?: string
   title?: string
   cols?: number
   rows?: number
@@ -36,6 +43,7 @@ export class TerminalManager {
     const session = new TerminalSession({
       terminalId,
       cwd: opts.cwd,
+      projectPath: opts.projectPath,
       title: opts.title ?? 'Terminal',
       cols: opts.cols ?? 80,
       rows: opts.rows ?? 24,
@@ -48,7 +56,14 @@ export class TerminalManager {
       snapshotSoftLimit: this.opts.snapshotSoftLimit,
     })
     this.byId.set(terminalId, session)
+    this.notifyCreated(terminalId)
     return session
+  }
+
+  notifyCreated(terminalId: string): void {
+    const session = this.byId.get(terminalId)
+    if (!session) return
+    this.opts.onEvent({ type: 'terminal_created', terminalId, item: session.listItem() })
   }
 
   get(terminalId: string): TerminalSession | undefined {
@@ -61,6 +76,15 @@ export class TerminalManager {
       if (cwd === undefined || session.cwd === cwd) items.push(session.listItem())
     }
     return items
+  }
+
+  /**
+   * Every tab the desktop would show for this folder: the project root, the
+   * session checkout (a worktree may sit beside the project), and anything
+   * nested under the project path.
+   */
+  listForProject(projectPath: string, sessionCwd?: string): TerminalListItem[] {
+    return this.list().filter((item) => terminalMatchesProject(item.cwd, projectPath, sessionCwd))
   }
 
   kill(terminalId: string): void {

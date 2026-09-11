@@ -848,6 +848,9 @@ const terminalAPI = {
   kill: (terminalId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.TERMINAL_KILL, terminalId) as Promise<void>,
 
+  claim: (terminalId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.TERMINAL_CLAIM, terminalId) as Promise<void>,
+
   onTerminalEvent: (callback: (event: TerminalEvent) => void) => {
     const handler = (_ipcEvent: Electron.IpcRendererEvent, event: TerminalEvent): void => {
       callback(event)

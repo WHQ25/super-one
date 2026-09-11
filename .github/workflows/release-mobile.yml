@@ -35,6 +35,11 @@ on:
           - internal
           - production
         default: internal
+      build_id:
+        description: 'Publish an existing EAS build instead of starting a new one (Android only). Use this to re-point latest.json at an older build — that is the rollback.'
+        required: false
+        type: string
+        default: ''
       min_supported_build_code:
         description: 'Raise (or lower) the hard gate. BLANK INHERITS the published value — only set this when old builds must be blocked.'
         required: false
@@ -66,6 +71,11 @@ on:
         required: true
         type: string
         default: internal
+      build_id:
+        description: Publish an existing EAS build instead of starting a new one (Android only).
+        required: false
+        type: string
+        default: ''
       min_supported_build_code:
         description: Raise the hard gate. Blank inherits the published value.
         required: false
@@ -98,6 +108,7 @@ env:
   EAS_CLI_VERSION: '24.0.0'
   INPUT_PLATFORM: ${{ inputs.platform }}
   INPUT_PROFILE: ${{ inputs.profile }}
+  INPUT_BUILD_ID: ${{ inputs.build_id }}
   INPUT_MIN_SUPPORTED: ${{ inputs.min_supported_build_code }}
   INPUT_TESTFLIGHT_URL: ${{ inputs.testflight_url }}
   INPUT_DRY_RUN: ${{ inputs.dry_run }}
@@ -127,7 +138,7 @@ jobs:
       - name: Install
         run: bun install --frozen-lockfile --ignore-scripts
 
-      - name: Build APK on EAS
+      - name: Resolve the APK on EAS
         id: build
         working-directory: apps/mobile
         env:
@@ -138,14 +149,22 @@ jobs:
             echo "::error::EXPO_TOKEN secret is not set — an EAS build cannot authenticate"
             exit 1
           fi
-          # --json implies --non-interactive; logs go to stderr, so stdout is
-          # the machine-readable half.
-          bunx "eas-cli@${EAS_CLI_VERSION}" build \
-            --platform android \
-            --profile "${INPUT_PROFILE}" \
-            --non-interactive \
-            --wait \
-            --json > build.json
+          if [ -n "${INPUT_BUILD_ID}" ]; then
+            # Re-publishing an existing build is how a rollback is performed, and
+            # it skips the EAS queue, which dominates the wall clock here.
+            # `build:view` rejects --non-interactive but honours --json.
+            echo "Reusing EAS build ${INPUT_BUILD_ID}"
+            bunx "eas-cli@${EAS_CLI_VERSION}" build:view "${INPUT_BUILD_ID}" --json > build.json
+          else
+            # --json implies --non-interactive; logs go to stderr, so stdout is
+            # the machine-readable half.
+            bunx "eas-cli@${EAS_CLI_VERSION}" build \
+              --platform android \
+              --profile "${INPUT_PROFILE}" \
+              --non-interactive \
+              --wait \
+              --json > build.json
+          fi
           # eas-cli has printed both a bare object and an array here across
           # versions, and the artifact field has two spellings. Normalise both
           # rather than index blindly.
@@ -156,13 +175,23 @@ jobs:
           BUILD_CODE="$(jq -r "${NORMALISED} | .appBuildVersion // empty" build.json)"
           APP_VERSION="$(jq -r "${NORMALISED} | .appVersion // empty" build.json)"
           if [ -z "${URL}" ] || [ -z "${BUILD_CODE}" ] || [ -z "${APP_VERSION}" ]; then
-            echo "::error::could not read a finished Android build out of eas-cli --json output"
+            echo "::error::could not read a finished Android build out of the eas-cli --json output"
             head -c 4000 build.json
             exit 1
           fi
           case "${BUILD_CODE}" in
             ''|*[!0-9]*)
               echo "::error::appBuildVersion ${BUILD_CODE} is not a version code"
+              exit 1
+              ;;
+          esac
+          # The `production` profile emits an AAB, which no phone can install
+          # from a file. Catching it here beats publishing a latest.json that
+          # every client downloads and then fails to open.
+          case "${URL}" in
+            *.apk) ;;
+            *)
+              echo "::error::artifact ${URL} is not an APK — only APK builds can be self-installed"
               exit 1
               ;;
           esac
@@ -246,6 +275,10 @@ jobs:
       - name: Check inputs
         run: |
           set -euo pipefail
+          if [ -n "${INPUT_BUILD_ID}" ]; then
+            echo "::error::build_id is Android-only; the iOS leg submits --latest to TestFlight"
+            exit 1
+          fi
           if [ -z "${INPUT_TESTFLIGHT_URL}" ]; then
             echo "::error::testflight_url is required to publish the iOS manifest"
             exit 1

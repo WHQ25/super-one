@@ -20,15 +20,21 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Remote Control: the companion mobile app is rebuilt from the ground up.
   Pairing leads with the code, the device list reports real reachability and
   finds a LAN route over mDNS, and projects and sessions live in one
-  workspace drawer — edge-swipe to open, host-side search, nested collab
-  children, a cross-project pinned section. Starting a session runs on the
-  desktop's own selectors. The composer is native: mentions (including
-  `@session` and folder browse), slash commands with their output, `/mcp`
-  status, `/workflows` runs, status chips, a file browser, persisted theme
-  and language, and an English / Chinese native shell. Chat handles plan
-  approvals, question answers, permission prompts including device control,
-  session actions, Codex images and voice transcripts, and a terminal that
-  follows the host's theme.
+  workspace surface — drawer on a phone, sidebar on a tablet — with
+  edge-swipe, host-side search, nested collab children and a cross-project
+  pinned section. Starting a session runs on the desktop's own selectors.
+  The composer is native: mentions (including `@session`, collaborators on a
+  bare `@`, and folder browse), slash commands with their output, `/mcp`
+  status, `/workflows` runs, status chips, a file browser, queued mid-turn
+  sends, the todo list, persisted theme and language, and an English /
+  Chinese shell that ships dark by default. Chat is rendered by the
+  desktop's own presenters, so tools, subagents and summaries carry the same
+  chrome; sessions open progressively from a bounded host projection; files
+  and images preview inline and fullscreen with save, share, rotate and
+  zoom. Plan approvals, question answers, permission prompts including
+  device control, session actions, Codex images and voice transcripts, and a
+  host-themed terminal are all handled. The Android app updates itself from
+  SuperOne's own CDN; iOS deep-links to TestFlight.
 - Worktree: the handoff popover names its scope ("Will carry") only when it is
   wider than the uncommitted work the header already reports — the detached
   case, where the worktree's own commits travel too.
@@ -36,13 +42,16 @@ Every alpha release keeps its own notes on its GitHub Release.
   node so remote agents keep reusable procedures across sessions.
 - Grok sessions host the x.ai ops the agent already spoke: interject,
   compact, rewind, fork, MCP elicitation, cron inject, and live workflows.
-  `/mcp` reports ACP server status.
+  `/mcp` reports ACP server status, and session recaps can be requested
+  automatically or with `/recap`.
 - SuperOne's own tools are preferred across harnesses, including Cursor
   (injected on the first turn) and DeepSeek (kept out of the persona
-  section).
+  section). Cursor surfaces host questions and plan approvals as pending
+  interactions.
 - Claude: a queued message can be steered as "next" without cancelling the
   in-flight tool. Session goals — Codex, Grok and Claude — share one
   indicator and dialog; Claude's `/goal` condition is on that surface.
+- Codex delivers async answers as turns.
 - Sidebar: the Pinned section follows the selected host.
 - Side chat opens at the activity panel's floor and no longer offers to
   cover the thread it forked from.
@@ -56,10 +65,13 @@ Every alpha release keeps its own notes on its GitHub Release.
   carries that radius, so a split no longer notches each pane's bottom
   edge where it meets a divider.
 - Codex: launch settings approved in the dialog take effect on the first
-  turn. The model chosen for a session survives restoring that session.
-  Fast mode survives session switches. Answering an async question steers
-  the live turn. Turn token totals no longer shrink at completion. Fewer
-  duplicate plan approvals on a live session.
+  turn. The model chosen for a session survives restoring that session, and
+  survives a catalog refresh. Fast mode survives session switches. Answering
+  an async question steers the live turn. Turn token totals no longer shrink
+  at completion. Fewer duplicate plan approvals on a live session.
+- Cursor: context occupancy is derived from run usage, and the plan-decision
+  lifecycle survives async turn preparation, rebuilds and out-of-order
+  follow-ups.
 - iOS Simulator: the preview recovers when CoreSimulator drops the
   framebuffer. Asking to control a healthy, booted simulator could fail with
   `NO_DEVICE` indefinitely, because every stream restarted against the dead
@@ -74,7 +86,8 @@ Every alpha release keeps its own notes on its GitHub Release.
   instead of a transcript notice that could arrive after the agent had
   already retrieved it.
 - Chat: the compacting timer tracks the compaction, not the render. Built-in
-  media artifacts resolve after Markdown parsing.
+  media artifacts resolve after Markdown parsing. Text after a `<` inside
+  math or prose is no longer swallowed.
 - Device control: agent-injected text bypasses the guest input method, so
   Pinyin no longer mangles ASCII on iOS or swallows it on Android.
 - Sidebar: a collapsed project stays collapsed when switching to a row it
@@ -93,6 +106,67 @@ Every alpha release keeps its own notes on its GitHub Release.
   declaring build-and-run fine.
 - Electron 44 (bundled Node 24.19.0), plus a sweep of dependency majors
   across the docking, terminal, syntax-highlighting and PDF stacks.
+
+## [0.63.0-alpha.1] - 2026-09-11
+
+### Added
+
+- Remote Control: mobile chat is rendered by the desktop's own presenters,
+  ported into the mobile WebView. Tools, subagents and summaries carry the
+  same chrome as desktop, transcript images open in a host fullscreen
+  viewer, and a long-press menu copies a user message.
+- Remote Control: sessions open progressively. The host serves a bounded
+  projection and patches live rows, so a long transcript is usable before
+  all of it has arrived.
+- Remote Control: files are first class. Transcript file chips preview
+  small text files inline with syntax highlighting, files and images open
+  fullscreen with save and share, and images rotate and zoom.
+  `read_desktop_file` returns small text files inline rather than a path.
+- Remote Control: the composer queues mid-turn sends, adds phone-specific
+  actions, offers collaborators on a bare `@` and inserts at the caret, and
+  carries the todo list as one strip above it.
+- Remote Control: one workspace surface serves as both phone drawer and
+  tablet sidebar; the attention badge is a dot. The app ships dark by
+  default with the native appearance pinned.
+- Remote Control: the Android app updates itself. It checks SuperOne's own
+  CDN, downloads a newer build and hands it to the system installer; iOS
+  deep-links to TestFlight. Both platforms share one build code, with a
+  hard gate for protocol breaks. The development build installs alongside
+  the released app under its own identity.
+- Grok session recaps can be requested automatically or with `/recap`.
+- Cursor bridges user questions and plan approvals into pending
+  interactions, so a host question arrives as AskUserQuestion.
+- Codex delivers async answers as turns, with the command presenter split
+  out.
+
+### Fixed
+
+- Cursor: context occupancy is derived from run usage and anchored on the
+  previous turn. The plan-decision lifecycle survives dispatch after async
+  turn preparation, MCP results are read from the real envelope, follow-ups
+  are keyed by id, and disposal stays terminal when a close lands during a
+  rebuild.
+- Grok: the context ring is sized from occupancy and the model window, and
+  `steer-soon` is no longer advertised.
+- Codex: the restored model and effort survive a catalog refresh.
+- Chat: text after a `<` inside math or prose is no longer swallowed, and a
+  prompt suggestion no longer appears twice above the composer.
+- Remote Control: IME composition is committed before an explicit Send.
+  Phones stay portrait and the tablet layout is gated on height. The
+  question sheet hides as soon as it is answered. GitHub search stays
+  pending until the matching result arrives. Add-project returns to the
+  workspace that opened it. Image paths survive in oversized tool results.
+- Settings: Grok and OpenCode keep their own harness page.
+- Session list watchers are notified on insert persist and on fork.
+
+### Changed
+
+- `mobile_share_file` is replaced by file chip links in the transcript.
+
+### CI
+
+- `release-mobile` can publish an existing EAS build instead of starting a
+  new one, which is also how a rollback re-points the update pointer.
 
 ## [0.63.0-alpha] - 2026-09-08
 

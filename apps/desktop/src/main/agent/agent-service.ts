@@ -1176,6 +1176,16 @@ export class AgentService {
         }
         break
       }
+      case 'get_mcp_icons': {
+        try {
+          const { collectMcpServerIconMap, probeMcpIconsForAllHarnesses } = await import('../mcp-server-icons')
+          void probeMcpIconsForAllHarnesses(command.projectPath ?? '')
+          await respond?.(command.requestId, { icons: await collectMcpServerIconMap() })
+        } catch (err) {
+          await respond?.(command.requestId, { error: (err as Error).message })
+        }
+        break
+      }
       case 'search_files': {
         try {
           const { searchFiles } = await import('./fuzzy-file-search')
@@ -3397,6 +3407,11 @@ export class AgentService {
       return readMcpMetaCache()
     })
 
+    ipcMain.handle(AgentIpcChannels.MCP_PROBE_ICONS, async (_event, projectPath: string) => {
+      const { probeMcpIconsForAllHarnesses } = await import('../mcp-server-icons')
+      await probeMcpIconsForAllHarnesses(typeof projectPath === 'string' ? projectPath : '')
+    })
+
     ipcMain.handle(AgentIpcChannels.MCP_OAUTH_AUTHORIZE, async (_event, serverUrl: string, headers?: Record<string, string>, transport?: 'http' | 'sse') => {
       return authorizeHttpMcpServer(serverUrl, headers, transport)
     })
@@ -3842,6 +3857,7 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.MCP_TOGGLE_CONFIG)
     ipcMain.removeHandler(AgentIpcChannels.MCP_CHECK_SERVERS)
     ipcMain.removeHandler(AgentIpcChannels.MCP_META_CACHE)
+    ipcMain.removeHandler(AgentIpcChannels.MCP_PROBE_ICONS)
     ipcMain.removeHandler(AgentIpcChannels.MCP_OAUTH_AUTHORIZE)
     ipcMain.removeHandler(AgentIpcChannels.MCP_LIST_LIBRARY)
     ipcMain.removeHandler(AgentIpcChannels.MCP_DELETE_LIBRARY_ENTRY)

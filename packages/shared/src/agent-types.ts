@@ -3715,6 +3715,7 @@ export const AgentIpcChannels = {
   MCP_TOGGLE_CONFIG: 'mcp:toggle-config',
   MCP_CHECK_SERVERS: 'mcp:check-servers',
   MCP_META_CACHE: 'mcp:meta-cache',
+  MCP_PROBE_ICONS: 'mcp:probe-icons',
   MCP_OAUTH_AUTHORIZE: 'mcp:oauth-authorize',
 
   // MCP library
@@ -4475,6 +4476,11 @@ export type RemoteCommand =
    * worse than reporting the state honestly.
    */
   | { type: 'list_mcp_servers'; requestId: string; projectPath: string }
+  /**
+   * Brand icons for MCP servers (library + mcpb + probe cache).
+   * Phone chat rows look these up by the tool's server name.
+   */
+  | { type: 'get_mcp_icons'; requestId: string; projectPath?: string }
   | { type: 'create_directory'; requestId: string; path: string; name: string }
   | { type: 'add_project'; requestId: string; path: string; /** mkdir -p the path first (add-project "Create" row). */ createIfMissing?: boolean }
   | { type: 'search_github_repos'; requestId: string; mode: GithubRepoSearchMode; value?: string; page?: number }

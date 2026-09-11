@@ -108,6 +108,7 @@ import { isFullBleedScreen } from '../layout-state'
 import { isReachable, type ReconnectInfo } from '../device-status'
 import { logRelayEventTypes } from '../relay-debug'
 import { dynamicMentionArtworkRevision, dynamicMentionArtworkSnapshot } from '../ui/mention-dynamic-artwork'
+import { loadMcpIcons, mcpIconsRevision, mcpIconsSnapshot } from '../mcp-icons'
 import { useMobileLocale } from '../i18n/context'
 import { useOrientationLock } from './use-orientation-lock'
 const kv = mobileKv
@@ -270,6 +271,7 @@ export function MobileApp() {
   const viewStateWriteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fatalReloadRef = useRef({ startedAt: 0, count: 0 })
   const mentionArtworkRevisionRef = useRef(-1)
+  const mcpIconsRevisionRef = useRef(-1)
   const suggestions = useComposerSuggestions(runtimeRef, `${activePairingId}:${project?.path}:${sessionId}:${selectedProvider}:${selectedAcpAgentId ?? ''}`, { client: clientRef, projectPath: project?.path, provider: selectedProvider, acpAgentId: selectedAcpAgentId, projects, iconStore: mobileKv })
   const { slashHits, mentionRows } = suggestions
   const systemInfoRequestRef = useRef(0)
@@ -348,12 +350,16 @@ export function MobileApp() {
     const mentionArtworkRevision = dynamicMentionArtworkRevision()
     const includeMentionArtwork = hydrate || mentionArtworkRevision !== mentionArtworkRevisionRef.current
     const mentionArtwork = includeMentionArtwork ? dynamicMentionArtworkSnapshot() : undefined
+    const iconsRevision = mcpIconsRevision()
+    const includeMcpIcons = hydrate || iconsRevision !== mcpIconsRevisionRef.current
+    const mcpIcons = includeMcpIcons ? mcpIconsSnapshot() : undefined
     inject(webRef, {
       type: hydrate ? 'hydrate' : 'applyReductionPatch',
       ...transcriptProjectionRef.current.projection.project(transcriptFor(runtime.session), hydrate),
       hasMoreHistory: runtime.hasMoreHistory,
       historyNavigation: runtime.navigationAvailable,
       ...(mentionArtwork ? { mentionArtwork } : {}),
+      ...(mcpIcons ? { mcpIcons } : {}),
       pendingPermission: pending
         ? { requestId: pending.requestId, toolName: pending.toolName, toolUseId: pending.toolUseId }
         : null,
@@ -370,6 +376,7 @@ export function MobileApp() {
       projectPath: runtime.projectPath || null,
     })
     if (includeMentionArtwork) mentionArtworkRevisionRef.current = mentionArtworkRevision
+    if (includeMcpIcons) mcpIconsRevisionRef.current = iconsRevision
     setHasTranscript(runtime.session.messages.length > 0)
     setStreaming(runtime.streaming)
     setQueuedMessages(runtime.session.queuedMessages)
@@ -572,6 +579,7 @@ export function MobileApp() {
       onTerminal: (payload) => termRuntimeRef.current?.ingest(payload),
       restore: async (activeClient) => {
         await refreshHarnessResources(activeClient)
+        await loadMcpIcons(activeClient, runtimeRef.current?.projectPath)
         const runtime = runtimeRef.current
         if (!runtime) return activeClient.releaseBuffer().epoch
         await runtime.reopen()
@@ -642,6 +650,7 @@ export function MobileApp() {
     setHarnessOptions(options)
     if (projectRows[0]) await preloadHarnessResources(client, projectRows[0].path,
       [selectedProvider, ...options.map((option) => option.provider)])
+    await loadMcpIcons(client, projectRows[0]?.path)
     if (clientRef.current !== client) return
     if (projectRows[0]) { await openProject(projectRows[0]); startNewSession(projectRows[0]) }
     // Nothing to run a session in yet — land on the picker, which owns Add Project.
@@ -760,6 +769,7 @@ export function MobileApp() {
     systemInfoRequestRef.current++
     const projectRequest = ++shellDetailsRequestRef.current
     await preloadHarnessResources(client, p.path, [selectedProvider, ...harnessOptions.map((option) => option.provider)])
+    await loadMcpIcons(client, p.path)
     if (clientRef.current !== client || projectRequest !== shellDetailsRequestRef.current) return
     setProject(p)
     setSessions((await readProjectSessions(client, p.path)).sessions)

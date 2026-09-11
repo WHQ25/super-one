@@ -19,7 +19,6 @@ import { resolveMiniAppToolIdentity } from '@/lib/miniapp-tool-identity'
 import { useAppStore } from '@/stores/app'
 import { useChatStore, useActiveSession, useBashOutput } from '@/stores/chat'
 import { useMiniAppStore } from '@/stores/miniapp'
-import { useSettingsStore } from '@/stores/settings'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { CanvasEditDiff } from './CanvasEditDiff'
 import { FileChip } from './FileChip'
@@ -53,6 +52,7 @@ import {
 } from './tool-row'
 import { ToolRendererFrame } from './ToolRendererFrame'
 import { parseMcpToolName } from './tool-display'
+import { useMcpServerIcon } from './use-mcp-server-icon'
 
 function toolRowTone(isDenied?: boolean, isError?: boolean): ToolRowTone {
   if (isDenied) return 'denied'
@@ -296,16 +296,11 @@ export const ToolBlock = memo(function ToolBlock(props: ToolBlockProps) {
       ))
       : undefined
   ))
-  const mcpMeta = useSettingsStore((state) => state.mcpMeta)
-  const mcpLibrary = useSettingsStore((state) => state.mcpLibrary)
   const miniApps = useMiniAppStore((state) => state.apps)
   const isStreaming = props.status === 'streaming'
   const stallLevel = useStallLevel(isStreaming)
   const mcpInfo = useMemo(() => parseMcpToolName(props.toolName), [props.toolName])
-  const mcpIconSrc = mcpInfo
-    ? (mcpMeta[mcpInfo.serverName]?.icons?.[0]?.src
-      ?? mcpLibrary.find((entry) => entry.name === mcpInfo.serverName)?.icons?.[0]?.src)
-    : undefined
+  const mcpIconSrc = useMcpServerIcon(mcpInfo?.serverName)
 
   const ports = useMemo<ToolBlockPresenterPorts>(() => ({
     cwd,

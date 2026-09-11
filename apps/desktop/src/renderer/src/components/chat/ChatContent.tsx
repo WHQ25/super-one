@@ -2,6 +2,7 @@ import { isCodexAsyncAnswer } from '@superone/shared/codex-async-question'
 import { useRef, useState, useEffect, useLayoutEffect, useMemo, useCallback, lazy, Suspense, memo } from 'react'
 import { useChatStore, useActiveSession, useIsRemoteLocked, useSessionScope } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
+import { useSettingsStore } from '@/stores/settings'
 import { useShallow } from 'zustand/react/shallow'
 import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
@@ -588,6 +589,10 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
       void window.agent.setSessionForeground(displayedSessionId, false)
     }
   }, [displayedSessionId, foreground])
+
+  useEffect(() => {
+    void useSettingsStore.getState().ensureMcpIconSources()
+  }, [])
 
   const liquidGlass = useAppStore((s) => s.liquidGlass)
   const [fullscreenPlan, setFullscreenPlan] = useState<{

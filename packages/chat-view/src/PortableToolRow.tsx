@@ -8,6 +8,8 @@ import { PortableWidgetBlock } from './PortableWidgetBlock'
 import { parsePortableNativeWidgetResult } from './portable-native-widget'
 import { parseWidgetResult } from '@superone/shared/generative-ui/types'
 import { PortableTurnContext } from './portable-turn-context'
+import { parseMcpToolName } from './presenters/tool-display'
+import { resolveMcpServerIconFromMap } from '@superone/shared/mcp-server-icon'
 import {
   GenericToolRowPresenter,
   type FileDiffPresenterProps,
@@ -285,6 +287,16 @@ export function PortableToolRow({ allowExpand = true, ...props }: PortableToolRo
     () => (isWidgetTool && !nativeWidget && props.result ? parseWidgetResult(props.result) : null),
     [isWidgetTool, nativeWidget, props.result],
   )
+  const { mcpIcons } = useContext(PortableTurnContext)
+  const mcpIconSrc = useMemo(() => {
+    const info = parseMcpToolName(props.toolName)
+    if (!info) return undefined
+    return resolveMcpServerIconFromMap(info.serverName, mcpIcons)
+  }, [mcpIcons, props.toolName])
+  const ports = useMemo<GenericToolRowPorts>(
+    () => ({ ...PORTABLE_TOOL_ROW_PORTS, mcpIconSrc }),
+    [mcpIconSrc],
+  )
   if (nativeWidget && props.status !== 'streaming' && !props.isError) {
     return <PortableNativeGallery payload={nativeWidget} toolUseId={props.toolUseId} />
   }
@@ -304,6 +316,7 @@ export function PortableToolRow({ allowExpand = true, ...props }: PortableToolRo
       />
     )
   }
+
   if (props.toolName === 'Bash') {
     return (
       <PortableBashTool
@@ -325,7 +338,7 @@ export function PortableToolRow({ allowExpand = true, ...props }: PortableToolRo
       {...props}
       allowExpand={allowExpand}
       autoExpandFileDiffs={false}
-      ports={PORTABLE_TOOL_ROW_PORTS}
+      ports={ports}
     />
   )
 }

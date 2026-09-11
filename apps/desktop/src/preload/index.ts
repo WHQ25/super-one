@@ -1534,6 +1534,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.MCP_CHECK_SERVERS, projectPath, harness),
   getMcpMetaCache: () =>
     ipcRenderer.invoke(AgentIpcChannels.MCP_META_CACHE),
+  probeMcpIcons: (projectPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MCP_PROBE_ICONS, projectPath),
   oauthAuthorize: (serverUrl: string, headers?: Record<string, string>, transport?: 'http' | 'sse') =>
     ipcRenderer.invoke(AgentIpcChannels.MCP_OAUTH_AUTHORIZE, serverUrl, headers, transport),
 

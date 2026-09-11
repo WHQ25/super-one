@@ -154,6 +154,7 @@ export const PortableMessage = memo(function PortableMessage({
   sessionStreaming = false,
   streamingTokens = ZERO_TURN_TOKENS,
   projectPath = null,
+  mcpIcons = {},
   hideCopyActions = false,
 }: {
   message: ChatMessage
@@ -165,6 +166,7 @@ export const PortableMessage = memo(function PortableMessage({
   sessionStreaming?: boolean
   streamingTokens?: TurnTokenCounts
   projectPath?: string | null
+  mcpIcons?: Record<string, string>
   /** A spoken turn has a synthetic id and nothing to copy or resolve against. */
   hideCopyActions?: boolean
 }) {
@@ -210,7 +212,7 @@ export const PortableMessage = memo(function PortableMessage({
   })
 
   return (
-    <PortableTurnProvider scheme={scheme} pendingPermission={pendingPermission} projectPath={projectPath}>
+    <PortableTurnProvider scheme={scheme} pendingPermission={pendingPermission} projectPath={projectPath} mcpIcons={mcpIcons}>
       <article data-turn-id={message.id} data-message-role={message.role} data-message-status={message.status}>
         <ChatMessagePresenter
           isUser={isUser}

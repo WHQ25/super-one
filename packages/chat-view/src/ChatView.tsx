@@ -48,6 +48,7 @@ interface ViewState {
   navigation: SessionHistoryIndex | null
   labels: Record<string, string>
   mentionArtwork: Record<string, string>
+  mcpIcons: Record<string, string>
   pendingPermission: PendingPermission
   session: SessionFacts
   range: ChatWindowRange
@@ -94,6 +95,7 @@ const EMPTY_STATE: ViewState = {
   navigation: null,
   labels: {},
   mentionArtwork: {},
+  mcpIcons: {},
   pendingPermission: null,
   session: EMPTY_SESSION,
   range: { start: 0, end: 0 },
@@ -116,6 +118,17 @@ function normalizeMentionArtwork(value: ReductionProjection['mentionArtwork'], f
     && typeof png === 'string'
     && png.length <= 256_000
     && /^[A-Za-z0-9+/]+={0,2}$/.test(png)))
+}
+
+function normalizeMcpIcons(value: ReductionProjection['mcpIcons'], fallback: Record<string, string>): Record<string, string> {
+  if (value === undefined) return fallback
+  if (!value || typeof value !== 'object') return {}
+  return Object.fromEntries(Object.entries(value).filter(([key, src]) =>
+    key.length > 0
+    && key.length <= 128
+    && typeof src === 'string'
+    && src.length <= 512_000
+    && (/^https:\/\//.test(src) || /^data:image\//.test(src))))
 }
 
 function mergeHistory(older: ChatMessage[], current: ChatMessage[]): { messages: ChatMessage[]; added: number } {
@@ -150,6 +163,7 @@ function applyProjection(
     historyNavigation: projection.historyNavigation ?? previous.historyNavigation,
     labels: projection.labels ?? previous.labels,
     mentionArtwork: normalizeMentionArtwork(projection.mentionArtwork, previous.mentionArtwork),
+    mcpIcons: normalizeMcpIcons(projection.mcpIcons, previous.mcpIcons),
     pendingPermission: projection.pendingPermission === undefined
       ? previous.pendingPermission
       : projection.pendingPermission,
@@ -621,6 +635,7 @@ export function ChatView() {
               scheme={state.scheme}
               pendingPermission={state.pendingPermission ?? null}
               mentionArtwork={state.mentionArtwork}
+              mcpIcons={state.mcpIcons}
               isLastAssistant={message.id === lastAssistantId}
               sessionStreaming={sessionStreaming}
               streamingTokens={state.session.streamingTokens}

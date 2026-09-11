@@ -43,6 +43,8 @@ export interface ReductionProjection extends SessionProjection {
   messages?: ChatMessage[]
   labels?: Record<string, string>
   mentionArtwork?: Record<string, string>
+  /** MCP server name → icon src (https or data:image). Omitted patches keep the previous map. */
+  mcpIcons?: Record<string, string>
   pendingPermission?: {
     requestId: string
     toolName: string

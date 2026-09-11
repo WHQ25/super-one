@@ -4,6 +4,7 @@ import {
   formatAgentToolOutput,
   formatTranscriptToolResult,
   isAlwaysHiddenToolName,
+  parseMcpToolName,
   normalizeTranscriptTool,
   resolveGrokStreamingToolName,
   truncateTranscriptToolResult,
@@ -90,12 +91,46 @@ describe('isAlwaysHiddenToolName', () => {
     expect(isAlwaysHiddenToolName('UseTool')).toBe(true)
     expect(isAlwaysHiddenToolName('search_tool')).toBe(true)
     expect(isAlwaysHiddenToolName('mcp__superone__session_rename')).toBe(true)
+    expect(isAlwaysHiddenToolName('superone__session_rename')).toBe(true)
   })
 
   it('does not hide ordinary file tools', () => {
     expect(isAlwaysHiddenToolName('read_file')).toBe(false)
     expect(isAlwaysHiddenToolName('Read')).toBe(false)
     expect(isAlwaysHiddenToolName('mcp__GitHub__list_issues')).toBe(false)
+    expect(isAlwaysHiddenToolName('GitHub__list_issues')).toBe(false)
+  })
+})
+
+describe('parseMcpToolName', () => {
+  it('parses Claude/Codex mcp__server__tool names', () => {
+    expect(parseMcpToolName('mcp__filesystem__read_file')).toEqual({
+      serverName: 'filesystem',
+      mcpToolName: 'read_file',
+    })
+    expect(parseMcpToolName('mcp__superone__miniapp_call')).toEqual({
+      serverName: 'superone',
+      mcpToolName: 'miniapp_call',
+    })
+  })
+
+  it('parses Grok server__tool names with exactly one delimiter', () => {
+    expect(parseMcpToolName('GitHub__list_issues')).toEqual({
+      serverName: 'GitHub',
+      mcpToolName: 'list_issues',
+    })
+    expect(parseMcpToolName('superone__session_rename')).toEqual({
+      serverName: 'superone',
+      mcpToolName: 'session_rename',
+    })
+  })
+
+  it('rejects native ids and ambiguous delimiters', () => {
+    expect(parseMcpToolName('Read')).toBeNull()
+    expect(parseMcpToolName('read_file')).toBeNull()
+    expect(parseMcpToolName('foo__bar__baz')).toBeNull()
+    expect(parseMcpToolName('__bare')).toBeNull()
+    expect(parseMcpToolName('bare__')).toBeNull()
   })
 })
 

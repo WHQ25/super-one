@@ -10,6 +10,7 @@ import { Circle, CheckCircle2, ChevronDown, ChevronUp, ShieldAlert, AlertTriangl
 import { requestOpenExternalLink } from '@/lib/external-link'
 import { ToolIcon } from './ToolIcon'
 import { getToolDisplay, getToolLabel, parseMcpToolName } from './tool-display'
+import { useMcpServerIcon } from './use-mcp-server-icon'
 import { deviceToolVerbKey } from './device-tool-display'
 import { EditDiff, WriteDiff } from './ToolBlock'
 import { modes as permissionModes } from './PermissionModeSelector'
@@ -180,6 +181,8 @@ export function PermissionPrompt() {
 
   const apps = useMiniAppStore((s) => s.apps)
   const pendingInput = pendingPermission?.input
+  // Hooks must precede the per-kind early returns below.
+  const mcpIconSrc = useMcpServerIcon(parseMcpToolName(toolName ?? '')?.serverName)
   const miniAppInfo: MiniAppToolInfo | null = useMemo(() => {
     if (!toolName) return null
     const mcpInfo = parseMcpToolName(toolName)
@@ -562,6 +565,9 @@ export function PermissionPrompt() {
     ? suggestions?.map((s) => (s.type === 'setMode' && s.mode === 'acceptEdits' ? { ...s, mode: 'auto' } : s))
     : suggestions
   const display = getToolDisplay(toolName ?? '', input, cwd, homedir)
+  const toolGlyph = mcpIconSrc
+    ? <img src={mcpIconSrc} alt="" className="size-3.5 shrink-0 rounded-sm object-cover" />
+    : <ToolIcon icon={display.icon} className="size-3.5 shrink-0 text-muted-foreground" />
   // A first-party tool keeps the words its own chat row uses. Only the generic
   // fallback is shared with third-party MCP servers.
   const deviceLabelKey = deviceToolVerbKey(toolName ?? '', input)
@@ -591,6 +597,8 @@ export function PermissionPrompt() {
             <ShieldAlert className="size-3.5 shrink-0 animate-pulse text-amber-500" />
           ) : miniAppInfo ? (
             <MiniAppIcon appId={miniAppInfo.appId} className="size-3.5 shrink-0 animate-pulse" />
+          ) : mcpIconSrc ? (
+            <img src={mcpIconSrc} alt="" className="size-3.5 shrink-0 animate-pulse rounded-sm object-cover" />
           ) : (
             <ToolIcon icon={display.icon} className="size-3.5 shrink-0 animate-pulse text-muted-foreground" />
           )}
@@ -645,9 +653,7 @@ export function PermissionPrompt() {
                           <div className="flex min-w-0 items-center gap-1.5">
                             {miniAppInfo ? (
                               <MiniAppIcon appId={miniAppInfo.appId} className="size-3.5 shrink-0" />
-                            ) : (
-                              <ToolIcon icon={display.icon} className="size-3.5 shrink-0 text-muted-foreground" />
-                            )}
+                            ) : toolGlyph}
                             {miniAppInfo ? (
                               <MiniAppToolLabel info={miniAppInfo} textSize="text-xs" />
                             ) : (

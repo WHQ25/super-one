@@ -14,6 +14,8 @@ export interface PortableTurnContextValue {
    * transport that could fetch a host file.
    */
   projectPath: string | null
+  /** MCP server name → brand icon src. Looked up case-insensitively. */
+  mcpIcons: Record<string, string>
 }
 
 /**
@@ -24,4 +26,5 @@ export const PortableTurnContext = createContext<PortableTurnContextValue>({
   scheme: 'dark',
   pendingPermission: null,
   projectPath: null,
+  mcpIcons: {},
 })

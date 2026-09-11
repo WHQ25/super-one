@@ -71,6 +71,7 @@ vi.mock('../mcp-config-service', () => ({
 
 vi.mock('../mcp-probe-service', () => ({
   checkMcpServers: vi.fn(),
+  readMcpMetaCache: vi.fn(() => ({})),
 }))
 
 vi.mock('../mcp-oauth', () => ({
@@ -149,6 +150,11 @@ vi.mock('../mcp-library-service', () => ({
   backupMcpServers: vi.fn(),
   listLibrary: vi.fn(),
   deleteLibraryEntry: vi.fn(),
+}))
+
+vi.mock('../mcp-server-icons', () => ({
+  collectMcpServerIconMap: vi.fn(async () => ({ github: 'https://example.com/g.png' })),
+  probeMcpIconsForAllHarnesses: vi.fn(async () => undefined),
 }))
 
 vi.mock('../database', () => ({
@@ -1095,6 +1101,14 @@ describe('AgentService.resolveInteractionSession', () => {
 })
 
 describe('AgentService.handleRemoteCommand', () => {
+  it('get_mcp_icons returns the host brand-icon map', async () => {
+    const respond = vi.fn()
+    await new AgentService().handleRemoteCommand(
+      { type: 'get_mcp_icons', requestId: 'mcp-icons' }, respond,
+    )
+    expect(respond).toHaveBeenCalledWith('mcp-icons', { icons: { github: 'https://example.com/g.png' } })
+  })
+
   /** Answers one `gitRun` per argv prefix; anything unlisted rejects like git would. */
   function stubGit(replies: Record<string, string>): void {
     gitRunMock.mockImplementation((_cwd: string, args: string[]) => {

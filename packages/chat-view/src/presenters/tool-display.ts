@@ -1,6 +1,6 @@
 import type { ContentBlock, ImageGenerationItem, VideoGenerationItem } from '@superone/shared/agent-types'
 import { shortenPath } from '@superone/shared/path-display'
-import { isAlwaysHiddenToolName } from '@superone/shared/tool-ui'
+import { isAlwaysHiddenToolName, parseMcpToolName } from '@superone/shared/tool-ui'
 import { DEVICE_AGENT_TOOL_NAMES } from '@superone/shared/superone-host-owned-tools'
 import { extractPartialToolInput } from '@superone/chat-core'
 import {
@@ -59,7 +59,7 @@ const TOOL_VERBS: Record<string, string> = {
 }
 
 export function getToolVerb(toolName: string): string {
-  if (toolName.startsWith('mcp__')) return 'Running'
+  if (parseMcpToolName(toolName)) return 'Running'
   return TOOL_VERBS[toolName] ?? 'Running'
 }
 
@@ -73,13 +73,7 @@ export interface ToolDisplay {
 }
 
 export { shortenPath } from '@superone/shared/path-display'
-
-/** Parse MCP tool name pattern `mcp__{serverName}__{toolName}`. */
-export function parseMcpToolName(toolName: string): { serverName: string; mcpToolName: string } | null {
-  const match = toolName.match(/^mcp__(.+?)__(.+)$/)
-  if (!match) return null
-  return { serverName: match[1], mcpToolName: match[2] }
-}
+export { parseMcpToolName } from '@superone/shared/tool-ui'
 
 export function isAlwaysHiddenToolBlock(toolName: string): boolean {
   return isAlwaysHiddenToolName(toolName)
@@ -198,8 +192,8 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
   const deviceSummary = deviceToolSummary(toolName, input)
   if (deviceSummary !== null) return { icon: 'smartphone', summary: deviceSummary }
 
-  // MCP tools: mcp__{serverName}__{toolName}
-  if (toolName.startsWith('mcp__')) {
+  // MCP tools: `mcp__{server}__{tool}` (Claude/Codex) or `{server}__{tool}` (Grok).
+  if (parseMcpToolName(toolName)) {
     return { icon: 'plug', summary: '' }
   }
 

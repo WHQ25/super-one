@@ -150,6 +150,23 @@ export function uiToolNameFromId(id: string | undefined | null): string | null {
   return TOOL_ID_TO_UI_NAME[key] ?? null
 }
 
+/**
+ * Claude/Codex: `mcp__{server}__{tool}`. Grok's wire id is `{server}__{tool}`
+ * (exactly one `__` delimiter) until ACP unwrap adds the `mcp__` prefix.
+ */
+export function parseMcpToolName(toolName: string): { serverName: string; mcpToolName: string } | null {
+  if (!toolName) return null
+  const prefixed = /^mcp__(.+?)__(.+)$/.exec(toolName)
+  if (prefixed) return { serverName: prefixed[1], mcpToolName: prefixed[2] }
+  const delimiter = toolName.indexOf('__')
+  if (delimiter <= 0) return null
+  if (toolName.indexOf('__', delimiter + 2) !== -1) return null
+  const serverName = toolName.slice(0, delimiter)
+  const mcpToolName = toolName.slice(delimiter + 2)
+  if (!serverName || !mcpToolName) return null
+  return { serverName, mcpToolName }
+}
+
 /** Tools whose chat row is never useful (meta / discovery / MCP envelope). */
 const HIDDEN_UI_TOOL_NAMES = new Set([
   'TodoWrite',
@@ -181,8 +198,8 @@ export function isAlwaysHiddenToolName(toolName: string): boolean {
   if (HIDDEN_UI_TOOL_NAMES.has(ui)) return true
   const harnessKey = ui.trim().toLowerCase().replace(/[^a-z0-9]/g, '')
   if (HIDDEN_HARNESS_TOOL_KEYS.has(harnessKey)) return true
-  const mcp = ui.match(/^mcp__(.+?)__(.+)$/) ?? toolName.match(/^mcp__(.+?)__(.+)$/)
-  return mcp?.[1] === 'superone' && HIDDEN_SUPERONE_MCP_TOOLS.has(mcp[2])
+  const mcp = parseMcpToolName(ui) ?? parseMcpToolName(toolName)
+  return mcp?.serverName === 'superone' && HIDDEN_SUPERONE_MCP_TOOLS.has(mcp.mcpToolName)
 }
 
 /**

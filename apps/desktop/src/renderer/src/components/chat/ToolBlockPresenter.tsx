@@ -451,6 +451,7 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
         isStreaming={isStreaming}
         isError={!!isError}
         isDenied={isDenied}
+        brandIconSrc={ports.mcpIconSrc}
       />
     )
     if (superoneToolDescriptor(mcpInfo.mcpToolName)) return compactRow

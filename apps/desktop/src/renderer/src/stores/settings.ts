@@ -60,9 +60,14 @@ interface SettingsState {
   mcpConfigs: McpServerConfig[]
   mcpStatus: McpServerInfo[]
   mcpMeta: Record<string, McpServerMeta>
+  /** Persisted probe cache — available in chat without visiting MCP settings. */
+  mcpMetaCache: Record<string, McpServerMeta>
   selectedMcpName: string | null
   fetchMcpConfigs: () => Promise<void>
   checkMcpServers: () => Promise<void>
+  fetchMcpMetaCache: () => Promise<void>
+  ensureMcpIconSources: () => Promise<void>
+  refreshMcpIconCache: () => Promise<void>
   saveMcpConfig: (name: string, config: Partial<Pick<McpServerConfig, 'type' | 'command' | 'args' | 'env' | 'url' | 'headers'>>, scope: ResourceScope) => Promise<void>
   deleteMcpConfig: (name: string, scope: ResourceScope) => Promise<void>
   toggleMcpConfig: (name: string, disabled: boolean, scope: ResourceScope) => Promise<void>
@@ -172,6 +177,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   mcpConfigs: [],
   mcpStatus: [],
   mcpMeta: {},
+  mcpMetaCache: {},
   selectedMcpName: null,
   codexMcpConfigs: [],
   codexMcpStatus: [],
@@ -352,6 +358,35 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     } catch {
       // ignore
     }
+  },
+
+  fetchMcpMetaCache: async () => {
+    try {
+      const cache = await window.app.getMcpMetaCache()
+      set({ mcpMetaCache: cache ?? {} })
+    } catch {
+      set({ mcpMetaCache: {} })
+    }
+  },
+
+  refreshMcpIconCache: async () => {
+    try {
+      await window.app.probeMcpIcons(getProjectPath())
+    } catch {
+      // Probe is best-effort; cached/library icons still render.
+    }
+    await Promise.all([get().fetchMcpMetaCache(), get().fetchMcpLibrary()])
+  },
+
+  ensureMcpIconSources: async () => {
+    await Promise.all([
+      get().fetchMcpLibrary(),
+      get().fetchMcpbInstalled(),
+      get().fetchMcpMetaCache(),
+    ])
+    // Probe Claude + Codex + dsh configs in the background so a Codex GitHub
+    // server is not missing just because settings last probed Claude.
+    void get().refreshMcpIconCache()
   },
 
   saveMcpConfig: async (name, config, scope) => {

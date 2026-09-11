@@ -12,7 +12,10 @@ const mockWindowApp = {
   codexToggleMcpConfig: vi.fn().mockResolvedValue(undefined),
   dshToggleMcpConfig: vi.fn().mockResolvedValue(undefined),
   checkMcpServers: vi.fn().mockResolvedValue({ status: [], meta: {} }),
+  getMcpMetaCache: vi.fn().mockResolvedValue({}),
+  probeMcpIcons: vi.fn().mockResolvedValue(undefined),
   listMcpLibrary: vi.fn().mockResolvedValue([]),
+  listInstalledMcpb: vi.fn().mockResolvedValue([]),
   deleteSkill: vi.fn().mockResolvedValue(undefined),
   codexDeleteSkill: vi.fn().mockResolvedValue(undefined),
   listSkills: vi.fn().mockResolvedValue([]),
@@ -57,6 +60,7 @@ function resetStore(overrides: Record<string, unknown> = {}) {
     mcpConfigs: [],
     mcpStatus: [],
     mcpMeta: {},
+    mcpMetaCache: {},
     selectedMcpName: null,
     skills: [],
     skillDetail: null,
@@ -439,5 +443,22 @@ describe('deleteMcpLibraryEntry', () => {
 
     expect(mockWindowApp.deleteMcpLibraryEntry).toHaveBeenCalledWith('entry')
     expect(mockWindowApp.listMcpLibrary).toHaveBeenCalled()
+  })
+})
+
+describe('ensureMcpIconSources', () => {
+  it('loads cached sources immediately and probes every harness in the background', async () => {
+    mockWindowApp.listMcpLibrary.mockResolvedValue([{ name: 'github', icons: [{ src: 'g.png' }] }])
+    mockWindowApp.getMcpMetaCache.mockResolvedValue({ github: { name: 'github', icons: [{ src: 'c.png' }] } })
+    mockWindowApp.listInstalledMcpb.mockResolvedValueOnce([{ meta: { name: 'linear' }, iconDataUrl: 'l.png' }])
+
+    await store.getState().ensureMcpIconSources()
+
+    expect(store.getState().mcpLibrary).toEqual([{ name: 'github', icons: [{ src: 'g.png' }] }])
+    expect(store.getState().mcpMetaCache).toEqual({ github: { name: 'github', icons: [{ src: 'c.png' }] } })
+    expect(store.getState().mcpbInstalled).toEqual([{ meta: { name: 'linear' }, iconDataUrl: 'l.png' }])
+    await vi.waitFor(() => {
+      expect(mockWindowApp.probeMcpIcons).toHaveBeenCalledWith('/project')
+    })
   })
 })

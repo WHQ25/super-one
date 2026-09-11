@@ -16,6 +16,8 @@ export interface SuperoneCompactToolRowPresenterProps {
   isStreaming: boolean
   isError?: boolean
   isDenied?: boolean
+  /** MCP server brand image when the host has one; otherwise the descriptor icon. */
+  brandIconSrc?: string
 }
 
 /**
@@ -33,6 +35,7 @@ export function SuperoneCompactToolRowPresenter({
   isStreaming,
   isError,
   isDenied,
+  brandIconSrc,
 }: SuperoneCompactToolRowPresenterProps) {
   const { t } = useTranslation()
   const descriptor = superoneToolDescriptor(mcpToolName)
@@ -46,7 +49,9 @@ export function SuperoneCompactToolRowPresenter({
 
   return (
     <CompactLabeledToolRow
-      icon={<ToolIcon icon={descriptor.icon} className="size-3 shrink-0 text-muted-foreground" />}
+      icon={brandIconSrc
+        ? <img src={brandIconSrc} alt="" className="size-3.5 shrink-0 rounded-sm object-cover" />
+        : <ToolIcon icon={descriptor.icon} className="size-3 shrink-0 text-muted-foreground" />}
       label={withStreamingEllipsis(
         toolOutcomeLabel({
           streaming: isStreaming,

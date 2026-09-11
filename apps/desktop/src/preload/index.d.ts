@@ -395,6 +395,8 @@ interface AppAPI {
   toggleMcpConfig(projectPath: string, name: string, disabled: boolean, scope: ResourceScope): Promise<void>
   checkMcpServers(projectPath: string, harness?: HarnessId): Promise<McpCheckResult>
   getMcpMetaCache(): Promise<Record<string, McpServerMeta>>
+  /** Handshake Claude/Codex/dsh MCP servers that still lack a cached brand icon. */
+  probeMcpIcons(projectPath: string): Promise<void>
   oauthAuthorize(serverUrl: string, headers?: Record<string, string>, transport?: 'http' | 'sse'): Promise<Record<string, string>>
 
   // MCP library

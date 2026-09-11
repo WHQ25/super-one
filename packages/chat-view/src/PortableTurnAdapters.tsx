@@ -8,7 +8,8 @@ import type {
   CodexCollabToolCallItem,
   ContentBlock,
 } from '@superone/shared/agent-types'
-import { isAlwaysHiddenToolName, isSubagentToolName } from '@superone/shared/tool-ui'
+import { isAlwaysHiddenToolName, isSubagentToolName, parseMcpToolName } from '@superone/shared/tool-ui'
+import { resolveMcpServerIconFromMap } from '@superone/shared/mcp-server-icon'
 import { isHiddenToolBlock } from './presenters/tool-display'
 import { resolveMarkdownFileLinks } from './presenters/markdown-file-links'
 import {
@@ -193,20 +194,21 @@ function PortableDocument({ name }: { name: string }) {
 }
 
 function PortableClaudeTool(props: ClaudeToolPresenterProps) {
-  const { pendingPermission } = useContext(PortableTurnContext)
+  const { pendingPermission, mcpIcons } = useContext(PortableTurnContext)
+  const brandIconSrc = resolveMcpServerIconFromMap('superone', mcpIcons)
   if (isPortableInteractiveTool(props.toolName, props.input)) return <DeferredInteractiveTool {...props} />
   if (props.remoteDetail) {
     // `DeferredTool` is already a generic row. Only a tool with its own presenter gets a
     // `renderDetail` that mounts that presenter inside it; every other tool leaves it unset so
     // the row shows the fetched result itself. Rendering a second `PortableClaudeTool` for a
     // tool that would fall through to `PortableToolRow` nested one generic row inside another.
-    const dedicated = renderDedicatedTool(props) !== null
+    const dedicated = renderDedicatedTool(props, brandIconSrc) !== null
     return <DeferredTool {...props} remoteDetail={props.remoteDetail}
       renderDetail={dedicated
         ? detail => <PortableClaudeTool {...props} {...detail} remoteDetail={undefined} autoExpand />
         : undefined} />
   }
-  const dedicated = renderDedicatedTool(props)
+  const dedicated = renderDedicatedTool(props, brandIconSrc)
   if (dedicated) return dedicated
   const awaitingPermission = isPermissionPending(pendingPermission, props.toolUseId, props.toolName)
   const row = <PortableToolRow {...props} />
@@ -221,13 +223,12 @@ function PortableClaudeTool(props: ClaudeToolPresenterProps) {
  * none and must render as `PortableToolRow`; the deferred path relies on that answer to decide
  * whether a shell needs a nested presenter at all.
  */
-function renderDedicatedTool(props: ClaudeToolPresenterProps): ReactNode | null {
+function renderDedicatedTool(props: ClaudeToolPresenterProps, brandIconSrc?: string): ReactNode | null {
   const browserOp = portableBrowserOp(props.toolName, props.input)
   const computerOp = portableComputerOp(props.toolName)
   const deviceOp = portableDeviceOp(props.toolName)
-  const collabToolName = props.toolName.startsWith('mcp__superone__')
-    ? props.toolName.slice('mcp__superone__'.length)
-    : null
+  const mcpInfo = parseMcpToolName(props.toolName)
+  const collabToolName = mcpInfo?.serverName === 'superone' ? mcpInfo.mcpToolName : null
   if (props.toolName === 'EnterPlanMode') return <EnterPlanModeBlock />
   if (props.toolName === 'ExitPlanMode') return <ExitPlanModeBlockPresenter result={props.result} />
   if (props.toolName === 'ListAgents') {
@@ -358,6 +359,7 @@ function renderDedicatedTool(props: ClaudeToolPresenterProps): ReactNode | null 
         isStreaming={props.status === 'streaming'}
         isError={props.isError}
         isDenied={isDenied}
+        brandIconSrc={brandIconSrc}
       />
     )
   }
@@ -1099,11 +1101,12 @@ export function PortableTurnProvider({
   scheme,
   pendingPermission,
   projectPath,
+  mcpIcons = {},
   children,
-}: PortableTurnContextValue & { children: ReactNode }) {
+}: Omit<PortableTurnContextValue, 'mcpIcons'> & { mcpIcons?: Record<string, string>; children: ReactNode }) {
   const value = useMemo(
-    () => ({ scheme, pendingPermission, projectPath }),
-    [scheme, pendingPermission, projectPath],
+    () => ({ scheme, pendingPermission, projectPath, mcpIcons }),
+    [scheme, pendingPermission, projectPath, mcpIcons],
   )
   return <PortableTurnContext.Provider value={value}>{children}</PortableTurnContext.Provider>
 }

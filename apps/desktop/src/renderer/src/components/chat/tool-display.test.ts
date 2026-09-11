@@ -55,6 +55,13 @@ describe('parseMcpToolName', () => {
     })
   })
 
+  it('parses Grok qualified names without the mcp__ prefix', () => {
+    expect(parseMcpToolName('GitHub__list_issues')).toEqual({
+      serverName: 'GitHub',
+      mcpToolName: 'list_issues',
+    })
+  })
+
   it('returns null for invalid MCP tool names', () => {
     expect(parseMcpToolName('Read')).toBeNull()
   })
@@ -131,6 +138,10 @@ describe('getToolDisplay', () => {
 
   it('maps MCP tools to plug icon', () => {
     expect(getToolDisplay('mcp__filesystem__read_file', {})).toEqual({
+      icon: 'plug',
+      summary: '',
+    })
+    expect(getToolDisplay('GitHub__list_issues', {})).toEqual({
       icon: 'plug',
       summary: '',
     })

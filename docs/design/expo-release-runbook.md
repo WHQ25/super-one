@@ -16,7 +16,7 @@ Android internal update group `7dc306ae-166f-4a4e-9053-53a1507a8aee` publishes t
 same runtime code to the existing installable APK channel, so manual Android testing
 does not require another binary build.
 **2026-09-11 (first workflow OTA):** `update-mobile.yml` run 34555359540 published commit
-`214ac745` as Android internal group `30303736-8e7b-45e4-a466-8c06daed8165` (runtime
+`4e0fef63` (the `main` head at dispatch) as Android internal group `30303736-8e7b-45e4-a466-8c06daed8165` (runtime
 `8171a5f1…`, matching build 22) and iOS production group
 `a2f30d92-a3a4-46e8-a178-0d6f2f7bd386` (runtime `d806bf5f…`, matching build 22).
 Build 21 uses runtime `1.0.0`; no mobile runtime source changed after the latest

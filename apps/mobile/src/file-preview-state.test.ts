@@ -8,6 +8,7 @@ import {
   previewFileName,
   previewLocalSource,
   reducePreviewResponse,
+  decodeInlineBase64,
   safeCacheFileName,
   type FilePreviewState,
 } from './file-preview-state'
@@ -53,10 +54,32 @@ describe('file preview response reduction', () => {
     expect(state).not.toHaveProperty('line')
   })
 
+  it('paints an inline relay image from the RPC payload', () => {
+    const png = { ...loading, name: 'shot.png' }
+    expect(reducePreviewResponse(png, {
+      ok: true, inline: true, base64: 'iVBORw==', name: 'shot.png', mimeType: 'image/png', size: 4, modifiedAt: 1,
+    }, 'relay')).toEqual({
+      kind: 'image', path: png.path, name: 'shot.png', src: 'data:image/png;base64,iVBORw==', mimeType: 'image/png',
+    })
+  })
+
+  it('keeps a small non-image inline payload for the hook to write, without confirmation', () => {
+    expect(reducePreviewResponse(loading, {
+      ok: true, inline: true, base64: 'AAAA', name: 'a.bin', mimeType: 'application/octet-stream', size: 3, modifiedAt: 1,
+    }, 'relay')).toMatchObject({
+      kind: 'transfer', needsConfirm: false, phase: 'idle', inlineBase64: 'AAAA', size: 3,
+    })
+  })
+
   it('turns metadata into an idle transfer that needs confirmation only over the relay', () => {
     const stat = { ok: true as const, statOnly: true as const, ...meta, size: 5_000_000, mimeType: 'image/png' }
     expect(reducePreviewResponse(loading, stat, 'relay')).toMatchObject({ kind: 'transfer', needsConfirm: true, phase: 'idle', size: 5_000_000 })
     expect(reducePreviewResponse(loading, stat, 'lan')).toMatchObject({ kind: 'transfer', needsConfirm: false })
+  })
+
+  it('decodes in-band bytes and rejects a size mismatch', () => {
+    expect(decodeInlineBase64('AQID', 3)).toEqual(new Uint8Array([1, 2, 3]))
+    expect(() => decodeInlineBase64('AQID', 4)).toThrow('inline size mismatch')
   })
 
   it('surfaces the host error message, falling back to its code', () => {

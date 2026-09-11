@@ -28,7 +28,7 @@ A chip in the transcript opens the file **in place**, the way the desktop opens 
 
 ## What arrives inline
 
-- Text and code under 256 KiB
+- Text and code under 512 KiB
 - Markdown, rendered as prose
 - The cited line, when the chip carried one
 
@@ -36,7 +36,7 @@ A chip in the transcript opens the file **in place**, the way the desktop opens 
 const inline = size <= INLINE_PREVIEW_MAX_BYTES
 \`\`\`
 
-> Anything else becomes a transfer card. Over the relay the user confirms it first.
+> Anything else becomes a transfer card. Over the relay a file larger than 512 KiB needs confirmation first.
 `
 
 /** A 2×2 PNG so the fixtures need no asset pipeline. */

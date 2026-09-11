@@ -29,7 +29,8 @@ function samplePng(seed: string): string {
 
 /**
  * Stand in for the React Native host: answer `loadImage` the way each transport
- * would. Relay answers `confirmRequired` until the request carries `confirmed`.
+ * would. A large relay file answers `confirmRequired` until the request carries
+ * `confirmed`; small ones come back as a data URI the way LAN does.
  */
 function MockHost({ mode, children }: { mode: HostMode; children: React.ReactNode }) {
   const [ready, setReady] = useState(false)

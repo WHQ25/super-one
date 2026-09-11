@@ -4,6 +4,7 @@ import { MAX_DOWNLOAD_BYTES, type RelayClient, type TransportKind } from '@super
 import type { ReadDesktopFileError, ReadDesktopFileResponse, RemoteCommand } from '@superone/shared/agent-types'
 import {
   completeTransfer,
+  decodeInlineBase64,
   imagePreviewState,
   previewFileName,
   reducePreviewResponse,
@@ -14,7 +15,7 @@ import type { ImagePreviewTarget } from '../image-preview-state'
 import { resolveRemoteFilePath } from '../shell-state'
 import { randomId } from '../ids'
 
-/** How long the phone waits for text or metadata; inline text is at most 256 KiB. */
+/** How long the phone waits for text or metadata; inline text is at most 512 KiB. */
 const PREVIEW_REQUEST_TIMEOUT_MS = 60_000
 /** How long a full transfer may take end to end, including the relay staging. */
 const TRANSFER_TIMEOUT_MS = 180_000
@@ -32,11 +33,12 @@ export type FilePreviewPorts = {
  * The fullscreen preview's state and the RPCs behind it.
  *
  * `open` takes a desktop path — from a file chip or a Files row — and asks the
- * host for the text if it is small or the metadata if it is not, in one
- * `read_desktop_file` round-trip. A LAN transfer then starts on its own; a relay
- * transfer waits for `startTransfer`, which the Download button calls — that is
- * the confirmation the relay route asks for. `showImage` takes a picture the
- * transcript already painted and opens it without any transfer at all.
+ * host for the bytes if they are small or the metadata if they are not, in one
+ * `read_desktop_file` round-trip. Small text and small relay binaries land
+ * inline; a LAN transfer then starts on its own; a larger relay transfer waits
+ * for `startTransfer`, which the Download button calls — that is the
+ * confirmation R2 staging asks for. `showImage` takes a picture the transcript
+ * already painted and opens it without any transfer at all.
  */
 export function useFilePreview(ports: FilePreviewPorts) {
   const [state, setStateValue] = useState<FilePreviewState | null>(null)
@@ -69,10 +71,13 @@ export function useFilePreview(ports: FilePreviewPorts) {
         ...(sessionId ? { sessionId } : {}),
         path: transfer.path,
         maxBytes: MAX_DOWNLOAD_BYTES,
+        preferInline: true,
       } as RemoteCommand, TRANSFER_TIMEOUT_MS) as ReadDesktopFileResponse | ReadDesktopFileError
       if (!response.ok) throw new Error(response.message ?? response.error)
-      if (!('url' in response)) throw new Error('desktop returned metadata without file data')
-      const bytes = await client.downloadDesktopFile(response)
+      let bytes: Uint8Array
+      if ('base64' in response) bytes = decodeInlineBase64(response.base64, response.size)
+      else if ('url' in response) bytes = await client.downloadDesktopFile(response)
+      else throw new Error('desktop returned metadata without file data')
       const file = new File(Paths.cache, CACHE_DIRECTORY, safeCacheFileName(randomId(), transfer.name))
       file.create({ overwrite: true, intermediates: true })
       file.write(bytes)
@@ -107,12 +112,19 @@ export function useFilePreview(ports: FilePreviewPorts) {
         statOnly: true,
       } as RemoteCommand, PREVIEW_REQUEST_TIMEOUT_MS) as ReadDesktopFileResponse | ReadDesktopFileError
       next = reducePreviewResponse(loading, response, transport)
+      if (next.kind === 'transfer' && next.inlineBase64) {
+        const bytes = decodeInlineBase64(next.inlineBase64, next.size)
+        const file = new File(Paths.cache, CACHE_DIRECTORY, safeCacheFileName(randomId(), next.name))
+        file.create({ overwrite: true, intermediates: true })
+        file.write(bytes)
+        next = completeTransfer({ ...next, phase: 'downloading' }, file.uri)
+      }
     } catch (error) {
       next = { kind: 'error', path: target, name: loading.name, message: error instanceof Error ? error.message : 'failed to read file' }
     }
     if (generation.current !== mine) return
     setState(next)
-    if (next.kind === 'transfer' && !next.needsConfirm) void startTransfer(next)
+    if (next.kind === 'transfer' && !next.needsConfirm && !next.inlineBase64) void startTransfer(next)
   }, [setState, startTransfer])
 
   const showImage = useCallback((target: ImagePreviewTarget) => {

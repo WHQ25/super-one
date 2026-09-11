@@ -2,8 +2,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, realpathSyn
 import { tmpdir } from 'node:os'
 import { join, basename } from 'node:path'
 import { afterAll, beforeAll, describe, it, expect } from 'vitest'
-import { INLINE_PREVIEW_MAX_BYTES } from '@superone/shared/file-preview'
-import { authorizeAndStat, authorizeWriteTarget, FileBridgeError, inferMimeType, canonicalizeRoots, readInlinePreviewText } from './file-bridge'
+import { INLINE_PREVIEW_MAX_BYTES, INLINE_RPC_MAX_BYTES } from '@superone/shared/file-preview'
+import { authorizeAndStat, authorizeWriteTarget, FileBridgeError, inferMimeType, canonicalizeRoots, readInlinePreviewText, readInlineRpcBytes, readPreferInline } from './file-bridge'
 
 let workspace: string
 let projectRoot: string
@@ -20,6 +20,7 @@ beforeAll(() => {
   writeFileSync(join(projectRoot, 'main.ts'), 'const 中文 = "ok"\n')
   writeFileSync(join(projectRoot, 'fake.txt'), Buffer.from([0x68, 0x69, 0x00, 0x21]))
   writeFileSync(join(projectRoot, 'huge.md'), Buffer.alloc(INLINE_PREVIEW_MAX_BYTES + 1, 0x61))
+  writeFileSync(join(projectRoot, 'huge.bin'), Buffer.alloc(INLINE_RPC_MAX_BYTES + 1, 0xab))
 
   mkdirSync(join(projectRoot, '.ssh'), { recursive: true })
   writeFileSync(join(projectRoot, '.ssh', 'id_rsa'), 'fake key')
@@ -201,5 +202,41 @@ describe('readInlinePreviewText', () => {
   it('declines text past the inline byte limit', async () => {
     const file = await authorizeAndStat(join(projectRoot, 'huge.md'), ctx, opts)
     expect(await readInlinePreviewText(file)).toBeNull()
+  })
+})
+
+describe('readPreferInline', () => {
+  const ctx = { allowedRoots: [] as string[] }
+  const opts = { skipRootCheck: true }
+
+  it('returns UTF-8 text on every transport when preferInline is set', async () => {
+    const file = await authorizeAndStat(join(projectRoot, 'main.ts'), ctx, opts)
+    await expect(readPreferInline(file, { preferInline: true, statOnly: true, transport: 'lan' }))
+      .resolves.toEqual({ kind: 'text', text: 'const 中文 = "ok"\n' })
+  })
+
+  it('returns small binary bytes over the relay, including on a statOnly+preferInline trip', async () => {
+    const file = await authorizeAndStat(join(projectRoot, 'image.png'), ctx, opts)
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47])
+    await expect(readPreferInline(file, { preferInline: true, statOnly: true, transport: 'relay' }))
+      .resolves.toEqual({ kind: 'bytes', bytes: png })
+    await expect(readPreferInline(file, { preferInline: false, statOnly: false, transport: 'relay' }))
+      .resolves.toEqual({ kind: 'bytes', bytes: png })
+  })
+
+  it('does not inline binaries over the LAN or past the RPC cap', async () => {
+    const png = await authorizeAndStat(join(projectRoot, 'image.png'), ctx, opts)
+    await expect(readPreferInline(png, { preferInline: true, statOnly: true, transport: 'lan' }))
+      .resolves.toEqual({ kind: 'none' })
+    const huge = await authorizeAndStat(join(projectRoot, 'huge.bin'), ctx, { ...opts, maxBytes: INLINE_RPC_MAX_BYTES + 1 })
+    await expect(readInlineRpcBytes(huge)).resolves.toBeNull()
+    await expect(readPreferInline(huge, { preferInline: true, statOnly: true, transport: 'relay' }))
+      .resolves.toEqual({ kind: 'none' })
+  })
+
+  it('does not read a small relay binary on a metadata-only request', async () => {
+    const file = await authorizeAndStat(join(projectRoot, 'image.png'), ctx, opts)
+    await expect(readPreferInline(file, { preferInline: false, statOnly: true, transport: 'relay' }))
+      .resolves.toEqual({ kind: 'none' })
   })
 })

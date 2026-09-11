@@ -3,6 +3,10 @@ import type { ReadDesktopFileError, ReadDesktopFileResponse, RemoteCommand } fro
 import { resolveRemoteFilePath } from './shell-state'
 import { randomId } from './ids'
 
+function isInlineBase64(response: ReadDesktopFileResponse): response is ReadDesktopFileResponse & { inline: true; base64: string } {
+  return 'inline' in response && 'base64' in response
+}
+
 /**
  * Largest image the transcript will pull inline. Screenshots and generated
  * stills sit well under this; anything bigger goes through the receive sheet.
@@ -65,18 +69,26 @@ function readCommand(req: InlineImageRequest, target: string, statOnly: boolean)
     ...(req.sessionId ? { sessionId: req.sessionId } : {}),
     path: target,
     maxBytes: INLINE_IMAGE_MAX_BYTES,
+    preferInline: true,
     ...(statOnly ? { statOnly: true } : {}),
   } as RemoteCommand
+}
+
+function dataUriFromInline(response: ReadDesktopFileResponse & { inline: true; base64: string }): string {
+  if (!response.mimeType.startsWith('image/')) throw new Error('not an image')
+  return `data:${response.mimeType};base64,${response.base64}`
 }
 
 /**
  * Fetch an image the desktop holds and hand it back as a data URI.
  *
  * Over the LAN this is one `read_desktop_file` plus a direct download. Over the
- * relay the bytes would first be staged encrypted on the relay, so until the
- * row is `confirmed` the loader only asks for the size and returns
- * `confirmRequired` — the WebView turns that into a Load button. A file that
- * is not an image, or is too large, throws; the row then keeps its preview chip.
+ * relay a file small enough for the RPC comes back as inline base64 in that
+ * same request — no R2 staging, no confirmation. Larger files would first be
+ * staged encrypted on the relay, so until the row is `confirmed` the loader
+ * only asks for the size and returns `confirmRequired` — the WebView turns
+ * that into a Load button. A file that is not an image, or is too large,
+ * throws; the row then keeps its preview chip.
  */
 export async function loadInlineImage(req: InlineImageRequest): Promise<InlineImageResult> {
   const target = resolveRemoteFilePath(req.projectPath, req.path)
@@ -87,12 +99,22 @@ export async function loadInlineImage(req: InlineImageRequest): Promise<InlineIm
   if (req.transport !== 'lan' && !req.confirmed) {
     const stat = await req.host.request(readCommand(req, target, true), INLINE_IMAGE_TIMEOUT_MS) as ReadDesktopFileResponse | ReadDesktopFileError
     if (!stat.ok) throw new Error(stat.message ?? stat.error)
+    if (isInlineBase64(stat)) {
+      const dataUri = dataUriFromInline(stat)
+      remember(key, dataUri)
+      return { dataUri }
+    }
     if (!stat.mimeType.startsWith('image/')) throw new Error('not an image')
     return { confirmRequired: true, size: stat.size }
   }
 
   const response = await req.host.request(readCommand(req, target, false), INLINE_IMAGE_TIMEOUT_MS) as ReadDesktopFileResponse | ReadDesktopFileError
   if (!response.ok) throw new Error(response.message ?? response.error)
+  if (isInlineBase64(response)) {
+    const dataUri = dataUriFromInline(response)
+    remember(key, dataUri)
+    return { dataUri }
+  }
   if (!('url' in response)) throw new Error('desktop returned metadata without file data')
   if (!response.mimeType.startsWith('image/')) throw new Error('not an image')
   const bytes = await req.host.downloadDesktopFile(response)

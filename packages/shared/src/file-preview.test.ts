@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   INLINE_PREVIEW_MAX_BYTES,
+  INLINE_RPC_MAX_BYTES,
   isInlinePreviewCandidate,
   isInlinePreviewTextName,
+  isInlineRpcCandidate,
   isMarkdownFileName,
   looksBinary,
+  shouldInlineRpcBytes,
 } from './file-preview'
 
 describe('inline preview policy', () => {
@@ -27,9 +30,21 @@ describe('inline preview policy', () => {
   })
 
   it('caps a candidate at the inline byte limit', () => {
+    expect(INLINE_RPC_MAX_BYTES).toBe(512 * 1024)
+    expect(INLINE_PREVIEW_MAX_BYTES).toBe(INLINE_RPC_MAX_BYTES)
     expect(isInlinePreviewCandidate('a.ts', INLINE_PREVIEW_MAX_BYTES)).toBe(true)
     expect(isInlinePreviewCandidate('a.ts', INLINE_PREVIEW_MAX_BYTES + 1)).toBe(false)
     expect(isInlinePreviewCandidate('a.png', 10)).toBe(false)
+  })
+
+  it('inlines small binaries over the relay and never over the LAN', () => {
+    expect(isInlineRpcCandidate(0)).toBe(true)
+    expect(isInlineRpcCandidate(INLINE_RPC_MAX_BYTES)).toBe(true)
+    expect(isInlineRpcCandidate(INLINE_RPC_MAX_BYTES + 1)).toBe(false)
+    expect(shouldInlineRpcBytes('relay', 20_480)).toBe(true)
+    expect(shouldInlineRpcBytes(undefined, 20_480)).toBe(true)
+    expect(shouldInlineRpcBytes('lan', 20_480)).toBe(false)
+    expect(shouldInlineRpcBytes('relay', INLINE_RPC_MAX_BYTES + 1)).toBe(false)
   })
 
   it('flags only markdown for the prose renderer', () => {

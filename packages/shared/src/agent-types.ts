@@ -4544,10 +4544,12 @@ export type RemoteCommand =
   | { type: 'remove_project_additional_dir'; requestId: string; projectPath: string; dir: string; provider?: HarnessId }
   | { type: 'set_session_additional_dirs'; requestId: string; projectPath: string; sessionId: string; dirs: string[] }
   /**
-   * `preferInline`: when the file is small text (see `@superone/shared/file-preview`),
-   * return its UTF-8 content in the response instead of staging it for download.
+   * `preferInline`: when the file is small enough to ride the RPC (see
+   * `@superone/shared/file-preview`), return it in-band instead of staging a
+   * download. Small text comes back as UTF-8 on every transport; small binaries
+   * come back as base64 over the relay only (LAN keeps the signed HTTP path).
    * Anything else falls back to `statOnly` / the URL path exactly as if the flag
-   * were absent, so `{ preferInline, statOnly }` yields text or metadata in one trip.
+   * were absent, so `{ preferInline, statOnly }` yields content or metadata in one trip.
    */
   | { type: 'read_desktop_file'; requestId: string; projectPath?: string; sessionId?: string; path: string; maxBytes?: number; statOnly?: boolean; preferInline?: boolean }
   | { type: 'upload_file'; requestId: string; projectPath?: string; sessionId?: string; targetDir: string; name: string; mimeType: string; size: number; inlineBase64?: string }
@@ -4625,6 +4627,8 @@ export type ReadDesktopFileResponse = ReadDesktopFileMetadata & (
   | { ok: true; statOnly: true }
   /** Small text returned in-band; only when the request set `preferInline`. */
   | { ok: true; inline: true; text: string }
+  /** Small binary returned in-band over the relay, skipping R2 staging. */
+  | { ok: true; inline: true; base64: string }
   | {
       ok: true
       url: string

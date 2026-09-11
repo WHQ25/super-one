@@ -652,11 +652,12 @@ Photos asks for add-only library permission and surfaces a denied state with an 
 Settings button; saving to Files goes through `Directory.pickDirectoryAsync`.
 `previewFile` is the file chip's primary action (with the cited `line` when there is one)
 and is owned by `navigation/use-file-preview.ts`: it asks `read_desktop_file` with
-`preferInline` + `statOnly` in one trip, shows small text/Markdown inline (policy in
+`preferInline` + `statOnly` in one trip, shows small text/Markdown inline on every
+transport and small binaries (≤512 KiB) inline over the relay (policy in
 `@superone/shared/file-preview`), and otherwise enters the `transfer` state — downloading
-on its own over LAN, after a Download confirmation over the relay. Downloaded images swap
-into the image body; other files stay on a "Downloaded" card so the menu can save or share
-them. `openFile` is the secondary action: resolve the path against the active project and
+on its own over LAN, after a Download confirmation over the relay when R2 staging is
+required. Downloaded images swap into the image body; other files stay on a "Downloaded"
+card so the menu can save or share them. `openFile` is the secondary action: resolve the path against the active project and
 open the containing directory. The native file browser uses `previewFile` for file rows;
 directory rows navigate only. Remote path helpers must preserve POSIX roots, Windows drive
 roots, and UNC share roots. Coalesce concurrent reads of the same project/session/path
@@ -666,8 +667,9 @@ until the first request settles. Unsupported actions must return an error respon
 name only, and unknown or >128 KiB files render plain.
 `loadImage` is how tool screenshots and generated images get onto the transcript: the
 WebView's `PortableHostImage` asks for a path, `inline-images.ts` answers with a data URI
-over LAN, and over the relay answers `confirmRequired` (+ size from a `statOnly` read)
-until the request carries `confirmed: true` — the row shows a Load button in between.
+over LAN and for relay files small enough to ride the RPC (≤512 KiB). Larger relay files
+answer `confirmRequired` (+ size from a `statOnly` read) until the request carries
+`confirmed: true` — the row shows a Load button in between.
 Decoded images are cached per project/path (48 MiB LRU) so re-mounted rows never re-fetch.
 Tapping any picture the transcript *displays* — a loaded host image, a user attachment, a
 markdown image — sends `previewImage` with the `src` already painted, and the shell opens
@@ -676,7 +678,7 @@ menu saves to Photos or shares from the cache. It never re-downloads (remote `ht
 sources have both rows disabled). `previewFile` remains the path for a chip *without* a
 picture yet, and for non-image files.
 Images and PDFs use the `ImageAttachment` message path. Project file upload uses inline
-RPC through 256 KiB, raw LAN PUT when connected locally, or chunk-encrypted relay R2
+RPC through 512 KiB, raw LAN PUT when connected locally, or chunk-encrypted relay R2
 PUT plus completion through 100 MiB. Picker-reported sizes are optional metadata, not a
 security boundary: check `File.size` before reading a whole PDF or project file, then
 enforce the exact decoded byte count for base64 image/PDF payloads. Reject missing or

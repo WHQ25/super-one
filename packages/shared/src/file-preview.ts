@@ -1,18 +1,21 @@
 /**
  * Inline file preview policy shared by the desktop host and the phone.
  *
- * A small text-like file can ride back inside the `read_desktop_file` RPC
- * response itself instead of going through a signed LAN URL or an encrypted
- * relay upload. Both ends need the same answer to "is this file small enough
- * and text enough", so the rule lives here rather than in either app.
+ * A small file can ride back inside the `read_desktop_file` RPC response
+ * itself instead of going through a signed LAN URL or an encrypted relay
+ * upload. Text uses this on every transport; binary uses it over the relay
+ * only (LAN keeps the HTTP path). Both ends need the same answer to "is this
+ * small enough to ride the RPC channel", so the rule lives here.
  */
 
 /**
- * Upper bound for a file the host may return inline as UTF-8 text.
- * Matches the inline threshold already used for uploads,
+ * Upper bound for a file the host may return in-band on the encrypted
+ * RPC/WebSocket. Matches the inline threshold already used for uploads,
  * so one number governs every "small enough to ride the RPC channel" decision.
  */
-export const INLINE_PREVIEW_MAX_BYTES = 256 * 1024
+export const INLINE_RPC_MAX_BYTES = 512 * 1024
+/** Same cap as `INLINE_RPC_MAX_BYTES`; the name used by the text-preview path. */
+export const INLINE_PREVIEW_MAX_BYTES = INLINE_RPC_MAX_BYTES
 
 /** Extensions the phone can render as plain text or code. */
 const INLINE_PREVIEW_EXTENSIONS: ReadonlySet<string> = new Set([
@@ -64,7 +67,24 @@ export function isInlinePreviewTextName(name: string): boolean {
 
 /** Name says text AND the file is small enough to ride the RPC response. */
 export function isInlinePreviewCandidate(name: string, size: number): boolean {
-  return size <= INLINE_PREVIEW_MAX_BYTES && isInlinePreviewTextName(name)
+  return isInlineRpcCandidate(size) && isInlinePreviewTextName(name)
+}
+
+/** Byte length small enough to ride the encrypted RPC/WebSocket. */
+export function isInlineRpcCandidate(size: number): boolean {
+  return Number.isFinite(size) && size >= 0 && size <= INLINE_RPC_MAX_BYTES
+}
+
+/**
+ * Whether a binary (or otherwise non-text) file should come back as inline
+ * bytes instead of a download URL. LAN keeps the signed HTTP path; the relay
+ * inlines so a 20 KB screenshot does not stage an encrypted copy on R2.
+ */
+export function shouldInlineRpcBytes(
+  transport: 'lan' | 'relay' | null | undefined,
+  size: number,
+): boolean {
+  return transport !== 'lan' && isInlineRpcCandidate(size)
 }
 
 /** Whether the phone should render the text as Markdown rather than as code. */

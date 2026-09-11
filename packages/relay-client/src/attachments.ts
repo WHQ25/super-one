@@ -3,10 +3,11 @@ import type {
   UploadFileCompleteResponse,
   UploadFileResponse,
 } from '@superone/shared/agent-types'
+import { INLINE_RPC_MAX_BYTES } from '@superone/shared/file-preview'
 import { bytesToBase64String, encryptBytesChunked } from './crypto'
 import { substituteLanHost } from './lan-url'
 
-export const INLINE_UPLOAD_MAX_BYTES = 256 * 1_024
+export const INLINE_UPLOAD_MAX_BYTES = INLINE_RPC_MAX_BYTES
 export const MAX_UPLOAD_BYTES = 100 * 1_024 * 1_024
 
 export type HttpPutResult = { savedPath?: string } | void

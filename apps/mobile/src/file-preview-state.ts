@@ -14,10 +14,10 @@ import { imagePreviewFileName, parseImageDataUri, type ImagePreviewTarget } from
  *   holds: the data URI the transcript painted, a cache file a transfer wrote,
  *   or a public URL (which the phone cannot save or share).
  * - `text` — small text or Markdown that rode back inside the RPC.
- * - `transfer` — a file that must move as bytes first. Over the relay the user
- *   confirms it (the desktop stages an encrypted copy on the relay); over the LAN
- *   it starts on its own. A finished transfer either becomes an `image` or stays
- *   here with `localUri` set, ready to save or share.
+ * - `transfer` — a file that must move as bytes first. Over the relay a file
+ *   larger than the RPC cap needs confirmation (the desktop stages an encrypted
+ *   copy on R2); over the LAN it starts on its own. A finished transfer either
+ *   becomes an `image` or stays here with `localUri` set, ready to save or share.
  */
 export type FilePreviewState =
   | { kind: 'loading'; path: string; name: string; line?: number }
@@ -52,13 +52,15 @@ export type FilePreviewState =
       mimeType: string
       /**
        * Whether the bytes may move without asking. A LAN download is a signed
-       * URL on the local network; a relay download stages the file on a third
-       * party first, so the user confirms it.
+       * URL on the local network; a relay download that still needs R2 staging
+       * asks first. Small relay files arrive inline and skip this.
        */
       needsConfirm: boolean
       phase: 'idle' | 'downloading' | 'ready'
       /** The cache file the bytes were written to, once `phase` is `ready`. */
       localUri?: string
+      /** In-band bytes from the RPC; the hook writes them instead of downloading. */
+      inlineBase64?: string
     }
   | { kind: 'error'; path: string; name: string; message: string }
 
@@ -146,14 +148,37 @@ export function reducePreviewResponse(
     return { kind: 'error', path, name, message: response.message ?? response.error }
   }
   if ('inline' in response) {
-    return {
-      kind: 'text',
-      path,
-      name,
-      text: response.text,
-      size: response.size,
-      markdown: isMarkdownFileName(name),
-      ...(current.line != null ? { line: current.line } : {}),
+    if ('text' in response) {
+      return {
+        kind: 'text',
+        path,
+        name,
+        text: response.text,
+        size: response.size,
+        markdown: isMarkdownFileName(name),
+        ...(current.line != null ? { line: current.line } : {}),
+      }
+    }
+    if ('base64' in response) {
+      if (response.mimeType.startsWith('image/')) {
+        return {
+          kind: 'image',
+          path,
+          name,
+          src: `data:${response.mimeType};base64,${response.base64}`,
+          mimeType: response.mimeType,
+        }
+      }
+      return {
+        kind: 'transfer',
+        path,
+        name,
+        size: response.size,
+        mimeType: response.mimeType,
+        needsConfirm: false,
+        phase: 'idle',
+        inlineBase64: response.base64,
+      }
     }
   }
   return {
@@ -165,6 +190,15 @@ export function reducePreviewResponse(
     needsConfirm: transport !== 'lan',
     phase: 'idle',
   }
+}
+
+/** Decode in-band file bytes; the host's `size` is the plaintext length. */
+export function decodeInlineBase64(base64: string, expectedSize: number): Uint8Array {
+  const bytes = typeof Buffer !== 'undefined'
+    ? new Uint8Array(Buffer.from(base64, 'base64'))
+    : Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
+  if (bytes.byteLength !== expectedSize) throw new Error('download: inline size mismatch')
+  return bytes
 }
 
 /**

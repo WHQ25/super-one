@@ -45,7 +45,7 @@ import {
 } from '../providers/credential-store'
 import type { CapabilityTask, ConsumerBinding, ConsumerId, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
 import { sanitizeGitRef } from '../path-security'
-import { authorizeAndStat, FileBridgeError, readInlinePreviewText, type AuthorizedFile } from '../file-bridge'
+import { authorizeAndStat, FileBridgeError, readPreferInline, type AuthorizedFile } from '../file-bridge'
 import { tmpdir } from 'os'
 import { app } from 'electron'
 import { activateWorktree, getCheckedOutBranches, getWorktreeInfo, gitErrorMessage } from '../git/worktree-ops'
@@ -1875,29 +1875,44 @@ export class AgentService {
       return
     }
 
-    // Small text rides back in the response itself: no LAN URL to sign and, over
-    // the relay, no encrypted R2 round-trip for a file the phone only wants to read.
-    // Checked before `statOnly` so one request can ask "give me the text if it is
-    // small, otherwise just tell me about the file" and get either answer.
-    if (command.preferInline) {
-      try {
-        const text = await readInlinePreviewText(authorized)
-        if (text !== null) {
-          await respond(command.requestId, {
-            ok: true,
-            inline: true,
-            text,
-            mimeType: authorized.mimeType,
-            name: authorized.name,
-            size: authorized.size,
-            modifiedAt: authorized.modifiedAt,
-          })
-          return
-        }
-      } catch (err) {
-        await respond(command.requestId, { ok: false, error: 'internal_error', message: (err as Error).message })
+    // Small files ride back in the response itself: no LAN URL to sign and, over
+    // the relay, no encrypted R2 round-trip. Checked before `statOnly` so one
+    // request can ask "give me the bytes if they are small, otherwise just tell
+    // me about the file" and get either answer. A full fetch of a small relay
+    // file takes the same path so it never stages on R2 either.
+    try {
+      const inline = await readPreferInline(authorized, {
+        preferInline: command.preferInline,
+        statOnly: command.statOnly,
+        transport: source?.transport ?? 'relay',
+      })
+      if (inline.kind === 'text') {
+        await respond(command.requestId, {
+          ok: true,
+          inline: true,
+          text: inline.text,
+          mimeType: authorized.mimeType,
+          name: authorized.name,
+          size: authorized.size,
+          modifiedAt: authorized.modifiedAt,
+        })
         return
       }
+      if (inline.kind === 'bytes') {
+        await respond(command.requestId, {
+          ok: true,
+          inline: true,
+          base64: inline.bytes.toString('base64'),
+          mimeType: authorized.mimeType,
+          name: authorized.name,
+          size: authorized.size,
+          modifiedAt: authorized.modifiedAt,
+        })
+        return
+      }
+    } catch (err) {
+      await respond(command.requestId, { ok: false, error: 'internal_error', message: (err as Error).message })
+      return
     }
 
     if (command.statOnly) {

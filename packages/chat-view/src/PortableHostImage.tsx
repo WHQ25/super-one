@@ -69,9 +69,10 @@ function formatSize(bytes: number): string {
  *
  * Desktop tool rows read screenshots and generated images straight off disk;
  * the phone has to ask for them. Over the LAN the host answers with the bytes
- * and the picture simply appears. Over the relay the host answers
- * `confirmRequired` instead, because those bytes would be staged encrypted on
- * the relay first — the row then shows a Load button and the user decides.
+ * and the picture simply appears. Over the relay a small file comes back the
+ * same way (in-band on the RPC). A larger file would be staged encrypted on
+ * the relay first, so the host answers `confirmRequired` — the row then shows
+ * a Load button and the user decides.
  * A host that cannot answer at all leaves the plain preview chip in place, so
  * the transcript is never worse than before.
  *

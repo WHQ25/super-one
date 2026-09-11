@@ -27,8 +27,9 @@ export interface NativeActionPorts {
   previewFile(path: string, line?: number): Promise<void>
   /**
    * Fetch an image for the transcript to show inline. Resolves to the data URI,
-   * or to `confirmRequired` when the transport wants the user to approve the
-   * transfer first; `confirmed` is that approval on the second request.
+   * or to `confirmRequired` when the relay would have to stage the file on R2
+   * first; `confirmed` is that approval on the second request. Small relay
+   * files skip confirmation and come back as a data URI in one trip.
    */
   loadImage(path: string, confirmed: boolean): Promise<Record<string, unknown>>
   /**

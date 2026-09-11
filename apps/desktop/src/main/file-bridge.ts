@@ -1,7 +1,13 @@
 import { promises as fs, statSync, existsSync } from 'node:fs'
 import { realpath } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, normalize, resolve } from 'node:path'
-import { INLINE_PREVIEW_MAX_BYTES, isInlinePreviewCandidate, looksBinary } from '@superone/shared/file-preview'
+import {
+  INLINE_RPC_MAX_BYTES,
+  isInlinePreviewCandidate,
+  isInlineRpcCandidate,
+  looksBinary,
+  shouldInlineRpcBytes,
+} from '@superone/shared/file-preview'
 import { isPathAtOrWithinAllowed, isPathWithinAllowed, resolveRealPath } from './path-security'
 
 const FILE_BRIDGE_MIME: Record<string, string> = {
@@ -144,8 +150,45 @@ export async function readInlinePreviewText(file: AuthorizedFile): Promise<strin
   // `size` came from a stat moments ago; re-check after the read so a file that
   // grew in between cannot push an oversized payload onto the RPC channel.
   const bytes = await fs.readFile(file.realPath)
-  if (bytes.byteLength > INLINE_PREVIEW_MAX_BYTES || looksBinary(bytes)) return null
+  if (bytes.byteLength > INLINE_RPC_MAX_BYTES || looksBinary(bytes)) return null
   return bytes.toString('utf8')
+}
+
+/**
+ * Read an already-authorized file for an in-band RPC payload, or `null` when
+ * it is too large. Re-checks the byte length after the read so a file that
+ * grew cannot push an oversized payload onto the WebSocket.
+ */
+export async function readInlineRpcBytes(file: AuthorizedFile): Promise<Buffer | null> {
+  if (!isInlineRpcCandidate(file.size)) return null
+  const bytes = await fs.readFile(file.realPath)
+  if (bytes.byteLength > INLINE_RPC_MAX_BYTES) return null
+  return bytes
+}
+
+export type PreferInlineRead =
+  | { kind: 'text'; text: string }
+  | { kind: 'bytes'; bytes: Buffer }
+  | { kind: 'none' }
+
+/**
+ * What `read_desktop_file` with `preferInline` (and the full-fetch path for
+ * a small relay file) should send back in-band. Text wins on every transport;
+ * small binaries ride the RPC over the relay only.
+ */
+export async function readPreferInline(
+  file: AuthorizedFile,
+  opts: { preferInline?: boolean; statOnly?: boolean; transport: 'lan' | 'relay' },
+): Promise<PreferInlineRead> {
+  if (opts.preferInline) {
+    const text = await readInlinePreviewText(file)
+    if (text !== null) return { kind: 'text', text }
+  }
+  if (shouldInlineRpcBytes(opts.transport, file.size) && (opts.preferInline || !opts.statOnly)) {
+    const bytes = await readInlineRpcBytes(file)
+    if (bytes) return { kind: 'bytes', bytes }
+  }
+  return { kind: 'none' }
 }
 
 export interface AuthorizedWriteTarget {

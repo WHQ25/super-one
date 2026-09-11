@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { ComposerDraftState } from '../composer-draft-state'
+import { ComposerDraftState, type ComposerDraftSnapshot } from '../composer-draft-state'
 import type { MentionEditorSnapshot } from '../mention-editor-state'
 import type { NativeComposerController } from '../ui/native-composer-input'
 
@@ -19,6 +19,13 @@ export function useComposerDraft() {
     if (editorRef.current) setGeneration((value) => value + 1)
     return true
   }
+  /** Swap the live editor for another session's draft. Remounts native chips. */
+  const replaceWith = (snapshot: ComposerDraftSnapshot) => {
+    state.loadSnapshot(snapshot)
+    setDraft(snapshot.text)
+    setGeneration((value) => value + 1)
+  }
   return { draft, draftRef: state.text, document: state.document, editorRef, generation, lastDraftChangeAtRef: state.lastChangeAt,
-    changeText, accept, recordMention: state.recordMention.bind(state), capture: () => state.capture(), clearSent }
+    changeText, accept, recordMention: state.recordMention.bind(state), capture: () => state.capture(),
+    exportSnapshot: () => state.exportSnapshot(), replaceWith, clearSent }
 }

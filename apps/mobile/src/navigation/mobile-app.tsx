@@ -42,6 +42,7 @@ import { usePairingDeepLink } from '../pairing-deep-link'
 import { shouldSubmitFromKeyboard } from '../composer-state'
 import { replaceFirstLine } from '../composer-first-line'
 import { CHAT_VIEW_STATE_KEY, parseStoredChatViewStates, restoredChatWindow, type ChatViewState } from '../chat-view-state'
+import { composerDraftKey, SessionComposerDrafts } from '../composer-session-drafts'
 import { useComposerDraft } from './use-composer-draft'
 import { useComposerSuggestions } from './use-composer-suggestions'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
@@ -167,6 +168,7 @@ export function MobileApp() {
   const [workspaceDirs, setWorkspaceDirs] = useState<string[]>([])
   const composerDraft = useComposerDraft()
   const { draft, draftRef, lastDraftChangeAtRef } = composerDraft
+  const sessionDrafts = useRef(new SessionComposerDrafts()).current
   const [terminalUi, setTerminalUi] = useState({ writable: false, title: 'Terminal' })
   const [streaming, setStreaming] = useState(false)
   const [sessionLoading, setSessionLoading] = useState(false)
@@ -187,6 +189,8 @@ export function MobileApp() {
   /** Where a session goes when it ends, fails or is removed: the workspace, open. */
   const returnToWorkspace = () => { setScreen('chat'); setSessionSwitcherOpen(true) }
   const [attachments, setAttachments] = useState<ImageAttachment[]>([])
+  const attachmentsRef = useRef(attachments)
+  attachmentsRef.current = attachments
   const [queuedMessages, setQueuedMessages] = useState<ChatMessage[]>([])
   const [todos, setTodos] = useState<Record<string, TodoItem>>({})
   const [promptSuggestions, setPromptSuggestions] = useState<string[]>([])
@@ -275,6 +279,23 @@ export function MobileApp() {
   const mcpIconsRevisionRef = useRef(-1)
   const suggestions = useComposerSuggestions(runtimeRef, `${activePairingId}:${project?.path}:${sessionId}:${selectedProvider}:${selectedAcpAgentId ?? ''}`, { client: clientRef, projectPath: project?.path, provider: selectedProvider, acpAgentId: selectedAcpAgentId, projects, iconStore: mobileKv })
   const { slashHits, mentionRows } = suggestions
+  /**
+   * Model/effort picks are visit-local until send. Composer text is the
+   * opposite: park it per session so switching away does not leak it, and
+   * switching back restores what was typed there.
+   */
+  const switchComposerDraft = (nextSessionId: string | null, nextProjectPath = project?.path) => {
+    const from = composerDraftKey(activePairingId, project?.path, sessionId)
+    const to = composerDraftKey(activePairingId, nextProjectPath, nextSessionId)
+    if (from === to) return
+    sessionDrafts.stash(from, { ...composerDraft.exportSnapshot(), attachments: attachmentsRef.current })
+    const restored = sessionDrafts.load(to)
+    composerDraft.replaceWith(restored)
+    suggestions.applyProgrammatic(restored.text)
+    setAttachments(restored.attachments)
+  }
+  const composerSwitchRef = useRef(switchComposerDraft)
+  composerSwitchRef.current = switchComposerDraft
   const systemInfoRequestRef = useRef(0)
   const shellDetailsRequestRef = useRef(0)
   // Files hangs off Project settings or off the session menu; back has to unwind
@@ -566,6 +587,7 @@ export function MobileApp() {
         workspaceActivity.ingest(events)
         const removed = sessionRemovalStatus(events, runtimeRef.current, epoch)
         if (removed) {
+          composerSwitchRef.current(null)
           clearActiveSession()
           returnToWorkspace()
           setStatus(removed === 'Desktop disconnected this session' ? '' : removed)
@@ -953,6 +975,7 @@ export function MobileApp() {
     }, setStatus, 'leave session failed')
   }
   const failSessionTransition = (error: unknown) => {
+    switchComposerDraft(null)
     clearActiveSession()
     returnToWorkspace()
     setStatus(error instanceof Error ? error.message : 'session transition failed')
@@ -965,6 +988,7 @@ export function MobileApp() {
       setScreen('chat')
       return
     }
+    switchComposerDraft(row.sessionId, p.path)
     setSessionLoading(true)
     try {
       const previousId = runtimeRef.current?.sessionId
@@ -1037,6 +1061,7 @@ export function MobileApp() {
 
     if (p.path === project?.path) setSessions((current) => current.filter((item) => item.sessionId !== row.sessionId))
     if (sessionId === row.sessionId) {
+      switchComposerDraft(null)
       leaveActiveSession()
       returnToWorkspace()
     }
@@ -1052,6 +1077,7 @@ export function MobileApp() {
   }
 
   const startNewSession = (targetProject = project) => {
+    switchComposerDraft(null, targetProject?.path)
     leaveActiveSession()
     setStatus('')
     setActiveSessionTitle('New session')
@@ -1324,6 +1350,7 @@ export function MobileApp() {
 
   /** Drop the transport and everything hanging off it, back to the device list. */
   const disconnectDevice = () => {
+    switchComposerDraft(null)
     reconnectControllerRef.current?.cancel()
     suppressReconnectRef.current = true
     clientRef.current?.disconnect()
@@ -1541,7 +1568,10 @@ export function MobileApp() {
               // Chat cannot be swiped off the stack (see MobileNavigator), so
               // reaching the device list means the transport is already gone —
               // but a stray pop must still not leave a session held open.
-              if (screen === 'chat' && route === 'pair' && sessionId) leaveActiveSession()
+              if (screen === 'chat' && route === 'pair' && sessionId) {
+                switchComposerDraft(null)
+                leaveActiveSession()
+              }
               setScreen(route)
             }}
             renderScene={(route) => (

@@ -56,4 +56,17 @@ describe('structured composer draft lifecycle', () => {
     state.changeText('typed after send', 300)
     expect(state.holdsCaptured(sent.revision)).toBe(false)
   })
+
+  it('exports a snapshot that another draft can load without sharing identity', () => {
+    const source = new ComposerDraftState()
+    source.accept(fileDraft('src/a.ts', 1), 100)
+    const snapshot = source.exportSnapshot()
+    source.changeText('edited after export', 200)
+
+    const target = new ComposerDraftState()
+    target.loadSnapshot(snapshot)
+    expect(target.exportSnapshot().text).toBe('\uFFFC ')
+    expect(target.capture().text).toContain('src/a.ts')
+    expect(source.exportSnapshot().text).toBe('edited after export')
+  })
 })

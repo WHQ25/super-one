@@ -1,6 +1,18 @@
 import { documentFromText, plainMentionText, serializeMentionDocument, type MentionDocument, type MentionInsertion, type MentionToken } from './mention-document'
 import type { MentionEditorSnapshot } from './mention-editor-state'
 
+export type ComposerDraftSnapshot = {
+  text: string
+  document: MentionDocument
+  insertions: MentionInsertion[]
+}
+
+export const EMPTY_COMPOSER_DRAFT: ComposerDraftSnapshot = {
+  text: '',
+  document: [],
+  insertions: [],
+}
+
 /** Structured draft survives native editor remounts. Revisions also distinguish
  * two different identities whose native placeholder strings happen to match. */
 export class ComposerDraftState {
@@ -57,6 +69,24 @@ export class ComposerDraftState {
   capture() {
     this.capturedVisible = this.text.current
     return { text: serializeMentionDocument(this.document.current), title: plainMentionText(this.document.current).trim(), revision: this.revision }
+  }
+  /** Copy out so another session can take the editor without sharing identity. */
+  exportSnapshot(): ComposerDraftSnapshot {
+    return {
+      text: this.text.current,
+      document: this.document.current.slice(),
+      insertions: this.insertions.map((insertion) => ({ text: insertion.text, mention: { ...insertion.mention } })),
+    }
+  }
+  /** Replace the live draft. Used when switching sessions, not for typing. */
+  loadSnapshot(next: ComposerDraftSnapshot) {
+    this.insertions = next.insertions.map((insertion) => ({ text: insertion.text, mention: { ...insertion.mention } }))
+    this.document.current = next.document.slice()
+    this.text.current = next.text
+    this.lastChangeAt.current = 0
+    this.revision++
+    this.snapshot = null
+    this.capturedVisible = null
   }
   isCurrent(revision: number) { return this.revision === revision }
   /** True when nothing the user typed has replaced the captured draft. */

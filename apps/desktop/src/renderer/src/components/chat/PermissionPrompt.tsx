@@ -137,6 +137,9 @@ export function PermissionPrompt() {
   const requestId = pendingPermission?.requestId
   const toolName = pendingPermission?.toolName
   const allowAlwaysAllow = pendingPermission?.allowAlwaysAllow
+  // Harness asked for a decline-first prompt: focus lands on Deny and Enter must
+  // not approve. Only the two-button Claude row honours it; Codex never sets it.
+  const defaultToNo = pendingPermission?.defaultToNo === true
   const isElicitation = pendingPermission?.requestKind === 'mcp_elicitation'
   const isVideoGenConfirm = pendingPermission?.requestKind === 'video_gen_confirm'
   const isConfigConfirm = pendingPermission?.requestKind === 'config_confirm'
@@ -218,10 +221,15 @@ export function PermissionPrompt() {
     if (requestId && !isCollapsed && !isSelfManagedConfirm) {
       requestAnimationFrame(() => {
         if (!canAutofocusInChatRoot(chatRootRef?.current)) return
-        btnRefs.current[0]?.focus()
+        // Deny sits at index 1 on the standard row (index 2 when device-control adds
+        // its always-allow button between approve and reject).
+        const denyIdx = isDeviceControlConfirm ? 2 : 1
+        const initialIdx = defaultToNo && !isCodexDecisionPrompt ? denyIdx : 0
+        btnRefs.current[initialIdx]?.focus()
+        setFocusedIdx(initialIdx)
       })
     }
-  }, [requestId, isCollapsed, isSelfManagedConfirm, chatRootRef])
+  }, [requestId, isCollapsed, isSelfManagedConfirm, chatRootRef, defaultToNo, isCodexDecisionPrompt, isDeviceControlConfirm])
 
   const btnCount = promptConfig.buttonCount
 
@@ -358,7 +366,8 @@ export function PermissionPrompt() {
 
       if (e.key === 'Enter' && !e.isComposing) {
         e.preventDefault()
-        handleAllow()
+        if (defaultToNo && !isCodexDecisionPrompt) handleDeny()
+        else handleAllow()
         return
       }
 
@@ -399,7 +408,7 @@ export function PermissionPrompt() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [requestId, btnCount, handleCancel, handleDeny, handleAcceptEdit, handleAllow, handleAlwaysAllow, isCodexDecisionPrompt, isDeviceControlConfirm, isEditTool, isCollapsed, suggestionsCount, toggleSuggestion, isSelfManagedConfirm, chatRootRef])
+  }, [requestId, btnCount, handleCancel, handleDeny, handleAcceptEdit, handleAllow, handleAlwaysAllow, isCodexDecisionPrompt, isDeviceControlConfirm, isEditTool, isCollapsed, suggestionsCount, toggleSuggestion, isSelfManagedConfirm, chatRootRef, defaultToNo])
 
   if (!pendingPermission) return null
 
@@ -759,6 +768,7 @@ export function PermissionPrompt() {
                     feedbackRef={feedbackRef}
                     onApprove={handleAllow}
                     onReject={handleDeny}
+                    enterApproves={!defaultToNo}
                     // Two answers that differ only in lifetime read as the same word
                     // unless both say theirs. "Allow" next to "Always Allow" invites
                     // the user to assume the first one also sticks.

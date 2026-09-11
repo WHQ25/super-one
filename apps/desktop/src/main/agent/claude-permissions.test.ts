@@ -325,7 +325,28 @@ describe('createCanUseTool', () => {
     expect(event.request.toolName).toBe('Write')
     expect(event.request.input).toEqual(input)
     expect(event.request.allowAlwaysAllow).toBe(true)
+    expect(event.request.defaultToNo).toBeUndefined()
     expect(event.request.suggestions).toEqual(suggestions)
+  })
+
+  it('honours the SDK defaultToNo / suppressAlwaysAllowRule prompt hints', async () => {
+    const { canUseTool } = createCanUseTool(perms, questions, plans, emit)
+    const suggestions = [{ type: 'bash' as const, tool: 'Bash', on: 'command', rule: 'rm *' }]
+
+    const promise = canUseTool(
+      'Bash',
+      { command: 'rm -rf build' },
+      makeContext({ suggestions, defaultToNo: true, suppressAlwaysAllowRule: true }),
+    )
+    const [id] = [...perms.keys()]
+    respondToPermission(perms, id, false)
+    await promise
+
+    const event = events[0] as Extract<AgentEvent, { type: 'permission_request' }>
+    // Suggestions are still forwarded for display, but the persistent rule is withheld.
+    expect(event.request.suggestions).toEqual(suggestions)
+    expect(event.request.allowAlwaysAllow).toBe(false)
+    expect(event.request.defaultToNo).toBe(true)
   })
 
   it('should return allow when user allows', async () => {

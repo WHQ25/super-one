@@ -214,4 +214,31 @@ describe('PermissionPrompt', () => {
 
     expect(document.activeElement).toBe(screen.getByTestId('pane-a-input'))
   })
+
+  describe('defaultToNo (Claude SDK prompt hint)', () => {
+    beforeEach(() => {
+      activeSessionState.sessionProvider = 'claude'
+      activeSessionState.pendingPermissions = [{
+        requestId: 'req-no',
+        toolName: 'Bash',
+        input: { command: 'git push --force' },
+        allowAlwaysAllow: false,
+        defaultToNo: true,
+      }]
+    })
+
+    it('autofocuses Deny instead of Allow', async () => {
+      renderInChat(<PermissionPrompt />)
+      await act(async () => {
+        await new Promise((r) => requestAnimationFrame(r))
+      })
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: /deny/i }))
+    })
+
+    it('rejects on a bare Enter rather than approving', () => {
+      renderInChat(<PermissionPrompt />)
+      fireEvent.keyDown(window, { key: 'Enter' })
+      expect(chatState.respondToPermission).toHaveBeenCalledWith('req-no', false, undefined, undefined)
+    })
+  })
 })

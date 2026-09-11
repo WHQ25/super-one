@@ -1000,6 +1000,12 @@ export interface PermissionRequest {
   decisionReason?: string
   blockedPath?: string
   allowAlwaysAllow: boolean
+  /**
+   * The harness asked that this prompt open on its decline option with no
+   * one-key approve shortcut (Claude SDK `defaultToNo`): approving must take a
+   * deliberate action, never a stray Enter.
+   */
+  defaultToNo?: boolean
   suggestions?: Array<Record<string, unknown>>
   toolDiff?: string
   toolDiffTokens?: { added?: DiffTokenLine[]; removed?: DiffTokenLine[] }

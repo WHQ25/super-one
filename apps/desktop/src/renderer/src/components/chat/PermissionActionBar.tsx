@@ -90,7 +90,8 @@ export const PermissionFeedbackInput = forwardRef<
 
 /**
  * The canonical decision row: approve, reject, and an optional reason. Enter approves unless
- * the reason box has focus, in which case it rejects — the reject hint reflects that.
+ * the reason box has focus or `enterApproves` is false, in which case it rejects — the
+ * reject hint reflects that.
  */
 export function ApproveRejectBar({
   onApprove,
@@ -98,6 +99,7 @@ export function ApproveRejectBar({
   approveLabel,
   rejectLabel,
   approveDisabled,
+  enterApproves = true,
   approveSuffix,
   extraActions,
   feedback,
@@ -110,6 +112,11 @@ export function ApproveRejectBar({
   approveLabel?: string
   rejectLabel?: string
   approveDisabled?: boolean
+  /**
+   * Whether a bare Enter approves. False when the harness flagged the ask as
+   * `defaultToNo`: the approve button then carries no key hint and Enter rejects.
+   */
+  enterApproves?: boolean
   /** Extra content inside the approve button, e.g. a selected-suggestion count. */
   approveSuffix?: ReactNode
   /**
@@ -131,6 +138,7 @@ export function ApproveRejectBar({
 }) {
   const { t } = useTranslation()
   const focused = feedback?.focused ?? false
+  const enterRejects = focused || !enterApproves
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -139,13 +147,13 @@ export function ApproveRejectBar({
         tone="approve"
         disabled={approveDisabled}
         onClick={onApprove}
-        kbd={focused ? undefined : '⏎'}
+        kbd={enterRejects ? undefined : '⏎'}
       >
         {approveLabel ?? t('chat.permission.allow')}
         {approveSuffix}
       </PermissionActionButton>
       {extraActions}
-      <PermissionActionButton ref={rejectRef} tone="reject" onClick={onReject} kbd={focused ? '↵' : 'esc'}>
+      <PermissionActionButton ref={rejectRef} tone="reject" onClick={onReject} kbd={enterRejects ? '↵' : 'esc'}>
         {rejectLabel ?? t('chat.permission.deny')}
       </PermissionActionButton>
       {feedback && (

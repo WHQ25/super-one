@@ -152,6 +152,10 @@ export function createCanUseTool(
       toolUseID: string
       signal: AbortSignal
       agentID?: string
+      /** SDK 0.3.268+: open on decline, no one-key approve. */
+      defaultToNo?: boolean
+      /** SDK 0.3.268+: the "always allow" rule would grant more than this call. */
+      suppressAlwaysAllowRule?: boolean
     }
   ) => {
     trace('permission.flow', 'canUseTool_enter', { toolName, toolUseId: context.toolUseID, agentId: context.agentID })
@@ -207,7 +211,8 @@ export function createCanUseTool(
         input,
         decisionReason: context.decisionReason,
         blockedPath: context.blockedPath,
-        allowAlwaysAllow: (context.suggestions?.length ?? 0) > 0,
+        allowAlwaysAllow: (context.suggestions?.length ?? 0) > 0 && !context.suppressAlwaysAllowRule,
+        ...(context.defaultToNo ? { defaultToNo: true } : {}),
         suggestions: context.suggestions as Array<Record<string, unknown>> | undefined,
       },
     }

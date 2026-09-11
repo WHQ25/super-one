@@ -184,6 +184,28 @@ export const WithSuggestions: Story = {
   )],
 }
 
+/**
+ * SDK `defaultToNo` hint (0.3.268+): Deny takes initial focus and the ⏎ hint
+ * moves off Allow — approving needs a deliberate click or arrow + Enter.
+ */
+export const DefaultToNo: Story = {
+  decorators: [(Story) => (
+    <>
+      <SeedPermission request={{
+        requestId: 'p-default-no',
+        toolName: 'Bash',
+        toolUseId: 'tu-default-no',
+        input: { command: 'git push --force origin main' },
+        allowAlwaysAllow: false,
+        defaultToNo: true,
+        riskLevel: 'high',
+        message: 'Run shell command',
+      }} />
+      <Story />
+    </>
+  )],
+}
+
 export const WithBlockedPath: Story = {
   decorators: [(Story) => (
     <>

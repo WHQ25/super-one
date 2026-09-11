@@ -1489,6 +1489,9 @@ export type GitResult = { ok: true } | { ok: false; error: string }
 
 export type FileOpResult = { ok: true } | { ok: false; error: string }
 
+/** What the file tree's "New…" actions create. */
+export type FileEntryKind = 'file' | 'directory'
+
 export type GitFileStatus = 'M' | 'A' | 'D' | 'R' | 'C' | 'U' | 'T' | '?' | '!'
 
 export interface FileTreeEntry {
@@ -3765,6 +3768,7 @@ export const AgentIpcChannels = {
   FILE_MOVE_IN: 'app:file-move-in',
   FILE_DELETE: 'app:file-delete',
   FILE_RENAME: 'app:file-rename',
+  FILE_CREATE: 'app:file-create',
   FILE_SHOW_IN_FOLDER: 'app:file-show-in-folder',
   SHOW_CONTEXT_MENU: 'app:show-context-menu',
   START_DRAG: 'app:start-drag',

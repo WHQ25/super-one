@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useEffect, useRef, type RefObject } from 'react'
-import type { FileTreeEntry, GitFileStatus } from '@superone/shared/agent-types'
+import type { FileEntryKind, FileTreeEntry, GitFileStatus } from '@superone/shared/agent-types'
 import { FileTree } from './FileTree'
 import { useAppStore } from '@/stores/app'
 import { useFileTreeStore } from '@/stores/file-tree'
@@ -105,7 +105,18 @@ function installListDirMock(items: Mock[]): void {
   const flat = flattenForListDir(items)
   const w = window as unknown as { app: Record<string, unknown> }
   const fn: ListDirMock = async (_folder, rel) => flat.get(rel) ?? []
-  w.app = { ...(w.app ?? {}), listDir: fn, startDrag: () => {}, getPathForFile: () => '', trace: () => {} }
+  // createEntry succeeds unless the name is taken, so the "already exists" toast is
+  // reproducible by typing a sibling's name into the draft row.
+  const createEntry = async (_folder: string, parent: string, name: string) => {
+    const taken = (flat.get(parent) ?? []).some((e) => e.name === name)
+    return taken ? { ok: false, error: `Target already exists: ${name}` } : { ok: true }
+  }
+  w.app = { ...(w.app ?? {}), listDir: fn, createEntry, startDrag: () => {}, getPathForFile: () => '', trace: () => {} }
+}
+
+interface DraftSpec {
+  parentDir: string
+  kind: FileEntryKind
 }
 
 interface SimulatedDrag {
@@ -168,9 +179,14 @@ function useSimulatedFileDrag(
   }, [drag, visibleCount, hostRef])
 }
 
-function StoryHost({ items, drag }: { items: Mock[]; drag?: SimulatedDrag }) {
+function StoryHost({ items, drag, draft }: { items: Mock[]; drag?: SimulatedDrag; draft?: DraftSpec }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const visibleCount = useFileTreeStore((s) => s._visibleList.length)
+
+  useEffect(() => {
+    if (!draft || visibleCount === 0 || useFileTreeStore.getState().draft) return
+    void useFileTreeStore.getState().startDraft(PROJECT, draft.parentDir, draft.kind)
+  }, [draft, visibleCount])
 
   useEffect(() => {
     installListDirMock(items)
@@ -316,4 +332,26 @@ export const DragOverFolderDark: Story = {
   name: 'Drag · over a folder (dark)',
   globals: { theme: 'dark' },
   args: { items: TREE, drag: { over: 'src', expand: 'src' } },
+}
+
+/*
+ * New File / New Folder. The draft row is a store-injected placeholder carrying the
+ * name input; it sits first under its parent. Enter creates, Escape or an empty name
+ * cancels, and a taken name keeps the row open behind an error toast.
+ */
+
+export const NewFileAtRoot: Story = {
+  name: 'New file · at project root',
+  args: { items: TREE, draft: { parentDir: '', kind: 'file' } },
+}
+
+export const NewFolderInsideDir: Story = {
+  name: 'New folder · inside src (auto-expanded)',
+  args: { items: TREE, draft: { parentDir: 'src', kind: 'directory' } },
+}
+
+export const NewFileDark: Story = {
+  name: 'New file · dark',
+  globals: { theme: 'dark' },
+  args: { items: TREE, draft: { parentDir: 'src', kind: 'file' } },
 }

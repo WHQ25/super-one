@@ -1,13 +1,13 @@
 import { useEffect, useCallback, useRef, useState, useMemo, type DragEvent, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
-import { RefreshCw, Search } from 'lucide-react'
+import { FilePlus, FolderPlus, RefreshCw, Search } from 'lucide-react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useAppStore, useEffectiveProjectRoot } from '@/stores/app'
 import { projectDisplayName } from '@/lib/project-display-name'
 import { useFileTreeStore, type VisibleItem } from '@/stores/file-tree'
 import { useSourceControlStore } from '@/stores/source-control'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
-import { TreeRow, autoExpandedDirs } from './TreeRow'
+import { TreeRow, DraftEntryRow, autoExpandedDirs } from './TreeRow'
 import { FileTreeSearch } from './FileTreeSearch'
 import { getDropAction, shouldCollapseAutoExpanded, computeDropOverlay, getDropTargetName, isWithinFolder, internalDragSource } from './drag-drop-utils'
 import { Kbd } from '@superone/ui/components/ui/kbd'
@@ -88,6 +88,7 @@ export function FileTree() {
   const deleteFile = useFileTreeStore((s) => s.deleteFile)
   const revealedPath = useFileTreeStore((s) => s.revealedPath)
   const clearRevealed = useFileTreeStore((s) => s.clearRevealed)
+  const startDraft = useFileTreeStore((s) => s.startDraft)
   const selectedFile = useSourceControlStore((s) => s.selectedFile)
   // Registry name so a renamed project reads the same here as in the sidebar.
   const recentFolders = useAppStore((s) => s.recentFolders)
@@ -285,9 +286,17 @@ export function FileTree() {
           </IconButton>
         )}
         {fileRoot && (
-          <IconButton size="sm" onClick={() => setSearching(true)} tooltip={t('sidebar.search.placeholder')}>
-            <Search />
-          </IconButton>
+          <>
+            <IconButton size="sm" onClick={() => startDraft(fileRoot, '', 'file')} tooltip={t('sidebar.contextMenu.newFile')}>
+              <FilePlus />
+            </IconButton>
+            <IconButton size="sm" onClick={() => startDraft(fileRoot, '', 'directory')} tooltip={t('sidebar.contextMenu.newFolder')}>
+              <FolderPlus />
+            </IconButton>
+            <IconButton size="sm" onClick={() => setSearching(true)} tooltip={t('sidebar.search.placeholder')}>
+              <Search />
+            </IconButton>
+          </>
         )}
       </div>
 
@@ -327,14 +336,18 @@ export function FileTree() {
                       transform: `translateY(${vRow.start}px)`,
                     }}
                   >
-                    <TreeRow
-                      item={item}
-                      currentFolder={fileRoot!}
-                      isSelected={selectedFile === item.path}
-                      isRenaming={renamingPath === item.path}
-                      isRevealed={revealedPath === item.path}
-                      onDeleteRequest={handleDeleteRequest}
-                    />
+                    {item.isDraft ? (
+                      <DraftEntryRow item={item} currentFolder={fileRoot!} />
+                    ) : (
+                      <TreeRow
+                        item={item}
+                        currentFolder={fileRoot!}
+                        isSelected={selectedFile === item.path}
+                        isRenaming={renamingPath === item.path}
+                        isRevealed={revealedPath === item.path}
+                        onDeleteRequest={handleDeleteRequest}
+                      />
+                    )}
                   </div>
                 )
               })}

@@ -29,7 +29,7 @@ import type {
   WorktreeInfo,
 } from '@superone/shared/agent-types'
 import { tmpdir } from 'node:os'
-import type { FileOpResult, FileTreeEntry } from '@superone/shared/agent-types'
+import type { FileEntryKind, FileOpResult, FileTreeEntry } from '@superone/shared/agent-types'
 import type { WorkspaceEntry } from '@superone/shared/environment'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import {
@@ -342,6 +342,37 @@ export async function deleteRemoteFile(
       project: projectRef(ctx),
       relativePath: relPath,
     })
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message }
+  }
+}
+
+/**
+ * Create an empty file or directory under `parentRelPath` ('' = project root).
+ * The node's writeFile overwrites silently, so existence is checked against the
+ * parent listing first — the same guard the local handler gets from `wx`.
+ */
+export async function createRemoteEntry(
+  host: EnvironmentHost,
+  folderPath: string,
+  parentRelPath: string,
+  name: string,
+  kind: FileEntryKind,
+): Promise<FileOpResult | null> {
+  const ctx = await resolveRemoteProjectContext(host, folderPath)
+  if (!ctx) return null
+  try {
+    const siblings = await host.workspace().listDir({ project: projectRef(ctx), relativePath: parentRelPath || '.' })
+    if (siblings.some((e) => e.name === name)) {
+      return { ok: false, error: `Target already exists: ${name}` }
+    }
+    const relativePath = joinProjectRel(parentRelPath, name)
+    if (kind === 'directory') {
+      await host.workspace().mkdir({ project: projectRef(ctx), relativePath })
+    } else {
+      await host.workspace().writeFile({ project: projectRef(ctx), relativePath, content: '' })
+    }
     return { ok: true }
   } catch (err) {
     return { ok: false, error: (err as Error).message }

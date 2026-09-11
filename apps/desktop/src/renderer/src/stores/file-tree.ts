@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { FileOpResult, FileTreeEntry, GitFileStatus } from '@superone/shared/agent-types'
+import type { FileEntryKind, FileOpResult, FileTreeEntry, GitFileStatus } from '@superone/shared/agent-types'
 
 export interface FlatNode {
   entry: FileTreeEntry
@@ -19,7 +19,18 @@ export interface VisibleItem {
   isExpanded: boolean
   isLoading: boolean
   hasChildren: boolean
+  /** Synthetic "New File / New Folder" row that carries the name input; never on disk. */
+  isDraft?: boolean
 }
+
+export interface DraftEntry {
+  /** Project-relative parent directory; '' = project root. */
+  parentDir: string
+  kind: FileEntryKind
+}
+
+/** Draft rows key off a NUL byte so they can never collide with a real path. */
+const DRAFT_PATH_SUFFIX = '\0new'
 
 interface FileTreeState {
   nodes: Map<string, FlatNode>
@@ -29,6 +40,7 @@ interface FileTreeState {
   renamingPath: string | null
   dragOverPath: string | null
   revealedPath: string | null
+  draft: DraftEntry | null
   _visibleList: VisibleItem[]
   _visibleVersion: number
   _currentRoot: string | null
@@ -46,6 +58,11 @@ interface FileTreeState {
   renameFile: (projectPath: string, oldPath: string, newName: string) => Promise<FileOpResult>
   revealPath: (projectPath: string, path: string) => Promise<void>
   clearRevealed: () => void
+  /** Open an inline name input under `parentDir` (expanding it first). */
+  startDraft: (projectPath: string, parentDir: string, kind: FileEntryKind) => Promise<void>
+  cancelDraft: () => void
+  /** Commit the draft: create on disk, refresh, and reveal the new entry. */
+  createEntry: (projectPath: string, name: string) => Promise<{ ok: true; path: string } | { ok: false; error: string }>
 }
 
 function entriesToNodes(
@@ -68,17 +85,37 @@ function entriesToNodes(
   return paths
 }
 
+function draftItem(draft: DraftEntry, depth: number): VisibleItem {
+  return {
+    path: `${draft.parentDir}${DRAFT_PATH_SUFFIX}`,
+    name: '',
+    isDirectory: draft.kind === 'directory',
+    gitIndex: null,
+    gitWorktree: null,
+    depth,
+    isExpanded: false,
+    isLoading: false,
+    hasChildren: false,
+    isDraft: true,
+  }
+}
+
 function computeVisible(
   nodes: Map<string, FlatNode>,
   expandedDirs: Set<string>,
   loadingDirs: Set<string>,
+  draft: DraftEntry | null = null,
 ): VisibleItem[] {
   const result: VisibleItem[] = []
 
   const rootNode = nodes.get('')
   if (!rootNode) return result
 
-  const walk = (childPaths: string[]) => {
+  const walk = (parentPath: string, childPaths: string[]) => {
+    // The draft sits first among its parent's children, like VS Code's new-file row.
+    if (draft && draft.parentDir === parentPath) {
+      result.push(draftItem(draft, (nodes.get(parentPath)?.depth ?? -1) + 1))
+    }
     for (const path of childPaths) {
       const node = nodes.get(path)
       if (!node) continue
@@ -96,12 +133,12 @@ function computeVisible(
         hasChildren: node.childPaths.length > 0 || !node.isLoaded,
       })
       if (node.entry.isDirectory && isExpanded && node.isLoaded) {
-        walk(node.childPaths)
+        walk(path, node.childPaths)
       }
     }
   }
 
-  walk(rootNode.childPaths)
+  walk('', rootNode.childPaths)
   return result
 }
 
@@ -157,7 +194,8 @@ function recomputeAndSet(
   const nodes = (extra?.nodes as Map<string, FlatNode> | undefined) ?? s.nodes
   const expandedDirs = (extra?.expandedDirs as Set<string> | undefined) ?? s.expandedDirs
   const loadingDirs = (extra?.loadingDirs as Set<string> | undefined) ?? s.loadingDirs
-  const _visibleList = computeVisible(nodes, expandedDirs, loadingDirs)
+  const draft = extra?.draft !== undefined ? extra.draft : s.draft
+  const _visibleList = computeVisible(nodes, expandedDirs, loadingDirs, draft)
   set({ ...extra, _visibleList, _visibleVersion: s._visibleVersion + 1 })
 }
 
@@ -199,6 +237,7 @@ export const useFileTreeStore = create<FileTreeState>((set, get) => ({
   renamingPath: null,
   dragOverPath: null,
   revealedPath: null,
+  draft: null,
   _visibleList: [],
   _visibleVersion: 0,
   _currentRoot: null,
@@ -214,7 +253,7 @@ export const useFileTreeStore = create<FileTreeState>((set, get) => ({
       const rootChildPaths = entriesToNodes(entries, '', 0, nodes)
       nodes.set('', { entry: { name: '', path: '', isDirectory: true }, depth: -1, parentPath: '', childPaths: rootChildPaths, isLoaded: true })
       const _visibleList = computeVisible(nodes, new Set(), new Set())
-      set({ nodes, expandedDirs: new Set(), loadingDirs: new Set(), loading: false, _visibleList, _visibleVersion: get()._visibleVersion + 1 })
+      set({ nodes, expandedDirs: new Set(), loadingDirs: new Set(), loading: false, draft: null, _visibleList, _visibleVersion: get()._visibleVersion + 1 })
     } catch {
       if (get()._currentRoot !== projectPath) return
       set({ nodes: new Map(), loading: false, _visibleList: [], _visibleVersion: get()._visibleVersion + 1 })
@@ -260,31 +299,31 @@ export const useFileTreeStore = create<FileTreeState>((set, get) => ({
     const next = new Set(expandedDirs)
     next.add(path)
 
-    const node = nodes.get(path)
-    if (node?.isLoaded || loadingDirs.has(path)) {
+    if (loadingDirs.has(path)) {
       recomputeAndSet(get, set, { expandedDirs: next })
       return
     }
 
-    const nextLoading = new Set(loadingDirs)
-    nextLoading.add(path)
+    // A collapsed directory is skipped by refreshTree (it only re-lists expanded
+    // dirs), so its cached children go stale whenever a terminal or agent writes
+    // into it. Always re-list on expand: an already-loaded dir shows its cached
+    // children immediately and merges the fresh listing in the background; an
+    // unloaded one shows the spinner until the listing lands.
+    const node = nodes.get(path)
+    const showSpinner = !node?.isLoaded
+    const nextLoading = showSpinner ? new Set(loadingDirs).add(path) : loadingDirs
     recomputeAndSet(get, set, { expandedDirs: next, loadingDirs: nextLoading })
 
-    window.app.listDir(projectPath, path).then((children) => {
+    const settle = (children: FileTreeEntry[] | null) => {
       const { nodes: currentNodes } = get()
-      const parentNode = currentNodes.get(path)
-      const depth = parentNode ? parentNode.depth + 1 : 0
-      mergeEntries(currentNodes, path, depth, children)
+      // On error keep the cached children; only a never-loaded dir settles to empty.
+      if (children) mergeEntries(currentNodes, path, (currentNodes.get(path)?.depth ?? 0) + 1, children)
+      else if (showSpinner) mergeEntries(currentNodes, path, (currentNodes.get(path)?.depth ?? 0) + 1, [])
       const nl = new Set(get().loadingDirs)
       nl.delete(path)
       recomputeAndSet(get, set, { loadingDirs: nl })
-    }).catch(() => {
-      const { nodes: currentNodes } = get()
-      mergeEntries(currentNodes, path, (currentNodes.get(path)?.depth ?? 0) + 1, [])
-      const nl = new Set(get().loadingDirs)
-      nl.delete(path)
-      recomputeAndSet(get, set, { loadingDirs: nl })
-    })
+    }
+    window.app.listDir(projectPath, path).then(settle, () => settle(null))
   },
 
   reset: () => {
@@ -296,6 +335,7 @@ export const useFileTreeStore = create<FileTreeState>((set, get) => ({
       renamingPath: null,
       dragOverPath: null,
       revealedPath: null,
+      draft: null,
       _visibleList: [],
       _visibleVersion: get()._visibleVersion + 1,
       _currentRoot: null,
@@ -350,4 +390,25 @@ export const useFileTreeStore = create<FileTreeState>((set, get) => ({
   },
 
   clearRevealed: () => set({ revealedPath: null }),
+
+  startDraft: async (projectPath, parentDir, kind) => {
+    if (parentDir) await ensureExpanded(get, set, projectPath, parentDir)
+    recomputeAndSet(get, set, { draft: { parentDir, kind }, renamingPath: null })
+  },
+
+  cancelDraft: () => {
+    if (get().draft) recomputeAndSet(get, set, { draft: null })
+  },
+
+  createEntry: async (projectPath, name) => {
+    const { draft } = get()
+    if (!draft) return { ok: false, error: 'No draft entry' }
+    const result = await window.app.createEntry(projectPath, draft.parentDir, name, draft.kind)
+    if (!result.ok) return result
+    const path = draft.parentDir ? `${draft.parentDir}/${name}` : name
+    recomputeAndSet(get, set, { draft: null })
+    await get().refreshTree(projectPath)
+    set({ revealedPath: path })
+    return { ok: true, path }
+  },
 }))

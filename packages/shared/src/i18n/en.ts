@@ -363,6 +363,7 @@ export type Messages = {
     empty: string
     noFiles: string
     refreshFiles: string
+    createFailed: string
     search: {
       placeholder: string
       noResults: string
@@ -447,6 +448,8 @@ export type Messages = {
       searchSessions: string
       rename: string
       renameFile: string
+      newFile: string
+      newFolder: string
       pin: string
       unpin: string
       hide: string
@@ -3984,6 +3987,7 @@ export const en: Messages = {
     empty: 'No projects yet',
     noFiles: 'No files',
     refreshFiles: 'Refresh file tree',
+    createFailed: 'Could not create {{name}}: {{error}}',
     search: {
       placeholder: 'Search files...',
       noResults: 'No matching files',
@@ -4068,6 +4072,8 @@ export const en: Messages = {
       searchSessions: 'Search sessions…',
       rename: 'Rename Session',
       renameFile: 'Rename',
+      newFile: 'New File',
+      newFolder: 'New Folder',
       pin: 'Pin Session',
       unpin: 'Unpin Session',
       hide: 'Hide Session',

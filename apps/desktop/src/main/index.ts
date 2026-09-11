@@ -123,6 +123,7 @@ import {
   type CodexResources,
   type StartupData,
   type FileTreeEntry,
+  type FileEntryKind,
   type FileOpResult,
   type NativeContextMenuItemSpec,
   type ComputerUseDisplayInfo,
@@ -3543,6 +3544,32 @@ function registerIpcHandlers(): void {
       return { ok: true }
     } catch (err) {
       return { ok: false, error: (err as Error).message }
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.FILE_CREATE, async (_event, folderPath: string, parentRelPath: string, name: string, kind: FileEntryKind): Promise<FileOpResult> => {
+    try {
+      if (name.includes('/') || name.includes('\\')) {
+        return { ok: false, error: 'Name cannot contain path separators' }
+      }
+      if (parseRemoteProjectKey(folderPath)) {
+        const { getEnvironmentHost } = await import('./environment')
+        const { createRemoteEntry } = await import('./environment/remote-file-tree')
+        return (
+          (await createRemoteEntry(getEnvironmentHost(), folderPath, parentRelPath, name, kind)) ?? {
+            ok: false,
+            error: 'remote create failed',
+          }
+        )
+      }
+      const abs = validatePathInProject(folderPath, parentRelPath ? `${parentRelPath}/${name}` : name)
+      // `wx` / non-recursive mkdir both fail with EEXIST instead of clobbering.
+      if (kind === 'directory') await mkdir(abs)
+      else await writeFile(abs, '', { flag: 'wx' })
+      return { ok: true }
+    } catch (err) {
+      const e = err as NodeJS.ErrnoException
+      return { ok: false, error: e.code === 'EEXIST' ? `Target already exists: ${name}` : e.message }
     }
   })
 

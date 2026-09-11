@@ -392,6 +392,7 @@ export const zh: Messages = {
     empty: '还没有项目',
     noFiles: '没有文件',
     refreshFiles: '刷新文件树',
+    createFailed: '无法创建 {{name}}：{{error}}',
     search: {
       placeholder: '搜索文件...',
       noResults: '没有匹配的文件',
@@ -475,6 +476,8 @@ export const zh: Messages = {
       searchSessions: '搜索会话…',
       rename: '重命名会话',
       renameFile: '重命名',
+      newFile: '新建文件',
+      newFolder: '新建文件夹',
       pin: '置顶会话',
       unpin: '取消置顶会话',
       hide: '隐藏会话',

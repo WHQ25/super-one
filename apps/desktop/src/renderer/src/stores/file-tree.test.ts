@@ -6,6 +6,7 @@ const moveFileMock = vi.fn()
 const copyFilesInMock = vi.fn()
 const deleteFileMock = vi.fn()
 const renameFileMock = vi.fn()
+const createEntryMock = vi.fn()
 
 vi.stubGlobal('window', {
   app: {
@@ -14,6 +15,7 @@ vi.stubGlobal('window', {
     copyFilesIn: copyFilesInMock,
     deleteFile: deleteFileMock,
     renameFile: renameFileMock,
+    createEntry: createEntryMock,
   },
 })
 
@@ -206,5 +208,88 @@ describe('renameFile', () => {
     const result = await useFileTreeStore.getState().renameFile('/proj', 'a.ts', 'b.ts')
     expect(result.ok).toBe(false)
     expect(useFileTreeStore.getState().renamingPath).toBe('a.ts')
+  })
+})
+
+describe('refreshTree', () => {
+  function dirEntry(name: string): FileTreeEntry {
+    return { name, path: name, isDirectory: true, gitIndex: null, gitWorktree: null }
+  }
+
+  it('re-lists a collapsed directory that was loaded before so it does not show stale children on re-expand', async () => {
+    listDirMock.mockImplementation(async (_folder, rel) => {
+      if (rel === '') return [dirEntry('src')]
+      return makeEntries(['a.ts'])
+    })
+    await useFileTreeStore.getState().fetchTree('/proj')
+    useFileTreeStore.getState().toggleDir('/proj', 'src')
+    await vi.waitFor(() => expect(useFileTreeStore.getState()._visibleList).toHaveLength(2))
+    // collapse
+    useFileTreeStore.getState().toggleDir('/proj', 'src')
+    expect(useFileTreeStore.getState()._visibleList).toHaveLength(1)
+
+    // a file lands on disk while the folder is collapsed (terminal / agent)
+    listDirMock.mockImplementation(async (_folder, rel) => {
+      if (rel === '') return [dirEntry('src')]
+      return makeEntries(['a.ts', 'b.ts'])
+    })
+    await useFileTreeStore.getState().refreshTree('/proj')
+
+    useFileTreeStore.getState().toggleDir('/proj', 'src')
+    await vi.waitFor(() =>
+      expect(useFileTreeStore.getState()._visibleList.map((i) => i.name)).toEqual(['src', 'a.ts', 'b.ts']),
+    )
+  })
+})
+
+describe('new file / new folder draft', () => {
+  const dirEntry = (name: string): FileTreeEntry => ({ name, path: name, isDirectory: true, gitIndex: null, gitWorktree: null })
+
+  it('shows a draft row first under the chosen directory and expands it on demand', async () => {
+    listDirMock.mockImplementation(async (_folder, rel) => (rel === '' ? [dirEntry('src'), ...makeEntries(['a.ts'])] : makeEntries(['x.ts'])))
+    await useFileTreeStore.getState().fetchTree('/proj')
+
+    await useFileTreeStore.getState().startDraft('/proj', 'src', 'file')
+    const list = useFileTreeStore.getState()._visibleList
+    expect(list.map((i) => [i.name, i.depth, !!i.isDraft])).toEqual([
+      ['src', 0, false],
+      ['', 1, true],
+      ['x.ts', 1, false],
+      ['a.ts', 0, false],
+    ])
+    expect(list[1].isDirectory).toBe(false)
+
+    useFileTreeStore.getState().cancelDraft()
+    expect(useFileTreeStore.getState()._visibleList.some((i) => i.isDraft)).toBe(false)
+  })
+
+  it('creates the entry, drops the draft, refreshes and reveals the new path', async () => {
+    listDirMock.mockResolvedValue(makeEntries(['a.ts']))
+    await useFileTreeStore.getState().fetchTree('/proj')
+    await useFileTreeStore.getState().startDraft('/proj', '', 'directory')
+    expect(useFileTreeStore.getState()._visibleList[0]).toMatchObject({ isDraft: true, isDirectory: true, depth: 0 })
+
+    createEntryMock.mockResolvedValueOnce({ ok: true })
+    listDirMock.mockResolvedValue([dirEntry('lib'), ...makeEntries(['a.ts'])])
+    const result = await useFileTreeStore.getState().createEntry('/proj', 'lib')
+
+    expect(result).toEqual({ ok: true, path: 'lib' })
+    expect(createEntryMock).toHaveBeenCalledWith('/proj', '', 'lib', 'directory')
+    const s = useFileTreeStore.getState()
+    expect(s.draft).toBeNull()
+    expect(s._visibleList.map((i) => i.name)).toEqual(['lib', 'a.ts'])
+    expect(s.revealedPath).toBe('lib')
+  })
+
+  it('keeps the draft open when creation fails so the user can fix the name', async () => {
+    listDirMock.mockResolvedValue(makeEntries(['a.ts']))
+    await useFileTreeStore.getState().fetchTree('/proj')
+    await useFileTreeStore.getState().startDraft('/proj', '', 'file')
+
+    createEntryMock.mockResolvedValueOnce({ ok: false, error: 'Target already exists: a.ts' })
+    const result = await useFileTreeStore.getState().createEntry('/proj', 'a.ts')
+
+    expect(result).toEqual({ ok: false, error: 'Target already exists: a.ts' })
+    expect(useFileTreeStore.getState().draft).toEqual({ parentDir: '', kind: 'file' })
   })
 })

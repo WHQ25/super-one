@@ -1,6 +1,7 @@
-import { useCallback, useRef, useEffect, memo } from 'react'
+import { useCallback, useRef, useEffect, useState, memo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronRight, Pencil, FolderOpen, Trash2, Copy, AtSign, Globe } from 'lucide-react'
+import { toast } from 'sonner'
+import { ChevronRight, Pencil, FolderOpen, Trash2, Copy, AtSign, Globe, FilePlus, FolderPlus } from 'lucide-react'
 import { FileIcon, FolderIcon } from '@superone/ui/components/ui/FileIcon'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
@@ -40,6 +41,58 @@ export function getStatusClass(
   return state.staged ? base : `${base} opacity-60`
 }
 
+/**
+ * Name editor shared by rename and the New File / New Folder draft row. Commits on
+ * Enter/blur, cancels on Escape; an empty value always cancels. The IME guard keeps a
+ * mid-composition Enter (CJK input) from committing a half-typed name.
+ */
+function InlineNameInput({
+  defaultValue,
+  isDirectory,
+  onCommit,
+  onCancel,
+}: {
+  defaultValue: string
+  isDirectory: boolean
+  onCommit: (name: string) => void
+  onCancel: () => void
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.focus()
+    if (!isDirectory) {
+      const dotIndex = defaultValue.lastIndexOf('.')
+      el.setSelectionRange(0, dotIndex > 0 ? dotIndex : defaultValue.length)
+    } else {
+      el.select()
+    }
+  }, [defaultValue, isDirectory])
+
+  const commit = useCallback(() => {
+    const val = inputRef.current?.value.trim()
+    if (!val) onCancel()
+    else onCommit(val)
+  }, [onCommit, onCancel])
+
+  return (
+    <input
+      ref={inputRef}
+      defaultValue={defaultValue}
+      className="min-w-0 flex-1 rounded-sm border border-primary/50 bg-sidebar px-1 text-[15px] text-sidebar-foreground outline-none"
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' && !e.nativeEvent.isComposing) commit()
+        if (e.key === 'Escape') onCancel()
+        e.stopPropagation()
+      }}
+      onClick={(e) => e.stopPropagation()}
+    />
+  )
+}
+
 function InlineRenameInput({
   item,
   currentFolder,
@@ -47,44 +100,56 @@ function InlineRenameInput({
   item: VisibleItem
   currentFolder: string
 }) {
-  const inputRef = useRef<HTMLInputElement>(null)
   const renameFile = useFileTreeStore((s) => s.renameFile)
   const setRenamingPath = useFileTreeStore((s) => s.setRenamingPath)
+  const cancel = useCallback(() => setRenamingPath(null), [setRenamingPath])
+  const commit = useCallback((val: string) => {
+    if (val === item.name) cancel()
+    else renameFile(currentFolder, item.path, val)
+  }, [item.path, item.name, currentFolder, renameFile, cancel])
 
-  useEffect(() => {
-    const el = inputRef.current
-    if (!el) return
-    el.focus()
-    if (!item.isDirectory) {
-      const dotIndex = item.name.lastIndexOf('.')
-      el.setSelectionRange(0, dotIndex > 0 ? dotIndex : item.name.length)
-    } else {
-      el.select()
-    }
-  }, [item.name, item.isDirectory])
+  return <InlineNameInput defaultValue={item.name} isDirectory={item.isDirectory} onCommit={commit} onCancel={cancel} />
+}
 
-  const commit = useCallback(() => {
-    const val = inputRef.current?.value.trim()
-    if (!val || val === item.name) {
-      setRenamingPath(null)
-      return
+/**
+ * The synthetic row the store injects for New File / New Folder. On failure the
+ * draft stays open with the typed name so the user can correct it instead of
+ * starting over.
+ */
+export function DraftEntryRow({ item, currentFolder }: { item: VisibleItem; currentFolder: string }) {
+  const { t } = useTranslation()
+  const createEntry = useFileTreeStore((s) => s.createEntry)
+  const cancelDraft = useFileTreeStore((s) => s.cancelDraft)
+  const [lastName, setLastName] = useState('')
+  // Enter commits and the resulting re-render can blur the input; one create per name.
+  const inFlight = useRef(false)
+
+  const commit = useCallback(async (name: string) => {
+    if (inFlight.current) return
+    inFlight.current = true
+    setLastName(name)
+    try {
+      const result = await createEntry(currentFolder, name)
+      if (!result.ok) {
+        toast.error(t('sidebar.createFailed', { name, error: result.error }))
+      } else if (!item.isDirectory) {
+        useSourceControlStore.getState().selectFile(currentFolder, result.path)
+        openFileTab(result.path)
+      }
+    } finally {
+      inFlight.current = false
     }
-    renameFile(currentFolder, item.path, val)
-  }, [item.path, item.name, currentFolder, renameFile, setRenamingPath])
+  }, [createEntry, currentFolder, item.isDirectory, t])
 
   return (
-    <input
-      ref={inputRef}
-      defaultValue={item.name}
-      className="min-w-0 flex-1 rounded-sm border border-primary/50 bg-sidebar px-1 text-[15px] text-sidebar-foreground outline-none"
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') commit()
-        if (e.key === 'Escape') setRenamingPath(null)
-        e.stopPropagation()
-      }}
-      onClick={(e) => e.stopPropagation()}
-    />
+    <div
+      className="flex w-full items-center gap-1 py-[3px] pr-2 text-left text-[15px]"
+      style={{ paddingLeft: `${item.depth * 8 + 8}px` }}
+    >
+      <span className="w-3.5 shrink-0" />
+      {item.isDirectory ? <FolderIcon name={lastName} size={15} /> : <FileIcon name={lastName} size={15} />}
+      <InlineNameInput defaultValue={lastName} isDirectory={item.isDirectory} onCommit={commit} onCancel={cancelDraft} />
+    </div>
   )
 }
 
@@ -114,6 +179,7 @@ export const TreeRow = memo(function TreeRow({
   const { t } = useTranslation()
   const toggleDir = useFileTreeStore((s) => s.toggleDir)
   const setRenamingPath = useFileTreeStore((s) => s.setRenamingPath)
+  const startDraft = useFileTreeStore((s) => s.startDraft)
   const copyFilesIn = useFileTreeStore((s) => s.copyFilesIn)
   const moveFilesIn = useFileTreeStore((s) => s.moveFilesIn)
   const setDragOverPath = useFileTreeStore((s) => s.setDragOverPath)
@@ -288,7 +354,6 @@ export const TreeRow = memo(function TreeRow({
   )
 
   const menuItems: AdaptiveMenuEntry[] = [
-    { kind: 'item', id: 'rename', label: t('sidebar.contextMenu.renameFile'), icon: Pencil, onSelect: () => setRenamingPath(item.path) },
     { kind: 'item', id: 'addToChat', label: t('sidebar.contextMenu.addToChat'), icon: AtSign, onSelect: () => {
       chatInputAPI.insertMention?.(
         item.isDirectory ? 'directory' : 'file',
@@ -308,6 +373,15 @@ export const TreeRow = memo(function TreeRow({
     { kind: 'item', id: 'copyPath', label: t('sidebar.contextMenu.copyPath'), icon: Copy, onSelect: () => navigator.clipboard.writeText(`${currentFolder}/${item.path}`) },
     { kind: 'item', id: 'copyRelativePath', label: t('sidebar.contextMenu.copyRelativePath'), icon: Copy, onSelect: () => navigator.clipboard.writeText(item.path) },
     { kind: 'item', id: 'openFolder', label: t('sidebar.contextMenu.openFolder'), icon: FolderOpen, onSelect: () => window.app.showInFolder(currentFolder, item.path) },
+    { kind: 'separator' },
+    // Mutations group: rename, then (folders only) create inside this folder.
+    { kind: 'item', id: 'rename', label: t('sidebar.contextMenu.renameFile'), icon: Pencil, onSelect: () => setRenamingPath(item.path) },
+    ...(item.isDirectory
+      ? [
+          { kind: 'item' as const, id: 'newFile', label: t('sidebar.contextMenu.newFile'), icon: FilePlus, onSelect: () => startDraft(currentFolder, item.path, 'file') },
+          { kind: 'item' as const, id: 'newFolder', label: t('sidebar.contextMenu.newFolder'), icon: FolderPlus, onSelect: () => startDraft(currentFolder, item.path, 'directory') },
+        ]
+      : []),
     { kind: 'separator' },
     { kind: 'item', id: 'delete', label: t('sidebar.contextMenu.delete'), icon: Trash2, destructive: true, onSelect: () => onDeleteRequest(item) },
   ]

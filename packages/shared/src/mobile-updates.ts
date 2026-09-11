@@ -96,13 +96,20 @@ export function mobileUpdateManifestUrl(
   return `${base.replace(/\/+$/, '')}/${mobileUpdateManifestObjectKey(platform)}`
 }
 
-/** `mobile/android/v<version>-<buildCode>/superone-<buildCode>.apk` -- immutable. */
+/**
+ * `mobile/android/superone-v<version>-build<buildCode>.apk` -- immutable.
+ *
+ * Flat rather than one directory per build: the file name already carries the
+ * whole identity, so the directory added nothing and made the prefix awkward to
+ * list and to prune. Keys published under the older nested layout stay valid --
+ * `latest.json` stores a full URL, so nothing resolves a key twice.
+ */
 export function androidApkObjectKey(version: string, buildCode: number): string {
   const ver = assertSafeKeySegment(version, 'version')
   if (!Number.isSafeInteger(buildCode) || buildCode <= 0) {
     throw new Error(`unsafe build code for mobile update key: ${buildCode}`)
   }
-  return `mobile/android/v${ver}-${buildCode}/superone-${buildCode}.apk`
+  return `mobile/android/superone-v${ver}-build${buildCode}.apk`
 }
 
 export function androidApkUrl(

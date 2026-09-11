@@ -9,7 +9,7 @@ import {
   parseMobileUpdateManifest,
 } from './mobile-updates'
 
-const APK_URL = 'https://dl.super-one.dev/mobile/android/v1.0.0-42/superone-42.apk'
+const APK_URL = 'https://dl.super-one.dev/mobile/android/superone-v1.0.0-build42.apk'
 
 function androidManifest(overrides: Record<string, unknown> = {}) {
   return {
@@ -44,7 +44,7 @@ function iosManifest(overrides: Record<string, unknown> = {}) {
 describe('object keys', () => {
   it('pins the APK to an immutable versioned key and the manifest to a stable one', () => {
     expect(androidApkObjectKey('1.0.0', 42)).toBe(
-      'mobile/android/v1.0.0-42/superone-42.apk',
+      'mobile/android/superone-v1.0.0-build42.apk',
     )
     expect(androidApkUrl('1.0.0', 42)).toBe(APK_URL)
     expect(mobileUpdateManifestUrl('android')).toBe(

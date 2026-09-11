@@ -160,7 +160,7 @@ describe('buildManifest', () => {
       plan,
       releasedAt: '2026-09-11T00:00:00.000Z',
       artifact: {
-        url: 'https://dl.super-one.dev/mobile/android/v1.0.0-43/superone-43.apk',
+        url: 'https://dl.super-one.dev/mobile/android/superone-v1.0.0-build43.apk',
         md5: '0123456789abcdef0123456789abcdef',
         sizeBytes: 1234,
       },

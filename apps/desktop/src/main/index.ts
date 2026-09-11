@@ -79,6 +79,8 @@ import { nodePtySpawner } from './terminal/pty'
 import { DeviceRegistry } from './remote/device-registry'
 import { MobileBroadcaster } from './remote/mobile-broadcaster'
 import { watchSessionList } from './session-list-watch'
+import { localDraftStore } from './db-drafts'
+import { installDraftOpenFlush } from './remote/draft-open-flush'
 import { NotificationService } from './notifications/notification-service'
 import { DesktopNotificationChannel } from './notifications/desktop-notification-channel'
 import { PresenceCoordinator } from './remote/presence-coordinator'
@@ -1858,6 +1860,13 @@ function registerIpcHandlers(): void {
     async (_e, connectionId: string, draftId: string) => {
       const { getEnvironmentHost } = await import('./environment')
       await getEnvironmentHost().deleteDraft(connectionId, draftId)
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_DISCONNECT_DRAFT,
+    async (_e, connectionId: string, draftId: string) => {
+      const { getEnvironmentHost } = await import('./environment')
+      await getEnvironmentHost().disconnectDraft(connectionId, draftId)
     },
   )
   ipcMain.handle(
@@ -4519,6 +4528,12 @@ function registerIpcHandlers(): void {
   // constructing the service in a test leaves no process-wide watcher behind.
   watchSessionList((projectPath) => {
     agentService.notifyEventSubscribers({ type: 'session_list_changed', projectPath })
+  })
+  deviceRegistry.setDraftControl(localDraftStore())
+  agentService.setPrepareDraftOpen(installDraftOpenFlush(allWindows))
+  localDraftStore().watch((event) => {
+    publishAgentEvent(event)
+    agentService.notifyEventSubscribers(event)
   })
 
   const savedRemoteConfig = readRemoteConfig()

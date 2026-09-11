@@ -43,6 +43,7 @@ describe('ChatRuntime', () => {
       worktreeBranchName: 'feat/mobile',
       worktreeCarryLocalChanges: true,
       additionalDirectories: ['/shared'],
+      sandboxMode: 'auto',
     })
     expect(id).toBeTruthy()
     expect(client.sent.some((c) => (c as { type: string }).type === 'create_session')).toBe(true)
@@ -53,6 +54,7 @@ describe('ChatRuntime', () => {
       worktreeBranchName: 'feat/mobile',
       worktreeCarryLocalChanges: true,
       additionalDirectories: ['/shared'],
+      sandboxMode: 'auto',
     }))
     // Catalog assembly moved to `slash-catalog.ts`, which the composer owns and
     // which is covered by its own suite — the runtime no longer holds a copy.
@@ -71,6 +73,12 @@ describe('ChatRuntime', () => {
       model: 'm',
       effort: 'high',
       images: [{ name: 'a.png', mimeType: 'image/png', base64: 'AA==' }],
+    }))
+    runtime.send('fast-off', { serviceTier: null })
+    expect(client.sent).toContainEqual(expect.objectContaining({
+      type: 'send_message',
+      content: 'fast-off',
+      serviceTier: null,
     }))
     expect(client.request).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'send_message' }))
     runtime.session = { ...runtime.session, status: 'streaming' }

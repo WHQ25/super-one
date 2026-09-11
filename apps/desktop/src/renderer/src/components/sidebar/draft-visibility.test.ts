@@ -26,6 +26,12 @@ beforeEach(() => {
 })
 
 describe('sidebar draft rows', () => {
+  it('excludes empty draft updates while preserving attachment-only rows', () => {
+    const blank = { ...draft('empty', null), text: ' \n', title: '' }
+    const attachment = { ...blank, id: 'attachment', attachments: [{ name: 'file.png', mimeType: 'image/png', data: 'AAA' }] }
+    expect(selectVisibleDrafts([blank, attachment], { activeSessionId: null, activeDraftId: null, resumingDraftId: null }))
+      .toEqual([attachment])
+  })
   it('lists a draft whose origin session is no longer focused', () => {
     const rows = selectVisibleDrafts([draft('d1', 'sess-a')], {
       activeSessionId: 'sess-b',

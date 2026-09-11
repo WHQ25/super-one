@@ -11,8 +11,9 @@ import { SessionRowContent } from '../ui/session-row-content'
 import { useMobileLocale } from '../i18n/context'
 import { WorkspaceProjectRow } from './workspace-project-row'
 import { readPinnedSessions } from './workspace-data'
+import { WorkspaceDrafts, type WorkspaceDraftsProps } from './workspace-drafts'
 
-export type WorkspaceListProps = {
+export type WorkspaceListProps = Partial<WorkspaceDraftsProps> & {
   client: RelayClient | null
   projects: Project[]
   activeProject: Project | null
@@ -153,6 +154,8 @@ export function WorkspaceList(props: WorkspaceListProps) {
         <Text style={{ flex: 1, color: colors.mutedForeground, fontSize: 12 }}>{t('Projects')}</Text>
         <IconButton icon={FolderPlus} label="Add project" onPress={() => leave(props.onAddProject)} chrome="plain" color={colors.mutedForeground} />
       </View>
+      {props.onOpenDraft && props.onDeleteDraft ? <WorkspaceDrafts drafts={props.drafts ?? []} activeDraftId={props.activeDraftId}
+        onOpenDraft={(draft) => leave(() => props.onOpenDraft!(draft))} onDeleteDraft={props.onDeleteDraft} /> : null}
       {!props.projects.length ? <Text style={{ color: colors.mutedForeground, fontSize: 13, padding: 12 }}>{t('No projects yet. Add one to start a session.')}</Text> : null}
       {props.projects.map((project) => <WorkspaceProjectRow
         key={project.path}

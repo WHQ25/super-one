@@ -128,7 +128,7 @@ export interface DraftUpsertResult {
  * A draft as the UI sees it. `pendingSync` marks a draft still sitting in the
  * controller outbox because its environment was unreachable at write time.
  */
-export type DraftListEntry = DraftRecord & { pendingSync?: true }
+export type DraftListEntry = DraftRecord & { pendingSync?: true; controllerDeviceId?: string | null }
 
 export interface DraftListRequest {
   /** Optional filter; omit for every draft in the environment. */
@@ -146,3 +146,20 @@ export interface DraftDeleteRequest {
 export interface DraftDeleteResult {
   ok: true
 }
+
+/** Mobile composer control is independent of a running agent session. */
+export type DraftRemoteCommand =
+  | { type: 'list_drafts'; requestId: string; projectPath?: string }
+  | { type: 'open_draft'; requestId: string; draftId: string; expectedUpdatedAt?: string }
+  | { type: 'save_draft'; requestId: string; draft: DraftUpsertRequest; leaseId?: string }
+  | { type: 'close_draft'; requestId: string; draftId: string; leaseId: string }
+  | { type: 'delete_draft'; requestId: string; draftId: string; leaseId?: string }
+
+export type DraftChangedEvent = {
+  type: 'draft_changed'
+  draftId: string
+  draft: DraftListEntry | null
+  reason: 'saved' | 'opened' | 'closed' | 'disconnected' | 'deleted'
+}
+
+export type DraftOpenResult = { draft: DraftListEntry; leaseId: string }

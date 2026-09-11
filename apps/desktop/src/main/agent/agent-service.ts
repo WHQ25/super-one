@@ -102,6 +102,8 @@ import { closeSideChat, startSideChat } from '../session/side-chat'
 import { loadRealtimeTimeline, reconcileRealtimeTimeline } from '../session/realtime-timeline-repo'
 
 export class AgentService {
+  private prepareDraftOpen?: (draftId: string) => Promise<void>
+  setPrepareDraftOpen(prepare: (draftId: string) => Promise<void>): void { this.prepareDraftOpen = prepare }
   private mainWindow: BrowserWindow | null = null
   private sessionManager: import('../session/session-manager').SessionManagerImpl | null = null
   private eventSubscribers: Array<(event: AgentEvent) => void> = []
@@ -577,7 +579,31 @@ export class AgentService {
     }
     trace('remote.cmd', command.type, command)
     switch (command.type) {
+      case 'list_drafts':
+      case 'open_draft':
+      case 'save_draft':
+      case 'close_draft':
+      case 'delete_draft': {
+        try {
+          if (command.type === 'open_draft') await this.prepareDraftOpen?.(command.draftId)
+          const { localDraftStore } = await import('../db-drafts')
+          await respond?.(command.requestId, localDraftStore().handle(command, deviceId))
+        } catch (error) {
+          await respond?.(command.requestId, { ok: false, error: error instanceof Error ? error.message : String(error) })
+        }
+        break
+      }
       case 'create_session': {
+        if (command.draftId) {
+          try {
+            const { localDraftStore } = await import('../db-drafts')
+            if (!command.draftLeaseId) throw new Error('Draft control is required')
+            localDraftStore().assertControl(command.draftId, deviceId, command.draftLeaseId)
+          } catch (error) {
+            await respond?.(command.requestId, { ok: false, error: error instanceof Error ? error.message : String(error) })
+            break
+          }
+        }
         const { projectPath, sessionId, provider } = command
         if (!projectPath || !sessionId) {
           await respond?.(command.requestId, { ok: false, error: 'projectPath and sessionId required' })
@@ -1255,6 +1281,24 @@ export class AgentService {
         } catch (err) {
           await respond?.(command.requestId, { error: (err as Error).message })
         }
+        break
+      }
+      case 'get_collab_launch_task': {
+        if (!this.canAccessSession(command.projectPath, command.sessionId)) {
+          await respond?.(command.requestId, { error: this.buildSessionAccessError(command.projectPath, command.sessionId) })
+          break
+        }
+        // The brief was withheld from the phone's copy of the request; the pending
+        // interaction the session still holds is the one the desktop rendered.
+        const pending = this.findSessionBySid(command.projectPath, command.sessionId)?.getPendingInteractions()
+          .find((event): event is AgentEvent & { type: 'permission_request' } =>
+            event.type === 'permission_request' && event.request.requestId === command.permissionRequestId)
+        const launch = pending?.request.sessionAgentsConfirm?.launches.find((item) => item.launchId === command.launchId)
+        if (!launch) {
+          await respond?.(command.requestId, { error: 'That collaboration request is no longer pending' })
+          break
+        }
+        await respond?.(command.requestId, { task: launch.task })
         break
       }
       case 'get_session_state': {

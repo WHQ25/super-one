@@ -10,7 +10,7 @@ describe('mobile translations', () => {
   })
 
   it('keeps English progress copy in sentence case', () => {
-    expect(translateMobileText('en', 'Loading conversation…')).toBe('Loading conversation…')
+    expect(translateMobileText('en', 'Loading…')).toBe('Loading…')
   })
 
   it('translates mobile shell copy into Chinese', () => {

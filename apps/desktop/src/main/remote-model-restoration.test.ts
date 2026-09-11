@@ -56,4 +56,28 @@ describe('mobile Codex model restoration', () => {
     expect(sent).toContainEqual(expect.objectContaining({ type: 'send_message', model: 'gpt-5.6-sol', effort: 'high' }))
     runtime.dispose()
   })
+
+  it.each([
+    { tier: null, label: 'off' },
+    { tier: 'priority', label: 'on' },
+  ])('restores Codex Fast $label from replay so a mobile open does not inherit the host default', async ({ tier }) => {
+    const host = createHost(() => {})
+    host.broadcastSettingsPatch({ selectedCodexModel: 'gpt-6-astra', selectedCodexServiceTier: tier })
+    let buffered: AgentEvent[][] = []
+    const client = {
+      startBuffering() { buffered = [] },
+      releaseBuffer() { return { epoch: 1, batches: buffered } },
+      send() {},
+      async request(command: { type: string }) {
+        if (command.type === 'subscribe_session') { buffered.push(host.getReplayEvents()); return { ok: true } }
+        if (command.type === 'load_session_messages') return { messages: [], provider: 'codex', hasMore: false }
+        if (command.type === 'get_session_state') return { status: 'idle', pendingInteractions: [], inProgressMessages: [] }
+        return { ok: true }
+      },
+    }
+    const runtime = new ChatRuntime(client as never, () => {})
+    await runtime.open('/project', 'session')
+    expect(runtime.session.selectedCodexServiceTier).toBe(tier)
+    runtime.dispose()
+  })
 })

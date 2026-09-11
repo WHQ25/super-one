@@ -576,6 +576,12 @@ export class EnvironmentHost {
     }
   }
 
+  async disconnectDraft(connectionId: string, draftId: string): Promise<void> {
+    if (connectionId !== 'local') throw new Error('Draft control is not supported by this environment')
+    const { localDraftStore } = await import('../db-drafts')
+    localDraftStore().disconnect(draftId)
+  }
+
   /**
    * Drain the outbox for a node that just came back. Called from the
    * connection lifecycle — never on a self-owned timer.

@@ -8,6 +8,17 @@ import { useHarnessSelection } from './use-harness-selection'
 const wrapper = ({ children }: { children: ReactNode }) =>
   <MobileThemeProvider>{children}</MobileThemeProvider>
 
+test('retains a draft model, mode, provider and effort when the catalog refreshes', async () => {
+  const { result } = await renderHook(() => useHarnessSelection(), { wrapper })
+  await act(async () => { result.current.restoreDraft({ harness: 'claude', model: 'saved-model', effort: 'max', permissionMode: 'plan', apiProviderId: 'saved-provider', selectedAcpModeId: 'saved-mode' }) })
+  await act(async () => { result.current.applySystemInfo('claude', { models: [{ id: 'default-model', name: 'Default', description: '' }], defaults: { model: 'default-model' } }) })
+  expect(result.current.selectedModel).toBe('saved-model')
+  expect(result.current.selectedEffort).toBe('max')
+  expect(result.current.permissionMode).toBe('plan')
+  expect(result.current.selectedProviderId).toBe('saved-provider')
+  expect(result.current.selectedModeId).toBe('saved-mode')
+})
+
 const claudeInfo: RemoteSystemInfo = {
   models: [
     { id: 'opus-4-8', name: 'Opus 4.8', description: '', supportedEffortLevels: ['low', 'medium', 'high'] },
@@ -165,6 +176,166 @@ test('a Codex model switch clears the Fast tier the previous model declared', as
   await act(async () => { result.current.selectModel('gpt-6-astra') })
 
   expect(result.current.serviceTier).toBeNull()
+})
+
+test('opening a Codex session restores Fast from the session, not the host default', async () => {
+  const { result } = await mount()
+  await act(async () => { result.current.resetForProvider('codex') })
+  await act(async () => {
+    result.current.applySystemInfo('codex', codexInfo, {
+      model: 'gpt-6-astra',
+      effort: 'high',
+      permissionMode: 'auto',
+      serviceTier: null,
+    })
+  })
+
+  expect(result.current.serviceTier).toBeNull()
+  expect(result.current.optionParams.find((param) => param.id === 'fast')?.selected).toBe('false')
+})
+
+test('a restored Codex Fast-off survives catalog refresh when the host default is on', async () => {
+  const { result } = await mount()
+  await act(async () => { result.current.resetForProvider('codex') })
+  await act(async () => {
+    result.current.applySystemInfo('codex', codexInfo, {
+      model: 'gpt-6-astra',
+      serviceTier: null,
+    })
+  })
+  await act(async () => { result.current.applySystemInfo('codex', codexInfo) })
+
+  expect(result.current.serviceTier).toBeNull()
+})
+
+test('a restored Codex Fast-on survives catalog refresh', async () => {
+  const { result } = await mount()
+  await act(async () => { result.current.resetForProvider('codex') })
+  await act(async () => {
+    result.current.applySystemInfo('codex', { ...codexInfo, defaults: { ...codexInfo.defaults, fastMode: false } }, {
+      model: 'gpt-6-astra',
+      serviceTier: 'priority',
+    })
+  })
+  await act(async () => {
+    result.current.applySystemInfo('codex', { ...codexInfo, defaults: { ...codexInfo.defaults, fastMode: false } })
+  })
+
+  expect(result.current.serviceTier).toBe('priority')
+  expect(result.current.optionParams.find((param) => param.id === 'fast')?.selected).toBe('true')
+})
+
+test('switching session restores that session Fast, not the previous visit pick', async () => {
+  const { result } = await mount()
+  await act(async () => { result.current.resetForProvider('codex') })
+  await act(async () => {
+    result.current.applySystemInfo('codex', codexInfo, { model: 'gpt-6-astra', serviceTier: 'priority' })
+  })
+  await act(async () => { result.current.setOptionParam('fast', 'false') })
+
+  await act(async () => { result.current.resetForProvider('codex') })
+  await act(async () => {
+    result.current.applySystemInfo('codex', codexInfo, { model: 'gpt-6-astra', serviceTier: 'priority' })
+  })
+
+  expect(result.current.serviceTier).toBe('priority')
+})
+
+test('a Fast pick on the landing survives catalog refresh', async () => {
+  const { result } = await mount()
+  await act(async () => { result.current.resetForProvider('codex') })
+  await act(async () => { result.current.applySystemInfo('codex', codexInfo) })
+  await act(async () => { result.current.setOptionParam('fast', 'false') })
+  await act(async () => { result.current.applySystemInfo('codex', codexInfo) })
+
+  expect(result.current.serviceTier).toBeNull()
+})
+
+test('a model switch does not let catalog refresh re-arm host default Fast', async () => {
+  const { result } = await mount()
+  await act(async () => { result.current.resetForProvider('codex') })
+  await act(async () => { result.current.applySystemInfo('codex', codexInfo) })
+  await act(async () => { result.current.selectModel('gpt-6-astra') })
+  await act(async () => { result.current.applySystemInfo('codex', codexInfo) })
+
+  expect(result.current.serviceTier).toBeNull()
+})
+
+const claudeWithProvider: RemoteSystemInfo = {
+  ...claudeInfo,
+  providers: [
+    { id: 'cred-host', name: 'Host' },
+    { id: 'cred-session', name: 'Session' },
+  ],
+  selectedProviderId: 'cred-host',
+}
+
+test('opening a session restores its API provider over the catalog default', async () => {
+  const { result } = await mount()
+  await act(async () => { result.current.resetForProvider('claude') })
+  await act(async () => {
+    result.current.applySystemInfo('claude', claudeWithProvider, {
+      model: 'opus-4-8',
+      apiProviderId: 'cred-session',
+    })
+  })
+  await act(async () => { result.current.applySystemInfo('claude', claudeWithProvider) })
+
+  expect(result.current.selectedProviderId).toBe('cred-session')
+})
+
+const acpInfo: RemoteSystemInfo = {
+  models: [{ id: 'grok-4', name: 'Grok 4', description: '' }],
+  modes: [{ id: 'ask', name: 'Ask' }, { id: 'code', name: 'Code' }],
+  selectedModeId: 'ask',
+  permissionModes: ['default', 'plan'],
+  defaults: { model: 'grok-4', permissionMode: 'default' },
+}
+
+test('opening an ACP session restores its mode over the catalog default', async () => {
+  const { result } = await mount()
+  await act(async () => { result.current.resetForProvider('acp') })
+  await act(async () => {
+    result.current.applySystemInfo('acp', acpInfo, { model: 'grok-4', selectedModeId: 'code' })
+  })
+  await act(async () => { result.current.applySystemInfo('acp', acpInfo) })
+
+  expect(result.current.selectedModeId).toBe('code')
+})
+
+const openCodeInfo: RemoteSystemInfo = {
+  models: [{ id: 'oc-model', name: 'OC', description: '' }],
+  agents: [{ id: 'build', name: 'Build' }, { id: 'plan', name: 'Plan' }],
+  selectedAgentId: 'build',
+  permissionModes: ['default'],
+  defaults: { model: 'oc-model', permissionMode: 'default' },
+}
+
+test('opening an OpenCode session restores its agent over the catalog default', async () => {
+  const { result } = await mount()
+  await act(async () => { result.current.resetForProvider('opencode') })
+  await act(async () => {
+    result.current.applySystemInfo('opencode', openCodeInfo, { model: 'oc-model', selectedAgentId: 'plan' })
+  })
+  await act(async () => { result.current.applySystemInfo('opencode', openCodeInfo) })
+
+  expect(result.current.selectedAgentId).toBe('plan')
+})
+
+test('switching session drops a visit-local OpenCode agent pick', async () => {
+  const { result } = await mount()
+  await act(async () => { result.current.resetForProvider('opencode') })
+  await act(async () => {
+    result.current.applySystemInfo('opencode', openCodeInfo, { model: 'oc-model', selectedAgentId: 'build' })
+  })
+  await act(async () => { result.current.selectAgent('plan') })
+
+  await act(async () => { result.current.resetForProvider('opencode') })
+  await act(async () => {
+    result.current.applySystemInfo('opencode', openCodeInfo, { model: 'oc-model', selectedAgentId: 'build' })
+  })
+
+  expect(result.current.selectedAgentId).toBe('build')
 })
 
 /**

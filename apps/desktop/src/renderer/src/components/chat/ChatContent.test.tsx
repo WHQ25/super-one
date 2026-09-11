@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 interface FakeSessionState {
+  draftRemoteDeviceId?: string | null
   messages: unknown[]
   isCompacting: boolean
   isRecapping: boolean
@@ -244,6 +245,8 @@ function renderContent() {
 }
 
 afterEach(() => {
+  hoisted.sessionState.draftRemoteDeviceId = null
+  hoisted.isRemoteLocked.value = false
   useCodexRealtimeViewStore.setState({ sessions: {} })
   hoisted.sessionState.queuedMessages = []
   hoisted.sessionState.sessionProvider = 'claude'
@@ -251,6 +254,23 @@ afterEach(() => {
   hoisted.sessionState.acpAgentId = null
   hoisted.sessionState._providerSessionId = null
   hoisted.sessionState.status = 'idle'
+})
+
+it('keeps the remote draft composer below its observation notice and disconnect action', async () => {
+  hoisted.sessionState._worktreeRemoved = false
+  hoisted.sessionState.draftId = 'draft-remote'
+  hoisted.sessionState.draftRemoteDeviceId = 'phone'
+  hoisted.isRemoteLocked.value = true
+  useAppStore.setState({ harnessCatalog: null })
+  const disconnect = vi.fn(async () => {})
+  window.environment.disconnectDraft = disconnect
+  renderContent()
+  const editor = screen.getByTestId('chat-input')
+  const notice = screen.getByText('Remote draft active — observation mode.')
+  expect(notice.compareDocumentPosition(editor) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }))
+  await waitFor(() => expect(disconnect).toHaveBeenCalledWith('local', 'draft-remote'))
+  hoisted.sessionState.draftId = null
 })
 
 // Disabling a harness keeps its binary on disk, so sessions on it stay openable.

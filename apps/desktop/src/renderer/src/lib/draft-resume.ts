@@ -60,6 +60,7 @@ function applyPersistedFields(sess: PerSessionState, draft: DraftListEntry): Per
     draftJson: draft.docJson,
     attachments: draftAttachments(draft),
     draftId: draft.id,
+    draftRemoteDeviceId: draft.controllerDeviceId ?? null,
     ...sessionFieldsFromSettings(resolvedSettings(draft)),
   }
 }
@@ -275,10 +276,9 @@ export async function resumeDraft(
     }, draft.id)
 
     releaseParkedDraft(draft.id)
-    // Only stop hiding once the row is really gone, so it cannot flash back in.
-    void useDraftsStore.getState().removeDraft(connectionId, draft.id).finally(() => {
-      useDraftsStore.getState().setResumingDraft(null)
-    })
+    // Keep the durable record while either device is editing. The sidebar
+    // hides the open origin; deleting here made it disappear from the phone.
+    useDraftsStore.getState().setResumingDraft(null)
     queueMicrotask(() => {
       draftTrace('resume_after_microtask', readActiveConfig(targetProject, sid), draft.id)
     })

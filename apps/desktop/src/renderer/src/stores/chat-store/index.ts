@@ -303,6 +303,7 @@ import { resetLock } from './helpers/lifecycle'
 
 export function isRemoteSession(state: ChatStore, projectPath: string, sessionId: string | null | undefined): boolean {
   if (!sessionId) return false
+  if (state.projectSessions[projectPath]?._sessions[sessionId]?.draftRemoteDeviceId) return true
   const ids = state.remoteSessions[projectPath]
   return !!ids && ids.includes(sessionId)
 }

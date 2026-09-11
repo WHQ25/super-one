@@ -11,6 +11,7 @@ import { formatSendWhen } from '@/components/chat/scheduled-send-time'
 import { useChatStore } from '@/stores/chat-store'
 import { discardDeletedDraft, getDraftIdForSession } from '@/stores/chat-store/helpers/draft-promote'
 import { nextDraftSlots, selectVisibleDrafts } from './draft-visibility'
+import { toast } from 'sonner'
 
 interface DraftsSectionProps {
   /** Environment whose drafts are shown — drafts follow the sidebar's host. */
@@ -102,9 +103,10 @@ const DraftRow = memo(function DraftRow({
           // Deleting the draft retires the promise with it — the schedule
           // mirrors this text, so leaving it armed would send a message the
           // user just threw away.
-          if (scheduled) void window.app.clearScheduledSend(scheduled.sessionId)
-          discardDeletedDraft(draft.id)
-          void discardDraft(connectionId, draft.id)
+          void discardDraft(connectionId, draft.id).then(() => {
+            if (scheduled) void window.app.clearScheduledSend(scheduled.sessionId)
+            discardDeletedDraft(draft.id)
+          }).catch((error) => toast.error(error instanceof Error ? error.message : 'Could not delete draft'))
         }}
         className="opacity-0 transition-opacity group-hover/draft:opacity-100"
       >

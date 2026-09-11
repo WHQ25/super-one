@@ -8,6 +8,7 @@
  */
 
 import { remoteProjectKey, parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { hasPersistableDraftContent } from '@superone/shared/environment/draft-content'
 import type {
   DraftSessionSettings,
   DraftUpsertRequest,
@@ -42,7 +43,7 @@ export { isUnsentSession } from './session-liveness'
  * silently discards the composer.
  */
 export function hasDraftContent(session: PerSessionState | undefined): boolean {
-  return !!session && (!!session.draftText.trim() || session.attachments.length > 0)
+  return !!session && hasPersistableDraftContent({ text: session.draftText, docJson: session.draftJson, attachments: session.attachments })
 }
 
 /**
@@ -320,8 +321,8 @@ export function captureOpenDraft(
   }
 }
 
-function emptyDraftFields(): Pick<PerSessionState, 'draftText' | 'draftJson' | 'attachments' | 'draftId'> {
-  return { draftText: '', draftJson: null, attachments: [], draftId: null }
+function emptyDraftFields(): Pick<PerSessionState, 'draftText' | 'draftJson' | 'attachments' | 'draftId' | 'draftRemoteDeviceId'> {
+  return { draftText: '', draftJson: null, attachments: [], draftId: null, draftRemoteDeviceId: null }
 }
 
 function contentAndSettingsFields(
@@ -451,17 +452,18 @@ export function applyCarriedDraft(
   return toSessionId
 }
 
-function buildUpsertFromSession(
+export function buildUpsertFromSession(
   store: ChatStore,
   projectPath: string,
   sessionId: string,
   session: PerSessionState,
   project: ProjectState | undefined,
+  worktree?: WorktreeHint | null,
 ): DraftUpsertRequest {
   const target = resolveDraftTarget(projectPath)
-  const draftId = draftIdBySession.get(sessionId) ?? crypto.randomUUID()
+  const draftId = draftIdBySession.get(sessionId) ?? session.draftId ?? crypto.randomUUID()
   draftIdBySession.set(sessionId, draftId)
-  const settings = snapshotDraftSettings(session, project, readAppWorktree(projectPath))
+  const settings = snapshotDraftSettings(session, project, worktree === undefined ? readAppWorktree(projectPath) : worktree)
   return {
     id: draftId,
     text: session.draftText,
@@ -499,7 +501,9 @@ export async function promoteDraftIfUnsent(
   }
   const project = store.projectSessions[projectPath]
   const session = project?._sessions[sessionId]
-  if (!isUnsentSession(session) || !hasDraftContent(session)) {
+  if (session?.draftRemoteDeviceId) return
+  const existingId = draftIdBySession.get(sessionId) ?? session?.draftId ?? null
+  if (!isUnsentSession(session) || (!hasDraftContent(session) && !existingId)) {
     draftTrace('promote_skip', {
       reason: 'not-unsent-with-text',
       projectPath,
@@ -515,7 +519,6 @@ export async function promoteDraftIfUnsent(
     return
   }
 
-  const existingId = draftIdBySession.get(sessionId) ?? session.draftId ?? null
   try {
     if (existingId && useDraftsStore.getState().isDraftDiscarded?.(existingId)) {
       draftTrace('promote_skip', { reason: 'discarded', projectPath, sessionId, draftId: existingId }, sessionId)
@@ -535,7 +538,7 @@ export async function promoteDraftIfUnsent(
   } catch {
     /* drafts store mocked without this seam in some tests */
   }
-  parkDraftSnapshot({
+  if (hasDraftContent(session)) parkDraftSnapshot({
     draftId: draft.id,
     projectPath,
     sessionId,
@@ -546,6 +549,7 @@ export async function promoteDraftIfUnsent(
     },
     sandboxInfo: project?.sandboxInfo ?? null,
   })
+  else releaseParkedDraft(draft.id)
   draftTrace('promote', {
     connectionId: target.connectionId,
     draftId: draft.id,

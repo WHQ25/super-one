@@ -1,5 +1,5 @@
 import { expect, jest, test } from '@jest/globals'
-import { Keyboard } from 'react-native'
+import { Animated, Keyboard } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { renderWithTheme } from '../test-render'
 import { WorkspaceDrawer, type WorkspaceDrawerProps } from './workspace-drawer'
@@ -40,11 +40,20 @@ const drawer = (overrides: Partial<WorkspaceDrawerProps> = {}) => (
 )
 
 test('dismisses the keyboard when the drawer opens over the composer', async () => {
+  const start = jest.fn()
+  // Opening mounts the list in the same commit; the test renderer has no native
+  // view tag for the panel's useNativeDriver spring.
+  const spring = jest.spyOn(Animated, 'spring').mockReturnValue({ start } as never)
+  const timing = jest.spyOn(Animated, 'timing').mockReturnValue({ start } as never)
   const dismiss = jest.spyOn(Keyboard, 'dismiss').mockImplementation(() => {})
-  const view = await renderWithTheme(drawer())
-  dismiss.mockClear()
-
-  await view.rerender(drawer({ visible: true }))
-  expect(dismiss).toHaveBeenCalled()
-  dismiss.mockRestore()
+  try {
+    const view = await renderWithTheme(drawer())
+    dismiss.mockClear()
+    await view.rerender(drawer({ visible: true }))
+    expect(dismiss).toHaveBeenCalled()
+  } finally {
+    dismiss.mockRestore()
+    spring.mockRestore()
+    timing.mockRestore()
+  }
 })

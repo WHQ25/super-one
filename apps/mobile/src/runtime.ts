@@ -49,6 +49,9 @@ export type SessionWorktreeFacts = {
 const NO_WORKTREE: SessionWorktreeFacts = { isWorktree: false, worktreePath: null, gitBranch: null }
 
 export type CreateSessionOptions = {
+  draftId?: string
+  draftLeaseId?: string
+  sandboxMode?: import('@superone/shared/agent-types').SandboxMode
   /** Client-chosen id so the shell can leave the landing before the host answers. */
   sessionId?: string
   provider?: HarnessId
@@ -293,6 +296,8 @@ export class ChatRuntime {
       ...(opts.mode ? { mode: opts.mode } : {}),
       ...(opts.agentPreset ? { agentPreset: opts.agentPreset } : {}),
       ...(opts.apiProviderId !== undefined ? { apiProviderId: opts.apiProviderId } : {}),
+      ...(opts.sandboxMode ? { sandboxMode: opts.sandboxMode } : {}),
+      ...(opts.draftId ? { draftId: opts.draftId, draftLeaseId: opts.draftLeaseId } : {}),
     } as RemoteCommand) as { ok?: boolean; sessionId?: string; error?: string }
     if (res.error || res.ok === false) throw new Error(res.error ?? 'create_session failed')
     const id = res.sessionId ?? sessionId
@@ -313,6 +318,15 @@ export class ChatRuntime {
       throw error
     }
     return id
+  }
+
+  /** The brief of one launch in a pending collaboration request — withheld from the wire until opened. */
+  async loadCollabLaunchTask(permissionRequestId: string, launchId: string): Promise<string> {
+    const result = await this.client.request({ type: 'get_collab_launch_task', requestId: randomId(),
+      projectPath: this.projectPath, sessionId: this.sessionId, permissionRequestId, launchId,
+    }) as { task?: string; error?: string }
+    if (result.error) throw new Error(result.error)
+    return result.task ?? ''
   }
 
   async loadSystemInfo(provider: string = String(this.provider)): Promise<SystemInfo> {
@@ -374,6 +388,7 @@ export class ChatRuntime {
   }
 
   send(content: string, extra: {
+    collaborationMode?: string
     images?: ImageAttachment[]; model?: string; effort?: string
     /** OpenCode primary agent for this turn. */
     agent?: string | null
@@ -394,9 +409,10 @@ export class ChatRuntime {
       provider: this.provider as HarnessId,
       ...(extra.model ? { model: extra.model } : {}),
       ...(extra.effort ? { effort: extra.effort } : {}),
+      ...(extra.collaborationMode ? { collaborationMode: extra.collaborationMode } : {}),
       ...(extra.images?.length ? { images: extra.images } : {}),
       ...(extra.agent ? { agent: extra.agent } : {}),
-      ...(extra.serviceTier ? { serviceTier: extra.serviceTier } : {}),
+      ...(extra.serviceTier !== undefined ? { serviceTier: extra.serviceTier } : {}),
       ...(extra.modelParams && Object.keys(extra.modelParams).length
         ? { modelParams: extra.modelParams }
         : {}),

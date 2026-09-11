@@ -215,6 +215,7 @@ export interface PerSessionState extends ChatCoreSession {
    * When set, the pane is a draft surface — not a fresh ChatSuggestions landing.
    */
   draftId: string | null
+  draftRemoteDeviceId?: string | null
   promptSuggestion: string | null
   attachments: ImageAttachment[]
   browserAnnotations: BrowserAnnotation[]

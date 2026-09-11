@@ -6,9 +6,25 @@ import type { AgentEvent } from '@superone/shared/agent-types'
 import { buildToolRendererUrl } from '@superone/shared/miniapp-types'
 import { buildMiniAppUrlHost } from '@superone/shared/miniapp-url'
 import { coalesceAgentEventBatch } from '@/lib/agent-event-batcher'
+import { applyDraftChange, flushDraftBeforeOpen, startDraftAutosave } from '@/lib/draft-sync'
+import { useDraftsStore } from '@/stores/drafts'
 
 export function useAgentEvents(): void {
   const handleAgentEvent = useChatStore((s) => s.handleAgentEvent)
+
+  useEffect(() => {
+    const stop = startDraftAutosave()
+    const stopHandover = window.environment.onDraftOpenRequested?.(flushDraftBeforeOpen)
+    const unsub = window.agent.onAgentEvent((event) => {
+      if (event.type === 'draft_changed') applyDraftChange(event)
+    })
+    void useDraftsStore.getState().loadDrafts('local').then(() => {
+      for (const draft of useDraftsStore.getState().byConnection.local ?? []) {
+        if (draft.controllerDeviceId) applyDraftChange({ type: 'draft_changed', draftId: draft.id, draft, reason: 'opened' })
+      }
+    })
+    return () => { stop(); unsub(); stopHandover?.() }
+  }, [])
 
   useEffect(() => {
     let hydrated = false

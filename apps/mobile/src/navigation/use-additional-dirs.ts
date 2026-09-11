@@ -207,6 +207,7 @@ export function useAdditionalDirs(opts: {
     },
     /** Forget a session's own folders; the next session starts with none. */
     clearSessionDirs: () => setSessionDirs([]),
+    restoreSessionDirs: setSessionDirs,
     remove: (dir: string, scope: AddDirScope) => {
       if (scope === 'session') return setSession(sessionDirs.filter((entry) => entry !== dir))
       return write({

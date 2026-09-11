@@ -3,15 +3,21 @@ import log from '../logger'
 import type { SessionLeaveReason, SessionManager } from '../session/types'
 
 export class DeviceRegistry {
+  private draftControl?: import('./draft-control').DraftControl
   private terminalManager?: import('../terminal/terminal-manager').TerminalManager
 
   constructor(private readonly sessionManager: SessionManager) {}
+
+  setDraftControl(drafts: import('./draft-control').DraftControl): void {
+    this.draftControl = drafts
+  }
 
   setTerminalManager(mgr: import('../terminal/terminal-manager').TerminalManager): void {
     this.terminalManager = mgr
   }
 
   handleDeviceDisconnected(deviceId: string): void {
+    this.draftControl?.releaseDevice(deviceId)
     let releasedCount = 0
     setProgressiveSession(deviceId)
     let unsubscribedCount = 0

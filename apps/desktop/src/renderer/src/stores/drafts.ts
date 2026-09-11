@@ -120,7 +120,8 @@ export const useDraftsStore = create<DraftsState>((set, get) => ({
     set((s) => {
       if (s.discardedIds[merged.id]) return s
       const list = s.byConnection[connectionId] ?? []
-      const next = [merged, ...list.filter((d) => d.id !== merged.id)]
+      const current = list.find((d) => d.id === merged.id)
+      const next = [{ ...merged, controllerDeviceId: current?.controllerDeviceId ?? merged.controllerDeviceId }, ...list.filter((d) => d.id !== merged.id)]
       const deduped = merged.originSessionId
         ? next.filter((d) => d.id === merged.id || d.originSessionId !== merged.originSessionId)
         : next
@@ -129,20 +130,26 @@ export const useDraftsStore = create<DraftsState>((set, get) => ({
   },
 
   removeDraft: async (connectionId, draftId) => {
+    await window.environment.deleteDraft(connectionId, draftId)
     set((s) => ({
       byConnection: {
         ...s.byConnection,
         [connectionId]: (s.byConnection[connectionId] ?? []).filter((d) => d.id !== draftId),
       },
     }))
-    await window.environment.deleteDraft(connectionId, draftId)
   },
 
   discardDraft: async (connectionId, draftId) => {
+    if (get().byConnection[connectionId]?.find((d) => d.id === draftId)?.controllerDeviceId) {
+      throw new Error('Disconnect this draft before deleting it')
+    }
     // Tombstone before IPC: a visibility flush / in-flight upsert must not
     // recreate the row. Resume still uses removeDraft so it can be re-promoted.
     get().markDraftDiscarded(draftId)
-    await get().removeDraft(connectionId, draftId)
+    try { await get().removeDraft(connectionId, draftId) } catch (error) {
+      set((s) => { const discardedIds = { ...s.discardedIds }; delete discardedIds[draftId]; return { discardedIds } })
+      throw error
+    }
   },
 }))
 

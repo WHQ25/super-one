@@ -9,6 +9,7 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
   }
   const activeSessionState = {
     draftText: '',
+    draftRemoteDeviceId: null as string | null,
     draftJson: null as object | null,
     status: 'idle' as 'idle' | 'streaming',
     attachments: [] as Array<{ mimeType: string; base64: string; name: string }>,
@@ -157,6 +158,7 @@ vi.mock('@tiptap/react', () => {
 
   const createEditor = () => {
     const editor = {
+      setEditable: vi.fn(),
       storage: {
         slashDecoration: { slashCommands: [] as unknown[] },
         promptSuggestion: { suggestion: null as string | null },
@@ -311,7 +313,7 @@ vi.mock('@/stores/chat', () => ({
   runClaudeInterceptedCommand: vi.fn(),
   useChatStore,
   useActiveSession: (selector: (state: typeof activeSessionState) => unknown) => selector(activeSessionState),
-  useIsRemoteLocked: () => false,
+  useIsRemoteLocked: () => !!activeSessionState.draftRemoteDeviceId,
   useSessionScope: () => sessionScope.value,
   selectCodexPrompts: () => [],
   selectActiveCodexSkills: () => [],
@@ -395,6 +397,26 @@ vi.mock('@/components/ui/HighlightedText', () => ({
 import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { ChatInput } from './ChatInput'
 
+it('keeps a remote draft observable without echoing mobile edits into the store', async () => {
+  activeSessionState.draftRemoteDeviceId = 'phone'
+  activeSessionState.draftText = 'Editing on phone'
+  const { rerender } = render(<ChatInput />)
+  await waitFor(() => expect(editorState.text).toBe('Editing on phone'))
+  expect(screen.getByTestId('editor').closest('[inert]')).not.toBeNull()
+  expect(chatActions.setDraftText).not.toHaveBeenCalled()
+  expect(chatActions.setDraftJson).not.toHaveBeenCalled()
+
+  activeSessionState.draftText = 'Latest mobile content'
+  rerender(<ChatInput />)
+  await waitFor(() => expect(editorState.text).toBe('Latest mobile content'))
+  expect(chatActions.setDraftText).not.toHaveBeenCalled()
+  activeSessionState.draftRemoteDeviceId = null
+  rerender(<ChatInput />)
+  expect(screen.getByTestId('editor').closest('[inert]')).toBeNull()
+  const editor = editorState.editor as { setEditable: ReturnType<typeof vi.fn> }
+  expect(editor.setEditable).toHaveBeenLastCalledWith(true, false)
+})
+
 beforeEach(() => {
   vi.clearAllMocks()
   editorState.text = ''
@@ -405,6 +427,7 @@ beforeEach(() => {
   editorState.composing = false
   editorState.destroyed = false
   activeSessionState.draftText = ''
+  activeSessionState.draftRemoteDeviceId = null
   activeSessionState.draftJson = null
   activeSessionState.status = 'idle'
   activeSessionState.attachments = []

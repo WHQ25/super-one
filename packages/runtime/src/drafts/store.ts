@@ -15,6 +15,7 @@ import {
   type DraftUpsertRequest,
 } from '@superone/shared/environment'
 import type { HarnessId } from '@superone/shared/session-types'
+import { hasPersistableDraftContent } from '@superone/shared/environment/draft-content'
 import type { SqliteDatabase } from '../sqlite'
 
 interface DbDraftRow {
@@ -176,6 +177,9 @@ export interface DraftStore {
 
 export function createDraftStore(db: SqliteDatabase & { exec?: (sql: string) => void }): DraftStore {
   ensureDraftsTable(db)
+  // Keep a cleared editor's identity available for control handover, without
+  // retaining an empty draft on disk or including it in the saved draft list.
+  const emptyEditors = new Map<string, DraftRecord>()
 
   const selectOne = db.prepare('SELECT * FROM drafts WHERE id = ?')
   const selectAll = db.prepare('SELECT * FROM drafts ORDER BY updated_at DESC, id DESC')
@@ -206,8 +210,13 @@ ON CONFLICT(id) DO UPDATE SET
 `)
 
   const get = (id: string): DraftRecord | undefined => {
+    if (emptyEditors.has(id)) return emptyEditors.get(id)
     const row = selectOne.get(id) as DbDraftRow | undefined
     return row ? toRecord(row) : undefined
+  }
+
+  for (const row of selectAll.all() as DbDraftRow[]) {
+    if (!hasPersistableDraftContent(toRecord(row))) deleteOne.run(row.id)
   }
 
   return {
@@ -221,15 +230,33 @@ ON CONFLICT(id) DO UPDATE SET
     get,
 
     upsert(input) {
-      const now = new Date().toISOString()
       const existing = get(input.id)
+      // Controllers use updatedAt to detect offline conflicts. Two edits in
+      // one clock tick must still have different versions.
+      const now = new Date(Math.max(Date.now(), existing ? Date.parse(existing.updatedAt) + 1 : 0)).toISOString()
       const attachments = clampAttachments(input.attachments)
       const originSessionId = input.originSessionId ?? null
       const { harness, model, permissionMode, settings } = denormalize(input)
       // Replace, don't accumulate: a second draft id claiming the same unsent
       // session means the controller lost its session→draft mapping (reload,
       // crash), and the older row is a staler snapshot of the same composer.
-      if (originSessionId) deleteOtherOwners.run(originSessionId, input.id)
+      if (originSessionId) {
+        deleteOtherOwners.run(originSessionId, input.id)
+        for (const [id, editor] of emptyEditors) {
+          if (id !== input.id && editor.originSessionId === originSessionId) emptyEditors.delete(id)
+        }
+      }
+      if (!hasPersistableDraftContent({ ...input, attachments })) {
+        const cleared: DraftRecord = {
+          id: input.id, title: '', text: input.text, docJson: input.docJson ?? null, attachments,
+          projectPath: input.projectPath ?? null, harness: harness as HarnessId | null, model, permissionMode,
+          settings: { harness: harness as HarnessId | null, model, permissionMode, ...settings }, originSessionId,
+          createdAt: existing?.createdAt ?? input.createdAt ?? now, updatedAt: now,
+        }
+        deleteOne.run(input.id)
+        emptyEditors.set(input.id, cleared)
+        return cleared
+      }
       upsertOne.run(
         input.id,
         deriveDraftTitle(input.text),
@@ -245,11 +272,13 @@ ON CONFLICT(id) DO UPDATE SET
         existing?.createdAt ?? input.createdAt ?? now,
         now,
       )
+      emptyEditors.delete(input.id)
       return get(input.id)!
     },
 
     delete(id) {
-      return deleteOne.run(id).changes > 0
+      const empty = emptyEditors.delete(id)
+      return deleteOne.run(id).changes > 0 || empty
     },
   }
 }

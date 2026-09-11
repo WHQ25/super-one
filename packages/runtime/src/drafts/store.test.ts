@@ -21,6 +21,41 @@ function openStore() {
 }
 
 describe('draft store', () => {
+  it('removes cleared drafts from disk while retaining the active editor identity', () => {
+    const db = new Database(':memory:')
+    dbs.push(db)
+    const store = createDraftStore(db)
+    const original = store.upsert({ id: 'd', text: 'original', originSessionId: 's', settings: { model: 'chosen' } })
+    const cleared = store.upsert({ ...original, text: ' \n', docJson: { type: 'doc', content: [{ type: 'paragraph' }] } })
+    expect(store.list()).toEqual([])
+    expect(db.prepare('SELECT COUNT(*) AS count FROM drafts').get()).toEqual({ count: 0 })
+    expect(store.get('d')).toEqual(cleared)
+    expect(createDraftStore(db).get('d')).toBeUndefined()
+    const resumed = store.upsert({ ...cleared, text: 'continue typing' })
+    expect(resumed.createdAt).toBe(original.createdAt)
+    expect(resumed.settings.model).toBe('chosen')
+    expect(store.list()).toEqual([resumed])
+  })
+
+  it('retains drafts containing only attachments or rich content', () => {
+    const store = openStore()
+    store.upsert({ id: 'attachment', text: '', attachments: [{ name: 'shot.png', mimeType: 'image/png', data: 'AAA' }] })
+    store.upsert({ id: 'paste', text: '', docJson: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'pasteChip', attrs: { text: 'saved code' } }] }] } })
+    store.upsert({ id: 'mention', text: '', docJson: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'mention', attrs: { value: '/repo/file.ts' } }] }] } })
+    expect(store.list().map((row) => row.id).sort()).toEqual(['attachment', 'mention', 'paste'])
+  })
+
+  it('cleans empty rows left by older versions on reopen', () => {
+    const db = new Database(':memory:')
+    dbs.push(db)
+    const store = createDraftStore(db)
+    store.upsert({ id: 'legacy', text: 'old' })
+    db.prepare("UPDATE drafts SET text = '', title = '' WHERE id = ?").run('legacy')
+    const reopened = createDraftStore(db)
+    expect(reopened.list()).toEqual([])
+    expect(reopened.get('legacy')).toBeUndefined()
+  })
+
   it('returns the stored draft with a title derived from the first meaningful line', () => {
     const store = openStore()
     const saved = store.upsert({ id: 'd1', text: '\n\n  fix the relay ACK bug\nmore detail here' })
@@ -35,6 +70,7 @@ describe('draft store', () => {
     expect(store.list()).toHaveLength(1)
     expect(second.text).toBe('second')
     expect(second.createdAt).toBe(first.createdAt)
+    expect(second.updatedAt > first.updatedAt).toBe(true)
   })
 
   it('reassigns originSessionId when a different draft claims it, keeping one draft per unsent session', () => {

@@ -7,6 +7,7 @@
  */
 
 import type { DraftListEntry } from '@superone/shared/environment'
+import { hasPersistableDraftContent } from '@superone/shared/environment/draft-content'
 import { isDraftOwnedBySession } from '@/stores/chat-store/helpers/draft-promote'
 
 export interface DraftVisibilityContext {
@@ -54,7 +55,8 @@ export function selectVisibleDrafts(
   if (!drafts?.length) return []
   return drafts.filter(
     (d) =>
-      d.id !== ctx.resumingDraftId
+      hasPersistableDraftContent(d)
+      && d.id !== ctx.resumingDraftId
       && !isDraftOwnedBySession(d, ctx.activeSessionId, ctx.activeDraftId),
   )
 }

@@ -73,6 +73,16 @@ beforeEach(() => {
 })
 
 describe('unsent session detection', () => {
+  it('flushes a cleared existing draft before navigation instead of leaving its old content parked', async () => {
+    const store = storeWith({ draftText: 'old content' })
+    await promoteDraftIfUnsent(store, '/repo', 'sid-1')
+    const id = getDraftIdForSession('sid-1')!
+    expect(getParkedDraft(id)).toBeDefined()
+    store.projectSessions['/repo']._sessions['sid-1'].draftText = ''
+    await promoteDraftIfUnsent(store, '/repo', 'sid-1')
+    expect(saveDraft).toHaveBeenLastCalledWith('local', expect.objectContaining({ id, text: '' }))
+    expect(getParkedDraft(id)).toBeUndefined()
+  })
   it('treats a composer with no messages and no live backend as unsent', () => {
     expect(isUnsentSession(session())).toBe(true)
   })

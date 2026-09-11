@@ -1,3 +1,5 @@
+import { ChatComposerShell } from './ChatComposerShell'
+import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 import { isCodexAsyncAnswer } from '@superone/shared/codex-async-question'
 import { useRef, useState, useEffect, useLayoutEffect, useMemo, useCallback, lazy, Suspense, memo } from 'react'
 import { useChatStore, useActiveSession, useIsRemoteLocked, useSessionScope } from '@/stores/chat'
@@ -7,26 +9,14 @@ import { useShallow } from 'zustand/react/shallow'
 import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { useTranslation } from 'react-i18next'
-import { ArrowDown, ChevronsUp, GitFork, PenLine, Play, ShipWheel, Smartphone, Trash2 } from 'lucide-react'
-import {
-  catalogIdForSessionProvider,
-  isCatalogHarnessDisabled,
-} from '@/lib/harness-visibility'
-import { resolveSessionIcon, resolveSessionIconFromBrandKey } from '@/components/harness/resolve-session-icon'
-import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
+import { ArrowDown, ChevronsUp, GitFork, PenLine, Play, ShipWheel, Trash2 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
-import { ChatInput } from './ChatInput'
-import { ChatStatusBar } from './ChatStatusBar'
 import { ChatMessage, CompactingIndicator, CompactIndicator, CompactErrorIndicator, ApiRetryIndicator, findLastAssistantMessageId, parseCompactMarker, parseTurnMetaMarker, isRedundantTurnSummaryMarker, TurnMetaIndicator, RecappingIndicator } from './ChatMessage'
 import { ModelFallbackRow } from './ModelFallbackRow'
 import { selectClaudeModels } from '@/stores/chat-store/selectors'
 import { ChatSuggestions } from './ChatSuggestions'
 import { SideChatEmptyState } from './SideChatEmptyState'
 import { DraftSessionSurface } from './DraftSessionSurface'
-import { PermissionPrompt } from './PermissionPrompt'
-import { AskUserQuestionPrompt } from './AskUserQuestionPrompt'
-import { CursorApiKeyDialog } from './CursorApiKeyDialog'
-import { TodoPopup } from './TodoPopup'
 import { PlanApprovalPrompt } from './PlanApprovalPrompt'
 import { PlanFullscreenContext } from './codex-item-renderer'
 import { CodexPlanFullscreenView } from './CodexPlanFullscreenView'
@@ -41,7 +31,6 @@ import { ChatScrollIndicator } from './ChatScrollIndicator'
 import { isRealtimeConversationTail, mergeCodexThreadMessages } from './codex-realtime-messages'
 import { CodexRealtimeTranscript } from './CodexRealtimeTranscript'
 import { RealtimeStartingSurface } from './RealtimeStartingSurface'
-import { RealtimeCallIndicator } from './RealtimeCallIndicator'
 import { extractTurnOutline } from './turn-outline'
 import { ChatRootContext } from './is-focus-in-chat'
 import type { CodexPlanApprovalState } from '@superone/shared/agent-types'
@@ -84,95 +73,6 @@ function createChatDensityStyle(scale: number): React.CSSProperties {
   ) as React.CSSProperties
 }
 
-/**
- * Composer stack — owns NO messages subscription. Stream ticks that only update
- * transcript text should not re-render TipTap / status chrome.
- */
-const ChatComposerShell = memo(function ChatComposerShell({ showTodoPopup }: { showTodoPopup: boolean }) {
-  const { t } = useTranslation()
-  const worktreeRemoved = useActiveSession((s) => s._worktreeRemoved)
-  const sessionProvider = useActiveSession((s) => s.sessionProvider)
-  const preferredProvider = useActiveSession((s) => s.preferredProvider)
-  const acpAgentId = useActiveSession((s) => s.acpAgentId)
-  const disconnectRemoteSessionAction = useChatStore((s) => s.disconnectRemoteSession)
-  const isRemoteLocked = useIsRemoteLocked()
-  const harnessCatalog = useAppStore((s) => s.harnessCatalog)
-  const openHarnessSettings = useAppStore((s) => s.openHarnessSettings)
-
-  const provider = resolveProvider({ sessionProvider, preferredProvider })
-  const catalogId = catalogIdForSessionProvider(provider, acpAgentId)
-  const harnessDisabled = catalogId != null && isCatalogHarnessDisabled(harnessCatalog, catalogId)
-  const harnessLabel = catalogId
-    ? t(`settings.harnesses.ids.${catalogId}` as 'settings.harnesses.ids.claude', {
-        defaultValue: catalogId,
-      })
-    : ''
-  const HarnessIcon =
-    (catalogId ? resolveSessionIconFromBrandKey(catalogId) : null)
-    ?? resolveSessionIcon(provider, acpAgentId)
-
-  if (worktreeRemoved) {
-    return (
-      <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 px-4 py-3 text-sm text-muted-foreground">
-        <GitFork className="size-3.5 shrink-0" />
-        <span>Worktree has been removed.</span>
-        <span>This session is now <em>READ ONLY</em>.</span>
-      </div>
-    )
-  }
-  // Disabled harness keeps its binary on disk (re-enable is instant) but must
-  // not accept new turns — same composer withdrawal as worktree-removed. Main
-  // process also refuses to resolve a disabled runtime, so mobile/automation
-  // cannot bypass this banner.
-  if (harnessDisabled && catalogId) {
-    return (
-      <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 px-4 py-3 text-sm text-muted-foreground">
-        {HarnessIcon ? (
-          <span className="inline-flex shrink-0">
-            <HarnessIcon status="default" size={18} renderLevel="compact" />
-          </span>
-        ) : null}
-        <span>
-          <span className="font-medium text-foreground">{harnessLabel}</span>
-          {' '}is disabled.
-        </span>
-        <span>This session is now <em>READ ONLY</em>.</span>
-        <button
-          type="button"
-          onClick={() => openHarnessSettings(catalogId)}
-          className="text-foreground underline underline-offset-2 hover:opacity-80"
-        >
-          Re-enable {harnessLabel}
-        </button>
-      </div>
-    )
-  }
-  if (isRemoteLocked) {
-    return (
-      <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 px-4 py-3 text-sm text-muted-foreground">
-        <Smartphone className="size-3.5 shrink-0" />
-        <span>Remote session active — observation mode.</span>
-        <button
-          onClick={disconnectRemoteSessionAction}
-          className="text-foreground underline underline-offset-2 hover:opacity-80"
-        >
-          Disconnect
-        </button>
-      </div>
-    )
-  }
-  return (
-    <>
-      <RealtimeCallIndicator />
-      <PermissionPrompt />
-      <AskUserQuestionPrompt />
-      <CursorApiKeyDialog />
-      {showTodoPopup && <TodoPopup />}
-      <ChatInput />
-      <ChatStatusBar />
-    </>
-  )
-})
 
 interface ChatTranscriptProps {
   scrollViewportRef: React.RefObject<HTMLDivElement | null>

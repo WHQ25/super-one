@@ -10,15 +10,16 @@
  * their node yet. Losing a row here means losing something the user typed.
  */
 
-import { createDraftStore, deriveDraftTitle, type DraftStore } from '@superone/runtime/drafts'
+import { createDraftStore, deriveDraftTitle } from '@superone/runtime/drafts'
 import type { DraftListEntry, DraftRecord, DraftUpsertRequest } from '@superone/shared/environment'
 import { getDb } from './database'
+import { DraftControl } from './remote/draft-control'
 
-let store: DraftStore | null = null
+let store: DraftControl | null = null
 
 /** Local-environment drafts (connectionId === 'local'). */
-export function localDraftStore(): DraftStore {
-  store ??= createDraftStore(getDb())
+export function localDraftStore(): DraftControl {
+  store ??= new DraftControl(createDraftStore(getDb()))
   return store
 }
 

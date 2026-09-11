@@ -1,3 +1,4 @@
+import { DraftsPreview } from '../navigation/workspace-drafts.stories'
 import { useComposerSend } from '../navigation/use-composer-send'
 import { useComposerDraft } from '../navigation/use-composer-draft'
 import { extractMentionQuery, insertMention, type MentionItem } from '../mentions'
@@ -8,14 +9,15 @@ import { previewAgentProfiles, previewCapabilityIds, previewMentionItems, previe
 import { filterSlashCommands } from '../slash'
 import type { SlashCatalogStatus } from '../slash-catalog'
 import { replaceFirstLine } from '../composer-first-line'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, useWindowDimensions, View } from 'react-native'
 import { Text } from '../ui/text'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar'
 import { WebView } from 'react-native-webview'
-import type { ChatMessage, HarnessId, ImageAttachment, ModelOption, RemoteHarnessOption, RemoteSystemInfo, SandboxInfo, TodoItem } from '@superone/shared/agent-types'
-import { MobileHeader } from '../navigation/mobile-header'
+import type { ChatMessage, HarnessId, ImageAttachment, ModelOption, RemoteHarnessOption, RemoteSystemInfo, SandboxInfo, TodoItem, SessionAgentLaunchProposal } from '@superone/shared/agent-types'
+import { MobileHeader, mobileHeaderTitle } from '../navigation/mobile-header'
+import { useMobileLocale } from '../i18n/context'
 import { MobileKeyboardFrame } from '../navigation/mobile-keyboard-frame'
 import { WorkspaceDrawer } from '../navigation/workspace-drawer'
 import { WorkspaceSidebar } from '../navigation/workspace-sidebar'
@@ -72,6 +74,9 @@ import {
 import { IconGallery } from './IconGallery'
 import { sandboxInfoFromMode } from '@superone/shared/harness/harness-sandbox'
 import { AddDirScreen } from '../screens/add-dir-screen'
+import { CollabRequestScreen } from '../screens/collab-request-screen'
+import { CollabTaskScreen } from '../screens/collab-task-screen'
+import { permissionExamples } from './permissions'
 import type { AddDirScope, AddDirStep } from '../add-dir-state'
 import { appendBrowsePathSegment } from '@superone/shared/path-browse'
 import { LanBrowserPreview } from './LanBrowserPreview'
@@ -227,6 +232,7 @@ const initialMessages: ChatMessage[] = [
 export function ShellPreview({ initialPage = 'New session', initialEffort, onClose, onTheme }: { initialPage?: Page; initialEffort?: string; onClose: () => void; onTheme: () => void }) {
   const styles = useMobileStyles()
   const { tokens, setHarness } = useMobileTheme()
+  const { t } = useMobileLocale()
   const { width, height, fontScale } = useWindowDimensions()
   const [page, setPage] = useState<Page>(initialPage)
   const [devicesRefreshing, setDevicesRefreshing] = useState(false)
@@ -269,6 +275,13 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
   const [previewSessionDirs, setPreviewSessionDirs] = useState<string[]>(['/Users/dev/scratch'])
   const [previewAddDirScope, setPreviewAddDirScope] = useState<AddDirScope>('project')
   const [previewAddDirQuery, setPreviewAddDirQuery] = useState('~/Developer/Projects/')
+  const [previewCollabTask, setPreviewCollabTaskState] = useState<SessionAgentLaunchProposal | null>(null)
+  const setPreviewCollabTask = (launch: SessionAgentLaunchProposal) => { setPreviewCollabTaskState(launch); setPage('Collaboration task') }
+  // A slow resolve, so the loading state is visible; the inline fixture task is the brief.
+  const previewCollabTaskLoad = useCallback(
+    () => new Promise<string>((resolve) => setTimeout(() => resolve(previewCollabTask?.task ?? ''), 600)),
+    [previewCollabTask],
+  )
   const addDirStep: AddDirStep = page === 'Browse folders'
     ? { kind: 'browse', scope: previewAddDirScope }
     : { kind: 'overview' }
@@ -352,8 +365,8 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
   }, (message) => Alert.alert('Could not send', message))
   const chat = page === 'New session' || page === 'Chat' || page === 'Workspace'
   // Standalone galleries share the catch-all 'files' route but draw themselves.
-  const gallery = page === 'Icons' || page === 'Git indicators' || page === 'Session status' || page === 'Composer suggestions' || page === 'Chip editor' || page === 'LAN browser'
-  const route = chat ? 'chat' : page === 'Project' ? 'project-picker' : page === 'Add project' ? 'add-project' : page === 'Worktree' ? 'worktree' : page === 'Branch' ? 'branch' : page === 'Additional folders' || page === 'Browse folders' ? 'add-dir' : page === 'Devices' || page === 'Pairing' ? 'pair' : page === 'Terminal' ? 'terminal' : page === 'Session search' ? 'session-search' : page === 'Settings' ? 'settings' : 'files'
+  const gallery = page === 'Drafts' || page === 'Icons' || page === 'Git indicators' || page === 'Session status' || page === 'Composer suggestions' || page === 'Chip editor' || page === 'LAN browser'
+  const route = chat ? 'chat' : page === 'Project' ? 'project-picker' : page === 'Add project' ? 'add-project' : page === 'Worktree' ? 'worktree' : page === 'Branch' ? 'branch' : page === 'Additional folders' || page === 'Browse folders' ? 'add-dir' : page === 'Collaboration request' ? 'collab-request' : page === 'Collaboration task' ? 'collab-task' : page === 'Devices' || page === 'Pairing' ? 'pair' : page === 'Terminal' ? 'terminal' : page === 'Session search' ? 'session-search' : page === 'Settings' ? 'settings' : 'files'
   /** One workspace, two mounts: the drawer below and the sidebar in the row. */
   const previewWorkspace = {
     client: previewClient, projects: previewProjects, activeProject: project,
@@ -381,7 +394,7 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
       <View style={styles.contentRow}>
         {tabletSidebar ? <WorkspaceSidebar {...previewWorkspace} deviceName="Preview desktop" deviceStatus="connectedLan" onDisconnect={() => setPage('Devices')} onOpenSettings={() => setPage('Settings')} /> : null}
         <View style={styles.mainPane}>
-      <MobileHeader route={route} title={page === 'Add project' ? addProject.title : page === 'Project' ? 'Projects' : page === 'Terminal' ? (previewTerminalTabs.find((tab) => tab.terminalId === terminalTab)?.title ?? 'Terminal') : route === 'files' ? previewBrowserMode.name : page} subtitle="super-one" provider={provider} hasSession={page === 'Chat'} deviceStatus="connectedLan" sidebarVisible={tabletSidebar} git={page === 'Chat' ? previewSessionGit : null} terminal={page === 'Terminal' ? {
+      <MobileHeader route={route} title={page === 'Add project' ? addProject.title : page === 'Project' ? 'Projects' : page === 'Terminal' ? (previewTerminalTabs.find((tab) => tab.terminalId === terminalTab)?.title ?? 'Terminal') : route === 'files' ? previewBrowserMode.name : route === 'collab-request' || route === 'collab-task' ? mobileHeaderTitle(route, undefined, '', '', t) : page} subtitle="super-one" provider={provider} hasSession={page === 'Chat'} launchCount={page === 'Collaboration request' ? 3 : undefined} deviceStatus="connectedLan" sidebarVisible={tabletSidebar} git={page === 'Chat' ? previewSessionGit : null} terminal={page === 'Terminal' ? {
           tabs: previewTerminalTabs,
           activeId: terminalTab,
           onSelect: setTerminalTab,
@@ -393,6 +406,7 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
           // Browsing unwinds to the overview before the page itself leaves,
           // which is the step the shipping `back` walks too.
           else if (page === 'Browse folders') setPage('Additional folders')
+          else if (page === 'Collaboration task') setPage('Collaboration request')
           else setPage('New session')
         }} onSwitchSession={() => setDrawer(true)} onOpenTerminal={() => setPage('Terminal')} onOpenFiles={() => setPage('Files')}
           files={route === 'files' ? { kind: previewBrowserMode.kind,
@@ -474,6 +488,11 @@ todos={page === 'Chat' ? previewTodos : {}} draft={chatDraft.draft} streaming={p
             onBrowse={(scope) => { setPreviewAddDirScope(scope); setPage('Browse folders') }}
             onRemove={(dir, scope) => (scope === 'session' ? setPreviewSessionDirs : setPreviewDirs)(
               (current) => current.filter((entry) => entry !== dir))} /> : null}
+          {page === 'Collaboration request' ? <CollabRequestScreen
+            payload={permissionExamples.session_agents_confirm.sessionAgentsConfirm}
+            onApprove={() => setPage('Chat')} onReject={() => setPage('Chat')}
+            onOpenTask={(launch) => setPreviewCollabTask(launch)} /> : null}
+          {page === 'Collaboration task' ? <CollabTaskScreen load={previewCollabTaskLoad} /> : null}
           {page === 'Worktree' ? <WorktreeScreen selection={worktreeDraft} onSelectionChange={setWorktreeDraft}
             gitInfo={{ ...PREVIEW_GIT_INFO, branch }} worktreeInfo={PREVIEW_WORKTREE_INFO}
             worktreeDirty={PREVIEW_WORKTREE_DIRTY} branches={PREVIEW_BRANCHES}
@@ -485,6 +504,7 @@ todos={page === 'Chat' ? previewTodos : {}} draft={chatDraft.draft} streaming={p
             onDone={() => setPage('New session')} /> : null}
           {page === 'File preview' ? <FilePreviewGallery /> : null}
           {page === 'Icons' ? <IconGallery /> : null}
+          {page === 'Drafts' ? <DraftsPreview /> : null}
           {page === 'Git indicators' ? <GitIndicatorGallery
             onOpenWorktree={(next) => { setWorktreeDraft(next); setPage('Worktree') }}
             onOpenBranch={() => setPage('Branch')} /> : null}

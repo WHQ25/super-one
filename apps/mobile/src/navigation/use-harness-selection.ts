@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import type {
   HarnessId,
+  ModelOption,
   RemoteAgentOption,
   RemoteEffortOption,
   RemoteModeOption,
@@ -15,7 +16,35 @@ import {
   resolveSelectedModel,
 } from '../model-selection-state'
 import { optionParamsForModel } from '../model-picker-state'
+import type { OpenedSessionSelection } from '../session-restore-selection'
 import { useMobileTheme } from '../theme/context'
+import type { DraftSessionSettings } from '@superone/shared/environment/draft-rpc'
+
+type ClaimedSelection = {
+  model: string | null
+  effort: string | null
+  permissionMode: string | null
+  /** undefined = unclaimed (host default may fill). null = claimed Fast off. */
+  serviceTier?: string | null
+  apiProviderId?: string | null
+  selectedModeId?: string | null
+  selectedAgentId?: string | null
+}
+
+function emptyClaimed(): ClaimedSelection {
+  return { model: null, effort: null, permissionMode: null }
+}
+
+function resolveClaimedServiceTier(
+  model: Pick<ModelOption, 'serviceTiers'> | undefined,
+  claimed: string | null | undefined,
+  hostDefault: boolean,
+): string | null {
+  if (claimed === undefined) return resolveCodexFastServiceTier(model, hostDefault)
+  if (claimed === null) return null
+  if (!model || model.serviceTiers?.some((tier) => tier.id === claimed)) return claimed
+  return findCodexFastServiceTier(model)?.id ?? claimed
+}
 
 export function useHarnessSelection() {
   const { setBrandHue } = useMobileTheme()
@@ -40,6 +69,7 @@ export function useHarnessSelection() {
     'bypassPermissions',
   ])
   const [sandboxSupport, setSandboxSupport] = useState<SandboxSupportLevel>('always')
+  const draftIdentity = useRef(false)
 
   /**
    * What has actually been *claimed* on this harness — by a pick the user made,
@@ -53,11 +83,7 @@ export function useHarnessSelection() {
    * and those arrive from async catalog fetches that must not resolve against a
    * stale render's copy.
    */
-  const claimed = useRef<{ model: string | null; effort: string | null; permissionMode: string | null }>({
-    model: null,
-    effort: null,
-    permissionMode: null,
-  })
+  const claimed = useRef<ClaimedSelection>(emptyClaimed())
 
   /**
    * `current` is the opened session's own stored settings — authoritative over
@@ -67,25 +93,33 @@ export function useHarnessSelection() {
   const applySystemInfo = (
     provider: HarnessId,
     info: RemoteSystemInfo,
-    current?: { model?: string; effort?: string; permissionMode?: string },
+    current?: OpenedSessionSelection,
   ) => {
     // `||` throughout, not `??`: every one of these arrives as `''` when unset.
     const claimedModel = current?.model || claimed.current.model || ''
     const claimedEffort = current?.effort || claimed.current.effort || ''
     const claimedPermissionMode = current?.permissionMode || claimed.current.permissionMode || ''
+    const claimedServiceTier = current && 'serviceTier' in current
+      ? current.serviceTier
+      : claimed.current.serviceTier
+    const claimedProviderId = current && 'apiProviderId' in current
+      ? current.apiProviderId ?? null
+      : claimed.current.apiProviderId
+    const claimedModeId = current?.selectedModeId ?? claimed.current.selectedModeId
+    const claimedAgentId = current?.selectedAgentId ?? claimed.current.selectedAgentId
 
     // A refreshed Codex catalog may omit a working model. It is discovery data,
     // not permission to replace the model the user or restored session selected.
-    const model = provider === 'codex' && claimedModel ? claimedModel : resolveSelectedModel(info, claimedModel)
+    const model = (provider === 'codex' || draftIdentity.current) && claimedModel ? claimedModel : resolveSelectedModel(info, claimedModel)
     const nextEfforts = effortOptionsForModel(provider, info, model)
     const missingCodexModel = provider === 'codex' && !info.models?.some(candidate => candidate.id === model)
-    const effort = missingCodexModel && claimedEffort
+    const effort = (missingCodexModel || draftIdentity.current) && claimedEffort
       ? claimedEffort
       : resolveSelectedEffort(nextEfforts, claimedEffort || info.defaults?.effort)
     const modes = info.permissionModes?.length
       ? info.permissionModes
       : info.permissionPresets ?? []
-    const nextPermissionMode = claimedPermissionMode && modes.includes(claimedPermissionMode)
+    const nextPermissionMode = claimedPermissionMode && (draftIdentity.current || modes.includes(claimedPermissionMode))
       ? claimedPermissionMode
       : info.defaults?.permissionMode && modes.includes(info.defaults.permissionMode)
         ? info.defaults.permissionMode
@@ -97,6 +131,10 @@ export function useHarnessSelection() {
       model: claimedModel || null,
       effort: claimedEffort || null,
       permissionMode: claimedPermissionMode || null,
+      ...(claimedServiceTier !== undefined ? { serviceTier: claimedServiceTier } : {}),
+      ...(claimedProviderId !== undefined ? { apiProviderId: claimedProviderId } : {}),
+      ...(claimedModeId !== undefined ? { selectedModeId: claimedModeId } : {}),
+      ...(claimedAgentId !== undefined ? { selectedAgentId: claimedAgentId } : {}),
     }
 
     setSystemInfo(info)
@@ -105,18 +143,22 @@ export function useHarnessSelection() {
     // harness goes through here.
     setBrandHue(provider, info.brandHue ?? null)
     setModels(info.models ?? [])
-    setSelectedAgentId(info.selectedAgentId ?? null)
-    setSelectedModeId(info.selectedModeId ?? null)
-    setSelectedProviderId(info.selectedProviderId ?? null)
-    // Fast rides as a boolean, not a tier id: the tier belongs to the model that
-    // declared it, so it is resolved here against the model actually selected.
-    setServiceTier(provider === 'codex'
-      ? resolveCodexFastServiceTier(
-        info.models?.find((candidate) => candidate.id === model),
-        info.defaults?.fastMode === true,
-      )
-      : null)
-    setModelParams({})
+    if (!draftIdentity.current) {
+      setSelectedAgentId(claimedAgentId !== undefined ? claimedAgentId : info.selectedAgentId ?? null)
+      setSelectedModeId(claimedModeId !== undefined ? claimedModeId : info.selectedModeId ?? null)
+      setSelectedProviderId(claimedProviderId !== undefined ? claimedProviderId : info.selectedProviderId ?? null)
+      // Fast rides as a boolean, not a tier id: the tier belongs to the model that
+      // declared it, so it is resolved here against the model actually selected.
+      // A claimed value (including Fast-off `null`) outranks the host default.
+      setServiceTier(provider === 'codex'
+        ? resolveClaimedServiceTier(
+          info.models?.find((candidate) => candidate.id === model),
+          claimedServiceTier,
+          info.defaults?.fastMode === true,
+        )
+        : null)
+      setModelParams({})
+    }
     setSelectedModel(model)
     setEfforts(nextEfforts)
     setSelectedEffortState(effort)
@@ -130,9 +172,10 @@ export function useHarnessSelection() {
 
   /** `acpAgentId` names which ACP agent the switcher row stood for. */
   const resetForProvider = (provider: HarnessId, acpAgentId: string | null = null) => {
+    draftIdentity.current = false
     // A pick belonged to the harness it was made on; the next one starts on its
     // own host defaults.
-    claimed.current = { model: null, effort: null, permissionMode: null }
+    claimed.current = emptyClaimed()
     setSelectedProvider(provider)
     setSystemInfo({})
     setModels([])
@@ -149,6 +192,33 @@ export function useHarnessSelection() {
     setSelectedAcpAgentId(provider === 'acp' ? acpAgentId : null)
   }
 
+  /** A saved draft is authoritative even when model discovery has changed. */
+  const restoreDraft = (settings: DraftSessionSettings) => {
+    draftIdentity.current = true
+    const provider = settings.harness ?? 'claude'
+    const model = (provider === 'codex' ? settings.codexModel ?? settings.model : settings.model) ?? ''
+    const effort = (provider === 'codex' ? settings.codexReasoningEffort : settings.effort) ?? ''
+    const permission = (provider === 'codex' ? settings.codexPermissionPreset : settings.permissionMode) ?? 'default'
+    claimed.current = {
+      model,
+      effort,
+      permissionMode: permission,
+      ...(settings.codexServiceTier !== undefined ? { serviceTier: settings.codexServiceTier } : {}),
+      ...(settings.apiProviderId !== undefined ? { apiProviderId: settings.apiProviderId } : {}),
+      ...(settings.selectedAcpModeId !== undefined ? { selectedModeId: settings.selectedAcpModeId } : {}),
+      ...(settings.openCodeAgentId !== undefined ? { selectedAgentId: settings.openCodeAgentId } : {}),
+    }
+    setSelectedProvider(provider)
+    setSelectedModel(model)
+    setSelectedEffortState(effort)
+    setPermissionModeState(permission)
+    setSelectedAcpAgentId(settings.acpAgentId ?? null)
+    setSelectedAgentId(settings.openCodeAgentId ?? null)
+    setSelectedModeId(settings.selectedAcpModeId ?? null)
+    setSelectedProviderId(settings.apiProviderId ?? null)
+    setServiceTier(settings.codexServiceTier ?? null)
+  }
+
   /** Every user-facing pick is a claim: it must survive the next catalog refresh. */
   const selectModel = (model: string) => {
     const nextEfforts = effortOptionsForModel(selectedProvider, systemInfo, model)
@@ -157,6 +227,7 @@ export function useHarnessSelection() {
     setEfforts(nextEfforts)
     setSelectedEffortState(resolveSelectedEffort(nextEfforts, selectedEffort))
     // The option catalog belongs to the model that declared it.
+    claimed.current.serviceTier = null
     setServiceTier(null)
     setModelParams({})
   }
@@ -180,10 +251,27 @@ export function useHarnessSelection() {
   /** Codex's Fast row is a service tier; every other param is a catalog value. */
   const setOptionParam = (id: string, value: string) => {
     if (selectedProvider === 'codex' && id === 'fast') {
-      setServiceTier(value === 'true' ? findCodexFastServiceTier(currentModel)?.id ?? null : null)
+      const next = value === 'true' ? findCodexFastServiceTier(currentModel)?.id ?? null : null
+      claimed.current.serviceTier = next
+      setServiceTier(next)
       return
     }
     setModelParams((current) => ({ ...current, [id]: value }))
+  }
+
+  const selectAgent = (id: string | null) => {
+    claimed.current.selectedAgentId = id
+    setSelectedAgentId(id)
+  }
+
+  const selectMode = (id: string | null) => {
+    claimed.current.selectedModeId = id
+    setSelectedModeId(id)
+  }
+
+  const selectProvider = (id: string | null) => {
+    claimed.current.apiProviderId = id
+    setSelectedProviderId(id)
   }
 
   return {
@@ -199,15 +287,15 @@ export function useHarnessSelection() {
     efforts,
     agents: (systemInfo.agents ?? []) as RemoteAgentOption[],
     selectedAgentId,
-    selectAgent: setSelectedAgentId,
+    selectAgent,
     modes: (systemInfo.modes ?? []) as RemoteModeOption[],
     modeLabel: systemInfo.modeLabel,
     modesLocked: systemInfo.modesLocked,
     selectedModeId,
-    selectMode: setSelectedModeId,
+    selectMode,
     providers: (systemInfo.providers ?? []) as RemoteProviderOption[],
     selectedProviderId,
-    selectProvider: setSelectedProviderId,
+    selectProvider,
     optionParams,
     setOptionParam,
     serviceTier,
@@ -229,6 +317,7 @@ export function useHarnessSelection() {
     sandboxSupport,
     applySystemInfo,
     resetForProvider,
+    restoreDraft,
     selectModel,
   }
 }

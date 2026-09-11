@@ -8,6 +8,10 @@ type Copy = Record<string, string>
  * and in-progress states use sentence case.
  */
 const en: Copy = {
+  'Drafts': 'Drafts',
+  'Untitled draft': 'Untitled Draft',
+  'Delete draft': 'Delete Draft',
+  'Pending sync': 'Pending Sync',
   'Settings': 'Settings',
   'Appearance': 'Appearance',
   'Theme': 'Theme',
@@ -100,7 +104,6 @@ const en: Copy = {
   'Download': 'Download',
   'Loading file…': 'Loading file…',
   'Downloaded. Use the menu to save or share it.': 'Downloaded. Use the menu to save or share it.',
-
   'Manage folders': 'Manage Folders',
   'Add to project': 'Add to Project',
   'Add to session': 'Add to Session',
@@ -130,7 +133,6 @@ const en: Copy = {
   'Reading folder…': 'Reading folder…',
   'Folder name': 'Folder Name',
   'Starting session…': 'Starting session…',
-  'Loading conversation…': 'Loading conversation…',
   'Loading terminal…': 'Loading terminal…',
   'Loading folder…': 'Loading folder…',
   'This folder is empty': 'This folder is empty',
@@ -199,8 +201,8 @@ const en: Copy = {
   'Remove': 'Remove',
   'Add': 'Add',
   '+ Add item': '+ Add Item',
-
   'Image preview': 'Image Preview',
+  'Mermaid': 'Mermaid',
   'Image failed to load': 'Image failed to load',
   'Rotate left': 'Rotate Left',
   'Rotate right': 'Rotate Right',
@@ -313,6 +315,18 @@ const en: Copy = {
   'Apply these settings?': 'Apply These Settings?',
   'Apply': 'Apply',
   'Approve collaboration?': 'Approve Collaboration?',
+  'Collaboration request': 'Collaboration Request',
+  'Loading the task…': 'Loading the task…',
+  'Could not load the task': 'Could not load the task',
+  'This launch has no task brief.': 'This launch has no task brief.',
+  'Work with': 'Work With',
+  'Takes the task over in its own top-level session — no replies back to this one.': 'Takes the task over in its own top-level session — no replies back to this one.',
+  'Show the full task': 'Show the full task',
+  'Collapse the task': 'Collapse the task',
+  'Working directory': 'Working Directory',
+  'Peer session': 'Peer Session',
+  'Peer project': 'Peer Project',
+  'Reject with feedback': 'Reject with Feedback',
   'These agents or linked sessions will join the current task.': 'These agents or linked sessions will join the current task.',
   'Deny': 'Deny',
   'Computer Use can observe and interact with this desktop app for the current session.': 'Computer Use can observe and interact with this desktop app for the current session.',
@@ -382,6 +396,10 @@ const en: Copy = {
 }
 
 const zh: Copy = {
+  'Drafts': '草稿',
+  'Untitled draft': '未命名草稿',
+  'Delete draft': '删除草稿',
+  'Pending sync': '待同步',
   'Settings': '设置',
   'Appearance': '外观',
   'Theme': '主题',
@@ -474,7 +492,6 @@ const zh: Copy = {
   'Download': '下载',
   'Loading file…': '正在加载文件…',
   'Downloaded. Use the menu to save or share it.': '已下载。可通过菜单保存或分享。',
-
   'Manage folders': '管理文件夹',
   'Add to project': '添加到项目',
   'Add to session': '添加到会话',
@@ -504,7 +521,6 @@ const zh: Copy = {
   'Reading folder…': '正在读取文件夹…',
   'Folder name': '文件夹名称',
   'Starting session…': '正在启动会话…',
-  'Loading conversation…': '正在加载对话…',
   'Loading terminal…': '正在加载终端…',
   'Loading folder…': '正在加载文件夹…',
   'This folder is empty': '此文件夹为空',
@@ -573,8 +589,8 @@ const zh: Copy = {
   'Remove': '移除',
   'Add': '添加',
   '+ Add item': '+ 添加项目',
-
   'Image preview': '图片预览',
+  'Mermaid': 'Mermaid 图表',
   'Image failed to load': '图片加载失败',
   'Rotate left': '向左旋转',
   'Rotate right': '向右旋转',
@@ -687,6 +703,18 @@ const zh: Copy = {
   'Apply these settings?': '应用这些设置？',
   'Apply': '应用',
   'Approve collaboration?': '批准协作？',
+  'Collaboration request': '协作请求',
+  'Loading the task…': '正在加载任务…',
+  'Could not load the task': '无法加载任务',
+  'This launch has no task brief.': '这个启动没有任务说明。',
+  'Work with': '协作对象',
+  'Takes the task over in its own top-level session — no replies back to this one.': '在独立的顶层会话中接手任务，不会再回复当前会话。',
+  'Show the full task': '展开完整任务',
+  'Collapse the task': '收起任务',
+  'Working directory': '工作目录',
+  'Peer session': '对端会话',
+  'Peer project': '对端项目',
+  'Reject with feedback': '附反馈拒绝',
   'These agents or linked sessions will join the current task.': '这些智能体或关联会话将加入当前任务。',
   'Deny': '拒绝',
   'Computer Use can observe and interact with this desktop app for the current session.': '电脑操作可在当前会话中观察并操作此桌面应用。',
@@ -758,5 +786,7 @@ const copy: Record<Locale, Copy> = { en, zh }
 export function translateMobileText(locale: Locale, source: string): string {
   const retry = /^Retrying in (\d+)s$/.exec(source)
   if (retry) return locale === 'zh' ? `${retry[1]} 秒后重试` : source
+  const launches = /^(\d+) requested launch(es)?$/.exec(source)
+  if (launches) return locale === 'zh' ? `请求启动 ${launches[1]} 个会话` : source
   return copy[locale][source] ?? source
 }

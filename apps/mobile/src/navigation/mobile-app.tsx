@@ -2,7 +2,7 @@ import { refreshSessionCatalog } from '../session-catalog-refresh'
 import { useComposerSend } from './use-composer-send'
 import { TranscriptProjection } from '../transcript-projection'
 import { SessionActivityContext, useWorkspaceActivity } from './use-session-activity'
-import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { StatusBar } from 'expo-status-bar'
 import * as Clipboard from 'expo-clipboard'
 import * as Haptics from 'expo-haptics'
@@ -19,12 +19,13 @@ import {
 import type {
   AskUserQuestionRequest, ChatMessage, HarnessId, ImageAttachment, PermissionRequest,
   ListHarnessOptionsResponse, PlanApprovalRequest, RemoteCommand, RemoteHarnessOption,
-  RealtimeTimelineSegment, SandboxInfo, SandboxMode, TodoItem, WorktreeInfo,
+  RealtimeTimelineSegment, SandboxInfo, SandboxMode, SessionAgentLaunchProposal, TodoItem, WorktreeInfo,
 } from '@superone/shared/agent-types'
-import { resolveRingContextWindow } from '@superone/shared/agent-types'
+import { resolveRingContextWindow, SESSION_AGENT_LAUNCHES_FIELD } from '@superone/shared/agent-types'
 import { selectedCatalogContextWindow } from '@superone/shared/model-option-params'
 import { mergeRealtimeTranscript } from '@superone/shared/realtime-transcript'
 import { ChatRuntime, type SessionWorktreeFacts } from '../runtime'
+import { openedSessionSelection } from '../session-restore-selection'
 import { TerminalRuntime, type TerminalUi } from '../terminal-runtime'
 import { randomId } from '../ids'
 import { newMessageId } from '@superone/shared/message-id'
@@ -33,6 +34,8 @@ import { mentionInsertText } from '../mentions'
 import { SlashOutputPanel } from '../ui/slash-output-panel'
 import { McpPanel } from '../ui/mcp-panel'
 import { AddDirScreen } from '../screens/add-dir-screen'
+import { CollabRequestScreen } from '../screens/collab-request-screen'
+import { CollabTaskScreen } from '../screens/collab-task-screen'
 import { WorkflowsPanel } from '../ui/workflows-panel'
 import { workflowRunRows } from '../workflow-runs'
 import { requestMcpServers, type McpServerRow } from '../mcp-status'
@@ -44,6 +47,8 @@ import { replaceFirstLine } from '../composer-first-line'
 import { CHAT_VIEW_STATE_KEY, parseStoredChatViewStates, restoredChatWindow, type ChatViewState } from '../chat-view-state'
 import { composerDraftKey, SessionComposerDrafts } from '../composer-session-drafts'
 import { useComposerDraft } from './use-composer-draft'
+import { useMobileDraftSession } from './use-mobile-draft-session'
+import { EMPTY_COMPOSER_DRAFT } from '../composer-draft-state'
 import { useComposerSuggestions } from './use-composer-suggestions'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { mobileWebViewTheme } from '../theme/tokens'
@@ -81,6 +86,7 @@ import { useProjectGitInfo } from './use-project-git-info'
 import { useFileSearch } from './use-file-search'
 import { completeTypedPath, usePathAutocomplete } from './use-path-autocomplete'
 import { useAdditionalDirs } from './use-additional-dirs'
+import { collabRequestOf, useCollabRequest } from './use-collab-request'
 import { useFilePreview } from './use-file-preview'
 import { clearFilePreviewCache } from '../file-preview-cache-store'
 import { sessionTranscriptCache } from '../session-transcript-cache'
@@ -118,7 +124,6 @@ import { useMobileLocale } from '../i18n/context'
 import { useOrientationLock } from './use-orientation-lock'
 const kv = mobileKv
 export function MobileApp() {
-  useOrientationLock()
   const styles = useMobileStyles()
   const { tokens, setHarness } = useMobileTheme()
   const { locale, t } = useMobileLocale()
@@ -251,6 +256,7 @@ export function MobileApp() {
     eligible: shouldInterceptGrokRecap(selectedProvider, selectedAcpAgentId) && hasTranscript,
   })
   const filePreview = useFilePreview({ clientRef, transport: activeTransport, project, sessionId, pairingId: activePairingId })
+  useOrientationLock({ filePreviewOpen: filePreview.state != null })
   const workspaceActivity = useWorkspaceActivity(clientRef.current, connectionState === 'connected', sessionListRevision, screen === 'chat' && !sessionSwitcherOpen ? sessionId : null)
   const directory = useRemoteDirectory(clientRef)
   const { load: loadDirectory, path: directoryPath, items: directoryItems } = directory
@@ -279,6 +285,20 @@ export function MobileApp() {
   additionalDirsRef.current = additionalDirs
   const runtimeRef = useRef<ChatRuntime | null>(null)
   const termRuntimeRef = useRef<TerminalRuntime | null>(null)
+  // The launch whose brief is open on the `collab-task` page; the brief itself is
+  // fetched there, because the request only carries summaries over the wire.
+  const [collabTask, setCollabTask] = useState<SessionAgentLaunchProposal | null>(null)
+  // A collaboration request is a page, not a sheet; walking away from it rejects.
+  const collab = useCollabRequest({
+    request: collabRequestOf(perm),
+    screen,
+    setScreen,
+    reject: (requestId, feedback) => runUiAction(
+      () => runtimeRef.current?.respondPermission(requestId, false, undefined, undefined, feedback),
+      setStatus,
+      'permission response failed',
+    ),
+  })
   const reconnectControllerRef = useRef<ReconnectController | null>(null)
   const connectionRef = useRef<{ state: 'connected' | 'reconnecting'; epoch: number }>({ state: 'connected', epoch: 0 })
   const sessionTransitionRef = useRef(new SessionTransition())
@@ -289,6 +309,20 @@ export function MobileApp() {
   const mcpIconsRevisionRef = useRef(-1)
   const suggestions = useComposerSuggestions(runtimeRef, `${activePairingId}:${project?.path}:${sessionId}:${selectedProvider}:${selectedAcpAgentId ?? ''}`, { client: clientRef, projectPath: project?.path, provider: selectedProvider, acpAgentId: selectedAcpAgentId, projects, iconStore: mobileKv })
   const { slashHits, mentionRows } = suggestions
+  const remoteDrafts = useMobileDraftSession({
+    kv, pairingId: activePairingId, clientRef, composer: composerDraft, attachments, sessionId,
+    project, projects, selection: harnessSelection, worktree: worktreeSelection, sandbox: composerSandboxInfo,
+    sessionDirs: additionalDirs.sessionDirs, restoreSessionDirs: additionalDirs.restoreSessionDirs,
+    setWorktree: setWorktreeSelection, setSandbox: setPendingSandboxMode, setAttachments, setHarness,
+    applyText: suggestions.applyProgrammatic,
+    openProject: (target) => openProject(target),
+    loadSettings: (provider, target) => loadShellDetails(provider, target),
+    leaveSession: () => leaveActiveSession(),
+    showDraft: (title) => { setActiveSessionTitle(title); setScreen('chat') },
+    showWorkspace: returnToWorkspace, onError: setStatus,
+  })
+  const remoteDraftsRef = useRef(remoteDrafts)
+  remoteDraftsRef.current = remoteDrafts
   /**
    * Model/effort picks are visit-local until send. Composer text is the
    * opposite: park it per session so switching away does not leak it, and
@@ -298,8 +332,8 @@ export function MobileApp() {
     const from = composerDraftKey(activePairingId, project?.path, sessionId)
     const to = composerDraftKey(activePairingId, nextProjectPath, nextSessionId)
     if (from === to) return
-    sessionDrafts.stash(from, { ...composerDraft.exportSnapshot(), attachments: attachmentsRef.current })
-    const restored = sessionDrafts.load(to)
+    if (sessionId) sessionDrafts.stash(from, { ...composerDraft.exportSnapshot(), attachments: attachmentsRef.current })
+    const restored = nextSessionId ? sessionDrafts.load(to) : { ...EMPTY_COMPOSER_DRAFT, attachments: [] }
     composerDraft.replaceWith(restored)
     suggestions.applyProgrammatic(restored.text)
     setAttachments(restored.attachments)
@@ -514,6 +548,7 @@ export function MobileApp() {
       },
       previewFile: (path, line) => filePreview.open(path, line),
       previewImage: async (target) => { filePreview.showImage(target) },
+      previewMermaid: async (svg) => { filePreview.showMermaid(svg) },
       loadImage: async (path, confirmed) => {
         const client = clientRef.current
         if (!client || !project) throw new Error('no active project')
@@ -594,6 +629,7 @@ export function MobileApp() {
     const { client, reconnectController } = createMobileRelayConnection({
       onEvents: (events, epoch) => {
         logRelayEventTypes(events)
+        remoteDraftsRef.current.ingest(events)
         workspaceActivity.ingest(events)
         const removed = sessionRemovalStatus(events, runtimeRef.current, epoch)
         if (removed) {
@@ -611,6 +647,7 @@ export function MobileApp() {
       },
       onTerminal: (payload) => termRuntimeRef.current?.ingest(payload),
       restore: async (activeClient) => {
+        await remoteDraftsRef.current.reconnect().catch((error) => setStatus(error instanceof Error ? error.message : 'Could not restore drafts'))
         await refreshHarnessResources(activeClient)
         await loadMcpIcons(activeClient, runtimeRef.current?.projectPath)
         const runtime = runtimeRef.current
@@ -693,7 +730,7 @@ export function MobileApp() {
       [selectedProvider, ...options.map((option) => option.provider)])
     await loadMcpIcons(client, projectRows[0]?.path)
     if (clientRef.current !== client) return
-    if (projectRows[0]) { await openProject(projectRows[0]); startNewSession(projectRows[0]) }
+    if (projectRows[0]) { await openProject(projectRows[0]); await startNewSession(projectRows[0]) }
     // Nothing to run a session in yet — land on the picker, which owns Add Project.
     else setScreen('project-picker')
     setStatus('')
@@ -804,9 +841,10 @@ export function MobileApp() {
     setPaste(result.data)
     void onPair(result.data)
   }
-  const openProject = async (p: Project) => {
+  const openProject = async (p: Project, parkDraft = true) => {
     const client = clientRef.current
     if (!client) return
+    if (parkDraft && p.path !== project?.path) await remoteDrafts.park()
     systemInfoRequestRef.current++
     const projectRequest = ++shellDetailsRequestRef.current
     await preloadHarnessResources(client, p.path, [selectedProvider, ...harnessOptions.map((option) => option.provider)])
@@ -943,11 +981,14 @@ export function MobileApp() {
     const request = ++systemInfoRequestRef.current
     refreshSessionCatalog(() => runtime.loadSystemInfo(provider),
       () => request === systemInfoRequestRef.current && runtimeRef.current === runtime,
-      (info) => applySystemInfo(provider, info, restoreSelection ? {
-        model: provider === 'codex' ? runtime.session.selectedCodexModel : runtime.session.selectedModel,
-        effort: provider === 'codex' ? runtime.session.selectedCodexReasoningEffort : runtime.session.selectedEffort,
-        permissionMode: runtime.permissionMode,
-      } : undefined),
+      (info) => applySystemInfo(
+        provider,
+        info,
+        restoreSelection ? openedSessionSelection(provider, {
+          ...runtime.session,
+          permissionMode: runtime.permissionMode,
+        }) : undefined,
+      ),
       (error) => setStatus(error instanceof Error ? error.message : 'Could not load agent settings'))
   }
   const resetSessionChrome = () => {
@@ -994,6 +1035,7 @@ export function MobileApp() {
     const client = clientRef.current
     const p = targetProject
     if (!client || !p) return
+    await remoteDrafts.park()
     if (runtimeRef.current?.sessionId === row.sessionId && runtimeRef.current.projectPath === p.path) {
       setScreen('chat')
       return
@@ -1089,19 +1131,31 @@ export function MobileApp() {
       runSessionOp(() => removeSession(row, 'delete_session', p), 'failed to delete session'),
   }
 
-  const startNewSession = (targetProject = project) => {
+  const startNewSession = async (targetProject = project) => {
+    await remoteDrafts.park()
     switchComposerDraft(null, targetProject?.path)
+    composerDraft.replaceWith(EMPTY_COMPOSER_DRAFT)
+    setAttachments([])
+    suggestions.applyProgrammatic('')
     leaveActiveSession()
+    setWorktreeSelection(LOCAL_WORKTREE_SELECTION)
     setStatus('')
     setActiveSessionTitle('New session')
     setScreen('chat')
     // Configuring a session is the one moment the host's configured defaults are
     // read, so this is where the catalog cache is worth paying to bypass.
-    runUiAction(() => loadShellDetails(selectedProvider, targetProject, true), setStatus, 'failed to load project settings')
+    await loadShellDetails(selectedProvider, targetProject, true)
+    remoteDrafts.begin()
   }
   /** Open a project for a new session — the picker's only exit that keeps state. */
   const chooseProject = (target: Project) =>
-    runUiAction(async () => { await openProject(target); startNewSession(target) },
+    runUiAction(async () => {
+      if (!sessionId && remoteDrafts.activeId) {
+        await openProject(target, false)
+        setWorktreeSelection(LOCAL_WORKTREE_SELECTION)
+        setScreen('chat')
+      } else { await openProject(target); await startNewSession(target) }
+    },
       setStatus, 'failed to open project')
 
   const addProjectFlow = useAddProject({
@@ -1172,25 +1226,25 @@ export function MobileApp() {
     const client = clientRef.current
     const p = project
     if (!client || !p) return
-    const selectionError = selectedProvider === 'claude'
-      ? worktreeSelectionError(worktreeSelection, branches, checkedOutBranches)
-      : null
+    const selectionError = worktreeSelectionError(worktreeSelection, branches, checkedOutBranches)
     if (selectionError) {
       setStatus(selectionError)
       return
     }
     return sessionTransitionRef.current.run(async () => {
+      const draftControl = await remoteDrafts.prepareSend()
       const previousId = runtimeRef.current?.sessionId
       if (previousId) client.send({ type: 'leave_session', sessionId: previousId })
       const runtime = bindRuntime(client)
       const startupDirs = [...new Set([...workspaceDirs, ...additionalDirs.sessionDirs])]
-      const id = randomId()
+      const id = remoteDrafts.originSessionId ?? randomId()
       // Leave the landing immediately — the first send should look like desktop,
       // not a "Starting session…" wait. Host errors still land on the status line.
       setSessionId(id)
       setActiveSessionTitle('New session')
       setScreen('chat')
       await runtime.create(p.path, {
+        ...draftControl,
         sessionId: id,
         provider: selectedProvider,
         ...(selectedProvider === 'acp' && selectedAcpAgentId
@@ -1199,9 +1253,7 @@ export function MobileApp() {
         permissionMode: permMode,
         ...(selectedModel ? { model: selectedModel } : {}),
         ...(selectedEffort ? { effort: selectedEffort } : {}),
-        ...(selectedProvider === 'claude'
-          ? buildWorktreeCreateOptions(worktreeSelection, gitInfo?.branch)
-          : {}),
+        ...buildWorktreeCreateOptions(worktreeSelection, gitInfo?.branch),
         // Project folders plus anything `/add-dir session …` collected before
         // there was a session to write it to — the desktop's draft session does
         // the same, and there is no other moment these could be handed over.
@@ -1257,12 +1309,14 @@ export function MobileApp() {
     try {
       await runtime.send(text, {
         images: attachments,
+        ...(selectedProvider === 'codex' && remoteDrafts.settings?.codexCollaborationMode
+          ? { collaborationMode: remoteDrafts.settings.codexCollaborationMode } : {}),
         ...(selectedModel ? { model: selectedModel } : {}),
         ...(selectedEffort ? { effort: selectedEffort } : {}),
         ...(selectedProvider === 'opencode' && harnessSelection.selectedAgentId
           ? { agent: harnessSelection.selectedAgentId }
           : {}),
-        ...(harnessSelection.serviceTier ? { serviceTier: harnessSelection.serviceTier } : {}),
+        ...(selectedProvider === 'codex' ? { serviceTier: harnessSelection.serviceTier } : {}),
         ...(Object.keys(harnessSelection.modelParams).length
           ? { modelParams: harnessSelection.modelParams }
           : {}),
@@ -1276,6 +1330,7 @@ export function MobileApp() {
       setStatus(error instanceof Error ? error.message : 'message failed')
       return
     }
+    await remoteDrafts.consume()
     if (composerDraft.clearSent(sentDraft.revision) && !composerDraft.editorRef.current) suggestions.update('')
     setAttachments((current) => current.filter((item) => !attachments.includes(item)))
   }, setStatus)
@@ -1374,7 +1429,8 @@ export function MobileApp() {
   }
 
   /** Drop the transport and everything hanging off it, back to the device list. */
-  const disconnectDevice = () => {
+  const disconnectDevice = async () => {
+    await remoteDrafts.park()
     filePreview.close()
     runtimeRef.current?.dispose()
     runtimeRef.current = null
@@ -1395,6 +1451,14 @@ export function MobileApp() {
   }
 
   const back = () => {
+    if (screen === 'collab-request') {
+      collab.leave()
+      return
+    }
+    if (screen === 'collab-task') {
+      setScreen('collab-request')
+      return
+    }
     if (screen === 'files') {
       setScreen(filesOrigin === 'session' ? 'chat' : 'settings')
       return
@@ -1427,6 +1491,16 @@ export function MobileApp() {
     // way the desktop keeps its sidebar there — it must not end the session.
     if (screen === 'chat') setSessionSwitcherOpen(true)
   }
+
+  // Stable per launch so the task page's effect runs once per open, not per render.
+  const collabTaskLoader = useCallback(async (): Promise<string> => {
+    const request = collab.open
+    if (!request || !collabTask) throw new Error('That collaboration request is no longer pending')
+    if (!collabTask.taskDeferred) return collabTask.task
+    const runtime = runtimeRef.current
+    if (!runtime) throw new Error('No active connection')
+    return runtime.loadCollabLaunchTask(request.requestId, collabTask.launchId)
+  }, [collab.open, collabTask])
 
   const openTerminal = () => {
     const p = project
@@ -1479,7 +1553,13 @@ export function MobileApp() {
     activeSessionId: sessionId,
     sessions,
     listRevision: sessionListRevision,
-    onNewSession: (p: Project) => runUiAction(async () => { await openProject(p); startNewSession(p) }, setStatus, 'failed to open project'),
+    drafts: remoteDrafts.rows,
+    activeDraftId: remoteDrafts.activeId,
+    onOpenDraft: (row: import('@superone/shared/environment/draft-rpc').DraftListEntry) =>
+      runUiAction(() => sessionTransitionRef.current.run(() => remoteDrafts.open(row)), setStatus, 'Could not open draft'),
+    onDeleteDraft: (row: import('@superone/shared/environment/draft-rpc').DraftListEntry) =>
+      runUiAction(() => remoteDrafts.remove(row), setStatus, 'Could not delete draft'),
+    onNewSession: (p: Project) => runUiAction(async () => { await openProject(p); await startNewSession(p) }, setStatus, 'failed to open project'),
     onOpenSession: (p: Project, row: SessionRow) => runUiAction(async () => { if (p.path !== project?.path) await openProject(p); await openSession(row, p) }, setStatus, 'failed to open session'),
     ...sessionListActions,
     onSearch: () => setScreen('session-search'),
@@ -1583,6 +1663,7 @@ export function MobileApp() {
               : undefined}
         confirmLabel={screen === 'add-project' ? addProjectFlow.confirmLabel ?? undefined
           : screen === 'add-dir' && additionalDirs.canGoBack ? 'Add' : undefined}
+        launchCount={screen === 'collab-request' ? collab.open?.payload.launches.length : undefined}
         onAddProject={screen === 'project-picker'
           ? () => { setAddProjectOrigin('picker'); setScreen('add-project') }
           : undefined}
@@ -1614,6 +1695,9 @@ export function MobileApp() {
                 switchComposerDraft(null)
                 leaveActiveSession()
               }
+              // The swipe and Android's back button pop the request page the
+              // same way the header's Back does: the request is rejected.
+              if (screen === 'collab-request' && route === 'chat') collab.leave()
               setScreen(route)
             }}
             renderScene={(route) => (
@@ -1703,7 +1787,7 @@ export function MobileApp() {
 
       {route === 'chat' ? (
         <ChatScreen provider={selectedProvider}
-          loadingConversation={sessionLoading}
+          loadingConversation={sessionLoading || remoteDrafts.opening}
           // The tablet keeps the session list on screen, so it has nothing to
           // pull out and the gutter stays free for the transcript.
           onEdgeSwipe={tabletMultiPane ? undefined : () => setSessionSwitcherOpen(true)}
@@ -1910,6 +1994,39 @@ export function MobileApp() {
         />
       ) : null}
 
+      {route === 'collab-request' && collab.open ? (
+        <CollabRequestScreen
+          key={collab.open.requestId}
+          payload={collab.open.payload}
+          onApprove={(launches) => {
+            const { requestId } = collab.open!
+            collab.answered(requestId)
+            runUiAction(
+              () => runtimeRef.current?.respondPermission(requestId, true, { [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify(launches) }),
+              setStatus,
+              'permission response failed',
+            )
+          }}
+          onReject={(feedback) => {
+            const { requestId } = collab.open!
+            collab.answered(requestId)
+            runUiAction(
+              () => runtimeRef.current?.respondPermission(requestId, false, undefined, undefined, feedback),
+              setStatus,
+              'permission response failed',
+            )
+          }}
+          onOpenTask={(launch) => { setCollabTask(launch); setScreen('collab-task') }}
+        />
+      ) : null}
+
+      {route === 'collab-task' && collab.open && collabTask ? (
+        <CollabTaskScreen
+          key={`${collab.open.requestId}/${collabTask.launchId}`}
+          load={collabTaskLoader}
+        />
+      ) : null}
+
       {route === 'add-dir' ? (
         <AddDirScreen
           step={additionalDirs.step}
@@ -1941,7 +2058,7 @@ export function MobileApp() {
       <MobileOverlays
         runtimeRef={runtimeRef}
         setStatus={setStatus}
-        permission={perm}
+        permission={collabRequestOf(perm) ? null : perm}
         plan={plan}
         question={question}
         planContinueMode={selectedProvider === 'claude'

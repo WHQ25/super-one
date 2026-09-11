@@ -13,6 +13,7 @@ import { ContextUsage } from './ContextUsage'
 import { MentionPopup, type MentionPopupHandle } from './MentionPopup'
 import { useShallow } from 'zustand/react/shallow'
 import { useEditor, EditorContent } from '@tiptap/react'
+import { useComposerDraftSync } from './chat-input/useComposerDraftSync'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { MentionNode } from './mention-node'
@@ -238,8 +239,6 @@ export function ChatInput() {
     mentionsRef.current = mentions
     const attachmentsRef = useRef(attachments)
     attachmentsRef.current = attachments
-    const draftJsonRef = useRef(draftJson)
-    draftJsonRef.current = draftJson
     const removeAttachmentByIdRef = useRef(removeAttachmentById)
     removeAttachmentByIdRef.current = removeAttachmentById
     const setDraftJsonRef = useRef(setDraftJson)
@@ -264,6 +263,8 @@ export function ChatInput() {
     }, [slashIndex])
 
     const isRemoteLocked = useIsRemoteLocked()
+    const isRemoteLockedRef = useRef(isRemoteLocked)
+    isRemoteLockedRef.current = isRemoteLocked
     const isStreaming = status === 'streaming'
     const activeProviderForResources = resolveProvider({ sessionProvider, preferredProvider })
     const resolvedCodexProviderId = useResolvedProviderId('codex')
@@ -1039,7 +1040,7 @@ export function ChatInput() {
     queuedMessageRef.current = scheduled?.message ?? null
 
     useEffect(() => {
-      if (!scheduled?.armed) return
+      if (isRemoteLocked || !scheduled?.armed) return
       const id = setInterval(() => {
         const next = draftMessageRef.current()
         // An empty composer is not an instruction to blank the queue. The draft
@@ -1051,7 +1052,7 @@ export function ChatInput() {
         setScheduledMessage(next)
       }, SCHEDULED_SEND_SYNC_MS)
       return () => clearInterval(id)
-    }, [scheduled?.armed, setScheduledMessage])
+    }, [scheduled?.armed, setScheduledMessage, isRemoteLocked])
 
     /**
      * Empty the composer once — and only once — the mirrored text has actually
@@ -1479,6 +1480,7 @@ export function ChatInput() {
         PromptSuggestion,
       ],
       content: '',
+      editable: !isRemoteLocked,
       editorProps: {
         attributes: {
           class: 'w-full min-h-9 max-h-30 overflow-y-auto text-sm leading-6 outline-none text-foreground',
@@ -1545,6 +1547,13 @@ export function ChatInput() {
         handleDrop: () => true,
       },
       onUpdate: ({ editor: ed }) => {
+        if (isRemoteLockedRef.current) {
+          isProgrammaticSetRef.current = false
+          let hasPasteChip = false
+          ed.state.doc.descendants((node) => { if (node.type.name === 'pasteChip') hasPasteChip = true })
+          setHasPasteChips(hasPasteChip)
+          return
+        }
         // Captured before the flag is consumed below: a programmatic content set
         // (session restore) must NOT prune attachments — the nodes are being
         // rebuilt from persisted session.attachments, not deleted by the user.
@@ -1669,69 +1678,12 @@ export function ChatInput() {
     })
     editorRef.current = editor && !editor.isDestroyed ? editor : null
 
-    /**
-     * The plain text the editor last reported through `onUpdate`. A store write
-     * that matches it is the editor echoing itself, and restoring content for it
-     * would fight the user's typing. It holds the text rather than a flag
-     * because an update that leaves `getText()` untouched (inserting an
-     * attachment chip, or typing that React bails out of re-rendering) never
-     * re-runs the effect below — a sticky flag would sit armed and swallow the
-     * next *external* write instead.
-     */
-    const editorEchoTextRef = useRef<string | null>(null)
-    const isProgrammaticSetRef = useRef(false)
-    const prevSessionIdRef = useRef(displayedSessionId)
-    useEffect(() => {
-      const sessionChanged = prevSessionIdRef.current !== displayedSessionId
-      prevSessionIdRef.current = displayedSessionId
-      const isEditorEcho = editorEchoTextRef.current === text
-      editorEchoTextRef.current = null
-      if (!sessionChanged && isEditorEcho) return
-      if (!editor || editor.isDestroyed) return
-      // Attachments live in per-session store state, not in the text draft, so
-      // detect when the editor's chip nodes drift from session.attachments
-      // (e.g. after a session switch rebuilt the doc from text only).
-      const editorAttIds = new Set<string>()
-      editor.state.doc.descendants((n) => {
-        if (n.type.name === 'attachment') editorAttIds.add((n.attrs as { id: string }).id)
-      })
-      const storeAtts = attachmentsRef.current.filter((a) => a.id)
-      const attMismatch = storeAtts.length !== editorAttIds.size || storeAtts.some((a) => !editorAttIds.has(a.id as string))
-      if (text !== editor.getText() || attMismatch) {
-        const json = draftJsonRef.current
-        const textSnapshot = text
-        // Defer setContent off the effect stack. TipTap ReactNodeViewRenderer
-        // calls flushSync when mounting mention/attachment chips; React 19
-        // rejects flushSync while a lifecycle is still running (console error
-        // at this setContent site, and chip state can fail to settle).
-        let cancelled = false
-        queueMicrotask(() => {
-          if (cancelled || !editor || editor.isDestroyed) return
-          isProgrammaticSetRef.current = true
-          if (json) {
-            // Restore the exact doc — chip nodes keep their inline positions.
-            editor.commands.setContent(json)
-          } else {
-            // No JSON snapshot (legacy draft, or a plain-text write such as
-            // editing a queued message): rebuild from text and append attachment
-            // chips from the persisted store. Doc JSON, not an HTML string —
-            // HTML would swallow newlines and the `<superone-*>` mention tags.
-            editor.commands.setContent(textSnapshot ? plainTextToTiptapDoc(textSnapshot) : '')
-            if (storeAtts.length > 0) {
-              editor.commands.insertContent(
-                storeAtts.map((a) => ({ type: 'attachment' as const, attrs: { id: a.id } })),
-              )
-            }
-          }
-        })
-        return () => {
-          cancelled = true
-        }
-      }
-    }, [text, editor, displayedSessionId])
+    const { editorEchoTextRef, isProgrammaticSetRef } = useComposerDraftSync({
+      editor, text, draftJson, attachments, sessionId: displayedSessionId, readOnly: isRemoteLocked,
+    })
 
     useEffect(() => {
-      if (!sessionScope && editor && !editor.isDestroyed && !showReviewPanel) {
+      if (!isRemoteLocked && !sessionScope && editor && !editor.isDestroyed && !showReviewPanel) {
         editor.commands.focus('end')
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1739,14 +1691,14 @@ export function ChatInput() {
 
     useEffect(() => {
       if (!chatInputFocusNonce) return
-      if (editor && !editor.isDestroyed && !showReviewPanel) {
+      if (!isRemoteLocked && editor && !editor.isDestroyed && !showReviewPanel) {
         editor.commands.focus('end')
       }
     }, [chatInputFocusNonce, editor, showReviewPanel])
 
     useEffect(() => {
       if (!chatInputRestoreFocusNonce) return
-      if (editor && !editor.isDestroyed && !showReviewPanel) {
+      if (!isRemoteLocked && editor && !editor.isDestroyed && !showReviewPanel) {
         editor.commands.focus()
       }
     }, [chatInputRestoreFocusNonce, editor, showReviewPanel])
@@ -1805,7 +1757,7 @@ export function ChatInput() {
 
 
     useEffect(() => {
-      if (!promptSuggestion || isStreaming || hasPendingInteraction) return
+      if (isRemoteLocked || !promptSuggestion || isStreaming || hasPendingInteraction) return
       function onKeyDown(e: KeyboardEvent) {
         if (e.key !== 'Tab' || e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return
         const ed = editorRef.current
@@ -1818,7 +1770,7 @@ export function ChatInput() {
       }
       window.addEventListener('keydown', onKeyDown)
       return () => window.removeEventListener('keydown', onKeyDown)
-    }, [promptSuggestion, isStreaming, hasPendingInteraction])
+    }, [promptSuggestion, isStreaming, hasPendingInteraction, isRemoteLocked])
 
     const applySuggestion = useCallback((text: string) => {
       const ed = editorRef.current
@@ -1830,7 +1782,7 @@ export function ChatInput() {
     }, [setText])
 
     return (
-      <div className="relative">
+      <div inert={isRemoteLocked} aria-disabled={isRemoteLocked} className={cn('relative', isRemoteLocked && 'opacity-60')}>
         {(activeProviderForResources === 'claude' || activeProviderForResources === 'codex') && <ChatInputDirsHint />}
         {status !== 'streaming' && (
           <PromptSuggestionChips suggestions={alternateSuggestions} onSelect={applySuggestion} />

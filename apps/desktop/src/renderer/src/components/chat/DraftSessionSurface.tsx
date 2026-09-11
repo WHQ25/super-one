@@ -16,8 +16,10 @@ import { useHostProjects } from '@/hooks/use-host-projects'
 import { remoteProjectKey } from '@/lib/remote-project-key'
 import { withDraftCarry } from '@/lib/draft-surface-select'
 import { ProviderSelector } from './ChatSuggestions'
+import { useIsRemoteLocked } from '@/stores/chat'
 
 export function DraftSessionSurface() {
+  const locked = useIsRemoteLocked()
   const { t } = useTranslation()
   const selectProject = useAppStore((s) => s.selectProject)
   const fetchRecentFolders = useAppStore((s) => s.fetchRecentFolders)
@@ -56,6 +58,7 @@ export function DraftSessionSurface() {
       className="flex h-full flex-col items-center justify-center gap-4 px-4"
       style={{ animation: 'fade-in 400ms ease-out' }}
       data-testid="draft-session-surface"
+      inert={locked}
     >
       <ProviderSelector disableAutoApply />
       <ProjectSelector

@@ -809,7 +809,6 @@ interface TerminalAPI {
   claim(terminalId: string): Promise<void>
   onTerminalEvent(callback: (event: TerminalEvent) => void): () => void
 }
-}
 
 /** Multi-environment / remote node — Main EnvironmentHost product path. */
 export interface EnvironmentAPI {
@@ -1017,6 +1016,8 @@ export interface EnvironmentAPI {
   listDrafts(connectionId: string, projectPath?: string): Promise<DraftListEntry[]>
   upsertDraft(connectionId: string, draft: DraftUpsertRequest): Promise<DraftListEntry>
   deleteDraft(connectionId: string, draftId: string): Promise<void>
+  disconnectDraft(connectionId: string, draftId: string): Promise<void>
+  onDraftOpenRequested(callback: (draftId: string) => Promise<void>): () => void
   /**
    * List sessions for a project on any environment (local or remote).
    * Local: connectionId `'local'`, projectId = project UUID or absolute folder path.

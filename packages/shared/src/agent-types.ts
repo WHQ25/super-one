@@ -954,6 +954,12 @@ export interface SessionAgentLaunchProposal {
    */
   task: string
   /**
+   * Remote Control only: the brief was withheld from the wire (a launch can carry
+   * pages of Markdown the phone may never open) and is fetched on demand with
+   * `get_collab_launch_task`. The host never reads `task` back from a confirm.
+   */
+  taskDeferred?: boolean
+  /**
    * Agent-chosen human label (e.g. "Alice", "Diff Reviewer") — not the harness
    * name. Used for session title and tool summaries: `Name - Role`.
    * For `link`, defaults to the peer session title when omitted.
@@ -1622,6 +1628,7 @@ export interface SubagentRetryInfo {
 }
 
 export type AgentEventBase =
+  | import('./environment/draft-rpc').DraftChangedEvent
   | { type: 'remote_detail'; subscriptionId: string; revision: number; offset: number; text: string }
   | { type: 'message_start'; message: ChatMessage }
   | { type: 'user_message_appended'; message: ChatMessage }
@@ -4125,6 +4132,9 @@ export const AgentIpcChannels = {
   ENVIRONMENT_LIST_DRAFTS: 'environment:listDrafts',
   ENVIRONMENT_UPSERT_DRAFT: 'environment:upsertDraft',
   ENVIRONMENT_DELETE_DRAFT: 'environment:deleteDraft',
+  ENVIRONMENT_DISCONNECT_DRAFT: 'environment:disconnectDraft',
+  ENVIRONMENT_PREPARE_DRAFT_OPEN: 'environment:prepareDraftOpen',
+  ENVIRONMENT_DRAFT_OPEN_READY: 'environment:draftOpenReady',
   /** Create a session on a remote project (local uses agent:create-session). */
   ENVIRONMENT_CREATE_SESSION: 'environment:createSession',
   ENVIRONMENT_GET_SESSION: 'environment:getSession',
@@ -4429,8 +4439,9 @@ export interface RemoteSystemInfo {
 }
 
 export type RemoteCommand =
+  | import('./environment/draft-rpc').DraftRemoteCommand
   | import('./codex-async-question').CodexAsyncQuestionAnswerCommand
-  | { type: 'create_session'; requestId: string; sessionId: string; projectPath: string; provider?: HarnessId; acpAgentId?: string; permissionMode?: string; effort?: string; model?: string; mode?: string; agentPreset?: string; apiProviderId?: string | null; gitBranch?: string; worktreePath?: string; worktreeBranch?: string; worktreeMode?: WorktreeMode; worktreeBranchName?: string; worktreeCarryLocalChanges?: boolean; additionalDirectories?: string[]; /** Sandbox the picker chose before the session existed (Claude / Cursor). */ sandboxMode?: SandboxMode }
+  | { type: 'create_session'; draftId?: string; draftLeaseId?: string; requestId: string; sessionId: string; projectPath: string; provider?: HarnessId; acpAgentId?: string; permissionMode?: string; effort?: string; model?: string; mode?: string; agentPreset?: string; apiProviderId?: string | null; gitBranch?: string; worktreePath?: string; worktreeBranch?: string; worktreeMode?: WorktreeMode; worktreeBranchName?: string; worktreeCarryLocalChanges?: boolean; additionalDirectories?: string[]; /** Sandbox the picker chose before the session existed (Claude / Cursor). */ sandboxMode?: SandboxMode }
   | { type: 'send_message'; sessionId: string; projectPath: string; content: string; provider?: HarnessId; model?: string; effort?: string; images?: ImageAttachment[]; permissionPreset?: string; collaborationMode?: string; threadId?: string; clientMessageId?: string; priority?: 'now' | 'next' | 'later'; /** Park then steer in this command so Stair cannot race a follow-up RPC. */ steer?: 'now' | 'next'; /** OpenCode primary agent for this turn. */ agent?: string; /** Codex service tier (`fast`). */ serviceTier?: string | null; /** Cursor catalog params (param id → value). */ modelParams?: Record<string, string> }
   /**
    * Grok ACP session recap → `x.ai/recap`.
@@ -4554,6 +4565,8 @@ export type RemoteCommand =
    */
   | { type: 'get_mention_icons'; requestId: string; ids: string[] }
   | { type: 'get_session_state'; requestId: string; projectPath: string; sessionId: string }
+  /** The full brief of one launch in a pending `session_agents_confirm` (see `taskDeferred`). */
+  | { type: 'get_collab_launch_task'; requestId: string; projectPath: string; sessionId: string; permissionRequestId: string; launchId: string }
   | { type: 'list_directory_for_add_dir'; requestId: string; projectPath: string; rawInput: string }
   | { type: 'validate_add_dir'; requestId: string; projectPath: string; candidate: string }
   | { type: 'add_project_additional_dir'; requestId: string; projectPath: string; dir: string; provider?: HarnessId }

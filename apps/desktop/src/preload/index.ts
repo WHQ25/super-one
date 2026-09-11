@@ -454,6 +454,18 @@ const environmentAPI = {
       input,
     ) as Promise<ProjectSnapshot>,
   /** Drafts live in the environment that owns the project — never mirrored. */
+  onDraftOpenRequested: (callback: (draftId: string) => Promise<void>) => {
+    const listener = (_event: Electron.IpcRendererEvent, requestId: string, draftId: string) => {
+      void Promise.resolve().then(() => callback(draftId)).then(
+        () => ipcRenderer.send(AgentIpcChannels.ENVIRONMENT_DRAFT_OPEN_READY, requestId),
+        (error) => ipcRenderer.send(AgentIpcChannels.ENVIRONMENT_DRAFT_OPEN_READY, requestId, error instanceof Error ? error.message : String(error)),
+      )
+    }
+    ipcRenderer.on(AgentIpcChannels.ENVIRONMENT_PREPARE_DRAFT_OPEN, listener)
+    return () => { ipcRenderer.removeListener(AgentIpcChannels.ENVIRONMENT_PREPARE_DRAFT_OPEN, listener) }
+  },
+  disconnectDraft: (connectionId: string, draftId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DISCONNECT_DRAFT, connectionId, draftId) as Promise<void>,
   listDrafts: (connectionId: string, projectPath?: string) =>
     ipcRenderer.invoke(
       AgentIpcChannels.ENVIRONMENT_LIST_DRAFTS,

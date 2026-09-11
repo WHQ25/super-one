@@ -1,6 +1,7 @@
 import type { RefObject } from 'react'
 import type { WebView } from 'react-native-webview'
 import type { HostInbound, HostOutbound } from '@superone/chat-view'
+import { isPreviewableMermaid } from '@superone/chat-view/mermaid-preview'
 import type { SaveWidgetTemplateRequest } from '@superone/shared/agent-types'
 import { isPreviewableImageSource } from './image-preview-state'
 
@@ -38,6 +39,11 @@ export interface NativeActionPorts {
    * so no second transfer happens; `path` is the desktop path when there is one.
    */
   previewImage(target: { src: string; label?: string; path?: string }): Promise<void>
+  /**
+   * Show a mermaid diagram the transcript already rendered, on a page of its
+   * own. `svg` is the markup mermaid.render produced in the chat WebView.
+   */
+  previewMermaid(svg: string): Promise<void>
   copyText(text: string): Promise<void>
   /**
    * Play a Taptic impact. The WebView cannot reach the haptic engine, so a
@@ -138,6 +144,10 @@ export async function resolveNativeRequest(
         ...(typeof payload.label === 'string' && payload.label ? { label: payload.label } : {}),
         ...(typeof payload.path === 'string' && payload.path ? { path: payload.path } : {}),
       })
+    } else if (message.action === 'previewMermaid') {
+      const svg = payloadString(message, 'svg')
+      if (!isPreviewableMermaid(svg)) throw new Error('unsupported mermaid diagram')
+      await ports.previewMermaid(svg)
     } else if (message.action === 'copyText') {
       await ports.copyText(payloadString(message, 'text'))
     } else if (message.action === 'haptic') {

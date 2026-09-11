@@ -464,9 +464,11 @@ describe('ChatMessage capability mention bubble', () => {
 function stubBodyHeight(px: number): () => void {
   const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')
   Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, get: () => px })
-  window.innerHeight = 800
+  // jsdom lays nothing out, so the viewport the clamp measures against is 0 unless stubbed.
+  Object.defineProperty(document.documentElement, 'clientHeight', { configurable: true, get: () => 800 })
   return () => {
     if (original) Object.defineProperty(HTMLElement.prototype, 'offsetHeight', original)
+    delete (document.documentElement as { clientHeight?: number }).clientHeight
   }
 }
 

@@ -7,6 +7,7 @@ import {
   FILE_PREVIEW_TEXT,
   filePreviewMenu,
   formatFileSize,
+  previewChromeIconName,
   previewLocalSource,
   type FilePreviewState,
 } from '../file-preview-state'
@@ -16,6 +17,7 @@ import { NativeMarkdown } from '../prompts/NativeMarkdown'
 import { useMobileTheme } from '../theme/context'
 import { AnchoredMenu, MenuRow, useMenuAnchor } from './anchored-menu'
 import { CodeListing } from './code-listing'
+import { FileTypeIcon } from './file-icon'
 import { IconButton } from './icon-button'
 import { MenuHost } from './menu-host'
 import { Button } from './primitives'
@@ -23,6 +25,7 @@ import { SCROLL_INDICATOR_GUTTER } from './scroll-gutter'
 import { Text } from './text'
 import { useFade } from './use-fade'
 import { ZoomableImage } from './zoomable-image'
+import { ZoomableMermaid } from './zoomable-mermaid'
 
 export type FilePreviewModalProps = {
   /** What to show; `null` keeps the modal closed. */
@@ -38,14 +41,18 @@ export type FilePreviewModalProps = {
 const FEEDBACK_MS = 2500
 
 /**
- * The one fullscreen surface every picture and file on the phone opens into —
- * a tap on a transcript image, a file chip, or a row in the Files browser.
+ * The one fullscreen surface every picture, mermaid diagram, and file on the
+ * phone opens into — a tap on a transcript image, a mermaid expand, a file
+ * chip, or a row in the Files browser.
  *
- * The body follows `state.kind`: a zoomable picture, a code listing or prose,
- * a transfer card while bytes are still on the desktop, or the loading and
- * error states around them. The chrome is the same throughout — back, the
- * file name, and a menu with the only two things worth doing with a file on a
- * phone: keep a copy, or hand it to another app.
+ * The body follows `state.kind`: a zoomable picture, a mermaid diagram, a
+ * code listing or prose, a transfer card while bytes are still on the
+ * desktop, or the loading and error states around them. The chrome is the
+ * same throughout — back, the file-type icon and name (the same Symbols
+ * artwork a file chip uses), and a menu with the only two things worth doing
+ * with a file on a phone: keep a copy, or hand it to another app. Phones stay
+ * portrait in chat, but this surface unlocks landscape so a picture or listing
+ * can use the long side.
  *
  * Leaving is the back button's job alone. A tap on the picture only gets the
  * chrome out of the way, so a finger that lands while lining up a pinch cannot
@@ -56,7 +63,7 @@ export function FilePreviewModal({ state, ports, onDismiss, onStartTransfer, onR
   const [chromeVisible, setChromeVisible] = useState(true)
   const toggleChrome = useCallback(() => setChromeVisible((visible) => !visible), [])
   // Every new target arrives with its chrome up, whatever the last one was left at.
-  const target = state?.kind === 'image' ? state.src : state?.path
+  const target = state?.kind === 'image' ? state.src : state?.kind === 'mermaid' ? state.svg : state?.path
   useEffect(() => { setChromeVisible(true) }, [target])
 
   return (
@@ -97,8 +104,21 @@ function PreviewBody({ state, chromeVisible, onToggleChrome, onStartTransfer, on
   const { t } = useMobileLocale()
   const insets = useSafeAreaInsets()
   // The picture sits under the chrome so it can use the whole screen; every
-  // other body starts below it, or its first lines would be covered.
-  const offset = state.kind === 'image' ? undefined : { paddingTop: insets.top + CHROME_ROW_HEIGHT }
+  // other body starts below it, or its first lines would be covered. Horizontal
+  // insets keep a landscape listing off the notch.
+  const offset = state.kind === 'image' ? undefined : {
+    paddingTop: insets.top + CHROME_ROW_HEIGHT,
+    paddingLeft: insets.left,
+    paddingRight: insets.right,
+  }
+
+  if (state.kind === 'mermaid') {
+    return (
+      <View style={[styles.flex, offset]}>
+        <ZoomableMermaid svg={state.svg} />
+      </View>
+    )
+  }
 
   if (state.kind === 'image') {
     return (
@@ -123,7 +143,7 @@ function PreviewBody({ state, chromeVisible, onToggleChrome, onStartTransfer, on
 
   if (state.kind === 'error') {
     return (
-      <View style={[styles.center, offset, { paddingHorizontal: spacing.lg }]}>
+      <View style={[styles.center, offset, { paddingLeft: spacing.lg + insets.left, paddingRight: spacing.lg + insets.right }]}>
         <CircleAlert color={colors.error} size={28} />
         <Text accessibilityRole="alert" style={{ color: colors.error, fontSize: 13, textAlign: 'center' }}>{state.message}</Text>
         <Button label={FILE_PREVIEW_TEXT.retry} variant="secondary" onPress={onRetry} />
@@ -133,7 +153,7 @@ function PreviewBody({ state, chromeVisible, onToggleChrome, onStartTransfer, on
 
   if (state.kind === 'transfer') {
     return (
-      <View style={[styles.center, offset, { paddingHorizontal: spacing.lg }]}>
+      <View style={[styles.center, offset, { paddingLeft: spacing.lg + insets.left, paddingRight: spacing.lg + insets.right }]}>
         <FileDown color={colors.primary} size={28} />
         <Text style={{ color: colors.foreground, fontSize: 15, fontWeight: '500', textAlign: 'center' }}>{state.name}</Text>
         <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{formatFileSize(state.size)} · {state.mimeType}</Text>
@@ -152,13 +172,22 @@ function PreviewBody({ state, chromeVisible, onToggleChrome, onStartTransfer, on
   if (state.markdown) {
     return (
       <ScrollView style={styles.flex}
-        contentContainerStyle={{ ...offset, padding: spacing.md, paddingRight: SCROLL_INDICATOR_GUTTER + spacing.md, paddingBottom: spacing.xl }}>
+        contentContainerStyle={{
+          paddingTop: (offset?.paddingTop ?? 0) + spacing.md,
+          paddingLeft: spacing.md + insets.left,
+          paddingRight: SCROLL_INDICATOR_GUTTER + spacing.md + insets.right,
+          paddingBottom: spacing.xl,
+        }}>
         <NativeMarkdown content={state.text} />
       </ScrollView>
     )
   }
 
-  return <CodeListing text={state.text} name={state.name} line={state.line} topInset={offset?.paddingTop ?? 0} />
+  return (
+    <View style={[styles.flex, { paddingLeft: insets.left, paddingRight: insets.right }]}>
+      <CodeListing text={state.text} name={state.name} line={state.line} topInset={offset?.paddingTop ?? 0} />
+    </View>
+  )
 }
 
 function TransferProgress({ receivedBytes, size }: { receivedBytes: number; size: number }) {
@@ -196,7 +225,10 @@ function PreviewChrome({ state, ports, onDismiss, visible }: { state: FilePrevie
   const [busy, setBusy] = useState(false)
   const [feedback, setFeedback] = useState<{ message: string; tone: 'info' | 'error'; offerSettings?: boolean } | null>(null)
   const actions = filePreviewMenu(state)
-  const title = state.kind === 'image' ? state.label ?? state.name : state.name
+  const iconName = previewChromeIconName(state)
+  const title = state.kind === 'image'
+    ? state.label ?? state.name
+    : state.kind === 'mermaid' ? t(FILE_PREVIEW_TEXT.mermaid) : state.name
 
   useEffect(() => {
     if (!feedback || feedback.tone === 'error' || feedback.offerSettings) return
@@ -237,11 +269,24 @@ function PreviewChrome({ state, ports, onDismiss, visible }: { state: FilePrevie
   return (
     <Animated.View
       pointerEvents={visible ? 'box-none' : 'none'}
-      style={[styles.chrome, { paddingTop: insets.top, paddingHorizontal: spacing.xs, backgroundColor: colors.background, opacity }]}
+      style={[styles.chrome, {
+        paddingTop: insets.top,
+        paddingLeft: Math.max(insets.left, spacing.xs),
+        paddingRight: Math.max(insets.right, spacing.xs),
+        backgroundColor: colors.background,
+        opacity,
+      }]}
     >
       <View style={styles.chromeRow}>
         <IconButton icon={ArrowLeft} label="Back" onPress={onDismiss} chrome="plain" color={colors.foreground} />
-        <Text numberOfLines={1} style={[styles.title, { color: colors.foreground }]}>{title}</Text>
+        <View style={styles.titleRow}>
+          {iconName ? (
+            <View testID="file-preview-type-icon" collapsable={false} style={styles.titleIcon}>
+              <FileTypeIcon name={iconName} size={16} />
+            </View>
+          ) : null}
+          <Text numberOfLines={1} style={[styles.title, { color: colors.foreground }]}>{title}</Text>
+        </View>
         <IconButton buttonRef={menu.ref} icon={MoreHorizontal} label={FILE_PREVIEW_TEXT.more} onPress={menu.open}
           chrome="plain" color={colors.foreground} spinning={busy} disabled={busy} />
       </View>
@@ -273,7 +318,9 @@ const styles = StyleSheet.create({
   fill: { height: 4, borderRadius: 999 },
   chrome: { position: 'absolute', top: 0, left: 0, right: 0 },
   chromeRow: { flexDirection: 'row', alignItems: 'center', gap: 4, height: CHROME_ROW_HEIGHT },
-  title: { flex: 1, textAlign: 'center', fontSize: 14, fontWeight: '600' },
+  titleRow: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  titleIcon: { flexShrink: 0 },
+  title: { flexShrink: 1, textAlign: 'center', fontSize: 14, fontWeight: '600' },
   feedbackRow: { alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 8 },
   feedback: { textAlign: 'center', fontSize: 12 },
 })

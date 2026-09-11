@@ -6,6 +6,7 @@
   "description": "React DOM chat renderer hosted in a mobile WebView. Receives pre-reduced patches only.",
   "exports": {
     ".": "./src/index.ts",
+    "./mermaid-preview": "./src/mermaid-preview.ts",
     "./PortableMarkdown": "./src/PortableMarkdown.tsx",
     "./PortableMessage": "./src/PortableMessage.tsx",
     "./PortableToolRow": "./src/PortableToolRow.tsx",
@@ -32,6 +33,7 @@
     "./presenters/CodexCollabBlock": "./src/presenters/CodexCollabBlock.tsx",
     "./presenters/CodexPlanBlock": "./src/presenters/CodexPlanBlock.tsx",
     "./presenters/CodexTurnView": "./src/presenters/CodexTurnView.tsx",
+    "./presenters/CollabTaskBubble": "./src/presenters/CollabTaskBubble.tsx",
     "./presenters/CollapsibleOutput": "./src/presenters/CollapsibleOutput.tsx",
     "./presenters/ComputerUseToolBlock": "./src/presenters/ComputerUseToolBlock.tsx",
     "./presenters/ConfigApplyBlock": "./src/presenters/ConfigApplyBlock.tsx",

@@ -1,4 +1,4 @@
-import { createElement, useContext, useMemo, type ComponentProps, type ReactNode } from 'react'
+import { createElement, useContext, useEffect, useMemo, type ComponentProps, type ReactNode } from 'react'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { createMathPlugin } from '@streamdown/math'
 import { defaultRehypePlugins, type Components } from 'streamdown'
@@ -23,6 +23,7 @@ import { PortableTurnContext } from './portable-turn-context'
 import { createPortableCodePlugin } from './portable-code-plugin'
 import { requestNative } from './bridge'
 import { isPreviewableImageSource, previewImage } from './image-preview'
+import { hasNativeHost, previewMermaid } from './mermaid-preview'
 
 const darkCodePlugin = createPortableCodePlugin('github-dark')
 const lightCodePlugin = createPortableCodePlugin('github-light')
@@ -157,10 +158,19 @@ function FullscreenMermaid({
   open: boolean
   onOpenChange(open: boolean): void
 }) {
-  if (!open) return null
+  const native = hasNativeHost()
+  // On the phone the overlay would be the same document as the transcript, so a
+  // pinch would scale the chat and stay that way after close. Hand the SVG to
+  // the native preview page instead; that page owns zoom, and back restores 1×.
+  useEffect(() => {
+    if (!open || !native) return
+    previewMermaid(svg)
+    onOpenChange(false)
+  }, [open, svg, native, onOpenChange])
+  if (!open || native) return null
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 p-4 touch-none"
       role="dialog"
       aria-modal="true"
       onClick={() => onOpenChange(false)}

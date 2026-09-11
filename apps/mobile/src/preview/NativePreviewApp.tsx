@@ -6,6 +6,7 @@ import { StatusBar } from 'expo-status-bar'
 import type { HarnessId } from '@superone/shared/agent-types'
 import { HARNESS_DEFAULT_BRAND_HUE } from '@superone/shared/harness-brand'
 import { PermissionSheet, PlanSheet, QuestionSheet } from '../sheets'
+import { CollabRequestScreen } from '../screens/collab-request-screen'
 import { MobileThemeProvider, useMobileTheme } from '../theme/context'
 import type { MobileColorScheme } from '../theme/tokens'
 import { Button, Chip, ListRow } from '../ui'
@@ -149,7 +150,13 @@ function NativeCatalog({ theme, onTheme, route }: { theme: ThemeChoice; onTheme:
         renderItem={({ item }) => <ListRow title={item.title} subtitle={`${item.category} · ${item.description}`} selected={selected?.id === item.id} onPress={() => open(item)} />}
         ListEmptyComponent={<Text style={styles.meta}>No matching scenarios. Try another search or category.</Text>}
       />
-      {visible && selected?.category === 'Permissions' ? <PermissionSheet
+      {visible && selected?.category === 'Permissions' && selected.request.sessionAgentsConfirm ? <View style={{ position: 'absolute', inset: 0, backgroundColor: tokens.colors.background }}>
+        <CollabRequestScreen key={revision} payload={selected.request.sessionAgentsConfirm}
+          onApprove={(launches) => { record('allow', { id: selected.request.requestId, launches }); setVisible(false) }}
+          onReject={(reason) => { record('deny', { id: selected.request.requestId, reason }); setVisible(false) }}
+          onOpenTask={(launch, label) => record('open-task', { launchId: launch.launchId, label })} />
+      </View> : null}
+      {visible && selected?.category === 'Permissions' && !selected.request.sessionAgentsConfirm ? <PermissionSheet
         key={revision} perm={selected.request}
         loadSystemInfo={async () => ({ models: [{ id: 'Preview model', name: 'Preview model', description: 'Offline preview model' }, { id: 'Review model', name: 'Review model', description: 'Offline review model' }], efforts: [{ value: 'low', label: 'Low' }, { value: 'high', label: 'High' }] })}
         onAllow={(id, formAnswers, alwaysAllow, selectedSuggestions) => record('allow', { id, formAnswers, alwaysAllow, selectedSuggestions })}

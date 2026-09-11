@@ -18,6 +18,7 @@ describe('responsive shell layout', () => {
     // reads as a panel beside the session list, on a phone as a page, with no
     // width branch of its own.
     expect(shouldUseTabletMultiPane(1024, 768, 'add-dir', true)).toBe(true)
+    expect(shouldUseTabletMultiPane(1024, 768, 'collab-request', true)).toBe(true)
     expect(shouldUseTabletMultiPane(TABLET_SPLIT_MIN_WIDTH - 1, 1024, 'add-dir', true)).toBe(false)
   })
 
@@ -53,6 +54,7 @@ describe('responsive shell layout', () => {
     expect(isFullBleedScreen('worktree')).toBe(true)
     expect(isFullBleedScreen('branch')).toBe(true)
     expect(isFullBleedScreen('add-dir')).toBe(true)
+    expect(isFullBleedScreen('collab-request')).toBe(true)
     expect(isFullBleedScreen('project-picker')).toBe(true)
     expect(isFullBleedScreen('add-project')).toBe(true)
     expect(isFullBleedScreen('session-search')).toBe(true)

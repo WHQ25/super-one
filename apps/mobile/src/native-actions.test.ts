@@ -8,6 +8,7 @@ function ports(): NativeActionPorts {
     previewFile: vi.fn(),
     loadImage: vi.fn(async () => ({ dataUri: 'data:image/png;base64,AA==' })),
     previewImage: vi.fn(),
+    previewMermaid: vi.fn(),
     copyText: vi.fn(),
     haptic: vi.fn(),
     setDraft: vi.fn(),
@@ -142,6 +143,27 @@ describe('native chat actions', () => {
       type: 'requestNative', requestId: 'bad', action: 'previewImage', payload: { src: 'file:///etc/passwd' },
     }, target)).resolves.toMatchObject({ error: 'unsupported image source' })
     expect(target.previewImage).not.toHaveBeenCalled()
+  })
+
+  it('opens the mermaid preview page with the rendered SVG', async () => {
+    const target = ports()
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>'
+    await expect(resolveNativeRequest({
+      type: 'requestNative', requestId: 'diagram', action: 'previewMermaid', payload: { svg },
+    }, target)).resolves.toMatchObject({ result: { ok: true } })
+    expect(target.previewMermaid).toHaveBeenCalledWith(svg)
+  })
+
+  it('refuses mermaid markup the preview page must not load', async () => {
+    const target = ports()
+    await expect(resolveNativeRequest({
+      type: 'requestNative', requestId: 'bad', action: 'previewMermaid', payload: { svg: '<div>nope</div>' },
+    }, target)).resolves.toMatchObject({ error: 'unsupported mermaid diagram' })
+    await expect(resolveNativeRequest({
+      type: 'requestNative', requestId: 'script', action: 'previewMermaid',
+      payload: { svg: '<svg><script>alert(1)</script></svg>' },
+    }, target)).resolves.toMatchObject({ error: 'unsupported mermaid diagram' })
+    expect(target.previewMermaid).not.toHaveBeenCalled()
   })
 
   it('routes validated Codex plan decisions to the active runtime', async () => {

@@ -23,6 +23,7 @@ const RELAY_TRANSFER: FilePreviewState = {
 beforeAll(() => {
   const proto = View.prototype as unknown as { measureInWindow: jest.Mock<(cb: (x: number, y: number, w: number, h: number) => void) => void> }
   proto.measureInWindow.mockImplementation((callback) => callback(340, 50, 40, 40))
+  // Native-driver animations look up a view tag the host-component tree never has.
   const animation = { start: (cb?: (result: { finished: boolean }) => void) => { cb?.({ finished: true }) }, stop: () => {}, reset: () => {} }
   jest.spyOn(Animated, 'timing').mockReturnValue(animation as Animated.CompositeAnimation)
   jest.spyOn(Animated, 'spring').mockReturnValue(animation as Animated.CompositeAnimation)
@@ -67,6 +68,7 @@ test('shows nothing until something is requested', async () => {
 test('a picture shows its label with back, rotation and the more menu', async () => {
   await mount(IMAGE)
   expect(screen.getByText('Screenshot')).toBeTruthy()
+  expect(screen.getByTestId('file-preview-type-icon')).toBeTruthy()
   expect(screen.getByLabelText('Back')).toBeTruthy()
   expect(screen.getByLabelText('More')).toBeTruthy()
   expect(screen.getByLabelText('Rotate Left')).toBeTruthy()
@@ -91,6 +93,43 @@ test('turning the picture keeps the viewer open', async () => {
 test('a file body has no rotation controls', async () => {
   await mount(TEXT)
   expect(screen.queryByLabelText('Rotate Left')).toBeNull()
+})
+
+test('a mermaid diagram opens as its own page and back dismisses it', async () => {
+  const onDismiss = jest.fn()
+  await mount({
+    kind: 'mermaid',
+    name: 'Mermaid',
+    svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>',
+  }, { onDismiss })
+  expect(screen.getByText('Mermaid')).toBeTruthy()
+  expect(screen.queryByTestId('file-preview-type-icon')).toBeNull()
+  expect(screen.getByLabelText('Back')).toBeTruthy()
+  expect(screen.queryByLabelText('Rotate Left')).toBeNull()
+  fireEvent.press(screen.getByLabelText('Back'))
+  expect(onDismiss).toHaveBeenCalledTimes(1)
+})
+
+test('a mermaid page title follows the shell locale', async () => {
+  await mount({
+    kind: 'mermaid',
+    name: 'Mermaid',
+    svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>',
+  }, { locale: 'zh' })
+  expect(screen.getByText('Mermaid 图表')).toBeTruthy()
+})
+
+test('a mermaid page offers nothing to save or share', async () => {
+  const calls: string[] = []
+  await mount({
+    kind: 'mermaid',
+    name: 'Mermaid',
+    svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>',
+  }, { ports: createFakeMediaPorts({ onCall: (action) => calls.push(action) }) })
+  const save = await runMenuAction('Save to Files')
+  expect(save).toBeDisabled()
+  expect(screen.getByLabelText('Share')).toBeDisabled()
+  expect(calls).toEqual([])
 })
 
 test('the menu saves a picture to Photos and reports it', async () => {
@@ -137,6 +176,7 @@ test('a remote URL disables both rows because there are no bytes on the phone', 
 test('text offers Save to Files, renders a numbered listing and marks the cited line', async () => {
   await mount(TEXT)
   expect(screen.getByText('App.tsx')).toBeTruthy()
+  expect(screen.getByTestId('file-preview-type-icon')).toBeTruthy()
   expect(screen.getByText('const a = 1')).toBeTruthy()
   expect(screen.getByText('const c = 3')).toBeTruthy()
   // The trailing newline terminates line 3; it does not add an empty line 4.

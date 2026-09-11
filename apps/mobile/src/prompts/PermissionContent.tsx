@@ -8,7 +8,6 @@ import { permissionSheetPresentation } from '../permission-sheet-state'
 import { permissionToolContent } from './prompt-content'
 import { usePromptStyles } from './styles'
 import { NativeDiff } from './NativeDiff'
-import { NativeMarkdown } from './NativeMarkdown'
 import { useMobileLocale } from '../i18n/context'
 
 export function PermissionContent({ request }: { request: PermissionRequest }) {
@@ -49,22 +48,4 @@ export function Disclosure({ title, children, initiallyOpen = false }: { title: 
     <Pressable accessibilityRole="button" accessibilityState={{ expanded }} onPress={() => setExpanded(!expanded)} style={[styles.row, { minHeight: 30 }]}><Icon size={14} color={tokens.colors.mutedForeground} /><Text style={styles.meta}>{t(title)}</Text></Pressable>
     {expanded ? children : null}
   </View>
-}
-
-export function CollaborationContent({ request }: { request: PermissionRequest }) {
-  const styles = usePromptStyles()
-  const { t } = useMobileLocale()
-  return <View style={styles.tight}>{request.sessionAgentsConfirm?.launches.map((launch) => {
-    const name = launch.peerTitle || launch.name || launch.agentId
-    const mode = t(launch.mode === 'link' ? 'Link session' : launch.mode === 'handoff' ? 'Hand off to' : 'Spawn agent')
-    return <View key={launch.launchId} style={styles.card}>
-      <Text style={styles.label}>{mode}</Text><Text style={styles.title}>{name}{launch.role ? ` · ${launch.role}` : ''}</Text>
-      <Text style={styles.meta}>{launch.summary || launch.task}</Text>
-      {launch.mode === 'handoff' ? <Text style={styles.warningText}>{t('One-way handoff to a sibling session.')}</Text> : null}
-      <Text style={styles.meta}>{[launch.config.model, launch.config.permissionMode, launch.config.effort].filter(Boolean).join(' · ') || t('Default agent configuration')}</Text>
-      {launch.config.cwd ? <Text selectable style={styles.meta}>{launch.config.cwd}</Text> : null}
-      {launch.config.worktree?.enabled ? <Text style={styles.meta}>Worktree · {launch.config.worktree.branchName || launch.config.worktree.baseBranch || launch.config.worktree.mode}</Text> : null}
-      {launch.task && launch.task !== launch.summary ? <Disclosure title="Full task"><NativeMarkdown content={launch.task} /></Disclosure> : null}
-    </View>
-  })}</View>
 }

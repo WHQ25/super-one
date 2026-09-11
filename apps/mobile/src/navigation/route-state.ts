@@ -14,6 +14,10 @@ export type MobileRoute =
   | 'add-dir'
   | 'settings'
   | 'files'
+  /** A pending agents-collaboration request; leaving the page rejects it. */
+  | 'collab-request'
+  /** One launch's full brief, over the request it belongs to. */
+  | 'collab-task'
 
 /** Where the Files browser was entered from; it is reachable from both. */
 export type FilesOrigin = 'settings' | 'session'
@@ -60,6 +64,10 @@ export function routeHierarchy(
   // Opened from the composer — the chip row or `/add-dir` — so back lands on
   // the chat that asked for it, never on a screen the user skipped past.
   if (route === 'add-dir') return [...root, 'add-dir']
+  // Opened by the request itself, over the chat that received it.
+  if (route === 'collab-request') return [...root, 'collab-request']
+  // Back from the brief returns to the request, which is still undecided.
+  if (route === 'collab-task') return [...root, 'collab-request', 'collab-task']
   if (route === 'project-picker') return [...root, 'project-picker']
   // Only the picker stacks Add Project on itself; from the workspace there is
   // nothing in between, so back leaves the flow outright.

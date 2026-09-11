@@ -1,5 +1,5 @@
 import { WorkspaceButton } from '../ui/workspace-button'
-import { ArrowLeft, Folder, FolderClosed, FolderPlus, MonitorSmartphone, MoreHorizontal, SquareTerminal, X } from 'lucide-react-native'
+import { ArrowLeft, Bot, Folder, FolderClosed, FolderPlus, MonitorSmartphone, MoreHorizontal, SquareTerminal, X } from 'lucide-react-native'
 import { Pressable, View } from 'react-native'
 import { Text } from '../ui/text'
 import { AnimatedSessionTitle } from '../ui/animated-session-title'
@@ -36,6 +36,8 @@ export function mobileHeaderTitle(
   if (route === 'project-picker') return translate('Projects')
   if (route === 'add-project') return translate('Add project')
   if (route === 'settings') return translate('Settings')
+  if (route === 'collab-request') return translate('Collaboration request')
+  if (route === 'collab-task') return translate('Full task')
   // Files names whatever it is anchored to — a project folder or the machine —
   // and that name is the way back to the top of it.
   if (route === 'files') return projectName ?? translate('Files')
@@ -91,6 +93,8 @@ export function MobileHeader(props: {
   }
   /** Trailing action that starts the add-project flow. */
   onAddProject?: () => void
+  /** Collaboration request only: how many launches the request carries. A readout, not a control. */
+  launchCount?: number
   /** Terminal only: the trailing menu lists, creates and closes tabs. */
   terminal?: {
     tabs: TerminalTabUi[]
@@ -161,6 +165,11 @@ export function MobileHeader(props: {
         </Text>
       </Pressable>
         : props.onAddProject ? <IconButton icon={FolderPlus} label="Add project" onPress={props.onAddProject} />
+        : props.launchCount != null ? <View accessible accessibilityLabel={`${props.launchCount} requested launch${props.launchCount === 1 ? '' : 'es'}`}
+            style={[styles.headerTrailingSpacer, { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }]}>
+            <Bot size={16} color={tokens.colors.mutedForeground} />
+            <Text style={{ fontSize: 13, color: tokens.colors.mutedForeground, fontVariant: ['tabular-nums'] }}>{props.launchCount}</Text>
+          </View>
         : chat ? <IconButton buttonRef={menu.ref} icon={MoreHorizontal} label="Session actions" onPress={menu.open} />
         : terminal ? <IconButton buttonRef={menu.ref} icon={MoreHorizontal} label="Terminal actions" onPress={menu.open} />
         : files ? files.finderOpen

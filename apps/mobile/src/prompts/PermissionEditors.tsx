@@ -1,18 +1,14 @@
-import { useState } from 'react'
 import { View } from 'react-native'
 import { Text } from '../ui/text'
 import type { ConfigConfirmField, HarnessId, RemoteSystemInfo, PermissionRequest } from '@superone/shared/agent-types'
-import { CollaborationContent, Disclosure } from './PermissionContent'
+import { Disclosure } from './PermissionContent'
 import { EditableField, SelectField } from './EditableField'
 import { AgentConfigFields } from './AgentConfigFields'
 import { NativeMarkdown } from './NativeMarkdown'
-import { patchLaunch } from './permission-edit-state'
-import { PromptPill } from './PromptControls'
 import { usePromptStyles } from './styles'
 
 export function PermissionEditors({ request, loadSystemInfo, onChange, onValidity }: { request: PermissionRequest; loadSystemInfo?: (harness: HarnessId) => Promise<RemoteSystemInfo>; onChange: (request: PermissionRequest) => void; onValidity: (key: string, valid: boolean) => void }) {
   const styles = usePromptStyles()
-  const [selectedLaunch, setSelectedLaunch] = useState(0)
   const video = request.videoGenConfirm
   if (video) {
     const params = video.params
@@ -47,15 +43,7 @@ export function PermissionEditors({ request, loadSystemInfo, onChange, onValidit
     </View>
     return <View style={styles.stack}>{config.fields?.map((field) => render(field, false))}{config.resource?.fields.map((field) => render(field, true))}</View>
   }
-  const collab = request.sessionAgentsConfirm
-  if (collab) return <View style={styles.stack}><View style={styles.wrap}>{collab.launches.map((launch, index) => <PromptPill key={launch.launchId} label={launch.peerTitle || launch.name || launch.agentId} selected={selectedLaunch === index} onPress={() => setSelectedLaunch(index)} />)}</View>{collab.launches.map((launch, index) => {
-    if (index !== selectedLaunch) return null
-    const profile = collab.profiles.find((item) => item.id === launch.agentId)
-    return <View key={launch.launchId} style={styles.tight}>
-      <CollaborationContent request={{ ...request, sessionAgentsConfirm: { ...collab, launches: [launch] } }} />
-      {launch.mode !== 'link' && profile ? <AgentConfigFields harness={profile.harnessId} profile={profile} config={launch.config} onChange={(patch) => onChange({ ...request, sessionAgentsConfirm: { ...collab, launches: collab.launches.map((item, i) => i === index ? patchLaunch(item, patch) : item) } })} /> : null}
-    </View>
-  })}</View>
+  // `session_agents_confirm` never reaches the sheet: it opens the collab-request page.
   const automation = request.automationConfirm
   if (automation && automation.operation !== 'delete') {
     const agent = automation.changes?.find((change) => change.field === 'agent')?.agentTo ?? automation.items[0]?.agent

@@ -596,6 +596,28 @@ describe('stripEventForRemote permission_request', () => {
     const result = stripEventForRemote(event, '/proj') as AgentEvent & { type: 'permission_request' }
     expect(result.request.toolLineDelta).toEqual({ added: 3, removed: 0 })
   })
+
+  it('withholds each collaboration launch brief and marks it deferred', () => {
+    // The brief can be pages of Markdown the phone may never open; the summary
+    // travels, the brief is fetched with get_collab_launch_task. The host only
+    // merges `config` back from a confirm, so a blank task cannot leak into a spawn.
+    const request: PermissionRequest = {
+      requestId: 'sessionagents_1', toolName: 'session_collab_request', input: {}, allowAlwaysAllow: false,
+      requestKind: 'session_agents_confirm',
+      sessionAgentsConfirm: { profiles: [], launches: [
+        { launchId: 'l1', agentId: 'a', summary: 'Short.', task: '# Long brief', config: {} },
+        { launchId: 'l2', agentId: 'b', summary: 'No brief.', task: '', config: {} },
+      ] },
+    }
+    const result = stripEventForRemote({ type: 'permission_request', request }, '/proj') as AgentEvent & { type: 'permission_request' }
+    expect(result.request.sessionAgentsConfirm?.launches).toEqual([
+      expect.objectContaining({ launchId: 'l1', summary: 'Short.', task: '', taskDeferred: true }),
+      expect.objectContaining({ launchId: 'l2', task: '' }),
+    ])
+    expect(result.request.sessionAgentsConfirm?.launches[1]?.taskDeferred).toBeUndefined()
+    // The desktop's own copy is untouched.
+    expect(request.sessionAgentsConfirm?.launches[0]?.task).toBe('# Long brief')
+  })
 })
 
 describe('stripMessagesForRemote', () => {

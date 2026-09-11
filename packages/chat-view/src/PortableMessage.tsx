@@ -7,6 +7,7 @@ import { TurnSummaryAboveFooter } from './presenters/ChatMessageIndicators'
 import { collaborationLabelKey } from './presenters/collaboration-label'
 import { getAssistantCopyText } from './presenters/getAssistantCopyText'
 import { ZERO_TURN_TOKENS, type TurnTokenCounts } from './presenters/turn-footer-model'
+import { PortableCollabTaskBubble } from './PortableCollabTaskBubble'
 import { PortableUserText } from './PortableUserText'
 import { PortableToolRow } from './PortableToolRow'
 import { PortableTurnFooter } from './PortableTurnFooter'
@@ -181,6 +182,15 @@ export const PortableMessage = memo(function PortableMessage({
   const isStreaming = message.status === 'streaming' && sessionStreaming && isLastAssistant
   const collabLabelKey = isUser ? collaborationLabelKey(message) : null
   const isCollaboration = collabLabelKey != null
+  // Parent-handed launch task: right-aligned markdown bubble, same as the desktop.
+  // Mailbox traffic keeps the left-aligned label + plain-text bubble.
+  const isInitialTask = isCollaboration && message.metadata?.collaboration?.kind === 'initial_task'
+  const initialTaskText = useMemo(
+    () => (isInitialTask
+      ? message.content.flatMap((block) => (block.type === 'text' ? [block.text] : [])).join('\n')
+      : ''),
+    [isInitialTask, message.content],
+  )
   const fallback = message.metadata?.modelFallback
   const body = fallback
     ? (
@@ -205,10 +215,11 @@ export const PortableMessage = memo(function PortableMessage({
     () => (isUser || isStreaming || hideCopyActions ? undefined : getAssistantCopyText(message)),
     [isUser, isStreaming, hideCopyActions, message],
   )
-  // A collaboration bubble sits on the left, so its menu hugs that edge too.
+  // A collaboration bubble sits on the left, so its menu hugs that edge too;
+  // the launch task is the exception and keeps the right edge like user input.
   const userMenu = useUserMessageMenu(message, {
     enabled: isUser && !hideCopyActions && !fallback,
-    align: isCollaboration ? 'start' : 'end',
+    align: isCollaboration && !isInitialTask ? 'start' : 'end',
   })
 
   return (
@@ -218,6 +229,16 @@ export const PortableMessage = memo(function PortableMessage({
           isUser={isUser}
           isCollaboration={isCollaboration}
           collaborationLabel={collabLabelKey ? t(collabLabelKey) : undefined}
+          initialTask={isInitialTask
+            ? (
+              <PortableCollabTaskBubble
+                text={initialTaskText}
+                scheme={scheme}
+                bubbleProps={userMenu.bubbleProps}
+                menu={userMenu.menu}
+              />
+            )
+            : undefined}
           body={body}
           userBubbleProps={userMenu.bubbleProps}
           userMenu={userMenu.menu}

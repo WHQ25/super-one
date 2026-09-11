@@ -158,7 +158,12 @@ export function ZoomableImage({ src, label, chromeVisible, onToggleChrome }: {
       {failed ? null : (
         <Animated.View
           pointerEvents={chromeVisible ? 'box-none' : 'none'}
-          style={[styles.bar, { bottom: insets.bottom + 16, opacity: barOpacity }]}
+          style={[styles.bar, {
+            bottom: insets.bottom + 16,
+            paddingLeft: insets.left,
+            paddingRight: insets.right,
+            opacity: barOpacity,
+          }]}
         >
           <View style={[styles.barInner, { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radius.pill }]}>
             <IconButton icon={RotateCcw} label={FILE_PREVIEW_TEXT.rotateLeft} onPress={() => turn(-1)} chrome="plain" color={colors.foreground} />

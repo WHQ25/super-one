@@ -24,6 +24,14 @@ import { useMobileLocale } from '../i18n/context'
 
 const CHAT_SOURCE = { html: CHAT_VIEW_HTML }
 
+/**
+ * The landing and restore covers sit over the WebView. `elevation` is what
+ * puts them above it on Android, but elevation also casts a Material shadow,
+ * and the cover's bottom edge would drop a grey band onto the composer in light
+ * mode. A transparent shadow colour keeps the ordering and loses the band.
+ */
+const coverStyle = { zIndex: 1, elevation: 4, shadowColor: 'transparent' } as const
+
 export function ChatScreen(props: {
   nativeDraft?: NativeComposerBinding
   provider: HarnessId
@@ -164,14 +172,14 @@ export function ChatScreen(props: {
       />
       </View>
       {coveringRestore ? (
-        <View testID="conversation-loading" collapsable={false} style={[StyleSheet.absoluteFillObject, styles.emptyState, { backgroundColor: tokens.colors.background, zIndex: 1, elevation: 4 }]}>
+        <View testID="conversation-loading" collapsable={false} style={[StyleSheet.absoluteFillObject, styles.emptyState, coverStyle, { backgroundColor: tokens.colors.background }]}>
           <ActivityIndicator color={tokens.colors.mutedForeground} />
           <Text style={styles.emptyBody}>{t('Loading conversation…')}</Text>
         </View>
       ) : showLanding && props.landing ? (
         // The renderer stays mounted at opacity 0 and still occupies flex
         // space, so a sibling landing would sit just above the composer.
-        <View testID="new-session-landing" collapsable={false} style={[StyleSheet.absoluteFillObject, { backgroundColor: tokens.colors.background, zIndex: 1, elevation: 4 }]}>
+        <View testID="new-session-landing" collapsable={false} style={[StyleSheet.absoluteFillObject, coverStyle, { backgroundColor: tokens.colors.background }]}>
           <NewSessionLanding {...props.landing} />
         </View>
       ) : null}

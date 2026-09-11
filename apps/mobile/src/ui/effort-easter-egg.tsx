@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Animated, Easing, StyleSheet, View, type LayoutChangeEvent } from 'react-native'
+import { Animated, Easing, Platform, StyleSheet, View, type LayoutChangeEvent } from 'react-native'
 import Svg, { Defs, LinearGradient, Mask, RadialGradient, Rect, Stop, Text as SvgText } from 'react-native-svg'
 import {
   FIRE_EMBER,
@@ -75,6 +75,18 @@ function paintWidth(box: Box, text: string, fontSize: number): number {
 }
 
 /**
+ * react-native-svg's Android text layout (`TSpanView.java`) reads each glyph's
+ * kerned advance off the whole line but then subtracts that advance from the
+ * *end* position to find the glyph's start, so a kern pair moves the wrong
+ * glyph: in `ULTRATHINK` the `L` is pulled back into the `U` by the L–T kern
+ * and a hole opens before the `T`. Turning auto-kerning off makes every glyph
+ * advance by its own width, which is what RN's own text engine shows. iOS
+ * takes its advances from CoreText, kerned and correctly placed, so it keeps
+ * the pairs.
+ */
+const GLYPH_PROPS = Platform.OS === 'android' ? { kerning: 0 } : {}
+
+/**
  * Desktop stacks three text-shadows per glow layer; RN allows one, so each layer
  * keeps the widest term of `fire-sprite-glow-a` / `-b` in `styles/index.css`.
  * Cross-fading two static layers reproduces the 0.8s shimmer without animating
@@ -88,17 +100,26 @@ const GLOW_LAYERS = [
 const SWEEP_SAMPLES = [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1]
 
 /**
- * The light-mode molten fill: four differently-centred radial gradients
- * cross-fading, so the hot spot travels across the glyphs. Desktop staggers the
- * same four with a negative `animation-delay`; here the stagger is folded into
- * each layer's output curve, off one shared clock.
+ * The light-mode molten fill: a static ember base under four differently-centred
+ * radial gradients cross-fading, so the hot spot travels across the glyphs.
+ * Desktop staggers the same four with a negative `animation-delay`; here the
+ * stagger is folded into each layer's output curve, off one shared clock.
+ *
+ * Every run — the ember base included — is SVG text. Mixing the RN layout text
+ * in as the base does not work: the two engines space glyphs differently, so
+ * the runs land a few pixels apart and the label reads as a doubled smear.
  */
 function MoltenFill({ box, fontSize, children }: { box: Box; fontSize: number; children: string }) {
   const sweep = useLoop(FIRE_SWEEP_S * 1000)
   const y = baselineY(box, fontSize)
   const width = paintWidth(box, children, fontSize)
   const radius = Math.hypot(width / 2, box.height * 0.55)
+  const glyphs = (fill: string) =>
+    <SvgText {...GLYPH_PROPS} x={0} y={y} fontSize={fontSize} fontWeight="600" fill={fill}>{children}</SvgText>
   return <>
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <Svg width={width} height={box.height}>{glyphs(FIRE_EMBER)}</Svg>
+    </View>
     {FIRE_SWEEP_CENTERS.map(([cx, cy], index) => <Animated.View key={index} pointerEvents="none" style={{
       ...StyleSheet.absoluteFillObject,
       opacity: sweep.interpolate({
@@ -114,7 +135,7 @@ function MoltenFill({ box, fontSize, children }: { box: Box; fontSize: number; c
             {FIRE_FILL_STOPS.map(([offset, color]) => <Stop key={offset} offset={offset} stopColor={color} />)}
           </RadialGradient>
         </Defs>
-        <SvgText x={0} y={y} fontSize={fontSize} fontWeight="600" fill={`url(#fire-${index})`}>{children}</SvgText>
+        {glyphs(`url(#fire-${index})`)}
       </Svg>
     </Animated.View>)}
   </>
@@ -147,7 +168,9 @@ export function FireText({ children, fontSize }: { children: string; fontSize: n
   }
 
   return <View onLayout={onLayout}>
-    <Text numberOfLines={1} style={{ ...layer, color: FIRE_EMBER }}>{children}</Text>
+    {/* Measures the box, then stops painting so only the SVG runs show — see
+        `RainbowText` for why this is `opacity` and not `color: 'transparent'`. */}
+    <Text numberOfLines={1} style={{ ...layer, color: FIRE_EMBER, opacity: box ? 0 : 1 }}>{children}</Text>
     {box ? <MoltenFill box={box} fontSize={fontSize}>{children}</MoltenFill> : null}
     {box ? <FireEmbers width={box.width} height={box.height} dark={false} /> : null}
   </View>
@@ -193,7 +216,7 @@ export function RainbowText({ children, fontSize }: { children: string; fontSize
         <Defs>
           <LinearGradient id="rainbow" x1="0" y1="0" x2="1" y2="0">{stops}</LinearGradient>
           <Mask id="rainbow-mask">
-            <SvgText x={0} y={baselineY(box, fontSize)} fontSize={fontSize} fontWeight="500" fill="#ffffff">{children}</SvgText>
+            <SvgText {...GLYPH_PROPS} x={0} y={baselineY(box, fontSize)} fontSize={fontSize} fontWeight="500" fill="#ffffff">{children}</SvgText>
           </Mask>
         </Defs>
         <AnimatedRect x={shift} y={0} width={width * 2} height={box.height} fill="url(#rainbow)" mask="url(#rainbow-mask)" />

@@ -4,6 +4,7 @@ import { EventBuffer } from './buffer'
 import { buildLanWsUrl, buildRelayWsUrl, type TransportKind } from './connect'
 import { decryptPayload, deriveKeys, encryptPayload } from './crypto'
 import { handleInboundFrame, makeDecrypt, type InboundFrame, type RelayControlFrame } from './frames'
+import { createRelayHeartbeat, type RelayHeartbeat } from '@superone/shared/relay-heartbeat'
 import { RpcInbox } from './rpc'
 import { uploadBytes, type HttpPut, type UploadBytesOptions } from './attachments'
 import { downloadDesktopFileBytes, type DownloadProgress, type HttpGet } from './downloads'
@@ -31,6 +32,7 @@ export class RelayClient {
   private readonly rpc = new RpcInbox()
   readonly buffer = new EventBuffer()
   private ackTimer: ReturnType<typeof setTimeout> | null = null
+  private heartbeat: RelayHeartbeat | null = null
   private cancelConnect: (() => void) | null = null
   private kind: TransportKind = 'relay'
   private closed = false
@@ -48,6 +50,8 @@ export class RelayClient {
       onControl?: (frame: RelayControlFrame) => void
       onStatus?: (connected: boolean) => void
       openSocket?: OpenSocket
+      /** Test seam only; production keeps the shared relay heartbeat cadence. */
+      heartbeat?: { intervalMs: number; timeoutMs: number }
     } = {},
   ) {}
 
@@ -114,6 +118,7 @@ export class RelayClient {
     this.cancelConnect?.()
     this.cancelConnect = null
     this.clearAckTimer()
+    this.stopHeartbeat()
     this.rpc.failAll(new Error('disconnected'))
     const ws = this.ws
     this.ws = null
@@ -185,6 +190,7 @@ export class RelayClient {
     this.cancelConnect?.()
     this.cancelConnect = null
     this.clearAckTimer()
+    this.stopHeartbeat()
     this.rpc.failAll(new Error('connection replaced'))
     const previous = this.ws
     this.ws = null
@@ -216,12 +222,7 @@ export class RelayClient {
           finishError(new Error('ws closed before connect'))
           return
         }
-        if (this.ws === ws) {
-          this.ws = null
-          this.clearAckTimer()
-          this.rpc.failAll(new Error('connection closed'))
-          this.hooks.onStatus?.(false)
-        }
+        this.handleClosed(ws)
       }
       ws.onopen = () => {
         if (settled) return
@@ -247,9 +248,37 @@ export class RelayClient {
       const fromSeq = this.tracker.lastAckedSeq + 1
       ws.send(JSON.stringify({ type: 'replay', fromSeq }))
     }
+    // Only the relay answers pings; on LAN the desktop is the socket peer, so a
+    // dead link surfaces as request failures instead.
+    if (this.kind === 'relay') {
+      this.heartbeat = createRelayHeartbeat({
+        send: (text) => ws.send(text),
+        // A half-open socket never fires onclose; treat the missed pong as one
+        // so the reconnect loop takes over.
+        onTimeout: () => this.handleClosed(ws),
+        ...this.hooks.heartbeat,
+      })
+      this.heartbeat.start()
+    }
+  }
+
+  private handleClosed(ws: SocketLike): void {
+    if (this.ws !== ws) return
+    this.ws = null
+    this.clearAckTimer()
+    this.stopHeartbeat()
+    this.detachAndClose(ws)
+    this.rpc.failAll(new Error('connection closed'))
+    this.hooks.onStatus?.(false)
+  }
+
+  private stopHeartbeat(): void {
+    this.heartbeat?.stop()
+    this.heartbeat = null
   }
 
   private onRaw(raw: string): void {
+    if (this.heartbeat?.onMessage(raw)) return
     let frame: InboundFrame
     try {
       frame = JSON.parse(raw) as InboundFrame

@@ -6,6 +6,7 @@ import { resolvePairedDeviceDisplayName } from './paired-device-name'
 import { variant, variantId } from './variant'
 import type { AgentEvent, RemoteCommand, ContentBlock, ChatMessage, RemoteDeviceConfig, TerminalEvent } from '@superone/shared/agent-types'
 import { isSubagentToolName } from '@superone/shared/tool-ui'
+import { createRelayHeartbeat } from '@superone/shared/relay-heartbeat'
 
 export type { RemoteDeviceConfig }
 import { trace } from './agent/event-trace'
@@ -89,6 +90,8 @@ export interface RemoteControlCallbacks {
   onLanStatusChanged?: (active: boolean) => void
   onLanUploadProgress?: (info: { savedPath: string; receivedBytes: number; done: boolean; error?: string }) => void
   isPairedDevice?: (deviceId: string) => boolean
+  /** Test seam only; production keeps the shared relay heartbeat cadence. */
+  relayHeartbeat?: { intervalMs: number; timeoutMs: number }
 }
 
 type DeviceTransport = 'lan' | 'relay'
@@ -408,17 +411,30 @@ export class RemoteControlService {
 
     const ws = new WebSocket(url)
     this.relayWs = ws
+    // A half-open socket never emits 'close' on its own; terminate() does,
+    // which hands the dead link to the reconnect path below.
+    const heartbeat = createRelayHeartbeat({
+      send: (text) => ws.send(text),
+      onTimeout: () => {
+        log.warn('[RemoteControl] Relay heartbeat timed out, terminating socket')
+        ws.terminate()
+      },
+      ...this.callbacks.relayHeartbeat,
+    })
 
     ws.on('open', () => {
       log.info('[RemoteControl] Relay connected')
       this.reconnectDelay = 1_000
       this.callbacks.onRelayStatusChanged?.(true)
       ws.send(this.buildHandshakeFrame())
+      heartbeat.start()
     })
 
     ws.on('message', (raw) => {
+      const text = raw.toString()
+      if (heartbeat.onMessage(text)) return
       try {
-        this.handleRelayMessage(JSON.parse(raw.toString()))
+        this.handleRelayMessage(JSON.parse(text))
       } catch (err) {
         log.error('[RemoteControl] Failed to parse relay message:', err)
       }
@@ -426,6 +442,7 @@ export class RemoteControlService {
 
     ws.on('close', (code: number, reason: Buffer) => {
       log.info('[RemoteControl] Relay WS closed:', code, reason.toString())
+      heartbeat.stop()
       if (this.relayWs !== ws) return
       this.relayWs = null
       this.callbacks.onRelayStatusChanged?.(false)

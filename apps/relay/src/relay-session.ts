@@ -25,6 +25,13 @@ type RelayFrame =
 
 const MAX_BUFFER_SIZE = 500
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000
+/**
+ * Clients send the literal `ping` every 30s and give up on a pong after 10s
+ * (`RELAY_HEARTBEAT_*` in `@superone/shared/relay-heartbeat`). A desktop whose
+ * last auto-response is older than one missed round trip is a half-open socket
+ * the runtime has not noticed yet — not a peer a mobile can talk to.
+ */
+const HEARTBEAT_STALE_MS = 2 * 30_000 + 10_000
 const DESKTOP_TAG = 'desktop'
 const MOBILE_TAG_PREFIX = 'mobile:'
 const SEQ_KEY = 'seq'
@@ -50,18 +57,44 @@ export class RelaySession implements DurableObject {
     })
   }
 
-  private getDesktop(): WebSocket | null {
-    const sockets = this.state.getWebSockets(DESKTOP_TAG)
-    return sockets.length > 0 ? sockets[0] : null
+  /**
+   * `getWebSockets()` still lists a socket that is CLOSING — the one a
+   * redialling peer just replaced, which on a half-open link never finishes
+   * closing. Tags are appended in accept order, so the newest OPEN socket is
+   * the live peer.
+   */
+  private newestOpen(sockets: WebSocket[]): WebSocket | null {
+    for (let i = sockets.length - 1; i >= 0; i -= 1) {
+      if (sockets[i].readyState === WebSocket.OPEN) return sockets[i]
+    }
+    return null
   }
 
+  private getDesktop(): WebSocket | null {
+    return this.newestOpen(this.state.getWebSockets(DESKTOP_TAG))
+  }
+
+  /**
+   * One live socket per device. The untagged list is not in accept order
+   * (workerd iterates it newest-first), so resolve each device through the
+   * tagged selector rather than trusting any ordering here.
+   */
   private getAllMobiles(): WebSocket[] {
-    return this.state.getWebSockets().filter((ws) => this.getMobileDeviceId(ws) !== null)
+    const deviceIds = new Set<string>()
+    for (const ws of this.state.getWebSockets()) {
+      const deviceId = this.getMobileDeviceId(ws)
+      if (deviceId !== null) deviceIds.add(deviceId)
+    }
+    const live: WebSocket[] = []
+    for (const deviceId of deviceIds) {
+      const ws = this.getMobileByDeviceId(deviceId)
+      if (ws) live.push(ws)
+    }
+    return live
   }
 
   private getMobileByDeviceId(deviceId: string): WebSocket | null {
-    const sockets = this.state.getWebSockets(MOBILE_TAG_PREFIX + deviceId)
-    return sockets.length > 0 ? sockets[0] : null
+    return this.newestOpen(this.state.getWebSockets(MOBILE_TAG_PREFIX + deviceId))
   }
 
   private getMobileDeviceId(ws: WebSocket): string | null {
@@ -70,6 +103,15 @@ export class RelaySession implements DurableObject {
       if (tag.startsWith(MOBILE_TAG_PREFIX)) return tag.slice(MOBILE_TAG_PREFIX.length)
     }
     return null
+  }
+
+  /**
+   * A socket that has never pinged is either freshly attached or a pre-heartbeat
+   * client; only a lapsed heartbeat proves the link is dead.
+   */
+  private isHeartbeatFresh(ws: WebSocket): boolean {
+    const lastPong = this.state.getWebSocketAutoResponseTimestamp(ws)
+    return lastPong === null || Date.now() - lastPong.getTime() < HEARTBEAT_STALE_MS
   }
 
   private getRole(ws: WebSocket): 'desktop' | 'mobile' | null {
@@ -84,7 +126,7 @@ export class RelaySession implements DurableObject {
 
     if (url.pathname === '/status') {
       const desktop = this.getDesktop()
-      return Response.json({ desktop: desktop !== null })
+      return Response.json({ desktop: desktop !== null && this.isHeartbeatFresh(desktop) })
     }
 
     const role = url.searchParams.get('role')
@@ -149,11 +191,14 @@ export class RelaySession implements DurableObject {
   async webSocketClose(ws: WebSocket): Promise<void> {
     const role = this.getRole(ws)
     if (role === 'desktop') {
+      // A replaced socket closing late must not announce the live desktop as gone.
+      if (this.getDesktop() !== null) return
       for (const mobile of this.getAllMobiles()) {
         mobile.send(JSON.stringify({ type: 'peer_disconnected' }))
       }
     } else if (role === 'mobile') {
       const deviceId = this.getMobileDeviceId(ws)
+      if (deviceId !== null && this.getMobileByDeviceId(deviceId) !== null) return
       const desktop = this.getDesktop()
       desktop?.send(JSON.stringify({ type: 'peer_disconnected', mobileDeviceId: deviceId }))
     }
@@ -164,7 +209,14 @@ export class RelaySession implements DurableObject {
   }
 
   async alarm(): Promise<void> {
-    this.getDesktop()?.close(1000, 'idle_timeout')
+    // Auto-response pings never wake the DO, so a pair that is alive but has
+    // exchanged no business frames looks idle here; its heartbeat says otherwise.
+    const desktop = this.getDesktop()
+    if (desktop && this.state.getWebSocketAutoResponseTimestamp(desktop) !== null && this.isHeartbeatFresh(desktop)) {
+      this.touchIdleTimer()
+      return
+    }
+    desktop?.close(1000, 'idle_timeout')
     for (const mobile of this.getAllMobiles()) mobile.close(1000, 'idle_timeout')
     this.buffer = []
     this.seq = 0

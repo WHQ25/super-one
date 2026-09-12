@@ -2,10 +2,14 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { RelaySession } from './relay-session'
 
 function createMockWebSocket() {
-  return {
+  const ws = {
+    readyState: WebSocket.OPEN,
     send: vi.fn(),
-    close: vi.fn(),
+    // Like the runtime: close() moves to CLOSING, and the socket stays listed
+    // until the close handshake completes — which a half-open link never does.
+    close: vi.fn((_code?: number, _reason?: string) => { ws.readyState = WebSocket.CLOSING }),
   }
+  return ws
 }
 
 function createMockState(initialKv: Record<string, unknown> = {}) {
@@ -16,11 +20,14 @@ function createMockState(initialKv: Record<string, unknown> = {}) {
     acceptWebSocket: vi.fn((ws: object, tags: string[]) => {
       sockets.set(ws, tags)
     }),
+    // Mirrors workerd: the untagged list iterates newest-first, tagged lists
+    // iterate in accept order.
     getWebSockets: vi.fn((tag?: string) => {
-      if (!tag) return [...sockets.keys()]
+      if (!tag) return [...sockets.keys()].reverse()
       return [...sockets.entries()].filter(([, t]) => t.includes(tag)).map(([ws]) => ws)
     }),
     getTags: vi.fn((ws: object) => sockets.get(ws) ?? []),
+    getWebSocketAutoResponseTimestamp: vi.fn((_ws: object): Date | null => null),
     blockConcurrencyWhile: vi.fn(async (fn: () => Promise<void>) => fn()),
     storage: {
       setAlarm: vi.fn(),
@@ -142,11 +149,13 @@ describe('RelaySession', () => {
   })
 
   it('sends peer_disconnected to all mobiles when desktop closes', async () => {
+    desktopWs.readyState = WebSocket.CLOSED
     await session.webSocketClose(desktopWs as any)
     expect(mobileWs.send).toHaveBeenCalledWith(JSON.stringify({ type: 'peer_disconnected' }))
   })
 
   it('sends per-device peer_disconnected to desktop when a mobile closes', async () => {
+    mobileWs.readyState = WebSocket.CLOSED
     await session.webSocketClose(mobileWs as any)
     expect(desktopWs.send).toHaveBeenCalledWith(JSON.stringify({ type: 'peer_disconnected', mobileDeviceId: 'dev-1' }))
   })
@@ -167,6 +176,122 @@ describe('RelaySession', () => {
   it('ignores invalid JSON', async () => {
     await session.webSocketMessage(desktopWs as any, 'not-json')
     expect(mobileWs.send).not.toHaveBeenCalled()
+  })
+
+  describe('replaced sockets that never finish closing', () => {
+    it('routes mobile commands to the redialled desktop, not the CLOSING one it replaced', async () => {
+      const fresh = createMockWebSocket()
+      desktopWs.close(1000, 'replaced')
+      state.acceptWebSocket(fresh, ['desktop'])
+      await session.webSocketMessage(mobileWs as any, JSON.stringify({ type: 'command', data: 'enc' }))
+      expect(fresh.send).toHaveBeenCalledWith(JSON.stringify({ type: 'command', data: 'enc', mobileDeviceId: 'dev-1' }))
+      expect(desktopWs.send).not.toHaveBeenCalled()
+    })
+
+    it('reports /status from the live desktop even while the stale one lingers', async () => {
+      const fresh = createMockWebSocket()
+      desktopWs.close(1000, 'replaced')
+      state.acceptWebSocket(fresh, ['desktop'])
+      state.getWebSocketAutoResponseTimestamp.mockImplementation((ws: object) =>
+        ws === desktopWs ? new Date(Date.now() - 600_000) : null)
+      const res = await session.fetch(new Request('https://internal/status'))
+      expect(await res.json()).toEqual({ desktop: true })
+    })
+
+    it('does not announce peer_disconnected when the replaced desktop socket closes late', async () => {
+      desktopWs.close(1000, 'replaced')
+      state.acceptWebSocket(createMockWebSocket(), ['desktop'])
+      await session.webSocketClose(desktopWs as any)
+      expect(mobileWs.send).not.toHaveBeenCalled()
+    })
+
+    it('does not mark a mobile offline when its replaced socket closes late', async () => {
+      mobileWs.close(1000, 'replaced')
+      state.acceptWebSocket(createMockWebSocket(), ['mobile:dev-1'])
+      await session.webSocketClose(mobileWs as any)
+      expect(desktopWs.send).not.toHaveBeenCalled()
+    })
+
+    it('still announces peer_disconnected when the only desktop closes', async () => {
+      desktopWs.close(1000, 'gone')
+      await session.webSocketClose(desktopWs as any)
+      expect(mobileWs.send).toHaveBeenCalledWith(JSON.stringify({ type: 'peer_disconnected' }))
+    })
+
+    it('broadcasts and targeted delivery agree on which of two OPEN sockets is a device', async () => {
+      // Residue of the old selector: two OPEN sockets carrying the same device tag.
+      const newer = createMockWebSocket()
+      state.acceptWebSocket(newer, ['mobile:dev-1'])
+      await session.webSocketMessage(desktopWs as any, JSON.stringify({ type: 'handshake', hostName: 'desk' }))
+      await session.webSocketMessage(desktopWs as any, JSON.stringify({ type: 'event', data: 'enc', targets: ['dev-1'] }))
+      expect(newer.send).toHaveBeenCalledTimes(2)
+      expect(mobileWs.send).not.toHaveBeenCalled()
+    })
+
+    it('delivers desktop events to the live socket of a mobile that redialled', async () => {
+      const fresh = createMockWebSocket()
+      mobileWs.close(1000, 'replaced')
+      state.acceptWebSocket(fresh, ['mobile:dev-1'])
+      await session.webSocketMessage(desktopWs as any, JSON.stringify({ type: 'event', data: 'enc' }))
+      expect(fresh.send).toHaveBeenCalledTimes(1)
+      expect(mobileWs.send).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('idle alarm', () => {
+    it('re-arms instead of tearing down while the desktop heartbeat is fresh', async () => {
+      state.getWebSocketAutoResponseTimestamp.mockReturnValue(new Date(Date.now() - 5_000))
+      await session.webSocketMessage(desktopWs as any, JSON.stringify({ type: 'event', data: 'enc' }))
+      state.storage.setAlarm.mockClear()
+      await session.alarm()
+      expect(desktopWs.close).not.toHaveBeenCalled()
+      expect(mobileWs.close).not.toHaveBeenCalled()
+      expect(state.storage.setAlarm).toHaveBeenCalledTimes(1)
+      expect(state._kv.get('seq')).toBe(1)
+    })
+
+    it('tears down a desktop whose heartbeat lapsed, even though its socket is still listed', async () => {
+      state.getWebSocketAutoResponseTimestamp.mockReturnValue(new Date(Date.now() - 70_000))
+      await session.alarm()
+      expect(desktopWs.close).toHaveBeenCalledWith(1000, 'idle_timeout')
+    })
+
+    it('tears down a desktop that never pinged, as before the heartbeat existed', async () => {
+      state.getWebSocketAutoResponseTimestamp.mockReturnValue(null)
+      await session.alarm()
+      expect(desktopWs.close).toHaveBeenCalledWith(1000, 'idle_timeout')
+      expect(mobileWs.close).toHaveBeenCalledWith(1000, 'idle_timeout')
+    })
+  })
+
+  describe('/status presence', () => {
+    const status = async () => {
+      const res = await session.fetch(new Request('https://internal/status'))
+      return (await res.json()) as { desktop: boolean }
+    }
+
+    it('reports the desktop online while its heartbeat is fresh', async () => {
+      state.getWebSocketAutoResponseTimestamp.mockReturnValue(new Date(Date.now() - 20_000))
+      expect(await status()).toEqual({ desktop: true })
+    })
+
+    it('reports online for a desktop that has not pinged yet — freshly attached or pre-heartbeat', async () => {
+      state.getWebSocketAutoResponseTimestamp.mockReturnValue(null)
+      expect(await status()).toEqual({ desktop: true })
+    })
+
+    it('reports a half-open desktop socket offline once its heartbeat lapses', async () => {
+      state.getWebSocketAutoResponseTimestamp.mockReturnValue(new Date(Date.now() - 90_000))
+      expect(await status()).toEqual({ desktop: false })
+    })
+
+    it('reports offline when no desktop socket is attached', async () => {
+      const lonely = createMockState()
+      const lonelySession = new RelaySession(lonely as any, {} as any)
+      lonely.acceptWebSocket(createMockWebSocket(), ['mobile:dev-1'])
+      const res = await lonelySession.fetch(new Request('https://internal/status'))
+      expect(await res.json()).toEqual({ desktop: false })
+    })
   })
 
   describe('hibernation persistence', () => {
@@ -240,6 +365,7 @@ describe('RelaySession', () => {
     })
 
     it('one mobile disconnect only notifies desktop with that mobile id; other mobile unaffected', async () => {
+      mobileWs.readyState = WebSocket.CLOSED
       await session.webSocketClose(mobileWs as any)
       expect(desktopWs.send).toHaveBeenCalledWith(JSON.stringify({ type: 'peer_disconnected', mobileDeviceId: 'dev-1' }))
       expect(mobileB.send).not.toHaveBeenCalled()

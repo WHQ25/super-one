@@ -31,6 +31,13 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
   let stopped = false
   let peerLost = false
   let peerRestore: Promise<void> | null = null
+  /**
+   * A handshake seen on the current socket. The desktop sends one whenever a
+   * mobile attaches, and it can land while the `/status` probe is still in
+   * flight — the probe then answers from a stale heartbeat, but a handshake is
+   * the desktop itself talking, so it outranks the probe.
+   */
+  let handshakeSeen = false
   let lastDelayMs = 0
   const report = hooks.onConnection
   const restore = () => hooks.restore(client)
@@ -48,7 +55,10 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
         }
         report(state, epoch)
       },
-      probe: async () => client.transport !== 'relay' || (await hooks.isDesktopOnline?.() ?? true),
+      probe: async () => client.transport !== 'relay'
+        || handshakeSeen
+        || (await hooks.isDesktopOnline?.() ?? true)
+        || handshakeSeen,
       onAttempt: () => {
         hooks.onReconnectInfo?.({ attempting: true, waiting: false, delayMs: lastDelayMs, nextAtMs: null })
       },
@@ -101,6 +111,7 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
         hooks.onKicked?.()
         return
       }
+      if (frame.type === 'handshake') handshakeSeen = true
       if (frame.type !== 'handshake' || !peerLost || reconnectController.isActive || peerRestore) return
       peerRestore = restore()
         .then((epoch) => {
@@ -118,6 +129,7 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
       if (stopped) return
       if (!connected && hooks.suppressDisconnect()) return
       if (connected) {
+        handshakeSeen = false
         if (reconnectController.isActive) {
           hooks.onStatus('reconnected — rehydrating')
           return

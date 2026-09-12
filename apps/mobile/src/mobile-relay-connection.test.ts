@@ -9,7 +9,10 @@ class MockSocket implements SocketLike {
   onmessage: ((event: { data: string }) => void) | null = null
   onclose: (() => void) | null = null
   onerror: (() => void) | null = null
-  send(): void {}
+  /** The relay answers heartbeat pings itself, so a parked mailbox socket stays alive. */
+  send(data: string): void {
+    if (data === 'ping') queueMicrotask(() => this.onmessage?.({ data: 'pong' }))
+  }
   close(): void {}
   drop(): void { this.onclose?.() }
   emit(frame: unknown): void { this.onmessage?.({ data: JSON.stringify(frame) }) }
@@ -165,6 +168,46 @@ describe('mobile relay connection lifecycle', () => {
     sockets[1].emit({ type: 'handshake', hostName: 'desktop' })
     await vi.waitFor(() => expect(restore).toHaveBeenCalledTimes(1))
     expect(onConnection).toHaveBeenLastCalledWith('connected', 5)
+  })
+
+  it('trusts a handshake that lands while a stale /status probe is still in flight', async () => {
+    vi.useFakeTimers()
+    const sockets: MockSocket[] = []
+    const restore = vi.fn().mockResolvedValue(7)
+    let answerProbe!: (online: boolean) => void
+    const isDesktopOnline = vi.fn(() => new Promise<boolean>((resolve) => { answerProbe = resolve }))
+    const onConnection = vi.fn()
+    const connection = createMobileRelayConnection({
+      onEvents: vi.fn(),
+      onTerminal: vi.fn(),
+      restore,
+      currentEpoch: () => 6,
+      onConnection,
+      onStatus: vi.fn(),
+      onShutdown: vi.fn(),
+      isDesktopOnline,
+      suppressDisconnect: () => false,
+      openSocket: () => {
+        const socket = new MockSocket()
+        sockets.push(socket)
+        queueMicrotask(() => socket.onopen?.())
+        return socket
+      },
+    })
+
+    await connection.client.connectRelay({ relayUrl: 'wss://relay.example', masterSecret: MASTER })
+    sockets[0].drop()
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(isDesktopOnline).toHaveBeenCalledTimes(1)
+
+    // The desktop answers our attach before the relay's presence probe returns
+    // — the probe sampled a heartbeat timestamp the redial has since superseded.
+    sockets[1].emit({ type: 'handshake', hostName: 'desktop' })
+    answerProbe(false)
+    await vi.runAllTicks()
+    await vi.waitFor(() => expect(restore).toHaveBeenCalledTimes(1))
+    expect(onConnection).toHaveBeenLastCalledWith('connected', 7)
+    expect(connection.reconnectController.isActive).toBe(false)
   })
 
   it('never probes the desktop over LAN, where the desktop is the socket peer', async () => {

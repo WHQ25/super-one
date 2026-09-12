@@ -33,8 +33,8 @@ describe('terminal instances are shared per project across session switches', ()
 
   it('still exposes the same tabs after leaving and returning to a session of the same project', () => {
     const s = useTerminalStore.getState()
-    s.addTab('/proj', item('t1'))
-    s.addTab('/proj', item('t2'))
+    s.upsertTab('/proj', item('t1'), true)
+    s.upsertTab('/proj', item('t2'), true)
     // Switching session does NOT touch byProject — simulate a session round-trip
     s.setOpen('sess-a', true)
     s.setOpen('sess-b', false)
@@ -46,8 +46,8 @@ describe('terminal instances are shared per project across session switches', ()
 
   it('isolates terminals between different projects', () => {
     const s = useTerminalStore.getState()
-    s.addTab('/proj-a', item('a1'))
-    s.addTab('/proj-b', item('b1'))
+    s.upsertTab('/proj-a', item('a1'), true)
+    s.upsertTab('/proj-b', item('b1'), true)
     expect(useTerminalStore.getState().byProject['/proj-a'].tabs).toHaveLength(1)
     expect(useTerminalStore.getState().byProject['/proj-b'].tabs).toHaveLength(1)
     expect(useTerminalStore.getState().byProject['/proj-a'].tabs[0].terminalId).toBe('a1')
@@ -55,8 +55,8 @@ describe('terminal instances are shared per project across session switches', ()
 
   it('promotes the previous tab as active after the active terminal is closed', () => {
     const s = useTerminalStore.getState()
-    s.addTab('/proj', item('t1'))
-    s.addTab('/proj', item('t2'))
+    s.upsertTab('/proj', item('t1'), true)
+    s.upsertTab('/proj', item('t2'), true)
     s.removeTab('/proj', 't2')
     expect(useTerminalStore.getState().byProject['/proj'].activeId).toBe('t1')
     s.removeTab('/proj', 't1')
@@ -72,9 +72,9 @@ describe('terminal tabs reorder by drag', () => {
 
   it('moves a dragged tab to the drop target slot while keeping the active tab', () => {
     const s = useTerminalStore.getState()
-    s.addTab('/proj', item('t1'))
-    s.addTab('/proj', item('t2'))
-    s.addTab('/proj', item('t3'))
+    s.upsertTab('/proj', item('t1'), true)
+    s.upsertTab('/proj', item('t2'), true)
+    s.upsertTab('/proj', item('t3'), true)
     s.setActive('/proj', 't1')
     s.reorderTabs('/proj', 't1', 't3')
     const proj = useTerminalStore.getState().byProject['/proj']
@@ -84,8 +84,8 @@ describe('terminal tabs reorder by drag', () => {
 
   it('no-ops on unknown ids, same source/target, or missing project', () => {
     const s = useTerminalStore.getState()
-    s.addTab('/proj', item('t1'))
-    s.addTab('/proj', item('t2'))
+    s.upsertTab('/proj', item('t1'), true)
+    s.upsertTab('/proj', item('t2'), true)
     const before = useTerminalStore.getState().byProject
     s.reorderTabs('/proj', 't1', 't1')
     s.reorderTabs('/proj', 't1', 'missing')
@@ -99,9 +99,21 @@ describe('tabs upserted from a remote create keep the current tab', () => {
     useTerminalStore.setState({ openBySession: {}, byProject: {}, instances: new Map() })
   })
 
+  it('keeps a single tab when the terminal_created event lands before the create() result', () => {
+    const s = useTerminalStore.getState()
+    // Main emits terminal_created synchronously inside create(), so the
+    // broadcast reaches the renderer before the IPC invoke resolves.
+    s.upsertTab('/proj', item('t1', 'super-one'))
+    s.upsertTab('/proj', item('t1', 'super-one'), true)
+    s.renameTab('t1', 'user@host')
+    const proj = useTerminalStore.getState().byProject['/proj']
+    expect(proj.tabs.map((t) => t.title)).toEqual(['user@host'])
+    expect(proj.activeId).toBe('t1')
+  })
+
   it('appends a new terminal without stealing the active tab', () => {
     const s = useTerminalStore.getState()
-    s.addTab('/proj', item('t1', 'zsh'))
+    s.upsertTab('/proj', item('t1', 'zsh'), true)
     s.upsertTab('/proj', item('t2', 'npm run dev'))
     const proj = useTerminalStore.getState().byProject['/proj']
     expect(proj.tabs.map((t) => t.terminalId)).toEqual(['t1', 't2'])
@@ -110,7 +122,7 @@ describe('tabs upserted from a remote create keep the current tab', () => {
 
   it('marks a phone as the owner of a tab', () => {
     const s = useTerminalStore.getState()
-    s.addTab('/proj', item('t1'))
+    s.upsertTab('/proj', item('t1'), true)
     s.setTabOwner('t1', 'phone-1')
     expect(useTerminalStore.getState().byProject['/proj'].tabs[0].ownerDeviceId).toBe('phone-1')
     s.setTabOwner('t1', null)
@@ -125,8 +137,8 @@ describe('tab title auto-updates from the shell OSC title sequence', () => {
 
   it('renames the owning project tab when the shell emits a new title', () => {
     const s = useTerminalStore.getState()
-    s.addTab('/proj-a', item('a1', 'zsh'))
-    s.addTab('/proj-b', item('b1', 'zsh'))
+    s.upsertTab('/proj-a', item('a1', 'zsh'), true)
+    s.upsertTab('/proj-b', item('b1', 'zsh'), true)
     s.renameTab('a1', '~/super-one — vitest')
     expect(useTerminalStore.getState().byProject['/proj-a'].tabs[0].title).toBe(
       '~/super-one — vitest',
@@ -136,7 +148,7 @@ describe('tab title auto-updates from the shell OSC title sequence', () => {
 
   it('ignores blank titles and no-ops when the title is unchanged or the terminal is gone', () => {
     const s = useTerminalStore.getState()
-    s.addTab('/proj', item('t1', 'zsh'))
+    s.upsertTab('/proj', item('t1', 'zsh'), true)
     const before = useTerminalStore.getState().byProject
     s.renameTab('t1', '   ')
     s.renameTab('t1', 'zsh')

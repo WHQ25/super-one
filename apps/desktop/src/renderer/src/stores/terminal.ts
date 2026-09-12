@@ -28,7 +28,6 @@ interface TerminalStore {
   instances: Map<string, TermInstance>
   setOpen: (sessionId: string | null, open: boolean) => void
   toggleOpen: (sessionId: string | null) => void
-  addTab: (projectPath: string, item: TerminalListItem) => void
   upsertTab: (projectPath: string, item: TerminalListItem, activate?: boolean) => void
   removeTab: (projectPath: string, terminalId: string) => void
   setActive: (projectPath: string, terminalId: string) => void
@@ -53,17 +52,6 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
     set((s) => {
       const key = sessionKey(sessionId)
       return { openBySession: { ...s.openBySession, [key]: !s.openBySession[key] } }
-    }),
-
-  addTab: (projectPath, item) =>
-    set((s) => {
-      const cur = s.byProject[projectPath] ?? { tabs: EMPTY_TABS, activeId: null }
-      return {
-        byProject: {
-          ...s.byProject,
-          [projectPath]: { tabs: [...cur.tabs, item], activeId: item.terminalId },
-        },
-      }
     }),
 
   upsertTab: (projectPath, item, activate = false) =>

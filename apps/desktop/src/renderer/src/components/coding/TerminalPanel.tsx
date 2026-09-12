@@ -69,7 +69,6 @@ export function TerminalPanel() {
   const instances = useTerminalStore((s) => s.instances)
   const tabs = useTerminalStore((s) => (projectPath ? s.byProject[projectPath]?.tabs : null) ?? EMPTY_TABS)
   const activeId = useTerminalStore((s) => (projectPath ? s.byProject[projectPath]?.activeId : null) ?? null)
-  const addTab = useTerminalStore((s) => s.addTab)
   const upsertTab = useTerminalStore((s) => s.upsertTab)
   const removeTab = useTerminalStore((s) => s.removeTab)
   const setActive = useTerminalStore((s) => s.setActive)
@@ -190,13 +189,13 @@ export function TerminalPanel() {
     creatingRef.current = true
     try {
       const item = await window.terminal.create({ projectPath, sessionId: sessionId ?? undefined })
-      addTab(projectPath, item)
+      upsertTab(projectPath, item, true)
       creatingRef.current = false
     } catch (e) {
       creatingRef.current = false
       throw e
     }
-  }, [projectPath, sessionId, addTab])
+  }, [projectPath, sessionId, upsertTab])
 
   const closeTab = useCallback(
     (terminalId: string) => {

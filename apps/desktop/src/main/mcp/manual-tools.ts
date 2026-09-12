@@ -28,6 +28,7 @@ import productCollaborationMd from './guides/product/collaboration.md?raw'
 import productSessionsMd from './guides/product/sessions.md?raw'
 import productAutomationMd from './guides/product/automation.md?raw'
 import productDevicesMd from './guides/product/devices.md?raw'
+import productShowYourWorkMd from './guides/product/show-your-work.md?raw'
 import productBrowserMd from './guides/product/browser.md?raw'
 import productMemoryMd from './guides/product/memory.md?raw'
 import {
@@ -84,6 +85,7 @@ const PRODUCT_GUIDES = {
   devices: productDevicesMd,
   browser: productBrowserMd,
   memory: productMemoryMd,
+  'show-your-work': productShowYourWorkMd,
 } satisfies Record<ProductGuideTopic, string>
 
 const MINIAPP_TOPIC_SUMMARIES: Record<MiniappGuideTopic, string> = {
@@ -176,11 +178,13 @@ function formatDomainIndex(domain: ManualDomain): string {
       '- devices — device_* loop for phones and tablets: grants, refs vs OCR, settling, batching, waits',
       '- browser — browser_* recording ladder, perf modes, and the saved-action step grammar',
       '- memory — personal browser, computer and device experience: identities, revisions, archive and node isolation',
+      '- show-your-work — screenshots and recordings as evidence: what to capture, how to embed it, what to say under it',
       '',
       'Call `read_manual({ domain: "product", topic: "contribute" })` for issues / PRs.',
       'Call `read_manual({ domain: "product", topic: "debug" })` for logs and local diagnosis.',
       'Call `read_manual({ domain: "product", topic: "collaboration" })` before setting config.cwd or config.worktree in session_collab_request.',
       'Call `read_manual({ domain: "product", topic: "sessions" })` before browsing or cleaning other sessions.',
+      'Call `read_manual({ domain: "product", topic: "show-your-work" })` before reporting work you verified on a device, in the browser or on the desktop.',
     ].join('\n')
   }
   if (domain === 'miniapp') {

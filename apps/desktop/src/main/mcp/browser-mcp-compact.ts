@@ -17,6 +17,7 @@ import {
   BROWSER_TOOLS_CALL_SUMMARY_DESCRIPTION,
   BROWSER_TOOLS_LIST_DESCRIPTION,
 } from './browser-webmcp-tool-defs'
+import { imageNote, recordingNote } from './show-your-work-notes'
 
 const tabField = {
   tab: z
@@ -373,9 +374,13 @@ export function registerCompactBrowserTools(
       })
       if (shot.isError) return shot
       if (!pageReply) return shot
+      // The primitive's own note names `path`; nested under `screenshot` that
+      // field is `screenshot.path`, so the outer note replaces it.
+      const { imageNote: _nested, ...screenshot } = parseJson(shot) as Record<string, unknown>
       return browserTextReply({
-        screenshot: parseJson(shot),
+        screenshot,
         page: replyText(pageReply),
+        imageNote: imageNote('screenshot.path'),
       })
     },
   )
@@ -545,6 +550,7 @@ export function registerCompactBrowserTools(
               width: stopped.width,
               height: stopped.height,
             },
+            recordingNote: recordingNote('recording.savedPath'),
           }),
           ...(actionReply.isError ? { isError: true } : {}),
         }

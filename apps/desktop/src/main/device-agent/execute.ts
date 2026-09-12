@@ -22,6 +22,7 @@ import {
   type ResolvedAction,
   type TouchDeviceBackend,
 } from './types'
+import { imageNote } from '../mcp/show-your-work-notes'
 
 /**
  * What "this screen" means when deciding whether an action did anything.
@@ -260,7 +261,7 @@ export class DeviceAgentSession {
       ...(observation.settled ? {} : { settledNote: UNSETTLED_NOTE }),
       ...(observation.truncated ? { truncated: true } : {}),
       ...sourceNote(observation.root),
-      ...(image ? { image } : {}),
+      ...(image ? { image, imageNote: imageNote('image.path') } : {}),
       ...(observation.treeUnavailable ? { source: 'pixels-only', note: TREE_UNAVAILABLE_NOTE } : {}),
       // Omitted in visual mode so a caller that asked for pixels does not also pay
       // for a tree it said it did not want — and omitted when there was no tree to

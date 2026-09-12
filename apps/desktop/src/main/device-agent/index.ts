@@ -14,6 +14,7 @@ import { releaseDevice } from './release'
 import { listDeviceCatalog } from './device-catalog'
 import type { DevicePlatformPort } from '../device/platform-port'
 import { devicePlatformPorts, deviceSurfaces } from '../device/registry'
+import type { DeviceCapture } from '../device/surface'
 import { getAndroidDeviceManager } from '../device/android'
 import { getMirrorDeviceManager } from '../device/ios-mirror'
 import { DEVICE_GRANTS, type DeviceGrantsPort } from './device-grants'
@@ -21,7 +22,10 @@ import { createDeviceRecents, type DeviceRecentsPort } from './device-recents'
 import { resolveHeldDevice, type HeldDevice } from './target'
 import type { DeviceAgentToolName } from './tools'
 import type { TouchDeviceBackend } from './types'
+import { recordAction } from './record-action'
 import { actionRecordingFromPath, adoptActionRecording } from '../agent/action-recording-store'
+import { recordingNote } from '../mcp/show-your-work-notes'
+
 
 export {
   DEVICE_AGENT_TOOL_NAMES,
@@ -190,7 +194,7 @@ function withRecording(
   return {
     ...replyValue,
     content: [
-      { type: 'text', text: JSON.stringify({ ...body, recording }) },
+      { type: 'text', text: JSON.stringify({ ...body, recording, recordingNote: recordingNote('recording.savedPath') }) },
       ...replyValue.content.filter((item) => item.type !== 'text'),
     ],
   }
@@ -287,25 +291,13 @@ export async function executeDeviceAgentTool(
           const surface = deviceSurfaces(app.getPath('userData')).find((candidate) => candidate.provider === provider)
           if (!surface) throw new Error(`Action recording is unavailable for device ${deviceId}.`)
           const startedAt = Date.now()
-          let recordingStarted = false
-          let actReply: DeviceToolReply
-          try {
-            actReply = await session.act(
-              args as Parameters<DeviceAgentSession['act']>[0],
-              signal,
-              async () => {
-                await surface.startRecording(deviceId)
-                recordingStarted = true
-              },
-            )
-          } catch (error) {
-            // An interrupted or failed action must not leave Android's device-side
-            // screenrecord process (or simctl) running indefinitely.
-            if (recordingStarted) await surface.stopRecording(deviceId).catch(() => null)
-            throw error
-          }
-          if (!recordingStarted) return actReply
-          const capture = await surface.stopRecording(deviceId)
+          const { reply: actReply, capture } = await recordAction<DeviceToolReply, DeviceCapture>({
+            start: async () => { await surface.startRecording(deviceId) },
+            stop: () => surface.stopRecording(deviceId),
+            act: (beforeEffects) => session.act(args as Parameters<DeviceAgentSession['act']>[0], signal, beforeEffects),
+            ...(signal ? { signal } : {}),
+          })
+          if (capture === undefined) return actReply
           if (!capture) {
             throw new Error('The device action ran, but its recording could not be finalized.')
           }

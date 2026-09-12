@@ -58,6 +58,7 @@ export const MANUAL_READ_DESCRIPTION =
   // the ones a model cannot discover after the fact — by then it has already acted.
   'Read product/collaboration before session_collab_request, product/automation before automation_apply, ' +
   'product/devices before device_request_control, product/browser before saving a browser action, ' +
+  'product/show-your-work before reporting work verified with a screenshot or recording, ' +
   'miniapp/overview before mini-app development, and media/overview before provider-specific options. ' +
   'Use config_read for live settings and widget_list_templates for saved widgets.'
 

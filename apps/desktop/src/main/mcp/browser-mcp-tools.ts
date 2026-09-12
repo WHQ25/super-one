@@ -47,6 +47,7 @@ import {
   resolveBrowserToolSurface,
 } from './browser-tool-surface'
 import { readAppSettings, saveAppSettings } from '../app-settings-service'
+import { imageNote } from './show-your-work-notes'
 export { BROWSER_TOOL_NAMES, BROWSER_COMPACT_TOOL_NAMES, BROWSER_LEGACY_TOOL_NAMES }
 
 interface ScreenshotResult {
@@ -846,7 +847,7 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
         const result = (await browserAutomationCall(sessionId, 'screenshot', args)) as ScreenshotResult
         const path = persistScreenshot(result.data, result.mimeType)
         if (!path) return errorReply('Failed to save screenshot to disk.')
-        return textReply({ path, width: result.width, height: result.height })
+        return textReply({ path, width: result.width, height: result.height, imageNote: imageNote('path') })
       } catch (err) {
         return errorReply(err)
       }

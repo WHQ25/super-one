@@ -204,7 +204,8 @@ const toolDefs: Array<{ name: DeviceAgentToolName; description: string; shape: R
       expect: conditionSchema.optional().describe('Postcondition checked after the actions run.'),
       timeoutMs: z.number().int().min(100).max(60_000).optional()
         .describe('Maximum wait for expect before the action is judged. Default 5000.'),
-      recording: z.boolean().optional().describe('Save a video of only this action transaction. Default false.'),
+      recording: z.boolean().optional()
+        .describe('Save a video of this transaction: 1s of the starting screen, the actions, its own settle/expect wait, then 1s more. Put the whole gesture you want on film in this one batch. Not available on iPhone Mirroring. Default false.'),
     },
   },
   {

@@ -3,9 +3,6 @@ import { describe, expect, it, vi } from 'vitest'
 vi.mock('./media-gen/paths', () => ({
   mediaGenOutputRoot: () => '/userData/media-gen/outputs',
 }))
-vi.mock('./agent/action-recording-store', () => ({
-  actionRecordingDir: () => '/userData/recordings',
-}))
 vi.mock('./recent-folders', () => ({
   getRecentFolders: () => [{ path: '/projects/app' }],
 }))
@@ -20,7 +17,7 @@ vi.mock('./path-security', () => ({
 }))
 
 vi.mock('electron', () => ({ app: { getPath: () => '/userData' } }))
-import { builtInCaptureRoots } from './media-output-paths'
+import { builtInCaptureRoots, RECORDING_ROOT } from './media-output-paths'
 
 import { getMediaReadableRoots } from './media-readable-roots'
 
@@ -30,9 +27,17 @@ describe('getMediaReadableRoots', () => {
       '/projects/app',
       '/projects/app/.worktrees/x',
       '/userData/media-gen/outputs',
-      '/userData/recordings',
+      // Screenshots and action recordings both live under the temp roots.
       ...builtInCaptureRoots(),
+      // Still readable: transcripts saved before the move link recordings here.
+      '/userData/recordings',
       '/Users/alice/.grok/sessions',
     ])
+  })
+
+  it('keeps recordings saved under the old userData root playable after the move to temp', () => {
+    const roots = getMediaReadableRoots()
+    expect(roots).toContain('/userData/recordings')
+    expect(roots).toContain(RECORDING_ROOT)
   })
 })

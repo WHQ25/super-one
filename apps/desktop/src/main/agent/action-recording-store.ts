@@ -1,8 +1,8 @@
 import { chmodSync, copyFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import { extname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { app } from 'electron'
 import log from '../logger'
+import { RECORDING_ROOT } from '../media-output-paths'
 
 export type ActionRecordingTarget = 'web' | 'device' | 'computer'
 
@@ -15,8 +15,7 @@ export interface ActionRecording {
 }
 
 export function actionRecordingDir(target?: ActionRecordingTarget): string {
-  const root = join(app.getPath('userData'), 'recordings')
-  return target ? join(root, target) : root
+  return target ? join(RECORDING_ROOT, target) : RECORDING_ROOT
 }
 
 function extensionFor(mimeType: string): 'mp4' | 'webm' {

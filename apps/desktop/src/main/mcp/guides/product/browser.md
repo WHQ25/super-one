@@ -197,3 +197,15 @@ so numbers and objects survive.
 
 `browser_action` does not record your earlier calls — a flow is written, not
 captured. For a one-off click or type, use `browser_act`.
+
+## Showing the result, and closing up
+
+A `browser_snapshot({ include: ["screenshot"] })` screenshot is evidence the
+user can look at; a sentence saying the page looked right is not. Embed the
+screenshot in the reply that reports the check, and say what to look at in it
+— `read_manual({domain:"product",topic:"show-your-work"})`.
+
+Then close the tabs you opened and no longer need: `browser_tabs({ action:
+"close", tab: [...] })` takes one id or an array. Tabs the user had open before
+you started are theirs, and so is one they are reading now — a preview you
+opened for them to look at stays. Capture first, close second.

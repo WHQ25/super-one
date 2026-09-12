@@ -51,6 +51,20 @@ describe('manualReadHandler', () => {
     expect(text).toMatch(/fake sidebar project/i)
   })
 
+  it('returns product show-your-work docs with the embed syntax and the recording rule', async () => {
+    const result = await manualReadHandler({ domain: 'product', topic: 'show-your-work' })
+    const text = result.content[0].text
+    expect(result.isError).not.toBe(true)
+    expect(text).toMatch(/!\[.*\]\(<\//)
+    expect(text).toMatch(/recording: true/)
+    expect(text).toMatch(/user's own media/i)
+    // The path fields differ per tool, and the browser only screenshots on request.
+    expect(text).toMatch(/include: \["screenshot"\]/)
+    expect(text).toMatch(/recording\.savedPath/)
+    expect(text).toMatch(/screenshot\.path/)
+    expect(text).toMatch(/iPhone Mirroring/)
+  })
+
   it('lists collaboration in product domain index', async () => {
     const result = await manualReadHandler({ domain: 'product' })
     expect(result.content[0].text).toMatch(/collaboration/)

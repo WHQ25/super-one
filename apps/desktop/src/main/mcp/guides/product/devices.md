@@ -106,7 +106,37 @@ nothing.
 `rotate` must be the last action in a batch, and the screen must be
 re-snapshotted afterwards — rotation renumbers everything.
 
-Set `recording: true` to save a short video containing only this transaction.
+### Recording
+
+`recording: true` saves a video of this one transaction and returns its path in
+`recording.savedPath`. The clip is padded on both ends: one second of the
+starting screen before the first touch, then the actions, the batch's own
+settle and `expect` wait, and one second more. A clip that opens mid-gesture
+cannot show what changed, so the padding is not optional. iOS Simulator and
+Android record; iPhone Mirroring cannot, and a batch that asks for it there is
+refused before any action runs — take screenshots instead.
+
+Record the whole thing the viewer needs to see, not just the touch. The
+recording covers exactly this batch, so put the entire scene in it — a tap
+followed by the typing it enables, a swipe and the tap on what it revealed —
+rather than filming a single tap and describing the rest. Get the screen into
+its starting state with unrecorded calls first; nothing before this batch is
+on film. Choose `expect` for the *finished* state (the row that appears once a
+list has loaded, the sheet's title once it has slid in), because the tail
+starts as soon as the batch returns — and it returns when `expect` holds, or
+when it times out, or when the screen never settled. An element that exists
+from the first frame of a transition ends the clip while it is still moving.
+Read `outcome`, `expectMet` and `settled` on the result before calling the
+clip proof of anything: a timed-out `expect` or `settled: false` is a reason to
+record again, not to describe what the viewer should have seen.
+
+A scene that spans several calls (tap, wait for a load, tap again) does not fit
+one batch; record the steps that matter individually, and say which is which
+when you hand them over.
+
+Screenshots and recordings are for the user as much as for you: embed them in
+the reply that reports the result. `read_manual({domain:"product",topic:"show-your-work"})`
+is the method.
 
 The result is `worked` / `didnt` / `unknown`. Pass `expect` to define what
 success means, and the tool waits for it rather than guessing.

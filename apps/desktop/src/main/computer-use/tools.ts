@@ -16,6 +16,7 @@ import type { CapturedImage } from './types'
 import { encode as toonEncode } from '@toon-format/toon'
 import { createActionRecordingPath } from '../agent/action-recording-store'
 import { outlineToToon } from './outline-toon'
+import { imageNote, recordingNote } from '../mcp/show-your-work-notes'
 
 export const COMPUTER_USE_TOOL_NAMES = [
   'computer_apps',
@@ -101,7 +102,8 @@ function toAgentImage(
 /** Swap in path-only (possibly JPEG-optimized) image; keep capture coordinateSpace. */
 function withAgentImages<T extends { image?: CapturedImage }>(result: T, screenshotDir: string): T {
   if (!result.image) return result
-  return { ...result, image: toAgentImage(result.image, screenshotDir) }
+  const image = toAgentImage(result.image, screenshotDir)
+  return { ...result, image, ...(image?.path ? { imageNote: imageNote('image.path') } : {}) }
 }
 
 function errorReply(err: unknown): ComputerUseToolReply {
@@ -226,7 +228,7 @@ const toolDefs: Array<{
       'Capture an immutable UI snapshot and return stateId (analogous to browser_snapshot for desktop apps). '
       + 'All subsequent query/act/wait_for calls must reference this stateId. '
       + 'mode=visual (and fused) saves the image to a temporary file and returns image.path (not base64). '
-      + 'The image is NOT loaded into your context automatically; call Read on image.path if you need to look at pixels, or leave the path as a record for the user. '
+      + 'The image is NOT loaded into your context automatically; call Read on image.path if you need to look at pixels, and embed image.path in your reply when it is evidence of the result (read_manual product/show-your-work). '
       + 'mode=semantic returns accessibility outline with @eN refs (no image). mode=fused = screenshot + AX. '
       + 'The outline is a TOON table, not JSON: a header row outline[N]{ref,depth,role,name,value,x,y,w,h,can,state}: '
       + 'followed by one CSV-style row per node, in depth-first reading order. '
@@ -775,7 +777,11 @@ async function executeComputerUseToolInner(
         if (successorImage?.path) {
           service.alignStateVisual(result.successorStateId, successorImage)
         }
-        return textReply({ ...result, successorImage })
+        return textReply({
+          ...result,
+          successorImage,
+          ...(result.recording ? { recordingNote: recordingNote('recording.savedPath') } : {}),
+        })
       }
       case 'computer_wait_for': {
         const condition = parseCondition(args.condition)

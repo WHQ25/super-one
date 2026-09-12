@@ -51,6 +51,12 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Remote nodes install the same Claude and Cursor Agent SDK versions the
   desktop bundles; the managed pins are now checked against the workspace
   dependencies.
+- Terminal: a tab no longer shows up twice when the PTY's created event
+  reaches the renderer before the create call returns.
+- Codex: a thread whose rollout file is still empty when its metadata is
+  first read is retried instead of failing the start.
+- Chat: follow-to-bottom stays pinned through tall live turns, and pauses
+  only on a real upward scroll — not a horizontal pan.
 
 ### Changed
 

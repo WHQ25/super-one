@@ -763,8 +763,11 @@ export function MobileApp() {
 
   /**
    * Tapping a device it could not reach used to fail with a transport error.
-   * Probe once first so an offline desktop is named as such, and prefer the
-   * address discovery just found over the one stored at pairing time.
+   * Probe once first so an offline desktop is named as such, and dial only the
+   * LAN address discovery just confirmed. The address stored at pairing time is
+   * a probe candidate, never a dial target: off the desktop's network it is a
+   * dead route, and dialling it would time out where the relay would have
+   * connected — the row said Online because the relay answered.
    */
   const connectToPairing = async (item: SavedPairing) => {
     if (connectingPairingId) return
@@ -777,7 +780,7 @@ export function MobileApp() {
         }
       }
       const discovered = discovery.lanAddressOf(item.id)
-      const lanHostPort = discovered ? `${discovered.host}:${discovered.port}` : item.lan || lan
+      const lanHostPort = discovered ? `${discovered.host}:${discovered.port}` : undefined
       await connectWithSecret(item.relayUrl, item.secret, lanHostPort, item.hostName, item.desktopDeviceId)
     } catch {
       // The device row moves from Connecting back to Offline; connection

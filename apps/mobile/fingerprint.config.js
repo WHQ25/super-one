@@ -31,5 +31,5 @@ module.exports = {
   // number is excluded -- `app.config.js` stays hashed, so real config logic
   // is still covered. Keep `build-code.js` free of anything but the constant
   // and its fan-out.
-  ignorePaths: ['build-code.js'],
+  ignorePaths: ['build-code.js', '**/node_modules/react-native-quick-crypto/ios/**/*'],
 }

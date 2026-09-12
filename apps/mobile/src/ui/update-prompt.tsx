@@ -1,10 +1,11 @@
-import { ArrowRight, Download, ShieldAlert } from 'lucide-react-native'
+import { ArrowRight, Download, RefreshCw, ShieldAlert } from 'lucide-react-native'
 import { StyleSheet, View } from 'react-native'
 import { Text } from './text'
 import { Button, Sheet } from './primitives'
 import { useMobileTheme } from '../theme/context'
 import { useMobileLocale } from '../i18n/context'
 import type { UpdateFailure, UpdateFlowActions, UpdateFlowState } from '../updates/use-update-check'
+import type { OtaView } from '../updates/ota-update-state'
 import {
   formatBuildLabel,
   formatDownloadPercent,
@@ -213,5 +214,53 @@ export function UpdatePrompt({
     <Sheet visible title="Update available" icon={Download} onDismiss={actions.dismiss}>
       <UpdateBody state={state} actions={actions} />
     </Sheet>
+  )
+}
+
+/**
+ * The JS-bundle update, which needs nothing from the user: it appears when a
+ * download is under way and the app restarts by itself once the bundle is on
+ * disk. Same gate as a required update, because a restart is seconds away and
+ * anything typed underneath it would be lost.
+ */
+export function OtaUpdatePrompt({ view }: { view: OtaView }) {
+  const { colors, styles } = useUpdateStyles()
+  const { t } = useMobileLocale()
+
+  if (view.phase === 'hidden') return null
+
+  const fraction = view.phase === 'downloading' ? view.fraction : 1
+  return (
+    <View
+      testID="ota-update-gate"
+      accessibilityViewIsModal
+      accessibilityLabel={t('Updating SuperOne')}
+      style={styles.gate}
+    >
+      <View style={styles.gateCard}>
+        <View style={styles.versionRow}>
+          <RefreshCw size={18} color={colors.primary} />
+          <Text style={styles.gateTitle}>{t('Updating SuperOne')}</Text>
+        </View>
+        <View style={styles.body}>
+          <Text style={styles.lead}>
+            {t('A newer version is being installed. This takes a moment and needs nothing from you.')}
+          </Text>
+          <View style={{ gap: 6 }}>
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>
+                {t(view.phase === 'restarting' ? 'Restarting…' : 'Downloading…')}
+              </Text>
+              <Text testID="ota-update-progress" style={styles.metaValue}>
+                {formatDownloadPercent(fraction)}
+              </Text>
+            </View>
+            <View style={styles.track}>
+              <View style={[styles.fill, { width: `${Math.round((fraction ?? 0) * 100)}%` }]} />
+            </View>
+          </View>
+        </View>
+      </View>
+    </View>
   )
 }

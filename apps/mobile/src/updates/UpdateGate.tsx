@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react'
 import { View } from 'react-native'
 import type { Kv } from '@superone/relay-client'
-import { UpdatePrompt } from '../ui/update-prompt'
+import { OtaUpdatePrompt, UpdatePrompt } from '../ui/update-prompt'
 import { UpdateStatusProvider } from './update-context'
+import { useOtaUpdate } from './use-ota-update'
 import { useUpdateCheck } from './use-update-check'
 import type { UpdatePorts } from './update-ports'
 
@@ -30,10 +31,13 @@ export function UpdateGate({
   children: ReactNode
 }) {
   const status = useUpdateCheck(ports, store)
+  const ota = useOtaUpdate(ports.ota)
   return (
     <View style={{ flex: 1 }}>
       <UpdateStatusProvider value={status}>{children}</UpdateStatusProvider>
       <UpdatePrompt state={status.state} actions={status.actions} />
+      {/* Last, so a bundle restart that is seconds away covers even a binary prompt. */}
+      <OtaUpdatePrompt view={ota} />
     </View>
   )
 }

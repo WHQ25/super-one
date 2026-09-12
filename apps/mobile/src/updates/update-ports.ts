@@ -10,6 +10,7 @@ import {
   type MobileUpdatePlatform,
 } from '@superone/shared/mobile-updates'
 import { downloadFraction, UpdateDownloadError, verifyDownload } from './update-download-state'
+import { OTA_IDLE, type OtaNativeState } from './ota-update-state'
 
 /**
  * Everything the updater needs from the phone, injected rather than imported
@@ -68,8 +69,26 @@ export type UpdateDownload = {
   cancel: () => void
 }
 
+/**
+ * The JS-bundle updater. expo-updates checks and downloads on its own at
+ * launch; these ports expose that lifecycle and add the two things it does not
+ * do by itself -- re-check when the app comes back to the foreground, and
+ * restart onto the downloaded bundle.
+ */
+export interface OtaPorts {
+  /** False in dev clients and Metro-served builds, where there is no bundle to update. */
+  enabled: boolean
+  snapshot(): OtaNativeState
+  subscribe(listener: (state: OtaNativeState) => void): () => void
+  /** Check and, when something is published, download it. Resolves once the native side has it. */
+  checkAndFetch(): Promise<void>
+  /** Restart onto the downloaded bundle. Resolving means the restart was refused, not that it happened. */
+  reload(): Promise<void>
+}
+
 export interface UpdatePorts {
   environment: UpdateEnvironment
+  ota: OtaPorts
   fetchManifest(): Promise<MobileUpdateManifest | null>
   /** Free bytes on the volume the download lands on, or null if unreadable. */
   freeDiskBytes(): number | null
@@ -121,11 +140,41 @@ function updatesDirectory(): Directory {
   return new Directory(Paths.cache, CACHE_DIRECTORY)
 }
 
+function otaStateFrom(context: Updates.UpdatesNativeStateMachineContext | undefined): OtaNativeState {
+  if (!context) return OTA_IDLE
+  return {
+    isUpdateAvailable: context.isUpdateAvailable,
+    isDownloading: context.isDownloading,
+    isUpdatePending: context.isUpdatePending,
+    isRestarting: context.isRestarting,
+    downloadProgress: context.downloadProgress,
+    hasDownloadError: context.downloadError !== undefined,
+  }
+}
+
+function createOtaPorts(): OtaPorts {
+  const enabled = Updates.isEnabled && !__DEV__ && process.env.EXPO_PUBLIC_NATIVE_PREVIEW !== '1'
+  return {
+    enabled,
+    snapshot: () => otaStateFrom(Updates.latestContext),
+    subscribe(listener) {
+      const subscription = Updates.addUpdatesStateChangeListener((event) => listener(otaStateFrom(event.context)))
+      return () => subscription.remove()
+    },
+    async checkAndFetch() {
+      const result = await Updates.checkForUpdateAsync()
+      if (result.isAvailable) await Updates.fetchUpdateAsync()
+    },
+    reload: () => Updates.reloadAsync(),
+  }
+}
+
 export function createUpdatePorts(): UpdatePorts {
   const environment = resolveEnvironment()
 
   return {
     environment,
+    ota: createOtaPorts(),
 
     async fetchManifest() {
       return fetchMobileUpdateManifest({ platform: environment.platform })

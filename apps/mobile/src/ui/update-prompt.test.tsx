@@ -4,7 +4,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context'
 import type { ReactElement } from 'react'
 import type { Locale } from '@superone/shared/agent-types'
 import { renderWithTheme } from '../test-render'
-import { UpdatePrompt } from './update-prompt'
+import { OtaUpdatePrompt, UpdatePrompt } from './update-prompt'
 import { fakeAndroidManifest, fakeIosManifest } from '../preview/fake-update-ports'
 import type { UpdateFlowActions, UpdateFlowState } from '../updates/use-update-check'
 
@@ -135,4 +135,24 @@ test('translates the whole prompt', async () => {
   expect(screen.getByText('稍后')).toBeTruthy()
   // Numbers stay outside the translation, so they read the same in both locales.
   expect(screen.getByTestId('update-next-build')).toHaveTextContent('1.1.0 (48)')
+})
+
+test('the OTA gate renders nothing until an update is known', async () => {
+  await renderPrompt(<OtaUpdatePrompt view={{ phase: 'hidden' }} />)
+  expect(screen.queryByTestId('ota-update-gate')).toBeNull()
+})
+
+test('the OTA gate shows progress and offers no controls', async () => {
+  await renderPrompt(<OtaUpdatePrompt view={{ phase: 'downloading', fraction: 0.38 }} />)
+  expect(screen.getByTestId('ota-update-gate')).toBeTruthy()
+  expect(screen.getByText('Updating SuperOne')).toBeTruthy()
+  expect(screen.getByTestId('ota-update-progress')).toHaveTextContent('38%')
+  expect(screen.queryByRole('button')).toBeNull()
+})
+
+test('the OTA gate says it is restarting once the bundle is on disk', async () => {
+  await renderPrompt(<OtaUpdatePrompt view={{ phase: 'restarting' }} />, 'zh')
+  expect(screen.getByText('正在更新 SuperOne')).toBeTruthy()
+  expect(screen.getByText('正在重启…')).toBeTruthy()
+  expect(screen.getByTestId('ota-update-progress')).toHaveTextContent('100%')
 })

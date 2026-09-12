@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
 import { Pressable, ScrollView, View } from 'react-native'
 import { Text } from '../ui/text'
-import { UpdatePrompt } from '../ui/update-prompt'
+import { OtaUpdatePrompt, UpdatePrompt } from '../ui/update-prompt'
 import { useMobileTheme } from '../theme/context'
+import type { OtaView } from '../updates/ota-update-state'
 import type { UpdateFlowActions, UpdateFlowState } from '../updates/use-update-check'
 import { fakeAndroidManifest, fakeIosManifest } from './fake-update-ports'
 
@@ -14,7 +15,9 @@ import { fakeAndroidManifest, fakeIosManifest } from './fake-update-ports'
  * hand would mean publishing a broken manifest on purpose.
  */
 
-type Scenario = { id: string; label: string; state: UpdateFlowState }
+type Scenario =
+  | { id: string; label: string; state: UpdateFlowState }
+  | { id: string; label: string; ota: OtaView }
 
 const ANDROID = fakeAndroidManifest()
 const IOS = fakeIosManifest()
@@ -96,6 +99,21 @@ const SCENARIOS: Scenario[] = [
       currentBuildCode: 29,
     },
   },
+  {
+    id: 'ota-downloading',
+    label: 'OTA · downloading 38%, nothing to press',
+    ota: { phase: 'downloading', fraction: 0.38 },
+  },
+  {
+    id: 'ota-starting',
+    label: 'OTA · found, bytes not moving yet',
+    ota: { phase: 'downloading', fraction: 0 },
+  },
+  {
+    id: 'ota-restarting',
+    label: 'OTA · on disk, restarting',
+    ota: { phase: 'restarting' },
+  },
 ]
 
 export function UpdatePromptGallery() {
@@ -140,7 +158,9 @@ export function UpdatePromptGallery() {
           {lastAction}
         </Text>
       </ScrollView>
-      <UpdatePrompt state={selected.state} actions={actions} />
+      {'ota' in selected
+        ? <OtaUpdatePrompt view={selected.ota} />
+        : <UpdatePrompt state={selected.state} actions={actions} />}
     </View>
   )
 }

@@ -42,3 +42,11 @@ export const RequiredDownloading = {
 export const IosTestFlight = {
   name: 'iOS · no self-install, so the action opens TestFlight',
 }
+
+export const OtaDownloading = {
+  name: 'OTA · automatic gate with progress and no controls',
+}
+
+export const OtaRestarting = {
+  name: 'OTA · bundle on disk, restarting by itself',
+}

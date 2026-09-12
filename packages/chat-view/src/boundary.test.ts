@@ -17,7 +17,8 @@ describe('chat-view package boundary', () => {
       if (/from\s+['"]@\//.test(source)) hits.push(`${name}:desktop-alias`)
       if (/from\s+['"]zustand/.test(source)) hits.push(`${name}:zustand`)
       if (/from\s+['"]electron/.test(source)) hits.push(`${name}:electron`)
-      if (/\bwindow\s*\./.test(source)) hits.push(`${name}:window`)
+      // Desktop's preload bridges, by name: DOM `window` (scroll, resize) is this renderer's own.
+      if (/\bwindow\.(agent|app|browserHost|electron|environment|miniapp|terminal)\b/.test(source)) hits.push(`${name}:window`)
       if (/ChatInput|<textarea/.test(source)) hits.push(`${name}:composer`)
     }
 

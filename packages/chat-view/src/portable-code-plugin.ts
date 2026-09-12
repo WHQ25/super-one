@@ -78,9 +78,12 @@ const ALIASES: Record<string, string> = {
 export function resolveLanguage(raw: string): string | null {
   const value = raw.trim().toLowerCase()
   if (!value) return null
-  if (loaded.has(value)) return value
+  // Aliases first: shiki registers a grammar's own aliases (`js`, `sh`, and
+  // `ts` via an embedded typescript) as loaded names, so checking `loaded`
+  // first would hand back the alias instead of the curated grammar.
   const alias = ALIASES[value]
-  return alias && loaded.has(alias) ? alias : null
+  if (alias && loaded.has(alias)) return alias
+  return loaded.has(value) ? value : null
 }
 
 export function createPortableCodePlugin(theme: 'github-dark' | 'github-light'): CodeHighlighterPlugin {

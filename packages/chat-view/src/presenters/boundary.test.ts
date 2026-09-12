@@ -18,8 +18,10 @@ describe('chat presenter boundary (WP-15)', () => {
       if (/from\s+['"]zustand/.test(source)) hits.push(`${name}:zustand`)
       if (/from\s+['"]electron/.test(source)) hits.push(`${name}:electron`)
       if (/from\s+['"]\.\.\//.test(source)) hits.push(`${name}:parent-import`)
-      if (/from\s+['"].*ToolBlock/.test(source)) hits.push(`${name}:tool-block`)
-      if (/\bwindow\s*\./.test(source)) hits.push(`${name}:window`)
+      // Desktop's concrete ToolBlock UI; a sibling presenter that happens to carry the name is fine.
+      if (/from\s+['"](?!\.\/)[^'"]*ToolBlock/.test(source)) hits.push(`${name}:tool-block`)
+      // Desktop's preload bridges, by name: DOM `window` (scroll, resize) is this renderer's own.
+      if (/\bwindow\.(agent|app|browserHost|electron|environment|miniapp|terminal)\b/.test(source)) hits.push(`${name}:window`)
     }
 
     expect(hits).toEqual([])

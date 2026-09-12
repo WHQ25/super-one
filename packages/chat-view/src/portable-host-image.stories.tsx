@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import type { ImageGenerationItem } from '@superone/shared/agent-types'
 import { installHostBridge } from './bridge'
 import { PortableHostImage } from './PortableHostImage'
+import { PortableImageGallery } from './PortableMediaGalleries'
 import { PortableNativeGallery } from './PortableNativeGallery'
 
 type HostMode = 'lan' | 'relay' | 'unavailable' | 'slow' | 'pending'
@@ -108,26 +110,61 @@ export const Loading: Story = {
 }
 
 export const LoadingGalleryTile: Story = {
-  name: 'Loading · in a gallery tile, which is shorter',
+  name: 'Loading · in a gallery tile',
   args: {
     mode: 'pending',
     path: '/Users/me/proj/media/pending-tile.png',
-    className: 'flex min-h-20 w-full flex-col items-center justify-center gap-1.5 overflow-hidden rounded-md border border-border/50 bg-background/60 p-2 text-center',
+    className: 'h-48 flex w-40 flex-none flex-col items-center justify-center gap-1.5 overflow-hidden rounded-md border border-border bg-muted/30 p-2 text-center',
   },
 }
 
+const GENERATED = (id: string, extra: Partial<ImageGenerationItem> = {}): ImageGenerationItem => ({
+  id, type: 'image_generation', status: 'completed', savedPath: `/Users/me/proj/media/${id}-${Date.now()}.png`, ...extra,
+})
+
 export const Gallery: Story = {
-  name: 'Generated-image gallery · two thumbnails',
+  name: 'Turn-end gallery · one image, as the desktop block lays it out',
+  render: () => (
+    <PortableImageGallery
+      items={[GENERATED('astronaut', {
+        revisedPrompt: 'An astronaut tending a glowing bonsai on the Moon',
+        generationMs: 14_320,
+        params: [{ key: 'provider', value: 'openai' }, { key: 'model', value: 'gpt-image-1' }, { key: 'size', value: '1024x1536' }],
+      })]}
+    />
+  ),
+}
+
+export const GalleryMany: Story = {
+  name: 'Turn-end gallery · tiles wrap; a failed and a pending item keep their slot',
+  render: () => (
+    <PortableImageGallery
+      items={[
+        GENERATED('concept-a'),
+        GENERATED('concept-b'),
+        GENERATED('concept-c'),
+        { id: 'failed', type: 'image_generation', status: 'failed', revisedPrompt: 'A prompt the provider refused' },
+        { id: 'pending', type: 'image_generation', status: 'in_progress' },
+      ]}
+    />
+  ),
+}
+
+export const GalleryRelay: Story = {
+  name: 'Turn-end gallery · relay, chips wait for a Load tap',
+  args: { mode: 'relay' },
+  render: () => <PortableImageGallery items={[GENERATED('relay-a'), GENERATED('relay-b')]} />,
+}
+
+export const NativeWidgetGallery: Story = {
+  name: 'widget_show native gallery · agent-titled',
   render: () => (
     <PortableNativeGallery
       payload={{
         kind: 'native',
         nativeType: 'image-gallery',
-        title: 'Generated images',
-        images: [
-          { id: 'a', type: 'image_generation', status: 'completed', savedPath: `/Users/me/proj/media/concept-a-${Date.now()}.png` },
-          { id: 'b', type: 'image_generation', status: 'completed', savedPath: `/Users/me/proj/media/concept-b-${Date.now()}.png` },
-        ],
+        title: 'Concept sheet',
+        images: [GENERATED('sheet-a'), GENERATED('sheet-b')],
       }}
     />
   ),

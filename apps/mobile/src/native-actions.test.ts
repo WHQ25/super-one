@@ -137,6 +137,21 @@ describe('native chat actions', () => {
     expect(target.previewImage).toHaveBeenLastCalledWith({ src: 'https://example.com/a.png' })
   })
 
+  it('forwards a generated image\'s facts to the viewer and drops malformed ones', async () => {
+    const target = ports()
+    const generation = { revisedPrompt: 'astronaut', generationMs: 1200, params: [{ key: 'model', value: 'gpt-image-1' }] }
+    await resolveNativeRequest({
+      type: 'requestNative', requestId: 'gen', action: 'previewImage',
+      payload: { src: 'data:image/png;base64,AA==', label: 'Generated image', path: '/media/a.png', generation },
+    }, target)
+    expect(target.previewImage).toHaveBeenLastCalledWith({ src: 'data:image/png;base64,AA==', label: 'Generated image', path: '/media/a.png', generation })
+    await resolveNativeRequest({
+      type: 'requestNative', requestId: 'junk', action: 'previewImage',
+      payload: { src: 'data:image/png;base64,AA==', generation: { params: 'nope', generationMs: -1 } },
+    }, target)
+    expect(target.previewImage).toHaveBeenLastCalledWith({ src: 'data:image/png;base64,AA==' })
+  })
+
   it('refuses a viewer source that is not an image the phone can show', async () => {
     const target = ports()
     await expect(resolveNativeRequest({

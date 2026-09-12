@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Download, Loader2, X, Info, ChevronLeft, ChevronRight, Copy, FolderOpen, MessageSquarePlus, ClipboardCopy, ImageIcon } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '@superone/ui/components/ui/dialog'
@@ -15,6 +16,7 @@ import { SelectionContextMenuZone } from './SelectionContextMenu'
 import { chatInputAPI } from './chat-input-api'
 import { useAppStore } from '@/stores/app'
 import type { ImageGenerationItem, MediaProviderStatus } from '@superone/shared/agent-types'
+import { resolveMediaModelLabel, resolveMediaProviderLabel } from '@superone/shared/media-provider-labels'
 
 /** Path used for gallery thumbs — prefers the downscaled preview when present. */
 export function imageThumbPath(item: ImageGenerationItem): string | undefined {
@@ -100,6 +102,16 @@ function basename(path: string): string {
   return slash >= 0 ? path.slice(slash + 1) : path
 }
 
+/** Put a generation prompt on the clipboard and say so; shared by the context menu and the info panel. */
+export async function copyImagePrompt(prompt: string, t: (key: string, options?: Record<string, unknown>) => string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(prompt)
+    toast.success(t('chat.image.promptCopied'))
+  } catch (error) {
+    toast.error(t('chat.image.copyFailed', { error: String(error) }))
+  }
+}
+
 export function useImageMenuItems({ savedPath, prompt, downloadable }: { savedPath: string; prompt?: string; downloadable?: boolean }): AdaptiveMenuEntry[] {
   const { t } = useTranslation()
   const handleCopy = async () => {
@@ -109,12 +121,7 @@ export function useImageMenuItems({ savedPath, prompt, downloadable }: { savedPa
   }
   const handleCopyPrompt = async () => {
     if (!prompt) return
-    try {
-      await navigator.clipboard.writeText(prompt)
-      toast.success(t('chat.image.promptCopied'))
-    } catch (error) {
-      toast.error(t('chat.image.copyFailed', { error: String(error) }))
-    }
+    await copyImagePrompt(prompt, t)
   }
   const handleDownload = async () => {
     const defaultDir = useAppStore.getState().currentFolder ?? undefined
@@ -232,7 +239,7 @@ const PARAM_LABEL_KEYS: Record<string, string> = {
 let mediaProvidersCache: MediaProviderStatus[] | null = null
 let mediaProvidersPromise: Promise<MediaProviderStatus[]> | null = null
 
-function useMediaProviderMap(enabled: boolean): Map<string, MediaProviderStatus> {
+function useMediaProviders(enabled: boolean): MediaProviderStatus[] {
   const [providers, setProviders] = useState<MediaProviderStatus[]>(mediaProvidersCache ?? [])
   useEffect(() => {
     if (!enabled || mediaProvidersCache) return
@@ -249,35 +256,22 @@ function useMediaProviderMap(enabled: boolean): Map<string, MediaProviderStatus>
     mediaProvidersPromise.then((list) => { if (!cancelled) setProviders(list) }).catch(() => {})
     return () => { cancelled = true }
   }, [enabled])
-  return useMemo(() => new Map(providers.map((p) => [p.id, p])), [providers])
+  return providers
 }
 
-function ProviderParamValue({ id, providerMap }: { id: string; providerMap: Map<string, MediaProviderStatus> }) {
-  const info = providerMap.get(id)
-  if (!info) return <dd className="break-all text-right text-foreground">{id}</dd>
+function ProviderParamValue({ id, providers }: { id: string; providers: MediaProviderStatus[] }) {
+  const { name, badge } = resolveMediaProviderLabel(id, providers)
+  if (!badge) return <dd className="break-all text-right text-foreground">{name}</dd>
   return (
     <dd className="flex flex-wrap items-center justify-end gap-1.5">
-      <span className="text-foreground">{info.providerLabel ?? info.label}</span>
-      {info.providerLabel && (
-        <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{info.label}</span>
-      )}
+      <span className="text-foreground">{name}</span>
+      <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{badge}</span>
     </dd>
   )
 }
 
-function resolveModelLabel(modelId: string, providerId: string | undefined, providerMap: Map<string, MediaProviderStatus>): string {
-  const preferred = providerId ? providerMap.get(providerId)?.models : undefined
-  const inPreferred = preferred?.find((m) => m.id === modelId)
-  if (inPreferred) return inPreferred.label
-  for (const provider of providerMap.values()) {
-    const match = provider.models.find((m) => m.id === modelId)
-    if (match) return match.label
-  }
-  return modelId
-}
-
-function ModelParamValue({ id, providerId, providerMap }: { id: string; providerId?: string; providerMap: Map<string, MediaProviderStatus> }) {
-  const label = resolveModelLabel(id, providerId, providerMap)
+function ModelParamValue({ id, providerId, providers }: { id: string; providerId?: string; providers: MediaProviderStatus[] }) {
+  const label = resolveMediaModelLabel(id, providerId, providers)
   return <dd className="break-all text-right text-foreground" title={id}>{label}</dd>
 }
 
@@ -335,7 +329,7 @@ export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }:
   const [downloadStatus, setDownloadStatus] = useState<string | null>(null)
   const [dims, setDims] = useState<{ width: number; height: number } | null>(null)
   const [infoOpen, setInfoOpen] = useState(false)
-  const providerMap = useMediaProviderMap(infoOpen)
+  const providers = useMediaProviders(infoOpen)
   const providerParamId = item?.params?.find((p) => p.key === 'provider')?.value
 
   const menuItems = useImageMenuItems({ savedPath: fullPath ?? '', prompt: item?.revisedPrompt, downloadable: true })
@@ -497,9 +491,9 @@ export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }:
                         {PARAM_LABEL_KEYS[p.key] ? t(PARAM_LABEL_KEYS[p.key]) : p.key}
                       </dt>
                       {p.key === 'provider' ? (
-                        <ProviderParamValue id={p.value} providerMap={providerMap} />
+                        <ProviderParamValue id={p.value} providers={providers} />
                       ) : p.key === 'model' ? (
-                        <ModelParamValue id={p.value} providerId={providerParamId} providerMap={providerMap} />
+                        <ModelParamValue id={p.value} providerId={providerParamId} providers={providers} />
                       ) : (
                         <dd className="break-all text-right text-foreground">{p.value}</dd>
                       )}
@@ -533,8 +527,19 @@ export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }:
               )}
               {item.revisedPrompt && (
                 <SelectionContextMenuZone className="border-t pt-2">
-                  <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    {t('chat.image.prompt')}
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      {t('chat.image.prompt')}
+                    </span>
+                    <IconButton
+                      size="xs"
+                      variant="ghost"
+                      tooltip={t('chat.image.copyPrompt')}
+                      aria-label={t('chat.image.copyPrompt')}
+                      onClick={() => { void copyImagePrompt(item.revisedPrompt!, t) }}
+                    >
+                      <ClipboardCopy />
+                    </IconButton>
                   </div>
                   <div className="max-h-48 overflow-y-auto leading-relaxed">
                     {item.revisedPrompt}

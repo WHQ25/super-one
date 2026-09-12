@@ -10,6 +10,7 @@ import {
   imagePreviewFileName,
   isPreviewableImageSource,
   parseImageDataUri,
+  parseImageGenerationInfo,
   pinchTransform,
   quarterTurnTransform,
   rotatedFit,
@@ -19,6 +20,31 @@ import {
 } from './image-preview-state'
 
 const viewport = { width: 400, height: 800 }
+
+describe('generation info off the bridge', () => {
+  it('keeps every well-formed field and nothing else', () => {
+    expect(parseImageGenerationInfo({
+      revisedPrompt: 'astronaut',
+      generationMs: 1200,
+      params: [{ key: 'model', value: 'gpt-image-1' }, { key: 'size' }, 'junk'],
+      referenceImagePaths: ['/refs/a.png'],
+      warnings: ['rewritten'],
+      extra: true,
+    })).toEqual({
+      revisedPrompt: 'astronaut',
+      generationMs: 1200,
+      params: [{ key: 'model', value: 'gpt-image-1' }],
+      referenceImagePaths: ['/refs/a.png'],
+      warnings: ['rewritten'],
+    })
+  })
+
+  it('answers undefined when nothing survives, so no info button appears', () => {
+    expect(parseImageGenerationInfo(undefined)).toBeUndefined()
+    expect(parseImageGenerationInfo('astronaut')).toBeUndefined()
+    expect(parseImageGenerationInfo({ revisedPrompt: '', generationMs: -5, params: [], warnings: [1] })).toBeUndefined()
+  })
+})
 
 describe('image preview sources', () => {
   it('accepts inline image bytes and public URLs only', () => {

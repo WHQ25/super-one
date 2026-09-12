@@ -358,6 +358,16 @@ export interface ImageGenerationItem {
 }
 
 /**
+ * What a fullscreen viewer's info panel shows about a generated image — everything an
+ * `ImageGenerationItem` knows beyond the bytes. Both a Codex-native ImageGen and a
+ * `media_generate_image` result land in this shape, so one panel covers both.
+ */
+export type ImageGenerationInfo = Pick<
+  ImageGenerationItem,
+  'revisedPrompt' | 'generationMs' | 'params' | 'referenceImagePaths' | 'warnings'
+>
+
+/**
  * A video produced by `media_generate_video`. Unlike an image it is rendered from disk rather than
  * inlined, and it stays `in_progress` across two tool calls — the submit and the status poll — so
  * the placeholder card is visible for the minutes the render takes.
@@ -3443,6 +3453,11 @@ export interface MediaProviderStatus {
   hasEnvKey: boolean
 }
 
+/** The part of a `MediaProviderStatus` a viewer needs to name a provider or model. */
+export type MediaProviderLabel = Pick<MediaProviderStatus, 'id' | 'label' | 'providerLabel' | 'models'>
+
+export type ListMediaProvidersResponse = { providers: MediaProviderLabel[] } | { error: string }
+
 export interface UpsertMediaProviderRequest {
   id?: string
   label: string
@@ -4594,6 +4609,12 @@ export type RemoteCommand =
   | { type: 'upload_file'; requestId: string; projectPath?: string; sessionId?: string; targetDir: string; name: string; mimeType: string; size: number; inlineBase64?: string }
   | { type: 'upload_file_complete'; requestId: string }
   | { type: 'list_providers'; requestId: string }
+  /**
+   * Provider and model display names for the media catalogue, so a phone can
+   * label a generated image's `provider` / `model` params the way the desktop
+   * viewer does. Labels only — no keys, URLs or configuration ride along.
+   */
+  | { type: 'list_media_providers'; requestId: string }
   | { type: 'set_session_api_provider_id'; projectPath: string; sessionId: string; apiProviderId: string | null }
   | { type: 'terminal_create'; requestId: string; projectPath: string; sessionId?: string }
   /**

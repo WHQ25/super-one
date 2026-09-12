@@ -43,6 +43,7 @@ import {
   type CreateCredentialInput,
   type UpdateCredentialInput,
 } from '../providers/credential-store'
+import { getMediaProviderStatuses } from '../media-gen/settings-service'
 import type { CapabilityTask, ConsumerBinding, ConsumerId, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
 import { sanitizeGitRef } from '../path-security'
 import { authorizeAndStat, FileBridgeError, readPreferInline, type AuthorizedFile } from '../file-bridge'
@@ -1909,6 +1910,18 @@ export class AgentService {
       case 'list_providers': {
         try {
           await respond?.(command.requestId, { providers: listCredentials() })
+        } catch (err) {
+          await respond?.(command.requestId, { error: (err as Error).message })
+        }
+        break
+      }
+      case 'list_media_providers': {
+        try {
+          // Labels only: the phone names params with these, it never configures providers.
+          const providers = (await getMediaProviderStatuses()).map(({ id, label, providerLabel, models }) => ({
+            id, label, ...(providerLabel ? { providerLabel } : {}), models,
+          }))
+          await respond?.(command.requestId, { providers })
         } catch (err) {
           await respond?.(command.requestId, { error: (err as Error).message })
         }

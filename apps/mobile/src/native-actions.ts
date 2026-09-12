@@ -3,7 +3,7 @@ import type { WebView } from 'react-native-webview'
 import type { HostInbound, HostOutbound } from '@superone/chat-view'
 import { isPreviewableMermaid } from '@superone/chat-view/mermaid-preview'
 import type { SaveWidgetTemplateRequest } from '@superone/shared/agent-types'
-import { isPreviewableImageSource } from './image-preview-state'
+import { isPreviewableImageSource, parseImageGenerationInfo, type ImagePreviewTarget } from './image-preview-state'
 
 type NativeRequest = Extract<HostOutbound, { type: 'requestNative' }>
 type NativeResult = Extract<HostInbound, { type: 'nativeActionResult' }>
@@ -36,9 +36,10 @@ export interface NativeActionPorts {
   /**
    * Show a picture the transcript is already displaying on the fullscreen
    * viewer. `src` is the data URI or public URL the `<img>` was painted from,
-   * so no second transfer happens; `path` is the desktop path when there is one.
+   * so no second transfer happens; `path` is the desktop path when there is one;
+   * `generation` is what the info panel shows for a generated image.
    */
-  previewImage(target: { src: string; label?: string; path?: string }): Promise<void>
+  previewImage(target: ImagePreviewTarget): Promise<void>
   /**
    * Show a mermaid diagram the transcript already rendered, on a page of its
    * own. `svg` is the markup mermaid.render produced in the chat WebView.
@@ -139,10 +140,12 @@ export async function resolveNativeRequest(
       const src = payloadString(message, 'src')
       if (!isPreviewableImageSource(src)) throw new Error('unsupported image source')
       const payload = (message.payload ?? {}) as Record<string, unknown>
+      const generation = parseImageGenerationInfo(payload.generation)
       await ports.previewImage({
         src,
         ...(typeof payload.label === 'string' && payload.label ? { label: payload.label } : {}),
         ...(typeof payload.path === 'string' && payload.path ? { path: payload.path } : {}),
+        ...(generation ? { generation } : {}),
       })
     } else if (message.action === 'previewMermaid') {
       const svg = payloadString(message, 'svg')

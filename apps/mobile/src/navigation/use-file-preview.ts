@@ -1,7 +1,7 @@
-import { useCallback, useRef, useState, type RefObject } from 'react'
+import { useCallback, useMemo, useRef, useState, type RefObject } from 'react'
 import { File, Paths } from 'expo-file-system'
 import { MAX_DOWNLOAD_BYTES, type HttpGet, type RelayClient, type TransportKind } from '@superone/relay-client'
-import type { ReadDesktopFileError, ReadDesktopFileResponse, RemoteCommand } from '@superone/shared/agent-types'
+import type { MediaProviderLabel, ReadDesktopFileError, ReadDesktopFileResponse, RemoteCommand } from '@superone/shared/agent-types'
 import { hydratePreviewFromCache, hydrateTransferFromCache, persistPreviewToCache } from '../file-preview-cache'
 import { getFilePreviewCache } from '../file-preview-cache-store'
 import {
@@ -15,7 +15,9 @@ import {
   safeCacheFileName,
   type FilePreviewState,
 } from '../file-preview-state'
+import { requestMediaProviderLabels, type ImageGenerationPorts } from '../image-generation-ports'
 import type { ImagePreviewTarget } from '../image-preview-state'
+import { loadInlineImage } from '../inline-images'
 import { resolveRemoteFilePath } from '../shell-state'
 import { randomId } from '../ids'
 
@@ -245,5 +247,34 @@ export function useFilePreview(ports: FilePreviewPorts) {
 
   const confirmTransfer = useCallback(() => { void startTransfer() }, [startTransfer])
 
-  return { state, open, showImage, showMermaid, close, startTransfer: confirmTransfer, retry }
+  // The catalogue is asked for once per pairing: labels only change when the
+  // user edits providers on the desktop, and the panel is opened far more often.
+  const providerLabels = useRef<{ pairingId: string | null; promise: Promise<MediaProviderLabel[]> } | null>(null)
+  const generationPorts = useMemo<ImageGenerationPorts>(() => ({
+    async loadImage(path) {
+      const client = portsRef.current.clientRef.current
+      const project = portsRef.current.project
+      if (!client || !project) return null
+      const result = await loadInlineImage({
+        host: client, transport: portsRef.current.transport, projectPath: project.path,
+        sessionId: portsRef.current.sessionId, path, confirmed: false,
+      })
+      return 'dataUri' in result ? result.dataUri : null
+    },
+    listMediaProviders() {
+      const client = portsRef.current.clientRef.current
+      if (!client) return Promise.resolve([])
+      const pairingId = portsRef.current.pairingId
+      if (providerLabels.current?.pairingId !== pairingId) {
+        const promise = requestMediaProviderLabels(client).catch(() => {
+          providerLabels.current = null
+          return []
+        })
+        providerLabels.current = { pairingId, promise }
+      }
+      return providerLabels.current.promise
+    },
+  }), [])
+
+  return { state, open, showImage, showMermaid, close, startTransfer: confirmTransfer, retry, generationPorts }
 }

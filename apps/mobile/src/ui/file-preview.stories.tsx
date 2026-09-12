@@ -4,8 +4,9 @@ import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { MobileThemeProvider } from '../theme/context'
 import type { Locale } from '@superone/shared/agent-types'
 import type { FilePreviewState } from '../file-preview-state'
+import { createFakeGenerationPorts } from '../preview/fake-generation-ports'
 import { createFakeMediaPorts, type FakeSaveBehaviour } from '../preview/fake-media-ports'
-import { FILE_PREVIEW_FIXTURES, TINY_PNG } from '../preview/file-preview-fixtures'
+import { FILE_PREVIEW_FIXTURES, TINY_PNG, TOOL_GENERATION } from '../preview/file-preview-fixtures'
 import { Button } from './primitives'
 import { FilePreviewModal } from './file-preview'
 
@@ -30,6 +31,7 @@ function Preview(props: Args) {
     () => createFakeMediaPorts({ save: props.saveOutcome, share: props.shareOutcome, delayMs: 600 }),
     [props.saveOutcome, props.shareOutcome],
   )
+  const generationPorts = useMemo(() => createFakeGenerationPorts({ delayMs: 400 }), [])
   return (
     <SafeAreaProvider initialMetrics={props.landscape ? LANDSCAPE_METRICS : PORTRAIT_METRICS}>
       <MobileThemeProvider colorScheme={props.scheme} locale={props.locale}>
@@ -41,6 +43,7 @@ function Preview(props: Args) {
             onDismiss={() => setState(null)}
             onStartTransfer={() => setState((current) => current?.kind === 'transfer' ? { ...current, phase: 'downloading' } : current)}
             onRetry={() => setState(null)}
+            generationPorts={generationPorts}
           />
         </View>
       </MobileThemeProvider>
@@ -112,5 +115,7 @@ export const TransferReady = { args: { state: fixture('Transfer · ready to save
 export const Error = { args: { state: fixture('Error') } }
 /** A long label truncates on one line after the type icon, between the two buttons. */
 export const LongLabel = { args: { state: { kind: 'image', name: 'long.png', label: 'A very long screenshot label that keeps going well past the width of a phone screen.png', src: TINY_PNG, mimeType: 'image/png' } satisfies FilePreviewState } }
+/** A generated image: the rotate bar grows an info button whose panel lists the generation facts. */
+export const GeneratedImage = { args: { state: { kind: 'image', name: 'astronaut.png', path: '/Users/me/proj/media/astronaut.png', src: TINY_PNG, mimeType: 'image/png', generation: TOOL_GENERATION } satisfies FilePreviewState } }
 /** Closed: only the trigger button, nothing painted over the page. */
 export const Closed = { args: { state: null } }

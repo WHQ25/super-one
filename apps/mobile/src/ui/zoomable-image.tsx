@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { RotateCcw, RotateCw } from 'lucide-react-native'
+import type { ImageGenerationInfo } from '@superone/shared/agent-types'
+import { Info, RotateCcw, RotateCw } from 'lucide-react-native'
 import {
   ActivityIndicator,
   Animated,
@@ -23,8 +24,11 @@ import {
   type Size,
 } from '../image-preview-state'
 import { useMobileLocale } from '../i18n/context'
+import type { ImageGenerationPorts } from '../image-generation-ports'
 import { useMobileTheme } from '../theme/context'
+import { AnchoredMenu, useMenuAnchor } from './anchored-menu'
 import { IconButton } from './icon-button'
+import { ImageInfoPanel } from './image-info-panel'
 import { Text } from './text'
 import { useFade } from './use-fade'
 
@@ -50,9 +54,16 @@ function touchList(event: GestureResponderEvent): GestureTouch[] {
  * once at its upright fit and `rotationFitScale` scales it back inside the
  * screen — so a whole turn stays on the native driver.
  */
-export function ZoomableImage({ src, label, chromeVisible, onToggleChrome }: {
+export function ZoomableImage({ src, label, generation, generationPorts, chromeVisible, onToggleChrome }: {
   src: string
   label: string
+  /**
+   * For a generated image: what the info button's panel shows. The button
+   * only exists when this does — a screenshot has nothing to say about itself.
+   */
+  generation?: ImageGenerationInfo
+  /** Host access for the panel's reference thumbs and provider labels. */
+  generationPorts?: ImageGenerationPorts
   /** Whether the overlay chrome is showing; the rotate bar rides along with it. */
   chromeVisible: boolean
   onToggleChrome: () => void
@@ -61,6 +72,7 @@ export function ZoomableImage({ src, label, chromeVisible, onToggleChrome }: {
   const { t } = useMobileLocale()
   const insets = useSafeAreaInsets()
   const { width, height } = useWindowDimensions()
+  const info = useMenuAnchor()
   const [imageSize, setImageSize] = useState<Size | null>(null)
   const [failed, setFailed] = useState(false)
 
@@ -168,9 +180,18 @@ export function ZoomableImage({ src, label, chromeVisible, onToggleChrome }: {
           <View style={[styles.barInner, { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radius.pill }]}>
             <IconButton icon={RotateCcw} label={FILE_PREVIEW_TEXT.rotateLeft} onPress={() => turn(-1)} chrome="plain" color={colors.foreground} />
             <IconButton icon={RotateCw} label={FILE_PREVIEW_TEXT.rotateRight} onPress={() => turn(1)} chrome="plain" color={colors.foreground} />
+            {generation ? (
+              <IconButton buttonRef={info.ref} icon={Info} label={FILE_PREVIEW_TEXT.imageInfo} onPress={info.open}
+                active={info.anchor !== null} chrome="plain" color={colors.foreground} />
+            ) : null}
           </View>
         </Animated.View>
       )}
+      {generation ? (
+        <AnchoredMenu anchor={info.anchor} title={FILE_PREVIEW_TEXT.imageInfo} onDismiss={info.close} width={Math.min(width - 24, 320)}>
+          <ImageInfoPanel generation={generation} imageSize={imageSize} ports={generationPorts} />
+        </AnchoredMenu>
+      ) : null}
     </View>
   )
 }

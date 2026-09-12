@@ -680,6 +680,15 @@ the same modal in its `image` state: a pinch/double-tap viewer over the same byt
 menu saves to Photos or shares from the cache. It never re-downloads (remote `http(s)`
 sources have both rows disabled). `previewFile` remains the path for a chip *without* a
 picture yet, and for non-image files.
+A *generated* image's tap also carries `generation` (`ImageGenerationInfo`: prompt, params,
+timing, reference paths, warnings — the same shape for Codex-native ImageGen and
+`media_generate_image`), which puts an Info button beside the rotate pair. Its panel
+(`ui/image-info-panel.tsx`) mirrors the desktop viewer's popover and reaches the host only
+through `ImageGenerationPorts` (`image-generation-ports.ts`, built in `use-file-preview`):
+`list_media_providers` turns provider/model ids into catalogue names (asked once per
+pairing) and `loadImage` fetches reference thumbs unconfirmed — over the relay a large
+reference falls back to its file name rather than staging a transfer. Stories and the
+`File preview` gallery inject `preview/fake-generation-ports.ts`.
 Images and PDFs use the `ImageAttachment` message path. Project file upload uses inline
 RPC through 512 KiB, raw LAN PUT when connected locally, or chunk-encrypted relay R2
 PUT plus completion through 100 MiB. Picker-reported sizes are optional metadata, not a

@@ -3,6 +3,7 @@ import { View } from 'react-native'
 import { FilePreviewModal } from '../ui/file-preview'
 import type { FilePreviewState } from '../file-preview-state'
 import { Button, SelectionField } from '../ui'
+import { createFakeGenerationPorts } from './fake-generation-ports'
 import { createFakeMediaPorts, type FakeSaveBehaviour } from './fake-media-ports'
 import { FILE_PREVIEW_FIXTURES } from './file-preview-fixtures'
 
@@ -28,6 +29,7 @@ export function FilePreviewGallery() {
     ? { ...fixture.state, phase }
     : fixture.state
   const ports = useMemo(() => createFakeMediaPorts({ save: saveOutcome, delayMs: 600 }), [saveOutcome])
+  const generationPorts = useMemo(() => createFakeGenerationPorts({ delayMs: 600 }), [])
   return (
     <View style={{ flex: 1, gap: 8, paddingHorizontal: 12, paddingVertical: 6 }}>
       <SelectionField compact label="State" value={label}
@@ -43,6 +45,7 @@ export function FilePreviewGallery() {
         onDismiss={() => setOpen(false)}
         onStartTransfer={() => setPhase('downloading')}
         onRetry={() => setPhase(null)}
+        generationPorts={generationPorts}
       />
     </View>
   )

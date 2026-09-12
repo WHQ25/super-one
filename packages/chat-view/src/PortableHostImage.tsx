@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import type { ImageGenerationInfo } from '@superone/shared/agent-types'
 import { Download, ImageIcon, Loader2 } from 'lucide-react'
 import { requestNative, requestNativeAsync } from './bridge'
 import { previewImage } from './image-preview'
@@ -80,16 +81,22 @@ function formatSize(bytes: number): string {
  * viewer (`previewImage`); only the chip without a picture yet still goes
  * through `previewFile`, because there is nothing to show until the file lands.
  */
-export function PortableHostImage({ path, label, className, fallback, caption }: {
+export function PortableHostImage({ path, label, className, pictureClassName, imageClassName, fallback, caption, generation }: {
   path: string
   /** Accessible name for the preview affordance, e.g. "Screenshot". */
   label: string
   /** Applied to the chip/picture button; the default fits a tool row. */
   className?: string
+  /** Applied to the picture button once the bytes are in, instead of `className`. */
+  pictureClassName?: string
+  /** Applied to the `<img>` itself; the default fits a tool row. */
+  imageClassName?: string
   /** Chip content while there is no picture yet; defaults to an icon and the file name. */
   fallback?: ReactNode
   /** Shown under the picture once it has loaded. */
   caption?: ReactNode
+  /** For a generated image: what the viewer's info panel shows. */
+  generation?: ImageGenerationInfo
 }) {
   const [phase, setPhase] = useState<Phase>(() => {
     const cached = loaded.get(path)
@@ -140,13 +147,13 @@ export function PortableHostImage({ path, label, className, fallback, caption }:
     return (
       <button
         type="button"
-        className={className ?? 'block w-full overflow-hidden rounded border border-border/60 bg-muted/25'}
-        onClick={() => previewImage(phase.dataUri, { label, path })}
+        className={pictureClassName ?? className ?? 'block w-full overflow-hidden rounded border border-border/60 bg-muted/25'}
+        onClick={() => previewImage(phase.dataUri, { label, path, generation })}
         aria-label={ariaLabel}
         title={path}
         data-host-image="ready"
       >
-        <img src={phase.dataUri} alt={label} className="mx-auto max-h-72 w-auto max-w-full object-contain" />
+        <img src={phase.dataUri} alt={label} className={imageClassName ?? 'mx-auto max-h-72 w-auto max-w-full object-contain'} />
         {caption}
       </button>
     )

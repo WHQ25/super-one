@@ -85,6 +85,7 @@ export function MobileOverlays(props: {
         onDismiss={props.filePreview.close}
         onStartTransfer={props.filePreview.startTransfer}
         onRetry={props.filePreview.retry}
+        generationPorts={props.filePreview.generationPorts}
       />
     </>
   )

@@ -1,4 +1,4 @@
-import type { ReadDesktopFileError, ReadDesktopFileResponse } from '@superone/shared/agent-types'
+import type { ImageGenerationInfo, ReadDesktopFileError, ReadDesktopFileResponse } from '@superone/shared/agent-types'
 import { isMarkdownFileName } from '@superone/shared/file-preview'
 import type { TransportKind } from '@superone/relay-client'
 import { imagePreviewFileName, parseImageDataUri, type ImagePreviewTarget } from './image-preview-state'
@@ -34,6 +34,8 @@ export type FilePreviewState =
       /** `data:image/*`, `file://` or `http(s)://`. */
       src: string
       mimeType: string
+      /** For a generated image: what the info panel shows. */
+      generation?: ImageGenerationInfo
     }
   | {
       kind: 'mermaid'
@@ -95,8 +97,34 @@ export const FILE_PREVIEW_TEXT = {
   imageFailed: 'Image failed to load',
   rotateLeft: 'Rotate left',
   rotateRight: 'Rotate right',
+  imageInfo: 'Image info',
+  generatedIn: 'Generated in',
+  noMetadata: 'No metadata available.',
+  prompt: 'Prompt',
+  copyPrompt: 'Copy prompt',
+  promptCopied: 'Prompt copied',
+  warnings: 'Warnings',
+  paramProvider: 'Provider',
+  paramModel: 'Model',
+  paramSize: 'Size',
+  paramAspectRatio: 'Aspect ratio',
+  paramReferenceImages: 'Reference images',
   mermaid: 'Mermaid',
 } as const
+
+/** Labels for the parameter keys a generation reports; anything else shows its raw key. */
+export const IMAGE_PARAM_LABELS: Record<string, string> = {
+  provider: FILE_PREVIEW_TEXT.paramProvider,
+  model: FILE_PREVIEW_TEXT.paramModel,
+  size: FILE_PREVIEW_TEXT.paramSize,
+  aspectRatio: FILE_PREVIEW_TEXT.paramAspectRatio,
+}
+
+/** `1.2s` / `850ms`, as the desktop viewer formats a generation time. */
+export function formatGenerationDuration(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`
+  return `${(ms / 1000).toFixed(1)}s`
+}
 
 /** The last path segment, which is what the page's title shows. */
 export function previewFileName(path: string): string {
@@ -161,6 +189,7 @@ export function imagePreviewState(target: ImagePreviewTarget): Extract<FilePrevi
     ...(target.label ? { label: target.label } : {}),
     src: target.src,
     mimeType,
+    ...(target.generation ? { generation: target.generation } : {}),
   }
 }
 

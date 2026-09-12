@@ -132,6 +132,12 @@ describe('image preview state', () => {
       .toEqual({ kind: 'image', path: '/shots/a.png', name: 'a.png', label: 'Screenshot', src: PNG, mimeType: 'image/png' })
   })
 
+  it('carries a generated image\'s facts through to the viewer', () => {
+    const generation = { revisedPrompt: 'astronaut', generationMs: 1200 }
+    expect(imagePreviewState({ src: PNG, path: '/media/a.png', generation })).toMatchObject({ kind: 'image', generation })
+    expect(imagePreviewState({ src: PNG, path: '/media/a.png' })).not.toHaveProperty('generation')
+  })
+
   it('guesses the type of a URL picture from its name and leaves the title to the label', () => {
     expect(imagePreviewState({ src: 'https://x/y.jpg', label: 'y.jpg' })).toMatchObject({ name: 'y.jpg', mimeType: 'image/jpeg' })
     expect(imagePreviewState({ src: 'https://x/y' })).toMatchObject({ name: 'image.img', mimeType: 'image/*' })

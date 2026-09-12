@@ -1,13 +1,20 @@
 import { beforeAll, expect, jest, test } from '@jest/globals'
 import { act, fireEvent, screen } from '@testing-library/react-native'
+import * as Clipboard from 'expo-clipboard'
 import { Animated, View } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import type { Locale } from '@superone/shared/agent-types'
 import type { FilePreviewState } from '../file-preview-state'
+import type { ImageGenerationPorts } from '../image-generation-ports'
 import type { MediaPorts } from '../media-ports'
+import { createFakeGenerationPorts } from '../preview/fake-generation-ports'
 import { createFakeMediaPorts } from '../preview/fake-media-ports'
 import { renderWithTheme } from '../test-render'
 import { FilePreviewModal } from './file-preview'
+
+jest.mock('expo-clipboard', () => ({
+  setStringAsync: jest.fn(async () => true),
+}))
 
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
 const PATH = '/workspace/proj/src/App.tsx'
@@ -42,7 +49,7 @@ async function runMenuAction(label: string) {
 
 function mount(
   state: FilePreviewState | null,
-  options: { ports?: MediaPorts; onDismiss?: () => void; onStartTransfer?: () => void; onRetry?: () => void; locale?: Locale } = {},
+  options: { ports?: MediaPorts; generationPorts?: ImageGenerationPorts; onDismiss?: () => void; onStartTransfer?: () => void; onRetry?: () => void; locale?: Locale } = {},
 ) {
   // The chrome reads the status-bar inset directly; outside a provider that hook throws.
   return renderWithTheme(
@@ -53,6 +60,7 @@ function mount(
         onDismiss={options.onDismiss ?? (() => {})}
         onStartTransfer={options.onStartTransfer ?? (() => {})}
         onRetry={options.onRetry ?? (() => {})}
+        generationPorts={options.generationPorts}
       />
     </SafeAreaProvider>,
     'dark',
@@ -88,6 +96,70 @@ test('turning the picture keeps the viewer open', async () => {
   await act(async () => { fireEvent.press(screen.getByLabelText('Rotate Right')) })
   expect(onDismiss).not.toHaveBeenCalled()
   expect(screen.getByLabelText('Screenshot')).toBeTruthy()
+})
+
+const GENERATED: FilePreviewState = {
+  ...IMAGE,
+  label: 'Generated image',
+  generation: {
+    revisedPrompt: 'An astronaut tending a bonsai on the Moon',
+    generationMs: 14_320,
+    params: [{ key: 'provider', value: 'openai' }, { key: 'model', value: 'gpt-image-1' }, { key: 'aspectRatio', value: '9:16' }],
+    referenceImagePaths: ['/refs/bonsai.jpg'],
+    warnings: ['Prompt was rewritten'],
+  },
+}
+
+test('a screenshot has no info button', async () => {
+  await mount(IMAGE)
+  expect(screen.queryByLabelText('Image Info')).toBeNull()
+})
+
+test('a generated image opens its facts from the info button; without a host, ids and names stand in', async () => {
+  await mount(GENERATED)
+  await act(async () => { fireEvent.press(screen.getByLabelText('Image Info')) })
+  await screen.findByTestId('image-info-panel')
+  expect(screen.getByText('Generated in 14.3s')).toBeTruthy()
+  expect(screen.getByText('openai')).toBeTruthy()
+  expect(screen.getByText('gpt-image-1')).toBeTruthy()
+  expect(screen.getByText('Aspect ratio')).toBeTruthy()
+  expect(screen.getByTestId('reference-image-name')).toHaveTextContent('bonsai.jpg')
+  expect(screen.getByText('• Prompt was rewritten')).toBeTruthy()
+  expect(screen.getByText('An astronaut tending a bonsai on the Moon')).toBeTruthy()
+})
+
+test('with a host, provider and model resolve to catalogue names and reference images become thumbs', async () => {
+  await mount(GENERATED, { generationPorts: createFakeGenerationPorts() })
+  await act(async () => { fireEvent.press(screen.getByLabelText('Image Info')) })
+  expect(await screen.findByText('OpenAI')).toBeTruthy()
+  expect(screen.getByText('OpenAI Images')).toBeTruthy()
+  expect(screen.getByText('GPT Image 1')).toBeTruthy()
+  expect(screen.queryByText('gpt-image-1')).toBeNull()
+  expect(await screen.findByTestId('reference-image-thumb')).toBeTruthy()
+})
+
+test('a reference image the host will not send unasked falls back to its name', async () => {
+  await mount(GENERATED, { generationPorts: createFakeGenerationPorts({ images: 'name', providers: [] }) })
+  await act(async () => { fireEvent.press(screen.getByLabelText('Image Info')) })
+  expect(await screen.findByTestId('reference-image-name')).toHaveTextContent('bonsai.jpg')
+  expect(screen.getByText('openai')).toBeTruthy()
+})
+
+test('the prompt copies with one tap and the button confirms it', async () => {
+  await mount(GENERATED)
+  await act(async () => { fireEvent.press(screen.getByLabelText('Image Info')) })
+  const copy = await screen.findByLabelText('Copy Prompt')
+  await act(async () => { fireEvent.press(copy) })
+  expect(Clipboard.setStringAsync).toHaveBeenCalledWith('An astronaut tending a bonsai on the Moon')
+  expect(await screen.findByLabelText('Prompt copied')).toBeTruthy()
+})
+
+test('the info panel is translated', async () => {
+  await mount(GENERATED, { locale: 'zh' })
+  await act(async () => { fireEvent.press(screen.getByLabelText('图片信息')) })
+  await screen.findByTestId('image-info-panel')
+  expect(screen.getByText('生成耗时 14.3s')).toBeTruthy()
+  expect(screen.getByText('提示词')).toBeTruthy()
 })
 
 test('a file body has no rotation controls', async () => {

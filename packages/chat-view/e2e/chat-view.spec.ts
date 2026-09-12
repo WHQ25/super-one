@@ -790,23 +790,35 @@ test('41 renders insight recordings with the shared markdown presenter', async (
   await expect(turn).toContainText('After the insight.')
 })
 
-test('42 renders Codex images through the host-backed native gallery', async ({ page }) => {
+test('42 renders Codex images as a turn-end gallery whose tap carries the generation facts', async ({ page }) => {
   await send(page, { type: 'hydrate', messages: [CODEX_IMAGE_GALLERY_RECORDING] })
 
   const turn = page.locator('[data-turn-id="recording-codex-image-gallery"]')
-  const gallery = turn.locator('[data-native-widget="image-gallery"]')
-  await expect(gallery).toContainText('Generated images')
-  await expect(gallery).toContainText('2')
-  await expect(gallery).toContainText('concept-a.png')
-  await gallery.getByRole('button', { name: /Open image/ }).first().click()
+  const gallery = turn.locator('[data-portable-image-gallery]')
+  // Same caption as the desktop block: no frame, no title, just the count.
+  await expect(gallery).toContainText('2 images generated')
+  await expect(gallery.locator('[data-native-widget]')).toHaveCount(0)
+
+  // Each tile asks the host for its thumb; answer like the LAN host would.
+  type HostRequest = { type?: string; requestId?: string; action?: string; payload?: { path?: string; src?: string; generation?: { revisedPrompt?: string } } }
+  const readRequests = () => page.evaluate(() => (
+    globalThis as typeof globalThis & { __hostMessages: HostRequest[] }
+  ).__hostMessages.filter((item) => item.type === 'requestNative' && item.action === 'loadImage'))
+  await expect.poll(async () => (await readRequests()).length).toBeGreaterThanOrEqual(2)
+  const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+  for (const request of await readRequests()) {
+    await send(page, { type: 'nativeActionResult', requestId: request.requestId, result: { ok: true, dataUri: pixel } })
+  }
+  await expect(gallery.locator('[data-host-image="ready"] img')).toHaveCount(2)
+
+  // Tapping opens the bytes fullscreen, titled by file name, with the prompt riding along for the info panel.
+  await gallery.getByRole('button', { name: 'concept-a.png' }).click()
   await expect.poll(() => page.evaluate(() => (
-    globalThis as typeof globalThis & {
-      __hostMessages: Array<{ type?: string; action?: string; payload?: { path?: string } }>
-    }
+    globalThis as typeof globalThis & { __hostMessages: HostRequest[] }
   ).__hostMessages.some((item) => (
-    item.type === 'requestNative'
-      && item.action === 'previewFile'
+    item.action === 'previewImage'
       && item.payload?.path === '/project/output/concept-a.png'
+      && item.payload?.generation?.revisedPrompt === 'Compact mobile chat interface'
   )))).toBe(true)
 })
 

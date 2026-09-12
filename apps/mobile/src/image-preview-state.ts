@@ -4,6 +4,8 @@
  * of React Native so it runs under vitest.
  */
 
+import type { ImageGenerationInfo } from '@superone/shared/agent-types'
+
 /** A picture the chat WebView asked to show fullscreen. */
 export interface ImagePreviewTarget {
   /** The `<img src>` the transcript painted: a data URI or a public URL. */
@@ -12,6 +14,34 @@ export interface ImagePreviewTarget {
   label?: string
   /** Desktop path when the picture came off the host's disk. */
   path?: string
+  /** For a generated image: prompt, parameters and timing the info panel shows. */
+  generation?: ImageGenerationInfo
+}
+
+const isStringList = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((entry) => typeof entry === 'string')
+
+/**
+ * The generation facts a `previewImage` request carried, or `undefined` when it
+ * carried none worth a panel. Each field is checked on its own so one malformed
+ * entry costs only itself, not the whole panel.
+ */
+export function parseImageGenerationInfo(value: unknown): ImageGenerationInfo | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const record = value as Record<string, unknown>
+  const info: ImageGenerationInfo = {}
+  if (typeof record.revisedPrompt === 'string' && record.revisedPrompt) info.revisedPrompt = record.revisedPrompt
+  if (typeof record.generationMs === 'number' && Number.isFinite(record.generationMs) && record.generationMs >= 0) info.generationMs = record.generationMs
+  if (Array.isArray(record.params)) {
+    const params = record.params.flatMap((entry) => {
+      const p = entry && typeof entry === 'object' ? entry as Record<string, unknown> : null
+      return typeof p?.key === 'string' && typeof p.value === 'string' ? [{ key: p.key, value: p.value }] : []
+    })
+    if (params.length > 0) info.params = params
+  }
+  if (isStringList(record.referenceImagePaths) && record.referenceImagePaths.length > 0) info.referenceImagePaths = record.referenceImagePaths
+  if (isStringList(record.warnings) && record.warnings.length > 0) info.warnings = record.warnings
+  return Object.keys(info).length > 0 ? info : undefined
 }
 
 export interface Size { width: number; height: number }

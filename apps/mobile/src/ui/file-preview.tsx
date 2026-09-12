@@ -11,6 +11,7 @@ import {
   previewLocalSource,
   type FilePreviewState,
 } from '../file-preview-state'
+import type { ImageGenerationPorts } from '../image-generation-ports'
 import type { MediaPorts } from '../media-ports'
 import { useMobileLocale } from '../i18n/context'
 import { NativeMarkdown } from '../prompts/NativeMarkdown'
@@ -35,6 +36,8 @@ export type FilePreviewModalProps = {
   /** Approve a relay transfer the page is waiting on. */
   onStartTransfer: () => void
   onRetry: () => void
+  /** Host access for a generated image's info panel; without it the panel shows ids and file names. */
+  generationPorts?: ImageGenerationPorts
 }
 
 /** How long a success line stays before the chrome goes quiet again. */
@@ -58,7 +61,7 @@ const FEEDBACK_MS = 2500
  * chrome out of the way, so a finger that lands while lining up a pinch cannot
  * close the thing it was reaching for.
  */
-export function FilePreviewModal({ state, ports, onDismiss, onStartTransfer, onRetry }: FilePreviewModalProps) {
+export function FilePreviewModal({ state, ports, onDismiss, onStartTransfer, onRetry, generationPorts }: FilePreviewModalProps) {
   const { tokens: { colors } } = useMobileTheme()
   const [chromeVisible, setChromeVisible] = useState(true)
   const toggleChrome = useCallback(() => setChromeVisible((visible) => !visible), [])
@@ -81,7 +84,7 @@ export function FilePreviewModal({ state, ports, onDismiss, onStartTransfer, onR
         // A native Modal is its own window, so menus need a host of their own inside it.
         <MenuHost>
           <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.background }]} accessibilityViewIsModal onAccessibilityEscape={onDismiss}>
-            <PreviewBody state={state} chromeVisible={chromeVisible} onToggleChrome={toggleChrome} onStartTransfer={onStartTransfer} onRetry={onRetry} />
+            <PreviewBody state={state} chromeVisible={chromeVisible} onToggleChrome={toggleChrome} onStartTransfer={onStartTransfer} onRetry={onRetry} generationPorts={generationPorts} />
             <PreviewChrome state={state} ports={ports} onDismiss={onDismiss} visible={state.kind !== 'image' || chromeVisible} />
           </View>
         </MenuHost>
@@ -93,12 +96,13 @@ export function FilePreviewModal({ state, ports, onDismiss, onStartTransfer, onR
 /** Height the chrome row takes; in-flow bodies start below it. */
 const CHROME_ROW_HEIGHT = 48
 
-function PreviewBody({ state, chromeVisible, onToggleChrome, onStartTransfer, onRetry }: {
+function PreviewBody({ state, chromeVisible, onToggleChrome, onStartTransfer, onRetry, generationPorts }: {
   state: FilePreviewState
   chromeVisible: boolean
   onToggleChrome: () => void
   onStartTransfer: () => void
   onRetry: () => void
+  generationPorts?: ImageGenerationPorts
 }) {
   const { tokens: { colors, spacing } } = useMobileTheme()
   const { t } = useMobileLocale()
@@ -126,6 +130,8 @@ function PreviewBody({ state, chromeVisible, onToggleChrome, onStartTransfer, on
         key={state.src}
         src={state.src}
         label={state.label ?? state.name}
+        generation={state.generation}
+        generationPorts={generationPorts}
         chromeVisible={chromeVisible}
         onToggleChrome={onToggleChrome}
       />

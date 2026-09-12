@@ -105,6 +105,47 @@ describe('keeping the menu open after a model switch', () => {
   })
 })
 
+describe('mapped Claude catalog', () => {
+  const catalog = [
+    { id: 'opus[1m]', name: 'Opus 5 1M', description: '1M context' },
+    { id: 'opus', name: 'Opus 5', description: 'Most capable' },
+    { id: 'sonnet', name: 'Sonnet 5', description: 'Balanced' },
+    { id: 'haiku', name: 'Haiku 4.5', description: 'Fastest' },
+  ]
+  const kimi = { opus: { id: 'kimi-k2', name: 'Kimi K2', description: 'Moonshot' }, sonnet: { id: 'kimi-k2' } }
+
+  it('folds mapped buckets onto the substituted model, as the desktop selector does', () => {
+    const [group] = groupModels(catalog, { harness: 'claude', providerName: 'Kimi', modelEnv: kimi })
+    expect(group?.models.map((model) => [model.id, model.name])).toEqual([
+      ['opus', 'Kimi K2'],
+      ['haiku', 'Haiku 4.5'],
+    ])
+    expect(group?.models[0]?.description).toBe('Moonshot')
+  })
+
+  it('leaves the catalog alone without a mapping', () => {
+    const [group] = groupModels(catalog, { harness: 'claude', modelEnv: null })
+    expect(group?.models).toHaveLength(4)
+  })
+
+  it('names the trigger after the slot, not the catalog row', () => {
+    expect(modelPickerLabel('claude', 'opus[1m]', 'Opus 5 1M', kimi)).toBe('Kimi K2')
+    expect(modelPickerLabel('claude', 'sonnet', 'Sonnet 5', kimi)).toBe('kimi-k2')
+    expect(modelPickerLabel('claude', 'haiku', 'Haiku 4.5', kimi)).toBe('Haiku 4.5')
+    expect(modelPickerLabel('claude', 'opus[1m]', 'Opus 5 1M', null)).toBe('Opus 5 1M')
+  })
+
+  it('closes the menu after a pick on a mapped credential even when the global binding is plain', () => {
+    const info: RemoteSystemInfo = {
+      models: [{ id: 'claude-opus-5', name: 'Opus', description: '', supportedEffortLevels: ['low', 'high'] }],
+      activeProvider: { id: 'relay', name: 'Relay', presetKey: null, modelEnv: {}, forcedEffort: null },
+      providers: [{ id: 'kimi', name: 'Kimi', modelEnv: { default: { id: 'kimi-k2' } } }],
+    }
+    expect(keepsOpenAfterModelSelect('claude', info, 'claude-opus-5', 'kimi')).toBe(false)
+    expect(keepsOpenAfterModelSelect('claude', info, 'claude-opus-5', null)).toBe(true)
+  })
+})
+
 describe('effort slider geometry', () => {
   // A 300pt track with a 28pt thumb leaves 272pt of travel, inset by 14pt.
   it('lands the first and last stop under the thumb centre', () => {

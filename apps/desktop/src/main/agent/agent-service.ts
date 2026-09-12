@@ -28,7 +28,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync } from 'fs'
 import { homedir } from 'os'
 import { getDb, getCachedHarnessResources } from '../database'
 import { resolveTestApiKey } from './provider-test-key'
-import { buildRemoteActiveService, platformDisplay, resolveChatService, resolveServiceFromCredential } from '../providers/resolver'
+import { buildRemoteActiveService, platformDisplay, resolveChatService } from '../providers/resolver'
 import { getPlatforms } from '../providers/registry'
 import { testServiceEndpoints } from '../providers/endpoint-test'
 import { discoverModels } from '../providers/model-discovery'
@@ -1640,16 +1640,16 @@ export class AgentService {
               // cannot switch provider must still get its models and defaults.
               try {
               const credentials = listCredentials()
-              const byId = new Map(credentials.map((credential) => [credential.id, credential]))
-              const consumer = harnessId === 'codex' ? 'chat:codex' as const : 'chat:claude' as const
               const options = { experimentalClaudeOpenAiChatEnabled: settings.experimentalClaudeOpenAiChatEnabled }
               return harnessProviderCatalog(harnessId, {
                 credentials,
+                // Resolve through the store the same way `activeProvider` does, so
+                // the bound credential picks up its binding-level mapping overrides
+                // and every row carries the mapping the client cannot compute itself.
                 servesHarness: (credentialId) => {
-                  const credential = byId.get(credentialId)
-                  if (!credential) return null
-                  const resolved = resolveServiceFromCredential(consumer, credential, null, options)
-                  return resolved ? { brand: resolved.brand } : null
+                  const resolved = resolveChatService(harnessId, credentialId, options)
+                  if (!resolved) return null
+                  return { brand: resolved.brand, modelEnv: resolved.modelMapping }
                 },
                 platformDisplay,
                 claudeAccounts,

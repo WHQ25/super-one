@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { ModelOption, ProviderModelEnv } from '@superone/shared/agent-types'
-import { resolveClaudeEntries } from './ModelSelectorLists'
+import type { ModelOption, ProviderModelEnv } from './agent-types'
+import { resolveClaudeEntries } from './claude-model-mapping'
 
 /** Shape of the official catalog the SDK reports: each alias plus its 1M row. */
 const CATALOG: ModelOption[] = [

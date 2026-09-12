@@ -3,6 +3,7 @@ import type { RemoteSystemInfo } from '@superone/shared/agent-types'
 import {
   effortOptionsForModel,
   resolveSelectedEffort,
+  selectedProviderModelEnv,
   resolveSelectedModel,
 } from './model-selection-state'
 
@@ -65,6 +66,22 @@ describe('mobile model selection state', () => {
     expect(effortOptionsForModel('claude', info, 'sonnet')).toEqual([])
   })
 
+  it('hides Claude effort for a picked credential that remaps, whatever the global binding', () => {
+    // The session runs on `kimi`; the host's bound credential is a plain relay.
+    const info: RemoteSystemInfo = {
+      ...claudeCatalog,
+      activeProvider: { id: 'relay', name: 'Relay', presetKey: null, modelEnv: {}, forcedEffort: null },
+      providers: [
+        { id: null, name: 'Claude' },
+        { id: 'relay', name: 'Relay' },
+        { id: 'kimi', name: 'Kimi', modelEnv: { opus: { id: 'kimi-k2' } } },
+      ],
+    }
+    expect(effortOptionsForModel('claude', info, 'sonnet', 'kimi')).toEqual([])
+    expect(effortOptionsForModel('claude', info, 'sonnet', 'relay').map((option) => option.value))
+      .toEqual(['low', 'medium', 'high'])
+  })
+
   it('keeps Claude effort for a credential that remaps no models', () => {
     const info: RemoteSystemInfo = {
       ...claudeCatalog,
@@ -94,5 +111,34 @@ describe('mobile model selection state', () => {
     const efforts = effortOptionsForModel('cursor', info, model)
     expect(model).toBe('cursor-1')
     expect(resolveSelectedEffort(efforts, 'unsupported')).toBe('medium')
+  })
+})
+
+describe('selectedProviderModelEnv', () => {
+  const kimi = { opus: { id: 'kimi-k2', name: 'Kimi K2' } }
+  const info: RemoteSystemInfo = {
+    activeProvider: { id: 'bound', name: 'Bound', presetKey: null, modelEnv: kimi, forcedEffort: null },
+    providers: [
+      { id: null, name: 'Claude' },
+      { id: 'bound', name: 'Bound' },
+      { id: 'plain', name: 'Plain', modelEnv: {} },
+      { id: 'other', name: 'Other', modelEnv: { sonnet: { id: 'glm-5' } } },
+    ],
+  }
+
+  it('reads the picked row, and only counts a mapping that remaps something', () => {
+    expect(selectedProviderModelEnv(info, 'other')).toEqual({ sonnet: { id: 'glm-5' } })
+    expect(selectedProviderModelEnv(info, 'plain')).toBeNull()
+  })
+
+  it('falls back to the active provider for the host default and for its own row', () => {
+    // `null` follows the global binding, and a row for the bound credential on a
+    // host that predates per-row mappings still resolves through `activeProvider`.
+    expect(selectedProviderModelEnv(info, null)).toEqual(kimi)
+    expect(selectedProviderModelEnv(info, 'bound')).toEqual(kimi)
+  })
+
+  it('does not let the global binding leak onto an unrelated credential', () => {
+    expect(selectedProviderModelEnv({ ...info, providers: [] }, 'unknown')).toBeNull()
   })
 })

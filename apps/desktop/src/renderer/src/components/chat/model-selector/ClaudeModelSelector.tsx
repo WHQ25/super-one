@@ -9,7 +9,7 @@ import { useAppStore } from '@/stores/app'
 import { consumerForHarness, resolveEffective } from '@/lib/provider-resolve'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { FireText } from '../FireText'
-import { resolveClaudeEntries, resolveClaudeDisplayName } from '../ModelSelectorLists'
+import { resolveClaudeDisplayName, resolveClaudeEntries } from '@superone/shared/claude-model-mapping'
 import { GroupedModelEffortSelector, type SelectorEffortOption, type SelectorModelOption } from './GroupedModelEffortSelector'
 import { useSelectorProviders } from './useSelectorProviders'
 

@@ -111,7 +111,9 @@ export function useHarnessSelection() {
     // A refreshed Codex catalog may omit a working model. It is discovery data,
     // not permission to replace the model the user or restored session selected.
     const model = (provider === 'codex' || draftIdentity.current) && claimedModel ? claimedModel : resolveSelectedModel(info, claimedModel)
-    const nextEfforts = effortOptionsForModel(provider, info, model)
+    // Effort follows the credential the session runs on, not the global binding.
+    const providerId = claimedProviderId !== undefined ? claimedProviderId : info.selectedProviderId ?? null
+    const nextEfforts = effortOptionsForModel(provider, info, model, providerId)
     const missingCodexModel = provider === 'codex' && !info.models?.some(candidate => candidate.id === model)
     const effort = (missingCodexModel || draftIdentity.current) && claimedEffort
       ? claimedEffort
@@ -221,7 +223,7 @@ export function useHarnessSelection() {
 
   /** Every user-facing pick is a claim: it must survive the next catalog refresh. */
   const selectModel = (model: string) => {
-    const nextEfforts = effortOptionsForModel(selectedProvider, systemInfo, model)
+    const nextEfforts = effortOptionsForModel(selectedProvider, systemInfo, model, selectedProviderId)
     claimed.current.model = model
     setSelectedModel(model)
     setEfforts(nextEfforts)
@@ -272,6 +274,13 @@ export function useHarnessSelection() {
   const selectProvider = (id: string | null) => {
     claimed.current.apiProviderId = id
     setSelectedProviderId(id)
+    // A mapped credential owns effort (desktop rule); switching back to a plain
+    // one restores the slider without forgetting the level that was picked.
+    const nextEfforts = effortOptionsForModel(selectedProvider, systemInfo, selectedModel, id)
+    setEfforts(nextEfforts)
+    if (nextEfforts.length) {
+      setSelectedEffortState(resolveSelectedEffort(nextEfforts, selectedEffort || systemInfo.defaults?.effort))
+    }
   }
 
   return {

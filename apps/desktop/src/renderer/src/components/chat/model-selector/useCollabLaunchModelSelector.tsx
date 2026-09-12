@@ -19,12 +19,8 @@ import {
   providerDisplayForCredential,
   resolveEffective,
 } from '@/lib/provider-resolve'
-import {
-  groupModelsBySlashPrefix,
-  resolveClaudeDisplayName,
-  resolveClaudeEntries,
-  resolveSlashModelLabel,
-} from '../ModelSelectorLists'
+import { resolveClaudeDisplayName, resolveClaudeEntries } from '@superone/shared/claude-model-mapping'
+import { groupModelsBySlashPrefix, resolveSlashModelLabel } from '../ModelSelectorLists'
 import { formatCodexModelName, formatReasoningEffortLabel } from '../chat-input-utils'
 import { FireText } from '../FireText'
 import type {

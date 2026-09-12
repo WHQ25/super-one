@@ -26,6 +26,7 @@ import {
   optionParamSummary,
   type SelectorCatalogParam,
 } from '../model-picker-state'
+import { selectedProviderModelEnv } from '../model-selection-state'
 import { useMobileLocale } from '../i18n/context'
 
 export type ModelPickerProps = {
@@ -59,7 +60,13 @@ export function ModelPicker(props: ModelPickerProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const selected = props.models.find((model) => model.id === props.model)
-  const modelLabel = modelPickerLabel(props.harness, props.model, selected?.name) || t('Choose model')
+  // The picked credential's Claude mapping — per row from the host, so a session
+  // on a mapped key names the substituted model even when the global binding differs.
+  const modelEnv = useMemo(
+    () => selectedProviderModelEnv({ providers: props.providers, activeProvider: props.activeProvider }, props.providerId),
+    [props.providers, props.activeProvider, props.providerId],
+  )
+  const modelLabel = modelPickerLabel(props.harness, props.model, selected?.name, modelEnv) || t('Choose model')
   const canSelectEffort = hasSelectableEffort(props.efforts)
   const effortLabel = props.efforts.find((effort) => effort.value === props.effort)?.label ?? t('Effort')
   const agents = props.agents ?? []
@@ -76,16 +83,18 @@ export function ModelPicker(props: ModelPickerProps) {
   const collapsed = expanded === null
   const groups = useMemo(
     () => groupModels(props.models, {
-      harness: props.harness, providerName: props.providerName, query, acpAgentId: props.acpAgentId,
+      harness: props.harness, providerName: props.providerName, query, acpAgentId: props.acpAgentId, modelEnv,
     }),
-    [props.models, props.harness, props.providerName, props.acpAgentId, query],
+    [props.models, props.harness, props.providerName, props.acpAgentId, query, modelEnv],
   )
   const collapse = () => { setExpanded(null); setSearchOpen(false); setQuery('') }
   const close = () => { collapse(); menu.close() }
-  const info = { models: props.models, efforts: props.efforts, activeProvider: props.activeProvider ?? null }
+  const info = {
+    models: props.models, efforts: props.efforts, activeProvider: props.activeProvider ?? null, providers: props.providers,
+  }
   const selectModel = (id: string) => {
     props.onModel(id)
-    if (hasSideOptions || keepsOpenAfterModelSelect(props.harness, info, id)) collapse()
+    if (hasSideOptions || keepsOpenAfterModelSelect(props.harness, info, id, props.providerId)) collapse()
     else close()
   }
   const refresh = async () => {

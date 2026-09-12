@@ -845,9 +845,10 @@ export interface SessionAgentProfile {
   /**
    * Third-party AI keys usable for this harness. `name` is the platform label
    * shown elsewhere in the app; `keyName` is the user-defined credential entry
-   * name (secondary), and `brand` drives the provider glyph.
+   * name (secondary), and `brand` drives the provider glyph. `modelEnv` is the
+   * Claude slot mapping the key runs under, when it remaps the catalog.
    */
-  apiProviders: Array<{ id: string; name: string; brand?: string; keyName?: string }>
+  apiProviders: Array<{ id: string; name: string; brand?: string; keyName?: string; modelEnv?: ProviderModelEnv }>
 }
 
 /**
@@ -4399,6 +4400,12 @@ export interface RemoteProviderOption {
   icon?: string
   /** Which key or account the row stands for, when several share a name. */
   keyName?: string
+  /**
+   * Claude slot mapping this credential runs under, so a client with no
+   * credential store can fold the catalog the way the desktop selector does.
+   * Absent or empty means the credential serves the Claude catalog as-is.
+   */
+  modelEnv?: ProviderModelEnv
 }
 
 export interface RemoteSystemInfo {

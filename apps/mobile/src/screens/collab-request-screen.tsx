@@ -213,7 +213,9 @@ function LaunchConfigRow({ launch, profile, onChange }: {
   const providers: RemoteProviderOption[] = profile.apiProviders.length
     ? [
       { id: null, name: t('Default provider'), brand: harness === 'codex' ? 'openai' : 'claude' },
-      ...profile.apiProviders.map((provider) => ({ id: provider.id, name: provider.name, brand: provider.brand ?? null, keyName: provider.keyName })),
+      ...profile.apiProviders.map((provider) => ({
+        id: provider.id, name: provider.name, brand: provider.brand ?? null, keyName: provider.keyName, modelEnv: provider.modelEnv,
+      })),
     ]
     : []
   const permissionMode = config.permissionMode ?? HARNESS_LAUNCH_OPTIONS[harness].permissionModes[0]!

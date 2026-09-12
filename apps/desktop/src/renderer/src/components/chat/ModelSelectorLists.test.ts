@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
+import { resolveClaudeEntries } from '@superone/shared/claude-model-mapping'
 import {
   groupModelsBySlashPrefix,
-  resolveClaudeEntries,
   resolveSlashModelLabel,
   splitSlashModelId,
 } from './ModelSelectorLists'

@@ -1,4 +1,5 @@
-import type { HarnessId, ModelOption, RemoteEffortOption, RemoteSystemInfo } from '@superone/shared/agent-types'
+import type { HarnessId, ModelOption, ProviderModelEnv, RemoteEffortOption, RemoteSystemInfo } from '@superone/shared/agent-types'
+import { resolveClaudeDisplayName, resolveClaudeEntries } from '@superone/shared/claude-model-mapping'
 import { findCodexFastServiceTier } from '@superone/shared/codex-fast-mode'
 import { formatCodexModelName } from '@superone/shared/codex-model-label'
 import { selectorCatalogParams, type SelectorCatalogParam } from '@superone/shared/model-option-params'
@@ -10,8 +11,19 @@ export function hasSelectableEffort(options: RemoteEffortOption[]): boolean {
   return options.length > 1
 }
 
-export function modelPickerLabel(harness: HarnessId, id: string, name?: string): string {
-  return harness === 'codex' ? formatCodexModelName(name, id) : name || id
+/**
+ * Trigger label. Under a third-party Claude mapping the slot name wins, as on
+ * desktop: the catalog says `Opus 5` but the provider is serving `kimi-k2`.
+ */
+export function modelPickerLabel(
+  harness: HarnessId,
+  id: string,
+  name?: string,
+  modelEnv: ProviderModelEnv | null = null,
+): string {
+  if (harness === 'codex') return formatCodexModelName(name, id)
+  if (harness === 'claude' && modelEnv) return resolveClaudeDisplayName({ id, name: name || id }, modelEnv) ?? id
+  return name || id
 }
 
 export function matchesModelSearch(model: ModelOption, query: string): boolean {
@@ -22,20 +34,38 @@ export function matchesModelSearch(model: ModelOption, query: string): boolean {
 
 export type ModelGroup = { name: string; models: ModelOption[] }
 
+/** The rows a Claude catalog renders as: folded onto the mapping when one is live. */
+function claudeRows(models: ModelOption[], modelEnv: ProviderModelEnv | null | undefined): ModelOption[] {
+  if (!modelEnv) return models
+  return resolveClaudeEntries(models, modelEnv).map(({ model, displayName, description }) => ({
+    ...model,
+    name: displayName,
+    description: description ?? '',
+  }))
+}
+
 /**
  * OpenCode ids carry their own provider prefix, and an OpenCode catalog reached
  * through ACP carries it too — the desktop groups both. Every other harness
- * files its models under one heading.
+ * files its models under one heading. A mapped Claude credential collapses
+ * each bucket onto the substituted model, as the desktop selector does.
  */
 export function groupModels(
   models: ModelOption[],
-  options: { harness: HarnessId; providerName?: string; query?: string; acpAgentId?: string | null },
+  options: {
+    harness: HarnessId
+    providerName?: string
+    query?: string
+    acpAgentId?: string | null
+    modelEnv?: ProviderModelEnv | null
+  },
 ): ModelGroup[] {
   const query = options.query?.trim().toLowerCase() ?? ''
   const slashGrouped = options.harness === 'opencode'
     || (options.harness === 'acp' && options.acpAgentId === 'opencode')
   const groups = new Map<string, ModelOption[]>()
-  for (const entry of models) {
+  const rows = options.harness === 'claude' ? claudeRows(models, options.modelEnv) : models
+  for (const entry of rows) {
     const model = options.harness === 'codex'
       ? { ...entry, name: modelPickerLabel(options.harness, entry.id, entry.name) }
       : entry
@@ -59,8 +89,9 @@ export function keepsOpenAfterModelSelect(
   harness: HarnessId,
   info: RemoteSystemInfo,
   modelId: string,
+  providerId: string | null = null,
 ): boolean {
-  return hasSelectableEffort(effortOptionsForModel(harness, info, modelId))
+  return hasSelectableEffort(effortOptionsForModel(harness, info, modelId, providerId))
 }
 
 /**

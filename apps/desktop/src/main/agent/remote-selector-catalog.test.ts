@@ -121,6 +121,20 @@ describe('provider catalog', () => {
     ])
   })
 
+  it('ships the slot mapping on the row and drops an empty one', () => {
+    // A Remote Control client has no credential store, so this is the only way
+    // it can name the model a mapped key serves, per credential rather than
+    // per global binding.
+    const mapping = { opus: { id: 'kimi-k2', name: 'Kimi K2' } }
+    const { providers } = harnessProviderCatalog('claude', {
+      ...source,
+      servesHarness: (id: string) => (id === 'cred-1' ? { brand: 'kimi', modelEnv: mapping } : { brand: null, modelEnv: {} }),
+    })
+
+    expect(providers[1]).toMatchObject({ id: 'cred-1', modelEnv: mapping })
+    expect(providers[2]).not.toHaveProperty('modelEnv')
+  })
+
   it('keeps the key out of the name and carries the platform favicon', () => {
     // The row draws a brand lockup plus a key badge; a name of `Kimi · work key`
     // spelled the key twice, and a custom platform lost its only mark.

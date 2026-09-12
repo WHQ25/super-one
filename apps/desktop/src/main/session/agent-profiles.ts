@@ -16,6 +16,7 @@ import type {
   EffortLevel,
   HarnessId,
   ModelOption,
+  ProviderModelEnv,
   SessionAgentLaunchConfig,
   SessionAgentProfile,
 } from '@superone/shared/agent-types'
@@ -28,19 +29,14 @@ import {
 } from '@superone/shared/environment'
 import { formatCodexModelName } from '@superone/shared/codex-model-label'
 import { findCodexFastServiceTier } from '@superone/shared/codex-fast-mode'
-import {
-  effectiveEndpoints,
-  findPlan,
-  findPlatform,
-  selectEndpoint,
-  type Credential,
-} from '@superone/shared/platform-registry'
+import { findPlatform, type Credential } from '@superone/shared/platform-registry'
 import { deriveSessionCatalog } from '../acp/acp-config'
 import { readAppSettings } from '../app-settings-service'
 import { getCachedHarnessResources } from '../database'
 import { getHarnessInstallation, probeDesktopHarness } from '../harness/service'
 import { listCredentials } from '../providers/credential-store'
 import { getPlatforms } from '../providers/registry'
+import { resolveServiceFromCredential } from '../providers/resolver'
 import { listSessionProviders } from './session-provider-repo'
 
 export function resolveAcpAgentId(provider: ReturnType<typeof listSessionProviders>[number]): string | null {
@@ -183,45 +179,33 @@ function profileDisplayName(
   return acpAgentDisplayName(acpAgentId, catalogName)
 }
 
+type ApiProviderRow = SessionAgentProfile['apiProviders'][number]
+
 /**
  * Match the chat model selector: platform registry name as the primary label,
- * user-defined credential name as the secondary key label.
+ * user-defined credential name as the secondary key label. The Claude slot
+ * mapping rides along so a client without the credential store (Remote
+ * Control) can name the model the key actually serves.
  */
-function apiProviderOption(credential: Credential): {
-  id: string
-  name: string
-  brand?: string
-  keyName?: string
-} {
+function apiProviderOption(credential: Credential, modelEnv: ProviderModelEnv | undefined): ApiProviderRow {
   const platform = findPlatform(getPlatforms(), credential.platformId)
   return {
     id: credential.id,
     name: platform?.name ?? credential.name,
     ...(platform?.brand ? { brand: platform.brand } : {}),
     ...(credential.name ? { keyName: credential.name } : {}),
+    ...(modelEnv ? { modelEnv } : {}),
   }
 }
 
 /** Same filter as the main chat provider picker (endpoint-capable credentials). */
-function listApiProvidersForHarness(harnessId: 'claude' | 'codex'): Array<{
-  id: string
-  name: string
-  brand?: string
-  keyName?: string
-}> {
+function listApiProvidersForHarness(harnessId: 'claude' | 'codex'): ApiProviderRow[] {
   const consumer = harnessId === 'codex' ? 'chat:codex' : 'chat:claude'
-  const platforms = getPlatforms()
-  return listCredentials()
-    .filter((credential) => {
-      const platform = findPlatform(platforms, credential.platformId)
-      const plan = findPlan(platform, credential.planId)
-      if (!platform || !plan) return false
-      const endpoints = effectiveEndpoints(platform, plan, credential)
-      return !!selectEndpoint(plan, consumer, undefined, credential, endpoints, {
-        experimentalClaudeOpenAiChatEnabled: readAppSettings().experimentalClaudeOpenAiChatEnabled,
-      })
-    })
-    .map(apiProviderOption)
+  const options = { experimentalClaudeOpenAiChatEnabled: readAppSettings().experimentalClaudeOpenAiChatEnabled }
+  return listCredentials().flatMap((credential) => {
+    const resolved = resolveServiceFromCredential(consumer, credential, null, options)
+    return resolved ? [apiProviderOption(credential, resolved.modelMapping)] : []
+  })
 }
 
 /**

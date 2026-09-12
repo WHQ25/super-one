@@ -97,8 +97,11 @@ export function deepseekModeCatalog(roster: DeepseekPresetRoster | null | undefi
 export interface ProviderCatalogSource {
   /** Masked credentials from the store, in sort order. */
   credentials: Array<{ id: string; name?: string; platformId: string }>
-  /** Whether this credential can actually serve the harness's chat consumer. */
-  servesHarness: (credentialId: string) => { brand?: string | null } | null
+  /**
+   * Whether this credential can actually serve the harness's chat consumer, and
+   * the mapping it would run under — the client cannot resolve that itself.
+   */
+  servesHarness: (credentialId: string) => Pick<RemoteProviderOption, 'brand' | 'modelEnv'> | null
   /** Platform name + favicon for a credential row, as the desktop picker draws it. */
   platformDisplay: (platformId: string) => { name: string; icon?: string }
   /** Logged-in Claude accounts; only surfaced once there is more than one. */
@@ -143,6 +146,7 @@ export function harnessProviderCatalog(
       brand: served.brand ?? null,
       ...(platform.icon ? { icon: platform.icon } : {}),
       ...(credential.name ? { keyName: credential.name } : {}),
+      ...(served.modelEnv && Object.keys(served.modelEnv).length > 0 ? { modelEnv: served.modelEnv } : {}),
     })
   }
   return { providers, selectedProviderId: source.selectedProviderId ?? null }

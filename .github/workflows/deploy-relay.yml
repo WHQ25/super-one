@@ -51,7 +51,7 @@ jobs:
           node-version: '22'
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: bun install --frozen-lockfile --ignore-scripts
 
       - name: Relay unit tests
         run: bun run test:relay

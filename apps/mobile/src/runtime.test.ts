@@ -110,12 +110,17 @@ describe('ChatRuntime', () => {
     const runtime = new ChatRuntime(client as never, (s) => {
       paints.push({ messages: s.messages.map((m) => m.id), pendingTurn: runtime.pendingTurn })
     })
-    const image = { name: 'a.png', mimeType: 'image/png', base64: 'AA==' }
+    const image = { id: 'img1', name: 'a.png', mimeType: 'image/png', base64: 'AA==' }
     runtime.stageTurn('user_first', 'hello', [image])
     // Painted synchronously: nothing has gone over the wire yet.
     expect(client.sent).toEqual([])
     expect(paints.at(-1)).toEqual({ messages: ['user_first'], pendingTurn: 'creating' })
-    expect(runtime.session.messages[0]).toMatchObject({ role: 'user', attachments: [image], providerId: 'local' })
+    // Shaped like the host's message — attachment blocks before the text — since
+    // this bubble, not the echo, is what the transcript keeps.
+    expect(runtime.session.messages[0]).toMatchObject({
+      role: 'user', attachments: [image], providerId: 'local',
+      content: [{ type: 'image', name: 'a.png', id: 'img1' }, { type: 'text', text: 'hello' }],
+    })
     expect(runtime.streaming).toBe(true)
 
     const created = runtime.create('/p', { sessionId: 's1', provider: 'claude' })

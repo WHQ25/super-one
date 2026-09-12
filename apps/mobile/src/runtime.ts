@@ -4,6 +4,7 @@ import { requestMentionSearch, type MentionSearchOptions, type MentionSearchResu
 import type {
   AgentEvent,
   ChatMessage,
+  ContentBlock,
   HarnessId,
   QuestionAnnotations,
   ImageAttachment,
@@ -76,12 +77,25 @@ export type CreateSessionOptions = {
 }
 
 /** The bubble the phone paints for its own send; the host's echo carries the same id. */
+/**
+ * The bubble painted before the host echoes it. Shaped like the host's own
+ * `buildUserMessage` (attachment blocks first, then the text) because the echo
+ * is deduplicated away by id: whatever is drawn here is what stays, and a
+ * reopened session must look the same.
+ */
 function localUserMessage(id: string, text: string, images?: ImageAttachment[]): ChatMessage {
   return {
     id,
     role: 'user',
     status: 'complete',
-    content: [{ type: 'text', text }],
+    content: [
+      ...(images ?? []).map((attachment): ContentBlock => (
+        attachment.mimeType === 'application/pdf'
+          ? { type: 'document', name: attachment.name, id: attachment.id }
+          : { type: 'image', name: attachment.name, id: attachment.id }
+      )),
+      { type: 'text', text },
+    ],
     createdAt: new Date().toISOString(),
     providerId: 'local',
     ...(images?.length ? { attachments: images } : {}),

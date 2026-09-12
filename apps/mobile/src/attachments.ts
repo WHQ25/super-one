@@ -1,11 +1,13 @@
 import * as DocumentPicker from 'expo-document-picker'
 import { File } from 'expo-file-system'
+import { ImageManipulator, SaveFormat } from 'expo-image-manipulator'
 import * as ImagePicker from 'expo-image-picker'
 import { Alert } from 'react-native'
 import { MAX_UPLOAD_BYTES, type HttpPut, type RelayClient } from '@superone/relay-client'
 import type { ImageAttachment } from '@superone/shared/agent-types'
 import { randomId } from './ids'
 import { classifyAttachmentSize } from './attachment-limits'
+import { CHAT_IMAGE_JPEG_QUALITY, chatImageFileName, planChatImage, sniffChatImageMime } from './chat-image-encoding'
 
 export const MAX_CHAT_IMAGE_BYTES = 5 * 1_024 * 1_024
 export const MAX_CHAT_PDF_BYTES = 20 * 1_024 * 1_024
@@ -15,23 +17,43 @@ export async function pickChatImages(limit: number): Promise<ImageAttachment[]> 
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ['images'],
     allowsMultipleSelection: true,
-    base64: true,
-    quality: 0.9,
+    quality: 1,
     selectionLimit: limit,
   })
   if (result.canceled) return []
-  return result.assets.map((asset, index): ImageAttachment => {
-    if (!asset.base64) throw new Error('Selected image data is unavailable')
-    const size = classifyAttachmentSize(asset.base64, asset.fileSize, MAX_CHAT_IMAGE_BYTES)
+  const attachments: ImageAttachment[] = []
+  for (const [index, asset] of result.assets.entries()) {
+    // The library hands back the asset as stored (HEIC on iPhones, full 12 MP);
+    // the AI reads only JPEG/PNG/GIF/WebP and downsizes past ~1568 px anyway.
+    const base64 = await encodeChatImage(asset)
+    const mimeType = sniffChatImageMime(base64)
+    if (!mimeType) throw new Error(`${asset.fileName ?? 'This image'} is in a format the AI cannot read`)
+    const size = classifyAttachmentSize(base64, null, MAX_CHAT_IMAGE_BYTES)
     if (size === 'invalid') throw new Error('Selected image data is invalid')
     if (size === 'too-large') throw new Error('Image too large to send to AI (max 5 MB)')
-    return {
+    attachments.push({
       id: asset.assetId ?? randomId(),
-      name: asset.fileName ?? `image-${index + 1}.jpg`,
-      mimeType: asset.mimeType ?? 'image/jpeg',
-      base64: asset.base64,
-    }
+      name: chatImageFileName(asset.fileName, index, mimeType),
+      mimeType,
+      base64,
+    })
+  }
+  return attachments
+}
+
+async function encodeChatImage(asset: ImagePicker.ImagePickerAsset): Promise<string> {
+  const plan = planChatImage(asset)
+  if (plan.kind === 'raw') return new File(asset.uri).base64()
+  const context = ImageManipulator.manipulate(asset.uri)
+  if (plan.edge) context.resize(asset.width >= asset.height ? { width: plan.edge } : { height: plan.edge })
+  const image = await context.renderAsync()
+  const saved = await image.saveAsync({
+    format: plan.format === 'png' ? SaveFormat.PNG : SaveFormat.JPEG,
+    compress: plan.format === 'png' ? 1 : CHAT_IMAGE_JPEG_QUALITY,
+    base64: true,
   })
+  if (!saved.base64) throw new Error('Selected image data is unavailable')
+  return saved.base64
 }
 
 export async function pickChatPdf(): Promise<ImageAttachment | null> {

@@ -1,13 +1,14 @@
 import { memo, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
-import { CircleStop, FileText, ImageIcon, RefreshCw } from 'lucide-react'
+import { CircleStop, RefreshCw } from 'lucide-react'
 import { ChatMessagePresenter } from './presenters/ChatMessage'
 import { TurnSummaryAboveFooter } from './presenters/ChatMessageIndicators'
 import { collaborationLabelKey } from './presenters/collaboration-label'
 import { getAssistantCopyText } from './presenters/getAssistantCopyText'
 import { ZERO_TURN_TOKENS, type TurnTokenCounts } from './presenters/turn-footer-model'
 import { PortableCollabTaskBubble } from './PortableCollabTaskBubble'
+import { attachmentForBlock, PortableAttachmentChip } from './PortableAttachmentChip'
 import { PortableUserText } from './PortableUserText'
 import { PortableToolRow } from './PortableToolRow'
 import { PortableTurnFooter } from './PortableTurnFooter'
@@ -25,7 +26,6 @@ import {
   collectCodexGeneratedVideos,
 } from './presenters/media-generation'
 import { collectGeneratedImages, collectGeneratedVideos } from './presenters/tool-display'
-import { previewImage } from './image-preview'
 import type { ReductionProjection } from './protocol'
 import { useUserMessageMenu } from './use-user-message-menu'
 
@@ -50,6 +50,9 @@ function resultsByTool(content: ContentBlock[]): Map<string, { result: string; i
   return results
 }
 
+type AttachmentBlock = Extract<ContentBlock, { type: 'image' | 'document' }>
+const isAttachmentBlock = (block: ContentBlock): block is AttachmentBlock => block.type === 'image' || block.type === 'document'
+
 function PortableUserContent({
   message,
   mentionArtwork,
@@ -58,23 +61,20 @@ function PortableUserContent({
   mentionArtwork: Record<string, string>
 }) {
   const results = resultsByTool(message.content)
-  return message.content.map((block, index) => {
+  // Attachments sit in one row above the text, as on desktop, whatever order
+  // the blocks arrived in.
+  const attachments = message.content.filter(isAttachmentBlock)
+  const rest = attachments.length ? message.content.filter((block) => !isAttachmentBlock(block)) : message.content
+  const chips = attachments.length > 0 && (
+    <div key="attachments" className="mb-1 flex flex-wrap gap-1.5">
+      {attachments.map((block, index) => (
+        <PortableAttachmentChip key={block.id ?? index} block={block} attachment={attachmentForBlock(message, block)} />
+      ))}
+    </div>
+  )
+  return [chips, ...rest.map((block, index) => {
     if (block.type === 'text') {
       return <PortableUserText key={index} text={block.text} mentionArtwork={mentionArtwork} />
-    }
-    if (block.type === 'image') {
-      return (
-        <div key={index} className="my-1 flex items-center gap-1.5 rounded bg-muted/40 px-2 py-1 text-xs">
-          <ImageIcon className="size-3" /> {block.name}
-        </div>
-      )
-    }
-    if (block.type === 'document') {
-      return (
-        <div key={index} className="my-1 flex items-center gap-1.5 rounded bg-muted/40 px-2 py-1 text-xs">
-          <FileText className="size-3" /> {block.name}
-        </div>
-      )
     }
     if ('toolName' in block && 'toolUseId' in block && 'input' in block) {
       const result = results.get(block.toolUseId)
@@ -95,35 +95,7 @@ function PortableUserContent({
       )
     }
     return null
-  })
-}
-
-function AttachmentGallery({ message }: { message: ChatMessage }) {
-  // The host echoes the sender's own message without the picture bytes; that
-  // copy is normally deduplicated away, and must not paint a broken image if not.
-  const attachments = message.attachments?.filter((attachment) => attachment.base64)
-  if (!attachments?.length) return null
-  return (
-    <div className="mt-2 grid grid-cols-2 gap-2">
-      {attachments.map((attachment, index) => {
-        const src = `data:${attachment.mimeType};base64,${attachment.base64}`
-        const picture = <img src={src} alt={attachment.name} className="max-h-64 w-full rounded-lg object-contain" />
-        // Only a real picture opens the viewer; a PDF attachment has no bitmap to show.
-        if (!attachment.mimeType.startsWith('image/')) return <div key={attachment.id ?? index}>{picture}</div>
-        return (
-          <button
-            key={attachment.id ?? index}
-            type="button"
-            className="block w-full overflow-hidden rounded-lg"
-            onClick={() => previewImage(src, { label: attachment.name })}
-            aria-label={`Preview ${attachment.name}`}
-          >
-            {picture}
-          </button>
-        )
-      })}
-    </div>
-  )
+  })]
 }
 
 /**
@@ -245,12 +217,9 @@ export const PortableMessage = memo(function PortableMessage({
           body={body}
           userBubbleProps={userMenu.bubbleProps}
           userMenu={userMenu.menu}
-          imageGallery={
-            <>
-              <AttachmentGallery message={message} />
-              {generated.images.length > 0 && <PortableImageGallery items={generated.images} />}
-            </>
-          }
+          imageGallery={generated.images.length > 0
+            ? <PortableImageGallery items={generated.images} />
+            : undefined}
           videoGallery={generated.videos.length > 0
             ? <PortableVideoGallery items={generated.videos} />
             : undefined}

@@ -36,6 +36,17 @@ bubble inside the WebView until the assistant's `message_start` lands. Every
 live send paints its own bubble the same way, under the `clientMessageId` the
 host echoes back. Create failures still surface on the status line from the
 host `create_session` error, and hand the cleared draft back to the composer.
+A picked picture is re-encoded on the phone before anything else sees it
+(`src/chat-image-encoding.ts` decides, `expo-image-manipulator` encodes): the
+library returns assets as stored — HEIC on every iPhone — and the host's Read
+tool and the model accept only JPEG/PNG/GIF/WebP, so HEIC/TIFF/AVIF become
+JPEG, anything over 2048 px on its longest edge is scaled down, a PNG stays PNG,
+a GIF is never touched, and the bytes are sniffed afterwards rather than
+trusting the picker's mime type. The user bubble shows each attachment as a
+thumbnail chip (`PortableAttachmentChip`, the phone's `AttachmentChip`) that
+opens the native viewer; the optimistic bubble carries the same `image` /
+`document` blocks the host builds, because the host's echo is deduplicated
+away and a reopened session must look the same.
 A picture attached to a send crosses the wire exactly twice (draft flush and
 `send_message`): the host strips attachment bytes from `list_drafts`,
 `save_draft` replies and `draft_changed`, `prepareSend` opens the draft with

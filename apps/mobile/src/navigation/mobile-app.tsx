@@ -439,6 +439,7 @@ export function MobileApp() {
       isRecapping: runtime.session.isRecapping,
       compactError: runtime.session.compactError,
       apiRetry: runtime.session.apiRetry,
+      pendingTurn: runtime.pendingTurn,
       projectPath: runtime.projectPath || null,
     })
     if (includeMentionArtwork) mentionArtworkRevisionRef.current = mentionArtworkRevision
@@ -1222,7 +1223,13 @@ export function MobileApp() {
       apply(await requestHarnessResource(client, 'get_system_info', project.path, option.provider))
     }, setStatus, 'failed to load agent settings')
   }
-  const createSession = async () => {
+  /**
+   * The first send creates the session it goes into. `turn` is that message:
+   * it is painted, and the title taken from it, before the draft flush and the
+   * host round trips, so the tap lands like a desktop send — bubble, title, and
+   * a "Creating session…" line under it — instead of a blank wait.
+   */
+  const createSession = async (turn: { clientMessageId: string; text: string; images: ImageAttachment[]; title: string }) => {
     const client = clientRef.current
     const p = project
     if (!client || !p) return
@@ -1232,7 +1239,6 @@ export function MobileApp() {
       return
     }
     return sessionTransitionRef.current.run(async () => {
-      const draftControl = await remoteDrafts.prepareSend()
       const previousId = runtimeRef.current?.sessionId
       if (previousId) client.send({ type: 'leave_session', sessionId: previousId })
       const runtime = bindRuntime(client)
@@ -1241,8 +1247,10 @@ export function MobileApp() {
       // Leave the landing immediately — the first send should look like desktop,
       // not a "Starting session…" wait. Host errors still land on the status line.
       setSessionId(id)
-      setActiveSessionTitle('New session')
+      setActiveSessionTitle(turn.title.slice(0, 72) || 'New session')
       setScreen('chat')
+      runtime.stageTurn(turn.clientMessageId, turn.text, turn.images)
+      const draftControl = await remoteDrafts.prepareSend()
       await runtime.create(p.path, {
         ...draftControl,
         sessionId: id,
@@ -1301,11 +1309,29 @@ export function MobileApp() {
       void runtime.requestRecap()
       return
     }
-    if (!runtimeRef.current) await createSession()
+    const clientMessageId = newMessageId('user')
+    if (!runtimeRef.current) {
+      // The tap empties the composer, as on desktop: the staged bubble now holds
+      // the message, and the session round trips behind it can run for seconds
+      // (a picture is encrypted and crosses the wire more than once). A refused
+      // create hands the draft back so nothing typed is lost with it.
+      const snapshot = composerDraft.exportSnapshot()
+      const cleared = composerDraft.clearSent(sentDraft.revision)
+      if (cleared && !composerDraft.editorRef.current) suggestions.update('')
+      setAttachments((current) => current.filter((item) => !attachments.includes(item)))
+      await createSession({ clientMessageId, text, images: attachments, title: sentDraft.title })
+      if (!runtimeRef.current) {
+        if (cleared) {
+          composerDraft.replaceWith(snapshot)
+          suggestions.applyProgrammatic(snapshot.text)
+        }
+        setAttachments((current) => [...attachments, ...current])
+        return
+      }
+    }
     const runtime = runtimeRef.current
     if (!runtime) return
-    const { needsClientMessageId } = composerQueuedSendFields(runtime.session.status, selectedProvider, kind)
-    const clientMessageId = needsClientMessageId ? newMessageId('user') : undefined
+    const { needsClientMessageId: queued } = composerQueuedSendFields(runtime.session.status, selectedProvider, kind)
     try {
       await runtime.send(text, {
         images: attachments,
@@ -1320,12 +1346,12 @@ export function MobileApp() {
         ...(Object.keys(harnessSelection.modelParams).length
           ? { modelParams: harnessSelection.modelParams }
           : {}),
-        ...(clientMessageId ? { clientMessageId, priority: 'next' } : {}),
+        clientMessageId,
+        ...(queued ? { priority: 'next' as const } : {}),
         // Fold Stair into this send so it cannot race a follow-up steer RPC.
-        ...(kind === 'steer' && clientMessageId ? { steer: 'now' as const } : {}),
-        ...(kind === 'soon' && clientMessageId ? { steer: 'next' as const } : {}),
+        ...(queued && kind === 'steer' ? { steer: 'now' as const } : {}),
+        ...(queued && kind === 'soon' ? { steer: 'next' as const } : {}),
       })
-      if (!sessionId && !runtime.sessionTitle && text) setActiveSessionTitle(sentDraft.title.slice(0, 72))
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'message failed')
       return

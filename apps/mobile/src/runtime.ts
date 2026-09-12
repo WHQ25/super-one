@@ -21,6 +21,7 @@ import { sandboxInfoFromMode } from '@superone/shared/harness/harness-sandbox'
 import type { CachedTranscript, RelayClient } from '@superone/relay-client'
 import { restoreSession } from '@superone/relay-client'
 import { randomId } from './ids'
+import { newMessageId } from '@superone/shared/message-id'
 
 type SessionState = ReturnType<typeof createDefaultChatCoreSession>
 
@@ -74,6 +75,19 @@ export type CreateSessionOptions = {
   apiProviderId?: string | null
 }
 
+/** The bubble the phone paints for its own send; the host's echo carries the same id. */
+function localUserMessage(id: string, text: string, images?: ImageAttachment[]): ChatMessage {
+  return {
+    id,
+    role: 'user',
+    status: 'complete',
+    content: [{ type: 'text', text }],
+    createdAt: new Date().toISOString(),
+    providerId: 'local',
+    ...(images?.length ? { attachments: images } : {}),
+  }
+}
+
 export class ChatRuntime {
   session: SessionState = createDefaultChatCoreSession()
   /**
@@ -105,6 +119,8 @@ export class ChatRuntime {
   private historyRequest: Promise<ChatMessage[]> | null = null
   private eventEpoch = 0
   private restoreGeneration = 0
+  /** `create_session` is in flight: a staged turn reads "creating" rather than "sending". */
+  private creating = false
   private restoreQueue: Promise<void> = Promise.resolve()
   /** Request ids the phone already answered, so a replayed `ask_user_question` cannot reopen the sheet. */
   private resolvedQuestionIds = new Set<string>()
@@ -272,6 +288,24 @@ export class ChatRuntime {
     if (opts.provider) this.provider = opts.provider
     this.projectPath = projectPath
     this.sessionId = sessionId
+    this.creating = true
+    try {
+      const id = await this.createOnHost(projectPath, sessionId, opts)
+      this.creating = false
+      // A staged turn moves from "creating" to "sending" here.
+      this.dirty = true
+      this.flush()
+      return id
+    } catch (error) {
+      this.creating = false
+      // The staged bubble belongs to a session that never came to be; a blank id
+      // keeps `dispose()` from caching it as that session's transcript.
+      this.sessionId = ''
+      throw error
+    }
+  }
+
+  private async createOnHost(projectPath: string, sessionId: string, opts: CreateSessionOptions): Promise<string> {
     const res = await this.client.request({
       type: 'create_session',
       requestId: randomId(),
@@ -401,6 +435,7 @@ export class ChatRuntime {
     /** Park then steer in one host command — composer Stair. */
     steer?: 'now' | 'next'
   } = {}): void {
+    const clientMessageId = extra.clientMessageId ?? newMessageId('user')
     const cmd: RemoteCommand = {
       type: 'send_message',
       sessionId: this.sessionId,
@@ -416,33 +451,52 @@ export class ChatRuntime {
       ...(extra.modelParams && Object.keys(extra.modelParams).length
         ? { modelParams: extra.modelParams }
         : {}),
-      ...(extra.clientMessageId ? { clientMessageId: extra.clientMessageId } : {}),
+      clientMessageId,
       ...(extra.priority ? { priority: extra.priority } : {}),
       ...(extra.steer ? { steer: extra.steer } : {}),
     }
     // The wire messages that report this command's output carry no name, so the
     // only chance to learn it is here, from what the user actually sent.
-    const queued = extra.priority === 'next' && extra.clientMessageId
-      ? {
-          id: extra.clientMessageId,
-          role: 'user' as const,
-          status: 'complete' as const,
-          content: [{ type: 'text' as const, text: content }],
-          createdAt: new Date().toISOString(),
-          providerId: 'local',
-          ...(extra.images?.length ? { attachments: extra.images } : {}),
-        }
+    const queued = extra.priority === 'next'
+      ? localUserMessage(clientMessageId, content, extra.images)
       : null
     this.session = {
       ...this.session,
       _pendingSlashCommand: pendingSlashCommandFrom(content),
       ...(queued ? { queuedMessages: [...this.session.queuedMessages, queued] } : {}),
     }
-    if (queued) {
-      this.dirty = true
-      this.flush()
-    }
+    // A live send paints its own bubble, as the desktop does: the host echoes
+    // it back under the same id, which the reducer then ignores as a duplicate.
+    if (!queued) this.appendLocalTurn(localUserMessage(clientMessageId, content, extra.images))
+    this.dirty = true
+    this.flush()
     this.client.send(cmd)
+  }
+
+  /**
+   * Paint the first bubble before the host has a session to send it to. The
+   * `send()` that follows `create()` reuses the id, so nothing is drawn twice.
+   */
+  stageTurn(clientMessageId: string, content: string, images?: ImageAttachment[]): void {
+    this.appendLocalTurn(localUserMessage(clientMessageId, content, images))
+    this.dirty = true
+    this.flush()
+  }
+
+  private appendLocalTurn(message: ChatMessage): void {
+    this.session = {
+      ...this.session,
+      ...(this.session.messages.some((item) => item.id === message.id)
+        ? {}
+        : { messages: [...this.session.messages, message] }),
+      awaitingAssistantReply: true,
+    }
+  }
+
+  /** What the transcript shows under a turn the host has not started answering. */
+  get pendingTurn(): 'creating' | 'sending' | null {
+    if (!this.session.awaitingAssistantReply) return null
+    return this.creating || !this.sessionId ? 'creating' : 'sending'
   }
 
   dequeueMessage(clientMessageId: string): void {
@@ -547,6 +601,13 @@ export class ChatRuntime {
   }
 
   interrupt(): void {
+    // Stop before the reply started: nothing will come back to clear the
+    // pending line, so drop it here — the desktop store does the same.
+    if (this.session.awaitingAssistantReply) {
+      this.session = { ...this.session, awaitingAssistantReply: false }
+      this.dirty = true
+      this.flush()
+    }
     const cmd: RemoteCommand = {
       type: 'interrupt',
       sessionId: this.sessionId,

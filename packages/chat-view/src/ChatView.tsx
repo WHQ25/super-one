@@ -24,6 +24,7 @@ import {
   CompactIndicator,
   CompactingIndicator,
   findLastAssistantMessageId,
+  PendingTurnIndicator,
   RecappingIndicator,
   TurnMetaIndicator,
 } from './presenters/ChatMessageIndicators'
@@ -73,6 +74,7 @@ const EMPTY_SESSION: SessionFacts = {
   isRecapping: false,
   compactError: null,
   apiRetry: null,
+  pendingTurn: null,
   projectPath: null,
 }
 
@@ -649,6 +651,7 @@ export function ChatView() {
         className="mx-auto flex items-center gap-1 rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
         <ChevronDown className="size-3" /> Load later
       </button>}
+      {state.session.pendingTurn && <PendingTurnIndicator phase={state.session.pendingTurn} />}
       {state.session.isCompacting && <CompactingIndicator startedAt={state.session.compactingStartedAt} />}
       {state.session.compactError && <CompactErrorIndicator error={state.session.compactError} />}
       {state.session.isRecapping && <RecappingIndicator />}

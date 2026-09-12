@@ -29,8 +29,13 @@ send and a session switch both reveal an already-themed document. Unmounting
 it remounts onto WKWebView's white default and flashes in dark mode. Leaving
 the landing injects `reset` so a previous transcript cannot leak into the
 next first send. The first send itself has no "Starting session…" / loading
-copy. Create failures still surface on the status line from the host
-`create_session` error.
+copy: the composer empties, and the user bubble and title are painted, before
+the draft flush and the `create_session` round trip (`ChatRuntime.stageTurn`),
+and a `pendingTurn` line ("Creating session…" → "Sending…") sits under the
+bubble inside the WebView until the assistant's `message_start` lands. Every
+live send paints its own bubble the same way, under the `clientMessageId` the
+host echoes back. Create failures still surface on the status line from the
+host `create_session` error, and hand the cleared draft back to the composer.
 The conversation tick rail also lives in the chat WebView (`ChatScrollIndicator`),
 where it can measure and navigate the transcript without round-tripping through RN.
 Its turn outline and tick curve are shared with desktop. Touch scrubbing previews

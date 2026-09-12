@@ -129,6 +129,28 @@ export function TurnMetaIndicator({ meta }: { meta: TurnMetaMarker }) {
   )
 }
 
+/**
+ * The phone's stand-in for a live turn that has no assistant row yet: the user
+ * bubble is painted optimistically, and this is what shows the turn is on its
+ * way — creating the session first when it is the first message. Mirrors the
+ * `PortableTurnFooter` "Sending…" meta so the label reads the same before and
+ * after the assistant row appears.
+ */
+export function PendingTurnIndicator({ phase }: { phase: 'creating' | 'sending' }) {
+  const { t } = useTranslation()
+  return (
+    <div
+      className="mt-0.5 mb-2.5 flex items-center gap-1.5 text-xs leading-snug text-muted-foreground"
+      data-pending-turn={phase}
+      role="status"
+      aria-live="polite"
+    >
+      <Loader2 className="size-3 shrink-0 animate-spin" aria-hidden />
+      <span>{t(phase === 'creating' ? 'chat.creatingSession' : 'chat.sending')}</span>
+    </div>
+  )
+}
+
 export function RecappingIndicator() {
   const { t } = useTranslation()
   return (

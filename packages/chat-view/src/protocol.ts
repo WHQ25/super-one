@@ -25,6 +25,14 @@ export interface SessionProjection {
   compactError?: string | null
   apiRetry?: ProjectedApiRetry | null
   /**
+   * A turn the phone has sent but the host has not started answering. Until the
+   * assistant's `message_start` lands there is no live turn to carry a footer,
+   * so this stands in under the last user bubble: `creating` while the session
+   * itself is still being created on the host, `sending` once the message is on
+   * the wire. `null` once the reply (or an error) arrives.
+   */
+  pendingTurn?: 'creating' | 'sending' | null
+  /**
    * Absolute project root on the host. Used only to turn project-relative
    * markdown file links into paths `previewFile` can act on — the WebView has no
    * transport for host files, so media srcs are deliberately left alone. Tool

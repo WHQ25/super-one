@@ -1777,6 +1777,7 @@ export const zh: Messages = {
     },
     runningCommand: '正在执行 /{{command}}…',
     sending: '发送中…',
+    creatingSession: '正在创建会话…',
     codex: {
       statusRunning: '执行中',
       statusReading: '读取中',

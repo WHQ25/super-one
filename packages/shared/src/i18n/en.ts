@@ -1674,6 +1674,7 @@ export type Messages = {
     }
     runningCommand: string
     sending: string
+    creatingSession: string
     codex: {
       statusRunning: string
       statusReading: string
@@ -5388,6 +5389,7 @@ export const en: Messages = {
     },
     runningCommand: 'Running /{{command}}…',
     sending: 'Sending…',
+    creatingSession: 'Creating session…',
     codex: {
       statusRunning: 'Running',
       statusReading: 'Reading',

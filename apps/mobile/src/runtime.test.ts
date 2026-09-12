@@ -95,6 +95,101 @@ describe('ChatRuntime', () => {
     expect(client.sent.some((c) => (c as { type: string }).type === 'load_session_messages')).toBe(false)
   })
 
+  it('paints the first bubble before the host has a session, then hands it to the send', async () => {
+    const client = fakeClient()
+    let releaseCreate: () => void = () => {}
+    client.request.mockImplementation(async (cmd: { type: string; sessionId?: string }) => {
+      client.sent.push(cmd)
+      if (cmd.type === 'create_session') {
+        await new Promise<void>((resolve) => { releaseCreate = resolve })
+        return { ok: true, sessionId: cmd.sessionId }
+      }
+      return { ok: true }
+    })
+    const paints: Array<{ messages: string[]; pendingTurn: string | null }> = []
+    const runtime = new ChatRuntime(client as never, (s) => {
+      paints.push({ messages: s.messages.map((m) => m.id), pendingTurn: runtime.pendingTurn })
+    })
+    const image = { name: 'a.png', mimeType: 'image/png', base64: 'AA==' }
+    runtime.stageTurn('user_first', 'hello', [image])
+    // Painted synchronously: nothing has gone over the wire yet.
+    expect(client.sent).toEqual([])
+    expect(paints.at(-1)).toEqual({ messages: ['user_first'], pendingTurn: 'creating' })
+    expect(runtime.session.messages[0]).toMatchObject({ role: 'user', attachments: [image], providerId: 'local' })
+    expect(runtime.streaming).toBe(true)
+
+    const created = runtime.create('/p', { sessionId: 's1', provider: 'claude' })
+    await Promise.resolve()
+    expect(runtime.pendingTurn).toBe('creating')
+    releaseCreate()
+    await created
+    expect(paints.at(-1)).toEqual({ messages: ['user_first'], pendingTurn: 'sending' })
+
+    runtime.send('hello', { images: [image], clientMessageId: 'user_first' })
+    // Same id as the staged bubble: the transcript still holds one row.
+    expect(runtime.session.messages.map((m) => m.id)).toEqual(['user_first'])
+    expect(client.sent).toContainEqual(expect.objectContaining({
+      type: 'send_message', clientMessageId: 'user_first', content: 'hello',
+    }))
+    // The host's echo carries the same id and is ignored as a duplicate…
+    runtime.ingest([{ type: 'user_message_appended', message: {
+      id: 'user_first', role: 'user', status: 'complete', content: [{ type: 'text', text: 'hello' }],
+      createdAt: new Date().toISOString(), providerId: 'remote',
+    } }])
+    expect(runtime.session.messages.map((m) => m.id)).toEqual(['user_first'])
+    expect(runtime.pendingTurn).toBe('sending')
+    // …and the assistant's first row takes over from the pending line.
+    runtime.ingest([{ type: 'message_start', message: {
+      id: 'assistant_1', role: 'assistant', status: 'streaming', content: [],
+      createdAt: new Date().toISOString(), providerId: 'claude',
+    } }])
+    expect(runtime.pendingTurn).toBeNull()
+  })
+
+  it('paints a live send optimistically with a generated id the host will echo', () => {
+    const client = fakeClient()
+    const paint = vi.fn()
+    const runtime = new ChatRuntime(client as never, paint)
+    runtime.projectPath = '/p'
+    runtime.sessionId = 's'
+    runtime.send('again')
+    const sent = client.sent.find((c) => (c as { type: string }).type === 'send_message') as { clientMessageId?: string }
+    expect(sent.clientMessageId).toMatch(/^user/)
+    expect(runtime.session.messages.map((m) => m.id)).toEqual([sent.clientMessageId])
+    expect(runtime.session.queuedMessages).toEqual([])
+    expect(runtime.pendingTurn).toBe('sending')
+    expect(paint).toHaveBeenCalledTimes(1)
+  })
+
+  it('drops the pending line on Stop, since no reply will come to clear it', () => {
+    const client = fakeClient()
+    const runtime = new ChatRuntime(client as never, vi.fn())
+    runtime.projectPath = '/p'
+    runtime.sessionId = 's'
+    runtime.send('hello')
+    expect(runtime.pendingTurn).toBe('sending')
+    runtime.interrupt()
+    expect(runtime.pendingTurn).toBeNull()
+    expect(runtime.streaming).toBe(false)
+    expect(client.sent).toContainEqual(expect.objectContaining({ type: 'interrupt', sessionId: 's' }))
+  })
+
+  it('forgets a staged session the host refused so it cannot be cached as a transcript', async () => {
+    const client = fakeClient()
+    client.request.mockImplementation(async (cmd: { type: string }) => {
+      if (cmd.type === 'create_session') return { ok: false, error: 'Worktree path not found' }
+      return { ok: true }
+    })
+    const put = vi.fn()
+    const runtime = new ChatRuntime(client as never, vi.fn(), {
+      pairingId: () => 'pair', transcripts: { get: () => null, put } as never,
+    })
+    runtime.stageTurn('user_first', 'hello')
+    await expect(runtime.create('/p', { sessionId: 's1' })).rejects.toThrow('Worktree path not found')
+    runtime.dispose()
+    expect(put).not.toHaveBeenCalled()
+  })
+
   it('folds composer Stair into the queued send so the host can steer atomically', () => {
     const client = fakeClient()
     const runtime = new ChatRuntime(client as never, vi.fn())

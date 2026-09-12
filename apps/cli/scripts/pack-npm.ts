@@ -39,8 +39,26 @@ const MIN_NODE_MAJOR = 20
 export const PUBLIC_CLI_PACKAGE = '@super-one/cli'
 export const PUBLIC_CLI_BIN = 'superone'
 
-const CLAUDE_SDK_VERSION = '0.3.257'
-const CURSOR_SDK_VERSION = '1.0.27'
+/**
+ * The published package installs the Agent SDKs from npm, so their versions must
+ * be the ones the bundled harness packages were compiled against — read them
+ * from those packages rather than pinning a second copy here.
+ */
+function workspaceDependencyVersion(pkgDir: string, dependency: string): string {
+  const pkgPath = join(REPO_ROOT, 'packages', pkgDir, 'package.json')
+  const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as {
+    dependencies?: Record<string, string>
+    peerDependencies?: Record<string, string>
+  }
+  const version = pkg.dependencies?.[dependency] ?? pkg.peerDependencies?.[dependency]
+  if (!version || !/^\d/.test(version)) {
+    throw new Error(`packages/${pkgDir}/package.json must pin ${dependency} to an exact version (got ${version ?? 'nothing'})`)
+  }
+  return version
+}
+
+const CLAUDE_SDK_VERSION = workspaceDependencyVersion('claude', '@anthropic-ai/claude-agent-sdk')
+const CURSOR_SDK_VERSION = workspaceDependencyVersion('cursor', '@cursor/sdk')
 
 const OPTIONAL_CLAUDE_PLATFORMS = [
   `@anthropic-ai/claude-agent-sdk-darwin-arm64`,

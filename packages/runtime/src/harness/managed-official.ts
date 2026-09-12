@@ -26,12 +26,18 @@ import {
   writeCurrentPointer,
 } from './managed-layout'
 
-/** Keep lockstep with apps/cli/scripts/pack-npm.ts CLAUDE_SDK_VERSION when possible. */
-export const OFFICIAL_CLAUDE_SDK_VERSION = '0.3.257'
+/**
+ * Pinned Claude Agent SDK on npm. The packaged desktop and the CLI bundle only
+ * the SDK's JS half and install the native `claude` binary from this pin, so it
+ * must equal the `@anthropic-ai/claude-agent-sdk` dependency in
+ * packages/claude/package.json — managed-official-lockstep.test.ts enforces it.
+ */
+export const OFFICIAL_CLAUDE_SDK_VERSION = '0.3.269'
 
 /**
  * Pinned Codex CLI on npm. Bump deliberately with release notes — never bare `latest`
- * in production enable (reproducible remote nodes).
+ * in production enable (reproducible remote nodes). Must equal the `@openai/codex`
+ * dependency in apps/desktop/package.json (same lockstep test).
  */
 export const OFFICIAL_CODEX_NPM_VERSION = '0.154.0'
 

@@ -15,6 +15,123 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- Devices: `device_release` lets the agent let go of a device when it is
+  done — a simulator or emulator SuperOne booted is shut down, one the user
+  already had running is only unbound, a real phone is only disconnected;
+  `shutdown: true` forces the stop. A mirrored iPhone is no longer routed
+  to the simulator port.
+- Show your work: agents embed the screenshots and recordings that back a
+  visual check, leave surfaces as they found them (close opened tabs,
+  release devices, quit launched apps), and get a `product/show-your-work`
+  manual chapter. Device recordings pad 1 s before and after the action.
+- Experience memory (browser / computer / device notes) is stored in Open
+  Knowledge Format v0.2 with a generated `index.md`, records the writing
+  harness and model, and agents are prompted to read it before the first
+  interaction and write it before ending a turn.
+- Mobile: the first send paints the user bubble and session title
+  immediately, with a progress line until the assistant replies.
+- Mobile: generated-image gallery and viewer match the desktop, including
+  an Info panel with the prompt, provider / model, size, timing and
+  reference images.
+- Mobile: markdown links carry the site favicon; the model picker names the
+  model a mapped API provider actually serves; a left-edge swipe dismisses
+  the file preview on iOS; picture attachments render as thumbnails.
+
+### Fixed
+
+- Mobile: photos are re-encoded on the phone before sending (HEIC / TIFF /
+  AVIF and oversized JPEGs become JPEG, capped at 2048 px), so the model can
+  read a picture taken on an iPhone.
+- Mobile: when the desktop is not behind the relay the app shows offline
+  instead of looping on reconnect; the next desktop handshake brings the
+  connection back.
+- Mobile: the workspace drawer no longer loses reordered session rows on
+  iOS or races sheets opened while it closes; the device list no longer
+  jumps when New Session is pushed; permission sheet titles and buttons
+  stay on one line.
+- Chat: long file chips are clamped to the column instead of widening the
+  page, on desktop and on the phone.
+- Media: device captures and recordings moved under the system temp
+  directory, and the model wraps spaced paths in angle brackets, so
+  screenshots no longer render as literal text.
+
+### Performance
+
+- Mobile: transcript pictures arrive as thumbnails with the original fetched
+  on tap; attachment bytes cross the link twice per send instead of eight
+  times, and frames are sealed with native AES-GCM.
+
+## [0.65.0-alpha] - 2026-09-12
+
+### Added
+
+- Devices: `device_release` lets the agent let go of a device when it is
+  done. A simulator or emulator SuperOne booted is shut down, one the user
+  already had running is only unbound, a real phone is only disconnected;
+  `shutdown: true` forces the stop. A mirrored iPhone is no longer routed
+  to the simulator port.
+- Show your work: agents embed the screenshots and recordings that back a
+  visual check (browser screenshots only on request), leave surfaces as
+  they found them (close opened tabs, release devices, quit launched apps),
+  and get a `product/show-your-work` manual chapter. Device recordings pad
+  1 s before and after the action, and a cancel during the tail keeps the
+  clip instead of reporting the action aborted.
+- Experience memory (browser / computer / device notes) is stored in Open
+  Knowledge Format v0.2 — Playbook frontmatter, generated `index.md`, legacy
+  files migrated on the next write — records the writing harness and model,
+  and the system prompt asks agents to read it before the first interaction
+  and write it before ending a turn.
+- Mobile: the first send paints the user bubble and session title
+  immediately, with a "Creating session…" → "Sending…" line until the
+  assistant replies; a refused create hands the draft back to the composer.
+- Mobile: generated-image gallery and viewer match the desktop — captioned
+  tiles and an Info panel with the prompt (one-tap copy), provider / model,
+  size, timing, reference thumbs and warnings.
+- Mobile: markdown links carry the site favicon; the markdown media
+  sanitize pipeline is shared with the desktop so the two cannot drift.
+- Mobile: the model picker names the model a mapped API provider actually
+  serves and lets a mapped credential own the effort options, as on desktop.
+- Mobile: a left-edge swipe dismisses the file preview on iOS.
+- Mobile: picture attachments render as bare 64 px thumbnails in the bubble;
+  PDFs keep the icon-and-name chip.
+
+### Fixed
+
+- Mobile: photos are re-encoded on the phone before anything sees them
+  (HEIC / TIFF / AVIF and oversized JPEGs become JPEG, capped at 2048 px),
+  so the model can read a picture taken on an iPhone; attachments open in
+  the native viewer from the bubble, and the optimistic bubble matches the
+  reopened session.
+- Mobile: when the desktop is not behind the relay the reconnect loop ends
+  in an `offline` state instead of burning request timeouts; the next
+  desktop handshake brings the connection back.
+- Mobile: the workspace drawer is an overlay rather than a Modal, so a
+  reordered session row no longer goes invisible on iOS and sheets no longer
+  race the drawer's close. Project rows only replay the unfold on a tap,
+  "Show more" matches the desktop footer, and the first-read spinner takes
+  the folder glyph's slot.
+- Mobile: each screen owns its header, so the device list no longer jumps
+  when New Session is pushed or popped; the list is one centred group.
+- Mobile: permission sheet titles and approve buttons stay on one line
+  (Allow / Trust, Always Allow / Always Trust).
+- Chat: long file chips are clamped to the column instead of widening the
+  page, on desktop and on the phone.
+- Media: device captures and recordings moved under the system temp
+  directory next to browser / computer-use screenshots (older recordings
+  stay readable), and the model wraps spaced paths in angle brackets, so
+  screenshots no longer render as literal text.
+
+### Performance
+
+- Mobile: transcript pictures arrive as 256 px thumbnails with the original
+  fetched on tap (a six-picture restore drops from 17.5 MB to 145 KB);
+  attachment bytes cross the link twice per send instead of eight times,
+  and frames are sealed with native AES-GCM (2.3 MB: 2796 ms → 3 ms).
+
+## [0.64.1] - 2026-09-12
+
+### Added
+
 - Composer drafts sync between desktop and mobile: a draft opened on the
   phone locks the desktop composer under a per-device lease, pending
   autosaves are flushed first, and mobile can start a session from a draft.
@@ -69,111 +186,6 @@ Every alpha release keeps its own notes on its GitHub Release.
   prompt instead of replaying the one recorded on its first request.
 - Chat: presenter-owned tools render through dedicated chrome; the live-turn
   label reads "Sending…".
-
-## [0.64.0-alpha.1] - 2026-09-12
-
-### Fixed
-
-- Claude: the managed runtime pin follows the bundled Agent SDK to 0.3.269.
-  0.64.0-alpha shipped the SDK's JS half at 0.3.269 driving a 0.3.257 native
-  binary, so unattended-run permission denial and the `defaultToNo` /
-  `suppressAlwaysAllowRule` prompt hints never reached the CLI side — on the
-  desktop and on remote nodes alike.
-- `@super-one/cli` publishes with the Claude and Cursor SDK versions the
-  bundled harness packages compile against (Cursor was 1.0.27 vs 1.0.30).
-  A lockstep test now ties the managed pins to the workspace dependencies.
-
-## [0.64.0-alpha] - 2026-09-12
-
-### Added
-
-- Composer drafts sync between desktop and mobile: drafts are exposed over
-  the remote protocol with a per-device control lease, the desktop flushes
-  pending autosaves before a phone opens a draft, and the desktop composer
-  shows and locks while a phone holds it. Mobile lists drafts in the
-  workspace and can start a session from one.
-- Mobile: dedicated collaboration request / task screens replace the
-  permission-sheet editor; the launch brief is fetched on demand. Mermaid
-  diagrams open on a native fullscreen preview page, so pinch-zoom no longer
-  scales the chat document.
-- Files: New File / New Folder from the tree header and folder context menu
-  (Enter commits, a taken name keeps the row open). Expanding a folder
-  re-lists it, so files written by a terminal or an agent into a collapsed
-  folder now show up, including on remote projects without a watcher.
-- Mobile: terminal tabs live in a header menu titled by the running command,
-  and create / close / title / ownership stay in sync with the desktop.
-  Selecting a tab on the phone opens the desktop panel in observation mode.
-- Mobile: file tree search, upload and new folder move into the header
-  menu; search hits render as a single relative path like `@` mentions.
-- Mobile: previews and transcripts are cached per paired desktop (512 MB
-  pool, cleared on Disconnect / Forget); reopening a session fetches only
-  the new messages, and downloads show progress.
-- Mobile: unsent composer text, mentions and attachments are parked per
-  session and restored on return instead of leaking into the next chat.
-- Remote Control: a device name edited on the desktop survives the phone's
-  next reconnect.
-- MCP brand icons on chat tool rows across desktop and mobile without first
-  visiting settings; Grok's `Server__tool` names resolve too.
-- Mobile: relay files up to 512 KiB travel in-band on the encrypted socket
-  instead of staging on R2 behind a confirmation.
-- Automation: unattended Claude runs use `permissionPrompts: 'none'` —
-  anything that would have prompted is denied immediately with a message,
-  instead of hanging the run.
-- Permissions: honour the SDK's `defaultToNo` (Deny is focused, bare Enter
-  rejects) and `suppressAlwaysAllowRule` hints on desktop and mobile.
-
-### Fixed
-
-- Mobile: a paired desktop that restarted on a new LAN port is found again
-  without restarting the app — Android re-resolves changed services, iOS
-  settles a stuck browser, and refresh restarts discovery and probes every
-  advertised address.
-- Mobile: steering a queued Grok send no longer races the send itself; host
-  errors moved under the header with copy and dismiss.
-- Mobile: a running turn stays visible when its project is collapsed, the
-  keyboard dismisses when switching sessions, model / effort picks stay
-  visit-local, git status refreshes at turn end and on the branch page, and
-  the Grok recap is requested only on return.
-- Mobile: chat WebView follows the host scheme in light mode (no dark flash
-  on mount or transcript reset), is opaque over the default white flash, and
-  the light-mode effort easter eggs and landing shadow band render cleanly.
-- Mobile: release Android builds allow cleartext LAN traffic, so reachability
-  no longer silently falls back to relay on the same Wi-Fi. Adaptive icon
-  inset by 16% to match launcher masks.
-- Mobile: code fences tagged `ts` / `js` / `sh` resolve to the curated
-  grammar instead of shiki's registered alias.
-- Session: mobile-created Grok sessions carry `acpAgentId`, so the sidebar
-  shows Grok instead of the generic ACP icon; Grok recaps persist to the
-  transcript so mobile history restores them.
-
-### Changed
-
-- Codex: adopted app-server 0.154.0. Unknown inbound JSON-RPC methods now
-  return method-not-found instead of an empty success; MCP tool-discovery
-  errors stay distinct from connection status; OAuth auth challenges on tool
-  results become a Sign-in action (not a user-deny). Unselected models are
-  omitted so server `config.model` is not overwritten by the picker default.
-- Claude Agent SDK 0.3.269, with `systemPrompt.snapshot` pinned off so a
-  resumed session renders the current prompt instead of replaying the one
-  recorded on its first request.
-- Chat: tools that own a presenter render through dedicated chrome instead
-  of a generic deferred row; turn-footer icons centre against text; the
-  live-turn label reads "Sending…".
-
-### Tests
-
-- Vitest strips `SUPERONE_HOME` / `SUPERONE_VARIANT` from SuperOne-launched
-  shells in the desktop and runtime suites; live reasoning is expected to
-  start collapsed; the alpha build sequence (`SUPERONE_PRERELEASE_N`) is
-  covered in the packaging seams; chat-view's boundary tests match preload
-  bridge names instead of every `window.`.
-
-### CI
-
-- `update-mobile.yml` publishes mobile OTA updates per platform behind a
-  runtime-fingerprint guard; `release-mobile.yml` builds both platforms from
-  one dispatch; every published mobile build is tagged
-  `mobile/<platform>/v<version>-build<N>`.
 
 ## [0.63.0] - 2026-09-11
 

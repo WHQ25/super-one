@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Pressable, ScrollView, View } from 'react-native'
 import { FolderPlus, Search, SquarePen } from 'lucide-react-native'
 import type { RelayClient } from '@superone/relay-client'
@@ -6,6 +6,7 @@ import { Text } from '../ui/text'
 import type { Project } from '../project-types'
 import type { SessionListRow } from '../session-list-state'
 import { useMobileTheme } from '../theme/context'
+import type { WorkspaceListCache } from '../workspace-list-cache'
 import { IconButton, SwipeSessionRow } from '../ui'
 import { SessionRowContent } from '../ui/session-row-content'
 import { useMobileLocale } from '../i18n/context'
@@ -20,12 +21,18 @@ export type WorkspaceListProps = Partial<WorkspaceDraftsProps> & {
   activeSessionId: string | null
   /** Rows the shell already holds for the active project; seeds its row. */
   sessions: SessionListRow[]
+  /**
+   * Everything this panel has read over the current connection. It outlives the
+   * panel — the drawer unmounts on every close — so an open paints from here
+   * and costs a request only for what the host has reported as changed since.
+   */
+  cache: WorkspaceListCache
   /** The panel is on screen. A hidden drawer has no reason to read anything. */
   visible: boolean
   /**
    * Bumped by the shell when the host reports a session-list change (and once
-   * after a reconnect). The lists are re-read on a bump, not on every open —
-   * opening a drawer nothing has changed under costs no request at all.
+   * after a reconnect). Only a tick: `cache` records which lists it named, so
+   * a change in one project does not re-read another.
    */
   listRevision: number
   onNewSession: (project: Project) => void | Promise<void>
@@ -56,31 +63,44 @@ export function WorkspaceList(props: WorkspaceListProps) {
   // Several projects may stand open at once, as on the desktop. Becoming
   // visible adds the project the user is in without disturbing the rest, so
   // landing on your own work never costs someone else's expansion. The first
-  // paint already has it open: the drawer remounts this list on every open,
-  // and expanding one commit later would unfold the active project each time.
+  // paint already has it open, and the rest as they were left: the drawer
+  // remounts this list on every open, and expanding one commit later would
+  // unfold the active project each time.
   const activePath = props.activeProject?.path
-  const { visible } = props
-  const [expandedPaths, setExpandedPaths] = useState<ReadonlySet<string>>(() => new Set(visible && activePath ? [activePath] : []))
-  const [pinned, setPinned] = useState<SessionListRow[]>([])
+  const { visible, cache } = props
+  const [expandedPaths, setExpandedPaths] = useState<ReadonlySet<string>>(
+    () => new Set(visible && activePath ? [...cache.expandedPaths, activePath] : cache.expandedPaths),
+  )
+  useEffect(() => { cache.expandedPaths = expandedPaths }, [cache, expandedPaths])
   useEffect(() => {
     if (!visible || !activePath) return
     setExpandedPaths((current) => current.has(activePath) ? current : new Set([...current, activePath]))
   }, [visible, activePath])
 
   const { client } = props
+  const [pinned, setPinned] = useState<SessionListRow[]>(() => cache.pinned?.rows ?? [])
   const refreshPinned = useCallback(() => {
     if (!client) return
-    readPinnedSessions(client).then(setPinned).catch(() => { /* the section just stays as it was */ })
-  }, [client])
+    const revision = cache.pinnedRevision
+    readPinnedSessions(client)
+      .then((rows) => {
+        // Two reads can overlap (a bump lands while a pin's own re-read is out);
+        // one that started earlier must not land over one that started later.
+        if (revision < (cache.pinned?.revision ?? -1)) return
+        cache.pinned = { rows, revision }
+        setPinned(rows)
+      })
+      .catch(() => { /* the section just stays as it was */ })
+  }, [client, cache])
 
   // The project lists live in the rows; this covers only the cross-project
-  // Pinned section, which has no other loader. `-1` so the first paint loads it.
-  const syncedRevision = useRef(-1)
+  // Pinned section, which has no other loader. Read once, then again only when
+  // a change anywhere may have moved a pin — never merely because the drawer
+  // opened.
   useEffect(() => {
-    if (!visible || syncedRevision.current === props.listRevision) return
-    syncedRevision.current = props.listRevision
+    if (!visible || cache.pinned?.revision === cache.pinnedRevision) return
     refreshPinned()
-  }, [visible, props.listRevision, refreshPinned])
+  }, [visible, props.listRevision, cache, refreshPinned])
 
   const { onLeave } = props
   const leave = (run: () => void) => { onLeave?.(); run() }
@@ -162,6 +182,7 @@ export function WorkspaceList(props: WorkspaceListProps) {
       {props.projects.map((project) => <WorkspaceProjectRow
         key={project.path}
         client={client}
+        cache={cache}
         project={project}
         expanded={expandedPaths.has(project.path)}
         onToggle={() => setExpandedPaths((current) => {

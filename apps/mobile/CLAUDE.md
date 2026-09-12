@@ -340,6 +340,10 @@ jest-expo reuses the transform Metro already applies. What it costs to use:
   happened, and the test fails claiming the cleanup is broken when it is not.
   `await act(async () => {})` between them does not help. Drive the state change
   through a **prop** instead of a press when the test needs a rerender.
+- **`unmount()` then a second `render` in one test poisons the next test.** The
+  tree the next test mounts never commits (its first `waitFor` sees zero calls),
+  the same act-scope overlap as above. To exercise a remount, render
+  `<>{mounted ? <Row/> : null}</>` and flip `mounted` through `rerender`.
 - `renderWithTheme`'s `rerender` re-wraps the provider. RNTL's own replaces the
   whole tree, so a bare `result.rerender` remounts into a tree with no
   `MobileThemeProvider` and every themed component throws.

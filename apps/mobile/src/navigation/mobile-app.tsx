@@ -74,6 +74,7 @@ import {
 import { shouldUseTabletMultiPane } from '../layout-state'
 import { WorkspaceSidebar } from './workspace-sidebar'
 import { sessionListInvalidations, type SessionListRow as SessionRow } from '../session-list-state'
+import { WorkspaceListCache } from '../workspace-list-cache'
 import { injectHostMessage as inject, resolveNativeRequest } from '../native-actions'
 import { createMediaPorts } from '../media-ports'
 import type { ReconnectController } from '../reconnect-controller'
@@ -188,14 +189,20 @@ export function MobileApp() {
   /**
    * Bumped whenever the host reports a session-list change, and once after a
    * reconnect — events that landed while the socket was down were never
-   * delivered, so everything cached is suspect. The drawer re-reads on a bump
-   * instead of on every open.
-   *
-   * One counter rather than one per project: `useProjectSessions` only ever
-   * caches the project it currently has open, so a change elsewhere costs at
-   * most one extra request the next time the drawer is opened.
+   * delivered, so everything cached is suspect. It is only a tick: which lists
+   * went stale is recorded per project in `workspaceCache`, so a change in one
+   * project never costs another a request.
    */
   const [sessionListRevision, setSessionListRevision] = useState(0)
+  /**
+   * Session lists read over the current connection. Outlives the drawer, which
+   * unmounts on every close, so opening it paints from here and re-reads only
+   * what the host has invalidated since. Replaced with the client: another
+   * desktop's lists are another desktop's.
+   */
+  const [workspaceCache, setWorkspaceCache] = useState(() => new WorkspaceListCache())
+  // The same object, readable from async flows that started before a re-render.
+  const workspaceCacheRef = useRef(workspaceCache)
   /** Where a session goes when it ends, fails or is removed: the workspace, open. */
   const returnToWorkspace = () => { setScreen('chat'); setSessionSwitcherOpen(true) }
   const [attachments, setAttachments] = useState<ImageAttachment[]>([])
@@ -258,7 +265,7 @@ export function MobileApp() {
   })
   const filePreview = useFilePreview({ clientRef, transport: activeTransport, project, sessionId, pairingId: activePairingId })
   useOrientationLock({ filePreviewOpen: filePreview.state != null })
-  const workspaceActivity = useWorkspaceActivity(clientRef.current, connectionState === 'connected', sessionListRevision, screen === 'chat' && !sessionSwitcherOpen ? sessionId : null)
+  const workspaceActivity = useWorkspaceActivity(clientRef.current, connectionState === 'connected', screen === 'chat' && !sessionSwitcherOpen ? sessionId : null)
   const directory = useRemoteDirectory(clientRef)
   const { load: loadDirectory, path: directoryPath, items: directoryItems } = directory
   // The browser is a project tree by default; computer mode is the folder-picking
@@ -638,6 +645,7 @@ export function MobileApp() {
     suppressReconnectRef.current = true
     clientRef.current?.disconnect()
     suppressReconnectRef.current = false
+    const cache = new WorkspaceListCache()
     const { client, reconnectController } = createMobileRelayConnection({
       onEvents: (events, epoch) => {
         logRelayEventTypes(events)
@@ -653,7 +661,11 @@ export function MobileApp() {
         }
         // Read off the raw batch, before ChatRuntime: the drawer has to stay
         // current even when no session is open and there is no runtime to ingest.
-        if (sessionListInvalidations(events).length) setSessionListRevision((n) => n + 1)
+        const invalidated = sessionListInvalidations(events)
+        if (invalidated.length) {
+          for (const path of invalidated) cache.invalidate(path)
+          setSessionListRevision((n) => n + 1)
+        }
         additionalDirsRef.current.ingest(events)
         runtimeRef.current?.ingest(events, epoch)
       },
@@ -672,6 +684,7 @@ export function MobileApp() {
       onConnection: (state, epoch) => {
         // A socket that was down missed every invalidation sent meanwhile.
         if (state === 'connected' && connectionRef.current?.state !== 'connected') {
+          cache.invalidateAll()
           setSessionListRevision((n) => n + 1)
         }
         connectionRef.current = { state, epoch }
@@ -700,6 +713,8 @@ export function MobileApp() {
     })
     reconnectControllerRef.current = reconnectController
     clientRef.current = client
+    workspaceCacheRef.current = cache
+    setWorkspaceCache(cache)
     const hp = (lanHostPort ?? lan).trim()
     if (hp.includes(':')) {
       const [host, port] = hp.split(':')
@@ -877,6 +892,8 @@ export function MobileApp() {
     if (parkDraft && p.path !== project?.path) await remoteDrafts.park()
     systemInfoRequestRef.current++
     const projectRequest = ++shellDetailsRequestRef.current
+    const cache = workspaceCacheRef.current
+    const listRevision = cache.revisionOf(p.path)
     // Four independent reads; one round trip instead of four over the relay.
     // Only the selected harness is waited for — the rest warm behind the screen.
     const [, , page] = await Promise.all([
@@ -889,6 +906,8 @@ export function MobileApp() {
     void preloadHarnessResources(client, p.path, harnessOptions.map((option) => option.provider))
     setProject(p)
     setSessions(page.sessions)
+    // This page is the list the drawer would otherwise read again on its next open.
+    cache.store(p.path, { rows: page.sessions, total: page.totalCount, revision: listRevision })
   }
 
   const loadShellDetails = async (provider: HarnessId = selectedProvider, p = project, refreshCatalog = false) => {
@@ -1613,6 +1632,7 @@ export function MobileApp() {
     activeProject: project,
     activeSessionId: sessionId,
     sessions,
+    cache: workspaceCache,
     listRevision: sessionListRevision,
     drafts: remoteDrafts.rows,
     activeDraftId: remoteDrafts.activeId,

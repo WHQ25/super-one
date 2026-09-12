@@ -11,6 +11,7 @@ import { useIconMotion } from '../ui/use-icon-motion'
 import type { Project } from '../project-types'
 import type { SessionListRow } from '../session-list-state'
 import { projectHasAttention } from '../session-activity-state'
+import type { WorkspaceListCache } from '../workspace-list-cache'
 import { useMobileTheme } from '../theme/context'
 import { SessionActivityContext } from './use-session-activity'
 import { useProjectSessions } from './use-project-sessions'
@@ -18,6 +19,8 @@ import { useProjectSessions } from './use-project-sessions'
 export type WorkspaceProjectRowProps = SessionListActions & {
   client: RelayClient | null
   project: Project
+  /** Lists read earlier over this connection; a remount starts from here, not from a request. */
+  cache: WorkspaceListCache
   expanded: boolean
   onToggle: () => void
   /** Rows the shell already holds for this project; avoids an empty first paint. */
@@ -25,7 +28,7 @@ export type WorkspaceProjectRowProps = SessionListActions & {
   activeSessionId: string | null
   /** The panel is on screen — a hidden drawer has no reason to re-read. */
   visible: boolean
-  /** The host's session-list invalidation counter; a bump is what triggers a re-read. */
+  /** The shell's tick for a host invalidation; the cache knows whether it named this project. */
   listRevision: number
 }
 
@@ -45,8 +48,8 @@ export function WorkspaceProjectRow(props: WorkspaceProjectRowProps) {
   // request. Live work is the desktop exception: a collapsed project still
   // shows running, unseen, and pending sessions, so those rows arm the list
   // too. Without the gate every project would fetch the moment the drawer
-  // opened.
-  const [armed, setArmed] = useState(props.expanded || needsAttention)
+  // opened. A list already in the cache arms for free — it is not a request.
+  const [armed, setArmed] = useState(props.expanded || needsAttention || props.cache.get(props.project.path) !== undefined)
   useEffect(() => { if (props.expanded || needsAttention) setArmed(true) }, [props.expanded, needsAttention])
   // Only a tap on this row plays the unfold. The list opens the active project
   // on its own every time the drawer mounts, and rows sliding in on an
@@ -54,24 +57,18 @@ export function WorkspaceProjectRow(props: WorkspaceProjectRowProps) {
   const [tapped, setTapped] = useState(false)
   const animate = useIconMotion() && tapped
 
-  const sessions = useProjectSessions(
-    props.client,
-    props.project,
-    props.seed ?? [],
-    props.activeSessionId,
-    props.expanded,
+  const sessions = useProjectSessions({
+    client: props.client,
+    project: props.project,
+    cache: props.cache,
+    seed: props.seed,
+    activeSessionId: props.activeSessionId,
+    listExpanded: props.expanded,
     armed,
-  )
-  const { refresh } = sessions
-  // The mount load is the first read; from then on only an invalidation the host
-  // sent, applied when this row is both on screen and open.
-  const syncedRevision = useRef(props.listRevision)
-  const { visible, expanded, listRevision } = props
-  useEffect(() => {
-    if (!visible || !expanded || syncedRevision.current === listRevision) return
-    syncedRevision.current = listRevision
-    refresh()
-  }, [visible, expanded, listRevision, refresh])
+    visible: props.visible,
+    listRevision: props.listRevision,
+  })
+  const { expanded } = props
 
   // The first read takes over the folder glyph rather than sitting inside the
   // list, where it would push every seeded row down and back up again. Same

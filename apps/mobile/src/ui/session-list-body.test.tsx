@@ -10,7 +10,7 @@ const confirmed = () => Promise.resolve(true)
 function sessions(overrides: Partial<ProjectSessions> = {}): ProjectSessions {
   return {
     items: [], busy: false, loaded: true, loadingMore: false, error: '', hasMore: false,
-    loadMore: noop, toggleChildren: noop, forget: noop, patch: noop, refresh: noop,
+    loadMore: noop, toggleChildren: noop, forget: noop, patch: noop,
     ...overrides,
   }
 }

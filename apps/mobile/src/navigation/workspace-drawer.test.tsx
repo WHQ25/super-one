@@ -1,14 +1,17 @@
-import { expect, jest, test } from '@jest/globals'
+import { beforeEach, expect, jest, test } from '@jest/globals'
 import { act } from '@testing-library/react-native'
 import { Animated, BackHandler, Keyboard } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { renderWithTheme } from '../test-render'
 import { WorkspaceDrawer, type WorkspaceDrawerProps } from './workspace-drawer'
 import type { SessionListRow } from '../session-list-state'
+import { WorkspaceListCache } from '../workspace-list-cache'
 
 const seed: SessionListRow[] = [{ sessionId: 's1', title: 'Fix the drawer' }]
 const noop = () => {}
 const confirmed = () => Promise.resolve(true)
+let cache = new WorkspaceListCache()
+beforeEach(() => { cache = new WorkspaceListCache() })
 
 const drawer = (overrides: Partial<WorkspaceDrawerProps> = {}) => (
   <SafeAreaProvider initialMetrics={{
@@ -21,6 +24,7 @@ const drawer = (overrides: Partial<WorkspaceDrawerProps> = {}) => (
     activeProject={{ path: '/repo', name: 'repo' }}
     activeSessionId="s1"
     sessions={seed}
+    cache={cache}
     visible={false}
     listRevision={0}
     onNewSession={noop}

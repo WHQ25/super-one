@@ -1,4 +1,4 @@
-import { expect, jest, test } from '@jest/globals'
+import { beforeEach, expect, jest, test } from '@jest/globals'
 import { useState } from 'react'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native'
 import type { RelayClient } from '@superone/relay-client'
@@ -7,17 +7,23 @@ import { renderWithTheme } from '../test-render'
 import { SessionActivityContext } from './use-session-activity'
 import { WorkspaceProjectRow, type WorkspaceProjectRowProps } from './workspace-project-row'
 import type { SessionListRow } from '../session-list-state'
+import { WorkspaceListCache } from '../workspace-list-cache'
 
 jest.mock('../ui/use-icon-motion', () => ({ useIconMotion: () => true }))
 
 const seed: SessionListRow[] = [{ sessionId: 's1', title: 'Fix the drawer' }]
 const noop = () => {}
 const confirmed = () => Promise.resolve(true)
+// One per test, as the shell keeps one per connection; a rerender must not
+// hand the row a different cache, which would read as a new connection.
+let cache = new WorkspaceListCache()
+beforeEach(() => { cache = new WorkspaceListCache() })
 
 /** `client: null` is the offline path: the seed is the whole list, no request. */
 const row = (overrides: Partial<WorkspaceProjectRowProps> = {}) => (
   <WorkspaceProjectRow
     client={null}
+    cache={cache}
     project={{ path: '/repo', name: 'repo' }}
     expanded={false}
     onToggle={noop}
@@ -181,4 +187,96 @@ test('plays the unfold when the project row itself is tapped', async () => {
   await act(async () => { fireEvent.press(screen.getByRole('button', { name: 'repo' })) })
   expect(screen.getByText('Fix the drawer')).toBeTruthy()
   expect(unfoldPlayed()).toBe(true)
+})
+
+/** A host that answers `list_sessions` at once, and counts how often it was asked. */
+const answering = (rows: SessionListRow[]) => {
+  const request = jest.fn(async () => ({ sessions: rows, totalCount: rows.length }))
+  return { client: { request } as unknown as RelayClient, request }
+}
+/**
+ * The drawer's close and reopen, as the row sees it: unmounted, then mounted
+ * again against the same cache. Driven by a prop through `rerender` — a bare
+ * `unmount()` followed by a second `render` in one test leaves the next test's
+ * tree uncommitted (the same act-scope overlap `fireEvent` has).
+ */
+const remountable = (mounted: boolean, overrides: Partial<WorkspaceProjectRowProps>) => <>{mounted ? row(overrides) : null}</>
+
+test('a remount paints the cached list without a request or a spinner', async () => {
+  // The drawer unmounts its rows on every close. Before the cache, every open
+  // was a first mount: spinner on the folder and one list_sessions per row.
+  const { client, request } = answering([{ sessionId: 'h1', title: 'From the host' }])
+  const { rerender } = await renderWithTheme(remountable(true, { expanded: true, client, seed: [] }))
+  await waitFor(() => expect(screen.getByText('From the host')).toBeTruthy())
+  expect(request).toHaveBeenCalledTimes(1)
+  await rerender(remountable(false, { expanded: true, client, seed: [] }))
+  expect(screen.queryByText('From the host')).toBeNull()
+
+  await rerender(remountable(true, { expanded: true, client, seed: [] }))
+  expect(screen.getByText('From the host')).toBeTruthy()
+  expect(screen.queryByTestId('project-list-loading')).toBeNull()
+  await act(async () => {})
+  expect(request).toHaveBeenCalledTimes(1)
+})
+
+test('a remount after the host invalidated this project re-reads in place', async () => {
+  const { client, request } = answering([{ sessionId: 'h1', title: 'From the host' }])
+  const { rerender } = await renderWithTheme(remountable(true, { expanded: true, client, seed: [] }))
+  await waitFor(() => expect(request).toHaveBeenCalledTimes(1))
+  await rerender(remountable(false, { expanded: true, client, seed: [] }))
+
+  cache.invalidate('/repo')
+  await rerender(remountable(true, { expanded: true, client, seed: [], listRevision: 1 }))
+  // The stale rows stay up while the re-read is out — no wipe, no spinner.
+  expect(screen.getByText('From the host')).toBeTruthy()
+  expect(screen.queryByTestId('project-list-loading')).toBeNull()
+  await waitFor(() => expect(request).toHaveBeenCalledTimes(2))
+})
+
+test('a change in another project costs this one nothing', async () => {
+  const { client, request } = answering([{ sessionId: 'h1', title: 'From the host' }])
+  const { rerender } = await renderWithTheme(row({ expanded: true, client, seed: [] }))
+  await waitFor(() => expect(request).toHaveBeenCalledTimes(1))
+
+  cache.invalidate('/elsewhere')
+  await rerender(row({ expanded: true, client, seed: [], listRevision: 1 }))
+  await act(async () => {})
+  expect(request).toHaveBeenCalledTimes(1)
+})
+
+test('a reconnect stales every list, so the next open re-reads it', async () => {
+  const { client, request } = answering([{ sessionId: 'h1', title: 'From the host' }])
+  const { rerender } = await renderWithTheme(row({ expanded: true, client, seed: [] }))
+  await waitFor(() => expect(request).toHaveBeenCalledTimes(1))
+
+  cache.invalidateAll()
+  await rerender(row({ expanded: true, client, seed: [], listRevision: 1 }))
+  await waitFor(() => expect(request).toHaveBeenCalledTimes(2))
+})
+
+test('a collapsed list does not chase an invalidation until it is opened', async () => {
+  const { client, request } = answering([{ sessionId: 'h1', title: 'From the host' }])
+  const { rerender } = await renderWithTheme(row({ expanded: true, client, seed: [] }))
+  await waitFor(() => expect(request).toHaveBeenCalledTimes(1))
+
+  await rerender(row({ expanded: false, client, seed: [] }))
+  cache.invalidate('/repo')
+  await rerender(row({ expanded: false, client, seed: [], listRevision: 1 }))
+  await act(async () => {})
+  expect(request).toHaveBeenCalledTimes(1)
+
+  await rerender(row({ expanded: true, client, seed: [], listRevision: 1 }))
+  await waitFor(() => expect(request).toHaveBeenCalledTimes(2))
+})
+
+test('a seed left standing by a failed read is not remembered as a read', async () => {
+  const request = jest.fn(() => Promise.reject(new Error('not connected')))
+  const client = { request } as unknown as RelayClient
+  const { rerender } = await renderWithTheme(remountable(true, { expanded: true, client }))
+  await waitFor(() => expect(request).toHaveBeenCalledTimes(1))
+  await rerender(remountable(false, { expanded: true, client }))
+
+  // Nothing cached: the next mount asks again rather than trusting the seed.
+  await rerender(remountable(true, { expanded: true, client }))
+  await waitFor(() => expect(request).toHaveBeenCalledTimes(2))
 })

@@ -10,7 +10,7 @@ import { SessionRowContent } from '../ui/session-row-content'
 const row: SessionActivity = { sessionId: 'background', projectPath: '/other', status: 'idle', provider: 'codex', pendingCount: 2, pendingReason: { en: 'Allow Bash?', zh: '允许 Bash？' } }
 let current: ReturnType<typeof useWorkspaceActivity>
 function Probe({ client, connected = true, viewed = null }: { client: RelayClient; connected?: boolean; viewed?: string | null }) {
-  current = useWorkspaceActivity(client, connected, 0, viewed)
+  current = useWorkspaceActivity(client, connected, viewed)
   return <SessionActivityContext.Provider value={current.sessions}>
     <WorkspaceButton pendingCount={current.pendingCount} onPress={() => {}} />
     <SessionRowContent item={{ session: { sessionId: row.sessionId, title: 'Background session' }, child: false, hasChildren: false, collapsed: false }} />

@@ -3,6 +3,7 @@ import { View } from 'react-native'
 import type { RelayClient } from '@superone/relay-client'
 import { MobileThemeProvider } from '../theme/context'
 import type { SessionListRow } from '../session-list-state'
+import { WorkspaceListCache } from '../workspace-list-cache'
 import type { MobileSessionActivity } from '../session-activity-state'
 import { SessionActivityContext } from './use-session-activity'
 import { WorkspaceProjectRow, type WorkspaceProjectRowProps } from './workspace-project-row'
@@ -30,6 +31,7 @@ const stalledClient = { request: () => new Promise(() => {}) } as unknown as Rel
 
 const base: WorkspaceProjectRowProps = {
   client: null,
+  cache: new WorkspaceListCache(),
   project: { path: '/repo', name: 'super-one' },
   expanded: false,
   onToggle: noop,

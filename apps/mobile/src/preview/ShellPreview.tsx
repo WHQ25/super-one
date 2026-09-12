@@ -21,6 +21,7 @@ import { useMobileLocale } from '../i18n/context'
 import { MobileKeyboardFrame } from '../navigation/mobile-keyboard-frame'
 import { WorkspaceDrawer } from '../navigation/workspace-drawer'
 import { WorkspaceSidebar } from '../navigation/workspace-sidebar'
+import { WorkspaceListCache } from '../workspace-list-cache'
 import { ChatScreen } from '../screens/chat-screen'
 import { FilesScreen } from '../screens/files-screen'
 import { FileFinderView } from '../screens/file-finder-view'
@@ -225,6 +226,8 @@ const sessions = [
   { sessionId: 'preview-7', title: 'Android edge-to-edge insets', provider: 'opencode' as const },
 ]
 const previewClient = previewRelayClient(sessions)
+// One cache per connection, as in the shell; the preview's connection is this module.
+const previewWorkspaceCache = new WorkspaceListCache()
 /** Offline fixtures never reach a host, so nothing is ever confirmed applied. */
 const previewSessionOp = () => Promise.resolve(false)
 const initialMessages: ChatMessage[] = [
@@ -375,7 +378,7 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
   /** One workspace, two mounts: the drawer below and the sidebar in the row. */
   const previewWorkspace = {
     client: previewClient, projects: previewProjects, activeProject: project,
-    activeSessionId: 'preview-1', sessions, listRevision: 0,
+    activeSessionId: 'preview-1', sessions, cache: previewWorkspaceCache, listRevision: 0,
     onNewSession: () => setPage('New session'), onOpenSession: () => setPage('Chat'),
     onPinSession: previewSessionOp, onArchiveSession: previewSessionOp, onDeleteSession: previewSessionOp,
     onSearch: () => setPage('Session search'), onAddProject: () => setPage('Add project'),

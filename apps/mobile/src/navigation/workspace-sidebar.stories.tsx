@@ -3,6 +3,7 @@ import { View } from 'react-native'
 import { MobileThemeProvider } from '../theme/context'
 import { Text } from '../ui/text'
 import type { SessionListRow } from '../session-list-state'
+import { WorkspaceListCache } from '../workspace-list-cache'
 import { countAttentionSessions, type MobileSessionActivity } from '../session-activity-state'
 import { MobileHeader } from './mobile-header'
 import { SessionActivityContext } from './use-session-activity'
@@ -22,6 +23,7 @@ const base: WorkspaceSidebarProps = {
   activeProject: { path: '/repo', name: 'repo' },
   activeSessionId: 's1',
   sessions,
+  cache: new WorkspaceListCache(),
   listRevision: 0,
   onNewSession: noop,
   onOpenSession: noop,

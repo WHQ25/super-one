@@ -8,8 +8,15 @@ import { randomId } from '../ids'
 export const SessionActivityContext = createContext<WorkspaceActivity>({})
 export const useSessionActivity = (sessionId: string) => useContext(SessionActivityContext)[sessionId]
 
-/** Independent of the open chat and drawer; reconnect replaces stale summaries. */
-export function useWorkspaceActivity(client: RelayClient | null, connected: boolean, revision: number, viewedSessionId: string | null = null) {
+/**
+ * Independent of the open chat and drawer; reconnect replaces stale summaries.
+ *
+ * Only a (re)connect reads the full snapshot. Everything after arrives pushed as
+ * `session_activity`, so a session-list change (rename, pin, a new row) is not
+ * a reason to ask for it again — it used to be, and every such change cost one
+ * more round trip on top of the list re-read.
+ */
+export function useWorkspaceActivity(client: RelayClient | null, connected: boolean, viewedSessionId: string | null = null) {
   const [sessions, setSessions] = useState<Record<string, MobileSessionActivity>>({})
   const updates = useRef<Record<string, SessionActivity>>({})
   const viewed = useRef(viewedSessionId)
@@ -67,6 +74,6 @@ export function useWorkspaceActivity(client: RelayClient | null, connected: bool
       }
     }).catch(() => {})
     return () => { active = false }
-  }, [client, connected, revision, visibleSession])
+  }, [client, connected, visibleSession])
   return { sessions, ingest, pendingCount: countAttentionSessions(sessions) }
 }

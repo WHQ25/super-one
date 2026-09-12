@@ -1,22 +1,7 @@
-import type { Root, Image, Definition } from 'mdast'
-import { visit } from 'unist-util-visit'
+import { remarkImageDestinations } from '@superone/chat-view/presenters/markdown-media'
 import { resolveMarkdownMediaSrc } from './chat-shared'
 
-/** Resolve parsed destinations, never Markdown source (which may be code). */
+/** Resolve parsed destinations onto `local-file:` / `remote-media:` for this project. */
 export function remarkMediaPaths(projectPath: string) {
-  return () => (tree: Root) => {
-    const imageReferences = new Set<string>()
-    visit(tree, 'imageReference', (node) => { imageReferences.add(node.identifier) })
-    visit(tree, (node) => {
-      if (node.type !== 'image' && !(node.type === 'definition' && imageReferences.has(node.identifier))) return
-      const media = node as Image | Definition
-      let src = media.url
-      // Markdown destinations are URLs. Decode once before the filesystem-to-URL
-      // conversion, but preserve already qualified transports verbatim.
-      if (!/^[a-z][a-z\d+.-]*:\/\//i.test(src) && !/^(?:data:|blob:)/i.test(src)) {
-        try { src = decodeURIComponent(src) } catch { /* literal percent in a file name */ }
-      }
-      media.url = resolveMarkdownMediaSrc(src, projectPath)
-    })
-  }
+  return remarkImageDestinations((src) => resolveMarkdownMediaSrc(src, projectPath))
 }

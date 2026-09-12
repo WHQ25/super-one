@@ -42,6 +42,7 @@
     "./presenters/FileChipShell": "./src/presenters/FileChipShell.tsx",
     "./presenters/GenericToolRow": "./src/presenters/GenericToolRow.tsx",
     "./presenters/ImageGenToolBlock": "./src/presenters/ImageGenToolBlock.tsx",
+    "./presenters/LinkFavicon": "./src/presenters/LinkFavicon.tsx",
     "./presenters/ListAgentsToolBlock": "./src/presenters/ListAgentsToolBlock.tsx",
     "./presenters/MediaProvidersBlock": "./src/presenters/MediaProvidersBlock.tsx",
     "./presenters/MermaidBlock": "./src/presenters/MermaidBlock.tsx",
@@ -76,6 +77,7 @@
     "./presenters/groupContent": "./src/presenters/groupContent.ts",
     "./presenters/list-agents-display": "./src/presenters/list-agents-display.ts",
     "./presenters/markdown-file-links": "./src/presenters/markdown-file-links.ts",
+    "./presenters/markdown-media": "./src/presenters/markdown-media.ts",
     "./presenters/media-generation": "./src/presenters/media-generation.ts",
     "./presenters/page-tools-display": "./src/presenters/page-tools-display.ts",
     "./presenters/remote-diff": "./src/presenters/remote-diff.ts",
@@ -120,8 +122,10 @@
     "mermaid": "^11.12.3",
     "react-i18next": "^17.0.4",
     "rehype-harden": "^1.1.8",
+    "rehype-sanitize": "^6.0.0",
     "streamdown": "^2.1.0",
-    "unified": "^11.0.5"
+    "unified": "^11.0.5",
+    "unist-util-visit": "^5.1.0"
   },
   "peerDependencies": {
     "react": "^19.1.0",
@@ -130,6 +134,7 @@
   "devDependencies": {
     "@playwright/test": "^1.59.1",
     "@tailwindcss/vite": "^4.1.18",
+    "@types/mdast": "^4.0.4",
     "@types/react": "^19.2.13",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.0.0",

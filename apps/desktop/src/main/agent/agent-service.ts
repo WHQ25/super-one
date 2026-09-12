@@ -1229,6 +1229,14 @@ export class AgentService {
         }
         break
       }
+      case 'resolve_favicon': {
+        try {
+          await respond?.(command.requestId, { dataUrl: await resolveFavicon(command.url, command.isDark === true) })
+        } catch (err) {
+          await respond?.(command.requestId, { error: (err as Error).message })
+        }
+        break
+      }
       case 'list_mcp_servers': {
         try {
           const session = this.sessionManager?.getActiveSession(command.projectPath)

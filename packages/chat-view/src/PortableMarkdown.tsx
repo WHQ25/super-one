@@ -1,8 +1,7 @@
 import { createElement, useContext, useEffect, useMemo, type ComponentProps, type ReactNode } from 'react'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { createMathPlugin } from '@streamdown/math'
-import { defaultRehypePlugins, type Components } from 'streamdown'
-import { harden, BlockPolicy } from 'rehype-harden'
+import { defaultRemarkPlugins, type Components } from 'streamdown'
 import type { PluggableList } from 'unified'
 import {
   CopyableMarkdownPresenter,
@@ -18,37 +17,30 @@ import {
 } from './presenters/CodeBlock'
 import { MermaidBlockPresenter } from './presenters/MermaidBlock'
 import { fileChipLabel } from './presenters/file-chip-label'
+import { createMarkdownRehypePlugins } from './presenters/markdown-media'
 import { formatLineRange, resolveProjectFileHref } from './presenters/file-link'
 import { PortableTurnContext } from './portable-turn-context'
 import { createPortableCodePlugin } from './portable-code-plugin'
 import { requestNative } from './bridge'
 import { isPreviewableImageSource, previewImage } from './image-preview'
+import { PortableHostImage } from './PortableHostImage'
+import { decodeHostImageSrc, HOST_IMAGE_PROTOCOL, remarkHostImages } from './host-image-src'
 import { hasNativeHost, previewMermaid } from './mermaid-preview'
+import { hostFaviconPorts } from './host-favicon'
+import { LinkFaviconPresenter } from './presenters/LinkFavicon'
 
 const darkCodePlugin = createPortableCodePlugin('github-dark')
 const lightCodePlugin = createPortableCodePlugin('github-light')
 const mathPlugin = createMathPlugin({ singleDollarTextMath: false })
 /**
- * Streamdown's default harden config allows any link PREFIX but not any
- * PROTOCOL, so a project file citation like `src/ToolRow.tsx:42` reads as an
- * unknown scheme and is replaced with a "Blocked URL" stub — the chip never
- * gets to render. Desktop already widens exactly this (see `chat-shared.ts`);
- * matching it is what makes file citations work on both surfaces.
- *
- * Widening is safe here because a link in this WebView never navigates: every
- * anchor goes through `NativeLink`, and the native side validates the scheme
- * before acting on `openLink`.
+ * The media pipeline is the desktop's (`presenters/markdown-media`), with the
+ * phone's `host-file:` transport plugged in. Widening links is safe here
+ * because an anchor in this WebView never navigates: every one goes through
+ * `NativeLink`, and the native side validates the scheme before `openLink`.
  */
-const rehypePlugins = Object.values({
-  ...defaultRehypePlugins,
-  harden: [harden, {
-    allowedLinkPrefixes: ['*'],
-    allowedImagePrefixes: ['*'],
-    allowedProtocols: ['*'],
-    allowDataImages: true,
-    linkBlockPolicy: BlockPolicy.textOnly,
-  }],
-}) as PluggableList
+// Passing `remarkPlugins` replaces Streamdown's defaults (GFM tables among them), so they are re-listed.
+const remarkPlugins: PluggableList = [...Object.values(defaultRemarkPlugins), remarkHostImages] as PluggableList
+const rehypePlugins = createMarkdownRehypePlugins({ srcProtocols: [HOST_IMAGE_PROTOCOL] })
 
 async function copyText(text: string): Promise<boolean> {
   try {
@@ -100,13 +92,13 @@ function NativeFileChip({
   )
 }
 
-function NativeLink({ href, onClick, ...props }: ComponentProps<'a'>) {
-  const { projectPath } = useContext(PortableTurnContext)
+function NativeLink({ href, onClick, children, node: _node, ...props }: ComponentProps<'a'> & { node?: unknown }) {
+  const { projectPath, scheme } = useContext(PortableTurnContext)
   const resolved = href ? resolveProjectFileHref(href, projectPath ?? '') : null
   if (resolved) {
     return (
       <NativeFileChip
-        name={fileChipLabel(props.children, href, resolved.filePath)}
+        name={fileChipLabel(children, href, resolved.filePath)}
         filePath={resolved.filePath}
         lineNumber={resolved.lineNumber}
         endLine={resolved.endLine}
@@ -117,26 +109,46 @@ function NativeLink({ href, onClick, ...props }: ComponentProps<'a'>) {
     <a
       {...props}
       href={href}
+      data-streamdown="link"
       onClick={(event) => {
         onClick?.(event)
         if (event.defaultPrevented || !href) return
         event.preventDefault()
         requestNative('openLink', { url: href })
       }}
-    />
+    >
+      {href && <LinkFaviconPresenter href={href} isDark={scheme === 'dark'} ports={hostFaviconPorts} />}
+      {children}
+    </a>
   )
 }
 
 /**
  * A markdown image. One the WebView can actually display — inline bytes or a
- * public URL — opens fullscreen on tap; a relative host path has nothing to
- * show and stays a plain (broken) picture, as before.
+ * public URL — opens fullscreen on tap. Anything else is a path on the
+ * desktop (or the remote node behind it): the agent writes `![…](out/a.png)`
+ * for a file the phone has never seen, so a plain `<img>` would only paint the
+ * broken-image alt text. Those go through the same host fetch as tool
+ * screenshots, which resolves the path against the project and asks before
+ * pulling a large file over the relay.
  */
 function NativeImage(props: ComponentProps<'img'>) {
+  const label = typeof props.alt === 'string' && props.alt ? props.alt : 'image'
+  const hostPath = decodeHostImageSrc(props.src)
+  if (hostPath) {
+    return (
+      <PortableHostImage
+        inline
+        path={hostPath}
+        label={label}
+        pictureClassName="my-2 block max-w-full overflow-hidden rounded-lg"
+        imageClassName="max-h-80 max-w-full rounded-lg object-contain"
+      />
+    )
+  }
   const picture = <img {...props} className="max-h-80 max-w-full rounded-lg object-contain" />
   if (!isPreviewableImageSource(props.src)) return picture
   const src = props.src
-  const label = typeof props.alt === 'string' && props.alt ? props.alt : 'image'
   return (
     <button
       type="button"
@@ -236,6 +248,7 @@ function createMarkdownRuntime(scheme: 'light' | 'dark'): CopyableMarkdownRuntim
     getMathPluginSync: () => mathPlugin,
     loadMathPlugin: async () => mathPlugin,
     plugins: {},
+    remarkPlugins,
     rehypePlugins,
     copyText,
     linkSafety: { enabled: false },

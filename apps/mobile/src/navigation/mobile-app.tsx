@@ -91,6 +91,7 @@ import { useFilePreview } from './use-file-preview'
 import { clearFilePreviewCache } from '../file-preview-cache-store'
 import { sessionTranscriptCache } from '../session-transcript-cache'
 import { loadInlineImage } from '../inline-images'
+import { requestLinkFavicon } from '../link-favicons'
 import { NewFolderSheet } from '../prompts/NewFolderSheet'
 import { FileFinderView } from '../screens/file-finder-view'
 import { leaveMobileSession, sessionRemovalStatus } from '../session-exit'
@@ -559,6 +560,11 @@ export function MobileApp() {
         const runtime = runtimeRef.current
         if (!runtime) throw new Error('no active session')
         return runtime.loadAttachment(messageId, ref)
+      },
+      resolveFavicon: async (url, isDark) => {
+        const client = clientRef.current
+        if (!client) throw new Error('not connected')
+        return requestLinkFavicon(client, url, isDark)
       },
       openFile: async (path) => {
         if (!project) throw new Error('no active project')

@@ -4603,6 +4603,12 @@ export type RemoteCommand =
    * changes its artwork — and an icon shared by two rows is fetched once.
    */
   | { type: 'get_mention_icons'; requestId: string; ids: string[] }
+  /**
+   * The favicon a chat markdown link shows, from the desktop's origin-keyed
+   * cache, so the phone's transcript carries the same icon as the desktop's.
+   * `isDark` picks the `<link media>` variant matching the phone's scheme.
+   */
+  | { type: 'resolve_favicon'; requestId: string; url: string; isDark: boolean }
   | { type: 'get_session_state'; requestId: string; projectPath: string; sessionId: string }
   /** The full brief of one launch in a pending `session_agents_confirm` (see `taskDeferred`). */
   | { type: 'get_collab_launch_task'; requestId: string; projectPath: string; sessionId: string; permissionRequestId: string; launchId: string }

@@ -81,7 +81,7 @@ function formatSize(bytes: number): string {
  * viewer (`previewImage`); only the chip without a picture yet still goes
  * through `previewFile`, because there is nothing to show until the file lands.
  */
-export function PortableHostImage({ path, label, className, pictureClassName, imageClassName, fallback, caption, generation }: {
+export function PortableHostImage({ path, label, className, pictureClassName, imageClassName, fallback, caption, generation, inline = false }: {
   path: string
   /** Accessible name for the preview affordance, e.g. "Screenshot". */
   label: string
@@ -97,6 +97,11 @@ export function PortableHostImage({ path, label, className, pictureClassName, im
   caption?: ReactNode
   /** For a generated image: what the viewer's info panel shows. */
   generation?: ImageGenerationInfo
+  /**
+   * Render with phrasing elements only, for a host inside a paragraph (a
+   * markdown image). The default block wrappers are invalid there.
+   */
+  inline?: boolean
 }) {
   const [phase, setPhase] = useState<Phase>(() => {
     const cached = loaded.get(path)
@@ -120,7 +125,8 @@ export function PortableHostImage({ path, label, className, pictureClassName, im
     void loadImage(path, true).then(setPhase)
   }
 
-  const chipClass = className ?? 'flex min-h-24 w-full items-center justify-center rounded border border-border/60 bg-muted/25 text-primary'
+  const Box = inline ? 'span' : 'div'
+  const chipClass = className ?? `${inline ? 'inline-flex' : 'flex'} min-h-24 w-full items-center justify-center rounded border border-border/60 bg-muted/25 text-primary`
   // A custom chip names itself through its content; the default chip is icon-only.
   const ariaLabel = fallback ? undefined : `Preview ${label}`
 
@@ -130,7 +136,7 @@ export function PortableHostImage({ path, label, className, pictureClassName, im
   // and the picture then replaced a name the reader had started to read.
   if (phase.kind === 'loading') {
     return (
-      <div
+      <Box
         className={`${chipClass} animate-pulse`}
         data-host-image="loading"
         role="status"
@@ -139,7 +145,7 @@ export function PortableHostImage({ path, label, className, pictureClassName, im
         title={path}
       >
         <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden />
-      </div>
+      </Box>
     )
   }
 
@@ -160,7 +166,7 @@ export function PortableHostImage({ path, label, className, pictureClassName, im
   }
 
   return (
-    <div className="flex flex-col gap-1.5" data-host-image={phase.kind}>
+    <Box className={`${inline ? 'inline-flex' : 'flex'} flex-col gap-1.5`} data-host-image={phase.kind}>
       <button
         type="button"
         className={chipClass}
@@ -186,6 +192,6 @@ export function PortableHostImage({ path, label, className, pictureClassName, im
           Load image{phase.size != null ? ` · ${formatSize(phase.size)}` : ''}
         </button>
       ) : null}
-    </div>
+    </Box>
   )
 }

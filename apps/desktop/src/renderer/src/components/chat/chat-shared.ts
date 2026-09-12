@@ -1,10 +1,6 @@
 import { createElement, type ComponentProps } from 'react'
 import type { Components, LinkSafetyConfig, MathPlugin } from 'streamdown'
-import { defaultRehypePlugins } from 'streamdown'
 import type { PluggableList } from 'unified'
-import { defaultSchema } from 'hast-util-sanitize'
-import rehypeSanitize from 'rehype-sanitize'
-import { harden, BlockPolicy } from 'rehype-harden'
 import { createStreamdownCodeComponent } from './CodeBlock'
 import { codePlugin, codePluginLight } from './code-plugins'
 import { toMediaUrl } from '@/lib/path-utils'
@@ -20,6 +16,7 @@ import { MarkdownTable } from './MarkdownTable'
 import { MarkdownRemoteMedia } from './markdown-remote-media'
 import { openBrowserTab } from '@/components/activity/activity-panel-api'
 import { resolveMarkdownFileLinks } from '@superone/chat-view/presenters/markdown-file-links'
+import { createMarkdownRehypePlugins } from '@superone/chat-view/presenters/markdown-media'
 
 export { resolveMarkdownFileLinks }
 
@@ -178,35 +175,20 @@ export const streamdownComponents = {
   table: MarkdownTable,
 } as unknown as Components
 
-const localFileSanitizeSchema = {
-  ...defaultSchema,
-  tagNames: [...(defaultSchema.tagNames ?? []), 'video', 'audio', 'source'],
+/**
+ * The shared media pipeline with the desktop's transports plugged in. Project
+ * file links are pre-resolved to absolute filesystem paths by
+ * `resolveMarkdownFileLinks` — never via a fake `https://localhost` origin.
+ */
+export const streamdownRehypePlugins: PluggableList = createMarkdownRehypePlugins({
+  srcProtocols: ['local-file', 'remote-media'],
+  tagNames: ['video', 'audio', 'source'],
   attributes: {
-    ...defaultSchema.attributes,
     video: ['src', 'controls', 'autoPlay', 'loop', 'muted', 'poster', 'width', 'height', 'preload'],
     audio: ['src', 'controls', 'autoPlay', 'loop', 'muted', 'preload'],
     source: ['src', 'type'],
   },
-  protocols: {
-    ...defaultSchema.protocols,
-    src: [...(defaultSchema.protocols?.src ?? []), 'local-file', 'remote-media'],
-  },
-}
-
-export const streamdownRehypePlugins: PluggableList = Object.values({
-  ...defaultRehypePlugins,
-  sanitize: [rehypeSanitize, localFileSanitizeSchema],
-  harden: [harden, {
-    allowedLinkPrefixes: ['*'],
-    allowedImagePrefixes: ['*'],
-    allowedProtocols: ['*'],
-    allowDataImages: true,
-    // No defaultOrigin: with wildcard prefixes, relative URLs stay as-is
-    // (pathname form). Project file links are pre-resolved to absolute filesystem
-    // paths by resolveMarkdownFileLinks — never via a fake https://localhost origin.
-    linkBlockPolicy: BlockPolicy.textOnly,
-  }],
-}) as PluggableList
+})
 
 /** Shared with Remote Control so both context rings read the same number. */
 export { formatTokens } from '@superone/shared/format-tokens'

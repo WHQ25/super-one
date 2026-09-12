@@ -316,6 +316,69 @@ test('25b turns a project file citation into a native previewFile chip', async (
 
 // A heading link is not a file, even though it is relative and the project root
 // is known — `<root>/#setup` names nothing.
+test('25d paints a globe on an http link and asks the host for its icon', async ({ page }) => {
+  await send(page, { type: 'hydrate', messages: [textMessage('link', '[Open](https://example.com/path)')] })
+  const link = page.getByRole('link', { name: 'Open' })
+  await expect(link.locator('svg.lucide')).toHaveCount(1)
+  await expect.poll(() => page.evaluate(() => (
+    globalThis as typeof globalThis & { __hostMessages: Array<{ action?: string; payload?: { url?: string } }> }
+  ).__hostMessages.some((item) => item.action === 'resolveFavicon' && item.payload?.url === 'https://example.com/path'))).toBe(true)
+})
+
+test('25e replaces the globe once the host answers with a PNG', async ({ page }) => {
+  const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+  await send(page, { type: 'hydrate', messages: [textMessage('link', '[Open](https://example.com/path)')] })
+  let requestId: string | undefined
+  await expect.poll(async () => {
+    requestId = await page.evaluate(() => (
+      globalThis as typeof globalThis & { __hostMessages: Array<{ requestId?: string; action?: string }> }
+    ).__hostMessages.find((item) => item.action === 'resolveFavicon')?.requestId)
+    return requestId
+  }).toBeTruthy()
+  await send(page, { type: 'nativeActionResult', requestId, result: { ok: true, dataUrl: pixel } })
+  const link = page.getByRole('link', { name: 'Open' })
+  await expect(link.locator('img')).toHaveAttribute('src', pixel)
+  await expect(link.locator('svg.lucide')).toHaveCount(0)
+})
+
+test('25f fetches a markdown image on a host path through loadImage', async ({ page }) => {
+  const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+  // A bare relative path, and an absolute one with a space: neither is blocked, both reach the host verbatim.
+  await send(page, { type: 'hydrate', messages: [textMessage('md-image', '![V2_01 对比](out/compare/v2_01.png)\n\n![cheek](</Users/me/proj/out/cheek 2x.png>)')] })
+  type HostRequest = { requestId?: string; action?: string; payload?: { path?: string } }
+  const readRequests = () => page.evaluate(() => (
+    globalThis as typeof globalThis & { __hostMessages: HostRequest[] }
+  ).__hostMessages.filter((item) => item.action === 'loadImage'))
+  // The path is handed to the host untouched; it resolves it against the project.
+  await expect.poll(async () => (await readRequests()).map((item) => item.payload?.path).sort())
+    .toEqual(['/Users/me/proj/out/cheek 2x.png', 'out/compare/v2_01.png'])
+  await expect(page.locator('.chat-md')).not.toContainText('Image blocked')
+  const loading = page.locator('.chat-md [data-host-image="loading"]')
+  await expect(loading).toHaveCount(2)
+  // Inside a paragraph, so the wrapper must be phrasing content.
+  await expect(loading.first()).toHaveJSProperty('tagName', 'SPAN')
+  const request = (await readRequests()).find((item) => item.payload?.path === 'out/compare/v2_01.png')!
+  await send(page, { type: 'nativeActionResult', requestId: request.requestId, result: { ok: true, dataUri: pixel } })
+  const picture = page.locator('.chat-md [data-host-image="ready"] img')
+  await expect(picture).toHaveAttribute('src', pixel)
+  await expect(picture).toHaveAttribute('alt', 'V2_01 对比')
+  await page.getByRole('button', { name: 'Preview V2_01 对比' }).click()
+  await expect.poll(() => page.evaluate(() => (
+    globalThis as typeof globalThis & { __hostMessages: Array<{ action?: string; payload?: { src?: string; path?: string } }> }
+  ).__hostMessages.some((item) => item.action === 'previewImage' && item.payload?.path === 'out/compare/v2_01.png'))).toBe(true)
+})
+
+test('25g does not fetch or paint an inline data-URI image, matching the desktop', async ({ page }) => {
+  const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+  await send(page, { type: 'hydrate', messages: [textMessage('md-data-image', `![inline](${pixel})`)] })
+  await expect(page.locator('.chat-md')).toContainText('inline')
+  await expect(page.locator('.chat-md img')).toHaveCount(0)
+  await expect(page.locator('.chat-md [data-host-image]')).toHaveCount(0)
+  expect(await page.evaluate(() => (
+    globalThis as typeof globalThis & { __hostMessages: Array<{ action?: string }> }
+  ).__hostMessages.some((item) => item.action === 'loadImage'))).toBe(false)
+})
+
 test('25c leaves an in-document anchor as a link', async ({ page }) => {
   await send(page, {
     type: 'hydrate',

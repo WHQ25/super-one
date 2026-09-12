@@ -3,7 +3,7 @@ import { createHash } from 'crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import log from './logger'
-import { download, toDataUrl } from './image-cache'
+import { download, toDataUrl, toWebDisplayImage } from './image-cache'
 
 const CACHE_TTL_MS = 3 * 24 * 60 * 60 * 1000
 const HTML_TIMEOUT_MS = 8000
@@ -83,7 +83,11 @@ async function resolveAndDownload(pageUrl: string, origin: string, isDark: boole
     if (seen.has(url)) continue
     seen.add(url)
     const buf = await download(url)
-    if (buf) return buf
+    if (!buf) continue
+    // ICO paints in Chromium and fails in the phone WebView. Prefer an
+    // embedded PNG; a BMP-only icon is skipped so Google's PNG can win.
+    const display = toWebDisplayImage(buf)
+    if (display) return display
   }
   return null
 }
@@ -109,7 +113,8 @@ export async function cacheCapturedFavicon(pageUrl: string, faviconUrl: string, 
   }
   try {
     const buf = await download(faviconUrl)
-    if (buf) writeCache(cacheFileFor(origin, isDark), buf)
+    const display = buf ? toWebDisplayImage(buf) : null
+    if (display) writeCache(cacheFileFor(origin, isDark), display)
   } catch (err) {
     log.debug('[favicon] cache-from-capture failed:', err)
   }

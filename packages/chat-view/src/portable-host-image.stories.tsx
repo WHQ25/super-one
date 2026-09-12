@@ -4,7 +4,9 @@ import type { ImageGenerationItem } from '@superone/shared/agent-types'
 import { installHostBridge } from './bridge'
 import { PortableHostImage } from './PortableHostImage'
 import { PortableImageGallery } from './PortableMediaGalleries'
+import { PortableMarkdown } from './PortableMarkdown'
 import { PortableNativeGallery } from './PortableNativeGallery'
+import { PortableTurnProvider } from './PortableTurnAdapters'
 
 type HostMode = 'lan' | 'relay' | 'unavailable' | 'slow' | 'pending'
 
@@ -168,4 +170,54 @@ export const NativeWidgetGallery: Story = {
       }}
     />
   ),
+}
+
+const MARKDOWN_IMAGES = [
+  '**参考图与配方**（每张拼图第一格就是参考图 `pre_zenref_textured`）',
+  '',
+  `![V2_01 对比：上排基线，下排 A](out/compare/v2_01-${Date.now()}.png)`,
+  '',
+  `![脸颊 1:1 原像素放大 2 倍：左边基线，右边 A](/Users/me/proj/out/compare/cheek-${Date.now()}.png)`,
+  '',
+  '结果（ArcFace vs 纹理底图，4 个 seed 的均值）',
+].join('\n')
+
+/**
+ * The agent cites files it wrote with `![…](path)`; the phone has none of
+ * them, so each goes through the same host fetch as a tool screenshot.
+ */
+function MarkdownImagesStory({ text = MARKDOWN_IMAGES }: { text?: string }) {
+  return (
+    <PortableTurnProvider scheme="dark" pendingPermission={null} projectPath="/Users/me/proj">
+      <PortableMarkdown text={text} isStreaming={false} scheme="dark" />
+    </PortableTurnProvider>
+  )
+}
+
+export const MarkdownLan: Story = {
+  name: 'Markdown image · LAN, project-relative and absolute paths both load',
+  render: () => <MarkdownImagesStory />,
+}
+
+export const MarkdownRelay: Story = {
+  name: 'Markdown image · relay, Load button before staging',
+  args: { mode: 'relay' },
+  render: () => <MarkdownImagesStory />,
+}
+
+export const MarkdownUnavailable: Story = {
+  name: 'Markdown image · host cannot answer, file-name chip instead of broken alt text',
+  args: { mode: 'unavailable' },
+  render: () => <MarkdownImagesStory />,
+}
+
+export const MarkdownLoading: Story = {
+  name: 'Markdown image · skeleton in the paragraph',
+  args: { mode: 'pending' },
+  render: () => <MarkdownImagesStory />,
+}
+
+export const MarkdownDataUri: Story = {
+  name: 'Markdown image · inline data URI is not admitted, as on the desktop',
+  render: () => <MarkdownImagesStory text={`Inline bytes:\n\n![inline](${samplePng('inline')})`} />,
 }

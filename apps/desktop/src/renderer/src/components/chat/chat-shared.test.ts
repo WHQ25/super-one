@@ -9,11 +9,10 @@ vi.mock('streamdown', () => ({
   defaultRehypePlugins: {},
 }))
 
-vi.mock('hast-util-sanitize', () => ({
+vi.mock('rehype-sanitize', () => ({
+  default: () => {},
   defaultSchema: { tagNames: [], attributes: {}, protocols: {} },
 }))
-
-vi.mock('rehype-sanitize', () => ({ default: () => {} }))
 vi.mock('@streamdown/code', () => ({ createCodePlugin: () => ({}) }))
 vi.mock('@streamdown/math', () => ({ createMathPlugin: () => ({ rehypePlugin: [{}, {}] }) }))
 vi.mock('katex/dist/katex.min.css', () => ({}))

@@ -1,4 +1,5 @@
-import { ActivityIndicator } from 'react-native'
+import { ActivityIndicator, Pressable } from 'react-native'
+import { ChevronDown } from 'lucide-react-native'
 import Animated from 'react-native-reanimated'
 import { Text } from './text'
 import type { ProjectSessions } from '../navigation/use-project-sessions'
@@ -35,14 +36,21 @@ export function SessionListBody(props: SessionListActions & {
   surface?: 'panel' | 'page'
   /**
    * A collapsed project only paints live, unseen, pending, and the active
-   * session, the way the desktop sidebar does. Spinner, empty copy and
-   * "Show more" belong to the expanded list.
+   * session, the way the desktop sidebar does. Empty copy and "Show more"
+   * belong to the expanded list; the first read's spinner belongs to the
+   * project row above, where it cannot shift the rows.
    */
   collapsed?: boolean
+  /**
+   * Play the unfold. The owner turns this off for an expansion the user did
+   * not tap — the drawer opening onto the active project — so the rows land
+   * in place instead of sliding in on every open.
+   */
+  animate?: boolean
 }) {
-  const { tokens: { colors } } = useMobileTheme()
+  const { tokens: { colors, radius } } = useMobileTheme()
   const { t } = useMobileLocale()
-  const motion = useIconMotion()
+  const motion = useIconMotion() && props.animate !== false
   const { sessions, collapsed } = props
   const applyIfConfirmed = (op: Promise<boolean>, apply: () => void) => {
     void op.then((confirmed) => { if (confirmed) apply() })
@@ -51,10 +59,9 @@ export function SessionListBody(props: SessionListActions & {
     style={{ overflow: 'hidden' }}
     layout={motion ? sessionListLayout(!!collapsed) : undefined}
   >
+    {!collapsed && sessions.error ? <Text style={{ color: colors.error, padding: 12 }}>{sessions.error}</Text> : null}
     {/* `!loaded` covers the frame before the request is even in flight; without
         it the empty state flashes on every first paint. */}
-    {!collapsed && (sessions.busy || !sessions.loaded) ? <ActivityIndicator style={{ padding: 12 }} color={colors.mutedForeground} /> : null}
-    {!collapsed && sessions.error ? <Text style={{ color: colors.error, padding: 12 }}>{sessions.error}</Text> : null}
     {!collapsed && sessions.loaded && !sessions.busy && !sessions.error && !sessions.items.length
       ? <Text style={{ color: colors.mutedForeground, fontSize: 13, padding: 12 }}>{t('No sessions yet')}</Text>
       : null}
@@ -91,12 +98,17 @@ export function SessionListBody(props: SessionListActions & {
       </SwipeSessionRow>
     </Animated.View>)}
 
+    {/* The desktop sidebar's footer: chevron + small muted label, a quiet
+        control rather than a link. Only the pressed fill differs — hover
+        has no phone equivalent. */}
     {!collapsed && sessions.hasMore ? (sessions.loadingMore
       ? <ActivityIndicator style={{ padding: 12 }} color={colors.mutedForeground} />
-      : <Text accessibilityRole="button" accessibilityLabel={t('Show more sessions')} onPress={sessions.loadMore}
-          style={{ color: colors.primary, fontSize: 13, paddingVertical: 12, paddingHorizontal: 12 }}>
-          {t('Show more')}
-        </Text>
+      : <Pressable accessibilityRole="button" accessibilityLabel={t('Show more sessions')} onPress={sessions.loadMore}
+          style={({ pressed }) => ({ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6,
+            minHeight: 32, paddingHorizontal: 12, borderRadius: radius.md, backgroundColor: pressed ? colors.muted : 'transparent' })}>
+          <ChevronDown size={14} color={colors.mutedForeground} />
+          <Text style={{ color: colors.mutedForeground, fontSize: 12, fontWeight: '500' }}>{t('Show more')}</Text>
+        </Pressable>
     ) : null}
   </Animated.View>
 }

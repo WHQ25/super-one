@@ -129,7 +129,13 @@ row mounts its list the first time it is expanded, or as soon as a session in it
 is live, unseen, or pending, and keeps it mounted after; collapsing hides ordinary
 rows without dropping the loaded list. Expanding unfolds the rows (height 240ms
 + staggered fade/slide) rather than snapping them in; collapse is 180ms with no
-stagger. Reduced motion skips both.
+stagger. Reduced motion skips both, and so does any expansion the user did not
+tap: the drawer remounts the list on every open with the active project already
+in the expanded set (initial state, not an effect), and a row only animates
+once its own header has been pressed. The first read's spinner takes over the
+project row's folder glyph (same 18 pt slot, so nothing else on the row moves),
+never inside the list, where it pushed the seeded rows down and back up on
+every open.
 Opening the drawer adds the active project to the expanded set without disturbing
 the rest.
 

@@ -63,6 +63,12 @@ export function useProjectSessions(
    * still render — desktop keeps those reachable without expanding the folder.
    */
   listExpanded = true,
+  /**
+   * False until the row has been expanded or holds live work. The hook then
+   * sits idle — no read, `loaded` stays false — so a drawer full of projects
+   * does not fetch every list the moment it opens.
+   */
+  armed = true,
 ): ProjectSessions {
   const activity = useContext(SessionActivityContext)
   const [rows, setRows] = useState<SessionListRow[]>([])
@@ -89,6 +95,7 @@ export function useProjectSessions(
   }, [client, path])
 
   useEffect(() => {
+    if (!armed) return
     const request = ++generation.current
     setRows(seed)
     setTotal(seed.length)
@@ -113,7 +120,7 @@ export function useProjectSessions(
       .finally(() => { if (request !== generation.current) return; setBusy(false); setLoaded(true) })
     return () => { generation.current++ }
     // `seed` is a render-time array; the project path is what actually changes.
-  }, [client, path, read])
+  }, [client, path, read, armed])
 
   const loadedCount = rows.length
   useEffect(() => { loadedRef.current = loadedCount }, [loadedCount])

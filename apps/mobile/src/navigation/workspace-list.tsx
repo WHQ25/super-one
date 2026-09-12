@@ -55,11 +55,13 @@ export function WorkspaceList(props: WorkspaceListProps) {
   const { t } = useMobileLocale()
   // Several projects may stand open at once, as on the desktop. Becoming
   // visible adds the project the user is in without disturbing the rest, so
-  // landing on your own work never costs someone else's expansion.
-  const [expandedPaths, setExpandedPaths] = useState<ReadonlySet<string>>(() => new Set())
-  const [pinned, setPinned] = useState<SessionListRow[]>([])
+  // landing on your own work never costs someone else's expansion. The first
+  // paint already has it open: the drawer remounts this list on every open,
+  // and expanding one commit later would unfold the active project each time.
   const activePath = props.activeProject?.path
   const { visible } = props
+  const [expandedPaths, setExpandedPaths] = useState<ReadonlySet<string>>(() => new Set(visible && activePath ? [activePath] : []))
+  const [pinned, setPinned] = useState<SessionListRow[]>([])
   useEffect(() => {
     if (!visible || !activePath) return
     setExpandedPaths((current) => current.has(activePath) ? current : new Set([...current, activePath]))

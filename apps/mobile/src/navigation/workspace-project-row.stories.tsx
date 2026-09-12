@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { View } from 'react-native'
+import type { RelayClient } from '@superone/relay-client'
 import { MobileThemeProvider } from '../theme/context'
 import type { SessionListRow } from '../session-list-state'
 import type { MobileSessionActivity } from '../session-activity-state'
@@ -15,8 +16,17 @@ const sessions: SessionListRow[] = [
   { sessionId: 's3', title: 'Collab task bubble', provider: 'codex' },
   { sessionId: 's4', title: 'Terminal tab strip', provider: 'claude' },
   { sessionId: 's5', title: 'File preview cache', provider: 'codex' },
-  { sessionId: 's6', title: 'Show more', provider: 'claude' },
+  { sessionId: 's6', title: 'Relay reconnect backoff', provider: 'claude' },
 ]
+
+/** A seventh group tips the list past `SESSION_REVEAL_STEP`, so the footer shows. */
+const moreSessions: SessionListRow[] = [
+  ...sessions,
+  { sessionId: 's7', title: 'Sidebar Show more footer', provider: 'codex' },
+]
+
+/** A host that never answers: the first read stays in flight for the whole story. */
+const stalledClient = { request: () => new Promise(() => {}) } as unknown as RelayClient
 
 const base: WorkspaceProjectRowProps = {
   client: null,
@@ -54,6 +64,16 @@ export const Collapsed = {
 export const Expanded = {
   render: () => <Frame><WorkspaceProjectRow {...base} expanded /></Frame>,
   name: 'Expanded',
+}
+
+export const ExpandedWithMore = {
+  render: () => <Frame><WorkspaceProjectRow {...base} seed={moreSessions} expanded /></Frame>,
+  name: 'Expanded · Show more footer',
+}
+
+export const Loading = {
+  render: () => <Frame><WorkspaceProjectRow {...base} client={stalledClient} expanded /></Frame>,
+  name: 'Loading · spinner on the project row',
 }
 
 export const UnfoldToggle = {

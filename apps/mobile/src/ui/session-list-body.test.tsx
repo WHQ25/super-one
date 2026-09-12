@@ -25,11 +25,13 @@ const body = (state: ProjectSessions) => (
   />
 )
 
-test('shows nothing but a spinner before the first read has settled', async () => {
+test('shows nothing before the first read has settled', async () => {
   // `busy` turns on inside an effect, which runs after the first commit — so a
   // list that reads emptiness off `!busy` flashes "No sessions yet" for a frame.
+  // The spinner for that read lives on the project row, not in here.
   await renderWithTheme(body(sessions({ loaded: false })))
   expect(screen.queryByText('No sessions yet')).toBeNull()
+  expect(JSON.stringify(screen.toJSON())).not.toContain('ActivityIndicator')
 })
 
 test('reports an empty project only once the read has settled', async () => {
@@ -46,4 +48,12 @@ test('shows the failure instead of an empty project when the read failed', async
   await renderWithTheme(body(sessions({ loaded: true, error: 'Could not load sessions' })))
   expect(screen.getByText('Could not load sessions')).toBeTruthy()
   expect(screen.queryByText('No sessions yet')).toBeNull()
+})
+
+test('offers "Show more" as the muted chevron control the desktop sidebar uses', async () => {
+  await renderWithTheme(body(sessions({ hasMore: true })))
+  expect(screen.getByRole('button', { name: 'Show More Sessions' })).toBeTruthy()
+  // Secondary ink, not the accent: it is a quiet footer, not a link.
+  expect(screen.getByText('Show More')).toHaveStyle({ fontSize: 12, fontWeight: '500' })
+  expect(screen.getByText('Show More')).not.toHaveStyle({ color: '#1570d1' })
 })

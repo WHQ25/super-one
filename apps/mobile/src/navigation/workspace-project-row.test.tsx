@@ -1,11 +1,14 @@
 import { expect, jest, test } from '@jest/globals'
-import { screen, waitFor } from '@testing-library/react-native'
+import { useState } from 'react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react-native'
 import type { RelayClient } from '@superone/relay-client'
 import type { SessionActivity } from '@superone/shared/session-activity'
 import { renderWithTheme } from '../test-render'
 import { SessionActivityContext } from './use-session-activity'
 import { WorkspaceProjectRow, type WorkspaceProjectRowProps } from './workspace-project-row'
 import type { SessionListRow } from '../session-list-state'
+
+jest.mock('../ui/use-icon-motion', () => ({ useIconMotion: () => true }))
 
 const seed: SessionListRow[] = [{ sessionId: 's1', title: 'Fix the drawer' }]
 const noop = () => {}
@@ -126,4 +129,56 @@ test('still reports a host failure that is not a dropped transport', async () =>
   const request = jest.fn(() => Promise.reject(new Error('no such project')))
   await renderWithTheme(row({ expanded: true, client: { request } as unknown as RelayClient, seed: [] }))
   await waitFor(() => expect(screen.getByText('no such project')).toBeTruthy())
+})
+
+test('shows the first read beside the project name, not inside the list', async () => {
+  // The spinner used to sit above the seeded rows and push them down for the
+  // duration of the read; on the header it changes nothing below it.
+  const request = jest.fn(() => new Promise(() => {}))
+  await renderWithTheme(row({ expanded: true, client: { request } as unknown as RelayClient }))
+  expect(screen.getByRole('button', { name: 'repo', expanded: true, busy: true })).toBeTruthy()
+  // The spinner takes the folder glyph's slot, so nothing else on the row moves.
+  expect(screen.getByTestId('project-list-loading')).toHaveStyle({ width: 18, height: 18 })
+  expect(screen.queryByTestId('project-list-icon')).toBeNull()
+  expect(screen.getByText('Fix the drawer')).toBeTruthy()
+})
+
+test('does not spin on a collapsed project', async () => {
+  const request = jest.fn(() => new Promise(() => {}))
+  // Pending work arms the list without expanding it; the read still runs but
+  // the header stays quiet because there is no open list waiting on it.
+  await renderWithTheme(
+    <SessionActivityContext.Provider value={{
+      ask: {
+        sessionId: 'ask', projectPath: '/repo', status: 'idle', provider: 'codex',
+        pendingCount: 1, pendingReason: { en: 'Allow Bash?', zh: '允许 Bash？' }, title: 'Needs input',
+      },
+    }}>
+      {row({ client: { request } as unknown as RelayClient })}
+    </SessionActivityContext.Provider>,
+  )
+  await waitFor(() => expect(request).toHaveBeenCalled())
+  expect(screen.queryByTestId('project-list-loading')).toBeNull()
+})
+
+/** Reanimated is mocked to plain views, so the unfold shows up as `entering` on a row wrapper. */
+const unfoldPlayed = () => JSON.stringify(screen.toJSON()).includes('"entering"')
+
+test('lands an expansion nobody tapped already open, without the unfold', async () => {
+  // The drawer opens the active project itself on every mount; rows sliding in
+  // each time read as the list being re-fetched.
+  await renderWithTheme(row({ expanded: true }))
+  expect(screen.getByText('Fix the drawer')).toBeTruthy()
+  expect(unfoldPlayed()).toBe(false)
+})
+
+test('plays the unfold when the project row itself is tapped', async () => {
+  function Toggling() {
+    const [expanded, setExpanded] = useState(false)
+    return row({ expanded, onToggle: () => setExpanded((open) => !open) })
+  }
+  await renderWithTheme(<Toggling />)
+  await act(async () => { fireEvent.press(screen.getByRole('button', { name: 'repo' })) })
+  expect(screen.getByText('Fix the drawer')).toBeTruthy()
+  expect(unfoldPlayed()).toBe(true)
 })

@@ -1,11 +1,12 @@
 import { useContext, useEffect, useRef, useState } from 'react'
 import { Pressable, View } from 'react-native'
-import { ChevronRight, Folder } from 'lucide-react-native'
+import { ChevronRight, Folder, LoaderCircle } from 'lucide-react-native'
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated'
 import type { RelayClient } from '@superone/relay-client'
 import { Text } from '../ui/text'
 import { SessionListBody, type SessionListActions } from '../ui'
 import { SESSION_UNFOLD } from '../ui/session-unfold'
+import { SpinningIcon } from '../ui/spinning-icon'
 import { useIconMotion } from '../ui/use-icon-motion'
 import type { Project } from '../project-types'
 import type { SessionListRow } from '../session-list-state'
@@ -39,60 +40,27 @@ export type WorkspaceProjectRowProps = SessionListActions & {
 export function WorkspaceProjectRow(props: WorkspaceProjectRowProps) {
   const { tokens: { colors } } = useMobileTheme()
   const needsAttention = projectHasAttention(useContext(SessionActivityContext), props.project.path)
-  // Mounted the first time this project is expanded, and kept mounted after.
-  // Collapsing hides the ordinary list instead of dropping it, so re-expanding
-  // costs no request. Live work is the desktop exception: a collapsed project
-  // still shows running, unseen, and pending sessions, so those rows arm the
-  // list too.
+  // Read the first time this project is expanded, and kept after. Collapsing
+  // hides the ordinary list instead of dropping it, so re-expanding costs no
+  // request. Live work is the desktop exception: a collapsed project still
+  // shows running, unseen, and pending sessions, so those rows arm the list
+  // too. Without the gate every project would fetch the moment the drawer
+  // opened.
   const [armed, setArmed] = useState(props.expanded || needsAttention)
   useEffect(() => { if (props.expanded || needsAttention) setArmed(true) }, [props.expanded, needsAttention])
+  // Only a tap on this row plays the unfold. The list opens the active project
+  // on its own every time the drawer mounts, and rows sliding in on an
+  // expansion nobody asked for read as the list being re-fetched.
+  const [tapped, setTapped] = useState(false)
+  const animate = useIconMotion() && tapped
 
-  return <View>
-    <Pressable accessibilityRole="button" accessibilityState={{ expanded: props.expanded }}
-      onPress={props.onToggle}
-      style={{ minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12 }}>
-      <View testID="project-list-icon" accessible={false} style={{ width: 18, height: 18 }}>
-        <Folder size={18} color={colors.mutedForeground} />
-      </View>
-      <Text numberOfLines={1} style={{ color: colors.foreground, fontSize: 15, flex: 1 }}>{props.project.name}</Text>
-      <ProjectChevron expanded={props.expanded} color={colors.mutedForeground} />
-    </Pressable>
-    {armed ? <ProjectSessions {...props} /> : null}
-  </View>
-}
-
-function ProjectChevron({ expanded, color }: { expanded: boolean; color: string }) {
-  const motion = useIconMotion()
-  const rotation = useSharedValue(expanded ? 90 : 0)
-  const previous = useRef(expanded)
-  useEffect(() => {
-    if (previous.current === expanded) return
-    previous.current = expanded
-    rotation.value = motion
-      ? withTiming(expanded ? 90 : 0, {
-        duration: SESSION_UNFOLD.chevronMs,
-        easing: Easing.bezier(...SESSION_UNFOLD.easing),
-      })
-      : expanded ? 90 : 0
-  }, [expanded, motion, rotation])
-  const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${rotation.value}deg` }] }))
-  return <Animated.View style={style}>
-    <ChevronRight size={15} color={color} />
-  </Animated.View>
-}
-
-/**
- * Separate component so the hook only ever exists for a project that has been
- * expanded — mounting it in `WorkspaceProjectRow` would fetch every project in
- * the drawer the moment it opened.
- */
-function ProjectSessions(props: WorkspaceProjectRowProps) {
   const sessions = useProjectSessions(
     props.client,
     props.project,
     props.seed ?? [],
     props.activeSessionId,
     props.expanded,
+    armed,
   )
   const { refresh } = sessions
   // The mount load is the first read; from then on only an invalidation the host
@@ -105,17 +73,54 @@ function ProjectSessions(props: WorkspaceProjectRowProps) {
     refresh()
   }, [visible, expanded, listRevision, refresh])
 
-  const showList = props.expanded || sessions.items.length > 0
-  return <View style={{ paddingLeft: 8, paddingBottom: showList ? 4 : 0 }}>
-    <SessionListBody
-      sessions={sessions}
-      surface="panel"
-      collapsed={!props.expanded}
-      activeSessionId={props.activeSessionId}
-      onOpenSession={props.onOpenSession}
-      onPinSession={props.onPinSession}
-      onArchiveSession={props.onArchiveSession}
-      onDeleteSession={props.onDeleteSession}
-    />
+  // The first read takes over the folder glyph rather than sitting inside the
+  // list, where it would push every seeded row down and back up again. Same
+  // slot, same size: nothing else on the row moves while it spins.
+  const loading = expanded && (sessions.busy || !sessions.loaded)
+  const showList = expanded || sessions.items.length > 0
+  return <View>
+    <Pressable accessibilityRole="button" accessibilityState={{ expanded, busy: loading }}
+      onPress={() => { setTapped(true); props.onToggle() }}
+      style={{ minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12 }}>
+      <View testID={loading ? 'project-list-loading' : 'project-list-icon'} accessible={false} style={{ width: 18, height: 18 }}>
+        {loading
+          ? <SpinningIcon icon={LoaderCircle} size={18} color={colors.mutedForeground} />
+          : <Folder size={18} color={colors.mutedForeground} />}
+      </View>
+      <Text numberOfLines={1} style={{ color: colors.foreground, fontSize: 15, flex: 1 }}>{props.project.name}</Text>
+      <ProjectChevron expanded={expanded} animate={animate} color={colors.mutedForeground} />
+    </Pressable>
+    {armed ? <View style={{ paddingLeft: 8, paddingBottom: showList ? 4 : 0 }}>
+      <SessionListBody
+        sessions={sessions}
+        surface="panel"
+        collapsed={!expanded}
+        animate={animate}
+        activeSessionId={props.activeSessionId}
+        onOpenSession={props.onOpenSession}
+        onPinSession={props.onPinSession}
+        onArchiveSession={props.onArchiveSession}
+        onDeleteSession={props.onDeleteSession}
+      />
+    </View> : null}
   </View>
+}
+
+function ProjectChevron({ expanded, animate, color }: { expanded: boolean; animate: boolean; color: string }) {
+  const rotation = useSharedValue(expanded ? 90 : 0)
+  const previous = useRef(expanded)
+  useEffect(() => {
+    if (previous.current === expanded) return
+    previous.current = expanded
+    rotation.value = animate
+      ? withTiming(expanded ? 90 : 0, {
+        duration: SESSION_UNFOLD.chevronMs,
+        easing: Easing.bezier(...SESSION_UNFOLD.easing),
+      })
+      : expanded ? 90 : 0
+  }, [expanded, animate, rotation])
+  const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${rotation.value}deg` }] }))
+  return <Animated.View style={style}>
+    <ChevronRight size={15} color={color} />
+  </Animated.View>
 }

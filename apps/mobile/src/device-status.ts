@@ -54,6 +54,9 @@ export function isLanStatus(status: DeviceStatus): boolean {
  * Single source of truth for a row's status. Priority matches Flutter's
  * `_deriveStatus`: the socket we hold outranks anything discovery reports, and
  * a LAN route outranks the cloud because it is the one we would actually take.
+ * A dial in progress outranks even the open socket: the socket opens long
+ * before the workspace behind it is loaded, and the row is the only progress
+ * the user sees until the tap lands somewhere.
  */
 export function deriveDeviceStatus(input: {
   pairingId: string
@@ -64,11 +67,11 @@ export function deriveDeviceStatus(input: {
   reachability: DeviceReachability | undefined
   searchingLan: boolean
 }): DeviceStatus {
+  if (input.connectingPairingId === input.pairingId) return 'connecting'
   const active = input.activePairingId !== null && input.activePairingId === input.pairingId
   if (active && input.connectionState === 'connected') {
     return input.activeTransport === 'lan' ? 'connectedLan' : 'connectedCloud'
   }
-  if (input.connectingPairingId === input.pairingId) return 'connecting'
   if (active && input.connectionState === 'reconnecting') return 'connecting'
   if (input.reachability?.lan) return 'onlineLan'
   if (input.reachability?.relay) return 'onlineCloud'

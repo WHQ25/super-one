@@ -63,6 +63,20 @@ describe('device status derivation', () => {
     })).toBe('connecting')
   })
 
+  it('stays connecting once the socket is open until the dial has finished', () => {
+    // The socket opens well before the workspace is loaded; the row is still
+    // the only progress indicator the user has, so it must not say Connected
+    // while the tap has not landed anywhere yet.
+    expect(deriveDeviceStatus({
+      ...base,
+      activePairingId: 'desk-1',
+      activeTransport: 'relay',
+      connectionState: 'connected',
+      connectingPairingId: 'desk-1',
+      reachability: both,
+    })).toBe('connecting')
+  })
+
   it('leaves other rows alone while one device is being dialled', () => {
     expect(deriveDeviceStatus({ ...base, connectingPairingId: 'desk-2', reachability: both }))
       .toBe('onlineLan')

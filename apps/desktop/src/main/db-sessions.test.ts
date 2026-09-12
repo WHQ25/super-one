@@ -22,7 +22,7 @@ vi.mock('./logger', () => ({
   },
 }))
 
-import { deleteSessionsOlderThan, listPinnedSessions, listSessionsForFolder, saveSessionState } from './db-sessions'
+import { countMessagesForSessions, deleteSessionsOlderThan, listPinnedSessions, listSessionsForFolder, saveSessionState } from './db-sessions'
 
 describe('db-sessions session query + mapping', () => {
   beforeEach(() => {
@@ -331,5 +331,31 @@ describe('saveSessionState', () => {
     })
 
     expect(updateSessionRun).toHaveBeenLastCalledWith(0, 0, 'claude', '2026-01-01T00:02:00.000Z', 'session-1')
+  })
+})
+
+describe('countMessagesForSessions', () => {
+  beforeEach(() => { getDbMock.mockReset() })
+
+  it('asks once for the whole page and reads a missing session as zero', () => {
+    const all = vi.fn(() => [{ session_id: 's1', count: 7 }, { session_id: 's3', count: 1 }])
+    const prepareMock = vi.fn(() => ({ all }))
+    getDbMock.mockReturnValue({ prepare: prepareMock })
+
+    const counts = countMessagesForSessions(['s1', 's2', 's3'])
+
+    expect(prepareMock).toHaveBeenCalledTimes(1)
+    expect(prepareMock.mock.calls[0][0]).toContain('IN (?,?,?)')
+    expect(all).toHaveBeenCalledWith('s1', 's2', 's3')
+    expect(counts.get('s1')).toBe(7)
+    expect(counts.get('s2')).toBeUndefined()
+    expect(counts.get('s3')).toBe(1)
+  })
+
+  it('does not touch the database for an empty page', () => {
+    const prepareMock = vi.fn()
+    getDbMock.mockReturnValue({ prepare: prepareMock })
+    expect(countMessagesForSessions([]).size).toBe(0)
+    expect(prepareMock).not.toHaveBeenCalled()
   })
 })

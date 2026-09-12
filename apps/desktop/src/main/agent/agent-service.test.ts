@@ -45,6 +45,7 @@ vi.mock('./fuzzy-file-search', () => ({
 
 vi.mock('../db-sessions', () => ({
   listSessionsForFolder: vi.fn(),
+  countMessagesForSessions: vi.fn(() => new Map()),
   createSession: vi.fn(),
   renameSession: vi.fn(),
   saveSessionState: vi.fn(),
@@ -2875,9 +2876,8 @@ describe('AgentService.handleRemoteCommand', () => {
       selectedModel: 'stored-model',
       tags: ['review'],
     }])
-    vi.mocked(database.getDb).mockReturnValue({
-      prepare: vi.fn(() => ({ get: vi.fn(() => ({ cnt: 7 })) })),
-    } as never)
+    // One query for the whole page, not one per row.
+    vi.mocked(dbSessions.countMessagesForSessions).mockReturnValue(new Map([['session-acp', 7]]))
     const service = new AgentService()
     ;(service as { sessionManager: unknown }).sessionManager = {
       getSession: vi.fn(() => ({ snapshot: { selectedModel: 'live-model', status: 'streaming' } })),
@@ -2901,6 +2901,7 @@ describe('AgentService.handleRemoteCommand', () => {
         messageCount: 7,
       })],
     }))
+    expect(dbSessions.countMessagesForSessions).toHaveBeenCalledWith(['session-acp'])
   })
 
   it('archives a remote session without deleting its transcript', async () => {

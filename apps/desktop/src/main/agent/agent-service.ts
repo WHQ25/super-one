@@ -26,7 +26,7 @@ import { getRecentFolders, addRecentFolder, getProjectExtraDirs, updateProject }
 import { readdir, mkdir } from 'fs/promises'
 import { existsSync, mkdirSync, readdirSync, readFileSync } from 'fs'
 import { homedir } from 'os'
-import { getDb, getCachedHarnessResources } from '../database'
+import { getCachedHarnessResources } from '../database'
 import { resolveTestApiKey } from './provider-test-key'
 import { buildRemoteActiveService, platformDisplay, resolveChatService } from '../providers/resolver'
 import { getPlatforms } from '../providers/registry'
@@ -75,7 +75,7 @@ function getGitRoot(cwd: string): string {
     return cwd // Fallback: not a git repo, use path itself
   }
 }
-import { listSessionsForFolder, createSession, createAutomationSession, renameSession as dbRenameSession, saveSessionState, loadSessionState, loadSessionMessage, loadSessionMessagesPaginated, sessionBelongsToProject, deleteSession as dbDeleteSession, deleteSessionsOlderThan as dbDeleteSessionsOlderThan, pinSession as dbPinSession, hideSession as dbHideSession, listPinnedSessions, searchSessionsByTitle, readSessionHarnessId } from '../db-sessions'
+import { listSessionsForFolder, countMessagesForSessions, createSession, createAutomationSession, renameSession as dbRenameSession, saveSessionState, loadSessionState, loadSessionMessage, loadSessionMessagesPaginated, sessionBelongsToProject, deleteSession as dbDeleteSession, deleteSessionsOlderThan as dbDeleteSessionsOlderThan, pinSession as dbPinSession, hideSession as dbHideSession, listPinnedSessions, searchSessionsByTitle, readSessionHarnessId } from '../db-sessions'
 import { loadSessionMessages } from '../session-history'
 import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig } from '../mcp-config-service'
 import {
@@ -1500,24 +1500,22 @@ export class AgentService {
       }
       case 'list_sessions': {
         try {
-          const db = getDb()
           const limit = command.limit ?? 10
           const offset = command.offset ?? 0
           const allSessions = listSessionsForFolder(command.projectPath)
           const visibleSessions = allSessions.filter((s) => !s.isHidden)
           const visible = visibleSessions.slice(offset, offset + limit)
           const totalCount = visibleSessions.length
-          const countStmt = db.prepare('SELECT COUNT(*) as cnt FROM chat_messages WHERE session_id = ?')
+          const messageCounts = countMessagesForSessions(visible.map((s) => s.sessionId))
           await respond?.(command.requestId, {
             totalCount,
             sessions: visible.map((s) => {
-              const row = countStmt.get(s.sessionId) as { cnt: number } | undefined
               const live = this.sessionManager?.getSession(s.sessionId)
               return {
                 sessionId: s.sessionId,
                 title: s.title,
                 lastActiveAt: s.lastActiveAt,
-                messageCount: row?.cnt ?? 0,
+                messageCount: messageCounts.get(s.sessionId) ?? 0,
                 provider: s.provider ?? 'claude',
                 acpAgentId: s.acpAgentId ?? null,
                 selectedModel: live?.snapshot.selectedModel || s.selectedModel || null,

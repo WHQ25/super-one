@@ -451,6 +451,24 @@ export function sessionHasMessages(sessionId: string): boolean {
   return !!row
 }
 
+/**
+ * Message counts for a page of sessions in one query. A session with no
+ * messages has no entry; read it as zero. One statement rather than one per
+ * row: the remote list is asked for over a relay round trip, and thirty
+ * `COUNT(*)` calls back to back were a visible share of its answer time.
+ */
+export function countMessagesForSessions(sessionIds: string[]): Map<string, number> {
+  const counts = new Map<string, number>()
+  if (!sessionIds.length) return counts
+  const rows = getDb().prepare(`
+    SELECT session_id, COUNT(*) AS count FROM chat_messages
+    WHERE session_id IN (${sessionIds.map(() => '?').join(',')})
+    GROUP BY session_id
+  `).all(...sessionIds) as { session_id: string; count: number }[]
+  for (const row of rows) counts.set(row.session_id, row.count)
+  return counts
+}
+
 export function hideSession(sessionId: string, hidden: boolean): void {
   const db = getDb()
   db.prepare('UPDATE sessions SET is_hidden = ? WHERE id = ?').run(hidden ? 1 : 0, sessionId)

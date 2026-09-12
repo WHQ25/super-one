@@ -1,6 +1,6 @@
 {
   "name": "@superone/relay",
-  "version": "0.41.15-alpha",
+  "version": "0.65.0-alpha",
   "private": true,
   "type": "module",
   "scripts": {

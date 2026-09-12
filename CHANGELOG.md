@@ -39,6 +39,10 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Fixed
 
+- Remote Control: the relay socket is heartbeated (ping every 30 s, dead
+  after 10 s without a pong), so a half-open desktop link no longer reads
+  as Online while the phone sits on "Connecting…"; the desktop re-dials
+  and the relay reports it offline in the meantime.
 - Mobile: photos are re-encoded on the phone before sending (HEIC / TIFF /
   AVIF and oversized JPEGs become JPEG, capped at 2048 px), so the model can
   read a picture taken on an iPhone.
@@ -97,6 +101,12 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Fixed
 
+- Remote Control: the relay socket is heartbeated (text `ping` every 30 s,
+  dead after 10 s without `pong`) on desktop and phone, and the relay's
+  `/status` reads the auto-response timestamp, so a half-open desktop link
+  (Wi-Fi switch, NAT idle drop, VPN toggle) no longer reads as Online while
+  the phone sits on "Connecting…". The relay picks the newest OPEN socket
+  and keeps its idle alarm armed while the heartbeat is fresh.
 - Mobile: photos are re-encoded on the phone before anything sees them
   (HEIC / TIFF / AVIF and oversized JPEGs become JPEG, capped at 2048 px),
   so the model can read a picture taken on an iPhone; attachments open in

@@ -99,10 +99,13 @@ function PortableUserContent({
 }
 
 function AttachmentGallery({ message }: { message: ChatMessage }) {
-  if (!message.attachments?.length) return null
+  // The host echoes the sender's own message without the picture bytes; that
+  // copy is normally deduplicated away, and must not paint a broken image if not.
+  const attachments = message.attachments?.filter((attachment) => attachment.base64)
+  if (!attachments?.length) return null
   return (
     <div className="mt-2 grid grid-cols-2 gap-2">
-      {message.attachments.map((attachment, index) => {
+      {attachments.map((attachment, index) => {
         const src = `data:${attachment.mimeType};base64,${attachment.base64}`
         const picture = <img src={src} alt={attachment.name} className="max-h-64 w-full rounded-lg object-contain" />
         // Only a real picture opens the viewer; a PDF attachment has no bitmap to show.

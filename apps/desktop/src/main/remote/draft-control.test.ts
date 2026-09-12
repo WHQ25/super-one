@@ -33,6 +33,26 @@ describe('shared desktop and mobile drafts', () => {
     expect(drafts.get('draft')).toBeDefined()
   })
 
+  it('keeps attachment bytes off the mobile wire except for a full open', () => {
+    const picture = { id: 'a1', name: 'a.jpg', mimeType: 'image/jpeg', data: 'AA=='.repeat(4) }
+    const opened = drafts.handle({ type: 'open_draft', requestId: 'r1', draftId: 'draft' }, 'phone') as { leaseId: string }
+    const saved = drafts.handle({
+      type: 'save_draft', requestId: 'r2', leaseId: opened.leaseId,
+      draft: { id: 'draft', text: 'with picture', projectPath: '/project', attachments: [picture] },
+    }, 'phone') as { draft: { attachments: Array<{ id?: string; data: string }> } }
+    // The saving phone already holds the bytes; the reply names the attachment only.
+    expect(saved.draft.attachments).toEqual([{ ...picture, data: '' }])
+    expect((drafts.handle({ type: 'list_drafts', requestId: 'r3' }, 'tablet') as { drafts: Array<{ attachments: unknown[] }> })
+      .drafts[0].attachments).toEqual([{ ...picture, data: '' }])
+    // The lease-only open a phone does right before sending its own draft…
+    const lease = drafts.handle({ type: 'open_draft', requestId: 'r4', draftId: 'draft', omitContent: true }, 'phone') as { draft: { attachments: unknown[] } }
+    expect(lease.draft.attachments).toEqual([{ ...picture, data: '' }])
+    drafts.releaseDevice('phone')
+    // …versus another device loading the draft into its composer.
+    const full = drafts.handle({ type: 'open_draft', requestId: 'r5', draftId: 'draft' }, 'tablet') as { draft: { attachments: unknown[] } }
+    expect(full.draft.attachments).toEqual([picture])
+  })
+
   it('releases only the disconnected device and publishes content, control and deletion changes', () => {
     const changes: unknown[] = []
     drafts.watch((event) => changes.push(event))

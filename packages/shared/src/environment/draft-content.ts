@@ -1,3 +1,5 @@
+import type { DraftAttachment } from './draft-rpc'
+
 export function hasPersistableDraftContent(draft: {
   text: string
   docJson?: object | null
@@ -18,4 +20,16 @@ export function hasPersistableDraftContent(draft: {
     if (Array.isArray(content)) pending.push(...content)
   }
   return false
+}
+
+/**
+ * A draft as it travels to a device that does not need its attachment bytes:
+ * list rows, change notices, and the lease-only open a phone does right before
+ * sending a draft it already holds. `data` is emptied rather than dropped so
+ * chip identity and `hasPersistableDraftContent` survive; a composer is only
+ * ever loaded from a full `open_draft` reply.
+ */
+export function withoutDraftAttachmentBytes<T extends { attachments: DraftAttachment[] }>(draft: T): T {
+  if (!draft.attachments.some((attachment) => attachment.data)) return draft
+  return { ...draft, attachments: draft.attachments.map((attachment) => ({ ...attachment, data: '' })) }
 }

@@ -124,7 +124,8 @@ export class RemoteDraftLibrary {
   prepareSend(id: string): Promise<{ draftId: string; draftLeaseId: string }> {
     return this.run(async () => {
       await this.flushOne(id)
-      const opened = await this.request<DraftOpenResult>({ type: 'open_draft', requestId: randomId(), draftId: id })
+      // Lease only: the composer already holds this draft, bytes and all.
+      const opened = await this.request<DraftOpenResult>({ type: 'open_draft', requestId: randomId(), draftId: id, omitContent: true })
       this.leases.set(id, opened.leaseId)
       return { draftId: id, draftLeaseId: opened.leaseId }
     })

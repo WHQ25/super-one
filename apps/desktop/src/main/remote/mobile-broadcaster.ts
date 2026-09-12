@@ -1,7 +1,8 @@
 import { detailUpdates, isProgressiveSession, projectProgressiveEvent } from './progressive-session'
+import { takeAttachmentOrigin, withoutAttachmentBytes } from './attachment-echo'
 import { SESSION_ACTIVITY_EVENTS, summarizeSessionActivity } from '@superone/shared/session-activity'
-import type { AgentEvent } from '@superone/shared/agent-types'
-import type { SessionManager } from '../session/types'
+import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
+import type { Session, SessionManager } from '../session/types'
 import { trace } from '../agent/event-trace'
 
 export interface MobileTransport {
@@ -48,8 +49,20 @@ export class MobileBroadcaster {
       return
     }
     trace('remote.broadcast', 'route', { type: event.type, sessionId: event.sessionId, targets: [...targets] })
-    const legacy = [...targets].filter(deviceId => !isProgressiveSession(deviceId, session.id))
-    const progressive = [...targets].filter(deviceId => isProgressiveSession(deviceId, session.id))
+    // The sender of a message with attachments gets the echo without the bytes.
+    const origin = event.type === 'user_message_appended' && event.message.attachments?.length
+      ? takeAttachmentOrigin(event.message.id)
+      : undefined
+    if (origin && targets.has(origin)) {
+      targets.delete(origin)
+      await this.deliver(withoutAttachmentBytes(event), [origin], session, messages)
+    }
+    await this.deliver(event, [...targets], session, messages)
+  }
+
+  private async deliver(event: AgentEvent, targets: string[], session: Session, messages: readonly ChatMessage[]): Promise<void> {
+    const legacy = targets.filter(deviceId => !isProgressiveSession(deviceId, session.id))
+    const progressive = targets.filter(deviceId => isProgressiveSession(deviceId, session.id))
     if (legacy.length) await this.transport.sendAgentEvent(event, legacy)
     if (progressive.length) {
       const projected = projectProgressiveEvent(event, messages)

@@ -1,6 +1,7 @@
 import { loadSessionHistoryIndex, loadSessionMessageWindow } from '../session/history-navigation'
 import { buildProgressiveBootstrap } from './progressive-bootstrap'
 import { isProgressiveSession, projectProgressiveMessage, setProgressiveSession } from '../remote/progressive-session'
+import { rememberAttachmentOrigin } from '../remote/attachment-echo'
 import { handleDetailCommand } from '../remote/detail-command'
 import { summarizeSessionActivity, type SessionActivity } from '@superone/shared/session-activity'
 import { answerRemoteAsyncQuestion } from './remote-async-question'
@@ -689,6 +690,8 @@ export class AgentService {
 
         const saved = loadSessionState(sessionId)
         const queueOp = command.priority === 'next' || command.priority === 'later' || Boolean(command.steer)
+        // The phone painted this bubble before sending; its echo needs no picture bytes.
+        if (command.clientMessageId && command.images?.length) rememberAttachmentOrigin(command.clientMessageId, deviceId)
         if (command.provider === 'codex' || saved?.provider === 'codex') {
           const run = async () => {
             await this.runCodexRemoteTurn(projectPath, sessionId, deviceId, command)

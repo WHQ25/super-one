@@ -150,7 +150,18 @@ export interface DraftDeleteResult {
 /** Mobile composer control is independent of a running agent session. */
 export type DraftRemoteCommand =
   | { type: 'list_drafts'; requestId: string; projectPath?: string }
-  | { type: 'open_draft'; requestId: string; draftId: string; expectedUpdatedAt?: string }
+  | {
+      type: 'open_draft'
+      requestId: string
+      draftId: string
+      expectedUpdatedAt?: string
+      /**
+       * Take the lease without the attachment bytes. A phone about to send a
+       * draft already holds them; shipping them back costs seconds of JS-side
+       * decryption per picture.
+       */
+      omitContent?: boolean
+    }
   | { type: 'save_draft'; requestId: string; draft: DraftUpsertRequest; leaseId?: string }
   | { type: 'close_draft'; requestId: string; draftId: string; leaseId: string }
   | { type: 'delete_draft'; requestId: string; draftId: string; leaseId?: string }

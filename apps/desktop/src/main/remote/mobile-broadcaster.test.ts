@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { MobileBroadcaster, type MobileTransport } from './mobile-broadcaster'
+import { rememberAttachmentOrigin } from './attachment-echo'
 import type { Session, SessionManager } from '../session/types'
 import type { AgentEvent } from '@superone/shared/agent-types'
 
@@ -48,6 +49,29 @@ describe('MobileBroadcaster', () => {
     await broadcaster.broadcast({ type: 'message_complete', sessionId: 's1' } as AgentEvent)
     expect(transport.sent).toHaveLength(1)
     expect(transport.sent[0].targets).toEqual(['dev-A'])
+  })
+
+  it('echoes a sent picture back to its sender without the bytes, and in full to everyone else', async () => {
+    const session = makeFakeSession({ id: 's1', owner: { kind: 'remote', deviceId: 'phone' }, subscribers: ['phone', 'tablet'] })
+    const transport = makeFakeTransport()
+    const broadcaster = new MobileBroadcaster(makeFakeManager(new Map([['s1', session]])), transport)
+    rememberAttachmentOrigin('user_1', 'phone')
+    const event = {
+      type: 'user_message_appended', sessionId: 's1',
+      message: { id: 'user_1', role: 'user', status: 'complete', content: [{ type: 'text', text: 'look' }],
+        createdAt: '', providerId: 'remote', attachments: [{ name: 'a.jpg', mimeType: 'image/jpeg', base64: 'AAAA' }] },
+    } as AgentEvent
+    await broadcaster.broadcast(event)
+    const toPhone = transport.sent.find((entry) => entry.targets?.includes('phone'))!
+    const toTablet = transport.sent.find((entry) => entry.targets?.includes('tablet'))!
+    expect(toPhone.targets).toEqual(['phone'])
+    expect((toPhone.event as { message: { attachments: Array<{ base64: string }> } }).message.attachments[0].base64).toBe('')
+    expect((toTablet.event as { message: { attachments: Array<{ base64: string }> } }).message.attachments[0].base64).toBe('AAAA')
+    // The origin is consumed: a replay of the same message goes out in full.
+    transport.sent.length = 0
+    await broadcaster.broadcast(event)
+    expect(transport.sent).toHaveLength(1)
+    expect(new Set(transport.sent[0].targets)).toEqual(new Set(['phone', 'tablet']))
   })
 
   it('routes session events to all subscribers (multiple)', async () => {

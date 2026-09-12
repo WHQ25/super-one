@@ -1,8 +1,8 @@
-import { gcm } from '@noble/ciphers/aes.js'
 import { bytesToHex, hexToBytes, randomBytes } from '@noble/ciphers/utils.js'
 import { hkdf } from '@noble/hashes/hkdf.js'
 import { hmac } from '@noble/hashes/hmac.js'
 import { sha256 } from '@noble/hashes/sha2.js'
+import { aesGcm, base64 } from './crypto-backend'
 
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
@@ -35,7 +35,7 @@ export function deriveKeys(masterSecretHex: string): {
 
 export function encryptPayload(aesKeyBytes: Uint8Array, payload: unknown): string {
   const iv = randomBytes(12)
-  const sealed = gcm(aesKeyBytes, iv).encrypt(encoder.encode(JSON.stringify(payload)))
+  const sealed = aesGcm().seal(aesKeyBytes, iv, encoder.encode(JSON.stringify(payload)))
   const out = new Uint8Array(12 + sealed.length)
   out.set(iv, 0)
   out.set(sealed, 12)
@@ -43,10 +43,10 @@ export function encryptPayload(aesKeyBytes: Uint8Array, payload: unknown): strin
 }
 
 export function decryptPayload(aesKeyBytes: Uint8Array, data: string): unknown {
-  const bytes = base64ToUint8(data)
+  const bytes = base64().decode(data)
   const iv = bytes.subarray(0, 12)
   const ciphertext = bytes.subarray(12)
-  const plain = gcm(aesKeyBytes, iv).decrypt(ciphertext)
+  const plain = aesGcm().open(aesKeyBytes, iv, ciphertext)
   return JSON.parse(decoder.decode(plain)) as unknown
 }
 
@@ -84,7 +84,7 @@ export function encryptBytesChunked(
     const end = Math.min(start + FILE_CHUNK_SIZE, plaintext.length)
     const chunk = plaintext.subarray(start, end)
     const iv = randomBytes(FILE_GCM_IV_SIZE)
-    const sealed = gcm(aesKeyBytes, iv, chunkAad(channelKeyHex, r2Key, i)).encrypt(chunk)
+    const sealed = aesGcm().seal(aesKeyBytes, iv, chunk, chunkAad(channelKeyHex, r2Key, i))
     out.set(iv, writeOffset)
     writeOffset += FILE_GCM_IV_SIZE
     out.set(sealed, writeOffset)
@@ -132,7 +132,7 @@ export function decryptBytesChunked(
     }
     const sealed = envelope.subarray(readOffset, readOffset + sealedLen)
     readOffset += sealedLen
-    const plain = gcm(aesKeyBytes, iv, chunkAad(channelKeyHex, r2Key, i)).decrypt(sealed)
+    const plain = aesGcm().open(aesKeyBytes, iv, sealed, chunkAad(channelKeyHex, r2Key, i))
     plaintextChunks.push(plain)
     totalPlaintext += plain.length
   }
@@ -149,16 +149,5 @@ export function decryptBytesChunked(
 }
 
 export function bytesToBase64String(bytes: Uint8Array): string {
-  if (typeof Buffer !== 'undefined') return Buffer.from(bytes).toString('base64')
-  let binary = ''
-  for (const b of bytes) binary += String.fromCharCode(b)
-  return btoa(binary)
-}
-
-function base64ToUint8(data: string): Uint8Array {
-  if (typeof Buffer !== 'undefined') return new Uint8Array(Buffer.from(data, 'base64'))
-  const binary = atob(data)
-  const out = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i)
-  return out
+  return base64().encode(bytes)
 }

@@ -80,6 +80,7 @@ import { DeviceRegistry } from './remote/device-registry'
 import { MobileBroadcaster } from './remote/mobile-broadcaster'
 import { watchSessionList } from './session-list-watch'
 import { localDraftStore } from './db-drafts'
+import { withoutDraftAttachmentBytes } from '@superone/shared/environment/draft-content'
 import { installDraftOpenFlush } from './remote/draft-open-flush'
 import { NotificationService } from './notifications/notification-service'
 import { DesktopNotificationChannel } from './notifications/desktop-notification-channel'
@@ -4533,7 +4534,9 @@ function registerIpcHandlers(): void {
   agentService.setPrepareDraftOpen(installDraftOpenFlush(allWindows))
   localDraftStore().watch((event) => {
     publishAgentEvent(event)
-    agentService.notifyEventSubscribers(event)
+    // Phones keep drafts as rows and load a composer through `open_draft`;
+    // the change notice needs no attachment bytes (seconds of decryption each).
+    agentService.notifyEventSubscribers(event.draft ? { ...event, draft: withoutDraftAttachmentBytes(event.draft) } : event)
   })
 
   const savedRemoteConfig = readRemoteConfig()

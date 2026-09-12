@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { DraftStore } from '@superone/runtime/drafts'
-import { hasPersistableDraftContent } from '@superone/shared/environment/draft-content'
+import { hasPersistableDraftContent, withoutDraftAttachmentBytes } from '@superone/shared/environment/draft-content'
 import { DRAFT_ATTACHMENTS_MAX_BYTES, type DraftChangedEvent, type DraftListEntry, type DraftOpenResult, type DraftRemoteCommand, type DraftUpsertRequest } from '@superone/shared/environment/draft-rpc'
 
 /** One authority for local IPC and mobile writes; stale lease packets cannot
@@ -97,16 +97,25 @@ export class DraftControl implements DraftStore {
     if (deleted) this.emit(id, 'deleted')
     return deleted
   }
+  /**
+   * The mobile wire. Attachment bytes travel only in a full `open_draft` reply —
+   * the one that loads a composer. Rows, saves and lease-only opens carry the
+   * attachment list without its data; see `withoutDraftAttachmentBytes`.
+   */
   handle(command: DraftRemoteCommand, deviceId: string): unknown {
     switch (command.type) {
-      case 'list_drafts': return { drafts: this.list(command.projectPath) }
-      case 'open_draft': return this.open(command.draftId, deviceId, command.expectedUpdatedAt)
+      case 'list_drafts': return { drafts: this.list(command.projectPath).map(withoutDraftAttachmentBytes) }
+      case 'open_draft': {
+        const opened = this.open(command.draftId, deviceId, command.expectedUpdatedAt)
+        return command.omitContent ? { ...opened, draft: withoutDraftAttachmentBytes(opened.draft) } : opened
+      }
       case 'save_draft': {
         const input = command.draft
         if (!input || typeof input.id !== 'string' || !input.id || typeof input.text !== 'string' || !input.projectPath) throw new Error('Draft id, text and project are required')
         if (input.attachments?.some((a) => typeof a.data !== 'string' || typeof a.name !== 'string' || typeof a.mimeType !== 'string')) throw new Error('Invalid draft attachment')
         if ((input.attachments?.reduce((size, a) => size + a.data.length, 0) ?? 0) > DRAFT_ATTACHMENTS_MAX_BYTES) throw new Error('Draft attachments exceed 8 MB. Remove an attachment to synchronize this draft.')
-        return this.save(input, deviceId, command.leaseId)
+        const saved = this.save(input, deviceId, command.leaseId)
+        return { ...saved, draft: withoutDraftAttachmentBytes(saved.draft) }
       }
       case 'close_draft': this.close(command.draftId, deviceId, command.leaseId); return { ok: true }
       case 'delete_draft': this.delete(command.draftId, deviceId, command.leaseId); return { ok: true }

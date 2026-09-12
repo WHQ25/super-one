@@ -36,6 +36,16 @@ bubble inside the WebView until the assistant's `message_start` lands. Every
 live send paints its own bubble the same way, under the `clientMessageId` the
 host echoes back. Create failures still surface on the status line from the
 host `create_session` error, and hand the cleared draft back to the composer.
+A picture attached to a send crosses the wire exactly twice (draft flush and
+`send_message`): the host strips attachment bytes from `list_drafts`,
+`save_draft` replies and `draft_changed`, `prepareSend` opens the draft with
+`omitContent`, and the `user_message_appended` echo goes back to its sender
+without `base64` (the phone already painted it — see
+`apps/desktop/src/main/remote/attachment-echo.ts`). Every frame is still
+AES-GCM'd; `src/native-crypto.ts` swaps the relay-client's pure-JS
+`@noble/ciphers` (~1 MB/s on Hermes, synchronous) for OpenSSL via
+`react-native-quick-crypto` at app start, so do not expect a JS profile to
+show the cipher any more — if a send is slow again, count the crossings first.
 The conversation tick rail also lives in the chat WebView (`ChatScrollIndicator`),
 where it can measure and navigate the transcript without round-tripping through RN.
 Its turn outline and tick curve are shared with desktop. Touch scrubbing previews

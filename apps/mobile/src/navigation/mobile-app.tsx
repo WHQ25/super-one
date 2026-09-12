@@ -13,8 +13,8 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { WebView } from 'react-native-webview'
 import type { HostOutbound } from '@superone/chat-view'
 import {
-  loadPairings, parsePairQr, RelayClient, savePairings, startPairingHandshake, upsertPairing,
-  type SavedPairing,
+  checkRelayDesktopOnline, loadPairings, parsePairQr, RelayClient, savePairings, startPairingHandshake,
+  upsertPairing, type SavedPairing,
 } from '@superone/relay-client'
 import type {
   AskUserQuestionRequest, ChatMessage, HarnessId, ImageAttachment, PermissionRequest,
@@ -301,7 +301,7 @@ export function MobileApp() {
     ),
   })
   const reconnectControllerRef = useRef<ReconnectController | null>(null)
-  const connectionRef = useRef<{ state: 'connected' | 'reconnecting'; epoch: number }>({ state: 'connected', epoch: 0 })
+  const connectionRef = useRef<{ state: 'connected' | 'reconnecting' | 'offline'; epoch: number }>({ state: 'connected', epoch: 0 })
   const sessionTransitionRef = useRef(new SessionTransition())
   const chatViewStatesRef = useRef<Record<string, ChatViewState>>({})
   const viewStateWriteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -677,12 +677,15 @@ export function MobileApp() {
         connectionRef.current = { state, epoch }
         setConnectionState(state)
         inject(webRef, { type: 'setConnection', state, epoch })
+        // The row falls back to discovery's verdict now; make sure it is current.
+        if (state === 'offline') void discovery.refresh({ reset: false })
         // Connection feedback has one structured home in the header/sidebar.
         // Clear unrelated transient copy instead of painting a second status row.
         setStatus('')
       },
       onStatus: () => { /* DeviceStatus + reconnect own connection feedback. */ },
       onReconnectInfo: setReconnect,
+      isDesktopOnline: () => checkRelayDesktopOnline({ relayUrl, masterSecret: secret }).catch(() => false),
       onShutdown: () => {
         setConnectionState('offline')
         setStatus('')

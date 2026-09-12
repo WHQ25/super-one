@@ -1,10 +1,17 @@
-export type ConnectionState = 'reconnecting' | 'connected'
+/** `offline` = the transport opened but the desktop is not behind it; the loop stops. */
+export type ConnectionState = 'reconnecting' | 'connected' | 'offline'
 
 export type ReconnectControllerHooks = {
   onState: (state: ConnectionState, epoch: number) => void
   onRetry?: (error: unknown, delayMs: number) => void
   /** A dial is in flight. Pairs with onRetry to tell waiting from attempting apart. */
   onAttempt?: () => void
+  /**
+   * Runs after the transport opened, before restore. The relay accepts a lone
+   * mobile (mailbox semantics), so an open socket says nothing about the desktop;
+   * answering false ends the loop as `offline` instead of burning request timeouts.
+   */
+  probe?: () => Promise<boolean>
 }
 
 /** Keep the Flutter-proven retry cadence: exponential backoff capped at 30s. */
@@ -19,6 +26,7 @@ export class ReconnectController {
   private attempt = 0
   private timer: ReturnType<typeof setTimeout> | null = null
   private active = false
+  private epoch = 0
 
   constructor(
     private readonly reconnect: () => Promise<void>,
@@ -60,6 +68,7 @@ export class ReconnectController {
   private begin(epoch: number, immediate: boolean): void {
     this.active = true
     this.attempt = 0
+    this.epoch = epoch
     const generation = ++this.generation
     this.hooks.onState('reconnecting', epoch)
     if (immediate) void this.run(generation)
@@ -70,6 +79,12 @@ export class ReconnectController {
     this.hooks.onAttempt?.()
     try {
       await this.reconnect()
+      if (this.hooks.probe && !(await this.hooks.probe())) {
+        if (!this.active || generation !== this.generation) return
+        this.active = false
+        this.hooks.onState('offline', this.epoch)
+        return
+      }
       const epoch = await this.restore()
       if (!this.active || generation !== this.generation) return
       this.active = false

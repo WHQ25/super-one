@@ -13,6 +13,12 @@ export type MobileRelayConnectionHooks = {
   onReconnectInfo?: (info: ReconnectInfo) => void
   onShutdown: () => void
   onKicked?: () => void
+  /**
+   * Relay presence probe (`/status`). Consulted after the relay socket reopens,
+   * because the relay accepts a lone mobile; LAN never asks — there the desktop
+   * is the socket peer, so an open socket already answers.
+   */
+  isDesktopOnline?: () => Promise<boolean>
   suppressDisconnect: () => boolean
   openSocket?: OpenSocket
 }
@@ -33,13 +39,16 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
     restore,
     {
       onState: (state, epoch) => {
-        if (state === 'connected') {
-          peerLost = false
+        if (state !== 'reconnecting') {
+          // Offline keeps the relay socket as a mailbox: the desktop's next
+          // handshake (below) is what brings this connection back.
+          peerLost = state === 'offline'
           lastDelayMs = 0
           hooks.onReconnectInfo?.({ attempting: false, waiting: false, delayMs: 0, nextAtMs: null })
         }
         report(state, epoch)
       },
+      probe: async () => client.transport !== 'relay' || (await hooks.isDesktopOnline?.() ?? true),
       onAttempt: () => {
         hooks.onReconnectInfo?.({ attempting: true, waiting: false, delayMs: lastDelayMs, nextAtMs: null })
       },
@@ -77,7 +86,7 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
     onControl: (frame) => {
       if (frame.type === 'peer_disconnected') {
         peerLost = true
-        report('reconnecting', hooks.currentEpoch(client))
+        report('offline', hooks.currentEpoch(client))
         hooks.onStatus('desktop disconnected — waiting to reconnect')
         return
       }

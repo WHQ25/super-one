@@ -71,3 +71,64 @@ describe('ReconnectController', () => {
     expect(reconnect).toHaveBeenCalledTimes(8)
   })
 })
+
+describe('ReconnectController peer probe', () => {
+  it('ends the loop as offline when the probe says the desktop is away, without restoring', async () => {
+    vi.useFakeTimers()
+    const reconnect = vi.fn().mockResolvedValue(undefined)
+    const restore = vi.fn(async () => 9)
+    const probe = vi.fn().mockResolvedValue(false)
+    const onState = vi.fn()
+    const onRetry = vi.fn()
+    const controller = new ReconnectController(reconnect, restore, { onState, onRetry, probe })
+
+    controller.start(3)
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(reconnect).toHaveBeenCalledTimes(1)
+    expect(probe).toHaveBeenCalledTimes(1)
+    expect(restore).not.toHaveBeenCalled()
+    expect(onRetry).not.toHaveBeenCalled()
+    expect(onState).toHaveBeenLastCalledWith('offline', 3)
+    expect(controller.isActive).toBe(false)
+
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(reconnect).toHaveBeenCalledTimes(1)
+  })
+
+  it('restores normally when the probe says the desktop is present', async () => {
+    vi.useFakeTimers()
+    const reconnect = vi.fn().mockResolvedValue(undefined)
+    const restore = vi.fn(async () => 9)
+    const onState = vi.fn()
+    const controller = new ReconnectController(reconnect, restore, {
+      onState,
+      probe: async () => true,
+    })
+
+    controller.start(3)
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(restore).toHaveBeenCalledTimes(1)
+    expect(onState).toHaveBeenLastCalledWith('connected', 9)
+  })
+
+  it('keeps backing off while the transport itself cannot be opened', async () => {
+    vi.useFakeTimers()
+    const reconnect = vi.fn().mockRejectedValue(new Error('ws error'))
+    const probe = vi.fn().mockResolvedValue(false)
+    const onRetry = vi.fn()
+    const controller = new ReconnectController(reconnect, async () => 1, {
+      onState: vi.fn(),
+      onRetry,
+      probe,
+    })
+
+    controller.start(0)
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(probe).not.toHaveBeenCalled()
+    expect(onRetry).toHaveBeenCalledWith(expect.any(Error), 2_000)
+    expect(controller.isActive).toBe(true)
+  })
+})

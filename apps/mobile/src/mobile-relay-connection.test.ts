@@ -83,7 +83,7 @@ describe('mobile relay connection lifecycle', () => {
 
     await connection.client.connectRelay({ relayUrl: 'wss://relay.example', masterSecret: MASTER })
     sockets[0].emit({ type: 'peer_disconnected' })
-    expect(onConnection).toHaveBeenLastCalledWith('reconnecting', 2)
+    expect(onConnection).toHaveBeenLastCalledWith('offline', 2)
     sockets[0].emit({ type: 'peer_connected' })
     sockets[0].emit({ type: 'handshake', hostName: 'desktop' })
     await vi.waitFor(() => expect(restore).toHaveBeenCalledTimes(1))
@@ -117,5 +117,86 @@ describe('mobile relay connection lifecycle', () => {
     expect(onShutdown).toHaveBeenCalledOnce()
     expect(connection.client.connected).toBe(false)
     expect(connection.reconnectController.isActive).toBe(false)
+  })
+
+  it('parks a reopened relay socket as offline when the desktop is away, then restores on its handshake', async () => {
+    vi.useFakeTimers()
+    const sockets: MockSocket[] = []
+    const restore = vi.fn().mockResolvedValue(5)
+    const isDesktopOnline = vi.fn().mockResolvedValue(false)
+    const onConnection = vi.fn()
+    const onReconnectInfo = vi.fn()
+    const connection = createMobileRelayConnection({
+      onEvents: vi.fn(),
+      onTerminal: vi.fn(),
+      restore,
+      currentEpoch: () => 4,
+      onConnection,
+      onStatus: vi.fn(),
+      onReconnectInfo,
+      onShutdown: vi.fn(),
+      isDesktopOnline,
+      suppressDisconnect: () => false,
+      openSocket: () => {
+        const socket = new MockSocket()
+        sockets.push(socket)
+        queueMicrotask(() => socket.onopen?.())
+        return socket
+      },
+    })
+
+    await connection.client.connectRelay({ relayUrl: 'wss://relay.example', masterSecret: MASTER })
+    sockets[0].drop()
+    expect(onConnection).toHaveBeenLastCalledWith('reconnecting', 4)
+
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(sockets).toHaveLength(2)
+    expect(isDesktopOnline).toHaveBeenCalledTimes(1)
+    expect(restore).not.toHaveBeenCalled()
+    expect(onConnection).toHaveBeenLastCalledWith('offline', 4)
+    expect(onReconnectInfo).toHaveBeenLastCalledWith({ attempting: false, waiting: false, delayMs: 0, nextAtMs: null })
+    expect(connection.reconnectController.isActive).toBe(false)
+    expect(connection.client.connected).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(sockets).toHaveLength(2)
+
+    sockets[1].emit({ type: 'peer_connected' })
+    sockets[1].emit({ type: 'handshake', hostName: 'desktop' })
+    await vi.waitFor(() => expect(restore).toHaveBeenCalledTimes(1))
+    expect(onConnection).toHaveBeenLastCalledWith('connected', 5)
+  })
+
+  it('never probes the desktop over LAN, where the desktop is the socket peer', async () => {
+    vi.useFakeTimers()
+    const sockets: MockSocket[] = []
+    const restore = vi.fn().mockResolvedValue(2)
+    const isDesktopOnline = vi.fn().mockResolvedValue(false)
+    const onConnection = vi.fn()
+    const connection = createMobileRelayConnection({
+      onEvents: vi.fn(),
+      onTerminal: vi.fn(),
+      restore,
+      currentEpoch: () => 1,
+      onConnection,
+      onStatus: vi.fn(),
+      onShutdown: vi.fn(),
+      isDesktopOnline,
+      suppressDisconnect: () => false,
+      openSocket: () => {
+        const socket = new MockSocket()
+        sockets.push(socket)
+        queueMicrotask(() => socket.onopen?.())
+        return socket
+      },
+    })
+
+    await connection.client.connectLan('192.168.1.2', 7788, MASTER)
+    sockets[0].drop()
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(isDesktopOnline).not.toHaveBeenCalled()
+    expect(restore).toHaveBeenCalledTimes(1)
+    expect(onConnection).toHaveBeenLastCalledWith('connected', 2)
   })
 })

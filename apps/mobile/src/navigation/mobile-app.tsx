@@ -725,29 +725,41 @@ export function MobileApp() {
       desktopDeviceId,
     })
     setActivePairingId(desktopDeviceId || hostName || relayUrl)
-    const res = await client.request({ type: 'list_projects', requestId: randomId() } as RemoteCommand) as {
-      projects?: Project[]
-      error?: string
-    }
+    // Every await here is a full round trip, and over the relay each one is
+    // hundreds of milliseconds; independent requests go out together.
+    // The harness list is already ordered and labelled the way the host's own
+    // new-session surface shows them.
+    const [res, options] = await Promise.all([
+      client.request({ type: 'list_projects', requestId: randomId() } as RemoteCommand) as Promise<{
+        projects?: Project[]
+        error?: string
+      }>,
+      client.request({ type: 'list_harness_options', requestId: randomId() } as RemoteCommand)
+        .then((result) => {
+          const response = result as ListHarnessOptionsResponse | null
+          return response && !('error' in response) ? response.options : []
+        }).catch((): RemoteHarnessOption[] => []),
+    ])
     if (res.error) throw new Error(res.error)
     const projectRows = res.projects ?? []
     setProjects(projectRows)
-    // Which harnesses this host offers, already ordered and labelled the way its
-    // own new-session surface shows them.
-    const options = await client.request({ type: 'list_harness_options', requestId: randomId() } as RemoteCommand)
-      .then((result) => {
-        const response = result as ListHarnessOptionsResponse | null
-        return response && !('error' in response) ? response.options : []
-      }).catch(() => [])
     if (clientRef.current !== client) return
     setHarnessOptions(options)
-    if (projectRows[0]) await preloadHarnessResources(client, projectRows[0].path,
-      [selectedProvider, ...options.map((option) => option.provider)])
-    await loadMcpIcons(client, projectRows[0]?.path)
-    if (clientRef.current !== client) return
-    if (projectRows[0]) { await openProject(projectRows[0]); await startNewSession(projectRows[0]) }
-    // Nothing to run a session in yet — land on the picker, which owns Add Project.
-    else setScreen('project-picker')
+    if (projectRows[0]) {
+      // openProject warms the selected harness itself. The others are warmed
+      // behind the screen: one of them may make the host launch a whole
+      // agent process to list its models, and nothing on the new-session
+      // screen waits for that.
+      await openProject(projectRows[0])
+      if (clientRef.current !== client) return
+      void preloadHarnessResources(client, projectRows[0].path, options.map((option) => option.provider))
+      await startNewSession(projectRows[0])
+    } else {
+      await loadMcpIcons(client)
+      if (clientRef.current !== client) return
+      // Nothing to run a session in yet — land on the picker, which owns Add Project.
+      setScreen('project-picker')
+    }
     setStatus('')
     void Promise.all(projectRows.map(async (row) => {
       const git = await client.request({
@@ -865,12 +877,18 @@ export function MobileApp() {
     if (parkDraft && p.path !== project?.path) await remoteDrafts.park()
     systemInfoRequestRef.current++
     const projectRequest = ++shellDetailsRequestRef.current
-    await preloadHarnessResources(client, p.path, [selectedProvider, ...harnessOptions.map((option) => option.provider)])
-    await loadMcpIcons(client, p.path)
+    // Four independent reads; one round trip instead of four over the relay.
+    // Only the selected harness is waited for — the rest warm behind the screen.
+    const [, , page] = await Promise.all([
+      preloadHarnessResources(client, p.path, [selectedProvider]),
+      loadMcpIcons(client, p.path),
+      readProjectSessions(client, p.path),
+      refreshGitInfo(p.path),
+    ])
     if (clientRef.current !== client || projectRequest !== shellDetailsRequestRef.current) return
+    void preloadHarnessResources(client, p.path, harnessOptions.map((option) => option.provider))
     setProject(p)
-    setSessions((await readProjectSessions(client, p.path)).sessions)
-    await refreshGitInfo(p.path)
+    setSessions(page.sessions)
   }
 
   const loadShellDetails = async (provider: HarnessId = selectedProvider, p = project, refreshCatalog = false) => {

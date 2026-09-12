@@ -62,6 +62,7 @@ const {
   mapApprovalRequest,
   extractSuperoneMiniAppToolName,
   waitForCodexMcpServerReady,
+  processServerRequest,
 } = await import('./codex-turn')
 const { getActiveProviderRaw, getProviderByIdRaw } = await import('../database')
 const { resolveChatService } = await import('../providers/resolver')
@@ -813,6 +814,46 @@ describe('mapApprovalRequest superone mini-app tool elicitation', () => {
     if (parsed?.responseKind !== 'elicitation') throw new Error('expected elicitation')
     expect(parsed.request.requestKind).toBe('mcp_elicitation')
     expect(parsed.formFields.length).toBeGreaterThan(0)
+  })
+})
+
+describe('processServerRequest', () => {
+  it('cancels unsupported openai/userVerification elicitation', async () => {
+    const respond = vi.fn(async () => {})
+    const respondError = vi.fn(async () => {})
+    const connection = { request: vi.fn(), respond, respondError, notify: vi.fn(), nextNotification: vi.fn() }
+    await processServerRequest(
+      {
+        requestIdRaw: 41,
+        requestId: '41',
+        method: 'mcpServer/elicitation/request',
+        params: { mode: 'openai/userVerification', title: 'Verify', description: 'x', challenge: 'c' },
+      },
+      connection as never,
+      makeSession() as never,
+      undefined,
+    )
+    expect(respond).toHaveBeenCalledWith(41, { action: 'cancel', content: null, _meta: null })
+    expect(respondError).not.toHaveBeenCalled()
+  })
+
+  it('returns JSON-RPC method-not-found for unknown inbound methods', async () => {
+    const respond = vi.fn(async () => {})
+    const respondError = vi.fn(async () => {})
+    const connection = { request: vi.fn(), respond, respondError, notify: vi.fn(), nextNotification: vi.fn() }
+    await processServerRequest(
+      {
+        requestIdRaw: 9,
+        requestId: '9',
+        method: 'attestation/generate',
+        params: {},
+      },
+      connection as never,
+      makeSession() as never,
+      undefined,
+    )
+    expect(respondError).toHaveBeenCalledWith(9, -32601, 'Method not found')
+    expect(respond).not.toHaveBeenCalled()
   })
 })
 

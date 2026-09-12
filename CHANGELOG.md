@@ -13,6 +13,14 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ## [Unreleased]
 
+### Changed
+
+- Codex: adopted app-server 0.154.0. Unknown inbound JSON-RPC methods now
+  return method-not-found instead of an empty success; MCP tool-discovery
+  errors stay distinct from connection status; OAuth auth challenges on tool
+  results become a Sign-in action (not a user-deny). Unselected models are
+  omitted so server `config.model` is not overwritten by the picker default.
+
 ### Added
 
 - Release health: SuperOne reports crashes and update adoption, so a bad

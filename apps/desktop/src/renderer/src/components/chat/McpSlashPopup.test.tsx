@@ -200,6 +200,25 @@ describe('McpSlashPopup', () => {
     expect(onClose).toHaveBeenCalled()
   })
 
+  it('shows a catalog error without marking the server disconnected', async () => {
+    mockWindow([{
+      name: 'docs',
+      status: 'connected',
+      toolCount: 0,
+      tools: [],
+      toolsError: 'discovery timed out',
+    }], [])
+
+    render(<McpSlashPopup onClose={vi.fn()} />)
+
+    const name = await screen.findByText('docs')
+    expect(name).toBeInTheDocument()
+    expect(screen.getByText('error')).toBeInTheDocument()
+    expect(screen.queryByText('discovery timed out')).not.toBeInTheDocument()
+    fireEvent.mouseDown(name.closest('button')!)
+    expect(await screen.findByText('discovery timed out')).toBeInTheDocument()
+  })
+
   it('shows Codex harness label when sessionProvider is codex', async () => {
     setChat({ sessionProvider: 'codex' })
     mockWindow([{ name: 'srv', status: 'connected', toolCount: 0 }], [])

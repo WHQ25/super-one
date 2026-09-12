@@ -72,11 +72,15 @@ import { CODEX_SYSTEM_PROMPT_APPEND } from '../agent/superone-system-prompt'
 import { buildAttachmentPathNote, persistAttachments } from '../agent/attachment-store'
 import { buildCodexWorkspaceWriteSandboxPolicy } from '@superone/codex'
 import {
+  JSON_RPC_METHOD_NOT_FOUND,
+  elicitationCancelResult,
+  isCodexUserVerificationElicitation,
   readCodexAgentMessageDelivery,
   readCodexAsyncUserInputQuestions,
   readCodexConfigRequirements,
   readCodexErrorOverrides,
   readCodexImageGenerationFailure,
+  readCodexMcpWwwAuthenticate,
 } from '@superone/codex'
 import { CodexTurnUsageAccumulator } from './codex-usage-accumulator'
 import {
@@ -441,6 +445,8 @@ export function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadI
       const prevMcp = previous?.type === 'mcp_tool_call' ? previous : null
       const resultRec = asRecord(rec.result)
       const errorRec = asRecord(rec.error)
+      const resultMeta = asRecord(resultRec?._meta) ?? asRecord(resultRec?.meta) ?? prevMcp?.result?.meta
+      const authChallenge = readCodexMcpWwwAuthenticate(resultMeta)
       return {
         id,
         type: 'mcp_tool_call',
@@ -452,6 +458,7 @@ export function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadI
               result: {
                 content: Array.isArray(resultRec.content) ? resultRec.content : [],
                 structuredContent: resultRec.structuredContent ?? resultRec.structured_content ?? null,
+                ...(resultMeta ? { meta: resultMeta } : {}),
               },
             }
           : prevMcp?.result
@@ -459,9 +466,12 @@ export function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadI
           : {}),
         ...(errorRec
           ? { error: { message: readString(errorRec.message) ?? 'Unknown MCP tool error' } }
+          : authChallenge !== undefined
+            ? { error: { message: 'MCP authentication required' } }
           : prevMcp?.error
           ? { error: prevMcp.error }
           : {}),
+        ...(authChallenge !== undefined || prevMcp?.authRequired ? { authRequired: true } : {}),
         status: mapMcpToolCallStatus(rec.status ?? prevMcp?.status),
       }
     }
@@ -909,6 +919,14 @@ export async function processServerRequest(
 ): Promise<boolean> {
   if (notification.requestIdRaw === undefined) return false
 
+  if (
+    notification.method === 'mcpServer/elicitation/request'
+    && isCodexUserVerificationElicitation(notification.params)
+  ) {
+    await connection.respond(notification.requestIdRaw, elicitationCancelResult())
+    return true
+  }
+
   const parsedApprovalRequest = mapApprovalRequest(notification)
   if (parsedApprovalRequest) {
     const fallbackResponse: PendingCodexApprovalResponse =
@@ -1004,7 +1022,11 @@ export async function processServerRequest(
     }
   }
 
-  await connection.respond(notification.requestIdRaw, {})
+  await connection.respondError(
+    notification.requestIdRaw,
+    JSON_RPC_METHOD_NOT_FOUND,
+    'Method not found',
+  )
   return true
 }
 
@@ -1372,9 +1394,9 @@ export async function resolveThread(
     const result = await connection.request(
       'thread/start',
       compactRecord({
-        model: session.model,
+        ...(session.model ? { model: session.model } : {}),
         model_provider: modelProvider,
-        serviceTier: session.serviceTier,
+        ...(session.serviceTier ? { serviceTier: session.serviceTier } : {}),
         cwd,
         approvalPolicy: permissionProfile.approvalPolicy,
         approvalsReviewer: permissionProfile.approvalsReviewer,
@@ -1398,9 +1420,9 @@ export async function resolveThread(
         'thread/resume',
         compactRecord({
           threadId: session.threadId,
-          model: session.model,
+          ...(session.model ? { model: session.model } : {}),
           model_provider: modelProvider,
-          serviceTier: session.serviceTier,
+          ...(session.serviceTier ? { serviceTier: session.serviceTier } : {}),
           cwd,
           approvalPolicy: permissionProfile.approvalPolicy,
           approvalsReviewer: permissionProfile.approvalsReviewer,
@@ -1433,6 +1455,8 @@ export async function resolveThread(
 
   const resolvedModel = readString(threadResult.model)
   if (resolvedModel) session.model = resolvedModel
+  const resolvedTier = readString(threadResult.serviceTier)
+  if (resolvedTier) session.serviceTier = resolvedTier
   session.threadId = resolvedThreadId
   session.threadReady = true
   return resolvedThreadId
@@ -1454,11 +1478,22 @@ async function respondToPrewarmRequest(connection: AppServerConnection, notifica
     await connection.respond(notification.requestIdRaw, { decision: 'decline' })
     return
   }
+  if (
+    notification.method === 'mcpServer/elicitation/request'
+    && isCodexUserVerificationElicitation(notification.params)
+  ) {
+    await connection.respond(notification.requestIdRaw, elicitationCancelResult())
+    return
+  }
   if (parsed?.responseKind === 'elicitation') {
     await connection.respond(notification.requestIdRaw, { action: 'decline', content: null, _meta: null })
     return
   }
-  await connection.respond(notification.requestIdRaw, {})
+  await connection.respondError(
+    notification.requestIdRaw,
+    JSON_RPC_METHOD_NOT_FOUND,
+    'Method not found',
+  )
 }
 
 async function drainPrewarmNotifications(
@@ -2110,6 +2145,16 @@ export async function streamTurnEvents(
 
         if (mapped.type === 'collab_tool_call') backFillAgentMetaFromCache(mapped)
         upsertItem(itemOrder, itemMap, mapped)
+        if (mapped.type === 'mcp_tool_call' && mapped.authRequired) {
+          mcpServerStatus.set(mapped.server, { status: 'failed', failureReason: 'reauthenticationRequired' })
+          callbacks?.onMcpServerStatus?.(
+            [...mcpServerStatus].map(([n, s]) => ({
+              name: n,
+              status: s.status,
+              ...(s.failureReason ? { failureReason: s.failureReason } : {}),
+            })),
+          )
+        }
         callbacks?.onItemDelta?.(method === 'item/started' ? 'started' : 'completed', mapped)
         if (method === 'item/completed') lastTurnItemCompletedAt = Date.now()
 
@@ -2475,10 +2520,11 @@ export async function runCodexTurn(
             ...(pendingInstruction
               ? { additionalContext: { superone: { value: pendingInstruction, kind: 'application' } } }
               : {}),
-            model: session.model,
-            serviceTier: session.serviceTier,
-            effort: session.modelReasoningEffort,
-            ...(session.modelReasoningEffort ? { summary: 'concise' } : {}),
+            ...(session.model ? { model: session.model } : {}),
+            ...(session.serviceTier ? { serviceTier: session.serviceTier } : {}),
+            ...(session.modelReasoningEffort
+              ? { effort: session.modelReasoningEffort, summary: 'concise' }
+              : {}),
             approvalPolicy: permissionProfile.approvalPolicy,
             approvalsReviewer: permissionProfile.approvalsReviewer,
             sandboxPolicy: buildTurnSandboxPolicy(effectiveCwd, permissionProfile, request.additionalDirectories),

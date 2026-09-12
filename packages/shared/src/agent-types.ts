@@ -296,8 +296,10 @@ export interface CodexMcpToolCallItem {
   server: string
   tool: string
   arguments: unknown
-  result?: { content: unknown[]; structuredContent: unknown }
+  result?: { content: unknown[]; structuredContent: unknown; meta?: Record<string, unknown> }
   error?: { message: string }
+  /** True when the tool result carried `_meta["mcp/www_authenticate"]` (auth-rejected, not user-deny). */
+  authRequired?: boolean
   status: CodexMcpToolCallStatus
 }
 
@@ -1287,6 +1289,8 @@ export interface McpServerInfo {
   pluginId?: string
   status: 'connected' | 'failed' | 'needs-auth' | 'pending' | 'disabled'
   error?: string
+  /** Tool discovery failed; independent of `status` / runtime connection. */
+  toolsError?: string
   scope?: string
   toolCount?: number
   tools?: McpToolInfo[]

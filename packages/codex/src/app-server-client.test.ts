@@ -254,6 +254,31 @@ describe('codex app-server client (Stage 4)', () => {
     const reply = lines.map((l) => JSON.parse(l)).find((o) => o.id === 99)
     expect(reply?.result?.decision ?? reply?.result?.outcome?.decision).toBe('deny')
 
+    child.stdout.write(
+      `${JSON.stringify({
+        jsonrpc: '2.0',
+        id: 100,
+        method: 'attestation/generate',
+        params: {},
+      })}\n`,
+    )
+    await pump()
+    const unknown = lines.map((l) => JSON.parse(l)).find((o) => o.id === 100)
+    expect(unknown?.error?.code).toBe(-32601)
+    expect(unknown?.result).toBeUndefined()
+
+    child.stdout.write(
+      `${JSON.stringify({
+        jsonrpc: '2.0',
+        id: 101,
+        method: 'mcpServer/elicitation/request',
+        params: { mode: 'openai/userVerification', title: 'Verify' },
+      })}\n`,
+    )
+    await pump()
+    const verification = lines.map((l) => JSON.parse(l)).find((o) => o.id === 101)
+    expect(verification?.result?.action).toBe('cancel')
+
     await client.close()
     rmSync(dir, { recursive: true, force: true })
   })

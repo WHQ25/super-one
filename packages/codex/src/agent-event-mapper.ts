@@ -12,6 +12,7 @@ import {
   readCodexImageGenerationFailure,
 } from './protocol-v149'
 import { readCodexAsyncUserInputQuestions } from './protocol-v153'
+import { readCodexMcpWwwAuthenticate } from './protocol-v154'
 import type {
   AgentEvent,
   CodexCollabAgentState,
@@ -313,18 +314,29 @@ export function mapCodexThreadItem(
       const prev = previous?.type === 'mcp_tool_call' ? previous : null
       const result = asRecord(rec.result)
       const error = asRecord(rec.error)
+      const resultMeta = asRecord(result?._meta) ?? asRecord(result?.meta) ?? prev?.result?.meta
+      const authChallenge = readCodexMcpWwwAuthenticate(resultMeta)
+      const mappedResult = result
+        ? {
+            content: Array.isArray(result.content) ? result.content : [],
+            structuredContent: result.structuredContent ?? result.structured_content ?? null,
+            ...(resultMeta ? { meta: resultMeta } : {}),
+          }
+        : prev?.result
+      const mappedError = error
+        ? { message: readString(error.message) ?? 'Unknown MCP tool error' }
+        : authChallenge !== undefined
+          ? { message: 'MCP authentication required' }
+          : prev?.error
       return {
         id,
         type: 'mcp_tool_call',
         server: readString(rec.server) ?? prev?.server ?? '',
         tool: readString(rec.tool) ?? prev?.tool ?? '',
         arguments: rec.arguments ?? prev?.arguments ?? {},
-        ...(result ? { result: {
-          content: Array.isArray(result.content) ? result.content : [],
-          structuredContent: result.structuredContent ?? result.structured_content ?? null,
-        } } : prev?.result ? { result: prev.result } : {}),
-        ...(error ? { error: { message: readString(error.message) ?? 'Unknown MCP tool error' } }
-          : prev?.error ? { error: prev.error } : {}),
+        ...(mappedResult ? { result: mappedResult } : {}),
+        ...(mappedError ? { error: mappedError } : {}),
+        ...(authChallenge !== undefined ? { authRequired: true } : prev?.authRequired ? { authRequired: true } : {}),
         status: mapMcpToolCallStatus(rec.status ?? prev?.status),
       }
     }

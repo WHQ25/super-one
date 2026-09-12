@@ -1690,6 +1690,18 @@ describe('CodexBackend unsupported operations degrade gracefully', () => {
     expect(backend.getCurrentProviderSessionId()).toBe('thread-forked')
   })
 
+  it('keeps exclusive beforeTurnId on rewind so the boundary turn is dropped', async () => {
+    // thread/revert and experimental thread/fork both take exclusive beforeTurnId.
+    // lastTurnId is inclusive and must not be substituted with the same id.
+    const request = vi.fn(async () => ({ thread: { id: 'thread-1' } }))
+    const session = (backend as unknown as { session: { connectionHandle: unknown; threadId: string | null } }).session
+    session.connectionHandle = { connection: { request }, close: vi.fn(), getStderr: () => '', onClosed: vi.fn(() => () => {}) }
+    session.threadId = 'thread-1'
+    await backend.rewindConversation('t2')
+    expect(request).toHaveBeenCalledWith('thread/revert', { threadId: 'thread-1', beforeTurnId: 't2' })
+    expect(request.mock.calls.some((call) => call[1] && 'lastTurnId' in (call[1] as object))).toBe(false)
+  })
+
   it('reconciles plugins and refreshes affected MCP and Apps runtimes', async () => {
     const request = vi.fn(async (method: string) => {
       if (method === 'plugin/reconcile') {

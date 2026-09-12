@@ -133,6 +133,7 @@ export const McpMixedStatuses: Story = {
           ],
         },
         { name: "github-actions", status: "needs-auth", statusLabel: "Authorize in Settings" },
+        { name: "docs", status: "connected", statusLabel: "discovery timed out" },
         { name: "playwright", status: "pending", statusLabel: "Connecting…" },
         { name: "scraper-v2", status: "failed", statusLabel: "Spawn failed (code 127)" },
         { name: "linear-archive", status: "disabled", statusLabel: "Disabled", scope: "user" },

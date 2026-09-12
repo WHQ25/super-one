@@ -31,4 +31,21 @@ describe('mapCodexMcpStatusForIpc', () => {
       .toMatchObject({ name: 'broken', status: 'failed' })
     expect(mapCodexMcpStatusForIpc({ serverInfo: {} })).toBeNull()
   })
+
+  it('keeps connection status when tool discovery failed', () => {
+    expect(mapCodexMcpStatusForIpc({
+      name: 'docs',
+      serverInfo: { name: 'docs' },
+      runtimeStatus: 'connected',
+      authStatus: 'unsupported',
+      tools: {},
+      toolsError: 'discovery timed out',
+    })).toMatchObject({
+      name: 'docs',
+      status: 'connected',
+      toolsError: 'discovery timed out',
+      toolCount: 0,
+      tools: [],
+    })
+  })
 })

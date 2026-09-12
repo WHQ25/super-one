@@ -109,6 +109,7 @@ export interface AppServerNotification {
 export interface AppServerConnection {
   request(method: string, params?: Record<string, unknown>): Promise<Record<string, unknown>>
   respond(requestId: JsonRpcRequestId, result?: Record<string, unknown>): Promise<void>
+  respondError(requestId: JsonRpcRequestId, code: number, message: string): Promise<void>
   notify(method: string, params?: Record<string, unknown>): Promise<void>
   nextNotification(): Promise<AppServerNotification>
   pollNotification?(timeoutMs: number): Promise<AppServerNotification | null>
@@ -834,6 +835,13 @@ export async function createAppServerConnection(
     respond: async (requestId, result) => {
       if (isDev) trace('codex.appserver.respond', 'client_response', { requestId, result }, String(requestId))
       await sendMessage(compactRecord({ id: requestId, result: result ?? {} }))
+    },
+
+    respondError: async (requestId, code, message) => {
+      if (isDev) {
+        trace('codex.appserver.respond', 'client_error', { requestId, code, message }, String(requestId))
+      }
+      await sendMessage({ id: requestId, error: { code, message } })
     },
 
     notify: async (method, params) => {

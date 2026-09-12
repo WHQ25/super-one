@@ -336,6 +336,24 @@ export const FailedAdapterRows: Story = {
           error: { message: 'Pull request was not found' },
         }}
       />
+      <StoryLabel>MCP auth-rejected</StoryLabel>
+      <ItemPreview
+        item={{
+          id: 'mcp-auth',
+          type: 'mcp_tool_call',
+          server: 'linear',
+          tool: 'list_issues',
+          arguments: {},
+          status: 'failed',
+          authRequired: true,
+          error: { message: 'MCP authentication required' },
+          result: {
+            content: [],
+            structuredContent: null,
+            meta: { 'mcp/www_authenticate': { authorizationUrl: 'https://auth.example/go' } },
+          },
+        }}
+      />
       <StoryLabel>File change failure</StoryLabel>
       <ItemPreview
         item={{

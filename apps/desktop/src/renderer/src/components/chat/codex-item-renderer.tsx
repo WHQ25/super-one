@@ -23,6 +23,7 @@ import { TerminalCommandOutput } from './TerminalCommandOutput'
 import { CompactLabeledToolRow, ToolName, ToolRow, ToolSummary, toolOutcomeLabel, withStreamingEllipsis } from './tool-row'
 import { isCodexCommandToolError } from './codex-command-status'
 import { CodexAsyncQuestionBlock } from './CodexAsyncQuestionBlock'
+import { CodexMcpAuthAction, hasCodexMcpAuthChallenge } from './CodexMcpAuthAction'
 
 interface PlanFooterActions {
   onApprove?: () => void
@@ -311,15 +312,18 @@ export function renderCodexItem(
         }
         if (item.error) chunks.push(`Error: ${item.error.message}`)
         const result = chunks.join('\n\n').trim()
+        const authChallenge = hasCodexMcpAuthChallenge(item)
         return (
-          <ToolBlock
-            key={`${item.id}-${index}`}
-            toolName={`mcp__${item.server}__${item.tool}`}
-            input={safeStringify(item.arguments)}
-            status={toToolStatus(item.status)}
-            result={result || undefined}
-            isError={item.status === 'failed' || !!item.error}
-          />
+          <div key={`${item.id}-${index}`} className="space-y-0.5">
+            <ToolBlock
+              toolName={`mcp__${item.server}__${item.tool}`}
+              input={safeStringify(item.arguments)}
+              status={toToolStatus(item.status)}
+              result={result || undefined}
+              isError={item.status === 'failed' || !!item.error}
+            />
+            {authChallenge ? <CodexMcpAuthAction item={item} /> : null}
+          </div>
         )
       }
 

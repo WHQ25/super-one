@@ -47,6 +47,7 @@ const STATUS_DOT: Record<McpServerInfo['status'], string> = {
 }
 
 function statusLabel(server: McpServerInfo, t: (k: string, p?: Record<string, unknown>) => string): string {
+  if (server.toolsError) return server.toolsError
   switch (server.status) {
     case 'connected':
       return t('resources.mcp.toolsCount', { count: server.toolCount ?? server.tools?.length ?? 0 })
@@ -309,8 +310,8 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
             const isExpanded = expanded.has(server.name)
             const tools = server.tools ?? []
             const probe = mode === 'probe'
-            const isError = server.status === 'failed' || server.status === 'needs-auth'
-            const hasErrorDetail = isError && !!server.error
+            const isError = server.status === 'failed' || server.status === 'needs-auth' || !!server.toolsError
+            const hasErrorDetail = !!server.toolsError || (isError && !!server.error)
             const canExpand = tools.length > 0 || hasErrorDetail
             const canAuthenticate = mode === 'live'
               && harness === 'opencode'
@@ -334,19 +335,25 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
                         <span
                           className={cn(
                             'shrink-0 rounded px-1 py-px text-xs font-medium uppercase',
-                            server.status === 'needs-auth'
+                            server.status === 'needs-auth' && !server.toolsError
                               ? 'bg-warning/15 text-warning'
                               : 'bg-error/15 text-error',
                           )}
                         >
-                          {server.status === 'needs-auth' ? t('chat.mcpPopup.authBadge') : t('chat.mcpPopup.errorBadge')}
+                          {server.status === 'needs-auth' && !server.toolsError
+                            ? t('chat.mcpPopup.authBadge')
+                            : t('chat.mcpPopup.errorBadge')}
                         </span>
                       )}
                     </div>
                     <span
                       className={cn(
                         'size-2 shrink-0 rounded-full',
-                        probe ? 'ring-1 ring-inset ring-border bg-transparent' : STATUS_DOT[server.status],
+                        probe
+                          ? 'ring-1 ring-inset ring-border bg-transparent'
+                          : server.toolsError
+                            ? 'bg-warning'
+                            : STATUS_DOT[server.status],
                       )}
                     />
                     {!isError && (
@@ -379,7 +386,7 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
                   <div className="ml-[22px] mb-1 space-y-0.5 border-l border-border pl-2">
                     {hasErrorDetail && (
                       <p className="whitespace-pre-wrap break-words rounded px-2 py-1 font-mono text-xs text-error">
-                        {server.error}
+                        {server.error ?? server.toolsError}
                       </p>
                     )}
                     {tools.map((tool) => (

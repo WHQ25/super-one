@@ -1,4 +1,11 @@
 import { superoneSystemPrompt } from '@superone/shared/superone-system-prompt'
+import {
+  approvalDenyResult,
+  elicitationCancelResult,
+  isCodexUserVerificationElicitation,
+  isKnownCodexServerRequest,
+  jsonRpcMethodNotFound,
+} from './server-request'
 /**
  * Minimal Electron-free Codex App Server JSON-RPC client (Stage 4).
  *
@@ -222,19 +229,20 @@ export async function openCodexAppServer(
         if (!parsed || typeof parsed !== 'object') continue
         const rec = parsed as Record<string, unknown>
 
-        // Inbound server → client request (has method + id): answer deterministically.
+        // Inbound server → client request (has method + id).
         if (typeof rec.method === 'string' && rec.id != null) {
-          const id = rec.id
-          // Stage 4: no interactive permission UI — deny tool/approval requests.
+          const id = rec.id as string | number
+          const params = rec.params && typeof rec.params === 'object' && !Array.isArray(rec.params)
+            ? rec.params as Record<string, unknown>
+            : undefined
           try {
-            writeLine({
-              jsonrpc: '2.0',
-              id,
-              result: {
-                decision: 'deny',
-                outcome: { decision: 'deny' },
-              },
-            })
+            if (rec.method === 'mcpServer/elicitation/request' && isCodexUserVerificationElicitation(params)) {
+              writeLine({ jsonrpc: '2.0', id, result: elicitationCancelResult() })
+            } else if (isKnownCodexServerRequest(rec.method)) {
+              writeLine({ jsonrpc: '2.0', id, result: approvalDenyResult() })
+            } else {
+              writeLine(jsonRpcMethodNotFound(id))
+            }
           } catch {
             /* ignore write failures while shutting down */
           }
@@ -372,6 +380,9 @@ export async function openCodexAppServer(
       },
       capabilities: {
         experimentalApi: true,
+        // requestAttestation stays omitted (default false). Do not implement
+        // inbound attestation/generate this round; unknown inbound methods
+        // receive JSON-RPC -32601.
       },
     })
     await notify('initialized')

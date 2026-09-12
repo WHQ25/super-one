@@ -537,13 +537,15 @@ export async function sendMessageImpl(
       preferredHarness === 'claude' || preferredHarness === 'acp' || preferredHarness === 'opencode'
         ? writeSess.selectedModel || undefined
         : preferredHarness === 'codex'
-          ? writeSess.selectedCodexModel || undefined
+          ? (writeSess.codexModelUserChosen ? writeSess.selectedCodexModel || undefined : undefined)
           : undefined
     const effortForTurn =
       preferredHarness === 'claude' || preferredHarness === 'acp' || preferredHarness === 'opencode'
         ? writeSess.selectedEffort || undefined
         : preferredHarness === 'codex'
-          ? writeSess.selectedCodexReasoningEffort || undefined
+          ? (writeSess.codexReasoningEffortUserChosen
+            ? writeSess.selectedCodexReasoningEffort || undefined
+            : undefined)
           : undefined
     const apiProviderIdForTurn = writeSess.apiProviderId ?? null
     const imagesForTurn = attachments.map((a) => ({
@@ -970,8 +972,12 @@ export async function sendMessageImpl(
     selectedCodexModel,
     selectedCodexReasoningEffort,
   )
-  const resolvedCodexModel = resolvedCodexSelection.modelId || undefined
-  const resolvedCodexReasoningEffort = resolvedCodexSelection.reasoningEffort
+  const resolvedCodexModel = session.codexModelUserChosen
+    ? (resolvedCodexSelection.modelId || undefined)
+    : undefined
+  const resolvedCodexReasoningEffort = session.codexReasoningEffortUserChosen
+    ? resolvedCodexSelection.reasoningEffort
+    : undefined
   const isCodexDurableQueueSend = effectiveProvider === 'codex'
     && session.status === 'streaming'
     && resolvedCodexCommand?.kind === 'run'

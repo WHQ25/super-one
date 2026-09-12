@@ -1783,6 +1783,7 @@ export const zh: Messages = {
       statusSearching: '搜索中',
       startingMcpServers: '正在启动 MCP 服务器 {{ready}}/{{total}}',
       mcpNeedsReauth: 'MCP 服务器 {{name}} 需要重新认证',
+      mcpSignIn: '登录 {{name}}',
       mcpStartupFailed: 'MCP 服务器 {{name}} 启动失败',
       mcpReauthenticating: '等待授权…',
       mcpReauthSuccess: '{{name}} 重新认证成功',

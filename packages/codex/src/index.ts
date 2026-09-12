@@ -81,3 +81,16 @@ export {
   readCodexServerDiagnostics,
 } from './protocol-v149'
 export { readCodexAsyncUserInputQuestions } from './protocol-v153'
+export {
+  codexMcpResultHasAuthChallenge,
+  readCodexMcpToolsError,
+  readCodexMcpWwwAuthenticate,
+} from './protocol-v154'
+export {
+  JSON_RPC_METHOD_NOT_FOUND,
+  approvalDenyResult,
+  elicitationCancelResult,
+  isCodexUserVerificationElicitation,
+  isKnownCodexServerRequest,
+  jsonRpcMethodNotFound,
+} from './server-request'

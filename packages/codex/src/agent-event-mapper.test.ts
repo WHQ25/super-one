@@ -105,6 +105,71 @@ describe('Codex AgentEvent mapper', () => {
     expect((complete?.metadata?.codex as unknown as { finalResponse: string }).finalResponse).toBe('done')
   })
 
+  it('does not treat async attention-only messages as the turn final response', () => {
+    const events: AgentEvent[] = []
+    const mapper = createCodexAgentEventMapper({
+      messageId: 'message-async',
+      emit: (event) => events.push(event),
+      now: () => 1_000,
+    })
+    mapper.start('thread-async')
+    mapper.apply({
+      method: 'item/completed',
+      params: { item: { id: 'note-1', type: 'agentMessage', delivery: 'async', text: 'ping', questions: null } },
+    })
+    expect(events.some((event) => event.type === 'message_complete')).toBe(false)
+    mapper.apply({
+      method: 'turn/completed',
+      params: { turn: { id: 'turn-async', status: 'completed' } },
+    })
+    const complete = events.find((event) => event.type === 'message_complete')
+    expect((complete?.metadata?.codex as { finalResponse?: string } | undefined)?.finalResponse).toBe('')
+  })
+
+  it('preserves MCP tool result _meta auth challenges', () => {
+    expect(mapCodexThreadItem({
+      id: 'mcp-1',
+      type: 'mcpToolCall',
+      server: 'linear',
+      tool: 'list_issues',
+      status: 'failed',
+      result: {
+        content: [],
+        _meta: { 'mcp/www_authenticate': { authorizationUrl: 'https://auth.example/go' } },
+      },
+    })).toMatchObject({
+      id: 'mcp-1',
+      type: 'mcp_tool_call',
+      authRequired: true,
+      error: { message: 'MCP authentication required' },
+      result: {
+        meta: { 'mcp/www_authenticate': { authorizationUrl: 'https://auth.example/go' } },
+      },
+    })
+  })
+
+  it('does not mark a user-denied MCP tool as an auth challenge', () => {
+    expect(mapCodexThreadItem({
+      id: 'mcp-deny',
+      type: 'mcpToolCall',
+      server: 'linear',
+      tool: 'list_issues',
+      status: 'failed',
+      error: { message: 'User denied the request' },
+    })).toMatchObject({
+      id: 'mcp-deny',
+      error: { message: 'User denied the request' },
+    })
+    expect(mapCodexThreadItem({
+      id: 'mcp-deny',
+      type: 'mcpToolCall',
+      server: 'linear',
+      tool: 'list_issues',
+      status: 'failed',
+      error: { message: 'User denied the request' },
+    })?.authRequired).toBeUndefined()
+  })
+
   it('keeps desktop Grok-style collaboration item normalization', () => {
     expect(mapCodexThreadItem({
       id: 'collab-1',

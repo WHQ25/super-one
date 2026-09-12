@@ -1,4 +1,5 @@
 import type { McpServerInfo } from '@superone/shared/agent-types'
+import { readCodexMcpToolsError } from '@superone/codex'
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
@@ -15,9 +16,11 @@ export function mapCodexMcpStatusForIpc(raw: unknown): McpServerInfo | null {
   if (!name) return null
   const authStatus = readString(rec?.authStatus)
   const serverInfo = asRecord(rec?.serverInfo)
+  const toolsError = readCodexMcpToolsError(rec?.toolsError ?? rec?.tools_error)
+  const runtimeStatus = readString(rec?.runtimeStatus ?? rec?.runtime_status)
   const status: McpServerInfo['status'] = authStatus === 'notLoggedIn'
     ? 'needs-auth'
-    : serverInfo ? 'connected' : 'failed'
+    : serverInfo || runtimeStatus === 'connected' ? 'connected' : 'failed'
   const toolsRecord = asRecord(rec?.tools)
   const tools = toolsRecord
     ? Object.values(toolsRecord).map((tool) => {
@@ -39,6 +42,8 @@ export function mapCodexMcpStatusForIpc(raw: unknown): McpServerInfo | null {
     name,
     ...(readString(rec?.pluginId) ? { pluginId: readString(rec?.pluginId)! } : {}),
     status,
+    ...(toolsError ? { toolsError } : {}),
+    ...(toolsError ? { error: toolsError } : {}),
     toolCount: tools.length,
     tools,
     ...(resources.length ? { resources } : {}),

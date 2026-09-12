@@ -8,11 +8,12 @@
  */
 
 import type { DeviceDescriptor } from '@superone/shared/device'
-import type { DevicePlatformPort } from '../platform-port'
+import type { DevicePlatformPort, DeviceReleaseOutcome } from '../platform-port'
 import { MIRROR_DEVICE_ID, type MirrorDeviceManager } from './mirror-device-manager'
 
 export class MirrorDevicePort implements DevicePlatformPort {
   readonly platform = 'ios' as const
+  readonly provider = 'ios-mirror' as const
 
   constructor(private readonly manager: MirrorDeviceManager) {}
 
@@ -36,6 +37,15 @@ export class MirrorDevicePort implements DevicePlatformPort {
     // This provider is a capture loop rather than a socket stream. A successful
     // capture is its equivalent of a first frame and primes input geometry too.
     await this.manager.capture()
+  }
+
+  /**
+   * Only ever a detach. The phone is somebody's, and iPhone Mirroring is their
+   * window onto it: `shutdown` has nothing here to act on and says so in the outcome.
+   */
+  async release(deviceId: string): Promise<DeviceReleaseOutcome> {
+    await this.manager.detach(deviceId || MIRROR_DEVICE_ID)
+    return 'detached'
   }
 
   /**

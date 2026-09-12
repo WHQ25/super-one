@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DeviceDescriptor } from '@superone/shared/device'
-import type { DevicePlatformPort } from '../device/platform-port'
+import type { DevicePlatformPort, DeviceReleaseOutcome } from '../device/platform-port'
 import { bootDevice } from './boot'
 
 function descriptor(overrides: Partial<DeviceDescriptor> & { id: string; name: string }): DeviceDescriptor {
@@ -25,6 +25,7 @@ function descriptor(overrides: Partial<DeviceDescriptor> & { id: string; name: s
  */
 class BootablePort implements DevicePlatformPort {
   readonly platform = 'ios' as const
+  readonly provider = 'ios-sim' as const
   readonly powered: string[] = []
   readonly bound: string[] = []
   powerFails = false
@@ -48,6 +49,7 @@ class BootablePort implements DevicePlatformPort {
   }
 
   async waitForPreview(): Promise<void> {}
+  async release(): Promise<DeviceReleaseOutcome> { return 'shutdown' }
   controlNote(): string { return 'note' }
   emptyNote(): string { return 'nothing here' }
 }
@@ -55,12 +57,14 @@ class BootablePort implements DevicePlatformPort {
 /** A real phone: it is listed and grantable, but nothing here can turn it on. */
 class MirrorLikePort implements DevicePlatformPort {
   readonly platform = 'ios' as const
+  readonly provider = 'ios-mirror' as const
 
   constructor(private readonly catalog: DeviceDescriptor[]) {}
 
   async listDevices(): Promise<DeviceDescriptor[]> { return this.catalog }
   async boot(): Promise<DeviceDescriptor | null> { return this.catalog[0] ?? null }
   async waitForPreview(): Promise<void> {}
+  async release(): Promise<DeviceReleaseOutcome> { return 'detached' }
   controlNote(): string { return 'note' }
   emptyNote(): string { return 'no phone' }
 }
@@ -98,7 +102,7 @@ describe('bootDevice', () => {
   })
 
   it('refuses a platform that cannot start its devices, naming the next step', async () => {
-    const port = new MirrorLikePort([descriptor({ id: 'ios-mirror:phone', name: 'iPhone' })])
+    const port = new MirrorLikePort([descriptor({ id: 'ios-mirror:phone', name: 'iPhone', provider: 'ios-mirror' })])
 
     await expect(bootDevice({ ports: [port], request: { device: 'ios-mirror:phone' } }))
       .rejects.toThrow(/device_request_control/)

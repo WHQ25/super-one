@@ -3003,6 +3003,33 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
     }
   },
   {
+    "name": "device_release",
+    "description": "Let go of a device this session controls, once you are done with it — the close-tab of device_request_control. Call it at the end of every device task rather than leaving a simulator running. Default puts the device back the way it was found: a simulator or emulator SuperOne started is shut down, one the user already had running is left running and only unbound, a real phone is only ever disconnected. shutdown=true stops any device that can stop. Afterwards the other device_* tools fail with NO_DEVICE for it until device_request_control grants it again.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "description": "Short explanation of this step for the user watching, in the conversation's language (e.g. 'Open the profile tab'). Shown in place of refs and coordinates."
+        },
+        "device": {
+          "description": "Device id or name from device_list. Optional while this session controls exactly one; required once it holds more. Use device_request_control to be granted another.",
+          "type": "string"
+        },
+        "shutdown": {
+          "description": "Stop the device even if it was already running before this session found it. Default false. Has no effect on a real phone.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "description"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "browser_perf",
     "description": "Profile what a page (or SuperOne itself) burns CPU on: hotspot functions by self time, plus layout/style/heap deltas. Pass `action` to measure ONE interaction: the window opens and closes around it, and a ~1s ambient baseline is subtracted. Omit `action` to profile steady state for `sampleMs` (no baseline; the only mode for target='app'). The reply flags a truncated window or a non-script bottleneck when either applies.",
     "inputSchema": {

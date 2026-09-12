@@ -348,4 +348,35 @@ describe('device catalog rows', () => {
     expect(deviceToolVerbKey('mcp__superone__device_boot', {})).toBe('boot')
     expect(deviceToolVerbKey('mcp__other__device_boot', {})).toBeNull()
   })
+
+  it('tells a release that stopped the device from one that left it running', () => {
+    // The label says "released" either way; the trailing word is the only place the
+    // user learns whether a simulator is still burning CPU.
+    const off = parseDeviceResult('release', JSON.stringify({
+      released: true,
+      outcome: 'shutdown',
+      running: false,
+      device: { id: 'a', name: 'iPhone 17 Pro Max' },
+    }), false)
+    expect(off.device).toBe('iPhone 17 Pro Max')
+    expect(off.releaseOutcome).toBe('shutdown')
+
+    const kept = parseDeviceResult('release', JSON.stringify({
+      released: true,
+      outcome: 'detached',
+      running: true,
+      device: { id: 'a', name: 'iPhone' },
+    }), false)
+    expect(kept.releaseOutcome).toBe('detached')
+
+    expect(parseDeviceResult('release', JSON.stringify({ released: true }), false).releaseOutcome)
+      .toBeUndefined()
+  })
+
+  it('recognizes device_release and titles it with the end-of-run verbs', () => {
+    expect(getDeviceOp('device_release')).toBe('release')
+    expect(deviceToolVerbKey('mcp__superone__device_release', {})).toBe('release')
+    expect(deviceVerbKey('release', {}, true)).toBe('releasing')
+    expect(deviceInputSummary('release', { device: 'iPad' })).toBe('iPad')
+  })
 })

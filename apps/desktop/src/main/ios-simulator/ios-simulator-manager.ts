@@ -389,7 +389,11 @@ export class IosSimulatorManager {
     return this.announce(this.emptyState(udid))
   }
 
-  /** Every simulator this session held, on its way out. */
+  /** Whether this app booted the simulator, so `release` knows to stop it again. */
+  bootedBySuperOne(udid: string): boolean {
+    return this.superOneBooted.has(udid)
+  }
+
   /** Put the device back the way it was found. See `DeviceSurface.release`. */
   async releaseDevice(udid: string): Promise<void> {
     await this.teardownSession(udid)

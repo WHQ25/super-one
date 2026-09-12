@@ -221,6 +221,24 @@ const toolDefs: Array<{ name: DeviceAgentToolName; description: string; shape: R
       timeoutMs: z.number().int().min(100).max(60_000).optional().describe('Default 5000'),
     },
   },
+  {
+    name: 'device_release',
+    description:
+      'Let go of a device this session controls, once you are done with it — the close-tab of '
+      + 'device_request_control. Call it at the end of every device task rather than leaving a '
+      + 'simulator running. Default puts the device back the way it was found: a simulator or '
+      + 'emulator SuperOne started is shut down, one the user already had running is left running '
+      + 'and only unbound, a real phone is only ever disconnected. shutdown=true stops any device '
+      + 'that can stop. Afterwards the other device_* tools fail with NO_DEVICE for it until '
+      + 'device_request_control grants it again.',
+    shape: {
+      ...descriptionField,
+      ...deviceField,
+      shutdown: z.boolean().optional()
+        .describe('Stop the device even if it was already running before this session found it. '
+          + 'Default false. Has no effect on a real phone.'),
+    },
+  },
 ]
 
 function zodShapeToJsonSchema(shape: Record<string, ZodTypeAny>): Record<string, unknown> {

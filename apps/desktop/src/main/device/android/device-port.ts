@@ -7,11 +7,12 @@
  */
 
 import type { DeviceDescriptor } from '@superone/shared/device'
-import type { DevicePlatformPort } from '../platform-port'
-import type { AndroidDeviceManager } from './android-device-manager'
+import type { DevicePlatformPort, DeviceReleaseOutcome } from '../platform-port'
+import { avdIdFromDeviceId, type AndroidDeviceManager } from './android-device-manager'
 
 export class AndroidDevicePort implements DevicePlatformPort {
   readonly platform = 'android' as const
+  readonly provider = 'android' as const
 
   constructor(private readonly manager: AndroidDeviceManager) {}
 
@@ -29,6 +30,23 @@ export class AndroidDevicePort implements DevicePlatformPort {
 
   waitForPreview(deviceId: string, signal?: AbortSignal): Promise<void> {
     return this.manager.waitForPreview(deviceId, signal)
+  }
+
+  /**
+   * An emulator this app launched is stopped; one the user had open is left running,
+   * as is a phone — that one has no off switch from here whatever `shutdown` says.
+   * Deliberately stricter than the panel's `release`, which never stops an AVD: the
+   * agent asked to be done with it, and a device nobody is driving costs a whole
+   * emulator's worth of CPU.
+   */
+  async release(deviceId: string, options: { shutdown: boolean }): Promise<DeviceReleaseOutcome> {
+    const emulator = avdIdFromDeviceId(deviceId) !== null
+    if (emulator && (options.shutdown || this.manager.launchedBySuperOne(deviceId))) {
+      await this.manager.stopDevice(deviceId)
+      return 'shutdown'
+    }
+    await this.manager.release(deviceId)
+    return 'detached'
   }
 
   controlNote(device: DeviceDescriptor): string {

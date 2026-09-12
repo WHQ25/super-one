@@ -210,6 +210,7 @@ function sanitizeInteractiveInput(toolName: string, input: string): string {
     copyDefined(source, safe, ['platform', 'appId', 'topic', 'status'])
   } else if (bare === 'device_snapshot') copyDefined(source, safe, ['mode'])
   else if (bare === 'device_query') copyDefined(source, safe, ['op'])
+  else if (bare === 'device_release') copyDefined(source, safe, ['shutdown'])
   else if (bare === 'device_act' && Array.isArray(source.actions)) {
     safe.actions = actionTypes(source.actions, true)
   } else if (bare === 'computer_apps') copyDefined(source, safe, ['action'])

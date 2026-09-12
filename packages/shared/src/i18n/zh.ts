@@ -2560,6 +2560,12 @@ export const zh: Messages = {
         alreadyRunning: '已在运行',
         requestControl: '请求设备',
         requestingControl: '正在请求设备',
+        release: '释放设备',
+        releasing: '正在释放设备',
+        releaseOutcome: {
+          shutdown: '已关机',
+          detached: '保持运行',
+        },
         deviceCount_one: '{{count}} 台设备',
         deviceCount_other: '{{count}} 台设备',
         noDevices: '没有可用设备',

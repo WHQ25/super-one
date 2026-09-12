@@ -13,10 +13,23 @@
  * the shared control flow, which is exactly the shape this seam exists to prevent.
  */
 
-import type { DeviceDescriptor, DevicePlatform } from '@superone/shared/device'
+import type { DeviceDescriptor, DevicePlatform, DeviceProvider } from '@superone/shared/device'
+
+/**
+ * How a device was let go of.
+ *
+ * `shutdown` means it is no longer running; `detached` means it was only unbound —
+ * a real phone, or a device that was already up when this session found it.
+ */
+export type DeviceReleaseOutcome = 'shutdown' | 'detached'
 
 export interface DevicePlatformPort {
   readonly platform: DevicePlatform
+  /**
+   * What this port speaks for. Routing key, not the platform: a mirrored iPhone and
+   * a simulator both RUN iOS, and only one of them answers to `simctl`.
+   */
+  readonly provider: DeviceProvider
 
   /** Everything this platform knows about, available or not. */
   listDevices(): Promise<DeviceDescriptor[]>
@@ -43,6 +56,16 @@ export interface DevicePlatformPort {
 
   /** Resolve only after the live preview has delivered its first drawable frame. */
   waitForPreview(deviceId: string, signal?: AbortSignal): Promise<void>
+
+  /**
+   * Give a device this session holds back, when the agent is done with it.
+   *
+   * Puts the device back the way it was found: one this app started is stopped, one
+   * that was already running is left running and merely unbound, and a real phone is
+   * only ever unbound. `shutdown` forces the stop on anything that CAN stop — a real
+   * phone still comes back `detached`, because nothing on this machine turns it off.
+   */
+  release(deviceId: string, options: { shutdown: boolean }): Promise<DeviceReleaseOutcome>
 
   /**
    * What the agent can do now that it holds a device here — how to install a build,
@@ -102,15 +125,17 @@ export function offerableDevices(devices: readonly DeviceDescriptor[]): DeviceDe
 /**
  * Which port speaks for a device.
  *
- * Unreachable while the descriptor came from a port in the same list, which is the
- * only way one is ever produced. Named rather than non-null-asserted so a future
- * caller that assembles the two separately fails loudly here.
+ * Matched on provider, never on platform: the simulator and the mirrored iPhone are
+ * both `ios`, and matching on that handed a mirrored phone to `simctl`. Null only
+ * when the descriptor did not come from a port in this list, which is the one way a
+ * caller can assemble the two separately — named rather than non-null-asserted so
+ * that fails loudly here.
  */
 export function portFor(
   ports: readonly DevicePlatformPort[],
-  device: DeviceDescriptor,
+  device: Pick<DeviceDescriptor, 'provider'>,
 ): DevicePlatformPort | null {
-  return ports.find((candidate) => candidate.platform === device.platform) ?? null
+  return ports.find((candidate) => candidate.provider === device.provider) ?? null
 }
 
 /**

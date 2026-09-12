@@ -99,6 +99,7 @@ export const DEVICE_AGENT_TOOL_NAMES = [
   'device_query',
   'device_act',
   'device_wait_for',
+  'device_release',
 ] as const
 
 /**

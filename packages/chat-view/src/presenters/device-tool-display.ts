@@ -8,15 +8,16 @@
 
 export type DeviceOp =
   | 'memory_read' | 'memory_write'
-  | 'list' | 'boot' | 'request_control' | 'snapshot' | 'query' | 'act' | 'wait_for'
+  | 'list' | 'boot' | 'request_control' | 'snapshot' | 'query' | 'act' | 'wait_for' | 'release'
 
 const DEVICE_OPS = new Set<DeviceOp>([
   'memory_read', 'memory_write',
-  'list', 'boot', 'request_control', 'snapshot', 'query', 'act', 'wait_for',
+  'list', 'boot', 'request_control', 'snapshot', 'query', 'act', 'wait_for', 'release',
 ])
 
 export type DeviceActOutcome = 'worked' | 'didnt' | 'unknown'
 export type DeviceWaitStatus = 'preexisting' | 'verified' | 'timeout'
+export type DeviceReleaseOutcome = 'shutdown' | 'detached'
 export type DeviceOrientation =
   | 'portrait'
   | 'landscape-left'
@@ -70,6 +71,8 @@ export interface DeviceResultInfo {
   alreadyControlled?: boolean
   /** `device_boot` only — the device was up before the call, so nothing was started. */
   alreadyRunning?: boolean
+  /** `device_release` only — whether the device was stopped or merely let go of. */
+  releaseOutcome?: DeviceReleaseOutcome
 }
 
 /**
@@ -148,6 +151,7 @@ export function deviceVerbKey(
   if (op === 'list') return streaming ? 'listing' : 'list'
   if (op === 'boot') return streaming ? 'booting' : 'boot'
   if (op === 'request_control') return streaming ? 'requestingControl' : 'requestControl'
+  if (op === 'release') return streaming ? 'releasing' : 'release'
 
   if (op === 'query') {
     const queryOp = params.op === 'search' || params.op === 'inspect' ? params.op : 'query'
@@ -267,6 +271,7 @@ export function deviceInputSummary(op: DeviceOp, params: Record<string, unknown>
       return ''
     case 'boot':
     case 'request_control':
+    case 'release':
       return stringValue(params.device)
     case 'snapshot':
       return params.mode != null && params.mode !== 'semantic' ? stringValue(params.mode) : ''
@@ -387,6 +392,16 @@ export function parseDeviceResult(
       status: 'ok',
       ...(typeof device?.name === 'string' ? { device: device.name } : {}),
       ...(obj.alreadyControlled === true ? { alreadyControlled: true } : {}),
+    }
+  }
+
+  if (op === 'release') {
+    const device = asRecord(obj.device)
+    const outcome = obj.outcome === 'shutdown' || obj.outcome === 'detached' ? obj.outcome : undefined
+    return {
+      status: 'ok',
+      ...(typeof device?.name === 'string' ? { device: device.name } : {}),
+      ...(outcome ? { releaseOutcome: outcome } : {}),
     }
   }
 

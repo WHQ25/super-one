@@ -2468,6 +2468,12 @@ export type Messages = {
         alreadyRunning: string
         requestControl: string
         requestingControl: string
+        release: string
+        releasing: string
+        releaseOutcome: {
+          shutdown: string
+          detached: string
+        }
         deviceCount_one: string
         deviceCount_other: string
         noDevices: string
@@ -6175,6 +6181,12 @@ export const en: Messages = {
         alreadyRunning: 'Already Running',
         requestControl: 'Request Device',
         requestingControl: 'Requesting device',
+        release: 'Release Device',
+        releasing: 'Releasing device',
+        releaseOutcome: {
+          shutdown: 'Shut Down',
+          detached: 'Left Running',
+        },
         deviceCount_one: '{{count}} device',
         deviceCount_other: '{{count}} devices',
         noDevices: 'None available',

@@ -186,6 +186,33 @@ const CONTROL_ALREADY = JSON.stringify({
   note: 'This session now controls the device.',
 })
 
+const RELEASE_SHUTDOWN = JSON.stringify({
+  released: true,
+  outcome: 'shutdown',
+  running: false,
+  device: { id: 'ios-sim:427A175E', name: 'iPhone 17 Pro Max' },
+  note: 'iPhone 17 Pro Max is shut down and no longer controlled by this session.',
+})
+
+const RELEASE_DETACHED = JSON.stringify({
+  released: true,
+  outcome: 'detached',
+  running: true,
+  device: { id: 'ios-sim:427A175E', name: 'iPhone 17 Pro Max' },
+  note: 'iPhone 17 Pro Max is disconnected but still running — it was already up before this session.',
+})
+
+const RELEASE_PHONE = JSON.stringify({
+  released: true,
+  outcome: 'detached',
+  running: true,
+  device: { id: 'ios-mirror:iphone', name: 'iPhone' },
+  note: 'iPhone is disconnected but still running: it is a real device and cannot be turned off from here.',
+})
+
+const RELEASE_NOTHING_HELD = '[Error] NO_DEVICE: This session controls no device. Call device_list, '
+  + 'then device_request_control with an id from it.'
+
 const meta: Meta = {
   title: 'Tool UI/SuperOne MCP/Device',
   parameters: { layout: 'padded' },
@@ -248,6 +275,12 @@ export const Gallery: Story = {
           result: QUERY_HITS,
         })}
       </Section>
+      <Section title="Release">
+        {tool('release', {
+          description: 'Done testing, shut the simulator down',
+          result: RELEASE_SHUTDOWN,
+        })}
+      </Section>
     </StoryShell>
   ),
 }
@@ -280,6 +313,20 @@ export const DeviceRequestControl: Story = {
     <StoryShell>
       {tool('request_control', { description: 'Drive the app on the simulator', input: { device: '427A175E' }, result: CONTROL_GRANTED })}
       {tool('request_control', { description: 'Drive the app on the simulator', input: { device: '427A175E' }, result: CONTROL_ALREADY })}
+    </StoryShell>
+  ),
+}
+
+/** The end of a run. The trailing word is the one thing the label cannot say: off, or still up. */
+export const DeviceRelease: Story = {
+  name: 'device_release',
+  render: () => (
+    <StoryShell>
+      {tool('release', { description: 'Done testing, shut the simulator down', result: RELEASE_SHUTDOWN })}
+      {tool('release', { description: 'Hand the simulator back', result: RELEASE_DETACHED })}
+      {tool('release', { description: 'Disconnect from the iPhone', input: { device: 'iPhone', shutdown: true }, result: RELEASE_PHONE })}
+      {tool('release', { description: 'Shut the simulator down', input: { device: 'iPad', shutdown: true }, status: 'streaming', elapsedSeconds: 3 })}
+      {tool('release', { description: 'Shut the simulator down', result: RELEASE_NOTHING_HELD, isError: true })}
     </StoryShell>
   ),
 }

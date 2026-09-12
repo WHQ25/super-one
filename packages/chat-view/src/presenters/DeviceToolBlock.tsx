@@ -163,7 +163,8 @@ function DeviceToolBlockOperation({
   // for the agent. A refusal is the exception: its reason has to be readable
   // somewhere, and the header truncates.
   const expandable = !isStreaming
-    && (pendingDetails != null || (!!result && ((op !== 'request_control' && op !== 'boot') || failed)))
+    && (pendingDetails != null
+      || (!!result && ((op !== 'request_control' && op !== 'boot' && op !== 'release') || failed)))
 
   return (
     <ToolRow
@@ -351,6 +352,15 @@ function statusText(
     return [
       info.device,
       info.alreadyControlled ? t('chat.toolBlock.device.alreadyControlled') : '',
+    ].filter(Boolean).join(' · ')
+  }
+  if (op === 'release') {
+    // Which device, and whether it is off or merely let go of — the label says
+    // "released" either way, and a simulator still running is the case the user
+    // would otherwise only discover from the panel.
+    return [
+      info.device,
+      info.releaseOutcome ? t(`chat.toolBlock.device.releaseOutcome.${info.releaseOutcome}`) : '',
     ].filter(Boolean).join(' · ')
   }
   if (op === 'act') {

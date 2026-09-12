@@ -14,7 +14,27 @@ device_snapshot        → a stateId + a tree of @eN refs
 device_act             → act against that stateId, then re-observe
 device_wait_for        → block on a condition instead of snapshotting in a loop
 device_query           → re-read the snapshot you already have, with no device round trip
+device_release         → let go when you are done — the close-tab of this loop
 ```
+
+## Letting go
+
+End every device task with `device_release`. A simulator nobody is driving is
+still a simulator burning CPU, and the user should not have to notice the panel
+to find out you left one running.
+
+By default it puts the device back the way it was found: a simulator or emulator
+SuperOne started is shut down; one the user already had running is left running
+and merely unbound; a real phone is only ever disconnected. Pass
+`shutdown: true` to stop a device that was running before you arrived — do that
+when the user asked you to close it, not by habit. It has no effect on a real
+phone, and the result says so.
+
+The result reports `outcome: "shutdown" | "detached"` and whether the device is
+still `running`. Either way this session no longer controls it: the other
+`device_*` tools fail with `NO_DEVICE` until `device_request_control` grants it
+again — instantly for a device left running, after a boot for one that was
+shut down.
 
 ## Starting a device vs being allowed to drive it
 

@@ -247,6 +247,18 @@ export class AndroidDeviceManager {
   }
 
   /**
+   * Whether this app launched the emulator, so `release` knows to stop it again.
+   *
+   * Only ever true for an AVD started in THIS run of the app: `launched` does not
+   * survive a restart (see `stopDevice`), so one started before that reads as the
+   * user's and is left running.
+   */
+  launchedBySuperOne(deviceId: string): boolean {
+    const avdId = avdIdFromDeviceId(deviceId)
+    return avdId !== null && this.launched.has(avdId)
+  }
+
+  /**
    * The scrcpy connection to a device, opened on first use.
    *
    * One per DEVICE, shared by the agent and the preview: they are looking at the same

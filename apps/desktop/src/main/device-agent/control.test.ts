@@ -79,6 +79,10 @@ class FakePort implements IosSimulatorCatalogSource {
     return () => { this.previewListeners.delete(listener) }
   }
 
+  async detach(): Promise<void> {}
+  async shutdown(): Promise<void> {}
+  bootedBySuperOne(): boolean { return false }
+
   emitPreviewFrame(keyframe = true): void {
     const frame: IosSimulatorFrame = {
       deviceId: 'cold', sequence: 1, timestampMs: 1,

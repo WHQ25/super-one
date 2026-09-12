@@ -11,7 +11,7 @@
 import { formatDeviceId, parseDeviceId, type DeviceDescriptor } from '@superone/shared/device'
 import type { IosSimulatorDevice } from '@superone/shared/ios-simulator'
 import type { IosSimulatorFrame } from '@superone/shared/ios-simulator'
-import type { DevicePlatformPort } from '../device/platform-port'
+import type { DevicePlatformPort, DeviceReleaseOutcome } from '../device/platform-port'
 import { waitForFirstDeviceFrame } from '../device/preview-ready'
 
 /** The slice of `IosSimulatorManager` this needs, so tests need no Electron. */
@@ -23,6 +23,12 @@ export interface IosSimulatorCatalogSource {
   ): Promise<{ phase: string; device?: IosSimulatorDevice | null }>
   power(udid: string): Promise<IosSimulatorDevice>
   subscribePreview(udid: string, listener: (frame: IosSimulatorFrame) => void): () => void
+  /** Let go and leave it running. */
+  detach(udid: string): Promise<unknown>
+  /** Let go and stop it, whoever started it. */
+  shutdown(udid: string): Promise<unknown>
+  /** Whether this app is the one that booted it — what "put it back" turns on. */
+  bootedBySuperOne(udid: string): boolean
 }
 
 const KINDS: Array<{ kind: string; name: string; match: RegExp }> = [
@@ -96,6 +102,7 @@ export function toDeviceDescriptor(device: IosSimulatorDevice): DeviceDescriptor
 
 export class IosSimulatorDevicePort implements DevicePlatformPort {
   readonly platform = 'ios' as const
+  readonly provider = 'ios-sim' as const
 
   /**
    * The raw devices behind the last `listDevices`.
@@ -130,6 +137,16 @@ export class IosSimulatorDevicePort implements DevicePlatformPort {
       (listener) => this.source.subscribePreview(udid, listener as (frame: IosSimulatorFrame) => void),
       signal,
     )
+  }
+
+  async release(deviceId: string, options: { shutdown: boolean }): Promise<DeviceReleaseOutcome> {
+    const udid = parseDeviceId(deviceId)?.native ?? deviceId
+    if (options.shutdown || this.source.bootedBySuperOne(udid)) {
+      await this.source.shutdown(udid)
+      return 'shutdown'
+    }
+    await this.source.detach(udid)
+    return 'detached'
   }
 
   controlNote(device: DeviceDescriptor): string {

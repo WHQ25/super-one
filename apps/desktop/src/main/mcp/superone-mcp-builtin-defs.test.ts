@@ -93,6 +93,19 @@ describe('built-in superone tool registration surfaces', () => {
     expect(classifyHostActionTool('device_query').replayPolicy).toBe('safe')
     expect(classifyHostActionTool('device_wait_for').replayPolicy).toBe('safe')
     expect(classifyHostActionTool('device_act').replayPolicy).toBe('unsafe')
+    expect(classifyHostActionTool('device_release').replayPolicy).toBe('unsafe')
+  })
+
+  it('pairs device_release with the grant it undoes and with the put-back rule', () => {
+    // The tool hands the device back; without naming the way to get it again the
+    // model reads NO_DEVICE on the next call as a bug. And `shutdown` is the one
+    // argument that changes what happens to the user's own simulator, so its
+    // default has to be stated rather than discovered.
+    const release = getDeviceAgentToolDescriptors().find((def) => def.name === 'device_release')
+    expect(release?.description).toMatch(/device_request_control/)
+    expect(release?.inputSchema.required).toEqual(['description'])
+    const props = release?.inputSchema.properties as Record<string, { type?: string }>
+    expect(props.shutdown?.type).toBe('boolean')
   })
 
   it('keeps WebMCP browser descriptors in the remote Host Action dump', () => {

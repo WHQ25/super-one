@@ -10,6 +10,7 @@ import { AndroidBackend } from './android-backend'
 import { MirrorBackend } from './mirror-backend'
 import { bootDevice } from './boot'
 import { requestDeviceControl } from './control'
+import { releaseDevice } from './release'
 import { listDeviceCatalog } from './device-catalog'
 import type { DevicePlatformPort } from '../device/platform-port'
 import { devicePlatformPorts, deviceSurfaces } from '../device/registry'
@@ -247,6 +248,21 @@ export async function executeDeviceAgentTool(
         },
         ...(signal ? { signal } : {}),
       }))
+    }
+    if (name === 'device_release') {
+      const { device, shutdown } = args as { device?: string; shutdown?: boolean }
+      const held = heldDevicesFor(sessionId)
+      const result = await releaseDevice({
+        ports: platformPortsFactory(),
+        held,
+        request: { ...(device ? { device } : {}), ...(shutdown ? { shutdown } : {}) },
+        ...(signal ? { signal } : {}),
+      })
+      // The snapshot store described a screen this session can no longer see. Dropped
+      // so a later grant of the same device starts from a fresh reading rather than
+      // inheriting refs into a device that has since rebooted.
+      if (sessions.get(result.device.id)?.sessionId === sessionId) sessions.delete(result.device.id)
+      return reply(result)
     }
     // Every remaining tool drives one device, so which one is settled first — and
     // refused rather than guessed when the session holds more than one.

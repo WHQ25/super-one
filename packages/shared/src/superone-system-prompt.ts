@@ -12,6 +12,7 @@ Response rendering:
 - Images: use ![description](/abs/path/image.png) to display an inline image.
 - Videos: use ![description](/abs/path/video.mp4) to display an inline video player.
 - Audio: use ![description](/abs/path/audio.mp3) to display an inline audio player.
+- Wrap a link or media destination in angle brackets whenever the path contains spaces or parentheses, e.g. ![screenshot](</Users/me/Library/Application Support/SuperOne/shot.png>). A bare path with spaces is not valid Markdown and renders as literal text.
 
 Only embed existing media when the user explicitly asks to see or play it, at most once per file per reply. For location-only requests, provide a plain file link.
 

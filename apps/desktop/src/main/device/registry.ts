@@ -1,4 +1,4 @@
-import { deviceCaptureDir } from '../media-output-paths'
+import { captureDir } from '../media-output-paths'
 /**
  * Every platform this machine can actually offer, assembled once for the panel.
  *
@@ -32,11 +32,11 @@ export function deviceSurfaces(userDataPath: string): DeviceSurface[] {
   ]
   const android = getAndroidDeviceManager()
   if (android) {
-    surfaces.push(createAndroidSurface(android, deviceCaptureDir(userDataPath, 'android')))
+    surfaces.push(createAndroidSurface(android, captureDir('android')))
   }
   const mirror = getMirrorDeviceManager()
   if (mirror) {
-    surfaces.push(createMirrorSurface(mirror, deviceCaptureDir(userDataPath, 'ios-mirror')))
+    surfaces.push(createMirrorSurface(mirror, captureDir('ios-mirror')))
   }
   return surfaces
 }

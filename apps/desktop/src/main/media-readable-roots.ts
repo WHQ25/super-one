@@ -23,7 +23,7 @@ export function getMediaReadableRoots(): string[] {
     ...listWorktreePaths(),
     mediaGenOutputRoot(),
     actionRecordingDir(),
-    ...builtInCaptureRoots(app.getPath('userData')),
+    ...builtInCaptureRoots(),
   ])
 }
 

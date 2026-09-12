@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { homedir, tmpdir } from 'node:os'
+import { homedir } from 'node:os'
 import type {
   IosSimulatorCapture,
   IosSimulatorCaptureKind,
@@ -39,6 +39,7 @@ import {
   type IosSimulatorRecording,
 } from './capture'
 import { captureFileName } from '../device/capture-path'
+import { captureDir } from '../media-output-paths'
 import { SimctlClient } from './simctl'
 import log from '../logger'
 
@@ -194,7 +195,7 @@ export class IosSimulatorManager {
   constructor(options: ManagerOptions) {
     this.simctl = options.simctl ?? new SimctlClient()
     this.capture = options.capture ?? new SimctlCapture()
-    this.captureRoot = options.captureRoot ?? join(tmpdir(), 'super-one-ios-simulator-captures')
+    this.captureRoot = options.captureRoot ?? captureDir('ios-simulator')
     this.chromeLoader = options.chrome ?? null
     this.helperProbe = options.helperProbe
     this.nativeFactory = options.nativeFactory

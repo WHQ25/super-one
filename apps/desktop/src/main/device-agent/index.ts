@@ -1,5 +1,5 @@
 import { DEVICE_MEMORY_DISCOVERY_HINT, withMemoryDiscoveryHint } from '@superone/shared/interaction-memory'
-import { deviceCaptureDir } from '../media-output-paths'
+import { captureDir } from '../media-output-paths'
 import { app } from 'electron'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { formatDeviceId, parseDeviceId, type DeviceViewfinderClaim } from '@superone/shared/device'
@@ -101,11 +101,11 @@ function buildBackend(deviceId: string): TouchDeviceBackend {
   const parsed = parseDeviceId(deviceId)
   if (parsed?.provider === 'android') {
     const android = getAndroidDeviceManager()
-    if (android) return new AndroidBackend(android, deviceId, deviceCaptureDir(userData, 'android'))
+    if (android) return new AndroidBackend(android, deviceId, captureDir('android'))
   }
   if (parsed?.provider === 'ios-mirror') {
     const mirror = getMirrorDeviceManager()
-    if (mirror) return new MirrorBackend(mirror, deviceId, deviceCaptureDir(userData, 'ios-mirror'))
+    if (mirror) return new MirrorBackend(mirror, deviceId, captureDir('ios-mirror'))
   }
   return new IosSimulatorBackend(getIosSimulatorManager(userData), parsed?.native ?? deviceId)
 }

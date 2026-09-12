@@ -76,7 +76,7 @@ const FUSED = JSON.stringify({
   screen: { width: 1320, height: 2868 },
   settled: false,
   truncated: true,
-  image: { path: '/tmp/super-one-ios-simulator-captures/shot.png', width: 1320, height: 2868 },
+  image: { path: '/tmp/super-one-captures/ios-simulator/shot.png', width: 1320, height: 2868 },
   tree: '@e0 application "Safari"',
 })
 

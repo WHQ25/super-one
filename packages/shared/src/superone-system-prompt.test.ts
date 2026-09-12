@@ -16,4 +16,11 @@ describe('SUPERONE_SYSTEM_PROMPT_APPEND', () => {
     expect(SUPERONE_SYSTEM_PROMPT_APPEND).toMatch(/no separate tool for sending a file to a phone/)
     expect(SUPERONE_SYSTEM_PROMPT_APPEND).not.toMatch(/mobile_share_file/)
   })
+
+  it('tells the model how to keep a spaced media path valid Markdown', () => {
+    // Device captures live under `Application Support/SuperOne …`; a bare path
+    // with spaces is not a CommonMark destination and renders as literal text.
+    expect(SUPERONE_SYSTEM_PROMPT_APPEND).toMatch(/angle brackets/)
+    expect(SUPERONE_SYSTEM_PROMPT_APPEND).toMatch(/!\[screenshot\]\(<\/Users\/me\/Library\/Application Support\/SuperOne\/shot\.png>\)/)
+  })
 })

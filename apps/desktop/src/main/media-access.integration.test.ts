@@ -52,7 +52,7 @@ function write(path: string): string {
 
 describe('built-in media delivery', () => {
   it('serves every capture root and generated outputs through local-file, excluding media credentials', async () => {
-    for (const dir of [...builtInCaptureRoots(state.userData), mediaGenOutputRoot()]) {
+    for (const dir of [...builtInCaptureRoots(), mediaGenOutputRoot()]) {
       const path = write(join(dir, `access-test-${root.split('/').pop()}.png`))
       captures.push(path)
       const response = await localFile(new Request(`local-file://${path}`))

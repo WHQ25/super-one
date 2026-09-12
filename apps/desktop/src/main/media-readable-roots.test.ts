@@ -31,7 +31,7 @@ describe('getMediaReadableRoots', () => {
       '/projects/app/.worktrees/x',
       '/userData/media-gen/outputs',
       '/userData/recordings',
-      ...builtInCaptureRoots('/userData'),
+      ...builtInCaptureRoots(),
       '/Users/alice/.grok/sessions',
     ])
   })

@@ -1,6 +1,6 @@
 import { CameraView, type BarcodeScanningResult } from 'expo-camera'
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, Link2Off, QrCode, RefreshCw } from 'lucide-react-native'
+import { ChevronDown, QrCode, RefreshCw } from 'lucide-react-native'
 import { FlatList, Pressable, StyleSheet, TextInput, View } from 'react-native'
 import { Text } from '../ui/text'
 import type { SavedPairing } from '@superone/relay-client'
@@ -60,57 +60,61 @@ export function PairingsScreen(props: {
     )
   }
   if (props.code) return <PairingCode code={props.code} onCancel={props.onCancelPairing} />
+  const hasDevices = props.pairings.length > 0
   return (
     <View style={styles.screenSection}>
-      {/* The wordmark and the section title anchor the page; only the list
-          itself scrolls, so they stay put however many devices are saved. */}
+      {/* Wordmark, device list and pair button are one group, centred while it
+          fits. Only the list may give way: when the devices outgrow the screen
+          it shrinks and scrolls, so the wordmark and the button stay put at
+          either end however many devices are saved. */}
       <View style={layout.group}>
-      <Wordmark />
-      <View style={styles.sectionHeader}>
-        <SectionHeader
-          title="My Devices"
-          badge={props.pairings.length ? <Badge label={`${props.pairings.length}`} /> : null}
-          action={(
-            <IconButton
-              icon={RefreshCw}
-              iconSize={16}
-              label="Refresh devices"
-              disabled={props.refreshing || props.pairings.length === 0}
-              spinning={props.refreshing}
-              onPress={props.onRefresh}
+        <Wordmark />
+        {hasDevices ? (
+          <View style={layout.devices}>
+            <View style={styles.sectionHeader}>
+              <SectionHeader
+                title="My Devices"
+                badge={<Badge label={`${props.pairings.length}`} />}
+                action={(
+                  <IconButton
+                    icon={RefreshCw}
+                    iconSize={16}
+                    label="Refresh devices"
+                    disabled={props.refreshing}
+                    spinning={props.refreshing}
+                    onPress={props.onRefresh}
+                  />
+                )}
+              />
+            </View>
+            <FlatList
+              testID="device-list"
+              style={layout.list}
+              // Rows are rebuilt with their status so a reachability change repaints
+              // them; FlatList would otherwise skip cells whose `data` entry is ===.
+              data={props.pairings.map((pairing) => ({ pairing, status: props.statusOf(pairing) }))}
+              keyExtractor={(item) => item.pairing.id}
+              renderItem={({ item }) => (
+                <DeviceRow
+                  pairing={item.pairing}
+                  status={item.status}
+                  reconnect={props.activePairingId === item.pairing.id ? props.reconnect : null}
+                  disabled={props.connectingPairingId !== null && props.connectingPairingId !== item.pairing.id}
+                  onPress={() => props.onConnect(item.pairing)}
+                  onRename={() => setEditing(item.pairing)}
+                  onForget={() => props.onForget(item.pairing)}
+                />
+              )}
             />
-          )}
-        />
-      </View>
-      {props.pairings.length ? (
-        <View style={layout.list}>
-        <FlatList
-          // Rows are rebuilt with their status so a reachability change repaints
-          // them; FlatList would otherwise skip cells whose `data` entry is ===.
-          data={props.pairings.map((pairing) => ({ pairing, status: props.statusOf(pairing) }))}
-          keyExtractor={(item) => item.pairing.id}
-          renderItem={({ item }) => (
-            <DeviceRow
-              pairing={item.pairing}
-              status={item.status}
-              reconnect={props.activePairingId === item.pairing.id ? props.reconnect : null}
-              disabled={props.connectingPairingId !== null && props.connectingPairingId !== item.pairing.id}
-              onPress={() => props.onConnect(item.pairing)}
-              onRename={() => setEditing(item.pairing)}
-              onForget={() => props.onForget(item.pairing)}
-            />
-          )}
-        />
-        </View>
-      ) : (
-        <View style={layout.empty}>
-          <Link2Off color={tokens.colors.border} size={54} />
-          <Text style={styles.emptyTitle}>{t('No devices yet')}</Text>
+          </View>
+        ) : null}
+        <Button label="Pair New Device" icon={QrCode} onPress={props.onOpenScanner} />
+        {hasDevices ? null : (
+          // With nothing to list the button sits right under the wordmark and
+          // the hint takes the list's place beneath it.
           <Text style={styles.emptyBody}>{t('Scan the QR code from your desktop app to pair a device.')}</Text>
-        </View>
-      )}
+        )}
       </View>
-      <Button label="Pair New Device" icon={QrCode} onPress={props.onOpenScanner} />
       {__DEV__ ? (
         <View style={styles.devPairing}>
           <Pressable accessibilityRole="button" accessibilityState={{ expanded: developerOpen }} onPress={() => setDeveloperOpen(!developerOpen)} style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -167,9 +171,10 @@ export function PairingsScreen(props: {
 function useLayoutStyles() {
   const { tokens } = useMobileTheme()
   return useMemo(() => StyleSheet.create({
-    /** Centres while the list is short; the list gives way once it is not. */
-    group: { flex: 1, gap: tokens.spacing.md, justifyContent: 'center' },
-    list: { flexShrink: 1 },
-    empty: { alignItems: 'center', gap: tokens.spacing.sm, padding: tokens.spacing.xl },
+    /** Centres while the group is short; only the list gives way once it is not. */
+    group: { flex: 1, flexShrink: 1, gap: tokens.spacing.lg, justifyContent: 'center' },
+    devices: { flexShrink: 1, gap: tokens.spacing.md },
+    /** No grow: the list is as tall as its rows until the group runs out of room. */
+    list: { flexGrow: 0, flexShrink: 1 },
   }), [tokens])
 }

@@ -1577,9 +1577,9 @@ export function MobileApp() {
     setGotoPath('')
     setFinderOpen(false)
   }
-  const header = screen === 'files'
-    ? browserMode.name
-    : mobileHeaderTitle(screen, project?.name, activeSessionTitle, terminalUi.title, t)
+  const headerTitle = (route: Screen) => route === 'add-project' ? addProjectFlow.title
+    : route === 'files' ? browserMode.name
+    : mobileHeaderTitle(route, project?.name, activeSessionTitle, terminalUi.title, t)
   /**
    * Everything the workspace shows, wherever it is mounted: the modal drawer on
    * a phone in portrait, the persistent sidebar once the window is wide enough.
@@ -1607,6 +1607,82 @@ export function MobileApp() {
   }
 
   const tabletMultiPane = shouldUseTabletMultiPane(width, height, screen, !!project)
+
+  /**
+   * The header is part of each scene rather than a bar above the navigator:
+   * it has to slide with the page. Mounted above the stack it appeared the
+   * instant `screen` changed, which shrank the stack's frame while the outgoing
+   * page was still on screen — the device list visibly dropped by half the bar
+   * before New Session slid in, and the reverse jump played on the way back.
+   * Inside the scene the frame is constant and the outgoing page keeps the bar
+   * it had, so every gate here keys on the scene's `route`, not on `screen`.
+   */
+  const renderHeader = (route: Screen) => (
+    <>
+      <MobileHeader
+      pendingCount={workspaceActivity.pendingCount}
+      route={route}
+      title={headerTitle(route)}
+      subtitle={project?.name}
+      provider={selectedProvider}
+      hasSession={!!sessionId}
+      sessionId={sessionId}
+      deviceStatus={deviceStatus}
+      reconnect={reconnect}
+      sidebarVisible={tabletMultiPane}
+      git={sessionGit}
+      onOpenBranch={openGitPage}
+      onBack={back}
+      onSwitchSession={() => setSessionSwitcherOpen(true)}
+      onOpenTerminal={openTerminal}
+      terminal={route === 'terminal' ? {
+        tabs: terminalUi.tabs,
+        activeId: terminalUi.activeId,
+        onSelect: (terminalId) => termRuntimeRef.current?.select(terminalId),
+        onCreate: () => {
+          const p = project
+          if (!p) return
+          runUiAction(() => termRuntimeRef.current?.create(p.path, runtimeRef.current?.sessionId), setStatus, 'terminal failed')
+        },
+        onClose: (terminalId) => termRuntimeRef.current?.closeTab(terminalId),
+      } : undefined}
+      onOpenFiles={() => openFiles('session')}
+      onOpenFilesRoot={() => runUiAction(() => loadDirectory(fileBrowserHome(browserMode, directoryPath)), setStatus, 'failed to load directory')}
+      files={route === 'files' ? { kind: browserKind, finderOpen,
+        onToggleFinder: () => {
+          if (finderOpen) { closeFinder(); return }
+          if (browserKind === 'computer') setGotoPath(`${directoryPath.replace(/\/+$/, '')}/`)
+          setFinderOpen(true)
+        },
+        onUploadFile: () => void uploadProjectFile(directoryPath),
+        onNewFolder: () => setFolderPrompt({ value: '' }),
+      } : undefined}
+      onConfirm={route === 'worktree'
+        ? () => { setWorktreeSelection(worktreeDraft); setScreen('chat') }
+        : route === 'add-project' && addProjectFlow.confirmLabel
+          ? addProjectFlow.confirm
+          // Only while browsing: the overview has nothing to commit, it hands
+          // off to the browser. Same slot Add Project commits from.
+          : route === 'add-dir' && additionalDirs.canGoBack
+            ? () => runUiAction(additionalDirs.confirm, setStatus, 'could not add that folder')
+            : undefined}
+      confirmLabel={route === 'add-project' ? addProjectFlow.confirmLabel ?? undefined
+        : route === 'add-dir' && additionalDirs.canGoBack ? 'Add' : undefined}
+      launchCount={route === 'collab-request' ? collab.open?.payload.launches.length : undefined}
+      onAddProject={route === 'project-picker'
+        ? () => { setAddProjectOrigin('picker'); setScreen('add-project') }
+        : undefined}
+      confirmDisabled={route === 'add-project'
+        ? addProjectFlow.busy
+        // A folder the host has not confirmed exists cannot be added, so the
+        // action stays off rather than failing after the tap.
+        : route === 'add-dir'
+          ? additionalDirs.busy || !additionalDirs.resolvedPath
+          : !!worktreeSelectionError(worktreeDraft, branches, checkedOutBranches)}
+      />
+      <StatusBanner message={status} onDismiss={() => setStatus('')} />
+    </>
+  )
 
   // Android's back button is the hardware twin of the swipe the navigator no
   // longer accepts on chat, so it opens the workspace for the same reason.
@@ -1640,9 +1716,9 @@ export function MobileApp() {
     <SafeAreaView style={styles.root}>
       <StatusBar style={tokens.scheme === 'dark' ? 'light' : 'dark'} />
       <MobileKeyboardFrame>
-        {/* Header lives in the detail column so the persistent sidebar can
-            occupy the full window height. On a phone the column is the whole
-            frame, so the bar still sits at the top. */}
+        {/* Scenes (and their headers) live in the detail column so the
+            persistent sidebar can occupy the full window height. On a phone
+            the column is the whole frame, so the bar still sits at the top. */}
         <View style={styles.contentRow}>
         {tabletMultiPane && project ? (
           <WorkspaceSidebar {...workspaceList}
@@ -1654,68 +1730,6 @@ export function MobileApp() {
           />
         ) : null}
           <View style={styles.mainPane}>
-        <MobileHeader
-        pendingCount={workspaceActivity.pendingCount}
-        route={screen}
-        title={screen === 'add-project' ? addProjectFlow.title : header}
-        subtitle={project?.name}
-        provider={selectedProvider}
-        hasSession={!!sessionId}
-        sessionId={sessionId}
-        deviceStatus={deviceStatus}
-        reconnect={reconnect}
-        sidebarVisible={tabletMultiPane}
-        git={sessionGit}
-        onOpenBranch={openGitPage}
-        onBack={back}
-        onSwitchSession={() => setSessionSwitcherOpen(true)}
-        onOpenTerminal={openTerminal}
-        terminal={screen === 'terminal' ? {
-          tabs: terminalUi.tabs,
-          activeId: terminalUi.activeId,
-          onSelect: (terminalId) => termRuntimeRef.current?.select(terminalId),
-          onCreate: () => {
-            const p = project
-            if (!p) return
-            runUiAction(() => termRuntimeRef.current?.create(p.path, runtimeRef.current?.sessionId), setStatus, 'terminal failed')
-          },
-          onClose: (terminalId) => termRuntimeRef.current?.closeTab(terminalId),
-        } : undefined}
-        onOpenFiles={() => openFiles('session')}
-        onOpenFilesRoot={() => runUiAction(() => loadDirectory(fileBrowserHome(browserMode, directoryPath)), setStatus, 'failed to load directory')}
-        files={screen === 'files' ? { kind: browserKind, finderOpen,
-          onToggleFinder: () => {
-            if (finderOpen) { closeFinder(); return }
-            if (browserKind === 'computer') setGotoPath(`${directoryPath.replace(/\/+$/, '')}/`)
-            setFinderOpen(true)
-          },
-          onUploadFile: () => void uploadProjectFile(directoryPath),
-          onNewFolder: () => setFolderPrompt({ value: '' }),
-        } : undefined}
-        onConfirm={screen === 'worktree'
-          ? () => { setWorktreeSelection(worktreeDraft); setScreen('chat') }
-          : screen === 'add-project' && addProjectFlow.confirmLabel
-            ? addProjectFlow.confirm
-            // Only while browsing: the overview has nothing to commit, it hands
-            // off to the browser. Same slot Add Project commits from.
-            : screen === 'add-dir' && additionalDirs.canGoBack
-              ? () => runUiAction(additionalDirs.confirm, setStatus, 'could not add that folder')
-              : undefined}
-        confirmLabel={screen === 'add-project' ? addProjectFlow.confirmLabel ?? undefined
-          : screen === 'add-dir' && additionalDirs.canGoBack ? 'Add' : undefined}
-        launchCount={screen === 'collab-request' ? collab.open?.payload.launches.length : undefined}
-        onAddProject={screen === 'project-picker'
-          ? () => { setAddProjectOrigin('picker'); setScreen('add-project') }
-          : undefined}
-        confirmDisabled={screen === 'add-project'
-          ? addProjectFlow.busy
-          // A folder the host has not confirmed exists cannot be added, so the
-          // action stays off rather than failing after the tap.
-          : screen === 'add-dir'
-            ? additionalDirs.busy || !additionalDirs.resolvedPath
-            : !!worktreeSelectionError(worktreeDraft, branches, checkedOutBranches)}
-        />
-        <StatusBanner message={status} onDismiss={() => setStatus('')} />
             <View style={styles.flex}>
             <MobileNavigator
             route={screen}
@@ -1741,6 +1755,8 @@ export function MobileApp() {
               setScreen(route)
             }}
             renderScene={(route) => (
+              <View style={styles.flex}>
+              {renderHeader(route)}
               <View style={isFullBleedScreen(route) ? styles.flex : styles.page}>
       {route === 'pair' ? (
         <PairingsScreen
@@ -2088,6 +2104,7 @@ export function MobileApp() {
         <ConnectedTerminal webRef={termRef} runtimeRef={termRuntimeRef} theme={webViewTheme}
           writable={terminalUi.writable} onStatus={setStatus} />
       ) : null}
+              </View>
               </View>
             )}
             />

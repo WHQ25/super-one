@@ -554,3 +554,25 @@ it('pages older history without dropping live messages or requesting the same pa
   expect(runtime.hasMoreHistory).toBe(false)
   runtime.dispose()
 })
+
+describe('attachment originals behind transcript thumbnails', () => {
+  it('fetches the bytes once per picture and surfaces a host refusal', async () => {
+    const client = fakeClient()
+    client.request.mockImplementation(async (cmd: { type: string; messageId?: string; attachmentId?: string; name?: string }) => {
+      client.sent.push(cmd)
+      if (cmd.type !== 'get_attachment') return { ok: true }
+      if (cmd.attachmentId === 'gone') return { error: 'That attachment is no longer available' }
+      return { attachment: { id: cmd.attachmentId, name: cmd.name, mimeType: 'image/jpeg', base64: '/9j/' } }
+    })
+    const runtime = new ChatRuntime(client as never, () => {})
+    runtime.projectPath = '/p'
+    runtime.sessionId = 's1'
+    await expect(runtime.loadAttachment('user_1', { attachmentId: 'a1', name: 'IMG_0005.jpg' })).resolves.toBe('data:image/jpeg;base64,/9j/')
+    await expect(runtime.loadAttachment('user_1', { attachmentId: 'a1', name: 'IMG_0005.jpg' })).resolves.toBe('data:image/jpeg;base64,/9j/')
+    expect(client.sent.filter((cmd) => (cmd as { type: string }).type === 'get_attachment')).toEqual([
+      expect.objectContaining({ type: 'get_attachment', projectPath: '/p', sessionId: 's1', messageId: 'user_1', attachmentId: 'a1', name: 'IMG_0005.jpg' }),
+    ])
+    await expect(runtime.loadAttachment('user_1', { attachmentId: 'gone', name: 'x.jpg' })).rejects.toThrow('no longer available')
+    runtime.dispose()
+  })
+})

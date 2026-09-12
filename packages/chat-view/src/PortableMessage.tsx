@@ -68,7 +68,7 @@ function PortableUserContent({
   const chips = attachments.length > 0 && (
     <div key="attachments" className="mb-1 flex flex-wrap gap-1.5">
       {attachments.map((block, index) => (
-        <PortableAttachmentChip key={block.id ?? index} block={block} attachment={attachmentForBlock(message, block)} />
+        <PortableAttachmentChip key={block.id ?? index} messageId={message.id} block={block} attachment={attachmentForBlock(message, block)} />
       ))}
     </div>
   )

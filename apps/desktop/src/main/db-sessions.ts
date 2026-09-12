@@ -380,6 +380,15 @@ export function loadSessionMessagesPaginated(
   return { messages, cursor: hasMore ? startIndex : null, hasMore }
 }
 
+/** One persisted message, for a lookup that must not page the transcript back in. */
+export function loadSessionMessage(sessionId: string, messageId: string): ChatMessage | null {
+  const row = getDb().prepare(`
+    SELECT id, sort_order, role, status, content_json, created_at, provider_id, metadata_json, checkpoint_id, resume_point_id
+    FROM chat_messages WHERE session_id = ? AND id = ?
+  `).get(sessionId, messageId) as DbChatMessage | undefined
+  return row ? rowToChatMessage(row) : null
+}
+
 /** Delete a session and its messages (cascade). */
 export function deleteSession(sessionId: string): void {
   const db = getDb()

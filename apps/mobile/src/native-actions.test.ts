@@ -7,6 +7,8 @@ function ports(): NativeActionPorts {
     openFile: vi.fn(),
     previewFile: vi.fn(),
     loadImage: vi.fn(async () => ({ dataUri: 'data:image/png;base64,AA==' })),
+    loadAttachment: vi.fn(async () => 'data:image/jpeg;base64,/9j/'),
+    resolveFavicon: vi.fn(async () => 'data:image/png;base64,AA=='),
     previewImage: vi.fn(),
     previewMermaid: vi.fn(),
     copyText: vi.fn(),
@@ -122,6 +124,30 @@ describe('native chat actions', () => {
       type: 'requestNative', requestId: 'img2', action: 'loadImage', payload: { path: 'shots/a.png', confirmed: true },
     }, target)
     expect(target.loadImage).toHaveBeenLastCalledWith('shots/a.png', true)
+  })
+
+  it('fetches the original behind an attachment thumbnail by id, or by name without one', async () => {
+    const target = ports()
+    await expect(resolveNativeRequest({
+      type: 'requestNative', requestId: 'att', action: 'loadAttachment', payload: { messageId: 'user_1', attachmentId: 'a1', name: 'IMG_0005.jpg' },
+    }, target)).resolves.toMatchObject({ result: { ok: true, dataUri: 'data:image/jpeg;base64,/9j/' } })
+    expect(target.loadAttachment).toHaveBeenCalledWith('user_1', { attachmentId: 'a1', name: 'IMG_0005.jpg' })
+    await resolveNativeRequest({
+      type: 'requestNative', requestId: 'att2', action: 'loadAttachment', payload: { messageId: 'user_1', name: 'old.png' },
+    }, target)
+    expect(target.loadAttachment).toHaveBeenLastCalledWith('user_1', { name: 'old.png' })
+  })
+
+  it('answers resolveFavicon with the desktop icon for an http(s) link only', async () => {
+    const target = ports()
+    await expect(resolveNativeRequest({
+      type: 'requestNative', requestId: 'ico', action: 'resolveFavicon', payload: { url: 'https://example.com/docs', isDark: true },
+    }, target)).resolves.toMatchObject({ result: { ok: true, dataUrl: 'data:image/png;base64,AA==' } })
+    expect(target.resolveFavicon).toHaveBeenCalledWith('https://example.com/docs', true)
+    await expect(resolveNativeRequest({
+      type: 'requestNative', requestId: 'ico2', action: 'resolveFavicon', payload: { url: 'file:///etc/passwd' },
+    }, target)).resolves.toMatchObject({ error: 'unsupported link' })
+    expect(target.resolveFavicon).toHaveBeenCalledTimes(1)
   })
 
   it('opens the fullscreen viewer for a picture the transcript already shows', async () => {

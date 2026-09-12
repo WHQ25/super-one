@@ -76,7 +76,6 @@ export type CreateSessionOptions = {
   apiProviderId?: string | null
 }
 
-/** The bubble the phone paints for its own send; the host's echo carries the same id. */
 /**
  * The bubble painted before the host echoes it. Shaped like the host's own
  * `buildUserMessage` (attachment blocks first, then the text) because the echo
@@ -150,6 +149,7 @@ export class ChatRuntime {
     this.projectPath = projectPath
     this.sessionId = sessionId
     this.resolvedQuestionIds.clear()
+    this.attachmentBytes.clear()
     this.historyRequest = null
     this.navigationIndex = null
     this.navigationRequest = null
@@ -376,6 +376,26 @@ export class ChatRuntime {
     if (result.error) throw new Error(result.error)
     return result.task ?? ''
   }
+
+  /**
+   * The original bytes behind a `preview` thumbnail in the transcript, as a
+   * data URI for the viewer. Memoised: opening the same picture twice must not
+   * cost a second transfer.
+   */
+  async loadAttachment(messageId: string, ref: { attachmentId?: string; name: string }): Promise<string> {
+    const key = `${messageId}:${ref.attachmentId ?? ref.name}`
+    const cached = this.attachmentBytes.get(key)
+    if (cached) return cached
+    const result = await this.client.request({ type: 'get_attachment', requestId: randomId(),
+      projectPath: this.projectPath, sessionId: this.sessionId, messageId, ...ref,
+    }) as { attachment?: ImageAttachment; error?: string }
+    if (result.error) throw new Error(result.error)
+    if (!result.attachment?.base64) throw new Error('attachment unavailable')
+    const dataUri = `data:${result.attachment.mimeType};base64,${result.attachment.base64}`
+    this.attachmentBytes.set(key, dataUri)
+    return dataUri
+  }
+  private readonly attachmentBytes = new Map<string, string>()
 
   async loadSystemInfo(provider: string = String(this.provider)): Promise<SystemInfo> {
     if (!this.projectPath) return {}

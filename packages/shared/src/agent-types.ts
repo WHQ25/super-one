@@ -12,6 +12,13 @@ export interface ImageAttachment {
   name: string
   /** Stable id linking an editor attachment chip node and its inline content block to this attachment. */
   id?: string
+  /**
+   * Set on the copy a phone receives in a transcript: `base64` then holds a
+   * small JPEG thumbnail (or nothing, for a PDF or a picture the host could not
+   * decode) and `mimeType` describes that thumbnail. The original bytes stay on
+   * the host and come back through `get_attachment` when the picture is opened.
+   */
+  preview?: boolean
 }
 
 export interface ShareFileEncryption {
@@ -4592,6 +4599,12 @@ export type RemoteCommand =
   | { type: 'get_session_state'; requestId: string; projectPath: string; sessionId: string }
   /** The full brief of one launch in a pending `session_agents_confirm` (see `taskDeferred`). */
   | { type: 'get_collab_launch_task'; requestId: string; projectPath: string; sessionId: string; permissionRequestId: string; launchId: string }
+  /**
+   * The original bytes of an attachment a transcript carried as a `preview`
+   * thumbnail. Matched by `attachmentId` when the attachment has one, by
+   * `name` otherwise, in the message as the host holds or persisted it.
+   */
+  | { type: 'get_attachment'; requestId: string; projectPath: string; sessionId: string; messageId: string; attachmentId?: string; name: string }
   | { type: 'list_directory_for_add_dir'; requestId: string; projectPath: string; rawInput: string }
   | { type: 'validate_add_dir'; requestId: string; projectPath: string; candidate: string }
   | { type: 'add_project_additional_dir'; requestId: string; projectPath: string; dir: string; provider?: HarnessId }

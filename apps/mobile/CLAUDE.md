@@ -46,7 +46,12 @@ trusting the picker's mime type. The user bubble shows each attachment as a
 thumbnail chip (`PortableAttachmentChip`, the phone's `AttachmentChip`) that
 opens the native viewer; the optimistic bubble carries the same `image` /
 `document` blocks the host builds, because the host's echo is deduplicated
-away and a reopened session must look the same.
+away and a reopened session must look the same. A transcript loaded from the
+host carries only a 256 px thumbnail per picture (`ImageAttachment.preview`,
+cut by `apps/desktop/src/main/remote/attachment-thumbnail.ts` on every
+mobile projection: restore, history pages, the live `user_message_appended`);
+tapping the chip fetches the original through the `loadAttachment` native
+action → `get_attachment` RPC, memoised per session in `ChatRuntime`.
 A picture attached to a send crosses the wire exactly twice (draft flush and
 `send_message`): the host strips attachment bytes from `list_drafts`,
 `save_draft` replies and `draft_changed`, `prepareSend` opens the draft with

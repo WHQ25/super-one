@@ -2,6 +2,7 @@ import { loadSessionHistoryIndex, loadSessionMessageWindow } from '../session/hi
 import { buildProgressiveBootstrap } from './progressive-bootstrap'
 import { isProgressiveSession, projectProgressiveMessage, setProgressiveSession } from '../remote/progressive-session'
 import { rememberAttachmentOrigin } from '../remote/attachment-echo'
+import { findAttachment } from '../remote/attachment-thumbnail'
 import { handleDetailCommand } from '../remote/detail-command'
 import { summarizeSessionActivity, type SessionActivity } from '@superone/shared/session-activity'
 import { answerRemoteAsyncQuestion } from './remote-async-question'
@@ -74,7 +75,7 @@ function getGitRoot(cwd: string): string {
     return cwd // Fallback: not a git repo, use path itself
   }
 }
-import { listSessionsForFolder, createSession, createAutomationSession, renameSession as dbRenameSession, saveSessionState, loadSessionState, loadSessionMessagesPaginated, sessionBelongsToProject, deleteSession as dbDeleteSession, deleteSessionsOlderThan as dbDeleteSessionsOlderThan, pinSession as dbPinSession, hideSession as dbHideSession, listPinnedSessions, searchSessionsByTitle, readSessionHarnessId } from '../db-sessions'
+import { listSessionsForFolder, createSession, createAutomationSession, renameSession as dbRenameSession, saveSessionState, loadSessionState, loadSessionMessage, loadSessionMessagesPaginated, sessionBelongsToProject, deleteSession as dbDeleteSession, deleteSessionsOlderThan as dbDeleteSessionsOlderThan, pinSession as dbPinSession, hideSession as dbHideSession, listPinnedSessions, searchSessionsByTitle, readSessionHarnessId } from '../db-sessions'
 import { loadSessionMessages } from '../session-history'
 import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig } from '../mcp-config-service'
 import {
@@ -1304,6 +1305,24 @@ export class AgentService {
           break
         }
         await respond?.(command.requestId, { task: launch.task })
+        break
+      }
+      case 'get_attachment': {
+        if (!this.canAccessSession(command.projectPath, command.sessionId)) {
+          await respond?.(command.requestId, { error: this.buildSessionAccessError(command.projectPath, command.sessionId) })
+          break
+        }
+        // The transcript carried a thumbnail; the bytes are in the live session
+        // when the turn is still running, otherwise in the persisted message.
+        const message = this.findSessionBySid(command.projectPath, command.sessionId)?.snapshot.messages
+          .find((item) => item.id === command.messageId)
+          ?? loadSessionMessage(command.sessionId, command.messageId)
+        const attachment = message ? findAttachment(message, command) : undefined
+        if (!attachment?.base64) {
+          await respond?.(command.requestId, { error: 'That attachment is no longer available' })
+          break
+        }
+        await respond?.(command.requestId, { attachment })
         break
       }
       case 'get_session_state': {

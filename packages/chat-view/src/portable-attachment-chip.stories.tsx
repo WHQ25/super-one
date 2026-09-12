@@ -40,6 +40,8 @@ export const OnePicture: Story = { args: { message: sent('what is in this photo'
 export const SeveralPictures: Story = { args: { message: sent('describe these', [photo, screenshot, photo]) } }
 export const Pdf: Story = { args: { message: sent('summarize the numbers', [pdf]) } }
 export const LongFileName: Story = { args: { message: sent('is the layout broken here?', [screenshot]) } }
-/** The host's echo to the sender, or history whose bytes were dropped: the icon stands in. */
-export const WithoutBytes: Story = { args: { message: sent('what is in this photo', [{ ...photo, base64: '' }]) } }
+/** Loaded from the host: only a thumbnail travels; the tap fetches the original before the viewer opens. */
+export const HostThumbnail: Story = { args: { message: sent('what is in this photo', [{ ...photo, preview: true }]) } }
+/** A picture the host could not cut a thumbnail for (GIF, WebP), or a PDF: the icon stands in, the tap still fetches. */
+export const WithoutBytes: Story = { args: { message: sent('what is in this photo', [{ ...photo, base64: '', preview: true }, { ...pdf, base64: '', preview: true }]) } }
 export const NoText: Story = { args: { message: sent('', [photo, pdf]) } }

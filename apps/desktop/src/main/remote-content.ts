@@ -6,6 +6,7 @@ import { remoteToolBlockType, sanitizeRemoteToolInput } from '@superone/shared/r
 import { readOutputFile } from './agent/claude-session-runtime'
 import { listWorkflowAgentsSync } from './workflow-transcripts'
 import { highlightCodeSync, highlightCodeByLang, parseAnsiTokens, type DiffTokenLine } from './remote-highlighter'
+import { withAttachmentPreviews } from './remote/attachment-thumbnail'
 
 const TOOL_RESULT_MAX_LEN = 200
 const MAX_BASH_OUTPUT = 5000
@@ -548,6 +549,10 @@ function enrichPermissionRequest(event: AgentEvent & { type: 'permission_request
 }
 
 export function stripEventForRemote(event: AgentEvent, projectPath?: string): AgentEvent {
+  if (event.type === 'user_message_appended') {
+    const message = withAttachmentPreviews(event.message)
+    return message === event.message ? event : { ...event, message }
+  }
   if (event.type === 'task_notification' && event.outputFile) {
     const { resultText, toolEntries } = readOutputFile(event.outputFile, projectPath)
     if (resultText || toolEntries.length > 0) return { ...event, ...(resultText ? { resultText } : {}), ...(toolEntries.length > 0 ? { toolEntries } : {}) }
@@ -598,7 +603,10 @@ function appendRemoteErrorText(msg: ChatMessage): ChatMessage {
 }
 
 export function stripMessagesForRemote(messages: ChatMessage[], projectPath?: string): ChatMessage[] {
-  return messages.map(appendRemoteErrorText).map((msg) => {
+  // A picture rides along as a thumbnail; the phone asks for the bytes when it
+  // is opened (`get_attachment`). Before the Codex early return: user messages
+  // are what carry attachments, whichever harness answers them.
+  return messages.map(appendRemoteErrorText).map((msg) => withAttachmentPreviews(msg)).map((msg) => {
     // The WebView uses the same Codex item reducer as desktop. Flattening the
     // snapshot loses the baseline needed by subsequent item patches and makes
     // the next item replace the visible turn with only its newest content.

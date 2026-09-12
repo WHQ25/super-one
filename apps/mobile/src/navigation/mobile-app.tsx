@@ -555,6 +555,11 @@ export function MobileApp() {
         if (!client || !project) throw new Error('no active project')
         return loadInlineImage({ host: client, transport: activeTransport, projectPath: project.path, sessionId, path, confirmed })
       },
+      loadAttachment: async (messageId, ref) => {
+        const runtime = runtimeRef.current
+        if (!runtime) throw new Error('no active session')
+        return runtime.loadAttachment(messageId, ref)
+      },
       openFile: async (path) => {
         if (!project) throw new Error('no active project')
         const target = resolveRemoteFilePath(project.path, path)

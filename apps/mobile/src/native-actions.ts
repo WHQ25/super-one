@@ -34,6 +34,17 @@ export interface NativeActionPorts {
    */
   loadImage(path: string, confirmed: boolean): Promise<Record<string, unknown>>
   /**
+   * The original picture behind a thumbnail the transcript carries for an
+   * attachment (`ImageAttachment.preview`), as a data URI for the viewer.
+   */
+  loadAttachment(messageId: string, ref: { attachmentId?: string; name: string }): Promise<string>
+  /**
+   * The favicon the desktop's own chat shows in front of `url`, as a data URL.
+   * `null` when it has none (or the host is too old to answer): the link keeps
+   * its globe.
+   */
+  resolveFavicon(url: string, isDark: boolean): Promise<string | null>
+  /**
    * Show a picture the transcript is already displaying on the fullscreen
    * viewer. `src` is the data URI or public URL the `<img>` was painted from,
    * so no second transfer happens; `path` is the desktop path when there is one;
@@ -136,6 +147,17 @@ export async function resolveNativeRequest(
     } else if (message.action === 'loadImage') {
       const confirmed = (message.payload as Record<string, unknown> | undefined)?.confirmed === true
       result = await ports.loadImage(payloadString(message, 'path'), confirmed)
+    } else if (message.action === 'loadAttachment') {
+      const attachmentId = (message.payload as Record<string, unknown> | undefined)?.attachmentId
+      result = { dataUri: await ports.loadAttachment(payloadString(message, 'messageId'), {
+        ...(typeof attachmentId === 'string' ? { attachmentId } : {}),
+        name: payloadString(message, 'name'),
+      }) }
+    } else if (message.action === 'resolveFavicon') {
+      const url = payloadString(message, 'url')
+      if (!/^https?:\/\//i.test(url)) throw new Error('unsupported link')
+      const isDark = (message.payload as Record<string, unknown> | undefined)?.isDark === true
+      result = { dataUrl: await ports.resolveFavicon(url, isDark) }
     } else if (message.action === 'previewImage') {
       const src = payloadString(message, 'src')
       if (!isPreviewableImageSource(src)) throw new Error('unsupported image source')

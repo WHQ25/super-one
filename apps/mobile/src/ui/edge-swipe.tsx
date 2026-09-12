@@ -11,17 +11,19 @@ const EDGE_WIDTH = 18
 const OPEN_DISTANCE = 32
 
 /**
- * An invisible strip down the left edge that opens the workspace drawer on a
- * rightward drag — the gesture a phone user reaches for when they want the
- * sidebar, and on chat the same one the native stack would otherwise spend on
- * popping back to the device list.
+ * An invisible strip down the left edge that fires on a rightward drag — the
+ * gesture a phone user reaches for when they want the sidebar, or to leave a
+ * fullscreen surface. On chat it opens the workspace drawer, the same edge the
+ * native stack would otherwise spend on popping back to the device list; on the
+ * file preview it stands in for the pop gesture a `Modal` never gets on iOS
+ * (Android's system back gesture already covers that edge there).
  *
  * It never claims the touch that *starts* on it, only one that moves right, so a
  * tap or a vertical scroll begun in the gutter still behaves normally. It has to
  * be laid over the scroller rather than wrapped around it: a WebView runs its own
  * gestures natively, and an ancestor `View` gets no say in them.
  */
-export function EdgeSwipeArea({ onOpen }: { onOpen: () => void }) {
+export function EdgeSwipeArea({ onSwipe }: { onSwipe: () => void }) {
   const fired = useRef(false)
   const responder = useMemo(() => PanResponder.create({
     onStartShouldSetPanResponder: () => false,
@@ -34,12 +36,13 @@ export function EdgeSwipeArea({ onOpen }: { onOpen: () => void }) {
     onPanResponderMove: (_, gesture) => {
       if (fired.current || gesture.dx < OPEN_DISTANCE) return
       fired.current = true
-      onOpen()
+      onSwipe()
     },
-  }), [onOpen])
+  }), [onSwipe])
 
   return <View
     {...responder.panHandlers}
+    testID="edge-swipe"
     // Landing/restore covers sit at elevation 4; this strip has to stay above
     // them or the drawer gesture dies on Android while the cover is up.
     style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: EDGE_WIDTH, zIndex: 2, elevation: 6 }}

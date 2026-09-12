@@ -90,6 +90,33 @@ test('the back button dismisses the viewer', async () => {
   expect(onDismiss).toHaveBeenCalledTimes(1)
 })
 
+/**
+ * One finger's worth of `touchHistory`, the shape PanResponder accumulates its
+ * `dx` from: where the finger was at the last event and where it is now. Each
+ * event needs a fresh timestamp or PanResponder treats it as a replay.
+ */
+function drag(fromX: number, toX: number, at: number) {
+  const touch = { touchActive: true, startPageX: 4, startPageY: 300, currentPageX: toX, currentPageY: 300, currentTimeStamp: at, previousPageX: fromX, previousPageY: 300, previousTimeStamp: at - 16 }
+  return { touchHistory: { numberActiveTouches: 1, indexOfSingleActiveTouch: 0, mostRecentTimeStamp: at, touchBank: [touch] }, nativeEvent: { touches: [touch] } }
+}
+
+test('a drag in from the left edge dismisses the viewer, like the stack pop it stands in for', async () => {
+  const onDismiss = jest.fn()
+  await mount(IMAGE, { onDismiss })
+  // The strip only claims a touch once it has moved right, which `fireEvent`
+  // reads as "not a touch responder" and drops on the floor; drive the
+  // responder callbacks the way the responder system would.
+  const edge = screen.getByTestId('edge-swipe').props as { onResponderGrant: (e: unknown) => void; onResponderMove: (e: unknown) => void }
+  edge.onResponderGrant(drag(4, 4, 0))
+  edge.onResponderMove(drag(4, 20, 16))
+  expect(onDismiss).not.toHaveBeenCalled()
+  edge.onResponderMove(drag(20, 48, 32))
+  expect(onDismiss).toHaveBeenCalledTimes(1)
+  // Committed once per drag; the finger sliding on does not dismiss twice.
+  edge.onResponderMove(drag(48, 90, 48))
+  expect(onDismiss).toHaveBeenCalledTimes(1)
+})
+
 test('turning the picture keeps the viewer open', async () => {
   const onDismiss = jest.fn()
   await mount(IMAGE, { onDismiss })

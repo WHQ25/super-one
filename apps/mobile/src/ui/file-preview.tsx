@@ -18,6 +18,7 @@ import { NativeMarkdown } from '../prompts/NativeMarkdown'
 import { useMobileTheme } from '../theme/context'
 import { AnchoredMenu, MenuRow, useMenuAnchor } from './anchored-menu'
 import { CodeListing } from './code-listing'
+import { EdgeSwipeArea } from './edge-swipe'
 import { FileTypeIcon } from './file-icon'
 import { IconButton } from './icon-button'
 import { MenuHost } from './menu-host'
@@ -57,9 +58,10 @@ const FEEDBACK_MS = 2500
  * portrait in chat, but this surface unlocks landscape so a picture or listing
  * can use the long side.
  *
- * Leaving is the back button's job alone. A tap on the picture only gets the
- * chrome out of the way, so a finger that lands while lining up a pinch cannot
- * close the thing it was reaching for.
+ * Leaving is the back button's job, or a drag in from the left edge — the pop
+ * gesture a native `Modal` has no equivalent of on iOS. A tap on the picture
+ * only gets the chrome out of the way, so a finger that lands while lining up
+ * a pinch cannot close the thing it was reaching for.
  */
 export function FilePreviewModal({ state, ports, onDismiss, onStartTransfer, onRetry, generationPorts }: FilePreviewModalProps) {
   const { tokens: { colors } } = useMobileTheme()
@@ -85,6 +87,7 @@ export function FilePreviewModal({ state, ports, onDismiss, onStartTransfer, onR
         <MenuHost>
           <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.background }]} accessibilityViewIsModal onAccessibilityEscape={onDismiss}>
             <PreviewBody state={state} chromeVisible={chromeVisible} onToggleChrome={toggleChrome} onStartTransfer={onStartTransfer} onRetry={onRetry} generationPorts={generationPorts} />
+            <EdgeSwipeArea onSwipe={onDismiss} />
             <PreviewChrome state={state} ports={ports} onDismiss={onDismiss} visible={state.kind !== 'image' || chromeVisible} />
           </View>
         </MenuHost>
@@ -322,7 +325,8 @@ const styles = StyleSheet.create({
   progressRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
   track: { height: 4, borderRadius: 999, overflow: 'hidden' },
   fill: { height: 4, borderRadius: 999 },
-  chrome: { position: 'absolute', top: 0, left: 0, right: 0 },
+  // Above the edge-swipe strip, or its 18px would cover the left of the back button.
+  chrome: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 3 },
   chromeRow: { flexDirection: 'row', alignItems: 'center', gap: 4, height: CHROME_ROW_HEIGHT },
   titleRow: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   titleIcon: { flexShrink: 0 },

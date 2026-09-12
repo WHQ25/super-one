@@ -189,7 +189,7 @@ export function ChatScreen(props: {
           <NewSessionLanding {...props.landing} />
         </View>
       ) : null}
-      {props.onEdgeSwipe ? <EdgeSwipeArea onOpen={props.onEdgeSwipe} /> : null}
+      {props.onEdgeSwipe ? <EdgeSwipeArea onSwipe={props.onEdgeSwipe} /> : null}
       </View>
       {!props.loadingConversation ? <TodoPanel todos={props.todos} /> : null}
       {!props.loadingConversation && props.queuedMessages.length ? (

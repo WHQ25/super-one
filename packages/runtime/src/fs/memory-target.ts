@@ -6,6 +6,8 @@ export interface MemoryTarget {
   readTool: string
   label: string
   indexHint: string
+  /** OKF `resource`: canonical URI of the asset a note describes. */
+  resource: string
 }
 
 export function normalizeMemoryDomain(value: string): string {
@@ -23,7 +25,7 @@ export function resolveMemoryTarget(family: MemoryFamily, args: MemoryReadArgs):
   const readTool = `${family}_memory_read`
   if (family === 'browser') {
     const domain = normalizeMemoryDomain('domain' in args ? args.domain : '')
-    return { segments: ['browser', 'memory', domain], identity: { domain }, readTool, label: domain,
+    return { segments: ['browser', 'memory', domain], identity: { domain }, readTool, label: domain, resource: `https://${domain}/`,
       indexHint: `Call ${readTool} with domain and one topic for its Markdown and revision.` }
   }
   if (family !== 'computer' && family !== 'device') throw new Error('Unknown memory family.')
@@ -36,5 +38,5 @@ export function resolveMemoryTarget(family: MemoryFamily, args: MemoryReadArgs):
     throw new Error('Invalid appId: use a stable bundle id, package name, application id or system; never a path, PID or snapshot ref.')
   }
   return { segments: [family, 'memory', args.platform, appId], identity: { platform: args.platform, appId }, readTool,
-    label: `${args.platform}/${appId}`, indexHint: `Call ${readTool} with platform, appId and one topic for its Markdown and revision.` }
+    label: `${args.platform}/${appId}`, resource: `app://${args.platform}/${appId}`, indexHint: `Call ${readTool} with platform, appId and one topic for its Markdown and revision.` }
 }

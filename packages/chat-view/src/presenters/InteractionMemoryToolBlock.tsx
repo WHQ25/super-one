@@ -28,7 +28,7 @@ export function InteractionMemoryToolBlock(props: InteractionMemoryToolBlockProp
   const tone = isDenied ? 'denied' : failed ? 'error' : 'default'
   const kind = op === 'memory_read' ? 'read' : op === 'action_read' ? 'actionRead'
     : op === 'action_archive' ? (params.archived === false ? 'actionRestore' : 'actionArchive')
-      : params.archived === true ? 'archive' : params.archived === false ? 'restore' : 'write'
+      : params.status === 'deprecated' ? 'archive' : params.status === 'stable' ? 'restore' : 'write'
   const state = tone !== 'default' ? 'action' : isStreaming ? 'streaming' : 'done'
   const domain = typeof params.domain === 'string' ? params.domain : typeof data?.domain === 'string' ? data.domain : ''
   const topic = typeof params.topic === 'string' ? params.topic : typeof params.name === 'string' ? params.name : typeof data?.topic === 'string' ? data.topic : ''

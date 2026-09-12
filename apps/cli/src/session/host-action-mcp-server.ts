@@ -51,6 +51,8 @@ export interface HostActionMcpServerOptions {
   requestHostAction: HostActionRequestFn
   /** Node-local session_collab_* (SessionRuntime collab service). */
   collab?: NodeCollabToolHandlers
+  /** OKF actor for interaction-memory notes (harness + model of the session). */
+  resolveActor?: (sessionId: string) => string | undefined
   /** Injectable for tests. */
   masterToken?: string
 }
@@ -202,6 +204,7 @@ export async function startHostActionMcpServer(
       try {
         const server = createHostActionMcpServer(superoneSessionId, opts.requestHostAction, {
           collab: opts.collab,
+          resolveActor: opts.resolveActor,
         })
         let sessionRef: HttpMcpSession | undefined
         const transport = new StreamableHTTPServerTransport({
@@ -289,6 +292,7 @@ export async function startHostActionMcpServer(
     createClaudeSdkMcp(sessionId: string): ClaudeSdkMcpHandle {
       const server = createHostActionMcpServer(sessionId, opts.requestHostAction, {
         collab: opts.collab,
+        resolveActor: opts.resolveActor,
       })
       const entry = {
         type: 'sdk' as const,

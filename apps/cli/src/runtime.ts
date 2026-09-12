@@ -29,6 +29,7 @@ import {
   type HostActionMcpServerHandle,
 } from './session/host-action-mcp-server'
 import { loadNodeAgentSettings } from '@superone/runtime/settings'
+import { memoryActor } from '@superone/shared/interaction-memory'
 import {
   AutomationService,
   createAutomationStore,
@@ -126,6 +127,10 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
         )
       }
       return sessionsRef.requestHostAction(input)
+    },
+    resolveActor: (sessionId) => {
+      const session = sessionsRef?.get(sessionId)
+      return session ? memoryActor(session.harnessId, session.model) : undefined
     },
     collab: {
       listAgents: () => {

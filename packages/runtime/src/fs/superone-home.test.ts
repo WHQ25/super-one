@@ -25,7 +25,7 @@ it('keeps alpha notes separate from stable notes on the same user account', asyn
   try {
     const stableRoot = resolveSuperoneHome({ userHome: home, variant: 'stable' })
     const alphaRoot = resolveSuperoneHome({ userHome: home, variant: 'alpha' })
-    const note = { domain: 'example.com', topic: 'search', summary: 'Search', content: 'Verified steps' }
+    const note = { domain: 'example.com', topic: 'search', description: 'Search', content: 'Verified steps' }
     await new InteractionMemoryStore(alphaRoot).write('browser', note)
     expect(await new InteractionMemoryStore(stableRoot).read('browser', { domain: note.domain })).toMatchObject({ count: 0 })
     expect(await readFile(join(alphaRoot, 'browser/memory/example.com/search.md'), 'utf8')).toContain(note.content)

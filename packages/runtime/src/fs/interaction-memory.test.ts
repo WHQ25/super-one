@@ -11,7 +11,7 @@ async function fixture() {
   return { home, store: new InteractionMemoryStore(join(home, '.superone')) }
 }
 afterEach(async () => { await Promise.all(homes.splice(0).map(home => rm(home, { recursive: true, force: true }))) })
-const note = { appId: 'com.example.app', platform: 'macos', topic: 'search', summary: 'Search for a document', content: 'Use the search field, then wait for the result list.' }
+const note = { appId: 'com.example.app', platform: 'macos', topic: 'search', description: 'Search for a document', content: 'Use the search field, then wait for the result list.' }
 
 describe('computer and device experience', () => {
   it('shares persistence and revision checks while isolating platform, app, family and node', async () => {
@@ -29,9 +29,9 @@ describe('computer and device experience', () => {
     expect(await store.read('device', { ...phone, platform: 'android', topic: undefined })).toMatchObject({ count: 0 })
     expect(await (await fixture()).store.read('device', { ...phone, topic: undefined })).toMatchObject({ count: 0 })
     await expect(store.write('device', { ...phone, expectedRevision: 'stale', content: 'Stale edit' })).rejects.toThrow(/revision/i)
-    await store.write('device', { ...phone, archived: true, expectedRevision: deviceNote.revision })
+    await store.write('device', { ...phone, status: 'deprecated', expectedRevision: deviceNote.revision })
     expect(await store.read('device', { ...phone, topic: undefined })).toMatchObject({ count: 0 })
-    expect(await store.read('computer', note)).toMatchObject({ archived: false })
+    expect(await store.read('computer', note)).toMatchObject({ status: 'stable' })
   })
 
   it('rejects host-platform inference, transient identifiers and unsafe paths without executing UI actions', async () => {

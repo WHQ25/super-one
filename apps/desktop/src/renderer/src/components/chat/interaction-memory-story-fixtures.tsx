@@ -8,7 +8,7 @@ type Story = StoryObj<typeof ToolBlock>
 export function memoryStories(family: 'browser' | 'computer' | 'device', identity: Record<string, string>) {
   const target = { ...identity, topic: 'search' }
   const label = Object.values(target).join('/')
-  const note = { ...target, version: 1, summary: 'Search', archived: false, updatedAt: '2026-09-08T14:00:00.000Z', revision: '1', content: 'Use the search field, then wait for the result list.' }
+  const note = { ...target, title: 'Search', description: 'Search', status: 'stable', generated: { by: 'superone-claude/claude-opus-5', at: '2026-09-08T14:00:00.000Z' }, verified: [], sources: [], revision: '1', content: 'Use the search field, then wait for the result list.' }
   const write = `mcp__superone__${family}_memory_write`
   const defaults: Meta<typeof ToolBlock> = {
     component: ToolBlock,
@@ -28,9 +28,9 @@ export function memoryStories(family: 'browser' | 'computer' | 'device', identit
     } satisfies Story,
     Empty: { args: { input: JSON.stringify(identity), result: JSON.stringify({ ...identity, count: 0, topics: [] }) } } satisfies Story,
     Loading: { args: { status: 'streaming', result: undefined } } satisfies Story,
-    Saved: { args: { toolName: write, result: JSON.stringify({ ...note, content: undefined, status: 'saved', created: true }) } } satisfies Story,
-    Archived: { args: { toolName: write, input: JSON.stringify({ ...target, archived: true }), result: JSON.stringify({ ...note, content: undefined, status: 'archived', archived: true }) } } satisfies Story,
-    Restored: { args: { toolName: write, input: JSON.stringify({ ...target, archived: false }), result: JSON.stringify({ ...note, content: undefined, status: 'saved' }) } } satisfies Story,
+    Saved: { args: { toolName: write, result: JSON.stringify({ ...note, content: undefined, saved: true, created: true }) } } satisfies Story,
+    Archived: { args: { toolName: write, input: JSON.stringify({ ...target, status: 'deprecated' }), result: JSON.stringify({ ...note, content: undefined, saved: true, status: 'deprecated' }) } } satisfies Story,
+    Restored: { args: { toolName: write, input: JSON.stringify({ ...target, status: 'stable' }), result: JSON.stringify({ ...note, content: undefined, saved: true }) } } satisfies Story,
     Conflict: { args: { toolName: write, isError: true, result: `[Error] Revision conflict. Read this topic with ${family}_memory_read and merge your changes before retrying.` } } satisfies Story,
     Denied: { args: { result: '[denied] User denied this tool call.' } } satisfies Story,
     Nested: { decorators: [(Story) => <NestedToolContext.Provider value={{ allowExpand: false }}><Story /></NestedToolContext.Provider>] } satisfies Story,

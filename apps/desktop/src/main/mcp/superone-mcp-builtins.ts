@@ -1,5 +1,5 @@
 import { superoneHome } from '../superone-home'
-import { INTERACTION_MEMORY_TOOL_DEFS } from '@superone/shared/interaction-memory'
+import { INTERACTION_MEMORY_TOOL_DEFS, memoryActor } from '@superone/shared/interaction-memory'
 import { InteractionMemoryStore, executeInteractionMemoryTool } from '@superone/runtime/fs/interaction-memory'
 import { jsonSchemaToZodShape } from './json-schema-zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -128,6 +128,11 @@ function collaborationHost(deps: BuiltInSuperoneToolDeps): SessionManager {
   const host = deps.sessionHost as SessionManager | null
   if (!host?.createSession || !host?.disposeSession) throw new Error('Session collaboration host is unavailable')
   return host
+}
+
+function sessionMemoryActor(deps: BuiltInSuperoneToolDeps): string {
+  const session = deps.sessionHost?.getSession(deps.sessionId) as { harnessId?: string; getUiSettings?: () => { selectedModel?: string | null } } | null
+  return memoryActor(session?.harnessId, session?.getUiSettings?.().selectedModel)
 }
 
 export interface BuiltInSuperoneToolDeps {
@@ -268,7 +273,7 @@ export async function executeBuiltInSuperoneTool(
     case 'computer_memory_write':
     case 'device_memory_read':
     case 'device_memory_write':
-      return executeInteractionMemoryTool(toolName, args, new InteractionMemoryStore(superoneHome()), deps.signal)
+      return executeInteractionMemoryTool(toolName, args, new InteractionMemoryStore(superoneHome(), sessionMemoryActor(deps)), deps.signal)
     case 'read_manual':
       return manualReadHandler(args as { domain?: string; topic?: string; modules?: string[] })
     case 'miniapp_dev_setup':

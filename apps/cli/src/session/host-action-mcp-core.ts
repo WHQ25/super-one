@@ -52,6 +52,8 @@ export interface NodeCollabToolHandlers {
 
 export interface CreateHostActionMcpServerOptions {
   memory?: InteractionMemoryStore
+  /** OKF actor for notes this session writes; resolved per call so a model switch is reflected. */
+  resolveActor?: (sessionId: string) => string | undefined
   collab?: NodeCollabToolHandlers
 }
 
@@ -108,9 +110,10 @@ export function createHostActionMcpServer(
   const server = new McpServer({ name: 'superone-host-action', version: '1.0.0' })
   registerHostActionTools(server, superoneSessionId, requestHostAction)
   const memory = opts?.memory ?? new InteractionMemoryStore()
+  const memoryFor = () => { const actor = opts?.resolveActor?.(superoneSessionId); return actor ? memory.withActor(actor) : memory }
   for (const def of INTERACTION_MEMORY_TOOL_DEFS) {
     server.registerTool(def.name, { description: def.description, inputSchema: jsonSchemaToZodShape(def.inputSchema) },
-      (args, extra) => executeInteractionMemoryTool(def.name, args, memory, extra.signal))
+      (args, extra) => executeInteractionMemoryTool(def.name, args, memoryFor(), extra.signal))
   }
   if (opts?.collab) {
     registerNodeCollabTools(server, superoneSessionId, opts.collab)

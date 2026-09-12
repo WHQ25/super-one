@@ -11,7 +11,7 @@ async function fixture() {
   return { home, store: new BrowserMemoryStore(join(home, '.superone')) }
 }
 afterEach(async () => { await Promise.all(homes.splice(0).map(home => rm(home, { recursive: true, force: true }))) })
-const note = { domain: 'github.com', topic: 'issue-search', summary: 'Search issues', content: 'Wait for the results before reading them.' }
+const note = { domain: 'github.com', topic: 'issue-search', description: 'Search issues', content: 'Wait for the results before reading them.' }
 
 describe('personal browser memory', () => {
   it('persists markdown across store instances and isolates user homes and subdomains', async () => {
@@ -24,7 +24,7 @@ describe('personal browser memory', () => {
     expect(await (await fixture()).store.read({ domain: note.domain })).toMatchObject({ count: 0 })
   })
 
-  it('requires the current revision, serializes concurrent writers, and supports archive and restore', async () => {
+  it('requires the current revision, serializes concurrent writers, and supports deprecate and restore', async () => {
     const { store, home } = await fixture()
     const saved = await store.write(note)
     await expect(store.write(note)).rejects.toThrow(/revision/i)
@@ -33,10 +33,11 @@ describe('personal browser memory', () => {
     expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1)
     const current = await store.read(note)
     if (!('revision' in current)) throw new Error('missing note')
-    const archived = await store.write({ domain: note.domain, topic: note.topic, archived: true, expectedRevision: current.revision })
+    const deprecated = await store.write({ domain: note.domain, topic: note.topic, status: 'deprecated', expectedRevision: current.revision })
+    expect(deprecated).toMatchObject({ saved: true, created: false, status: 'deprecated' })
     expect(await store.read({ domain: note.domain })).toMatchObject({ count: 0 })
-    expect(await store.read({ domain: note.domain, includeArchived: true })).toMatchObject({ count: 1 })
-    await store.write({ domain: note.domain, topic: note.topic, archived: false, expectedRevision: archived.revision })
+    expect(await store.read({ domain: note.domain, includeDeprecated: true })).toMatchObject({ count: 1, topics: [{ status: 'deprecated' }] })
+    await store.write({ domain: note.domain, topic: note.topic, status: 'stable', expectedRevision: deprecated.revision })
     expect(await store.read({ domain: note.domain })).toMatchObject({ count: 1 })
   })
 
@@ -64,12 +65,13 @@ describe('personal browser memory', () => {
 
   it('does not write on cancellation and clears old verification when content changes', async () => {
     const { store } = await fixture()
-    const saved = await store.write({ ...note, verifiedAt: '2026-09-08T12:00:00Z' })
+    const saved = await store.write({ ...note, verified: true })
+    expect(saved.verified).toHaveLength(1)
     const signal = AbortSignal.abort()
     await expect(store.write({ ...note, expectedRevision: saved.revision }, signal)).rejects.toThrow()
     expect(await store.read(note)).toMatchObject({ revision: saved.revision })
     await store.write({ ...note, content: 'Revised procedure', expectedRevision: saved.revision })
-    expect(await store.read(note)).not.toHaveProperty('verifiedAt')
+    expect(await store.read(note)).toMatchObject({ verified: [] })
   })
 
   it('paginates summaries without putting topic bodies in the index', async () => {

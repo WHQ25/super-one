@@ -20,7 +20,10 @@ describe('node-local interaction memory MCP', () => {
     async function connect(home?: string) {
       const dir = home ?? await mkdtemp(join(tmpdir(), 'node-browser-memory-'))
       if (!home) cleanup.push(() => rm(dir, { recursive: true, force: true }))
-      const server = createHostActionMcpServer('session', requestHostAction, { memory: new InteractionMemoryStore(dir) })
+      const server = createHostActionMcpServer('session', requestHostAction, {
+        memory: new InteractionMemoryStore(dir),
+        resolveActor: (sessionId) => (sessionId === 'session' ? 'superone-claude/claude-opus-5' : undefined),
+      })
       const client = new Client({ name: 'memory-test', version: '1' })
       const [a, b] = InMemoryTransport.createLinkedPair()
       await server.connect(a)
@@ -31,9 +34,10 @@ describe('node-local interaction memory MCP', () => {
     }
     const a = await connect()
     expect((await a.client.listTools()).tools.map(t => t.name)).toEqual(expect.arrayContaining([`${family}_memory_read`, `${family}_memory_write`]))
-    const note = { ...identity, topic: 'search', summary: 'Search', content: 'Wait for results.' }
+    const note = { ...identity, topic: 'search', description: 'Search', content: 'Wait for results.' }
     const saved = await a.client.callTool({ name: `${family}_memory_write`, arguments: note })
     expect(saved.isError).toBeFalsy()
+    expect(JSON.stringify(saved)).toContain('superone-claude/claude-opus-5')
     const resumed = await connect(a.dir)
     const found = await resumed.client.callTool({ name: `${family}_memory_read`, arguments: { ...identity, topic: note.topic } })
     expect(JSON.stringify(found)).toContain(note.content)

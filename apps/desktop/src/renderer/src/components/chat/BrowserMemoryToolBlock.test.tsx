@@ -38,11 +38,11 @@ describe('browser memory presentation across desktop and mobile', () => {
     { family: 'computer', platform: 'macos', Presenter: ComputerUseToolBlockPresenter, resolve: getComputerOp, icon: '.lucide-mouse-pointer-2' },
     { family: 'device', platform: 'android', Presenter: DeviceToolBlockPresenter, resolve: getDeviceOp, icon: '.lucide-smartphone' },
   ])('renders $family memory with its native icon and safe mobile identity', ({ family, platform, Presenter, resolve, icon }) => {
-    const args = { platform, appId: 'com.example.app', topic: 'search', content: 'Private procedure', expectedRevision: 'private', archived: true }
+    const args = { platform, appId: 'com.example.app', topic: 'search', content: 'Private procedure', expectedRevision: 'private', status: 'deprecated' }
     const safe = JSON.parse(sanitizeRemoteToolInput(`mcp__superone__${family}_memory_write`, JSON.stringify(args)))
-    expect(safe).toEqual({ platform, appId: args.appId, topic: args.topic, archived: true })
+    expect(safe).toEqual({ platform, appId: args.appId, topic: args.topic, status: 'deprecated' })
     expect(resolve(`${family}_memory_write`)).toBe('memory_write')
-    const { container, rerender } = render(<Presenter op="memory_write" params={safe} isStreaming={false} result={JSON.stringify({ status: 'archived', ...safe })} />)
+    const { container, rerender } = render(<Presenter op="memory_write" params={safe} isStreaming={false} result={JSON.stringify({ saved: true, ...safe })} />)
     expect(screen.getByText('Memory Archived')).toBeTruthy()
     expect(screen.getByText(`${platform}/com.example.app/search`)).toBeTruthy()
     expect(container.querySelector(icon)).toBeTruthy()

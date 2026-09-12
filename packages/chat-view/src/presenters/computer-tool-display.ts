@@ -198,7 +198,7 @@ export function computerVerbKey(
   streaming = false,
 ): string {
   if (op === 'memory_read' || op === 'memory_write') {
-    return `memory.${op === 'memory_read' ? 'read' : params.archived === true ? 'archive' : params.archived === false ? 'restore' : 'write'}.${streaming ? 'streaming' : 'done'}`
+    return `memory.${op === 'memory_read' ? 'read' : params.status === 'deprecated' ? 'archive' : params.status === 'stable' ? 'restore' : 'write'}.${streaming ? 'streaming' : 'done'}`
   }
   if (op === 'apps') {
     const action =

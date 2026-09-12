@@ -48,6 +48,9 @@ Every alpha release keeps its own notes on its GitHub Release.
   silently falling back to relay; adaptive icon sized to launcher masks.
 - Session: mobile-created Grok sessions show the Grok icon, and Grok recaps
   persist so mobile history restores them.
+- Remote nodes install the same Claude and Cursor Agent SDK versions the
+  desktop bundles; the managed pins are now checked against the workspace
+  dependencies.
 
 ### Changed
 
@@ -60,6 +63,19 @@ Every alpha release keeps its own notes on its GitHub Release.
   prompt instead of replaying the one recorded on its first request.
 - Chat: presenter-owned tools render through dedicated chrome; the live-turn
   label reads "Sending…".
+
+## [0.64.0-alpha.1] - 2026-09-12
+
+### Fixed
+
+- Claude: the managed runtime pin follows the bundled Agent SDK to 0.3.269.
+  0.64.0-alpha shipped the SDK's JS half at 0.3.269 driving a 0.3.257 native
+  binary, so unattended-run permission denial and the `defaultToNo` /
+  `suppressAlwaysAllowRule` prompt hints never reached the CLI side — on the
+  desktop and on remote nodes alike.
+- `@super-one/cli` publishes with the Claude and Cursor SDK versions the
+  bundled harness packages compile against (Cursor was 1.0.27 vs 1.0.30).
+  A lockstep test now ties the managed pins to the workspace dependencies.
 
 ## [0.64.0-alpha] - 2026-09-12
 

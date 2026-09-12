@@ -63,6 +63,9 @@ const {
   extractSuperoneMiniAppToolName,
   waitForCodexMcpServerReady,
   processServerRequest,
+  prewarmCodexSession,
+  isCodexEmptyRolloutError,
+  isCodexThreadNotFoundError,
 } = await import('./codex-turn')
 const { getActiveProviderRaw, getProviderByIdRaw } = await import('../database')
 const { resolveChatService } = await import('../providers/resolver')
@@ -271,6 +274,208 @@ describe('resolveThread fallback', () => {
     expect(failure.message).toBe('current request failed')
     expect(handle.close).toHaveBeenCalledOnce()
     expect(session.connectionHandle).toBeNull()
+  })
+
+  it('treats an empty Codex rollout as a missing thread', () => {
+    const empty = new Error(
+      'failed to read thread: thread-store internal error: failed to read session metadata /tmp/rollout.jsonl: rollout at /tmp/rollout.jsonl is empty',
+    )
+    expect(isCodexEmptyRolloutError(empty)).toBe(true)
+    expect(isCodexThreadNotFoundError(empty)).toBe(true)
+    expect(isCodexEmptyRolloutError(new Error('rollout at C:\\Users\\John Smith\\.codex\\rollout.jsonl is empty'))).toBe(true)
+    expect(isCodexEmptyRolloutError(new Error('Codex prompt is empty'))).toBe(false)
+    expect(isCodexEmptyRolloutError(new Error('thread-store internal error: turn input is empty'))).toBe(false)
+    expect(isCodexThreadNotFoundError(new Error('thread not found'))).toBe(true)
+  })
+
+  it('falls back to thread/start when resume hits an empty rollout', async () => {
+    const session = makeSession({ model: 'gpt-5', threadId: 'stale-thread' })
+    const mockConnection = {
+      request: vi.fn()
+        .mockRejectedValueOnce(new Error('rollout at /tmp/rollout.jsonl is empty'))
+        .mockResolvedValueOnce({ thread: { id: 'new-thread-1' } }),
+    } as never
+
+    const result = await resolveThread(mockConnection, session, '/project', '/project', permissionProfile as never)
+
+    expect(result).toBe('new-thread-1')
+    expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request.mock.calls[0][0]).toBe('thread/resume')
+    expect((mockConnection as { request: ReturnType<typeof vi.fn> }).request.mock.calls[1][0]).toBe('thread/start')
+  })
+
+  it('retries thread/start once when Codex returns an empty rollout', async () => {
+    const session = makeSession({ model: 'gpt-5' })
+    const auth = { mode: 'auto' as const }
+    const empty = new Error(
+      'failed to read thread: thread-store internal error: failed to read session metadata /tmp/rollout.jsonl: rollout at /tmp/rollout.jsonl is empty',
+    )
+    const connection = {
+      request: vi.fn()
+        .mockRejectedValueOnce(empty)
+        .mockResolvedValue({ thread: { id: 'new-thread-2' } }),
+    }
+    const handle = {
+      connection,
+      close: vi.fn(async () => {}),
+      getStderr: () => '',
+      onClosed: () => () => {},
+    }
+    session.connectionHandle = handle as never
+    session.connectionAuth = auth
+    session.notificationDispatcher = {} as never
+
+    const result = await withThreadConnection(
+      session,
+      auth,
+      undefined,
+      '/project',
+      '/project',
+      permissionProfile as never,
+      async ({ threadId }) => threadId,
+    )
+
+    expect(result).toBe('new-thread-2')
+    expect(connection.request.mock.calls.map((call) => call[0])).toEqual(['thread/start', 'thread/start'])
+    expect(handle.close).not.toHaveBeenCalled()
+  })
+
+  it('does not retry a post-resolve empty rollout unless the caller opted in', async () => {
+    const session = makeSession({ model: 'gpt-5' })
+    const auth = { mode: 'auto' as const }
+    const empty = new Error('rollout at /tmp/rollout.jsonl is empty')
+    const connection = {
+      request: vi.fn()
+        .mockResolvedValueOnce({ thread: { id: 'thread-1' } })
+        .mockRejectedValueOnce(empty),
+    }
+    session.connectionHandle = {
+      connection,
+      close: vi.fn(async () => {}),
+      getStderr: () => '',
+      onClosed: () => () => {},
+    } as never
+    session.connectionAuth = auth
+    session.notificationDispatcher = {} as never
+
+    await expect(withThreadConnection(
+      session,
+      auth,
+      undefined,
+      '/project',
+      '/project',
+      permissionProfile as never,
+      async ({ threadId }) => {
+        await connection.request('turn/start', { threadId })
+        return threadId
+      },
+    )).rejects.toThrow(/is empty/)
+
+    expect(connection.request.mock.calls.map((call) => call[0])).toEqual(['thread/start', 'turn/start'])
+    expect(session.threadId).toBe('thread-1')
+  })
+
+  it('retries on a new thread when turn/start hits an empty rollout', async () => {
+    const session = makeSession({ model: 'gpt-5' })
+    const auth = { mode: 'auto' as const }
+    const empty = new Error('rollout at /tmp/rollout.jsonl is empty')
+    const connection = {
+      request: vi.fn()
+        .mockResolvedValueOnce({ thread: { id: 'thread-1' } })
+        .mockRejectedValueOnce(empty)
+        .mockResolvedValueOnce({ thread: { id: 'thread-2' } })
+        .mockResolvedValueOnce({}),
+    }
+    const handle = {
+      connection,
+      close: vi.fn(async () => {}),
+      getStderr: () => '',
+      onClosed: () => () => {},
+    }
+    session.connectionHandle = handle as never
+    session.connectionAuth = auth
+    session.notificationDispatcher = {} as never
+
+    const result = await withThreadConnection(
+      session,
+      auth,
+      undefined,
+      '/project',
+      '/project',
+      permissionProfile as never,
+      async ({ threadId }) => {
+        await connection.request('turn/start', { threadId })
+        return threadId
+      },
+      { retryEmptyRollout: true },
+    )
+
+    expect(result).toBe('thread-2')
+    expect(connection.request.mock.calls.map((call) => call[0])).toEqual([
+      'thread/start',
+      'turn/start',
+      'thread/start',
+      'turn/start',
+    ])
+  })
+
+  it('does not retry an empty rollout after the turn has been accepted', async () => {
+    const session = makeSession({ model: 'gpt-5' })
+    const auth = { mode: 'auto' as const }
+    const empty = new Error('rollout at /tmp/rollout.jsonl is empty')
+    const connection = {
+      request: vi.fn()
+        .mockResolvedValueOnce({ thread: { id: 'thread-1' } })
+        .mockResolvedValueOnce({})
+        .mockRejectedValueOnce(empty),
+    }
+    session.connectionHandle = {
+      connection,
+      close: vi.fn(async () => {}),
+      getStderr: () => '',
+      onClosed: () => () => {},
+    } as never
+    session.connectionAuth = auth
+    session.notificationDispatcher = {} as never
+
+    await expect(withThreadConnection(
+      session,
+      auth,
+      undefined,
+      '/project',
+      '/project',
+      permissionProfile as never,
+      async ({ threadId, markTurnAccepted }) => {
+        await connection.request('turn/start', { threadId })
+        markTurnAccepted()
+        await connection.request('turn/steer', { threadId })
+        return threadId
+      },
+      { retryEmptyRollout: true },
+    )).rejects.toThrow(/is empty/)
+
+    expect(connection.request.mock.calls.map((call) => call[0])).toEqual([
+      'thread/start',
+      'turn/start',
+      'turn/steer',
+    ])
+    expect(session.threadId).toBe('thread-1')
+  })
+
+  it('retries prewarm thread/start once on an empty rollout', async () => {
+    const session = makeSession({ model: 'gpt-5' })
+    const empty = new Error('rollout at /tmp/rollout.jsonl is empty')
+    const connection = {
+      request: vi.fn()
+        .mockRejectedValueOnce(empty)
+        .mockResolvedValue({ thread: { id: 'warm-thread' } }),
+      pollNotification: vi.fn(async () => null),
+    }
+    const handle = { connection, close: vi.fn(async () => {}), getStderr: () => '', onClosed: () => () => {} }
+
+    const threadId = await prewarmCodexSession(handle as never, session as never, '/project')
+
+    expect(threadId).toBe('warm-thread')
+    expect(connection.request.mock.calls.map((call) => call[0])).toEqual(['thread/start', 'thread/start'])
   })
 
   it('falls back to thread/start when the stored thread does not exist', async () => {

@@ -1223,6 +1223,8 @@ interface ThreadConnectionContext {
   threadId: string
   wasThreadReady: boolean
   markMutationStarted(): void
+  /** Call after `turn/start` (or equivalent) has resolved. Empty-rollout retry is then disabled. */
+  markTurnAccepted(): void
 }
 
 export async function withThreadConnection<T>(
@@ -1233,10 +1235,13 @@ export async function withThreadConnection<T>(
   cwd: string,
   permissionProfile: ReturnType<typeof resolvePermissionProfile>,
   operation: (context: ThreadConnectionContext) => Promise<T>,
+  options?: { retryEmptyRollout?: boolean },
 ): Promise<T> {
   const resumableThreadId = session.threadId
   for (let attempt = 0; attempt < 2; attempt += 1) {
     let mutationStarted = false
+    let threadResolved = false
+    let turnAccepted = false
     let attemptedHandle = session.connectionHandle
     try {
       return await withSessionConnection(session, auth, signal, async (connection, dispatcher, handle) => {
@@ -1245,6 +1250,7 @@ export async function withThreadConnection<T>(
         const threadId = await resolveThread(connection, session, projectPath, cwd, permissionProfile, {
           onStartingNewThread: () => { mutationStarted = true },
         })
+        threadResolved = true
         return operation({
           connection,
           notificationInbox: dispatcher.mainInbox,
@@ -1252,20 +1258,45 @@ export async function withThreadConnection<T>(
           threadId,
           wasThreadReady,
           markMutationStarted: () => { mutationStarted = true },
+          markTurnAccepted: () => { turnAccepted = true },
         })
       })
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
       const canRetryResume = attempt === 0
         && !mutationStarted
         && Boolean(resumableThreadId)
         && !signal?.aborted
         && isCodexAppServerConnectionError(error)
-      if (!canRetryResume) throw error
+      // Empty rollout is a Codex writer race on thread/start or the first
+      // turn/start (0-byte jsonl, metadata tens of ms later). thread/start
+      // failed before any thread was resolved — safe for every caller.
+      // turn/start on a live thread is opt-in (`retryEmptyRollout`) and
+      // closes once markTurnAccepted runs. Goal / timeline / mid-turn
+      // stream errors must not discard a live thread.
+      const canRetryEmptyRollout = attempt === 0
+        && !signal?.aborted
+        && isCodexEmptyRolloutError(error)
+        && (!threadResolved || (Boolean(options?.retryEmptyRollout) && !turnAccepted))
+      if (!canRetryResume && !canRetryEmptyRollout) throw error
+
+      if (canRetryEmptyRollout) {
+        log.warn(
+          '[codex] empty rollout; retrying on a new thread sid=%s thread=%s: %s',
+          session.superoneSessionId,
+          session.threadId ?? 'none',
+          message,
+        )
+        session.threadId = null
+        session.threadReady = false
+        session.effectiveCwd = cwd
+        continue
+      }
 
       log.warn(
         '[codex] thread/resume connection failed; retrying on fresh app-server thread=%s: %s',
         resumableThreadId,
-        error instanceof Error ? error.message : String(error),
+        message,
       )
       if (session.connectionHandle === attemptedHandle) {
         await closeSessionConnection(session)
@@ -1391,28 +1422,37 @@ export async function resolveThread(
   const startNewThread = async () => {
     options?.onStartingNewThread?.()
     const startedAt = Date.now()
-    const result = await connection.request(
-      'thread/start',
-      compactRecord({
-        ...(session.model ? { model: session.model } : {}),
-        model_provider: modelProvider,
-        ...(session.serviceTier ? { serviceTier: session.serviceTier } : {}),
+    try {
+      const result = await connection.request(
+        'thread/start',
+        compactRecord({
+          ...(session.model ? { model: session.model } : {}),
+          model_provider: modelProvider,
+          ...(session.serviceTier ? { serviceTier: session.serviceTier } : {}),
+          cwd,
+          approvalPolicy: permissionProfile.approvalPolicy,
+          approvalsReviewer: permissionProfile.approvalsReviewer,
+          sandbox: permissionProfile.sandboxMode,
+          config: threadConfig,
+          historyMode: 'paginated',
+          experimentalRawEvents: false,
+        }),
+      )
+      trace('codex.thread', 'start_response', {
         cwd,
-        approvalPolicy: permissionProfile.approvalPolicy,
-        approvalsReviewer: permissionProfile.approvalsReviewer,
-        sandbox: permissionProfile.sandboxMode,
-        config: threadConfig,
-        historyMode: 'paginated',
-        experimentalRawEvents: false,
-      }),
-    )
-    trace('codex.thread', 'start_response', {
-      cwd,
-      model: session.model,
-      permissionPreset: permissionProfile.permissionPreset,
-      durMs: Date.now() - startedAt,
-    }, session.threadId ?? undefined)
-    return result
+        model: session.model,
+        permissionPreset: permissionProfile.permissionPreset,
+        durMs: Date.now() - startedAt,
+      }, session.threadId ?? undefined)
+      return result
+    } catch (error) {
+      log.warn(
+        '[codex] thread/start failed sid=%s: %s',
+        session.superoneSessionId,
+        error instanceof Error ? error.message : String(error),
+      )
+      throw error
+    }
   }
 
   const threadResult = session.threadId
@@ -1462,9 +1502,15 @@ export async function resolveThread(
   return resolvedThreadId
 }
 
+export function isCodexEmptyRolloutError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /rollout at .+? is empty/i.test(message)
+}
+
 export function isCodexThreadNotFoundError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error)
-  return /(?:thread|rollout|conversation).*(?:not found|does not exist)|(?:no|missing) rollout/i.test(message)
+  return isCodexEmptyRolloutError(error)
+    || /(?:thread|rollout|conversation).*(?:not found|does not exist)|(?:no|missing) rollout/i.test(message)
 }
 
 async function respondToPrewarmRequest(connection: AppServerConnection, notification: AppServerNotification): Promise<void> {
@@ -1598,9 +1644,23 @@ export async function prewarmCodexSession(
   cwd: string,
 ): Promise<string> {
   const permissionProfile = resolvePermissionProfile(session.permissionPreset)
-  const threadId = await resolveThread(handle.connection, session, session.projectPath, cwd, permissionProfile)
-  await drainPrewarmNotifications(handle.connection, session)
-  return threadId
+  try {
+    const threadId = await resolveThread(handle.connection, session, session.projectPath, cwd, permissionProfile)
+    await drainPrewarmNotifications(handle.connection, session)
+    return threadId
+  } catch (error) {
+    if (!isCodexEmptyRolloutError(error)) throw error
+    log.warn(
+      '[codex] prewarm empty rollout; retrying sid=%s: %s',
+      session.superoneSessionId,
+      error instanceof Error ? error.message : String(error),
+    )
+    session.threadId = null
+    session.threadReady = false
+    const threadId = await resolveThread(handle.connection, session, session.projectPath, cwd, permissionProfile)
+    await drainPrewarmNotifications(handle.connection, session)
+    return threadId
+  }
 }
 
 export async function streamTurnEvents(
@@ -2494,7 +2554,7 @@ export async function runCodexTurn(
       projectPath,
       effectiveCwd,
       permissionProfile,
-      async ({ connection, notificationInbox, connectionId, threadId: resolvedThreadId, wasThreadReady, markMutationStarted }) => {
+      async ({ connection, notificationInbox, connectionId, threadId: resolvedThreadId, wasThreadReady, markMutationStarted, markTurnAccepted }) => {
         // A freshly-started thread connects its MCP servers asynchronously after thread/start.
         // turn/start snapshots the available tools once, so wait for the superone bridge to
         // finish starting first — otherwise the first turn after an @-mention (which registers
@@ -2531,6 +2591,7 @@ export async function runCodexTurn(
             ...(collaborationMode ? { collaborationMode } : {}),
           }),
         )
+        markTurnAccepted()
 
         const turn = asRecord(turnStartResult.turn)
         const activeTurnId = readString(turn?.id)
@@ -2565,6 +2626,7 @@ export async function runCodexTurn(
           session.interruptFn = null
         }
       },
+      { retryEmptyRollout: true },
     )
 
     return {

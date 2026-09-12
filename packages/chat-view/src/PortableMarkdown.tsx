@@ -89,12 +89,12 @@ function NativeFileChip({
         event.stopPropagation()
         requestNative('previewFile', { path: filePath, ...(lineNumber != null ? { line: lineNumber } : {}) })
       }}
-      className="inline-flex items-center gap-0.5 rounded bg-muted px-1 align-baseline text-[0.9em] text-foreground whitespace-nowrap"
+      className="inline-flex max-w-full items-center gap-0.5 rounded bg-muted px-1 align-baseline text-[0.9em] text-foreground whitespace-nowrap"
     >
       <FileIcon name={filePath.split(/[/\\]/).pop() || name} size={12} />
-      <span>{name}</span>
+      <span className="min-w-0 truncate">{name}</span>
       {lineNumber != null && (
-        <span className="text-[0.85em] text-muted-foreground">{formatLineRange(lineNumber, endLine)}</span>
+        <span className="shrink-0 text-[0.85em] text-muted-foreground">{formatLineRange(lineNumber, endLine)}</span>
       )}
     </span>
   )

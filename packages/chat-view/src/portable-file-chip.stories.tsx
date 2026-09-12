@@ -68,9 +68,17 @@ export const MixedTypes: Story = {
   },
 }
 
+/**
+ * A chip wider than the column must clamp to it — truncating the name and keeping
+ * the line suffix — instead of stretching the whole chat page sideways.
+ */
 export const LongName: Story = {
-  name: 'Long name · wraps within a phone column',
+  name: 'Long name · truncates within a phone column',
   args: {
-    text: 'See [a-very-long-component-file-name-that-keeps-going.tsx](src/components/a-very-long-component-file-name-that-keeps-going.tsx:1) here.',
+    text: [
+      'See [a-very-long-component-file-name-that-keeps-going.tsx](src/components/a-very-long-component-file-name-that-keeps-going.tsx:1) here.',
+      '',
+      '顺带一提 [docs/temp/research/computer-use-comparison/09-p2-macos-mvp.md](docs/temp/research/computer-use-comparison/09-p2-macos-mvp.md:90) 还写着旧目录名。',
+    ].join('\n'),
   },
 }

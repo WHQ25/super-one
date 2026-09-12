@@ -37,12 +37,12 @@ export function InlineFileChip({ name, filePath, lineNumber, endLine }: { name: 
           role="button"
           onClick={handleClick}
           title={filePath}
-          className="inline-flex cursor-pointer items-center gap-0.5 rounded bg-muted px-1 text-[0.9em] text-foreground whitespace-nowrap align-baseline translate-y-[1px] hover:bg-muted/80 transition-colors"
+          className="inline-flex max-w-full cursor-pointer items-center gap-0.5 rounded bg-muted px-1 text-[0.9em] text-foreground whitespace-nowrap align-baseline translate-y-[1px] hover:bg-muted/80 transition-colors"
         >
           <DraggableFileIcon name={name} filePath={filePath} dragEndRef={dragEndRef} />
-          <span>{name}</span>
+          <span className="min-w-0 truncate">{name}</span>
           {lineNumber != null && (
-            <span className="text-muted-foreground text-[0.85em]">{formatLineRange(lineNumber, endLine)}</span>
+            <span className="shrink-0 text-muted-foreground text-[0.85em]">{formatLineRange(lineNumber, endLine)}</span>
           )}
         </span>
     </AdaptiveContextMenu>

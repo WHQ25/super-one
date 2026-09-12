@@ -51,7 +51,13 @@ project or session navigation belong in that list, not in a new route.
 **`WorkspaceDrawer` and `WorkspaceSidebar` are two mounts of one surface**, not two
 surfaces: the drawer adds a scrim, a slide and a close drag, the sidebar a 280 pt
 pane, and both render the same `WorkspaceList` from the same props object
-(`workspaceList` in `MobileApp`). The header lives in the detail column, so that
+(`workspaceList` in `MobileApp`). **The drawer is an overlay in the shell's view
+tree, not an RN `Modal`.** A `Modal` is a second UIKit presentation, and inside
+one Reanimated's layout animations left a reordered session row stuck invisible
+at its old frame on iOS (its touch target over the next project), while UIKit's
+one-presentation-at-a-time rule turned every sheet opened during the drawer's
+fade-out into a race. The overlay is mounted last in `MobileOverlays`, keeps
+itself mounted through its own close animation, and owns Android back while open. The header lives in the detail column, so that
 pane is full window height rather than sitting under the session title. That pane
 used to be a *session* list for the active project alone, which meant a landscape
 phone could only switch project by opening a modal drawer on top of the list
@@ -734,7 +740,14 @@ and reports input and bounded resize messages to RN.
   batches and triggers the same restore path.
 - Transport loss retries with bounded backoff until it succeeds or a manual connection
   cancels the loop. A reopened socket is still `reconnecting`: publish `connected` and
-  the new epoch only after rehydrate releases the buffer. Re-send the current connection
+  the new epoch only after rehydrate releases the buffer. **An open relay socket says
+  nothing about the desktop** — the relay accepts a lone mobile as a mailbox — so a
+  reopened *relay* socket asks `/status` before restoring; a desktop that is away parks
+  the connection as `offline` (socket held, loop stopped, device row shows discovery's
+  verdict) and the desktop's next `handshake` runs the restore. `peer_disconnected` is
+  the same `offline`. Without the probe every retry burned three 15 s request timeouts
+  and painted `Reconnecting…` for a desktop that was simply off. LAN never probes: there
+  the desktop *is* the socket peer. Re-send the current connection
   snapshot whenever the Chat WebView reports `ready` after a renderer reload.
 - Opening and creating sessions are mutually exclusive because every restore uses the
   client's single event buffer. Validate new-session worktree input before unsubscribing

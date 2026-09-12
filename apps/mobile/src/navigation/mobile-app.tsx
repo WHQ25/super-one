@@ -1570,7 +1570,7 @@ export function MobileApp() {
 
   // Android's back button is the hardware twin of the swipe the navigator no
   // longer accepts on chat, so it opens the workspace for the same reason.
-  // While the drawer is up the dialog consumes back itself and this never runs.
+  // While the drawer is up its own handler (registered later, so asked first) consumes back.
   useEffect(() => {
     if (screen !== 'chat' || tabletMultiPane) return
     const back = BackHandler.addEventListener('hardwareBackPress', () => { setSessionSwitcherOpen(true); return true })

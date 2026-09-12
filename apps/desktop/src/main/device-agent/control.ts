@@ -124,17 +124,16 @@ export async function requestDeviceControl(options: {
     // Taking a device another chat holds is allowed, but it unbinds that session — so
     // it is said out loud rather than discovered afterwards by whoever was using it.
     const takenFrom = chosen.boundSessionId && chosen.boundSessionId !== sessionId
-      ? ' It is currently controlled by another chat session, which will lose it.'
-      : ''
+      ? 'It is currently controlled by another chat session, which will lose it.'
+      : undefined
     const subject = `${chosen.name} (${chosen.platformVersion})`
     const decision = await awaitDeviceControlConfirm({
       emitHostEvent: options.emitHostEvent,
       deviceName: chosen.name,
       platform: chosen.platformVersion,
       ...(request.reason ? { reason: request.reason } : {}),
-      message: request.reason
-        ? `Let the agent control ${subject}? ${request.reason}${takenFrom}`
-        : `Let the agent control ${subject}?${takenFrom}`,
+      ...(takenFrom ? { note: takenFrom } : {}),
+      message: [`Let the agent control ${subject}?`, request.reason, takenFrom].filter(Boolean).join(' '),
       ...(signal ? { signal } : {}),
     })
 

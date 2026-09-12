@@ -130,14 +130,16 @@ export function permissionSheetPresentation(request: PermissionRequest): Permiss
     case 'computer_use_grant': {
       const grant = request.computerUseGrant
       const app = grant?.app || String(request.input.app || 'this app')
+      // Fixed title per kind — the subject goes into the item list so a long app name
+      // never wraps the sheet header.
       return {
-        title: `Allow control of ${app}?`,
+        title: 'Allow app control?',
         description: 'Computer Use can observe and interact with this desktop app for the current session.',
-        approveLabel: 'Allow this session',
+        approveLabel: 'Allow',
         denyLabel: 'Deny',
-        alwaysLabel: request.allowAlwaysAllow ? 'Always allow this app' : undefined,
+        alwaysLabel: request.allowAlwaysAllow ? 'Always allow' : undefined,
         items: [
-          ...(grant?.bundleId ? [{ title: grant.bundleId, subtitle: 'Application' }] : []),
+          { title: app, subtitle: grant?.bundleId || 'Application' },
           { title: grant?.toolName || request.toolName, subtitle: 'Requested by' },
         ],
       }
@@ -183,10 +185,10 @@ export function permissionSheetPresentation(request: PermissionRequest): Permiss
       const payload = request.webmcpTrustConfirm
       const origin = payload?.origin || String(request.input.origin || 'this site')
       return {
-        title: payload?.reason === 'tool_changed' ? `Review changed tools from ${origin}` : `Trust tools from ${origin}?`,
-        description: 'Tool names and descriptions are supplied by the page. Calls still use normal agent permissions.',
-        approveLabel: 'Trust this session',
-        alwaysLabel: 'Always trust this site',
+        title: payload?.reason === 'tool_changed' ? 'Review changed site tools?' : 'Trust site tools?',
+        description: `${origin} — tool names and descriptions are supplied by the page. Calls still use normal agent permissions.`,
+        approveLabel: 'Trust',
+        alwaysLabel: 'Always trust',
         denyLabel: 'Deny',
         items: (payload?.tools ?? []).map((tool) => ({
           title: tool.title || tool.name,
@@ -199,14 +201,18 @@ export function permissionSheetPresentation(request: PermissionRequest): Permiss
       const device = String(request.input.device || 'this device')
       const platform = typeof request.input.platform === 'string' ? request.input.platform : undefined
       const reason = typeof request.input.description === 'string' ? request.input.description : undefined
+      const note = typeof request.input.note === 'string' ? request.input.note : undefined
+      // `request.message` is the desktop's one-line question with the device and reason
+      // folded in; on a phone that wraps to three lines, so the title stays fixed and
+      // the device / reason render in the body.
       return {
-        title: request.message || `Allow control of ${device}?`,
-        description: reason || 'SuperOne can observe and interact with this device for the current session.',
-        approveLabel: 'Allow for this session',
+        title: 'Allow device control?',
+        description: [reason || 'SuperOne can observe and interact with this device for the current session.', note].filter(Boolean).join(' '),
+        approveLabel: 'Allow',
         alwaysLabel: request.allowAlwaysAllow ? 'Always allow' : undefined,
         denyLabel: 'Deny',
         items: [
-          { title: device, subtitle: platform || 'Device' },
+          { title: device, subtitle: platform || 'Device', warning: Boolean(note) },
         ],
       }
     }

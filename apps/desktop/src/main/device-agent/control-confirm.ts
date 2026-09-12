@@ -53,6 +53,8 @@ export async function awaitDeviceControlConfirm(opts: {
   /** The runtime, e.g. "iOS 26.4". Same-named simulators exist on every installed one. */
   platform?: string
   reason?: string
+  /** Side effect worth stating separately from the reason, e.g. "another chat loses it". */
+  note?: string
   message: string
   signal?: AbortSignal
 }): Promise<DeviceControlDecision> {
@@ -69,6 +71,7 @@ export async function awaitDeviceControlConfirm(opts: {
         // blind. The picker this prompt replaced showed the runtime; so does it.
         ...(opts.platform ? { platform: opts.platform } : {}),
         ...(opts.reason ? { description: opts.reason } : {}),
+        ...(opts.note ? { note: opts.note } : {}),
       },
       // Two answers with two lifetimes: this chat, or every chat from now on. "Always"
       // is still scoped to THIS device — it is not the harness-level "stop asking about

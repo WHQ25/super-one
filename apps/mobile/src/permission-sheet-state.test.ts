@@ -34,16 +34,28 @@ describe('permission sheet state', () => {
 
   it('uses device-scoped actions for device control approval', () => {
     const deviceRequest = request('device_control_confirm')
-    deviceRequest.input = { device: 'iPhone 17 Pro Max', platform: 'iOS 26.5' }
-    deviceRequest.message = 'Let this session control iPhone 17 Pro Max?'
+    deviceRequest.input = { device: 'iPhone 17 Pro Max', platform: 'iOS 26.5', description: 'Verify the gallery layout.', note: 'Another chat will lose it.' }
+    deviceRequest.message = 'Let the agent control iPhone 17 Pro Max (iOS 26.5)? Verify the gallery layout. Another chat will lose it.'
 
+    // The desktop's one-line message folds device + reason into the question; on a phone
+    // the title stays fixed and the specifics move to the body so the header never wraps.
     expect(permissionSheetPresentation(deviceRequest)).toMatchObject({
-      title: 'Let this session control iPhone 17 Pro Max?',
-      approveLabel: 'Allow for this session',
+      title: 'Allow device control?',
+      description: 'Verify the gallery layout. Another chat will lose it.',
+      approveLabel: 'Allow',
       alwaysLabel: 'Always allow',
       denyLabel: 'Deny',
-      items: [{ title: 'iPhone 17 Pro Max', subtitle: 'iOS 26.5' }],
+      items: [{ title: 'iPhone 17 Pro Max', subtitle: 'iOS 26.5', warning: true }],
     })
+  })
+
+  it('keeps approve labels to a single word so the footer buttons stay on one line', () => {
+    const grantKinds = ['computer_use_grant', 'webmcp_trust_confirm', 'device_control_confirm'] as const
+    for (const kind of grantKinds) {
+      const presentation = permissionSheetPresentation(request(kind))
+      expect(presentation.approveLabel, kind).toMatch(/^\w+$/)
+      expect(presentation.alwaysLabel, kind).toMatch(/^Always \w+$/)
+    }
   })
 
   it('packs video and config defaults into the protocol fields', () => {

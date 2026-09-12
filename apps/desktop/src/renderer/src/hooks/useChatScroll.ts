@@ -13,6 +13,14 @@ interface UseChatScrollReturn {
 
 const RESUME_AT_BOTTOM_PX = 24
 
+function isPauseFollowWheel(event: WheelEvent): boolean {
+  if (event.deltaY >= 0) return false
+  // Horizontal pans on overflow-x blocks often carry a tiny deltaY. Axis
+  // dominance keeps follow on; any real vertical-up still pauses, including
+  // slow trackpad ticks of 1–5px.
+  return Math.abs(event.deltaX) < Math.abs(event.deltaY)
+}
+
 /**
  * `scrollHeight` / `clientHeight` are rounded to integers while `scrollTop` keeps
  * sub-pixels, so the max scroll offset derived from them can be off by up to 1px
@@ -52,10 +60,7 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
   const activeSessionId = useActiveSession((s) => s._activeSessionId)
   const sessionId = scope?.sessionId ?? activeSessionId
   const sessionKey = scope ? `${scope.projectPath}\0${scope.sessionId}` : activeSessionId
-  const status = useActiveSession((s) => s.status)
   const pendingPlanApproval = useActiveSession((s) => s.pendingPlanApproval)
-  const statusRef = useRef(status)
-  statusRef.current = status
 
   // Explicit upward input pauses following. It resumes only when the user moves
   // back toward the bottom, or a deliberate tick jump lands there.
@@ -77,6 +82,7 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     const el = scrollViewportRef.current
     if (el) {
       pinToBottom(el)
+      pausedScrollTopRef.current = el.scrollTop
       if (import.meta.env.DEV) {
         window.app.trace?.('scroll', 'session_switch', { sessionId, scrollHeight: el.scrollHeight, scrollTop: el.scrollTop, clientHeight: el.clientHeight, msgCount: messages.length })
       }
@@ -119,7 +125,7 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     if (!el) return
     let touchY = 0
     const handleWheel = (e: WheelEvent): void => {
-      if (e.deltaY < 0) pauseAutoScroll(false)
+      if (isPauseFollowWheel(e)) pauseAutoScroll(false)
     }
     const handleTouchStart = (e: TouchEvent): void => {
       touchY = e.touches[0]?.clientY ?? 0
@@ -134,7 +140,13 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     }
     const handleScroll = (): void => {
       const remaining = el.scrollHeight - el.scrollTop - el.clientHeight
-      if (!followRef.current) {
+      if (followRef.current) {
+        // Thumb-drag / track-click only fire scroll, not wheel. pinToBottom
+        // only raises scrollTop, so a decrease outside the bottom band is user.
+        const movedUp = el.scrollTop < pausedScrollTopRef.current - 1
+        pausedScrollTopRef.current = el.scrollTop
+        if (movedUp && remaining > RESUME_AT_BOTTOM_PX) pauseAutoScroll(false)
+      } else {
         const movedTowardBottom = el.scrollTop > pausedScrollTopRef.current + 1
         pausedScrollTopRef.current = el.scrollTop
         if ((movedTowardBottom || allowStationaryBottomResumeRef.current) && remaining <= RESUME_AT_BOTTOM_PX) {
@@ -174,6 +186,7 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     }
     if (shouldScroll) {
       pinToBottom(el)
+      pausedScrollTopRef.current = el.scrollTop
       followRef.current = true
       allowStationaryBottomResumeRef.current = false
       setShowScrollButton(false)
@@ -187,11 +200,16 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     if (!content) return
     if (sessionSwitchRef.current && followRef.current) {
       pinToBottom(viewport)
+      pausedScrollTopRef.current = viewport.scrollTop
       setShowScrollButton(false)
     }
     const observer = new ResizeObserver(() => {
-      if (followRef.current && (statusRef.current === 'streaming' || sessionSwitchRef.current)) {
+      // Late growth (syntax highlight, wrap, content-visibility revealing a
+      // tall tool block) often lands after the turn is already idle. Follow
+      // state, not streaming, is what decides whether to stay pinned.
+      if (followRef.current) {
         pinToBottom(viewport)
+        pausedScrollTopRef.current = viewport.scrollTop
         setShowScrollButton(false)
       }
       if (sessionSwitchRef.current) {
@@ -208,6 +226,7 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     const el = scrollViewportRef.current
     if (el) {
       el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+      pausedScrollTopRef.current = el.scrollTop
       followRef.current = true
       allowStationaryBottomResumeRef.current = false
       sessionSwitchRef.current = false

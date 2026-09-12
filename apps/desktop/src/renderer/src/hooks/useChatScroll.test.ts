@@ -57,8 +57,8 @@ function createMockViewport() {
   return { el, state, contentChild }
 }
 
-function wheelUp(el: HTMLElement, deltaY = -50) {
-  el.dispatchEvent(new WheelEvent('wheel', { deltaY }))
+function wheelUp(el: HTMLElement, deltaY = -50, deltaX = 0) {
+  el.dispatchEvent(new WheelEvent('wheel', { deltaY, deltaX }))
 }
 
 function touchDrag(el: HTMLElement, fromY: number, toY: number) {
@@ -145,6 +145,36 @@ describe('useChatScroll', () => {
     state.scrollHeight = 800
     act(() => { fireResize() })
     expect(state.scrollTop).toBe(200)
+  })
+
+  it('keeps following through a horizontal pan on a wide block', () => {
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+
+    renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+
+    act(() => { wheelUp(el, -5, -40) })
+
+    state.scrollHeight = 800
+    act(() => { fireResize() })
+    expect(state.scrollTop).toBe(500)
+  })
+
+  it('stops following when the scrollbar is dragged up', () => {
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+    state.scrollTop = state.scrollHeight - state.clientHeight
+
+    renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+
+    act(() => {
+      state.scrollTop = 40
+      el.dispatchEvent(new Event('scroll'))
+    })
+
+    state.scrollHeight = 800
+    act(() => { fireResize() })
+    expect(state.scrollTop).toBe(40)
   })
 
   it('does not scroll on resize after user wheels up to the top', () => {
@@ -407,7 +437,7 @@ describe('useChatScroll', () => {
     expect(state.scrollTop).toBe(500)
   })
 
-  it('does not scroll on resize when not streaming', () => {
+  it('still pins on late resize after the turn is idle when following', () => {
     vi.useFakeTimers()
     mockSessionState = { ...mockSessionState, status: 'idle' }
     const { el, state } = createMockViewport()
@@ -419,7 +449,29 @@ describe('useChatScroll', () => {
 
     state.scrollHeight = 800
     fireResize()
-    expect(state.scrollTop).toBe(200)
+    expect(state.scrollTop).toBe(500)
+    vi.useRealTimers()
+  })
+
+  it('does not pin on idle resize after the user has wheeled up', () => {
+    vi.useFakeTimers()
+    mockSessionState = { ...mockSessionState, status: 'idle' }
+    const { el, state } = createMockViewport()
+    const ref = { current: el }
+
+    renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+    act(() => { fireResize() })
+    vi.advanceTimersByTime(500)
+
+    act(() => {
+      wheelUp(el)
+      state.scrollTop = 0
+      el.dispatchEvent(new Event('scroll'))
+    })
+
+    state.scrollHeight = 800
+    fireResize()
+    expect(state.scrollTop).toBe(0)
     vi.useRealTimers()
   })
 

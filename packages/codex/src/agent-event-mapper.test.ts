@@ -167,7 +167,7 @@ describe('Codex AgentEvent mapper', () => {
       tool: 'list_issues',
       status: 'failed',
       error: { message: 'User denied the request' },
-    })?.authRequired).toBeUndefined()
+    })).not.toHaveProperty('authRequired')
   })
 
   it('keeps desktop Grok-style collaboration item normalization', () => {

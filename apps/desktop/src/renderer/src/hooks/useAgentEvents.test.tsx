@@ -37,6 +37,10 @@ vi.stubGlobal('window', {
       return () => {}
     },
   },
+  environment: {
+    onDraftOpenRequested: () => () => {},
+    listDrafts: async () => [],
+  },
 })
 
 const { useAgentEvents } = await import('./useAgentEvents')

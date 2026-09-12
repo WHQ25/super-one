@@ -31,6 +31,7 @@ const meta = {
       value={{
         scheme: context.globals.theme === 'light' ? 'light' : 'dark',
         pendingPermission: null,
+        mcpIcons: {},
         projectPath: (context.parameters.projectPath as string | null | undefined) ?? null,
       }}
     >

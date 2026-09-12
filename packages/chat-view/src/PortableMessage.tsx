@@ -66,7 +66,7 @@ function PortableUserContent({
   const attachments = message.content.filter(isAttachmentBlock)
   const rest = attachments.length ? message.content.filter((block) => !isAttachmentBlock(block)) : message.content
   const chips = attachments.length > 0 && (
-    <div key="attachments" className="mb-1 flex flex-wrap gap-1.5">
+    <div key="attachments" className="mb-1.5 flex flex-wrap gap-1.5">
       {attachments.map((block, index) => (
         <PortableAttachmentChip key={block.id ?? index} messageId={message.id} block={block} attachment={attachmentForBlock(message, block)} />
       ))}

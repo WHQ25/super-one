@@ -39,7 +39,7 @@ type Story = StoryObj<typeof meta>
 export const OnePicture: Story = { args: { message: sent('what is in this photo', [photo]) } }
 export const SeveralPictures: Story = { args: { message: sent('describe these', [photo, screenshot, photo]) } }
 export const Pdf: Story = { args: { message: sent('summarize the numbers', [pdf]) } }
-export const LongFileName: Story = { args: { message: sent('is the layout broken here?', [screenshot]) } }
+export const LongFileName: Story = { args: { message: sent('summarize this', [{ ...pdf, name: 'Q3-2026-board-deck-final-v7-with-appendix-and-notes.pdf' }]) } }
 /** Loaded from the host: only a thumbnail travels; the tap fetches the original before the viewer opens. */
 export const HostThumbnail: Story = { args: { message: sent('what is in this photo', [{ ...photo, preview: true }]) } }
 /** A picture the host could not cut a thumbnail for (GIF, WebP), or a PDF: the icon stands in, the tap still fetches. */

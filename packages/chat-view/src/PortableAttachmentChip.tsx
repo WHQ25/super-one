@@ -31,60 +31,58 @@ export async function attachmentImageSource(messageId: string, attachment: Image
 }
 
 /**
- * The phone's counterpart to desktop's `AttachmentChip`: a thumbnail (or a
- * file-type icon) beside the file name inside the user bubble. The thumbnail is
- * a touch target and opens the native viewer with the original. A picture
- * without bytes — a thumbnail the host could not cut, the host's stripped
- * echo — falls back to the icon rather than a broken image; a PDF has no
- * bitmap to show at all.
+ * An attachment inside the user bubble. A picture is just its thumbnail — a
+ * 64 px square that opens the native viewer with the original; the file name
+ * says nothing a phone user wants to read. A PDF keeps an icon chip with its
+ * name, which is all it has. A picture without bytes (a thumbnail the host
+ * could not cut, the host's stripped echo) shows the icon in the same square,
+ * and the tap still fetches the original.
  */
 export function PortableAttachmentChip({ messageId, block, attachment }: { messageId: string; block: AttachmentBlock; attachment?: ImageAttachment }) {
   const [loading, setLoading] = useState(false)
-  const isPicture = block.type === 'image' && Boolean(attachment)
-  const thumbnail = isPicture && attachment?.base64
-    ? `data:${attachment.mimeType};base64,${attachment.base64}`
-    : null
   const label = attachment?.name ?? block.name
-  const icon = block.type === 'document' ? <FileText className="size-4" /> : <ImageIcon className="size-4" />
   const open = async () => {
     if (!attachment || loading) return
     setLoading(true)
     try {
       previewImage(await attachmentImageSource(messageId, attachment), { label })
     } catch {
-      // The host no longer has it (or is too old to answer): the chip stays as it is.
+      // The host no longer has it (or is too old to answer): the tile stays as it is.
     } finally {
       setLoading(false)
     }
   }
-  const picture = thumbnail
-    ? <img src={thumbnail} alt={label} className="size-10 object-cover" />
-    : <span className="flex size-10 items-center justify-center bg-muted/40 text-muted-foreground">{icon}</span>
+  if (block.type === 'document') {
+    return (
+      <div
+        data-attachment-chip="document"
+        className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border bg-background/60 px-2 py-1 text-xs"
+      >
+        <FileText className="size-4 shrink-0 text-muted-foreground" />
+        <span className="truncate">{label}</span>
+      </div>
+    )
+  }
+  const thumbnail = attachment?.base64 ? `data:${attachment.mimeType};base64,${attachment.base64}` : null
   return (
-    <div
-      data-attachment-chip={block.type}
+    <button
+      type="button"
+      data-attachment-chip="image"
       data-attachment-loading={loading || undefined}
-      className="inline-flex max-w-full items-center gap-2 rounded-md border border-border bg-background/60 py-1 pl-1 pr-2 text-xs"
+      className="relative size-16 shrink-0 overflow-hidden rounded-md border border-border bg-muted/40"
+      onClick={() => { void open() }}
+      aria-label={`Preview ${label}`}
+      aria-busy={loading || undefined}
+      disabled={!attachment}
     >
-      {isPicture
-        ? (
-          <button
-            type="button"
-            className="relative shrink-0 overflow-hidden rounded-sm"
-            onClick={() => { void open() }}
-            aria-label={`Preview ${label}`}
-            aria-busy={loading || undefined}
-          >
-            {picture}
-            {loading && (
-              <span className="absolute inset-0 flex items-center justify-center bg-background/60">
-                <Loader2 className="size-4 animate-spin" />
-              </span>
-            )}
-          </button>
-        )
-        : <span className="shrink-0 overflow-hidden rounded-sm">{picture}</span>}
-      <span className="truncate">{label}</span>
-    </div>
+      {thumbnail
+        ? <img src={thumbnail} alt={label} className="size-full object-cover" />
+        : <span className="flex size-full items-center justify-center text-muted-foreground"><ImageIcon className="size-5" /></span>}
+      {loading && (
+        <span className="absolute inset-0 flex items-center justify-center bg-background/60">
+          <Loader2 className="size-4 animate-spin" />
+        </span>
+      )}
+    </button>
   )
 }

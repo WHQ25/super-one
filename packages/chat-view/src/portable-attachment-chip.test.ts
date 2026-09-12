@@ -23,6 +23,8 @@ describe('attachment chips in the user bubble', () => {
     expect(html).toContain(`src="data:image/png;base64,${PNG}"`)
     expect(html).toContain('aria-label="Preview IMG_0005.jpg"')
     expect(html).toContain('data-attachment-chip="image"')
+    // The name is for assistive tech only; a picture speaks for itself.
+    expect(html).not.toContain('>IMG_0005.jpg<')
   })
 
   it('falls back to an icon when the picture came without bytes', () => {
@@ -30,7 +32,15 @@ describe('attachment chips in the user bubble', () => {
       messageId: 'user_1', block: { type: 'image', name: 'IMG_0005.jpg', id: 'a1' }, attachment: { ...photo, base64: '' },
     }))
     expect(html).not.toContain('<img')
-    expect(html).toContain('IMG_0005.jpg')
+    expect(html).toContain('aria-label="Preview IMG_0005.jpg"')
+    expect(html).not.toContain('disabled')
+  })
+
+  it('cannot be tapped when the message has no attachment for the block', () => {
+    const html = renderToStaticMarkup(createElement(PortableAttachmentChip, {
+      messageId: 'user_1', block: { type: 'image', name: 'IMG_0005.jpg', id: 'a1' },
+    }))
+    expect(html).toContain('disabled')
   })
 
   it('never tries to draw a PDF as a bitmap', () => {
@@ -40,7 +50,8 @@ describe('attachment chips in the user bubble', () => {
     }))
     expect(html).not.toContain('<img')
     expect(html).toContain('data-attachment-chip="document"')
-    expect(html).toContain('report.pdf')
+    // A PDF keeps its name: that is all it has to show.
+    expect(html).toContain('>report.pdf<')
   })
 
   it('opens a phone-painted picture from its own bytes, and a host thumbnail from the fetched original', async () => {

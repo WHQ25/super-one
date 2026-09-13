@@ -245,6 +245,8 @@ function createMarkdownRuntime(scheme: 'light' | 'dark'): CopyableMarkdownRuntim
   return {
     components,
     controls: { table: false },
+    // Phones have no room for a nested scroll region; let tables grow with the page.
+    tableMaxHeight: Infinity,
     getMathPluginSync: () => mathPlugin,
     loadMathPlugin: async () => mathPlugin,
     plugins: {},

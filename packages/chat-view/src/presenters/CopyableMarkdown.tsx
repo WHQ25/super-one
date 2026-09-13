@@ -21,6 +21,8 @@ export interface CopyableMarkdownRuntime {
   remarkPlugins?: PluggableList
   rehypePlugins: PluggableList
   copyText: (text: string) => Promise<boolean>
+  /** Streamdown table scroll cap; `Infinity` disables it. Falls back to Streamdown's default when unset. */
+  tableMaxHeight?: number | string
 }
 
 export interface CopyableMarkdownPresenterProps {
@@ -206,6 +208,7 @@ export const InsightBlockPresenter = memo(function InsightBlock({ title, content
         components={merged}
         controls={runtime.controls}
         linkSafety={runtime.linkSafety}
+        tableMaxHeight={runtime.tableMaxHeight}
         remend={REMEND_OPTIONS}
         isAnimating={isStreaming}
       >
@@ -238,6 +241,7 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ text, isStreaming, com
       components={merged}
       controls={runtime.controls}
       linkSafety={runtime.linkSafety}
+      tableMaxHeight={runtime.tableMaxHeight}
       remend={REMEND_OPTIONS}
       isAnimating={isStreaming}
     >

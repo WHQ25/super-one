@@ -240,6 +240,26 @@ that read exactly like regressions. Conversely, starting the preview with `CI=1`
 disables the watcher, and Maestro then verifies a stale bundle — the edit you are
 testing is not in it.
 
+Loading and failure states have the same treatment, because a healthy preview
+settles in a frame: `page=Loading%20states` holds the native spinners and error
+copy (terminal overlay, folder read, session-list paging, collaboration brief,
+MCP status, model refresh, branch switch, busy icon button, running todo) through
+the real components on slow or rejecting ports, and the Chat page's **Transcript**
+selector (`src/preview/transcript-fixtures.ts`) drives the document's own states —
+history paging held or failed, navigation index held or failed, `pendingTurn`,
+API retry, compacting, compaction failure, recap — plus the native session-restore
+cover. Two rules those states enforce. **The document has exactly two loading
+surfaces**: a centred spinner while it has nothing mounted yet, and one
+backgroundless `EdgeLoader` at each end of the transcript that every fetch
+paints on — history paging, a tick-rail jump (top if the target lies above the
+window, bottom if below), the legacy `loadEarlier` path — so two fetches can
+never stack two indicators at one spot, which is what the old fixed pill over
+the in-flow button did; a failed navigation index shows nothing and is simply
+asked for again on the next reach for either edge. And the slash catalog's
+loading / error strip is reported only while a `/` query is open, because the
+catalog reloads on every new session and harness switch and used to flash above
+an empty input.
+
 The composer overlays follow the same rule:
 `superone://native-preview?page=Composer%20suggestions` walks every slash and
 mention state — searching, failed + retry, no matches, skill-only match, CJK and

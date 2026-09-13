@@ -4,7 +4,7 @@ import type { ChatMessage, Locale } from '@superone/shared/agent-types'
 import { extendHistoryIndex } from '@superone/shared/session-history-index'
 import { ChatView } from './ChatView'
 
-function HistoryNavigationPreview({ state = 'ready', count = 100, scheme = 'light', locale = 'en' }: { state?: 'ready' | 'loading' | 'error' | 'jump-error'; count?: number; scheme?: 'light' | 'dark'; locale?: Locale }) {
+function HistoryNavigationPreview({ state = 'ready', count = 100, scheme = 'light', locale = 'en' }: { state?: 'ready' | 'loading' | 'error' | 'jump-error' | 'page-loading'; count?: number; scheme?: 'light' | 'dark'; locale?: Locale }) {
   useEffect(() => {
     const host = globalThis as typeof globalThis & { ReactNativeWebView?: { postMessage(raw: string): void }; __applyHost?: (value: unknown) => void }
     const previous = host.ReactNativeWebView
@@ -19,6 +19,9 @@ function HistoryNavigationPreview({ state = 'ready', count = 100, scheme = 'ligh
       const request = JSON.parse(raw)
       if (request.type !== 'requestNative') return
       if (request.action === 'loadNavigationIndex' && state === 'loading') return
+      // A page above or below the window stays in flight, so the "Load earlier"
+      // button's own loading state — not the fixed pill — is what shows.
+      if (request.action === 'loadHistoryWindow' && state === 'page-loading' && request.payload.direction !== 'around') return
       const error = !failed && (state === 'error' && request.action === 'loadNavigationIndex'
         || state === 'jump-error' && request.action === 'loadHistoryWindow')
       if (error) failed = true
@@ -47,6 +50,7 @@ type Story = StoryObj<typeof meta>
 export const FullHistory: Story = {}
 export const Empty: Story = { args: { count: 0 } }
 export const IndexLoading: Story = { args: { state: 'loading' } }
-export const IndexRetry: Story = { args: { state: 'error' } }
+export const IndexFailed: Story = { args: { state: 'error' } }
 export const JumpRetry: Story = { args: { state: 'jump-error' } }
+export const PageLoading: Story = { args: { state: 'page-loading' } }
 export const LongHistory: Story = { args: { count: 1000 } }

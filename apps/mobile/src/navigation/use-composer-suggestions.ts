@@ -163,6 +163,10 @@ export function useComposerSuggestions(
     () => (slashDismissed ? [] : filterSlashCommands(draft, catalog, provider)),
     [draft, catalog, provider, slashDismissed],
   )
+  // The overlay reports the catalog only while a `/` query is open. The load
+  // itself starts with every new session and harness switch, and reporting it
+  // unconditionally popped a "Loading commands…" strip above an empty input.
+  const slashCatalogStatus: SlashCatalogStatus = !slashDismissed && draft.startsWith('/') ? catalogStatus : 'ready'
 
   const carried = () => ({
     agentProfiles: mentionCatalog.current.agentProfiles,
@@ -438,7 +442,7 @@ export function useComposerSuggestions(
   useEffect(() => () => { if (debounce.current) clearTimeout(debounce.current) }, [])
 
   return {
-    slashHits, slashCatalogStatus: catalogStatus, mentionRows, mentionSearch, requestedCursor,
+    slashHits, slashCatalogStatus, mentionRows, mentionSearch, requestedCursor,
     mentionQuery, mentionGroupLabels,
     update, updateNative, select, insert, insertSnippet, clear, applyProgrammatic,
     dismissSlash: () => setSlashDismissed(true),

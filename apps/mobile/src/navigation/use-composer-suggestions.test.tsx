@@ -64,8 +64,8 @@ test('opens the overlay when the catalog lands after the user typed', async () =
 test('loads a catalog with no session, for the new-session landing', async () => {
   const client = { request: jest.fn(async () => ({ userSlashCommands: [{ name: 'clear' }] })) }
   const { result } = await mount(client)
-  await waitFor(() => expect(result.current.slashCatalogStatus).toBe('ready'))
   await act(async () => { result.current.update('/') })
+  await waitFor(() => expect(result.current.slashCatalogStatus).toBe('ready'))
   // `/add-dir` rides along: the landing is exactly where the folders a session
   // will start with are still worth changing.
   expect(result.current.slashHits.map((hit) => hit.name)).toEqual(['clear', 'add-dir'])
@@ -74,16 +74,33 @@ test('loads a catalog with no session, for the new-session landing', async () =>
 test('reports a catalog the host could not answer for', async () => {
   const client = { request: jest.fn(async () => { throw new Error('offline') }) }
   const { result } = await mount(client)
+  await act(async () => { result.current.update('/') })
   await waitFor(() => expect(result.current.slashCatalogStatus).toBe('error'))
+})
+
+test('keeps the catalog load and its failure off screen until a slash is typed', async () => {
+  // The load starts with every new session and harness switch; reported
+  // unconditionally it flashed a "Loading commands…" strip above an empty input.
+  const { client, release } = deferredClient()
+  const { result } = await mount(client)
+  expect(result.current.slashCatalogStatus).toBe('ready')
+  await act(async () => { result.current.update('hello') })
+  expect(result.current.slashCatalogStatus).toBe('ready')
+  await act(async () => { result.current.update('/') })
+  expect(result.current.slashCatalogStatus).toBe('loading')
+  await act(async () => { result.current.dismissSlash() })
+  expect(result.current.slashCatalogStatus).toBe('ready')
+  await act(async () => { release() })
+  await act(async () => { result.current.update('/c') })
+  await waitFor(() => expect(result.current.slashHits.map((hit) => hit.name)).toEqual(['clear', 'compact']))
 })
 
 test('dismissing hides the overlay until the next edit re-arms it', async () => {
   const client = { request: jest.fn(async () => ({ userSlashCommands: [{ name: 'clear' }] })) }
   const { result } = await mount(client)
-  await waitFor(() => expect(result.current.slashCatalogStatus).toBe('ready'))
 
   await act(async () => { result.current.update('/c') })
-  expect(result.current.slashHits).toHaveLength(1)
+  await waitFor(() => expect(result.current.slashHits).toHaveLength(1))
 
   await act(async () => { result.current.dismissSlash() })
   expect(result.current.slashHits).toEqual([])
@@ -95,21 +112,21 @@ test('dismissing hides the overlay until the next edit re-arms it', async () => 
 test('a toolbar slash inserts at the caret and opens the overlay', async () => {
   const client = { request: jest.fn(async () => ({ userSlashCommands: [{ name: 'clear' }] })) }
   const { result } = await mount(client)
-  await waitFor(() => expect(result.current.slashCatalogStatus).toBe('ready'))
+  await waitFor(() => expect(client.request).toHaveBeenCalled())
 
   let value = ''
   await act(async () => { value = result.current.insertSnippet('/') })
 
   expect(value).toBe('/')
-  expect(result.current.slashHits.map((hit) => hit.name)).toEqual(['clear', 'add-dir'])
+  await waitFor(() => expect(result.current.slashHits.map((hit) => hit.name)).toEqual(['clear', 'add-dir']))
 })
 
 test('a draft the app rewrote does not re-open the overlay', async () => {
   const client = { request: jest.fn(async () => ({ userSlashCommands: [{ name: 'clear' }] })) }
   const { result } = await mount(client)
-  await waitFor(() => expect(result.current.slashCatalogStatus).toBe('ready'))
 
   await act(async () => { result.current.update('/c') })
+  await waitFor(() => expect(result.current.slashHits).toHaveLength(1))
   await act(async () => { result.current.applyProgrammatic('/clear ') })
   expect(result.current.slashHits).toEqual([])
 })
@@ -117,10 +134,9 @@ test('a draft the app rewrote does not re-open the overlay', async () => {
 test('keeps matching once the draft grows a second line', async () => {
   const client = { request: jest.fn(async () => ({ userSlashCommands: [{ name: 'clear' }] })) }
   const { result } = await mount(client)
-  await waitFor(() => expect(result.current.slashCatalogStatus).toBe('ready'))
 
   await act(async () => { result.current.update('/cl\nand the diff') })
-  expect(result.current.slashHits.map((hit) => hit.name)).toEqual(['clear'])
+  await waitFor(() => expect(result.current.slashHits.map((hit) => hit.name)).toEqual(['clear']))
 })
 
 
@@ -128,8 +144,8 @@ test('uses the connection-preloaded catalog without loading or another request',
   const client = { request: jest.fn(async () => ({ userSlashCommands: [{ name: 'clear' }] })) }
   await preloadHarnessResources(client, '/work/app', ['claude'])
   const { result } = await mount(client)
-  expect(result.current.slashCatalogStatus).toBe('ready')
   await act(async () => { result.current.update('/c') })
+  expect(result.current.slashCatalogStatus).toBe('ready')
   expect(result.current.slashHits.map((command) => command.name)).toEqual(['clear'])
   expect(client.request).toHaveBeenCalledTimes(2)
 })

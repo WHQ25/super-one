@@ -1,7 +1,6 @@
-import { NavigationFeedback } from './NavigationFeedback'
 import { contiguousHistoryRange, needsHistoryPage, globalHistoryRange } from './history-navigation'
 import { extendHistoryIndex, mergeIndexedHistory, type SessionHistoryIndex } from '@superone/shared/session-history-index'
-import { HistoryPageButton } from './HistoryPageButton'
+import { EdgeLoader } from './EdgeLoader'
 import { deliverDetail } from './detail-stream'
 import { applyDocumentTheme, initialDocumentScheme } from './document-theme'
 import { AsyncQuestionMessagesContext } from './PortableAsyncQuestion'
@@ -17,7 +16,7 @@ import {
   type ReactNode,
 } from 'react'
 import type { AgentStatus, ChatMessage, Locale } from '@superone/shared/agent-types'
-import { ChevronDown } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import {
   ApiRetryIndicator,
   CompactErrorIndicator,
@@ -176,6 +175,14 @@ function applyProjection(
   }
 }
 
+/** Which end a jump target lies beyond: above the window paints at the top, below at the bottom. */
+function jumpEdge(view: ViewState, anchorId: string): 'top' | 'bottom' {
+  const ids = view.navigation?.messageIds ?? view.messages.map(message => message.id)
+  const first = view.messages[view.range.start]?.id
+  const anchor = ids.indexOf(anchorId)
+  return first === undefined || anchor < 0 || anchor < ids.indexOf(first) ? 'top' : 'bottom'
+}
+
 export function ChatView() {
   const [state, setState] = useState<ViewState>(() => ({ ...EMPTY_STATE, scheme: initialDocumentScheme(document.documentElement) }))
   const stateRef = useRef(state)
@@ -191,6 +198,12 @@ export function ChatView() {
   const navigationRequest = useRef(0)
   const [navigationLoading, setNavigationLoading] = useState(false)
   const [navigationRetry, setNavigationRetry] = useState<(() => void) | null>(null)
+  // Which end of the transcript the in-flight (or failed) window request
+  // belongs to. Every fetch paints on one of the two `EdgeLoader`s and nowhere
+  // else, so nothing can stack a second indicator over the first.
+  const [navigationEdge, setNavigationEdge] = useState<'top' | 'bottom'>('top')
+  const [indexLoading, setIndexLoading] = useState(false)
+  const indexFailedRef = useRef(false)
   const [indexAttempt, setIndexAttempt] = useState(0)
   stateRef.current = state
 
@@ -216,18 +229,25 @@ export function ChatView() {
   useEffect(() => {
     if (!state.historyNavigation) return
     let cancelled = false
-    setNavigationLoading(true)
-    setNavigationRetry(null)
+    indexFailedRef.current = false
+    setIndexLoading(true)
     void requestNativeAsync('loadNavigationIndex').then((result) => {
       if (cancelled) return
       const index = result as SessionHistoryIndex
       if (!Array.isArray(index.messageIds) || !Array.isArray(index.entries) || !Array.isArray(index.compacts)) throw new Error('Invalid history index')
       setState(previous => ({ ...previous, navigation: index }))
     }).catch(() => {
-      if (!cancelled) setNavigationRetry(() => () => setIndexAttempt(value => value + 1))
-    }).finally(() => { if (!cancelled) setNavigationLoading(false) })
+      // No banner: paging falls back to `loadEarlier` meanwhile, and the next
+      // reach for either edge asks for the index again.
+      if (!cancelled) indexFailedRef.current = true
+    }).finally(() => { if (!cancelled) setIndexLoading(false) })
     return () => { cancelled = true }
   }, [state.transcriptEpoch, state.historyNavigation, indexAttempt])
+  const retryIndex = useCallback(() => {
+    if (!indexFailedRef.current) return
+    indexFailedRef.current = false
+    setIndexAttempt(value => value + 1)
+  }, [])
 
   const requestHistoryWindow = useCallback(async (anchorId: string, direction: 'around' | 'before' | 'after') => {
     const epoch = stateRef.current.transcriptEpoch
@@ -236,6 +256,7 @@ export function ChatView() {
     scrollToBottomRef.current = false
     setNavigationLoading(true)
     setNavigationRetry(null)
+    setNavigationEdge(direction === 'after' ? 'bottom' : direction === 'before' ? 'top' : jumpEdge(stateRef.current, anchorId))
     try {
       const result = await requestNativeAsync('loadHistoryWindow', { anchorId, direction }) as { messages: ChatMessage[] }
       if (epoch !== stateRef.current.transcriptEpoch || request !== navigationRequest.current) return
@@ -284,6 +305,7 @@ export function ChatView() {
     }))
   }, [])
   const loadPrevious = useCallback(async () => {
+    retryIndex()
     const current = stateRef.current
     if (current.navigation && needsHistoryPage(current.messages, current.navigation, current.range, 'before')) {
       if (!navigationLoading) await requestHistoryWindow(current.messages[current.range.start]!.id, 'before')
@@ -324,13 +346,14 @@ export function ChatView() {
         setHistoryLoading(false)
       }
     }
-  }, [changeWindow, navigationLoading, requestHistoryWindow])
+  }, [changeWindow, navigationLoading, requestHistoryWindow, retryIndex])
   const loadNext = useCallback(() => {
+    retryIndex()
     const current = stateRef.current
     if (current.navigation && needsHistoryPage(current.messages, current.navigation, current.range, 'after')) {
       if (!navigationLoading) void requestHistoryWindow(current.messages[current.range.end - 1]!.id, 'after')
     } else changeWindow('next')
-  }, [changeWindow, navigationLoading, requestHistoryWindow])
+  }, [changeWindow, navigationLoading, requestHistoryWindow, retryIndex])
 
   const prepareNavigation = useCallback(() => {
     navigationRequest.current++
@@ -588,6 +611,12 @@ export function ChatView() {
   const lastAssistantId = findLastAssistantMessageId(state.messages)
   const sessionStreaming = state.session.sessionStatus === 'streaming'
     || state.session.sessionStatus === 'background'
+  // A window request paints on the edge it concerns even when that edge has
+  // nothing else to say (a jump to an unloaded turn, for instance).
+  const topBusy = (navigationLoading || !!navigationRetry) && navigationEdge === 'top'
+  const bottomBusy = (navigationLoading || !!navigationRetry) && navigationEdge === 'bottom'
+  const topRetry = navigationRetry && navigationEdge === 'top' ? navigationRetry : null
+  const bottomRetry = navigationRetry && navigationEdge === 'bottom' ? navigationRetry : null
   return (
     <main
       className="chat-view-shell"
@@ -603,15 +632,17 @@ export function ChatView() {
         compactMarkers={navigation?.compacts}
         compactExpanded={compactExpanded} compactSplit={compactSplit} onJump={jumpToMessage}
         onToggleCompact={() => setCompactExpansion(compactExpanded ? 0 : compactIndices.length)} />
-      <NavigationFeedback loading={navigationLoading} error={!!navigationRetry} onRetry={() => navigationRetry?.()} />
       <div className="chat-view-top-sentinel" data-testid="top-sentinel">
-        {(state.range.start > visibleStart || (state.navigation ? needsHistoryPage(state.messages, state.navigation, state.range, 'before') : visibleStart === 0 && state.hasMoreHistory)) && (
-          <HistoryPageButton loading={historyLoading} error={historyError} onLoad={loadPrevious} />
+        {visible.length > 0 && (topBusy || state.range.start > visibleStart || (state.navigation ? needsHistoryPage(state.messages, state.navigation, state.range, 'before') : visibleStart === 0 && state.hasMoreHistory)) && (
+          <EdgeLoader edge="top" loading={historyLoading || (navigationLoading && navigationEdge === 'top')}
+            error={historyError || (!!navigationRetry && navigationEdge === 'top')} onLoad={topRetry ?? loadPrevious} />
         )}
       </div>
       <AsyncQuestionMessagesContext.Provider value={state.messages}>
       {visible.length === 0
-        ? <p className="py-12 text-center text-sm text-muted-foreground">Waiting for session…</p>
+        ? (historyLoading || navigationLoading || indexLoading
+          ? <div className="flex justify-center py-12 text-muted-foreground" role="status" data-testid="initial-loading"><Loader2 className="size-5 animate-spin" aria-hidden /></div>
+          : <p className="py-12 text-center text-sm text-muted-foreground">Waiting for session…</p>)
         : visible.map((message) => {
           const row = transcriptRow(message, state.messages)
           if (row.kind === 'hidden') return null
@@ -647,10 +678,10 @@ export function ChatView() {
           )
         })}
       </AsyncQuestionMessagesContext.Provider>
-      {state.range.end < state.messages.length && <button type="button" onClick={loadNext}
-        className="mx-auto flex items-center gap-1 rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
-        <ChevronDown className="size-3" /> Load later
-      </button>}
+      {visible.length > 0 && (bottomBusy || state.range.end < state.messages.length || (state.navigation && needsHistoryPage(state.messages, state.navigation, state.range, 'after'))) && (
+        <EdgeLoader edge="bottom" loading={navigationLoading && navigationEdge === 'bottom'}
+          error={!!navigationRetry && navigationEdge === 'bottom'} onLoad={bottomRetry ?? loadNext} />
+      )}
       {state.session.pendingTurn && <PendingTurnIndicator phase={state.session.pendingTurn} />}
       {state.session.isCompacting && <CompactingIndicator startedAt={state.session.compactingStartedAt} />}
       {state.session.compactError && <CompactErrorIndicator error={state.session.compactError} />}

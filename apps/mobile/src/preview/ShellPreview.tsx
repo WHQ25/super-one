@@ -73,6 +73,8 @@ import {
   previewSwitchBranch,
 } from './git-fixtures'
 import { IconGallery } from './IconGallery'
+import { LoadingStateGallery } from './LoadingStateGallery'
+import { answerTranscriptRequest, transcriptProjection, transcriptStates, type TranscriptState } from './transcript-fixtures'
 import { sandboxInfoFromMode } from '@superone/shared/harness/harness-sandbox'
 import { AddDirScreen } from '../screens/add-dir-screen'
 import { CollabRequestScreen } from '../screens/collab-request-screen'
@@ -353,6 +355,9 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
     { terminalId: 'git', title: 'git status', status: 'running' as const },
   ]
   const [messages, setMessages] = useState(initialMessages)
+  // Which transient state the document is held in: history paging, pending
+  // turn, retry / compaction banners, or the native restore cover.
+  const [transcript, setTranscript] = useState<TranscriptState>('live')
   const web = useRef<WebView>(null)
   const terminal = useRef<WebView>(null)
   const chooseAgent = (option: RemoteHarnessOption) => {
@@ -362,9 +367,18 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
   const paintChat = () => {
     injectHostMessage(web, mobileWebViewTheme(tokens))
     injectHostMessage(web, { type: 'setViewport', fontScale, locale: 'en' })
-    injectHostMessage(web, { type: 'hydrate', messages, mentionArtwork: dynamicMentionArtworkSnapshot() })
+    injectHostMessage(web, { type: 'hydrate', ...transcriptProjection(transcript, messages), mentionArtwork: dynamicMentionArtworkSnapshot() })
   }
-  useEffect(() => { paintChat(); injectHostMessage(terminal, mobileWebViewTheme(tokens)) }, [tokens, fontScale, messages])
+  useEffect(() => { paintChat(); injectHostMessage(terminal, mobileWebViewTheme(tokens)) }, [tokens, fontScale, messages, transcript])
+  /** The document's history requests, answered (slowly, or not at all) per transcript state. */
+  const onChatMessage = (raw: string) => {
+    const message = JSON.parse(raw)
+    if (message.type === 'ready') paintChat()
+    if (message.type !== 'requestNative') return
+    answerTranscriptRequest(transcript, message.action, message.payload)
+      .then((result) => injectHostMessage(web, { type: 'nativeActionResult', requestId: message.requestId, result }))
+      .catch((error: Error) => injectHostMessage(web, { type: 'nativeActionResult', requestId: message.requestId, error: error.message }))
+  }
   const send = useComposerSend(chatDraft.editorRef, page, () => {
     const captured = chatDraft.capture()
     if (!captured.text.trim() && !attachments.length) return
@@ -373,7 +387,7 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
   }, (message) => Alert.alert('Could not send', message))
   const chat = page === 'New session' || page === 'Chat' || page === 'Workspace'
   // Standalone galleries share the catch-all 'files' route but draw themselves.
-  const gallery = page === 'Drafts' || page === 'Icons' || page === 'Git indicators' || page === 'Session status' || page === 'Composer suggestions' || page === 'Chip editor' || page === 'LAN browser'
+  const gallery = page === 'Drafts' || page === 'Icons' || page === 'Git indicators' || page === 'Session status' || page === 'Composer suggestions' || page === 'Chip editor' || page === 'LAN browser' || page === 'Loading states'
   const route = chat ? 'chat' : page === 'Project' ? 'project-picker' : page === 'Add project' ? 'add-project' : page === 'Worktree' ? 'worktree' : page === 'Branch' ? 'branch' : page === 'Additional folders' || page === 'Browse folders' ? 'add-dir' : page === 'Collaboration request' ? 'collab-request' : page === 'Collaboration task' ? 'collab-task' : page === 'Devices' || page === 'Pairing' ? 'pair' : page === 'Terminal' ? 'terminal' : page === 'Session search' ? 'session-search' : page === 'Settings' ? 'settings' : 'files'
   /** One workspace, two mounts: the drawer below and the sidebar in the row. */
   const previewWorkspace = {
@@ -398,6 +412,10 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
       {chat ? <Button variant="ghost" label={`Catalog: ${slashStatus}`}
         onPress={() => setSlashStatus((value) => value === 'ready' ? 'loading' : value === 'loading' ? 'error' : 'ready')} /> : null}
     </View>
+    {page === 'Chat' ? <View style={{ paddingHorizontal: 8, backgroundColor: tokens.colors.surface }}>
+      <SelectionField compact label="Transcript" value={transcript}
+        options={transcriptStates.map((value) => ({ value, label: value }))} onChange={(value) => setTranscript(value as TranscriptState)} />
+    </View> : null}
     <MobileKeyboardFrame>
       <View style={styles.contentRow}>
         {tabletSidebar ? <WorkspaceSidebar {...previewWorkspace} deviceName="Preview desktop" deviceStatus="connectedLan" onDisconnect={() => setPage('Devices')} onOpenSettings={() => setPage('Settings')} /> : null}
@@ -433,7 +451,7 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
           : !!worktreeSelectionError(worktreeDraft, PREVIEW_BRANCHES, PREVIEW_CHECKED_OUT)} />
         <StatusBanner message={editorError} onDismiss={() => setEditorError('')} />
         <View style={isFullBleedScreen(route) ? styles.flex : styles.page}>
-          {chat ? <ChatScreen provider={provider} onEdgeSwipe={() => setDrawer(true)} landing={page === 'New session' ? {
+          {chat ? <ChatScreen provider={provider} onEdgeSwipe={() => setDrawer(true)} loadingConversation={page === 'Chat' && transcript === 'restoring'} landing={page === 'New session' ? {
               provider, harnessOptions: PREVIEW_HARNESS_OPTIONS,
               activeHarnessKey: suggestionHarnessKey(provider, acpAgentId), onHarness: chooseAgent,
               projectName: projectList.find((item) => item.path === projectPath)?.name,
@@ -444,10 +462,10 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
               onBranch: () => setPage('Branch'),
             } : undefined}
             selection={{ ...pickerCatalogs, model, models: previewModels, effort, efforts, onModel: chooseModel, onEffort: setEffort }}
-            webRef={web} permissionModes={['default', 'acceptEdits', 'plan']} permissionMode={mode} slashHits={slashDismissed ? [] : filterSlashCommands(chatDraft.draft, previewSlashCatalog, provider)} slashCatalogStatus={slashStatus} mentionRows={mentionRows} attachments={attachments} projectDirs={page === 'New session' ? previewDirs : []} sessionDirs={page === 'New session' ? previewSessionDirs : []} onManageDirectories={() => setPage('Additional folders')} queuedMessages={[]}
+            webRef={web} permissionModes={['default', 'acceptEdits', 'plan']} permissionMode={mode} slashHits={slashDismissed ? [] : filterSlashCommands(chatDraft.draft, previewSlashCatalog, provider)} slashCatalogStatus={!slashDismissed && chatDraft.draft.startsWith('/') ? slashStatus : 'ready'} mentionRows={mentionRows} attachments={attachments} projectDirs={page === 'New session' ? previewDirs : []} sessionDirs={page === 'New session' ? previewSessionDirs : []} onManageDirectories={() => setPage('Additional folders')} queuedMessages={[]}
 todos={page === 'Chat' ? previewTodos : {}} draft={chatDraft.draft} streaming={page === 'Chat'}
             sandboxInfo={sandbox} contextTokens={82_400} contextWindow={200_000} totalCostUsd={0.4213}
-            onWebMessage={(raw) => { if (JSON.parse(raw).type === 'ready') paintChat() }} onWebProcessError={() => {}} onPermissionMode={setMode}
+            onWebMessage={onChatMessage} onWebProcessError={() => {}} onPermissionMode={setMode}
             onSandboxMode={(next) => setSandbox(sandboxInfoFromMode(next))} onSlash={(command) => {
               // Mirror the shipping handler: with the fallback editor mounted there
               // is no controller to call, and dropping the else branch leaves the
@@ -519,6 +537,7 @@ todos={page === 'Chat' ? previewTodos : {}} draft={chatDraft.draft} streaming={p
           {page === 'Session status' ? <SessionStatusGallery onOpenBranch={() => setPage('Branch')} /> : null}
           {page === 'LAN browser' ? <LanBrowserPreview /> : null}
           {page === 'Composer suggestions' ? <ComposerSuggestionsGallery /> : null}
+          {page === 'Loading states' ? <LoadingStateGallery /> : null}
           {page === 'Chip editor' ? <MentionEditorPreview /> : null}
           {route === 'files' && !gallery ? (page === 'File search' ? <FileFinderView
             query="chat" busy={false} onQuery={() => {}}

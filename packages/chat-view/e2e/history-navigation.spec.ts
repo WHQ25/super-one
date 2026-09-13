@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 const url = pathToFileURL(resolve(import.meta.dirname, '../dist/index.html')).href
 
-async function open(page: Page, opts: { failWindow?: boolean; holdWindow?: boolean; holdIndex?: boolean; compacts?: boolean } = {}) {
+async function open(page: Page, opts: { failWindow?: boolean; holdWindow?: boolean; holdIndex?: boolean; failIndex?: boolean; compacts?: boolean } = {}) {
   await page.context().setOffline(true)
   await page.addInitScript((opts) => {
     const host = window as any
@@ -15,6 +15,8 @@ async function open(page: Page, opts: { failWindow?: boolean; holdWindow?: boole
     host.responses = []
     host.failWindow = opts.failWindow
     host.holdWindow = opts.holdWindow
+    host.holdIndex = opts.holdIndex
+    host.failIndex = opts.failIndex
     host.index = { messageIds: messages.map(m => m.id), entries: messages.filter(m => m.role === 'user').map(m => ({
       id: m.id, index: Number(m.id.slice(1)), text: `Question ${m.id.slice(1)}`, createdAt: '', reply: 'Short reply preview' })),
       compacts: opts.compacts ? [{ id: 'm15', index: 15 }, { id: 'm55', index: 55 }] : [] }
@@ -23,8 +25,9 @@ async function open(page: Page, opts: { failWindow?: boolean; holdWindow?: boole
       if (request.type !== 'requestNative') return
       host.calls.push(request)
       if (request.action === 'loadNavigationIndex') {
-        const response = { type: 'nativeActionResult', requestId: request.requestId, result: host.index }
-        if (opts.holdIndex) host.responses.push(response)
+        const response = { type: 'nativeActionResult', requestId: request.requestId,
+          ...(host.failIndex ? { error: 'Index unavailable' } : { result: host.index }) }
+        if (host.holdIndex) host.responses.push(response)
         else queueMicrotask(() => host.__applyHost(response))
       }
       if (request.action === 'loadHistoryWindow') {
@@ -100,10 +103,13 @@ test('live updates preserve the historical reading position and extend the full 
 test('failed jumps keep the current transcript and offer retry', async ({ page }) => {
   await open(page, { failWindow: true })
   await jump(page, 'm20')
-  await expect(page.getByTestId('navigation-feedback').getByRole('button', { name: 'Retry' })).toBeVisible()
+  // m20 lies above the window, so the failure lands on the top edge — the
+  // one indicator that end of the transcript has.
+  await expect(page.getByTestId('edge-loader-top')).toHaveText('Retry')
+  await expect(page.getByTestId('edge-loader-bottom')).toHaveCount(0)
   await expect(page.locator('[data-turn-id="m99"]')).toHaveCount(1)
   await page.evaluate(() => { (window as any).failWindow = false })
-  await page.getByTestId('navigation-feedback').getByRole('button', { name: 'Retry' }).click()
+  await page.getByTestId('edge-loader-top').click()
   await expect(page.locator('[data-turn-id="m20"]')).toBeInViewport()
 })
 
@@ -160,4 +166,50 @@ test('paging upward still reveals older rows after reaching the forty-row ceilin
     await expect(page.locator(`[data-turn-id="m${84 - i * 8}"]`)).toHaveCount(1)
   }
   expect(Number(await page.locator('main').getAttribute('data-mounted-turns'))).toBeLessThanOrEqual(40)
+})
+
+test('a page above the window reports progress and failure on the top edge alone', async ({ page }) => {
+  // Before, a fixed pill said "Loading…" over a button still reading "Load
+  // earlier" at the same spot — two indicators for one fetch.
+  await open(page)
+  await page.evaluate(() => { (window as any).holdWindow = true })
+  await page.getByRole('button', { name: 'Load earlier' }).evaluate((element: HTMLElement) => element.click())
+  await expect.poll(() => calls(page)).toContainEqual({ anchorId: 'm92', direction: 'before' })
+  await expect(page.getByTestId('edge-loader-top')).toHaveText('Loading...')
+  await expect(page.getByTestId('edge-loader-top')).toBeDisabled()
+  await expect(page.getByRole('status')).toHaveCount(0)
+  await page.evaluate(() => { const host = window as any; for (const response of host.responses) host.__applyHost(response) })
+  await expect(page.locator('[data-turn-id="m84"]')).toHaveCount(1)
+
+  await page.evaluate(() => { (window as any).holdWindow = false; (window as any).failWindow = true })
+  await page.getByRole('button', { name: 'Load earlier' }).evaluate((element: HTMLElement) => element.click())
+  await expect(page.getByTestId('edge-loader-top')).toHaveText('Retry')
+  await page.evaluate(() => { (window as any).failWindow = false })
+  await page.getByTestId('edge-loader-top').evaluate((element: HTMLElement) => element.click())
+  await expect(page.locator('[data-turn-id="m76"]')).toHaveCount(1)
+})
+
+test('a page below the window reports on the bottom edge', async ({ page }) => {
+  await open(page)
+  await jump(page, 'm20')
+  await expect(page.locator('[data-turn-id="m20"]')).toBeInViewport()
+  await page.evaluate(() => { (window as any).holdWindow = true })
+  // The jump suppresses window moves for 700 ms; keep tapping until it lets one through.
+  await expect.poll(async () => {
+    await page.getByRole('button', { name: 'Load later' }).evaluate((element: HTMLElement) => element.click())
+    return calls(page)
+  }).toContainEqual({ anchorId: 'm25', direction: 'after' })
+  await expect(page.getByTestId('edge-loader-bottom')).toHaveText('Loading...')
+  await expect(page.getByTestId('edge-loader-top')).not.toHaveText('Loading...')
+})
+
+test('a failed index shows nothing and is asked for again on the next reach for the edge', async ({ page }) => {
+  await open(page, { failIndex: true })
+  await expect(page.locator('[data-turn-id="m99"]')).toBeInViewport()
+  // Only the mounted page's own outline, and no banner anywhere.
+  await expect(page.locator('[data-tick]')).toHaveCount(4)
+  await expect(page.getByRole('status')).toHaveCount(0)
+  await page.evaluate(() => { (window as any).failIndex = false })
+  await page.getByRole('button', { name: 'Load earlier' }).evaluate((element: HTMLElement) => element.click())
+  await expect(page.locator('[data-tick]')).toHaveCount(50)
 })

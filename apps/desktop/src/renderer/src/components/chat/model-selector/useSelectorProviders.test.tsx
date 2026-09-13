@@ -73,7 +73,7 @@ vi.mock('@/stores/app', () => {
 
 vi.mock('@/stores/chat', () => {
   const session = { apiProviderId: null }
-  const chat = { setSessionApiProviderId: vi.fn() }
+  const chat = { activeProject: '/project', setSessionApiProviderId: vi.fn() }
   return {
     useActiveSession: (selector: (s: typeof session) => unknown) => selector(session),
     useChatStore: (selector: (s: typeof chat) => unknown) => selector(chat),

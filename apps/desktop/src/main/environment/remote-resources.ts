@@ -483,19 +483,21 @@ export async function remoteCodexSetAuth(
 export async function remoteCodexGetAccountStatus(
   host: EnvironmentHost,
   folderPath: string,
+  apiProviderId?: string | null,
 ): Promise<unknown | null> {
   const pair = await withRemoteCodexGw(host, folderPath)
   if (!pair) return null
-  return pair.gw.codexGetAccountStatus(pair.ctx.projectId)
+  return pair.gw.codexGetAccountStatus(pair.ctx.projectId, apiProviderId)
 }
 
 export async function remoteCodexAccountLoginStart(
   host: EnvironmentHost,
   folderPath: string,
+  accountId?: string,
 ): Promise<unknown | null> {
   const pair = await withRemoteCodexGw(host, folderPath)
   if (!pair) return null
-  return pair.gw.codexAccountLoginStart(pair.ctx.projectId)
+  return pair.gw.codexAccountLoginStart(pair.ctx.projectId, accountId)
 }
 
 export async function remoteCodexAccountLoginCancel(
@@ -511,10 +513,11 @@ export async function remoteCodexAccountLoginCancel(
 export async function remoteCodexAccountLogout(
   host: EnvironmentHost,
   folderPath: string,
+  apiProviderId?: string | null,
 ): Promise<unknown | null> {
   const pair = await withRemoteCodexGw(host, folderPath)
   if (!pair) return null
-  return pair.gw.codexAccountLogout(pair.ctx.projectId)
+  return pair.gw.codexAccountLogout(pair.ctx.projectId, apiProviderId)
 }
 
 export async function remoteCodexGetRateLimits(
@@ -675,4 +678,13 @@ export async function remoteCodexMarketplaceUpgrade(
     throw new Error('Remote Codex marketplace.upgrade requires a connected remote project')
   }
   return pair.gw.codexMarketplaceUpgrade(pair.ctx.projectId, marketplaceName, apiProviderId)
+}
+
+export async function remoteCodexListAccounts(host: EnvironmentHost, folderPath: string): Promise<unknown | null> {
+  const pair = await withRemoteCodexGw(host, folderPath)
+  return pair ? pair.gw.codexListAccounts(pair.ctx.projectId) : null
+}
+export async function remoteCodexSetDefaultAccount(host: EnvironmentHost, folderPath: string, accountId: string): Promise<unknown | null> {
+  const pair = await withRemoteCodexGw(host, folderPath)
+  return pair ? pair.gw.codexSetDefaultAccount(pair.ctx.projectId, accountId) : null
 }

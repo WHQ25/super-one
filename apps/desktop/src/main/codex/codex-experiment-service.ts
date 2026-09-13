@@ -1,3 +1,6 @@
+import { CodexAccountManager } from '@superone/codex/account-manager'
+import { codexAccountId, isCodexAccountProvider } from '@superone/shared/codex-accounts'
+import { codexAccountStore } from './codex-account-store'
 import { createHash, randomUUID } from 'crypto'
 import log from '../logger'
 import { authHeaders, modelsUrl } from '../providers/endpoint-test'
@@ -7,7 +10,7 @@ import {
   sanitizeDiscoveredByFamily,
   type ProtocolFamily,
 } from '@superone/shared/platform-registry'
-import { parseAccountLoginStart, parseAccountStatus, parseAccountUsage, readCodexConfigRequirements, readCodexServerDiagnostics } from '@superone/codex'
+import { parseAccountUsage, readCodexConfigRequirements, readCodexServerDiagnostics } from '@superone/codex'
 import {
   buildCodexAccountEnv,
   buildCodexProviderCliOverridesFor,
@@ -31,8 +34,6 @@ import { resolveChatService } from '../providers/resolver'
 import { codexReasoningOptions, resolveCodexChatReasoning } from '../providers/codex-responses/reasoning'
 import { listCodexRealtimeVoices } from './codex-realtime'
 import type {
-  CodexAccountLoginStartResult,
-  CodexAccountStatus,
   CodexAuthStatus,
   CodexAccountUsage,
   CodexConfigRequirements,
@@ -265,10 +266,11 @@ function readNumericLike(value: unknown): number | null {
 }
 
 function authsEqual(a: CodexProjectAuth, b: CodexProjectAuth): boolean {
-  return a.mode === b.mode && normalizeApiKey(a.apiKey) === normalizeApiKey(b.apiKey)
+  return a.mode === b.mode && a.accountId === b.accountId && normalizeApiKey(a.apiKey) === normalizeApiKey(b.apiKey)
 }
 
 function codexProviderSignature(apiProviderId?: string | null): string {
+  if (isCodexAccountProvider(apiProviderId)) return apiProviderId!
   const resolved = resolveChatService('codex', apiProviderId ?? null)
   if (!resolved) return ''
   return [
@@ -331,11 +333,6 @@ interface CachedAppServerConnection {
   claimed: boolean
 }
 
-interface PendingAccountLogin {
-  projectPath: string
-  handle: AppServerConnectionHandle
-}
-
 function throwAppServerRequestError(error: unknown, stderr: string): never {
   log.error('[codex] app-server error:', error instanceof Error ? error.message : String(error))
   log.error('[codex] app-server stderr:', stderr)
@@ -366,12 +363,26 @@ async function closeEphemeralAppServer(handle: AppServerConnectionHandle): Promi
 
 export class CodexExperimentService {
   private projectAuth = new Map<string, CodexProjectAuth>()
-  private authChangedListeners = new Map<string, Set<() => void>>()
+  private authChangedListeners = new Map<string, Set<(providerId?: string) => void>>()
   private appServerConnections = new Map<string, CachedAppServerConnection>()
   private modelCacheByProvider = new Map<string, CachedModelList>()
-  private pendingAccountLogins = new Map<string, PendingAccountLogin>()
+  readonly accounts = new CodexAccountManager(codexAccountStore(), async (providerId) => {
+    const handle = await createAppServerConnection(
+      { mode: 'chatgpt', accountId: codexAccountId(providerId)! },
+      undefined,
+      codexAccountStore().environment(providerId, buildCodexAccountEnv(), true),
+      codexAccountStore().cliOverrides(providerId),
+    )
+    return {
+      request: (method, params) => handle.connection.request(method, params),
+      nextNotification: () => handle.connection.nextNotification(),
+      close: () => handle.close(),
+    }
+  }, (providerId) => this.invalidateAccountConsumers(providerId))
 
-  getProjectAuth(projectPath: string): CodexProjectAuth {
+  getProjectAuth(projectPath: string, apiProviderId?: string | null): CodexProjectAuth {
+    const accountId = codexAccountId(apiProviderId)
+    if (accountId) return { mode: 'chatgpt', accountId }
     let auth = this.projectAuth.get(projectPath)
     if (!auth) {
       auth = { mode: 'auto' }
@@ -380,7 +391,7 @@ export class CodexExperimentService {
     return auth
   }
 
-  onAuthChanged(projectPath: string, cb: () => void): () => void {
+  onAuthChanged(projectPath: string, cb: (providerId?: string) => void): () => void {
     let set = this.authChangedListeners.get(projectPath)
     if (!set) {
       set = new Set()
@@ -390,129 +401,26 @@ export class CodexExperimentService {
     return () => { set!.delete(cb) }
   }
 
-  private emitAuthChanged(projectPath: string): void {
+  private emitAuthChanged(projectPath: string, providerId?: string): void {
     const set = this.authChangedListeners.get(projectPath)
     if (!set) return
     for (const cb of set) {
-      try { cb() } catch (err) { log.warn('[codex] auth-changed listener error:', err) }
+      try { cb(providerId) } catch (err) { log.warn('[codex] auth-changed listener error:', err) }
     }
   }
 
-  private async createAccountConnection(): Promise<AppServerConnectionHandle> {
-    return createAppServerConnection(
-      { mode: 'chatgpt' },
-      undefined,
-      buildCodexAccountEnv(),
-      [],
-    )
+  private invalidateAccountConsumers(providerId: string): void {
+    this.modelCacheByProvider.clear()
+    for (const [key, cached] of this.appServerConnections) {
+      if (cached.providerSig === providerId) void this.closeAppServerConnection(key)
+    }
+    for (const projectPath of this.authChangedListeners.keys()) this.emitAuthChanged(projectPath, providerId)
   }
 
-  private invalidateAccountConsumers(): void {
-    const projects = new Set([
-      ...this.projectAuth.keys(),
-      ...this.authChangedListeners.keys(),
-      ...this.appServerConnections.keys(),
-    ])
-    for (const projectPath of [...this.appServerConnections.keys()]) {
-      void this.closeAppServerConnection(projectPath)
-    }
-    for (const projectPath of projects) this.emitAuthChanged(projectPath)
-  }
-
-  private async waitForAccountLogin(
-    loginId: string,
-    pending: PendingAccountLogin,
-  ): Promise<void> {
-    const deadline = Date.now() + 15 * 60_000
-    try {
-      while (Date.now() < deadline && this.pendingAccountLogins.get(loginId) === pending) {
-        const notification = pending.handle.connection.pollNotification
-          ? await pending.handle.connection.pollNotification(Math.min(1_000, deadline - Date.now()))
-          : await pending.handle.connection.nextNotification()
-        if (!notification) continue
-        if (
-          notification.method === 'account/login/completed'
-          && readString(notification.params.loginId) === loginId
-        ) {
-          if (readBoolean(notification.params.success) === true) {
-            this.invalidateAccountConsumers()
-          } else {
-            log.info(
-              '[codex] ChatGPT login failed project=%s: %s',
-              pending.projectPath,
-              readString(notification.params.error) ?? 'unknown error',
-            )
-          }
-          return
-        }
-      }
-      log.info('[codex] ChatGPT login timed out project=%s', pending.projectPath)
-    } catch (error) {
-      log.info(
-        '[codex] ChatGPT login listener failed project=%s: %s',
-        pending.projectPath,
-        error instanceof Error ? error.message : String(error),
-      )
-    } finally {
-      if (this.pendingAccountLogins.get(loginId) === pending) {
-        this.pendingAccountLogins.delete(loginId)
-      }
-      await pending.handle.close().catch(() => {})
-    }
-  }
-
-  async getAccountStatus(): Promise<CodexAccountStatus> {
-    const handle = await this.createAccountConnection()
-    try {
-      return parseAccountStatus(await handle.connection.request('account/read', { refreshToken: false }))
-    } finally {
-      await handle.close().catch(() => {})
-    }
-  }
-
-  async startAccountLogin(projectPath: string): Promise<CodexAccountLoginStartResult> {
-    const handle = await this.createAccountConnection()
-    try {
-      const result = parseAccountLoginStart(await handle.connection.request('account/login/start', {
-        type: 'chatgpt',
-        useHostedLoginSuccessPage: true,
-        appBrand: 'chatgpt',
-      }))
-      const pending = { projectPath, handle }
-      this.pendingAccountLogins.set(result.loginId, pending)
-      void this.waitForAccountLogin(result.loginId, pending)
-      return result
-    } catch (error) {
-      await handle.close().catch(() => {})
-      throw error
-    }
-  }
-
-  async cancelAccountLogin(loginId: string): Promise<void> {
-    const pending = this.pendingAccountLogins.get(loginId)
-    if (!pending) return
-    this.pendingAccountLogins.delete(loginId)
-    try {
-      await pending.handle.connection.request('account/login/cancel', { loginId })
-    } finally {
-      await pending.handle.close().catch(() => {})
-    }
-  }
-
-  async logoutAccount(): Promise<CodexAccountStatus> {
-    for (const loginId of [...this.pendingAccountLogins.keys()]) {
-      await this.cancelAccountLogin(loginId)
-    }
-    const handle = await this.createAccountConnection()
-    try {
-      await handle.connection.request('account/logout')
-      const status = parseAccountStatus(await handle.connection.request('account/read', { refreshToken: false }))
-      this.invalidateAccountConsumers()
-      return status
-    } finally {
-      await handle.close().catch(() => {})
-    }
-  }
+  getAccountStatus(providerId?: string | null) { return this.accounts.status(providerId) }
+  startAccountLogin(_projectPath: string, accountId?: string) { return this.accounts.start('chatgpt', accountId) }
+  cancelAccountLogin(loginId: string) { return this.accounts.cancel(loginId) }
+  logoutAccount(providerId?: string | null) { return this.accounts.logout(providerId) }
 
   private async closeAppServerConnection(projectPath: string): Promise<void> {
     const cached = this.appServerConnections.get(projectPath)
@@ -527,12 +435,17 @@ export class CodexExperimentService {
     }
   }
 
+  private connectionKey(projectPath: string, apiProviderId?: string | null): string {
+    return isCodexAccountProvider(apiProviderId) ? `${projectPath}\0${apiProviderId}` : projectPath
+  }
+
   private getCachedAppServerConnection(
     projectPath: string,
     auth: CodexProjectAuth,
     signal: AbortSignal | undefined,
     apiProviderId?: string | null,
   ): CachedAppServerConnection {
+    projectPath = this.connectionKey(projectPath, apiProviderId)
     const sig = codexProviderSignature(apiProviderId)
     const existing = this.appServerConnections.get(projectPath)
     if (existing && authsEqual(existing.auth, auth) && existing.providerSig === sig) {
@@ -545,7 +458,7 @@ export class CodexExperimentService {
     if (existing) void this.closeAppServerConnection(projectPath)
 
     const cached: CachedAppServerConnection = {
-      auth: { mode: auth.mode, apiKey: normalizeApiKey(auth.apiKey) },
+      auth: { ...auth, apiKey: normalizeApiKey(auth.apiKey) },
       providerSig: sig,
       handlePromise: Promise.resolve(null as never),
       handle: null,
@@ -600,6 +513,7 @@ export class CodexExperimentService {
     auth: CodexProjectAuth,
     apiProviderId?: string | null,
   ): Promise<AppServerConnectionHandle | null> {
+    projectPath = this.connectionKey(projectPath, apiProviderId)
     const cached = this.appServerConnections.get(projectPath)
     if (!cached || !authsEqual(cached.auth, auth) || cached.providerSig !== codexProviderSignature(apiProviderId) || cached.inFlight > 0) return null
     this.appServerConnections.delete(projectPath)
@@ -622,12 +536,13 @@ export class CodexExperimentService {
     handle: AppServerConnectionHandle,
     apiProviderId?: string | null,
   ): void {
+    projectPath = this.connectionKey(projectPath, apiProviderId)
     if (this.appServerConnections.has(projectPath)) {
       void handle.close().catch(() => {})
       return
     }
     const cached: CachedAppServerConnection = {
-      auth: { mode: auth.mode, apiKey: normalizeApiKey(auth.apiKey) },
+      auth: { ...auth, apiKey: normalizeApiKey(auth.apiKey) },
       providerSig: codexProviderSignature(apiProviderId),
       handlePromise: Promise.resolve(handle),
       handle,
@@ -676,13 +591,13 @@ export class CodexExperimentService {
     } catch (error) {
       const stderr = handle ? readAppServerStderrSince(handle, stderrBaseline) : ''
       if (stderr) {
-        await this.closeAppServerConnection(projectPath)
+        await this.closeAppServerConnection(this.connectionKey(projectPath, apiProviderId))
         throwAppServerRequestError(error, stderr)
       }
       throw error
     } finally {
       cached.inFlight = Math.max(0, cached.inFlight - 1)
-      this.scheduleAppServerConnectionClose(projectPath, cached)
+      this.scheduleAppServerConnectionClose(this.connectionKey(projectPath, apiProviderId), cached)
     }
   }
 
@@ -757,7 +672,8 @@ export class CodexExperimentService {
   }
 
   async listModels(projectPath: string, apiProviderId: string | null = null, force = false): Promise<ModelOption[]> {
-    const auth = this.getProjectAuth(projectPath)
+    if (apiProviderId == null && !resolveChatService('codex')) apiProviderId = codexAccountStore().defaultProviderId()
+    const auth = this.getProjectAuth(projectPath, apiProviderId)
     const sig = modelCacheSignature(auth, apiProviderId)
     if (!force) {
       const cached = this.modelCacheByProvider.get(sig)
@@ -788,7 +704,7 @@ export class CodexExperimentService {
     fn: (request: AppServerConnection['request']) => Promise<T>,
     apiProviderId: string | null = null,
   ): Promise<T> {
-    const auth = this.getProjectAuth(projectPath)
+    const auth = this.getProjectAuth(projectPath, apiProviderId)
     return this.withAppServerConnection(
       projectPath,
       auth,
@@ -809,19 +725,22 @@ export class CodexExperimentService {
   async withEphemeralAppServerRequest<T>(
     projectPath: string,
     fn: (request: AppServerConnection['request']) => Promise<T>,
+    apiProviderId?: string | null,
   ): Promise<T> {
     return this.withEphemeralAppServerConnection(
       projectPath,
       async (connection) => fn(connection.request),
+      apiProviderId,
     )
   }
 
   private async withEphemeralAppServerConnection<T>(
     projectPath: string,
     fn: (connection: AppServerConnection) => Promise<T>,
+    apiProviderId?: string | null,
   ): Promise<T> {
-    const auth = this.getProjectAuth(projectPath)
-    const handle = await createAppServerConnection(auth)
+    const auth = this.getProjectAuth(projectPath, apiProviderId)
+    const handle = await createAppServerConnection(auth, undefined, undefined, undefined, apiProviderId)
     const stderrBaseline = handle.getStderr()
     try {
       return await fn(handle.connection)
@@ -839,7 +758,8 @@ export class CodexExperimentService {
   }
 
   async getRateLimits(projectPath: string, apiProviderId: string | null = null): Promise<CodexRateLimits | null> {
-    const auth = this.getProjectAuth(projectPath)
+    if (apiProviderId == null && !resolveChatService('codex')) apiProviderId = codexAccountStore().defaultProviderId()
+    const auth = this.getProjectAuth(projectPath, apiProviderId)
     if (resolveMode(auth.mode, auth.apiKey) !== 'chatgpt') return null
     if (getCodexProviderOverrideFor(apiProviderId)) return null
     try {
@@ -854,7 +774,7 @@ export class CodexExperimentService {
   }
 
   async consumeRateLimitReset(projectPath: string, apiProviderId: string | null = null, creditId?: string | null): Promise<CodexRateLimitResetOutcome | null> {
-    const auth = this.getProjectAuth(projectPath)
+    const auth = this.getProjectAuth(projectPath, apiProviderId)
     if (resolveMode(auth.mode, auth.apiKey) !== 'chatgpt') return null
     if (getCodexProviderOverrideFor(apiProviderId)) return null
     try {
@@ -878,7 +798,7 @@ export class CodexExperimentService {
     openUrl?: (url: string) => void,
     options?: CodexMcpOauthLoginOptions,
   ): Promise<CodexMcpOauthLoginResult> {
-    const auth = this.getProjectAuth(projectPath)
+    const auth = this.getProjectAuth(projectPath, apiProviderId)
     try {
       return await this.withAppServerConnection(projectPath, auth, undefined, async (connection) => {
         const res = await connection.request('mcpServer/oauth/login', compactRecord({
@@ -918,7 +838,7 @@ export class CodexExperimentService {
   }
 
   async detectExternalAgentConfig(projectPath: string, apiProviderId: string | null = null): Promise<CodexExternalAgentItem[]> {
-    const auth = this.getProjectAuth(projectPath)
+    const auth = this.getProjectAuth(projectPath, apiProviderId)
     try {
       return await this.withAppServerConnection(projectPath, auth, undefined, async (connection) => {
         const res = await connection.request('externalAgentConfig/detect', { includeHome: true, cwds: [projectPath] })
@@ -937,7 +857,7 @@ export class CodexExperimentService {
     apiProviderId: string | null = null,
   ): Promise<CodexExternalAgentImportResult | null> {
     if (items.length === 0) return { successCount: 0, failureCount: 0 }
-    const auth = this.getProjectAuth(projectPath)
+    const auth = this.getProjectAuth(projectPath, apiProviderId)
     try {
       return await this.withAppServerConnection(projectPath, auth, undefined, async (connection) => {
         const res = await connection.request('externalAgentConfig/import', { migrationItems: items, source: 'superone' })
@@ -961,7 +881,8 @@ export class CodexExperimentService {
   }
 
   async getAccountUsage(projectPath: string, apiProviderId: string | null = null, threadId?: string | null): Promise<CodexAccountUsage | null> {
-    const auth = this.getProjectAuth(projectPath)
+    if (apiProviderId == null && !resolveChatService('codex')) apiProviderId = codexAccountStore().defaultProviderId()
+    const auth = this.getProjectAuth(projectPath, apiProviderId)
     if (resolveMode(auth.mode, auth.apiKey) !== 'chatgpt') return null
     if (getCodexProviderOverrideFor(apiProviderId)) return null
     try {
@@ -1023,7 +944,9 @@ export class CodexExperimentService {
 
   closeProject(projectPath: string): void {
     this.projectAuth.delete(projectPath)
-    void this.closeAppServerConnection(projectPath)
+    for (const key of this.appServerConnections.keys()) {
+      if (key === projectPath || key.startsWith(`${projectPath}\0`)) void this.closeAppServerConnection(key)
+    }
     this.emitAuthChanged(projectPath)
     this.authChangedListeners.delete(projectPath)
   }
@@ -1034,10 +957,7 @@ export class CodexExperimentService {
     }
     this.projectAuth.clear()
     this.authChangedListeners.clear()
-    for (const pending of this.pendingAccountLogins.values()) {
-      void pending.handle.close().catch(() => {})
-    }
-    this.pendingAccountLogins.clear()
+    this.accounts.dispose()
   }
 }
 

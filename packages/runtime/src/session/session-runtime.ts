@@ -1,3 +1,4 @@
+import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
 import { randomUUID } from 'node:crypto'
 import {
   DEFAULT_HOST_ACTION_TOOL_GROUPS,
@@ -203,6 +204,7 @@ export class SessionRuntime {
   private readonly questionWaiters = new Map<string, QuestionWaiter>()
   private readonly planWaiters = new Map<string, PlanWaiter>()
   private readonly agentsConfirmWaiters = new Map<string, AgentsConfirmWaiter>()
+  private readonly defaultApiProviderId?: (harnessId: string) => string | null
   private readonly permissionTimeoutMs: number
   private readonly agentsConfirmTimeoutMs: number
   private readonly hostActions: HostActionStore | null
@@ -234,6 +236,7 @@ export class SessionRuntime {
     private readonly environmentId: string,
     private readonly turnRunner: TurnRunner,
     opts?: {
+      defaultApiProviderId?: (harnessId: string) => string | null
       permissionTimeoutMs?: number
       agentsConfirmTimeoutMs?: number
       hostActions?: HostActionStore | null
@@ -241,6 +244,7 @@ export class SessionRuntime {
       runtimeReaperIntervalMs?: number
     },
   ) {
+    this.defaultApiProviderId = opts?.defaultApiProviderId
     this.permissionTimeoutMs = opts?.permissionTimeoutMs ?? DEFAULT_PERMISSION_TIMEOUT_MS
     this.agentsConfirmTimeoutMs =
       opts?.agentsConfirmTimeoutMs ?? DEFAULT_AGENTS_CONFIRM_TIMEOUT_MS
@@ -475,7 +479,7 @@ export class SessionRuntime {
       sandboxMode: input.sandboxMode ?? null,
       model: input.model ?? null,
       effort: input.effort ?? null,
-      apiProviderId: input.apiProviderId ?? null,
+      apiProviderId: input.apiProviderId ?? this.defaultApiProviderId?.(input.harnessId ?? 'claude') ?? null,
       createdAt: now,
       updatedAt: now,
       isPinned: false,
@@ -612,6 +616,9 @@ export class SessionRuntime {
       throw Object.assign(new Error('session is closed'), { code: 'failed_precondition' })
     }
 
+    if (session.harnessId === 'codex' && 'apiProviderId' in patch) {
+      assertCodexAccountSwitchAllowed(session.apiProviderId, patch.apiProviderId, session.transcript.length > 0 || session.status === 'streaming')
+    }
     const apply = (key: keyof NodeSessionSettings): void => {
       if (!(key in patch)) return
       const next = normalizeSettingValue(patch[key])
@@ -883,13 +890,17 @@ export class SessionRuntime {
       additionalDirectories: input.additionalDirectories,
       enabledSkills: input.enabledSkills,
       disabledSkills: input.disabledSkills,
-      apiProviderId: pick(input.apiProviderId, session.apiProviderId),
+      apiProviderId: session.harnessId === 'codex' ? input.apiProviderId ?? session.apiProviderId : pick(input.apiProviderId, session.apiProviderId),
       turnKind,
       collaborationMode: input.collaborationMode,
       reviewTarget: input.reviewTarget,
     }
 
     // Always accept the user message into the durable transcript (queue or run).
+    if (session.harnessId === 'codex') {
+      assertCodexAccountSwitchAllowed(session.apiProviderId, turnOpts.apiProviderId, session.transcript.length > 0)
+      session.apiProviderId = turnOpts.apiProviderId ?? session.apiProviderId
+    }
     this.appendUserMessage(session, turnOpts)
 
     if (session.status === 'streaming') {
@@ -961,10 +972,14 @@ export class SessionRuntime {
       effort: pick(input.effort, session.effort),
       permissionMode: pick(input.permissionMode, session.permissionMode),
       sandboxMode: pick(input.sandboxMode, session.sandboxMode),
-      apiProviderId: pick(input.apiProviderId, session.apiProviderId),
+      apiProviderId: session.harnessId === 'codex' ? input.apiProviderId ?? session.apiProviderId : pick(input.apiProviderId, session.apiProviderId),
       source: input.source,
     }
 
+    if (session.harnessId === 'codex') {
+      assertCodexAccountSwitchAllowed(session.apiProviderId, turnOpts.apiProviderId, session.transcript.length > 0)
+      session.apiProviderId = turnOpts.apiProviderId ?? session.apiProviderId
+    }
     this.appendUserMessage(session, turnOpts)
 
     if (session.status === 'streaming') {

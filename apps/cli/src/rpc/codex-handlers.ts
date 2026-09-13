@@ -22,6 +22,7 @@ import { createCodexAdminService } from '../session/codex-admin-service'
 import type { CodexSpawnFn } from '@superone/codex'
 
 export interface CodexRpcContext {
+  nodeHome?: string
   client: AuthenticatedClient
   projects: ProjectRegistry
   harnesses: HarnessManager
@@ -57,6 +58,7 @@ function mapThrown(err: unknown): CodexRpcResult {
 
 function admin(ctx: CodexRpcContext) {
   return createCodexAdminService({
+    nodeHome: ctx.nodeHome,
     binaryPath: ctx.binaryPath,
     harnesses: ctx.harnesses,
     providers: ctx.providers,
@@ -77,6 +79,9 @@ export async function dispatchCodexRpc(
   if (!method.startsWith('codex.')) return null
 
   switch (method) {
+    case 'codex.listAccounts':
+    case 'codex.setDefaultAccount':
+      return handleAccounts(method, payload, ctx)
     case 'codex.getAuthStatus':
       return handleGetAuthStatus(payload, ctx)
     case 'codex.setAuth':
@@ -125,6 +130,7 @@ export async function dispatchCodexRpc(
 }
 
 export const CODEX_MUTATING_METHODS = [
+  'codex.setDefaultAccount',
   'codex.setAuth',
   'codex.accountLoginStart',
   'codex.accountLoginCancel',
@@ -190,7 +196,7 @@ async function handleGetAccountStatus(
   if (!projectId) return { error: { code: 'invalid_argument', message: 'projectId required' } }
   if (!ctx.projects.get(projectId)) return { error: { code: 'not_found', message: 'project not found' } }
   try {
-    return { result: await admin(ctx).getAccountStatus() }
+    return { result: await admin(ctx).getAccountStatus(typeof p.apiProviderId === 'string' ? p.apiProviderId : undefined) }
   } catch (err) {
     return mapThrown(err)
   }
@@ -207,7 +213,7 @@ async function handleAccountLoginStart(
   if (!projectId) return { error: { code: 'invalid_argument', message: 'projectId required' } }
   if (!ctx.projects.get(projectId)) return { error: { code: 'not_found', message: 'project not found' } }
   try {
-    return { result: await admin(ctx).startAccountLogin(projectId) }
+    return { result: await admin(ctx).startAccountLogin(projectId, typeof p.accountId === 'string' ? p.accountId : undefined) }
   } catch (err) {
     return mapThrown(err)
   }
@@ -241,7 +247,7 @@ async function handleAccountLogout(
   if (!projectId) return { error: { code: 'invalid_argument', message: 'projectId required' } }
   if (!ctx.projects.get(projectId)) return { error: { code: 'not_found', message: 'project not found' } }
   try {
-    return { result: await admin(ctx).logoutAccount() }
+    return { result: await admin(ctx).logoutAccount(typeof p.apiProviderId === 'string' ? p.apiProviderId : undefined) }
   } catch (err) {
     return mapThrown(err)
   }
@@ -640,4 +646,17 @@ async function handleMarketplaceUpgrade(
   } catch (err) {
     return mapThrown(err)
   }
+}
+
+async function handleAccounts(method: string, payload: unknown, ctx: CodexRpcContext): Promise<CodexRpcResult> {
+  const denied = requireScopes(ctx.client, method === 'codex.listAccounts' ? OPERATION_SCOPES.readEnvironment : OPERATION_SCOPES.adminNode)
+  if (denied) return denied
+  const p = asRecord(payload)
+  if (!ctx.projects.get(projectIdOf(p))) return { error: { code: 'not_found', message: 'project not found' } }
+  try {
+    if (method === 'codex.listAccounts') return { result: await admin(ctx).accounts.list() }
+    if (typeof p.accountId !== 'string') return { error: { code: 'invalid_argument', message: 'accountId required' } }
+    await admin(ctx).accounts.setDefault(p.accountId)
+    return { result: { ok: true } }
+  } catch (error) { return mapThrown(error) }
 }

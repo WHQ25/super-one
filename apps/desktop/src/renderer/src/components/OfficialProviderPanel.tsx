@@ -1,3 +1,4 @@
+import { CodexAuthSettings } from './CodexAuthSettings'
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Loader2, LogOut, Plus, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -225,6 +226,7 @@ function ClaudeAccountRow({ account, limits, busy, onSignOut }: {
   )
 }
 
+
 function CodexAccount() {
   const { t } = useTranslation()
   const projectPath = useChatStore((s) => s.activeProject)
@@ -284,6 +286,7 @@ function CodexAccount() {
       {loading && !account && !limits && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-3.5 animate-spin" /> {t('resources.providers.accountLoading')}</div>
       )}
+      <CodexAuthSettings onAuthChanged={fetchAll} />
     </PanelShell>
   )
 }

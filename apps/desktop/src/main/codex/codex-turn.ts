@@ -1058,7 +1058,7 @@ export async function closeSessionConnection(session: CodexSession): Promise<voi
 }
 
 function authsMatch(a: CodexProjectAuth, b: CodexProjectAuth): boolean {
-  return a.mode === b.mode && normalizeApiKey(a.apiKey) === normalizeApiKey(b.apiKey)
+  return a.mode === b.mode && a.accountId === b.accountId && normalizeApiKey(a.apiKey) === normalizeApiKey(b.apiKey)
 }
 
 export async function withSessionConnection<T>(
@@ -1099,7 +1099,7 @@ export async function withSessionConnection<T>(
   }
 
   if (!session.connectionHandle) {
-    const pendingAuth = { mode: auth.mode, apiKey: auth.apiKey }
+    const pendingAuth = { ...auth }
     let connectionPromise!: Promise<AppServerConnectionHandle>
     connectionPromise = createAppServerConnection(
       auth,

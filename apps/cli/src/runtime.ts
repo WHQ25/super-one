@@ -1,3 +1,4 @@
+import { nodeCodexAccountStore } from './session/codex-accounts'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { AuthService } from './auth/auth-service'
 import { resolveRuntimeConfig, nodePaths, type NodeRuntimeConfig } from './config'
@@ -198,6 +199,7 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
     (simulatedHarness
       ? createMultiHarnessRouter('codex')
       : createProductionTurnRunner({
+          nodeHome: paths.nodeHome,
           harnesses,
           resolveProjectPath: (projectId) => projects.get(projectId)?.path ?? null,
           allowSimulatedFallback: allowSimulatedTurnFallback,
@@ -225,6 +227,10 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
     leases,
     identity.environmentId,
     turnRunner,
+    { defaultApiProviderId: (harness) => harness === 'codex'
+      ? providers.listBindings().find((b) => b.consumer === 'chat:codex')?.credentialId
+        ?? nodeCodexAccountStore(paths.nodeHome).defaultProviderId()
+      : null },
   )
   sessionsRef = sessions
   const sessionProviders = createSessionProviderStore(db)

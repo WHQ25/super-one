@@ -1,3 +1,4 @@
+import { isCodexAccountProvider } from '@superone/shared/codex-accounts'
 import type {
   AgentEvent,
   ChatMessage,
@@ -498,7 +499,7 @@ export async function startCodexRealtime(
   emit: (event: AgentEvent) => void,
   delegatedTurnHandler: CodexRealtimeDelegatedTurnHandler,
 ): Promise<CodexRealtimeHandle> {
-  if (session.apiProviderId) {
+  if (session.apiProviderId && !isCodexAccountProvider(session.apiProviderId)) {
     throw new Error('Realtime voice currently supports the official Codex account only.')
   }
   return withThreadConnection(
@@ -555,7 +556,7 @@ export async function listCodexRealtimeTimeline(
   projectPath: string,
   cwd: string,
 ): Promise<RealtimeTimelineResult> {
-  if (session.apiProviderId) return { segments: [], threadMessages: [], activeRealtimeSessionId: null, hasTimeline: false }
+  if (session.apiProviderId && !isCodexAccountProvider(session.apiProviderId)) return { segments: [], threadMessages: [], activeRealtimeSessionId: null, hasTimeline: false }
   return withThreadConnection(
     session,
     auth,

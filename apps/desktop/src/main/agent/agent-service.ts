@@ -1,3 +1,4 @@
+import { codexAccountStore } from '../codex/codex-account-store'
 import { loadSessionHistoryIndex, loadSessionMessageWindow } from '../session/history-navigation'
 import { buildProgressiveBootstrap } from './progressive-bootstrap'
 import { isProgressiveSession, projectProgressiveMessage, setProgressiveSession } from '../remote/progressive-session'
@@ -662,7 +663,7 @@ export class AgentService {
           // arguments — they are settings the picker chose on the draft.
           if (command.mode) created.setSelectedSettings({ mode: command.mode })
           if (command.agentPreset) created.setAgentPreset(command.agentPreset)
-          if (command.apiProviderId !== undefined) created.setApiProviderId(command.apiProviderId)
+          if (command.apiProviderId != null) created.setApiProviderId(command.apiProviderId)
           // A sandbox picked before the session existed has no `set_sandbox_mode`
           // to ride on — the client had no session id yet. A host that cannot
           // sandbox rejects it, and that must not sink the session already made.
@@ -1660,7 +1661,8 @@ export class AgentService {
                 },
                 platformDisplay,
                 claudeAccounts,
-                selectedProviderId: resolveChatService(harnessId, null, options)?.credentialId ?? null,
+                codexAccounts: harnessId === 'codex' ? codexAccountStore().list() : [],
+                selectedProviderId: resolveChatService(harnessId, null, options)?.credentialId ?? (harnessId === 'codex' ? codexAccountStore().defaultProviderId() : null),
               })
               } catch (err) {
                 log.warn('[get_system_info] provider catalog unavailable: %s', err instanceof Error ? err.message : String(err))

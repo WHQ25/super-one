@@ -1,3 +1,4 @@
+import { codexAccountProviderId, CODEX_CLI_ACCOUNT_ID } from '@superone/shared/codex-accounts'
 import { mapCodexPermissionMode, resolveCodexBackendSelection } from './codex-backend-selection'
 import type {
   AgentEvent,
@@ -85,8 +86,8 @@ export interface CodexRunStreamCallbacksDeps {
 }
 
 export interface CodexServiceDeps {
-  getProjectAuth(projectPath: string): CodexProjectAuth
-  onAuthChanged(projectPath: string, cb: () => void): () => void
+  getProjectAuth(projectPath: string, apiProviderId?: string | null): CodexProjectAuth
+  onAuthChanged(projectPath: string, cb: (providerId?: string) => void): () => void
   prewarmAppServerConnection?(projectPath: string): void
   takeAppServerConnection?(projectPath: string, auth: CodexProjectAuth, apiProviderId?: string | null): Promise<AppServerConnectionHandle | null>
 }
@@ -130,7 +131,7 @@ function summarizeCodexItemsForTrace(items: CodexThreadItem[]): Array<{ id: stri
 }
 
 function authsEqual(a: CodexProjectAuth, b: CodexProjectAuth): boolean {
-  return a.mode === b.mode && (a.apiKey ?? '') === (b.apiKey ?? '')
+  return a.accountId === b.accountId && a.mode === b.mode && (a.apiKey ?? '') === (b.apiKey ?? '')
 }
 
 let codexServiceFactory: (() => CodexServiceDeps) | null = null
@@ -266,7 +267,7 @@ export class CodexBackend implements SessionBackend {
       getAuth: () => {
         const projectPath = this.startOpts?.projectPath
         if (!projectPath) throw new Error('CodexBackend missing startOpts')
-        return this.service.getProjectAuth(projectPath)
+        return this.service.getProjectAuth(projectPath, this.session?.apiProviderId ?? this.startOpts?.apiProviderId)
       },
       getCwd: () => this.startOpts?.cwd || this.startOpts?.projectPath || '',
       getCurrentRun: () => this.activeRun,
@@ -378,7 +379,8 @@ export class CodexBackend implements SessionBackend {
     )
     this.session.queueChangedFn = (threadId) => this.scheduleDurableQueueRefresh(threadId)
     await this.adoptWarmHandle()
-    this.authChangedUnsub = this.service.onAuthChanged(opts.projectPath, () => {
+    this.authChangedUnsub = this.service.onAuthChanged(opts.projectPath, (providerId) => {
+      if (providerId && providerId !== (opts.apiProviderId ?? codexAccountProviderId(CODEX_CLI_ACCOUNT_ID))) return
       this.handleAuthChanged()
     })
     this.started = true
@@ -390,7 +392,7 @@ export class CodexBackend implements SessionBackend {
     if (this.warmHandlePromise) {
       return
     }
-    const auth = this.service.getProjectAuth(opts.projectPath)
+    const auth = this.service.getProjectAuth(opts.projectPath, opts.apiProviderId)
     const promise = this.prepareWarmHandle(opts, auth).catch((err) => {
       log.warn('[CodexBackend] prewarm failed: %s', err instanceof Error ? err.message : String(err))
       if (this.warmHandlePromise === promise) {
@@ -461,7 +463,7 @@ export class CodexBackend implements SessionBackend {
       }, opts.sessionId)
       return {
         handle,
-        auth: { mode: auth.mode, apiKey: auth.apiKey },
+        auth: { ...auth },
         threadId,
         threadReady: true,
         effectiveCwd: warm.cwd,
@@ -480,7 +482,7 @@ export class CodexBackend implements SessionBackend {
     const session = this.session
     const startOpts = this.startOpts
     if (!startOpts) return
-    const currentAuth = this.service.getProjectAuth(startOpts.projectPath)
+    const currentAuth = this.service.getProjectAuth(startOpts.projectPath, startOpts.apiProviderId)
     let warm: WarmCodexHandle | null = null
     if (this.warmHandlePromise) {
       warm = await this.warmHandlePromise.catch(() => null)
@@ -489,7 +491,7 @@ export class CodexBackend implements SessionBackend {
       if (handle) {
         warm = {
           handle,
-          auth: { mode: currentAuth.mode, apiKey: currentAuth.apiKey },
+          auth: { ...currentAuth },
           threadId: null,
           threadReady: false,
           effectiveCwd: startOpts.cwd || startOpts.projectPath,
@@ -509,7 +511,7 @@ export class CodexBackend implements SessionBackend {
       }
     })
     session.connectionHandle = warm.handle
-    session.connectionAuth = { mode: currentAuth.mode, apiKey: currentAuth.apiKey }
+    session.connectionAuth = { ...currentAuth }
     session.threadId = warm.threadId
     session.threadReady = warm.threadReady && Boolean(warm.threadId)
     session.effectiveCwd = warm.effectiveCwd
@@ -686,7 +688,7 @@ export class CodexBackend implements SessionBackend {
       resolvedServiceTier,
     )
 
-    const auth = this.service.getProjectAuth(projectPath)
+    const auth = this.service.getProjectAuth(projectPath, this.session?.apiProviderId ?? this.startOpts?.apiProviderId)
 
     this.resetSegments(assistantMessageId)
     this.currentMessageId = assistantMessageId
@@ -926,7 +928,7 @@ export class CodexBackend implements SessionBackend {
     try {
       handle = await startCodexRealtime(
         session,
-        this.service.getProjectAuth(startOpts.projectPath),
+        this.service.getProjectAuth(startOpts.projectPath, startOpts.apiProviderId),
         startOpts.projectPath,
         startOpts.cwd || startOpts.projectPath,
         request,
@@ -1015,7 +1017,7 @@ export class CodexBackend implements SessionBackend {
     if (!session || !startOpts) return { segments: [], threadMessages: [], activeRealtimeSessionId: null, hasTimeline: false }
     return listCodexRealtimeTimeline(
       session,
-      this.service.getProjectAuth(startOpts.projectPath),
+      this.service.getProjectAuth(startOpts.projectPath, startOpts.apiProviderId),
       startOpts.projectPath,
       startOpts.cwd || startOpts.projectPath,
     )
@@ -1266,7 +1268,7 @@ export class CodexBackend implements SessionBackend {
     if (existing) return existing.connection
     const opts = this.startOpts
     if (!opts) throw new Error('CodexBackend missing startOpts')
-    const auth = this.service.getProjectAuth(opts.projectPath)
+    const auth = this.service.getProjectAuth(opts.projectPath, opts.apiProviderId)
     this.warmHandlePromise = this.prepareWarmHandle(opts, auth)
     await this.adoptWarmHandle()
     const handle = this.session?.connectionHandle
@@ -1404,7 +1406,7 @@ export class CodexBackend implements SessionBackend {
       try {
         const result = await startCodexQueuedTurn(
           session,
-          this.service.getProjectAuth(opts.projectPath),
+          this.service.getProjectAuth(opts.projectPath, opts.apiProviderId),
           opts.projectPath,
           opts.cwd,
           callbacks,

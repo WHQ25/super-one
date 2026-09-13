@@ -1,3 +1,5 @@
+import { codexAccountProviderId, isCodexAccountProvider } from '@superone/shared/codex-accounts'
+import { codexAccountStore } from './codex-account-store'
 import { execFileSync, spawn, type ChildProcess } from 'child_process'
 import { existsSync } from 'fs'
 import { createRequire } from 'module'
@@ -93,6 +95,7 @@ const moduleRequire = createRequire(import.meta.url)
 let cachedCodexCliScriptPath: string | null = null
 
 export interface CodexProjectAuth {
+  accountId?: string
   mode: CodexAuthMode
   apiKey?: string
 }
@@ -450,6 +453,8 @@ export function buildCodexProviderTestEnv(apiKey: string, extraEnv: string): Nod
 
 export function buildAppServerEnv(auth: CodexProjectAuth, apiProviderId?: string | null): NodeJS.ProcessEnv {
   const env = buildSafeEnv()
+  const accountProvider = auth.accountId ? codexAccountProviderId(auth.accountId) : apiProviderId
+  if (isCodexAccountProvider(accountProvider)) return codexAccountStore().environment(accountProvider!, buildCodexAccountEnv())
   if (process.versions.electron) {
     env.ELECTRON_RUN_AS_NODE = '1'
   }
@@ -548,6 +553,7 @@ export async function createAppServerConnection(
   await ensureCodexProxyUrl(apiProviderId)
   const overrideArgs = [
     ...(cliOverrides ?? buildCodexProviderCliOverridesFor(apiProviderId)),
+    ...(auth.accountId ? codexAccountStore().cliOverrides(codexAccountProviderId(auth.accountId)) : []),
     '-c', 'features.realtime_conversation=true',
     ...buildCodexBundledCapabilityIsolationCliOverrides(),
   ]

@@ -512,7 +512,7 @@ describe('setSessionApiProviderId', () => {
     setupProject()
     mockWindowAgent.setSessionApiProvider.mockRejectedValueOnce(new Error('boom'))
     await expect(useChatStore.getState().setSessionApiProviderId('gateway-x')).resolves.toBeUndefined()
-    expect(activeSession().apiProviderId).toBe('gateway-x')
+    expect(activeSession().apiProviderId).toBeNull()
   })
 
   it('is a no-op when no project is active', async () => {
@@ -584,13 +584,13 @@ describe('sendMessage: Codex utility slash commands', () => {
 
   it('/login starts ChatGPT login for the official OpenAI provider', async () => {
     await useChatStore.getState().sendMessage('/login')
-    expect(mockWindowApp.codexStartAccountLogin).toHaveBeenCalledWith(PATH)
+    expect(mockWindowApp.codexStartAccountLogin).toHaveBeenCalledWith(PATH, undefined)
     expect(activeSession().slashCommandOutput).toEqual(expect.objectContaining({ command: 'login' }))
   })
 
   it('/logout signs out of ChatGPT for the official OpenAI provider', async () => {
     await useChatStore.getState().sendMessage('/logout')
-    expect(mockWindowApp.codexLogoutAccount).toHaveBeenCalledWith(PATH)
+    expect(mockWindowApp.codexLogoutAccount).toHaveBeenCalledWith(PATH, null)
     expect(activeSession().slashCommandOutput).toEqual({
       command: 'logout',
       content: 'Signed out of ChatGPT.',

@@ -1,3 +1,4 @@
+import { CodexAccountIpcChannels } from '@superone/shared/codex-accounts'
 import { collaborationMailbox } from './collaboration-mailbox'
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
@@ -1212,17 +1213,21 @@ const appAPI = {
   codexGetAuthStatus: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_GET_AUTH_STATUS, projectPath),
 
-  codexGetAccountStatus: (projectPath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_GET_ACCOUNT_STATUS, projectPath),
+  codexListAccounts: (projectPath: string) => ipcRenderer.invoke(CodexAccountIpcChannels.LIST, projectPath),
 
-  codexStartAccountLogin: (projectPath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_ACCOUNT_LOGIN_START, projectPath),
+  codexSetDefaultAccount: (projectPath: string, accountId: string) => ipcRenderer.invoke(CodexAccountIpcChannels.SET_DEFAULT, projectPath, accountId),
+
+  codexGetAccountStatus: (projectPath: string, apiProviderId?: string | null) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_GET_ACCOUNT_STATUS, projectPath, apiProviderId),
+
+  codexStartAccountLogin: (projectPath: string, accountId?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_ACCOUNT_LOGIN_START, projectPath, accountId),
 
   codexCancelAccountLogin: (projectPath: string, loginId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_ACCOUNT_LOGIN_CANCEL, projectPath, loginId),
 
-  codexLogoutAccount: (projectPath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_ACCOUNT_LOGOUT, projectPath),
+  codexLogoutAccount: (projectPath: string, apiProviderId?: string | null) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_ACCOUNT_LOGOUT, projectPath, apiProviderId),
 
   codexGetRateLimits: (projectPath: string, apiProviderId?: string | null) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_GET_RATE_LIMITS, projectPath, apiProviderId),

@@ -1,3 +1,4 @@
+import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
 import { hostPendingInteractions, trackHostInteraction } from './host-pending-interactions'
 import { dispatchBackendSteer } from './dispatch-backend-steer'
 import { broadcastSessionSettings } from './session-settings-broadcast'
@@ -633,6 +634,7 @@ export class Session implements SessionContract {
   setApiProviderId(apiProviderId: string | null): void {
     this.assertNotDisposed()
     if (this._apiProviderId === apiProviderId) return
+    if (this.harnessId === 'codex') assertCodexAccountSwitchAllowed(this._apiProviderId, apiProviderId, this._messages.length > 0 || this.isStreaming())
     this._apiProviderId = apiProviderId
     if (this.resolveProviderConfigForApiProvider) {
       this.providerConfig = this.resolveProviderConfigForApiProvider(apiProviderId)

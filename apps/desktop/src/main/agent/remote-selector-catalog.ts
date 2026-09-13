@@ -1,3 +1,4 @@
+import { codexAccountProviderId, type CodexAccount } from '@superone/shared/codex-accounts'
 import type {
   ClaudeAccount,
   DeepseekPresetRoster,
@@ -106,6 +107,7 @@ export interface ProviderCatalogSource {
   platformDisplay: (platformId: string) => { name: string; icon?: string }
   /** Logged-in Claude accounts; only surfaced once there is more than one. */
   claudeAccounts?: ClaudeAccount[]
+  codexAccounts?: CodexAccount[]
   /** Credential id the session currently resolves to, or null for the host default. */
   selectedProviderId?: string | null
 }
@@ -125,7 +127,10 @@ export function harnessProviderCatalog(
   }
   const defaultName = harness === 'codex' ? 'ChatGPT' : 'Claude'
   const accounts = harness === 'claude' ? source.claudeAccounts ?? [] : []
-  const providers: RemoteProviderOption[] = accounts.length > 1
+  const codexAccounts = harness === 'codex' ? (source.codexAccounts ?? []).filter((a) => a.signedIn) : []
+  const providers: RemoteProviderOption[] = codexAccounts.length > 0
+    ? codexAccounts.map((account) => ({ id: codexAccountProviderId(account.id), name: defaultName, brand: 'openai', keyName: [account.email, account.planType].filter(Boolean).join(' · ') }))
+    : accounts.length > 1
     ? accounts.map((account) => ({
         id: claudeAccountProviderId(account.credentialDir),
         name: defaultName,

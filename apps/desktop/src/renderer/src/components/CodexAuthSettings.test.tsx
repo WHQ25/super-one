@@ -1,116 +1,69 @@
 /** @vitest-environment jsdom */
+import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { CodexAuthSettings } from './CodexAuthSettings'
+import { codexAccountProviderId, type CodexAccount } from '@superone/shared/codex-accounts'
 
-import { render, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { CodexAuthSettings } from "./CodexAuthSettings";
+const list = vi.fn()
+const start = vi.fn()
+const cancel = vi.fn()
+const logout = vi.fn()
+const setDefault = vi.fn()
+vi.mock('@/stores/chat', () => ({ useChatStore: (select: (state: { activeProject: string }) => unknown) => select({ activeProject: '/project' }) }))
+Object.defineProperty(window, 'app', { configurable: true, value: { codexListAccounts: list, codexStartAccountLogin: start, codexCancelAccountLogin: cancel, codexLogoutAccount: logout, codexSetDefaultAccount: setDefault } })
+const a: CodexAccount = { id: '11111111-1111-4111-8111-111111111111', signedIn: true, isDefault: true, email: 'a@example.test', planType: 'plus', authMode: 'chatgpt', requiresOpenaiAuth: true }
+const b: CodexAccount = { ...a, id: '22222222-2222-4222-8222-222222222222', email: 'b@example.test', isDefault: false }
+beforeEach(() => { vi.clearAllMocks(); list.mockResolvedValue([]) })
 
-const codexGetAccountStatus = vi.fn();
-const codexStartAccountLogin = vi.fn();
-const codexCancelAccountLogin = vi.fn();
-const codexLogoutAccount = vi.fn();
+describe('Codex account management', () => {
+  it('adds an account with device-code login even while another account is signed in', async () => {
+    list.mockResolvedValue([a])
+    start.mockResolvedValue({ type: 'chatgptDeviceCode', accountId: b.id, loginId: 'login-1', verificationUrl: 'https://auth.openai.com/device', userCode: 'ABCD-EFGH' })
+    const user = userEvent.setup()
+    render(<CodexAuthSettings />)
+    await screen.findByText(a.email!)
+    await user.click(screen.getByRole('button', { name: 'Add Account' }))
+    expect(start).toHaveBeenCalledWith('/project', undefined)
+    expect(await screen.findByText('ABCD-EFGH')).toBeInTheDocument()
+    expect(screen.getByText(a.email!)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(cancel).toHaveBeenCalledWith('/project', 'login-1')
+  })
 
-vi.mock("@/stores/chat", () => ({
-  useChatStore: (selector: (state: { activeProject: string }) => unknown) =>
-    selector({ activeProject: "/project" }),
-}));
+  it('changes the default without logging out either account', async () => {
+    let accounts = [a, b]
+    list.mockImplementation(async () => accounts)
+    setDefault.mockImplementation(async (_path, id) => { accounts = accounts.map((a) => ({ ...a, isDefault: a.id === id })) })
+    const user = userEvent.setup()
+    render(<CodexAuthSettings />)
+    const bRow = (await screen.findByText(b.email!)).closest('li')!
+    await user.click(within(bRow).getByRole('button', { name: 'Set as Default' }))
+    expect(setDefault).toHaveBeenCalledWith('/project', b.id)
+    await waitFor(() => expect(within(bRow).getByText('Default')).toBeInTheDocument())
+    expect(logout).not.toHaveBeenCalled()
+  })
 
-Object.defineProperty(window, "app", {
-  configurable: true,
-  value: new Proxy(
-    {
-      codexGetAccountStatus,
-      codexStartAccountLogin,
-      codexCancelAccountLogin,
-      codexLogoutAccount,
-    },
-    {
-      get(target, prop, receiver) {
-        if (prop in target) return Reflect.get(target, prop, receiver);
-        return () => Promise.resolve(undefined);
-      },
-    },
-  ),
-});
+  it('signs out only the selected account and keeps the other row', async () => {
+    list.mockResolvedValue([a, b])
+    logout.mockImplementation(async () => { list.mockResolvedValue([{ ...a, signedIn: false, isDefault: false }, { ...b, isDefault: true }]) })
+    const user = userEvent.setup()
+    render(<CodexAuthSettings />)
+    const row = (await screen.findByText(a.email!)).closest('li')!
+    await user.click(within(row).getByRole('button', { name: 'Sign Out' }))
+    expect(logout).toHaveBeenCalledWith('/project', codexAccountProviderId(a.id))
+    await waitFor(() => expect(within(row).getByText('Signed Out')).toBeInTheDocument())
+    expect(screen.getByText(b.email!)).toBeInTheDocument()
+  })
 
-describe("Codex ChatGPT account settings", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    codexGetAccountStatus.mockResolvedValue({
-      signedIn: false,
-      authMode: null,
-      email: null,
-      planType: null,
-      requiresOpenaiAuth: true,
-    });
-  });
-
-  it("starts device-code login and displays the code returned by the remote node", async () => {
-    codexStartAccountLogin.mockResolvedValue({
-      type: "chatgptDeviceCode",
-      loginId: "login-1",
-      verificationUrl: "https://auth.openai.com/device",
-      userCode: "ABCD-EFGH",
-    });
-    const user = userEvent.setup();
-    render(<CodexAuthSettings />);
-
-    await user.click(
-      await screen.findByRole("button", { name: "Sign in with ChatGPT" }),
-    );
-
-    expect(codexStartAccountLogin).toHaveBeenCalledWith("/project");
-    expect(await screen.findByText("ABCD-EFGH")).toBeInTheDocument();
-    expect(screen.getByText("Enter this one-time code")).toBeInTheDocument();
-  });
-
-  it("shows signed-out actions in a single account card", async () => {
-    render(<CodexAuthSettings />);
-
-    await waitFor(() => expect(codexGetAccountStatus).toHaveBeenCalled());
-    const accountCard = screen.getByRole("region", {
-      name: "ChatGPT account",
-    });
-
-    expect(
-      within(accountCard).getByRole("button", {
-        name: "Sign in with ChatGPT",
-      }),
-    ).toBeInTheDocument();
-    expect(within(accountCard).queryByText("Not signed in")).toBeNull();
-  });
-
-  it("shows the real account and signs it out", async () => {
-    codexGetAccountStatus.mockResolvedValue({
-      signedIn: true,
-      authMode: "chatgpt",
-      email: "dev@example.com",
-      planType: "pro",
-      requiresOpenaiAuth: true,
-    });
-    codexLogoutAccount.mockResolvedValue({
-      signedIn: false,
-      authMode: null,
-      email: null,
-      planType: null,
-      requiresOpenaiAuth: true,
-    });
-    const user = userEvent.setup();
-    render(<CodexAuthSettings />);
-
-    expect(await screen.findByText("dev@example.com")).toBeInTheDocument();
-    expect(screen.queryByText("Signed in")).toBeNull();
-    expect(screen.queryByText("Authentication")).toBeNull();
-    const accountHeader = screen.getByRole("banner");
-    await user.click(
-      within(accountHeader).getByRole("button", { name: "Sign out" }),
-    );
-
-    await waitFor(() =>
-      expect(codexLogoutAccount).toHaveBeenCalledWith("/project"),
-    );
-    expect(
-      screen.getByRole("button", { name: "Sign in with ChatGPT" }),
-    ).toBeInTheDocument();
-  });
-});
+  it('shows refresh failures and recovers on retry', async () => {
+    list.mockRejectedValueOnce(new Error('Node disconnected'))
+    const user = userEvent.setup()
+    render(<CodexAuthSettings />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Node disconnected')
+    list.mockResolvedValue([a])
+    await user.click(screen.getByRole('button', { name: 'Refresh account status' }))
+    expect(await screen.findByText(a.email!)).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+})

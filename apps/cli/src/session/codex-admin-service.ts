@@ -1,3 +1,5 @@
+import { isCodexAccountProvider } from '@superone/shared/codex-accounts'
+import { nodeCodexAccounts, nodeCodexAccountStore, clearNodeCodexAccountsForTest } from './codex-accounts'
 /**
  * Node-side Codex app-server admin surface (auth / usage / plugins / marketplace).
  * Electron-free; opens short-lived or shared admin connections via the binary.
@@ -11,7 +13,6 @@
 import { openCodexAppServer, type CodexAppServerHandle, type CodexSpawnFn } from '@superone/codex'
 import {
   applySetAuth,
-  cancelAccountLogin,
   consumeRateLimitReset,
   detectExternalAgentConfig,
   getAuthStatus,
@@ -19,24 +20,19 @@ import {
   installPlugin,
   listPluginInventory,
   loginMcpServerOauth,
-  logoutAccount,
   marketplaceAdd,
   marketplaceRemove,
   marketplaceUpgrade,
   normalizeApiKey,
   readAccountUsage,
-  readAccountStatus,
   readCodexConfigRequirements,
   readCodexServerDiagnostics,
   readRateLimits,
   resolveMode,
-  startAccountLogin,
   uninstallPlugin,
   type CodexProjectAuth,
 } from '@superone/codex'
 import type {
-  CodexAccountLoginStartResult,
-  CodexAccountStatus,
   CodexAccountUsage,
   CodexConfigRequirements,
   CodexAuthStatus,
@@ -55,6 +51,7 @@ import type { ProviderStore } from '../provider/provider-store'
 import { buildHarnessEnvWithProxy, resolveHarnessService } from '../provider/resolve-service'
 
 export interface CodexAdminServiceOptions {
+  nodeHome?: string
   binaryPath?: string | null
   harnesses?: HarnessManager
   providers?: ProviderStore
@@ -69,12 +66,8 @@ export interface CodexAdminServiceOptions {
  */
 const projectAuthById = new Map<string, CodexProjectAuth>()
 
-const pendingAccountLogins = new Map<
-  string,
-  { projectId: string; client: CodexAppServerHandle }
->()
-
 export class CodexAdminService {
+  get accounts() { return nodeCodexAccounts(this.opts) }
   constructor(private readonly opts: CodexAdminServiceOptions) {}
 
   getProjectAuth(projectId: string): CodexProjectAuth {
@@ -150,7 +143,8 @@ export class CodexAdminService {
 
     const client = await openCodexAppServer({
       binaryPath: binary,
-      env: authEnv,
+      env: isCodexAccountProvider(apiProviderId) ? nodeCodexAccountStore(this.opts.nodeHome).environment(apiProviderId!, authEnv) : authEnv,
+      cliArgs: isCodexAccountProvider(apiProviderId) ? nodeCodexAccountStore(this.opts.nodeHome).cliOverrides(apiProviderId!) : undefined,
       spawnFn: this.opts.spawnFn,
     })
     try {
@@ -160,96 +154,10 @@ export class CodexAdminService {
     }
   }
 
-  private async openAccountClient(): Promise<CodexAppServerHandle> {
-    const binary = resolveCodexBinaryPath({
-      binaryPath: this.opts.binaryPath,
-      harnesses: this.opts.harnesses,
-    })
-    if (!binary) {
-      throw Object.assign(new Error('Codex binary not available'), {
-        code: 'failed_precondition',
-      })
-    }
-    const env: NodeJS.ProcessEnv = { ...process.env, ...this.opts.env }
-    delete env.CODEX_API_KEY
-    return openCodexAppServer({
-      binaryPath: binary,
-      env,
-      spawnFn: this.opts.spawnFn,
-    })
-  }
-
-  async getAccountStatus(): Promise<CodexAccountStatus> {
-    const client = await this.openAccountClient()
-    try {
-      return await readAccountStatus(client)
-    } finally {
-      await client.close().catch(() => {})
-    }
-  }
-
-  async startAccountLogin(projectId: string): Promise<CodexAccountLoginStartResult> {
-    const client = await this.openAccountClient()
-    try {
-      const result = await startAccountLogin(client, 'chatgptDeviceCode')
-      pendingAccountLogins.set(result.loginId, { projectId, client })
-      void this.waitForAccountLogin(result.loginId, client)
-      return result
-    } catch (error) {
-      await client.close().catch(() => {})
-      throw error
-    }
-  }
-
-  private async waitForAccountLogin(
-    loginId: string,
-    client: CodexAppServerHandle,
-  ): Promise<void> {
-    const deadline = Date.now() + 15 * 60_000
-    try {
-      while (Date.now() < deadline && pendingAccountLogins.get(loginId)?.client === client) {
-        const notification = await client.nextNotification(Math.min(1_000, deadline - Date.now()))
-        if (!notification) continue
-        if (
-          notification.method === 'account/login/completed'
-          && notification.params.loginId === loginId
-        ) return
-      }
-    } catch {
-      // The status poll in the desktop is the user-facing source of truth.
-    } finally {
-      if (pendingAccountLogins.get(loginId)?.client === client) {
-        pendingAccountLogins.delete(loginId)
-      }
-      await client.close().catch(() => {})
-    }
-  }
-
-  async cancelAccountLogin(loginId: string): Promise<void> {
-    const pending = pendingAccountLogins.get(loginId)
-    if (!pending) return
-    pendingAccountLogins.delete(loginId)
-    try {
-      await cancelAccountLogin(pending.client, loginId)
-    } finally {
-      await pending.client.close().catch(() => {})
-    }
-  }
-
-  async logoutAccount(): Promise<CodexAccountStatus> {
-    for (const [loginId, pending] of [...pendingAccountLogins]) {
-      pendingAccountLogins.delete(loginId)
-      await cancelAccountLogin(pending.client, loginId).catch(() => {})
-      await pending.client.close().catch(() => {})
-    }
-    const client = await this.openAccountClient()
-    try {
-      await logoutAccount(client)
-      return await readAccountStatus(client)
-    } finally {
-      await client.close().catch(() => {})
-    }
-  }
+  getAccountStatus(providerId?: string | null) { return this.accounts.status(providerId) }
+  startAccountLogin(_projectId: string, accountId?: string) { return this.accounts.start('chatgptDeviceCode', accountId) }
+  cancelAccountLogin(loginId: string) { return this.accounts.cancel(loginId) }
+  logoutAccount(providerId?: string | null) { return this.accounts.logout(providerId) }
 
   async getRateLimits(
     projectId: string,
@@ -429,8 +337,5 @@ export function createCodexAdminService(opts: CodexAdminServiceOptions): CodexAd
 /** Test helper — clear durable auth map. */
 export function clearCodexAdminAuthForTest(): void {
   projectAuthById.clear()
-  for (const pending of pendingAccountLogins.values()) {
-    void pending.client.close().catch(() => {})
-  }
-  pendingAccountLogins.clear()
+  clearNodeCodexAccountsForTest()
 }

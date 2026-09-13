@@ -99,3 +99,21 @@ export const GroupedModelList: Story = {
 export const WithOpenCodeAgents: Story = {
   render: () => <SelectorStory modelGroups={MODEL_GROUPS} withAgents />,
 }
+
+function CodexAccountsStory() {
+  const [providerId, setProviderId] = useState<string | null>('codex-account:11111111-1111-4111-8111-111111111111')
+  return <div className="flex min-h-96 items-end justify-center p-6">
+    <GroupedModelEffortSelector
+      models={[{ id: 'gpt-5.3-codex', name: 'GPT-5.3-Codex' }]}
+      selectedModelId="gpt-5.3-codex" onSelectModel={() => {}}
+      effortOptions={EFFORTS} selectedEffort="high" onSelectEffort={() => {}}
+      providers={[
+        { id: 'codex-account:11111111-1111-4111-8111-111111111111', brand: 'openai', name: 'ChatGPT', keyName: 'personal@example.com · plus' },
+        { id: 'codex-account:22222222-2222-4222-8222-222222222222', brand: 'openai', name: 'ChatGPT', keyName: 'work@example.com · pro' },
+      ]}
+      selectedProviderId={providerId} onSelectProvider={setProviderId} onManageProviders={() => {}}
+    />
+  </div>
+}
+
+export const CodexAccounts: Story = { render: () => <CodexAccountsStory /> }

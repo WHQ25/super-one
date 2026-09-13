@@ -236,3 +236,26 @@ describe('SessionRuntime question / plan', () => {
     await waitIdle(runtime, session.sessionId)
   })
 })
+
+
+describe('Codex per-conversation accounts', () => {
+  it('pins new defaults, preserves null turn selections, and rejects a cross-account continuation', async () => {
+    const { store, events, leases } = memoryPorts()
+    const a = 'codex-account:11111111-1111-4111-8111-111111111111'
+    const b = 'codex-account:22222222-2222-4222-8222-222222222222'
+    let defaultId = a
+    const runtime = new SessionRuntime(store, events, leases, 'accounts', createSimulatedTurnRunner({ delayMs: 1, chunks: ['ok'] }), { defaultApiProviderId: () => defaultId })
+    const first = runtime.create({ projectId: 'p', harnessId: 'codex' })
+    defaultId = b
+    const second = runtime.create({ projectId: 'p', harnessId: 'codex' })
+    expect(first.apiProviderId).toBe(a)
+    expect(second.apiProviderId).toBe(b)
+    await runtime.send({ sessionId: first.sessionId, text: 'hello', apiProviderId: null, client, ...lease })
+    await waitIdle(runtime, first.sessionId)
+    expect(runtime.get(first.sessionId)?.apiProviderId).toBe(a)
+    const count = runtime.get(first.sessionId)!.transcript.length
+    await expect(runtime.send({ sessionId: first.sessionId, text: 'wrong account', apiProviderId: b, client, ...lease })).rejects.toThrow(/new conversation/)
+    expect(runtime.get(first.sessionId)?.transcript.length).toBe(count)
+    await runtime.dispose()
+  })
+})

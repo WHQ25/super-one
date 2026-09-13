@@ -148,6 +148,7 @@ export async function startSideChat(
         projectPath: source.projectPath,
         cwd: source.cwd,
         providerConfig: provider.config,
+        apiProviderId: source.apiProviderId,
       },
       source.cwd,
       ctx,

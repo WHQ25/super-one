@@ -1,3 +1,5 @@
+import { codexAccountStore } from './codex/codex-account-store'
+import { registerCodexAccountIpc } from './codex/codex-account-ipc'
 import { superoneHome } from './superone-home'
 import { registerCollaborationMailboxIpc } from './session/collaboration-mailbox-ipc'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, powerMonitor, protocol, screen, session, shell, systemPreferences, webContents } from 'electron'
@@ -476,7 +478,8 @@ const sessionManager = new SessionManagerImpl({
   },
   getActiveDefaultApiProviderId: (harnessId) => {
     if (harnessId === 'acp' || harnessId === 'opencode' || harnessId === 'cursor' || harnessId === 'dsh') return null
-    return getBinding(harnessId === 'codex' ? 'chat:codex' : 'chat:claude')?.credentialId ?? null
+    return getBinding(harnessId === 'codex' ? 'chat:codex' : 'chat:claude')?.credentialId
+      ?? (harnessId === 'codex' ? codexAccountStore().defaultProviderId() : null)
   },
   onBeforeInterrupt: (sessionId) => {
     clearAllGates()
@@ -2442,53 +2445,7 @@ function registerIpcHandlers(): void {
     return codexService.getAuthStatus(projectPath)
   })
 
-  ipcMain.handle(AgentIpcChannels.CODEX_GET_ACCOUNT_STATUS, async (_event, projectPath: string) => {
-    if (parseRemoteProjectKey(projectPath)) {
-      const { getEnvironmentHost, remoteCodexGetAccountStatus } = await import('./environment')
-      const status = await remoteCodexGetAccountStatus(getEnvironmentHost(), projectPath)
-      if (status) return status
-      throw new Error('Remote Codex account status unavailable (node not connected or project unresolved)')
-    }
-    return codexService.getAccountStatus()
-  })
-
-  ipcMain.handle(AgentIpcChannels.CODEX_ACCOUNT_LOGIN_START, async (_event, projectPath: string) => {
-    let result: CodexAccountLoginStartResult
-    if (parseRemoteProjectKey(projectPath)) {
-      const { getEnvironmentHost, remoteCodexAccountLoginStart } = await import('./environment')
-      const remoteResult = await remoteCodexAccountLoginStart(getEnvironmentHost(), projectPath)
-      if (!remoteResult) throw new Error('Remote Codex login unavailable (node not connected or project unresolved)')
-      result = remoteResult as CodexAccountLoginStartResult
-    } else {
-      result = await codexService.startAccountLogin(projectPath)
-    }
-    const url = result.authUrl ?? result.verificationUrl
-    if (url) {
-      void shell.openExternal(url).catch((error) => {
-        log.warn('[codex] failed to open account login URL: %s', error instanceof Error ? error.message : String(error))
-      })
-    }
-    return result
-  })
-
-  ipcMain.handle(AgentIpcChannels.CODEX_ACCOUNT_LOGIN_CANCEL, async (_event, projectPath: string, loginId: string) => {
-    if (parseRemoteProjectKey(projectPath)) {
-      const { getEnvironmentHost, remoteCodexAccountLoginCancel } = await import('./environment')
-      await remoteCodexAccountLoginCancel(getEnvironmentHost(), projectPath, loginId)
-      return
-    }
-    await codexService.cancelAccountLogin(loginId)
-  })
-
-  ipcMain.handle(AgentIpcChannels.CODEX_ACCOUNT_LOGOUT, async (_event, projectPath: string) => {
-    if (parseRemoteProjectKey(projectPath)) {
-      const { getEnvironmentHost, remoteCodexAccountLogout } = await import('./environment')
-      const status = await remoteCodexAccountLogout(getEnvironmentHost(), projectPath)
-      if (status) return status
-      throw new Error('Remote Codex logout unavailable (node not connected or project unresolved)')
-    }
-    return codexService.logoutAccount()
-  })
+  registerCodexAccountIpc(codexService)
 
   ipcMain.handle(AgentIpcChannels.CODEX_GET_RATE_LIMITS, async (_event, projectPath: string, apiProviderId?: string | null) => {
     if (parseRemoteProjectKey(projectPath)) {

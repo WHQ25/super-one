@@ -1,3 +1,4 @@
+import { isCodexAccountProvider } from '@superone/shared/codex-accounts'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
@@ -450,9 +451,9 @@ function CodexRateLimitIcon({ projectPath, apiProviderId, threadId, status, tip,
   // naming the OAuth account would point at a subscription this session never touches.
   useEffect(() => {
     setAccountEmail(null)
-    if (apiProviderId) return
+    if (apiProviderId && !isCodexAccountProvider(apiProviderId)) return
     let cancelled = false
-    window.app.codexGetAccountStatus(projectPath)
+    window.app.codexGetAccountStatus(projectPath, apiProviderId)
       .then((account) => { if (!cancelled) setAccountEmail(account?.signedIn ? (account.email ?? null) : null) })
       .catch(() => {})
     return () => { cancelled = true }

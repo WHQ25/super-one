@@ -1,3 +1,5 @@
+import { isCodexAccountProvider } from '@superone/shared/codex-accounts'
+import { nodeCodexAccountStore } from './codex-accounts'
 /**
  * Node harness-level transcript/thread fork (Claude SDK + Codex App Server).
  * Used by RPC `session.fork` so remote forks continue with real provider resume.
@@ -16,6 +18,7 @@ import {
 import { resolveCodexBinaryPath } from './codex-turn-runner'
 
 export interface NodeHarnessForkOptions {
+  nodeHome?: string
   resolveProjectPath: (projectId: string) => string | null
   harnesses?: HarnessManager
   providers?: ProviderStore
@@ -87,13 +90,16 @@ export async function forkNodeHarnessResume(
     const providerEnv = opts.providers
       ? await buildHarnessEnvWithProxy(
           'codex',
-          resolveHarnessService(opts.providers, 'codex', null),
+          resolveHarnessService(opts.providers, 'codex', source.apiProviderId),
         )
       : {}
     const openFn = opts.openCodexFn ?? openCodexAppServer
     const client = await openFn({
       binaryPath: binary,
-      env: { ...process.env, ...opts.env, ...providerEnv },
+      env: isCodexAccountProvider(source.apiProviderId)
+        ? nodeCodexAccountStore(opts.nodeHome).environment(source.apiProviderId!, { ...process.env, ...opts.env })
+        : { ...process.env, ...opts.env, ...providerEnv },
+      cliArgs: isCodexAccountProvider(source.apiProviderId) ? nodeCodexAccountStore(opts.nodeHome).cliOverrides(source.apiProviderId!) : undefined,
     })
     try {
       const newThreadId = await forkCodexThread({

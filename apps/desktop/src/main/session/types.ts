@@ -21,6 +21,7 @@ import type { HarnessId, LiveSessionSnapshot, SessionSnapshot, SessionStatus } f
 export type { HarnessId, LiveSessionSnapshot, SessionSnapshot, SessionStatus }
 
 export interface ForkSource {
+  apiProviderId?: string | null
   providerSessionId: string
   projectPath: string
   /** Effective cwd of the source session, including a source worktree. */

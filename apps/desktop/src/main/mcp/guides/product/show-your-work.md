@@ -34,6 +34,22 @@ or parentheses, and a bare path with either is not valid Markdown — the user
 sees literal text instead of the picture. Use the path the tool returned, never
 one you reconstructed.
 
+## Which captures belong in the reply
+
+Embed a screenshot or recording when the user requested the capture or it
+directly supports a visual claim in your reply: the drawer opened, the layout
+holds at 375px, the fix stopped the jitter. Select it by what it shows, not why
+you first took it. Reuse a relevant inspection capture as evidence; there is
+no need to capture the same unchanged state again solely for the reply.
+
+Screenshots needed to inspect content are allowed, including charts or screens
+whose content is unavailable as text. When the browser or app only supplied
+content — an article to summarise, a docs page to look up a flag, a dashboard
+to read a number — ordinary reading needs no screenshot for the reply. Omit
+captures that only document navigation or extraction unless the user requested
+them. The note attached to a capture result is a reminder to select evidence,
+not an instruction to embed every capture.
+
 ## What to capture
 
 **A still, for a state.** A layout, a colour, a label, something present or

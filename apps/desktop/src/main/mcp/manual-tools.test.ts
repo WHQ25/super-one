@@ -63,6 +63,12 @@ describe('manualReadHandler', () => {
     expect(text).toMatch(/recording\.savedPath/)
     expect(text).toMatch(/screenshot\.path/)
     expect(text).toMatch(/iPhone Mirroring/)
+    // Inspection captures are allowed; only their value to the reply decides inclusion.
+    const prose = text.replace(/\s+/g, ' ')
+    expect(prose).toMatch(/user requested.*capture/)
+    expect(prose).toMatch(/directly supports a visual claim/)
+    expect(prose).toMatch(/Screenshots needed to inspect content are allowed/)
+    expect(prose).toMatch(/Reuse.*inspection capture/)
   })
 
   it('lists collaboration in product domain index', async () => {

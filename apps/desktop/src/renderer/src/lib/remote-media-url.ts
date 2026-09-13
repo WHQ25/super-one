@@ -82,8 +82,12 @@ export function resolveMediaSrcForProject(src: string, projectPath: string): str
   if (src.startsWith('/') || /^[A-Za-z]:[\\/]/.test(src)) {
     const rel = relativeUnderRemoteProject(projectPath, src)
     if (rel != null && rel !== '.') return encodeRemoteMediaUrl(projectPath, rel)
-    // Outside project root — fall back to host path (works for same-machine lab).
-    return toLocalFileUrl(src)
+    // Outside the project root — a session sync-zone artifact (a screenshot, a
+    // generated image) or an out-of-project file. Keep the connection and carry
+    // the absolute node path so the main process resolves it through
+    // resolveSessionFile (session-sync-zone.md §4.2) instead of losing it to a
+    // local-file URL that only worked on a same-machine lab.
+    return encodeRemoteMediaUrl(projectPath, src)
   }
   return encodeRemoteMediaUrl(projectPath, clean)
 }

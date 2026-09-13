@@ -2059,8 +2059,21 @@ export class EnvironmentHost {
     }
     this.abortSessionDrain(this.sessionCursorKey(connectionId, sessionId), 'session_removed')
     this.sessionEventCursors.delete(this.sessionCursorKey(connectionId, sessionId))
+    // Cancel local transfer jobs and delete the node's zone directory before the
+    // session row is gone — afterwards the controller binding artifact.delete needs
+    // no longer holds (docs/design/session-sync-zone.md §7).
+    this.transfers?.dropSession(sessionId)
+    if (control?.leaseId && this.getSyncZone(connectionId)) {
+      try {
+        await this.artifactDelete(connectionId, sessionId)
+      } catch {
+        // The node drops it too on session.remove; a failure here is not fatal.
+      }
+    }
     const result = await gateway.removeSession(sessionId, control)
     this.sessionLeases.delete(this.leaseKey(connectionId, sessionId))
+    // The desktop mirror of this session's artifacts is ours to remove.
+    void import('./session-zone-reclaim').then((m) => m.removeSessionZone(sessionId)).catch(() => undefined)
     return result
   }
 

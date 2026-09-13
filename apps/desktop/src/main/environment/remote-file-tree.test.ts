@@ -1,4 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+const zoneState = vi.hoisted(() => ({ userData: '' }))
+vi.mock('electron', () => ({ app: { getPath: () => zoneState.userData } }))
 import {
   hostPathsEqual,
   listRemoteFileTreeDir,
@@ -349,6 +355,36 @@ describe('readRemoteProjectFile / saveRemoteProjectFile', () => {
     expect(readFile).toHaveBeenCalledWith({
       project: { environmentId: 'env-1', projectId: 'proj-1' },
       relativePath: 'docs/a.md',
+    })
+  })
+
+  describe('session sync zone', () => {
+    beforeEach(() => { zoneState.userData = mkdtempSync(join(tmpdir(), 'rft-zone-')) })
+    afterEach(() => rmSync(zoneState.userData, { recursive: true, force: true }))
+
+    it('serves a node zone artifact from the desktop mirror instead of splicing it into the project', async () => {
+      const readFile = vi.fn()
+      const report = Buffer.from('# written on the node')
+      const host = mockHost({
+        workspace: () => ({ readFile }),
+        getSyncZone: () => ({ syncRoot: '/home/node/.superone/node/sync', os: 'linux' }),
+        artifactStat: async () => ({ exists: true, size: report.length, mtimeMs: 1_700_000_000_000 }),
+        artifactGet: async () => ({ chunk: report.toString('base64'), total: report.length, mtimeMs: 1_700_000_000_000, eof: true }),
+      })
+      const result = await readRemoteProjectFile(host, 'remote:conn-1:/work/app', '/home/node/.superone/node/sync/s1/agent/report.md')
+      expect(result).toMatchObject({ content: '# written on the node', language: 'markdown' })
+      expect(readFile).not.toHaveBeenCalled()
+    })
+
+    it('reports a zone file neither side has as missing, not as an empty editor', async () => {
+      const host = mockHost({
+        workspace: () => ({ readFile: vi.fn() }),
+        getSyncZone: () => ({ syncRoot: '/home/node/.superone/node/sync', os: 'linux' }),
+        artifactStat: async () => ({ exists: false, size: 0, mtimeMs: 0 }),
+        artifactGet: async () => { throw new Error('unreachable') },
+      })
+      const result = await readRemoteProjectFile(host, 'remote:conn-1:/work/app', '/home/node/.superone/node/sync/s1/agent/none.md')
+      expect(result).toMatchObject({ content: '', error: 'missing' })
     })
   })
 

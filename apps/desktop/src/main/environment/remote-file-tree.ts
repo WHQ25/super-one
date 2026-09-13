@@ -42,6 +42,7 @@ import {
 import { AsyncCoalescer } from '../async-cache'
 import type { EnvironmentHost } from './environment-host'
 import { RemoteEnvironmentGateway } from './remote-environment-gateway'
+import { resolveSessionFile, resolverDepsFor } from './session-file-resolver'
 
 /** Coalesce status-bar + file-tree git.status RPCs (same as local 1.5s window). */
 const REMOTE_GIT_STATUS_TTL_MS = 1_500
@@ -620,79 +621,82 @@ export async function materializeRemotePathsForDrag(
  * only paths under a single remote folderPath that we can resolve are exported
  * when `folderPath` is provided; otherwise each path is parsed independently.
  */
+/** `GitFileContent` for bytes already in hand — the shape the panel and the previewer read. */
+export function fileContentFromBuffer(filePath: string, buf: Buffer): GitFileContent {
+  const ext = extname(filePath).toLowerCase()
+  if (buf.length > MAX_TRANSFER_BYTES) {
+    return { path: filePath, content: '', language: 'too-large' }
+  }
+  if (REMOTE_IMAGE_EXTS.has(ext)) {
+    const mime = REMOTE_MIME[ext] ?? 'application/octet-stream'
+    return { path: filePath, content: `data:${mime};base64,${buf.toString('base64')}`, language: 'image' }
+  }
+  if (REMOTE_PDF_EXTS.has(ext)) {
+    return { path: filePath, content: `data:application/pdf;base64,${buf.toString('base64')}`, language: 'pdf' }
+  }
+  if (REMOTE_VIDEO_EXTS.has(ext)) {
+    const mime = REMOTE_MIME[ext] ?? 'video/mp4'
+    return { path: filePath, content: `data:${mime};base64,${buf.toString('base64')}`, language: 'video' }
+  }
+  if (REMOTE_AUDIO_EXTS.has(ext)) {
+    const mime = REMOTE_MIME[ext] ?? 'audio/mpeg'
+    return { path: filePath, content: `data:${mime};base64,${buf.toString('base64')}`, language: 'audio' }
+  }
+  // Sniff binary vs text (nul byte in first 8 KiB).
+  const sniff = buf.subarray(0, Math.min(8192, buf.length))
+  if (sniff.includes(0)) {
+    return { path: filePath, content: '', language: 'binary' }
+  }
+  const text = buf.toString('utf8')
+  if (ext === '.svg') return { path: filePath, content: text, language: 'svg' }
+  return { path: filePath, content: text, language: REMOTE_EXT_LANG[ext] ?? 'text' }
+}
+
 /**
- * Read a project-relative file for FilePreview / source control.
+ * Read a file for FilePreview / source control under a remote root.
  * Media types return a `data:` URI in `content` so the renderer can preview
  * without a local file:// path.
+ *
+ * The path goes through `resolveSessionFile` first (session-sync-zone.md §4.2):
+ * a node-zone artifact is served from the desktop mirror, a desktop-zone path
+ * from disk, and only a genuine project path crosses to `workspace.readFile`.
  */
 export async function readRemoteProjectFile(
   host: EnvironmentHost,
   folderPath: string,
   filePath: string,
 ): Promise<GitFileContent | null> {
+  const resolution = await resolveSessionFile(folderPath, filePath, resolverDepsFor(host))
+  if (resolution.kind === 'missing') {
+    return { path: filePath, content: '', language: 'text', error: 'missing' }
+  }
+  if (resolution.kind === 'local') {
+    try {
+      return fileContentFromBuffer(filePath, readFileSync(resolution.path))
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      return { path: filePath, content: '', language: 'text', error: code === 'ENOENT' ? 'missing' : (err as Error).message || 'io' }
+    }
+  }
   const ctx = await resolveRemoteProjectContext(host, folderPath)
   if (!ctx) return null
-  const rel = toRemoteRelativePath(ctx.hostPath, filePath)
-  const ext = extname(rel).toLowerCase()
+  const rel = resolution.relativePath
   try {
     const raw = await host.workspace().readFile({
       project: projectRef(ctx),
       relativePath: rel,
     })
-    const buf = bufferFromWorkspaceContent(raw.content)
-    if (buf.length > MAX_TRANSFER_BYTES) {
-      return { path: filePath, content: '', language: 'too-large' }
-    }
-
-    if (REMOTE_IMAGE_EXTS.has(ext)) {
-      const mime = REMOTE_MIME[ext] ?? 'application/octet-stream'
-      return {
-        path: filePath,
-        content: `data:${mime};base64,${buf.toString('base64')}`,
-        language: 'image',
-      }
-    }
-    if (REMOTE_PDF_EXTS.has(ext)) {
-      return {
-        path: filePath,
-        content: `data:application/pdf;base64,${buf.toString('base64')}`,
-        language: 'pdf',
-      }
-    }
-    if (REMOTE_VIDEO_EXTS.has(ext)) {
-      const mime = REMOTE_MIME[ext] ?? 'video/mp4'
-      return {
-        path: filePath,
-        content: `data:${mime};base64,${buf.toString('base64')}`,
-        language: 'video',
-      }
-    }
-    if (REMOTE_AUDIO_EXTS.has(ext)) {
-      const mime = REMOTE_MIME[ext] ?? 'audio/mpeg'
-      return {
-        path: filePath,
-        content: `data:${mime};base64,${buf.toString('base64')}`,
-        language: 'audio',
-      }
-    }
-
-    // Sniff binary vs text (nul byte in first 8 KiB).
-    const sniff = buf.subarray(0, Math.min(8192, buf.length))
-    if (sniff.includes(0)) {
-      return { path: filePath, content: '', language: 'binary' }
-    }
-    const text = buf.toString('utf8')
-    if (ext === '.svg') return { path: filePath, content: text, language: 'svg' }
-    return { path: filePath, content: text, language: REMOTE_EXT_LANG[ext] ?? 'text' }
+    return fileContentFromBuffer(filePath, bufferFromWorkspaceContent(raw.content))
   } catch (err) {
     // An unreadable remote file used to fall through as empty text, which the
     // preview renders as a blank editor — indistinguishable from an empty file.
     console.warn(`[remote-file] read failed: ${folderPath} :: ${filePath}`, err)
+    const code = (err as { code?: string }).code
     return {
       path: filePath,
       content: '',
       language: 'text',
-      error: (err as Error).message || 'remote read failed',
+      error: code === 'not_found' ? 'missing' : (err as Error).message || 'remote read failed',
     }
   }
 }

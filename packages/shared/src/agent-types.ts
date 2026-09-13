@@ -4632,13 +4632,13 @@ export type RemoteCommand =
    * Anything else falls back to `statOnly` / the URL path exactly as if the flag
    * were absent, so `{ preferInline, statOnly }` yields content or metadata in one trip.
    */
-  | { type: 'read_desktop_file'; requestId: string; projectPath?: string; sessionId?: string; path: string; maxBytes?: number; statOnly?: boolean; preferInline?: boolean }
+  | { type: 'read_desktop_file'; requestId: string; projectPath?: string; sessionId?: string; root?: string; path: string; maxBytes?: number; statOnly?: boolean; preferInline?: boolean }
   /**
    * The first frame of a video on the host, as a small JPEG the phone paints
    * in the transcript. Always in-band: a poster is tens of kilobytes, so it
    * never needs the LAN URL or relay staging the file itself would.
    */
-  | { type: 'read_video_poster'; requestId: string; projectPath?: string; sessionId?: string; path: string }
+  | { type: 'read_video_poster'; requestId: string; projectPath?: string; sessionId?: string; root?: string; path: string }
   | { type: 'upload_file'; requestId: string; projectPath?: string; sessionId?: string; targetDir: string; name: string; mimeType: string; size: number; inlineBase64?: string }
   | { type: 'upload_file_complete'; requestId: string }
   | { type: 'list_providers'; requestId: string }

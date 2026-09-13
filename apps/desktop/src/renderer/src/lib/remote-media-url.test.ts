@@ -34,6 +34,15 @@ describe('remote-media-url', () => {
     expect(relativeUnderRemoteProject(project, '/other/x.png')).toBeNull()
   })
 
+  it('keeps the connection for an out-of-project node path (a sync-zone artifact)', () => {
+    // A node screenshot lives under the node home, not the project — the URL must
+    // still carry the connection so the main process can resolve it.
+    const nodePath = '/home/node/.superone/node/sync/s1/browser/shot.png'
+    const src = resolveMediaSrcForProject(nodePath, project)
+    expect(isRemoteMediaUrl(src)).toBe(true)
+    expect(decodeRemoteMediaUrl(src)).toEqual({ projectPath: project, relativePath: nodePath })
+  })
+
   it('local project still uses local-file URLs', () => {
     const src = resolveMediaSrcForProject('./a.png', '/Users/me/local')
     expect(src).toBe('local-file:///Users/me/local/a.png')

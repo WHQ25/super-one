@@ -119,7 +119,7 @@ const DOMAIN_SUMMARIES: Record<ManualDomain, string> = {
   product: 'Product support and contributing: overview, issues/PRs, logs, collaboration launch rules, and session archive tools.',
   miniapp: 'Mini-app development: scaffold, APIs, packaging, tools.',
   media: 'Image/video generation: provider-specific parameters and silent-failure modes.',
-  widget: 'Inline chat widget design guidelines, plus the `native` module for handing generated media to SuperOne\'s own gallery instead of authoring one. Saved templates use widget_list_templates.',
+  widget: 'Inline chat widget design guidelines, plus the `native` module for handing generated media to SuperOne\'s own gallery, or several files to its previewer, instead of authoring one. Saved templates use widget_list_templates.',
 }
 
 export interface ManualReadArgs {

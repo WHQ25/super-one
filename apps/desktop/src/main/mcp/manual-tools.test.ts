@@ -69,6 +69,10 @@ describe('manualReadHandler', () => {
     expect(prose).toMatch(/directly supports a visual claim/)
     expect(prose).toMatch(/Screenshots needed to inspect content are allowed/)
     expect(prose).toMatch(/Reuse.*inspection capture/)
+    // Two or more files go through the previewer card, one still goes inline.
+    expect(text).toMatch(/template: '@native\/files-previewer'/)
+    expect(prose).toMatch(/two or more files.*@native\/files-previewer/i)
+    expect(prose).toMatch(/single capture still goes inline/)
   })
 
   it('lists collaboration in product domain index', async () => {

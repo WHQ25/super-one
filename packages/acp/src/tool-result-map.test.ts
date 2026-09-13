@@ -53,6 +53,20 @@ describe('tool result capping', () => {
     expect(() => JSON.parse(summaryOf(completed(payload)))).not.toThrow()
   })
 
+  it('keeps a native widget_show payload whole — a previewer with 50 rows is well past 4k', () => {
+    const files = Array.from({ length: 50 }, (_, i) => ({
+      path: `src/very/long/path/segment/number/${i}/component-file-name-${i}.tsx`,
+      absolutePath: `/Users/someone/projects/repo/src/very/long/path/segment/number/${i}/component-file-name-${i}.tsx`,
+      name: `component-file-name-${i}.tsx`,
+      kind: 'text',
+      size: 1234,
+      note: `Explains what changed in file ${i} and why it matters for the review.`,
+    }))
+    const payload = JSON.stringify({ kind: 'native', nativeType: 'files-previewer', title: 't', root: '/repo', files })
+    expect(payload.length).toBeGreaterThan(4000)
+    expect(summaryOf(completed(payload))).toBe(payload)
+  })
+
   it('still caps an unrelated oversized result', () => {
     expect(summaryOf(completed(JSON.stringify({ logs: 'x'.repeat(20000) }))).length).toBe(4000)
   })

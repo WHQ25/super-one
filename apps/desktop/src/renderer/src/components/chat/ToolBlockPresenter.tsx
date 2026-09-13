@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Ban, ChevronRight, TriangleAlert } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { parsePartialWidgetInput, parseWidgetResult } from '@superone/shared/generative-ui/types'
+import { parseNativeWidgetResult } from '@superone/shared/generative-ui/native-widgets'
 import { AutomationToolBlock, isAutomationToolName } from './AutomationToolBlock'
 import { BrowserToolBlock } from './BrowserToolBlock'
 import { ComputerUseToolBlock } from './ComputerUseToolBlock'
@@ -51,6 +52,7 @@ import {
 } from '@superone/chat-view/presenters/GenericToolRow'
 import { VideoGenToolBlock } from './VideoGenToolBlock'
 import { WidgetBlock } from './WidgetBlock'
+import { FilesPreviewer } from './files-previewer/FilesPreviewer'
 import { isWorkflowSmokeCheck } from './workflow-utils'
 import { EnterPlanModeBlock } from './presenters/PlanModeBlocks'
 import {
@@ -475,6 +477,13 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
   // — native templates made this reachable, since a bad path or data shape is an ordinary,
   // agent-fixable outcome rather than an internal error.
   if (mcpInfo?.mcpToolName === 'widget_show' && !isError && !isDenied) {
+    // A files-previewer result renders in place, unlike the gallery types that the turn-end
+    // gallery collects (and `isHiddenToolBlock` hides) — it is the one native template whose
+    // row *is* the block. Streaming and the subagent stub fall through to the compact row.
+    const nativeWidget = result && !isStreaming && allowExpand ? parseNativeWidgetResult(result) : null
+    if (nativeWidget?.nativeType === 'files-previewer') {
+      return <FilesPreviewer payload={nativeWidget} projectPath={nativeWidget.root} />
+    }
     const widgetData = (result ? parseWidgetResult(result) : null) ?? parsePartialWidgetInput(input)
     const jsonComplete = isCompleteJson(input)
     const inputComplete = !isStreaming || jsonComplete

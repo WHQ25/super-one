@@ -810,6 +810,28 @@ describe('formatAcpRawOutput', () => {
     expect(JSON.parse((result as { delta: { summary: string } }).delta.summary).widget_code.length).toBeGreaterThan(4000)
   })
 
+  it('keeps a native widget_show payload untruncated past 4k — its JSON is the UI', () => {
+    const files = Array.from({ length: 50 }, (_, i) => ({
+      path: `src/very/long/path/segment/number/${i}/component-file-name-${i}.tsx`,
+      absolutePath: `/Users/someone/projects/repo/src/very/long/path/segment/number/${i}/component-file-name-${i}.tsx`,
+      name: `component-file-name-${i}.tsx`,
+      kind: 'text',
+      size: 1234,
+      note: `Explains what changed in file ${i} and why it matters for the review.`,
+    }))
+    const payload = JSON.stringify({ kind: 'native', nativeType: 'files-previewer', title: 'changed_files', root: '/Users/someone/projects/repo', files })
+    expect(payload.length).toBeGreaterThan(4000)
+
+    const events = mapSessionUpdate({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'call_previewer',
+      status: 'completed',
+      rawOutput: { type: 'MCP', tool_name: 'widget_show', server_name: 'superone', output: { OkayOutput: payload } },
+    } as never, ctx)
+    const result = events.find((e) => e.type === 'content_delta' && e.delta.type === 'tool_result')
+    expect((result as { delta: { summary: string } }).delta.summary).toBe(payload)
+  })
+
   it('does not pretty-print opaque JSON when re-formatting a string payload', () => {
     const compact = '{"title":"w","widget_code":"<div/>","width":1,"height":1,"isSVG":false}'
     expect(formatAcpRawOutput(compact)).toBe(compact)

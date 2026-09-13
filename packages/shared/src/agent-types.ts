@@ -3847,6 +3847,7 @@ export const AgentIpcChannels = {
   CLIPBOARD_WRITE: 'app:clipboard-write',
   GIT_DIFF_FILE: 'app:git-diff-file',
   READ_PROJECT_FILE: 'app:read-project-file',
+  STAT_PREVIEW_FILE: 'app:stat-preview-file',
   SAVE_FILE: 'app:save-file',
   READ_FILE_AS_DATA_URI: 'app:read-file-as-data-uri',
   SAVE_FILE_AS: 'app:save-file-as',

@@ -2002,6 +2002,21 @@ export type Messages = {
       hintSelect: string
       hintDismiss: string
     }
+    filesPreviewer: {
+      counter: string
+      previous: string
+      next: string
+      fullscreen: string
+      close: string
+      loading: string
+      missing: string
+      undecodable: string
+      readFailed: string
+      unpreviewableBinary: string
+      unpreviewableTooLarge: string
+      unpreviewableOutside: string
+      retry: string
+    }
     toolBlock: {
       enteredPlanMode: string
       readingWidgetGuidelines: string
@@ -5715,6 +5730,21 @@ export const en: Messages = {
       hintNote: 'note',
       hintSelect: 'select',
       hintDismiss: 'dismiss',
+    },
+    filesPreviewer: {
+      counter: '{{index}} / {{total}}',
+      previous: 'Previous file',
+      next: 'Next file',
+      fullscreen: 'Open fullscreen',
+      close: 'Close',
+      loading: 'Loading…',
+      missing: 'File not found',
+      undecodable: 'Cannot be displayed',
+      readFailed: 'Could not read the file',
+      unpreviewableBinary: 'Binary file — no preview',
+      unpreviewableTooLarge: 'Too large to preview',
+      unpreviewableOutside: 'Outside the folders SuperOne can show',
+      retry: 'Retry',
     },
     toolBlock: {
       enteredPlanMode: 'Entered plan mode',

@@ -44,7 +44,21 @@ const INLINE_PREVIEW_BASENAMES: ReadonlySet<string> = new Set([
   'podfile', 'fastfile', 'appfile', 'matchfile', 'vagrantfile', 'justfile', 'cname',
 ])
 
-const MARKDOWN_EXTENSIONS: ReadonlySet<string> = new Set(['.md', '.mdx', '.markdown'])
+/**
+ * Preview classification shared by every surface that opens a file by name:
+ * the activity panel (`FilePreview`), the host's `readProjectFile`, the
+ * remote-node file tree and the `@native/files-previewer` payload builder.
+ * One table, dotted lower-case extensions, so a kind one side emits is a
+ * kind every other side renders.
+ */
+/** Raster images: opaque bytes the host serves by URL, never as text. */
+export const BINARY_IMAGE_EXTENSIONS: ReadonlySet<string> = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.ico'])
+/** Everything that previews as a picture, including SVG (which the host still reads as text). */
+export const IMAGE_EXTENSIONS: ReadonlySet<string> = new Set([...BINARY_IMAGE_EXTENSIONS, '.svg'])
+export const PDF_EXTENSIONS: ReadonlySet<string> = new Set(['.pdf'])
+export const AUDIO_EXTENSIONS: ReadonlySet<string> = new Set(['.mp3', '.wav', '.flac', '.aac', '.m4a'])
+export const NOTEBOOK_EXTENSIONS: ReadonlySet<string> = new Set(['.ipynb'])
+export const MARKDOWN_EXTENSIONS: ReadonlySet<string> = new Set(['.md', '.mdx', '.markdown'])
 
 /** Lower-cased extension including the dot, or `''` when the name has none. */
 function extensionOf(name: string): string {
@@ -97,11 +111,30 @@ export function isMarkdownFileName(name: string): boolean {
  * `<video>` and the phone's poster tile. Matches what the host's media
  * server serves and Chromium decodes.
  */
-const VIDEO_EXTENSIONS: ReadonlySet<string> = new Set(['.mp4', '.m4v', '.webm', '.ogg', '.mov'])
+export const VIDEO_EXTENSIONS: ReadonlySet<string> = new Set(['.mp4', '.m4v', '.webm', '.ogg', '.mov'])
 
 /** Whether a file's NAME says it is a video the transcript can preview. */
 export function isVideoFileName(name: string): boolean {
   return VIDEO_EXTENSIONS.has(extensionOf(name))
+}
+
+/** What a file's NAME says about how it previews; the host corrects `text` by sniffing bytes. */
+export type FilePreviewKind = 'image' | 'pdf' | 'video' | 'audio' | 'markdown' | 'notebook' | 'text'
+
+/**
+ * Name-only classification. `.ogg` is a video container here because the
+ * activity panel checks video before audio; a `<video>` element still plays
+ * an audio-only ogg, the reverse is not true.
+ */
+export function fileKindFromName(name: string): FilePreviewKind {
+  const ext = extensionOf(name)
+  if (IMAGE_EXTENSIONS.has(ext)) return 'image'
+  if (PDF_EXTENSIONS.has(ext)) return 'pdf'
+  if (VIDEO_EXTENSIONS.has(ext)) return 'video'
+  if (AUDIO_EXTENSIONS.has(ext)) return 'audio'
+  if (MARKDOWN_EXTENSIONS.has(ext)) return 'markdown'
+  if (NOTEBOOK_EXTENSIONS.has(ext)) return 'notebook'
+  return 'text'
 }
 
 /**

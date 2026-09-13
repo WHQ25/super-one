@@ -34,6 +34,39 @@ or parentheses, and a bare path with either is not valid Markdown — the user
 sees literal text instead of the picture. Use the path the tool returned, never
 one you reconstructed.
 
+## Several files: use the previewer
+
+One capture goes inline as above. When the evidence is **two or more files** —
+a screenshot per breakpoint, before and after, a recording plus the frame that
+matters, the changed sources next to the page they changed — do not stack
+`![]()` embeds. Put them in one `@native/files-previewer` card and give each
+file its one-line note:
+
+```js
+widget_show({
+  title: 'drawer at three widths',
+  template: '@native/files-previewer',
+  data: {
+    files: [
+      { path: '/var/folders/xx/T/super-one-captures/browser/375.png', note: 'Drawer collapses to icons below 400px' },
+      { path: '/var/folders/xx/T/super-one-captures/browser/768.png', note: 'Labels return; nothing wraps' },
+      { path: '/var/folders/xx/T/super-one-recordings/device/open.mp4', note: 'The slide-in, 240ms, no overshoot' },
+    ],
+  },
+})
+```
+
+The card renders where the call sits — a fixed-height carousel the user pages
+through, with the note under each file, and a tap for the full-size viewer.
+It takes anything the activity panel can preview (images, video, audio, PDF,
+Markdown, notebooks, source), so a screenshot and the file it verifies can sit
+in the same strip. The note is the "say what to look at" sentence from below;
+write it per file, not as one paragraph after the card. Then make the claim
+in prose and stop — the card is the evidence, the reply is the conclusion.
+
+A single capture still goes inline with `![]()`; the previewer earns its
+chrome only from the second file on. Details: `read_manual({ domain: "widget", modules: ["native"] })`.
+
 ## Which captures belong in the reply
 
 Embed a screenshot or recording when the user requested the capture or it
@@ -81,7 +114,9 @@ what would have been different before.
 ## What to show
 
 - Embed the file in the reply that reports the result, not in a later one, and
-  put it next to the claim it supports. One file at most once per reply.
+  put it next to the claim it supports. One file at most once per reply. Two
+  or more files go in one `@native/files-previewer` card (above), not in a
+  column of embeds.
 - Say what to look at. A screenshot of a full phone screen has a hundred things
   on it; the sentence under it names the one that matters ("the spinner sits in
   the folder icon's slot; the rows below have not moved").

@@ -5,7 +5,7 @@ import { requestNative } from './bridge'
 import { PortableMarkdown } from './PortableMarkdown'
 import { PortableNativeGallery } from './PortableNativeGallery'
 import { PortableWidgetBlock } from './PortableWidgetBlock'
-import { parsePortableNativeWidgetResult } from './portable-native-widget'
+import { isGalleryPayload, parsePortableNativeWidgetResult } from './portable-native-widget'
 import { parseWidgetResult } from '@superone/shared/generative-ui/types'
 import { PortableTurnContext } from './portable-turn-context'
 import { parseMcpToolName } from './presenters/tool-display'
@@ -297,7 +297,10 @@ export function PortableToolRow({ allowExpand = true, ...props }: PortableToolRo
     () => ({ ...PORTABLE_TOOL_ROW_PORTS, mcpIconSrc }),
     [mcpIconSrc],
   )
-  if (nativeWidget && props.status !== 'streaming' && !props.isError) {
+  // Dispatch on the native type, never on "it parsed": the gallery draws images or videos and
+  // would show a previewer payload as an empty video strip. Until the phone has its own card for
+  // it, `files-previewer` keeps the ordinary tool row.
+  if (nativeWidget && isGalleryPayload(nativeWidget) && props.status !== 'streaming' && !props.isError) {
     return <PortableNativeGallery payload={nativeWidget} toolUseId={props.toolUseId} />
   }
   // Denied and failed calls keep the ordinary row: it is the only one that says why.

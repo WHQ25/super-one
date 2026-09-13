@@ -4,6 +4,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { checkCdnViolations } from '@superone/shared/generative-ui/cdn-allowlist'
 import { isNativeTemplateId, nativeTypeFromTemplateId, NATIVE_WIDGET_TYPES } from '@superone/shared/generative-ui/native-widgets'
+import { WIDGET_SHOW_DESCRIPTION } from '@superone/shared/generative-ui/widget-tool-descriptions'
 import { buildWidgetPayload } from './widget-payload'
 import type { TemplateRoots } from './template-store'
 
@@ -12,6 +13,12 @@ interface WidgetToolsOptions {
   projectPath?: string
   /** Scopes where agent-supplied media bytes are written, mirroring media_generate_*. */
   sessionId?: string
+  /**
+   * The directory the agent is working in *right now* — its worktree after `setCwd`, not the
+   * project identity `projectPath` carries. Read at call time because the MCP transport is
+   * registered once per session and would otherwise freeze a stale value.
+   */
+  resolveSessionRoot?: () => string | undefined
 }
 
 function templateRoots(opts?: WidgetToolsOptions): TemplateRoots {
@@ -47,6 +54,22 @@ async function executeNativeWidget(
       content: [{ type: 'text' as const, text: `[Error] Unknown native template "${template}". Available: ${known}.` }],
       isError: true as const,
     }
+  }
+
+  if (nativeType === 'files-previewer') {
+    const root = opts?.resolveSessionRoot?.() ?? opts?.projectPath
+    if (!root) {
+      return {
+        content: [{ type: 'text' as const, text: '[Error] @native/files-previewer needs a session working directory to resolve paths against; none is available here.' }],
+        isError: true as const,
+      }
+    }
+    const { buildFilesPreviewerPayload } = await import('./files-previewer-payload')
+    const built = buildFilesPreviewerPayload(title, data, { root })
+    if (!built.payload) {
+      return { content: [{ type: 'text' as const, text: built.error ?? '[Error] widget_show failed.' }], isError: true as const }
+    }
+    return { content: [{ type: 'text' as const, text: JSON.stringify(built.payload) }] }
   }
 
   const { mediaGenOutputDir } = await import('../media-gen/paths')
@@ -128,11 +151,7 @@ export function registerWidgetTools(server: McpServer, opts?: WidgetToolsOptions
 
   server.tool(
     'widget_show',
-    'Render SVG, diagrams, charts, or interactive HTML inline in chat. ' +
-    'Pass widget_code for new content, or template + data to reuse a saved template. ' +
-    'To show media you produced yourself, pass a @native/* template so it renders in SuperOne\'s own gallery ' +
-    '(viewer, download, drag-out) instead of a lookalike you build in widget_code — call widget_list_templates for the list. ' +
-    'Before the first new widget in a session, load the relevant design modules with read_manual({ domain: "widget", modules: [...] }).',
+    WIDGET_SHOW_DESCRIPTION,
     {
       title: z.string().describe('Short snake_case identifier for this widget.'),
       widget_code: z.string().optional().describe(

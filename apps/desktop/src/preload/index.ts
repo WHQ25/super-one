@@ -2182,6 +2182,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.GIT_DIFF_FILE, folderPath, filePath, staged),
   readProjectFile: (folderPath: string, filePath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.READ_PROJECT_FILE, folderPath, filePath),
+  statPreviewFile: (root: string, filePath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.STAT_PREVIEW_FILE, root, filePath),
   setUnsavedEditorBuffer: (filePath: string, content: string | null) =>
     ipcRenderer.invoke(AgentIpcChannels.ACP_SET_UNSAVED_BUFFER, filePath, content),
   getFileTree: (folderPath: string) =>

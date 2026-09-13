@@ -9,6 +9,8 @@ const ZOOM_STEP = 0.2
 interface ImagePreviewProps {
   src: string
   alt: string
+  /** Leave ← → to a surrounding viewer that navigates between items with them. */
+  disableArrowKeys?: boolean
 }
 
 function Controls() {
@@ -30,7 +32,7 @@ function Controls() {
   )
 }
 
-export default function ImagePreviewImpl({ src, alt }: ImagePreviewProps) {
+export default function ImagePreviewImpl({ src, alt, disableArrowKeys = false }: ImagePreviewProps) {
   const apiRef = useRef<ReactZoomPanPinchContentRef | null>(null)
 
   useEffect(() => {
@@ -66,6 +68,7 @@ export default function ImagePreviewImpl({ src, alt }: ImagePreviewProps) {
         case 'ArrowDown':
         case 'ArrowLeft':
         case 'ArrowRight': {
+          if (disableArrowKeys) return
           e.preventDefault()
           const { positionX, positionY, scale } = api.instance.state
           const dx = e.key === 'ArrowLeft' ? PAN_STEP : e.key === 'ArrowRight' ? -PAN_STEP : 0
@@ -77,7 +80,7 @@ export default function ImagePreviewImpl({ src, alt }: ImagePreviewProps) {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [])
+  }, [disableArrowKeys])
 
   return (
     <div className="relative h-full w-full">

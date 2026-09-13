@@ -157,6 +157,9 @@ function shouldKeepFullToolResult(summary: string, toolName?: string): boolean {
   try {
     const obj = JSON.parse(trimmed) as Record<string, unknown>
     return (typeof obj.widget_code === 'string' && obj.widget_code.length > 0)
+      // A native widget_show result *is* the UI (gallery items, previewer rows); truncating it
+      // leaves the renderer with unparseable JSON and a blank turn.
+      || (obj.kind === 'native' && typeof obj.nativeType === 'string')
       || looksLikeCollabResult(obj)
       || looksLikeSessionArchiveJson(obj)
       || looksLikeComputerUseResult(obj)

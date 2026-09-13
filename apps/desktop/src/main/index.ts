@@ -73,6 +73,7 @@ import { SessionManagerImpl } from './session/session-manager'
 import { TerminalManager } from './terminal/terminal-manager'
 import { RemoteTerminalController } from './environment/remote-terminal-controller'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
+import { AUDIO_EXTENSIONS, BINARY_IMAGE_EXTENSIONS, PDF_EXTENSIONS, VIDEO_EXTENSIONS } from '@superone/shared/file-preview'
 import { newMessageId } from '@superone/shared/message-id'
 import { TerminalBroadcaster } from './remote/terminal-broadcaster'
 import { nodePtySpawner } from './terminal/pty'
@@ -3228,10 +3229,15 @@ function registerIpcHandlers(): void {
     }
   })
 
-  const BINARY_IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.ico'])
-  const PDF_EXTS = new Set(['.pdf'])
-  const VIDEO_EXTS = new Set(['.mp4', '.webm', '.ogg', '.mov'])
-  const AUDIO_EXTS = new Set(['.mp3', '.wav', '.flac', '.aac', '.m4a', '.ogg'])
+  const BINARY_IMAGE_EXTS = BINARY_IMAGE_EXTENSIONS
+  const PDF_EXTS = PDF_EXTENSIONS
+  const VIDEO_EXTS = VIDEO_EXTENSIONS
+  const AUDIO_EXTS = AUDIO_EXTENSIONS
+  ipcMain.handle(AgentIpcChannels.STAT_PREVIEW_FILE, async (_event, root: string, filePath: string) => {
+    const { resolvePreviewerFile } = await import('./generative-ui/files-previewer-payload')
+    return resolvePreviewerFile({ path: filePath }, { root })
+  })
+
   ipcMain.handle(AgentIpcChannels.READ_PROJECT_FILE, async (_event, folderPath: string, filePath: string) => {
     try {
       if (parseRemoteProjectKey(folderPath)) {

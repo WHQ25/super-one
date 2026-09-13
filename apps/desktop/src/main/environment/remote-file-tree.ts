@@ -32,6 +32,7 @@ import { tmpdir } from 'node:os'
 import type { FileEntryKind, FileOpResult, FileTreeEntry } from '@superone/shared/agent-types'
 import type { WorkspaceEntry } from '@superone/shared/environment'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
+import { AUDIO_EXTENSIONS, BINARY_IMAGE_EXTENSIONS, PDF_EXTENSIONS, VIDEO_EXTENSIONS } from '@superone/shared/file-preview'
 import {
   EMPTY_PAIR,
   parseGitStatusOutput,
@@ -63,10 +64,10 @@ const SKIP_NAMES = new Set(['.git', '.DS_Store'])
 /** Match node workspace.writeFile / readFile payload cap. */
 const MAX_TRANSFER_BYTES = 10 * 1024 * 1024
 
-const REMOTE_IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.ico'])
-const REMOTE_PDF_EXTS = new Set(['.pdf'])
-const REMOTE_VIDEO_EXTS = new Set(['.mp4', '.webm', '.ogg', '.mov'])
-const REMOTE_AUDIO_EXTS = new Set(['.mp3', '.wav', '.flac', '.aac', '.m4a', '.ogg'])
+const REMOTE_IMAGE_EXTS = BINARY_IMAGE_EXTENSIONS
+const REMOTE_PDF_EXTS = PDF_EXTENSIONS
+const REMOTE_VIDEO_EXTS = VIDEO_EXTENSIONS
+const REMOTE_AUDIO_EXTS = AUDIO_EXTENSIONS
 const REMOTE_MIME: Record<string, string> = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
@@ -77,6 +78,7 @@ const REMOTE_MIME: Record<string, string> = {
   '.ico': 'image/x-icon',
   '.pdf': 'application/pdf',
   '.mp4': 'video/mp4',
+  '.m4v': 'video/x-m4v',
   '.webm': 'video/webm',
   '.ogg': 'video/ogg',
   '.mov': 'video/quicktime',

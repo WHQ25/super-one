@@ -39,6 +39,17 @@ export const NATIVE_TEMPLATE_CATALOG: { id: string; type: NativeWidgetType; desc
       'SuperOne\'s own video gallery — the surface finished media_generate_video jobs render into. '
       + 'data: { videos: [{ path } | { base64, mediaType }], prompt?, params?: { [label]: string | number }, warnings?: string[] }.',
   },
+  {
+    id: '@native/files-previewer',
+    type: 'files-previewer',
+    description:
+      'A fixed-height carousel of files with a note under each — arrows on desktop, swipe on the phone, '
+      + 'tap to open the real viewer. Anything the activity panel can preview: images, PDF, video, audio, '
+      + 'Markdown, notebooks, source and text. '
+      + 'data: { files: [{ path, note? }] } — path relative to your working directory or absolute, note is plain text. '
+      + 'Use this when you hand the user several artifacts to look at one after another; '
+      + 'for one image an ordinary ![](<path>) is enough.',
+  },
 ]
 
 export function formatNativeTemplateList(): string {
@@ -149,7 +160,7 @@ function materialize(
 }
 
 export function buildNativeWidgetPayload(
-  nativeType: NativeWidgetType,
+  nativeType: Exclude<NativeWidgetType, 'files-previewer'>,
   title: string,
   data: Record<string, unknown> | undefined,
   deps: NativeWidgetBuildDeps,

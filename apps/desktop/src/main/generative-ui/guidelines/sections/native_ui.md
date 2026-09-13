@@ -4,7 +4,8 @@ Every other module teaches you to *author* a visual. This one is the opposite: S
 of its own surfaces and you supply only the data. You write no HTML, no CSS, no layout.
 
 Reach for this whenever the thing you want to show is **media you produced** — images or video from a
-provider, a script, or adapter code you just wrote — rather than a layout you designed.
+provider, a script, or adapter code you just wrote — or **several files the user should look at one
+after another** — rather than a layout you designed.
 
 ### Why not just build it in widget_code
 
@@ -25,6 +26,7 @@ A widget cannot implement any of these, because they live outside the frame.
 |---|---|
 | `@native/image-gallery` | Generated or fetched **images** |
 | `@native/video-gallery` | Generated or fetched **video** |
+| `@native/files-previewer` | **Several files** to look at in turn — screenshots, reports, changed sources — each with a note |
 
 Call `widget_list_templates` for each one's exact `data` shape — that list is generated from the
 running build, so it is authoritative and this page is not.
@@ -51,11 +53,33 @@ you are holding. The host writes the bytes to disk, generates thumbnails, and re
 indistinguishable from a built-in generation. `prompt` and `params` are optional captions shown on
 the card.
 
+### The files previewer
+
+```js
+widget_show({
+  title: 'changed_files',
+  template: '@native/files-previewer',
+  data: {
+    files: [
+      { path: 'docs/design/architecture.png', note: 'Three layers; arrows are IPC direction' },
+      { path: 'src/renderer/components/chat/FilesPreviewer.tsx', note: 'New block entry point' },
+      { path: '/abs/path/reports/q3-summary.pdf' },
+    ],
+  },
+})
+```
+
+`path` is relative to your working directory or absolute; `note` is optional plain text shown under
+the file. Anything the activity panel can preview works: images, PDF, video, audio, Markdown,
+notebooks, source and text. The host checks every path before answering — a file that does not
+exist stays in the carousel as a "not found" row so the user sees what you meant. Up to 50 files
+per call. For a single image, plain `![](<path>)` in your reply is lighter.
+
 ### What you will see
 
-**The tool row disappears.** A native call is not narrated as "widget_show ran" — the gallery itself
-takes its place in the transcript, exactly as it does for `media_generate_image`. That is intended:
-the result is the UI.
+**The tool row disappears.** A native gallery call is not narrated as "widget_show ran" — the
+gallery itself takes its place in the transcript, exactly as it does for `media_generate_image`. The
+files previewer renders as a card where the call sits. Either way the result is the UI.
 
 If the call fails (a path that does not exist, an entry with neither `path` nor `base64`), the row
 stays and reports the reason. Those errors are yours to fix — read the message and re-call.

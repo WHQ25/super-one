@@ -110,6 +110,8 @@ export interface SessionTitleSetter {
   setTitle(title: string, source: 'user' | 'agent'): void
   /** Project directory this session is scoped to (present on the real Session object). */
   readonly projectPath?: string
+  /** Directory the agent works in — a worktree when it has one (present on the real Session object). */
+  readonly cwd?: string
   /** Host-emitted AgentEvents (e.g. browser download task lifecycle). */
   emitHostEvent?(event: import('@superone/shared/agent-types').AgentEvent): void
   /**

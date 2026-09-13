@@ -10,6 +10,14 @@ import { isAbsoluteLocalPath } from '@/lib/file-link'
 import { toLocalFileUrl, toMediaUrl } from '@/lib/path-utils'
 import { PdfPreview } from '@/components/chat/PdfPreview'
 import type { GitFileDiff, GitFileContent } from '@superone/shared/agent-types'
+import {
+  AUDIO_EXTENSIONS,
+  BINARY_IMAGE_EXTENSIONS,
+  MARKDOWN_EXTENSIONS,
+  NOTEBOOK_EXTENSIONS,
+  PDF_EXTENSIONS,
+  VIDEO_EXTENSIONS,
+} from '@superone/shared/file-preview'
 import { FileDiffView } from './source-control/FileDiffView'
 import { FileWithDiffView } from './source-control/FileWithDiffView'
 import { ImagePreview } from './ImagePreview'
@@ -18,15 +26,17 @@ import { NotebookPreview } from './NotebookPreview'
 import { TextFileEditor } from './TextFileEditor'
 import { FileSelectionContextMenuZone } from './FileSelectionContextMenuZone'
 
-const MARKDOWN_EXTS = new Set(['md', 'mdx', 'markdown'])
-const NOTEBOOK_EXTS = new Set(['ipynb'])
-const BINARY_IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico'])
-const PDF_EXTS = new Set(['pdf'])
-const VIDEO_EXTS = new Set(['mp4', 'webm', 'ogg', 'mov'])
-const AUDIO_EXTS = new Set(['mp3', 'wav', 'flac', 'aac', 'm4a', 'ogg'])
+const MARKDOWN_EXTS = MARKDOWN_EXTENSIONS
+const NOTEBOOK_EXTS = NOTEBOOK_EXTENSIONS
+const BINARY_IMAGE_EXTS = BINARY_IMAGE_EXTENSIONS
+const PDF_EXTS = PDF_EXTENSIONS
+const VIDEO_EXTS = VIDEO_EXTENSIONS
+const AUDIO_EXTS = AUDIO_EXTENSIONS
 
+/** Dotted, lower-case, matching the shared extension tables. */
 function getFileExt(fileName: string): string {
-  return fileName.split('.').pop()?.toLowerCase() ?? ''
+  const dot = fileName.lastIndexOf('.')
+  return dot < 0 ? '' : fileName.slice(dot).toLowerCase()
 }
 
 type TabKey = 'changes' | 'editor' | 'preview' | 'file'
@@ -55,7 +65,7 @@ function useOwnFileData(filePath: string | undefined, refreshKey: number) {
       pickedTabForPathRef.current = filePath
       const isBin = c.language === 'image' || c.language === 'pdf' || c.language === 'video' || c.language === 'audio'
       const isSvg = c.language === 'svg'
-      const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
+      const ext = getFileExt(filePath)
       const isMd = MARKDOWN_EXTS.has(ext)
       const isNb = NOTEBOOK_EXTS.has(ext)
       // Default: media + markdown + notebook → Preview; dirty git → Changes; else File.
@@ -103,7 +113,7 @@ export function FilePreview({ filePath }: FilePreviewProps) {
   const isNotebook = NOTEBOOK_EXTS.has(ext)
   const isBinImg = BINARY_IMAGE_EXTS.has(ext)
   const isPdfFile = PDF_EXTS.has(ext)
-  const isSvgFile = ext === 'svg'
+  const isSvgFile = ext === '.svg'
   const isVideoFile = VIDEO_EXTS.has(ext)
   const isAudioFile = AUDIO_EXTS.has(ext)
   const hasDiff = !!fileDiff?.diff

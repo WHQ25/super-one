@@ -11,7 +11,13 @@ const ZOOM_MIN = 0.5
 const ZOOM_MAX = 3
 const RESIZE_DEBOUNCE_MS = 300
 
-export function PdfPreview(props: PdfSource & { className?: string }) {
+/**
+ * `stage`: the first page only, fitted to the container, no toolbar — a passive
+ * thumbnail for a carousel slide. `full` (default) renders every page with zoom.
+ */
+type PdfVariant = 'full' | 'stage'
+
+export function PdfPreview(props: PdfSource & { className?: string; variant?: PdfVariant }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const pdfRef = useRef<import('pdfjs-dist').PDFDocumentProxy | null>(null)
@@ -24,6 +30,7 @@ export function PdfPreview(props: PdfSource & { className?: string }) {
   const [zoom, setZoom] = useState(1)
 
   const sourceKey = 'base64' in props ? props.base64 : props.url
+  const stage = props.variant === 'stage'
 
   const renderPages = useCallback(async (scale: number) => {
     const container = containerRef.current
@@ -34,7 +41,8 @@ export function PdfPreview(props: PdfSource & { className?: string }) {
     container.innerHTML = ''
     const dpr = window.devicePixelRatio || 1
 
-    for (let i = 1; i <= pdf.numPages; i++) {
+    const last = stage ? 1 : pdf.numPages
+    for (let i = 1; i <= last; i++) {
       const page = await pdf.getPage(i)
       const viewport = page.getViewport({ scale: scale * dpr })
 
@@ -51,7 +59,7 @@ export function PdfPreview(props: PdfSource & { className?: string }) {
     }
 
     baseScaleRef.current = scale
-  }, [])
+  }, [stage])
 
   useEffect(() => {
     let cancelled = false
@@ -125,7 +133,7 @@ export function PdfPreview(props: PdfSource & { className?: string }) {
 
   return (
     <div className={cn('relative flex flex-col overflow-hidden bg-muted/30', props.className ?? 'max-h-[80vh]')}>
-      {!loading && pageCount > 0 && (
+      {!loading && pageCount > 0 && !stage && (
         <div className="flex shrink-0 items-center justify-center gap-1 border-b px-3 py-1.5">
           <IconButton size="sm" onClick={zoomOut}>
             <ZoomOut />
@@ -140,7 +148,7 @@ export function PdfPreview(props: PdfSource & { className?: string }) {
           <span className="ml-2 text-xs text-muted-foreground">{pageCount} pages</span>
         </div>
       )}
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto p-4">
+      <div ref={scrollRef} className={cn('min-h-0 flex-1 p-4', stage ? 'overflow-hidden' : 'overflow-auto')}>
         {loading && (
           <div className="flex items-center justify-center py-20">
             <Loader2 className="size-5 animate-spin text-muted-foreground" />

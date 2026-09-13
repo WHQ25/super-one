@@ -14,6 +14,11 @@ export function parsePortableNativeWidgetResult(result: string | undefined): Nat
   }
 }
 
+/** The two turn-end gallery types; anything else renders in place or not at all. */
+export function isGalleryPayload(payload: NativeWidgetPayload): boolean {
+  return payload.nativeType === 'image-gallery' || payload.nativeType === 'video-gallery'
+}
+
 export function portableFileName(path: string): string {
   return path.split(/[\\/]/).pop() || path
 }

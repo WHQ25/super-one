@@ -18,8 +18,39 @@ import type { ImageGenerationItem, VideoGenerationItem } from '../agent-types'
 
 export const NATIVE_TEMPLATE_PREFIX = '@native/'
 
-export const NATIVE_WIDGET_TYPES = ['image-gallery', 'video-gallery'] as const
+export const NATIVE_WIDGET_TYPES = ['image-gallery', 'video-gallery', 'files-previewer'] as const
 export type NativeWidgetType = (typeof NATIVE_WIDGET_TYPES)[number]
+
+/**
+ * How one `@native/files-previewer` entry renders. The name-derived kinds mirror
+ * `FilePreviewKind`; the last two are host verdicts the renderer cannot reach on
+ * its own — a NUL in the first bytes, a file past the read cap, a path outside
+ * every root the media server serves, or nothing at the path at all.
+ */
+export type PreviewerFileKind =
+  | 'image' | 'pdf' | 'video' | 'audio' | 'markdown' | 'notebook' | 'text'
+  | 'unpreviewable'
+  | 'missing'
+
+export type PreviewerUnpreviewableReason = 'binary' | 'too_large' | 'outside_readable_roots'
+
+export interface PreviewerFile {
+  /** As the agent wrote it — what the header shows. */
+  path: string
+  /** Host-resolved; what every read and open uses. */
+  absolutePath: string
+  name: string
+  kind: PreviewerFileKind
+  /** Bytes; absent when missing. */
+  size?: number
+  /** Present only when `kind` is `unpreviewable`. */
+  reason?: PreviewerUnpreviewableReason
+  note?: string
+}
+
+/** Host-enforced input limits; the result must survive every harness's tool-result cap. */
+export const FILES_PREVIEWER_MAX_FILES = 50
+export const FILES_PREVIEWER_MAX_NOTE_CHARS = 500
 
 export interface NativeWidgetPayload {
   kind: 'native'
@@ -29,6 +60,10 @@ export interface NativeWidgetPayload {
   images?: ImageGenerationItem[]
   /** Present for `video-gallery`. */
   videos?: VideoGenerationItem[]
+  /** Present for `files-previewer`: the root every `absolutePath` was resolved against. */
+  root?: string
+  /** Present for `files-previewer`. */
+  files?: PreviewerFile[]
 }
 
 /**
@@ -82,6 +117,39 @@ export function parseNativeWidgetResult(resultText: string | undefined): NativeW
     const images = renderableItems<ImageGenerationItem>(record.images)
     return images.length > 0 ? { kind: 'native', nativeType, title, images } : null
   }
+  if (nativeType === 'files-previewer') {
+    // The previewer renders in place; it must never carry gallery items or the
+    // turn-end collectors would show it twice.
+    if (record.images !== undefined || record.videos !== undefined) return null
+    const files = previewerFiles(record.files)
+    const root = typeof record.root === 'string' ? record.root : ''
+    return files.length > 0 && root ? { kind: 'native', nativeType, title, root, files } : null
+  }
   const videos = renderableItems<VideoGenerationItem>(record.videos)
   return videos.length > 0 ? { kind: 'native', nativeType, title, videos } : null
+}
+
+const PREVIEWER_KINDS: ReadonlySet<string> = new Set([
+  'image', 'pdf', 'video', 'audio', 'markdown', 'notebook', 'text', 'unpreviewable', 'missing',
+])
+
+function previewerFiles(value: unknown): PreviewerFile[] {
+  if (!Array.isArray(value)) return []
+  const files: PreviewerFile[] = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue
+    const r = item as Record<string, unknown>
+    if (typeof r.path !== 'string' || typeof r.absolutePath !== 'string' || typeof r.name !== 'string') continue
+    if (typeof r.kind !== 'string' || !PREVIEWER_KINDS.has(r.kind)) continue
+    files.push({
+      path: r.path,
+      absolutePath: r.absolutePath,
+      name: r.name,
+      kind: r.kind as PreviewerFileKind,
+      ...(typeof r.size === 'number' && Number.isFinite(r.size) ? { size: r.size } : {}),
+      ...(typeof r.reason === 'string' ? { reason: r.reason as PreviewerUnpreviewableReason } : {}),
+      ...(typeof r.note === 'string' && r.note ? { note: r.note } : {}),
+    })
+  }
+  return files
 }

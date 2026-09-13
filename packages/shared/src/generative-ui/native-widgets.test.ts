@@ -21,6 +21,7 @@ describe('native widget template ids', () => {
   it('resolves only known native types, so a typo does not silently render nothing', () => {
     expect(nativeTypeFromTemplateId('@native/image-gallery')).toBe('image-gallery')
     expect(nativeTypeFromTemplateId('@native/video-gallery')).toBe('video-gallery')
+    expect(nativeTypeFromTemplateId('@native/files-previewer')).toBe('files-previewer')
     expect(nativeTypeFromTemplateId('@native/image_gallery')).toBeNull()
     expect(nativeTypeFromTemplateId('@native/table')).toBeNull()
   })
@@ -59,5 +60,34 @@ describe('parseNativeWidgetResult — the single hide/collect predicate', () => 
   it('drops items that are not render-ready, so hiding never trades a row for nothing', () => {
     const noPath = JSON.stringify({ ...payload, images: [{ id: 'x', type: 'image_generation', status: 'completed' }] })
     expect(parseNativeWidgetResult(noPath)).toBeNull()
+  })
+})
+
+describe('parseNativeWidgetResult — files-previewer renders in place', () => {
+  const file = { path: 'docs/a.png', absolutePath: '/repo/docs/a.png', name: 'a.png', kind: 'image', size: 10, note: 'the diagram' }
+  const payload = { kind: 'native', nativeType: 'files-previewer', title: 'files', root: '/repo', files: [file] }
+
+  it('parses a previewer payload with its root and rows', () => {
+    expect(parseNativeWidgetResult(JSON.stringify(payload))).toEqual(payload)
+  })
+
+  it('keeps a missing row — order and count must match what the agent wrote', () => {
+    const missing = { path: 'gone.txt', absolutePath: '/repo/gone.txt', name: 'gone.txt', kind: 'missing' }
+    const parsed = parseNativeWidgetResult(JSON.stringify({ ...payload, files: [file, missing] }))
+    expect(parsed?.files?.map((f) => f.kind)).toEqual(['image', 'missing'])
+  })
+
+  it('drops rows with an unknown kind (a payload from a newer build) rather than rendering a blank slide', () => {
+    const parsed = parseNativeWidgetResult(JSON.stringify({ ...payload, files: [file, { ...file, kind: 'hologram' }] }))
+    expect(parsed?.files).toHaveLength(1)
+  })
+
+  it('returns null for an empty file list or a missing root, so the ordinary tool row shows instead', () => {
+    expect(parseNativeWidgetResult(JSON.stringify({ ...payload, files: [] }))).toBeNull()
+    expect(parseNativeWidgetResult(JSON.stringify({ ...payload, root: undefined }))).toBeNull()
+  })
+
+  it('rejects a payload that also carries gallery items, which the turn-end collectors would show twice', () => {
+    expect(parseNativeWidgetResult(JSON.stringify({ ...payload, images: [] }))).toBeNull()
   })
 })

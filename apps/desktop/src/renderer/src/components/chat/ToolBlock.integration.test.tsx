@@ -93,6 +93,15 @@ vi.mock('./chat-shared', () => ({
     getThemes: () => ({}),
     highlight: () => null,
   },
+  // `CopyableMarkdown` (reached through the files previewer's Markdown stage) reads
+  // these at import time; none of the scenarios here render Markdown.
+  getMathPluginSync: () => null,
+  loadMathPlugin: () => Promise.resolve(null),
+  streamdownComponents: {},
+  streamdownControls: {},
+  streamdownLinkSafety: { enabled: false },
+  streamdownPlugins: {},
+  streamdownRehypePlugins: [],
 }))
 
 vi.mock('./tool-block-utils', async (importOriginal) => ({
@@ -620,5 +629,47 @@ describe('WebMCP page tool rows read through the MCP reply envelope', () => {
     // BrowserPageToolsBlock.test.tsx. What matters here is that the row expanded at all,
     // which only happens once the envelope has been unwrapped to a non-empty output.
     expect(container.textContent).toContain('Result')
+  })
+})
+
+describe('ToolBlock widget_show native previewer', () => {
+  const previewer = JSON.stringify({
+    kind: 'native',
+    nativeType: 'files-previewer',
+    title: 'changed_files',
+    root: '/proj',
+    files: [
+      { path: 'docs/diagram.png', absolutePath: '/proj/docs/diagram.png', name: 'diagram.png', kind: 'image', size: 10, note: 'Three layers' },
+      { path: 'src/a.ts', absolutePath: '/proj/src/a.ts', name: 'a.ts', kind: 'text', size: 20 },
+    ],
+  })
+  const gallery = JSON.stringify({
+    kind: 'native',
+    nativeType: 'image-gallery',
+    title: 'g',
+    images: [{ id: 'g-0', type: 'image_generation', status: 'completed', savedPath: '/tmp/a.png' }],
+  })
+
+  it('mounts the previewer card in place once the result has settled', () => {
+    render(
+      <ToolBlock toolName="mcp__superone__widget_show" input="{}" status="complete" result={previewer} />,
+    )
+    expect(screen.getByTestId('files-previewer')).not.toBeNull()
+    expect(screen.getByTestId('previewer-note').textContent).toBe('Three layers')
+  })
+
+  it('shows the ordinary compact row while the call streams', () => {
+    render(
+      <ToolBlock toolName="mcp__superone__widget_show" input='{"title":"changed_files","template":"@native/files-previewer"}' status="streaming" />,
+    )
+    expect(screen.queryByTestId('files-previewer')).toBeNull()
+    expect(screen.getByText(/Generating widget/)).not.toBeNull()
+  })
+
+  it('never mounts the card for a gallery result — the turn-end gallery draws that one', () => {
+    render(
+      <ToolBlock toolName="mcp__superone__widget_show" input="{}" status="complete" result={gallery} />,
+    )
+    expect(screen.queryByTestId('files-previewer')).toBeNull()
   })
 })

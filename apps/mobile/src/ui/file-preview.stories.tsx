@@ -82,6 +82,12 @@ export const TallPortrait = { args: { state: fixture('Image · tall portrait (tu
 /** A source that cannot decode shows the failure copy instead of a spinner forever. */
 export const Broken = { args: { state: fixture('Image · broken') } }
 /** A mermaid diagram on its own page: pinch stays here, back restores the chat. */
+export const Video = { args: { state: fixture('Video · downloaded') } }
+
+export const VideoUndecodable = { args: { state: fixture('Video · undecodable') } }
+
+export const VideoLandscape = { args: { state: fixture('Video · downloaded'), landscape: true } }
+
 export const Mermaid = { args: { state: fixture('Mermaid') } }
 /** Same diagram in the light shell. */
 export const MermaidLight = { args: { state: fixture('Mermaid'), scheme: 'light' } }

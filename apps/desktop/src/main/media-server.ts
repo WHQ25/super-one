@@ -81,6 +81,17 @@ export function getMediaServerPort(): number {
   return port
 }
 
+/**
+ * The URL the server answers for a file — the same encoding the renderer's
+ * `mediaUrlFor` uses, so main-side consumers (the video poster window) and the
+ * chat gallery hit identical paths.
+ */
+export function mediaServerUrl(filePath: string, serverPort: number): string {
+  const normalized = filePath.replace(/\\/g, '/')
+  const withRoot = normalized.startsWith('/') ? normalized : `/${normalized}`
+  return `http://127.0.0.1:${serverPort}${encodeURI(withRoot).replace(/#/g, '%23')}`
+}
+
 export function stopMediaServer(): void {
   server?.close()
   server = null

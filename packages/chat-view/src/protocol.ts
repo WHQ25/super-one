@@ -37,8 +37,9 @@ export interface SessionProjection {
    * markdown file links into paths `previewFile` can act on — the WebView has no
    * transport for host files, so media srcs are deliberately left alone. Tool
    * screenshots and generated images are the one exception: `PortableHostImage`
-   * asks the host for them through the `loadImage` native action. Any picture
-   * the transcript does display opens fullscreen through `previewImage`. A
+   * asks the host for them through the `loadImage` native action, and
+   * `PortableHostVideo` asks for a clip's first frame through `loadVideoPoster`.
+   * Any picture the transcript does display opens fullscreen through `previewImage`. A
    * mermaid expand is the same idea: `previewMermaid` opens a page of its own
    * so pinch-zoom cannot scale the chat document.
    */

@@ -26,6 +26,7 @@ import { Button } from './primitives'
 import { SCROLL_INDICATOR_GUTTER } from './scroll-gutter'
 import { Text } from './text'
 import { useFade } from './use-fade'
+import { VideoPlayerView } from './video-player'
 import { ZoomableImage } from './zoomable-image'
 import { ZoomableMermaid } from './zoomable-mermaid'
 
@@ -49,9 +50,9 @@ const FEEDBACK_MS = 2500
  * phone opens into — a tap on a transcript image, a mermaid expand, a file
  * chip, or a row in the Files browser.
  *
- * The body follows `state.kind`: a zoomable picture, a mermaid diagram, a
- * code listing or prose, a transfer card while bytes are still on the
- * desktop, or the loading and error states around them. The chrome is the
+ * The body follows `state.kind`: a zoomable picture, a playing clip, a
+ * mermaid diagram, a code listing or prose, a transfer card while bytes are
+ * still on the desktop, or the loading and error states around them. The chrome is the
  * same throughout — back, the file-type icon and name (the same Symbols
  * artwork a file chip uses), and a menu with the only two things worth doing
  * with a file on a phone: keep a copy, or hand it to another app. Phones stay
@@ -68,7 +69,7 @@ export function FilePreviewModal({ state, ports, onDismiss, onStartTransfer, onR
   const [chromeVisible, setChromeVisible] = useState(true)
   const toggleChrome = useCallback(() => setChromeVisible((visible) => !visible), [])
   // Every new target arrives with its chrome up, whatever the last one was left at.
-  const target = state?.kind === 'image' ? state.src : state?.kind === 'mermaid' ? state.svg : state?.path
+  const target = state?.kind === 'image' ? state.src : state?.kind === 'mermaid' ? state.svg : state?.kind === 'video' ? state.localUri : state?.path
   useEffect(() => { setChromeVisible(true) }, [target])
 
   return (
@@ -123,6 +124,14 @@ function PreviewBody({ state, chromeVisible, onToggleChrome, onStartTransfer, on
     return (
       <View style={[styles.flex, offset]}>
         <ZoomableMermaid svg={state.svg} />
+      </View>
+    )
+  }
+
+  if (state.kind === 'video') {
+    return (
+      <View style={[styles.flex, offset, { backgroundColor: '#000' }]}>
+        <VideoPlayerView key={state.localUri} uri={state.localUri} label={state.name} />
       </View>
     )
   }

@@ -73,9 +73,16 @@
         "expo-media-library",
         {
           "photosPermission": "Allow SuperOne to attach images to chat.",
-          "savePhotosPermission": "Allow SuperOne to save images from the desktop to your photo library.",
+          "savePhotosPermission": "Allow SuperOne to save images and videos from the desktop to your photo library.",
           "isAccessMediaLocationEnabled": false,
           "granularPermissions": []
+        }
+      ],
+      [
+        "expo-video",
+        {
+          "supportsBackgroundPlayback": false,
+          "supportsPictureInPicture": false
         }
       ],
       "./plugins/with-dev-client-updates.js",

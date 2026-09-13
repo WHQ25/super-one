@@ -7,6 +7,7 @@ function ports(): NativeActionPorts {
     openFile: vi.fn(),
     previewFile: vi.fn(),
     loadImage: vi.fn(async () => ({ dataUri: 'data:image/png;base64,AA==' })),
+    loadVideoPoster: vi.fn(async () => ({ dataUri: 'data:image/jpeg;base64,/9j/', width: 320, height: 180, durationMs: 4200 })),
     loadAttachment: vi.fn(async () => 'data:image/jpeg;base64,/9j/'),
     resolveFavicon: vi.fn(async () => 'data:image/png;base64,AA=='),
     previewImage: vi.fn(),
@@ -124,6 +125,18 @@ describe('native chat actions', () => {
       type: 'requestNative', requestId: 'img2', action: 'loadImage', payload: { path: 'shots/a.png', confirmed: true },
     }, target)
     expect(target.loadImage).toHaveBeenLastCalledWith('shots/a.png', true)
+  })
+
+  it('answers loadVideoPoster with the poster under its own key, and null when the host cut none', async () => {
+    const target = ports()
+    await expect(resolveNativeRequest({
+      type: 'requestNative', requestId: 'vid', action: 'loadVideoPoster', payload: { path: 'out/clip.mp4' },
+    }, target)).resolves.toMatchObject({ result: { ok: true, poster: { dataUri: 'data:image/jpeg;base64,/9j/', width: 320, height: 180, durationMs: 4200 } } })
+    expect(target.loadVideoPoster).toHaveBeenCalledWith('out/clip.mp4')
+    vi.mocked(target.loadVideoPoster).mockResolvedValueOnce(null)
+    await expect(resolveNativeRequest({
+      type: 'requestNative', requestId: 'vid2', action: 'loadVideoPoster', payload: { path: 'out/odd.mkv' },
+    }, target)).resolves.toMatchObject({ result: { ok: true, poster: null } })
   })
 
   it('fetches the original behind an attachment thumbnail by id, or by name without one', async () => {

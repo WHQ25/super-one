@@ -3,6 +3,7 @@ import { buildProgressiveBootstrap } from './progressive-bootstrap'
 import { isProgressiveSession, projectProgressiveMessage, setProgressiveSession } from '../remote/progressive-session'
 import { rememberAttachmentOrigin } from '../remote/attachment-echo'
 import { findAttachment } from '../remote/attachment-thumbnail'
+import { videoPosterService } from '../remote/video-poster'
 import { handleDetailCommand } from '../remote/detail-command'
 import { summarizeSessionActivity, type SessionActivity } from '@superone/shared/session-activity'
 import { answerRemoteAsyncQuestion } from './remote-async-question'
@@ -1904,6 +1905,10 @@ export class AgentService {
         await this.handleReadDesktopFile(command, respond, source)
         break
       }
+      case 'read_video_poster': {
+        await this.handleReadVideoPoster(command, respond)
+        break
+      }
       case 'upload_file': {
         if (!respond) break
         const svc = this.mobileReceiveService
@@ -1983,23 +1988,55 @@ export class AgentService {
     }
   }
 
-  private async handleReadDesktopFile(
-    command: Extract<RemoteCommand, { type: 'read_desktop_file' }>,
-    respond?: RemoteResponder,
-    source?: { deviceId: string; transport: 'lan' | 'relay' },
-  ): Promise<void> {
-    if (!respond) return
-    let authorized: AuthorizedFile
+  /**
+   * The same gate `read_desktop_file` applies, answered as the error shape
+   * both file RPCs share. `null` means the error has already been sent.
+   */
+  private async authorizeRemoteFile(
+    command: { requestId: string; path: string; maxBytes?: number },
+    respond: RemoteResponder,
+  ): Promise<AuthorizedFile | null> {
     try {
-      authorized = await authorizeAndStat(command.path, { allowedRoots: [] }, { maxBytes: command.maxBytes, skipRootCheck: true })
+      return await authorizeAndStat(command.path, { allowedRoots: [] }, { maxBytes: command.maxBytes, skipRootCheck: true })
     } catch (err) {
       if (err instanceof FileBridgeError) {
         await respond(command.requestId, { ok: false, error: err.code, message: err.message })
       } else {
         await respond(command.requestId, { ok: false, error: 'internal_error', message: (err as Error).message })
       }
+      return null
+    }
+  }
+
+  private async handleReadVideoPoster(
+    command: Extract<RemoteCommand, { type: 'read_video_poster' }>,
+    respond?: RemoteResponder,
+  ): Promise<void> {
+    if (!respond) return
+    // No size cap: only the first frame leaves the host, however long the clip.
+    const authorized = await this.authorizeRemoteFile({ requestId: command.requestId, path: command.path, maxBytes: Number.MAX_SAFE_INTEGER }, respond)
+    if (!authorized) return
+    const metadata = { mimeType: authorized.mimeType, name: authorized.name, size: authorized.size, modifiedAt: authorized.modifiedAt }
+    if (!authorized.mimeType.startsWith('video/')) {
+      await respond(command.requestId, { ok: true, ...metadata, poster: null })
       return
     }
+    try {
+      const poster = await videoPosterService().posterFor(authorized)
+      await respond(command.requestId, { ok: true, ...metadata, poster })
+    } catch (err) {
+      await respond(command.requestId, { ok: false, error: 'internal_error', message: (err as Error).message })
+    }
+  }
+
+  private async handleReadDesktopFile(
+    command: Extract<RemoteCommand, { type: 'read_desktop_file' }>,
+    respond?: RemoteResponder,
+    source?: { deviceId: string; transport: 'lan' | 'relay' },
+  ): Promise<void> {
+    if (!respond) return
+    const authorized = await this.authorizeRemoteFile(command, respond)
+    if (!authorized) return
 
     // Small files ride back in the response itself: no LAN URL to sign and, over
     // the relay, no encrypted R2 round-trip. Checked before `statOnly` so one

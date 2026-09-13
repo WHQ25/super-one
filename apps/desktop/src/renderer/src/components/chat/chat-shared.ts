@@ -17,6 +17,7 @@ import { MarkdownRemoteMedia } from './markdown-remote-media'
 import { openBrowserTab } from '@/components/activity/activity-panel-api'
 import { resolveMarkdownFileLinks } from '@superone/chat-view/presenters/markdown-file-links'
 import { createMarkdownRehypePlugins } from '@superone/chat-view/presenters/markdown-media'
+import { isVideoFileName } from '@superone/shared/file-preview'
 
 export { resolveMarkdownFileLinks }
 
@@ -68,7 +69,6 @@ function localFileToMediaUrl(src: string | undefined): string | undefined {
   return src
 }
 
-const VIDEO_EXTS = new Set(['.mp4', '.m4v', '.webm', '.ogg', '.mov'])
 const AUDIO_EXTS = new Set(['.mp3', '.wav', '.flac', '.aac', '.m4a', '.opus', '.weba'])
 
 function MediaVideo(props: ComponentProps<'video'>) {
@@ -111,7 +111,7 @@ function getMediaExt(src: string | undefined): string | null {
 
 function MediaImage(props: ComponentProps<'img'>) {
   const ext = getMediaExt(props.src)
-  if (ext && VIDEO_EXTS.has(ext)) {
+  if (ext && isVideoFileName(ext)) {
     const { alt: _, ...rest } = props
     return MediaVideo(rest as ComponentProps<'video'>)
   }

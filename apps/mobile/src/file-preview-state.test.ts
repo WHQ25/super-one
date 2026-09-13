@@ -120,6 +120,13 @@ describe('transfer completion', () => {
     })
   })
 
+  it('turns a downloaded clip into the video body over its cache file', () => {
+    const clip = { ...image, path: '/proj/out/clip.mp4', name: 'clip.mp4', mimeType: 'video/mp4', size: 4096 }
+    expect(completeTransfer(clip, 'file:///cache/clip.mp4')).toEqual({
+      kind: 'video', path: '/proj/out/clip.mp4', name: 'clip.mp4', localUri: 'file:///cache/clip.mp4', mimeType: 'video/mp4', size: 4096,
+    })
+  })
+
   it('keeps any other file on the transfer card with its bytes attached', () => {
     const pdf = { ...image, name: 'spec.pdf', mimeType: 'application/pdf' }
     expect(completeTransfer(pdf, 'file:///cache/spec.pdf')).toMatchObject({ kind: 'transfer', phase: 'ready', localUri: 'file:///cache/spec.pdf' })
@@ -165,6 +172,12 @@ describe('the more menu', () => {
     expect(filePreviewMenu({ kind: 'image', name: 'a.png', src: PNG, mimeType: 'image/png' })).toEqual({ save: { enabled: true, toPhotos: true }, share: { enabled: true } })
     expect(filePreviewMenu({ kind: 'image', name: 'a.png', src: 'file:///c/a.png', mimeType: 'image/png' }).save).toEqual({ enabled: true, toPhotos: true })
     expect(filePreviewMenu({ kind: 'image', name: 'a.png', src: 'https://x/a.png', mimeType: 'image/png' })).toEqual({ save: { enabled: false, toPhotos: true }, share: { enabled: false } })
+  })
+
+  it('saves a downloaded clip to Photos from its cache file', () => {
+    const video: FilePreviewState = { kind: 'video', path: '/p/clip.mp4', name: 'clip.mp4', localUri: 'file:///c/clip.mp4', mimeType: 'video/mp4', size: 9 }
+    expect(filePreviewMenu(video)).toEqual({ save: { enabled: true, toPhotos: true }, share: { enabled: true } })
+    expect(previewLocalSource(video)).toEqual({ kind: 'file', uri: 'file:///c/clip.mp4', name: 'clip.mp4', mimeType: 'video/mp4' })
   })
 
   it('saves text and finished transfers to a folder', () => {

@@ -6,6 +6,7 @@ import {
   isInlinePreviewTextName,
   isInlineRpcCandidate,
   isMarkdownFileName,
+  isVideoFileName,
   looksBinary,
   shouldInlineRpcBytes,
 } from './file-preview'
@@ -51,6 +52,15 @@ describe('inline preview policy', () => {
     expect(isMarkdownFileName('docs/guide.md')).toBe(true)
     expect(isMarkdownFileName('page.MDX')).toBe(true)
     expect(isMarkdownFileName('notes.txt')).toBe(false)
+  })
+
+  it('names the video containers both chat surfaces preview', () => {
+    expect(isVideoFileName('/proj/out/clip.mp4')).toBe(true)
+    expect(isVideoFileName('walkthrough.MOV')).toBe(true)
+    expect(isVideoFileName('C:\\media\\take.webm')).toBe(true)
+    expect(isVideoFileName('poster.png')).toBe(false)
+    expect(isVideoFileName('notes.mp4.txt')).toBe(false)
+    expect(isVideoFileName('mp4')).toBe(false)
   })
 
   it('treats a NUL in the sniffed prefix as binary and multibyte UTF-8 as text', () => {

@@ -694,10 +694,10 @@ Chat WebView native requests route HTTPS links, clipboard copies, and stripped r
 file-tool metadata through RN. Every preview — file chip or picture — lands in the one
 fullscreen `ui/file-preview.tsx` modal (`FilePreviewModal`, its own `MenuHost`) whose only
 chrome is Close, the title, and a **More** menu with *Save to Photos* / *Save to Files* and
-*Share*. `file-preview-state.ts` owns the state machine (`loading | image | text | transfer |
-error`) and decides which menu rows are enabled; `media-ports.ts` (`MediaPorts`) is the
-only place that touches `expo-file-system` / `expo-sharing` / `expo-media-library`, so
-tests, stories, and the gallery inject `preview/fake-media-ports.ts` instead. Saving to
+*Share*. `file-preview-state.ts` owns the state machine (`loading | image | video | text |
+transfer | error`) and decides which menu rows are enabled; `media-ports.ts` (`MediaPorts`)
+is the only place that touches `expo-file-system` / `expo-sharing` / `expo-media-library`,
+so tests, stories, and the gallery inject `preview/fake-media-ports.ts` instead. Saving to
 Photos asks for add-only library permission and surfaces a denied state with an Open
 Settings button; saving to Files goes through `Directory.pickDirectoryAsync`.
 `previewFile` is the file chip's primary action (with the cited `line` when there is one)
@@ -706,8 +706,11 @@ and is owned by `navigation/use-file-preview.ts`: it asks `read_desktop_file` wi
 transport and small binaries (≤512 KiB) inline over the relay (policy in
 `@superone/shared/file-preview`), and otherwise enters the `transfer` state — downloading
 on its own over LAN, after a Download confirmation over the relay when R2 staging is
-required. Downloaded images swap into the image body; other files stay on a "Downloaded"
-card so the menu can save or share them. `openFile` is the secondary action: resolve the path against the active project and
+required. Downloaded images swap into the image body, downloaded clips into the `video`
+body (`ui/video-player.tsx`, `expo-video` with native controls, autoplay, Save to Photos);
+other files stay on a "Downloaded" card so the menu can save or share them. `expo-video`
+is native — pulling it in needs a dev-client rebuild — and jest stands it in from
+`jest.setup.ts` (a source containing `missing` reports `status: 'error'`). `openFile` is the secondary action: resolve the path against the active project and
 open the containing directory. The native file browser uses `previewFile` for file rows;
 directory rows navigate only. Remote path helpers must preserve POSIX roots, Windows drive
 roots, and UNC share roots. Coalesce concurrent reads of the same project/session/path
@@ -721,6 +724,13 @@ over LAN and for relay files small enough to ride the RPC (≤512 KiB). Larger r
 answer `confirmRequired` (+ size from a `statOnly` read) until the request carries
 `confirmed: true` — the row shows a Load button in between.
 Decoded images are cached per project/path (48 MiB LRU) so re-mounted rows never re-fetch.
+A video in the transcript — a generated clip's gallery tile or a markdown `![…](clip.mp4)` —
+is `PortableHostVideo`: it asks `loadVideoPoster` → `read_video_poster` for the first frame,
+which the desktop cuts in a hidden offscreen window streaming from its media server
+(`apps/desktop/src/main/remote/video-poster.ts`, disk-cached under userData) and always
+answers in-band, so there is no relay confirmation for a poster. `video-posters.ts` caches
+the answer per project/path, `null` included. Tapping the tile is `previewFile`: the clip
+itself only moves then.
 Tapping any picture the transcript *displays* — a loaded host image, a user attachment, a
 markdown image — sends `previewImage` with the `src` already painted, and the shell opens
 the same modal in its `image` state: a pinch/double-tap viewer over the same bytes, whose

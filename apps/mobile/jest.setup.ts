@@ -54,6 +54,35 @@ jest.mock('react-native-reanimated', () => {
   }
 })
 
+/**
+ * The native player has no host-component stand-in. The mock keeps the shape
+ * the video body reads — a player whose `status` a test can seed through the
+ * source, and a view that renders as a plain `View` carrying the props.
+ */
+jest.mock('expo-video', () => {
+  const React = require('react')
+  const { View } = require('react-native')
+  const players = new Map<string, { status: string; loop: boolean; play: jest.Mock; addListener: jest.Mock; removeListener: jest.Mock }>()
+  return {
+    useVideoPlayer: (source: string, setup?: (player: unknown) => void) => {
+      let player = players.get(source)
+      if (!player) {
+        player = {
+          status: source.includes('missing') ? 'error' : 'readyToPlay',
+          loop: true,
+          play: jest.fn(),
+          addListener: jest.fn(() => ({ remove: jest.fn() })),
+          removeListener: jest.fn(),
+        }
+        players.set(source, player)
+        setup?.(player)
+      }
+      return player
+    },
+    VideoView: (props: object) => React.createElement(View, { testID: 'video-view', ...props }),
+  }
+})
+
 /** The title's temporary WebView is driven through its native message callbacks
  * in component tests; its actual CSS/JS is exercised in browser integration tests. */
 jest.mock('react-native-webview', () => {

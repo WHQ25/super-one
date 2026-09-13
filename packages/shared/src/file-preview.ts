@@ -93,6 +93,18 @@ export function isMarkdownFileName(name: string): boolean {
 }
 
 /**
+ * Containers both chat surfaces treat as a video: the desktop's markdown
+ * `<video>` and the phone's poster tile. Matches what the host's media
+ * server serves and Chromium decodes.
+ */
+const VIDEO_EXTENSIONS: ReadonlySet<string> = new Set(['.mp4', '.m4v', '.webm', '.ogg', '.mov'])
+
+/** Whether a file's NAME says it is a video the transcript can preview. */
+export function isVideoFileName(name: string): boolean {
+  return VIDEO_EXTENSIONS.has(extensionOf(name))
+}
+
+/**
  * How many leading bytes to sniff for a NUL before declaring a file binary.
  * Matches git's heuristic, which is what most tools already agree with.
  */

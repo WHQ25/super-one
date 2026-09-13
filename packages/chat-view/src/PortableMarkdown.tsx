@@ -1,5 +1,6 @@
 import { createElement, useContext, useEffect, useMemo, type ComponentProps, type ReactNode } from 'react'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
+import { isVideoFileName } from '@superone/shared/file-preview'
 import { createMathPlugin } from '@streamdown/math'
 import { defaultRemarkPlugins, type Components } from 'streamdown'
 import type { PluggableList } from 'unified'
@@ -24,6 +25,7 @@ import { createPortableCodePlugin } from './portable-code-plugin'
 import { requestNative } from './bridge'
 import { isPreviewableImageSource, previewImage } from './image-preview'
 import { PortableHostImage } from './PortableHostImage'
+import { PortableHostVideo } from './PortableHostVideo'
 import { decodeHostImageSrc, HOST_IMAGE_PROTOCOL, remarkHostImages } from './host-image-src'
 import { hasNativeHost, previewMermaid } from './mermaid-preview'
 import { hostFaviconPorts } from './host-favicon'
@@ -136,6 +138,18 @@ function NativeImage(props: ComponentProps<'img'>) {
   const label = typeof props.alt === 'string' && props.alt ? props.alt : 'image'
   const hostPath = decodeHostImageSrc(props.src)
   if (hostPath) {
+    // `![…](clip.mp4)` is how the agent embeds a video; the desktop plays it
+    // inline, the phone shows its first frame and plays on tap.
+    if (isVideoFileName(hostPath)) {
+      return (
+        <PortableHostVideo
+          inline
+          path={hostPath}
+          label={label === 'image' ? 'video' : label}
+          tileClassName="relative my-2 inline-block max-h-80 max-w-full overflow-hidden rounded-lg bg-black align-top"
+        />
+      )
+    }
     return (
       <PortableHostImage
         inline

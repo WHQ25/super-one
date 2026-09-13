@@ -16,10 +16,13 @@ import { imagePreviewFileName, parseImageDataUri, type ImagePreviewTarget } from
  * - `mermaid` — a rendered diagram the transcript already holds as SVG. It
  *   opens a page of its own so pinch-zoom cannot scale the chat WebView.
  * - `text` — small text or Markdown that rode back inside the RPC.
+ * - `video` — a clip whose bytes have landed on the phone, played by the
+ *   native player over the cache file. Its menu saves to Photos like a picture.
  * - `transfer` — a file that must move as bytes first. Over the relay a file
  *   larger than the RPC cap needs confirmation (the desktop stages an encrypted
- *   copy on R2); over the LAN it starts on its own. A finished transfer either
- *   becomes an `image` or stays here with `localUri` set, ready to save or share.
+ *   copy on R2); over the LAN it starts on its own. A finished transfer becomes
+ *   an `image` or a `video`, or stays here with `localUri` set, ready to save
+ *   or share.
  */
 export type FilePreviewState =
   | { kind: 'loading'; path: string; name: string; line?: number }
@@ -36,6 +39,15 @@ export type FilePreviewState =
       mimeType: string
       /** For a generated image: what the info panel shows. */
       generation?: ImageGenerationInfo
+    }
+  | {
+      kind: 'video'
+      path: string
+      name: string
+      /** The cache file the bytes were written to; what the player and the menu use. */
+      localUri: string
+      mimeType: string
+      size: number
     }
   | {
       kind: 'mermaid'
@@ -91,7 +103,8 @@ export const FILE_PREVIEW_TEXT = {
   share: 'Share',
   savedToPhotos: 'Saved to Photos',
   savedToFiles: 'Saved',
-  photosDenied: 'Allow photo library access in Settings to save images.',
+  photosDenied: 'Allow photo library access in Settings to save photos and videos.',
+  videoFailed: 'Video failed to load',
   openSettings: 'Open Settings',
   sharingUnavailable: 'Sharing is unavailable on this device',
   imageFailed: 'Image failed to load',
@@ -270,9 +283,9 @@ export function decodeInlineBase64(base64: string, expectedSize: number): Uint8A
 }
 
 /**
- * Where a finished transfer lands: a picture becomes the image body over the
- * cache file it was written to; anything else stays a transfer card that now
- * has bytes to save or share.
+ * Where a finished transfer lands: a picture becomes the image body and a
+ * clip the video body, both over the cache file the bytes were written to;
+ * anything else stays a transfer card that now has bytes to save or share.
  */
 export function completeTransfer(
   current: Extract<FilePreviewState, { kind: 'transfer' }>,
@@ -280,6 +293,9 @@ export function completeTransfer(
 ): FilePreviewState {
   if (current.mimeType.startsWith('image/')) {
     return { kind: 'image', path: current.path, name: current.name, src: localUri, mimeType: current.mimeType }
+  }
+  if (current.mimeType.startsWith('video/')) {
+    return { kind: 'video', path: current.path, name: current.name, localUri, mimeType: current.mimeType, size: current.size }
   }
   return { ...current, phase: 'ready', localUri }
 }
@@ -303,6 +319,9 @@ export function previewLocalSource(state: FilePreviewState): LocalSource | null 
     const inline = parseImageDataUri(state.src)
     return inline ? { kind: 'dataUri', dataUri: state.src, name: state.name, mimeType: inline.mimeType } : null
   }
+  if (state.kind === 'video') {
+    return { kind: 'file', uri: state.localUri, name: state.name, mimeType: state.mimeType }
+  }
   if (state.kind === 'transfer' && state.phase === 'ready' && state.localUri) {
     return { kind: 'file', uri: state.localUri, name: state.name, mimeType: state.mimeType }
   }
@@ -311,7 +330,7 @@ export function previewLocalSource(state: FilePreviewState): LocalSource | null 
 
 /** The two things the menu offers, and whether each can run right now. */
 export interface FilePreviewMenu {
-  /** Pictures go to the photo library; everything else to a folder the user picks. */
+  /** Pictures and clips go to the photo library; everything else to a folder the user picks. */
   save: { enabled: boolean; toPhotos: boolean }
   share: { enabled: boolean }
 }
@@ -320,7 +339,7 @@ export function filePreviewMenu(state: FilePreviewState | null): FilePreviewMenu
   const source = state ? previewLocalSource(state) : null
   const enabled = source !== null
   return {
-    save: { enabled, toPhotos: state?.kind === 'image' },
+    save: { enabled, toPhotos: state?.kind === 'image' || state?.kind === 'video' },
     share: { enabled },
   }
 }

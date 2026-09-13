@@ -4,6 +4,7 @@ import type { HostInbound, HostOutbound } from '@superone/chat-view'
 import { isPreviewableMermaid } from '@superone/chat-view/mermaid-preview'
 import type { SaveWidgetTemplateRequest } from '@superone/shared/agent-types'
 import { isPreviewableImageSource, parseImageGenerationInfo, type ImagePreviewTarget } from './image-preview-state'
+import type { VideoPosterResult } from './video-posters'
 
 type NativeRequest = Extract<HostOutbound, { type: 'requestNative' }>
 type NativeResult = Extract<HostInbound, { type: 'nativeActionResult' }>
@@ -33,6 +34,12 @@ export interface NativeActionPorts {
    * files skip confirmation and come back as a data URI in one trip.
    */
   loadImage(path: string, confirmed: boolean): Promise<Record<string, unknown>>
+  /**
+   * The first frame of a video on the host, for the transcript's video tile.
+   * Cut on the host and always in-band, so there is no confirmation step;
+   * `null` when the host cannot decode the clip and the tile stays a chip.
+   */
+  loadVideoPoster(path: string): Promise<VideoPosterResult | null>
   /**
    * The original picture behind a thumbnail the transcript carries for an
    * attachment (`ImageAttachment.preview`), as a data URI for the viewer.
@@ -147,6 +154,8 @@ export async function resolveNativeRequest(
     } else if (message.action === 'loadImage') {
       const confirmed = (message.payload as Record<string, unknown> | undefined)?.confirmed === true
       result = await ports.loadImage(payloadString(message, 'path'), confirmed)
+    } else if (message.action === 'loadVideoPoster') {
+      result = { poster: await ports.loadVideoPoster(payloadString(message, 'path')) }
     } else if (message.action === 'loadAttachment') {
       const attachmentId = (message.payload as Record<string, unknown> | undefined)?.attachmentId
       result = { dataUri: await ports.loadAttachment(payloadString(message, 'messageId'), {

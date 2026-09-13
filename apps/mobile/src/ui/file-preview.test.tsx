@@ -21,6 +21,7 @@ const PATH = '/workspace/proj/src/App.tsx'
 
 const IMAGE: FilePreviewState = { kind: 'image', path: '/shots/a.png', name: 'a.png', label: 'Screenshot', src: PNG, mimeType: 'image/png' }
 const TEXT: FilePreviewState = { kind: 'text', path: PATH, name: 'App.tsx', size: 30, markdown: false, line: 2, text: 'const a = 1\nconst b = 2\nconst c = 3\n' }
+const VIDEO: FilePreviewState = { kind: 'video', path: '/workspace/proj/out/clip.mp4', name: 'clip.mp4', localUri: 'file:///cache/file-preview/clip.mp4', mimeType: 'video/mp4', size: 31_813 }
 const RELAY_TRANSFER: FilePreviewState = {
   kind: 'transfer', path: '/workspace/proj/art/hero.png', name: 'hero.png', size: 4_820_113, mimeType: 'image/png', needsConfirm: true, phase: 'idle',
 }
@@ -270,6 +271,25 @@ test('a remote URL disables both rows because there are no bytes on the phone', 
   expect(save).toBeDisabled()
   expect(screen.getByLabelText('Share')).toBeDisabled()
   expect(calls).toEqual([])
+})
+
+test('a downloaded clip plays in the native player, starts on its own and saves to Photos', async () => {
+  const calls: string[] = []
+  await mount(VIDEO, { ports: createFakeMediaPorts({ onCall: (action) => calls.push(action) }) })
+  expect(screen.getByText('clip.mp4')).toBeTruthy()
+  const view = screen.getByTestId('video-view')
+  expect(view.props.nativeControls).toBe(true)
+  expect(view.props.player.play).toHaveBeenCalledTimes(1)
+  expect(view.props.player.loop).toBe(false)
+  await runMenuAction('Save to Photos')
+  expect(await screen.findByText('Saved to Photos')).toBeTruthy()
+  expect(calls).toEqual(['save'])
+})
+
+test('a clip the platform cannot decode says so instead of sitting on a black view', async () => {
+  await mount({ ...VIDEO, localUri: 'file:///cache/file-preview/missing.mov', name: 'odd.mov' })
+  expect(screen.getByRole('alert')).toHaveTextContent('Video failed to load')
+  expect(screen.queryByTestId('video-view')).toBeNull()
 })
 
 test('text offers Save to Files, renders a numbered listing and marks the cited line', async () => {

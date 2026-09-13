@@ -4632,6 +4632,12 @@ export type RemoteCommand =
    * were absent, so `{ preferInline, statOnly }` yields content or metadata in one trip.
    */
   | { type: 'read_desktop_file'; requestId: string; projectPath?: string; sessionId?: string; path: string; maxBytes?: number; statOnly?: boolean; preferInline?: boolean }
+  /**
+   * The first frame of a video on the host, as a small JPEG the phone paints
+   * in the transcript. Always in-band: a poster is tens of kilobytes, so it
+   * never needs the LAN URL or relay staging the file itself would.
+   */
+  | { type: 'read_video_poster'; requestId: string; projectPath?: string; sessionId?: string; path: string }
   | { type: 'upload_file'; requestId: string; projectPath?: string; sessionId?: string; targetDir: string; name: string; mimeType: string; size: number; inlineBase64?: string }
   | { type: 'upload_file_complete'; requestId: string }
   | { type: 'list_providers'; requestId: string }
@@ -4733,6 +4739,24 @@ export interface ReadDesktopFileError {
   error: 'forbidden_path' | 'not_found' | 'too_large' | 'no_session' | 'no_transport' | 'upload_failed' | 'internal_error'
   message?: string
 }
+
+/** A video's first frame, cut on the host, plus what the badge over it shows. */
+export interface VideoPosterPayload {
+  base64: string
+  mimeType: string
+  width: number
+  height: number
+  /** Clip length when the container reports one. */
+  durationMs?: number
+}
+
+/**
+ * `poster` is `null` when the host could not decode the clip (an unsupported
+ * codec, a path outside its media roots): the phone keeps its icon chip.
+ */
+export type ReadVideoPosterResponse =
+  | (ReadDesktopFileMetadata & { ok: true; poster: VideoPosterPayload | null })
+  | ReadDesktopFileError
 
 export type UploadFileError = {
   ok: false

@@ -2,9 +2,9 @@ import type { ReactNode } from 'react'
 import type { ImageGenerationItem } from '@superone/shared/agent-types'
 import type { NativeWidgetPayload } from '@superone/shared/generative-ui/native-widgets'
 import { ExternalLink, ImageIcon, Video } from 'lucide-react'
-import { requestNative } from './bridge'
 import { portableFileName } from './portable-native-widget'
 import { PortableHostImage } from './PortableHostImage'
+import { PortableHostVideo } from './PortableHostVideo'
 
 /**
  * A fixed-height strip the picture sizes itself into, like the desktop
@@ -76,20 +76,7 @@ export function PortableNativeGallery(props: {
         {items.map((item) => {
           const path = item.savedPath!
           if (kind === 'image') return <PortableGalleryImage key={item.id || path} item={item as ImageGenerationItem} />
-          return (
-            <button
-              key={item.id || path}
-              type="button"
-              className={GALLERY_CHIP}
-              onClick={() => requestNative('previewFile', { path })}
-            >
-              <Video className="size-6 text-primary" />
-              <span className="max-w-full truncate text-xs text-foreground">{portableFileName(path)}</span>
-              <span className="flex items-center gap-1 text-[11px] text-primary">
-                Open video <ExternalLink className="size-3" />
-              </span>
-            </button>
-          )
+          return <PortableHostVideo key={item.id || path} path={path} label={portableFileName(path)} className={GALLERY_CHIP} />
         })}
       </div>
     </div>

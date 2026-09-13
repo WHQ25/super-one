@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   statSync,
@@ -19,6 +20,7 @@ import {
   createThrottledProgress,
   desktopPackagePins,
   downloadResumableToFile,
+  extractTgzArchive,
   harnessArtifactDownloadKey,
   harnessPartialPath,
   installPackageDir,
@@ -190,6 +192,42 @@ describe('createDesktopTarballInstaller', () => {
       expect(result.command).toContain(join('versions', pin))
       expect(existsSync(join(managedVersionDir(prefix, pin), 'install-meta.json'))).toBe(true)
       expect(existsSync(join(prefix, 'current'))).toBe(true)
+    } finally {
+      rmSync(packWork, { recursive: true, force: true })
+    }
+  })
+
+  it('extracts under the harness prefix so rename-into-place never crosses a filesystem', async () => {
+    // Linux ships /tmp as tmpfs; extracting there and rename(2)-ing into
+    // ~/.superone fails with EXDEV. The work dir must share the destination's fs.
+    const packWork = mkdtempSync(join(tmpdir(), 'so-pack-exdev-'))
+    try {
+      const { bytes } = makeNpmTgz(packWork, {
+        'package.json': JSON.stringify({ name: 'x', version: '0.0.1' }),
+        claude: { body: '#!/bin/sh\necho ok\n', mode: 0o755 },
+      })
+      const pins = desktopPackagePins('claude')
+      const extractDirs: string[] = []
+      const installer = createDesktopTarballInstaller({
+        npmOnly: true,
+        fetchJson: async () => ({
+          version: pins.packages[0]!.version,
+          dist: { tarball: 'https://example.test/pkg.tgz', integrity: sha512Integrity(bytes) },
+        }),
+        fetchBinary: async () => bytes,
+        extractTgz: async (tgzPath, destDir) => {
+          extractDirs.push(destDir)
+          await extractTgzArchive(tgzPath, destDir)
+        },
+      })
+
+      await installer.install('claude', { root: home })
+
+      const prefix = join(home, 'claude')
+      expect(extractDirs).toHaveLength(1)
+      expect(extractDirs[0]!.startsWith(prefix)).toBe(true)
+      // Scratch dir is cleaned up after the payload is placed.
+      expect(readdirSync(prefix).filter((n) => n.startsWith('.extract-'))).toEqual([])
     } finally {
       rmSync(packWork, { recursive: true, force: true })
     }

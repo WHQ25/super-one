@@ -19,7 +19,6 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { x as extractTar } from 'tar'
 import { channelFromVersion } from '@superone/shared/update-channels'
@@ -446,7 +445,10 @@ export function createManagedTarballInstaller(
         })
         const partialPath = harnessPartialPath(home.root, downloadKey)
 
-        const work = mkdtempSync(join(tmpdir(), `superone-harness-${id}-`))
+        // Extract next to the destination, not under os.tmpdir(): on Linux
+        // /tmp is often tmpfs, and `installPackageDir` moves the payload with
+        // rename(2), which fails with EXDEV across filesystems.
+        const work = mkdtempSync(join(prefix, `.extract-${id}-`))
         try {
           const { from } = await fetchTarballWithFallback({
             destPath: partialPath,

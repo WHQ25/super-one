@@ -75,7 +75,7 @@ describe('RemoteEnvironmentGateway artifacts', () => {
       chunk: data.subarray(offset, end).toString('base64'), final,
     }, control)
     expect(await chunk(0, 8, false)).toEqual({ ok: true, bytesWritten: 8 })
-    expect(await chunk(8, data.length, true)).toEqual({ ok: true, bytesWritten: data.length })
+    expect(await chunk(8, data.length, true)).toMatchObject({ ok: true, bytesWritten: data.length })
 
     const twin = join(nodeHome, 'sync', sessionId, 'browser', 'shot.png')
     expect(readFileSync(twin)).toEqual(data)

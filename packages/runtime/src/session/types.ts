@@ -175,6 +175,13 @@ export type TurnRunner = ((input: {
   /** Extra readable directories (Claude additionalDirectories). */
   additionalDirectories?: string[]
   /**
+   * The session's sync zone directory (`<syncRoot>/<sessionId>`), exposed to
+   * the harness process as `SUPERONE_SESSION_DIR`. Its `agent/` subdirectory
+   * is the one place a remote agent can write deliverables the desktop and the
+   * phone will open; the write grant is carried in `additionalDirectories`.
+   */
+  sessionDir?: string
+  /**
    * Explicit skill allow-list for Claude SDK `skills` option (desktop parity when
    * the user has disabled skills). When omitted, SDK discovers via settingSources.
    */

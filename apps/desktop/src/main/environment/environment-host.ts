@@ -35,6 +35,7 @@ import {
   type RemoteInstallSource,
 } from '@superone/shared/environment'
 import { EnvironmentRegistryImpl } from './environment-registry'
+import { ArtifactTransferService } from './artifact-transfer-service'
 import { NodeConnectionManager } from './node-connection-manager'
 import { NodeCredentialStore } from './node-credential-store'
 import { WorkspaceRouter } from './workspace-router'
@@ -178,6 +179,13 @@ export class EnvironmentHost {
   >()
   /** One Host Action consumer per live connectionId. */
   private readonly hostActionConsumers = new Map<string, RemoteHostActionConsumer>()
+  /**
+   * Deferred artifact uploads (session-sync-zone.md §5.3); one worker per live
+   * connection, started and stopped with its Host Action consumer. Null until
+   * `enableArtifactTransfers` — the production singleton turns it on, unit
+   * tests that never open the desktop database leave it off.
+   */
+  private transfers: ArtifactTransferService | null = null
   private readonly hostActionExecutor: HostActionExecutor
   private readonly hostActionConcurrency: number
   private readonly hostActionPollWaitMs: number
@@ -3299,6 +3307,7 @@ export class EnvironmentHost {
     for (const id of [...this.hostActionConsumers.keys()]) {
       this.stopHostActionConsumer(id, 'dispose')
     }
+    this.transfers?.stopAll()
     for (const id of this.connections.listKnown().map((known) => known.connectionId)) {
       this.abortConnectionSessionDrains(id, 'dispose')
     }
@@ -3327,13 +3336,35 @@ export class EnvironmentHost {
     })
     this.hostActionConsumers.set(connectionId, consumer)
     consumer.start()
+    this.transfers?.start(connectionId)
   }
 
   private stopHostActionConsumer(connectionId: string, reason: string): void {
+    this.transfers?.stop(connectionId)
     const consumer = this.hostActionConsumers.get(connectionId)
     if (!consumer) return
     consumer.stop(reason)
     this.hostActionConsumers.delete(connectionId)
+  }
+
+  /** Turn on the deferred-upload workers (needs the desktop database). Idempotent. */
+  enableArtifactTransfers(): ArtifactTransferService {
+    if (this.transfers) return this.transfers
+    this.transfers = new ArtifactTransferService({
+      put: (connectionId, input) => this.artifactPut(connectionId, input),
+      // Lazy logger for the same reason as publishStatus: a static ../logger import breaks partial electron mocks.
+      log: {
+        info: (...args) => void import('../logger').then((m) => m.default.info(...args)).catch(() => undefined),
+        warn: (...args) => void import('../logger').then((m) => m.default.warn(...args)).catch(() => undefined),
+      },
+    })
+    for (const connectionId of this.hostActionConsumers.keys()) this.transfers.start(connectionId)
+    return this.transfers
+  }
+
+  /** The transfer-job service, or null when transfers are disabled (unit tests). */
+  get artifactTransfers(): ArtifactTransferService | null {
+    return this.transfers
   }
 
   private loadKnown(): KnownEnvironmentRecord[] {
@@ -3378,7 +3409,10 @@ export function getEnvironmentHost(): EnvironmentHost {
     .catch(() => {
       // Non-Electron unit tests without ipcMain.
     })
-  if (!singleton) singleton = new EnvironmentHost()
+  if (!singleton) {
+    singleton = new EnvironmentHost()
+    singleton.enableArtifactTransfers()
+  }
   return singleton
 }
 

@@ -32,7 +32,7 @@ import { encryptSecret } from './crypto/secret-store'
  * every launch); it decides when a pre-migration snapshot is taken and lets a
  * build recognise a database written by a newer build.
  */
-export const SCHEMA_VERSION = 5
+export const SCHEMA_VERSION = 6
 
 /**
  * The oldest schema revision that can still read this database.
@@ -680,6 +680,34 @@ function applyMigrations(db: Database.Database): void {
     // spawn = create child (default, back-compat); link = mailbox with existing session
     db.exec(`ALTER TABLE session_collaboration_grants ADD COLUMN kind TEXT NOT NULL DEFAULT 'spawn'`)
   }
+
+  // Session sync zone transfer jobs (docs/design/session-sync-zone.md §5.3):
+  // a Host Action output too large to push inside the claim budget is uploaded
+  // to the node here instead. Keyed by connection, resumed from `offset` after
+  // a disconnect or restart, retried with backoff, dropped with the session.
+  // No FK to sessions: the session row is the node's, not this database's.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS artifact_transfer_jobs (
+      job_id TEXT PRIMARY KEY,
+      connection_id TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      local_path TEXT NOT NULL,
+      relative_path TEXT NOT NULL,
+      transfer_id TEXT NOT NULL,
+      offset INTEGER NOT NULL DEFAULT 0,
+      total INTEGER NOT NULL DEFAULT 0,
+      state TEXT NOT NULL DEFAULT 'pending',
+      attempts INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at TEXT,
+      last_error TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_artifact_transfer_jobs_connection
+      ON artifact_transfer_jobs(connection_id, state);
+    CREATE INDEX IF NOT EXISTS idx_artifact_transfer_jobs_session
+      ON artifact_transfer_jobs(session_id);
+  `)
 }
 
 function seedBaseSessionProviders(db: Database.Database): void {

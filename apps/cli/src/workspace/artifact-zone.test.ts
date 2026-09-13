@@ -83,7 +83,8 @@ describe('artifact upload', () => {
     expect(zone.stat('s1', 'browser/a.png').exists).toBe(false)
 
     const last = zone.put({ sessionId: 's1', relativePath: 'browser/a.png', transferId: 't1', offset: 5, total: data.length, sha256: digest, chunk: data.subarray(5).toString('base64'), final: true })
-    expect(last).toEqual({ ok: true, bytesWritten: data.length })
+    expect(last).toMatchObject({ ok: true, bytesWritten: data.length })
+    expect(last.mtimeMs).toBe(zone.stat('s1', 'browser/a.png').mtimeMs)
     expect(readdirSync(dir)).toEqual(['a.png'])
     expect(readFileSync(join(dir, 'a.png'))).toEqual(data)
     expect(zone.stat('s1', 'browser/a.png')).toMatchObject({ exists: true, size: data.length })
@@ -107,7 +108,7 @@ describe('artifact upload', () => {
     // A retry of the chunk the node already has is acknowledged, not appended twice.
     expect(put(0, 4)).toEqual({ ok: true, bytesWritten: 4 })
     put(4, 8)
-    expect(put(8, 10, true)).toEqual({ ok: true, bytesWritten: 10 })
+    expect(put(8, 10, true)).toMatchObject({ ok: true, bytesWritten: 10 })
     expect(readFileSync(join(root, 'sync', 's1', 'agent', 'r.md'))).toEqual(data)
   })
 
@@ -136,7 +137,7 @@ describe('artifact upload', () => {
   })
 
   it('stores an empty file as a single final chunk of zero bytes', () => {
-    expect(upload('s1', 'agent/empty.txt', Buffer.alloc(0))).toEqual({ ok: true, bytesWritten: 0 })
+    expect(upload('s1', 'agent/empty.txt', Buffer.alloc(0))).toMatchObject({ ok: true, bytesWritten: 0 })
     expect(zone.stat('s1', 'agent/empty.txt')).toMatchObject({ exists: true, size: 0 })
     expect(readFileSync(join(root, 'sync', 's1', 'agent', 'empty.txt'))).toHaveLength(0)
   })

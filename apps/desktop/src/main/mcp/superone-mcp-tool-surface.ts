@@ -46,6 +46,8 @@ import {
   CODEX_MANAGED_BROWSER_COMPUTER_DENIED_MESSAGE,
   isCodexBrowserAndComputerUseDenied,
 } from '../codex/codex-managed-capability-policy'
+import { collectArtifacts, takeArtifacts, type ArtifactRef } from './artifact-registry'
+import { randomUUID } from 'node:crypto'
 
 const WIDGET_LIST_TEMPLATES_NAME = 'widget_list_templates'
 const WIDGET_SHOW_NAME = 'widget_show'
@@ -98,6 +100,23 @@ export function listSuperoneMcpTools(sessionId: string): SuperoneMcpToolDescript
   // Mini-app tools are no longer listed per-app — fixed miniapp_list / miniapp_call only.
   void sessionId
   return tools
+}
+
+/**
+ * `executeSuperoneMcpTool` plus the artifact refs the call registered
+ * (session-sync-zone.md §3). The Host Action executor uses this so it can push
+ * a remote session's outputs to the node before the reply goes back; local
+ * callers keep the plain result.
+ */
+export async function executeSuperoneMcpToolCollecting(
+  sessionId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<{ result: Awaited<ReturnType<typeof executeSuperoneMcpTool>>; artifacts: ArtifactRef[] }> {
+  const callId = randomUUID()
+  const result = await collectArtifacts(sessionId, callId, () => executeSuperoneMcpTool(sessionId, toolName, args, signal))
+  return { result, artifacts: takeArtifacts(sessionId, callId) }
 }
 
 export async function executeSuperoneMcpTool(

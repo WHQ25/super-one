@@ -37,6 +37,7 @@ import {
 } from '@superone/runtime/automations'
 import { createDraftStore, type DraftStore } from '@superone/runtime/drafts'
 import { ArtifactZoneService } from './workspace/artifact-zone'
+import { withSessionZone } from './session/session-zone-runner'
 import {
   createSessionProviderStore,
   type SessionProviderStore,
@@ -194,7 +195,7 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
     },
   })
 
-  const turnRunner =
+  const turnRunner = withSessionZone(
     partial.turnRunner ??
     (simulatedHarness
       ? createMultiHarnessRouter('codex')
@@ -218,7 +219,9 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
             const cfg = hostActionMcp.getHttpConfig(sessionId)
             return { url: cfg.url, headers: cfg.headers }
           },
-        }))
+        })),
+    paths.syncRoot,
+  )
 
   const sessions = new SessionRuntime(
     db,

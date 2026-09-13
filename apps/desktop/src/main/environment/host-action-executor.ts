@@ -18,6 +18,12 @@
 
 import type { ClaimHostActionResult } from '@superone/shared/environment'
 import type { HostActionExecutor } from './remote-host-action-consumer'
+import {
+  mapHostActionInputs,
+  syncHostActionOutputs,
+  type HostActionSyncDeps,
+  type ToolReply,
+} from './host-action-sync'
 
 /**
  * Tools that mutate node session metadata, not desktop-local resources.
@@ -100,21 +106,36 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
           )
         }
 
-        const { executeSuperoneMcpTool } = await import('../mcp/superone-mcp-tool-surface')
-        const toolResult = await executeSuperoneMcpTool(
+        const aborted = (): ExecutorResult => ({
+          outcome: 'failed',
+          error: {
+            code: 'aborted',
+            message: 'host action aborted or timed out during execution',
+          },
+        })
+
+        // Session sync zone (docs/design/session-sync-zone.md §3): a node that
+        // reports its zone gets node-zone args mapped to the desktop mirror
+        // first, and desktop-produced outputs pushed and rewritten afterwards.
+        // Older nodes report no zone and get today's behaviour unchanged.
+        const sync = await resolveSyncContext(connectionId, runAbort.signal)
+        const mappedArgs = sync ? await mapHostActionInputs(args, sync) : args
+        if (runAbort.signal.aborted || raceWinner === 'deadline') return aborted()
+
+        const { executeSuperoneMcpToolCollecting } = await import('../mcp/superone-mcp-tool-surface')
+        const { result: rawResult, artifacts } = await executeSuperoneMcpToolCollecting(
           claimed.sessionId,
           claimed.toolName,
-          args,
+          mappedArgs,
+          runAbort.signal,
         )
-        if (runAbort.signal.aborted || raceWinner === 'deadline') {
-          return {
-            outcome: 'failed',
-            error: {
-              code: 'aborted',
-              message: 'host action aborted or timed out during execution',
-            },
-          }
-        }
+        if (runAbort.signal.aborted || raceWinner === 'deadline') return aborted()
+
+        const toolResult = sync && artifacts.length > 0
+          ? await syncHostActionOutputs(claimed.sessionId, artifacts, rawResult as ToolReply, claimed.claimExpiresAt, sync)
+          : rawResult
+        if (runAbort.signal.aborted || raceWinner === 'deadline') return aborted()
+
         const isError = Boolean((toolResult as { isError?: boolean })?.isError)
         if (isError) {
           return { outcome: 'failed', error: toolResult, result: toolResult }
@@ -190,6 +211,31 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
     }
   } finally {
     signal.removeEventListener('abort', onOuterAbort)
+  }
+}
+
+/**
+ * Everything the sync steps need for one connection, or null when the node
+ * has no zone. Dynamic import keeps EnvironmentHost out of the unit graph.
+ */
+async function resolveSyncContext(connectionId: string, signal: AbortSignal): Promise<HostActionSyncDeps | null> {
+  const { getEnvironmentHost } = await import('./environment-host')
+  const host = getEnvironmentHost()
+  const zone = host.getSyncZone(connectionId)
+  if (!zone) return null
+  const transfers = host.artifactTransfers
+  if (!transfers) return null
+  return {
+    zone,
+    connectionId,
+    signal,
+    put: (input) => host.artifactPut(connectionId, input),
+    get: (input) => host.artifactGet(connectionId, input),
+    stat: (input) => host.artifactStat(connectionId, input.sessionId, input.relativePath),
+    transfers,
+    log: {
+      warn: (...args) => void import('../logger').then((m) => m.default.warn(...args)).catch(() => undefined),
+    },
   }
 }
 

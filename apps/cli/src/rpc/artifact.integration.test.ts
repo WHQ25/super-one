@@ -70,7 +70,7 @@ describe('artifact RPC on a node', () => {
     })
     expect(await put(0, 10, false)).toEqual({ ok: true, bytesWritten: 10 })
     expect(((await client.rpc('artifact.stat', { sessionId, relativePath: 'browser/shot.png' })) as ArtifactStatResult).exists).toBe(false)
-    expect(await put(10, data.length, true)).toEqual({ ok: true, bytesWritten: data.length })
+    expect(await put(10, data.length, true)).toMatchObject({ ok: true, bytesWritten: data.length })
 
     const twin = join(nodeHome, 'sync', sessionId, 'browser', 'shot.png')
     expect(readFileSync(twin)).toEqual(data)

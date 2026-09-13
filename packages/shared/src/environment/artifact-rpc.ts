@@ -41,6 +41,8 @@ export interface ArtifactPutRequest {
 export interface ArtifactPutResult {
   ok: true
   bytesWritten: number
+  /** Present on the final chunk: mtime of the file now in place, so the desktop can stamp its copy to match. */
+  mtimeMs?: number
 }
 
 export interface ArtifactGetRequest {

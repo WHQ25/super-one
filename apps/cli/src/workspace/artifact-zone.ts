@@ -172,7 +172,7 @@ export class ArtifactZoneService {
     }
     renameSync(transfer.partPath, transfer.absolutePath)
     this.forget(transfer, false)
-    return { ok: true, bytesWritten: transfer.written }
+    return { ok: true, bytesWritten: transfer.written, mtimeMs: Math.floor(statSync(transfer.absolutePath).mtimeMs) }
   }
 
   get(req: ArtifactGetRequest): ArtifactGetResult {

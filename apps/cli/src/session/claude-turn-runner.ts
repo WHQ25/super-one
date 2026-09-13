@@ -253,6 +253,7 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       ...process.env,
       ...opts.env,
       ...providerEnv,
+      ...(input.sessionDir ? { SUPERONE_SESSION_DIR: input.sessionDir } : {}),
     }
 
     // Nodes commonly run as root (container / systemd). Claude Code exits

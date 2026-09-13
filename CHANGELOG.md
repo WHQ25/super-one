@@ -15,6 +15,80 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- Codex: several ChatGPT logins per host, bound per conversation, with a
+  default for new threads. Settings manages the accounts; the model picker
+  lists email and plan. Switching account on a thread with history needs a
+  new session.
+- Chat: an inline files previewer (`@native/files-previewer`) shows a
+  carousel of project files with notes. Desktop opens a fullscreen viewer;
+  the phone uses its existing preview.
+- Mobile: videos show a first-frame poster and play after download; prompt
+  suggestions are a composer panel; an OTA bundle downloaded at launch is
+  applied immediately.
+
+### Fixed
+
+- Harness installs on Linux no longer fail with `EXDEV` when the extract
+  and install roots sit on different filesystems.
+- MCP memory and capture prompts stay scoped to the current task.
+- Mobile: harness catalog stays readable during a refresh; `@` after a
+  word opens mentions; one loading surface per transcript edge; the
+  workspace drawer returns after session search; Connecting waits for the
+  tap; no LAN route dials the relay. Markdown tables on the phone are no
+  longer height-capped.
+
+### Performance
+
+- Remote session pages count messages in one query.
+- Mobile connect-to-workspace round trips drop from seven to two, and
+  workspace session lists survive drawer closes.
+
+## [0.66.0-alpha] - 2026-09-14
+
+### Added
+
+- Codex: several ChatGPT logins per host, bound per conversation. Settings
+  can add, sign in, sign out and set a default; the model picker lists each
+  account's email and plan. Managed accounts get their own `CODEX_HOME`.
+  Existing threads keep the account they started with; switching needs a
+  new session.
+- Chat: `widget_show` `@native/files-previewer` renders a carousel of
+  project files with a note per file. Desktop opens a fullscreen viewer;
+  the phone opens its existing file preview.
+- Mobile: videos in chat show a first-frame poster and play in the native
+  player after download; Save to Photos accepts clips.
+- Mobile: prompt suggestions are a composer panel, shown only while the
+  draft is empty.
+- Mobile: an OTA JS bundle downloaded at launch is applied immediately
+  behind an automatic gate, instead of waiting for the next cold start.
+
+### Fixed
+
+- Harness: runtime tarballs extract beside the install root, so a Linux
+  install across filesystems no longer fails with `EXDEV`.
+- MCP: memory-read and capture prompts are scoped to the current task.
+- Mobile: the last harness catalog stays on screen while a refresh is in
+  flight; `@` right after a word opens the mention overlay; one loading
+  surface per transcript edge, and no slash strip without a query; leaving
+  session search restores the workspace drawer; the device row stays on
+  Connecting until the tap has landed; discovery with no live LAN route
+  dials the relay instead of sitting idle.
+- Chat view: markdown tables on the phone are no longer height-capped.
+
+### Performance
+
+- Desktop: counting messages for a remote session page is one query.
+- Mobile: workspace session lists survive drawer closes; connect-to-
+  workspace round trips drop from seven to two.
+
+### CI
+
+- Relay deploy installs dependencies without lifecycle scripts.
+
+## [0.65.0] - 2026-09-12
+
+### Added
+
 - Devices: `device_release` lets the agent let go of a device when it is
   done — a simulator or emulator SuperOne booted is shut down, one the user
   already had running is only unbound, a real phone is only disconnected;
@@ -64,79 +138,6 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Mobile: transcript pictures arrive as thumbnails with the original fetched
   on tap; attachment bytes cross the link twice per send instead of eight
   times, and frames are sealed with native AES-GCM.
-
-## [0.65.0-alpha] - 2026-09-12
-
-### Added
-
-- Devices: `device_release` lets the agent let go of a device when it is
-  done. A simulator or emulator SuperOne booted is shut down, one the user
-  already had running is only unbound, a real phone is only disconnected;
-  `shutdown: true` forces the stop. A mirrored iPhone is no longer routed
-  to the simulator port.
-- Show your work: agents embed the screenshots and recordings that back a
-  visual check (browser screenshots only on request), leave surfaces as
-  they found them (close opened tabs, release devices, quit launched apps),
-  and get a `product/show-your-work` manual chapter. Device recordings pad
-  1 s before and after the action, and a cancel during the tail keeps the
-  clip instead of reporting the action aborted.
-- Experience memory (browser / computer / device notes) is stored in Open
-  Knowledge Format v0.2 — Playbook frontmatter, generated `index.md`, legacy
-  files migrated on the next write — records the writing harness and model,
-  and the system prompt asks agents to read it before the first interaction
-  and write it before ending a turn.
-- Mobile: the first send paints the user bubble and session title
-  immediately, with a "Creating session…" → "Sending…" line until the
-  assistant replies; a refused create hands the draft back to the composer.
-- Mobile: generated-image gallery and viewer match the desktop — captioned
-  tiles and an Info panel with the prompt (one-tap copy), provider / model,
-  size, timing, reference thumbs and warnings.
-- Mobile: markdown links carry the site favicon; the markdown media
-  sanitize pipeline is shared with the desktop so the two cannot drift.
-- Mobile: the model picker names the model a mapped API provider actually
-  serves and lets a mapped credential own the effort options, as on desktop.
-- Mobile: a left-edge swipe dismisses the file preview on iOS.
-- Mobile: picture attachments render as bare 64 px thumbnails in the bubble;
-  PDFs keep the icon-and-name chip.
-
-### Fixed
-
-- Remote Control: the relay socket is heartbeated (text `ping` every 30 s,
-  dead after 10 s without `pong`) on desktop and phone, and the relay's
-  `/status` reads the auto-response timestamp, so a half-open desktop link
-  (Wi-Fi switch, NAT idle drop, VPN toggle) no longer reads as Online while
-  the phone sits on "Connecting…". The relay picks the newest OPEN socket
-  and keeps its idle alarm armed while the heartbeat is fresh.
-- Mobile: photos are re-encoded on the phone before anything sees them
-  (HEIC / TIFF / AVIF and oversized JPEGs become JPEG, capped at 2048 px),
-  so the model can read a picture taken on an iPhone; attachments open in
-  the native viewer from the bubble, and the optimistic bubble matches the
-  reopened session.
-- Mobile: when the desktop is not behind the relay the reconnect loop ends
-  in an `offline` state instead of burning request timeouts; the next
-  desktop handshake brings the connection back.
-- Mobile: the workspace drawer is an overlay rather than a Modal, so a
-  reordered session row no longer goes invisible on iOS and sheets no longer
-  race the drawer's close. Project rows only replay the unfold on a tap,
-  "Show more" matches the desktop footer, and the first-read spinner takes
-  the folder glyph's slot.
-- Mobile: each screen owns its header, so the device list no longer jumps
-  when New Session is pushed or popped; the list is one centred group.
-- Mobile: permission sheet titles and approve buttons stay on one line
-  (Allow / Trust, Always Allow / Always Trust).
-- Chat: long file chips are clamped to the column instead of widening the
-  page, on desktop and on the phone.
-- Media: device captures and recordings moved under the system temp
-  directory next to browser / computer-use screenshots (older recordings
-  stay readable), and the model wraps spaced paths in angle brackets, so
-  screenshots no longer render as literal text.
-
-### Performance
-
-- Mobile: transcript pictures arrive as 256 px thumbnails with the original
-  fetched on tap (a six-picture restore drops from 17.5 MB to 145 KB);
-  attachment bytes cross the link twice per send instead of eight times,
-  and frames are sealed with native AES-GCM (2.3 MB: 2796 ms → 3 ms).
 
 ## [0.64.1] - 2026-09-12
 

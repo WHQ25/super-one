@@ -4,7 +4,7 @@ import { requestMentionIcons, requestMentionSearch, type MentionSearchResult } f
 import { MentionIconCache, type MentionIconStore } from '../mention-icon-cache'
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import type { ChatRuntime } from '../runtime'
-import { cursorAfterEdit, insertAtCursor, type ComposerCursor } from '../composer-cursor'
+import { cursorAfterEdit, insertAtCursor, triggerSnippet, type ComposerCursor } from '../composer-cursor'
 import { extractMentionQuery, insertMention, parseMentionItems, parseAgentMentionItems, type MentionItem } from '../mentions'
 import { buildMentionRows, type MentionRow } from '../mention-rows'
 import { deriveMentionMode, mentionScopeDir } from '../mention-browse-state'
@@ -421,9 +421,14 @@ export function useComposerSuggestions(
     else clear()
     return value
   }
+  /**
+   * What the toolbar's `/` or `@` should insert at the current caret — padded
+   * from the text before it, so the native editor can place it directly.
+   */
+  const snippetAtCursor = (snippet: string): string => triggerSnippet(text.current, cursor.current, snippet)
   /** Toolbar `/` and `@` — same path as a keystroke, so the overlay can open. */
   const insertSnippet = (snippet: string): string => {
-    const next = insertAtCursor(text.current, cursor.current, snippet)
+    const next = insertAtCursor(text.current, cursor.current, snippetAtCursor(snippet))
     text.current = next.draft
     cursor.current = next.cursor
     setRequestedCursor(next.cursor)
@@ -444,7 +449,7 @@ export function useComposerSuggestions(
   return {
     slashHits, slashCatalogStatus, mentionRows, mentionSearch, requestedCursor,
     mentionQuery, mentionGroupLabels,
-    update, updateNative, select, insert, insertSnippet, clear, applyProgrammatic,
+    update, updateNative, select, insert, insertSnippet, snippetAtCursor, clear, applyProgrammatic,
     dismissSlash: () => setSlashDismissed(true),
     retry: searchMentions,
     /** Fetch the next page of an already-open list, keeping what is on screen. */

@@ -194,6 +194,22 @@ test.each(['typed', 'native', 'toolbar'])('loads collaborators and miniapps on t
   expect(result.current.mentionRows.find((row) => row.item.path === 'browser')?.disabled).toBeUndefined()
 })
 
+test('the toolbar @ opens the overlay even right after a word', async () => {
+  const client = mentionClient()
+  const { result } = await mount(client)
+  await act(async () => { result.current.updateNative('检查', { start: 2, end: 2 }, false) })
+  // The native editor places this itself; the fallback path goes through insertSnippet.
+  expect(result.current.snippetAtCursor('@')).toBe(' @')
+
+  let value = ''
+  await act(async () => { value = result.current.insertSnippet('@') })
+
+  expect(value).toBe('检查 @')
+  expect(result.current.mentionQuery).toBe('')
+  await waitFor(() => expect(result.current.mentionSearch.loading).toBe(false))
+  expect(result.current.mentionRows.length).toBeGreaterThan(0)
+})
+
 test('loads the bare @ catalog through the active runtime and browses its worktree', async () => {
   const client = mentionClient()
   const runtime = {

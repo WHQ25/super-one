@@ -27,3 +27,14 @@ export function cursorAfterEdit(before: string, after: string, selection: Compos
   const end = after.length - suffix
   return { start: end, end }
 }
+
+/**
+ * The toolbar's `@` / `/` is a request to open the overlay, not a character.
+ * A mention needs a word boundary before it — `foo@bar` is an email, not a
+ * query — so a trigger placed right after text is separated from it first.
+ */
+export function triggerSnippet(draft: string, cursor: ComposerCursor, trigger: string): string {
+  const start = Math.max(0, Math.min(cursor.start, draft.length))
+  const before = start > 0 ? draft[start - 1]! : ''
+  return before && !/\s/.test(before) ? ` ${trigger}` : trigger
+}

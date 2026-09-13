@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cursorAfterEdit, insertAtCursor } from './composer-cursor'
+import { cursorAfterEdit, insertAtCursor, triggerSnippet } from './composer-cursor'
 import { extractMentionQuery, insertMention, parseMentionItems } from './mentions'
 
 describe('composer cursor', () => {
@@ -42,6 +42,25 @@ describe('insert at cursor', () => {
     expect(insertAtCursor('hi', { start: 9, end: 12 }, '/')).toEqual({
       draft: 'hi/', cursor: { start: 3, end: 3 },
     })
+  })
+})
+
+describe('trigger snippet', () => {
+  it('separates a trigger from the word before the caret', () => {
+    expect(triggerSnippet('hello', { start: 5, end: 5 }, '@')).toBe(' @')
+    expect(triggerSnippet('检查', { start: 2, end: 2 }, '@')).toBe(' @')
+    expect(triggerSnippet('a\uFFFC', { start: 2, end: 2 }, '@')).toBe(' @')
+  })
+
+  it('leaves a trigger bare at the start or after whitespace', () => {
+    expect(triggerSnippet('', { start: 0, end: 0 }, '@')).toBe('@')
+    expect(triggerSnippet('hello ', { start: 6, end: 6 }, '@')).toBe('@')
+    expect(triggerSnippet('hello\n', { start: 6, end: 6 }, '/')).toBe('/')
+    expect(triggerSnippet('hello world', { start: 6, end: 6 }, '@')).toBe('@')
+  })
+
+  it('reads the caret, not the selection end', () => {
+    expect(triggerSnippet('ab cd', { start: 3, end: 5 }, '@')).toBe('@')
   })
 })
 

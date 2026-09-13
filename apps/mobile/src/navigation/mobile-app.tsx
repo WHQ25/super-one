@@ -2041,7 +2041,7 @@ export function MobileApp() {
           onAttachPdf={() => void addAttachment('pdf')}
           onInsertSnippet={(snippet) => {
             if (composerDraft.editorRef.current) {
-              composerDraft.editorRef.current.insertText(snippet)
+              composerDraft.editorRef.current.insertText(suggestions.snippetAtCursor(snippet))
               return
             }
             composerDraft.changeText(suggestions.insertSnippet(snippet))

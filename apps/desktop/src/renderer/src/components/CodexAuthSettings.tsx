@@ -1,265 +1,99 @@
-import { useCallback, useEffect, useState } from "react";
-import {
-  Copy,
-  ExternalLink,
-  Loader2,
-  LogIn,
-  LogOut,
-  RefreshCw,
-  X,
-} from "lucide-react";
-import { useTranslation } from "react-i18next";
-import { toast } from "sonner";
-import { Button } from "@superone/ui/components/ui/button";
-import { IconButton } from "@superone/ui/components/ui/icon-button";
-import type {
-  CodexAccountLoginStartResult,
-  CodexAccountStatus,
-} from "@superone/shared/agent-types";
-import { useChatStore } from "@/stores/chat";
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
+import { codexAccountProviderId, type CodexAccount, type CodexManagedLoginStart } from '@superone/shared/codex-accounts'
+import { useChatStore } from '@/stores/chat'
+import { CodexAccountsPanel } from './CodexAccountsPanel'
 
-const ACCOUNT_POLL_MS = 1_500;
-
-export function CodexAuthSettings({
-  onAuthChanged,
-}: {
-  onAuthChanged?: () => void;
-}) {
-  const { t } = useTranslation();
-  const projectPath = useChatStore((state) => state.activeProject);
-  const [status, setStatus] = useState<CodexAccountStatus | null>(null);
-  const [pending, setPending] = useState<CodexAccountLoginStartResult | null>(
-    null,
-  );
-  const [loading, setLoading] = useState(false);
-  const [loggingOut, setLoggingOut] = useState(false);
+export function CodexAuthSettings({ onAuthChanged }: { onAuthChanged?: () => void }) {
+  const { t } = useTranslation()
+  const projectPath = useChatStore((s) => s.activeProject)
+  const [accounts, setAccounts] = useState<CodexAccount[]>([])
+  const [pending, setPending] = useState<CodexManagedLoginStart | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const generation = useRef(0)
+  const onChanged = useRef(onAuthChanged)
+  onChanged.current = onAuthChanged
+  const changed = useCallback(() => {
+    window.dispatchEvent(new Event('codex-accounts-changed'))
+    onChanged.current?.()
+  }, [])
 
   const refresh = useCallback(async () => {
-    if (!projectPath) {
-      setStatus(null);
-      return null;
-    }
-    setLoading(true);
+    if (!projectPath) return []
+    const current = generation.current
+    setLoading(true)
     try {
-      const next = await window.app.codexGetAccountStatus(projectPath);
-      setStatus(next);
-      return next;
+      const result = await window.app.codexListAccounts(projectPath) ?? []
+      if (current === generation.current) { setAccounts(result); setError(null) }
+      return result
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  }, [projectPath]);
+      if (current === generation.current) setError(error instanceof Error ? error.message : String(error))
+      return []
+    } finally { if (current === generation.current) setLoading(false) }
+  }, [projectPath])
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    generation.current++
+    setAccounts([])
+    setBusy(false)
+    setPending(null)
+    void refresh()
+    return () => { generation.current++ }
+  }, [refresh])
 
   useEffect(() => {
-    if (!pending || !projectPath) return;
-    const timer = window.setInterval(() => {
-      void window.app
-        .codexGetAccountStatus(projectPath)
-        .then((next) => {
-          setStatus(next);
-          if (!next.signedIn) return;
-          window.clearInterval(timer);
-          setPending(null);
-          toast.success(t("settings.harnesses.codexAccount.signInComplete"));
-          onAuthChanged?.();
-        })
-        .catch(() => {});
-    }, ACCOUNT_POLL_MS);
-    return () => window.clearInterval(timer);
-  }, [onAuthChanged, pending, projectPath, t]);
-
-  async function signIn() {
-    if (!projectPath || pending || loading) return;
-    setLoading(true);
-    try {
-      const result = await window.app.codexStartAccountLogin(projectPath);
-      setPending(result);
-      toast.success(t("settings.harnesses.codexAccount.signInOpened"));
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
-    } finally {
-      setLoading(false);
+    if (!pending || !projectPath) return
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout>
+    const deadline = Date.now() + 15 * 60_000
+    const poll = async () => {
+      try {
+        const result = await window.app.codexListAccounts(projectPath) ?? []
+        if (cancelled) return
+        setAccounts(result)
+        const account = result.find((a) => a.id === pending.accountId)
+        if (account?.signedIn && account.loginState !== 'pending') {
+          setPending(null)
+          changed()
+          return
+        }
+        if (account?.loginState === 'failed' || Date.now() > deadline) {
+          setPending(null)
+          setError(t('settings.harnesses.codexAccount.loginFailed'))
+          return
+        }
+      } catch (error) {
+        if (cancelled) return
+        setError(error instanceof Error ? error.message : String(error))
+      }
+      if (!cancelled) timer = setTimeout(poll, 1500)
     }
+    timer = setTimeout(poll, 1500)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [pending, projectPath, changed, t])
+
+  const action = async (run: (path: string) => Promise<void>) => {
+    if (!projectPath || busy) return
+    const current = generation.current
+    setBusy(true)
+    setError(null)
+    try { await run(projectPath) }
+    catch (error) { if (current === generation.current) setError(error instanceof Error ? error.message : String(error)) }
+    finally { if (current === generation.current) setBusy(false) }
   }
 
-  async function cancelSignIn() {
-    if (!projectPath || !pending) return;
-    const loginId = pending.loginId;
-    setPending(null);
-    try {
-      await window.app.codexCancelAccountLogin(projectPath, loginId);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
-    }
-  }
-
-  async function signOut() {
-    if (!projectPath || loggingOut) return;
-    setLoggingOut(true);
-    try {
-      const next = await window.app.codexLogoutAccount(projectPath);
-      setStatus(next);
-      setPending(null);
-      toast.success(t("settings.harnesses.codexAccount.signOutComplete"));
-      onAuthChanged?.();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
-    } finally {
-      setLoggingOut(false);
-    }
-  }
-
-  async function copyDeviceCode() {
-    if (!pending?.userCode) return;
-    await navigator.clipboard.writeText(pending.userCode);
-    toast.success(t("settings.harnesses.codexAccount.codeCopied"));
-  }
-
-  function openSignInPage() {
-    const url = pending?.authUrl ?? pending?.verificationUrl;
-    if (url) void window.app.openExternalLink(url);
-  }
-
-  if (!projectPath) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        {t("settings.harnesses.codexAccount.noProject")}
-      </p>
-    );
-  }
-
-  return (
-    <section
-      aria-labelledby="codex-account-title"
-      className="flex flex-col gap-4 rounded-lg border p-4"
-    >
-      <header className="flex items-start justify-between gap-4">
-        <div className="flex min-w-0 flex-col gap-1">
-          <h3 id="codex-account-title" className="text-sm font-medium">
-            {t("settings.harnesses.codexAccount.title")}
-          </h3>
-          <p className="max-w-2xl text-xs text-muted-foreground">
-            {t("settings.harnesses.codexAccount.description")}
-          </p>
-        </div>
-        {status?.signedIn ? (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={loggingOut}
-            onClick={() => void signOut()}
-          >
-            {loggingOut ? (
-              <Loader2 data-icon className="animate-spin" />
-            ) : (
-              <LogOut data-icon />
-            )}
-            {t("settings.harnesses.codexAccount.signOut")}
-          </Button>
-        ) : (
-          <IconButton
-            size="sm"
-            variant="ghost"
-            tooltip={t("settings.harnesses.codexAccount.refresh")}
-            disabled={loading}
-            onClick={() => void refresh()}
-          >
-            <RefreshCw className={loading ? "animate-spin" : undefined} />
-          </IconButton>
-        )}
-      </header>
-
-      {status?.signedIn ? (
-        <div className="flex flex-col gap-3">
-          <dl className="grid gap-2 text-sm sm:grid-cols-2">
-            {status.email ? (
-              <div>
-                <dt className="text-xs text-muted-foreground">
-                  {t("settings.harnesses.codexAccount.email")}
-                </dt>
-                <dd className="truncate">{status.email}</dd>
-              </div>
-            ) : null}
-            {status.planType ? (
-              <div>
-                <dt className="text-xs text-muted-foreground">
-                  {t("settings.harnesses.codexAccount.plan")}
-                </dt>
-                <dd>{status.planType}</dd>
-              </div>
-            ) : null}
-          </dl>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-3">
-          {pending?.type === "chatgptDeviceCode" && pending.userCode ? (
-            <div className="flex flex-col gap-2">
-              <div className="text-sm font-medium">
-                {t("settings.harnesses.codexAccount.deviceCodeTitle")}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {t("settings.harnesses.codexAccount.deviceCodeDescription")}
-              </p>
-              <div className="flex flex-wrap items-center gap-2">
-                <code className="rounded-md bg-muted px-3 py-2 text-lg font-semibold tracking-[0.2em]">
-                  {pending.userCode}
-                </code>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void copyDeviceCode()}
-                >
-                  <Copy data-icon />
-                  {t("settings.harnesses.codexAccount.copyCode")}
-                </Button>
-              </div>
-            </div>
-          ) : null}
-          <div className="flex flex-wrap gap-2">
-            {pending ? (
-              <>
-                <Button size="sm" disabled>
-                  <Loader2 data-icon className="animate-spin" />
-                  {t("settings.harnesses.codexAccount.signingIn")}
-                </Button>
-                {pending.authUrl || pending.verificationUrl ? (
-                  <Button variant="outline" size="sm" onClick={openSignInPage}>
-                    <ExternalLink data-icon />
-                    {t("settings.harnesses.codexAccount.openPage")}
-                  </Button>
-                ) : null}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void cancelSignIn()}
-                >
-                  <X data-icon />
-                  {t("settings.harnesses.codexAccount.cancel")}
-                </Button>
-              </>
-            ) : (
-              <Button
-                size="sm"
-                disabled={loading}
-                onClick={() => void signIn()}
-              >
-                {loading ? (
-                  <Loader2 data-icon className="animate-spin" />
-                ) : (
-                  <LogIn data-icon />
-                )}
-                {t("settings.harnesses.codexAccount.signIn")}
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
-    </section>
-  );
+  return <CodexAccountsPanel
+    accounts={accounts} loading={loading} busy={busy} pending={pending}
+    disabled={!projectPath} error={!projectPath ? t('settings.harnesses.codexAccount.noProject') : error}
+    onRefresh={() => { void refresh() }}
+    onSignIn={(id) => { void action(async (path) => { const current = generation.current; const result = await window.app.codexStartAccountLogin(path, id); if (current !== generation.current) { await window.app.codexCancelAccountLogin(path, result.loginId); return }; setPending(result); await refresh() }) }}
+    onSignOut={(id) => { void action(async (path) => { await window.app.codexLogoutAccount(path, codexAccountProviderId(id)); await refresh(); changed() }) }}
+    onSetDefault={(id) => { void action(async (path) => { await window.app.codexSetDefaultAccount(path, id); await refresh(); changed() }) }}
+    onCancel={() => { void action(async (path) => { if (pending) await window.app.codexCancelAccountLogin(path, pending.loginId); setPending(null); await refresh() }) }}
+    onOpenLogin={() => { const url = pending?.authUrl ?? pending?.verificationUrl; if (url) void window.app.openExternalLink(url) }}
+    onCopyCode={() => { if (pending?.userCode) void navigator.clipboard.writeText(pending.userCode).then(() => toast.success(t('settings.harnesses.codexAccount.codeCopied'))).catch((error) => setError(String(error))) }}
+  />
 }

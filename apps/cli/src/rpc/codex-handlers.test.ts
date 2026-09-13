@@ -117,12 +117,13 @@ describe('dispatchCodexRpc', () => {
   })
 
   afterEach(() => {
-    rmSync(dir, { recursive: true, force: true })
     clearCodexAdminAuthForTest()
+    rmSync(dir, { recursive: true, force: true })
   })
 
   it('codex.getAuthStatus returns default auto status without binary', async () => {
     const ctx: CodexRpcContext = {
+      nodeHome: dir,
       client: fakeClient(['environment:read']),
       projects: fakeProjects(dir),
       harnesses: fakeHarnesses(null),
@@ -138,6 +139,7 @@ describe('dispatchCodexRpc', () => {
 
   it('codex.setAuth requires node:admin', async () => {
     const ctx: CodexRpcContext = {
+      nodeHome: dir,
       client: fakeClient(['environment:read']),
       projects: fakeProjects(dir),
       harnesses: fakeHarnesses(bin),
@@ -153,6 +155,7 @@ describe('dispatchCodexRpc', () => {
 
   it('codex.setAuth persists mode for getAuthStatus', async () => {
     const ctx: CodexRpcContext = {
+      nodeHome: dir,
       client: fakeClient(['environment:read', 'node:admin']),
       projects: fakeProjects(dir),
       harnesses: fakeHarnesses(bin),
@@ -170,6 +173,7 @@ describe('dispatchCodexRpc', () => {
 
   it('codex.getAccountUsage fails closed when binary not ready', async () => {
     const ctx: CodexRpcContext = {
+      nodeHome: dir,
       client: fakeClient(['environment:read', 'node:admin']),
       projects: fakeProjects(dir),
       harnesses: fakeHarnesses(null),
@@ -205,6 +209,7 @@ describe('dispatchCodexRpc', () => {
     })
 
     const ctx: CodexRpcContext = {
+      nodeHome: dir,
       client: fakeClient(['environment:read', 'node:admin']),
       projects: fakeProjects(dir),
       harnesses: fakeHarnesses(bin),
@@ -232,6 +237,7 @@ describe('dispatchCodexRpc', () => {
       return child as unknown as ChildProcessWithoutNullStreams
     })
     const ctx: CodexRpcContext = {
+      nodeHome: dir,
       client: fakeClient(['environment:read']),
       projects: fakeProjects(dir),
       harnesses: fakeHarnesses(bin),
@@ -259,6 +265,7 @@ describe('dispatchCodexRpc', () => {
       return child as unknown as ChildProcessWithoutNullStreams
     })
     const ctx: CodexRpcContext = {
+      nodeHome: dir,
       client: fakeClient(['environment:read']),
       projects: fakeProjects(dir),
       harnesses: fakeHarnesses(bin),
@@ -287,6 +294,7 @@ describe('dispatchCodexRpc', () => {
       return child as unknown as ChildProcessWithoutNullStreams
     })
     const ctx: CodexRpcContext = {
+      nodeHome: dir,
       client: fakeClient(['environment:read']),
       projects: fakeProjects(dir),
       harnesses: fakeHarnesses(bin),
@@ -330,6 +338,7 @@ describe('dispatchCodexRpc', () => {
       return child as unknown as ChildProcessWithoutNullStreams
     })
     const ctx: CodexRpcContext = {
+      nodeHome: dir,
       client: fakeClient(['node:admin']),
       projects: fakeProjects(dir),
       harnesses: fakeHarnesses(bin),
@@ -378,6 +387,7 @@ describe('dispatchCodexRpc', () => {
       return child as unknown as ChildProcessWithoutNullStreams
     })
     const ctx: CodexRpcContext = {
+      nodeHome: dir,
       client: fakeClient(['workspace:read', 'node:admin', 'environment:read']),
       projects: fakeProjects(dir),
       harnesses: fakeHarnesses(bin),
@@ -405,6 +415,7 @@ describe('dispatchCodexRpc', () => {
 
   it('codex.marketplace.add requires node:admin', async () => {
     const ctx: CodexRpcContext = {
+      nodeHome: dir,
       client: fakeClient(['workspace:read']),
       projects: fakeProjects(dir),
       harnesses: fakeHarnesses(bin),

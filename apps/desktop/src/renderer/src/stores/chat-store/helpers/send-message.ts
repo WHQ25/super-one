@@ -1,3 +1,4 @@
+import { codexAccountId, isCodexAccountProvider } from '@superone/shared/codex-accounts'
 import type {
   ChatMessage,
   ContentBlock,
@@ -43,6 +44,7 @@ import { toastSendFailure } from './send-error-toast'
 import { resolveEffectiveProviderId } from '@/lib/provider-resolve'
 
 async function isOfficialCodexProvider(apiProviderId: string | null): Promise<boolean> {
+  if (isCodexAccountProvider(apiProviderId)) return true
   if (apiProviderId) return false
   // Settings imports the chat store, so resolve it lazily to avoid a module-init cycle.
   const { useSettingsStore } = await import('../../settings')
@@ -122,10 +124,10 @@ export async function sendMessageImpl(
         popupContent = `/${command} is only available with the official OpenAI provider.`
       } else if (command === 'login') {
         popupContent = formatCodexLoginStart(
-          await window.app.codexStartAccountLogin(projectPath),
+          await window.app.codexStartAccountLogin(projectPath, codexAccountId(apiProviderId) ?? undefined),
         )
       } else {
-        await window.app.codexLogoutAccount(projectPath)
+        await window.app.codexLogoutAccount(projectPath, apiProviderId)
         popupContent = 'Signed out of ChatGPT.'
       }
       patchSession(() => ({ slashCommandOutput: { command, content: popupContent } }))

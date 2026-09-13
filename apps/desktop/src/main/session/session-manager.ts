@@ -181,11 +181,8 @@ export class SessionManagerImpl implements SessionManagerContract {
     const sessionId = opts.id ?? randomUUID()
     const cwd = opts.cwd ?? opts.projectPath
     const backend = harness.createBackend()
-    const apiProviderId = opts.apiProviderId ?? null
+    let apiProviderId = opts.apiProviderId ?? null
     const resolveProviderConfig = this.persistence.resolveProviderConfig
-    const providerConfig = resolveProviderConfig
-      ? resolveProviderConfig(provider, apiProviderId)
-      : provider.config
     let permissionMode = opts.permissionMode
     let sandboxMode = opts.sandboxMode
     // Cold create with a known SuperOne session id (prewarm / send fallback) must
@@ -195,10 +192,15 @@ export class SessionManagerImpl implements SessionManagerContract {
     let resumedProviderSessionId = opts.providerSessionId?.trim() || null
     let selectedModel = opts.model
     let selectedEffort = opts.effort
+    let restoredCodexSession = false
     if (opts.id && this.persistence.loadSession) {
       try {
         const prior = this.persistence.loadSession(opts.id)
         if (prior?.providerId === opts.providerId) {
+          if (provider.harnessId === 'codex') {
+            restoredCodexSession = true
+            apiProviderId = prior.apiProviderId ?? null
+          }
           if (!resumedProviderSessionId && prior.providerSessionId?.trim()) {
             resumedProviderSessionId = prior.providerSessionId.trim()
             log.info(
@@ -216,6 +218,12 @@ export class SessionManagerImpl implements SessionManagerContract {
         log.debug('[SessionManager] createSession loadSession hydrate skipped:', err)
       }
     }
+    if (provider.harnessId === 'codex' && apiProviderId === null && !restoredCodexSession && !resumedProviderSessionId) {
+      apiProviderId = this.persistence.getActiveDefaultApiProviderId?.('codex') ?? null
+    }
+    const providerConfig = resolveProviderConfig
+      ? resolveProviderConfig(provider, apiProviderId)
+      : provider.config
     const sandboxInfo = sandboxMode !== undefined
       ? { enabled: sandboxMode !== 'off', autoAllowBash: sandboxMode === 'auto' }
       : undefined

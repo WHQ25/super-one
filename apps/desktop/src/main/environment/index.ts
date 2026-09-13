@@ -45,6 +45,8 @@ export {
   remoteCodexGetAuthStatus,
   remoteCodexSetAuth,
   remoteCodexGetAccountStatus,
+  remoteCodexListAccounts,
+  remoteCodexSetDefaultAccount,
   remoteCodexAccountLoginStart,
   remoteCodexAccountLoginCancel,
   remoteCodexAccountLogout,

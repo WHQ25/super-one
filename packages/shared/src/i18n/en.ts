@@ -671,6 +671,15 @@ export type Messages = {
         'acp-grok': string
       }
       codexAccount: {
+        multiDescription: string
+        empty: string
+        pendingAccount: string
+        defaultAccount: string
+        setDefault: string
+        addAccount: string
+        signedOut: string
+        unavailable: string
+        loginFailed: string
         title: string
         description: string
         email: string
@@ -4319,12 +4328,21 @@ export const en: Messages = {
         'acp-grok': 'Grok (ACP)',
       },
       codexAccount: {
-        title: 'ChatGPT account',
+        multiDescription: 'Choose an account for each new conversation. The first account becomes the default; changing the default leaves existing conversations unchanged.',
+        empty: 'Add a ChatGPT account to get started.',
+        pendingAccount: 'ChatGPT Account',
+        defaultAccount: 'Default',
+        setDefault: 'Set as Default',
+        addAccount: 'Add Account',
+        signedOut: 'Signed Out',
+        unavailable: 'Account status is unavailable. Try refreshing.',
+        loginFailed: 'Sign-in failed or timed out. Try again.',
+        title: 'ChatGPT Accounts',
         description: 'Sign in through the official Codex flow. Codex stores the credentials; SuperOne never reads or saves your tokens.',
         email: 'Email',
         plan: 'Plan',
-        signIn: 'Sign in with ChatGPT',
-        signOut: 'Sign out',
+        signIn: 'Sign In with ChatGPT',
+        signOut: 'Sign Out',
         signingIn: 'Waiting for sign-in…',
         signInOpened: 'Continue signing in in your browser',
         signInComplete: 'ChatGPT sign-in complete',

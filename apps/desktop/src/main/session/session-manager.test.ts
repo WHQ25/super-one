@@ -274,6 +274,50 @@ describe('SessionManager', () => {
     })
   })
 
+  describe('Codex account binding', () => {
+    it('preserves legacy auth resolution when restoring an unbound conversation', async () => {
+      seedProvider('codex-base', 'codex')
+      const manager = new SessionManagerImpl({
+        getActiveDefaultApiProviderId: () => 'codex-account:11111111-1111-4111-8111-111111111111',
+        loadSession: () => ({ projectPath: '/project', providerId: 'codex-base', providerSessionId: 'legacy-thread', apiProviderId: null, messages: [], totalCostUsd: 0, contextTokens: 0 }),
+      })
+      expect(manager.createSession({ id: 'cold-legacy', projectPath: '/project', providerId: 'codex-base' }).snapshot.apiProviderId).toBeNull()
+      expect(manager.resumeSession('restored-legacy').snapshot.apiProviderId).toBeNull()
+      await manager.disposeAllSessions()
+    })
+
+    it('pins the default at creation and restores the original account after the default changes', async () => {
+      seedProvider('codex-base', 'codex')
+      const a = 'codex-account:11111111-1111-4111-8111-111111111111'
+      const b = 'codex-account:22222222-2222-4222-8222-222222222222'
+      let defaultId = a
+      const manager = new SessionManagerImpl({
+        getActiveDefaultApiProviderId: () => defaultId,
+        loadSession: () => ({ projectPath: '/project', providerId: 'codex-base', providerSessionId: 'thread-a', apiProviderId: a, messages: [], totalCostUsd: 0, contextTokens: 0 }),
+      })
+      const first = manager.createSession({ projectPath: '/project', providerId: 'codex-base' })
+      defaultId = b
+      const second = manager.createSession({ projectPath: '/project', providerId: 'codex-base' })
+      expect(first.snapshot.apiProviderId).toBe(a)
+      expect(second.snapshot.apiProviderId).toBe(b)
+      const restored = manager.resumeSession('restored')
+      expect(restored.snapshot.apiProviderId).toBe(a)
+      const cold = manager.createSession({ id: 'cold', projectPath: '/project', providerId: 'codex-base' })
+      expect(cold.snapshot.apiProviderId).toBe(a)
+      await manager.disposeAllSessions()
+    })
+
+    it('rejects an account switch after messages exist without changing the bound account', async () => {
+      seedProvider('codex-base', 'codex')
+      const a = 'codex-account:11111111-1111-4111-8111-111111111111'
+      const manager = new SessionManagerImpl({ loadSession: () => ({ projectPath: '/project', providerId: 'codex-base', providerSessionId: 'thread-a', apiProviderId: a, messages: [{ id: 'm', role: 'user', content: [{ type: 'text', text: 'hello' }], timestamp: Date.now() }] as ChatMessage[], totalCostUsd: 0, contextTokens: 0 }) })
+      const restored = manager.resumeSession('restored')
+      expect(() => restored.setApiProviderId('codex-account:22222222-2222-4222-8222-222222222222')).toThrow(/new conversation/)
+      expect(restored.snapshot.apiProviderId).toBe(a)
+      await manager.disposeAllSessions()
+    })
+  })
+
   describe('createSession', () => {
     it('creates a session with a UUID that differs from the SessionProvider id', () => {
       const session = mgr.createSession({ projectPath: '/proj', providerId: 'claude-base' })

@@ -1,3 +1,4 @@
+import type { CodexAccount, CodexManagedLoginStart } from '@superone/shared/codex-accounts'
 import type { CollaborationMailboxAPI } from '@superone/shared/collaboration-mailbox'
 import type { ElectronAPI } from '@electron-toolkit/preload'
 import type { AppMetricsSnapshot } from '@superone/shared/agent-types'
@@ -228,10 +229,12 @@ interface AppAPI {
   codexPlanApproval(projectPath: string, sessionId: string, messageId: string, status: 'approved' | 'rejected', feedback?: string): Promise<void>
   codexCollaborationModeChange(projectPath: string, sessionId: string, mode: string): Promise<void>
   codexGetAuthStatus(projectPath: string): Promise<CodexAuthStatus>
-  codexGetAccountStatus(projectPath: string): Promise<CodexAccountStatus>
-  codexStartAccountLogin(projectPath: string): Promise<CodexAccountLoginStartResult>
+  codexListAccounts(projectPath: string): Promise<CodexAccount[]>
+  codexSetDefaultAccount(projectPath: string, accountId: string): Promise<void>
+  codexGetAccountStatus(projectPath: string, apiProviderId?: string | null): Promise<CodexAccountStatus>
+  codexStartAccountLogin(projectPath: string, accountId?: string): Promise<CodexManagedLoginStart>
   codexCancelAccountLogin(projectPath: string, loginId: string): Promise<void>
-  codexLogoutAccount(projectPath: string): Promise<CodexAccountStatus>
+  codexLogoutAccount(projectPath: string, apiProviderId?: string | null): Promise<CodexAccountStatus>
   codexGetRateLimits(projectPath: string, apiProviderId?: string | null): Promise<CodexRateLimits | null>
   codexListRealtimeVoices(projectPath?: string | null): Promise<CodexRealtimeVoiceCatalog>
   codexGetAccountUsage(projectPath: string, apiProviderId?: string | null, threadId?: string | null): Promise<CodexAccountUsage | null>

@@ -249,3 +249,27 @@ export const Interactive: Story = {
   name: 'Interactive playground',
   render: () => <Playground />,
 }
+
+function CodexAccountUsagePreview() {
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    mockIpc('app', 'codexGetRateLimits', async () => ({
+      planType: 'plus',
+      primary: { usedPercent: 28, windowDurationMins: 300, resetsAt: Math.floor(Date.now() / 1000) + 3 * 3600 },
+      secondary: { usedPercent: 41, windowDurationMins: 10080, resetsAt: Math.floor(Date.now() / 1000) + 4 * 86400 },
+    }))
+    mockIpc('app', 'codexGetAccountStatus', async () => ({ signedIn: true, email: 'personal@example.com', planType: 'plus', authMode: 'chatgpt' }))
+    mockIpc('app', 'codexGetAccountUsage', async () => null)
+    const project = createDefaultProjectState()
+    project._activeSessionId = SB_SESSION
+    project._sessions = { [SB_SESSION]: {
+      ...createDefaultPerSessionState(), preferredProvider: 'codex', sessionProvider: 'codex',
+      apiProviderId: 'codex-account:11111111-1111-4111-8111-111111111111', status: 'idle',
+    } }
+    useChatStore.setState({ activeProject: SB_PROJECT, projectSessions: { [SB_PROJECT]: project } })
+    setReady(true)
+  }, [])
+  return <div className="flex h-screen overflow-hidden"><SidebarPreview>{ready && <UsageStatusIcon />}</SidebarPreview></div>
+}
+
+export const CodexAccountUsage: Story = { render: () => <CodexAccountUsagePreview /> }

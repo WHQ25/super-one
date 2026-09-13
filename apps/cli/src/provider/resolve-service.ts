@@ -1,3 +1,4 @@
+import { isCodexAccountProvider } from '@superone/shared/codex-accounts'
 /**
  * Resolve chat service env/models from node ProviderStore (no Electron).
  */
@@ -197,6 +198,7 @@ export function resolveHarnessService(
   const consumer = consumerForHarness(harness)
   if (!consumer) return null
   const platforms = platformsForNode(store)
+  if (isCodexAccountProvider(apiProviderId)) return null
   const bindings = store.listBindings()
   const binding = bindings.find((b) => b.consumer === consumer)
 

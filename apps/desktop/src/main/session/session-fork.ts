@@ -35,6 +35,7 @@ async function persistFork(
   try {
     newProviderSessionId = await harness.forkTranscript(
       {
+        apiProviderId: record.apiProviderId,
         providerSessionId: record.providerSessionId!,
         projectPath: record.projectPath,
         cwd: sourceCwd,

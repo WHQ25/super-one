@@ -1,3 +1,4 @@
+import { dirname as configDirname } from 'node:path'
 import {
   DATABASE_SCHEMA_GENERATION,
   PHASE1_NODE_CAPABILITIES,
@@ -317,6 +318,7 @@ async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContex
   if (harnessResources) return harnessResources
 
   const codex = await dispatchCodexRpc(method, payload, {
+    nodeHome: configDirname(ctx.settingsConfigPath),
     client: ctx.client,
     projects: ctx.projects,
     harnesses: ctx.harnesses,
@@ -1812,6 +1814,7 @@ async function handleSessionFork(payload: unknown, ctx: RpcContext): Promise<Rpc
           resolveProjectPath: (projectId) => ctx.projects.get(projectId)?.path ?? null,
           harnesses: ctx.harnesses,
           providers: ctx.providers,
+          nodeHome: configDirname(ctx.settingsConfigPath),
         },
         forkFromMessageId,
       )

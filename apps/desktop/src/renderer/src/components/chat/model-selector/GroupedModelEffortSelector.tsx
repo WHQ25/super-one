@@ -1,3 +1,4 @@
+import { isCodexAccountProvider } from '@superone/shared/codex-accounts'
 import { useMemo, useState, type ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
@@ -793,6 +794,7 @@ export function GroupedModelEffortSelector({
                 <div className="max-h-60 min-h-0 overflow-y-auto pr-1">
                   {providers.map((provider) => {
                     const selected = provider.id === selectedProviderId
+                    const account = isCodexAccountProvider(provider.id)
                     return (
                       <DropdownMenuItem
                         key={provider.id ?? '__default__'}
@@ -801,13 +803,13 @@ export function GroupedModelEffortSelector({
                           onSelectProvider(provider.id)
                           setProvidersExpanded(false)
                         }}
-                        className={cn('justify-between gap-2 px-2 py-1.5', ITEM_FOCUS, selected && 'bg-muted')}
+                        className={cn('items-center justify-between gap-2 px-2 py-1.5', ITEM_FOCUS, selected && 'bg-muted')}
                       >
-                        <ProviderOptionLabel brandKey={provider.brand} name={provider.name} icon={provider.icon} />
-                        <span className="flex min-w-0 shrink-0 items-center gap-1.5">
+                        <span className={cn('flex min-w-0 flex-1', account ? 'flex-col gap-1' : 'items-center justify-between gap-1.5')}>
+                          <ProviderOptionLabel brandKey={provider.brand} name={provider.name} icon={provider.icon} />
                           {provider.keyName && <span className="truncate text-xs text-muted-foreground">{provider.keyName}</span>}
-                          {selected && <Check className="size-4 shrink-0 text-primary" />}
                         </span>
+                        {selected && <Check className="size-4 shrink-0 text-primary" />}
                       </DropdownMenuItem>
                     )
                   })}
@@ -834,11 +836,11 @@ export function GroupedModelEffortSelector({
                 >
                   {selectedProvider ? (
                     <>
-                      <span className="flex min-w-0 flex-1 items-center">
+                      <span className="flex shrink-0 items-center">
                         <ProviderOptionLabel brandKey={selectedProvider.brand} name={selectedProvider.name} icon={selectedProvider.icon} />
                       </span>
                       {selectedProvider.keyName && (
-                        <span className="truncate text-xs text-muted-foreground">{selectedProvider.keyName}</span>
+                        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{selectedProvider.keyName}</span>
                       )}
                     </>
                   ) : (

@@ -1,3 +1,5 @@
+import { codexAccountProviderId, type CodexAccount } from '@superone/shared/codex-accounts'
+import { useChatStore } from '@/stores/chat'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { claudeAccountProviderId, type ClaudeAccount, type HarnessId } from '@superone/shared/agent-types'
@@ -78,6 +80,20 @@ export function useSelectorProviders(harness: HarnessId) {
     return () => { cancelled = true }
   }, [harness])
 
+  const projectPath = useChatStore((s) => s.activeProject)
+  const [codexAccounts, setCodexAccounts] = useState<CodexAccount[]>([])
+  useEffect(() => {
+    setCodexAccounts([])
+    if (harness !== 'codex' || !projectPath) return
+    let cancelled = false
+    const refresh = () => { void window.app.codexListAccounts(projectPath)
+      .then((accounts) => { if (!cancelled) setCodexAccounts(accounts) })
+      .catch(() => {}) }
+    refresh()
+    window.addEventListener('codex-accounts-changed', refresh)
+    return () => { cancelled = true; window.removeEventListener('codex-accounts-changed', refresh) }
+  }, [harness, projectPath, providerScope])
+
   const consumer = consumerForHarness(harness)
   const filtered = useMemo<Credential[]>(
     () => credentialsForConsumer(platforms, credentials, consumer, { experimentalClaudeOpenAiChatEnabled }),
@@ -92,7 +108,12 @@ export function useSelectorProviders(harness: HarnessId) {
     // default login as a single unlabelled row. The email column only appears once there is a
     // second account to tell apart, so single-account users never see the feature.
     const list: SelectorProviderOption[] =
-      harness === 'claude' && claudeAccounts.length > 1
+      harness === 'codex' && codexAccounts.length > 0
+        ? codexAccounts.filter((account) => account.signedIn || codexAccountProviderId(account.id) === resolvedProviderId).map((account) => ({
+            id: codexAccountProviderId(account.id), brand: 'openai', name: defaultLabel,
+            keyName: [account.email || account.id, account.signedIn ? account.planType : t('settings.harnesses.codexAccount.signedOut')].filter(Boolean).join(' · '),
+          }))
+        : harness === 'claude' && claudeAccounts.length > 1
         ? claudeAccounts.map((account) => ({
             id: claudeAccountProviderId(account.credentialDir),
             brand: 'claude',
@@ -105,11 +126,11 @@ export function useSelectorProviders(harness: HarnessId) {
       list.push({ id: c.id, brand, name, icon, keyName: c.name })
     }
     return list
-  }, [filtered, platforms, harness, t, claudeAccounts])
+  }, [filtered, platforms, harness, t, claudeAccounts, codexAccounts, resolvedProviderId])
 
   return {
     providers,
-    selectedProviderId: resolvedProviderId,
+    selectedProviderId: resolvedProviderId ?? (harness === 'codex' && codexAccounts.some((a) => a.isDefault) ? codexAccountProviderId(codexAccounts.find((a) => a.isDefault)!.id) : null),
     onSelectProvider: (id: string | null) => { void setSessionApiProviderId(id) },
     onManageProviders: () => { setSettingsTab('providers'); navigateTo('settings') },
   }

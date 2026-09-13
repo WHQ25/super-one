@@ -1,3 +1,5 @@
+import { isCodexAccountProvider } from '@superone/shared/codex-accounts'
+import { nodeCodexAccountStore } from './codex-accounts'
 /**
  * Production TurnRunner for node-hosted Codex (Stage 4) and multi-dispatch
  * with Claude (Stage 5-E Agent SDK via @superone/claude).
@@ -39,6 +41,7 @@ import { ensureMcpMerge, type McpMergeMode } from '@superone/runtime/fs'
 import { openTurnAndStream } from './codex-live-turn'
 
 export interface NodeCodexRunnerOptions {
+  nodeHome?: string
   binaryPath?: string | null
   resolveProjectPath: (projectId: string) => string | null
   harnesses?: HarnessCatalogReader
@@ -135,6 +138,8 @@ export function isCodexBinaryOverrideRunnable(): boolean {
  */
 function providerEnvKeyOf(env: NodeJS.ProcessEnv): string {
   return [
+    env.CODEX_HOME ?? '',
+    env.SUPERONE_CODEX_ACCOUNT_REVISION ?? '',
     env.OPENAI_BASE_URL ?? '',
     env.CODEX_BASE_URL ?? '',
     env.OPENAI_API_KEY ?? '',
@@ -189,6 +194,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
     const client = await openCodexAppServer({
       binaryPath: binary,
       env: authEnv,
+      cliArgs: authEnv.SUPERONE_CODEX_ACCOUNT_PROVIDER ? nodeCodexAccountStore(opts.nodeHome).cliOverrides(authEnv.SUPERONE_CODEX_ACCOUNT_PROVIDER) : undefined,
       spawnFn: opts.spawnFn,
       // Connection outlives individual turns — do not bind open to turn abort.
     })
@@ -243,10 +249,15 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
           resolveHarnessService(opts.providers, 'codex', input.apiProviderId),
         )
       : {}
-    const authEnv: NodeJS.ProcessEnv = {
+    let authEnv: NodeJS.ProcessEnv = {
       ...process.env,
       ...opts.env,
       ...providerEnv,
+    }
+
+    if (isCodexAccountProvider(input.apiProviderId)) {
+      authEnv = nodeCodexAccountStore(opts.nodeHome).environment(input.apiProviderId!, authEnv)
+      authEnv.SUPERONE_CODEX_ACCOUNT_PROVIDER = input.apiProviderId!
     }
 
     const sessionId = input.session.sessionId

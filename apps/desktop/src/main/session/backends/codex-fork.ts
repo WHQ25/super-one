@@ -39,5 +39,6 @@ export async function forkCodexThread(
       lastTurnId,
       dropTrailingTurns,
     }),
+    source.apiProviderId,
   )
 }

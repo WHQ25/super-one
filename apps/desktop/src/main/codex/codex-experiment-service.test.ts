@@ -1,4 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, mkdirSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { CodexAccountStore } from '@superone/codex/account-store'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+const accountFixture = vi.hoisted(() => ({ root: '' }))
+vi.mock('./codex-account-store', () => ({ codexAccountStore: () => new CodexAccountStore(join(accountFixture.root, 'accounts'), join(accountFixture.root, 'cli')) }))
+beforeEach(() => { accountFixture.root = mkdtempSync(join(tmpdir(), 'codex-service-test-')); mkdirSync(join(accountFixture.root, 'cli')) })
+afterEach(() => { rmSync(accountFixture.root, { recursive: true, force: true }) })
 
 vi.mock('../providers/resolver', () => ({ resolveChatService: vi.fn(() => null) }))
 
@@ -156,7 +165,7 @@ describe('CodexExperimentService auth state', () => {
       requiresOpenaiAuth: true,
     })
     expect(handle.connection.request).toHaveBeenCalledWith('account/read', { refreshToken: false })
-    expect(createHandleMock.mock.calls[0]?.[3]).toEqual([])
+    expect(createHandleMock.mock.calls[0]?.[3]).toContain('model_provider="openai"')
     expect(handle.close).toHaveBeenCalledTimes(1)
   })
 
@@ -168,8 +177,8 @@ describe('CodexExperimentService auth state', () => {
       type: 'chatgpt',
       loginId: 'login-1',
       authUrl: 'https://auth.openai.com/login',
-    })
-    handle.connection.pollNotification = vi.fn(async () => {
+    }).mockResolvedValueOnce({ account: { type: 'chatgpt', email: 'test@example.test', planType: 'plus' }, requiresOpenaiAuth: true })
+    handle.connection.nextNotification = vi.fn(async () => {
       await loginCompleted
       return {
         method: 'account/login/completed',
@@ -202,6 +211,24 @@ describe('CodexExperimentService auth state', () => {
 
     service.setAuth('/project', { mode: 'chatgpt' })
     expect(listener).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps metadata connections and model caches separate for accounts in the same project', async () => {
+    const a = 'codex-account:11111111-1111-4111-8111-111111111111'
+    const b = 'codex-account:22222222-2222-4222-8222-222222222222'
+    const handleA = makeModelHandle()
+    const handleB = makeModelHandle()
+    createHandleMock.mockImplementation(async (auth) => auth.accountId === a.slice('codex-account:'.length) ? handleA : handleB)
+    const service = new CodexExperimentService()
+    await Promise.all([service.listModels('/project', a), service.listModels('/project', b)])
+    expect(createHandleMock).toHaveBeenCalledTimes(2)
+    expect(handleA.close).not.toHaveBeenCalled()
+    expect(handleB.close).not.toHaveBeenCalled()
+    await service.listModels('/project', a, true)
+    expect(createHandleMock).toHaveBeenCalledTimes(2)
+    expect(handleA.connection.request).toHaveBeenCalledTimes(2)
+    expect(handleB.connection.request).toHaveBeenCalledTimes(1)
+    service.dispose()
   })
 
   it('serves repeated model lists from the per-provider cache and reuses one connection on force-refresh', async () => {

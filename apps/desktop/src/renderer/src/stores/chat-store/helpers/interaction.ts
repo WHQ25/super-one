@@ -1,3 +1,5 @@
+import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
+import { toast } from 'sonner'
 import type {
   CodexCollaborationMode,
   PermissionMode,
@@ -709,15 +711,14 @@ export async function setSessionApiProviderIdImpl(
   const { projectPath: activeProject, sessionId, session: sess } = resolveWriteScope(get(), target)
   if (!activeProject) return
   if (!sessionId) return
-  set((s) => commitPerSession(s, target, () => ({
-    apiProviderId,
-    slashCommandOutput: null,
-  })))
   const isCodex = (sess.sessionProvider ?? sess.preferredProvider ?? 'claude') === 'codex'
   try {
+    if (isCodex) assertCodexAccountSwitchAllowed(sess.apiProviderId, apiProviderId, sess.messages.length > 0)
     await window.agent.setSessionApiProvider(sessionId, apiProviderId)
+    set((s) => commitPerSession(s, target, () => ({ apiProviderId, slashCommandOutput: null })))
   } catch (err) {
-    console.warn('[chat] setSessionApiProvider failed:', err)
+    toast.error(err instanceof Error ? err.message : String(err))
+    return
   }
   // Remote: always re-list from the node provider store. Local Codex also re-lists.
   const isRemote = !!parseRemoteProjectKey(activeProject)

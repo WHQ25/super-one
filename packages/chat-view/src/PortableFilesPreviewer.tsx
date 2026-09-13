@@ -15,10 +15,10 @@ import { beginSwipe, endSwipe, trackSwipe, type SwipeTracking } from './previewe
 
 /**
  * Card height on the phone. Shorter than the desktop's: a phone shows one
- * column, and 340px leaves the message above and the dots below on screen
- * together at the common viewport heights.
+ * column, and 400px still leaves the message above and the dots below on
+ * screen together at the common viewport heights.
  */
-export const PORTABLE_PREVIEWER_HEIGHT = 340
+export const PORTABLE_PREVIEWER_HEIGHT = 400
 
 /** What the host answers a `loadTextFile` request with. */
 export type LoadTextFileResult =

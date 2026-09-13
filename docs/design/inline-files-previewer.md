@@ -440,7 +440,7 @@ same `readRemoteProjectFile` the panel uses.
 ### 6.2 Card (`packages/chat-view/src/PortableFilesPreviewer.tsx`)
 
 Mounted from `PortableToolRow` (§2.3) with the parsed payload. Height
-**340px**. Header: `name` + `n / N`; no fullscreen button — the whole stage is
+**400px**. Header: `name` + `n / N`; no fullscreen button — the whole stage is
 the tap target. **No arrows**: the phone moves between files by swipe alone,
 with the dots as the only visible position indicator.
 

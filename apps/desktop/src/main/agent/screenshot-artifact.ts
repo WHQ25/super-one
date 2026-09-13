@@ -2,11 +2,13 @@ import { createRequire } from 'module'
 import { mkdirSync, writeFileSync, renameSync, statSync } from 'fs'
 import { join, dirname, basename, extname } from 'path'
 import { randomUUID } from 'crypto'
+import { producerDir, type CaptureProducer } from '../media-output-paths'
+import { registerArtifact } from '../mcp/artifact-registry'
 
 /**
  * Shared screenshot artifact helpers for browser + Computer Use.
  *
- * - Persist base64 → fixed directory path (tool returns path, not pixels)
+ * - Persist base64 → the session's sync zone (tool returns path, not pixels)
  * - When file is too heavy for agent Read: JPEG re-encode at same dimensions
  *   (media-gen/image-preview pattern; no resize so coordinate spaces stay valid)
  *
@@ -115,22 +117,34 @@ export function writeOptimizedAgentScreenshot(
   }
 }
 
+export interface ScreenshotTarget {
+  /** Owning session; captures with none land in the `adhoc` zone. */
+  sessionId?: string | null
+  producer: CaptureProducer
+}
+
 /**
- * Write base64 image under `dir`, then optimize for agent Read when oversized.
+ * Write base64 image under the session's `<producer>` zone directory, then
+ * optimize for agent Read when oversized. Every file that ends up on disk is
+ * registered as an artifact so a remote session's executor can push it to the
+ * node before the agent reads it.
  */
 export function persistBase64Screenshot(
-  dir: string,
+  target: ScreenshotTarget,
   base64: string,
   mimeType: string = 'image/png',
   declared?: { width?: number; height?: number },
   deps?: ScreenshotArtifactDeps,
 ): PersistedScreenshotArtifact | null {
+  const sessionId = target.sessionId ?? ''
+  const dir = producerDir(sessionId, target.producer)
   try {
     mkdirSync(dir, { recursive: true })
     const ext = mimeType.includes('jpeg') || mimeType.includes('jpg') ? 'jpg' : 'png'
     const originalPath = join(dir, `${randomUUID()}.${ext}`)
     const raw = Buffer.from(base64, 'base64')
     writeFileSync(originalPath, raw)
+    registerArtifact(sessionId, { path: originalPath, producer: target.producer, final: true })
 
     let width = declared?.width ?? 0
     let height = declared?.height ?? 0
@@ -167,6 +181,8 @@ export function persistBase64Screenshot(
         resolved ?? defaultDeps(),
       )
       if (optimizedResult && optimizedResult.path !== originalPath) {
+        // The sibling is its own ref — the executor never infers it from a suffix.
+        registerArtifact(sessionId, { path: optimizedResult.path, producer: target.producer, final: true })
         path = optimizedResult.path
         width = optimizedResult.width
         height = optimizedResult.height

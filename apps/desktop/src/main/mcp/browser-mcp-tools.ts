@@ -845,7 +845,7 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
         // to re-rasterize before reading pixels; a CDP Page.captureScreenshot reads
         // the composited surface as-is, so under PiP it returned a blurry upscale.
         const result = (await browserAutomationCall(sessionId, 'screenshot', args)) as ScreenshotResult
-        const path = persistScreenshot(result.data, result.mimeType)
+        const path = persistScreenshot(sessionId, result.data, result.mimeType)
         if (!path) return errorReply('Failed to save screenshot to disk.')
         return textReply({ path, width: result.width, height: result.height, imageNote: imageNote('path') })
       } catch (err) {
@@ -1172,7 +1172,7 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
         const res = (await browserAutomationCall(sessionId, 'evaluate', args)) as { value: unknown }
         const json = JSON.stringify(res.value ?? null)
         if (json.length <= INLINE_ARTIFACT_LIMIT) return textReply({ value: res.value ?? null })
-        const path = persistTextArtifact(json, 'json')
+        const path = persistTextArtifact(sessionId, json, 'json')
         if (!path) return textReply({ value: res.value ?? null, bytes: json.length })
         return textReply({ spilled: true, path, bytes: json.length, preview: json.slice(0, ARTIFACT_PREVIEW_CHARS) })
       } catch (err) {
@@ -1325,7 +1325,7 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
         detail.bodyOmitted = e.bodyOmitted ?? 'not-captured'
         return Promise.resolve(toonReply(detail))
       }
-      return Promise.resolve(toonReply(spillLargeBrowserField({ ...detail, body: e.body, bodyTruncated: e.bodyTruncated }, 'body', 'txt')))
+      return Promise.resolve(toonReply(spillLargeBrowserField(sessionId, { ...detail, body: e.body, bodyTruncated: e.bodyTruncated }, 'body', 'txt')))
     },
   )
 

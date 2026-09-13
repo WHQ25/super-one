@@ -2,6 +2,7 @@ import { createRequire } from 'module'
 import { statSync, writeFileSync, renameSync } from 'fs'
 import { dirname, extname, join, basename } from 'path'
 import type { SavedImage } from './types'
+import { registerZoneArtifact } from './zone-artifact'
 
 const requireElectron = createRequire(import.meta.url)
 
@@ -86,6 +87,7 @@ export function writeImagePreview(originalPath: string, deps: ImagePreviewDeps =
     if (!jpeg || jpeg.length === 0) return originalPath
     const outPath = previewPathFor(originalPath)
     deps.writeAtomic(outPath, Buffer.from(jpeg))
+    registerZoneArtifact(outPath)
     return outPath
   } catch (err) {
     deps.warn?.('[media-gen] preview generation failed for', originalPath, err)

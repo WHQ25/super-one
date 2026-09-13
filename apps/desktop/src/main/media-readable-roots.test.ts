@@ -17,7 +17,7 @@ vi.mock('./path-security', () => ({
 }))
 
 vi.mock('electron', () => ({ app: { getPath: () => '/userData' } }))
-import { builtInCaptureRoots, RECORDING_ROOT } from './media-output-paths'
+import { builtInCaptureRoots, RECORDING_ROOT, syncZoneRoot } from './media-output-paths'
 
 import { getMediaReadableRoots } from './media-readable-roots'
 
@@ -26,8 +26,10 @@ describe('getMediaReadableRoots', () => {
     expect(getMediaReadableRoots()).toEqual([
       '/projects/app',
       '/projects/app/.worktrees/x',
+      // Every session artifact — captures, generations, agent deliverables — lives here now.
+      '/userData/sync',
+      // Legacy: generations and captures written before the sync zone existed.
       '/userData/media-gen/outputs',
-      // Screenshots and action recordings both live under the temp roots.
       ...builtInCaptureRoots(),
       // Still readable: transcripts saved before the move link recordings here.
       '/userData/recordings',
@@ -39,5 +41,13 @@ describe('getMediaReadableRoots', () => {
     const roots = getMediaReadableRoots()
     expect(roots).toContain('/userData/recordings')
     expect(roots).toContain(RECORDING_ROOT)
+  })
+
+  it('keeps every legacy capture and generation root readable after artifacts moved to the sync zone', () => {
+    const roots = getMediaReadableRoots()
+    expect(roots).toContain(syncZoneRoot())
+    // A transcript saved before the move links its screenshot under the temp root and its
+    // generated image under media-gen/outputs; neither may start 403ing.
+    for (const legacy of [...builtInCaptureRoots(), '/userData/media-gen/outputs']) expect(roots).toContain(legacy)
   })
 })

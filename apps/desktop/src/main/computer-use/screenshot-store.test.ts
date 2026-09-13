@@ -1,13 +1,20 @@
-import { describe, it, expect, vi } from 'vitest'
-import { readFileSync, existsSync } from 'fs'
+import { afterAll, describe, it, expect, vi } from 'vitest'
+import { readFileSync, existsSync, mkdtempSync, rmSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
+
+const userData = mkdtempSync(join(tmpdir(), 'superone-cu-shots-'))
+vi.mock('electron', () => ({ app: { getPath: () => userData } }))
+afterAll(() => rmSync(userData, { recursive: true, force: true }))
+
 import {
   persistComputerUseScreenshot,
   needsComputerUseOptimize,
   writeOptimizedAgentImage,
-  COMPUTER_USE_SCREENSHOT_DIR,
   CU_AGENT_MAX_BYTES,
   type ScreenshotStoreDeps,
 } from './screenshot-store'
+import { producerDir } from '../media-output-paths'
 import type { AgentNativeImage } from '../agent/screenshot-artifact'
 
 const TINY_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC'
@@ -62,10 +69,10 @@ describe('needsComputerUseOptimize', () => {
 })
 
 describe('persistComputerUseScreenshot', () => {
-  it('writes under the fixed computer-use screenshot directory', () => {
-    const result = persistComputerUseScreenshot(TINY_PNG, 'image/png')
+  it('writes under the session computer-use zone directory', () => {
+    const result = persistComputerUseScreenshot(TINY_PNG, 'image/png', undefined, { sessionId: 'session-a' })
     expect(result).toBeTruthy()
-    expect(result!.path.startsWith(COMPUTER_USE_SCREENSHOT_DIR)).toBe(true)
+    expect(result!.path.startsWith(producerDir('session-a', 'computer-use'))).toBe(true)
     expect(existsSync(result!.path)).toBe(true)
     expect(readFileSync(result!.path).equals(Buffer.from(TINY_PNG, 'base64'))).toBe(true)
   })

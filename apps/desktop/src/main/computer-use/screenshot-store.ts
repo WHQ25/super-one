@@ -7,11 +7,6 @@ import {
   type ScreenshotArtifactDeps,
 } from '../agent/screenshot-artifact'
 
-import { COMPUTER_USE_SCREENSHOT_DIR } from '../media-output-paths'
-
-/** Fixed directory shared with the chat media readers. */
-export { COMPUTER_USE_SCREENSHOT_DIR } from '../media-output-paths'
-
 /** @deprecated Use AGENT_SCREENSHOT_MAX_BYTES — kept for existing imports/tests. */
 export const CU_AGENT_MAX_BYTES = AGENT_SCREENSHOT_MAX_BYTES
 /** Documentation / capture budget; agent path does not resize. */
@@ -24,16 +19,16 @@ export const needsComputerUseOptimize = needsAgentScreenshotOptimize
 export const writeOptimizedAgentImage = writeOptimizedAgentScreenshot
 
 /**
- * Persist a Computer Use capture, then JPEG-optimize when oversized.
+ * Persist a Computer Use capture into the session's zone, then JPEG-optimize when oversized.
  */
 export function persistComputerUseScreenshot(
   base64: string,
   mimeType: string = 'image/png',
   declared?: { width?: number; height?: number },
-  options: { dir?: string; deps?: ScreenshotArtifactDeps } = {},
+  options: { sessionId?: string | null; deps?: ScreenshotArtifactDeps } = {},
 ): PersistedComputerUseScreenshot | null {
   return persistBase64Screenshot(
-    options.dir ?? COMPUTER_USE_SCREENSHOT_DIR,
+    { sessionId: options.sessionId, producer: 'computer-use' },
     base64,
     mimeType,
     declared,

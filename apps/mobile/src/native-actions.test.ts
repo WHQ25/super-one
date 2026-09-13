@@ -8,6 +8,7 @@ function ports(): NativeActionPorts {
     previewFile: vi.fn(),
     loadImage: vi.fn(async () => ({ dataUri: 'data:image/png;base64,AA==' })),
     loadVideoPoster: vi.fn(async () => ({ dataUri: 'data:image/jpeg;base64,/9j/', width: 320, height: 180, durationMs: 4200 })),
+    loadTextFile: vi.fn(async () => ({ text: '# hi\n' })),
     loadAttachment: vi.fn(async () => 'data:image/jpeg;base64,/9j/'),
     resolveFavicon: vi.fn(async () => 'data:image/png;base64,AA=='),
     previewImage: vi.fn(),
@@ -137,6 +138,18 @@ describe('native chat actions', () => {
     await expect(resolveNativeRequest({
       type: 'requestNative', requestId: 'vid2', action: 'loadVideoPoster', payload: { path: 'out/odd.mkv' },
     }, target)).resolves.toMatchObject({ result: { ok: true, poster: null } })
+  })
+
+  it('answers loadTextFile with the text in-band, and passes a tooLarge verdict through', async () => {
+    const target = ports()
+    await expect(resolveNativeRequest({
+      type: 'requestNative', requestId: 'txt', action: 'loadTextFile', payload: { path: '/proj/README.md' },
+    }, target)).resolves.toMatchObject({ result: { ok: true, text: '# hi\n' } })
+    expect(target.loadTextFile).toHaveBeenCalledWith('/proj/README.md')
+    vi.mocked(target.loadTextFile).mockResolvedValueOnce({ tooLarge: true, size: 900_000 })
+    await expect(resolveNativeRequest({
+      type: 'requestNative', requestId: 'txt2', action: 'loadTextFile', payload: { path: '/proj/big.log' },
+    }, target)).resolves.toMatchObject({ result: { ok: true, tooLarge: true, size: 900_000 } })
   })
 
   it('fetches the original behind an attachment thumbnail by id, or by name without one', async () => {

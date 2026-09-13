@@ -92,6 +92,7 @@ import { useFilePreview } from './use-file-preview'
 import { clearFilePreviewCache } from '../file-preview-cache-store'
 import { sessionTranscriptCache } from '../session-transcript-cache'
 import { loadInlineImage } from '../inline-images'
+import { loadTextFile } from '../text-files'
 import { loadVideoPoster } from '../video-posters'
 import { requestLinkFavicon } from '../link-favicons'
 import { NewFolderSheet } from '../prompts/NewFolderSheet'
@@ -568,6 +569,11 @@ export function MobileApp() {
         const client = clientRef.current
         if (!client || !project) throw new Error('no active project')
         return loadVideoPoster({ host: client, projectPath: project.path, sessionId, path })
+      },
+      loadTextFile: async (path) => {
+        const client = clientRef.current
+        if (!client || !project) throw new Error('no active project')
+        return loadTextFile({ host: client, projectPath: project.path, sessionId, path })
       },
       loadAttachment: async (messageId, ref) => {
         const runtime = runtimeRef.current

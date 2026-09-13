@@ -4,6 +4,7 @@ import type { HostInbound, HostOutbound } from '@superone/chat-view'
 import { isPreviewableMermaid } from '@superone/chat-view/mermaid-preview'
 import type { SaveWidgetTemplateRequest } from '@superone/shared/agent-types'
 import { isPreviewableImageSource, parseImageGenerationInfo, type ImagePreviewTarget } from './image-preview-state'
+import type { TextFileResult } from './text-files'
 import type { VideoPosterResult } from './video-posters'
 
 type NativeRequest = Extract<HostOutbound, { type: 'requestNative' }>
@@ -40,6 +41,12 @@ export interface NativeActionPorts {
    * `null` when the host cannot decode the clip and the tile stays a chip.
    */
   loadVideoPoster(path: string): Promise<VideoPosterResult | null>
+  /**
+   * A small text file, in-band, for the files previewer to render in place.
+   * `tooLarge` when the host will not put it on the RPC; the card then shows
+   * a chip that opens the preview page instead.
+   */
+  loadTextFile(path: string): Promise<TextFileResult>
   /**
    * The original picture behind a thumbnail the transcript carries for an
    * attachment (`ImageAttachment.preview`), as a data URI for the viewer.
@@ -156,6 +163,8 @@ export async function resolveNativeRequest(
       result = await ports.loadImage(payloadString(message, 'path'), confirmed)
     } else if (message.action === 'loadVideoPoster') {
       result = { poster: await ports.loadVideoPoster(payloadString(message, 'path')) }
+    } else if (message.action === 'loadTextFile') {
+      result = await ports.loadTextFile(payloadString(message, 'path'))
     } else if (message.action === 'loadAttachment') {
       const attachmentId = (message.payload as Record<string, unknown> | undefined)?.attachmentId
       result = { dataUri: await ports.loadAttachment(payloadString(message, 'messageId'), {

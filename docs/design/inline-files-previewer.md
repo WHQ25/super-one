@@ -1,11 +1,11 @@
 # Inline files previewer (`@native/files-previewer`)
 
-Status: **phase 1 implemented (local sessions), phases 2–3 proposed** — 2026-09-13.
+Status: **phases 1–2 implemented (desktop + phone, local sessions), phase 3 proposed** — 2026-09-13.
 Revised the same day five times: after a
 first Codex design review, after scoping the card to "stage, not workspace",
 after switching the trigger from a Markdown table to a `widget_show` native
 template, after deciding remote-node support rides on the session sync zone,
-and after a second Codex review of that version. Nothing here is started.
+and after a second Codex review of that version; phases 1 and 2 then landed.
 Scope: a chat block that shows N files as a fixed-height carousel with a note
 per file, on desktop (`apps/desktop`) and on the phone (`packages/chat-view`
 + `apps/mobile`). Sibling docs: `session-sync-zone.md` (remote-node artifact
@@ -412,7 +412,7 @@ take without a round trip:
 |---|---|---|
 | image | `PortableHostImage` → `loadImage` RN action → desktop `read_desktop_file` (data URI; relay inlines ≤512 KB, larger shows the existing Load / confirm state) | the component, with a new `onOpen` prop (§6.2) |
 | video | `PortableHostVideo` → `loadVideoPoster` → desktop `read_video_poster` (`apps/mobile/src/video-posters.ts:61`) | the component (poster + play badge; no inline playback on the phone), with `onOpen` |
-| text / markdown, `size ≤ INLINE_RPC_MAX_BYTES` | **no native action returns text to the WebView today**; `previewFile` opens the global modal and returns only an ack | a **new** `loadTextFile` native action (reuses `read_desktop_file`'s inline `text` branch) → rendered by `PortableMarkdown` / the code plugin |
+| text / markdown, `isInlinePreviewCandidate(name, size)` | `loadTextFile` native action (`apps/mobile/src/text-files.ts`: one `read_desktop_file` with `preferInline` + `statOnly`, so a small text file comes back in-band and anything else answers `tooLarge`) | rendered by `PortableMarkdown` — Markdown as is, source fenced with a language tag so the code plugin highlights it — scrolling inside the card with links, copy buttons and selection inert |
 | pdf / audio / notebook / large text / unpreviewable | `previewFile` transfer → native viewer / share | **chip stage** (icon, name, size, "Tap to open"); no inline render |
 | missing | — | error chip, no tap target |
 
@@ -425,18 +425,17 @@ explains why relay media are download-then-play; the poster's tap opens the
 normal preview, which downloads and plays with `expo-video`.
 
 Identity and caches. `PortableHostImage` / `PortableHostVideo` keep
-module-level maps keyed by bare path with no generation or eviction
-(`PortableHostImage.tsx:26-54`, `PortableHostVideo.tsx:24-60`); the WebView
-stays mounted across sessions (`chat-screen.tsx:115`). Phase 2 keys both by
-`root + path`, bounds them by bytes, and drops entries whose session
-generation is gone — this is a fix to the host components, not to the card.
-On the desktop side the phone's file commands all land in
-`authorizeRemoteFile` (`agent/agent-service.ts:1995`), which today drops
-project context, and the poster call at `:2017` passes only a path; both
-gain `root` so `resolveSessionFile` can serve a node-zone file from the
-mirror. The phone never talks to the node; a node project file still crosses
-two hops (phone → desktop → node) through the same `readRemoteProjectFile`
-the panel uses.
+module-level maps keyed by bare path; the previewer's text cache
+(`PortableFilesPreviewer.tsx`) is keyed the same way and bounded to 4M
+characters, oldest-first. Re-keying all three by `root + path` waits for
+phase 3, when two roots can first hold the same path. On the desktop side
+the phone's file commands all land in `authorizeRemoteFile`
+(`agent/agent-service.ts:1995`) with `skipRootCheck`, so the card's
+`absolutePath` is served as-is today — which is also why phase 2 needed no
+`root` on the wire; phase 3 adds it so `resolveSessionFile` can serve a
+node-zone file from the mirror. The phone never talks to the node; a node
+project file still crosses two hops (phone → desktop → node) through the
+same `readRemoteProjectFile` the panel uses.
 
 ### 6.2 Card (`packages/chat-view/src/PortableFilesPreviewer.tsx`)
 
@@ -448,16 +447,19 @@ with the dots as the only visible position indicator.
 - Only the current slide is in the DOM (no translated track): the WebView
   already fights for layout during streaming, and a 7-slide track of
   `PortableHostImage`s would request seven `loadImage`s.
-- Horizontal swipe switches files: pointer events, 40px threshold,
-  `touch-action: pan-y` on the stage so vertical scrolling stays with the
-  chat list. A pointer sequence that moved more than the threshold is a
-  swipe and **suppresses the tap** that would otherwise fire on release.
-  Text stages scroll vertically inside the card; a swipe that begins as a
-  vertical drag is left to the scroller.
-- `PortableHostImage` (`:157` opens `previewImage`, `:173` falls back to
-  `previewFile`) and `PortableHostVideo` (`:121` → `previewFile`) both open a
-  viewer on click today. Both gain an optional `onOpen` prop; when set, the
-  built-in behaviour is replaced. Without it the card would open two viewers.
+- Horizontal swipe switches files: pointer events, 40px threshold, 8px tap
+  slop with the axis locked on the first move past it (`previewer-swipe.ts`,
+  pure and unit-tested), `touch-action: pan-y` on the stage so vertical
+  scrolling stays with the chat list. A release that ended a swipe — or a
+  `pointercancel`, which is the browser taking a vertical scroll —
+  **suppresses the click** the browser synthesises next, before anything
+  inside the stage sees it. Text stages scroll vertically inside the card.
+- `PortableHostImage` (opens `previewImage` once the bytes are in, else
+  `previewFile`) and `PortableHostVideo` (→ `previewFile`) keep their own
+  click: the stage's capture-phase handler lets any `<button>` inside run
+  untouched and only claims the tap elsewhere, so a loaded image opens the
+  viewer over the bytes already on the phone with no second transfer, and a
+  relay Load button still loads. No `onOpen` prop was needed.
 - Footer: note (2-line clamp) + dots.
 - **Tap → `requestNative('previewFile', { root, path: absolutePath })`** for
   the current row. That is the existing `FilePreviewModal`
@@ -555,10 +557,12 @@ before the phone shows it; the generated HTML is not committed.
    saved template works on remote sessions today because the template store
    falls back to the user scope (`template-store.ts:44-48, 78-84`), so
    "missing projectPath" does not naturally produce an error.
-2. **Phone card** — `PortableFilesPreviewer`, `PortableToolRow` dispatch,
-   `onOpen` on the two host media components, host-component cache re-keying
-   and bounds, `loadTextFile` native action, `root` on the file commands,
-   swipe with tap suppression, chip stage, tap → `previewFile`. Needs
+2. **Phone card** — implemented: `PortableFilesPreviewer`, `PortableToolRow`
+   dispatch, `loadTextFile` native action (`text-files.ts`, port, handler),
+   swipe with tap suppression, chip stages, tap → `previewFile`, stories
+   (`Chat/SuperOne/Files previewer`), DOM tests under the desktop jsdom suite
+   (`portable-files-previewer.test.tsx`). Deferred to phase 3 with the reason
+   for them: `root` on the file commands and cache re-keying by root. Needs
    `build:chat-view`; no native module, no dev-client rebuild.
 3. **Remote sessions** — `resolveSessionContext` for Host Action calls,
    builder stat via mirror / `artifact.stat` / `workspace.listDir`,

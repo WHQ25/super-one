@@ -3,6 +3,7 @@ import { cn } from '@superone/ui/lib/utils'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { requestNative } from './bridge'
 import { PortableMarkdown } from './PortableMarkdown'
+import { PortableFilesPreviewer } from './PortableFilesPreviewer'
 import { PortableNativeGallery } from './PortableNativeGallery'
 import { PortableWidgetBlock } from './PortableWidgetBlock'
 import { isGalleryPayload, parsePortableNativeWidgetResult } from './portable-native-widget'
@@ -298,10 +299,11 @@ export function PortableToolRow({ allowExpand = true, ...props }: PortableToolRo
     [mcpIconSrc],
   )
   // Dispatch on the native type, never on "it parsed": the gallery draws images or videos and
-  // would show a previewer payload as an empty video strip. Until the phone has its own card for
-  // it, `files-previewer` keeps the ordinary tool row.
-  if (nativeWidget && isGalleryPayload(nativeWidget) && props.status !== 'streaming' && !props.isError) {
-    return <PortableNativeGallery payload={nativeWidget} toolUseId={props.toolUseId} />
+  // would show a previewer payload as an empty video strip. An unknown native type keeps the
+  // ordinary tool row, which is the only one that can still say what the call was.
+  if (nativeWidget && props.status !== 'streaming' && !props.isError) {
+    if (isGalleryPayload(nativeWidget)) return <PortableNativeGallery payload={nativeWidget} toolUseId={props.toolUseId} />
+    if (nativeWidget.nativeType === 'files-previewer') return <PortableFilesPreviewer payload={nativeWidget} toolUseId={props.toolUseId} />
   }
   // Denied and failed calls keep the ordinary row: it is the only one that says why.
   if (codeWidget && props.status !== 'streaming' && !props.isError) {

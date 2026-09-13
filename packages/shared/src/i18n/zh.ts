@@ -2112,6 +2112,7 @@ export const zh: Messages = {
       unpreviewableTooLarge: '文件过大，无法预览',
       unpreviewableOutside: '不在 SuperOne 可展示的目录内',
       retry: '重试',
+      tapToOpen: '点击打开',
     },
     toolBlock: {
       enteredPlanMode: '已进入计划模式',

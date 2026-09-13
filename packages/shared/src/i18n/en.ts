@@ -2016,6 +2016,7 @@ export type Messages = {
       unpreviewableTooLarge: string
       unpreviewableOutside: string
       retry: string
+      tapToOpen: string
     }
     toolBlock: {
       enteredPlanMode: string
@@ -5745,6 +5746,7 @@ export const en: Messages = {
       unpreviewableTooLarge: 'Too large to preview',
       unpreviewableOutside: 'Outside the folders SuperOne can show',
       retry: 'Retry',
+      tapToOpen: 'Tap to open',
     },
     toolBlock: {
       enteredPlanMode: 'Entered plan mode',

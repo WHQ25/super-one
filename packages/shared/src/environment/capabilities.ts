@@ -35,6 +35,13 @@ export interface EnvironmentCapabilities {
    * predating the feature — their sidebar simply shows no drafts group.
    */
   drafts: boolean
+  /**
+   * Session sync zone (`docs/design/session-sync-zone.md`): the environment
+   * reports `descriptor.syncRoot` and serves `artifact.stat/put/get/delete`
+   * scoped to `<syncRoot>/<sessionId>`. Absent on older nodes — the desktop
+   * then neither rewrites Host Action paths nor mirrors node artifacts.
+   */
+  syncZone: boolean
 }
 
 export const LOCAL_ENVIRONMENT_CAPABILITIES: EnvironmentCapabilities = {
@@ -52,6 +59,8 @@ export const LOCAL_ENVIRONMENT_CAPABILITIES: EnvironmentCapabilities = {
   turnReattach: false,
   hostActionV1: true,
   drafts: true,
+  // Local artifacts already live on this machine; there is no peer to sync with.
+  syncZone: false,
 }
 
 /** Baseline node capabilities; Phase 2 enables workspaceFs/git/worktrees at runtime. */
@@ -70,6 +79,7 @@ export const PHASE1_NODE_CAPABILITIES: EnvironmentCapabilities = {
   turnReattach: false,
   hostActionV1: true,
   drafts: true,
+  syncZone: true,
 }
 
 /**
@@ -96,6 +106,7 @@ export function intersectCapabilities(
     turnReattach: a.turnReattach && b.turnReattach,
     hostActionV1: a.hostActionV1 && b.hostActionV1,
     drafts: a.drafts && b.drafts,
+    syncZone: a.syncZone && b.syncZone,
   }
 }
 
@@ -130,5 +141,6 @@ export function normalizeCapabilities(raw: unknown): EnvironmentCapabilities {
     turnReattach: flag('turnReattach'),
     hostActionV1: flag('hostActionV1'),
     drafts: flag('drafts'),
+    syncZone: flag('syncZone'),
   }
 }

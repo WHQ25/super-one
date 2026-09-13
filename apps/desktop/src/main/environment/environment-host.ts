@@ -2,8 +2,14 @@ import { remoteSuperoneHome, remoteNodePort } from './remote-data-path'
 import { app } from 'electron'
 import { join } from 'node:path'
 import type {
+  ArtifactGetRequest,
+  ArtifactGetResult,
+  ArtifactPutRequest,
+  ArtifactPutResult,
+  ArtifactStatResult,
   EndpointProfile,
   EnvironmentGateway,
+  EnvironmentOs,
   EnvironmentInstallProgress,
   EnvironmentListItem,
   ExecutionEnvironmentDescriptor,
@@ -840,6 +846,40 @@ export class EnvironmentHost {
   async getSession(connectionId: string, sessionId: string): Promise<unknown> {
     const { gateway, environmentId } = this.resolveRemote(connectionId)
     return gateway.sessions.get({ environmentId, sessionId })
+  }
+
+  /**
+   * The node's session sync zone root and OS, or null when the connection is
+   * not live or the node predates the zone (`docs/design/session-sync-zone.md` §5.1).
+   */
+  getSyncZone(connectionId: string): { syncRoot: string; os: EnvironmentOs } | null {
+    try {
+      return this.resolveRemote(connectionId).gateway.syncZone()
+    } catch {
+      return null
+    }
+  }
+
+  /** `artifact.stat` / `artifact.get` — controller binding only, no lease. */
+  artifactStat(connectionId: string, sessionId: string, relativePath: string): Promise<ArtifactStatResult> {
+    return this.resolveRemote(connectionId).gateway.artifacts.stat({ sessionId, relativePath })
+  }
+
+  artifactGet(connectionId: string, input: ArtifactGetRequest): Promise<ArtifactGetResult> {
+    return this.resolveRemote(connectionId).gateway.artifacts.get(input)
+  }
+
+  /** `artifact.put` — one chunk; the session lease is acquired or renewed here. */
+  async artifactPut(connectionId: string, input: ArtifactPutRequest): Promise<ArtifactPutResult> {
+    const { gateway } = this.resolveRemote(connectionId)
+    const control = await this.ensureSessionLease(connectionId, input.sessionId)
+    return gateway.artifacts.put(input, control)
+  }
+
+  async artifactDelete(connectionId: string, sessionId: string, relativePath?: string): Promise<void> {
+    const { gateway } = this.resolveRemote(connectionId)
+    const control = await this.ensureSessionLease(connectionId, sessionId)
+    await gateway.artifacts.delete({ sessionId, relativePath }, control)
   }
 
   /**

@@ -36,6 +36,7 @@ import {
   type AutomationStore,
 } from '@superone/runtime/automations'
 import { createDraftStore, type DraftStore } from '@superone/runtime/drafts'
+import { ArtifactZoneService } from './workspace/artifact-zone'
 import {
   createSessionProviderStore,
   type SessionProviderStore,
@@ -248,6 +249,7 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
   const startedAt = Date.now()
 
   const drafts = createDraftStore(db)
+  const artifacts = new ArtifactZoneService(paths.syncRoot)
   const automations = createAutomationStore(db, (projectId) => projects.get(projectId)?.path ?? null)
   const automationService = new AutomationService({
     store: automations,
@@ -277,6 +279,7 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
     providers,
     settingsConfigPath: paths.configJson,
     drafts,
+    artifacts,
     automations,
     automationService,
     sessionProviders,

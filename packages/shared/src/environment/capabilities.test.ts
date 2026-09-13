@@ -23,6 +23,7 @@ describe('normalizeCapabilities', () => {
       turnReattach: false,
       hostActionV1: false,
       drafts: false,
+      syncZone: false,
     })
   })
 
@@ -47,6 +48,13 @@ describe('intersectCapabilities', () => {
     expect(result.terminal).toBe(true)
     expect(result.harnessIds).toEqual([])
     expect(result.nodeAdmin).toBe(false)
+  })
+
+  it('negotiates the sync zone like every other flag, so an older node without it stays off', () => {
+    const node = { ...PHASE1_NODE_CAPABILITIES, syncZone: true }
+    expect(intersectCapabilities(node, node).syncZone).toBe(true)
+    expect(intersectCapabilities(node, normalizeCapabilities({ ...node, syncZone: undefined })).syncZone).toBe(false)
+    expect(normalizeCapabilities({ syncZone: true }).syncZone).toBe(true)
   })
 })
 

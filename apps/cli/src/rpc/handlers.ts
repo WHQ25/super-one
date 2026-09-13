@@ -49,6 +49,7 @@ import {
   dispatchAutomationRpc,
 } from './automation-handlers'
 import { dispatchDraftRpc } from './draft-handlers'
+import { dispatchArtifactRpc } from './artifact-handlers'
 import {
   CODEX_MUTATING_METHODS,
   dispatchCodexRpc,
@@ -61,6 +62,7 @@ import { dispatchHarnessResourcesRpc } from './harness-resources-handlers'
 import type { AutomationService } from '@superone/runtime/automations'
 import type { AutomationStore } from '@superone/runtime/automations'
 import type { DraftStore } from '@superone/runtime/drafts'
+import type { ArtifactZoneService } from '../workspace/artifact-zone'
 import {
   settingsFromSessionProviderConfig,
   type SessionProviderStore,
@@ -96,6 +98,11 @@ export interface RpcContext {
    * a queued write freely without replay receipts.
    */
   drafts: DraftStore
+  /**
+   * Session sync zone under `<nodeHome>/sync` (`artifact.*`). Like drafts,
+   * absent from MUTATING_METHODS: `put` is idempotent by its offset contract.
+   */
+  artifacts: ArtifactZoneService
   /** Process-lifecycle scheduler + runNow executor. */
   automationService: AutomationService
   /** Session-layer provider profiles (claude-base, custom multi-profile, …). */
@@ -299,6 +306,15 @@ async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContex
 
   const draft = dispatchDraftRpc(method, payload, { client: ctx.client, drafts: ctx.drafts })
   if (draft) return draft
+
+  const artifact = dispatchArtifactRpc(method, payload, {
+    client: ctx.client,
+    environmentId: ctx.identity.environmentId,
+    sessions: ctx.sessions,
+    leases: ctx.leases,
+    artifacts: ctx.artifacts,
+  })
+  if (artifact) return await artifact
 
   const sessionProviders = dispatchSessionProviderRpc(method, payload, {
     client: ctx.client,
@@ -722,12 +738,14 @@ function handleDescriptor(ctx: RpcContext): RpcResult {
       // yet — streaming rows are reconciled to interrupted (see SessionRuntime).
       turnReattach: false,
       hostActionV1: true,
+      syncZone: true,
     },
     generations: {
       protocol: { ...PROTOCOL_GENERATION },
       databaseSchema: { ...DATABASE_SCHEMA_GENERATION },
     },
     nodePublicKeyFingerprint: ctx.identity.publicKeyFingerprint,
+    syncRoot: ctx.artifacts.syncRoot,
   }
   return { result: descriptor }
 }
@@ -2223,6 +2241,9 @@ function handleSessionRemove(payload: unknown, ctx: RpcContext): RpcResult {
       })
     }
     const removed = ctx.sessions.remove(sessionId)
+    // The zone directory goes with the session (session-sync-zone.md §7); the
+    // controller cannot call artifact.delete afterwards because the binding is gone.
+    void ctx.artifacts.delete(sessionId).catch(() => undefined)
     return { result: removed }
   } catch (err) {
     return mapThrown(err)

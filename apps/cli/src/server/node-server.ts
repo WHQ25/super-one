@@ -18,6 +18,7 @@ import type { IdempotencyService } from '../auth/idempotency'
 import type { ProviderStore } from '../provider/provider-store'
 import type { AutomationService, AutomationStore } from '@superone/runtime/automations'
 import type { DraftStore } from '@superone/runtime/drafts'
+import type { ArtifactZoneService } from '../workspace/artifact-zone'
 import type { SessionProviderStore } from '@superone/runtime/session'
 import {
   startNodeServer as startRuntimeNodeServer,
@@ -45,6 +46,7 @@ export interface NodeServerOptions {
   providers: ProviderStore
   settingsConfigPath: string
   drafts: DraftStore
+  artifacts: ArtifactZoneService
   automations: AutomationStore
   automationService: AutomationService
   sessionProviders: SessionProviderStore
@@ -89,6 +91,7 @@ export async function startNodeServer(opts: NodeServerOptions): Promise<NodeServ
       providers: opts.providers,
       settingsConfigPath: opts.settingsConfigPath,
       drafts: opts.drafts,
+      artifacts: opts.artifacts,
       automations: opts.automations,
       automationService: opts.automationService,
       sessionProviders: opts.sessionProviders,

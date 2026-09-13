@@ -1,5 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import type {
+  ArtifactDeleteResult,
+  ArtifactGetRequest,
+  ArtifactGetResult,
+  ArtifactPutRequest,
+  ArtifactPutResult,
+  ArtifactStatResult,
   ControlLease,
   CreateSessionInput,
   CreateTerminalInput,
@@ -46,6 +52,13 @@ import type { ProjectExtraDirsPatch } from '@superone/shared/project-extra-dirs'
 import type { NodeRpcClient } from './node-rpc-client'
 import type { CodexMcpOauthLoginOptions } from '@superone/shared/agent-types'
 
+export interface ArtifactGateway {
+  stat(input: { sessionId: string; relativePath: string }): Promise<ArtifactStatResult>
+  get(input: ArtifactGetRequest): Promise<ArtifactGetResult>
+  put(input: ArtifactPutRequest, control: MutatingControlContext): Promise<ArtifactPutResult>
+  delete(input: { sessionId: string; relativePath?: string }, control: MutatingControlContext): Promise<ArtifactDeleteResult>
+}
+
 /**
  * Environment gateway that delegates to an authenticated node RPC session.
  * Sessions, interactions, terminals, and workspace (incl. watch) all go over RPC.
@@ -56,6 +69,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
   readonly terminals: TerminalGateway
   readonly workspace: WorkspaceGateway
   readonly drafts: DraftGateway
+  readonly artifacts: ArtifactGateway
 
   private descriptorCache: ExecutionEnvironmentDescriptor | null = null
   private fixedEnvironmentId: string | null = null
@@ -66,6 +80,29 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     this.terminals = this.createTerminalGateway()
     this.workspace = this.createWorkspaceGateway()
     this.drafts = this.createDraftGateway()
+    this.artifacts = this.createArtifactGateway()
+  }
+
+  /**
+   * The node's side of the session sync zone, or null when the node predates
+   * it (`capabilities.syncZone` absent). Read from the descriptor cached at
+   * connect; the root is compared textually, never resolved here.
+   */
+  syncZone(): { syncRoot: string; os: ExecutionEnvironmentDescriptor['platform']['os'] } | null {
+    const descriptor = this.descriptorCache
+    if (!descriptor?.capabilities?.syncZone || !descriptor.syncRoot) return null
+    return { syncRoot: descriptor.syncRoot, os: descriptor.platform.os }
+  }
+
+  /** `artifact.*` — scoped by the node to `<syncRoot>/<sessionId>`; `put`/`delete` carry the lease. */
+  private createArtifactGateway(): ArtifactGateway {
+    const client = this.client
+    return {
+      stat: (input) => client.rpc<ArtifactStatResult>('artifact.stat', input),
+      get: (input) => client.rpc<ArtifactGetResult>('artifact.get', input),
+      put: (input, control) => client.rpc<ArtifactPutResult>('artifact.put', { ...input, ...control }),
+      delete: (input, control) => client.rpc<ArtifactDeleteResult>('artifact.delete', { ...input, ...control }),
+    }
   }
 
   /**

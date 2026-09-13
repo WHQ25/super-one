@@ -1234,6 +1234,16 @@ export function MobileApp() {
    */
   const leaveAddProject = () => {
     if (addProjectOrigin === 'picker') { setScreen('project-picker'); return }
+    leaveToWorkspace()
+  }
+
+  /**
+   * Return to chat with the workspace drawer up again. Every page the drawer
+   * opens closes it to take the screen, so leaving that page has to restore
+   * it — unless the window is wide enough for the persistent sidebar, which
+   * never went away.
+   */
+  const leaveToWorkspace = () => {
     setScreen('chat')
     if (!shouldUseTabletMultiPane(width, height, 'chat', !!project)) setSessionSwitcherOpen(true)
   }
@@ -1783,6 +1793,12 @@ export function MobileApp() {
                 leaveAddProject()
                 return
               }
+              // Session search is only reachable from the drawer, so swiping
+              // it away restores the drawer the same way Cancel does.
+              if (screen === 'session-search' && route === 'chat') {
+                leaveToWorkspace()
+                return
+              }
               // Chat cannot be swiped off the stack (see MobileNavigator), so
               // reaching the device list means the transport is already gone —
               // but a stray pop must still not leave a session held open.
@@ -2051,7 +2067,7 @@ export function MobileApp() {
       {route === 'session-search' ? (
         <SessionSearchScreen
           client={clientRef.current}
-          onCancel={() => setScreen('chat')}
+          onCancel={leaveToWorkspace}
           onOpenSession={(row) => runUiAction(async () => {
             const target = projects.find((item) => item.path === row.projectPath)
               ?? (row.projectPath ? { path: row.projectPath, name: row.projectName ?? row.projectPath } : project)

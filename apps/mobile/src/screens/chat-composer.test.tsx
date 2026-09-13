@@ -96,14 +96,23 @@ test('a panel takes the slot from the command list rather than stacking on it', 
 
 const FOLLOW_UPS = ['Explain the diff first', 'Run the affected tests']
 
-test('renders every prompt suggestion as a chip, including the first', async () => {
+test('renders every prompt suggestion as a row, including the first', async () => {
   // Desktop keeps the first one as ghost text and accepts it with Tab. There is
-  // no Tab here, so a first suggestion left off the row would be unreachable.
+  // no Tab here, so a first suggestion left off the list would be unreachable.
   await renderWithTheme(composer({ promptSuggestions: FOLLOW_UPS }))
 
   expect(screen.getByTestId('prompt-suggestions')).toBeTruthy()
+  expect(screen.getByText('Suggestions')).toBeTruthy()
   expect(screen.getByLabelText('Explain the diff first')).toBeTruthy()
   expect(screen.getByLabelText('Run the affected tests')).toBeTruthy()
+})
+
+test('prompt suggestions leave once the draft has content', async () => {
+  // The panel offers something to say; once the user is saying something it
+  // would only push the input further from the message it answers.
+  await renderWithTheme(composer({ promptSuggestions: FOLLOW_UPS, draft: 'Run them' }))
+
+  expect(screen.queryByTestId('prompt-suggestions')).toBeNull()
 })
 
 test('a tapped suggestion is reported rather than sent', async () => {

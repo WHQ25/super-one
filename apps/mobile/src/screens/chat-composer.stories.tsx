@@ -184,8 +184,10 @@ const SUGGESTIONS = [
 ]
 
 /**
- * Every follow-up is a chip here, including the first — desktop puts that one in
+ * Every follow-up is a row here, including the first — desktop puts that one in
  * the input as ghost text, but there is no Tab key on a phone to accept it with.
+ * The panel is the slash / mention card, so it reads as one of them rather than
+ * a stray chip between the status row and the action bar.
  */
 export const PromptSuggestions = {
   args: { promptSuggestions: SUGGESTIONS },
@@ -199,12 +201,13 @@ export const PromptSuggestionsLongText = {
       '短的那条',
     ],
   },
-  name: 'Prompt suggestions · long text truncates',
+  name: 'Prompt suggestions · long text wraps to two lines',
 }
 
+/** A tap fills the draft, and the panel that offered it leaves with the draft non-empty. */
 export const PromptSuggestionsWithDraft = {
   args: { promptSuggestions: SUGGESTIONS, draft: '跑一遍受影响的测试' },
-  name: 'Prompt suggestions · after a tap fills the draft',
+  name: 'Prompt suggestions · hidden once the draft has content',
 }
 
 /** A `/` query is an answer in progress; the follow-ups give up the slot to it. */

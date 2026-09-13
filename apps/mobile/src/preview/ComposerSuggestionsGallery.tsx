@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Pressable, ScrollView, View } from 'react-native'
 import { Text } from '../ui/text'
 import { useMobileTheme } from '../theme/context'
-import { MentionSuggestions, SlashSuggestions } from '../ui/composer-suggestions'
+import { MentionSuggestions, PromptSuggestions, SlashSuggestions } from '../ui/composer-suggestions'
 import { filterSlashCommands } from '../slash'
 import { buildMentionRows } from '../mention-rows'
 import { browseItems } from '../mention-browse'
@@ -234,6 +234,18 @@ export function ComposerSuggestionsGallery() {
         runs={workflows === 'runs' ? workflowRunRows(previewWorkflowMessages) : []}
         onDismiss={() => setWorkflows('closed')}
       />
+    </Section>
+
+    <Section title="Follow-ups · one" note="Claude offers a single suggestion. Same card as the lists above, not a chip.">
+      <PromptSuggestions suggestions={['push']} onSelect={() => {}} />
+    </Section>
+
+    <Section title="Follow-ups · several, one long" note="Grok offers a set. A long one wraps to two lines rather than truncating.">
+      <PromptSuggestions suggestions={[
+        'Explain the diff first',
+        '帮我把 lifecycle 规则的检查、方案 D 的取舍、以及回归测试的范围整理成一段可以直接贴进 PR 描述的说明',
+        'Run the affected tests',
+      ]} onSelect={() => {}} />
     </Section>
 
   </ScrollView>

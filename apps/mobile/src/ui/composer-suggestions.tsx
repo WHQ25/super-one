@@ -277,11 +277,13 @@ export function MentionSuggestions({ rows, onSelect, search, onRetry, onLoadMore
  * The follow-ups a harness offers at the end of a turn.
  *
  * Desktop puts the first one in the composer as ghost text and accepts it with Tab;
- * there is no Tab here, so every suggestion — including the first — is a chip the
+ * there is no Tab here, so every suggestion — including the first — is a row the
  * user taps. A tap fills the composer rather than sending, so it stays editable.
  *
- * Like the slash and mention lists this sits above the input, but it answers no
- * keystroke: those lists take the slot back the moment the user types `/` or `@`.
+ * Same card as the slash and mention lists, not a strip of chips: between the
+ * status row and the action bar a 32 pt chip read as a stray, while a full-width
+ * panel is the shape everything else in that slot already takes. It answers no
+ * keystroke — it shows while the draft is empty and leaves once there is one.
  */
 export function PromptSuggestions({ suggestions, onSelect }: {
   suggestions: string[]
@@ -289,14 +291,14 @@ export function PromptSuggestions({ suggestions, onSelect }: {
 }) {
   const { tokens: { colors } } = useMobileTheme()
   if (!suggestions.length) return null
-  return <ScrollView testID="prompt-suggestions" horizontal showsHorizontalScrollIndicator={false}
-    keyboardShouldPersistTaps="always" style={{ flexGrow: 0 }}
-    contentContainerStyle={{ flexDirection: 'row', gap: 6, paddingTop: 6, paddingBottom: 2 }}>
+  return <ScrollView testID="prompt-suggestions" keyboardShouldPersistTaps="always"
+    style={{ maxHeight: 256, flexGrow: 0, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, borderRadius: 12 }}
+    contentContainerStyle={{ padding: 6 }}>
+    <SectionTitle title="Suggestions" count={suggestions.length} />
     {suggestions.map((suggestion) => <Pressable key={suggestion} accessibilityRole="button" accessibilityLabel={suggestion}
       onPress={() => onSelect(suggestion)}
-      style={({ pressed }) => ({ maxWidth: 280, minHeight: 32, justifyContent: 'center', paddingHorizontal: 12, paddingVertical: 6,
-        borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: pressed ? colors.muted : colors.surface })}>
-      <Text numberOfLines={1} style={{ color: colors.mutedForeground, fontSize: 13 }}>{suggestion}</Text>
+      style={({ pressed }) => ({ minHeight: 44, justifyContent: 'center', paddingHorizontal: 8, paddingVertical: 8, borderRadius: 6, backgroundColor: pressed ? colors.muted : 'transparent' })}>
+      <Text numberOfLines={2} style={{ color: colors.foreground, fontSize: 13, lineHeight: 18 }}>{suggestion}</Text>
     </Pressable>)}
   </ScrollView>
 }

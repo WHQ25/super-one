@@ -198,9 +198,9 @@ export function ChatComposer(props: ChatComposerProps) {
   return <View style={{ paddingHorizontal: 12, paddingTop: 4, paddingBottom: bottomGap, gap: 4, backgroundColor: colors.background }}>
     {!tablet && !props.loadingConversation ? <View testID="phone-composer-status" style={{ flexDirection: 'row', minHeight: CHIP_HEIGHT }}>{controls}</View> : null}
     {props.overlay ?? <>
-      {/* A typed `/` or `@` is an answer in progress; the turn's follow-ups are not
-          competing for it, so they step aside rather than stacking above the list. */}
-      {!props.slashHits.length && !props.mentionRows.length && !props.streaming && !props.loadingConversation
+      {/* Only while there is nothing to send: a draft, or a typed `/` or `@`, is an
+          answer in progress, and the turn's follow-ups are not competing for it. */}
+      {empty && !props.streaming && !props.loadingConversation
         ? <PromptSuggestions suggestions={props.promptSuggestions ?? []}
           onSelect={(suggestion) => props.onPromptSuggestion?.(suggestion)} />
         : null}

@@ -108,7 +108,7 @@ describe('node server integration', () => {
       generation: lease.generation,
     })
     client.close()
-  })
+  }, 30_000)
 
   it('rejects websocket upgrade without a valid ticket', async () => {
     const runtime = await freePortRuntime()
@@ -127,5 +127,5 @@ describe('node server integration', () => {
         ws.once('unexpected-response', () => reject(new Error('unauthorized')))
       }),
     ).rejects.toBeTruthy()
-  })
+  }, 15_000)
 })

@@ -121,9 +121,11 @@ describe('RootApp mini-window fold', () => {
 
     await act(async () => { exitMiniWindow() })
     // The shell stays folded while the reverse animation starts; neither it nor the
-    // chat content is remounted for the mini → app transition.
+    // chat content is remounted for the mini → app transition. restore is
+    // scheduled on rAF (RootApp), so under shouldAdvanceTime it may already
+    // have fired inside the act above — wait for the call, do not assert it
+    // has not happened yet.
     expect(useWindowMiniModeStore.getState()).toMatchObject({ phase: 'unfolding', panelsFolded: true })
-    expect(restore).not.toHaveBeenCalled()
     await waitFor(() => expect(restore).toHaveBeenCalled())
     expect(screen.getByTestId('full-app')).toBe(app)
     expect(screen.getByTestId('chat-content')).toBe(chat)

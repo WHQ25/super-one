@@ -86,7 +86,7 @@ describe('checkPeerLockstep', () => {
       peerDependencies: { '@deepseek-ai/cordis': '^99.0.0' },
     })
     expect(report.mismatched).toEqual([
-      { name: '@deepseek-ai/cordis', wanted: '^99.0.0', actual: '4.0.1' },
+      { name: '@deepseek-ai/cordis', wanted: '^99.0.0', actual: '4.0.2' },
     ])
     expect(lockstepBlocks(report)).toBe(true)
   })

@@ -21,9 +21,9 @@ export interface BundledDshPlugin {
 const DSH_VERSION = '0.1.1-rc.2'
 
 const CORE_PLUGINS: readonly { name: string; version: string }[] = [
-  { name: '@deepseek-ai/cordis-plugin-group', version: '1.0.1' },
-  { name: '@deepseek-ai/cordis-plugin-loader', version: '1.0.2' },
-  { name: '@deepseek-ai/cordis-plugin-timer', version: '1.1.3' },
+  { name: '@deepseek-ai/cordis-plugin-group', version: '1.0.2' },
+  { name: '@deepseek-ai/cordis-plugin-loader', version: '1.0.3' },
+  { name: '@deepseek-ai/cordis-plugin-timer', version: '1.1.4' },
   { name: '@deepseek-ai/dsh-agent', version: DSH_VERSION },
   { name: '@deepseek-ai/dsh-agent-loop', version: DSH_VERSION },
   { name: '@deepseek-ai/dsh-agent-presets', version: DSH_VERSION },

@@ -9,7 +9,12 @@ function fakeClient(epoch = 1) {
     startBuffering() {},
     releaseBuffer() { return { epoch, batches: [] } },
     send: vi.fn((cmd: { type: string }) => { sent.push(cmd) }),
-    request: vi.fn(async (cmd: { type: string; sessionId?: string }) => {
+    request: vi.fn(async (cmd: {
+      type: string
+      sessionId?: string
+      attachmentId?: string
+      name?: string
+    }): Promise<Record<string, unknown>> => {
       sent.push(cmd)
       if (cmd.type === 'subscribe_session') return { ok: true }
       if (cmd.type === 'load_session_messages') return { messages: [], hasMore: false }
@@ -23,6 +28,10 @@ function fakeClient(epoch = 1) {
           projectSlashCommands: [{ name: 'project' }],
           skills: [{ name: 'ship', description: 'Release' }],
         }
+      }
+      if (cmd.type === 'get_attachment') {
+        if (cmd.attachmentId === 'gone') return { error: 'That attachment is no longer available' }
+        return { attachment: { id: cmd.attachmentId, name: cmd.name, mimeType: 'image/jpeg', base64: '/9j/' } }
       }
       return { ok: true }
     }),
@@ -558,12 +567,6 @@ it('pages older history without dropping live messages or requesting the same pa
 describe('attachment originals behind transcript thumbnails', () => {
   it('fetches the bytes once per picture and surfaces a host refusal', async () => {
     const client = fakeClient()
-    client.request.mockImplementation(async (cmd: { type: string; messageId?: string; attachmentId?: string; name?: string }) => {
-      client.sent.push(cmd)
-      if (cmd.type !== 'get_attachment') return { ok: true }
-      if (cmd.attachmentId === 'gone') return { error: 'That attachment is no longer available' }
-      return { attachment: { id: cmd.attachmentId, name: cmd.name, mimeType: 'image/jpeg', base64: '/9j/' } }
-    })
     const runtime = new ChatRuntime(client as never, () => {})
     runtime.projectPath = '/p'
     runtime.sessionId = 's1'

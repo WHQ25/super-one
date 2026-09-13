@@ -20,9 +20,14 @@ describe('chat density utilities', () => {
     const violations = listRuntimeComponents(CHAT_COMPONENT_DIR).flatMap((path) =>
       readFileSync(path, 'utf8')
         .split('\n')
-        .flatMap((line, index) => FIXED_DENSITY_UTILITY.test(line)
-          ? [`${path.slice(CHAT_COMPONENT_DIR.length + 1)}:${index + 1}`]
-          : []),
+        .flatMap((line, index) => {
+          // Stage card: paging files must not reflow the transcript, so the
+          // height is a fixed px pair (PREVIEWER_CARD_HEIGHT_CLASS).
+          if (line.includes('PREVIEWER_CARD_HEIGHT_CLASS =')) return []
+          return FIXED_DENSITY_UTILITY.test(line)
+            ? [`${path.slice(CHAT_COMPONENT_DIR.length + 1)}:${index + 1}`]
+            : []
+        }),
     )
 
     expect(violations).toEqual([])

@@ -140,7 +140,7 @@ export function FilesPreviewer({ payload, projectPath }: FilesPreviewerProps) {
 
       <div className="flex shrink-0 flex-col items-center gap-2 px-3 pt-3 pb-1">
         {file.note && (
-          <div className="line-clamp-2 max-w-prose text-center text-[13px] leading-snug text-muted-foreground" title={file.note} data-testid="previewer-note">
+          <div className="line-clamp-2 max-w-prose text-center text-xs leading-snug text-muted-foreground" title={file.note} data-testid="previewer-note">
             {file.note}
           </div>
         )}

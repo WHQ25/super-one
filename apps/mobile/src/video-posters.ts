@@ -20,6 +20,8 @@ export interface VideoPosterRequest {
   projectPath: string
   sessionId: string | null
   path: string
+  /** Session root the path belongs to; folds into the cache key and rides to the desktop. */
+  root?: string
 }
 
 /** Cutting a frame is a decode on the host; a cold one takes well under a second. */
@@ -28,7 +30,7 @@ const POSTER_TIMEOUT_MS = 20_000
 const POSTER_CACHE_LIMIT = 256
 
 /**
- * Posters by `project\0path`, insertion-ordered so eviction is oldest-first.
+ * Posters by `root\0project\0path`, insertion-ordered so eviction is oldest-first.
  * `null` is remembered too: a clip the host cannot decode stays a chip
  * without asking again every time the row remounts.
  */
@@ -54,7 +56,9 @@ export function resetVideoPosterCache(): void {
  */
 export async function loadVideoPoster(req: VideoPosterRequest): Promise<VideoPosterResult | null> {
   const target = resolveRemoteFilePath(req.projectPath, req.path)
-  const key = `${req.projectPath}\0${target}`
+  // Two sessions can hold the same absolute path meaning different files, so
+  // the root is part of the identity, not just the project.
+  const key = `${req.root ?? ''}\0${req.projectPath}\0${target}`
   const cached = cache.get(key)
   if (cached !== undefined) return cached
 
@@ -63,6 +67,7 @@ export async function loadVideoPoster(req: VideoPosterRequest): Promise<VideoPos
     requestId: randomId(),
     projectPath: req.projectPath,
     ...(req.sessionId ? { sessionId: req.sessionId } : {}),
+    ...(req.root ? { root: req.root } : {}),
     path: target,
   } as RemoteCommand, POSTER_TIMEOUT_MS) as ReadVideoPosterResponse | { error?: string } | undefined
   if (!response || !('ok' in response)) throw new Error('host cannot cut video posters')

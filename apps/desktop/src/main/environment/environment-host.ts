@@ -10,6 +10,7 @@ import type {
   EndpointProfile,
   EnvironmentGateway,
   EnvironmentOs,
+  WorkspaceEntry,
   EnvironmentInstallProgress,
   EnvironmentListItem,
   ExecutionEnvironmentDescriptor,
@@ -854,6 +855,23 @@ export class EnvironmentHost {
   async getSession(connectionId: string, sessionId: string): Promise<unknown> {
     const { gateway, environmentId } = this.resolveRemote(connectionId)
     return gateway.sessions.get({ environmentId, sessionId })
+  }
+
+  /** Host path of a remote project, for the files-previewer root key. */
+  async getRemoteProjectPath(connectionId: string, projectId: string): Promise<string | null> {
+    const { gateway } = this.resolveRemote(connectionId)
+    const project = await gateway.getProject(projectId)
+    return project?.path ?? null
+  }
+
+  /** `workspace.listDir` for a remote project directory (files-previewer stat). */
+  async remoteWorkspaceListDir(
+    connectionId: string,
+    projectId: string,
+    relativeDir: string,
+  ): Promise<WorkspaceEntry[]> {
+    const { gateway, environmentId } = this.resolveRemote(connectionId)
+    return gateway.workspace.listDir({ project: { environmentId, projectId }, relativePath: relativeDir })
   }
 
   /**

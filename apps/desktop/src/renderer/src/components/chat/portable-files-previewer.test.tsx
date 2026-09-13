@@ -124,7 +124,7 @@ describe('files previewer on the phone', () => {
     installFakeHost({})
     const { container } = renderRow(payload([pdf, missing]))
     await act(async () => { fireEvent.click(stage(container)) })
-    expect(sent.filter((s) => s.action === 'previewFile').map((s) => s.payload)).toEqual([{ path: `${ROOT}/report.pdf` }])
+    expect(sent.filter((s) => s.action === 'previewFile').map((s) => s.payload)).toEqual([{ path: `${ROOT}/report.pdf`, root: ROOT }])
 
     await act(async () => { fireEvent.click(container.querySelector('[data-previewer-dots] button[aria-label="2"]')!) })
     expect(card(container).dataset.index).toBe('1')
@@ -141,4 +141,14 @@ describe('files previewer on the phone', () => {
     expect(actions).toContain('previewImage')
     expect(actions).not.toContain('previewFile')
   })
+  it('threads the session root into loadTextFile, loadImage and previewFile so a remote file keys apart from a local one', async () => {
+    const REMOTE = 'remote:conn-1:/home/node/proj'
+    const nodeText: PreviewerFile = { path: 'docs/a.md', absolutePath: '/home/node/.superone/node/sync/s1/agent/a.md', name: 'a.md', kind: 'markdown', size: 10 }
+    installFakeHost({ '/home/node/.superone/node/sync/s1/agent/a.md': '# node report' })
+    const { container } = renderRow(JSON.stringify({ kind: 'native', nativeType: 'files-previewer', title: 't', root: REMOTE, files: [nodeText] }))
+    await waitFor(() => expect(container.querySelector('[data-previewer-text="ready"]')).not.toBeNull())
+    const load = sent.find((s) => s.action === 'loadTextFile')
+    expect(load?.payload).toEqual({ path: '/home/node/.superone/node/sync/s1/agent/a.md', root: REMOTE })
+  })
+
 })

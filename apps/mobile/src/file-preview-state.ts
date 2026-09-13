@@ -25,7 +25,18 @@ import { imagePreviewFileName, parseImageDataUri, type ImagePreviewTarget } from
  *   or share.
  */
 export type FilePreviewState =
-  | { kind: 'loading'; path: string; name: string; line?: number }
+  | {
+      kind: 'loading'
+      path: string
+      name: string
+      line?: number
+      /**
+       * Session root the path belongs to. The desktop resolves `(root, path)`
+       * through `resolveSessionFile`, which is what lets the page open a file
+       * that lives on a remote node (session-sync-zone.md §4.2).
+       */
+      root?: string
+    }
   | {
       kind: 'image'
       /** Desktop path when the picture came off the host's disk. */
@@ -70,6 +81,8 @@ export type FilePreviewState =
       kind: 'transfer'
       path: string
       name: string
+      /** Carried from the loading state so a confirmed download re-asks with the same root. */
+      root?: string
       size: number
       mimeType: string
       /**
@@ -222,7 +235,7 @@ export function reducePreviewResponse(
   response: ReadDesktopFileResponse | ReadDesktopFileError,
   transport: TransportKind | null,
 ): FilePreviewState {
-  const { path, name } = current
+  const { path, name, root } = current
   if (!response.ok) {
     return { kind: 'error', path, name, message: response.message ?? response.error }
   }
@@ -252,6 +265,7 @@ export function reducePreviewResponse(
         kind: 'transfer',
         path,
         name,
+        ...(root ? { root } : {}),
         size: response.size,
         mimeType: response.mimeType,
         needsConfirm: false,
@@ -265,6 +279,7 @@ export function reducePreviewResponse(
     kind: 'transfer',
     path,
     name,
+    ...(root ? { root } : {}),
     size: response.size,
     mimeType: response.mimeType,
     needsConfirm: transport !== 'lan',

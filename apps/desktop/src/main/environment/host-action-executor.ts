@@ -128,6 +128,7 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
           claimed.toolName,
           mappedArgs,
           runAbort.signal,
+          connectionId,
         )
         if (runAbort.signal.aborted || raceWinner === 'deadline') return aborted()
 

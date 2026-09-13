@@ -34,8 +34,8 @@ afterEach(() => {
 })
 
 describe('files-previewer payload — the host decides, the renderer draws', () => {
-  it('resolves relative paths against the session root and classifies by name', () => {
-    const { payload } = buildFilesPreviewerPayload('t', {
+  it('resolves relative paths against the session root and classifies by name', async () => {
+    const { payload } = await buildFilesPreviewerPayload('t', {
       files: [
         { path: 'docs/diagram.png', note: ' the diagram ' },
         { path: 'docs/plan.md' },
@@ -55,52 +55,52 @@ describe('files-previewer payload — the host decides, the renderer draws', () 
     expect(payload?.files?.every((f) => !('content' in f))).toBe(true)
   })
 
-  it('keeps a missing file as a row so count and order match what the agent wrote', () => {
-    const { payload } = buildFilesPreviewerPayload('t', { files: [{ path: 'gone.png' }, { path: 'notes.txt' }] }, deps())
+  it('keeps a missing file as a row so count and order match what the agent wrote', async () => {
+    const { payload } = await buildFilesPreviewerPayload('t', { files: [{ path: 'gone.png' }, { path: 'notes.txt' }] }, deps())
     expect(payload?.files?.map((f) => f.kind)).toEqual(['missing', 'text'])
     expect(payload?.files?.[0].size).toBeUndefined()
   })
 
-  it('reports a NUL-sniffed .txt as unpreviewable/binary instead of trusting the extension', () => {
-    const { payload } = buildFilesPreviewerPayload('t', { files: [{ path: 'blob.txt' }] }, deps())
+  it('reports a NUL-sniffed .txt as unpreviewable/binary instead of trusting the extension', async () => {
+    const { payload } = await buildFilesPreviewerPayload('t', { files: [{ path: 'blob.txt' }] }, deps())
     expect(payload?.files?.[0]).toMatchObject({ kind: 'unpreviewable', reason: 'binary', size: 3 })
   })
 
-  it('rejects a relative path that escapes the root the way readProjectFile does', () => {
+  it('rejects a relative path that escapes the root the way readProjectFile does', async () => {
     writeFileSync(join(outside, 'secret.txt'), 'x')
     const escaped = join('..', basename(outside), 'secret.txt')
-    const { payload } = buildFilesPreviewerPayload('t', { files: [{ path: escaped }] }, deps())
+    const { payload } = await buildFilesPreviewerPayload('t', { files: [{ path: escaped }] }, deps())
     expect(payload?.files?.[0]).toMatchObject({ kind: 'unpreviewable', reason: 'outside_readable_roots' })
   })
 
-  it('accepts an absolute path outside the root only when the media server could serve it', () => {
+  it('accepts an absolute path outside the root only when the media server could serve it', async () => {
     const file = join(outside, 'shot.png')
     writeFileSync(file, 'x')
-    const denied = buildFilesPreviewerPayload('t', { files: [{ path: file }] }, deps())
+    const denied = await buildFilesPreviewerPayload('t', { files: [{ path: file }] }, deps())
     expect(denied.payload?.files?.[0]).toMatchObject({ kind: 'unpreviewable', reason: 'outside_readable_roots' })
 
     readable.add(real(file))
-    const allowed = buildFilesPreviewerPayload('t', { files: [{ path: file }] }, deps())
+    const allowed = await buildFilesPreviewerPayload('t', { files: [{ path: file }] }, deps())
     expect(allowed.payload?.files?.[0]).toMatchObject({ kind: 'image', size: 1 })
   })
 
-  it('follows a symlink to its real path so a later read and the media roots agree', () => {
+  it('follows a symlink to its real path so a later read and the media roots agree', async () => {
     symlinkSync(join(root, 'docs', 'diagram.png'), join(root, 'link.png'))
-    const { payload } = buildFilesPreviewerPayload('t', { files: [{ path: 'link.png' }] }, deps())
+    const { payload } = await buildFilesPreviewerPayload('t', { files: [{ path: 'link.png' }] }, deps())
     expect(payload?.files?.[0].absolutePath).toBe(real(join(root, 'docs/diagram.png')))
   })
 
-  it('refuses an empty list, too many files, a blank path and an oversized note before touching the disk', () => {
-    expect(buildFilesPreviewerPayload('t', { files: [] }, deps()).error).toMatch(/non-empty/)
-    expect(buildFilesPreviewerPayload('t', undefined, deps()).error).toMatch(/non-empty/)
+  it('refuses an empty list, too many files, a blank path and an oversized note before touching the disk', async () => {
+    expect((await buildFilesPreviewerPayload('t', { files: [] }, deps())).error).toMatch(/non-empty/)
+    expect((await buildFilesPreviewerPayload('t', undefined, deps())).error).toMatch(/non-empty/)
     const many = Array.from({ length: FILES_PREVIEWER_MAX_FILES + 1 }, () => ({ path: 'notes.txt' }))
-    expect(buildFilesPreviewerPayload('t', { files: many }, deps()).error).toMatch(/at most/)
-    expect(buildFilesPreviewerPayload('t', { files: [{ path: '  ' }] }, deps()).error).toMatch(/files\[0\]\.path/)
+    expect((await buildFilesPreviewerPayload('t', { files: many }, deps())).error).toMatch(/at most/)
+    expect((await buildFilesPreviewerPayload('t', { files: [{ path: '  ' }] }, deps())).error).toMatch(/files\[0\]\.path/)
     const note = 'n'.repeat(FILES_PREVIEWER_MAX_NOTE_CHARS + 1)
-    expect(buildFilesPreviewerPayload('t', { files: [{ path: 'notes.txt', note }] }, deps()).error).toMatch(/files\[0\]\.note/)
+    expect((await buildFilesPreviewerPayload('t', { files: [{ path: 'notes.txt', note }] }, deps())).error).toMatch(/files\[0\]\.note/)
   })
 
-  it('re-stats one file on its own, which is what the card asks for after a missing verdict', () => {
+  it('re-stats one file on its own, which is what the card asks for after a missing verdict', async () => {
     expect(resolvePreviewerFile({ path: 'later.md' }, deps()).kind).toBe('missing')
     writeFileSync(join(root, 'later.md'), '# now\n')
     expect(resolvePreviewerFile({ path: 'later.md' }, deps())).toMatchObject({ kind: 'markdown', size: 6 })

@@ -19,6 +19,13 @@ export interface TextFileRequest {
   projectPath: string
   sessionId: string | null
   path: string
+  /**
+   * Session root the path belongs to (`remote:<conn>:<host>` or a local
+   * directory). The desktop resolves `(root, path)` through
+   * `resolveSessionFile`, which is what makes a node-zone artifact or a node
+   * project file readable from the phone (session-sync-zone.md §4.2).
+   */
+  root?: string
 }
 
 /** Inline text is at most 512 KiB; the relay carries that in a few seconds. */
@@ -40,6 +47,7 @@ export async function loadTextFile(req: TextFileRequest): Promise<TextFileResult
     requestId: randomId(),
     projectPath: req.projectPath,
     ...(req.sessionId ? { sessionId: req.sessionId } : {}),
+    ...(req.root ? { root: req.root } : {}),
     path: target,
     maxBytes: INLINE_RPC_MAX_BYTES,
     preferInline: true,

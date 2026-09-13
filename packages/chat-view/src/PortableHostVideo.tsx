@@ -24,6 +24,10 @@ type Phase =
 const loaded = new Map<string, VideoPosterResult>()
 const inflight = new Map<string, Promise<Phase>>()
 
+function cacheKey(root: string | undefined, path: string): string {
+  return root ? `${root}\u0000${path}` : path
+}
+
 function parseResult(value: unknown): Phase {
   const record = value && typeof value === 'object' ? value as Record<string, unknown> : null
   const poster = record?.poster && typeof record.poster === 'object' ? record.poster as Record<string, unknown> : null
@@ -44,20 +48,21 @@ function parseResult(value: unknown): Phase {
   return { kind: 'fallback' }
 }
 
-/** One request per path at a time; the answer is memoised when it carries a poster. */
-function loadPoster(path: string): Promise<Phase> {
-  const cached = loaded.get(path)
+/** One request per (root, path) at a time; the answer is memoised when it carries a poster. */
+function loadPoster(root: string | undefined, path: string): Promise<Phase> {
+  const store = cacheKey(root, path)
+  const cached = loaded.get(store)
   if (cached) return Promise.resolve({ kind: 'ready', poster: cached })
-  const pending = inflight.get(path)
+  const pending = inflight.get(store)
   if (pending) return pending
-  const promise = requestNativeAsync('loadVideoPoster', { path })
+  const promise = requestNativeAsync('loadVideoPoster', { path, ...(root ? { root } : {}) })
     .then(parseResult, (): Phase => ({ kind: 'fallback' }))
     .then((phase) => {
-      if (phase.kind === 'ready') loaded.set(path, phase.poster)
-      inflight.delete(path)
+      if (phase.kind === 'ready') loaded.set(store, phase.poster)
+      inflight.delete(store)
       return phase
     })
-  inflight.set(path, promise)
+  inflight.set(store, promise)
   return promise
 }
 
@@ -87,8 +92,10 @@ export function formatVideoDuration(durationMs: number): string {
  * relay) and plays it. A host that cannot cut a frame leaves the icon chip
  * in place, so the transcript is never worse than before.
  */
-export function PortableHostVideo({ path, label, className, tileClassName, inline = false }: {
+export function PortableHostVideo({ path, root, label, className, tileClassName, inline = false }: {
   path: string
+  /** Session root the path belongs to; folds into the poster cache key. */
+  root?: string
   /** Accessible name for the tile, e.g. "Generated video". */
   label: string
   /** Applied to the chip while there is no poster; the default fits a gallery. */
@@ -102,23 +109,23 @@ export function PortableHostVideo({ path, label, className, tileClassName, inlin
   inline?: boolean
 }) {
   const [phase, setPhase] = useState<Phase>(() => {
-    const cached = loaded.get(path)
+    const cached = loaded.get(cacheKey(root, path))
     return cached ? { kind: 'ready', poster: cached } : { kind: 'loading' }
   })
 
   useEffect(() => {
     let live = true
-    const cached = loaded.get(path)
+    const cached = loaded.get(cacheKey(root, path))
     if (cached) {
       setPhase({ kind: 'ready', poster: cached })
     } else {
       setPhase({ kind: 'loading' })
-      void loadPoster(path).then((next) => { if (live) setPhase(next) })
+      void loadPoster(root, path).then((next) => { if (live) setPhase(next) })
     }
     return () => { live = false }
-  }, [path])
+  }, [root, path])
 
-  const open = () => requestNative('previewFile', { path })
+  const open = () => requestNative('previewFile', { path, ...(root ? { root } : {}) })
   const Box = inline ? 'span' : 'div'
   const chipClass = className ?? `${inline ? 'inline-flex' : 'flex'} h-48 w-40 flex-none flex-col items-center justify-center gap-1.5 overflow-hidden rounded-md border border-border bg-muted/30 p-2 text-center`
 

@@ -142,6 +142,7 @@ export function useFilePreview(ports: FilePreviewPorts) {
         requestId: randomId(),
         projectPath: project.path,
         ...(sessionId ? { sessionId } : {}),
+        ...(transfer.root ? { root: transfer.root } : {}),
         path: transfer.path,
         maxBytes: MAX_DOWNLOAD_BYTES,
         preferInline: true,
@@ -167,13 +168,13 @@ export function useFilePreview(ports: FilePreviewPorts) {
     setState(next)
   }, [setState])
 
-  const open = useCallback(async (path: string, line?: number) => {
+  const open = useCallback(async (path: string, line?: number, root?: string) => {
     const { clientRef, transport, project, sessionId, pairingId } = portsRef.current
     const client = clientRef.current
     if (!client || !project) throw new Error('no active project')
     const target = resolveRemoteFilePath(project.path, path)
     const loading: Extract<FilePreviewState, { kind: 'loading' }> = {
-      kind: 'loading', path: target, name: previewFileName(target), ...(line != null ? { line } : {}),
+      kind: 'loading', path: target, name: previewFileName(target), ...(line != null ? { line } : {}), ...(root ? { root } : {}),
     }
     const mine = ++generation.current
     setState(loading)
@@ -182,6 +183,7 @@ export function useFilePreview(ports: FilePreviewPorts) {
       requestId: randomId(),
       projectPath: project.path,
       ...(sessionId ? { sessionId } : {}),
+      ...(root ? { root } : {}),
       path: target,
       maxBytes: MAX_DOWNLOAD_BYTES,
       preferInline,
@@ -241,7 +243,7 @@ export function useFilePreview(ports: FilePreviewPorts) {
     const current = stateRef.current
     if (!current || current.kind === 'image' || current.kind === 'mermaid') return
     // open() only throws before the page shows anything; the page has a state for it.
-    open(current.path, 'line' in current ? current.line : undefined)
+    open(current.path, 'line' in current ? current.line : undefined, 'root' in current ? current.root : undefined)
       .catch((error) => setState({ kind: 'error', path: current.path, name: current.name, message: error instanceof Error ? error.message : String(error) }))
   }, [open, setState])
 

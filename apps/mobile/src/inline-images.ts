@@ -33,12 +33,14 @@ export interface InlineImageRequest {
   projectPath: string
   sessionId: string | null
   path: string
+  /** Session root the path belongs to; folds into the cache key and rides to the desktop. */
+  root?: string
   /** The user tapped Load on a relay-connected row. */
   confirmed: boolean
 }
 
 /**
- * Data URIs by `project\0path`, insertion-ordered so eviction is oldest-first.
+ * Data URIs by `root\0project\0path`, insertion-ordered so eviction is oldest-first.
  * Scrolling a transcript re-mounts rows constantly; the same screenshot must
  * not cross the relay twice.
  */
@@ -67,6 +69,7 @@ function readCommand(req: InlineImageRequest, target: string, statOnly: boolean)
     requestId: randomId(),
     projectPath: req.projectPath,
     ...(req.sessionId ? { sessionId: req.sessionId } : {}),
+    ...(req.root ? { root: req.root } : {}),
     path: target,
     maxBytes: INLINE_IMAGE_MAX_BYTES,
     preferInline: true,
@@ -92,7 +95,9 @@ function dataUriFromInline(response: ReadDesktopFileResponse & { inline: true; b
  */
 export async function loadInlineImage(req: InlineImageRequest): Promise<InlineImageResult> {
   const target = resolveRemoteFilePath(req.projectPath, req.path)
-  const key = `${req.projectPath}\0${target}`
+  // Two sessions can hold the same absolute path meaning different files, so
+  // the root is part of the identity, not just the project.
+  const key = `${req.root ?? ''}\0${req.projectPath}\0${target}`
   const cached = cache.get(key)
   if (cached) return { dataUri: cached }
 

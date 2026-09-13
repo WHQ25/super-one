@@ -113,9 +113,10 @@ export async function executeSuperoneMcpToolCollecting(
   toolName: string,
   args: Record<string, unknown>,
   signal?: AbortSignal,
+  connectionId?: string,
 ): Promise<{ result: Awaited<ReturnType<typeof executeSuperoneMcpTool>>; artifacts: ArtifactRef[] }> {
   const callId = randomUUID()
-  const result = await collectArtifacts(sessionId, callId, () => executeSuperoneMcpTool(sessionId, toolName, args, signal))
+  const result = await collectArtifacts(sessionId, callId, () => executeSuperoneMcpTool(sessionId, toolName, args, signal, connectionId))
   return { result, artifacts: takeArtifacts(sessionId, callId) }
 }
 
@@ -124,6 +125,12 @@ export async function executeSuperoneMcpTool(
   toolName: string,
   args: Record<string, unknown>,
   signal?: AbortSignal,
+  /**
+   * Owning remote connection when this runs as a Host Action. Only the
+   * files-previewer widget uses it — to reach the node session's live cwd and
+   * stat its files where they live (inline-files-previewer.md §2.2).
+   */
+  connectionId?: string,
 ) {
   if (
     isCodexBrowserAndComputerUseDenied(sessionId)
@@ -198,6 +205,15 @@ export async function executeSuperoneMcpTool(
       projectPath,
       sessionId,
       resolveSessionRoot: () => getSessionHost()?.getSession(sessionId)?.cwd || projectPath,
+      // A remote Host Action has no local SessionManager entry; the previewer's
+      // context comes from the owning node instead (inline-files-previewer.md §2.2).
+      resolvePreviewerContext:
+        connectionId && connectionId !== 'local' && !session
+          ? async () => {
+              const { resolveRemotePreviewerContext } = await import('../environment/files-previewer-context')
+              return resolveRemotePreviewerContext(connectionId, sessionId)
+            }
+          : undefined,
     })
   }
 

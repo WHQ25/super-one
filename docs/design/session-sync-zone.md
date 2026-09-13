@@ -1,7 +1,8 @@
 # Session sync zone
 
-Status: **proposed** — 2026-09-13, revised the same day after a Codex design
-review. Nothing here is started.
+Status: **implemented (phases 1–4)** — designed 2026-09-13, revised the same
+day after a Codex design review, built 2026-09-14. Deviations from the design
+as written are listed in §8.
 Scope: a per-session artifact directory that exists on **both** the controlling
 desktop and a remote node, with a fixed layout and a prefix-mapping rule, so
 that files a Host Action produces on the desktop are readable by the node's
@@ -343,39 +344,100 @@ land together:
 
 ## 8. Phases
 
-1. **Registry + zone for Host Action outputs** — `artifact-registry.ts`,
-   `syncZoneRoot()` and helpers, `registerArtifact` in the browser /
-   computer-use capture path and media-gen writers, unique capture
-   filenames, media readable roots updated. Device backends, recordings and
-   downloads migrate in later batches — each batch is "pass sessionId, call
-   `registerArtifact`", not a layout change. Local-only, no protocol change.
-2. **Descriptor + RPCs** — `syncRoot` / `syncZone`, `artifact.stat/put/get/delete`
-   with the §5.2 contract, node tests (traversal, part atomicity, resume,
-   concurrent put, delete tombstone, empty file).
-3. **Eager push, rewrite, input mapping** — executor changes (§3, §3.1,
-   §4.1), transfer jobs (§5.3), `SUPERONE_SESSION_DIR` and per-harness write
-   grants. From here a remote agent can `Read` its screenshots.
-4. **Lazy mirror + resource identity** — `resolveSessionFile`, `root`
-   threaded through `readProjectFile`, media URLs, `authorizeRemoteFile` and
-   the poster path. From here the previewer and Markdown images work for
-   remote sessions with no special casing.
+All four landed on 2026-09-14, one commit each.
 
-Phases 1–2 are independent of each other and of the previewer; 3 unblocks
-remote agents; 4 unblocks remote *viewing*. The previewer's remote support
-depends on 4.
+1. **Registry + zone for Host Action outputs** — implemented.
+   `mcp/artifact-registry.ts` (AsyncLocalStorage-scoped per tool call, so two
+   concurrent Host Actions of one session never take each other's refs),
+   `media-output-paths.ts` owning `syncZoneRoot` / `sessionZoneDir` /
+   `producerDir` / `zoneRelativePath` / `isUnderSyncZone`, `registerArtifact`
+   in `persistBase64Screenshot` (browser + computer-use, the `.agent.jpg`
+   sibling as its own ref), the media-gen writers and previews, unique capture
+   filenames, readable roots updated. Local-only, no protocol change.
+2. **Descriptor + RPCs** — implemented. `syncRoot` / `syncZone` negotiated
+   through intersect *and* normalise; `apps/cli/src/workspace/artifact-zone.ts`
+   + `rpc/artifact-handlers.ts` serve the §5.2 contract; tests cover traversal,
+   cross-session, symlink escape, part atomicity, resume-from-offset,
+   concurrent put, delete tombstone and the empty file.
+3. **Eager push, rewrite, input mapping** — implemented.
+   `environment/host-action-sync.ts` (§3, §3.1, §4.1),
+   `artifact-transfer.ts` + `artifact-transfer-service.ts` + the
+   `artifact_transfer_jobs` table (`SCHEMA_VERSION` 6),
+   `session/session-zone-runner.ts` for `SUPERONE_SESSION_DIR` and the write
+   grant, and the §5.4 paragraph in `product/show-your-work`.
+4. **Lazy mirror + resource identity** — implemented.
+   `session-file-mirror.ts` + `session-file-resolver.ts`, `readProjectFile`
+   routed through it, media URLs keeping the connection for out-of-project
+   node paths, `root` on `read_desktop_file` / `read_video_poster`, and
+   `session-zone-reclaim.ts` on both delete paths.
+
+### Deviations from the design as written
+
+- **Only refs the reply names are pushed** (§3). A registered artifact whose
+  path never appears in `content[].text` is not uploaded: the agent has no
+  path to `Read`, and the desktop, the renderer and the phone all read the
+  desktop copy. This is what keeps `computer_snapshot` from shipping both the
+  full PNG and the `.agent.jpg` when the reply cites only the latter.
+- **Smallest ref first** (§4.1), so a screenshot never waits behind a
+  recording for the claim budget.
+- **A failed eager push becomes a transfer job** rather than failing the
+  action (§4.1). The tool already did its work; the reply still carries
+  `sync.deferred`, so the agent's `ENOENT` stays honest.
+- **`artifact.put` returns `mtimeMs` on the final chunk**, and both transfer
+  directions stamp the local copy with it. The design had the mirror compare
+  size + mtime (§4.2) without saying how the two sides come to agree on one.
+- **`session.remove` on the node deletes the session's zone directory**, so a
+  session removed from the node side does not leave artifacts behind even if
+  the desktop never calls `artifact.delete`.
+- **`SUPERONE_SESSION_DIR` is injected by one wrapper**
+  (`withSessionZone`) in front of the production turn runner rather than per
+  harness. Session start, cold resume and forked children all reach the runner
+  through `SessionRuntime.runTurn`, so that is the single place; the `agent/`
+  grant rides on `additionalDirectories`, which Claude honours directly and
+  Codex maps to `writableRoots` (§5.4's requirement, one seam instead of two).
+- **Spilled browser text results moved into the zone too** (not in §6's
+  table). `persistTextArtifact` hands the agent a path the same way a
+  screenshot does, so a remote agent could not read it either.
+- **Device captures, recordings and downloads did not migrate** — as phase 1
+  reserved. They still write under the temp roots, which stay readable; each
+  is "pass sessionId, call `registerArtifact`" when its batch comes.
+- **`media-gen` output moved** from `<userData>/media-gen/outputs/<sessionId>`
+  to the zone. The legacy root stays readable so existing transcripts render.
+- **The phone's `previewFile` always carries `root`**, local sessions
+  included, rather than only remote ones — one shape for the command instead
+  of two.
+- **`authorizeRemoteFile`'s new resolution glue has no test at the
+  agent-service layer.** It is thin delegation over `resolveSessionFile`,
+  `mirrorNodeArtifact` and `materializeRemoteProjectFile`, which are each
+  unit-tested; the agent-service suite's mock graph does not cover the
+  dynamic imports it uses, and building that scaffolding was judged more
+  fragile than the forwarding it would guard.
 
 ## 9. Out of scope / open
 
+Still open after phases 1–4:
+
 - **Completion notification to the agent** for deferred transfers (§4.1);
-  needs a desktop→node session notification channel that does not exist.
+  needs a desktop→node session notification channel that does not exist. The
+  reply's `sync.deferred` is the only signal.
 - **Claim renewal** as an alternative to deferral.
 - **`browser_download` with `dir`** on a remote session.
-- **Quota.** No size cap on the zone; session deletion is the only reclaim.
+- **Device captures, recordings and downloads** are not in the zone yet (see
+  §8 deviations), so a remote agent still cannot `Read` a recording and the
+  previewer reports one as `missing` unless the desktop produced it locally.
+- **Quota.** No size cap on the zone; session deletion is the only reclaim,
+  and `adhoc` is never reclaimed at all.
 - **Older nodes** without `syncZone`: no rewrite, no mirror, consumers say
   `missing`. No shim.
 - **Multiple controllers.** The zone is keyed by session, the node root is
   per node; a second desktop controlling the same node mirrors lazily like
   any other reader, and its own Host Action outputs land on the node and
   become visible to both. Untested.
-- **Windows nodes** — separator handling is specified (§2) but no Windows
-  node exists to test against.
+- **Windows nodes** — separator handling is implemented and unit-tested in
+  `sync-zone-paths.test.ts` (including the case-insensitive root compare), but
+  no Windows node exists to test against end to end.
+- **Live end-to-end run.** Every layer is covered by tests against a real node
+  runtime (`artifact.integration.test.ts`, `remote-gateway-artifacts.test.ts`),
+  but the full desktop↔lab loop — take a screenshot in a remote session, have
+  the agent `Read` it, open the previewer on the phone — has not been driven
+  by hand.

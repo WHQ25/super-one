@@ -19,12 +19,18 @@ type Phase =
   | { kind: 'fallback' }
 
 /**
- * Bytes already fetched this session, by desktop path. Re-expanding a tool row
- * or scrolling back must not cost another transfer, and the phone keeps its
- * own copy so the two never disagree about what was paid for.
+ * Bytes already fetched this session, keyed by `root + path`. Re-expanding a
+ * tool row or scrolling back must not cost another transfer, and the phone
+ * keeps its own copy so the two never disagree about what was paid for. The
+ * key folds the root because a remote-node session and a local one can hold
+ * the same absolute path meaning two different files (session-sync-zone.md).
  */
 const loaded = new Map<string, string>()
 const inflight = new Map<string, Promise<Phase>>()
+
+function cacheKey(root: string | undefined, path: string): string {
+  return root ? `${root}\u0000${path}` : path
+}
 
 function parseResult(value: unknown): Phase {
   const record = value && typeof value === 'object' ? value as Record<string, unknown> : null
@@ -37,17 +43,18 @@ function parseResult(value: unknown): Phase {
   return { kind: 'fallback' }
 }
 
-/** One request per path at a time; the answer is memoised when it carries bytes. */
-function loadImage(path: string, confirmed: boolean): Promise<Phase> {
-  const cached = loaded.get(path)
+/** One request per (root, path) at a time; the answer is memoised when it carries bytes. */
+function loadImage(root: string | undefined, path: string, confirmed: boolean): Promise<Phase> {
+  const store = cacheKey(root, path)
+  const cached = loaded.get(store)
   if (cached) return Promise.resolve({ kind: 'ready', dataUri: cached })
-  const key = `${confirmed ? 'c' : 'p'}:${path}`
+  const key = `${confirmed ? 'c' : 'p'}:${store}`
   const pending = inflight.get(key)
   if (pending) return pending
-  const promise = requestNativeAsync('loadImage', { path, ...(confirmed ? { confirmed: true } : {}) })
+  const promise = requestNativeAsync('loadImage', { path, ...(root ? { root } : {}), ...(confirmed ? { confirmed: true } : {}) })
     .then(parseResult, (): Phase => ({ kind: 'fallback' }))
     .then((phase) => {
-      if (phase.kind === 'ready') loaded.set(path, phase.dataUri)
+      if (phase.kind === 'ready') loaded.set(store, phase.dataUri)
       inflight.delete(key)
       return phase
     })
@@ -81,8 +88,10 @@ function formatSize(bytes: number): string {
  * viewer (`previewImage`); only the chip without a picture yet still goes
  * through `previewFile`, because there is nothing to show until the file lands.
  */
-export function PortableHostImage({ path, label, className, pictureClassName, imageClassName, fallback, caption, generation, inline = false }: {
+export function PortableHostImage({ path, root, label, className, pictureClassName, imageClassName, fallback, caption, generation, inline = false }: {
   path: string
+  /** Session root the path belongs to (`remote:<conn>:<host>` or local); folds into the byte cache key. */
+  root?: string
   /** Accessible name for the preview affordance, e.g. "Screenshot". */
   label: string
   /** Applied to the chip/picture button; the default fits a tool row. */
@@ -104,25 +113,25 @@ export function PortableHostImage({ path, label, className, pictureClassName, im
   inline?: boolean
 }) {
   const [phase, setPhase] = useState<Phase>(() => {
-    const cached = loaded.get(path)
+    const cached = loaded.get(cacheKey(root, path))
     return cached ? { kind: 'ready', dataUri: cached } : { kind: 'loading' }
   })
 
   useEffect(() => {
     let live = true
-    const cached = loaded.get(path)
+    const cached = loaded.get(cacheKey(root, path))
     if (cached) {
       setPhase({ kind: 'ready', dataUri: cached })
     } else {
       setPhase({ kind: 'loading' })
-      void loadImage(path, false).then((next) => { if (live) setPhase(next) })
+      void loadImage(root, path, false).then((next) => { if (live) setPhase(next) })
     }
     return () => { live = false }
-  }, [path])
+  }, [root, path])
 
   const confirm = () => {
     setPhase({ kind: 'loading' })
-    void loadImage(path, true).then(setPhase)
+    void loadImage(root, path, true).then(setPhase)
   }
 
   const Box = inline ? 'span' : 'div'

@@ -42,7 +42,10 @@ describe('connection harness resources', () => {
   it('refreshes known resources on reconnect and supports connection invalidation', async () => {
     const client = makeClient()
     await preloadHarnessResources(client, '/p', ['claude', 'codex'])
-    await refreshHarnessResources(client)
+    const refreshing = refreshHarnessResources(client)
+    // Stale-while-revalidate: the old value stays peekable until the refresh lands.
+    expect(peekHarnessResource(client, 'get_system_info', '/p', 'claude')?.models).toHaveLength(1)
+    await refreshing
     expect(client.request).toHaveBeenCalledTimes(8)
     clearHarnessResources(client)
     expect(peekSlashCatalog(client, '/p', 'claude')).toBeUndefined()

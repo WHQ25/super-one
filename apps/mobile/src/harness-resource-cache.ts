@@ -29,7 +29,9 @@ export function requestHarnessResource<T extends keyof Resources>(
   const key = keyFor(type, projectPath, provider)
   const existing = cache.get(key)
   if (existing && !refresh) return existing.pending as Promise<Resources[T]>
-  const entry: Entry = { pending: Promise.resolve() }
+  // A refresh keeps the last known value readable until the new one lands, so
+  // a peek during reconnect serves the catalog it had instead of nothing.
+  const entry: Entry = { value: existing?.value, pending: Promise.resolve() }
   entry.pending = Promise.resolve().then(() => client.request({
     type, requestId: randomId(), projectPath, provider: provider as HarnessId,
   } as RemoteCommand)).then((value) => {

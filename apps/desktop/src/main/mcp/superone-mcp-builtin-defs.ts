@@ -84,6 +84,7 @@ export const RENAME_SESSION_DESCRIPTION =
   'Rename the current chat session to a concise topic label shown in the sidebar. ' +
   'Always pass tags (set): 1–4 short kebab-case labels you choose so session_list/session_search can find this chat. ' +
   'Reuse names from session_tag_list when they fit; invent one when they don\'t. ' +
+  'When the session fixes an issue, reviews a PR, or opens one, add a ref tag issue-N / pr-N on top of the labels. ' +
   // The user_locked recovery path is not described here: the error reply itself already
   // says "Do not call session_rename again for this session", so spelling it out in the
   // always-loaded surface charged every turn for advice only one reply ever needs.
@@ -93,12 +94,14 @@ export const SESSION_TAG_DESCRIPTION =
   'Tag SuperOne sessions so session_list/session_search can filter by tag. Default: current session. ' +
   'Pass sessionId for one other session, or sessionIds with add to tag many. Use add, remove, or set (exactly one). set: [] clears. ' +
   'Pick 1–4 short kebab-case labels; reuse names from session_tag_list when they fit, otherwise invent. ' +
+  'Add pr-N as soon as the session opens a PR, and issue-N / pr-N when work turns out to target one. ' +
   'Only the top-level agent may call this; subagents must not. Not session_rename (titles) and not live collab.'
 
 export const SESSION_TAG_LIST_DESCRIPTION =
   'List tags used on SuperOne sessions (tag + session count). Default: current project; projectId or allProjects for other scope. ' +
+  'kind: label (default) = topic labels to reuse; ref = issue-N / pr-N tracker references; all = both. ' +
   'Filter with query (tag substring). Hidden sessions omitted unless includeHidden. ' +
-  'Call this before session_list/session_search with tags. Then filter with tags + tagMatch any (at least one) or all (every tag). Not live collab.'
+  'Call this before session_list/session_search with label tags, then filter with tags + tagMatch any (at least one) or all (every tag). A known ref tag (pr-456) needs no lookup. Not live collab.'
 
 export const PROJECT_LIST_DESCRIPTION =
   'List SuperOne projects (id, name, path, lastActiveAt). ' +
@@ -601,7 +604,7 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
           type: 'array',
           items: { type: 'string' },
           maxItems: 8,
-          description: 'Replace this session\'s tags (set). Pass 1–4 short kebab-case labels you choose. Reuse names from session_tag_list when they fit; invent when they don\'t. Empty array clears. Applied even when the title is user_locked.',
+          description: 'Replace this session\'s tags (set). Pass 1–4 short kebab-case labels you choose, plus issue-N / pr-N when the session targets a tracker item. Reuse names from session_tag_list when they fit; invent when they don\'t. Empty array clears. Applied even when the title is user_locked.',
         },
       },
       required: ['title'],
@@ -653,6 +656,11 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
       type: 'object',
       properties: {
         query: { type: 'string', description: 'Case-insensitive substring filter on tag name.' },
+        kind: {
+          type: 'string',
+          enum: ['label', 'ref', 'all'],
+          description: 'label (default) = topic labels; ref = issue-N / pr-N references; all = both.',
+        },
         includeHidden: { type: 'boolean', description: 'Count hidden sessions. Default false.' },
         projectId: {
           type: 'string',

@@ -525,7 +525,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
       inputSchema: {
         title: z.string().min(1).max(80).describe('A concise 4-8 word title describing the current conversation topic.'),
         tags: z.array(z.string()).max(8).optional()
-          .describe('Replace this session\'s tags (set). Pass 1–4 short kebab-case labels you choose. Reuse names from session_tag_list when they fit; invent when they don\'t. Empty array clears. Applied even when the title is user_locked.'),
+          .describe('Replace this session\'s tags (set). Pass 1–4 short kebab-case labels you choose, plus issue-N / pr-N when the session targets a tracker item. Reuse names from session_tag_list when they fit; invent when they don\'t. Empty array clears. Applied even when the title is user_locked.'),
       },
       _meta: { 'anthropic/alwaysLoad': true },
     },
@@ -559,6 +559,8 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
       description: SESSION_TAG_LIST_DESCRIPTION,
       inputSchema: {
         query: z.string().optional().describe('Case-insensitive substring filter on tag name.'),
+        kind: z.enum(['label', 'ref', 'all']).optional()
+          .describe('label (default) = topic labels; ref = issue-N / pr-N references; all = both.'),
         includeHidden: z.boolean().optional().describe('Count hidden sessions. Default false.'),
         projectId: z
           .string()

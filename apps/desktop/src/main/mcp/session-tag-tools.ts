@@ -8,7 +8,9 @@ import { encode as toonEncode } from '@toon-format/toon'
 import {
   SESSION_TAG_BULK_MAX,
   applySessionTagOp,
+  isSessionRefTag,
   normalizeSessionTagList,
+  parseSessionTagKind,
   parseSessionTagOp,
 } from '@superone/shared/session-tags'
 import { getDb } from '../database'
@@ -127,6 +129,7 @@ export const SESSION_TAG_LIST_MAX_LIMIT = 100
 
 export interface SessionTagListArgs extends ArchiveProjectScopeArgs {
   query?: string
+  kind?: string
   includeHidden?: boolean
   limit?: number
   offset?: number
@@ -135,6 +138,11 @@ export interface SessionTagListArgs extends ArchiveProjectScopeArgs {
 export function sessionTagListHandler(args: SessionTagListArgs, deps: BuiltInSuperoneToolDeps) {
   const scope = resolveArchiveScope(deps, args)
   if ('error' in scope) return scope.error
+
+  const kind = parseSessionTagKind(args.kind)
+  if (!kind) {
+    return toolResult({ status: 'error', message: 'kind must be label, ref, or all.' }, true)
+  }
 
   const limit = clampLimit(args.limit, SESSION_TAG_LIST_DEFAULT_LIMIT, SESSION_TAG_LIST_MAX_LIMIT)
   const offset = typeof args.offset === 'number' && Number.isFinite(args.offset)
@@ -158,34 +166,29 @@ export function sessionTagListHandler(args: SessionTagListArgs, deps: BuiltInSup
   }
 
   const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''
-  const db = getDb()
-  const countRow = db.prepare(`
-    SELECT COUNT(*) AS n FROM (
-      SELECT je.value
-      FROM sessions s, json_each(COALESCE(s.tags_json, '[]')) je
-      ${whereSql}
-      GROUP BY je.value
-    )
-  `).get(...params) as { n: number }
-
-  const rows = db.prepare(`
+  // Distinct tags are few (bounded by 8 × sessions in scope), so the ref/label split and
+  // pagination run in JS: SQLite has no REGEXP and the pattern must stay one source of truth.
+  const rows = getDb().prepare(`
     SELECT je.value AS tag, COUNT(DISTINCT s.id) AS sessions
     FROM sessions s, json_each(COALESCE(s.tags_json, '[]')) je
     ${whereSql}
     GROUP BY je.value
     ORDER BY sessions DESC, tag ASC
-    LIMIT ? OFFSET ?
-  `).all(...params, limit, offset) as Array<{ tag: string; sessions: number }>
+  `).all(...params) as Array<{ tag: string; sessions: number }>
 
-  const tags = rows.map((r) => ({ tag: r.tag, sessions: r.sessions }))
+  const filtered = kind === 'all'
+    ? rows
+    : rows.filter((r) => isSessionRefTag(r.tag) === (kind === 'ref'))
+  const tags = filtered.slice(offset, offset + limit).map((r) => ({ tag: r.tag, sessions: r.sessions }))
   return toonResult({
     ...(scope.mode === 'all'
       ? { allProjects: true }
       : { projectId: scope.projectId, allProjects: false }),
+    kind,
     offset,
     limit,
     count: tags.length,
-    total: countRow?.n ?? tags.length,
+    total: filtered.length,
     tags,
   })
 }

@@ -50,6 +50,24 @@ session_tag({ sessionIds: ["s1", "s2"], add: ["oauth"] })  // bulk
 
 Subagents must not call `session_rename` or `session_tag`. `session_tag_list` / list / search / read are allowed.
 
+### Reference tags (`issue-N` / `pr-N`)
+
+Two kinds of tag share one store:
+
+| Kind | Shape | Cardinality | `session_tag_list` |
+|------|-------|-------------|--------------------|
+| label | `oauth`, `mobile-ui` | low, reused across sessions | `kind: "label"` (default) |
+| ref | `issue-123`, `pr-456` | one tracker item each | `kind: "ref"` (or `all`) |
+
+Add a ref tag when the session's purpose is to fix an issue or review a PR, and add `pr-N` as soon as the session opens a PR. Ref tags are extra to the 1–4 labels (hard cap is 8 per session). The number alone is enough — sessions are already scoped to a project.
+
+Lookup needs no `session_tag_list` round-trip when the ref is known:
+
+```
+session_list({ tags: ["pr-456"] })                       // every session that touched PR 456
+session_search({ query: "why", tags: ["issue-123"] })   // rationale recorded under the issue
+```
+
 ### Cite / recover a prior decision
 
 ```

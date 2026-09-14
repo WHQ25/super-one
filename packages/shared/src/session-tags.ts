@@ -11,6 +11,25 @@ const TAG_CHAR = /^[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*$/u
 
 export type SessionTagMatch = 'any' | 'all'
 
+/**
+ * Reference tags point at one tracker item (`issue-123`, `pr-456`). They are
+ * high-cardinality and one-off, unlike topic labels, so `session_tag_list`
+ * keeps them out of the reuse vocabulary unless asked for.
+ */
+export const SESSION_REF_TAG_PATTERN = /^(issue|pr)-\d+$/
+
+export type SessionTagKind = 'label' | 'ref' | 'all'
+
+export function isSessionRefTag(tag: string): boolean {
+  return SESSION_REF_TAG_PATTERN.test(tag)
+}
+
+export function parseSessionTagKind(raw: unknown): SessionTagKind | null {
+  if (raw == null || raw === '') return 'label'
+  if (raw === 'label' || raw === 'ref' || raw === 'all') return raw
+  return null
+}
+
 export type SessionTagOp =
   | { kind: 'add'; tags: string[] }
   | { kind: 'remove'; tags: string[] }

@@ -131,24 +131,56 @@ describe('session_rename tags', () => {
 })
 
 describe('session_tag_list', () => {
+  const rows = [
+    { tag: 'oauth', sessions: 3 },
+    { tag: 'pr-456', sessions: 2 },
+    { tag: 'auth', sessions: 1 },
+    { tag: 'issue-123', sessions: 1 },
+  ]
+  let prepare: ReturnType<typeof vi.fn>
+
   beforeEach(() => {
     getDbMock.mockReset()
+    prepare = vi.fn(() => ({ all: () => rows }))
+    getDbMock.mockReturnValue({ prepare })
   })
 
-  it('aggregates tags for the current project', () => {
-    const prepare = vi.fn((sql: string) => {
-      if (sql.includes('COUNT(*)')) return { get: () => ({ n: 2 }) }
-      return { all: () => [{ tag: 'oauth', sessions: 3 }, { tag: 'auth', sessions: 1 }] }
-    })
-    getDbMock.mockReturnValue({ prepare })
-
+  it('aggregates label tags for the current project and hides refs by default', () => {
     const text = textResult(sessionTagListHandler({}, makeDeps()))
     expect(text).toContain('oauth')
     expect(text).toContain('auth')
+    expect(text).not.toContain('pr-456')
+    expect(text).not.toContain('issue-123')
     expect(text).toContain('proj-1')
-    const sql = prepare.mock.calls.find((c) => String(c[0]).includes('GROUP BY'))![0] as string
+    expect(text).toContain('kind: label')
+    expect(text).toContain('total: 2')
+    const sql = prepare.mock.calls[0][0] as string
     expect(sql).toMatch(/json_each/)
     expect(sql).toMatch(/s\.project_id = \?/)
     expect(sql).not.toMatch(/last_user_message_at/)
+    expect(sql).not.toMatch(/LIMIT/)
+  })
+
+  it('lists only issue-N / pr-N with kind=ref', () => {
+    const text = textResult(sessionTagListHandler({ kind: 'ref' }, makeDeps()))
+    expect(text).toContain('pr-456')
+    expect(text).toContain('issue-123')
+    expect(text).not.toContain('oauth')
+    expect(text).toContain('total: 2')
+  })
+
+  it('paginates in JS after the kind split', () => {
+    const text = textResult(sessionTagListHandler({ kind: 'all', limit: 3, offset: 2 }, makeDeps()))
+    expect(text).toContain('auth')
+    expect(text).toContain('issue-123')
+    expect(text).not.toContain('oauth')
+    expect(text).toContain('count: 2')
+    expect(text).toContain('total: 4')
+  })
+
+  it('rejects an unknown kind', () => {
+    const result = sessionTagListHandler({ kind: 'bogus' }, makeDeps())
+    expect(result.isError).toBe(true)
+    expect(textResult(result)).toMatch(/kind must be/)
   })
 })

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   applySessionTagOp,
+  isSessionRefTag,
   normalizeSessionTag,
   normalizeSessionTagList,
+  parseSessionTagKind,
   parseSessionTagMatch,
   parseSessionTagOp,
   parseTagsJson,
@@ -83,6 +85,24 @@ describe('sessionTagsMatchClause', () => {
     const all = sessionTagsMatchClause('s.tags_json', ['oauth', 'auth'], 'all')
     expect(all.sql).toMatch(/COUNT\(DISTINCT value\)/)
     expect(all.params).toEqual(['oauth', 'auth', 2])
+  })
+})
+
+describe('isSessionRefTag / parseSessionTagKind', () => {
+  it('matches only issue-N and pr-N', () => {
+    expect(isSessionRefTag('issue-123')).toBe(true)
+    expect(isSessionRefTag('pr-7')).toBe(true)
+    expect(isSessionRefTag('pr-7-followup')).toBe(false)
+    expect(isSessionRefTag('issue')).toBe(false)
+    expect(isSessionRefTag('mr-12')).toBe(false)
+    expect(isSessionRefTag('oauth')).toBe(false)
+  })
+
+  it('defaults kind to label and rejects unknown values', () => {
+    expect(parseSessionTagKind(undefined)).toBe('label')
+    expect(parseSessionTagKind('ref')).toBe('ref')
+    expect(parseSessionTagKind('all')).toBe('all')
+    expect(parseSessionTagKind('bogus')).toBeNull()
   })
 })
 

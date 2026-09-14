@@ -15,6 +15,7 @@ import { releaseComputerUseViewfinder } from './viewfinder'
 import type { CapturedImage } from './types'
 import { encode as toonEncode } from '@toon-format/toon'
 import { createActionRecordingPath } from '../agent/action-recording-store'
+import { registerArtifact } from '../mcp/artifact-registry'
 import { outlineToToon } from './outline-toon'
 import { imageNote, recordingNote } from '../mcp/show-your-work-notes'
 
@@ -774,6 +775,13 @@ async function executeComputerUseToolInner(
         const successorImage = toAgentImage(result.successorImage, sessionId)
         if (successorImage?.path) {
           service.alignStateVisual(result.successorStateId, successorImage)
+        }
+        // The path was reserved before the action ran; it is an artifact only
+        // once the helper has sealed the file, which is what `recording` in the
+        // result means (session-sync-zone.md §3).
+        const recordingPath = (result as { recording?: { savedPath?: unknown } }).recording?.savedPath
+        if (typeof recordingPath === 'string' && recordingPath) {
+          registerArtifact(sessionId, { path: recordingPath, producer: 'recording', final: true })
         }
         return textReply({
           ...result,

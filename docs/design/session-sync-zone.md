@@ -406,6 +406,53 @@ All four landed on 2026-09-14, one commit each.
   paths are pushed and rewritten. Each has a scenario-named regression test.
 
 
+- **A second review of those five follow-up commits found sixteen more, all
+  fixed before this branch was handed back.** Four could lose or expose data.
+  Reclaim walked the zone with `stat`, so a symlink dropped into it was
+  followed and *its target's* old files were deleted — every walk is `lstat`
+  now, a link is removed as the link it is and never descended into, and a
+  top-level entry that is not a real directory is skipped. The node's reserved
+  `.parts` check compared the requested *spelling*, so `agent/../.parts/x`
+  walked around it and `mkdir -p` through a linked `.parts` wrote outside the
+  zone — the check now runs on the resolved absolute path and the staging
+  directory itself is refused when it is a link. A tool call for one session
+  could name another session's node zone path and be handed that session's
+  mirror — input mapping is session-scoped and refuses a foreign zone with
+  `forbidden`. And the sweep read "no ownership marker" as proof of death,
+  deleting directories of sessions this database still names, then deleted
+  after an `await` without looking again — the local database now gets the
+  first word, and mtime, marker and pending transfers are all re-read after
+  the await.
+
+  The rest, in the same commit: the completion notification stat'd one
+  spelling and reported another (and could carry newlines into the wake text)
+  — it names the path the resolver returned, JSON-quoted, capped at 32; it
+  checked the controller *after* the stat, which made it an existence probe
+  across the binding — the check comes first; and it recorded delivery before
+  the send, so a failed wake was never retried, while keying only on the
+  notification id let one session's success answer another's — it records
+  after the send, keyed on session and id. `renewClaim` could revive a claim
+  that had expired but not yet been swept. The upload budget aborted a signal
+  the RPC never observed, so the sync step waited for the node anyway — the
+  upload is now *raced* against the budget and the hash stream is cancellable,
+  because a signal is a notification and only a race is a deadline. The path
+  rewrite still missed a path nested two JSON levels deep, and the separate
+  mention check that decides whether to push at all disagreed with it — both
+  questions now go through the one traversal, so they cannot drift again.
+  `uploadArtifact` stamped the node's mtime onto a local file that had changed
+  under it, which would make the mirror agree about two different files
+  forever. The node appended to an in-flight `transferId` whose `total` /
+  `sha256` had changed. A mirror fetch that failed reported `missing`, which
+  reads as "deleted" — there is an `unavailable` outcome now, and mapped
+  inputs refuse it instead of handing the tool a stale copy.
+  `browser_download`'s `dir` accepted another session's zone and a directory
+  linked out of it, and fell back to this machine's Downloads folder when the
+  zone could not be created — a path the node's agent can never open.
+  `read_desktop_file` read a whole remote file into memory before checking the
+  10 MiB cap. Computer-use recordings were never registered, a page-triggered
+  download never entered the zone, and a foreground download was queued twice
+  — once eagerly and once by the background finalizer.
+
 - **Only refs the reply names are pushed** (§3). A registered artifact whose
   path never appears in `content[].text` is not uploaded: the agent has no
   path to `Read`, and the desktop, the renderer and the phone all read the
@@ -465,15 +512,24 @@ marked and the residue is stated):
   the notification without re-uploading; `notificationId` is the job id, and
   the node injects once per id. A node that answers `not_found` / `forbidden`
   (session gone) or does not know the method ends the job.
+  **Still open:** the node's "already injected this one" record is in memory,
+  so a node restart between the injection and the desktop's next retry can
+  inject a wake twice. The durable half — the transfer job — is on the desktop
+  and is what guarantees the notification is not *lost*; making the node's
+  half durable too needs a table and was judged not worth one for a duplicate
+  sentence.
 - ~~**Claim renewal** as an alternative to deferral~~ — **implemented
   2026-09-14.** `session.renewHostActionClaim({ actionId, claimToken, ttlMs })`
   extends a live claim; the holder proves itself with the claim token, and the
   node caps the new expiry at the action's own deadline, so renewal buys time
   inside the window the agent already agreed to wait — it does not extend that
   window. `syncHostActionOutputs` asks before deferring a file that does not
-  fit, and each upload now runs under its own abort bound to the remaining
-  budget, so an estimate that turns out optimistic becomes a deferral rather
-  than a claim the desktop has already lost. A node that refuses (deadline
+  fit, and each upload runs under its own abort bound to the remaining budget
+  — raced against it, not merely signalled, because aborting does not make a
+  node RPC return. An estimate that turns out optimistic becomes a deferral
+  rather than a claim the desktop has already lost, and the abandoned upload
+  keeps its `transferId`, so the job resumes the partial transfer instead of
+  starting over. A node that refuses (deadline
   reached, claim swept) or does not know the method defers as before.
   **Still open:** the action's 120 s deadline is the hard ceiling; a minutes-long
   video still defers.
@@ -487,6 +543,12 @@ marked and the residue is stated):
   with no scope left to register into, so its finalizer queues the transfer
   itself and the transfer's completion wake tells the agent the path works.
   Local sessions are unchanged: downloads stay user-visible in Downloads.
+  **Still open:** a download the *page* starts (an export button the agent
+  clicks) cannot resolve its session inside `will-download` — ownership is
+  renderer state behind an async call, and the event is synchronous — so it
+  still lands in the user's Downloads folder and is adopted into the zone when
+  `browser_list_downloads` reports it. The agent gets a path it can read;
+  what it does not get is the file arriving in the zone before it asks.
 - ~~**Device captures, recordings and downloads** are not in the zone yet~~ —
   **implemented 2026-09-14.** Recordings write to `producerDir(sessionId,
   'recording')/<target>` and register on persist and on adopt; device captures
@@ -495,7 +557,10 @@ marked and the residue is stated):
   `buildBackend(deviceId, sessionId)`) and `DeviceAgentSession` registers each
   one in a single place, reading the producer back off the layout with
   `zoneArtifactRef`; downloads as above. The legacy temp roots stay readable so
-  transcripts from before this change still render.
+  transcripts from before this change still render. Computer-use recordings
+  register their sealed file when `service.act` returns, not when the path is
+  reserved — a path is not an artifact until something is written to it.
+  **Still open:** page-triggered downloads, as above.
 - **Reclaim** — **implemented 2026-09-14**, deliberately evidence-based rather
   than quota-based. `reclaimSyncZone` runs 30 s after launch and removes only
   what it can *prove* is dead: a session directory whose owner says it is gone,
@@ -510,6 +575,14 @@ marked and the residue is stated):
   **Still open:** there is no size cap and no eviction under pressure. A cap
   would have to delete artifacts a live transcript names, which is a product
   decision — surfacing zone size in settings is the likely first step.
+- **Zone media larger than 10 MiB has no desktop preview path.** Chat markdown
+  resolves a node media file by mirroring it and inlining a data URI, which is
+  capped at `MAX_TRANSFER_BYTES`; the read now stats first so a large file
+  fails instead of loading into the main process, but it still fails. Newly
+  migrated screen recordings clear 10 MiB easily. The fix is to serve a
+  mirrored zone file over the authorised local media protocol the desktop
+  already has, rather than as a data URI — a small change that belongs with
+  the previewer's media path, not with a node range-request RPC.
 - **Older nodes** without `syncZone`: no rewrite, no mirror, consumers say
   `missing`. No shim.
 - **Multiple controllers.** The zone is keyed by session, the node root is

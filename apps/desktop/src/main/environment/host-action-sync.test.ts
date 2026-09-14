@@ -190,6 +190,22 @@ describe('host action outputs', () => {
     expect(out.content[1]?.text).toMatch(/not (yet )?(there|available|synced)/i)
   })
 
+  it('gives up on an upload that outruns the claim budget instead of waiting for the node', async () => {
+    // Aborting the controller does not make a node RPC return. If the sync
+    // step waits for it anyway, the claim is gone by the time the reply is
+    // built — and the reply is what the agent gets.
+    const node = fakeNode()
+    const shot = desktopFile('s1', 'browser/shot.png', 'png')
+    node.deps.put = () => new Promise(() => {})
+    const reply = { content: [{ type: 'text', text: shot }] }
+    const settled = await Promise.race([
+      syncHostActionOutputs('s1', [{ path: shot, producer: 'browser', final: true }], reply, Date.now() + CLAIM_BUDGET_MARGIN_MS + 30, node.deps),
+      new Promise<'hung'>((resolve) => setTimeout(() => resolve('hung'), 500)),
+    ])
+    expect(settled).not.toBe('hung')
+    expect(node.deferred).toEqual(['browser/shot.png'])
+  })
+
   it('stops at the abort signal between uploads', async () => {
     const node = fakeNode()
     const abort = new AbortController()
@@ -214,6 +230,24 @@ describe('host action inputs', () => {
     const local = join(root, 'sync', 's1', 'agent', 'chart.png')
     expect(mapped).toEqual({ title: 'g', template: '@native/image-gallery', data: { images: [{ path: local }] } })
     expect(readFileSync(local, 'utf8')).toBe('chart')
+  })
+
+  it('refuses to map another session zone path into this call', async () => {
+    // A Host Action for s1 may only reach s1's zone. Mapping s2's path would
+    // hand this tool a file from a session it is not running for.
+    const node = fakeNode()
+    const args = { path: '/home/node/.superone/node/sync/s2/agent/secret.md' }
+    await expect(mapHostActionInputs(args, { ...node.deps, sessionId: 's1' })).rejects.toMatchObject({ code: 'forbidden' })
+  })
+
+  it('fails the call when the node has an input file it could not hand over', async () => {
+    // Running the tool on whatever happens to be at the desktop path instead
+    // is how a stale or foreign file reaches the model.
+    const node = fakeNode()
+    node.files.set('agent/ref.png', Buffer.from('node bytes'))
+    node.deps.get = async () => { throw Object.assign(new Error('socket closed'), { code: 'unavailable' }) }
+    const args = { path: '/home/node/.superone/node/sync/s1/agent/ref.png' }
+    await expect(mapHostActionInputs(args, { ...node.deps, sessionId: 's1' })).rejects.toBeTruthy()
   })
 
   it('leaves project paths and plain strings untouched', async () => {

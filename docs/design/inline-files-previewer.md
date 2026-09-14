@@ -602,13 +602,19 @@ Each phase is a separate PR.
 - **Line targeting.** A `line` field on `files[]` is the natural extension;
   scrolling `FileWithDiffView` to it in a 400px card is cheap. Not in v1.
 - **Remote-node artifact ownership** is the sync zone's problem, not the
-  previewer's. Three things it does not cover and the previewer inherits:
-  `browser_download` with an explicit `dir` on a remote session; a deferred
-  (oversized) transfer that has not finished when the block renders — that
-  file is `missing` until it lands, and there is no notification; and
-  recordings, downloads and device captures, which are not in the zone yet
-  (`session-sync-zone.md` §8), so on a remote session those read as
-  `missing`.
+  previewer's. All three gaps this section used to list closed on
+  2026-09-14 (`session-sync-zone.md` §9): `browser_download` honours a `dir`
+  inside the session zone, a deferred transfer now wakes the agent when it
+  lands, and recordings, device captures and downloads write into the zone.
+  What the previewer still inherits: a file is `missing` between the block
+  rendering and the transfer landing, and zone media over 10 MiB has no
+  desktop preview path yet.
+- **A session whose `cwd` is a worktree outside its registered project root**
+  previews against the registered root, not the worktree. `previewerContext`
+  authorises by registered project path on purpose — widening it to the
+  session's `cwd` would widen file authorisation for every consumer of that
+  context, which is not a previewer-sized change. Files under the worktree
+  that are not also under the registered root read as `missing`.
 - **Adjacent prefetch and any retained cache** on either surface: measure
   first.
 - **Carousel inside the phone viewer** (swipe between the block's files

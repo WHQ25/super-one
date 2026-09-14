@@ -1,9 +1,9 @@
-import { closeSync, mkdirSync, openSync } from 'fs'
-import { basename, extname, isAbsolute, join } from 'path'
+import { closeSync, copyFileSync, mkdirSync, openSync, realpathSync } from 'fs'
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'path'
 import { randomUUID } from 'crypto'
 import { app } from 'electron'
 import { readAppSettings } from '../app-settings-service'
-import { isUnderSyncZone, producerDir } from '../media-output-paths'
+import { isUnderSyncZone, producerDir, sessionZoneDir } from '../media-output-paths'
 import { currentHostActionConnection, registerArtifact } from '../mcp/artifact-registry'
 import log from '../logger'
 
@@ -83,7 +83,7 @@ export function resolveDownloadDir(explicitDir?: string | null, sessionId?: stri
   const remote = sessionId ? currentHostActionConnection() !== null : false
   if (explicit) {
     if (!isAbsolute(explicit)) throw new Error(`Download directory must be an absolute path: ${explicit}`)
-    if (remote && !isUnderSyncZone(explicit)) {
+    if (remote && !withinSessionZone(sessionId!, explicit)) {
       throw new Error(
         `This session runs on a remote node, so ${explicit} is a directory its agent cannot read. `
         + 'Omit `dir` to download into the session directory ($SUPERONE_SESSION_DIR), or name a path inside it.',
@@ -106,7 +106,11 @@ function ensureDir(explicitDir?: string | null, sessionId?: string | null): stri
     mkdirSync(root, { recursive: true })
     return root
   } catch (err) {
-    if (explicitDir?.trim()) throw err
+    // A directory the agent named is its own choice, and a remote session's
+    // zone is the only place its agent can read. Neither may quietly become
+    // this machine's Downloads folder: the download would report a path that
+    // works here and nowhere the caller can look.
+    if (explicitDir?.trim() || isUnderSyncZone(root)) throw err
     log.warn(`[browser-download] cannot use ${root}, falling back: ${err instanceof Error ? err.message : String(err)}`)
   }
   const fallback = systemDownloadDir()
@@ -152,6 +156,36 @@ export function reserveDownloadPath(filename: string, dir?: string | null, sessi
 }
 
 /**
+ * Is `dir` inside *this* session's zone, once every symlink on the way has
+ * been resolved? The zone root is not the boundary — another session's
+ * directory is inside it, and a link planted in this one leads out of it.
+ */
+function withinSessionZone(sessionId: string, dir: string): boolean {
+  const root = realOrSelf(sessionZoneDir(sessionId))
+  const target = realOrSelf(dir)
+  return target === root || target.startsWith(root + sep)
+}
+
+function realOrSelf(path: string): string {
+  const resolved = resolve(path)
+  try {
+    return realpathSync(resolved)
+  } catch {
+    // Not there yet: resolve the nearest existing ancestor so a link on the
+    // way out is still followed, and keep the rest as written.
+    let parent = dirname(resolved)
+    while (parent !== dirname(parent)) {
+      try {
+        return join(realpathSync(parent), relative(parent, resolved))
+      } catch {
+        parent = dirname(parent)
+      }
+    }
+    return resolved
+  }
+}
+
+/**
  * A download is registered when its path is reserved and again when the bytes
  * are in: the reservation is what a *background* download's reply names, and
  * the seal is what makes the file worth pushing. Only zone paths are pushed,
@@ -160,4 +194,31 @@ export function reserveDownloadPath(filename: string, dir?: string | null, sessi
 export function registerDownload(sessionId: string | null | undefined, path: string, final: boolean): void {
   if (!sessionId || !isUnderSyncZone(path)) return
   registerArtifact(sessionId, { path, producer: 'download', final })
+}
+
+/**
+ * Bring a download the *page* started into the session zone.
+ *
+ * `will-download` has to name a save path synchronously, and which tab owns
+ * which session is renderer state resolved over an async call — so a
+ * page-triggered download cannot be filed by session at capture time the way
+ * `browser_download` is. It is adopted here instead, when the agent asks for
+ * the list and the session is finally known: the file is copied into the
+ * zone, registered, and the zone path is what the agent is told
+ * (`docs/design/session-sync-zone.md` §6).
+ *
+ * Returns the path to report — the original when there is nothing to adopt.
+ */
+export function adoptCapturedDownload(sessionId: string | null | undefined, path: string): string {
+  if (!sessionId || !path || isUnderSyncZone(path)) return path
+  if (currentHostActionConnection() === null) return path
+  try {
+    const target = uniqueCandidate(ensureDir(null, sessionId), basename(path), 0)
+    copyFileSync(path, target)
+    registerDownload(sessionId, target, true)
+    return target
+  } catch (err) {
+    log.warn(`[browser-download] could not adopt ${path} into the session zone: ${err instanceof Error ? err.message : String(err)}`)
+    return path
+  }
 }

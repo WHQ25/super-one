@@ -2703,6 +2703,9 @@ function handleSessionRespondHostAction(payload: unknown, ctx: RpcContext): RpcR
  * reports work the controller already did — and idempotent by
  * `notificationId`, because the desktop retries when an ACK is lost.
  */
+/** One wake names at most this many files; the rest are covered by their own jobs. */
+const MAX_NOTIFIED_PATHS = 32
+
 async function handleSessionNotifyArtifactCompleted(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
   if (denied) return denied
@@ -2715,14 +2718,22 @@ async function handleSessionNotifyArtifactCompleted(payload: unknown, ctx: RpcCo
   if (!sessionId || !notificationId || relativePaths.length === 0) {
     return { error: { code: 'invalid_argument', message: 'sessionId, notificationId and relativePaths are required' } }
   }
-  // Only paths the node actually holds: telling the agent a file is ready when
-  // it is not would be worse than staying silent.
+  // Authorisation first, and before touching the filesystem: otherwise
+  // "delivered: false" versus "forbidden" tells a client that is not the
+  // controller whether a given path exists in someone else's zone.
+  const session = ctx.sessions.get(sessionId)
+  if (!session) return { error: { code: 'not_found', message: 'session not found' } }
+  if (session.controllerClientSessionId !== ctx.client.clientSessionId) {
+    return { error: { code: 'forbidden', message: 'not the session controller' } }
+  }
+  // Only paths the node actually holds, named the way the node resolved them:
+  // the caller's spelling never reaches the wording, so a path that normalises
+  // onto a real file cannot smuggle text into the agent's turn.
   const ready: string[] = []
-  for (const relativePath of relativePaths) {
+  for (const relativePath of relativePaths.slice(0, MAX_NOTIFIED_PATHS)) {
     try {
-      if (ctx.artifacts.stat(sessionId, relativePath).exists) {
-        ready.push(pathJoin(ctx.artifacts.syncRoot, sessionId, relativePath))
-      }
+      const absolute = ctx.artifacts.resolve(sessionId, relativePath)
+      if (ctx.artifacts.stat(sessionId, relativePath).exists) ready.push(absolute)
     } catch {
       /* an unusable path is not a file that landed */
     }
@@ -2733,7 +2744,9 @@ async function handleSessionNotifyArtifactCompleted(payload: unknown, ctx: RpcCo
     ready.length === 1
       ? 'A file SuperOne was transferring to this machine has finished and can now be read:'
       : 'Files SuperOne was transferring to this machine have finished and can now be read:',
-    ...ready.map((path) => `- ${path}`),
+    // JSON-quoted: a file name may contain anything a filesystem allows, and
+    // the wording around it has to stay the node's.
+    ...ready.map((path) => `- ${JSON.stringify(path)}`),
     `</task_notification>`,
   ].join('\n')
   try {

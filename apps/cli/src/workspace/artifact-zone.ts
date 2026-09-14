@@ -34,7 +34,7 @@ import {
   realpathSync,
 } from 'node:fs'
 import { rm } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import {
   ARTIFACT_CHUNK_BYTES,
   type ArtifactGetRequest,
@@ -132,12 +132,14 @@ export class ArtifactZoneService {
     if (typeof relativePath !== 'string' || !relativePath.trim() || relativePath === '.' || relativePath.endsWith('/')) {
       throw rpcError('invalid_argument', 'relativePath must name a file inside the session zone')
     }
-    const normalised = relativePath.replace(/\\/g, '/').replace(/^(\.\/)+/, '')
-    if (normalised === PARTS_DIR || normalised.startsWith(`${PARTS_DIR}/`)) {
+    const resolved = resolveProjectPath(dir, relativePath.replace(/\\/g, '/'))
+    if (!resolved.ok) throw rpcError('invalid_argument', resolved.reason)
+    // Checked on the *resolved* path, not the spelling: `agent/../.parts/x`
+    // and `./.parts/x` both name the staging area.
+    const partsRoot = join(dir, PARTS_DIR)
+    if (resolved.absolutePath === partsRoot || resolved.absolutePath.startsWith(partsRoot + sep)) {
       throw rpcError('invalid_argument', `${PARTS_DIR} is reserved for uploads in progress`)
     }
-    const resolved = resolveProjectPath(dir, normalised)
-    if (!resolved.ok) throw rpcError('invalid_argument', resolved.reason)
     // `a/..` normalises to the session directory itself; that is not a file either.
     const self = resolveProjectPath(dir, '.')
     if (self.ok && resolved.absolutePath === self.absolutePath) {
@@ -186,6 +188,11 @@ export class ArtifactZoneService {
       transfer = this.open(sessionId, relativePath, abs, transferId, req)
     } else if (transfer.sessionId !== sessionId || transfer.absolutePath !== abs) {
       throw rpcError('conflict', 'transferId belongs to a different path')
+    } else if (transfer.total !== req.total || transfer.sha256 !== req.sha256) {
+      // Same id, different file. A retry that re-read a changed source is a
+      // new upload, and treating it as this one acknowledges bytes nobody wrote.
+      this.abandon(transfer)
+      throw rpcError('conflict', 'transferId was opened for different content', { expectedOffset: 0 })
     }
     transfer.lastActivityAt = Date.now()
 
@@ -305,8 +312,7 @@ export class ArtifactZoneService {
 
   private open(sessionId: string, relativePath: string, abs: string, transferId: string, req: ArtifactPutRequest): Transfer {
     mkdirSync(dirname(abs), { recursive: true })
-    const partsDir = join(this.sessionDir(sessionId), PARTS_DIR)
-    mkdirSync(partsDir, { recursive: true })
+    const partsDir = this.stagingDir(sessionId)
     this.sweepStaleParts(partsDir)
     const partPath = join(partsDir, transferId)
     // Exclusive create: a transferId is one upload; a leftover under the same
@@ -329,6 +335,31 @@ export class ArtifactZoneService {
     this.transfers.set(transferId, transfer)
     this.writing.set(abs, transferId)
     return transfer
+  }
+
+  /**
+   * The session's staging directory, created if missing and refused if it is
+   * anything but a real directory. `mkdir -p` follows a symlink and
+   * `openSync(..., 'wx')` only guards the leaf, so a link planted here would
+   * put upload bytes outside the zone entirely.
+   */
+  private stagingDir(sessionId: string): string {
+    const dir = join(this.sessionDir(sessionId), PARTS_DIR)
+    try {
+      const st = lstatSync(dir)
+      if (!st.isDirectory()) {
+        throw rpcError('failed_precondition', `${PARTS_DIR} must be a real directory`)
+      }
+      return dir
+    } catch (err) {
+      if ((err as { code?: string }).code === 'failed_precondition') throw err
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+    }
+    mkdirSync(dir, { recursive: true })
+    if (lstatSync(dir).isSymbolicLink()) {
+      throw rpcError('failed_precondition', `${PARTS_DIR} must be a real directory`)
+    }
+    return dir
   }
 
   /** Staging a node crash left behind: nothing tracks it, so age is the only signal. */

@@ -564,6 +564,11 @@ export function createSqliteHostActionStore(db: SqliteDatabase): HostActionStore
         if (row.deadline <= now) {
           throw Object.assign(new Error('host action deadline expired'), { code: 'failed_precondition' })
         }
+        // A claim is dead when it expires, not when the sweep notices. Without
+        // this, the window between the two is a grace period nothing granted.
+        if (row.claimExpiresAt == null || row.claimExpiresAt <= now) {
+          throw Object.assign(new Error('claim has expired'), { code: 'failed_precondition' })
+        }
         // The action's deadline is the ceiling: renewal buys time inside the
         // window the agent is already waiting in, never past it.
         const claimExpiresAt = Math.min(now + ttlMs, row.deadline)

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -121,6 +121,38 @@ describe('sync zone sweep', () => {
     expect(existsSync(fresh)).toBe(true)
     expect(existsSync(join(root, 'sync', 'adhoc'))).toBe(true)
     expect(result.freedBytes).toBeGreaterThan(0)
+  })
+
+  it('never follows a symlink out of the zone, at the top level or inside it', async () => {
+    // The sweep deletes files; a link is the one way it could delete something
+    // that is not ours. `statSync` follows links, so the scan uses `lstat`.
+    const outside = mkdtempSync(join(tmpdir(), 'not-the-zone-'))
+    try {
+      const victim = join(outside, 'precious.txt')
+      writeFileSync(victim, 'not ours')
+      const ancient = (now - 30 * DAY) / 1000
+      utimesSync(victim, ancient, ancient)
+
+      mkdirSync(join(root, 'sync', 'adhoc', 'browser'), { recursive: true })
+      symlinkSync(outside, join(root, 'sync', 'adhoc', 'browser', 'alias'))
+      symlinkSync(outside, join(root, 'sync', 'linked-session'))
+
+      const result = await reclaimSyncZone(deps())
+      expect(existsSync(victim)).toBe(true)
+      expect(result.removed).toEqual([])
+      // The link itself may go; what is on the other side may not.
+      expect(existsSync(outside)).toBe(true)
+    } finally {
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps an unmarked directory whose session this desktop still has, however old it is', async () => {
+    // Ownership was only recorded from this version on; silence is not proof
+    // of death when the database still names the session.
+    zoneFile('old-but-live', 'browser/a.png', UNMARKED_GRACE_MS + DAY)
+    const result = await reclaimSyncZone(deps({ hasLocalSession: (id) => id === 'old-but-live' }))
+    expect(result.removed).toEqual([])
   })
 
   it('does nothing at all when there is no zone yet', async () => {

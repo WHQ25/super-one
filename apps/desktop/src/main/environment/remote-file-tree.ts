@@ -672,6 +672,12 @@ export async function readRemoteProjectFile(
   }
   if (resolution.kind === 'local') {
     try {
+      // Size first. Reading a 4 GB recording into the main process only to
+      // report `too-large` from its length blocks every window and can take
+      // the process with it.
+      if (statSync(resolution.path).size > MAX_TRANSFER_BYTES) {
+        return { path: filePath, content: '', language: 'too-large' }
+      }
       return fileContentFromBuffer(filePath, readFileSync(resolution.path))
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code

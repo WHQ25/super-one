@@ -212,6 +212,27 @@ describe('Host Action store', () => {
     })).toThrow(/controller/i)
   })
 
+  it('refuses to renew a claim that has already expired, sweep or no sweep', () => {
+    // The sweep runs on a timer; a claim is dead the moment it expires, not
+    // the moment something notices.
+    const { hostActions } = boot()
+    const row = hostActions.create({
+      sessionId: 's1',
+      controllerClientSessionId: 'c1',
+      toolName: 'computer.snapshot',
+      toolGroup: HOST_ACTION_TOOL_GROUPS.browserRead,
+      args: {},
+      replayPolicy: 'safe',
+      now: 1_000,
+    })
+    const claimed = hostActions.claim({
+      actionId: row.actionId, expectedVersion: row.version, controllerClientSessionId: 'c1', claimTtlMs: 1_000, now: 1_000,
+    })
+    expect(() => hostActions.renewClaim({
+      actionId: row.actionId, claimToken: claimed.claimToken, controllerClientSessionId: 'c1', ttlMs: 10_000, now: 3_000,
+    })).toThrow(/expired|precondition/i)
+  })
+
   it('refuses to renew a claim the expiry sweep already took back', () => {
     const { hostActions } = boot()
     const row = hostActions.create({

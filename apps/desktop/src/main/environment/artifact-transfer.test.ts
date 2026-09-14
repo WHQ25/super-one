@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { ARTIFACT_CHUNK_BYTES, type ArtifactPutRequest } from '@superone/shared/environment'
-import { downloadArtifact, uploadArtifact } from './artifact-transfer'
+import { downloadArtifact, sha256File, uploadArtifact } from './artifact-transfer'
 
 let root: string
 beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'artifact-transfer-')) })
@@ -35,6 +35,20 @@ function fakeNode() {
   }
   return { files, parts, calls, put }
 }
+
+describe('artifact hashing', () => {
+  it('stops reading a large file the moment the transfer is aborted', () => {
+    // Hashing runs before the first chunk goes out, so a claim that expires
+    // while a multi-gigabyte recording is being read would otherwise be paid
+    // for twice: once waiting, once in I/O nobody is waiting for any more.
+    const big = join(root, 'big.bin')
+    writeFileSync(big, Buffer.alloc(8 * 1024 * 1024))
+    const ac = new AbortController()
+    const hashing = sha256File(big, ac.signal)
+    ac.abort()
+    return expect(hashing).rejects.toMatchObject({ code: 'aborted' })
+  })
+})
 
 describe('artifact upload', () => {
   it('streams a file in contract-sized chunks and stamps the local copy with the node mtime', async () => {
@@ -79,6 +93,21 @@ describe('artifact upload', () => {
     const put = async (req: ArtifactPutRequest) => { const r = await node.put(req); abort.abort(); return r }
     await expect(uploadArtifact({ localPath: local, sessionId: 's1', relativePath: 'a', put, signal: abort.signal })).rejects.toMatchObject({ code: 'aborted' })
     expect(node.calls).toHaveLength(1)
+  })
+
+  it('does not stamp the node mtime onto a local file that changed while the upload ran', async () => {
+    // Stamping regardless is how the mirror ends up permanently agreeing about
+    // two different files: same size, same mtime, different bytes.
+    const local = join(root, 'shot.png')
+    writeFileSync(local, 'AAA')
+    const before = statSync(local).mtimeMs
+    const put = async (req: ArtifactPutRequest) => {
+      if (req.final) writeFileSync(local, 'BBB')
+      return { ok: true as const, bytesWritten: 3, ...(req.final ? { mtimeMs: 1_600_000_000_000 } : {}) }
+    }
+    await uploadArtifact({ localPath: local, sessionId: 's1', relativePath: 'browser/shot.png', put })
+    expect(Math.floor(statSync(local).mtimeMs)).not.toBe(1_600_000_000_000)
+    expect(statSync(local).mtimeMs).toBeGreaterThanOrEqual(before)
   })
 })
 

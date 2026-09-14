@@ -123,6 +123,39 @@ describe('downloads for a remote session', () => {
     }, 'conn-1')
   })
 
+  it("refuses another session's zone, and a directory linked out of it", async () => {
+    // `dir` is agent input. Containment has to be checked against this
+    // session's own canonical directory, not against the zone root as text.
+    const { mkdirSync, symlinkSync } = await import('node:fs')
+    const other = join(producerDir('s2', 'download'))
+    await collectArtifacts('s1', 'call-5', async () => {
+      expect(() => reserveDownloadPath('q3.pdf', other, 's1')).toThrow(/remote session|session directory|SUPERONE_SESSION_DIR/i)
+    }, 'conn-1')
+
+    const outside = join(root, 'outside')
+    mkdirSync(outside, { recursive: true })
+    const linked = join(producerDir('s1', 'download'), 'linked')
+    mkdirSync(join(linked, '..'), { recursive: true })
+    symlinkSync(outside, linked)
+    await collectArtifacts('s1', 'call-6', async () => {
+      expect(() => reserveDownloadPath('q3.pdf', linked, 's1')).toThrow()
+    }, 'conn-1')
+    expect(existsSync(join(outside, 'q3.pdf'))).toBe(false)
+  })
+
+  it("fails rather than dropping a remote session's download into this machine's Downloads folder", async () => {
+    // The zone is the only directory the node's agent can read. Degrading to
+    // ~/Downloads the way a broken *configured* default does would report a
+    // path that works here and nowhere the agent can look.
+    const { mkdirSync } = await import('node:fs')
+    mkdirSync(join(root, 'sync', 's1'), { recursive: true })
+    writeFileSync(producerDir('s1', 'download'), 'a file where the directory should be')
+    await collectArtifacts('s1', 'call-7', async () => {
+      expect(() => reserveDownloadPath('a.bin', null, 's1')).toThrow()
+    }, 'conn-1')
+    expect(existsSync(join(state.osDownloads, 'a.bin'))).toBe(false)
+  })
+
   it('leaves a local session downloading into the configured folder', async () => {
     state.configuredDir = join(root, 'custom')
     const path = await collectArtifacts('s1', 'call-4', async () => reserveDownloadPath('a.txt', null, 's1'))

@@ -41,6 +41,8 @@ async function pendingUploadInJobs(sessionId: string, relativePath: string): Pro
 export type MirrorOutcome =
   | { kind: 'local'; path: string; size: number; mtimeMs: number }
   | { kind: 'missing' }
+  /** The node has the file but would not hand it over; a caller that needs the bytes must not proceed. */
+  | { kind: 'unavailable'; reason: string }
 
 /** In-flight fetches keyed by desktop path so two readers of one file share a download. */
 const inflight = new Map<string, Promise<MirrorOutcome>>()
@@ -82,8 +84,15 @@ export async function mirrorNodeArtifact(sessionId: string, relativePath: string
     }
     if (!remote.exists) return pendingHere()
     if (local && local.size === remote.size && local.mtimeMs === remote.mtimeMs) return { kind: 'local', path, ...local }
-    const fetched = await downloadArtifact({ sessionId, relativePath, destPath: path, get: deps.get, signal: deps.signal })
-    return { kind: 'local', path, size: fetched.bytes, mtimeMs: fetched.mtimeMs }
+    try {
+      const fetched = await downloadArtifact({ sessionId, relativePath, destPath: path, get: deps.get, signal: deps.signal })
+      return { kind: 'local', path, size: fetched.bytes, mtimeMs: fetched.mtimeMs }
+    } catch (err) {
+      if ((err as { code?: string }).code === 'aborted') throw err
+      // The node has it and we could not get it. Saying `missing` would let a
+      // caller fall through to whatever is at the desktop path.
+      return { kind: 'unavailable', reason: err instanceof Error ? err.message : String(err) }
+    }
   })().finally(() => inflight.delete(path))
   inflight.set(path, work)
   return work

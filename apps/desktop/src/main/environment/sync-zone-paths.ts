@@ -39,10 +39,19 @@ export function nodeZonePath(zone: NodeSyncZone, sessionId: string, relativePath
  */
 export function parseNodeZonePath(zone: NodeSyncZone, path: string): { sessionId: string; relativePath: string } | null {
   const sep = foreignSep(zone.os)
+  // On Windows a backslash cannot appear in a file name, so `/` is always a
+  // separator too — and it has to be accepted, because anything that carries
+  // the path through a URL or JSON normalises it (`encodeRemoteMediaUrl`
+  // does). On POSIX a backslash is an ordinary character and stays one.
+  const windows = zone.os === 'windows'
+  const normalise = (value: string) => (windows ? value.replace(/\\/g, '/') : value)
+  const isSep = (ch: string) => ch === sep || (windows && ch === '/')
   const root = trimTrailing(zone.syncRoot, sep)
-  const cmp = zone.os === 'windows' ? (a: string, b: string) => a.toLowerCase() === b.toLowerCase() : (a: string, b: string) => a === b
-  if (path.length <= root.length + 1 || !cmp(path.slice(0, root.length), root) || path[root.length] !== sep) return null
-  const rest = path.slice(root.length + 1).split(sep).filter((part) => part.length > 0)
+  const cmp = windows
+    ? (a: string, b: string) => normalise(a).toLowerCase() === normalise(b).toLowerCase()
+    : (a: string, b: string) => a === b
+  if (path.length <= root.length + 1 || !cmp(path.slice(0, root.length), root) || !isSep(path[root.length]!)) return null
+  const rest = normalise(path.slice(root.length + 1)).split(windows ? '/' : sep).filter((part) => part.length > 0)
   if (rest.length < 2 || rest.some((part) => part === '.' || part === '..')) return null
   const [sessionId, ...tail] = rest
   return { sessionId, relativePath: tail.join('/') }
@@ -70,24 +79,39 @@ function escapeRegExp(s: string): string {
  * while a sentence-ending `shot.png.` still counts.
  */
 function tokenPattern(path: string): RegExp {
-  return new RegExp(`${escapeRegExp(path)}(?![A-Za-z0-9_-]|\\.[A-Za-z0-9])`, 'g')
+  return new RegExp(`${escapeRegExp(path)}(?![A-Za-z0-9_([-]|\\.[A-Za-z0-9])`, 'g')
 }
 
 function replaceTokens(text: string, from: string, to: string): string {
   return text.replace(tokenPattern(from), () => to)
 }
 
-/** Does `text` name `path` as a whole token, raw or JSON-escaped? */
+/** Stands in for the node twin while probing; cannot occur in a real path. */
+const MENTION_PROBE = '\u0000mention\u0000'
+
+/**
+ * Does `text` name `path`? Asked of the rewriter rather than answered
+ * separately: whatever it would replace is a mention and whatever it would
+ * not is not. Rewriting twice — once to itself, once to a probe — cancels out
+ * any re-serialisation the JSON walk does, so only a real substitution shows.
+ * The two used to be independent, and the reply that nested a Windows path two
+ * JSON levels deep was rewritten by one and called unmentioned by the other,
+ * which skipped the upload and left the agent a path the node never received.
+ */
 export function mentionsArtifactPath(text: string, path: string): boolean {
   if (!path) return false
-  if (tokenPattern(path).test(text)) return true
-  const escaped = JSON.stringify(path).slice(1, -1)
-  return escaped !== path && tokenPattern(escaped).test(text)
+  return rewriteString(text, [[path, MENTION_PROBE] as const]) !== rewriteString(text, [[path, path] as const])
 }
 
+/**
+ * Could this string be a JSON document? A quoted scalar counts: a tool that
+ * embeds a serialised result as a string value nests the escaping, and a
+ * text-level replace there writes a Windows twin's backslashes in unescaped
+ * and breaks the document.
+ */
 function looksLikeJson(text: string): boolean {
   const c = text.trimStart()[0]
-  return c === '{' || c === '['
+  return c === '{' || c === '[' || c === '"'
 }
 
 /**
@@ -100,7 +124,9 @@ function rewriteString(text: string, entries: ReadonlyArray<readonly [string, st
   if (looksLikeJson(text)) {
     try {
       const value = JSON.parse(text) as unknown
-      if (value && typeof value === 'object') return JSON.stringify(rewriteValue(value, entries))
+      if (typeof value === 'string' || (value && typeof value === 'object')) {
+        return JSON.stringify(rewriteValue(value, entries))
+      }
     } catch {
       /* not JSON after all: fall through to text */
     }
@@ -146,6 +172,12 @@ export function rewriteArtifactPaths(text: string, mapping: ReadonlyMap<string, 
 export function mapNodeZoneArgs(
   zone: NodeSyncZone,
   args: unknown,
+  /**
+   * The session this Host Action is running for. A path under any *other*
+   * session's zone is refused rather than mapped: a tool call for one session
+   * must not be handed a file from another (§3.1).
+   */
+  sessionId?: string,
 ): { args: unknown; refs: { sessionId: string; relativePath: string; desktopPath: string }[] } {
   const refs: { sessionId: string; relativePath: string; desktopPath: string }[] = []
   const seen = new Set<string>()
@@ -153,6 +185,12 @@ export function mapNodeZoneArgs(
     if (typeof value === 'string') {
       const parsed = parseNodeZonePath(zone, value)
       if (!parsed) return value
+      if (sessionId && parsed.sessionId !== sessionId) {
+        throw Object.assign(
+          new Error(`${value} belongs to another session's directory`),
+          { code: 'forbidden' },
+        )
+      }
       const desktopPath = desktopMirrorPath(parsed.sessionId, parsed.relativePath)
       if (!seen.has(desktopPath)) {
         seen.add(desktopPath)

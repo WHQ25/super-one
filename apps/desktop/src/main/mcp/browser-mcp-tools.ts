@@ -11,6 +11,7 @@ import { measurePerf, samplePerf, resolveAppTarget } from '../browser/browser-cd
 import { persistScreenshot } from '../agent/browser-screenshot-store'
 import { raceDownloadTask, startUrlDownloadTask } from '../browser/browser-download-tasks'
 import { listDownloads } from '../browser/browser-downloads'
+import { adoptCapturedDownload } from '../agent/browser-download-store'
 import { persistTextArtifact } from '../agent/browser-artifact-store'
 import type { SuperoneMcpToolDescriptor } from './superone-mcp-types'
 import { registerBrowserActionTools } from './browser-action-mcp-tools'
@@ -1446,11 +1447,19 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
     },
     async (args) => {
       try {
-        const downloads = await listDownloads(sessionId, {
+        const listed = await listDownloads(sessionId, {
           state: args.state,
           wait: args.wait,
           timeoutMs: args.timeoutMs,
         })
+        // A download the page started could not be filed by session when it
+        // began; on a remote node it is adopted into the zone now, so the path
+        // reported here is one the agent can open.
+        const downloads = listed.map((download) =>
+          download.state === 'completed' && download.path
+            ? { ...download, path: adoptCapturedDownload(sessionId, download.path) }
+            : download,
+        )
         return textReply({ count: downloads.length, downloads })
       } catch (err) {
         return errorReply(err)

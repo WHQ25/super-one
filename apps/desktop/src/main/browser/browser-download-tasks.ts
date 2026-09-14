@@ -159,7 +159,10 @@ function settle(task: InternalTask, settled: Settled): void {
     resultText: JSON.stringify(resultPayload),
   })
 
-  if (settled.ok) pushToNode(task, settled.result.path)
+  // Only a *backgrounded* download needs this: a foreground one settles inside
+  // its tool call, where the registry already has the ref and the executor
+  // pushes it eagerly. Queuing both would race two transferIds for one file.
+  if (settled.ok && task.backgrounded) pushToNode(task, settled.result.path)
 
   if (task.backgrounded) {
     void notifyAgent(task, settled).catch((err) => {

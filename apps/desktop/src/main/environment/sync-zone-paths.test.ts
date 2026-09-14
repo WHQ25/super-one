@@ -26,6 +26,20 @@ describe('sync zone prefix mapping', () => {
     expect(nodeZonePath({ ...linux, syncRoot: '/home/node/.superone/node/sync/' }, 's1', 'agent/x')).toBe('/home/node/.superone/node/sync/s1/agent/x')
   })
 
+  it('parses a Windows zone path whose separators were normalised on the way through a URL', () => {
+    // `encodeRemoteMediaUrl` folds `\` to `/` before base64-ing the payload, so
+    // by the time a media URL comes back the Windows path is slash-separated.
+    // Refusing it here is what made every Windows-node screenshot preview
+    // resolve to `missing`.
+    const native = nodeZonePath(windows, 's1', 'browser/shot.png')
+    expect(native).toBe('C:\\Users\\node\\.superone\\node\\sync\\s1\\browser\\shot.png')
+    expect(parseNodeZonePath(windows, native)).toEqual({ sessionId: 's1', relativePath: 'browser/shot.png' })
+    expect(parseNodeZonePath(windows, native.replace(/\\/g, '/'))).toEqual({ sessionId: 's1', relativePath: 'browser/shot.png' })
+    // A POSIX node keeps backslash as an ordinary filename character.
+    expect(parseNodeZonePath(linux, '/home/node/.superone/node/sync/s1/browser/od\\d.png'))
+      .toEqual({ sessionId: 's1', relativePath: 'browser/od\\d.png' })
+  })
+
   it('rewrites whole path tokens only, in raw and JSON-escaped form', () => {
     const from = `${desktopZone}/s1/browser/shot.png`
     const to = nodeTwinOf(linux, from)!
@@ -54,6 +68,39 @@ describe('sync zone prefix mapping', () => {
     expect(JSON.parse(parsed.nested)).toEqual({ inner: to })
     // Plain text gets the raw twin.
     expect(rewriteArtifactPaths(`saved to ${from}`, new Map([[from, to]]))).toBe(`saved to ${to}`)
+  })
+
+  it('finds and rewrites a path inside a JSON string that is itself inside JSON', () => {
+    // A tool that embeds a serialised result as a string value nests the
+    // escaping twice. Missing it made the push decision and the rewrite
+    // disagree: the ref was judged "never mentioned" and silently skipped.
+    const from = `${desktopZone}/s1/browser/shot.png`
+    const to = nodeTwinOf(windows, from)!
+    const text = JSON.stringify({ payload: JSON.stringify({ path: from }) })
+    expect(mentionsArtifactPath(text, from)).toBe(true)
+    const out = rewriteArtifactPaths(text, new Map([[from, to]]))
+    const outer = JSON.parse(out) as { payload: string }
+    expect(JSON.parse(outer.payload)).toEqual({ path: to })
+  })
+
+  it('keeps a bare JSON string value valid when the twin carries backslashes', () => {
+    const from = `${desktopZone}/s1/browser/a[1]+(x).png`
+    const to = nodeTwinOf(windows, from)!
+    const text = JSON.stringify(JSON.stringify(from))
+    const out = rewriteArtifactPaths(text, new Map([[from, to]]))
+    expect(JSON.parse(JSON.parse(out) as string)).toBe(to)
+  })
+
+  it('sees a Windows path nested two JSON levels deep, so its ref is still pushed', () => {
+    // `rewriteArtifactPaths` walks nested JSON and would rewrite this path.
+    // If `mentionsArtifactPath` disagrees, the ref is judged unmentioned and
+    // never uploaded — and the agent is handed a node path for a file the
+    // node does not have. The two have to answer the same question.
+    const from = 'C:\\Users\\me\\AppData\\Roaming\\SuperOne\\sync\\s1\\browser\\shot.png'
+    const text = JSON.stringify({ result: JSON.stringify({ path: from }) })
+    expect(mentionsArtifactPath(text, from)).toBe(true)
+    const rewritten = rewriteArtifactPaths(text, new Map([[from, 'D:\\node\\sync\\s1\\browser\\shot.png']]))
+    expect(JSON.parse(JSON.parse(rewritten).result).path).toBe('D:\\node\\sync\\s1\\browser\\shot.png')
   })
 
   it('prefers the longest registered path when one is a prefix of another', () => {

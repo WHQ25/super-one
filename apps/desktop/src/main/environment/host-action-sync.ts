@@ -58,6 +58,15 @@ export interface HostActionSyncDeps {
   log?: { warn: (...args: unknown[]) => void }
 }
 
+/** Rejects when the budget runs out, so a hung RPC cannot hold the reply. */
+function budgetExpiry(signal: AbortSignal): Promise<never> {
+  return new Promise<never>((_resolve, reject) => {
+    const fail = () => reject(Object.assign(new Error('upload exceeded the claim budget'), { code: 'budget_exceeded' }))
+    if (signal.aborted) { fail(); return }
+    signal.addEventListener('abort', fail, { once: true })
+  })
+}
+
 function throwIfAborted(signal: AbortSignal): void {
   if (signal.aborted) throw Object.assign(new Error('host action aborted'), { code: 'aborted' })
 }
@@ -65,12 +74,21 @@ function throwIfAborted(signal: AbortSignal): void {
 /** §3.1 — reverse-map node zone paths in the args, mirroring each one first. */
 export async function mapHostActionInputs(
   args: Record<string, unknown>,
-  deps: Pick<HostActionSyncDeps, 'zone' | 'get' | 'stat' | 'signal'>,
+  deps: Pick<HostActionSyncDeps, 'zone' | 'get' | 'stat' | 'signal'> & { sessionId?: string },
 ): Promise<Record<string, unknown>> {
-  const mapped = mapNodeZoneArgs(deps.zone, args)
+  const mapped = mapNodeZoneArgs(deps.zone, args, deps.sessionId)
   for (const ref of mapped.refs) {
-    await mirrorNodeArtifact(ref.sessionId, ref.relativePath, { stat: deps.stat, get: deps.get, signal: deps.signal })
+    const outcome = await mirrorNodeArtifact(ref.sessionId, ref.relativePath, { stat: deps.stat, get: deps.get, signal: deps.signal })
     throwIfAborted(deps.signal)
+    // `missing` is fine: the agent may be naming a file the tool is about to
+    // write. `unavailable` is not — the node has it, so running the tool on
+    // whatever is at the desktop path would be running it on the wrong bytes.
+    if (outcome.kind === 'unavailable') {
+      throw Object.assign(
+        new Error(`could not fetch ${ref.relativePath} from the node: ${outcome.reason}`),
+        { code: 'unavailable' },
+      )
+    }
   }
   return mapped.args as Record<string, unknown>
 }
@@ -156,14 +174,20 @@ export async function syncHostActionOutputs(
     const abortWithAction = () => budget.abort()
     deps.signal.addEventListener('abort', abortWithAction, { once: true })
     try {
-      const outcome = await uploadArtifact({
-        localPath: item.ref.path,
-        sessionId: item.sessionId,
-        relativePath: item.relativePath,
-        transferId,
-        put: deps.put,
-        signal: budget.signal,
-      })
+      // Raced, not merely signalled: aborting does not make a node RPC return,
+      // and continuing to await one is how the claim expires with the reply
+      // still unbuilt. The transfer keeps its id, so the job resumes it.
+      const outcome = await Promise.race([
+        uploadArtifact({
+          localPath: item.ref.path,
+          sessionId: item.sessionId,
+          relativePath: item.relativePath,
+          transferId,
+          put: deps.put,
+          signal: budget.signal,
+        }),
+        budgetExpiry(budget.signal),
+      ])
       deps.transfers.recordThroughput(deps.connectionId, outcome)
     } catch (err) {
       throwIfAborted(deps.signal)

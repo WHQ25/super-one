@@ -42,16 +42,30 @@ export interface TransferOutcome {
 }
 
 function throwIfAborted(signal?: AbortSignal): void {
-  if (signal?.aborted) throw Object.assign(new Error('artifact transfer aborted'), { code: 'aborted' })
+  if (signal?.aborted) throw aborted()
 }
 
-export function sha256File(path: string): Promise<string> {
+function aborted(): Error {
+  return Object.assign(new Error('artifact transfer aborted'), { code: 'aborted' })
+}
+
+/**
+ * Hash the file, giving up as soon as `signal` fires. The hash runs before a
+ * single byte is sent, so a transfer whose budget is already spent must not
+ * keep reading a large file nobody is waiting for.
+ */
+export function sha256File(path: string, signal?: AbortSignal): Promise<string> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(aborted()); return }
     const hash = createHash('sha256')
-    createReadStream(path)
+    const stream = createReadStream(path)
+    const stop = () => stream.destroy(aborted())
+    signal?.addEventListener('abort', stop, { once: true })
+    const clear = () => signal?.removeEventListener('abort', stop)
+    stream
       .on('data', (chunk) => hash.update(chunk))
-      .on('error', reject)
-      .on('end', () => resolve(hash.digest('hex')))
+      .on('error', (err) => { clear(); reject(err) })
+      .on('end', () => { clear(); resolve(hash.digest('hex')) })
   })
 }
 
@@ -60,8 +74,9 @@ const MAX_OFFSET_RESYNCS = 3
 
 export async function uploadArtifact(opts: UploadArtifactOptions): Promise<TransferOutcome> {
   throwIfAborted(opts.signal)
-  const total = statSync(opts.localPath).size
-  const sha256 = await sha256File(opts.localPath)
+  const source = statSync(opts.localPath)
+  const total = source.size
+  const sha256 = await sha256File(opts.localPath, opts.signal)
   throwIfAborted(opts.signal)
   const transferId = opts.transferId ?? randomUUID()
   let offset = Math.max(0, Math.min(opts.offset ?? 0, total))
@@ -103,7 +118,12 @@ export async function uploadArtifact(opts: UploadArtifactOptions): Promise<Trans
       offset = result.bytesWritten
       opts.onProgress?.(offset, total)
       if (final && offset >= total) {
-        if (typeof result.mtimeMs === 'number') stampMtime(opts.localPath, result.mtimeMs)
+        // Only stamp the copy we actually sent. If the local file changed while
+        // the upload ran, giving the new bytes the node's mtime for the old
+        // ones makes the mirror agree about two different files forever.
+        if (typeof result.mtimeMs === 'number' && sameSource(opts.localPath, source)) {
+          stampMtime(opts.localPath, result.mtimeMs)
+        }
         break
       }
     } while (offset < total)
@@ -169,6 +189,16 @@ export async function downloadArtifact(opts: DownloadArtifactOptions): Promise<T
     throw err
   }
   return { bytes: offset, ms, mtimeMs }
+}
+
+/** Is the file still the one the upload read? Identity, size and mtime together. */
+function sameSource(path: string, before: import('node:fs').Stats): boolean {
+  try {
+    const now = statSync(path)
+    return now.ino === before.ino && now.size === before.size && now.mtimeMs === before.mtimeMs
+  } catch {
+    return false
+  }
 }
 
 function stampMtime(path: string, mtimeMs: number): void {

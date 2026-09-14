@@ -7,6 +7,8 @@ const state = vi.hoisted(() => ({ userData: '' }))
 vi.mock('electron', () => ({ app: { getPath: () => state.userData } }))
 
 import { materializeRemoteProjectFile, resolveSessionFile, type SessionFileResolverDeps } from './session-file-resolver'
+import { nodeZonePath } from './sync-zone-paths'
+import { decodeRemoteMediaUrl, encodeRemoteMediaUrl } from '@/lib/remote-media-url'
 
 let root: string
 beforeEach(() => {
@@ -44,6 +46,19 @@ describe('resolveSessionFile', () => {
     const out = await resolveSessionFile('remote:c1:/home/node/proj', '/home/node/.superone/node/sync/s1/agent/report.md', d)
     expect(out).toEqual({ kind: 'local', path: join(root, 'sync', 's1', 'agent', 'report.md') })
     expect(readFileSync(join(root, 'sync', 's1', 'agent', 'report.md'), 'utf8')).toBe('# hi')
+  })
+
+  it('resolves a Windows node screenshot that came back through a media URL', async () => {
+    // The encoder folds `\\` to `/` before base64-ing the payload, so the
+    // parser never saw the separator it demanded and every Windows-node
+    // screenshot in chat markdown resolved to `missing`. Encoder, decoder and
+    // resolver have to agree end to end, which no single unit test shows.
+    const winZone = { syncRoot: 'C:\\Users\\node\\.superone\\node\\sync', os: 'windows' as const }
+    const d = { ...deps({ 'browser/shot.png': Buffer.from('png') }), getSyncZone: () => winZone }
+    const native = nodeZonePath(winZone, 's1', 'browser/shot.png')
+    const decoded = decodeRemoteMediaUrl(encodeRemoteMediaUrl('remote:c1:C:\\Users\\node\\proj', native))!
+    expect(await resolveSessionFile(decoded.projectPath, decoded.relativePath, d))
+      .toEqual({ kind: 'local', path: join(root, 'sync', 's1', 'browser', 'shot.png') })
   })
 
   it('reports a node zone file that exists on neither side as missing', async () => {

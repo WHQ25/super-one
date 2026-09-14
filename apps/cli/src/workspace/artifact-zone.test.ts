@@ -170,6 +170,26 @@ describe('artifact upload', () => {
     expect(readFileSync(join(dir, 'a.png.part.keep'), 'utf8')).toBe('mine')
   })
 
+  it('refuses a relative path that normalises into the staging area', () => {
+    // The reserved check has to run on the resolved path, not the spelling:
+    // `agent/../.parts/x` is `.parts/x`.
+    expect(code(() => zone.get({ sessionId: 's1', relativePath: 'agent/../.parts/open', offset: 0, maxBytes: 16 }))).toBe('invalid_argument')
+    expect(code(() => upload('s1', 'agent/../.parts/x', Buffer.from('y'), 'x'))).toBe('invalid_argument')
+    expect(code(() => zone.stat('s1', './.parts/open'))).toBe('invalid_argument')
+  })
+
+  it('refuses to stage through a symlinked .parts directory', () => {
+    // `mkdir -p` happily accepts a link, and `openSync(..., 'wx')` only
+    // protects the leaf — so without this the bytes land outside the zone.
+    const outside = join(root, 'outside')
+    mkdirSync(outside, { recursive: true })
+    writeFileSync(join(outside, 'victim'), 'not ours')
+    mkdirSync(join(root, 'sync', 's1'), { recursive: true })
+    symlinkSync(outside, join(root, 'sync', 's1', '.parts'))
+    expect(code(() => upload('s1', 'browser/a.png', Buffer.from('bytes'), 'victim'))).toBe('failed_precondition')
+    expect(readFileSync(join(outside, 'victim'), 'utf8')).toBe('not ours')
+  })
+
   it('sweeps staging left by a crashed upload once it is old enough', () => {
     const parts = join(root, 'sync', 's1', '.parts')
     mkdirSync(parts, { recursive: true })
@@ -178,6 +198,19 @@ describe('artifact upload', () => {
     utimesSync(join(parts, 'dead'), old, old)
     upload('s1', 'browser/a.png', Buffer.from('fresh'))
     expect(readdirSync(parts)).toEqual([])
+  })
+
+  it('refuses to continue a transfer whose declared file changed under it', () => {
+    // A deferred retry re-reads the local file; if it changed, the same
+    // transferId now describes different bytes. Acknowledging that as the same
+    // upload reports success for a file that was never written.
+    const a = Buffer.from('AB')
+    zone.put({ sessionId: 's1', relativePath: 'agent/a.txt', transferId: 'T', offset: 0, total: 2, sha256: sha(a), chunk: Buffer.from('A').toString('base64'), final: false })
+    const c = Buffer.from('C')
+    expect(code(() => zone.put({
+      sessionId: 's1', relativePath: 'agent/a.txt', transferId: 'T', offset: 0, total: 1, sha256: sha(c), chunk: c.toString('base64'), final: true,
+    }))).toBe('conflict')
+    expect(zone.stat('s1', 'agent/a.txt').exists).toBe(false)
   })
 
   it('acknowledges a re-sent final chunk after the receipt was lost, without rewriting a newer version', () => {

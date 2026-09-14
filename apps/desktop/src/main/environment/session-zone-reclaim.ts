@@ -10,7 +10,7 @@
  *
  * `adhoc` holds captures taken with no session and is never auto-deleted.
  */
-import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ADHOC_SESSION_ID, sessionZoneDir, syncZoneRoot } from '../media-output-paths'
@@ -75,11 +75,29 @@ function readOwner(dir: string): string | null {
   }
 }
 
-function sizeOf(path: string): number {
+/**
+ * Every walk here uses `lstat`, never `stat`. The sweep deletes things, and a
+ * symlink is the one way a delete could land outside the zone: a link the
+ * agent (or anything else with write access) drops in would otherwise be
+ * followed into someone else's files. A link is never descended into; it is
+ * only ever removed as the link it is.
+ */
+function linkSafeStat(path: string): { isDirectory: boolean; isFile: boolean; size: number; mtimeMs: number } | null {
   try {
-    const st = statSync(path)
-    if (st.isFile()) return st.size
-    if (!st.isDirectory()) return 0
+    const st = lstatSync(path)
+    if (st.isSymbolicLink()) return { isDirectory: false, isFile: false, size: 0, mtimeMs: st.mtimeMs }
+    return { isDirectory: st.isDirectory(), isFile: st.isFile(), size: st.size, mtimeMs: st.mtimeMs }
+  } catch {
+    return null
+  }
+}
+
+function sizeOf(path: string): number {
+  const st = linkSafeStat(path)
+  if (!st) return 0
+  if (st.isFile) return st.size
+  if (!st.isDirectory) return 0
+  try {
     return readdirSync(path).reduce((total, name) => total + sizeOf(join(path, name)), 0)
   } catch {
     return 0
@@ -87,18 +105,19 @@ function sizeOf(path: string): number {
 }
 
 function newestMtime(path: string): number {
+  const st = linkSafeStat(path)
+  if (!st) return 0
+  if (!st.isDirectory) return st.mtimeMs
+  let newest = st.mtimeMs
   try {
-    const st = statSync(path)
-    if (!st.isDirectory()) return st.mtimeMs
-    let newest = st.mtimeMs
     for (const name of readdirSync(path)) newest = Math.max(newest, newestMtime(join(path, name)))
-    return newest
   } catch {
-    return 0
+    /* unreadable: what we have is the answer */
   }
+  return newest
 }
 
-/** Delete files under `dir` older than `maxAgeMs`, leaving the directory itself. */
+/** Delete files under `dir` older than the cutoff, leaving the directory itself. */
 function pruneOldFiles(dir: string, cutoff: number): number {
   let freed = 0
   let entries: string[]
@@ -109,12 +128,14 @@ function pruneOldFiles(dir: string, cutoff: number): number {
   }
   for (const name of entries) {
     const path = join(dir, name)
+    const st = linkSafeStat(path)
+    if (!st) continue
     try {
-      const st = statSync(path)
-      if (st.isDirectory()) {
+      if (st.isDirectory) {
         freed += pruneOldFiles(path, cutoff)
         continue
       }
+      // A link is removed as a link (never followed), and only when it is old.
       if (st.mtimeMs >= cutoff) continue
       freed += st.size
       rmSync(path, { force: true })
@@ -147,11 +168,10 @@ export async function reclaimSyncZone(deps: ZoneReclaimDeps): Promise<{ removed:
   let freedBytes = 0
   for (const sessionId of entries) {
     const dir = join(root, sessionId)
-    try {
-      if (!statSync(dir).isDirectory()) continue
-    } catch {
-      continue
-    }
+    // A session zone is a real directory. A link here names something outside
+    // the zone, and removing what it points at is never ours to do.
+    const dirStat = linkSafeStat(dir)
+    if (!dirStat?.isDirectory) continue
     if (sessionId === ADHOC_SESSION_ID) {
       freedBytes += pruneOldFiles(dir, now - ADHOC_MAX_AGE_MS)
       continue
@@ -163,7 +183,11 @@ export async function reclaimSyncZone(deps: ZoneReclaimDeps): Promise<{ removed:
     const owner = readOwner(dir)
     let gone: boolean
     if (owner === null) {
-      gone = idle >= UNMARKED_GRACE_MS
+      // Ownership has only been recorded since 2026-09; an older directory may
+      // belong to a live local session (the database still names it) or to a
+      // live remote one (it does not, and cannot). So the database gets the
+      // first word, and only then does a week of silence count as death.
+      gone = !deps.hasLocalSession(sessionId) && idle >= UNMARKED_GRACE_MS
     } else if (owner === 'local') {
       gone = !deps.hasLocalSession(sessionId)
     } else {
@@ -171,6 +195,11 @@ export async function reclaimSyncZone(deps: ZoneReclaimDeps): Promise<{ removed:
       gone = answer === false
     }
     if (!gone) continue
+    // Asking the node was an await; the session may have written since, or the
+    // marker may have changed. Re-check both before deleting anything.
+    if (now - newestMtime(dir) < ACTIVE_GRACE_MS) continue
+    if (readOwner(dir) !== owner) continue
+    if (deps.hasPendingTransfer(sessionId)) continue
 
     freedBytes += sizeOf(dir)
     try {

@@ -219,8 +219,15 @@ export class SessionRuntime {
    * beginTurn + long-lived SDK session instead.
    */
   private readonly turnQueues = new Map<string, TurnQueueItem[]>()
-  /** notificationIds already delivered, so a retried artifact-completion RPC injects once. */
+  /**
+   * `session + notificationId` already delivered, so a retried
+   * artifact-completion RPC injects once. In memory: a node restart may let
+   * one duplicate through, which is the right way round — a repeated wake is
+   * noise, a lost one leaves the agent believing a path it can read is gone.
+   */
   private readonly deliveredArtifactNotifications = new Set<string>()
+  /** Deliveries in flight, so concurrent retries share one turn instead of racing. */
+  private readonly deliveringArtifactNotifications = new Map<string, Promise<void>>()
   /** In-flight runTurn count per session (for multi-turn live inject). */
   private readonly activeTurnCounts = new Map<string, number>()
   /**
@@ -1023,13 +1030,29 @@ export class SessionRuntime {
     if (!session.controllerClientSessionId || session.controllerClientSessionId !== input.controllerClientSessionId) {
       throw Object.assign(new Error('not the session controller'), { code: 'forbidden' })
     }
-    if (this.deliveredArtifactNotifications.has(input.notificationId)) return { delivered: true }
-    this.deliveredArtifactNotifications.add(input.notificationId)
-    if (this.deliveredArtifactNotifications.size > 4096) {
-      const oldest = this.deliveredArtifactNotifications.values().next().value
-      if (oldest !== undefined) this.deliveredArtifactNotifications.delete(oldest)
+    // Keyed by session as well as id: two sessions' jobs are unrelated even
+    // when their ids collide. Recorded only *after* the turn is accepted — a
+    // receipt written before the await turns a transient failure into a
+    // permanently lost notification, which is the one outcome this channel
+    // exists to prevent.
+    const key = `${input.sessionId}\u0000${input.notificationId}`
+    if (this.deliveredArtifactNotifications.has(key)) return { delivered: true }
+    const existing = this.deliveringArtifactNotifications.get(key)
+    if (existing) {
+      await existing
+      return { delivered: true }
     }
-    await this.sendWithoutLease({ sessionId: input.sessionId, text: input.text, source: 'task-notification' })
+    const work = this.sendWithoutLease({ sessionId: input.sessionId, text: input.text, source: 'task-notification' })
+      .then(() => {
+        this.deliveredArtifactNotifications.add(key)
+        if (this.deliveredArtifactNotifications.size > 4096) {
+          const oldest = this.deliveredArtifactNotifications.values().next().value
+          if (oldest !== undefined) this.deliveredArtifactNotifications.delete(oldest)
+        }
+      })
+      .finally(() => this.deliveringArtifactNotifications.delete(key))
+    this.deliveringArtifactNotifications.set(key, work)
+    await work
     return { delivered: true }
   }
 

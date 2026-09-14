@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createHash, randomBytes } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ARTIFACT_CHUNK_BYTES } from '@superone/shared/environment'
@@ -329,6 +329,34 @@ describe('artifact directory listing', () => {
     } finally {
       rmSync(outside, { recursive: true, force: true })
     }
+  })
+
+  it('refuses a linked directory inside the session as a root, instead of listing its target under the wrong name', () => {
+    // `agent/alias -> agent/actual` is inside the zone, so it is not an
+    // escape — but a listing of `alias` that names `actual/...` sends the
+    // desktop to fetch one path and hand the tool another. The contract is
+    // "no directory link is followed", including the one asked for.
+    upload('s1', 'agent/actual/manifest.json', Buffer.from('{}'))
+    symlinkSync(join(root, 'sync', 's1', 'agent', 'actual'), join(root, 'sync', 's1', 'agent', 'alias'))
+    expect(code(() => zone.list('s1', 'agent/alias'))).toBe('invalid_argument')
+    expect(code(() => zone.list('s1', 'agent/alias/sub'))).toBe('invalid_argument')
+    for (const e of zone.list('s1', 'agent/actual').entries) expect(e.relativePath.startsWith('agent/actual/')).toBe(true)
+  })
+
+  it('reports a subtree it could not read as an error, never as a complete listing', () => {
+    // The desktop prunes its mirror to what this listing names. An unreadable
+    // subdirectory that came back as "nothing there" would have every file
+    // under it deleted on the desktop and a tool run against a partial tree.
+    upload('s1', 'agent/app/manifest.json', Buffer.from('{}'))
+    upload('s1', 'agent/app/assets/logo.png', Buffer.from('png'), 't2')
+    const assets = join(root, 'sync', 's1', 'agent', 'app', 'assets')
+    chmodSync(assets, 0o000)
+    try {
+      expect(code(() => zone.list('s1', 'agent/app'))).toBe('unavailable')
+    } finally {
+      chmodSync(assets, 0o755)
+    }
+    expect(zone.list('s1', 'agent/app').entries.map((e) => e.relativePath).sort()).toEqual(['agent/app/assets/logo.png', 'agent/app/manifest.json'])
   })
 
   it('stops at the entry cap and says so, rather than handing over a partial tree as whole', () => {

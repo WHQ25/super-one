@@ -34,7 +34,7 @@ import {
   writeSync,
 } from 'node:fs'
 import { rm } from 'node:fs/promises'
-import { dirname, join, relative, resolve, sep } from 'node:path'
+import { dirname, join, normalize, relative, resolve, sep } from 'node:path'
 import {
   ARTIFACT_CHUNK_BYTES,
   ARTIFACT_LIST_MAX_ENTRIES,
@@ -160,25 +160,40 @@ export class ArtifactZoneService {
    * area and the owner marker are not artifacts and are skipped.
    */
   list(sessionId: string, relativePath: string, maxEntries = ARTIFACT_LIST_MAX_ENTRIES): ArtifactListResult {
-    const abs = this.resolve(sessionId, relativePath)
-    let top: ReturnType<typeof lstatSync>
-    try {
-      top = lstatSync(abs)
-    } catch {
-      return { exists: false, entries: [], truncated: false }
-    }
-    if (top.isSymbolicLink()) throw rpcError('invalid_argument', 'relativePath must name a real directory inside the session zone')
-    if (!top.isDirectory()) return { exists: false, entries: [], truncated: false }
+    // `resolve` canonicalises, so a link *inside* the zone would come back as
+    // its target and the listing would name files under a directory nobody
+    // asked for. The scoping check stays; the walk is of the path as spelled,
+    // and every component of it must be a real directory.
+    this.resolve(sessionId, relativePath)
     const sessionRoot = this.sessionDir(sessionId)
+    const abs = join(sessionRoot, normalize(relativePath.replace(/\\/g, '/')))
+    let cursor = sessionRoot
+    for (const segment of relative(sessionRoot, abs).split(sep)) {
+      cursor = join(cursor, segment)
+      let st: ReturnType<typeof lstatSync>
+      try {
+        st = lstatSync(cursor)
+      } catch {
+        return { exists: false, entries: [], truncated: false }
+      }
+      if (st.isSymbolicLink()) throw rpcError('invalid_argument', 'relativePath must name a real directory inside the session zone')
+      if (!st.isDirectory()) return { exists: false, entries: [], truncated: false }
+    }
     const entries: ArtifactListEntry[] = []
     let truncated = false
+    // The desktop prunes its mirror to what this names, so a subtree that
+    // could not be read must fail the listing — reported as "nothing there"
+    // it would have every file under it deleted on the desktop. Only a name
+    // that vanished between readdir and lstat is a real absence.
+    const unreadable = (path: string, err: unknown): Error =>
+      rpcError('unavailable', `could not read ${relative(sessionRoot, path).split(sep).join('/')} (${(err as { code?: string }).code ?? 'error'})`)
     const walk = (dir: string): void => {
       if (truncated) return
       let names: string[]
       try {
         names = readdirSync(dir).sort()
-      } catch {
-        return
+      } catch (err) {
+        throw unreadable(dir, err)
       }
       for (const name of names) {
         if (name === PARTS_DIR || name === OWNER_FILE) continue
@@ -186,8 +201,9 @@ export class ArtifactZoneService {
         let st: ReturnType<typeof lstatSync>
         try {
           st = lstatSync(path)
-        } catch {
-          continue
+        } catch (err) {
+          if ((err as { code?: string }).code === 'ENOENT') continue
+          throw unreadable(path, err)
         }
         if (st.isDirectory()) {
           walk(path)

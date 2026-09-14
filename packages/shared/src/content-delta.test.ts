@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { CodexThreadItem, ContentBlock } from './agent-types'
-import { applyContentDelta, mergeToolUseInputJson, sealCodexItems, sealStreamingTools } from './content-delta'
+import { applyContentDelta, mergeToolUseInputJson, retractContentBlocks, sealCodexItems, sealStreamingTools } from './content-delta'
 
 const thinking = (text: string, parent?: string | null): ContentBlock =>
   ({ type: 'thinking', thinking: text, ...(parent !== undefined ? { parentToolUseId: parent } : {}) }) as ContentBlock
@@ -272,5 +272,51 @@ describe('applyContentDelta: projected tool calls merge by toolUseId', () => {
     const sealed = sealStreamingTools([open('bash')])
 
     expect((sealed[0] as { status?: string }).status).toBe('complete')
+  })
+})
+
+describe('retractContentBlocks', () => {
+  const toolUse = (id: string): ContentBlock => ({ type: 'tool_use', toolName: 'Bash', toolUseId: id, input: '{}', status: 'complete' })
+  const toolResult = (id: string): ContentBlock => ({ type: 'tool_result', toolUseId: id, summary: 'ok' })
+  const work = [thinking('plan'), toolUse('tu_1'), toolResult('tu_1')]
+
+  it('drops a refused partial by exact payload and keeps the earlier work', () => {
+    const content = [...work, text('I can help with')]
+    expect(retractContentBlocks(content, [{ type: 'text', text: 'I can help with' }])).toEqual(work)
+  })
+
+  it('drops a retracted tool call together with its result', () => {
+    const content = [text('a'), toolUse('tu_1'), toolResult('tu_1'), toolUse('tu_2'), toolResult('tu_2')]
+    expect(retractContentBlocks(content, [{ type: 'tool_use', toolUseId: 'tu_2' }])).toEqual(content.slice(0, 3))
+  })
+
+  it('drops only the result for a tombstoned tool_result frame', () => {
+    const content = [toolUse('tu_1'), toolResult('tu_1')]
+    expect(retractContentBlocks(content, [{ type: 'tool_result', toolUseId: 'tu_1' }])).toEqual([toolUse('tu_1')])
+  })
+
+  it('strips just the refused prefix when the retry already merged onto it', () => {
+    const merged = [...work, text('I can help with' + 'Sure, here is')]
+    expect(retractContentBlocks(merged, [{ type: 'text', text: 'I can help with' }])).toEqual([...work, text('Sure, here is')])
+  })
+
+  it('prefers the most recent block when an earlier step shares the payload', () => {
+    const content = [text('Let me'), toolUse('tu_1'), toolResult('tu_1'), text('Let me')]
+    expect(retractContentBlocks(content, [{ type: 'text', text: 'Let me' }])).toEqual(content.slice(0, 3))
+  })
+
+  it('strips a refused thinking prefix the same way', () => {
+    const content = [thinking('first' + 'second')]
+    expect(retractContentBlocks(content, [{ type: 'thinking', thinking: 'first' }])).toEqual([thinking('second')])
+  })
+
+  it('never touches sub-agent blocks — retraction is a top-level frame', () => {
+    const content = [text('same', 'agent-1')]
+    expect(retractContentBlocks(content, [{ type: 'text', text: 'same' }])).toBe(content)
+  })
+
+  it('returns the same ref when nothing matched', () => {
+    const content = [...work]
+    expect(retractContentBlocks(content, [{ type: 'tool_use', toolUseId: 'gone' }, { type: 'text', text: 'never' }])).toBe(content)
   })
 })

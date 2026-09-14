@@ -140,20 +140,35 @@ describe('reduceLifecycle: message_interrupted seals in-flight tools', () => {
   })
 })
 
-describe('reduceLifecycle: messages_retracted', () => {
-  it('evicts the refused partial so it does not linger above the retry', () => {
+describe('reduceLifecycle: content_retracted', () => {
+  it('evicts only the refused partial, keeping the turn\'s earlier work', () => {
     const session = createDefaultPerSessionState()
-    session.messages = [msg('u1', 'user'), msg('a1', 'assistant'), msg('a2', 'assistant')]
+    const turn = msg('a1', 'assistant')
+    turn.content = [
+      { type: 'tool_use', toolName: 'Bash', toolUseId: 'tu_1', input: '{}', status: 'complete' },
+      { type: 'tool_result', toolUseId: 'tu_1', summary: 'ok' },
+      { type: 'text', text: 'I can help with' },
+    ]
+    session.messages = [msg('u1', 'user'), turn]
 
-    const patch = reduceLifecycle(session, { type: 'messages_retracted', messageIds: ['a1'] } as never)
+    const patch = reduceLifecycle(session, {
+      type: 'content_retracted',
+      messageId: 'a1',
+      blocks: [{ type: 'text', text: 'I can help with' }],
+    } as never)
 
-    expect(patch.messages?.map((m) => m.id)).toEqual(['u1', 'a2'])
+    expect(patch.messages?.map((m) => m.id)).toEqual(['u1', 'a1'])
+    expect(patch.messages?.[1].content).toEqual(turn.content.slice(0, 2))
   })
 
-  it('is a no-op for ids already gone, so a replayed eviction cannot churn state', () => {
+  it('is a no-op for blocks already gone, so a replayed eviction cannot churn state', () => {
     const session = createDefaultPerSessionState()
     session.messages = [msg('a1', 'assistant')]
 
-    expect(reduceLifecycle(session, { type: 'messages_retracted', messageIds: ['gone'] } as never)).toEqual({})
+    expect(reduceLifecycle(session, {
+      type: 'content_retracted',
+      messageId: 'a1',
+      blocks: [{ type: 'tool_use', toolUseId: 'gone' }],
+    } as never)).toEqual({})
   })
 })

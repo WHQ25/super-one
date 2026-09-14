@@ -3,7 +3,7 @@ import type { AgentEvent, ChatMessage, ContentBlock, SendMessageRequest, Session
 import { applySeqToMessage, isReplayedEventForMessage } from '@superone/shared/event-seq-utils'
 import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
 import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
-import { applyContentDelta, sealStreamingTools } from '@superone/shared/content-delta'
+import { applyContentDelta, retractContentBlocks, sealStreamingTools } from '@superone/shared/content-delta'
 import { newMessageId } from '@superone/shared/message-id'
 import { resolveDeltaHomeMessageId, resolveTaskToolUseId } from '@superone/shared/subagent-routing'
 
@@ -267,11 +267,17 @@ export function applyClaudeEventToRuntime(
   switch (event.type) {
     case 'message_start':
       return { ...runtime, messages: upsertMessage(runtime.messages, event.message) }
-    case 'messages_retracted': {
-      const dropped = new Set(event.messageIds)
-      const messages = runtime.messages.filter((message) => !dropped.has(message.id))
-      // Idempotent by contract: an already-evicted id must not churn identity.
-      return messages.length === runtime.messages.length ? runtime : { ...runtime, messages }
+    case 'content_retracted': {
+      let changed = false
+      const messages = runtime.messages.map((message) => {
+        if (message.id !== event.messageId) return message
+        const content = retractContentBlocks(message.content, event.blocks)
+        if (content === message.content) return message
+        changed = true
+        return { ...message, content }
+      })
+      // Idempotent by contract: blocks already evicted must not churn identity.
+      return changed ? { ...runtime, messages } : runtime
     }
     case 'message_timestamp':
       return {

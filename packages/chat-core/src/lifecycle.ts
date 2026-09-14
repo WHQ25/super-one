@@ -2,7 +2,7 @@ import type { AgentEvent } from '@superone/shared/agent-types'
 import { applySeqToMessage } from '@superone/shared/event-seq-utils'
 import { DEFAULT_PROVIDER } from './transformers'
 import type { ChatCoreSession } from './types'
-import { sealCodexMetadata, sealStreamingTools } from './shared'
+import { retractContentBlocks, sealCodexMetadata, sealStreamingTools } from './shared'
 import { defaultChatCorePorts, type ChatCorePorts } from './ports'
 
 type LifecycleEvent = Extract<AgentEvent, {
@@ -11,7 +11,7 @@ type LifecycleEvent = Extract<AgentEvent, {
     | 'queued_messages_restored'
     | 'message_start'
     | 'message_timestamp'
-    | 'messages_retracted'
+    | 'content_retracted'
     | 'user_message_appended'
     | 'message_interrupted'
     | 'message_error'
@@ -104,11 +104,17 @@ export function reduceLifecycle(
       }
     }
 
-    case 'messages_retracted': {
-      const dropped = new Set(event.messageIds)
-      const messages = session.messages.filter((m) => !dropped.has(m.id))
-      // Idempotent by contract: an already-evicted id must not churn identity.
-      if (messages.length === session.messages.length) return {}
+    case 'content_retracted': {
+      let changed = false
+      const messages = session.messages.map((msg) => {
+        if (msg.id !== event.messageId) return msg
+        const content = retractContentBlocks(msg.content, event.blocks)
+        if (content === msg.content) return msg
+        changed = true
+        return { ...msg, content }
+      })
+      // Idempotent by contract: blocks already evicted must not churn identity.
+      if (!changed) return {}
       return { messages, lastEventAt: ports.now() }
     }
 

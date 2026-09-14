@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mapModelFallbackWire } from './model-fallback-wire'
+import { createRetractionLedger, mapModelFallbackWire } from './model-fallback-wire'
 
 const NO_RETRACTION = () => []
 
@@ -86,17 +86,21 @@ describe('mapModelFallbackWire', () => {
     expect(event.trigger).toBe('refusal')
   })
 
-  it('emits an eviction for retracted uuids the harness can place', () => {
+  it('appends whatever eviction the harness resolves for the retracted uuids', () => {
     const events = mapModelFallbackWire(
       {
         subtype: 'model_refusal_fallback',
         trigger: 'refusal',
         retracted_message_uuids: ['uuid-a', 'uuid-b'],
       },
-      (uuids) => uuids.filter((u) => u === 'uuid-a').map(() => 'msg_1'),
+      (uuids) => [{ type: 'content_retracted', messageId: 'msg_1', blocks: uuids.map((u) => ({ type: 'text', text: u })) }],
     )
 
-    expect(events[1]).toEqual({ type: 'messages_retracted', messageIds: ['msg_1'] })
+    expect(events[1]).toEqual({
+      type: 'content_retracted',
+      messageId: 'msg_1',
+      blocks: [{ type: 'text', text: 'uuid-a' }, { type: 'text', text: 'uuid-b' }],
+    })
   })
 
   it('stays silent when no retracted uuid maps to a message we hold', () => {
@@ -106,5 +110,60 @@ describe('mapModelFallbackWire', () => {
     )
 
     expect(events).toHaveLength(1)
+  })
+})
+
+describe('createRetractionLedger', () => {
+  const refusedFrame = [{ type: 'text', text: 'I can help with' }]
+  const toolFrame = [{ type: 'tool_use', id: 'tu_1', name: 'Bash', input: {} }]
+
+  it('resolves a retracted frame to the blocks it produced, not the whole message', () => {
+    const ledger = createRetractionLedger()
+    ledger.recordAssistantFrame('u-tool', 'msg_1', toolFrame)
+    ledger.recordAssistantFrame('u-refused', 'msg_1', refusedFrame)
+
+    expect(ledger.resolve(['u-refused'])).toEqual([
+      { type: 'content_retracted', messageId: 'msg_1', blocks: [{ type: 'text', text: 'I can help with' }] },
+    ])
+  })
+
+  it('groups several retracted frames of one message into a single eviction', () => {
+    const ledger = createRetractionLedger()
+    ledger.recordAssistantFrame('u-tool', 'msg_1', toolFrame)
+    ledger.recordToolResultFrame('u-result', 'msg_1', [{ type: 'tool_result', tool_use_id: 'tu_1', content: 'x' }])
+
+    expect(ledger.resolve(['u-tool', 'u-result'])).toEqual([
+      {
+        type: 'content_retracted',
+        messageId: 'msg_1',
+        blocks: [{ type: 'tool_use', toolUseId: 'tu_1' }, { type: 'tool_result', toolUseId: 'tu_1' }],
+      },
+    ])
+  })
+
+  it('forgets a uuid once resolved so supersede + end-of-turn notice evict once', () => {
+    const ledger = createRetractionLedger()
+    ledger.recordAssistantFrame('u-refused', 'msg_1', refusedFrame)
+
+    expect(ledger.resolve(['u-refused'])).toHaveLength(1)
+    expect(ledger.resolve(['u-refused'])).toEqual([])
+  })
+
+  it('drops uuids it never saw and tolerates a malformed list', () => {
+    const ledger = createRetractionLedger()
+    ledger.recordAssistantFrame('u-1', 'msg_1', refusedFrame)
+
+    expect(ledger.resolve(['nope', 42])).toEqual([])
+    expect(ledger.resolve(undefined)).toEqual([])
+    expect(ledger.resolve('u-1')).toEqual([])
+  })
+
+  it('only remembers the message currently streaming', () => {
+    const ledger = createRetractionLedger()
+    ledger.recordAssistantFrame('u-old', 'msg_1', refusedFrame)
+    ledger.recordAssistantFrame('u-new', 'msg_2', refusedFrame)
+
+    expect(ledger.resolve(['u-old'])).toEqual([])
+    expect(ledger.resolve(['u-new'])).toHaveLength(1)
   })
 })

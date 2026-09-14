@@ -1,4 +1,4 @@
-import type { ChatMessage, ContentBlock } from './agent-types'
+import type { ChatMessage, ContentBlock, RetractedBlockRef } from './agent-types'
 
 /**
  * Every block that reports the outcome of a tool call, keyed by `toolUseId`.
@@ -215,6 +215,57 @@ export function applyContentDelta(
     return [...updated, delta]
   }
   return [...content, delta]
+}
+
+/**
+ * Evict the blocks a retracted SDK frame produced (refusal fallback: the refused
+ * partial is retracted and re-generated on the fallback model).
+ *
+ * Tool blocks resolve by id. A text/thinking ref is the frame's full payload:
+ * a block equal to it is dropped outright; otherwise the LAST top-level block
+ * that starts with it is the refused partial with the retry already merged onto
+ * its tail (`applyContentDelta` folds consecutive same-parent deltas), so only
+ * the refused prefix is stripped. Last-match is safe because the retraction
+ * arrives before, or right as, the replacement starts streaming.
+ *
+ * Same `content` ref back when nothing matched — idempotent by contract.
+ * Single source of truth for the renderer store AND the main-process runtime.
+ */
+export function retractContentBlocks(content: ContentBlock[], blocks: RetractedBlockRef[]): ContentBlock[] {
+  const droppedToolUses = new Set<string>()
+  const droppedToolResults = new Set<string>()
+  for (const ref of blocks) {
+    if (ref.type === 'tool_use') droppedToolUses.add(ref.toolUseId)
+    else if (ref.type === 'tool_result') droppedToolResults.add(ref.toolUseId)
+  }
+  let next: ContentBlock[] = content.filter((b) => {
+    if (isToolUseBlock(b)) return !droppedToolUses.has(b.toolUseId)
+    if (isToolResultBlock(b)) return !droppedToolUses.has(b.toolUseId) && !droppedToolResults.has(b.toolUseId)
+    return true
+  })
+  for (const ref of blocks) {
+    if (ref.type !== 'text' && ref.type !== 'thinking') continue
+    const payload = ref.type === 'text' ? ref.text : ref.thinking
+    if (!payload) continue
+    const own = (b: ContentBlock): string | undefined =>
+      b.type === ref.type && !b.parentToolUseId ? (b.type === 'text' ? b.text : b.thinking) : undefined
+    const lastIndexWhere = (test: (value: string) => boolean): number => {
+      for (let i = next.length - 1; i >= 0; i--) {
+        const value = own(next[i])
+        if (value !== undefined && test(value)) return i
+      }
+      return -1
+    }
+    let idx = lastIndexWhere((value) => value === payload)
+    if (idx === -1) idx = lastIndexWhere((value) => value.startsWith(payload))
+    if (idx === -1) continue
+    const block = next[idx]
+    const rest = own(block)!.slice(payload.length)
+    next = rest
+      ? next.map((b, i) => (i === idx ? { ...b, ...(ref.type === 'text' ? { text: rest } : { thinking: rest }) } as ContentBlock : b))
+      : next.filter((_, i) => i !== idx)
+  }
+  return next.length === content.length && next.every((b, i) => b === content[i]) ? content : next
 }
 
 /**

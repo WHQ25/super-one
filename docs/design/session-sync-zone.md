@@ -573,8 +573,11 @@ All four landed on 2026-09-14, one commit each.
   named `report?draft.png` resolved to `report` — `?` now joins `#` as an
   encoded path terminator.
 
-- **A ninth review, of those fixes, found nine more — all combination
-  scenarios the single-case fixes left open, and all fixed.** The pattern: a
+- **A ninth review, of those fixes, found nine more — combination scenarios
+  the single-case fixes left open. All nine were fixed as filed; a tenth
+  review then reopened four of them at narrower windows (below), so read
+  this paragraph as "the case as reported", not "the guard is now total".**
+  The pattern: a
   guard that held at the mirror root, or only in the prune, did not hold at
   every file operation. The boundary check is now enforced per member (an
   in-zone ancestor symlink pointing *out* of the zone had the root check pass
@@ -605,6 +608,37 @@ All four landed on 2026-09-14, one commit each.
   Host Action dedupe stat checks cancellation unconditionally before acting on
   its answer, and `within` rejects an already-aborted signal instead of waiting
   out a budget for an abort event that has already fired.
+
+- **A tenth review closed four of the nine and found five more, each the
+  same guard failing inside a window narrower than the one it was fixed
+  for.** Three were time-of-check/time-of-use: the prune walked a pending set
+  captured *before* the fetches, so a file whose upload was queued while the
+  batch ran was deleted as unknown — `PendingSource.snapshot()` is now taken
+  synchronously at the moment of each destructive step rather than once per
+  mirror; the boundary check ran after the local `stat`, and the post-`await`
+  `local` returns (cache hit, offline fallback) did not re-check it at all, so
+  a symlink swapped mid-mirror was served from outside the zone; and a cancel
+  arriving after the pending source resolved was not seen until the first
+  fetch, so the batch started work the caller had already abandoned. The
+  fourth: a fetch that decided to overwrite could still `renameSync` over an
+  original queued for upload in the milliseconds between the last check and
+  the commit — `downloadArtifact` now takes a `beforeCommit` hook and the
+  mirror re-checks pending, cancellation and the boundary *synchronously*
+  between `close` and `rename`, which is the only point with no await left.
+  The fifth was scope coverage, not timing: `runInLocalCallScope` had been
+  wired into two dispatchers by hand, which misses the Claude SDK's in-process
+  server, the HTTP transport and anything registered dynamically (a mini-app's
+  tools). It is now bound once per `McpServer` instance
+  (`bindLocalCallScope`), wrapping `registerTool`/`tool` so every handler runs
+  inside the scope; inside an existing Host Action scope it is a pass-through,
+  so a remote session's call is never refiled as local.
+
+- **`browser_open` creates the tab blank, records the driver, then
+  navigates.** Opening with the URL in one call meant the page could start a
+  direct download before the tab had an owner, and `will-download` had nobody
+  to attribute it to. The two-step is why `open` now issues `open` with
+  `readiness: 'none'` and a separate `navigate`; the reply is merged so the
+  caller still sees one result with the final URL and title.
 
 - **Only refs the reply names are pushed** (§3). A registered artifact whose
   path never appears in `content[].text` is not uploaded: the agent has no
@@ -797,3 +831,14 @@ marked and the residue is stated):
   but the full desktop↔lab loop — take a screenshot in a remote session, have
   the agent `Read` it, open the previewer on the phone — has not been driven
   by hand.
+- **The mirror's timing guards are proven by construction, not by racing.**
+  The pending / cancel / boundary checks are placed so that nothing is
+  `await`ed between the decision and the act — the prune walk is synchronous,
+  and the last word before `rename` is a synchronous `beforeCommit`. The tests
+  drive each interleaving deterministically (a pending row inserted between
+  two steps, a signal aborted at a named point) and each was verified red
+  against the unfixed code. What is *not* tested is a real concurrent run
+  where the interleaving is chosen by the scheduler; the argument that no
+  other window exists rests on reading the await points, so a future edit that
+  introduces an `await` inside one of those stretches reopens the hole without
+  failing a test. If you add one, add the check after it.

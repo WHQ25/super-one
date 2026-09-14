@@ -11,7 +11,11 @@ const noop = () => {}
 const meta = {
   title: 'Settings/Codex Accounts', component: CodexAccountsPanel,
   parameters: { layout: 'padded' },
-  args: { accounts, onRefresh: noop, onSignIn: noop, onSignOut: noop, onSetDefault: noop, onCancel: noop, onOpenLogin: noop, onCopyCode: noop },
+  decorators: [(Story) => <div className="max-w-2xl"><Story /></div>],
+  args: { accounts, meters: {
+    [accounts[0]!.id]: { limits: { primary: { usedPercent: 23, windowDurationMins: 300, resetsAt: null }, secondary: { usedPercent: 48, windowDurationMins: 10080, resetsAt: null }, planType: 'plus', resetCredits: null }, usage: { lifetimeTokens: 12500000, peakDailyTokens: 850000, currentStreakDays: 12, longestStreakDays: null, longestRunningTurnSec: null } },
+    [accounts[1]!.id]: { limits: { primary: { usedPercent: 94, windowDurationMins: 300, resetsAt: null }, secondary: { usedPercent: 72, windowDurationMins: 10080, resetsAt: null }, planType: 'pro', resetCredits: null } },
+  }, onRefresh: noop, onSignIn: noop, onSignOut: noop, onSetDefault: noop, onCancel: noop, onOpenLogin: noop, onCopyCode: noop },
 } satisfies Meta<typeof CodexAccountsPanel>
 export default meta
 type Story = StoryObj<typeof meta>
@@ -37,3 +41,7 @@ function InteractivePanel(props: CodexAccountsPanelProps) {
   />
 }
 export const ChangeDefault: Story = { render: (args) => <InteractivePanel {...args} /> }
+
+export const UsageLoading: Story = { args: { meters: { [accounts[0]!.id]: { loading: true }, [accounts[1]!.id]: { loading: true } } } }
+export const UsageUnavailable: Story = { args: { meters: { [accounts[0]!.id]: { error: true } } } }
+export const AccountUnavailable: Story = { args: { accounts: [{ ...accounts[0]!, unavailable: true }] } }

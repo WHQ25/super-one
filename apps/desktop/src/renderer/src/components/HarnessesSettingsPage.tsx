@@ -1,3 +1,4 @@
+import { CONFIG_TAB_META, configTabsFor } from './harness-config-tabs'
 /**
  * Settings → Harnesses — Provider-style Enabled/Disabled list + detail.
  * Claude/Codex/Cursor detail uses tabs (preferences / skills / MCP / …) and reuses
@@ -10,12 +11,11 @@ import {
   useEffect,
   useMemo,
   useState,
-  type ComponentType,
   type CSSProperties,
   type ReactNode,
 } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Blocks, Bot, Cloud, Cpu, GripVertical, KeyRound, Loader2, Palette, Puzzle, RefreshCw, Server, Webhook } from 'lucide-react'
+import { GripVertical, Loader2, RefreshCw } from 'lucide-react'
 import { Codex, Cursor, DeepSeek, Grok, OpenCode } from '@lobehub/icons'
 import { toast } from 'sonner'
 import {
@@ -59,7 +59,6 @@ import { DshPluginsPage } from './DshPluginsPage'
 import { PreferencesPage } from './PreferencesPage'
 import { CursorAuthSettings, type CursorSettingsSection } from './CursorAuthSettings'
 import { HarnessPreferencesPage } from './preferences/SessionDefaultsSection'
-import { CodexAuthSettings } from './CodexAuthSettings'
 
 interface CatalogRow {
   id: string
@@ -170,64 +169,6 @@ const CATALOG_HARNESS_META = {
 export function listKeyForSettingsProvider(provider: SettingsProvider): string {
   if (provider === 'acp') return 'acp-grok'
   return provider
-}
-
-const CONFIG_TAB_META: Record<
-  HarnessConfigSection,
-  { labelKey: string; icon: ComponentType<{ className?: string }> }
-> = {
-  preferences: { labelKey: 'settings.layout.tabs.preferences', icon: Palette },
-  account: { labelKey: 'settings.layout.tabs.account', icon: KeyRound },
-  agents: { labelKey: 'settings.layout.tabs.agents', icon: Bot },
-  skills: { labelKey: 'settings.layout.tabs.skills', icon: Puzzle },
-  mcp: { labelKey: 'settings.layout.tabs.mcp', icon: Server },
-  hooks: { labelKey: 'settings.layout.tabs.hooks', icon: Webhook },
-  plugins: { labelKey: 'settings.layout.tabs.plugins', icon: Blocks },
-  cloud: { labelKey: 'settings.layout.tabs.cloud', icon: Cloud },
-  models: { labelKey: 'settings.layout.tabs.models', icon: Cpu },
-}
-
-const CLAUDE_CONFIG_TABS: HarnessConfigSection[] = [
-  'preferences',
-  'agents',
-  'skills',
-  'mcp',
-  'hooks',
-  'plugins',
-]
-
-const CODEX_CONFIG_TABS: HarnessConfigSection[] = [
-  'account',
-  'preferences',
-  'skills',
-  'mcp',
-  'hooks',
-  'plugins',
-]
-
-const CURSOR_CONFIG_TABS: HarnessConfigSection[] = [
-  'account',
-  'preferences',
-  'models',
-  'cloud',
-]
-
-const DSH_CONFIG_TABS: HarnessConfigSection[] = ['preferences', 'mcp', 'plugins']
-
-/**
- * Harnesses whose only app-level settings are their session defaults. They had
- * no tabs at all before those defaults became per-harness, which is what made
- * Grok's permission mode unconfigurable.
- */
-const SESSION_DEFAULTS_ONLY_TABS: HarnessConfigSection[] = ['preferences']
-
-function configTabsFor(provider: SettingsProvider | undefined): HarnessConfigSection[] | null {
-  if (provider === 'claude') return CLAUDE_CONFIG_TABS
-  if (provider === 'codex') return CODEX_CONFIG_TABS
-  if (provider === 'cursor') return CURSOR_CONFIG_TABS
-  if (provider === 'dsh') return DSH_CONFIG_TABS
-  if (provider === 'acp' || provider === 'opencode') return SESSION_DEFAULTS_ONLY_TABS
-  return null
 }
 
 /** True when the nested harness tab is one of Cursor's config pages. */
@@ -962,9 +903,6 @@ function HarnessDetail({
           ) : (
             configTabs.map((section) => (
               <TabsContent key={section} value={section} className="mt-0 min-h-0 outline-none">
-                {section === 'account' && item.provider === 'codex' && (
-                  <CodexAuthSettings onAuthChanged={onRefresh} />
-                )}
                 {section === 'preferences' && (
                   <PreferencesPage provider={item.configProvider} />
                 )}

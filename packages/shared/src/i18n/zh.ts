@@ -715,6 +715,7 @@ export const zh: Messages = {
         'acp-grok': 'Grok (ACP)',
       },
       codexAccount: {
+        usageUnavailable: '暂时无法获取用量，请刷新重试。',
         multiDescription: '为新会话选择账号。首个账号自动成为默认账号；之后修改默认账号不会影响已有会话。',
         empty: '添加一个 ChatGPT 账号以开始使用。',
         pendingAccount: 'ChatGPT 账号',

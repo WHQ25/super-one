@@ -169,14 +169,14 @@ describe('first-party harness settings entries', () => {
     expect(screen.getByRole('tab', { name: /MCP/i })).toBeInTheDocument()
   })
 
-  it('opens Codex on the account tab', async () => {
+  it('opens Codex on preferences without an account tab', async () => {
     const user = userEvent.setup()
     render(<HarnessesSettingsPage />)
 
     await user.click(await screen.findByRole('button', { name: HARNESS_LABELS.codex }))
 
-    expect(screen.getByRole('tab', { name: /Account|账号/i })).toHaveAttribute('data-state', 'active')
-    expect(screen.getByText('Codex account settings')).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: /Account|账号/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /Preferences/i })).toHaveAttribute('data-state', 'active')
   })
 
   it.each(['opencode', 'acp-grok'] as const)(

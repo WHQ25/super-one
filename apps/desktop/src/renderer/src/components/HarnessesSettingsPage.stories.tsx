@@ -678,3 +678,8 @@ export const FailOnEnable: Story = {
     },
   },
 }
+
+export const CodexPreferences: Story = {
+  name: 'Codex (preferences, accounts managed in Providers)',
+  decorators: [(Story) => <StoryFrame scenario={{ select: 'codex', catalog: baseCatalog({ codex: { enabled: true, state: 'ready', runtimeSource: 'managed', runtimeVersion: '0.45.0' } }) }}><Story /></StoryFrame>],
+}

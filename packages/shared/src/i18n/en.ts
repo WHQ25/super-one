@@ -672,6 +672,7 @@ export type Messages = {
         'acp-grok': string
       }
       codexAccount: {
+        usageUnavailable: string
         multiDescription: string
         empty: string
         pendingAccount: string
@@ -4366,6 +4367,7 @@ export const en: Messages = {
         'acp-grok': 'Grok (ACP)',
       },
       codexAccount: {
+        usageUnavailable: 'Usage is unavailable. Refresh to try again.',
         multiDescription: 'Choose an account for each new conversation. The first account becomes the default; changing the default leaves existing conversations unchanged.',
         empty: 'Add a ChatGPT account to get started.',
         pendingAccount: 'ChatGPT Account',

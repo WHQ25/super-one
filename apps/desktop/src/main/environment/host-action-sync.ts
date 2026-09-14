@@ -333,6 +333,17 @@ export async function syncHostActionOutputs(
   let expiresAt = claimExpiresAt
   for (const item of planned) {
     mapping.set(item.ref.path, item.nodePath)
+    // A handoff task already owns this file: joining it IS the action.
+    //
+    // Pushing alongside it delivers the file by a route the task cannot see,
+    // so the task never settles — it keeps its claim, which makes the mirror
+    // serve this desktop's copy of a file the agent may since have changed on
+    // the node, and its retry ladder eventually files a redundant job that
+    // uploads the old bytes over the new ones. One owner, one delivery.
+    if (handoffTransferId(deps.connectionId, item.sessionId, item.ref.path)) {
+      deferred.push(item.nodePath)
+      continue
+    }
     const alreadyThere = await nodeAlreadyHas(item, expiresAt - now() - CLAIM_BUDGET_MARGIN_MS, deps)
     // Unconditionally, before acting on the answer: that stat was an await, and
     // a cancel during it must stop the loop rather than be carried into the
@@ -343,10 +354,7 @@ export async function syncHostActionOutputs(
     // One transferId for the file's whole life: the node keeps a half-written
     // transfer open after a dropped connection, and a job retrying under a new
     // id would be told `busy` by it. The job carries this id and resumes.
-    // An earlier handoff for this path may already have partial bytes on the
-    // node under its id; a fresh one would abandon them and make the node meet
-    // a second transfer for one file.
-    const transferId = handoffTransferId(deps.connectionId, item.sessionId, item.ref.path) ?? randomUUID()
+    const transferId = randomUUID()
     const job = { connectionId: deps.connectionId, sessionId: item.sessionId, localPath: item.ref.path, relativePath: item.relativePath, transferId }
     const estimateMs = item.size / rate
     if (estimateMs > expiresAt - now() - CLAIM_BUDGET_MARGIN_MS && deps.renewClaim) {

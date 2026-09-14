@@ -72,6 +72,7 @@ const node = vi.hoisted(() => ({
   files: new Map<string, Buffer>(),
   parts: new Map<string, Buffer[]>(),
   seenTransferIds: [] as string[],
+  onStat: null as null | (() => void),
 }))
 const envHost = vi.hoisted(() => ({
   getSyncZone: () => ({ syncRoot: '/home/node/.superone/node/sync', os: 'linux' as const }),
@@ -88,7 +89,10 @@ const envHost = vi.hoisted(() => ({
     node.files.set(req.transferId, Buffer.concat(chunks))
     return { ok: true as const, bytesWritten: written, mtimeMs: 1_700_000_000_000 }
   },
-  artifactStat: async () => ({ exists: false, size: 0, mtimeMs: 0 }),
+  artifactStat: async () => {
+    node.onStat?.()
+    return { exists: false, size: 0, mtimeMs: 0 }
+  },
   artifactTransfers: {
     throughputBytesPerMs: () => 1024,
     recordThroughput: () => {},
@@ -169,6 +173,7 @@ beforeEach(() => {
   node.files.clear()
   node.parts.clear()
   node.seenTransferIds.length = 0
+  node.onStat = null
   resetActiveWrites()
   resetPendingHandoffs()
 })
@@ -335,6 +340,63 @@ describe('who ends a download write claim', () => {
     expect(readFileSync(shot, 'utf8')).toBe('png-bytes')
   })
 
+  it('protects a screenshot before the first node RPC, not after the push gives up', async () => {
+    // AE1. The window is the `stat` that asks whether the node already has the
+    // file: it is an await, and a directory mirror landing inside it used to
+    // find a screenshot nothing was holding yet. Protection after the enqueue
+    // fails is far too late — by then the file is gone.
+    const shot = join(zone.userData, 'sync', SESSION, 'browser', 'shot.png')
+    const { mkdirSync, writeFileSync } = await import('node:fs')
+    browser.executeBrowserTool.mockImplementationOnce(async (sessionId) => {
+      mkdirSync(join(shot, '..'), { recursive: true })
+      writeFileSync(shot, 'png-bytes')
+      const { registerArtifact } = await import('../mcp/artifact-registry')
+      registerArtifact(sessionId, { path: shot, producer: 'browser', final: true })
+      return { content: [{ type: 'text' as const, text: shot }] }
+    })
+    // The mirror runs while that first stat is outstanding.
+    let mirrored: Promise<unknown> | null = null
+    node.onStat = () => {
+      mirrored ??= mirrorNodeDirectory(SESSION, 'browser', emptyNodeDir())
+    }
+
+    await desktopHostActionExecutor(claimed({ toolName: 'browser_screenshot' }), new AbortController().signal, 'conn-1')
+    await mirrored
+    expect(readFileSync(shot, 'utf8')).toBe('png-bytes')
+  })
+
+  it('joins an existing handoff instead of pushing beside it', async () => {
+    // AE2. A file with a stuck handoff is delivered by a route the task cannot
+    // see: the task never settles, keeps its claim — so the mirror serves this
+    // desktop's copy of a file the agent later changed on the node — and its
+    // ladder eventually files a redundant job that uploads the old bytes back
+    // over the new ones.
+    node.deferFails = true
+    const { registerDownload, reserveDownloadPath, queueDownloadUpload } = await import('../agent/browser-download-store')
+    const path = reserveDownloadPath('report.csv', join(zone.userData, 'sync', SESSION, 'download'), SESSION, { connectionId: 'conn-1' })
+    const { writeFileSync } = await import('node:fs')
+    writeFileSync(path, 'OLD')
+    registerDownload(SESSION, path, true)
+    queueDownloadUpload('conn-1', SESSION, path)
+    await vi.waitFor(() => expect(failedHandoffs(SESSION)).toHaveLength(1))
+
+    // The agent lists its downloads: a Host Action that re-registers the same
+    // path and would otherwise eager-push it.
+    node.puts = 0
+    browser.executeBrowserTool.mockImplementationOnce(async (sessionId) => {
+      registerDownload(sessionId, path, true)
+      return { content: [{ type: 'text' as const, text: path }] }
+    })
+    const out = await desktopHostActionExecutor(claimed({ toolName: 'browser_list_downloads' }), new AbortController().signal, 'conn-1')
+    expect(out.outcome).toBe('succeeded')
+    // Not pushed: the task owns delivery, and the reply says so.
+    expect(node.puts).toBe(0)
+    expect(JSON.stringify(out.result)).toContain('deferred')
+    // Still exactly one task, still holding, still the same id.
+    expect(failedHandoffs(SESSION)).toHaveLength(1)
+    expect(activeWriteAt(SESSION, path)).toBe('sealed')
+  })
+
   it('keeps one task per path, so a re-registration cannot mint a second transfer id', async () => {
     // AD2. A second listing re-registers the same download; the task in flight
     // keeps its id and its claim rather than being overwritten by a guess.
@@ -393,6 +455,7 @@ describe('who ends a download write claim', () => {
     const first = failedHandoffs(SESSION)[0]!
     node.deferFails = false
     node.seenTransferIds.length = 0
+  node.onStat = null
     expect(retryFailedHandoffs()).toEqual({ retried: 1 })
     await vi.advanceTimersByTimeAsync(50)
     // Same id: the node resumes its partial upload instead of meeting a second

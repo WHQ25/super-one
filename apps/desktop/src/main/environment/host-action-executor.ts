@@ -17,7 +17,7 @@
  */
 
 import type { ClaimHostActionResult } from '@superone/shared/environment'
-import { adoptWriteClaim, releaseWriteClaim } from './active-writes'
+import { releaseWriteClaim, takeSealedClaim } from './active-writes'
 import { handoffOwns } from './pending-handoffs'
 import type { HostActionExecutor } from './remote-host-action-consumer'
 import {
@@ -158,12 +158,22 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
         // to hand it on — it would pin its path for the life of the process.
         const adopted: string[] = []
         try {
+          // Protection is taken BEFORE the first node RPC, not after the push
+          // decides to give up. `syncHostActionOutputs` stats the node, hashes
+          // and uploads — all awaits — and a directory mirror running during
+          // any of them would prune a file nothing was holding yet. Only
+          // downloads reserve a path, so `takeSealedClaim` also *creates* the
+          // claim for a screenshot or a generated image that never made one.
+          //
           // Adopted BEFORE the cancellation check, so the `finally` frees them
           // on every exit. A cancel that lands as the tool completes used to
           // return past this point, leaving a sealed file with no holder left
           // to hand it on — pinned against the prune for the process's life.
           for (const ref of artifacts) {
-            if (adoptWriteClaim(claimed.sessionId, ref.path, 'push')) adopted.push(ref.path)
+            // Not ours: a writer is still filling this one, or a handoff task
+            // already owns it and is the only thing that may end it.
+            if (!ref.final || handoffOwns(claimed.sessionId, ref.path, connectionId)) continue
+            if (takeSealedClaim(claimed.sessionId, ref.path, 'push')) adopted.push(ref.path)
           }
           if (runAbort.signal.aborted || raceWinner === 'deadline') return aborted()
 
@@ -179,11 +189,10 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
           return { outcome: 'succeeded', result: toolResult }
         } finally {
           for (const path of adopted) {
-            // A file whose enqueue is still outstanding belongs to its handoff
-            // task now — the task holds the claim and releases it when a row
-            // exists. Releasing here would leave the only complete copy
-            // unprotected with nothing naming it, which is the failure this
-            // whole region exists to prevent.
+            // Handed on during the sync: a handoff task took the claim and is
+            // the only thing that may end it. Releasing here would leave the
+            // only complete copy unprotected with nothing naming it, which is
+            // the failure this whole region exists to prevent.
             if (handoffOwns(claimed.sessionId, path, connectionId)) continue
             releaseWriteClaim(claimed.sessionId, path, 'push')
           }

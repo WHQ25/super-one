@@ -789,6 +789,30 @@ All four landed on 2026-09-14, one commit each.
   null rather than filing a row and taking a claim on a file that was removed
   with its session.
 
+- **A fifteenth review found both remaining holes at the seam between the
+  eager push and the handoff task — one on each side of it.**
+
+  Protection still began too late. The executor only *adopted* a claim, which
+  a screenshot never has, and the handoff task only created one after the
+  enqueue had already failed. In between sits the whole eager push: a `stat`
+  asking whether the node already has the file, a hash, an upload — every one
+  an await. A directory mirror landing in any of them found a file nothing was
+  holding. The executor now takes protection for every `final` ref *before*
+  the first node RPC, creating the claim when the producer never made one, and
+  leaves alone anything a handoff task already owns.
+
+  And the eager push ran *beside* an existing task rather than deferring to
+  it. A file with a stuck handoff would be delivered by a route the task could
+  not see, so the task never settled: it kept its claim — which makes the
+  mirror serve this desktop's copy of a file the agent has since changed on
+  the node — and its retry ladder eventually filed a redundant job that
+  uploaded the old bytes back over the new ones. A path with a live task is
+  now reported `deferred` and not pushed at all. One owner, one delivery.
+
+  That is the shape of every finding from the twelfth review onward: a file's
+  protection and its delivery are one responsibility, and every defect came
+  from a second party acting on either without holding it.
+
 - **`browser_open` creates the tab blank, records the driver, then
   navigates.** Opening with the URL in one call meant the page could start a
   direct download before the tab had an owner, and `will-download` had nobody

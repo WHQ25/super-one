@@ -241,9 +241,14 @@ interface PlannedRef {
  * listed it, or a recording named in two replies. An unreachable node reads
  * as "no", and the upload proceeds as it always did.
  */
-async function nodeAlreadyHas(item: PlannedRef, deps: HostActionSyncDeps): Promise<boolean> {
+async function nodeAlreadyHas(item: PlannedRef, budgetMs: number, deps: HostActionSyncDeps): Promise<boolean> {
+  // The dedupe stat is a node RPC, and a node RPC does not return because the
+  // claim ran out — so it is bounded by the same budget as every other wait
+  // here (§4.1). A timeout, an error, or no budget left all read as "not
+  // sure", and the upload/defer path below decides from there.
+  if (budgetMs <= 0) return false
   try {
-    const remote = await deps.stat({ sessionId: item.sessionId, relativePath: item.relativePath })
+    const remote = await within(budgetMs, deps.signal, () => deps.stat({ sessionId: item.sessionId, relativePath: item.relativePath }))
     return remote.exists && remote.size === item.size && remote.mtimeMs === item.mtimeMs
   } catch {
     return false
@@ -304,7 +309,10 @@ export async function syncHostActionOutputs(
   let expiresAt = claimExpiresAt
   for (const item of planned) {
     mapping.set(item.ref.path, item.nodePath)
-    if (await nodeAlreadyHas(item, deps)) continue
+    if (await nodeAlreadyHas(item, expiresAt - now() - CLAIM_BUDGET_MARGIN_MS, deps)) continue
+    // The stat may have burned the budget or the action may have been
+    // cancelled while it was in flight; check before treating "not already
+    // there" as "upload now".
     throwIfAborted(deps.signal)
     // One transferId for the file's whole life: the node keeps a half-written
     // transfer open after a dropped connection, and a job retrying under a new

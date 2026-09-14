@@ -273,6 +273,34 @@ describe('host action outputs', () => {
     expect(out.content![0].text).toBe('/home/node/.superone/node/sync/s1/browser/shot.png')
   })
 
+  it('defers a file whose already-there check hangs past the claim budget, instead of waiting for the stat', async () => {
+    // The dedupe stat is a node RPC like any other and does not return because
+    // the claim ran out. Bounded by the same budget, it gives up and the file
+    // is deferred rather than the reply held past its claim.
+    const node = fakeNode()
+    const shot = desktopFile('s1', 'browser/shot.png', 'png')
+    node.deps.stat = () => new Promise(() => {})
+    const reply = { content: [{ type: 'text', text: shot }] }
+    const settled = await Promise.race([
+      syncHostActionOutputs('s1', [{ path: shot, producer: 'browser', final: true }], reply, Date.now() + CLAIM_BUDGET_MARGIN_MS + 30, node.deps),
+      new Promise<'hung'>((resolve) => setTimeout(() => resolve('hung'), 500)),
+    ])
+    expect(settled).not.toBe('hung')
+    expect(node.deferred).toEqual(['browser/shot.png'])
+  })
+
+  it('throws aborted when the action is cancelled while the already-there check is in flight', async () => {
+    const node = fakeNode()
+    const abort = new AbortController()
+    const shot = desktopFile('s1', 'browser/shot.png', 'png')
+    node.deps = { ...node.deps, signal: abort.signal, stat: () => new Promise(() => {}) }
+    setTimeout(() => abort.abort(), 5)
+    await expect(
+      syncHostActionOutputs('s1', [{ path: shot, producer: 'browser', final: true }], { content: [{ type: 'text', text: shot }] }, Date.now() + CLAIM_BUDGET_MARGIN_MS + 30, node.deps),
+    ).rejects.toMatchObject({ code: 'aborted' })
+    expect(node.puts).toHaveLength(0)
+  })
+
   it('stops at the abort signal between uploads', async () => {
     const node = fakeNode()
     const abort = new AbortController()

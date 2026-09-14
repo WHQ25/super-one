@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import type { RelayClient } from '@superone/relay-client'
 import type { ShellGitInfo } from '../project-types'
+import { invalidateGitResources } from '../git-resource-cache'
 import { fetchProjectGitInfo, gitTurnEnded } from '../session-git-refresh'
 
 /**
@@ -21,12 +22,13 @@ export function useProjectGitInfo(opts: {
   const generation = useRef(0)
   const turnRef = useRef({ sessionId, streaming })
 
-  const refresh = useCallback(async (path: string | null | undefined = projectPath) => {
+  const refresh = useCallback(async (path: string | null | undefined = projectPath, force = false) => {
     const client = clientRef.current
     if (!client || !path) return
+    if (force) invalidateGitResources(client, path)
     const request = ++generation.current
     const git = await fetchProjectGitInfo(client, path)
-    if (request !== generation.current) return
+    if (request !== generation.current || clientRef.current !== client) return
     setGitInfo(git)
   }, [clientRef, projectPath])
 
@@ -39,7 +41,7 @@ export function useProjectGitInfo(opts: {
     const prev = turnRef.current
     const next = { sessionId, streaming }
     turnRef.current = next
-    if (gitTurnEnded(prev, next)) void refresh().catch(() => {})
+    if (gitTurnEnded(prev, next)) void refresh(projectPath, true).catch(() => {})
   }, [sessionId, streaming, refresh])
 
   return { gitInfo, refresh, replace }

@@ -1,5 +1,5 @@
 import { SeqAckTracker } from './ack'
-import { decryptPayload } from './crypto'
+import { decryptHostPayload } from './crypto'
 
 export type TransportKind = 'relay' | 'lan'
 
@@ -131,5 +131,5 @@ export function handleInboundFrame(
 }
 
 export function makeDecrypt(aesKeyBytes: Uint8Array): FrameDecrypt {
-  return (data: string) => decryptPayload(aesKeyBytes, data)
+  return (data: string) => decryptHostPayload(aesKeyBytes, data)
 }

@@ -581,6 +581,25 @@ describe('attachment originals behind transcript thumbnails', () => {
 })
 
 
+it('paints the saved transcript before the subscribe response arrives', async () => {
+  const client = fakeClient()
+  let release!: (value: unknown) => void
+  client.request.mockImplementationOnce(() => new Promise(resolve => { release = resolve as typeof release }))
+  const cached = { messages: [{ id: 'cached', role: 'user', content: [{ type: 'text', text: 'saved' }], createdAt: '', status: 'complete' }], cursor: null, hasMore: false }
+  const paint = vi.fn()
+  const onCachedHydrate = vi.fn()
+  const runtime = new ChatRuntime(client as never, paint, { onCachedHydrate, pairingId: () => 'host', transcripts: { get: () => cached, put() {} } as never })
+  const opening = runtime.open('/p', 's')
+  await Promise.resolve(); await Promise.resolve()
+  expect(paint).toHaveBeenCalledWith(expect.objectContaining({ messages: cached.messages }), true)
+  // The shell must uncover this page while subscribe is still pending.
+  expect(onCachedHydrate).toHaveBeenCalledOnce()
+  release({ ok: true, history: { messages: [], hasMore: false, cursor: null }, snapshot: { status: 'idle' } })
+  await opening
+  runtime.dispose()
+})
+
+
 it('retains no optimistic bubble when the host refuses attachment admission', async () => {
   const client = fakeClient()
   client.request.mockResolvedValue({ error: 'Attachment: Could not save file. Retry.' })

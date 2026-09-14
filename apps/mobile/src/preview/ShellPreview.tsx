@@ -1,3 +1,5 @@
+import { Empty as EmptyLedger, TrafficAndReset, Narrow as NarrowLedger } from '../ui/network-ledger-panel.stories'
+import { networkLedger } from '../network-ledger'
 import { DraftsPreview } from '../navigation/workspace-drafts.stories'
 import { useComposerSend } from '../navigation/use-composer-send'
 import { useComposerDraft } from '../navigation/use-composer-draft'
@@ -10,7 +12,7 @@ import { filterSlashCommands } from '../slash'
 import type { SlashCatalogStatus } from '../slash-catalog'
 import { replaceFirstLine } from '../composer-first-line'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Alert, useWindowDimensions, View } from 'react-native'
+import { Alert, ScrollView, useWindowDimensions, View } from 'react-native'
 import { Text } from '../ui/text'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar'
@@ -387,7 +389,7 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
   }, (message) => Alert.alert('Could not send', message))
   const chat = page === 'New session' || page === 'Chat' || page === 'Workspace'
   // Standalone galleries share the catch-all 'files' route but draw themselves.
-  const gallery = page === 'Drafts' || page === 'Icons' || page === 'Git indicators' || page === 'Session status' || page === 'Composer suggestions' || page === 'Chip editor' || page === 'LAN browser' || page === 'Loading states'
+  const gallery = page === 'Network ledger' || page === 'Drafts' || page === 'Icons' || page === 'Git indicators' || page === 'Session status' || page === 'Composer suggestions' || page === 'Chip editor' || page === 'LAN browser' || page === 'Loading states'
   const route = chat ? 'chat' : page === 'Project' ? 'project-picker' : page === 'Add project' ? 'add-project' : page === 'Worktree' ? 'worktree' : page === 'Branch' ? 'branch' : page === 'Additional folders' || page === 'Browse folders' ? 'add-dir' : page === 'Collaboration request' ? 'collab-request' : page === 'Collaboration task' ? 'collab-task' : page === 'Devices' || page === 'Pairing' ? 'pair' : page === 'Terminal' ? 'terminal' : page === 'Session search' ? 'session-search' : page === 'Settings' ? 'settings' : 'files'
   /** One workspace, two mounts: the drawer below and the sidebar in the row. */
   const previewWorkspace = {
@@ -499,7 +501,8 @@ todos={page === 'Chat' ? previewTodos : {}} draft={chatDraft.draft} streaming={p
             onBarcodeScanned={() => {}} onCancelScanner={() => {}} onPasteChange={() => {}} onLanChange={() => {}}
             onPair={() => {}} onCancelPairing={() => setPage('Devices')} onOpenScanner={() => setPage('Pairing')} onConnect={() => {}} onRename={() => {}} onForget={() => {}} /> : null}
           {page === 'Session search' ? <SessionSearchScreen client={previewClient} onOpenSession={() => setPage('Chat')} onCancel={() => setPage('Chat')} /> : null}
-          {page === 'Settings' ? <AppSettingsScreen update={{ version: '1.0.0', buildCode: 42 }} /> : null}
+          {page === 'Network ledger' ? <ScrollView><TrafficAndReset /><NarrowLedger /><EmptyLedger /></ScrollView> : null}
+          {page === 'Settings' ? <AppSettingsScreen update={{ version: '1.0.0', buildCode: 42 }} ledger={networkLedger} /> : null}
           {page === 'Update' ? <UpdatePromptGallery /> : null}
           {page === 'Project' ? <ProjectPickerScreen projects={projectList} activePath={projectPath}
             onSelect={(item) => { setProjectPath(item.path); setPage('New session') }} /> : null}

@@ -1,0 +1,22 @@
+{
+  "comment": "Fixed test-only keys and IVs. Host application framing v1; legacy pairing/file vectors are unchanged.",
+  "masterSecretHex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "vectors": [
+    {
+      "plaintext": {
+        "ok": true
+      },
+      "flag": 0,
+      "jsonBytes": 11,
+      "ciphertextB64": "AQEBAQEBAQEBAQEBoEjLwm+Tz66g7uPaInv8Xw4bzGZk4/4SjGSexaOLQ5I="
+    },
+    {
+      "plaintext": {
+        "text": "中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture 中文 compression fixture "
+      },
+      "flag": 1,
+      "jsonBytes": 1739,
+      "ciphertextB64": "AgICAgICAgICAgICKnnnkPxWwOGAT0kHcp+/vzhJG9VgHtj3pMvbAh7vIfBGEJDCZLgL0F4t/5Q0DwJjQdaGqiHE4B9504KdDjWuCQwvwYGoK8q8KHqrhA=="
+    }
+  ]
+}

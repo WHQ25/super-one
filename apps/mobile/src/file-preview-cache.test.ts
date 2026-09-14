@@ -24,6 +24,7 @@ function memoryDisk(): FilePreviewCacheDisk & { files: Map<string, Uint8Array> }
   const id = (pairingId: string, fileName: string) => `${pairingId}/${fileName}`
   return {
     files,
+    read(pairingId, fileName) { return files.get(id(pairingId, fileName)) ?? null },
     write(pairingId, fileName, bytes) {
       files.set(id(pairingId, fileName), bytes)
       return `file:///cache/${id(pairingId, fileName)}`
@@ -52,6 +53,18 @@ const transfer = (over: Partial<Extract<FilePreviewState, { kind: 'transfer' }>>
 })
 
 describe('preview cache identity', () => {
+  it('restores cached files and transcripts after restart, and Forget removes both', () => {
+    const disk = memoryDisk()
+    const first = new FilePreviewCache(disk)
+    first.put(identity(), 'hero.png', new Uint8Array(100))
+    first.putBlob('desk-1', 'session\0/p\0s', new Uint8Array([1, 2, 3]))
+    const restarted = new FilePreviewCache(disk)
+    expect(restarted.lookup(identity())).not.toBeNull()
+    expect(restarted.lookupBlob('desk-1', 'session\0/p\0s')).toEqual(new Uint8Array([1, 2, 3]))
+    restarted.clearPairing('desk-1')
+    expect(new FilePreviewCache(disk).lookup(identity())).toBeNull()
+    expect(disk.files.size).toBe(0)
+  })
   it('treats a changed mtime as a different object', () => {
     expect(previewCacheKey(identity())).not.toBe(previewCacheKey(identity({ modifiedAt: 11 })))
     expect(previewCacheFingerprint('a')).toHaveLength(16)

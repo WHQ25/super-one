@@ -1,3 +1,4 @@
+import { encryptHostPayload } from './remote/payload-codec'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { AddressInfo } from 'node:net'
 import { networkInterfaces } from 'node:os'
@@ -9,7 +10,7 @@ import { WebSocket, WebSocketServer } from 'ws'
 import log from './logger'
 import { trace } from './agent/event-trace'
 import type { RemoteCommand } from '@superone/shared/agent-types'
-import { decryptPayload, encryptPayload } from './remote-control-crypto'
+import { decryptPayload } from './remote-control-crypto'
 import type { LanFileTokenSigner } from './lan-file-token'
 import { inferMimeType } from './file-bridge'
 
@@ -145,7 +146,7 @@ export class LanServer {
     if (!aesKey) return
     if (this.registeredTargets().length === 0) return
     try {
-      const data = await encryptPayload(aesKey, event)
+      const data = await encryptHostPayload(aesKey, event)
       this.broadcastFrame(JSON.stringify({ type: 'event', data }))
     } catch (err) {
       log.error('[LanServer] broadcastEvent failed:', err)
@@ -462,7 +463,8 @@ export class LanServer {
     if (ws.readyState !== WebSocket.OPEN) return
     try {
       trace('remote.resp', requestId, data)
-      const encrypted = await encryptPayload(aesKey, data)
+      const encrypted = await encryptHostPayload(aesKey, data)
+      if (ws.readyState !== WebSocket.OPEN || this.callbacks.getAesKey() !== aesKey) return
       if (encrypted.length <= WS_CHUNK_SIZE) {
         ws.send(JSON.stringify({ type: 'response', requestId, data: encrypted }))
       } else {

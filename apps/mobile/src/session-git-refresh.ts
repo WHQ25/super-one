@@ -1,6 +1,5 @@
 import type { RelayClient } from '@superone/relay-client'
-import type { RemoteCommand } from '@superone/shared/agent-types'
-import { randomId } from './ids'
+import { requestGitResource } from './git-resource-cache'
 import type { ShellGitInfo } from './project-types'
 
 export type GitTurnSnapshot = {
@@ -26,9 +25,5 @@ export async function fetchProjectGitInfo(
   client: RelayClient,
   projectPath: string,
 ): Promise<ShellGitInfo | null> {
-  return await client.request({
-    type: 'get_git_info',
-    requestId: randomId(),
-    projectPath,
-  } as RemoteCommand).catch(() => null) as ShellGitInfo | null
+  return requestGitResource(client, 'get_git_info', projectPath).catch(() => null)
 }

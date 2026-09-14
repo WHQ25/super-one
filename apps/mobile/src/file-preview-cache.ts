@@ -19,11 +19,14 @@ export type FilePreviewCacheEntry = {
   lastAccess: number
   /** On-disk file name; omitted for in-memory session blobs. */
   fileName?: string
+  blob?: boolean
   path?: string
   modifiedAt?: number
 }
 
 export type FilePreviewCacheDisk = {
+  list?(pairingId: string): string[]
+  read?(pairingId: string, fileName: string): Uint8Array | null
   write(pairingId: string, fileName: string, bytes: Uint8Array): string
   exists(pairingId: string, fileName: string): boolean
   uri(pairingId: string, fileName: string): string
@@ -86,6 +89,7 @@ export class FilePreviewCache {
   private entries: FilePreviewCacheEntry[] = []
   private seen = new Set<string>()
   private blobs = new Map<string, Uint8Array>()
+  private serial = 0
 
   constructor(
     private readonly disk: FilePreviewCacheDisk,
@@ -124,28 +128,29 @@ export class FilePreviewCache {
       path: identity.path,
       modifiedAt: identity.modifiedAt,
     })
+    this.persistIndex(identity.pairingId)
     return uri
   }
 
   putBlob(pairingId: string, key: string, bytes: Uint8Array): void {
     if (bytes.byteLength > this.maxBytes) return
     this.reserve(pairingId, key, bytes.byteLength)
-    this.blobs.set(blobId(pairingId, key), bytes)
-    this.entries.push({
-      pairingId,
-      key,
-      size: bytes.byteLength,
-      lastAccess: this.now(),
-    })
+    const fileName = this.disk.read ? `blob-${previewCacheFingerprint(key)}-${this.now()}-${++this.serial}` : undefined
+    if (fileName) this.disk.write(pairingId, fileName, bytes)
+    else this.blobs.set(blobId(pairingId, key), bytes)
+    this.entries.push({ pairingId, key, size: bytes.byteLength, lastAccess: this.now(), ...(fileName ? { fileName, blob: true } : {}) })
+    this.persistIndex(pairingId)
   }
 
   lookupBlob(pairingId: string, key: string): Uint8Array | null {
     this.prime(pairingId)
-    const found = this.entries.find((entry) => entry.pairingId === pairingId && entry.key === key && !entry.fileName)
+    const found = this.entries.find(entry => entry.pairingId === pairingId && entry.key === key && (!entry.fileName || entry.blob))
     if (!found) return null
-    const bytes = this.blobs.get(blobId(pairingId, key))
-    if (!bytes) {
-      this.entries = this.entries.filter((entry) => entry !== found)
+    let bytes: Uint8Array | null = null
+    try { bytes = found.fileName ? this.disk.read?.(pairingId, found.fileName) ?? null : this.blobs.get(blobId(pairingId, key)) ?? null }
+    catch { /* reclaimed or corrupt cache file */ }
+    if (!bytes || bytes.byteLength !== found.size) {
+      this.drop([found])
       return null
     }
     found.lastAccess = this.now()
@@ -170,11 +175,43 @@ export class FilePreviewCache {
     for (const id of pairingIds) this.disk.wipePairing(id)
   }
 
-  /** First use of a pairing in this JS runtime drops leftovers from a previous process. */
+  /** Versioned manifest; absent or corrupt state is a cache miss. */
   private prime(pairingId: string): void {
     if (this.seen.has(pairingId)) return
     this.seen.add(pairingId)
-    if (!this.entries.some((entry) => entry.pairingId === pairingId)) this.disk.wipePairing(pairingId)
+    try {
+      const raw = this.disk.read?.(pairingId, 'index-v1.json')
+      if (!raw || raw.length > 2 * 1024 * 1024) throw new Error('missing cache index')
+      const index = JSON.parse(new TextDecoder().decode(raw)) as { version: number; entries: FilePreviewCacheEntry[] }
+      if (index.version !== 1 || !Array.isArray(index.entries) || index.entries.length > 1024) throw new Error('obsolete cache index')
+      const valid = index.entries.filter(entry => entry && entry.pairingId === pairingId
+        && typeof entry.key === 'string' && typeof entry.fileName === 'string'
+        && !/[\\/]/.test(entry.fileName) && entry.fileName !== '..'
+        && Number.isFinite(entry.size) && entry.size >= 0 && entry.size <= this.maxBytes
+        && Number.isFinite(entry.lastAccess) && this.disk.exists(pairingId, entry.fileName))
+      this.entries.push(...valid)
+      this.drop(planPreviewCacheEviction(this.entries, 0, this.maxBytes))
+      const retained = new Set(this.entries.filter(entry => entry.pairingId === pairingId).map(entry => entry.fileName))
+      for (const name of this.disk.list?.(pairingId) ?? []) {
+        if (name !== 'index-v1.json' && !retained.has(name)) this.disk.remove(pairingId, name)
+      }
+    } catch { this.disk.wipePairing(pairingId) }
+  }
+
+  private persistIndex(pairingId: string): void {
+    if (!this.disk.read) return
+    try {
+      const entries = this.entries.filter(entry => entry.pairingId === pairingId && entry.fileName).sort((a, b) => a.lastAccess - b.lastAccess)
+      const encode = () => new TextEncoder().encode(JSON.stringify({ version: 1, entries }))
+      let bytes = encode()
+      while (entries.length && (entries.length > 1024 || bytes.length > 2 * 1024 * 1024)) {
+        const dropped = entries.shift()!
+        this.entries = this.entries.filter(entry => entry !== dropped)
+        this.disk.remove(pairingId, dropped.fileName!)
+        bytes = encode()
+      }
+      this.disk.write(pairingId, 'index-v1.json', bytes)
+    } catch { /* a cache write cannot fail the user's operation */ }
   }
 
   private reserve(pairingId: string, key: string, incomingSize: number): void {
@@ -193,6 +230,7 @@ export class FilePreviewCache {
       else this.blobs.delete(blobId(entry.pairingId, entry.key))
     }
     this.entries = this.entries.filter((entry) => !dropping.has(entry))
+    for (const pairingId of new Set(entries.map(entry => entry.pairingId))) this.persistIndex(pairingId)
   }
 }
 

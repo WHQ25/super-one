@@ -1,3 +1,5 @@
+import { decodeHostPlaintext } from './host-payload'
+import { MAX_REMOTE_CIPHERTEXT_CHARS } from '@superone/shared/remote-payload'
 import { bytesToHex, hexToBytes, randomBytes } from '@noble/ciphers/utils.js'
 import { hkdf } from '@noble/hashes/hkdf.js'
 import { hmac } from '@noble/hashes/hmac.js'
@@ -48,6 +50,16 @@ export function decryptPayload(aesKeyBytes: Uint8Array, data: string): unknown {
   const ciphertext = bytes.subarray(12)
   const plain = aesGcm().open(aesKeyBytes, iv, ciphertext)
   return JSON.parse(decoder.decode(plain)) as unknown
+}
+
+/** Application responses/events use framed plaintext; pairing still uses decryptPayload. */
+export function decryptHostPayload(aesKeyBytes: Uint8Array, data: string, onDecrypt?: (ms: number) => void): unknown {
+  const started = performance.now()
+  if (data.length > MAX_REMOTE_CIPHERTEXT_CHARS) throw new Error('remote ciphertext exceeds limit')
+  const bytes = base64().decode(data)
+  const plain = aesGcm().open(aesKeyBytes, bytes.subarray(0, 12), bytes.subarray(12))
+  onDecrypt?.(performance.now() - started)
+  return decodeHostPlaintext(plain)
 }
 
 export function computeHmacToken(channelKeyHex: string, role: string, timestamp: string): string {

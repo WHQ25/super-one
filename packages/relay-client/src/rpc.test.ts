@@ -68,4 +68,16 @@ describe('RpcInbox', () => {
     inbox.complete('chunks', assembled)
     await expect(pending).resolves.toBe('ab')
   })
+  it('bounds chunk memory and rejects conflicting duplicate chunks', async () => {
+    const { aesKeyBytes } = deriveKeys(MASTER)
+    const inbox = new RpcInbox()
+    const pending = inbox.begin({ type: 'list_projects', requestId: 'bounded' }, () => {}, aesKeyBytes)
+    expect(() => inbox.ingestChunk('bounded', 0, 2, 'a'.repeat(800_001))).toThrow('chunk size')
+    expect(inbox.ingestChunk('bounded', 0, 2, 'a')).toBeNull()
+    expect(inbox.ingestChunk('bounded', 0, 2, 'a')).toBeNull()
+    expect(() => inbox.ingestChunk('bounded', 0, 2, 'b')).toThrow('conflicting')
+    inbox.fail('bounded', new Error('invalid chunks'))
+    await expect(pending).rejects.toThrow('invalid chunks')
+  })
+
 })

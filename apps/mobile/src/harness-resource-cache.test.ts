@@ -1,10 +1,21 @@
 import { describe, expect, it, vi } from 'vitest'
-import { clearHarnessResources, peekHarnessResource, preloadHarnessResources, refreshHarnessResources, requestHarnessResource } from './harness-resource-cache'
+import { clearHarnessResources, markHarnessResourcesStale, peekHarnessResource, preloadHarnessResources, refreshHarnessResources, requestHarnessResource } from './harness-resource-cache'
 import { peekSlashCatalog, requestSlashCatalog } from './slash-catalog'
 
 const makeClient = () => ({ request: vi.fn(async () => ({ models: [{ id: 'model' }] })) })
 
 describe('connection harness resources', () => {
+  it('marks unused catalogs stale without fetching them and keeps the warm value on revalidation failure', async () => {
+    const client = makeClient()
+    await requestHarnessResource(client, 'get_system_info', '/p', 'claude')
+    markHarnessResourcesStale(client)
+    expect(client.request).toHaveBeenCalledTimes(1)
+    client.request.mockRejectedValueOnce(new Error('offline'))
+    const value = await requestHarnessResource(client, 'get_system_info', '/p', 'claude')
+    expect(value.models).toHaveLength(1)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(peekHarnessResource(client, 'get_system_info', '/p', 'claude')?.models).toHaveLength(1)
+  })
   it('preloads every harness once and shares requests with the shell and command catalog', async () => {
     const client = makeClient()
     await preloadHarnessResources(client, '/p', ['claude', 'codex', 'claude'])

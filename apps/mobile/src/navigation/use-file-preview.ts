@@ -77,7 +77,7 @@ export type FilePreviewPorts = {
   transport: TransportKind | null
   project: { path: string } | null
   sessionId: string | null
-  /** Active paired desktop; preview bytes live in this bucket until disconnect. */
+  /** Active paired desktop; preview bytes live in this bucket until Forget. */
   pairingId: string | null
 }
 
@@ -90,7 +90,7 @@ export type FilePreviewPorts = {
  * inline; a LAN transfer then starts on its own; a larger relay transfer waits
  * for `startTransfer`, which the Download button calls — that is the
  * confirmation R2 staging asks for. Finished bytes stay on the phone for this
- * pairing until Disconnect or Forget, capped at 512 MB, so the same file is
+ * pairing across disconnects until Forget, capped at 512 MB, so the same file is
  * not downloaded twice. `showImage` takes a picture the transcript already
  * painted and opens it without any transfer at all. `showMermaid` does the
  * same for a rendered diagram, on a page of its own so pinch-zoom cannot
@@ -192,9 +192,7 @@ export function useFilePreview(ports: FilePreviewPorts) {
     let next: FilePreviewState
     try {
       const cache = getFilePreviewCache()
-      const stat = pairingId
-        ? await read(false, true)
-        : await read(true, true)
+      const stat = await read(true, true)
       if (generation.current !== mine) return
       if (pairingId && stat.ok) {
         const hit = hydratePreviewFromCache(loading, stat, pairingId, cache)
@@ -203,9 +201,7 @@ export function useFilePreview(ports: FilePreviewPorts) {
           return
         }
       }
-      const response = pairingId && stat.ok && !('inline' in stat)
-        ? await read(true, false)
-        : stat
+      const response = stat
       if (generation.current !== mine) return
       if (portsRef.current.pairingId !== pairingId) return
       next = reducePreviewResponse(loading, response, transport)

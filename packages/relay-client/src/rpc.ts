@@ -1,4 +1,5 @@
 import type { RemoteCommand } from '@superone/shared/agent-types'
+import { MAX_REMOTE_CIPHERTEXT_CHARS, REMOTE_RESPONSE_CHUNK_CHARS } from '@superone/shared/remote-payload'
 import { encryptPayload } from './crypto'
 
 export type PendingRpc = {
@@ -64,13 +65,14 @@ export class RpcInbox {
   }
 
   ingestChunk(requestId: string, index: number, total: number, data: string): string | null {
-    if (!Number.isSafeInteger(total) || total <= 0 || total > 10_000) {
+    if (!Number.isSafeInteger(total) || total <= 0 || total > Math.ceil(MAX_REMOTE_CIPHERTEXT_CHARS / REMOTE_RESPONSE_CHUNK_CHARS)) {
       throw new Error(`invalid rpc chunk total: ${total}`)
     }
     if (!Number.isSafeInteger(index) || index < 0 || index >= total) {
       throw new Error(`invalid rpc chunk index: ${index}`)
     }
     if (!this.pending.has(requestId)) throw new Error(`unknown rpc chunk request: ${requestId}`)
+    if (typeof data !== 'string' || data.length > REMOTE_RESPONSE_CHUNK_CHARS) throw new Error('invalid rpc chunk size')
     let slots = this.chunks.get(requestId)
     if (!slots) {
       slots = Array.from({ length: total }, () => null)
@@ -78,6 +80,15 @@ export class RpcInbox {
     } else if (slots.length !== total) {
       this.chunks.delete(requestId)
       throw new Error(`rpc chunk total changed for ${requestId}`)
+    }
+    if (slots[index] !== null && slots[index] !== data) {
+      this.chunks.delete(requestId)
+      throw new Error('conflicting rpc chunk')
+    }
+    const receivedSize = slots.reduce((sum, chunk) => sum + (chunk?.length ?? 0), 0) - (slots[index]?.length ?? 0) + data.length
+    if (receivedSize > MAX_REMOTE_CIPHERTEXT_CHARS) {
+      this.chunks.delete(requestId)
+      throw new Error('invalid rpc response size')
     }
     slots[index] = data
     if (slots.every((c) => c != null)) {

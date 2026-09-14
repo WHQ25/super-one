@@ -1,3 +1,4 @@
+import { LruMap } from '@superone/shared/lru-map'
 import { useEffect, useState, type ReactNode } from 'react'
 import type { ImageGenerationInfo } from '@superone/shared/agent-types'
 import { Download, ImageIcon, Loader2 } from 'lucide-react'
@@ -25,7 +26,7 @@ type Phase =
  * key folds the root because a remote-node session and a local one can hold
  * the same absolute path meaning two different files (session-sync-zone.md).
  */
-const loaded = new Map<string, string>()
+const loaded = new LruMap<string, string>(128)
 const inflight = new Map<string, Promise<Phase>>()
 
 function cacheKey(root: string | undefined, path: string): string {

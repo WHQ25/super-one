@@ -1,3 +1,4 @@
+import { networkLedger, networkMetricsEnabled } from './network-ledger'
 import { RelayClient, type OpenSocket } from '@superone/relay-client'
 import { ReconnectController, type ConnectionState } from './reconnect-controller'
 import type { ReconnectInfo } from './device-status'
@@ -41,6 +42,20 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
   let lastDelayMs = 0
   const report = hooks.onConnection
   const restore = () => hooks.restore(client)
+  const restorePeer = () => {
+    if (peerRestore) return
+    peerRestore = restore()
+      .then((epoch) => {
+        if (stopped) return
+        peerLost = false
+        report('connected', epoch)
+        hooks.onStatus('')
+      })
+      .catch((error) => {
+        if (!stopped) hooks.onStatus(error instanceof Error ? error.message : 'rehydrate failed')
+      })
+      .finally(() => { peerRestore = null })
+  }
   const reconnectController = new ReconnectController(
     () => client.reconnect(),
     restore,
@@ -77,15 +92,14 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
   )
 
   client = new RelayClient({
+    onMetric: networkMetricsEnabled ? metric => networkLedger.record(metric) : undefined,
     onEvents: hooks.onEvents,
     onTerminal: hooks.onTerminal,
     onReset: () => {
       hooks.onStatus('server reset — rehydrating')
       if (reconnectController.isActive) return
       report('reconnecting', hooks.currentEpoch(client))
-      void restore()
-        .then((epoch) => report('connected', epoch))
-        .catch((error) => hooks.onStatus(error instanceof Error ? error.message : 'rehydrate failed'))
+      restorePeer()
     },
     onShutdown: () => {
       stopped = true
@@ -113,17 +127,7 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
       }
       if (frame.type === 'handshake') handshakeSeen = true
       if (frame.type !== 'handshake' || !peerLost || reconnectController.isActive || peerRestore) return
-      peerRestore = restore()
-        .then((epoch) => {
-          if (stopped) return
-          peerLost = false
-          report('connected', epoch)
-          hooks.onStatus('')
-        })
-        .catch((error) => {
-          if (!stopped) hooks.onStatus(error instanceof Error ? error.message : 'rehydrate failed')
-        })
-        .finally(() => { peerRestore = null })
+      restorePeer()
     },
     onStatus: (connected) => {
       if (stopped) return

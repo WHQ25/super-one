@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { PROCESSED_SEQ_CAP, SeqAckTracker, TransportAckRegistry } from './ack'
 import { EventBuffer } from './buffer'
-import { deriveKeys, encryptPayload } from './crypto'
+import { deriveKeys } from './crypto'
+import { encryptHostTestPayload as encryptPayload } from './test-host-frame'
 import { handleInboundFrame, makeDecrypt } from './frames'
 
 const MASTER = '0123456789abcdef'.repeat(8)

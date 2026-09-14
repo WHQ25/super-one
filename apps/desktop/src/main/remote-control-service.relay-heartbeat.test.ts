@@ -28,18 +28,19 @@ async function startFakeRelay(opts: { mute: boolean }) {
   const desktops: ServerSocket[] = []
   const pings: string[] = []
   const closes: number[] = []
+  const controls: string[] = []
   server.on('connection', (socket) => {
     desktops.push(socket)
     socket.on('message', (raw) => {
       const text = raw.toString()
-      if (text !== 'ping') return
+      if (text !== 'ping') { controls.push(JSON.parse(text).type); return }
       pings.push(text)
       if (!opts.mute) socket.send('pong')
     })
     socket.on('close', (code) => closes.push(code))
   })
   const port = (server.address() as { port: number }).port
-  return { server, desktops, pings, closes, url: `ws://127.0.0.1:${port}` }
+  return { server, desktops, pings, closes, controls, url: `ws://127.0.0.1:${port}` }
 }
 
 async function waitFor(predicate: () => boolean, timeoutMs = 3_000): Promise<void> {
@@ -82,6 +83,7 @@ describe('RemoteControlService relay heartbeat', () => {
     await waitFor(() => pings.length >= 3)
     expect(desktops).toHaveLength(1)
     expect(service!.isRelayConnected()).toBe(true)
+    expect(relay.controls).toEqual(['handshake'])
   })
 
   it('terminates a socket whose pings go unanswered and dials the relay again', async () => {
@@ -91,5 +93,7 @@ describe('RemoteControlService relay heartbeat', () => {
     // First socket dies on the missed pong; the reconnect path opens a second.
     await waitFor(() => closes.length >= 1 && desktops.length >= 2)
     expect(closes[0]).not.toBe(1000)
+    await waitFor(() => relay!.controls.filter(type => type === 'handshake').length >= 2)
+    expect(relay.controls.every(type => type === 'handshake')).toBe(true)
   })
 })

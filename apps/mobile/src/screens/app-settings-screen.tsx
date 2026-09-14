@@ -1,3 +1,6 @@
+import type { TransportLedger } from '@superone/relay-client'
+import { NetworkLedgerPanel } from '../ui/network-ledger-panel'
+import { networkLedger, networkMetricsEnabled } from '../network-ledger'
 import { ScrollView, View } from 'react-native'
 import type { Locale, ThemeMode } from '@superone/shared/agent-types'
 import { Text } from '../ui/text'
@@ -26,7 +29,7 @@ export type AppSettingsUpdateProps = {
 }
 
 /** Device-local preferences. Project and harness controls stay on the chat surface. */
-export function AppSettingsScreen({ update }: { update?: AppSettingsUpdateProps } = {}) {
+export function AppSettingsScreen({ update, ledger }: { update?: AppSettingsUpdateProps; ledger?: TransportLedger } = {}) {
   const { tokens: { colors, radius, spacing }, mode, setMode } = useMobileTheme()
   const { locale, setLocale, t } = useMobileLocale()
   const sectionLabel = { color: colors.mutedForeground, fontSize: 12, fontWeight: '500' as const }
@@ -94,6 +97,7 @@ export function AppSettingsScreen({ update }: { update?: AppSettingsUpdateProps 
           </View>
         </View>
       ) : null}
+      {ledger ? <NetworkLedgerPanel ledger={ledger} /> : null}
     </ScrollView>
   )
 }
@@ -107,9 +111,10 @@ export function AppSettingsScreen({ update }: { update?: AppSettingsUpdateProps 
  */
 export function ConnectedAppSettingsScreen() {
   const status = useUpdateStatus()
-  if (!status) return <AppSettingsScreen />
+  if (!status) return <AppSettingsScreen ledger={networkMetricsEnabled ? networkLedger : undefined} />
   return (
     <AppSettingsScreen
+      ledger={networkMetricsEnabled ? networkLedger : undefined}
       update={{
         version: status.state.currentVersion,
         buildCode: status.state.currentBuildCode,

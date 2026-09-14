@@ -67,6 +67,7 @@ describe('mobile relay connection lifecycle', () => {
     const restore = vi.fn().mockResolvedValue(3)
     const onConnection = vi.fn()
     const onStatus = vi.fn()
+    const onShutdown = vi.fn()
     const connection = createMobileRelayConnection({
       onEvents: vi.fn(),
       onTerminal: vi.fn(),
@@ -74,7 +75,7 @@ describe('mobile relay connection lifecycle', () => {
       currentEpoch: () => 2,
       onConnection,
       onStatus,
-      onShutdown: vi.fn(),
+      onShutdown,
       suppressDisconnect: () => false,
       openSocket: () => {
         const socket = new MockSocket()
@@ -88,11 +89,16 @@ describe('mobile relay connection lifecycle', () => {
     sockets[0].emit({ type: 'peer_disconnected' })
     expect(onConnection).toHaveBeenLastCalledWith('offline', 2)
     sockets[0].emit({ type: 'peer_connected' })
+    // An existing relay replay reset can arrive before the peer's handshake.
+    sockets[0].emit({ type: 'reset' })
     sockets[0].emit({ type: 'handshake', hostName: 'desktop' })
     await vi.waitFor(() => expect(restore).toHaveBeenCalledTimes(1))
     expect(sockets).toHaveLength(1)
     expect(onConnection).toHaveBeenLastCalledWith('connected', 3)
     expect(onStatus).toHaveBeenLastCalledWith('')
+    expect(onShutdown).not.toHaveBeenCalled()
+    expect(connection.client.connected).toBe(true)
+    connection.client.disconnect()
   })
 
   it('stops reconnecting when the desktop shuts down', async () => {

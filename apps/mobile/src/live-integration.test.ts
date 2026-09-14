@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RelayClient, type SocketLike } from '@superone/relay-client'
-import { decryptPayload, deriveKeys, encryptPayload } from '@superone/relay-client'
+import { decryptPayload, deriveKeys } from '@superone/relay-client'
+import { encryptHostTestPayload as encryptPayload } from '../../../packages/relay-client/src/test-host-frame'
 import { ChatRuntime } from './runtime'
 
 const MASTER = '0123456789abcdef'.repeat(8)

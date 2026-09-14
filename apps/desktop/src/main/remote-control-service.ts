@@ -1,3 +1,5 @@
+import { encryptHostPayload } from './remote/payload-codec'
+import { RemoteEventBatcher } from './remote/event-batcher'
 import { webcrypto } from 'node:crypto'
 import { hostname } from 'node:os'
 import WebSocket from 'ws'
@@ -108,6 +110,9 @@ export class RemoteControlService {
   private pairingSession: PairingSession | null = null
 
   private sendQueue: Promise<void> = Promise.resolve()
+  private terminalQueue: Promise<void> = Promise.resolve()
+  private sendGeneration = 0
+  private readonly eventBatcher = new RemoteEventBatcher((events, targets) => this.enqueueEvents(events, targets))
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private reconnectDelay = 1_000
   private intentionallyClosed = false
@@ -354,7 +359,10 @@ export class RemoteControlService {
   async stop(): Promise<void> {
     await this.cancelPairing()
     this.intentionallyClosed = true
+    this.eventBatcher.dispose()
+    this.sendGeneration++
     this.sendQueue = Promise.resolve()
+    this.terminalQueue = Promise.resolve()
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
@@ -468,14 +476,17 @@ export class RemoteControlService {
     switch (frame.type) {
       case 'command': {
         if (!this.keys) return
+        const ws = this.relayWs
+        const generation = this.sendGeneration
         const command = (await decryptPayload(this.keys.aesKey, frame.data as string)) as RemoteCommand
+        if (this.relayWs !== ws || generation !== this.sendGeneration) return
         trace('remote.in', command.type, command)
         const deviceId = (frame.mobileDeviceId as string | undefined) ?? null
         if (!deviceId) {
           log.warn('[RemoteControl] relay command missing mobileDeviceId, dropping')
           return
         }
-        this.callbacks.onCommand(command, (requestId, data) => this.sendResponse(requestId, data, deviceId), { deviceId, transport: 'relay' })
+        this.callbacks.onCommand(command, (requestId, data) => this.sendResponse(requestId, data, deviceId, ws, generation), { deviceId, transport: 'relay' })
         break
       }
       case 'register': {
@@ -600,29 +611,25 @@ export class RemoteControlService {
   }
 
   async sendEventToMobile(event: Record<string, unknown>, targetDeviceIds?: string[]): Promise<void> {
-    if (!this.keys) return
-    if (!this.hasAnyMobileTransport()) return
-    try {
-      const data = await encryptPayload(this.keys.aesKey, event)
-      this.sendEventFrame(data, targetDeviceIds)
-    } catch (err) {
-      log.error('[RemoteControl] Failed to send event to mobile:', err)
-    }
+    this.eventBatcher.flush()
+    return this.enqueuePayload(event, targetDeviceIds)
   }
 
   async sendTerminalFrame(event: TerminalEvent, targetDeviceIds?: string[]): Promise<void> {
-    if (!this.keys) return
-    if (!this.hasAnyMobileTransport()) return
-    try {
-      const data = await encryptPayload(this.keys.aesKey, event)
+    const generation = this.sendGeneration
+    this.terminalQueue = this.terminalQueue.then(async () => {
+      if (!this.keys || generation !== this.sendGeneration || !this.hasAnyMobileTransport()) return
+      const data = await encryptHostPayload(this.keys.aesKey, event)
+      if (generation !== this.sendGeneration) return
       const payload: Record<string, unknown> = { type: 'terminal', data }
       if (targetDeviceIds && targetDeviceIds.length > 0) payload.targets = targetDeviceIds
       const json = JSON.stringify(payload)
       if (this.relayWs?.readyState === WebSocket.OPEN) this.relayWs.send(json)
       this.lanServer?.broadcastFrame(json, targetDeviceIds)
-    } catch (err) {
+    }).catch(err => {
       log.error('[RemoteControl] Failed to send terminal frame:', err)
-    }
+    })
+    return this.terminalQueue
   }
 
   private hasAnyMobileTransport(): boolean {
@@ -756,19 +763,20 @@ export class RemoteControlService {
     this.queueSend([stripped], targetDeviceIds)
   }
 
-  private async sendResponse(requestId: string, data: unknown, mobileDeviceId?: string): Promise<void> {
-    if (!this.keys || !this.relayWs || this.relayWs.readyState !== WebSocket.OPEN) return
+  private async sendResponse(requestId: string, data: unknown, mobileDeviceId?: string, ws = this.relayWs, generation = this.sendGeneration): Promise<void> {
+    if (!this.keys || !ws || this.relayWs !== ws || ws.readyState !== WebSocket.OPEN || generation !== this.sendGeneration) return
     try {
       trace('remote.resp', requestId, data)
-      const encrypted = await encryptPayload(this.keys.aesKey, data)
+      const encrypted = await encryptHostPayload(this.keys.aesKey, data)
+      if (this.relayWs !== ws || ws.readyState !== WebSocket.OPEN || generation !== this.sendGeneration) return
       if (encrypted.length <= WS_CHUNK_SIZE) {
-        this.relayWs.send(JSON.stringify({ type: 'response', requestId, data: encrypted, ...(mobileDeviceId ? { mobileDeviceId } : {}) }))
+        ws.send(JSON.stringify({ type: 'response', requestId, data: encrypted, ...(mobileDeviceId ? { mobileDeviceId } : {}) }))
       } else {
         const totalChunks = Math.ceil(encrypted.length / WS_CHUNK_SIZE)
         log.info(`[RemoteControl] Chunking response ${requestId}: ${encrypted.length} bytes → ${totalChunks} chunks`)
         for (let i = 0; i < totalChunks; i++) {
           const chunk = encrypted.slice(i * WS_CHUNK_SIZE, (i + 1) * WS_CHUNK_SIZE)
-          this.relayWs.send(JSON.stringify({ type: 'response_chunk', requestId, index: i, total: totalChunks, data: chunk, ...(mobileDeviceId ? { mobileDeviceId } : {}) }))
+          ws.send(JSON.stringify({ type: 'response_chunk', requestId, index: i, total: totalChunks, data: chunk, ...(mobileDeviceId ? { mobileDeviceId } : {}) }))
         }
       }
     } catch (err) {
@@ -777,12 +785,21 @@ export class RemoteControlService {
   }
 
   private queueSend(events: AgentEvent[], targetDeviceIds?: string[]): void {
-    if (events.length === 0) return
+    for (const event of events) this.eventBatcher.push(event, targetDeviceIds)
+  }
+
+  private enqueueEvents(events: AgentEvent[], targetDeviceIds?: string[]): void {
+    if (events.length) void this.enqueuePayload(events, targetDeviceIds)
+  }
+
+  private enqueuePayload(payload: unknown, targetDeviceIds?: string[]): Promise<void> {
+    const generation = this.sendGeneration
     this.sendQueue = this.sendQueue.then(async () => {
-      if (!this.keys) return
+      if (!this.keys || generation !== this.sendGeneration) return
       if (!this.hasAnyMobileTransport()) return
-      const data = await encryptPayload(this.keys.aesKey, events)
-      this.sendEventFrame(data, targetDeviceIds)
+      const data = await encryptHostPayload(this.keys.aesKey, payload)
+      if (generation === this.sendGeneration) this.sendEventFrame(data, targetDeviceIds)
     }).catch(err => log.error('[RemoteControl] Failed to send events:', err))
+    return this.sendQueue
   }
 }

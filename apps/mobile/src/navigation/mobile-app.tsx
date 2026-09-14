@@ -1,3 +1,7 @@
+import { PersistedWorkspace } from '../persisted-workspace'
+import { networkLedger } from '../network-ledger'
+import type { RemoteSystemInfo } from '@superone/shared/agent-types'
+import { invalidateGitResources, requestGitResource } from '../git-resource-cache'
 import { validateTurnAttachments } from '@superone/shared/attachment-validation'
 import { refreshSessionCatalog } from '../session-catalog-refresh'
 import { useComposerSend } from './use-composer-send'
@@ -117,7 +121,7 @@ import { MobileOverlays } from './mobile-overlays'
 import { MobileKeyboardFrame } from './mobile-keyboard-frame'
 import { useHarnessSelection } from './use-harness-selection'
 import { fetchShellDetails } from './shell-details'
-import { refreshHarnessResources, peekHarnessResource, preloadHarnessResources, requestHarnessResource } from '../harness-resource-cache'
+import { subscribeHarnessResources, bindHarnessPersistence, markHarnessResourcesStale, peekHarnessResource, preloadHarnessResources, requestHarnessResource } from '../harness-resource-cache'
 import { useReconnectOnForeground } from '../use-reconnect-on-foreground'
 import { useDeviceDiscovery } from './use-device-discovery'
 import { isFullBleedScreen } from '../layout-state'
@@ -361,7 +365,18 @@ export function MobileApp() {
   const scanningRef = useRef(false)
   const pairingSocketRef = useRef<WebSocket | null>(null)
   const pairingCancelledRef = useRef(false)
-  useReconnectOnForeground(() => reconnectControllerRef.current?.force(connectionRef.current.epoch))
+  useReconnectOnForeground(() => {
+    networkLedger.mark('foreground')
+    const client = clientRef.current
+    if (!client || connectionRef.current.state !== 'connected') {
+      reconnectControllerRef.current?.force(connectionRef.current.epoch)
+      return
+    }
+    markHarnessResourcesStale(client)
+    void client.probeConnection().then(healthy => {
+      if (!healthy && clientRef.current === client) reconnectControllerRef.current?.force(connectionRef.current.epoch)
+    })
+  })
   const discovery = useDeviceDiscovery({
     pairings,
     activePairingId,
@@ -381,6 +396,8 @@ export function MobileApp() {
       chatViewStatesRef.current = parseStoredChatViewStates(raw)
     })
     return () => {
+      ++connectGenerationRef.current
+      workspaceCacheRef.current.persistence?.dispose()
       if (viewStateWriteTimerRef.current != null) clearTimeout(viewStateWriteTimerRef.current)
       suppressReconnectRef.current = true
       reconnectControllerRef.current?.cancel()
@@ -648,9 +665,20 @@ export function MobileApp() {
     await savePairings(kv, next)
     setPairings(next)
   }
+  const connectGenerationRef = useRef(0)
   const connectWithSecret = async (relayUrl: string, secret: string, lanHostPort?: string, hostName?: string, desktopDeviceId?: string) => {
+    networkLedger.mark('connect')
+    const connectGeneration = ++connectGenerationRef.current
     const activeDeviceId = deviceId || await loadOrCreateMobileId()
+    if (connectGeneration !== connectGenerationRef.current) return
     if (!deviceId) setDeviceId(activeDeviceId)
+    await remoteDraftsRef.current.park()
+    if (connectGeneration !== connectGenerationRef.current) return
+    composerSwitchRef.current(null)
+    composerDraft.replaceWith(EMPTY_COMPOSER_DRAFT)
+    suggestions.applyProgrammatic('')
+    setAttachments([])
+    setWorktreeSelection(LOCAL_WORKTREE_SELECTION)
     reconnectControllerRef.current?.cancel()
     runtimeRef.current?.dispose()
     runtimeRef.current = null
@@ -658,9 +686,35 @@ export function MobileApp() {
     suppressReconnectRef.current = true
     clientRef.current?.disconnect()
     suppressReconnectRef.current = false
-    const cache = new WorkspaceListCache()
+    clientRef.current = null
+    clearActiveSession()
+    setProjects([]); setSessions([]); setHarnessOptions([]); setProject(null)
+    workspaceCacheRef.current.persistence?.dispose()
+    const pairingId = desktopDeviceId || hostName || relayUrl
+    setActivePairingId(pairingId)
+    const persisted = new PersistedWorkspace(kv, pairingId)
+    await persisted.load()
+    if (connectGeneration !== connectGenerationRef.current) { persisted.dispose(); return }
+    const cache = new WorkspaceListCache(persisted)
+    // Initialize once, before showing cached data. Revalidation must never clear
+    // text/attachments typed into this landing or replace a session opened there.
+    remoteDraftsRef.current.begin()
+    const initialShellRequest = shellDetailsRequestRef.current
+    const cachedProjects = persisted.get<Project[]>('projects')
+    let cachedProject: Project | undefined
+    if (Array.isArray(cachedProjects)) {
+      const validProjects = cachedProjects.filter(row => row && typeof row.path === 'string' && typeof row.name === 'string')
+      cachedProject = validProjects[0]
+      setProjects(validProjects)
+      if (validProjects[0]) { setProject(validProjects[0]); setScreen('chat') }
+    }
+    const cachedHarnesses = persisted.get<RemoteHarnessOption[]>('harness-options')
+    if (Array.isArray(cachedHarnesses)) setHarnessOptions(cachedHarnesses.filter(row => row && typeof row.provider === 'string'))
+
+    networkLedger.checkpoint('cache-loaded')
     const { client, reconnectController } = createMobileRelayConnection({
       onEvents: (events, epoch) => {
+        if (connectGeneration !== connectGenerationRef.current) return
         logRelayEventTypes(events)
         remoteDraftsRef.current.ingest(events)
         workspaceActivity.ingest(events)
@@ -684,8 +738,9 @@ export function MobileApp() {
       },
       onTerminal: (payload) => termRuntimeRef.current?.ingest(payload),
       restore: async (activeClient) => {
+        invalidateGitResources(activeClient)
         await remoteDraftsRef.current.reconnect().catch((error) => setStatus(error instanceof Error ? error.message : 'Could not restore drafts'))
-        await refreshHarnessResources(activeClient)
+        markHarnessResourcesStale(activeClient)
         await loadMcpIcons(activeClient, runtimeRef.current?.projectPath)
         const runtime = runtimeRef.current
         if (!runtime) return activeClient.releaseBuffer().epoch
@@ -695,6 +750,7 @@ export function MobileApp() {
       },
       currentEpoch: (activeClient) => runtimeRef.current?.epoch ?? activeClient.buffer.epoch,
       onConnection: (state, epoch) => {
+        if (connectGeneration !== connectGenerationRef.current) return
         // A socket that was down missed every invalidation sent meanwhile.
         if (state === 'connected' && connectionRef.current?.state !== 'connected') {
           cache.invalidateAll()
@@ -724,6 +780,7 @@ export function MobileApp() {
       },
       suppressDisconnect: () => suppressReconnectRef.current,
     })
+    bindHarnessPersistence(client, persisted)
     reconnectControllerRef.current = reconnectController
     clientRef.current = client
     workspaceCacheRef.current = cache
@@ -743,6 +800,7 @@ export function MobileApp() {
         deviceName: getMobileDeviceName(),
       })
     }
+    if (connectGeneration !== connectGenerationRef.current) return
     setActiveTransport(client.transport)
     await rememberPairing({
       id: desktopDeviceId || hostName || relayUrl,
@@ -752,7 +810,7 @@ export function MobileApp() {
       lan: hp.includes(':') ? hp : undefined,
       desktopDeviceId,
     })
-    setActivePairingId(desktopDeviceId || hostName || relayUrl)
+    if (connectGeneration !== connectGenerationRef.current) return
     // Every await here is a full round trip, and over the relay each one is
     // hundreds of milliseconds; independent requests go out together.
     // The harness list is already ordered and labelled the way the host's own
@@ -768,20 +826,26 @@ export function MobileApp() {
           return response && !('error' in response) ? response.options : []
         }).catch((): RemoteHarnessOption[] => []),
     ])
+    if (clientRef.current !== client) return
     if (res.error) throw new Error(res.error)
     const projectRows = res.projects ?? []
+    persisted.set('projects', projectRows)
+    persisted.set('harness-options', options)
     setProjects(projectRows)
     if (clientRef.current !== client) return
     setHarnessOptions(options)
-    if (projectRows[0]) {
-      // openProject warms the selected harness itself. The others are warmed
-      // behind the screen: one of them may make the host launch a whole
-      // agent process to list its models, and nothing on the new-session
-      // screen waits for that.
-      await openProject(projectRows[0])
-      if (clientRef.current !== client) return
-      void preloadHarnessResources(client, projectRows[0].path, options.map((option) => option.provider))
-      await startNewSession(projectRows[0])
+    if (shellDetailsRequestRef.current !== initialShellRequest || runtimeRef.current || sessionTransitionRef.current.isActive) return
+    const initialProject = projectRows.find(row => row.path === cachedProject?.path) ?? projectRows[0]
+    if (initialProject) {
+      // Warm only the selected harness; another provider may start a process
+      // merely to list models and is loaded when the user chooses it.
+      await openProject(initialProject, false)
+      if (clientRef.current !== client || shellDetailsRequestRef.current !== initialShellRequest + 1 || runtimeRef.current || sessionTransitionRef.current.isActive) return
+      const system = peekHarnessResource(client, 'get_system_info', initialProject.path, selectedProvider)
+      if (system) applySystemInfo(selectedProvider, system)
+      const resources = peekHarnessResource(client, 'get_project_resources', initialProject.path, selectedProvider)
+      setWorkspaceDirs(resources?.workspaceDirs ?? [])
+      if (!cachedProject) setScreen('chat')
     } else {
       await loadMcpIcons(client)
       if (clientRef.current !== client) return
@@ -789,16 +853,7 @@ export function MobileApp() {
       setScreen('project-picker')
     }
     setStatus('')
-    void Promise.all(projectRows.map(async (row) => {
-      const git = await client.request({
-        type: 'get_git_info',
-        requestId: randomId(),
-        projectPath: row.path,
-      } as RemoteCommand) as ShellGitInfo
-      return { ...row, git }
-    })).then((rows) => {
-      if (clientRef.current === client) setProjects(rows)
-    }).catch(() => { /* Git indicators are best-effort. */ })
+    networkLedger.checkpoint('landing-ready')
   }
 
   /**
@@ -902,13 +957,16 @@ export function MobileApp() {
   const openProject = async (p: Project, parkDraft = true) => {
     const client = clientRef.current
     if (!client) return
-    if (parkDraft && p.path !== project?.path) await remoteDrafts.park()
     systemInfoRequestRef.current++
     const projectRequest = ++shellDetailsRequestRef.current
+    if (parkDraft && p.path !== project?.path) await remoteDrafts.park()
+    if (clientRef.current !== client || projectRequest !== shellDetailsRequestRef.current) return
     const cache = workspaceCacheRef.current
     const listRevision = cache.revisionOf(p.path)
-    // Four independent reads; one round trip instead of four over the relay.
-    // Only the selected harness is waited for — the rest warm behind the screen.
+    if (p.path !== project?.path) {
+      setBranches([]); setCheckedOutBranches([]); setWorktreeInfo(null); setWorktreeDirty({})
+    }
+    // Independent reads overlap latency. Only the selected harness is loaded.
     const [, , page] = await Promise.all([
       preloadHarnessResources(client, p.path, [selectedProvider]),
       loadMcpIcons(client, p.path),
@@ -916,19 +974,18 @@ export function MobileApp() {
       refreshGitInfo(p.path),
     ])
     if (clientRef.current !== client || projectRequest !== shellDetailsRequestRef.current) return
-    void preloadHarnessResources(client, p.path, harnessOptions.map((option) => option.provider))
     setProject(p)
     setSessions(page.sessions)
     // This page is the list the drawer would otherwise read again on its next open.
     cache.store(p.path, { rows: page.sessions, total: page.totalCount, revision: listRevision })
   }
 
-  const loadShellDetails = async (provider: HarnessId = selectedProvider, p = project, refreshCatalog = false) => {
+  const loadShellDetails = async (provider: HarnessId = selectedProvider, p = project, refreshCatalog = false, includeWorktreeDirty = false) => {
     const client = clientRef.current
     if (!client || !p) return
     const request = ++systemInfoRequestRef.current
     const shellRequest = ++shellDetailsRequestRef.current
-    const details = await fetchShellDetails(client, p.path, provider, refreshCatalog)
+    const details = await fetchShellDetails(client, p.path, provider, refreshCatalog, includeWorktreeDirty)
     if (shellRequest !== shellDetailsRequestRef.current || clientRef.current !== client) return
     replaceGitInfo(details.git)
     setWorkspaceDirs(details.workspaceDirs)
@@ -977,6 +1034,16 @@ export function MobileApp() {
 
   // App settings are host-independent, so this no longer warms the shell details
   // the old project-settings screen needed.
+  useEffect(() => {
+    const client = clientRef.current
+    if (!client || !project) return
+    return subscribeHarnessResources(client, (type, path, provider, value) => {
+      if (clientRef.current !== client || path !== project.path || provider !== selectedProvider) return
+      if (type === 'get_system_info') applySystemInfo(selectedProvider, value as RemoteSystemInfo)
+      else setWorkspaceDirs((value as { workspaceDirs?: string[] }).workspaceDirs ?? [])
+    })
+  }, [connectionState, project?.path, selectedProvider, applySystemInfo])
+
   const openSettings = () => setScreen('settings')
 
   const openFiles = (origin: FilesOrigin = 'settings') => {
@@ -1022,6 +1089,7 @@ export function MobileApp() {
     const runtime = new ChatRuntime(client, (_session, hydrate) => {
       if (runtimeRef.current === runtime) syncSheets(runtime, hydrate)
     }, {
+      onCachedHydrate: () => { if (runtimeRef.current === runtime) setSessionLoading(false) },
       onDetail: (event) => { if (runtimeRef.current === runtime) inject(webRef, { ...event, type: 'detailUpdate' }) },
       onSessionRecap: (sid) => autoRecap.markRecapShown(sid),
       transcripts: sessionTranscriptCache,
@@ -1210,9 +1278,13 @@ export function MobileApp() {
     setStatus('')
     setActiveSessionTitle('New session')
     setScreen('chat')
-    // Configuring a session is the one moment the host's configured defaults are
-    // read, so this is where the catalog cache is worth paying to bypass.
-    await loadShellDetails(selectedProvider, targetProject, true)
+    const client = clientRef.current
+    if (client && targetProject) {
+      const system = peekHarnessResource(client, 'get_system_info', targetProject.path, selectedProvider)
+      if (system) applySystemInfo(selectedProvider, system)
+      const resources = peekHarnessResource(client, 'get_project_resources', targetProject.path, selectedProvider)
+      setWorkspaceDirs(resources?.workspaceDirs ?? [])
+    }
     remoteDrafts.begin()
   }
   /** Open a project for a new session — the picker's only exit that keeps state. */
@@ -1270,6 +1342,11 @@ export function MobileApp() {
   const openGitPage = () => {
     setScreen('branch')
     void refreshGitInfo(project?.path).catch(() => {})
+    const client = clientRef.current
+    const request = ++shellDetailsRequestRef.current
+    if (client && project) void requestGitResource(client, 'get_git_branches', project.path).then(result => {
+      if (clientRef.current === client && request === shellDetailsRequestRef.current) setBranches(result.branches ?? [])
+    }).catch(() => {})
   }
 
   /** Checkout or create a branch on the paired desktop, then re-read git state. */
@@ -1280,6 +1357,7 @@ export function MobileApp() {
       type, requestId: randomId(), projectPath: project.path, branch,
     } as RemoteCommand) as { ok?: boolean; error?: string }
     if (result?.ok === false) throw new Error(result.error || 'Could not change branch')
+    invalidateGitResources(client, project.path)
     await loadShellDetails()
   }
   /** Switcher pick: an ACP row also pins which agent it stood for. */
@@ -1530,12 +1608,13 @@ export function MobileApp() {
 
   /** Drop the transport and everything hanging off it, back to the device list. */
   const disconnectDevice = async () => {
+    ++connectGenerationRef.current
+    workspaceCacheRef.current.persistence?.dispose()
     await remoteDrafts.park()
     filePreview.close()
     runtimeRef.current?.dispose()
     runtimeRef.current = null
     termRuntimeRef.current = null
-    if (activePairingId) clearFilePreviewCache(activePairingId)
     switchComposerDraft(null)
     reconnectControllerRef.current?.cancel()
     suppressReconnectRef.current = true
@@ -1852,9 +1931,11 @@ export function MobileApp() {
             'failed to rename device',
           )}
           onForget={(item) => runUiAction(async () => {
+            if (activePairingId === item.id) await disconnectDevice()
+            if (workspaceCacheRef.current.persistence?.pairingId === item.id) await workspaceCacheRef.current.persistence.forget()
+            else await new PersistedWorkspace(kv, item.id).forget()
             clearFilePreviewCache(item.id)
             await updatePairings((current) => current.filter((pairing) => pairing.id !== item.id))
-            if (activePairingId === item.id) disconnectDevice()
           }, setStatus, 'failed to forget device')}
         />
       ) : null}
@@ -1926,7 +2007,7 @@ export function MobileApp() {
             worktreeInfo,
             branch: gitInfo?.branch,
             dirtyFiles: gitInfo?.dirty?.files,
-            onWorktree: () => { setWorktreeDraft(worktreeSelection); setScreen('worktree') },
+            onWorktree: () => { setWorktreeDraft(worktreeSelection); setScreen('worktree'); void loadShellDetails(selectedProvider, project, false, true) },
             onBranch: openGitPage,
           } : undefined}
           selection={{ model: selectedModel, models, providerName: harnessSelection.activeProviderName,

@@ -4,7 +4,7 @@
  * inputs mapped back to the desktop mirror (§3.1).
  */
 import { createHash } from 'node:crypto'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -250,6 +250,21 @@ describe('host action outputs', () => {
     const out = await syncHostActionOutputs('s1', [{ path: shot, producer: 'browser', final: true }], reply, Date.now() + 60_000, node.deps)
     expect(node.files.has('browser/shot.png')).toBe(true)
     expect(out.content![0].text).toBe('截图已保存到 /home/node/.superone/node/sync/s1/browser/shot.png，请查看。')
+  })
+
+  it('rewrites without re-uploading a file the node already holds at the same size and mtime', async () => {
+    // A download queued at capture time reaches the node before the agent
+    // lists it; a recording listed twice is the same file twice. The stamp
+    // the upload leaves — the node's mtime on the desktop copy — is how the
+    // desktop can tell, the same way the mirror does.
+    const node = fakeNode()
+    const shot = desktopFile('s1', 'browser/shot.png', 'png-bytes')
+    node.files.set('browser/shot.png', Buffer.from('png-bytes'))
+    utimesSync(shot, 1_700_000_000, 1_700_000_000)
+    const reply = { content: [{ type: 'text', text: shot }] }
+    const out = await syncHostActionOutputs('s1', [{ path: shot, producer: 'browser', final: true }], reply, Date.now() + 60_000, node.deps)
+    expect(node.puts).toHaveLength(0)
+    expect(out.content![0].text).toBe('/home/node/.superone/node/sync/s1/browser/shot.png')
   })
 
   it('stops at the abort signal between uploads', async () => {

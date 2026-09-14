@@ -3,7 +3,7 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } 
 import { randomUUID } from 'crypto'
 import { app } from 'electron'
 import { readAppSettings } from '../app-settings-service'
-import { isUnderSyncZone, producerDir, sessionZoneDir } from '../media-output-paths'
+import { isUnderSyncZone, producerDir, sessionZoneDir, zoneRelativePath } from '../media-output-paths'
 import { currentHostActionConnection, registerArtifact } from '../mcp/artifact-registry'
 import log from '../logger'
 
@@ -78,9 +78,18 @@ export function systemDownloadDir(): string {
  * path the agent asked for has already been rewritten to its desktop mirror by
  * the Host Action input mapping (§3.1), so it arrives here inside the zone.
  */
-export function resolveDownloadDir(explicitDir?: string | null, sessionId?: string | null): string {
+/**
+ * Where a download comes from when the caller knows: a page-triggered capture
+ * runs in an event handler, outside any tool call, so it names the driving
+ * session's connection itself instead of relying on the call scope.
+ */
+export interface DownloadOrigin {
+  connectionId: string | null
+}
+
+export function resolveDownloadDir(explicitDir?: string | null, sessionId?: string | null, origin?: DownloadOrigin): string {
   const explicit = explicitDir?.trim()
-  const remote = sessionId ? currentHostActionConnection() !== null : false
+  const remote = sessionId ? (origin ? origin.connectionId !== null : currentHostActionConnection() !== null) : false
   if (explicit) {
     if (!isAbsolute(explicit)) throw new Error(`Download directory must be an absolute path: ${explicit}`)
     if (remote && !withinSessionZone(sessionId!, explicit)) {
@@ -109,8 +118,8 @@ export function resolveDownloadDir(explicitDir?: string | null, sessionId?: stri
  * responsibility, so a failure surfaces as an error; a failing *configured*
  * default must not break downloading, so it degrades to the OS folder.
  */
-function ensureDir(explicitDir?: string | null, sessionId?: string | null): string {
-  const root = resolveDownloadDir(explicitDir, sessionId)
+function ensureDir(explicitDir?: string | null, sessionId?: string | null, origin?: DownloadOrigin): string {
+  const root = resolveDownloadDir(explicitDir, sessionId, origin)
   try {
     mkdirSync(root, { recursive: true })
     return root
@@ -146,8 +155,8 @@ function uniqueCandidate(dir: string, filename: string, attempt: number): string
  * (`wx`) — that both skips names already on disk and keeps two concurrent
  * downloads of the same file from racing onto the same path.
  */
-export function reserveDownloadPath(filename: string, dir?: string | null, sessionId?: string | null): string {
-  const root = ensureDir(dir, sessionId)
+export function reserveDownloadPath(filename: string, dir?: string | null, sessionId?: string | null, origin?: DownloadOrigin): string {
+  const root = ensureDir(dir, sessionId, origin)
   for (let attempt = 0; attempt < 100; attempt++) {
     const candidate = uniqueCandidate(root, filename, attempt)
     try {
@@ -223,6 +232,23 @@ export function registerDownload(sessionId: string | null | undefined, path: str
   registerArtifact(sessionId, { path, producer: 'download', final })
 }
 
+/**
+ * Hand a finished zone download to the transfer service. The artifact
+ * registry cannot: a download finishes after (or outside) the tool call it
+ * belongs to, so there is no scope left to register into. The job's own
+ * completion wake tells the agent the node path works
+ * (`docs/design/session-sync-zone.md` §4.1).
+ */
+export function queueDownloadUpload(connectionId: string, sessionId: string, path: string): void {
+  const zone = zoneRelativePath(path)
+  if (!zone || zone.sessionId !== sessionId) return
+  void import('../environment/environment-host')
+    .then(({ getEnvironmentHost }) => {
+      getEnvironmentHost().artifactTransfers?.defer({ connectionId, sessionId, localPath: path, relativePath: zone.relativePath })
+    })
+    .catch((err) => log.warn('[browser-download] could not queue the node transfer: %s', err instanceof Error ? err.message : String(err)))
+}
+
 /** Page downloads already adopted, so a second listing reuses the same copy. */
 const adopted = new Map<string, string>()
 
@@ -240,8 +266,14 @@ const adopted = new Map<string, string>()
  * Returns the path to report — the original when there is nothing to adopt.
  */
 export function adoptCapturedDownload(sessionId: string | null | undefined, path: string): string {
-  if (!sessionId || !path || isUnderSyncZone(path)) return path
+  if (!sessionId || !path) return path
   if (currentHostActionConnection() === null) return path
+  // Captured straight into the zone (the tab's driver was known): nothing to
+  // copy, but the listing still needs a ref or its reply is not rewritten.
+  if (isUnderSyncZone(path)) {
+    if (zoneRelativePath(path)?.sessionId === sessionId) registerDownload(sessionId, path, true)
+    return path
+  }
   // Listing is not a one-shot: the agent may ask twice, and adopting twice
   // would leave two copies and two node uploads of one download.
   const key = `${sessionId}\u0000${realOrSelf(path)}`

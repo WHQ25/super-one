@@ -2,6 +2,8 @@ import type { BrowserWindow } from 'electron'
 import { randomUUID } from 'crypto'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
 import log from '../logger'
+import { currentHostActionConnection } from '../mcp/artifact-registry'
+import { rememberTabDriver } from './browser-tab-drivers'
 
 export type BrowserAutomationOp =
   | 'snapshot'
@@ -71,6 +73,9 @@ export async function resolveBrowserWebContentsId(sessionId: string, tab?: strin
   if (typeof result.webContentsId !== 'number' || result.webContentsId < 0) {
     throw new Error('Could not resolve the target browser view')
   }
+  // The one place every browser tool passes: a download this view starts
+  // later is filed under the session that drove it here.
+  rememberTabDriver(result.webContentsId, sessionId, currentHostActionConnection())
   return result.webContentsId
 }
 

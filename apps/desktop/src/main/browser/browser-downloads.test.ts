@@ -12,15 +12,24 @@ vi.mock('../logger', () => ({ default: { warn: vi.fn(), info: vi.fn(), error: vi
 
 vi.mock('./browser-automation-bridge', () => ({ browserAutomationCall: vi.fn() }))
 
+const store = vi.hoisted(() => ({
+  reserveDownloadPath: vi.fn((name: string, _dir?: string | null, sessionId?: string | null, origin?: { connectionId: string | null }) =>
+    origin?.connectionId ? `/zone/${sessionId}/download/${name}` : `/tmp/dl/${name}`),
+  queueDownloadUpload: vi.fn(),
+}))
 vi.mock('../agent/browser-download-store', () => ({
   filenameFor: (raw: string) => raw,
-  reserveDownloadPath: (name: string) => `/tmp/dl/${name}`,
+  reserveDownloadPath: store.reserveDownloadPath,
+  queueDownloadUpload: store.queueDownloadUpload,
 }))
 
 import { browserAutomationCall } from './browser-automation-bridge'
 
 let listDownloads: typeof import('./browser-downloads').listDownloads
 let waitForDownloads: typeof import('./browser-downloads').waitForDownloads
+// Re-imported with the module under test: `resetModules` gives each test a
+// fresh driver map, and the one the capture reads must be the one we fill.
+let rememberTabDriver: typeof import('./browser-tab-drivers').rememberTabDriver
 
 class FakeItem {
   private doneHandler?: (event: unknown, state: string) => void
@@ -70,12 +79,40 @@ describe('page-triggered download capture', () => {
     const mod = await import('./browser-downloads')
     listDownloads = mod.listDownloads
     waitForDownloads = mod.waitForDownloads
+    rememberTabDriver = (await import('./browser-tab-drivers')).rememberTabDriver
     mod.registerBrowserDownloadCapture()
   })
 
   it('gives the item a save path so Electron never opens a save dialog', () => {
     const item = emitDownload('a.txt', 10)
     expect(item.savePath).toBe('/tmp/dl/a.txt')
+  })
+
+  it('files a download the page starts in a tab a remote session drives into that session zone, and queues it for the node', async () => {
+    // `will-download` is synchronous and tab ownership is renderer state, so
+    // the capture asks who last *drove* the tab instead — every browser tool
+    // call records that. A remote session's agent then finds the file in its
+    // own directory without listing first, and the transfer wake names it.
+    rememberTabDriver(10, 'sess-1', 'conn-1')
+    const item = emitDownload('export.csv', 10)
+    expect(item.savePath).toBe('/zone/sess-1/download/export.csv')
+    expect(store.reserveDownloadPath).toHaveBeenCalledWith('export.csv', null, 'sess-1', { connectionId: 'conn-1' })
+    expect(store.queueDownloadUpload).not.toHaveBeenCalled()
+    item.finish()
+    expect(store.queueDownloadUpload).toHaveBeenCalledWith('conn-1', 'sess-1', '/zone/sess-1/download/export.csv')
+  })
+
+  it('keeps a local session download in the Downloads folder, and an undriven tab too', () => {
+    rememberTabDriver(11, 'sess-local', null)
+    expect(emitDownload('a.txt', 11).savePath).toBe('/tmp/dl/a.txt')
+    expect(emitDownload('b.txt', 12).savePath).toBe('/tmp/dl/b.txt')
+    expect(store.queueDownloadUpload).not.toHaveBeenCalled()
+  })
+
+  it('does not queue a remote download that was cancelled or interrupted', () => {
+    rememberTabDriver(10, 'sess-1', 'conn-1')
+    emitDownload('half.bin', 10).finish('interrupted')
+    expect(store.queueDownloadUpload).not.toHaveBeenCalled()
   })
 
   it('lists only downloads from tabs the calling session owns', async () => {

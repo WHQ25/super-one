@@ -6,7 +6,8 @@ import { pipeline } from 'stream/promises'
 import log from '../logger'
 import { mediaFileGrants } from '../media-file-grants'
 import { browserAutomationCall } from './browser-automation-bridge'
-import { filenameFor, registerDownload, reserveDownloadPath } from '../agent/browser-download-store'
+import { filenameFor, queueDownloadUpload, registerDownload, reserveDownloadPath } from '../agent/browser-download-store'
+import { tabDriver, type TabDriver } from './browser-tab-drivers'
 
 const BROWSER_PARTITION = 'persist:browser'
 const MAX_CAPTURED = 20
@@ -20,12 +21,14 @@ interface CapturedDownload {
   state: 'progressing' | 'completed' | 'cancelled' | 'interrupted'
   startedAt: number
   webContentsId: number
+  /** The session that drove the tab when the download started, if known. */
+  driver: TabDriver | null
 }
 
 // The capture buffer spans every browser view in the app, so a download is only
 // ever reported to the session that owns the tab it came from — otherwise one
 // session's agent could read another's downloaded files.
-export type DownloadRecord = Omit<CapturedDownload, 'webContentsId'>
+export type DownloadRecord = Omit<CapturedDownload, 'webContentsId' | 'driver'>
 
 export interface DownloadResult {
   path: string
@@ -163,9 +166,16 @@ export async function downloadUrl(url: string, opts: DownloadUrlOptions = {}): P
 export function registerBrowserDownloadCapture(): void {
   session.fromPartition(BROWSER_PARTITION).on('will-download', (_event, item, webContents) => {
     const filename = filenameFor(item.getFilename(), item.getURL(), item.getMimeType() || '')
+    // Ownership is renderer state behind an async call and this handler must
+    // answer now; the session that last drove the tab is known synchronously
+    // and is the one whose agent clicked. A remote session's file goes into
+    // its zone so the agent can open it; a local session's into Downloads.
+    const driver = tabDriver(webContents?.id)
     let path: string
     try {
-      path = reserveDownloadPath(filename)
+      path = driver
+        ? reserveDownloadPath(filename, null, driver.sessionId, { connectionId: driver.connectionId })
+        : reserveDownloadPath(filename)
     } catch (err) {
       log.warn('[browser-download] failed to reserve a save path', err)
       return
@@ -180,6 +190,7 @@ export function registerBrowserDownloadCapture(): void {
       state: 'progressing',
       startedAt: Date.now(),
       webContentsId: webContents?.id ?? -1,
+      driver,
     }
     captured.unshift(record)
     captured.length = Math.min(captured.length, MAX_CAPTURED)
@@ -189,6 +200,9 @@ export function registerBrowserDownloadCapture(): void {
       record.bytes = item.getReceivedBytes()
       if (state === 'completed') {
         try { mediaFileGrants().add(path) } catch (error) { log.warn('[browser-download] could not persist media grant', error) }
+        // Outside any tool call, so the transfer service takes it directly;
+        // its completion wake is how the agent learns the node path works.
+        if (driver?.connectionId) queueDownloadUpload(driver.connectionId, driver.sessionId, path)
       }
       if (state !== 'completed') log.warn(`[browser-download] ${state}: ${record.url}`)
       notifyWaiters()
@@ -197,15 +211,8 @@ export function registerBrowserDownloadCapture(): void {
   })
 }
 
-function toRecord(d: CapturedDownload): DownloadRecord {
-  return {
-    url: d.url,
-    filename: d.filename,
-    path: d.path,
-    bytes: d.bytes,
-    state: d.state,
-    startedAt: d.startedAt,
-  }
+function toRecord({ webContentsId: _wc, driver: _driver, ...record }: CapturedDownload): DownloadRecord {
+  return record
 }
 
 async function ownedWebContentsIds(sessionId: string): Promise<Set<number>> {

@@ -625,12 +625,20 @@ marked and the residue is stated):
   with no scope left to register into, so its finalizer queues the transfer
   itself and the transfer's completion wake tells the agent the path works.
   Local sessions are unchanged: downloads stay user-visible in Downloads.
-  **Still open:** a download the *page* starts (an export button the agent
-  clicks) cannot resolve its session inside `will-download` — ownership is
-  renderer state behind an async call, and the event is synchronous — so it
-  still lands in the user's Downloads folder and is adopted into the zone when
-  `browser_list_downloads` reports it. The agent gets a path it can read;
-  what it does not get is the file arriving in the zone before it asks.
+  A download the *page* starts (an export button the agent clicks) is filed
+  at capture time too, since 2026-09-14: `will-download` cannot ask who
+  *owns* the tab — that is renderer state behind an async call — but it can
+  ask who last *drove* it, which every browser tool call records
+  (`browser-tab-drivers.ts`) as it resolves its view. A tab a remote agent
+  drove files its downloads into that session's zone and queues the transfer
+  when the bytes land, so the agent finds the file without listing first;
+  listing still works and registers the ref so the reply is rewritten. The
+  consequence to know about: a person who downloads from a tab a remote
+  agent has driven finds the file in the session directory, not in Downloads.
+  The adoption path stays for a tab nothing drove yet. And an upload is now
+  skipped when the node already holds the file at the same size and mtime —
+  the stamp a finished transfer leaves — so a download that landed before
+  the listing, or a recording named twice, is not sent twice.
 - ~~**Device captures, recordings and downloads** are not in the zone yet~~ —
   **implemented 2026-09-14.** Recordings write to `producerDir(sessionId,
   'recording')/<target>` and register on persist and on adopt; device captures
@@ -642,7 +650,7 @@ marked and the residue is stated):
   transcripts from before this change still render. Computer-use recordings
   register their sealed file when `service.act` returns, not when the path is
   reserved — a path is not an artifact until something is written to it.
-  **Still open:** page-triggered downloads, as above.
+  Page-triggered downloads: filed at capture, as above.
 - **Reclaim** — **implemented 2026-09-14**, deliberately evidence-based rather
   than quota-based. `reclaimSyncZone` runs 30 s after launch and removes only
   what it can *prove* is dead: a session directory whose owner says it is gone,

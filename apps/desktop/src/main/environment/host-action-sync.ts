@@ -235,6 +235,24 @@ interface PlannedRef {
   relativePath: string
   nodePath: string
   size: number
+  mtimeMs: number
+}
+
+/**
+ * Does the node already hold this exact file? A finished upload stamps the
+ * desktop copy with the node's mtime, so size + mtime agreeing is the same
+ * test the lazy mirror uses in the other direction (§4.2). True for a
+ * download that was queued at capture time and landed before the agent
+ * listed it, or a recording named in two replies. An unreachable node reads
+ * as "no", and the upload proceeds as it always did.
+ */
+async function nodeAlreadyHas(item: PlannedRef, deps: HostActionSyncDeps): Promise<boolean> {
+  try {
+    const remote = await deps.stat({ sessionId: item.sessionId, relativePath: item.relativePath })
+    return remote.exists && remote.size === item.size && remote.mtimeMs === item.mtimeMs
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -270,12 +288,15 @@ export async function syncHostActionOutputs(
     // The same matcher on the same text the rewrite will see.
     if (!mentionedInReply(reply, ref.path)) continue
     let size: number
+    let mtimeMs: number
     try {
-      size = statSync(ref.path).size
+      const st = statSync(ref.path)
+      size = st.size
+      mtimeMs = Math.floor(st.mtimeMs)
     } catch {
       continue
     }
-    planned.push({ ref, sessionId: zone.sessionId, relativePath: zone.relativePath, nodePath, size })
+    planned.push({ ref, sessionId: zone.sessionId, relativePath: zone.relativePath, nodePath, size, mtimeMs })
   }
   if (planned.length === 0) return reply
 
@@ -288,6 +309,8 @@ export async function syncHostActionOutputs(
   let expiresAt = claimExpiresAt
   for (const item of planned) {
     mapping.set(item.ref.path, item.nodePath)
+    if (await nodeAlreadyHas(item, deps)) continue
+    throwIfAborted(deps.signal)
     // One transferId for the file's whole life: the node keeps a half-written
     // transfer open after a dropped connection, and a job retrying under a new
     // id would be told `busy` by it. The job carries this id and resumes.

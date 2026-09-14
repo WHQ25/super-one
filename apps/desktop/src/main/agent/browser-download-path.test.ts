@@ -198,6 +198,25 @@ describe('downloads for a remote session', () => {
     expect(existsSync(join(outside, 'download', 'a.txt'))).toBe(false)
   })
 
+  it('lands in the zone for a caller that names the connection itself, with no tool call in flight', () => {
+    // A page-triggered download is captured by an event handler, outside any
+    // tool call scope; the capture knows the driver and says so explicitly.
+    expect(resolveDownloadDir(null, 's1', { connectionId: 'conn-1' })).toBe(producerDir('s1', 'download'))
+    expect(resolveDownloadDir(null, 's1', { connectionId: null })).toBe(state.osDownloads)
+  })
+
+  it('registers a zone file it is asked to adopt instead of copying it again', async () => {
+    // A download captured straight into the zone needs no copy; it still
+    // needs a ref, or the listing reply is not rewritten to the node path.
+    const zoneDir = producerDir('s1', 'download')
+    mkdirSync(zoneDir, { recursive: true })
+    const path = join(zoneDir, 'export.csv')
+    writeFileSync(path, 'captured into the zone')
+    const reported = await collectArtifacts('s1', 'call-11', async () => adoptCapturedDownload('s1', path), 'conn-1')
+    expect(reported).toBe(path)
+    expect(takeArtifacts('s1', 'call-11')).toEqual([{ path, producer: 'download', final: true }])
+  })
+
   it('leaves a local session downloading into the configured folder', async () => {
     state.configuredDir = join(root, 'custom')
     const path = await collectArtifacts('s1', 'call-4', async () => reserveDownloadPath('a.txt', null, 's1'))

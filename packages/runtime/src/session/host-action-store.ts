@@ -131,6 +131,15 @@ export interface HostActionStore {
     now?: number
   }): { migrated: HostActionRow[]; cancelled: HostActionRow[] }
   /**
+   * Has this artifact-completion wake already been injected into the session?
+   * The desktop retries a wake until the node acknowledges it, and the
+   * acknowledgement is only as durable as the record behind it — an in-memory
+   * one forgot every delivery on restart, and the next retry injected the
+   * same sentence again (`docs/design/session-sync-zone.md` §9).
+   */
+  hasDeliveredNotification(sessionId: string, notificationId: string): boolean
+  recordDeliveredNotification(sessionId: string, notificationId: string, now?: number): void
+  /**
    * Requeue expired claimed+safe actions to pending; cancel expired claimed+unsafe.
    * Also cancel any action past its deadline still non-terminal.
    */
@@ -259,7 +268,18 @@ export function ensureHostActionTables(db: SqliteDatabase): void {
     `CREATE INDEX IF NOT EXISTS idx_host_action_changes_controller_seq
      ON host_action_changes(controller_client_session_id, sequence)`,
   ).run()
+  db.prepare(
+    `CREATE TABLE IF NOT EXISTS artifact_notifications (
+      session_id TEXT NOT NULL,
+      notification_id TEXT NOT NULL,
+      delivered_at INTEGER NOT NULL,
+      PRIMARY KEY (session_id, notification_id)
+    )`,
+  ).run()
 }
+
+/** A delivery receipt older than this has outlived any retry the desktop would make. */
+const NOTIFICATION_RECEIPT_TTL_MS = 30 * 24 * 60 * 60 * 1000
 
 export function createSqliteHostActionStore(db: SqliteDatabase): HostActionStore {
   ensureHostActionTables(db)
@@ -348,7 +368,20 @@ export function createSqliteHostActionStore(db: SqliteDatabase): HostActionStore
     }
   }
 
+  const hasDelivered = db.prepare(
+    'SELECT 1 FROM artifact_notifications WHERE session_id = ? AND notification_id = ?',
+  )
+  const recordDelivered = db.prepare(
+    'INSERT OR REPLACE INTO artifact_notifications (session_id, notification_id, delivered_at) VALUES (?, ?, ?)',
+  )
+  const pruneDelivered = db.prepare('DELETE FROM artifact_notifications WHERE delivered_at < ?')
+
   const store: HostActionStore = {
+    hasDeliveredNotification: (sessionId, notificationId) => hasDelivered.get(sessionId, notificationId) !== undefined,
+    recordDeliveredNotification: (sessionId, notificationId, now = Date.now()) => {
+      recordDelivered.run(sessionId, notificationId, now)
+      pruneDelivered.run(now - NOTIFICATION_RECEIPT_TTL_MS)
+    },
     create(input) {
       const now = input.now ?? Date.now()
       const deadlineMs = input.deadlineMs ?? DEFAULT_HOST_ACTION_DEADLINE_MS

@@ -592,14 +592,15 @@ marked and the residue is stated):
   the notification without re-uploading; `notificationId` is the job id, and
   the node injects once per id. A node that answers `not_found` / `forbidden`
   (session gone) or does not know the method ends the job.
-  **Still open:** the node's "already injected this one" record is in memory,
-  so a node restart between the injection and the desktop's next retry can
-  inject a wake twice. The desktop's transfer job is what makes the desktop
-  *retry* an unacknowledged wake; what happens after the node acknowledges one
-  and then dies before the harness consumes it has not been tested, so this is
-  a retry guarantee and not an end-to-end delivery guarantee. Making the
-  node's half durable needs a table and was judged not worth one for a
-  duplicate sentence.
+  Since 2026-09-14 the node's "already injected this one" record is a row in
+  the host-action store (`artifact_notifications`, pruned after 30 days),
+  so a restart between the injection and the desktop's next retry no longer
+  injects the wake twice; the integration test restarts the node runtime on
+  the same home and retries. The desktop's transfer job is what makes the
+  desktop *retry* an unacknowledged wake; what happens after the node
+  acknowledges one and then dies before the harness consumes it has not been
+  tested, so this remains a retry guarantee and not an end-to-end delivery
+  guarantee.
 - ~~**Claim renewal** as an alternative to deferral~~ — **implemented
   2026-09-14.** `session.renewHostActionClaim({ actionId, claimToken, ttlMs })`
   extends a live claim; the holder proves itself with the claim token, and the

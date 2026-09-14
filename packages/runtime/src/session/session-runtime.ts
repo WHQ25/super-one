@@ -1036,7 +1036,12 @@ export class SessionRuntime {
     // permanently lost notification, which is the one outcome this channel
     // exists to prevent.
     const key = `${input.sessionId}\u0000${input.notificationId}`
-    if (this.deliveredArtifactNotifications.has(key)) return { delivered: true }
+    // The receipt lives in the host-action store, which survives a restart;
+    // the in-memory set only stands in when there is no store at all.
+    const delivered = this.hostActions
+      ? this.hostActions.hasDeliveredNotification(input.sessionId, input.notificationId)
+      : this.deliveredArtifactNotifications.has(key)
+    if (delivered) return { delivered: true }
     const existing = this.deliveringArtifactNotifications.get(key)
     if (existing) {
       await existing
@@ -1044,6 +1049,10 @@ export class SessionRuntime {
     }
     const work = this.sendWithoutLease({ sessionId: input.sessionId, text: input.text, source: 'task-notification' })
       .then(() => {
+        if (this.hostActions) {
+          this.hostActions.recordDeliveredNotification(input.sessionId, input.notificationId)
+          return
+        }
         this.deliveredArtifactNotifications.add(key)
         if (this.deliveredArtifactNotifications.size > 4096) {
           const oldest = this.deliveredArtifactNotifications.values().next().value

@@ -146,6 +146,37 @@ describe('artifact RPC on a node', () => {
     client.close()
   })
 
+  it('does not wake the agent a second time for a job it delivered before the node restarted', async () => {
+    // The desktop retries a wake until the node acknowledges it; the
+    // acknowledgement is only as durable as the record behind it. A record
+    // kept in memory forgets every delivery on restart, and the next retry
+    // injects the same sentence again.
+    const { rt, nodeHome } = await boot()
+    let client = await connectAuthedRpc(rt)
+    const { sessionId, lease } = await openSession(client)
+    const data = Buffer.from('the recording')
+    await client.rpc('artifact.put', {
+      sessionId, relativePath: 'recording/run.mp4', transferId: 'late', offset: 0, total: data.length,
+      sha256: createHash('sha256').update(data).digest('hex'), chunk: data.toString('base64'), final: true, ...lease,
+    })
+    expect(await client.rpc('session.notifyArtifactCompleted', { sessionId, notificationId: 'job-1', relativePaths: ['recording/run.mp4'] }))
+      .toEqual({ delivered: true })
+    client.close()
+    await rt.stop()
+    runtimes.splice(runtimes.indexOf(rt), 1)
+
+    const restarted = await startNodeRuntime({ nodeHome, bindHost: '127.0.0.1', bindPort: 0, simulatedHarness: true })
+    runtimes.push(restarted)
+    client = await connectAuthedRpc(restarted)
+    await client.rpc('session.acquireControl', { sessionId, ttlMs: 60_000 })
+    expect(await client.rpc('session.notifyArtifactCompleted', { sessionId, notificationId: 'job-1', relativePaths: ['recording/run.mp4'] }))
+      .toEqual({ delivered: true })
+
+    const { messages } = (await client.rpc('session.messages.list', { sessionId })) as { messages: Array<{ role: string; text?: string }> }
+    expect(messages.filter((m) => m.role === 'user' && m.text?.includes('artifact_sync'))).toHaveLength(1)
+    client.close()
+  })
+
   it('names the file it actually checked, so a crafted path cannot write the notification', async () => {
     // The wording is the node's, and the paths in it have to be the resolved
     // ones — otherwise a relativePath that normalises onto a real file can

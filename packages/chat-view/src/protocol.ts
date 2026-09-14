@@ -47,6 +47,8 @@ export interface SessionProjection {
 }
 
 export interface ReductionProjection extends SessionProjection {
+  /** Optional reliable-delivery receipt; legacy hosts can keep sending bare projections. */
+  delivery?: { channelId: string; sequence: number }
   messagePatches?: ChatMessage[]
   messageOrder?: string[]
   hasMoreHistory?: boolean
@@ -84,6 +86,7 @@ export type HostInbound =
 
 export type HostOutbound =
   | { type: 'ready' }
+  | { type: 'transcriptApplied'; channelId: string; sequence: number }
   | { type: 'error'; fatal: true; message: string }
   | { type: 'requestNative'; requestId: string; action: string; payload?: unknown }
   | {

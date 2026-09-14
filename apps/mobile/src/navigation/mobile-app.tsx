@@ -5,7 +5,7 @@ import { invalidateGitResources, requestGitResource } from '../git-resource-cach
 import { validateTurnAttachments } from '@superone/shared/attachment-validation'
 import { refreshSessionCatalog } from '../session-catalog-refresh'
 import { useComposerSend } from './use-composer-send'
-import { TranscriptProjection } from '../transcript-projection'
+import { useTranscriptSync } from './use-transcript-sync'
 import { SessionActivityContext, useWorkspaceActivity } from './use-session-activity'
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { StatusBar } from 'expo-status-bar'
@@ -24,11 +24,10 @@ import {
 import type {
   AskUserQuestionRequest, ChatMessage, HarnessId, ImageAttachment, PermissionRequest,
   ListHarnessOptionsResponse, PlanApprovalRequest, RemoteCommand, RemoteHarnessOption,
-  RealtimeTimelineSegment, SandboxInfo, SandboxMode, SessionAgentLaunchProposal, TodoItem, WorktreeInfo,
+  SandboxInfo, SandboxMode, SessionAgentLaunchProposal, TodoItem, WorktreeInfo,
 } from '@superone/shared/agent-types'
 import { resolveRingContextWindow, SESSION_AGENT_LAUNCHES_FIELD } from '@superone/shared/agent-types'
 import { selectedCatalogContextWindow } from '@superone/shared/model-option-params'
-import { mergeRealtimeTranscript } from '@superone/shared/realtime-transcript'
 import { ChatRuntime, type SessionWorktreeFacts } from '../runtime'
 import { openedSessionSelection } from '../session-restore-selection'
 import { TerminalRuntime, type TerminalUi } from '../terminal-runtime'
@@ -424,33 +423,12 @@ export function MobileApp() {
   useEffect(() => {
     inject(webRef, { type: 'setViewport', fontScale, locale })
   }, [fontScale, locale])
-  // Voice is woven in only on the way to the WebView. `session.messages` stays the
-  // host's own list: the projected voice rows carry synthetic `codex-realtime-*` ids
-  // that nothing on the host can resolve, and they would leak into `workflowRunRows`
-  // and the in-progress dedupe in `ChatRuntime.open`.
-  const transcriptCache = useRef<{
-    messages: ChatMessage[]
-    segments: RealtimeTimelineSegment[]
-    merged: ChatMessage[]
-  } | null>(null)
-  const transcriptFor = (session: ChatRuntime['session']): ChatMessage[] => {
-    const cached = transcriptCache.current
-    if (cached && cached.messages === session.messages && cached.segments === session.realtimeSegments) {
-      return cached.merged
-    }
-    const merged = mergeRealtimeTranscript(session.messages, session.realtimeSegments)
-    transcriptCache.current = { messages: session.messages, segments: session.realtimeSegments, merged }
-    return merged
-  }
-  const transcriptProjectionRef = useRef<{ runtime: ChatRuntime; projection: TranscriptProjection } | null>(null)
+  const transcriptSync = useTranscriptSync(webRef)
   const syncSheets = (runtime: ChatRuntime, hydrate = false) => {
     if (connectionRef.current.epoch !== runtime.epoch) {
       connectionRef.current = { state: 'connected', epoch: runtime.epoch }
       setConnectionState('connected')
       inject(webRef, { type: 'setConnection', ...connectionRef.current })
-    }
-    if (transcriptProjectionRef.current?.runtime !== runtime) {
-      transcriptProjectionRef.current = { runtime, projection: new TranscriptProjection() }
     }
     const pending = runtime.session.pendingPermissions[0]
     const mentionArtworkRevision = dynamicMentionArtworkRevision()
@@ -459,9 +437,7 @@ export function MobileApp() {
     const iconsRevision = mcpIconsRevision()
     const includeMcpIcons = hydrate || iconsRevision !== mcpIconsRevisionRef.current
     const mcpIcons = includeMcpIcons ? mcpIconsSnapshot() : undefined
-    inject(webRef, {
-      type: hydrate ? 'hydrate' : 'applyReductionPatch',
-      ...transcriptProjectionRef.current.projection.project(transcriptFor(runtime.session), hydrate),
+    transcriptSync.publish(runtime, {
       hasMoreHistory: runtime.hasMoreHistory,
       historyNavigation: runtime.navigationAvailable,
       ...(mentionArtwork ? { mentionArtwork } : {}),
@@ -481,7 +457,7 @@ export function MobileApp() {
       apiRetry: runtime.session.apiRetry,
       pendingTurn: runtime.pendingTurn,
       projectPath: runtime.projectPath || null,
-    })
+    }, hydrate)
     if (includeMentionArtwork) mentionArtworkRevisionRef.current = mentionArtworkRevision
     if (includeMcpIcons) mcpIconsRevisionRef.current = iconsRevision
     setHasTranscript(runtime.session.messages.length > 0)
@@ -645,6 +621,7 @@ export function MobileApp() {
     } catch {
       return
     }
+    if (transcriptSync.receive(message)) return
     if (message.type === 'ready') {
       inject(webRef, webViewTheme)
       inject(webRef, { type: 'setViewport', fontScale, locale })
@@ -1141,6 +1118,7 @@ export function MobileApp() {
       (error) => setStatus(error instanceof Error ? error.message : 'Could not load agent settings'))
   }
   const resetSessionChrome = () => {
+    transcriptSync.reset()
     systemInfoRequestRef.current++
     setSessionWorktree({ isWorktree: false, worktreePath: null, gitBranch: null, removed: false })
     setPerm(null)

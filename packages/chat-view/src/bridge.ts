@@ -39,8 +39,25 @@ export function requestNativeAsync(action: string, payload?: unknown): Promise<u
 }
 
 export function installHostBridge(onMessage: (message: HostInbound) => void): () => void {
+  let channelId: string | null = null
+  let sequence = 0
+  const retiredChannels = new Set<string>()
   const accept = (value: unknown): void => {
     const message = parseHostInbound(value)
+    const delivery = message && 'delivery' in message ? message.delivery : undefined
+    if (delivery) {
+      if (retiredChannels.has(delivery.channelId)) return
+      if (channelId !== delivery.channelId) {
+        if (channelId) retiredChannels.add(channelId)
+        channelId = delivery.channelId
+        sequence = 0
+      }
+      if (delivery.sequence <= sequence) {
+        // An ACK can be lost too. Receipt retries must never replay a hydrate.
+        postHost({ type: 'transcriptApplied', ...delivery })
+        return
+      }
+    }
     if (message?.type === 'nativeActionResult') {
       const pending = pendingRequests.get(message.requestId)
       pendingRequests.delete(message.requestId)
@@ -48,6 +65,10 @@ export function installHostBridge(onMessage: (message: HostInbound) => void): ()
       else pending?.resolve(message.result)
     }
     if (message) onMessage(message)
+    if (delivery) {
+      sequence = delivery.sequence
+      postHost({ type: 'transcriptApplied', ...delivery })
+    }
   }
   const handleMessage = (event: MessageEvent): void => accept(event.data)
   const handleDocumentMessage = (event: Event): void => {

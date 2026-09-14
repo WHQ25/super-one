@@ -828,6 +828,12 @@ and reports input and bounded resize messages to RN.
   dropped, and overlapping restores may only commit their newest generation.
 - Script-fatal errors and native iOS/Android WebView process exits reload and
   hydrate the chat document, bounded to two reloads per 10-second window.
+- Transcript paints use `TranscriptDelivery`: one unacknowledged projection plus
+  one coalesced latest snapshot. The document emits `transcriptApplied`; a missing
+  receipt retries the same projection after 1s, including the final idle paint.
+  Only acknowledged paints can be followed by a diff. Hydrates supersede pending
+  work; the document acknowledges duplicates without reapplying them. Keep native
+  permission state updates outside this document queue.
 - Only relay `event` envelopes advance or emit cumulative ACKs. LAN and terminal
   frames never produce relay ACKs.
 - Development builds log only decrypted `AgentEvent.type` values, never event payloads

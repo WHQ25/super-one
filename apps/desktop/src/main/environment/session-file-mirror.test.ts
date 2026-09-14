@@ -3,8 +3,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const state = vi.hoisted(() => ({ userData: '' }))
+const state = vi.hoisted(() => ({ userData: '', jobs: [] as { sessionId: string; relativePath: string; state: string }[] }))
 vi.mock('electron', () => ({ app: { getPath: () => state.userData } }))
+// The real job table, live: the mirror must read it at the moment it deletes or
+// overwrites, not from a snapshot taken before the first fetch started.
+vi.mock('../db-artifact-transfers', () => ({
+  listArtifactTransfersForSession: (sessionId: string) => state.jobs.filter((j) => j.sessionId === sessionId),
+}))
 
 import { mirrorNodeArtifact, mirrorNodeDirectory } from './session-file-mirror'
 
@@ -12,6 +17,7 @@ let root: string
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'mirror-'))
   state.userData = root
+  state.jobs = []
 })
 afterEach(() => rmSync(root, { recursive: true, force: true }))
 
@@ -433,5 +439,107 @@ describe('node directory mirror — combination scenarios (round 8 follow-up)', 
     }
     await expect(mirrorNodeArtifact('s1', 'agent/foo', node)).rejects.toMatchObject({ code: 'aborted' })
     expect(existsSync(join(asDir, 'child', 'x'))).toBe(true)
+  })
+})
+
+describe('node mirror — pending originals read at the moment of writing (round 9 follow-up)', () => {
+  /** A node whose pending set is the real job table, never an injected predicate. */
+  function liveNode(files: Record<string, Buffer>, opts: { onGet?: (rel: string) => Promise<void> | void } = {}) {
+    return {
+      connectionId: 'conn-1',
+      stat: async ({ relativePath }: { relativePath: string }) => {
+        const f = files[relativePath]
+        return f ? { exists: true, size: f.length, mtimeMs: 1_700_000_000_000 } : { exists: false, size: 0, mtimeMs: 0 }
+      },
+      get: async (req: { relativePath: string; offset: number; maxBytes: number }) => {
+        await opts.onGet?.(req.relativePath)
+        const f = files[req.relativePath]!
+        const slice = f.subarray(req.offset, req.offset + req.maxBytes)
+        return { chunk: slice.toString('base64'), total: f.length, mtimeMs: 1_700_000_000_000, eof: req.offset + slice.length >= f.length }
+      },
+      list: async ({ relativePath }: { relativePath: string }) => {
+        const entries = Object.keys(files)
+          .filter((rel) => rel.startsWith(relativePath + '/'))
+          .map((rel) => ({ relativePath: rel, size: files[rel]!.length, mtimeMs: 1_700_000_000_000 }))
+        return { exists: entries.length > 0, entries, truncated: false }
+      },
+    }
+  }
+
+  it('Z1: keeps an original another producer queued while a member of the same directory was downloading', async () => {
+    // The prune must read the job table when it deletes, not from a snapshot
+    // taken before the first fetch — a capture queued in between is the only copy.
+    const newPath = join(root, 'sync', 's1', 'agent', 'app', 'new.png')
+    const node = liveNode({ 'agent/app/old.txt': Buffer.from('old') }, {
+      onGet: async () => {
+        // Another Host Action produces and enqueues while this get is in flight.
+        mkdirSync(join(newPath, '..'), { recursive: true })
+        writeFileSync(newPath, 'fresh capture')
+        state.jobs.push({ sessionId: 's1', relativePath: 'agent/app/new.png', state: 'pending' })
+      },
+    })
+    const outcome = await mirrorNodeDirectory('s1', 'agent/app', node)
+    expect(outcome.kind).toBe('local')
+    expect(existsSync(newPath)).toBe(true)
+  })
+
+  it('Z2A: serves a desktop original still owed to the node instead of overwriting it with the node’s older copy', async () => {
+    const path = join(root, 'sync', 's1', 'media-gen', 'g.preview.jpg')
+    mkdirSync(join(path, '..'), { recursive: true })
+    writeFileSync(path, 'NEW-desktop-bytes')
+    state.jobs.push({ sessionId: 's1', relativePath: 'media-gen/g.preview.jpg', state: 'pending' })
+    // The node still has the old version at the same path, different mtime.
+    const node = liveNode({ 'media-gen/g.preview.jpg': Buffer.from('old') })
+    const outcome = await mirrorNodeArtifact('s1', 'media-gen/g.preview.jpg', node)
+    expect(outcome).toMatchObject({ kind: 'local', path })
+    expect(readFileSync(path, 'utf8')).toBe('NEW-desktop-bytes')
+  })
+
+  it('Z2B: refuses to commit a fetch over an original that was produced and queued while it was downloading', async () => {
+    const path = join(root, 'sync', 's1', 'browser', 'shot.png')
+    const node = liveNode({ 'browser/shot.png': Buffer.from('node-old') }, {
+      onGet: async () => {
+        mkdirSync(join(path, '..'), { recursive: true })
+        writeFileSync(path, 'NEW-desktop-bytes')
+        state.jobs.push({ sessionId: 's1', relativePath: 'browser/shot.png', state: 'pending' })
+      },
+    })
+    const outcome = await mirrorNodeArtifact('s1', 'browser/shot.png', node)
+    expect(outcome.kind).toBe('unavailable')
+    expect(readFileSync(path, 'utf8')).toBe('NEW-desktop-bytes')
+  })
+
+  it('Z3: never serves a cached or offline copy that resolves outside the session zone', async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'mirror-z3-'))
+    const secret = join(outside, 'TOP')
+    writeFileSync(secret, 'not ours')
+    mkdirSync(join(root, 'sync', 's1', 'agent'), { recursive: true })
+    const { symlinkSync } = await import('node:fs')
+    symlinkSync(secret, join(root, 'sync', 's1', 'agent', 'link'))
+    try {
+      const size = statSync(secret).size
+      const mtimeMs = Math.floor(statSync(secret).mtimeMs)
+      // Cache hit: the node reports exactly what the link's target looks like.
+      const matching = { connectionId: 'c', stat: async () => ({ exists: true, size, mtimeMs }), get: async () => { throw new Error('must not fetch') } }
+      expect((await mirrorNodeArtifact('s1', 'agent/link', matching)).kind).toBe('unavailable')
+      // Offline: the node cannot be reached, so the local copy would be served.
+      const offline = { connectionId: 'c', stat: async () => { throw new Error('not connected') }, get: async () => { throw new Error('not connected') } }
+      expect((await mirrorNodeArtifact('s1', 'agent/link', offline)).kind).toBe('unavailable')
+    } finally {
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('Z4: stops before touching anything when the cancel lands while the pending set is being read', async () => {
+    const asDir = join(root, 'sync', 's1', 'agent', 'app', 'foo')
+    mkdirSync(join(asDir, 'keep'), { recursive: true })
+    writeFileSync(join(asDir, 'keep', 'x'), 'keep me')
+    const controller = new AbortController()
+    const node = liveNode({ 'agent/app/foo': Buffer.from('now a file') })
+    const realList = node.list
+    // Cancel lands after the listing, during the pending-set read that follows it.
+    node.list = async (input) => { const r = await realList(input); queueMicrotask(() => queueMicrotask(() => controller.abort())); return r }
+    await expect(mirrorNodeDirectory('s1', 'agent/app', { ...node, signal: controller.signal })).rejects.toMatchObject({ code: 'aborted' })
+    expect(existsSync(join(asDir, 'keep', 'x'))).toBe(true)
   })
 })

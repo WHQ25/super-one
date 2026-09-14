@@ -63,33 +63,46 @@ function namesReservedMetadata(relativePath: string): boolean {
   return relativePath.split(/[\\/]/).some((seg) => RESERVED_ZONE_NAMES.has(seg))
 }
 
-async function pendingUploadInJobs(sessionId: string, relativePath: string): Promise<boolean> {
-  try {
-    const { listArtifactTransfersForSession } = await import('../db-artifact-transfers')
-    return listArtifactTransfersForSession(sessionId).some((j) => j.relativePath === relativePath && j.state !== 'done')
-  } catch {
-    return false
-  }
-}
+/** "Is this desktop path a desktop original still owed to the node?", as of when it was taken. */
+type PendingSnapshot = (desktopPath: string) => boolean
 
 /**
- * A synchronous "is this desktop path a pending original?" for the destructive
- * steps, which must not `await` between deciding to delete and deleting. Built
- * once per top-level mirror: the caller-supplied predicate is used verbatim,
- * else the job table is read into a set up front.
+ * Takes a *fresh* synchronous view of the pending originals on demand.
+ *
+ * Freshness is the whole point: a capture another Host Action produced and
+ * queued while this mirror was mid-download is the only copy of that file, and
+ * a snapshot taken before the first fetch does not know about it. The module
+ * load is the only `await`, done once up front, so every destructive step can
+ * read the table synchronously at the moment it acts — no `await` between
+ * deciding to delete or overwrite and doing it.
  */
-async function pendingPathPredicate(sessionId: string, deps: MirrorDeps): Promise<(desktopPath: string) => boolean> {
+interface PendingSource {
+  snapshot(): PendingSnapshot
+}
+
+async function pendingSource(sessionId: string, deps: MirrorDeps): Promise<PendingSource> {
   const zoneRoot = sessionZoneDir(sessionId)
   const relOf = (p: string) => relative(zoneRoot, p).split(sep).join('/')
-  if (deps.isPendingUpload) return (p) => deps.isPendingUpload!(sessionId, relOf(p))
-  const rels = new Set<string>()
+  if (deps.isPendingUpload) {
+    return { snapshot: () => (p) => deps.isPendingUpload!(sessionId, relOf(p)) }
+  }
+  let list: ((id: string) => { relativePath: string; state: string }[]) | null = null
   try {
-    const { listArtifactTransfersForSession } = await import('../db-artifact-transfers')
-    for (const j of listArtifactTransfersForSession(sessionId)) if (j.state !== 'done') rels.add(j.relativePath)
+    list = (await import('../db-artifact-transfers')).listArtifactTransfersForSession
   } catch {
     /* no job table: nothing is protected beyond what is on disk */
   }
-  return (p) => rels.has(relOf(p))
+  return {
+    snapshot: () => {
+      const rels = new Set<string>()
+      try {
+        for (const j of list?.(sessionId) ?? []) if (j.state !== 'done') rels.add(j.relativePath)
+      } catch {
+        /* unreadable table: fall through to "nothing pending" */
+      }
+      return (p) => rels.has(relOf(p))
+    },
+  }
 }
 
 export type MirrorOutcome =
@@ -137,13 +150,20 @@ async function mirrorOneArtifact(
   relativePath: string,
   path: string,
   deps: MirrorDeps,
-  isPending?: (desktopPath: string) => boolean,
+  source?: PendingSource,
 ): Promise<MirrorOutcome> {
+  const outside = (): MirrorOutcome => ({ kind: 'unavailable', reason: `${relativePath} resolves outside the session zone` })
+  // Before anything is read OR written: a path that resolves out of the zone is
+  // not this mirror's to serve either. A cached copy behind a planted link is
+  // still a file from outside, and the callers hand the path straight on.
+  if (!withinSessionZone(sessionId, path)) return outside()
+  const pending = source ?? (await pendingSource(sessionId, deps))
   const local = localStat(path)
-  const pendingHere = async () =>
-    local && (deps.isPendingUpload ? deps.isPendingUpload(sessionId, relativePath) : await pendingUploadInJobs(sessionId, relativePath))
-      ? { kind: 'local' as const, path, ...local }
-      : { kind: 'missing' as const }
+  /** Every `local` answer after an await re-checks the boundary: a link can be planted mid-flight. */
+  const serveLocal = (st: { size: number; mtimeMs: number }): MirrorOutcome =>
+    withinSessionZone(sessionId, path) ? { kind: 'local', path, size: st.size, mtimeMs: st.mtimeMs } : outside()
+  const pendingHere = (): MirrorOutcome =>
+    local && pending.snapshot()(path) ? serveLocal(local) : { kind: 'missing' }
   let remote: ArtifactStatResult
   try {
     remote = await deps.stat({ sessionId, relativePath })
@@ -152,28 +172,46 @@ async function mirrorOneArtifact(
     if (ABSENT_STAT_ERRORS.has(code)) return pendingHere()
     if (REFUSED_STAT_ERRORS.has(code)) return { kind: 'unavailable', reason: `the node refused to stat it (${code})` }
     // Node unreachable: the local copy, if any, is the best answer there is.
-    return local ? { kind: 'local', path, ...local } : { kind: 'missing' }
+    return local ? serveLocal(local) : { kind: 'missing' }
   }
   if (!remote.exists) return pendingHere()
-  if (local && local.size === remote.size && local.mtimeMs === remote.mtimeMs) return { kind: 'local', path, ...local }
+  // A desktop original still owed to the node is newer than anything the node
+  // can have; overwriting it with the node's older copy destroys the only one.
+  if (local && pending.snapshot()(path)) return serveLocal(local)
+  if (local && local.size === remote.size && local.mtimeMs === remote.mtimeMs) return serveLocal(local)
   // The stat was an await: a cancel may have arrived, and the destructive
   // reconcile below must not run past it (a deleted directory does not come
   // back when the fetch then throws aborted).
   if (deps.signal?.aborted) throw aborted()
-  // A member reached through a link that leaves the zone is never written: the
-  // fetch would follow the link and overwrite a file outside the mirror.
-  if (!withinSessionZone(sessionId, path)) return { kind: 'unavailable', reason: `${relativePath} resolves outside the session zone` }
-  const pending = isPending ?? (await pendingPathPredicate(sessionId, deps))
+  if (!withinSessionZone(sessionId, path)) return outside()
   // Mark the owner before a single `.part` is opened: a first mirror that
   // crashes mid-download must still leave a directory the reclaim sweep can
   // reason about, and an unmarked one is kept forever.
   if (deps.connectionId) markZoneOwner(sessionId, deps.connectionId)
-  const reconciled = reconcileMirrorType(sessionId, path, pending, deps.signal)
+  const reconciled = reconcileMirrorType(sessionId, path, pending.snapshot(), deps.signal)
   if (reconciled === 'conflict') {
     return { kind: 'unavailable', reason: `${relativePath} cannot be placed: a desktop original or an out-of-zone link is in the way` }
   }
   try {
-    const fetched = await downloadArtifact({ sessionId, relativePath, destPath: path, get: deps.get, signal: deps.signal })
+    const fetched = await downloadArtifact({
+      sessionId,
+      relativePath,
+      destPath: path,
+      get: deps.get,
+      signal: deps.signal,
+      // The last word, synchronously, immediately before the rename: the whole
+      // download was an await, and a producer may have written and queued the
+      // real original at this path while it ran.
+      beforeCommit: () => {
+        if (deps.signal?.aborted) throw aborted()
+        if (pending.snapshot()(path)) {
+          throw Object.assign(new Error(`${relativePath} was produced here and is still owed to the node`), { code: 'conflict' })
+        }
+        if (!withinSessionZone(sessionId, path)) {
+          throw Object.assign(new Error(`${relativePath} resolves outside the session zone`), { code: 'conflict' })
+        }
+      },
+    })
     return { kind: 'local', path, size: fetched.bytes, mtimeMs: fetched.mtimeMs }
   } catch (err) {
     if ((err as { code?: string }).code === 'aborted') throw err
@@ -320,12 +358,17 @@ async function mirrorDirectoryLocked(sessionId: string, relativePath: string, de
   // Mark before any bytes so a crash mid-mirror still leaves a markable dir.
   if (deps.connectionId) markZoneOwner(sessionId, deps.connectionId)
 
-  const isPending = await pendingPathPredicate(sessionId, deps)
+  const pending = await pendingSource(sessionId, deps)
+  // Reading the job table was an await of its own; a cancel during it raises no
+  // further event, so the batch below would start with a signal that looks live.
+  if (deps.signal?.aborted) throw aborted()
   // The batch is cancelled as one: a member that cannot be placed, or the
   // caller's own abort, stops every worker — and every worker is awaited before
   // this returns, so a fetch a failed batch abandoned cannot outlive it and
   // land in a later mirror's tree.
   const batch = new AbortController()
+  // Carried over synchronously: an abort that already fired never fires again.
+  if (deps.signal?.aborted) batch.abort()
   const relayAbort = () => batch.abort()
   deps.signal?.addEventListener('abort', relayAbort, { once: true })
   const workerDeps: MirrorDeps = { ...deps, signal: batch.signal }
@@ -337,7 +380,7 @@ async function mirrorDirectoryLocked(sessionId: string, relativePath: string, de
       if (batch.signal.aborted) return
       let outcome: MirrorOutcome
       try {
-        outcome = await mirrorNodeArtifactWithin(sessionId, entry.relativePath, workerDeps, isPending)
+        outcome = await mirrorNodeArtifactWithin(sessionId, entry.relativePath, workerDeps, pending)
       } catch (err) {
         failure ??= err as Error
         batch.abort()
@@ -366,7 +409,9 @@ async function mirrorDirectoryLocked(sessionId: string, relativePath: string, de
     if (failed instanceof Error) throw failed
     return failed
   }
-  pruneMirroredDirectory(dir, keep, sessionId, isPending, deps.signal)
+  // A snapshot taken now, not before the fetches: a capture another Host Action
+  // queued while they ran is the only copy of that file.
+  pruneMirroredDirectory(dir, keep, sessionId, pending.snapshot(), deps.signal)
   return { kind: 'local', path: dir, size: 0, mtimeMs: 0 }
 }
 
@@ -375,13 +420,13 @@ function mirrorNodeArtifactWithin(
   sessionId: string,
   relativePath: string,
   deps: MirrorDeps,
-  isPending: (desktopPath: string) => boolean,
+  pending: PendingSource,
 ): Promise<MirrorOutcome> {
   if (namesReservedMetadata(relativePath)) return Promise.resolve({ kind: 'missing' })
   const path = desktopMirrorPath(sessionId, relativePath)
   const existing = inflight.get(path)
   if (existing) return existing
-  const work = mirrorOneArtifact(sessionId, relativePath, path, deps, isPending).finally(() => inflight.delete(path))
+  const work = mirrorOneArtifact(sessionId, relativePath, path, deps, pending).finally(() => inflight.delete(path))
   inflight.set(path, work)
   return work
 }

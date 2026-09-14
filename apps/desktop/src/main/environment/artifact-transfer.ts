@@ -139,6 +139,13 @@ export interface DownloadArtifactOptions {
   destPath: string
   get: ArtifactGetFn
   signal?: AbortSignal
+  /**
+   * Synchronous last word before the staged bytes replace whatever is at
+   * `destPath`. The download itself is a long await, so the caller re-checks
+   * here what it checked before starting; throwing refuses the commit and the
+   * part is discarded, leaving the existing file untouched.
+   */
+  beforeCommit?: () => void
 }
 
 /** How many times a download starts over because the file changed under it. */
@@ -181,6 +188,7 @@ export async function downloadArtifact(opts: DownloadArtifactOptions): Promise<T
     }
     ftruncateSync(fd, offset)
     closeSync(fd)
+    opts.beforeCommit?.()
     renameSync(partPath, opts.destPath)
     stampMtime(opts.destPath, mtimeMs)
   } catch (err) {

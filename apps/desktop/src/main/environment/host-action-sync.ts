@@ -128,12 +128,22 @@ function argRoles(toolName: string | undefined, args: Record<string, unknown>): 
       return { ...NO_ROLES, outputs: args.action === 'download' ? DIR_ARG : NO_ARGS }
     case 'browser_download':
       return { ...NO_ROLES, outputs: DIR_ARG }
+    // The compact dispatcher re-issues each public wrapper under an internal
+    // name (`browser_perf` → `browser_perf_measure`, `browser_action` →
+    // `browser_action_save` / `_do`), and the mapping runs again there. The
+    // internal name has to defer the same arguments, or the second pass
+    // judges what the first one deliberately left alone.
     case 'browser_perf':
+    case 'browser_perf_measure':
       return { ...NO_ROLES, deferred: new Set(['action']) }
     case 'browser_action':
-      // `input` feeds a saved flow's templates; `steps` *is* a flow being
-      // saved, whose paths have not been produced yet and are not to be mirrored.
-      return { ...NO_ROLES, deferred: new Set(['input', 'steps']) }
+    case 'browser_action_save':
+    case 'browser_action_do':
+      // `input` feeds a saved flow's templates; `steps` and `parameters`
+      // (whose defaults feed the same templates) *are* a flow being saved —
+      // definition data, whose paths are resolved on each run, not mirrored
+      // once and frozen at the version the save happened to see.
+      return { ...NO_ROLES, deferred: new Set(['input', 'steps', 'parameters']) }
     case 'miniapp_dev_setup':
       return { ...NO_ROLES, outputs: new Set(['directory', 'projectDir']) }
     case 'miniapp_dev_register':

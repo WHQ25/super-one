@@ -521,7 +521,17 @@ All four landed on 2026-09-14, one commit each.
   (`runPrimitive`, `executeBrowserTool`) maps the inner call by the inner
   tool's own roles, finding the Host Action's mapping through
   `AsyncLocalStorage`. Mapping twice is mapping once, because a desktop path
-  does not parse as a node zone path.
+  does not parse as a node zone path. A sixth review found that this was not
+  yet true end to end: the compact dispatcher re-issues each wrapper under an
+  internal name (`browser_perf_measure`, `browser_action_save` / `_do`) and
+  the second mapping pass judged there what the first had deferred; and a
+  saved flow's `parameters[].default` was mirrored at save time and stored as
+  a desktop path, freezing a source file at the version the save happened to
+  see. The internal names now defer the same arguments as their public
+  wrappers, and `parameters` is definition data like `steps` — resolved on
+  each run, never at save. The wiring test that had passed on a stale mock
+  reading now clears the mock per entry and covers a real saved flow's save
+  and run.
 
 - **Only refs the reply names are pushed** (§3). A registered artifact whose
   path never appears in `content[].text` is not uploaded: the agent has no

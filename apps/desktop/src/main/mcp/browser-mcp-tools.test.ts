@@ -1,5 +1,5 @@
 import { isNodeLocalSuperoneTool } from '@superone/shared/environment/host-action-browser-catalog'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -98,7 +98,8 @@ vi.mock('../browser/browser-cdp-perf', () => ({
   samplePerf: vi.fn(async () => ({})),
   resolveAppTarget: vi.fn(() => 1),
 }))
-vi.mock('electron', () => ({ app: { getPath: () => '/Users/me/Library/Application Support/SuperOne' } }))
+const electron = vi.hoisted(() => ({ userData: '' }))
+vi.mock('electron', () => ({ app: { getPath: () => electron.userData } }))
 
 import { decode as toonDecode } from '@toon-format/toon'
 import {
@@ -125,6 +126,10 @@ import { cdpClick, cdpHover } from '../browser/browser-cdp'
 import { startUrlDownloadTask, raceDownloadTask } from '../browser/browser-download-tasks'
 import { listDownloads } from '../browser/browser-downloads'
 import { withInputMapping } from '../environment/host-action-sync'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { cdpSetFileInput } from '../browser/browser-cdp'
 import { resolveWebmcpTrustConfirm } from './browser-webmcp-confirm'
 import { BROWSER_TOOLS_CALL_SUMMARY_DESCRIPTION } from './browser-webmcp-tool-defs'
 
@@ -790,6 +795,12 @@ describe('browser_download', () => {
       mode: 'sync',
       settled: { ok: true, result: { path: '/tmp/dl/a.png', filename: 'a.png', bytes: 12, mimeType: 'image/png' } },
     })
+    electron.userData = mkdtempSync(join(tmpdir(), 'browser-mcp-tools-'))
+    clearBrowserToolHandlers('sess-1')
+  })
+
+  afterEach(() => {
+    rmSync(electron.userData, { recursive: true, force: true })
   })
 
   it('starts a url task and returns the path when it finishes within timeout', async () => {
@@ -818,29 +829,95 @@ describe('browser_download', () => {
     )
   })
 
-  it('maps a remote download directory the same way whether the call is direct or wrapped in browser_perf', async () => {
-    // The public `browser_network` and the `browser_perf` wrapper both reach
-    // the download primitive; the node-zone `dir` has to arrive there as the
-    // desktop mirror in both cases, or one entry point hands the download a
-    // directory this machine does not have.
+  it('maps a remote download directory the same way from every entry: direct, wrapped in browser_perf, and from a saved action', async () => {
+    // All three reach the download primitive, through different internal
+    // names on the way (`browser_perf_measure`, `browser_action_do`). The
+    // node-zone `dir` has to arrive as the desktop mirror from each, or one
+    // entry hands the download a directory this machine does not have.
     gates.cdp = true
-    const zone = { syncRoot: '/home/node/.superone/node/sync', os: 'linux' as const }
     const nodeDir = '/home/node/.superone/node/sync/sess-1/download/reports'
-    const desktopDir = '/Users/me/Library/Application Support/SuperOne/sync/sess-1/download/reports'
+    const desktopDir = join(electron.userData, 'sync', 'sess-1', 'download', 'reports')
+    const stat = vi.fn(async () => ({ exists: false, size: 0, mtimeMs: 0 }))
     const deps = {
-      zone,
+      zone: { syncRoot: '/home/node/.superone/node/sync', os: 'linux' as const },
       sessionId: 'sess-1',
       signal: new AbortController().signal,
-      stat: async () => ({ exists: false, size: 0, mtimeMs: 0 }),
+      stat,
       get: async () => { throw new Error('not called') },
     }
-    await withInputMapping(deps, () => executeBrowserTool('sess-1', 'browser_network', { action: 'download', url: 'https://x.test/a.png', dir: nodeDir }))
-    expect(startUrlDownloadTask).toHaveBeenLastCalledWith('sess-1', 'https://x.test/a.png', undefined, desktopDir)
+    const run = (tool: string, args: Record<string, unknown>) => withInputMapping(deps, () => executeBrowserTool('sess-1', tool, args))
 
-    await withInputMapping(deps, () => executeBrowserTool('sess-1', 'browser_perf', {
-      action: { tool: 'browser_download', args: { url: 'https://x.test/a.png', dir: nodeDir } },
-    }))
-    expect(startUrlDownloadTask).toHaveBeenLastCalledWith('sess-1', 'https://x.test/a.png', undefined, desktopDir)
+    vi.mocked(startUrlDownloadTask).mockClear()
+    const direct = await run('browser_network', { action: 'download', url: 'https://x.test/a.png', dir: nodeDir })
+    expect(direct.isError).toBeUndefined()
+    expect(startUrlDownloadTask).toHaveBeenCalledTimes(1)
+    expect(startUrlDownloadTask).toHaveBeenCalledWith('sess-1', 'https://x.test/a.png', undefined, desktopDir)
+
+    vi.mocked(startUrlDownloadTask).mockClear()
+    const perf = await run('browser_perf', { action: { tool: 'browser_download', args: { url: 'https://x.test/a.png', dir: nodeDir } } })
+    expect(perf.isError).toBeUndefined()
+    expect(startUrlDownloadTask).toHaveBeenCalledTimes(1)
+    expect(startUrlDownloadTask).toHaveBeenCalledWith('sess-1', 'https://x.test/a.png', undefined, desktopDir)
+
+    // Saving a flow is saving a definition: a default that names a directory
+    // which does not exist yet must not be refused, and nothing is mirrored.
+    stat.mockClear()
+    const saved = await run('browser_action', {
+      action: 'save',
+      domain: 'x.test',
+      name: 'export',
+      description: 'download the export',
+      parameters: [{ name: 'dir', type: 'string', default: nodeDir }],
+      steps: [{ kind: 'tool', tool: 'browser_download', args: { url: 'https://x.test/a.png', dir: '${input.dir}' } }],
+    })
+    expect(saved.isError).toBeUndefined()
+    expect(stat).not.toHaveBeenCalled()
+
+    vi.mocked(startUrlDownloadTask).mockClear()
+    const done = await run('browser_action', { action: 'do', domain: 'x.test', name: 'export' })
+    expect(done.isError).toBeUndefined()
+    expect(startUrlDownloadTask).toHaveBeenCalledTimes(1)
+    expect(startUrlDownloadTask).toHaveBeenCalledWith('sess-1', 'https://x.test/a.png', undefined, desktopDir)
+  })
+
+  it('reads a saved action\'s source default from the node at run time, not from the copy taken when it was saved', async () => {
+    // A default that names a node file is definition data. Mirroring it at
+    // save time and storing the desktop path would freeze the file at that
+    // version: the node could rewrite it and every later run would upload
+    // the old bytes without ever asking.
+    gates.cdp = true
+    const nodeFile = '/home/node/.superone/node/sync/sess-1/agent/a.txt'
+    const node = { bytes: Buffer.from('old'), mtimeMs: 1_700_000_000_000 }
+    const stat = vi.fn(async () => ({ exists: true, size: node.bytes.length, mtimeMs: node.mtimeMs }))
+    const deps = {
+      zone: { syncRoot: '/home/node/.superone/node/sync', os: 'linux' as const },
+      sessionId: 'sess-1',
+      signal: new AbortController().signal,
+      stat,
+      get: async () => ({ chunk: node.bytes.toString('base64'), total: node.bytes.length, mtimeMs: node.mtimeMs, eof: true }),
+    }
+    const run = (tool: string, args: Record<string, unknown>) => withInputMapping(deps, () => executeBrowserTool('sess-1', tool, args))
+
+    const saved = await run('browser_action', {
+      action: 'save',
+      domain: 'x.test',
+      name: 'attach',
+      description: 'attach the report',
+      parameters: [{ name: 'file', type: 'string', default: nodeFile }],
+      steps: [{ kind: 'tool', tool: 'browser_upload_file', args: { selector: '#f', files: ['${input.file}'] } }],
+    })
+    expect(saved.isError).toBeUndefined()
+    expect(stat).not.toHaveBeenCalled()
+
+    const desktopFile = join(electron.userData, 'sync', 'sess-1', 'agent', 'a.txt')
+    expect((await run('browser_action', { action: 'do', domain: 'x.test', name: 'attach' })).isError).toBeUndefined()
+    expect(cdpSetFileInput).toHaveBeenLastCalledWith(7, '#f', [desktopFile])
+    expect(readFileSync(desktopFile, 'utf8')).toBe('old')
+
+    node.bytes = Buffer.from('new')
+    node.mtimeMs += 1000
+    expect((await run('browser_action', { action: 'do', domain: 'x.test', name: 'attach' })).isError).toBeUndefined()
+    expect(readFileSync(desktopFile, 'utf8')).toBe('new')
   })
 
   it('returns background status with taskId when the download exceeds timeout', async () => {

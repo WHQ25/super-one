@@ -21,7 +21,7 @@ import type { ArtifactGetRequest, ArtifactGetResult, ArtifactListRequest, Artifa
 import type { ArtifactRef } from '../mcp/artifact-registry'
 import { zoneRelativePath } from '../media-output-paths'
 import { uploadArtifact, type TransferOutcome } from './artifact-transfer'
-import { recordFailedHandoff, type HandoffJob } from './pending-handoffs'
+import { handoffArtifact, handoffTransferId, type HandoffJob } from './pending-handoffs'
 import { mirrorNodeArtifact, mirrorNodeDirectory } from './session-file-mirror'
 import { mapNodeZoneArgs, mentionsArtifactPath, nodeZonePath, rewriteArtifactPaths, type NodeSyncZone } from './sync-zone-paths'
 
@@ -276,13 +276,15 @@ function mentionedInReply(reply: ToolReply, path: string): boolean {
  * are not there yet.
  */
 /**
- * File a deferred job, and keep the file protected when that fails.
+ * Hand the file to a transfer job, protected until one exists.
  *
  * `defer` is local — a stat, a SQLite insert — so it throws for local reasons,
  * and the file it was about is complete, is the only copy, and now has nothing
  * durable naming it. Letting the throw escape is what used to lose it: the
  * executor's `finally` released the claim on the way out and the next
- * directory mirror pruned the file.
+ * directory mirror pruned the file. The handoff task takes a claim of its own
+ * before it tries, so this holds for a screenshot that never reserved a path
+ * as much as for a download that did.
  *
  * The action does not fail either way. The tool already did its work, and the
  * reply already says `sync.deferred` — which stays true: the node does not
@@ -290,16 +292,7 @@ function mentionedInReply(reply: ToolReply, path: string): boolean {
  * after it.
  */
 function fileJob(deps: HostActionSyncDeps, job: HandoffJob, size: number): void {
-  try {
-    deps.transfers.defer(job)
-  } catch (err) {
-    recordFailedHandoff({
-      ...job,
-      holder: 'push',
-      bytes: size,
-      lastError: err instanceof Error ? err.message : String(err),
-    })
-  }
+  handoffArtifact({ ...job, bytes: size, enqueue: (j) => void deps.transfers.defer(j) })
 }
 
 export async function syncHostActionOutputs(
@@ -350,7 +343,10 @@ export async function syncHostActionOutputs(
     // One transferId for the file's whole life: the node keeps a half-written
     // transfer open after a dropped connection, and a job retrying under a new
     // id would be told `busy` by it. The job carries this id and resumes.
-    const transferId = randomUUID()
+    // An earlier handoff for this path may already have partial bytes on the
+    // node under its id; a fresh one would abandon them and make the node meet
+    // a second transfer for one file.
+    const transferId = handoffTransferId(deps.connectionId, item.sessionId, item.ref.path) ?? randomUUID()
     const job = { connectionId: deps.connectionId, sessionId: item.sessionId, localPath: item.ref.path, relativePath: item.relativePath, transferId }
     const estimateMs = item.size / rate
     if (estimateMs > expiresAt - now() - CLAIM_BUDGET_MARGIN_MS && deps.renewClaim) {

@@ -71,6 +71,7 @@ const node = vi.hoisted(() => ({
   puts: 0,
   files: new Map<string, Buffer>(),
   parts: new Map<string, Buffer[]>(),
+  seenTransferIds: [] as string[],
 }))
 const envHost = vi.hoisted(() => ({
   getSyncZone: () => ({ syncRoot: '/home/node/.superone/node/sync', os: 'linux' as const }),
@@ -94,9 +95,10 @@ const envHost = vi.hoisted(() => ({
     // Synchronous, like the production `defer` (statSync + SQLite insert +
     // worker wake). An async stand-in would let a throw land a turn late and
     // miss the very ordering these tests are about.
-    defer: (input: { relativePath: string }) => {
+    defer: (input: { relativePath: string; transferId: string }) => {
       if (node.deferFails) throw new Error('SQLITE_BUSY')
       node.deferred.push(input.relativePath)
+      node.seenTransferIds.push(input.transferId)
       return { jobId: 'j1' }
     },
   },
@@ -132,7 +134,7 @@ vi.mock('../mcp/superone-mcp-builtins', () => ({
 
 import { downloadUrl } from '../browser/browser-downloads'
 import { activeWriteAt, resetActiveWrites } from './active-writes'
-import { dropSessionHandoffs, failedHandoffs, resetPendingHandoffs, retryFailedHandoffs } from './pending-handoffs'
+import { dropSessionHandoffs, failedHandoffs, handoffArtifact, resetPendingHandoffs, retryFailedHandoffs } from './pending-handoffs'
 import { mirrorNodeDirectory } from './session-file-mirror'
 import { desktopHostActionExecutor } from './host-action-executor'
 
@@ -166,6 +168,7 @@ beforeEach(() => {
   node.puts = 0
   node.files.clear()
   node.parts.clear()
+  node.seenTransferIds.length = 0
   resetActiveWrites()
   resetPendingHandoffs()
 })
@@ -233,7 +236,7 @@ describe('who ends a download write claim', () => {
     expect(node.deferred).toEqual([])
     // Still protected, still owned by the push that failed to hand it on.
     expect(activeWriteAt(SESSION, DOWNLOAD())).toBe('sealed')
-    expect(failedHandoffs(SESSION)).toMatchObject([{ relativePath: 'download/report.csv', holder: 'push', lastError: expect.stringContaining('SQLITE_BUSY') }])
+    expect(failedHandoffs(SESSION)).toMatchObject([{ relativePath: 'download/report.csv', holdsClaim: true, lastError: expect.stringContaining('SQLITE_BUSY') }])
 
     // And it survives a directory mirror that would otherwise prune it.
     await mirrorNodeDirectory(SESSION, 'download', emptyNodeDir())
@@ -254,9 +257,8 @@ describe('who ends a download write claim', () => {
 
     // Whatever was wrong is fixed; the retry files the row and only then lets go.
     node.deferFails = false
-    const result = retryFailedHandoffs((job) => envHost.artifactTransfers.defer(job), 'conn-1')
-    expect(result).toEqual({ retried: 1, recovered: 1 })
-    expect(node.deferred).toEqual(['download/report.csv'])
+    expect(retryFailedHandoffs('conn-1')).toEqual({ retried: 1 })
+    await vi.waitFor(() => expect(node.deferred).toEqual(['download/report.csv']))
     expect(activeWriteAt(SESSION, DOWNLOAD())).toBeNull()
     expect(failedHandoffs()).toEqual([])
   })
@@ -307,6 +309,64 @@ describe('who ends a download write claim', () => {
     expect(activeWriteAt(SESSION, DOWNLOAD())).toBeNull()
   })
 
+  it('protects a producer that never reserved a path at all when its enqueue fails', async () => {
+    // AD1. Only downloads reserve a path, so only downloads have a claim to
+    // adopt. A screenshot is simply written and registered — recording a
+    // failure for one used to note its `holder` and protect nothing, and the
+    // next directory mirror deleted it.
+    node.deferFails = true
+    node.putFails = true
+    const { writeFileSync, mkdirSync } = await import('node:fs')
+    const shot = join(zone.userData, 'sync', SESSION, 'browser', 'shot.png')
+    browser.executeBrowserTool.mockImplementationOnce(async (sessionId) => {
+      mkdirSync(join(shot, '..'), { recursive: true })
+      writeFileSync(shot, 'png-bytes')
+      const { registerArtifact } = await import('../mcp/artifact-registry')
+      registerArtifact(sessionId, { path: shot, producer: 'browser', final: true })
+      return { content: [{ type: 'text' as const, text: shot }] }
+    })
+
+    await desktopHostActionExecutor(claimed({ toolName: 'browser_screenshot' }), new AbortController().signal, 'conn-1')
+    // A claim now exists that never existed before: the task made one.
+    expect(activeWriteAt(SESSION, shot)).toBe('sealed')
+    expect(failedHandoffs(SESSION)).toMatchObject([{ relativePath: 'browser/shot.png', holdsClaim: true }])
+
+    await mirrorNodeDirectory(SESSION, 'browser', emptyNodeDir())
+    expect(readFileSync(shot, 'utf8')).toBe('png-bytes')
+  })
+
+  it('keeps one task per path, so a re-registration cannot mint a second transfer id', async () => {
+    // AD2. A second listing re-registers the same download; the task in flight
+    // keeps its id and its claim rather than being overwritten by a guess.
+    vi.useFakeTimers()
+    node.deferFails = true
+    const { registerDownload, reserveDownloadPath, queueDownloadUpload } = await import('../agent/browser-download-store')
+    const path = reserveDownloadPath('report.csv', join(zone.userData, 'sync', SESSION, 'download'), SESSION, { connectionId: 'conn-1' })
+    const { writeFileSync } = await import('node:fs')
+    writeFileSync(path, 'ALL-BYTES')
+    registerDownload(SESSION, path, true)
+    queueDownloadUpload('conn-1', SESSION, path)
+    await vi.advanceTimersByTimeAsync(10_000)
+    const first = failedHandoffs(SESSION)[0]!
+
+    // The agent lists downloads again: same file, same task.
+    registerDownload(SESSION, path, true)
+    queueDownloadUpload('conn-1', SESSION, path)
+    await vi.advanceTimersByTimeAsync(10_000)
+    const after = failedHandoffs(SESSION)
+    expect(after).toHaveLength(1)
+    expect(after[0]!.transferId).toBe(first.transferId)
+    expect(activeWriteAt(SESSION, path)).toBe('sealed')
+
+    // And the retry that finally works releases the claim, so the node's own
+    // later version of the file is not shadowed by a stuck desktop original.
+    node.deferFails = false
+    retryFailedHandoffs()
+    await vi.advanceTimersByTimeAsync(50)
+    expect(activeWriteAt(SESSION, path)).toBeNull()
+    expect(failedHandoffs(SESSION)).toEqual([])
+  })
+
   it('keeps a completed file protected when the transfer queue will not take it', async () => {
     vi.useFakeTimers()
     // The bytes are all here and the node has none of them. A failed `defer`
@@ -326,16 +386,74 @@ describe('who ends a download write claim', () => {
     await vi.advanceTimersByTimeAsync(10_000)
     expect(node.deferred).toEqual([])
     expect(activeWriteAt(SESSION, path)).toBe('sealed')
-    expect(failedHandoffs(SESSION)).toMatchObject([{ holder: 'queue', relativePath: 'download/report.csv' }])
+    expect(failedHandoffs(SESSION)).toMatchObject([{ holdsClaim: true, relativePath: 'download/report.csv' }])
 
     // Recovery uses the SAME transfer id, so the node resumes its partial
     // upload instead of meeting a second transfer for one file.
     const first = failedHandoffs(SESSION)[0]!
     node.deferFails = false
-    expect(retryFailedHandoffs((job) => {
-      expect(job.transferId).toBe(first.transferId)
-      envHost.artifactTransfers.defer(job)
-    })).toEqual({ retried: 1, recovered: 1 })
+    node.seenTransferIds.length = 0
+    expect(retryFailedHandoffs()).toEqual({ retried: 1 })
+    await vi.advanceTimersByTimeAsync(50)
+    // Same id: the node resumes its partial upload instead of meeting a second
+    // transfer for one file.
+    expect(node.seenTransferIds).toEqual([first.transferId])
+    expect(activeWriteAt(SESSION, path)).toBeNull()
+  })
+
+  it('does not let a retry in flight re-register a session that was deleted mid-ladder', async () => {
+    // AD3. The delete lands after the first enqueue failed but long before the
+    // ladder runs out, so there is nothing in the table for `dropSession` to
+    // find — and the entry used to appear afterwards, holding a claim on a
+    // file that no longer exists.
+    vi.useFakeTimers()
+    node.deferFails = true
+    const { registerDownload, reserveDownloadPath, queueDownloadUpload } = await import('../agent/browser-download-store')
+    const path = reserveDownloadPath('report.csv', join(zone.userData, 'sync', SESSION, 'download'), SESSION, { connectionId: 'conn-1' })
+    const { writeFileSync } = await import('node:fs')
+    writeFileSync(path, 'ALL-BYTES')
+    registerDownload(SESSION, path, true)
+    queueDownloadUpload('conn-1', SESSION, path)
+    await vi.advanceTimersByTimeAsync(20)
+
+    dropSessionHandoffs(SESSION)
+    expect(failedHandoffs(SESSION)).toEqual([])
+    expect(activeWriteAt(SESSION, path)).toBeNull()
+
+    // Whatever was wrong clears up while the ladder is still running. Nothing
+    // should reach the job table for a session that no longer exists.
+    node.deferFails = false
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(node.deferred).toEqual([])
+    expect(failedHandoffs(SESSION)).toEqual([])
+  })
+
+  it('does not file a job for a session deleted while its enqueue was in flight', async () => {
+    // The narrow window the generation check exists for: cancelling the retry
+    // timer cannot help an attempt that is already awaiting. When it resolves
+    // it would file a row, and release a claim, for a session that is gone.
+    const filed: string[] = []
+    const path = join(zone.userData, 'sync', SESSION, 'browser', 'shot.png')
+    const { mkdirSync, writeFileSync } = await import('node:fs')
+    mkdirSync(join(path, '..'), { recursive: true })
+    writeFileSync(path, 'png-bytes')
+
+    // The caller resolved a dependency first — `queueDownloadUpload` waits for
+    // the environment host — and the session was deleted while it waited.
+    dropSessionHandoffs(SESSION)
+    const task = handoffArtifact({
+      connectionId: 'conn-1',
+      sessionId: SESSION,
+      localPath: path,
+      relativePath: 'browser/shot.png',
+      transferId: 'tid-1',
+      bytes: 9,
+      enqueue: (job) => void filed.push(job.relativePath),
+    })
+    expect(task).toBeNull()
+    expect(filed).toEqual([])
+    expect(failedHandoffs(SESSION)).toEqual([])
+    // And no claim was taken on a file that was removed with its session.
     expect(activeWriteAt(SESSION, path)).toBeNull()
   })
 

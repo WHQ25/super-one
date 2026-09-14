@@ -57,11 +57,13 @@ export type ClaimStage = 'writing' | 'sealed'
  * - `writer` — the producer that reserved the path. Holds it until the bytes
  *   are sealed and someone adopts them, or until the write fails.
  * - `push` — the Host Action executor, while it uploads the file to the node
- *   or files a deferred job for it.
- * - `queue` — the transfer service, for a download that finished outside any
- *   tool call and goes straight onto the job table.
+ *   inside the claim budget.
+ * - `handoff` — the pending-handoff task for this path, from the moment the
+ *   file is meant to become a transfer job until a row actually exists. One
+ *   holder for both the foreground and the background route, because they are
+ *   the same responsibility arriving from two directions.
  */
-export type ClaimHolder = 'writer' | 'push' | 'queue'
+export type ClaimHolder = 'writer' | 'push' | 'handoff'
 
 interface Claim {
   stage: ClaimStage
@@ -128,6 +130,34 @@ export function adoptWriteClaim(sessionId: string | null | undefined, path: stri
   if (!sessionId) return false
   const claim = claims.get(keyFor(sessionId, path))
   if (!claim || claim.stage !== 'sealed' || claim.holder !== 'writer') return false
+  claim.holder = holder
+  return true
+}
+
+/**
+ * Take a sealed claim for a file that must stay protected, creating one when
+ * the producer never made a claim at all.
+ *
+ * This is the difference between recording a problem and doing something about
+ * it. Only downloads reserve a path and therefore only downloads have a claim;
+ * a screenshot or a generated image is simply written and registered. When one
+ * of *those* cannot be filed as a transfer job, there was nothing to adopt —
+ * so `adoptWriteClaim` answered false and the file was left unprotected with a
+ * neat record of its own deletion.
+ *
+ * Refused only while a writer is still filling the file: a handoff for a file
+ * that is not finished is a contradiction, and taking it would let an
+ * incomplete file be served as a complete original.
+ */
+export function takeSealedClaim(sessionId: string | null | undefined, path: string, holder: ClaimHolder): boolean {
+  if (!sessionId) return false
+  const key = keyFor(sessionId, path)
+  const claim = claims.get(key)
+  if (!claim) {
+    claims.set(key, { stage: 'sealed', holder })
+    return true
+  }
+  if (claim.stage === 'writing') return false
   claim.holder = holder
   return true
 }

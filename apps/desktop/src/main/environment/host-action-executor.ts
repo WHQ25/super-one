@@ -18,7 +18,7 @@
 
 import type { ClaimHostActionResult } from '@superone/shared/environment'
 import { adoptWriteClaim, releaseWriteClaim } from './active-writes'
-import { hasFailedHandoff } from './pending-handoffs'
+import { handoffOwns } from './pending-handoffs'
 import type { HostActionExecutor } from './remote-host-action-consumer'
 import {
   mapHostActionInputs,
@@ -179,11 +179,12 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
           return { outcome: 'succeeded', result: toolResult }
         } finally {
           for (const path of adopted) {
-            // A file whose enqueue failed is on the pending-handoff table now,
-            // and that entry is what will eventually release it. Releasing
-            // here would leave the only complete copy unprotected with no job
-            // row naming it — the failure this whole region exists to prevent.
-            if (hasFailedHandoff(claimed.sessionId, path, connectionId)) continue
+            // A file whose enqueue is still outstanding belongs to its handoff
+            // task now — the task holds the claim and releases it when a row
+            // exists. Releasing here would leave the only complete copy
+            // unprotected with nothing naming it, which is the failure this
+            // whole region exists to prevent.
+            if (handoffOwns(claimed.sessionId, path, connectionId)) continue
             releaseWriteClaim(claimed.sessionId, path, 'push')
           }
         }

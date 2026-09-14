@@ -4141,7 +4141,7 @@ function registerIpcHandlers(): void {
   // a person who fixed whatever was wrong needs a way to say "try again now".
   ipcMain.handle(AgentIpcChannels.SYNC_ZONE_RETRY_HANDOFFS, async () => {
     const transfers = (await import('./environment/environment-host')).getEnvironmentHost().artifactTransfers
-    return transfers?.retryFailedHandoffs() ?? { retried: 0, recovered: 0 }
+    return transfers?.retryFailedHandoffs() ?? { retried: 0 }
   })
 
   ipcMain.handle(AgentIpcChannels.APP_INSTALL_ID_GET, () => getInstallId())

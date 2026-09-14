@@ -1,4 +1,5 @@
-import { adoptWriteClaim, beginActiveWrite, releaseWriteClaim, sealActiveWrite } from '../environment/active-writes'
+import { beginActiveWrite, sealActiveWrite } from '../environment/active-writes'
+import { handoffArtifact } from '../environment/pending-handoffs'
 import { ensureZoneDir } from '../environment/zone-owner'
 import { realOrSelf, withinSessionZone } from '../environment/sync-zone-paths'
 import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, statSync } from 'fs'
@@ -214,68 +215,30 @@ export function registerDownload(sessionId: string | null | undefined, path: str
 export function queueDownloadUpload(connectionId: string, sessionId: string, path: string): void {
   const zone = zoneRelativePath(path)
   if (!zone || zone.sessionId !== sessionId) return
-  // Take responsibility before the first attempt, so a Host Action returning
-  // in the meantime cannot release the file out from under the queue.
-  const owned = adoptWriteClaim(sessionId, path, 'queue')
-  // One id for the whole handoff, retries included: a new id would make the
-  // node meet a second transfer instead of resuming the partial one it holds.
-  void enqueueWithRetry(connectionId, sessionId, path, zone.relativePath, owned, randomUUID())
-}
-
-/** Attempts, then the delay before each retry. Short: the file is unprotected work in progress. */
-const DEFER_RETRY_DELAYS_MS = [100, 500, 2000, 5000]
-
-/**
- * File the transfer job, retrying a transient failure.
- *
- * The claim is released only when a row demonstrably exists. A `defer` that
- * threw, or a transfer service that is not there at all, is NOT a handoff —
- * releasing on either turns the only complete copy of the file into something
- * the next directory mirror prunes. Pinning the path is the lesser failure,
- * and it is logged as an error so it is not silent.
- */
-async function enqueueWithRetry(
-  connectionId: string,
-  sessionId: string,
-  path: string,
-  relativePath: string,
-  owned: boolean,
-  transferId: string,
-): Promise<void> {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      const { getEnvironmentHost } = await import('../environment/environment-host')
-      const transfers = getEnvironmentHost().artifactTransfers
-      if (!transfers) throw new Error('no artifact transfer service on this host')
-      await transfers.defer({ connectionId, sessionId, localPath: path, relativePath, transferId })
-      if (owned) releaseWriteClaim(sessionId, path, 'queue')
-      return
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      const delay = DEFER_RETRY_DELAYS_MS[attempt]
-      if (delay === undefined) {
-        // Out of short retries, but not out of options: the file goes on the
-        // pending-handoff table, which keeps it protected and is retried when
-        // the connection's transfer worker next starts. The claim is NOT
-        // released — the entry records who holds it so recovery can.
-        const { recordFailedHandoff } = await import('../environment/pending-handoffs')
-        recordFailedHandoff({
-          connectionId,
-          sessionId,
-          localPath: path,
-          relativePath,
-          transferId,
-          holder: owned ? 'queue' : 'writer',
-          bytes: sizeOf(path),
-          lastError: message,
-          attempts: attempt,
-        })
-        return
-      }
-      log.warn('[browser-download] queueing the node transfer failed (%s), retrying in %dms', message, delay)
-      await new Promise((resolve) => setTimeout(resolve, delay))
-    }
-  }
+  // One task per path, whichever route reaches it: it takes the claim, mints
+  // the transfer id once, owns the retries, and releases only when a job row
+  // exists. Re-listing the same download joins the task in flight rather than
+  // starting a second one with a new id.
+  // The host is resolved BEFORE the task exists, so the task's enqueue is
+  // synchronous — which is what lets a session deleted in the meantime refuse
+  // the handoff outright instead of discovering it mid-flight.
+  void import('../environment/environment-host').then(({ getEnvironmentHost }) => {
+    handoffArtifact({
+      connectionId,
+      sessionId,
+      localPath: path,
+      relativePath: zone.relativePath,
+      transferId: randomUUID(),
+      bytes: sizeOf(path),
+      enqueue: (job) => {
+        const transfers = getEnvironmentHost().artifactTransfers
+        // Not a handoff: nothing persisted the file, so releasing on this
+        // would make the only complete copy prunable.
+        if (!transfers) throw new Error('no artifact transfer service on this host')
+        transfers.defer(job)
+      },
+    })
+  })
 }
 
 /** Size for the Storage figure; zero when the file cannot be read. */

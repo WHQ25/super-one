@@ -754,6 +754,41 @@ All four landed on 2026-09-14, one commit each.
   loop open and eventually firing an abort on a controller nobody was
   listening to. It is cleared in the `finally` now.
 
+- **A fourteenth review found that recording a failure is not the same as
+  protecting a file, and the three defects it produced share one cause: the
+  handoff was a note, not a task.** `pending-handoffs.ts` now owns one task per
+  `(connection, session, canonical path)`, from the first attempt until a job
+  row exists.
+
+  The blocker was the gap between the two. The table recorded a `holder` and
+  assumed the claim already existed — but only downloads reserve a path, so
+  only downloads had one. A screenshot is simply written and registered, so a
+  screenshot whose enqueue failed got a tidy record and no protection at all,
+  and the next directory mirror deleted it. A task now *takes* its claim:
+  `takeSealedClaim` creates one when the producer never did, so "there is a
+  task" and "the file is protected" cannot come apart.
+
+  The second followed from re-entry. A later listing that re-registered the
+  same download overwrote the entry — minting a new `transferId`, which
+  abandons whatever partial bytes the node holds, and asserting a holder the
+  caller had only guessed at. A claim recorded under a holder that never took
+  it is a claim nobody can release, and a sealed claim that outlives its
+  handoff beats the node for ever: the mirror keeps serving the desktop's old
+  copy of a file the agent has since changed. Re-entering now returns the task
+  in flight, id, claim and schedule intact.
+
+  The third was deletion racing the retry ladder, and it took two attempts to
+  test honestly. Cancelling the timers in `dropSession` is enough for a task
+  the table already holds — the first test passed without the fix, which is
+  the failure mode this review keeps catching. The window that is real is a
+  handoff *arriving* after the delete, from a caller that awaited something
+  first. That is why `EnqueueJob` is synchronous by contract and both call
+  sites resolve their dependencies **before** building the task: an enqueue
+  that awaits internally has already been entered by the time anything could
+  refuse it. A deleted session is tombstoned, and `handoffArtifact` returns
+  null rather than filing a row and taking a claim on a file that was removed
+  with its session.
+
 - **`browser_open` creates the tab blank, records the driver, then
   navigates.** Opening with the URL in one call meant the page could start a
   direct download before the tab had an owner, and `will-download` had nobody

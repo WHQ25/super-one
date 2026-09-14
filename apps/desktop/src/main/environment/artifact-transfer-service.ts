@@ -107,8 +107,8 @@ export class ArtifactTransferService {
    * would ever pick them up. Each is still protected from the mirror, and
    * stays protected until its row exists.
    */
-  retryFailedHandoffs(connectionId?: string): { retried: number; recovered: number } {
-    return retryFailedHandoffs((job) => void this.defer(job), connectionId)
+  retryFailedHandoffs(connectionId?: string): { retried: number } {
+    return retryFailedHandoffs(connectionId)
   }
 
   /** What could not be queued, for Settings to show and for a manual retry. */

@@ -258,14 +258,19 @@ async function failedHandoffUsage(): Promise<{ files: number; bytes: number; las
   try {
     const { failedHandoffs } = await import('./pending-handoffs')
     const entries = failedHandoffs()
-    // One file, one count — and never double-counted against a job row that
-    // may exist for the same path from an earlier attempt.
+    if (entries.length === 0) return { files: 0, bytes: 0, lastError: null }
+    // A path an earlier attempt already got onto the job table is counted by
+    // `pendingBytes`; counting it here too would report the same bytes twice
+    // under two headings that mean different things.
+    const { listUploadingArtifactTransfers } = await import('../db-artifact-transfers')
+    const queued = new Set<string>()
+    for (const job of listUploadingArtifactTransfers()) queued.add(safeRealpath(job.localPath))
     const seen = new Set<string>()
     let bytes = 0
     let files = 0
     for (const entry of entries) {
       const real = safeRealpath(entry.localPath)
-      if (seen.has(real)) continue
+      if (seen.has(real) || queued.has(real)) continue
       seen.add(real)
       const st = linkSafeStat(entry.localPath)
       if (!st?.isFile) continue

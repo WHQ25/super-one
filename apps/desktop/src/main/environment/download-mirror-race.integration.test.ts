@@ -22,7 +22,7 @@ vi.mock('../db-artifact-transfers', () => ({
 vi.mock('../app-settings-service', () => ({ readAppSettings: () => ({}) }))
 
 import { registerDownload, reserveDownloadPath } from '../agent/browser-download-store'
-import { endActiveWrite, resetActiveWrites } from './active-writes'
+import { abandonWriteClaim, adoptWriteClaim, releaseWriteClaim, resetActiveWrites } from './active-writes'
 import { mirrorNodeDirectory } from './session-file-mirror'
 
 let root: string
@@ -78,8 +78,10 @@ describe('a download streaming into a directory the agent also mirrors', () => {
     writeFileSync(path, 'FIRST')
 
     // The mirror runs while the body is still open — the node's get for the
-    // unrelated member is where it interleaves.
-    await mirrorNodeDirectory('s1', 'agent/app', nodeWithOldFile())
+    // unrelated member is where it interleaves. The file survives, and the
+    // directory is not offered as a complete input while it is half-written.
+    const mid = await mirrorNodeDirectory('s1', 'agent/app', nodeWithOldFile())
+    expect(mid).toMatchObject({ kind: 'unavailable' })
     expect(readFileSync(path, 'utf8')).toBe('FIRST')
 
     writeFileSync(path, 'FIRSTSECOND')
@@ -95,9 +97,11 @@ describe('a download streaming into a directory the agent also mirrors', () => {
     await mirrorNodeDirectory('s1', 'agent/app', nodeWithOldFile())
     expect(existsSync(path)).toBe(true)
 
-    // Handoff: the job row is now what protects it, so the claim is released.
+    // Handoff: the queue takes the sealed file, files a row, and only then ends
+    // the claim. Nobody else could have ended it — the claim names its holder.
     state.jobs = [{ sessionId: 's1', relativePath: 'agent/app/report.csv', state: 'pending' }]
-    endActiveWrite('s1', path)
+    expect(adoptWriteClaim('s1', path, 'queue')).toBe(true)
+    expect(releaseWriteClaim('s1', path, 'queue')).toBe(true)
     await mirrorNodeDirectory('s1', 'agent/app', nodeWithOldFile())
     expect(existsSync(path)).toBe(true)
 
@@ -111,7 +115,7 @@ describe('a download streaming into a directory the agent also mirrors', () => {
     const path = reserveDownloadPath('report.csv', join(root, 'sync', 's1', 'agent', 'app'), 's1', origin)
     writeFileSync(path, 'HALF')
     // `will-download` reports `cancelled`; there is nothing to hand on.
-    endActiveWrite('s1', path)
+    abandonWriteClaim('s1', path)
     await mirrorNodeDirectory('s1', 'agent/app', nodeWithOldFile())
     expect(existsSync(path)).toBe(false)
   })

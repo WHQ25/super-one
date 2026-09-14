@@ -17,7 +17,7 @@
  */
 
 import type { ClaimHostActionResult } from '@superone/shared/environment'
-import { endActiveWrite } from './active-writes'
+import { adoptWriteClaim, releaseWriteClaim } from './active-writes'
 import type { HostActionExecutor } from './remote-host-action-consumer'
 import {
   mapHostActionInputs,
@@ -141,28 +141,43 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
         const { result: rawResult, artifacts } = sync
           ? await withInputMapping({ ...sync, sessionId: claimed.sessionId }, runTool)
           : await runTool()
-        if (runAbort.signal.aborted || raceWinner === 'deadline') return aborted()
-
         // The tool's call scope is already closed, so anything it produced is
-        // named by nothing durable until this push lands or defers a job. Hold
-        // the claims the producers took across that gap and release them here,
-        // whichever way the push ends — a release inside the tool surface would
-        // land one turn too early, and none at all would pin the path.
-        let toolResult: unknown
+        // named by nothing durable until this push lands or defers a job.
+        //
+        // Ownership, not "it appeared in the reply": `adoptWriteClaim` refuses
+        // a file that is still being written, so a tool that went background on
+        // its deadline leaves its download protected for the writer to finish;
+        // and it refuses one the transfer queue already took, so two handoffs
+        // never race to free one file. Only what this push actually adopted is
+        // released here.
+        //
+        // The cancellation checks are INSIDE the region on purpose. They return
+        // early, and a sealed claim abandoned by an early return has no one left
+        // to hand it on — it would pin its path for the life of the process.
+        const adopted: string[] = []
         try {
-          toolResult = sync && artifacts.length > 0
+          // Adopted BEFORE the cancellation check, so the `finally` frees them
+          // on every exit. A cancel that lands as the tool completes used to
+          // return past this point, leaving a sealed file with no holder left
+          // to hand it on — pinned against the prune for the process's life.
+          for (const ref of artifacts) {
+            if (adoptWriteClaim(claimed.sessionId, ref.path, 'push')) adopted.push(ref.path)
+          }
+          if (runAbort.signal.aborted || raceWinner === 'deadline') return aborted()
+
+          const toolResult = sync && artifacts.length > 0
             ? await syncHostActionOutputs(claimed.sessionId, artifacts, rawResult as ToolReply, claimed.claimExpiresAt, sync)
             : rawResult
-        } finally {
-          for (const ref of artifacts) endActiveWrite(claimed.sessionId, ref.path)
-        }
-        if (runAbort.signal.aborted || raceWinner === 'deadline') return aborted()
+          if (runAbort.signal.aborted || raceWinner === 'deadline') return aborted()
 
-        const isError = Boolean((toolResult as { isError?: boolean })?.isError)
-        if (isError) {
-          return { outcome: 'failed', error: toolResult, result: toolResult }
+          const isError = Boolean((toolResult as { isError?: boolean })?.isError)
+          if (isError) {
+            return { outcome: 'failed', error: toolResult, result: toolResult }
+          }
+          return { outcome: 'succeeded', result: toolResult }
+        } finally {
+          for (const path of adopted) releaseWriteClaim(claimed.sessionId, path, 'push')
         }
-        return { outcome: 'succeeded', result: toolResult }
       } finally {
         if (raceWinner === 'deadline') {
           try {

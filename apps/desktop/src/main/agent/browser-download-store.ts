@@ -1,4 +1,4 @@
-import { beginActiveWrite, endActiveWrite, sealActiveWrite } from '../environment/active-writes'
+import { adoptWriteClaim, beginActiveWrite, releaseWriteClaim, sealActiveWrite } from '../environment/active-writes'
 import { ensureZoneDir } from '../environment/zone-owner'
 import { realOrSelf, withinSessionZone } from '../environment/sync-zone-paths'
 import { closeSync, copyFileSync, existsSync, mkdirSync, openSync } from 'fs'
@@ -214,15 +214,55 @@ export function registerDownload(sessionId: string | null | undefined, path: str
 export function queueDownloadUpload(connectionId: string, sessionId: string, path: string): void {
   const zone = zoneRelativePath(path)
   if (!zone || zone.sessionId !== sessionId) return
-  void import('../environment/environment-host')
-    .then(({ getEnvironmentHost }) => {
-      getEnvironmentHost().artifactTransfers?.defer({ connectionId, sessionId, localPath: path, relativePath: zone.relativePath })
-    })
-    .catch((err) => log.warn('[browser-download] could not queue the node transfer: %s', err instanceof Error ? err.message : String(err)))
-    // Released only now: the job row is what protects the file from here on,
-    // and until `defer` has run there is nothing durable that names it. A
-    // failed defer releases too — retrying forever would pin the path.
-    .finally(() => endActiveWrite(sessionId, path))
+  // Take responsibility before the first attempt, so a Host Action returning
+  // in the meantime cannot release the file out from under the queue.
+  const owned = adoptWriteClaim(sessionId, path, 'queue')
+  void enqueueWithRetry(connectionId, sessionId, path, zone.relativePath, owned)
+}
+
+/** Attempts, then the delay before each retry. Short: the file is unprotected work in progress. */
+const DEFER_RETRY_DELAYS_MS = [100, 500, 2000, 5000]
+
+/**
+ * File the transfer job, retrying a transient failure.
+ *
+ * The claim is released only when a row demonstrably exists. A `defer` that
+ * threw, or a transfer service that is not there at all, is NOT a handoff —
+ * releasing on either turns the only complete copy of the file into something
+ * the next directory mirror prunes. Pinning the path is the lesser failure,
+ * and it is logged as an error so it is not silent.
+ */
+async function enqueueWithRetry(
+  connectionId: string,
+  sessionId: string,
+  path: string,
+  relativePath: string,
+  owned: boolean,
+): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const { getEnvironmentHost } = await import('../environment/environment-host')
+      const transfers = getEnvironmentHost().artifactTransfers
+      if (!transfers) throw new Error('no artifact transfer service on this host')
+      await transfers.defer({ connectionId, sessionId, localPath: path, relativePath })
+      if (owned) releaseWriteClaim(sessionId, path, 'queue')
+      return
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      const delay = DEFER_RETRY_DELAYS_MS[attempt]
+      if (delay === undefined) {
+        log.error(
+          '[browser-download] could not queue the node transfer for %s after %d attempts (%s); the desktop copy stays protected and will not be reclaimed',
+          path,
+          attempt,
+          message,
+        )
+        return
+      }
+      log.warn('[browser-download] queueing the node transfer failed (%s), retrying in %dms', message, delay)
+      await new Promise((resolve) => setTimeout(resolve, delay))
+    }
+  }
 }
 
 /** Page downloads already adopted, so a second listing reuses the same copy. */

@@ -6,7 +6,7 @@ import { pipeline } from 'stream/promises'
 import log from '../logger'
 import { mediaFileGrants } from '../media-file-grants'
 import { browserAutomationCall } from './browser-automation-bridge'
-import { endActiveWrite, sealActiveWrite } from '../environment/active-writes'
+import { abandonWriteClaim, sealActiveWrite } from '../environment/active-writes'
 import { filenameFor, queueDownloadUpload, registerDownload, reserveDownloadPath } from '../agent/browser-download-store'
 import { tabDriver, type TabDriver } from './browser-tab-drivers'
 
@@ -119,7 +119,7 @@ export async function downloadUrl(url: string, opts: DownloadUrlOptions = {}): P
     } catch (err) {
       // The reservation claimed the path against the mirror; a write that never
       // happened must give it back or the file is protected forever.
-      endActiveWrite(sessionId, path)
+      abandonWriteClaim(sessionId, path)
       throw err
     }
     onProgress?.({ bytes: buf.byteLength, totalBytes: buf.byteLength, filename, mimeType })
@@ -139,7 +139,7 @@ export async function downloadUrl(url: string, opts: DownloadUrlOptions = {}): P
   try {
     return await receiveBody()
   } catch (err) {
-    endActiveWrite(sessionId, path)
+    abandonWriteClaim(sessionId, path)
     throw err
   }
 
@@ -223,13 +223,14 @@ export function registerBrowserDownloadCapture(): void {
         // Outside any tool call, so the transfer service takes it directly;
         // its completion wake is how the agent learns the node path works.
         if (driver?.connectionId) queueDownloadUpload(driver.connectionId, driver.sessionId, path)
-        else endActiveWrite(driver?.sessionId, path)
+        // No node to push to: nothing will ever adopt it, so the writer ends it.
+        else abandonWriteClaim(driver?.sessionId, path)
       }
       if (state !== 'completed') {
         log.warn(`[browser-download] ${state}: ${record.url}`)
         // Cancelled or interrupted: there is nothing to hand on, and holding
         // the claim would pin a stub the mirror may never prune.
-        endActiveWrite(driver?.sessionId, path)
+        abandonWriteClaim(driver?.sessionId, path)
       }
       notifyWaiters()
     })

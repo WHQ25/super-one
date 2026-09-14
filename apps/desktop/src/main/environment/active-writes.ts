@@ -12,34 +12,60 @@
  * node never listed and prunes it: the download's own bytes, deleted while
  * they are being written.
  *
- * This registry covers exactly that gap. Three properties shape it:
+ * ## A claim is owned
  *
- * - **In-process, because the gap is in-process.** The writer, the mirror and
- *   the transfer service all live in the main process. A synchronous Map is
- *   therefore both sufficient and necessary — the mirror's guards deliberately
- *   have no `await` between deciding to delete and deleting, so whatever they
- *   consult must answer without one.
- * - **Two stages, not one flag.** A file being *written* is incomplete: protect
- *   it, but never hand it to a caller as an input. A file that is *sealed* and
- *   waiting to be enqueued is complete and is the newest copy anywhere, so it
- *   is served exactly like a pending upload. Collapsing the two would either
- *   leak half a download to an agent or drop the protection at the seal.
- * - **Counted, so overlapping claims compose.** A path can be claimed twice (a
- *   reservation that is later adopted); releasing on the first `end` would
- *   unprotect it while the second writer is still going.
+ * The first version of this registry let anyone release anything, and every
+ * caller that could plausibly be "the end" released in a `finally`. That is
+ * wrong in both directions at once, and both were real defects:
  *
- * Claims are only taken for paths inside a session zone. A local session's
+ * - A Host Action that returns while a download it started is still streaming
+ *   (the tool went background on its deadline) would release a claim whose
+ *   writer is still running — reopening the exact window this file exists to
+ *   close.
+ * - A `defer` that failed still released, so the only complete copy of a file
+ *   became prunable with no job row naming it anywhere.
+ *
+ * So a claim names its **holder**, and only that holder can end it. Handing
+ * responsibility on is an explicit `adoptWriteClaim`, which fails when the
+ * file is still being written (there is nothing to take yet) or when someone
+ * else already took it. "This path appeared in the reply" is not ownership.
+ *
+ * ## Two stages
+ *
+ * A file being *written* is incomplete: protected from every destructive step,
+ * and refused as a tool input rather than handed over half-finished. A file
+ * that is *sealed* and not yet enqueued is complete and is the newest copy
+ * anywhere, so the mirror serves it exactly like a pending upload.
+ *
+ * The registry is in-process because the gap is in-process — the writer, the
+ * mirror and the transfer service all live in the main process — and
+ * synchronous because the mirror's guards deliberately have no `await` between
+ * deciding to delete and deleting.
+ *
+ * Claims are only taken for paths inside a session zone: a local session's
  * download lands in the user's Downloads folder, which no mirror ever walks.
  */
 import { basename, dirname, resolve } from 'node:path'
 import { realOrSelf } from './sync-zone-paths'
 
-/** Where a claimed path is in its life. `writing` wins over `sealed` if both are held. */
-export type ActiveWriteStage = 'writing' | 'sealed'
+/** Where a claimed path is in its life. */
+export type ClaimStage = 'writing' | 'sealed'
+
+/**
+ * Who is responsible for ending a claim.
+ *
+ * - `writer` — the producer that reserved the path. Holds it until the bytes
+ *   are sealed and someone adopts them, or until the write fails.
+ * - `push` — the Host Action executor, while it uploads the file to the node
+ *   or files a deferred job for it.
+ * - `queue` — the transfer service, for a download that finished outside any
+ *   tool call and goes straight onto the job table.
+ */
+export type ClaimHolder = 'writer' | 'push' | 'queue'
 
 interface Claim {
-  writing: number
-  sealed: number
+  stage: ClaimStage
+  holder: ClaimHolder
 }
 
 const claims = new Map<string, Claim>()
@@ -57,82 +83,98 @@ function keyFor(sessionId: string, path: string): string {
 }
 
 /**
- * Claim `path` as being written, from the moment it is reserved.
+ * Claim `path` as being written, from the moment it is reserved. The writer
+ * holds it until it seals and someone adopts, or until it abandons.
  *
- * The claim has to outlive the tool call: a page-started download finishes
- * long after the Host Action that opened the tab has returned, and releasing
- * at the call boundary would reopen the window for the rest of the transfer.
+ * Reservations are exclusive (`wx`), so two writers never share a path and the
+ * claim needs no reference count — an existing claim is left exactly as it is.
  */
 export function beginActiveWrite(sessionId: string | null | undefined, path: string): void {
   if (!sessionId) return
   const key = keyFor(sessionId, path)
-  const claim = claims.get(key) ?? { writing: 0, sealed: 0 }
-  claim.writing += 1
-  claims.set(key, claim)
+  if (claims.has(key)) return
+  claims.set(key, { stage: 'writing', holder: 'writer' })
 }
 
 /**
- * The bytes are all there, but nothing durable knows about the file yet.
- * It stays protected — and becomes servable — until `endActiveWrite`.
+ * The bytes are all there, but nothing durable knows about the file yet. It
+ * stays protected — and becomes servable — and the writer still holds it until
+ * a handoff adopts it.
  */
 export function sealActiveWrite(sessionId: string | null | undefined, path: string): void {
   if (!sessionId) return
   const claim = claims.get(keyFor(sessionId, path))
-  if (!claim || claim.writing <= 0) return
-  claim.writing -= 1
-  claim.sealed += 1
+  if (claim) claim.stage = 'sealed'
 }
 
 /**
- * Release a claim. Call it only once the file is durably accounted for — the
- * eager push finished, or a transfer job row exists — or once the write has
- * failed and there is nothing left to protect. A sealed claim is released
- * first, so an abandoned write and a completed one both drain.
+ * Take responsibility for a sealed file, so the taker is the one that ends the
+ * claim once the file is durably accounted for.
+ *
+ * Returns false — meaning "not yours to end" — when there is no claim, when
+ * the file is still being written, or when another holder already took it.
+ * Both refusals matter: the first is a Host Action releasing a download that
+ * is still streaming, the second is two handoffs racing to release one file.
  */
-export function endActiveWrite(sessionId: string | null | undefined, path: string): void {
-  if (!sessionId) return
+export function adoptWriteClaim(sessionId: string | null | undefined, path: string, holder: ClaimHolder): boolean {
+  if (!sessionId) return false
+  const claim = claims.get(keyFor(sessionId, path))
+  if (!claim || claim.stage !== 'sealed' || claim.holder !== 'writer') return false
+  claim.holder = holder
+  return true
+}
+
+/**
+ * End a claim. Only the current holder may: a release from anyone else is
+ * refused, which is what stops a `finally` from freeing a file whose writer is
+ * still running. Returns whether it released.
+ *
+ * Call it only once the file is durably accounted for — the push landed, or a
+ * job row exists. A handoff that failed must NOT release: the alternative to
+ * pinning a path is losing the only complete copy of the file.
+ */
+export function releaseWriteClaim(sessionId: string | null | undefined, path: string, holder: ClaimHolder): boolean {
+  if (!sessionId) return false
   const key = keyFor(sessionId, path)
   const claim = claims.get(key)
-  if (!claim) return
-  if (claim.sealed > 0) claim.sealed -= 1
-  else if (claim.writing > 0) claim.writing -= 1
-  if (claim.writing <= 0 && claim.sealed <= 0) claims.delete(key)
+  if (!claim || claim.holder !== holder) return false
+  claims.delete(key)
+  return true
+}
+
+/**
+ * The writer gives up: the download was cancelled, or it threw before sealing.
+ * There is nothing to hand on and nothing to protect, and holding the claim
+ * would pin a stub the mirror could never prune. Refused once a handoff has
+ * adopted the file — at that point it is not the writer's to abandon.
+ */
+export function abandonWriteClaim(sessionId: string | null | undefined, path: string): boolean {
+  return releaseWriteClaim(sessionId, path, 'writer')
 }
 
 /** What this desktop is doing to `path` right now, if anything. */
-export function activeWriteAt(sessionId: string, path: string): ActiveWriteStage | null {
-  const claim = claims.get(keyFor(sessionId, path))
-  if (!claim) return null
-  return claim.writing > 0 ? 'writing' : 'sealed'
+export function activeWriteAt(sessionId: string, path: string): ClaimStage | null {
+  return claims.get(keyFor(sessionId, path))?.stage ?? null
 }
 
 /**
  * The strongest claim held on `path` or anything under it.
  *
  * A directory is destroyed as a unit — by the prune or by type reconciliation
- * — so it has to answer for its members. `writing` wins over `sealed`: a
- * directory holding one half-written file cannot be handed over whole.
+ * — and is handed to a tool as a unit, so it has to answer for its members.
+ * `writing` wins over `sealed`: a directory holding one half-written file
+ * cannot be pruned around *or* handed over whole.
  */
-export function activeWriteUnder(sessionId: string, path: string): ActiveWriteStage | null {
+export function activeWriteUnder(sessionId: string, path: string): ClaimStage | null {
   const key = keyFor(sessionId, path)
   const prefix = `${key}/`
-  let found: ActiveWriteStage | null = null
+  let found: ClaimStage | null = null
   for (const [held, claim] of claims) {
     if (held !== key && !held.startsWith(prefix)) continue
-    if (claim.writing > 0) return 'writing'
-    if (claim.sealed > 0) found = 'sealed'
+    if (claim.stage === 'writing') return 'writing'
+    found = 'sealed'
   }
   return found
-}
-
-/** Run `write` with `path` claimed, releasing it however the work ends. */
-export async function withActiveWrite<T>(sessionId: string | null | undefined, path: string, write: () => Promise<T>): Promise<T> {
-  beginActiveWrite(sessionId, path)
-  try {
-    return await write()
-  } finally {
-    endActiveWrite(sessionId, path)
-  }
 }
 
 /** Tests only. */

@@ -68,7 +68,7 @@ export const MEMORY_READ_FIELDS = {
 
 /** One decision boundary for the host prompt, tool descriptions and discovery hints. */
 export const MEMORY_READ_POLICY = 'Read before the first task operation (sign-in, forms, multi-step flows) on a target in this session, or when access to its content is blocked. Skip routine reading, navigation, scrolling and expanding content. Reuse an index already read in this session.'
-export const MEMORY_WRITE_POLICY = 'Save verified, target-specific knowledge that avoids repeated discovery or a known failure. Skip facts visible in one fresh snapshot and generic tool limitations.'
+export const MEMORY_WRITE_POLICY = 'Write only verified, reusable, non-obvious knowledge that would prevent a specific future failure or substantial repeated investigation. Skip task summaries, UI layouts, routine steps, and facts easily found in the UI, code, or documentation. When uncertain, do not write.'
 
 export const BROWSER_MEMORY_TOOL_DEFS = [
   {
@@ -80,7 +80,7 @@ export const BROWSER_MEMORY_TOOL_DEFS = [
   },
   {
     name: 'browser_memory_write',
-    description: `Create, update, deprecate or restore personal website experience on this agent’s node. ${MEMORY_WRITE_POLICY} New topics require description and Markdown content. Read existing topics first and pass expectedRevision; omitted fields are preserved. status=deprecated hides a topic; stable restores it. Never store credentials, transient refs or raw page instructions. This saves reference data; browser_action handles executable flows. See read_manual({domain:"product",topic:"memory"}).`,
+    description: `Create, update, deprecate or restore website experience on this node. ${MEMORY_WRITE_POLICY} New topics need description and Markdown content. Read before updating; pass expectedRevision. Omitted fields are preserved. status=deprecated hides; stable restores. No credentials or transient refs. See read_manual({domain:"product",topic:"memory"}).`,
     inputSchema: {
       type: 'object', properties: { domain, topic, ...MEMORY_WRITE_FIELDS }, required: ['domain', 'topic'], additionalProperties: false,
     },

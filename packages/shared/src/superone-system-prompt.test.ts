@@ -34,10 +34,14 @@ describe('SUPERONE_SYSTEM_PROMPT_APPEND', () => {
     expect(MEMORY_READ_POLICY).toMatch(/Reuse an index.*this session/)
   })
 
-  it('judges saved experience by reusable value rather than novelty', () => {
-    expect(MEMORY_WRITE_POLICY).toMatch(/verified, target-specific/)
-    expect(MEMORY_WRITE_POLICY).toMatch(/repeated discovery.*known failure/)
-    expect(MEMORY_WRITE_POLICY).toMatch(/one fresh snapshot.*generic tool limitations/)
+  it('requires assessment without making memory writes a completion step', () => {
+    expect(MEMORY_WRITE_POLICY).toMatch(/verified, reusable, non-obvious/)
+    expect(MEMORY_WRITE_POLICY).toMatch(/specific future failure.*substantial repeated investigation/)
+    expect(MEMORY_WRITE_POLICY).toMatch(/When uncertain, do not write/)
+    expect(SUPERONE_SYSTEM_PROMPT_APPEND).toMatch(/Before finishing.*assess whether/)
+    expect(SUPERONE_SYSTEM_PROMPT_APPEND).toMatch(/Do not report assessments that result in no write/)
+    expect(SUPERONE_SYSTEM_PROMPT_APPEND).toContain('read_manual({ domain: "product", topic: "memory" })')
+    expect(SUPERONE_SYSTEM_PROMPT_APPEND).not.toMatch(/Before ending the turn, save|one topic per task/)
     for (const def of INTERACTION_MEMORY_TOOL_DEFS.filter(def => def.name.endsWith('_write'))) {
       expect(def.description).toContain(MEMORY_WRITE_POLICY)
     }

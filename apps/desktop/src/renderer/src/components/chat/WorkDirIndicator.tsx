@@ -70,11 +70,15 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
   const MainCheckoutIcon = isRemoteProject ? Server : Monitor
   const mainCheckoutLabel = t('tooltips.local')
 
+  const refreshWorktreeInfo = useCallback(() => {
+    if (!currentFolder || isGitRepo === false) return
+    window.app.getWorktreeInfo(currentFolder).then(setWorktreeInfo).catch(() => {})
+  }, [currentFolder, isGitRepo])
+
   // A freshly forked worktree must land in `entries` for `activeEntry` to
   // resolve and render the detached icon — so activePath is a dependency.
   useEffect(() => {
-    if (!currentFolder) { setWorktreeInfo(null); return }
-    if (isGitRepo === false) { setWorktreeInfo(null); return }
+    if (!currentFolder || isGitRepo === false) { setWorktreeInfo(null); return }
     let cancelled = false
     window.app.getWorktreeInfo(currentFolder).then((info) => {
       if (!cancelled) setWorktreeInfo(info)
@@ -89,6 +93,16 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
     }).catch(() => {})
   }, [activePath])
 
+  // The agent can also move the worktree's HEAD or attach a branch to a
+  // detached checkout during a turn (`git switch -c` / `git checkout -b`), and
+  // the file-watcher only covers the main checkout — so the entry list that
+  // decides "detached vs branch" must be re-read at the same boundary as dirty.
+  const refreshActiveWorktree = useCallback(() => {
+    if (!activePath) return
+    refreshActiveDirty()
+    refreshWorktreeInfo()
+  }, [activePath, refreshActiveDirty, refreshWorktreeInfo])
+
   // Event-driven, like the branch chip: read once for the worktree, then only
   // when a turn ends or the repo's HEAD moves.
   useEffect(() => {
@@ -98,12 +112,12 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
       if (!cancelled) setActiveDirty((prev) => (sameDirty(prev, info?.dirty) ? prev : info?.dirty))
     }).catch(() => {})
     const unsub = window.app.onGitHeadChange((evt) => {
-      if (evt.folderPath === activePath) refreshActiveDirty()
+      if (evt.folderPath === activePath) refreshActiveWorktree()
     })
     return () => { cancelled = true; unsub() }
-  }, [activePath, refreshActiveDirty])
+  }, [activePath, refreshActiveWorktree])
 
-  useOnTurnCompleted(refreshActiveDirty)
+  useOnTurnCompleted(refreshActiveWorktree)
 
   const loadPopoverData = useCallback(async () => {
     if (!currentFolder) return

@@ -4135,6 +4135,8 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.APP_SETTINGS_GET, () => readAppSettings())
   ipcMain.handle(AgentIpcChannels.APP_SETTINGS_SAVE, (_e, patch) => applyAppSettingsPatch(patch))
   ipcMain.handle(AgentIpcChannels.APP_DEFAULT_DOWNLOAD_DIR, () => systemDownloadDir())
+  ipcMain.handle(AgentIpcChannels.SYNC_ZONE_USAGE_GET, async () => (await import('./environment/session-zone-reclaim')).syncZoneUsage())
+  ipcMain.handle(AgentIpcChannels.SYNC_ZONE_RECLAIM, async () => (await import('./environment/session-zone-reclaim')).sweepSyncZone())
 
   ipcMain.handle(AgentIpcChannels.APP_INSTALL_ID_GET, () => getInstallId())
   ipcMain.handle(
@@ -4549,9 +4551,9 @@ function registerIpcHandlers(): void {
   // claimed. Runs 30 s after launch — never between launch and the first
   // window — and again whenever a node connects, because a node that was
   // offline at launch is one the launch sweep could only say "keep" about.
-  void Promise.all([import('./environment/session-zone-reclaim'), import('./environment')]).then(([{ createReclaimScheduler, reclaimSyncZoneOnStartup }, { getEnvironmentHost }]) => {
+  void Promise.all([import('./environment/session-zone-reclaim'), import('./environment')]).then(([{ createReclaimScheduler, sweepSyncZone }, { getEnvironmentHost }]) => {
     const sweep = createReclaimScheduler(() =>
-      reclaimSyncZoneOnStartup()
+      sweepSyncZone()
         .then(({ removed, freedBytes }) => {
           if (removed.length > 0 || freedBytes > 0) {
             log.info('[main] sync zone reclaimed %d session(s), %d bytes', removed.length, freedBytes)

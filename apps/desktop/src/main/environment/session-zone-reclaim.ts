@@ -15,6 +15,7 @@ import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ADHOC_SESSION_ID, sessionZoneDir, syncZoneRoot } from '../media-output-paths'
 import { OWNER_FILE } from './zone-owner'
+import type { SyncZoneReclaimResult, SyncZoneUsage } from '@superone/shared/environment'
 
 export async function removeSessionZone(sessionId: string): Promise<void> {
   if (!sessionId || sessionId === ADHOC_SESSION_ID) return
@@ -96,7 +97,7 @@ function newestMtime(path: string): number {
 }
 
 /** Delete files under `dir` older than the cutoff, leaving the directory itself. */
-function pruneOldFiles(dir: string, cutoff: number): number {
+function pruneOldFiles(dir: string, cutoff: number, dryRun = false): number {
   let freed = 0
   let entries: string[]
   try {
@@ -110,13 +111,13 @@ function pruneOldFiles(dir: string, cutoff: number): number {
     if (!st) continue
     try {
       if (st.isDirectory) {
-        freed += pruneOldFiles(path, cutoff)
+        freed += pruneOldFiles(path, cutoff, dryRun)
         continue
       }
       // A link is removed as a link (never followed), and only when it is old.
       if (st.mtimeMs >= cutoff) continue
       freed += st.size
-      rmSync(path, { force: true })
+      if (!dryRun) rmSync(path, { force: true })
     } catch {
       /* raced with something else; the next sweep will see it */
     }
@@ -132,7 +133,12 @@ function pruneOldFiles(dir: string, cutoff: number): number {
  * claimed. Everything ambiguous — an unreachable node, a queued transfer, a
  * directory in use — is kept.
  */
-export async function reclaimSyncZone(deps: ZoneReclaimDeps): Promise<{ removed: string[]; freedBytes: number }> {
+export async function reclaimSyncZone(
+  deps: ZoneReclaimDeps,
+  /** Report what would go without touching anything — what Settings shows as reclaimable. */
+  opts: { dryRun?: boolean } = {},
+): Promise<SyncZoneReclaimResult> {
+  const dryRun = opts.dryRun === true
   const now = (deps.now ?? Date.now)()
   const root = syncZoneRoot()
   let entries: string[]
@@ -151,7 +157,7 @@ export async function reclaimSyncZone(deps: ZoneReclaimDeps): Promise<{ removed:
     const dirStat = linkSafeStat(dir)
     if (!dirStat?.isDirectory) continue
     if (sessionId === ADHOC_SESSION_ID) {
-      freedBytes += pruneOldFiles(dir, now - ADHOC_MAX_AGE_MS)
+      freedBytes += pruneOldFiles(dir, now - ADHOC_MAX_AGE_MS, dryRun)
       continue
     }
     if (deps.hasPendingTransfer(sessionId)) continue
@@ -181,6 +187,10 @@ export async function reclaimSyncZone(deps: ZoneReclaimDeps): Promise<{ removed:
     if (deps.hasPendingTransfer(sessionId)) continue
 
     freedBytes += sizeOf(dir)
+    if (dryRun) {
+      removed.push(sessionId)
+      continue
+    }
     try {
       rmSync(dir, { recursive: true, force: true })
       removed.push(sessionId)
@@ -192,12 +202,60 @@ export async function reclaimSyncZone(deps: ZoneReclaimDeps): Promise<{ removed:
 }
 
 /**
- * The sweep as the app runs it: local sessions from the database, remote ones
- * from their node when that connection is live, transfers from the job table.
- * Failures are swallowed — reclaim is housekeeping and must never keep the app
- * from starting.
+ * The sweep as the app runs it — at launch, on node connect, and when the
+ * person presses "Reclaim Now" in Settings: local sessions from the database,
+ * remote ones from their node when that connection is live, transfers from
+ * the job table. Failures are swallowed — reclaim is housekeeping and must
+ * never keep the app from starting.
  */
-export async function reclaimSyncZoneOnStartup(): Promise<{ removed: string[]; freedBytes: number }> {
+export async function sweepSyncZone(): Promise<SyncZoneReclaimResult> {
+  return runSyncZoneReclaim()
+}
+
+/**
+ * The numbers Settings shows: what the zone holds, what is still to be
+ * uploaded, and what a sweep would free. Looking never frees anything —
+ * the sweep here is a dry run.
+ */
+export async function syncZoneUsage(): Promise<SyncZoneUsage> {
+  const root = syncZoneRoot()
+  let entries: string[] = []
+  try {
+    entries = readdirSync(root)
+  } catch {
+    /* no zone yet */
+  }
+  let totalBytes = 0
+  let adhocBytes = 0
+  let sessionCount = 0
+  for (const name of entries) {
+    const dir = join(root, name)
+    if (!linkSafeStat(dir)?.isDirectory) continue
+    const bytes = sizeOf(dir)
+    totalBytes += bytes
+    if (name === ADHOC_SESSION_ID) adhocBytes += bytes
+    else sessionCount++
+  }
+  const pendingBytes = await pendingUploadBytes()
+  const dry = await runSyncZoneReclaim({ dryRun: true })
+  return { root, totalBytes, sessionCount, adhocBytes, pendingBytes, reclaimable: { sessions: dry.removed.length, bytes: dry.freedBytes } }
+}
+
+async function pendingUploadBytes(): Promise<number> {
+  try {
+    const { listUnfinishedArtifactTransfers } = await import('../db-artifact-transfers')
+    let bytes = 0
+    for (const job of listUnfinishedArtifactTransfers()) {
+      const st = linkSafeStat(job.localPath)
+      if (st?.isFile) bytes += st.size
+    }
+    return bytes
+  } catch {
+    return 0
+  }
+}
+
+async function runSyncZoneReclaim(opts: { dryRun?: boolean } = {}): Promise<SyncZoneReclaimResult> {
   try {
     const [{ sessionExists }, { listArtifactTransfersForSession }, { getEnvironmentHost }] = await Promise.all([
       import('../db-sessions'),
@@ -230,9 +288,9 @@ export async function reclaimSyncZoneOnStartup(): Promise<{ removed: string[]; f
           return 'unknown'
         }
       },
-    })
+    }, opts)
     // The directory is gone; its terminal job rows go with it.
-    for (const sessionId of result.removed) getEnvironmentHost().artifactTransfers?.dropSession(sessionId)
+    if (!opts.dryRun) for (const sessionId of result.removed) getEnvironmentHost().artifactTransfers?.dropSession(sessionId)
     return result
   } catch {
     return { removed: [], freedBytes: 0 }

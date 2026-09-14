@@ -4,6 +4,7 @@
  * the existing settings page components under the active tab.
  */
 
+import { formatBytes } from '@superone/shared/format-bytes'
 import {
   useCallback,
   useEffect,
@@ -237,13 +238,6 @@ function isCursorSettingsSection(section: HarnessConfigSection): section is Curs
     || section === 'models'
     || section === 'cloud'
   )
-}
-
-function formatBytes(n: number): string {
-  if (!Number.isFinite(n) || n <= 0) return '0 B'
-  if (n < 1024) return `${n} B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`
 }
 
 function catalogIsOn(row: CatalogRow | undefined): boolean {

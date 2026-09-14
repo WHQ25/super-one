@@ -144,6 +144,12 @@ export function claimArtifactTransfer(jobId: string, state: 'running' | 'notifyi
 }
 
 /** Every unfinished job of a connection regardless of when it is due; the worker sleeps until the earliest. */
+/** Every job not yet done or failed, across connections — what Settings counts as "still to be uploaded". */
+export function listUnfinishedArtifactTransfers(): ArtifactTransferJob[] {
+  const rows = getDb().prepare(`SELECT * FROM artifact_transfer_jobs WHERE state IN ${UNFINISHED_STATES}`).all() as Row[]
+  return rows.map(toJob)
+}
+
 export function listPendingArtifactTransfers(connectionId: string): ArtifactTransferJob[] {
   const rows = getDb().prepare(`
     SELECT * FROM artifact_transfer_jobs

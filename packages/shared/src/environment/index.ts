@@ -8,6 +8,7 @@
 export * from './protocol'
 export * from './refs'
 export * from './capabilities'
+export * from './sync-zone-usage'
 export * from './host-actions'
 export * from './host-action-browser-catalog'
 export * from './harness-installation'

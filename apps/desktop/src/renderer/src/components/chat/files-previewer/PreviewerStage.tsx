@@ -1,3 +1,4 @@
+import { formatBytes } from '@superone/shared/format-bytes'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FileX2, FileWarning, Loader2, RefreshCw } from 'lucide-react'
@@ -70,12 +71,6 @@ function StageError({ file, error, onRetry }: { file: PreviewerFile; error: Prev
       )}
     </div>
   )
-}
-
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 /**

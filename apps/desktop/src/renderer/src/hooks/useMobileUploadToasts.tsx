@@ -1,15 +1,9 @@
+import { formatBytes } from '@superone/shared/format-bytes'
 import { useEffect } from 'react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { Smartphone, FileUp, Check, AlertCircle } from 'lucide-react'
 import type { MobileUploadProgress } from '@superone/shared/agent-types'
-
-function formatBytes(bytes: number): string {
-  if (!bytes) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB']
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
-  return `${(bytes / 1024 ** i).toFixed(i === 0 ? 0 : 1)} ${units[i]}`
-}
 
 function basename(p: string): string {
   const trimmed = p.replace(/[/\\]+$/, '')

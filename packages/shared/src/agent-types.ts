@@ -3902,6 +3902,9 @@ export const AgentIpcChannels = {
   APP_SETTINGS_CHANGED: 'app:settings-changed',
   /** Resolved OS Downloads folder, shown as the placeholder for an unset download directory. */
   APP_DEFAULT_DOWNLOAD_DIR: 'app:default-download-dir',
+  /** What the session sync zone holds and what a sweep would free; the sweep itself. */
+  SYNC_ZONE_USAGE_GET: 'app:sync-zone-usage',
+  SYNC_ZONE_RECLAIM: 'app:sync-zone-reclaim',
   /** Stable per-installation id used as the analytics distinct id. */
   APP_INSTALL_ID_GET: 'app:install-id-get',
   /**

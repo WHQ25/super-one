@@ -7,7 +7,7 @@ const state = vi.hoisted(() => ({
   userData: '',
   dropped: [] as string[],
   localSessions: new Set<string>(),
-  jobs: [] as { sessionId: string; state: string }[],
+  jobs: [] as { sessionId: string; state: string; localPath?: string }[],
 }))
 vi.mock('electron', () => ({ app: { getPath: () => state.userData } }))
 vi.mock('./environment-host', () => ({
@@ -19,9 +19,10 @@ vi.mock('./environment-host', () => ({
 vi.mock('../db-sessions', () => ({ sessionExists: (id: string) => state.localSessions.has(id) }))
 vi.mock('../db-artifact-transfers', () => ({
   listArtifactTransfersForSession: (id: string) => state.jobs.filter((j) => j.sessionId === id),
+  listUnfinishedArtifactTransfers: () => state.jobs.filter((j) => j.state !== 'failed' && j.state !== 'done'),
 }))
 
-import { ADHOC_MAX_AGE_MS, createReclaimScheduler, markZoneOwner, reclaimSyncZone, reclaimSyncZoneOnStartup, removeSessionZone } from './session-zone-reclaim'
+import { ADHOC_MAX_AGE_MS, createReclaimScheduler, markZoneOwner, reclaimSyncZone, sweepSyncZone, removeSessionZone, syncZoneUsage } from './session-zone-reclaim'
 
 let root: string
 beforeEach(() => {
@@ -182,12 +183,28 @@ describe('sync zone sweep', () => {
     }
     aged('dead', 'recording/a.mp4')
     state.jobs = [{ sessionId: 'dead', state: 'failed' }]
-    const result = await reclaimSyncZoneOnStartup()
+    const result = await sweepSyncZone()
     expect(result.removed).toEqual(['dead'])
     expect(state.dropped).toEqual(['dead'])
     aged('retrying', 'recording/b.mp4')
     state.jobs = [{ sessionId: 'retrying', state: 'pending' }]
-    expect((await reclaimSyncZoneOnStartup()).removed).toEqual([])
+    expect((await sweepSyncZone()).removed).toEqual([])
+  })
+
+  it('reports a dead directory once when a manual sweep lands during the scheduled one', async () => {
+    // Asking the node is an await, and two walks park on it for the same
+    // directory. The post-await re-check is what keeps the second from sizing
+    // and reporting a directory the first already removed.
+    const sessionId = 'dead'
+    const path = join(root, 'sync', sessionId, 'recording', 'a.mp4')
+    mkdirSync(join(path, '..'), { recursive: true })
+    writeFileSync(path, 'xxxxxxxx')
+    markZoneOwner(sessionId, 'conn-1')
+    const seconds = (Date.now() - 2 * DAY) / 1000
+    for (const p of [path, join(path, '..'), join(root, 'sync', sessionId, '.owner'), join(root, 'sync', sessionId)]) utimesSync(p, seconds, seconds)
+    const [scheduled, manual] = await Promise.all([sweepSyncZone(), sweepSyncZone()])
+    expect(scheduled.freedBytes + manual.freedBytes).toBe(8 + 'conn-1'.length)
+    expect([...scheduled.removed, ...manual.removed]).toEqual([sessionId])
   })
 
   it('does nothing at all when there is no zone yet', async () => {
@@ -240,5 +257,39 @@ describe('reclaim scheduling', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('sync zone usage', () => {
+  it('reports what the zone holds, what is still to be uploaded, and what a sweep would free — without freeing it', async () => {
+    // Settings shows this so a person can decide; the sweep must not run as
+    // a side effect of looking.
+    const DAY = 24 * 60 * 60 * 1000
+    const aged = (sessionId: string, rel: string, ageMs: number, bytes: string) => {
+      const path = join(root, 'sync', sessionId, ...rel.split('/'))
+      mkdirSync(join(path, '..'), { recursive: true })
+      writeFileSync(path, bytes)
+      markZoneOwner(sessionId, null)
+      const seconds = (Date.now() - ageMs) / 1000
+      for (const p of [path, join(path, '..'), join(root, 'sync', sessionId, '.owner'), join(root, 'sync', sessionId)]) utimesSync(p, seconds, seconds)
+    }
+    aged('dead', 'browser/a.png', 2 * DAY, 'xxxx')
+    aged('live', 'browser/b.png', 2 * DAY, 'yyyyyy')
+    state.localSessions = new Set(['live'])
+    state.jobs = [{ sessionId: 'live', state: 'pending', localPath: join(root, 'sync', 'live', 'browser', 'b.png') }]
+    mkdirSync(join(root, 'sync', 'adhoc', 'browser'), { recursive: true })
+    writeFileSync(join(root, 'sync', 'adhoc', 'browser', 'manual.png'), 'zz')
+
+    const usage = await syncZoneUsage()
+    expect(usage).toMatchObject({
+      sessionCount: 2,
+      adhocBytes: 2,
+      pendingBytes: 6,
+      // The dead directory's 4 bytes plus its 5-byte `.owner` marker.
+      reclaimable: { sessions: 1, bytes: 4 + 'local'.length },
+    })
+    expect(usage.totalBytes).toBeGreaterThanOrEqual(12)
+    expect(usage.root).toBe(join(root, 'sync'))
+    expect(existsSync(join(root, 'sync', 'dead'))).toBe(true)
   })
 })

@@ -3,6 +3,7 @@
  * Claude/Codex before entering main UI.
  */
 
+import { formatBytes } from '@superone/shared/format-bytes'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -24,13 +25,6 @@ export type HarnessAlignViewProps = {
   error: string
   progress: HarnessAlignProgress | null
   onRetry?: () => void
-}
-
-function formatBytes(n: number): string {
-  if (!Number.isFinite(n) || n <= 0) return '0 B'
-  if (n < 1024) return `${n} B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`
 }
 
 /** Presentational gate UI — drive via props for Storybook / design iteration. */

@@ -1791,6 +1791,10 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.APP_SETTINGS_SAVE, patch),
   getDefaultDownloadDir: () =>
     ipcRenderer.invoke(AgentIpcChannels.APP_DEFAULT_DOWNLOAD_DIR),
+  getSyncZoneUsage: () =>
+    ipcRenderer.invoke(AgentIpcChannels.SYNC_ZONE_USAGE_GET),
+  reclaimSyncZone: () =>
+    ipcRenderer.invoke(AgentIpcChannels.SYNC_ZONE_RECLAIM),
   getInstallId: () => ipcRenderer.invoke(AgentIpcChannels.APP_INSTALL_ID_GET),
   openComputerUsePermissions: (
     request: boolean | 'guided' | 'accessibility' | 'screenRecording' = true,

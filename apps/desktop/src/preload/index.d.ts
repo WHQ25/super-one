@@ -22,6 +22,7 @@ import type {
 import type { IosSimulatorChrome, IosSimulatorCreateRequest, IosSimulatorDevice, IosSimulatorRuntimeOption, IosSimulatorStatus } from '@superone/shared/ios-simulator'
 import type { DeviceCapture, DeviceDescriptor, DeviceFrame, DeviceInput, DeviceInputResult, DeviceState, DeviceStreamOptions, DeviceViewfinderClaim } from '@superone/shared/device'
 import type { DeviceSetupKind, DeviceSetupOption } from '@superone/shared/device-setup'
+import type { SyncZoneReclaimResult, SyncZoneUsage } from '@superone/shared/environment'
 // Re-export so renderer consumers of the preload types see the correlated shape.
 export type { EnvironmentInstallProgress } from '@superone/shared/environment'
 
@@ -513,6 +514,8 @@ interface AppAPI {
   saveAppSettings(patch: AppSettingsPatch): Promise<AppSettings>
   /** OS Downloads folder — the effective target when `browserDownloadDir` is unset. */
   getDefaultDownloadDir(): Promise<string>
+  getSyncZoneUsage(): Promise<SyncZoneUsage>
+  reclaimSyncZone(): Promise<SyncZoneReclaimResult>
   getInstallId(): Promise<string>
   /**
    * false — status only.

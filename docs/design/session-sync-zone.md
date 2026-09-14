@@ -676,9 +676,19 @@ marked and the residue is stated):
   sweep also runs on every node connection, debounced, not only 30 s after
   launch — a node offline at launch was one the launch sweep could only say
   "keep" about.
-  **Still open:** there is no size cap and no eviction under pressure. A cap
-  would have to delete artifacts a live transcript names, which is a product
-  decision — surfacing zone size in settings is the likely first step.
+  **No size cap, by decision (2026-09-14).** A cap would have to delete
+  artifacts a live transcript names, and the sweep above already removes
+  everything that can be proved dead — so a cap could only ever delete on a
+  guess. What a person can want instead is to *see* the number and to run
+  that sweep now rather than at the next launch: Settings → General →
+  Storage (`SessionStorageSection`) shows the zone total, the session count,
+  what is still queued for upload (it is not going anywhere), and what a
+  sweep would free — the same sweep run as a dry run — with **Reclaim Now**
+  and **Show in Folder**. Nothing there deletes what the sweep would keep.
+  A manual sweep landing during the scheduled one is safe without a lock:
+  the post-await re-check (`readOwner`, `newestMtime`, pending transfer)
+  makes the second walk skip a directory the first already removed, so the
+  bytes are reported once.
 - ~~**Directories under the zone cannot be tool inputs on a remote session.**~~
   — **implemented 2026-09-14.** `artifact.list` (controller-bound, `lstat`
   walk, links neither followed nor named, `.parts` and `.owner` skipped,

@@ -19,6 +19,7 @@
  * nothing accumulates.
  */
 import { AsyncLocalStorage, AsyncResource } from 'node:async_hooks'
+import { randomUUID } from 'node:crypto'
 import log from '../logger'
 import type { ArtifactProducer } from '../media-output-paths'
 
@@ -90,6 +91,26 @@ export function currentCallOwner(): string | null | undefined {
   const scope = current.getStore()
   if (!scope) return undefined
   return scope.connectionId && scope.connectionId !== 'local' ? scope.connectionId : null
+}
+
+/**
+ * Run a LOCAL session's tool call inside a call scope, so producers it reaches
+ * can tell "this desktop's own session" from "no idea who is calling".
+ *
+ * `currentCallOwner()` reports `undefined` outside any scope, and an unknown
+ * owner marks nothing — which is right for a UI capture of a device a remote
+ * session holds, and wrong for the local MCP dispatchers, whose calls are
+ * local by construction. They open this scope so a zone directory they create
+ * is marked `local` and the reclaim sweep can check it against this database.
+ * No refs are collected: a local call has nothing to push to a node.
+ */
+export async function runInLocalCallScope<T>(sessionId: string, run: () => Promise<T>): Promise<T> {
+  const callId = randomUUID()
+  try {
+    return await collectArtifacts(sessionId, callId, run)
+  } finally {
+    takeArtifacts(sessionId, callId)
+  }
 }
 
 /** Open a collection scope for one tool call and run it inside. */

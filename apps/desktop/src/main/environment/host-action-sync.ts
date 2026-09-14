@@ -78,6 +78,9 @@ function budgetExpiry(signal: AbortSignal): Promise<never> {
  * the budget signal so it can stop its own I/O too.
  */
 async function within<T>(ms: number, signal: AbortSignal, work: (budget: AbortSignal) => Promise<T>): Promise<T> {
+  // An already-cancelled action raises no new abort event, so a listener alone
+  // would wait the full budget for something that already happened.
+  if (signal.aborted) throw Object.assign(new Error('aborted'), { code: 'aborted' })
   const budget = new AbortController()
   const timer = setTimeout(() => budget.abort(), Math.max(0, ms))
   const abortWithAction = () => budget.abort()
@@ -309,11 +312,13 @@ export async function syncHostActionOutputs(
   let expiresAt = claimExpiresAt
   for (const item of planned) {
     mapping.set(item.ref.path, item.nodePath)
-    if (await nodeAlreadyHas(item, expiresAt - now() - CLAIM_BUDGET_MARGIN_MS, deps)) continue
-    // The stat may have burned the budget or the action may have been
-    // cancelled while it was in flight; check before treating "not already
-    // there" as "upload now".
+    const alreadyThere = await nodeAlreadyHas(item, expiresAt - now() - CLAIM_BUDGET_MARGIN_MS, deps)
+    // Unconditionally, before acting on the answer: that stat was an await, and
+    // a cancel during it must stop the loop rather than be carried into the
+    // next file — where `within` would enter on an already-aborted signal and
+    // wait out the whole budget for an abort event that has already fired.
     throwIfAborted(deps.signal)
+    if (alreadyThere) continue
     // One transferId for the file's whole life: the node keeps a half-written
     // transfer open after a dropped connection, and a job retrying under a new
     // id would be told `busy` by it. The job carries this id and resumes.

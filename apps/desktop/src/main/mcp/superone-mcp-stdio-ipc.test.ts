@@ -7,6 +7,18 @@ import { join } from 'path'
 const tmpRoot = mkdtempSync(join(tmpdir(), 'superone-mcp-ipc-'))
 const collaborationSettings = vi.hoisted(() => ({ enabled: false }))
 const requestSessionAgentsMock = vi.hoisted(() => vi.fn())
+const localScopeSpy = vi.hoisted(() => vi.fn())
+// Delegates to the real scope; only records that the dispatcher opened one.
+vi.mock('./artifact-registry', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./artifact-registry')>()
+  return {
+    ...actual,
+    runInLocalCallScope: (sessionId: string, run: () => Promise<unknown>) => {
+      localScopeSpy(sessionId)
+      return actual.runInLocalCallScope(sessionId, run)
+    },
+  }
+})
 
 vi.mock('electron', () => ({
   app: { getPath: vi.fn(() => tmpRoot) },
@@ -262,15 +274,19 @@ describe('superone-mcp-stdio-ipc', () => {
     clientB.close()
   })
 
-  it('executes built-in tools through the bridge', async () => {
+  it('executes built-in tools through the bridge, inside a local call scope', async () => {
     const client = new TestClient(getEndpoint())
     await client.ready()
+    localScopeSpy.mockClear()
     const res = await client.send('tools/call', getToken(), {
       sessionId: PROJ,
       name: 'read_manual',
       arguments: { domain: 'miniapp', topic: 'overview' },
     })
     expect(res.result?.content?.[0]?.text).toBe('overview content')
+    // Without the scope a producer this call reaches marks nothing, and the
+    // session's zone is kept by the reclaim sweep forever (§7).
+    expect(localScopeSpy).toHaveBeenCalledWith(PROJ)
     client.close()
   })
 

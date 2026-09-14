@@ -56,6 +56,15 @@ describe('artifact zone scoping', () => {
     expect(code(() => zone.stat('s1', ''))).toBe('invalid_argument')
   })
 
+  it('refuses the session .owner marker through stat, get and put, since it is not an artifact', () => {
+    // The desktop mirror must never fetch the node's `.owner` over its own —
+    // that would move the directory's ownership and hand a live session to the
+    // reclaim sweep.
+    expect(code(() => zone.resolve('s1', '.owner'))).toBe('invalid_argument')
+    expect(code(() => zone.resolve('s1', './.owner'))).toBe('invalid_argument')
+    expect(code(() => zone.stat('s1', '.owner'))).toBe('invalid_argument')
+  })
+
   it('refuses a symlink that escapes the session directory', () => {
     const outside = join(root, 'outside')
     mkdirSync(outside)

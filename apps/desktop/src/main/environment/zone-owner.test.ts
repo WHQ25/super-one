@@ -7,7 +7,7 @@ const state = vi.hoisted(() => ({ userData: '' }))
 vi.mock('electron', () => ({ app: { getPath: () => state.userData } }))
 vi.mock('../logger', () => ({ default: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() } }))
 
-import { collectArtifacts } from '../mcp/artifact-registry'
+import { collectArtifacts, runInLocalCallScope } from '../mcp/artifact-registry'
 import { persistTextArtifact } from '../agent/browser-artifact-store'
 import { producerDir } from '../media-output-paths'
 import { ensureArtifactDir, ensureZoneDir } from './zone-owner'
@@ -61,6 +61,15 @@ describe('zone ownership at directory creation', () => {
     expect(owner('s6')).toBe('conn-1')
     await collectArtifacts('s6', 'call-3', async () => { ensureArtifactDir(producerDir('s6', 'browser')) })
     expect(owner('s6')).toBe('conn-1')
+  })
+
+  it("marks a local session's zone through the scope the local MCP dispatchers open", async () => {
+    // A local tool call opens no Host Action scope, so after "no scope means
+    // unknown" it stopped marking at all — and an unmarked directory is kept
+    // by the sweep forever, even for a session this database knows is gone.
+    // The local dispatchers now say "this is a local call" explicitly.
+    await runInLocalCallScope('s7', async () => { persistTextArtifact('s7', 'spilled', 'json') })
+    expect(owner('s7')).toBe('local')
   })
 
   it('leaves the adhoc zone and directories outside the zone unmarked', () => {

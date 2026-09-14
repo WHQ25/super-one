@@ -573,6 +573,39 @@ All four landed on 2026-09-14, one commit each.
   named `report?draft.png` resolved to `report` — `?` now joins `#` as an
   encoded path terminator.
 
+- **A ninth review, of those fixes, found nine more — all combination
+  scenarios the single-case fixes left open, and all fixed.** The pattern: a
+  guard that held at the mirror root, or only in the prune, did not hold at
+  every file operation. The boundary check is now enforced per member (an
+  in-zone ancestor symlink pointing *out* of the zone had the root check pass
+  and the fetch then overwrite the link's target); the pending-original and
+  cancel checks now cover the destructive *type reconciliation* too, not just
+  the prune — reconciling a `foo` file over a desktop `foo/` directory used to
+  delete an original still queued for upload, and a cancel arriving during the
+  member stat let the reconcile delete before the fetch threw. The prune is now
+  fully synchronous over a pending set snapshotted before the walk, so nothing
+  is `await`ed between deciding to delete and deleting, and it takes the signal
+  so a cancel between the last fetch and the prune stops it. A failed batch no
+  longer releases its per-session generation early: workers record their
+  failure and return rather than throwing, the batch is cancelled as one, and
+  every worker is awaited — a fetch a failed mirror abandoned used to outlive
+  it and write into the tree a later mirror produced. `.owner` is now reserved
+  metadata on *both* sides: the node refuses it through `resolve` (so
+  `stat`/`get`/`put` cannot reach it, not only `list`), and the mirror refuses
+  any path naming it — with the marker written before the first `.part`, a
+  mirror of `.owner` itself would have moved a live directory's ownership to
+  `local` and handed it to the sweep. The tab driver is recorded by `select`,
+  `evaluate` and `open` as well (a select's change handler and an evaluate can
+  both start a download; a new tab is attributed as soon as it exists). And the
+  local MCP dispatchers — the stdio bridge and the in-process DeepSeek backend —
+  now open an explicit local call scope (`runInLocalCallScope`): after "no scope
+  means unknown owner", a local producer marked nothing at all, which left a
+  local session's zone unmarked and therefore kept by the sweep forever. A UI
+  call with no identity is still unknown and still marks nothing. Finally the
+  Host Action dedupe stat checks cancellation unconditionally before acting on
+  its answer, and `within` rejects an already-aborted signal instead of waiting
+  out a budget for an abort event that has already fired.
+
 - **Only refs the reply names are pushed** (§3). A registered artifact whose
   path never appears in `content[].text` is not uploaded: the agent has no
   path to `Read`, and the desktop, the renderer and the phone all read the

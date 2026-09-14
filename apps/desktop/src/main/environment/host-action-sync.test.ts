@@ -301,6 +301,44 @@ describe('host action outputs', () => {
     expect(node.puts).toHaveLength(0)
   })
 
+  it('stops at a cancel that landed while checking whether the node already had the first file', async () => {
+    // The dedupe hit used to `continue` before the abort check, so a cancel
+    // that arrived during that stat was only noticed by the *next* file — and
+    // `within` entered with an already-aborted signal never sees a fresh abort
+    // event, so that next wait ran the whole budget out.
+    const node = fakeNode()
+    const abort = new AbortController()
+    const a = desktopFile('s1', 'browser/a.png', 'a')
+    const b = desktopFile('s1', 'browser/b.png', 'bb')
+    // a is already on the node, byte-identical; the stat that says so cancels.
+    node.files.set('browser/a.png', Buffer.from('a'))
+    utimesSync(a, 1_700_000_000, 1_700_000_000)
+    let statCalls = 0
+    node.deps = {
+      ...node.deps,
+      signal: abort.signal,
+      stat: async (req: { relativePath: string }) => {
+        statCalls++
+        if (req.relativePath === 'browser/a.png') abort.abort()
+        const f = node.files.get(req.relativePath)
+        return f ? { exists: true, size: f.length, mtimeMs: 1_700_000_000_000 } : { exists: false, size: 0, mtimeMs: 0 }
+      },
+    }
+    const settled = await Promise.race([
+      syncHostActionOutputs('s1', [
+        { path: a, producer: 'browser', final: true },
+        { path: b, producer: 'browser', final: true },
+      ], { content: [{ type: 'text', text: `${a} ${b}` }] }, Date.now() + 60_000, node.deps)
+        .then(() => 'resolved' as const, (err) => err as Error),
+      new Promise<'hung'>((resolve) => setTimeout(() => resolve('hung'), 300)),
+    ])
+    expect(settled).not.toBe('hung')
+    expect(settled).toMatchObject({ code: 'aborted' })
+    // It stopped at the first file, without starting the second one's stat.
+    expect(statCalls).toBe(1)
+    expect(node.puts).toHaveLength(0)
+  })
+
   it('stops at the abort signal between uploads', async () => {
     const node = fakeNode()
     const abort = new AbortController()

@@ -775,6 +775,29 @@ describe('browser tool registration under experimental gates', () => {
     expect(resultText(miss)).toContain('gone')
   })
 
+  it('records the tab driver before select, evaluate and open, so a download they start is attributed', async () => {
+    // These three used to bypass the driver update: select via dataTool,
+    // evaluate via a direct call, open before its new tab existed. A page
+    // download from any of them was filed under whoever last drove the tab (§6).
+    const tools = buildTools()
+    vi.mocked(noteTabDriver).mockClear()
+
+    vi.mocked(browserAutomationCall).mockResolvedValueOnce({ ok: true })
+    await tools.get('browser_select')!({ tab: 'browser-1', selector: '#fmt', value: 'csv' })
+    expect(vi.mocked(noteTabDriver)).toHaveBeenCalledWith('sess-1', 'browser-1')
+
+    vi.mocked(noteTabDriver).mockClear()
+    vi.mocked(browserAutomationCall).mockResolvedValueOnce({ value: 1 })
+    await tools.get('browser_evaluate')!({ tab: 'browser-1', expression: 'x' })
+    expect(vi.mocked(noteTabDriver)).toHaveBeenCalledWith('sess-1', 'browser-1')
+
+    vi.mocked(noteTabDriver).mockClear()
+    vi.mocked(browserAutomationCall).mockResolvedValueOnce({ tab: 'browser-9', url: 'https://x.test', title: 't' })
+    await tools.get('browser_open')!({ url: 'https://x.test' })
+    // The freshly created tab is attributed to this session, not left undriven.
+    expect(vi.mocked(noteTabDriver)).toHaveBeenCalledWith('sess-1', 'browser-9')
+  })
+
   it('spills a large evaluate result but returns a small one inline', async () => {
     const tools = buildTools()
 

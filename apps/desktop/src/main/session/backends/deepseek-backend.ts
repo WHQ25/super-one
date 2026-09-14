@@ -21,6 +21,7 @@ import log from '../../logger'
 import { addToolsChangedListener } from '../../mcp/superone-mcp-server'
 import { readDshMcpServerSpecs, trackDshMcpConfig } from '../../deepseek/deepseek-mcp-sync'
 import { executeSuperoneMcpTool, listSuperoneMcpTools } from '../../mcp/superone-mcp-tool-surface'
+import { runInLocalCallScope } from '../../mcp/artifact-registry'
 import {
   DEEPSEEK_DEFAULT_MODEL as DEFAULT_MODEL,
   DEEPSEEK_DEFAULT_PROVIDER as DEFAULT_PROVIDER,
@@ -138,7 +139,8 @@ export class DeepseekBackend implements SessionBackend {
             call: async (name, args, { signal }) => {
               // A tool that returns nothing (fire-and-forget host actions) still
               // owes the model a result block.
-              const result = await executeSuperoneMcpTool(superoneSessionId, name, args, signal)
+              // In-process and local: the scope marks a produced zone directory `local`.
+              const result = await runInLocalCallScope(superoneSessionId, () => executeSuperoneMcpTool(superoneSessionId, name, args, signal))
               return result ?? { content: [{ type: 'text', text: '(no output)' }] }
             },
             // Mini-app registration and the Computer Use toggle change the set

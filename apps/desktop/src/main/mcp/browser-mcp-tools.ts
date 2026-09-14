@@ -1149,7 +1149,11 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
         checked: z.boolean().optional().describe('Desired checked state (for checkbox/radio). Defaults to true.'),
       },
     },
-    (args) => dataTool(sessionId, 'select', args),
+    async (args) => {
+      // A select's change handler can start a download; record the driver first.
+      await noteTabDriver(sessionId, args.tab)
+      return dataTool(sessionId, 'select', args)
+    },
   )
 
   server.registerTool(
@@ -1164,7 +1168,14 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
         readiness: z.enum(['load', 'none']).default('load').describe("'load' waits for loading to stop (default); 'none' returns as soon as the tab exists."),
       },
     },
-    (args) => dataTool(sessionId, 'open', args),
+    async (args) => {
+      if (args.tab) await noteTabDriver(sessionId, args.tab)
+      const data = (await browserAutomationCall(sessionId, 'open', args)) as { tab?: string; url?: string; title?: string }
+      // Attribute the new tab to this session before the agent acts on it, so a
+      // later page-started download is not filed under whoever last opened one.
+      if (typeof data.tab === 'string') await noteTabDriver(sessionId, data.tab)
+      return textReply(data)
+    },
   )
 
   server.registerTool(
@@ -1196,6 +1207,8 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
     },
     async (args) => {
       try {
+        // Evaluate can navigate or trigger a download; record the driver first.
+        await noteTabDriver(sessionId, args.tab)
         const res = (await browserAutomationCall(sessionId, 'evaluate', args)) as { value: unknown }
         const json = JSON.stringify(res.value ?? null)
         if (json.length <= INLINE_ARTIFACT_LIMIT) return textReply({ value: res.value ?? null })

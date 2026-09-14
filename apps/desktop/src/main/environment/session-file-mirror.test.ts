@@ -305,3 +305,133 @@ describe('node directory mirror — safety under conflict, cancellation and stal
     expect(maxActive).toBe(1)
   })
 })
+
+describe('node directory mirror — combination scenarios (round 8 follow-up)', () => {
+  function dirNode(files: Record<string, Buffer>, opts: { pending?: Set<string>; signal?: AbortSignal; onGet?: (rel: string) => void } = {}) {
+    return {
+      connectionId: 'conn-1',
+      signal: opts.signal,
+      isPendingUpload: (_s: string, rel: string) => opts.pending?.has(rel) ?? false,
+      stat: async ({ relativePath }: { relativePath: string }) => {
+        const f = files[relativePath]
+        return f ? { exists: true, size: f.length, mtimeMs: 1_700_000_000_000 } : { exists: false, size: 0, mtimeMs: 0 }
+      },
+      get: async (req: { relativePath: string; offset: number; maxBytes: number }) => {
+        opts.onGet?.(req.relativePath)
+        const f = files[req.relativePath]!
+        const slice = f.subarray(req.offset, req.offset + req.maxBytes)
+        return { chunk: slice.toString('base64'), total: f.length, mtimeMs: 1_700_000_000_000, eof: req.offset + slice.length >= f.length }
+      },
+      list: async ({ relativePath }: { relativePath: string }) => {
+        const entries = Object.keys(files)
+          .filter((rel) => rel.startsWith(relativePath + '/'))
+          .map((rel) => ({ relativePath: rel, size: files[rel]!.length, mtimeMs: 1_700_000_000_000 }))
+        return { exists: entries.length > 0, entries, truncated: false }
+      },
+    }
+  }
+
+  it('Y1: refuses to fetch a member through an in-zone ancestor symlink that leaves the zone, leaving the target untouched', async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'mirror-y1-'))
+    const target = join(outside, 'target')
+    writeFileSync(target, 'not ours')
+    mkdirSync(join(root, 'sync', 's1', 'agent', 'app'), { recursive: true })
+    const { symlinkSync } = await import('node:fs')
+    symlinkSync(outside, join(root, 'sync', 's1', 'agent', 'app', 'sub'))
+    try {
+      const node = dirNode({ 'agent/app/sub/target': Buffer.from('new bytes') })
+      const outcome = await mirrorNodeDirectory('s1', 'agent/app', node)
+      expect(outcome.kind).toBe('unavailable')
+      expect(readFileSync(target, 'utf8')).toBe('not ours')
+    } finally {
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('Y3: refuses when reconciling a type swap would delete a desktop original still pending upload', async () => {
+    // Desktop app/foo/original is the only copy, queued for upload; node made foo a file.
+    const original = join(root, 'sync', 's1', 'agent', 'app', 'foo', 'original')
+    mkdirSync(join(original, '..'), { recursive: true })
+    writeFileSync(original, 'unsent desktop bytes')
+    const node = dirNode({ 'agent/app/foo': Buffer.from('now a file') }, { pending: new Set(['agent/app/foo/original']) })
+    const outcome = await mirrorNodeDirectory('s1', 'agent/app', node)
+    expect(outcome.kind).toBe('unavailable')
+    expect(readFileSync(original, 'utf8')).toBe('unsent desktop bytes')
+  })
+
+  it('Y6: a failed batch does not resolve until every worker it started has settled', async () => {
+    // A lists a,b: a is refused, b get is gated. If A resolves the moment a
+    // fails, its b worker outlives the mirror and can write into whatever a
+    // later mirror of this directory produced. A must drain first — so it must
+    // not settle while b is still in flight.
+    let releaseB: () => void = () => {}
+    const gateB = new Promise<void>((r) => { releaseB = r })
+    const nodeA = dirNode({ 'agent/app/a.txt': Buffer.from('a'), 'agent/app/b.txt': Buffer.from('b') })
+    const realStatA = nodeA.stat
+    nodeA.stat = async (input) => { if (input.relativePath === 'agent/app/a.txt') throw Object.assign(new Error('forbidden'), { code: 'forbidden' }); return realStatA(input) }
+    let bStarted = false
+    const realGetA = nodeA.get
+    nodeA.get = async (req) => { if (req.relativePath === 'agent/app/b.txt') { bStarted = true; await gateB } return realGetA(req) }
+
+    const a = mirrorNodeDirectory('s1', 'agent/app', nodeA)
+    await vi.waitFor(() => expect(bStarted).toBe(true))
+    let settled = false
+    void a.then(() => { settled = true }, () => { settled = true })
+    // Let every pending microtask flush; A must still be holding for b.
+    await new Promise((r) => setTimeout(r, 20))
+    expect(settled).toBe(false)
+    releaseB()
+    const outcomeA = await a
+    expect(outcomeA.kind).toBe('unavailable')
+  })
+
+  it('Y2: removes a stale mirror file as a link when it points out of the zone, never following it to delete the target', async () => {
+    // A prune must delete a leftover it finds, but a link a producer planted in
+    // the mirror is removed as the link — its target is not the mirror\'s.
+    const outside = mkdtempSync(join(tmpdir(), 'mirror-y2-'))
+    const target = join(outside, 'target')
+    writeFileSync(target, 'not ours')
+    mkdirSync(join(root, 'sync', 's1', 'agent', 'app'), { recursive: true })
+    const { symlinkSync } = await import('node:fs')
+    symlinkSync(target, join(root, 'sync', 's1', 'agent', 'app', 'stale-link'))
+    try {
+      const node = dirNode({ 'agent/app/manifest.json': Buffer.from('{}') })
+      await mirrorNodeDirectory('s1', 'agent/app', node)
+      expect(existsSync(join(root, 'sync', 's1', 'agent', 'app', 'stale-link'))).toBe(false)
+      expect(readFileSync(target, 'utf8')).toBe('not ours')
+    } finally {
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('Y7B: does not prune when the mirror is cancelled between the last fetch and the prune', async () => {
+    const stale = join(root, 'sync', 's1', 'agent', 'app', 'prior.txt')
+    mkdirSync(join(stale, '..'), { recursive: true })
+    writeFileSync(stale, 'prior')
+    const controller = new AbortController()
+    const node = dirNode({ 'agent/app/keep.txt': Buffer.from('k') }, { signal: controller.signal })
+    // Cancel the moment the one member finishes fetching, before the prune runs.
+    const realGet = node.get
+    node.get = async (req) => { const r = await realGet(req); controller.abort(); return r }
+    await expect(mirrorNodeDirectory('s1', 'agent/app', node)).rejects.toMatchObject({ code: 'aborted' })
+    expect(existsSync(stale)).toBe(true)
+  })
+
+  it('Y7A: does not delete the old directory when the single-file mirror is cancelled during its stat', async () => {
+    // foo is a desktop directory; node made it a file; the action cancels while
+    // the stat is in flight. Reconcile must not remove foo before the abort lands.
+    const asDir = join(root, 'sync', 's1', 'agent', 'foo')
+    mkdirSync(join(asDir, 'child'), { recursive: true })
+    writeFileSync(join(asDir, 'child', 'x'), 'keep me')
+    const controller = new AbortController()
+    const node = {
+      connectionId: 'conn-1',
+      signal: controller.signal,
+      isPendingUpload: () => false,
+      stat: async () => { controller.abort(); return { exists: true, size: 3, mtimeMs: 1 } },
+      get: async () => ({ chunk: Buffer.from('abc').toString('base64'), total: 3, mtimeMs: 1, eof: true }),
+    }
+    await expect(mirrorNodeArtifact('s1', 'agent/foo', node)).rejects.toMatchObject({ code: 'aborted' })
+    expect(existsSync(join(asDir, 'child', 'x'))).toBe(true)
+  })
+})

@@ -15,6 +15,7 @@ import {
 import { setSuperoneMcpHttpSessionCloser } from './superone-mcp-http-state'
 import { createSuperoneMcpServer, getSessionHost, setToolSyncCallbacks } from './superone-mcp-server'
 import { executeSuperoneMcpTool, listSuperoneMcpTools } from './superone-mcp-tool-surface'
+import { runInLocalCallScope } from './artifact-registry'
 import { setSuperoneMcpBridgeRuntime } from './superone-mcp-stdio-state'
 
 type RequestId = string | number
@@ -123,7 +124,9 @@ async function handleRequest(client: IpcClient, raw: unknown): Promise<void> {
       const controller = new AbortController()
       client.inFlight.set(id, controller)
       try {
-        const result = await executeSuperoneMcpTool(sessionId, toolName, args, controller.signal)
+        // A local call, and known to be one: the scope is what lets a producer
+        // mark the session's zone `local` for the reclaim sweep (§7).
+        const result = await runInLocalCallScope(sessionId, () => executeSuperoneMcpTool(sessionId, toolName, args, controller.signal))
         writeMessage(client.socket, { id, result })
       } finally {
         client.inFlight.delete(id)

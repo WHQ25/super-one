@@ -145,6 +145,12 @@ export class ArtifactZoneService {
     if (resolved.absolutePath === partsRoot || resolved.absolutePath.startsWith(partsRoot + sep)) {
       throw rpcError('invalid_argument', `${PARTS_DIR} is reserved for uploads in progress`)
     }
+    // The reclaim marker is not an artifact. Serving it through get/stat/put
+    // would let the desktop mirror fetch the node's `.owner` over its own and
+    // hand a live directory to the sweep.
+    if (resolved.absolutePath === join(dir, OWNER_FILE)) {
+      throw rpcError('invalid_argument', `${OWNER_FILE} is reserved zone metadata`)
+    }
     // `a/..` normalises to the session directory itself; that is not a file either.
     const self = resolveProjectPath(dir, '.')
     if (self.ok && resolved.absolutePath === self.absolutePath) {

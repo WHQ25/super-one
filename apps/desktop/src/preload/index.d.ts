@@ -516,6 +516,7 @@ interface AppAPI {
   getDefaultDownloadDir(): Promise<string>
   getSyncZoneUsage(): Promise<SyncZoneUsage>
   reclaimSyncZone(): Promise<SyncZoneReclaimResult>
+  retrySyncZoneHandoffs(): Promise<{ retried: number; recovered: number }>
   getInstallId(): Promise<string>
   /**
    * false — status only.

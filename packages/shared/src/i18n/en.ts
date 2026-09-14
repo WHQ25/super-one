@@ -1072,6 +1072,9 @@ export type Messages = {
         description: string
         summary: string
         pending: string
+        stuck: string
+        stuckRetry: string
+        retrying: string
         reclaimable: string
         nothingReclaimable: string
         reclaim: string
@@ -4800,6 +4803,9 @@ export const en: Messages = {
         description: 'Screenshots, recordings, downloads and generated media that agents produced, kept per session so the previewer and the tools can reach them.',
         summary: '{{total}} across {{count}} sessions',
         pending: '{{bytes}} waiting to upload',
+        stuck: '{{bytes}} in {{count}} files could not be queued for upload ({{error}}) — kept until they are',
+        stuckRetry: 'Retry Upload',
+        retrying: 'Retrying…',
         reclaimable: '{{bytes}} from {{count}} finished sessions can be reclaimed',
         nothingReclaimable: 'Nothing to reclaim — every session here is still known',
         reclaim: 'Reclaim Now',

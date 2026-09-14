@@ -14,6 +14,7 @@ const BASE: SyncZoneUsage = {
   adhocBytes: 12 * MB,
   pendingBytes: 0,
   reclaimable: { sessions: 0, bytes: 0 },
+  failedHandoffs: { files: 0, bytes: 0, lastError: null },
 }
 
 let usage: SyncZoneUsage = { ...BASE }
@@ -99,3 +100,32 @@ export const Narrow: Story = {
     ),
   ],
 }
+
+/**
+ * Complete files that could not be written onto the transfer job table — a
+ * busy database, a connection with no transfer service yet. Nothing is coming
+ * for them on its own, which is why this is the one figure here with a button.
+ */
+export const HandoffsStuck: Story = {
+  decorators: [
+    seed({
+      pendingBytes: 200 * MB,
+      failedHandoffs: { files: 2, bytes: 5 * MB, lastError: 'SQLITE_BUSY' },
+    }),
+  ],
+}
+
+/** A long driver message must not push the actions off the row. */
+export const HandoffsStuckLongError: Story = {
+  decorators: [
+    seed({
+      failedHandoffs: {
+        files: 137,
+        bytes: 2.4 * GB,
+        lastError: 'SQLITE_BUSY: database is locked by another connection and did not clear within the retry window',
+      },
+      reclaimable: { sessions: 12, bytes: 2.4 * GB },
+    }),
+  ],
+}
+

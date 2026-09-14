@@ -238,7 +238,44 @@ export async function syncZoneUsage(): Promise<SyncZoneUsage> {
   }
   const pendingBytes = await pendingUploadBytes()
   const dry = await runSyncZoneReclaim({ dryRun: true })
-  return { root, totalBytes, sessionCount, adhocBytes, pendingBytes, reclaimable: { sessions: dry.removed.length, bytes: dry.freedBytes } }
+  return {
+    root,
+    totalBytes,
+    sessionCount,
+    adhocBytes,
+    pendingBytes,
+    reclaimable: { sessions: dry.removed.length, bytes: dry.freedBytes },
+    failedHandoffs: await failedHandoffUsage(),
+  }
+}
+
+/**
+ * Files complete on disk that never reached the job table. Counted separately
+ * from `pendingBytes`, which is about rows a worker will get to — these have
+ * no row, so nothing is coming for them until something retries.
+ */
+async function failedHandoffUsage(): Promise<{ files: number; bytes: number; lastError: string | null }> {
+  try {
+    const { failedHandoffs } = await import('./pending-handoffs')
+    const entries = failedHandoffs()
+    // One file, one count — and never double-counted against a job row that
+    // may exist for the same path from an earlier attempt.
+    const seen = new Set<string>()
+    let bytes = 0
+    let files = 0
+    for (const entry of entries) {
+      const real = safeRealpath(entry.localPath)
+      if (seen.has(real)) continue
+      seen.add(real)
+      const st = linkSafeStat(entry.localPath)
+      if (!st?.isFile) continue
+      files += 1
+      bytes += st.size
+    }
+    return { files, bytes, lastError: entries.at(-1)?.lastError ?? null }
+  } catch {
+    return { files: 0, bytes: 0, lastError: null }
+  }
 }
 
 async function pendingUploadBytes(): Promise<number> {

@@ -1795,6 +1795,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.SYNC_ZONE_USAGE_GET),
   reclaimSyncZone: () =>
     ipcRenderer.invoke(AgentIpcChannels.SYNC_ZONE_RECLAIM),
+  retrySyncZoneHandoffs: () =>
+    ipcRenderer.invoke(AgentIpcChannels.SYNC_ZONE_RETRY_HANDOFFS),
   getInstallId: () => ipcRenderer.invoke(AgentIpcChannels.APP_INSTALL_ID_GET),
   openComputerUsePermissions: (
     request: boolean | 'guided' | 'accessibility' | 'screenRecording' = true,

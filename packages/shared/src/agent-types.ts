@@ -3905,6 +3905,7 @@ export const AgentIpcChannels = {
   /** What the session sync zone holds and what a sweep would free; the sweep itself. */
   SYNC_ZONE_USAGE_GET: 'app:sync-zone-usage',
   SYNC_ZONE_RECLAIM: 'app:sync-zone-reclaim',
+  SYNC_ZONE_RETRY_HANDOFFS: 'app:sync-zone-retry-handoffs',
   /** Stable per-installation id used as the analytics distinct id. */
   APP_INSTALL_ID_GET: 'app:install-id-get',
   /**

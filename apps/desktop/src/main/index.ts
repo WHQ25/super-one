@@ -4137,6 +4137,12 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.APP_DEFAULT_DOWNLOAD_DIR, () => systemDownloadDir())
   ipcMain.handle(AgentIpcChannels.SYNC_ZONE_USAGE_GET, async () => (await import('./environment/session-zone-reclaim')).syncZoneUsage())
   ipcMain.handle(AgentIpcChannels.SYNC_ZONE_RECLAIM, async () => (await import('./environment/session-zone-reclaim')).sweepSyncZone())
+  // Files that never reached the job table have no worker coming for them, so
+  // a person who fixed whatever was wrong needs a way to say "try again now".
+  ipcMain.handle(AgentIpcChannels.SYNC_ZONE_RETRY_HANDOFFS, async () => {
+    const transfers = (await import('./environment/environment-host')).getEnvironmentHost().artifactTransfers
+    return transfers?.retryFailedHandoffs() ?? { retried: 0, recovered: 0 }
+  })
 
   ipcMain.handle(AgentIpcChannels.APP_INSTALL_ID_GET, () => getInstallId())
   ipcMain.handle(

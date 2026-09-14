@@ -12,14 +12,16 @@ const usage: SyncZoneUsage = {
   adhocBytes: 12 * 1024 * 1024,
   pendingBytes: 200 * 1024 * 1024,
   reclaimable: { sessions: 3, bytes: 700 * 1024 * 1024 },
+  failedHandoffs: { files: 0, bytes: 0, lastError: null },
 }
 
 function stub(overrides: Partial<{ usage: SyncZoneUsage; freed: number }> = {}) {
   const getSyncZoneUsage = vi.fn().mockResolvedValue(overrides.usage ?? usage)
   const reclaimSyncZone = vi.fn().mockResolvedValue({ removed: ['a', 'b', 'c'], freedBytes: overrides.freed ?? usage.reclaimable.bytes })
   const revealFile = vi.fn().mockResolvedValue(undefined)
-  Object.assign(window.app, { getSyncZoneUsage, reclaimSyncZone, revealFile })
-  return { getSyncZoneUsage, reclaimSyncZone, revealFile }
+  const retrySyncZoneHandoffs = vi.fn().mockResolvedValue({ retried: 2, recovered: 2 })
+  Object.assign(window.app, { getSyncZoneUsage, reclaimSyncZone, revealFile, retrySyncZoneHandoffs })
+  return { getSyncZoneUsage, reclaimSyncZone, revealFile, retrySyncZoneHandoffs }
 }
 
 beforeEach(() => { stub() })
@@ -33,6 +35,28 @@ describe('session storage settings', () => {
     expect(screen.getByText(/42 sessions/)).toBeInTheDocument()
     expect(screen.getByText(/200\.0 MB/)).toBeInTheDocument()
     expect(screen.getByText(/700\.0 MB/)).toBeInTheDocument()
+  })
+
+  it('hides the retry affordance entirely while nothing is stuck', async () => {
+    render(<SessionStorageSection />)
+    await screen.findByText(/3\.0 GB/)
+    expect(screen.queryByTestId('session-storage-stuck')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /retry upload/i })).not.toBeInTheDocument()
+  })
+
+  it('names the files that could not be queued and why, and offers to try again', async () => {
+    // These have no job row, so no worker is coming for them — unlike
+    // `pendingBytes`, this number only moves if a person or a reconnect acts.
+    const stuck: SyncZoneUsage = { ...usage, failedHandoffs: { files: 2, bytes: 5 * 1024 * 1024, lastError: 'SQLITE_BUSY' } }
+    const { retrySyncZoneHandoffs, getSyncZoneUsage } = stub({ usage: stuck })
+    render(<SessionStorageSection />)
+    expect(await screen.findByTestId('session-storage-stuck')).toHaveTextContent(/5\.0 MB in 2 files/)
+    expect(screen.getByTestId('session-storage-stuck')).toHaveTextContent(/SQLITE_BUSY/)
+
+    await userEvent.click(screen.getByRole('button', { name: /retry upload/i }))
+    await waitFor(() => expect(retrySyncZoneHandoffs).toHaveBeenCalledTimes(1))
+    // Re-read, because a recovered handoff changes both figures.
+    await waitFor(() => expect(getSyncZoneUsage).toHaveBeenCalledTimes(2))
   })
 
   it('runs the sweep on request, says what it freed, and re-reads the numbers', async () => {

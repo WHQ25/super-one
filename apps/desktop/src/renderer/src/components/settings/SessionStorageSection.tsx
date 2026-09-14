@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { FolderOpen, Loader2, Trash2 } from 'lucide-react'
+import { FolderOpen, Loader2, RefreshCw, Trash2 } from 'lucide-react'
 import { Button } from '@superone/ui/components/ui/button'
 import { formatBytes } from '@superone/shared/format-bytes'
 import type { SyncZoneUsage } from '@superone/shared/environment'
@@ -28,6 +28,7 @@ export function SessionStorageSection() {
   const { t } = useTranslation()
   const [state, setState] = useState<Usage>({ status: 'loading' })
   const [reclaiming, setReclaiming] = useState(false)
+  const [retrying, setRetrying] = useState(false)
   const [freed, setFreed] = useState<number | null>(null)
 
   const load = useCallback(async () => {
@@ -59,8 +60,26 @@ export function SessionStorageSection() {
     }
   }
 
+  /**
+   * Files that are complete but never reached the job table have no worker
+   * coming for them, so unlike everything else here they need a person. The
+   * button appears only when there is something to retry.
+   */
+  async function retryHandoffs() {
+    setRetrying(true)
+    try {
+      await window.app.retrySyncZoneHandoffs()
+      await load()
+    } catch {
+      setState({ status: 'error' })
+    } finally {
+      setRetrying(false)
+    }
+  }
+
   const usage = state.status === 'ready' ? state.usage : null
   const reclaimable = usage != null && usage.reclaimable.bytes > 0
+  const stuck = usage != null && usage.failedHandoffs.files > 0
 
   return (
     <div className="rounded-lg border border-border">
@@ -85,6 +104,15 @@ export function SessionStorageSection() {
                 {usage.pendingBytes > 0 && (
                   <p className="text-muted-foreground">{t('settings.general.storage.pending', { bytes: formatBytes(usage.pendingBytes) })}</p>
                 )}
+                {stuck && (
+                  <p className="text-warning" data-testid="session-storage-stuck">
+                    {t('settings.general.storage.stuck', {
+                      bytes: formatBytes(usage.failedHandoffs.bytes),
+                      count: usage.failedHandoffs.files,
+                      error: usage.failedHandoffs.lastError ?? '',
+                    })}
+                  </p>
+                )}
                 <p className="text-muted-foreground">
                   {reclaimable
                     ? t('settings.general.storage.reclaimable', { bytes: formatBytes(usage.reclaimable.bytes), count: usage.reclaimable.sessions })
@@ -100,6 +128,21 @@ export function SessionStorageSection() {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {stuck && (
+            <Button variant="outline" size="sm" onClick={() => void retryHandoffs()} disabled={retrying}>
+              {retrying ? (
+                <>
+                  <Loader2 className="size-3.5 animate-spin" />
+                  {t('settings.general.storage.retrying')}
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="size-3.5" />
+                  {t('settings.general.storage.stuckRetry')}
+                </>
+              )}
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"

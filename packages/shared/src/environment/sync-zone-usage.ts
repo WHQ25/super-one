@@ -17,6 +17,15 @@ export interface SyncZoneUsage {
   pendingBytes: number
   /** What a reclaim sweep would remove right now: directories whose session is provably gone, plus stale adhoc captures. */
   reclaimable: { sessions: number; bytes: number }
+  /**
+   * Files that are complete and could not be written onto the transfer job
+   * table at all — a busy database, a connection with no transfer service yet.
+   * They are not `pendingBytes`: no job names them, so no worker will ever
+   * pick them up, and they stay protected from the mirror until a retry
+   * succeeds. Surfaced because the alternative is a zone that quietly stops
+   * reclaiming with nothing to look at.
+   */
+  failedHandoffs: { files: number; bytes: number; lastError: string | null }
 }
 
 export interface SyncZoneReclaimResult {

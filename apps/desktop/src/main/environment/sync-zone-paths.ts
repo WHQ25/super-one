@@ -74,18 +74,25 @@ function escapeRegExp(s: string): string {
 }
 
 /**
- * A path token has a path on neither side of it. Both boundaries matter and
- * for different reasons: without the left one the match is a substring search,
- * so `/tmp/a.png` "occurs" inside `/other/tmp/a.png` and rewriting it splices
- * a node path into the middle of somebody else's; the right one is what keeps
- * `shot.png` from matching `shot.png.bak`, `shot.png/child` or `shot.png(1)`,
- * while a sentence-ending `shot.png.` still counts.
+ * Where a path may begin and end in prose — stated as the delimiters that
+ * *can* surround one, not as the characters that cannot be in one. A file
+ * name can hold a letter in any script, a backslash, an opening bracket; a
+ * list of "path characters" is always one script short. So anything that is
+ * not a delimiter continues the path, and a registered path is never found
+ * inside a longer one: `/other/tmp/a.png`, `a.png副本`, `a.png\child`,
+ * `a.png(1)` name other files. A path that is the whole string needs no
+ * delimiter at all.
  */
-const PATH_BEFORE = '[A-Za-z0-9_~./\\-]'
-const PATH_AFTER = '[A-Za-z0-9_~/\\([{-]'
+const OPENS_PATH = '\\s"\'`([{<,;:=|'
+const CLOSES_PATH = '\\s"\'`)\\]}>,;:!?|'
 
 function tokenPattern(path: string): RegExp {
-  return new RegExp(`(?<!${PATH_BEFORE})${escapeRegExp(path)}(?!${PATH_AFTER}|\\.[A-Za-z0-9])`, 'g')
+  // Ends at a closing delimiter, the end of the text, or a full stop that
+  // ends the sentence — `shot.png.` counts, `shot.png.bak` does not.
+  return new RegExp(
+    `(?<![^${OPENS_PATH}])${escapeRegExp(path)}(?![^${CLOSES_PATH}.])(?!\\.(?!\\s|$))`,
+    'g',
+  )
 }
 
 function replaceTokens(text: string, from: string, to: string): string {
@@ -139,6 +146,9 @@ function rewriteString(text: string, entries: ReadonlyArray<readonly [string, st
   }
   let out = text
   for (const [from, to] of entries) {
+    // A decoded value that *is* the path — the common case inside JSON — is
+    // an exact comparison, not a search.
+    if (out === from) return to
     out = replaceTokens(out, from, to)
     const fromJson = JSON.stringify(from).slice(1, -1)
     if (fromJson !== from) out = replaceTokens(out, fromJson, JSON.stringify(to).slice(1, -1))
@@ -179,8 +189,12 @@ export interface ZoneArgRef {
   sessionId: string
   relativePath: string
   desktopPath: string
-  /** Top-level argument the path came from, or null when it is not under one. */
-  key: string | null
+  /**
+   * Every top-level argument the path appeared under. One path can be named
+   * twice in one call with different roles — a destination and a source —
+   * and it then has to satisfy both.
+   */
+  keys: string[]
 }
 
 export function mapNodeZoneArgs(
@@ -194,9 +208,9 @@ export function mapNodeZoneArgs(
   sessionId?: string,
 ): { args: unknown; refs: ZoneArgRef[] } {
   const refs: ZoneArgRef[] = []
-  const seen = new Set<string>()
-  // The top-level argument name travels with the ref: whether a file has to
-  // exist already depends on which parameter named it, and only the caller
+  const byPath = new Map<string, ZoneArgRef>()
+  // The top-level argument names travel with the ref: whether a file has to
+  // exist already depends on which parameters named it, and only the caller
   // knows which of a tool's parameters are destinations (§3.1).
   const walk = (value: unknown, key: string | null): unknown => {
     if (typeof value === 'string') {
@@ -209,10 +223,13 @@ export function mapNodeZoneArgs(
         )
       }
       const desktopPath = desktopMirrorPath(parsed.sessionId, parsed.relativePath)
-      if (!seen.has(desktopPath)) {
-        seen.add(desktopPath)
-        refs.push({ ...parsed, desktopPath, key })
+      let ref = byPath.get(desktopPath)
+      if (!ref) {
+        ref = { ...parsed, desktopPath, keys: [] }
+        byPath.set(desktopPath, ref)
+        refs.push(ref)
       }
+      if (key !== null && !ref.keys.includes(key)) ref.keys.push(key)
       return desktopPath
     }
     if (Array.isArray(value)) return value.map((inner) => walk(inner, key))

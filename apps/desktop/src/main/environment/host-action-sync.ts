@@ -87,17 +87,47 @@ async function within<T>(ms: number, signal: AbortSignal, work: (budget: AbortSi
   }
 }
 
+const NO_ARGS: ReadonlySet<string> = new Set()
+const DIR_ARG: ReadonlySet<string> = new Set(['dir'])
+
+interface ArgRoles {
+  /** Arguments that name where the tool will write; these may not exist yet. */
+  outputs: ReadonlySet<string>
+  /**
+   * Arguments that name a directory the tool will read. The zone syncs files:
+   * `artifact.stat` on a directory answers "not there" whether or not it is,
+   * so such an argument cannot be honoured from a remote session and is
+   * refused as unsupported rather than reported missing.
+   */
+  directorySources: ReadonlySet<string>
+}
+
 /**
- * Arguments that name where a tool will *write*, per tool. Everything else a
- * tool is given is a source and has to exist on the node before the tool runs
- * — otherwise it runs on whatever copy happens to be at the desktop path. A
- * tool that gains an output path needs a line here, or its callers will be
- * told the directory does not exist (§3.1).
+ * The roles a tool's arguments play, keyed by the name the *node* publishes.
+ * The desktop splits `browser_network` into `browser_download` only after the
+ * inputs are mapped, so it is the public name and its `action` that arrive
+ * here. Everything not listed is a source file and has to exist on the node
+ * before the tool runs — otherwise it runs on whatever copy happens to be at
+ * the desktop path (§3.1). A tool that gains an output or directory argument
+ * needs a line here.
  */
-const HOST_ACTION_OUTPUT_ARGS: Readonly<Record<string, readonly string[]>> = {
-  browser_download: ['dir'],
-  miniapp_dev_setup: ['directory'],
-  miniapp_dev_pack: ['outputDir'],
+function argRoles(toolName: string | undefined, args: Record<string, unknown>): ArgRoles {
+  switch (toolName) {
+    case 'browser_network':
+      return { outputs: args.action === 'download' ? DIR_ARG : NO_ARGS, directorySources: NO_ARGS }
+    case 'browser_download':
+      return { outputs: DIR_ARG, directorySources: NO_ARGS }
+    case 'miniapp_dev_setup':
+      return { outputs: new Set(['directory', 'projectDir']), directorySources: NO_ARGS }
+    case 'miniapp_dev_register':
+      return { outputs: new Set(['projectDir']), directorySources: new Set(['directory']) }
+    case 'miniapp_dev_pack':
+      return { outputs: new Set(['outputDir']), directorySources: new Set(['appDir']) }
+    case 'miniapp_dev_update_types':
+      return { outputs: NO_ARGS, directorySources: new Set(['appDir']) }
+    default:
+      return { outputs: NO_ARGS, directorySources: NO_ARGS }
+  }
 }
 
 function throwIfAborted(signal: AbortSignal): void {
@@ -110,8 +140,20 @@ export async function mapHostActionInputs(
   deps: Pick<HostActionSyncDeps, 'zone' | 'get' | 'stat' | 'signal'> & { sessionId?: string; toolName?: string },
 ): Promise<Record<string, unknown>> {
   const mapped = mapNodeZoneArgs(deps.zone, args, deps.sessionId)
-  const outputs = new Set(deps.toolName ? HOST_ACTION_OUTPUT_ARGS[deps.toolName] ?? [] : [])
+  const roles = argRoles(deps.toolName, args)
   for (const ref of mapped.refs) {
+    if (ref.keys.some((key) => roles.directorySources.has(key))) {
+      throw Object.assign(
+        new Error(
+          `${ref.relativePath} is a directory under the session directory, and the session directory syncs files, not directories; `
+          + `${deps.toolName} cannot take it from a remote session`,
+        ),
+        { code: 'unsupported' },
+      )
+    }
+    // A path is only "allowed to be new" if every role it was given is a
+    // destination. Named once as a source, it is a source.
+    const outputOnly = ref.keys.length > 0 && ref.keys.every((key) => roles.outputs.has(key))
     const outcome = await mirrorNodeArtifact(ref.sessionId, ref.relativePath, { stat: deps.stat, get: deps.get, signal: deps.signal })
     throwIfAborted(deps.signal)
     // The node has it and would not hand it over: running the tool on
@@ -124,7 +166,7 @@ export async function mapHostActionInputs(
     }
     // Not there at all. Only a declared destination is allowed to be new —
     // for a source this is the same stale-copy hazard wearing another code.
-    if (outcome.kind === 'missing' && !(ref.key !== null && outputs.has(ref.key))) {
+    if (outcome.kind === 'missing' && !outputOnly) {
       throw Object.assign(
         new Error(`${ref.relativePath} is not in this session's directory on the node`),
         { code: 'not_found' },

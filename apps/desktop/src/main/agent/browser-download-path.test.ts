@@ -175,6 +175,11 @@ describe('downloads for a remote session', () => {
 
     const second = await collectArtifacts('s1', 'call-9', async () => adoptCapturedDownload('s1', captured), 'conn-1')
     expect(second).toBe(first)
+    // Reusing the copy is not the same as having nothing to report: each
+    // reply is rewritten from the refs of its own call, so a listing that
+    // registers nothing hands the agent the desktop path again.
+    expect(takeArtifacts('s1', 'call-8')).toEqual([{ path: first, producer: 'download', final: true }])
+    expect(takeArtifacts('s1', 'call-9')).toEqual([{ path: first, producer: 'download', final: true }])
   })
 
   it('refuses a session whose own zone directory is a link, explicit dir or not', async () => {

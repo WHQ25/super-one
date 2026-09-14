@@ -314,6 +314,52 @@ describe('host action inputs', () => {
     expect(mapped.dir).toBe(join(root, 'sync', 's1', 'download', 'reports'))
   })
 
+  it('keeps the source rule for a path one call names as both source and destination, in either order', async () => {
+    // Refs used to be de-duplicated by path and keep only the first argument
+    // name seen — so `{ outputDir: p, appDir: p }` slipped through as an
+    // output while `{ appDir: p, outputDir: p }` was refused. A path's roles
+    // are all of the roles it was given.
+    const node = fakeNode()
+    const p = '/home/node/.superone/node/sync/s1/agent/app'
+    desktopFile('s1', 'agent/app/manifest.json', '{}')
+    for (const args of [{ outputDir: p, appDir: p }, { appDir: p, outputDir: p }]) {
+      await expect(mapHostActionInputs(args, { ...node.deps, sessionId: 's1', toolName: 'miniapp_dev_pack' })).rejects.toBeTruthy()
+    }
+  })
+
+  it('recognises the download destination under the public tool name and action, not only the internal one', async () => {
+    // The node's catalog publishes `browser_network`; `action: "download"` is
+    // only split off into `browser_download` after the inputs are mapped.
+    const node = fakeNode()
+    const dir = '/home/node/.superone/node/sync/s1/download/reports'
+    const ok = await mapHostActionInputs({ action: 'download', url: 'https://x/y.pdf', dir }, { ...node.deps, sessionId: 's1', toolName: 'browser_network' })
+    expect(ok.dir).toBe(join(root, 'sync', 's1', 'download', 'reports'))
+    await expect(mapHostActionInputs({ action: 'body', requestId: dir }, { ...node.deps, sessionId: 's1', toolName: 'browser_network' }))
+      .rejects.toMatchObject({ code: 'not_found' })
+  })
+
+  it("lets a mini-app scaffold name a project directory that does not exist yet", async () => {
+    // `projectDir` is where the dev pointer is written; the service creates it.
+    const node = fakeNode()
+    const args = { directory: '/home/node/.superone/node/sync/s1/agent/app', projectDir: '/home/node/.superone/node/sync/s1/agent', scope: 'project' }
+    await expect(mapHostActionInputs(args, { ...node.deps, sessionId: 's1', toolName: 'miniapp_dev_setup' })).resolves.toBeTruthy()
+    await expect(mapHostActionInputs({ directory: '/home/node/project/app', projectDir: args.projectDir }, { ...node.deps, sessionId: 's1', toolName: 'miniapp_dev_register' })).resolves.toBeTruthy()
+  })
+
+  it('refuses a directory under the session zone as a tool source, saying so, rather than reporting it missing', async () => {
+    // The zone syncs files. A directory argument has no member list to
+    // mirror, so `artifact.stat` on it says "not there" even when it is —
+    // and a tool that then read the desktop side would read whatever was
+    // left there last time. Until directories sync, the honest answer is
+    // "not supported", not "not found".
+    const node = fakeNode()
+    const app = '/home/node/.superone/node/sync/s1/agent/app'
+    await expect(mapHostActionInputs({ directory: app }, { ...node.deps, sessionId: 's1', toolName: 'miniapp_dev_register' }))
+      .rejects.toMatchObject({ code: 'unsupported', message: expect.stringMatching(/directory/i) })
+    await expect(mapHostActionInputs({ appDir: app }, { ...node.deps, sessionId: 's1', toolName: 'miniapp_dev_update_types' }))
+      .rejects.toMatchObject({ code: 'unsupported' })
+  })
+
   it('leaves project paths and plain strings untouched', async () => {
     const node = fakeNode()
     const args = { path: '/home/node/project/a.png', note: 'sync/s1 in prose' }

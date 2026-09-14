@@ -246,7 +246,13 @@ export function adoptCapturedDownload(sessionId: string | null | undefined, path
   // would leave two copies and two node uploads of one download.
   const key = `${sessionId}\u0000${realOrSelf(path)}`
   const already = adopted.get(key)
-  if (already && existsSync(already)) return already
+  if (already && existsSync(already)) {
+    // The copy is reused; the ref is not. Each reply is rewritten from the
+    // refs of its own call, so a listing that registers nothing hands the
+    // agent the desktop path again.
+    registerDownload(sessionId, already, true)
+    return already
+  }
   try {
     // An exclusive reservation, not a plain join: `download/report.csv` may
     // already be a file some earlier turn named, and overwriting it would

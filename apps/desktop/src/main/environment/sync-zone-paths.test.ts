@@ -108,13 +108,19 @@ describe('sync zone prefix mapping', () => {
     // "occurs" inside `/other/tmp/a.png`, and rewriting it produces a node
     // path spliced into the middle of somebody else's.
     const from = `${desktopZone}/s1/browser/a.png`
-    for (const text of [`/other${from}`, `${from}/child`, `${from}{copy}`, `${from}[copy]`, `${from}.bak`]) {
+    for (const text of [`/other${from}`, `${from}/child`, `${from}{copy}`, `${from}[copy]`, `${from}.bak`, `${from}副本`, `/其他${from}`, `${from}\\child`]) {
       expect(mentionsArtifactPath(text, from)).toBe(false)
       expect(rewriteArtifactPaths(text, new Map([[from, '/node/a.png']]))).toBe(text)
     }
-    for (const text of [from, `saw ${from} today`, `${from}.`, `(${from})`, `"${from}"`]) {
+    for (const text of [from, `saw ${from} today`, `${from}.`, `(${from})`, `"${from}"`, `[${from}]`, `${from},`]) {
       expect(mentionsArtifactPath(text, from)).toBe(true)
     }
+    // A Windows path with a longer path spliced onto it, inside JSON: the
+    // decoded value is not the path, so neither is it a mention.
+    const win = 'C:\\desk\\sync\\s\\a.png'
+    const text = JSON.stringify({ path: `${win}\\child` })
+    expect(mentionsArtifactPath(text, win)).toBe(false)
+    expect(rewriteArtifactPaths(text, new Map([[win, 'D:\\node\\a.png']]))).toBe(text)
   })
 
   it('prefers the longest registered path when one is a prefix of another', () => {
@@ -135,8 +141,8 @@ describe('sync zone prefix mapping', () => {
       referenceImages: [`${desktopZone}/s1/agent/a.png`, '/home/node/project/b.png'],
       title: 'x',
     })
-    // The top-level argument name rides along: whether a path has to exist
-    // already depends on which parameter named it.
-    expect(refs).toEqual([{ sessionId: 's1', relativePath: 'agent/a.png', desktopPath: `${desktopZone}/s1/agent/a.png`, key: 'data' }])
+    // Every top-level argument that named the path rides along: whether it
+    // has to exist already depends on which parameters named it — all of them.
+    expect(refs).toEqual([{ sessionId: 's1', relativePath: 'agent/a.png', desktopPath: `${desktopZone}/s1/agent/a.png`, keys: ['data', 'referenceImages'] }])
   })
 })

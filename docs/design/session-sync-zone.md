@@ -483,6 +483,29 @@ All four landed on 2026-09-14, one commit each.
   deadline; every wait in `host-action-sync.ts` now goes through one `within`
   helper that races the work against the time actually left.
 
+- **A fourth review found five more, none blocking.** One path named twice in
+  a call — as a destination and as a source — kept only the first role, so
+  argument order decided whether a stale desktop copy reached the tool; a ref
+  now carries every argument it appeared under and has to satisfy all of them.
+  The path-token boundary was still a list of "path characters", which is
+  always one script short: `a.png副本` and `a.png\child` both matched (the
+  backslash had not even survived the string→regex escaping) — the boundary
+  is now the set of delimiters that *can* surround a path, and a decoded
+  value that is exactly the path is compared, not searched. The destination
+  allowlist was keyed on `browser_download`, but the node publishes
+  `browser_network` and the split happens after mapping — roles are keyed on
+  the public name and its `action` now, and the mini-app tools' `projectDir`
+  (where the dev pointer is written) counts as a destination. An adoption
+  cache hit returned the copy without registering it, so the *second*
+  `browser_list_downloads` handed the agent the desktop path again. And a
+  directory argument under the zone (`miniapp_dev_register.directory`,
+  `pack.appDir`, `update_types.appDir`) was reported `not_found` whether or
+  not it existed, because `artifact.stat` only knows files — it is refused
+  as `unsupported` with a message that says so, and §9 records the limit.
+  Also from that review's notes: a transfer job that had failed for good was
+  read as "still queued" and pinned its dead directory forever; the startup
+  sweep now ignores terminal rows and drops them with the directory.
+
 - **Only refs the reply names are pushed** (§3). A registered artifact whose
   path never appears in `content[].text` is not uploaded: the agent has no
   path to `Read`, and the desktop, the renderer and the phone all read the
@@ -601,9 +624,11 @@ marked and the residue is stated):
   first tool call of a session — `local` is checked against this database,
   a connection id against that node, and an unreachable node means "keep",
   because offline is not deleted. A directory touched in the last hour is in
-  use; a directory with a queued transfer is not ours to drop; an unmarked
-  directory (written before ownership was recorded, so possibly a live remote
-  session) gets a 7-day silence before it counts as dead.
+  use; a directory with a transfer still queued or retrying is not ours to
+  drop (a job that has failed for good is not "queued", and is dropped with
+  the directory); an unmarked directory is kept, however old — it may be a
+  live remote session with no row here and no marker yet, and nothing in
+  this sweep can prove otherwise.
   **Still open:** there is no size cap and no eviction under pressure. A cap
   would have to delete artifacts a live transcript names, which is a product
   decision — surfacing zone size in settings is the likely first step. And
@@ -614,6 +639,14 @@ marked and the residue is stated):
   indefinitely. Widening it means recording ownership at every entry that
   creates a zone directory, which is the right next step and is not a change
   to the sweep.
+- **Directories under the zone cannot be tool inputs on a remote session.**
+  The zone syncs files, and `artifact.stat` on a directory answers "not
+  there". A tool whose argument names a directory it will *read* —
+  `miniapp_dev_register.directory`, `miniapp_dev_pack.appDir`,
+  `miniapp_dev_update_types.appDir` — is refused with `unsupported` when that
+  argument is a zone path, rather than reading whatever the desktop side last
+  held. Supporting it means a directory manifest and per-file mirroring on
+  the same `artifact.get` + version check the file path already uses.
 - **Zone media larger than 10 MiB has no desktop preview path.** Chat markdown
   resolves a node media file by mirroring it and inlining a data URI, which is
   capped at `MAX_TRANSFER_BYTES`; the read now stats first so a large file

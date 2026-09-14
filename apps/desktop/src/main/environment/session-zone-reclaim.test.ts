@@ -3,19 +3,33 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const state = vi.hoisted(() => ({ userData: '', dropped: [] as string[] }))
+const state = vi.hoisted(() => ({
+  userData: '',
+  dropped: [] as string[],
+  localSessions: new Set<string>(),
+  jobs: [] as { sessionId: string; state: string }[],
+}))
 vi.mock('electron', () => ({ app: { getPath: () => state.userData } }))
 vi.mock('./environment-host', () => ({
-  getEnvironmentHost: () => ({ artifactTransfers: { dropSession: (id: string) => state.dropped.push(id) } }),
+  getEnvironmentHost: () => ({
+    artifactTransfers: { dropSession: (id: string) => state.dropped.push(id) },
+    getSession: async () => null,
+  }),
+}))
+vi.mock('../db-sessions', () => ({ sessionExists: (id: string) => state.localSessions.has(id) }))
+vi.mock('../db-artifact-transfers', () => ({
+  listArtifactTransfersForSession: (id: string) => state.jobs.filter((j) => j.sessionId === id),
 }))
 
-import { ADHOC_MAX_AGE_MS, markZoneOwner, reclaimSyncZone, removeSessionZone } from './session-zone-reclaim'
+import { ADHOC_MAX_AGE_MS, markZoneOwner, reclaimSyncZone, reclaimSyncZoneOnStartup, removeSessionZone } from './session-zone-reclaim'
 
 let root: string
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'zone-reclaim-'))
   state.userData = root
   state.dropped = []
+  state.localSessions = new Set()
+  state.jobs = []
 })
 afterEach(() => rmSync(root, { recursive: true, force: true }))
 
@@ -154,6 +168,26 @@ describe('sync zone sweep', () => {
     zoneFile('old-but-live', 'browser/a.png', 400 * DAY)
     const result = await reclaimSyncZone(deps({ hasLocalSession: (id) => id === 'old-but-live' }))
     expect(result.removed).toEqual([])
+  })
+
+  it('reclaims a dead session whose only remaining job has failed for good, and drops that job with it', async () => {
+    // `failed` is terminal — no retry is scheduled — so it is not "an upload
+    // still queued". Treating it as one pinned a dead directory forever.
+    // The startup sweep reads the real clock, so these ages are real too.
+    const aged = (sessionId: string, rel: string) => {
+      const path = zoneFile(sessionId, rel)
+      markZoneOwner(sessionId, null)
+      const seconds = (Date.now() - 2 * DAY) / 1000
+      for (const p of [path, join(path, '..'), join(root, 'sync', sessionId, '.owner'), join(root, 'sync', sessionId)]) utimesSync(p, seconds, seconds)
+    }
+    aged('dead', 'recording/a.mp4')
+    state.jobs = [{ sessionId: 'dead', state: 'failed' }]
+    const result = await reclaimSyncZoneOnStartup()
+    expect(result.removed).toEqual(['dead'])
+    expect(state.dropped).toEqual(['dead'])
+    aged('retrying', 'recording/b.mp4')
+    state.jobs = [{ sessionId: 'retrying', state: 'pending' }]
+    expect((await reclaimSyncZoneOnStartup()).removed).toEqual([])
   })
 
   it('does nothing at all when there is no zone yet', async () => {

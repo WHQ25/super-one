@@ -219,7 +219,7 @@ export async function reclaimSyncZoneOnStartup(): Promise<{ removed: string[]; f
       import('../db-artifact-transfers'),
       import('./environment-host'),
     ])
-    return await reclaimSyncZone({
+    const result = await reclaimSyncZone({
       hasLocalSession: (sessionId) => {
         try {
           return sessionExists(sessionId)
@@ -231,7 +231,9 @@ export async function reclaimSyncZoneOnStartup(): Promise<{ removed: string[]; f
       },
       hasPendingTransfer: (sessionId) => {
         try {
-          return listArtifactTransfersForSession(sessionId).length > 0
+          // `failed` is terminal — no retry is scheduled — so it is not an
+          // upload still queued, and must not pin a dead directory forever.
+          return listArtifactTransfersForSession(sessionId).some((job) => job.state !== 'failed')
         } catch {
           return true
         }
@@ -244,6 +246,9 @@ export async function reclaimSyncZoneOnStartup(): Promise<{ removed: string[]; f
         }
       },
     })
+    // The directory is gone; its terminal job rows go with it.
+    for (const sessionId of result.removed) getEnvironmentHost().artifactTransfers?.dropSession(sessionId)
+    return result
   } catch {
     return { removed: [], freedBytes: 0 }
   }

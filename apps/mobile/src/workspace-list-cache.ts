@@ -1,3 +1,4 @@
+import type { PersistedWorkspace } from './persisted-workspace'
 import type { SessionListRow } from './session-list-state'
 
 /** One project's rows as last read, plus the invalidation revision they reflect. */
@@ -33,17 +34,32 @@ export class WorkspaceListCache {
   private readonly invalidations = new Map<string, number>()
   private everyList = 0
   /** The cross-project Pinned section; any project's change may have moved a row. */
-  pinned: { rows: SessionListRow[]; revision: number } | null = null
+  private pinnedRows: { rows: SessionListRow[]; revision: number } | null = null
+  get pinned() { return this.pinnedRows }
+  set pinned(value: { rows: SessionListRow[]; revision: number } | null) {
+    this.pinnedRows = value
+    this.persistence?.set('pinned', value ? { rows: value.rows.slice(0, 30), revision: -1 } : null)
+  }
   pinnedRevision = 0
   /** Which project rows stand open — also lost on every drawer unmount otherwise. */
   expandedPaths: ReadonlySet<string> = new Set()
 
+  constructor(readonly persistence?: PersistedWorkspace) {
+    const saved = persistence?.get<{ rows?: SessionListRow[] }>('pinned')
+    if (Array.isArray(saved?.rows)) this.pinnedRows = { rows: validRows(saved.rows), revision: -1 }
+  }
+
   get(path: string): CachedSessionList | undefined {
+    if (!this.lists.has(path)) {
+      const cached = this.persistence?.get<CachedSessionList>(`sessions:${path}`)
+      if (cached && Array.isArray(cached.rows) && Number.isFinite(cached.total)) this.lists.set(path, { ...cached, rows: validRows(cached.rows), revision: -1 })
+    }
     return this.lists.get(path)
   }
 
   store(path: string, list: CachedSessionList): void {
     this.lists.set(path, list)
+    this.persistence?.set(`sessions:${path}`, { ...list, rows: list.rows.slice(0, 30), revision: -1 })
   }
 
   /** The latest revision a list for `path` could reflect. */
@@ -62,4 +78,8 @@ export class WorkspaceListCache {
     this.everyList++
     this.pinnedRevision++
   }
+}
+
+function validRows(rows: SessionListRow[]): SessionListRow[] {
+  return rows.filter(row => row && typeof row.sessionId === 'string' && typeof row.title === 'string').slice(0, 30)
 }

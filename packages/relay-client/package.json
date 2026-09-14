@@ -6,7 +6,8 @@
   "description": "Pure-TS relay/LAN crypto, ACK, pairing, and RPC for Expo.",
   "exports": {
     ".": "./src/index.ts",
-    "./crypto": "./src/crypto.ts"
+    "./crypto": "./src/crypto.ts",
+    "./transport-ledger": "./src/transport-ledger.ts"
   },
   "scripts": {
     "test": "vitest run",
@@ -15,7 +16,8 @@
   "dependencies": {
     "@noble/ciphers": "2.3.0",
     "@noble/hashes": "2.3.0",
-    "@superone/shared": "workspace:*"
+    "@superone/shared": "workspace:*",
+    "fflate": "0.8.2"
   },
   "devDependencies": {
     "typescript": "^5.8.3",

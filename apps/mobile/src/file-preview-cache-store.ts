@@ -10,10 +10,23 @@ function expoDisk(): FilePreviewCacheDisk {
   const dirOf = (pairingId: string) =>
     new Directory(Paths.cache, CACHE_ROOT, safePairingSegment(pairingId))
   return {
+    list(pairingId) {
+      const directory = dirOf(pairingId)
+      return directory.exists ? directory.list().filter(entry => entry instanceof File).map(entry => entry.name) : []
+    },
+    read(pairingId, fileName) {
+      try {
+        const file = fileOf(pairingId, fileName)
+        return file.exists ? file.bytesSync() : null
+      } catch { return null }
+    },
     write(pairingId, fileName, bytes) {
       const file = fileOf(pairingId, fileName)
-      file.create({ overwrite: true, intermediates: true })
-      file.write(bytes)
+      const temporary = fileOf(pairingId, `${fileName}.tmp`)
+      temporary.create({ overwrite: true, intermediates: true })
+      temporary.write(bytes)
+      if (file.exists) file.delete()
+      temporary.move(file)
       return file.uri
     },
     exists(pairingId, fileName) {

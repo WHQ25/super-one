@@ -80,3 +80,5 @@ export {
 } from './crypto'
 export { setCryptoBackend } from './crypto-backend'
 export type { AesGcm, Base64Codec, CryptoBackend } from './crypto-backend'
+
+export { TransportLedger, type TransportMetric, type LedgerSnapshot } from './transport-ledger'

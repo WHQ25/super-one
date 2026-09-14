@@ -100,6 +100,11 @@ export const RestoringSession = {
   name: 'Session switch · cover over the renderer, no white flash',
 }
 
+export const CachedSessionRevalidating = {
+  args: { loadingConversation: false, draft: 'Continue from the saved conversation' },
+  name: 'Cached session · renderer uncovered while the host revalidates',
+}
+
 export const QueuedWhileStreaming = {
   args: {
     streaming: true,

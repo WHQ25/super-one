@@ -1,3 +1,5 @@
+import { networkLedger } from './network-ledger'
+import { requestHarnessResource } from './harness-resource-cache'
 import { extendHistoryIndex, mergeIndexedHistory, type SessionHistoryIndex } from '@superone/shared/session-history-index'
 import { codexAsyncAnswerId } from '@superone/shared/codex-async-question'
 import { requestMentionSearch, type MentionSearchOptions, type MentionSearchResult } from './mention-search'
@@ -32,6 +34,7 @@ export type SessionTranscriptCache = {
 }
 
 export type ChatRuntimeHooks = {
+  onCachedHydrate?: () => void
   onDetail?: (event: Extract<AgentEvent, { type: 'remote_detail' }>) => void
   onSessionRecap?: (sessionId: string) => void
   transcripts?: SessionTranscriptCache
@@ -157,6 +160,17 @@ export class ChatRuntime {
     const restore = this.restoreQueue.then(async () => {
       if (generation !== this.restoreGeneration) return
       const cached = this.readTranscript(projectPath, sessionId)
+      networkLedger.mark('open-session')
+      if (cached?.messages.length) {
+        this.session = { ...createDefaultChatCoreSession(), messages: [...cached.messages] }
+        this.hasMoreHistory = cached.hasMore
+        this.historyCursor = cached.cursor
+        if (cached.provider) this.provider = cached.provider
+        this.dirty = true
+        this.flush(true)
+        this.hooks.onCachedHydrate?.()
+        networkLedger.checkpoint('cached-hydrate')
+      }
       const restored = await restoreSession(this.client, projectPath, sessionId, cached)
       if (generation !== this.restoreGeneration) return
       this.restoreMetrics = restored.metrics
@@ -216,6 +230,7 @@ export class ChatRuntime {
       // Replayed history is a baseline, even when the connection epoch is unchanged.
       this.flush(true)
       this.persistTranscript()
+      networkLedger.checkpoint('restore-ready')
     })
     this.restoreQueue = restore.catch(() => {})
     await restore
@@ -399,10 +414,7 @@ export class ChatRuntime {
 
   async loadSystemInfo(provider: string = String(this.provider)): Promise<SystemInfo> {
     if (!this.projectPath) return {}
-    const info = await this.client.request({
-      type: 'get_system_info', requestId: randomId(), projectPath: this.projectPath,
-      provider: provider as HarnessId,
-    } as RemoteCommand) as SystemInfo
+    const info = await requestHarnessResource(this.client, 'get_system_info', this.projectPath, provider) as SystemInfo
 
     this.provider = provider
     if (info.permissionModes?.length) this.permissionModes = info.permissionModes

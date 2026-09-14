@@ -1,9 +1,11 @@
+import { RequestCoalescer } from './request-coalescer'
+import { jsonBytes, type TransportMetric } from './transport-ledger'
 import type { ReadDesktopFileResponse, RemoteCommand } from '@superone/shared/agent-types'
 import { SeqAckTracker } from './ack'
 import { EventBuffer } from './buffer'
 import { buildLanWsUrl, buildRelayWsUrl, type TransportKind } from './connect'
-import { decryptPayload, deriveKeys, encryptPayload } from './crypto'
-import { handleInboundFrame, makeDecrypt, type InboundFrame, type RelayControlFrame } from './frames'
+import { decryptHostPayload, deriveKeys, encryptPayload } from './crypto'
+import { handleInboundFrame, type InboundFrame, type RelayControlFrame } from './frames'
 import { createRelayHeartbeat, type RelayHeartbeat } from '@superone/shared/relay-heartbeat'
 import { RpcInbox } from './rpc'
 import { uploadBytes, type HttpPut, type UploadBytesOptions } from './attachments'
@@ -30,9 +32,11 @@ export class RelayClient {
   private channelKeyHex: string | null = null
   private readonly tracker = new SeqAckTracker()
   private readonly rpc = new RpcInbox()
+  private readonly reads = new RequestCoalescer()
   readonly buffer = new EventBuffer()
   private ackTimer: ReturnType<typeof setTimeout> | null = null
   private heartbeat: RelayHeartbeat | null = null
+  private probe: { promise: Promise<boolean>; finish: (ok: boolean) => void } | null = null
   private cancelConnect: (() => void) | null = null
   private kind: TransportKind = 'relay'
   private closed = false
@@ -43,6 +47,7 @@ export class RelayClient {
 
   constructor(
     private readonly hooks: {
+      onMetric?: (metric: TransportMetric) => void
       onEvents?: (events: unknown[], epoch: number) => void
       onTerminal?: (payload: unknown) => void
       onReset?: () => void
@@ -118,7 +123,9 @@ export class RelayClient {
     this.cancelConnect?.()
     this.cancelConnect = null
     this.clearAckTimer()
+    this.probe?.finish(false)
     this.stopHeartbeat()
+    this.reads.clear()
     this.rpc.failAll(new Error('disconnected'))
     const ws = this.ws
     this.ws = null
@@ -131,7 +138,18 @@ export class RelayClient {
   request(command: RemoteCommand, timeoutMs = 15_000): Promise<unknown> {
     if (!this.ws || !this.aesKeyBytes) return Promise.reject(new Error('not connected'))
     const ws = this.ws
-    return this.rpc.begin(command, (frame) => ws.send(JSON.stringify(frame)), this.aesKeyBytes, timeoutMs)
+    const result = this.reads.run(command, timeoutMs, () => {
+      const started = performance.now()
+      const encoding = started
+      const pending = this.rpc.begin(command, frame => this.sendFrame(ws, JSON.stringify(frame)), this.aesKeyBytes!, timeoutMs)
+      this.metric({ kind: 'encode', name: command.type, durationMs: performance.now() - encoding, bytes: this.hooks.onMetric ? jsonBytes(command) : 0 })
+      if (this.hooks.onMetric) {
+        const record = () => this.metric({ kind: 'rpc', name: command.type, durationMs: performance.now() - started })
+        void pending.then(record, record)
+      }
+      return pending
+    })
+    return result
   }
 
   uploadFile(
@@ -169,8 +187,35 @@ export class RelayClient {
   /** Fire-and-forget encrypted command. Terminal I/O uses this — results arrive on the terminal channel. */
   send(command: RemoteCommand): void {
     if (!this.ws || !this.aesKeyBytes) throw new Error('not connected')
+    const started = performance.now()
     const data = encryptPayload(this.aesKeyBytes, command)
-    this.ws.send(JSON.stringify({ type: 'command', data }))
+    this.metric({ kind: 'encode', name: command.type, durationMs: performance.now() - started, bytes: this.hooks.onMetric ? jsonBytes(command) : 0 })
+    this.sendFrame(this.ws, JSON.stringify({ type: 'command', data }))
+  }
+
+  /** Foreground liveness check; an open relay socket alone does not prove liveness. */
+  probeConnection(timeoutMs = 3_000): Promise<boolean> {
+    if (this.probe) return this.probe.promise
+    const ws = this.ws
+    if (!ws) return Promise.resolve(false)
+    let settle!: (ok: boolean) => void
+    const promise = new Promise<boolean>(resolve => { settle = resolve })
+    const finish = (ok: boolean) => {
+      if (this.probe?.promise !== promise) return
+      clearTimeout(timer)
+      this.probe = null
+      settle(ok && this.ws === ws)
+    }
+    const timer = setTimeout(() => finish(false), timeoutMs)
+    this.probe = { promise, finish }
+    if (this.kind === 'lan') {
+      // LAN has no ping command today. A small existing read probes the desktop.
+      void this.request({ type: 'list_session_activity' } as RemoteCommand, timeoutMs).then(
+        result => finish(!(result as { error?: string })?.error), () => finish(false))
+    } else {
+      try { this.sendFrame(ws, JSON.stringify({ type: 'ping' })) } catch { finish(false) }
+    }
+    return promise
   }
 
   reconnect(): Promise<void> {
@@ -190,7 +235,9 @@ export class RelayClient {
     this.cancelConnect?.()
     this.cancelConnect = null
     this.clearAckTimer()
+    this.probe?.finish(false)
     this.stopHeartbeat()
+    this.reads.clear()
     this.rpc.failAll(new Error('connection replaced'))
     const previous = this.ws
     this.ws = null
@@ -237,7 +284,7 @@ export class RelayClient {
       return
     }
     if (identity) {
-      ws.send(JSON.stringify({
+      this.sendFrame(ws, JSON.stringify({
         type: 'register',
         deviceName: identity.deviceName,
         mobileDeviceId: identity.deviceId,
@@ -246,13 +293,13 @@ export class RelayClient {
     this.hooks.onStatus?.(true)
     if (replay) {
       const fromSeq = this.tracker.lastAckedSeq + 1
-      ws.send(JSON.stringify({ type: 'replay', fromSeq }))
+      this.sendFrame(ws, JSON.stringify({ type: 'replay', fromSeq }))
     }
     // Only the relay answers pings; on LAN the desktop is the socket peer, so a
     // dead link surfaces as request failures instead.
     if (this.kind === 'relay') {
       this.heartbeat = createRelayHeartbeat({
-        send: (text) => ws.send(text),
+        send: (text) => this.sendFrame(ws, text),
         // A half-open socket never fires onclose; treat the missed pong as one
         // so the reconnect loop takes over.
         onTimeout: () => this.handleClosed(ws),
@@ -266,8 +313,10 @@ export class RelayClient {
     if (this.ws !== ws) return
     this.ws = null
     this.clearAckTimer()
+    this.probe?.finish(false)
     this.stopHeartbeat()
     this.detachAndClose(ws)
+    this.reads.clear()
     this.rpc.failAll(new Error('connection closed'))
     this.hooks.onStatus?.(false)
   }
@@ -277,7 +326,28 @@ export class RelayClient {
     this.heartbeat = null
   }
 
+  private metric(metric: TransportMetric): void {
+    this.hooks.onMetric?.({ ...metric, transport: this.kind })
+  }
+
+  private sendFrame(ws: SocketLike, text: string): void {
+    ws.send(text)
+    if (this.hooks.onMetric) {
+      let name = 'unknown'
+      try { name = JSON.parse(text).type ?? name } catch { /* non-JSON control */ }
+      this.metric({ kind: 'wire-out', name, bytes: new TextEncoder().encode(text).length })
+    }
+  }
+
   private onRaw(raw: string): void {
+    if (this.hooks.onMetric) {
+      let name = 'unknown'
+      try { name = JSON.parse(raw).type ?? name } catch { /* malformed frame still costs bytes */ }
+      this.metric({ kind: 'wire-in', name, bytes: new TextEncoder().encode(raw).length })
+    }
+    if (this.probe && this.kind === 'relay') {
+      try { if (JSON.parse(raw).type === 'pong') this.probe.finish(true) } catch { /* invalid frame */ }
+    }
     if (this.heartbeat?.onMessage(raw)) return
     let frame: InboundFrame
     try {
@@ -286,7 +356,16 @@ export class RelayClient {
       return
     }
     if (!this.aesKeyBytes) return
-    const decrypt = makeDecrypt(this.aesKeyBytes)
+    const decrypt = (data: string) => {
+      const started = performance.now()
+      let decryptMs = 0
+      const payload = decryptHostPayload(this.aesKeyBytes!, data, this.hooks.onMetric ? ms => {
+        decryptMs = ms
+        this.metric({ kind: 'decrypt', name: frame.type ?? 'unknown', durationMs: ms })
+      } : undefined)
+      if (this.hooks.onMetric) this.metric({ kind: 'decoded', name: frame.type ?? 'unknown', bytes: jsonBytes(payload), durationMs: performance.now() - started - decryptMs })
+      return payload
+    }
     const effect = handleInboundFrame(frame, this.tracker, decrypt)
     switch (effect.kind) {
       case 'drop':
@@ -326,7 +405,7 @@ export class RelayClient {
         try {
           const assembled = this.rpc.ingestChunk(effect.requestId, effect.index, effect.total, effect.data)
           if (assembled) {
-            this.rpc.complete(effect.requestId, decryptPayload(this.aesKeyBytes, assembled))
+            this.rpc.complete(effect.requestId, decrypt(assembled))
           }
         } catch (error) {
           this.rpc.fail(effect.requestId, error)
@@ -351,7 +430,7 @@ export class RelayClient {
     const ws = this.ws
     if (!ws) return
     try {
-      ws.send(JSON.stringify({ type: 'ack', seq }))
+      this.sendFrame(ws, JSON.stringify({ type: 'ack', seq }))
       this.tracker.acknowledgeSent()
     } catch {
       // A closing socket may reject send before onclose schedules reconnect.

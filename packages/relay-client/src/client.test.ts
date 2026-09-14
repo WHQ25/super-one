@@ -1,5 +1,6 @@
+import { encryptHostTestPayload as encryptPayload } from './test-host-frame'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { deriveKeys, encryptPayload } from './crypto'
+import { deriveKeys } from './crypto'
 import { RelayClient, type SocketLike } from './client'
 import { restoreSession } from './restore'
 
@@ -25,6 +26,19 @@ class MockSocket implements SocketLike {
 }
 
 afterEach(() => vi.useRealTimers())
+
+it('probes a healthy foreground socket once and resolves false when it closes', async () => {
+  const socket = new MockSocket()
+  const client = new RelayClient({ openSocket: () => { queueMicrotask(() => socket.onopen?.()); return socket } })
+  await client.connectRelay({ relayUrl: 'wss://relay.example', masterSecret: MASTER })
+  const probe = client.probeConnection()
+  expect(client.probeConnection()).toBe(probe)
+  socket.emit({ type: 'pong' })
+  await expect(probe).resolves.toBe(true)
+  const lost = client.probeConnection()
+  client.disconnect()
+  await expect(lost).resolves.toBe(false)
+})
 
 describe('RelayClient', () => {
   it('connects, requests RPC, and applies buffered events after restore', async () => {

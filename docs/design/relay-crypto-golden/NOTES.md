@@ -31,3 +31,25 @@ Do not edit the frozen desktop / Flutter crypto implementations for this package
 ## Do not regenerate
 
 Ciphertexts include random IVs. Regenerating changes the JSON. Only recapture if HKDF/AES parameters change.
+
+
+## Host application framing (2026-09-14)
+
+[`host-payload-v1.json`](./host-payload-v1.json) adds frozen raw and deflated host
+application vectors. `vectors.json` continues to cover pairing and chunked file
+crypto; it is not the application-frame decoder.
+
+After AES-GCM opening, host application plaintext is `flag:u8`, original JSON
+byte length as `u32be`, then raw JSON or raw DEFLATE. The five-byte header is
+authenticated. JSON is capped at 32 MiB, ciphertext/chunk assembly at the derived
+base64 bound. Unknown flags, corrupt data, size mismatches and oversize frames
+are rejected. All current LAN and relay consumers use this one contract; there
+is no legacy application decoder or version negotiation.
+
+The host uses asynchronous zlib; the phone uses direct `fflate@0.8.2` with a fixed
+output buffer. Local WebCrypto-to-phone-decoder and real LAN socket tests pass.
+The separate native crypto backend can replace noble for AES without changing
+these bytes. Relay envelopes and control messages are unchanged: compression
+is inside the encrypted payload. Only desktop and phone need this decoder
+upgrade; no relay deployment or startup replay reset is required. Existing
+pairings and draft outboxes remain intact.

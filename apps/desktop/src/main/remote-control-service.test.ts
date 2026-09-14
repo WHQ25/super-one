@@ -1077,3 +1077,34 @@ describe('slash command output over the wire', () => {
     expect(sent.content.endsWith('… output truncated')).toBe(true)
   })
 })
+
+it('keeps terminal output before exit when compression of the first frame is slower', async () => {
+  const { deriveKeys } = await import('./remote-control-crypto')
+  const { deriveKeys: mobileKeys, decryptHostPayload } = await import('@superone/relay-client/crypto')
+  const secret = '0123456789abcdef'.repeat(8)
+  const keys = await deriveKeys(secret)
+  const frames: string[] = []
+  const service = new RemoteControlService('', {} as never)
+  Object.assign(service, { keys, relayWs: { readyState: 1, send: (frame: string) => frames.push(frame) } })
+  await Promise.all([
+    service.sendTerminalFrame({ type: 'terminal_output', terminalId: 't', data: 'x'.repeat(1_000_000), fromSeq: 1, toSeq: 1, createdAt: 0 }),
+    service.sendTerminalFrame({ type: 'terminal_exited', terminalId: 't', exitCode: 0, signal: null }),
+  ])
+  const key = mobileKeys(secret).aesKeyBytes
+  expect(frames.map(frame => (decryptHostPayload(key, JSON.parse(frame).data) as { type: string }).type)).toEqual(['terminal_output', 'terminal_exited'])
+})
+
+it('drops a response when its relay connection is replaced during compression', async () => {
+  const { deriveKeys } = await import('./remote-control-crypto')
+  const keys = await deriveKeys('0123456789abcdef'.repeat(8))
+  const oldSend = vi.fn()
+  const newSend = vi.fn()
+  const service = new RemoteControlService('', {} as never)
+  Object.assign(service, { keys, relayWs: { readyState: 1, send: oldSend } })
+  const pending = (service as unknown as { sendResponse(id: string, value: unknown): Promise<void> })
+    .sendResponse('old-request', { body: 'x'.repeat(1_000_000) })
+  Object.assign(service, { relayWs: { readyState: 1, send: newSend } })
+  await pending
+  expect(oldSend).not.toHaveBeenCalled()
+  expect(newSend).not.toHaveBeenCalled()
+})

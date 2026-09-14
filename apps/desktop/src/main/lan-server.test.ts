@@ -1,10 +1,11 @@
+import { decryptHostPayload, deriveKeys as mobileDeriveKeys } from '@superone/relay-client/crypto'
 vi.mock('./logger', () => ({ default: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } }))
 vi.mock('./agent/event-trace', () => ({ trace: vi.fn() }))
 
 import { webcrypto } from 'node:crypto'
 import WebSocket from 'ws'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { deriveKeys, encryptPayload, decryptPayload, bytesToHex } from './remote-control-crypto'
+import { deriveKeys, encryptPayload, bytesToHex } from './remote-control-crypto'
 import { LanServer } from './lan-server'
 import type { RemoteCommand } from '@superone/shared/agent-types'
 
@@ -43,7 +44,7 @@ describe('LanServer', () => {
   })
 
   it('accepts a paired device and replies with handshake', async () => {
-    const { aesKey } = await makeKeys()
+    const { aesKey, secret } = await makeKeys()
     server = new LanServer({
       getAesKey: () => aesKey,
       isPairedDevice: () => true,
@@ -64,7 +65,7 @@ describe('LanServer', () => {
   })
 
   it('kicks an unpaired device and closes the socket', async () => {
-    const { aesKey } = await makeKeys()
+    const { aesKey, secret } = await makeKeys()
     server = new LanServer({
       getAesKey: () => aesKey,
       isPairedDevice: () => false,
@@ -87,7 +88,7 @@ describe('LanServer', () => {
   })
 
   it('broadcasts desktop_shutdown to every registered LAN client', async () => {
-    const { aesKey } = await makeKeys()
+    const { aesKey, secret } = await makeKeys()
     server = new LanServer({
       getAesKey: () => aesKey,
       isPairedDevice: () => true,
@@ -111,7 +112,7 @@ describe('LanServer', () => {
   })
 
   it('decrypts command frames and passes them to onCommand', async () => {
-    const { aesKey } = await makeKeys()
+    const { aesKey, secret } = await makeKeys()
     const onCommand = vi.fn()
     server = new LanServer({
       getAesKey: () => aesKey,
@@ -138,7 +139,7 @@ describe('LanServer', () => {
   })
 
   it('delivers encrypted response back through sendResponse', async () => {
-    const { aesKey } = await makeKeys()
+    const { aesKey, secret } = await makeKeys()
     server = new LanServer({
       getAesKey: () => aesKey,
       isPairedDevice: () => true,
@@ -159,13 +160,13 @@ describe('LanServer', () => {
     client.send(JSON.stringify({ type: 'command', data }))
 
     const response = await nextFrame(client, (f) => f.type === 'response')
-    const decoded = await decryptPayload(aesKey, response.data as string)
+    const decoded = await decryptHostPayload(mobileDeriveKeys(secret).aesKeyBytes, response.data as string)
     expect(decoded).toEqual({ ok: true, value: 42 })
     expect(response.requestId).toBe('req-1')
   })
 
   it('broadcast delivers events to all registered clients', async () => {
-    const { aesKey } = await makeKeys()
+    const { aesKey, secret } = await makeKeys()
     server = new LanServer({
       getAesKey: () => aesKey,
       isPairedDevice: () => true,
@@ -193,15 +194,15 @@ describe('LanServer', () => {
       nextFrame(c1, (f) => f.type === 'event'),
       nextFrame(c2, (f) => f.type === 'event'),
     ])
-    expect(await decryptPayload(aesKey, f1.data as string)).toEqual({ type: 'pong', seq: 1 })
-    expect(await decryptPayload(aesKey, f2.data as string)).toEqual({ type: 'pong', seq: 1 })
+    expect(await decryptHostPayload(mobileDeriveKeys(secret).aesKeyBytes, f1.data as string)).toEqual({ type: 'pong', seq: 1 })
+    expect(await decryptHostPayload(mobileDeriveKeys(secret).aesKeyBytes, f2.data as string)).toEqual({ type: 'pong', seq: 1 })
 
     c1.close()
     c2.close()
   })
 
   it('broadcastFrame routes to specified target deviceIds only when filter is given', async () => {
-    const { aesKey } = await makeKeys()
+    const { aesKey, secret } = await makeKeys()
     server = new LanServer({
       getAesKey: () => aesKey,
       isPairedDevice: () => true,
@@ -245,7 +246,7 @@ describe('LanServer', () => {
   })
 
   it('reports isEmpty() correctly as clients come and go', async () => {
-    const { aesKey } = await makeKeys()
+    const { aesKey, secret } = await makeKeys()
     server = new LanServer({
       getAesKey: () => aesKey,
       isPairedDevice: () => true,

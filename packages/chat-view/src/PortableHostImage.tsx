@@ -1,3 +1,4 @@
+import { LruMap } from '@superone/shared/lru-map'
 import { useEffect, useState, type ReactNode } from 'react'
 import type { ImageGenerationInfo } from '@superone/shared/agent-types'
 import { Download, ImageIcon, Loader2 } from 'lucide-react'
@@ -23,7 +24,7 @@ type Phase =
  * or scrolling back must not cost another transfer, and the phone keeps its
  * own copy so the two never disagree about what was paid for.
  */
-const loaded = new Map<string, string>()
+const loaded = new LruMap<string, string>(128)
 const inflight = new Map<string, Promise<Phase>>()
 
 function parseResult(value: unknown): Phase {

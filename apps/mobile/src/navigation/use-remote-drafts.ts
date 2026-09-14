@@ -114,7 +114,6 @@ export function useRemoteDrafts(opts: {
     },
     reconnect: async () => {
       await library.reconnect(active.current)
-      await library.refresh()
     },
     refresh: () => library.refresh(),
   }

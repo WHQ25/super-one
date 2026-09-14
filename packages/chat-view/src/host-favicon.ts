@@ -1,3 +1,4 @@
+import { LruMap } from '@superone/shared/lru-map'
 import { requestNativeAsync } from './bridge'
 import { isHttpHref, type LinkFaviconPorts } from './presenters/LinkFavicon'
 
@@ -9,7 +10,7 @@ import { isHttpHref, type LinkFaviconPorts } from './presenters/LinkFavicon'
  * remembered as null for the same reason: the globe is the right icon then
  * and retrying on every scroll would only stack up timeouts.
  */
-const resolved = new Map<string, Promise<string | null>>()
+const resolved = new LruMap<string, Promise<string | null>>(200)
 
 function cacheKey(href: string, isDark: boolean): string | null {
   if (!isHttpHref(href)) return null

@@ -1,8 +1,9 @@
 # One delivery record — replacing the claim/handoff/job triple
 
-Status: **design, revision 2, not implemented.** Revision 1 was reviewed and
-returned with five design corrections (P1–P5 below, each marked where it
-landed). Supersedes §4.1 and §5.3 of `session-sync-zone.md` once implemented.
+Status: **design, revision 3, approved to begin §10.1 with the constraints of
+revisions 2–3 in the spec and the acceptance suite.** Supersedes §4.1 and
+§5.3 of `session-sync-zone.md` once implemented. Review markers: P1–P5 from
+the first review, Q1–Q4 from the second.
 
 ## 1. Why
 
@@ -44,10 +45,10 @@ not the next member of it.
 
 ## 2. The record
 
-One row per delivery. Created before the first byte a producer controls is
-written (§5), kept — with its outcome — until the session's zone is reclaimed,
-so "was this path ever delivered, and as what?" is always answerable by lookup
-rather than by inference (P3).
+One row per delivery. Created before the first byte we control is written
+(§4), kept — with its outcome — until the session's zone is reclaimed, so "was
+this path ever delivered, and as what?" is answered by lookup, never by
+inference (P3).
 
 ```sql
 CREATE TABLE session_file_deliveries (
@@ -56,25 +57,25 @@ CREATE TABLE session_file_deliveries (
   connection_id   TEXT NOT NULL,      -- the node this session belongs to; survives disconnects
   local_path      TEXT NOT NULL,      -- canonicalClaimPath spelling
   relative_path   TEXT NOT NULL,
-  transfer_id     TEXT NOT NULL,      -- artifact.put resume identity; = delivery_id for new rows
+  transfer_id     TEXT NOT NULL,      -- artifact.put resume identity; = delivery_id
   origin          TEXT NOT NULL,      -- 'download' | 'page-download' | 'produced'
 
   -- Content phase: monotonic, never rewritten by a failure (P2).
-  phase           TEXT NOT NULL,      -- writing | sealed | queued | uploading | uploaded | notifying
+  phase           TEXT NOT NULL,      -- writing | sealed | queued | uploading | committing | uploaded | notifying
   outcome         TEXT,               -- NULL while live; 'done' | 'abandoned'
 
-  -- Ownership, for compare-and-set (P4).
-  holder          TEXT,               -- token of whoever may advance the phase; NULL if nobody
+  -- Ownership (Q3). holder = '<incarnation>:<token>'; NULL when nobody holds it.
+  holder          TEXT,
   epoch           INTEGER NOT NULL DEFAULT 0,
 
   -- Scheduling: orthogonal to phase. "Failed" is a value of these, not of phase.
   offset          INTEGER NOT NULL DEFAULT 0,
   total           INTEGER NOT NULL DEFAULT 0,
-  sha256          TEXT,               -- fixed at seal; the node rejects a put whose sha changed
+  sha256          TEXT,               -- fixed at seal
   attempts        INTEGER NOT NULL DEFAULT 0,
   next_attempt_at TEXT,
   last_error      TEXT,
-  gave_up_at      TEXT,               -- terminal for automatic retry; a person can still retry
+  gave_up_at      TEXT,               -- automatic retry stopped; a person may still act
 
   created_at      TEXT NOT NULL,
   updated_at      TEXT NOT NULL
@@ -84,268 +85,257 @@ CREATE INDEX idx_deliveries_path     ON session_file_deliveries(session_id, loca
 CREATE INDEX idx_deliveries_runnable ON session_file_deliveries(connection_id, phase, next_attempt_at)
   WHERE outcome IS NULL;
 
--- The content slot (P1): one writer/owner of the bytes at a path at a time.
--- Rows past `uploading` no longer own content and do not occupy the slot.
+-- The content slot (P1): one owner of the bytes at a path at a time. Rows past
+-- `committing` no longer own content locally and do not occupy the slot.
 CREATE UNIQUE INDEX idx_deliveries_content_slot ON session_file_deliveries(session_id, local_path)
-  WHERE outcome IS NULL AND phase IN ('writing', 'sealed', 'queued', 'uploading');
+  WHERE outcome IS NULL AND phase IN ('writing', 'sealed', 'queued', 'uploading', 'committing');
 
--- Session-close admission (P4): a durable tombstone, written in the same
--- transaction that abandons the session's rows.
+-- Session-close admission (P4): durable, written in the transaction that abandons the rows.
 CREATE TABLE session_zone_tombstones (
   session_id TEXT PRIMARY KEY,
   dropped_at TEXT NOT NULL
 );
 ```
 
+Verified against in-memory SQLite: an `uploaded` row and a `writing` row at
+the same path coexist; two content owners are refused with
+`SQLITE_CONSTRAINT_UNIQUE`; abandoning frees the slot; a compare-and-set with
+a stale `epoch` returns `changes = 0`.
+
 One phase machine, monotonic:
 
 ```
-writing → sealed → queued → uploading → uploaded → notifying → [outcome = done]
-   any phase ──────────────────────────────────────────────→ [outcome = abandoned]
+writing → sealed → queued → uploading → committing → uploaded → notifying → [outcome = done]
+   any phase ─────────────────────────────────────────────────────────────→ [outcome = abandoned]
 ```
 
-A failure at any phase sets `last_error` / `next_attempt_at` / `attempts`, or
-`gave_up_at` once automatic retry stops. **It never moves `phase`.** AJ2 —
-"the retry limit turned an owed wake into a pending upload" — has no
-representation: there is no `failed` value to overwrite `uploaded` with, and
-the worker's next pass reads the phase it actually reached (P2).
+**`committing`** (Q1) is written **before** the final `artifact.put` is sent
+and left only when its reply confirms the rename. It is the one phase whose
+truth on the node is unknowable from the desktop side if the reply is lost:
+the node's completion receipts are a bounded in-memory map
+(`apps/cli/src/workspace/artifact-zone.ts:72`, `COMPLETED_RECEIPTS = 512`),
+`artifact.stat` (`packages/shared/src/environment/artifact-rpc.ts:19`) returns
+size and mtime but no hash, and the commit itself is an unconditional
+`renameSync` (`artifact-zone.ts:311`). Every other phase is unambiguous:
+before `committing` the node has at most a `.parts` fragment, after it the
+node has the file. Confining the ambiguity to one named phase is the whole
+point of having it.
 
-No `superseded`. V1 does not replace content at a path in place (§3, R2).
+A failure at any phase sets `last_error` / `next_attempt_at` / `attempts`, or
+`gave_up_at`. **It never moves `phase`** (P2). AJ2 has no representation.
+
+No `superseded` (§3, R2).
 
 ## 3. Identity rules
 
-**R1 — one content owner per path.** Enforced by `idx_deliveries_content_slot`,
-not by code remembering to check. Rows at `uploaded`/`notifying`/`done` do not
-occupy the slot: their bytes are on the node and they own nothing locally.
-(Revision 1's index counted them as live, so the "new row beside the old wake"
-case it described was a UNIQUE violation — P1.)
+**R1 — one content owner per path**, enforced by `idx_deliveries_content_slot`
+(P1). Rows at `uploaded` and later own nothing locally and leave the slot.
 
-**R2 — a path is written once per session; a new version is a new path.**
-A producer asking to write a path that has *any* row — live or done — is
-refused and must choose another name. Producers already do: downloads reserve
-with `wx` and uniquify on collision; captures and generations use timestamped
-names. This is what makes R6 possible and removes every "which version is this
-row about?" question. In-place replacement would need either strict serial
-commit or a generation/CAS protocol on the node — the node today commits with a
-bare `renameSync` and reports `busy` by path (`apps/cli/src/workspace/artifact-zone.ts:262`,
-`:311`), and an `AbortSignal` cannot retract an `artifact.put` already sent.
-That protocol is not in scope; if it is ever wanted it is a node contract
-change first (P3).
+**R2 — a path is written once per session; a new version is a new path.** A
+producer asking to write a path that has *any* row — live or done — is refused
+and picks another name (downloads already uniquify on `wx` collision; captures
+and generations use timestamped names). In-place replacement would need a
+generation or conditional-commit protocol on the node, which today commits
+with a bare `renameSync` and reports `busy` by path (`artifact-zone.ts:262`,
+`:311`); an `AbortSignal` cannot retract a put already sent. Not in scope; it
+is a node contract change first (P3).
 
 **R3 — every event names a record.** `advance(deliveryId, from, to, holder)`,
-`noteDelivered(deliveryId)`, `abandon(deliveryId, holder)`. A worker finishing
-delivery *T* has no way to touch delivery *U*: it does not have *U*'s id and
-nothing looks a live row up by path except the producer's own reservation
-(R2) and the mirror (R4). AK1 is unrepresentable, and "the thing advanced must
-be the same delivery" is a signature rather than a convention.
+`abandon(deliveryId, holder)`. A worker finishing delivery *T* has no way to
+touch delivery *U*: it does not have *U*'s id, and nothing looks a live row up
+by path except the producer's own reservation (R2) and the mirror (R4). AK1 is
+unrepresentable.
 
-**R3a — producers carry the handle; observation reuses it.** The reservation
-returns `deliveryId`; the `ArtifactRef` the tool registers carries it; the
-Host Action reply's `sync` block carries it. A later *observation* of the same
-file — `browser_list_downloads` re-reporting a ref, a second listing, a mirror
-reading it back — finds the row by `(session_id, local_path)` and reuses it,
-whatever its phase or outcome. It never creates a second delivery and never
-guesses from the path alone, because the row is still there to answer (P3).
+**R3a — producers carry the handle; observation reuses it.** Reservation
+returns `deliveryId`; the `ArtifactRef` carries it; the Host Action reply's
+`sync` block carries it. A later *observation* of the same file —
+`browser_list_downloads` re-reporting, a second listing, a mirror read — finds
+the row by `(session_id, local_path)`, whatever its phase or outcome, and
+reuses it. Rows are kept until session reclaim so there is always a row to
+find (P3).
 
-**R4 — the mirror asks one table, and still has to read the answer.** A
-single classification, used by every destructive step, with four outcomes
-(P2):
+**R4 — the mirror asks one table and reads the whole answer.** One
+classification, used by every destructive step, evaluated in this order (Q3):
 
 | Row at or under the path | The mirror's view |
 |---|---|
-| `writing` | protected, **not readable** — a caller wanting bytes gets `unavailable` |
-| `sealed` / `queued` / `uploading` | protected, readable — the desktop copy is the newest anywhere |
-| `uploaded` / `notifying` / `done` | **not** protected — the node is authoritative; fetch and overwrite the desktop copy |
-| no row | not protected — ordinary mirror behaviour |
 | table unreadable | `unavailable`: prune nothing, overwrite nothing, serve nothing (R5) |
+| `outcome = abandoned` | not protected, whatever its phase — a half file is never served |
+| `outcome = done` | not protected; node authoritative |
+| `writing` | protected, **not readable** |
+| `sealed` / `queued` / `uploading` | protected, readable — the desktop copy is the newest anywhere |
+| `committing` | protected, **not readable** — neither copy can be called authoritative (Q1) |
+| `uploaded` / `notifying` | **not** protected; node authoritative; fetch and overwrite |
+| no row | ordinary mirror behaviour |
 
-`OWES_UPLOAD`, `OWED_TO_NODE`, `stageOf`, `PendingSnapshot` and the
-four-valued lookup all go. `better-sqlite3` is synchronous, so the
-classification still runs with no `await` between deciding and acting.
+`OWES_UPLOAD`, `OWED_TO_NODE`, `stageOf`, `PendingSnapshot`, `JobLookupResult`
+all go. `better-sqlite3` is synchronous, so the classification still runs with
+no `await` between deciding and acting.
 
-**R5 — unreadable means protected; unwritable does not mean unreadable.**
-A failed read makes every destructive step refuse. A failed *write* is a
-different event and is handled by the phase it interrupted (§6) — a read-only
-volume or a full disk keeps reads working, so "the mirror can't see it either"
-is never a basis for anything (P4).
+**R5 — unreadable means protected; unwritable does not mean unreadable** (P4).
+A failed *write* is handled by the phase it interrupted (§6).
 
-**R6 — a sealed source is immutable.** From `sealed` onward the producer never
-touches the file, and the mirror may overwrite it only once `phase ≥ uploaded`
-(R4). `sha256` and `total` are fixed at seal. This is what makes resume safe:
-`artifact.put` re-reads the source on every chunk, and the node already
-abandons a transfer whose sha or total changed mid-stream
-(`artifact-zone.ts` "Same id, different file"). With R2 there is no second
-writer to change it (P3).
+**R6 — a sealed source is immutable.** From `sealed` on, the producer never
+touches the file; the mirror may overwrite it only in the R4 rows that say so.
+`sha256` and `total` are fixed at seal; the node already abandons a transfer
+whose sha or total changed mid-stream. With R2 there is no second writer.
 
-**R7 — every advance is a compare-and-set.**
-`UPDATE … SET phase = ?, holder = ?, epoch = epoch + 1 WHERE delivery_id = ? AND phase = ? AND epoch = ?`,
-`changes === 1` or the caller has lost the row to someone else and stops. A
-holder is a token minted per attempt; a restart mints a new one, so a worker
-that died mid-claim cannot be impersonated by its own ghost (P4).
+**R7 — every advance is a compare-and-set on `(delivery_id, phase, epoch)`**,
+and every takeover is a compare-and-set on `(delivery_id, holder)`. Either
+bumps `epoch`, so the previous holder's next CAS fails (Q3).
 
-## 4. The producers
+## 4. The producers, by how they write (Q2)
 
-Eight call sites register artifacts today, all *after* writing
-(`agent/action-recording-store`, `agent/browser-artifact-store`,
-`agent/browser-download-store`, `agent/screenshot-artifact`,
-`computer-use/tools`, `device-agent/execute`, `media-gen/zone-artifact`,
-`mcp/artifact-registry`). They fall into three kinds, and the rule differs
-because the side-effect they cannot undo differs:
+The rule follows the write mode, not the tool, because the side-effect that
+cannot be undone differs. Entries by mode:
 
-| Kind | Entry | Rule |
+| Mode | Entries today | Rule |
 |---|---|---|
-| **Streaming download** | `browser_download` → `registerDownload` | Reserve the row **before** the `wx` create. Insert fails ⇒ no file is ever created; the tool reports the failure. |
-| **Passive page download** | `will-download` | The file is already being written by Chromium when we learn of it. Insert the row on `will-download`; insert fails ⇒ `item.cancel()`, which removes the partial. The external side-effect (a page triggered a download) has happened and is reported as such. |
-| **Produced file** | screenshot, recording, generation, capture, spilled text | The capture/render has happened; the file is the tool's own output. `registerArtifact` inserts the row at `sealed`; insert fails ⇒ the call fails and the file is left with no row, which the reclaim sweep treats as garbage. |
+| **Streaming into a reserved path** | `browser_download` → `registerDownload` | reserve the row, then the `wx` create, then stream, then seal. Insert fails ⇒ no file is ever created. |
+| **Path handed out before an asynchronous writer** | `createActionRecordingPath` (`computer-use/tools.ts:772`, written by the helper's recorder, registered at `:784`); device capture paths handed to a backend (`device-agent/execute.ts:205`) | `reserve()` lives **inside the path factory**: the row exists before the path leaves it. `registerArtifact` at the end advances to `sealed`. This is the case revision 2 missed — a directory mirror between hand-out and register saw "not in the node's list, no row" and pruned a recording in progress (`session-file-mirror.ts:467`), with the database perfectly healthy. |
+| **Final path unknown until written** | media-gen providers (`mediaGenOutputDir` hands out a directory; `media-gen/zone-artifact.ts` registers afterwards) | write under a staging name the mirror never walks (`.parts` is already in `RESERVED_ZONE_NAMES`; staging reuses that carve-out), then `reserve()` + `renameSync` into the zone + `sealed` in one synchronous sequence. |
+| **Synchronous buffer publish** | `action-recording-store.ts:54` and `:84` (a buffer / `copyFileSync`), `browser-artifact-store.ts:22`, `screenshot-artifact.ts:147` | `writeFileSync` then insert at `sealed`, with no `await` between: the mirror cannot run inside a synchronous sequence. An explicit special case; **not** to be generalized to any producer that awaits between write and register. |
+| **Passive external write** | `will-download` | the file is already being written by Chromium when we learn of it. Insert the row on `will-download`; insert fails ⇒ `item.cancel()`, which removes the partial. The external event is reported as having happened. |
 
-The product decision this encodes, stated once: **a desktop that cannot write
-its database does not start a transfer.** Files already produced are not
-pretended away, but nothing new is promised to the agent on the strength of a
-record that does not exist. Reviewer's framing, adopted: "persisted
-reservation before the first local write we control".
+**Local and adhoc sessions have no row.** `reserve()` takes the destination
+from explicit context — the call scope's connection
+(`currentHostActionConnection()`) for tool-driven producers, the session's
+registered host for event-driven ones — and returns `{ deliveryId: null }` when
+there is none. Nothing mirrors a local session, so nothing there needs a row;
+their existing owner/reclaim semantics are unchanged. `connection_id` stays
+`NOT NULL` (Q2).
 
-`connection_id` is `NOT NULL`. A zone file belongs to a remote session, and a
-remote session has a node from the moment it exists; local sessions' downloads
-go to the user's Downloads folder and never have a row. Disconnection does not
-clear it — it is the node's identity, not a socket. There is no
-produce-then-bind flow to support, so the smaller contract wins.
+The product decision, once: **a desktop that cannot write its database does
+not start a transfer.** Files already produced are not pretended away; nothing
+new is promised to the agent on the strength of a record that does not exist.
 
 ## 5. Availability
 
 `blocked`, `unavailable`, the retry ladder, `retryFailedHandoffs` and the
-tombstone set in `pending-handoffs.ts` exist because the in-memory half kept
-working while the durable half was down and a flow could get halfway and then
-not know. With one authority:
+in-memory tombstone set exist because the in-memory half kept working while
+the durable half was down. With one authority:
 
-- **Cannot insert the row** → §4: refuse, cancel, or fail the call. Nothing is
-  half-owned.
-- **Row exists, later step fails** → the row records the phase it reached and
-  the error. Recovery (§6) resumes from that phase. Durable, so it survives a
-  restart — which is most of what §9 of the parent design gave up on.
+- **Cannot insert the row** → §4: refuse, cancel, or fail the call.
+- **Row exists, later step fails** → the row records the phase reached and the
+  error; §6 resumes from that phase. Durable, so it survives a restart.
 - **Settings "could not be queued"** becomes `gave_up_at IS NOT NULL`; Retry
-  Upload clears `gave_up_at` and `next_attempt_at`. Same UI, accurate across
-  restarts.
+  Upload clears it. `committing` rows that gave up are shown as *needs
+  re-delivery*, not *retry* (§6).
 
-## 6. Recovery
+## 6. Holders and recovery (Q1, Q3)
 
-What a worker pass (and startup) finds, what it means, and what it does. Every
-action below is a CAS (R7); a row whose `holder` is set and whose `epoch` has
-moved since the pass read it belongs to someone else and is skipped (P4).
+**Liveness is not `epoch`.** `epoch` is a concurrency version; a long
+download sits in `writing` for as long as the response takes and its epoch
+does not move. A holder is `'<incarnation>:<token>'`, where `incarnation` is
+minted once per process start. A holder is **alive** iff its incarnation is
+the current one *and* it is in the process-local set of holders currently
+being worked (added on claim, removed on advance/abandon). That set is
+process-local liveness, like the existing `inflight` abort map — not delivery
+state, which lives only in the row. No heartbeat, no idle timeout: within one
+process liveness is exact, and after a restart every holder of another
+incarnation is dead by definition.
+
+**Any live row with a dead holder can be taken over**, in every phase, by
+`UPDATE … SET holder = ?, epoch = epoch + 1 WHERE delivery_id = ? AND holder = ?`.
+The old holder's later CAS fails on `epoch`. Takeover, renewal, abandon and
+session drop all invalidate the previous holder the same way.
+
+What a worker pass (and startup) then does with what it finds:
 
 | Found | Means | Action |
 |---|---|---|
-| `writing`, holder dead (epoch unchanged for > `IDLE_HOLDER_MS`), file missing | reserved, never created | `abandoned` |
-| `writing`, holder dead, file present | producer crashed mid-stream | `abandoned`; the file stays for the sweep. **Never sent** — there is no record of how far the producer got, and a half file is worse than none. |
-| `sealed` / `queued`, no holder | complete source waiting | claim → `uploading` |
-| `uploading`, holder dead | commit result unknown | **stat the node first.** Node has the file with our `sha256`/`total` ⇒ advance to `uploaded` with no put. Absent ⇒ resume: `artifact.put` from `offset`; the node answers from its receipt, or with `expectedOffset`, or `unknown transfer` — then restart from 0 under the same `transfer_id`, safe because the source is immutable (R6). |
-| `uploaded` / `notifying`, no holder | only the wake is owed | claim → `notifying` → wake → `done`. Never a put, by construction: there is no path from here back to `uploading`. |
-| any live phase, `gave_up_at` set | automatic retry stopped | shown in Settings; a manual retry clears it and re-enters this table |
-| any row, session in `session_zone_tombstones` | late arrival after delete | `abandoned`; a *new* insert for that session is refused |
-
-The stat-before-put rule is not only for crashes. The node's completion
-receipts are a bounded in-memory map (`COMPLETED_RECEIPTS = 512`,
-`artifact-zone.ts:72`), so after a node restart or eviction a re-sent final
-chunk under an old `transfer_id` is a fresh upload that would overwrite
-whatever the agent wrote since. Any resume whose commit state is unknown asks
-the node what it has before sending a byte (P5).
+| `writing`, dead holder | producer crashed (or reserved and never created the file) | `abandoned`. **Never sent**: nothing records how far the producer got, and a half file is worse than none. The file stays for the sweep, unprotected (R4). |
+| `sealed` / `queued`, dead or no holder | complete source waiting | take over → `uploading` |
+| `uploading`, dead holder | final put **not yet sent** (or the row would be `committing`) | take over, resume from `offset`. The node has at most a `.parts` fragment: it answers `expectedOffset`, or `unknown transfer` after its idle expiry, and then the upload restarts from 0 under the same `transfer_id` — safe because the source is immutable (R6) and the target path was never committed. |
+| `committing`, dead holder | final put sent, reply lost | **cannot be verified from here** (§2). `gave_up_at = now`, `last_error = 'commit unverified'`, no automatic put ever. Settings shows *needs re-delivery*; a person re-delivers under a **new path and a new `delivery_id`**, after which this row is `abandoned`. Automatic recovery would need the node to expose a hash on `stat` or accept a conditional final chunk; that is a node contract change and is named here as the boundary, not promised. |
+| `uploaded` / `notifying`, dead or no holder | only the wake is owed | take over → `notifying` → wake → `done`. There is no path from here back to `uploading`. |
+| any live phase, `gave_up_at` set | automatic retry stopped | shown in Settings; manual retry clears it and re-enters this table |
+| any row, session tombstoned | late arrival after delete | `abandoned`; a new insert for that session is refused |
 
 **Session close.** `dropSession(sessionId)` is one transaction: insert the
-tombstone, set `outcome = 'abandoned'` on every live row, delete the rows'
-files' protection with them. `environment-host.ts:2112` and
-`session-zone-reclaim.ts:23` are the two callers today and stay the two. The
-admission check on insert is `NOT EXISTS (SELECT 1 FROM session_zone_tombstones …)`
-in the same statement. This is a session-lifecycle fact, not a second delivery
-authority; it is what the in-memory `dropped` set was standing in for.
+tombstone, `outcome = 'abandoned'` on every live row. The two callers today
+(`environment-host.ts:2112`, `session-zone-reclaim.ts:23`) remain the two.
+Insert admission is `NOT EXISTS (SELECT 1 FROM session_zone_tombstones …)` in
+the same statement.
 
-## 7. Migration and downgrade
+## 7. Migration and downgrade (Q4)
 
-Additive-only, per `apps/desktop/CLAUDE.md`, and **not** a compatibility
-break: `MIN_COMPATIBLE_SCHEMA_VERSION` stays; `SCHEMA_VERSION` → 7.
+**Supported old-version range: none.** No released build contains any of this
+feature: `main` is at `SCHEMA_VERSION = 5` and has no sync zone, no mirror, no
+transfer table and no CLI artifact zone. `artifact_transfer_jobs` was created
+by this branch's own unreleased migration 6 (`1c42c64a`).
 
-**One-time copy, gated.** `applyMigrations` runs every launch and is
-idempotent; the copy must not resurrect rows a later launch has finished. So it
-is gated on `fromVersion < 7` — `runDatabaseMigrations` already reads
-`user_version` before the transaction and stamps it inside the same one
-(`database-migrations.ts:75`, `:98`) — and is `INSERT OR IGNORE` with
-`delivery_id = job_id`, so a crash between the copy and the stamp re-runs it
-harmlessly. `job_id` is what `notificationId` has always been, so the node's
-notification idempotency carries over unchanged (P5).
+So migration 6 is **rewritten before it ships** to create
+`session_file_deliveries` and `session_zone_tombstones` instead. There is no
+copy, no dual-write, and no bridge for a table that no user has. The
+additive-only policy is honoured trivially — nothing is dropped or renamed —
+and `MIN_COMPATIBLE_SCHEMA_VERSION` does not move.
 
-| Old `state` | New `phase` / scheduling |
-|---|---|
-| `pending` | `queued` |
-| `running` | `uploading`, holder NULL — recovered by the stat-first rule (§6) |
-| `uploaded` | `uploaded` |
-| `notifying` | `notifying` |
-| `failed` (terminal) | `sealed`, `gave_up_at = now`, `last_error` kept. Its real phase is unknown, so it is never resumed automatically; a manual retry goes through §6, which stats the node before any put. |
-| `done` | not copied (the old code deletes these; none exist) |
-| two rows, same path | newest by `created_at` takes the content slot; the rest are copied as `abandoned` so their ids still resolve |
+Developer databases already on this branch keep an orphaned
+`artifact_transfer_jobs` that nothing reads (the migration body is idempotent
+and runs every launch, so the new tables appear beside it). In-flight jobs in
+such a database are lost; their files stay on disk. That round trip is
+explicitly outside the compatibility promise.
 
-`transfer_id`, `offset`, `total`, `attempts`, `last_error`, `created_at` copy
-through. `sha256` is NULL for migrated rows and computed on first resume.
-
-**Dual-write during the transition.** The new code keeps writing
-`artifact_transfer_jobs` for the phases an older build understands
-(`queued→pending`, `uploading→running`, `uploaded`, `notifying`; delete on
-`done`/`abandoned`), and a `writing`/`sealed` row has no counterpart there.
-This is what expand/contract step 1 asks for — revision 1 "left the old table
-in place, unwritten", which is not the same thing and would have handed a
-downgraded build a frozen snapshot to replay (P5). Step 2 — stop writing, drop
-the table, `GRANDFATHERED` entry — is at least two releases later.
-
-**What a downgraded build sees, stated rather than assumed.** The same jobs at
-the same phases, so it does not re-upload a delivered file. It does not see
-`writing`/`sealed` rows, so its mirror does not protect a file that was sealed
-but not yet queued when the crash-then-downgrade happened; that window is one
-synchronous step wide in the new code and is the same exposure such a file has
-today. It does not see tombstones and keeps its own in-memory set. The
-old-build replay hazard against the node's evicted receipts is therefore
-closed for everything the old build can see; the `writing`/`sealed` residue is
-the only thing it cannot, and that residue is never sent by anyone.
+**Downgrade to `main`** is safe by absence: the feature does not exist there.
+The tables are ignored, the zone directories sit untouched, nothing is
+uploaded and nothing is pruned.
 
 ## 8. What this deletes
 
 | File | Now | After |
 |---|---|---|
 | `active-writes.ts` | 249 | gone |
-| `pending-handoffs.ts` | 500 | gone; the worker's runnable query is the scheduler |
-| `artifact-transfer-service.ts` | 349 | ~220; no `setPendingJobLookup`, no `OWES_UPLOAD`, no `reviveArtifactTransfer`, no `noteHandoffDelivered` |
-| `db-artifact-transfers.ts` | 228 | dual-write shim only, deleted at contract step 2 |
-| `session-file-mirror.ts` | 549 | ~470; `stageOf`, `OWED_TO_NODE`, `PendingSource` replaced by one classification |
+| `pending-handoffs.ts` | 500 | gone; the runnable query is the scheduler |
+| `artifact-transfer-service.ts` | 349 | ~220 |
+| `db-artifact-transfers.ts` | 228 | replaced by `db-session-deliveries.ts` |
+| `session-file-mirror.ts` | 549 | ~470; one classification replaces three predicates |
 | `host-action-sync.ts` | 509 | ~400; `owned`/`joined`/`releaseUndelivered` become record ids on the plan |
 
-Also gone: `ClaimHolder` / `WRITER_TOKEN` and the three-function
-who-may-end-a-claim protocol; `JobLookupResult`; `HandoffState`; the
-in-memory `dropped` set.
+Also gone: `ClaimHolder` / `WRITER_TOKEN` and the who-may-end-a-claim protocol;
+`JobLookupResult`; `HandoffState`; the in-memory `dropped` set; the
+`revive`/`noteHandoffDelivered`/`setPendingJobLookup` seams.
 
 ## 9. Acceptance
 
-The existing reproductions stay as the architecture's acceptance tests, not as
-regression tests for fixes that no longer exist:
+Deterministic, on one fixture: real `ArtifactTransferService`, real SQLite,
+real mirror, real `ArtifactZoneService` for the node, controllable clock and
+process incarnation. No random scheduling, no new end-to-end.
 
-- AJ1 (blocked lookup recovers after the worker finished), AJ2 (retry limit
-  on an `uploaded` row), AK1 (older wake completing while a newer push holds
-  the path), and the mirror-during-unreadable-table case from §1.
-- Then the agreed matrix: **phase-advance point × concurrent actor**, with the
+- `keeps an uncertain final commit unavailable without replaying old bytes` —
+  the node has committed; the desktop's `uploaded` write fails; the node's
+  file is then modified and then deleted; recovery serves neither OLD nor a
+  replayed final chunk, and Settings shows *needs re-delivery*.
+- `protects a recorder before its asynchronous writer starts` — real DB and
+  mirror, writer paused at the fake recorder boundary; a directory mirror
+  prunes nothing; the same entry with a local session takes no row and needs
+  no node.
+- `keeps a live writer and reclaims dead holders in every phase` — a long
+  `writing` holder is not reclaimed; a `notifying` holder from a previous
+  incarnation is; a stale-epoch callback is refused; session drop invalidates
+  the holder; no retry moves a phase backwards.
+- `ignores the unreleased job table and starts empty` — a developer database
+  carrying `artifact_transfer_jobs` opens with the new tables beside it and
+  nothing imported; a `main` (schema 5) database upgrades with no rows.
+- The existing AJ1 / AJ2 / AK1 reproductions and the unreadable-table mirror
+  case, as acceptance of the architecture rather than regression tests for
+  fixes that no longer exist.
+- R4 classification on the same fixture: `committing`, `gave_up_at`,
+  `abandoned`, and several rows under one directory.
+- Then the agreed matrix: phase-advance point × concurrent actor, with the
   advance's outcome (succeeded / failed before taking effect / took effect but
-  the caller did not learn it) and the retry counter (first / at limit) as
-  parameters, on one fixture — real `ArtifactTransferService`, real SQLite,
-  real mirror, real `ArtifactZoneService` for the node.
-
-Not claimed: random-schedule coverage, crash injection between filesystem and
-SQLite, live end-to-end. Those stay in the parent design's §9 as accepted
-boundaries.
+  the caller did not learn it) and the retry counter as parameters.
 
 ## 10. Order of work
 
-1. Schema + `db-session-deliveries.ts` with the CAS primitives (R7) and the
-   classification (R4), tested against real SQLite.
-2. Producers: reservation for downloads, `will-download` cancel-on-failure,
-   `registerArtifact` insert-at-sealed (§4). `ArtifactRef` gains `deliveryId`.
-3. Host Action sync and the worker over the record; delete the three old
-   modules.
+1. Schema + `db-session-deliveries.ts`: reserve / advance / takeover / abandon
+   / dropSession as CAS primitives, the R4 classification, the holder set and
+   incarnation. Tested against real SQLite.
+2. Producers by write mode (§4). `ArtifactRef` gains `deliveryId`.
+3. Host Action sync and the worker over the record, `committing` included.
+   Delete the three old modules.
 4. Mirror over the classification.
-5. Migration + dual-write shim.
+5. Rewrite migration 6.
 6. Acceptance suite (§9), then the matrix.
 
 AK1 and AJ2 are not fixed separately; they are acceptance cases for step 6.

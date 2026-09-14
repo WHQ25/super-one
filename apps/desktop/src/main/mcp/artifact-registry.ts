@@ -33,6 +33,8 @@ export interface ArtifactRef {
 interface Scope {
   sessionId: string
   callId: string
+  /** Remote connection this call is a Host Action for; absent for a local session. */
+  connectionId?: string
   refs: Map<string, ArtifactRef>
 }
 
@@ -67,9 +69,24 @@ export function bindArtifactScope<A extends unknown[], R>(fn: (...args: A) => R)
   return AsyncResource.bind(fn)
 }
 
+/**
+ * The remote connection the running tool call belongs to, or null when it is a
+ * local session. A tool asks this when the answer changes where it writes —
+ * `browser_download` puts a remote session's file in the zone so the agent can
+ * reach it, instead of in this machine's Downloads folder.
+ */
+export function currentHostActionConnection(): string | null {
+  return current.getStore()?.connectionId ?? null
+}
+
 /** Open a collection scope for one tool call and run it inside. */
-export async function collectArtifacts<T>(sessionId: string, callId: string, run: () => Promise<T>): Promise<T> {
-  const scope: Scope = { sessionId, callId, refs: new Map() }
+export async function collectArtifacts<T>(
+  sessionId: string,
+  callId: string,
+  run: () => Promise<T>,
+  connectionId?: string,
+): Promise<T> {
+  const scope: Scope = { sessionId, callId, refs: new Map(), ...(connectionId ? { connectionId } : {}) }
   scopes.set(callId, scope)
   try {
     return await current.run(scope, run)

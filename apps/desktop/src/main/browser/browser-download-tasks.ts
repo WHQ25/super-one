@@ -2,6 +2,8 @@ import { randomUUID } from 'crypto'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import log from '../logger'
 import { downloadUrl, type DownloadProgress, type DownloadResult } from './browser-downloads'
+import { isUnderSyncZone, zoneRelativePath } from '../media-output-paths'
+import { currentHostActionConnection } from '../mcp/artifact-registry'
 
 export type DownloadTaskStatus = 'running' | 'completed' | 'failed' | 'stopped'
 
@@ -39,12 +41,14 @@ type Settled =
 interface InternalTask extends DownloadTaskSnapshot {
   done: Promise<Settled>
   resolveDone: (value: Settled) => void
+  /** Remote connection this download was started for; absent for a local session. */
+  connectionId?: string
 }
 
 const tasks = new Map<string, InternalTask>()
 
 function snapshotOf(t: InternalTask): DownloadTaskSnapshot {
-  const { done: _d, resolveDone: _r, ...snap } = t
+  const { done: _d, resolveDone: _r, connectionId: _c, ...snap } = t
   return { ...snap }
 }
 
@@ -65,6 +69,7 @@ export function hasRunningDownloadTasks(sessionId?: string): boolean {
 function createTask(
   sessionId: string,
   fields: Partial<Pick<DownloadTaskSnapshot, 'url' | 'filename'>>,
+  connectionId?: string,
 ): InternalTask {
   let resolveDone!: (value: Settled) => void
   const done = new Promise<Settled>((resolve) => {
@@ -81,6 +86,7 @@ function createTask(
     filename: fields.filename,
     done,
     resolveDone,
+    ...(connectionId ? { connectionId } : {}),
   }
   tasks.set(task.taskId, task)
   emitHost(sessionId, {
@@ -153,11 +159,37 @@ function settle(task: InternalTask, settled: Settled): void {
     resultText: JSON.stringify(resultPayload),
   })
 
+  if (settled.ok) pushToNode(task, settled.result.path)
+
   if (task.backgrounded) {
     void notifyAgent(task, settled).catch((err) => {
       log.warn('[browser-download-tasks] notify agent failed task=%s: %s', task.taskId, err instanceof Error ? err.message : String(err))
     })
   }
+}
+
+/**
+ * A remote session's download has to reach the node before the agent can open
+ * it. The artifact registry cannot do it: a background download finishes after
+ * its tool call returned, so there is no scope left to register into. The
+ * finalizer therefore queues the transfer itself, and the transfer's own
+ * completion wake tells the agent the node path works
+ * (`docs/design/session-sync-zone.md` §4.1).
+ */
+function pushToNode(task: InternalTask, path: string): void {
+  if (!task.connectionId || !isUnderSyncZone(path)) return
+  void import('../environment/environment-host')
+    .then(({ getEnvironmentHost }) => {
+      const zone = zoneRelativePath(path)
+      if (!zone || zone.sessionId !== task.sessionId) return
+      getEnvironmentHost().artifactTransfers?.defer({
+        connectionId: task.connectionId!,
+        sessionId: task.sessionId,
+        localPath: path,
+        relativePath: zone.relativePath,
+      })
+    })
+    .catch((err) => log.warn('[browser-download-tasks] could not queue the node transfer: %s', err instanceof Error ? err.message : String(err)))
 }
 
 function emitHost(sessionId: string, event: AgentEvent): void {
@@ -204,7 +236,10 @@ export function startUrlDownloadTask(
   filename?: string,
   dir?: string,
 ): DownloadTaskSnapshot {
-  const task = createTask(sessionId, { url, filename })
+  // Read while the tool call's scope is still open: the download itself
+  // finishes later, outside it.
+  const connectionId = currentHostActionConnection() ?? undefined
+  const task = createTask(sessionId, { url, filename }, connectionId)
   const onProgress = (p: DownloadProgress): void => {
     task.filename = p.filename
     task.bytes = p.bytes
@@ -220,7 +255,7 @@ export function startUrlDownloadTask(
       url,
     })
   }
-  void downloadUrl(url, { filename, dir, onProgress })
+  void downloadUrl(url, { filename, dir, sessionId, onProgress })
     .then((result) => settle(task, { ok: true, result }))
     .catch((err) => settle(task, { ok: false, error: err instanceof Error ? err.message : String(err) }))
   return snapshotOf(task)

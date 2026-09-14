@@ -39,7 +39,7 @@ import {
   type IosSimulatorRecording,
 } from './capture'
 import { captureFileName } from '../device/capture-path'
-import { captureDir } from '../media-output-paths'
+import { producerDir } from '../media-output-paths'
 import { SimctlClient } from './simctl'
 import log from '../logger'
 
@@ -146,7 +146,8 @@ const delay = (milliseconds: number) => new Promise<void>((resolve) => setTimeou
 export class IosSimulatorManager {
   private readonly simctl: IosSimulatorPort
   private readonly capture: IosSimulatorCapturePort
-  private readonly captureRoot: string
+  /** Explicit override; without one the owning session's zone is used per capture. */
+  private readonly captureRoot: string | null
   private readonly chromeLoader: IosSimulatorChromePort | null
   private readonly helperProbe: () => Promise<IosSimulatorHelperProbe | null>
   private readonly nativeFactory: () => Promise<IosSimulatorNativePort>
@@ -195,7 +196,7 @@ export class IosSimulatorManager {
   constructor(options: ManagerOptions) {
     this.simctl = options.simctl ?? new SimctlClient()
     this.capture = options.capture ?? new SimctlCapture()
-    this.captureRoot = options.captureRoot ?? captureDir('ios-simulator')
+    this.captureRoot = options.captureRoot ?? null
     this.chromeLoader = options.chrome ?? null
     this.helperProbe = options.helperProbe
     this.nativeFactory = options.nativeFactory
@@ -916,6 +917,12 @@ export class IosSimulatorManager {
    * Where a capture lands. Filed under the DEVICE, not the session that took it:
    * a session may hold several devices, and their screenshots in one folder could
    * not be told apart.
+   *
+   * The root is the owning session's sync zone, so a remote agent can read the
+   * path the tool reply gives it (`docs/design/session-sync-zone.md` §6).
+   * `owners` is the ownership fact already, so the session is read from there
+   * rather than threaded through every capture call; an injected `captureRoot`
+   * (tests, the manual live harness) still wins.
    */
   private captureFor(
     udid: string,
@@ -924,7 +931,8 @@ export class IosSimulatorManager {
     extension: string,
   ): IosSimulatorCapture {
     const fileName = captureFileName(deviceName, extension, new Date())
-    return { kind, fileName, path: join(this.captureRoot, udid, fileName) }
+    const root = this.captureRoot ?? producerDir(this.owners.get(udid) ?? null, 'ios-simulator')
+    return { kind, fileName, path: join(root, udid, fileName) }
   }
 
   private unbind(udid: string): void {

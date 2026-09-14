@@ -768,7 +768,7 @@ async function executeComputerUseToolInner(
           timeoutMs: args.timeoutMs as number | undefined,
           signal: context.signal,
           ...(args.recording === true
-            ? { recordingPath: createActionRecordingPath('computer', 'mp4') }
+            ? { recordingPath: createActionRecordingPath(sessionId, 'computer', 'mp4') }
             : {}),
         })
         const successorImage = toAgentImage(result.successorImage, sessionId)

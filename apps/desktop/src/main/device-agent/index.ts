@@ -1,5 +1,5 @@
 import { DEVICE_MEMORY_DISCOVERY_HINT, withMemoryDiscoveryHint } from '@superone/shared/interaction-memory'
-import { captureDir } from '../media-output-paths'
+import { producerDir } from '../media-output-paths'
 import { app } from 'electron'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { formatDeviceId, parseDeviceId, type DeviceViewfinderClaim } from '@superone/shared/device'
@@ -100,17 +100,20 @@ function heldDevicesFor(sessionId: string): HeldDevice[] {
  * The same pure routing the panel's surfaces use — no state to consult, and nothing
  * that could disagree with which device the user actually approved.
  */
-function buildBackend(deviceId: string): TouchDeviceBackend {
+function buildBackend(deviceId: string, sessionId: string): TouchDeviceBackend {
   if (backendFactory) return backendFactory(deviceId)
   const userData = app.getPath('userData')
   const parsed = parseDeviceId(deviceId)
+  // Captures land in the driving session's sync zone, so the path the reply
+  // names is one a remote agent can read (session-sync-zone.md §6). The
+  // simulator resolves its own per-device owner, which is the same session.
   if (parsed?.provider === 'android') {
     const android = getAndroidDeviceManager()
-    if (android) return new AndroidBackend(android, deviceId, captureDir('android'))
+    if (android) return new AndroidBackend(android, deviceId, producerDir(sessionId, 'android'))
   }
   if (parsed?.provider === 'ios-mirror') {
     const mirror = getMirrorDeviceManager()
-    if (mirror) return new MirrorBackend(mirror, deviceId, captureDir('ios-mirror'))
+    if (mirror) return new MirrorBackend(mirror, deviceId, producerDir(sessionId, 'ios-mirror'))
   }
   return new IosSimulatorBackend(getIosSimulatorManager(userData), parsed?.native ?? deviceId)
 }
@@ -172,7 +175,7 @@ export function setDeviceAgentViewfinderClaimSink(
 function sessionFor(sessionId: string, deviceId: string): DeviceAgentSession {
   const existing = sessions.get(deviceId)
   if (existing && existing.sessionId === sessionId) return existing.session
-  const session = new DeviceAgentSession(buildBackend(deviceId))
+  const session = new DeviceAgentSession(buildBackend(deviceId, sessionId), sessionId)
   sessions.set(deviceId, { session, sessionId })
   return session
 }
@@ -301,7 +304,7 @@ export async function executeDeviceAgentTool(
           if (!capture) {
             throw new Error('The device action ran, but its recording could not be finalized.')
           }
-          return withRecording(actReply, adoptActionRecording('device', capture.path, startedAt))
+          return withRecording(actReply, adoptActionRecording(sessionId, 'device', capture.path, startedAt))
         }
       case 'device_wait_for':
         return await session.waitFor(args as Parameters<DeviceAgentSession['waitFor']>[0], signal)

@@ -3,16 +3,18 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
-const state = vi.hoisted(() => ({ configuredDir: null as string | null, osDownloads: '' }))
+const state = vi.hoisted(() => ({ configuredDir: null as string | null, osDownloads: '', userData: '/tmp' }))
 
 vi.mock('electron', () => ({
-  app: { getPath: (name: string) => (name === 'downloads' ? state.osDownloads : '/tmp') },
+  app: { getPath: (name: string) => (name === 'downloads' ? state.osDownloads : state.userData) },
 }))
 vi.mock('../logger', () => ({ default: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() } }))
 vi.mock('../app-settings-service', () => ({
   readAppSettings: () => ({ browserDownloadDir: state.configuredDir }),
 }))
 
+import { producerDir } from '../media-output-paths'
+import { collectArtifacts, resetArtifactRegistry, takeArtifacts } from '../mcp/artifact-registry'
 import { reserveDownloadPath, resolveDownloadDir, systemDownloadDir } from './browser-download-store'
 
 let root: string
@@ -20,7 +22,9 @@ let root: string
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'so-dl-'))
   state.osDownloads = join(root, 'os-downloads')
+  state.userData = root
   state.configuredDir = null
+  resetArtifactRegistry()
 })
 
 afterEach(() => {
@@ -93,5 +97,35 @@ describe('download filename collisions', () => {
 describe('systemDownloadDir', () => {
   it('reports the OS Downloads folder', () => {
     expect(systemDownloadDir()).toBe(state.osDownloads)
+  })
+})
+
+describe('downloads for a remote session', () => {
+  it("lands in the session sync zone rather than this machine's Downloads folder, and is registered", async () => {
+    // The agent runs on the node and is handed this path; a file in the
+    // desktop's Downloads folder is one it can never open
+    // (docs/design/session-sync-zone.md §6).
+    const path = await collectArtifacts('s1', 'call-1', async () => reserveDownloadPath('report.pdf', null, 's1'), 'conn-1')
+    expect(path).toBe(join(producerDir('s1', 'download'), 'report.pdf'))
+    expect(takeArtifacts('s1', 'call-1')).toEqual([{ path, producer: 'download', final: false }])
+  })
+
+  it('honours a directory inside the zone, which is how a node path arrives after input mapping', async () => {
+    const inZone = join(producerDir('s1', 'download'), 'reports')
+    const path = await collectArtifacts('s1', 'call-2', async () => reserveDownloadPath('q3.pdf', inZone, 's1'), 'conn-1')
+    expect(path).toBe(join(inZone, 'q3.pdf'))
+  })
+
+  it('refuses a desktop directory a remote agent could never read, saying what to do instead', async () => {
+    await collectArtifacts('s1', 'call-3', async () => {
+      expect(() => reserveDownloadPath('q3.pdf', join(root, 'elsewhere'), 's1'))
+        .toThrow(/remote session|session directory|SUPERONE_SESSION_DIR/i)
+    }, 'conn-1')
+  })
+
+  it('leaves a local session downloading into the configured folder', async () => {
+    state.configuredDir = join(root, 'custom')
+    const path = await collectArtifacts('s1', 'call-4', async () => reserveDownloadPath('a.txt', null, 's1'))
+    expect(path).toBe(join(root, 'custom', 'a.txt'))
   })
 })

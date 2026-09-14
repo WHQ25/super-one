@@ -1377,7 +1377,7 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
     'browser_download',
     {
       description:
-        "Fetch a file by URL and save it to disk through the browser session (cookies/auth apply, no CORS; data: URLs ok). Completes synchronously if finished within `timeoutMs`; otherwise continues in the background and returns status 'background' with a taskId — you will receive a task notification when it finishes. For downloads the page starts itself (export buttons, attachment links), click first then use browser_list_downloads. Without `dir` the file lands in the user's configured download directory; pass `dir` when it belongs somewhere specific, such as the project the user is working in.",
+        "Fetch a file by URL and save it to disk through the browser session (cookies/auth apply, no CORS; data: URLs ok). Completes synchronously if finished within `timeoutMs`; otherwise continues in the background and returns status 'background' with a taskId — you will receive a task notification when it finishes. For downloads the page starts itself (export buttons, attachment links), click first then use browser_list_downloads. Without `dir` the file lands in the user's configured download directory — or, for a session running on a remote node, in that session's directory ($SUPERONE_SESSION_DIR), which is where you can read it. Pass `dir` when it belongs somewhere specific, such as the project the user is working in.",
       inputSchema: {
         ...descriptionField,
         url: z.string().min(1).describe('Absolute URL (or data: URL) of the file to download.'),
@@ -1388,7 +1388,7 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
         dir: z
           .string()
           .optional()
-          .describe("Absolute directory to save into, created if missing. Defaults to the user's configured download directory."),
+          .describe("Absolute directory to save into, created if missing. Defaults to the user's configured download directory, or the session directory on a remote node."),
         timeoutMs: z
           .number()
           .int()

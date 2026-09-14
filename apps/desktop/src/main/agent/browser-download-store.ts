@@ -3,6 +3,8 @@ import { basename, extname, isAbsolute, join } from 'path'
 import { randomUUID } from 'crypto'
 import { app } from 'electron'
 import { readAppSettings } from '../app-settings-service'
+import { isUnderSyncZone, producerDir } from '../media-output-paths'
+import { currentHostActionConnection, registerArtifact } from '../mcp/artifact-registry'
 import log from '../logger'
 
 import { BROWSER_DOWNLOAD_FALLBACK_DIR as FALLBACK_DIR } from '../media-output-paths'
@@ -67,13 +69,29 @@ export function systemDownloadDir(): string {
  * directory, the user's configured default, then the OS Downloads folder.
  * Only absolute paths are honoured — a relative one has no meaningful base in
  * the main process, so it is rejected rather than resolved against cwd.
+ *
+ * A **remote session** changes both ends of that. Its agent runs on the node
+ * and can only read what is in the session sync zone, so with no directory the
+ * download goes there rather than into this machine's Downloads folder, and a
+ * directory outside the zone is refused instead of silently writing somewhere
+ * the agent will never reach (`docs/design/session-sync-zone.md` §9). A node
+ * path the agent asked for has already been rewritten to its desktop mirror by
+ * the Host Action input mapping (§3.1), so it arrives here inside the zone.
  */
-export function resolveDownloadDir(explicitDir?: string | null): string {
+export function resolveDownloadDir(explicitDir?: string | null, sessionId?: string | null): string {
   const explicit = explicitDir?.trim()
+  const remote = sessionId ? currentHostActionConnection() !== null : false
   if (explicit) {
     if (!isAbsolute(explicit)) throw new Error(`Download directory must be an absolute path: ${explicit}`)
+    if (remote && !isUnderSyncZone(explicit)) {
+      throw new Error(
+        `This session runs on a remote node, so ${explicit} is a directory its agent cannot read. `
+        + 'Omit `dir` to download into the session directory ($SUPERONE_SESSION_DIR), or name a path inside it.',
+      )
+    }
     return explicit
   }
+  if (remote) return producerDir(sessionId, 'download')
   return readAppSettings().browserDownloadDir || systemDownloadDir()
 }
 
@@ -82,8 +100,8 @@ export function resolveDownloadDir(explicitDir?: string | null): string {
  * responsibility, so a failure surfaces as an error; a failing *configured*
  * default must not break downloading, so it degrades to the OS folder.
  */
-function ensureDir(explicitDir?: string | null): string {
-  const root = resolveDownloadDir(explicitDir)
+function ensureDir(explicitDir?: string | null, sessionId?: string | null): string {
+  const root = resolveDownloadDir(explicitDir, sessionId)
   try {
     mkdirSync(root, { recursive: true })
     return root
@@ -115,12 +133,13 @@ function uniqueCandidate(dir: string, filename: string, attempt: number): string
  * (`wx`) — that both skips names already on disk and keeps two concurrent
  * downloads of the same file from racing onto the same path.
  */
-export function reserveDownloadPath(filename: string, dir?: string | null): string {
-  const root = ensureDir(dir)
+export function reserveDownloadPath(filename: string, dir?: string | null, sessionId?: string | null): string {
+  const root = ensureDir(dir, sessionId)
   for (let attempt = 0; attempt < 100; attempt++) {
     const candidate = uniqueCandidate(root, filename, attempt)
     try {
       closeSync(openSync(candidate, 'wx'))
+      registerDownload(sessionId, candidate, false)
       return candidate
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
@@ -130,4 +149,15 @@ export function reserveDownloadPath(filename: string, dir?: string | null): stri
   const ext = extname(filename)
   const stem = ext ? filename.slice(0, -ext.length) : filename
   return join(root, `${stem} (${randomUUID().slice(0, 8)})${ext}`)
+}
+
+/**
+ * A download is registered when its path is reserved and again when the bytes
+ * are in: the reservation is what a *background* download's reply names, and
+ * the seal is what makes the file worth pushing. Only zone paths are pushed,
+ * so a local session's Downloads folder is unaffected.
+ */
+export function registerDownload(sessionId: string | null | undefined, path: string, final: boolean): void {
+  if (!sessionId || !isUnderSyncZone(path)) return
+  registerArtifact(sessionId, { path, producer: 'download', final })
 }

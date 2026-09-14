@@ -6,7 +6,7 @@ import { pipeline } from 'stream/promises'
 import log from '../logger'
 import { mediaFileGrants } from '../media-file-grants'
 import { browserAutomationCall } from './browser-automation-bridge'
-import { filenameFor, reserveDownloadPath } from '../agent/browser-download-store'
+import { filenameFor, registerDownload, reserveDownloadPath } from '../agent/browser-download-store'
 
 const BROWSER_PARTITION = 'persist:browser'
 const MAX_CAPTURED = 20
@@ -94,19 +94,26 @@ export interface DownloadUrlOptions {
   filename?: string
   /** Absolute directory to save into. Defaults to the configured download directory. */
   dir?: string | null
+  /**
+   * Session the download belongs to. A remote session's file lands in its sync
+   * zone and is registered so the Host Action pushes it to the node
+   * (`docs/design/session-sync-zone.md` §6); a local session is unaffected.
+   */
+  sessionId?: string | null
   onProgress?: (p: DownloadProgress) => void
 }
 
 export async function downloadUrl(url: string, opts: DownloadUrlOptions = {}): Promise<DownloadResult> {
-  const { filename: filenameOverride, dir, onProgress } = opts
+  const { filename: filenameOverride, dir, sessionId, onProgress } = opts
   if (!url) throw new Error('Invalid URL')
   if (url.startsWith('data:')) {
     const { buf, mimeType } = parseDataUrl(url, 'application/octet-stream')
     const filename = filenameFor(filenameOverride || '', url, mimeType)
-    const path = reserveDownloadPath(filename, dir)
+    const path = reserveDownloadPath(filename, dir, sessionId)
     await writeFile(path, buf)
     onProgress?.({ bytes: buf.byteLength, totalBytes: buf.byteLength, filename, mimeType })
     mediaFileGrants().add(path)
+    registerDownload(sessionId, path, true)
     return { path, filename, bytes: buf.byteLength, mimeType }
   }
 
@@ -115,7 +122,7 @@ export async function downloadUrl(url: string, opts: DownloadUrlOptions = {}): P
   const mimeType = resp.headers.get('content-type')?.split(';')[0]?.trim() || 'application/octet-stream'
   const disposition = resp.headers.get('content-disposition')
   const filename = filenameFor(filenameOverride || nameFromDisposition(disposition), url, mimeType)
-  const path = reserveDownloadPath(filename, dir)
+  const path = reserveDownloadPath(filename, dir, sessionId)
   const totalBytes = Number(resp.headers.get('content-length')) || null
 
   if (!resp.body) {
@@ -123,6 +130,7 @@ export async function downloadUrl(url: string, opts: DownloadUrlOptions = {}): P
     await writeFile(path, buf)
     onProgress?.({ bytes: buf.byteLength, totalBytes: buf.byteLength, filename, mimeType })
     mediaFileGrants().add(path)
+    registerDownload(sessionId, path, true)
     return { path, filename, bytes: buf.byteLength, mimeType }
   }
 
@@ -142,6 +150,7 @@ export async function downloadUrl(url: string, opts: DownloadUrlOptions = {}): P
   const { size } = await import('fs/promises').then((fs) => fs.stat(path))
   onProgress?.({ bytes: size, totalBytes: totalBytes ?? size, filename, mimeType })
   mediaFileGrants().add(path)
+  registerDownload(sessionId, path, true)
   return { path, filename, bytes: size, mimeType }
 }
 

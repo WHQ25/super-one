@@ -2,7 +2,8 @@ import { chmodSync, copyFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import { extname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import log from '../logger'
-import { RECORDING_ROOT } from '../media-output-paths'
+import { producerDir } from '../media-output-paths'
+import { registerArtifact } from '../mcp/artifact-registry'
 
 export type ActionRecordingTarget = 'web' | 'device' | 'computer'
 
@@ -14,8 +15,16 @@ export interface ActionRecording {
   height?: number
 }
 
-export function actionRecordingDir(target?: ActionRecordingTarget): string {
-  return target ? join(RECORDING_ROOT, target) : RECORDING_ROOT
+/**
+ * Recordings live in the session sync zone, partitioned by which surface was
+ * recorded (`docs/design/session-sync-zone.md` §6). The agent is handed
+ * `savedPath` in the tool reply, so on a remote node the file has to be
+ * somewhere the executor can push and rewrite; a recording taken with no
+ * session goes to `adhoc`, which is never pushed and never auto-reclaimed.
+ */
+export function actionRecordingDir(sessionId: string | null | undefined, target?: ActionRecordingTarget): string {
+  const root = producerDir(sessionId, 'recording')
+  return target ? join(root, target) : root
 }
 
 function extensionFor(mimeType: string): 'mp4' | 'webm' {
@@ -23,10 +32,11 @@ function extensionFor(mimeType: string): 'mp4' | 'webm' {
 }
 
 export function createActionRecordingPath(
+  sessionId: string | null | undefined,
   target: ActionRecordingTarget,
   extension: 'mp4' | 'webm',
 ): string {
-  const dir = actionRecordingDir(target)
+  const dir = actionRecordingDir(sessionId, target)
   mkdirSync(dir, { recursive: true, mode: 0o700 })
   chmodSync(dir, 0o700)
   return join(dir, `${randomUUID()}.${extension}`)
@@ -34,13 +44,15 @@ export function createActionRecordingPath(
 
 /** Persist a short renderer-produced action recording without putting video in tool JSON. */
 export function persistActionRecording(
+  sessionId: string | null | undefined,
   target: ActionRecordingTarget,
   base64: string,
   mimeType: string,
 ): string | null {
   try {
-    const path = createActionRecordingPath(target, extensionFor(mimeType))
+    const path = createActionRecordingPath(sessionId, target, extensionFor(mimeType))
     writeFileSync(path, Buffer.from(base64, 'base64'), { mode: 0o600 })
+    registerRecording(sessionId, path)
     return path
   } catch (error) {
     log.warn('[action-recording] failed to persist video', error)
@@ -61,14 +73,21 @@ export function actionRecordingFromPath(
 }
 
 export function adoptActionRecording(
+  sessionId: string | null | undefined,
   target: ActionRecordingTarget,
   sourcePath: string,
   startedAt: number,
 ): ActionRecording {
   const extension =
     extname(sourcePath).toLowerCase() === '.webm' ? 'webm' : 'mp4'
-  const path = createActionRecordingPath(target, extension)
+  const path = createActionRecordingPath(sessionId, target, extension)
   copyFileSync(sourcePath, path)
   chmodSync(path, 0o600)
+  registerRecording(sessionId, path)
   return actionRecordingFromPath(path, startedAt)
+}
+
+/** Sealed the moment it is on disk: the tool reply that names it goes out next. */
+function registerRecording(sessionId: string | null | undefined, path: string): void {
+  if (sessionId) registerArtifact(sessionId, { path, producer: 'recording', final: true })
 }

@@ -475,10 +475,25 @@ Still open after phases 1–4:
   reached, claim swept) or does not know the method defers as before.
   **Still open:** the action's 120 s deadline is the hard ceiling; a minutes-long
   video still defers.
-- **`browser_download` with `dir`** on a remote session.
-- **Device captures, recordings and downloads** are not in the zone yet (see
-  §8 deviations), so a remote agent still cannot `Read` a recording and the
-  previewer reports one as `missing` unless the desktop produced it locally.
+- ~~**`browser_download` with `dir`** on a remote session~~ — **implemented
+  2026-09-14.** On a remote session a download with no `dir` lands in the
+  session zone's `download/` instead of this machine's Downloads folder, and a
+  `dir` outside the zone is refused with a message naming
+  `$SUPERONE_SESSION_DIR` — a node path the agent asks for arrives here already
+  rewritten to its desktop mirror by the input mapping (§3.1), so it is inside
+  the zone. A *background* download settles after its tool call has returned,
+  with no scope left to register into, so its finalizer queues the transfer
+  itself and the transfer's completion wake tells the agent the path works.
+  Local sessions are unchanged: downloads stay user-visible in Downloads.
+- ~~**Device captures, recordings and downloads** are not in the zone yet~~ —
+  **implemented 2026-09-14.** Recordings write to `producerDir(sessionId,
+  'recording')/<target>` and register on persist and on adopt; device captures
+  land in the driving session's zone for all three platforms (the simulator
+  reads its own `owners` map, Android and iOS-mirror take the root from
+  `buildBackend(deviceId, sessionId)`) and `DeviceAgentSession` registers each
+  one in a single place, reading the producer back off the layout with
+  `zoneArtifactRef`; downloads as above. The legacy temp roots stay readable so
+  transcripts from before this change still render.
 - **Quota.** No size cap on the zone; session deletion is the only reclaim,
   and `adhoc` is never reclaimed at all.
 - **Older nodes** without `syncZone`: no rewrite, no mirror, consumers say

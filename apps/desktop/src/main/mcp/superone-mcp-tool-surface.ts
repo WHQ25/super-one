@@ -117,7 +117,12 @@ export async function executeSuperoneMcpToolCollecting(
 ): Promise<{ result: Awaited<ReturnType<typeof executeSuperoneMcpTool>>; artifacts: ArtifactRef[] }> {
   const callId = randomUUID()
   try {
-    const result = await collectArtifacts(sessionId, callId, () => executeSuperoneMcpTool(sessionId, toolName, args, signal, connectionId))
+    const result = await collectArtifacts(
+      sessionId,
+      callId,
+      () => executeSuperoneMcpTool(sessionId, toolName, args, signal, connectionId),
+      connectionId,
+    )
     return { result, artifacts: takeArtifacts(sessionId, callId) }
   } finally {
     // A call that threw after registering must not leave its scope behind.

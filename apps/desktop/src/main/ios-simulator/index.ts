@@ -1,4 +1,3 @@
-import { captureDir } from '../media-output-paths'
 import { join } from 'node:path'
 import log from '../logger'
 import { IosSimulatorChromeLoader } from './device-chrome'
@@ -17,7 +16,6 @@ export function getIosSimulatorManager(userDataPath: string): IosSimulatorManage
     log.warn('[ios-simulator] device chrome unavailable', deviceTypeIdentifier, error)
   manager ??= new IosSimulatorManager({
     chrome,
-    captureRoot: captureDir('ios-simulator'),
     helperProbe: () => probeIosSimulatorHelper(cacheRoot),
     nativeFactory: () => createIosSimulatorHelperRuntime(cacheRoot),
     watchExternalSimulator: () => watchExternalSimulator(cacheRoot),

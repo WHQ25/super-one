@@ -33,6 +33,11 @@ export function captureDir(producer: CaptureProducer): string {
 }
 
 /** Keep the legacy producers and both media transports on the same directory contract. */
+/**
+ * Temp roots that predate the sync zone. Captures and recordings write into
+ * the zone now, but a transcript from before this change still names a file
+ * here, so these stay readable (`docs/design/session-sync-zone.md` §6).
+ */
 export function builtInCaptureRoots(): string[] {
   return [CAPTURE_ROOT, RECORDING_ROOT, BROWSER_DOWNLOAD_FALLBACK_DIR]
 }
@@ -95,6 +100,24 @@ export function zoneRelativePath(path: string): { sessionId: string; relativePat
     return { sessionId, relativePath: rest.join('/') }
   }
   return null
+}
+
+const ARTIFACT_PRODUCERS: readonly ArtifactProducer[] = [
+  'browser', 'computer-use', 'ios-simulator', 'android', 'ios-mirror', 'recording', 'media-gen', 'download', 'agent',
+]
+
+/**
+ * Read a zone path back into the ref that produced it. The layout *is* the
+ * record: a writer that was handed an output directory (a device backend, a
+ * media-gen driver) does not have to carry the producer separately.
+ */
+export function zoneArtifactRef(path: string): { sessionId: string; producer: ArtifactProducer; relativePath: string } | null {
+  const zone = zoneRelativePath(path)
+  if (!zone) return null
+  const [producer, ...rest] = zone.relativePath.split('/')
+  if (!producer || rest.length === 0) return null
+  if (!ARTIFACT_PRODUCERS.includes(producer as ArtifactProducer)) return null
+  return { sessionId: zone.sessionId, producer: producer as ArtifactProducer, relativePath: zone.relativePath }
 }
 
 export function isUnderSyncZone(path: string): boolean {

@@ -11,6 +11,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
+import { CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 
 const state = vi.hoisted(() => ({ userData: '' }))
 vi.mock('electron', () => ({ app: { getPath: () => state.userData } }))
@@ -45,6 +48,28 @@ function serverWithProducer(sessionId: string, api: 'registerTool' | 'tool') {
   return { invoke: () => registered.t_produce!.handler({}, {}), calls }
 }
 
+/**
+ * The shape `installBrowserAliasCallFallback` uses: replace the `tools/call`
+ * handler and answer unlisted names directly, delegating the rest.
+ */
+function installAliasFallback(server: McpServer, run: () => void): void {
+  const inner = (server as unknown as {
+    server: {
+      _requestHandlers: Map<string, (req: unknown, extra: unknown) => Promise<unknown>>
+      setRequestHandler: (schema: unknown, handler: (req: unknown, extra: unknown) => Promise<unknown>) => void
+    }
+  }).server
+  const original = inner._requestHandlers.get('tools/call')!
+  inner.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+    const name = (request as { params?: { name?: string } }).params?.name
+    if (typeof name === 'string' && name.startsWith('browser_')) {
+      run()
+      return { content: [{ type: 'text', text: 'ok' }] }
+    }
+    return original(request, extra)
+  })
+}
+
 describe('local call scope on the MCP instance', () => {
   it('marks the zone local for a tool the SDK calls through registerTool', async () => {
     const { invoke, calls } = serverWithProducer('sdk-1', 'registerTool')
@@ -66,6 +91,33 @@ describe('local call scope on the MCP instance', () => {
     await collectArtifacts('remote-1', 'call-1', () => invoke() as Promise<unknown>, 'node-7')
     expect(calls).toEqual(['node-7'])
     expect(owner('remote-1')).toBe('node-7')
+  })
+
+  it('marks the zone local for a tools/call the SDK routes past every registered tool', async () => {
+    // The compact browser surface installs its own `tools/call` handler so an
+    // unlisted legacy alias from an old transcript still runs — and that branch
+    // reaches the executor without ever touching a registered callback. Driven
+    // through a real Client and transport, because `_registeredTools` cannot
+    // see this path at all.
+    const server = new McpServer({ name: 't', version: '1' })
+    bindLocalCallScope(server, 'alias-1')
+    const seen: (string | null | undefined)[] = []
+    // One registered tool, so the SDK installs its `tools/call` handler...
+    server.registerTool('t_listed', { description: 'd', inputSchema: {} }, async () => ({ content: [] }))
+    // ...then the fallback replaces it, exactly as the browser surface does.
+    installAliasFallback(server, () => {
+      seen.push(currentCallOwner())
+      persistTextArtifact('alias-1', 'spilled', 'json')
+    })
+
+    const [clientSide, serverSide] = InMemoryTransport.createLinkedPair()
+    const client = new Client({ name: 'c', version: '1' })
+    await Promise.all([server.connect(serverSide), client.connect(clientSide)])
+    await client.callTool({ name: 'browser_unlisted_alias', arguments: {} })
+    await client.close()
+
+    expect(seen).toEqual([null])
+    expect(owner('alias-1')).toBe('local')
   })
 
   it('leaves nothing marked when a producer runs with no call at all', () => {

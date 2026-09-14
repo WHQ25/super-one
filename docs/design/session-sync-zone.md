@@ -633,6 +633,47 @@ All four landed on 2026-09-14, one commit each.
   inside the scope; inside an existing Host Action scope it is a pass-through,
   so a remote session's call is never refiled as local.
 
+- **An eleventh review found the guards placed correctly and guarding the
+  wrong set.** Round ten proved no `await` sits between a check and the act it
+  guards. It did not prove the check asks about the right files, and three of
+  the four findings here are that second question.
+
+  The job table is the durable record of "the node is owed these bytes", but a
+  job exists only once a file is finished *and* enqueued. `browser_download`
+  reserves its path and streams into it; for the whole transfer, plus the gap
+  between sealing and enqueueing, the file is real, is the only copy, and is
+  invisible to the table — so a directory mirror pruned a download while it was
+  being written. `active-writes.ts` covers exactly that gap: an in-process,
+  synchronous registry (the gap is in-process, and the guards cannot `await`),
+  claimed at the reservation and released only once the eager push has landed
+  or a job row exists. It has two stages, because a file being *written* is
+  incomplete — protected, but refused as a tool input rather than handed over
+  half-finished — while a file that is *sealed and not yet enqueued* is
+  complete and is served exactly like a pending upload.
+
+  The mirrored mistake: `state !== 'done'` counted `uploaded` and `notifying`
+  as "the node still owes us". Those states mean the bytes are already there
+  and the row is waiting on the completion wake, so the desktop copy is *not*
+  authoritative — the agent may have changed the file on the node since, and
+  round ten's "serve the pending local copy" branch then handed back the
+  version it replaced. The predicate now names the states it means
+  (`pending`, `running`, `failed`) instead of excluding the one it does not.
+
+  `bindLocalCallScope` was also still incomplete. Wrapping the registrars
+  misses a call that never reaches a registered callback: the compact browser
+  surface installs its own `tools/call` handler so an unlisted legacy
+  `browser_*` alias from an old transcript still runs, and that branch calls
+  the union executor directly. The binder now also wraps `setRequestHandler` —
+  not the handler it finds there, which the fallback would simply replace.
+
+  And the new-tab fix below was best-effort where it had to be a precondition:
+  a cold-started view is registered before its `webContents` exists, so the
+  first resolve can fail with "not attached yet" and the next succeed.
+  `noteTabDriver` swallowed that and `open` navigated anyway, leaving the tab
+  unattributed for its initial load. `requireTabDriver` waits out the attach
+  gap and *reports*; `browser_open` refuses to navigate without it and names
+  the blank tab it left behind so the caller can retry or close it.
+
 - **`browser_open` creates the tab blank, records the driver, then
   navigates.** Opening with the URL in one call meant the page could start a
   direct download before the tab had an owner, and `will-download` had nobody
@@ -842,3 +883,11 @@ marked and the residue is stated):
   other window exists rests on reading the await points, so a future edit that
   introduces an `await` inside one of those stretches reopens the hole without
   failing a test. If you add one, add the check after it.
+
+  Note what that argument does *not* cover, which the eleventh review found the
+  hard way: placement says a guard runs at the right moment, never that it asks
+  about the right files. Both of that round's mirror defects were in the
+  predicate — one set was missing producers that had no job row yet, the other
+  included jobs whose bytes were already delivered. A correct check in a
+  correct place is still wrong if its subject is wrong, so a change to what the
+  zone protects needs its own reasoning, not this paragraph.

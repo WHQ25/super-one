@@ -3,6 +3,8 @@ import type {
   ArtifactDeleteResult,
   ArtifactGetRequest,
   ArtifactGetResult,
+  ArtifactListRequest,
+  ArtifactListResult,
   ArtifactPutRequest,
   ArtifactPutResult,
   ArtifactStatResult,
@@ -54,6 +56,7 @@ import type { CodexMcpOauthLoginOptions } from '@superone/shared/agent-types'
 
 export interface ArtifactGateway {
   stat(input: { sessionId: string; relativePath: string }): Promise<ArtifactStatResult>
+  list(input: ArtifactListRequest): Promise<ArtifactListResult>
   get(input: ArtifactGetRequest): Promise<ArtifactGetResult>
   put(input: ArtifactPutRequest, control: MutatingControlContext): Promise<ArtifactPutResult>
   delete(input: { sessionId: string; relativePath?: string }, control: MutatingControlContext): Promise<ArtifactDeleteResult>
@@ -116,6 +119,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     const client = this.client
     return {
       stat: (input) => client.rpc<ArtifactStatResult>('artifact.stat', input),
+      list: (input) => client.rpc<ArtifactListResult>('artifact.list', input),
       get: (input) => client.rpc<ArtifactGetResult>('artifact.get', input),
       put: (input, control) => client.rpc<ArtifactPutResult>('artifact.put', { ...input, ...control }),
       delete: (input, control) => client.rpc<ArtifactDeleteResult>('artifact.delete', { ...input, ...control }),

@@ -17,11 +17,11 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
 import { statSync } from 'node:fs'
-import type { ArtifactGetRequest, ArtifactGetResult, ArtifactPutRequest, ArtifactPutResult, ArtifactStatResult } from '@superone/shared/environment'
+import type { ArtifactGetRequest, ArtifactGetResult, ArtifactListRequest, ArtifactListResult, ArtifactPutRequest, ArtifactPutResult, ArtifactStatResult } from '@superone/shared/environment'
 import type { ArtifactRef } from '../mcp/artifact-registry'
 import { zoneRelativePath } from '../media-output-paths'
 import { uploadArtifact, type TransferOutcome } from './artifact-transfer'
-import { mirrorNodeArtifact } from './session-file-mirror'
+import { mirrorNodeArtifact, mirrorNodeDirectory } from './session-file-mirror'
 import { mapNodeZoneArgs, mentionsArtifactPath, nodeZonePath, rewriteArtifactPaths, type NodeSyncZone } from './sync-zone-paths'
 
 /** Left for the response itself after the uploads (§4.1). */
@@ -44,6 +44,8 @@ export interface HostActionSyncDeps {
   put: (input: ArtifactPutRequest) => Promise<ArtifactPutResult>
   get: (input: ArtifactGetRequest) => Promise<ArtifactGetResult>
   stat: (input: { sessionId: string; relativePath: string }) => Promise<ArtifactStatResult>
+  /** Every file under a zone directory (§3.1); absent for a node that predates it. */
+  list?: (input: ArtifactListRequest) => Promise<ArtifactListResult>
   transfers: {
     throughputBytesPerMs(connectionId: string): number
     recordThroughput(connectionId: string, outcome: TransferOutcome): void
@@ -95,10 +97,9 @@ interface ArgRoles {
   /** Arguments that name where the tool will write; these may not exist yet. */
   outputs: ReadonlySet<string>
   /**
-   * Arguments that name a directory the tool will read. The zone syncs files:
-   * `artifact.stat` on a directory answers "not there" whether or not it is,
-   * so such an argument cannot be honoured from a remote session and is
-   * refused as unsupported rather than reported missing.
+   * Arguments that name a directory the tool will read. `artifact.stat` knows
+   * files, so a directory is answered by listing it and mirroring every
+   * member (`mirrorNodeDirectory`) before the tool runs.
    */
   directorySources: ReadonlySet<string>
   /**
@@ -157,7 +158,7 @@ function argRoles(toolName: string | undefined, args: Record<string, unknown>): 
   }
 }
 
-type InputMappingDeps = Pick<HostActionSyncDeps, 'zone' | 'get' | 'stat' | 'signal'> & { sessionId?: string; connectionId?: string }
+type InputMappingDeps = Pick<HostActionSyncDeps, 'zone' | 'get' | 'stat' | 'list' | 'signal'> & { sessionId?: string; connectionId?: string }
 
 /**
  * The Host Action whose tool is running, for the tools it dispatches in
@@ -194,20 +195,14 @@ export async function mapHostActionInputs(
 ): Promise<Record<string, unknown>> {
   const roles = argRoles(deps.toolName, args)
   const mapped = mapNodeZoneArgs(deps.zone, args, deps.sessionId, roles.deferred)
+  const mirrorDeps = { connectionId: deps.connectionId, stat: deps.stat, get: deps.get, list: deps.list, signal: deps.signal }
   for (const ref of mapped.refs) {
-    if (ref.keys.some((key) => roles.directorySources.has(key))) {
-      throw Object.assign(
-        new Error(
-          `${ref.relativePath} is a directory under the session directory, and the session directory syncs files, not directories; `
-          + `${deps.toolName} cannot take it from a remote session`,
-        ),
-        { code: 'unsupported' },
-      )
-    }
     // A path is only "allowed to be new" if every role it was given is a
     // destination. Named once as a source, it is a source.
     const outputOnly = ref.keys.length > 0 && ref.keys.every((key) => roles.outputs.has(key))
-    const outcome = await mirrorNodeArtifact(ref.sessionId, ref.relativePath, { connectionId: deps.connectionId, stat: deps.stat, get: deps.get, signal: deps.signal })
+    const outcome = ref.keys.some((key) => roles.directorySources.has(key))
+      ? await mirrorNodeDirectory(ref.sessionId, ref.relativePath, mirrorDeps)
+      : await mirrorNodeArtifact(ref.sessionId, ref.relativePath, mirrorDeps)
     throwIfAborted(deps.signal)
     // The node has it and would not hand it over: running the tool on
     // whatever is at the desktop path would be running it on the wrong bytes.

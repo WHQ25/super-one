@@ -4,6 +4,8 @@ import { join } from 'node:path'
 import type {
   ArtifactGetRequest,
   ArtifactGetResult,
+  ArtifactListRequest,
+  ArtifactListResult,
   ArtifactPutRequest,
   ArtifactPutResult,
   ArtifactStatResult,
@@ -893,6 +895,10 @@ export class EnvironmentHost {
 
   artifactGet(connectionId: string, input: ArtifactGetRequest): Promise<ArtifactGetResult> {
     return this.resolveRemote(connectionId).gateway.artifacts.get(input)
+  }
+
+  artifactList(connectionId: string, input: ArtifactListRequest): Promise<ArtifactListResult> {
+    return this.resolveRemote(connectionId).gateway.artifacts.list(input)
   }
 
   /** `artifact.put` — one chunk; the session lease is acquired or renewed here. */

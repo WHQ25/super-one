@@ -248,6 +248,7 @@ async function resolveSyncContext(
     put: (input) => host.artifactPut(connectionId, input),
     get: (input) => host.artifactGet(connectionId, input),
     stat: (input) => host.artifactStat(connectionId, input.sessionId, input.relativePath),
+    list: (input) => host.artifactList(connectionId, input),
     transfers,
     log: {
       warn: (...args) => void import('../logger').then((m) => m.default.warn(...args)).catch(() => undefined),

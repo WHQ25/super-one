@@ -2,10 +2,10 @@
  * `artifact.*` — session sync zone transfer RPCs
  * (`docs/design/session-sync-zone.md` §5.2).
  *
- * All four are scoped by the node to `<syncRoot>/<sessionId>`; the zone lies
+ * All five are scoped by the node to `<syncRoot>/<sessionId>`; the zone lies
  * outside every project, so `workspace.*` cannot reach it and these must not
- * reach a project. `stat` / `get` need the controller binding only; `put` /
- * `delete` also need the session lease.
+ * reach a project. `stat` / `list` / `get` need the controller binding only;
+ * `put` / `delete` also need the session lease.
  */
 
 /** Upload chunk size. Small enough to stay under the RPC frame budget once base64-encoded. */
@@ -73,8 +73,36 @@ export interface ArtifactDeleteResult {
   ok: true
 }
 
+/**
+ * `artifact.list` — every file under a zone directory, so the desktop can
+ * mirror a directory a tool will read (a mini-app source tree) file by file.
+ * Entries are session-relative and carry the same `size` + `mtimeMs` the
+ * mirror compares per file. A tree past the cap is reported `truncated`,
+ * and the desktop refuses to run on a partial one.
+ */
+export const ARTIFACT_LIST_MAX_ENTRIES = 2000
+
+export interface ArtifactListRequest {
+  sessionId: string
+  relativePath: string
+}
+
+export interface ArtifactListEntry {
+  relativePath: string
+  size: number
+  mtimeMs: number
+}
+
+export interface ArtifactListResult {
+  /** False when the path is not a directory the session zone has. */
+  exists: boolean
+  entries: ArtifactListEntry[]
+  truncated: boolean
+}
+
 export const ARTIFACT_RPC_METHODS = {
   stat: 'artifact.stat',
+  list: 'artifact.list',
   put: 'artifact.put',
   get: 'artifact.get',
   delete: 'artifact.delete',

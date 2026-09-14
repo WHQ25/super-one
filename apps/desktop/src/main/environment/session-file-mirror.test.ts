@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const state = vi.hoisted(() => ({ userData: '' }))
 vi.mock('electron', () => ({ app: { getPath: () => state.userData } }))
 
-import { mirrorNodeArtifact } from './session-file-mirror'
+import { mirrorNodeArtifact, mirrorNodeDirectory } from './session-file-mirror'
 
 let root: string
 beforeEach(() => {
@@ -117,5 +117,47 @@ describe('node artifact mirror', () => {
     const [a, b] = await Promise.all([mirrorNodeArtifact('s1', 'agent/r.md', remote), mirrorNodeArtifact('s1', 'agent/r.md', remote)])
     expect(a).toEqual(b)
     expect(remote.gets).toEqual([0])
+  })
+})
+
+describe('node directory mirror', () => {
+  function fakeNode(files: Record<string, Buffer>, opts: { truncated?: boolean } = {}) {
+    const stat = async ({ relativePath }: { relativePath: string }) => {
+      const f = files[relativePath]
+      return f ? { exists: true, size: f.length, mtimeMs: 1_700_000_000_000 } : { exists: false, size: 0, mtimeMs: 0 }
+    }
+    const get = async (req: { relativePath: string; offset: number; maxBytes: number }) => {
+      const f = files[req.relativePath]
+      const slice = f.subarray(req.offset, req.offset + req.maxBytes)
+      return { chunk: slice.toString('base64'), total: f.length, mtimeMs: 1_700_000_000_000, eof: req.offset + slice.length >= f.length }
+    }
+    const list = async ({ relativePath }: { relativePath: string }) => {
+      const entries = Object.entries(files)
+        .filter(([rel]) => rel.startsWith(relativePath + '/'))
+        .map(([rel, buf]) => ({ relativePath: rel, size: buf.length, mtimeMs: 1_700_000_000_000 }))
+      return { exists: entries.length > 0, entries, truncated: opts.truncated ?? false }
+    }
+    return { stat, get, list, isPendingUpload: () => false, connectionId: 'conn-1' }
+  }
+
+  it('brings every file of a node directory to the desktop mirror and drops what the node no longer has', async () => {
+    // A tool that reads a directory reads all of it. A stale desktop file the
+    // node deleted would be part of "all of it" — so the mirror is made
+    // faithful, not merely superset.
+    const stale = join(root, 'sync', 's1', 'agent', 'app', 'old.js')
+    mkdirSync(join(stale, '..'), { recursive: true })
+    writeFileSync(stale, 'gone on the node')
+    const node = fakeNode({ 'agent/app/manifest.json': Buffer.from('{}'), 'agent/app/src/index.js': Buffer.from('export {}') })
+    const outcome = await mirrorNodeDirectory('s1', 'agent/app', node)
+    expect(outcome).toMatchObject({ kind: 'local', path: join(root, 'sync', 's1', 'agent', 'app') })
+    expect(readFileSync(join(root, 'sync', 's1', 'agent', 'app', 'manifest.json'), 'utf8')).toBe('{}')
+    expect(readFileSync(join(root, 'sync', 's1', 'agent', 'app', 'src', 'index.js'), 'utf8')).toBe('export {}')
+    expect(existsSync(stale)).toBe(false)
+  })
+
+  it('reports a directory the node does not have as missing, and one it could not list whole as unavailable', async () => {
+    expect(await mirrorNodeDirectory('s1', 'agent/none', fakeNode({}))).toEqual({ kind: 'missing' })
+    const partial = fakeNode({ 'agent/big/a.txt': Buffer.from('a') }, { truncated: true })
+    expect(await mirrorNodeDirectory('s1', 'agent/big', partial)).toMatchObject({ kind: 'unavailable' })
   })
 })

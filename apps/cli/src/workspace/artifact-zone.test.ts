@@ -287,3 +287,54 @@ describe('artifact delete', () => {
     expect(zone.stat('s1', 'browser/c.png').exists).toBe(true)
   })
 })
+
+describe('artifact directory listing', () => {
+  it('lists the files under a directory recursively, with the size and mtime the mirror compares', () => {
+    // A directory argument to a tool has no single file to stat; the desktop
+    // needs every member to mirror it and the same version signal per file.
+    upload('s1', 'agent/app/manifest.json', Buffer.from('{}'))
+    upload('s1', 'agent/app/src/index.js', Buffer.from('export {}'), 't2')
+    upload('s1', 'agent/other.txt', Buffer.from('x'), 't3')
+    const listing = zone.list('s1', 'agent/app')
+    expect(listing.exists).toBe(true)
+    expect(listing.truncated).toBe(false)
+    expect(listing.entries.map((e) => e.relativePath).sort()).toEqual(['agent/app/manifest.json', 'agent/app/src/index.js'])
+    const manifest = listing.entries.find((e) => e.relativePath === 'agent/app/manifest.json')!
+    const stat = zone.stat('s1', 'agent/app/manifest.json')
+    expect(manifest).toEqual({ relativePath: 'agent/app/manifest.json', size: stat.size, mtimeMs: stat.mtimeMs })
+  })
+
+  it('reports a missing directory as exists:false, and a file as not a directory', () => {
+    expect(zone.list('s1', 'agent/none')).toEqual({ exists: false, entries: [], truncated: false })
+    upload('s1', 'agent/file.txt', Buffer.from('x'))
+    expect(zone.list('s1', 'agent/file.txt').exists).toBe(false)
+  })
+
+  it('never lists through a symlink, the staging area or the owner marker', () => {
+    // The listing feeds `get`, which is scoped; but a link inside the tree
+    // would still expose *names* from outside the zone, and the reserved
+    // areas are not artifacts.
+    upload('s1', 'agent/app/a.txt', Buffer.from('a'))
+    const outside = mkdtempSync(join(tmpdir(), 'zone-outside-'))
+    try {
+      writeFileSync(join(outside, 'secret.txt'), 's')
+      symlinkSync(outside, join(root, 'sync', 's1', 'agent', 'app', 'linked'))
+      mkdirSync(join(root, 'sync', 's1', 'agent', 'app', '.parts'), { recursive: true })
+      writeFileSync(join(root, 'sync', 's1', 'agent', 'app', '.parts', 'stage'), 'p')
+      writeFileSync(join(root, 'sync', 's1', '.owner'), 'local')
+      expect(zone.list('s1', 'agent/app').entries.map((e) => e.relativePath)).toEqual(['agent/app/a.txt'])
+      expect(zone.list('s1', 'agent').entries.map((e) => e.relativePath)).toEqual(['agent/app/a.txt'])
+      // The linked directory itself is refused as a listing root.
+      expect(code(() => zone.list('s1', 'agent/app/linked'))).toBe('invalid_argument')
+    } finally {
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('stops at the entry cap and says so, rather than handing over a partial tree as whole', () => {
+    for (let i = 0; i < 5; i++) upload('s1', `agent/big/f${i}.txt`, Buffer.from('x'), `t${i}`)
+    const listing = zone.list('s1', 'agent/big', 3)
+    expect(listing.entries).toHaveLength(3)
+    expect(listing.truncated).toBe(true)
+  })
+})

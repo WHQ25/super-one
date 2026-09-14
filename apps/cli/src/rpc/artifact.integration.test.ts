@@ -177,6 +177,25 @@ describe('artifact RPC on a node', () => {
     client.close()
   })
 
+  it('lists a zone directory for the session controller only', async () => {
+    const { rt } = await boot()
+    const client = await connectAuthedRpc(rt)
+    const { sessionId, lease } = await openSession(client)
+    const data = Buffer.from('{}')
+    await client.rpc('artifact.put', {
+      sessionId, relativePath: 'agent/app/manifest.json', transferId: 'm', offset: 0, total: data.length,
+      sha256: createHash('sha256').update(data).digest('hex'), chunk: data.toString('base64'), final: true, ...lease,
+    })
+    const listing = (await client.rpc('artifact.list', { sessionId, relativePath: 'agent/app' })) as { exists: boolean; entries: Array<{ relativePath: string }> }
+    expect(listing.exists).toBe(true)
+    expect(listing.entries.map((e) => e.relativePath)).toEqual(['agent/app/manifest.json'])
+
+    const other = await connectAuthedRpc(rt)
+    expect(await failure(other.rpc('artifact.list', { sessionId, relativePath: 'agent/app' }))).toBe('forbidden')
+    other.close()
+    client.close()
+  })
+
   it('names the file it actually checked, so a crafted path cannot write the notification', async () => {
     // The wording is the node's, and the paths in it have to be the resolved
     // ones — otherwise a relativePath that normalises onto a real file can

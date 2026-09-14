@@ -679,14 +679,20 @@ marked and the residue is stated):
   **Still open:** there is no size cap and no eviction under pressure. A cap
   would have to delete artifacts a live transcript names, which is a product
   decision — surfacing zone size in settings is the likely first step.
-- **Directories under the zone cannot be tool inputs on a remote session.**
-  The zone syncs files, and `artifact.stat` on a directory answers "not
-  there". A tool whose argument names a directory it will *read* —
+- ~~**Directories under the zone cannot be tool inputs on a remote session.**~~
+  — **implemented 2026-09-14.** `artifact.list` (controller-bound, `lstat`
+  walk, links neither followed nor named, `.parts` and `.owner` skipped,
+  capped at 2000 entries and reported `truncated` past that) returns every
+  file under a zone directory with the size and mtime the mirror compares.
+  A tool argument that names a directory it will *read* —
   `miniapp_dev_register.directory`, `miniapp_dev_pack.appDir`,
-  `miniapp_dev_update_types.appDir` — is refused with `unsupported` when that
-  argument is a zone path, rather than reading whatever the desktop side last
-  held. Supporting it means a directory manifest and per-file mirroring on
-  the same `artifact.get` + version check the file path already uses.
+  `miniapp_dev_update_types.appDir` — is answered by `mirrorNodeDirectory`:
+  list, then every member through the same per-file mirror (four at a time),
+  then anything under the desktop mirror the node no longer has is removed,
+  because the tool reads all of the directory and a stale file is part of
+  "all of it". A truncated listing is refused as `unavailable` rather than
+  handed over as a whole tree that is not; a node that predates `artifact.list`
+  gets the same answer.
 - ~~**Zone media larger than 10 MiB has no desktop preview path.**~~ —
   **implemented 2026-09-14.** `readProjectFile` answers a zone media file
   with the `local-file://` URL of its desktop mirror instead of a data URI;

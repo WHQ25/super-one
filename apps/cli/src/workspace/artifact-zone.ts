@@ -22,23 +22,26 @@ import { createHash } from 'node:crypto'
 import {
   closeSync,
   fstatSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readSync,
   readdirSync,
+  realpathSync,
   renameSync,
   statSync,
   unlinkSync,
   writeSync,
-  lstatSync,
-  realpathSync,
 } from 'node:fs'
 import { rm } from 'node:fs/promises'
-import { dirname, join, resolve, sep } from 'node:path'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 import {
   ARTIFACT_CHUNK_BYTES,
+  ARTIFACT_LIST_MAX_ENTRIES,
   type ArtifactGetRequest,
   type ArtifactGetResult,
+  type ArtifactListEntry,
+  type ArtifactListResult,
   type ArtifactPutRequest,
   type ArtifactPutResult,
   type ArtifactStatResult,
@@ -64,6 +67,8 @@ interface Transfer {
 
 /** Staging directory inside each session zone; never addressable through the contract. */
 const PARTS_DIR = '.parts'
+/** Written by the desktop's reclaim sweep into a zone it mirrors; never an artifact. */
+const OWNER_FILE = '.owner'
 /** How many finished-upload receipts to keep for late re-sends. */
 const COMPLETED_RECEIPTS = 512
 
@@ -146,6 +151,55 @@ export class ArtifactZoneService {
       throw rpcError('invalid_argument', 'relativePath must name a file inside the session zone')
     }
     return resolved.absolutePath
+  }
+
+  /**
+   * Every file under `<sessionId>/<relativePath>`, recursively. Walked with
+   * `lstat` only: a link is neither followed nor listed, since a listing feeds
+   * `get` and a name from outside the zone must not appear in it. The staging
+   * area and the owner marker are not artifacts and are skipped.
+   */
+  list(sessionId: string, relativePath: string, maxEntries = ARTIFACT_LIST_MAX_ENTRIES): ArtifactListResult {
+    const abs = this.resolve(sessionId, relativePath)
+    let top: ReturnType<typeof lstatSync>
+    try {
+      top = lstatSync(abs)
+    } catch {
+      return { exists: false, entries: [], truncated: false }
+    }
+    if (top.isSymbolicLink()) throw rpcError('invalid_argument', 'relativePath must name a real directory inside the session zone')
+    if (!top.isDirectory()) return { exists: false, entries: [], truncated: false }
+    const sessionRoot = this.sessionDir(sessionId)
+    const entries: ArtifactListEntry[] = []
+    let truncated = false
+    const walk = (dir: string): void => {
+      if (truncated) return
+      let names: string[]
+      try {
+        names = readdirSync(dir).sort()
+      } catch {
+        return
+      }
+      for (const name of names) {
+        if (name === PARTS_DIR || name === OWNER_FILE) continue
+        const path = join(dir, name)
+        let st: ReturnType<typeof lstatSync>
+        try {
+          st = lstatSync(path)
+        } catch {
+          continue
+        }
+        if (st.isDirectory()) {
+          walk(path)
+          if (truncated) return
+        } else if (st.isFile()) {
+          if (entries.length >= maxEntries) { truncated = true; return }
+          entries.push({ relativePath: relative(sessionRoot, path).split(sep).join('/'), size: st.size, mtimeMs: Math.floor(st.mtimeMs) })
+        }
+      }
+    }
+    walk(abs)
+    return { exists: true, entries, truncated }
   }
 
   stat(sessionId: string, relativePath: string): ArtifactStatResult {

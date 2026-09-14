@@ -9,8 +9,9 @@
  * copy is stale or absent it is fetched with `artifact.get` into a `.part`
  * and renamed, so a concurrent reader never sees a half file.
  */
-import { statSync } from 'node:fs'
-import type { ArtifactGetRequest, ArtifactGetResult, ArtifactStatResult } from '@superone/shared/environment'
+import { lstatSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { join, relative, sep } from 'node:path'
+import type { ArtifactGetRequest, ArtifactGetResult, ArtifactListRequest, ArtifactListResult, ArtifactStatResult } from '@superone/shared/environment'
 import { downloadArtifact } from './artifact-transfer'
 import { desktopMirrorPath } from './sync-zone-paths'
 import { markZoneOwner } from './zone-owner'
@@ -18,6 +19,8 @@ import { markZoneOwner } from './zone-owner'
 export interface MirrorDeps {
   stat: (input: { sessionId: string; relativePath: string }) => Promise<ArtifactStatResult>
   get: (input: ArtifactGetRequest) => Promise<ArtifactGetResult>
+  /** Every file under a zone directory; needed only to mirror a directory. */
+  list?: (input: ArtifactListRequest) => Promise<ArtifactListResult>
   signal?: AbortSignal
   /**
    * The node being mirrored from. Recorded on the zone directory the mirror
@@ -112,4 +115,86 @@ export async function mirrorNodeArtifact(sessionId: string, relativePath: string
   })().finally(() => inflight.delete(path))
   inflight.set(path, work)
   return work
+}
+
+/** How many member files are fetched at once when a directory is mirrored. */
+const DIRECTORY_MIRROR_CONCURRENCY = 4
+
+/**
+ * Bring a whole node directory to the desktop mirror — for a tool that will
+ * *read* a directory (a mini-app source tree), which no single `stat` can
+ * vouch for. The node lists it, every member goes through `mirrorNodeArtifact`
+ * so each file gets the same size + mtime check, and anything under the
+ * mirror the node no longer has is removed: the tool reads all of the
+ * directory, and a stale file is part of "all of it". A listing the node
+ * had to truncate is refused as `unavailable` rather than handed over as
+ * a whole tree that is not.
+ */
+export async function mirrorNodeDirectory(sessionId: string, relativePath: string, deps: MirrorDeps): Promise<MirrorOutcome> {
+  if (!deps.list) return { kind: 'unavailable', reason: 'this node cannot list a zone directory' }
+  let listing: ArtifactListResult
+  try {
+    listing = await deps.list({ sessionId, relativePath })
+  } catch (err) {
+    const code = String((err as { code?: unknown })?.code)
+    if (ABSENT_STAT_ERRORS.has(code)) return { kind: 'missing' }
+    return { kind: 'unavailable', reason: `the node would not list it (${code})` }
+  }
+  if (!listing.exists) return { kind: 'missing' }
+  if (listing.truncated) {
+    return { kind: 'unavailable', reason: `${relativePath} has more files than one listing carries; it cannot be mirrored whole` }
+  }
+  const dir = desktopMirrorPath(sessionId, relativePath)
+  const queue = [...listing.entries]
+  const workers = Array.from({ length: Math.min(DIRECTORY_MIRROR_CONCURRENCY, queue.length) }, async () => {
+    for (let entry = queue.shift(); entry; entry = queue.shift()) {
+      const outcome = await mirrorNodeArtifact(sessionId, entry.relativePath, deps)
+      // `missing` here is a file deleted between the listing and the fetch;
+      // the tree the tool sees is then the node's newer one, which is right.
+      if (outcome.kind === 'unavailable') throw outcome
+    }
+  })
+  try {
+    await Promise.all(workers)
+  } catch (err) {
+    if ((err as { kind?: string }).kind === 'unavailable') return err as MirrorOutcome
+    throw err
+  }
+  pruneMirroredDirectory(dir, new Set(listing.entries.map((e) => desktopMirrorPath(sessionId, e.relativePath))))
+  return { kind: 'local', path: dir, size: 0, mtimeMs: 0 }
+}
+
+/**
+ * Remove every file under the mirror that the node's listing did not name.
+ * `lstat` only, and links removed as links: the mirror is the desktop's own
+ * directory, but deleting is still the one operation a link could redirect.
+ */
+function pruneMirroredDirectory(dir: string, keep: ReadonlySet<string>): void {
+  let names: string[]
+  try {
+    names = readdirSync(dir)
+  } catch {
+    return
+  }
+  for (const name of names) {
+    const path = join(dir, name)
+    let st: ReturnType<typeof lstatSync>
+    try {
+      st = lstatSync(path)
+    } catch {
+      continue
+    }
+    if (st.isDirectory()) {
+      pruneMirroredDirectory(path, keep)
+      continue
+    }
+    if (keep.has(path)) continue
+    // A `.part.*` of a fetch still in flight belongs to that fetch.
+    if (relative(dir, path).split(sep).pop()?.includes('.part.')) continue
+    try {
+      rmSync(path, { force: true })
+    } catch {
+      /* raced; the next mirror sees it */
+    }
+  }
 }

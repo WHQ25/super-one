@@ -69,6 +69,12 @@ function fakeNode() {
         const f = files.get(req.relativePath)
         return f ? { exists: true, size: f.length, mtimeMs: 1_700_000_000_000 } : { exists: false, size: 0, mtimeMs: 0 }
       },
+      list: async (req: { relativePath: string }) => {
+        const entries = [...files.entries()]
+          .filter(([rel]) => rel.startsWith(req.relativePath + '/'))
+          .map(([rel, buf]) => ({ relativePath: rel, size: buf.length, mtimeMs: 1_700_000_000_000 }))
+        return { exists: entries.length > 0, entries, truncated: false }
+      },
       transfers: {
         throughputBytesPerMs: () => 1024,
         recordThroughput: () => {},
@@ -398,18 +404,20 @@ describe('host action inputs', () => {
     await expect(mapHostActionInputs({ directory: '/home/node/project/app', projectDir: args.projectDir }, { ...node.deps, sessionId: 's1', toolName: 'miniapp_dev_register' })).resolves.toBeTruthy()
   })
 
-  it('refuses a directory under the session zone as a tool source, saying so, rather than reporting it missing', async () => {
-    // The zone syncs files. A directory argument has no member list to
-    // mirror, so `artifact.stat` on it says "not there" even when it is —
-    // and a tool that then read the desktop side would read whatever was
-    // left there last time. Until directories sync, the honest answer is
-    // "not supported", not "not found".
+  it('mirrors a whole directory the tool will read, file by file, and refuses one the node does not have', async () => {
+    // `artifact.stat` knows files; a directory argument is answered by
+    // listing it and mirroring every member, so the tool reads the node's
+    // tree and not whatever the desktop side held last time.
     const node = fakeNode()
+    node.files.set('agent/app/manifest.json', Buffer.from('{"appId":"x"}'))
+    node.files.set('agent/app/src/index.js', Buffer.from('export {}'))
     const app = '/home/node/.superone/node/sync/s1/agent/app'
-    await expect(mapHostActionInputs({ directory: app }, { ...node.deps, sessionId: 's1', toolName: 'miniapp_dev_register' }))
-      .rejects.toMatchObject({ code: 'unsupported', message: expect.stringMatching(/directory/i) })
-    await expect(mapHostActionInputs({ appDir: app }, { ...node.deps, sessionId: 's1', toolName: 'miniapp_dev_update_types' }))
-      .rejects.toMatchObject({ code: 'unsupported' })
+    const mapped = await mapHostActionInputs({ directory: app }, { ...node.deps, sessionId: 's1', toolName: 'miniapp_dev_register' })
+    expect(mapped.directory).toBe(join(root, 'sync', 's1', 'agent', 'app'))
+    expect(readFileSync(join(root, 'sync', 's1', 'agent', 'app', 'manifest.json'), 'utf8')).toBe('{"appId":"x"}')
+    expect(readFileSync(join(root, 'sync', 's1', 'agent', 'app', 'src', 'index.js'), 'utf8')).toBe('export {}')
+    await expect(mapHostActionInputs({ appDir: '/home/node/.superone/node/sync/s1/agent/none' }, { ...node.deps, sessionId: 's1', toolName: 'miniapp_dev_update_types' }))
+      .rejects.toMatchObject({ code: 'not_found' })
   })
 
   it('leaves project paths and plain strings untouched', async () => {

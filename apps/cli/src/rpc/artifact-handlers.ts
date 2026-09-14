@@ -99,6 +99,20 @@ function handleStat(payload: unknown, ctx: ArtifactRpcContext): ArtifactRpcResul
   }
 }
 
+function handleList(payload: unknown, ctx: ArtifactRpcContext): ArtifactRpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const sessionId = String(p.sessionId ?? '')
+  const gate = requireController(sessionId, ctx)
+  if (gate) return gate
+  try {
+    return { result: ctx.artifacts.list(sessionId, String(p.relativePath ?? '')) }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
 function handleGet(payload: unknown, ctx: ArtifactRpcContext): ArtifactRpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
   if (denied) return denied
@@ -168,6 +182,8 @@ export function dispatchArtifactRpc(
   switch (method) {
     case ARTIFACT_RPC_METHODS.stat:
       return handleStat(payload, ctx)
+    case ARTIFACT_RPC_METHODS.list:
+      return handleList(payload, ctx)
     case ARTIFACT_RPC_METHODS.get:
       return handleGet(payload, ctx)
     case ARTIFACT_RPC_METHODS.put:

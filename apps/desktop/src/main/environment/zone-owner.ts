@@ -43,6 +43,18 @@ export function markZoneOwner(sessionId: string, owner: ZoneOwner | undefined): 
   }
 }
 
+/**
+ * Who a session's zone was recorded as belonging to: a node's connection id,
+ * `null` for this desktop, `undefined` when nothing has marked it. The
+ * fallback a producer outside any call uses to name its destination.
+ */
+export function readZoneOwner(sessionId: string): ZoneOwner | undefined {
+  if (!sessionId || sessionId === ADHOC_SESSION_ID) return null
+  const marked = readOwnerFile(join(sessionZoneDir(sessionId), OWNER_FILE))
+  if (marked === null) return undefined
+  return marked === 'local' ? null : marked
+}
+
 function readOwnerFile(marker: string): string | null {
   try {
     return readFileSync(marker, 'utf8').trim() || null

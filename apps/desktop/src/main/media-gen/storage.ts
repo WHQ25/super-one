@@ -48,7 +48,7 @@ function persistFiles(
     const tmpPath = `${filePath}.${process.pid}.tmp`
     writeFileSync(tmpPath, file.uint8Array)
     renameSync(tmpPath, filePath)
-    registerZoneArtifact(filePath)
+    registerZoneArtifact(filePath, file.uint8Array)
     return { path: filePath, mediaType, ...(withBase64 ? { base64: file.base64 } : {}) }
   })
 }

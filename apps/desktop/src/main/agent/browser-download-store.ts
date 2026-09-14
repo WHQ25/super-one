@@ -1,4 +1,5 @@
 import { beginActiveWrite, sealActiveWrite } from '../environment/active-writes'
+import { publishArtifact, recordTolerantly, reserveZoneFile } from '../environment/zone-delivery'
 import { acquireHandoff, enqueueHandoff, type EnqueueJob } from '../environment/pending-handoffs'
 import { ensureZoneDir } from '../environment/zone-owner'
 import { realOrSelf, withinSessionZone } from '../environment/sync-zone-paths'
@@ -167,16 +168,22 @@ export function reserveDownloadPath(filename: string, dir?: string | null, sessi
     const candidate = uniqueCandidate(root, filename, attempt)
     try {
       closeSync(openSync(candidate, 'wx'))
-      registerDownload(sessionId, candidate, false)
-      return candidate
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
+      continue
     }
+    registerDownload(sessionId, candidate, false, origin)
+    return candidate
   }
   // 100 same-named files in one folder: stop guessing and make the name unique.
+  // Reserved exactly like the others — this used to hand back a path with no
+  // file created and no claim taken, the one download the mirror could prune.
   const ext = extname(filename)
   const stem = ext ? filename.slice(0, -ext.length) : filename
-  return join(root, `${stem} (${randomUUID().slice(0, 8)})${ext}`)
+  const unique = join(root, `${stem} (${randomUUID().slice(0, 8)})${ext}`)
+  closeSync(openSync(unique, 'wx'))
+  registerDownload(sessionId, unique, false, origin)
+  return unique
 }
 
 /**
@@ -193,7 +200,7 @@ export function reserveDownloadPath(filename: string, dir?: string | null, sessi
  * the seal is what makes the file worth pushing. Only zone paths are pushed,
  * so a local session's Downloads folder is unaffected.
  */
-export function registerDownload(sessionId: string | null | undefined, path: string, final: boolean): void {
+export function registerDownload(sessionId: string | null | undefined, path: string, final: boolean, origin?: DownloadOrigin): void {
   if (!sessionId || !isUnderSyncZone(path)) return
   // The same two moments the registry cares about are the two the mirror does:
   // the reservation opens a window in which the file exists but no transfer job
@@ -202,7 +209,22 @@ export function registerDownload(sessionId: string | null | undefined, path: str
   // download) is a no-op.
   if (final) sealActiveWrite(sessionId, path)
   else beginActiveWrite(sessionId, path)
-  registerArtifact(sessionId, { path, producer: 'download', final })
+  // The delivery record, beside the claim above until step 3 replaces it. The
+  // reservation is made in the same synchronous sequence as the `wx` create,
+  // so the file has no bytes and no gap before the row exists. A page
+  // download's tab driver names its node explicitly; a tool's call scope
+  // names it implicitly.
+  if (!final) {
+    recordTolerantly(path, () =>
+      reserveZoneFile({
+        sessionId,
+        path,
+        origin: origin ? 'page-download' : 'download',
+        ...(origin ? { connectionId: origin.connectionId } : {}),
+      }),
+    )
+  }
+  publishArtifact(sessionId, { path, producer: 'download', final, ...(origin ? { connectionId: origin.connectionId } : {}) })
 }
 
 /**

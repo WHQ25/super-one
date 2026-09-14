@@ -4,7 +4,7 @@ import { join } from 'path'
 import { randomUUID } from 'crypto'
 import log from '../logger'
 import { producerDir } from '../media-output-paths'
-import { registerArtifact } from '../mcp/artifact-registry'
+import { publishArtifact } from '../environment/zone-delivery'
 
 /**
  * Persist a large browser text/JSON result into the session's zone and return
@@ -20,7 +20,7 @@ export function persistTextArtifact(sessionId: string | null | undefined, conten
     const dir = ensureArtifactDir(producerDir(sessionId, 'browser'))
     const filePath = join(dir, `${randomUUID()}.${ext}`)
     writeFileSync(filePath, content, 'utf-8')
-    registerArtifact(sessionId ?? '', { path: filePath, producer: 'browser', final: true })
+    publishArtifact(sessionId ?? '', { path: filePath, producer: 'browser', final: true, bytes: content })
     return filePath
   } catch (err) {
     log.warn('[browser-artifact] failed to persist artifact', err)

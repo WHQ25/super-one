@@ -186,16 +186,41 @@ bumps `epoch`, so the previous holder's next CAS fails (Q3).
 
 ## 4. The producers, by how they write (Q2)
 
-The rule follows the write mode, not the tool, because the side-effect that
-cannot be undone differs. Entries by mode:
+The rule follows the write mode, not the tool, because what matters is
+whether there is an `await` between a file's first byte and its registration.
+Reading each entry rather than guessing at it left **two** modes, not the
+three revision 3 listed — media generation writes synchronously from a buffer
+(`media-gen/storage.ts` `persistFiles`: `writeFileSync` + `renameSync` +
+register), so there is no "final path unknown until written" producer and no
+staging directory.
 
-| Mode | Entries today | Rule |
+| Mode | Entries | Rule |
 |---|---|---|
-| **Streaming into a reserved path** | `browser_download` → `registerDownload` | reserve the row, then the `wx` create, then stream, then seal. Insert fails ⇒ no file is ever created. |
-| **Path handed out before an asynchronous writer** | `createActionRecordingPath` (`computer-use/tools.ts:772`, written by the helper's recorder, registered at `:784`); device capture paths handed to a backend (`device-agent/execute.ts:205`) | `reserve()` lives **inside the path factory**: the row exists before the path leaves it. `registerArtifact` at the end advances to `sealed`. This is the case revision 2 missed — a directory mirror between hand-out and register saw "not in the node's list, no row" and pruned a recording in progress (`session-file-mirror.ts:467`), with the database perfectly healthy. |
-| **Final path unknown until written** | media-gen providers (`mediaGenOutputDir` hands out a directory; `media-gen/zone-artifact.ts` registers afterwards) | write under a staging name the mirror never walks (`.parts` is already in `RESERVED_ZONE_NAMES`; staging reuses that carve-out), then `reserve()` + `renameSync` into the zone + `sealed` in one synchronous sequence. |
-| **Synchronous buffer publish** | `action-recording-store.ts:54` and `:84` (a buffer / `copyFileSync`), `browser-artifact-store.ts:22`, `screenshot-artifact.ts:147` | `writeFileSync` then insert at `sealed`, with no `await` between: the mirror cannot run inside a synchronous sequence. An explicit special case; **not** to be generalized to any producer that awaits between write and register. |
-| **Passive external write** | `will-download` | the file is already being written by Chromium when we learn of it. Insert the row on `will-download`; insert fails ⇒ `item.cancel()`, which removes the partial. The external event is reported as having happened. |
+| **Reserved before the first byte** | `reserveDownloadPath` — both `browser_download`'s fetch and a page download's `will-download`, which calls it before `item.setSavePath`; `createActionRecordingPath` — the `computer_act` recorder (`tools.ts:772`) and the two buffer persists that share the factory; `captureFor` on the simulator manager (§10.2 boundary, below) | `reserveZoneFile` **inside the path factory**, in the same synchronous sequence as the `wx` create, so the path never leaves with fewer than a row behind it. `sealZoneFile` when the writer says the bytes are in. The `wx` create comes first because it is what picks the unique name; a row reserved for a name that then collides would burn that name under R2. |
+| **Published complete in one synchronous sequence** | `persistBase64Screenshot` (both files), `persistTextArtifact`, `persistFiles` and `image-preview`, the Android and mirror device backends (`writeFileSync` now, not `await writeFile`) | `sealZoneFile` in the same tick as the write, hashed from the buffer the producer still holds. Nothing can run between the write and the row. |
+| **Re-registration at a later boundary** | `registerCapture` in the device executor, the video status call in `media-tools.ts`, the recorder's registration at `tools.ts:784` | `publishArtifact` finds the row by path and reuses its id (R3a). Never a second row, never a reset. |
+
+`publishArtifact` replaces every direct `registerArtifact` call: it seals or
+publishes in the record, then registers the ref with its `deliveryId`, so the
+Host Action that pushes it goes straight to the row.
+
+Two things this pass fixed on the way through: `reserveDownloadPath`'s
+hundred-collision fallback handed back a path with no file created and no
+claim taken — the one download the mirror could always prune — and the
+recorder path was never claimed at all (the finding that opened Q2).
+
+**§10.2 boundary.** The simulator manager's `captureFor` is shared by the
+agent's screenshot and by the panel's recording, with the destination in
+`zoneOwners` rather than a call scope; it and the Android panel recording are
+wired in §10.3 with the worker, where their seal points (`screenshot()`,
+`stopRecording()`) meet the consumer. Until then those captures are as
+unprotected as they were before this work.
+
+**Step 2 is dual-path.** Producers write the record beside the old
+claim/handoff registries, and nothing consumes it until §10.3. Until then a
+failure to record is logged, not raised (`recordTolerantly`), so the old path
+behaves exactly as before and every existing test stays green. §10.3 deletes
+that function; a refusal becomes the operation's failure.
 
 **Local and adhoc sessions have no row.** `reserve()` takes the destination
 from explicit context — the call scope's connection

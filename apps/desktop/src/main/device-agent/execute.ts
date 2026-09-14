@@ -24,7 +24,7 @@ import {
 } from './types'
 import { imageNote } from '../mcp/show-your-work-notes'
 import { zoneArtifactRef } from '../media-output-paths'
-import { registerArtifact } from '../mcp/artifact-registry'
+import { publishArtifact } from '../environment/zone-delivery'
 
 /**
  * What "this screen" means when deciding whether an action did anything.
@@ -202,7 +202,7 @@ export class DeviceAgentSession {
     if (!image || !this.sessionId) return
     const ref = zoneArtifactRef(image.path)
     if (!ref || ref.sessionId !== this.sessionId) return
-    registerArtifact(this.sessionId, { path: image.path, producer: ref.producer, final: true })
+    publishArtifact(this.sessionId, { path: image.path, producer: ref.producer, final: true })
   }
 
   /**

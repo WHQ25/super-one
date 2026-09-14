@@ -4,7 +4,7 @@ import { extname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import log from '../logger'
 import { producerDir } from '../media-output-paths'
-import { registerArtifact } from '../mcp/artifact-registry'
+import { publishArtifact, recordTolerantly, reserveZoneFile } from '../environment/zone-delivery'
 
 export type ActionRecordingTarget = 'web' | 'device' | 'computer'
 
@@ -39,7 +39,12 @@ export function createActionRecordingPath(
 ): string {
   const dir = ensureArtifactDir(actionRecordingDir(sessionId, target), 0o700)
   chmodSync(dir, 0o700)
-  return join(dir, `${randomUUID()}.${extension}`)
+  const path = join(dir, `${randomUUID()}.${extension}`)
+  if (sessionId) recordTolerantly(path, () => reserveZoneFile({ sessionId, path, origin: 'produced' }))
+  // Spoken for before the path leaves here: the helper's recorder fills it
+  // over the whole action, and a directory mirror in that window must find
+  // the file owned rather than prunable.
+  return path
 }
 
 /** Persist a short renderer-produced action recording without putting video in tool JSON. */
@@ -89,5 +94,5 @@ export function adoptActionRecording(
 
 /** Sealed the moment it is on disk: the tool reply that names it goes out next. */
 function registerRecording(sessionId: string | null | undefined, path: string): void {
-  if (sessionId) registerArtifact(sessionId, { path, producer: 'recording', final: true })
+  if (sessionId) publishArtifact(sessionId, { path, producer: 'recording', final: true })
 }

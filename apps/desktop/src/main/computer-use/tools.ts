@@ -15,7 +15,7 @@ import { releaseComputerUseViewfinder } from './viewfinder'
 import type { CapturedImage } from './types'
 import { encode as toonEncode } from '@toon-format/toon'
 import { createActionRecordingPath } from '../agent/action-recording-store'
-import { registerArtifact } from '../mcp/artifact-registry'
+import { publishArtifact } from '../environment/zone-delivery'
 import { outlineToToon } from './outline-toon'
 import { imageNote, recordingNote } from '../mcp/show-your-work-notes'
 
@@ -781,7 +781,7 @@ async function executeComputerUseToolInner(
         // result means (session-sync-zone.md §3).
         const recordingPath = (result as { recording?: { savedPath?: unknown } }).recording?.savedPath
         if (typeof recordingPath === 'string' && recordingPath) {
-          registerArtifact(sessionId, { path: recordingPath, producer: 'recording', final: true })
+          publishArtifact(sessionId, { path: recordingPath, producer: 'recording', final: true })
         }
         return textReply({
           ...result,

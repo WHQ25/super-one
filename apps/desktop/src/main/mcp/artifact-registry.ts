@@ -29,6 +29,12 @@ export interface ArtifactRef {
   producer: ArtifactProducer
   /** False while the file is still being written (a recording that has started); re-registered when sealed. */
   final: boolean
+  /**
+   * The delivery record this file is (`docs/design/session-sync-zone-delivery-record.md`),
+   * for a remote session's zone file. Absent for a local session or a path
+   * outside the zone. Set by `publishArtifact`, never by a producer directly.
+   */
+  deliveryId?: string
 }
 
 interface Scope {
@@ -51,7 +57,10 @@ function hasOpenScope(sessionId: string): boolean {
 export function registerArtifact(sessionId: string, ref: ArtifactRef): void {
   const bound = current.getStore()
   if (bound && bound.sessionId === sessionId) {
-    bound.refs.set(ref.path, { ...ref })
+    // A re-registration that does not know the delivery (a status boundary
+    // naming a path again) must not erase the one the producer recorded.
+    const deliveryId = ref.deliveryId ?? bound.refs.get(ref.path)?.deliveryId
+    bound.refs.set(ref.path, deliveryId ? { ...ref, deliveryId } : { ...ref })
     return
   }
   // A scope is open for this session but this code is not running inside it:

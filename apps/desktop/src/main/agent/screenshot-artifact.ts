@@ -4,7 +4,7 @@ import { writeFileSync, renameSync, statSync } from 'fs'
 import { join, dirname, basename, extname } from 'path'
 import { randomUUID } from 'crypto'
 import { producerDir, type CaptureProducer } from '../media-output-paths'
-import { registerArtifact } from '../mcp/artifact-registry'
+import { publishArtifact } from '../environment/zone-delivery'
 
 /**
  * Shared screenshot artifact helpers for browser + Computer Use.
@@ -145,7 +145,7 @@ export function persistBase64Screenshot(
     const originalPath = join(dir, `${randomUUID()}.${ext}`)
     const raw = Buffer.from(base64, 'base64')
     writeFileSync(originalPath, raw)
-    registerArtifact(sessionId, { path: originalPath, producer: target.producer, final: true })
+    publishArtifact(sessionId, { path: originalPath, producer: target.producer, final: true, bytes: raw })
 
     let width = declared?.width ?? 0
     let height = declared?.height ?? 0
@@ -183,7 +183,7 @@ export function persistBase64Screenshot(
       )
       if (optimizedResult && optimizedResult.path !== originalPath) {
         // The sibling is its own ref — the executor never infers it from a suffix.
-        registerArtifact(sessionId, { path: optimizedResult.path, producer: target.producer, final: true })
+        publishArtifact(sessionId, { path: optimizedResult.path, producer: target.producer, final: true })
         path = optimizedResult.path
         width = optimizedResult.width
         height = optimizedResult.height

@@ -79,6 +79,19 @@ export function currentHostActionConnection(): string | null {
   return current.getStore()?.connectionId ?? null
 }
 
+/**
+ * Whose zone the running call writes into: a node's connection id, `null` for
+ * a local session's call, and `undefined` when no call is running at all —
+ * the UI capturing from a device a session holds, a listener that lost its
+ * context. The last is not "local": a marker that says `local` is what lets
+ * the reclaim sweep delete, so code outside a call must not guess one.
+ */
+export function currentCallOwner(): string | null | undefined {
+  const scope = current.getStore()
+  if (!scope) return undefined
+  return scope.connectionId && scope.connectionId !== 'local' ? scope.connectionId : null
+}
+
 /** Open a collection scope for one tool call and run it inside. */
 export async function collectArtifacts<T>(
   sessionId: string,

@@ -5,7 +5,7 @@ import { randomUUID } from 'crypto'
 import { app } from 'electron'
 import { readAppSettings } from '../app-settings-service'
 import { isUnderSyncZone, producerDir, sessionZoneDir, zoneRelativePath } from '../media-output-paths'
-import { currentHostActionConnection, registerArtifact } from '../mcp/artifact-registry'
+import { currentCallOwner, currentHostActionConnection, registerArtifact } from '../mcp/artifact-registry'
 import log from '../logger'
 
 import { BROWSER_DOWNLOAD_FALLBACK_DIR as FALLBACK_DIR } from '../media-output-paths'
@@ -124,7 +124,7 @@ function ensureDir(explicitDir?: string | null, sessionId?: string | null, origi
   try {
     // A capture outside any tool call names its connection; a tool call's
     // scope knows it. Either way the directory is marked for the sweep.
-    ensureZoneDir(root, origin ? origin.connectionId : currentHostActionConnection())
+    ensureZoneDir(root, origin ? origin.connectionId : currentCallOwner())
     return root
   } catch (err) {
     // A directory the agent named is its own choice, and a remote session's

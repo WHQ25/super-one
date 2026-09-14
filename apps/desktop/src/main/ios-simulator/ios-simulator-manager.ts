@@ -40,6 +40,8 @@ import {
 } from './capture'
 import { captureFileName } from '../device/capture-path'
 import { producerDir } from '../media-output-paths'
+import { ensureZoneDir, type ZoneOwner } from '../environment/zone-owner'
+import { currentCallOwner } from '../mcp/artifact-registry'
 import { SimctlClient } from './simctl'
 import log from '../logger'
 
@@ -161,6 +163,12 @@ export class IosSimulatorManager {
    * a recording belong to a DEVICE, not to whoever is watching it.
    */
   private readonly owners = new Map<string, string>()
+  /**
+   * udid -> whose zone the owning session's captures belong to, read from the
+   * call scope at bind time. A capture the person takes from the panel runs in
+   * no scope, and the zone still has to be marked for the node that bound.
+   */
+  private readonly zoneOwners = new Map<string, ZoneOwner | undefined>()
 
   /** udid -> the name the last listing saw. For messages only; see `withOwnership`. */
   private readonly deviceNames = new Map<string, string>()
@@ -315,6 +323,7 @@ export class IosSimulatorManager {
     // No "previous device" to give up: a session may hold several at once, so
     // letting one go is a decision its holder makes explicitly, through `detach`.
     this.owners.set(udid, sessionId)
+    this.zoneOwners.set(udid, currentCallOwner())
     if (device.booted) await this.ensureNativeSession(udid)
     // The row read above, not a fresh one: nothing between here and there changes what
     // simctl would say about this device — attaching the helper does not boot it — and
@@ -931,12 +940,18 @@ export class IosSimulatorManager {
     extension: string,
   ): IosSimulatorCapture {
     const fileName = captureFileName(deviceName, extension, new Date())
-    const root = this.captureRoot ?? producerDir(this.owners.get(udid) ?? null, 'ios-simulator')
-    return { kind, fileName, path: join(root, udid, fileName) }
+    if (this.captureRoot) return { kind, fileName, path: join(this.captureRoot, udid, fileName) }
+    const root = join(producerDir(this.owners.get(udid) ?? null, 'ios-simulator'), udid)
+    // Created here, with the owner recorded at bind, because the capture port
+    // creating it later runs in whatever scope the caller has — none, from
+    // the panel — and an unknown owner marks nothing.
+    ensureZoneDir(root, this.zoneOwners.get(udid))
+    return { kind, fileName, path: join(root, fileName) }
   }
 
   private unbind(udid: string): void {
     this.owners.delete(udid)
+    this.zoneOwners.delete(udid)
   }
 
   /** Serialises every open/close for one session behind the previous one. */

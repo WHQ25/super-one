@@ -72,16 +72,21 @@ describe('node artifact mirror', () => {
     expect(await mirrorNodeArtifact('s1', 'agent/report.md', remote)).toEqual({ kind: 'missing' })
   })
 
-  it('treats a refusal from the node like a missing file, not like being offline', async () => {
+  it('separates a node that refuses from a node that says the file is gone', async () => {
+    // Both used to read as `missing`, and `missing` lets a caller fall
+    // through to whatever copy sits at the desktop path. Only `not_found` is
+    // an answer about the file; the rest are answers about the request.
     const local = join(root, 'sync', 's1', 'agent', 'a.txt')
     mkdirSync(join(root, 'sync', 's1', 'agent'), { recursive: true })
     writeFileSync(local, 'cached')
-    const refused = {
-      stat: async () => { throw Object.assign(new Error('not the session controller'), { code: 'forbidden' }) },
+    const refusing = (code: string) => ({
+      stat: async () => { throw Object.assign(new Error(code), { code }) },
       get: async () => { throw new Error('unreachable') },
       isPendingUpload: () => false,
-    }
-    expect(await mirrorNodeArtifact('s1', 'agent/a.txt', refused)).toEqual({ kind: 'missing' })
+    })
+    expect(await mirrorNodeArtifact('s1', 'agent/a.txt', refusing('not_found'))).toEqual({ kind: 'missing' })
+    expect(await mirrorNodeArtifact('s1', 'agent/a.txt', refusing('forbidden'))).toMatchObject({ kind: 'unavailable' })
+    expect(await mirrorNodeArtifact('s1', 'agent/a.txt', refusing('invalid_argument'))).toMatchObject({ kind: 'unavailable' })
   })
 
   it('falls back to the local copy when the node cannot be reached', async () => {

@@ -9,13 +9,7 @@ vi.mock('./environment-host', () => ({
   getEnvironmentHost: () => ({ artifactTransfers: { dropSession: (id: string) => state.dropped.push(id) } }),
 }))
 
-import {
-  ADHOC_MAX_AGE_MS,
-  UNMARKED_GRACE_MS,
-  markZoneOwner,
-  reclaimSyncZone,
-  removeSessionZone,
-} from './session-zone-reclaim'
+import { ADHOC_MAX_AGE_MS, markZoneOwner, reclaimSyncZone, removeSessionZone } from './session-zone-reclaim'
 
 let root: string
 beforeEach(() => {
@@ -99,11 +93,18 @@ describe('sync zone sweep', () => {
     expect(result.removed).toEqual([])
   })
 
-  it('gives an unmarked directory a long grace, because it may be a live remote session from before ownership was recorded', async () => {
-    zoneFile('old-unmarked', 'browser/a.png', UNMARKED_GRACE_MS + DAY)
+  it('keeps an unmarked directory however old it is, and never asks a node about it', async () => {
+    // Ownership has only been recorded since this version. An unmarked
+    // directory may belong to a live *remote* session, which has no row in
+    // this database — so neither the database nor silence is evidence, and
+    // there is nobody to ask. Age is a TTL, not a proof of death, and this
+    // sweep only deletes what it can prove.
+    zoneFile('old-unmarked', 'browser/a.png', 400 * DAY)
     zoneFile('recent-unmarked', 'browser/b.png', DAY)
-    const result = await reclaimSyncZone(deps())
-    expect(result.removed).toEqual(['old-unmarked'])
+    let asked = 0
+    const result = await reclaimSyncZone(deps({ remoteSessionExists: async () => { asked++; return false } }))
+    expect(result.removed).toEqual([])
+    expect(asked).toBe(0)
   })
 
   it('never reclaims a directory with a transfer still queued', async () => {
@@ -150,7 +151,7 @@ describe('sync zone sweep', () => {
   it('keeps an unmarked directory whose session this desktop still has, however old it is', async () => {
     // Ownership was only recorded from this version on; silence is not proof
     // of death when the database still names the session.
-    zoneFile('old-but-live', 'browser/a.png', UNMARKED_GRACE_MS + DAY)
+    zoneFile('old-but-live', 'browser/a.png', 400 * DAY)
     const result = await reclaimSyncZone(deps({ hasLocalSession: (id) => id === 'old-but-live' }))
     expect(result.removed).toEqual([])
   })

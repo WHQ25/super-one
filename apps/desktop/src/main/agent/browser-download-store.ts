@@ -1,4 +1,4 @@
-import { closeSync, copyFileSync, mkdirSync, openSync, realpathSync } from 'fs'
+import { closeSync, copyFileSync, existsSync, lstatSync, mkdirSync, openSync, realpathSync } from 'fs'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'path'
 import { randomUUID } from 'crypto'
 import { app } from 'electron'
@@ -91,7 +91,16 @@ export function resolveDownloadDir(explicitDir?: string | null, sessionId?: stri
     }
     return explicit
   }
-  if (remote) return producerDir(sessionId, 'download')
+  if (remote) {
+    // The default goes through the same containment check as an explicit
+    // directory. It is derived from the session id rather than given, but a
+    // link anywhere on the way still decides where the bytes land.
+    const dir = producerDir(sessionId, 'download')
+    if (!withinSessionZone(sessionId!, dir)) {
+      throw new Error(`The session directory for this remote session is not usable: ${dir}`)
+    }
+    return dir
+  }
   return readAppSettings().browserDownloadDir || systemDownloadDir()
 }
 
@@ -156,12 +165,30 @@ export function reserveDownloadPath(filename: string, dir?: string | null, sessi
 }
 
 /**
+ * This session's zone directory, canonicalised — or null when it cannot serve
+ * as a boundary because it is itself a link. Resolving such a link would move
+ * the boundary to wherever it points, so everything under it would then read
+ * as "inside the zone", including the directory it was aimed at. The node
+ * applies the same rule to its own session directories.
+ */
+function canonicalSessionZone(sessionId: string): string | null {
+  const dir = sessionZoneDir(sessionId)
+  try {
+    if (lstatSync(dir).isSymbolicLink()) return null
+  } catch {
+    /* not there yet; it will be created as a real directory */
+  }
+  return realOrSelf(dir)
+}
+
+/**
  * Is `dir` inside *this* session's zone, once every symlink on the way has
  * been resolved? The zone root is not the boundary — another session's
  * directory is inside it, and a link planted in this one leads out of it.
  */
 function withinSessionZone(sessionId: string, dir: string): boolean {
-  const root = realOrSelf(sessionZoneDir(sessionId))
+  const root = canonicalSessionZone(sessionId)
+  if (root === null) return false
   const target = realOrSelf(dir)
   return target === root || target.startsWith(root + sep)
 }
@@ -196,6 +223,9 @@ export function registerDownload(sessionId: string | null | undefined, path: str
   registerArtifact(sessionId, { path, producer: 'download', final })
 }
 
+/** Page downloads already adopted, so a second listing reuses the same copy. */
+const adopted = new Map<string, string>()
+
 /**
  * Bring a download the *page* started into the session zone.
  *
@@ -212,10 +242,19 @@ export function registerDownload(sessionId: string | null | undefined, path: str
 export function adoptCapturedDownload(sessionId: string | null | undefined, path: string): string {
   if (!sessionId || !path || isUnderSyncZone(path)) return path
   if (currentHostActionConnection() === null) return path
+  // Listing is not a one-shot: the agent may ask twice, and adopting twice
+  // would leave two copies and two node uploads of one download.
+  const key = `${sessionId}\u0000${realOrSelf(path)}`
+  const already = adopted.get(key)
+  if (already && existsSync(already)) return already
   try {
-    const target = uniqueCandidate(ensureDir(null, sessionId), basename(path), 0)
+    // An exclusive reservation, not a plain join: `download/report.csv` may
+    // already be a file some earlier turn named, and overwriting it would
+    // silently change what that path means in the transcript.
+    const target = reserveDownloadPath(basename(path), null, sessionId)
     copyFileSync(path, target)
     registerDownload(sessionId, target, true)
+    adopted.set(key, target)
     return target
   } catch (err) {
     log.warn(`[browser-download] could not adopt ${path} into the session zone: ${err instanceof Error ? err.message : String(err)}`)

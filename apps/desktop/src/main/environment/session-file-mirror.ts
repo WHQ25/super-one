@@ -26,8 +26,14 @@ export interface MirrorDeps {
   isPendingUpload?: (sessionId: string, relativePath: string) => boolean
 }
 
-/** Refusals the node means; anything else is taken as "could not ask". */
-const AUTHORITATIVE_STAT_ERRORS = new Set(['forbidden', 'not_found', 'invalid_argument', 'failed_precondition'])
+/** The node saying the file is not there. This is the only absence it reports. */
+const ABSENT_STAT_ERRORS = new Set(['not_found'])
+/**
+ * The node answering, but refusing. A refusal is not an absence: reporting it
+ * as `missing` lets a caller fall through to whatever copy is at the desktop
+ * path, which is the stale-bytes case this mirror exists to prevent.
+ */
+const REFUSED_STAT_ERRORS = new Set(['forbidden', 'invalid_argument', 'failed_precondition'])
 
 async function pendingUploadInJobs(sessionId: string, relativePath: string): Promise<boolean> {
   try {
@@ -78,7 +84,9 @@ export async function mirrorNodeArtifact(sessionId: string, relativePath: string
     try {
       remote = await deps.stat({ sessionId, relativePath })
     } catch (err) {
-      if (AUTHORITATIVE_STAT_ERRORS.has(String((err as { code?: unknown })?.code))) return pendingHere()
+      const code = String((err as { code?: unknown })?.code)
+      if (ABSENT_STAT_ERRORS.has(code)) return pendingHere()
+      if (REFUSED_STAT_ERRORS.has(code)) return { kind: 'unavailable', reason: `the node refused to stat it (${code})` }
       // Node unreachable: the local copy, if any, is the best answer there is.
       return local ? { kind: 'local', path, ...local } : { kind: 'missing' }
     }

@@ -453,6 +453,36 @@ All four landed on 2026-09-14, one commit each.
   download never entered the zone, and a foreground download was queued twice
   — once eagerly and once by the background finalizer.
 
+- **A third review found seven more.** Two were blockers. Reclaim still
+  deleted an *unmarked* directory once this database did not name the session
+  — but a live remote session has no row here and no marker either if it never
+  ran a Host Action, so the sweep was deleting on a timer while claiming to
+  delete on proof. An unmarked directory is now simply kept; age is a TTL, and
+  this sweep does not have one. And `adoptCapturedDownload` joined the
+  captured file's basename onto the zone directory, so a page download of
+  `report.csv` overwrote a `download/report.csv` an earlier turn had already
+  named — it reserves an exclusive path now and remembers the adoption, so a
+  second `browser_list_downloads` returns the first copy instead of making
+  another.
+
+  The rest: a node *refusal* (`forbidden`, `invalid_argument`) was still
+  reported as `missing`, and `missing` was allowed for every mapped argument —
+  so a source file the node would not hand over still reached the tool as a
+  stale desktop copy. `missing` is now refused for every argument except the
+  ones a tool declares as destinations (`HOST_ACTION_OUTPUT_ARGS`), and a
+  refusal is `unavailable`. `browser_download`'s *default* directory skipped
+  the containment check the explicit one got, and a session directory that was
+  itself a link moved the boundary to wherever it pointed — both paths now go
+  through one check, and a linked session directory disqualifies itself. The
+  mention check ran on every content block joined together while the rewrite
+  ran per block, so a reply of one JSON block plus one prose block parsed as
+  neither and its ref was never pushed — mention is asked per block, on the
+  same text the rewrite will see. The path token still had no *left* boundary,
+  so `/tmp/a.png` "occurred" inside `/other/tmp/a.png`. And the claim renewal
+  — the RPC that exists to protect the claim — was itself awaited without a
+  deadline; every wait in `host-action-sync.ts` now goes through one `within`
+  helper that races the work against the time actually left.
+
 - **Only refs the reply names are pushed** (§3). A registered artifact whose
   path never appears in `content[].text` is not uploaded: the agent has no
   path to `Read`, and the desktop, the renderer and the phone all read the
@@ -514,10 +544,12 @@ marked and the residue is stated):
   (session gone) or does not know the method ends the job.
   **Still open:** the node's "already injected this one" record is in memory,
   so a node restart between the injection and the desktop's next retry can
-  inject a wake twice. The durable half — the transfer job — is on the desktop
-  and is what guarantees the notification is not *lost*; making the node's
-  half durable too needs a table and was judged not worth one for a duplicate
-  sentence.
+  inject a wake twice. The desktop's transfer job is what makes the desktop
+  *retry* an unacknowledged wake; what happens after the node acknowledges one
+  and then dies before the harness consumes it has not been tested, so this is
+  a retry guarantee and not an end-to-end delivery guarantee. Making the
+  node's half durable needs a table and was judged not worth one for a
+  duplicate sentence.
 - ~~**Claim renewal** as an alternative to deferral~~ — **implemented
   2026-09-14.** `session.renewHostActionClaim({ actionId, claimToken, ttlMs })`
   extends a live claim; the holder proves itself with the claim token, and the
@@ -574,7 +606,14 @@ marked and the residue is stated):
   session) gets a 7-day silence before it counts as dead.
   **Still open:** there is no size cap and no eviction under pressure. A cap
   would have to delete artifacts a live transcript names, which is a product
-  decision — surfacing zone size in settings is the likely first step.
+  decision — surfacing zone size in settings is the likely first step. And
+  because a directory with no `.owner` marker is never reclaimed, the sweep's
+  reach is exactly as good as the marker's coverage: it is written on the
+  first Host Action of a session, so a zone written any other way — a lazy
+  mirror fetch, a local producer, anything from before this change — is kept
+  indefinitely. Widening it means recording ownership at every entry that
+  creates a zone directory, which is the right next step and is not a change
+  to the sweep.
 - **Zone media larger than 10 MiB has no desktop preview path.** Chat markdown
   resolves a node media file by mirroring it and inlining a data URI, which is
   capped at `MAX_TRANSFER_BYTES`; the read now stats first so a large file

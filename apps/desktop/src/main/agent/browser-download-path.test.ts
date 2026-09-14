@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
@@ -13,9 +13,9 @@ vi.mock('../app-settings-service', () => ({
   readAppSettings: () => ({ browserDownloadDir: state.configuredDir }),
 }))
 
-import { producerDir } from '../media-output-paths'
+import { producerDir, sessionZoneDir } from '../media-output-paths'
 import { collectArtifacts, resetArtifactRegistry, takeArtifacts } from '../mcp/artifact-registry'
-import { reserveDownloadPath, resolveDownloadDir, systemDownloadDir } from './browser-download-store'
+import { adoptCapturedDownload, reserveDownloadPath, resolveDownloadDir, systemDownloadDir } from './browser-download-store'
 
 let root: string
 
@@ -154,6 +154,43 @@ describe('downloads for a remote session', () => {
       expect(() => reserveDownloadPath('a.bin', null, 's1')).toThrow()
     }, 'conn-1')
     expect(existsSync(join(state.osDownloads, 'a.bin'))).toBe(false)
+  })
+
+  it('adopts a page download without overwriting a zone file of the same name, and only once', async () => {
+    // A transcript can already name `download/report.csv`; a page that saves
+    // the same name must not replace the bytes that path used to mean. And
+    // the agent may list twice — the second call has to return the first
+    // adoption rather than copy the file again under a new name.
+    const zoneDir = producerDir('s1', 'download')
+    mkdirSync(zoneDir, { recursive: true })
+    writeFileSync(join(zoneDir, 'report.csv'), 'prior transcript file')
+    mkdirSync(state.osDownloads, { recursive: true })
+    const captured = join(state.osDownloads, 'report.csv')
+    writeFileSync(captured, 'freshly downloaded')
+
+    const first = await collectArtifacts('s1', 'call-8', async () => adoptCapturedDownload('s1', captured), 'conn-1')
+    expect(first).not.toBe(join(zoneDir, 'report.csv'))
+    expect(readFileSync(join(zoneDir, 'report.csv'), 'utf8')).toBe('prior transcript file')
+    expect(readFileSync(first, 'utf8')).toBe('freshly downloaded')
+
+    const second = await collectArtifacts('s1', 'call-9', async () => adoptCapturedDownload('s1', captured), 'conn-1')
+    expect(second).toBe(first)
+  })
+
+  it('refuses a session whose own zone directory is a link, explicit dir or not', async () => {
+    // Resolving `sync/<id>` through a link would move the boundary to
+    // wherever it points, so everything under it then looks "inside the
+    // zone" — including the directory it was pointed at.
+    const outside = join(root, 'outside')
+    mkdirSync(outside, { recursive: true })
+    mkdirSync(join(root, 'sync'), { recursive: true })
+    symlinkSync(outside, sessionZoneDir('s9'))
+    await collectArtifacts('s9', 'call-10', async () => {
+      expect(() => reserveDownloadPath('a.txt', null, 's9')).toThrow()
+      expect(() => reserveDownloadPath('a.txt', join(sessionZoneDir('s9'), 'download'), 's9')).toThrow()
+    }, 'conn-1')
+    expect(existsSync(join(outside, 'a.txt'))).toBe(false)
+    expect(existsSync(join(outside, 'download', 'a.txt'))).toBe(false)
   })
 
   it('leaves a local session downloading into the configured folder', async () => {

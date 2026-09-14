@@ -24,13 +24,6 @@ export async function removeSessionZone(sessionId: string): Promise<void> {
 
 /** Captures taken with no session are kept this long, then pruned. */
 export const ADHOC_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
-/**
- * How long a directory with no ownership marker is left alone. Zones written
- * before ownership was recorded could belong to a live *remote* session, which
- * has no row in this database — so "the database does not know it" is not
- * evidence there, and only a long silence is.
- */
-export const UNMARKED_GRACE_MS = 7 * 24 * 60 * 60 * 1000
 /** A directory touched this recently is in use, whatever else is known about it. */
 export const ACTIVE_GRACE_MS = 60 * 60 * 1000
 const OWNER_FILE = '.owner'
@@ -183,11 +176,12 @@ export async function reclaimSyncZone(deps: ZoneReclaimDeps): Promise<{ removed:
     const owner = readOwner(dir)
     let gone: boolean
     if (owner === null) {
-      // Ownership has only been recorded since 2026-09; an older directory may
-      // belong to a live local session (the database still names it) or to a
-      // live remote one (it does not, and cannot). So the database gets the
-      // first word, and only then does a week of silence count as death.
-      gone = !deps.hasLocalSession(sessionId) && idle >= UNMARKED_GRACE_MS
+      // Ownership has only been recorded since 2026-09, and an unmarked
+      // directory may belong to a live *remote* session, which has no row in
+      // this database — so the database not naming it is not evidence, and
+      // there is nobody to ask instead. Age would only be a TTL, and this
+      // sweep deletes on proof, not on a timer. Such a directory is kept.
+      gone = false
     } else if (owner === 'local') {
       gone = !deps.hasLocalSession(sessionId)
     } else {

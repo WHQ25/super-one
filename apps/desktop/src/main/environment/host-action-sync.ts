@@ -61,10 +61,43 @@ export interface HostActionSyncDeps {
 /** Rejects when the budget runs out, so a hung RPC cannot hold the reply. */
 function budgetExpiry(signal: AbortSignal): Promise<never> {
   return new Promise<never>((_resolve, reject) => {
-    const fail = () => reject(Object.assign(new Error('upload exceeded the claim budget'), { code: 'budget_exceeded' }))
+    const fail = () => reject(Object.assign(new Error('exceeded the claim budget'), { code: 'budget_exceeded' }))
     if (signal.aborted) { fail(); return }
     signal.addEventListener('abort', fail, { once: true })
   })
+}
+
+/**
+ * Run `work` under a deadline of `ms`, also ending at the action's abort.
+ * Every wait in this file is a race, never a plain await: a node RPC does not
+ * return because we stopped wanting it, so awaiting one without a deadline
+ * spends exactly the claim the deadline exists to protect. `work` is handed
+ * the budget signal so it can stop its own I/O too.
+ */
+async function within<T>(ms: number, signal: AbortSignal, work: (budget: AbortSignal) => Promise<T>): Promise<T> {
+  const budget = new AbortController()
+  const timer = setTimeout(() => budget.abort(), Math.max(0, ms))
+  const abortWithAction = () => budget.abort()
+  signal.addEventListener('abort', abortWithAction, { once: true })
+  try {
+    return await Promise.race([work(budget.signal), budgetExpiry(budget.signal)])
+  } finally {
+    clearTimeout(timer)
+    signal.removeEventListener('abort', abortWithAction)
+  }
+}
+
+/**
+ * Arguments that name where a tool will *write*, per tool. Everything else a
+ * tool is given is a source and has to exist on the node before the tool runs
+ * — otherwise it runs on whatever copy happens to be at the desktop path. A
+ * tool that gains an output path needs a line here, or its callers will be
+ * told the directory does not exist (§3.1).
+ */
+const HOST_ACTION_OUTPUT_ARGS: Readonly<Record<string, readonly string[]>> = {
+  browser_download: ['dir'],
+  miniapp_dev_setup: ['directory'],
+  miniapp_dev_pack: ['outputDir'],
 }
 
 function throwIfAborted(signal: AbortSignal): void {
@@ -74,19 +107,27 @@ function throwIfAborted(signal: AbortSignal): void {
 /** §3.1 — reverse-map node zone paths in the args, mirroring each one first. */
 export async function mapHostActionInputs(
   args: Record<string, unknown>,
-  deps: Pick<HostActionSyncDeps, 'zone' | 'get' | 'stat' | 'signal'> & { sessionId?: string },
+  deps: Pick<HostActionSyncDeps, 'zone' | 'get' | 'stat' | 'signal'> & { sessionId?: string; toolName?: string },
 ): Promise<Record<string, unknown>> {
   const mapped = mapNodeZoneArgs(deps.zone, args, deps.sessionId)
+  const outputs = new Set(deps.toolName ? HOST_ACTION_OUTPUT_ARGS[deps.toolName] ?? [] : [])
   for (const ref of mapped.refs) {
     const outcome = await mirrorNodeArtifact(ref.sessionId, ref.relativePath, { stat: deps.stat, get: deps.get, signal: deps.signal })
     throwIfAborted(deps.signal)
-    // `missing` is fine: the agent may be naming a file the tool is about to
-    // write. `unavailable` is not — the node has it, so running the tool on
+    // The node has it and would not hand it over: running the tool on
     // whatever is at the desktop path would be running it on the wrong bytes.
     if (outcome.kind === 'unavailable') {
       throw Object.assign(
         new Error(`could not fetch ${ref.relativePath} from the node: ${outcome.reason}`),
         { code: 'unavailable' },
+      )
+    }
+    // Not there at all. Only a declared destination is allowed to be new —
+    // for a source this is the same stale-copy hazard wearing another code.
+    if (outcome.kind === 'missing' && !(ref.key !== null && outputs.has(ref.key))) {
+      throw Object.assign(
+        new Error(`${ref.relativePath} is not in this session's directory on the node`),
+        { code: 'not_found' },
       )
     }
   }
@@ -101,8 +142,15 @@ interface PlannedRef {
   size: number
 }
 
-function replyText(reply: ToolReply): string {
-  return (reply.content ?? []).map((block) => (typeof block.text === 'string' ? block.text : '')).join('\n')
+/**
+ * Is the path named anywhere in the reply? Asked block by block, because the
+ * rewrite runs block by block: joining them first changes the parse — two
+ * JSON blocks joined are not JSON — so the two would answer differently about
+ * the same reply, and a ref the rewrite would have redirected was never
+ * uploaded.
+ */
+function mentionedInReply(reply: ToolReply, path: string): boolean {
+  return (reply.content ?? []).some((block) => typeof block.text === 'string' && mentionsArtifactPath(block.text, path))
 }
 
 /**
@@ -118,15 +166,14 @@ export async function syncHostActionOutputs(
   deps: HostActionSyncDeps,
 ): Promise<ToolReply> {
   const now = deps.now ?? Date.now
-  const text = replyText(reply)
   const planned: PlannedRef[] = []
   for (const ref of refs) {
     if (!ref.final) continue
     const zone = zoneRelativePath(ref.path)
     if (!zone || zone.sessionId !== sessionId) continue
     const nodePath = nodeZonePath(deps.zone, zone.sessionId, zone.relativePath)
-    // The same matcher the rewrite uses: a whole path token, raw or JSON-escaped.
-    if (!mentionsArtifactPath(text, ref.path)) continue
+    // The same matcher on the same text the rewrite will see.
+    if (!mentionedInReply(reply, ref.path)) continue
     let size: number
     try {
       size = statSync(ref.path).size
@@ -155,7 +202,10 @@ export async function syncHostActionOutputs(
     if (estimateMs > expiresAt - now() - CLAIM_BUDGET_MARGIN_MS && deps.renewClaim) {
       // Buying time beats handing the agent an ENOENT it has to wait out.
       try {
-        expiresAt = await deps.renewClaim(Math.min(MAX_CLAIM_RENEWAL_MS, Math.ceil(estimateMs * RENEWAL_SLACK) + CLAIM_BUDGET_MARGIN_MS))
+        const ask = Math.min(MAX_CLAIM_RENEWAL_MS, Math.ceil(estimateMs * RENEWAL_SLACK) + CLAIM_BUDGET_MARGIN_MS)
+        // Bounded by the claim we still hold: a renewal that never answers
+        // would otherwise be waited out past the very claim it was protecting.
+        expiresAt = await within(expiresAt - now() - CLAIM_BUDGET_MARGIN_MS, deps.signal, () => deps.renewClaim!(ask))
       } catch (err) {
         deps.log?.warn('[host-action] claim renewal refused, deferring', item.relativePath, err instanceof Error ? err.message : String(err))
       }
@@ -169,25 +219,17 @@ export async function syncHostActionOutputs(
     }
     // The upload gets the budget as a hard stop of its own: an estimate is not
     // a guarantee, and running past the claim loses the reply as well.
-    const budget = new AbortController()
-    const stopAtBudget = setTimeout(() => budget.abort(), Math.max(0, budgetMs))
-    const abortWithAction = () => budget.abort()
-    deps.signal.addEventListener('abort', abortWithAction, { once: true })
     try {
-      // Raced, not merely signalled: aborting does not make a node RPC return,
-      // and continuing to await one is how the claim expires with the reply
-      // still unbuilt. The transfer keeps its id, so the job resumes it.
-      const outcome = await Promise.race([
-        uploadArtifact({
-          localPath: item.ref.path,
-          sessionId: item.sessionId,
-          relativePath: item.relativePath,
-          transferId,
-          put: deps.put,
-          signal: budget.signal,
-        }),
-        budgetExpiry(budget.signal),
-      ])
+      // The transfer keeps its id when the budget cuts it off, so the job
+      // resumes the partial upload rather than starting a second one.
+      const outcome = await within(budgetMs, deps.signal, (budgetSignal) => uploadArtifact({
+        localPath: item.ref.path,
+        sessionId: item.sessionId,
+        relativePath: item.relativePath,
+        transferId,
+        put: deps.put,
+        signal: budgetSignal,
+      }))
       deps.transfers.recordThroughput(deps.connectionId, outcome)
     } catch (err) {
       throwIfAborted(deps.signal)
@@ -196,9 +238,6 @@ export async function syncHostActionOutputs(
       deps.log?.warn('[host-action] eager artifact push failed, deferring', item.relativePath, err instanceof Error ? err.message : String(err))
       deps.transfers.defer(job)
       deferred.push(item.nodePath)
-    } finally {
-      clearTimeout(stopAtBudget)
-      deps.signal.removeEventListener('abort', abortWithAction)
     }
     throwIfAborted(deps.signal)
   }

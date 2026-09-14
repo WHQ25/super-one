@@ -206,6 +206,43 @@ describe('host action outputs', () => {
     expect(node.deferred).toEqual(['browser/shot.png'])
   })
 
+  it('pushes a ref named in one block of a multi-block reply', async () => {
+    // The mention check used to run on every block joined together, while the
+    // rewrite ran per block. A JSON block plus a prose block is not JSON, so
+    // the joined text parsed as neither and the ref was judged unmentioned —
+    // never uploaded, and its path left pointing at the desktop.
+    const node = fakeNode()
+    // The quote is what makes it visible: JSON escapes it once per nesting
+    // level, and the joined text was matched against a single level.
+    const shot = desktopFile('s1', 'browser/a"b.png', 'png-bytes')
+    const reply = {
+      content: [
+        { type: 'text', text: JSON.stringify({ result: JSON.stringify({ path: shot }) }) },
+        { type: 'text', text: 'Image saved.' },
+      ],
+    }
+    const out = await syncHostActionOutputs('s1', [{ path: shot, producer: 'browser', final: true }], reply, Date.now() + 60_000, node.deps)
+    expect(node.files.has('browser/a"b.png')).toBe(true)
+    expect(JSON.parse(JSON.parse(out.content![0].text!).result).path).toBe('/home/node/.superone/node/sync/s1/browser/a"b.png')
+  })
+
+  it('defers when the claim renewal itself hangs, instead of waiting past the claim it already had', async () => {
+    // Asking for more time is another RPC that can stop answering. Waiting on
+    // it under no deadline spends exactly the claim the renewal was meant to
+    // protect.
+    const node = fakeNode()
+    const big = desktopFile('s1', 'recording/run.mp4', Buffer.alloc(64 * 1024))
+    node.deps.transfers.throughputBytesPerMs = () => 10
+    node.deps.renewClaim = () => new Promise(() => {})
+    const reply = { content: [{ type: 'text', text: big }] }
+    const settled = await Promise.race([
+      syncHostActionOutputs('s1', [{ path: big, producer: 'recording', final: true }], reply, Date.now() + CLAIM_BUDGET_MARGIN_MS + 30, node.deps),
+      new Promise<'hung'>((resolve) => setTimeout(() => resolve('hung'), 500)),
+    ])
+    expect(settled).not.toBe('hung')
+    expect(node.deferred).toEqual(['recording/run.mp4'])
+  })
+
   it('stops at the abort signal between uploads', async () => {
     const node = fakeNode()
     const abort = new AbortController()
@@ -248,6 +285,33 @@ describe('host action inputs', () => {
     node.deps.get = async () => { throw Object.assign(new Error('socket closed'), { code: 'unavailable' }) }
     const args = { path: '/home/node/.superone/node/sync/s1/agent/ref.png' }
     await expect(mapHostActionInputs(args, { ...node.deps, sessionId: 's1' })).rejects.toBeTruthy()
+  })
+
+  it('refuses to run a tool on a source file the node does not have', async () => {
+    // `missing` used to be allowed for every argument, on the theory that the
+    // tool might be about to write it. For a source that means running on
+    // whatever stale copy sits at the desktop path.
+    const node = fakeNode()
+    const args = { reference_image_paths: ['/home/node/.superone/node/sync/s1/agent/gone.png'] }
+    await expect(mapHostActionInputs(args, { ...node.deps, sessionId: 's1', toolName: 'media_generate_image' }))
+      .rejects.toMatchObject({ code: 'not_found' })
+  })
+
+  it('reports a node that refuses to stat as unavailable, not as a file that is simply not there', async () => {
+    const node = fakeNode()
+    node.deps.stat = async () => { throw Object.assign(new Error('nope'), { code: 'forbidden' }) }
+    const args = { reference_image_paths: ['/home/node/.superone/node/sync/s1/agent/ref.png'] }
+    await expect(mapHostActionInputs(args, { ...node.deps, sessionId: 's1', toolName: 'media_generate_image' }))
+      .rejects.toMatchObject({ code: 'unavailable' })
+  })
+
+  it("lets a tool's declared output directory through even though nothing is there yet", async () => {
+    // `browser_download.dir` names where the file will go. Requiring it to
+    // exist would make the one argument that is meant to be new impossible.
+    const node = fakeNode()
+    const args = { action: 'download', dir: '/home/node/.superone/node/sync/s1/download/reports' }
+    const mapped = await mapHostActionInputs(args, { ...node.deps, sessionId: 's1', toolName: 'browser_download' })
+    expect(mapped.dir).toBe(join(root, 'sync', 's1', 'download', 'reports'))
   })
 
   it('leaves project paths and plain strings untouched', async () => {

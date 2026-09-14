@@ -122,7 +122,7 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
           actionId: claimed.actionId,
           claimToken: claimed.claimToken,
         })
-        const mappedArgs = sync ? await mapHostActionInputs(args, { ...sync, sessionId: claimed.sessionId }) : args
+        const mappedArgs = sync ? await mapHostActionInputs(args, { ...sync, sessionId: claimed.sessionId, toolName: claimed.toolName }) : args
         if (runAbort.signal.aborted || raceWinner === 'deadline') return aborted()
 
         const { executeSuperoneMcpToolCollecting } = await import('../mcp/superone-mcp-tool-surface')

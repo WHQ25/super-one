@@ -74,12 +74,18 @@ function escapeRegExp(s: string): string {
 }
 
 /**
- * A path token ends where the path would: not before another path character,
- * and not before `.ext` (so `shot.png` is not a mention of `shot.png.bak`),
+ * A path token has a path on neither side of it. Both boundaries matter and
+ * for different reasons: without the left one the match is a substring search,
+ * so `/tmp/a.png` "occurs" inside `/other/tmp/a.png` and rewriting it splices
+ * a node path into the middle of somebody else's; the right one is what keeps
+ * `shot.png` from matching `shot.png.bak`, `shot.png/child` or `shot.png(1)`,
  * while a sentence-ending `shot.png.` still counts.
  */
+const PATH_BEFORE = '[A-Za-z0-9_~./\\-]'
+const PATH_AFTER = '[A-Za-z0-9_~/\\([{-]'
+
 function tokenPattern(path: string): RegExp {
-  return new RegExp(`${escapeRegExp(path)}(?![A-Za-z0-9_([-]|\\.[A-Za-z0-9])`, 'g')
+  return new RegExp(`(?<!${PATH_BEFORE})${escapeRegExp(path)}(?!${PATH_AFTER}|\\.[A-Za-z0-9])`, 'g')
 }
 
 function replaceTokens(text: string, from: string, to: string): string {
@@ -169,6 +175,14 @@ export function rewriteArtifactPaths(text: string, mapping: ReadonlyMap<string, 
  * its desktop mirror path. Returns the mapped args and the zone refs that
  * were touched so the caller can make sure each one is mirrored first.
  */
+export interface ZoneArgRef {
+  sessionId: string
+  relativePath: string
+  desktopPath: string
+  /** Top-level argument the path came from, or null when it is not under one. */
+  key: string | null
+}
+
 export function mapNodeZoneArgs(
   zone: NodeSyncZone,
   args: unknown,
@@ -178,10 +192,13 @@ export function mapNodeZoneArgs(
    * must not be handed a file from another (§3.1).
    */
   sessionId?: string,
-): { args: unknown; refs: { sessionId: string; relativePath: string; desktopPath: string }[] } {
-  const refs: { sessionId: string; relativePath: string; desktopPath: string }[] = []
+): { args: unknown; refs: ZoneArgRef[] } {
+  const refs: ZoneArgRef[] = []
   const seen = new Set<string>()
-  const walk = (value: unknown): unknown => {
+  // The top-level argument name travels with the ref: whether a file has to
+  // exist already depends on which parameter named it, and only the caller
+  // knows which of a tool's parameters are destinations (§3.1).
+  const walk = (value: unknown, key: string | null): unknown => {
     if (typeof value === 'string') {
       const parsed = parseNodeZonePath(zone, value)
       if (!parsed) return value
@@ -194,17 +211,17 @@ export function mapNodeZoneArgs(
       const desktopPath = desktopMirrorPath(parsed.sessionId, parsed.relativePath)
       if (!seen.has(desktopPath)) {
         seen.add(desktopPath)
-        refs.push({ ...parsed, desktopPath })
+        refs.push({ ...parsed, desktopPath, key })
       }
       return desktopPath
     }
-    if (Array.isArray(value)) return value.map(walk)
+    if (Array.isArray(value)) return value.map((inner) => walk(inner, key))
     if (value && typeof value === 'object') {
       const out: Record<string, unknown> = {}
-      for (const [key, inner] of Object.entries(value as Record<string, unknown>)) out[key] = walk(inner)
+      for (const [k, inner] of Object.entries(value as Record<string, unknown>)) out[k] = walk(inner, key ?? k)
       return out
     }
     return value
   }
-  return { args: walk(args), refs }
+  return { args: walk(args, null), refs }
 }

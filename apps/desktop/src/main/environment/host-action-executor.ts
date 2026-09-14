@@ -18,6 +18,7 @@
 
 import type { ClaimHostActionResult } from '@superone/shared/environment'
 import { adoptWriteClaim, releaseWriteClaim } from './active-writes'
+import { hasFailedHandoff } from './pending-handoffs'
 import type { HostActionExecutor } from './remote-host-action-consumer'
 import {
   mapHostActionInputs,
@@ -83,6 +84,7 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
 
   /** First race winner: 'work' | 'deadline'. Late work completions are logged. */
   let raceWinner: 'work' | 'deadline' | null = null
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined
 
   try {
     const work = (async (): Promise<ExecutorResult> => {
@@ -176,7 +178,14 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
           }
           return { outcome: 'succeeded', result: toolResult }
         } finally {
-          for (const path of adopted) releaseWriteClaim(claimed.sessionId, path, 'push')
+          for (const path of adopted) {
+            // A file whose enqueue failed is on the pending-handoff table now,
+            // and that entry is what will eventually release it. Releasing
+            // here would leave the only complete copy unprotected with no job
+            // row naming it — the failure this whole region exists to prevent.
+            if (hasFailedHandoff(claimed.sessionId, path, connectionId)) continue
+            releaseWriteClaim(claimed.sessionId, path, 'push')
+          }
         }
       } finally {
         if (raceWinner === 'deadline') {
@@ -197,7 +206,7 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
     void work.catch(() => undefined)
 
     const deadline = new Promise<ExecutorResult>((resolve) => {
-      const timer = setTimeout(() => {
+      deadlineTimer = setTimeout(() => {
         runAbort.abort()
         resolve({
           outcome: 'failed',
@@ -211,7 +220,7 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
       signal.addEventListener(
         'abort',
         () => {
-          clearTimeout(timer)
+          clearTimeout(deadlineTimer)
           resolve({
             outcome: 'failed',
             error: { code: 'aborted', message: 'host action aborted during execution' },
@@ -248,6 +257,11 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
     }
   } finally {
     signal.removeEventListener('abort', onOuterAbort)
+    // The deadline was only ever cleared when the OUTER signal aborted, so a
+    // Host Action that simply succeeded left a live timer behind for the rest
+    // of the timeout — holding the event loop open and firing an abort on a
+    // controller nobody is listening to any more.
+    clearTimeout(deadlineTimer)
   }
 }
 

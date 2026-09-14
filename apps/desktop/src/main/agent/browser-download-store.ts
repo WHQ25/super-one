@@ -1,7 +1,7 @@
 import { adoptWriteClaim, beginActiveWrite, releaseWriteClaim, sealActiveWrite } from '../environment/active-writes'
 import { ensureZoneDir } from '../environment/zone-owner'
 import { realOrSelf, withinSessionZone } from '../environment/sync-zone-paths'
-import { closeSync, copyFileSync, existsSync, mkdirSync, openSync } from 'fs'
+import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, statSync } from 'fs'
 import { basename, extname, isAbsolute, join } from 'path'
 import { randomUUID } from 'crypto'
 import { app } from 'electron'
@@ -217,7 +217,9 @@ export function queueDownloadUpload(connectionId: string, sessionId: string, pat
   // Take responsibility before the first attempt, so a Host Action returning
   // in the meantime cannot release the file out from under the queue.
   const owned = adoptWriteClaim(sessionId, path, 'queue')
-  void enqueueWithRetry(connectionId, sessionId, path, zone.relativePath, owned)
+  // One id for the whole handoff, retries included: a new id would make the
+  // node meet a second transfer instead of resuming the partial one it holds.
+  void enqueueWithRetry(connectionId, sessionId, path, zone.relativePath, owned, randomUUID())
 }
 
 /** Attempts, then the delay before each retry. Short: the file is unprotected work in progress. */
@@ -238,30 +240,50 @@ async function enqueueWithRetry(
   path: string,
   relativePath: string,
   owned: boolean,
+  transferId: string,
 ): Promise<void> {
   for (let attempt = 0; ; attempt++) {
     try {
       const { getEnvironmentHost } = await import('../environment/environment-host')
       const transfers = getEnvironmentHost().artifactTransfers
       if (!transfers) throw new Error('no artifact transfer service on this host')
-      await transfers.defer({ connectionId, sessionId, localPath: path, relativePath })
+      await transfers.defer({ connectionId, sessionId, localPath: path, relativePath, transferId })
       if (owned) releaseWriteClaim(sessionId, path, 'queue')
       return
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       const delay = DEFER_RETRY_DELAYS_MS[attempt]
       if (delay === undefined) {
-        log.error(
-          '[browser-download] could not queue the node transfer for %s after %d attempts (%s); the desktop copy stays protected and will not be reclaimed',
-          path,
-          attempt,
-          message,
-        )
+        // Out of short retries, but not out of options: the file goes on the
+        // pending-handoff table, which keeps it protected and is retried when
+        // the connection's transfer worker next starts. The claim is NOT
+        // released — the entry records who holds it so recovery can.
+        const { recordFailedHandoff } = await import('../environment/pending-handoffs')
+        recordFailedHandoff({
+          connectionId,
+          sessionId,
+          localPath: path,
+          relativePath,
+          transferId,
+          holder: owned ? 'queue' : 'writer',
+          bytes: sizeOf(path),
+          lastError: message,
+          attempts: attempt,
+        })
         return
       }
       log.warn('[browser-download] queueing the node transfer failed (%s), retrying in %dms', message, delay)
       await new Promise((resolve) => setTimeout(resolve, delay))
     }
+  }
+}
+
+/** Size for the Storage figure; zero when the file cannot be read. */
+function sizeOf(path: string): number {
+  try {
+    return statSync(path).size
+  } catch {
+    return 0
   }
 }
 

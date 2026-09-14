@@ -8,6 +8,7 @@
  * per connection and feeds the executor's claim-budget decision (§4.1).
  */
 import { statSync } from 'node:fs'
+import { dropSessionHandoffs, failedHandoffs, retryFailedHandoffs } from './pending-handoffs'
 import type { ArtifactPutRequest, ArtifactPutResult } from '@superone/shared/environment'
 import {
   deleteArtifactTransfersForSession,
@@ -93,9 +94,32 @@ export class ArtifactTransferService {
       this.inflight.get(jobId)?.abort()
       this.inflight.delete(jobId)
     }
+    // A handoff waiting to be retried has nowhere to go once the session is
+    // gone, and the write claim it was protecting would outlive everything
+    // that could ever release it.
+    dropSessionHandoffs(sessionId)
+  }
+
+  /**
+   * Retry the files that could not be written onto the job table at all.
+   *
+   * These are not deferred jobs — there is no row for them — so no worker
+   * would ever pick them up. Each is still protected from the mirror, and
+   * stays protected until its row exists.
+   */
+  retryFailedHandoffs(connectionId?: string): { retried: number; recovered: number } {
+    return retryFailedHandoffs((job) => void this.defer(job), connectionId)
+  }
+
+  /** What could not be queued, for Settings to show and for a manual retry. */
+  failedHandoffs(sessionId?: string) {
+    return failedHandoffs(sessionId)
   }
 
   start(connectionId: string): void {
+    // A handoff that could not be written to the table is invisible to the
+    // worker loop, so starting the worker is also when they get another go.
+    this.retryFailedHandoffs(connectionId)
     if (this.workers.has(connectionId)) return
     const abort = new AbortController()
     let wake: () => void = () => {}

@@ -21,6 +21,7 @@ import type { ArtifactGetRequest, ArtifactGetResult, ArtifactListRequest, Artifa
 import type { ArtifactRef } from '../mcp/artifact-registry'
 import { zoneRelativePath } from '../media-output-paths'
 import { uploadArtifact, type TransferOutcome } from './artifact-transfer'
+import { recordFailedHandoff, type HandoffJob } from './pending-handoffs'
 import { mirrorNodeArtifact, mirrorNodeDirectory } from './session-file-mirror'
 import { mapNodeZoneArgs, mentionsArtifactPath, nodeZonePath, rewriteArtifactPaths, type NodeSyncZone } from './sync-zone-paths'
 
@@ -274,6 +275,33 @@ function mentionedInReply(reply: ToolReply, path: string): boolean {
  * not fit. Returns the rewritten reply; `sync.deferred` lists node paths that
  * are not there yet.
  */
+/**
+ * File a deferred job, and keep the file protected when that fails.
+ *
+ * `defer` is local — a stat, a SQLite insert — so it throws for local reasons,
+ * and the file it was about is complete, is the only copy, and now has nothing
+ * durable naming it. Letting the throw escape is what used to lose it: the
+ * executor's `finally` released the claim on the way out and the next
+ * directory mirror pruned the file.
+ *
+ * The action does not fail either way. The tool already did its work, and the
+ * reply already says `sync.deferred` — which stays true: the node does not
+ * have the file. The difference is only whether anything is still looking
+ * after it.
+ */
+function fileJob(deps: HostActionSyncDeps, job: HandoffJob, size: number): void {
+  try {
+    deps.transfers.defer(job)
+  } catch (err) {
+    recordFailedHandoff({
+      ...job,
+      holder: 'push',
+      bytes: size,
+      lastError: err instanceof Error ? err.message : String(err),
+    })
+  }
+}
+
 export async function syncHostActionOutputs(
   sessionId: string,
   refs: ArtifactRef[],
@@ -339,7 +367,7 @@ export async function syncHostActionOutputs(
     }
     const budgetMs = expiresAt - now() - CLAIM_BUDGET_MARGIN_MS
     if (estimateMs > budgetMs) {
-      deps.transfers.defer(job)
+      fileJob(deps, job, item.size)
       deferred.push(item.nodePath)
       continue
     }
@@ -362,7 +390,7 @@ export async function syncHostActionOutputs(
       // The tool already did its work; a failed push must not fail the action.
       // Hand the file to a job and tell the agent it is not there yet.
       deps.log?.warn('[host-action] eager artifact push failed, deferring', item.relativePath, err instanceof Error ? err.message : String(err))
-      deps.transfers.defer(job)
+      fileJob(deps, job, item.size)
       deferred.push(item.nodePath)
     }
     throwIfAborted(deps.signal)

@@ -58,7 +58,10 @@ export function homePath(absolutePath: string): string {
  */
 export function toLocalFileUrl(filePath: string): string {
   const normalized = filePath.replace(/\\/g, '/')
-  const encoded = encodeURI(normalized).replace(/#/g, '%23')
+  // encodeURI leaves the two characters that terminate a URL path — `#` and
+  // `?` — so a legal `report?draft.png` would parse back as `report`. Encode
+  // both; `%` and unicode are already handled by encodeURI.
+  const encoded = encodeURI(normalized).replace(/#/g, '%23').replace(/\?/g, '%3F')
   return /^[A-Za-z]:/.test(normalized) ? `local-file:///${encoded}` : `local-file://${encoded}`
 }
 

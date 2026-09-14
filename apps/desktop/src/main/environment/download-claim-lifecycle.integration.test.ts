@@ -13,7 +13,7 @@
  * and the database own — `session.fetch`, media grants, the node RPCs — plus
  * the unrelated tool subsystems the surface would otherwise load.
  */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -73,6 +73,9 @@ const node = vi.hoisted(() => ({
   parts: new Map<string, Buffer[]>(),
   seenTransferIds: [] as string[],
   delivered: [] as { relativePath: string; transferId: string }[],
+  lookupFails: false,
+  noteFails: false,
+  alreadyThere: false,
   onStat: null as null | ((rel: string) => void | Promise<void>),
   statCalls: 0,
   uploadedIds: new Set<string>(),
@@ -96,7 +99,9 @@ const envHost = vi.hoisted(() => ({
   artifactStat: async (_c: unknown, _s: unknown, relativePath: string) => {
     node.statCalls += 1
     await node.onStat?.(relativePath)
-    return { exists: false, size: 0, mtimeMs: 0 }
+    if (!node.alreadyThere) return { exists: false, size: 0, mtimeMs: 0 }
+    const st = statSync(join(zone.userData, 'sync', SESSION, relativePath))
+    return { exists: true, size: st.size, mtimeMs: Math.floor(st.mtimeMs) }
   },
   artifactTransfers: {
     throughputBytesPerMs: () => 1024,
@@ -105,6 +110,7 @@ const envHost = vi.hoisted(() => ({
     // worker wake). An async stand-in would let a throw land a turn late and
     // miss the very ordering these tests are about.
     noteDelivered: (input: { relativePath: string; transferId: string }) => {
+      if (node.noteFails) throw new Error('SQLITE_BUSY')
       node.delivered.push({ relativePath: input.relativePath, transferId: input.transferId })
     },
     defer: (input: { relativePath: string; transferId: string }) => {
@@ -171,9 +177,11 @@ function claimed(partial: Partial<ClaimHostActionResult> = {}): ClaimHostActionR
 
 beforeEach(() => {
   jobs.length = 0
-  setPendingJobLookup((sessionId, localPath) =>
-    jobs.find((j) => j.sessionId === sessionId && j.localPath === localPath && j.state === 'pending') ?? null,
-  )
+  setPendingJobLookup((sessionId, localPath) => {
+    if (node.lookupFails) return { status: 'unavailable' }
+    const job = jobs.find((j) => j.sessionId === sessionId && j.localPath === localPath && j.state === 'pending')
+    return job ? { status: 'found', transferId: job.transferId } : { status: 'absent' }
+  })
   zone.userData = mkdtempSync(join(tmpdir(), 'claim-life-'))
   let open!: () => void
   wire.gate = { promise: new Promise<void>((resolve) => (open = resolve)), open: () => open() }
@@ -186,6 +194,9 @@ beforeEach(() => {
   node.parts.clear()
   node.seenTransferIds.length = 0
   node.delivered.length = 0
+  node.lookupFails = false
+  node.noteFails = false
+  node.alreadyThere = false
   node.onStat = null
   node.statCalls = 0
   node.uploadedIds.clear()
@@ -667,6 +678,86 @@ describe('who ends a download write claim', () => {
     await desktopHostActionExecutor(claimed({ toolName: 'browser_list_downloads' }), new AbortController().signal, 'conn-1')
     expect(node.puts).toBeGreaterThan(0)
     expect(node.delivered).toEqual([])
+  })
+
+  it('does not start a second delivery when the lookup fails with an existing persisted job', async () => {
+    // AI1. "I could not read the table" is not "there is no job". Answering
+    // absent hands out a second upload identity for a file a persisted job is
+    // already carrying, and whichever of the two runs last wins — usually the
+    // older one, putting stale bytes back over the node's newer copy.
+    const shared = sharedArtifact('report.csv', 'OLD')
+    jobs.push({ sessionId: SESSION, localPath: shared, transferId: 'job-T', state: 'pending' })
+    node.lookupFails = true
+
+    registerSharedArtifact(shared)
+    const out = await desktopHostActionExecutor(claimed({ toolName: 'browser_list_downloads' }), new AbortController().signal, 'conn-1')
+    expect(out.outcome).toBe('succeeded')
+    // No push and no new row while the answer is unknown — and the file is held.
+    expect(node.puts).toBe(0)
+    expect(node.deferred).toEqual([])
+    expect(activeWriteAt(SESSION, shared)).toBe('sealed')
+
+    // The table comes back, the existing job is found, and this instance was
+    // only ever a placeholder.
+    node.lookupFails = false
+  node.noteFails = false
+  node.alreadyThere = false
+    await until(() => activeWriteAt(SESSION, shared) === null)
+    expect(node.puts).toBe(0)
+    expect(node.deferred).toEqual([])
+  })
+
+  it('files its own delivery once the lookup recovers and finds nothing', async () => {
+    // The other half: unknown must not become a permanent hold either.
+    const shared = sharedArtifact('report.csv', 'OLD')
+    node.lookupFails = true
+    registerSharedArtifact(shared)
+    await desktopHostActionExecutor(claimed({ toolName: 'browser_list_downloads' }), new AbortController().signal, 'conn-1')
+    expect(activeWriteAt(SESSION, shared)).toBe('sealed')
+
+    node.lookupFails = false
+  node.noteFails = false
+  node.alreadyThere = false
+    await until(() => node.deferred.length === 1)
+    expect(activeWriteAt(SESSION, shared)).toBeNull()
+  })
+
+  it('keeps a failed notification record from turning an already-present file into an upload', async () => {
+    // AI2. The node already has this exact file, so there is nothing to send —
+    // only the wake a joiner was promised. A failure to write that record used
+    // to read as a failed push, which filed an upload job for a file already
+    // delivered and put its stale bytes back over the node's newer copy.
+    const shared = sharedArtifact('report.csv', 'OLD')
+    node.alreadyThere = true
+    node.noteFails = true
+    let open!: () => void
+    const parked = new Promise<void>((resolve) => (open = resolve))
+    node.onStat = async () => {
+      node.onStat = null
+      await parked
+    }
+
+    registerSharedArtifact(shared)
+    const a = desktopHostActionExecutor(claimed({ toolName: 'browser_list_downloads' }), new AbortController().signal, 'conn-1')
+    await until(() => node.statCalls === 1)
+    registerSharedArtifact(shared)
+    await desktopHostActionExecutor(claimed({ toolName: 'browser_list_downloads' }), new AbortController().signal, 'conn-1')
+
+    open()
+    const out = await a
+    expect(out.outcome).toBe('succeeded')
+    // Nothing uploaded, nothing queued for upload, and the desktop copy is no
+    // longer held over the node's.
+    expect(node.puts).toBe(0)
+    expect(node.deferred).toEqual([])
+    expect(activeWriteAt(SESSION, shared)).toBeNull()
+
+    // The record is retried on its own, and only the record.
+    node.noteFails = false
+    expect(retryFailedHandoffs('conn-1').retried).toBe(1)
+    await until(() => node.delivered.length === 1)
+    expect(node.puts).toBe(0)
+    expect(node.deferred).toEqual([])
   })
 
   it('keeps a completed file protected when the transfer queue will not take it', async () => {

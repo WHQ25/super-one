@@ -367,6 +367,9 @@ export async function syncHostActionOutputs(
       localPath: item.ref.path,
       relativePath: item.relativePath,
       bytes: item.size,
+      // Only used if the job table cannot be read now: the instance holds the
+      // file and files its own job once it can tell there is not one already.
+      enqueue: (job) => void deps.transfers.defer(job),
     })
     // Session deleted while the tool ran: there is nothing to deliver to.
     if (!acquired) continue
@@ -404,8 +407,10 @@ export async function syncHostActionOutputs(
     // wait out the whole budget for an abort event that has already fired.
     throwIfAborted(deps.signal)
     if (alreadyThere) {
-      // Nothing to deliver, so this file's delivery is over — but a caller that
-      // joined is still owed the wake it was promised.
+      // Nothing to send, so this file's delivery is already over — but a caller
+      // that joined is still owed the wake it was promised. `deliverHandoff`
+      // absorbs a failure to record that wake; it must not surface as a push
+      // failure, because there was no push.
       deliverHandoff(item.handoff, (job) => deps.transfers.noteDelivered(job))
       continue
     }
@@ -427,6 +432,7 @@ export async function syncHostActionOutputs(
       }
       throwIfAborted(deps.signal)
     }
+    let delivered = false
     const budgetMs = expiresAt - now() - CLAIM_BUDGET_MARGIN_MS
     if (estimateMs > budgetMs) {
       fileJob(deps, item.handoff)
@@ -447,9 +453,7 @@ export async function syncHostActionOutputs(
         signal: budgetSignal,
       }))
       deps.transfers.recordThroughput(deps.connectionId, outcome)
-      // The bytes are on the node: delivery is complete and the file is the
-      // node's problem now. A joiner told "deferred" still gets its wake.
-      deliverHandoff(item.handoff, (job) => deps.transfers.noteDelivered(job))
+      delivered = true
     } catch (err) {
       throwIfAborted(deps.signal)
       // The tool already did its work; a failed push must not fail the action.
@@ -458,6 +462,11 @@ export async function syncHostActionOutputs(
       fileJob(deps, item.handoff)
       deferred.push(item.nodePath)
     }
+    // Outside the upload's `catch` on purpose: the bytes are on the node, and
+    // a completion record that fails to write is not a failed push. Treating
+    // it as one filed a second upload job for a file already delivered, which
+    // then put its stale bytes back over the node's newer copy.
+    if (delivered) deliverHandoff(item.handoff, (job) => deps.transfers.noteDelivered(job))
     throwIfAborted(deps.signal)
   }
   replied = true

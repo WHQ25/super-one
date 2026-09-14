@@ -82,6 +82,13 @@ export function enqueueArtifactTransfer(input: {
   total: number
   /** The eager attempt's id, so the job resumes that transfer rather than colliding with it. */
   transferId?: string
+  /**
+   * `uploaded` for a file an eager push already delivered: only the agent's
+   * wake is owed. One statement, never an INSERT that is later UPDATEd — a
+   * failure between the two leaves a `pending` row that re-uploads bytes the
+   * node already has, over whatever the agent did to the file in between.
+   */
+  state?: 'pending' | 'uploaded'
 }): ArtifactTransferJob {
   const now = new Date().toISOString()
   const job: Row = {
@@ -93,7 +100,7 @@ export function enqueueArtifactTransfer(input: {
     transfer_id: input.transferId ?? randomUUID(),
     offset: 0,
     total: input.total,
-    state: 'pending',
+    state: input.state ?? 'pending',
     attempts: 0,
     next_attempt_at: null,
     last_error: null,

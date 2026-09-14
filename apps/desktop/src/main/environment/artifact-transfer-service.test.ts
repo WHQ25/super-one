@@ -266,7 +266,7 @@ describe('artifact transfer jobs', () => {
     // The agent asks for this file again. Joining must revive the job, keeping
     // its id, its transfer id and the offset the node already has.
     const joined = findPendingJobFor('s1', local)
-    expect(joined).toEqual({ transferId: dead[0]!.transferId })
+    expect(joined).toEqual({ status: 'found', transferId: dead[0]!.transferId })
     const revived = listArtifactTransfersForSession('s1')
     expect(revived[0]).toMatchObject({ jobId: dead[0]!.jobId, state: 'pending', attempts: 0, nextAttemptAt: null })
 

@@ -88,7 +88,8 @@ export class ArtifactTransferService {
     // eventually overwrites the winner.
     setPendingJobLookup((sessionId, localPath) => {
       const real = canonicalClaimPath(localPath)
-      for (const job of listArtifactTransfersForSession(sessionId)) {
+      const jobs = listArtifactTransfersForSession(sessionId)
+      for (const job of jobs) {
         if (!OWES_UPLOAD.has(job.state)) continue
         if (canonicalClaimPath(job.localPath) !== real) continue
         // `failed` is terminal: the worker's queries exclude it, so joining one
@@ -97,9 +98,9 @@ export class ArtifactTransferService {
         // so the row goes back in the queue under its own id and offset.
         if (job.state === 'failed' && !reviveArtifactTransfer(job.jobId)) continue
         this.workers.get(job.connectionId)?.wake()
-        return { transferId: job.transferId }
+        return { status: 'found', transferId: job.transferId }
       }
-      return null
+      return { status: 'absent' }
     })
   }
 
@@ -128,8 +129,11 @@ export class ArtifactTransferService {
     } catch {
       /* delivered and then removed locally; the notification still stands */
     }
-    const job = enqueueArtifactTransfer({ ...input, total })
-    markArtifactTransferUploaded(job.jobId)
+    // One statement, in `uploaded` from the start. The previous shape — insert
+    // `pending`, then update to `uploaded` — left a row that re-uploads the
+    // file if the second statement fails, and the caller's own error handling
+    // then filed a second one beside it.
+    enqueueArtifactTransfer({ ...input, total, state: 'uploaded' })
     this.workers.get(input.connectionId)?.wake()
   }
 

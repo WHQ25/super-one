@@ -67,8 +67,11 @@ export type EnqueueJob = (job: HandoffJob) => void
  * `pushing` — its owner is uploading it inside a claim budget.
  * `enqueueing` / `failed` — it is becoming a transfer job, or the last attempt threw.
  * `queued` — a persisted job owns the delivery; this instance only names it.
+ * `blocked` — the file is held, but we cannot yet tell whether a job already
+ *   carries it, so no upload identity has been handed out.
+ * `notifying` — the bytes are delivered; only the completion record is owed.
  */
-export type HandoffState = 'pushing' | 'enqueueing' | 'failed' | 'queued'
+export type HandoffState = 'pushing' | 'enqueueing' | 'failed' | 'queued' | 'blocked' | 'notifying'
 
 export interface Handoff {
   connectionId: string
@@ -86,6 +89,8 @@ export interface Handoff {
   bytes: number
   enqueue: EnqueueJob | null
   cancelRetry: (() => void) | null
+  /** What the retry ladder is for, so a failure lands in the right state. */
+  kind: 'upload' | 'notice'
   /**
    * Callers that joined this delivery and were told the file is on its way.
    * The owner giving up must not silently drop a promise they are holding.
@@ -102,7 +107,13 @@ export interface Handoff {
  * uploads the node cannot dedupe, the later of which puts stale bytes back
  * over whatever the agent did in between.
  */
-export type PendingJobLookup = (sessionId: string, localPath: string) => { transferId: string } | null
+export type JobLookupResult =
+  | { status: 'found'; transferId: string }
+  | { status: 'absent' }
+  /** The table could not be read. NOT the same as `absent`. */
+  | { status: 'unavailable' }
+
+export type PendingJobLookup = (sessionId: string, localPath: string) => JobLookupResult
 
 let findPendingJob: PendingJobLookup | null = null
 
@@ -116,17 +127,17 @@ export function setPendingJobLookup(lookup: PendingJobLookup | null): void {
  * row is put back in the queue by the answer — so this is the one question and
  * the one place that asks it.
  */
-export function findPendingJobFor(sessionId: string, localPath: string): { transferId: string } | null {
+export function findPendingJobFor(sessionId: string, localPath: string): JobLookupResult {
+  if (!findPendingJob) return { status: 'absent' }
   try {
-    return findPendingJob?.(sessionId, localPath) ?? null
+    return findPendingJob(sessionId, localPath)
   } catch (err) {
-    // The database is exactly what tends to be unavailable here, and the
-    // question was "is someone else already delivering this?". Unable to say
-    // means no, which starts a delivery of our own — the file stays protected
-    // and gets a retry ladder. Letting the throw out instead escaped as an
-    // unhandled rejection and left the file with no instance at all.
+    // "I could not read the table" is not "there is no job". Answering
+    // `absent` here hands out a second delivery for a file a persisted job is
+    // already carrying — two uploads under two ids, and the older one wins
+    // whenever it happens to run last.
     log.warn('[artifact-handoff] could not check for an existing job: %s', err instanceof Error ? err.message : String(err))
-    return null
+    return { status: 'unavailable' }
   }
 }
 
@@ -162,6 +173,8 @@ export function acquireHandoff(input: {
   localPath: string
   relativePath: string
   bytes: number
+  /** Used only if the lookup is unavailable and this instance has to file the job itself later. */
+  enqueue?: EnqueueJob
 }): { handoff: Handoff; mine: boolean } | null {
   if (dropped.has(input.sessionId)) return null
   const key = keyFor(input.connectionId, input.sessionId, input.localPath)
@@ -176,7 +189,7 @@ export function acquireHandoff(input: {
   // beside it is exactly the two-uploads-one-file failure, and the row's own
   // upload would later overwrite whatever the second one delivered.
   const queued = findPendingJobFor(input.sessionId, input.localPath)
-  if (queued) {
+  if (queued.status === 'found') {
     return {
       handoff: {
         ...input,
@@ -189,12 +202,34 @@ export function acquireHandoff(input: {
         enqueue: null,
         cancelRetry: null,
         waiters: 0,
+        kind: 'upload',
       },
       mine: false,
     }
   }
 
   const token = randomUUID()
+  if (queued.status === 'unavailable') {
+    // Hold the file — that part is never in doubt — but hand out no upload
+    // identity until we can tell whether a job already carries it. Reported as
+    // not-mine, so no caller pushes and no caller files a row on a guess.
+    const blocked: Handoff = {
+      ...input,
+      transferId: '',
+      token,
+      state: 'blocked',
+      holdsClaim: takeSealedClaim(input.sessionId, input.localPath, token),
+      attempts: 0,
+      lastError: 'the transfer job table could not be read',
+      enqueue: input.enqueue ?? null,
+      cancelRetry: null,
+      waiters: 0,
+      kind: 'upload',
+    }
+    handoffs.set(key, blocked)
+    scheduleRetry(blocked)
+    return { handoff: blocked, mine: false }
+  }
   const handoff: Handoff = {
     connectionId: input.connectionId,
     sessionId: input.sessionId,
@@ -209,9 +244,10 @@ export function acquireHandoff(input: {
     attempts: 0,
     lastError: null,
     bytes: input.bytes,
-    enqueue: null,
+    enqueue: input.enqueue ?? null,
     cancelRetry: null,
     waiters: 0,
+    kind: 'upload',
   }
   handoffs.set(key, handoff)
   return { handoff, mine: true }
@@ -225,17 +261,26 @@ export function acquireHandoff(input: {
  * is how that promise is still kept: it records a job that owes only the
  * completion wake, never a re-upload.
  */
-export function deliverHandoff(handoff: Handoff, noteDelivered?: (job: HandoffJob) => void): void {
-  if (handoff.waiters > 0 && noteDelivered) {
-    noteDelivered({
-      connectionId: handoff.connectionId,
-      sessionId: handoff.sessionId,
-      localPath: handoff.localPath,
-      relativePath: handoff.relativePath,
-      transferId: handoff.transferId,
-    })
+export function deliverHandoff(handoff: Handoff, noteDelivered?: EnqueueJob): void {
+  // The bytes are on the node, so the desktop copy stops being authoritative
+  // here — before anything that could fail. Holding it past this point keeps
+  // the mirror serving our older content over the node's.
+  if (handoff.holdsClaim) releaseWriteClaim(handoff.sessionId, handoff.localPath, handoff.token)
+  handoff.holdsClaim = false
+
+  if (handoff.waiters <= 0 || !noteDelivered) {
+    settle(handoff)
+    return
   }
-  settle(handoff)
+  // Only the wake is outstanding now, and it is its own kind of work: a
+  // failure retries the record, never the upload. This function does not
+  // throw — a caller that treated a failed notification as a failed push used
+  // to file a second upload job beside the delivered file.
+  handoff.state = 'notifying'
+  handoff.kind = 'notice'
+  handoff.enqueue = noteDelivered
+  handoff.attempts = 0
+  attempt(handoff)
 }
 
 /**
@@ -287,7 +332,9 @@ function settle(handoff: Handoff): void {
 
 function attempt(handoff: Handoff): void {
   const key = keyFor(handoff.connectionId, handoff.sessionId, handoff.localPath)
-  if (dropped.has(handoff.sessionId) || handoffs.get(key) !== handoff || !handoff.enqueue) return
+  if (dropped.has(handoff.sessionId) || handoffs.get(key) !== handoff) return
+  if (handoff.state === 'blocked') return resolveBlocked(handoff)
+  if (!handoff.enqueue) return
   handoff.attempts += 1
   try {
     handoff.enqueue({
@@ -298,7 +345,10 @@ function attempt(handoff: Handoff): void {
       transferId: handoff.transferId,
     })
   } catch (err) {
-    handoff.state = 'failed'
+    // A notice retries as a notice. Falling back to `failed` would put it in
+    // the Storage "could not be queued for upload" figure and, worse, invite
+    // an upload of a file the node already has.
+    handoff.state = handoff.kind === 'notice' ? 'notifying' : 'failed'
     handoff.lastError = err instanceof Error ? err.message : String(err)
     scheduleRetry(handoff)
     return
@@ -307,8 +357,43 @@ function attempt(handoff: Handoff): void {
   settle(handoff)
 }
 
+/**
+ * Ask again whether a job already carries this file, now that the table may be
+ * readable.
+ *
+ * Until it answers, the file is held and nothing has an upload identity for
+ * it. `found` means a persisted job has it and this instance was only ever a
+ * placeholder; `absent` is the first moment it is safe to become a delivery of
+ * our own.
+ */
+function resolveBlocked(handoff: Handoff): void {
+  handoff.attempts += 1
+  const answer = findPendingJobFor(handoff.sessionId, handoff.localPath)
+  if (answer.status === 'unavailable') {
+    scheduleRetry(handoff)
+    return
+  }
+  if (answer.status === 'found') {
+    // The row owns it, and the row protects it. Nothing here to do but let go.
+    settle(handoff)
+    return
+  }
+  if (!handoff.enqueue) {
+    // Nobody gave this instance a way to file a job. Keep holding the file
+    // rather than drop the only copy; a retry entry can still resolve it.
+    handoff.state = 'failed'
+    return
+  }
+  handoff.transferId = randomUUID()
+  handoff.state = 'enqueueing'
+  handoff.attempts = 0
+  attempt(handoff)
+}
+
 function scheduleRetry(handoff: Handoff): void {
-  const delay = RETRY_DELAYS_MS[handoff.attempts - 1]
+  // `attempts` counts tries already made; a `blocked` instance is scheduled
+  // before its first, so the index is clamped rather than read as -1.
+  const delay = RETRY_DELAYS_MS[Math.max(0, handoff.attempts - 1)]
   if (delay === undefined) {
     log.warn(
       '[artifact-handoff] %s could not be queued after %d attempts (%s); the desktop copy stays protected until a retry succeeds',
@@ -334,7 +419,10 @@ export function retryFailedHandoffs(connectionId?: string): { retried: number } 
   let retried = 0
   for (const handoff of [...handoffs.values()]) {
     if (connectionId && handoff.connectionId !== connectionId) continue
-    if (handoff.state !== 'failed') continue
+    // Everything that stopped short: an upload that could not be queued, a
+    // completion record that could not be written, and a file still waiting to
+    // learn whether a job already carries it.
+    if (handoff.state === 'pushing' || handoff.state === 'enqueueing') continue
     handoff.cancelRetry?.()
     handoff.cancelRetry = null
     // A fresh ladder: this is a new reason to believe it will work.

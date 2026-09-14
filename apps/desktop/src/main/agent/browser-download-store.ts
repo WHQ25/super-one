@@ -1,5 +1,5 @@
 import { beginActiveWrite, sealActiveWrite } from '../environment/active-writes'
-import { acquireHandoff, enqueueHandoff } from '../environment/pending-handoffs'
+import { acquireHandoff, enqueueHandoff, type EnqueueJob } from '../environment/pending-handoffs'
 import { ensureZoneDir } from '../environment/zone-owner'
 import { realOrSelf, withinSessionZone } from '../environment/sync-zone-paths'
 import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, statSync } from 'fs'
@@ -223,23 +223,27 @@ export function queueDownloadUpload(connectionId: string, sessionId: string, pat
   // synchronous — which is what lets a session deleted in the meantime refuse
   // the handoff outright instead of discovering it mid-flight.
   void import('../environment/environment-host').then(({ getEnvironmentHost }) => {
+    const enqueue: EnqueueJob = (job) => {
+      const transfers = getEnvironmentHost().artifactTransfers
+      // Not a handoff: nothing persisted the file, so settling on this would
+      // make the only complete copy prunable.
+      if (!transfers) throw new Error('no artifact transfer service on this host')
+      transfers.defer(job)
+    }
     const acquired = acquireHandoff({
       connectionId,
       sessionId,
       localPath: path,
       relativePath: zone.relativePath,
       bytes: sizeOf(path),
+      enqueue,
     })
     // Session deleted while we resolved the host, or a Host Action already owns
     // this file's delivery — in either case there is nothing for us to start.
+    // Not ours: a Host Action owns the delivery, a persisted job already has
+    // it, or the instance is still waiting to find out which.
     if (!acquired?.mine) return
-    enqueueHandoff(acquired.handoff, (job) => {
-      const transfers = getEnvironmentHost().artifactTransfers
-      // Not a handoff: nothing persisted the file, so settling on this would
-      // make the only complete copy prunable.
-      if (!transfers) throw new Error('no artifact transfer service on this host')
-      transfers.defer(job)
-    })
+    enqueueHandoff(acquired.handoff, enqueue)
   })
 }
 

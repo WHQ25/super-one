@@ -917,6 +917,29 @@ All four landed on 2026-09-14, one commit each.
   the real transfer worker and the real mirror. It found the two defects
   above on its first run.
 
+- **A nineteenth review found both of the eighteenth's database-failure
+  handlers were themselves data-loss bugs.** Neither needed a restart.
+
+  "I could not read the job table" had been collapsed into "there is no job".
+  That is the same mistake as answering a question you did not ask: it handed
+  out a second upload identity for a file a persisted job was already
+  carrying, and whichever of the two ran last won — usually the older one,
+  putting stale bytes back over the node's newer copy. The lookup is now three
+  answers, `found | absent | unavailable`, and `unavailable` gets its own
+  instance state: the file is held immediately, no transfer id is minted, no
+  push and no row. It re-asks on the retry ladder, joins the job if one turns
+  up, and only becomes a delivery of its own once the table says `absent`.
+
+  And `noteDelivered` — "the bytes are on the node, only the wake is owed" —
+  was an INSERT of a `pending` row followed by an UPDATE to `uploaded`. A
+  failure between them left a row that re-uploads a file the node already has,
+  and the error surfaced inside the eager push's `catch`, which filed *a
+  second* one beside it. The row is now written `uploaded` in a single
+  statement, and delivery is a state rather than a moment: the claim ends the
+  instant the bytes are confirmed on the node — before anything that can fail
+  — and what remains is a notice whose retries are notices. A failed
+  completion record never becomes an upload again.
+
 - **`browser_open` creates the tab blank, records the driver, then
   navigates.** Opening with the URL in one call meant the page could start a
   direct download before the tab had an owner, and `will-download` had nobody

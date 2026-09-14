@@ -158,24 +158,53 @@ export function ensureSessionFileDeliveriesSchema(db: Database.Database): void {
 }
 
 // ---------------------------------------------------------------------------
+// Ownership
+//
+// Every write to a live row goes through a handle: the row's id, the holder
+// the caller is acting as, and the epoch it last saw. The compare-and-set
+// checks all three. Ownership changes in exactly one place, `claimDelivery`,
+// and only from a holder that is NULL or dead; an advance keeps the holder it
+// was given. That is what stops a worker that has merely read the epoch from
+// walking a row out from under the attempt awaiting its final put.
+
+/** Proof of holding a row at a known epoch. Every write takes one; every successful write returns the next. */
+export interface DeliveryHandle {
+  deliveryId: string
+  holder: string
+  epoch: number
+}
+
+/** The `WHERE` every owned write shares. */
+const OWNED = 'delivery_id = ? AND holder = ? AND epoch = ? AND outcome IS NULL'
+const ownedParams = (h: DeliveryHandle): [string, string, number] => [h.deliveryId, h.holder, h.epoch]
+
+// ---------------------------------------------------------------------------
 // Creating
 
-export interface ReserveDeliveryInput {
+export type ReserveDeliveryInput = {
   sessionId: string
   connectionId: string
   localPath: string
   relativePath: string
   origin: DeliveryOrigin
-  /** The producer's holder; alive until its attempt ends. */
-  holder: string
-  /** `writing` for a path about to be filled; `sealed` for a file that is already complete. */
-  phase: 'writing' | 'sealed'
-  total?: number
-  sha256?: string
-}
+} & (
+  | {
+      /** A path about to be filled. Someone is writing it, so someone holds it. */
+      phase: 'writing'
+      holder: string
+    }
+  | {
+      /** A file that is already complete. Held by whoever is about to push it, or by nobody until a worker claims it. */
+      phase: 'sealed'
+      holder: string | null
+      /** Fixed here and never again (R6). */
+      total: number
+      sha256: string
+    }
+)
 
 export type ReserveDeliveryResult =
-  | { deliveryId: string; epoch: 0 }
+  | { deliveryId: string; epoch: 0; holder: string | null }
   /** The session's zone was deleted; nothing may be produced into it again. */
   | { refused: 'session-dropped' }
   /** A path is written once per session (R2). Pick another name. */
@@ -189,6 +218,9 @@ export type ReserveDeliveryResult =
  * a concurrent drop or a concurrent reservation of the same path.
  */
 export function reserveDelivery(input: ReserveDeliveryInput): ReserveDeliveryResult {
+  if (input.phase === 'sealed' && (typeof input.total !== 'number' || typeof input.sha256 !== 'string')) {
+    throw new Error('a delivery reserved sealed must carry its total and sha256')
+  }
   const db = getDb()
   const localPath = canonicalClaimPath(input.localPath)
   return db.transaction((): ReserveDeliveryResult => {
@@ -214,74 +246,85 @@ export function reserveDelivery(input: ReserveDeliveryInput): ReserveDeliveryRes
       input.origin,
       input.phase,
       input.holder,
-      input.total ?? 0,
-      input.sha256 ?? null,
+      input.phase === 'sealed' ? input.total : 0,
+      input.phase === 'sealed' ? input.sha256 : null,
       now,
       now,
     )
-    return { deliveryId, epoch: 0 }
+    return { deliveryId, epoch: 0, holder: input.holder }
   })()
 }
 
 // ---------------------------------------------------------------------------
 // Advancing
 
-export interface AdvanceDeliveryInput {
-  from: DeliveryPhase
-  to: DeliveryPhase
-  /** Who holds the row after this step. May differ from the current holder: a worker taking a sealed file from its producer. */
-  holder: string
-  epoch: number
-  /** Fixed at seal (R6). */
-  total?: number
-  sha256?: string
-}
+/**
+ * One step forward. Size and hash are accepted on the step INTO `sealed` and
+ * on no other: after seal the content identity is fixed (R6), and the type
+ * says so rather than leaving it to convention.
+ */
+export type DeliveryStep =
+  | { from: 'writing'; to: 'sealed'; total: number; sha256: string }
+  | { from: Exclude<DeliveryPhase, 'notifying'>; to: Exclude<DeliveryPhase, 'writing' | 'sealed'> }
 
-export type AdvanceDeliveryResult = { ok: true; epoch: number } | { ok: false }
+export type AdvanceDeliveryResult = { ok: true; handle: DeliveryHandle } | { ok: false }
 
 /**
- * Move the phase forward under compare-and-set. `{ ok: false }` means the row
- * is not at `from` any more, or someone else has advanced or taken it since
- * `epoch` — either way the caller has lost it and must stop.
+ * Move the phase forward under the handle. `{ ok: false }` means the row is
+ * not at `from`, or is not held by this holder at this epoch any more —
+ * either way the caller has lost it and must stop. The holder is kept.
  *
  * A step backwards is a programming error, not a race, and throws.
  */
-export function advanceDelivery(deliveryId: string, input: AdvanceDeliveryInput): AdvanceDeliveryResult {
-  const fromIndex = DELIVERY_PHASES.indexOf(input.from)
-  const toIndex = DELIVERY_PHASES.indexOf(input.to)
-  if (fromIndex < 0 || toIndex < 0) throw new Error(`unknown delivery phase: ${input.from} → ${input.to}`)
-  if (toIndex <= fromIndex) throw new Error(`delivery phase cannot move backwards: ${input.from} → ${input.to}`)
-  const sets = ['phase = ?', 'holder = ?', 'epoch = epoch + 1', 'updated_at = ?']
-  const params: unknown[] = [input.to, input.holder, nowIso()]
-  if (input.total !== undefined) { sets.push('total = ?'); params.push(input.total) }
-  if (input.sha256 !== undefined) { sets.push('sha256 = ?'); params.push(input.sha256) }
+export function advanceDelivery(handle: DeliveryHandle, step: DeliveryStep): AdvanceDeliveryResult {
+  const fromIndex = DELIVERY_PHASES.indexOf(step.from)
+  const toIndex = DELIVERY_PHASES.indexOf(step.to)
+  if (fromIndex < 0 || toIndex < 0) throw new Error(`unknown delivery phase: ${step.from} → ${step.to}`)
+  if (toIndex <= fromIndex) throw new Error(`delivery phase cannot move backwards: ${step.from} → ${step.to}`)
+  const sealing = step.to === 'sealed'
+  if (!sealing && ('total' in step || 'sha256' in step)) return { ok: false }
+  const sets = ['phase = ?', 'epoch = epoch + 1', 'updated_at = ?']
+  const params: unknown[] = [step.to, nowIso()]
+  if (sealing) {
+    sets.push('total = ?', 'sha256 = ?')
+    params.push(step.total, step.sha256)
+  }
   const result = getDb()
-    .prepare(`UPDATE session_file_deliveries SET ${sets.join(', ')} WHERE delivery_id = ? AND phase = ? AND epoch = ? AND outcome IS NULL`)
-    .run(...params, deliveryId, input.from, input.epoch)
-  return result.changes === 1 ? { ok: true, epoch: input.epoch + 1 } : { ok: false }
+    .prepare(`UPDATE session_file_deliveries SET ${sets.join(', ')} WHERE ${OWNED} AND phase = ?`)
+    .run(...params, ...ownedParams(handle), step.from)
+  return result.changes === 1 ? { ok: true, handle: { ...handle, epoch: handle.epoch + 1 } } : { ok: false }
 }
 
 /**
- * Bytes have landed. Progress is not a state change — the epoch stays — but a
- * holder that has lost the row must not write offsets into it either.
+ * Bytes have landed. Progress is not a state change — the epoch stays — but
+ * only the holder may record it: a ghost must not write offsets either.
  */
-export function recordDeliveryOffset(deliveryId: string, input: { epoch: number; offset: number }): boolean {
+export function recordDeliveryOffset(handle: DeliveryHandle, offset: number): boolean {
   return (
     getDb()
-      .prepare('UPDATE session_file_deliveries SET offset = ?, updated_at = ? WHERE delivery_id = ? AND epoch = ? AND outcome IS NULL')
-      .run(input.offset, nowIso(), deliveryId, input.epoch).changes === 1
+      .prepare(`UPDATE session_file_deliveries SET offset = ?, updated_at = ? WHERE ${OWNED}`)
+      .run(offset, nowIso(), ...ownedParams(handle)).changes === 1
+  )
+}
+
+/**
+ * The attempt is over without the delivery being over: a producer done at
+ * `sealed`, a worker stopping. The row is unheld; any pass may claim it.
+ */
+export function releaseDelivery(handle: DeliveryHandle): boolean {
+  return (
+    getDb()
+      .prepare(`UPDATE session_file_deliveries SET holder = NULL, epoch = epoch + 1, updated_at = ? WHERE ${OWNED}`)
+      .run(nowIso(), ...ownedParams(handle)).changes === 1
   )
 }
 
 /** The agent has been woken: the delivery is over. Only from `notifying`. */
-export function completeDelivery(deliveryId: string, input: { holder: string; epoch: number }): boolean {
+export function completeDelivery(handle: DeliveryHandle): boolean {
   return (
     getDb()
-      .prepare(
-        `UPDATE session_file_deliveries SET outcome = 'done', holder = NULL, epoch = epoch + 1, updated_at = ?
-         WHERE delivery_id = ? AND phase = 'notifying' AND holder = ? AND epoch = ? AND outcome IS NULL`,
-      )
-      .run(nowIso(), deliveryId, input.holder, input.epoch).changes === 1
+      .prepare(`UPDATE session_file_deliveries SET outcome = 'done', holder = NULL, epoch = epoch + 1, updated_at = ? WHERE ${OWNED} AND phase = 'notifying'`)
+      .run(nowIso(), ...ownedParams(handle)).changes === 1
   )
 }
 
@@ -291,45 +334,64 @@ export function completeDelivery(deliveryId: string, input: { holder: string; ep
  * — a later reservation of the same path is still refused (R2) — but it
  * protects nothing.
  */
-export function abandonDelivery(deliveryId: string, input: { holder: string; epoch: number }): boolean {
+export function abandonDelivery(handle: DeliveryHandle): boolean {
   return (
     getDb()
-      .prepare(
-        `UPDATE session_file_deliveries SET outcome = 'abandoned', holder = NULL, epoch = epoch + 1, updated_at = ?
-         WHERE delivery_id = ? AND holder = ? AND epoch = ? AND outcome IS NULL`,
-      )
-      .run(nowIso(), deliveryId, input.holder, input.epoch).changes === 1
+      .prepare(`UPDATE session_file_deliveries SET outcome = 'abandoned', holder = NULL, epoch = epoch + 1, updated_at = ? WHERE ${OWNED}`)
+      .run(nowIso(), ...ownedParams(handle)).changes === 1
   )
+}
+
+// ---------------------------------------------------------------------------
+// Claiming
+
+export type ClaimDeliveryResult = { ok: true; handle: DeliveryHandle } | { ok: false }
+
+/**
+ * Become the holder of a row nobody holds, or that a dead holder left behind
+ * — another incarnation, or an attempt that ended without releasing. The
+ * phase is untouched; the caller continues from it.
+ *
+ * Refused while `from.holder` is still alive in this process, and this is
+ * enforced here so that no worker pass has to remember to check. Refused
+ * when the epoch has moved: a row that was NULL at epoch N, claimed, and
+ * released again is not the row the stale snapshot described.
+ */
+export function claimDelivery(deliveryId: string, from: { holder: string | null; epoch: number }, newHolder: string): ClaimDeliveryResult {
+  if (isHolderAlive(from.holder)) return { ok: false }
+  const changes = getDb()
+    .prepare(
+      `UPDATE session_file_deliveries SET holder = ?, epoch = epoch + 1, updated_at = ?
+       WHERE delivery_id = ? AND holder IS ? AND epoch = ? AND outcome IS NULL`,
+    )
+    .run(newHolder, nowIso(), deliveryId, from.holder, from.epoch).changes
+  return changes === 1 ? { ok: true, handle: { deliveryId, holder: newHolder, epoch: from.epoch + 1 } } : { ok: false }
 }
 
 // ---------------------------------------------------------------------------
 // Scheduling — orthogonal to phase
 
 /**
- * An attempt failed. The phase is untouched: the next attempt resumes from
+ * The attempt failed. The phase is untouched: the next attempt resumes from
  * where this one actually got to. The holder is released so any pass — in this
- * process or the next — may pick the row up once `nextAttemptAt` is due.
+ * process or the next — may claim the row once `nextAttemptAt` is due.
  * `nextAttemptAt: null` stops automatic retry; a person may still act.
  */
-export function recordDeliveryFailure(
-  deliveryId: string,
-  input: { epoch: number; error: string; nextAttemptAt: number | null },
-): boolean {
+export function recordDeliveryFailure(handle: DeliveryHandle, input: { error: string; nextAttemptAt: number | null }): boolean {
   const now = nowIso()
   return (
     getDb()
       .prepare(
         `UPDATE session_file_deliveries
          SET holder = NULL, epoch = epoch + 1, attempts = attempts + 1, last_error = ?, next_attempt_at = ?, gave_up_at = ?, updated_at = ?
-         WHERE delivery_id = ? AND epoch = ? AND outcome IS NULL`,
+         WHERE ${OWNED}`,
       )
       .run(
         input.error.slice(0, 500),
         input.nextAttemptAt === null ? null : new Date(input.nextAttemptAt).toISOString(),
         input.nextAttemptAt === null ? now : null,
         now,
-        deliveryId,
-        input.epoch,
+        ...ownedParams(handle),
       ).changes === 1
   )
 }
@@ -356,35 +418,6 @@ export function retryGivenUpDeliveries(sessionId?: string): string[] {
      WHERE delivery_id IN (${placeholders})`,
   ).run(nowIso(), ...ids)
   return ids
-}
-
-// ---------------------------------------------------------------------------
-// Holders
-
-export type TakeOverDeliveryResult = { ok: true; epoch: number } | { ok: false }
-
-/**
- * Take a row from a holder that is dead — another incarnation, or an attempt
- * that ended without advancing. Refused while that holder is still alive in
- * this process: a worker pass that runs while another attempt is awaiting its
- * final put must not take the row from under it, and this is enforced here so
- * that no pass has to remember to check. Atomic, and it locks the previous
- * holder out of its remembered epoch.
- */
-export function takeOverDelivery(deliveryId: string, input: { deadHolder: string; newHolder: string }): TakeOverDeliveryResult {
-  if (isHolderAlive(input.deadHolder)) return { ok: false }
-  const db = getDb()
-  return db.transaction((): TakeOverDeliveryResult => {
-    const changes = db
-      .prepare(
-        `UPDATE session_file_deliveries SET holder = ?, epoch = epoch + 1, updated_at = ?
-         WHERE delivery_id = ? AND holder = ? AND outcome IS NULL`,
-      )
-      .run(input.newHolder, nowIso(), deliveryId, input.deadHolder).changes
-    if (changes !== 1) return { ok: false }
-    const row = db.prepare('SELECT epoch FROM session_file_deliveries WHERE delivery_id = ?').get(deliveryId) as { epoch: number }
-    return { ok: true, epoch: row.epoch }
-  })()
 }
 
 // ---------------------------------------------------------------------------

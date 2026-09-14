@@ -197,6 +197,27 @@ export function abandonWriteClaim(sessionId: string | null | undefined, path: st
   return releaseWriteClaim(sessionId, path, WRITER_TOKEN)
 }
 
+/**
+ * The session is gone (§7): its zone directory goes with it, so nothing under
+ * it is worth protecting and no holder is left to release anything.
+ *
+ * Whole-session, not per-holder, because the claim that outlives a delete is
+ * usually the *writer's*: a download reserves its path, the session is deleted
+ * mid-transfer, and the handoff that would have adopted the file is refused
+ * because the session is gone — leaving the reservation's claim held by a
+ * producer with nothing to hand it to.
+ */
+export function dropSessionClaims(sessionId: string): number {
+  const prefix = `${sessionId}\t`
+  let dropped = 0
+  for (const key of [...claims.keys()]) {
+    if (!key.startsWith(prefix)) continue
+    claims.delete(key)
+    dropped += 1
+  }
+  return dropped
+}
+
 /** What this desktop is doing to `path` right now, if anything. */
 export function activeWriteAt(sessionId: string, path: string): ClaimStage | null {
   return claims.get(keyFor(sessionId, path))?.stage ?? null

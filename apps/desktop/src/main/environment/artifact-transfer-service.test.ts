@@ -14,6 +14,7 @@ const { getDbMock } = vi.hoisted(() => ({ getDbMock: vi.fn() }))
 vi.mock('../database', () => ({ getDb: getDbMock }))
 
 import { listArtifactTransfersForSession } from '../db-artifact-transfers'
+import { findPendingJobFor } from './pending-handoffs'
 import { ArtifactTransferService, DEFAULT_THROUGHPUT_BYTES_PER_MS } from './artifact-transfer-service'
 
 let db: Database.Database
@@ -234,6 +235,66 @@ describe('artifact transfer jobs', () => {
     service.defer({ connectionId: 'c1', sessionId: 's1', localPath: local, relativePath: 'browser/a.png' })
     await service.runOnce('c1')
     expect(node.files.has('browser/a.png')).toBe(true)
+    expect(listArtifactTransfersForSession('s1')).toEqual([])
+  })
+
+  it('restarts a terminal failed delivery when the same download is requested again', async () => {
+    // AH1. `failed` is terminal — every worker query excludes it — so a caller
+    // that merely joins such a job is told "on its way" about a delivery
+    // nothing will ever perform. The set of files being protected is not the
+    // set of tasks that will still run, and the join is where they must agree.
+    let refuse = true
+    const node = fakeNode()
+    const service = new ArtifactTransferService({
+      put: async (connectionId, req) => {
+        if (refuse) throw new Error('node refused the chunk')
+        return node.put(connectionId, req)
+      },
+    })
+    const local = join(root, 'report.csv')
+    writeFileSync(local, 'OLD')
+    service.defer({ connectionId: 'c1', sessionId: 's1', localPath: local, relativePath: 'download/report.csv' })
+    // Run it into the ground: the row ends terminal, not merely backed off.
+    for (let i = 0; i < 10; i++) {
+      db.prepare("UPDATE artifact_transfer_jobs SET next_attempt_at = NULL WHERE session_id = 's1'").run()
+      await service.runOnce('c1')
+    }
+    const dead = listArtifactTransfersForSession('s1')
+    expect(dead).toHaveLength(1)
+    expect(dead[0]!.state).toBe('failed')
+
+    // The agent asks for this file again. Joining must revive the job, keeping
+    // its id, its transfer id and the offset the node already has.
+    const joined = findPendingJobFor('s1', local)
+    expect(joined).toEqual({ transferId: dead[0]!.transferId })
+    const revived = listArtifactTransfersForSession('s1')
+    expect(revived[0]).toMatchObject({ jobId: dead[0]!.jobId, state: 'pending', attempts: 0, nextAttemptAt: null })
+
+    // And it now actually runs.
+    refuse = false
+    await service.runOnce('c1')
+    expect(node.files.get('download/report.csv')?.toString()).toBe('OLD')
+  })
+
+  it('records a delivered file as owing only its completion wake', async () => {
+    // AG2's success branch: the eager push already put the bytes on the node,
+    // so re-uploading them would both waste the transfer and let this copy
+    // overwrite whatever the agent did to the file on the node in between.
+    const node = fakeNode()
+    const notified: unknown[] = []
+    const service = new ArtifactTransferService({
+      put: node.put,
+      notifyCompleted: async (_c, input) => void notified.push(input),
+    })
+    const local = join(root, 'shot.png')
+    writeFileSync(local, 'png')
+    service.noteDelivered({ connectionId: 'c1', sessionId: 's1', localPath: local, relativePath: 'browser/shot.png', transferId: 'tid-1' })
+    expect(listArtifactTransfersForSession('s1')[0]).toMatchObject({ state: 'uploaded', transferId: 'tid-1' })
+
+    await service.runOnce('c1')
+    // Notified, and never uploaded: the node already had it.
+    expect(notified).toHaveLength(1)
+    expect(node.calls).toHaveLength(0)
     expect(listArtifactTransfersForSession('s1')).toEqual([])
   })
 

@@ -876,6 +876,47 @@ All four landed on 2026-09-14, one commit each.
   and released, which cannot touch a file still being written or one a transfer
   instance owns.
 
+- **An eighteenth review separated three things the job table had been
+  conflating: a terminal failure, a retryable upload, and a file that owes
+  only a notification.**
+
+  Joining a persisted job (seventeenth review) reached for `failed` rows too —
+  and `failed` is terminal. Every worker query excludes it, and the Settings
+  retry only ever looked at in-memory instances, so joining one answered "on
+  its way" about a delivery nothing would ever perform. **The set of files
+  being protected is not the set of tasks that will still run**, and the join
+  is exactly where they have to agree: a `failed` row asked for again is
+  revived to `pending` in place, keeping its job id, its transfer id and the
+  offset the node already has.
+
+  And a joiner's promise was only half kept. Waiters made an *abandoning*
+  owner hand the file to a job, but an owner that *succeeded* settled
+  silently — so a caller told "deferred, you will be notified" never was. An
+  eager delivery with waiters outstanding now records a row that starts in
+  `uploaded`: only the wake is owed. Enqueueing it normally would re-upload
+  bytes the node already has and let this copy overwrite whatever the agent
+  did to the file in between.
+
+  Two more came out of the background-finalizer test below, which is the entry
+  every other case here had been standing in for. A session deleted while a
+  download was still streaming left the *writer's* claim held for ever: the
+  handoff that would have adopted the file is refused by the tombstone, so
+  nothing was left to release it — `dropSessionHandoffs` now clears the
+  session's claims wholesale, since its zone directory goes with it. And a
+  lookup that threw (the database being precisely what tends to be
+  unavailable) escaped `acquireHandoff` as an unhandled rejection and left the
+  file with no instance at all; unable to say "someone else owns this" now
+  means no, which starts a delivery of our own.
+
+- **`background-download-finalizer.integration.test.ts` covers the entry the
+  claim tests could not.** Every other case drives `downloadUrl` or
+  `queueDownloadUpload` directly; this one goes through
+  `browser-download-tasks`' own settle — a real `browser_download` racing its
+  timeout into `background`, the call scope closed, and the rest of the
+  transfer arriving with nobody left to register it — over a real job table,
+  the real transfer worker and the real mirror. It found the two defects
+  above on its first run.
+
 - **`browser_open` creates the tab blank, records the driver, then
   navigates.** Opening with the URL in one call meant the page could start a
   direct download before the tab had an owner, and `will-download` had nobody

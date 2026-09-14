@@ -41,7 +41,7 @@
  * does not pretend otherwise.
  */
 import { randomUUID } from 'node:crypto'
-import { releaseWriteClaim, takeSealedClaim, canonicalClaimPath } from './active-writes'
+import { dropSessionClaims, releaseWriteClaim, takeSealedClaim, canonicalClaimPath } from './active-writes'
 import log from '../logger'
 
 export interface HandoffJob {
@@ -110,6 +110,26 @@ export function setPendingJobLookup(lookup: PendingJobLookup | null): void {
   findPendingJob = lookup
 }
 
+/**
+ * Does a persisted job still owe this file's bytes, and if so under which
+ * transfer id? Joining one is not a passive observation — a terminal `failed`
+ * row is put back in the queue by the answer — so this is the one question and
+ * the one place that asks it.
+ */
+export function findPendingJobFor(sessionId: string, localPath: string): { transferId: string } | null {
+  try {
+    return findPendingJob?.(sessionId, localPath) ?? null
+  } catch (err) {
+    // The database is exactly what tends to be unavailable here, and the
+    // question was "is someone else already delivering this?". Unable to say
+    // means no, which starts a delivery of our own — the file stays protected
+    // and gets a retry ladder. Letting the throw out instead escaped as an
+    // unhandled rejection and left the file with no instance at all.
+    log.warn('[artifact-handoff] could not check for an existing job: %s', err instanceof Error ? err.message : String(err))
+    return null
+  }
+}
+
 /** Delays before each retry. Short: the file is unprotected work in progress. */
 const RETRY_DELAYS_MS = [100, 500, 2000, 5000]
 
@@ -155,7 +175,7 @@ export function acquireHandoff(input: {
   // there is no in-memory instance to find — but starting a second delivery
   // beside it is exactly the two-uploads-one-file failure, and the row's own
   // upload would later overwrite whatever the second one delivered.
-  const queued = findPendingJob?.(input.sessionId, input.localPath)
+  const queued = findPendingJobFor(input.sessionId, input.localPath)
   if (queued) {
     return {
       handoff: {
@@ -197,8 +217,24 @@ export function acquireHandoff(input: {
   return { handoff, mine: true }
 }
 
-/** Delivery is complete — the bytes are on the node, or it already had them. */
-export function deliverHandoff(handoff: Handoff): void {
+/**
+ * Delivery is complete — the bytes are on the node, or it already had them.
+ *
+ * A caller that joined was told the file is on its way and would be notified,
+ * and an eager push is a route its own reply cannot report. `noteDelivered`
+ * is how that promise is still kept: it records a job that owes only the
+ * completion wake, never a re-upload.
+ */
+export function deliverHandoff(handoff: Handoff, noteDelivered?: (job: HandoffJob) => void): void {
+  if (handoff.waiters > 0 && noteDelivered) {
+    noteDelivered({
+      connectionId: handoff.connectionId,
+      sessionId: handoff.sessionId,
+      localPath: handoff.localPath,
+      relativePath: handoff.relativePath,
+      transferId: handoff.transferId,
+    })
+  }
   settle(handoff)
 }
 
@@ -320,6 +356,11 @@ export function dropSessionHandoffs(sessionId: string): void {
     if (handoff.sessionId !== sessionId) continue
     settle(handoff)
   }
+  // Including claims no instance holds. A download still streaming when its
+  // session was deleted seals into a writer's claim that nothing can adopt —
+  // the handoff is refused by the tombstone — and would hold its path for the
+  // life of the process.
+  dropSessionClaims(sessionId)
 }
 
 /** Everything still waiting on a job row, for the Storage figure and for tests. */

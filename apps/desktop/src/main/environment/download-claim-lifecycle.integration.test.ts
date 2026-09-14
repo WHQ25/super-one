@@ -72,6 +72,7 @@ const node = vi.hoisted(() => ({
   files: new Map<string, Buffer>(),
   parts: new Map<string, Buffer[]>(),
   seenTransferIds: [] as string[],
+  delivered: [] as { relativePath: string; transferId: string }[],
   onStat: null as null | ((rel: string) => void | Promise<void>),
   statCalls: 0,
   uploadedIds: new Set<string>(),
@@ -103,6 +104,9 @@ const envHost = vi.hoisted(() => ({
     // Synchronous, like the production `defer` (statSync + SQLite insert +
     // worker wake). An async stand-in would let a throw land a turn late and
     // miss the very ordering these tests are about.
+    noteDelivered: (input: { relativePath: string; transferId: string }) => {
+      node.delivered.push({ relativePath: input.relativePath, transferId: input.transferId })
+    },
     defer: (input: { relativePath: string; transferId: string }) => {
       if (node.deferFails) throw new Error('SQLITE_BUSY')
       node.deferred.push(input.relativePath)
@@ -181,6 +185,7 @@ beforeEach(() => {
   node.files.clear()
   node.parts.clear()
   node.seenTransferIds.length = 0
+  node.delivered.length = 0
   node.onStat = null
   node.statCalls = 0
   node.uploadedIds.clear()
@@ -623,6 +628,45 @@ describe('who ends a download write claim', () => {
     expect(activeWriteAt(SESSION, shared)).toBeNull()
     // Which is what lets the node's own newer version win from here on.
     expect(failedHandoffs(SESSION)).toEqual([])
+  })
+
+  it('notifies a deferred joiner when its owner succeeds eagerly', async () => {
+    // AG2's success branch. B was told "deferred, you will be notified"; A then
+    // delivered by a route B's own reply cannot report. Settling silently left
+    // B waiting on a wake that was never owed to anyone.
+    const shared = sharedArtifact('report.csv', 'OLD')
+    let open!: () => void
+    const parked = new Promise<void>((resolve) => (open = resolve))
+    node.onStat = async () => {
+      node.onStat = null
+      await parked
+    }
+
+    registerSharedArtifact(shared)
+    const a = desktopHostActionExecutor(claimed({ toolName: 'browser_list_downloads' }), new AbortController().signal, 'conn-1')
+    await until(() => node.statCalls === 1)
+
+    registerSharedArtifact(shared)
+    const b = await desktopHostActionExecutor(claimed({ toolName: 'browser_list_downloads' }), new AbortController().signal, 'conn-1')
+    expect(JSON.stringify(b.result)).toContain('deferred')
+
+    open()
+    await a
+    // Uploaded once, and the promise made to B is recorded as owing only a wake.
+    expect(node.puts).toBeGreaterThan(0)
+    expect(node.delivered).toHaveLength(1)
+    expect(node.delivered[0]!.relativePath).toBe('download/report.csv')
+    expect(node.deferred).toEqual([])
+    expect(activeWriteAt(SESSION, shared)).toBeNull()
+  })
+
+  it('does not record a wake for a delivery nobody was waiting on', async () => {
+    // The common case must stay quiet: one action, no joiner, no extra row.
+    const shared = sharedArtifact('report.csv', 'OLD')
+    registerSharedArtifact(shared)
+    await desktopHostActionExecutor(claimed({ toolName: 'browser_list_downloads' }), new AbortController().signal, 'conn-1')
+    expect(node.puts).toBeGreaterThan(0)
+    expect(node.delivered).toEqual([])
   })
 
   it('keeps a completed file protected when the transfer queue will not take it', async () => {

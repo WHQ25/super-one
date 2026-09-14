@@ -191,6 +191,28 @@ export function markArtifactTransferFailed(
 }
 
 /** Session deletion drops its jobs (§7). Returns the ids so an in-flight upload can be cancelled. */
+/**
+ * Put a terminal `failed` job back in the queue, keeping everything that makes
+ * it the same delivery: its id, its transfer id, and the offset the node has
+ * already received.
+ *
+ * `failed` is terminal — the worker's queries exclude it — so a caller that
+ * merely *joins* such a job would be promising a delivery nothing will ever
+ * perform. The set of files being protected is not the set of tasks that will
+ * still run, and this is what keeps them the same set.
+ *
+ * False when the row is no longer failed (someone else revived it, or its
+ * session was deleted), so the caller can look again rather than assume.
+ */
+export function reviveArtifactTransfer(jobId: string): boolean {
+  const result = getDb().prepare(`
+    UPDATE artifact_transfer_jobs
+    SET state = 'pending', attempts = 0, next_attempt_at = NULL, updated_at = ?
+    WHERE job_id = ? AND state = 'failed'
+  `).run(new Date().toISOString(), jobId)
+  return result.changes > 0
+}
+
 export function deleteArtifactTransfersForSession(sessionId: string): string[] {
   const db = getDb()
   const ids = (db.prepare('SELECT job_id FROM artifact_transfer_jobs WHERE session_id = ?').all(sessionId) as { job_id: string }[]).map((r) => r.job_id)

@@ -22,6 +22,7 @@ import type { ArtifactPutRequest, ArtifactPutResult } from '@superone/shared/env
 import {
   deleteArtifactTransfersForSession,
   listArtifactTransfersForSession,
+  reviveArtifactTransfer,
   enqueueArtifactTransfer,
   listPendingArtifactTransfers,
   listRunnableArtifactTransfers,
@@ -90,6 +91,12 @@ export class ArtifactTransferService {
       for (const job of listArtifactTransfersForSession(sessionId)) {
         if (!OWES_UPLOAD.has(job.state)) continue
         if (canonicalClaimPath(job.localPath) !== real) continue
+        // `failed` is terminal: the worker's queries exclude it, so joining one
+        // would answer "on its way" about a delivery nothing will ever perform.
+        // A caller asking for this file again is the reason to try once more,
+        // so the row goes back in the queue under its own id and offset.
+        if (job.state === 'failed' && !reviveArtifactTransfer(job.jobId)) continue
+        this.workers.get(job.connectionId)?.wake()
         return { transferId: job.transferId }
       }
       return null
@@ -103,6 +110,27 @@ export class ArtifactTransferService {
   /** Feed the meter from an eager upload the executor did itself. */
   recordThroughput(connectionId: string, outcome: TransferOutcome): void {
     this.meter.record(connectionId, outcome)
+  }
+
+  /**
+   * Record a file an eager push already delivered, so a caller that was told
+   * "deferred, you will be notified" still gets its wake.
+   *
+   * The row starts in `uploaded`, never `pending`: only the notification is
+   * owed. Enqueueing it normally would re-upload bytes the node already has,
+   * and — worse — would let this copy overwrite whatever the agent did to the
+   * file on the node in the meantime.
+   */
+  noteDelivered(input: { connectionId: string; sessionId: string; localPath: string; relativePath: string; transferId: string }): void {
+    let total = 0
+    try {
+      total = statSync(input.localPath).size
+    } catch {
+      /* delivered and then removed locally; the notification still stands */
+    }
+    const job = enqueueArtifactTransfer({ ...input, total })
+    markArtifactTransferUploaded(job.jobId)
+    this.workers.get(input.connectionId)?.wake()
   }
 
   /** Persist a deferred upload and nudge the connection's worker. */

@@ -52,6 +52,8 @@ export interface HostActionSyncDeps {
     throughputBytesPerMs(connectionId: string): number
     recordThroughput(connectionId: string, outcome: TransferOutcome): void
     defer(input: { connectionId: string; sessionId: string; localPath: string; relativePath: string; transferId?: string }): unknown
+    /** Record a file the eager push already delivered, so a joiner still gets its completion wake. */
+    noteDelivered(input: { connectionId: string; sessionId: string; localPath: string; relativePath: string; transferId: string }): void
   }
   /**
    * Ask the node to extend this action's claim, returning the new expiry
@@ -402,8 +404,9 @@ export async function syncHostActionOutputs(
     // wait out the whole budget for an abort event that has already fired.
     throwIfAborted(deps.signal)
     if (alreadyThere) {
-      // Nothing to deliver, so this file's delivery is over.
-      deliverHandoff(item.handoff)
+      // Nothing to deliver, so this file's delivery is over — but a caller that
+      // joined is still owed the wake it was promised.
+      deliverHandoff(item.handoff, (job) => deps.transfers.noteDelivered(job))
       continue
     }
     // The instance's id, for the file's whole delivery: the node keeps a
@@ -445,8 +448,8 @@ export async function syncHostActionOutputs(
       }))
       deps.transfers.recordThroughput(deps.connectionId, outcome)
       // The bytes are on the node: delivery is complete and the file is the
-      // node's problem now.
-      deliverHandoff(item.handoff)
+      // node's problem now. A joiner told "deferred" still gets its wake.
+      deliverHandoff(item.handoff, (job) => deps.transfers.noteDelivered(job))
     } catch (err) {
       throwIfAborted(deps.signal)
       // The tool already did its work; a failed push must not fail the action.

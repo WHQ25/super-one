@@ -902,6 +902,20 @@ export class EnvironmentHost {
     return gateway.artifacts.put(input, control)
   }
 
+  /**
+   * Extend a Host Action's claim (§4.1), returning the new expiry. The node
+   * caps it at the action's own deadline, so this buys time inside the window
+   * the agent already agreed to wait.
+   */
+  async renewHostActionClaim(
+    connectionId: string,
+    input: { actionId: string; claimToken: string; ttlMs?: number },
+  ): Promise<number> {
+    const { gateway } = this.resolveRemote(connectionId)
+    const result = await gateway.renewHostActionClaim(input)
+    return result.claimExpiresAt
+  }
+
   /** Wake the node session after a deferred transfer landed (§4.1). No lease needed. */
   async artifactNotifyCompleted(
     connectionId: string,

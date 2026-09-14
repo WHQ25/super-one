@@ -463,7 +463,18 @@ Still open after phases 1–4:
   the notification without re-uploading; `notificationId` is the job id, and
   the node injects once per id. A node that answers `not_found` / `forbidden`
   (session gone) or does not know the method ends the job.
-- **Claim renewal** as an alternative to deferral.
+- ~~**Claim renewal** as an alternative to deferral~~ — **implemented
+  2026-09-14.** `session.renewHostActionClaim({ actionId, claimToken, ttlMs })`
+  extends a live claim; the holder proves itself with the claim token, and the
+  node caps the new expiry at the action's own deadline, so renewal buys time
+  inside the window the agent already agreed to wait — it does not extend that
+  window. `syncHostActionOutputs` asks before deferring a file that does not
+  fit, and each upload now runs under its own abort bound to the remaining
+  budget, so an estimate that turns out optimistic becomes a deferral rather
+  than a claim the desktop has already lost. A node that refuses (deadline
+  reached, claim swept) or does not know the method defers as before.
+  **Still open:** the action's 120 s deadline is the hard ceiling; a minutes-long
+  video still defers.
 - **`browser_download` with `dir`** on a remote session.
 - **Device captures, recordings and downloads** are not in the zone yet (see
   §8 deviations), so a remote agent still cannot `Read` a recording and the

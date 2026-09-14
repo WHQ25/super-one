@@ -88,6 +88,18 @@ export interface HostActionStore {
     now?: number
     /** Caller already verified session binding / grants / active turn. */
   }): ClaimHostActionStoreResult
+  /**
+   * Extend a live claim, up to the action's own deadline (§4.1). The holder
+   * proves itself with the claim token, so an expired-and-requeued action
+   * cannot be revived and a second controller cannot steal time.
+   */
+  renewClaim(input: {
+    actionId: string
+    claimToken: string
+    controllerClientSessionId: string
+    ttlMs?: number
+    now?: number
+  }): HostActionRow
   respond(input: {
     actionId: string
     claimToken: string
@@ -520,6 +532,55 @@ export function createSqliteHostActionStore(db: SqliteDatabase): HostActionStore
         insertChange(updated, now)
         db.prepare('COMMIT').run()
         return { row: updated, claimToken }
+      } catch (err) {
+        try {
+          db.prepare('ROLLBACK').run()
+        } catch {
+          /* ignore */
+        }
+        throw err
+      }
+    },
+
+    renewClaim(input) {
+      const now = input.now ?? Date.now()
+      const ttlMs = Math.max(0, input.ttlMs ?? DEFAULT_HOST_ACTION_CLAIM_TTL_MS)
+      const tokenHash = hashToken(input.claimToken)
+      db.prepare('BEGIN IMMEDIATE').run()
+      try {
+        const row = load(input.actionId)
+        if (!row) throw Object.assign(new Error('host action not found'), { code: 'not_found' })
+        if (row.controllerClientSessionId !== input.controllerClientSessionId) {
+          throw Object.assign(new Error('not the session controller'), { code: 'forbidden' })
+        }
+        if (row.state !== 'claimed' || !row.claimTokenHash) {
+          throw Object.assign(new Error(`host action is ${row.state}, expected claimed`), {
+            code: 'failed_precondition',
+          })
+        }
+        if (!tokensEqual(row.claimTokenHash, tokenHash)) {
+          throw Object.assign(new Error('claim token does not match'), { code: 'forbidden' })
+        }
+        if (row.deadline <= now) {
+          throw Object.assign(new Error('host action deadline expired'), { code: 'failed_precondition' })
+        }
+        // The action's deadline is the ceiling: renewal buys time inside the
+        // window the agent is already waiting in, never past it.
+        const claimExpiresAt = Math.min(now + ttlMs, row.deadline)
+        const nextVersion = row.version + 1
+        const result = db
+          .prepare(
+            `UPDATE host_actions SET version = ?, claim_expires_at = ?
+             WHERE action_id = ? AND version = ? AND state = 'claimed'`,
+          )
+          .run(nextVersion, claimExpiresAt, input.actionId, row.version)
+        if (result.changes !== 1) {
+          throw Object.assign(new Error('renew lost race'), { code: 'conflict' })
+        }
+        const updated = load(input.actionId)!
+        insertChange(updated, now)
+        db.prepare('COMMIT').run()
+        return updated
       } catch (err) {
         try {
           db.prepare('ROLLBACK').run()

@@ -485,6 +485,8 @@ async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContex
       return handleSessionClaimHostAction(payload, ctx)
     case 'session.respondHostAction':
       return handleSessionRespondHostAction(payload, ctx)
+    case 'session.renewHostActionClaim':
+      return handleSessionRenewHostActionClaim(payload, ctx)
     case 'session.notifyArtifactCompleted':
       return handleSessionNotifyArtifactCompleted(payload, ctx)
     case 'session.events':
@@ -2644,6 +2646,24 @@ function handleSessionClaimHostAction(payload: unknown, ctx: RpcContext): RpcRes
       expectedVersion: Number(p.expectedVersion ?? -1),
       controllerClientSessionId: ctx.client.clientSessionId,
       claimTtlMs: typeof p.claimTtlMs === 'number' ? p.claimTtlMs : undefined,
+    })
+    return { result }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+/** Extend a live claim rather than deferring the work it is still doing (§4.1). */
+function handleSessionRenewHostActionClaim(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    const result = ctx.sessions.renewHostActionClaim({
+      actionId: String(p.actionId ?? ''),
+      claimToken: String(p.claimToken ?? ''),
+      controllerClientSessionId: ctx.client.clientSessionId,
+      ttlMs: typeof p.ttlMs === 'number' ? p.ttlMs : undefined,
     })
     return { result }
   } catch (err) {

@@ -1702,6 +1702,29 @@ export class SessionRuntime {
   }
 
   /**
+   * Extend a live claim instead of letting it lapse (§4.1) — the desktop asks
+   * when a Host Action's outputs are still uploading. Bounded by the action's
+   * own deadline, so the agent never waits longer than it already agreed to.
+   */
+  renewHostActionClaim(input: {
+    actionId: string
+    claimToken: string
+    controllerClientSessionId: string
+    ttlMs?: number
+  }): { actionId: string; version: number; claimExpiresAt: number } {
+    if (!this.hostActions) {
+      throw Object.assign(new Error('host action store not configured'), { code: 'failed_precondition' })
+    }
+    const row = this.hostActions.renewClaim({
+      actionId: input.actionId,
+      claimToken: input.claimToken,
+      controllerClientSessionId: input.controllerClientSessionId,
+      ttlMs: input.ttlMs ?? DEFAULT_HOST_ACTION_CLAIM_TTL_MS,
+    })
+    return { actionId: row.actionId, version: row.version, claimExpiresAt: row.claimExpiresAt! }
+  }
+
+  /**
    * Atomically verify claim token, persist terminal result, settle live waiter.
    * Identical response returns stored receipt; different payload → conflict.
    */

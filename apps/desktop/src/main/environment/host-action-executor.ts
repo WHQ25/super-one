@@ -118,7 +118,10 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
         // reports its zone gets node-zone args mapped to the desktop mirror
         // first, and desktop-produced outputs pushed and rewritten afterwards.
         // Older nodes report no zone and get today's behaviour unchanged.
-        const sync = await resolveSyncContext(connectionId, runAbort.signal)
+        const sync = await resolveSyncContext(connectionId, runAbort.signal, {
+          actionId: claimed.actionId,
+          claimToken: claimed.claimToken,
+        })
         const mappedArgs = sync ? await mapHostActionInputs(args, sync) : args
         if (runAbort.signal.aborted || raceWinner === 'deadline') return aborted()
 
@@ -219,7 +222,11 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
  * Everything the sync steps need for one connection, or null when the node
  * has no zone. Dynamic import keeps EnvironmentHost out of the unit graph.
  */
-async function resolveSyncContext(connectionId: string, signal: AbortSignal): Promise<HostActionSyncDeps | null> {
+async function resolveSyncContext(
+  connectionId: string,
+  signal: AbortSignal,
+  claim: { actionId: string; claimToken: string },
+): Promise<HostActionSyncDeps | null> {
   const { getEnvironmentHost } = await import('./environment-host')
   const host = getEnvironmentHost()
   const zone = host.getSyncZone(connectionId)
@@ -230,6 +237,7 @@ async function resolveSyncContext(connectionId: string, signal: AbortSignal): Pr
     zone,
     connectionId,
     signal,
+    renewClaim: (ttlMs) => host.renewHostActionClaim(connectionId, { ...claim, ttlMs }),
     put: (input) => host.artifactPut(connectionId, input),
     get: (input) => host.artifactGet(connectionId, input),
     stat: (input) => host.artifactStat(connectionId, input.sessionId, input.relativePath),

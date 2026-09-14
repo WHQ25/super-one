@@ -100,6 +100,17 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     return { syncRoot: descriptor.syncRoot, os: descriptor.platform.os }
   }
 
+  /**
+   * Extend a Host Action claim this desktop holds (`session-sync-zone.md`
+   * §4.1). The claim token proves the holder; the node caps the new expiry at
+   * the action's own deadline. Not on `SessionGateway` for the same reason
+   * claim/respond are not: the Host Action channel is the consumer's, not the
+   * session list's.
+   */
+  renewHostActionClaim(input: { actionId: string; claimToken: string; ttlMs?: number }): Promise<{ claimExpiresAt: number; version: number }> {
+    return this.client.rpc<{ claimExpiresAt: number; version: number }>('session.renewHostActionClaim', input)
+  }
+
   /** `artifact.*` — scoped by the node to `<syncRoot>/<sessionId>`; `put`/`delete` carry the lease. */
   private createArtifactGateway(): ArtifactGateway {
     const client = this.client

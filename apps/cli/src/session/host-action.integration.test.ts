@@ -257,6 +257,63 @@ describe('Host Action RPC channel', () => {
     client2.close()
   })
 
+  it('renews the holder claim so slow Host Action work is not cut off, and refuses everyone else', async () => {
+    // The desktop is still pushing a recording into the session sync zone when
+    // the claim is about to lapse (session-sync-zone.md §4.1).
+    let release!: () => void
+    const held = new Promise<void>((r) => { release = r })
+    const runner: TurnRunner = async ({ signal }) => {
+      await new Promise<void>((resolve, reject) => {
+        if (signal.aborted) return reject(new Error('aborted'))
+        signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+        held.then(() => resolve())
+      })
+      return { finalText: 'done' }
+    }
+    const rt = await boot(runner)
+    const client = await connectAuthedRpc(rt)
+    const stranger = await connectAuthedRpc(rt)
+    const project = await openProject(client)
+    const session = (await client.rpc('session.create', { projectId: project.projectId, harnessId: 'codex' })) as { sessionId: string }
+    const sessionId = session.sessionId
+    const lease = (await client.rpc('session.acquireControl', { sessionId, ttlMs: 60_000 })) as { leaseId: string; generation: string }
+    await client.rpc('session.send', { sessionId, text: 'hi', leaseId: lease.leaseId, generation: lease.generation })
+
+    const wait = rt.sessions.requestHostAction({
+      sessionId,
+      toolName: 'browser.tabs',
+      toolGroup: HOST_ACTION_TOOL_GROUPS.browserRead,
+      args: {},
+      deadlineMs: 120_000,
+    })
+    const poll = (await client.rpc('session.hostActionsPoll', {})) as { outstanding: Array<{ actionId: string; version: number }> }
+    const action = poll.outstanding[0]!
+    const claimed = (await client.rpc('session.claimHostAction', {
+      actionId: action.actionId, expectedVersion: action.version, claimTtlMs: 5_000,
+    })) as { claimToken: string; claimExpiresAt: number }
+
+    const renewed = (await client.rpc('session.renewHostActionClaim', {
+      actionId: action.actionId, claimToken: claimed.claimToken, ttlMs: 60_000,
+    })) as { claimExpiresAt: number }
+    expect(renewed.claimExpiresAt).toBeGreaterThan(claimed.claimExpiresAt)
+
+    // Neither another paired client nor a wrong token may buy time on it.
+    await expect(stranger.rpc('session.renewHostActionClaim', {
+      actionId: action.actionId, claimToken: claimed.claimToken, ttlMs: 60_000,
+    })).rejects.toBeTruthy()
+    await expect(client.rpc('session.renewHostActionClaim', {
+      actionId: action.actionId, claimToken: 'guessed', ttlMs: 60_000,
+    })).rejects.toBeTruthy()
+
+    await client.rpc('session.respondHostAction', {
+      actionId: action.actionId, claimToken: claimed.claimToken, outcome: 'succeeded', result: { ok: true },
+    })
+    await wait
+    release()
+    client.close()
+    stranger.close()
+  })
+
   it('controller filtering: other client cannot poll/claim/respond', async () => {
     let release!: () => void
     const held = new Promise<void>((r) => {

@@ -25,6 +25,10 @@ import { mapNodeZoneArgs, mentionsArtifactPath, nodeZonePath, rewriteArtifactPat
 
 /** Left for the response itself after the uploads (§4.1). */
 export const CLAIM_BUDGET_MARGIN_MS = 10_000
+/** Longest single renewal to ask for; the node caps it at the action's deadline anyway. */
+export const MAX_CLAIM_RENEWAL_MS = 60_000
+/** Slack over the estimate when renewing, so a slightly slow link does not immediately re-defer. */
+const RENEWAL_SLACK = 2
 
 export interface ToolReply {
   content?: Array<{ type?: string; text?: string; [key: string]: unknown }>
@@ -44,6 +48,12 @@ export interface HostActionSyncDeps {
     recordThroughput(connectionId: string, outcome: TransferOutcome): void
     defer(input: { connectionId: string; sessionId: string; localPath: string; relativePath: string; transferId?: string }): unknown
   }
+  /**
+   * Ask the node to extend this action's claim, returning the new expiry
+   * (§4.1). Absent for an older node — then a file that does not fit is
+   * deferred, as before.
+   */
+  renewClaim?: (ttlMs: number) => Promise<number>
   now?: () => number
   log?: { warn: (...args: unknown[]) => void }
 }
@@ -115,6 +125,7 @@ export async function syncHostActionOutputs(
   // Smallest first: a screenshot should never wait behind a recording.
   planned.sort((a, b) => a.size - b.size)
 
+  let expiresAt = claimExpiresAt
   for (const item of planned) {
     mapping.set(item.ref.path, item.nodePath)
     // One transferId for the file's whole life: the node keeps a half-written
@@ -122,13 +133,28 @@ export async function syncHostActionOutputs(
     // id would be told `busy` by it. The job carries this id and resumes.
     const transferId = randomUUID()
     const job = { connectionId: deps.connectionId, sessionId: item.sessionId, localPath: item.ref.path, relativePath: item.relativePath, transferId }
-    const budgetMs = claimExpiresAt - now() - CLAIM_BUDGET_MARGIN_MS
     const estimateMs = item.size / rate
+    if (estimateMs > expiresAt - now() - CLAIM_BUDGET_MARGIN_MS && deps.renewClaim) {
+      // Buying time beats handing the agent an ENOENT it has to wait out.
+      try {
+        expiresAt = await deps.renewClaim(Math.min(MAX_CLAIM_RENEWAL_MS, Math.ceil(estimateMs * RENEWAL_SLACK) + CLAIM_BUDGET_MARGIN_MS))
+      } catch (err) {
+        deps.log?.warn('[host-action] claim renewal refused, deferring', item.relativePath, err instanceof Error ? err.message : String(err))
+      }
+      throwIfAborted(deps.signal)
+    }
+    const budgetMs = expiresAt - now() - CLAIM_BUDGET_MARGIN_MS
     if (estimateMs > budgetMs) {
       deps.transfers.defer(job)
       deferred.push(item.nodePath)
       continue
     }
+    // The upload gets the budget as a hard stop of its own: an estimate is not
+    // a guarantee, and running past the claim loses the reply as well.
+    const budget = new AbortController()
+    const stopAtBudget = setTimeout(() => budget.abort(), Math.max(0, budgetMs))
+    const abortWithAction = () => budget.abort()
+    deps.signal.addEventListener('abort', abortWithAction, { once: true })
     try {
       const outcome = await uploadArtifact({
         localPath: item.ref.path,
@@ -136,7 +162,7 @@ export async function syncHostActionOutputs(
         relativePath: item.relativePath,
         transferId,
         put: deps.put,
-        signal: deps.signal,
+        signal: budget.signal,
       })
       deps.transfers.recordThroughput(deps.connectionId, outcome)
     } catch (err) {
@@ -146,6 +172,9 @@ export async function syncHostActionOutputs(
       deps.log?.warn('[host-action] eager artifact push failed, deferring', item.relativePath, err instanceof Error ? err.message : String(err))
       deps.transfers.defer(job)
       deferred.push(item.nodePath)
+    } finally {
+      clearTimeout(stopAtBudget)
+      deps.signal.removeEventListener('abort', abortWithAction)
     }
     throwIfAborted(deps.signal)
   }

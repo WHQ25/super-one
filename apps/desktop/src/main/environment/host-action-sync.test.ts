@@ -102,6 +102,34 @@ describe('host action outputs', () => {
     expect(out.content![0].text).toContain('/home/node/.superone/node/sync/s1/computer-use/a.agent.jpg')
   })
 
+  it('renews the claim for a file that does not fit the budget, and pushes it instead of deferring', async () => {
+    const node = fakeNode()
+    const big = desktopFile('s1', 'recording/run.mp4', Buffer.alloc(64 * 1024))
+    // ~6.5 s at this rate: past the 5 s left on the claim, inside one renewal.
+    node.deps.transfers.throughputBytesPerMs = () => 10
+    const now = 1_000_000
+    node.deps.now = () => now
+    const renewals: number[] = []
+    node.deps.renewClaim = async (ttlMs: number) => { renewals.push(ttlMs); return now + ttlMs }
+    const reply = { content: [{ type: 'text', text: big }] }
+    const out = await syncHostActionOutputs('s1', [{ path: big, producer: 'recording', final: true }], reply, now + 15_000, node.deps)
+    expect(renewals).toHaveLength(1)
+    expect(node.files.has('recording/run.mp4')).toBe(true)
+    expect(node.deferred).toEqual([])
+    expect(out.sync).toBeUndefined()
+  })
+
+  it('defers when the node refuses to renew, rather than running past the claim', async () => {
+    const node = fakeNode()
+    const big = desktopFile('s1', 'recording/run.mp4', Buffer.alloc(64 * 1024))
+    node.deps.transfers.throughputBytesPerMs = () => 10
+    node.deps.renewClaim = async () => { throw Object.assign(new Error('deadline expired'), { code: 'failed_precondition' }) }
+    const reply = { content: [{ type: 'text', text: big }] }
+    const out = await syncHostActionOutputs('s1', [{ path: big, producer: 'recording', final: true }], reply, Date.now() + 15_000, node.deps)
+    expect(node.deferred).toEqual(['recording/run.mp4'])
+    expect(out.sync).toEqual({ deferred: ['/home/node/.superone/node/sync/s1/recording/run.mp4'] })
+  })
+
   it('defers a file that cannot fit the claim budget, still rewrites its path, and says so in the reply', async () => {
     const node = fakeNode()
     const small = desktopFile('s1', 'browser/small.png', 'x')

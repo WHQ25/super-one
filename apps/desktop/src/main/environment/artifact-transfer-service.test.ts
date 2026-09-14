@@ -298,6 +298,47 @@ describe('artifact transfer jobs', () => {
     expect(listArtifactTransfersForSession('s1')).toEqual([])
   })
 
+  it('never downgrades an uploaded job when claiming its notification fails', async () => {
+    // The bytes are on the node and only the wake is owed. Writing down which
+    // phase the row is in is the thing that failed — and a failure there used
+    // to default the row back to `pending`, which made the next pass upload
+    // the desktop's older copy over whatever the agent had done on the node.
+    const node = fakeNode()
+    const notifications: string[] = []
+    const service = new ArtifactTransferService({
+      put: node.put,
+      notifyCompleted: async (_c, input) => {
+        notifications.push(input.relativePaths[0]!)
+        return { delivered: true }
+      },
+    })
+    const local = join(root, 'report.csv')
+    writeFileSync(local, 'OLD')
+    service.noteDelivered({ connectionId: 'c1', sessionId: 's1', localPath: local, relativePath: 'download/report.csv', transferId: 'tid-1' })
+    expect(listArtifactTransfersForSession('s1')[0]).toMatchObject({ state: 'uploaded' })
+
+    const real = db.prepare.bind(db)
+    const prepare = vi.spyOn(db, 'prepare').mockImplementation(((sql: string) => {
+      // The claim statement, and only it.
+      if (sql.includes('attempts = attempts + 1')) throw new Error('SQLITE_BUSY')
+      return real(sql)
+    }) as typeof db.prepare)
+    await service.runOnce('c1')
+    prepare.mockRestore()
+
+    // Still a delivered file owing a wake. Never a pending upload.
+    expect(listArtifactTransfersForSession('s1')).toEqual([expect.objectContaining({ state: 'uploaded' })])
+    expect(node.calls).toEqual([])
+    expect(notifications).toEqual([])
+
+    // Recovered: one wake, zero bytes, nothing sent to the node at all.
+    db.prepare("UPDATE artifact_transfer_jobs SET next_attempt_at = NULL WHERE session_id = 's1'").run()
+    await service.runOnce('c1')
+    expect(node.calls).toEqual([])
+    expect(notifications).toEqual(['download/report.csv'])
+    expect(listArtifactTransfersForSession('s1')).toEqual([])
+  })
+
   it('runs only the jobs of the connection it was started for', async () => {
     const node = fakeNode()
     const service = new ArtifactTransferService({ put: node.put })

@@ -940,6 +940,39 @@ All four landed on 2026-09-14, one commit each.
   — and what remains is a notice whose retries are notices. A failed
   completion record never becomes an upload again.
 
+- **A twentieth review asked the job table one question and read the answer
+  as another.** `OWES_UPLOAD` — pending, running, failed — is the right test
+  for "may a new delivery join an existing one?": a row in `uploaded` has had
+  *its* bytes accepted, and a file that changed since then must not be filed
+  behind a wake that knows nothing about the new version. But the instance
+  that could not read the table (`unavailable`, above) is not a new version.
+  It never received an upload identity, so the file it is holding is exactly
+  the one that row already delivered — and being told `absent` made it mint a
+  second transfer id and push the desktop's older copy back over the node's
+  newer file. No restart, no crash: an eager push and a listing of the same
+  directory are enough.
+
+  The lookup now has a fourth answer, `delivered`, and the two callers read it
+  differently on purpose: `acquireHandoff` ignores it and starts its own
+  delivery, `resolveBlocked` treats it exactly like `found` and lets go. The
+  same review closed the narrower form — the row deleted outright once the
+  wake lands — by having the worker call `noteHandoffDelivered` after the
+  upload is confirmed and *before* the row is removed, so no instance ever has
+  to infer completion from a missing row.
+
+  A first attempt added a second seam for this (`bindJobToHandoff`, called by
+  the worker before its first await). It was removed: every window it covered
+  was already covered by `running` being in `OWES_UPLOAD`, and a second way to
+  advance the same state is the fragmentation this whole file exists to
+  prevent. Completion for a file is advanced in one place.
+
+  And `runJob`'s outer `catch` resumed from `pending` unconditionally. Once
+  the bytes are confirmed on the node, a later failure — including failing to
+  write down *which phase the row is in* — cannot mean "upload it again"; it
+  meant exactly that, and the retry put stale bytes over the node's copy. The
+  handler now resumes from the phase actually reached, and a delivered file is
+  never failed for want of a local copy.
+
 - **`browser_open` creates the tab blank, records the driver, then
   navigates.** Opening with the URL in one call meant the page could start a
   direct download before the tab had an owner, and `will-download` had nobody

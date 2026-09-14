@@ -108,7 +108,21 @@ export interface Handoff {
  * over whatever the agent did in between.
  */
 export type JobLookupResult =
+  /** A row still owes this file's bytes; join it rather than start a second. */
   | { status: 'found'; transferId: string }
+  /**
+   * A row carries this path but owes no bytes — the node already has them and
+   * only the wake is left.
+   *
+   * Distinct from `found` because the two callers ask different questions of
+   * the same table. A *new version* of the file must not join such a row: its
+   * bytes were never sent, and the row will be deleted by a wake that knows
+   * nothing about them. A *placeholder* that never received an upload identity
+   * must, because the file it was created for is the one already delivered.
+   * Collapsing this into `absent` gave the placeholder a second transfer id
+   * and pushed the desktop's older copy over the node's newer file.
+   */
+  | { status: 'delivered' }
   | { status: 'absent' }
   /** The table could not be read. NOT the same as `absent`. */
   | { status: 'unavailable' }
@@ -188,6 +202,9 @@ export function acquireHandoff(input: {
   // there is no in-memory instance to find — but starting a second delivery
   // beside it is exactly the two-uploads-one-file failure, and the row's own
   // upload would later overwrite whatever the second one delivered.
+  // `delivered` is deliberately not consulted here: this caller is handing over
+  // a file as it is on disk now, and a row whose bytes are already on the node
+  // says nothing about that version. It starts its own delivery.
   const queued = findPendingJobFor(input.sessionId, input.localPath)
   if (queued.status === 'found') {
     return {
@@ -251,6 +268,19 @@ export function acquireHandoff(input: {
   }
   handoffs.set(key, handoff)
   return { handoff, mine: true }
+}
+
+/**
+ * The bytes for this file are on the node. Anything still holding it locally
+ * can let go — and, crucially, stops being a reason to deliver it again.
+ *
+ * Called by the worker once the upload is confirmed and BEFORE the row is
+ * deleted, so there is no window in which the job is gone and an instance is
+ * still waiting to hear about it.
+ */
+export function noteHandoffDelivered(connectionId: string, sessionId: string, localPath: string): void {
+  const handoff = handoffs.get(keyFor(connectionId, sessionId, localPath))
+  if (handoff) settle(handoff)
 }
 
 /**
@@ -334,6 +364,9 @@ function attempt(handoff: Handoff): void {
   const key = keyFor(handoff.connectionId, handoff.sessionId, handoff.localPath)
   if (dropped.has(handoff.sessionId) || handoffs.get(key) !== handoff) return
   if (handoff.state === 'blocked') return resolveBlocked(handoff)
+  // A persisted job is carrying this file; the instance only names it, and
+  // enqueueing again would be the second delivery this whole file prevents.
+  if (handoff.state === 'queued') return
   if (!handoff.enqueue) return
   handoff.attempts += 1
   try {
@@ -373,8 +406,10 @@ function resolveBlocked(handoff: Handoff): void {
     scheduleRetry(handoff)
     return
   }
-  if (answer.status === 'found') {
+  if (answer.status === 'found' || answer.status === 'delivered') {
     // The row owns it, and the row protects it. Nothing here to do but let go.
+    // `delivered` counts: this instance never had an upload identity, so the
+    // file it is holding is the one that row already put on the node.
     settle(handoff)
     return
   }

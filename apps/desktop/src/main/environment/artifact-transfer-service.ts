@@ -9,7 +9,7 @@
  */
 import { statSync } from 'node:fs'
 import { canonicalClaimPath } from './active-writes'
-import { dropSessionHandoffs, failedHandoffs, retryFailedHandoffs, setPendingJobLookup } from './pending-handoffs'
+import { dropSessionHandoffs, failedHandoffs, noteHandoffDelivered, retryFailedHandoffs, setPendingJobLookup } from './pending-handoffs'
 
 /**
  * Job states whose bytes the node does not have yet. `uploaded` and
@@ -89,9 +89,16 @@ export class ArtifactTransferService {
     setPendingJobLookup((sessionId, localPath) => {
       const real = canonicalClaimPath(localPath)
       const jobs = listArtifactTransfersForSession(sessionId)
+      let delivered = false
       for (const job of jobs) {
-        if (!OWES_UPLOAD.has(job.state)) continue
         if (canonicalClaimPath(job.localPath) !== real) continue
+        if (!OWES_UPLOAD.has(job.state)) {
+          // `uploaded` / `notifying`: the node has these bytes. Reporting it as
+          // nothing at all is what let a waiting instance mint a second
+          // transfer id and send the desktop's copy again.
+          delivered = true
+          continue
+        }
         // `failed` is terminal: the worker's queries exclude it, so joining one
         // would answer "on its way" about a delivery nothing will ever perform.
         // A caller asking for this file again is the reason to try once more,
@@ -100,7 +107,7 @@ export class ArtifactTransferService {
         this.workers.get(job.connectionId)?.wake()
         return { status: 'found', transferId: job.transferId }
       }
-      return { status: 'absent' }
+      return delivered ? { status: 'delivered' } : { status: 'absent' }
     })
   }
 
@@ -276,9 +283,13 @@ export class ArtifactTransferService {
     const onWorkerAbort = () => abort.abort()
     workerSignal.addEventListener('abort', onWorkerAbort, { once: true })
     this.inflight.set(job.jobId, abort)
+    /** Set once the node is known to hold the bytes: an error after this is never an upload failure. */
+    let delivered = false
     try {
       // The bytes are already there; only the agent's wake is still owed.
       if (job.state === 'uploaded' || job.state === 'notifying') {
+        delivered = true
+        noteHandoffDelivered(job.connectionId, job.sessionId, job.localPath)
         if (!claimArtifactTransfer(job.jobId, 'notifying')) return
         await this.notify(job)
         return
@@ -301,7 +312,11 @@ export class ArtifactTransferService {
       this.deps.log?.info('[artifact-transfer] uploaded', job.relativePath, `${outcome.bytes}B`)
       // The row survives the upload: the agent has an ENOENT to take back and
       // is only told the path works once the node confirms the wake.
+      delivered = true
       markArtifactTransferUploaded(job.jobId)
+      // Before anything can delete the row: the file is on the node, so nothing
+      // here needs to hold it and nothing should deliver it a second time.
+      noteHandoffDelivered(job.connectionId, job.sessionId, job.localPath)
       if (!claimArtifactTransfer(job.jobId, 'notifying')) return
       await this.notify(job)
     } catch (err) {
@@ -309,10 +324,21 @@ export class ArtifactTransferService {
       const message = err instanceof Error ? err.message : String(err)
       const missingLocal = (err as { code?: string }).code === 'ENOENT'
       const attempts = job.attempts + 1
-      const giveUp = missingLocal || attempts >= MAX_ATTEMPTS
+      // A delivered file cannot fail for want of a local copy: the bytes are on
+      // the node and only the wake is outstanding.
+      const giveUp = (missingLocal && !delivered) || attempts >= MAX_ATTEMPTS
       const delay = Math.min(BACKOFF_MAX_MS, BACKOFF_BASE_MS * 2 ** Math.min(attempts - 1, 10))
       try {
-        markArtifactTransferFailed(job.jobId, message, giveUp ? null : (this.deps.now ?? Date.now)() + delay)
+        // Resume from the phase actually reached. The default was `pending`,
+        // which turned "could not write the notification state" into "upload
+        // this again" — and that upload put the desktop's older bytes back
+        // over whatever the agent had done to the file on the node.
+        markArtifactTransferFailed(
+          job.jobId,
+          message,
+          giveUp ? null : (this.deps.now ?? Date.now)() + delay,
+          delivered ? 'uploaded' : 'pending',
+        )
       } catch { /* row dropped with the session */ }
       this.deps.log?.warn('[artifact-transfer] upload failed', job.relativePath, message, giveUp ? '(giving up)' : `(retry in ${delay}ms)`)
     } finally {

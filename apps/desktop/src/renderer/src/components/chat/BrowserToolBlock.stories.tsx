@@ -165,6 +165,13 @@ export const Gallery: Story = {
       </Section>
       <Section title="Interaction">
         {tool('click', { input: { selector: 'button.submit', description: 'Submit checkout' }, result: JSON.stringify({ ok: true }) })}
+        {tool('click', {
+          input: { selector: 'button.submit', description: 'Verify the reply reappears after a missed update' },
+          result: JSON.stringify({
+            ok: true,
+            recording: { savedPath: '/tmp/super-one-recordings/browser/click.webm', mimeType: 'video/webm', durationMs: 1400 },
+          }),
+        })}
         {tool('hover', { input: { text: 'Account' }, result: JSON.stringify({ ok: true }) })}
         {tool('type', { input: { selector: '#email', text: 'ada@example.com', description: 'Fill email' }, result: JSON.stringify({ ok: true }) })}
         {tool('press', { input: { key: 'Enter', modifiers: ['Meta'] }, result: JSON.stringify({ ok: true }) })}
@@ -241,6 +248,21 @@ export const BrowserScreenshot: Story = {
 export const BrowserClick: Story = {
   name: 'browser_click',
   render: () => <StoryShell>{tool('click', { input: { selector: 'button.submit', description: 'Submit checkout' }, result: JSON.stringify({ ok: true }) })}</StoryShell>,
+}
+
+export const BrowserClickRecording: Story = {
+  name: 'browser_click · recording icon on the right',
+  render: () => (
+    <StoryShell>
+      {tool('click', {
+        input: { selector: 'button.submit', description: 'Verify the reply reappears after a missed update' },
+        result: JSON.stringify({
+          ok: true,
+          recording: { savedPath: '/tmp/super-one-recordings/browser/click.webm', mimeType: 'video/webm', durationMs: 1400 },
+        }),
+      })}
+    </StoryShell>
+  ),
 }
 
 export const BrowserHover: Story = {

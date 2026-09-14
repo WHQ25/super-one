@@ -152,12 +152,18 @@ export function ToolRow({
         {iconIsIdentity ? icon : <ToolStatusIcon tone={tone} fallback={icon} />}
         {children}
         {showStatusBadge ? <ToolStatusBadge tone={tone} /> : null}
-        {trailing}
-        {canExpand ? (
-          <ChevronRight className={cn(
-            'ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200',
-            expanded && 'rotate-90',
-          )} />
+        {/* One ml-auto for trailing + chevron. Separate auto margins split the
+            leftover space and park trailing (recording icon, counts) mid-row. */}
+        {trailing || canExpand ? (
+          <span className="ml-auto flex shrink-0 items-center gap-1.5">
+            {trailing}
+            {canExpand ? (
+              <ChevronRight className={cn(
+                'size-3 shrink-0 text-muted-foreground transition-transform duration-200',
+                expanded && 'rotate-90',
+              )} />
+            ) : null}
+          </span>
         ) : null}
       </div>
       {canExpand ? (

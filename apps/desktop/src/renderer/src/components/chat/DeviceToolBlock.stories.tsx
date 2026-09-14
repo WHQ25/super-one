@@ -267,6 +267,18 @@ export const Gallery: Story = {
           input: { stateId: 's4', actions: [{ type: 'rotate', orientation: 'landscape-left' }] },
           result: ACT_WORKED,
         })}
+        {tool('act', {
+          description: 'Tap Settings after the spinner clears',
+          input: { stateId: 's2', actions: [{ type: 'tap', ref: '@e4' }], recording: true },
+          result: JSON.stringify({
+            ...JSON.parse(ACT_WORKED),
+            recording: {
+              savedPath: '/tmp/super-one-recordings/device/clip.mp4',
+              mimeType: 'video/mp4',
+              durationMs: 1800,
+            },
+          }),
+        })}
       </Section>
       <Section title="Query">
         {tool('query', {
@@ -356,6 +368,26 @@ export const DeviceAct: Story = {
     <StoryShell>
       {tool('act', { description: 'Open the Settings app', input: { stateId: 's2', actions: [{ type: 'tap', ref: '@e4' }] }, result: ACT_WORKED })}
       {tool('act', { description: 'Turn the device on its side', input: { stateId: 's4', actions: [{ type: 'rotate', orientation: 'landscape-left' }] }, result: ACT_DIDNT })}
+    </StoryShell>
+  ),
+}
+
+export const DeviceActRecording: Story = {
+  name: 'device_act · recording icon on the right',
+  render: () => (
+    <StoryShell>
+      {tool('act', {
+        description: 'Tap Settings after the spinner clears',
+        input: { stateId: 's2', actions: [{ type: 'tap', ref: '@e4' }], recording: true },
+        result: JSON.stringify({
+          ...JSON.parse(ACT_WORKED),
+          recording: {
+            savedPath: '/tmp/super-one-recordings/device/clip.mp4',
+            mimeType: 'video/mp4',
+            durationMs: 1800,
+          },
+        }),
+      })}
     </StoryShell>
   ),
 }

@@ -26,6 +26,27 @@ describe('ToolRow', () => {
     fireEvent.click(screen.getByText('Run Command'))
     expect(screen.getByText('diagnostic detail')).toBeTruthy()
   })
+
+  it('keeps trailing and the expand chevron in one right-aligned group', () => {
+    const { container } = render(
+      <ToolRow
+        icon={<span>tool icon</span>}
+        expandable
+        trailing={<span data-testid="trailing">rec</span>}
+        details={<div>detail</div>}
+      >
+        <ToolName>Click</ToolName>
+        <ToolSummary>a short description</ToolSummary>
+      </ToolRow>,
+    )
+
+    const trailing = screen.getByTestId('trailing')
+    const chevron = container.querySelector('.lucide-chevron-right')
+    expect(chevron).toBeTruthy()
+    expect(trailing.parentElement).toBe(chevron?.parentElement)
+    expect(trailing.parentElement).toHaveClass('ml-auto')
+    expect(chevron).not.toHaveClass('ml-auto')
+  })
 })
 
 describe('toolOutcomeLabel', () => {

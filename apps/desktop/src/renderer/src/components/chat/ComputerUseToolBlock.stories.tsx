@@ -209,6 +209,19 @@ export const Gallery: Story = {
             evidence: [{ description: "button state changed" }],
           }),
         })}
+        {tool("act", {
+          description: "Click the Save button",
+          input: { stateId: "@s1", actions: [{ type: "click", ref: "@e4" }], recording: true },
+          result: JSON.stringify({
+            outcome: "worked",
+            successorStateId: "@s2",
+            recording: {
+              savedPath: "/tmp/super-one-recordings/computer/click.mp4",
+              mimeType: "video/mp4",
+              durationMs: 1600,
+            },
+          }),
+        })}
         {tool("wait_for", {
           description: "Wait for the save confirmation",
           input: {
@@ -327,6 +340,27 @@ export const ComputerAct: Story = {
           outcome: "worked",
           successorStateId: "@s2",
           evidence: [{ description: "button state changed" }],
+        }),
+      })}
+    </StoryShell>
+  ),
+};
+
+export const ComputerActRecording: Story = {
+  name: "computer_act · recording icon on the right",
+  render: () => (
+    <StoryShell>
+      {tool("act", {
+        description: "Click the Save button",
+        input: { stateId: "@s1", actions: [{ type: "click", ref: "@e4" }], recording: true },
+        result: JSON.stringify({
+          outcome: "worked",
+          successorStateId: "@s2",
+          recording: {
+            savedPath: "/tmp/super-one-recordings/computer/click.mp4",
+            mimeType: "video/mp4",
+            durationMs: 1600,
+          },
         }),
       })}
     </StoryShell>

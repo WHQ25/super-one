@@ -252,7 +252,7 @@ function BrowserOperationBlock({
       mountDetails="expanded"
       onExpandedChange={onExpandedChange}
       trailing={(
-        <div className="ml-auto flex shrink-0 items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1.5">
           {rightCount ? <span className="text-muted-foreground/70">{rightCount}</span> : null}
           {recording ? <Video className="size-3 text-muted-foreground/70" aria-label="Action recording" /> : null}
           {isStreaming ? elapsed(elapsedSeconds, elapsedClassName) : null}
@@ -393,7 +393,7 @@ function BrowserDownloadBlock({
       details={details}
       detailsClassName="p-0"
       trailing={(
-        <div className="ml-auto flex shrink-0 items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1.5">
           {inFlight && progressPct != null ? <span className="text-muted-foreground/70 tabular-nums">{progressPct}%</span> : null}
           {inFlight ? elapsed(elapsedSeconds, elapsedClassName) : null}
         </div>

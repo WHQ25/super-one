@@ -1,3 +1,5 @@
+import { attachmentPrompt, buildAttachmentTurn } from '@superone/shared/attachment-turn'
+import { validateTurnAttachments } from '@superone/shared/attachment-validation'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -703,7 +705,9 @@ export class DeepseekRuntime {
         // every later request of the session, so a message that dsh could
         // store but not serialize would not fail once — it would fail on every
         // subsequent turn too, with no way back. See `imageBlocksFor`.
-        const encoded = images?.length ? encodeComposerImages(images) : []
+        validateTurnAttachments(images, text)
+        const prepared = buildAttachmentTurn(images, { inlineImages: true, requirePaths: true })
+        const encoded = encodeComposerImages(prepared.attachments.filter(a => a.inline).map(a => ({ ...a, id: String(a.index) })))
         const imageBlocks = encoded.length > 0
           ? await runtime.imageBlocksFor(record, options, encoded)
           : []
@@ -711,7 +715,7 @@ export class DeepseekRuntime {
         // can park until the next wake (integration plan §3 footgun 2) — the
         // queued-message chip covers that surface until steering lands.
         record.agent.followup(createUserMessage({
-          content: [{ type: 'text', text }, ...imageBlocks],
+          content: [{ type: 'text', text: attachmentPrompt(text, prepared.note) }, ...imageBlocks],
           source: { kind: 'user' },
         }))
       },

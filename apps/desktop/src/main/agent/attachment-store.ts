@@ -14,3 +14,5 @@ export {
   type AttachmentInput,
   type PersistedAttachment,
 } from '@superone/shared/attachment-store'
+
+export { buildAttachmentTurn, buildCodexAttachmentInput } from '@superone/shared/attachment-turn'

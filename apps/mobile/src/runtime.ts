@@ -468,7 +468,7 @@ export class ChatRuntime {
     priority?: 'now' | 'next' | 'later'
     /** Park then steer in one host command — composer Stair. */
     steer?: 'now' | 'next'
-  } = {}): void {
+  } = {}): Promise<void> | void {
     const clientMessageId = extra.clientMessageId ?? newMessageId('user')
     const cmd: RemoteCommand = {
       type: 'send_message',
@@ -504,6 +504,23 @@ export class ChatRuntime {
     if (!queued) this.appendLocalTurn(localUserMessage(clientMessageId, content, extra.images))
     this.dirty = true
     this.flush()
+    if (extra.images?.length) {
+      const generation = this.restoreGeneration
+      return this.client.request({ ...cmd, requestId: randomId() }).then((result) => {
+        const error = (result as { error?: string } | null)?.error
+        if (error) throw new Error(error)
+      }).catch(error => {
+        if (generation !== this.restoreGeneration) throw error
+        this.session = { ...this.session,
+          messages: this.session.messages.filter(message => message.id !== clientMessageId),
+          queuedMessages: this.session.queuedMessages.filter(message => message.id !== clientMessageId),
+        }
+        this.session.awaitingAssistantReply = false
+        this.dirty = true
+        this.flush()
+        throw error
+      })
+    }
     this.client.send(cmd)
   }
 

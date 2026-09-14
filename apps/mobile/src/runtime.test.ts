@@ -89,7 +89,7 @@ describe('ChatRuntime', () => {
       content: 'fast-off',
       serviceTier: null,
     }))
-    expect(client.request).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'send_message' }))
+    expect(client.request).toHaveBeenCalledWith(expect.objectContaining({ type: 'send_message', images: expect.any(Array), requestId: expect.any(String) }))
     runtime.session = { ...runtime.session, status: 'streaming' }
     runtime.send('later', { clientMessageId: 'user_q', priority: 'next' })
     expect(runtime.session.queuedMessages.map((message) => message.id)).toEqual(['user_q'])
@@ -578,4 +578,18 @@ describe('attachment originals behind transcript thumbnails', () => {
     await expect(runtime.loadAttachment('user_1', { attachmentId: 'gone', name: 'x.jpg' })).rejects.toThrow('no longer available')
     runtime.dispose()
   })
+})
+
+
+it('retains no optimistic bubble when the host refuses attachment admission', async () => {
+  const client = fakeClient()
+  client.request.mockResolvedValue({ error: 'Attachment: Could not save file. Retry.' })
+  const runtime = new ChatRuntime(client as never, vi.fn())
+  runtime.projectPath = '/p'; runtime.sessionId = 's'
+  await expect(runtime.send('look', { clientMessageId: 'u', images: [{ id: 'i', name: 'a.png', mimeType: 'image/png', base64: 'a' }] })).rejects.toThrow('Could not save')
+  expect(runtime.session.messages).toEqual([])
+  expect(runtime.pendingTurn).toBeNull()
+  expect(client.send).not.toHaveBeenCalled()
+  expect(client.request).toHaveBeenCalledWith(expect.objectContaining({ type: 'send_message', requestId: expect.any(String) }))
+  runtime.dispose()
 })

@@ -36,7 +36,7 @@ import { createMultiHarnessRouter, createAcpOpenCodeProductionRouter, createCurs
 import type { HarnessCatalogReader } from '@superone/runtime/harness'
 import type { ProviderStore } from '../provider/provider-store'
 import { buildHarnessEnvWithProxy, resolveHarnessService } from '../provider/resolve-service'
-import { prepareTurnPrompt } from './turn-attachments'
+import { buildCodexAttachmentInput } from '@superone/shared/attachment-turn'
 import { ensureMcpMerge, type McpMergeMode } from '@superone/runtime/fs'
 import { openTurnAndStream } from './codex-live-turn'
 
@@ -278,8 +278,11 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
         ? { mcp_servers: merged.codexMcpServers }
         : undefined
 
-    const prepared = prepareTurnPrompt(input.text, cwd, input.images)
-    const prompt = prepared.kind === 'text' ? prepared.text : prepared.textFallback
+    if (input.images?.length && turnKind !== 'run' && turnKind !== 'steer') {
+      throw new Error('Attachment: attachments are supported on normal and steered turns only.')
+    }
+    const attachmentInput = input.images?.length ? buildCodexAttachmentInput(input.text, input.images) : undefined
+    const prompt = input.text
     const reasoningEffort = mapCodexReasoningEffort(input.effort)
 
     const priorThread =
@@ -299,6 +302,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
         const result = await runCodexAppServerTurn({
           client: live.client,
           prompt,
+          input: attachmentInput,
           cwd: live.cwd,
           threadId: live.threadId,
           turnKind: 'steer',
@@ -344,6 +348,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
           const result = await openTurnAndStream({
             client: conn.client,
             prompt,
+            input: attachmentInput,
             cwd,
             additionalDirectories: input.additionalDirectories,
             threadId: conn.threadId!,

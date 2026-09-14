@@ -5,10 +5,11 @@
 
 import {
   buildAttachmentPathNote,
-  buildInlineAttachmentBlocks,
   partitionAttachments,
   type AttachmentInput,
 } from '@superone/shared/attachment-store'
+import { attachmentPrompt, buildAttachmentTurn } from '@superone/shared/attachment-turn'
+import { validateTurnAttachments } from '@superone/shared/attachment-validation'
 import type { TurnImageAttachment } from '@superone/runtime/session'
 
 function toInputs(
@@ -28,15 +29,13 @@ export type PreparedTurnPrompt =
       kind: 'multimodal'
       /** SDKUserMessage-shaped content: image/document blocks + optional text. */
       content: Array<Record<string, unknown>>
-      /** Text-only fallback for harnesses that cannot take multimodal (Codex). */
+      /** Text representation for path-only callers. Codex uses typed localImage input. */
       textFallback: string
     }
 
 /**
  * Prepare prompt for a turn:
- * - Prefer path note for persisted files (desktop parity).
- * - If any attach fails to persist, build multimodal content blocks so Claude
- *   still sees the bytes (desktop buildUserMessage fallback).
+ * Images are inline alongside saved paths; PDFs are referenced by path only.
  *
  * `cwd` is unused (storage is host-wide tmp); kept for call-site stability.
  */
@@ -48,29 +47,12 @@ export function prepareTurnPrompt(
   const inputs = toInputs(images)
   if (inputs.length === 0) return { kind: 'text', text }
 
-  const { saved, failed } = partitionAttachments(inputs)
-  const note = buildAttachmentPathNote(saved)
-  const textWithNote = note
-    ? text.trim()
-      ? `${text}\n\n${note}`
-      : note
-    : text
+  validateTurnAttachments(inputs, text)
+  const turn = buildAttachmentTurn(inputs, { inlineImages: true, inlinePdf: false, requirePaths: true })
+  const textWithNote = attachmentPrompt(text, turn.note)
+  const blocks = [...turn.inlineBlocks, { type: 'text', text: textWithNote }]
+  return { kind: 'multimodal', content: blocks, textFallback: textWithNote }
 
-  if (failed.length === 0) {
-    return { kind: 'text', text: textWithNote }
-  }
-
-  const blocks = buildInlineAttachmentBlocks(failed)
-  if (textWithNote.trim()) {
-    blocks.push({ type: 'text', text: textWithNote })
-  }
-  // Codex and other text-only runners fall back to path note + dropped failed.
-  const textFallback =
-    textWithNote.trim() ||
-    (failed.length > 0
-      ? `[${failed.length} attachment(s) could not be saved for path tools; Claude multimodal may still see them.]`
-      : text)
-  return { kind: 'multimodal', content: blocks, textFallback }
 }
 
 /** @deprecated Prefer {@link prepareTurnPrompt}. Text-only convenience. */

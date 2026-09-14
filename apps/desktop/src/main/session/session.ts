@@ -1,3 +1,4 @@
+import { admitTurnAttachments } from '@superone/shared/attachment-turn'
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
 import { hostPendingInteractions, trackHostInteraction } from './host-pending-interactions'
 import { dispatchBackendSteer } from './dispatch-backend-steer'
@@ -678,9 +679,11 @@ export class Session implements SessionContract {
     } as AgentEvent)
   }
 
-  async send(request: SendMessageRequest, opts?: { providerOrigin?: SendProviderOrigin }): Promise<void> {
+  async send(request: SendMessageRequest, opts?: { providerOrigin?: SendProviderOrigin; onAccepted?: () => void }): Promise<void> {
     const providerOrigin = opts?.providerOrigin ?? 'local'
+    this.assertNotDisposed()
     this.assertCanSend(providerOrigin)
+    admitTurnAttachments(request.content, request.images)
     this.touchRuntimeActivity()
     request = this.prepareFirstTurnPreamble(request)
     const isQueued = (request.priority === 'next' || request.priority === 'later') && this.isStreaming()
@@ -708,6 +711,7 @@ export class Session implements SessionContract {
         }
         try {
           this.flushFirstTurnPreamble()
+          opts?.onAccepted?.()
           await this.backend.send(request)
         } catch (error) {
           if (request.clientMessageId) this._pendingQueuedRequests.delete(request.clientMessageId)
@@ -720,6 +724,8 @@ export class Session implements SessionContract {
     let release!: () => void
     this._sendChain = new Promise<void>((r) => { release = r })
     try {
+      // The validated request now has a place in this session's send queue.
+      opts?.onAccepted?.()
       await prev.catch(() => {})
       await this.waitForRuntimeRelease()
       this.assertNotDisposed()

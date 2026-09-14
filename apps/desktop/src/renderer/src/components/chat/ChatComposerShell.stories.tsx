@@ -1,3 +1,4 @@
+import { PNG_ATTACHMENT } from '@superone/shared/test-fixtures/attachments'
 import type { Meta, StoryObj } from '@storybook/react'
 import { useEffect, useState } from 'react'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore, type PerSessionState } from '@/stores/chat'
@@ -26,7 +27,7 @@ function updateDraft(fields: Partial<PerSessionState>) {
   })
 }
 
-function DraftPreview({ narrow = false, busy = false, failure = false }: { narrow?: boolean; busy?: boolean; failure?: boolean }) {
+function DraftPreview({ narrow = false, busy = false, failure = false, attachmentFailure }: { narrow?: boolean; busy?: boolean; failure?: boolean; attachmentFailure?: 'invalid' | 'save' }) {
   const [ready, setReady] = useState(false)
   const [text, setText] = useState('Review the mobile draft layout and keep desktop edits visible.\nInclude the saved attachment and inline references.')
   const locked = useChatStore((state) => !!state.projectSessions[projectPath]?._sessions[sessionId]?.draftRemoteDeviceId)
@@ -37,11 +38,12 @@ function DraftPreview({ narrow = false, busy = false, failure = false }: { narro
     const timer = setTimeout(() => {
       const project = createDefaultProjectState()
       const session = createDefaultPerSessionState()
-      Object.assign(session, { draftId: 'shared-draft', draftText: text, draftJson: plainTextToTiptapDoc(text), draftRemoteDeviceId: 'phone' })
+      Object.assign(session, { draftId: 'shared-draft', draftText: text, draftJson: plainTextToTiptapDoc(text), draftRemoteDeviceId: attachmentFailure ? null : 'phone', ...(attachmentFailure ? { attachments: [{ ...PNG_ATTACHMENT, id: 'image', ...(attachmentFailure === 'invalid' ? { base64: 'invalid' } : {}) }] } : {}) })
       useChatStore.setState({ activeProject: projectPath, projectSessions: {
         ...useChatStore.getState().projectSessions,
         [projectPath]: { ...project, _activeSessionId: sessionId, _sessions: { [sessionId]: session } },
       } })
+      if (attachmentFailure === 'save') useChatStore.setState({ sendMessage: async () => { updateDraft({ attachments: [] }); throw new Error('Attachment: Could not save picture.png. Retry the message.') } })
       useAppStore.setState({ harnessCatalog: null })
       window.environment = { ...environment, disconnectDraft: async () => {
         if (busy) return new Promise<void>(() => {})
@@ -56,7 +58,7 @@ function DraftPreview({ narrow = false, busy = false, failure = false }: { narro
       useChatStore.setState(previous)
       useAppStore.setState({ harnessCatalog: oldCatalog })
     }
-  }, [busy, failure])
+  }, [busy, failure, attachmentFailure])
   return <div style={{ width: narrow ? 320 : 620, maxWidth: '100%' }}>
     <label className="mb-5 block text-sm text-muted-foreground">Mobile draft
       <textarea aria-label="Mobile draft" className="mt-2 block w-full rounded-md border p-2 text-foreground" value={text} disabled={!locked}
@@ -76,3 +78,6 @@ export const SharedDraft: Story = { render: () => <DraftPreview /> }
 export const NarrowDraft: Story = { render: () => <DraftPreview narrow /> }
 export const Disconnecting: Story = { render: () => <DraftPreview busy /> }
 export const DisconnectError: Story = { render: () => <DraftPreview failure /> }
+
+export const InvalidAttachment: Story = { render: () => <DraftPreview attachmentFailure="invalid" /> }
+export const AttachmentSaveRetry: Story = { render: () => <DraftPreview attachmentFailure="save" narrow /> }

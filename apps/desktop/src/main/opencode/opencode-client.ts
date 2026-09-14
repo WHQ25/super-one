@@ -1,3 +1,5 @@
+import { attachmentPrompt, buildAttachmentTurn } from '@superone/shared/attachment-turn'
+import { validateTurnAttachments } from '@superone/shared/attachment-validation'
 import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 import { existsSync } from 'fs'
 import { homedir } from 'os'
@@ -133,7 +135,7 @@ export function parseOpenCodeMcpStatus(statuses: Record<string, McpStatus>): Mcp
   })
 }
 
-function imageParts(images: ImageAttachment[] | undefined): FilePartInput[] {
+function imageParts(images: Array<{ mimeType: string; name: string; base64: string }> | undefined): FilePartInput[] {
   return (images ?? []).map((image) => ({
     type: 'file',
     mime: image.mimeType,
@@ -233,8 +235,11 @@ export class OpenCodeClient {
     images?: ImageAttachment[]
     system?: string
   }): Promise<void> {
-    const parts: TextPartInput[] = input.text ? [{ type: 'text', text: input.text }] : []
-    const fileParts = imageParts(input.images)
+    validateTurnAttachments(input.images, input.text)
+    const turn = buildAttachmentTurn(input.images, { inlineImages: true, requirePaths: true })
+    const text = attachmentPrompt(input.text, turn.note)
+    const parts: TextPartInput[] = text ? [{ type: 'text', text }] : []
+    const fileParts = imageParts(turn.attachments.filter(a => a.inline))
     const model = parseOpenCodeModelSlug(input.model)
     if (input.model && !model) throw new OpenCodeApiError(`Invalid OpenCode model id: ${input.model}`)
     await this.sdk.session.promptAsync({
@@ -255,11 +260,13 @@ export class OpenCodeClient {
     agent?: string
     images?: ImageAttachment[]
   }): Promise<void> {
-    const parts = imageParts(input.images)
+    validateTurnAttachments(input.images, input.arguments)
+    const turn = buildAttachmentTurn(input.images, { inlineImages: true, requirePaths: true })
+    const parts = imageParts(turn.attachments.filter(a => a.inline))
     await this.sdk.session.command({
       sessionID: sessionId,
       command: input.command,
-      arguments: input.arguments,
+      arguments: attachmentPrompt(input.arguments ?? '', turn.note),
       model: input.model,
       variant: input.variant,
       agent: input.agent,

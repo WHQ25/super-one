@@ -1,3 +1,5 @@
+import { attachmentPrompt, buildAttachmentTurn } from '@superone/shared/attachment-turn'
+import { validateTurnAttachments } from '@superone/shared/attachment-validation'
 import type {
   AgentEvent,
   ContextUsageInfo,
@@ -304,15 +306,15 @@ export class CursorBackend implements SessionBackend {
       const turnComplete = new Promise<void>((resolve) => { resolveTurn = resolve })
       this.activeTurn = { messageId, resolve: resolveTurn, done: turnComplete }
 
-      const images = request.images
-        ?.map((img) => ({ data: img.base64, mimeType: img.mimeType || 'image/png' }))
-        .filter((img) => img.data) ?? []
+      validateTurnAttachments(request.images, request.content)
+      const turn = buildAttachmentTurn(request.images, { inlineImages: true, requirePaths: true })
+      const images = turn.attachments.filter(a => a.inline).map(img => ({ data: img.base64, mimeType: img.mimeType }))
 
       const force = Boolean(request.force || request.cursor?.force)
       const idempotencyKey = request.clientMessageId
         || request.assistantMessageId
         || messageId
-      await runtime.send(messageId, request.content, {
+      await runtime.send(messageId, attachmentPrompt(request.content, turn.note), {
         images: images.length ? images : undefined,
         force: force || undefined,
         idempotencyKey,

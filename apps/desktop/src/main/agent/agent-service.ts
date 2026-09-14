@@ -1,3 +1,5 @@
+import { admitTurnAttachments } from '@superone/shared/attachment-turn'
+import { withTurnReceipt } from '../remote/turn-receipt'
 import { codexAccountStore } from '../codex/codex-account-store'
 import { loadSessionHistoryIndex, loadSessionMessageWindow } from '../session/history-navigation'
 import { buildProgressiveBootstrap } from './progressive-bootstrap'
@@ -499,7 +501,7 @@ export class AgentService {
     })
   }
 
-  private async runCodexRemoteTurn(projectPath: string, sessionId: string, deviceId: string, command: { content: string; model?: string; effort?: string; serviceTier?: string | null; permissionPreset?: string; collaborationMode?: string; threadId?: string; images?: SendMessageRequest['images']; gitBranch?: string | null; worktreeBranch?: string | null; clientMessageId?: string; priority?: 'now' | 'next' | 'later' }, isNewSession?: boolean): Promise<void> {
+  private async runCodexRemoteTurn(projectPath: string, sessionId: string, deviceId: string, command: { content: string; model?: string; effort?: string; serviceTier?: string | null; permissionPreset?: string; collaborationMode?: string; threadId?: string; images?: SendMessageRequest['images']; gitBranch?: string | null; worktreeBranch?: string | null; clientMessageId?: string; priority?: 'now' | 'next' | 'later' }, onAccepted?: () => void): Promise<void> {
     const userMessageId = newMessageId('user')
     const assistantMessageId = newMessageId('remote')
     const mgr = this.requireSessionManager()
@@ -533,20 +535,12 @@ export class AgentService {
             reasoningEffort: command.effort as CodexReasoningEffort | undefined,
             ...(command.serviceTier !== undefined ? { serviceTier: command.serviceTier } : {}),
           },
-        }, { providerOrigin: 'remote' })
-      }, {
-        onClaim: isNewSession
-          ? () => {
-              this.remoteControlService?.sendAgentEvent({
-                type: 'session_init', projectPath, sessionId,
-                session: { sessionId, permissionMode: command.permissionPreset ?? 'default' },
-              } as AgentEvent, [deviceId])
-            }
-          : undefined,
+        }, { providerOrigin: 'remote', ...(onAccepted ? { onAccepted } : {}) })
       })
     } catch (err) {
       if (err instanceof SessionClaimConflictError) {
         await this.notifySessionLocked(deviceId, sessionId, err.currentOwnerDeviceId)
+        if (onAccepted) throw err
         return
       }
       throw err
@@ -683,66 +677,75 @@ export class AgentService {
       }
       case 'send_message': {
         const { projectPath, sessionId } = command
-        if (!projectPath || !sessionId) break
+        if (!projectPath || !sessionId) {
+          if (command.requestId) await respond?.(command.requestId, { error: 'Missing project or session' })
+          break
+        }
 
         const mgr = this.requireSessionManager()
         if (!this.canAccessSession(projectPath, sessionId)) {
+          if (command.requestId) await respond?.(command.requestId, { error: this.buildSessionAccessError(projectPath, sessionId) })
           log.warn('[AgentService] %s', this.buildSessionAccessError(projectPath, sessionId))
           break
         }
 
-        const saved = loadSessionState(sessionId)
-        const queueOp = command.priority === 'next' || command.priority === 'later' || Boolean(command.steer)
-        // The phone painted this bubble before sending; its echo needs no picture bytes.
-        if (command.clientMessageId && command.images?.length) rememberAttachmentOrigin(command.clientMessageId, deviceId)
-        if (command.provider === 'codex' || saved?.provider === 'codex') {
-          const run = async () => {
-            await this.runCodexRemoteTurn(projectPath, sessionId, deviceId, command)
-            const session = this.findSessionBySid(projectPath, sessionId)
-            if (session) await this.steerQueuedFromSend(session, command)
+        await withTurnReceipt(command.requestId, respond, async (onAccepted) => {
+          admitTurnAttachments(command.content, command.images)
+          const saved = loadSessionState(sessionId)
+          const queueOp = command.priority === 'next' || command.priority === 'later' || Boolean(command.steer)
+          // The phone painted this bubble before sending; its echo needs no picture bytes.
+          if (command.clientMessageId && command.images?.length) rememberAttachmentOrigin(command.clientMessageId, deviceId)
+          if (command.provider === 'codex' || saved?.provider === 'codex') {
+            const run = async () => {
+              await this.runCodexRemoteTurn(projectPath, sessionId, deviceId, command, onAccepted)
+              const session = this.findSessionBySid(projectPath, sessionId)
+              if (session) await this.steerQueuedFromSend(session, command)
+            }
+            if (queueOp) await this.enqueueSessionQueueOp(sessionId, run)
+            else await run()
+            return
           }
-          if (queueOp) await this.enqueueSessionQueueOp(sessionId, run)
-          else await run()
-          break
-        }
 
-        let session: import('../session/types').Session
-        const existing = mgr.getSession(sessionId)
-        if (existing) {
-          session = existing
-        } else {
-          try { session = mgr.resumeSession(sessionId) } catch {
-            log.warn('[AgentService] remote send_message: session %s not found', sessionId)
-            break
-          }
-        }
-
-        trace('remote.debug', 'send_message:dispatch', { sid: sessionId, projectPath, deviceId })
-        const deliver = async () => {
-          try {
-            await this.ensureRemoteOwnership(deviceId, session, async () => {
-              await session.send({
-                content: command.content,
-                model: command.model,
-                effort: command.effort as SendMessageRequest['effort'] | undefined,
-                images: command.images,
-                priority: command.priority,
-                clientMessageId: command.clientMessageId,
-                ...(command.agent ? { agent: command.agent } : {}),
-                ...(command.modelParams ? { cursor: { params: command.modelParams } } : {}),
-              }, { providerOrigin: 'remote' })
-              await this.steerQueuedFromSend(session, command)
-            })
-          } catch (err) {
-            if (err instanceof SessionClaimConflictError) {
-              await this.notifySessionLocked(deviceId, sessionId, err.currentOwnerDeviceId)
+          let session: import('../session/types').Session
+          const existing = mgr.getSession(sessionId)
+          if (existing) {
+            session = existing
+          } else {
+            try { session = mgr.resumeSession(sessionId) } catch {
+              log.warn('[AgentService] remote send_message: session %s not found', sessionId)
+              if (command.requestId) throw new Error(`Session ${sessionId} not found`)
               return
             }
-            throw err
           }
-        }
-        if (queueOp) await this.enqueueSessionQueueOp(sessionId, deliver)
-        else await deliver()
+
+          trace('remote.debug', 'send_message:dispatch', { sid: sessionId, projectPath, deviceId })
+          const deliver = async () => {
+            try {
+              await this.ensureRemoteOwnership(deviceId, session, async () => {
+                await session.send({
+                  content: command.content,
+                  model: command.model,
+                  effort: command.effort as SendMessageRequest['effort'] | undefined,
+                  images: command.images,
+                  priority: command.priority,
+                  clientMessageId: command.clientMessageId,
+                  ...(command.agent ? { agent: command.agent } : {}),
+                  ...(command.modelParams ? { cursor: { params: command.modelParams } } : {}),
+                }, { providerOrigin: 'remote', ...(onAccepted ? { onAccepted } : {}) })
+                await this.steerQueuedFromSend(session, command)
+              })
+            } catch (err) {
+              if (err instanceof SessionClaimConflictError) {
+                await this.notifySessionLocked(deviceId, sessionId, err.currentOwnerDeviceId)
+                if (onAccepted) throw err
+                return
+              }
+              throw err
+            }
+          }
+          if (queueOp) await this.enqueueSessionQueueOp(sessionId, deliver)
+          else await deliver()
+        })
         break
       }
       case 'dequeue_message': {

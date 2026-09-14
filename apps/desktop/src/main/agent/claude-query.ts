@@ -23,7 +23,8 @@ import { getSandboxCapability } from '../sandbox-platform'
 import { recordClaudeStepDeltas, modelUsageInfoToDelta, subtractDelta, type UsageStepDelta } from '../usage-stats-service'
 import { SUPERONE_SYSTEM_PROMPT_APPEND } from './superone-system-prompt'
 import { isMainThreadOnlySuperoneTool, STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES, superoneBareToolName } from '@superone/shared/superone-host-owned-tools'
-import { persistAttachment, buildAttachmentPathNote } from './attachment-store'
+import { buildUserMessage } from './claude-user-message'
+export { buildUserMessage } from './claude-user-message'
 
 export { isResumeDropsTurnRefusal, RESUME_DROPS_TURN_REFUSAL_PREFIX }
 
@@ -226,45 +227,6 @@ export function createSessionQuery(
   })
 
   return { query: q, iterationDone, spawnAbortController, activeBackgroundTasks }
-}
-
-export function buildUserMessage(request: SendMessageRequest, sessionId: string): SDKUserMessage {
-  let content: unknown
-
-  if (request.images?.length) {
-    const saved = request.images.map((att) => ({
-      name: att.name,
-      path: persistAttachment(att.base64, att.mimeType),
-    }))
-    if (saved.every((entry) => entry.path)) {
-      // Hand the agent file paths instead of inline bytes so it Reads them only
-      // when needed, and can pass them to file-path tools (e.g. image editing).
-      const note = buildAttachmentPathNote(saved as Array<{ name: string; path: string }>)
-      content = request.content.trim() ? `${request.content}\n\n${note}` : note
-    } else {
-      // Persisting to disk failed — fall back to inline base64 so the upload is
-      // never lost.
-      const blocks: Array<Record<string, unknown>> = request.images.map((att) => ({
-        type: att.mimeType === 'application/pdf' ? 'document' : 'image',
-        source: { type: 'base64', media_type: att.mimeType, data: att.base64 },
-      }))
-      if (request.content.trim()) blocks.push({ type: 'text', text: request.content })
-      content = blocks
-    }
-  } else {
-    content = request.content
-  }
-
-  const msg = {
-    type: 'user' as const,
-    message: { role: 'user' as const, content },
-    parent_tool_use_id: null,
-    uuid: randomUUID(),
-    session_id: sessionId,
-    ...(request.priority ? { priority: request.priority } : {}),
-  } as SDKUserMessage
-  trace('agent.sdk', 'user_send', { content })
-  return msg
 }
 
 export interface IterateMessagesOptions {

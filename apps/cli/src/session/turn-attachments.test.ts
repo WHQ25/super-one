@@ -1,3 +1,4 @@
+import { PNG_ATTACHMENT } from '@superone/shared/test-fixtures/attachments'
 import { mkdtempSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -35,10 +36,10 @@ describe('turn attachments (unified store)', () => {
     expect(note).toContain(paths[0]!)
 
     const text = withAttachmentNote('hello', projectCwd, [
-      { mimeType: 'image/png', base64: Buffer.from('x').toString('base64') },
+      PNG_ATTACHMENT,
     ])
     expect(text).toContain('hello')
-    expect(text).toContain('saved locally')
+    expect(text).toContain('Use the local path')
     expect(text).not.toContain('superone-attachments')
     expect(SUPERONE_ATTACHMENTS_DIR_NAME).toBe('super-one-attachments')
   })

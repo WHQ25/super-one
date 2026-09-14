@@ -1,3 +1,4 @@
+import type { AttachmentCodexInput } from '@superone/shared/attachment-turn'
 import { superoneSystemPrompt } from '@superone/shared/superone-system-prompt'
 import {
   approvalDenyResult,
@@ -479,13 +480,14 @@ export async function steerCodexAppServerTurn(opts: {
   client: CodexAppServerHandle
   threadId: string
   prompt: string
+  input?: AttachmentCodexInput[]
   expectedTurnId?: string | null
   signal?: AbortSignal
 }): Promise<CodexAppServerTurnResult> {
   if (opts.signal?.aborted) throw new Error('Codex turn interrupted')
   await opts.client.request('turn/steer', {
     threadId: opts.threadId,
-    input: [{ type: 'text', text: opts.prompt }],
+    input: opts.input ?? [{ type: 'text', text: opts.prompt }],
     ...(opts.expectedTurnId ? { expectedTurnId: opts.expectedTurnId } : {}),
   })
   return {
@@ -504,6 +506,7 @@ export async function steerCodexAppServerTurn(opts: {
 export async function runCodexAppServerTurn(opts: {
   client: CodexAppServerHandle
   prompt: string
+  input?: AttachmentCodexInput[]
   cwd: string
   additionalDirectories?: string[]
   threadId?: string | null
@@ -568,6 +571,7 @@ export async function runCodexAppServerTurn(opts: {
       client: opts.client,
       threadId,
       prompt: opts.prompt,
+      input: opts.input,
       expectedTurnId: opts.expectedTurnId,
       signal: opts.signal,
     })
@@ -601,7 +605,7 @@ export async function runCodexAppServerTurn(opts: {
     )
     const turnStartResult = await opts.client.request('turn/start', compactRecord({
       threadId,
-      input: [{ type: 'text', text: opts.prompt, text_elements: [] }],
+      input: opts.input ?? [{ type: 'text', text: opts.prompt, text_elements: [] }],
       ...(opts.model ? { model: opts.model } : {}),
       ...(opts.reasoningEffort
         ? { effort: opts.reasoningEffort, reasoning_effort: opts.reasoningEffort, summary: 'concise' }

@@ -3685,3 +3685,68 @@ describe('AgentService terminal remote commands', () => {
     expect(payload.terminals).toHaveLength(2)
   })
 })
+
+describe('mobile attachment admission receipt', () => {
+  it('rejects a session that cannot be resumed instead of acknowledging a dropped message', async () => {
+    const service = new AgentService()
+    ;(service as unknown as { sessionManager: unknown }).sessionManager = {
+      getSession: () => undefined,
+      resumeSession: () => { throw new Error('Session not found') },
+    }
+    const respond = vi.fn()
+    await service.handleRemoteCommand({ type: 'send_message', requestId: 'receipt', projectPath: '/p', sessionId: 'missing', content: 'look' }, respond, { deviceId: 'phone', transport: 'relay' })
+    expect(respond).toHaveBeenCalledExactlyOnceWith('receipt', { error: expect.stringContaining('not found') })
+  })
+
+  it.each(['claude', 'codex'] as const)('rejects a %s ownership conflict before confirming admission', async (provider) => {
+    const service = new AgentService()
+    const send = vi.fn()
+    const session = makeMockSession({ id: 'sid-1', projectPath: '/p', send, snapshot: { harnessId: provider } })
+    session.claim({ kind: 'remote', deviceId: 'another-phone' })
+    ;(service as unknown as { sessionManager: unknown }).sessionManager = { getSession: () => session }
+    const respond = vi.fn()
+    await service.handleRemoteCommand({ type: 'send_message', provider, requestId: 'receipt', projectPath: '/p', sessionId: 'sid-1', content: 'look' }, respond, { deviceId: 'phone', transport: 'relay' })
+    expect(respond).toHaveBeenCalledExactlyOnceWith('receipt', { error: expect.any(String) })
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it.each(['claude', 'codex'] as const)('waits for %s admission but not turn completion', async (provider) => {
+    const service = new AgentService()
+    let admit!: () => void
+    let finish!: () => void
+    const send = vi.fn((_request, opts) => {
+      admit = opts.onAccepted
+      return new Promise<void>(resolve => { finish = resolve })
+    })
+    const session = makeMockSession({ id: 'sid-1', projectPath: '/p', send, snapshot: { harnessId: provider } })
+    ;(service as unknown as { sessionManager: unknown }).sessionManager = { getSession: () => session }
+    const respond = vi.fn()
+    const running = service.handleRemoteCommand({ type: 'send_message', provider, requestId: 'receipt', projectPath: '/p', sessionId: 'sid-1', content: 'look' }, respond, { deviceId: 'phone', transport: 'relay' })
+    await vi.waitFor(() => expect(send).toHaveBeenCalledOnce())
+    expect(respond).not.toHaveBeenCalled()
+    admit()
+    expect(respond).toHaveBeenCalledExactlyOnceWith('receipt', { ok: true })
+    finish()
+    await running
+  })
+
+  it('reports a session admission failure without consuming the draft', async () => {
+    const service = new AgentService()
+    const session = makeMockSession({ id: 'sid-1', projectPath: '/p', send: vi.fn().mockRejectedValue(new Error('Worktree removed')) })
+    ;(service as unknown as { sessionManager: unknown }).sessionManager = { getSession: () => session }
+    const respond = vi.fn()
+    await service.handleRemoteCommand({ type: 'send_message', requestId: 'receipt', projectPath: '/p', sessionId: 'sid-1', content: 'look' }, respond, { deviceId: 'phone', transport: 'relay' })
+    expect(respond).toHaveBeenCalledExactlyOnceWith('receipt', { error: 'Worktree removed' })
+  })
+
+  it('reports invalid bytes without dispatching a turn', async () => {
+    const service = new AgentService()
+    const send = vi.fn()
+    const session = makeMockSession({ id: 'sid-1', projectPath: '/p', send, snapshot: { harnessId: 'claude' } })
+    ;(service as unknown as { sessionManager: unknown }).sessionManager = { getSession: () => session }
+    const respond = vi.fn()
+    await service.handleRemoteCommand({ type: 'send_message', requestId: 'receipt', projectPath: '/p', sessionId: 'sid-1', content: 'look', images: [{ id: 'bad', name: 'bad.png', mimeType: 'image/png', base64: 'invalid' }] }, respond, { deviceId: 'phone', transport: 'relay' })
+    expect(respond).toHaveBeenCalledWith('receipt', { error: expect.stringContaining('Attachment: ') })
+    expect(send).not.toHaveBeenCalled()
+  })
+})

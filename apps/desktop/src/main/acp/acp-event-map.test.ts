@@ -1,3 +1,4 @@
+import { PNG_ATTACHMENT } from '@superone/shared/test-fixtures/attachments'
 import { describe, it, expect } from 'vitest'
 import type { SessionUpdate } from '@agentclientprotocol/sdk'
 import {
@@ -327,10 +328,10 @@ describe('mapSessionUpdate', () => {
 
   it('buildAcpPromptContent includes text and images', async () => {
     const { buildAcpPromptContent } = await import('./acp-event-map')
-    expect(buildAcpPromptContent('hi', [{ mimeType: 'image/png', base64: 'abc', name: 'a.png' }])).toEqual([
-      { type: 'text', text: 'hi' },
-      { type: 'image', mimeType: 'image/png', data: 'abc', uri: 'attachment://a.png' },
-    ])
+    const blocks = buildAcpPromptContent('hi', [PNG_ATTACHMENT])
+    expect(blocks[0]).toEqual({ type: 'image', mimeType: 'image/png', data: PNG_ATTACHMENT.base64, uri: expect.stringMatching(/^file:\/\//) })
+    expect(blocks[1]).toEqual({ type: 'text', text: expect.stringContaining('hi') })
+    expect(blocks[1]!.text).toContain('shot.png')
   })
 
   it('maps available_commands_update to acp_commands', () => {

@@ -5,15 +5,15 @@
  * Single directory: `$TMPDIR/super-one-attachments` (or SUPERONE_ATTACHMENTS_DIR).
  * Do not create per-harness sibling dirs (e.g. super-one-codex-attachments).
  *
- * Attachments are saved as files and referenced by path in the prompt so the
- * agent Reads them on demand (keeps base64 out of context until needed and
- * works with file-path tools such as image editing).
+ * Files remain available to path-based tools; attachment-turn adds supported
+ * inline images so the provider can view them without another tool call.
  */
 
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { MAX_ATTACHMENT_BYTES } from './attachment-validation'
 
 /** Directory name under the OS temp root. */
 export const SUPERONE_ATTACHMENTS_DIR_NAME = 'super-one-attachments'
@@ -58,7 +58,7 @@ function decodeBase64(base64: string): Buffer | null {
     const raw = base64.includes(',') ? base64.split(',').pop()! : base64
     if (!raw) return null
     const buf = Buffer.from(raw, 'base64')
-    if (buf.length === 0 || buf.length > 4_000_000) return null
+    if (buf.length === 0 || buf.length > MAX_ATTACHMENT_BYTES) return null
     return buf
   } catch {
     return null

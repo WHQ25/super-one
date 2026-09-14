@@ -1,3 +1,6 @@
+import { commitPerSession } from '@/stores/chat-store/helpers/store-helpers'
+import { restoreAttachmentDraft } from './chat-input/restore-attachment-draft'
+import { validateTurnAttachments } from '@superone/shared/attachment-validation'
 import { useRef, useState, useCallback, useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -1067,6 +1070,8 @@ export function ChatInput() {
 
     const handleSend = useCallback(() => {
       if (!canSend) return
+      try { validateTurnAttachments(attachmentsRef.current, text) }
+      catch (error) { toast.error(error instanceof Error ? error.message : 'Invalid attachment'); return }
       const trimmed = text.trim()
       if (goalCapability) {
         const action = goalComposerAction(trimmed, goalCapability.lifecycleArgs)
@@ -1076,6 +1081,8 @@ export function ChatInput() {
           return
         }
       }
+      const savedDoc = editorRef.current?.getJSON() ?? draftJson
+      const retryTarget = sessionScope ?? (activeProject && displayedSessionId ? { projectPath: activeProject, sessionId: displayedSessionId } : undefined)
       const { segments, mentions: editorMentions, attachments: sentAttachments } = serializeAndClear()
       const fullText = segments.flatMap((s) => ('attachmentId' in s ? [] : [s.text])).join('\n')
       // Pass the mosaic tile (or mini-window) scope so the turn lands on this pane's
@@ -1089,9 +1096,12 @@ export function ChatInput() {
         sentAttachments,
         sessionScope ?? undefined,
       ).catch((err) => {
+        if (sentAttachments.length && String(err).includes('Attachment: ') && retryTarget) {
+          useChatStore.setState(state => commitPerSession(state, retryTarget, current => restoreAttachmentDraft(current, { text, doc: savedDoc, attachments: sentAttachments })))
+        }
         console.error('[ChatInput] sendMessage failed:', err)
       })
-    }, [goalCapability, canSend, sendMessage, serializeAndClear, sessionScope, text])
+    }, [goalCapability, canSend, sendMessage, serializeAndClear, sessionScope, text, draftJson, activeProject, displayedSessionId])
 
     const handleKeyDownCore = useCallback(
       (e: KeyboardEvent | React.KeyboardEvent): boolean => {

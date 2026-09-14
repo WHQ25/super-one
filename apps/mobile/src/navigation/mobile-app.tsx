@@ -1,3 +1,4 @@
+import { validateTurnAttachments } from '@superone/shared/attachment-validation'
 import { refreshSessionCatalog } from '../session-catalog-refresh'
 import { useComposerSend } from './use-composer-send'
 import { TranscriptProjection } from '../transcript-projection'
@@ -1374,6 +1375,7 @@ export function MobileApp() {
     const sentDraft = composerDraft.capture()
     const text = sentDraft.text.trim()
     if (!text && attachments.length === 0) return
+    validateTurnAttachments(attachments, text)
     if (sessionTransitionRef.current.isActive) {
       setStatus('The conversation is still loading. Please send again when it is ready.')
       return
@@ -1387,21 +1389,17 @@ export function MobileApp() {
     }
     const clientMessageId = newMessageId('user')
     if (!runtimeRef.current) {
-      // The tap empties the composer, as on desktop: the staged bubble now holds
-      // the message, and the session round trips behind it can run for seconds
-      // (a picture is encrypted and crosses the wire more than once). A refused
-      // create hands the draft back so nothing typed is lost with it.
+      // Keep attachment drafts until the host confirms files are readable.
+      // Text-only drafts move into the staged bubble during session creation.
       const snapshot = composerDraft.exportSnapshot()
-      const cleared = composerDraft.clearSent(sentDraft.revision)
+      const cleared = attachments.length === 0 && composerDraft.clearSent(sentDraft.revision)
       if (cleared && !composerDraft.editorRef.current) suggestions.update('')
-      setAttachments((current) => current.filter((item) => !attachments.includes(item)))
       await createSession({ clientMessageId, text, images: attachments, title: sentDraft.title })
       if (!runtimeRef.current) {
         if (cleared) {
           composerDraft.replaceWith(snapshot)
           suggestions.applyProgrammatic(snapshot.text)
         }
-        setAttachments((current) => [...attachments, ...current])
         return
       }
     }

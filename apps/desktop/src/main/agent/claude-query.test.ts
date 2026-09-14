@@ -1,3 +1,4 @@
+import { PNG_ATTACHMENT } from '@superone/shared/test-fixtures/attachments'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent, SendMessageRequest } from '@superone/shared/agent-types'
 import type { MessageBridge } from './message-bridge'
@@ -217,29 +218,25 @@ describe('buildUserMessage', () => {
     expect(message.message.content).toBe('Hello Claude')
   })
 
-  it('replaces attached files with saved paths instead of inlining base64 bytes', () => {
+  it('includes image bytes and a usable path in the same turn', () => {
     const request: SendMessageRequest = {
       content: 'Please review this screenshot',
       images: [
         {
           name: 'screenshot.png',
           mimeType: 'image/png',
-          base64: 'ZmFrZS1iYXNlNjQ=',
+          base64: PNG_ATTACHMENT.base64,
         },
       ],
     }
 
     const message = buildUserMessage(request, 'session-2')
-    const content = message.message.content as string
-
-    expect(typeof content).toBe('string')
-    // The user's own text leads, followed by a note pointing at the saved path.
-    expect(content).toContain('Please review this screenshot')
-    expect(content).toContain('screenshot.png → ')
-    expect(content).toMatch(/super-one-attachments/)
-    // The base64 bytes must NOT be inlined — that is the whole point (agent Reads
-    // the path on demand, keeping bytes out of context until needed).
-    expect(content).not.toContain('ZmFrZS1iYXNlNjQ=')
+    const content = message.message.content as Array<Record<string, unknown>>
+    expect(content[0]).toEqual({ type: 'image', source: { type: 'base64', media_type: 'image/png', data: PNG_ATTACHMENT.base64 } })
+    expect(content[1]).toEqual({ type: 'text', text: expect.stringContaining('screenshot.png') })
+    expect(content[1]!.text).toContain('Please review this screenshot')
+    expect(content[1]!.text).toMatch(/super-one-attachments/)
+    expect(content[1]!.text).toContain('do not Read')
   })
 })
 

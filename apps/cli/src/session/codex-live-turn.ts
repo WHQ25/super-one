@@ -1,3 +1,4 @@
+import type { AttachmentCodexInput } from '@superone/shared/attachment-turn'
 /**
  * Mid-turn-aware Codex run: starts turn/start, exposes turn id for steer,
  * then waits for turn/completed.
@@ -68,6 +69,7 @@ function extractAgentTextFromTurn(turn: Record<string, unknown>): string {
 export async function openTurnAndStream(opts: {
   client: CodexAppServerHandle
   prompt: string
+  input?: AttachmentCodexInput[]
   cwd: string
   additionalDirectories?: string[]
   threadId: string
@@ -92,7 +94,7 @@ export async function openTurnAndStream(opts: {
     'turn/start',
     compactRecord({
       threadId: opts.threadId,
-      input: [{ type: 'text', text: opts.prompt, text_elements: [] }],
+      input: opts.input ?? [{ type: 'text', text: opts.prompt, text_elements: [] }],
       ...(opts.model ? { model: opts.model } : {}),
       ...(opts.reasoningEffort
         ? {

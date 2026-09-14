@@ -1,3 +1,4 @@
+import { PNG_ATTACHMENT, PDF_ATTACHMENT } from '@superone/shared/test-fixtures/attachments'
 import { describe, expect, it, vi } from 'vitest'
 import {
   createNodeCodexTurnRunner,
@@ -150,6 +151,7 @@ describe('createNodeCodexTurnRunner', () => {
     const turnP = runner({
       session: session(),
       text: 'ping',
+      images: [PNG_ATTACHMENT, PDF_ATTACHMENT],
       additionalDirectories: [join(dir, 'shared')],
       onDelta: (d) => deltas.push(d),
       onAgentEvent: (event) => agentEvents.push(event),
@@ -168,6 +170,10 @@ describe('createNodeCodexTurnRunner', () => {
 
     await pump()
     const turn = JSON.parse(lines.find((l) => l.includes('turn/start'))!)
+    expect(turn.params.input).toEqual([
+      { type: 'text', text: expect.stringContaining('notes.pdf'), text_elements: [] },
+      { type: 'localImage', path: expect.stringContaining('-shot.png') },
+    ])
     expect(turn.params.sandboxPolicy.writableRoots).toEqual([dir, join(dir, 'shared')])
     child.stdout.write(
       `${JSON.stringify({ jsonrpc: '2.0', id: turn.id, result: { turn: { id: 'u1' } } })}\n`,
@@ -684,6 +690,7 @@ url = "https://mcp.linear.app/mcp"
     const steerP = runner({
       session: session({ sessionId: 'steer-s', providerResume: 'thread:t-s' }),
       text: 'nudge',
+      images: [PNG_ATTACHMENT],
       turnKind: 'steer',
       onDelta: () => {},
       signal: new AbortController().signal,
@@ -691,6 +698,7 @@ url = "https://mcp.linear.app/mcp"
     await pump()
     expect(lines.some((l) => l.includes('turn/steer'))).toBe(true)
     const steerReq = JSON.parse(lines.find((l) => l.includes('turn/steer'))!)
+    expect(steerReq.params.input[1]).toEqual({ type: 'localImage', path: expect.stringContaining('-shot.png') })
     expect(steerReq.params.expectedTurnId).toBe('u-active')
     child.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: steerReq.id, result: {} })}\n`)
     const steerResult = await steerP

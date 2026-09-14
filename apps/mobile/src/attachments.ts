@@ -1,3 +1,4 @@
+import { MAX_ATTACHMENT_BYTES } from '@superone/shared/attachment-validation'
 import * as DocumentPicker from 'expo-document-picker'
 import { File } from 'expo-file-system'
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator'
@@ -9,8 +10,8 @@ import { randomId } from './ids'
 import { classifyAttachmentSize } from './attachment-limits'
 import { CHAT_IMAGE_JPEG_QUALITY, chatImageFileName, planChatImage, sniffChatImageMime } from './chat-image-encoding'
 
-export const MAX_CHAT_IMAGE_BYTES = 5 * 1_024 * 1_024
-export const MAX_CHAT_PDF_BYTES = 20 * 1_024 * 1_024
+export const MAX_CHAT_IMAGE_BYTES = MAX_ATTACHMENT_BYTES
+export const MAX_CHAT_PDF_BYTES = MAX_ATTACHMENT_BYTES
 
 export async function pickChatImages(limit: number): Promise<ImageAttachment[]> {
   if (limit <= 0) return []
@@ -30,7 +31,7 @@ export async function pickChatImages(limit: number): Promise<ImageAttachment[]> 
     if (!mimeType) throw new Error(`${asset.fileName ?? 'This image'} is in a format the AI cannot read`)
     const size = classifyAttachmentSize(base64, null, MAX_CHAT_IMAGE_BYTES)
     if (size === 'invalid') throw new Error('Selected image data is invalid')
-    if (size === 'too-large') throw new Error('Image too large to send to AI (max 5 MB)')
+    if (size === 'too-large') throw new Error('Image too large to send to AI (max 4 MB)')
     attachments.push({
       id: asset.assetId ?? randomId(),
       name: chatImageFileName(asset.fileName, index, mimeType),
@@ -67,12 +68,12 @@ export async function pickChatPdf(): Promise<ImageAttachment | null> {
   if (!asset) return null
   const file = new File(asset.uri)
   if ((asset.size ?? 0) > MAX_CHAT_PDF_BYTES || file.size > MAX_CHAT_PDF_BYTES) {
-    throw new Error('PDF too large to send to AI (max 20 MB)')
+    throw new Error('PDF too large to send to AI (max 4 MB)')
   }
   const base64 = await file.base64()
   const size = classifyAttachmentSize(base64, Math.max(asset.size ?? 0, file.size), MAX_CHAT_PDF_BYTES)
   if (size === 'invalid') throw new Error('Selected PDF data is invalid')
-  if (size === 'too-large') throw new Error('PDF too large to send to AI (max 20 MB)')
+  if (size === 'too-large') throw new Error('PDF too large to send to AI (max 4 MB)')
   return {
     id: randomId(),
     name: asset.name,

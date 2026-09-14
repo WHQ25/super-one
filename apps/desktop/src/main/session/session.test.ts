@@ -3722,3 +3722,37 @@ describe('Session model fallback transcript row', () => {
     expect(fallbackRows(session)).toHaveLength(2)
   })
 })
+
+describe('attachment admission before normal and queued turns', () => {
+  it('confirms admitted sends before the provider completes and never confirms rejected sends', async () => {
+    const { session, backend } = makeSession()
+    const onAccepted = vi.fn()
+    await expect(session.send({ content: 'bad', images: [{ id: 'bad', name: 'bad.png', mimeType: 'image/png', base64: 'not-base64' }] }, { onAccepted })).rejects.toThrow('base64')
+    expect(onAccepted).not.toHaveBeenCalled()
+    const sending = session.send({ content: 'hello' }, { onAccepted })
+    expect(onAccepted).toHaveBeenCalledOnce()
+    await vi.waitFor(() => expect(backend.sendCalls).toHaveLength(1))
+    backend.resolveSend?.()
+    await sending
+    session.dispose()
+    onAccepted.mockClear()
+    await expect(session.send({ content: 'too late' }, { onAccepted })).rejects.toThrow()
+    expect(onAccepted).not.toHaveBeenCalled()
+  })
+
+  it('rejects invalid bytes before recording a message or calling the backend', async () => {
+    const { session, backend } = makeSession()
+    const images = [{ id: 'bad', name: 'bad.png', mimeType: 'image/png', base64: 'not-base64' }]
+    await expect(session.send({ content: 'describe', images })).rejects.toThrow('base64')
+    expect(backend.sendCalls).toHaveLength(0)
+    expect(session.snapshot.messages).toHaveLength(0)
+    const sending = session.send({ content: 'hello' })
+    await vi.waitFor(() => expect(backend.sendCalls).toHaveLength(1))
+    backend.emit({ type: 'message_start', message: { id: 'live', role: 'assistant', content: [], status: 'streaming', createdAt: '', providerId: 'claude' } })
+    await expect(session.send({ content: 'next', images, priority: 'next', clientMessageId: 'queued' })).rejects.toThrow('base64')
+    expect(backend.sendCalls).toHaveLength(1)
+    backend.resolveSend?.()
+    await sending
+    session.dispose()
+  })
+})

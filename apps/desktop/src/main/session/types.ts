@@ -445,7 +445,7 @@ export interface Session {
   subscribe(deviceId: string): void
   unsubscribe(deviceId: string, reason?: SessionLeaveReason): void
   onLifecycle(handler: (event: SessionLifecycleEvent) => void): () => void
-  send(request: SendMessageRequest, opts?: { providerOrigin?: SendProviderOrigin }): Promise<void>
+  send(request: SendMessageRequest, opts?: { providerOrigin?: SendProviderOrigin; onAccepted?: () => void }): Promise<void>
   interrupt(): Promise<boolean>
   startRealtimeVoice(request: import('@superone/shared/agent-types').RealtimeVoiceStartRequest): Promise<void>
   stopRealtimeVoice(): Promise<void>

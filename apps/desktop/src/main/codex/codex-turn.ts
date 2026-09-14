@@ -69,7 +69,8 @@ import { resolveConfigConfirm, rejectConfigConfirm } from '../mcp/config-tools'
 import { resolveVideoConfirm, rejectVideoConfirm } from '../mcp/media-tools'
 import { resolveComputerUseGrant, rejectComputerUseGrant } from '../computer-use/grant-request'
 import { CODEX_SYSTEM_PROMPT_APPEND } from '../agent/superone-system-prompt'
-import { buildAttachmentPathNote, persistAttachments } from '../agent/attachment-store'
+import { buildCodexAttachmentInput as buildCodexQueuedInput } from '@superone/shared/attachment-turn'
+export { buildCodexAttachmentInput as buildCodexQueuedInput } from '@superone/shared/attachment-turn'
 import { buildCodexWorkspaceWriteSandboxPolicy } from '@superone/codex'
 import {
   JSON_RPC_METHOD_NOT_FOUND,
@@ -667,19 +668,6 @@ export function deriveFinalResponse(items: CodexThreadItem[]): string {
     if (item.type === 'agent_message' && item.delivery !== 'async') return item.text
   }
   return ''
-}
-
-export function buildCodexQueuedInput(
-  prompt: string,
-  images?: import('@superone/shared/agent-types').ImageAttachment[],
-): Array<Record<string, unknown>> {
-  const attachedFiles = persistAttachments(images)
-  const attachmentNote = buildAttachmentPathNote(attachedFiles)
-  const normalized = attachmentNote
-    ? (prompt.trim() ? `${prompt.trim()}\n\n${attachmentNote}` : attachmentNote)
-    : prompt.trim()
-  if (!normalized) throw new Error('Codex prompt is empty')
-  return [{ type: 'text', text: normalized, text_elements: [] }]
 }
 
 function extractTurnErrorMessage(raw: unknown): string {

@@ -451,7 +451,6 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
                   const meta = wtMetas[e.path]
                   const detached = !e.branch
                   const dirty = meta?.dirty
-                  const filesCount = dirty?.files ?? 0
                   const isCurrent = sameWorktreePath(e.path, wtState?.activePath)
                   return (
                     <button
@@ -462,16 +461,17 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
                     >
                       {detached ? <GitCommit className="mt-0.5 size-3 shrink-0 text-muted-foreground" /> : <GitBranch className="mt-0.5 size-3 shrink-0 text-muted-foreground" />}
                       <div className="flex flex-1 flex-col items-start min-w-0">
-                        <span className={`truncate ${detached ? 'text-muted-foreground' : ''}`}>
-                          {detached ? t('chat.worktree.detachedLabel') : e.branch}
+                        {/* Long branch names wrap onto a second line instead of colliding
+                            with the trailing columns; the hash only identifies detached rows. */}
+                        <span className={`line-clamp-2 break-words text-left ${detached ? 'text-muted-foreground' : ''}`}>
+                          {detached ? `${t('chat.worktree.detachedLabel')} ${meta?.shortHead ?? ''}` : e.branch}
                         </span>
-                        <span className="truncate text-xs text-muted-foreground">
-                          {meta?.shortHead || ''}
-                        </span>
+                        {dirty && dirty.files > 0 && (
+                          <span className="text-xs text-amber-500">
+                            <DiffStat stat={dirty} />
+                          </span>
+                        )}
                       </div>
-                      <span className={`shrink-0 text-xs ${filesCount > 0 ? 'text-amber-500' : 'text-muted-foreground'}`}>
-                        {filesCount > 0 ? t('chat.worktree.filesCount', { count: filesCount }) : t('chat.worktree.cleanLabel')}
-                      </span>
                       {isCurrent && <Check className="mt-0.5 size-3 shrink-0 text-primary" />}
                     </button>
                   )

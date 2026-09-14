@@ -2,10 +2,11 @@ import { useState, type ReactNode } from 'react'
 import { Check, GitBranch, GitCommitHorizontal, Laptop, Search } from 'lucide-react-native'
 import { Pressable, TextInput, View } from 'react-native'
 import { Text } from './text'
-import type { WorktreeEntry, WorktreeInfo, WorktreeMode } from '@superone/shared/agent-types'
+import type { GitDirtyStatus, WorktreeEntry, WorktreeInfo, WorktreeMode } from '@superone/shared/agent-types'
 import type { ShellGitInfo } from '../project-types'
 import { useMobileTheme } from '../theme/context'
 import { useMobileLocale } from '../i18n/context'
+import { DiffStat } from './diff-stat'
 import {
   attachUnavailableReason,
   filterWorktreeEntries,
@@ -34,8 +35,8 @@ export function WorktreePicker(props: {
   onSelectionChange: (selection: NewSessionWorktreeSelection) => void
   gitInfo: ShellGitInfo | null
   worktreeInfo: WorktreeInfo | null
-  /** Uncommitted file count per worktree path, when the desktop has reported it. */
-  worktreeDirty?: Record<string, number>
+  /** Uncommitted diff per worktree path; absent when clean or not yet reported. */
+  worktreeDirty?: Record<string, GitDirtyStatus>
   branches: string[]
   checkedOutBranches: string[]
 }) {
@@ -89,7 +90,7 @@ export function WorktreePicker(props: {
           {separator}
           {heading(t('Existing worktrees'))}
           {existing.map((entry) => (
-            <ExistingRow key={entry.path} entry={entry} dirtyFiles={props.worktreeDirty?.[entry.path]}
+            <ExistingRow key={entry.path} entry={entry} dirty={props.worktreeDirty?.[entry.path]}
               selected={selection.kind === 'existing' && selection.path === entry.path}
               onPress={() => props.onSelectionChange({
                 kind: 'existing', path: entry.path, ...(entry.branch ? { branch: entry.branch } : {}),
@@ -168,9 +169,7 @@ export function WorktreePicker(props: {
               </View>
               <Text style={{ flex: 1, fontSize: 13, color: colors.foreground }}>{t('Carry local changes')}</Text>
               <Text style={{ fontSize: 12, color: colors.mutedForeground }}>
-                {props.gitInfo.dirty.files} files
-                <Text style={{ color: colors.success }}> +{props.gitInfo.dirty.insertions}</Text>
-                <Text style={{ color: colors.error }}> -{props.gitInfo.dirty.deletions}</Text>
+                <DiffStat dirty={props.gitInfo.dirty} />
               </Text>
             </Pressable>
           ) : null}
@@ -183,17 +182,17 @@ export function WorktreePicker(props: {
 
 function ExistingRow(props: {
   entry: WorktreeEntry
-  dirtyFiles?: number
+  dirty?: GitDirtyStatus
   selected: boolean
   onPress: () => void
 }) {
   const { tokens: { colors, radius } } = useMobileTheme()
   const { t } = useMobileLocale()
   const detached = !props.entry.branch
-  const files = props.dirtyFiles ?? 0
+  const shortHead = props.entry.head.slice(0, 7)
   return (
     <Pressable accessibilityRole="button" accessibilityState={{ selected: props.selected }}
-      accessibilityLabel={detached ? `Detached ${props.entry.head.slice(0, 7)}` : props.entry.branch}
+      accessibilityLabel={detached ? `Detached ${shortHead}` : props.entry.branch}
       onPress={props.onPress}
       style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 48,
         paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.sm,
@@ -202,16 +201,17 @@ function ExistingRow(props: {
         ? <GitCommitHorizontal size={16} color={colors.mutedForeground} />
         : <GitBranch size={16} color={colors.mutedForeground} />}
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text numberOfLines={1} style={{ fontSize: 14, color: detached ? colors.mutedForeground : colors.foreground }}>
-          {detached ? t('Detached') : props.entry.branch}
+        {/* Long branch names wrap onto a second line instead of colliding with
+            the trailing columns; the hash only identifies detached rows. */}
+        <Text numberOfLines={2} style={{ fontSize: 14, color: detached ? colors.mutedForeground : colors.foreground }}>
+          {detached ? `${t('Detached')} ${shortHead}` : props.entry.branch}
         </Text>
-        <Text numberOfLines={1} style={{ fontSize: 12, color: colors.mutedForeground }}>{props.entry.head.slice(0, 7)}</Text>
+        {props.dirty ? (
+          <Text numberOfLines={1} style={{ fontSize: 12, color: colors.warning }}>
+            <DiffStat dirty={props.dirty} />
+          </Text>
+        ) : null}
       </View>
-      {props.dirtyFiles === undefined ? null : (
-        <Text style={{ fontSize: 12, color: files > 0 ? colors.warning : colors.mutedForeground }}>
-          {files > 0 ? `${files} ${t(files === 1 ? 'file' : 'files')}` : t('clean')}
-        </Text>
-      )}
       {props.selected ? <Check size={16} color={colors.primary} /> : null}
     </Pressable>
   )

@@ -1,4 +1,4 @@
-import type { WorktreeInfo } from '@superone/shared/agent-types'
+import type { GitDirtyStatus, WorktreeInfo } from '@superone/shared/agent-types'
 import type { ShellGitInfo } from '../project-types'
 
 /**
@@ -21,14 +21,15 @@ export const PREVIEW_WORKTREE_INFO: WorktreeInfo = {
   entries: [
     { path: '/workspace/super-one', branch: 'feat/mobile-ui', head: 'aa11bb22cc33dd44', isMain: true, isCurrent: true },
     { path: '/workspace/.worktrees/review', branch: 'review/pr-482', head: '4c8e0b19a7f3', isMain: false, isCurrent: false },
+    { path: '/workspace/.worktrees/long', branch: 'feat/optimize-skill-and-prompt-for-agent-collaboration-handoff', head: '7d2e9a4c1b06', isMain: false, isCurrent: false },
     { path: '/workspace/.worktrees/detached', branch: '', head: '9f3c1d7e5a20', isMain: false, isCurrent: false },
   ],
 }
 
-/** One dirty worktree and one clean one, so both right-hand labels are reachable. */
-export const PREVIEW_WORKTREE_DIRTY: Record<string, number> = {
-  '/workspace/.worktrees/review': 4,
-  '/workspace/.worktrees/detached': 0,
+/** Dirty worktrees carry a diff line; the clean detached one has no second line. */
+export const PREVIEW_WORKTREE_DIRTY: Record<string, GitDirtyStatus> = {
+  '/workspace/.worktrees/review': { files: 4, insertions: 128, deletions: 17 },
+  '/workspace/.worktrees/long': { files: 67, insertions: 1843, deletions: 212 },
 }
 
 export const PREVIEW_BRANCHES = [

@@ -6,8 +6,8 @@ import { branchToCreate, filterBranches } from '../branch-picker-state'
 import type { ShellGitInfo } from '../project-types'
 import { useMobileTheme } from '../theme/context'
 import { useMobileLocale } from '../i18n/context'
+import { DiffStat } from './diff-stat'
 
-const fmt = (n: number) => n.toLocaleString()
 
 /**
  * Switch the project checkout to another branch, or create one from HEAD.
@@ -109,9 +109,7 @@ function DirtySummary({ dirty }: { dirty: NonNullable<ShellGitInfo['dirty']> }) 
   const { t } = useMobileLocale()
   return (
     <Text numberOfLines={1} style={{ fontSize: 12, color: colors.mutedForeground }}>
-      {t('uncommitted:')} {fmt(dirty.files)} {t(dirty.files === 1 ? 'file' : 'files')}
-      {dirty.insertions > 0 ? <Text style={{ color: colors.success }}> +{fmt(dirty.insertions)}</Text> : null}
-      {dirty.deletions > 0 ? <Text style={{ color: colors.error }}> -{fmt(dirty.deletions)}</Text> : null}
+      {t('uncommitted:')} <DiffStat dirty={dirty} />
     </Text>
   )
 }

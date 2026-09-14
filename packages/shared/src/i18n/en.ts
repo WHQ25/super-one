@@ -1788,7 +1788,6 @@ export type Messages = {
       detachedLabel: string
       attachedLabel: string
       fromLabel: string
-      cleanLabel: string
       filesCount_one: string
       filesCount_other: string
       carryLocalChanges: string
@@ -5556,7 +5555,6 @@ export const en: Messages = {
       detachedLabel: 'Detached',
       attachedLabel: 'attached',
       fromLabel: 'from {{branch}}',
-      cleanLabel: 'clean',
       filesCount_one: '{{count}} file',
       filesCount_other: '{{count}} files',
       carryLocalChanges: 'Carry local changes',

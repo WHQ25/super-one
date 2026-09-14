@@ -1891,7 +1891,6 @@ export const zh: Messages = {
       detachedLabel: 'Detached',
       attachedLabel: '附加',
       fromLabel: '来自 {{branch}}',
-      cleanLabel: '干净',
       filesCount_one: '{{count}} 个文件',
       filesCount_other: '{{count}} 个文件',
       carryLocalChanges: '携带本地修改',

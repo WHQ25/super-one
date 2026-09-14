@@ -1,13 +1,13 @@
 import type { RelayClient } from '@superone/relay-client'
-import type { HarnessId, RemoteSystemInfo, WorktreeInfo } from '@superone/shared/agent-types'
+import type { GitDirtyStatus, HarnessId, RemoteSystemInfo, WorktreeInfo } from '@superone/shared/agent-types'
 import { requestGitResource } from '../git-resource-cache'
 import { requestHarnessResource } from '../harness-resource-cache'
 import type { ShellGitInfo } from '../project-types'
 
 export interface ShellDetails {
   git: ShellGitInfo | null
-  /** Uncommitted file count per non-main worktree path, best effort. */
-  worktreeDirty: Record<string, number>
+  /** Uncommitted diff per non-main worktree path, best effort; clean rows are absent. */
+  worktreeDirty: Record<string, GitDirtyStatus>
   workspaceDirs: string[]
   worktree: WorktreeInfo | null
   system: RemoteSystemInfo | null
@@ -35,12 +35,12 @@ export async function fetchShellDetails(
     requestGitResource(client, 'get_checked_out_branches', projectPath)
       .catch(() => null) as Promise<{ branches?: string[] } | null>,
   ])
-  const worktreeDirty: Record<string, number> = {}
-  // The desktop labels each worktree row `N files` / `clean`; only a per-path
-  // `get_git_info` can answer that, and a failure just leaves the row silent.
+  const worktreeDirty: Record<string, GitDirtyStatus> = {}
+  // The desktop labels each dirty worktree row `N files +ins -del`; only a
+  // per-path `get_git_info` can answer that, and a failure just leaves the row silent.
   await Promise.all((includeWorktreeDirty ? worktree?.entries ?? [] : []).filter((entry) => !entry.isMain).map(async (entry) => {
     const info = await requestGitResource(client, 'get_git_info', entry.path).catch(() => null) as ShellGitInfo | null
-    if (info) worktreeDirty[entry.path] = info.dirty?.files ?? 0
+    if (info?.dirty) worktreeDirty[entry.path] = info.dirty
   }))
   return {
     git,

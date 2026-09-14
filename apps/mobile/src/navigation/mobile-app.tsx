@@ -22,7 +22,7 @@ import {
   upsertPairing, type SavedPairing,
 } from '@superone/relay-client'
 import type {
-  AskUserQuestionRequest, ChatMessage, HarnessId, ImageAttachment, PermissionRequest,
+  AskUserQuestionRequest, ChatMessage, GitDirtyStatus, HarnessId, ImageAttachment, PermissionRequest,
   ListHarnessOptionsResponse, PlanApprovalRequest, RemoteCommand, RemoteHarnessOption,
   SandboxInfo, SandboxMode, SessionAgentLaunchProposal, TodoItem, WorktreeInfo,
 } from '@superone/shared/agent-types'
@@ -179,7 +179,7 @@ export function MobileApp() {
   // Empty until the host answers; the switcher hides itself below two rows.
   const [harnessOptions, setHarnessOptions] = useState<RemoteHarnessOption[]>([])
   const [worktreeInfo, setWorktreeInfo] = useState<WorktreeInfo | null>(null)
-  const [worktreeDirty, setWorktreeDirty] = useState<Record<string, number>>({})
+  const [worktreeDirty, setWorktreeDirty] = useState<Record<string, GitDirtyStatus>>({})
   const [branches, setBranches] = useState<string[]>([])
   const [checkedOutBranches, setCheckedOutBranches] = useState<string[]>([])
   const [worktreeSelection, setWorktreeSelection] = useState<NewSessionWorktreeSelection>(LOCAL_WORKTREE_SELECTION)

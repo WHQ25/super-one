@@ -1,5 +1,5 @@
 import { ScrollView } from 'react-native'
-import type { WorktreeInfo } from '@superone/shared/agent-types'
+import type { GitDirtyStatus, WorktreeInfo } from '@superone/shared/agent-types'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { SCROLL_INDICATOR_GUTTER } from '../ui/scroll-gutter'
 import { WorktreePicker } from '../ui/worktree-picker'
@@ -12,7 +12,7 @@ export type WorktreeScreenProps = {
   onSelectionChange: (selection: NewSessionWorktreeSelection) => void
   gitInfo: ShellGitInfo | null
   worktreeInfo: WorktreeInfo | null
-  worktreeDirty?: Record<string, number>
+  worktreeDirty?: Record<string, GitDirtyStatus>
   branches: string[]
   checkedOutBranches: string[]
 }

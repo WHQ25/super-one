@@ -18,6 +18,8 @@ export type SessionListRow = {
   /** Collaboration parent (`session_collab_start` spawn); groups the row on desktop. */
   parentSessionId?: string | null
   isPinned?: boolean
+  /** Epoch ms for an armed scheduled send; absent on older hosts. */
+  scheduledSendAt?: number | null
   /** Set only by the cross-project lists (pinned, search), which span projects. */
   projectPath?: string
   projectName?: string

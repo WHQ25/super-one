@@ -1,7 +1,7 @@
 import { sessionActivityIconStatus } from '../session-activity-state'
 import { useSessionActivity } from '../navigation/use-session-activity'
 import { useMobileLocale } from '../i18n/context'
-import { Bot, ChevronDown, ChevronRight, CornerDownRight, MessageSquare } from 'lucide-react-native'
+import { Bot, ChevronDown, ChevronRight, Clock, CornerDownRight, MessageSquare } from 'lucide-react-native'
 import { Pressable, View } from 'react-native'
 import { Text } from './text'
 import type { SessionListItem } from '../session-list-state'
@@ -47,7 +47,7 @@ export function SessionRowContent({ item, selected, revealed, subtitle, surface 
 }) {
   const { tokens: { colors, radius } } = useMobileTheme()
   const activity = useSessionActivity(item.session.sessionId)
-  const { locale } = useMobileLocale()
+  const { locale, t } = useMobileLocale()
   const session = { ...item.session, ...activity }
   const iconStatus = sessionActivityIconStatus(session)
   const pendingReason = activity?.pendingReason?.[locale]
@@ -79,6 +79,14 @@ export function SessionRowContent({ item, selected, revealed, subtitle, surface 
     </View>
     {/* No pin glyph: the drawer carries a Pinned section of its own, so a badge
         on the row would state twice what the section above already says. */}
+    {session.scheduledSendAt != null ? <View
+      accessible accessibilityRole="image"
+      accessibilityLabel={`${t('Scheduled send')}: ${new Date(session.scheduledSendAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`}
+      testID="session-scheduled-send"
+      style={{ width: 14, height: 14, flexShrink: 0 }}
+    >
+      <Clock size={14} color={colors.warning} />
+    </View> : null}
     {item.hasChildren && onToggleChildren ? <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${item.collapsed ? 'Show' : 'Hide'} sessions started by ${session.title || 'Untitled'}`}

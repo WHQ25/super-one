@@ -1,4 +1,5 @@
 import { SessionUnseenGallery } from './SessionUnseenGallery'
+import { SessionScheduledSendGallery } from './SessionScheduledSendGallery'
 import { SessionAttentionGallery } from './SessionAttentionGallery'
 import { useEffect, useMemo, useState } from 'react'
 import { ScrollView, View } from 'react-native'
@@ -88,6 +89,7 @@ export function SessionStatusGallery(props: { onOpenBranch: () => void }) {
   const rows = useMemo(() => buildRows(deadline), [deadline])
   return (
     <ScrollView contentContainerStyle={{ padding: 12, gap: 4 }}>
+      <SessionScheduledSendGallery />
       <SessionAttentionGallery />
       <SessionUnseenGallery />
       <SessionTitleGallery />

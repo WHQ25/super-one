@@ -2,6 +2,7 @@ import { View } from 'react-native'
 import { MobileThemeProvider } from '../theme/context'
 import { Text } from './text'
 import { SessionRowContent } from './session-row-content'
+import { SessionScheduledSendGallery } from '../preview/SessionScheduledSendGallery'
 
 const idle = {
   session: { sessionId: 'one', title: 'Review the composer loading state', isPinned: true, provider: 'codex' as const },
@@ -30,3 +31,11 @@ export default {
 }
 
 export const PinnedSectionVsProjectList = {}
+
+export const ScheduledSends = {
+  render: () => <MobileThemeProvider><SessionScheduledSendGallery /></MobileThemeProvider>,
+}
+
+export const ScheduledSendsNarrow = {
+  render: () => <MobileThemeProvider><SessionScheduledSendGallery width={240} /></MobileThemeProvider>,
+}

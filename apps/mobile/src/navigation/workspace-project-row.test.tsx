@@ -194,6 +194,19 @@ const answering = (rows: SessionListRow[]) => {
   const request = jest.fn(async () => ({ sessions: rows, totalCount: rows.length }))
   return { client: { request } as unknown as RelayClient, request }
 }
+
+test('updates the scheduled icon from a host list invalidation without reopening the drawer', async () => {
+  const scheduled = { sessionId: 'h1', title: 'Scheduled review', scheduledSendAt: Date.UTC(2026, 8, 15, 10) }
+  const { client, request } = answering([scheduled])
+  const { rerender } = await renderWithTheme(row({ expanded: true, client, seed: [] }))
+  await waitFor(() => expect(screen.getByTestId('session-scheduled-send')).toBeTruthy())
+
+  request.mockResolvedValue({ sessions: [{ ...scheduled, scheduledSendAt: null }], totalCount: 1 })
+  cache.invalidate('/repo')
+  await rerender(row({ expanded: true, client, seed: [], listRevision: 1 }))
+  await waitFor(() => expect(screen.queryByTestId('session-scheduled-send')).toBeNull())
+  expect(screen.getByText('Scheduled review')).toBeTruthy()
+})
 /**
  * The drawer's close and reopen, as the row sees it: unmounted, then mounted
  * again against the same cache. Driven by a prop through `rerender` — a bare

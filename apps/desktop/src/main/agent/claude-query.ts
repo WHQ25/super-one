@@ -2,7 +2,7 @@ import { query, type CanUseTool, type HookCallback, type OnElicitation, type Opt
 import { randomUUID } from 'node:crypto'
 import { resolveMappedClaudeModelId } from '@superone/shared/agent-types'
 import type { AgentEvent, PermissionMode, QuestionPreviewFormat, SandboxInfo, SendMessageRequest } from '@superone/shared/agent-types'
-import { mapModelFallbackWire, MODEL_FALLBACK_SUBTYPES } from '@superone/shared/model-fallback-wire'
+import { createRetractionLedger, mapModelFallbackWire, MODEL_FALLBACK_SUBTYPES } from '@superone/shared/model-fallback-wire'
 import { readTerminalSlashCommands } from '@superone/shared/slash-commands'
 import { sessionGoalFromClaudeActive } from '@superone/shared/session-goal'
 import {
@@ -302,11 +302,12 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
   let lastAssistantUsage: any = null
   // Track the most recent top-level assistant message UUID for resumeSessionAt
   let lastTopLevelAssistantUuid = ''
-  // SDK wire uuid -> our message id, so a refusal fallback's
-  // `retracted_message_uuids` can be evicted from our own transcript.
+  // SDK wire frame -> the blocks it put in our message, so a refusal fallback's
+  // `retracted_message_uuids` / `supersedes` evict just the refused partial —
+  // never the whole turn the frame belongs to.
+  const retractions = createRetractionLedger()
+  // SDK user-message uuid -> our message id (turn anchor for error attribution).
   const wireUuidToMessageId = new Map<string, string>()
-  const resolveRetractedMessageIds = (uuids: string[]): string[] =>
-    [...new Set(uuids.map((uuid) => wireUuidToMessageId.get(uuid)).filter((id): id is string => !!id))]
   /**
    * Remember which of our messages a turn's triggering user message belongs to.
    * SDK 0.3.246+ stamps `user_message_uuid` on each turn's first assistant
@@ -499,6 +500,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
 
         // Extract tool_result blocks from array content
         if (Array.isArray(msgContent)) {
+          if (!parentToolUseId) retractions.recordToolResultFrame(userMsg.uuid, messageId, msgContent)
           let hasToolResult = false
           for (const block of msgContent) {
             if (block.type === 'tool_result' && block.tool_use_id) {
@@ -747,7 +749,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
               delayMs: sys.retry_delay_ms ?? 0,
             })
           } else if (MODEL_FALLBACK_SUBTYPES.has(sys.subtype)) {
-            for (const mapped of mapModelFallbackWire(sys, resolveRetractedMessageIds)) emit(mapped)
+            for (const mapped of mapModelFallbackWire(sys, retractions.resolve)) emit(mapped)
           } else if (sys.subtype === 'local_command_output') {
             const text = typeof sys.content === 'string' ? sys.content : ''
             if (text) {
@@ -788,7 +790,11 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
           if (!assistantParent) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             lastTopLevelAssistantUuid = (msg as any).uuid ?? ''
-            if (lastTopLevelAssistantUuid) wireUuidToMessageId.set(lastTopLevelAssistantUuid, messageId)
+            // The replacement frame after a refusal names what it supersedes;
+            // evict on arrival, before its own deltas land behind the partial.
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            for (const retracted of retractions.resolve((msg as any).supersedes)) emit(retracted)
+            retractions.recordAssistantFrame(lastTopLevelAssistantUuid, messageId, msg.message?.content)
             rememberUserMessageAnchor(msg, messageId)
             seedMessageTimestamp(messageId, msg)
           }

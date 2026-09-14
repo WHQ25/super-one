@@ -785,26 +785,33 @@ describe('resuming a completed sub-agent via SendMessage (runtime)', () => {
   })
 })
 
-describe('applyClaudeEventToRuntime: messages_retracted', () => {
-  function plain(id: string): ChatMessage {
-    return { id, role: 'assistant', status: 'complete', content: [], createdAt: '', providerId: 'claude' }
+describe('applyClaudeEventToRuntime: content_retracted', () => {
+  function plain(id: string, content: ChatMessage['content'] = []): ChatMessage {
+    return { id, role: 'assistant', status: 'complete', content, createdAt: '', providerId: 'claude' }
   }
 
-  it('evicts the refused partial the harness retracted', () => {
-    const runtime = makeRuntime([plain('a1'), plain('a2'), plain('a3')])
+  it('evicts only the refused partial the harness retracted, keeping the turn', () => {
+    const work: ChatMessage['content'] = [
+      { type: 'tool_use', toolName: 'Bash', toolUseId: 'tu_1', input: '{}', status: 'complete' },
+      { type: 'tool_result', toolUseId: 'tu_1', summary: 'ok' },
+    ]
+    const runtime = makeRuntime([plain('a1'), plain('a2', [...work, { type: 'text', text: 'I can help with' }])])
     const next = applyClaudeEventToRuntime(runtime, {
-      type: 'messages_retracted',
-      messageIds: ['a2'],
+      type: 'content_retracted',
+      messageId: 'a2',
+      blocks: [{ type: 'text', text: 'I can help with' }],
     } as AgentEvent)
 
-    expect(next.messages.map((m) => m.id)).toEqual(['a1', 'a3'])
+    expect(next.messages.map((m) => m.id)).toEqual(['a1', 'a2'])
+    expect(next.messages[1].content).toEqual(work)
   })
 
-  it('is a no-op for ids already gone, so a replayed eviction cannot churn state', () => {
+  it('is a no-op for blocks already gone, so a replayed eviction cannot churn state', () => {
     const runtime = makeRuntime([plain('a1')])
     const next = applyClaudeEventToRuntime(runtime, {
-      type: 'messages_retracted',
-      messageIds: ['gone'],
+      type: 'content_retracted',
+      messageId: 'a1',
+      blocks: [{ type: 'tool_use', toolUseId: 'gone' }],
     } as AgentEvent)
 
     expect(next).toBe(runtime)

@@ -32,7 +32,7 @@ export function applyEventToSession(
     case 'queued_messages_restored':
     case 'message_start':
     case 'message_timestamp':
-    case 'messages_retracted':
+    case 'content_retracted':
     case 'user_message_appended':
     case 'message_interrupted':
     case 'message_error':

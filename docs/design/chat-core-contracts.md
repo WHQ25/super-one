@@ -19,7 +19,7 @@ Expo must match Flutter 1.0.0+19 **plus** every **remote-visible** desktop surfa
 |------|--------------------------------------------------|
 | Transcript | sandbox chip; model-fallback notice row; structured `errorInfo` badge; grouped `task_notification`; background-task wake row; unified tool status; native `@native/*` widget galleries; DeepSeek Task block + `diagnostic`; Cursor nested subagents; Codex Fast / Approve for Me presets |
 | Composer | `@widget`, `@debug`; `@codex` / `@claude` / `@grok` instead of `@collab`; collab `handoff`; additional dirs persist (`provider` on add/remove RPC); IME from desktop ChatInput |
-| Lifecycle | `messages_retracted`; drafts if the remote snapshot exposes them |
+| Lifecycle | `content_retracted`; drafts if the remote snapshot exposes them |
 | Theme | `setTheme` from desktop light-mode inverted chrome tokens (no independent WebView palette) |
 
 **Out of scope** (desktop-only; do not port):
@@ -164,7 +164,7 @@ Generated from family write-points on v0.55.2. Adding a key requires updating th
 
 `model_fallback` is painted from a **transcript row** the main process appends, not from a session field. WebView must render that row; there is no patch key.
 
-New in v0.55.2: `messages_retracted` → `{ messages, lastEventAt }`.
+New in v0.55.2: `messages_retracted` → `{ messages, lastEventAt }`. Replaced in v0.66 by block-level `content_retracted` `{ messageId, blocks }` → same patch keys: an SDK frame is one API step, and a turn's steps share one assistant message, so evicting by message id deleted the whole turn.
 
 ---
 
@@ -341,7 +341,7 @@ WP-12 copies this into `packages/chat-core` and typechecks `applyEventToSession`
 
 | # | Resolution |
 |---|------------|
-| Plan §11.5 remote-relevant families | **All families in `applyEventToSession` except skipped-event no-ops.** Includes ACP inline cases and `messages_retracted`. |
+| Plan §11.5 remote-relevant families | **All families in `applyEventToSession` except skipped-event no-ops.** Includes ACP inline cases and `content_retracted`. |
 | `model_fallback` | Transcript row, not a patch key. |
 | DeepSeek trajectory | Out of scope (desktop). Task `diagnostic` is in `taskProgress`. |
 | Mini-app iframe-in-WebView | Still deferred (plan R6). `@native/*` galleries go through `requestNative`. |

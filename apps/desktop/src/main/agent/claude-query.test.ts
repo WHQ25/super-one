@@ -537,6 +537,43 @@ describe('createSessionQuery', () => {
     expect(usageEvents[2]).toMatchObject({ inputTokens: 218, outputTokens: 20 })
   })
 
+  it('evicts only the refused partial on a refusal fallback, never the turn\'s earlier work', async () => {
+    state.messages = [
+      // A completed tool round, then the primary model's refused partial.
+      { type: 'assistant', uuid: 'u-tool', message: { id: 'step-1', content: [{ type: 'tool_use', id: 'tool-a', name: 'Bash', input: {} }] } },
+      { type: 'user', uuid: 'u-result', message: { content: [{ type: 'tool_result', tool_use_id: 'tool-a', content: 'ok' }] } },
+      { type: 'assistant', uuid: 'u-refused', message: { id: 'step-2', content: [{ type: 'text', text: 'I can help with' }] } },
+      {
+        type: 'system',
+        subtype: 'model_refusal_fallback',
+        trigger: 'refusal',
+        original_model: 'claude-opus-5[1m]',
+        fallback_model: 'claude-opus-4-8',
+        api_refusal_category: 'cyber',
+        retracted_message_uuids: ['u-refused'],
+      },
+      // The replacement names what it supersedes; the ledger already forgot it.
+      { type: 'assistant', uuid: 'u-retry', supersedes: ['u-refused'], message: { id: 'step-3', content: [{ type: 'text', text: 'Sure' }] } },
+      { type: 'result', subtype: 'success', usage: {} },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-turn',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+
+    expect(events.filter((e) => e.type === 'content_retracted')).toEqual([
+      { type: 'content_retracted', messageId: 'msg-turn', blocks: [{ type: 'text', text: 'I can help with' }] },
+    ])
+    expect(events.some((e) => e.type === 'model_fallback' && e.refusalCategory === 'cyber')).toBe(true)
+  })
+
   it('emits message_error on non-success result subtype and idle when no background tasks active', async () => {
     state.messages = [
       {

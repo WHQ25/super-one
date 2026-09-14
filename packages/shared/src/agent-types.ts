@@ -104,6 +104,17 @@ interface ToolUseBase {
 
 export type ContentBlock = ContentBlockData & { remoteDetail?: string }
 
+/**
+ * How a retracted SDK frame names the blocks it produced in our flat content
+ * array. Tool blocks are keyed by id; text/thinking carry the frame's full
+ * payload, which is exactly the block our stream merge built from its deltas.
+ */
+export type RetractedBlockRef =
+  | { type: 'tool_use'; toolUseId: string }
+  | { type: 'tool_result'; toolUseId: string }
+  | { type: 'text'; text: string }
+  | { type: 'thinking'; thinking: string }
+
 type ContentBlockData =
   | { type: 'text'; text: string; parentToolUseId?: string | null; codeBlockTokens?: Array<{ language: string; tokens: DiffTokenLine[] | null }>; isPaste?: boolean }
   | { type: 'thinking'; thinking: string; parentToolUseId?: string | null; startedAt?: number; endedAt?: number }
@@ -1781,11 +1792,14 @@ export type AgentEventBase =
       refusalCategory?: string | null
     }
   /**
-   * Messages the harness retracted (SDK `retracted_message_uuids` on a refusal
-   * fallback). Resolution-time eviction: drop them from transcript state on
-   * receipt. Idempotent — unknown or already-removed ids are a no-op.
+   * Blocks the harness retracted from one of our messages (SDK
+   * `retracted_message_uuids` / `supersedes` on a refusal fallback). One SDK
+   * frame is a single API step, and our assistant message folds every step of
+   * a turn into one flat `content` array — so eviction is per block, never per
+   * message: dropping the message would take the whole turn's work with it.
+   * Idempotent — blocks already gone are a no-op.
    */
-  | { type: 'messages_retracted'; messageIds: string[] }
+  | { type: 'content_retracted'; messageId: string; blocks: RetractedBlockRef[] }
   | { type: 'queued_message_consumed'; clientMessageId: string }
   | { type: 'queued_messages_restored'; messages: Array<{ clientMessageId: string; content: string }> }
   | { type: 'worktree_missing'; worktreePath: string; fallbackCwd: string }

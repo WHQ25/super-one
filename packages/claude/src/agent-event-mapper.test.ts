@@ -55,6 +55,33 @@ describe('createClaudeAgentEventMapper', () => {
     ]))
   })
 
+  it('evicts only the refused partial on a refusal fallback, never the turn\'s earlier work', () => {
+    const events: AgentEvent[] = []
+    const mapper = createClaudeAgentEventMapper({ messageId: 'm1', emit: (event) => events.push(event) })
+
+    // A completed tool round, then the primary model's refused partial.
+    mapper.apply({ type: 'assistant', uuid: 'u-tool', message: { content: [{ type: 'tool_use', id: 'tu1', name: 'Bash', input: {} }] } })
+    mapper.apply({ type: 'user', uuid: 'u-result', message: { content: [{ type: 'tool_result', tool_use_id: 'tu1', content: 'ok' }] } })
+    mapper.apply({ type: 'assistant', uuid: 'u-refused', message: { content: [{ type: 'text', text: 'I can help with' }] } })
+    mapper.apply({
+      type: 'system',
+      subtype: 'model_refusal_fallback',
+      trigger: 'refusal',
+      original_model: 'claude-opus-5[1m]',
+      fallback_model: 'claude-opus-4-8',
+      api_refusal_category: 'cyber',
+      retracted_message_uuids: ['u-refused'],
+    })
+    // The replacement names what it supersedes; the ledger already forgot it.
+    mapper.apply({ type: 'assistant', uuid: 'u-retry', supersedes: ['u-refused'], message: { content: [{ type: 'text', text: 'Sure' }] } })
+
+    const retracted = events.filter((e) => e.type === 'content_retracted')
+    expect(retracted).toEqual([
+      { type: 'content_retracted', messageId: 'm1', blocks: [{ type: 'text', text: 'I can help with' }] },
+    ])
+    expect(events.some((e) => e.type === 'model_fallback' && e.refusalCategory === 'cyber')).toBe(true)
+  })
+
   it('preserves desktop tool-result classification and task metadata', () => {
     const events: AgentEvent[] = []
     const mapper = createClaudeAgentEventMapper({ messageId: 'm1', emit: (event) => events.push(event) })

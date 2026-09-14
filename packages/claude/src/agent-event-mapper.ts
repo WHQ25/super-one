@@ -6,7 +6,7 @@
  * state and emits IPC-safe AgentEvents.
  */
 import type { AgentEvent, MessageMetadata } from '@superone/shared/agent-types'
-import { mapModelFallbackWire } from '@superone/shared/model-fallback-wire'
+import { createRetractionLedger, mapModelFallbackWire } from '@superone/shared/model-fallback-wire'
 import { readTerminalSlashCommands } from '@superone/shared/slash-commands'
 import { sessionGoalFromClaudeActive } from '@superone/shared/session-goal'
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
@@ -202,11 +202,10 @@ export function createClaudeAgentEventMapper(
   const activeBackgroundTasks = new Map<string, { toolUseId?: string; description: string }>()
   let lastAssistantUsage: Raw | null = null
   let lastTopLevelAssistantUuid = ''
-  // SDK wire uuid -> our message id, so a refusal fallback's
-  // `retracted_message_uuids` can be evicted from our own transcript.
-  const wireUuidToMessageId = new Map<string, string>()
-  const resolveRetractedMessageIds = (uuids: string[]): string[] =>
-    [...new Set(uuids.map((uuid) => wireUuidToMessageId.get(uuid)).filter((id): id is string => !!id))]
+  // SDK wire frame -> the blocks it put in our message, so a refusal fallback's
+  // `retracted_message_uuids` / `supersedes` evict just the refused partial —
+  // never the whole turn the frame belongs to.
+  const retractions = createRetractionLedger()
   let lastReplayCheckpointId = ''
   let lastAssistantTypedError: string | undefined
   let lastAssistantRequestId: string | undefined
@@ -466,7 +465,7 @@ export function createClaudeAgentEventMapper(
       case 'model_fallback':
       case 'model_refusal_fallback':
       case 'model_refusal_no_fallback':
-        for (const mapped of mapModelFallbackWire(system, resolveRetractedMessageIds)) emit(mapped)
+        for (const mapped of mapModelFallbackWire(system, retractions.resolve)) emit(mapped)
         break
       case 'local_command_output':
         if (typeof system.content === 'string' && system.content) {
@@ -487,6 +486,7 @@ export function createClaudeAgentEventMapper(
         const isSynthetic = raw.isSynthetic === true
         const isReplay = raw.isReplay === true
         if (Array.isArray(content)) {
+          if (!parentToolUseId) retractions.recordToolResultFrame(raw.uuid, messageId, content)
           let hasTopLevelToolResult = false
           for (const block of content) {
             if (block?.type !== 'tool_result' || !block.tool_use_id) continue
@@ -553,7 +553,10 @@ export function createClaudeAgentEventMapper(
           if (raw.message?.model) lastAssistantModel = String(raw.message.model)
           if (!assistantParent) {
             lastTopLevelAssistantUuid = raw.uuid ?? ''
-            if (lastTopLevelAssistantUuid) wireUuidToMessageId.set(lastTopLevelAssistantUuid, messageId)
+            // The replacement frame after a refusal names what it supersedes;
+            // evict on arrival, before its own deltas land behind the partial.
+            for (const retracted of retractions.resolve(raw.supersedes)) emit(retracted)
+            retractions.recordAssistantFrame(lastTopLevelAssistantUuid, messageId, raw.message?.content)
             if (!timestampApplied && typeof raw.timestamp === 'string' && raw.timestamp) {
               timestampApplied = true
               emit({ type: 'message_timestamp', messageId, timestamp: raw.timestamp })

@@ -813,6 +813,36 @@ All four landed on 2026-09-14, one commit each.
   protection and its delivery are one responsibility, and every defect came
   from a second party acting on either without holding it.
 
+- **A sixteenth review found both remaining holes in concurrent Host Actions,
+  and replaced the rule they were violating with a stricter one.** The
+  invariant is now stated at the top of `pending-handoffs.ts`:
+
+  > At any moment a given file version corresponds to **one identifiable
+  > transfer instance**. Protection begins before the first node RPC and lasts
+  > until that instance's delivery ends. Release, retry and cancellation all
+  > verify the instance and the session are still the ones they were for.
+
+  Asking "does anyone own this file?" *before* an await and acting on the
+  answer after it is not a check. A second Host Action slipped in during the
+  first one's `stat`, and both delivered — under two different transfer ids,
+  so the node's receipt dedup could not catch it either. The later upload put
+  stale bytes back over the file the agent had since changed. Instances are
+  now acquired synchronously, before anything is awaited, and a second caller
+  for a path is told it already has an owner and reports it deferred.
+
+  And a role label is not an identity. Two concurrent actions both called
+  themselves `push`, so cancelling either satisfied the check on the other's
+  claim and freed a file that was still being delivered. `ClaimHolder` is now
+  an opaque token minted per holder; `takeSealedClaim` refuses a path another
+  token holds, and a release names an instance rather than a kind of caller.
+
+  The executor consequently holds no claims at all. Protection and delivery
+  are one responsibility, `syncHostActionOutputs` owns it end to end, and a
+  cancelled action is deliberately *not* short-circuited before it — the sync
+  acquires synchronously and then throws on the aborted signal, so its
+  `finally` frees what the tool produced. Returning early instead would leave
+  a sealed file held by its writer with nothing downstream to deliver it.
+
 - **`browser_open` creates the tab blank, records the driver, then
   navigates.** Opening with the URL in one call meant the page could start a
   direct download before the tab had an owner, and `will-download` had nobody
@@ -1029,7 +1059,10 @@ marked and the residue is stated):
   predicate — one set was missing producers that had no job row yet, the other
   included jobs whose bytes were already delivered. A correct check in a
   correct place is still wrong if its subject is wrong, so a change to what the
-  zone protects needs its own reasoning, not this paragraph.
+  zone protects needs its own reasoning, not this paragraph. And a guard whose subject is
+  right is still wrong if it is read across an await: the sixteenth review's
+  defects were both a correct question asked at a moment when the answer could
+  not survive to the act.
 - **Protection for un-enqueued files does not survive a restart.** A file that
   is complete but could not be written onto the transfer job table is held by
   the in-memory `pending-handoffs` table, and that is all that keeps the mirror

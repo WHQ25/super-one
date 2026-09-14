@@ -13,8 +13,7 @@
  * and the database own — `session.fetch`, media grants, the node RPCs — plus
  * the unrelated tool subsystems the surface would otherwise load.
  */
-import { readFileSync } from 'node:fs'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -72,12 +71,15 @@ const node = vi.hoisted(() => ({
   files: new Map<string, Buffer>(),
   parts: new Map<string, Buffer[]>(),
   seenTransferIds: [] as string[],
-  onStat: null as null | (() => void),
+  onStat: null as null | ((rel: string) => void | Promise<void>),
+  statCalls: 0,
+  uploadedIds: new Set<string>(),
 }))
 const envHost = vi.hoisted(() => ({
   getSyncZone: () => ({ syncRoot: '/home/node/.superone/node/sync', os: 'linux' as const }),
   artifactPut: async (_c: unknown, req: { transferId: string; chunk: string; final?: boolean }) => {
     node.puts += 1
+    node.uploadedIds.add(req.transferId)
     if (node.putFails) throw new Error('node refused the chunk')
     // Accumulate for real: `bytesWritten` is how the uploader advances its
     // offset, so a stub that always answers 0 never terminates.
@@ -89,8 +91,9 @@ const envHost = vi.hoisted(() => ({
     node.files.set(req.transferId, Buffer.concat(chunks))
     return { ok: true as const, bytesWritten: written, mtimeMs: 1_700_000_000_000 }
   },
-  artifactStat: async () => {
-    node.onStat?.()
+  artifactStat: async (_c: unknown, _s: unknown, relativePath: string) => {
+    node.statCalls += 1
+    await node.onStat?.(relativePath)
     return { exists: false, size: 0, mtimeMs: 0 }
   },
   artifactTransfers: {
@@ -137,8 +140,8 @@ vi.mock('../mcp/superone-mcp-builtins', () => ({
 }))
 
 import { downloadUrl } from '../browser/browser-downloads'
-import { activeWriteAt, resetActiveWrites } from './active-writes'
-import { dropSessionHandoffs, failedHandoffs, handoffArtifact, resetPendingHandoffs, retryFailedHandoffs } from './pending-handoffs'
+import { activeWriteAt, releaseWriteClaim, resetActiveWrites, takeSealedClaim } from './active-writes'
+import { acquireHandoff, dropSessionHandoffs, failedHandoffs, resetPendingHandoffs, retryFailedHandoffs } from './pending-handoffs'
 import { mirrorNodeDirectory } from './session-file-mirror'
 import { desktopHostActionExecutor } from './host-action-executor'
 
@@ -174,8 +177,14 @@ beforeEach(() => {
   node.parts.clear()
   node.seenTransferIds.length = 0
   node.onStat = null
+  node.statCalls = 0
+  node.uploadedIds.clear()
   resetActiveWrites()
   resetPendingHandoffs()
+  // A `mockImplementationOnce` an earlier test never consumed would be handed
+  // to the next test's first tool call instead of its own.
+  browser.executeBrowserTool.mockReset()
+  browser.executeBrowserTool.mockImplementation(async () => ({ content: [] }))
 })
 afterEach(() => {
   vi.useRealTimers()
@@ -199,6 +208,36 @@ function emptyNodeDir() {
     },
     list: async () => ({ exists: true, entries: [], truncated: false }),
   }
+}
+
+/**
+ * Poll on real timers. `vi.waitFor` shares the timer mocking other cases in
+ * this file switch on, and silently times out here even once the condition
+ * holds.
+ */
+async function until(ready: () => boolean, timeoutMs = 15000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (!ready()) {
+    if (Date.now() > deadline) throw new Error('condition never held')
+    await new Promise((r) => setTimeout(r, 5))
+  }
+}
+
+/** A sealed zone file both actions will name in their replies. */
+function sharedArtifact(name: string, body: string): string {
+  const path = join(zone.userData, 'sync', SESSION, 'download', name)
+  mkdirSync(join(path, '..'), { recursive: true })
+  writeFileSync(path, body)
+  return path
+}
+
+/** What a `browser_list_downloads` Host Action does: name the file and register it. */
+function registerSharedArtifact(path: string): void {
+  browser.executeBrowserTool.mockImplementationOnce(async (sessionId) => {
+    const { registerArtifact } = await import('../mcp/artifact-registry')
+    registerArtifact(sessionId, { path, producer: 'download', final: true })
+    return { content: [{ type: 'text' as const, text: path }] }
+  })
 }
 
 describe('who ends a download write claim', () => {
@@ -263,7 +302,7 @@ describe('who ends a download write claim', () => {
     // Whatever was wrong is fixed; the retry files the row and only then lets go.
     node.deferFails = false
     expect(retryFailedHandoffs('conn-1')).toEqual({ retried: 1 })
-    await vi.waitFor(() => expect(node.deferred).toEqual(['download/report.csv']))
+    await until(() => node.deferred.length === 1)
     expect(activeWriteAt(SESSION, DOWNLOAD())).toBeNull()
     expect(failedHandoffs()).toEqual([])
   })
@@ -378,7 +417,7 @@ describe('who ends a download write claim', () => {
     writeFileSync(path, 'OLD')
     registerDownload(SESSION, path, true)
     queueDownloadUpload('conn-1', SESSION, path)
-    await vi.waitFor(() => expect(failedHandoffs(SESSION)).toHaveLength(1))
+    await until(() => failedHandoffs(SESSION).length === 1)
 
     // The agent lists its downloads: a Host Action that re-registers the same
     // path and would otherwise eager-push it.
@@ -429,6 +468,83 @@ describe('who ends a download write claim', () => {
     expect(failedHandoffs(SESSION)).toEqual([])
   })
 
+  it('has a second action defer the file while the first action\'s stat is outstanding', async () => {
+    // AF1. Checking "does anyone own this?" before an await and acting on the
+    // answer after it is not a check at all: B slipped in during A's stat and
+    // both delivered, under two different transfer ids, so the later upload put
+    // stale bytes back over the node's newer file. No receipt dedup can catch
+    // two ids — the instance has to be taken before the first await.
+    const shared = sharedArtifact('report.csv', 'OLD')
+    let open!: () => void
+    const parked = new Promise<void>((resolve) => (open = resolve))
+    node.onStat = async () => {
+      node.onStat = null
+      await parked
+    }
+
+    registerSharedArtifact(shared)
+    const a = desktopHostActionExecutor(claimed({ toolName: 'browser_list_downloads' }), new AbortController().signal, 'conn-1')
+    await until(() => node.statCalls === 1)
+
+    // B runs entirely inside A's stat.
+    registerSharedArtifact(shared)
+    const b = await desktopHostActionExecutor(claimed({ toolName: 'browser_list_downloads' }), new AbortController().signal, 'conn-1')
+    expect(JSON.stringify(b.result)).toContain('deferred')
+
+    open()
+    await a
+    // Exactly one delivery, under exactly one id.
+    expect(node.seenTransferIds.length + node.uploadedIds.size).toBeLessThanOrEqual(1)
+    expect(node.uploadedIds.size).toBe(1)
+  })
+
+  it('does not release one action\'s file when a concurrent action is cancelled', async () => {
+    // AF2. Both callers labelled themselves `push`, so B's cleanup satisfied
+    // the check on A's claim and freed a file A was still delivering — the next
+    // directory mirror then deleted it out from under A.
+    const shared = sharedArtifact('report.csv', 'OLD')
+    let open!: () => void
+    const parked = new Promise<void>((resolve) => (open = resolve))
+    node.onStat = async () => {
+      node.onStat = null
+      await parked
+    }
+
+    registerSharedArtifact(shared)
+    const a = desktopHostActionExecutor(claimed({ toolName: 'browser_list_downloads' }), new AbortController().signal, 'conn-1')
+    await until(() => node.statCalls === 1)
+
+    const cancelB = new AbortController()
+    registerSharedArtifact(shared)
+    cancelB.abort()
+    await desktopHostActionExecutor(claimed({ toolName: 'browser_list_downloads' }), cancelB.signal, 'conn-1')
+    // B touched nothing of A's: the file is still held, and still here.
+    expect(activeWriteAt(SESSION, shared)).toBe('sealed')
+    await mirrorNodeDirectory(SESSION, 'download', emptyNodeDir())
+    expect(readFileSync(shared, 'utf8')).toBe('OLD')
+
+    open()
+    await a
+    expect(activeWriteAt(SESSION, shared)).toBeNull()
+  })
+
+  it('will not let one holder release another holder\'s claim', async () => {
+    // AF2's primitive. The single-instance rule above is what makes two owners
+    // unreachable in practice, but it rests on the claim being unable to
+    // confuse them: a role label (`push`) was satisfied by whichever caller
+    // wore it, so cancelling one action freed the file another was delivering.
+    const path = sharedArtifact('report.csv', 'OLD')
+    expect(takeSealedClaim(SESSION, path, 'token-a')).toBe(true)
+    // A second holder cannot take a file that is already spoken for...
+    expect(takeSealedClaim(SESSION, path, 'token-b')).toBe(false)
+    // ...and cannot release it either.
+    expect(releaseWriteClaim(SESSION, path, 'token-b')).toBe(false)
+    expect(activeWriteAt(SESSION, path)).toBe('sealed')
+    // Only the holder that took it can end it.
+    expect(releaseWriteClaim(SESSION, path, 'token-a')).toBe(true)
+    expect(activeWriteAt(SESSION, path)).toBeNull()
+  })
+
   it('keeps a completed file protected when the transfer queue will not take it', async () => {
     vi.useFakeTimers()
     // The bytes are all here and the node has none of them. A failed `defer`
@@ -455,7 +571,6 @@ describe('who ends a download write claim', () => {
     const first = failedHandoffs(SESSION)[0]!
     node.deferFails = false
     node.seenTransferIds.length = 0
-  node.onStat = null
     expect(retryFailedHandoffs()).toEqual({ retried: 1 })
     await vi.advanceTimersByTimeAsync(50)
     // Same id: the node resumes its partial upload instead of meeting a second
@@ -504,16 +619,15 @@ describe('who ends a download write claim', () => {
     // The caller resolved a dependency first — `queueDownloadUpload` waits for
     // the environment host — and the session was deleted while it waited.
     dropSessionHandoffs(SESSION)
-    const task = handoffArtifact({
+    const acquired = acquireHandoff({
       connectionId: 'conn-1',
       sessionId: SESSION,
       localPath: path,
       relativePath: 'browser/shot.png',
-      transferId: 'tid-1',
       bytes: 9,
-      enqueue: (job) => void filed.push(job.relativePath),
     })
-    expect(task).toBeNull()
+    expect(acquired).toBeNull()
+    expect(filed).toEqual([])
     expect(filed).toEqual([])
     expect(failedHandoffs(SESSION)).toEqual([])
     // And no claim was taken on a file that was removed with its session.

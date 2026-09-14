@@ -21,7 +21,7 @@ import type { ArtifactGetRequest, ArtifactGetResult, ArtifactListRequest, Artifa
 import type { ArtifactRef } from '../mcp/artifact-registry'
 import { zoneRelativePath } from '../media-output-paths'
 import { uploadArtifact, type TransferOutcome } from './artifact-transfer'
-import { handoffArtifact, handoffTransferId, type HandoffJob } from './pending-handoffs'
+import { abandonHandoff, acquireHandoff, deliverHandoff, enqueueHandoff, type Handoff } from './pending-handoffs'
 import { mirrorNodeArtifact, mirrorNodeDirectory } from './session-file-mirror'
 import { mapNodeZoneArgs, mentionsArtifactPath, nodeZonePath, rewriteArtifactPaths, type NodeSyncZone } from './sync-zone-paths'
 
@@ -235,6 +235,8 @@ interface PlannedRef {
   nodePath: string
   size: number
   mtimeMs: number
+  /** The instance that owns this file's delivery; absent once its session is gone. */
+  handoff?: Handoff
 }
 
 /**
@@ -291,8 +293,8 @@ function mentionedInReply(reply: ToolReply, path: string): boolean {
  * have the file. The difference is only whether anything is still looking
  * after it.
  */
-function fileJob(deps: HostActionSyncDeps, job: HandoffJob, size: number): void {
-  handoffArtifact({ ...job, bytes: size, enqueue: (j) => void deps.transfers.defer(j) })
+function fileJob(deps: HostActionSyncDeps, handoff: Handoff): void {
+  enqueueHandoff(handoff, (job) => void deps.transfers.defer(job))
 }
 
 export async function syncHostActionOutputs(
@@ -324,6 +326,25 @@ export async function syncHostActionOutputs(
   }
   if (planned.length === 0) return reply
 
+  // Before ANY await: one transfer instance per file, each holding its own
+  // claim. Everything below this line — the node stat, the hash, the upload —
+  // is time in which a directory mirror could otherwise delete a file nobody
+  // was holding, or a second Host Action could start a second delivery of it.
+  const owned: Handoff[] = []
+  for (const item of planned) {
+    const acquired = acquireHandoff({
+      connectionId: deps.connectionId,
+      sessionId: item.sessionId,
+      localPath: item.ref.path,
+      relativePath: item.relativePath,
+      bytes: item.size,
+    })
+    // Session deleted while the tool ran: there is nothing to deliver to.
+    if (!acquired) continue
+    item.handoff = acquired.handoff
+    if (acquired.mine) owned.push(acquired.handoff)
+  }
+
   const mapping = new Map<string, string>()
   const deferred: string[] = []
   const rate = Math.max(1, deps.transfers.throughputBytesPerMs(deps.connectionId))
@@ -331,16 +352,18 @@ export async function syncHostActionOutputs(
   planned.sort((a, b) => a.size - b.size)
 
   let expiresAt = claimExpiresAt
+  try {
   for (const item of planned) {
     mapping.set(item.ref.path, item.nodePath)
-    // A handoff task already owns this file: joining it IS the action.
+    // Someone else owns this file's delivery: joining them IS the action.
     //
-    // Pushing alongside it delivers the file by a route the task cannot see,
-    // so the task never settles — it keeps its claim, which makes the mirror
-    // serve this desktop's copy of a file the agent may since have changed on
-    // the node, and its retry ladder eventually files a redundant job that
-    // uploads the old bytes over the new ones. One owner, one delivery.
-    if (handoffTransferId(deps.connectionId, item.sessionId, item.ref.path)) {
+    // Pushing alongside them delivers the file by a route their instance
+    // cannot see, so it never settles — it keeps its claim, which makes the
+    // mirror serve this desktop's copy of a file the agent may since have
+    // changed on the node, and its retry ladder eventually files a redundant
+    // job that uploads the old bytes over the new ones. One owner, one
+    // delivery, one transfer id.
+    if (!item.handoff || !owned.includes(item.handoff)) {
       deferred.push(item.nodePath)
       continue
     }
@@ -350,11 +373,15 @@ export async function syncHostActionOutputs(
     // next file — where `within` would enter on an already-aborted signal and
     // wait out the whole budget for an abort event that has already fired.
     throwIfAborted(deps.signal)
-    if (alreadyThere) continue
-    // One transferId for the file's whole life: the node keeps a half-written
-    // transfer open after a dropped connection, and a job retrying under a new
-    // id would be told `busy` by it. The job carries this id and resumes.
-    const transferId = randomUUID()
+    if (alreadyThere) {
+      // Nothing to deliver, so this file's delivery is over.
+      deliverHandoff(item.handoff)
+      continue
+    }
+    // The instance's id, for the file's whole delivery: the node keeps a
+    // half-written transfer open after a dropped connection, and a retry under
+    // a new id would be told `busy` by it. The job carries this id and resumes.
+    const transferId = item.handoff.transferId
     const job = { connectionId: deps.connectionId, sessionId: item.sessionId, localPath: item.ref.path, relativePath: item.relativePath, transferId }
     const estimateMs = item.size / rate
     if (estimateMs > expiresAt - now() - CLAIM_BUDGET_MARGIN_MS && deps.renewClaim) {
@@ -371,7 +398,7 @@ export async function syncHostActionOutputs(
     }
     const budgetMs = expiresAt - now() - CLAIM_BUDGET_MARGIN_MS
     if (estimateMs > budgetMs) {
-      fileJob(deps, job, item.size)
+      fileJob(deps, item.handoff)
       deferred.push(item.nodePath)
       continue
     }
@@ -389,15 +416,26 @@ export async function syncHostActionOutputs(
         signal: budgetSignal,
       }))
       deps.transfers.recordThroughput(deps.connectionId, outcome)
+      // The bytes are on the node: delivery is complete and the file is the
+      // node's problem now.
+      deliverHandoff(item.handoff)
     } catch (err) {
       throwIfAborted(deps.signal)
       // The tool already did its work; a failed push must not fail the action.
       // Hand the file to a job and tell the agent it is not there yet.
       deps.log?.warn('[host-action] eager artifact push failed, deferring', item.relativePath, err instanceof Error ? err.message : String(err))
-      fileJob(deps, job, item.size)
+      fileJob(deps, item.handoff)
       deferred.push(item.nodePath)
     }
     throwIfAborted(deps.signal)
+  }
+  } finally {
+    // Anything this call acquired and neither delivered nor handed to a job:
+    // cancelled, or the loop threw. Nothing downstream will carry those, and
+    // holding their claims would pin the paths for the life of the process.
+    // A no-op for an instance that has already moved on, so an action cannot
+    // undo a job it just filed on its way out.
+    for (const handoff of owned) abandonHandoff(handoff)
   }
 
   const content = (reply.content ?? []).map((block) =>

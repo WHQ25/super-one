@@ -52,18 +52,23 @@ import { realOrSelf } from './sync-zone-paths'
 export type ClaimStage = 'writing' | 'sealed'
 
 /**
- * Who is responsible for ending a claim.
+ * An opaque token identifying who holds a claim — not a role.
  *
- * - `writer` — the producer that reserved the path. Holds it until the bytes
- *   are sealed and someone adopts them, or until the write fails.
- * - `push` — the Host Action executor, while it uploads the file to the node
- *   inside the claim budget.
- * - `handoff` — the pending-handoff task for this path, from the moment the
- *   file is meant to become a transfer job until a row actually exists. One
- *   holder for both the foreground and the background route, because they are
- *   the same responsibility arriving from two directions.
+ * A role label was not enough. Two concurrent Host Actions both called
+ * themselves `push`, both recorded the same path as theirs, and cancelling
+ * either one released the file the other was still delivering. A token is
+ * minted per holder, so a release names an instance rather than a kind of
+ * caller and cannot be satisfied by a different one.
+ *
+ * The producer that reserved a path uses `WRITER_TOKEN`: reservations are
+ * exclusive (`wx`), so there is never more than one writer for a path.
+ * Everything downstream gets a fresh token from the transfer instance that
+ * owns delivery (`pending-handoffs.ts`).
  */
-export type ClaimHolder = 'writer' | 'push' | 'handoff'
+export type ClaimHolder = string
+
+/** The producer that reserved the path; unique by construction. */
+export const WRITER_TOKEN = 'writer'
 
 interface Claim {
   stage: ClaimStage
@@ -103,7 +108,7 @@ export function beginActiveWrite(sessionId: string | null | undefined, path: str
   if (!sessionId) return
   const key = keyFor(sessionId, path)
   if (claims.has(key)) return
-  claims.set(key, { stage: 'writing', holder: 'writer' })
+  claims.set(key, { stage: 'writing', holder: WRITER_TOKEN })
 }
 
 /**
@@ -129,7 +134,7 @@ export function sealActiveWrite(sessionId: string | null | undefined, path: stri
 export function adoptWriteClaim(sessionId: string | null | undefined, path: string, holder: ClaimHolder): boolean {
   if (!sessionId) return false
   const claim = claims.get(keyFor(sessionId, path))
-  if (!claim || claim.stage !== 'sealed' || claim.holder !== 'writer') return false
+  if (!claim || claim.stage !== 'sealed' || claim.holder !== WRITER_TOKEN) return false
   claim.holder = holder
   return true
 }
@@ -145,9 +150,10 @@ export function adoptWriteClaim(sessionId: string | null | undefined, path: stri
  * so `adoptWriteClaim` answered false and the file was left unprotected with a
  * neat record of its own deletion.
  *
- * Refused only while a writer is still filling the file: a handoff for a file
- * that is not finished is a contradiction, and taking it would let an
- * incomplete file be served as a complete original.
+ * Refused while a writer is still filling the file — a handoff for a file that
+ * is not finished is a contradiction, and taking it would let an incomplete
+ * file be served as a complete original — and refused when another token
+ * already holds it, so a second caller joins the first instead of taking over.
  */
 export function takeSealedClaim(sessionId: string | null | undefined, path: string, holder: ClaimHolder): boolean {
   if (!sessionId) return false
@@ -158,6 +164,7 @@ export function takeSealedClaim(sessionId: string | null | undefined, path: stri
     return true
   }
   if (claim.stage === 'writing') return false
+  if (claim.holder !== WRITER_TOKEN && claim.holder !== holder) return false
   claim.holder = holder
   return true
 }
@@ -187,7 +194,7 @@ export function releaseWriteClaim(sessionId: string | null | undefined, path: st
  * adopted the file — at that point it is not the writer's to abandon.
  */
 export function abandonWriteClaim(sessionId: string | null | undefined, path: string): boolean {
-  return releaseWriteClaim(sessionId, path, 'writer')
+  return releaseWriteClaim(sessionId, path, WRITER_TOKEN)
 }
 
 /** What this desktop is doing to `path` right now, if anything. */

@@ -17,8 +17,6 @@
  */
 
 import type { ClaimHostActionResult } from '@superone/shared/environment'
-import { releaseWriteClaim, takeSealedClaim } from './active-writes'
-import { handoffOwns } from './pending-handoffs'
 import type { HostActionExecutor } from './remote-host-action-consumer'
 import {
   mapHostActionInputs,
@@ -143,60 +141,28 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
         const { result: rawResult, artifacts } = sync
           ? await withInputMapping({ ...sync, sessionId: claimed.sessionId }, runTool)
           : await runTool()
-        // The tool's call scope is already closed, so anything it produced is
-        // named by nothing durable until this push lands or defers a job.
+        // The executor holds no claims of its own. Protection and delivery are
+        // one responsibility and `syncHostActionOutputs` owns it end to end:
+        // it acquires a transfer instance per file BEFORE its first node RPC
+        // and releases it on delivery, on handing the file to a job, or on its
+        // own way out. An executor that also took claims gave two callers the
+        // same label, and cancelling one released the other's file.
         //
-        // Ownership, not "it appeared in the reply": `adoptWriteClaim` refuses
-        // a file that is still being written, so a tool that went background on
-        // its deadline leaves its download protected for the writer to finish;
-        // and it refuses one the transfer queue already took, so two handoffs
-        // never race to free one file. Only what this push actually adopted is
-        // released here.
-        //
-        // The cancellation checks are INSIDE the region on purpose. They return
-        // early, and a sealed claim abandoned by an early return has no one left
-        // to hand it on — it would pin its path for the life of the process.
-        const adopted: string[] = []
-        try {
-          // Protection is taken BEFORE the first node RPC, not after the push
-          // decides to give up. `syncHostActionOutputs` stats the node, hashes
-          // and uploads — all awaits — and a directory mirror running during
-          // any of them would prune a file nothing was holding yet. Only
-          // downloads reserve a path, so `takeSealedClaim` also *creates* the
-          // claim for a screenshot or a generated image that never made one.
-          //
-          // Adopted BEFORE the cancellation check, so the `finally` frees them
-          // on every exit. A cancel that lands as the tool completes used to
-          // return past this point, leaving a sealed file with no holder left
-          // to hand it on — pinned against the prune for the process's life.
-          for (const ref of artifacts) {
-            // Not ours: a writer is still filling this one, or a handoff task
-            // already owns it and is the only thing that may end it.
-            if (!ref.final || handoffOwns(claimed.sessionId, ref.path, connectionId)) continue
-            if (takeSealedClaim(claimed.sessionId, ref.path, 'push')) adopted.push(ref.path)
-          }
-          if (runAbort.signal.aborted || raceWinner === 'deadline') return aborted()
+        // Which is why a cancelled action is NOT short-circuited here. The sync
+        // acquires synchronously and then throws on the already-aborted signal,
+        // so its `finally` frees what the tool produced. Returning early
+        // instead would leave a sealed file held by its writer with nothing
+        // downstream to deliver it — pinned for the life of the process.
+        const toolResult = sync && artifacts.length > 0
+          ? await syncHostActionOutputs(claimed.sessionId, artifacts, rawResult as ToolReply, claimed.claimExpiresAt, sync)
+          : rawResult
+        if (runAbort.signal.aborted || raceWinner === 'deadline') return aborted()
 
-          const toolResult = sync && artifacts.length > 0
-            ? await syncHostActionOutputs(claimed.sessionId, artifacts, rawResult as ToolReply, claimed.claimExpiresAt, sync)
-            : rawResult
-          if (runAbort.signal.aborted || raceWinner === 'deadline') return aborted()
-
-          const isError = Boolean((toolResult as { isError?: boolean })?.isError)
-          if (isError) {
-            return { outcome: 'failed', error: toolResult, result: toolResult }
-          }
-          return { outcome: 'succeeded', result: toolResult }
-        } finally {
-          for (const path of adopted) {
-            // Handed on during the sync: a handoff task took the claim and is
-            // the only thing that may end it. Releasing here would leave the
-            // only complete copy unprotected with nothing naming it, which is
-            // the failure this whole region exists to prevent.
-            if (handoffOwns(claimed.sessionId, path, connectionId)) continue
-            releaseWriteClaim(claimed.sessionId, path, 'push')
-          }
+        const isError = Boolean((toolResult as { isError?: boolean })?.isError)
+        if (isError) {
+          return { outcome: 'failed', error: toolResult, result: toolResult }
         }
+        return { outcome: 'succeeded', result: toolResult }
       } finally {
         if (raceWinner === 'deadline') {
           try {

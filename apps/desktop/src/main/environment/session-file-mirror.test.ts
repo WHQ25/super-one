@@ -11,7 +11,7 @@ vi.mock('../db-artifact-transfers', () => ({
   listArtifactTransfersForSession: (sessionId: string) => state.jobs.filter((j) => j.sessionId === sessionId),
 }))
 
-import { beginActiveWrite, endActiveWrite, resetActiveWrites } from './active-writes'
+import { abandonWriteClaim, beginActiveWrite, resetActiveWrites, sealActiveWrite } from './active-writes'
 import { mirrorNodeArtifact, mirrorNodeDirectory } from './session-file-mirror'
 
 function liveNode(files: Record<string, Buffer>, opts: { onGet?: (rel: string) => Promise<void> | void } = {}) {
@@ -557,7 +557,9 @@ describe('node mirror — files a producer is still writing (round 11 follow-up)
     writeFileSync(inProgress, 'FIRST')
     beginActiveWrite('s1', inProgress)
     const outcome = await mirrorNodeDirectory('s1', 'agent/app', liveNode({ 'agent/app/old.txt': Buffer.from('old') }))
-    expect(outcome.kind).toBe('local')
+    // Kept, and the tree is not offered as a complete input while it holds a
+    // half-written member — a caller that packs the directory would ship it.
+    expect(outcome).toMatchObject({ kind: 'unavailable' })
     expect(existsSync(inProgress)).toBe(true)
     expect(readFileSync(inProgress, 'utf8')).toBe('FIRST')
   })
@@ -593,9 +595,42 @@ describe('node mirror — files a producer is still writing (round 11 follow-up)
     mkdirSync(join(stale, '..'), { recursive: true })
     writeFileSync(stale, 'FIRST')
     beginActiveWrite('s1', stale)
-    endActiveWrite('s1', stale)
+    abandonWriteClaim('s1', stale)
     await mirrorNodeDirectory('s1', 'agent/app', liveNode({ 'agent/app/old.txt': Buffer.from('old') }))
     expect(existsSync(stale)).toBe(false)
+  })
+
+  it('AB3: refuses a half-written file even when the node is unreachable', async () => {
+    // The offline fallback has no node answer to weigh the local copy against,
+    // which is exactly why it must not hand over an incomplete one.
+    const path = join(root, 'sync', 's1', 'browser', 'shot.png')
+    mkdirSync(join(path, '..'), { recursive: true })
+    writeFileSync(path, 'HALF')
+    beginActiveWrite('s1', path)
+    const offline = {
+      connectionId: 'conn-1',
+      stat: async () => {
+        throw Object.assign(new Error('offline'), { code: 'ECONNREFUSED' })
+      },
+      get: async () => {
+        throw new Error('unreachable')
+      },
+    }
+    expect(await mirrorNodeArtifact('s1', 'browser/shot.png', offline)).toMatchObject({ kind: 'unavailable' })
+    // Sealed, it is a complete original again and the offline copy is the answer.
+    sealActiveWrite('s1', path)
+    expect(await mirrorNodeArtifact('s1', 'browser/shot.png', offline)).toMatchObject({ kind: 'local', path })
+  })
+
+  it('AB3: serves a directory whose only claimed member is sealed', async () => {
+    const sealed = join(root, 'sync', 's1', 'agent', 'app', 'new.txt')
+    mkdirSync(join(sealed, '..'), { recursive: true })
+    writeFileSync(sealed, 'ALL-BYTES')
+    beginActiveWrite('s1', sealed)
+    sealActiveWrite('s1', sealed)
+    const outcome = await mirrorNodeDirectory('s1', 'agent/app', liveNode({ 'agent/app/old.txt': Buffer.from('old') }))
+    expect(outcome.kind).toBe('local')
+    expect(existsSync(sealed)).toBe(true)
   })
 
   it('AA2: refreshes from the node when the only outstanding work on the original is its completion notice', async () => {

@@ -196,18 +196,21 @@ async function mirrorOneArtifact(
   if (!withinSessionZone(sessionId, path)) return outside()
   const pending = source ?? (await pendingSource(sessionId, deps))
   const local = localStat(path)
-  /** Every `local` answer after an await re-checks the boundary: a link can be planted mid-flight. */
-  const serveLocal = (st: { size: number; mtimeMs: number }): MirrorOutcome =>
-    withinSessionZone(sessionId, path) ? { kind: 'local', path, size: st.size, mtimeMs: st.mtimeMs } : outside()
   const incomplete = (): MirrorOutcome => ({ kind: 'unavailable', reason: `${relativePath} is still being written on this desktop` })
-  /** What the desktop has when the node does not have the file. */
-  const pendingHere = (): MirrorOutcome => {
-    if (!local) return { kind: 'missing' }
-    const why = pending.snapshot()(path)
-    if (why === 'upload') return serveLocal(local)
-    if (why === 'writing') return incomplete()
-    return { kind: 'missing' }
+  /**
+   * Every `local` answer goes through here, so both refusals are stated once:
+   * the boundary is re-checked because a link can be planted mid-flight, and a
+   * file a producer is still filling is never handed over — including on the
+   * offline fallback, where there is no node answer to weigh it against.
+   */
+  const serveLocal = (st: { size: number; mtimeMs: number }): MirrorOutcome => {
+    if (!withinSessionZone(sessionId, path)) return outside()
+    if (activeWriteUnder(sessionId, path) === 'writing') return incomplete()
+    return { kind: 'local', path, size: st.size, mtimeMs: st.mtimeMs }
   }
+  /** What the desktop has when the node does not have the file. */
+  const pendingHere = (): MirrorOutcome =>
+    local && pending.snapshot()(path) ? serveLocal(local) : { kind: 'missing' }
   let remote: ArtifactStatResult
   try {
     remote = await deps.stat({ sessionId, relativePath })
@@ -222,11 +225,7 @@ async function mirrorOneArtifact(
   // A desktop original still owed to the node is newer than anything the node
   // can have; overwriting it with the node's older copy destroys the only one.
   // A file still being written is protected the same way but is not an answer.
-  if (local) {
-    const why = pending.snapshot()(path)
-    if (why === 'upload') return serveLocal(local)
-    if (why === 'writing') return incomplete()
-  }
+  if (local && pending.snapshot()(path)) return serveLocal(local)
   if (local && local.size === remote.size && local.mtimeMs === remote.mtimeMs) return serveLocal(local)
   // The stat was an await: a cancel may have arrived, and the destructive
   // reconcile below must not run past it (a deleted directory does not come
@@ -466,6 +465,13 @@ async function mirrorDirectoryLocked(sessionId: string, relativePath: string, de
   // A snapshot taken now, not before the fetches: a capture another Host Action
   // queued while they ran is the only copy of that file.
   pruneMirroredDirectory(dir, keep, sessionId, pending.snapshot(), deps.signal)
+  // A directory is handed to its caller as a unit — `miniapp_dev_pack` reads
+  // the whole tree — so one half-written member makes the whole answer wrong.
+  // The prune correctly KEEPS that file; keeping it and then calling the tree
+  // complete are different questions, and only the first was answered.
+  if (activeWriteUnder(sessionId, dir) === 'writing') {
+    return { kind: 'unavailable', reason: `${relativePath} holds a file this desktop is still writing` }
+  }
   return { kind: 'local', path: dir, size: 0, mtimeMs: 0 }
 }
 

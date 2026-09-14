@@ -14,6 +14,7 @@
  * never mentions is not pushed: the agent has no path to `Read`, and the
  * desktop, the renderer and the phone read the desktop copy.
  */
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
 import { statSync } from 'node:fs'
 import type { ArtifactGetRequest, ArtifactGetResult, ArtifactPutRequest, ArtifactPutResult, ArtifactStatResult } from '@superone/shared/environment'
@@ -100,7 +101,17 @@ interface ArgRoles {
    * refused as unsupported rather than reported missing.
    */
   directorySources: ReadonlySet<string>
+  /**
+   * Arguments that hold *another* tool's arguments — `browser_perf.action`
+   * carries the call it measures, and a saved `browser_action`'s `input`
+   * only becomes arguments after template expansion. Their purpose is not
+   * knowable here, so they are left as written and mapped where the inner
+   * tool actually runs (`mapNestedToolInputs`), by that tool's own roles.
+   */
+  deferred: ReadonlySet<string>
 }
+
+const NO_ROLES: ArgRoles = { outputs: NO_ARGS, directorySources: NO_ARGS, deferred: NO_ARGS }
 
 /**
  * The roles a tool's arguments play, keyed by the name the *node* publishes.
@@ -114,20 +125,52 @@ interface ArgRoles {
 function argRoles(toolName: string | undefined, args: Record<string, unknown>): ArgRoles {
   switch (toolName) {
     case 'browser_network':
-      return { outputs: args.action === 'download' ? DIR_ARG : NO_ARGS, directorySources: NO_ARGS }
+      return { ...NO_ROLES, outputs: args.action === 'download' ? DIR_ARG : NO_ARGS }
     case 'browser_download':
-      return { outputs: DIR_ARG, directorySources: NO_ARGS }
+      return { ...NO_ROLES, outputs: DIR_ARG }
+    case 'browser_perf':
+      return { ...NO_ROLES, deferred: new Set(['action']) }
+    case 'browser_action':
+      // `input` feeds a saved flow's templates; `steps` *is* a flow being
+      // saved, whose paths have not been produced yet and are not to be mirrored.
+      return { ...NO_ROLES, deferred: new Set(['input', 'steps']) }
     case 'miniapp_dev_setup':
-      return { outputs: new Set(['directory', 'projectDir']), directorySources: NO_ARGS }
+      return { ...NO_ROLES, outputs: new Set(['directory', 'projectDir']) }
     case 'miniapp_dev_register':
-      return { outputs: new Set(['projectDir']), directorySources: new Set(['directory']) }
+      return { ...NO_ROLES, outputs: new Set(['projectDir']), directorySources: new Set(['directory']) }
     case 'miniapp_dev_pack':
-      return { outputs: new Set(['outputDir']), directorySources: new Set(['appDir']) }
+      return { ...NO_ROLES, outputs: new Set(['outputDir']), directorySources: new Set(['appDir']) }
     case 'miniapp_dev_update_types':
-      return { outputs: NO_ARGS, directorySources: new Set(['appDir']) }
+      return { ...NO_ROLES, directorySources: new Set(['appDir']) }
     default:
-      return { outputs: NO_ARGS, directorySources: NO_ARGS }
+      return NO_ROLES
   }
+}
+
+type InputMappingDeps = Pick<HostActionSyncDeps, 'zone' | 'get' | 'stat' | 'signal'> & { sessionId?: string }
+
+/**
+ * The Host Action whose tool is running, for the tools it dispatches in
+ * turn. Set once around the outer call; read by `mapNestedToolInputs` from
+ * wherever a wrapper reaches its inner tool, however many frames down.
+ */
+const nestedMapping = new AsyncLocalStorage<InputMappingDeps>()
+
+/** Run a Host Action's tool with its input mapping reachable by nested dispatch. */
+export function withInputMapping<T>(deps: InputMappingDeps, run: () => Promise<T>): Promise<T> {
+  return nestedMapping.run(deps, run)
+}
+
+/**
+ * Map the arguments a wrapper hands to an inner tool, by the inner tool's
+ * own roles — the point where `browser_perf`'s measured call or a saved
+ * action's expanded step actually becomes a `browser_download`. A no-op
+ * outside a Host Action, and for arguments already mapped: a desktop path
+ * does not parse as a node zone path, so mapping twice is mapping once.
+ */
+export async function mapNestedToolInputs(toolName: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const deps = nestedMapping.getStore()
+  return deps ? mapHostActionInputs(args, { ...deps, toolName }) : args
 }
 
 function throwIfAborted(signal: AbortSignal): void {
@@ -137,10 +180,10 @@ function throwIfAborted(signal: AbortSignal): void {
 /** §3.1 — reverse-map node zone paths in the args, mirroring each one first. */
 export async function mapHostActionInputs(
   args: Record<string, unknown>,
-  deps: Pick<HostActionSyncDeps, 'zone' | 'get' | 'stat' | 'signal'> & { sessionId?: string; toolName?: string },
+  deps: InputMappingDeps & { toolName?: string },
 ): Promise<Record<string, unknown>> {
-  const mapped = mapNodeZoneArgs(deps.zone, args, deps.sessionId)
   const roles = argRoles(deps.toolName, args)
+  const mapped = mapNodeZoneArgs(deps.zone, args, deps.sessionId, roles.deferred)
   for (const ref of mapped.refs) {
     if (ref.keys.some((key) => roles.directorySources.has(key))) {
       throw Object.assign(

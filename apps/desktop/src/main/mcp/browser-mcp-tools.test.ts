@@ -93,6 +93,12 @@ vi.mock('../browser/browser-download-tasks', () => ({
 vi.mock('../browser/browser-downloads', () => ({
   listDownloads: vi.fn(async () => []),
 }))
+vi.mock('../browser/browser-cdp-perf', () => ({
+  measurePerf: vi.fn(async ({ runAction }: { runAction: () => Promise<unknown> }) => { await runAction(); return { settled: 'idle' } }),
+  samplePerf: vi.fn(async () => ({})),
+  resolveAppTarget: vi.fn(() => 1),
+}))
+vi.mock('electron', () => ({ app: { getPath: () => '/Users/me/Library/Application Support/SuperOne' } }))
 
 import { decode as toonDecode } from '@toon-format/toon'
 import {
@@ -118,6 +124,7 @@ import { browserAutomationCall, browserFocusGuard, resolveBrowserWebContentsId }
 import { cdpClick, cdpHover } from '../browser/browser-cdp'
 import { startUrlDownloadTask, raceDownloadTask } from '../browser/browser-download-tasks'
 import { listDownloads } from '../browser/browser-downloads'
+import { withInputMapping } from '../environment/host-action-sync'
 import { resolveWebmcpTrustConfirm } from './browser-webmcp-confirm'
 import { BROWSER_TOOLS_CALL_SUMMARY_DESCRIPTION } from './browser-webmcp-tool-defs'
 
@@ -809,6 +816,31 @@ describe('browser_download', () => {
       undefined,
       '/Users/dev/project/assets',
     )
+  })
+
+  it('maps a remote download directory the same way whether the call is direct or wrapped in browser_perf', async () => {
+    // The public `browser_network` and the `browser_perf` wrapper both reach
+    // the download primitive; the node-zone `dir` has to arrive there as the
+    // desktop mirror in both cases, or one entry point hands the download a
+    // directory this machine does not have.
+    gates.cdp = true
+    const zone = { syncRoot: '/home/node/.superone/node/sync', os: 'linux' as const }
+    const nodeDir = '/home/node/.superone/node/sync/sess-1/download/reports'
+    const desktopDir = '/Users/me/Library/Application Support/SuperOne/sync/sess-1/download/reports'
+    const deps = {
+      zone,
+      sessionId: 'sess-1',
+      signal: new AbortController().signal,
+      stat: async () => ({ exists: false, size: 0, mtimeMs: 0 }),
+      get: async () => { throw new Error('not called') },
+    }
+    await withInputMapping(deps, () => executeBrowserTool('sess-1', 'browser_network', { action: 'download', url: 'https://x.test/a.png', dir: nodeDir }))
+    expect(startUrlDownloadTask).toHaveBeenLastCalledWith('sess-1', 'https://x.test/a.png', undefined, desktopDir)
+
+    await withInputMapping(deps, () => executeBrowserTool('sess-1', 'browser_perf', {
+      action: { tool: 'browser_download', args: { url: 'https://x.test/a.png', dir: nodeDir } },
+    }))
+    expect(startUrlDownloadTask).toHaveBeenLastCalledWith('sess-1', 'https://x.test/a.png', undefined, desktopDir)
   })
 
   it('returns background status with taskId when the download exceeds timeout', async () => {

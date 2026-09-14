@@ -20,6 +20,7 @@ import type { ClaimHostActionResult } from '@superone/shared/environment'
 import type { HostActionExecutor } from './remote-host-action-consumer'
 import {
   mapHostActionInputs,
+  withInputMapping,
   syncHostActionOutputs,
   type HostActionSyncDeps,
   type ToolReply,
@@ -127,13 +128,18 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
 
         const { executeSuperoneMcpToolCollecting } = await import('../mcp/superone-mcp-tool-surface')
         if (runAbort.signal.aborted || raceWinner === 'deadline') return aborted()
-        const { result: rawResult, artifacts } = await executeSuperoneMcpToolCollecting(
+        const runTool = () => executeSuperoneMcpToolCollecting(
           claimed.sessionId,
           claimed.toolName,
           mappedArgs,
           runAbort.signal,
           connectionId,
         )
+        // A wrapper tool maps the arguments of the tool it dispatches at the
+        // point of dispatch, by that tool's roles; it finds the mapping here.
+        const { result: rawResult, artifacts } = sync
+          ? await withInputMapping({ ...sync, sessionId: claimed.sessionId }, runTool)
+          : await runTool()
         if (runAbort.signal.aborted || raceWinner === 'deadline') return aborted()
 
         const toolResult = sync && artifacts.length > 0

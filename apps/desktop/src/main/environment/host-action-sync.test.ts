@@ -13,7 +13,7 @@ import type { ArtifactPutRequest } from '@superone/shared/environment'
 const state = vi.hoisted(() => ({ userData: '' }))
 vi.mock('electron', () => ({ app: { getPath: () => state.userData } }))
 
-import { mapHostActionInputs, syncHostActionOutputs, CLAIM_BUDGET_MARGIN_MS } from './host-action-sync'
+import { mapHostActionInputs, mapNestedToolInputs, syncHostActionOutputs, withInputMapping, CLAIM_BUDGET_MARGIN_MS } from './host-action-sync'
 
 let root: string
 const zone = { syncRoot: '/home/node/.superone/node/sync', os: 'linux' as const }
@@ -243,6 +243,15 @@ describe('host action outputs', () => {
     expect(node.deferred).toEqual(['recording/run.mp4'])
   })
 
+  it('pushes a file the reply names in Chinese prose, with Chinese punctuation around it', async () => {
+    const node = fakeNode()
+    const shot = desktopFile('s1', 'browser/shot.png', 'png-bytes')
+    const reply = { content: [{ type: 'text', text: `截图已保存到 ${shot}，请查看。` }] }
+    const out = await syncHostActionOutputs('s1', [{ path: shot, producer: 'browser', final: true }], reply, Date.now() + 60_000, node.deps)
+    expect(node.files.has('browser/shot.png')).toBe(true)
+    expect(out.content![0].text).toBe('截图已保存到 /home/node/.superone/node/sync/s1/browser/shot.png，请查看。')
+  })
+
   it('stops at the abort signal between uploads', async () => {
     const node = fakeNode()
     const abort = new AbortController()
@@ -316,15 +325,43 @@ describe('host action inputs', () => {
 
   it('keeps the source rule for a path one call names as both source and destination, in either order', async () => {
     // Refs used to be de-duplicated by path and keep only the first argument
-    // name seen — so `{ outputDir: p, appDir: p }` slipped through as an
-    // output while `{ appDir: p, outputDir: p }` was refused. A path's roles
-    // are all of the roles it was given.
+    // name seen — so a destination named first laundered the same path's
+    // use as a source. A path's roles are all of the roles it was given.
     const node = fakeNode()
-    const p = '/home/node/.superone/node/sync/s1/agent/app'
-    desktopFile('s1', 'agent/app/manifest.json', '{}')
-    for (const args of [{ outputDir: p, appDir: p }, { appDir: p, outputDir: p }]) {
-      await expect(mapHostActionInputs(args, { ...node.deps, sessionId: 's1', toolName: 'miniapp_dev_pack' })).rejects.toBeTruthy()
+    const p = '/home/node/.superone/node/sync/s1/download/x.bin'
+    desktopFile('s1', 'download/x.bin', 'stale')
+    for (const args of [{ action: 'download', dir: p, url: p }, { action: 'download', url: p, dir: p }]) {
+      await expect(mapHostActionInputs(args, { ...node.deps, sessionId: 's1', toolName: 'browser_network' }))
+        .rejects.toMatchObject({ code: 'not_found' })
     }
+  })
+
+  it('leaves a wrapped call alone at the outer boundary and maps it where the inner tool runs', async () => {
+    // `browser_perf` carries another tool's arguments; a saved `browser_action`
+    // carries values that only become arguments after template expansion.
+    // Neither can be judged at the outer boundary, so their contents are
+    // left as the node wrote them and mapped by the inner tool's own roles.
+    const node = fakeNode()
+    const dir = '/home/node/.superone/node/sync/s1/download/reports'
+    const perf = await mapHostActionInputs(
+      { action: { tool: 'browser_download', args: { url: 'https://x/y.pdf', dir } } },
+      { ...node.deps, sessionId: 's1', toolName: 'browser_perf' },
+    )
+    expect((perf.action as { args: { dir: string } }).args.dir).toBe(dir)
+    const saved = await mapHostActionInputs(
+      { action: 'do', name: 'export', input: { dir } },
+      { ...node.deps, sessionId: 's1', toolName: 'browser_action' },
+    )
+    expect((saved.input as { dir: string }).dir).toBe(dir)
+
+    // The inner boundary: the same dir, as the primitive sees it.
+    const inner = await withInputMapping({ ...node.deps, sessionId: 's1' }, () => mapNestedToolInputs('browser_download', { url: 'https://x/y.pdf', dir }))
+    expect(inner.dir).toBe(join(root, 'sync', 's1', 'download', 'reports'))
+    // And a source the inner tool names still has to exist.
+    await expect(withInputMapping({ ...node.deps, sessionId: 's1' }, () => mapNestedToolInputs('browser_upload', { path: dir })))
+      .rejects.toMatchObject({ code: 'not_found' })
+    // Outside a Host Action there is nothing to map.
+    expect(await mapNestedToolInputs('browser_download', { dir })).toEqual({ dir })
   })
 
   it('recognises the download destination under the public tool name and action, not only the internal one', async () => {

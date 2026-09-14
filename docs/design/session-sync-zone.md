@@ -506,6 +506,23 @@ All four landed on 2026-09-14, one commit each.
   read as "still queued" and pinned its dead directory forever; the startup
   sweep now ignores terminal rows and drops them with the directory.
 
+- **A fifth review found three more, none blocking, and settled the path
+  rewrite's contract.** A decoded JSON string value that *is* a path is now
+  compared whole and never searched — `/tmp/a.png copy.png` and
+  `/other:/tmp/a.png` are other files, and a space or a colon is a legal
+  file-name character — while a value that is prose is scanned for a token
+  bounded by delimiters, which now include Chinese punctuation and corner
+  brackets (`已保存到 <path>。` used to be judged unmentioned and the file
+  was never pushed). Top-level text blocks are prose. And the argument roles
+  were only applied at the outer boundary, so a download wrapped in
+  `browser_perf` or expanded from a saved `browser_action` had its `dir`
+  refused as a missing source: the wrapper's container argument is now
+  `deferred` — left exactly as written — and every route to a browser tool
+  (`runPrimitive`, `executeBrowserTool`) maps the inner call by the inner
+  tool's own roles, finding the Host Action's mapping through
+  `AsyncLocalStorage`. Mapping twice is mapping once, because a desktop path
+  does not parse as a node zone path.
+
 - **Only refs the reply names are pushed** (§3). A registered artifact whose
   path never appears in `content[].text` is not uploaded: the agent has no
   path to `Read`, and the desktop, the renderer and the phone all read the

@@ -8,6 +8,7 @@ import { isCdpEnabled, isCdpCookiesEnabled, isCdpMockEnabled, isCdpEmulateEnable
 import { encode as toonEncode } from '@toon-format/toon'
 import { startRecording, stopRecording, waitForRecordedRequest, getRecordedRequest, addMockRule, clearMockRules, type RecordedRequest } from '../browser/browser-cdp-network'
 import { measurePerf, samplePerf, resolveAppTarget } from '../browser/browser-cdp-perf'
+import { mapNestedToolInputs } from '../environment/host-action-sync'
 import { persistScreenshot } from '../agent/browser-screenshot-store'
 import { raceDownloadTask, startUrlDownloadTask } from '../browser/browser-download-tasks'
 import { listDownloads } from '../browser/browser-downloads'
@@ -574,7 +575,7 @@ function captureLegacyTools(sessionId: string, webMcpEnabled: boolean): {
   return { descriptors: capturing.descriptors, handlers: capturing.handlers }
 }
 
-function runPrimitive(
+async function runPrimitive(
   sessionId: string,
   name: string,
   args: Record<string, unknown>,
@@ -585,8 +586,29 @@ function runPrimitive(
     primitiveHandlerCache.set(sessionId, primitives)
   }
   const handler = primitives.get(name)
-  if (!handler) return Promise.resolve(errorReply(new Error(`Unknown browser primitive: ${name}`)))
-  return handler(args)
+  if (!handler) return errorReply(new Error(`Unknown browser primitive: ${name}`))
+  return runMappedTool(name, args, handler)
+}
+
+/**
+ * Every route to a browser tool passes here — the compact dispatcher, the
+ * `browser_perf` wrapper, a saved action's expanded step — so this is where a
+ * remote session's node-zone arguments are mapped by the tool's own roles
+ * (`docs/design/session-sync-zone.md` §3.1). A refused mapping is an error
+ * reply, never a rejection: callers up the stack read `isError`.
+ */
+async function runMappedTool(
+  name: string,
+  args: Record<string, unknown>,
+  handler: (args: Record<string, unknown>) => Promise<ToolReply>,
+): Promise<ToolReply> {
+  let mapped: Record<string, unknown>
+  try {
+    mapped = await mapNestedToolInputs(name, args)
+  } catch (err) {
+    return errorReply(err instanceof Error ? err : new Error(String(err)))
+  }
+  return handler(mapped)
 }
 
 function captureCompactTools(sessionId: string, webMcpEnabled: boolean): {
@@ -635,7 +657,7 @@ export async function executeBrowserTool(
 ): Promise<ToolReply> {
   const handler = ensureAllHandlers(sessionId).get(toolName)
   if (!handler) throw new Error(`Unknown browser tool: ${toolName}`)
-  return handler(args)
+  return runMappedTool(toolName, args, handler)
 }
 
 export function clearBrowserToolHandlers(sessionId: string): void {

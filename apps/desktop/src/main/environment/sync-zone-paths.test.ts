@@ -123,6 +123,32 @@ describe('sync zone prefix mapping', () => {
     expect(rewriteArtifactPaths(text, new Map([[win, 'D:\\node\\a.png']]))).toBe(text)
   })
 
+  it('compares a JSON path value exactly instead of searching inside it', () => {
+    // `/tmp/a.png copy.png` and `/other:/tmp/a.png` are other files. A space
+    // or a colon is a legal file-name character, so a value that *is* a path
+    // is compared whole; only prose is scanned.
+    const from = `${desktopZone}/s1/browser/a.png`
+    const mapping = new Map([[from, '/node/a.png']])
+    for (const other of [`${from} copy.png`, `${from},old`, `/other:${from}`]) {
+      for (const text of [JSON.stringify({ path: other }), JSON.stringify({ result: JSON.stringify({ path: other }) })]) {
+        expect(mentionsArtifactPath(text, from)).toBe(false)
+        expect(rewriteArtifactPaths(text, mapping)).toBe(text)
+      }
+    }
+    // A prose value inside JSON is still prose.
+    const prose = JSON.stringify({ note: `saved ${from} for you` })
+    expect(mentionsArtifactPath(prose, from)).toBe(true)
+    expect(JSON.parse(rewriteArtifactPaths(prose, mapping)).note).toBe('saved /node/a.png for you')
+  })
+
+  it('finds a path bounded by Chinese punctuation or corner brackets', () => {
+    const from = `${desktopZone}/s1/browser/a.png`
+    for (const text of [`已保存到 ${from}。`, `已保存到 ${from}，继续`, `路径：${from}`, `「${from}」`, `（${from}）`]) {
+      expect(mentionsArtifactPath(text, from)).toBe(true)
+      expect(rewriteArtifactPaths(text, new Map([[from, '/node/a.png']]))).toContain('/node/a.png')
+    }
+  })
+
   it('prefers the longest registered path when one is a prefix of another', () => {
     const short = `${desktopZone}/s1/browser/shot.png`
     const long = `${desktopZone}/s1/browser/shot.png.agent.jpg`

@@ -83,8 +83,13 @@ function escapeRegExp(s: string): string {
  * `a.png(1)` name other files. A path that is the whole string needs no
  * delimiter at all.
  */
-const OPENS_PATH = '\\s"\'`([{<,;:=|'
-const CLOSES_PATH = '\\s"\'`)\\]}>,;:!?|'
+const OPENS_PATH = '\\s"\'`([{<,;:=|，。；：！？、（「『【《〈“‘'
+const CLOSES_PATH = '\\s"\'`)\\]}>,;:!?|，。、；：！？）」』】》〉”’'
+
+/** Does the string start the way an absolute path does? POSIX root, drive letter, UNC. */
+function looksLikePath(text: string): boolean {
+  return /^(?:\/|[A-Za-z]:[\\/]|\\\\)/.test(text)
+}
 
 function tokenPattern(path: string): RegExp {
   // Ends at a closing delimiter, the end of the text, or a full stop that
@@ -128,26 +133,50 @@ function looksLikeJson(text: string): boolean {
 }
 
 /**
- * Rewrite one string: parse it as JSON when it is JSON and rewrite the string
- * values at their own level (so a Windows twin is escaped by the serialiser
- * instead of breaking the document); otherwise replace tokens in the text,
- * raw and — for a desktop path that JSON doubles — escaped.
+ * Rewrite one text block: parse it as JSON when it is JSON and rewrite the
+ * string values at their own level (so a Windows twin is escaped by the
+ * serialiser instead of breaking the document); otherwise treat it as prose.
  */
 function rewriteString(text: string, entries: ReadonlyArray<readonly [string, string]>): string {
-  if (looksLikeJson(text)) {
-    try {
-      const value = JSON.parse(text) as unknown
-      if (typeof value === 'string' || (value && typeof value === 'object')) {
-        return JSON.stringify(rewriteValue(value, entries))
-      }
-    } catch {
-      /* not JSON after all: fall through to text */
+  const asJson = rewriteJson(text, entries)
+  return asJson ?? rewriteProse(text, entries)
+}
+
+/** The JSON branch of `rewriteString` and `rewriteScalar`; null when `text` is not a JSON document. */
+function rewriteJson(text: string, entries: ReadonlyArray<readonly [string, string]>): string | null {
+  if (!looksLikeJson(text)) return null
+  try {
+    const value = JSON.parse(text) as unknown
+    if (typeof value === 'string' || (value && typeof value === 'object')) {
+      return JSON.stringify(rewriteValue(value, entries))
     }
+  } catch {
+    /* not JSON after all */
   }
+  return null
+}
+
+/**
+ * A decoded JSON string value. Two kinds, and the contract differs: a value
+ * that *is* a path is compared whole and never searched — `/tmp/a.png copy.png`
+ * and `/other:/tmp/a.png` are other files, and a space or a colon is a legal
+ * file-name character — while a value that is prose is scanned for a
+ * delimited token like any other text. (A nested document is a document.)
+ */
+function rewriteScalar(value: string, entries: ReadonlyArray<readonly [string, string]>): string {
+  const asJson = rewriteJson(value, entries)
+  if (asJson !== null) return asJson
+  if (looksLikePath(value)) {
+    for (const [from, to] of entries) if (value === from) return to
+    return value
+  }
+  return rewriteProse(value, entries)
+}
+
+/** Replace delimited tokens in prose, raw and — for a path that JSON doubles — escaped. */
+function rewriteProse(text: string, entries: ReadonlyArray<readonly [string, string]>): string {
   let out = text
   for (const [from, to] of entries) {
-    // A decoded value that *is* the path — the common case inside JSON — is
-    // an exact comparison, not a search.
     if (out === from) return to
     out = replaceTokens(out, from, to)
     const fromJson = JSON.stringify(from).slice(1, -1)
@@ -157,7 +186,7 @@ function rewriteString(text: string, entries: ReadonlyArray<readonly [string, st
 }
 
 function rewriteValue(value: unknown, entries: ReadonlyArray<readonly [string, string]>): unknown {
-  if (typeof value === 'string') return rewriteString(value, entries)
+  if (typeof value === 'string') return rewriteScalar(value, entries)
   if (Array.isArray(value)) return value.map((v) => rewriteValue(v, entries))
   if (value && typeof value === 'object') {
     const out: Record<string, unknown> = {}
@@ -206,6 +235,12 @@ export function mapNodeZoneArgs(
    * must not be handed a file from another (§3.1).
    */
   sessionId?: string,
+  /**
+   * Top-level arguments whose contents are another tool's arguments (or become
+   * one's after expansion) and are mapped there, by that tool's own roles.
+   * Left exactly as written here — not mapped, not checked.
+   */
+  deferKeys: ReadonlySet<string> = new Set(),
 ): { args: unknown; refs: ZoneArgRef[] } {
   const refs: ZoneArgRef[] = []
   const byPath = new Map<string, ZoneArgRef>()
@@ -235,7 +270,9 @@ export function mapNodeZoneArgs(
     if (Array.isArray(value)) return value.map((inner) => walk(inner, key))
     if (value && typeof value === 'object') {
       const out: Record<string, unknown> = {}
-      for (const [k, inner] of Object.entries(value as Record<string, unknown>)) out[k] = walk(inner, key ?? k)
+      for (const [k, inner] of Object.entries(value as Record<string, unknown>)) {
+        out[k] = key === null && deferKeys.has(k) ? inner : walk(inner, key ?? k)
+      }
       return out
     }
     return value

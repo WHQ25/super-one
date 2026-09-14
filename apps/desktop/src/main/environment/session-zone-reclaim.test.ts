@@ -7,9 +7,9 @@ const state = vi.hoisted(() => ({
   userData: '',
   dropped: [] as string[],
   localSessions: new Set<string>(),
-  jobs: [] as { sessionId: string; state: string; localPath?: string }[],
 }))
 vi.mock('electron', () => ({ app: { getPath: () => state.userData } }))
+vi.mock('../database', async () => (await import('../../test/fixtures/delivery-db')).deliveryDatabase())
 vi.mock('./environment-host', () => ({
   getEnvironmentHost: () => ({
     artifactTransfers: { dropSession: (id: string) => state.dropped.push(id) },
@@ -17,12 +17,25 @@ vi.mock('./environment-host', () => ({
   }),
 }))
 vi.mock('../db-sessions', () => ({ sessionExists: (id: string) => state.localSessions.has(id) }))
-vi.mock('../db-artifact-transfers', () => ({
-  listArtifactTransfersForSession: (id: string) => state.jobs.filter((j) => j.sessionId === id),
-  listUploadingArtifactTransfers: () => state.jobs.filter((j) => j.state === 'pending' || j.state === 'running'),
-}))
 
 import { ADHOC_MAX_AGE_MS, createReclaimScheduler, markZoneOwner, reclaimSyncZone, sweepSyncZone, removeSessionZone, syncZoneUsage } from './session-zone-reclaim'
+import { reserveDelivery, type DeliveryPhase } from '../db-session-deliveries'
+import { deliveryDb, resetDeliveryDatabase } from '../../test/fixtures/delivery-db'
+import { _resetHoldersForTests, mintHolder } from './delivery-holders'
+
+/**
+ * A delivery-record row for a file already written to disk, in the state the
+ * scenario names. A `sealed` (or `uploading`) row is a desktop original the
+ * node still owes; `gaveUp` is one automatic retry has stopped on.
+ */
+function deliver(sessionId: string, rel: string, opts: { phase?: DeliveryPhase; gaveUp?: boolean; error?: string } = {}): void {
+  const localPath = join(root, 'sync', sessionId, ...rel.split('/'))
+  const r = reserveDelivery({ sessionId, connectionId: 'conn-1', localPath, relativePath: rel, origin: 'produced', phase: 'writing', holder: mintHolder() })
+  if ('refused' in r) throw new Error(r.refused)
+  deliveryDb()
+    .prepare('UPDATE session_file_deliveries SET phase = ?, holder = NULL, gave_up_at = ?, last_error = ? WHERE delivery_id = ?')
+    .run(opts.phase ?? 'sealed', opts.gaveUp ? new Date().toISOString() : null, opts.error ?? null, r.deliveryId)
+}
 
 let root: string
 beforeEach(() => {
@@ -30,7 +43,8 @@ beforeEach(() => {
   state.userData = root
   state.dropped = []
   state.localSessions = new Set()
-  state.jobs = []
+  resetDeliveryDatabase()
+  _resetHoldersForTests()
 })
 afterEach(() => rmSync(root, { recursive: true, force: true }))
 
@@ -182,12 +196,14 @@ describe('sync zone sweep', () => {
       for (const p of [path, join(path, '..'), join(root, 'sync', sessionId, '.owner'), join(root, 'sync', sessionId)]) utimesSync(p, seconds, seconds)
     }
     aged('dead', 'recording/a.mp4')
-    state.jobs = [{ sessionId: 'dead', state: 'failed' }]
+    // Its one delivery gave up: no retry is scheduled, so it does not pin the dir.
+    deliver('dead', 'recording/a.mp4', { phase: 'uploading', gaveUp: true })
     const result = await sweepSyncZone()
     expect(result.removed).toEqual(['dead'])
     expect(state.dropped).toEqual(['dead'])
     aged('retrying', 'recording/b.mp4')
-    state.jobs = [{ sessionId: 'retrying', state: 'pending' }]
+    // A live delivery still to be sent keeps the directory.
+    deliver('retrying', 'recording/b.mp4', { phase: 'sealed' })
     expect((await sweepSyncZone()).removed).toEqual([])
   })
 
@@ -278,13 +294,10 @@ describe('sync zone usage', () => {
     // Already on the node, only the agent's wake still owed: not "to be uploaded".
     aged('live', 'browser/c.png', 2 * DAY, 'zzz')
     state.localSessions = new Set(['live'])
-    const bPath = join(root, 'sync', 'live', 'browser', 'b.png')
-    state.jobs = [
-      { sessionId: 'live', state: 'pending', localPath: bPath },
-      // A second job for the same file (a retry row) must not be counted twice.
-      { sessionId: 'live', state: 'running', localPath: bPath },
-      { sessionId: 'live', state: 'uploaded', localPath: join(root, 'sync', 'live', 'browser', 'c.png') },
-    ]
+    // b is a desktop original still owed to the node; c is already there,
+    // only the agent's wake outstanding — not counted as "to be uploaded".
+    deliver('live', 'browser/b.png', { phase: 'sealed' })
+    deliver('live', 'browser/c.png', { phase: 'notifying' })
     mkdirSync(join(root, 'sync', 'adhoc', 'browser'), { recursive: true })
     writeFileSync(join(root, 'sync', 'adhoc', 'browser', 'manual.png'), 'zz')
 

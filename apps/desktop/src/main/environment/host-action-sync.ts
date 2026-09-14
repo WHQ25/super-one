@@ -15,14 +15,23 @@
  * desktop, the renderer and the phone read the desktop copy.
  */
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { randomUUID } from 'node:crypto'
-import { statSync } from 'node:fs'
 import type { ArtifactGetRequest, ArtifactGetResult, ArtifactListRequest, ArtifactListResult, ArtifactPutRequest, ArtifactPutResult, ArtifactStatResult } from '@superone/shared/environment'
 import type { ArtifactRef } from '../mcp/artifact-registry'
 import { zoneRelativePath } from '../media-output-paths'
 import { uploadArtifact, type TransferOutcome } from './artifact-transfer'
-import { abandonHandoff, acquireHandoff, deliverHandoff, enqueueHandoff, leaveHandoff, type Handoff } from './pending-handoffs'
-import { adoptWriteClaim, releaseWriteClaim } from './active-writes'
+import {
+  advanceDelivery,
+  claimDelivery,
+  completeDelivery,
+  getDelivery,
+  recordDeliveryFailure,
+  recordDeliveryOffset,
+  releaseDelivery,
+  type Delivery,
+  type DeliveryHandle,
+} from '../db-session-deliveries'
+import { isHolderAlive, mintHolder, retireHolder } from './delivery-holders'
+import { abandonUndeliveredDelivery } from './zone-delivery'
 import { mirrorNodeArtifact, mirrorNodeDirectory } from './session-file-mirror'
 import { mapNodeZoneArgs, mentionsArtifactPath, nodeZonePath, rewriteArtifactPaths, type NodeSyncZone } from './sync-zone-paths'
 
@@ -51,9 +60,8 @@ export interface HostActionSyncDeps {
   transfers: {
     throughputBytesPerMs(connectionId: string): number
     recordThroughput(connectionId: string, outcome: TransferOutcome): void
-    defer(input: { connectionId: string; sessionId: string; localPath: string; relativePath: string; transferId?: string }): unknown
-    /** Record a file the eager push already delivered, so a joiner still gets its completion wake. */
-    noteDelivered(input: { connectionId: string; sessionId: string; localPath: string; relativePath: string; transferId: string }): void
+    /** A row was left for the worker; it need not wait for its next timer. */
+    wake(connectionId: string): void
   }
   /**
    * Ask the node to extend this action's claim, returning the new expiry
@@ -89,12 +97,25 @@ async function within<T>(ms: number, signal: AbortSignal, work: (budget: AbortSi
   const timer = setTimeout(() => budget.abort(), Math.max(0, ms))
   const abortWithAction = () => budget.abort()
   signal.addEventListener('abort', abortWithAction, { once: true })
+  // A work that has ALREADY finished is honoured even if the deadline fires in
+  // the same tick — an abort landing on a final put's reply must not discard a
+  // commit the node confirmed and report it as needing re-delivery (§6). The
+  // deadline still wins over a work that is merely slow or hung: on expiry we
+  // give the settled result one macrotask to surface, no longer.
+  let done: { value: T } | { error: unknown } | null = null
+  const task = work(budget.signal).then((value) => void (done ??= { value }), (error) => void (done ??= { error }))
   try {
-    return await Promise.race([work(budget.signal), budgetExpiry(budget.signal)])
+    await Promise.race([task, budgetExpiry(budget.signal)])
+  } catch (deadline) {
+    await Promise.race([task, new Promise((resolve) => setTimeout(resolve, 0))])
+    if (!done) throw deadline
   } finally {
     clearTimeout(timer)
     signal.removeEventListener('abort', abortWithAction)
   }
+  const settled = done!
+  if ('error' in settled) throw settled.error
+  return settled.value
 }
 
 const NO_ARGS: ReadonlySet<string> = new Set()
@@ -237,31 +258,7 @@ interface PlannedRef {
   relativePath: string
   nodePath: string
   size: number
-  mtimeMs: number
-  /** The instance that owns this file's delivery; absent once its session is gone. */
-  handoff?: Handoff
-}
-
-/**
- * Does the node already hold this exact file? A finished upload stamps the
- * desktop copy with the node's mtime, so size + mtime agreeing is the same
- * test the lazy mirror uses in the other direction (§4.2). True for a
- * download that was queued at capture time and landed before the agent
- * listed it, or a recording named in two replies. An unreachable node reads
- * as "no", and the upload proceeds as it always did.
- */
-async function nodeAlreadyHas(item: PlannedRef, budgetMs: number, deps: HostActionSyncDeps): Promise<boolean> {
-  // The dedupe stat is a node RPC, and a node RPC does not return because the
-  // claim ran out — so it is bounded by the same budget as every other wait
-  // here (§4.1). A timeout, an error, or no budget left all read as "not
-  // sure", and the upload/defer path below decides from there.
-  if (budgetMs <= 0) return false
-  try {
-    const remote = await within(budgetMs, deps.signal, () => deps.stat({ sessionId: item.sessionId, relativePath: item.relativePath }))
-    return remote.exists && remote.size === item.size && remote.mtimeMs === item.mtimeMs
-  } catch {
-    return false
-  }
+  delivery: Delivery
 }
 
 /**
@@ -275,44 +272,28 @@ function mentionedInReply(reply: ToolReply, path: string): boolean {
   return (reply.content ?? []).some((block) => typeof block.text === 'string' && mentionsArtifactPath(block.text, path))
 }
 
+/** The eager push lost its row mid-step: the session was dropped, or another holder took it. */
+class LostDelivery extends Error {
+  constructor() {
+    super('delivery lost to another holder')
+    this.name = 'LostDelivery'
+  }
+}
+
 /**
  * §3 + §4.1 — push the registered outputs, rewrite the reply, defer what does
  * not fit. Returns the rewritten reply; `sync.deferred` lists node paths that
  * are not there yet.
- */
-/**
- * Hand the file to a transfer job, protected until one exists.
  *
- * `defer` is local — a stat, a SQLite insert — so it throws for local reasons,
- * and the file it was about is complete, is the only copy, and now has nothing
- * durable naming it. Letting the throw escape is what used to lose it: the
- * executor's `finally` released the claim on the way out and the next
- * directory mirror pruned the file. The handoff task takes a claim of its own
- * before it tries, so this holds for a screenshot that never reserved a path
- * as much as for a download that did.
- *
- * The action does not fail either way. The tool already did its work, and the
- * reply already says `sync.deferred` — which stays true: the node does not
- * have the file. The difference is only whether anything is still looking
- * after it.
+ * Every ref is a delivery record (`docs/design/session-sync-zone-delivery-record.md`),
+ * and the record says what there is to do: a row already at `uploaded` or
+ * later needs nothing sent — the node has it — and a row someone else holds
+ * is being delivered by them. Only a `sealed` row nobody holds is this call's
+ * to push, and it pushes it under a holder of its own, through the same
+ * `committing` gate the worker uses, to `done`: for an eager push the reply
+ * itself is the wake. Anything it cannot finish inside the budget it leaves
+ * for the worker at the phase it reached, and reports as deferred.
  */
-function fileJob(deps: HostActionSyncDeps, handoff: Handoff): void {
-  enqueueHandoff(handoff, (job) => void deps.transfers.defer(job))
-}
-
-/**
- * End a sealed file's claim when this call is the last thing that could have
- * delivered it and will not.
- *
- * Adopted under a token of its own before releasing, so it can only ever free
- * a claim still held by its writer — never one a transfer instance owns, and
- * never a file whose writer is still filling it.
- */
-function releaseUndelivered(sessionId: string, path: string): void {
-  const token = randomUUID()
-  if (adoptWriteClaim(sessionId, path, token)) releaseWriteClaim(sessionId, path, token)
-}
-
 export async function syncHostActionOutputs(
   sessionId: string,
   refs: ArtifactRef[],
@@ -326,57 +307,25 @@ export async function syncHostActionOutputs(
     if (!ref.final) continue
     const zone = zoneRelativePath(ref.path)
     if (!zone || zone.sessionId !== sessionId) continue
-    const nodePath = nodeZonePath(deps.zone, zone.sessionId, zone.relativePath)
+    if (!ref.deliveryId) {
+      deps.log?.warn('[host-action] a zone file was registered without a delivery record; not pushed', ref.path)
+      continue
+    }
+    const delivery = getDelivery(ref.deliveryId)
+    if (!delivery) continue
     // The same matcher on the same text the rewrite will see.
     if (!mentionedInReply(reply, ref.path)) {
       // Produced, sealed, and named by nothing the agent will read — a
       // `browser_perf_measure` that ran a download and reported only its
-      // timings. Nothing will ever deliver it, so its writer's claim has to
-      // end here: left held, it reads as a desktop original the node still
-      // owes, and the mirror serves it over the node's copy for ever.
-      releaseUndelivered(zone.sessionId, ref.path)
+      // timings. Nothing will ever deliver it; left live, the worker would
+      // upload it for nobody and the mirror would keep it for ever.
+      abandonUndeliveredDelivery(delivery.deliveryId)
       continue
     }
-    let size: number
-    let mtimeMs: number
-    try {
-      const st = statSync(ref.path)
-      size = st.size
-      mtimeMs = Math.floor(st.mtimeMs)
-    } catch {
-      // Gone between the tool and here; there is nothing left to protect.
-      releaseUndelivered(zone.sessionId, ref.path)
-      continue
-    }
-    planned.push({ ref, sessionId: zone.sessionId, relativePath: zone.relativePath, nodePath, size, mtimeMs })
+    const nodePath = nodeZonePath(deps.zone, zone.sessionId, zone.relativePath)
+    planned.push({ ref, sessionId: zone.sessionId, relativePath: zone.relativePath, nodePath, size: delivery.total, delivery })
   }
   if (planned.length === 0) return reply
-
-  // Before ANY await: one transfer instance per file, each holding its own
-  // claim. Everything below this line — the node stat, the hash, the upload —
-  // is time in which a directory mirror could otherwise delete a file nobody
-  // was holding, or a second Host Action could start a second delivery of it.
-  const owned: Handoff[] = []
-  const joined: Handoff[] = []
-  /** Set once the loop finished: a joiner that got its reply is still owed the file. */
-  let replied = false
-  for (const item of planned) {
-    const acquired = acquireHandoff({
-      connectionId: deps.connectionId,
-      sessionId: item.sessionId,
-      localPath: item.ref.path,
-      relativePath: item.relativePath,
-      bytes: item.size,
-      // Only used if the job table cannot be read now: the instance holds the
-      // file and files its own job once it can tell there is not one already.
-      enqueue: (job) => void deps.transfers.defer(job),
-    })
-    // Session deleted while the tool ran: there is nothing to deliver to.
-    if (!acquired) continue
-    item.handoff = acquired.handoff
-    if (acquired.mine) owned.push(acquired.handoff)
-    else joined.push(acquired.handoff)
-  }
 
   const mapping = new Map<string, string>()
   const deferred: string[] = []
@@ -385,106 +334,96 @@ export async function syncHostActionOutputs(
   planned.sort((a, b) => a.size - b.size)
 
   let expiresAt = claimExpiresAt
-  try {
+  let leftForWorker = false
   for (const item of planned) {
+    // A cancel that landed during the previous item's push: nothing further
+    // is claimed, so the rest stays `sealed` and unheld for the worker.
+    throwIfAborted(deps.signal)
+    const row = item.delivery
+    // The producer's failure: the file is not going to exist on the node, and
+    // the reply the tool wrote already says what happened to it.
+    if (row.outcome === 'abandoned') continue
     mapping.set(item.ref.path, item.nodePath)
-    // Someone else owns this file's delivery: joining them IS the action.
-    //
-    // Pushing alongside them delivers the file by a route their instance
-    // cannot see, so it never settles — it keeps its claim, which makes the
-    // mirror serve this desktop's copy of a file the agent may since have
-    // changed on the node, and its retry ladder eventually files a redundant
-    // job that uploads the old bytes over the new ones. One owner, one
-    // delivery, one transfer id.
-    if (!item.handoff || !owned.includes(item.handoff)) {
+    // The node has it (done, or only the wake is owed — the worker's).
+    if (row.outcome === 'done' || row.phase === 'uploaded' || row.phase === 'notifying') continue
+    // Being delivered by someone else, or already the worker's — an upload in
+    // progress, a queued one, a commit in flight. Joining them IS the action.
+    if (row.phase !== 'sealed' || isHolderAlive(row.holder)) {
       deferred.push(item.nodePath)
+      leftForWorker = true
       continue
     }
-    const alreadyThere = await nodeAlreadyHas(item, expiresAt - now() - CLAIM_BUDGET_MARGIN_MS, deps)
-    // Unconditionally, before acting on the answer: that stat was an await, and
-    // a cancel during it must stop the loop rather than be carried into the
-    // next file — where `within` would enter on an already-aborted signal and
-    // wait out the whole budget for an abort event that has already fired.
-    throwIfAborted(deps.signal)
-    if (alreadyThere) {
-      // Nothing to send, so this file's delivery is already over — but a caller
-      // that joined is still owed the wake it was promised. `deliverHandoff`
-      // absorbs a failure to record that wake; it must not surface as a push
-      // failure, because there was no push.
-      deliverHandoff(item.handoff, (job) => deps.transfers.noteDelivered(job))
-      continue
-    }
-    // The instance's id, for the file's whole delivery: the node keeps a
-    // half-written transfer open after a dropped connection, and a retry under
-    // a new id would be told `busy` by it. The job carries this id and resumes.
-    const transferId = item.handoff.transferId
-    const job = { connectionId: deps.connectionId, sessionId: item.sessionId, localPath: item.ref.path, relativePath: item.relativePath, transferId }
-    const estimateMs = item.size / rate
-    if (estimateMs > expiresAt - now() - CLAIM_BUDGET_MARGIN_MS && deps.renewClaim) {
-      // Buying time beats handing the agent an ENOENT it has to wait out.
-      try {
-        const ask = Math.min(MAX_CLAIM_RENEWAL_MS, Math.ceil(estimateMs * RENEWAL_SLACK) + CLAIM_BUDGET_MARGIN_MS)
-        // Bounded by the claim we still hold: a renewal that never answers
-        // would otherwise be waited out past the very claim it was protecting.
-        expiresAt = await within(expiresAt - now() - CLAIM_BUDGET_MARGIN_MS, deps.signal, () => deps.renewClaim!(ask))
-      } catch (err) {
-        deps.log?.warn('[host-action] claim renewal refused, deferring', item.relativePath, err instanceof Error ? err.message : String(err))
-      }
-      throwIfAborted(deps.signal)
-    }
-    let delivered = false
-    const budgetMs = expiresAt - now() - CLAIM_BUDGET_MARGIN_MS
-    if (estimateMs > budgetMs) {
-      fileJob(deps, item.handoff)
+    // Ours to push, if the budget allows. Claimed before any await.
+    const holder = mintHolder()
+    const claimed = claimDelivery(row.deliveryId, { holder: row.holder, epoch: row.epoch }, holder)
+    if (!claimed.ok) {
+      retireHolder(holder)
       deferred.push(item.nodePath)
+      leftForWorker = true
       continue
     }
-    // The upload gets the budget as a hard stop of its own: an estimate is not
-    // a guarantee, and running past the claim loses the reply as well.
+    // The handle moves as the phase does; the failure path has to record
+    // against the epoch actually reached, or it records nothing.
+    const cursor: PushCursor = { handle: claimed.handle, committing: false }
     try {
-      // The transfer keeps its id when the budget cuts it off, so the job
+      const estimateMs = item.size / rate
+      if (estimateMs > expiresAt - now() - CLAIM_BUDGET_MARGIN_MS && deps.renewClaim) {
+        // Buying time beats handing the agent an ENOENT it has to wait out.
+        try {
+          const ask = Math.min(MAX_CLAIM_RENEWAL_MS, Math.ceil(estimateMs * RENEWAL_SLACK) + CLAIM_BUDGET_MARGIN_MS)
+          // Bounded by the claim we still hold: a renewal that never answers
+          // would otherwise be waited out past the very claim it was protecting.
+          expiresAt = await within(expiresAt - now() - CLAIM_BUDGET_MARGIN_MS, deps.signal, () => deps.renewClaim!(ask))
+        } catch (err) {
+          deps.log?.warn('[host-action] claim renewal refused, deferring', item.relativePath, err instanceof Error ? err.message : String(err))
+        }
+        throwIfAborted(deps.signal)
+      }
+      const budgetMs = expiresAt - now() - CLAIM_BUDGET_MARGIN_MS
+      if (estimateMs > budgetMs) {
+        // Not attempted: queued for the worker, still complete, still protected.
+        const queued = advanceDelivery(cursor.handle, { from: 'sealed', to: 'queued' })
+        if (queued.ok) releaseDelivery(queued.handle)
+        deferred.push(item.nodePath)
+        leftForWorker = true
+        continue
+      }
+      const started = advanceDelivery(cursor.handle, { from: 'sealed', to: 'uploading' })
+      if (!started.ok) throw new LostDelivery()
+      cursor.handle = started.handle
+      // The upload gets the budget as a hard stop of its own: an estimate is
+      // not a guarantee, and running past the claim loses the reply as well.
+      // The transfer keeps its id when the budget cuts it off, so the worker
       // resumes the partial upload rather than starting a second one.
-      const outcome = await within(budgetMs, deps.signal, (budgetSignal) => uploadArtifact({
-        localPath: item.ref.path,
-        sessionId: item.sessionId,
-        relativePath: item.relativePath,
-        transferId,
-        put: deps.put,
-        signal: budgetSignal,
-      }))
-      deps.transfers.recordThroughput(deps.connectionId, outcome)
-      delivered = true
+      await within(budgetMs, deps.signal, (budgetSignal) => pushDelivery(row, cursor, budgetSignal, deps))
+      // For an eager push the reply is the wake: the agent reads the rewritten
+      // path in the same turn. Done, under this holder.
+      const notifying = advanceDelivery(cursor.handle, { from: 'uploaded', to: 'notifying' })
+      if (!notifying.ok || !completeDelivery(notifying.handle)) throw new LostDelivery()
     } catch (err) {
-      throwIfAborted(deps.signal)
+      if (err instanceof LostDelivery) {
+        deferred.push(item.nodePath)
+        continue
+      }
       // The tool already did its work; a failed push must not fail the action.
-      // Hand the file to a job and tell the agent it is not there yet.
-      deps.log?.warn('[host-action] eager artifact push failed, deferring', item.relativePath, err instanceof Error ? err.message : String(err))
-      fileJob(deps, item.handoff)
+      // The row keeps the phase it reached and the worker takes it from there:
+      // `uploading` with its offset is resumed; `committing` — the final put
+      // went out and its reply did not come back — is unknowable from here and
+      // stops (§6). The agent is told the file is not there yet.
+      const message = err instanceof Error ? err.message : String(err)
+      recordDeliveryFailure(cursor.handle, { error: cursor.committing ? `commit unverified: ${message}` : message, nextAttemptAt: cursor.committing ? null : now() })
       deferred.push(item.nodePath)
+      leftForWorker = true
+      // The action was cancelled, not the push: the row already records where
+      // it got to (§6), and the failure surfaced as the action's abort.
+      throwIfAborted(deps.signal)
+      deps.log?.warn('[host-action] eager artifact push failed, deferring', item.relativePath, message)
+    } finally {
+      retireHolder(holder)
     }
-    // Outside the upload's `catch` on purpose: the bytes are on the node, and
-    // a completion record that fails to write is not a failed push. Treating
-    // it as one filed a second upload job for a file already delivered, which
-    // then put its stale bytes back over the node's newer copy.
-    if (delivered) deliverHandoff(item.handoff, (job) => deps.transfers.noteDelivered(job))
     throwIfAborted(deps.signal)
   }
-  replied = true
-  } finally {
-    // Anything this call acquired and neither delivered nor handed to a job:
-    // cancelled, or the loop threw. Nothing downstream will carry those, and
-    // holding their claims would pin the paths for the life of the process.
-    // A no-op for an instance that has already moved on, so an action cannot
-    // undo a job it just filed on its way out.
-    //
-    // Unless another call joined and was told the file is on its way: giving
-    // up then would leave them waiting on a node path that never appears, so
-    // the delivery is handed to a job under the same id instead.
-    for (const handoff of owned) abandonHandoff(handoff, (job) => void deps.transfers.defer(job))
-    // A joiner stops waiting only when its own call died. One that returned
-    // normally told its agent the file is coming and is still owed it.
-    if (!replied) for (const handoff of joined) leaveHandoff(handoff)
-  }
+  if (leftForWorker) deps.transfers.wake(deps.connectionId)
 
   const content = (reply.content ?? []).map((block) =>
     typeof block.text === 'string' ? { ...block, text: rewriteArtifactPaths(block.text, mapping) } : block,
@@ -498,6 +437,44 @@ export async function syncHostActionOutputs(
     content: [...content, { type: 'text', text: deferredNotice(deferred) }],
     sync: { deferred },
   }
+}
+
+/** Where a push has got to, visible to its failure path. */
+interface PushCursor {
+  handle: DeliveryHandle
+  /** The `committing` gate has been written: the final put is, or was, in flight. */
+  committing: boolean
+}
+
+/**
+ * Send one sealed file under the cursor's handle, through the `committing`
+ * gate, to `uploaded`. The gate is written immediately before the final chunk
+ * — for an empty file, a single chunk, a resumed last chunk alike — and a
+ * gate that cannot be written sends nothing.
+ */
+async function pushDelivery(row: Delivery, cursor: PushCursor, signal: AbortSignal, deps: HostActionSyncDeps): Promise<void> {
+  const outcome = await uploadArtifact({
+    localPath: row.localPath,
+    sessionId: row.sessionId,
+    relativePath: row.relativePath,
+    transferId: row.transferId,
+    ...(row.sha256 ? { identity: { total: row.total, sha256: row.sha256 } } : {}),
+    put: deps.put,
+    signal,
+    onProgress: (offset) => void recordDeliveryOffset(cursor.handle, offset),
+    beforeFinal: () => {
+      // Idempotent: an offset resync can re-send a final chunk.
+      if (cursor.committing) return
+      const gate = advanceDelivery(cursor.handle, { from: 'uploading', to: 'committing' })
+      if (!gate.ok) throw new LostDelivery()
+      cursor.handle = gate.handle
+      cursor.committing = true
+    },
+  })
+  deps.transfers.recordThroughput(deps.connectionId, outcome)
+  const landed = advanceDelivery(cursor.handle, { from: 'committing', to: 'uploaded' })
+  if (!landed.ok) throw new LostDelivery()
+  cursor.handle = landed.handle
 }
 
 function deferredNotice(paths: string[]): string {

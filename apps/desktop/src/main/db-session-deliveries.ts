@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
 import { getDb } from './database'
+import { CONTENT_OWNING_PHASES } from './db-session-deliveries-schema'
 import { isHolderAlive } from './environment/delivery-holders'
 import { canonicalClaimPath } from './environment/sync-zone-paths'
 import log from './logger'
@@ -37,8 +38,7 @@ import log from './logger'
 export const DELIVERY_PHASES = ['writing', 'sealed', 'queued', 'uploading', 'committing', 'uploaded', 'notifying'] as const
 export type DeliveryPhase = (typeof DELIVERY_PHASES)[number]
 
-/** Phases in which the desktop copy is the only complete one, or is being made. */
-const CONTENT_OWNING_PHASES = "('writing', 'sealed', 'queued', 'uploading', 'committing')"
+export { ensureSessionFileDeliveriesSchema } from './db-session-deliveries-schema'
 
 export type DeliveryOutcome = 'done' | 'abandoned'
 export type DeliveryOrigin = 'download' | 'page-download' | 'produced'
@@ -112,50 +112,6 @@ function toDelivery(row: Row): Delivery {
 }
 
 const nowIso = (): string => new Date().toISOString()
-
-/**
- * The schema. Idempotent, so the migration and the tests share it and neither
- * can drift from the other. No FK to `sessions`: the session row is the
- * node's, not this database's.
- */
-export function ensureSessionFileDeliveriesSchema(db: Database.Database): void {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS session_file_deliveries (
-      delivery_id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      connection_id TEXT NOT NULL,
-      local_path TEXT NOT NULL,
-      relative_path TEXT NOT NULL,
-      transfer_id TEXT NOT NULL,
-      origin TEXT NOT NULL,
-      phase TEXT NOT NULL,
-      outcome TEXT,
-      holder TEXT,
-      epoch INTEGER NOT NULL DEFAULT 0,
-      offset INTEGER NOT NULL DEFAULT 0,
-      total INTEGER NOT NULL DEFAULT 0,
-      sha256 TEXT,
-      attempts INTEGER NOT NULL DEFAULT 0,
-      next_attempt_at TEXT,
-      last_error TEXT,
-      gave_up_at TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_deliveries_path
-      ON session_file_deliveries(session_id, local_path);
-    CREATE INDEX IF NOT EXISTS idx_deliveries_runnable
-      ON session_file_deliveries(connection_id, phase, next_attempt_at)
-      WHERE outcome IS NULL;
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_deliveries_content_slot
-      ON session_file_deliveries(session_id, local_path)
-      WHERE outcome IS NULL AND phase IN ${CONTENT_OWNING_PHASES};
-    CREATE TABLE IF NOT EXISTS session_zone_tombstones (
-      session_id TEXT PRIMARY KEY,
-      dropped_at TEXT NOT NULL
-    );
-  `)
-}
 
 // ---------------------------------------------------------------------------
 // Ownership
@@ -486,6 +442,37 @@ export function listLiveDeliveries(connectionId: string, nowMs: number): Deliver
        ORDER BY created_at ASC`,
     )
     .all(connectionId, new Date(nowMs).toISOString()) as Row[]
+  return rows.map(toDelivery)
+}
+
+/** When the connection's earliest backed-off row becomes due, or null if nothing is waiting on a clock. */
+export function nextDeliveryDueAt(connectionId: string): number | null {
+  const row = getDb()
+    .prepare(
+      `SELECT MIN(next_attempt_at) AS due FROM session_file_deliveries
+       WHERE connection_id = ? AND outcome IS NULL AND gave_up_at IS NULL AND next_attempt_at IS NOT NULL`,
+    )
+    .get(connectionId) as { due: string | null }
+  return row.due ? Date.parse(row.due) : null
+}
+
+/** Rows automatic retry has stopped on: what Settings shows, and what Retry Upload acts on. */
+export function listGivenUpDeliveries(sessionId?: string): Delivery[] {
+  const where = sessionId ? 'AND session_id = ?' : ''
+  const rows = getDb()
+    .prepare(`SELECT * FROM session_file_deliveries WHERE outcome IS NULL AND gave_up_at IS NOT NULL ${where} ORDER BY created_at ASC`)
+    .all(...(sessionId ? [sessionId] : [])) as Row[]
+  return rows.map(toDelivery)
+}
+
+/**
+ * Bytes this desktop still owes some node: every live row whose content is
+ * not yet on the node. What Settings sizes as "waiting to upload".
+ */
+export function listContentOwnedDeliveries(): Delivery[] {
+  const rows = getDb()
+    .prepare(`SELECT * FROM session_file_deliveries WHERE outcome IS NULL AND phase IN ${CONTENT_OWNING_PHASES} ORDER BY created_at ASC`)
+    .all() as Row[]
   return rows.map(toDelivery)
 }
 

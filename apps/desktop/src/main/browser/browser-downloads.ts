@@ -6,15 +6,8 @@ import { pipeline } from 'stream/promises'
 import log from '../logger'
 import { mediaFileGrants } from '../media-file-grants'
 import { browserAutomationCall } from './browser-automation-bridge'
-import { abandonWriteClaim, sealActiveWrite } from '../environment/active-writes'
-import { abandonZoneFile, recordTolerantly, sealZoneFile } from '../environment/zone-delivery'
-
-/** The writer gives up: the claim and the delivery record both let go of the path. */
-function abandonDownload(sessionId: string | null | undefined, path: string): void {
-  abandonWriteClaim(sessionId, path)
-  if (sessionId) abandonZoneFile(sessionId, path)
-}
-import { filenameFor, queueDownloadUpload, registerDownload, reserveDownloadPath } from '../agent/browser-download-store'
+import { abandonZoneFile, sealZoneFile } from '../environment/zone-delivery'
+import { filenameFor, registerDownload, reserveDownloadPath, wakeDownloadDelivery } from '../agent/browser-download-store'
 import { tabDriver, type TabDriver } from './browser-tab-drivers'
 
 const BROWSER_PARTITION = 'persist:browser'
@@ -126,7 +119,7 @@ export async function downloadUrl(url: string, opts: DownloadUrlOptions = {}): P
     } catch (err) {
       // The reservation claimed the path against the mirror; a write that never
       // happened must give it back or the file is protected forever.
-      abandonDownload(sessionId, path)
+      if (sessionId) abandonZoneFile(sessionId, path)
       throw err
     }
     onProgress?.({ bytes: buf.byteLength, totalBytes: buf.byteLength, filename, mimeType })
@@ -146,7 +139,7 @@ export async function downloadUrl(url: string, opts: DownloadUrlOptions = {}): P
   try {
     return await receiveBody()
   } catch (err) {
-    abandonDownload(sessionId, path)
+    if (sessionId) abandonZoneFile(sessionId, path)
     throw err
   }
 
@@ -224,26 +217,28 @@ export function registerBrowserDownloadCapture(): void {
       record.bytes = item.getReceivedBytes()
       if (state === 'completed') {
         try { mediaFileGrants().add(path) } catch (error) { log.warn('[browser-download] could not persist media grant', error) }
-        // Sealed, not released: the bytes are all there but nothing durable
-        // names the file until `queueDownloadUpload` has filed its job.
-        sealActiveWrite(driver?.sessionId, path)
         // The delivery record is sealed HERE, by the item's own completion —
         // not by a later listing that may never come. Its node was named at
-        // reservation, from the tab driver.
+        // reservation, from the tab driver; a local session's file has no
+        // row. Outside any tool call, so the worker carries it, and its
+        // completion wake is how the agent learns the node path works.
         if (driver) {
-          recordTolerantly(path, () => sealZoneFile({ sessionId: driver.sessionId, path, origin: 'page-download', connectionId: driver.connectionId }))
+          try {
+            sealZoneFile({ sessionId: driver.sessionId, path, origin: 'page-download', connectionId: driver.connectionId })
+            if (driver.connectionId) wakeDownloadDelivery(driver.connectionId)
+          } catch (err) {
+            // The session let go of the reservation while the bytes came in:
+            // nothing will carry them, and the listing must not say otherwise.
+            record.state = 'interrupted'
+            log.warn(`[browser-download] completed but not deliverable: ${record.url}`, err)
+          }
         }
-        // Outside any tool call, so the transfer service takes it directly;
-        // its completion wake is how the agent learns the node path works.
-        if (driver?.connectionId) queueDownloadUpload(driver.connectionId, driver.sessionId, path)
-        // No node to push to: nothing will ever adopt it, so the writer ends it.
-        else abandonDownload(driver?.sessionId, path)
       }
       if (state !== 'completed') {
         log.warn(`[browser-download] ${state}: ${record.url}`)
         // Cancelled or interrupted: there is nothing to hand on, and holding
-        // the claim would pin a stub the mirror may never prune.
-        abandonDownload(driver?.sessionId, path)
+        // the row would pin a stub the mirror may never prune.
+        if (driver) abandonZoneFile(driver.sessionId, path)
       }
       notifyWaiters()
     })

@@ -682,38 +682,13 @@ function applyMigrations(db: Database.Database): void {
     db.exec(`ALTER TABLE session_collaboration_grants ADD COLUMN kind TEXT NOT NULL DEFAULT 'spawn'`)
   }
 
-  // Session sync zone transfer jobs (docs/design/session-sync-zone.md §5.3):
-  // a Host Action output too large to push inside the claim budget is uploaded
-  // to the node here instead. Keyed by connection, resumed from `offset` after
-  // a disconnect or restart, retried with backoff, dropped with the session.
-  // No FK to sessions: the session row is the node's, not this database's.
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS artifact_transfer_jobs (
-      job_id TEXT PRIMARY KEY,
-      connection_id TEXT NOT NULL,
-      session_id TEXT NOT NULL,
-      local_path TEXT NOT NULL,
-      relative_path TEXT NOT NULL,
-      transfer_id TEXT NOT NULL,
-      offset INTEGER NOT NULL DEFAULT 0,
-      total INTEGER NOT NULL DEFAULT 0,
-      state TEXT NOT NULL DEFAULT 'pending',
-      attempts INTEGER NOT NULL DEFAULT 0,
-      next_attempt_at TEXT,
-      last_error TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_artifact_transfer_jobs_connection
-      ON artifact_transfer_jobs(connection_id, state);
-    CREATE INDEX IF NOT EXISTS idx_artifact_transfer_jobs_session
-      ON artifact_transfer_jobs(session_id);
-  `)
-
-  // The delivery record (docs/design/session-sync-zone-delivery-record.md):
-  // one durable row per zone file delivered to its node, replacing the table
-  // above and the two in-memory registries beside it. The DDL lives with the
-  // module so the tests build the exact schema the migration does.
+  // Session sync zone delivery record (docs/design/session-sync-zone-delivery-record.md):
+  // one durable row per zone file delivered to its node — created before the
+  // first controlled byte, advanced through a monotonic phase, and read by the
+  // mirror, the eager push and the transfer worker alike. It is the whole of
+  // the sync bookkeeping; the claim/handoff/job triple it replaced never
+  // shipped (the zone feature is branch-only). The DDL lives with the module so
+  // the tests build the exact schema the migration does.
   ensureSessionFileDeliveriesSchema(db)
 }
 

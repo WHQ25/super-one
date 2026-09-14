@@ -1,20 +1,18 @@
 /**
  * A download that outlives the tool call that started it.
  *
- * This is the entry the claim/handoff tests kept standing in for: every other
- * case in `download-claim-lifecycle.integration.test.ts` calls `downloadUrl`
- * or `queueDownloadUpload` directly, so none of them exercise
- * `browser-download-tasks.ts`'s own settle — the one that decides a
- * backgrounded download needs queueing at all, notifies the agent, and does it
- * with the tool's call scope long closed.
+ * This is the entry the download tests kept standing in for: `downloadUrl`
+ * alone never exercises `browser-download-tasks.ts`'s own settle — the one that
+ * decides a backgrounded download is finished, seals its delivery record, wakes
+ * the worker, and notifies the agent, all with the tool's call scope long
+ * closed.
  *
  * Real throughout: `startUrlDownloadTask` / `raceDownloadTask` and their
- * timeout, the real reservation and write claim, the real handoff instance,
- * the real `ArtifactTransferService` over a real (in-memory) job table, and the
- * real directory mirror. Mocked only at the boundaries Electron and the node
- * RPC own — `session.fetch`, media grants, `put`, `notifyCompleted`.
+ * timeout, the real reservation and seal, the real delivery record over a real
+ * (in-memory) SQLite, the real `ArtifactTransferService`, and the real
+ * directory mirror. Mocked only at the boundaries Electron and the node RPC
+ * own — `session.fetch`, media grants, `put`, `notifyCompleted`.
  */
-import Database from 'better-sqlite3'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -26,12 +24,15 @@ const wire = vi.hoisted(() => ({
   /** Opened when the test lets the rest of the response body through. */
   gate: { promise: Promise.resolve(), open: () => {} },
 }))
-const { getDbMock } = vi.hoisted(() => ({ getDbMock: vi.fn() }))
+const hostRef = vi.hoisted(() => ({ wake: (_c: string) => {} }))
 
-vi.mock('../database', () => ({ getDb: getDbMock }))
+vi.mock('../database', async () => (await import('../../test/fixtures/delivery-db')).deliveryDatabase())
 vi.mock('../logger', () => ({ default: { warn: () => {}, info: () => {}, error: () => {}, debug: () => {} } }))
 vi.mock('../media-file-grants', () => ({ mediaFileGrants: () => ({ add: () => {} }) }))
 vi.mock('../app-settings-service', () => ({ readAppSettings: () => ({}) }))
+// The finalizer wakes the worker through the environment host; here that is the
+// test's own service.
+vi.mock('./environment-host', () => ({ getEnvironmentHost: () => ({ artifactTransfers: { wake: (c: string) => hostRef.wake(c) } }) }))
 vi.mock('electron', () => ({
   app: { getPath: () => zone.userData },
   session: {
@@ -55,10 +56,11 @@ vi.mock('electron', () => ({
   },
 }))
 
-import { activeWriteAt, resetActiveWrites } from './active-writes'
+import { resetDeliveryDatabase } from '../../test/fixtures/delivery-db'
+import { classifyDeliveryAt, findDeliveryByPath, listSessionDeliveries } from '../db-session-deliveries'
+import { _resetHoldersForTests } from './delivery-holders'
 import { ArtifactTransferService } from './artifact-transfer-service'
-import { listArtifactTransfersForSession } from '../db-artifact-transfers'
-import { acquireHandoff, resetPendingHandoffs } from './pending-handoffs'
+import { _resetZoneDeliveryForTests } from './zone-delivery'
 import { mirrorNodeArtifact, mirrorNodeDirectory } from './session-file-mirror'
 import {
   _resetDownloadTasksForTests,
@@ -71,21 +73,19 @@ import { collectArtifacts, takeArtifacts } from '../mcp/artifact-registry'
 const SESSION = 'node-s'
 const CONNECTION = 'conn-1'
 
-let db: Database.Database
 let root: string
 let service: ArtifactTransferService
 const nodeFiles = new Map<string, Buffer>()
-/** Every transfer id the node was pushed under, so a second delivery is visible. */
+/** Every transfer id the node was pushed under, so a second delivery would be visible. */
 const putIds: string[] = []
 const notified: { relativePaths: string[] }[] = []
 const injected: string[] = []
 
-function newService(putFails = false): ArtifactTransferService {
+function newService(): ArtifactTransferService {
   return new ArtifactTransferService({
     put: async (_c: string, req: ArtifactPutRequest) => {
-      if (putFails) throw new Error('node refused the chunk')
       putIds.push(req.transferId)
-      const previous = nodeFiles.get(req.relativePath) ?? Buffer.alloc(0)
+      const previous = req.offset === 0 ? Buffer.alloc(0) : nodeFiles.get(req.relativePath) ?? Buffer.alloc(0)
       const whole = Buffer.concat([previous, Buffer.from(req.chunk, 'base64')])
       nodeFiles.set(req.relativePath, whole)
       return { ok: true as const, bytesWritten: whole.length, ...(req.final ? { mtimeMs: 1_700_000_000_000 } : {}) }
@@ -95,17 +95,9 @@ function newService(putFails = false): ArtifactTransferService {
 }
 
 beforeEach(() => {
-  db = new Database(':memory:')
-  db.exec(`
-    CREATE TABLE artifact_transfer_jobs (
-      job_id TEXT PRIMARY KEY, connection_id TEXT NOT NULL, session_id TEXT NOT NULL,
-      local_path TEXT NOT NULL, relative_path TEXT NOT NULL, transfer_id TEXT NOT NULL,
-      offset INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL DEFAULT 0,
-      state TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0,
-      next_attempt_at TEXT, last_error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-    )
-  `)
-  getDbMock.mockReturnValue(db)
+  resetDeliveryDatabase()
+  _resetHoldersForTests()
+  _resetZoneDeliveryForTests()
   root = mkdtempSync(join(tmpdir(), 'bg-finalizer-'))
   zone.userData = root
   let open!: () => void
@@ -114,20 +106,18 @@ beforeEach(() => {
   putIds.length = 0
   notified.length = 0
   injected.length = 0
-  resetActiveWrites()
-  resetPendingHandoffs()
+  service = newService()
+  hostRef.wake = () => {}
   _resetDownloadTasksForTests()
   setBrowserDownloadTaskHost({
     emitHostEvent: () => {},
     injectTaskNotification: async (_sessionId: string, content: string) => void injected.push(content),
   })
-  service = newService()
 })
 afterEach(() => {
   wire.gate.open()
   setBrowserDownloadTaskHost(null)
   rmSync(root, { recursive: true, force: true })
-  db.close()
 })
 
 /** The download's desktop path, once the task has reserved it. */
@@ -188,8 +178,8 @@ async function settleBody(): Promise<void> {
 describe('a download that finishes after its tool call', () => {
   it('survives a mirror of its directory while the tool call is already over', async () => {
     await backgroundedDownload()
-    // The scope is closed, the bytes are still arriving, and no job names it.
-    expect(activeWriteAt(SESSION, downloadPath())).toBe('writing')
+    // The scope is closed, the bytes are still arriving, and the row is `writing`.
+    expect(classifyDeliveryAt(SESSION, downloadPath())).toBe('protected-unreadable')
     const mid = await mirrorNodeDirectory(SESSION, 'download', emptyNodeDir())
     expect(mid).toMatchObject({ kind: 'unavailable' })
     expect(existsSync(downloadPath())).toBe(true)
@@ -198,146 +188,59 @@ describe('a download that finishes after its tool call', () => {
     expect(readFileSync(downloadPath(), 'utf8')).toBe('FIRSTSECOND')
   })
 
-  it('queues, uploads and notifies through the real job table once it settles', async () => {
+  it('seals its delivery, wakes the worker, and the worker uploads and notifies once it settles', async () => {
+    const wakes: string[] = []
+    hostRef.wake = (c) => wakes.push(c)
     await backgroundedDownload()
     await settleBody()
 
-    // The finalizer filed a job — nothing else could have, the scope was gone.
-    const queued = listArtifactTransfersForSession(SESSION)
-    expect(queued).toHaveLength(1)
-    expect(queued[0]).toMatchObject({ relativePath: 'download/report.csv', state: 'pending' })
+    // The finalizer sealed the delivery — nothing else could have, the scope
+    // was gone — and woke the connection's worker.
+    const sealed = listSessionDeliveries(SESSION)
+    expect(sealed).toHaveLength(1)
+    expect(sealed[0]).toMatchObject({ relativePath: 'download/report.csv', phase: 'sealed', outcome: null })
+    expect(wakes).toEqual([CONNECTION])
     // And the agent was told the download itself finished.
     expect(injected.join('\n')).toContain('status="completed"')
 
     await service.runOnce(CONNECTION)
     expect(nodeFiles.get('download/report.csv')?.toString()).toBe('FIRSTSECOND')
-    expect(notified).toEqual([{ sessionId: SESSION, notificationId: queued[0]!.jobId, relativePaths: ['download/report.csv'] }])
-    expect(listArtifactTransfersForSession(SESSION)).toEqual([])
-    // The job saw it through, so nothing is holding the path any more.
-    expect(activeWriteAt(SESSION, downloadPath())).toBeNull()
+    expect(notified).toEqual([{ sessionId: SESSION, notificationId: sealed[0]!.deliveryId, relativePaths: ['download/report.csv'] }])
+    // Delivered: done, and nothing protects the path any more.
+    expect(findDeliveryByPath(SESSION, downloadPath())).toMatchObject({ outcome: 'done' })
+    expect(classifyDeliveryAt(SESSION, downloadPath())).toBe('node-authoritative')
   })
 
-  it('keeps the only copy when the settle cannot reach the job table', async () => {
-    getDbMock.mockImplementation(() => {
-      throw new Error('SQLITE_BUSY')
-    })
+  it('does not deliver a second time after the agent edits the file on the node', async () => {
+    // One path, one delivery (R2). Once it is done the desktop copy is a mirror
+    // of the node's, not a source for it: a second settle or listing observes
+    // the same row (R3a) and never mints a second transfer to push stale bytes
+    // over what the agent changed.
     await backgroundedDownload()
     await settleBody()
-    expect(activeWriteAt(SESSION, downloadPath())).toBe('sealed')
-
-    // Restored. Nothing was filed while it was down — the file was held, not
-    // half-queued.
-    getDbMock.mockReturnValue(db)
-    expect(listArtifactTransfersForSession(SESSION)).toEqual([])
-
-    // The connection's worker starts: the production recovery entry, the same
-    // one Settings' Retry Upload uses. Only once the row exists does the file
-    // stop being held.
-    expect(service.retryFailedHandoffs(CONNECTION).retried).toBe(1)
-    expect(listArtifactTransfersForSession(SESSION)).toHaveLength(1)
-    expect(activeWriteAt(SESSION, downloadPath())).toBeNull()
-  })
-
-  it('does not redeliver when the original worker finishes before a blocked lookup recovers', async () => {
-    // The file is already a queued job. A later reader arrives while the job
-    // table cannot be read: it cannot tell whether a job carries this file, so
-    // it holds the file and asks again later. Meanwhile the worker that owns
-    // the row finishes and deletes it — and from then on `absent` means "the
-    // delivery is done" just as readily as "there was never one". Inferring
-    // the second mints a new transfer id and pushes the desktop's copy again,
-    // over whatever the agent changed on the node in between.
-    await backgroundedDownload()
-    await settleBody()
-    const job = listArtifactTransfersForSession(SESSION)[0]!
-
-    getDbMock.mockImplementation(() => {
-      throw new Error('SQLITE_BUSY')
-    })
-    const blocked = acquireHandoff({
-      connectionId: CONNECTION,
-      sessionId: SESSION,
-      localPath: downloadPath(),
-      relativePath: 'download/report.csv',
-      bytes: 11,
-      enqueue: (input) => service.defer(input),
-    })
-    expect(blocked?.mine).toBe(false)
-    expect(activeWriteAt(SESSION, downloadPath())).toBe('sealed')
-    getDbMock.mockReturnValue(db)
-
-    // The worker sees the delivery through, and says so.
+    const first = findDeliveryByPath(SESSION, downloadPath())!
     await service.runOnce(CONNECTION)
-    expect(nodeFiles.get('download/report.csv')?.toString()).toBe('FIRSTSECOND')
-    expect(listArtifactTransfersForSession(SESSION)).toEqual([])
-    expect(activeWriteAt(SESSION, downloadPath())).toBeNull()
+    expect(putIds).toEqual([first.transferId])
+    expect(findDeliveryByPath(SESSION, downloadPath())).toMatchObject({ outcome: 'done' })
 
-    // The agent edits the file on the node. Nothing here is owed to it any
-    // more, so this desktop is a mirror of that — not a source for it.
+    // The agent edits the file on the node.
     nodeFiles.set('download/report.csv', Buffer.from('NEW'))
 
-    // The ladder runs: it has nothing left to pick up and files no second job.
-    expect(service.retryFailedHandoffs(CONNECTION).retried).toBe(0)
-    expect(listArtifactTransfersForSession(SESSION)).toEqual([])
+    // Another worker pass has nothing to pick up; the row is done.
     await service.runOnce(CONNECTION)
-    // One id, once: the file is small enough to be a single chunk.
-    expect(putIds).toEqual([job.transferId])
+    expect(putIds).toEqual([first.transferId])
 
+    // The desktop now mirrors the node's version rather than serving its own.
     const read = await mirrorNodeArtifact(SESSION, 'download/report.csv', liveNodeFiles())
     expect(read).toMatchObject({ kind: 'local' })
     expect(readFileSync(downloadPath(), 'utf8')).toBe('NEW')
-  })
-
-  it('does not redeliver a file whose row owes only the completion wake', async () => {
-    // The wider form of the same defect, and it needs no worker at all. A row
-    // in `uploaded` is invisible to "does a job still owe these bytes?" —
-    // correctly, because a NEW version of the file must not join it. But a
-    // placeholder that never received an upload identity is not a new version,
-    // and reading that silence as "nobody has this file" hands it a second
-    // transfer id for bytes the node is already holding.
-    await backgroundedDownload()
-    await settleBody()
-    const first = listArtifactTransfersForSession(SESSION)[0]!.transferId
-    await service.runOnce(CONNECTION)
-    expect(listArtifactTransfersForSession(SESSION)).toEqual([])
-
-    // A later eager push delivered the same path and left a row owing the wake.
-    service.noteDelivered({
-      connectionId: CONNECTION,
-      sessionId: SESSION,
-      localPath: downloadPath(),
-      relativePath: 'download/report.csv',
-      transferId: 'pushed-1',
-    })
-    nodeFiles.set('download/report.csv', Buffer.from('NEW'))
-
-    getDbMock.mockImplementation(() => {
-      throw new Error('SQLITE_BUSY')
-    })
-    const blocked = acquireHandoff({
-      connectionId: CONNECTION,
-      sessionId: SESSION,
-      localPath: downloadPath(),
-      relativePath: 'download/report.csv',
-      bytes: 11,
-      enqueue: (input) => service.defer(input),
-    })
-    expect(blocked?.mine).toBe(false)
-    getDbMock.mockReturnValue(db)
-
-    // It asks again and is told the truth: that row has this file.
-    expect(service.retryFailedHandoffs(CONNECTION).retried).toBe(1)
-    expect(listArtifactTransfersForSession(SESSION).map((j) => j.transferId)).toEqual(['pushed-1'])
-    await service.runOnce(CONNECTION)
-    // Only the download's own upload ever happened; the agent's edit stands.
-    expect(putIds).toEqual([first])
-    expect(nodeFiles.get('download/report.csv')?.toString()).toBe('NEW')
   })
 
   it('files nothing for a session deleted before the download settles', async () => {
     await backgroundedDownload()
     service.dropSession(SESSION)
     await settleBody()
-    expect(listArtifactTransfersForSession(SESSION)).toEqual([])
-    expect(activeWriteAt(SESSION, downloadPath())).toBeNull()
+    // The seal onto a dropped session is refused; the download is not delivered.
+    expect(listSessionDeliveries(SESSION).some((r) => r.outcome === null)).toBe(false)
   })
 })

@@ -1,8 +1,13 @@
 /**
- * Deferred uploads over the persisted job table: resume from offset, backoff,
- * drop on session delete (session-sync-zone.md §5.3, §7).
+ * The transfer worker over the delivery record
+ * (`docs/design/session-sync-zone-delivery-record.md` §6): it takes any live
+ * row with a dead-or-no holder, uploads from the recorded offset under the
+ * row's fixed identity, wakes the agent, and marks the row done. Failure is
+ * scheduling — `attempts`, `next_attempt_at`, `gave_up_at` — never a phase.
+ *
+ * Real SQLite (the delivery record), real files, real hashing; only the node's
+ * `put` / `notifyCompleted` are stubbed.
  */
-import Database from 'better-sqlite3'
 import { createHash } from 'node:crypto'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -10,40 +15,62 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ARTIFACT_CHUNK_BYTES, type ArtifactPutRequest } from '@superone/shared/environment'
 
-const { getDbMock } = vi.hoisted(() => ({ getDbMock: vi.fn() }))
-vi.mock('../database', () => ({ getDb: getDbMock }))
+vi.mock('../database', async () => (await import('../../test/fixtures/delivery-db')).deliveryDatabase())
 
-import { listArtifactTransfersForSession } from '../db-artifact-transfers'
-import { findPendingJobFor } from './pending-handoffs'
+import { deliveryDb, resetDeliveryDatabase } from '../../test/fixtures/delivery-db'
+import { getDelivery, listSessionDeliveries, reserveDelivery, type Delivery, type DeliveryPhase } from '../db-session-deliveries'
+import { _resetHoldersForTests, mintHolder } from './delivery-holders'
 import { ArtifactTransferService, DEFAULT_THROUGHPUT_BYTES_PER_MS } from './artifact-transfer-service'
 
-let db: Database.Database
 let root: string
-
 beforeEach(() => {
-  db = new Database(':memory:')
-  db.exec(`
-    CREATE TABLE artifact_transfer_jobs (
-      job_id TEXT PRIMARY KEY, connection_id TEXT NOT NULL, session_id TEXT NOT NULL,
-      local_path TEXT NOT NULL, relative_path TEXT NOT NULL, transfer_id TEXT NOT NULL,
-      offset INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL DEFAULT 0,
-      state TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0,
-      next_attempt_at TEXT, last_error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-    );
-  `)
-  getDbMock.mockReturnValue(db)
+  resetDeliveryDatabase()
+  _resetHoldersForTests()
   root = mkdtempSync(join(tmpdir(), 'transfer-svc-'))
 })
 afterEach(() => rmSync(root, { recursive: true, force: true }))
 
-function fakeNode(opts: { failFirst?: number } = {}) {
+/**
+ * A sealed delivery for `rel`, waiting for the worker — a file an eager push
+ * queued, or one produced outside any call. Its identity is fixed at seal from
+ * the bytes on disk (R6).
+ */
+function sealDelivery(
+  sessionId: string,
+  connectionId: string,
+  localPath: string,
+  rel: string,
+  data: Buffer,
+): string {
+  const r = reserveDelivery({
+    sessionId,
+    connectionId,
+    localPath,
+    relativePath: rel,
+    origin: 'produced',
+    phase: 'sealed',
+    holder: null,
+    total: data.length,
+    sha256: createHash('sha256').update(data).digest('hex'),
+  })
+  if ('refused' in r) throw new Error(r.refused)
+  return r.deliveryId
+}
+
+/** Force a delivery to a later phase, the way an interrupted worker would have left it. */
+function setPhase(deliveryId: string, phase: DeliveryPhase, offset = 0): void {
+  deliveryDb().prepare('UPDATE session_file_deliveries SET phase = ?, offset = ? WHERE delivery_id = ?').run(phase, offset, deliveryId)
+}
+
+/** Every live row of a session — what the worker still has to do. */
+const live = (sessionId: string): Delivery[] => listSessionDeliveries(sessionId).filter((r) => r.outcome === null)
+
+function fakeNode() {
   const files = new Map<string, Buffer>()
   const parts = new Map<string, { chunks: Buffer[]; offset: number }>()
   const calls: ArtifactPutRequest[] = []
-  let failures = opts.failFirst ?? 0
   const put = async (_connectionId: string, req: ArtifactPutRequest) => {
     calls.push(req)
-    if (failures > 0) { failures--; throw Object.assign(new Error('node away'), { code: 'unavailable' }) }
     let part = parts.get(req.transferId)
     if (!part) { part = { chunks: [], offset: 0 }; parts.set(req.transferId, part) }
     if (req.offset < part.offset) return { ok: true as const, bytesWritten: part.offset }
@@ -62,105 +89,153 @@ function fakeNode(opts: { failFirst?: number } = {}) {
   return { files, parts, calls, put }
 }
 
-describe('artifact transfer jobs', () => {
-  it('uploads a deferred artifact, measures throughput, and removes the finished job', async () => {
+describe('the transfer worker', () => {
+  it('uploads a sealed delivery, measures throughput, and ends it as done', async () => {
     const node = fakeNode()
     const service = new ArtifactTransferService({ put: node.put })
     const local = join(root, 'clip.mp4')
     const data = Buffer.alloc(ARTIFACT_CHUNK_BYTES + 100, 3)
     writeFileSync(local, data)
+    const id = sealDelivery('s1', 'c1', local, 'recording/clip.mp4', data)
     expect(service.throughputBytesPerMs('c1')).toBe(DEFAULT_THROUGHPUT_BYTES_PER_MS)
 
-    service.defer({ connectionId: 'c1', sessionId: 's1', localPath: local, relativePath: 'recording/clip.mp4' })
-    expect(listArtifactTransfersForSession('s1')).toHaveLength(1)
     await service.runOnce('c1')
     expect(node.files.get('recording/clip.mp4')!.equals(data)).toBe(true)
-    expect(listArtifactTransfersForSession('s1')).toEqual([])
+    // Kept until reclaim (P3), but over: done, unheld.
+    expect(getDelivery(id)).toMatchObject({ phase: 'notifying', outcome: 'done', holder: null })
+    expect(live('s1')).toEqual([])
   })
 
   it('backs off after a failure and resumes from the recorded offset on the next pass', async () => {
     let clock = 1_000_000
     const node = fakeNode()
-    const service = new ArtifactTransferService({ put: node.put, now: () => clock })
     const local = join(root, 'big.bin')
     const data = Buffer.alloc(2 * ARTIFACT_CHUNK_BYTES + 1, 5)
     writeFileSync(local, data)
-    service.defer({ connectionId: 'c1', sessionId: 's1', localPath: local, relativePath: 'agent/big.bin' })
+    const id = sealDelivery('s1', 'c1', local, 'agent/big.bin', data)
 
     // First chunk lands, then the node goes away mid-upload.
-    const realPut = node.put
     let calls = 0
     const flaky = async (c: string, req: ArtifactPutRequest) => {
       calls++
       if (calls === 2) throw Object.assign(new Error('socket closed'), { code: 'unavailable' })
-      return realPut(c, req)
+      return node.put(c, req)
     }
     const flakyService = new ArtifactTransferService({ put: flaky, now: () => clock })
     await flakyService.runOnce('c1')
-    const [job] = listArtifactTransfersForSession('s1')
-    expect(job.state).toBe('pending')
-    expect(job.offset).toBe(ARTIFACT_CHUNK_BYTES)
-    expect(job.attempts).toBe(1)
-    expect(job.nextAttemptAt).toBeGreaterThan(clock)
+    const stalled = getDelivery(id)!
+    expect(stalled).toMatchObject({ phase: 'uploading', offset: ARTIFACT_CHUNK_BYTES, attempts: 1, gaveUpAt: null, holder: null })
+    expect(stalled.nextAttemptAt).toBeGreaterThan(clock)
 
     // Not due yet: nothing happens.
+    const service = new ArtifactTransferService({ put: node.put, now: () => clock })
     await service.runOnce('c1')
     expect(node.calls).toHaveLength(1)
 
-    clock = job.nextAttemptAt! + 1
+    clock = stalled.nextAttemptAt! + 1
     await service.runOnce('c1')
     expect(node.files.get('agent/big.bin')!.equals(data)).toBe(true)
     // Resumed at the recorded offset — the first chunk was not sent twice.
     expect(node.calls.map((c) => c.offset)).toEqual([0, ARTIFACT_CHUNK_BYTES, 2 * ARTIFACT_CHUNK_BYTES])
-    expect(listArtifactTransfersForSession('s1')).toEqual([])
+    expect(live('s1')).toEqual([])
   })
 
-  it('gives up on a job whose local file is gone instead of retrying forever', async () => {
+  it('gives up on a delivery whose local file is gone instead of retrying forever', async () => {
     const node = fakeNode()
     const service = new ArtifactTransferService({ put: node.put })
     const local = join(root, 'gone.png')
-    writeFileSync(local, 'x')
-    service.defer({ connectionId: 'c1', sessionId: 's1', localPath: local, relativePath: 'browser/gone.png' })
+    const data = Buffer.from('x')
+    writeFileSync(local, data)
+    const id = sealDelivery('s1', 'c1', local, 'browser/gone.png', data)
     rmSync(local)
     await service.runOnce('c1')
-    expect(listArtifactTransfersForSession('s1')[0]).toMatchObject({ state: 'failed', nextAttemptAt: null })
+    const row = getDelivery(id)!
+    expect(row).toMatchObject({ nextAttemptAt: null, outcome: null })
+    expect(row.gaveUpAt).not.toBeNull()
   })
 
-  it('drops the jobs of a deleted session and aborts the one in flight', async () => {
+  it('never retries a delivery whose final put was already sent (committing)', async () => {
+    // The final chunk went out and the reply was lost; the node may have
+    // committed it. Nothing here can tell (§2), so the worker leaves it alone.
+    const node = fakeNode()
+    const service = new ArtifactTransferService({ put: node.put })
+    const local = join(root, 'shot.png')
+    const data = Buffer.from('png')
+    writeFileSync(local, data)
+    const id = sealDelivery('s1', 'c1', local, 'browser/shot.png', data)
+    setPhase(id, 'committing')
+    await service.runOnce('c1')
+    expect(node.calls).toEqual([])
+    const row = getDelivery(id)!
+    expect(row).toMatchObject({ phase: 'committing', nextAttemptAt: null, outcome: null })
+    expect(row.gaveUpAt).not.toBeNull()
+    expect(row.lastError).toMatch(/commit unverified/)
+  })
+
+  it('abandons a row still writing whose producer is gone, and never sends it', async () => {
+    // A crashed producer leaves a `writing` row; nothing records how far it
+    // got, so a half file is worse than none.
+    const node = fakeNode()
+    const service = new ArtifactTransferService({ put: node.put })
+    const local = join(root, 'half.bin')
+    writeFileSync(local, 'FIRST')
+    const r = reserveDelivery({ sessionId: 's1', connectionId: 'c1', localPath: local, relativePath: 'download/half.bin', origin: 'download', phase: 'writing', holder: mintHolder() })
+    if ('refused' in r) throw new Error(r.refused)
+    // Its producer's holder is dead (a fresh incarnation): the worker may take it.
+    _resetHoldersForTests()
+    deliveryDb().prepare('UPDATE session_file_deliveries SET holder = ? WHERE delivery_id = ?').run(`dead:${r.deliveryId}`, r.deliveryId)
+    await service.runOnce('c1')
+    expect(node.calls).toEqual([])
+    expect(getDelivery(r.deliveryId)).toMatchObject({ outcome: 'abandoned', holder: null })
+  })
+
+  it('drops the deliveries of a deleted session and aborts the one in flight', async () => {
     let release!: () => void
     const gate = new Promise<void>((resolve) => { release = resolve })
     const node = fakeNode()
     const put = async (c: string, req: ArtifactPutRequest) => { await gate; return node.put(c, req) }
     const service = new ArtifactTransferService({ put })
-    const local = join(root, 'a.png')
-    writeFileSync(local, Buffer.alloc(ARTIFACT_CHUNK_BYTES * 2))
-    service.defer({ connectionId: 'c1', sessionId: 's1', localPath: local, relativePath: 'browser/a.png' })
-    service.defer({ connectionId: 'c1', sessionId: 's2', localPath: local, relativePath: 'browser/b.png' })
+    const a = join(root, 'a.png')
+    const b = join(root, 'b.png')
+    const data = Buffer.alloc(ARTIFACT_CHUNK_BYTES * 2)
+    writeFileSync(a, data)
+    writeFileSync(b, data)
+    sealDelivery('s1', 'c1', a, 'browser/a.png', data)
+    sealDelivery('s2', 'c1', b, 'browser/b.png', data)
     const pass = service.runOnce('c1')
     await new Promise((resolve) => setTimeout(resolve, 10))
     service.dropSession('s1')
     release()
     await pass
-    expect(listArtifactTransfersForSession('s1')).toEqual([])
-    // The other session's job was unaffected and finished.
+    expect(live('s1')).toEqual([])
+    // The other session's delivery was unaffected and finished.
     expect(node.files.has('browser/b.png')).toBe(true)
     expect(node.files.has('browser/a.png')).toBe(false)
   })
 
   it('sleeps until the earliest backoff is due, not for the ten-minute cap', async () => {
     // start() drives the loop from a timer; the delay it computes must come
-    // from the job's next_attempt_at, and the query behind it must not be fed a
+    // from the row's next_attempt_at, and the query behind it must not be fed a
     // number `Date` cannot represent (which threw and silently meant "10 min").
     vi.useFakeTimers()
     try {
-      const node = fakeNode({ failFirst: 1 })
-      const service = new ArtifactTransferService({ put: node.put })
+      let calls = 0
+      const node = fakeNode()
+      const put = async (c: string, req: ArtifactPutRequest) => {
+        calls++
+        if (calls === 1) throw Object.assign(new Error('node away'), { code: 'unavailable' })
+        return node.put(c, req)
+      }
+      const service = new ArtifactTransferService({ put })
       const local = join(root, 'later.png')
-      writeFileSync(local, 'x')
-      service.defer({ connectionId: 'c1', sessionId: 's1', localPath: local, relativePath: 'browser/later.png' })
+      // Two chunks: the FIRST (non-final) put fails, so the row backs off at
+      // `uploading` rather than landing in the unretryable `committing` state.
+      const data = Buffer.alloc(2 * ARTIFACT_CHUNK_BYTES, 9)
+      writeFileSync(local, data)
+      const id = sealDelivery('s1', 'c1', local, 'browser/later.png', data)
       service.start('c1')
       // The hash and the chunk read are real I/O; waitFor advances the fake clock while it polls.
-      await vi.waitFor(() => expect(listArtifactTransfersForSession('s1')[0]).toMatchObject({ state: 'pending', attempts: 1 }))
+      await vi.waitFor(() => expect(getDelivery(id)).toMatchObject({ phase: 'uploading', attempts: 1 }))
       // BACKOFF_BASE_MS is 5 s: the retry must have happened well before the cap.
       await vi.advanceTimersByTimeAsync(6_000)
       await vi.waitFor(() => expect(node.files.has('browser/later.png')).toBe(true))
@@ -170,19 +245,22 @@ describe('artifact transfer jobs', () => {
     }
   })
 
-  it('does not run a job whose session was deleted while an earlier job of the same pass was uploading', async () => {
+  it('does not run a delivery whose session was deleted while an earlier one of the same pass was uploading', async () => {
     let release!: () => void
     const gate = new Promise<void>((resolve) => { release = resolve })
     const node = fakeNode()
     const put = async (c: string, req: ArtifactPutRequest) => { await gate; return node.put(c, req) }
     const service = new ArtifactTransferService({ put })
-    const local = join(root, 'a.png')
-    writeFileSync(local, 'x')
-    service.defer({ connectionId: 'c1', sessionId: 's1', localPath: local, relativePath: 'browser/a.png' })
-    service.defer({ connectionId: 'c1', sessionId: 's2', localPath: local, relativePath: 'browser/b.png' })
+    const a = join(root, 'a.png')
+    const b = join(root, 'b.png')
+    const data = Buffer.from('x')
+    writeFileSync(a, data)
+    writeFileSync(b, data)
+    sealDelivery('s1', 'c1', a, 'browser/a.png', data)
+    sealDelivery('s2', 'c1', b, 'browser/b.png', data)
     const pass = service.runOnce('c1')
     await new Promise((resolve) => setTimeout(resolve, 10))
-    // s2's row is gone before the worker reaches it; the snapshot it took must not resurrect it.
+    // s2's row is abandoned before the worker reaches it; the claim it tries must fail.
     service.dropSession('s2')
     release()
     await pass
@@ -190,7 +268,7 @@ describe('artifact transfer jobs', () => {
     expect(node.files.has('browser/b.png')).toBe(false)
   })
 
-  it('wakes the agent once a deferred upload lands, and keeps the job until that wake is acknowledged', async () => {
+  it('wakes the agent once an upload lands, and keeps the delivery until that wake is acknowledged', async () => {
     let clock = 2_000_000
     const node = fakeNode()
     const notified: Array<{ sessionId: string; notificationId: string; relativePaths: string[] }> = []
@@ -205,44 +283,46 @@ describe('artifact transfer jobs', () => {
       },
     })
     const local = join(root, 'clip.mp4')
-    writeFileSync(local, 'bytes')
-    const job = service.defer({ connectionId: 'c1', sessionId: 's1', localPath: local, relativePath: 'recording/clip.mp4' })
+    const data = Buffer.from('bytes')
+    writeFileSync(local, data)
+    const id = sealDelivery('s1', 'c1', local, 'recording/clip.mp4', data)
 
-    // The bytes land but the wake does not: the job stays so the wake is retried.
+    // The bytes land but the wake does not: the row stays at notifying so the wake is retried.
     await service.runOnce('c1')
     expect(node.files.has('recording/clip.mp4')).toBe(true)
-    expect(listArtifactTransfersForSession('s1')).toHaveLength(1)
-
-    expect(listArtifactTransfersForSession('s1')[0]).toMatchObject({ state: 'uploaded' })
+    const waiting = getDelivery(id)!
+    expect(waiting).toMatchObject({ phase: 'notifying', outcome: null, holder: null })
+    expect(waiting.nextAttemptAt).toBeGreaterThan(clock)
 
     refuse = false
-    clock = listArtifactTransfersForSession('s1')[0].nextAttemptAt! + 1
+    clock = waiting.nextAttemptAt! + 1
     await service.runOnce('c1')
-    expect(notified).toEqual([{ sessionId: 's1', notificationId: job.jobId, relativePaths: ['recording/clip.mp4'] }])
+    expect(notified).toEqual([{ sessionId: 's1', notificationId: id, relativePaths: ['recording/clip.mp4'] }])
     // Uploaded once, not again for the retried wake.
     expect(node.calls.filter((c) => c.final)).toHaveLength(1)
-    expect(listArtifactTransfersForSession('s1')).toEqual([])
+    expect(getDelivery(id)).toMatchObject({ outcome: 'done' })
   })
 
-  it('drops a job whose session ended rather than retrying its wake forever', async () => {
+  it('ends a delivery whose session is gone rather than retrying its wake forever', async () => {
     const node = fakeNode()
     const service = new ArtifactTransferService({
       put: node.put,
       notifyCompleted: async () => { throw Object.assign(new Error('session not found'), { code: 'not_found' }) },
     })
     const local = join(root, 'a.png')
-    writeFileSync(local, 'x')
-    service.defer({ connectionId: 'c1', sessionId: 's1', localPath: local, relativePath: 'browser/a.png' })
+    const data = Buffer.from('x')
+    writeFileSync(local, data)
+    const id = sealDelivery('s1', 'c1', local, 'browser/a.png', data)
     await service.runOnce('c1')
     expect(node.files.has('browser/a.png')).toBe(true)
-    expect(listArtifactTransfersForSession('s1')).toEqual([])
+    // The bytes are there but nobody to tell: abandoned, not left retrying.
+    expect(getDelivery(id)).toMatchObject({ outcome: 'abandoned', holder: null })
   })
 
-  it('restarts a terminal failed delivery when the same download is requested again', async () => {
-    // AH1. `failed` is terminal — every worker query excludes it — so a caller
-    // that merely joins such a job is told "on its way" about a delivery
-    // nothing will ever perform. The set of files being protected is not the
-    // set of tasks that will still run, and the join is where they must agree.
+  it('re-runs a delivery that gave up once Retry Upload clears it', async () => {
+    // AH1. A row automatic retry stopped on (`gave_up_at`) has no worker
+    // coming for it; the person presses Retry, which clears the flag and puts
+    // it back in the queue under the same id, transfer id and offset.
     let refuse = true
     const node = fakeNode()
     const service = new ArtifactTransferService({
@@ -252,34 +332,32 @@ describe('artifact transfer jobs', () => {
       },
     })
     const local = join(root, 'report.csv')
-    writeFileSync(local, 'OLD')
-    service.defer({ connectionId: 'c1', sessionId: 's1', localPath: local, relativePath: 'download/report.csv' })
-    // Run it into the ground: the row ends terminal, not merely backed off.
+    // Two chunks so the failing put is a non-final one: give-up at `uploading`,
+    // which Retry can act on — unlike a `committing` give-up (§6).
+    const data = Buffer.alloc(2 * ARTIFACT_CHUNK_BYTES, 4)
+    writeFileSync(local, data)
+    const id = sealDelivery('s1', 'c1', local, 'download/report.csv', data)
+    // Run it into the ground: the row gives up, not merely backs off.
     for (let i = 0; i < 10; i++) {
-      db.prepare("UPDATE artifact_transfer_jobs SET next_attempt_at = NULL WHERE session_id = 's1'").run()
+      deliveryDb().prepare("UPDATE session_file_deliveries SET next_attempt_at = NULL WHERE session_id = 's1' AND gave_up_at IS NULL").run()
       await service.runOnce('c1')
     }
-    const dead = listArtifactTransfersForSession('s1')
-    expect(dead).toHaveLength(1)
-    expect(dead[0]!.state).toBe('failed')
+    const dead = getDelivery(id)!
+    expect(dead.gaveUpAt).not.toBeNull()
+    expect(service.givenUp('s1').map((r) => r.deliveryId)).toEqual([id])
 
-    // The agent asks for this file again. Joining must revive the job, keeping
-    // its id, its transfer id and the offset the node already has.
-    const joined = findPendingJobFor('s1', local)
-    expect(joined).toEqual({ status: 'found', transferId: dead[0]!.transferId })
-    const revived = listArtifactTransfersForSession('s1')
-    expect(revived[0]).toMatchObject({ jobId: dead[0]!.jobId, state: 'pending', attempts: 0, nextAttemptAt: null })
-
-    // And it now actually runs.
+    // Retry revives it, keeping its id and transfer id; it now actually runs.
+    expect(service.retryGivenUp('s1')).toEqual({ retried: 1 })
+    expect(getDelivery(id)).toMatchObject({ gaveUpAt: null, attempts: 0, nextAttemptAt: null, transferId: dead.transferId })
     refuse = false
     await service.runOnce('c1')
-    expect(node.files.get('download/report.csv')?.toString()).toBe('OLD')
+    expect(node.files.get('download/report.csv')!.equals(data)).toBe(true)
   })
 
-  it('records a delivered file as owing only its completion wake', async () => {
-    // AG2's success branch: the eager push already put the bytes on the node,
-    // so re-uploading them would both waste the transfer and let this copy
-    // overwrite whatever the agent did to the file on the node in between.
+  it('only wakes the agent for a file already on the node, sending no bytes', async () => {
+    // An eager push put the bytes on the node and left the row at `notifying`;
+    // the worker owes only the wake. Re-uploading would waste the transfer and
+    // could overwrite what the agent changed on the node in between.
     const node = fakeNode()
     const notified: unknown[] = []
     const service = new ArtifactTransferService({
@@ -287,64 +365,23 @@ describe('artifact transfer jobs', () => {
       notifyCompleted: async (_c, input) => void notified.push(input),
     })
     const local = join(root, 'shot.png')
-    writeFileSync(local, 'png')
-    service.noteDelivered({ connectionId: 'c1', sessionId: 's1', localPath: local, relativePath: 'browser/shot.png', transferId: 'tid-1' })
-    expect(listArtifactTransfersForSession('s1')[0]).toMatchObject({ state: 'uploaded', transferId: 'tid-1' })
-
+    const data = Buffer.from('png')
+    writeFileSync(local, data)
+    const id = sealDelivery('s1', 'c1', local, 'browser/shot.png', data)
+    setPhase(id, 'notifying')
     await service.runOnce('c1')
-    // Notified, and never uploaded: the node already had it.
     expect(notified).toHaveLength(1)
     expect(node.calls).toHaveLength(0)
-    expect(listArtifactTransfersForSession('s1')).toEqual([])
+    expect(getDelivery(id)).toMatchObject({ outcome: 'done' })
   })
 
-  it('never downgrades an uploaded job when claiming its notification fails', async () => {
-    // The bytes are on the node and only the wake is owed. Writing down which
-    // phase the row is in is the thing that failed — and a failure there used
-    // to default the row back to `pending`, which made the next pass upload
-    // the desktop's older copy over whatever the agent had done on the node.
-    const node = fakeNode()
-    const notifications: string[] = []
-    const service = new ArtifactTransferService({
-      put: node.put,
-      notifyCompleted: async (_c, input) => {
-        notifications.push(input.relativePaths[0]!)
-        return { delivered: true }
-      },
-    })
-    const local = join(root, 'report.csv')
-    writeFileSync(local, 'OLD')
-    service.noteDelivered({ connectionId: 'c1', sessionId: 's1', localPath: local, relativePath: 'download/report.csv', transferId: 'tid-1' })
-    expect(listArtifactTransfersForSession('s1')[0]).toMatchObject({ state: 'uploaded' })
-
-    const real = db.prepare.bind(db)
-    const prepare = vi.spyOn(db, 'prepare').mockImplementation(((sql: string) => {
-      // The claim statement, and only it.
-      if (sql.includes('attempts = attempts + 1')) throw new Error('SQLITE_BUSY')
-      return real(sql)
-    }) as typeof db.prepare)
-    await service.runOnce('c1')
-    prepare.mockRestore()
-
-    // Still a delivered file owing a wake. Never a pending upload.
-    expect(listArtifactTransfersForSession('s1')).toEqual([expect.objectContaining({ state: 'uploaded' })])
-    expect(node.calls).toEqual([])
-    expect(notifications).toEqual([])
-
-    // Recovered: one wake, zero bytes, nothing sent to the node at all.
-    db.prepare("UPDATE artifact_transfer_jobs SET next_attempt_at = NULL WHERE session_id = 's1'").run()
-    await service.runOnce('c1')
-    expect(node.calls).toEqual([])
-    expect(notifications).toEqual(['download/report.csv'])
-    expect(listArtifactTransfersForSession('s1')).toEqual([])
-  })
-
-  it('runs only the jobs of the connection it was started for', async () => {
+  it('runs only the deliveries of the connection it was started for', async () => {
     const node = fakeNode()
     const service = new ArtifactTransferService({ put: node.put })
     const local = join(root, 'x.png')
-    writeFileSync(local, 'x')
-    service.defer({ connectionId: 'other', sessionId: 's1', localPath: local, relativePath: 'browser/x.png' })
+    const data = Buffer.from('x')
+    writeFileSync(local, data)
+    sealDelivery('s1', 'other', local, 'browser/x.png', data)
     await service.runOnce('c1')
     expect(node.calls).toHaveLength(0)
   })

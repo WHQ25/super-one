@@ -10,7 +10,7 @@
  *
  * `adhoc` holds captures taken with no session and is never auto-deleted.
  */
-import { lstatSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+import { lstatSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ADHOC_SESSION_ID, sessionZoneDir, syncZoneRoot } from '../media-output-paths'
@@ -245,59 +245,44 @@ export async function syncZoneUsage(): Promise<SyncZoneUsage> {
     adhocBytes,
     pendingBytes,
     reclaimable: { sessions: dry.removed.length, bytes: dry.freedBytes },
-    failedHandoffs: await failedHandoffUsage(),
+    failedHandoffs: await givenUpUsage(),
   }
 }
 
 /**
- * Files complete on disk that never reached the job table. Counted separately
- * from `pendingBytes`, which is about rows a worker will get to — these have
- * no row, so nothing is coming for them until something retries.
+ * Deliveries automatic retry has stopped on (`gave_up_at`): a file that could
+ * not be uploaded after every attempt, or whose final commit cannot be
+ * verified. Counted separately from `pendingBytes`, which is about rows a
+ * worker will get to — nothing is coming for these until a person acts.
+ * Still reported under the `failedHandoffs` name the Settings page reads.
  */
-async function failedHandoffUsage(): Promise<{ files: number; bytes: number; lastError: string | null }> {
+async function givenUpUsage(): Promise<{ files: number; bytes: number; lastError: string | null }> {
   try {
-    const { failedHandoffs } = await import('./pending-handoffs')
-    const entries = failedHandoffs()
-    if (entries.length === 0) return { files: 0, bytes: 0, lastError: null }
-    // A path an earlier attempt already got onto the job table is counted by
-    // `pendingBytes`; counting it here too would report the same bytes twice
-    // under two headings that mean different things.
-    const { listUploadingArtifactTransfers } = await import('../db-artifact-transfers')
-    const queued = new Set<string>()
-    for (const job of listUploadingArtifactTransfers()) queued.add(safeRealpath(job.localPath))
-    const seen = new Set<string>()
+    const { listGivenUpDeliveries } = await import('../db-session-deliveries')
+    const rows = listGivenUpDeliveries()
     let bytes = 0
     let files = 0
-    for (const entry of entries) {
-      const real = safeRealpath(entry.localPath)
-      if (seen.has(real) || queued.has(real)) continue
-      seen.add(real)
-      const st = linkSafeStat(entry.localPath)
+    for (const row of rows) {
+      const st = linkSafeStat(row.localPath)
       if (!st?.isFile) continue
       files += 1
       bytes += st.size
     }
-    return { files, bytes, lastError: entries.at(-1)?.lastError ?? null }
+    return { files, bytes, lastError: rows.at(-1)?.lastError ?? null }
   } catch {
     return { files: 0, bytes: 0, lastError: null }
   }
 }
 
+/** Bytes of every file this desktop still owes a node and a worker will still try to send. */
 async function pendingUploadBytes(): Promise<number> {
   try {
-    const { listUploadingArtifactTransfers } = await import('../db-artifact-transfers')
-    // One file, one count: a retry leaves several rows for the same path, and
-    // only bytes not yet on the node count as still to be uploaded.
-    const seen = new Set<string>()
+    const { listContentOwnedDeliveries } = await import('../db-session-deliveries')
     let bytes = 0
-    for (const job of listUploadingArtifactTransfers()) {
-      const real = safeRealpath(job.localPath)
-      if (seen.has(real)) continue
-      const st = linkSafeStat(job.localPath)
-      if (st?.isFile) {
-        seen.add(real)
-        bytes += st.size
-      }
+    for (const row of listContentOwnedDeliveries()) {
+      if (row.gaveUpAt !== null) continue
+      const st = linkSafeStat(row.localPath)
+      if (st?.isFile) bytes += st.size
     }
     return bytes
   } catch {
@@ -305,19 +290,11 @@ async function pendingUploadBytes(): Promise<number> {
   }
 }
 
-function safeRealpath(path: string): string {
-  try {
-    return realpathSync(path)
-  } catch {
-    return path
-  }
-}
-
 async function runSyncZoneReclaim(opts: { dryRun?: boolean } = {}): Promise<SyncZoneReclaimResult> {
   try {
-    const [{ sessionExists }, { listArtifactTransfersForSession }, { getEnvironmentHost }] = await Promise.all([
+    const [{ sessionExists }, { listSessionDeliveries }, { getEnvironmentHost }] = await Promise.all([
       import('../db-sessions'),
-      import('../db-artifact-transfers'),
+      import('../db-session-deliveries'),
       import('./environment-host'),
     ])
     const result = await reclaimSyncZone({
@@ -332,9 +309,9 @@ async function runSyncZoneReclaim(opts: { dryRun?: boolean } = {}): Promise<Sync
       },
       hasPendingTransfer: (sessionId) => {
         try {
-          // `failed` is terminal — no retry is scheduled — so it is not an
-          // upload still queued, and must not pin a dead directory forever.
-          return listArtifactTransfersForSession(sessionId).some((job) => job.state !== 'failed')
+          // A delivery that gave up has no retry scheduled: it is not an upload
+          // still queued, and must not pin a dead directory forever.
+          return listSessionDeliveries(sessionId).some((row) => row.outcome === null && row.gaveUpAt === null)
         } catch {
           return true
         }
@@ -347,7 +324,7 @@ async function runSyncZoneReclaim(opts: { dryRun?: boolean } = {}): Promise<Sync
         }
       },
     }, opts)
-    // The directory is gone; its terminal job rows go with it.
+    // The directory is gone; its rows go with it, and nothing new may be inserted for it.
     if (!opts.dryRun) for (const sessionId of result.removed) getEnvironmentHost().artifactTransfers?.dropSession(sessionId)
     return result
   } catch {

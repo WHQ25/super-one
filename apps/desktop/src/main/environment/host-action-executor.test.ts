@@ -14,6 +14,7 @@ import type { ArtifactPutRequest } from '@superone/shared/environment'
 
 const zoneState = vi.hoisted(() => ({ userData: '' }))
 vi.mock('electron', () => ({ app: { getPath: () => zoneState.userData } }))
+vi.mock('../database', async () => (await import('../../test/fixtures/delivery-db')).deliveryDatabase())
 
 const browser = vi.hoisted(() => ({
   executeBrowserTool: vi.fn(async (sessionId: string, toolName: string, args: unknown) => ({
@@ -33,11 +34,12 @@ const browser = vi.hoisted(() => ({
 const node = vi.hoisted(() => {
   const files = new Map<string, Buffer>()
   const parts = new Map<string, Buffer[]>()
-  const deferred: string[] = []
+  let wakes = 0
   return {
     files,
     parts,
-    deferred,
+    wakes: () => wakes,
+    wake: () => { wakes++ },
     zone: null as { syncRoot: string; os: 'linux' } | null,
     put: async (_c: string, req: ArtifactPutRequest) => {
       const chunks = parts.get(req.transferId) ?? []
@@ -71,12 +73,12 @@ const envHost = vi.hoisted(() => ({
   artifactTransfers: {
     throughputBytesPerMs: () => 1024,
     recordThroughput: () => {},
-    defer: (input: { relativePath: string }) => { node.deferred.push(input.relativePath) },
+    wake: () => node.wake(),
   },
 }))
 
 /** Registered refs the fake tool surface hands back with its result. */
-const registry = vi.hoisted(() => ({ artifacts: [] as { path: string; producer: 'browser'; final: boolean }[] }))
+const registry = vi.hoisted(() => ({ artifacts: [] as { path: string; producer: 'browser'; final: boolean; deliveryId?: string }[] }))
 
 const mcpSurface = vi.hoisted(() => ({
   executeSuperoneMcpTool: vi.fn(async (sessionId: string, toolName: string, args: unknown) => {
@@ -127,6 +129,10 @@ vi.mock('../mcp/session-tag-tools', () => renameTags)
 
 import { desktopHostActionExecutor } from './host-action-executor'
 import type { ClaimHostActionResult } from '@superone/shared/environment'
+import { resetDeliveryDatabase } from '../../test/fixtures/delivery-db'
+import { _resetHoldersForTests } from './delivery-holders'
+import { sealZoneFile } from './zone-delivery'
+import { findDeliveryByPath } from '../db-session-deliveries'
 
 function claimed(partial: Partial<ClaimHostActionResult> & Pick<ClaimHostActionResult, 'toolName' | 'sessionId'>): ClaimHostActionResult {
   return {
@@ -151,8 +157,9 @@ describe('desktopHostActionExecutor', () => {
     node.zone = null
     node.files.clear()
     node.parts.clear()
-    node.deferred.length = 0
     registry.artifacts.length = 0
+    resetDeliveryDatabase()
+    _resetHoldersForTests()
     browser.executeBrowserTool.mockClear()
     envHost.renameSession.mockClear()
     mcpSurface.executeSuperoneMcpTool.mockClear()
@@ -172,7 +179,10 @@ describe('desktopHostActionExecutor', () => {
       node.zone = { syncRoot: '/home/node/.superone/node/sync', os: 'linux' }
       const shot = desktopArtifact('node-s', 'browser/shot.png', 'png-bytes')
       browser.executeBrowserTool.mockImplementationOnce(async () => {
-        registry.artifacts.push({ path: shot, producer: 'browser', final: true })
+        // The producer seals the file as a delivery for this node, exactly as
+        // the real screenshot store does; the ref carries the id.
+        const deliveryId = sealZoneFile({ sessionId: 'node-s', path: shot, origin: 'produced', connectionId: 'conn-1', bytes: 'png-bytes' })!
+        registry.artifacts.push({ path: shot, producer: 'browser', final: true, deliveryId })
         return { content: [{ type: 'text' as const, text: JSON.stringify({ path: shot, width: 1, height: 1 }) }] }
       })
       const out = await desktopHostActionExecutor(
@@ -184,6 +194,7 @@ describe('desktopHostActionExecutor', () => {
       const reply = out.result as { content: { text: string }[] }
       expect(JSON.parse(reply.content[0].text).path).toBe('/home/node/.superone/node/sync/node-s/browser/shot.png')
       expect(node.files.get('browser/shot.png')!.toString()).toBe('png-bytes')
+      expect(findDeliveryByPath('node-s', shot)).toMatchObject({ phase: 'notifying', outcome: 'done' })
     })
 
     it('maps a node zone path in the args to the desktop mirror before the tool runs', async () => {

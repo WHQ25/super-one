@@ -139,14 +139,11 @@ export async function executeSuperoneMcpToolCollecting(
   } finally {
     // A call that threw after registering must not leave its scope behind.
     // On the success path this take is empty — the caller already drained it
-    // and owns the handoff. Here it is not, and no one downstream will ever see
-    // these refs, so a SEALED file has nobody left to hand it on: adopt it and
-    // end it. A file still being written is left alone — its writer is still
-    // running and still owns it (`active-writes.ts`).
+    // and owns the delivery. Here it is not, and no one downstream will ever
+    // see these refs, so a SEALED file has nobody left to carry it: end it. A
+    // file still being written, or one a carrier already holds, is left alone.
     for (const ref of takeArtifacts(sessionId, callId)) {
-      void import('../environment/active-writes').then((m) => {
-        if (m.adoptWriteClaim(sessionId, ref.path, 'push')) m.releaseWriteClaim(sessionId, ref.path, 'push')
-      })
+      if (ref.deliveryId) void import('../environment/zone-delivery').then((m) => m.abandonUndeliveredDelivery(ref.deliveryId!))
     }
   }
 }

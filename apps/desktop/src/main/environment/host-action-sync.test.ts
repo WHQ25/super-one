@@ -2,18 +2,29 @@
  * What the executor does around one Host Action for a remote session:
  * outputs pushed and rewritten inside the claim budget (session-sync-zone.md §3, §4.1),
  * inputs mapped back to the desktop mirror (§3.1).
+ *
+ * Every output is a delivery record (session-sync-zone-delivery-record.md):
+ * the row says whether there is anything to push, and what the push leaves
+ * behind for the worker is read back from the row, not from a queue.
  */
 import { createHash } from 'node:crypto'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ArtifactPutRequest } from '@superone/shared/environment'
+import { ARTIFACT_CHUNK_BYTES } from '@superone/shared/environment/artifact-rpc'
 
 const state = vi.hoisted(() => ({ userData: '' }))
 vi.mock('electron', () => ({ app: { getPath: () => state.userData } }))
+vi.mock('../database', async () => (await import('../../test/fixtures/delivery-db')).deliveryDatabase())
 
+import { findDeliveryByPath, listSessionDeliveries } from '../db-session-deliveries'
+import type { ArtifactRef } from '../mcp/artifact-registry'
+import { deliveryDb, resetDeliveryDatabase } from '../../test/fixtures/delivery-db'
+import { _resetHoldersForTests, isHolderAlive } from './delivery-holders'
 import { mapHostActionInputs, mapNestedToolInputs, syncHostActionOutputs, withInputMapping, CLAIM_BUDGET_MARGIN_MS } from './host-action-sync'
+import { reserveZoneFile, sealZoneFile } from './zone-delivery'
 
 let root: string
 const zone = { syncRoot: '/home/node/.superone/node/sync', os: 'linux' as const }
@@ -21,6 +32,8 @@ const zone = { syncRoot: '/home/node/.superone/node/sync', os: 'linux' as const 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'ha-sync-'))
   state.userData = root
+  resetDeliveryDatabase()
+  _resetHoldersForTests()
 })
 afterEach(() => rmSync(root, { recursive: true, force: true }))
 
@@ -31,17 +44,27 @@ function desktopFile(sessionId: string, rel: string, data: string | Buffer): str
   return path
 }
 
+/** A file a producer wrote and sealed for node `c1`: the ref the registry hands the executor. */
+function sealed(sessionId: string, rel: string, data: string | Buffer, producer: ArtifactRef['producer'] = 'browser'): ArtifactRef {
+  const path = desktopFile(sessionId, rel, data)
+  const deliveryId = sealZoneFile({ sessionId, path, origin: 'produced', connectionId: 'c1', bytes: data })!
+  return { path, producer, final: true, deliveryId }
+}
+
+/** The row behind a ref, as the worker would find it. */
+const rowOf = (ref: ArtifactRef) => findDeliveryByPath('s1', ref.path)!
+/** Relative paths of every delivery of `s1` that is not over — what the worker still has to do. */
+const stillOwed = () => listSessionDeliveries('s1').filter((r) => r.outcome === null).map((r) => r.relativePath)
+
 function fakeNode() {
   const files = new Map<string, Buffer>()
   const parts = new Map<string, Buffer[]>()
   const puts: ArtifactPutRequest[] = []
-  const deferred: string[] = []
-  const deferredJobs: { relativePath: string; transferId?: string }[] = []
+  let wakes = 0
   return {
     files,
     puts,
-    deferred,
-    deferredJobs,
+    wakes: () => wakes,
     deps: {
       zone,
       connectionId: 'c1',
@@ -78,78 +101,83 @@ function fakeNode() {
       transfers: {
         throughputBytesPerMs: () => 1024,
         recordThroughput: () => {},
-        defer: (input: { relativePath: string; transferId?: string }) => { deferred.push(input.relativePath); deferredJobs.push(input) },
+        wake: () => { wakes++ },
       },
     },
   }
 }
 
 describe('host action outputs', () => {
-  it('pushes a screenshot the reply names and rewrites its path to the node twin', async () => {
+  it('pushes a screenshot the reply names, rewrites its path to the node twin, and ends the delivery', async () => {
     const node = fakeNode()
-    const shot = desktopFile('s1', 'browser/shot.png', 'png-bytes')
-    const reply = { content: [{ type: 'text', text: JSON.stringify({ path: shot, width: 10, height: 10, imageNote: 'call Read on path' }) }] }
-    const out = await syncHostActionOutputs('s1', [{ path: shot, producer: 'browser', final: true }], reply, Date.now() + 60_000, node.deps)
+    const shot = sealed('s1', 'browser/shot.png', 'png-bytes')
+    const reply = { content: [{ type: 'text', text: JSON.stringify({ path: shot.path, width: 10, height: 10, imageNote: 'call Read on path' }) }] }
+    const out = await syncHostActionOutputs('s1', [shot], reply, Date.now() + 60_000, node.deps)
     expect(JSON.parse(out.content![0].text!)).toMatchObject({ path: '/home/node/.superone/node/sync/s1/browser/shot.png', width: 10 })
     expect(node.files.get('browser/shot.png')!.toString()).toBe('png-bytes')
     expect(out.sync).toBeUndefined()
+    // The reply is the wake: nothing is left for the worker, and the holder is gone.
+    expect(rowOf(shot)).toMatchObject({ phase: 'notifying', outcome: 'done', holder: null })
+    expect(node.wakes()).toBe(0)
   })
 
-  it('does not push a registered file the reply never mentions, but pushes the optimized sibling it does', async () => {
+  it('abandons a registered file the reply never mentions, and pushes the optimized sibling it does', async () => {
+    // A `browser_perf_measure` that ran a download and reported only its
+    // timings: sealed, complete, and named by nothing the agent will read.
+    // Left live, the worker would send it to nobody and the mirror keep it.
     const node = fakeNode()
-    const original = desktopFile('s1', 'computer-use/a.png', Buffer.alloc(100, 1))
-    const agent = desktopFile('s1', 'computer-use/a.agent.jpg', 'jpeg')
-    const reply = { content: [{ type: 'text', text: JSON.stringify({ image: { path: agent } }) }] }
-    const out = await syncHostActionOutputs('s1', [
-      { path: original, producer: 'computer-use', final: true },
-      { path: agent, producer: 'computer-use', final: true },
-    ], reply, Date.now() + 60_000, node.deps)
+    const original = sealed('s1', 'computer-use/a.png', Buffer.alloc(100, 1), 'computer-use')
+    const agent = sealed('s1', 'computer-use/a.agent.jpg', 'jpeg', 'computer-use')
+    const reply = { content: [{ type: 'text', text: JSON.stringify({ image: { path: agent.path } }) }] }
+    const out = await syncHostActionOutputs('s1', [original, agent], reply, Date.now() + 60_000, node.deps)
     expect([...node.files.keys()]).toEqual(['computer-use/a.agent.jpg'])
     expect(out.content![0].text).toContain('/home/node/.superone/node/sync/s1/computer-use/a.agent.jpg')
+    expect(rowOf(original)).toMatchObject({ outcome: 'abandoned', holder: null })
+    expect(rowOf(agent)).toMatchObject({ outcome: 'done' })
   })
 
   it('renews the claim for a file that does not fit the budget, and pushes it instead of deferring', async () => {
     const node = fakeNode()
-    const big = desktopFile('s1', 'recording/run.mp4', Buffer.alloc(64 * 1024))
+    const big = sealed('s1', 'recording/run.mp4', Buffer.alloc(64 * 1024), 'recording')
     // ~6.5 s at this rate: past the 5 s left on the claim, inside one renewal.
     node.deps.transfers.throughputBytesPerMs = () => 10
     const now = 1_000_000
     node.deps.now = () => now
     const renewals: number[] = []
     node.deps.renewClaim = async (ttlMs: number) => { renewals.push(ttlMs); return now + ttlMs }
-    const reply = { content: [{ type: 'text', text: big }] }
-    const out = await syncHostActionOutputs('s1', [{ path: big, producer: 'recording', final: true }], reply, now + 15_000, node.deps)
+    const reply = { content: [{ type: 'text', text: big.path }] }
+    const out = await syncHostActionOutputs('s1', [big], reply, now + 15_000, node.deps)
     expect(renewals).toHaveLength(1)
     expect(node.files.has('recording/run.mp4')).toBe(true)
-    expect(node.deferred).toEqual([])
+    expect(stillOwed()).toEqual([])
     expect(out.sync).toBeUndefined()
   })
 
-  it('defers when the node refuses to renew, rather than running past the claim', async () => {
+  it('queues a file for the worker when the node refuses to renew, rather than running past the claim', async () => {
     const node = fakeNode()
-    const big = desktopFile('s1', 'recording/run.mp4', Buffer.alloc(64 * 1024))
+    const big = sealed('s1', 'recording/run.mp4', Buffer.alloc(64 * 1024), 'recording')
     node.deps.transfers.throughputBytesPerMs = () => 10
     node.deps.renewClaim = async () => { throw Object.assign(new Error('deadline expired'), { code: 'failed_precondition' }) }
-    const reply = { content: [{ type: 'text', text: big }] }
-    const out = await syncHostActionOutputs('s1', [{ path: big, producer: 'recording', final: true }], reply, Date.now() + 15_000, node.deps)
-    expect(node.deferred).toEqual(['recording/run.mp4'])
+    const reply = { content: [{ type: 'text', text: big.path }] }
+    const out = await syncHostActionOutputs('s1', [big], reply, Date.now() + 15_000, node.deps)
+    expect(node.puts).toEqual([])
     expect(out.sync).toEqual({ deferred: ['/home/node/.superone/node/sync/s1/recording/run.mp4'] })
+    // Not attempted: still complete, still protected, nobody's, and the worker told.
+    expect(rowOf(big)).toMatchObject({ phase: 'queued', holder: null, outcome: null })
+    expect(node.wakes()).toBe(1)
   })
 
   it('defers a file that cannot fit the claim budget, still rewrites its path, and says so in the reply', async () => {
     const node = fakeNode()
-    const small = desktopFile('s1', 'browser/small.png', 'x')
-    const big = desktopFile('s1', 'recording/clip.mp4', Buffer.alloc(50 * 1024))
-    const reply = { content: [{ type: 'text', text: `${small}\n${big}` }] }
+    const small = sealed('s1', 'browser/small.png', 'x')
+    const big = sealed('s1', 'recording/clip.mp4', Buffer.alloc(50 * 1024), 'recording')
+    const reply = { content: [{ type: 'text', text: `${small.path}\n${big.path}` }] }
     // 1 KiB/ms throughput; 50 KiB needs 50 ms but the claim leaves only the margin plus 20 ms.
     const claimExpiresAt = Date.now() + CLAIM_BUDGET_MARGIN_MS + 20
-    const out = await syncHostActionOutputs('s1', [
-      { path: big, producer: 'recording', final: true },
-      { path: small, producer: 'browser', final: true },
-    ], reply, claimExpiresAt, node.deps)
+    const out = await syncHostActionOutputs('s1', [big, small], reply, claimExpiresAt, node.deps)
     expect(node.files.has('browser/small.png')).toBe(true)
     expect(node.files.has('recording/clip.mp4')).toBe(false)
-    expect(node.deferred).toEqual(['recording/clip.mp4'])
+    expect(stillOwed()).toEqual(['recording/clip.mp4'])
     expect(out.sync).toEqual({ deferred: ['/home/node/.superone/node/sync/s1/recording/clip.mp4'] })
     expect(out.content![0].text).toBe('/home/node/.superone/node/sync/s1/browser/small.png\n/home/node/.superone/node/sync/s1/recording/clip.mp4')
   })
@@ -157,29 +185,59 @@ describe('host action outputs', () => {
   it('leaves non-final refs, other sessions and files outside the zone alone', async () => {
     const node = fakeNode()
     const started = desktopFile('s1', 'recording/live.mp4', 'partial')
-    const other = desktopFile('s2', 'browser/theirs.png', 'x')
-    const reply = { content: [{ type: 'text', text: `${started} ${other} /tmp/elsewhere.png` }] }
+    const reservation = reserveZoneFile({ sessionId: 's1', path: started, origin: 'produced', connectionId: 'c1' })!
+    const other = sealed('s2', 'browser/theirs.png', 'x')
+    const reply = { content: [{ type: 'text', text: `${started} ${other.path} /tmp/elsewhere.png` }] }
     const out = await syncHostActionOutputs('s1', [
-      { path: started, producer: 'recording', final: false },
-      { path: other, producer: 'browser', final: true },
+      { path: started, producer: 'recording', final: false, deliveryId: reservation },
+      other,
       { path: '/tmp/elsewhere.png', producer: 'browser', final: true },
     ], reply, Date.now() + 60_000, node.deps)
     expect(node.puts).toEqual([])
     expect(out).toEqual(reply)
+    // The writer still holds its reservation.
+    const row = findDeliveryByPath('s1', started)!
+    expect(row.phase).toBe('writing')
+    expect(isHolderAlive(row.holder)).toBe(true)
   })
 
-  it('hands a failed push to a job that continues the same transfer instead of failing the action', async () => {
+  it('leaves an upload the node dropped mid-stream for the worker, at its offset, under the same transfer', async () => {
+    // Three chunks; the node closes the socket on the second. The first is
+    // on the node under this transfer id, and the row says so: the worker
+    // resumes from there rather than starting a second transfer.
     const node = fakeNode()
-    const shot = desktopFile('s1', 'browser/shot.png', 'png')
+    const big = sealed('s1', 'recording/run.mp4', Buffer.alloc(2 * ARTIFACT_CHUNK_BYTES + 1, 7), 'recording')
+    const put = node.deps.put
+    node.deps.put = async (req) => {
+      if (req.offset === ARTIFACT_CHUNK_BYTES) throw Object.assign(new Error('node closed the socket'), { code: 'unavailable' })
+      return put(req)
+    }
+    const reply = { content: [{ type: 'text', text: big.path }] }
+    const out = await syncHostActionOutputs('s1', [big], reply, Date.now() + 60_000, node.deps)
+    expect(out.sync).toEqual({ deferred: ['/home/node/.superone/node/sync/s1/recording/run.mp4'] })
+    const row = rowOf(big)
+    expect(row).toMatchObject({ phase: 'uploading', offset: ARTIFACT_CHUNK_BYTES, holder: null, attempts: 1, lastError: 'node closed the socket', gaveUpAt: null })
+    expect(row.nextAttemptAt).not.toBeNull()
+    expect(node.puts[0]?.transferId).toBe(row.transferId)
+    expect(node.wakes()).toBe(1)
+  })
+
+  it('stops on a final put whose reply was lost, rather than sending the file again', async () => {
+    // The final chunk went out and the answer did not come back. The node
+    // may have committed it; the desktop cannot tell (§2), and resending would
+    // replace a file the agent may already have changed. The row records the
+    // doubt and no worker will act on it automatically.
+    const node = fakeNode()
+    const shot = sealed('s1', 'browser/shot.png', 'png')
     const put = node.deps.put
     node.deps.put = async (req) => { await put(req); throw Object.assign(new Error('node closed the socket'), { code: 'unavailable' }) }
-    const reply = { content: [{ type: 'text', text: shot }] }
-    const out = await syncHostActionOutputs('s1', [{ path: shot, producer: 'browser', final: true }], reply, Date.now() + 60_000, node.deps)
-    expect(node.deferred).toEqual(['browser/shot.png'])
+    const reply = { content: [{ type: 'text', text: shot.path }] }
+    const out = await syncHostActionOutputs('s1', [shot], reply, Date.now() + 60_000, node.deps)
     expect(out.sync).toEqual({ deferred: ['/home/node/.superone/node/sync/s1/browser/shot.png'] })
-    // The node may already hold the chunks the eager attempt sent; a job under
-    // a fresh transferId would be told `busy` by that half-written transfer.
-    expect(node.deferredJobs[0]?.transferId).toBe(node.puts[0]?.transferId)
+    const row = rowOf(shot)
+    expect(row).toMatchObject({ phase: 'committing', holder: null, outcome: null, nextAttemptAt: null })
+    expect(row.gaveUpAt).not.toBeNull()
+    expect(row.lastError).toMatch(/commit unverified/)
   })
 
   it('tells the agent about deferred files inside the tool content, not only on the envelope', async () => {
@@ -187,29 +245,32 @@ describe('host action outputs', () => {
     // forwards only `content`, so a deferred list that lives nowhere else is
     // invisible to the model.
     const node = fakeNode()
-    const big = desktopFile('s1', 'recording/run.mp4', Buffer.alloc(64 * 1024))
+    const big = sealed('s1', 'recording/run.mp4', Buffer.alloc(64 * 1024), 'recording')
     node.deps.transfers.throughputBytesPerMs = () => 1
-    const reply = { content: [{ type: 'text', text: JSON.stringify({ ok: true, savedPath: big }) }] }
-    const out = await syncHostActionOutputs('s1', [{ path: big, producer: 'recording', final: true }], reply, Date.now() + 15_000, node.deps)
+    const reply = { content: [{ type: 'text', text: JSON.stringify({ ok: true, savedPath: big.path }) }] }
+    const out = await syncHostActionOutputs('s1', [big], reply, Date.now() + 15_000, node.deps)
     expect(out.content).toHaveLength(2)
     expect(out.content[1]?.text).toContain('/home/node/.superone/node/sync/s1/recording/run.mp4')
     expect(out.content[1]?.text).toMatch(/not (yet )?(there|available|synced)/i)
   })
 
-  it('gives up on an upload that outruns the claim budget instead of waiting for the node', async () => {
+  it('gives up waiting on a put that outruns the claim budget, and records the doubt it leaves', async () => {
     // Aborting the controller does not make a node RPC return. If the sync
     // step waits for it anyway, the claim is gone by the time the reply is
-    // built — and the reply is what the agent gets.
+    // built — and the reply is what the agent gets. The put it walked away
+    // from was the final one, so what the node did with it is unknowable.
     const node = fakeNode()
-    const shot = desktopFile('s1', 'browser/shot.png', 'png')
+    const shot = sealed('s1', 'browser/shot.png', 'png')
     node.deps.put = () => new Promise(() => {})
-    const reply = { content: [{ type: 'text', text: shot }] }
+    const reply = { content: [{ type: 'text', text: shot.path }] }
     const settled = await Promise.race([
-      syncHostActionOutputs('s1', [{ path: shot, producer: 'browser', final: true }], reply, Date.now() + CLAIM_BUDGET_MARGIN_MS + 30, node.deps),
+      syncHostActionOutputs('s1', [shot], reply, Date.now() + CLAIM_BUDGET_MARGIN_MS + 30, node.deps),
       new Promise<'hung'>((resolve) => setTimeout(() => resolve('hung'), 500)),
     ])
     expect(settled).not.toBe('hung')
-    expect(node.deferred).toEqual(['browser/shot.png'])
+    expect((settled as { sync?: unknown }).sync).toEqual({ deferred: ['/home/node/.superone/node/sync/s1/browser/shot.png'] })
+    expect(rowOf(shot)).toMatchObject({ phase: 'committing', holder: null, nextAttemptAt: null })
+    expect(rowOf(shot).gaveUpAt).not.toBeNull()
   })
 
   it('pushes a ref named in one block of a multi-block reply', async () => {
@@ -220,14 +281,14 @@ describe('host action outputs', () => {
     const node = fakeNode()
     // The quote is what makes it visible: JSON escapes it once per nesting
     // level, and the joined text was matched against a single level.
-    const shot = desktopFile('s1', 'browser/a"b.png', 'png-bytes')
+    const shot = sealed('s1', 'browser/a"b.png', 'png-bytes')
     const reply = {
       content: [
-        { type: 'text', text: JSON.stringify({ result: JSON.stringify({ path: shot }) }) },
+        { type: 'text', text: JSON.stringify({ result: JSON.stringify({ path: shot.path }) }) },
         { type: 'text', text: 'Image saved.' },
       ],
     }
-    const out = await syncHostActionOutputs('s1', [{ path: shot, producer: 'browser', final: true }], reply, Date.now() + 60_000, node.deps)
+    const out = await syncHostActionOutputs('s1', [shot], reply, Date.now() + 60_000, node.deps)
     expect(node.files.has('browser/a"b.png')).toBe(true)
     expect(JSON.parse(JSON.parse(out.content![0].text!).result).path).toBe('/home/node/.superone/node/sync/s1/browser/a"b.png')
   })
@@ -237,120 +298,76 @@ describe('host action outputs', () => {
     // it under no deadline spends exactly the claim the renewal was meant to
     // protect.
     const node = fakeNode()
-    const big = desktopFile('s1', 'recording/run.mp4', Buffer.alloc(64 * 1024))
+    const big = sealed('s1', 'recording/run.mp4', Buffer.alloc(64 * 1024), 'recording')
     node.deps.transfers.throughputBytesPerMs = () => 10
     node.deps.renewClaim = () => new Promise(() => {})
-    const reply = { content: [{ type: 'text', text: big }] }
+    const reply = { content: [{ type: 'text', text: big.path }] }
     const settled = await Promise.race([
-      syncHostActionOutputs('s1', [{ path: big, producer: 'recording', final: true }], reply, Date.now() + CLAIM_BUDGET_MARGIN_MS + 30, node.deps),
+      syncHostActionOutputs('s1', [big], reply, Date.now() + CLAIM_BUDGET_MARGIN_MS + 30, node.deps),
       new Promise<'hung'>((resolve) => setTimeout(() => resolve('hung'), 500)),
     ])
     expect(settled).not.toBe('hung')
-    expect(node.deferred).toEqual(['recording/run.mp4'])
+    expect(rowOf(big)).toMatchObject({ phase: 'queued', holder: null })
   })
 
   it('pushes a file the reply names in Chinese prose, with Chinese punctuation around it', async () => {
     const node = fakeNode()
-    const shot = desktopFile('s1', 'browser/shot.png', 'png-bytes')
-    const reply = { content: [{ type: 'text', text: `截图已保存到 ${shot}，请查看。` }] }
-    const out = await syncHostActionOutputs('s1', [{ path: shot, producer: 'browser', final: true }], reply, Date.now() + 60_000, node.deps)
+    const shot = sealed('s1', 'browser/shot.png', 'png-bytes')
+    const reply = { content: [{ type: 'text', text: `截图已保存到 ${shot.path}，请查看。` }] }
+    const out = await syncHostActionOutputs('s1', [shot], reply, Date.now() + 60_000, node.deps)
     expect(node.files.has('browser/shot.png')).toBe(true)
     expect(out.content![0].text).toBe('截图已保存到 /home/node/.superone/node/sync/s1/browser/shot.png，请查看。')
   })
 
-  it('rewrites without re-uploading a file the node already holds at the same size and mtime', async () => {
-    // A download queued at capture time reaches the node before the agent
-    // lists it; a recording listed twice is the same file twice. The stamp
-    // the upload leaves — the node's mtime on the desktop copy — is how the
-    // desktop can tell, the same way the mirror does.
+  it('rewrites without re-uploading a file whose delivery the node already has', async () => {
+    // A download the worker carried before the agent listed it; a recording
+    // listed twice. The record says the bytes are there (or only the wake is
+    // owed, which is the worker's), so the reply is rewritten and nothing sent.
     const node = fakeNode()
-    const shot = desktopFile('s1', 'browser/shot.png', 'png-bytes')
-    node.files.set('browser/shot.png', Buffer.from('png-bytes'))
-    utimesSync(shot, 1_700_000_000, 1_700_000_000)
-    const reply = { content: [{ type: 'text', text: shot }] }
-    const out = await syncHostActionOutputs('s1', [{ path: shot, producer: 'browser', final: true }], reply, Date.now() + 60_000, node.deps)
-    expect(node.puts).toHaveLength(0)
-    expect(out.content![0].text).toBe('/home/node/.superone/node/sync/s1/browser/shot.png')
-  })
-
-  it('defers a file whose already-there check hangs past the claim budget, instead of waiting for the stat', async () => {
-    // The dedupe stat is a node RPC like any other and does not return because
-    // the claim ran out. Bounded by the same budget, it gives up and the file
-    // is deferred rather than the reply held past its claim.
-    const node = fakeNode()
-    const shot = desktopFile('s1', 'browser/shot.png', 'png')
-    node.deps.stat = () => new Promise(() => {})
-    const reply = { content: [{ type: 'text', text: shot }] }
-    const settled = await Promise.race([
-      syncHostActionOutputs('s1', [{ path: shot, producer: 'browser', final: true }], reply, Date.now() + CLAIM_BUDGET_MARGIN_MS + 30, node.deps),
-      new Promise<'hung'>((resolve) => setTimeout(() => resolve('hung'), 500)),
-    ])
-    expect(settled).not.toBe('hung')
-    expect(node.deferred).toEqual(['browser/shot.png'])
-  })
-
-  it('throws aborted when the action is cancelled while the already-there check is in flight', async () => {
-    const node = fakeNode()
-    const abort = new AbortController()
-    const shot = desktopFile('s1', 'browser/shot.png', 'png')
-    node.deps = { ...node.deps, signal: abort.signal, stat: () => new Promise(() => {}) }
-    setTimeout(() => abort.abort(), 5)
-    await expect(
-      syncHostActionOutputs('s1', [{ path: shot, producer: 'browser', final: true }], { content: [{ type: 'text', text: shot }] }, Date.now() + CLAIM_BUDGET_MARGIN_MS + 30, node.deps),
-    ).rejects.toMatchObject({ code: 'aborted' })
-    expect(node.puts).toHaveLength(0)
-  })
-
-  it('stops at a cancel that landed while checking whether the node already had the first file', async () => {
-    // The dedupe hit used to `continue` before the abort check, so a cancel
-    // that arrived during that stat was only noticed by the *next* file — and
-    // `within` entered with an already-aborted signal never sees a fresh abort
-    // event, so that next wait ran the whole budget out.
-    const node = fakeNode()
-    const abort = new AbortController()
-    const a = desktopFile('s1', 'browser/a.png', 'a')
-    const b = desktopFile('s1', 'browser/b.png', 'bb')
-    // a is already on the node, byte-identical; the stat that says so cancels.
-    node.files.set('browser/a.png', Buffer.from('a'))
-    utimesSync(a, 1_700_000_000, 1_700_000_000)
-    let statCalls = 0
-    node.deps = {
-      ...node.deps,
-      signal: abort.signal,
-      stat: async (req: { relativePath: string }) => {
-        statCalls++
-        if (req.relativePath === 'browser/a.png') abort.abort()
-        const f = node.files.get(req.relativePath)
-        return f ? { exists: true, size: f.length, mtimeMs: 1_700_000_000_000 } : { exists: false, size: 0, mtimeMs: 0 }
-      },
+    const shot = sealed('s1', 'browser/shot.png', 'png-bytes')
+    for (const [phase, outcome] of [['uploaded', null], ['notifying', null], ['notifying', 'done']] as const) {
+      deliveryDb().prepare('UPDATE session_file_deliveries SET phase = ?, outcome = ? WHERE delivery_id = ?').run(phase, outcome, shot.deliveryId)
+      const reply = { content: [{ type: 'text', text: shot.path }] }
+      const out = await syncHostActionOutputs('s1', [shot], reply, Date.now() + 60_000, node.deps)
+      expect(node.puts, `${phase}/${outcome}`).toHaveLength(0)
+      expect(out.content![0].text).toBe('/home/node/.superone/node/sync/s1/browser/shot.png')
+      expect(out.sync).toBeUndefined()
     }
-    const settled = await Promise.race([
-      syncHostActionOutputs('s1', [
-        { path: a, producer: 'browser', final: true },
-        { path: b, producer: 'browser', final: true },
-      ], { content: [{ type: 'text', text: `${a} ${b}` }] }, Date.now() + 60_000, node.deps)
-        .then(() => 'resolved' as const, (err) => err as Error),
-      new Promise<'hung'>((resolve) => setTimeout(() => resolve('hung'), 300)),
-    ])
-    expect(settled).not.toBe('hung')
-    expect(settled).toMatchObject({ code: 'aborted' })
-    // It stopped at the first file, without starting the second one's stat.
-    expect(statCalls).toBe(1)
-    expect(node.puts).toHaveLength(0)
   })
 
-  it('stops at the abort signal between uploads', async () => {
+  it('defers a file another push or the worker is delivering right now, rather than sending it beside them', async () => {
+    const node = fakeNode()
+    const shot = sealed('s1', 'browser/shot.png', 'png-bytes')
+    // Someone alive holds it: a second action naming the same file joins them.
+    const { mintHolder } = await import('./delivery-holders')
+    deliveryDb().prepare(`UPDATE session_file_deliveries SET phase = 'uploading', holder = ? WHERE delivery_id = ?`).run(mintHolder(), shot.deliveryId)
+    const reply = { content: [{ type: 'text', text: shot.path }] }
+    const out = await syncHostActionOutputs('s1', [shot], reply, Date.now() + 60_000, node.deps)
+    expect(node.puts).toHaveLength(0)
+    expect(out.sync).toEqual({ deferred: ['/home/node/.superone/node/sync/s1/browser/shot.png'] })
+    expect(rowOf(shot).phase).toBe('uploading')
+  })
+
+  it('stops at the abort signal, leaving files it did not reach sealed for the worker', async () => {
+    // The action is cancelled the instant the first file's final put is
+    // confirmed. That confirmed commit is honoured — not reported as needing
+    // re-delivery for a file already on the node — and the second file, never
+    // reached, stays sealed and unheld for the worker. The call throws the
+    // action's own abort, not the push's error.
     const node = fakeNode()
     const abort = new AbortController()
-    const a = desktopFile('s1', 'browser/a.png', 'a')
-    const b = desktopFile('s1', 'browser/b.png', 'bb')
+    const a = sealed('s1', 'browser/a.png', 'a')
+    const b = sealed('s1', 'browser/b.png', 'bb')
     const put = node.deps.put
     node.deps = { ...node.deps, signal: abort.signal, put: async (req) => { const r = await put(req); abort.abort(); return r } }
-    await expect(syncHostActionOutputs('s1', [
-      { path: a, producer: 'browser', final: true },
-      { path: b, producer: 'browser', final: true },
-    ], { content: [{ type: 'text', text: `${a} ${b}` }] }, Date.now() + 60_000, node.deps)).rejects.toMatchObject({ code: 'aborted' })
+    await expect(syncHostActionOutputs('s1', [a, b], { content: [{ type: 'text', text: `${a.path} ${b.path}` }] }, Date.now() + 60_000, node.deps))
+      .rejects.toMatchObject({ code: 'aborted' })
     expect(node.puts).toHaveLength(1)
+    // The first file's final put was confirmed before the abort surfaced, so
+    // it is honoured as delivered rather than discarded; the second, never
+    // reached, stays sealed and unheld for the worker.
+    expect(rowOf(a)).toMatchObject({ phase: 'notifying', outcome: 'done', holder: null })
+    expect(rowOf(b)).toMatchObject({ phase: 'sealed', holder: null, outcome: null })
   })
 })
 

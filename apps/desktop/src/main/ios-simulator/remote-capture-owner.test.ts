@@ -6,15 +6,18 @@
  * session is alive on the node.
  */
 import { EventEmitter } from 'node:events'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const state = vi.hoisted(() => ({ userData: '' }))
+// The zone's delivery record: a table that cannot be read protects every zone file (R5).
+vi.mock('../database', async () => (await import('../../test/fixtures/delivery-db')).deliveryDatabase())
 vi.mock('electron', () => ({ app: { getPath: () => state.userData } }))
 vi.mock('../logger', () => ({ default: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() } }))
 
+import { findDeliveryByPath } from '../db-session-deliveries'
 import { collectArtifacts } from '../mcp/artifact-registry'
 import { SimctlCapture } from './capture'
 import { IosSimulatorManager } from './ios-simulator-manager'
@@ -49,10 +52,12 @@ function harness() {
     writePasteboard: vi.fn(async () => {}),
   }
   // The real capture port with the real default directory creation; only
-  // `xcrun simctl` itself is replaced, by a child that exits cleanly.
+  // `xcrun simctl` itself is replaced, by a child that writes the capture it
+  // was asked for and exits cleanly.
   const capture = new SimctlCapture({
-    spawnProcess: vi.fn(() => {
+    spawnProcess: vi.fn((_bin: string, args: string[]) => {
       const child = new FakeChild()
+      writeFileSync(args.at(-1)!, 'PNG')
       queueMicrotask(() => child.emit('close', 0))
       return child
     }) as never,
@@ -78,13 +83,16 @@ describe('capturing a simulator a remote session holds', () => {
     expect(shot.path.startsWith(join(root, 'sync', 'remote-s1', 'ios-simulator', 'device-a'))).toBe(true)
     expect(existsSync(join(shot.path, '..'))).toBe(true)
     expect(readFileSync(join(root, 'sync', 'remote-s1', '.owner'), 'utf8')).toBe('node-1')
+    // And the capture is a delivery to that node, sealed by the manager itself.
+    expect(findDeliveryByPath('remote-s1', shot.path)).toMatchObject({ phase: 'sealed', holder: null, connectionId: 'node-1', total: 3 })
   })
 
   it('marks a local session as local when it bound the device from its own call', async () => {
     const { manager, power } = harness()
     await collectArtifacts('local-s1', 'call-1', () => manager.bind('local-s1', 'device-a'))
     power(true)
-    await manager.screenshot('device-a')
+    const shot = await manager.screenshot('device-a')
     expect(readFileSync(join(root, 'sync', 'local-s1', '.owner'), 'utf8')).toBe('local')
+    expect(findDeliveryByPath('local-s1', shot.path)).toBeNull()
   })
 })

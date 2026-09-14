@@ -15,12 +15,22 @@ vi.mock('./browser-automation-bridge', () => ({ browserAutomationCall: vi.fn() }
 const store = vi.hoisted(() => ({
   reserveDownloadPath: vi.fn((name: string, _dir?: string | null, sessionId?: string | null, origin?: { connectionId: string | null }) =>
     origin?.connectionId ? `/zone/${sessionId}/download/${name}` : `/tmp/dl/${name}`),
-  queueDownloadUpload: vi.fn(),
+  registerDownload: vi.fn(),
+  wakeDownloadDelivery: vi.fn(),
 }))
 vi.mock('../agent/browser-download-store', () => ({
   filenameFor: (raw: string) => raw,
   reserveDownloadPath: store.reserveDownloadPath,
-  queueDownloadUpload: store.queueDownloadUpload,
+  registerDownload: store.registerDownload,
+  wakeDownloadDelivery: store.wakeDownloadDelivery,
+}))
+
+// The delivery record is sealed on completion and abandoned on give-up; the
+// capture path names its node from the tab driver and wakes the worker.
+const record = vi.hoisted(() => ({ sealZoneFile: vi.fn(), abandonZoneFile: vi.fn() }))
+vi.mock('../environment/zone-delivery', () => ({
+  sealZoneFile: record.sealZoneFile,
+  abandonZoneFile: record.abandonZoneFile,
 }))
 
 import { browserAutomationCall } from './browser-automation-bridge'
@@ -88,31 +98,34 @@ describe('page-triggered download capture', () => {
     expect(item.savePath).toBe('/tmp/dl/a.txt')
   })
 
-  it('files a download the page starts in a tab a remote session drives into that session zone, and queues it for the node', async () => {
+  it('files a download the page starts in a tab a remote session drives into that session zone, and wakes the worker', async () => {
     // `will-download` is synchronous and tab ownership is renderer state, so
     // the capture asks who last *drove* the tab instead — every browser tool
     // call records that. A remote session's agent then finds the file in its
-    // own directory without listing first, and the transfer wake names it.
+    // own directory without listing first, and the delivery's wake names it.
     rememberTabDriver(10, 'sess-1', 'conn-1')
     const item = emitDownload('export.csv', 10)
     expect(item.savePath).toBe('/zone/sess-1/download/export.csv')
     expect(store.reserveDownloadPath).toHaveBeenCalledWith('export.csv', null, 'sess-1', { connectionId: 'conn-1' })
-    expect(store.queueDownloadUpload).not.toHaveBeenCalled()
+    expect(record.sealZoneFile).not.toHaveBeenCalled()
     item.finish()
-    expect(store.queueDownloadUpload).toHaveBeenCalledWith('conn-1', 'sess-1', '/zone/sess-1/download/export.csv')
+    expect(record.sealZoneFile).toHaveBeenCalledWith({ sessionId: 'sess-1', path: '/zone/sess-1/download/export.csv', origin: 'page-download', connectionId: 'conn-1' })
+    expect(store.wakeDownloadDelivery).toHaveBeenCalledWith('conn-1')
   })
 
   it('keeps a local session download in the Downloads folder, and an undriven tab too', () => {
     rememberTabDriver(11, 'sess-local', null)
     expect(emitDownload('a.txt', 11).savePath).toBe('/tmp/dl/a.txt')
     expect(emitDownload('b.txt', 12).savePath).toBe('/tmp/dl/b.txt')
-    expect(store.queueDownloadUpload).not.toHaveBeenCalled()
+    expect(record.sealZoneFile).not.toHaveBeenCalled()
+    expect(store.wakeDownloadDelivery).not.toHaveBeenCalled()
   })
 
-  it('does not queue a remote download that was cancelled or interrupted', () => {
+  it('abandons the reservation of a remote download that was cancelled or interrupted', () => {
     rememberTabDriver(10, 'sess-1', 'conn-1')
     emitDownload('half.bin', 10).finish('interrupted')
-    expect(store.queueDownloadUpload).not.toHaveBeenCalled()
+    expect(record.sealZoneFile).not.toHaveBeenCalled()
+    expect(record.abandonZoneFile).toHaveBeenCalledWith('sess-1', '/zone/sess-1/download/half.bin')
   })
 
   it('lists only downloads from tabs the calling session owns', async () => {

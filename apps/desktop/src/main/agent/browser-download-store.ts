@@ -1,9 +1,7 @@
-import { beginActiveWrite, sealActiveWrite } from '../environment/active-writes'
-import { publishArtifact, recordTolerantly, reserveZoneFile, ZoneDeliveryRefused } from '../environment/zone-delivery'
-import { acquireHandoff, enqueueHandoff, type EnqueueJob } from '../environment/pending-handoffs'
+import { publishArtifact, reserveZoneFile, ZoneDeliveryRefused } from '../environment/zone-delivery'
 import { ensureZoneDir } from '../environment/zone-owner'
 import { realOrSelf, withinSessionZone } from '../environment/sync-zone-paths'
-import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, statSync, unlinkSync } from 'fs'
+import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, unlinkSync } from 'fs'
 import { basename, extname, isAbsolute, join } from 'path'
 import { randomUUID } from 'crypto'
 import { app } from 'electron'
@@ -192,10 +190,9 @@ export function reserveDownloadPath(filename: string, dir?: string | null, sessi
  * this session (R2). A vacancy on disk is not a free name — a delivered file
  * the node has since deleted leaves exactly that, and a new download slipping
  * into its row would be reported as already delivered. On `path-taken` the
- * empty stub this call created is removed and the next name is tried.
- *
- * Until step 3 of the delivery-record work, a refusal for any other reason
- * (session dropped, destination unknown) is tolerated: the old path continues.
+ * empty stub this call created is removed and the next name is tried. Any
+ * other refusal — the session dropped, no destination to promise the file to
+ * — is the download's failure: the stub is removed and the refusal raised.
  */
 function claimDownloadName(candidate: string, sessionId: string | null | undefined, origin?: DownloadOrigin): boolean {
   try {
@@ -214,15 +211,9 @@ function claimDownloadName(candidate: string, sessionId: string | null | undefin
     })
     return true
   } catch (err) {
-    if (err instanceof ZoneDeliveryRefused && err.reason === 'path-taken') {
-      unlinkSync(candidate)
-      return false
-    }
-    // Step 2: a refusal about the session's context is tolerated; step 3 makes it the download's failure.
-    recordTolerantly(candidate, () => {
-      throw err
-    })
-    return true
+    unlinkSync(candidate)
+    if (err instanceof ZoneDeliveryRefused && err.reason === 'path-taken') return false
+    throw err
   }
 }
 
@@ -242,69 +233,22 @@ function claimDownloadName(candidate: string, sessionId: string | null | undefin
  */
 export function registerDownload(sessionId: string | null | undefined, path: string, final: boolean, origin?: DownloadOrigin): void {
   if (!sessionId || !isUnderSyncZone(path)) return
-  // The same two moments the registry cares about are the two the mirror does:
-  // the reservation opens a window in which the file exists but no transfer job
-  // does, and the seal closes it only once the file has been handed on. A
-  // second seal of an already-sealed path (a listing re-registering an adopted
-  // download) is a no-op.
-  if (final) sealActiveWrite(sessionId, path)
-  else beginActiveWrite(sessionId, path)
-  // The delivery record, beside the claim above until step 3 replaces it. The
-  // reservation itself was made by `claimDownloadName`, in the same
+  // The reservation itself was made by `claimDownloadName`, in the same
   // synchronous sequence as the `wx` create; this registers the ref (with the
-  // reservation's id) and, on `final`, seals it.
+  // reservation's id) and, on `final`, seals it. A second seal of an already
+  // sealed path (a listing re-registering an adopted download) reuses the row.
   publishArtifact(sessionId, { path, producer: 'download', final, ...(origin ? { connectionId: origin.connectionId } : {}) })
 }
 
 /**
- * Hand a finished zone download to the transfer service. The artifact
- * registry cannot: a download finishes after (or outside) the tool call it
- * belongs to, so there is no scope left to register into. The job's own
- * completion wake tells the agent the node path works
+ * A finished zone download that no tool call is left to push — it was
+ * backgrounded, or it was the page's own — is a sealed row the worker will
+ * take; this only makes the worker look now rather than at its next tick. The
+ * delivery's own completion wake tells the agent the node path works
  * (`docs/design/session-sync-zone.md` §4.1).
  */
-export function queueDownloadUpload(connectionId: string, sessionId: string, path: string): void {
-  const zone = zoneRelativePath(path)
-  if (!zone || zone.sessionId !== sessionId) return
-  // One task per path, whichever route reaches it: it takes the claim, mints
-  // the transfer id once, owns the retries, and releases only when a job row
-  // exists. Re-listing the same download joins the task in flight rather than
-  // starting a second one with a new id.
-  // The host is resolved BEFORE the task exists, so the task's enqueue is
-  // synchronous — which is what lets a session deleted in the meantime refuse
-  // the handoff outright instead of discovering it mid-flight.
-  void import('../environment/environment-host').then(({ getEnvironmentHost }) => {
-    const enqueue: EnqueueJob = (job) => {
-      const transfers = getEnvironmentHost().artifactTransfers
-      // Not a handoff: nothing persisted the file, so settling on this would
-      // make the only complete copy prunable.
-      if (!transfers) throw new Error('no artifact transfer service on this host')
-      transfers.defer(job)
-    }
-    const acquired = acquireHandoff({
-      connectionId,
-      sessionId,
-      localPath: path,
-      relativePath: zone.relativePath,
-      bytes: sizeOf(path),
-      enqueue,
-    })
-    // Session deleted while we resolved the host, or a Host Action already owns
-    // this file's delivery — in either case there is nothing for us to start.
-    // Not ours: a Host Action owns the delivery, a persisted job already has
-    // it, or the instance is still waiting to find out which.
-    if (!acquired?.mine) return
-    enqueueHandoff(acquired.handoff, enqueue)
-  })
-}
-
-/** Size for the Storage figure; zero when the file cannot be read. */
-function sizeOf(path: string): number {
-  try {
-    return statSync(path).size
-  } catch {
-    return 0
-  }
+export function wakeDownloadDelivery(connectionId: string): void {
+  void import('../environment/environment-host').then(({ getEnvironmentHost }) => getEnvironmentHost().artifactTransfers?.wake(connectionId))
 }
 
 /** Page downloads already adopted, so a second listing reuses the same copy. */

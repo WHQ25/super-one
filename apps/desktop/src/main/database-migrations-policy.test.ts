@@ -21,7 +21,7 @@ import { MIN_COMPATIBLE_SCHEMA_VERSION, SCHEMA_VERSION } from './database-migrat
  * table's schema to the module that owns it when tests need the same DDL, and
  * that module is then as much a migration as this file is.
  */
-const MIGRATION_SOURCES = [join(__dirname, 'database-migrations.ts'), join(__dirname, 'db-session-deliveries.ts')]
+const MIGRATION_SOURCES = [join(__dirname, 'database-migrations.ts'), join(__dirname, 'db-session-deliveries-schema.ts')]
 const DESTRUCTIVE_PATTERN = /\b(?:DROP\s+TABLE(?:\s+IF\s+EXISTS)?|DROP\s+COLUMN|RENAME\s+COLUMN|RENAME\s+TO)\b[^'"`\n]*/gi
 
 /**

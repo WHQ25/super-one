@@ -49,7 +49,6 @@ import { persistTextArtifact } from '../agent/browser-artifact-store'
 import { persistImages } from '../media-gen/storage'
 import { registerZoneArtifact } from '../media-gen/zone-artifact'
 import { mediaGenOutputDir } from '../media-gen/paths'
-import { resetActiveWrites } from './active-writes'
 import { _resetZoneDeliveryForTests } from './zone-delivery'
 
 let db: Database.Database
@@ -66,7 +65,6 @@ beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'zone-producers-'))
   zone.userData = root
   resetArtifactRegistry()
-  resetActiveWrites()
   _resetZoneDeliveryForTests()
 })
 afterEach(() => rmSync(root, { recursive: true, force: true }))

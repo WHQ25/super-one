@@ -3,8 +3,8 @@ import { chmodSync, copyFileSync, writeFileSync } from 'node:fs'
 import { extname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import log from '../logger'
-import { producerDir } from '../media-output-paths'
-import { abandonZoneFile, publishArtifact, recordTolerantly, reserveZoneFile } from '../environment/zone-delivery'
+import { producerDir, zoneRelativePath } from '../media-output-paths'
+import { abandonZoneFile, publishArtifact, reserveZoneFile } from '../environment/zone-delivery'
 
 export type ActionRecordingTarget = 'web' | 'device' | 'computer'
 
@@ -40,10 +40,10 @@ export function createActionRecordingPath(
   const dir = ensureArtifactDir(actionRecordingDir(sessionId, target), 0o700)
   chmodSync(dir, 0o700)
   const path = join(dir, `${randomUUID()}.${extension}`)
-  if (sessionId) recordTolerantly(path, () => reserveZoneFile({ sessionId, path, origin: 'produced' }))
   // Spoken for before the path leaves here: the helper's recorder fills it
   // over the whole action, and a directory mirror in that window must find
-  // the file owned rather than prunable.
+  // the file owned rather than prunable. A refusal is the recording's failure.
+  if (sessionId) reserveZoneFile({ sessionId, path, origin: 'produced' })
   return path
 }
 
@@ -79,12 +79,24 @@ export function actionRecordingFromPath(
   }
 }
 
+/**
+ * Take a recording a device surface produced. One the surface already put in
+ * this session's zone — and sealed, under its own delivery — is registered
+ * where it lies: copying it would make a second delivery of the same bytes,
+ * and leave the first for a worker to send to nobody. Anything else (a
+ * surface with an injected capture root) is copied into the recording
+ * directory under a reservation of its own.
+ */
 export function adoptActionRecording(
   sessionId: string | null | undefined,
   target: ActionRecordingTarget,
   sourcePath: string,
   startedAt: number,
 ): ActionRecording {
+  if (sessionId && zoneRelativePath(sourcePath)?.sessionId === sessionId) {
+    registerRecording(sessionId, sourcePath)
+    return actionRecordingFromPath(sourcePath, startedAt)
+  }
   const extension =
     extname(sourcePath).toLowerCase() === '.webm' ? 'webm' : 'mp4'
   const path = createActionRecordingPath(sessionId, target, extension)

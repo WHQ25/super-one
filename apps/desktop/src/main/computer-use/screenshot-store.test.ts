@@ -16,6 +16,10 @@ import {
 } from './screenshot-store'
 import { producerDir } from '../media-output-paths'
 import type { AgentNativeImage } from '../agent/screenshot-artifact'
+import { markZoneOwner } from '../environment/zone-owner'
+
+// A zone file has to be going somewhere: the session is this desktop's own.
+markZoneOwner('session-a', null)
 
 const TINY_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC'
 

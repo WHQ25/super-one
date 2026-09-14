@@ -33,6 +33,20 @@ export interface UploadArtifactOptions {
   put: ArtifactPutFn
   signal?: AbortSignal
   onProgress?: (offset: number, total: number) => void
+  /**
+   * The file's identity as the delivery record fixed it at seal (R6). When
+   * given, this — not a fresh read of the file — is what every chunk carries,
+   * so a source that changed underneath a retry is refused by the node rather
+   * than silently re-identified.
+   */
+  identity?: { total: number; sha256: string }
+  /**
+   * Called synchronously immediately before the FINAL chunk is sent, and only
+   * then — for an empty file, a single-chunk file and a resumed last chunk
+   * alike. This is the `committing` gate: the caller records that the commit
+   * is in flight before it can be, and a throw here means no final put.
+   */
+  beforeFinal?: () => void
 }
 
 export interface TransferOutcome {
@@ -75,8 +89,8 @@ const MAX_OFFSET_RESYNCS = 3
 export async function uploadArtifact(opts: UploadArtifactOptions): Promise<TransferOutcome> {
   throwIfAborted(opts.signal)
   const source = statSync(opts.localPath)
-  const total = source.size
-  const sha256 = await sha256File(opts.localPath, opts.signal)
+  const total = opts.identity?.total ?? source.size
+  const sha256 = opts.identity?.sha256 ?? (await sha256File(opts.localPath, opts.signal))
   throwIfAborted(opts.signal)
   const transferId = opts.transferId ?? randomUUID()
   let offset = Math.max(0, Math.min(opts.offset ?? 0, total))
@@ -90,6 +104,7 @@ export async function uploadArtifact(opts: UploadArtifactOptions): Promise<Trans
       const chunk = Buffer.alloc(length)
       if (length > 0) readSync(fd, chunk, 0, length, offset)
       const final = offset + length >= total
+      if (final) opts.beforeFinal?.()
       const started = Date.now()
       let result: ArtifactPutResult
       try {
@@ -114,18 +129,21 @@ export async function uploadArtifact(opts: UploadArtifactOptions): Promise<Trans
         throw err
       }
       ms += Date.now() - started
-      throwIfAborted(opts.signal)
       offset = result.bytesWritten
       opts.onProgress?.(offset, total)
       if (final && offset >= total) {
-        // Only stamp the copy we actually sent. If the local file changed while
-        // the upload ran, giving the new bytes the node's mtime for the old
-        // ones makes the mirror agree about two different files forever.
+        // A final put that answered is a known outcome, whatever arrived while
+        // it was in flight: an abort here is not allowed to turn "committed"
+        // into "unknown". Only stamp the copy we actually sent. If the local
+        // file changed while the upload ran, giving the new bytes the node's
+        // mtime for the old ones makes the mirror agree about two different
+        // files forever.
         if (typeof result.mtimeMs === 'number' && sameSource(opts.localPath, source)) {
           stampMtime(opts.localPath, result.mtimeMs)
         }
         break
       }
+      throwIfAborted(opts.signal)
     } while (offset < total)
   } finally {
     closeSync(fd)

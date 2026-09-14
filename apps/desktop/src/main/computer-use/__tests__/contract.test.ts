@@ -5,6 +5,8 @@ import { join } from 'path'
 
 // Captures land in the session sync zone under userData; point it at a scratch dir.
 const userData = mkdtempSync(join(tmpdir(), 'superone-cu-contract-'))
+// The zone's delivery record: a table that cannot be read protects every zone file (R5).
+vi.mock('../../database', async () => (await import('../../../test/fixtures/delivery-db')).deliveryDatabase())
 vi.mock('electron', () => ({
   app: { getPath: (name: string) => (name === 'userData' ? userData : tmpdir()), getVersion: () => '0.0.0-test' },
   BrowserWindow: class BrowserWindow {},
@@ -17,6 +19,7 @@ import { findNode, searchOutline } from '../outline'
 import { boundText, clearContinuations, getContinuationRaw, readContinuation } from '../result-view'
 import { ComputerUseError } from '../types'
 import { producerDir } from '../../media-output-paths'
+import { markZoneOwner } from '../../environment/zone-owner'
 import {
   COMPUTER_USE_TOOL_NAMES,
   clearComputerUseServices,
@@ -485,6 +488,9 @@ describe('Computer Use P0 contract', () => {
 
   it('executeComputerUseTool observe visual returns image.path on disk (not base64)', async () => {
     setComputerUseEnabledForTests(true)
+    // Called here without the tool call scope the MCP surface would give it:
+    // the zone marker says whose session this is.
+    markZoneOwner('sess-shot', null)
     const s = getOrCreateComputerUseService('sess-shot', { backend: 'fake' } as never)
     s.policy.setEnabled(true)
     s.policy.grant({ app: 'Notes', bundleId: 'com.apple.Notes', tier: 'full' })

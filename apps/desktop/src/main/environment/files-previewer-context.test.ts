@@ -10,6 +10,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { WorkspaceEntry } from '@superone/shared/environment'
 
 const state = vi.hoisted(() => ({ userData: '' }))
+// The zone's delivery record: a table that cannot be read protects every zone file (R5).
+vi.mock('../database', async () => (await import('../../test/fixtures/delivery-db')).deliveryDatabase())
 vi.mock('electron', () => ({ app: { getPath: () => state.userData } }))
 
 import { resolveRemotePreviewerContext, statPreviewerFileForRoot, type PreviewerHost } from './files-previewer-context'

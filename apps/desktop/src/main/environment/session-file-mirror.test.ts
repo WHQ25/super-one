@@ -3,16 +3,42 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const state = vi.hoisted(() => ({ userData: '', jobs: [] as { sessionId: string; relativePath: string; state: string }[] }))
+const state = vi.hoisted(() => ({ userData: '' }))
 vi.mock('electron', () => ({ app: { getPath: () => state.userData } }))
-// The real job table, live: the mirror must read it at the moment it deletes or
-// overwrites, not from a snapshot taken before the first fetch started.
-vi.mock('../db-artifact-transfers', () => ({
-  listArtifactTransfersForSession: (sessionId: string) => state.jobs.filter((j) => j.sessionId === sessionId),
-}))
+// The real delivery record, live: the mirror must read it at the moment it
+// deletes or overwrites, not from a snapshot taken before the first fetch.
+vi.mock('../database', async () => (await import('../../test/fixtures/delivery-db')).deliveryDatabase())
 
-import { abandonWriteClaim, beginActiveWrite, resetActiveWrites, sealActiveWrite } from './active-writes'
+import { reserveDelivery, type DeliveryOutcome, type DeliveryPhase } from '../db-session-deliveries'
+import { deliveryDb, resetDeliveryDatabase } from '../../test/fixtures/delivery-db'
+import { _resetHoldersForTests, mintHolder } from './delivery-holders'
 import { mirrorNodeArtifact, mirrorNodeDirectory } from './session-file-mirror'
+
+/**
+ * A row of the delivery record for `s1`'s `rel`, in the state the scenario
+ * names (`docs/design/session-sync-zone-delivery-record.md` R4). `held` gives
+ * it a live holder — a producer still filling it, a push still sending it.
+ */
+function delivery(rel: string, phase: DeliveryPhase, opts: { outcome?: DeliveryOutcome; held?: boolean; gaveUp?: boolean } = {}): void {
+  const r = reserveDelivery({
+    sessionId: 's1',
+    connectionId: 'conn-1',
+    localPath: join(root, 'sync', 's1', rel),
+    relativePath: rel,
+    origin: 'produced',
+    phase: 'writing',
+    holder: mintHolder(),
+  })
+  if ('refused' in r) throw new Error(r.refused)
+  deliveryDb()
+    .prepare('UPDATE session_file_deliveries SET phase = ?, outcome = ?, holder = ?, gave_up_at = ? WHERE delivery_id = ?')
+    .run(phase, opts.outcome ?? null, opts.held ? mintHolder() : null, opts.gaveUp ? new Date().toISOString() : null, r.deliveryId)
+}
+
+/** The desktop still owes this file to the node: a complete original nothing has sent yet. */
+const owed = (rel: string) => delivery(rel, 'sealed')
+/** A producer is still filling this file. */
+const writing = (rel: string) => delivery(rel, 'writing', { held: true })
 
 function liveNode(files: Record<string, Buffer>, opts: { onGet?: (rel: string) => Promise<void> | void } = {}) {
   return {
@@ -40,8 +66,8 @@ let root: string
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'mirror-'))
   state.userData = root
-  state.jobs = []
-  resetActiveWrites()
+  resetDeliveryDatabase()
+  _resetHoldersForTests()
 })
 afterEach(() => rmSync(root, { recursive: true, force: true }))
 
@@ -85,17 +111,18 @@ describe('node artifact mirror', () => {
   })
 
   it('keeps a desktop-produced copy whose upload is still pending, and reports a file neither side has as missing', async () => {
-    const remote = { ...node({}), isPendingUpload: (_s: string, rel: string) => rel === 'browser/shot.png' }
+    const remote = node({})
     const local = join(root, 'sync', 's1', 'browser', 'shot.png')
     mkdirSync(join(root, 'sync', 's1', 'browser'), { recursive: true })
     writeFileSync(local, 'png')
+    owed('browser/shot.png')
     expect(await mirrorNodeArtifact('s1', 'browser/shot.png', remote)).toMatchObject({ kind: 'local', path: local, size: 3 })
     expect(await mirrorNodeArtifact('s1', 'browser/nothing.png', remote)).toEqual({ kind: 'missing' })
   })
 
   it('reports a file the node deleted as missing even though a mirror copy is on disk', async () => {
     // The node is authoritative for what exists; a copy with no upload pending is a leftover.
-    const remote = { ...node({}), isPendingUpload: () => false }
+    const remote = node({})
     const local = join(root, 'sync', 's1', 'agent', 'report.md')
     mkdirSync(join(root, 'sync', 's1', 'agent'), { recursive: true })
     writeFileSync(local, 'old')
@@ -110,7 +137,6 @@ describe('node artifact mirror', () => {
       connectionId: 'conn-1',
       stat: async () => ({ exists: true, size: report.length, mtimeMs: 1_700_000_000_000 }),
       get: async () => ({ chunk: report.toString('base64'), total: report.length, mtimeMs: 1_700_000_000_000, eof: true }),
-      isPendingUpload: () => false,
     }
     await mirrorNodeArtifact('s1', 'agent/report.md', remote)
     expect(readFileSync(join(root, 'sync', 's1', '.owner'), 'utf8')).toBe('conn-1')
@@ -126,7 +152,6 @@ describe('node artifact mirror', () => {
     const refusing = (code: string) => ({
       stat: async () => { throw Object.assign(new Error(code), { code }) },
       get: async () => { throw new Error('unreachable') },
-      isPendingUpload: () => false,
     })
     expect(await mirrorNodeArtifact('s1', 'agent/a.txt', refusing('not_found'))).toEqual({ kind: 'missing' })
     expect(await mirrorNodeArtifact('s1', 'agent/a.txt', refusing('forbidden'))).toMatchObject({ kind: 'unavailable' })
@@ -137,7 +162,7 @@ describe('node artifact mirror', () => {
     const local = join(root, 'sync', 's1', 'agent', 'a.txt')
     mkdirSync(join(root, 'sync', 's1', 'agent'), { recursive: true })
     writeFileSync(local, 'cached')
-    const offline = { stat: async () => { throw new Error('not connected') }, get: async () => { throw new Error('not connected') }, isPendingUpload: () => false }
+    const offline = { stat: async () => { throw new Error('not connected') }, get: async () => { throw new Error('not connected') } }
     expect(await mirrorNodeArtifact('s1', 'agent/a.txt', offline)).toMatchObject({ kind: 'local', path: local })
     expect(await mirrorNodeArtifact('s1', 'agent/b.txt', offline)).toEqual({ kind: 'missing' })
   })
@@ -167,7 +192,7 @@ describe('node directory mirror', () => {
         .map(([rel, buf]) => ({ relativePath: rel, size: buf.length, mtimeMs: 1_700_000_000_000 }))
       return { exists: entries.length > 0, entries, truncated: opts.truncated ?? false }
     }
-    return { stat, get, list, isPendingUpload: () => false, connectionId: 'conn-1' }
+    return { stat, get, list, connectionId: 'conn-1' }
   }
 
   it('brings every file of a node directory to the desktop mirror and drops what the node no longer has', async () => {
@@ -193,12 +218,11 @@ describe('node directory mirror', () => {
 })
 
 describe('node directory mirror — safety under conflict, cancellation and staleness', () => {
-  function dirNode(files: Record<string, Buffer>, opts: { truncated?: boolean; pending?: Set<string>; signal?: AbortSignal } = {}) {
+  function dirNode(files: Record<string, Buffer>, opts: { truncated?: boolean; signal?: AbortSignal } = {}) {
     const at = (rel: string) => files[rel]
     return {
       connectionId: 'conn-1',
       signal: opts.signal,
-      isPendingUpload: (_s: string, rel: string) => opts.pending?.has(rel) ?? false,
       stat: async ({ relativePath }: { relativePath: string }) => {
         const f = at(relativePath)
         return f ? { exists: true, size: f.length, mtimeMs: 1_700_000_000_000 } : { exists: false, size: 0, mtimeMs: 0 }
@@ -223,7 +247,8 @@ describe('node directory mirror — safety under conflict, cancellation and stal
     const original = join(root, 'sync', 's1', 'agent', 'app', 'assets', 'new.png')
     mkdirSync(join(original, '..'), { recursive: true })
     writeFileSync(original, 'fresh-desktop-bytes')
-    const node = dirNode({ 'agent/app/manifest.json': Buffer.from('{}') }, { pending: new Set(['agent/app/assets/new.png']) })
+    owed('agent/app/assets/new.png')
+    const node = dirNode({ 'agent/app/manifest.json': Buffer.from('{}') })
     await mirrorNodeDirectory('s1', 'agent/app', node)
     expect(existsSync(original)).toBe(true)
   })
@@ -337,11 +362,10 @@ describe('node directory mirror — safety under conflict, cancellation and stal
 })
 
 describe('node directory mirror — combination scenarios (round 8 follow-up)', () => {
-  function dirNode(files: Record<string, Buffer>, opts: { pending?: Set<string>; signal?: AbortSignal; onGet?: (rel: string) => void } = {}) {
+  function dirNode(files: Record<string, Buffer>, opts: { signal?: AbortSignal; onGet?: (rel: string) => void } = {}) {
     return {
       connectionId: 'conn-1',
       signal: opts.signal,
-      isPendingUpload: (_s: string, rel: string) => opts.pending?.has(rel) ?? false,
       stat: async ({ relativePath }: { relativePath: string }) => {
         const f = files[relativePath]
         return f ? { exists: true, size: f.length, mtimeMs: 1_700_000_000_000 } : { exists: false, size: 0, mtimeMs: 0 }
@@ -383,7 +407,8 @@ describe('node directory mirror — combination scenarios (round 8 follow-up)', 
     const original = join(root, 'sync', 's1', 'agent', 'app', 'foo', 'original')
     mkdirSync(join(original, '..'), { recursive: true })
     writeFileSync(original, 'unsent desktop bytes')
-    const node = dirNode({ 'agent/app/foo': Buffer.from('now a file') }, { pending: new Set(['agent/app/foo/original']) })
+    owed('agent/app/foo/original')
+    const node = dirNode({ 'agent/app/foo': Buffer.from('now a file') })
     const outcome = await mirrorNodeDirectory('s1', 'agent/app', node)
     expect(outcome.kind).toBe('unavailable')
     expect(readFileSync(original, 'utf8')).toBe('unsent desktop bytes')
@@ -457,7 +482,6 @@ describe('node directory mirror — combination scenarios (round 8 follow-up)', 
     const node = {
       connectionId: 'conn-1',
       signal: controller.signal,
-      isPendingUpload: () => false,
       stat: async () => { controller.abort(); return { exists: true, size: 3, mtimeMs: 1 } },
       get: async () => ({ chunk: Buffer.from('abc').toString('base64'), total: 3, mtimeMs: 1, eof: true }),
     }
@@ -467,18 +491,17 @@ describe('node directory mirror — combination scenarios (round 8 follow-up)', 
 })
 
 describe('node mirror — pending originals read at the moment of writing (round 9 follow-up)', () => {
-  /** A node whose pending set is the real job table, never an injected predicate. */
 
   it('Z1: keeps an original another producer queued while a member of the same directory was downloading', async () => {
-    // The prune must read the job table when it deletes, not from a snapshot
-    // taken before the first fetch — a capture queued in between is the only copy.
+    // The prune must read the record when it deletes, not from a snapshot
+    // taken before the first fetch — a capture sealed in between is the only copy.
     const newPath = join(root, 'sync', 's1', 'agent', 'app', 'new.png')
     const node = liveNode({ 'agent/app/old.txt': Buffer.from('old') }, {
       onGet: async () => {
         // Another Host Action produces and enqueues while this get is in flight.
         mkdirSync(join(newPath, '..'), { recursive: true })
         writeFileSync(newPath, 'fresh capture')
-        state.jobs.push({ sessionId: 's1', relativePath: 'agent/app/new.png', state: 'pending' })
+        owed('agent/app/new.png')
       },
     })
     const outcome = await mirrorNodeDirectory('s1', 'agent/app', node)
@@ -490,7 +513,7 @@ describe('node mirror — pending originals read at the moment of writing (round
     const path = join(root, 'sync', 's1', 'media-gen', 'g.preview.jpg')
     mkdirSync(join(path, '..'), { recursive: true })
     writeFileSync(path, 'NEW-desktop-bytes')
-    state.jobs.push({ sessionId: 's1', relativePath: 'media-gen/g.preview.jpg', state: 'pending' })
+    owed('media-gen/g.preview.jpg')
     // The node still has the old version at the same path, different mtime.
     const node = liveNode({ 'media-gen/g.preview.jpg': Buffer.from('old') })
     const outcome = await mirrorNodeArtifact('s1', 'media-gen/g.preview.jpg', node)
@@ -504,7 +527,7 @@ describe('node mirror — pending originals read at the moment of writing (round
       onGet: async () => {
         mkdirSync(join(path, '..'), { recursive: true })
         writeFileSync(path, 'NEW-desktop-bytes')
-        state.jobs.push({ sessionId: 's1', relativePath: 'browser/shot.png', state: 'pending' })
+        owed('browser/shot.png')
       },
     })
     const outcome = await mirrorNodeArtifact('s1', 'browser/shot.png', node)
@@ -533,14 +556,14 @@ describe('node mirror — pending originals read at the moment of writing (round
     }
   })
 
-  it('Z4: stops before touching anything when the cancel lands while the pending set is being read', async () => {
+  it('Z4: stops before touching anything when the cancel lands right after the listing', async () => {
     const asDir = join(root, 'sync', 's1', 'agent', 'app', 'foo')
     mkdirSync(join(asDir, 'keep'), { recursive: true })
     writeFileSync(join(asDir, 'keep', 'x'), 'keep me')
     const controller = new AbortController()
     const node = liveNode({ 'agent/app/foo': Buffer.from('now a file') })
     const realList = node.list
-    // Cancel lands after the listing, during the pending-set read that follows it.
+    // Cancel lands after the listing, before the first member is touched.
     node.list = async (input) => { const r = await realList(input); queueMicrotask(() => queueMicrotask(() => controller.abort())); return r }
     await expect(mirrorNodeDirectory('s1', 'agent/app', { ...node, signal: controller.signal })).rejects.toMatchObject({ code: 'aborted' })
     expect(existsSync(join(asDir, 'keep', 'x'))).toBe(true)
@@ -549,13 +572,13 @@ describe('node mirror — pending originals read at the moment of writing (round
 
 describe('node mirror — files a producer is still writing (round 11 follow-up)', () => {
   it('AA1: keeps a download whose path is reserved but whose bytes and job do not exist yet', async () => {
-    // The gap the job table cannot cover: `browser_download` reserved the path
-    // and is streaming into it. There is no transfer job until the file is
-    // sealed, so to the prune the file looks like a stale mirror member.
+    // `browser_download` reserved the path and is streaming into it: a row
+    // at `writing`, held by the producer. To a prune that only looked at the
+    // disk the file would be a stale mirror member.
     const inProgress = join(root, 'sync', 's1', 'agent', 'app', 'new.txt')
     mkdirSync(join(inProgress, '..'), { recursive: true })
     writeFileSync(inProgress, 'FIRST')
-    beginActiveWrite('s1', inProgress)
+    writing('agent/app/new.txt')
     const outcome = await mirrorNodeDirectory('s1', 'agent/app', liveNode({ 'agent/app/old.txt': Buffer.from('old') }))
     // Kept, and the tree is not offered as a complete input while it holds a
     // half-written member — a caller that packs the directory would ship it.
@@ -570,7 +593,7 @@ describe('node mirror — files a producer is still writing (round 11 follow-up)
       onGet: async () => {
         mkdirSync(join(path, '..'), { recursive: true })
         writeFileSync(path, 'PARTIAL-desktop-bytes')
-        beginActiveWrite('s1', path)
+        writing('browser/shot.png')
       },
     })
     const outcome = await mirrorNodeArtifact('s1', 'browser/shot.png', node)
@@ -584,18 +607,17 @@ describe('node mirror — files a producer is still writing (round 11 follow-up)
     const inProgress = join(root, 'sync', 's1', 'agent', 'app', 'new.txt')
     mkdirSync(join(inProgress, '..'), { recursive: true })
     writeFileSync(inProgress, 'FIRST')
-    beginActiveWrite('s1', inProgress)
+    writing('agent/app/new.txt')
     const outcome = await mirrorNodeArtifact('s1', 'agent/app', liveNode({ 'agent/app': Buffer.from('now a file') }))
     expect(outcome.kind).toBe('unavailable')
     expect(readFileSync(inProgress, 'utf8')).toBe('FIRST')
   })
 
-  it('AA1: stops protecting the file once the write is handed off', async () => {
+  it('AA1: stops protecting the file once its writer has abandoned it', async () => {
     const stale = join(root, 'sync', 's1', 'agent', 'app', 'new.txt')
     mkdirSync(join(stale, '..'), { recursive: true })
     writeFileSync(stale, 'FIRST')
-    beginActiveWrite('s1', stale)
-    abandonWriteClaim('s1', stale)
+    delivery('agent/app/new.txt', 'writing', { outcome: 'abandoned' })
     await mirrorNodeDirectory('s1', 'agent/app', liveNode({ 'agent/app/old.txt': Buffer.from('old') }))
     expect(existsSync(stale)).toBe(false)
   })
@@ -606,7 +628,7 @@ describe('node mirror — files a producer is still writing (round 11 follow-up)
     const path = join(root, 'sync', 's1', 'browser', 'shot.png')
     mkdirSync(join(path, '..'), { recursive: true })
     writeFileSync(path, 'HALF')
-    beginActiveWrite('s1', path)
+    writing('browser/shot.png')
     const offline = {
       connectionId: 'conn-1',
       stat: async () => {
@@ -617,8 +639,8 @@ describe('node mirror — files a producer is still writing (round 11 follow-up)
       },
     }
     expect(await mirrorNodeArtifact('s1', 'browser/shot.png', offline)).toMatchObject({ kind: 'unavailable' })
-    // Sealed, it is a complete original again and the offline copy is the answer.
-    sealActiveWrite('s1', path)
+    // Sealed, it is a complete original and the offline copy is the answer.
+    deliveryDb().prepare(`UPDATE session_file_deliveries SET phase = 'sealed', holder = NULL`).run()
     expect(await mirrorNodeArtifact('s1', 'browser/shot.png', offline)).toMatchObject({ kind: 'local', path })
   })
 
@@ -626,36 +648,90 @@ describe('node mirror — files a producer is still writing (round 11 follow-up)
     const sealed = join(root, 'sync', 's1', 'agent', 'app', 'new.txt')
     mkdirSync(join(sealed, '..'), { recursive: true })
     writeFileSync(sealed, 'ALL-BYTES')
-    beginActiveWrite('s1', sealed)
-    sealActiveWrite('s1', sealed)
+    owed('agent/app/new.txt')
     const outcome = await mirrorNodeDirectory('s1', 'agent/app', liveNode({ 'agent/app/old.txt': Buffer.from('old') }))
     expect(outcome.kind).toBe('local')
     expect(existsSync(sealed)).toBe(true)
   })
 
   it('AA2: refreshes from the node when the only outstanding work on the original is its completion notice', async () => {
-    // `uploaded` / `notifying` mean the bytes are already on the node; the job
-    // is waiting on an ACK. Treating that as "the node still owes us" served a
-    // stale local copy over a newer file the agent had written on the node.
+    // `uploaded` / `notifying` / `done` mean the bytes are already on the
+    // node; only the wake is outstanding. Treating that as "the node still
+    // owes us" served a stale local copy over a newer file the agent had
+    // written on the node.
     const path = join(root, 'sync', 's1', 'media-gen', 'g.png')
     mkdirSync(join(path, '..'), { recursive: true })
-    writeFileSync(path, 'OLD')
-    for (const jobState of ['uploaded', 'notifying']) {
-      state.jobs = [{ sessionId: 's1', relativePath: 'media-gen/g.png', state: jobState }]
+    const cases: Array<[DeliveryPhase, DeliveryOutcome | undefined]> = [['uploaded', undefined], ['notifying', undefined], ['notifying', 'done']]
+    for (const [phase, outcome] of cases) {
+      resetDeliveryDatabase()
+      delivery('media-gen/g.png', phase, { outcome })
       writeFileSync(path, 'OLD')
-      const outcome = await mirrorNodeArtifact('s1', 'media-gen/g.png', liveNode({ 'media-gen/g.png': Buffer.from('NEW-from-node') }))
-      expect(outcome.kind, jobState).toBe('local')
-      expect(readFileSync(path, 'utf8'), jobState).toBe('NEW-from-node')
+      const result = await mirrorNodeArtifact('s1', 'media-gen/g.png', liveNode({ 'media-gen/g.png': Buffer.from('NEW-from-node') }))
+      expect(result.kind, `${phase}/${outcome}`).toBe('local')
+      expect(readFileSync(path, 'utf8'), `${phase}/${outcome}`).toBe('NEW-from-node')
     }
   })
 
-  it('AA2: still protects an original whose upload failed and has not been retried', async () => {
+  it('AA2: still protects an original whose upload has given up and has not been retried', async () => {
     const path = join(root, 'sync', 's1', 'media-gen', 'g.png')
     mkdirSync(join(path, '..'), { recursive: true })
     writeFileSync(path, 'DESKTOP-ONLY')
-    state.jobs = [{ sessionId: 's1', relativePath: 'media-gen/g.png', state: 'failed' }]
+    delivery('media-gen/g.png', 'uploading', { gaveUp: true })
     const outcome = await mirrorNodeArtifact('s1', 'media-gen/g.png', liveNode({ 'media-gen/g.png': Buffer.from('node-old') }))
     expect(outcome).toMatchObject({ kind: 'local' })
     expect(readFileSync(path, 'utf8')).toBe('DESKTOP-ONLY')
+  })
+})
+
+describe('node mirror — what the record says (R4, R5)', () => {
+  it('protects a file whose final commit is in flight, without serving it', async () => {
+    // `committing`: the final put went out; neither copy can be called
+    // authoritative until the reply says which. Kept, never handed over.
+    const path = join(root, 'sync', 's1', 'browser', 'shot.png')
+    mkdirSync(join(path, '..'), { recursive: true })
+    writeFileSync(path, 'DESKTOP')
+    delivery('browser/shot.png', 'committing')
+    const node = liveNode({ 'browser/shot.png': Buffer.from('node-copy') })
+    expect(await mirrorNodeArtifact('s1', 'browser/shot.png', node)).toMatchObject({ kind: 'unavailable' })
+    expect(readFileSync(path, 'utf8')).toBe('DESKTOP')
+    // And a directory holding it is kept whole, but not offered as complete.
+    const other = join(root, 'sync', 's1', 'browser', 'other.png')
+    writeFileSync(other, 'stale')
+    expect(await mirrorNodeDirectory('s1', 'browser', liveNode({ 'browser/listed.png': Buffer.from('x') }))).toMatchObject({ kind: 'unavailable' })
+    expect(existsSync(path)).toBe(true)
+    expect(existsSync(other)).toBe(false)
+  })
+
+  it('protects nothing for an abandoned row, whatever phase it was abandoned in', async () => {
+    const path = join(root, 'sync', 's1', 'browser', 'half.png')
+    mkdirSync(join(path, '..'), { recursive: true })
+    writeFileSync(path, 'HALF')
+    delivery('browser/half.png', 'uploading', { outcome: 'abandoned' })
+    expect(await mirrorNodeArtifact('s1', 'browser/half.png', liveNode({}))).toEqual({ kind: 'missing' })
+    await mirrorNodeDirectory('s1', 'browser', liveNode({ 'browser/listed.png': Buffer.from('x') }))
+    expect(existsSync(path)).toBe(false)
+  })
+
+  it('prunes nothing, overwrites nothing and serves nothing when the record cannot be read', async () => {
+    // R5: unreadable means protected. The alternative — "no rows, nothing
+    // pending" — is how a desktop original gets deleted by a database hiccup.
+    const original = join(root, 'sync', 's1', 'agent', 'app', 'new.png')
+    mkdirSync(join(original, '..'), { recursive: true })
+    writeFileSync(original, 'only copy')
+    owed('agent/app/new.png')
+    deliveryDb().exec('DROP TABLE session_file_deliveries')
+    try {
+      const node = liveNode({ 'agent/app/manifest.json': Buffer.from('{}'), 'agent/app/new.png': Buffer.from('node-old') })
+      expect(await mirrorNodeDirectory('s1', 'agent/app', node)).toMatchObject({ kind: 'unavailable' })
+      expect(readFileSync(original, 'utf8')).toBe('only copy')
+      expect(await mirrorNodeArtifact('s1', 'agent/app/new.png', node)).toMatchObject({ kind: 'unavailable' })
+      expect(readFileSync(original, 'utf8')).toBe('only copy')
+      // Not even the offline fallback hands it over.
+      const offline = { connectionId: 'conn-1', stat: async () => { throw new Error('offline') }, get: async () => { throw new Error('offline') } }
+      expect(await mirrorNodeArtifact('s1', 'agent/app/new.png', offline)).toMatchObject({ kind: 'unavailable' })
+    } finally {
+      const { ensureSessionFileDeliveriesSchema } = await import('../db-session-deliveries-schema')
+      ensureSessionFileDeliveriesSchema(deliveryDb())
+    }
   })
 })

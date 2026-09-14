@@ -1,52 +1,61 @@
 /**
- * Transfer jobs (`docs/design/session-sync-zone.md` §5.3).
+ * The transfer worker over the delivery record
+ * (`docs/design/session-sync-zone-delivery-record.md` §6).
  *
  * One worker per live remote connection, started next to the Host Action
- * consumer and stopped with it. It drains the persisted job table for that
- * connection: resumes each upload from its recorded offset, backs off on
- * failure, and drops a job when its session is deleted. Throughput is measured
- * per connection and feeds the executor's claim-budget decision (§4.1).
+ * consumer and stopped with it. Each pass lists the connection's live rows
+ * that are due, skips the ones whose holder is still working, claims the rest
+ * from their dead or absent holders, and continues each from the phase it
+ * actually reached:
+ *
+ * - `writing` with a dead holder: the producer died. Abandoned, never sent —
+ *   nothing records how far it got, and a half file is worse than none.
+ * - `sealed` / `queued`: a complete source waiting. Uploaded.
+ * - `uploading`: the final put was never sent (or the row would be
+ *   `committing`), so the node has at most a `.parts` fragment. Resumed.
+ * - `committing` with a dead holder: the final put was sent and its reply
+ *   lost. Unknowable from here (§2), so automatic retry stops and a person
+ *   re-delivers under a new path.
+ * - `uploaded` / `notifying`: the bytes are on the node; only the wake is
+ *   owed. Notified, never uploaded — there is no path back to `uploading`.
+ *
+ * Every step is a compare-and-set under the worker's own holder, so a pass
+ * that lost a row to a concurrent claim stops instead of acting on it. A
+ * failure records itself against the row — error, backoff, or giving up — and
+ * never moves the phase.
  */
-import { statSync } from 'node:fs'
-import { canonicalClaimPath } from './active-writes'
-import { dropSessionHandoffs, failedHandoffs, noteHandoffDelivered, retryFailedHandoffs, setPendingJobLookup } from './pending-handoffs'
-
-/**
- * Job states whose bytes the node does not have yet. `uploaded` and
- * `notifying` are deliberately absent: those rows are waiting on the
- * completion wake and no longer own the file's content, so a later delivery of
- * a *newer* version must not be made to join them.
- */
-const OWES_UPLOAD = new Set(['pending', 'running', 'failed'])
-import type { ArtifactPutRequest, ArtifactPutResult } from '@superone/shared/environment'
+import { isHolderAlive, mintHolder, retireHolder } from './delivery-holders'
 import {
-  deleteArtifactTransfersForSession,
-  listArtifactTransfersForSession,
-  reviveArtifactTransfer,
-  enqueueArtifactTransfer,
-  listPendingArtifactTransfers,
-  listRunnableArtifactTransfers,
-  markArtifactTransferDone,
-  markArtifactTransferFailed,
-  markArtifactTransferRunning,
-  markArtifactTransferUploaded,
-  claimArtifactTransfer,
-  recordArtifactTransferOffset,
-  type ArtifactTransferJob,
-} from '../db-artifact-transfers'
+  abandonDelivery,
+  advanceDelivery,
+  claimDelivery,
+  completeDelivery,
+  dropSessionDeliveries,
+  listGivenUpDeliveries,
+  listLiveDeliveries,
+  nextDeliveryDueAt,
+  recordDeliveryFailure,
+  recordDeliveryOffset,
+  retryGivenUpDeliveries,
+  type Delivery,
+  type DeliveryHandle,
+} from '../db-session-deliveries'
+import type { ArtifactPutRequest, ArtifactPutResult } from '@superone/shared/environment'
 import { uploadArtifact, type TransferOutcome } from './artifact-transfer'
 
 /** Bytes per millisecond assumed for a connection nothing has been measured on yet (~1 MiB/s). */
 export const DEFAULT_THROUGHPUT_BYTES_PER_MS = 1024
-const MAX_ATTEMPTS = 8
+/** Upload attempts before automatic retry stops. Never applied once the bytes are on the node. */
+const MAX_UPLOAD_ATTEMPTS = 8
 const BACKOFF_BASE_MS = 5_000
 const BACKOFF_MAX_MS = 10 * 60_000
 
 export interface ArtifactTransferDeps {
   put: (connectionId: string, input: ArtifactPutRequest) => Promise<ArtifactPutResult>
   /**
-   * Tell the session's agent the file landed (§4.1). Optional so a host
-   * without the notification RPC (an older node, a unit test) still transfers.
+   * Tell the session's agent the file landed (§4.1 of the parent design).
+   * Optional so a host without the notification RPC (an older node, a unit
+   * test) still transfers.
    */
   notifyCompleted?: (
     connectionId: string,
@@ -58,6 +67,14 @@ export interface ArtifactTransferDeps {
 
 /** A node that answers this way will never accept the wake: the session is gone. */
 const TERMINAL_NOTIFY_ERRORS = new Set(['not_found', 'forbidden', 'failed_precondition', 'unimplemented', 'method_not_found'])
+
+/** The worker lost the row mid-step: someone else advanced or took it. */
+class LostDelivery extends Error {
+  constructor() {
+    super('delivery lost to another holder')
+    this.name = 'LostDelivery'
+  }
+}
 
 /** Exponential moving average of measured bytes/ms, one per connection. */
 class ThroughputMeter {
@@ -80,36 +97,7 @@ export class ArtifactTransferService {
   private readonly workers = new Map<string, { abort: AbortController; loop: Promise<void>; wake: () => void }>()
   private readonly inflight = new Map<string, AbortController>()
 
-  constructor(private readonly deps: ArtifactTransferDeps) {
-    // How a new delivery finds out that a persisted job already owns this
-    // file. Without it a row that exists but has not been picked up yet is
-    // invisible, and the next Host Action pushes the same file again under a
-    // second transfer id — which the node cannot dedupe, and whose loser
-    // eventually overwrites the winner.
-    setPendingJobLookup((sessionId, localPath) => {
-      const real = canonicalClaimPath(localPath)
-      const jobs = listArtifactTransfersForSession(sessionId)
-      let delivered = false
-      for (const job of jobs) {
-        if (canonicalClaimPath(job.localPath) !== real) continue
-        if (!OWES_UPLOAD.has(job.state)) {
-          // `uploaded` / `notifying`: the node has these bytes. Reporting it as
-          // nothing at all is what let a waiting instance mint a second
-          // transfer id and send the desktop's copy again.
-          delivered = true
-          continue
-        }
-        // `failed` is terminal: the worker's queries exclude it, so joining one
-        // would answer "on its way" about a delivery nothing will ever perform.
-        // A caller asking for this file again is the reason to try once more,
-        // so the row goes back in the queue under its own id and offset.
-        if (job.state === 'failed' && !reviveArtifactTransfer(job.jobId)) continue
-        this.workers.get(job.connectionId)?.wake()
-        return { status: 'found', transferId: job.transferId }
-      }
-      return delivered ? { status: 'delivered' } : { status: 'absent' }
-    })
-  }
+  constructor(private readonly deps: ArtifactTransferDeps) {}
 
   throughputBytesPerMs(connectionId: string): number {
     return this.meter.bytesPerMs(connectionId)
@@ -120,70 +108,39 @@ export class ArtifactTransferService {
     this.meter.record(connectionId, outcome)
   }
 
+  /** Something new is waiting for this connection's worker. */
+  wake(connectionId: string): void {
+    this.workers.get(connectionId)?.wake()
+  }
+
   /**
-   * Record a file an eager push already delivered, so a caller that was told
-   * "deferred, you will be notified" still gets its wake.
-   *
-   * The row starts in `uploaded`, never `pending`: only the notification is
-   * owed. Enqueueing it normally would re-upload bytes the node already has,
-   * and — worse — would let this copy overwrite whatever the agent did to the
-   * file on the node in the meantime.
+   * Session deletion (§6): tombstone the session, abandon its live rows, and
+   * cancel any upload of theirs in flight. The upload's own failure handling
+   * sees an abort, not an error, and records nothing.
    */
-  noteDelivered(input: { connectionId: string; sessionId: string; localPath: string; relativePath: string; transferId: string }): void {
-    let total = 0
-    try {
-      total = statSync(input.localPath).size
-    } catch {
-      /* delivered and then removed locally; the notification still stands */
-    }
-    // One statement, in `uploaded` from the start. The previous shape — insert
-    // `pending`, then update to `uploaded` — left a row that re-uploads the
-    // file if the second statement fails, and the caller's own error handling
-    // then filed a second one beside it.
-    enqueueArtifactTransfer({ ...input, total, state: 'uploaded' })
-    this.workers.get(input.connectionId)?.wake()
-  }
-
-  /** Persist a deferred upload and nudge the connection's worker. */
-  defer(input: { connectionId: string; sessionId: string; localPath: string; relativePath: string; transferId?: string }): ArtifactTransferJob {
-    const total = statSync(input.localPath).size
-    const job = enqueueArtifactTransfer({ ...input, total })
-    this.workers.get(input.connectionId)?.wake()
-    return job
-  }
-
-  /** Session deletion (§7): forget the jobs and cancel any upload in progress. */
   dropSession(sessionId: string): void {
-    for (const jobId of deleteArtifactTransfersForSession(sessionId)) {
-      this.inflight.get(jobId)?.abort()
-      this.inflight.delete(jobId)
+    for (const deliveryId of dropSessionDeliveries(sessionId)) {
+      this.inflight.get(deliveryId)?.abort()
+      this.inflight.delete(deliveryId)
     }
-    // A handoff waiting to be retried has nowhere to go once the session is
-    // gone, and the write claim it was protecting would outlive everything
-    // that could ever release it.
-    dropSessionHandoffs(sessionId)
   }
 
   /**
-   * Retry the files that could not be written onto the job table at all.
-   *
-   * These are not deferred jobs — there is no row for them — so no worker
-   * would ever pick them up. Each is still protected from the mirror, and
-   * stays protected until its row exists.
+   * Settings' Retry Upload: rows that gave up go back in the queue — except a
+   * `committing` row, which only a re-delivery under a new path can clear.
    */
-  retryFailedHandoffs(connectionId?: string): { retried: number } {
-    return retryFailedHandoffs(connectionId)
+  retryGivenUp(sessionId?: string): { retried: number } {
+    const ids = retryGivenUpDeliveries(sessionId)
+    for (const id of this.workers.keys()) this.wake(id)
+    return { retried: ids.length }
   }
 
-  /** What could not be queued, for Settings to show and for a manual retry. */
-  failedHandoffs(sessionId?: string) {
-    return failedHandoffs(sessionId)
+  /** What automatic retry has stopped on, for Settings to show. */
+  givenUp(sessionId?: string): Delivery[] {
+    return listGivenUpDeliveries(sessionId)
   }
 
   start(connectionId: string): void {
-    // A handoff that could not be written to the table is invisible to the
-    // worker loop, so starting the worker is also when they get another go.
-    this.retryFailedHandoffs(connectionId)
     if (this.workers.has(connectionId)) return
     const abort = new AbortController()
     let wake: () => void = () => {}
@@ -203,19 +160,22 @@ export class ArtifactTransferService {
     for (const id of [...this.workers.keys()]) this.stop(id)
   }
 
-  /** One pass over the runnable jobs of a connection. The worker loop calls this; tests call it directly. */
+  /** One pass over the connection's due rows. The worker loop calls this; tests call it directly. */
   async runOnce(connectionId: string, signal: AbortSignal = new AbortController().signal): Promise<void> {
     const now = this.deps.now ?? Date.now
-    let jobs: ArtifactTransferJob[] = []
+    let rows: Delivery[]
     try {
-      jobs = listRunnableArtifactTransfers(connectionId, now())
+      rows = listLiveDeliveries(connectionId, now())
     } catch (err) {
-      this.deps.log?.warn('[artifact-transfer] list failed', err)
+      this.deps.log?.warn('[artifact-transfer] could not list deliveries', err)
       return
     }
-    for (const job of jobs) {
+    for (const row of rows) {
       if (signal.aborted) return
-      await this.runJob(job, signal)
+      // Still being worked — by a producer filling it, an eager push sending
+      // it, or another pass of ours. Not a candidate.
+      if (isHolderAlive(row.holder)) continue
+      await this.runDelivery(row, signal)
     }
   }
 
@@ -224,7 +184,6 @@ export class ArtifactTransferService {
     while (!signal.aborted) {
       await this.runOnce(connectionId, signal)
       if (signal.aborted) break
-      // Sleep until nudged (a new job, a stop) or until the earliest backoff is due.
       await new Promise<void>((resolve) => {
         const timer = setTimeout(resolve, this.nextDueDelay(connectionId, now()))
         registerWake(() => { clearTimeout(timer); resolve() })
@@ -234,116 +193,147 @@ export class ArtifactTransferService {
 
   private nextDueDelay(connectionId: string, nowMs: number): number {
     try {
-      const pending = listPendingArtifactTransfers(connectionId)
-      const due = pending.map((j) => j.nextAttemptAt ?? nowMs).filter((t) => t > nowMs)
-      if (due.length === 0) return pending.length > 0 ? 1_000 : BACKOFF_MAX_MS
-      return Math.max(250, Math.min(...due) - nowMs)
+      const due = nextDeliveryDueAt(connectionId)
+      if (due === null) return BACKOFF_MAX_MS
+      return Math.max(250, due - nowMs)
     } catch {
       return BACKOFF_MAX_MS
     }
   }
 
-  /**
-   * Wake the agent for a landed file. A node that says the session is gone
-   * ends the job; anything else is a retry, because the agent was told the
-   * path would work and nothing else will tell it that it does.
-   */
-  private async notify(job: ArtifactTransferJob): Promise<void> {
-    if (!this.deps.notifyCompleted) {
-      markArtifactTransferDone(job.jobId)
+  private async runDelivery(row: Delivery, workerSignal: AbortSignal): Promise<void> {
+    const holder = mintHolder()
+    const claimed = claimDelivery(row.deliveryId, { holder: row.holder, epoch: row.epoch }, holder)
+    if (!claimed.ok) {
+      retireHolder(holder)
       return
     }
-    try {
-      await this.deps.notifyCompleted(job.connectionId, {
-        sessionId: job.sessionId,
-        notificationId: job.jobId,
-        relativePaths: [job.relativePath],
-      })
-      markArtifactTransferDone(job.jobId)
-    } catch (err) {
-      const code = String((err as { code?: unknown }).code ?? '')
-      const message = err instanceof Error ? err.message : String(err)
-      if (TERMINAL_NOTIFY_ERRORS.has(code)) {
-        this.deps.log?.warn('[artifact-transfer] wake refused, dropping job', job.relativePath, code)
-        markArtifactTransferDone(job.jobId)
-        return
-      }
-      const attempts = job.attempts + 1
-      const delay = Math.min(BACKOFF_MAX_MS, BACKOFF_BASE_MS * 2 ** Math.min(attempts - 1, 10))
-      try {
-        // Back to `uploaded`: the next attempt must wake, never re-upload.
-        markArtifactTransferFailed(job.jobId, message, (this.deps.now ?? Date.now)() + delay, 'uploaded')
-      } catch { /* row dropped with the session */ }
-      this.deps.log?.warn('[artifact-transfer] wake failed', job.relativePath, message, `(retry in ${delay}ms)`)
-    }
-  }
-
-  private async runJob(job: ArtifactTransferJob, workerSignal: AbortSignal): Promise<void> {
+    // Moves as the phase does, so the failure path records against the epoch
+    // actually reached — and knows whether the final put was already sent.
+    const cursor = { handle: claimed.handle, committing: false }
     const abort = new AbortController()
     const onWorkerAbort = () => abort.abort()
     workerSignal.addEventListener('abort', onWorkerAbort, { once: true })
-    this.inflight.set(job.jobId, abort)
+    this.inflight.set(row.deliveryId, abort)
     /** Set once the node is known to hold the bytes: an error after this is never an upload failure. */
     let delivered = false
     try {
-      // The bytes are already there; only the agent's wake is still owed.
-      if (job.state === 'uploaded' || job.state === 'notifying') {
-        delivered = true
-        noteHandoffDelivered(job.connectionId, job.sessionId, job.localPath)
-        if (!claimArtifactTransfer(job.jobId, 'notifying')) return
-        await this.notify(job)
-        return
+      switch (row.phase) {
+        case 'writing':
+          abandonDelivery(cursor.handle)
+          this.deps.log?.warn('[artifact-transfer] abandoned a half-written file whose producer is gone', row.relativePath)
+          return
+        case 'committing':
+          // The final put went out and nothing says whether it landed. Nothing
+          // here can find out (§2), so nothing here retries it.
+          recordDeliveryFailure(cursor.handle, { error: 'commit unverified', nextAttemptAt: null })
+          this.deps.log?.warn('[artifact-transfer] final put unverified; needs re-delivery under a new path', row.relativePath)
+          return
+        case 'sealed':
+        case 'queued': {
+          const started = advanceDelivery(cursor.handle, { from: row.phase, to: 'uploading' })
+          if (!started.ok) throw new LostDelivery()
+          cursor.handle = started.handle
+          await this.upload(row, cursor, abort.signal)
+          delivered = true
+          break
+        }
+        case 'uploading':
+          await this.upload(row, cursor, abort.signal)
+          delivered = true
+          break
+        case 'uploaded':
+        case 'notifying':
+          delivered = true
+          break
       }
-      // The pass works from a snapshot; a session deleted since then took its row with it.
-      if (!markArtifactTransferRunning(job.jobId)) return
-      const outcome = await uploadArtifact({
-        localPath: job.localPath,
-        sessionId: job.sessionId,
-        relativePath: job.relativePath,
-        transferId: job.transferId,
-        offset: job.offset,
-        signal: abort.signal,
-        put: (input) => this.deps.put(job.connectionId, input),
-        onProgress: (offset) => {
-          try { recordArtifactTransferOffset(job.jobId, offset) } catch { /* row dropped with the session */ }
-        },
-      })
-      this.meter.record(job.connectionId, outcome)
-      this.deps.log?.info('[artifact-transfer] uploaded', job.relativePath, `${outcome.bytes}B`)
-      // The row survives the upload: the agent has an ENOENT to take back and
-      // is only told the path works once the node confirms the wake.
-      delivered = true
-      markArtifactTransferUploaded(job.jobId)
-      // Before anything can delete the row: the file is on the node, so nothing
-      // here needs to hold it and nothing should deliver it a second time.
-      noteHandoffDelivered(job.connectionId, job.sessionId, job.localPath)
-      if (!claimArtifactTransfer(job.jobId, 'notifying')) return
-      await this.notify(job)
+      // Every path out of the switch is at `uploaded`, except a row that came in
+      // already `notifying` — a wake that failed last time and is being retried.
+      if (row.phase !== 'notifying') {
+        const notifying = advanceDelivery(cursor.handle, { from: 'uploaded', to: 'notifying' })
+        if (!notifying.ok) throw new LostDelivery()
+        cursor.handle = notifying.handle
+      }
+      await this.notify(row, cursor.handle)
     } catch (err) {
-      if (abort.signal.aborted) return
+      if (abort.signal.aborted || err instanceof LostDelivery) return
       const message = err instanceof Error ? err.message : String(err)
+      const attempts = row.attempts + 1
       const missingLocal = (err as { code?: string }).code === 'ENOENT'
-      const attempts = job.attempts + 1
-      // A delivered file cannot fail for want of a local copy: the bytes are on
-      // the node and only the wake is outstanding.
-      const giveUp = (missingLocal && !delivered) || attempts >= MAX_ATTEMPTS
+      // The final put went out and its reply did not come back: unknowable
+      // from here (§2), so automatic retry stops right now rather than after
+      // a backoff that would resend the final chunk.
+      const unverified = cursor.committing && !delivered
+      // A delivered file cannot fail for want of a local copy, and never gives
+      // up: the bytes are on the node and only the wake is outstanding.
+      const giveUp = unverified || (!delivered && (missingLocal || attempts >= MAX_UPLOAD_ATTEMPTS))
       const delay = Math.min(BACKOFF_MAX_MS, BACKOFF_BASE_MS * 2 ** Math.min(attempts - 1, 10))
-      try {
-        // Resume from the phase actually reached. The default was `pending`,
-        // which turned "could not write the notification state" into "upload
-        // this again" — and that upload put the desktop's older bytes back
-        // over whatever the agent had done to the file on the node.
-        markArtifactTransferFailed(
-          job.jobId,
-          message,
-          giveUp ? null : (this.deps.now ?? Date.now)() + delay,
-          delivered ? 'uploaded' : 'pending',
-        )
-      } catch { /* row dropped with the session */ }
-      this.deps.log?.warn('[artifact-transfer] upload failed', job.relativePath, message, giveUp ? '(giving up)' : `(retry in ${delay}ms)`)
+      recordDeliveryFailure(cursor.handle, {
+        error: unverified ? `commit unverified: ${message}` : message,
+        nextAttemptAt: giveUp ? null : (this.deps.now ?? Date.now)() + delay,
+      })
+      this.deps.log?.warn('[artifact-transfer] delivery failed', row.relativePath, message, giveUp ? '(giving up)' : `(retry in ${delay}ms)`)
     } finally {
       workerSignal.removeEventListener('abort', onWorkerAbort)
-      this.inflight.delete(job.jobId)
+      this.inflight.delete(row.deliveryId)
+      retireHolder(holder)
     }
+  }
+
+  /**
+   * Send the bytes, resuming from the recorded offset, under the record's
+   * fixed identity. The `committing` gate is written immediately before the
+   * final chunk goes out; a gate that cannot be written sends nothing.
+   */
+  private async upload(row: Delivery, cursor: { handle: DeliveryHandle; committing: boolean }, signal: AbortSignal): Promise<void> {
+    const outcome = await uploadArtifact({
+      localPath: row.localPath,
+      sessionId: row.sessionId,
+      relativePath: row.relativePath,
+      transferId: row.transferId,
+      offset: row.offset,
+      ...(row.sha256 ? { identity: { total: row.total, sha256: row.sha256 } } : {}),
+      signal,
+      put: (input) => this.deps.put(row.connectionId, input),
+      onProgress: (offset) => void recordDeliveryOffset(cursor.handle, offset),
+      beforeFinal: () => {
+        // Idempotent: an offset resync can re-send a final chunk, and the gate
+        // has already been written for it.
+        if (cursor.committing) return
+        const gate = advanceDelivery(cursor.handle, { from: 'uploading', to: 'committing' })
+        if (!gate.ok) throw new LostDelivery()
+        cursor.handle = gate.handle
+        cursor.committing = true
+      },
+    })
+    this.meter.record(row.connectionId, outcome)
+    this.deps.log?.info('[artifact-transfer] uploaded', row.relativePath, `${outcome.bytes}B`)
+    const landed = advanceDelivery(cursor.handle, { from: 'committing', to: 'uploaded' })
+    if (!landed.ok) throw new LostDelivery()
+    cursor.handle = landed.handle
+  }
+
+  /**
+   * Wake the agent for a landed file. A node that says the session is gone
+   * ends the delivery; anything else is retried, because the agent was told
+   * the path would work and nothing else will tell it that it does.
+   */
+  private async notify(row: Delivery, handle: DeliveryHandle): Promise<void> {
+    if (this.deps.notifyCompleted) {
+      try {
+        await this.deps.notifyCompleted(row.connectionId, {
+          sessionId: row.sessionId,
+          notificationId: row.deliveryId,
+          relativePaths: [row.relativePath],
+        })
+      } catch (err) {
+        const code = String((err as { code?: unknown }).code ?? '')
+        if (!TERMINAL_NOTIFY_ERRORS.has(code)) throw err
+        this.deps.log?.warn('[artifact-transfer] wake refused, ending delivery', row.relativePath, code)
+        abandonDelivery(handle)
+        return
+      }
+    }
+    if (!completeDelivery(handle)) throw new LostDelivery()
   }
 }

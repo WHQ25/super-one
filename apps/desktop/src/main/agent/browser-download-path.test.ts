@@ -5,6 +5,8 @@ import { tmpdir } from 'os'
 
 const state = vi.hoisted(() => ({ configuredDir: null as string | null, osDownloads: '', userData: '/tmp' }))
 
+// The zone's delivery record: a table that cannot be read protects every zone file (R5).
+vi.mock('../database', async () => (await import('../../test/fixtures/delivery-db')).deliveryDatabase())
 vi.mock('electron', () => ({
   app: { getPath: (name: string) => (name === 'downloads' ? state.osDownloads : state.userData) },
 }))
@@ -107,7 +109,7 @@ describe('downloads for a remote session', () => {
     // (docs/design/session-sync-zone.md §6).
     const path = await collectArtifacts('s1', 'call-1', async () => reserveDownloadPath('report.pdf', null, 's1'), 'conn-1')
     expect(path).toBe(join(producerDir('s1', 'download'), 'report.pdf'))
-    expect(takeArtifacts('s1', 'call-1')).toEqual([{ path, producer: 'download', final: false }])
+    expect(takeArtifacts('s1', 'call-1')).toEqual([{ path, producer: 'download', final: false, deliveryId: expect.any(String) }])
   })
 
   it('honours a directory inside the zone, which is how a node path arrives after input mapping', async () => {
@@ -178,8 +180,11 @@ describe('downloads for a remote session', () => {
     // Reusing the copy is not the same as having nothing to report: each
     // reply is rewritten from the refs of its own call, so a listing that
     // registers nothing hands the agent the desktop path again.
-    expect(takeArtifacts('s1', 'call-8')).toEqual([{ path: first, producer: 'download', final: true }])
-    expect(takeArtifacts('s1', 'call-9')).toEqual([{ path: first, producer: 'download', final: true }])
+    // One delivery, named by both replies (R3a): the second listing observes
+    // the first adoption's row rather than opening another.
+    const [firstRef] = takeArtifacts('s1', 'call-8')
+    expect(firstRef).toEqual({ path: first, producer: 'download', final: true, deliveryId: expect.any(String) })
+    expect(takeArtifacts('s1', 'call-9')).toEqual([{ path: first, producer: 'download', final: true, deliveryId: firstRef!.deliveryId }])
   })
 
   it('refuses a session whose own zone directory is a link, explicit dir or not', async () => {
@@ -217,7 +222,7 @@ describe('downloads for a remote session', () => {
     writeFileSync(path, 'captured into the zone')
     const reported = await collectArtifacts('s1', 'call-11', async () => adoptCapturedDownload('s1', path), 'conn-1')
     expect(reported).toBe(path)
-    expect(takeArtifacts('s1', 'call-11')).toEqual([{ path, producer: 'download', final: true }])
+    expect(takeArtifacts('s1', 'call-11')).toEqual([{ path, producer: 'download', final: true, deliveryId: expect.any(String) }])
   })
 
   it('leaves a local session downloading into the configured folder', async () => {

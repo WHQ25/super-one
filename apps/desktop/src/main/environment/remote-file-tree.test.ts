@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const zoneState = vi.hoisted(() => ({ userData: '' }))
+// The zone's delivery record: a table that cannot be read protects every zone file (R5).
+vi.mock('../database', async () => (await import('../../test/fixtures/delivery-db')).deliveryDatabase())
 vi.mock('electron', () => ({ app: { getPath: () => zoneState.userData } }))
 import {
   hostPathsEqual,

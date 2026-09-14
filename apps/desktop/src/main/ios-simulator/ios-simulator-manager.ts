@@ -40,6 +40,7 @@ import {
 } from './capture'
 import { captureFileName } from '../device/capture-path'
 import { producerDir } from '../media-output-paths'
+import { abandonZoneFile, reserveZoneFile, sealZoneFile } from '../environment/zone-delivery'
 import { ensureZoneDir, type ZoneOwner } from '../environment/zone-owner'
 import { currentCallOwner } from '../mcp/artifact-registry'
 import { SimctlClient } from './simctl'
@@ -802,7 +803,13 @@ export class IosSimulatorManager {
   async screenshot(udid: string): Promise<IosSimulatorCapture> {
     const { deviceName } = await this.requireCaptureTarget(udid)
     const capture = this.captureFor(udid, deviceName, 'screenshot', 'png')
-    await this.capture.screenshot(udid, capture.path)
+    try {
+      await this.capture.screenshot(udid, capture.path)
+    } catch (error) {
+      this.abandonCapture(udid, capture)
+      throw error
+    }
+    this.sealCapture(udid, capture)
     return capture
   }
 
@@ -822,6 +829,7 @@ export class IosSimulatorManager {
       await flight
     } catch (error) {
       this.recordings.delete(udid)
+      this.abandonCapture(udid, capture)
       throw error
     }
     return capture
@@ -833,10 +841,16 @@ export class IosSimulatorManager {
     if (!current) return null
     this.recordings.delete(udid)
     // A start that already failed has nothing to signal, and its rejection was
-    // reported to whoever pressed record.
+    // reported to whoever pressed record — and its reservation given back.
     const recording = await current.flight.catch(() => null)
     if (!recording) return null
-    await recording.stop()
+    try {
+      await recording.stop()
+    } catch (error) {
+      this.abandonCapture(udid, current.capture)
+      throw error
+    }
+    this.sealCapture(udid, current.capture)
     return current.capture
   }
 
@@ -941,12 +955,37 @@ export class IosSimulatorManager {
   ): IosSimulatorCapture {
     const fileName = captureFileName(deviceName, extension, new Date())
     if (this.captureRoot) return { kind, fileName, path: join(this.captureRoot, udid, fileName) }
-    const root = join(producerDir(this.owners.get(udid) ?? null, 'ios-simulator'), udid)
+    const sessionId = this.owners.get(udid) ?? null
+    const root = join(producerDir(sessionId, 'ios-simulator'), udid)
     // Created here, with the owner recorded at bind, because the capture port
     // creating it later runs in whatever scope the caller has — none, from
     // the panel — and an unknown owner marks nothing.
     ensureZoneDir(root, this.zoneOwners.get(udid))
-    return { kind, fileName, path: join(root, fileName) }
+    const path = join(root, fileName)
+    // Spoken for before simctl opens it: the recorder fills the file over the
+    // whole recording, and a mirror in that window must find it owned rather
+    // than prunable. The destination is the one recorded at bind, since the
+    // panel calls from no scope at all; a refusal is the capture's failure.
+    if (sessionId) reserveZoneFile({ sessionId, path, origin: 'produced', ...this.captureDestination(udid) })
+    return { kind, fileName, path }
+  }
+
+  private captureDestination(udid: string): { connectionId?: ZoneOwner } {
+    const owner = this.zoneOwners.get(udid)
+    return owner === undefined ? {} : { connectionId: owner }
+  }
+
+  /** The bytes are in: the capture is a delivery from here on. */
+  private sealCapture(udid: string, capture: IosSimulatorCapture): void {
+    const sessionId = this.owners.get(udid)
+    if (!sessionId || this.captureRoot) return
+    sealZoneFile({ sessionId, path: capture.path, origin: 'produced', ...this.captureDestination(udid) })
+  }
+
+  /** The capture is not going to exist: give the reservation back. */
+  private abandonCapture(udid: string, capture: IosSimulatorCapture): void {
+    const sessionId = this.owners.get(udid)
+    if (sessionId) abandonZoneFile(sessionId, capture.path)
   }
 
   private unbind(udid: string): void {

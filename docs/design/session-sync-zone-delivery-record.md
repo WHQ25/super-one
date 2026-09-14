@@ -1,9 +1,50 @@
 # One delivery record — replacing the claim/handoff/job triple
 
-Status: **design, revision 3, approved to begin §10.1 with the constraints of
-revisions 2–3 in the spec and the acceptance suite.** Supersedes §4.1 and
-§5.3 of `session-sync-zone.md` once implemented. Review markers: P1–P5 from
-the first review, Q1–Q4 from the second.
+Status: **implemented — §10.1 through §10.6 all landed.** Supersedes §4.1 and
+§5.3 of `session-sync-zone.md`. Review markers: P1–P5 from the first review,
+Q1–Q4 from the second.
+
+Implementation notes (things decided while building, not derivable from the
+spec above):
+
+- **The DDL lives in its own module, `db-session-deliveries-schema.ts`**, so a
+  test fixture (`src/test/fixtures/delivery-db.ts`) can open an empty record
+  without importing the desktop database. `database-migrations-policy.test.ts`
+  scans that file, not `db-session-deliveries.ts`.
+- **Every zone test that reaches the mirror, the push or a producer needs the
+  delivery table present**, because an unreadable table is `unavailable` and
+  protects everything (R5) — the same failure surfaces as "cannot mirror" if
+  the table is simply missing. Those tests mock `../database` onto the fixture.
+  A producer test with no call scope also has to `markZoneOwner(session, null)`
+  (or run under a scope), or the seal is refused `unknown-destination`.
+- **`within()` in `host-action-sync.ts` honours an already-settled work even
+  when the deadline fires in the same tick** — an abort landing exactly on a
+  final put's reply must not discard a commit the node confirmed and report it
+  as needing re-delivery. A still-running work is still given up on: on expiry
+  the settled result gets one macrotask to surface, no longer.
+- **`uploadArtifact` does not re-check the abort signal after a final put that
+  answered.** A confirmed terminal outcome is kept whatever arrived while it
+  was in flight; the abort check moved to before the next chunk.
+- **A local session (or an empty session id) takes no row at all** —
+  `zoneDestination` returns `local` first, so `reserveZoneFile` / `sealZoneFile`
+  return null before the database is touched. The adhoc zone is local too.
+- **The page-download `will-download` path seals on the item's own `done`**,
+  then wakes the worker; a completion that cannot be sealed (the session let go
+  of the reservation) is reported as `interrupted` rather than delivered.
+- **Backgrounded downloads seal in `receiveBody` and wake the worker from the
+  task's settle** (`wakeDownloadDelivery`); there is no `queueDownloadUpload`.
+- **`adoptActionRecording` registers a recording already in the session's zone
+  in place** rather than copying it — a device surface that captured straight
+  into the zone already has a sealed delivery, and copying would make a second.
+- **Reclaim reads the record**: `hasPendingTransfer` is "a live row not given
+  up", `pendingUploadBytes` sums `listContentOwnedDeliveries`, and the Settings
+  "stuck" figure (`failedHandoffs` in the payload, unchanged name) is
+  `listGivenUpDeliveries`.
+- **§6 `committing` is unretryable even for a clean rejection.** A single-chunk
+  file whose only (final) put fails lands in `committing`: the gate is written
+  before the put, so from the desktop the outcome is unknowable whether the
+  node rejected it or the reply was lost. It shows in `givenUp` as *needs
+  re-delivery* but `retryGivenUp` excludes it (only a new path clears it).
 
 ## 1. Why
 
@@ -376,14 +417,20 @@ process incarnation. No random scheduling, no new end-to-end.
 
 ## 10. Order of work
 
-1. Schema + `db-session-deliveries.ts`: reserve / advance / takeover / abandon
-   / dropSession as CAS primitives, the R4 classification, the holder set and
-   incarnation. Tested against real SQLite.
-2. Producers by write mode (§4). `ArtifactRef` gains `deliveryId`.
-3. Host Action sync and the worker over the record, `committing` included.
-   Delete the three old modules.
-4. Mirror over the classification.
-5. Rewrite migration 6.
-6. Acceptance suite (§9), then the matrix.
+1. ✅ Schema + `db-session-deliveries.ts`: reserve / advance / takeover /
+   abandon / dropSession as CAS primitives, the R4 classification, the holder
+   set and incarnation. Tested against real SQLite (`db-session-deliveries.test.ts`).
+2. ✅ Producers by write mode (§4). `ArtifactRef` gains `deliveryId`
+   (`zone-delivery.ts`, `zone-delivery.test.ts`, `zone-producers.integration.test.ts`).
+3. ✅ Host Action sync and the worker over the record, `committing` included.
+   The three old modules (`active-writes.ts`, `pending-handoffs.ts`,
+   `db-artifact-transfers.ts`) deleted.
+4. ✅ Mirror over the classification (`session-file-mirror.ts`).
+5. ✅ Migration 6 rewritten in place; the `artifact_transfer_jobs` creation is gone.
+6. ✅ Acceptance suite (§9) + the matrix
+   (`session-sync-delivery-acceptance.integration.test.ts`), and the download
+   lifecycle end-to-end (`download-claim-lifecycle.integration.test.ts`,
+   `background-download-finalizer.integration.test.ts`).
 
-AK1 and AJ2 are not fixed separately; they are acceptance cases for step 6.
+AK1 and AJ2 were not fixed separately; they are acceptance cases for step 6 —
+the model makes both unrepresentable.

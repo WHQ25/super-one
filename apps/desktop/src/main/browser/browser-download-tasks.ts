@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import log from '../logger'
 import { downloadUrl, type DownloadProgress, type DownloadResult } from './browser-downloads'
-import { queueDownloadUpload } from '../agent/browser-download-store'
+import { wakeDownloadDelivery } from '../agent/browser-download-store'
 import { currentHostActionConnection } from '../mcp/artifact-registry'
 
 export type DownloadTaskStatus = 'running' | 'completed' | 'failed' | 'stopped'
@@ -159,12 +159,10 @@ function settle(task: InternalTask, settled: Settled): void {
     resultText: JSON.stringify(resultPayload),
   })
 
-  // Only a *backgrounded* download needs this: a foreground one settles inside
-  // its tool call, where the registry already has the ref and the executor
-  // pushes it eagerly. Queuing both would race two transferIds for one file.
-  // A foreground download was registered in its call scope and pushed eagerly;
-  // only a backgrounded one finishes with nobody left to register it.
-  if (settled.ok && task.backgrounded && task.connectionId) queueDownloadUpload(task.connectionId, task.sessionId, settled.result.path)
+  // A foreground download settles inside its tool call, where the registry has
+  // the ref and the executor pushes it eagerly; only a backgrounded one finishes
+  // with nobody left to push it, and its sealed row waits for the worker.
+  if (settled.ok && task.backgrounded && task.connectionId) wakeDownloadDelivery(task.connectionId)
 
   if (task.backgrounded) {
     void notifyAgent(task, settled).catch((err) => {

@@ -11,6 +11,10 @@ import { persistScreenshot, persistScreenshotArtifact } from './browser-screensh
 import { AGENT_SCREENSHOT_MAX_BYTES, type ScreenshotArtifactDeps, type AgentNativeImage } from './screenshot-artifact'
 import { producerDir } from '../media-output-paths'
 import { collectArtifacts, takeArtifacts } from '../mcp/artifact-registry'
+import { markZoneOwner } from '../environment/zone-owner'
+
+// A zone file has to be going somewhere: the session is this desktop's own.
+markZoneOwner('session-a', null)
 
 const TINY_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC'
 

@@ -32,16 +32,17 @@ import { closeSync, openSync, readSync } from 'node:fs'
 import {
   abandonDelivery,
   advanceDelivery,
+  claimDelivery,
   findDeliveryByPath,
+  getDelivery,
   releaseDelivery,
   reserveDelivery,
   type DeliveryHandle,
   type DeliveryOrigin,
 } from '../db-session-deliveries'
-import log from '../logger'
 import { ADHOC_SESSION_ID, isUnderSyncZone, zoneArtifactRef, zoneRelativePath } from '../media-output-paths'
 import { currentCallOwner, registerArtifact, type ArtifactRef } from '../mcp/artifact-registry'
-import { mintHolder, retireHolder } from './delivery-holders'
+import { isHolderAlive, mintHolder, retireHolder } from './delivery-holders'
 import { canonicalClaimPath } from './sync-zone-paths'
 import { readZoneOwner } from './zone-owner'
 
@@ -49,10 +50,11 @@ export type ZoneDestination = { kind: 'local' } | { kind: 'remote'; connectionId
 
 /**
  * Where a session's zone files are going. Explicit beats scope beats marker;
- * the adhoc zone is always this desktop's own.
+ * the adhoc zone — a capture with no session at all — is always this
+ * desktop's own.
  */
 export function zoneDestination(sessionId: string, explicit?: string | null): ZoneDestination {
-  if (sessionId === ADHOC_SESSION_ID) return { kind: 'local' }
+  if (!sessionId || sessionId === ADHOC_SESSION_ID) return { kind: 'local' }
   if (explicit !== undefined) return explicit ? { kind: 'remote', connectionId: explicit } : { kind: 'local' }
   const scoped = currentCallOwner()
   if (scoped !== undefined) return scoped ? { kind: 'remote', connectionId: scoped } : { kind: 'local' }
@@ -95,9 +97,12 @@ interface ZoneFileInput {
 }
 
 function destinationOrRefuse(input: ZoneFileInput): string | null {
-  const dest = zoneDestination(input.sessionId, input.connectionId)
+  return connectionOf(zoneDestination(input.sessionId, input.connectionId), input.path)
+}
+
+function connectionOf(dest: ZoneDestination, path: string): string | null {
   if (dest.kind === 'local') return null
-  if (dest.kind === 'unknown') throw new ZoneDeliveryRefused('unknown-destination', input.path)
+  if (dest.kind === 'unknown') throw new ZoneDeliveryRefused('unknown-destination', path)
   return dest.connectionId
 }
 
@@ -146,6 +151,9 @@ export function reserveZoneFile(input: ZoneFileInput): string | null {
  */
 export function sealZoneFile(input: ZoneFileInput & { bytes?: Buffer | string }): string | null {
   if (!isUnderSyncZone(input.path)) return null
+  // A local session's zone has no record and never touches the database.
+  const dest = zoneDestination(input.sessionId, input.connectionId)
+  if (dest.kind === 'local') return null
   const key = keyOf(input.sessionId, input.path)
   const held = open.get(key)
   if (held) {
@@ -168,7 +176,9 @@ export function sealZoneFile(input: ZoneFileInput & { bytes?: Buffer | string })
     if (!observable) throw new ZoneDeliveryRefused('path-taken', input.path)
     return existing.deliveryId
   }
-  const connectionId = destinationOrRefuse(input)
+  // Only a NEW row needs to know where the file is going; an observation of
+  // an existing one reads the connection the row already names.
+  const connectionId = connectionOf(dest, input.path)
   if (!connectionId) return null
   const r = reserveDelivery({
     sessionId: input.sessionId,
@@ -197,38 +207,29 @@ export function abandonZoneFile(sessionId: string, path: string): void {
   }
 }
 
+/**
+ * A sealed file nothing will carry: its call ended without naming it in a
+ * reply anyone will read, or threw after producing it. Only a row still
+ * `sealed` — not queued, not sent, not observed again after delivery — and
+ * held by nobody is ended; anything past `sealed` was taken up by a carrier,
+ * and a live holder is one (R7).
+ */
+export function abandonUndeliveredDelivery(deliveryId: string): void {
+  const row = getDelivery(deliveryId)
+  if (!row || row.outcome || row.phase !== 'sealed' || isHolderAlive(row.holder)) return
+  const holder = mintHolder()
+  try {
+    const claimed = claimDelivery(deliveryId, { holder: row.holder, epoch: row.epoch }, holder)
+    if (claimed.ok) abandonDelivery(claimed.handle)
+  } finally {
+    retireHolder(holder)
+  }
+}
+
 /** The id of a reservation this process holds for `path`, if any. */
 export function openZoneReservation(sessionId: string, path: string): string | null {
   return open.get(keyOf(sessionId, path))?.deliveryId ?? null
 }
-
-/**
- * TEMPORARY — step 2 of the delivery-record work (§10 of the design).
- *
- * Producers write the record beside the old claim/handoff/job registries, and
- * nothing consumes it until step 3. Until then a failure to record is logged,
- * not raised, so the old path keeps working exactly as before. Step 3 deletes
- * this function: a refusal becomes the operation's failure (§4, "a desktop
- * that cannot write its database does not start a transfer").
- */
-export function recordTolerantly<T>(what: string, fn: () => T): T | null {
-  try {
-    return fn()
-  } catch (err) {
-    if (err instanceof ZoneDeliveryRefused && STRICT_ALREADY.has(err.reason)) throw err
-    log.warn('[zone-delivery] could not record %s (old path continues): %s', what, err instanceof Error ? err.message : String(err))
-    return null
-  }
-}
-
-/**
- * The refusals that are the record's verdict on THIS write — a name already
- * written in this session, a reservation the session took away — are never
- * tolerated: swallowing either reports a file as delivered that is not. The
- * two about the session's context (no destination, session dropped) are what
- * the old fixtures cannot yet satisfy; they join this set in step 3.
- */
-const STRICT_ALREADY: ReadonlySet<ZoneDeliveryRefusal> = new Set(['path-taken', 'reservation-lost'])
 
 /**
  * What producers call instead of `registerArtifact`: seal or publish the file
@@ -238,12 +239,10 @@ const STRICT_ALREADY: ReadonlySet<ZoneDeliveryRefusal> = new Set(['path-taken', 
 export function publishArtifact(sessionId: string, ref: ArtifactRef & { bytes?: Buffer | string; connectionId?: string | null }): void {
   const { bytes, connectionId, ...plain } = ref
   const origin: DeliveryOrigin = ref.producer === 'download' ? 'download' : 'produced'
-  // A refusal is the record's answer, not a recording failure: a lost
-  // reservation or a taken name is never registered as a final ref. Only an
-  // error in recording itself is tolerated, and only until step 3.
-  const deliveryId = ref.final
-    ? recordTolerantly(ref.path, () => sealZoneFile({ sessionId, path: ref.path, origin, connectionId, bytes }))
-    : openZoneReservation(sessionId, ref.path)
+  // A refusal is the record's answer and the producer's failure: a lost
+  // reservation, a taken name, a session gone or a destination unknown is
+  // never registered as a final ref (§4).
+  const deliveryId = ref.final ? sealZoneFile({ sessionId, path: ref.path, origin, connectionId, bytes }) : openZoneReservation(sessionId, ref.path)
   registerArtifact(sessionId, deliveryId ? { ...plain, deliveryId } : plain)
 }
 
@@ -255,7 +254,7 @@ export function publishArtifact(sessionId: string, ref: ArtifactRef & { bytes?: 
 export function publishZoneFileAt(path: string, bytes: Buffer): void {
   const ref = zoneArtifactRef(path)
   if (!ref) return
-  recordTolerantly(path, () => sealZoneFile({ sessionId: ref.sessionId, path, origin: 'produced', bytes }))
+  sealZoneFile({ sessionId: ref.sessionId, path, origin: 'produced', bytes })
 }
 
 /** Tests only. */

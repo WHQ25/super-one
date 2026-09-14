@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 const state = vi.hoisted(() => ({ userData: '', downloads: '' }))
+// The zone's delivery record: a table that cannot be read protects every zone file (R5).
+vi.mock('./database', async () => (await import('../test/fixtures/delivery-db')).deliveryDatabase())
 vi.mock('electron', () => ({ app: { getPath: (key: string) => key === 'downloads' ? state.downloads : state.userData } }))
 vi.mock('./recent-folders', () => ({ getRecentFolders: () => [] }))
 vi.mock('./session/session-repo', () => ({ listWorktreePaths: () => [] }))

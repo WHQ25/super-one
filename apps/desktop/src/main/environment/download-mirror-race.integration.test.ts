@@ -7,30 +7,37 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
  * A download streaming into a session zone, and a directory mirror of the same
  * zone directory running while it streams.
  *
- * These are the two halves of the window the transfer job table cannot see: a
- * job row exists only once a file is finished AND enqueued, so between the
- * reservation and the handoff the mirror is looking at a real file the node has
- * never listed. Everything here is real — the reservation, the artifact
- * registry, the active-write registry, the mirror and the filesystem — with the
- * node's `list`/`stat`/`get` standing in for the wire.
+ * This is the window between a download's reservation and its delivery: the
+ * `writing` row protects a real file the node has never listed, the `sealed`
+ * row is a complete original still owed to the node, and only once the worker
+ * has delivered it (outcome `done`) does the mirror prune. Everything here is
+ * real — the reservation, the artifact registry, the delivery record, the
+ * mirror and the filesystem — with the node's `list`/`stat`/`get` for the wire.
  */
-const state = vi.hoisted(() => ({ userData: '', jobs: [] as { sessionId: string; relativePath: string; state: string }[] }))
+const state = vi.hoisted(() => ({ userData: '' }))
 vi.mock('electron', () => ({ app: { getPath: () => state.userData } }))
-vi.mock('../db-artifact-transfers', () => ({
-  listArtifactTransfersForSession: (sessionId: string) => state.jobs.filter((j) => j.sessionId === sessionId),
-}))
+vi.mock('../database', async () => (await import('../../test/fixtures/delivery-db')).deliveryDatabase())
 vi.mock('../app-settings-service', () => ({ readAppSettings: () => ({}) }))
 
 import { registerDownload, reserveDownloadPath } from '../agent/browser-download-store'
-import { abandonWriteClaim, adoptWriteClaim, releaseWriteClaim, resetActiveWrites } from './active-writes'
+import { abandonZoneFile } from './zone-delivery'
+import { findDeliveryByPath } from '../db-session-deliveries'
+import { deliveryDb, resetDeliveryDatabase } from '../../test/fixtures/delivery-db'
+import { _resetHoldersForTests } from './delivery-holders'
 import { mirrorNodeDirectory } from './session-file-mirror'
+
+/** Advance the delivery of `path` to the state a completed worker would leave. */
+function markDelivered(sessionId: string, path: string): void {
+  const row = findDeliveryByPath(sessionId, path)!
+  deliveryDb().prepare(`UPDATE session_file_deliveries SET phase = 'notifying', outcome = 'done', holder = NULL WHERE delivery_id = ?`).run(row.deliveryId)
+}
 
 let root: string
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'dl-race-'))
   state.userData = root
-  state.jobs = []
-  resetActiveWrites()
+  resetDeliveryDatabase()
+  _resetHoldersForTests()
 })
 afterEach(() => rmSync(root, { recursive: true, force: true }))
 
@@ -89,24 +96,18 @@ describe('a download streaming into a directory the agent also mirrors', () => {
     expect(readFileSync(path, 'utf8')).toBe('FIRSTSECOND')
   })
 
-  it('stays protected after sealing until a transfer job takes over, then prunes', async () => {
+  it('stays protected after sealing until the worker delivers it, then prunes', async () => {
     const path = reserveDownloadPath('report.csv', join(root, 'sync', 's1', 'agent', 'app'), 's1', origin)
     writeFileSync(path, 'ALL-BYTES')
-    // Sealed: complete, but the eager push has not run and no job row exists.
+    // Sealed: complete, a desktop original still owed to the node (the eager
+    // push has not run and the worker has not taken it).
     registerDownload('s1', path, true)
     await mirrorNodeDirectory('s1', 'agent/app', nodeWithOldFile())
     expect(existsSync(path)).toBe(true)
 
-    // Handoff: the queue takes the sealed file, files a row, and only then ends
-    // the claim. Nobody else could have ended it — the claim names its holder.
-    state.jobs = [{ sessionId: 's1', relativePath: 'agent/app/report.csv', state: 'pending' }]
-    expect(adoptWriteClaim('s1', path, 'queue')).toBe(true)
-    expect(releaseWriteClaim('s1', path, 'queue')).toBe(true)
-    await mirrorNodeDirectory('s1', 'agent/app', nodeWithOldFile())
-    expect(existsSync(path)).toBe(true)
-
-    // Uploaded and acknowledged: nothing owns it, so a stale member is pruned.
-    state.jobs = []
+    // Delivered: the node has the bytes and the wake is done, so a stale member
+    // is now the node's to say what exists — and it does not list it.
+    markDelivered('s1', path)
     await mirrorNodeDirectory('s1', 'agent/app', nodeWithOldFile())
     expect(existsSync(path)).toBe(false)
   })
@@ -115,7 +116,7 @@ describe('a download streaming into a directory the agent also mirrors', () => {
     const path = reserveDownloadPath('report.csv', join(root, 'sync', 's1', 'agent', 'app'), 's1', origin)
     writeFileSync(path, 'HALF')
     // `will-download` reports `cancelled`; there is nothing to hand on.
-    abandonWriteClaim('s1', path)
+    abandonZoneFile('s1', path)
     await mirrorNodeDirectory('s1', 'agent/app', nodeWithOldFile())
     expect(existsSync(path)).toBe(false)
   })

@@ -4,10 +4,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const state = vi.hoisted(() => ({ userData: '' }))
+// The zone's delivery record: a table that cannot be read protects every zone file (R5).
+vi.mock('../database', async () => (await import('../../test/fixtures/delivery-db')).deliveryDatabase())
 vi.mock('electron', () => ({ app: { getPath: () => state.userData } }))
 
 import { ADHOC_SESSION_ID, producerDir } from '../media-output-paths'
 import { collectArtifacts, resetArtifactRegistry, takeArtifacts } from '../mcp/artifact-registry'
+import { markZoneOwner } from '../environment/zone-owner'
 import {
   actionRecordingDir,
   adoptActionRecording,
@@ -20,6 +23,8 @@ beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'recording-store-'))
   state.userData = root
   resetArtifactRegistry()
+  // A zone file has to be going somewhere: `s1` is this desktop's own.
+  markZoneOwner('s1', null)
 })
 
 describe('action recording storage', () => {

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -9,7 +9,13 @@ vi.mock('./environment-host', () => ({
   getEnvironmentHost: () => ({ artifactTransfers: { dropSession: (id: string) => state.dropped.push(id) } }),
 }))
 
-import { removeSessionZone } from './session-zone-reclaim'
+import {
+  ADHOC_MAX_AGE_MS,
+  UNMARKED_GRACE_MS,
+  markZoneOwner,
+  reclaimSyncZone,
+  removeSessionZone,
+} from './session-zone-reclaim'
 
 let root: string
 beforeEach(() => {
@@ -37,5 +43,87 @@ describe('session zone reclaim', () => {
     await removeSessionZone('')
     expect(existsSync(adhoc)).toBe(true)
     expect(state.dropped).toEqual([])
+  })
+})
+
+describe('sync zone sweep', () => {
+  const DAY = 24 * 60 * 60 * 1000
+  const now = 1_800_000_000_000
+
+  function zoneFile(sessionId: string, rel: string, ageMs = 0): string {
+    const path = join(root, 'sync', sessionId, ...rel.split('/'))
+    mkdirSync(join(path, '..'), { recursive: true })
+    writeFileSync(path, 'bytes')
+    const seconds = (now - ageMs) / 1000
+    utimesSync(path, seconds, seconds)
+    utimesSync(join(root, 'sync', sessionId), seconds, seconds)
+    return path
+  }
+
+  function deps(overrides: Partial<Parameters<typeof reclaimSyncZone>[0]> = {}) {
+    return {
+      now: () => now,
+      hasLocalSession: () => false,
+      hasPendingTransfer: () => false,
+      remoteSessionExists: async () => 'unknown' as const,
+      ...overrides,
+    }
+  }
+
+  it('reclaims a local session directory the database no longer knows', async () => {
+    zoneFile('gone', 'browser/a.png', 2 * DAY)
+    markZoneOwner('gone', null)
+    zoneFile('live', 'browser/b.png', 2 * DAY)
+    markZoneOwner('live', null)
+    const result = await reclaimSyncZone(deps({ hasLocalSession: (id) => id === 'live' }))
+    expect(result.removed).toEqual(['gone'])
+    expect(existsSync(join(root, 'sync', 'gone'))).toBe(false)
+    expect(existsSync(join(root, 'sync', 'live'))).toBe(true)
+  })
+
+  it('keeps a remote session the node still has, and reclaims one it does not', async () => {
+    zoneFile('remote-live', 'agent/a.md', 2 * DAY)
+    markZoneOwner('remote-live', 'conn-1')
+    zoneFile('remote-gone', 'agent/b.md', 2 * DAY)
+    markZoneOwner('remote-gone', 'conn-1')
+    const result = await reclaimSyncZone(deps({
+      remoteSessionExists: async (_c, id) => id === 'remote-live',
+    }))
+    expect(result.removed).toEqual(['remote-gone'])
+  })
+
+  it('keeps a remote session whose node cannot be reached, rather than guessing', async () => {
+    zoneFile('offline', 'agent/a.md', 30 * DAY)
+    markZoneOwner('offline', 'conn-1')
+    const result = await reclaimSyncZone(deps())
+    expect(result.removed).toEqual([])
+  })
+
+  it('gives an unmarked directory a long grace, because it may be a live remote session from before ownership was recorded', async () => {
+    zoneFile('old-unmarked', 'browser/a.png', UNMARKED_GRACE_MS + DAY)
+    zoneFile('recent-unmarked', 'browser/b.png', DAY)
+    const result = await reclaimSyncZone(deps())
+    expect(result.removed).toEqual(['old-unmarked'])
+  })
+
+  it('never reclaims a directory with a transfer still queued', async () => {
+    zoneFile('pending', 'recording/a.mp4', 30 * DAY)
+    markZoneOwner('pending', null)
+    const result = await reclaimSyncZone(deps({ hasPendingTransfer: (id) => id === 'pending' }))
+    expect(result.removed).toEqual([])
+  })
+
+  it('prunes stale adhoc captures without ever removing the adhoc directory itself', async () => {
+    const old = zoneFile('adhoc', 'browser/old.png', ADHOC_MAX_AGE_MS + DAY)
+    const fresh = zoneFile('adhoc', 'browser/fresh.png', DAY)
+    const result = await reclaimSyncZone(deps())
+    expect(existsSync(old)).toBe(false)
+    expect(existsSync(fresh)).toBe(true)
+    expect(existsSync(join(root, 'sync', 'adhoc'))).toBe(true)
+    expect(result.freedBytes).toBeGreaterThan(0)
+  })
+
+  it('does nothing at all when there is no zone yet', async () => {
+    expect(await reclaimSyncZone(deps())).toEqual({ removed: [], freedBytes: 0 })
   })
 })

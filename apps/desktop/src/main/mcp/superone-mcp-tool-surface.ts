@@ -108,6 +108,8 @@ export function listSuperoneMcpTools(sessionId: string): SuperoneMcpToolDescript
  * a remote session's outputs to the node before the reply goes back; local
  * callers keep the plain result.
  */
+const markedZoneOwners = new Set<string>()
+
 export async function executeSuperoneMcpToolCollecting(
   sessionId: string,
   toolName: string,
@@ -116,6 +118,16 @@ export async function executeSuperoneMcpToolCollecting(
   connectionId?: string,
 ): Promise<{ result: Awaited<ReturnType<typeof executeSuperoneMcpTool>>; artifacts: ArtifactRef[] }> {
   const callId = randomUUID()
+  // Record which side owns this session's zone directory, so the reclaim sweep
+  // can ask the right one whether the session still exists (§7). Once per
+  // (session, connection) per process — the marker does not change after that.
+  const ownerKey = `${sessionId}\u0000${connectionId ?? 'local'}`
+  if (!markedZoneOwners.has(ownerKey)) {
+    markedZoneOwners.add(ownerKey)
+    void import('../environment/session-zone-reclaim')
+      .then((m) => m.markZoneOwner(sessionId, connectionId && connectionId !== 'local' ? connectionId : null))
+      .catch(() => markedZoneOwners.delete(ownerKey))
+  }
   try {
     const result = await collectArtifacts(
       sessionId,

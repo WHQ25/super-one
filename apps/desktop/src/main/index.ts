@@ -4544,6 +4544,20 @@ function registerIpcHandlers(): void {
   // A deleted session takes its sync zone and transfer jobs with it
   // (docs/design/session-sync-zone.md §7) — off the db-layer signal, so the
   // single delete, "delete older" and session_cleanup all reclaim.
+  // Housekeeping for the sync zone (docs/design/session-sync-zone.md §7):
+  // directories whose session is provably gone, and adhoc captures nobody
+  // claimed. Deferred so it never sits between launch and the first window.
+  setTimeout(() => {
+    void import('./environment/session-zone-reclaim')
+      .then(({ reclaimSyncZoneOnStartup }) => reclaimSyncZoneOnStartup())
+      .then(({ removed, freedBytes }) => {
+        if (removed.length > 0 || freedBytes > 0) {
+          log.info('[main] sync zone reclaimed %d session(s), %d bytes', removed.length, freedBytes)
+        }
+      })
+      .catch((err) => log.warn('[main] sync zone reclaim failed: %s', err instanceof Error ? err.message : String(err)))
+  }, 30_000).unref?.()
+
   watchSessionDeletes((sessionIds) => {
     void import('./environment/session-zone-reclaim').then(({ removeSessionZone }) =>
       Promise.all(sessionIds.map((id) => removeSessionZone(id).catch((err: unknown) => {

@@ -448,7 +448,9 @@ All four landed on 2026-09-14, one commit each.
 
 ## 9. Out of scope / open
 
-Still open after phases 1–4:
+Still open after phases 1–4 (2026-09-14: five of the seven items below were
+closed on the same day, in the commits following the Codex review; each is
+marked and the residue is stated):
 
 - ~~**Completion notification to the agent** for deferred transfers~~ —
   **implemented 2026-09-14.** `session.notifyArtifactCompleted` is a
@@ -494,8 +496,20 @@ Still open after phases 1–4:
   one in a single place, reading the producer back off the layout with
   `zoneArtifactRef`; downloads as above. The legacy temp roots stay readable so
   transcripts from before this change still render.
-- **Quota.** No size cap on the zone; session deletion is the only reclaim,
-  and `adhoc` is never reclaimed at all.
+- **Reclaim** — **implemented 2026-09-14**, deliberately evidence-based rather
+  than quota-based. `reclaimSyncZone` runs 30 s after launch and removes only
+  what it can *prove* is dead: a session directory whose owner says it is gone,
+  plus `adhoc` captures older than 7 days (the directory itself is never
+  removed). Ownership is a `.owner` file written into the directory on the
+  first tool call of a session — `local` is checked against this database,
+  a connection id against that node, and an unreachable node means "keep",
+  because offline is not deleted. A directory touched in the last hour is in
+  use; a directory with a queued transfer is not ours to drop; an unmarked
+  directory (written before ownership was recorded, so possibly a live remote
+  session) gets a 7-day silence before it counts as dead.
+  **Still open:** there is no size cap and no eviction under pressure. A cap
+  would have to delete artifacts a live transcript names, which is a product
+  decision — surfacing zone size in settings is the likely first step.
 - **Older nodes** without `syncZone`: no rewrite, no mirror, consumers say
   `missing`. No shim.
 - **Multiple controllers.** The zone is keyed by session, the node root is

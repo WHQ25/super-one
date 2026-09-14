@@ -446,6 +446,12 @@ export function readSessionHarnessId(sessionId: string): HarnessId | null {
   return row ? deriveHarnessId(row) : null
 }
 
+/** Does this desktop still have a row for the session? Used by sync-zone reclaim (§7). */
+export function sessionExists(sessionId: string): boolean {
+  const row = getDb().prepare('SELECT 1 FROM sessions WHERE id = ?').get(sessionId) as unknown
+  return row !== undefined
+}
+
 export function sessionHasMessages(sessionId: string): boolean {
   const row = getDb()
     .prepare('SELECT 1 AS present FROM chat_messages WHERE session_id = ? LIMIT 1')

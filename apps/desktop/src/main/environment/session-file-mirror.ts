@@ -18,6 +18,24 @@ export interface MirrorDeps {
   stat: (input: { sessionId: string; relativePath: string }) => Promise<ArtifactStatResult>
   get: (input: ArtifactGetRequest) => Promise<ArtifactGetResult>
   signal?: AbortSignal
+  /**
+   * Is a desktop→node upload of this file still queued? Then the desktop copy
+   * is the original and the node's "not there" is just "not there yet".
+   * Defaults to the transfer job table.
+   */
+  isPendingUpload?: (sessionId: string, relativePath: string) => boolean
+}
+
+/** Refusals the node means; anything else is taken as "could not ask". */
+const AUTHORITATIVE_STAT_ERRORS = new Set(['forbidden', 'not_found', 'invalid_argument', 'failed_precondition'])
+
+async function pendingUploadInJobs(sessionId: string, relativePath: string): Promise<boolean> {
+  try {
+    const { listArtifactTransfersForSession } = await import('../db-artifact-transfers')
+    return listArtifactTransfersForSession(sessionId).some((j) => j.relativePath === relativePath && j.state !== 'done')
+  } catch {
+    return false
+  }
 }
 
 export type MirrorOutcome =
@@ -39,9 +57,10 @@ function localStat(path: string): { size: number; mtimeMs: number } | null {
 /**
  * Return the desktop copy of `<sessionId>/<relativePath>`, fetching or
  * refreshing it first when the node's stat disagrees with what is on disk.
- * A file the node does not have is `missing` — and a stale local copy of it
- * is still returned, because a desktop-produced artifact that was never
- * pushed (older node, deferred transfer) is real on this side.
+ * The node is authoritative for what exists: a file it does not have is
+ * `missing` even when a copy sits here — unless that copy is a desktop
+ * original whose upload is still pending, which is the one case where the
+ * desktop knows better. Only an unreachable node falls back to the copy.
  */
 export async function mirrorNodeArtifact(sessionId: string, relativePath: string, deps: MirrorDeps): Promise<MirrorOutcome> {
   const path = desktopMirrorPath(sessionId, relativePath)
@@ -49,14 +68,19 @@ export async function mirrorNodeArtifact(sessionId: string, relativePath: string
   if (existing) return existing
   const work = (async (): Promise<MirrorOutcome> => {
     const local = localStat(path)
+    const pendingHere = async () =>
+      local && (deps.isPendingUpload ? deps.isPendingUpload(sessionId, relativePath) : await pendingUploadInJobs(sessionId, relativePath))
+        ? { kind: 'local' as const, path, ...local }
+        : { kind: 'missing' as const }
     let remote: ArtifactStatResult
     try {
       remote = await deps.stat({ sessionId, relativePath })
-    } catch {
+    } catch (err) {
+      if (AUTHORITATIVE_STAT_ERRORS.has(String((err as { code?: unknown })?.code))) return pendingHere()
       // Node unreachable: the local copy, if any, is the best answer there is.
       return local ? { kind: 'local', path, ...local } : { kind: 'missing' }
     }
-    if (!remote.exists) return local ? { kind: 'local', path, ...local } : { kind: 'missing' }
+    if (!remote.exists) return pendingHere()
     if (local && local.size === remote.size && local.mtimeMs === remote.mtimeMs) return { kind: 'local', path, ...local }
     const fetched = await downloadArtifact({ sessionId, relativePath, destPath: path, get: deps.get, signal: deps.signal })
     return { kind: 'local', path, size: fetched.bytes, mtimeMs: fetched.mtimeMs }

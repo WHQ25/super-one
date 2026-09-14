@@ -20,6 +20,7 @@ import {
 } from '../media-gen/providers'
 import { getMediaProviderStatuses } from '../media-gen/settings-service'
 import { readVideoGeneration, submitVideoGeneration } from '../media-gen/video/history'
+import { registerZoneArtifact } from '../media-gen/zone-artifact'
 import { HostConfirmRegistry } from '../session/host-confirm-registry'
 import type { VideoFrameInput } from '../media-gen/video/service'
 import {
@@ -432,6 +433,10 @@ export async function videoStatusToolHandler(args: VideoStatusArgs) {
     if (state.status === 'failed') {
       return toolError(new Error(state.error ?? 'Video generation failed.'))
     }
+    // Registered at the boundary that hands the paths out, not only where the
+    // files were written: a later status call answers from the record, and a
+    // remote agent needs those paths pushed and rewritten just the same.
+    for (const path of state.savedPaths) registerZoneArtifact(path)
     return toolResult({
       status: 'generated',
       generationId: state.generationId,

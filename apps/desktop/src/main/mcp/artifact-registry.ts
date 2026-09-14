@@ -11,12 +11,15 @@
  * Refs are scoped to a *call*, not just a session: two Host Actions for one
  * session can run concurrently, and a screenshot taken by one must not be
  * pushed on behalf of the other. The scope rides on `AsyncLocalStorage`, so a
- * writer deep inside a tool needs only the session id; when a callback has
- * lost its async context, the most recent open scope for that session takes
- * the ref instead. Outside any scope — local sessions, manual UI captures —
- * registration is a no-op, so nothing accumulates.
+ * writer deep inside a tool needs only the session id. A callback that has
+ * lost its async context (a listener on a long-lived emitter) is *not*
+ * guessed onto another call's scope — that misfiles refs under concurrency;
+ * such a call site wraps its listener with `bindArtifactScope`. Outside any
+ * scope — local sessions, manual UI captures — registration is a no-op, so
+ * nothing accumulates.
  */
-import { AsyncLocalStorage } from 'node:async_hooks'
+import { AsyncLocalStorage, AsyncResource } from 'node:async_hooks'
+import log from '../logger'
 import type { ArtifactProducer } from '../media-output-paths'
 
 export interface ArtifactRef {
@@ -36,17 +39,32 @@ interface Scope {
 const scopes = new Map<string, Scope>()
 const current = new AsyncLocalStorage<Scope>()
 
-function scopeFor(sessionId: string): Scope | undefined {
-  const bound = current.getStore()
-  if (bound && bound.sessionId === sessionId) return bound
-  let latest: Scope | undefined
-  for (const scope of scopes.values()) if (scope.sessionId === sessionId) latest = scope
-  return latest
+function hasOpenScope(sessionId: string): boolean {
+  for (const scope of scopes.values()) if (scope.sessionId === sessionId) return true
+  return false
 }
 
 /** Record a file the session's caller may be handed a path to. Later registrations of one path replace earlier ones. */
 export function registerArtifact(sessionId: string, ref: ArtifactRef): void {
-  scopeFor(sessionId)?.refs.set(ref.path, { ...ref })
+  const bound = current.getStore()
+  if (bound && bound.sessionId === sessionId) {
+    bound.refs.set(ref.path, { ...ref })
+    return
+  }
+  // A scope is open for this session but this code is not running inside it:
+  // the writer reached here through a listener that lost the async context.
+  // Say so rather than guess which call it belongs to.
+  if (hasOpenScope(sessionId)) {
+    log.warn('[artifact-registry] registration outside its call scope (wrap the listener with bindArtifactScope) sid=%s path=%s', sessionId, ref.path)
+  }
+}
+
+/**
+ * Bind `fn` to the current call scope so it can register artifacts when it
+ * runs later from an emitter that would otherwise lose the context.
+ */
+export function bindArtifactScope<A extends unknown[], R>(fn: (...args: A) => R): (...args: A) => R {
+  return AsyncResource.bind(fn)
 }
 
 /** Open a collection scope for one tool call and run it inside. */

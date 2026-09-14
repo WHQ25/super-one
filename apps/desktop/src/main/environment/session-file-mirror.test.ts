@@ -54,8 +54,8 @@ describe('node artifact mirror', () => {
     expect(Math.floor(statSync(refreshed.kind === 'local' ? refreshed.path : '').mtimeMs)).toBe(1_500_000_000_000)
   })
 
-  it('keeps a desktop-produced copy the node never received, and reports a file neither side has as missing', async () => {
-    const remote = node({})
+  it('keeps a desktop-produced copy whose upload is still pending, and reports a file neither side has as missing', async () => {
+    const remote = { ...node({}), isPendingUpload: (_s: string, rel: string) => rel === 'browser/shot.png' }
     const local = join(root, 'sync', 's1', 'browser', 'shot.png')
     mkdirSync(join(root, 'sync', 's1', 'browser'), { recursive: true })
     writeFileSync(local, 'png')
@@ -63,11 +63,32 @@ describe('node artifact mirror', () => {
     expect(await mirrorNodeArtifact('s1', 'browser/nothing.png', remote)).toEqual({ kind: 'missing' })
   })
 
+  it('reports a file the node deleted as missing even though a mirror copy is on disk', async () => {
+    // The node is authoritative for what exists; a copy with no upload pending is a leftover.
+    const remote = { ...node({}), isPendingUpload: () => false }
+    const local = join(root, 'sync', 's1', 'agent', 'report.md')
+    mkdirSync(join(root, 'sync', 's1', 'agent'), { recursive: true })
+    writeFileSync(local, 'old')
+    expect(await mirrorNodeArtifact('s1', 'agent/report.md', remote)).toEqual({ kind: 'missing' })
+  })
+
+  it('treats a refusal from the node like a missing file, not like being offline', async () => {
+    const local = join(root, 'sync', 's1', 'agent', 'a.txt')
+    mkdirSync(join(root, 'sync', 's1', 'agent'), { recursive: true })
+    writeFileSync(local, 'cached')
+    const refused = {
+      stat: async () => { throw Object.assign(new Error('not the session controller'), { code: 'forbidden' }) },
+      get: async () => { throw new Error('unreachable') },
+      isPendingUpload: () => false,
+    }
+    expect(await mirrorNodeArtifact('s1', 'agent/a.txt', refused)).toEqual({ kind: 'missing' })
+  })
+
   it('falls back to the local copy when the node cannot be reached', async () => {
     const local = join(root, 'sync', 's1', 'agent', 'a.txt')
     mkdirSync(join(root, 'sync', 's1', 'agent'), { recursive: true })
     writeFileSync(local, 'cached')
-    const offline = { stat: async () => { throw new Error('not connected') }, get: async () => { throw new Error('not connected') } }
+    const offline = { stat: async () => { throw new Error('not connected') }, get: async () => { throw new Error('not connected') }, isPendingUpload: () => false }
     expect(await mirrorNodeArtifact('s1', 'agent/a.txt', offline)).toMatchObject({ kind: 'local', path: local })
     expect(await mirrorNodeArtifact('s1', 'agent/b.txt', offline)).toEqual({ kind: 'missing' })
   })

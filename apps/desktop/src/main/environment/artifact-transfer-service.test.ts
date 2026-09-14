@@ -146,6 +146,49 @@ describe('artifact transfer jobs', () => {
     expect(node.files.has('browser/a.png')).toBe(false)
   })
 
+  it('sleeps until the earliest backoff is due, not for the ten-minute cap', async () => {
+    // start() drives the loop from a timer; the delay it computes must come
+    // from the job's next_attempt_at, and the query behind it must not be fed a
+    // number `Date` cannot represent (which threw and silently meant "10 min").
+    vi.useFakeTimers()
+    try {
+      const node = fakeNode({ failFirst: 1 })
+      const service = new ArtifactTransferService({ put: node.put })
+      const local = join(root, 'later.png')
+      writeFileSync(local, 'x')
+      service.defer({ connectionId: 'c1', sessionId: 's1', localPath: local, relativePath: 'browser/later.png' })
+      service.start('c1')
+      // The hash and the chunk read are real I/O; waitFor advances the fake clock while it polls.
+      await vi.waitFor(() => expect(listArtifactTransfersForSession('s1')[0]).toMatchObject({ state: 'pending', attempts: 1 }))
+      // BACKOFF_BASE_MS is 5 s: the retry must have happened well before the cap.
+      await vi.advanceTimersByTimeAsync(6_000)
+      await vi.waitFor(() => expect(node.files.has('browser/later.png')).toBe(true))
+      service.stop('c1')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not run a job whose session was deleted while an earlier job of the same pass was uploading', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const node = fakeNode()
+    const put = async (c: string, req: ArtifactPutRequest) => { await gate; return node.put(c, req) }
+    const service = new ArtifactTransferService({ put })
+    const local = join(root, 'a.png')
+    writeFileSync(local, 'x')
+    service.defer({ connectionId: 'c1', sessionId: 's1', localPath: local, relativePath: 'browser/a.png' })
+    service.defer({ connectionId: 'c1', sessionId: 's2', localPath: local, relativePath: 'browser/b.png' })
+    const pass = service.runOnce('c1')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    // s2's row is gone before the worker reaches it; the snapshot it took must not resurrect it.
+    service.dropSession('s2')
+    release()
+    await pass
+    expect(node.files.has('browser/a.png')).toBe(true)
+    expect(node.files.has('browser/b.png')).toBe(false)
+  })
+
   it('runs only the jobs of the connection it was started for', async () => {
     const node = fakeNode()
     const service = new ArtifactTransferService({ put: node.put })

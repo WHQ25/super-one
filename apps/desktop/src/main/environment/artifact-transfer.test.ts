@@ -99,6 +99,39 @@ describe('artifact download', () => {
     expect(Math.floor(statSync(dest).mtimeMs)).toBe(1_600_000_000_000)
   })
 
+  it('starts over when the file changes under it instead of stitching two versions together', async () => {
+    // The agent rewrote report.md between two windows: same length, new
+    // mtime. A copy of half-old, half-new bytes stamped with the new mtime
+    // would pass the mirror's size+mtime check for good.
+    const oldData = Buffer.alloc(ARTIFACT_CHUNK_BYTES + 3, 1)
+    const newData = Buffer.alloc(ARTIFACT_CHUNK_BYTES + 3, 2)
+    let version = { data: oldData, mtimeMs: 1_600_000_000_000 }
+    let calls = 0
+    const get = async (req: { offset: number; maxBytes: number }) => {
+      calls++
+      if (calls === 2) version = { data: newData, mtimeMs: 1_600_000_005_000 }
+      const slice = version.data.subarray(req.offset, req.offset + req.maxBytes)
+      return { chunk: slice.toString('base64'), total: version.data.length, mtimeMs: version.mtimeMs, eof: req.offset + slice.length >= version.data.length }
+    }
+    const dest = join(root, 'mirror', 'agent', 'report.md')
+    const outcome = await downloadArtifact({ sessionId: 's1', relativePath: 'agent/report.md', destPath: dest, get })
+    expect(readFileSync(dest).equals(newData)).toBe(true)
+    expect(outcome.mtimeMs).toBe(1_600_000_005_000)
+  })
+
+  it('gives up on a file that keeps changing rather than looping forever', async () => {
+    let n = 0
+    const get = async (req: { offset: number; maxBytes: number }) => {
+      n++
+      const data = Buffer.alloc(ARTIFACT_CHUNK_BYTES + 1, n)
+      const slice = data.subarray(req.offset, req.offset + req.maxBytes)
+      return { chunk: slice.toString('base64'), total: data.length, mtimeMs: 1_600_000_000_000 + n, eof: req.offset + slice.length >= data.length }
+    }
+    const dest = join(root, 'mirror', 'agent', 'busy.md')
+    await expect(downloadArtifact({ sessionId: 's1', relativePath: 'agent/busy.md', destPath: dest, get })).rejects.toMatchObject({ code: 'conflict' })
+    expect(() => statSync(dest)).toThrow()
+  })
+
   it('leaves no partial file behind when the node fails mid-stream', async () => {
     const get = async () => { throw Object.assign(new Error('gone'), { code: 'not_found' }) }
     const dest = join(root, 'agent', 'missing.md')

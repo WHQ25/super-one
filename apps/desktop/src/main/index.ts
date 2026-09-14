@@ -79,7 +79,7 @@ import { TerminalBroadcaster } from './remote/terminal-broadcaster'
 import { nodePtySpawner } from './terminal/pty'
 import { DeviceRegistry } from './remote/device-registry'
 import { MobileBroadcaster } from './remote/mobile-broadcaster'
-import { watchSessionList } from './session-list-watch'
+import { watchSessionDeletes, watchSessionList } from './session-list-watch'
 import { localDraftStore } from './db-drafts'
 import { withoutDraftAttachmentBytes } from '@superone/shared/environment/draft-content'
 import { installDraftOpenFlush } from './remote/draft-open-flush'
@@ -3234,6 +3234,11 @@ function registerIpcHandlers(): void {
   const VIDEO_EXTS = VIDEO_EXTENSIONS
   const AUDIO_EXTS = AUDIO_EXTENSIONS
   ipcMain.handle(AgentIpcChannels.STAT_PREVIEW_FILE, async (_event, root: string, filePath: string) => {
+    // A remote root re-stats on the node (inline-files-previewer.md §2.2);
+    // the local resolver would only ever answer `missing` for a node path.
+    const { statPreviewerFileForRoot } = await import('./environment/files-previewer-context')
+    const remote = await statPreviewerFileForRoot(root, filePath)
+    if (remote) return remote
     const { resolvePreviewerFile } = await import('./generative-ui/files-previewer-payload')
     return resolvePreviewerFile({ path: filePath }, { root })
   })
@@ -4535,6 +4540,16 @@ function registerIpcHandlers(): void {
   // constructing the service in a test leaves no process-wide watcher behind.
   watchSessionList((projectPath) => {
     agentService.notifyEventSubscribers({ type: 'session_list_changed', projectPath })
+  })
+  // A deleted session takes its sync zone and transfer jobs with it
+  // (docs/design/session-sync-zone.md §7) — off the db-layer signal, so the
+  // single delete, "delete older" and session_cleanup all reclaim.
+  watchSessionDeletes((sessionIds) => {
+    void import('./environment/session-zone-reclaim').then(({ removeSessionZone }) =>
+      Promise.all(sessionIds.map((id) => removeSessionZone(id).catch((err: unknown) => {
+        log.warn('[main] sync zone cleanup failed sid=%s: %s', id, err instanceof Error ? err.message : String(err))
+      }))),
+    )
   })
   deviceRegistry.setDraftControl(localDraftStore())
   agentService.setPrepareDraftOpen(installDraftOpenFlush(allWindows))

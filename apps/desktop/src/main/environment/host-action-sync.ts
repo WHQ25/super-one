@@ -14,13 +14,14 @@
  * never mentions is not pushed: the agent has no path to `Read`, and the
  * desktop, the renderer and the phone read the desktop copy.
  */
+import { randomUUID } from 'node:crypto'
 import { statSync } from 'node:fs'
 import type { ArtifactGetRequest, ArtifactGetResult, ArtifactPutRequest, ArtifactPutResult, ArtifactStatResult } from '@superone/shared/environment'
 import type { ArtifactRef } from '../mcp/artifact-registry'
 import { zoneRelativePath } from '../media-output-paths'
 import { uploadArtifact, type TransferOutcome } from './artifact-transfer'
 import { mirrorNodeArtifact } from './session-file-mirror'
-import { mapNodeZoneArgs, nodeZonePath, rewriteArtifactPaths, type NodeSyncZone } from './sync-zone-paths'
+import { mapNodeZoneArgs, mentionsArtifactPath, nodeZonePath, rewriteArtifactPaths, type NodeSyncZone } from './sync-zone-paths'
 
 /** Left for the response itself after the uploads (§4.1). */
 export const CLAIM_BUDGET_MARGIN_MS = 10_000
@@ -41,7 +42,7 @@ export interface HostActionSyncDeps {
   transfers: {
     throughputBytesPerMs(connectionId: string): number
     recordThroughput(connectionId: string, outcome: TransferOutcome): void
-    defer(input: { connectionId: string; sessionId: string; localPath: string; relativePath: string }): unknown
+    defer(input: { connectionId: string; sessionId: string; localPath: string; relativePath: string; transferId?: string }): unknown
   }
   now?: () => number
   log?: { warn: (...args: unknown[]) => void }
@@ -96,9 +97,8 @@ export async function syncHostActionOutputs(
     const zone = zoneRelativePath(ref.path)
     if (!zone || zone.sessionId !== sessionId) continue
     const nodePath = nodeZonePath(deps.zone, zone.sessionId, zone.relativePath)
-    // Raw or JSON-escaped: whichever form the serialised reply carries.
-    const mentioned = text.includes(ref.path) || text.includes(JSON.stringify(ref.path).slice(1, -1))
-    if (!mentioned) continue
+    // The same matcher the rewrite uses: a whole path token, raw or JSON-escaped.
+    if (!mentionsArtifactPath(text, ref.path)) continue
     let size: number
     try {
       size = statSync(ref.path).size
@@ -117,10 +117,15 @@ export async function syncHostActionOutputs(
 
   for (const item of planned) {
     mapping.set(item.ref.path, item.nodePath)
+    // One transferId for the file's whole life: the node keeps a half-written
+    // transfer open after a dropped connection, and a job retrying under a new
+    // id would be told `busy` by it. The job carries this id and resumes.
+    const transferId = randomUUID()
+    const job = { connectionId: deps.connectionId, sessionId: item.sessionId, localPath: item.ref.path, relativePath: item.relativePath, transferId }
     const budgetMs = claimExpiresAt - now() - CLAIM_BUDGET_MARGIN_MS
     const estimateMs = item.size / rate
     if (estimateMs > budgetMs) {
-      deps.transfers.defer({ connectionId: deps.connectionId, sessionId: item.sessionId, localPath: item.ref.path, relativePath: item.relativePath })
+      deps.transfers.defer(job)
       deferred.push(item.nodePath)
       continue
     }
@@ -129,6 +134,7 @@ export async function syncHostActionOutputs(
         localPath: item.ref.path,
         sessionId: item.sessionId,
         relativePath: item.relativePath,
+        transferId,
         put: deps.put,
         signal: deps.signal,
       })
@@ -138,7 +144,7 @@ export async function syncHostActionOutputs(
       // The tool already did its work; a failed push must not fail the action.
       // Hand the file to a job and tell the agent it is not there yet.
       deps.log?.warn('[host-action] eager artifact push failed, deferring', item.relativePath, err instanceof Error ? err.message : String(err))
-      deps.transfers.defer({ connectionId: deps.connectionId, sessionId: item.sessionId, localPath: item.ref.path, relativePath: item.relativePath })
+      deps.transfers.defer(job)
       deferred.push(item.nodePath)
     }
     throwIfAborted(deps.signal)
@@ -147,5 +153,21 @@ export async function syncHostActionOutputs(
   const content = (reply.content ?? []).map((block) =>
     typeof block.text === 'string' ? { ...block, text: rewriteArtifactPaths(block.text, mapping) } : block,
   )
-  return { ...reply, content, ...(deferred.length > 0 ? { sync: { deferred } } : {}) }
+  if (deferred.length === 0) return { ...reply, content }
+  // The node's MCP server forwards `content` and nothing else of the envelope,
+  // so the deferred list has to be content too or the model only ever sees
+  // the ENOENT (§4.1).
+  return {
+    ...reply,
+    content: [...content, { type: 'text', text: deferredNotice(deferred) }],
+    sync: { deferred },
+  }
+}
+
+function deferredNotice(paths: string[]): string {
+  return [
+    `SuperOne sync: ${paths.length === 1 ? 'this file is' : 'these files are'} still being transferred to this machine and not yet available at the path shown:`,
+    ...paths.map((p) => `- ${p}`),
+    'You will be notified when the transfer completes; reading the path before that fails with ENOENT.',
+  ].join('\n')
 }

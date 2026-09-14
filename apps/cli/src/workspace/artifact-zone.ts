@@ -11,10 +11,12 @@
  * (offset must equal bytes written so far → else `conflict`), a repeated chunk
  * at an already-written offset is acknowledged and dropped (idempotent retry),
  * a second transfer for a path already being written gets `busy`. Bytes land
- * in `<file>.part.<transferId>`; on `final` the sha256 of the whole file is
- * verified and the part is renamed into place, so a reader never sees a half
- * file. `delete` tombstones the session directory until it returns, so a
- * transfer landing after a delete cannot recreate it.
+ * in `<session>/.parts/<transferId>` — a reserved directory no relativePath
+ * may name, so staging can neither be read through `get` nor collide with a
+ * real artifact; on `final` the sha256 of the whole file is verified and the
+ * part is renamed into place, so a reader never sees a half file. `delete`
+ * tombstones the session directory until it returns, so a transfer landing
+ * after a delete cannot recreate it.
  */
 import { createHash } from 'node:crypto'
 import {
@@ -28,9 +30,11 @@ import {
   statSync,
   unlinkSync,
   writeSync,
+  lstatSync,
+  realpathSync,
 } from 'node:fs'
 import { rm } from 'node:fs/promises'
-import { basename, dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import {
   ARTIFACT_CHUNK_BYTES,
   type ArtifactGetRequest,
@@ -58,28 +62,68 @@ interface Transfer {
   lastActivityAt: number
 }
 
+/** Staging directory inside each session zone; never addressable through the contract. */
+const PARTS_DIR = '.parts'
+/** How many finished-upload receipts to keep for late re-sends. */
+const COMPLETED_RECEIPTS = 512
+
 function rpcError(code: string, message: string, details?: Record<string, unknown>): Error {
   return Object.assign(new Error(message), { code, ...(details ? { details } : {}) })
 }
 
-function sessionKey(sessionId: string, relativePath: string): string {
-  return `${sessionId}\0${relativePath}`
-}
 
 export class ArtifactZoneService {
   private readonly transfers = new Map<string, Transfer>()
-  /** `sessionId + relativePath` → transferId of the upload currently writing it. */
+  /**
+   * Receipts of finished uploads, so a final chunk re-sent after its reply was
+   * lost is acknowledged instead of being taken for a new upload that would
+   * overwrite whatever landed since. Bounded; insertion-ordered eviction.
+   */
+  private readonly completed = new Map<string, { absolutePath: string; sha256: string; total: number }>()
+  /** Canonical absolute path → transferId of the upload currently writing it. */
   private readonly writing = new Map<string, string>()
   private readonly tombstones = new Set<string>()
+  /** An upload that has not sent a chunk for this long is presumed lost; its path is free again. */
+  readonly idleTransferTtlMs = 10 * 60_000
+  /**
+   * `syncRoot` with symlinks resolved. Every path the service handles is built
+   * from this, so one file has one spelling from the first chunk to the rename
+   * — `resolveProjectPath` realpaths an existing root and leaves a missing one
+   * alone, which would otherwise give the first chunk of a fresh session a
+   * different absolute path from the second. `syncRoot` itself stays as
+   * configured: it is what the descriptor advertises and what the agent's
+   * `SUPERONE_SESSION_DIR` is built from.
+   */
+  private readonly realRoot: string
 
-  constructor(readonly syncRoot: string) {}
+  constructor(readonly syncRoot: string) {
+    let real = resolve(syncRoot)
+    try {
+      mkdirSync(real, { recursive: true })
+      real = realpathSync(real)
+    } catch {
+      /* unwritable root: keep the textual path; every operation will fail with a clear error */
+    }
+    this.realRoot = real
+  }
 
-  /** A zone id is one path component; refuse anything that could climb. */
+  /**
+   * A zone id is one path component; refuse anything that could climb. The
+   * directory is the authorisation boundary, so it must be a real directory:
+   * a link there would let one session's controller reach another's files
+   * through `resolveProjectPath`, which follows the root before checking.
+   */
   private sessionDir(sessionId: string): string {
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(sessionId) || sessionId === '.' || sessionId === '..') {
       throw rpcError('invalid_argument', 'sessionId must be a single path component')
     }
-    return join(this.syncRoot, sessionId)
+    const dir = join(this.realRoot, sessionId)
+    try {
+      if (lstatSync(dir).isSymbolicLink()) throw rpcError('invalid_argument', 'session zone must be a real directory')
+    } catch (err) {
+      if ((err as { code?: string }).code !== 'ENOENT') throw err
+    }
+    return dir
   }
 
   /** Absolute path of `<sessionId>/<relativePath>`, or an `invalid_argument` error. */
@@ -88,7 +132,11 @@ export class ArtifactZoneService {
     if (typeof relativePath !== 'string' || !relativePath.trim() || relativePath === '.' || relativePath.endsWith('/')) {
       throw rpcError('invalid_argument', 'relativePath must name a file inside the session zone')
     }
-    const resolved = resolveProjectPath(dir, relativePath.replace(/\\/g, '/'))
+    const normalised = relativePath.replace(/\\/g, '/').replace(/^(\.\/)+/, '')
+    if (normalised === PARTS_DIR || normalised.startsWith(`${PARTS_DIR}/`)) {
+      throw rpcError('invalid_argument', `${PARTS_DIR} is reserved for uploads in progress`)
+    }
+    const resolved = resolveProjectPath(dir, normalised)
     if (!resolved.ok) throw rpcError('invalid_argument', resolved.reason)
     // `a/..` normalises to the session directory itself; that is not a file either.
     const self = resolveProjectPath(dir, '.')
@@ -124,12 +172,19 @@ export class ArtifactZoneService {
 
     let transfer = this.transfers.get(transferId)
     if (!transfer) {
+      const receipt = this.completed.get(transferId)
+      if (receipt) {
+        if (receipt.absolutePath !== abs || receipt.sha256 !== req.sha256 || receipt.total !== req.total) {
+          throw rpcError('conflict', 'transferId was already used for a different upload')
+        }
+        return { ok: true, bytesWritten: receipt.total }
+      }
       if (req.offset !== 0) throw rpcError('conflict', 'unknown transfer: expected offset 0', { expectedOffset: 0 })
-      const key = sessionKey(sessionId, relativePath)
-      const active = this.writing.get(key)
+      this.expireIdleTransfers()
+      const active = this.writing.get(abs)
       if (active && active !== transferId) throw rpcError('busy', 'another transfer is writing this path', { transferId: active })
       transfer = this.open(sessionId, relativePath, abs, transferId, req)
-    } else if (transfer.sessionId !== sessionId || transfer.relativePath !== relativePath) {
+    } else if (transfer.sessionId !== sessionId || transfer.absolutePath !== abs) {
       throw rpcError('conflict', 'transferId belongs to a different path')
     }
     transfer.lastActivityAt = Date.now()
@@ -172,6 +227,8 @@ export class ArtifactZoneService {
     }
     renameSync(transfer.partPath, transfer.absolutePath)
     this.forget(transfer, false)
+    this.completed.set(transferId, { absolutePath: transfer.absolutePath, sha256: transfer.sha256, total: transfer.total })
+    if (this.completed.size > COMPLETED_RECEIPTS) this.completed.delete(this.completed.keys().next().value!)
     return { ok: true, bytesWritten: transfer.written, mtimeMs: Math.floor(statSync(transfer.absolutePath).mtimeMs) }
   }
 
@@ -235,16 +292,27 @@ export class ArtifactZoneService {
     return [...this.transfers.keys()]
   }
 
+  /**
+   * Drop uploads that went quiet: a desktop that lost its connection mid-file
+   * retries later under a new transferId, and must not meet `busy` until the
+   * node restarts. Called lazily from `put`; no timer to leak.
+   */
+  expireIdleTransfers(now = Date.now()): void {
+    for (const transfer of [...this.transfers.values()]) {
+      if (transfer.lastActivityAt + this.idleTransferTtlMs <= now) this.abandon(transfer)
+    }
+  }
+
   private open(sessionId: string, relativePath: string, abs: string, transferId: string, req: ArtifactPutRequest): Transfer {
     mkdirSync(dirname(abs), { recursive: true })
-    // A crashed upload leaves a part file behind; the next put for that path removes it.
-    for (const name of readdirSync(dirname(abs))) {
-      if (name.startsWith(`${basename(abs)}.part.`)) {
-        try { unlinkSync(join(dirname(abs), name)) } catch { /* already gone */ }
-      }
-    }
-    const partPath = `${abs}.part.${transferId}`
-    const fd = openSync(partPath, 'w')
+    const partsDir = join(this.sessionDir(sessionId), PARTS_DIR)
+    mkdirSync(partsDir, { recursive: true })
+    this.sweepStaleParts(partsDir)
+    const partPath = join(partsDir, transferId)
+    // Exclusive create: a transferId is one upload; a leftover under the same
+    // id is a crashed one, removed rather than appended to.
+    try { unlinkSync(partPath) } catch { /* nothing staged */ }
+    const fd = openSync(partPath, 'wx')
     const transfer: Transfer = {
       transferId,
       sessionId,
@@ -259,8 +327,20 @@ export class ArtifactZoneService {
       lastActivityAt: Date.now(),
     }
     this.transfers.set(transferId, transfer)
-    this.writing.set(sessionKey(sessionId, relativePath), transferId)
+    this.writing.set(abs, transferId)
     return transfer
+  }
+
+  /** Staging a node crash left behind: nothing tracks it, so age is the only signal. */
+  private sweepStaleParts(partsDir: string): void {
+    const cutoff = Date.now() - this.idleTransferTtlMs
+    for (const name of readdirSync(partsDir)) {
+      if (this.transfers.has(name)) continue
+      const path = join(partsDir, name)
+      try {
+        if (statSync(path).mtimeMs < cutoff) unlinkSync(path)
+      } catch { /* already gone */ }
+    }
   }
 
   private abandon(transfer: Transfer): void {
@@ -273,7 +353,6 @@ export class ArtifactZoneService {
       try { unlinkSync(transfer.partPath) } catch { /* never written or already gone */ }
     }
     this.transfers.delete(transfer.transferId)
-    const key = sessionKey(transfer.sessionId, transfer.relativePath)
-    if (this.writing.get(key) === transfer.transferId) this.writing.delete(key)
+    if (this.writing.get(transfer.absolutePath) === transfer.transferId) this.writing.delete(transfer.absolutePath)
   }
 }

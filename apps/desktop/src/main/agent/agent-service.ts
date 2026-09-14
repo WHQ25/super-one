@@ -3929,15 +3929,9 @@ export class AgentService {
           log.warn('[agent-service] dispose before delete failed sid=%s: %s', sessionId, err instanceof Error ? err.message : String(err))
         }
       }
+      // The sync zone and transfer jobs are reclaimed off the db-layer delete
+      // signal (session-list-watch.ts), the same for every delete entry point.
       dbDeleteSession(sessionId)
-      // The session's sync-zone artifacts and any in-flight upload go with it
-      // (docs/design/session-sync-zone.md §7). adhoc is never a real session id.
-      try {
-        const { removeSessionZone } = await import('../environment/session-zone-reclaim')
-        await removeSessionZone(sessionId)
-      } catch (err) {
-        log.warn('[agent-service] sync zone cleanup failed sid=%s: %s', sessionId, err instanceof Error ? err.message : String(err))
-      }
       this.emitSessionsChanged()
     })
 

@@ -86,7 +86,13 @@ export function usePreviewerFile(root: string, file: PreviewerFile, active: bool
   }, [key, active])
 
   const markUndecodable = useCallback(() => setState({ status: 'error', error: 'undecodable' }), [])
-  const restat = useCallback(() => window.app.statPreviewFile(root, file.path), [root, file.path])
+  // Re-stat by absolute path: a remote root has no live cwd to resolve a
+  // relative `path` against, and the absolute one is what the builder decided.
+  // The label and note are the agent's and survive the answer.
+  const restat = useCallback(async () => {
+    const next = await window.app.statPreviewFile(root, file.absolutePath)
+    return { ...next, path: file.path, ...(file.note ? { note: file.note } : {}) }
+  }, [root, file.absolutePath, file.path, file.note])
 
   return { state, markUndecodable, restat }
 }

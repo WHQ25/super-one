@@ -162,7 +162,7 @@ export function useFilePreview(ports: FilePreviewPorts) {
       }
       next = completeTransfer(downloaded, persistTransferBytes(downloaded, pairingId, bytes))
     } catch (error) {
-      next = { kind: 'error', path: transfer.path, name: transfer.name, message: error instanceof Error ? error.message : 'download failed' }
+      next = { kind: 'error', path: transfer.path, name: transfer.name, message: error instanceof Error ? error.message : 'download failed', ...(transfer.root ? { root: transfer.root } : {}) }
     }
     if (generation.current !== mine) return
     setState(next)
@@ -217,7 +217,7 @@ export function useFilePreview(ports: FilePreviewPorts) {
         next = completeTransfer(next, persistTransferBytes(next, pairingId, bytes))
       }
     } catch (error) {
-      next = { kind: 'error', path: target, name: loading.name, message: error instanceof Error ? error.message : 'failed to read file' }
+      next = { kind: 'error', path: target, name: loading.name, message: error instanceof Error ? error.message : 'failed to read file', ...(root ? { root } : {}) }
     }
     if (generation.current !== mine) return
     setState(next)
@@ -244,7 +244,7 @@ export function useFilePreview(ports: FilePreviewPorts) {
     if (!current || current.kind === 'image' || current.kind === 'mermaid') return
     // open() only throws before the page shows anything; the page has a state for it.
     open(current.path, 'line' in current ? current.line : undefined, 'root' in current ? current.root : undefined)
-      .catch((error) => setState({ kind: 'error', path: current.path, name: current.name, message: error instanceof Error ? error.message : String(error) }))
+      .catch((error) => setState({ kind: 'error', path: current.path, name: current.name, message: error instanceof Error ? error.message : String(error), ...('root' in current && current.root ? { root: current.root } : {}) }))
   }, [open, setState])
 
   const confirmTransfer = useCallback(() => { void startTransfer() }, [startTransfer])

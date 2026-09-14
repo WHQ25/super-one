@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { collectArtifacts, registerArtifact, resetArtifactRegistry, takeArtifacts } from './artifact-registry'
+import { bindArtifactScope, collectArtifacts, registerArtifact, resetArtifactRegistry, takeArtifacts } from './artifact-registry'
 
 afterEach(() => resetArtifactRegistry())
 
@@ -41,15 +41,36 @@ describe('artifact registry', () => {
     expect(takeArtifacts('s1', 'call-1')).toEqual([{ path: '/zone/s1/recording/r.mp4', producer: 'recording', final: true }])
   })
 
-  it('falls back to the latest open scope of the session when the async context is lost', async () => {
-    // An IPC reply lands from the event loop, in the emitter's context, not the tool's.
+  it('does not file a context-less registration under another concurrent call', async () => {
+    // Call A hands off to an emitter listener and loses its async context;
+    // call B of the same session is open meanwhile. Guessing "latest scope"
+    // would give B a ref it never produced and A nothing.
     const { EventEmitter } = await import('node:events')
     const ipc = new EventEmitter()
-    const call = collectArtifacts('s1', 'call-1', () => new Promise<void>((resolve) => {
+    let releaseB!: () => void
+    const b = collectArtifacts('s1', 'call-b', () => new Promise<void>((resolve) => { releaseB = resolve }))
+    const a = collectArtifacts('s1', 'call-a', () => new Promise<void>((resolve) => {
       ipc.once('reply', () => {
         registerArtifact('s1', { path: '/zone/s1/browser/late.png', producer: 'browser', final: true })
         resolve()
       })
+    }))
+    ipc.emit('reply')
+    await a
+    releaseB()
+    await b
+    expect(takeArtifacts('s1', 'call-b')).toEqual([])
+    expect(takeArtifacts('s1', 'call-a')).toEqual([])
+  })
+
+  it('keeps the scope through an emitter listener bound with bindArtifactScope', async () => {
+    const { EventEmitter } = await import('node:events')
+    const ipc = new EventEmitter()
+    const call = collectArtifacts('s1', 'call-1', () => new Promise<void>((resolve) => {
+      ipc.once('reply', bindArtifactScope(() => {
+        registerArtifact('s1', { path: '/zone/s1/browser/late.png', producer: 'browser', final: true })
+        resolve()
+      }))
     }))
     ipc.emit('reply')
     await call

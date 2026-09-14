@@ -54,6 +54,21 @@ describe('remote files previewer resolver', () => {
     expect(file).toMatchObject({ kind: 'image', size: 7, note: 'the result', absolutePath: '/home/node/.superone/node/sync/s1/browser/shot.png' })
   })
 
+  it('accepts the desktop mirror path the host action input mapping produced and reports the node twin', async () => {
+    // §3.1 rewrites every node-zone string in the tool args to the desktop
+    // mirror before the tool runs, so the builder sees a desktop path; the
+    // card must still classify it and hand the renderer the node identity.
+    const { mkdirSync, writeFileSync } = await import('node:fs')
+    const mirror = join(root, 'sync', 's1', 'browser')
+    mkdirSync(mirror, { recursive: true })
+    writeFileSync(join(mirror, 'shot.png'), Buffer.from('pngdata'))
+    const file = await resolveRemotePreviewerFile(
+      { path: join(mirror, 'shot.png') },
+      ctx({ files: { 'browser/shot.png': Buffer.from('pngdata') } }),
+    )
+    expect(file).toMatchObject({ kind: 'image', size: 7, path: '/home/node/.superone/node/sync/s1/browser/shot.png', absolutePath: '/home/node/.superone/node/sync/s1/browser/shot.png' })
+  })
+
   it('reports a zone file that neither the mirror nor the node has as missing', async () => {
     const file = await resolveRemotePreviewerFile({ path: '/home/node/.superone/node/sync/s1/agent/none.md' }, ctx({ files: {} }))
     expect(file.kind).toBe('missing')

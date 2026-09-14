@@ -58,15 +58,21 @@ describe('resolveSessionFile', () => {
     expect(await resolveSessionFile('remote:c1:/home/node/proj', local, deps({}))).toEqual({ kind: 'local', path: local })
   })
 
-  it('treats every other path in a remote session as a node project file, relative to the project', async () => {
+  it('treats a project path in a remote session as a node project file, relative to the project', async () => {
     const d = deps({})
     expect(await resolveSessionFile('remote:c1:/home/node/proj', '/home/node/proj/docs/a.md', d))
       .toEqual({ kind: 'remote-project', connectionId: 'c1', folderPath: 'remote:c1:/home/node/proj', relativePath: 'docs/a.md' })
     expect(await resolveSessionFile('remote:c1:/home/node/proj', 'docs/a.md', d))
       .toEqual({ kind: 'remote-project', connectionId: 'c1', folderPath: 'remote:c1:/home/node/proj', relativePath: 'docs/a.md' })
-    // An older node has no zone: what would be a zone path is just a project path guess, never a mirror.
-    expect((await resolveSessionFile('remote:c1:/home/node/proj', '/home/node/.superone/node/sync/s1/agent/x.md', deps({ 'agent/x.md': Buffer.from('x') }, false))).kind)
-      .toBe('remote-project')
+  })
+
+  it('never splices an absolute node path outside the project into it', async () => {
+    // `/etc/hosts` is not `<project>/etc/hosts`; showing that file would be a lie.
+    expect(await resolveSessionFile('remote:c1:/home/node/proj', '/etc/hosts', deps({}))).toEqual({ kind: 'missing' })
+    expect(await resolveSessionFile('remote:c1:/home/node/proj', '/home/node/proj-other/a.md', deps({}))).toEqual({ kind: 'missing' })
+    // An older node has no zone: a zone-shaped path is just an absolute path outside the project.
+    expect(await resolveSessionFile('remote:c1:/home/node/proj', '/home/node/.superone/node/sync/s1/agent/x.md', deps({ 'agent/x.md': Buffer.from('x') }, false)))
+      .toEqual({ kind: 'missing' })
   })
 })
 

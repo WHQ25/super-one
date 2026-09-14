@@ -120,7 +120,8 @@ describe('files previewer card', () => {
     expect(screen.getByTestId('previewer-error').textContent).toContain('File not found')
 
     await act(async () => { fireEvent.click(screen.getByText('Retry')) })
-    await waitFor(() => expect(statPreviewFile).toHaveBeenCalledWith(ROOT, 'gone.md'))
+    // Re-stat by the absolute path: a remote root has no cwd to resolve 'gone.md' against.
+    await waitFor(() => expect(statPreviewFile).toHaveBeenCalledWith(ROOT, '/repo/gone.md'))
     await waitFor(() => expect(screen.queryByTestId('previewer-error')).toBeNull())
     // The note survives the re-stat; the host does not know it.
     expect(screen.getByTestId('previewer-note').textContent).toBe('Not yet written')

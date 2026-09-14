@@ -60,21 +60,82 @@ export function nodeTwinOf(zone: NodeSyncZone, desktopPath: string): string | nu
   return nodeZonePath(zone, parsed.sessionId, parsed.relativePath)
 }
 
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 /**
- * Replace every exact occurrence of each desktop path with its node twin in
- * `text`. Both the raw form and the JSON-escaped form are replaced, because
- * the executor sees serialised JSON where a Windows desktop path carries
- * doubled backslashes. Exact string match only — no prefix scan (§3).
+ * A path token ends where the path would: not before another path character,
+ * and not before `.ext` (so `shot.png` is not a mention of `shot.png.bak`),
+ * while a sentence-ending `shot.png.` still counts.
  */
-export function rewriteArtifactPaths(text: string, mapping: ReadonlyMap<string, string>): string {
+function tokenPattern(path: string): RegExp {
+  return new RegExp(`${escapeRegExp(path)}(?![A-Za-z0-9_-]|\\.[A-Za-z0-9])`, 'g')
+}
+
+function replaceTokens(text: string, from: string, to: string): string {
+  return text.replace(tokenPattern(from), () => to)
+}
+
+/** Does `text` name `path` as a whole token, raw or JSON-escaped? */
+export function mentionsArtifactPath(text: string, path: string): boolean {
+  if (!path) return false
+  if (tokenPattern(path).test(text)) return true
+  const escaped = JSON.stringify(path).slice(1, -1)
+  return escaped !== path && tokenPattern(escaped).test(text)
+}
+
+function looksLikeJson(text: string): boolean {
+  const c = text.trimStart()[0]
+  return c === '{' || c === '['
+}
+
+/**
+ * Rewrite one string: parse it as JSON when it is JSON and rewrite the string
+ * values at their own level (so a Windows twin is escaped by the serialiser
+ * instead of breaking the document); otherwise replace tokens in the text,
+ * raw and — for a desktop path that JSON doubles — escaped.
+ */
+function rewriteString(text: string, entries: ReadonlyArray<readonly [string, string]>): string {
+  if (looksLikeJson(text)) {
+    try {
+      const value = JSON.parse(text) as unknown
+      if (value && typeof value === 'object') return JSON.stringify(rewriteValue(value, entries))
+    } catch {
+      /* not JSON after all: fall through to text */
+    }
+  }
   let out = text
-  for (const [from, to] of mapping) {
-    if (!from) continue
-    out = out.split(from).join(to)
+  for (const [from, to] of entries) {
+    out = replaceTokens(out, from, to)
     const fromJson = JSON.stringify(from).slice(1, -1)
-    if (fromJson !== from) out = out.split(fromJson).join(JSON.stringify(to).slice(1, -1))
+    if (fromJson !== from) out = replaceTokens(out, fromJson, JSON.stringify(to).slice(1, -1))
   }
   return out
+}
+
+function rewriteValue(value: unknown, entries: ReadonlyArray<readonly [string, string]>): unknown {
+  if (typeof value === 'string') return rewriteString(value, entries)
+  if (Array.isArray(value)) return value.map((v) => rewriteValue(v, entries))
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[k] = rewriteValue(v, entries)
+    return out
+  }
+  return value
+}
+
+/**
+ * Replace every whole-token occurrence of each desktop path with its node twin
+ * in `text` (§3). JSON text is rewritten value by value and re-serialised;
+ * plain text by token. Longest path first, so a registered path that is a
+ * prefix of another (`shot.png` / `shot.png.agent.jpg`) cannot eat it.
+ * No prefix scan: only the paths in `mapping` are touched.
+ */
+export function rewriteArtifactPaths(text: string, mapping: ReadonlyMap<string, string>): string {
+  const entries = [...mapping.entries()].filter(([from]) => from.length > 0).sort((a, b) => b[0].length - a[0].length)
+  if (entries.length === 0) return text
+  return rewriteString(text, entries)
 }
 
 /**

@@ -56,12 +56,17 @@ async function defaultDeps(): Promise<SessionFileResolverDeps> {
   return resolverDepsFor(getEnvironmentHost())
 }
 
-/** Project-relative form of `path` under the remote project `hostPath` (same rule as remote-file-tree). */
-function remoteRelative(hostPath: string, path: string): string {
+/**
+ * Project-relative form of `path` under the remote project `hostPath`, or
+ * null for an absolute path outside it — `/etc/hosts` is not
+ * `<project>/etc/hosts`, and stripping the slash would show that file.
+ */
+function remoteRelative(hostPath: string, path: string): string | null {
   const p = path.replace(/\\/g, '/')
   const root = hostPath.replace(/\\/g, '/').replace(/\/+$/, '') || '/'
   if (root !== '/' && p.startsWith(`${root}/`)) return p.slice(root.length + 1)
-  return p.replace(/^\/+/, '')
+  if (isAbsolute(p) || /^[A-Za-z]:\//.test(p)) return root === '/' ? p.replace(/^\/+/, '') : null
+  return p
 }
 
 export async function resolveSessionFile(
@@ -87,7 +92,9 @@ export async function resolveSessionFile(
   // A desktop path in a remote session: produced here (older node, or handed
   // out before the zone existed) and read here.
   if ((isAbsolute(path) || /^[A-Za-z]:[\\/]/.test(path)) && isUnderSyncZone(path)) return { kind: 'local', path }
-  return { kind: 'remote-project', connectionId: remote.connectionId, folderPath: root!, relativePath: remoteRelative(remote.path, path) }
+  const relativePath = remoteRelative(remote.path, path)
+  if (relativePath === null) return { kind: 'missing' }
+  return { kind: 'remote-project', connectionId: remote.connectionId, folderPath: root!, relativePath }
 }
 
 /** Where node project files are staged for the phone; transient by design. */

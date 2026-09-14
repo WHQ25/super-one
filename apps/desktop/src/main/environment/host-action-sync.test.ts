@@ -36,10 +36,12 @@ function fakeNode() {
   const parts = new Map<string, Buffer[]>()
   const puts: ArtifactPutRequest[] = []
   const deferred: string[] = []
+  const deferredJobs: { relativePath: string; transferId?: string }[] = []
   return {
     files,
     puts,
     deferred,
+    deferredJobs,
     deps: {
       zone,
       connectionId: 'c1',
@@ -70,7 +72,7 @@ function fakeNode() {
       transfers: {
         throughputBytesPerMs: () => 1024,
         recordThroughput: () => {},
-        defer: (input: { relativePath: string }) => { deferred.push(input.relativePath) },
+        defer: (input: { relativePath: string; transferId?: string }) => { deferred.push(input.relativePath); deferredJobs.push(input) },
       },
     },
   }
@@ -132,14 +134,32 @@ describe('host action outputs', () => {
     expect(out).toEqual(reply)
   })
 
-  it('hands a failed push to a job instead of failing the action', async () => {
+  it('hands a failed push to a job that continues the same transfer instead of failing the action', async () => {
     const node = fakeNode()
     const shot = desktopFile('s1', 'browser/shot.png', 'png')
-    node.deps.put = async () => { throw Object.assign(new Error('node closed the socket'), { code: 'unavailable' }) }
+    const put = node.deps.put
+    node.deps.put = async (req) => { await put(req); throw Object.assign(new Error('node closed the socket'), { code: 'unavailable' }) }
     const reply = { content: [{ type: 'text', text: shot }] }
     const out = await syncHostActionOutputs('s1', [{ path: shot, producer: 'browser', final: true }], reply, Date.now() + 60_000, node.deps)
     expect(node.deferred).toEqual(['browser/shot.png'])
     expect(out.sync).toEqual({ deferred: ['/home/node/.superone/node/sync/s1/browser/shot.png'] })
+    // The node may already hold the chunks the eager attempt sent; a job under
+    // a fresh transferId would be told `busy` by that half-written transfer.
+    expect(node.deferredJobs[0]?.transferId).toBe(node.puts[0]?.transferId)
+  })
+
+  it('tells the agent about deferred files inside the tool content, not only on the envelope', async () => {
+    // `sync` is a SuperOne field on the reply envelope; the node's MCP server
+    // forwards only `content`, so a deferred list that lives nowhere else is
+    // invisible to the model.
+    const node = fakeNode()
+    const big = desktopFile('s1', 'recording/run.mp4', Buffer.alloc(64 * 1024))
+    node.deps.transfers.throughputBytesPerMs = () => 1
+    const reply = { content: [{ type: 'text', text: JSON.stringify({ ok: true, savedPath: big }) }] }
+    const out = await syncHostActionOutputs('s1', [{ path: big, producer: 'recording', final: true }], reply, Date.now() + 15_000, node.deps)
+    expect(out.content).toHaveLength(2)
+    expect(out.content[1]?.text).toContain('/home/node/.superone/node/sync/s1/recording/run.mp4')
+    expect(out.content[1]?.text).toMatch(/not (yet )?(there|available|synced)/i)
   })
 
   it('stops at the abort signal between uploads', async () => {

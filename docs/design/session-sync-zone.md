@@ -373,6 +373,39 @@ All four landed on 2026-09-14, one commit each.
 
 ### Deviations from the design as written
 
+- **A code review by Codex on 2026-09-14 found and fixed twelve defects in
+  the phases above** before they shipped: the node keyed its write-lock and
+  authorisation on the relative path spelling and the realpath'd session
+  directory (so `agent/./a` aliased `agent/a`, and a symlinked session dir
+  escaped the zone) — both now key on one canonicalised absolute path and the
+  session dir must be a real directory; `.part` files shared the artifact
+  namespace and a re-sent final chunk could roll a file back — staging moved to
+  a reserved `<session>/.parts/` and completed transfers keep a bounded receipt;
+  a dropped eager push left the node holding a half-written transfer that a new
+  job's fresh id met with `busy` — the job now inherits the eager `transferId`
+  and idle transfers expire; the deferred list lived only on the reply
+  envelope the node's MCP server drops — it is now a `content` block too; the
+  worker's backoff query fed `Date` a value it cannot represent and silently
+  fell back to the 10-minute cap; `dropSession` could not stop a job already
+  taken into a pass — the job re-checks its row before uploading; a download
+  stitched two versions of a file that changed mid-stream — it now restarts on
+  a size/mtime change; the mirror served a node-deleted file from a stale local
+  copy and swallowed a `forbidden` as offline — the node is authoritative for
+  existence unless an upload is pending; the reply rewrite matched path
+  substrings (so `shot.png` hit `shot.png.bak`) and could break JSON on a
+  Windows twin — it now matches whole tokens, longest-first, and rewrites JSON
+  values structurally; the artifact registry guessed a context-less
+  registration onto "the latest open scope" and misfiled it under a concurrent
+  call — it no longer guesses (a call site that needs it binds with
+  `bindArtifactScope`); an out-of-project absolute node path was spliced into
+  the project (`/etc/hosts` → `<project>/etc/hosts`) — it now resolves to
+  `missing`; the previewer's Retry re-stat'd a remote file locally and the
+  card's fallback chip and the phone's error state dropped `root` — all three
+  now carry it; and `media_video_status` returning an already-generated file
+  from the record did not re-register it — it does now, so a second poll's
+  paths are pushed and rewritten. Each has a scenario-named regression test.
+
+
 - **Only refs the reply names are pushed** (§3). A registered artifact whose
   path never appears in `content[].text` is not uploaded: the agent has no
   path to `Read`, and the desktop, the renderer and the phone all read the

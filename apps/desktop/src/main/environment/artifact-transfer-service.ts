@@ -12,6 +12,7 @@ import type { ArtifactPutRequest, ArtifactPutResult } from '@superone/shared/env
 import {
   deleteArtifactTransfersForSession,
   enqueueArtifactTransfer,
+  listPendingArtifactTransfers,
   listRunnableArtifactTransfers,
   markArtifactTransferDone,
   markArtifactTransferFailed,
@@ -66,7 +67,7 @@ export class ArtifactTransferService {
   }
 
   /** Persist a deferred upload and nudge the connection's worker. */
-  defer(input: { connectionId: string; sessionId: string; localPath: string; relativePath: string }): ArtifactTransferJob {
+  defer(input: { connectionId: string; sessionId: string; localPath: string; relativePath: string; transferId?: string }): ArtifactTransferJob {
     const total = statSync(input.localPath).size
     const job = enqueueArtifactTransfer({ ...input, total })
     this.workers.get(input.connectionId)?.wake()
@@ -132,7 +133,7 @@ export class ArtifactTransferService {
 
   private nextDueDelay(connectionId: string, nowMs: number): number {
     try {
-      const pending = listRunnableArtifactTransfers(connectionId, Number.MAX_SAFE_INTEGER)
+      const pending = listPendingArtifactTransfers(connectionId)
       const due = pending.map((j) => j.nextAttemptAt ?? nowMs).filter((t) => t > nowMs)
       if (due.length === 0) return pending.length > 0 ? 1_000 : BACKOFF_MAX_MS
       return Math.max(250, Math.min(...due) - nowMs)
@@ -147,7 +148,8 @@ export class ArtifactTransferService {
     workerSignal.addEventListener('abort', onWorkerAbort, { once: true })
     this.inflight.set(job.jobId, abort)
     try {
-      markArtifactTransferRunning(job.jobId)
+      // The pass works from a snapshot; a session deleted since then took its row with it.
+      if (!markArtifactTransferRunning(job.jobId)) return
       const outcome = await uploadArtifact({
         localPath: job.localPath,
         sessionId: job.sessionId,

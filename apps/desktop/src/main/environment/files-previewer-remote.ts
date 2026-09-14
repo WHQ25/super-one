@@ -22,7 +22,7 @@ import type { PreviewerFile } from '@superone/shared/generative-ui/native-widget
 import type { WorkspaceEntry } from '@superone/shared/environment'
 import { classifyPreviewerFile } from '../generative-ui/files-previewer-payload'
 import { mirrorNodeArtifact } from './session-file-mirror'
-import { parseNodeZonePath, type NodeSyncZone } from './sync-zone-paths'
+import { nodeTwinOf, parseNodeZonePath, type NodeSyncZone } from './sync-zone-paths'
 import { normalizeHostPath } from './remote-file-tree'
 
 export interface RemotePreviewerContext {
@@ -59,9 +59,14 @@ export async function resolveRemotePreviewerFile(
   entry: { path: string; note?: string },
   ctx: RemotePreviewerContext,
 ): Promise<PreviewerFile> {
-  const abs = toNodeAbsolute(entry.path, ctx.cwd, ctx.zone?.os)
+  // The executor maps node-zone args to the desktop mirror before the tool
+  // runs (§3.1), so a zone file arrives here as a desktop path. Turn it back
+  // into its node twin: that is the identity the renderer and the phone
+  // resolve, and the zone branch below already knows how to stat it.
+  const twin = ctx.zone ? nodeTwinOf(ctx.zone, entry.path) : null
+  const abs = twin ?? toNodeAbsolute(entry.path, ctx.cwd, ctx.zone?.os)
   const base: Omit<PreviewerFile, 'kind'> = {
-    path: entry.path,
+    path: twin ?? entry.path,
     absolutePath: abs,
     name: basename(abs.replace(/[\\/]+$/, '')) || abs,
     ...(entry.note ? { note: entry.note } : {}),

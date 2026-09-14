@@ -69,6 +69,8 @@ export function enqueueArtifactTransfer(input: {
   localPath: string
   relativePath: string
   total: number
+  /** The eager attempt's id, so the job resumes that transfer rather than colliding with it. */
+  transferId?: string
 }): ArtifactTransferJob {
   const now = new Date().toISOString()
   const job: Row = {
@@ -77,7 +79,7 @@ export function enqueueArtifactTransfer(input: {
     session_id: input.sessionId,
     local_path: input.localPath,
     relative_path: input.relativePath,
-    transfer_id: randomUUID(),
+    transfer_id: input.transferId ?? randomUUID(),
     offset: 0,
     total: input.total,
     state: 'pending',
@@ -110,9 +112,25 @@ export function listArtifactTransfersForSession(sessionId: string): ArtifactTran
   return rows.map(toJob)
 }
 
-export function markArtifactTransferRunning(jobId: string): void {
-  getDb().prepare(`UPDATE artifact_transfer_jobs SET state = 'running', attempts = attempts + 1, updated_at = ? WHERE job_id = ?`)
+/**
+ * Claim a job for one attempt. False when the row is gone — its session was
+ * deleted after the worker took its snapshot — so the caller skips it rather
+ * than uploading for a session that no longer exists.
+ */
+export function markArtifactTransferRunning(jobId: string): boolean {
+  const result = getDb().prepare(`UPDATE artifact_transfer_jobs SET state = 'running', attempts = attempts + 1, updated_at = ? WHERE job_id = ?`)
     .run(new Date().toISOString(), jobId)
+  return result.changes === 1
+}
+
+/** Every unfinished job of a connection regardless of when it is due; the worker sleeps until the earliest. */
+export function listPendingArtifactTransfers(connectionId: string): ArtifactTransferJob[] {
+  const rows = getDb().prepare(`
+    SELECT * FROM artifact_transfer_jobs
+    WHERE connection_id = ? AND state IN ('pending', 'running')
+    ORDER BY created_at ASC
+  `).all(connectionId) as Row[]
+  return rows.map(toJob)
 }
 
 export function recordArtifactTransferOffset(jobId: string, offset: number): void {

@@ -101,7 +101,7 @@ export type FilePreviewState =
       /** In-band bytes from the RPC; the hook writes them instead of downloading. */
       inlineBase64?: string
     }
-  | { kind: 'error'; path: string; name: string; message: string }
+  | { kind: 'error'; path: string; name: string; message: string; root?: string }
 
 export const FILE_PREVIEW_TEXT = {
   loading: 'Loading file…',
@@ -237,7 +237,8 @@ export function reducePreviewResponse(
 ): FilePreviewState {
   const { path, name, root } = current
   if (!response.ok) {
-    return { kind: 'error', path, name, message: response.message ?? response.error }
+    // Retry re-opens from this state; without the root a remote file would be asked for as a desktop path.
+    return { kind: 'error', path, name, message: response.message ?? response.error, ...(root ? { root } : {}) }
   }
   if ('inline' in response) {
     if ('text' in response) {

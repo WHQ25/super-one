@@ -10,7 +10,7 @@
  * check the lazy mirror uses to decide a copy is still current (§4.2).
  */
 import { createHash, randomUUID } from 'node:crypto'
-import { closeSync, createReadStream, mkdirSync, openSync, readSync, renameSync, statSync, unlinkSync, utimesSync, writeSync } from 'node:fs'
+import { closeSync, createReadStream, mkdirSync, openSync, readSync, renameSync, statSync, unlinkSync, utimesSync, writeSync, ftruncateSync } from 'node:fs'
 import { dirname } from 'node:path'
 import {
   ARTIFACT_CHUNK_BYTES,
@@ -121,6 +121,9 @@ export interface DownloadArtifactOptions {
   signal?: AbortSignal
 }
 
+/** How many times a download starts over because the file changed under it. */
+const MAX_VERSION_RESTARTS = 3
+
 export async function downloadArtifact(opts: DownloadArtifactOptions): Promise<TransferOutcome & { mtimeMs: number }> {
   throwIfAborted(opts.signal)
   mkdirSync(dirname(opts.destPath), { recursive: true })
@@ -129,19 +132,34 @@ export async function downloadArtifact(opts: DownloadArtifactOptions): Promise<T
   let offset = 0
   let ms = 0
   let mtimeMs = 0
+  let total = -1
+  let restarts = 0
   try {
     for (;;) {
       const started = Date.now()
       const res = await opts.get({ sessionId: opts.sessionId, relativePath: opts.relativePath, offset, maxBytes: ARTIFACT_CHUNK_BYTES })
       ms += Date.now() - started
       throwIfAborted(opts.signal)
+      // Every window reports the file's size and mtime; a change means the
+      // node replaced the file between windows. Half of each version stamped
+      // with the newer mtime would pass the mirror's check for good, so start over.
+      if (offset > 0 && (res.total !== total || res.mtimeMs !== mtimeMs)) {
+        if (++restarts > MAX_VERSION_RESTARTS) {
+          throw Object.assign(new Error('artifact keeps changing while it is being read'), { code: 'conflict' })
+        }
+        offset = 0
+        total = -1
+        continue
+      }
       const chunk = Buffer.from(res.chunk, 'base64')
       if (chunk.length > 0) writeSync(fd, chunk, 0, chunk.length, offset)
       offset += chunk.length
       mtimeMs = res.mtimeMs
+      total = res.total
       if (res.eof) break
       if (chunk.length === 0) throw new Error('artifact.get returned no bytes before eof')
     }
+    ftruncateSync(fd, offset)
     closeSync(fd)
     renameSync(partPath, opts.destPath)
     stampMtime(opts.destPath, mtimeMs)

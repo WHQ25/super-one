@@ -179,7 +179,7 @@ export function PortableHostImage({ path, root, label, className, pictureClassNa
       <button
         type="button"
         className={chipClass}
-        onClick={() => requestNative('previewFile', { path })}
+        onClick={() => requestNative('previewFile', { path, ...(root ? { root } : {}) })}
         aria-label={ariaLabel}
         title={path}
       >

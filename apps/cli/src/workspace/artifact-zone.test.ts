@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createHash, randomBytes } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ARTIFACT_CHUNK_BYTES } from '@superone/shared/environment'
@@ -66,6 +66,18 @@ describe('artifact zone scoping', () => {
     expect(code(() => zone.get({ sessionId: 's1', relativePath: 'link/secret.txt', offset: 0, maxBytes: 10 }))).toBe('invalid_argument')
   })
 
+  it('refuses a session directory that is itself a symlink to another session', () => {
+    // The authorisation boundary is <syncRoot>/<sessionId>; realpath-ing that
+    // directory before checking would let s1 read and write s2 through a link.
+    mkdirSync(join(root, 'sync', 's2', 'agent'), { recursive: true })
+    writeFileSync(join(root, 'sync', 's2', 'agent', 'secret.txt'), 'other session')
+    symlinkSync(join(root, 'sync', 's2'), join(root, 'sync', 's1'))
+    expect(code(() => zone.stat('s1', 'agent/secret.txt'))).toBe('invalid_argument')
+    expect(code(() => zone.get({ sessionId: 's1', relativePath: 'agent/secret.txt', offset: 0, maxBytes: 64 }))).toBe('invalid_argument')
+    expect(code(() => upload('s1', 'agent/secret.txt', Buffer.from('overwritten')))).toBe('invalid_argument')
+    expect(readFileSync(join(root, 'sync', 's2', 'agent', 'secret.txt'), 'utf8')).toBe('other session')
+  })
+
   it('reports a missing artifact as exists:false rather than an error', () => {
     expect(zone.stat('s1', 'browser/nothing.png')).toEqual({ exists: false, size: 0, mtimeMs: 0 })
     expect(code(() => zone.get({ sessionId: 's1', relativePath: 'browser/nothing.png', offset: 0, maxBytes: 10 }))).toBe('not_found')
@@ -73,13 +85,14 @@ describe('artifact zone scoping', () => {
 })
 
 describe('artifact upload', () => {
-  it('writes ordered chunks into a part file and renames it into place only on the verified final chunk', () => {
+  it('writes ordered chunks into staging and renames into place only on the verified final chunk', () => {
     const data = Buffer.from('hello sync zone')
     const digest = sha(data)
     const first = zone.put({ sessionId: 's1', relativePath: 'browser/a.png', transferId: 't1', offset: 0, total: data.length, sha256: digest, chunk: data.subarray(0, 5).toString('base64'), final: false })
     expect(first).toEqual({ ok: true, bytesWritten: 5 })
     const dir = join(root, 'sync', 's1', 'browser')
-    expect(readdirSync(dir)).toEqual(['a.png.part.t1'])
+    expect(readdirSync(dir)).toEqual([])
+    expect(readdirSync(join(root, 'sync', 's1', '.parts'))).toEqual(['t1'])
     expect(zone.stat('s1', 'browser/a.png').exists).toBe(false)
 
     const last = zone.put({ sessionId: 's1', relativePath: 'browser/a.png', transferId: 't1', offset: 5, total: data.length, sha256: digest, chunk: data.subarray(5).toString('base64'), final: true })
@@ -120,6 +133,19 @@ describe('artifact upload', () => {
     expect(zone.put({ sessionId: 's2', relativePath: 'browser/a.png', transferId: 't3', offset: 0, total: 8, sha256: sha(data), chunk: data.toString('base64'), final: true }).ok).toBe(true)
   })
 
+  it('lets a new transfer take over a path whose previous transfer went idle', () => {
+    // The desktop lost its connection after the first chunk; the deferred job
+    // that retries later carries a new transferId and must not be told busy
+    // until the node restarts.
+    const data = Buffer.from('abcdef')
+    zone.put({ sessionId: 's1', relativePath: 'recording/a.mp4', transferId: 'eager', offset: 0, total: 6, sha256: sha(data), chunk: data.subarray(0, 3).toString('base64'), final: false })
+    expect(code(() => zone.put({ sessionId: 's1', relativePath: 'recording/a.mp4', transferId: 'job', offset: 0, total: 6, sha256: sha(data), chunk: data.subarray(0, 3).toString('base64'), final: false }))).toBe('busy')
+    zone.expireIdleTransfers(Date.now() + zone.idleTransferTtlMs + 1)
+    expect(zone.activeTransfers()).toEqual([])
+    expect(upload('s1', 'recording/a.mp4', data, 'job')).toMatchObject({ ok: true, bytesWritten: 6 })
+    expect(readFileSync(join(root, 'sync', 's1', 'recording', 'a.mp4'))).toEqual(data)
+  })
+
   it('drops the part file and the transfer when the digest does not match', () => {
     const data = Buffer.from('payload')
     expect(code(() => zone.put({ sessionId: 's1', relativePath: 'browser/a.png', transferId: 't1', offset: 0, total: data.length, sha256: sha(Buffer.from('other')), chunk: data.toString('base64'), final: true }))).toBe('invalid_argument')
@@ -128,12 +154,43 @@ describe('artifact upload', () => {
     expect(zone.activeTransfers()).toEqual([])
   })
 
-  it('removes a stale part file left by a crashed upload when a new transfer starts', () => {
+  it('stages bytes in a reserved directory the RPC cannot name, and leaves a real file with a part-like name alone', () => {
     const dir = join(root, 'sync', 's1', 'browser')
     mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, 'a.png.part.dead'), 'half')
+    // A legitimate artifact whose name happens to look like staging.
+    upload('s1', 'browser/a.png.part.keep', Buffer.from('mine'), 'keep')
+    zone.put({ sessionId: 's1', relativePath: 'browser/a.png', transferId: 'open', offset: 0, total: 6, sha256: sha(Buffer.from('freshy')), chunk: Buffer.from('fre').toString('base64'), final: false })
+    expect(readdirSync(dir).sort()).toEqual(['a.png.part.keep'])
+    expect(readdirSync(join(root, 'sync', 's1', '.parts'))).toEqual(['open'])
+    // Neither reading nor writing the staging area is allowed through the contract.
+    expect(code(() => zone.get({ sessionId: 's1', relativePath: '.parts/open', offset: 0, maxBytes: 16 }))).toBe('invalid_argument')
+    expect(code(() => upload('s1', '.parts/x', Buffer.from('y'), 'x'))).toBe('invalid_argument')
+    upload('s1', 'browser/a.png', Buffer.from('freshy'), 'open')
+    expect(readdirSync(dir).sort()).toEqual(['a.png', 'a.png.part.keep'])
+    expect(readFileSync(join(dir, 'a.png.part.keep'), 'utf8')).toBe('mine')
+  })
+
+  it('sweeps staging left by a crashed upload once it is old enough', () => {
+    const parts = join(root, 'sync', 's1', '.parts')
+    mkdirSync(parts, { recursive: true })
+    writeFileSync(join(parts, 'dead'), 'half')
+    const old = (Date.now() - zone.idleTransferTtlMs - 60_000) / 1000
+    utimesSync(join(parts, 'dead'), old, old)
     upload('s1', 'browser/a.png', Buffer.from('fresh'))
-    expect(readdirSync(dir)).toEqual(['a.png'])
+    expect(readdirSync(parts)).toEqual([])
+  })
+
+  it('acknowledges a re-sent final chunk after the receipt was lost, without rewriting a newer version', () => {
+    // The desktop never saw the reply to A's final chunk and re-sends it after
+    // B replaced the file; a transfer forgotten on completion would treat that
+    // as a fresh upload and roll the file back.
+    const a = Buffer.from('old')
+    const b = Buffer.from('new')
+    upload('s1', 'agent/doc.txt', a, 'A')
+    upload('s1', 'agent/doc.txt', b, 'B')
+    const again = zone.put({ sessionId: 's1', relativePath: 'agent/doc.txt', transferId: 'A', offset: 0, total: 3, sha256: sha(a), chunk: a.toString('base64'), final: true })
+    expect(again).toMatchObject({ ok: true, bytesWritten: 3 })
+    expect(readFileSync(join(root, 'sync', 's1', 'agent', 'doc.txt'), 'utf8')).toBe('new')
   })
 
   it('stores an empty file as a single final chunk of zero bytes', () => {

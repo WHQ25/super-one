@@ -105,6 +105,9 @@ export function currentCallOwner(): string | null | undefined {
  * No refs are collected: a local call has nothing to push to a node.
  */
 export async function runInLocalCallScope<T>(sessionId: string, run: () => Promise<T>): Promise<T> {
+  // A Host Action already opened a scope that names its node. Replacing it with
+  // a local one would file a remote session's directory as this desktop's.
+  if (current.getStore()) return run()
   const callId = randomUUID()
   try {
     return await collectArtifacts(sessionId, callId, run)

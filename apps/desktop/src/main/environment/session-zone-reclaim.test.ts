@@ -19,7 +19,7 @@ vi.mock('./environment-host', () => ({
 vi.mock('../db-sessions', () => ({ sessionExists: (id: string) => state.localSessions.has(id) }))
 vi.mock('../db-artifact-transfers', () => ({
   listArtifactTransfersForSession: (id: string) => state.jobs.filter((j) => j.sessionId === id),
-  listUnfinishedArtifactTransfers: () => state.jobs.filter((j) => j.state !== 'failed' && j.state !== 'done'),
+  listUploadingArtifactTransfers: () => state.jobs.filter((j) => j.state === 'pending' || j.state === 'running'),
 }))
 
 import { ADHOC_MAX_AGE_MS, createReclaimScheduler, markZoneOwner, reclaimSyncZone, sweepSyncZone, removeSessionZone, syncZoneUsage } from './session-zone-reclaim'
@@ -275,8 +275,16 @@ describe('sync zone usage', () => {
     }
     aged('dead', 'browser/a.png', 2 * DAY, 'xxxx')
     aged('live', 'browser/b.png', 2 * DAY, 'yyyyyy')
+    // Already on the node, only the agent's wake still owed: not "to be uploaded".
+    aged('live', 'browser/c.png', 2 * DAY, 'zzz')
     state.localSessions = new Set(['live'])
-    state.jobs = [{ sessionId: 'live', state: 'pending', localPath: join(root, 'sync', 'live', 'browser', 'b.png') }]
+    const bPath = join(root, 'sync', 'live', 'browser', 'b.png')
+    state.jobs = [
+      { sessionId: 'live', state: 'pending', localPath: bPath },
+      // A second job for the same file (a retry row) must not be counted twice.
+      { sessionId: 'live', state: 'running', localPath: bPath },
+      { sessionId: 'live', state: 'uploaded', localPath: join(root, 'sync', 'live', 'browser', 'c.png') },
+    ]
     mkdirSync(join(root, 'sync', 'adhoc', 'browser'), { recursive: true })
     writeFileSync(join(root, 'sync', 'adhoc', 'browser', 'manual.png'), 'zz')
 
@@ -288,7 +296,7 @@ describe('sync zone usage', () => {
       // The dead directory's 4 bytes plus its 5-byte `.owner` marker.
       reclaimable: { sessions: 1, bytes: 4 + 'local'.length },
     })
-    expect(usage.totalBytes).toBeGreaterThanOrEqual(12)
+    expect(usage.totalBytes).toBeGreaterThanOrEqual(15)
     expect(usage.root).toBe(join(root, 'sync'))
     expect(existsSync(join(root, 'sync', 'dead'))).toBe(true)
   })

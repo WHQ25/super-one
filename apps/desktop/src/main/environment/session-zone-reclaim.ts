@@ -10,7 +10,7 @@
  *
  * `adhoc` holds captures taken with no session and is never auto-deleted.
  */
-import { lstatSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { lstatSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ADHOC_SESSION_ID, sessionZoneDir, syncZoneRoot } from '../media-output-paths'
@@ -243,15 +243,31 @@ export async function syncZoneUsage(): Promise<SyncZoneUsage> {
 
 async function pendingUploadBytes(): Promise<number> {
   try {
-    const { listUnfinishedArtifactTransfers } = await import('../db-artifact-transfers')
+    const { listUploadingArtifactTransfers } = await import('../db-artifact-transfers')
+    // One file, one count: a retry leaves several rows for the same path, and
+    // only bytes not yet on the node count as still to be uploaded.
+    const seen = new Set<string>()
     let bytes = 0
-    for (const job of listUnfinishedArtifactTransfers()) {
+    for (const job of listUploadingArtifactTransfers()) {
+      const real = safeRealpath(job.localPath)
+      if (seen.has(real)) continue
       const st = linkSafeStat(job.localPath)
-      if (st?.isFile) bytes += st.size
+      if (st?.isFile) {
+        seen.add(real)
+        bytes += st.size
+      }
     }
     return bytes
   } catch {
     return 0
+  }
+}
+
+function safeRealpath(path: string): string {
+  try {
+    return realpathSync(path)
+  } catch {
+    return path
   }
 }
 

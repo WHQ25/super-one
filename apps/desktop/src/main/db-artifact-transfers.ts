@@ -22,6 +22,8 @@ export type ArtifactTransferState = 'pending' | 'running' | 'uploaded' | 'notify
 const TRANSFER_STATES: readonly ArtifactTransferState[] = ['pending', 'running', 'uploaded', 'notifying', 'done', 'failed']
 /** Everything a worker still owes work on, including states a crash left behind. */
 const UNFINISHED_STATES = "('pending', 'running', 'uploaded', 'notifying')"
+/** Jobs whose bytes are not yet on the node — the only ones still "to be uploaded". */
+const UPLOADING_STATES = "('pending', 'running')"
 
 export interface ArtifactTransferJob {
   jobId: string
@@ -143,10 +145,13 @@ export function claimArtifactTransfer(jobId: string, state: 'running' | 'notifyi
   return result.changes === 1
 }
 
-/** Every unfinished job of a connection regardless of when it is due; the worker sleeps until the earliest. */
-/** Every job not yet done or failed, across connections — what Settings counts as "still to be uploaded". */
-export function listUnfinishedArtifactTransfers(): ArtifactTransferJob[] {
-  const rows = getDb().prepare(`SELECT * FROM artifact_transfer_jobs WHERE state IN ${UNFINISHED_STATES}`).all() as Row[]
+/**
+ * Jobs whose bytes are still owed to the node — `pending` or `running`, not the
+ * `uploaded`/`notifying` rows whose file is already there and only the agent's
+ * wake is left. This is what Settings sizes as "waiting to upload".
+ */
+export function listUploadingArtifactTransfers(): ArtifactTransferJob[] {
+  const rows = getDb().prepare(`SELECT * FROM artifact_transfer_jobs WHERE state IN ${UPLOADING_STATES}`).all() as Row[]
   return rows.map(toJob)
 }
 

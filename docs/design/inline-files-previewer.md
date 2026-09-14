@@ -610,12 +610,22 @@ Each phase is a separate PR.
   rendering and the transfer landing. (Zone media over 10 MiB previews since
   2026-09-14: the host returns the mirror's `local-file://` URL and the
   previewer streams it like a local file.)
-- **A session whose `cwd` is a worktree outside its registered project root**
-  previews against the registered root, not the worktree. `previewerContext`
-  authorises by registered project path on purpose — widening it to the
-  session's `cwd` would widen file authorisation for every consumer of that
-  context, which is not a previewer-sized change. Files under the worktree
-  that are not also under the registered root read as `missing`.
+- **A remote session whose `cwd` is a worktree outside its registered project
+  root** — **narrowed 2026-09-14.** Node reads are project-relative
+  (`fs-service.ts` `readFile(projectId, relativePath)`), so the worktree's
+  files are reachable only through a project the node has for that path.
+  `resolveRemotePreviewerContext` now checks: when `cwd` leaves the project
+  root and the node lists a project rooted at (or above) `cwd`, the payload is
+  keyed by that project and files resolve inside it — the same key the file
+  tree uses when the person opens that folder, so Retry and the renderer's
+  read need nothing new. When the node lists no such project, the registered
+  root stays and those files read as `unpreviewable` /
+  `outside_readable_roots`, as before. Registering the worktree from a tool
+  call was deliberately not done: it would leave a ghost project on the node
+  for every forked session (`remote-file-tree.ts` avoids exactly that for git
+  probes), and widening `workspace.readFile` to worktrees is a node
+  authorisation change, not a previewer-sized one. The local path is
+  unaffected — it always resolved against the live `cwd`.
 - **Adjacent prefetch and any retained cache** on either surface: measure
   first.
 - **Carousel inside the phone viewer** (swipe between the block's files

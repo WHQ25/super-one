@@ -21,11 +21,19 @@ beforeEach(() => {
 })
 afterEach(() => rmSync(root, { recursive: true, force: true }))
 
-function fakeHost(opts: { project: Record<string, WorkspaceEntry[]>; zone?: Record<string, Buffer>; session?: { cwd?: string; projectId?: string } | null }): PreviewerHost {
+function fakeHost(opts: {
+  project: Record<string, WorkspaceEntry[]>
+  zone?: Record<string, Buffer>
+  session?: { cwd?: string; projectId?: string } | null
+  /** Every project the node lists, keyed by id; `remoteWorkspaceListDir` answers per project. */
+  projects?: Record<string, { path: string; dirs: Record<string, WorkspaceEntry[]> }>
+}): PreviewerHost {
   const zone = opts.zone ?? {}
+  const projects = opts.projects ?? { p1: { path: '/home/node/proj', dirs: opts.project } }
   return {
     getSession: async () => opts.session === undefined ? { cwd: '/home/node/proj', projectId: 'p1' } : opts.session,
-    getRemoteProjectPath: async () => '/home/node/proj',
+    getRemoteProjectPath: async (_c, id) => projects[id]?.path ?? null,
+    listProjects: async () => Object.entries(projects).map(([projectId, { path }]) => ({ projectId, path })),
     getSyncZone: () => ({ syncRoot: '/home/node/.superone/node/sync', os: 'linux' }),
     artifactStat: async (_c, _s, rel) => {
       const f = zone[rel]
@@ -36,7 +44,7 @@ function fakeHost(opts: { project: Record<string, WorkspaceEntry[]>; zone?: Reco
       const slice = f.subarray(input.offset, input.offset + input.maxBytes)
       return { chunk: slice.toString('base64'), total: f.length, mtimeMs: 1_700_000_000_000, eof: input.offset + slice.length >= f.length }
     },
-    remoteWorkspaceListDir: async (_c, _p, dir) => opts.project[dir] ?? [],
+    remoteWorkspaceListDir: async (_c, p, dir) => projects[p]?.dirs[dir] ?? [],
   }
 }
 
@@ -46,6 +54,34 @@ describe('remote previewer context', () => {
     const ctx = await resolveRemotePreviewerContext('c1', 's1', host)
     expect(ctx?.root).toBe('remote:c1:/home/node/proj')
     expect(await ctx!.resolveOne({ path: 'docs/plan.md' })).toMatchObject({ kind: 'markdown', size: 12 })
+  })
+
+  it('previews from the worktree when the session works in one the node lists as a project', async () => {
+    // A fork into a worktree keeps the parent's projectId but moves cwd
+    // outside its root. Node reads are project-relative, so the only way to
+    // reach the worktree's files without widening authorisation is through
+    // the project the node already has for that path.
+    const host = fakeHost({
+      project: {},
+      session: { cwd: '/home/node/.worktrees/proj/feat-x', projectId: 'p1' },
+      projects: {
+        p1: { path: '/home/node/proj', dirs: { docs: [{ name: 'plan.md', path: 'docs/plan.md', type: 'file', size: 1 }] } },
+        p2: { path: '/home/node/.worktrees/proj/feat-x', dirs: { docs: [{ name: 'plan.md', path: 'docs/plan.md', type: 'file', size: 99 }] } },
+      },
+    })
+    const ctx = await resolveRemotePreviewerContext('c1', 's1', host)
+    expect(ctx?.root).toBe('remote:c1:/home/node/.worktrees/proj/feat-x')
+    expect(await ctx!.resolveOne({ path: 'docs/plan.md' })).toMatchObject({ kind: 'markdown', size: 99, absolutePath: '/home/node/.worktrees/proj/feat-x/docs/plan.md' })
+  })
+
+  it('keeps the registered root when the worktree is not a project the node lists', async () => {
+    // Registering it here would add a ghost project on the node for every
+    // forked session; that stays the person's call, so the file is reported
+    // as outside what the desktop can serve rather than quietly spliced in.
+    const host = fakeHost({ project: {}, session: { cwd: '/home/node/.worktrees/proj/feat-x', projectId: 'p1' } })
+    const ctx = await resolveRemotePreviewerContext('c1', 's1', host)
+    expect(ctx?.root).toBe('remote:c1:/home/node/proj')
+    expect(await ctx!.resolveOne({ path: 'docs/plan.md' })).toMatchObject({ kind: 'unpreviewable', reason: 'outside_readable_roots' })
   })
 
   it('answers nothing for a session the node does not know', async () => {

@@ -138,7 +138,12 @@ export async function executeSuperoneMcpToolCollecting(
     return { result, artifacts: takeArtifacts(sessionId, callId) }
   } finally {
     // A call that threw after registering must not leave its scope behind.
-    takeArtifacts(sessionId, callId)
+    // On the success path this take is empty — the caller already drained it
+    // and owns releasing the claims. Here it is not, and no one downstream
+    // will ever see these refs, so their claims are released now.
+    for (const ref of takeArtifacts(sessionId, callId)) {
+      void import('../environment/active-writes').then((m) => m.endActiveWrite(sessionId, ref.path))
+    }
   }
 }
 

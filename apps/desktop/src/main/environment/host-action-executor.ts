@@ -17,6 +17,7 @@
  */
 
 import type { ClaimHostActionResult } from '@superone/shared/environment'
+import { endActiveWrite } from './active-writes'
 import type { HostActionExecutor } from './remote-host-action-consumer'
 import {
   mapHostActionInputs,
@@ -142,9 +143,19 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
           : await runTool()
         if (runAbort.signal.aborted || raceWinner === 'deadline') return aborted()
 
-        const toolResult = sync && artifacts.length > 0
-          ? await syncHostActionOutputs(claimed.sessionId, artifacts, rawResult as ToolReply, claimed.claimExpiresAt, sync)
-          : rawResult
+        // The tool's call scope is already closed, so anything it produced is
+        // named by nothing durable until this push lands or defers a job. Hold
+        // the claims the producers took across that gap and release them here,
+        // whichever way the push ends — a release inside the tool surface would
+        // land one turn too early, and none at all would pin the path.
+        let toolResult: unknown
+        try {
+          toolResult = sync && artifacts.length > 0
+            ? await syncHostActionOutputs(claimed.sessionId, artifacts, rawResult as ToolReply, claimed.claimExpiresAt, sync)
+            : rawResult
+        } finally {
+          for (const ref of artifacts) endActiveWrite(claimed.sessionId, ref.path)
+        }
         if (runAbort.signal.aborted || raceWinner === 'deadline') return aborted()
 
         const isError = Boolean((toolResult as { isError?: boolean })?.isError)

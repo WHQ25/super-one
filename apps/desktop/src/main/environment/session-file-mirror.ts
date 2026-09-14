@@ -20,6 +20,7 @@ import { basename, join, relative, sep } from 'node:path'
 import { lstatSync, readdirSync, rmSync, statSync } from 'node:fs'
 import type { ArtifactGetRequest, ArtifactGetResult, ArtifactListRequest, ArtifactListResult, ArtifactStatResult } from '@superone/shared/environment'
 import { downloadArtifact } from './artifact-transfer'
+import { activeWriteUnder } from './active-writes'
 import { desktopMirrorPath, withinSessionZone } from './sync-zone-paths'
 import { sessionZoneDir } from '../media-output-paths'
 import { markZoneOwner, OWNER_FILE } from './zone-owner'
@@ -63,8 +64,40 @@ function namesReservedMetadata(relativePath: string): boolean {
   return relativePath.split(/[\\/]/).some((seg) => RESERVED_ZONE_NAMES.has(seg))
 }
 
-/** "Is this desktop path a desktop original still owed to the node?", as of when it was taken. */
-type PendingSnapshot = (desktopPath: string) => boolean
+/**
+ * Why the desktop's copy of a path must not be deleted or overwritten, as of
+ * when the snapshot was taken:
+ *
+ * - `upload` — a *complete* desktop original whose bytes the node does not
+ *   have. It is the newest version of that file anywhere, so the mirror serves
+ *   it as well as protecting it.
+ * - `writing` — a producer on this desktop is still filling it. Protected the
+ *   same way, but never served: half a file is not an input, and the caller
+ *   would hand the agent a path to a truncated download.
+ */
+type ProtectedReason = 'upload' | 'writing' | null
+type PendingSnapshot = (desktopPath: string) => ProtectedReason
+
+/**
+ * Job states whose bytes are not on the node yet.
+ *
+ * `uploaded` and `notifying` are deliberately absent: the file is already
+ * there and the row is only waiting on the completion wake, so the desktop
+ * copy is not authoritative — the agent may have changed the file on the node
+ * since, and serving ours would hand back the version it replaced.
+ * `failed` IS present: a failed upload means the node never got the bytes.
+ */
+const OWED_TO_NODE = new Set(['pending', 'running', 'failed'])
+
+/**
+ * A file this desktop is producing, translated into the mirror's vocabulary. A
+ * sealed write is complete and is the only copy, which is the same standing as
+ * a queued upload; an unsealed one is protected but must not be served.
+ */
+function stageOf(sessionId: string, path: string): ProtectedReason {
+  const stage = activeWriteUnder(sessionId, path)
+  return stage === 'writing' ? 'writing' : stage === 'sealed' ? 'upload' : null
+}
 
 /**
  * Takes a *fresh* synchronous view of the pending originals on demand.
@@ -84,7 +117,9 @@ async function pendingSource(sessionId: string, deps: MirrorDeps): Promise<Pendi
   const zoneRoot = sessionZoneDir(sessionId)
   const relOf = (p: string) => relative(zoneRoot, p).split(sep).join('/')
   if (deps.isPendingUpload) {
-    return { snapshot: () => (p) => deps.isPendingUpload!(sessionId, relOf(p)) }
+    return {
+      snapshot: () => (p) => stageOf(sessionId, p) ?? (deps.isPendingUpload!(sessionId, relOf(p)) ? 'upload' : null),
+    }
   }
   let list: ((id: string) => { relativePath: string; state: string }[]) | null = null
   try {
@@ -96,11 +131,13 @@ async function pendingSource(sessionId: string, deps: MirrorDeps): Promise<Pendi
     snapshot: () => {
       const rels = new Set<string>()
       try {
-        for (const j of list?.(sessionId) ?? []) if (j.state !== 'done') rels.add(j.relativePath)
+        for (const j of list?.(sessionId) ?? []) if (OWED_TO_NODE.has(j.state)) rels.add(j.relativePath)
       } catch {
         /* unreadable table: fall through to "nothing pending" */
       }
-      return (p) => rels.has(relOf(p))
+      // Writers first: a file still being filled has no job row at all, which
+      // is the whole reason the in-process registry exists.
+      return (p) => stageOf(sessionId, p) ?? (rels.has(relOf(p)) ? 'upload' : null)
     },
   }
 }
@@ -162,8 +199,15 @@ async function mirrorOneArtifact(
   /** Every `local` answer after an await re-checks the boundary: a link can be planted mid-flight. */
   const serveLocal = (st: { size: number; mtimeMs: number }): MirrorOutcome =>
     withinSessionZone(sessionId, path) ? { kind: 'local', path, size: st.size, mtimeMs: st.mtimeMs } : outside()
-  const pendingHere = (): MirrorOutcome =>
-    local && pending.snapshot()(path) ? serveLocal(local) : { kind: 'missing' }
+  const incomplete = (): MirrorOutcome => ({ kind: 'unavailable', reason: `${relativePath} is still being written on this desktop` })
+  /** What the desktop has when the node does not have the file. */
+  const pendingHere = (): MirrorOutcome => {
+    if (!local) return { kind: 'missing' }
+    const why = pending.snapshot()(path)
+    if (why === 'upload') return serveLocal(local)
+    if (why === 'writing') return incomplete()
+    return { kind: 'missing' }
+  }
   let remote: ArtifactStatResult
   try {
     remote = await deps.stat({ sessionId, relativePath })
@@ -177,7 +221,12 @@ async function mirrorOneArtifact(
   if (!remote.exists) return pendingHere()
   // A desktop original still owed to the node is newer than anything the node
   // can have; overwriting it with the node's older copy destroys the only one.
-  if (local && pending.snapshot()(path)) return serveLocal(local)
+  // A file still being written is protected the same way but is not an answer.
+  if (local) {
+    const why = pending.snapshot()(path)
+    if (why === 'upload') return serveLocal(local)
+    if (why === 'writing') return incomplete()
+  }
   if (local && local.size === remote.size && local.mtimeMs === remote.mtimeMs) return serveLocal(local)
   // The stat was an await: a cancel may have arrived, and the destructive
   // reconcile below must not run past it (a deleted directory does not come
@@ -204,8 +253,13 @@ async function mirrorOneArtifact(
       // real original at this path while it ran.
       beforeCommit: () => {
         if (deps.signal?.aborted) throw aborted()
-        if (pending.snapshot()(path)) {
-          throw Object.assign(new Error(`${relativePath} was produced here and is still owed to the node`), { code: 'conflict' })
+        const why = pending.snapshot()(path)
+        if (why) {
+          const reason =
+            why === 'writing'
+              ? `${relativePath} is being written on this desktop`
+              : `${relativePath} was produced here and is still owed to the node`
+          throw Object.assign(new Error(reason), { code: 'conflict' })
         }
         if (!withinSessionZone(sessionId, path)) {
           throw Object.assign(new Error(`${relativePath} resolves outside the session zone`), { code: 'conflict' })
@@ -232,7 +286,7 @@ async function mirrorOneArtifact(
 function reconcileMirrorType(
   sessionId: string,
   destPath: string,
-  isPending: (desktopPath: string) => boolean,
+  isPending: PendingSnapshot,
   signal?: AbortSignal,
 ): 'clear' | 'conflict' {
   const zoneRoot = sessionZoneDir(sessionId)
@@ -268,7 +322,7 @@ function reconcileMirrorType(
 }
 
 /** Does `path`, or any file under it, still owe an upload or belong to a running fetch? `lstat` only. */
-function subtreeHasProtectedFile(path: string, isPending: (desktopPath: string) => boolean): boolean {
+function subtreeHasProtectedFile(path: string, isPending: PendingSnapshot): boolean {
   let st: ReturnType<typeof lstatSync>
   try {
     st = lstatSync(path)
@@ -276,7 +330,7 @@ function subtreeHasProtectedFile(path: string, isPending: (desktopPath: string) 
     return false
   }
   if (st.isSymbolicLink()) return false
-  if (st.isFile()) return basename(path).includes('.part.') || isPending(path)
+  if (st.isFile()) return basename(path).includes('.part.') || isPending(path) !== null
   if (st.isDirectory()) {
     let names: string[]
     try {
@@ -444,7 +498,7 @@ function pruneMirroredDirectory(
   dir: string,
   keep: ReadonlySet<string>,
   sessionId: string,
-  isPending: (desktopPath: string) => boolean,
+  isPending: PendingSnapshot,
   signal?: AbortSignal,
 ): void {
   if (signal?.aborted) throw aborted()
@@ -474,7 +528,8 @@ function pruneMirroredDirectory(
     // A `.part.*` of a fetch still in flight belongs to that fetch; `.owner` is
     // the reclaim marker, never a mirrored artifact.
     if (name.includes('.part.') || RESERVED_ZONE_NAMES.has(name)) continue
-    // A desktop original whose upload has not landed is the only copy there is.
+    // A desktop original whose upload has not landed, or a file a producer here
+    // is still writing, is the only copy there is.
     if (isPending(path)) continue
     // `dir` was re-checked in the zone at this recursion\'s entry and the walk
     // holds no `await`, so nothing swaps it under us; a stale link here is

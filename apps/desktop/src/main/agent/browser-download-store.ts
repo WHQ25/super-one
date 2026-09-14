@@ -1,3 +1,4 @@
+import { beginActiveWrite, endActiveWrite, sealActiveWrite } from '../environment/active-writes'
 import { ensureZoneDir } from '../environment/zone-owner'
 import { realOrSelf, withinSessionZone } from '../environment/sync-zone-paths'
 import { closeSync, copyFileSync, existsSync, mkdirSync, openSync } from 'fs'
@@ -193,6 +194,13 @@ export function reserveDownloadPath(filename: string, dir?: string | null, sessi
  */
 export function registerDownload(sessionId: string | null | undefined, path: string, final: boolean): void {
   if (!sessionId || !isUnderSyncZone(path)) return
+  // The same two moments the registry cares about are the two the mirror does:
+  // the reservation opens a window in which the file exists but no transfer job
+  // does, and the seal closes it only once the file has been handed on. A
+  // second seal of an already-sealed path (a listing re-registering an adopted
+  // download) is a no-op.
+  if (final) sealActiveWrite(sessionId, path)
+  else beginActiveWrite(sessionId, path)
   registerArtifact(sessionId, { path, producer: 'download', final })
 }
 
@@ -211,6 +219,10 @@ export function queueDownloadUpload(connectionId: string, sessionId: string, pat
       getEnvironmentHost().artifactTransfers?.defer({ connectionId, sessionId, localPath: path, relativePath: zone.relativePath })
     })
     .catch((err) => log.warn('[browser-download] could not queue the node transfer: %s', err instanceof Error ? err.message : String(err)))
+    // Released only now: the job row is what protects the file from here on,
+    // and until `defer` has run there is nothing durable that names it. A
+    // failed defer releases too — retrying forever would pin the path.
+    .finally(() => endActiveWrite(sessionId, path))
 }
 
 /** Page downloads already adopted, so a second listing reuses the same copy. */

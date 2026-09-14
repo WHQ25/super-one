@@ -6,6 +6,7 @@ import { pipeline } from 'stream/promises'
 import log from '../logger'
 import { mediaFileGrants } from '../media-file-grants'
 import { browserAutomationCall } from './browser-automation-bridge'
+import { endActiveWrite, sealActiveWrite } from '../environment/active-writes'
 import { filenameFor, queueDownloadUpload, registerDownload, reserveDownloadPath } from '../agent/browser-download-store'
 import { tabDriver, type TabDriver } from './browser-tab-drivers'
 
@@ -113,7 +114,14 @@ export async function downloadUrl(url: string, opts: DownloadUrlOptions = {}): P
     const { buf, mimeType } = parseDataUrl(url, 'application/octet-stream')
     const filename = filenameFor(filenameOverride || '', url, mimeType)
     const path = reserveDownloadPath(filename, dir, sessionId)
-    await writeFile(path, buf)
+    try {
+      await writeFile(path, buf)
+    } catch (err) {
+      // The reservation claimed the path against the mirror; a write that never
+      // happened must give it back or the file is protected forever.
+      endActiveWrite(sessionId, path)
+      throw err
+    }
     onProgress?.({ bytes: buf.byteLength, totalBytes: buf.byteLength, filename, mimeType })
     mediaFileGrants().add(path)
     registerDownload(sessionId, path, true)
@@ -128,6 +136,14 @@ export async function downloadUrl(url: string, opts: DownloadUrlOptions = {}): P
   const path = reserveDownloadPath(filename, dir, sessionId)
   const totalBytes = Number(resp.headers.get('content-length')) || null
 
+  try {
+    return await receiveBody()
+  } catch (err) {
+    endActiveWrite(sessionId, path)
+    throw err
+  }
+
+  async function receiveBody(): Promise<DownloadResult> {
   if (!resp.body) {
     const buf = Buffer.from(await resp.arrayBuffer())
     await writeFile(path, buf)
@@ -155,6 +171,7 @@ export async function downloadUrl(url: string, opts: DownloadUrlOptions = {}): P
   mediaFileGrants().add(path)
   registerDownload(sessionId, path, true)
   return { path, filename, bytes: size, mimeType }
+  }
 }
 
 /**
@@ -200,11 +217,20 @@ export function registerBrowserDownloadCapture(): void {
       record.bytes = item.getReceivedBytes()
       if (state === 'completed') {
         try { mediaFileGrants().add(path) } catch (error) { log.warn('[browser-download] could not persist media grant', error) }
+        // Sealed, not released: the bytes are all there but nothing durable
+        // names the file until `queueDownloadUpload` has filed its job.
+        sealActiveWrite(driver?.sessionId, path)
         // Outside any tool call, so the transfer service takes it directly;
         // its completion wake is how the agent learns the node path works.
         if (driver?.connectionId) queueDownloadUpload(driver.connectionId, driver.sessionId, path)
+        else endActiveWrite(driver?.sessionId, path)
       }
-      if (state !== 'completed') log.warn(`[browser-download] ${state}: ${record.url}`)
+      if (state !== 'completed') {
+        log.warn(`[browser-download] ${state}: ${record.url}`)
+        // Cancelled or interrupted: there is nothing to hand on, and holding
+        // the claim would pin a stub the mirror may never prune.
+        endActiveWrite(driver?.sessionId, path)
+      }
       notifyWaiters()
     })
     notifyWaiters()

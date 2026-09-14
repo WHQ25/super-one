@@ -22,6 +22,7 @@ import {
 import { DRAFTS_TABLE_DDL } from '@superone/runtime/drafts'
 import { BASE_SESSION_PROVIDER_DEFINITIONS } from '@superone/shared/session-provider-definitions'
 import type Database from 'better-sqlite3'
+import { ensureSessionFileDeliveriesSchema } from './db-session-deliveries'
 import { encryptSecret } from './crypto/secret-store'
 
 /**
@@ -708,6 +709,12 @@ function applyMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_artifact_transfer_jobs_session
       ON artifact_transfer_jobs(session_id);
   `)
+
+  // The delivery record (docs/design/session-sync-zone-delivery-record.md):
+  // one durable row per zone file delivered to its node, replacing the table
+  // above and the two in-memory registries beside it. The DDL lives with the
+  // module so the tests build the exact schema the migration does.
+  ensureSessionFileDeliveriesSchema(db)
 }
 
 function seedBaseSessionProviders(db: Database.Database): void {

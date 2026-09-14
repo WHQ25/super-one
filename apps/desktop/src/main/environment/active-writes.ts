@@ -45,8 +45,9 @@
  * Claims are only taken for paths inside a session zone: a local session's
  * download lands in the user's Downloads folder, which no mirror ever walks.
  */
-import { basename, dirname, resolve } from 'node:path'
-import { realOrSelf } from './sync-zone-paths'
+import { canonicalClaimPath } from './sync-zone-paths'
+
+export { canonicalClaimPath }
 
 /** Where a claimed path is in its life. */
 export type ClaimStage = 'writing' | 'sealed'
@@ -76,22 +77,6 @@ interface Claim {
 }
 
 const claims = new Map<string, Claim>()
-
-/**
- * One spelling for a path, so the writer and the mirror agree.
- *
- * Only the directory is resolved. The file itself may not exist yet — a
- * reservation is an empty `wx` create that a stream then fills — and
- * `realpath` on a missing path throws.
- *
- * Exported because the pending-handoff table keys on the same path and the two
- * must agree: a handoff filed under one spelling and looked up under another
- * silently protects nothing.
- */
-export function canonicalClaimPath(path: string): string {
-  const abs = resolve(path)
-  return resolve(realOrSelf(dirname(abs)), basename(abs))
-}
 
 function keyFor(sessionId: string, path: string): string {
   return `${sessionId}\t${canonicalClaimPath(path)}`

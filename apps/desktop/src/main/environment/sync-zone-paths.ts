@@ -9,7 +9,7 @@
  */
 import type { EnvironmentOs } from '@superone/shared/environment'
 import { sessionZoneDir, zoneRelativePath } from '../media-output-paths'
-import { dirname, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { lstatSync, realpathSync } from 'node:fs'
 
 export interface NodeSyncZone {
@@ -307,6 +307,19 @@ export function realOrSelf(path: string): string {
 }
 
 /** This session's zone root, or null when the zone directory is itself a link (never ours to write through). */
+/**
+ * One spelling for a zone file's path, so every table that keys on it agrees.
+ *
+ * Only the directory is resolved. The file itself may not exist yet — a
+ * reservation is an empty `wx` create that a stream then fills — and
+ * `realpath` on a missing path throws. A delivery filed under one spelling
+ * and looked up under another silently protects nothing.
+ */
+export function canonicalClaimPath(path: string): string {
+  const abs = resolve(path)
+  return resolve(realOrSelf(dirname(abs)), basename(abs))
+}
+
 export function canonicalSessionZone(sessionId: string): string | null {
   const dir = sessionZoneDir(sessionId)
   try {

@@ -61,9 +61,16 @@ export function zoneDestination(sessionId: string, explicit?: string | null): Zo
   return marked ? { kind: 'remote', connectionId: marked } : { kind: 'local' }
 }
 
+export type ZoneDeliveryRefusal =
+  | 'session-dropped'
+  | 'path-taken'
+  | 'unknown-destination'
+  /** The reservation this process held was invalidated underneath it — the session was dropped mid-write. */
+  | 'reservation-lost'
+
 export class ZoneDeliveryRefused extends Error {
   constructor(
-    readonly reason: 'session-dropped' | 'path-taken' | 'unknown-destination',
+    readonly reason: ZoneDeliveryRefusal,
     path: string,
   ) {
     super(`zone delivery refused (${reason}): ${path}`)
@@ -122,10 +129,20 @@ export function reserveZoneFile(input: ZoneFileInput): string | null {
 }
 
 /**
- * The bytes at `path` are all there. Seals a reservation this process holds,
- * publishes a file that was never reserved, or — for a path that already has
- * a row — returns that row's id without touching it. `bytes` lets a producer
- * that still has the buffer skip re-reading the file for its hash.
+ * The bytes at `path` are all there. Three intents, told apart rather than
+ * guessed:
+ *
+ * - **Seal** a reservation this process holds. The advance is a compare-and-set;
+ *   if it fails the row was taken away underneath us (the session was dropped)
+ *   and the seal is refused as `reservation-lost` — never reported as done.
+ * - **Publish** a file written just now (`bytes` given) that was never
+ *   reserved: a row at `sealed`. A path that already has a row is refused
+ *   (`path-taken`): new bytes at an old name is R2's case, not an observation.
+ * - **Observe** a path already delivered (no reservation, no `bytes`): a
+ *   re-listing or a status boundary naming the file again. Returns the row's
+ *   id untouched. A row still `writing` under someone else, or one that was
+ *   abandoned, is not observable: the first is a second writer, which `wx`
+ *   makes impossible; the second is a name that was burned. Both are refused.
  */
 export function sealZoneFile(input: ZoneFileInput & { bytes?: Buffer | string }): string | null {
   if (!isUnderSyncZone(input.path)) return null
@@ -136,14 +153,21 @@ export function sealZoneFile(input: ZoneFileInput & { bytes?: Buffer | string })
     try {
       const identity = contentIdentity(input.path, input.bytes)
       const sealed = advanceDelivery(held, { from: 'writing', to: 'sealed', ...identity })
-      if (sealed.ok) releaseDelivery(sealed.handle)
+      if (!sealed.ok || !releaseDelivery(sealed.handle)) throw new ZoneDeliveryRefused('reservation-lost', input.path)
     } finally {
       retireHolder(held.holder)
     }
     return held.deliveryId
   }
   const existing = findDeliveryByPath(input.sessionId, input.path)
-  if (existing) return existing.deliveryId
+  if (existing) {
+    // Observable means a delivery that is happening or has happened. New bytes
+    // at an old name, a row still being written by someone else, and a row
+    // that was abandoned are none of those: the name is taken, not reusable.
+    const observable = input.bytes === undefined && existing.outcome !== 'abandoned' && existing.phase !== 'writing'
+    if (!observable) throw new ZoneDeliveryRefused('path-taken', input.path)
+    return existing.deliveryId
+  }
   const connectionId = destinationOrRefuse(input)
   if (!connectionId) return null
   const r = reserveDelivery({
@@ -191,10 +215,20 @@ export function recordTolerantly<T>(what: string, fn: () => T): T | null {
   try {
     return fn()
   } catch (err) {
+    if (err instanceof ZoneDeliveryRefused && STRICT_ALREADY.has(err.reason)) throw err
     log.warn('[zone-delivery] could not record %s (old path continues): %s', what, err instanceof Error ? err.message : String(err))
     return null
   }
 }
+
+/**
+ * The refusals that are the record's verdict on THIS write — a name already
+ * written in this session, a reservation the session took away — are never
+ * tolerated: swallowing either reports a file as delivered that is not. The
+ * two about the session's context (no destination, session dropped) are what
+ * the old fixtures cannot yet satisfy; they join this set in step 3.
+ */
+const STRICT_ALREADY: ReadonlySet<ZoneDeliveryRefusal> = new Set(['path-taken', 'reservation-lost'])
 
 /**
  * What producers call instead of `registerArtifact`: seal or publish the file
@@ -204,6 +238,9 @@ export function recordTolerantly<T>(what: string, fn: () => T): T | null {
 export function publishArtifact(sessionId: string, ref: ArtifactRef & { bytes?: Buffer | string; connectionId?: string | null }): void {
   const { bytes, connectionId, ...plain } = ref
   const origin: DeliveryOrigin = ref.producer === 'download' ? 'download' : 'produced'
+  // A refusal is the record's answer, not a recording failure: a lost
+  // reservation or a taken name is never registered as a final ref. Only an
+  // error in recording itself is tolerated, and only until step 3.
   const deliveryId = ref.final
     ? recordTolerantly(ref.path, () => sealZoneFile({ sessionId, path: ref.path, origin, connectionId, bytes }))
     : openZoneReservation(sessionId, ref.path)

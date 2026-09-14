@@ -14,7 +14,7 @@ import { persistComputerUseScreenshot } from './screenshot-store'
 import { releaseComputerUseViewfinder } from './viewfinder'
 import type { CapturedImage } from './types'
 import { encode as toonEncode } from '@toon-format/toon'
-import { createActionRecordingPath } from '../agent/action-recording-store'
+import { abandonActionRecording, createActionRecordingPath } from '../agent/action-recording-store'
 import { publishArtifact } from '../environment/zone-delivery'
 import { outlineToToon } from './outline-toon'
 import { imageNote, recordingNote } from '../mcp/show-your-work-notes'
@@ -763,15 +763,23 @@ async function executeComputerUseToolInner(
       }
       case 'computer_act': {
         await ensureGrantForState(sessionId, service, normalized, String(args.stateId))
-        const result = await service.act(String(args.stateId), args.actions, {
-          expect: parseCondition(args.expect),
-          delivery: args.delivery as 'semantic' | 'app-directed' | 'physical' | undefined,
-          timeoutMs: args.timeoutMs as number | undefined,
-          signal: context.signal,
-          ...(args.recording === true
-            ? { recordingPath: createActionRecordingPath(sessionId, 'computer', 'mp4') }
-            : {}),
-        })
+        // Reserved before the action: the helper's recorder fills it for the
+        // whole run. Every exit that does not hand back a sealed recording —
+        // the action failing, the helper producing none — gives the path up.
+        const recordingPath = args.recording === true ? createActionRecordingPath(sessionId, 'computer', 'mp4') : null
+        let result: Awaited<ReturnType<typeof service.act>>
+        try {
+          result = await service.act(String(args.stateId), args.actions, {
+            expect: parseCondition(args.expect),
+            delivery: args.delivery as 'semantic' | 'app-directed' | 'physical' | undefined,
+            timeoutMs: args.timeoutMs as number | undefined,
+            signal: context.signal,
+            ...(recordingPath ? { recordingPath } : {}),
+          })
+        } catch (error) {
+          if (recordingPath) abandonActionRecording(sessionId, recordingPath)
+          throw error
+        }
         const successorImage = toAgentImage(result.successorImage, sessionId)
         if (successorImage?.path) {
           service.alignStateVisual(result.successorStateId, successorImage)
@@ -779,9 +787,11 @@ async function executeComputerUseToolInner(
         // The path was reserved before the action ran; it is an artifact only
         // once the helper has sealed the file, which is what `recording` in the
         // result means (session-sync-zone.md §3).
-        const recordingPath = (result as { recording?: { savedPath?: unknown } }).recording?.savedPath
-        if (typeof recordingPath === 'string' && recordingPath) {
-          publishArtifact(sessionId, { path: recordingPath, producer: 'recording', final: true })
+        const savedPath = (result as { recording?: { savedPath?: unknown } }).recording?.savedPath
+        if (typeof savedPath === 'string' && savedPath) {
+          publishArtifact(sessionId, { path: savedPath, producer: 'recording', final: true })
+        } else if (recordingPath) {
+          abandonActionRecording(sessionId, recordingPath)
         }
         return textReply({
           ...result,

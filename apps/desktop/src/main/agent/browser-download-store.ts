@@ -1,9 +1,9 @@
 import { beginActiveWrite, sealActiveWrite } from '../environment/active-writes'
-import { publishArtifact, recordTolerantly, reserveZoneFile } from '../environment/zone-delivery'
+import { publishArtifact, recordTolerantly, reserveZoneFile, ZoneDeliveryRefused } from '../environment/zone-delivery'
 import { acquireHandoff, enqueueHandoff, type EnqueueJob } from '../environment/pending-handoffs'
 import { ensureZoneDir } from '../environment/zone-owner'
 import { realOrSelf, withinSessionZone } from '../environment/sync-zone-paths'
-import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, statSync } from 'fs'
+import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, statSync, unlinkSync } from 'fs'
 import { basename, extname, isAbsolute, join } from 'path'
 import { randomUUID } from 'crypto'
 import { app } from 'electron'
@@ -166,24 +166,64 @@ export function reserveDownloadPath(filename: string, dir?: string | null, sessi
   const root = ensureDir(dir, sessionId, origin)
   for (let attempt = 0; attempt < 100; attempt++) {
     const candidate = uniqueCandidate(root, filename, attempt)
-    try {
-      closeSync(openSync(candidate, 'wx'))
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
-      continue
+    if (claimDownloadName(candidate, sessionId, origin)) {
+      registerDownload(sessionId, candidate, false, origin)
+      return candidate
     }
-    registerDownload(sessionId, candidate, false, origin)
-    return candidate
   }
   // 100 same-named files in one folder: stop guessing and make the name unique.
   // Reserved exactly like the others — this used to hand back a path with no
   // file created and no claim taken, the one download the mirror could prune.
   const ext = extname(filename)
   const stem = ext ? filename.slice(0, -ext.length) : filename
-  const unique = join(root, `${stem} (${randomUUID().slice(0, 8)})${ext}`)
-  closeSync(openSync(unique, 'wx'))
-  registerDownload(sessionId, unique, false, origin)
-  return unique
+  for (;;) {
+    const unique = join(root, `${stem} (${randomUUID().slice(0, 8)})${ext}`)
+    if (claimDownloadName(unique, sessionId, origin)) {
+      registerDownload(sessionId, unique, false, origin)
+      return unique
+    }
+  }
+}
+
+/**
+ * Take one candidate name, or say it is not free. A name is free only when
+ * BOTH the filesystem and the delivery record say so: the `wx` create picks
+ * it atomically on disk, and the record must accept it as never written in
+ * this session (R2). A vacancy on disk is not a free name — a delivered file
+ * the node has since deleted leaves exactly that, and a new download slipping
+ * into its row would be reported as already delivered. On `path-taken` the
+ * empty stub this call created is removed and the next name is tried.
+ *
+ * Until step 3 of the delivery-record work, a refusal for any other reason
+ * (session dropped, destination unknown) is tolerated: the old path continues.
+ */
+function claimDownloadName(candidate: string, sessionId: string | null | undefined, origin?: DownloadOrigin): boolean {
+  try {
+    closeSync(openSync(candidate, 'wx'))
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
+    return false
+  }
+  if (!sessionId || !isUnderSyncZone(candidate)) return true
+  try {
+    reserveZoneFile({
+      sessionId,
+      path: candidate,
+      origin: origin ? 'page-download' : 'download',
+      ...(origin ? { connectionId: origin.connectionId } : {}),
+    })
+    return true
+  } catch (err) {
+    if (err instanceof ZoneDeliveryRefused && err.reason === 'path-taken') {
+      unlinkSync(candidate)
+      return false
+    }
+    // Step 2: a refusal about the session's context is tolerated; step 3 makes it the download's failure.
+    recordTolerantly(candidate, () => {
+      throw err
+    })
+    return true
+  }
 }
 
 /**
@@ -210,20 +250,9 @@ export function registerDownload(sessionId: string | null | undefined, path: str
   if (final) sealActiveWrite(sessionId, path)
   else beginActiveWrite(sessionId, path)
   // The delivery record, beside the claim above until step 3 replaces it. The
-  // reservation is made in the same synchronous sequence as the `wx` create,
-  // so the file has no bytes and no gap before the row exists. A page
-  // download's tab driver names its node explicitly; a tool's call scope
-  // names it implicitly.
-  if (!final) {
-    recordTolerantly(path, () =>
-      reserveZoneFile({
-        sessionId,
-        path,
-        origin: origin ? 'page-download' : 'download',
-        ...(origin ? { connectionId: origin.connectionId } : {}),
-      }),
-    )
-  }
+  // reservation itself was made by `claimDownloadName`, in the same
+  // synchronous sequence as the `wx` create; this registers the ref (with the
+  // reservation's id) and, on `final`, seals it.
   publishArtifact(sessionId, { path, producer: 'download', final, ...(origin ? { connectionId: origin.connectionId } : {}) })
 }
 

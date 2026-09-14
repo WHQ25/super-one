@@ -216,11 +216,34 @@ wired in §10.3 with the worker, where their seal points (`screenshot()`,
 `stopRecording()`) meet the consumer. Until then those captures are as
 unprotected as they were before this work.
 
+**A name is free only when both the filesystem and the record say so.** The
+`wx` create picks a name atomically on disk; the record then has to accept it
+as never written in this session (R2). A vacancy on disk is not a free name —
+a delivered file the node has since deleted leaves exactly that — so on
+`path-taken` the factory removes the empty stub it just created and tries the
+next name. Sealing, publishing and observing are three intents told apart,
+not guessed: a seal whose compare-and-set fails is refused as
+`reservation-lost` and never registered; a publish (`bytes` given) onto a
+path that has a row is refused; an observation returns a row only if it is a
+delivery that is happening or has happened — never a `writing` row under
+someone else, never an abandoned one.
+
+**Every writer exit closes its reservation.** A page download is sealed by
+the `DownloadItem`'s own completion, not by a later listing that may never
+come; a recording reservation is abandoned by every consumer's failure exit
+(`abandonActionRecording`) — the source missing, the action failing, the
+helper producing none. Nothing times out on its own; an open reservation
+with a live holder is, by design, a writer still working.
+
 **Step 2 is dual-path.** Producers write the record beside the old
 claim/handoff registries, and nothing consumes it until §10.3. Until then a
-failure to record is logged, not raised (`recordTolerantly`), so the old path
-behaves exactly as before and every existing test stays green. §10.3 deletes
-that function; a refusal becomes the operation's failure.
+failure to *record* is logged, not raised (`recordTolerantly`), so the old
+path behaves exactly as before. Two refusals are already strict, because they
+are the record's verdict on the write itself and swallowing either reports a
+file as delivered that is not: `path-taken` and `reservation-lost`. The two
+about the session's context — `unknown-destination`, `session-dropped` —
+are what the old fixtures cannot yet satisfy; §10.3 makes them strict with
+those fixtures and deletes `recordTolerantly`.
 
 **Local and adhoc sessions have no row.** `reserve()` takes the destination
 from explicit context — the call scope's connection

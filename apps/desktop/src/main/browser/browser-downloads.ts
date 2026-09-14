@@ -7,7 +7,7 @@ import log from '../logger'
 import { mediaFileGrants } from '../media-file-grants'
 import { browserAutomationCall } from './browser-automation-bridge'
 import { abandonWriteClaim, sealActiveWrite } from '../environment/active-writes'
-import { abandonZoneFile } from '../environment/zone-delivery'
+import { abandonZoneFile, recordTolerantly, sealZoneFile } from '../environment/zone-delivery'
 
 /** The writer gives up: the claim and the delivery record both let go of the path. */
 function abandonDownload(sessionId: string | null | undefined, path: string): void {
@@ -227,6 +227,12 @@ export function registerBrowserDownloadCapture(): void {
         // Sealed, not released: the bytes are all there but nothing durable
         // names the file until `queueDownloadUpload` has filed its job.
         sealActiveWrite(driver?.sessionId, path)
+        // The delivery record is sealed HERE, by the item's own completion —
+        // not by a later listing that may never come. Its node was named at
+        // reservation, from the tab driver.
+        if (driver) {
+          recordTolerantly(path, () => sealZoneFile({ sessionId: driver.sessionId, path, origin: 'page-download', connectionId: driver.connectionId }))
+        }
         // Outside any tool call, so the transfer service takes it directly;
         // its completion wake is how the agent learns the node path works.
         if (driver?.connectionId) queueDownloadUpload(driver.connectionId, driver.sessionId, path)

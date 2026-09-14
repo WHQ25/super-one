@@ -4,7 +4,7 @@ import { extname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import log from '../logger'
 import { producerDir } from '../media-output-paths'
-import { publishArtifact, recordTolerantly, reserveZoneFile } from '../environment/zone-delivery'
+import { abandonZoneFile, publishArtifact, recordTolerantly, reserveZoneFile } from '../environment/zone-delivery'
 
 export type ActionRecordingTarget = 'web' | 'device' | 'computer'
 
@@ -54,13 +54,15 @@ export function persistActionRecording(
   base64: string,
   mimeType: string,
 ): string | null {
+  let path: string | null = null
   try {
-    const path = createActionRecordingPath(sessionId, target, extensionFor(mimeType))
+    path = createActionRecordingPath(sessionId, target, extensionFor(mimeType))
     writeFileSync(path, Buffer.from(base64, 'base64'), { mode: 0o600 })
     registerRecording(sessionId, path)
     return path
   } catch (error) {
     log.warn('[action-recording] failed to persist video', error)
+    if (path) abandonActionRecording(sessionId, path)
     return null
   }
 }
@@ -86,10 +88,27 @@ export function adoptActionRecording(
   const extension =
     extname(sourcePath).toLowerCase() === '.webm' ? 'webm' : 'mp4'
   const path = createActionRecordingPath(sessionId, target, extension)
-  copyFileSync(sourcePath, path)
-  chmodSync(path, 0o600)
-  registerRecording(sessionId, path)
+  try {
+    copyFileSync(sourcePath, path)
+    chmodSync(path, 0o600)
+    registerRecording(sessionId, path)
+  } catch (error) {
+    // The factory spoke for the destination; a source that is not there must
+    // give it back, or a live holder guards an empty path until the process ends.
+    abandonActionRecording(sessionId, path)
+    throw error
+  }
   return actionRecordingFromPath(path, startedAt)
+}
+
+/**
+ * The recording the factory reserved a path for is not going to exist: the
+ * helper never started, the action failed, the source was missing. Every
+ * consumer of `createActionRecordingPath` has to reach this on its failure
+ * exits; the reservation does not time out on its own.
+ */
+export function abandonActionRecording(sessionId: string | null | undefined, path: string): void {
+  if (sessionId) abandonZoneFile(sessionId, path)
 }
 
 /** Sealed the moment it is on disk: the tool reply that names it goes out next. */

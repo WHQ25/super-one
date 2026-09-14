@@ -1,9 +1,11 @@
-import { describe, expect, it } from 'vitest'
+/** @vitest-environment jsdom */
+import { describe, expect, it, vi } from 'vitest'
 import {
   decodeRemoteMediaUrl,
   encodeRemoteMediaUrl,
   isRemoteMediaUrl,
   relativeUnderRemoteProject,
+  resolveDisplayMediaSrc,
   resolveMediaSrcForProject,
 } from './remote-media-url'
 
@@ -41,6 +43,14 @@ describe('remote-media-url', () => {
     const src = resolveMediaSrcForProject(nodePath, project)
     expect(isRemoteMediaUrl(src)).toBe(true)
     expect(decodeRemoteMediaUrl(src)).toEqual({ projectPath: project, relativePath: nodePath })
+  })
+
+  it('displays a zone media file from the local-file URL the host returns, not only from a data URI', async () => {
+    // Large media does not fit a data URI; the host answers with the URL of
+    // its mirror instead, which the local-file protocol streams by range.
+    const url = 'local-file:///Users/me/Library/Application%20Support/SuperOne/sync/s1/recording/run.mp4'
+    Object.assign(window.app, { readProjectFile: vi.fn(async () => ({ path: '/x', content: url, language: 'video' })) })
+    expect(await resolveDisplayMediaSrc(encodeRemoteMediaUrl(project, '/home/node/sync/s1/recording/run.mp4'))).toBe(url)
   })
 
   it('local project still uses local-file URLs', () => {

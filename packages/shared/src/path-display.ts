@@ -49,3 +49,27 @@ export function homePath(absolutePath: string): string {
   return absolutePath.replace(HOME_RE, '~')
 }
 
+
+/**
+ * The desktop's `local-file://` URL for an absolute path — the scheme the
+ * renderer loads project and session-zone media through. One definition for
+ * both processes: the main process hands these out for zone media and the
+ * renderer builds them for local files, and they have to agree on encoding.
+ */
+export function toLocalFileUrl(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, '/')
+  const encoded = encodeURI(normalized).replace(/#/g, '%23')
+  return /^[A-Za-z]:/.test(normalized) ? `local-file:///${encoded}` : `local-file://${encoded}`
+}
+
+/** The absolute path a `local-file://` URL names, or null for any other URL. */
+export function localFileUrlToPath(url: string): string | null {
+  if (!url.startsWith('local-file://')) return null
+  try {
+    const path = decodeURIComponent(new URL(url).pathname)
+    // Windows: `local-file:///C:/x` has pathname `/C:/x`.
+    return /^\/[A-Za-z]:/.test(path) ? path.slice(1) : path
+  } catch {
+    return null
+  }
+}

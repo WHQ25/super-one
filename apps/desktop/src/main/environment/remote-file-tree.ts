@@ -43,6 +43,7 @@ import { AsyncCoalescer } from '../async-cache'
 import type { EnvironmentHost } from './environment-host'
 import { RemoteEnvironmentGateway } from './remote-environment-gateway'
 import { resolveSessionFile, resolverDepsFor } from './session-file-resolver'
+import { toLocalFileUrl } from '@superone/shared/path-display'
 
 /** Coalesce status-bar + file-tree git.status RPCs (same as local 1.5s window). */
 const REMOTE_GIT_STATUS_TTL_MS = 1_500
@@ -621,26 +622,35 @@ export async function materializeRemotePathsForDrag(
  * only paths under a single remote folderPath that we can resolve are exported
  * when `folderPath` is provided; otherwise each path is parsed independently.
  */
+type MediaLanguage = 'image' | 'pdf' | 'video' | 'audio'
+
+/** The preview language of a media file by extension, or null for anything else. */
+function mediaLanguage(filePath: string): MediaLanguage | null {
+  const ext = extname(filePath).toLowerCase()
+  if (REMOTE_IMAGE_EXTS.has(ext)) return 'image'
+  if (REMOTE_PDF_EXTS.has(ext)) return 'pdf'
+  if (REMOTE_VIDEO_EXTS.has(ext)) return 'video'
+  if (REMOTE_AUDIO_EXTS.has(ext)) return 'audio'
+  return null
+}
+
+const MEDIA_FALLBACK_MIME: Record<MediaLanguage, string> = {
+  image: 'application/octet-stream',
+  pdf: 'application/pdf',
+  video: 'video/mp4',
+  audio: 'audio/mpeg',
+}
+
 /** `GitFileContent` for bytes already in hand — the shape the panel and the previewer read. */
 export function fileContentFromBuffer(filePath: string, buf: Buffer): GitFileContent {
   const ext = extname(filePath).toLowerCase()
   if (buf.length > MAX_TRANSFER_BYTES) {
     return { path: filePath, content: '', language: 'too-large' }
   }
-  if (REMOTE_IMAGE_EXTS.has(ext)) {
-    const mime = REMOTE_MIME[ext] ?? 'application/octet-stream'
-    return { path: filePath, content: `data:${mime};base64,${buf.toString('base64')}`, language: 'image' }
-  }
-  if (REMOTE_PDF_EXTS.has(ext)) {
-    return { path: filePath, content: `data:application/pdf;base64,${buf.toString('base64')}`, language: 'pdf' }
-  }
-  if (REMOTE_VIDEO_EXTS.has(ext)) {
-    const mime = REMOTE_MIME[ext] ?? 'video/mp4'
-    return { path: filePath, content: `data:${mime};base64,${buf.toString('base64')}`, language: 'video' }
-  }
-  if (REMOTE_AUDIO_EXTS.has(ext)) {
-    const mime = REMOTE_MIME[ext] ?? 'audio/mpeg'
-    return { path: filePath, content: `data:${mime};base64,${buf.toString('base64')}`, language: 'audio' }
+  const media = mediaLanguage(filePath)
+  if (media) {
+    const mime = REMOTE_MIME[ext] ?? MEDIA_FALLBACK_MIME[media]
+    return { path: filePath, content: `data:${mime};base64,${buf.toString('base64')}`, language: media }
   }
   // Sniff binary vs text (nul byte in first 8 KiB).
   const sniff = buf.subarray(0, Math.min(8192, buf.length))
@@ -654,8 +664,9 @@ export function fileContentFromBuffer(filePath: string, buf: Buffer): GitFileCon
 
 /**
  * Read a file for FilePreview / source control under a remote root.
- * Media types return a `data:` URI in `content` so the renderer can preview
- * without a local file:// path.
+ * Media on the node returns a `data:` URI in `content` so the renderer can
+ * preview without a local path; media in the session zone returns the
+ * `local-file://` URL of its desktop mirror instead, which has no size cap.
  *
  * The path goes through `resolveSessionFile` first (session-sync-zone.md §4.2):
  * a node-zone artifact is served from the desktop mirror, a desktop-zone path
@@ -671,6 +682,15 @@ export async function readRemoteProjectFile(
     return { path: filePath, content: '', language: 'text', error: 'missing' }
   }
   if (resolution.kind === 'local') {
+    // Media is handed over as the mirror's URL, not its bytes. The local-file
+    // protocol already serves the zone with range requests; a data URI would
+    // carry a whole recording through IPC and into the DOM, which is why it
+    // had a cap that a screen recording clears without trying.
+    const media = mediaLanguage(filePath)
+    if (media) {
+      if (!existsSync(resolution.path)) return { path: filePath, content: '', language: 'text', error: 'missing' }
+      return { path: filePath, content: toLocalFileUrl(resolution.path), language: media }
+    }
     try {
       // Size first. Reading a 4 GB recording into the main process only to
       // report `too-large` from its length blocks every window and can take

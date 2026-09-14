@@ -1,25 +1,19 @@
 import { useEffect, useState } from 'react'
 import { isRemoteMediaUrl, resolveDisplayMediaSrc } from '@/lib/remote-media-url'
-import { mediaUrlFor } from '@/lib/path-utils'
+import { localFileUrlToPath, mediaUrlFor } from '@/lib/path-utils'
 import { useMediaServerPort } from './use-media-server-port'
 
 function localFileToMediaUrl(src: string | undefined, port: number): string | undefined {
   if (!src) return src
-  if (src.startsWith('local-file:///')) {
-    try {
-      const filePath = decodeURIComponent(new URL(src).pathname)
-      return mediaUrlFor(filePath, port)
-    } catch {
-      return src
-    }
-  }
-  return src
+  const filePath = localFileUrlToPath(src)
+  return filePath ? mediaUrlFor(filePath, port) : src
 }
 
 /**
  * Resolve markdown media src for display.
  * - local-file → media-server / local-file URL (sync)
- * - remote-media → async readProjectFile → data URI
+ * - remote-media → async readProjectFile → data URI, or a local-file URL for
+ *   session-zone media, which then streams like a local file
  * - http/data → passthrough
  */
 export function useResolvedMediaSrc(src: string | undefined): {
@@ -60,6 +54,6 @@ export function useResolvedMediaSrc(src: string | undefined): {
   }, [src])
 
   if (!src) return { displaySrc: undefined, loading: false, failed: false }
-  if (isRemote) return { displaySrc: remoteSrc, loading, failed }
+  if (isRemote) return { displaySrc: localFileToMediaUrl(remoteSrc, port), loading, failed }
   return { displaySrc: localFileToMediaUrl(src, port) ?? src, loading: false, failed: false }
 }

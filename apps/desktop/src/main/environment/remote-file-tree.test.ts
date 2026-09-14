@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -374,6 +374,27 @@ describe('readRemoteProjectFile / saveRemoteProjectFile', () => {
       const result = await readRemoteProjectFile(host, 'remote:conn-1:/work/app', '/home/node/.superone/node/sync/s1/agent/report.md')
       expect(result).toMatchObject({ content: '# written on the node', language: 'markdown' })
       expect(readFile).not.toHaveBeenCalled()
+    })
+
+    it('serves zone media as a local-file URL to the mirror, whatever its size, instead of a capped data URI', async () => {
+      // A data URI carries the whole file through IPC and into the DOM, so it
+      // had a 10 MiB cap — and a screen recording clears that easily. The
+      // mirror is a real file under a root the local-file protocol already
+      // serves with range requests; the renderer only needs its URL.
+      const video = Buffer.alloc(12 * 1024 * 1024, 7)
+      const host = mockHost({
+        workspace: () => ({ readFile: vi.fn() }),
+        getSyncZone: () => ({ syncRoot: '/home/node/.superone/node/sync', os: 'linux' }),
+        artifactStat: async () => ({ exists: true, size: video.length, mtimeMs: 1_700_000_000_000 }),
+        artifactGet: async (_c: string, req: { offset: number; maxBytes: number }) => {
+          const slice = video.subarray(req.offset, req.offset + req.maxBytes)
+          return { chunk: slice.toString('base64'), total: video.length, mtimeMs: 1_700_000_000_000, eof: req.offset + slice.length >= video.length }
+        },
+      })
+      const result = await readRemoteProjectFile(host, 'remote:conn-1:/work/app', '/home/node/.superone/node/sync/s1/recording/run.mp4')
+      const mirror = join(zoneState.userData, 'sync', 's1', 'recording', 'run.mp4')
+      expect(result).toEqual({ path: '/home/node/.superone/node/sync/s1/recording/run.mp4', content: `local-file://${mirror}`, language: 'video' })
+      expect(existsSync(mirror)).toBe(true)
     })
 
     it('reports a zone file neither side has as missing, not as an empty editor', async () => {

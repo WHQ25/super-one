@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { PreviewerFile, PreviewerFileKind } from '@superone/shared/generative-ui/native-widgets'
-import { toLocalFileUrl, toMediaUrl } from '@/lib/path-utils'
+import { localFileUrlToPath, toLocalFileUrl, toMediaUrl } from '@/lib/path-utils'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { resolveDisplayMediaSrc, resolveMediaSrcForProject } from '@/lib/remote-media-url'
 
@@ -55,13 +55,18 @@ export function usePreviewerFile(root: string, file: PreviewerFile, active: bool
     if (!TEXT_KINDS.has(file.kind)) {
       // A node-session media file has no desktop file:// path; resolve it through
       // the same remote-media path the markdown images use — readProjectFile ->
-      // resolveSessionFile -> a data URI (inline-files-previewer.md §4.3).
+      // resolveSessionFile -> a data URI, or the mirror's local-file URL for
+      // session-zone media (inline-files-previewer.md §4.3).
       if (parseRemoteProjectKey(root) && !file.absolutePath.startsWith('data:')) {
         let cancelled = false
         setState({ status: 'loading' })
         void resolveDisplayMediaSrc(resolveMediaSrcForProject(file.absolutePath, root)).then((resolved) => {
           if (cancelled) return
-          setState(resolved ? { status: 'ready', url: resolved } : { status: 'error', error: 'io' })
+          if (!resolved) { setState({ status: 'error', error: 'io' }); return }
+          // Zone media comes back as its mirror's local-file URL: from here on
+          // it is a local file, and streams the way one does.
+          const mirror = localFileUrlToPath(resolved)
+          setState({ status: 'ready', url: mirror ? mediaUrl({ ...file, absolutePath: mirror }) : resolved })
         }).catch(() => { if (!cancelled) setState({ status: 'error', error: 'io' }) })
         return () => { cancelled = true }
       }

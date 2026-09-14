@@ -94,7 +94,8 @@ export function resolveMediaSrcForProject(src: string, projectPath: string): str
 
 /**
  * Turn a remote-media ref (or already-resolved src) into a browser-displayable URL.
- * Uses readProjectFile which returns data: URIs for media on remote projects.
+ * Uses readProjectFile, which returns a data: URI for media on the node and a
+ * local-file: URL for media mirrored into the session zone.
  */
 export async function resolveDisplayMediaSrc(src: string): Promise<string | null> {
   if (!src) return null
@@ -107,7 +108,9 @@ export async function resolveDisplayMediaSrc(src: string): Promise<string | null
   try {
     const file = await window.app.readProjectFile(remote.projectPath, remote.relativePath)
     if (file.language === 'too-large' || file.language === 'binary') return null
-    if (file.content.startsWith('data:')) return file.content
+    // Node media arrives as a data URI; session-zone media as the URL of its
+    // desktop mirror, which the local-file protocol streams at any size.
+    if (file.content.startsWith('data:') || file.content.startsWith('local-file:')) return file.content
     if (file.language === 'svg' && file.content) {
       return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(file.content)}`
     }

@@ -674,14 +674,13 @@ marked and the residue is stated):
   argument is a zone path, rather than reading whatever the desktop side last
   held. Supporting it means a directory manifest and per-file mirroring on
   the same `artifact.get` + version check the file path already uses.
-- **Zone media larger than 10 MiB has no desktop preview path.** Chat markdown
-  resolves a node media file by mirroring it and inlining a data URI, which is
-  capped at `MAX_TRANSFER_BYTES`; the read now stats first so a large file
-  fails instead of loading into the main process, but it still fails. Newly
-  migrated screen recordings clear 10 MiB easily. The fix is to serve a
-  mirrored zone file over the authorised local media protocol the desktop
-  already has, rather than as a data URI — a small change that belongs with
-  the previewer's media path, not with a node range-request RPC.
+- ~~**Zone media larger than 10 MiB has no desktop preview path.**~~ —
+  **implemented 2026-09-14.** `readProjectFile` answers a zone media file
+  with the `local-file://` URL of its desktop mirror instead of a data URI;
+  the local-file protocol already serves the zone with range requests, so a
+  recording of any size plays in chat markdown, the file preview and the
+  files previewer. Node *project* media (not in the zone) still arrives as a
+  data URI under the 10 MiB cap — it has no desktop file to point at.
 - **Older nodes** without `syncZone`: no rewrite, no mirror, consumers say
   `missing`. No shim.
 - **Multiple controllers.** The zone is keyed by session, the node root is

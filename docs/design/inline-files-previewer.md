@@ -607,8 +607,9 @@ Each phase is a separate PR.
   inside the session zone, a deferred transfer now wakes the agent when it
   lands, and recordings, device captures and downloads write into the zone.
   What the previewer still inherits: a file is `missing` between the block
-  rendering and the transfer landing, and zone media over 10 MiB has no
-  desktop preview path yet.
+  rendering and the transfer landing. (Zone media over 10 MiB previews since
+  2026-09-14: the host returns the mirror's `local-file://` URL and the
+  previewer streams it like a local file.)
 - **A session whose `cwd` is a worktree outside its registered project root**
   previews against the registered root, not the worktree. `previewerContext`
   authorises by registered project path on purpose — widening it to the

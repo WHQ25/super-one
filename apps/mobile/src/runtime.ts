@@ -140,6 +140,7 @@ export class ChatRuntime {
   private restoreQueue: Promise<void> = Promise.resolve()
   /** Request ids the phone already answered, so a replayed `ask_user_question` cannot reopen the sheet. */
   private resolvedQuestionIds = new Set<string>()
+  private resolvedPermissionIds = new Set<string>()
 
   constructor(
     private readonly client: RelayClient,
@@ -152,6 +153,7 @@ export class ChatRuntime {
     this.projectPath = projectPath
     this.sessionId = sessionId
     this.resolvedQuestionIds.clear()
+    this.resolvedPermissionIds.clear()
     this.attachmentBytes.clear()
     this.historyRequest = null
     this.navigationIndex = null
@@ -742,6 +744,7 @@ export class ChatRuntime {
     reason?: string,
     selectedSuggestions?: number[],
   ): void {
+    if (this.resolvedPermissionIds.has(requestId)) return
     const cmd: RemoteCommand = {
       type: 'respond_permission',
       requestId,
@@ -754,6 +757,8 @@ export class ChatRuntime {
       ...(formAnswers ? { formAnswers } : {}),
     }
     this.client.send(cmd)
+    this.ingest([{ type: 'interaction_resolved', interactionType: 'permission', requestId }])
+    this.flush()
   }
 
   respondPlan(requestId: string, approved: boolean, feedback?: string): void {
@@ -878,6 +883,10 @@ export class ChatRuntime {
     if (event.type === 'interaction_resolved' && event.interactionType === 'question') {
       this.resolvedQuestionIds.add(event.requestId)
     }
+    if (event.type === 'interaction_resolved' && event.interactionType === 'permission') {
+      this.resolvedPermissionIds.add(event.requestId)
+    }
+    if (event.type === 'permission_request' && this.resolvedPermissionIds.has(event.request.requestId)) return false
     return !(event.type === 'ask_user_question' && this.resolvedQuestionIds.has(event.request.requestId))
   }
 

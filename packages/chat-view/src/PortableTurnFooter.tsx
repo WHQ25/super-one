@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AlertTriangle, ArrowDown, ArrowUp, Check, ChevronDown, ChevronUp, Clock, Copy, Loader2 } from 'lucide-react'
 import type { ChatMessage } from '@superone/shared/agent-types'
@@ -17,30 +17,32 @@ import {
 import { requestNative } from './bridge'
 
 /**
- * The failure explanation, inline rather than in a popover: a phone has no
- * hover, and a tap target that hides the only description of what went wrong
- * behind a second tap is worse than the two extra lines. The kind → title/hint
- * mapping is the desktop one, so both surfaces name a failure identically.
+ * Keep the trigger in the metadata row, but let expanded details take a full
+ * flex line so usage and copy never subtract from the explanation's width.
+ * The kind → title/hint mapping is shared with desktop.
  */
 function PortableErrorBadge({ info }: { info: NonNullable<ChatMessage['metadata']>['errorInfo'] }) {
   const { t } = useTranslation()
   const kind = resolveAgentErrorKind(info!)
   const rows = useMemo(() => buildAgentErrorDetails(info!), [info])
   const [open, setOpen] = useState(false)
+  const detailsId = useId()
 
   return (
-    <div className="min-w-0 flex-1">
+    <>
       <button
         type="button"
+        aria-expanded={open}
+        aria-controls={detailsId}
         onClick={() => setOpen((value) => !value)}
-        className="flex items-center gap-1 text-warning"
+        className="flex min-w-0 items-center gap-1 text-left text-warning"
       >
         <AlertTriangle className="size-3 shrink-0" />
         <span>{t(`chat.error.title.${kind}`)}</span>
-        {open ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
+        {open ? <ChevronUp className="size-3 shrink-0" /> : <ChevronDown className="size-3 shrink-0" />}
       </button>
       {open && (
-        <div className="mt-1.5 rounded-md bg-muted/60 p-2 text-xs leading-relaxed text-muted-foreground">
+        <div id={detailsId} className="min-w-0 basis-full rounded-md bg-muted/60 p-2 text-xs leading-relaxed text-muted-foreground">
           <p className="text-foreground">{t(`chat.error.hint.${kind}`)}</p>
           {rows.map((row) => (
             <div key={row.label} className="mt-1 flex gap-2 font-mono">
@@ -51,15 +53,12 @@ function PortableErrorBadge({ info }: { info: NonNullable<ChatMessage['metadata'
           <p className="mt-2 border-t pt-2 font-mono break-all whitespace-pre-wrap">{info!.raw}</p>
         </div>
       )}
-    </div>
+    </>
   )
 }
 
 /**
- * One icon + label pair, sized to the row's 16px text line. The row itself is
- * top-aligned so an expanded error badge grows downward without dragging the
- * other items to its middle — but that leaves a bare 12px icon riding 2px
- * high against 16px text, so every pair centres itself inside its own line.
+ * One icon + label pair, centred inside the metadata row's 16px text line.
  */
 function Meta({ children, className }: { children: ReactNode; className?: string }) {
   return <span className={cn('inline-flex h-4 shrink-0 items-center gap-1.5', className)}>{children}</span>
@@ -140,7 +139,7 @@ export function PortableTurnFooter({
   const separator = <span aria-hidden>·</span>
 
   return (
-    <div className={cn('mt-2 flex items-start gap-1.5 text-xs text-muted-foreground', message.metadata?.turnSummary && 'mt-1')}>
+    <div className={cn('mt-2 flex flex-wrap items-start gap-1.5 text-xs text-muted-foreground', message.metadata?.turnSummary && 'mt-1')}>
       {showCopy && (
         <button
           type="button"

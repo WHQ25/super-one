@@ -9,7 +9,8 @@
  */
 import type { EnvironmentOs } from '@superone/shared/environment'
 import { sessionZoneDir, zoneRelativePath } from '../media-output-paths'
-import { join } from 'node:path'
+import { dirname, join, relative, resolve, sep } from 'node:path'
+import { lstatSync, realpathSync } from 'node:fs'
 
 export interface NodeSyncZone {
   syncRoot: string
@@ -278,4 +279,55 @@ export function mapNodeZoneArgs(
     return value
   }
   return { args: walk(args, null), refs }
+}
+
+/**
+ * The canonical path of `path` with every symlink on the way resolved, or —
+ * when it does not exist yet — the nearest existing ancestor resolved and the
+ * remaining segments kept as written, so a link planted on the way out is
+ * still followed. Shared by the download store and the directory mirror: any
+ * code about to *create under* or *delete within* a session zone has to reason
+ * about the real location, not the spelling.
+ */
+export function realOrSelf(path: string): string {
+  const resolved = resolve(path)
+  try {
+    return realpathSync(resolved)
+  } catch {
+    let parent = dirname(resolved)
+    while (parent !== dirname(parent)) {
+      try {
+        return join(realpathSync(parent), relative(parent, resolved))
+      } catch {
+        parent = dirname(parent)
+      }
+    }
+    return resolved
+  }
+}
+
+/** This session's zone root, or null when the zone directory is itself a link (never ours to write through). */
+export function canonicalSessionZone(sessionId: string): string | null {
+  const dir = sessionZoneDir(sessionId)
+  try {
+    if (lstatSync(dir).isSymbolicLink()) return null
+  } catch {
+    /* not there yet; it will be created as a real directory */
+  }
+  return realOrSelf(dir)
+}
+
+/**
+ * Is `path` inside *this* session's zone, once every symlink on the way has
+ * been resolved? The zone root is not the boundary — another session's
+ * directory is inside it, and a link planted in this one leads out of it. The
+ * one operation a link can redirect is the dangerous one (create, delete), so
+ * this is checked before either, on the path and every ancestor up to the
+ * session root.
+ */
+export function withinSessionZone(sessionId: string, path: string): boolean {
+  const root = canonicalSessionZone(sessionId)
+  if (root === null) return false
+  const target = realOrSelf(path)
+  return target === root || target.startsWith(root + sep)
 }

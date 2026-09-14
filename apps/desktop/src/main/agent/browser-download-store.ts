@@ -1,10 +1,11 @@
 import { ensureZoneDir } from '../environment/zone-owner'
-import { closeSync, copyFileSync, existsSync, lstatSync, mkdirSync, openSync, realpathSync } from 'fs'
-import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'path'
+import { realOrSelf, withinSessionZone } from '../environment/sync-zone-paths'
+import { closeSync, copyFileSync, existsSync, mkdirSync, openSync } from 'fs'
+import { basename, extname, isAbsolute, join } from 'path'
 import { randomUUID } from 'crypto'
 import { app } from 'electron'
 import { readAppSettings } from '../app-settings-service'
-import { isUnderSyncZone, producerDir, sessionZoneDir, zoneRelativePath } from '../media-output-paths'
+import { isUnderSyncZone, producerDir, zoneRelativePath } from '../media-output-paths'
 import { currentCallOwner, currentHostActionConnection, registerArtifact } from '../mcp/artifact-registry'
 import log from '../logger'
 
@@ -183,46 +184,6 @@ export function reserveDownloadPath(filename: string, dir?: string | null, sessi
  * as "inside the zone", including the directory it was aimed at. The node
  * applies the same rule to its own session directories.
  */
-function canonicalSessionZone(sessionId: string): string | null {
-  const dir = sessionZoneDir(sessionId)
-  try {
-    if (lstatSync(dir).isSymbolicLink()) return null
-  } catch {
-    /* not there yet; it will be created as a real directory */
-  }
-  return realOrSelf(dir)
-}
-
-/**
- * Is `dir` inside *this* session's zone, once every symlink on the way has
- * been resolved? The zone root is not the boundary — another session's
- * directory is inside it, and a link planted in this one leads out of it.
- */
-function withinSessionZone(sessionId: string, dir: string): boolean {
-  const root = canonicalSessionZone(sessionId)
-  if (root === null) return false
-  const target = realOrSelf(dir)
-  return target === root || target.startsWith(root + sep)
-}
-
-function realOrSelf(path: string): string {
-  const resolved = resolve(path)
-  try {
-    return realpathSync(resolved)
-  } catch {
-    // Not there yet: resolve the nearest existing ancestor so a link on the
-    // way out is still followed, and keep the rest as written.
-    let parent = dirname(resolved)
-    while (parent !== dirname(parent)) {
-      try {
-        return join(realpathSync(parent), relative(parent, resolved))
-      } catch {
-        parent = dirname(parent)
-      }
-    }
-    return resolved
-  }
-}
 
 /**
  * A download is registered when its path is reserved and again when the bytes

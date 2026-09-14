@@ -761,7 +761,7 @@ function SessionRow({ session }: { session: MockSession }) {
         </div>
         <span className="min-w-0 truncate text-[13px]">{session.title}</span>
         <div className="ml-auto flex shrink-0 items-center">
-          <button className="box-content w-0 shrink-0 overflow-hidden rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-all hover:text-sidebar-foreground group-hover/session:w-3 group-hover/session:opacity-100">
+          <button className="box-content w-0 shrink-0 overflow-hidden rounded p-0 text-sidebar-foreground/70 opacity-0 transition-[width,padding,opacity] hover:text-sidebar-foreground group-hover/session:w-3 group-hover/session:p-0.5 group-hover/session:opacity-100">
             <Pin className="size-3" />
           </button>
         </div>

@@ -20,6 +20,12 @@ import { useSessionMenuItems, type SessionMenuCallbacks } from './useSessionMenu
 
 const EMPTY_REMOTE_SESSION_IDS: string[] = []
 
+/** Pin / expand: a true 0-width box at rest. `p-0.5` on `box-content w-0`
+ *  still occupies 4px per control, which shoved scheduled clocks out of
+ *  alignment across rows that do or don't have children. Padding lands on hover. */
+const SESSION_ROW_HOVER_ACTION =
+  'box-content w-0 shrink-0 overflow-hidden rounded p-0 text-sidebar-foreground/70 opacity-0 transition-[width,padding,opacity] hover:text-sidebar-foreground group-hover/session:w-3 group-hover/session:p-0.5 group-hover/session:opacity-100'
+
 /** Lazy `lastEventAt` reader — never subscribe; the store rewrites it on every
  *  content delta and a subscription would re-render the whole session list at
  *  stream frequency. Stall level only needs a 1 Hz sample. */
@@ -184,7 +190,7 @@ export const SessionRow = memo(function SessionRow({
                   is a state, and a state the user cannot see explains nothing. */}
               {scheduled && (
                 <Clock
-                  className="mr-1 size-3 shrink-0 text-warning"
+                  className="size-3 shrink-0 text-warning group-hover/session:mr-1"
                   aria-label={t('sidebar.scheduledFor', { time: formatSendWhen(scheduled.sendAt, Date.now()) })}
                 />
               )}
@@ -195,7 +201,7 @@ export const SessionRow = memo(function SessionRow({
                     onToggleChildren()
                   }}
                   title={childrenCollapsed ? t('sidebar.contextMenu.expandChildren') : t('sidebar.contextMenu.collapseChildren')}
-                  className="box-content w-0 overflow-hidden rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-all hover:text-sidebar-foreground group-hover/session:w-3 group-hover/session:opacity-100"
+                  className={SESSION_ROW_HOVER_ACTION}
                 >
                   {childrenCollapsed
                     ? <ChevronRight className="size-3" />
@@ -207,7 +213,7 @@ export const SessionRow = memo(function SessionRow({
                   e.stopPropagation()
                   onPinSession(session.sessionId, !session.isPinned, folderPath)
                 }}
-                className="box-content w-0 overflow-hidden rounded p-0.5 text-sidebar-foreground/70 opacity-0 transition-all hover:text-sidebar-foreground group-hover/session:w-3 group-hover/session:opacity-100"
+                className={SESSION_ROW_HOVER_ACTION}
               >
                 <Pin className="size-3" />
               </button>

@@ -66,6 +66,17 @@ export function browserAutomationCall(sessionId: string, op: BrowserAutomationOp
   })
 }
 
+/**
+ * Record which session (and, for a Host Action, which node) is driving a view,
+ * so a download the page starts moments later is filed under it (§6). Called at
+ * every action's target resolution — before the action runs, because a
+ * synthetic click can start the download before its result returns — so a tab
+ * handed from one session to another is re-attributed to the second.
+ */
+function recordDriver(webContentsId: number, sessionId: string): void {
+  rememberTabDriver(webContentsId, sessionId, currentHostActionConnection())
+}
+
 export async function resolveBrowserWebContentsId(sessionId: string, tab?: string): Promise<number> {
   const result = await browserAutomationCall(sessionId, 'resolveWebContentsId', { tab }) as {
     webContentsId?: number
@@ -73,10 +84,30 @@ export async function resolveBrowserWebContentsId(sessionId: string, tab?: strin
   if (typeof result.webContentsId !== 'number' || result.webContentsId < 0) {
     throw new Error('Could not resolve the target browser view')
   }
-  // The one place every browser tool passes: a download this view starts
-  // later is filed under the session that drove it here.
-  rememberTabDriver(result.webContentsId, sessionId, currentHostActionConnection())
+  recordDriver(result.webContentsId, sessionId)
   return result.webContentsId
+}
+
+/** A resolved click/hover/drag point, driver recorded — the CDP action paths' target resolution. */
+export async function resolvePointForSession(sessionId: string, args: unknown): Promise<Record<string, unknown>> {
+  const point = await browserAutomationCall(sessionId, 'resolvePoint', args) as Record<string, unknown>
+  if (typeof point.webContentsId === 'number' && point.webContentsId >= 0) recordDriver(point.webContentsId, sessionId)
+  return point
+}
+
+/**
+ * Record the driver for an action the renderer will run itself (a synthetic
+ * click, a navigate). The renderer resolves the tab and may start a download
+ * during the action, before any result comes back — so the driver is set here,
+ * before the action is dispatched. A resolution failure is swallowed; the real
+ * action reports it.
+ */
+export async function noteTabDriver(sessionId: string, tab?: string): Promise<void> {
+  try {
+    await resolveBrowserWebContentsId(sessionId, tab)
+  } catch {
+    /* the action that follows surfaces the real error */
+  }
 }
 
 /**

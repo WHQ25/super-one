@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { z, toJSONSchema, type ZodTypeAny } from 'zod'
-import { browserAutomationCall, browserFocusGuard, resolveBrowserWebContentsId, type BrowserAutomationOp } from '../browser/browser-automation-bridge'
+import { browserAutomationCall, browserFocusGuard, noteTabDriver, resolveBrowserWebContentsId, resolvePointForSession, type BrowserAutomationOp } from '../browser/browser-automation-bridge'
 import { existsSync } from 'fs'
 import { isCdpEnabled, isCdpCookiesEnabled, isCdpMockEnabled, isCdpEmulateEnabled, resolveCdpTarget, cdpClick, cdpHover, cdpDrag, cdpPress, cdpType, cdpEmulate, cdpGetCookies, cdpSetFileInput } from '../browser/browser-cdp'
 import { encode as toonEncode } from '@toon-format/toon'
@@ -140,6 +140,9 @@ async function cdpOrData(
     // renderer-side isolation window, so the guard has to span the whole call.
     // The synthetic branch is already covered by the renderer's own wrapper.
     if (useCdp) return textReply(await withHostFocusGuard(sessionId, cdpFn))
+    // The synthetic action runs in the renderer and can start a download
+    // before its result returns; record the driver first (§6).
+    await noteTabDriver(sessionId, (input as { tab?: string }).tab)
     return textReply(await browserAutomationCall(sessionId, op, input))
   } catch (err) {
     return errorReply(err)
@@ -903,7 +906,7 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
         'click',
         args,
         async () => {
-          const point = (await browserAutomationCall(sessionId, 'resolvePoint', args)) as ResolvePoint
+          const point = (await resolvePointForSession(sessionId, args)) as unknown as ResolvePoint
           if (!point.ok) throw new Error(point.error ?? 'click target not found')
           await cdpClick(point.webContentsId, point.x, point.y)
           return { ok: true, selector: point.selector, name: point.name, ...(point.ambiguous ? { ambiguous: point.ambiguous } : {}) }
@@ -940,7 +943,7 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
         'hover',
         args,
         async () => {
-          const point = (await browserAutomationCall(sessionId, 'resolvePoint', args)) as ResolvePoint
+          const point = (await resolvePointForSession(sessionId, args)) as unknown as ResolvePoint
           if (!point.ok) throw new Error(point.error ?? 'hover target not found')
           await cdpHover(point.webContentsId, point.x, point.y)
           return { ok: true, selector: point.selector, name: point.name, ...(point.ambiguous ? { ambiguous: point.ambiguous } : {}) }
@@ -1001,11 +1004,12 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
         readiness: z.enum(['load', 'none']).default('load').describe("'load' waits for loading to stop (default); 'none' returns immediately."),
       },
     },
-    (args) => {
+    async (args) => {
       const modes = Number(args.url != null) + Number(args.port != null) + Number(args.action != null)
       if (modes !== 1) {
-        return Promise.resolve(errorReply('Provide exactly one of url, port, or action.'))
+        return errorReply('Provide exactly one of url, port, or action.')
       }
+      await noteTabDriver(sessionId, args.tab)
       return dataTool(sessionId, 'navigate', args)
     },
   )
@@ -1120,9 +1124,9 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
       if (modes(args.from) !== 1) return Promise.resolve(errorReply('Provide exactly one of selector, text, or x+y for `from`.'))
       if (modes(args.to) !== 1) return Promise.resolve(errorReply('Provide exactly one of selector, text, or x+y for `to`.'))
       return cdpOrData(sessionId, 'drag', args, async () => {
-        const src = (await browserAutomationCall(sessionId, 'resolvePoint', { tab: args.tab, ...args.from })) as ResolvePoint
+        const src = (await resolvePointForSession(sessionId, { tab: args.tab, ...args.from })) as unknown as ResolvePoint
         if (!src.ok) throw new Error(src.error ?? 'drag source not found')
-        const dst = (await browserAutomationCall(sessionId, 'resolvePoint', { tab: args.tab, ...args.to })) as ResolvePoint
+        const dst = (await resolvePointForSession(sessionId, { tab: args.tab, ...args.to })) as unknown as ResolvePoint
         if (!dst.ok) throw new Error(dst.error ?? 'drag target not found')
         await cdpDrag(src.webContentsId, src.x, src.y, dst.x, dst.y, { steps: args.steps, holdMs: args.holdMs, humanize: args.humanize })
         return { ok: true, from: { selector: src.selector, name: src.name }, to: { selector: dst.selector, name: dst.name } }

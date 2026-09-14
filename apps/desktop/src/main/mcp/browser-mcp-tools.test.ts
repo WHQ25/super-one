@@ -9,6 +9,8 @@ vi.mock('../browser/browser-automation-bridge', () => ({
   browserAutomationCall: vi.fn(),
   browserFocusGuard: vi.fn(async () => {}),
   resolveBrowserWebContentsId: vi.fn(async () => 7),
+  resolvePointForSession: vi.fn(async (_sid: string, args: { x?: number; y?: number }) => ({ ok: true, webContentsId: 7, x: args.x ?? 10, y: args.y ?? 20 })),
+  noteTabDriver: vi.fn(async () => {}),
 }))
 
 const gates = {
@@ -123,6 +125,7 @@ import { HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS } from '@superone/shared/environm
 import { startRecording, stopRecording, waitForRecordedRequest, getRecordedRequest } from './../browser/browser-cdp-network'
 import { browserAutomationCall, browserFocusGuard, resolveBrowserWebContentsId } from '../browser/browser-automation-bridge'
 import { cdpClick, cdpHover } from '../browser/browser-cdp'
+import { resolvePointForSession, noteTabDriver } from '../browser/browser-automation-bridge'
 import { startUrlDownloadTask, raceDownloadTask } from '../browser/browser-download-tasks'
 import { listDownloads } from '../browser/browser-downloads'
 import { withInputMapping } from '../environment/host-action-sync'
@@ -657,18 +660,19 @@ describe('browser tool registration under experimental gates', () => {
   it('hovers via a trusted CDP mouse move when CDP is on', async () => {
     gates.cdp = true
     const tools = buildTools()
-    vi.mocked(browserAutomationCall).mockResolvedValueOnce({ ok: true, webContentsId: 7, x: 12, y: 34, selector: '#menu', name: 'Menu' })
+    vi.mocked(resolvePointForSession).mockResolvedValueOnce({ ok: true, webContentsId: 7, x: 12, y: 34, selector: '#menu', name: 'Menu' })
 
     const reply = await tools.get('browser_hover')!({ selector: '#menu' })
     expect(reply.isError).toBeUndefined()
-    expect(vi.mocked(browserAutomationCall)).toHaveBeenCalledWith('sess-1', 'resolvePoint', { selector: '#menu' })
+    // Resolution records the driver before the trusted move (§6).
+    expect(vi.mocked(resolvePointForSession)).toHaveBeenCalledWith('sess-1', { selector: '#menu' })
     expect(vi.mocked(cdpHover)).toHaveBeenCalledWith(7, 12, 34)
   })
 
   it('holds the host focus guard around a CDP click so the composer keeps the caret', async () => {
     gates.cdp = true
     const tools = buildTools()
-    vi.mocked(browserAutomationCall).mockResolvedValueOnce({ ok: true, webContentsId: 7, x: 12, y: 34, selector: '#go' })
+    vi.mocked(resolvePointForSession).mockResolvedValueOnce({ ok: true, webContentsId: 7, x: 12, y: 34, selector: '#go' })
 
     const reply = await tools.get('browser_click')!({ selector: '#go' })
     expect(reply.isError).toBeUndefined()

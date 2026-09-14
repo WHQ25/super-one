@@ -21,6 +21,10 @@ function fakeChannel(id = 'fake') {
   return channel
 }
 
+function statusEvent(status: 'streaming' | 'idle', sessionId = 'sid'): AgentEvent {
+  return { type: 'status_change', status, sessionId }
+}
+
 function permissionEvent(requestId = 'req-1'): AgentEvent {
   return {
     type: 'permission_request',
@@ -169,6 +173,69 @@ describe('NotificationService', () => {
     service.handleEvent(permissionEvent('req-1'))
 
     expect(channel.delivered).toHaveLength(2)
+  })
+
+  it('notifies once when a streamed run goes idle, keyed per session', () => {
+    const service = makeService()
+    const channel = fakeChannel()
+    service.registerChannel(channel)
+
+    service.handleEvent(statusEvent('streaming'))
+    service.handleEvent(statusEvent('idle'))
+
+    expect(channel.delivered).toHaveLength(1)
+    expect(channel.delivered[0]).toMatchObject({ kind: 'completed', id: 'completed:sid' })
+  })
+
+  it('does not notify for an idle that closes no run', () => {
+    const service = makeService()
+    const channel = fakeChannel()
+    service.registerChannel(channel)
+
+    service.handleEvent(statusEvent('idle'))
+
+    expect(channel.delivered).toHaveLength(0)
+  })
+
+  it('withdraws the completion banner and frees its slot when the next run starts', () => {
+    const service = makeService()
+    const channel = fakeChannel()
+    service.registerChannel(channel)
+
+    service.handleEvent(statusEvent('streaming'))
+    focused = true
+    service.handleEvent(statusEvent('idle')) // seen in-app: slot claimed, nothing delivered
+    focused = false
+    service.handleEvent(statusEvent('streaming'))
+    service.handleEvent(statusEvent('idle'))
+
+    expect(channel.withdrawn).toEqual(['completed:sid'])
+    expect(channel.delivered).toHaveLength(1)
+  })
+
+  it('still rings for a run that started while notifications were off', () => {
+    const service = makeService()
+    const channel = fakeChannel()
+    service.registerChannel(channel)
+
+    settings.enabled = false
+    service.handleEvent(statusEvent('streaming'))
+    settings.enabled = true
+    service.handleEvent(statusEvent('idle'))
+
+    expect(channel.delivered).toHaveLength(1)
+  })
+
+  it('honours the completed opt-out', () => {
+    settings.kinds.completed = false
+    const service = makeService()
+    const channel = fakeChannel()
+    service.registerChannel(channel)
+
+    service.handleEvent(statusEvent('streaming'))
+    service.handleEvent(statusEvent('idle'))
+
+    expect(channel.delivered).toHaveLength(0)
   })
 
   it('keeps delivering to healthy channels when one throws', () => {

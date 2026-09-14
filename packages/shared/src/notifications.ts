@@ -30,12 +30,19 @@ export type NotificationKind =
    * which is only one of eight.
    */
   | 'confirm'
+  /**
+   * A run ended on its own: `status_change: idle` closing a stream that was
+   * neither interrupted nor errored. The one kind that is not "blocked on
+   * you" — it is "you can come back now".
+   */
+  | 'completed'
 
 export const NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'permission',
   'question',
   'plan',
   'confirm',
+  'completed',
 ]
 
 /**
@@ -67,7 +74,7 @@ export interface NotificationSettings {
 
 export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   enabled: true,
-  kinds: { permission: true, question: true, plan: true, confirm: true },
+  kinds: { permission: true, question: true, plan: true, confirm: true, completed: true },
 }
 
 /** True when `settings` permits delivering `kind`. */

@@ -609,6 +609,7 @@ export const zh: Messages = {
       question: { title: '{{session}} 有问题要问你', body: '智能体正在等待你的回答。' },
       plan: { title: '{{session}} 需要审批计划', body: '计划已生成，等待你确认。' },
       confirm: { title: '{{session}} 需要你确认' },
+      completed: { title: '{{session}} 已完成', body: '智能体已完成任务，等你回来查看。' },
     },
   },
   settings: {
@@ -1144,7 +1145,7 @@ export const zh: Messages = {
         section: '通知',
         enabled: {
           label: '会话需要你时发送通知',
-          description: '当智能体卡住等待你输入时发送系统通知。SuperOne 处于前台时不打扰。',
+          description: '当智能体完成任务或卡住等待你输入时发送系统通知。SuperOne 处于前台时不打扰。',
         },
         kinds: {
           label: '通知这些情况',
@@ -1154,6 +1155,7 @@ export const zh: Messages = {
           question: '智能体的提问',
           plan: '计划审批',
           confirm: '宿主确认请求',
+          completed: '任务完成',
         },
       },
       storage: {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentEvent } from '@superone/shared/agent-types'
-import { intentForEvent, withdrawIdForEvent, type IntentContext } from './notification-intent'
+import { RunTracker, intentForEvent, withdrawIdForEvent, type IntentContext } from './notification-intent'
 
 function ctx(overrides: Partial<IntentContext> = {}): IntentContext {
   return {
@@ -131,6 +131,28 @@ describe('intentForEvent', () => {
     expect(intentForEvent({ type: 'message_complete', messageId: 'm', sessionId: 'sid' }, ctx())).toBeNull()
   })
 
+  it('ignores idle unless the caller says it closes a run', () => {
+    expect(intentForEvent({ type: 'status_change', status: 'idle', sessionId: 'sid' }, ctx())).toBeNull()
+    expect(intentForEvent({ type: 'status_change', status: 'idle', sessionId: 'sid' }, ctx({ runCompleted: false }))).toBeNull()
+  })
+
+  it('maps a completed run to the completed kind with the agent’s closing words as body', () => {
+    const intent = intentForEvent(
+      { type: 'status_change', status: 'idle', sessionId: 'sid' },
+      ctx({ runCompleted: true, describeSession: () => ({ title: 'Fix login', projectPath: '/repo/app', lastAssistantText: 'Done — 3 files changed.' }) }),
+    )
+    expect(intent).toMatchObject({ id: 'completed:sid', kind: 'completed', sessionId: 'sid', body: 'Done — 3 files changed.' })
+    expect(intent!.title).toContain('notifications.kind.completed.title')
+  })
+
+  it('falls back to generic completed copy when the last turn had no prose', () => {
+    const intent = intentForEvent(
+      { type: 'status_change', status: 'idle', sessionId: 'sid' },
+      ctx({ runCompleted: true, describeSession: () => ({ title: 'T', lastAssistantText: null }) }),
+    )
+    expect(intent!.body).toBe('notifications.kind.completed.body')
+  })
+
   it('collapses whitespace and truncates a long body', () => {
     const event: AgentEvent = {
       type: 'ask_user_question',
@@ -158,5 +180,68 @@ describe('withdrawIdForEvent', () => {
 
   it('returns null for unrelated events', () => {
     expect(withdrawIdForEvent({ type: 'status_change', status: 'idle' })).toBeNull()
+  })
+
+  it('retracts the session’s completion banner when a new run starts', () => {
+    expect(withdrawIdForEvent({ type: 'status_change', status: 'streaming', sessionId: 'sid' })).toBe('completed:sid')
+  })
+})
+
+describe('RunTracker', () => {
+  const streaming: AgentEvent = { type: 'status_change', status: 'streaming', sessionId: 'sid' }
+  const idle: AgentEvent = { type: 'status_change', status: 'idle', sessionId: 'sid' }
+
+  it('reports the idle that closes a streamed run', () => {
+    const tracker = new RunTracker()
+    expect(tracker.observe(streaming)).toBe(false)
+    expect(tracker.observe(idle)).toBe(true)
+  })
+
+  it('ignores an idle with no run behind it (init, reconnect replay)', () => {
+    expect(new RunTracker().observe(idle)).toBe(false)
+  })
+
+  it('does not double-report: the run is consumed by its idle', () => {
+    const tracker = new RunTracker()
+    tracker.observe(streaming)
+    tracker.observe(idle)
+    expect(tracker.observe(idle)).toBe(false)
+  })
+
+  it('treats a run parked in background and then finished as completed', () => {
+    const tracker = new RunTracker()
+    tracker.observe(streaming)
+    tracker.observe({ type: 'status_change', status: 'background', sessionId: 'sid' })
+    expect(tracker.observe(idle)).toBe(true)
+  })
+
+  it('ignores an interrupted run — the user stopped it, they know', () => {
+    const tracker = new RunTracker()
+    tracker.observe(streaming)
+    tracker.observe({ type: 'message_interrupted', messageId: 'm', sessionId: 'sid' })
+    expect(tracker.observe(idle)).toBe(false)
+  })
+
+  it('ignores an errored run and an error status', () => {
+    const tracker = new RunTracker()
+    tracker.observe(streaming)
+    tracker.observe({ type: 'message_error', messageId: 'm', error: 'x', sessionId: 'sid' })
+    expect(tracker.observe(idle)).toBe(false)
+    tracker.observe(streaming)
+    expect(tracker.observe({ type: 'status_change', status: 'error', sessionId: 'sid' })).toBe(false)
+  })
+
+  it('ignores message_complete — Codex fires it at every queued-turn boundary', () => {
+    const tracker = new RunTracker()
+    tracker.observe(streaming)
+    tracker.observe({ type: 'message_complete', messageId: 'm', sessionId: 'sid' })
+    expect(tracker.observe(idle)).toBe(true)
+  })
+
+  it('tracks sessions independently', () => {
+    const tracker = new RunTracker()
+    tracker.observe(streaming)
+    expect(tracker.observe({ type: 'status_change', status: 'idle', sessionId: 'other' })).toBe(false)
+    expect(tracker.observe(idle)).toBe(true)
   })
 })

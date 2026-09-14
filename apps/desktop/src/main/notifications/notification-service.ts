@@ -11,7 +11,7 @@ import type { NotificationIntent, NotificationSettings } from '@superone/shared/
 import { isNotificationKindEnabled } from '@superone/shared/notifications'
 import log from '../logger'
 import type { NotificationChannel } from './notification-channel'
-import { intentForEvent, withdrawIdForEvent, type IntentContext } from './notification-intent'
+import { RunTracker, intentForEvent, withdrawIdForEvent, type IntentContext } from './notification-intent'
 
 export interface NotificationServiceDeps {
   readSettings(): NotificationSettings
@@ -34,6 +34,7 @@ export class NotificationService {
    * without this every reconnect would re-ring the same permission gate.
    */
   private readonly active = new Set<string>()
+  private readonly runs = new RunTracker()
   private readonly now: () => number
 
   constructor(private readonly deps: NotificationServiceDeps) {
@@ -53,6 +54,11 @@ export class NotificationService {
    * ~99% of events that are not interactions: one switch on `event.type`.
    */
   handleEvent(event: AgentEvent): void {
+    // Observed unconditionally, before any early return: the tracker must see
+    // the stream open even when notifications are switched off, or a run that
+    // started disabled and ended enabled would never ring.
+    const runCompleted = this.runs.observe(event)
+
     const withdrawId = withdrawIdForEvent(event)
     if (withdrawId) {
       this.withdraw(withdrawId)
@@ -66,6 +72,7 @@ export class NotificationService {
       t: this.deps.t,
       describeSession: this.deps.describeSession,
       now: this.now,
+      runCompleted,
     })
     if (!intent) return
     if (!isNotificationKindEnabled(settings, intent.kind)) return

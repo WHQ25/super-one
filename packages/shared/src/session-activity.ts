@@ -44,10 +44,29 @@ export const SESSION_ACTIVITY_EVENTS: ReadonlySet<string> = new Set([
   'status_change', 'message_interrupted', 'session_ended',
 ])
 
-function lastCompletedMessageId(messages: readonly ChatMessage[]): string | null {
+function lastCompletedMessage(messages: readonly ChatMessage[]): ChatMessage | null {
   for (let index = messages.length - 1; index >= 0; index--) {
     const message = messages[index]!
-    if (message.role === 'assistant' && message.status !== 'streaming') return message.id
+    if (message.role === 'assistant' && message.status !== 'streaming') return message
   }
   return null
+}
+
+function lastCompletedMessageId(messages: readonly ChatMessage[]): string | null {
+  return lastCompletedMessage(messages)?.id ?? null
+}
+
+/**
+ * Prose of the latest finished assistant message, text blocks joined — the
+ * agent's closing words, for a one-line "what did it do" summary. Null when
+ * the last message carried no text (tool-only turn, or none yet).
+ */
+export function lastAssistantText(messages: readonly ChatMessage[]): string | null {
+  const message = lastCompletedMessage(messages)
+  if (!message) return null
+  const text = message.content
+    .flatMap(block => block.type === 'text' ? [block.text] : [])
+    .join(' ')
+    .trim()
+  return text || null
 }

@@ -568,6 +568,7 @@ export type Messages = {
       question: { title: string; body: string }
       plan: { title: string; body: string }
       confirm: { title: string }
+      completed: { title: string; body: string }
     }
   }
   settings: {
@@ -1073,6 +1074,7 @@ export type Messages = {
           question: string
           plan: string
           confirm: string
+          completed: string
         }
       }
       storage: {
@@ -4257,6 +4259,7 @@ export const en: Messages = {
       question: { title: '{{session}} has a question', body: 'The agent is waiting for your answer.' },
       plan: { title: '{{session}} needs plan approval', body: 'A plan is ready for your review.' },
       confirm: { title: '{{session}} needs your confirmation' },
+      completed: { title: '{{session}} finished', body: 'The agent is done and waiting for you.' },
     },
   },
   settings: {
@@ -4804,7 +4807,7 @@ export const en: Messages = {
         section: 'Notifications',
         enabled: {
           label: 'Notify when a session needs you',
-          description: 'Send a system notification when an agent is blocked on your input. Suppressed while SuperOne is focused.',
+          description: 'Send a system notification when an agent finishes or is blocked on your input. Suppressed while SuperOne is focused.',
         },
         kinds: {
           label: 'Notify me about',
@@ -4814,6 +4817,7 @@ export const en: Messages = {
           question: 'Questions from the agent',
           plan: 'Plan approvals',
           confirm: 'Host confirmations',
+          completed: 'Finished runs',
         },
       },
       storage: {

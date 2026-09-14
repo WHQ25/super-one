@@ -792,10 +792,23 @@ describe('browser tool registration under experimental gates', () => {
     expect(vi.mocked(noteTabDriver)).toHaveBeenCalledWith('sess-1', 'browser-1')
 
     vi.mocked(noteTabDriver).mockClear()
-    vi.mocked(browserAutomationCall).mockResolvedValueOnce({ tab: 'browser-9', url: 'https://x.test', title: 't' })
-    await tools.get('browser_open')!({ url: 'https://x.test' })
+    vi.mocked(browserAutomationCall).mockClear()
+    vi.mocked(browserAutomationCall)
+      .mockResolvedValueOnce({ tab: 'browser-9', url: 'about:blank', title: '' })
+      .mockResolvedValueOnce({ ok: true, url: 'https://x.test', title: 't' })
+    const opened = await tools.get('browser_open')!({ url: 'https://x.test', readiness: 'load' })
     // The freshly created tab is attributed to this session, not left undriven.
     expect(vi.mocked(noteTabDriver)).toHaveBeenCalledWith('sess-1', 'browser-9')
+    // And the tab is created blank first, so the driver is on record before the
+    // initial URL — a direct-download link there would otherwise start with none.
+    const ops = vi.mocked(browserAutomationCall).mock.calls.map((c) => c[1])
+    expect(ops).toEqual(['open', 'navigate'])
+    expect(vi.mocked(browserAutomationCall).mock.calls[0]![2]).toMatchObject({ url: undefined, readiness: 'none' })
+    expect(vi.mocked(browserAutomationCall).mock.calls[1]![2]).toMatchObject({ tab: 'browser-9', url: 'https://x.test', readiness: 'load' })
+    const [openOrder] = vi.mocked(browserAutomationCall).mock.invocationCallOrder
+    const [driverOrder] = vi.mocked(noteTabDriver).mock.invocationCallOrder
+    expect(driverOrder).toBeGreaterThan(openOrder!)
+    expect(JSON.parse(resultText(opened))).toMatchObject({ tab: 'browser-9', url: 'https://x.test' })
   })
 
   it('spills a large evaluate result but returns a small one inline', async () => {

@@ -1170,11 +1170,25 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
     },
     async (args) => {
       if (args.tab) await noteTabDriver(sessionId, args.tab)
-      const data = (await browserAutomationCall(sessionId, 'open', args)) as { tab?: string; url?: string; title?: string }
-      // Attribute the new tab to this session before the agent acts on it, so a
-      // later page-started download is not filed under whoever last opened one.
-      if (typeof data.tab === 'string') await noteTabDriver(sessionId, data.tab)
-      return textReply(data)
+      // The tab is created blank first, so this session is recorded as its
+      // driver BEFORE the initial URL loads. Navigating straight to the URL
+      // would let a direct-download link (or a first-paint script) start a
+      // download while the tab still had no driver, and the file would land in
+      // the Downloads folder instead of the session zone (§6).
+      const opened = (await browserAutomationCall(sessionId, 'open', { ...args, url: undefined, readiness: 'none' })) as {
+        tab?: string
+        url?: string
+        title?: string
+      }
+      if (typeof opened.tab === 'string') await noteTabDriver(sessionId, opened.tab)
+      if (!args.url || typeof opened.tab !== 'string') return textReply(opened)
+      // `readiness` keeps its meaning: it is the initial navigation it describes.
+      const navigated = (await browserAutomationCall(sessionId, 'navigate', {
+        tab: opened.tab,
+        url: args.url,
+        readiness: args.readiness,
+      })) as { url?: string; title?: string }
+      return textReply({ ...opened, url: navigated.url ?? args.url, title: navigated.title ?? opened.title })
     },
   )
 

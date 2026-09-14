@@ -719,6 +719,41 @@ All four landed on 2026-09-14, one commit each.
   when the tool replies, cancelled as the tool completes, and the queue
   refusing it.
 
+- **A thirteenth review found the foreground handoff still releasing on
+  failure, and the fix is a table both paths share.** The background give-up
+  had been taught to keep its claim; the *foreground* one had not.
+  `syncHostActionOutputs` either pushes a file inside the claim budget or files
+  a job for it, and when that `defer` threw, the executor's `finally` released
+  the claim anyway — the file then had no node copy, no job row and no
+  protection at once, and the next directory mirror pruned it.
+
+  `pending-handoffs.ts` is where both paths now land. Two properties are
+  load-bearing, and each came from getting it wrong first:
+
+  - **The entry carries the claim's holder.** Recovery does not re-adopt:
+    `adoptWriteClaim` only accepts a claim still held by `writer`, so a second
+    adopt of a file the queue already took returns false and the release
+    silently does nothing. Whoever recorded the failure stays responsible.
+  - **The original `transferId` is kept.** A retry that invents a new id makes
+    the node meet a second transfer for one file instead of resuming the
+    partial it already holds.
+
+  Recovery runs when a connection's transfer worker starts, and from a
+  **Retry Upload** button in Settings → Storage. `dropSession` clears a deleted
+  session's entries and the claims they were protecting.
+
+  Worth being precise about what fails here, because the first guess was
+  wrong: `defer` is purely local — `statSync`, a SQLite insert, a worker wake —
+  so it fails for local reasons. A node that is merely unreachable never
+  reaches this table; that is what the worker's backoff over persisted jobs is
+  for.
+
+  One unrelated leak surfaced on the way: the executor's deadline timer was
+  cleared only when the *outer* signal aborted, so a Host Action that simply
+  succeeded left a live timer for the rest of the timeout — holding the event
+  loop open and eventually firing an abort on a controller nobody was
+  listening to. It is cleared in the `finally` now.
+
 - **`browser_open` creates the tab blank, records the driver, then
   navigates.** Opening with the URL in one call meant the page could start a
   direct download before the tab had an owner, and `will-download` had nobody
@@ -936,3 +971,14 @@ marked and the residue is stated):
   included jobs whose bytes were already delivered. A correct check in a
   correct place is still wrong if its subject is wrong, so a change to what the
   zone protects needs its own reasoning, not this paragraph.
+- **Protection for un-enqueued files does not survive a restart.** A file that
+  is complete but could not be written onto the transfer job table is held by
+  the in-memory `pending-handoffs` table, and that is all that keeps the mirror
+  off it. Quit the desktop with entries in it and the file becomes an ordinary
+  unreferenced zone file — the next directory mirror of its folder prunes it,
+  and the node never gets it. Closing this properly means a small
+  sealed-handoff journal in the zone's reserved metadata (session, connection,
+  relative path, transfer id), scanned at startup to restore the protection and
+  re-file the row, excluded from `list`/mirror/prune like `.owner` and
+  `.parts`, and cleared on session delete. Not implemented; do not read the
+  Settings figure as a durability guarantee.

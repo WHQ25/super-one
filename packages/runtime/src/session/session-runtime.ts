@@ -219,6 +219,8 @@ export class SessionRuntime {
    * beginTurn + long-lived SDK session instead.
    */
   private readonly turnQueues = new Map<string, TurnQueueItem[]>()
+  /** notificationIds already delivered, so a retried artifact-completion RPC injects once. */
+  private readonly deliveredArtifactNotifications = new Set<string>()
   /** In-flight runTurn count per session (for multi-turn live inject). */
   private readonly activeTurnCounts = new Map<string, number>()
   /**
@@ -1000,6 +1002,35 @@ export class SessionRuntime {
 
     this.beginTurn(session, turnOpts)
     return this.clone(session)
+  }
+
+  /**
+   * Deliver a host-built completion notification for finished artifact
+   * transfers (`docs/design/session-sync-zone.md` §4.1). Controller-bound like
+   * the Host Action channel, and idempotent by `notificationId` so a desktop
+   * retry after a dropped ACK injects the turn once. The text is built on the
+   * node from files it has confirmed — the desktop cannot inject arbitrary
+   * text as a user turn through this path.
+   */
+  async notifyArtifactsCompleted(input: {
+    sessionId: string
+    controllerClientSessionId: string
+    notificationId: string
+    text: string
+  }): Promise<{ delivered: boolean }> {
+    const session = this.live.get(input.sessionId)
+    if (!session) throw Object.assign(new Error('session not found'), { code: 'not_found' })
+    if (!session.controllerClientSessionId || session.controllerClientSessionId !== input.controllerClientSessionId) {
+      throw Object.assign(new Error('not the session controller'), { code: 'forbidden' })
+    }
+    if (this.deliveredArtifactNotifications.has(input.notificationId)) return { delivered: true }
+    this.deliveredArtifactNotifications.add(input.notificationId)
+    if (this.deliveredArtifactNotifications.size > 4096) {
+      const oldest = this.deliveredArtifactNotifications.values().next().value
+      if (oldest !== undefined) this.deliveredArtifactNotifications.delete(oldest)
+    }
+    await this.sendWithoutLease({ sessionId: input.sessionId, text: input.text, source: 'task-notification' })
+    return { delivered: true }
   }
 
   private appendUserMessage(session: NodeSessionRecord, opts: TurnOpts): void {

@@ -902,6 +902,15 @@ export class EnvironmentHost {
     return gateway.artifacts.put(input, control)
   }
 
+  /** Wake the node session after a deferred transfer landed (§4.1). No lease needed. */
+  async artifactNotifyCompleted(
+    connectionId: string,
+    input: { sessionId: string; notificationId: string; relativePaths: string[] },
+  ): Promise<{ delivered: boolean }> {
+    const { gateway } = this.resolveRemote(connectionId)
+    return gateway.artifacts.notifyCompleted(input)
+  }
+
   async artifactDelete(connectionId: string, sessionId: string, relativePath?: string): Promise<void> {
     const { gateway } = this.resolveRemote(connectionId)
     const control = await this.ensureSessionLease(connectionId, sessionId)
@@ -3383,6 +3392,7 @@ export class EnvironmentHost {
     if (this.transfers) return this.transfers
     this.transfers = new ArtifactTransferService({
       put: (connectionId, input) => this.artifactPut(connectionId, input),
+      notifyCompleted: (connectionId, input) => this.artifactNotifyCompleted(connectionId, input),
       // Lazy logger for the same reason as publishStatus: a static ../logger import breaks partial electron mocks.
       log: {
         info: (...args) => void import('../logger').then((m) => m.default.info(...args)).catch(() => undefined),

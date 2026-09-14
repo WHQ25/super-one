@@ -485,6 +485,8 @@ async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContex
       return handleSessionClaimHostAction(payload, ctx)
     case 'session.respondHostAction':
       return handleSessionRespondHostAction(payload, ctx)
+    case 'session.notifyArtifactCompleted':
+      return handleSessionNotifyArtifactCompleted(payload, ctx)
     case 'session.events':
       return handleSessionEvents(payload, ctx)
     case 'session.messages.list':
@@ -2665,6 +2667,61 @@ function handleSessionRespondHostAction(payload: unknown, ctx: RpcContext): RpcR
       outcome,
       result: p.result,
       error: p.error,
+    })
+    return { result }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+/**
+ * A deferred artifact transfer landed (`docs/design/session-sync-zone.md` §4.1).
+ *
+ * The desktop names the session and the zone-relative paths; the node checks
+ * each one itself and builds the wording, so this cannot become a channel for
+ * injecting arbitrary text as a user turn. Controller-bound, no lease — it
+ * reports work the controller already did — and idempotent by
+ * `notificationId`, because the desktop retries when an ACK is lost.
+ */
+async function handleSessionNotifyArtifactCompleted(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const sessionId = String(p.sessionId ?? '')
+  const notificationId = String(p.notificationId ?? '')
+  const relativePaths = Array.isArray(p.relativePaths)
+    ? p.relativePaths.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
+    : []
+  if (!sessionId || !notificationId || relativePaths.length === 0) {
+    return { error: { code: 'invalid_argument', message: 'sessionId, notificationId and relativePaths are required' } }
+  }
+  // Only paths the node actually holds: telling the agent a file is ready when
+  // it is not would be worse than staying silent.
+  const ready: string[] = []
+  for (const relativePath of relativePaths) {
+    try {
+      if (ctx.artifacts.stat(sessionId, relativePath).exists) {
+        ready.push(pathJoin(ctx.artifacts.syncRoot, sessionId, relativePath))
+      }
+    } catch {
+      /* an unusable path is not a file that landed */
+    }
+  }
+  if (ready.length === 0) return { result: { delivered: false } }
+  const text = [
+    `<task_notification source="artifact_sync" status="completed">`,
+    ready.length === 1
+      ? 'A file SuperOne was transferring to this machine has finished and can now be read:'
+      : 'Files SuperOne was transferring to this machine have finished and can now be read:',
+    ...ready.map((path) => `- ${path}`),
+    `</task_notification>`,
+  ].join('\n')
+  try {
+    const result = await ctx.sessions.notifyArtifactsCompleted({
+      sessionId,
+      controllerClientSessionId: ctx.client.clientSessionId,
+      notificationId,
+      text,
     })
     return { result }
   } catch (err) {

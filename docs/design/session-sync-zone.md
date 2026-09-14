@@ -450,9 +450,19 @@ All four landed on 2026-09-14, one commit each.
 
 Still open after phases 1–4:
 
-- **Completion notification to the agent** for deferred transfers (§4.1);
-  needs a desktop→node session notification channel that does not exist. The
-  reply's `sync.deferred` is the only signal.
+- ~~**Completion notification to the agent** for deferred transfers~~ —
+  **implemented 2026-09-14.** `session.notifyArtifactCompleted` is a
+  controller-bound, lease-free node RPC: the desktop names the session and the
+  zone-relative paths, the node stats each one itself, builds the wording, and
+  delivers it through `sendWithoutLease({ source: 'task-notification' })` —
+  the same path a collaboration mailbox wake uses, so Claude live-injects,
+  Codex steers and every other harness FIFO-queues it. The desktop cannot send
+  arbitrary text through it, and a path the node does not hold is never named.
+  A transfer job now survives its own upload in state `uploaded`/`notifying`
+  and is only deleted once the node confirms the wake, so a lost reply retries
+  the notification without re-uploading; `notificationId` is the job id, and
+  the node injects once per id. A node that answers `not_found` / `forbidden`
+  (session gone) or does not know the method ends the job.
 - **Claim renewal** as an alternative to deferral.
 - **`browser_download` with `dir`** on a remote session.
 - **Device captures, recordings and downloads** are not in the zone yet (see

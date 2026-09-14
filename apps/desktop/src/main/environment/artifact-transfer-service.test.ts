@@ -189,6 +189,54 @@ describe('artifact transfer jobs', () => {
     expect(node.files.has('browser/b.png')).toBe(false)
   })
 
+  it('wakes the agent once a deferred upload lands, and keeps the job until that wake is acknowledged', async () => {
+    let clock = 2_000_000
+    const node = fakeNode()
+    const notified: Array<{ sessionId: string; notificationId: string; relativePaths: string[] }> = []
+    let refuse = true
+    const service = new ArtifactTransferService({
+      put: node.put,
+      now: () => clock,
+      notifyCompleted: async (_c, input) => {
+        if (refuse) throw Object.assign(new Error('node away'), { code: 'unavailable' })
+        notified.push(input)
+        return { delivered: true }
+      },
+    })
+    const local = join(root, 'clip.mp4')
+    writeFileSync(local, 'bytes')
+    const job = service.defer({ connectionId: 'c1', sessionId: 's1', localPath: local, relativePath: 'recording/clip.mp4' })
+
+    // The bytes land but the wake does not: the job stays so the wake is retried.
+    await service.runOnce('c1')
+    expect(node.files.has('recording/clip.mp4')).toBe(true)
+    expect(listArtifactTransfersForSession('s1')).toHaveLength(1)
+
+    expect(listArtifactTransfersForSession('s1')[0]).toMatchObject({ state: 'uploaded' })
+
+    refuse = false
+    clock = listArtifactTransfersForSession('s1')[0].nextAttemptAt! + 1
+    await service.runOnce('c1')
+    expect(notified).toEqual([{ sessionId: 's1', notificationId: job.jobId, relativePaths: ['recording/clip.mp4'] }])
+    // Uploaded once, not again for the retried wake.
+    expect(node.calls.filter((c) => c.final)).toHaveLength(1)
+    expect(listArtifactTransfersForSession('s1')).toEqual([])
+  })
+
+  it('drops a job whose session ended rather than retrying its wake forever', async () => {
+    const node = fakeNode()
+    const service = new ArtifactTransferService({
+      put: node.put,
+      notifyCompleted: async () => { throw Object.assign(new Error('session not found'), { code: 'not_found' }) },
+    })
+    const local = join(root, 'a.png')
+    writeFileSync(local, 'x')
+    service.defer({ connectionId: 'c1', sessionId: 's1', localPath: local, relativePath: 'browser/a.png' })
+    await service.runOnce('c1')
+    expect(node.files.has('browser/a.png')).toBe(true)
+    expect(listArtifactTransfersForSession('s1')).toEqual([])
+  })
+
   it('runs only the jobs of the connection it was started for', async () => {
     const node = fakeNode()
     const service = new ArtifactTransferService({ put: node.put })

@@ -57,6 +57,12 @@ export interface ArtifactGateway {
   get(input: ArtifactGetRequest): Promise<ArtifactGetResult>
   put(input: ArtifactPutRequest, control: MutatingControlContext): Promise<ArtifactPutResult>
   delete(input: { sessionId: string; relativePath?: string }, control: MutatingControlContext): Promise<ArtifactDeleteResult>
+  /**
+   * Tell the session's agent that deferred transfers landed (§4.1). No lease —
+   * it reports work the controller already did — and idempotent by
+   * `notificationId`, so a retry after a dropped reply wakes the agent once.
+   */
+  notifyCompleted(input: { sessionId: string; notificationId: string; relativePaths: string[] }): Promise<{ delivered: boolean }>
 }
 
 /**
@@ -102,6 +108,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
       get: (input) => client.rpc<ArtifactGetResult>('artifact.get', input),
       put: (input, control) => client.rpc<ArtifactPutResult>('artifact.put', { ...input, ...control }),
       delete: (input, control) => client.rpc<ArtifactDeleteResult>('artifact.delete', { ...input, ...control }),
+      notifyCompleted: (input) => client.rpc<{ delivered: boolean }>('session.notifyArtifactCompleted', input),
     }
   }
 

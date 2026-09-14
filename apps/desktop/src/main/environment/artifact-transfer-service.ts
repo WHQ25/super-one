@@ -17,6 +17,8 @@ import {
   markArtifactTransferDone,
   markArtifactTransferFailed,
   markArtifactTransferRunning,
+  markArtifactTransferUploaded,
+  claimArtifactTransfer,
   recordArtifactTransferOffset,
   type ArtifactTransferJob,
 } from '../db-artifact-transfers'
@@ -30,9 +32,20 @@ const BACKOFF_MAX_MS = 10 * 60_000
 
 export interface ArtifactTransferDeps {
   put: (connectionId: string, input: ArtifactPutRequest) => Promise<ArtifactPutResult>
+  /**
+   * Tell the session's agent the file landed (§4.1). Optional so a host
+   * without the notification RPC (an older node, a unit test) still transfers.
+   */
+  notifyCompleted?: (
+    connectionId: string,
+    input: { sessionId: string; notificationId: string; relativePaths: string[] },
+  ) => Promise<{ delivered: boolean }>
   log?: { warn: (...args: unknown[]) => void; info: (...args: unknown[]) => void }
   now?: () => number
 }
+
+/** A node that answers this way will never accept the wake: the session is gone. */
+const TERMINAL_NOTIFY_ERRORS = new Set(['not_found', 'forbidden', 'failed_precondition', 'unimplemented', 'method_not_found'])
 
 /** Exponential moving average of measured bytes/ms, one per connection. */
 class ThroughputMeter {
@@ -142,12 +155,53 @@ export class ArtifactTransferService {
     }
   }
 
+  /**
+   * Wake the agent for a landed file. A node that says the session is gone
+   * ends the job; anything else is a retry, because the agent was told the
+   * path would work and nothing else will tell it that it does.
+   */
+  private async notify(job: ArtifactTransferJob): Promise<void> {
+    if (!this.deps.notifyCompleted) {
+      markArtifactTransferDone(job.jobId)
+      return
+    }
+    try {
+      await this.deps.notifyCompleted(job.connectionId, {
+        sessionId: job.sessionId,
+        notificationId: job.jobId,
+        relativePaths: [job.relativePath],
+      })
+      markArtifactTransferDone(job.jobId)
+    } catch (err) {
+      const code = String((err as { code?: unknown }).code ?? '')
+      const message = err instanceof Error ? err.message : String(err)
+      if (TERMINAL_NOTIFY_ERRORS.has(code)) {
+        this.deps.log?.warn('[artifact-transfer] wake refused, dropping job', job.relativePath, code)
+        markArtifactTransferDone(job.jobId)
+        return
+      }
+      const attempts = job.attempts + 1
+      const delay = Math.min(BACKOFF_MAX_MS, BACKOFF_BASE_MS * 2 ** Math.min(attempts - 1, 10))
+      try {
+        // Back to `uploaded`: the next attempt must wake, never re-upload.
+        markArtifactTransferFailed(job.jobId, message, (this.deps.now ?? Date.now)() + delay, 'uploaded')
+      } catch { /* row dropped with the session */ }
+      this.deps.log?.warn('[artifact-transfer] wake failed', job.relativePath, message, `(retry in ${delay}ms)`)
+    }
+  }
+
   private async runJob(job: ArtifactTransferJob, workerSignal: AbortSignal): Promise<void> {
     const abort = new AbortController()
     const onWorkerAbort = () => abort.abort()
     workerSignal.addEventListener('abort', onWorkerAbort, { once: true })
     this.inflight.set(job.jobId, abort)
     try {
+      // The bytes are already there; only the agent's wake is still owed.
+      if (job.state === 'uploaded' || job.state === 'notifying') {
+        if (!claimArtifactTransfer(job.jobId, 'notifying')) return
+        await this.notify(job)
+        return
+      }
       // The pass works from a snapshot; a session deleted since then took its row with it.
       if (!markArtifactTransferRunning(job.jobId)) return
       const outcome = await uploadArtifact({
@@ -163,8 +217,12 @@ export class ArtifactTransferService {
         },
       })
       this.meter.record(job.connectionId, outcome)
-      markArtifactTransferDone(job.jobId)
       this.deps.log?.info('[artifact-transfer] uploaded', job.relativePath, `${outcome.bytes}B`)
+      // The row survives the upload: the agent has an ENOENT to take back and
+      // is only told the path works once the node confirms the wake.
+      markArtifactTransferUploaded(job.jobId)
+      if (!claimArtifactTransfer(job.jobId, 'notifying')) return
+      await this.notify(job)
     } catch (err) {
       if (abort.signal.aborted) return
       const message = err instanceof Error ? err.message : String(err)

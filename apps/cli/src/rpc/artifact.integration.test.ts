@@ -120,6 +120,47 @@ describe('artifact RPC on a node', () => {
     stranger.close()
   })
 
+  it('wakes the agent once when a deferred transfer lands, naming only the files the node has', async () => {
+    const { rt, nodeHome } = await boot()
+    const client = await connectAuthedRpc(rt)
+    const { sessionId, lease } = await openSession(client)
+    const data = Buffer.from('the recording')
+    await client.rpc('artifact.put', {
+      sessionId, relativePath: 'recording/run.mp4', transferId: 'late', offset: 0, total: data.length,
+      sha256: createHash('sha256').update(data).digest('hex'), chunk: data.toString('base64'), final: true, ...lease,
+    })
+
+    const notify = (notificationId: string, relativePaths: string[]) =>
+      client.rpc('session.notifyArtifactCompleted', { sessionId, notificationId, relativePaths })
+    expect(await notify('job-1', ['recording/run.mp4', 'recording/never.mp4'])).toEqual({ delivered: true })
+    // A lost ACK makes the desktop send the same job again; the agent is woken once.
+    expect(await notify('job-1', ['recording/run.mp4'])).toEqual({ delivered: true })
+    // Nothing the node holds: no turn at all, rather than a lie about a path.
+    expect(await notify('job-2', ['recording/never.mp4'])).toEqual({ delivered: false })
+
+    const { messages } = (await client.rpc('session.messages.list', { sessionId })) as { messages: Array<{ role: string; text?: string }> }
+    const wakes = messages.filter((m) => m.role === 'user' && m.text?.includes('artifact_sync'))
+    expect(wakes).toHaveLength(1)
+    expect(wakes[0]?.text).toContain(join(nodeHome, 'sync', sessionId, 'recording', 'run.mp4'))
+    expect(wakes[0]?.text).not.toContain('never.mp4')
+    client.close()
+  })
+
+  it('refuses a completion notification from a client that is not the session controller', async () => {
+    const { rt } = await boot()
+    const controller = await connectAuthedRpc(rt)
+    const stranger = await connectAuthedRpc(rt)
+    const { sessionId, lease } = await openSession(controller)
+    const data = Buffer.from('x')
+    await controller.rpc('artifact.put', {
+      sessionId, relativePath: 'agent/a.txt', transferId: 't', offset: 0, total: 1,
+      sha256: createHash('sha256').update(data).digest('hex'), chunk: data.toString('base64'), final: true, ...lease,
+    })
+    expect(await failure(stranger.rpc('session.notifyArtifactCompleted', { sessionId, notificationId: 'n1', relativePaths: ['agent/a.txt'] }))).toBe('forbidden')
+    controller.close()
+    stranger.close()
+  })
+
   it('removes the session zone directory when the session itself is removed', async () => {
     const { rt, nodeHome } = await boot()
     const client = await connectAuthedRpc(rt)

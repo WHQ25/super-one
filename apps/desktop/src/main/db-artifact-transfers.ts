@@ -12,7 +12,16 @@ import { getDb } from './database'
  * resumes rather than restarts.
  */
 
-export type ArtifactTransferState = 'pending' | 'running' | 'done' | 'failed'
+/**
+ * `uploaded` and `notifying` sit between the bytes landing and the agent being
+ * told (§4.1): the row survives a failed or lost wake so it is retried, and a
+ * crash in either state never re-uploads a file the node already has.
+ */
+export type ArtifactTransferState = 'pending' | 'running' | 'uploaded' | 'notifying' | 'done' | 'failed'
+
+const TRANSFER_STATES: readonly ArtifactTransferState[] = ['pending', 'running', 'uploaded', 'notifying', 'done', 'failed']
+/** Everything a worker still owes work on, including states a crash left behind. */
+const UNFINISHED_STATES = "('pending', 'running', 'uploaded', 'notifying')"
 
 export interface ArtifactTransferJob {
   jobId: string
@@ -54,7 +63,7 @@ function toJob(row: Row): ArtifactTransferJob {
     transferId: row.transfer_id,
     offset: row.offset,
     total: row.total,
-    state: (['pending', 'running', 'done', 'failed'] as const).includes(row.state as ArtifactTransferState)
+    state: TRANSFER_STATES.includes(row.state as ArtifactTransferState)
       ? (row.state as ArtifactTransferState)
       : 'pending',
     attempts: row.attempts,
@@ -95,12 +104,12 @@ export function enqueueArtifactTransfer(input: {
   return toJob(job)
 }
 
-/** Jobs a connection's worker should pick up: pending and due, plus anything left `running` by a crash. */
+/** Jobs a connection's worker should pick up: due and unfinished, including states a crash left behind. */
 export function listRunnableArtifactTransfers(connectionId: string, nowMs: number): ArtifactTransferJob[] {
   const rows = getDb().prepare(`
     SELECT * FROM artifact_transfer_jobs
     WHERE connection_id = ?
-      AND state IN ('pending', 'running')
+      AND state IN ${UNFINISHED_STATES}
       AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
     ORDER BY created_at ASC
   `).all(connectionId, new Date(nowMs).toISOString()) as Row[]
@@ -118,8 +127,19 @@ export function listArtifactTransfersForSession(sessionId: string): ArtifactTran
  * than uploading for a session that no longer exists.
  */
 export function markArtifactTransferRunning(jobId: string): boolean {
-  const result = getDb().prepare(`UPDATE artifact_transfer_jobs SET state = 'running', attempts = attempts + 1, updated_at = ? WHERE job_id = ?`)
+  return claimArtifactTransfer(jobId, 'running')
+}
+
+/** The bytes are on the node; only the agent's wake is still owed. */
+export function markArtifactTransferUploaded(jobId: string): void {
+  getDb().prepare(`UPDATE artifact_transfer_jobs SET state = 'uploaded', next_attempt_at = NULL, updated_at = ? WHERE job_id = ?`)
     .run(new Date().toISOString(), jobId)
+}
+
+/** Claim a job for one attempt in `state`. False when the row is gone (its session was deleted). */
+export function claimArtifactTransfer(jobId: string, state: 'running' | 'notifying'): boolean {
+  const result = getDb().prepare(`UPDATE artifact_transfer_jobs SET state = ?, attempts = attempts + 1, updated_at = ? WHERE job_id = ?`)
+    .run(state, new Date().toISOString(), jobId)
   return result.changes === 1
 }
 
@@ -127,7 +147,7 @@ export function markArtifactTransferRunning(jobId: string): boolean {
 export function listPendingArtifactTransfers(connectionId: string): ArtifactTransferJob[] {
   const rows = getDb().prepare(`
     SELECT * FROM artifact_transfer_jobs
-    WHERE connection_id = ? AND state IN ('pending', 'running')
+    WHERE connection_id = ? AND state IN ${UNFINISHED_STATES}
     ORDER BY created_at ASC
   `).all(connectionId) as Row[]
   return rows.map(toJob)
@@ -142,12 +162,21 @@ export function markArtifactTransferDone(jobId: string): void {
   getDb().prepare(`DELETE FROM artifact_transfer_jobs WHERE job_id = ?`).run(jobId)
 }
 
-export function markArtifactTransferFailed(jobId: string, error: string, nextAttemptAtMs: number | null): void {
-  getDb().prepare(`
-    UPDATE artifact_transfer_jobs
-    SET state = ?, last_error = ?, next_attempt_at = ?, updated_at = ?
-    WHERE job_id = ?
-  `).run(nextAttemptAtMs === null ? 'failed' : 'pending', error, nextAttemptAtMs === null ? null : new Date(nextAttemptAtMs).toISOString(), new Date().toISOString(), jobId)
+export function markArtifactTransferFailed(
+  jobId: string,
+  message: string,
+  nextAttemptAtMs: number | null,
+  /** Where the retry resumes from; `uploaded` keeps the bytes already on the node. */
+  retryState: 'pending' | 'uploaded' = 'pending',
+): void {
+  getDb().prepare(`UPDATE artifact_transfer_jobs SET state = ?, last_error = ?, next_attempt_at = ?, updated_at = ? WHERE job_id = ?`)
+    .run(
+      nextAttemptAtMs === null ? 'failed' : retryState,
+      message.slice(0, 500),
+      nextAttemptAtMs === null ? null : new Date(nextAttemptAtMs).toISOString(),
+      new Date().toISOString(),
+      jobId,
+    )
 }
 
 /** Session deletion drops its jobs (§7). Returns the ids so an in-flight upload can be cancelled. */

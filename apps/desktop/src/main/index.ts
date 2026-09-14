@@ -125,6 +125,10 @@ import {
   type CodexUsageInfo,
   type CodexSetAuthRequest,
   type CodexAccountLoginStartResult,
+  type CodexAccountStatus,
+  type CodexAccountUsage,
+  type CodexRateLimitResetOutcome,
+  type CodexRateLimits,
   type ImageAttachment,
   type ClaudeResources,
   type CodexResources,
@@ -2281,6 +2285,54 @@ function registerIpcHandlers(): void {
   agentService.setCodexListModels((projectPath) => codexService.listModels(projectPath))
   agentService.setCodexProviderChanged((invalidateModelCache) => codexService.handleProviderChanged(invalidateModelCache))
   agentService.setCodexGetAuthStatus((projectPath) => codexService.getAuthStatus(projectPath))
+  agentService.setHarnessUsageReader(async (request) => {
+    const { readHarnessUsage } = await import('./agent/harness-usage')
+    return readHarnessUsage(request, {
+      claudeApiProvider: () => getCachedHarnessResources('claude')?.account?.apiProvider,
+      claudeRateLimits: getClaudeRateLimits,
+      claudeAccounts: () => listClaudeAccounts(),
+      providerRateLimits: getProviderRateLimits,
+      // Same routing as the CODEX_GET_RATE_LIMITS / CODEX_GET_ACCOUNT_STATUS IPC: a remote
+      // project's Codex lives on the node, so its meter is read over the node RPC.
+      codexRateLimits: async (projectPath, apiProviderId) => {
+        if (parseRemoteProjectKey(projectPath)) {
+          const { getEnvironmentHost, remoteCodexGetRateLimits } = await import('./environment')
+          return (await remoteCodexGetRateLimits(getEnvironmentHost(), projectPath, apiProviderId)) as CodexRateLimits | null
+        }
+        return codexService.getRateLimits(projectPath, apiProviderId)
+      },
+      codexAccount: async (projectPath, apiProviderId) => {
+        if (parseRemoteProjectKey(projectPath)) {
+          const { getEnvironmentHost, remoteCodexGetAccountStatus } = await import('./environment')
+          return (await remoteCodexGetAccountStatus(getEnvironmentHost(), projectPath, apiProviderId)) as CodexAccountStatus | null
+        }
+        return codexService.getAccountStatus(apiProviderId)
+      },
+      codexAccountUsage: async (projectPath, apiProviderId, sessionId) => {
+        // A Codex session's provider id is its thread id; that is what scopes the thread estimate.
+        const threadId = (sessionId ? sessionManager.getSession(sessionId)?.snapshot.providerSessionId : null) ?? null
+        if (parseRemoteProjectKey(projectPath)) {
+          const { getEnvironmentHost, remoteCodexGetAccountUsage } = await import('./environment')
+          return (await remoteCodexGetAccountUsage(getEnvironmentHost(), projectPath, apiProviderId, threadId)) as CodexAccountUsage | null
+        }
+        return codexService.getAccountUsage(projectPath, apiProviderId, threadId)
+      },
+      // Grok billing rides the session's ACP connection: prefer the session the
+      // phone is looking at, then whichever session the project has live.
+      acpRateLimits: async (agentId, { sessionId, projectPath }, force) => {
+        const { getAcpRateLimits } = await import('./acp/acp-usage-service')
+        const session = (sessionId ? sessionManager.getSession(sessionId) : null) ?? sessionManager.getActiveSession(projectPath) ?? null
+        return getAcpRateLimits(agentId, session, force)
+      },
+    })
+  })
+  agentService.setCodexConsumeRateLimitReset(async (projectPath, apiProviderId, creditId) => {
+    if (parseRemoteProjectKey(projectPath)) {
+      const { getEnvironmentHost, remoteCodexConsumeRateLimitReset } = await import('./environment')
+      return (await remoteCodexConsumeRateLimitReset(getEnvironmentHost(), projectPath, apiProviderId, creditId)) as CodexRateLimitResetOutcome | null
+    }
+    return codexService.consumeRateLimitReset(projectPath, apiProviderId, creditId)
+  })
   agentService.setup()
 
   ipcMain.on(AgentIpcChannels.TRACE, (_e, source: string, type: string, data: unknown, tag?: string) => {

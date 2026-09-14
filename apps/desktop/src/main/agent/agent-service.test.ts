@@ -2966,6 +2966,43 @@ describe('AgentService.handleRemoteCommand', () => {
     }))
   })
 
+  it('get_usage forwards the command to the harness usage reader and answers { usage }', async () => {
+    const usage = { kind: 'claude', title: 'Claude', account: 'a@x.io', planType: 'Max', windows: [], extraUsage: null }
+    const reader = vi.fn(async () => usage as never)
+    const respond = vi.fn()
+    const service = new AgentService()
+    service.setHarnessUsageReader(reader)
+    const command = { type: 'get_usage', requestId: 'u-1', projectPath: '/p', provider: 'claude', sessionId: 's1', apiProviderId: null, force: true }
+    await service.handleRemoteCommand(command as never, respond)
+
+    expect(reader).toHaveBeenCalledWith(command)
+    expect(respond).toHaveBeenCalledWith('u-1', { usage })
+  })
+
+  it('get_usage answers null without a reader and { error } when the reader throws', async () => {
+    const respond = vi.fn()
+    const service = new AgentService()
+    await service.handleRemoteCommand({ type: 'get_usage', requestId: 'u-2', projectPath: '/p', provider: 'codex' } as never, respond)
+    expect(respond).toHaveBeenCalledWith('u-2', { usage: null })
+
+    service.setHarnessUsageReader(async () => { throw new Error('app-server down') })
+    await service.handleRemoteCommand({ type: 'get_usage', requestId: 'u-3', projectPath: '/p', provider: 'codex' } as never, respond)
+    expect(respond).toHaveBeenLastCalledWith('u-3', { error: 'app-server down' })
+  })
+
+  it('consume_rate_limit_reset redeems through the Codex service and answers { outcome }', async () => {
+    const consume = vi.fn(async () => 'reset' as const)
+    const respond = vi.fn()
+    const service = new AgentService()
+    service.setCodexConsumeRateLimitReset(consume)
+    await service.handleRemoteCommand(
+      { type: 'consume_rate_limit_reset', requestId: 'r-1', projectPath: '/p', apiProviderId: null, creditId: 'rc-1' } as never,
+      respond,
+    )
+    expect(consume).toHaveBeenCalledWith('/p', null, 'rc-1')
+    expect(respond).toHaveBeenCalledWith('r-1', { outcome: 'reset' })
+  })
+
   it('get_system_info returns user agent defaults for claude', async () => {
     vi.mocked(appSettings.readAppSettings).mockReturnValue({
       analyticsEnabled: true,

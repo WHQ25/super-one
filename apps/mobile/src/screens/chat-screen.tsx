@@ -15,6 +15,7 @@ import type { MentionRow } from '../mention-rows'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import type { ReactNode } from 'react'
 import { ChatComposer, type ComposerSelection } from './chat-composer'
+import type { UsageMeterProps } from '../ui/usage-panel'
 import { QueuedMessages } from '../ui/queued-messages'
 import { NewSessionLanding, type NewSessionLandingProps } from './new-session-landing'
 import { chatViewPrePaintScript, hostMessageIsReady } from './chat-webview-boot'
@@ -51,6 +52,8 @@ export function ChatScreen(props: {
   contextTokens: number
   contextWindow: number | null
   totalCostUsd: number
+  /** The credential's subscription meter; forwarded to the composer's ring. */
+  usage?: UsageMeterProps
   slashHits: MatchedSlashCommand[]
   slashCatalogStatus: SlashCatalogStatus
   mentionRows: MentionRow[]

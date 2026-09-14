@@ -89,6 +89,8 @@ import { readProjectSessions } from './workspace-data'
 import { useRemoteDirectory } from './use-remote-directory'
 import { useProjectGitStatus } from './use-project-git-status'
 import { useProjectGitInfo } from './use-project-git-info'
+import { useComposerUsage } from './use-harness-usage'
+import type { LiveRateLimit } from '../harness-usage'
 import { useFileSearch } from './use-file-search'
 import { completeTypedPath, usePathAutocomplete } from './use-path-autocomplete'
 import { useAdditionalDirs } from './use-additional-dirs'
@@ -234,6 +236,9 @@ export function MobileApp() {
     { isWorktree: false, worktreePath: null, gitBranch: null, removed: false },
   )
   const [usage, setUsage] = useState({ contextTokens: 0, contextWindow: null as number | null, totalCostUsd: 0 })
+  // The live `rate_limit` event, already reduced by chat-core; the meter chip
+  // tints on it before the next polled reading confirms the limit.
+  const [rateLimit, setRateLimit] = useState<LiveRateLimit | null>(null)
   // A live session reports its own sandbox; before one exists the chip answers
   // from the pick made here, falling back to the default the host would apply.
   const composerSandboxInfo = sessionId
@@ -289,6 +294,10 @@ export function MobileApp() {
     projectPath: project?.path,
     sessionId,
     streaming,
+  })
+  const composerUsage = useComposerUsage({
+    clientRef, projectPath: project?.path, provider: selectedProvider, sessionId,
+    apiProviderId: harnessSelection.selectedProviderId, acpAgentId: selectedAcpAgentId, streaming, rateLimit,
   })
   const additionalDirs = useAdditionalDirs({
     clientRef, projectPath: project?.path, provider: selectedProvider, sessionId,
@@ -494,6 +503,7 @@ export function MobileApp() {
         ? current
         : { contextTokens: runtime.contextTokens, contextWindow: runtime.contextWindow, totalCostUsd: runtime.totalCostUsd }
     ))
+    setRateLimit(runtime.session.rateLimitInfo)
     setPerm(pending ?? null)
     setPlan(runtime.session.pendingPlanApproval)
     setQuestion(runtime.session.pendingQuestion)
@@ -1142,6 +1152,7 @@ export function MobileApp() {
     setSandboxInfo(null)
     setPendingSandboxMode(null)
     setUsage({ contextTokens: 0, contextWindow: null, totalCostUsd: 0 })
+    setRateLimit(null)
   }
   const clearActiveSession = () => {
     runtimeRef.current?.dispose()
@@ -2030,6 +2041,7 @@ export function MobileApp() {
           contextTokens={usage.contextTokens}
           contextWindow={ringContextWindow}
           totalCostUsd={usage.totalCostUsd}
+          usage={composerUsage}
           slashHits={slashHits}
           slashCatalogStatus={suggestions.slashCatalogStatus}
           promptSuggestions={promptSuggestions}

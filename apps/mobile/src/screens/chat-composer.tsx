@@ -25,6 +25,7 @@ import { isSessionMentionQuery } from '../session-mention'
 import type { MentionRow } from '../mention-rows'
 import { useMobileTheme } from '../theme/context'
 import { AdditionalDirsChip, ContextRing, IconButton, PermissionModeSelector, SandboxSelector } from '../ui'
+import type { UsageMeterProps } from '../ui/usage-panel'
 import { CHIP_HEIGHT } from '../ui/chip-metrics'
 
 export type ComposerSelection = {
@@ -64,6 +65,8 @@ export type ChatComposerProps = {
   /** Host platform sandbox capability, reported by the harness catalog. */
   sandboxSupport?: SandboxSupportLevel
   contextTokens: number; contextWindow: number | null; totalCostUsd: number
+  /** The credential's subscription meter, drawn as the ring's outer arc. */
+  usage?: UsageMeterProps
   slashHits: MatchedSlashCommand[]; slashCatalogStatus: SlashCatalogStatus; mentionRows: MentionRow[]
   /**
    * End-of-turn follow-ups from the harness. Unlike desktop none of them go into
@@ -154,7 +157,7 @@ export function ChatComposer(props: ChatComposerProps) {
       <PermissionModeSelector harness={props.provider} modes={props.permissionModes} value={props.permissionMode} onChange={props.onPermissionMode} />
     </ScrollView>
     <View testID="composer-status-readouts" style={{ flexDirection: 'row', alignItems: 'center' }}>
-      <ContextRing tokens={props.contextTokens} contextWindow={props.contextWindow} costUsd={props.totalCostUsd} />
+      <ContextRing tokens={props.contextTokens} contextWindow={props.contextWindow} costUsd={props.totalCostUsd} usage={props.usage} />
       <SandboxSelector harness={props.provider} sandboxInfo={props.sandboxInfo}
         sandboxSupport={props.sandboxSupport} permissionMode={props.permissionMode} onChange={props.onSandboxMode} />
       {/* Last, on the outer edge: the only one of the three that comes and goes

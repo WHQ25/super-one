@@ -3058,6 +3058,26 @@ export interface ProviderRateLimits extends ClaudeRateLimits {
   creditBalanceDollars?: number
 }
 
+/** Which subscription meter a session's credential draws on. */
+export type RemoteUsageKind = 'claude' | 'codex' | 'provider' | 'acp'
+
+/**
+ * One session's subscription meter, shaped once on the host for Remote Control.
+ * Every harness (Claude OAuth, Codex ChatGPT, GLM / MiniMax gateways, Grok
+ * Build) lands on the same `windows[]`, so the phone renders one gauge and
+ * never learns Codex's `primary` / `secondary` shape.
+ */
+export interface RemoteUsage extends ProviderRateLimits {
+  kind: RemoteUsageKind
+  /** Signed-in account email when the meter belongs to a first-party login. */
+  account: string | null
+  /** Codex rate-limit reset credits still redeemable, when the account has any. */
+  resetCredits?: number | null
+  resetCreditList?: CodexRateLimitResetCredit[]
+  /** Codex lifetime / streak stats plus the open thread's credit estimate. */
+  codexAccount?: CodexAccountUsage | null
+}
+
 /**
  * One signed-in Claude subscription, as reported by `claude auth status --json`.
  *
@@ -4579,6 +4599,14 @@ export type RemoteCommand =
   | { type: 'delete_session'; requestId: string; projectPath: string; sessionId: string }
   | { type: 'list_models'; requestId: string; projectPath: string }
   | { type: 'get_system_info'; requestId: string; projectPath: string; provider: HarnessId }
+  /**
+   * Subscription meter for the credential a session bills. `sessionId` lets the
+   * host read through that session's live runtime (Grok billing rides the ACP
+   * connection); the other fields name the credential the way the composer does.
+   */
+  | { type: 'get_usage'; requestId: string; projectPath: string; provider: HarnessId; sessionId?: string | null; apiProviderId?: string | null; acpAgentId?: string | null; force?: boolean }
+  /** Redeem one Codex rate-limit reset credit (or the next available one when `creditId` is omitted). */
+  | { type: 'consume_rate_limit_reset'; requestId: string; projectPath: string; apiProviderId?: string | null; creditId?: string | null }
   | { type: 'get_project_resources'; requestId: string; projectPath: string; provider: HarnessId }
   | { type: 'get_git_info'; requestId: string; projectPath: string }
   /** Per-file git status for the file browser's colouring. */

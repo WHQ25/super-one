@@ -116,6 +116,8 @@ export class AgentService {
   private eventSubscribers: Array<(event: AgentEvent) => void> = []
   private codexListModels?: (projectPath: string) => Promise<ModelOption[]>
   private codexGetAuthStatus?: (projectPath: string) => unknown
+  private readHarnessUsage?: (request: import('./harness-usage').HarnessUsageRequest) => Promise<import('@superone/shared/agent-types').RemoteUsage | null>
+  private codexConsumeRateLimitReset?: (projectPath: string, apiProviderId: string | null, creditId: string | null) => Promise<import('@superone/shared/agent-types').CodexRateLimitResetOutcome | null>
   private codexProviderChanged?: (invalidateModelCache?: boolean) => void
   private remoteControlService?: RemoteControlService
   private mobileReceiveService?: import('../remote/mobile-receive-service').MobileReceiveService
@@ -140,6 +142,15 @@ export class AgentService {
 
   setCodexGetAuthStatus(fn: (projectPath: string) => unknown): void {
     this.codexGetAuthStatus = fn
+  }
+
+  /** Subscription-meter reader shared with the desktop gauge's data sources; see `harness-usage.ts`. */
+  setHarnessUsageReader(fn: NonNullable<typeof this.readHarnessUsage>): void {
+    this.readHarnessUsage = fn
+  }
+
+  setCodexConsumeRateLimitReset(fn: NonNullable<typeof this.codexConsumeRateLimitReset>): void {
+    this.codexConsumeRateLimitReset = fn
   }
 
   setRemoteControlService(svc: RemoteControlService): void {
@@ -1943,6 +1954,26 @@ export class AgentService {
         }
         const res = await svc.handleUploadComplete({ requestId: command.requestId })
         await respond(command.requestId, res)
+        break
+      }
+      case 'get_usage': {
+        try {
+          const usage = this.readHarnessUsage ? await this.readHarnessUsage(command) : null
+          await respond?.(command.requestId, { usage })
+        } catch (err) {
+          await respond?.(command.requestId, { error: (err as Error).message })
+        }
+        break
+      }
+      case 'consume_rate_limit_reset': {
+        try {
+          const outcome = this.codexConsumeRateLimitReset
+            ? await this.codexConsumeRateLimitReset(command.projectPath, command.apiProviderId ?? null, command.creditId ?? null)
+            : null
+          await respond?.(command.requestId, { outcome })
+        } catch (err) {
+          await respond?.(command.requestId, { error: (err as Error).message })
+        }
         break
       }
       case 'list_providers': {

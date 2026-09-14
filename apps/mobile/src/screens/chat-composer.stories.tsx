@@ -100,6 +100,27 @@ export const StatusRowWithoutModelPicker = {
   args: { selection: undefined, projectDirs: ['/workspace/design-system'] },
 }
 
+/** The ring doubles as the subscription meter: outer arc account, inner arc context. */
+export const StatusRowWithUsage = {
+  args: {
+    projectDirs: ['/workspace/design-system'],
+    usage: {
+      usage: {
+        kind: 'codex', title: 'Codex', account: 'dev@example.com', planType: 'plus', extraUsage: null, fetchedAt: Date.now(),
+        windows: [{ label: '5h', usedPercent: 82, resetsAt: Math.round(Date.now() / 1000) + 2400 }, { label: '7d', usedPercent: 55, resetsAt: null }],
+        resetCredits: 1,
+      },
+      onOpen: noop, onRefresh: noop, onConsumeResetCredit: async () => 'reset',
+    },
+  },
+}
+
+export const StatusRowRateLimited = {
+  args: {
+    usage: { usage: null, rateLimit: { status: 'rejected', resetsAt: Math.round(Date.now() / 1000) + 3600 } },
+  },
+}
+
 export const TabletStatusRowGroups = {
   args: {
     tablet: true,

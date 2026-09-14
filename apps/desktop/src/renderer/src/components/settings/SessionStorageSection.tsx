@@ -80,6 +80,7 @@ export function SessionStorageSection() {
   const usage = state.status === 'ready' ? state.usage : null
   const reclaimable = usage != null && usage.reclaimable.bytes > 0
   const stuck = usage != null && usage.failedHandoffs.files > 0
+  const needsRedelivery = usage != null && usage.needsRedelivery.files > 0
 
   return (
     <div className="rounded-lg border border-border">
@@ -110,6 +111,14 @@ export function SessionStorageSection() {
                       bytes: formatBytes(usage.failedHandoffs.bytes),
                       count: usage.failedHandoffs.files,
                       error: usage.failedHandoffs.lastError ?? '',
+                    })}
+                  </p>
+                )}
+                {needsRedelivery && (
+                  <p className="text-warning" data-testid="session-storage-needs-redelivery">
+                    {t('settings.general.storage.needsRedelivery', {
+                      bytes: formatBytes(usage.needsRedelivery.bytes),
+                      count: usage.needsRedelivery.files,
                     })}
                   </p>
                 )}

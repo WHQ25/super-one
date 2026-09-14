@@ -18,14 +18,21 @@ export interface SyncZoneUsage {
   /** What a reclaim sweep would remove right now: directories whose session is provably gone, plus stale adhoc captures. */
   reclaimable: { sessions: number; bytes: number }
   /**
-   * Files that are complete and could not be written onto the transfer job
-   * table at all — a busy database, a connection with no transfer service yet.
-   * They are not `pendingBytes`: no job names them, so no worker will ever
-   * pick them up, and they stay protected from the mirror until a retry
-   * succeeds. Surfaced because the alternative is a zone that quietly stops
-   * reclaiming with nothing to look at.
+   * Complete files whose automatic delivery gave up but which a person CAN
+   * retry: the upload failed every attempt, or the local file went missing and
+   * came back. They are not `pendingBytes` — no worker is scheduled for them —
+   * and stay protected from the mirror until Retry Upload succeeds.
    */
   failedHandoffs: { files: number; bytes: number; lastError: string | null }
+  /**
+   * Complete files whose final upload chunk was sent but never confirmed
+   * (`committing`, §6): from this desktop the node's copy cannot be told apart
+   * from committed-or-not, so retrying would risk overwriting a file the agent
+   * changed. Retry does nothing for these; they need re-delivery under a new
+   * path (re-running the action that produced them). Shown separately so the
+   * page never offers a button that cannot help.
+   */
+  needsRedelivery: { files: number; bytes: number }
 }
 
 export interface SyncZoneReclaimResult {

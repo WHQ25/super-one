@@ -19,6 +19,8 @@
  * nothing accumulates.
  */
 import { AsyncLocalStorage, AsyncResource } from 'node:async_hooks'
+import { retireHolder } from '../environment/delivery-holders'
+import { releaseDelivery, type DeliveryHandle } from '../db-session-deliveries'
 import { randomUUID } from 'node:crypto'
 import log from '../logger'
 import type { ArtifactProducer } from '../media-output-paths'
@@ -43,6 +45,22 @@ interface Scope {
   /** Remote connection this call is a Host Action for; absent for a local session. */
   connectionId?: string
   refs: Map<string, ArtifactRef>
+  /**
+   * Deliveries this call sealed and is still holding. Kept alive so the worker
+   * cannot take a produced file before the reply-selection decides whether the
+   * agent will read it (E090-4). Released — holder set to null — when the scope
+   * ends, after which the decision (push a mentioned ref, abandon an unmentioned
+   * one) runs against an unheld row.
+   */
+  heldDeliveries: Map<string, DeliveryHandle>
+  /**
+   * True once the call has returned. A detached task the call started — a
+   * backgrounded download that seals after the tool replied — keeps this scope
+   * as its `AsyncLocalStorage` context, so `holdSealedDelivery` must read this
+   * rather than "is a scope current": a seal after the call ended is nobody's
+   * to hold and is released for the worker at once.
+   */
+  ended: boolean
 }
 
 const scopes = new Map<string, Scope>()
@@ -69,6 +87,20 @@ export function registerArtifact(sessionId: string, ref: ArtifactRef): void {
   if (hasOpenScope(sessionId)) {
     log.warn('[artifact-registry] registration outside its call scope (wrap the listener with bindArtifactScope) sid=%s path=%s', sessionId, ref.path)
   }
+}
+
+/**
+ * Keep a just-sealed delivery held by `holder` for the rest of this call, so
+ * the transfer worker skips it until the reply-selection has run
+ * (`docs/design/session-sync-zone-delivery-record.md`, E090-4). Returns false
+ * when no call is open — a page download's own completion, a background
+ * finalizer — where the producer releases the row for the worker itself.
+ */
+export function holdSealedDelivery(handle: DeliveryHandle): boolean {
+  const scope = current.getStore()
+  if (!scope || scope.ended) return false
+  scope.heldDeliveries.set(handle.deliveryId, handle)
+  return true
 }
 
 /**
@@ -132,11 +164,21 @@ export async function collectArtifacts<T>(
   run: () => Promise<T>,
   connectionId?: string,
 ): Promise<T> {
-  const scope: Scope = { sessionId, callId, refs: new Map(), ...(connectionId ? { connectionId } : {}) }
+  const scope: Scope = { sessionId, callId, refs: new Map(), heldDeliveries: new Map(), ended: false, ...(connectionId ? { connectionId } : {}) }
   scopes.set(callId, scope)
   try {
     return await current.run(scope, run)
   } finally {
+    scope.ended = true
+    // Release the call's grip on everything it sealed: the rows go back to
+    // holder = null, which is what the reply-selection that runs next
+    // (`syncHostActionOutputs`) claims for a mentioned ref or abandons for an
+    // unmentioned one — with no window in which the worker could take an
+    // undecided file (E090-4).
+    for (const handle of scope.heldDeliveries.values()) {
+      try { releaseDelivery(handle) } catch (err) { log.warn('[artifact-registry] could not release a held delivery at scope end', err) } finally { retireHolder(handle.holder) }
+    }
+    scope.heldDeliveries.clear()
     // The scope stays registered until `takeArtifacts` reads it, so a caller that
     // awaits the tool result and then takes is never racing the `finally`.
     if (scope.refs.size === 0) scopes.delete(callId)

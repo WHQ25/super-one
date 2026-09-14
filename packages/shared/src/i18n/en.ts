@@ -1074,6 +1074,7 @@ export type Messages = {
         pending: string
         stuck: string
         stuckRetry: string
+        needsRedelivery: string
         retrying: string
         reclaimable: string
         nothingReclaimable: string
@@ -4805,6 +4806,7 @@ export const en: Messages = {
         pending: '{{bytes}} waiting to upload',
         stuck: '{{bytes}} in {{count}} files could not be queued for upload ({{error}}) — kept until they are',
         stuckRetry: 'Retry Upload',
+        needsRedelivery: '{{bytes}} in {{count}} files were sent but never confirmed — re-run the action that produced them to deliver again',
         retrying: 'Retrying…',
         reclaimable: '{{bytes}} from {{count}} finished sessions can be reclaimed',
         nothingReclaimable: 'Nothing to reclaim — every session here is still known',

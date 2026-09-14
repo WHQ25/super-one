@@ -223,7 +223,8 @@ describe('a download delivered inside its own call', () => {
     const out = await desktopHostActionExecutor(claimed(), new AbortController().signal, 'conn-1')
     expect(out.outcome).toBe('succeeded')
     expect(node.files.has('download/report.csv')).toBe(false)
-    expect(JSON.stringify(out.result)).toContain('deferred')
+    // Reported as stopped, not deferred: the agent is told to re-run (E090-3).
+    expect(JSON.stringify(out.result)).toContain('stopped')
     const stalled = findDeliveryByPath(SESSION, DOWNLOAD())!
     expect(stalled).toMatchObject({ phase: 'committing', outcome: null, nextAttemptAt: null })
     expect(stalled.gaveUpAt).not.toBeNull()

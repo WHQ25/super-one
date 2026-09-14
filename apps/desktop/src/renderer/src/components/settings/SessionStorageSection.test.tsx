@@ -13,6 +13,7 @@ const usage: SyncZoneUsage = {
   pendingBytes: 200 * 1024 * 1024,
   reclaimable: { sessions: 3, bytes: 700 * 1024 * 1024 },
   failedHandoffs: { files: 0, bytes: 0, lastError: null },
+  needsRedelivery: { files: 0, bytes: 0 },
 }
 
 function stub(overrides: Partial<{ usage: SyncZoneUsage; freed: number }> = {}) {
@@ -57,6 +58,39 @@ describe('session storage settings', () => {
     await waitFor(() => expect(retrySyncZoneHandoffs).toHaveBeenCalledTimes(1))
     // Re-read, because a recovered handoff changes both figures.
     await waitFor(() => expect(getSyncZoneUsage).toHaveBeenCalledTimes(2))
+  })
+
+  it('warns about committing files that need re-delivery without offering a button that cannot help', async () => {
+    // A `committing` file already had its final put sent; no automatic retry can
+    // safely repeat it, so unlike a stuck handoff it gets a warning but no button.
+    stub({ usage: { ...usage, needsRedelivery: { files: 1, bytes: 3 * 1024 * 1024 } } })
+    render(<SessionStorageSection />)
+    expect(await screen.findByTestId('session-storage-needs-redelivery')).toHaveTextContent(/3\.0 MB in 1 files/)
+    expect(screen.getByTestId('session-storage-needs-redelivery')).toHaveTextContent(/re-run the action/i)
+    expect(screen.queryByRole('button', { name: /retry upload/i })).not.toBeInTheDocument()
+  })
+
+  it('shows a retryable stuck line with its button beside a committing re-delivery line with none (mixed payload)', async () => {
+    // Both at once: files that never reached the queue (retryable, a person's
+    // Retry Upload clears them) and files whose final put was sent but never
+    // confirmed (committing, only re-running the action can deliver again). The
+    // button gates on the retryable count alone — the committing line adds none.
+    const mixed: SyncZoneUsage = {
+      ...usage,
+      failedHandoffs: { files: 2, bytes: 5 * 1024 * 1024, lastError: 'SQLITE_BUSY' },
+      needsRedelivery: { files: 1, bytes: 3 * 1024 * 1024 },
+    }
+    const { retrySyncZoneHandoffs } = stub({ usage: mixed })
+    render(<SessionStorageSection />)
+    expect(await screen.findByTestId('session-storage-stuck')).toHaveTextContent(/5\.0 MB in 2 files/)
+    const redelivery = screen.getByTestId('session-storage-needs-redelivery')
+    expect(redelivery).toHaveTextContent(/3\.0 MB in 1 files/)
+    expect(redelivery).toHaveTextContent(/re-run the action/i)
+    // Exactly one Retry Upload button, and it retries only the handoffs.
+    const retryButtons = screen.getAllByRole('button', { name: /retry upload/i })
+    expect(retryButtons).toHaveLength(1)
+    await userEvent.click(retryButtons[0])
+    await waitFor(() => expect(retrySyncZoneHandoffs).toHaveBeenCalledTimes(1))
   })
 
   it('runs the sweep on request, says what it freed, and re-reads the numbers', async () => {

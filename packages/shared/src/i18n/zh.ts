@@ -1155,6 +1155,7 @@ export const zh: Messages = {
         pending: '{{bytes}} 等待上传',
         stuck: '{{count}} 个文件共 {{bytes}} 无法加入上传队列（{{error}}），在成功前会一直保留',
         stuckRetry: '重试上传',
+        needsRedelivery: '{{count}} 个文件共 {{bytes}} 已发送但未确认——请重新执行产生它们的操作以再次投递',
         retrying: '重试中…',
         reclaimable: '{{count}} 个已结束会话的 {{bytes}} 可回收',
         nothingReclaimable: '没有可回收的内容——这里的每个会话都还在',

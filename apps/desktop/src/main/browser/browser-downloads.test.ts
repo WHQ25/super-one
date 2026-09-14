@@ -60,8 +60,12 @@ class FakeItem {
   getReceivedBytes(): number {
     return 32
   }
+  cancelled = false
   setSavePath(p: string): void {
     this.savePath = p
+  }
+  cancel(): void {
+    this.cancelled = true
   }
   once(_event: string, handler: (event: unknown, state: string) => void): void {
     this.doneHandler = handler
@@ -126,6 +130,27 @@ describe('page-triggered download capture', () => {
     emitDownload('half.bin', 10).finish('interrupted')
     expect(record.sealZoneFile).not.toHaveBeenCalled()
     expect(record.abandonZoneFile).toHaveBeenCalledWith('sess-1', '/zone/sess-1/download/half.bin')
+  })
+
+  it('cancels a download whose reservation is refused, saves nowhere, and records the failure for a waiter (E090-6)', async () => {
+    // `will-download` is synchronous: returning without a save path hands the
+    // item back to Electron, which opens a save dialog or drops an untracked
+    // file into Downloads a remote agent can never reach. When the now-strict
+    // reservation throws (the delivery row could not be written, or the zone was
+    // dropped), the capture must cancel the item, set no save path, and record
+    // the failure so `waitForDownloads` resolves on it instead of hanging.
+    rememberTabDriver(10, 'sess-1', 'conn-1')
+    ownTabs(10)
+    store.reserveDownloadPath.mockImplementationOnce(() => { throw new Error('zone dropped') })
+    const item = emitDownload('report.pdf', 10)
+    // Cancelled, and Electron was given no default save flow to fall back to.
+    expect(item.cancelled).toBe(true)
+    expect(item.savePath).toBe('')
+    // Nothing was sealed — the reservation never succeeded.
+    expect(record.sealZoneFile).not.toHaveBeenCalled()
+    // The failure is a terminal capture a waiter sees: interrupted, no bytes, no path.
+    const visible = await waitForDownloads('sess-1', 2000)
+    expect(visible).toMatchObject([{ filename: 'report.pdf', state: 'interrupted', path: '', bytes: 0 }])
   })
 
   it('lists only downloads from tabs the calling session owns', async () => {

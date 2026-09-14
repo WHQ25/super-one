@@ -15,6 +15,7 @@ const BASE: SyncZoneUsage = {
   pendingBytes: 0,
   reclaimable: { sessions: 0, bytes: 0 },
   failedHandoffs: { files: 0, bytes: 0, lastError: null },
+  needsRedelivery: { files: 0, bytes: 0 },
 }
 
 let usage: SyncZoneUsage = { ...BASE }
@@ -111,6 +112,25 @@ export const HandoffsStuck: Story = {
     seed({
       pendingBytes: 200 * MB,
       failedHandoffs: { files: 2, bytes: 5 * MB, lastError: 'SQLITE_BUSY' },
+    }),
+  ],
+}
+
+/**
+ * Complete files whose final chunk was sent but never confirmed (§6). Retry
+ * cannot help — they need re-delivery under a new path — so this figure has no
+ * button, only the explanation of what to do.
+ */
+export const NeedsRedelivery: Story = {
+  decorators: [seed({ needsRedelivery: { files: 3, bytes: 18 * MB } })],
+}
+
+/** Both kinds at once: a retryable batch with its button, and a needs-redelivery note without one. */
+export const StuckAndNeedsRedelivery: Story = {
+  decorators: [
+    seed({
+      failedHandoffs: { files: 2, bytes: 5 * MB, lastError: 'SQLITE_BUSY' },
+      needsRedelivery: { files: 1, bytes: 4 * MB },
     }),
   ],
 }

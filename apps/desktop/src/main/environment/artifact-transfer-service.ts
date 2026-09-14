@@ -145,7 +145,14 @@ export class ArtifactTransferService {
     const abort = new AbortController()
     let wake: () => void = () => {}
     const loop = this.run(connectionId, abort.signal, (register) => { wake = register })
-    this.workers.set(connectionId, { abort, loop, wake: () => wake() })
+    const entry = { abort, loop, wake: () => wake() }
+    this.workers.set(connectionId, entry)
+    // The loop is written not to throw, but a registration that outlived its
+    // loop would be a worker no `wake`/`start` could ever revive — so if the
+    // loop ends for any reason while still registered, drop it.
+    void loop.catch((err) => this.deps.log?.warn('[artifact-transfer] worker loop ended unexpectedly', connectionId, err)).finally(() => {
+      if (this.workers.get(connectionId) === entry) this.workers.delete(connectionId)
+    })
   }
 
   stop(connectionId: string): void {
@@ -175,19 +182,41 @@ export class ArtifactTransferService {
       // Still being worked — by a producer filling it, an eager push sending
       // it, or another pass of ours. Not a candidate.
       if (isHolderAlive(row.holder)) continue
-      await this.runDelivery(row, signal)
+      try {
+        await this.runDelivery(row, signal)
+      } catch (err) {
+        // A database error while working one row must not end the pass — let
+        // alone the worker. The row keeps whatever phase it reached; the next
+        // pass or a wake picks it up again.
+        this.deps.log?.warn('[artifact-transfer] delivery pass errored', row.relativePath, err)
+      }
     }
   }
 
   private async run(connectionId: string, signal: AbortSignal, registerWake: (wake: () => void) => void): Promise<void> {
     const now = this.deps.now ?? Date.now
+    // A wake that lands *while a pass runs* would otherwise be lost — the pass
+    // took its row snapshot before the new file existed, and the sleep it wakes
+    // is not the one that was pending. The flag records it so the loop scans
+    // once more immediately rather than sleeping out the next-due timer, which
+    // ignores brand-new rows (next_attempt_at IS NULL).
+    let woken = false
+    let interruptSleep: (() => void) | null = null
+    registerWake(() => { woken = true; interruptSleep?.() })
     while (!signal.aborted) {
-      await this.runOnce(connectionId, signal)
+      woken = false
+      try {
+        await this.runOnce(connectionId, signal)
+      } catch (err) {
+        this.deps.log?.warn('[artifact-transfer] worker pass errored', connectionId, err)
+      }
       if (signal.aborted) break
+      if (woken) continue
       await new Promise<void>((resolve) => {
         const timer = setTimeout(resolve, this.nextDueDelay(connectionId, now()))
-        registerWake(() => { clearTimeout(timer); resolve() })
+        interruptSleep = () => { clearTimeout(timer); interruptSleep = null; resolve() }
       })
+      interruptSleep = null
     }
   }
 
@@ -203,14 +232,23 @@ export class ArtifactTransferService {
 
   private async runDelivery(row: Delivery, workerSignal: AbortSignal): Promise<void> {
     const holder = mintHolder()
-    const claimed = claimDelivery(row.deliveryId, { holder: row.holder, epoch: row.epoch }, holder)
-    if (!claimed.ok) {
+    let cursor: { handle: DeliveryHandle; committing: boolean }
+    try {
+      const claimed = claimDelivery(row.deliveryId, { holder: row.holder, epoch: row.epoch }, holder)
+      if (!claimed.ok) {
+        retireHolder(holder)
+        return
+      }
+      // Moves as the phase does, so the failure path records against the epoch
+      // actually reached — and knows whether the final put was already sent.
+      cursor = { handle: claimed.handle, committing: false }
+    } catch (err) {
+      // The claim itself could not be written; the holder minted for it is
+      // released so no attempt is left dangling, and the row is untouched.
       retireHolder(holder)
+      this.deps.log?.warn('[artifact-transfer] could not claim delivery', row.relativePath, err)
       return
     }
-    // Moves as the phase does, so the failure path records against the epoch
-    // actually reached — and knows whether the final put was already sent.
-    const cursor = { handle: claimed.handle, committing: false }
     const abort = new AbortController()
     const onWorkerAbort = () => abort.abort()
     workerSignal.addEventListener('abort', onWorkerAbort, { once: true })
@@ -268,10 +306,17 @@ export class ArtifactTransferService {
       // up: the bytes are on the node and only the wake is outstanding.
       const giveUp = unverified || (!delivered && (missingLocal || attempts >= MAX_UPLOAD_ATTEMPTS))
       const delay = Math.min(BACKOFF_MAX_MS, BACKOFF_BASE_MS * 2 ** Math.min(attempts - 1, 10))
-      recordDeliveryFailure(cursor.handle, {
-        error: unverified ? `commit unverified: ${message}` : message,
-        nextAttemptAt: giveUp ? null : (this.deps.now ?? Date.now)() + delay,
-      })
+      try {
+        recordDeliveryFailure(cursor.handle, {
+          error: unverified ? `commit unverified: ${message}` : message,
+          nextAttemptAt: giveUp ? null : (this.deps.now ?? Date.now)() + delay,
+        })
+      } catch (recordErr) {
+        // Even writing the failure failed. The row keeps its phase and its
+        // previous schedule; a later pass retries it. Never rethrow — that
+        // would take the worker down with it (E090-1).
+        this.deps.log?.warn('[artifact-transfer] could not record delivery failure', row.relativePath, recordErr)
+      }
       this.deps.log?.warn('[artifact-transfer] delivery failed', row.relativePath, message, giveUp ? '(giving up)' : `(retry in ${delay}ms)`)
     } finally {
       workerSignal.removeEventListener('abort', onWorkerAbort)
@@ -311,6 +356,10 @@ export class ArtifactTransferService {
     const landed = advanceDelivery(cursor.handle, { from: 'committing', to: 'uploaded' })
     if (!landed.ok) throw new LostDelivery()
     cursor.handle = landed.handle
+    // The commit is confirmed on the node: from here `committing` no longer
+    // describes the row, so a later failure (the wake) is an ordinary retry,
+    // never "commit unverified" (E090-2).
+    cursor.committing = false
   }
 
   /**

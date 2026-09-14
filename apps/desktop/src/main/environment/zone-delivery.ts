@@ -41,7 +41,7 @@ import {
   type DeliveryOrigin,
 } from '../db-session-deliveries'
 import { ADHOC_SESSION_ID, isUnderSyncZone, zoneArtifactRef, zoneRelativePath } from '../media-output-paths'
-import { currentCallOwner, registerArtifact, type ArtifactRef } from '../mcp/artifact-registry'
+import { currentCallOwner, holdSealedDelivery, registerArtifact, type ArtifactRef } from '../mcp/artifact-registry'
 import { isHolderAlive, mintHolder, retireHolder } from './delivery-holders'
 import { canonicalClaimPath } from './sync-zone-paths'
 import { readZoneOwner } from './zone-owner'
@@ -158,13 +158,19 @@ export function sealZoneFile(input: ZoneFileInput & { bytes?: Buffer | string })
   const held = open.get(key)
   if (held) {
     open.delete(key)
-    try {
-      const identity = contentIdentity(input.path, input.bytes)
-      const sealed = advanceDelivery(held, { from: 'writing', to: 'sealed', ...identity })
-      if (!sealed.ok || !releaseDelivery(sealed.handle)) throw new ZoneDeliveryRefused('reservation-lost', input.path)
-    } finally {
+    const identity = contentIdentity(input.path, input.bytes)
+    const sealed = advanceDelivery(held, { from: 'writing', to: 'sealed', ...identity })
+    if (!sealed.ok) {
       retireHolder(held.holder)
+      throw new ZoneDeliveryRefused('reservation-lost', input.path)
     }
+    // Inside a call the row stays held until the reply-selection runs, so the
+    // worker cannot deliver a produced file the agent may never name (E090-4).
+    // Outside one — a page download's own completion — it is released now for
+    // the worker to carry.
+    if (holdSealedDelivery(sealed.handle)) return held.deliveryId
+    if (!releaseDelivery(sealed.handle)) throw new ZoneDeliveryRefused('reservation-lost', input.path)
+    retireHolder(held.holder)
     return held.deliveryId
   }
   const existing = findDeliveryByPath(input.sessionId, input.path)
@@ -180,6 +186,9 @@ export function sealZoneFile(input: ZoneFileInput & { bytes?: Buffer | string })
   // an existing one reads the connection the row already names.
   const connectionId = connectionOf(dest, input.path)
   if (!connectionId) return null
+  // Held for the call while it decides (E090-4); a publish outside any call
+  // (a device backend's synchronous write) lands unheld for the worker.
+  const holder = mintHolder()
   const r = reserveDelivery({
     sessionId: input.sessionId,
     connectionId,
@@ -187,10 +196,18 @@ export function sealZoneFile(input: ZoneFileInput & { bytes?: Buffer | string })
     relativePath: relativeOf(input.sessionId, input.path),
     origin: input.origin,
     phase: 'sealed',
-    holder: null,
+    holder,
     ...contentIdentity(input.path, input.bytes),
   })
-  if ('refused' in r) throw new ZoneDeliveryRefused(r.refused, input.path)
+  if ('refused' in r) {
+    retireHolder(holder)
+    throw new ZoneDeliveryRefused(r.refused, input.path)
+  }
+  const handle: DeliveryHandle = { deliveryId: r.deliveryId, holder, epoch: r.epoch }
+  if (holdSealedDelivery(handle)) return r.deliveryId
+  // No call to decide: release the holder so the worker may claim it.
+  if (!releaseDelivery(handle)) throw new ZoneDeliveryRefused('reservation-lost', input.path)
+  retireHolder(holder)
   return r.deliveryId
 }
 

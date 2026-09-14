@@ -78,15 +78,22 @@ describe('downloads: reserved before the first byte', () => {
     expect(takeArtifacts(S, 'call')[0]).toMatchObject({ path, final: false, deliveryId: row.deliveryId })
   })
 
-  it('seals the same row when the bytes are in, with their hash', async () => {
+  it('seals the same row when the bytes are in, with their hash — held for the call, released after (E090-4)', async () => {
+    let path = ''
     await asRemote(async () => {
-      const path = reserveDownloadPath('report.csv', null, S)
+      path = reserveDownloadPath('report.csv', null, S)
       const { writeFileSync } = await import('node:fs')
       writeFileSync(path, 'FIRSTSECOND')
       registerDownload(S, path, true)
-      expect(findDeliveryByPath(S, path)).toMatchObject({ phase: 'sealed', holder: null, total: 11, sha256: sha('FIRSTSECOND') })
+      // Inside the call the sealed row is still held, so the worker cannot take
+      // a file the reply may never name.
+      const inCall = findDeliveryByPath(S, path)!
+      expect(inCall).toMatchObject({ phase: 'sealed', total: 11, sha256: sha('FIRSTSECOND') })
+      expect(isHolderAlive(inCall.holder!)).toBe(true)
       expect(takeArtifacts(S, 'call')[0]).toMatchObject({ final: true, deliveryId: expect.any(String) })
     })
+    // The call ended: the row is released for the reply-selection / worker.
+    expect(findDeliveryByPath(S, path)).toMatchObject({ phase: 'sealed', holder: null })
   })
 
   it('names a page download’s node from its tab driver, outside any call scope', () => {

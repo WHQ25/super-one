@@ -21,10 +21,12 @@ vi.mock('../database', async () => (await import('../../test/fixtures/delivery-d
 
 import { findDeliveryByPath, listSessionDeliveries } from '../db-session-deliveries'
 import type { ArtifactRef } from '../mcp/artifact-registry'
+import { collectArtifacts } from '../mcp/artifact-registry'
 import { deliveryDb, resetDeliveryDatabase } from '../../test/fixtures/delivery-db'
 import { _resetHoldersForTests, isHolderAlive } from './delivery-holders'
 import { mapHostActionInputs, mapNestedToolInputs, syncHostActionOutputs, withInputMapping, CLAIM_BUDGET_MARGIN_MS } from './host-action-sync'
 import { reserveZoneFile, sealZoneFile } from './zone-delivery'
+import { ArtifactTransferService } from './artifact-transfer-service'
 
 let root: string
 const zone = { syncRoot: '/home/node/.superone/node/sync', os: 'linux' as const }
@@ -55,6 +57,10 @@ function sealed(sessionId: string, rel: string, data: string | Buffer, producer:
 const rowOf = (ref: ArtifactRef) => findDeliveryByPath('s1', ref.path)!
 /** Relative paths of every delivery of `s1` that is not over — what the worker still has to do. */
 const stillOwed = () => listSessionDeliveries('s1').filter((r) => r.outcome === null).map((r) => r.relativePath)
+
+let callSeq = 0
+/** Run `fn` inside an open Host Action call scope for node c1 — an in-call producer. */
+const asRemote = <T,>(fn: () => Promise<T>): Promise<T> => collectArtifacts('s1', `call-${++callSeq}`, fn, 'c1')
 
 function fakeNode() {
   const files = new Map<string, Buffer>()
@@ -233,7 +239,10 @@ describe('host action outputs', () => {
     node.deps.put = async (req) => { await put(req); throw Object.assign(new Error('node closed the socket'), { code: 'unavailable' }) }
     const reply = { content: [{ type: 'text', text: shot.path }] }
     const out = await syncHostActionOutputs('s1', [shot], reply, Date.now() + 60_000, node.deps)
-    expect(out.sync).toEqual({ deferred: ['/home/node/.superone/node/sync/s1/browser/shot.png'] })
+    // Not "deferred / you will be notified": a committing row is stopped, and
+    // the agent is told to re-run rather than wait (E090-3).
+    expect(out.sync).toEqual({ deferred: [], stopped: ['/home/node/.superone/node/sync/s1/browser/shot.png'] })
+    expect(out.content?.at(-1)?.text).toMatch(/not be retried automatically|re-run/i)
     const row = rowOf(shot)
     expect(row).toMatchObject({ phase: 'committing', holder: null, outcome: null, nextAttemptAt: null })
     expect(row.gaveUpAt).not.toBeNull()
@@ -268,7 +277,7 @@ describe('host action outputs', () => {
       new Promise<'hung'>((resolve) => setTimeout(() => resolve('hung'), 500)),
     ])
     expect(settled).not.toBe('hung')
-    expect((settled as { sync?: unknown }).sync).toEqual({ deferred: ['/home/node/.superone/node/sync/s1/browser/shot.png'] })
+    expect((settled as { sync?: unknown }).sync).toEqual({ deferred: [], stopped: ['/home/node/.superone/node/sync/s1/browser/shot.png'] })
     expect(rowOf(shot)).toMatchObject({ phase: 'committing', holder: null, nextAttemptAt: null })
     expect(rowOf(shot).gaveUpAt).not.toBeNull()
   })
@@ -368,6 +377,71 @@ describe('host action outputs', () => {
     // reached, stays sealed and unheld for the worker.
     expect(rowOf(a)).toMatchObject({ phase: 'notifying', outcome: 'done', holder: null })
     expect(rowOf(b)).toMatchObject({ phase: 'sealed', holder: null, outcome: null })
+  })
+
+  it('does not report a confirmed upload as needing re-delivery when only the wake write fails (E090-2)', async () => {
+    // The PUT lands and the row reaches `uploaded` — the bytes are on the node.
+    // Then the completion write (`outcome = 'done'`) fails. Because the commit
+    // is already confirmed, this is an ordinary retryable failure of the wake,
+    // never "commit unverified": the file is there, only the notice is owed.
+    const node = fakeNode()
+    const shot = sealed('s1', 'browser/shot.png', 'png')
+    const real = deliveryDb().prepare.bind(deliveryDb())
+    const spy = vi.spyOn(deliveryDb(), 'prepare').mockImplementation(((sql: string) => {
+      if (sql.includes("outcome = 'done'")) throw new Error('SQLITE_BUSY')
+      return real(sql)
+    }) as never)
+    const out = await syncHostActionOutputs('s1', [shot], { content: [{ type: 'text', text: shot.path }] }, Date.now() + 60_000, node.deps)
+    spy.mockRestore()
+    expect(node.files.get('browser/shot.png')?.toString()).toBe('png')
+    // The bytes are on the node; the row is at `notifying`, retryable, NOT a
+    // committing/gave-up "needs re-delivery".
+    const row = rowOf(shot)
+    expect(row).toMatchObject({ phase: 'notifying', outcome: null, gaveUpAt: null })
+    expect(row.lastError ?? '').not.toMatch(/commit unverified/)
+    expect(out.sync).toMatchObject({ deferred: ['/home/node/.superone/node/sync/s1/browser/shot.png'] })
+    expect((out.sync as { stopped?: string[] }).stopped).toBeUndefined()
+    // A worker pass with the DB healthy finishes the wake.
+    const service = new ArtifactTransferService({ put: (_c, req) => node.deps.put(req), notifyCompleted: async () => undefined })
+    await service.runOnce('c1')
+    expect(rowOf(shot)).toMatchObject({ outcome: 'done' })
+  })
+})
+
+describe('an in-call producer the worker could race (E090-4)', () => {
+  it('is not delivered by a worker that wakes mid-call, then is abandoned when the reply never names it', async () => {
+    // A `browser_perf_measure` seals a nested download while the outer call is
+    // still sampling. A worker woken by another task must not take that sealed
+    // file — the reply-selection has not run — so it stays held until the call
+    // ends, and is abandoned because the reply names only timings.
+    const node = fakeNode()
+    const service = new ArtifactTransferService({ put: (_c, req) => node.deps.put(req), notifyCompleted: async () => undefined })
+    const probePath = join(root, 'sync', 's1', 'download', 'probe.bin')
+    let deliveryId = ''
+    await asRemote(async () => {
+      const path = desktopFile('s1', 'download/probe.bin', 'BYTES')
+      deliveryId = sealZoneFile({ sessionId: 's1', path, origin: 'download', connectionId: 'c1' })!
+      // The worker wakes for an unrelated reason while the call is still open.
+      // The row it would take is held by this call's live holder, so it skips it.
+      await service.runOnce('c1')
+      const midCallRow = findDeliveryByPath('s1', path)!
+      expect(node.puts).toHaveLength(0)
+      expect(midCallRow).toMatchObject({ phase: 'sealed' })
+      expect(isHolderAlive(midCallRow.holder!)).toBe(true)
+    })
+    // The call ended: its grip is released so the reply-selection can decide,
+    // but the row is still `sealed` with nothing sent (E090-4 has no window in
+    // which the worker could have taken the undecided file).
+    const afterCall = findDeliveryByPath('s1', probePath)!
+    expect(afterCall).toMatchObject({ phase: 'sealed', outcome: null, holder: null })
+    // The reply names only timings: the executor's sync abandons the unmentioned file.
+    const reply = { content: [{ type: 'text', text: JSON.stringify({ ms: 1234 }) }] }
+    const probe = { path: probePath, producer: 'download' as const, final: true, deliveryId }
+    await syncHostActionOutputs('s1', [probe], reply, Date.now() + 60_000, node.deps)
+    expect(findDeliveryByPath('s1', probePath)).toMatchObject({ outcome: 'abandoned' })
+    // And a worker pass afterwards still sends nothing.
+    await service.runOnce('c1')
+    expect(node.puts).toHaveLength(0)
   })
 })
 

@@ -329,6 +329,9 @@ export async function syncHostActionOutputs(
 
   const mapping = new Map<string, string>()
   const deferred: string[] = []
+  // Files whose final chunk was sent but not confirmed (§6): no worker will
+  // retry them, so the agent is told they stopped, not that they are on the way.
+  const stopped: string[] = []
   const rate = Math.max(1, deps.transfers.throughputBytesPerMs(deps.connectionId))
   // Smallest first: a screenshot should never wait behind a recording.
   planned.sort((a, b) => a.size - b.size)
@@ -397,9 +400,14 @@ export async function syncHostActionOutputs(
       // resumes the partial upload rather than starting a second one.
       await within(budgetMs, deps.signal, (budgetSignal) => pushDelivery(row, cursor, budgetSignal, deps))
       // For an eager push the reply is the wake: the agent reads the rewritten
-      // path in the same turn. Done, under this holder.
+      // path in the same turn. Done, under this holder. The cursor tracks the
+      // notifying handle so a completeDelivery that throws records against the
+      // epoch actually reached — as an ordinary retry, the bytes being on the
+      // node already (E090-2).
       const notifying = advanceDelivery(cursor.handle, { from: 'uploaded', to: 'notifying' })
-      if (!notifying.ok || !completeDelivery(notifying.handle)) throw new LostDelivery()
+      if (!notifying.ok) throw new LostDelivery()
+      cursor.handle = notifying.handle
+      if (!completeDelivery(cursor.handle)) throw new LostDelivery()
     } catch (err) {
       if (err instanceof LostDelivery) {
         deferred.push(item.nodePath)
@@ -407,17 +415,25 @@ export async function syncHostActionOutputs(
       }
       // The tool already did its work; a failed push must not fail the action.
       // The row keeps the phase it reached and the worker takes it from there:
-      // `uploading` with its offset is resumed; `committing` — the final put
-      // went out and its reply did not come back — is unknowable from here and
-      // stops (§6). The agent is told the file is not there yet.
+      // `uploading` with its offset is resumed; a wake that failed after the
+      // commit was confirmed retries the wake (cursor.committing was cleared at
+      // `uploaded`); only a final put still in flight — `committing` — is
+      // unknowable from here and stops (§6). The agent is told it is not there yet.
       const message = err instanceof Error ? err.message : String(err)
       recordDeliveryFailure(cursor.handle, { error: cursor.committing ? `commit unverified: ${message}` : message, nextAttemptAt: cursor.committing ? null : now() })
-      deferred.push(item.nodePath)
-      leftForWorker = true
+      if (cursor.committing) {
+        // Final put in flight and unconfirmed: the worker will not touch it, so
+        // do not wake one, and tell the agent it stopped rather than promise a
+        // completion notice that will never come.
+        stopped.push(item.nodePath)
+      } else {
+        deferred.push(item.nodePath)
+        leftForWorker = true
+      }
       // The action was cancelled, not the push: the row already records where
       // it got to (§6), and the failure surfaced as the action's abort.
       throwIfAborted(deps.signal)
-      deps.log?.warn('[host-action] eager artifact push failed, deferring', item.relativePath, message)
+      deps.log?.warn('[host-action] eager artifact push failed', item.relativePath, message)
     } finally {
       retireHolder(holder)
     }
@@ -428,14 +444,18 @@ export async function syncHostActionOutputs(
   const content = (reply.content ?? []).map((block) =>
     typeof block.text === 'string' ? { ...block, text: rewriteArtifactPaths(block.text, mapping) } : block,
   )
-  if (deferred.length === 0) return { ...reply, content }
+  if (deferred.length === 0 && stopped.length === 0) return { ...reply, content }
   // The node's MCP server forwards `content` and nothing else of the envelope,
-  // so the deferred list has to be content too or the model only ever sees
-  // the ENOENT (§4.1).
+  // so both lists have to be content too or the model only ever sees the ENOENT
+  // (§4.1) — and it must be able to tell "on its way" from "stopped, re-run".
+  const notices = [
+    ...(deferred.length ? [{ type: 'text' as const, text: deferredNotice(deferred) }] : []),
+    ...(stopped.length ? [{ type: 'text' as const, text: stoppedNotice(stopped) }] : []),
+  ]
   return {
     ...reply,
-    content: [...content, { type: 'text', text: deferredNotice(deferred) }],
-    sync: { deferred },
+    content: [...content, ...notices],
+    sync: { deferred, ...(stopped.length ? { stopped } : {}) },
   }
 }
 
@@ -475,6 +495,10 @@ async function pushDelivery(row: Delivery, cursor: PushCursor, signal: AbortSign
   const landed = advanceDelivery(cursor.handle, { from: 'committing', to: 'uploaded' })
   if (!landed.ok) throw new LostDelivery()
   cursor.handle = landed.handle
+  // The commit is confirmed on the node: `committing` no longer describes the
+  // row, so a later failure (the wake) is an ordinary retry, never reported as
+  // "commit unverified" for bytes already delivered (E090-2).
+  cursor.committing = false
 }
 
 function deferredNotice(paths: string[]): string {
@@ -482,5 +506,13 @@ function deferredNotice(paths: string[]): string {
     `SuperOne sync: ${paths.length === 1 ? 'this file is' : 'these files are'} still being transferred to this machine and not yet available at the path shown:`,
     ...paths.map((p) => `- ${p}`),
     'You will be notified when the transfer completes; reading the path before that fails with ENOENT.',
+  ].join('\n')
+}
+
+function stoppedNotice(paths: string[]): string {
+  return [
+    `SuperOne sync: the transfer of ${paths.length === 1 ? 'this file' : 'these files'} was interrupted after the final chunk was sent and could not be confirmed, so ${paths.length === 1 ? 'it is' : 'they are'} not available at the path shown and will NOT be retried automatically:`,
+    ...paths.map((p) => `- ${p}`),
+    'Re-run the action that produced ' + (paths.length === 1 ? 'it' : 'them') + ' to deliver again; you will not be notified about the stopped transfer.',
   ].join('\n')
 }

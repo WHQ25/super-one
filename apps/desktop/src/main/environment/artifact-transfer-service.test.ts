@@ -385,4 +385,73 @@ describe('the transfer worker', () => {
     await service.runOnce('c1')
     expect(node.calls).toHaveLength(0)
   })
+
+  it('survives a precise DB fault on one row mid-pass and stays alive to deliver it (E090-1)', async () => {
+    // A running worker (start(), not a bare runOnce): the claim UPDATE for the
+    // first row throws once — an SQLITE_BUSY landing on exactly that statement.
+    // It must not end the pass or the worker: the second row still uploads in
+    // the same pass, the faulted row is left untouched, and once the fault
+    // clears the still-running worker delivers it.
+    const node = fakeNode()
+    const service = new ArtifactTransferService({ put: node.put })
+    const a = join(root, 'a.png'); const dataA = Buffer.from('AAAA'); writeFileSync(a, dataA)
+    const b = join(root, 'b.png'); const dataB = Buffer.from('BBBB'); writeFileSync(b, dataB)
+    const idA = sealDelivery('s1', 'c1', a, 'browser/a.png', dataA)
+    const idB = sealDelivery('s1', 'c1', b, 'browser/b.png', dataB)
+    // Fault the first claim only — the `holder IS ?` CAS is unique to claimDelivery.
+    const real = deliveryDb().prepare.bind(deliveryDb())
+    let faulted = false
+    const spy = vi.spyOn(deliveryDb(), 'prepare').mockImplementation(((sql: string) => {
+      if (!faulted && sql.includes('holder IS ?')) { faulted = true; throw new Error('SQLITE_BUSY') }
+      return real(sql)
+    }) as never)
+    service.start('c1')
+    // The pass survived the fault: the second row is on the node.
+    await vi.waitFor(() => expect(getDelivery(idB)).toMatchObject({ outcome: 'done' }))
+    expect(node.files.get('browser/b.png')!.equals(dataB)).toBe(true)
+    // The faulted row was left exactly as it was — sealed, unheld, retryable.
+    expect(getDelivery(idA)).toMatchObject({ phase: 'sealed', outcome: null, holder: null, gaveUpAt: null })
+    // With the DB healthy again, the SAME worker (never restarted) delivers it.
+    spy.mockRestore()
+    service.wake('c1')
+    await vi.waitFor(() => expect(getDelivery(idA)).toMatchObject({ outcome: 'done' }))
+    expect(node.files.get('browser/a.png')!.equals(dataA)).toBe(true)
+    service.stop('c1')
+  })
+
+  it('rescans after a wake that lands mid-pass, delivering a row sealed after the pass began (E090-5)', async () => {
+    // The race the `woken` flag exists for: a file is sealed *after* a pass took
+    // its row snapshot, and the wake for it lands while that pass is still
+    // uploading. A brand-new row has next_attempt_at NULL, so the post-pass
+    // sleep timer ignores it (it would wait BACKOFF_MAX). Only an immediate
+    // rescan driven by the flag delivers it — which is why this asserts the new
+    // row lands promptly, with the real loop, not a second runOnce.
+    const node = fakeNode()
+    let release!: () => void
+    const gate = new Promise<void>((r) => { release = r })
+    let entered = 0
+    const put = async (c: string, req: ArtifactPutRequest) => {
+      entered++
+      if (entered === 1) await gate // hold the first pass open inside A's upload
+      return node.put(c, req)
+    }
+    const service = new ArtifactTransferService({ put })
+    const a = join(root, 'a.png'); const dataA = Buffer.from('AAAA'); writeFileSync(a, dataA)
+    const b = join(root, 'b.png'); const dataB = Buffer.from('BBBB'); writeFileSync(b, dataB)
+    const idA = sealDelivery('s1', 'c1', a, 'browser/a.png', dataA)
+    service.start('c1')
+    // Pass 1 is blocked inside A's put; its snapshot was [A] only.
+    await vi.waitFor(() => expect(entered).toBe(1))
+    // B is sealed now — after the snapshot — and the wake lands mid-pass.
+    const idB = sealDelivery('s1', 'c1', b, 'browser/b.png', dataB)
+    service.wake('c1')
+    release()
+    // The flag forces a rescan; B is delivered without waiting out any timer.
+    await vi.waitFor(() => {
+      expect(getDelivery(idA)).toMatchObject({ outcome: 'done' })
+      expect(getDelivery(idB)).toMatchObject({ outcome: 'done' })
+    })
+    expect(node.files.get('browser/b.png')!.equals(dataB)).toBe(true)
+    service.stop('c1')
+  })
 })

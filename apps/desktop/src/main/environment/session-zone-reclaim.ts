@@ -238,6 +238,7 @@ export async function syncZoneUsage(): Promise<SyncZoneUsage> {
   }
   const pendingBytes = await pendingUploadBytes()
   const dry = await runSyncZoneReclaim({ dryRun: true })
+  const givenUp = await givenUpUsage()
   return {
     root,
     totalBytes,
@@ -245,32 +246,42 @@ export async function syncZoneUsage(): Promise<SyncZoneUsage> {
     adhocBytes,
     pendingBytes,
     reclaimable: { sessions: dry.removed.length, bytes: dry.freedBytes },
-    failedHandoffs: await givenUpUsage(),
+    failedHandoffs: givenUp.failedHandoffs,
+    needsRedelivery: givenUp.needsRedelivery,
   }
 }
 
 /**
- * Deliveries automatic retry has stopped on (`gave_up_at`): a file that could
- * not be uploaded after every attempt, or whose final commit cannot be
- * verified. Counted separately from `pendingBytes`, which is about rows a
- * worker will get to — nothing is coming for these until a person acts.
- * Still reported under the `failedHandoffs` name the Settings page reads.
+ * Deliveries automatic retry has stopped on (`gave_up_at`), split by what a
+ * person can do about them (E090-3): a `committing` row's final chunk was sent
+ * but never confirmed, so it needs re-delivery under a new path and Retry
+ * cannot help; every other given-up row failed before the final put and Retry
+ * Upload puts it back in the queue. Counted separately from `pendingBytes`,
+ * which is about rows a worker will still get to.
  */
-async function givenUpUsage(): Promise<{ files: number; bytes: number; lastError: string | null }> {
+async function givenUpUsage(): Promise<{
+  failedHandoffs: { files: number; bytes: number; lastError: string | null }
+  needsRedelivery: { files: number; bytes: number }
+}> {
+  const retryable = { files: 0, bytes: 0, lastError: null as string | null }
+  const needsRedelivery = { files: 0, bytes: 0 }
   try {
     const { listGivenUpDeliveries } = await import('../db-session-deliveries')
-    const rows = listGivenUpDeliveries()
-    let bytes = 0
-    let files = 0
-    for (const row of rows) {
+    for (const row of listGivenUpDeliveries()) {
       const st = linkSafeStat(row.localPath)
       if (!st?.isFile) continue
-      files += 1
-      bytes += st.size
+      if (row.phase === 'committing') {
+        needsRedelivery.files += 1
+        needsRedelivery.bytes += st.size
+      } else {
+        retryable.files += 1
+        retryable.bytes += st.size
+        retryable.lastError = row.lastError ?? retryable.lastError
+      }
     }
-    return { files, bytes, lastError: rows.at(-1)?.lastError ?? null }
+    return { failedHandoffs: retryable, needsRedelivery }
   } catch {
-    return { files: 0, bytes: 0, lastError: null }
+    return { failedHandoffs: retryable, needsRedelivery }
   }
 }
 

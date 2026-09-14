@@ -2,7 +2,7 @@
 
 Status: **implemented — §10.1 through §10.6 all landed.** Supersedes §4.1 and
 §5.3 of `session-sync-zone.md`. Review markers: P1–P5 from the first review,
-Q1–Q4 from the second.
+Q1–Q4 from the second, E090-1–E090-6 from the third (worker/registry hardening).
 
 Implementation notes (things decided while building, not derivable from the
 spec above):
@@ -45,6 +45,45 @@ spec above):
   before the put, so from the desktop the outcome is unknowable whether the
   node rejected it or the reply was lost. It shows in `givenUp` as *needs
   re-delivery* but `retryGivenUp` excludes it (only a new path clears it).
+
+Third review (E090), worker and registry hardening — each with a regression
+test on the real SQLite fixture / Electron event boundary:
+
+- **E090-1 — a DB fault on one row must not end the pass or the worker.**
+  `runDelivery` already retires the holder and leaves the row untouched when the
+  claim CAS throws; `runOnce` wraps each row so a fault deeper in the pass is the
+  same; and `start()` drops a loop that ends for any reason so no registration
+  outlives a dead worker. Test: the claim UPDATE throws once, the *other* row of
+  the same pass still uploads, and the still-running worker delivers the faulted
+  row once the fault clears.
+- **E090-2 — a confirmed upload whose only the wake-write fails is retryable,
+  not "commit unverified".** Once the final put answered, the bytes are on the
+  node; a failure of `outcome = 'done'` leaves the row at `notifying`, retryable,
+  never `committing`/gave-up. The eager push routes it to `deferred`, not
+  `stopped`.
+- **E090-4 — a file a producer seals *inside* a call is held until the
+  reply-selection runs.** `sealZoneFile` calls `holdSealedDelivery`: inside a
+  call scope the row keeps its live holder, so a worker woken mid-call skips it
+  (`claimDelivery` refuses live holders). `collectArtifacts`' `finally` sets
+  `scope.ended`, then releases + retires every held handle — so the row is
+  `holder = null` for `syncHostActionOutputs` to claim or abandon, with no window
+  in which the worker could take an undecided file. `holdSealedDelivery` returns
+  false once `scope.ended`, so a detached background download that seals after
+  the call is not held forever.
+- **E090-5 — a wake that lands mid-pass triggers an immediate re-scan.** A row
+  sealed after a pass took its snapshot has `next_attempt_at NULL`, which the
+  next-due sleep timer ignores; the `woken` flag makes the loop `continue`
+  instead of sleeping, so the late row is delivered without waiting out
+  `BACKOFF_MAX`.
+- **E090-6 — a refused `will-download` reservation cancels the item.** Returning
+  without a save path would hand the item back to Electron's default flow (a save
+  dialog, or an untracked file a remote agent can never reach). The now-strict
+  reservation instead `item.cancel()`s, sets no save path, and records an
+  `interrupted` capture so `waitForDownloads` resolves rather than hanging.
+- **E090-3 — Settings separates *needs re-delivery* (committing) from *stuck*
+  (retryable).** `needsRedelivery` gets its own warning line and **no button**;
+  Retry Upload gates on `failedHandoffs` alone, because a `committing` file
+  cannot be safely re-queued — only re-produced under a new path.
 
 ## 1. Why
 

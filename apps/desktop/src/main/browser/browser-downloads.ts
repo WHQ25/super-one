@@ -194,7 +194,26 @@ export function registerBrowserDownloadCapture(): void {
         ? reserveDownloadPath(filename, null, driver.sessionId, { connectionId: driver.connectionId })
         : reserveDownloadPath(filename)
     } catch (err) {
-      log.warn('[browser-download] failed to reserve a save path', err)
+      // The reservation is now strict: the delivery record could not be written,
+      // or the session's zone was dropped. Returning here would let Electron
+      // fall back to its default save flow — a dialog, or an untracked file in
+      // the user's Downloads that a remote agent can never see (E090-6). Cancel
+      // the download instead, and record the failure for `waitForDownloads`.
+      log.warn('[browser-download] refused to reserve a save path; cancelling', err)
+      try { item.cancel() } catch (cancelErr) { log.debug('[browser-download] could not cancel a refused download', cancelErr) }
+      const failed: CapturedDownload = {
+        url: item.getURL(),
+        filename,
+        path: '',
+        bytes: 0,
+        state: 'interrupted',
+        startedAt: Date.now(),
+        webContentsId: webContents?.id ?? -1,
+        driver,
+      }
+      captured.unshift(failed)
+      captured.length = Math.min(captured.length, MAX_CAPTURED)
+      notifyWaiters()
       return
     }
     item.setSavePath(path)

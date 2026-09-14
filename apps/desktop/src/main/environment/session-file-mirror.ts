@@ -13,11 +13,18 @@ import { statSync } from 'node:fs'
 import type { ArtifactGetRequest, ArtifactGetResult, ArtifactStatResult } from '@superone/shared/environment'
 import { downloadArtifact } from './artifact-transfer'
 import { desktopMirrorPath } from './sync-zone-paths'
+import { markZoneOwner } from './zone-owner'
 
 export interface MirrorDeps {
   stat: (input: { sessionId: string; relativePath: string }) => Promise<ArtifactStatResult>
   get: (input: ArtifactGetRequest) => Promise<ArtifactGetResult>
   signal?: AbortSignal
+  /**
+   * The node being mirrored from. Recorded on the zone directory the mirror
+   * writes into, so the reclaim sweep knows whom to ask about the session —
+   * a directory that only ever held mirrored files used to stay unmarked.
+   */
+  connectionId?: string
   /**
    * Is a desktop→node upload of this file still queued? Then the desktop copy
    * is the original and the node's "not there" is just "not there yet".
@@ -94,6 +101,7 @@ export async function mirrorNodeArtifact(sessionId: string, relativePath: string
     if (local && local.size === remote.size && local.mtimeMs === remote.mtimeMs) return { kind: 'local', path, ...local }
     try {
       const fetched = await downloadArtifact({ sessionId, relativePath, destPath: path, get: deps.get, signal: deps.signal })
+      if (deps.connectionId) markZoneOwner(sessionId, deps.connectionId)
       return { kind: 'local', path, size: fetched.bytes, mtimeMs: fetched.mtimeMs }
     } catch (err) {
       if ((err as { code?: string }).code === 'aborted') throw err

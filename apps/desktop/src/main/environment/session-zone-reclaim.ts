@@ -10,10 +10,11 @@
  *
  * `adhoc` holds captures taken with no session and is never auto-deleted.
  */
-import { lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { lstatSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ADHOC_SESSION_ID, sessionZoneDir, syncZoneRoot } from '../media-output-paths'
+import { OWNER_FILE } from './zone-owner'
 
 export async function removeSessionZone(sessionId: string): Promise<void> {
   if (!sessionId || sessionId === ADHOC_SESSION_ID) return
@@ -26,7 +27,6 @@ export async function removeSessionZone(sessionId: string): Promise<void> {
 export const ADHOC_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 /** A directory touched this recently is in use, whatever else is known about it. */
 export const ACTIVE_GRACE_MS = 60 * 60 * 1000
-const OWNER_FILE = '.owner'
 
 export interface ZoneReclaimDeps {
   now?: () => number
@@ -42,22 +42,7 @@ export interface ZoneReclaimDeps {
   remoteSessionExists?: (connectionId: string, sessionId: string) => Promise<boolean | 'unknown'>
 }
 
-/**
- * Record who a zone directory belongs to, so the sweep can ask the right side
- * whether the session still exists. Written into the directory itself rather
- * than a table: the directory is the thing being reclaimed, and a marker that
- * travels with it cannot go stale separately.
- */
-export function markZoneOwner(sessionId: string, connectionId: string | null): void {
-  if (!sessionId || sessionId === ADHOC_SESSION_ID) return
-  try {
-    const dir = sessionZoneDir(sessionId)
-    mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, OWNER_FILE), connectionId ?? 'local', { mode: 0o600 })
-  } catch {
-    /* the marker is an optimisation for reclaim, never a precondition for writing */
-  }
-}
+export { markZoneOwner } from './zone-owner'
 
 function readOwner(dir: string): string | null {
   try {
@@ -251,5 +236,48 @@ export async function reclaimSyncZoneOnStartup(): Promise<{ removed: string[]; f
     return result
   } catch {
     return { removed: [], freedBytes: 0 }
+  }
+}
+
+/**
+ * One sweep at a time, and not for every nudge. The sweep is asked to run
+ * at launch and whenever a node connects — a node that was offline at
+ * launch and reconnects later is the case the launch-only sweep missed,
+ * because an unreachable node means "keep" and nobody asked again. A
+ * reconnect raises several status changes in a row, so requests inside the
+ * debounce window collapse into one run; a request that arrives while a
+ * sweep is running may carry new evidence and gets one more run after it.
+ */
+export function createReclaimScheduler(
+  run: () => Promise<unknown>,
+  opts: { debounceMs?: number } = {},
+): { request(): void; dispose(): void } {
+  const debounceMs = opts.debounceMs ?? 5_000
+  let timer: ReturnType<typeof setTimeout> | null = null
+  let running = false
+  let again = false
+  let disposed = false
+  const start = (): void => {
+    timer = null
+    if (disposed) return
+    if (running) { again = true; return }
+    running = true
+    void run().catch(() => undefined).finally(() => {
+      running = false
+      if (again && !disposed) { again = false; schedule() }
+    })
+  }
+  const schedule = (): void => {
+    if (timer !== null) clearTimeout(timer)
+    timer = setTimeout(start, debounceMs)
+    timer.unref?.()
+  }
+  return {
+    request: () => { if (!disposed) schedule() },
+    dispose: () => {
+      disposed = true
+      if (timer !== null) clearTimeout(timer)
+      timer = null
+    },
   }
 }

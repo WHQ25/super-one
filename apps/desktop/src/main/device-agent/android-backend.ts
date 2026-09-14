@@ -16,8 +16,9 @@
  * fingerprint differs.
  */
 
+import { ensureArtifactDir } from '../environment/zone-owner'
 import { createHash } from 'node:crypto'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { DeviceOrientation, DeviceUiNode } from '@superone/shared/device-agent'
 import { splitDeviceText } from '@superone/shared/device'
@@ -183,7 +184,7 @@ export class AndroidBackend implements TouchDeviceBackend {
     const { serial, name } = this.require()
     const png = await this.screencap(serial)
     const path = join(this.captureRoot, this.deviceId, captureFileName(name, 'png', new Date()))
-    await mkdir(dirname(path), { recursive: true })
+    ensureArtifactDir(dirname(path))
     await writeFile(path, png)
     const size = readPngSize(png)
     return { path, width: size?.width ?? 0, height: size?.height ?? 0 }

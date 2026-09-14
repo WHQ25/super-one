@@ -4546,17 +4546,24 @@ function registerIpcHandlers(): void {
   // single delete, "delete older" and session_cleanup all reclaim.
   // Housekeeping for the sync zone (docs/design/session-sync-zone.md §7):
   // directories whose session is provably gone, and adhoc captures nobody
-  // claimed. Deferred so it never sits between launch and the first window.
-  setTimeout(() => {
-    void import('./environment/session-zone-reclaim')
-      .then(({ reclaimSyncZoneOnStartup }) => reclaimSyncZoneOnStartup())
-      .then(({ removed, freedBytes }) => {
-        if (removed.length > 0 || freedBytes > 0) {
-          log.info('[main] sync zone reclaimed %d session(s), %d bytes', removed.length, freedBytes)
-        }
-      })
-      .catch((err) => log.warn('[main] sync zone reclaim failed: %s', err instanceof Error ? err.message : String(err)))
-  }, 30_000).unref?.()
+  // claimed. Runs 30 s after launch — never between launch and the first
+  // window — and again whenever a node connects, because a node that was
+  // offline at launch is one the launch sweep could only say "keep" about.
+  void Promise.all([import('./environment/session-zone-reclaim'), import('./environment')]).then(([{ createReclaimScheduler, reclaimSyncZoneOnStartup }, { getEnvironmentHost }]) => {
+    const sweep = createReclaimScheduler(() =>
+      reclaimSyncZoneOnStartup()
+        .then(({ removed, freedBytes }) => {
+          if (removed.length > 0 || freedBytes > 0) {
+            log.info('[main] sync zone reclaimed %d session(s), %d bytes', removed.length, freedBytes)
+          }
+        })
+        .catch((err) => log.warn('[main] sync zone reclaim failed: %s', err instanceof Error ? err.message : String(err))),
+    )
+    setTimeout(() => sweep.request(), 30_000).unref?.()
+    getEnvironmentHost().onStatusChange((snapshot) => {
+      if (snapshot.state === 'connected') sweep.request()
+    })
+  })
 
   watchSessionDeletes((sessionIds) => {
     void import('./environment/session-zone-reclaim').then(({ removeSessionZone }) =>

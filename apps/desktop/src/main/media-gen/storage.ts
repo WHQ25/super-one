@@ -1,4 +1,5 @@
-import { mkdirSync, renameSync, writeFileSync } from 'fs'
+import { ensureArtifactDir } from '../environment/zone-owner'
+import { renameSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import type { SavedImage } from './types'
 import { registerZoneArtifact } from './zone-artifact'
@@ -39,7 +40,7 @@ function persistFiles(
   fallbackMediaType: string,
   withBase64: boolean,
 ): SavedImage[] {
-  mkdirSync(outputDir, { recursive: true })
+  ensureArtifactDir(outputDir)
   return files.map((file, index) => {
     const mediaType = file.mediaType || fallbackMediaType
     const extension = extByMediaType[mediaType] ?? 'bin'

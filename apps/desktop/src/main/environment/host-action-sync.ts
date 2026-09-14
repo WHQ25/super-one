@@ -157,7 +157,7 @@ function argRoles(toolName: string | undefined, args: Record<string, unknown>): 
   }
 }
 
-type InputMappingDeps = Pick<HostActionSyncDeps, 'zone' | 'get' | 'stat' | 'signal'> & { sessionId?: string }
+type InputMappingDeps = Pick<HostActionSyncDeps, 'zone' | 'get' | 'stat' | 'signal'> & { sessionId?: string; connectionId?: string }
 
 /**
  * The Host Action whose tool is running, for the tools it dispatches in
@@ -207,7 +207,7 @@ export async function mapHostActionInputs(
     // A path is only "allowed to be new" if every role it was given is a
     // destination. Named once as a source, it is a source.
     const outputOnly = ref.keys.length > 0 && ref.keys.every((key) => roles.outputs.has(key))
-    const outcome = await mirrorNodeArtifact(ref.sessionId, ref.relativePath, { stat: deps.stat, get: deps.get, signal: deps.signal })
+    const outcome = await mirrorNodeArtifact(ref.sessionId, ref.relativePath, { connectionId: deps.connectionId, stat: deps.stat, get: deps.get, signal: deps.signal })
     throwIfAborted(deps.signal)
     // The node has it and would not hand it over: running the tool on
     // whatever is at the desktop path would be running it on the wrong bytes.

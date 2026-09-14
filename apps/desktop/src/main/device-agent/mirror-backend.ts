@@ -19,8 +19,9 @@
  * got the wrong result, which costs far more turns than a clear refusal.
  */
 
+import { ensureArtifactDir } from '../environment/zone-owner'
 import { createHash } from 'node:crypto'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { captureFileName } from '../device/capture-path'
 import { settle } from '../device/settle'
@@ -131,7 +132,7 @@ export class MirrorBackend implements TouchDeviceBackend {
     const snapshot = await this.manager.capture()
     const fileName = captureFileName(this.deviceId, 'png', new Date())
     const path = join(this.captureRoot, fileName)
-    await mkdir(dirname(path), { recursive: true })
+    ensureArtifactDir(dirname(path))
     await writeFile(path, snapshot.png)
     return { path, width: snapshot.width, height: snapshot.height }
   }

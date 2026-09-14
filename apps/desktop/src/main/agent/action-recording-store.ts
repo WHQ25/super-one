@@ -1,4 +1,5 @@
-import { chmodSync, copyFileSync, mkdirSync, writeFileSync } from 'node:fs'
+import { ensureArtifactDir } from '../environment/zone-owner'
+import { chmodSync, copyFileSync, writeFileSync } from 'node:fs'
 import { extname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import log from '../logger'
@@ -36,8 +37,7 @@ export function createActionRecordingPath(
   target: ActionRecordingTarget,
   extension: 'mp4' | 'webm',
 ): string {
-  const dir = actionRecordingDir(sessionId, target)
-  mkdirSync(dir, { recursive: true, mode: 0o700 })
+  const dir = ensureArtifactDir(actionRecordingDir(sessionId, target), 0o700)
   chmodSync(dir, 0o700)
   return join(dir, `${randomUUID()}.${extension}`)
 }

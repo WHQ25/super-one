@@ -1,5 +1,6 @@
+import { ensureArtifactDir } from '../environment/zone-owner'
 import { createRequire } from 'module'
-import { mkdirSync, writeFileSync, renameSync, statSync } from 'fs'
+import { writeFileSync, renameSync, statSync } from 'fs'
 import { join, dirname, basename, extname } from 'path'
 import { randomUUID } from 'crypto'
 import { producerDir, type CaptureProducer } from '../media-output-paths'
@@ -139,7 +140,7 @@ export function persistBase64Screenshot(
   const sessionId = target.sessionId ?? ''
   const dir = producerDir(sessionId, target.producer)
   try {
-    mkdirSync(dir, { recursive: true })
+    ensureArtifactDir(dir)
     const ext = mimeType.includes('jpeg') || mimeType.includes('jpg') ? 'jpg' : 'png'
     const originalPath = join(dir, `${randomUUID()}.${ext}`)
     const raw = Buffer.from(base64, 'base64')

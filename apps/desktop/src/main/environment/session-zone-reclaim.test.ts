@@ -21,7 +21,7 @@ vi.mock('../db-artifact-transfers', () => ({
   listArtifactTransfersForSession: (id: string) => state.jobs.filter((j) => j.sessionId === id),
 }))
 
-import { ADHOC_MAX_AGE_MS, markZoneOwner, reclaimSyncZone, reclaimSyncZoneOnStartup, removeSessionZone } from './session-zone-reclaim'
+import { ADHOC_MAX_AGE_MS, createReclaimScheduler, markZoneOwner, reclaimSyncZone, reclaimSyncZoneOnStartup, removeSessionZone } from './session-zone-reclaim'
 
 let root: string
 beforeEach(() => {
@@ -192,5 +192,53 @@ describe('sync zone sweep', () => {
 
   it('does nothing at all when there is no zone yet', async () => {
     expect(await reclaimSyncZone(deps())).toEqual({ removed: [], freedBytes: 0 })
+  })
+})
+
+describe('reclaim scheduling', () => {
+  it('collapses a burst of requests into one sweep, and runs once more for a request made mid-sweep', async () => {
+    // A node that reconnects raises several status changes in a row; a
+    // sweep already asking that node must not be joined by a second one, but
+    // a request that arrived while it ran may have new evidence and gets its
+    // own pass afterwards.
+    vi.useFakeTimers()
+    try {
+      let running = 0
+      let peak = 0
+      const runs: number[] = []
+      let release: () => void = () => {}
+      const run = vi.fn(async () => {
+        running++
+        peak = Math.max(peak, running)
+        runs.push(Date.now())
+        await new Promise<void>((resolve) => { release = resolve })
+        running--
+      })
+      const scheduler = createReclaimScheduler(run, { debounceMs: 1000 })
+      scheduler.request()
+      scheduler.request()
+      scheduler.request()
+      await vi.advanceTimersByTimeAsync(999)
+      expect(run).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(run).toHaveBeenCalledTimes(1)
+
+      scheduler.request()
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(run).toHaveBeenCalledTimes(1)
+      release()
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(run).toHaveBeenCalledTimes(2)
+      expect(peak).toBe(1)
+      release()
+      await vi.advanceTimersByTimeAsync(0)
+
+      scheduler.dispose()
+      scheduler.request()
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(run).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

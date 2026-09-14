@@ -77,6 +77,7 @@ export async function resolveRemotePreviewerFile(
     // Mirror it so a text file can be sniffed and the desktop copy is ready for
     // the first read; the stat that decides the row still comes from the node.
     const outcome = await mirrorNodeArtifact(zonePath.sessionId, zonePath.relativePath, {
+      connectionId: ctx.connectionId,
       stat: (input) => ctx.artifactStat(input.sessionId, input.relativePath),
       get: (input) => ctx.artifactGet(input),
     })

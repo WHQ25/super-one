@@ -1,4 +1,5 @@
-import { mkdirSync, writeFileSync } from 'fs'
+import { ensureArtifactDir } from '../environment/zone-owner'
+import { writeFileSync } from 'fs'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
 import log from '../logger'
@@ -16,8 +17,7 @@ import { registerArtifact } from '../mcp/artifact-registry'
  */
 export function persistTextArtifact(sessionId: string | null | undefined, content: string, ext: string): string | null {
   try {
-    const dir = producerDir(sessionId, 'browser')
-    mkdirSync(dir, { recursive: true })
+    const dir = ensureArtifactDir(producerDir(sessionId, 'browser'))
     const filePath = join(dir, `${randomUUID()}.${ext}`)
     writeFileSync(filePath, content, 'utf-8')
     registerArtifact(sessionId ?? '', { path: filePath, producer: 'browser', final: true })

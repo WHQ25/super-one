@@ -72,6 +72,20 @@ describe('node artifact mirror', () => {
     expect(await mirrorNodeArtifact('s1', 'agent/report.md', remote)).toEqual({ kind: 'missing' })
   })
 
+  it('records which node a mirrored directory belongs to, so the sweep can ask it', async () => {
+    // A zone directory that only ever held mirrored files was never marked,
+    // and an unmarked directory is kept forever.
+    const report = Buffer.from('# hi')
+    const remote = {
+      connectionId: 'conn-1',
+      stat: async () => ({ exists: true, size: report.length, mtimeMs: 1_700_000_000_000 }),
+      get: async () => ({ chunk: report.toString('base64'), total: report.length, mtimeMs: 1_700_000_000_000, eof: true }),
+      isPendingUpload: () => false,
+    }
+    await mirrorNodeArtifact('s1', 'agent/report.md', remote)
+    expect(readFileSync(join(root, 'sync', 's1', '.owner'), 'utf8')).toBe('conn-1')
+  })
+
   it('separates a node that refuses from a node that says the file is gone', async () => {
     // Both used to read as `missing`, and `missing` lets a caller fall
     // through to whatever copy sits at the desktop path. Only `not_found` is

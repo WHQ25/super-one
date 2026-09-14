@@ -203,6 +203,9 @@ describe('downloads for a remote session', () => {
     // tool call scope; the capture knows the driver and says so explicitly.
     expect(resolveDownloadDir(null, 's1', { connectionId: 'conn-1' })).toBe(producerDir('s1', 'download'))
     expect(resolveDownloadDir(null, 's1', { connectionId: null })).toBe(state.osDownloads)
+    // And the directory it creates is marked for that node, event handler or not.
+    reserveDownloadPath('a.bin', null, 's1', { connectionId: 'conn-1' })
+    expect(readFileSync(join(root, 'sync', 's1', '.owner'), 'utf8')).toBe('conn-1')
   })
 
   it('registers a zone file it is asked to adopt instead of copying it again', async () => {

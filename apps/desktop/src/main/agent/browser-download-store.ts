@@ -1,3 +1,4 @@
+import { ensureZoneDir } from '../environment/zone-owner'
 import { closeSync, copyFileSync, existsSync, lstatSync, mkdirSync, openSync, realpathSync } from 'fs'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'path'
 import { randomUUID } from 'crypto'
@@ -121,7 +122,9 @@ export function resolveDownloadDir(explicitDir?: string | null, sessionId?: stri
 function ensureDir(explicitDir?: string | null, sessionId?: string | null, origin?: DownloadOrigin): string {
   const root = resolveDownloadDir(explicitDir, sessionId, origin)
   try {
-    mkdirSync(root, { recursive: true })
+    // A capture outside any tool call names its connection; a tool call's
+    // scope knows it. Either way the directory is marked for the sweep.
+    ensureZoneDir(root, origin ? origin.connectionId : currentHostActionConnection())
     return root
   } catch (err) {
     // A directory the agent named is its own choice, and a remote session's

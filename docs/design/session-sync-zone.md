@@ -664,16 +664,20 @@ marked and the residue is stated):
   the directory); an unmarked directory is kept, however old — it may be a
   live remote session with no row here and no marker yet, and nothing in
   this sweep can prove otherwise.
+  Since 2026-09-14 the marker is written at **every** entry that creates a
+  zone directory, not only on a Host Action: producers go through
+  `ensureArtifactDir` (owner from the tool call scope — a remote call carries
+  its connection, a local call opens no scope), downloads and the lazy
+  mirror name their connection explicitly (`ensureZoneDir`, `MirrorDeps.
+  connectionId`), because they run outside any call and "no scope" there
+  would misfile a remote directory as local. Directories from before this
+  change stay unmarked and kept until something writes into them again. The
+  sweep also runs on every node connection, debounced, not only 30 s after
+  launch — a node offline at launch was one the launch sweep could only say
+  "keep" about.
   **Still open:** there is no size cap and no eviction under pressure. A cap
   would have to delete artifacts a live transcript names, which is a product
-  decision — surfacing zone size in settings is the likely first step. And
-  because a directory with no `.owner` marker is never reclaimed, the sweep's
-  reach is exactly as good as the marker's coverage: it is written on the
-  first Host Action of a session, so a zone written any other way — a lazy
-  mirror fetch, a local producer, anything from before this change — is kept
-  indefinitely. Widening it means recording ownership at every entry that
-  creates a zone directory, which is the right next step and is not a change
-  to the sweep.
+  decision — surfacing zone size in settings is the likely first step.
 - **Directories under the zone cannot be tool inputs on a remote session.**
   The zone syncs files, and `artifact.stat` on a directory answers "not
   there". A tool whose argument names a directory it will *read* —

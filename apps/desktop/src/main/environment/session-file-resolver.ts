@@ -84,6 +84,7 @@ export async function resolveSessionFile(
   const parsed = zone ? parseNodeZonePath(zone, path) : null
   if (parsed) {
     const outcome = await mirrorNodeArtifact(parsed.sessionId, parsed.relativePath, {
+      connectionId: remote.connectionId,
       stat: (input) => resolved.artifactStat(remote.connectionId, input.sessionId, input.relativePath),
       get: (input) => resolved.artifactGet(remote.connectionId, input),
     })

@@ -674,6 +674,51 @@ All four landed on 2026-09-14, one commit each.
   gap and *reports*; `browser_open` refuses to navigate without it and names
   the blank tab it left behind so the caller can retry or close it.
 
+- **A twelfth review found the registry right and its handoffs wrong: a
+  claim now names its holder.** The first version let anyone release anything,
+  and every caller that could plausibly be "the end" released in a `finally`.
+  That is wrong in both directions at once, and both were real:
+
+  - A Host Action that returned while a download it started was still
+    streaming — the tool went background on its deadline — released a claim
+    whose writer was still running, reopening the exact window the registry
+    exists to close.
+  - A `defer` that failed released anyway, so the only complete copy of a file
+    became prunable with no job row naming it anywhere. The optional-chained
+    "no transfer service at all" branch counted as a successful handoff too.
+
+  So a claim records its `holder`, and only that holder can end it. Taking
+  responsibility is an explicit `adoptWriteClaim`, which refuses a file still
+  being written (there is nothing to take yet) and refuses one another holder
+  already took (two handoffs cannot race to free one file). "This path
+  appeared in the reply" is not ownership. The writer's own give-up path is
+  `abandonWriteClaim`, refused once someone has adopted.
+
+  Two smaller consequences of the same shape. The executor adopts *before* its
+  cancellation check, because that check returns early and a sealed claim
+  abandoned by an early return has no holder left to hand it on — it would pin
+  its path for the life of the process. And `queueDownloadUpload` retries a
+  transient `defer` failure and, when it finally gives up, keeps the claim and
+  logs an error: pinning a path is the lesser failure, losing the only
+  complete copy is the greater one.
+
+  The fourth finding was a read, not a release. `writing` gated the online
+  branches but not the offline fallback, and not the whole-directory answer —
+  so an unreachable node served half a file, and a tree with a half-written
+  member was handed to `miniapp_dev_pack` as a complete input. Every `local`
+  answer now goes through one `serveLocal` that refuses both out-of-zone and
+  incomplete, and a directory answer is `unavailable` while
+  `activeWriteUnder` reports `writing`. Keeping a file through the prune and
+  calling the tree complete are different questions; only the first had been
+  answered.
+
+  `download-claim-lifecycle.integration.test.ts` is where "a claim is released
+  exactly once, by whoever took responsibility" stops being an argument: real
+  `downloadUrl`, real reservation, real collecting tool surface, real
+  executor, over the four endings — finishes inside the call, still streaming
+  when the tool replies, cancelled as the tool completes, and the queue
+  refusing it.
+
 - **`browser_open` creates the tab blank, records the driver, then
   navigates.** Opening with the URL in one call meant the page could start a
   direct download before the tab had an owner, and `will-download` had nobody

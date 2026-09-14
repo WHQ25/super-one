@@ -533,6 +533,46 @@ All four landed on 2026-09-14, one commit each.
   reading now clears the mock per entry and covers a real saved flow's save
   and run.
 
+- **An eighth review, of the §9 follow-up work below, found fourteen more and
+  all are fixed.** The directory mirror (`mirrorNodeDirectory`) carried most of
+  them: its prune walked only the mirror root's children, so a root symlink out
+  of the zone had the *target's* files deleted — the zone-boundary check is now
+  shared with the download store (`sync-zone-paths.ts` `withinSessionZone`) and
+  refuses a root or ancestor that resolves outside; prune deleted any desktop
+  file the node had not listed, including a fresh capture still queued for
+  upload, and now keeps a pending original; the keep-set was built from the
+  listing rather than from members that actually mirrored, so a file the node
+  dropped between list and fetch survived; two overlapping mirrors could
+  interleave and let a stale listing prune a newer generation, so directory
+  mirrors now serialise per session; a file/directory type swap on the node
+  (`foo` file ↔ `foo/bar`) threw `EEXIST`/`EISDIR` forever and is now
+  reconciled before the fetch; a cancel during listing still ran the prune, so
+  the signal is checked after the list and before the prune; and the owner
+  marker was written only *after* a download finished, so a crash mid-first-
+  mirror left an unmarked directory the sweep keeps forever — it is written
+  before any `.part` is opened. The node's `artifact.list` swallowed a
+  `readdir`/`lstat` failure and returned an empty *complete* listing, which the
+  desktop would prune its mirror to; it now fails such a subtree as
+  `unavailable`, and lists the requested path as spelled (every component
+  `lstat`-checked) so an in-zone directory symlink is refused rather than
+  listed as its target. Ownership marking read "no call scope" as `local`,
+  which is a deletion warrant against a remote session's zone: the panel's
+  screenshot of a simulator a remote session holds rewrote `node-1` to `local`.
+  A missing scope now marks nothing, a node marker is never taken back to
+  `local`, and the simulator manager records the binding session's owner at
+  `bind` and marks the capture directory itself. The tab-driver was recorded
+  only on the plain resolve, so a CDP click (via `resolvePoint`) or a synthetic
+  action on a tab handed from session A to B filed B's page-started download
+  under A; the driver is now recorded at every action's target resolution and
+  before the action runs. The dedupe stat that skips re-uploading a file the
+  node already holds awaited with no deadline; it is now bounded by the same
+  claim budget as every other wait. The Settings "waiting to upload" figure
+  counted `uploaded`/`notifying` rows (bytes already on the node) and double-
+  counted retries; it now sums only `pending`/`running` jobs, deduplicated by
+  resolved path. And a `local-file://` URL left `?` unencoded, so a zone file
+  named `report?draft.png` resolved to `report` — `?` now joins `#` as an
+  encoded path terminator.
+
 - **Only refs the reply names are pushed** (§3). A registered artifact whose
   path never appears in `content[].text` is not uploaded: the agent has no
   path to `Read`, and the desktop, the renderer and the phone all read the

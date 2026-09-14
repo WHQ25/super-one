@@ -455,6 +455,15 @@ describe('SessionManager', () => {
       expect(backend.disposed).toBe(true)
     })
 
+    it('retains the session and reports failure when its backend cannot close', async () => {
+      const s = mgr.createSession({ projectPath: '/p', providerId: 'claude-base' })
+      const backend = hoisted.backendsCreated.at(-1) as FakeBackend
+      vi.spyOn(backend, 'close').mockRejectedValue(new Error('shutdown failed'))
+      await expect(mgr.disposeSession(s.id)).rejects.toThrow('shutdown failed')
+      expect(mgr.getSession(s.id)).toBe(s)
+      expect(hoisted.disposeDeviceAgentSession).not.toHaveBeenCalled()
+    })
+
     it('disposeSession is a no-op for unknown id', async () => {
       await expect(mgr.disposeSession('nope')).resolves.toBeUndefined()
     })

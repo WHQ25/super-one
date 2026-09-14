@@ -55,6 +55,7 @@ function makeDeps(overrides?: Partial<BuiltInSuperoneToolDeps>): BuiltInSuperone
   return {
     sessionId: 'self-session',
     sessionHost: {
+      disposeSession: vi.fn(async () => {}),
       getSession: (id: string) =>
         id === 'self-session'
           ? { setTitle: vi.fn(), projectPath: '/tmp/proj', emitHostEvent }
@@ -580,7 +581,14 @@ describe('session archive tools', () => {
     expect(req.request.sessionCleanupConfirm?.sessions).toEqual([
       expect.objectContaining({ id: 'old-1', title: 'Old chat' }),
     ])
+    let finishShutdown!: () => void
+    const shutdown = new Promise<void>((resolve) => { finishShutdown = resolve })
+    const dispose = vi.mocked(deps.sessionHost!.disposeSession!)
+    dispose.mockImplementation(() => shutdown)
     resolveSessionCleanupConfirm(req.request.requestId, 'accept')
+    await vi.waitFor(() => expect(dispose).toHaveBeenCalledWith('old-1'))
+    expect(deleteSessionMock).not.toHaveBeenCalled()
+    finishShutdown()
     const deleted = await deletePromise
     expect(JSON.parse(textResult(deleted))).toMatchObject({
       status: 'ok',
@@ -708,7 +716,7 @@ describe('session archive tools', () => {
     })
   })
 
-  it('session_cleanup delete returns partial when some deleteSession calls fail', async () => {
+  it.each(['delete', 'close'])('session_cleanup preserves sessions when %s fails', async (failure) => {
     const rows = [
       {
         id: 'old-1',
@@ -766,11 +774,12 @@ describe('session archive tools', () => {
       },
     })
 
-    deleteSessionMock.mockImplementation((id: string) => {
-      if (id === 'old-2') throw new Error('disk full')
-    })
-
     const deps = makeDeps()
+    const fail = (id: string) => {
+      if (id === 'old-2') throw new Error('disk full')
+    }
+    if (failure === 'delete') deleteSessionMock.mockImplementation(fail)
+    else vi.mocked(deps.sessionHost!.disposeSession!).mockImplementation(async (id) => fail(id))
     const session = deps.sessionHost!.getSession('self-session')!
     const emit = session.emitHostEvent as ReturnType<typeof vi.fn>
     const deletePromise = sessionCleanupHandler(
@@ -788,6 +797,7 @@ describe('session archive tools', () => {
       deleted: [{ id: 'old-1', title: 'One' }],
       failed: [{ id: 'old-2', title: 'Two', error: 'disk full' }],
     })
+    if (failure === 'close') expect(deleteSessionMock).not.toHaveBeenCalledWith('old-2')
   })
 
   it('session_read allows sessions from other projects', () => {

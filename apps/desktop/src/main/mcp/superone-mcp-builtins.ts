@@ -123,6 +123,7 @@ export interface SessionTitleSetter {
 }
 
 export interface SessionTitleHost {
+  disposeSession?(sessionId: string): Promise<void>
   getSession(sessionId: string): SessionTitleSetter | null
 }
 

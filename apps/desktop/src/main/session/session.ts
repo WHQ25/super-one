@@ -1,5 +1,6 @@
 import { admitTurnAttachments } from '@superone/shared/attachment-turn'
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
+import { SessionShutdown } from './session-shutdown'
 import { hostPendingInteractions, trackHostInteraction } from './host-pending-interactions'
 import { dispatchBackendSteer } from './dispatch-backend-steer'
 import { broadcastSessionSettings } from './session-settings-broadcast'
@@ -289,6 +290,7 @@ export class Session implements SessionContract {
   private getActiveDefaultApiProviderId?: (harnessId: HarnessId) => string | null
   private onBeforeInterrupt?: () => void
 
+  private readonly shutdown = new SessionShutdown()
   private abortController: AbortController | null = null
   private backendStarted = false
   private eventListeners = new Set<(e: AgentEvent) => void>()
@@ -765,6 +767,7 @@ export class Session implements SessionContract {
         }
         this._needsRebuild = false
       }
+      this.assertNotDisposed()
       this._status = 'streaming'
       try {
         this.flushFirstTurnPreamble()
@@ -1463,7 +1466,10 @@ export class Session implements SessionContract {
   }
 
   async dispose(): Promise<void> {
-    if (this._status === 'disposed') return
+    return this.shutdown.run(() => this.disposeRuntime())
+  }
+
+  private async disposeRuntime(): Promise<void> {
     if (this.harnessId === 'acp') {
       notifySessionRecapSessionRemoved(this.id)
     }
@@ -1473,8 +1479,13 @@ export class Session implements SessionContract {
     this._pendingQueuedRequests.clear()
     forgetWebMcpSessionTrust(this.id)
     void this.clearComputerUseVisuals('dispose')
+    // Cancel active work before awaiting shutdown: backend.close may wait for it.
+    this.abortController?.abort()
+    this.abortController = null
     try { await this.waitForRuntimeRelease() } catch { /* backend close still needs to run */ }
-    try { await this.backend.close() } catch (err) { log.debug('[Session] backend.close error:', err) }
+    // A start already in flight must settle before its newly created runtime is closed.
+    try { await this._startPromise } catch { /* cancellation during startup is expected */ }
+    await this.backend.close()
     if (this._owner.kind === 'remote') {
       const previous = this._owner
       this._owner = LOCAL_OWNER
@@ -1491,8 +1502,6 @@ export class Session implements SessionContract {
     }
     this.unsubs = []
     this.eventListeners.clear()
-    this.abortController?.abort()
-    this.abortController = null
   }
 
   on(handler: (event: AgentEvent) => void): () => void {

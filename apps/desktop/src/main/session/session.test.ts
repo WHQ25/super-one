@@ -652,6 +652,57 @@ describe('Session state machine', () => {
     expect(backend.disposed).toBe(true)
   })
 
+  it('cancels a running session before waiting for backend shutdown', async () => {
+    const sending = session.send({ content: 'running' })
+    await vi.waitFor(() => expect(backend.resolveSend).not.toBeNull())
+    const signal = backend.startOpts!.abortController.signal
+    const order: string[] = []
+    signal.addEventListener('abort', () => {
+      order.push('abort')
+      backend.resolveSend?.()
+    }, { once: true })
+    backend.close = async () => {
+      order.push('close')
+      expect(signal.aborted).toBe(true)
+      await sending
+      backend.disposed = true
+    }
+
+    await session.dispose()
+    expect(order).toEqual(['abort', 'close'])
+    expect(backend.disposed).toBe(true)
+    expect(session.snapshot.status).toBe('disposed')
+  })
+
+  it('concurrent disposal waits for the same backend shutdown', async () => {
+    let finish!: () => void
+    const closed = new Promise<void>((resolve) => { finish = resolve })
+    const close = vi.spyOn(backend, 'close').mockImplementation(() => closed)
+    const first = session.dispose()
+    await vi.waitFor(() => expect(close).toHaveBeenCalledOnce())
+    let secondFinished = false
+    const second = session.dispose().then(() => { secondFinished = true })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(secondFinished).toBe(false)
+    finish()
+    await Promise.all([first, second])
+    expect(close).toHaveBeenCalledOnce()
+  })
+
+  it('does not start a turn when backend startup completes after disposal', async () => {
+    backend.startBlocked = true
+    const sending = session.send({ content: 'starting' })
+    const rejected = expect(sending).rejects.toThrow(/disposed/)
+    await vi.waitFor(() => expect(backend.resolveStart).not.toBeNull())
+    const disposing = session.dispose()
+    backend.resolveStart?.()
+    await disposing
+    await rejected
+    expect(backend.sendCalls).toEqual([])
+    expect(session.snapshot.status).toBe('disposed')
+  })
+
   it('send() after dispose throws', async () => {
     await session.dispose()
     await expect(session.send({ content: 'x' })).rejects.toThrow(/disposed/)

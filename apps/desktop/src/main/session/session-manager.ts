@@ -450,9 +450,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       try { unsub() } catch { /* ignore */ }
       this.perSessionUnsub.delete(sessionId)
     }
-    try { await session.dispose() } catch (err) {
-      log.debug('[SessionManager] dispose error:', err)
-    }
+    await session.dispose()
     await closeSuperoneMcpHttpSessions(sessionId)
     try {
       const { disposeDeviceAgentSession } = await import('../device-agent')

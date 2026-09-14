@@ -96,6 +96,8 @@ import { completeTypedPath, usePathAutocomplete } from './use-path-autocomplete'
 import { useAdditionalDirs } from './use-additional-dirs'
 import { collabRequestOf, useCollabRequest } from './use-collab-request'
 import { useFilePreview } from './use-file-preview'
+import { usePromptCollapse } from './use-prompt-collapse'
+import { collapsedPendingPrompts } from '../pending-prompt-state'
 import { clearFilePreviewCache } from '../file-preview-cache-store'
 import { sessionTranscriptCache } from '../session-transcript-cache'
 import { loadInlineImage } from '../inline-images'
@@ -276,6 +278,7 @@ export function MobileApp() {
     eligible: shouldInterceptGrokRecap(selectedProvider, selectedAcpAgentId) && hasTranscript,
   })
   const filePreview = useFilePreview({ clientRef, transport: activeTransport, project, sessionId, pairingId: activePairingId })
+  const promptCollapse = usePromptCollapse()
   useOrientationLock({ filePreviewOpen: filePreview.state != null })
   const workspaceActivity = useWorkspaceActivity(clientRef.current, connectionState === 'connected', screen === 'chat' && !sessionSwitcherOpen ? sessionId : null)
   const directory = useRemoteDirectory(clientRef)
@@ -1143,6 +1146,7 @@ export function MobileApp() {
     setPerm(null)
     setPlan(null)
     setQuestion(null)
+    promptCollapse.reset()
     setStreaming(false)
     setHasTranscript(false)
     setTodos({})
@@ -2074,6 +2078,8 @@ export function MobileApp() {
           onSteerQueued={(messageId) => runUiAction(() => runtimeRef.current?.steerQueuedMessage(messageId, 'now'), setStatus, 'steer failed')}
           onSteerQueuedSoon={(messageId) => runUiAction(() => runtimeRef.current?.steerQueuedMessage(messageId, 'next'), setStatus, 'steer failed')}
           todos={todos}
+          collapsedPrompts={collapsedPendingPrompts({ permission: collabRequestOf(perm) ? null : perm, plan, question }, promptCollapse.collapsed)}
+          onExpandPrompt={promptCollapse.expand}
           draft={draft}
           streaming={streaming}
           onWebMessage={handleChatViewMessage}
@@ -2282,6 +2288,8 @@ export function MobileApp() {
           ? (permModes.includes('auto') ? 'auto' : 'acceptEdits')
           : undefined}
         onPlanContinueMode={setPermMode}
+        collapsedPrompts={promptCollapse.collapsed}
+        onCollapsePrompt={promptCollapse.collapse}
         workspace={{ ...workspaceList,
           visible: sessionSwitcherOpen,
           onDismiss: () => setSessionSwitcherOpen(false),

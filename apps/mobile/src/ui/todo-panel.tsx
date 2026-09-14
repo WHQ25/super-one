@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Animated, Easing, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native'
+import { useEffect, useRef, useState } from 'react'
+import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native'
 import { Bot, CheckCircle2, ChevronRight, Circle, CircleDashed, ListTodo, Lock } from 'lucide-react-native'
 import type { TodoItem } from '@superone/shared/agent-types'
 import { buildTodoPanelRows, todoPanelSummary, type TodoPanelRow } from '../todo-panel-state'
@@ -7,9 +7,9 @@ import { shouldUseTabletComposer } from '../layout-state'
 import { useMobileTheme } from '../theme/context'
 import { useMobileLocale } from '../i18n/context'
 import { CHIP_HEIGHT } from './chip-metrics'
+import { Pulse } from './pulse'
 import { RotatingChevron } from './rotating-chevron'
 import { SpinningIcon } from './spinning-icon'
-import { useIconMotion } from './use-icon-motion'
 import { Text } from './text'
 
 /**
@@ -20,7 +20,6 @@ import { Text } from './text'
 const LIST_MAX_HEIGHT = 140
 /** Slow enough to read as a state marker rather than a request in flight. */
 const RUNNING_SPIN_MS = 3_000
-const PULSE_MS = 1_500
 
 /**
  * The session's todo list, above the composer — the one place it is shown.
@@ -213,24 +212,4 @@ function TodoRow(props: {
       ) : null}
     </View>
   )
-}
-
-/** Opacity breathing on the same motion gate the harness icons use. */
-function Pulse(props: { active: boolean; children: ReactNode }) {
-  const animate = useIconMotion()
-  const opacity = useRef(new Animated.Value(1)).current
-  const running = props.active && animate
-  useEffect(() => {
-    if (!running) return
-    const loop = Animated.loop(Animated.sequence([
-      Animated.timing(opacity, { toValue: 0.4, duration: PULSE_MS, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-      Animated.timing(opacity, { toValue: 1, duration: PULSE_MS, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-    ]))
-    loop.start()
-    return () => {
-      loop.stop()
-      opacity.setValue(1)
-    }
-  }, [opacity, running])
-  return <Animated.View style={{ opacity }}>{props.children}</Animated.View>
 }

@@ -21,6 +21,8 @@ import { NewSessionLanding, type NewSessionLandingProps } from './new-session-la
 import { chatViewPrePaintScript, hostMessageIsReady } from './chat-webview-boot'
 import { injectHostMessage } from '../native-actions'
 import { TodoPanel } from '../ui/todo-panel'
+import { PendingPromptBar } from '../ui/pending-prompt-bar'
+import type { PendingPrompt } from '../pending-prompt-state'
 import { useMobileLocale } from '../i18n/context'
 
 const CHAT_SOURCE = { html: CHAT_VIEW_HTML }
@@ -65,6 +67,9 @@ export function ChatScreen(props: {
   sessionDirs: string[]
   queuedMessages: ChatMessage[]
   todos: Record<string, TodoItem>
+  /** Prompts put away with an outside tap; each waits as a strip above the todos. */
+  collapsedPrompts?: PendingPrompt[]
+  onExpandPrompt?: (requestId: string) => void
   onCursorChange?: (selection: ComposerCursor) => void
   requestedCursor?: ComposerCursor
   mentionSearch?: MentionSearchState
@@ -194,6 +199,9 @@ export function ChatScreen(props: {
       ) : null}
       {props.onEdgeSwipe ? <EdgeSwipeArea onSwipe={props.onEdgeSwipe} /> : null}
       </View>
+      {!props.loadingConversation ? props.collapsedPrompts?.map((prompt) => (
+        <PendingPromptBar key={prompt.request.requestId} prompt={prompt} onExpand={(id) => props.onExpandPrompt?.(id)} />
+      )) : null}
       {!props.loadingConversation ? <TodoPanel todos={props.todos} /> : null}
       {!props.loadingConversation && props.queuedMessages.length ? (
         <QueuedMessages

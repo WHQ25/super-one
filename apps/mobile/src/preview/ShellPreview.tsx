@@ -25,6 +25,8 @@ import { WorkspaceDrawer } from '../navigation/workspace-drawer'
 import { WorkspaceSidebar } from '../navigation/workspace-sidebar'
 import { WorkspaceListCache } from '../workspace-list-cache'
 import { ChatScreen } from '../screens/chat-screen'
+import { PermissionSheet } from '../prompts/PermissionSheet'
+import { ordinaryPermission } from './permissions'
 import { FilesScreen } from '../screens/files-screen'
 import { FileFinderView } from '../screens/file-finder-view'
 import { buildMentionRows, type MentionRow } from '../mention-rows'
@@ -361,6 +363,10 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
   // Which transient state the document is held in: history paging, pending
   // turn, retry / compaction banners, or the native restore cover.
   const [transcript, setTranscript] = useState<TranscriptState>('live')
+  // A permission the agent is blocked on, in its three states: nothing, the
+  // sheet, and put away as the strip above the todos — the last is the one
+  // worth seeing against the real composer and status row.
+  const [pending, setPending] = useState<'none' | 'sheet' | 'collapsed'>('none')
   const web = useRef<WebView>(null)
   const terminal = useRef<WebView>(null)
   const chooseAgent = (option: RemoteHarnessOption) => {
@@ -412,6 +418,8 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
       <Text style={[styles.meta, { flex: 1 }]}>Offline preview · {Math.round(width)} px · font {fontScale.toFixed(2)}</Text>
       {chat ? <Button variant="ghost" label={nativeEditor ? 'Editor: native' : 'Editor: fallback'}
         onPress={() => setNativeEditor((value) => !value)} /> : null}
+      {page === 'Chat' ? <Button variant="ghost" label={`Pending: ${pending}`}
+        onPress={() => setPending((value) => value === 'none' ? 'sheet' : value === 'sheet' ? 'collapsed' : 'none')} /> : null}
       {chat ? <Button variant="ghost" label={`Catalog: ${slashStatus}`}
         onPress={() => setSlashStatus((value) => value === 'ready' ? 'loading' : value === 'loading' ? 'error' : 'ready')} /> : null}
     </View>
@@ -467,6 +475,8 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
             selection={{ ...pickerCatalogs, model, models: previewModels, effort, efforts, onModel: chooseModel, onEffort: setEffort }}
             webRef={web} permissionModes={['default', 'acceptEdits', 'plan']} permissionMode={mode} slashHits={slashDismissed ? [] : filterSlashCommands(chatDraft.draft, previewSlashCatalog, provider)} slashCatalogStatus={!slashDismissed && chatDraft.draft.startsWith('/') ? slashStatus : 'ready'} mentionRows={mentionRows} attachments={attachments} projectDirs={page === 'New session' ? previewDirs : []} sessionDirs={page === 'New session' ? previewSessionDirs : []} onManageDirectories={() => setPage('Additional folders')} queuedMessages={[]}
 todos={page === 'Chat' ? previewTodos : {}} draft={chatDraft.draft} streaming={page === 'Chat'}
+            collapsedPrompts={page === 'Chat' && pending === 'collapsed' ? [{ kind: 'permission', request: ordinaryPermission }] : undefined}
+            onExpandPrompt={() => setPending('sheet')}
             sandboxInfo={sandbox} contextTokens={82_400} contextWindow={200_000} totalCostUsd={0.4213}
             onWebMessage={onChatMessage} onWebProcessError={() => {}} onPermissionMode={setMode}
             onSandboxMode={(next) => setSandbox(sandboxInfoFromMode(next))} onSlash={(command) => {
@@ -570,6 +580,8 @@ todos={page === 'Chat' ? previewTodos : {}} draft={chatDraft.draft} streaming={p
         </View>
       </View>
     </MobileKeyboardFrame>
+    {page === 'Chat' && pending !== 'none' ? <PermissionSheet perm={ordinaryPermission} collapsed={pending === 'collapsed'}
+      onCollapse={() => setPending('collapsed')} onAllow={() => setPending('none')} onDeny={() => setPending('none')} /> : null}
     <WorkspaceDrawer {...previewWorkspace} visible={drawer || page === 'Workspace'} onDismiss={() => { setDrawer(false); if (page === 'Workspace') setPage('Chat') }} deviceName="Preview desktop" deviceStatus="connectedLan" onDisconnect={() => setPage('Devices')} onOpenAppSettings={() => setPage('Settings')} />
   </SafeAreaView>
 }

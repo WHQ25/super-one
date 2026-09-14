@@ -3,6 +3,7 @@ import { View } from 'react-native'
 import { Text } from '../ui/text'
 import { FilePenLine } from 'lucide-react-native'
 import type { PlanApprovalRequest } from '@superone/shared/agent-types'
+import { pendingPromptHeader } from '../pending-prompt-state'
 import { PromptSheet } from './PromptSheet'
 import { PromptActions, PromptChoice } from './PromptControls'
 import { NativeMarkdown } from './NativeMarkdown'
@@ -14,6 +15,9 @@ export function PlanSheet(props: {
   onApprove: (id: string) => void
   onApproveAndContinue: (id: string, mode: string) => void
   onReject: (id: string, feedback?: string) => void
+  /** Put away behind a strip rather than rejected; see `PromptSheet`. */
+  collapsed?: boolean
+  onCollapse?: (id: string) => void
 }) {
   const styles = usePromptStyles()
   const { locale, t } = useMobileLocale()
@@ -24,7 +28,8 @@ export function PlanSheet(props: {
   if (!plan) return null
   const modeLabel = props.continueMode === 'auto' ? t('Auto') : t('Accept Edits')
   const reject = () => props.onReject(plan.requestId, feedback.trim() || undefined)
-  return <PromptSheet spacious title="Plan review" subtitle={plan.planFilePath.split(/[\\/]/).at(-1)} icon={FilePenLine} onDismiss={reject} footer={<PromptActions
+  const header = pendingPromptHeader({ kind: 'plan', request: plan })
+  return <PromptSheet spacious title={header.title} subtitle={header.detail} icon={FilePenLine} onDismiss={reject} collapsed={props.collapsed} onCollapse={props.onCollapse && (() => props.onCollapse!(plan.requestId))} footer={<PromptActions
     approveLabel={continueAfter && props.continueMode ? locale === 'zh' ? `批准并切换到${modeLabel}` : `Approve & ${modeLabel}` : t('Approve')}
     rejectLabel={feedback.trim() ? locale === 'zh' ? '拒绝并附上反馈' : 'Reject with Feedback' : t('Reject')}
     feedback={{ value: feedback, onChange: setFeedback }}

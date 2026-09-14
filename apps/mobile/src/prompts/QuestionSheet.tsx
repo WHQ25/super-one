@@ -5,6 +5,7 @@ import { MessageCircle } from 'lucide-react-native'
 import { WebView } from 'react-native-webview'
 import type { AskUserQuestionRequest, QuestionAnnotations } from '@superone/shared/agent-types'
 import { buildQuestionAnnotations, initialQuestionAnswers, questionAnswersAreComplete, questionKey, questionNoteKey, selectedQuestionOptions, toggleQuestionOption } from '../question-sheet-state'
+import { pendingPromptHeader } from '../pending-prompt-state'
 import { useMobileTheme } from '../theme/context'
 import { PromptSheet } from './PromptSheet'
 import { PromptActions, PromptInput, PromptPill } from './PromptControls'
@@ -16,6 +17,9 @@ export function QuestionSheet(props: {
   question: AskUserQuestionRequest | null
   onSubmit: (id: string, answers: Record<string, string>, annotations?: QuestionAnnotations) => void
   onDismiss: (id: string) => void
+  /** Put away behind a strip rather than dismissed; see `PromptSheet`. */
+  collapsed?: boolean
+  onCollapse?: (id: string) => void
 }) {
   const styles = usePromptStyles()
   const { tokens } = useMobileTheme()
@@ -41,7 +45,7 @@ export function QuestionSheet(props: {
   const noteKey = option && q ? questionNoteKey(q, option.label) : ''
   const answered = question.questions.filter((item) => answers[questionKey(item)]?.trim()).length
   const close = (action: () => void) => { setClosed(true); action() }
-  return <PromptSheet title={question.questions.length === 1 ? 'Question' : 'Questions'} subtitle={question.questions.length > 1 ? `${answered} of ${question.questions.length} answered` : undefined} icon={MessageCircle} onDismiss={() => close(() => props.onDismiss(question.requestId))} footer={<PromptActions
+  return <PromptSheet title={pendingPromptHeader({ kind: 'question', request: question }).title} subtitle={question.questions.length > 1 ? `${answered} of ${question.questions.length} answered` : undefined} icon={MessageCircle} onDismiss={() => close(() => props.onDismiss(question.requestId))} collapsed={props.collapsed} onCollapse={props.onCollapse && (() => props.onCollapse!(question.requestId))} footer={<PromptActions
     approveLabel="Submit" rejectLabel="Dismiss" tone="submit"
     disabled={!questionAnswersAreComplete(question.questions, answers)}
     onApprove={() => close(() => props.onSubmit(question.requestId, answers, buildQuestionAnnotations(question.questions, answers, notes)))}

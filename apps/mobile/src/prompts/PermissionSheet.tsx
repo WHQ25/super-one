@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Linking, Switch, View } from 'react-native'
 import { Text } from '../ui/text'
-import { Bot, CalendarClock, FilePenLine, FileText, Globe, Monitor, Plug, Settings2, ShieldAlert, Smartphone, Terminal, Trash2, Video, type LucideIcon } from 'lucide-react-native'
 import type { HarnessId, RemoteSystemInfo, PermissionRequest } from '@superone/shared/agent-types'
 import { elicitationAnswersAreValid, initialElicitationAnswers, permissionSheetPresentation, permissionSuggestionLabel } from '../permission-sheet-state'
+import { permissionPromptTitle } from '../pending-prompt-state'
+import { permissionPromptIcon } from './prompt-icon'
 import { useMobileTheme } from '../theme/context'
 import { PromptSheet } from './PromptSheet'
 import { PromptActions, PromptChoice, PromptInput, PromptPill } from './PromptControls'
@@ -14,17 +15,14 @@ import { showRememberPermission } from './prompt-content'
 import { usePromptStyles } from './styles'
 import { useMobileLocale } from '../i18n/context'
 
-const kindIcons: Record<NonNullable<PermissionRequest['requestKind']>, LucideIcon> = {
-  mcp_elicitation: Plug, video_gen_confirm: Video, config_confirm: Settings2,
-  session_agents_confirm: Bot, computer_use_grant: Monitor, session_cleanup_confirm: Trash2,
-  automation_confirm: CalendarClock, webmcp_trust_confirm: Globe, device_control_confirm: Smartphone,
-}
-
 export function PermissionSheet(props: {
   perm: PermissionRequest | null
   loadSystemInfo?: (harness: HarnessId) => Promise<RemoteSystemInfo>
   onAllow: (id: string, formAnswers?: Record<string, unknown>, alwaysAllow?: boolean, selectedSuggestions?: number[]) => void
   onDeny: (id: string, reason?: string) => void
+  /** Put away behind a strip rather than denied; see `PromptSheet`. */
+  collapsed?: boolean
+  onCollapse?: (id: string) => void
 }) {
   const styles = usePromptStyles()
   const { tokens } = useMobileTheme()
@@ -44,8 +42,8 @@ export function PermissionSheet(props: {
   if (!perm) return null
   const presentation = permissionSheetPresentation(perm)
   const allowRemember = Boolean(presentation.alwaysLabel && showRememberPermission(perm))
-  const icon = perm.requestKind ? kindIcons[perm.requestKind] : perm.toolName === 'Bash' ? Terminal : perm.toolName === 'SandboxNetworkAccess' ? ShieldAlert : /Edit|Write/.test(perm.toolName) ? FilePenLine : perm.toolName === 'Read' ? FileText : Plug
-  const title = perm.requestKind ? presentation.title : perm.toolName === 'SandboxNetworkAccess' ? 'Allow sandbox network access' : perm.toolName.replace(/^mcp__.*?__/, '').replaceAll('_', ' ')
+  const icon = permissionPromptIcon(perm)
+  const title = permissionPromptTitle(perm)
   const deny = () => props.onDeny(perm.requestId, feedback.trim() || undefined)
   const approve = () => {
     const formAnswers = perm.requestKind === 'webmcp_trust_confirm' ? { scope: remember ? 'always' : 'session' }
@@ -53,7 +51,7 @@ export function PermissionSheet(props: {
         : editedPermissionAnswers(perm)
     props.onAllow(perm.requestId, formAnswers, allowRemember && remember, suggestions.size ? [...suggestions].sort((a, b) => a - b) : undefined)
   }
-  return <PromptSheet title={title} icon={icon} onDismiss={deny} footer={<PromptActions
+  return <PromptSheet title={title} icon={icon} onDismiss={deny} collapsed={props.collapsed} onCollapse={props.onCollapse && (() => props.onCollapse!(perm.requestId))} footer={<PromptActions
     approveLabel={remember && allowRemember ? presentation.alwaysLabel! : `${presentation.approveLabel}${suggestions.size ? ` +${suggestions.size}` : ''}`}
     rejectLabel={feedback.trim() ? `${presentation.denyLabel} with feedback` : presentation.denyLabel}
     onApprove={approve} onReject={deny} disabled={!elicitationAnswersAreValid(fields, values) || !permissionEditsValid(perm) || Object.values(invalidFields).some(Boolean)}

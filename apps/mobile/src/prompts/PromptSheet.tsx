@@ -7,10 +7,20 @@ import { useMobileTheme } from '../theme/context'
 import { MenuHost } from '../ui/menu-host'
 import { useMobileLocale } from '../i18n/context'
 
-/** Native interaction shell: bounded body, persistent actions, and keyboard-safe layout. */
-export function PromptSheet({ title, subtitle, icon: Icon, children, footer, onDismiss, spacious = false }: {
+/**
+ * Native interaction shell: bounded body, persistent actions, and keyboard-safe layout.
+ *
+ * Two ways out. The close button is `onDismiss` — the decision. Everything
+ * that reads as "put this away" (scrim tap, drag down, Android back, the
+ * VoiceOver escape) is `onCollapse` when the caller gives one: the sheet
+ * slides out and the caller keeps it pending behind a strip. Callers with no
+ * decision to protect — pickers — leave `onCollapse` unset and every gesture
+ * dismisses, as before. While `collapsed` the sheet stays mounted with the
+ * Modal hidden, so answers typed so far survive the round trip.
+ */
+export function PromptSheet({ title, subtitle, icon: Icon, children, footer, onDismiss, onCollapse, collapsed = false, spacious = false }: {
   title: string; subtitle?: string; icon: LucideIcon; children: ReactNode; footer?: ReactNode
-  onDismiss: () => void; spacious?: boolean
+  onDismiss: () => void; onCollapse?: () => void; collapsed?: boolean; spacious?: boolean
 }) {
   const { tokens: { colors, radius, spacing } } = useMobileTheme()
   const { t } = useMobileLocale()
@@ -19,8 +29,9 @@ export function PromptSheet({ title, subtitle, icon: Icon, children, footer, onD
   const insets = useSafeAreaInsets()
   const tablet = width >= 768
   const offset = useRef(new Animated.Value(0)).current
-  const dismiss = useRef(onDismiss)
-  dismiss.current = onDismiss
+  const putAway = onCollapse ?? onDismiss
+  const dismiss = useRef(putAway)
+  dismiss.current = putAway
   const pan = useRef(PanResponder.create({
     onMoveShouldSetPanResponder: (_, gesture) => gesture.dy > 8 && Math.abs(gesture.dx) < gesture.dy,
     onPanResponderMove: (_, gesture) => offset.setValue(Math.max(0, gesture.dy)),
@@ -31,12 +42,12 @@ export function PromptSheet({ title, subtitle, icon: Icon, children, footer, onD
     onPanResponderTerminate: () => Animated.spring(offset, { toValue: 0, useNativeDriver: true }).start(),
   })).current
   return (
-    <Modal supportedOrientations={['portrait', 'portrait-upside-down', 'landscape-left', 'landscape-right']} transparent visible animationType="slide" presentationStyle="overFullScreen" statusBarTranslucent navigationBarTranslucent onRequestClose={onDismiss}>
+    <Modal supportedOrientations={['portrait', 'portrait-upside-down', 'landscape-left', 'landscape-right']} transparent visible={!collapsed} animationType="slide" presentationStyle="overFullScreen" statusBarTranslucent navigationBarTranslucent onRequestClose={putAway}>
       <MenuHost>
       <View style={{ flex: 1, backgroundColor: colors.scrim }}>
-        <Pressable accessibilityRole="button" accessibilityLabel={t('Dismiss dialog')} onPress={onDismiss} style={StyleSheet.absoluteFill} />
+        <Pressable accessibilityRole="button" accessibilityLabel={t(onCollapse ? 'Put dialog away' : 'Dismiss dialog')} onPress={putAway} style={StyleSheet.absoluteFill} />
         <KeyboardAvoidingView pointerEvents="box-none" behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, paddingTop: insets.top + spacing.sm, paddingHorizontal: tablet ? spacing.lg : 0, paddingBottom: tablet ? insets.bottom + spacing.lg : 0, justifyContent: tablet ? 'center' : 'flex-end', alignItems: 'center' }}>
-          <Animated.View accessibilityViewIsModal onAccessibilityEscape={onDismiss} style={{ width: '100%', maxWidth: tablet ? 620 : undefined, maxHeight: '100%', height: spacious ? '92%' : undefined, flexShrink: 1, backgroundColor: colors.elevated, borderTopLeftRadius: radius.lg + 8, borderTopRightRadius: radius.lg + 8, borderBottomLeftRadius: tablet ? radius.lg : 0, borderBottomRightRadius: tablet ? radius.lg : 0, overflow: 'hidden', transform: [{ translateY: offset }] }}>
+          <Animated.View accessibilityViewIsModal onAccessibilityEscape={putAway} style={{ width: '100%', maxWidth: tablet ? 620 : undefined, maxHeight: '100%', height: spacious ? '92%' : undefined, flexShrink: 1, backgroundColor: colors.elevated, borderTopLeftRadius: radius.lg + 8, borderTopRightRadius: radius.lg + 8, borderBottomLeftRadius: tablet ? radius.lg : 0, borderBottomRightRadius: tablet ? radius.lg : 0, overflow: 'hidden', transform: [{ translateY: offset }] }}>
             {!tablet ? <View {...pan.panHandlers} style={{ paddingTop: 10, paddingBottom: 4, alignItems: 'center' }}>
               <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border }} />
             </View> : null}

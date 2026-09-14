@@ -6,6 +6,8 @@ import { StatusBar } from 'expo-status-bar'
 import type { HarnessId } from '@superone/shared/agent-types'
 import { HARNESS_DEFAULT_BRAND_HUE } from '@superone/shared/harness-brand'
 import { PermissionSheet, PlanSheet, QuestionSheet } from '../sheets'
+import { PendingPromptBar } from '../ui/pending-prompt-bar'
+import type { PendingPrompt } from '../pending-prompt-state'
 import { CollabRequestScreen } from '../screens/collab-request-screen'
 import { MobileThemeProvider, useMobileTheme } from '../theme/context'
 import type { MobileColorScheme } from '../theme/tokens'
@@ -49,6 +51,9 @@ function NativeCatalog({ theme, onTheme, route }: { theme: ThemeChoice; onTheme:
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<NativeScenario | null>(null)
   const [visible, setVisible] = useState(false)
+  // Mirrors `usePromptCollapse` for one scenario: an outside tap on any sheet
+  // lands it in the strip at the bottom, and the strip reopens it.
+  const [collapsed, setCollapsed] = useState(false)
   const [revision, setRevision] = useState(0)
   const [actions, setActions] = useState<string[]>([])
   const [shellPreview, setShellPreview] = useState<ShellPreviewPage | null>(null)
@@ -63,7 +68,7 @@ function NativeCatalog({ theme, onTheme, route }: { theme: ThemeChoice; onTheme:
     }
     setShellPreview(null)
     setCategory('All'); setSearch(route.scenario.id); setActions([])
-    setSelected(route.scenario); setRevision((value) => value + 1); setVisible(true)
+    setSelected(route.scenario); setRevision((value) => value + 1); setVisible(true); setCollapsed(false)
     list.current?.scrollToOffset({ offset: 0, animated: false })
   }, [route, setHarness])
   const styles = useMemo(() => {
@@ -92,7 +97,14 @@ function NativeCatalog({ theme, onTheme, route }: { theme: ThemeChoice; onTheme:
     setSelected(scenario)
     setRevision((value) => value + 1)
     setVisible(true)
+    setCollapsed(false)
   }
+  const collapseProps = { collapsed, onCollapse: () => setCollapsed(true) }
+  const pendingPrompt: PendingPrompt | null = !visible || !selected ? null
+    : selected.category === 'Permissions' && !selected.request.sessionAgentsConfirm ? { kind: 'permission', request: selected.request }
+      : selected.category === 'Questions' ? { kind: 'question', request: selected.request }
+        : selected.category === 'Plans' ? { kind: 'plan', request: selected.request }
+          : null
   const record = (action: string, payload: unknown) => {
     setActions((current) => [JSON.stringify({ scenario: selected?.id, action, payload }, null, 2), ...current].slice(0, 10))
     setVisible(false)
@@ -156,19 +168,20 @@ function NativeCatalog({ theme, onTheme, route }: { theme: ThemeChoice; onTheme:
           onReject={(reason) => { record('deny', { id: selected.request.requestId, reason }); setVisible(false) }}
           onOpenTask={(launch, label) => record('open-task', { launchId: launch.launchId, label })} />
       </View> : null}
+      {collapsed && pendingPrompt ? <PendingPromptBar prompt={pendingPrompt} onExpand={() => setCollapsed(false)} /> : null}
       {visible && selected?.category === 'Permissions' && !selected.request.sessionAgentsConfirm ? <PermissionSheet
-        key={revision} perm={selected.request}
+        key={revision} perm={selected.request} {...collapseProps}
         loadSystemInfo={async () => ({ models: [{ id: 'Preview model', name: 'Preview model', description: 'Offline preview model' }, { id: 'Review model', name: 'Review model', description: 'Offline review model' }], efforts: [{ value: 'low', label: 'Low' }, { value: 'high', label: 'High' }] })}
         onAllow={(id, formAnswers, alwaysAllow, selectedSuggestions) => record('allow', { id, formAnswers, alwaysAllow, selectedSuggestions })}
         onDeny={(id, reason) => record('deny', { id, reason })}
       /> : null}
       {visible && selected?.category === 'Questions' ? <QuestionSheet
-        key={revision} question={selected.request}
+        key={revision} question={selected.request} {...collapseProps}
         onSubmit={(id, answers, annotations) => record('submit', { id, answers, annotations })}
         onDismiss={(id) => record('dismiss', { id })}
       /> : null}
       {visible && selected?.category === 'Plans' ? <PlanSheet
-        key={revision} plan={selected.request} continueMode={selected.continueMode}
+        key={revision} plan={selected.request} continueMode={selected.continueMode} {...collapseProps}
         onApprove={(id) => record('approve', { id })}
         onApproveAndContinue={(id, mode) => record('approve-and-continue', { id, mode })}
         onReject={(id, feedback) => record('reject', { id, feedback })}

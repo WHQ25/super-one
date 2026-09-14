@@ -20,6 +20,9 @@ export function MobileOverlays(props: {
   question: AskUserQuestionRequest | null
   planContinueMode?: string
   onPlanContinueMode: (mode: string) => void
+  /** Request ids put away behind a strip; an outside tap on a sheet adds one. */
+  collapsedPrompts: ReadonlySet<string>
+  onCollapsePrompt: (requestId: string) => void
   workspace: WorkspaceDrawerProps
   /** The fullscreen preview every picture and file opens into. */
   filePreview: ReturnType<typeof useFilePreview>
@@ -30,6 +33,8 @@ export function MobileOverlays(props: {
     <>
       <PermissionSheet
         perm={props.permission}
+        collapsed={!!props.permission && props.collapsedPrompts.has(props.permission.requestId)}
+        onCollapse={props.onCollapsePrompt}
         loadSystemInfo={async (harness) => {
           const active = runtime()
           if (!active) throw new Error("No active connection")
@@ -48,6 +53,8 @@ export function MobileOverlays(props: {
       />
       <PlanSheet
         plan={props.plan}
+        collapsed={!!props.plan && props.collapsedPrompts.has(props.plan.requestId)}
+        onCollapse={props.onCollapsePrompt}
         continueMode={props.planContinueMode}
         onApprove={(id) => runUiAction(
           () => runtime()?.respondPlan(id, true),
@@ -67,6 +74,8 @@ export function MobileOverlays(props: {
       />
       <QuestionSheet
         question={props.question}
+        collapsed={!!props.question && props.collapsedPrompts.has(props.question.requestId)}
+        onCollapse={props.onCollapsePrompt}
         onSubmit={(id, answers, annotations) => runUiAction(
           () => runtime()?.answerQuestion(id, answers, annotations),
           props.setStatus,

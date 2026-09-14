@@ -66,8 +66,9 @@ export type EnqueueJob = (job: HandoffJob) => void
 /**
  * `pushing` — its owner is uploading it inside a claim budget.
  * `enqueueing` / `failed` — it is becoming a transfer job, or the last attempt threw.
+ * `queued` — a persisted job owns the delivery; this instance only names it.
  */
-export type HandoffState = 'pushing' | 'enqueueing' | 'failed'
+export type HandoffState = 'pushing' | 'enqueueing' | 'failed' | 'queued'
 
 export interface Handoff {
   connectionId: string
@@ -85,6 +86,28 @@ export interface Handoff {
   bytes: number
   enqueue: EnqueueJob | null
   cancelRetry: (() => void) | null
+  /**
+   * Callers that joined this delivery and were told the file is on its way.
+   * The owner giving up must not silently drop a promise they are holding.
+   */
+  waiters: number
+}
+
+/**
+ * Finds a persisted transfer job that still owes this file's bytes.
+ *
+ * Set by the transfer service, so this module keeps no database dependency.
+ * Without it a path whose job row already exists looks unowned, and the next
+ * Host Action starts a second delivery of it under a second transfer id — two
+ * uploads the node cannot dedupe, the later of which puts stale bytes back
+ * over whatever the agent did in between.
+ */
+export type PendingJobLookup = (sessionId: string, localPath: string) => { transferId: string } | null
+
+let findPendingJob: PendingJobLookup | null = null
+
+export function setPendingJobLookup(lookup: PendingJobLookup | null): void {
+  findPendingJob = lookup
 }
 
 /** Delays before each retry. Short: the file is unprotected work in progress. */
@@ -123,7 +146,33 @@ export function acquireHandoff(input: {
   if (dropped.has(input.sessionId)) return null
   const key = keyFor(input.connectionId, input.sessionId, input.localPath)
   const existing = handoffs.get(key)
-  if (existing) return { handoff: existing, mine: false }
+  if (existing) {
+    existing.waiters += 1
+    return { handoff: existing, mine: false }
+  }
+
+  // A job row already owns this file's delivery. It survives this process, so
+  // there is no in-memory instance to find — but starting a second delivery
+  // beside it is exactly the two-uploads-one-file failure, and the row's own
+  // upload would later overwrite whatever the second one delivered.
+  const queued = findPendingJob?.(input.sessionId, input.localPath)
+  if (queued) {
+    return {
+      handoff: {
+        ...input,
+        transferId: queued.transferId,
+        token: '',
+        state: 'queued',
+        holdsClaim: false,
+        attempts: 0,
+        lastError: null,
+        enqueue: null,
+        cancelRetry: null,
+        waiters: 0,
+      },
+      mine: false,
+    }
+  }
 
   const token = randomUUID()
   const handoff: Handoff = {
@@ -142,6 +191,7 @@ export function acquireHandoff(input: {
     bytes: input.bytes,
     enqueue: null,
     cancelRetry: null,
+    waiters: 0,
   }
   handoffs.set(key, handoff)
   return { handoff, mine: true }
@@ -173,9 +223,20 @@ export function enqueueHandoff(handoff: Handoff, enqueue: EnqueueJob): void {
  * A no-op once the instance has moved on: an action that already handed the
  * file to a job must not undo that on its way out.
  */
-export function abandonHandoff(handoff: Handoff): void {
+export function abandonHandoff(handoff: Handoff, fallbackEnqueue?: EnqueueJob): void {
   if (handoff.state !== 'pushing') return
+  // Someone else was told this file is on its way. Dropping it now would leave
+  // them waiting on a node path that never appears and is never reported.
+  if (handoff.waiters > 0 && fallbackEnqueue) {
+    enqueueHandoff(handoff, fallbackEnqueue)
+    return
+  }
   settle(handoff)
+}
+
+/** A joiner is no longer waiting — its own call was cancelled or finished. */
+export function leaveHandoff(handoff: Handoff): void {
+  if (handoff.waiters > 0) handoff.waiters -= 1
 }
 
 function settle(handoff: Handoff): void {
@@ -263,7 +324,7 @@ export function dropSessionHandoffs(sessionId: string): void {
 
 /** Everything still waiting on a job row, for the Storage figure and for tests. */
 export function failedHandoffs(sessionId?: string): Handoff[] {
-  const all = [...handoffs.values()].filter((h) => h.state !== 'pushing')
+  const all = [...handoffs.values()].filter((h) => h.state === 'failed' || h.state === 'enqueueing')
   return sessionId ? all.filter((h) => h.sessionId === sessionId) : all
 }
 

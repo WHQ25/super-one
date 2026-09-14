@@ -8,10 +8,20 @@
  * per connection and feeds the executor's claim-budget decision (§4.1).
  */
 import { statSync } from 'node:fs'
-import { dropSessionHandoffs, failedHandoffs, retryFailedHandoffs } from './pending-handoffs'
+import { canonicalClaimPath } from './active-writes'
+import { dropSessionHandoffs, failedHandoffs, retryFailedHandoffs, setPendingJobLookup } from './pending-handoffs'
+
+/**
+ * Job states whose bytes the node does not have yet. `uploaded` and
+ * `notifying` are deliberately absent: those rows are waiting on the
+ * completion wake and no longer own the file's content, so a later delivery of
+ * a *newer* version must not be made to join them.
+ */
+const OWES_UPLOAD = new Set(['pending', 'running', 'failed'])
 import type { ArtifactPutRequest, ArtifactPutResult } from '@superone/shared/environment'
 import {
   deleteArtifactTransfersForSession,
+  listArtifactTransfersForSession,
   enqueueArtifactTransfer,
   listPendingArtifactTransfers,
   listRunnableArtifactTransfers,
@@ -69,7 +79,22 @@ export class ArtifactTransferService {
   private readonly workers = new Map<string, { abort: AbortController; loop: Promise<void>; wake: () => void }>()
   private readonly inflight = new Map<string, AbortController>()
 
-  constructor(private readonly deps: ArtifactTransferDeps) {}
+  constructor(private readonly deps: ArtifactTransferDeps) {
+    // How a new delivery finds out that a persisted job already owns this
+    // file. Without it a row that exists but has not been picked up yet is
+    // invisible, and the next Host Action pushes the same file again under a
+    // second transfer id — which the node cannot dedupe, and whose loser
+    // eventually overwrites the winner.
+    setPendingJobLookup((sessionId, localPath) => {
+      const real = canonicalClaimPath(localPath)
+      for (const job of listArtifactTransfersForSession(sessionId)) {
+        if (!OWES_UPLOAD.has(job.state)) continue
+        if (canonicalClaimPath(job.localPath) !== real) continue
+        return { transferId: job.transferId }
+      }
+      return null
+    })
+  }
 
   throughputBytesPerMs(connectionId: string): number {
     return this.meter.bytesPerMs(connectionId)

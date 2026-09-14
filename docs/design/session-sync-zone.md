@@ -843,6 +843,39 @@ All four landed on 2026-09-14, one commit each.
   `finally` frees what the tool produced. Returning early instead would leave
   a sealed file held by its writer with nothing downstream to deliver it.
 
+- **A seventeenth review found the instance rule held only for instances this
+  process still remembers, and that "protected" and "owed" had come apart
+  again.**
+
+  A successful enqueue deleted the instance — correctly, since the job row is
+  what protects the file from then on — but the row still *owes the upload*.
+  A listing arriving before the worker picked it up found no owner, minted a
+  second transfer id and pushed. Two uploads of one file under two ids, which
+  no receipt dedup can catch, and the queued job's later upload put its stale
+  bytes back over whatever the agent had done in between. `acquireHandoff` now
+  asks the transfer service, synchronously, whether a job still owes this
+  path's bytes and joins it instead — same id, no second delivery.
+  `uploaded` and `notifying` are deliberately not joinable: those rows owe only
+  a completion wake and no longer own the file's content.
+
+  A joiner was also not a consumer. Told "deferred, you will be notified", it
+  had nothing registered anywhere, so cancelling the *owner* dropped the
+  delivery entirely — the promise was never kept and the zone file it named was
+  pruned. Joining now registers a waiter, and an owner giving up with waiters
+  outstanding hands the file to a job under the same id rather than releasing
+  it. A joiner stops waiting only when its own call dies; one that returned
+  normally is still owed the file.
+
+  And removing the executor's fallback cleanup (sixteenth review) left a file
+  nothing would ever deliver holding its writer's claim for ever.
+  `browser_perf_measure` can run a download and report only timings, so the
+  path appears nowhere in the reply, the sync skips it at the mention filter —
+  and a sealed claim reads as a desktop original the node still owes, so the
+  mirror serves it over the node's copy indefinitely. Any `final` ref this call
+  will not deliver now has its writer's claim adopted under a token of its own
+  and released, which cannot touch a file still being written or one a transfer
+  instance owns.
+
 - **`browser_open` creates the tab blank, records the driver, then
   navigates.** Opening with the URL in one call meant the page could start a
   direct download before the tab had an owner, and `will-download` had nobody

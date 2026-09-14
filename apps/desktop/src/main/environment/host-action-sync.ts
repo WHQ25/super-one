@@ -21,7 +21,8 @@ import type { ArtifactGetRequest, ArtifactGetResult, ArtifactListRequest, Artifa
 import type { ArtifactRef } from '../mcp/artifact-registry'
 import { zoneRelativePath } from '../media-output-paths'
 import { uploadArtifact, type TransferOutcome } from './artifact-transfer'
-import { abandonHandoff, acquireHandoff, deliverHandoff, enqueueHandoff, type Handoff } from './pending-handoffs'
+import { abandonHandoff, acquireHandoff, deliverHandoff, enqueueHandoff, leaveHandoff, type Handoff } from './pending-handoffs'
+import { adoptWriteClaim, releaseWriteClaim } from './active-writes'
 import { mirrorNodeArtifact, mirrorNodeDirectory } from './session-file-mirror'
 import { mapNodeZoneArgs, mentionsArtifactPath, nodeZonePath, rewriteArtifactPaths, type NodeSyncZone } from './sync-zone-paths'
 
@@ -297,6 +298,19 @@ function fileJob(deps: HostActionSyncDeps, handoff: Handoff): void {
   enqueueHandoff(handoff, (job) => void deps.transfers.defer(job))
 }
 
+/**
+ * End a sealed file's claim when this call is the last thing that could have
+ * delivered it and will not.
+ *
+ * Adopted under a token of its own before releasing, so it can only ever free
+ * a claim still held by its writer — never one a transfer instance owns, and
+ * never a file whose writer is still filling it.
+ */
+function releaseUndelivered(sessionId: string, path: string): void {
+  const token = randomUUID()
+  if (adoptWriteClaim(sessionId, path, token)) releaseWriteClaim(sessionId, path, token)
+}
+
 export async function syncHostActionOutputs(
   sessionId: string,
   refs: ArtifactRef[],
@@ -312,7 +326,15 @@ export async function syncHostActionOutputs(
     if (!zone || zone.sessionId !== sessionId) continue
     const nodePath = nodeZonePath(deps.zone, zone.sessionId, zone.relativePath)
     // The same matcher on the same text the rewrite will see.
-    if (!mentionedInReply(reply, ref.path)) continue
+    if (!mentionedInReply(reply, ref.path)) {
+      // Produced, sealed, and named by nothing the agent will read — a
+      // `browser_perf_measure` that ran a download and reported only its
+      // timings. Nothing will ever deliver it, so its writer's claim has to
+      // end here: left held, it reads as a desktop original the node still
+      // owes, and the mirror serves it over the node's copy for ever.
+      releaseUndelivered(zone.sessionId, ref.path)
+      continue
+    }
     let size: number
     let mtimeMs: number
     try {
@@ -320,6 +342,8 @@ export async function syncHostActionOutputs(
       size = st.size
       mtimeMs = Math.floor(st.mtimeMs)
     } catch {
+      // Gone between the tool and here; there is nothing left to protect.
+      releaseUndelivered(zone.sessionId, ref.path)
       continue
     }
     planned.push({ ref, sessionId: zone.sessionId, relativePath: zone.relativePath, nodePath, size, mtimeMs })
@@ -331,6 +355,9 @@ export async function syncHostActionOutputs(
   // is time in which a directory mirror could otherwise delete a file nobody
   // was holding, or a second Host Action could start a second delivery of it.
   const owned: Handoff[] = []
+  const joined: Handoff[] = []
+  /** Set once the loop finished: a joiner that got its reply is still owed the file. */
+  let replied = false
   for (const item of planned) {
     const acquired = acquireHandoff({
       connectionId: deps.connectionId,
@@ -343,6 +370,7 @@ export async function syncHostActionOutputs(
     if (!acquired) continue
     item.handoff = acquired.handoff
     if (acquired.mine) owned.push(acquired.handoff)
+    else joined.push(acquired.handoff)
   }
 
   const mapping = new Map<string, string>()
@@ -429,13 +457,21 @@ export async function syncHostActionOutputs(
     }
     throwIfAborted(deps.signal)
   }
+  replied = true
   } finally {
     // Anything this call acquired and neither delivered nor handed to a job:
     // cancelled, or the loop threw. Nothing downstream will carry those, and
     // holding their claims would pin the paths for the life of the process.
     // A no-op for an instance that has already moved on, so an action cannot
     // undo a job it just filed on its way out.
-    for (const handoff of owned) abandonHandoff(handoff)
+    //
+    // Unless another call joined and was told the file is on its way: giving
+    // up then would leave them waiting on a node path that never appears, so
+    // the delivery is handed to a job under the same id instead.
+    for (const handoff of owned) abandonHandoff(handoff, (job) => void deps.transfers.defer(job))
+    // A joiner stops waiting only when its own call died. One that returned
+    // normally told its agent the file is coming and is still owed it.
+    if (!replied) for (const handoff of joined) leaveHandoff(handoff)
   }
 
   const content = (reply.content ?? []).map((block) =>

@@ -13,7 +13,7 @@
  * and the database own — `session.fetch`, media grants, the node RPCs — plus
  * the unrelated tool subsystems the surface would otherwise load.
  */
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -63,6 +63,7 @@ vi.mock('../browser/browser-automation-bridge', () => ({ browserAutomationCall: 
 vi.mock('../app-settings-service', () => ({ readAppSettings: () => ({}) }))
 
 /** The node side: enough to accept a push, and a `defer` the test can break. */
+const jobs = vi.hoisted(() => [] as { sessionId: string; localPath: string; transferId: string; state: string }[])
 const node = vi.hoisted(() => ({
   deferred: [] as string[],
   deferFails: false,
@@ -141,7 +142,7 @@ vi.mock('../mcp/superone-mcp-builtins', () => ({
 
 import { downloadUrl } from '../browser/browser-downloads'
 import { activeWriteAt, releaseWriteClaim, resetActiveWrites, takeSealedClaim } from './active-writes'
-import { acquireHandoff, dropSessionHandoffs, failedHandoffs, resetPendingHandoffs, retryFailedHandoffs } from './pending-handoffs'
+import { acquireHandoff, dropSessionHandoffs, failedHandoffs, resetPendingHandoffs, retryFailedHandoffs, setPendingJobLookup } from './pending-handoffs'
 import { mirrorNodeDirectory } from './session-file-mirror'
 import { desktopHostActionExecutor } from './host-action-executor'
 
@@ -165,6 +166,10 @@ function claimed(partial: Partial<ClaimHostActionResult> = {}): ClaimHostActionR
 }
 
 beforeEach(() => {
+  jobs.length = 0
+  setPendingJobLookup((sessionId, localPath) =>
+    jobs.find((j) => j.sessionId === sessionId && j.localPath === localPath && j.state === 'pending') ?? null,
+  )
   zone.userData = mkdtempSync(join(tmpdir(), 'claim-life-'))
   let open!: () => void
   wire.gate = { promise: new Promise<void>((resolve) => (open = resolve)), open: () => open() }
@@ -543,6 +548,81 @@ describe('who ends a download write claim', () => {
     // Only the holder that took it can end it.
     expect(releaseWriteClaim(SESSION, path, 'token-a')).toBe(true)
     expect(activeWriteAt(SESSION, path)).toBeNull()
+  })
+
+  it('joins a persisted pending upload when downloads are listed before the worker runs', async () => {
+    // AG1. The job row owns the delivery and survives this process, so there is
+    // no in-memory instance to find. Pushing beside it means two uploads of one
+    // file under two ids — which the node cannot dedupe — and the row's own
+    // upload later puts its stale bytes back over whatever the agent did in
+    // between.
+    const shared = sharedArtifact('report.csv', 'OLD')
+    jobs.push({ sessionId: SESSION, localPath: shared, transferId: 'job-T', state: 'pending' })
+
+    registerSharedArtifact(shared)
+    const out = await desktopHostActionExecutor(claimed({ toolName: 'browser_list_downloads' }), new AbortController().signal, 'conn-1')
+    expect(out.outcome).toBe('succeeded')
+    // Joined, not pushed: no second upload and no second id.
+    expect(node.puts).toBe(0)
+    expect(JSON.stringify(out.result)).toContain('deferred')
+    expect(node.uploadedIds.size).toBe(0)
+  })
+
+  it('keeps delivering for a joiner when the owning action is cancelled', async () => {
+    // AG2. B was told the file is on its way. A giving up used to drop the
+    // delivery outright, so B waited on a node path that never appeared and was
+    // never reported — and the zone file it named was pruned.
+    const shared = sharedArtifact('report.csv', 'OLD')
+    let open!: () => void
+    const parked = new Promise<void>((resolve) => (open = resolve))
+    node.onStat = async () => {
+      node.onStat = null
+      await parked
+    }
+
+    registerSharedArtifact(shared)
+    const cancelA = new AbortController()
+    const a = desktopHostActionExecutor(claimed({ toolName: 'browser_list_downloads' }), cancelA.signal, 'conn-1')
+    await until(() => node.statCalls === 1)
+
+    // B joins while A is parked, and is told the file is on its way.
+    registerSharedArtifact(shared)
+    const b = await desktopHostActionExecutor(claimed({ toolName: 'browser_list_downloads' }), new AbortController().signal, 'conn-1')
+    expect(JSON.stringify(b.result)).toContain('deferred')
+
+    // Only A is cancelled.
+    cancelA.abort()
+    open()
+    await a
+    await until(() => node.deferred.length === 1)
+    // The promise made to B is kept by a job under the same id.
+    expect(node.seenTransferIds).toHaveLength(1)
+    expect(existsSync(shared)).toBe(true)
+  })
+
+  it('releases an unmentioned foreground download produced by a perf action', async () => {
+    // AG3. `browser_perf_measure` runs a nested download and reports only its
+    // timings, so the path is named nowhere the agent will read. Nothing will
+    // ever deliver it — and a sealed claim left behind reads as a desktop
+    // original the node still owes, so the mirror serves it over the node's
+    // copy for ever.
+    const { registerDownload, reserveDownloadPath } = await import('../agent/browser-download-store')
+    let shared = ''
+    browser.executeBrowserTool.mockImplementationOnce(async (sessionId) => {
+      // A real foreground download inside the perf run: reserved (which claims
+      // the path) and sealed, exactly as `browser_download` leaves it.
+      shared = reserveDownloadPath('report.csv', join(zone.userData, 'sync', SESSION, 'download'), sessionId, { connectionId: 'conn-1' })
+      writeFileSync(shared, 'OLD')
+      registerDownload(sessionId, shared, true)
+      expect(activeWriteAt(SESSION, shared)).toBe('sealed')
+      // The perf tool reports timings and drops the download's path entirely.
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ ttfb: 12, loadMs: 340 }) }] }
+    })
+
+    await desktopHostActionExecutor(claimed({ toolName: 'browser_perf_measure' }), new AbortController().signal, 'conn-1')
+    expect(activeWriteAt(SESSION, shared)).toBeNull()
+    // Which is what lets the node's own newer version win from here on.
+    expect(failedHandoffs(SESSION)).toEqual([])
   })
 
   it('keeps a completed file protected when the transfer queue will not take it', async () => {

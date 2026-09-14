@@ -8,6 +8,7 @@ import { rememberAttachmentOrigin } from '../remote/attachment-echo'
 import { findAttachment } from '../remote/attachment-thumbnail'
 import { videoPosterService } from '../remote/video-poster'
 import { handleDetailCommand } from '../remote/detail-command'
+import { readRemoteSessionList } from '../remote/session-lists'
 import { summarizeSessionActivity, type SessionActivity } from '@superone/shared/session-activity'
 import { answerRemoteAsyncQuestion } from './remote-async-question'
 import { randomUUID } from 'crypto'
@@ -79,7 +80,7 @@ function getGitRoot(cwd: string): string {
     return cwd // Fallback: not a git repo, use path itself
   }
 }
-import { listSessionsForFolder, countMessagesForSessions, createSession, createAutomationSession, renameSession as dbRenameSession, saveSessionState, loadSessionState, loadSessionMessage, loadSessionMessagesPaginated, sessionBelongsToProject, deleteSession as dbDeleteSession, deleteSessionsOlderThan as dbDeleteSessionsOlderThan, pinSession as dbPinSession, hideSession as dbHideSession, listPinnedSessions, searchSessionsByTitle, readSessionHarnessId } from '../db-sessions'
+import { listSessionsForFolder, createSession, createAutomationSession, renameSession as dbRenameSession, saveSessionState, loadSessionState, loadSessionMessage, loadSessionMessagesPaginated, sessionBelongsToProject, deleteSession as dbDeleteSession, deleteSessionsOlderThan as dbDeleteSessionsOlderThan, pinSession as dbPinSession, hideSession as dbHideSession, listPinnedSessions, readSessionHarnessId } from '../db-sessions'
 import { loadSessionMessages } from '../session-history'
 import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig } from '../mcp-config-service'
 import {
@@ -1514,59 +1515,11 @@ export class AgentService {
         await respond?.(command.requestId, { sessions })
         break
       }
-      case 'list_sessions': {
-        try {
-          const limit = command.limit ?? 10
-          const offset = command.offset ?? 0
-          const allSessions = listSessionsForFolder(command.projectPath)
-          const visibleSessions = allSessions.filter((s) => !s.isHidden)
-          const visible = visibleSessions.slice(offset, offset + limit)
-          const totalCount = visibleSessions.length
-          const messageCounts = countMessagesForSessions(visible.map((s) => s.sessionId))
-          await respond?.(command.requestId, {
-            totalCount,
-            sessions: visible.map((s) => {
-              const live = this.sessionManager?.getSession(s.sessionId)
-              return {
-                sessionId: s.sessionId,
-                title: s.title,
-                lastActiveAt: s.lastActiveAt,
-                messageCount: messageCounts.get(s.sessionId) ?? 0,
-                provider: s.provider ?? 'claude',
-                acpAgentId: s.acpAgentId ?? null,
-                selectedModel: live?.snapshot.selectedModel || s.selectedModel || null,
-                status: live?.snapshot.status ?? 'idle',
-                tags: s.tags ?? [],
-                gitBranch: s.gitBranch ?? null,
-                isWorktree: s.isWorktree ?? false,
-                worktreePath: s.worktreePath ?? null,
-                isPinned: s.isPinned ?? false,
-                // Lets the remote list nest collaboration children under their
-                // parent the way the desktop sidebar does.
-                parentSessionId: s.parentSessionId ?? null,
-              }
-            }),
-          })
-        } catch (err) {
-          await respond?.(command.requestId, { error: (err as Error).message })
-        }
-        break
-      }
+      case 'list_sessions':
       case 'list_pinned_sessions':
       case 'search_sessions': {
-        // Both are cross-project by nature, so neither can be scoped by the
-        // per-project access check the single-session commands use.
         try {
-          const rows = command.type === 'search_sessions'
-            ? searchSessionsByTitle(command.query, command.limit)
-            : listPinnedSessions()
-          await respond?.(command.requestId, {
-            sessions: rows.map(({ folderPath, folderName, ...session }) => ({
-              ...session,
-              projectPath: folderPath,
-              projectName: folderName,
-            })),
-          })
+          await respond?.(command.requestId, readRemoteSessionList(command, this.sessionManager))
         } catch (err) {
           await respond?.(command.requestId, { error: (err as Error).message })
         }

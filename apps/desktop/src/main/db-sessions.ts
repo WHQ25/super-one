@@ -33,7 +33,7 @@ interface DbChatMessage {
  * The project a session belongs to. Most mutations are keyed by session id, and
  * a delete has to resolve this *before* the row is gone.
  */
-function projectPathOfSession(sessionId: string): string | null {
+export function projectPathOfSession(sessionId: string): string | null {
   const row = getDb()
     .prepare('SELECT p.path AS path FROM sessions s JOIN projects p ON p.id = s.project_id WHERE s.id = ?')
     .get(sessionId) as { path: string } | undefined

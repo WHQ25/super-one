@@ -2865,7 +2865,11 @@ describe('AgentService.handleRemoteCommand', () => {
     })] })
   })
 
-  it('lists remote sessions with live model, status, tags, and ACP identity', async () => {
+  it('lists remote sessions with live metadata and their scheduled send', async () => {
+    const sendAt = Date.UTC(2026, 8, 15, 10)
+    vi.mocked(database.getDb).mockReturnValue({
+      prepare: () => ({ all: () => [{ session_id: 'session-acp', send_at: new Date(sendAt).toISOString(), armed: 1, source: 'manual', message: null }] }),
+    } as never)
     vi.mocked(dbSessions.listSessionsForFolder).mockReturnValue([{
       sessionId: 'session-acp',
       title: 'Grok review',
@@ -2899,6 +2903,7 @@ describe('AgentService.handleRemoteCommand', () => {
         status: 'streaming',
         tags: ['review'],
         messageCount: 7,
+        scheduledSendAt: sendAt,
       })],
     }))
     expect(dbSessions.countMessagesForSessions).toHaveBeenCalledWith(['session-acp'])

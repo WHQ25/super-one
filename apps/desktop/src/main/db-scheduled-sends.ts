@@ -1,4 +1,6 @@
 import { getDb } from './database'
+import { projectPathOfSession } from './db-sessions'
+import { notifySessionList } from './session-list-watch'
 import log from './logger'
 import type { ScheduledSend, ScheduledSendPatch, ScheduledSendSource } from '@superone/shared/agent-types'
 
@@ -103,14 +105,27 @@ export function upsertScheduledSend(sessionId: string, patch: ScheduledSendPatch
     log.debug('[scheduled-send] upsert failed sid=%s: %s', sessionId, String(err))
     return null
   }
-  return getScheduledSend(sessionId)
+  const next = getScheduledSend(sessionId)
+  notifyScheduledListChange(sessionId, prev, next)
+  return next
 }
 
 export function deleteScheduledSend(sessionId: string): void {
+  const prev = getScheduledSend(sessionId)
   getDb().prepare('DELETE FROM scheduled_sends WHERE session_id = ?').run(sessionId)
+  notifyScheduledListChange(sessionId, prev, null)
 }
 
 /** Drop only rows a stall created — a manual schedule outlives the turn it sat through. */
 export function deleteScheduledSendBySource(sessionId: string, source: ScheduledSendSource): void {
+  const prev = getScheduledSend(sessionId)
   getDb().prepare('DELETE FROM scheduled_sends WHERE session_id = ? AND source = ?').run(sessionId, source)
+  if (prev?.source === source) notifyScheduledListChange(sessionId, prev, null)
+}
+
+/** Draft mirroring can write every second; only a visible time change rereads the list. */
+function notifyScheduledListChange(sessionId: string, prev: ScheduledSend | null, next: ScheduledSend | null): void {
+  const previousTime = prev?.armed ? prev.sendAt : null
+  const nextTime = next?.armed ? next.sendAt : null
+  if (previousTime !== nextTime) notifySessionList(projectPathOfSession(sessionId))
 }

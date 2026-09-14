@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { z, toJSONSchema, type ZodTypeAny } from 'zod'
-import { browserAutomationCall, browserFocusGuard, noteTabDriver, resolveBrowserWebContentsId, resolvePointForSession, type BrowserAutomationOp } from '../browser/browser-automation-bridge'
+import { browserAutomationCall, browserFocusGuard, noteTabDriver, requireTabDriver, resolveBrowserWebContentsId, resolvePointForSession, type BrowserAutomationOp } from '../browser/browser-automation-bridge'
 import { existsSync } from 'fs'
 import { isCdpEnabled, isCdpCookiesEnabled, isCdpMockEnabled, isCdpEmulateEnabled, resolveCdpTarget, cdpClick, cdpHover, cdpDrag, cdpPress, cdpType, cdpEmulate, cdpGetCookies, cdpSetFileInput } from '../browser/browser-cdp'
 import { encode as toonEncode } from '@toon-format/toon'
@@ -1180,8 +1180,21 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
         url?: string
         title?: string
       }
-      if (typeof opened.tab === 'string') await noteTabDriver(sessionId, opened.tab)
-      if (!args.url || typeof opened.tab !== 'string') return textReply(opened)
+      if (!args.url || typeof opened.tab !== 'string') {
+        if (typeof opened.tab === 'string') await noteTabDriver(sessionId, opened.tab)
+        return textReply(opened)
+      }
+      // Attribution is a precondition for the initial navigation, not a
+      // best-effort side errand: a cold-started view is registered before its
+      // webContents exists, so the first resolve can fail and the next succeed.
+      // Navigating in between is exactly how a first-paint download ends up
+      // unattributed. Report the tab that WAS opened so the caller can retry or
+      // close it rather than leaking a blank view.
+      if (!(await requireTabDriver(sessionId, opened.tab))) {
+        return errorReply(
+          `Opened tab ${opened.tab} but could not attribute it to this session, so it was left on about:blank. Retry the navigation with browser_act, or close the tab.`,
+        )
+      }
       // `readiness` keeps its meaning: it is the initial navigation it describes.
       const navigated = (await browserAutomationCall(sessionId, 'navigate', {
         tab: opened.tab,

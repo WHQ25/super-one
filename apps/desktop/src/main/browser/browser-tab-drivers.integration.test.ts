@@ -16,6 +16,7 @@ import {
   noteTabDriver,
   resolvePointForSession,
   resolveBrowserWebContentsId,
+  requireTabDriver,
   resolveBrowserAutomation,
 } from './browser-automation-bridge'
 import { collectArtifacts } from '../mcp/artifact-registry'
@@ -68,5 +69,25 @@ describe('tab driver recorded before every action', () => {
     rememberTabDriver(5, 'sess-A', 'conn-A')
     await noteTabDriver('sess-B', 'gone').catch(() => {})
     expect(tabDriver(5)).toEqual({ sessionId: 'sess-A', connectionId: 'conn-A' })
+  })
+
+  it('waits out the gap between a cold-started view being registered and its webContents existing', async () => {
+    // BrowserHostLayer registers the view from an effect, so the tab is known
+    // before `webContentsIdForBrowser` can answer for it: the first resolve
+    // fails with "Browser view is not attached yet" and a later one succeeds.
+    let attempts = 0
+    fakeWindow((op) => {
+      if (op !== 'resolveWebContentsId') return { ok: true }
+      attempts += 1
+      return attempts < 3 ? { ok: false, error: 'Browser view is not attached yet' } : { webContentsId: 42 }
+    })
+    await expect(requireTabDriver('sess-C', 'browser-new')).resolves.toBe(true)
+    expect(attempts).toBe(3)
+    expect(tabDriver(42)).toEqual({ sessionId: 'sess-C', connectionId: null })
+  })
+
+  it('reports failure rather than swallowing it when a tab never becomes attributable', async () => {
+    fakeWindow(() => ({ ok: false, error: 'Browser view is not attached yet' }))
+    await expect(requireTabDriver('sess-D', 'browser-never')).resolves.toBe(false)
   })
 })

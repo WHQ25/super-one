@@ -110,6 +110,43 @@ export async function noteTabDriver(sessionId: string, tab?: string): Promise<vo
   }
 }
 
+/** How long a freshly opened tab may take to acquire a webContents. */
+const DRIVER_ATTACH_TIMEOUT_MS = 3000
+const DRIVER_ATTACH_POLL_MS = 25
+
+/**
+ * Record the driver for a tab that must be attributed *before* anything runs
+ * in it, waiting out the gap between a view being registered and its
+ * webContents existing.
+ *
+ * `noteTabDriver` is best-effort on purpose: the action behind it reports its
+ * own failure, so a swallowed resolve costs nothing. This one is not. A tab
+ * opened cold is registered by a renderer effect before `webContentsIdForBrowser`
+ * can answer for it, so the first resolve can fail with "Browser view is not
+ * attached yet" and then succeed a moment later. Navigating in between is what
+ * loses the attribution: the page may start a download on first paint, and an
+ * unattributed download goes to this machine's Downloads folder — somewhere a
+ * remote agent cannot read, with no error raised anywhere.
+ *
+ * Returns whether the tab is attributed. A caller that cannot proceed without
+ * it must not navigate.
+ */
+export async function requireTabDriver(sessionId: string, tab: string): Promise<boolean> {
+  const deadline = Date.now() + DRIVER_ATTACH_TIMEOUT_MS
+  for (;;) {
+    try {
+      await resolveBrowserWebContentsId(sessionId, tab)
+      return true
+    } catch (err) {
+      if (Date.now() >= deadline) {
+        log.warn('[browser-automation] tab %s never became attributable: %s', tab, err instanceof Error ? err.message : String(err))
+        return false
+      }
+      await new Promise((resolve) => setTimeout(resolve, DRIVER_ATTACH_POLL_MS))
+    }
+  }
+}
+
 /**
  * Hold (or release) the renderer's host-focus guard around agent-driven input.
  *

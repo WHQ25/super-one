@@ -11,6 +11,7 @@ vi.mock('../browser/browser-automation-bridge', () => ({
   resolveBrowserWebContentsId: vi.fn(async () => 7),
   resolvePointForSession: vi.fn(async (_sid: string, args: { x?: number; y?: number }) => ({ ok: true, webContentsId: 7, x: args.x ?? 10, y: args.y ?? 20 })),
   noteTabDriver: vi.fn(async () => {}),
+  requireTabDriver: vi.fn(async () => true),
 }))
 
 const gates = {
@@ -125,7 +126,7 @@ import { HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS } from '@superone/shared/environm
 import { startRecording, stopRecording, waitForRecordedRequest, getRecordedRequest } from './../browser/browser-cdp-network'
 import { browserAutomationCall, browserFocusGuard, resolveBrowserWebContentsId } from '../browser/browser-automation-bridge'
 import { cdpClick, cdpHover } from '../browser/browser-cdp'
-import { resolvePointForSession, noteTabDriver } from '../browser/browser-automation-bridge'
+import { resolvePointForSession, noteTabDriver, requireTabDriver } from '../browser/browser-automation-bridge'
 import { startUrlDownloadTask, raceDownloadTask } from '../browser/browser-download-tasks'
 import { listDownloads } from '../browser/browser-downloads'
 import { withInputMapping } from '../environment/host-action-sync'
@@ -792,13 +793,14 @@ describe('browser tool registration under experimental gates', () => {
     expect(vi.mocked(noteTabDriver)).toHaveBeenCalledWith('sess-1', 'browser-1')
 
     vi.mocked(noteTabDriver).mockClear()
+    vi.mocked(requireTabDriver).mockClear()
     vi.mocked(browserAutomationCall).mockClear()
     vi.mocked(browserAutomationCall)
       .mockResolvedValueOnce({ tab: 'browser-9', url: 'about:blank', title: '' })
       .mockResolvedValueOnce({ ok: true, url: 'https://x.test', title: 't' })
     const opened = await tools.get('browser_open')!({ url: 'https://x.test', readiness: 'load' })
     // The freshly created tab is attributed to this session, not left undriven.
-    expect(vi.mocked(noteTabDriver)).toHaveBeenCalledWith('sess-1', 'browser-9')
+    expect(vi.mocked(requireTabDriver)).toHaveBeenCalledWith('sess-1', 'browser-9')
     // And the tab is created blank first, so the driver is on record before the
     // initial URL — a direct-download link there would otherwise start with none.
     const ops = vi.mocked(browserAutomationCall).mock.calls.map((c) => c[1])
@@ -806,9 +808,23 @@ describe('browser tool registration under experimental gates', () => {
     expect(vi.mocked(browserAutomationCall).mock.calls[0]![2]).toMatchObject({ url: undefined, readiness: 'none' })
     expect(vi.mocked(browserAutomationCall).mock.calls[1]![2]).toMatchObject({ tab: 'browser-9', url: 'https://x.test', readiness: 'load' })
     const [openOrder] = vi.mocked(browserAutomationCall).mock.invocationCallOrder
-    const [driverOrder] = vi.mocked(noteTabDriver).mock.invocationCallOrder
+    const [driverOrder] = vi.mocked(requireTabDriver).mock.invocationCallOrder
     expect(driverOrder).toBeGreaterThan(openOrder!)
     expect(JSON.parse(resultText(opened))).toMatchObject({ tab: 'browser-9', url: 'https://x.test' })
+  })
+
+  it('does not navigate a new tab it could not attribute, and says which tab was left open', async () => {
+    // Navigating an unattributed tab is how a first-paint download lands in
+    // this machine's Downloads folder, unreadable by a remote agent and with
+    // no error raised. Attribution is the precondition, not a side errand.
+    const tools = buildTools()
+    vi.mocked(browserAutomationCall).mockClear()
+    vi.mocked(browserAutomationCall).mockResolvedValueOnce({ tab: 'browser-9', url: 'about:blank', title: '' })
+    vi.mocked(requireTabDriver).mockResolvedValueOnce(false)
+    const reply = await tools.get('browser_open')!({ url: 'https://x.test' })
+    expect(reply).toMatchObject({ isError: true })
+    expect(resultText(reply)).toContain('browser-9')
+    expect(vi.mocked(browserAutomationCall).mock.calls.map((c) => c[1])).toEqual(['open'])
   })
 
   it('spills a large evaluate result but returns a small one inline', async () => {

@@ -432,7 +432,7 @@ function stripContentBlock(block: ContentBlock, bashCmds?: Map<string, string>, 
       return block
     }
     if (!agentIds?.has(block.toolUseId) && block.summary.length > TOOL_RESULT_MAX_LEN) {
-      return { ...block, summary: compactMediaToolResult(block.summary) ?? block.summary.slice(0, TOOL_RESULT_MAX_LEN) + '…' }
+      return { ...block, summary: compactMediaToolResult(block.summary) ?? compactTerminalToolResult(block.summary) ?? block.summary.slice(0, TOOL_RESULT_MAX_LEN) + '…' }
     }
   }
   return block
@@ -508,6 +508,29 @@ export function compactMediaToolResult(summary: string): string | null {
     for (const key of ROOT_IDENTITY_KEYS) if (typeof root[key] === 'string') identity[key] = root[key]
     compact.root = identity
   }
+  return JSON.stringify(compact)
+}
+
+/** Result fields the terminal row reads; the screen is cut to its last lines. */
+const TERMINAL_RESULT_KEYS = ['status', 'reason', 'hint', 'tab', 'tabStatus', 'foreground', 'command', 'control', 'closed', 'skipped', 'met', 'expectMet', 'stepsExecuted'] as const
+const TERMINAL_RESULT_SCREEN_LINES = 12
+
+/**
+ * A `terminal_*` result carries the whole visible screen; truncating that JSON at
+ * 200 characters would leave the phone's row unable to parse even the status.
+ * Keep the header fields and the tail of the screen instead.
+ */
+export function compactTerminalToolResult(summary: string): string | null {
+  const text = unwrapMcpEnvelope(summary)
+  if (text.charCodeAt(0) !== 123 /* { */) return null
+  let parsed: unknown
+  try { parsed = JSON.parse(text) } catch { return null }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+  const obj = parsed as Record<string, unknown>
+  if (typeof obj.tab !== 'string' || !('tabStatus' in obj || 'screen' in obj)) return null
+  const compact: Record<string, unknown> = {}
+  for (const key of TERMINAL_RESULT_KEYS) if (key in obj) compact[key] = obj[key]
+  if (Array.isArray(obj.screen)) compact.screen = obj.screen.slice(-TERMINAL_RESULT_SCREEN_LINES)
   return JSON.stringify(compact)
 }
 

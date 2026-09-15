@@ -51,6 +51,7 @@ import { resolveVideoConfirm, rejectVideoConfirm } from '../mcp/media-tools'
 import { resolveSessionCleanupConfirm, rejectSessionCleanupConfirm } from '../mcp/session-archive-tools'
 import { resolveAutomationConfirm, rejectAutomationConfirm } from '../mcp/automation-tools'
 import { resolveDeviceControlConfirm, rejectDeviceControlConfirm } from '../device-agent/control-confirm'
+import { rejectTerminalCommandConfirm, resolveTerminalCommandConfirm } from '../mcp/terminal-command-confirm'
 import { nextEventSeq } from './event-seq'
 import { notifySessionRecapForeground, notifySessionRecapSessionRemoved } from '../acp/acp-recap-focus'
 import { asEffortLevel } from '../acp/acp-config'
@@ -1038,6 +1039,7 @@ export class Session implements SessionContract {
       if (rejectSessionCleanupConfirm(requestId, reason ?? 'User cancelled')) return true
       if (rejectAutomationConfirm(requestId, reason ?? 'User cancelled')) return true
       if (rejectDeviceControlConfirm(requestId, reason ?? 'User cancelled')) return true
+      if (rejectTerminalCommandConfirm(requestId, reason ?? 'User cancelled')) return true
     } else if (resolveSessionAgentsConfirm(requestId, allow ? 'accept' : 'decline', formAnswers)) {
       return true
     } else if (resolveMiniappCallConfirm(
@@ -1064,6 +1066,13 @@ export class Session implements SessionContract {
     } else if (resolveAutomationConfirm(requestId, allow ? 'accept' : 'decline', formAnswers)) {
       return true
     } else if (resolveDeviceControlConfirm(
+      requestId,
+      allow ? 'accept' : 'decline',
+      alwaysAllow === true,
+      reason,
+    )) {
+      return true
+    } else if (resolveTerminalCommandConfirm(
       requestId,
       allow ? 'accept' : 'decline',
       alwaysAllow === true,

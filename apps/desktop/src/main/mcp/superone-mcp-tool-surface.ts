@@ -24,6 +24,7 @@ import {
 import {
   getSessionHost,
   getAppSettingsApplier,
+  getTerminalToolDeps,
   miniappToolDepsForSurface,
   notifyDevAppReady,
 } from './superone-mcp-server'
@@ -207,6 +208,7 @@ export async function executeSuperoneMcpTool(
       sessionId,
       sessionHost: getSessionHost(),
       applyAppSettings: getAppSettingsApplier(),
+      terminals: getTerminalToolDeps(),
       signal,
     })
   }

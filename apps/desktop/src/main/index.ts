@@ -37,7 +37,7 @@ import { detachAllCdp } from './browser/browser-cdp'
 import { registerBrowserPopupRedirect } from './browser-popup-redirect'
 import { fetchBrowserBytes, registerBrowserDownloadCapture } from './browser/browser-downloads'
 import { setBrowserDownloadTaskHost } from './browser/browser-download-tasks'
-import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregisterAppAcrossSessions, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearSessionPendingCalls as clearSessionPendingMiniAppCalls, disposeSuperoneMcpServer, setSessionHostProvider, setAppSettingsApplier, isAppStillAuthorizedInProject, addToolsChangedListener, setAppToolExecutor } from './mcp/superone-mcp-server'
+import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregisterAppAcrossSessions, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearSessionPendingCalls as clearSessionPendingMiniAppCalls, disposeSuperoneMcpServer, setSessionHostProvider, setAppSettingsApplier, setTerminalToolDeps, isAppStillAuthorizedInProject, addToolsChangedListener, setAppToolExecutor } from './mcp/superone-mcp-server'
 import { MobileReceiveService, type MobileReceiveTarget } from './remote/mobile-receive-service'
 import { startSuperoneMcpStdioBridge, stopSuperoneMcpStdioBridge } from './mcp/superone-mcp-stdio-ipc'
 import {
@@ -73,6 +73,7 @@ import { AgentService } from './agent/agent-service'
 import { createRendererAgentEventTransport } from './agent/renderer-agent-event-transport'
 import { SessionManagerImpl } from './session/session-manager'
 import { TerminalManager } from './terminal/terminal-manager'
+import { addTerminalCommandRule, isTerminalCommandPreapproved } from './db-terminal-command-rules'
 import { RemoteTerminalController } from './environment/remote-terminal-controller'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import { AUDIO_EXTENSIONS, BINARY_IMAGE_EXTENSIONS, PDF_EXTENSIONS, VIDEO_EXTENSIONS } from '@superone/shared/file-preview'
@@ -796,6 +797,10 @@ const remoteTerminalController = new RemoteTerminalController({
 const terminalBroadcaster = new TerminalBroadcaster(terminalManager, remoteControlService)
 deviceRegistry.setTerminalManager(terminalManager)
 agentService.setTerminalManager(terminalManager)
+setTerminalToolDeps({
+  manager: terminalManager,
+  rules: { isPreapproved: isTerminalCommandPreapproved, add: addTerminalCommandRule },
+})
 let terminalSweepTimer: ReturnType<typeof setInterval> | null = null
 
 function resolveTerminalCwd(projectPath: string, sessionId?: string): string {

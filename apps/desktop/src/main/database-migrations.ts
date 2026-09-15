@@ -23,6 +23,7 @@ import { DRAFTS_TABLE_DDL } from '@superone/runtime/drafts'
 import { BASE_SESSION_PROVIDER_DEFINITIONS } from '@superone/shared/session-provider-definitions'
 import type Database from 'better-sqlite3'
 import { ensureSessionFileDeliveriesSchema } from './db-session-deliveries'
+import { ensureTerminalCommandRulesSchema } from './db-terminal-command-rules'
 import { encryptSecret } from './crypto/secret-store'
 
 /**
@@ -33,7 +34,7 @@ import { encryptSecret } from './crypto/secret-store'
  * every launch); it decides when a pre-migration snapshot is taken and lets a
  * build recognise a database written by a newer build.
  */
-export const SCHEMA_VERSION = 6
+export const SCHEMA_VERSION = 7
 
 /**
  * The oldest schema revision that can still read this database.
@@ -690,6 +691,9 @@ function applyMigrations(db: Database.Database): void {
   // shipped (the zone feature is branch-only). The DDL lives with the module so
   // the tests build the exact schema the migration does.
   ensureSessionFileDeliveriesSchema(db)
+  // Per-project "always allow" rules for agent terminal commands
+  // (docs/design/terminal-agent-tools.md §5); DDL owned by the module.
+  ensureTerminalCommandRulesSchema(db)
 }
 
 function seedBaseSessionProviders(db: Database.Database): void {

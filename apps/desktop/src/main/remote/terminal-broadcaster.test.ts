@@ -11,6 +11,7 @@ function fakeSpawner(): PtySpawner {
       onData: () => {},
       onExit: () => {},
       kill: () => {},
+      foregroundProcess: () => 'zsh',
     }),
   }
 }

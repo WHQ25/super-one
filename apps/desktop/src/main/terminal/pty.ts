@@ -9,6 +9,12 @@ export interface PtyLike {
   onData(cb: (data: string) => void): void
   onExit(cb: (e: { exitCode: number; signal: number | null }) => void): void
   kill(): void
+  /**
+   * Name of the PTY's foreground process (`tcgetpgrp` on macOS/Linux) — the shell
+   * itself at a prompt, the running command otherwise. Agent control of a tab is
+   * bounded by this (docs/design/terminal-agent-tools.md §6).
+   */
+  foregroundProcess(): string
 }
 
 export interface PtySpawnOptions {
@@ -23,7 +29,7 @@ export interface PtySpawner {
   spawn(opts: PtySpawnOptions): PtyLike
 }
 
-function defaultShell(): string {
+export function defaultShell(): string {
   if (process.platform === 'win32') return process.env.COMSPEC || 'powershell.exe'
   return process.env.SHELL || '/bin/bash'
 }
@@ -82,6 +88,7 @@ export const nodePtySpawner: PtySpawner = {
         proc.onExit(({ exitCode, signal }) => cb({ exitCode, signal: signal ?? null }))
       },
       kill: () => proc.kill(),
+      foregroundProcess: () => proc.process,
     }
   },
 }

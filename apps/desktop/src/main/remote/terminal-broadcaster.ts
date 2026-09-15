@@ -25,6 +25,7 @@ export class TerminalBroadcaster {
       event.type === 'terminal_title_changed'
       || event.type === 'terminal_created'
       || event.type === 'terminal_exited'
+      || event.type === 'terminal_control_changed'
     ) {
       await this.transport.sendTerminalFrame(event)
       return

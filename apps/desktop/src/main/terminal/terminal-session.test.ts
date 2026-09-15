@@ -13,10 +13,13 @@ function fakePty() {
     writes: string[]
     resizes: Array<[number, number]>
     killed: boolean
+    foreground: string
   } = {
     writes: [],
     resizes: [],
     killed: false,
+    foreground: 'zsh',
+    foregroundProcess: () => pty.foreground,
     write: (d) => pty.writes.push(d),
     resize: (c, r) => pty.resizes.push([c, r]),
     onData: (cb) => {
@@ -48,6 +51,7 @@ function makeSession(opts?: { coalesceMs?: number; snapshotSoftLimit?: number })
     ownership: new TerminalOwnership(),
     coalesceMs: opts?.coalesceMs ?? 8,
     snapshotSoftLimit: opts?.snapshotSoftLimit,
+    shell: '/bin/zsh',
     onEvent: (e) => events.push(e),
   })
   return { session, pty, events }
@@ -194,6 +198,59 @@ describe('TerminalSession snapshot chunking', () => {
       .map((c) => c.ansi)
       .join('')
     expect(reassembled).toContain('ABCDEFGHIJKLMNOPQRSTUVWXYZ')
+    session.kill()
+  })
+})
+
+describe('TerminalSession agent view', () => {
+  it('renders the visible screen and the scrollback tail as plain text', async () => {
+    const { session, pty } = makeSession()
+    for (let i = 1; i <= 30; i++) pty.emitData(`\x1b[32mline ${i}\x1b[0m\r\n`)
+    const screen = await session.screenLines()
+    // 30 lines + the cursor row into 24 rows: the viewport starts at line 8.
+    expect(screen[0]).toBe('line 8')
+    expect(screen).toHaveLength(23)
+    expect(screen.join('')).not.toContain('\x1b')
+    const tail = await session.bufferTail(5)
+    expect(tail.lines).toEqual(['line 27', 'line 28', 'line 29', 'line 30'])
+    expect(tail.totalLines).toBe(31)
+    session.kill()
+  })
+
+  it('reports the alternate screen and application cursor mode', async () => {
+    const { session, pty } = makeSession()
+    expect(session.altScreen).toBe(false)
+    pty.emitData('\x1b[?1049h\x1b[?1h')
+    await session.screenLines()
+    expect(session.altScreen).toBe(true)
+    expect(session.applicationCursor).toBe(true)
+    session.kill()
+  })
+
+  it('tracks the foreground process against the spawn shell', () => {
+    const { session, pty } = makeSession()
+    expect(session.isAtShell()).toBe(true)
+    pty.foreground = '-zsh'
+    expect(session.isAtShell()).toBe(true)
+    pty.foreground = 'node'
+    expect(session.isAtShell()).toBe(false)
+    expect(session.foregroundProcess()).toBe('node')
+    session.kill()
+  })
+
+  it('only writes agent input while that session holds control', () => {
+    const { session, pty, events } = makeSession()
+    expect(session.agentInput('s1', 'x')).toBe(false)
+    session.control.grant({ sessionId: 's1', command: 'python3', startedAt: Date.now() })
+    expect(session.agentInput('s2', 'x')).toBe(false)
+    expect(session.agentInput('s1', 'print(1)\r')).toBe(true)
+    expect(pty.writes).toEqual(['print(1)\r'])
+    expect(session.listItem().agentControl?.command).toBe('python3')
+
+    session.takeOver()
+    expect(session.agentInput('s1', 'y')).toBe(false)
+    expect(events.filter((e) => e.type === 'terminal_control_changed').map((e) => (e as { reason: string }).reason))
+      .toEqual(['granted', 'user_took_over'])
     session.kill()
   })
 })

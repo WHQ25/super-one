@@ -224,6 +224,19 @@ export function getAppSettingsApplier(): AppSettingsApplier {
   return appSettingsApplier ?? (() => { throw new Error('App settings applier is not registered') })
 }
 
+type TerminalToolDeps = NonNullable<BuiltInSuperoneToolDeps['terminals']>
+
+let terminalToolDeps: TerminalToolDeps | null = null
+
+/** The PTY host the `terminal_*` tools drive; `null` leaves them reporting unavailable. */
+export function setTerminalToolDeps(deps: TerminalToolDeps | null): void {
+  terminalToolDeps = deps
+}
+
+export function getTerminalToolDeps(): TerminalToolDeps | undefined {
+  return terminalToolDeps ?? undefined
+}
+
 export function notifyDevAppReady(projectDir: string, appId: string): void {
   const win = getMainWindow?.()
   if (win && !win.isDestroyed()) {
@@ -252,6 +265,7 @@ export function createSuperoneMcpServer(sessionId: string, projectPath?: string)
     sessionId,
     sessionHost: getSessionHost(),
     applyAppSettings: getAppSettingsApplier(),
+    terminals: getTerminalToolDeps(),
   })
   registerWidgetTools(server, {
     projectPath,

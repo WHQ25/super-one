@@ -1,14 +1,17 @@
 import { createRequire } from 'node:module'
 import type { Terminal as XTermHeadless } from '@xterm/headless'
 import type { SerializeAddon as SerializeAddonInstance } from '@xterm/addon-serialize'
+import { basename } from 'node:path'
 import type {
+  TerminalAgentControl,
   TerminalEvent,
   TerminalListItem,
   TerminalSnapshot,
   TerminalStatus,
 } from '@superone/shared/agent-types'
-import type { PtyLike, PtySpawner } from './pty'
+import { defaultShell, type PtyLike, type PtySpawner } from './pty'
 import { TerminalOwnership } from './terminal-ownership'
+import { TerminalControl, type TerminalControlOptions } from './terminal-control'
 
 const nodeRequire = createRequire(import.meta.url)
 const { Terminal } = nodeRequire('@xterm/headless') as typeof import('@xterm/headless')
@@ -28,18 +31,37 @@ export interface TerminalSessionOptions {
   shell?: string
   coalesceMs?: number
   snapshotSoftLimit?: number
+  /** Tab opened by an agent tool rather than the user. */
+  openedByAgent?: boolean
+  control?: TerminalControlOptions
 }
 
 const DEFAULT_COALESCE_MS = 24
 const DEFAULT_SNAPSHOT_SOFT_LIMIT = 256 * 1024
+/** Lines kept above the viewport — what `terminal_snapshot scrollback` can reach. */
+const SCROLLBACK_LINES = 5_000
+
+export interface TerminalScreenCursor {
+  row: number
+  col: number
+}
+
+/** Login shells report as `-zsh`; `pty.process` may give a path or a bare name. */
+function processBaseName(name: string): string {
+  return basename(name).replace(/^-/, '')
+}
 
 export class TerminalSession {
   readonly terminalId: string
   readonly cwd: string
   readonly projectPath: string
   readonly ownership: TerminalOwnership
+  readonly control: TerminalControl
+  readonly openedByAgent: boolean
   title: string
   lastAnsi = ''
+  /** Last PTY output for idle detection; 0 until the process has printed anything. */
+  lastOutputAt = 0
 
   private readonly pty: PtyLike
   private readonly term: XTermHeadless
@@ -59,6 +81,7 @@ export class TerminalSession {
   private snapshotting = false
   private deferred: TerminalEvent[] = []
   private titleDisposable: { dispose(): void } | null = null
+  private readonly shellName: string
 
   constructor(opts: TerminalSessionOptions) {
     this.terminalId = opts.terminalId
@@ -71,8 +94,10 @@ export class TerminalSession {
     this.snapshotSoftLimit = opts.snapshotSoftLimit ?? DEFAULT_SNAPSHOT_SOFT_LIMIT
     this._cols = opts.cols
     this._rows = opts.rows
+    this.openedByAgent = opts.openedByAgent === true
+    this.shellName = processBaseName(opts.shell || defaultShell())
 
-    this.term = new Terminal({ cols: opts.cols, rows: opts.rows, allowProposedApi: true })
+    this.term = new Terminal({ cols: opts.cols, rows: opts.rows, allowProposedApi: true, scrollback: SCROLLBACK_LINES })
     this.serializer = new SerializeAddon()
     this.term.loadAddon(this.serializer as unknown as Parameters<XTermHeadless['loadAddon']>[0])
     this.titleDisposable = this.term.onTitleChange((title) => this.applyTitle(title))
@@ -95,10 +120,27 @@ export class TerminalSession {
         writableByMe: owner.kind === 'local',
       })
     })
+    this.control = new TerminalControl(
+      {
+        terminalId: this.terminalId,
+        isAtShell: () => this.isAtShell(),
+        lastOutputAt: () => this.lastOutputAt,
+        emit: (event) => this.emit(event),
+      },
+      opts.control,
+    )
   }
 
   get status(): TerminalStatus {
     return this._status
+  }
+
+  get cols(): number {
+    return this._cols
+  }
+
+  get rows(): number {
+    return this._rows
   }
 
   listItem(): TerminalListItem {
@@ -109,7 +151,75 @@ export class TerminalSession {
       title: this.title,
       status: this._status,
       ownerDeviceId: this.ownership.ownerDeviceId,
+      agentControl: this.control.current,
+      openedByAgent: this.openedByAgent,
     }
+  }
+
+  /** Base name of the foreground process — the shell at a prompt, else the running command. */
+  foregroundProcess(): string {
+    if (this._status !== 'running') return ''
+    return processBaseName(this.pty.foregroundProcess())
+  }
+
+  isAtShell(): boolean {
+    return this.foregroundProcess() === this.shellName
+  }
+
+  get agentControl(): TerminalAgentControl | null {
+    return this.control.current
+  }
+
+  /** True while a full-screen program (vim, htop) owns the terminal. */
+  get altScreen(): boolean {
+    return this.term.buffer.active.type === 'alternate'
+  }
+
+  /** DECCKM — full-screen programs expect `ESC O A` style cursor keys while set. */
+  get applicationCursor(): boolean {
+    return this.term.modes.applicationCursorKeysMode
+  }
+
+  cursor(): TerminalScreenCursor {
+    const buffer = this.term.buffer.active
+    return { row: buffer.cursorY, col: buffer.cursorX }
+  }
+
+  /** The visible rows as plain text, trailing blank lines dropped. */
+  async screenLines(): Promise<string[]> {
+    await this.settle()
+    const buffer = this.term.buffer.active
+    return trimTrailingBlankLines(
+      Array.from({ length: this._rows }, (_, y) => buffer.getLine(buffer.baseY + y)?.translateToString(true) ?? ''),
+    )
+  }
+
+  /** The last `tail` lines of scrollback + viewport as plain text. */
+  async bufferTail(tail: number): Promise<{ lines: string[]; totalLines: number }> {
+    await this.settle()
+    const buffer = this.term.buffer.active
+    const totalLines = buffer.baseY + this._rows
+    const start = Math.max(0, totalLines - tail)
+    const lines: string[] = []
+    for (let y = start; y < totalLines; y++) lines.push(buffer.getLine(y)?.translateToString(true) ?? '')
+    return { lines: trimTrailingBlankLines(lines), totalLines }
+  }
+
+  /** Input from an agent session: only while it controls the tab's foreground command. */
+  agentInput(sessionId: string, data: string): boolean {
+    if (!this.control.heldBy(sessionId)) return false
+    this.input(data)
+    return true
+  }
+
+  /** The user reclaims the tab; the agent's next write is rejected. */
+  takeOver(): void {
+    this.control.release('user_took_over')
+  }
+
+  /** Flush pending writes into the headless terminal so reads see the latest bytes. */
+  private settle(): Promise<void> {
+    return new Promise<void>((resolve) => this.term.write('', resolve))
   }
 
   input(data: string): void {
@@ -219,6 +329,7 @@ export class TerminalSession {
 
   private onPtyData(data: string): void {
     this.seq += 1
+    this.lastOutputAt = Date.now()
     this.term.write(data)
     if (this.buffer === '') this.bufferFromSeq = this.seq
     this.bufferToSeq = this.seq
@@ -263,6 +374,7 @@ export class TerminalSession {
   }
 
   private disposeTerm(): void {
+    this.control.dispose()
     try {
       this.titleDisposable?.dispose()
     } catch {
@@ -287,4 +399,10 @@ export class TerminalSession {
   private rawEmit(event: TerminalEvent): void {
     this.onEvent(event)
   }
+}
+
+function trimTrailingBlankLines(lines: string[]): string[] {
+  let end = lines.length
+  while (end > 0 && lines[end - 1].trim() === '') end -= 1
+  return lines.slice(0, end)
 }

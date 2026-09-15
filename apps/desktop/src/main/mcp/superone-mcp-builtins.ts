@@ -27,6 +27,7 @@ import { manualReadHandler, registerManualTools } from './manual-tools'
 import {
   BUILT_IN_SUPERONE_TOOL_DEFS,
   BUILT_IN_SUPERONE_TOOL_NAMES,
+  TERMINAL_TOOL_NAMES,
   CONFIG_SETTINGS_DOMAINS,
   CONFIG_READ_DESCRIPTION,
   CONFIG_APPLY_DESCRIPTION,
@@ -94,6 +95,17 @@ import {
   type AutomationListArgs,
 } from './automation-tools'
 import type { SessionManager } from '../session/types'
+import {
+  terminalActHandler,
+  terminalSnapshotHandler,
+  terminalTabsHandler,
+  terminalWaitForHandler,
+  type TerminalActArgs,
+  type TerminalSnapshotArgs,
+  type TerminalTabsArgs,
+  type TerminalToolDeps,
+  type TerminalWaitForArgs,
+} from './terminal-tools'
 import type {
   RequestSessionAgentsArgs,
   SessionSendArgs,
@@ -144,6 +156,8 @@ export interface BuiltInSuperoneToolDeps {
   sessionHost: SessionTitleHost | null
   /** Persist an app-settings patch through the shared side-effect + broadcast path. */
   applyAppSettings: (patch: AppSettingsPatch) => Promise<AppSettings> | AppSettings
+  /** Local terminal tabs + per-project command rules; absent where no PTY host exists. */
+  terminals?: TerminalToolDeps
   signal?: AbortSignal
 }
 
@@ -337,6 +351,14 @@ export async function executeBuiltInSuperoneTool(
       return generateVideoToolHandler(args as unknown as GenerateVideoArgs, deps)
     case 'media_video_status':
       return videoStatusToolHandler(args as unknown as VideoStatusArgs)
+    case 'terminal_tabs':
+      return terminalTabsHandler(args as unknown as TerminalTabsArgs, deps)
+    case 'terminal_snapshot':
+      return terminalSnapshotHandler(args as unknown as TerminalSnapshotArgs, deps)
+    case 'terminal_act':
+      return terminalActHandler(args as unknown as TerminalActArgs, deps)
+    case 'terminal_wait_for':
+      return terminalWaitForHandler(args as unknown as TerminalWaitForArgs, deps)
   }
 }
 
@@ -431,6 +453,19 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
   for (const def of INTERACTION_MEMORY_TOOL_DEFS) {
     server.registerTool(def.name, { description: def.description, inputSchema: jsonSchemaToZodShape(def.inputSchema) },
       (args, extra) => executeInteractionMemoryTool(def.name, args, new InteractionMemoryStore(superoneHome()), extra.signal))
+  }
+  // Terminal tools share the stdio-bridge JSON Schema so the two surfaces cannot drift.
+  const terminalHandlers: Record<(typeof TERMINAL_TOOL_NAMES)[number], (args: never, deps: BuiltInSuperoneToolDeps) => Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: true }>> = {
+    terminal_tabs: terminalTabsHandler,
+    terminal_snapshot: terminalSnapshotHandler,
+    terminal_act: terminalActHandler,
+    terminal_wait_for: terminalWaitForHandler,
+  }
+  for (const def of BUILT_IN_SUPERONE_TOOL_DEFS) {
+    const handler = terminalHandlers[def.name as (typeof TERMINAL_TOOL_NAMES)[number]]
+    if (!handler) continue
+    server.registerTool(def.name, { description: def.description, inputSchema: jsonSchemaToZodShape(def.inputSchema) },
+      (args, extra) => handler(args as never, { ...deps, signal: extra.signal ?? deps.signal }))
   }
   registerManualTools(server)
 

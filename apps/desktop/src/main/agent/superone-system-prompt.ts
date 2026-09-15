@@ -1,6 +1,6 @@
-import { SUPERONE_SYSTEM_PROMPT_APPEND } from '@superone/shared/superone-system-prompt'
+import { CLAUDE_SYSTEM_PROMPT_APPEND, SUPERONE_SYSTEM_PROMPT_APPEND } from '@superone/shared/superone-system-prompt'
 
-export { SUPERONE_SYSTEM_PROMPT_APPEND }
+export { CLAUDE_SYSTEM_PROMPT_APPEND, SUPERONE_SYSTEM_PROMPT_APPEND }
 
 const CODEX_PLAN_COMPLETION_APPEND = 'When using update_plan, mark finished steps completed and keep remaining statuses accurate before ending the turn. SuperOne displays these statuses to the user.'
 

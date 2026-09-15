@@ -10,7 +10,7 @@
 import { existsSync } from 'node:fs'
 import { query as sdkQuery, type CanUseTool, type Options } from '@anthropic-ai/claude-agent-sdk'
 import type { SessionTurnEvent } from '@superone/shared/environment'
-import { SUPERONE_SYSTEM_PROMPT_APPEND } from '@superone/shared/superone-system-prompt'
+import { CLAUDE_SYSTEM_PROMPT_APPEND } from '@superone/shared/superone-system-prompt'
 import { isStaticHostOwnedSuperoneToolQualified } from '@superone/shared/superone-host-owned-tools'
 import { applySdkMessage, createSdkMapState } from './map-sdk-message'
 import { createClaudeAgentEventMapper } from './agent-event-mapper'
@@ -187,7 +187,7 @@ function buildOptions(opts: RunClaudeSdkTurnOptions, timing: { pausedMs: number 
     systemPrompt: {
       type: 'preset',
       preset: 'claude_code',
-      append: [SUPERONE_SYSTEM_PROMPT_APPEND, opts.systemPromptAppend]
+      append: [CLAUDE_SYSTEM_PROMPT_APPEND, opts.systemPromptAppend]
         .filter(Boolean)
         .join('\n\n'),
       snapshot: false,

@@ -21,7 +21,7 @@ import { resolveHarnessRuntime } from '../harness/resolve-runtime'
 import { makeClaudeSpawn } from './claude-spawn'
 import { getSandboxCapability } from '../sandbox-platform'
 import { recordClaudeStepDeltas, modelUsageInfoToDelta, subtractDelta, type UsageStepDelta } from '../usage-stats-service'
-import { SUPERONE_SYSTEM_PROMPT_APPEND } from './superone-system-prompt'
+import { CLAUDE_SYSTEM_PROMPT_APPEND } from './superone-system-prompt'
 import { isMainThreadOnlySuperoneTool, STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES, superoneBareToolName } from '@superone/shared/superone-host-owned-tools'
 import { buildUserMessage } from './claude-user-message'
 export { buildUserMessage } from './claude-user-message'
@@ -145,7 +145,7 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
     systemPrompt: {
       type: 'preset',
       preset: 'claude_code',
-      append: [SUPERONE_SYSTEM_PROMPT_APPEND, opts.systemPromptAppend].filter(Boolean).join('\n\n'),
+      append: [CLAUDE_SYSTEM_PROMPT_APPEND, opts.systemPromptAppend].filter(Boolean).join('\n\n'),
       snapshot: false,
     },
     hooks: { PreToolUse: [{ hooks: [denySubagentSessionRename] }] },

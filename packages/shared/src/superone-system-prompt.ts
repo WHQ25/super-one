@@ -42,6 +42,17 @@ On the first substantive user request, call session_rename as your first tool ca
 
 Rename again when the title no longer describes the task. Update tags with session_tag as needed — in particular add pr-N right after opening a PR, so later sessions on that PR can find this one. Use a short title with a verb and concrete object in the user's language, without surrounding quotes or trailing punctuation.`
 
+/**
+ * Claude Code lists MCP tools as deferred entries that must be loaded by their
+ * qualified name; the shared append names tools bare so it reads the same on
+ * every harness. Without this note a model that decides to use a terminal or
+ * browser tool searches `select:terminal_tabs`, finds nothing, and falls back
+ * to its shell tool.
+ */
+export const CLAUDE_TOOL_NAMING_APPEND = `Tool naming: SuperOne tools are named above without their server prefix. In your tool list they are mcp__superone__<name> (e.g. mcp__superone__terminal_tabs); when one is deferred, load it with ToolSearch by that full name.`
+
+export const CLAUDE_SYSTEM_PROMPT_APPEND = `${SUPERONE_SYSTEM_PROMPT_APPEND}\n\n${CLAUDE_TOOL_NAMING_APPEND}`
+
 export function superoneSystemPrompt(extra?: string): string {
   return [SUPERONE_SYSTEM_PROMPT_APPEND, extra].filter(Boolean).join('\n\n')
 }

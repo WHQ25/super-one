@@ -27,7 +27,7 @@ import type {
   ClaudeSdkTurnResult,
   RunClaudeSdkTurnOptions,
 } from './types'
-import { SUPERONE_SYSTEM_PROMPT_APPEND } from '@superone/shared/superone-system-prompt'
+import { CLAUDE_SYSTEM_PROMPT_APPEND } from '@superone/shared/superone-system-prompt'
 import { isStaticHostOwnedSuperoneToolQualified } from '@superone/shared/superone-host-owned-tools'
 import type { CanUseTool } from '@anthropic-ai/claude-agent-sdk'
 
@@ -255,7 +255,7 @@ function buildLiveOptions(
     systemPrompt: {
       type: 'preset',
       preset: 'claude_code',
-      append: [SUPERONE_SYSTEM_PROMPT_APPEND, opts.systemPromptAppend]
+      append: [CLAUDE_SYSTEM_PROMPT_APPEND, opts.systemPromptAppend]
         .filter(Boolean)
         .join('\n\n'),
       snapshot: false,

@@ -166,7 +166,9 @@ export class WorkspaceGitService {
         deletions: shortstat.deletions,
       }
     } catch (err) {
-      throw Object.assign(new Error((err as Error).message || 'git status failed'), {
+      // stderr carries the reason the desktop status bar shows (license,
+      // dubious ownership…); execFileSync's message is just "Command failed".
+      throw Object.assign(new Error(gitErrorMessage(err) || 'git status failed'), {
         code: 'internal',
       })
     }

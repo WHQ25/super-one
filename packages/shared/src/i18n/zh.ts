@@ -1926,6 +1926,8 @@ export const zh: Messages = {
       initHint: '在当前文件夹初始化 git 仓库',
       initSuccess: '已初始化 git 仓库',
       initFailed: 'Git 初始化失败：{{error}}',
+      unavailable: 'Git 不可用',
+      unavailableHint: 'Git 无法读取此文件夹，点击重试。\n{{error}}',
     },
     permission: {
       sandboxNetwork: '沙盒网络',

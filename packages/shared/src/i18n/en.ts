@@ -1824,6 +1824,8 @@ export type Messages = {
       initHint: string
       initSuccess: string
       initFailed: string
+      unavailable: string
+      unavailableHint: string
     }
     permission: {
       sandboxNetwork: string
@@ -5625,6 +5627,8 @@ export const en: Messages = {
       initHint: 'Initialize a new git repository in this folder',
       initSuccess: 'Git repository initialized',
       initFailed: 'Git init failed: {{error}}',
+      unavailable: 'Git Unavailable',
+      unavailableHint: 'Git could not read this folder — click to retry.\n{{error}}',
     },
     permission: {
       sandboxNetwork: 'Sandbox Network',

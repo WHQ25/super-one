@@ -1523,6 +1523,20 @@ export interface GitInfo {
   dirty?: GitDirtyStatus
 }
 
+/**
+ * Git itself failed on the folder (missing binary, unaccepted Xcode license,
+ * dubious ownership, corrupt `.git`). Distinct from `null` — the folder may be
+ * a repo, so callers must surface `error` rather than offer `git init`.
+ */
+export interface GitUnavailable {
+  branch: null
+  dirty?: never
+  error: string
+}
+
+/** `getGitInfo` result: repo info, `null` for a non-repo folder, or why git could not read it. */
+export type GitInfoResult = GitInfo | GitUnavailable | null
+
 export interface GitLogEntry {
   sha: string
   parents: string[]

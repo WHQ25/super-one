@@ -17,3 +17,16 @@ export function gitErrorMessage(err: unknown): string {
   if (stderr) return stderr
   return (err as Error)?.message ?? 'Unknown git error'
 }
+
+const NOT_A_REPO_RE = /not a git repository/i
+
+/**
+ * True when git failed because `cwd` is not inside a repository — the one
+ * failure that means "offer init". Every other rejection (missing binary,
+ * unaccepted Xcode license, dubious ownership, corrupt `.git`) is git being
+ * unusable on a folder that may well be a repo, and must not be folded into
+ * "not a repo".
+ */
+export function isNotGitRepoError(err: unknown): boolean {
+  return NOT_A_REPO_RE.test(gitErrorMessage(err))
+}

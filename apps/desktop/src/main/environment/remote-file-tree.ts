@@ -25,6 +25,7 @@ import type {
   GitFileContent,
   GitFileDiff,
   GitInfo,
+  GitInfoResult,
   WorktreeEntry,
   WorktreeInfo,
 } from '@superone/shared/agent-types'
@@ -808,7 +809,7 @@ function mapStatusToGitInfo(status: {
 export async function getRemoteGitInfo(
   host: EnvironmentHost,
   folderPath: string,
-): Promise<GitInfo | null> {
+): Promise<GitInfoResult> {
   if (!parseRemoteProjectKey(folderPath)) return null
   try {
     // Never registerIfMissing — git probes must not pollute project.list with worktree paths.
@@ -839,8 +840,11 @@ export async function getRemoteGitInfo(
       }
     }
     return null
-  } catch {
-    return null
+  } catch (err) {
+    // The node answers `isRepo: false` for a plain folder and throws when git
+    // itself fails (see cli git-service `statusForCwd`) — keep that distinction
+    // so the status bar does not offer "Init Git" for a repo git cannot read.
+    return { branch: null, error: (err as Error)?.message || 'git status failed' }
   }
 }
 

@@ -2,7 +2,7 @@ import { StatusBarMailbox } from './chat-status-bar/StatusBarMailbox'
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { GitBranch, GitBranchPlus, ChevronDown, Check, Circle, Plus, Square, SquareTerminal, Bot, Workflow } from 'lucide-react'
+import { GitBranch, GitBranchPlus, ChevronDown, Check, Circle, Plus, Square, SquareTerminal, Bot, Workflow, TriangleAlert } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import {
@@ -43,7 +43,7 @@ import {
 } from './subagent-utils'
 import { isWorkflowSmokeCheck, parseWorkflowInput, parseWorkflowLaunch, workflowToolTargetLabel } from './workflow-utils'
 import { WorkflowBlock } from './WorkflowBlock'
-import type { ContentBlock, GitInfo } from '@superone/shared/agent-types'
+import type { ContentBlock, GitInfo, GitInfoResult } from '@superone/shared/agent-types'
 
 interface WorktreeStateLike {
   pendingBaseBranch: string | null
@@ -247,6 +247,7 @@ export function ChatStatusBar() {
   const [compactIndicators, setCompactIndicators] = useState(false)
   const [gitInfo, setGitInfo] = useState<GitInfo | null>(null)
   const [isGitRepo, setIsGitRepo] = useState<boolean | null>(null)
+  const [gitError, setGitError] = useState<string | null>(null)
   const [initing, setIniting] = useState(false)
   const [branches, setBranches] = useState<string[]>([])
   const [popoverOpen, setPopoverOpen] = useState(false)
@@ -261,32 +262,43 @@ export function ChatStatusBar() {
   const wtState = currentFolder ? worktrees[currentFolder] : undefined
   const isInWorktree = computeIsInWorktree(wtState)
 
+  // One RPC path: getGitInfo implies isRepo; skip separate getGitIsRepo (was 2× remote status).
+  // `null` = not a repo (offer init); `branch: null` = git itself failed, so the
+  // repo question stays open (`isGitRepo` unknown) and the reason is shown instead.
+  const applyGitInfo = useCallback((info: GitInfoResult) => {
+    if (info?.branch == null) {
+      setIsGitRepo(info ? null : false)
+      setGitError(info?.error ?? null)
+      return
+    }
+    setGitInfo(info)
+    setIsGitRepo(true)
+    setGitError(null)
+  }, [])
+
   const refreshGitInfo = useCallback(async () => {
     if (!currentFolder) return
-    // One RPC path: getGitInfo implies isRepo; skip separate getGitIsRepo (was 2× remote status).
-    const info = await window.app.getGitInfo(currentFolder)
-    if (info) setGitInfo(info)
-    setIsGitRepo(info != null)
-  }, [currentFolder])
+    applyGitInfo(await window.app.getGitInfo(currentFolder))
+  }, [currentFolder, applyGitInfo])
 
   // Initial read for the project. Everything after this is event-driven — git
   // state only changes when someone acts on the repo, and every actor that can
   // do so already gives us a signal.
   useEffect(() => {
-    if (!currentFolder) { setGitInfo(null); setIsGitRepo(null); return }
+    if (!currentFolder) { setGitInfo(null); setIsGitRepo(null); setGitError(null); return }
 
     let cancelled = false
     // Optimistic: assume git repo until proven otherwise so Local chip paints immediately.
     setIsGitRepo(true)
     window.app.getGitInfo(currentFolder).then((info) => {
       if (cancelled) return
-      setGitInfo(info)
-      setIsGitRepo(info != null)
+      if (info?.branch == null) setGitInfo(null)
+      applyGitInfo(info)
     }).catch(() => {
       if (!cancelled) setIsGitRepo(false)
     })
     return () => { cancelled = true }
-  }, [currentFolder])
+  }, [currentFolder, applyGitInfo])
 
   useOnTurnCompleted(refreshGitInfo)
 
@@ -651,6 +663,20 @@ export function ChatStatusBar() {
             >
               <GitBranchPlus className="size-3" />
               {!compactIndicators && <span>{t('chat.git.init')}</span>}
+            </button>
+          </>
+        )}
+
+        {gitError && !isInWorktree && !sessionGitBranch && (
+          <>
+            <div className="h-3 w-px bg-border" />
+            <button
+              onClick={() => void refreshGitInfo()}
+              className="flex items-center gap-1 rounded-lg px-2 py-1 text-warning transition-colors hover:bg-muted"
+              title={t('chat.git.unavailableHint', { error: gitError })}
+            >
+              <TriangleAlert className="size-3" />
+              {!compactIndicators && <span>{t('chat.git.unavailable')}</span>}
             </button>
           </>
         )}

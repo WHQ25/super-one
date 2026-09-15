@@ -9,7 +9,7 @@ import { readFile, writeFile, readdir, rename, cp, rm, access, stat, mkdir } fro
 import { cpus, homedir, hostname, release as osRelease } from 'os'
 import { resolveRealPath, isPathWithinAllowed, isPathAtOrWithinAllowed, sanitizeGitRef, getReadableAssetRoots } from './path-security'
 import { spawn } from 'child_process'
-import { gitRun, type GitRunOptions } from './git-run'
+import { gitRun, isNotGitRepoError, type GitRunOptions } from './git-run'
 import { logGitFailure, logSlowGit } from './git-diagnostics'
 import { AsyncCoalescer } from './async-cache'
 import { countAddedLines } from './git-added-lines'
@@ -219,7 +219,7 @@ import { readAppSettings, saveAppSettings } from './app-settings-service'
 import { getInstallId } from './install-id'
 import { reportMainException, reportProcessGone } from './crash-telemetry'
 import { systemDownloadDir } from './agent/browser-download-store'
-import type { AppSettings, AppSettingsPatch, GitInfo, ScheduledSendPatch, ScheduledSendSessionInit, ThemeMode, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
+import type { AppSettings, AppSettingsPatch, GitInfoResult, ScheduledSendPatch, ScheduledSendSessionInit, ThemeMode, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
 import { MINI_WINDOW_SIZE } from '@superone/shared/agent-types'
 import { foldWindow, unfoldWindow } from './window-fold'
 import { recordBrowserHistory, suggestBrowserHistory, deleteBrowserHistory } from './browser-history-service'
@@ -2926,7 +2926,7 @@ function registerIpcHandlers(): void {
   // Every session pane refreshes on the same signal (its turn going idle), so
   // the requests arrive together and want the same snapshot. No TTL: a refresh
   // often follows a checkout the user just made, and must not read a stale one.
-  const gitInfoCoalescer = new AsyncCoalescer<GitInfo | null>()
+  const gitInfoCoalescer = new AsyncCoalescer<GitInfoResult>()
 
   ipcMain.handle(AgentIpcChannels.GIT_INFO, (_event, folderPath: string) =>
     gitInfoCoalescer.get(folderPath, async () => {
@@ -2979,18 +2979,13 @@ function registerIpcHandlers(): void {
           ...(files > 0 ? { dirty: { files, insertions, deletions } } : {}),
         }
       } catch (err) {
-        // Returning null here hides the whole branch chip (ChatStatusBar renders
-        // it only when gitInfo is non-null, and the "Git init" fallback only when
-        // `.git` is absent) — so a repo git refuses to read leaves the status bar
-        // blank with no other trace. Log it.
-        const isRemote = Boolean(parseRemoteProjectKey(folderPath))
-        logGitFailure(
-          'GIT_INFO',
-          folderPath,
-          err,
-          isRemote ? true : existsSync(join(folderPath, '.git')),
-        )
-        return null
+        // `null` means "not a repo" and makes ChatStatusBar offer "Init Git".
+        // Only git's own not-a-repository answer earns that; any other failure
+        // (no binary, unaccepted Xcode license, dubious ownership) is reported
+        // so the bar can show why instead of offering an init that would fail too.
+        if (isNotGitRepoError(err)) return null
+        logGitFailure('GIT_INFO', folderPath, err, existsSync(join(folderPath, '.git')))
+        return { branch: null, error: gitErrorMessage(err) }
       }
     }),
   )

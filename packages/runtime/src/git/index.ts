@@ -2,7 +2,7 @@
  * @superone/runtime/git — pure git helpers + process runner (no Electron).
  */
 
-export { sanitizeGitRef, gitErrorMessage } from './sanitize-ref'
+export { sanitizeGitRef, gitErrorMessage, isNotGitRepoError } from './sanitize-ref'
 export { parseShortstat } from './shortstat'
 export {
   parseWorktreePorcelain,

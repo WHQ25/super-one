@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { sanitizeGitRef, gitErrorMessage, parseShortstat, parseWorktreePorcelain } from './index'
+import { sanitizeGitRef, gitErrorMessage, isNotGitRepoError, parseShortstat, parseWorktreePorcelain } from './index'
 
 describe('sanitizeGitRef', () => {
   it('accepts normal branch names', () => {
@@ -49,5 +49,14 @@ describe('gitErrorMessage', () => {
   it('prefers stderr', () => {
     expect(gitErrorMessage({ stderr: '  boom  ', message: 'x' })).toBe('boom')
     expect(gitErrorMessage(new Error('e'))).toBe('e')
+  })
+})
+
+describe('isNotGitRepoError', () => {
+  it('matches only the not-a-repository failure', () => {
+    expect(isNotGitRepoError({ stderr: 'fatal: not a git repository (or any of the parent directories): .git' })).toBe(true)
+    expect(isNotGitRepoError({ stderr: 'fatal: detected dubious ownership in repository at /repo' })).toBe(false)
+    expect(isNotGitRepoError({ stderr: 'You have not agreed to the Xcode license agreements.' })).toBe(false)
+    expect(isNotGitRepoError(Object.assign(new Error('spawn git ENOENT'), { code: 'ENOENT' }))).toBe(false)
   })
 })

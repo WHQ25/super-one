@@ -111,5 +111,17 @@ jobs:
       # The committed *.generated.json / PNG icon sets are derived from
       # packages/ui and packages/shared, which change without anyone opening
       # apps/mobile; this catches a source edit that was never regenerated.
+      # The brand generators rasterise SVG through Playwright's Chromium.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('apps/mobile/package.json') }}
+      - run: bunx playwright install --with-deps chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        working-directory: apps/mobile
+      - run: bunx playwright install-deps chromium
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        working-directory: apps/mobile
       - run: bun run check:icons
         working-directory: apps/mobile

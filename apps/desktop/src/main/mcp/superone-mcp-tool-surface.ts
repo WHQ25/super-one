@@ -46,7 +46,8 @@ import {
   CODEX_MANAGED_BROWSER_COMPUTER_DENIED_MESSAGE,
   isCodexBrowserAndComputerUseDenied,
 } from '../codex/codex-managed-capability-policy'
-import { collectArtifacts, takeArtifacts, type ArtifactRef } from './artifact-registry'
+import { abandonHeldDeliveries, collectArtifacts, takeArtifacts, takeHeldDeliveries, type ArtifactRef } from './artifact-registry'
+import type { DeliveryHandle } from '../db-session-deliveries'
 import { randomUUID } from 'node:crypto'
 
 const WIDGET_LIST_TEMPLATES_NAME = 'widget_list_templates'
@@ -116,7 +117,7 @@ export async function executeSuperoneMcpToolCollecting(
   args: Record<string, unknown>,
   signal?: AbortSignal,
   connectionId?: string,
-): Promise<{ result: Awaited<ReturnType<typeof executeSuperoneMcpTool>>; artifacts: ArtifactRef[] }> {
+): Promise<{ result: Awaited<ReturnType<typeof executeSuperoneMcpTool>>; artifacts: ArtifactRef[]; held: Map<string, DeliveryHandle> }> {
   const callId = randomUUID()
   // Record which side owns this session's zone directory, so the reclaim sweep
   // can ask the right one whether the session still exists (§7). Once per
@@ -135,13 +136,20 @@ export async function executeSuperoneMcpToolCollecting(
       () => executeSuperoneMcpTool(sessionId, toolName, args, signal, connectionId),
       connectionId,
     )
-    return { result, artifacts: takeArtifacts(sessionId, callId) }
+    // Drain the held deliveries first, then the refs: the reply-selection is
+    // handed the live handles so the worker can never take an undecided file in
+    // the gap between here and the selection (E090-4).
+    const held = takeHeldDeliveries(sessionId, callId)
+    const artifacts = takeArtifacts(sessionId, callId)
+    return { result, artifacts, held: new Map(held.filter((h) => h.deliveryId).map((h) => [h.deliveryId, h])) }
   } finally {
-    // A call that threw after registering must not leave its scope behind.
-    // On the success path this take is empty — the caller already drained it
-    // and owns the delivery. Here it is not, and no one downstream will ever
-    // see these refs, so a SEALED file has nobody left to carry it: end it. A
-    // file still being written, or one a carrier already holds, is left alone.
+    // A call that threw after registering must not leave its scope behind. On
+    // the success path both takes are empty — the caller already drained them
+    // and owns the deliveries. Here they are not, and no one downstream will
+    // ever see them: a held row has nobody left to carry it, so abandon it; a
+    // sealed ref with no held handle is ended the same way. A file still being
+    // written, or one a carrier already holds, is left alone.
+    abandonHeldDeliveries(takeHeldDeliveries(sessionId, callId))
     for (const ref of takeArtifacts(sessionId, callId)) {
       if (ref.deliveryId) void import('../environment/zone-delivery').then((m) => m.abandonUndeliveredDelivery(ref.deliveryId!))
     }

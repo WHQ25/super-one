@@ -40,7 +40,7 @@ import { registerBrowserDownloadCapture } from '../browser/browser-downloads'
 import { rememberTabDriver } from '../browser/browser-tab-drivers'
 import { adoptActionRecording } from '../agent/action-recording-store'
 import { sealZoneFile, ZoneDeliveryRefused } from './zone-delivery'
-import { collectArtifacts, resetArtifactRegistry, runInLocalCallScope, takeArtifacts } from '../mcp/artifact-registry'
+import { collectArtifacts, releaseHeldDeliveries, resetArtifactRegistry, runInLocalCallScope, takeArtifacts, takeHeldDeliveries } from '../mcp/artifact-registry'
 import { registerDownload, reserveDownloadPath } from '../agent/browser-download-store'
 import { createActionRecordingPath, persistActionRecording } from '../agent/action-recording-store'
 import { unlinkSync, writeFileSync } from 'node:fs'
@@ -56,7 +56,13 @@ let root: string
 const S = 'sess-1'
 const C = 'conn-1'
 const sha = (b: Buffer | string) => createHash('sha256').update(b).digest('hex')
-const asRemote = <T>(fn: () => T | Promise<T>) => collectArtifacts(S, 'call', async () => fn(), C)
+const asRemote = async <T>(fn: () => T | Promise<T>): Promise<T> => {
+  // Model the executor's full call: after the scope, the held rows are drained
+  // and — with no reply-selection in these producer tests — released to the worker.
+  const result = await collectArtifacts(S, 'call', async () => fn(), C)
+  releaseHeldDeliveries(takeHeldDeliveries(S, 'call'))
+  return result
+}
 
 beforeEach(() => {
   db = new Database(':memory:')

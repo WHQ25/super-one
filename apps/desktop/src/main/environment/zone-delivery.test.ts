@@ -22,7 +22,8 @@ vi.mock('../logger', () => ({ default: { warn: () => {}, info: () => {}, error: 
 
 import { ensureSessionFileDeliveriesSchema, getDelivery, listSessionDeliveries } from '../db-session-deliveries'
 import { isHolderAlive } from './delivery-holders'
-import { collectArtifacts, resetArtifactRegistry, runInLocalCallScope, takeArtifacts } from '../mcp/artifact-registry'
+import { collectArtifacts, releaseHeldDeliveries, resetArtifactRegistry, runInLocalCallScope, takeArtifacts, takeHeldDeliveries } from '../mcp/artifact-registry'
+import { ArtifactTransferService } from './artifact-transfer-service'
 import { ADHOC_SESSION_ID } from '../media-output-paths'
 import { markZoneOwner } from './zone-owner'
 import { abandonZoneFile, publishArtifact, publishZoneFileAt, reserveZoneFile, sealZoneFile, ZoneDeliveryRefused, zoneDestination } from './zone-delivery'
@@ -46,7 +47,13 @@ const zonePath = (rel: string) => join(root, 'sync', S, rel)
 const sha = (b: Buffer | string) => createHash('sha256').update(b).digest('hex')
 
 /** Run `fn` as a Host Action for `C`, the way a remote session's tool call runs. */
-const asRemote = <T>(fn: () => T) => collectArtifacts(S, 'call-1', async () => fn(), C)
+const asRemote = async <T>(fn: () => T): Promise<T> => {
+  // Model the executor's full call: after the scope, held rows are drained and
+  // — with no reply-selection here — released to the worker (holder → null).
+  const result = await collectArtifacts(S, 'call-1', async () => fn(), C)
+  releaseHeldDeliveries(takeHeldDeliveries(S, 'call-1'))
+  return result
+}
 
 describe('where a zone file is going', () => {
   it('reads the node from the call scope, and local from a local call', async () => {
@@ -117,6 +124,38 @@ describe('a file reserved before its first byte', () => {
     await asRemote(() => reserveZoneFile({ sessionId: S, path, origin: 'download' }))
     abandonZoneFile(S, path)
     await asRemote(() => expect(() => reserveZoneFile({ sessionId: S, path, origin: 'download' })).toThrow(/path-taken/))
+  })
+})
+
+describe('a seal that fails part-way (FE99-1)', () => {
+  it('frees the holder when the writing→sealed write throws, so the worker can recover the row', async () => {
+    // A page download reserves and writes, then the seal's writing→sealed
+    // UPDATE throws (a busy database). The reservation is already off `open`,
+    // so if the holder is not freed it stays live for ever: the worker skips a
+    // live holder as someone still working, and the mirror stays unreadable
+    // until the process restarts.
+    markZoneOwner(S, C)
+    const path = zonePath('download/report.bin')
+    mkdirSync(join(root, 'sync', S, 'download'), { recursive: true })
+    const id = reserveZoneFile({ sessionId: S, path, origin: 'download' })!
+    const holder = getDelivery(id)!.holder!
+    expect(isHolderAlive(holder)).toBe(true)
+    writeFileSync(path, 'BYTES')
+    // Fault exactly the sealing advance — the only UPDATE that writes sha256.
+    const real = db.prepare.bind(db)
+    const spy = vi.spyOn(db, 'prepare').mockImplementation(((sql: string) => {
+      if (sql.startsWith('UPDATE') && sql.includes('sha256 = ?')) throw new Error('SQLITE_BUSY')
+      return real(sql)
+    }) as never)
+    expect(() => sealZoneFile({ sessionId: S, path, origin: 'download' })).toThrow()
+    spy.mockRestore()
+    // The holder is dead and the row untouched (still writing), so the worker
+    // can take it over — it abandons a writing row whose producer is gone.
+    expect(isHolderAlive(holder)).toBe(false)
+    expect(getDelivery(id)).toMatchObject({ phase: 'writing', outcome: null })
+    const service = new ArtifactTransferService({ put: async () => ({ ok: true as const, bytesWritten: 0 }) })
+    await service.runOnce(C)
+    expect(getDelivery(id)).toMatchObject({ outcome: 'abandoned' })
   })
 })
 

@@ -2,7 +2,8 @@
 
 Status: **implemented — §10.1 through §10.6 all landed.** Supersedes §4.1 and
 §5.3 of `session-sync-zone.md`. Review markers: P1–P5 from the first review,
-Q1–Q4 from the second, E090-1–E090-6 from the third (worker/registry hardening).
+Q1–Q4 from the second, E090-1–E090-6 and FE99-1 from the third
+(worker/registry hardening and its regression).
 
 Implementation notes (things decided while building, not derivable from the
 spec above):
@@ -61,15 +62,21 @@ test on the real SQLite fixture / Electron event boundary:
   node; a failure of `outcome = 'done'` leaves the row at `notifying`, retryable,
   never `committing`/gave-up. The eager push routes it to `deferred`, not
   `stopped`.
-- **E090-4 — a file a producer seals *inside* a call is held until the
-  reply-selection runs.** `sealZoneFile` calls `holdSealedDelivery`: inside a
-  call scope the row keeps its live holder, so a worker woken mid-call skips it
-  (`claimDelivery` refuses live holders). `collectArtifacts`' `finally` sets
-  `scope.ended`, then releases + retires every held handle — so the row is
-  `holder = null` for `syncHostActionOutputs` to claim or abandon, with no window
-  in which the worker could take an undecided file. `holdSealedDelivery` returns
-  false once `scope.ended`, so a detached background download that seals after
-  the call is not held forever.
+- **E090-4 — a file a producer seals *inside* a call stays held across the scope
+  end, all the way to the reply-selection.** `sealZoneFile` calls
+  `holdSealedDelivery`: inside a call scope the row keeps its live holder, so a
+  worker woken mid-call skips it (`claimDelivery` refuses live holders). The held
+  handles are **not** released when the scope ends — doing so left a window
+  (`collectArtifacts` `finally` → `syncHostActionOutputs`, two awaits apart in the
+  executor) in which a worker woken for another task could claim and deliver an
+  undecided file. Instead `collectArtifacts` `finally` only sets `scope.ended`;
+  the executor drains the live handles with `takeHeldDeliveries` and threads them
+  into `syncHostActionOutputs(held)`, which pushes a mentioned file under the same
+  handle, abandons an unmentioned one by that handle, and releases the rest to the
+  worker in its own `finally` (an abort part way leaves the unreached files sealed
+  and unheld, for the worker). A thrown tool abandons its held rows
+  (`abandonHeldDeliveries`). `holdSealedDelivery` returns false once `scope.ended`,
+  so a detached background download that seals after the call is never held.
 - **E090-5 — a wake that lands mid-pass triggers an immediate re-scan.** A row
   sealed after a pass took its snapshot has `next_attempt_at NULL`, which the
   next-due sleep timer ignores; the `woken` flag makes the loop `continue`
@@ -80,10 +87,22 @@ test on the real SQLite fixture / Electron event boundary:
   dialog, or an untracked file a remote agent can never reach). The now-strict
   reservation instead `item.cancel()`s, sets no save path, and records an
   `interrupted` capture so `waitForDownloads` resolves rather than hanging.
-- **E090-3 — Settings separates *needs re-delivery* (committing) from *stuck*
-  (retryable).** `needsRedelivery` gets its own warning line and **no button**;
-  Retry Upload gates on `failedHandoffs` alone, because a `committing` file
-  cannot be safely re-queued — only re-produced under a new path.
+- **E090-3 — a stopped file stays stopped, in Settings and in the reply.**
+  Settings separates *needs re-delivery* (committing) from *stuck* (retryable):
+  `needsRedelivery` gets its own warning line and **no button**; Retry Upload
+  gates on `failedHandoffs` alone, because a `committing` file cannot be safely
+  re-queued — only re-produced under a new path. And `syncHostActionOutputs`
+  classifies a re-observed delivery by phase and `gaveUpAt`: a `committing` or
+  gave-up row is reported `stopped`, not `deferred` — before the fix, observing a
+  stopped file again (a later `browser_download` listing naming the same path)
+  turned it into a deferred "you will be notified" wake no worker honours.
+- **FE99-1 — a seal that throws frees its holder.** `sealZoneFile`'s two seal
+  paths wrap "acquire/create holder → seal → hand off" in a `try/finally`: unless
+  the row was handed to the call scope, the holder is retired even if hashing,
+  `advanceDelivery` or `reserveDelivery` threw. Without it, a throw after the
+  reservation left `open` stranded a live holder on a `writing`/`sealed` row the
+  worker then skipped for ever (a live holder is someone still working), and the
+  mirror stayed unreadable until the process restarted.
 
 ## 1. Why
 
@@ -375,7 +394,7 @@ What a worker pass (and startup) then does with what it finds:
 | `writing`, dead holder | producer crashed (or reserved and never created the file) | `abandoned`. **Never sent**: nothing records how far the producer got, and a half file is worse than none. The file stays for the sweep, unprotected (R4). |
 | `sealed` / `queued`, dead or no holder | complete source waiting | take over → `uploading` |
 | `uploading`, dead holder | final put **not yet sent** (or the row would be `committing`) | take over, resume from `offset`. The node has at most a `.parts` fragment: it answers `expectedOffset`, or `unknown transfer` after its idle expiry, and then the upload restarts from 0 under the same `transfer_id` — safe because the source is immutable (R6) and the target path was never committed. |
-| `committing`, dead holder | final put sent, reply lost | **cannot be verified from here** (§2). `gave_up_at = now`, `last_error = 'commit unverified'`, no automatic put ever. Settings shows *needs re-delivery*; a person re-delivers under a **new path and a new `delivery_id`**, after which this row is `abandoned`. Automatic recovery would need the node to expose a hash on `stat` or accept a conditional final chunk; that is a node contract change and is named here as the boundary, not promised. |
+| `committing`, dead holder | final put sent, reply lost | **cannot be verified from here** (§2). `gave_up_at = now`, `last_error = 'commit unverified'`, no automatic put ever. Settings shows *needs re-delivery* and the reply says *stopped* (E090-3). Recovery today is **manual and unlinked**: re-running the action that produced the file writes a **new file under a new path and a new `delivery_id`** — it does **not** close, abandon or associate the old `committing` row (that row stays until reclaim), and it cannot restore an output that no longer exists to re-produce (an ended recording). There is no entry point that takes the old `delivery_id`; a linked re-delivery (old id in, reuse reserve/seal/worker, close the old row once the new one is established) is a **future** addition, not implemented. Automatic recovery instead would need the node to expose a hash on `stat` or accept a conditional final chunk — a node contract change, named here as the boundary, not promised. |
 | `uploaded` / `notifying`, dead or no holder | only the wake is owed | take over → `notifying` → wake → `done`. There is no path from here back to `uploading`. |
 | any live phase, `gave_up_at` set | automatic retry stopped | shown in Settings; manual retry clears it and re-enters this table |
 | any row, session tombstoned | late arrival after delete | `abandoned`; a new insert for that session is refused |

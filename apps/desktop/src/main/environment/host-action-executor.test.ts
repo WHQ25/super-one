@@ -92,6 +92,7 @@ const mcpSurface = vi.hoisted(() => ({
   executeSuperoneMcpToolCollecting: async (sessionId: string, toolName: string, args: unknown) => ({
     result: await mcpSurface.executeSuperoneMcpTool(sessionId, toolName, args),
     artifacts: registry.artifacts.splice(0),
+    held: new Map(),
   }),
 }))
 

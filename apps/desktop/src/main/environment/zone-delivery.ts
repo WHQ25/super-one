@@ -158,20 +158,26 @@ export function sealZoneFile(input: ZoneFileInput & { bytes?: Buffer | string })
   const held = open.get(key)
   if (held) {
     open.delete(key)
-    const identity = contentIdentity(input.path, input.bytes)
-    const sealed = advanceDelivery(held, { from: 'writing', to: 'sealed', ...identity })
-    if (!sealed.ok) {
-      retireHolder(held.holder)
-      throw new ZoneDeliveryRefused('reservation-lost', input.path)
+    let handedToScope = false
+    try {
+      const identity = contentIdentity(input.path, input.bytes)
+      const sealed = advanceDelivery(held, { from: 'writing', to: 'sealed', ...identity })
+      if (!sealed.ok) throw new ZoneDeliveryRefused('reservation-lost', input.path)
+      // Inside a call the row stays held until the reply-selection runs, so the
+      // worker cannot deliver a produced file the agent may never name (E090-4).
+      // Outside one — a page download's own completion — it is released now for
+      // the worker to carry.
+      if (holdSealedDelivery(sealed.handle)) { handedToScope = true; return held.deliveryId }
+      if (!releaseDelivery(sealed.handle)) throw new ZoneDeliveryRefused('reservation-lost', input.path)
+      return held.deliveryId
+    } finally {
+      // Any exit that did not hand the row to the call scope frees the holder,
+      // so a throw between `open.delete` and the seal (a busy database hashing
+      // or advancing) cannot strand a live holder on a `writing` row the worker
+      // would then skip for ever (FE99-1). The row keeps the phase it reached; a
+      // dead holder is exactly what lets the worker take it over.
+      if (!handedToScope) retireHolder(held.holder)
     }
-    // Inside a call the row stays held until the reply-selection runs, so the
-    // worker cannot deliver a produced file the agent may never name (E090-4).
-    // Outside one — a page download's own completion — it is released now for
-    // the worker to carry.
-    if (holdSealedDelivery(sealed.handle)) return held.deliveryId
-    if (!releaseDelivery(sealed.handle)) throw new ZoneDeliveryRefused('reservation-lost', input.path)
-    retireHolder(held.holder)
-    return held.deliveryId
   }
   const existing = findDeliveryByPath(input.sessionId, input.path)
   if (existing) {
@@ -189,26 +195,31 @@ export function sealZoneFile(input: ZoneFileInput & { bytes?: Buffer | string })
   // Held for the call while it decides (E090-4); a publish outside any call
   // (a device backend's synchronous write) lands unheld for the worker.
   const holder = mintHolder()
-  const r = reserveDelivery({
-    sessionId: input.sessionId,
-    connectionId,
-    localPath: input.path,
-    relativePath: relativeOf(input.sessionId, input.path),
-    origin: input.origin,
-    phase: 'sealed',
-    holder,
-    ...contentIdentity(input.path, input.bytes),
-  })
-  if ('refused' in r) {
-    retireHolder(holder)
-    throw new ZoneDeliveryRefused(r.refused, input.path)
+  let handedToScope = false
+  try {
+    const r = reserveDelivery({
+      sessionId: input.sessionId,
+      connectionId,
+      localPath: input.path,
+      relativePath: relativeOf(input.sessionId, input.path),
+      origin: input.origin,
+      phase: 'sealed',
+      holder,
+      ...contentIdentity(input.path, input.bytes),
+    })
+    if ('refused' in r) throw new ZoneDeliveryRefused(r.refused, input.path)
+    const handle: DeliveryHandle = { deliveryId: r.deliveryId, holder, epoch: r.epoch }
+    if (holdSealedDelivery(handle)) { handedToScope = true; return r.deliveryId }
+    // No call to decide: release the holder so the worker may claim it.
+    if (!releaseDelivery(handle)) throw new ZoneDeliveryRefused('reservation-lost', input.path)
+    return r.deliveryId
+  } finally {
+    // As in the reserved-then-sealed path: unless the scope took the row, the
+    // holder is retired even if `reserveDelivery` or hashing threw, so no live
+    // holder outlives this call (FE99-1). A sealed row with a dead holder is
+    // exactly what the worker claims.
+    if (!handedToScope) retireHolder(holder)
   }
-  const handle: DeliveryHandle = { deliveryId: r.deliveryId, holder, epoch: r.epoch }
-  if (holdSealedDelivery(handle)) return r.deliveryId
-  // No call to decide: release the holder so the worker may claim it.
-  if (!releaseDelivery(handle)) throw new ZoneDeliveryRefused('reservation-lost', input.path)
-  retireHolder(holder)
-  return r.deliveryId
 }
 
 /** The writer gave up before sealing. Nothing will carry the file; the row protects nothing. */

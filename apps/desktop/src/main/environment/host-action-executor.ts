@@ -25,6 +25,7 @@ import {
   type HostActionSyncDeps,
   type ToolReply,
 } from './host-action-sync'
+import { releaseHeldDeliveries } from '../mcp/artifact-registry'
 
 /**
  * Tools that mutate node session metadata, not desktop-local resources.
@@ -138,7 +139,7 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
         )
         // A wrapper tool maps the arguments of the tool it dispatches at the
         // point of dispatch, by that tool's roles; it finds the mapping here.
-        const { result: rawResult, artifacts } = sync
+        const { result: rawResult, artifacts, held } = sync
           ? await withInputMapping({ ...sync, sessionId: claimed.sessionId }, runTool)
           : await runTool()
         // The executor holds no claims of its own. Protection and delivery are
@@ -153,9 +154,17 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
         // so its `finally` frees what the tool produced. Returning early
         // instead would leave a sealed file held by its writer with nothing
         // downstream to deliver it — pinned for the life of the process.
-        const toolResult = sync && artifacts.length > 0
-          ? await syncHostActionOutputs(claimed.sessionId, artifacts, rawResult as ToolReply, claimed.claimExpiresAt, sync)
-          : rawResult
+        let toolResult: unknown
+        if (sync && artifacts.length > 0) {
+          // The held handles this call owns are threaded in so the selection
+          // holds each file live through its decision (E090-4).
+          toolResult = await syncHostActionOutputs(claimed.sessionId, artifacts, held, rawResult as ToolReply, claimed.claimExpiresAt, sync)
+        } else {
+          // No selection will run: release any rows the call was still holding
+          // to the worker (a local or output-less call normally holds none).
+          releaseHeldDeliveries(held.values())
+          toolResult = rawResult
+        }
         if (runAbort.signal.aborted || raceWinner === 'deadline') return aborted()
 
         const isError = Boolean((toolResult as { isError?: boolean })?.isError)

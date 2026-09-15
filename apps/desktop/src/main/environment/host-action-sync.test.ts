@@ -21,7 +21,7 @@ vi.mock('../database', async () => (await import('../../test/fixtures/delivery-d
 
 import { findDeliveryByPath, listSessionDeliveries } from '../db-session-deliveries'
 import type { ArtifactRef } from '../mcp/artifact-registry'
-import { collectArtifacts } from '../mcp/artifact-registry'
+import { collectArtifacts, takeArtifacts, takeHeldDeliveries } from '../mcp/artifact-registry'
 import { deliveryDb, resetDeliveryDatabase } from '../../test/fixtures/delivery-db'
 import { _resetHoldersForTests, isHolderAlive } from './delivery-holders'
 import { mapHostActionInputs, mapNestedToolInputs, syncHostActionOutputs, withInputMapping, CLAIM_BUDGET_MARGIN_MS } from './host-action-sync'
@@ -57,10 +57,6 @@ function sealed(sessionId: string, rel: string, data: string | Buffer, producer:
 const rowOf = (ref: ArtifactRef) => findDeliveryByPath('s1', ref.path)!
 /** Relative paths of every delivery of `s1` that is not over — what the worker still has to do. */
 const stillOwed = () => listSessionDeliveries('s1').filter((r) => r.outcome === null).map((r) => r.relativePath)
-
-let callSeq = 0
-/** Run `fn` inside an open Host Action call scope for node c1 — an in-call producer. */
-const asRemote = <T,>(fn: () => Promise<T>): Promise<T> => collectArtifacts('s1', `call-${++callSeq}`, fn, 'c1')
 
 function fakeNode() {
   const files = new Map<string, Buffer>()
@@ -118,7 +114,7 @@ describe('host action outputs', () => {
     const node = fakeNode()
     const shot = sealed('s1', 'browser/shot.png', 'png-bytes')
     const reply = { content: [{ type: 'text', text: JSON.stringify({ path: shot.path, width: 10, height: 10, imageNote: 'call Read on path' }) }] }
-    const out = await syncHostActionOutputs('s1', [shot], reply, Date.now() + 60_000, node.deps)
+    const out = await syncHostActionOutputs('s1', [shot], new Map(), reply, Date.now() + 60_000, node.deps)
     expect(JSON.parse(out.content![0].text!)).toMatchObject({ path: '/home/node/.superone/node/sync/s1/browser/shot.png', width: 10 })
     expect(node.files.get('browser/shot.png')!.toString()).toBe('png-bytes')
     expect(out.sync).toBeUndefined()
@@ -135,7 +131,7 @@ describe('host action outputs', () => {
     const original = sealed('s1', 'computer-use/a.png', Buffer.alloc(100, 1), 'computer-use')
     const agent = sealed('s1', 'computer-use/a.agent.jpg', 'jpeg', 'computer-use')
     const reply = { content: [{ type: 'text', text: JSON.stringify({ image: { path: agent.path } }) }] }
-    const out = await syncHostActionOutputs('s1', [original, agent], reply, Date.now() + 60_000, node.deps)
+    const out = await syncHostActionOutputs('s1', [original, agent], new Map(), reply, Date.now() + 60_000, node.deps)
     expect([...node.files.keys()]).toEqual(['computer-use/a.agent.jpg'])
     expect(out.content![0].text).toContain('/home/node/.superone/node/sync/s1/computer-use/a.agent.jpg')
     expect(rowOf(original)).toMatchObject({ outcome: 'abandoned', holder: null })
@@ -152,7 +148,7 @@ describe('host action outputs', () => {
     const renewals: number[] = []
     node.deps.renewClaim = async (ttlMs: number) => { renewals.push(ttlMs); return now + ttlMs }
     const reply = { content: [{ type: 'text', text: big.path }] }
-    const out = await syncHostActionOutputs('s1', [big], reply, now + 15_000, node.deps)
+    const out = await syncHostActionOutputs('s1', [big], new Map(), reply, now + 15_000, node.deps)
     expect(renewals).toHaveLength(1)
     expect(node.files.has('recording/run.mp4')).toBe(true)
     expect(stillOwed()).toEqual([])
@@ -165,7 +161,7 @@ describe('host action outputs', () => {
     node.deps.transfers.throughputBytesPerMs = () => 10
     node.deps.renewClaim = async () => { throw Object.assign(new Error('deadline expired'), { code: 'failed_precondition' }) }
     const reply = { content: [{ type: 'text', text: big.path }] }
-    const out = await syncHostActionOutputs('s1', [big], reply, Date.now() + 15_000, node.deps)
+    const out = await syncHostActionOutputs('s1', [big], new Map(), reply, Date.now() + 15_000, node.deps)
     expect(node.puts).toEqual([])
     expect(out.sync).toEqual({ deferred: ['/home/node/.superone/node/sync/s1/recording/run.mp4'] })
     // Not attempted: still complete, still protected, nobody's, and the worker told.
@@ -180,7 +176,7 @@ describe('host action outputs', () => {
     const reply = { content: [{ type: 'text', text: `${small.path}\n${big.path}` }] }
     // 1 KiB/ms throughput; 50 KiB needs 50 ms but the claim leaves only the margin plus 20 ms.
     const claimExpiresAt = Date.now() + CLAIM_BUDGET_MARGIN_MS + 20
-    const out = await syncHostActionOutputs('s1', [big, small], reply, claimExpiresAt, node.deps)
+    const out = await syncHostActionOutputs('s1', [big, small], new Map(), reply, claimExpiresAt, node.deps)
     expect(node.files.has('browser/small.png')).toBe(true)
     expect(node.files.has('recording/clip.mp4')).toBe(false)
     expect(stillOwed()).toEqual(['recording/clip.mp4'])
@@ -198,7 +194,7 @@ describe('host action outputs', () => {
       { path: started, producer: 'recording', final: false, deliveryId: reservation },
       other,
       { path: '/tmp/elsewhere.png', producer: 'browser', final: true },
-    ], reply, Date.now() + 60_000, node.deps)
+    ], new Map(), reply, Date.now() + 60_000, node.deps)
     expect(node.puts).toEqual([])
     expect(out).toEqual(reply)
     // The writer still holds its reservation.
@@ -219,7 +215,7 @@ describe('host action outputs', () => {
       return put(req)
     }
     const reply = { content: [{ type: 'text', text: big.path }] }
-    const out = await syncHostActionOutputs('s1', [big], reply, Date.now() + 60_000, node.deps)
+    const out = await syncHostActionOutputs('s1', [big], new Map(), reply, Date.now() + 60_000, node.deps)
     expect(out.sync).toEqual({ deferred: ['/home/node/.superone/node/sync/s1/recording/run.mp4'] })
     const row = rowOf(big)
     expect(row).toMatchObject({ phase: 'uploading', offset: ARTIFACT_CHUNK_BYTES, holder: null, attempts: 1, lastError: 'node closed the socket', gaveUpAt: null })
@@ -238,7 +234,7 @@ describe('host action outputs', () => {
     const put = node.deps.put
     node.deps.put = async (req) => { await put(req); throw Object.assign(new Error('node closed the socket'), { code: 'unavailable' }) }
     const reply = { content: [{ type: 'text', text: shot.path }] }
-    const out = await syncHostActionOutputs('s1', [shot], reply, Date.now() + 60_000, node.deps)
+    const out = await syncHostActionOutputs('s1', [shot], new Map(), reply, Date.now() + 60_000, node.deps)
     // Not "deferred / you will be notified": a committing row is stopped, and
     // the agent is told to re-run rather than wait (E090-3).
     expect(out.sync).toEqual({ deferred: [], stopped: ['/home/node/.superone/node/sync/s1/browser/shot.png'] })
@@ -257,7 +253,7 @@ describe('host action outputs', () => {
     const big = sealed('s1', 'recording/run.mp4', Buffer.alloc(64 * 1024), 'recording')
     node.deps.transfers.throughputBytesPerMs = () => 1
     const reply = { content: [{ type: 'text', text: JSON.stringify({ ok: true, savedPath: big.path }) }] }
-    const out = await syncHostActionOutputs('s1', [big], reply, Date.now() + 15_000, node.deps)
+    const out = await syncHostActionOutputs('s1', [big], new Map(), reply, Date.now() + 15_000, node.deps)
     expect(out.content).toHaveLength(2)
     expect(out.content[1]?.text).toContain('/home/node/.superone/node/sync/s1/recording/run.mp4')
     expect(out.content[1]?.text).toMatch(/not (yet )?(there|available|synced)/i)
@@ -273,7 +269,7 @@ describe('host action outputs', () => {
     node.deps.put = () => new Promise(() => {})
     const reply = { content: [{ type: 'text', text: shot.path }] }
     const settled = await Promise.race([
-      syncHostActionOutputs('s1', [shot], reply, Date.now() + CLAIM_BUDGET_MARGIN_MS + 30, node.deps),
+      syncHostActionOutputs('s1', [shot], new Map(), reply, Date.now() + CLAIM_BUDGET_MARGIN_MS + 30, node.deps),
       new Promise<'hung'>((resolve) => setTimeout(() => resolve('hung'), 500)),
     ])
     expect(settled).not.toBe('hung')
@@ -297,7 +293,7 @@ describe('host action outputs', () => {
         { type: 'text', text: 'Image saved.' },
       ],
     }
-    const out = await syncHostActionOutputs('s1', [shot], reply, Date.now() + 60_000, node.deps)
+    const out = await syncHostActionOutputs('s1', [shot], new Map(), reply, Date.now() + 60_000, node.deps)
     expect(node.files.has('browser/a"b.png')).toBe(true)
     expect(JSON.parse(JSON.parse(out.content![0].text!).result).path).toBe('/home/node/.superone/node/sync/s1/browser/a"b.png')
   })
@@ -312,7 +308,7 @@ describe('host action outputs', () => {
     node.deps.renewClaim = () => new Promise(() => {})
     const reply = { content: [{ type: 'text', text: big.path }] }
     const settled = await Promise.race([
-      syncHostActionOutputs('s1', [big], reply, Date.now() + CLAIM_BUDGET_MARGIN_MS + 30, node.deps),
+      syncHostActionOutputs('s1', [big], new Map(), reply, Date.now() + CLAIM_BUDGET_MARGIN_MS + 30, node.deps),
       new Promise<'hung'>((resolve) => setTimeout(() => resolve('hung'), 500)),
     ])
     expect(settled).not.toBe('hung')
@@ -323,7 +319,7 @@ describe('host action outputs', () => {
     const node = fakeNode()
     const shot = sealed('s1', 'browser/shot.png', 'png-bytes')
     const reply = { content: [{ type: 'text', text: `截图已保存到 ${shot.path}，请查看。` }] }
-    const out = await syncHostActionOutputs('s1', [shot], reply, Date.now() + 60_000, node.deps)
+    const out = await syncHostActionOutputs('s1', [shot], new Map(), reply, Date.now() + 60_000, node.deps)
     expect(node.files.has('browser/shot.png')).toBe(true)
     expect(out.content![0].text).toBe('截图已保存到 /home/node/.superone/node/sync/s1/browser/shot.png，请查看。')
   })
@@ -337,7 +333,7 @@ describe('host action outputs', () => {
     for (const [phase, outcome] of [['uploaded', null], ['notifying', null], ['notifying', 'done']] as const) {
       deliveryDb().prepare('UPDATE session_file_deliveries SET phase = ?, outcome = ? WHERE delivery_id = ?').run(phase, outcome, shot.deliveryId)
       const reply = { content: [{ type: 'text', text: shot.path }] }
-      const out = await syncHostActionOutputs('s1', [shot], reply, Date.now() + 60_000, node.deps)
+      const out = await syncHostActionOutputs('s1', [shot], new Map(), reply, Date.now() + 60_000, node.deps)
       expect(node.puts, `${phase}/${outcome}`).toHaveLength(0)
       expect(out.content![0].text).toBe('/home/node/.superone/node/sync/s1/browser/shot.png')
       expect(out.sync).toBeUndefined()
@@ -351,7 +347,7 @@ describe('host action outputs', () => {
     const { mintHolder } = await import('./delivery-holders')
     deliveryDb().prepare(`UPDATE session_file_deliveries SET phase = 'uploading', holder = ? WHERE delivery_id = ?`).run(mintHolder(), shot.deliveryId)
     const reply = { content: [{ type: 'text', text: shot.path }] }
-    const out = await syncHostActionOutputs('s1', [shot], reply, Date.now() + 60_000, node.deps)
+    const out = await syncHostActionOutputs('s1', [shot], new Map(), reply, Date.now() + 60_000, node.deps)
     expect(node.puts).toHaveLength(0)
     expect(out.sync).toEqual({ deferred: ['/home/node/.superone/node/sync/s1/browser/shot.png'] })
     expect(rowOf(shot).phase).toBe('uploading')
@@ -369,7 +365,7 @@ describe('host action outputs', () => {
     const b = sealed('s1', 'browser/b.png', 'bb')
     const put = node.deps.put
     node.deps = { ...node.deps, signal: abort.signal, put: async (req) => { const r = await put(req); abort.abort(); return r } }
-    await expect(syncHostActionOutputs('s1', [a, b], { content: [{ type: 'text', text: `${a.path} ${b.path}` }] }, Date.now() + 60_000, node.deps))
+    await expect(syncHostActionOutputs('s1', [a, b], new Map(), { content: [{ type: 'text', text: `${a.path} ${b.path}` }] }, Date.now() + 60_000, node.deps))
       .rejects.toMatchObject({ code: 'aborted' })
     expect(node.puts).toHaveLength(1)
     // The first file's final put was confirmed before the abort surfaced, so
@@ -391,7 +387,7 @@ describe('host action outputs', () => {
       if (sql.includes("outcome = 'done'")) throw new Error('SQLITE_BUSY')
       return real(sql)
     }) as never)
-    const out = await syncHostActionOutputs('s1', [shot], { content: [{ type: 'text', text: shot.path }] }, Date.now() + 60_000, node.deps)
+    const out = await syncHostActionOutputs('s1', [shot], new Map(), { content: [{ type: 'text', text: shot.path }] }, Date.now() + 60_000, node.deps)
     spy.mockRestore()
     expect(node.files.get('browser/shot.png')?.toString()).toBe('png')
     // The bytes are on the node; the row is at `notifying`, retryable, NOT a
@@ -406,42 +402,93 @@ describe('host action outputs', () => {
     await service.runOnce('c1')
     expect(rowOf(shot)).toMatchObject({ outcome: 'done' })
   })
+
+  it('keeps reporting a stopped committing file as stopped when it is observed again, never as deferred (E090-3)', async () => {
+    // The first eager push sends the file's only (final) chunk; its reply is
+    // lost, so the row lands in `committing` and gives up (§6) — reported
+    // `stopped`. A later download listing observes the same path (same delivery
+    // id, no new row). Re-syncing it must keep saying stopped: no worker will
+    // carry a committing row, so a deferred "you will be notified" is a promise
+    // nothing keeps (E090-3).
+    const node = fakeNode()
+    const shot = sealed('s1', 'browser/shot.png', 'png')
+    let puts = 0
+    node.deps.put = async () => { puts++; throw Object.assign(new Error('link dropped'), { code: 'unavailable' }) }
+    const reply = { content: [{ type: 'text', text: shot.path }] }
+    const out1 = await syncHostActionOutputs('s1', [shot], new Map(), reply, Date.now() + 60_000, node.deps)
+    expect(puts).toBe(1)
+    expect(rowOf(shot).phase).toBe('committing')
+    expect(rowOf(shot).gaveUpAt).not.toBeNull()
+    expect(out1.sync).toMatchObject({ stopped: ['/home/node/.superone/node/sync/s1/browser/shot.png'] })
+    expect((out1.sync as { deferred: string[] }).deferred).toEqual([])
+    // Observed again (a `browser_download` listing names the same path): same
+    // delivery id, still committing/gave-up. It must not turn into a deferred wake.
+    const out2 = await syncHostActionOutputs('s1', [shot], new Map(), reply, Date.now() + 60_000, node.deps)
+    expect(puts).toBe(1)
+    expect(out2.sync).toMatchObject({ stopped: ['/home/node/.superone/node/sync/s1/browser/shot.png'] })
+    expect((out2.sync as { deferred: string[] }).deferred).toEqual([])
+    expect(node.wakes()).toBe(0)
+  })
 })
 
-describe('an in-call producer the worker could race (E090-4)', () => {
-  it('is not delivered by a worker that wakes mid-call, then is abandoned when the reply never names it', async () => {
-    // A `browser_perf_measure` seals a nested download while the outer call is
-    // still sampling. A worker woken by another task must not take that sealed
-    // file — the reply-selection has not run — so it stays held until the call
-    // ends, and is abandoned because the reply names only timings.
+describe('the scope→selection handoff a worker could race (E090-4)', () => {
+  // Replay the executor's own sequence around a produced file: a tool seals it
+  // inside its call scope; the scope ends; the held handle is handed to the
+  // reply-selection (`takeHeldDeliveries` → `syncHostActionOutputs(held)`). The
+  // row stays held — a live holder — from the seal, ACROSS the scope end, until
+  // the selection decides. A worker pass run in the gap between the two (the
+  // exact window the old code released the holder in) must therefore take
+  // nothing, whether the reply names the file or not.
+
+  it('holds a produced file across the handoff so a worker in the gap cannot take it, then abandons the unnamed one (E090-4)', async () => {
     const node = fakeNode()
     const service = new ArtifactTransferService({ put: (_c, req) => node.deps.put(req), notifyCompleted: async () => undefined })
     const probePath = join(root, 'sync', 's1', 'download', 'probe.bin')
     let deliveryId = ''
-    await asRemote(async () => {
+    const reply = await collectArtifacts('s1', 'call-1', async () => {
       const path = desktopFile('s1', 'download/probe.bin', 'BYTES')
       deliveryId = sealZoneFile({ sessionId: 's1', path, origin: 'download', connectionId: 'c1' })!
-      // The worker wakes for an unrelated reason while the call is still open.
-      // The row it would take is held by this call's live holder, so it skips it.
-      await service.runOnce('c1')
-      const midCallRow = findDeliveryByPath('s1', path)!
-      expect(node.puts).toHaveLength(0)
-      expect(midCallRow).toMatchObject({ phase: 'sealed' })
-      expect(isHolderAlive(midCallRow.holder!)).toBe(true)
-    })
-    // The call ended: its grip is released so the reply-selection can decide,
-    // but the row is still `sealed` with nothing sent (E090-4 has no window in
-    // which the worker could have taken the undecided file).
-    const afterCall = findDeliveryByPath('s1', probePath)!
-    expect(afterCall).toMatchObject({ phase: 'sealed', outcome: null, holder: null })
-    // The reply names only timings: the executor's sync abandons the unmentioned file.
-    const reply = { content: [{ type: 'text', text: JSON.stringify({ ms: 1234 }) }] }
-    const probe = { path: probePath, producer: 'download' as const, final: true, deliveryId }
-    await syncHostActionOutputs('s1', [probe], reply, Date.now() + 60_000, node.deps)
-    expect(findDeliveryByPath('s1', probePath)).toMatchObject({ outcome: 'abandoned' })
-    // And a worker pass afterwards still sends nothing.
+      return { content: [{ type: 'text', text: JSON.stringify({ ms: 1234 }) }] }
+    }, 'c1')
+    const held = new Map(takeHeldDeliveries('s1', 'call-1').map((h) => [h.deliveryId, h]))
+    takeArtifacts('s1', 'call-1')
+    // The worker runs in the handoff gap. The row is still held (a live holder),
+    // so it sends nothing — this is what the released-at-scope-end code failed.
     await service.runOnce('c1')
     expect(node.puts).toHaveLength(0)
+    expect(findDeliveryByPath('s1', probePath)).toMatchObject({ phase: 'sealed', outcome: null })
+    expect(isHolderAlive(findDeliveryByPath('s1', probePath)!.holder!)).toBe(true)
+    // The reply names only timings: the selection abandons the file under the
+    // handle it kept — never a fresh claim on an unheld row.
+    const probe = { path: probePath, producer: 'download' as const, final: true, deliveryId }
+    await syncHostActionOutputs('s1', [probe], held, reply, Date.now() + 60_000, node.deps)
+    expect(findDeliveryByPath('s1', probePath)).toMatchObject({ outcome: 'abandoned', holder: null })
+    await service.runOnce('c1')
+    expect(node.puts).toHaveLength(0)
+  })
+
+  it('delivers a produced file the reply names, under the handle it held across the gap (E090-4)', async () => {
+    const node = fakeNode()
+    const service = new ArtifactTransferService({ put: (_c, req) => node.deps.put(req), notifyCompleted: async () => undefined })
+    const shotPath = join(root, 'sync', 's1', 'browser', 'shot.png')
+    let deliveryId = ''
+    const reply = await collectArtifacts('s1', 'call-1', async () => {
+      const path = desktopFile('s1', 'browser/shot.png', 'png')
+      deliveryId = sealZoneFile({ sessionId: 's1', path, origin: 'produced', connectionId: 'c1' })!
+      return { content: [{ type: 'text', text: path }] }
+    }, 'c1')
+    const held = new Map(takeHeldDeliveries('s1', 'call-1').map((h) => [h.deliveryId, h]))
+    takeArtifacts('s1', 'call-1')
+    // Worker in the gap: still held, so nothing is sent.
+    await service.runOnce('c1')
+    expect(node.puts).toHaveLength(0)
+    // The selection pushes it under the same holder the call kept — no window in
+    // which it was a sealed, unheld row.
+    const shot = { path: shotPath, producer: 'browser' as const, final: true, deliveryId }
+    const out = await syncHostActionOutputs('s1', [shot], held, reply, Date.now() + 60_000, node.deps)
+    expect(node.files.get('browser/shot.png')?.toString()).toBe('png')
+    expect(out.content![0].text).toBe('/home/node/.superone/node/sync/s1/browser/shot.png')
+    expect(findDeliveryByPath('s1', shotPath)).toMatchObject({ phase: 'notifying', outcome: 'done', holder: null })
   })
 })
 

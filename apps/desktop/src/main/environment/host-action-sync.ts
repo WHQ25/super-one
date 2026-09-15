@@ -17,9 +17,11 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { ArtifactGetRequest, ArtifactGetResult, ArtifactListRequest, ArtifactListResult, ArtifactPutRequest, ArtifactPutResult, ArtifactStatResult } from '@superone/shared/environment'
 import type { ArtifactRef } from '../mcp/artifact-registry'
+import { releaseHeldDeliveries } from '../mcp/artifact-registry'
 import { zoneRelativePath } from '../media-output-paths'
 import { uploadArtifact, type TransferOutcome } from './artifact-transfer'
 import {
+  abandonDelivery,
   advanceDelivery,
   claimDelivery,
   completeDelivery,
@@ -297,11 +299,26 @@ class LostDelivery extends Error {
 export async function syncHostActionOutputs(
   sessionId: string,
   refs: ArtifactRef[],
+  /**
+   * The deliveries this call sealed and is still holding, by delivery id
+   * (E090-4). Kept live across the scope end so the worker cannot take an
+   * undecided file; this function owns each one now — it pushes a mentioned
+   * file under the same handle, abandons an unmentioned one, and releases the
+   * rest to the worker in its `finally`.
+   */
+  held: Map<string, DeliveryHandle>,
   reply: ToolReply,
   claimExpiresAt: number,
   deps: HostActionSyncDeps,
 ): Promise<ToolReply> {
   const now = deps.now ?? Date.now
+  // A held handle is "consumed" once this function has taken responsibility for
+  // retiring its holder (pushed it, or abandoned it). Everything else is
+  // released to the worker on the way out — including files an abort never
+  // reached, which stay sealed and unheld for it.
+  const consumed = new Set<string>()
+  const releaseLeftover = (): void =>
+    releaseHeldDeliveries([...held].filter(([id]) => !consumed.has(id)).map(([, handle]) => handle))
   const planned: PlannedRef[] = []
   for (const ref of refs) {
     if (!ref.final) continue
@@ -318,14 +335,26 @@ export async function syncHostActionOutputs(
       // Produced, sealed, and named by nothing the agent will read — a
       // `browser_perf_measure` that ran a download and reported only its
       // timings. Nothing will ever deliver it; left live, the worker would
-      // upload it for nobody and the mirror would keep it for ever.
-      abandonUndeliveredDelivery(delivery.deliveryId)
+      // upload it for nobody and the mirror would keep it for ever. If we still
+      // hold it from the call, abandon it under that handle (no window in which
+      // the worker could have taken it); otherwise fall back to a fresh claim.
+      const mine = held.get(delivery.deliveryId)
+      if (mine) {
+        consumed.add(delivery.deliveryId)
+        abandonDelivery(mine)
+        retireHolder(mine.holder)
+      } else {
+        abandonUndeliveredDelivery(delivery.deliveryId)
+      }
       continue
     }
     const nodePath = nodeZonePath(deps.zone, zone.sessionId, zone.relativePath)
     planned.push({ ref, sessionId: zone.sessionId, relativePath: zone.relativePath, nodePath, size: delivery.total, delivery })
   }
-  if (planned.length === 0) return reply
+  if (planned.length === 0) {
+    releaseLeftover()
+    return reply
+  }
 
   const mapping = new Map<string, string>()
   const deferred: string[] = []
@@ -338,108 +367,142 @@ export async function syncHostActionOutputs(
 
   let expiresAt = claimExpiresAt
   let leftForWorker = false
-  for (const item of planned) {
-    // A cancel that landed during the previous item's push: nothing further
-    // is claimed, so the rest stays `sealed` and unheld for the worker.
-    throwIfAborted(deps.signal)
-    const row = item.delivery
-    // The producer's failure: the file is not going to exist on the node, and
-    // the reply the tool wrote already says what happened to it.
-    if (row.outcome === 'abandoned') continue
-    mapping.set(item.ref.path, item.nodePath)
-    // The node has it (done, or only the wake is owed — the worker's).
-    if (row.outcome === 'done' || row.phase === 'uploaded' || row.phase === 'notifying') continue
-    // Being delivered by someone else, or already the worker's — an upload in
-    // progress, a queued one, a commit in flight. Joining them IS the action.
-    if (row.phase !== 'sealed' || isHolderAlive(row.holder)) {
-      deferred.push(item.nodePath)
-      leftForWorker = true
-      continue
-    }
-    // Ours to push, if the budget allows. Claimed before any await.
-    const holder = mintHolder()
-    const claimed = claimDelivery(row.deliveryId, { holder: row.holder, epoch: row.epoch }, holder)
-    if (!claimed.ok) {
-      retireHolder(holder)
-      deferred.push(item.nodePath)
-      leftForWorker = true
-      continue
-    }
-    // The handle moves as the phase does; the failure path has to record
-    // against the epoch actually reached, or it records nothing.
-    const cursor: PushCursor = { handle: claimed.handle, committing: false }
-    try {
-      const estimateMs = item.size / rate
-      if (estimateMs > expiresAt - now() - CLAIM_BUDGET_MARGIN_MS && deps.renewClaim) {
-        // Buying time beats handing the agent an ENOENT it has to wait out.
-        try {
-          const ask = Math.min(MAX_CLAIM_RENEWAL_MS, Math.ceil(estimateMs * RENEWAL_SLACK) + CLAIM_BUDGET_MARGIN_MS)
-          // Bounded by the claim we still hold: a renewal that never answers
-          // would otherwise be waited out past the very claim it was protecting.
-          expiresAt = await within(expiresAt - now() - CLAIM_BUDGET_MARGIN_MS, deps.signal, () => deps.renewClaim!(ask))
-        } catch (err) {
-          deps.log?.warn('[host-action] claim renewal refused, deferring', item.relativePath, err instanceof Error ? err.message : String(err))
-        }
-        throwIfAborted(deps.signal)
-      }
-      const budgetMs = expiresAt - now() - CLAIM_BUDGET_MARGIN_MS
-      if (estimateMs > budgetMs) {
-        // Not attempted: queued for the worker, still complete, still protected.
-        const queued = advanceDelivery(cursor.handle, { from: 'sealed', to: 'queued' })
-        if (queued.ok) releaseDelivery(queued.handle)
-        deferred.push(item.nodePath)
-        leftForWorker = true
-        continue
-      }
-      const started = advanceDelivery(cursor.handle, { from: 'sealed', to: 'uploading' })
-      if (!started.ok) throw new LostDelivery()
-      cursor.handle = started.handle
-      // The upload gets the budget as a hard stop of its own: an estimate is
-      // not a guarantee, and running past the claim loses the reply as well.
-      // The transfer keeps its id when the budget cuts it off, so the worker
-      // resumes the partial upload rather than starting a second one.
-      await within(budgetMs, deps.signal, (budgetSignal) => pushDelivery(row, cursor, budgetSignal, deps))
-      // For an eager push the reply is the wake: the agent reads the rewritten
-      // path in the same turn. Done, under this holder. The cursor tracks the
-      // notifying handle so a completeDelivery that throws records against the
-      // epoch actually reached — as an ordinary retry, the bytes being on the
-      // node already (E090-2).
-      const notifying = advanceDelivery(cursor.handle, { from: 'uploaded', to: 'notifying' })
-      if (!notifying.ok) throw new LostDelivery()
-      cursor.handle = notifying.handle
-      if (!completeDelivery(cursor.handle)) throw new LostDelivery()
-    } catch (err) {
-      if (err instanceof LostDelivery) {
-        deferred.push(item.nodePath)
-        continue
-      }
-      // The tool already did its work; a failed push must not fail the action.
-      // The row keeps the phase it reached and the worker takes it from there:
-      // `uploading` with its offset is resumed; a wake that failed after the
-      // commit was confirmed retries the wake (cursor.committing was cleared at
-      // `uploaded`); only a final put still in flight — `committing` — is
-      // unknowable from here and stops (§6). The agent is told it is not there yet.
-      const message = err instanceof Error ? err.message : String(err)
-      recordDeliveryFailure(cursor.handle, { error: cursor.committing ? `commit unverified: ${message}` : message, nextAttemptAt: cursor.committing ? null : now() })
-      if (cursor.committing) {
-        // Final put in flight and unconfirmed: the worker will not touch it, so
-        // do not wake one, and tell the agent it stopped rather than promise a
-        // completion notice that will never come.
-        stopped.push(item.nodePath)
-      } else {
-        deferred.push(item.nodePath)
-        leftForWorker = true
-      }
-      // The action was cancelled, not the push: the row already records where
-      // it got to (§6), and the failure surfaced as the action's abort.
+  try {
+    for (const item of planned) {
+      // A cancel that landed during the previous item's push: nothing further
+      // is claimed, so the rest stays `sealed` and unheld for the worker.
       throwIfAborted(deps.signal)
-      deps.log?.warn('[host-action] eager artifact push failed', item.relativePath, message)
-    } finally {
-      retireHolder(holder)
+      const row = item.delivery
+      // The live handle this call is still holding for the row, if any: the row
+      // is then `sealed` with our holder, ours to push under it.
+      const mine = held.get(row.deliveryId)
+      const ours = mine != null && row.holder === mine.holder && row.epoch === mine.epoch
+      // The producer's failure: the file is not going to exist on the node, and
+      // the reply the tool wrote already says what happened to it.
+      if (row.outcome === 'abandoned') continue
+      mapping.set(item.ref.path, item.nodePath)
+      // The node has it (done, or only the wake is owed — the worker's).
+      if (row.outcome === 'done' || row.phase === 'uploaded' || row.phase === 'notifying') continue
+      // Stopped, not on its way: a `committing` row's final put was sent and
+      // never confirmed (§6), and a row that gave up sits until a person acts —
+      // no worker will carry either (`retryGivenUp` excludes committing). Even
+      // observed again, it stays `stopped`: a deferred wake would promise a
+      // completion notice nothing sends (E090-3).
+      if (row.phase === 'committing' || row.gaveUpAt != null) {
+        stopped.push(item.nodePath)
+        continue
+      }
+      // Being delivered by someone else, or already the worker's — an upload in
+      // progress, a queued one. Joining them IS the action. A live holder that
+      // is OURS is not someone else: it is the grip we kept across the scope
+      // end, and this is the push it was kept for (E090-4).
+      if (row.phase !== 'sealed' || (isHolderAlive(row.holder) && !ours)) {
+        deferred.push(item.nodePath)
+        leftForWorker = true
+        continue
+      }
+      // Ours to push, if the budget allows. If we still hold it from the call,
+      // push under that live handle — no fresh claim, so the worker never had a
+      // sealed, unheld row to race (E090-4). Otherwise (a row sealed outside any
+      // call that reached here) claim it before any await.
+      let holder: string
+      let handle: DeliveryHandle
+      if (ours) {
+        holder = mine!.holder
+        handle = mine!
+        consumed.add(row.deliveryId)
+      } else {
+        holder = mintHolder()
+        const claimed = claimDelivery(row.deliveryId, { holder: row.holder, epoch: row.epoch }, holder)
+        if (!claimed.ok) {
+          retireHolder(holder)
+          deferred.push(item.nodePath)
+          leftForWorker = true
+          continue
+        }
+        handle = claimed.handle
+      }
+      // The handle moves as the phase does; the failure path has to record
+      // against the epoch actually reached, or it records nothing.
+      const cursor: PushCursor = { handle, committing: false }
+      try {
+        const estimateMs = item.size / rate
+        if (estimateMs > expiresAt - now() - CLAIM_BUDGET_MARGIN_MS && deps.renewClaim) {
+          // Buying time beats handing the agent an ENOENT it has to wait out.
+          try {
+            const ask = Math.min(MAX_CLAIM_RENEWAL_MS, Math.ceil(estimateMs * RENEWAL_SLACK) + CLAIM_BUDGET_MARGIN_MS)
+            // Bounded by the claim we still hold: a renewal that never answers
+            // would otherwise be waited out past the very claim it was protecting.
+            expiresAt = await within(expiresAt - now() - CLAIM_BUDGET_MARGIN_MS, deps.signal, () => deps.renewClaim!(ask))
+          } catch (err) {
+            deps.log?.warn('[host-action] claim renewal refused, deferring', item.relativePath, err instanceof Error ? err.message : String(err))
+          }
+          throwIfAborted(deps.signal)
+        }
+        const budgetMs = expiresAt - now() - CLAIM_BUDGET_MARGIN_MS
+        if (estimateMs > budgetMs) {
+          // Not attempted: queued for the worker, still complete, still protected.
+          const queued = advanceDelivery(cursor.handle, { from: 'sealed', to: 'queued' })
+          if (queued.ok) releaseDelivery(queued.handle)
+          deferred.push(item.nodePath)
+          leftForWorker = true
+          continue
+        }
+        const started = advanceDelivery(cursor.handle, { from: 'sealed', to: 'uploading' })
+        if (!started.ok) throw new LostDelivery()
+        cursor.handle = started.handle
+        // The upload gets the budget as a hard stop of its own: an estimate is
+        // not a guarantee, and running past the claim loses the reply as well.
+        // The transfer keeps its id when the budget cuts it off, so the worker
+        // resumes the partial upload rather than starting a second one.
+        await within(budgetMs, deps.signal, (budgetSignal) => pushDelivery(row, cursor, budgetSignal, deps))
+        // For an eager push the reply is the wake: the agent reads the rewritten
+        // path in the same turn. Done, under this holder. The cursor tracks the
+        // notifying handle so a completeDelivery that throws records against the
+        // epoch actually reached — as an ordinary retry, the bytes being on the
+        // node already (E090-2).
+        const notifying = advanceDelivery(cursor.handle, { from: 'uploaded', to: 'notifying' })
+        if (!notifying.ok) throw new LostDelivery()
+        cursor.handle = notifying.handle
+        if (!completeDelivery(cursor.handle)) throw new LostDelivery()
+      } catch (err) {
+        if (err instanceof LostDelivery) {
+          deferred.push(item.nodePath)
+          continue
+        }
+        // The tool already did its work; a failed push must not fail the action.
+        // The row keeps the phase it reached and the worker takes it from there:
+        // `uploading` with its offset is resumed; a wake that failed after the
+        // commit was confirmed retries the wake (cursor.committing was cleared at
+        // `uploaded`); only a final put still in flight — `committing` — is
+        // unknowable from here and stops (§6). The agent is told it is not there yet.
+        const message = err instanceof Error ? err.message : String(err)
+        recordDeliveryFailure(cursor.handle, { error: cursor.committing ? `commit unverified: ${message}` : message, nextAttemptAt: cursor.committing ? null : now() })
+        if (cursor.committing) {
+          // Final put in flight and unconfirmed: the worker will not touch it, so
+          // do not wake one, and tell the agent it stopped rather than promise a
+          // completion notice that will never come.
+          stopped.push(item.nodePath)
+        } else {
+          deferred.push(item.nodePath)
+          leftForWorker = true
+        }
+        // The action was cancelled, not the push: the row already records where
+        // it got to (§6), and the failure surfaced as the action's abort.
+        throwIfAborted(deps.signal)
+        deps.log?.warn('[host-action] eager artifact push failed', item.relativePath, message)
+      } finally {
+        retireHolder(holder)
+      }
+      throwIfAborted(deps.signal)
     }
-    throwIfAborted(deps.signal)
+    if (leftForWorker) deps.transfers.wake(deps.connectionId)
+  } finally {
+    // Whatever the loop did not consume — an abort part way through, a ref
+    // filtered before its held handle was used — is released to the worker:
+    // the row stays sealed and unheld for it (E090-4).
+    releaseLeftover()
   }
-  if (leftForWorker) deps.transfers.wake(deps.connectionId)
 
   const content = (reply.content ?? []).map((block) =>
     typeof block.text === 'string' ? { ...block, text: rewriteArtifactPaths(block.text, mapping) } : block,

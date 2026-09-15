@@ -20,7 +20,7 @@
  */
 import { AsyncLocalStorage, AsyncResource } from 'node:async_hooks'
 import { retireHolder } from '../environment/delivery-holders'
-import { releaseDelivery, type DeliveryHandle } from '../db-session-deliveries'
+import { abandonDelivery, releaseDelivery, type DeliveryHandle } from '../db-session-deliveries'
 import { randomUUID } from 'node:crypto'
 import log from '../logger'
 import type { ArtifactProducer } from '../media-output-paths'
@@ -48,9 +48,11 @@ interface Scope {
   /**
    * Deliveries this call sealed and is still holding. Kept alive so the worker
    * cannot take a produced file before the reply-selection decides whether the
-   * agent will read it (E090-4). Released — holder set to null — when the scope
-   * ends, after which the decision (push a mentioned ref, abandon an unmentioned
-   * one) runs against an unheld row.
+   * agent will read it (E090-4). They are NOT released when the scope ends —
+   * that would open a window for the worker between the scope end and the
+   * selection; instead `takeHeldDeliveries` hands the live handles to whoever
+   * drains the scope, which pushes a mentioned ref under the same handle,
+   * abandons an unmentioned one, and releases the rest.
    */
   heldDeliveries: Map<string, DeliveryHandle>
   /**
@@ -153,6 +155,9 @@ export async function runInLocalCallScope<T>(sessionId: string, run: () => Promi
   try {
     return await collectArtifacts(sessionId, callId, run)
   } finally {
+    // A local call has no reply-selection to hand held rows to; release any to
+    // the worker (there normally are none — a local session's seal takes no row).
+    releaseHeldDeliveries(takeHeldDeliveries(sessionId, callId))
     takeArtifacts(sessionId, callId)
   }
 }
@@ -170,18 +175,19 @@ export async function collectArtifacts<T>(
     return await current.run(scope, run)
   } finally {
     scope.ended = true
-    // Release the call's grip on everything it sealed: the rows go back to
-    // holder = null, which is what the reply-selection that runs next
-    // (`syncHostActionOutputs`) claims for a mentioned ref or abandons for an
-    // unmentioned one — with no window in which the worker could take an
-    // undecided file (E090-4).
-    for (const handle of scope.heldDeliveries.values()) {
-      try { releaseDelivery(handle) } catch (err) { log.warn('[artifact-registry] could not release a held delivery at scope end', err) } finally { retireHolder(handle.holder) }
-    }
-    scope.heldDeliveries.clear()
-    // The scope stays registered until `takeArtifacts` reads it, so a caller that
-    // awaits the tool result and then takes is never racing the `finally`.
-    if (scope.refs.size === 0) scopes.delete(callId)
+    // The rows this call sealed stay HELD — a live holder — they are NOT
+    // released here. Releasing them at scope end would open a window in which
+    // the transfer worker, woken for another task between this `finally` and the
+    // reply-selection, could claim a produced file before the selection decides
+    // whether the agent will read it (E090-4). Ownership passes to whoever
+    // drains the scope: `takeHeldDeliveries`. The Host Action's reply-selection
+    // keeps a mentioned file held through its own push and releases or abandons
+    // the rest; a call that threw abandons them (`abandonHeldDeliveries`).
+    // `scope.ended` stops a detached task (a backgrounded download that seals
+    // after the reply) from being held against a scope no selection will read.
+    // The scope stays registered until it is drained, so a caller that awaits
+    // the tool result and then takes is never racing this `finally`.
+    if (scope.refs.size === 0 && scope.heldDeliveries.size === 0) scopes.delete(callId)
   }
 }
 
@@ -189,8 +195,41 @@ export async function collectArtifacts<T>(
 export function takeArtifacts(sessionId: string, callId: string): ArtifactRef[] {
   const scope = scopes.get(callId)
   if (!scope || scope.sessionId !== sessionId) return []
-  scopes.delete(callId)
-  return [...scope.refs.values()]
+  // Keep the scope alive if it is still holding deliveries no one has taken, so
+  // those handles are not silently dropped when only the refs are drained.
+  if (scope.heldDeliveries.size === 0) scopes.delete(callId)
+  const refs = [...scope.refs.values()]
+  scope.refs.clear()
+  return refs
+}
+
+/**
+ * Take the deliveries a call is still holding, handing their live holders to
+ * the caller (E090-4). The caller now owns each one: deliver it, release it to
+ * the worker, or abandon it — but it must account for every handle, because
+ * nothing will release them otherwise.
+ */
+export function takeHeldDeliveries(sessionId: string, callId: string): DeliveryHandle[] {
+  const scope = scopes.get(callId)
+  if (!scope || scope.sessionId !== sessionId) return []
+  const held = [...scope.heldDeliveries.values()]
+  scope.heldDeliveries.clear()
+  if (scope.refs.size === 0) scopes.delete(callId)
+  return held
+}
+
+/** Abandon each held delivery and retire its holder — for a call that threw, or one whose file nothing downstream will deliver. */
+export function abandonHeldDeliveries(handles: Iterable<DeliveryHandle>): void {
+  for (const handle of handles) {
+    try { abandonDelivery(handle) } catch (err) { log.warn('[artifact-registry] could not abandon a held delivery', err) } finally { retireHolder(handle.holder) }
+  }
+}
+
+/** Release each held delivery to the worker (holder → null, phase kept) and retire its holder — for a leftover the reply-selection did not reach. */
+export function releaseHeldDeliveries(handles: Iterable<DeliveryHandle>): void {
+  for (const handle of handles) {
+    try { releaseDelivery(handle) } catch (err) { log.warn('[artifact-registry] could not release a held delivery', err) } finally { retireHolder(handle.holder) }
+  }
 }
 
 /** Tests only. */

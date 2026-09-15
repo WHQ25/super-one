@@ -6,7 +6,8 @@ import { onTerminalThemeChange } from '@/components/coding/terminal-theme'
 import { applyTerminalAppearance, SEARCH_DECORATIONS } from '@/components/coding/term-instance'
 import { TerminalFindBar } from '@/components/coding/TerminalFindBar'
 import { createTerminalKeyEventHandler } from '@/components/coding/terminal-keybindings'
-import { ensureActivityTermInstance, feedActivityTerminal, getActivityTermInstance } from './activity-terminal'
+import { TerminalAgentBanner } from '@/components/coding/TerminalAgentBanner'
+import { ensureActivityTermInstance, feedActivityTerminal, getActivityTermInstance, useTerminalAgentControl } from './activity-terminal'
 
 interface Props {
   terminalId: string
@@ -15,6 +16,7 @@ interface Props {
 
 export function ActivityTerminalPanel({ terminalId, api }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
+  const agentControl = useTerminalAgentControl(terminalId)
   const addUserSelection = useChatStore((s) => s.addUserSelection)
   const [menu, setMenu] = useState<{ x: number; y: number; text: string } | null>(null)
   const [find, setFind] = useState<string | null>(null)
@@ -142,10 +144,10 @@ export function ActivityTerminalPanel({ terminalId, api }: Props) {
   }, [terminalId, api])
 
   return (
-    <div className="relative h-full">
+    <div className="relative flex h-full flex-col">
       <div
         ref={hostRef}
-        className="h-full overflow-hidden p-1"
+        className="min-h-0 flex-1 overflow-hidden p-1"
         onContextMenu={(e) => {
           const sel = getActivityTermInstance(terminalId)?.xterm.getSelection().trim()
           if (!sel) return
@@ -153,6 +155,7 @@ export function ActivityTerminalPanel({ terminalId, api }: Props) {
           setMenu({ x: e.clientX, y: e.clientY, text: sel })
         }}
       />
+      {agentControl && <TerminalAgentBanner command={agentControl.command} />}
       {find !== null && (
         <TerminalFindBar
           value={find}

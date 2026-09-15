@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Terminal as TerminalIcon, Plus, PanelBottomClose, Smartphone } from 'lucide-react'
+import { Terminal as TerminalIcon, Plus, PanelBottomClose, Smartphone, Bot } from 'lucide-react'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
@@ -16,6 +16,7 @@ import { EMPTY_TABS, useTerminalStore } from '@/stores/terminal'
 import { useTerminalPanel } from '@/hooks/useTerminalPanel'
 import { tabBelongsToProject } from '@/hooks/useTerminalSync'
 import { TerminalRemoteBanner } from './TerminalRemoteBanner'
+import { TerminalAgentBanner } from './TerminalAgentBanner'
 import { HoverCloseSlot } from '@/components/activity/ActivityTab'
 import { SelectionMenu } from '@/components/chat/SelectionContextMenu'
 
@@ -54,7 +55,9 @@ function SortableTerminalTab({
       <HoverCloseSlot onClose={onClose}>
         {tab.ownerDeviceId
           ? <Smartphone className="size-3 shrink-0" />
-          : <TerminalIcon className="size-3 shrink-0" />}
+          : tab.agentControl
+            ? <Bot className="size-3 shrink-0" />
+            : <TerminalIcon className="size-3 shrink-0" />}
       </HoverCloseSlot>
       <span className="max-w-40 truncate text-xs">{tab.title}</span>
     </div>
@@ -69,6 +72,7 @@ export function TerminalPanel() {
   const instances = useTerminalStore((s) => s.instances)
   const tabs = useTerminalStore((s) => (projectPath ? s.byProject[projectPath]?.tabs : null) ?? EMPTY_TABS)
   const activeId = useTerminalStore((s) => (projectPath ? s.byProject[projectPath]?.activeId : null) ?? null)
+  const activeTab = tabs.find((tab) => tab.terminalId === activeId)
   const upsertTab = useTerminalStore((s) => s.upsertTab)
   const removeTab = useTerminalStore((s) => s.removeTab)
   const setActive = useTerminalStore((s) => s.setActive)
@@ -351,8 +355,10 @@ export function TerminalPanel() {
               inputRef={findInputRef}
             />
           )}
-          {tabs.find((tab) => tab.terminalId === activeId)?.ownerDeviceId ? (
+          {activeTab?.ownerDeviceId ? (
             <TerminalRemoteBanner onDisconnect={() => { if (activeId) void window.terminal.claim(activeId) }} />
+          ) : activeTab?.agentControl ? (
+            <TerminalAgentBanner command={activeTab.agentControl.command} />
           ) : null}
         </div>
       )}

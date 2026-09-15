@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { IDockviewPanelHeaderProps } from 'dockview-core'
-import { Bug, Globe, Maximize, MessageCirclePlus, RotateCw, Route, Shrink, Smartphone, Terminal as TerminalIcon, X } from 'lucide-react'
+import { Bot, Bug, Globe, Maximize, MessageCirclePlus, RotateCw, Route, Shrink, Smartphone, Terminal as TerminalIcon, X } from 'lucide-react'
 import { motion } from 'motion/react'
 import { cn } from '@superone/ui/lib/utils'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
@@ -13,6 +13,7 @@ import { BrowserFavicon } from '@/components/browser/BrowserFavicon'
 import { useDeviceTabActions } from '@/components/device/device-tab-actions'
 import { deviceFamilyIcon } from '@/components/device/device-icons'
 import { closeActivityTerminalTab, closeBrowserTab, closeDeviceTab, closeTrajectoryTab, toggleMaximizedActivityGroup } from './activity-panel-api'
+import { useTerminalAgentControl } from './activity-terminal'
 import { requestCloseSideChat } from '@/lib/side-chat-actions'
 
 function useIsActive(api: IDockviewPanelHeaderProps['api']) {
@@ -240,10 +241,11 @@ export function BrowserTab(props: IDockviewPanelHeaderProps<{ browserId: string 
 export function TerminalTab(props: IDockviewPanelHeaderProps<{ terminalId: string }>) {
   const active = useIsActive(props.api)
   const title = usePanelTitle(props.api)
+  const agentControl = useTerminalAgentControl(props.params.terminalId)
   return (
     <div className={tabChipClass(active)}>
       <HoverCloseSlot onClose={() => closeActivityTerminalTab(props.params.terminalId)}>
-        <TerminalIcon className="size-3.5 shrink-0" />
+        {agentControl ? <Bot className="size-3.5 shrink-0" /> : <TerminalIcon className="size-3.5 shrink-0" />}
       </HoverCloseSlot>
       <TabTitle>{title || 'Terminal'}</TabTitle>
       <MaximizeTabAction api={props.api} active={active} />

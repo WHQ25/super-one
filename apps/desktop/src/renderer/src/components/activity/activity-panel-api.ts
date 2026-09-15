@@ -539,6 +539,16 @@ export function materializeOwnedBrowserTabs(sessionId: string) {
 export async function openTerminalTab(projectPath: string, sessionId?: string) {
   ensureVisible()
   const item = await window.terminal.create({ projectPath, sessionId })
+  revealTerminalTabInActivity(item)
+}
+
+/**
+ * Show an existing PTY as an activity-panel tab (agent-opened terminals arrive
+ * this way: main spawns them, `terminal_created` reveals them here so the user
+ * watches the agent work in the same dock as its browser tabs).
+ */
+export function revealTerminalTabInActivity(item: { terminalId: string; title?: string }) {
+  ensureVisible()
   const panelId = `terminal-${item.terminalId}`
   execOrDefer(() => {
     if (!dockApi) return

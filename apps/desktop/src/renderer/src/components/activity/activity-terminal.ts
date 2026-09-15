@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react'
+import type { TerminalAgentControl } from '@superone/shared/agent-types'
 import type { TermInstance } from '@/stores/terminal'
 import { applyTerminalEvent, createBaseXterm, disposeTermInstance } from '@/components/coding/term-instance'
 
@@ -35,4 +37,27 @@ export function disposeActivityTermInstance(terminalId: string): void {
   if (!inst) return
   disposeTermInstance(inst)
   activityInstances.delete(terminalId)
+}
+
+/**
+ * Whether an agent currently drives this tab's command. Seeds from the PTY list
+ * (the tab may mount after the grant) and then follows `terminal_control_changed`.
+ */
+export function useTerminalAgentControl(terminalId: string): TerminalAgentControl | null {
+  const [control, setControl] = useState<TerminalAgentControl | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    void window.terminal.list().then((items) => {
+      if (cancelled) return
+      setControl(items.find((item) => item.terminalId === terminalId)?.agentControl ?? null)
+    })
+    const off = window.terminal.onTerminalEvent((event) => {
+      if (event.type === 'terminal_control_changed' && event.terminalId === terminalId) setControl(event.control)
+    })
+    return () => {
+      cancelled = true
+      off()
+    }
+  }, [terminalId])
+  return control
 }

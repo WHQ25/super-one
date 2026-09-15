@@ -3,7 +3,7 @@ import type { Terminal as XTerm } from '@xterm/xterm'
 import type { FitAddon } from '@xterm/addon-fit'
 import type { SearchAddon } from '@xterm/addon-search'
 import type { WebglAddon } from '@xterm/addon-webgl'
-import type { TerminalListItem } from '@superone/shared/agent-types'
+import type { TerminalAgentControl, TerminalListItem } from '@superone/shared/agent-types'
 
 export const NO_SESSION_KEY = '__no_session__'
 
@@ -33,6 +33,7 @@ interface TerminalStore {
   setActive: (projectPath: string, terminalId: string) => void
   renameTab: (terminalId: string, title: string) => void
   setTabOwner: (terminalId: string, ownerDeviceId: string | null) => void
+  setTabControl: (terminalId: string, control: TerminalAgentControl | null) => void
   reorderTabs: (projectPath: string, fromId: string, toId: string) => void
 }
 
@@ -121,6 +122,19 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
         if (pt.tabs[idx].ownerDeviceId === ownerDeviceId) return s
         const tabs = pt.tabs.slice()
         tabs[idx] = { ...tabs[idx], ownerDeviceId }
+        return { byProject: { ...s.byProject, [path]: { ...pt, tabs } } }
+      }
+      return s
+    }),
+
+  setTabControl: (terminalId, control) =>
+    set((s) => {
+      for (const [path, pt] of Object.entries(s.byProject)) {
+        const idx = pt.tabs.findIndex((t) => t.terminalId === terminalId)
+        if (idx === -1) continue
+        if ((pt.tabs[idx].agentControl ?? null) === control) return s
+        const tabs = pt.tabs.slice()
+        tabs[idx] = { ...tabs[idx], agentControl: control }
         return { byProject: { ...s.byProject, [path]: { ...pt, tabs } } }
       }
       return s

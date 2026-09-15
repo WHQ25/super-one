@@ -103,6 +103,9 @@ vi.mock('../browser/browser-cdp-perf', () => ({
 }))
 const electron = vi.hoisted(() => ({ userData: '' }))
 vi.mock('electron', () => ({ app: { getPath: () => electron.userData } }))
+// The mirror asks the delivery record before it writes a zone file; a table that
+// cannot be read protects everything (R5), which would refuse every upload below.
+vi.mock('../database', async () => (await import('../../test/fixtures/delivery-db')).deliveryDatabase())
 
 import { decode as toonDecode } from '@toon-format/toon'
 import {
@@ -134,6 +137,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { cdpSetFileInput } from '../browser/browser-cdp'
+import { resetDeliveryDatabase } from '../../test/fixtures/delivery-db'
 import { resolveWebmcpTrustConfirm } from './browser-webmcp-confirm'
 import { BROWSER_TOOLS_CALL_SUMMARY_DESCRIPTION } from './browser-webmcp-tool-defs'
 
@@ -856,6 +860,7 @@ describe('browser_download', () => {
   })
 
   afterEach(() => {
+    resetDeliveryDatabase()
     rmSync(electron.userData, { recursive: true, force: true })
   })
 

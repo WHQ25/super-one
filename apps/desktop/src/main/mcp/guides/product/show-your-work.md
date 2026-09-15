@@ -1,10 +1,8 @@
 # Show your work
 
-When you verify something the user cannot see from their chair — a screen on a
-simulator, a page in the embedded browser, a window under computer use — the
-verification is only as good as what you show of it. "Confirmed on the
-simulator" is a claim. A screenshot of the simulator is evidence. This chapter is
-how to turn the second into the default.
+Use captures when the user requested them or they support a visual claim.
+Ordinary content extraction needs no screenshot in the reply. Reuse suitable
+inspection captures and show only the evidence needed to assess the result.
 
 Everything here uses tools you already have. Each returns an absolute file
 path; the field depends on the tool:

@@ -1,6 +1,6 @@
 # Adding a New Harness — Phased Roadmap
 
-Read `SKILL.md` first — Claude / Codex / Grok are the completeness bar, and host SuperOne
+Read [integration.md](integration.md) first — Claude / Codex / Grok are the completeness bar, and host SuperOne
 tools are required at P2. This file is the ordered file list; `experiences.md` is the
 per-feature detail you pull in during P3–P4.
 
@@ -48,7 +48,7 @@ Do this in one commit and let type errors drive you. Start with `HarnessResource
 | `packages/shared/src/session-provider-definitions.ts` | base `SessionProvider` entry; its exhaustive `Record<HarnessId, …>` must stay compiler-complete |
 | `packages/shared/src/harness/harness-capabilities.ts` | entry in `HARNESS_CAPABILITIES` — **all false** except `displayName` until each is actually wired |
 | `packages/shared/src/harness/harness-brand.ts` | `HARNESS_DEFAULT_BRAND_HUE` + `HARNESS_DEFAULT_TOKENS` entries |
-| `packages/shared/src/agent-types.ts` | **`AppSettings['agentPreference'].<harness>` slot** — `BrandOnlyAgentPreference` when the harness stores nothing else — plus the matching optional key on `SaveAppSettings`. Every harness needs one; see the trap in `SKILL.md` |
+| `packages/shared/src/agent-types.ts` | **`AppSettings['agentPreference'].<harness>` slot** — `BrandOnlyAgentPreference` when the harness stores nothing else — plus the matching optional key on `SaveAppSettings`. Every harness needs one; see the trap in [integration.md](integration.md) |
 | `apps/desktop/src/main/session/harness-registry.ts` | config zod schema + `Harness` object + registry map entry |
 | `apps/desktop/src/main/session/backends/xxx-backend.ts` | `SessionBackend` skeleton — required members only, throw/no-op bodies |
 | `apps/desktop/src/main/session/backends/xxx-fork.ts` | `forkTranscript` stub (can throw "not supported" initially) |
@@ -115,7 +115,7 @@ If the provider has no native permission protocol, decide deliberately whether t
 to report `supportsPlanMode: false` — a fake approval prompt that doesn't actually gate the tool call
 is worse than no prompt.
 
-Host SuperOne tools (inject + admit + ToolBlock map) follow the three recipes in `SKILL.md`
+Host SuperOne tools (inject + admit + ToolBlock map) follow the three recipes in [integration.md](integration.md)
 **Host SuperOne tools**. Copy Claude, Codex, or Grok — not a later harness.
 
 **Acceptance:** a provider tool call triggers the permission popover (approve continues, deny
@@ -141,7 +141,7 @@ fallback for either surface.
 
 Flip `HARNESS_CAPABILITIES` flags to `true` **as each one lands**, not up front.
 
-**Acceptance:** walk the chat bar left to right against the required list in `SKILL.md`
+**Acceptance:** walk the chat bar left to right against the required list in [integration.md](integration.md)
 (Completeness standard). Nothing missing, inert, or showing another harness's vocabulary.
 Sandbox/todos/subagents may be explicitly off, as Codex and Grok already are.
 

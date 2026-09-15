@@ -1,6 +1,6 @@
 ---
 name: release
-description: "Automate SuperOne releases. Desktop: version bump, CHANGELOG, per-platform build, CLI npm publish, harness R2 mirror, promote, publish, set-latest — /release desktop [alpha|stable] [major|feature|patch|build] (the desktop word is optional). Mobile: /release mobile ota for a JS-only EAS Update, /release mobile [major|feature|patch|build] for a native APK / TestFlight build. Use this skill whenever the user wants to release, publish, ship, deploy, hot-update or OTA any part of the app."
+description: Release SuperOne desktop builds or mobile native/OTA updates using the repository release workflows.
 arguments: "[desktop|mobile] [alpha|stable|ota] [major|feature|patch|build]"
 argument-hint: "desktop [alpha|stable] [major|feature|patch|build] | mobile ota | mobile [major|feature|patch|build]"
 compatibility: "Requires git, gh, bun, npm, curl, jq, GitHub Actions access, an EAS login for mobile, and network approval for GitHub, npm, expo.dev and dl.super-one.dev."
@@ -78,8 +78,8 @@ motivated it) is in `references/desktop.md`.
   user edits inline.
 - **Network approval**: every `gh …`, `eas …`, `npm view`, and verification
   `curl` talks to `api.github.com`, `expo.dev`, `registry.npmjs.org` or
-  `dl.super-one.dev`. Use the environment's approved escalation from the start
-  rather than waiting for a sandbox denial.
+  `dl.super-one.dev`, none of which the sandbox allows. Use the environment's
+  approved escalation from the start rather than waiting for a sandbox denial.
 - **Monitor in the foreground** with `gh run watch <id> --exit-status`; do not
   poll from a sandboxed loop, and do not verify artifacts one `curl` at a time
   when a manifest already lists them.

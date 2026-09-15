@@ -214,8 +214,8 @@ Notes:
 
 ## 2. Description + JSON-Schema descriptor
 
-`apps/desktop/src/main/mcp/superone-mcp-builtin-defs.ts` — descriptions are exported consts so tests
-and the host-action mirror can reference the same string.
+Export description constants from `packages/shared/src/superone-tool-descriptions.ts`.
+Import them in desktop `superone-mcp-builtin-defs.ts` and the remote descriptor family.
 
 ```ts
 export const NOTE_PIN_DESCRIPTION =
@@ -321,11 +321,11 @@ For a heavy dependency, register lazily so it stays off the startup path — the
 
 ## 5. Remote-node descriptor
 
-`packages/shared/src/environment/host-action-superone-descriptors.ts` is the tool surface a **remote
-node** (the `superone` CLI) advertises for host-delegated tools. Its header says "regenerate when the
-SuperOne MCP tool surface changes"; in practice you append the same JSON descriptor as step 2, with
-the description string copied **verbatim** — the drift tests compare with `toEqual`, so a reworded
-copy fails.
+`packages/shared/src/environment/host-action-superone-descriptors.ts` composes
+family modules (`host-action-archive-descriptors.ts`, `host-action-media-descriptors.ts`,
+etc.) for remote Host Actions. Add the matching JSON schema to the relevant family
+and import its description from `../superone-tool-descriptions`. Preserve catalog
+order. The parity test compares both descriptions and schemas with the desktop.
 
 Only add the tool here if it makes sense on a remote node. A tool that manipulates desktop-only UI
 state does not; one that reads session data does.
@@ -501,11 +501,12 @@ Manuals are the main **progressive-load** path for knowledge (not for side-effec
 that does not fit the 700-char description goes to a topic instead of a bigger always-on schema:
 
 1. Write `apps/desktop/src/main/mcp/guides/<domain>/<topic>.md`.
-2. Add the topic to the domain list in `superone-mcp-builtin-defs.ts`
+2. Add the topic to the domain list in `manual-tool-defs.ts` and map its content in `manual-tools.ts`
    (`PRODUCT_GUIDE_TOPICS`, `MINIAPP_GUIDE_TOPICS`, `MEDIA_GUIDE_TOPICS`, …).
-3. Mention it in `MANUAL_READ_DESCRIPTION` **only** if the model needs to know it exists before it has
-   a reason to look — that string is always in context, so each addition costs every turn.
-4. Point at it from the tool description: `call read_manual({ domain: "x", topic: "y" }) before …`.
+3. Put the reading trigger on the tool whose workflow needs the topic; keep
+   `MANUAL_READ_DESCRIPTION` a catalog entry rather than a growing trigger list.
+4. Say which task or options need that manual. Require a fixed read-before-action
+   sequence only for a real protocol or permission dependency. Reuse loaded guidance.
 
 This is the cheapest way to give a tool a lot of guidance: the words load only when the model decides
 it needs them. Prefer a **topic per concern** over one giant guide so the agent can pull only the

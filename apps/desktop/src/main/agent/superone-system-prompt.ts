@@ -2,7 +2,7 @@ import { SUPERONE_SYSTEM_PROMPT_APPEND } from '@superone/shared/superone-system-
 
 export { SUPERONE_SYSTEM_PROMPT_APPEND }
 
-const CODEX_PLAN_COMPLETION_APPEND = 'Plan hygiene: whenever you track work with the `update_plan` tool, keep its statuses truthful. Mark each step `completed` the moment it is done, and before you end your turn, send a final `update_plan` call that sets every finished step to `completed`. Never finish a turn leaving steps stuck in `pending` or `in_progress` when the underlying work is actually done — the host renders unfinished steps as incomplete to the user.'
+const CODEX_PLAN_COMPLETION_APPEND = 'When using update_plan, mark finished steps completed and keep remaining statuses accurate before ending the turn. SuperOne displays these statuses to the user.'
 
 export const CODEX_SYSTEM_PROMPT_APPEND = `${SUPERONE_SYSTEM_PROMPT_APPEND}\n\n${CODEX_PLAN_COMPLETION_APPEND}`
 

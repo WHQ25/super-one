@@ -28,7 +28,7 @@ Two facts decide which of the two you can use:
   the published one, and App Store Connect rejects a repeated `CFBundleVersion`,
   so a forgotten bump fails loudly rather than shipping.
 
-Read `apps/mobile/CLAUDE.md` → **Native-binary updates** when something below
+Read `apps/mobile/docs/agent-reference/native-builds.md` → **Native-binary updates** when something below
 does not add up; it is the design record.
 
 ---

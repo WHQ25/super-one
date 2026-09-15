@@ -490,4 +490,4 @@ their normal UI, which answers "is the block wrong or is the result wrong" in on
 takes priority over every other branch, including hiding.
 
 If the debug flag never fires on Grok, the chat `toolName` is not the canonical `mcp__superone__…`
-form — fix the event mapper, not the block. Symptom table: `SKILL.md` Step 6.
+form — fix the event mapper, not the block. Symptom table: [diagnostics.md](diagnostics.md).

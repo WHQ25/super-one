@@ -25,13 +25,20 @@ Read `api-host` for the Node context and WebView messaging, `manifest` for entri
 
 ## Development workflow
 
-Before coding, confirm the app requirements, source `directory`, `scope` (`project` or `user`), and whether agent-facing tools are actually needed. Then:
+Use the user's requirements and existing project context. Choose a suitable template
+and a source directory within the current project for project-scoped work. Ask
+only when missing requirements or project-versus-user visibility materially
+change the result; do not reconfirm decisions already supplied.
 
-1. Call `miniapp_dev_setup` to scaffold a `vanilla` or `react` app, or `miniapp_dev_register` for an existing directory.
-2. Implement `manifest.main` and the WebView entry.
-3. Declare tools in `manifest.tools` and register matching handlers from `activate(context)`.
-4. Add WebView permissions only for browser-side APIs that need them.
-5. Build and test the app, then use `miniapp_dev_pack` for distribution.
+Use `miniapp_dev_setup` for new source or `miniapp_dev_register` for an existing
+app. Implement the Host and WebView pieces the requested behavior needs. Add
+agent tools only if the agent needs to invoke that behavior; user-driven UI can
+use Host messaging directly.
+
+Completion means the app builds, is registered for preview, and its requested
+behavior has been checked. Fix failures caused by the implementation before
+handing it back. Package with `miniapp_dev_pack` when distribution is requested.
+Installation trust and API permissions remain enforced by SuperOne.
 
 ## Choosing a template
 

@@ -3,7 +3,7 @@
 Use this when a harness needs to catch up on **one** capability. Find the row, do every cell in it.
 Paths are relative to repo root; `R/` = `apps/desktop/src/renderer/src/`, `M/` = `apps/desktop/src/main/`.
 
-The completeness bar is **Claude / Codex / Grok** (`SKILL.md`). Matrix columns for those three
+The completeness bar is **Claude / Codex / Grok** ([integration.md](integration.md)). Matrix columns for those three
 are the spec; OpenCode / Cursor / dsh are gap audits against that spec, not models to copy.
 
 The support column reflects what was true when this was written — **verify before quoting it**, and
@@ -193,7 +193,7 @@ deep agents' output into the parent. Running-state is decided solely by
 ## 7. MCP
 
 Host SuperOne tools are required at P2 for a complete harness. Injection recipes (Claude SDK
-server / Codex HTTP `mcp_servers.superone` / Grok `session/new`) live in `SKILL.md` — do not
+server / Codex HTTP `mcp_servers.superone` / Grok `session/new`) live in [integration.md](integration.md) — do not
 fork a fourth shape without a reason.
 
 | Cell | File |

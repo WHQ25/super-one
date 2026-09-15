@@ -73,6 +73,10 @@ export const permissionExamples = {
     toolName: 'mcp__superone__device_request_control', allowAlwaysAllow: true,
     input: { device: 'Preview iPhone', platform: 'iOS', description: 'Inspect the current screen and interact with this device during the session.' },
   },
+  terminal_command_confirm: {
+    toolName: 'mcp__superone__terminal_tabs', allowAlwaysAllow: true,
+    input: { action: 'run', command: 'bun run storybook --ci', cwd: '/Users/me/app', rule: 'bun run storybook --ci:*', description: 'Start Storybook to check the new story.' },
+  },
 } satisfies Record<PermissionKind, PermissionExample>
 
 export function permissionRequest(kind: PermissionKind): PermissionRequest {

@@ -110,6 +110,29 @@ describe('remote tool input exemptions', () => {
     ))).toEqual({ description: 'Inspect the window', mode: 'semantic', capture: 'screen' })
   })
 
+  it('keeps the command and key names for terminal tools but never typed text', () => {
+    expect(JSON.parse(sanitizeRemoteToolInput(
+      'mcp__superone__terminal_tabs',
+      JSON.stringify({ action: 'run', command: 'bun run dev', cwd: '/Users/me/secret', size: { cols: 120, rows: 40 } }),
+    ))).toEqual({ action: 'run', command: 'bun run dev' })
+    expect(JSON.parse(sanitizeRemoteToolInput(
+      'mcp__superone__terminal_act',
+      JSON.stringify({
+        tab: 't1',
+        description: 'Answer the prompt',
+        actions: [{ type: 'type', text: 'hunter2' }, { type: 'key', key: 'Ctrl+C', repeat: 2 }, { type: 'raw', bytes: '\x1b' }],
+      }),
+    ))).toEqual({
+      description: 'Answer the prompt',
+      tab: 't1',
+      actions: [{ type: 'type' }, { type: 'key', key: 'Ctrl+C', repeat: 2 }, { type: 'raw' }],
+    })
+    expect(JSON.parse(sanitizeRemoteToolInput(
+      'mcp__superone__terminal_wait_for',
+      JSON.stringify({ tab: 't1', text: 'Local:', idleMs: 500, timeoutMs: 9000 }),
+    ))).toEqual({ tab: 't1', text: 'Local:', idleMs: 500 })
+  })
+
   it('keeps only visible collaboration content', () => {
     expect(JSON.parse(sanitizeRemoteToolInput(
       'mcp__superone__session_collab_send',

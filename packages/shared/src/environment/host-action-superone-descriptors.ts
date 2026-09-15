@@ -12,6 +12,7 @@ import { HOST_ACTION_WIDGET_DESCRIPTORS } from './host-action-widget-descriptors
 import { HOST_ACTION_AUTOMATION_DESCRIPTORS } from './host-action-automation-descriptors'
 import { HOST_ACTION_DEVICE_DESCRIPTORS } from './host-action-device-descriptors'
 import { HOST_ACTION_BROWSER_PERF_DESCRIPTORS } from './host-action-browser-perf-descriptors'
+import { HOST_ACTION_TERMINAL_DESCRIPTORS } from './host-action-terminal-descriptors'
 
 export interface HostActionSuperoneToolDescriptor {
   name: string
@@ -32,6 +33,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
   ...HOST_ACTION_COMPUTER_DESCRIPTORS,
   ...HOST_ACTION_WIDGET_DESCRIPTORS,
   ...HOST_ACTION_AUTOMATION_DESCRIPTORS,
+  ...HOST_ACTION_TERMINAL_DESCRIPTORS,
   ...HOST_ACTION_DEVICE_DESCRIPTORS,
   ...HOST_ACTION_BROWSER_PERF_DESCRIPTORS,
 ]

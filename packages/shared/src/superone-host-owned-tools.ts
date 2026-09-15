@@ -103,6 +103,17 @@ export const DEVICE_AGENT_TOOL_NAMES = [
 ] as const
 
 /**
+ * Interactive terminal tabs (docs/design/terminal-agent-tools.md). Host-owned so every
+ * harness reaches the executor; the per-command approval lives inside `terminal_tabs`.
+ */
+export const TERMINAL_TOOL_NAMES = [
+  'terminal_tabs',
+  'terminal_snapshot',
+  'terminal_act',
+  'terminal_wait_for',
+] as const
+
+/**
  * Bare tool names registered as SuperOne MCP builtins (desktop surface).
  * Keep in sync with tools registered on the SuperOne MCP surface.
  */
@@ -144,6 +155,7 @@ export const BUILT_IN_SUPERONE_TOOL_NAMES = [
   'automation_delete',
   ...BROWSER_TOOL_NAMES,
   ...DEVICE_AGENT_TOOL_NAMES,
+  ...TERMINAL_TOOL_NAMES,
 ] as const
 
 export type BuiltInSuperoneToolName = (typeof BUILT_IN_SUPERONE_TOOL_NAMES)[number]

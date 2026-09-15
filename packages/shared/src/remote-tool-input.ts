@@ -222,6 +222,34 @@ function sanitizeInteractiveInput(toolName: string, input: string): string {
   return Object.keys(safe).length > 0 ? JSON.stringify(safe) : ''
 }
 
+/**
+ * Terminal rows show the approved command and what kind of keys were sent; typed
+ * text (which may be a password answered to a prompt) never leaves the desktop.
+ */
+function sanitizeTerminalInput(toolName: string, input: string): string {
+  const bare = superoneBareName(toolName)
+  if (!bare || !bare.startsWith('terminal_')) return ''
+  if (!input) return ''
+  let parsed: unknown
+  try { parsed = JSON.parse(input) } catch { return '' }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return ''
+  const source = parsed as Record<string, unknown>
+  const safe: Record<string, unknown> = {}
+  copyDefined(source, safe, ['description', 'tab'])
+  if (bare === 'terminal_tabs') copyDefined(source, safe, ['action', 'command', 'title'])
+  else if (bare === 'terminal_snapshot') copyDefined(source, safe, ['include'])
+  else if (bare === 'terminal_wait_for') copyDefined(source, safe, ['text', 'textGone', 'idleMs', 'exited'])
+  else if (bare === 'terminal_act' && Array.isArray(source.actions)) {
+    safe.actions = source.actions.flatMap((action) => {
+      if (!action || typeof action !== 'object' || Array.isArray(action)) return []
+      const a = action as Record<string, unknown>
+      if (typeof a.type !== 'string') return []
+      return [{ type: a.type, ...(a.type === 'key' && typeof a.key === 'string' ? { key: a.key, ...(typeof a.repeat === 'number' ? { repeat: a.repeat } : {}) } : {}) }]
+    })
+  }
+  return Object.keys(safe).length > 0 ? JSON.stringify(safe) : ''
+}
+
 function sanitizeCollabInput(toolName: string, input: string): string {
   const bare = superoneBareName(toolName)
   const requestTools = new Set(['session_collab_request', 'session_request_agents_collab'])
@@ -351,6 +379,7 @@ export function sanitizeRemoteToolInput(toolName: string, input: string): string
     || sanitizeSuperoneRowInput(toolName, input)
     || sanitizeBrowserInput(toolName, input)
     || sanitizeInteractiveInput(toolName, input)
+    || sanitizeTerminalInput(toolName, input)
     || sanitizeCollabInput(toolName, input)
     || sanitizeWorkflowInput(toolName, input)
 }

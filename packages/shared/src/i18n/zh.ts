@@ -8,6 +8,9 @@ export const zh: Messages = {
       terminal: '终端',
       device: '设备',
     },
+    terminal: {
+      agentBanner: '智能体正在操作 {{command}}，你也可以直接输入',
+    },
     device: {
       title: '设备',
       refresh: '刷新',
@@ -604,13 +607,7 @@ export const zh: Messages = {
       body: '当智能体需要你、而你正在别处时，SuperOne 会提醒你。',
     },
     untitledSession: '未命名会话',
-    kind: {
-      permission: { title: '{{session}} 需要授权', body: '正在等待你批准执行 {{tool}}。' },
-      question: { title: '{{session}} 有问题要问你', body: '智能体正在等待你的回答。' },
-      plan: { title: '{{session}} 需要审批计划', body: '计划已生成，等待你确认。' },
-      confirm: { title: '{{session}} 需要你确认' },
-      completed: { title: '{{session}} 已完成', body: '智能体已完成任务，等你回来查看。' },
-    },
+    completed: '已完成',
   },
   settings: {
     layout: {
@@ -1945,6 +1942,14 @@ export const zh: Messages = {
       denyReasonPlaceholder: '拒绝原因（可选，按 Enter 提交）',
       alwaysAllow: '总是允许',
       alwaysAllowDevice: '始终允许',
+      allowOnce: '允许一次',
+      alwaysAllowInProject: '本项目始终允许',
+      terminal: {
+        run: '在终端中运行',
+        attach: '与运行中的命令交互',
+        close: '关闭终端标签页',
+        ruleHint: '“始终允许”同时覆盖本项目中之后匹配 {{rule}} 的命令。',
+      },
       openUrl: '在浏览器中打开',
       copyUrl: '复制链接',
       reopenUrl: '重新打开',
@@ -2596,6 +2601,33 @@ export const zh: Messages = {
           verified: '已满足',
           failed: '未满足',
         },
+      },
+      terminal: {
+        list: { streaming: '正在列出终端', action: '列出终端', done: '已列出终端' },
+        run: { streaming: '正在终端中运行', action: '在终端中运行', done: '命令已启动' },
+        attach: { streaming: '正在接管终端', action: '接管终端', done: '已接管终端' },
+        close: { streaming: '正在关闭终端', action: '关闭终端', done: '终端已关闭' },
+        snapshot: { streaming: '正在读取终端', action: '读取终端', done: '已读取终端' },
+        act: { streaming: '正在发送输入', action: '发送输入', done: '输入已发送' },
+        waitFor: { streaming: '正在等待终端', action: '等待终端', done: '终端已就绪' },
+        tabCount_one: '{{count}} 个标签页',
+        tabCount_other: '{{count}} 个标签页',
+        waitGone: '直到“{{text}}”消失',
+        waitIdle: '静默 {{ms}} 毫秒',
+        waitExited: '直到退出',
+        actions: {
+          typed: '输入“{{text}}”',
+          pressed: '按下 {{key}}',
+          raw: '发送原始字节',
+          resized: '调整为 {{cols}}×{{rows}}',
+          waited: '等待 {{ms}} 毫秒',
+        },
+        reasons: {
+          command_exited: '命令已退出，标签页的控制权已释放。',
+          user_took_over: '你已接管该标签页。',
+          held_by_other_session: '该标签页由其他会话控制。',
+        },
+        revealTab: '在终端面板中显示',
       },
       device: {
         memory: interactionMemoryZh,

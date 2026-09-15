@@ -1051,6 +1051,7 @@ export interface PermissionRequest {
     | 'automation_confirm'
     | 'webmcp_trust_confirm'
     | 'device_control_confirm'
+    | 'terminal_command_confirm'
   serverName?: string
   message?: string
   subtitle?: string
@@ -4377,6 +4378,17 @@ export interface TerminalSnapshot {
   subscriberCount: number
 }
 
+/**
+ * An agent holds a tab only while the command the user approved is its
+ * foreground process (docs/design/terminal-agent-tools.md §5). Cleared when the
+ * command exits or the user takes over.
+ */
+export interface TerminalAgentControl {
+  sessionId: string
+  command: string
+  startedAt: number
+}
+
 export interface TerminalListItem {
   terminalId: string
   cwd: string
@@ -4385,6 +4397,10 @@ export interface TerminalListItem {
   title: string
   status: TerminalStatus
   ownerDeviceId: string | null
+  /** Present while an agent session controls the tab's foreground command. */
+  agentControl?: TerminalAgentControl | null
+  /** Tab opened by an agent — the panel labels it and reveals it on creation. */
+  openedByAgent?: boolean
 }
 
 export type TerminalErrorCode = 'not_owner' | 'no_terminal' | 'spawn_failed' | 'cwd_invalid'
@@ -4402,6 +4418,8 @@ export type TerminalEvent =
   | { type: 'terminal_title_changed'; terminalId: string; title: string }
   /** A PTY appeared — desktop tabs and other phones add it without re-listing. */
   | { type: 'terminal_created'; terminalId: string; item: TerminalListItem }
+  /** Agent control granted (command started) or released (exited / user took over). */
+  | { type: 'terminal_control_changed'; terminalId: string; control: TerminalAgentControl | null; reason: 'granted' | 'command_exited' | 'user_took_over' | 'terminal_exited' }
 
 export interface RemoteEffortOption {
   value: string

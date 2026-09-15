@@ -176,3 +176,27 @@ export const AUTOMATION_DELETE_DESCRIPTION =
   'Permanently delete project automations by id (from automation_list). ' +
   'Always opens a user confirmation dialog. Current project only. Prefer automation_list to choose ids first.'
 
+
+export const TERMINAL_TABS_DESCRIPTION =
+  'Manage terminal tabs in the activity panel for processes that outlive one command or need input: dev servers, watch modes, REPLs, TUIs, ssh, wizards. ' +
+  'One-shot commands (build, test, git) belong in your shell tool. ' +
+  'action=list (default) returns a TOON table: tab / title / cwd / status / foreground / control. ' +
+  'action=run asks the user to approve `command`, types it into a new (or a given idle) tab and returns the screen; you control the tab only while that command is in the foreground. ' +
+  'action=attach asks to control a command already running in a user tab. ' +
+  'action=close kills a tab — never one the user is using. Follow up with terminal_act / terminal_wait_for / terminal_snapshot on the tab id.'
+
+export const TERMINAL_SNAPSHOT_DESCRIPTION =
+  'Read a terminal tab as rendered text. `include` picks sections: screen (visible rows, default), scrollback (last `tail` lines including scrolled-off output), cursor, meta (title, cwd, status, foreground command, control). ' +
+  'Use screen for prompts and full-screen programs, scrollback for server logs. Output over the tail cap is spilled to a file and returned as path + preview. ' +
+  'Prefer this before terminal_act; use terminal_wait_for instead of polling.'
+
+export const TERMINAL_ACT_DESCRIPTION =
+  'Send input to a terminal tab you control. actions is an array, e.g. [{type:"type",text:"yes"}] or [{type:"key",key:"Ctrl+C"}]; types: type (Enter by default), key (Enter, Tab, Escape, Up, Ctrl+C, F1…), raw, resize, wait. ' +
+  'ONE action per call by default; batch 2–20 only for an uninterruptible sequence (answer a wizard). Fail-fast. ' +
+  'expect holds the call open until a screen condition is met (text, textGone, idleMs, exited); the screen after the batch is returned. ' +
+  'Rejected with status=rejected when the approved command has exited or the user took over — do not retry, call terminal_tabs run again or ask. ' +
+  'description is shown to the user instead of raw keystrokes.'
+
+export const TERMINAL_WAIT_FOR_DESCRIPTION =
+  'Block until a terminal tab reaches a state; conditions AND-combine: text (substring visible on screen or in new output), textGone, idleMs (no output for that long), exited (foreground command finished). ' +
+  'Use after terminal_tabs run or terminal_act when output arrives asynchronously (a server banner, a build finishing). timeoutMs default 15000, max 120000. Do not sleep+poll with terminal_snapshot yourself.'

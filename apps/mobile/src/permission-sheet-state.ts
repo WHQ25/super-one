@@ -216,6 +216,29 @@ export function permissionSheetPresentation(request: PermissionRequest): Permiss
         ],
       }
     }
+    case 'terminal_command_confirm': {
+      const action = request.input.action === 'attach' ? 'attach' : request.input.action === 'close' ? 'close' : 'run'
+      const command = String(request.input.command || '')
+      const cwd = typeof request.input.cwd === 'string' ? request.input.cwd : undefined
+      const reason = typeof request.input.description === 'string' ? request.input.description : undefined
+      const rule = typeof request.input.rule === 'string' ? request.input.rule : undefined
+      // Mirrors the desktop prompt: the command is the subject, so it lives in the
+      // item list, and "always" means the cmd:* rule for this project only.
+      return {
+        title: action === 'attach' ? 'Attach to running command?' : action === 'close' ? 'Close terminal tab?' : 'Run in a terminal tab?',
+        description: [
+          reason,
+          action === 'close'
+            ? 'The tab was opened by you; the agent wants to close it.'
+            : 'The agent controls the tab only while this command runs.',
+          rule && request.allowAlwaysAllow ? `Always allow stores the rule ${rule} for this project.` : undefined,
+        ].filter(Boolean).join(' '),
+        approveLabel: 'Allow',
+        alwaysLabel: request.allowAlwaysAllow ? 'Always allow' : undefined,
+        denyLabel: 'Deny',
+        items: [{ title: command, subtitle: cwd || 'Terminal' }],
+      }
+    }
     default:
       return {
         title: `Allow ${genericToolName(request.toolName)}?`,

@@ -6,6 +6,7 @@ const kindIcons: Record<NonNullable<PermissionRequest['requestKind']>, LucideIco
   mcp_elicitation: Plug, video_gen_confirm: Video, config_confirm: Settings2,
   session_agents_confirm: Bot, computer_use_grant: Monitor, session_cleanup_confirm: Trash2,
   automation_confirm: CalendarClock, webmcp_trust_confirm: Globe, device_control_confirm: Smartphone,
+  terminal_command_confirm: Terminal,
 }
 
 export function permissionPromptIcon(request: PermissionRequest): LucideIcon {

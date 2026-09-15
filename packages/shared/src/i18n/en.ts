@@ -20,6 +20,10 @@ export type Messages = {
       terminal: string
       device: string
     }
+    terminal: {
+      /** Status line under an agent-controlled tab: the command it is driving. */
+      agentBanner: string
+    }
     device: {
       title: string
       refresh: string
@@ -563,13 +567,7 @@ export type Messages = {
   notifications: {
     prime: { title: string; body: string }
     untitledSession: string
-    kind: {
-      permission: { title: string; body: string }
-      question: { title: string; body: string }
-      plan: { title: string; body: string }
-      confirm: { title: string }
-      completed: { title: string; body: string }
-    }
+    completed: string
   }
   settings: {
     layout: {
@@ -1843,6 +1841,16 @@ export type Messages = {
       alwaysAllow: string
       /** device_control_confirm only — persists the grant for every session. */
       alwaysAllowDevice: string
+      /** terminal_command_confirm only — one-shot approval of this command. */
+      allowOnce: string
+      /** terminal_command_confirm only — stores a per-project rule for the command. */
+      alwaysAllowInProject: string
+      terminal: {
+        run: string
+        attach: string
+        close: string
+        ruleHint: string
+      }
       openUrl: string
       copyUrl: string
       reopenUrl: string
@@ -2504,6 +2512,33 @@ export type Messages = {
           verified: string
           failed: string
         }
+      }
+      terminal: {
+        list: { streaming: string; action: string; done: string }
+        run: { streaming: string; action: string; done: string }
+        attach: { streaming: string; action: string; done: string }
+        close: { streaming: string; action: string; done: string }
+        snapshot: { streaming: string; action: string; done: string }
+        act: { streaming: string; action: string; done: string }
+        waitFor: { streaming: string; action: string; done: string }
+        tabCount_one: string
+        tabCount_other: string
+        waitGone: string
+        waitIdle: string
+        waitExited: string
+        actions: {
+          typed: string
+          pressed: string
+          raw: string
+          resized: string
+          waited: string
+        }
+        reasons: {
+          command_exited: string
+          user_took_over: string
+          held_by_other_session: string
+        }
+        revealTab: string
       }
       device: {
         memory: typeof interactionMemoryEn
@@ -3649,6 +3684,9 @@ export const en: Messages = {
       terminal: 'Terminal',
       device: 'Device',
     },
+    terminal: {
+      agentBanner: 'Agent is driving {{command}} — you can type here too',
+    },
     device: {
       title: 'Device',
       refresh: 'Refresh',
@@ -4254,13 +4292,7 @@ export const en: Messages = {
       body: "SuperOne will let you know when an agent needs you and you're looking elsewhere.",
     },
     untitledSession: 'Untitled session',
-    kind: {
-      permission: { title: '{{session}} needs permission', body: 'Waiting for approval to run {{tool}}.' },
-      question: { title: '{{session}} has a question', body: 'The agent is waiting for your answer.' },
-      plan: { title: '{{session}} needs plan approval', body: 'A plan is ready for your review.' },
-      confirm: { title: '{{session}} needs your confirmation' },
-      completed: { title: '{{session}} finished', body: 'The agent is done and waiting for you.' },
-    },
+    completed: 'Finished',
   },
   settings: {
     layout: {
@@ -5609,6 +5641,14 @@ export const en: Messages = {
       denyReasonPlaceholder: 'Deny reason (optional, Enter to submit)',
       alwaysAllow: 'Always Allow',
       alwaysAllowDevice: 'Always Allow',
+      allowOnce: 'Allow Once',
+      alwaysAllowInProject: 'Always Allow in Project',
+      terminal: {
+        run: 'Run in Terminal',
+        attach: 'Interact with Running Command',
+        close: 'Close Terminal Tab',
+        ruleHint: 'Always allow also covers later commands matching {{rule}} in this project.',
+      },
       openUrl: 'Open in browser',
       copyUrl: 'Copy link',
       reopenUrl: 'Reopen',
@@ -6263,6 +6303,33 @@ export const en: Messages = {
           verified: 'Matched',
           failed: 'Not Matched',
         },
+      },
+      terminal: {
+        list: { streaming: 'Listing terminals', action: 'List Terminals', done: 'Terminals Listed' },
+        run: { streaming: 'Running in terminal', action: 'Run in Terminal', done: 'Command Started' },
+        attach: { streaming: 'Attaching to terminal', action: 'Attach to Terminal', done: 'Terminal Attached' },
+        close: { streaming: 'Closing terminal', action: 'Close Terminal', done: 'Terminal Closed' },
+        snapshot: { streaming: 'Reading terminal', action: 'Read Terminal', done: 'Terminal Read' },
+        act: { streaming: 'Sending input', action: 'Send Input', done: 'Input Sent' },
+        waitFor: { streaming: 'Waiting for terminal', action: 'Wait for Terminal', done: 'Terminal Ready' },
+        tabCount_one: '{{count}} tab',
+        tabCount_other: '{{count}} tabs',
+        waitGone: 'until “{{text}}” is gone',
+        waitIdle: 'idle {{ms}} ms',
+        waitExited: 'until it exits',
+        actions: {
+          typed: 'typed “{{text}}”',
+          pressed: 'pressed {{key}}',
+          raw: 'sent raw bytes',
+          resized: 'resized to {{cols}}×{{rows}}',
+          waited: 'waited {{ms}} ms',
+        },
+        reasons: {
+          command_exited: 'The command has exited, so control of the tab was released.',
+          user_took_over: 'You took over the tab.',
+          held_by_other_session: 'Another session controls this tab.',
+        },
+        revealTab: 'Show in terminal panel',
       },
       device: {
         memory: interactionMemoryEn,

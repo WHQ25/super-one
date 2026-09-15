@@ -74,7 +74,12 @@ const output = JSON.stringify({
   brands,
 }, null, 2) + '\n'
 if (process.argv.includes('--check')) {
-  if (readFileSync(target, 'utf8') !== output) throw new Error('Native provider brands are stale; run generate:icons')
+  const committed = JSON.parse(readFileSync(target, 'utf8')) as { brands: Record<string, Brand> }
+  // Name the marks that moved: a bare "stale" cannot tell a source edit from a
+  // measurement that differs between this engine and the one that generated it.
+  const drifted = Object.keys(brands).filter((key) => JSON.stringify(brands[key]) !== JSON.stringify(committed.brands[key]))
+  for (const key of drifted) console.error(`${key}: committed ${JSON.stringify(committed.brands[key])}\n${key}: measured  ${JSON.stringify(brands[key])}`)
+  if (readFileSync(target, 'utf8') !== output) throw new Error(`Native provider brands are stale (${drifted.join(', ') || 'header'}); run generate:icons`)
 } else writeFileSync(target, output)
 const withText = Object.values(brands).filter((brand) => brand.text).length
 console.log(`Native provider brands: ${Object.keys(brands).length} marks, ${withText} with word marks`)

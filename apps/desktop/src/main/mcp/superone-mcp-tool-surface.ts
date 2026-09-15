@@ -145,14 +145,13 @@ export async function executeSuperoneMcpToolCollecting(
   } finally {
     // A call that threw after registering must not leave its scope behind. On
     // the success path both takes are empty — the caller already drained them
-    // and owns the deliveries. Here they are not, and no one downstream will
-    // ever see them: a held row has nobody left to carry it, so abandon it; a
-    // sealed ref with no held handle is ended the same way. A file still being
-    // written, or one a carrier already holds, is left alone.
+    // and owns the deliveries. Here they are not: this call OWNS its held rows,
+    // so a thrown tool abandons them. The refs are only drained to free the
+    // scope — a ref WITHOUT a held handle is an observation of someone else's
+    // delivery (a page or background download the worker has not yet carried),
+    // never this call's to abandon (E090-4).
     abandonHeldDeliveries(takeHeldDeliveries(sessionId, callId))
-    for (const ref of takeArtifacts(sessionId, callId)) {
-      if (ref.deliveryId) void import('../environment/zone-delivery').then((m) => m.abandonUndeliveredDelivery(ref.deliveryId!))
-    }
+    takeArtifacts(sessionId, callId)
   }
 }
 

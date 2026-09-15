@@ -77,6 +77,16 @@ test on the real SQLite fixture / Electron event boundary:
   and unheld, for the worker). A thrown tool abandons its held rows
   (`abandonHeldDeliveries`). `holdSealedDelivery` returns false once `scope.ended`,
   so a detached background download that seals after the call is never held.
+  Two properties the owner lifecycle depends on: (a) the `finally` wraps the
+  **whole** function, from before the first DB read, and every retirement is
+  guaranteed by a `finally` — so a throw in `getDelivery` or in the first
+  unmentioned `abandon` still retires every handle this call took, never stranding
+  a live holder; (b) a call may abandon **only** a delivery it holds a handle for.
+  The old `abandonUndeliveredDelivery(deliveryId)` — an id-only claim on any
+  sealed/unheld row — was removed: a page or background download the worker has
+  not yet carried is sealed and unheld too, and an observation of it (`held` has
+  no handle for that ref) must be skipped, never abandoned, or one call ends
+  another producer's delivery.
 - **E090-5 — a wake that lands mid-pass triggers an immediate re-scan.** A row
   sealed after a pass took its snapshot has `next_attempt_at NULL`, which the
   next-due sleep timer ignores; the `woken` flag makes the loop `continue`
@@ -92,10 +102,17 @@ test on the real SQLite fixture / Electron event boundary:
   `needsRedelivery` gets its own warning line and **no button**; Retry Upload
   gates on `failedHandoffs` alone, because a `committing` file cannot be safely
   re-queued — only re-produced under a new path. And `syncHostActionOutputs`
-  classifies a re-observed delivery by phase and `gaveUpAt`: a `committing` or
-  gave-up row is reported `stopped`, not `deferred` — before the fix, observing a
+  classifies a re-observed `committing` delivery by holder liveness: a live holder
+  means its executor is finishing the final put right now — it will complete and
+  wake the agent, so it is reported `deferred` (on its way), not stopped. Only a
+  `committing` row whose holder is gone had its put sent and lost, with no worker
+  to retry it — that one is `stopped`, and stays stopped when observed again. (A
+  row that gave up in an earlier phase falls through to the ordinary handling: its
+  bytes were never a sent-but-unconfirmed put, so it must not borrow the "re-run"
+  message; Settings Retry Upload can recover it.) Before the fix, observing a
   stopped file again (a later `browser_download` listing naming the same path)
-  turned it into a deferred "you will be notified" wake no worker honours.
+  turned it into a deferred "you will be notified" wake no worker honours, and a
+  live commit-in-flight was wrongly reported stopped.
 - **FE99-1 — a seal that throws frees its holder.** `sealZoneFile`'s two seal
   paths wrap "acquire/create holder → seal → hand off" in a `try/finally`: unless
   the row was handed to the call scope, the holder is retired even if hashing,

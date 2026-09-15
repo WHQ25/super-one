@@ -235,24 +235,13 @@ export function abandonZoneFile(sessionId: string, path: string): void {
   }
 }
 
-/**
- * A sealed file nothing will carry: its call ended without naming it in a
- * reply anyone will read, or threw after producing it. Only a row still
- * `sealed` — not queued, not sent, not observed again after delivery — and
- * held by nobody is ended; anything past `sealed` was taken up by a carrier,
- * and a live holder is one (R7).
- */
-export function abandonUndeliveredDelivery(deliveryId: string): void {
-  const row = getDelivery(deliveryId)
-  if (!row || row.outcome || row.phase !== 'sealed' || isHolderAlive(row.holder)) return
-  const holder = mintHolder()
-  try {
-    const claimed = claimDelivery(deliveryId, { holder: row.holder, epoch: row.epoch }, holder)
-    if (claimed.ok) abandonDelivery(claimed.handle)
-  } finally {
-    retireHolder(holder)
-  }
-}
+// `abandonUndeliveredDelivery(deliveryId)` was removed: abandoning a row by id
+// alone — claiming whatever sealed/unheld row that id names — let a call end a
+// delivery it did not create (an observation of another producer's page or
+// background download is sealed and unheld too). Abandon authority now comes
+// only from an owned handle: `abandonDelivery(handle)` under the live holder the
+// producing call kept (E090-4). A file nothing will carry is abandoned by its
+// holder, in `syncHostActionOutputs` or `abandonHeldDeliveries`.
 
 /** The id of a reservation this process holds for `path`, if any. */
 export function openZoneReservation(sessionId: string, path: string): string | null {

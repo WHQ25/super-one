@@ -33,7 +33,6 @@ import {
   type DeliveryHandle,
 } from '../db-session-deliveries'
 import { isHolderAlive, mintHolder, retireHolder } from './delivery-holders'
-import { abandonUndeliveredDelivery } from './zone-delivery'
 import { mirrorNodeArtifact, mirrorNodeDirectory } from './session-file-mirror'
 import { mapNodeZoneArgs, mentionsArtifactPath, nodeZonePath, rewriteArtifactPaths, type NodeSyncZone } from './sync-zone-paths'
 
@@ -319,55 +318,55 @@ export async function syncHostActionOutputs(
   const consumed = new Set<string>()
   const releaseLeftover = (): void =>
     releaseHeldDeliveries([...held].filter(([id]) => !consumed.has(id)).map(([, handle]) => handle))
-  const planned: PlannedRef[] = []
-  for (const ref of refs) {
-    if (!ref.final) continue
-    const zone = zoneRelativePath(ref.path)
-    if (!zone || zone.sessionId !== sessionId) continue
-    if (!ref.deliveryId) {
-      deps.log?.warn('[host-action] a zone file was registered without a delivery record; not pushed', ref.path)
-      continue
-    }
-    const delivery = getDelivery(ref.deliveryId)
-    if (!delivery) continue
-    // The same matcher on the same text the rewrite will see.
-    if (!mentionedInReply(reply, ref.path)) {
-      // Produced, sealed, and named by nothing the agent will read — a
-      // `browser_perf_measure` that ran a download and reported only its
-      // timings. Nothing will ever deliver it; left live, the worker would
-      // upload it for nobody and the mirror would keep it for ever. If we still
-      // hold it from the call, abandon it under that handle (no window in which
-      // the worker could have taken it); otherwise fall back to a fresh claim.
-      const mine = held.get(delivery.deliveryId)
-      if (mine) {
-        consumed.add(delivery.deliveryId)
-        abandonDelivery(mine)
-        retireHolder(mine.holder)
-      } else {
-        abandonUndeliveredDelivery(delivery.deliveryId)
-      }
-      continue
-    }
-    const nodePath = nodeZonePath(deps.zone, zone.sessionId, zone.relativePath)
-    planned.push({ ref, sessionId: zone.sessionId, relativePath: zone.relativePath, nodePath, size: delivery.total, delivery })
-  }
-  if (planned.length === 0) {
-    releaseLeftover()
-    return reply
-  }
-
-  const mapping = new Map<string, string>()
-  const deferred: string[] = []
-  // Files whose final chunk was sent but not confirmed (§6): no worker will
-  // retry them, so the agent is told they stopped, not that they are on the way.
-  const stopped: string[] = []
-  const rate = Math.max(1, deps.transfers.throughputBytesPerMs(deps.connectionId))
-  // Smallest first: a screenshot should never wait behind a recording.
-  planned.sort((a, b) => a.size - b.size)
-
-  let expiresAt = claimExpiresAt
-  let leftForWorker = false
   try {
+    const planned: PlannedRef[] = []
+    for (const ref of refs) {
+      if (!ref.final) continue
+      const zone = zoneRelativePath(ref.path)
+      if (!zone || zone.sessionId !== sessionId) continue
+      if (!ref.deliveryId) {
+        deps.log?.warn('[host-action] a zone file was registered without a delivery record; not pushed', ref.path)
+        continue
+      }
+      const delivery = getDelivery(ref.deliveryId)
+      if (!delivery) continue
+      // The same matcher on the same text the rewrite will see.
+      if (!mentionedInReply(reply, ref.path)) {
+        // Named by nothing the agent will read — a `browser_perf_measure` that ran
+        // a download and reported only its timings. If we still HOLD it from this
+        // call, abandon it under that handle; the retire is guaranteed even if the
+        // abandon write throws. A ref we do NOT hold is an observation of someone
+        // else's delivery — a page or background download the worker has not yet
+        // carried is sealed and unheld too — so we skip it. A call's authority to
+        // abandon comes only from a handle it owns, never an id-only claim on a
+        // row that merely happens to be free (E090-4).
+        const mine = held.get(delivery.deliveryId)
+        if (mine) {
+          try {
+            abandonDelivery(mine)
+          } finally {
+            retireHolder(mine.holder)
+            consumed.add(delivery.deliveryId)
+          }
+        }
+        continue
+      }
+      const nodePath = nodeZonePath(deps.zone, zone.sessionId, zone.relativePath)
+      planned.push({ ref, sessionId: zone.sessionId, relativePath: zone.relativePath, nodePath, size: delivery.total, delivery })
+    }
+    if (planned.length === 0) return reply
+
+    const mapping = new Map<string, string>()
+    const deferred: string[] = []
+    // Files whose final chunk was sent but not confirmed (§6): no worker will
+    // retry them, so the agent is told they stopped, not that they are on the way.
+    const stopped: string[] = []
+    const rate = Math.max(1, deps.transfers.throughputBytesPerMs(deps.connectionId))
+    // Smallest first: a screenshot should never wait behind a recording.
+    planned.sort((a, b) => a.size - b.size)
+
+    let expiresAt = claimExpiresAt
+    let leftForWorker = false
     for (const item of planned) {
       // A cancel that landed during the previous item's push: nothing further
       // is claimed, so the rest stays `sealed` and unheld for the worker.
@@ -383,13 +382,17 @@ export async function syncHostActionOutputs(
       mapping.set(item.ref.path, item.nodePath)
       // The node has it (done, or only the wake is owed — the worker's).
       if (row.outcome === 'done' || row.phase === 'uploaded' || row.phase === 'notifying') continue
-      // Stopped, not on its way: a `committing` row's final put was sent and
-      // never confirmed (§6), and a row that gave up sits until a person acts —
-      // no worker will carry either (`retryGivenUp` excludes committing). Even
-      // observed again, it stays `stopped`: a deferred wake would promise a
-      // completion notice nothing sends (E090-3).
-      if (row.phase === 'committing' || row.gaveUpAt != null) {
-        stopped.push(item.nodePath)
+      // A `committing` row's final put was sent (§6). Under a LIVE holder it is
+      // its executor finishing that put right now — it will complete and wake the
+      // agent, so report it on its way (deferred), not stopped. Only a committing
+      // row whose holder is gone had its put sent and lost, with no worker to
+      // retry it: that one is `stopped`, and stays stopped when observed again
+      // (E090-3). A row that gave up in an EARLIER phase falls through — its bytes
+      // were never a sent-but-unconfirmed put, so it must not borrow the "re-run"
+      // message; a person can still retry it from Settings.
+      if (row.phase === 'committing') {
+        if (isHolderAlive(row.holder)) deferred.push(item.nodePath)
+        else stopped.push(item.nodePath)
         continue
       }
       // Being delivered by someone else, or already the worker's — an upload in
@@ -497,28 +500,28 @@ export async function syncHostActionOutputs(
       throwIfAborted(deps.signal)
     }
     if (leftForWorker) deps.transfers.wake(deps.connectionId)
+    const content = (reply.content ?? []).map((block) =>
+      typeof block.text === 'string' ? { ...block, text: rewriteArtifactPaths(block.text, mapping) } : block,
+    )
+    if (deferred.length === 0 && stopped.length === 0) return { ...reply, content }
+    // The node's MCP server forwards `content` and nothing else of the envelope,
+    // so both lists have to be content too or the model only ever sees the ENOENT
+    // (§4.1) — and it must be able to tell "on its way" from "stopped, re-run".
+    const notices = [
+      ...(deferred.length ? [{ type: 'text' as const, text: deferredNotice(deferred) }] : []),
+      ...(stopped.length ? [{ type: 'text' as const, text: stoppedNotice(stopped) }] : []),
+    ]
+    return {
+      ...reply,
+      content: [...content, ...notices],
+      sync: { deferred, ...(stopped.length ? { stopped } : {}) },
+    }
   } finally {
-    // Whatever the loop did not consume — an abort part way through, a ref
-    // filtered before its held handle was used — is released to the worker:
-    // the row stays sealed and unheld for it (E090-4).
+    // Every held handle this call took is accounted for on every path: pushed
+    // and retired, abandoned and retired, or — for anything the body did not
+    // reach (a DB error before the decision, an abort part way, a ref filtered
+    // out) — released to the worker here, never left as a live holder (E090-4).
     releaseLeftover()
-  }
-
-  const content = (reply.content ?? []).map((block) =>
-    typeof block.text === 'string' ? { ...block, text: rewriteArtifactPaths(block.text, mapping) } : block,
-  )
-  if (deferred.length === 0 && stopped.length === 0) return { ...reply, content }
-  // The node's MCP server forwards `content` and nothing else of the envelope,
-  // so both lists have to be content too or the model only ever sees the ENOENT
-  // (§4.1) — and it must be able to tell "on its way" from "stopped, re-run".
-  const notices = [
-    ...(deferred.length ? [{ type: 'text' as const, text: deferredNotice(deferred) }] : []),
-    ...(stopped.length ? [{ type: 'text' as const, text: stoppedNotice(stopped) }] : []),
-  ]
-  return {
-    ...reply,
-    content: [...content, ...notices],
-    sync: { deferred, ...(stopped.length ? { stopped } : {}) },
   }
 }
 

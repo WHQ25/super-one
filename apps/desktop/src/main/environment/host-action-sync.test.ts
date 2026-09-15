@@ -19,7 +19,7 @@ const state = vi.hoisted(() => ({ userData: '' }))
 vi.mock('electron', () => ({ app: { getPath: () => state.userData } }))
 vi.mock('../database', async () => (await import('../../test/fixtures/delivery-db')).deliveryDatabase())
 
-import { findDeliveryByPath, listSessionDeliveries } from '../db-session-deliveries'
+import { findDeliveryByPath, listSessionDeliveries, type DeliveryHandle } from '../db-session-deliveries'
 import type { ArtifactRef } from '../mcp/artifact-registry'
 import { collectArtifacts, takeArtifacts, takeHeldDeliveries } from '../mcp/artifact-registry'
 import { deliveryDb, resetDeliveryDatabase } from '../../test/fixtures/delivery-db'
@@ -51,6 +51,15 @@ function sealed(sessionId: string, rel: string, data: string | Buffer, producer:
   const path = desktopFile(sessionId, rel, data)
   const deliveryId = sealZoneFile({ sessionId, path, origin: 'produced', connectionId: 'c1', bytes: data })!
   return { path, producer, final: true, deliveryId }
+}
+
+/** Seal files inside a Host Action call scope, as a producer does, and drain
+ *  the live handles the executor hands the reply-selection (E090-4). */
+async function inCall(seals: () => ArtifactRef[]): Promise<{ refs: ArtifactRef[]; held: Map<string, DeliveryHandle> }> {
+  const refs = await collectArtifacts('s1', 'call-1', async () => seals(), 'c1')
+  const held = new Map(takeHeldDeliveries('s1', 'call-1').map((h) => [h.deliveryId, h]))
+  takeArtifacts('s1', 'call-1')
+  return { refs, held }
 }
 
 /** The row behind a ref, as the worker would find it. */
@@ -124,18 +133,22 @@ describe('host action outputs', () => {
   })
 
   it('abandons a registered file the reply never mentions, and pushes the optimized sibling it does', async () => {
-    // A `browser_perf_measure` that ran a download and reported only its
-    // timings: sealed, complete, and named by nothing the agent will read.
-    // Left live, the worker would send it to nobody and the mirror keep it.
+    // A `computer_use` that optimized a screenshot: both files produced inside
+    // the call (so both carry a held handle), the reply names only the optimized
+    // one. The unnamed original is abandoned under its own handle — left live,
+    // the worker would send it to nobody and the mirror keep it for ever.
     const node = fakeNode()
-    const original = sealed('s1', 'computer-use/a.png', Buffer.alloc(100, 1), 'computer-use')
-    const agent = sealed('s1', 'computer-use/a.agent.jpg', 'jpeg', 'computer-use')
-    const reply = { content: [{ type: 'text', text: JSON.stringify({ image: { path: agent.path } }) }] }
-    const out = await syncHostActionOutputs('s1', [original, agent], new Map(), reply, Date.now() + 60_000, node.deps)
+    const { refs, held } = await inCall(() => [
+      sealed('s1', 'computer-use/a.png', Buffer.alloc(100, 1), 'computer-use'),
+      sealed('s1', 'computer-use/a.agent.jpg', 'jpeg', 'computer-use'),
+    ])
+    const [original, agentRef] = refs
+    const reply = { content: [{ type: 'text', text: JSON.stringify({ image: { path: agentRef.path } }) }] }
+    const out = await syncHostActionOutputs('s1', refs, held, reply, Date.now() + 60_000, node.deps)
     expect([...node.files.keys()]).toEqual(['computer-use/a.agent.jpg'])
     expect(out.content![0].text).toContain('/home/node/.superone/node/sync/s1/computer-use/a.agent.jpg')
     expect(rowOf(original)).toMatchObject({ outcome: 'abandoned', holder: null })
-    expect(rowOf(agent)).toMatchObject({ outcome: 'done' })
+    expect(rowOf(agentRef)).toMatchObject({ outcome: 'done' })
   })
 
   it('renews the claim for a file that does not fit the budget, and pushes it instead of deferring', async () => {
@@ -428,6 +441,73 @@ describe('host action outputs', () => {
     expect(out2.sync).toMatchObject({ stopped: ['/home/node/.superone/node/sync/s1/browser/shot.png'] })
     expect((out2.sync as { deferred: string[] }).deferred).toEqual([])
     expect(node.wakes()).toBe(0)
+  })
+
+  it('reports a committing file whose executor still holds it as on its way, not stopped (E090-3)', async () => {
+    // A normal final put is IN FLIGHT: the row is committing, held by a live
+    // holder (its executor). Observing it must say deferred — that executor will
+    // complete and wake the agent — not stopped, which would tell the agent to
+    // re-run a put that is about to confirm.
+    const node = fakeNode()
+    const shot = sealed('s1', 'browser/shot.png', 'png')
+    const { mintHolder } = await import('./delivery-holders')
+    const holder = mintHolder()
+    deliveryDb().prepare(`UPDATE session_file_deliveries SET phase = 'committing', holder = ? WHERE delivery_id = ?`).run(holder, shot.deliveryId)
+    const out = await syncHostActionOutputs('s1', [shot], new Map(), { content: [{ type: 'text', text: shot.path }] }, Date.now() + 60_000, node.deps)
+    expect(out.sync).toMatchObject({ deferred: ['/home/node/.superone/node/sync/s1/browser/shot.png'] })
+    expect((out.sync as { stopped?: string[] }).stopped).toBeUndefined()
+    // We did not touch the row — its executor owns it — and it is unchanged.
+    expect(node.puts).toHaveLength(0)
+    expect(rowOf(shot)).toMatchObject({ phase: 'committing', holder })
+  })
+
+  it('does not abandon a file it only observed; the original worker still delivers it (E090-4)', async () => {
+    // A background page-download sealed the file outside any call — worker-
+    // eligible, sealed and unheld. A different call (a perf wrapper) observes the
+    // same path but does NOT own it (held is empty) and names only timings.
+    // Nothing this call does may end that delivery: its authority is its own
+    // held handles, not an id-only claim on a row that merely happens to be free.
+    const node = fakeNode()
+    const probe = sealed('s1', 'download/report.bin', 'BYTES', 'download')
+    expect(rowOf(probe)).toMatchObject({ phase: 'sealed', holder: null })
+    const out = await syncHostActionOutputs('s1', [probe], new Map(), { content: [{ type: 'text', text: JSON.stringify({ ms: 5 }) }] }, Date.now() + 60_000, node.deps)
+    expect(out.sync).toBeUndefined()
+    // Not abandoned — still sealed for the worker, which delivers it.
+    expect(rowOf(probe)).toMatchObject({ phase: 'sealed', outcome: null })
+    const service = new ArtifactTransferService({ put: (_c, req) => node.deps.put(req), notifyCompleted: async () => undefined })
+    await service.runOnce('c1')
+    expect(node.files.get('download/report.bin')?.toString()).toBe('BYTES')
+    expect(rowOf(probe)).toMatchObject({ outcome: 'done' })
+  })
+
+  it('retires every held holder even when an unmentioned abandon write throws (E090-4 owner lifecycle)', async () => {
+    // Two files produced in-call (both held), reply names neither. The first
+    // abandon UPDATE throws mid-selection. The function must still retire BOTH
+    // holders — the throwing one via its own finally, the untouched one via the
+    // whole-function finally — never leave a live holder stranding the mirror.
+    const node = fakeNode()
+    const { refs, held } = await inCall(() => [
+      sealed('s1', 'computer-use/a.png', Buffer.alloc(10, 1), 'computer-use'),
+      sealed('s1', 'computer-use/b.png', Buffer.alloc(10, 2), 'computer-use'),
+    ])
+    const holders = [...held.values()].map((h) => h.holder)
+    const real = deliveryDb().prepare.bind(deliveryDb())
+    let threw = false
+    const spy = vi.spyOn(deliveryDb(), 'prepare').mockImplementation(((sql: string) => {
+      if (!threw && sql.includes("outcome = 'abandoned'")) { threw = true; throw new Error('SQLITE_BUSY') }
+      return real(sql)
+    }) as never)
+    await expect(
+      syncHostActionOutputs('s1', refs, held, { content: [{ type: 'text', text: JSON.stringify({ ms: 1 }) }] }, Date.now() + 60_000, node.deps),
+    ).rejects.toThrow()
+    spy.mockRestore()
+    // No call-owned holder survives — nothing is left live-held to strand the row.
+    for (const holder of holders) expect(isHolderAlive(holder)).toBe(false)
+    // Both rows are recoverable (sealed, dead/unheld); a healthy worker carries them.
+    const service = new ArtifactTransferService({ put: (_c, req) => node.deps.put(req), notifyCompleted: async () => undefined })
+    await service.runOnce('c1')
+    for (const holder of holders) expect(isHolderAlive(holder)).toBe(false)
+    expect(listSessionDeliveries('s1').every((r) => r.holder === null)).toBe(true)
   })
 })
 

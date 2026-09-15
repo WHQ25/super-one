@@ -1,7 +1,7 @@
 # Agent instructions (CLI)
 
-Directory guidance lives in sibling [`CLAUDE.md`](./CLAUDE.md) (headless node RPC, lab, harness packages, etc.).
-
-Agents that only load `AGENTS.md` and do **not** expand `@` includes **must read** `./CLAUDE.md` before changing code under `apps/cli/`.
+[CLAUDE.md](CLAUDE.md) contains this directory's short guidance and task-specific
+reference routes. If `@` includes are not expanded by your harness, read that
+entrypoint; load only the references relevant to the change.
 
 @CLAUDE.md

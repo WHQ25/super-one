@@ -1,196 +1,79 @@
-# CLAUDE.md
+# SuperOne project guidance
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository. It is intentionally kept lean: it covers the **monorepo structure, cross-package resolution, and repo-wide conventions** only. Workspace-specific architecture lives in per-workspace `CLAUDE.md` files (loaded additively when you work in that directory — see **Per-Workspace Guidance** below).
+SuperOne is a Bun workspaces monorepo: Electron desktop, Expo mobile, headless
+CLI, Next.js web, relay, and shared runtime/UI/harness packages. Product features
+should use shared event and environment contracts across supported harnesses.
 
-## Project Overview
+## Read for the task
 
-SuperOne is an Electron desktop app that puts every coding-agent harness on one
-surface and makes each one more capable than it is alone. Four things define it:
+Use the relevant workspace's short `CLAUDE.md` and only the references needed for
+the change. Reuse content already loaded; a local typo fix needs no architecture tour.
 
-1. **Integrate.** Claude, Codex, Cursor, OpenCode, DeepSeek and any ACP agent run over
-   the same project, session history, provider/credential store, MCP servers, skills and
-   UI. Harness differences are declared as data (`HARNESS_CAPABILITIES` in
-   `packages/shared/src/harness/`), not branched at call sites.
-2. **Extend.** Every harness inherits SuperOne's own tool surface through the built-in
-   MCP server (`apps/desktop/src/main/mcp/`): an embedded browser, computer use, iOS
-   Simulator / Android device control, image and video generation, interactive widgets,
-   and SuperOne's own settings. A harness gains abilities its own CLI never shipped.
-3. **Collaborate.** Sessions talk to each other *across* harness boundaries via
-   `session_collab_*` — `spawn` (child you keep talking to), `handoff` (sibling that
-   takes over), `link` (mailbox with an existing session) — with durable Markdown
-   handoffs and optional worktree isolation. A Claude session can hand a task to Codex
-   and read the result back.
-4. **Build agentic apps.** Mini-apps (`.s1app`) pair a trusted Node host that owns
-   computation and agent tools with WebViews that own rendering, so an app you write
-   becomes tools the agent can call.
-
-Keep this framing in mind when placing new code: a feature that only one harness can
-use, or that bypasses the shared tool/collab surfaces, is usually in the wrong layer.
-
-## Monorepo Layout
-
-This repo is a **bun workspaces monorepo** (no turborepo/nx). Linker is hoisted (`bunfig.toml`) so transitive deps remain reachable like a single-package install.
-
-```
-super-one/
-  apps/
-    desktop/         — Electron app (was the entire repo pre-monorepo)
-    mobile/          — Expo dev-client Remote Control app (`@superone/mobile`; not Expo Go)
-    cli/             — `superone` headless environment CLI / remote backend (no Electron)
-    web/             — Next.js 16 marketing/docs/demos site (App Router + Turbopack)
-    relay/           — Cloudflare Workers (Durable Objects) — mobile↔desktop relay protocol
-  packages/
-    shared/          — Neutral types, harness-brand, i18n, miniapp runtime (no Electron deps)
-    relay-client/    — Pure-TS relay/LAN crypto, ACK, buffer-first, RPC
-    chat-core/       — applyEventToSession re-export for Expo
-    chat-view/       — WebView DOM chat renderer (pre-reduced patches)
-    ui/              — shadcn primitives + OKLch theme CSS, shared by desktop + web
-    runtime/         — @superone/runtime — session/fs/git/lease/spawn-env/crypto (always needed)
-    claude/          — @superone/claude — Claude harness (opt-in)
-    codex/           — @superone/codex — Codex harness (opt-in)
-    acp/             — @superone/acp — ACP harness (opt-in)
-    opencode/        — @superone/opencode — OpenCode harness (opt-in)
-    tsconfig/        — Shared base/react-library/electron-{node,renderer}/react-native/nextjs configs
-```
-
-Workspace package names: `@superone/desktop`, `@superone/cli`, `@superone/web`,
-`@superone/relay`, `@superone/mobile`, `@superone/ui`, `@superone/shared`,
-`@superone/relay-client`, `@superone/chat-core`, `@superone/chat-view`, `@superone/runtime`,
-`@superone/claude`, `@superone/codex`, `@superone/acp`, `@superone/opencode`,
-`@superone/tsconfig`. All `private: true`.
-
-### Node package layout (enable harness = depend on package)
-
-| Package | npm name | When to depend |
-|---------|----------|----------------|
-| Runtime (session/fs/git) | `@superone/runtime` | **Always** for CLI / remote node |
-| Claude | `@superone/claude` | Harness `claude` enabled |
-| Codex | `@superone/codex` | Harness `codex` enabled |
-| ACP | `@superone/acp` | Harness `acp` enabled |
-| OpenCode | `@superone/opencode` | Harness `opencode` enabled |
-
-Subpaths: `@superone/runtime/session`, `@superone/runtime/fs`, `@superone/runtime/git`.
-
-See `packages/runtime/README.md`. Desktop thin-wrap onto harness packages is deferred.
-
-**Self-host relay**: `apps/relay/` is intended to be self-hostable by users. Currently the repo is private; when going public the plan is to set up a `git subtree` mirror to a public repo via GitHub Action so self-hosters can clone just the relay subtree. Until then, distribute by sharing wrangler.toml + source bundle directly.
-
-**Cross-package imports**: code uses `@superone/shared/agent-types`, `@superone/ui/components/ui/button`, etc. Each package's `exports` map governs resolution; Vite/TS pick up `.tsx`/`.ts` source directly (no build step).
-
-Inside a package, prefer relative paths (`./X`, `../lib/utils`) over `@/` aliases to keep the package bundler-agnostic.
-
-## Per-Workspace Guidance
-
-Each workspace carries its own `CLAUDE.md` with architecture, conventions, and recurring footguns specific to that subsystem. When working inside a directory, that file is loaded **in addition to** this root file — read it for the detail this file deliberately omits.
-
-| Workspace | `CLAUDE.md` | Covers |
-|---|---|---|
-| `apps/desktop/` | `apps/desktop/CLAUDE.md` | Electron 3-process architecture, Zustand stores, IPC API, Remote Control (mobile), Codex, auto-update, build/release, styling/brand theming, debugging (event-trace), testing (TDD), **Mini-App platform** (⚠️ recurring two-runtime footgun) |
-| `apps/cli/` | `apps/cli/CLAUDE.md` | Headless node RPC, workspace/git, pairing; harness packages under `@superone/*`; **local lab UI test** (`dev:cli:lab` + Other Devices → Local lab); labs do not hot-reload |
-| `apps/web/` | `apps/web/CLAUDE.md` | Next.js 16 marketing/docs/demos site |
-| `apps/mobile/` | `apps/mobile/CLAUDE.md` | Expo dev-client Remote Control (RN / chat WebView / terminal WebView) |
-| `apps/video/` | `apps/video/CLAUDE.md` | Remotion video compositions / offline render |
-
-`apps/relay/` and most `packages/*` currently have no local `CLAUDE.md`; the relay protocol is summarized in `apps/desktop/CLAUDE.md` → "Remote Control (Mobile) Architecture".
-
-## Commands
-
-All root scripts proxy to a workspace via `bun --filter`. Run them from the repo root.
-
-```bash
-bun run dev              # Start Electron app with hot reload (→ @superone/desktop)
-bun run dev:web          # Start Next.js dev server on :3000 (→ @superone/web)
-bun run build:chat-view  # Generate the offline mobile chat + terminal documents
-bun run dev:mobile       # Expo dev-client Metro (→ @superone/mobile; not Expo Go)
-bun run dev:cli          # Start superone CLI in foreground (→ @superone/cli)
-bun run dev:cli:lab      # Local remote-node lab on :7789 (host process; prefer for harness/creds)
-# Manual UI test: Terminal A `dev:cli:lab` + Terminal B `dev` → Remote Control →
-# Control Other Devices → Local lab → Connect lab (see apps/cli/CLAUDE.md)
-# Docker SSH lab: bun run dev:cli:docker* — Linux/SSH fidelity only
-bun run test:cli         # Run CLI package tests
-bun run test:runtime     # Run @superone/runtime unit tests (session/fs/git/host-action)
-bun run test:chat-core   # Run the shared chat reducer suite
-bun run test:chat-view   # Run the shared DOM presenter / host protocol suite
-bun run test:relay-client # Run the mobile relay/LAN transport suite
-bun run test:mobile      # Build chat-view, then run the Expo mobile suite
-bun run dev:relay        # Start wrangler dev for Cloudflare Worker relay (→ @superone/relay)
-bun run deploy:relay     # wrangler deploy the relay (→ @superone/relay)
-bun run test:relay       # Run relay vitest suite
-bun run build            # Production build (electron-vite only)
-bun run preview          # Preview production build
-bun run test             # Run desktop suite once (does not include cli/runtime/relay)
-bun run test:watch       # Run tests in watch mode
-bun run typecheck        # Full type check across all workspaces
-bun run typecheck:node   # Type check main/preload only (desktop)
-bun run typecheck:web    # Type check renderer only (desktop)
-bun run build:app        # Full packaged build (electron-vite + electron-builder)
-bun run build:mac        # macOS package (DMG + ZIP)
-bun run build:win        # Windows package (NSIS)
-bun run build:linux      # Linux package (AppImage)
-bun run storybook        # Start Storybook (collects stories from desktop + packages/ui)
-```
-
-To run a single test file: `bunx vitest run apps/desktop/src/path/to/file.test.ts` (vitest runs from `apps/desktop` cwd, so paths are relative to that workspace).
-
-**Test scope — do not run the full suite after every edit.** The desktop suite is ~650 files and takes minutes; running it per change is the single biggest time sink in a long session. Default to the narrowest run that can catch the regression (all from the `apps/desktop` cwd):
-
-```bash
-bunx vitest run src/path/to/file.test.ts       # known target test file(s)
-bunx vitest related src/main/session/session.ts # tests that import a changed source file
-bunx vitest run --changed HEAD                  # everything affected by uncommitted changes
-bunx vitest list --changed HEAD --filesOnly     # preview that set without running it
-```
-
-Run the **full** suite (`bun run test`, plus `test:cli` / `test:runtime` / `test:relay` when those workspaces changed) **only when explicitly asked to**. It is not a pre-commit gate — do not start it on your own initiative, not even before a commit.
-
-Before committing, run the scoped set instead:
-
-```bash
-bunx vitest run --changed HEAD   # everything the staged/uncommitted change affects
-```
-
-One case is worth saying out loud rather than silently scoping: when the change is suite-wide by nature — `apps/desktop/vitest.setup.ts`, `vitest.config.ts`, `src/test/fixtures/`, `packages/shared`, `packages/ui`, or anything imported nearly everywhere — a scoped run proves little. Flag that and let the human decide whether the full run is worth the minutes.
-
-**Sandbox note**: `bun run test` (full suite) and any LAN/mDNS tests (`apps/desktop/src/main/lan-server.test.ts`, `apps/desktop/src/main/lan-advertiser.test.ts`) bind to `0.0.0.0:5353` / `127.0.0.1` and will fail with `EPERM` under the default sandbox. Run them with `dangerouslyDisableSandbox: true` (Bash tool) or outside the sandbox.
-
-## Cross-Package Resolution & TypeScript
-
-### Path Alias
-
-- **Inside `apps/desktop`**: `@/*` maps to `apps/desktop/src/renderer/src/*` (configured in `electron.vite.config.ts`, `tsconfig.web.json`, `vitest.config.ts`, `.storybook/main.ts`).
-- **Cross-package**: code imports via package names — `@superone/shared/agent-types`, `@superone/ui/components/ui/button`, etc. These resolve through `node_modules/@superone/*` workspace symlinks and each package's `exports` map.
-- **Inside `packages/ui`** (and other packages): use relative paths only (`../lib/utils`, `./button`) — no `@/` alias.
-
-### TypeScript Setup
-
-Each workspace has its own tsconfig. `composite` is **not** used (apps are consumers, not library producers); cross-package imports resolve via `paths` mappings + `exports`.
-
-- `packages/tsconfig/{base,react-library,electron-renderer,electron-node,nextjs}.json` — shared base configs
-- `apps/desktop/tsconfig.node.json` — main + preload (extends `electron-node`)
-- `apps/desktop/tsconfig.web.json` — renderer (extends `electron-renderer`, has `@/*` and `@superone/shared/*` paths)
-- `apps/desktop/tsconfig.json` and root `tsconfig.json` — empty stubs (`files: []`, `include: []`) acting as IDE entry points only
-- `apps/web/tsconfig.json` — extends `nextjs`
-- `packages/{ui,shared}/tsconfig.json` — extend `react-library` / `base`
+| Area | Guidance |
+|---|---|
+| Desktop, IPC, sessions, agent tools | [apps/desktop/CLAUDE.md](apps/desktop/CLAUDE.md) |
+| Mobile shell, chat WebView, transport | [apps/mobile/CLAUDE.md](apps/mobile/CLAUDE.md) |
+| Remote node, RPC, local/Docker labs | [apps/cli/CLAUDE.md](apps/cli/CLAUDE.md) |
+| Website | [apps/web/CLAUDE.md](apps/web/CLAUDE.md) |
+| Remotion compositions | [apps/video/CLAUDE.md](apps/video/CLAUDE.md) |
+| Shared translations | [packages/shared/src/i18n/CLAUDE.md](packages/shared/src/i18n/CLAUDE.md) |
+| Cross-package layout and TypeScript resolution | [repository.md](docs/development/repository.md) |
+| Preparing a commit | [commit-messages.md](docs/development/commit-messages.md) |
 
 ## Conventions
 
-Repo-wide conventions. Workspace-specific conventions (sidebar tokens, animations, ProseMirror, window chrome, etc.) live in the relevant per-workspace `CLAUDE.md`.
+- Use `bun` / `bunx`; root scripts delegate to workspaces. All packages use ES modules.
+- Cross-package imports use `@superone/<package>` exports. Prefer relative imports
+  inside a package; desktop's `@/` alias is renderer-only.
+- Use shared `HarnessId` / capability data and `AgentEvent` contracts instead of
+  adding harness-specific UI branches. Preserve explicit unsupported states.
+- Commits are one logical change, in English: `<type>(<scope>): <subject>`.
+  Use an established lowercase scope, imperative lowercase subject, no trailing
+  period, at most 72 characters. Explain why in the body when useful; incompatible
+  changes require a `BREAKING CHANGE:` footer and migration instructions.
 
-- **Package manager**: bun (not npm/pnpm), use bunx instead of npx
-- **Module system**: ES modules (`"type": "module"`)
-- **Commit messages**: `<type>(<scope>): <description>` (e.g. `feat(mcp): add document tools`)
+## Commands and verification
 
+Root `package.json` is the command catalog. Common commands:
 
-### UI Storybook coverage (required)
+```bash
+bun run dev                 # Electron development
+bun run dev:web             # website
+bun run dev:mobile          # Expo dev client
+bun run dev:cli:lab          # local remote node
+bun run build:chat-view     # generated mobile chat/terminal documents
+bun run typecheck:node      # desktop main/preload
+bun run typecheck:web       # desktop renderer
+bun run storybook           # shared UI + desktop stories
+```
 
-Every new or changed UI must include colocated Storybook stories (`*.stories.tsx`)
-that render the production component and show all applicable user-visible states.
-Cover default, empty, loading/submitting, success/completed, error/retry, disabled,
-and selected/expanded states as applicable, plus long content and narrow layouts.
-Include interactive stories for meaningful state transitions, and make each state
-reproducible without live services, credentials, or real side effects. Reuse the
-existing theme and locale controls to inspect light/dark and translated layouts.
+Run the smallest affected checks and fix failures caused by the requested change.
+For desktop/shared/UI Vitest, run from `apps/desktop`:
 
-Add or update stories in the same change as the UI; UI work is not complete until
-its stories are available for review. Verify rendering and relevant interactions,
-and provide the Storybook location or direct preview link when handing off UI work.
+```bash
+bunx vitest run src/path/to/file.test.ts
+bunx vitest related src/path/to/changed-file.ts
+bunx vitest run --changed HEAD
+```
+
+Before committing code, run affected tests. Full suites (`bun run test` and
+workspace-wide equivalents) run only when explicitly requested; they are not a
+pre-commit gate. For changes to shared fixtures or suite-wide infrastructure,
+explain the coverage limitation before proposing a full run. Documentation-only
+edits need relevant link/command/content checks, not application test suites.
+If a needed test is blocked by the sandbox, inspect the failure and use the
+available permission mechanism for that specific operation; do not assume all
+tests need unrestricted access.
+
+Complete authorized implementation and relevant verification before handing it
+back. Reuse the user's decisions and authorization within scope; ask when missing
+information changes the result or required authorization. Report any specific
+unresolved blocker rather than presenting an unchecked implementation as complete.
+
+## UI coverage
+
+New or changed UI includes colocated Storybook stories using production components.
+Cover applicable loading, empty, error/retry, denied/disabled, success, expanded,
+long-content, and narrow-layout states. Make meaningful interactions reproducible
+without live credentials or real side effects, and check light/dark and translated
+layouts where relevant. Provide the story location with the verified result.

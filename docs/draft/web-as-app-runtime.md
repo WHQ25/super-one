@@ -2,7 +2,7 @@
 
 Status: **draft** — product + architecture exploration, not an approved design  
 Last updated: 2026-08-07  
-Related: mini-app platform (`apps/desktop/CLAUDE.md` → Mini-App Platform), browser MCP tools, `packages/shared` miniapp bridge
+Related: mini-app platform (`apps/desktop/docs/agent-reference/miniapps.md`), browser MCP tools, `packages/shared` miniapp bridge
 
 ---
 

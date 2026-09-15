@@ -3,7 +3,7 @@
 Status: **draft** — approved direction; plan reviewed and revised, not yet executed
 Last updated: 2026-08-08
 Reviewed by: Codex (adversarial design review, 2026-08-08) — 5 blocking issues found and incorporated
-Related: `apps/desktop/CLAUDE.md` → Remote Control (Mobile) Architecture; `apps/relay/`; `packages/shared`; external repo `super-one-flutter`
+Related: `apps/desktop/docs/agent-reference/architecture.md` → Remote Control (Mobile) Architecture; `apps/relay/`; `packages/shared`; external repo `super-one-flutter`
 
 ---
 

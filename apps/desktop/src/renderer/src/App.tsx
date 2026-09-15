@@ -338,6 +338,27 @@ function App(): React.JSX.Element {
   const compactMiniShell = useWindowMiniModeStore((s) => s.phase === 'mini' || s.phase === 'unfolding')
   // Both side panels shed as one move, from both edges at once.
   const panelsFolded = useWindowMiniModeStore(selectPanelsFolded)
+
+  // Maximizing an activity tab is a "focus on this content" gesture: fold the
+  // sidebar and collapse the floating chat so the tab gets the whole window. Only
+  // a sidebar *we* folded comes back on exit — one the user closed stays closed.
+  const sidebarFoldedByMaximizeRef = useRef(false)
+  const prevActivityMaximizedRef = useRef(activityMaximized)
+  useEffect(() => {
+    const was = prevActivityMaximizedRef.current
+    prevActivityMaximizedRef.current = activityMaximized
+    if (was === activityMaximized || inMiniWindow) return
+    const { showSidebar: sb, setShowSidebar } = useAppStore.getState()
+    if (activityMaximized) {
+      sidebarFoldedByMaximizeRef.current = sb
+      if (sb) setShowSidebar(false)
+      useChatStore.setState({ isOpen: false })
+    } else if (sidebarFoldedByMaximizeRef.current) {
+      sidebarFoldedByMaximizeRef.current = false
+      setShowSidebar(true)
+    }
+  }, [activityMaximized, inMiniWindow])
+
   useEffect(() => {
     if (inMiniWindow) return
     let minW = view === 'main'

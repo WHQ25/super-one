@@ -52,9 +52,12 @@ try {
     const crop = (svg: string, index: number): Mark => {
       const box = boxes[index]
       if (!box?.width || !box.height) throw new Error(`Brand "${entry.key}" mark ${index} has an empty ink box`)
+      // getBBox differs between platforms in the 1e-7 range; a viewBox does not
+      // need that precision, and keeping it makes --check depend on the engine.
+      const r = (value: number) => Math.round(value * 1000) / 1000
       return {
-        svg: svg.replace(/viewBox="[^"]*"/, `viewBox="${box.x} ${box.y} ${box.width} ${box.height}"`),
-        aspect: Math.round((box.width / box.height) * 1000) / 1000,
+        svg: svg.replace(/viewBox="[^"]*"/, `viewBox="${r(box.x)} ${r(box.y)} ${r(box.width)} ${r(box.height)}"`),
+        aspect: r(box.width / box.height),
       }
     }
     brands[entry.key] = {

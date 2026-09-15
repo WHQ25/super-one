@@ -15,14 +15,14 @@ const recording = (
   <Video className="size-3 text-muted-foreground/70" aria-label="Action recording" />
 )
 
-const meta = {
+const meta: Meta<typeof ToolRow> = {
   title: 'Tool UI/General/ToolRow',
   component: ToolRow,
   parameters: { layout: 'padded' },
-} satisfies Meta<typeof ToolRow>
+}
 
 export default meta
-type Story = StoryObj<typeof meta>
+type Story = StoryObj<typeof ToolRow>
 
 export const Default: Story = {
   render: () => (

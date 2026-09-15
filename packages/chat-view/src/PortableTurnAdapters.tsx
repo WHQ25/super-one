@@ -85,9 +85,11 @@ import {
   PortableBrowserTool,
   PortableComputerTool,
   PortableDeviceTool,
+  PortableTerminalTool,
   portableBrowserOp,
   portableComputerOp,
   portableDeviceOp,
+  portableTerminalOp,
 } from './PortableInteractiveTools'
 import {
   SubagentBlockPresenter,
@@ -254,6 +256,7 @@ function renderDedicatedTool(props: ClaudeToolPresenterProps, brandIconSrc?: str
   const browserOp = portableBrowserOp(props.toolName, props.input)
   const computerOp = portableComputerOp(props.toolName)
   const deviceOp = portableDeviceOp(props.toolName)
+  const terminalOp = portableTerminalOp(props.toolName)
   const mcpInfo = parseMcpToolName(props.toolName)
   const collabToolName = mcpInfo?.serverName === 'superone' ? mcpInfo.mcpToolName : null
   if (props.toolName === 'EnterPlanMode') return <EnterPlanModeBlock />
@@ -418,6 +421,18 @@ function renderDedicatedTool(props: ClaudeToolPresenterProps, brandIconSrc?: str
     return (
       <PortableDeviceTool
         op={deviceOp}
+        input={props.input}
+        result={props.result}
+        toolSummary={props.toolSummary}
+        isStreaming={props.status === 'streaming'}
+        isError={props.isError}
+      />
+    )
+  }
+  if (terminalOp) {
+    return (
+      <PortableTerminalTool
+        op={terminalOp}
         input={props.input}
         result={props.result}
         toolSummary={props.toolSummary}

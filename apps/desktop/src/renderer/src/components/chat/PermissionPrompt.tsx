@@ -6,7 +6,7 @@ import { useChatStore, useActiveSession, selectClaudeModels, selectClaudeAccount
 import { useMiniAppStore } from '@/stores/miniapp'
 import { resolveMiniAppToolIdentity } from '@/lib/miniapp-tool-identity'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
-import { Circle, CheckCircle2, ChevronDown, ChevronUp, ShieldAlert, AlertTriangle, ExternalLink, Copy, Loader2 } from 'lucide-react'
+import { Circle, CheckCircle2, ChevronDown, ChevronUp, ShieldAlert, AlertTriangle, ExternalLink, Copy, Loader2, SquareTerminal } from 'lucide-react'
 import { requestOpenExternalLink } from '@/lib/external-link'
 import { ToolIcon } from './ToolIcon'
 import { getToolDisplay, getToolLabel, parseMcpToolName } from './tool-display'
@@ -152,6 +152,7 @@ export function PermissionPrompt() {
   // because a refusal's typed reason is what the device tool reads back to the agent.
   // It only adds a third button.
   const isDeviceControlConfirm = pendingPermission?.requestKind === 'device_control_confirm'
+  const isTerminalCommandConfirm = pendingPermission?.requestKind === 'terminal_command_confirm'
   const isSelfManagedConfirm =
     isVideoGenConfirm
     || isConfigConfirm
@@ -173,6 +174,8 @@ export function PermissionPrompt() {
     pendingPermission?.requestKind,
   )
   const isCodexDecisionPrompt = promptConfig.buttonCount === 4
+  // Host confirms that add a third "always" button between approve and reject.
+  const hasHostAlwaysButton = promptConfig.buttonCount === 3
   const isEditTool = toolName === 'Write' || toolName === 'Edit' || toolName === 'NotebookEdit'
   const autoEligible = useMemo(
     () => eligibilityFromStore(account, availableModels.find((m) => m.id === selectedModel)).ok,
@@ -223,13 +226,13 @@ export function PermissionPrompt() {
         if (!canAutofocusInChatRoot(chatRootRef?.current)) return
         // Deny sits at index 1 on the standard row (index 2 when device-control adds
         // its always-allow button between approve and reject).
-        const denyIdx = isDeviceControlConfirm ? 2 : 1
+        const denyIdx = hasHostAlwaysButton ? 2 : 1
         const initialIdx = defaultToNo && !isCodexDecisionPrompt ? denyIdx : 0
         btnRefs.current[initialIdx]?.focus()
         setFocusedIdx(initialIdx)
       })
     }
-  }, [requestId, isCollapsed, isSelfManagedConfirm, chatRootRef, defaultToNo, isCodexDecisionPrompt, isDeviceControlConfirm])
+  }, [requestId, isCollapsed, isSelfManagedConfirm, chatRootRef, defaultToNo, isCodexDecisionPrompt, hasHostAlwaysButton])
 
   const btnCount = promptConfig.buttonCount
 
@@ -358,7 +361,7 @@ export function PermissionPrompt() {
         return
       }
 
-      if ((isCodexDecisionPrompt || isDeviceControlConfirm) && e.key === 'Enter' && e.shiftKey && !e.isComposing) {
+      if ((isCodexDecisionPrompt || hasHostAlwaysButton) && e.key === 'Enter' && e.shiftKey && !e.isComposing) {
         e.preventDefault()
         handleAlwaysAllow()
         return
@@ -408,7 +411,7 @@ export function PermissionPrompt() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [requestId, btnCount, handleCancel, handleDeny, handleAcceptEdit, handleAllow, handleAlwaysAllow, isCodexDecisionPrompt, isDeviceControlConfirm, isEditTool, isCollapsed, suggestionsCount, toggleSuggestion, isSelfManagedConfirm, chatRootRef, defaultToNo])
+  }, [requestId, btnCount, handleCancel, handleDeny, handleAcceptEdit, handleAllow, handleAlwaysAllow, isCodexDecisionPrompt, hasHostAlwaysButton, isEditTool, isCollapsed, suggestionsCount, toggleSuggestion, isSelfManagedConfirm, chatRootRef, defaultToNo])
 
   if (!pendingPermission) return null
 
@@ -574,15 +577,22 @@ export function PermissionPrompt() {
     ? suggestions?.map((s) => (s.type === 'setMode' && s.mode === 'acceptEdits' ? { ...s, mode: 'auto' } : s))
     : suggestions
   const display = getToolDisplay(toolName ?? '', input, cwd, homedir)
-  const toolGlyph = mcpIconSrc
-    ? <img src={mcpIconSrc} alt="" className="size-3.5 shrink-0 rounded-sm object-cover" />
-    : <ToolIcon icon={display.icon} className="size-3.5 shrink-0 text-muted-foreground" />
+  const toolGlyph = isTerminalCommandConfirm
+    ? <SquareTerminal className="size-3.5 shrink-0 text-muted-foreground" />
+    : mcpIconSrc
+      ? <img src={mcpIconSrc} alt="" className="size-3.5 shrink-0 rounded-sm object-cover" />
+      : <ToolIcon icon={display.icon} className="size-3.5 shrink-0 text-muted-foreground" />
   // A first-party tool keeps the words its own chat row uses. Only the generic
   // fallback is shared with third-party MCP servers.
   const deviceLabelKey = deviceToolVerbKey(toolName ?? '', input)
-  const toolLabel = deviceLabelKey
-    ? t(`chat.toolBlock.device.${deviceLabelKey}`)
-    : getToolLabel(toolName ?? '')
+  const terminalAction = isTerminalCommandConfirm && (input.action === 'run' || input.action === 'attach' || input.action === 'close')
+    ? input.action
+    : null
+  const toolLabel = terminalAction
+    ? t(`chat.permission.terminal.${terminalAction}`)
+    : deviceLabelKey
+      ? t(`chat.toolBlock.device.${deviceLabelKey}`)
+      : getToolLabel(toolName ?? '')
   const isBash = toolName === 'Bash'
   const isSandboxNetwork = toolName === 'SandboxNetworkAccess'
   const hasSuggestionRow = !isCodexDecisionPrompt && !!suggestions && suggestions.length > 0
@@ -693,6 +703,22 @@ export function PermissionPrompt() {
                   {display.summary}
                 </p>
               )}
+              {terminalAction && (
+                <div className="mb-2 space-y-1 text-xs">
+                  {typeof input.description === 'string' && input.description && (
+                    <p className="text-muted-foreground">{input.description}</p>
+                  )}
+                  <p className="max-h-32 overflow-y-auto whitespace-pre-wrap break-all rounded bg-muted/50 px-2 py-1.5 font-mono text-foreground">
+                    {typeof input.command === 'string' ? input.command : ''}
+                  </p>
+                  <p className="truncate font-mono text-muted-foreground" title={typeof input.cwd === 'string' ? input.cwd : undefined}>
+                    {typeof input.tab === 'string' && input.tab ? `${input.tab} · ` : ''}{typeof input.cwd === 'string' ? input.cwd : ''}
+                  </p>
+                  {hasHostAlwaysButton && typeof input.rule === 'string' && (
+                    <p className="text-muted-foreground">{t('chat.permission.terminal.ruleHint', { rule: input.rule })}</p>
+                  )}
+                </div>
+              )}
               {(toolName === 'Edit' || toolName === 'Write') && (
                 <div
                   className="mb-2 max-h-64 overflow-y-auto rounded bg-muted/50 text-xs"
@@ -764,7 +790,7 @@ export function PermissionPrompt() {
                 ) : (
                   <ApproveRejectBar
                     approveRef={(el) => { btnRefs.current[0] = el }}
-                    rejectRef={(el) => { btnRefs.current[isDeviceControlConfirm ? 2 : 1] = el }}
+                    rejectRef={(el) => { btnRefs.current[hasHostAlwaysButton ? 2 : 1] = el }}
                     feedbackRef={feedbackRef}
                     onApprove={handleAllow}
                     onReject={handleDeny}
@@ -774,18 +800,20 @@ export function PermissionPrompt() {
                     // the user to assume the first one also sticks.
                     {...(isDeviceControlConfirm
                       ? { approveLabel: t('chat.permission.allowForSession') }
-                      : {})}
+                      : isTerminalCommandConfirm && hasHostAlwaysButton
+                        ? { approveLabel: t('chat.permission.allowOnce') }
+                        : {})}
                     approveSuffix={selectedSuggestions.size > 0 && (
                       <span className="ml-1 text-xs text-success-foreground/70">+{selectedSuggestions.size}</span>
                     )}
-                    extraActions={isDeviceControlConfirm && (
+                    extraActions={hasHostAlwaysButton && (
                       <PermissionActionButton
                         ref={(el) => { btnRefs.current[1] = el }}
                         tone="primary"
                         kbd="⇧⏎"
                         onClick={handleAlwaysAllow}
                       >
-                        {t('chat.permission.alwaysAllowDevice')}
+                        {isTerminalCommandConfirm ? t('chat.permission.alwaysAllowInProject') : t('chat.permission.alwaysAllowDevice')}
                       </PermissionActionButton>
                     )}
                     feedback={{

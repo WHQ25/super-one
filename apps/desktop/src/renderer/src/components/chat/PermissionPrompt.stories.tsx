@@ -146,6 +146,51 @@ export const McpTool: Story = {
   )],
 }
 
+/** Host confirm for an agent terminal command: Allow Once / Always Allow in Project / Deny. */
+export const TerminalCommand: Story = {
+  decorators: [(Story) => (
+    <>
+      <SeedPermission request={{
+        requestId: 'p-terminal',
+        toolName: 'mcp__superone__terminal_tabs',
+        toolUseId: 'tu-terminal',
+        input: {
+          action: 'run',
+          command: 'bun run storybook --ci',
+          cwd: '/Users/me/Developer/super-one/apps/desktop',
+          rule: 'bun run storybook --ci:*',
+          description: 'Start Storybook to check the new terminal stories',
+        },
+        allowAlwaysAllow: true,
+        supportsAlwaysPersist: true,
+        requestKind: 'terminal_command_confirm',
+        serverName: 'superone',
+        message: 'Run `bun run storybook --ci` in a terminal tab?',
+      }} />
+      <Story />
+    </>
+  )],
+}
+
+/** Closing a user tab: same kind, but no always-allow, so the plain two-button row. */
+export const TerminalCloseUserTab: Story = {
+  decorators: [(Story) => (
+    <>
+      <SeedPermission request={{
+        requestId: 'p-terminal-close',
+        toolName: 'mcp__superone__terminal_tabs',
+        toolUseId: 'tu-terminal-close',
+        input: { action: 'close', command: 'node', cwd: '/Users/me/Developer/super-one', tab: 'dev server' },
+        allowAlwaysAllow: false,
+        requestKind: 'terminal_command_confirm',
+        serverName: 'superone',
+        message: 'Close the terminal tab “dev server”? This kills whatever is running in it.',
+      }} />
+      <Story />
+    </>
+  )],
+}
+
 export const SandboxNetworkAccess: Story = {
   decorators: [(Story) => (
     <>

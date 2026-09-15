@@ -28,6 +28,13 @@ describe('getPermissionPromptConfig', () => {
       .toEqual(getPermissionPromptConfig('codex', true, false, 'device_control_confirm'))
   })
 
+  it('gives a terminal command the three-button row only when always-allow is offered', () => {
+    expect(getPermissionPromptConfig('codex', true, false, 'terminal_command_confirm'))
+      .toEqual({ buttonCount: 3, includesFeedbackOnDeny: true, enterSubmitsFeedback: true })
+    expect(getPermissionPromptConfig('codex', false, false, 'terminal_command_confirm'))
+      .toEqual({ buttonCount: 2, includesFeedbackOnDeny: true, enterSubmitsFeedback: true })
+  })
+
   it('leaves an ordinary two-button prompt alone', () => {
     expect(getPermissionPromptConfig('claude', false, false)).toEqual({
       buttonCount: 2,

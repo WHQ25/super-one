@@ -8,9 +8,11 @@ import { AutomationToolBlock, isAutomationToolName } from './AutomationToolBlock
 import { BrowserToolBlock } from './BrowserToolBlock'
 import { ComputerUseToolBlock } from './ComputerUseToolBlock'
 import { DeviceToolBlock } from './DeviceToolBlock'
+import { TerminalToolBlock } from './TerminalToolBlock'
 import { getBrowserOp } from './browser-tool-display'
 import { getComputerOp } from './computer-tool-display'
 import { getDeviceOp } from './device-tool-display'
+import { getTerminalOp } from './terminal-tool-display'
 import { ImageGenToolBlock } from './ImageGenToolBlock'
 import { ListAgentsToolBlock } from './ListAgentsToolBlock'
 import { MediaProvidersBlock } from './MediaProvidersBlock'
@@ -316,6 +318,21 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
           isDenied={isDenied}
           elapsedSeconds={elapsedSeconds}
           stallLevel={stallLevel}
+          allowExpand={allowExpand}
+        />
+      )
+    }
+    const terminalOp = getTerminalOp(mcpInfo.mcpToolName)
+    if (terminalOp) {
+      return (
+        <TerminalToolBlock
+          op={terminalOp}
+          params={params}
+          result={cleanResult}
+          toolSummary={toolSummary}
+          isStreaming={isStreaming}
+          isError={isError}
+          isDenied={isDenied}
           allowExpand={allowExpand}
         />
       )

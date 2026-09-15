@@ -6,9 +6,11 @@ import {
   PortableBrowserTool,
   PortableComputerTool,
   PortableDeviceTool,
+  PortableTerminalTool,
   portableBrowserOp,
   portableComputerOp,
   portableDeviceOp,
+  portableTerminalOp,
 } from './PortableInteractiveTools'
 import { useDeferredText } from './use-deferred-text'
 
@@ -17,7 +19,7 @@ function parseDetail(text: string): Partial<ClaudeToolPresenterProps> {
 }
 
 export function isPortableInteractiveTool(toolName: string, input: unknown): boolean {
-  return Boolean(portableBrowserOp(toolName, input) || portableComputerOp(toolName) || portableDeviceOp(toolName))
+  return Boolean(portableBrowserOp(toolName, input) || portableComputerOp(toolName) || portableDeviceOp(toolName) || portableTerminalOp(toolName))
 }
 
 /**
@@ -40,10 +42,12 @@ export function DeferredInteractiveTool(props: ClaudeToolPresenterProps): ReactN
   const browserOp = portableBrowserOp(props.toolName, input)
   const computerOp = portableComputerOp(props.toolName)
   const deviceOp = portableDeviceOp(props.toolName)
+  const terminalOp = portableTerminalOp(props.toolName)
   const waitsForResult = browserOp === 'screenshot'
     || (browserOp != null && isReadBrowserOp(browserOp))
     || computerOp != null
     || deviceOp != null
+    || terminalOp != null
   const pendingDetails = props.remoteDetail && !result && props.status !== 'streaming' && waitsForResult
     ? (
       error
@@ -70,5 +74,6 @@ export function DeferredInteractiveTool(props: ClaudeToolPresenterProps): ReactN
   if (browserOp) return <PortableBrowserTool op={browserOp} {...shared} />
   if (computerOp) return <PortableComputerTool op={computerOp} {...shared} />
   if (deviceOp) return <PortableDeviceTool op={deviceOp} {...shared} />
+  if (terminalOp) return <PortableTerminalTool op={terminalOp} {...shared} />
   return null
 }

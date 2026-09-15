@@ -7,6 +7,8 @@ import { ComputerUseToolBlockPresenter } from './presenters/ComputerUseToolBlock
 import { getComputerOp, type ComputerOp } from './presenters/computer-tool-display'
 import { DeviceToolBlockPresenter } from './presenters/DeviceToolBlock'
 import { getDeviceOp, type DeviceOp } from './presenters/device-tool-display'
+import { TerminalToolBlockPresenter } from './presenters/TerminalToolBlock'
+import { getTerminalOp, type TerminalOp } from './presenters/terminal-tool-display'
 import { unwrapMcpResultText } from './presenters/tool-block-utils'
 import { ToolScreenshotViewPresenter } from './presenters/ToolScreenshotView'
 import { PortableHostImage } from './PortableHostImage'
@@ -45,6 +47,11 @@ export function portableComputerOp(toolName: string): ComputerOp | null {
 export function portableDeviceOp(toolName: string): DeviceOp | null {
   const bare = portableSuperoneToolName(toolName)
   return bare ? getDeviceOp(bare) : null
+}
+
+export function portableTerminalOp(toolName: string): TerminalOp | null {
+  const bare = portableSuperoneToolName(toolName)
+  return bare ? getTerminalOp(bare) : null
 }
 
 function PortableBrowserFile({ path, label }: { path: string; label: string }) {
@@ -186,6 +193,32 @@ export function PortableDeviceTool({
       renderScreenshot={(path, label, unavailableLabel) => (
         <PortableToolScreenshot path={path} label={label} unavailableLabel={unavailableLabel} />
       )}
+    />
+  )
+}
+
+export function PortableTerminalTool({
+  op,
+  input,
+  result,
+  toolSummary,
+  isStreaming,
+  isError,
+  onExpandedChange,
+  pendingDetails,
+}: PortableInteractiveToolProps & { op: TerminalOp }) {
+  const outcome = portableResult(result)
+  return (
+    <TerminalToolBlockPresenter
+      op={op}
+      params={portableToolParams(input)}
+      result={outcome.cleanResult}
+      toolSummary={toolSummary}
+      isStreaming={isStreaming}
+      isError={isError}
+      isDenied={outcome.isDenied}
+      onExpandedChange={onExpandedChange}
+      pendingDetails={pendingDetails}
     />
   )
 }

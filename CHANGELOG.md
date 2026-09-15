@@ -15,6 +15,109 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- Remote node: host-action artifacts (captures, downloads,
+  generated media) sync to the node as one delivery record. A
+  stuck upload retries from Settings.
+- Chat attachments are admitted inline with size and type limits.
+  A rejected file stays in the draft so it can be resized or
+  removed.
+- Desktop notifies when a run finishes, with the agent's closing
+  text.
+- Settings puts ChatGPT accounts on the provider cards, with
+  per-account usage.
+- Sessions can be found later by issue/PR reference tags.
+- Scheduled sends show a clock on desktop and mobile session lists.
+- Mobile: usage on the composer ring; permission, question and
+  plan sheets put away on an outside tap instead of dismissing.
+
+### Fixed
+
+- A Claude refusal fallback no longer wipes the rest of the turn.
+- Worktree status updates to the attached branch at turn end;
+  long branch names wrap and show the diff stat.
+- Deleting a session waits for runtime shutdown.
+- Mobile: permission sheets close after a sent decision; missed
+  transcript updates retry.
+
+### Changed
+
+- Agent skills and product manuals load only what the current
+  task needs.
+
+### Performance
+
+- Mobile reconnects reuse workspace caches; host payloads are
+  compressed. Upgrade desktop and phone together.
+
+## [0.67.0-alpha] - 2026-09-15
+
+### Added
+
+- Remote sessions: a session sync zone delivers host-action artifacts
+  (captures, downloads, generated media) to the remote node as one
+  durable record. A stuck upload retries from Settings.
+- Chat: attachments are admitted inline with validated local paths.
+  PDFs stay on disk; a failed admission keeps the draft so the file
+  can be resized or removed.
+- Notifications: a finished run posts a banner with the agent's
+  closing text, not only when the run blocks.
+- Settings: ChatGPT accounts live on the provider cards, with
+  per-account usage meters. Account management stays in Providers.
+- Sessions: MCP ref tags (`issue-N` / `pr-N`) sit beside topic
+  labels so a later session can find the same tracker item.
+  `session_tag_list` defaults to reusable labels.
+- Session lists include the armed scheduled-send time. The desktop
+  sidebar and the mobile drawer show a clock for it.
+- Mobile: subscription usage is the outer arc of the composer ring
+  (Claude OAuth, third-party Claude, Codex ChatGPT, Grok).
+- Mobile: a scrim tap, drag-down or Android back on a permission,
+  question or plan sheet puts it away as a strip instead of
+  dismissing the request.
+
+### Fixed
+
+- Claude: a model-refusal fallback retracts only the refused
+  partial, not the rest of the turn.
+- Chat: a worktree that commits then switches branch at turn end
+  shows the new branch instead of a detached SHA.
+- Chat: the tool-row recording icon sits with the expand chevron;
+  mobile error details use the full message width.
+- Session: runtime shutdown finishes before a delete, so an
+  in-flight close cannot be bypassed.
+- Worktree rows wrap long branch names and show `N files +ins -del`.
+- Sidebar hover actions no longer shove scheduled-send clocks out
+  of alignment.
+- MCP: operation memories require a reusable value before save.
+- Mobile: permission sheets dismiss after the decision is sent;
+  unacknowledged transcript updates retry; missing put-away copy
+  no longer leaks English keys.
+
+### Changed
+
+- Agent skills and product manuals load by task instead of the
+  full entrypoint on every trigger.
+
+### Performance
+
+- Mobile: workspace caches persist across reconnects; host
+  payloads are framed and compressed before encryption. Upgrade
+  the desktop with the phone — there is no legacy decoder.
+
+### Tests
+
+- Environment zone-producers mock the host so lazy wake imports
+  settle; MCP browser-upload tests use a readable delivery record;
+  settings tests assert OfficialProviderPanel dispatch.
+
+### CI
+
+- Generated mobile icon sets fail CI when they drift; Playwright
+  Chromium is installed for the brand-icon checks.
+
+## [0.66.0] - 2026-09-15
+
+### Added
+
 - Codex: several ChatGPT logins per host, bound per conversation, with a
   default for new threads. Settings manages the accounts; the model picker
   lists email and plan. Switching account on a thread with history needs a
@@ -42,48 +145,6 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Remote session pages count messages in one query.
 - Mobile connect-to-workspace round trips drop from seven to two, and
   workspace session lists survive drawer closes.
-
-## [0.66.0-alpha] - 2026-09-14
-
-### Added
-
-- Codex: several ChatGPT logins per host, bound per conversation. Settings
-  can add, sign in, sign out and set a default; the model picker lists each
-  account's email and plan. Managed accounts get their own `CODEX_HOME`.
-  Existing threads keep the account they started with; switching needs a
-  new session.
-- Chat: `widget_show` `@native/files-previewer` renders a carousel of
-  project files with a note per file. Desktop opens a fullscreen viewer;
-  the phone opens its existing file preview.
-- Mobile: videos in chat show a first-frame poster and play in the native
-  player after download; Save to Photos accepts clips.
-- Mobile: prompt suggestions are a composer panel, shown only while the
-  draft is empty.
-- Mobile: an OTA JS bundle downloaded at launch is applied immediately
-  behind an automatic gate, instead of waiting for the next cold start.
-
-### Fixed
-
-- Harness: runtime tarballs extract beside the install root, so a Linux
-  install across filesystems no longer fails with `EXDEV`.
-- MCP: memory-read and capture prompts are scoped to the current task.
-- Mobile: the last harness catalog stays on screen while a refresh is in
-  flight; `@` right after a word opens the mention overlay; one loading
-  surface per transcript edge, and no slash strip without a query; leaving
-  session search restores the workspace drawer; the device row stays on
-  Connecting until the tap has landed; discovery with no live LAN route
-  dials the relay instead of sitting idle.
-- Chat view: markdown tables on the phone are no longer height-capped.
-
-### Performance
-
-- Desktop: counting messages for a remote session page is one query.
-- Mobile: workspace session lists survive drawer closes; connect-to-
-  workspace round trips drop from seven to two.
-
-### CI
-
-- Relay deploy installs dependencies without lifecycle scripts.
 
 ## [0.65.0] - 2026-09-12
 

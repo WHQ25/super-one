@@ -33,6 +33,10 @@ vi.mock('../browser/browser-automation-bridge', () => ({ browserAutomationCall: 
 vi.mock('../logger', () => ({ default: { warn: () => {}, info: () => {}, error: () => {}, debug: () => {} } }))
 vi.mock('../media-file-grants', () => ({ mediaFileGrants: () => ({ add: () => {} }) }))
 vi.mock('../app-settings-service', () => ({ readAppSettings: () => ({}) }))
+// wakeDownloadDelivery imports the host lazily and never awaits it; without a
+// mock the real module graph is still loading when the file finishes, which
+// vitest reports as an EnvironmentTeardownError on a slow runner.
+vi.mock('./environment-host', () => ({ getEnvironmentHost: () => ({ artifactTransfers: { wake: () => {} } }) }))
 
 import { advanceDelivery, claimDelivery, completeDelivery, dropSessionDeliveries, ensureSessionFileDeliveriesSchema, findDeliveryByPath, getDelivery, listSessionDeliveries } from '../db-session-deliveries'
 import { isHolderAlive, mintHolder } from './delivery-holders'

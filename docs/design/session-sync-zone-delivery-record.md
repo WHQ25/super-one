@@ -1,9 +1,12 @@
 # One delivery record — replacing the claim/handoff/job triple
 
-Status: **implemented — §10.1 through §10.6 all landed.** Supersedes §4.1 and
-§5.3 of `session-sync-zone.md`. Review markers: P1–P5 from the first review,
-Q1–Q4 from the second, E090-1–E090-6 and FE99-1 from the third
-(worker/registry hardening and its regression).
+Status: **implemented and review-complete — §10.1 through §10.6 all landed, all
+review rounds closed.** Supersedes §4.1 and §5.3 of `session-sync-zone.md`.
+Review markers: P1–P5 from the first review, Q1–Q4 from the second,
+E090-1–E090-6 and FE99-1 from the third (worker/registry hardening and its
+regression), then the E090-4 owner lifecycle / observer-permission and the
+E090-3 live-vs-stopped-committing and `retryRequired` refinements. Not yet
+pushed/merged.
 
 Implementation notes (things decided while building, not derivable from the
 spec above):

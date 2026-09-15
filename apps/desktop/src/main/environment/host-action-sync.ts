@@ -361,6 +361,11 @@ export async function syncHostActionOutputs(
     // Files whose final chunk was sent but not confirmed (§6): no worker will
     // retry them, so the agent is told they stopped, not that they are on the way.
     const stopped: string[] = []
+    // Files whose automatic upload gave up before the final put (retries
+    // exhausted): the worker's own query excludes gave-up rows, so they are
+    // neither on their way nor a lost commit — only a person's Retry Upload
+    // recovers them (E090-3).
+    const retryRequired: string[] = []
     const rate = Math.max(1, deps.transfers.throughputBytesPerMs(deps.connectionId))
     // Smallest first: a screenshot should never wait behind a recording.
     planned.sort((a, b) => a.size - b.size)
@@ -393,6 +398,15 @@ export async function syncHostActionOutputs(
       if (row.phase === 'committing') {
         if (isHolderAlive(row.holder)) deferred.push(item.nodePath)
         else stopped.push(item.nodePath)
+        continue
+      }
+      // Gave up before the final put (retries exhausted, or the local file went
+      // missing and came back): its bytes were never sent, so it is not stopped
+      // (§6) — but the worker will not carry a gave-up row either, so it is not
+      // deferred. It needs a person: Settings → Retry Upload. Do not wake a
+      // worker that will skip it (E090-3).
+      if (row.gaveUpAt != null) {
+        retryRequired.push(item.nodePath)
         continue
       }
       // Being delivered by someone else, or already the worker's — an upload in
@@ -503,18 +517,20 @@ export async function syncHostActionOutputs(
     const content = (reply.content ?? []).map((block) =>
       typeof block.text === 'string' ? { ...block, text: rewriteArtifactPaths(block.text, mapping) } : block,
     )
-    if (deferred.length === 0 && stopped.length === 0) return { ...reply, content }
+    if (deferred.length === 0 && stopped.length === 0 && retryRequired.length === 0) return { ...reply, content }
     // The node's MCP server forwards `content` and nothing else of the envelope,
-    // so both lists have to be content too or the model only ever sees the ENOENT
-    // (§4.1) — and it must be able to tell "on its way" from "stopped, re-run".
+    // so every list has to be content too or the model only ever sees the ENOENT
+    // (§4.1) — and it must be able to tell "on its way" from "stopped, re-run"
+    // from "gave up, retry from Settings".
     const notices = [
       ...(deferred.length ? [{ type: 'text' as const, text: deferredNotice(deferred) }] : []),
       ...(stopped.length ? [{ type: 'text' as const, text: stoppedNotice(stopped) }] : []),
+      ...(retryRequired.length ? [{ type: 'text' as const, text: retryRequiredNotice(retryRequired) }] : []),
     ]
     return {
       ...reply,
       content: [...content, ...notices],
-      sync: { deferred, ...(stopped.length ? { stopped } : {}) },
+      sync: { deferred, ...(stopped.length ? { stopped } : {}), ...(retryRequired.length ? { retryRequired } : {}) },
     }
   } finally {
     // Every held handle this call took is accounted for on every path: pushed
@@ -580,5 +596,13 @@ function stoppedNotice(paths: string[]): string {
     `SuperOne sync: the transfer of ${paths.length === 1 ? 'this file' : 'these files'} was interrupted after the final chunk was sent and could not be confirmed, so ${paths.length === 1 ? 'it is' : 'they are'} not available at the path shown and will NOT be retried automatically:`,
     ...paths.map((p) => `- ${p}`),
     'Re-run the action that produced ' + (paths.length === 1 ? 'it' : 'them') + ' to deliver again; you will not be notified about the stopped transfer.',
+  ].join('\n')
+}
+
+function retryRequiredNotice(paths: string[]): string {
+  return [
+    `SuperOne sync: the automatic upload of ${paths.length === 1 ? 'this file' : 'these files'} exhausted its retries and stopped, so ${paths.length === 1 ? 'it is' : 'they are'} not available at the path shown and will NOT be retried automatically:`,
+    ...paths.map((p) => `- ${p}`),
+    'Retry from Settings → Session Storage → Retry Upload; you will not be notified until then.',
   ].join('\n')
 }

@@ -106,13 +106,17 @@ test on the real SQLite fixture / Electron event boundary:
   means its executor is finishing the final put right now — it will complete and
   wake the agent, so it is reported `deferred` (on its way), not stopped. Only a
   `committing` row whose holder is gone had its put sent and lost, with no worker
-  to retry it — that one is `stopped`, and stays stopped when observed again. (A
-  row that gave up in an earlier phase falls through to the ordinary handling: its
-  bytes were never a sent-but-unconfirmed put, so it must not borrow the "re-run"
-  message; Settings Retry Upload can recover it.) Before the fix, observing a
-  stopped file again (a later `browser_download` listing naming the same path)
-  turned it into a deferred "you will be notified" wake no worker honours, and a
-  live commit-in-flight was wrongly reported stopped.
+  to retry it — that one is `stopped`, and stays stopped when observed again. A
+  row that gave up in an EARLIER phase (upload retries exhausted, or the local
+  file went missing and came back) is a third case with its own reply category,
+  `retryRequired`: its bytes were never a sent-but-unconfirmed put, so it must not
+  borrow the "re-run" message, and the worker's own query excludes gave-up rows,
+  so it is not "on its way" either. The reply says the automatic upload stopped
+  and points to Settings → Retry Upload, without waking a worker that would skip
+  it. Before the fix, observing a stopped file again (a later `browser_download`
+  listing naming the same path) turned it into a deferred "you will be notified"
+  wake no worker honours; a live commit-in-flight was wrongly reported stopped;
+  and a gave-up row promised a completion notice that never came.
 - **FE99-1 — a seal that throws frees its holder.** `sealZoneFile`'s two seal
   paths wrap "acquire/create holder → seal → hand off" in a `try/finally`: unless
   the row was handed to the call scope, the holder is retired even if hashing,

@@ -461,6 +461,44 @@ describe('host action outputs', () => {
     expect(rowOf(shot)).toMatchObject({ phase: 'committing', holder })
   })
 
+  it('reports a file whose automatic upload gave up as needing a Settings retry, not a deferred wake (E090-3)', async () => {
+    // A real retry exhaustion, not a hand-set phase: a two-chunk file whose FIRST
+    // (non-final) put always fails backs off at `uploading` and, after
+    // MAX_UPLOAD_ATTEMPTS, gives up. The worker's own query excludes gave-up rows,
+    // so observing it must NOT promise a completion notice (deferred), nor claim a
+    // sent-but-unconfirmed put (stopped) — only a person's Settings → Retry Upload
+    // recovers it.
+    const node = fakeNode()
+    const big = sealed('s1', 'recording/run.mp4', Buffer.alloc(ARTIFACT_CHUNK_BYTES + 1, 7), 'recording')
+    let clock = 1_000_000
+    const service = new ArtifactTransferService({
+      put: async (_c: string, req: ArtifactPutRequest) => {
+        if (!req.final) throw Object.assign(new Error('link down'), { code: 'unavailable' })
+        return node.deps.put(req)
+      },
+      now: () => clock,
+    })
+    for (let i = 0; i < 8; i++) {
+      await service.runOnce('c1')
+      const row = rowOf(big)
+      if (row.nextAttemptAt) clock = row.nextAttemptAt + 1
+    }
+    const gaveUp = rowOf(big)
+    expect(gaveUp).toMatchObject({ phase: 'uploading', outcome: null, attempts: 8 })
+    expect(gaveUp.gaveUpAt).not.toBeNull()
+    expect(node.files.has('recording/run.mp4')).toBe(false)
+    // Observed now, mid another action: not on its way, not a lost commit.
+    const out = await syncHostActionOutputs('s1', [big], new Map(), { content: [{ type: 'text', text: big.path }] }, Date.now() + 60_000, node.deps)
+    const sync = out.sync as { deferred: string[]; stopped?: string[]; retryRequired?: string[] }
+    expect(sync.retryRequired).toEqual(['/home/node/.superone/node/sync/s1/recording/run.mp4'])
+    expect(sync.deferred).toEqual([])
+    expect(sync.stopped).toBeUndefined()
+    expect(node.wakes()).toBe(0)
+    expect(out.content!.some((b) => /Retry Upload/i.test(b.text ?? ''))).toBe(true)
+    // Only Settings' Retry Upload puts it back in the queue.
+    expect(service.retryGivenUp('s1')).toMatchObject({ retried: 1 })
+  })
+
   it('does not abandon a file it only observed; the original worker still delivers it (E090-4)', async () => {
     // A background page-download sealed the file outside any call — worker-
     // eligible, sealed and unheld. A different call (a perf wrapper) observes the

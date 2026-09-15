@@ -11,6 +11,7 @@ import { WorkDirLabel, workDirIcon, workDirTitle, type WorkDirState } from './wo
 import { WorktreeHandoffSection } from './WorktreeHandoffSection'
 import { WorktreeAssignBranchSection } from './WorktreeAssignBranchSection'
 import { WorktreeForkSection } from './WorktreeForkSection'
+import { WorktreeEntryRow } from './WorktreeEntryRow'
 import { DiffStat, sameDirty } from './DiffStat'
 
 /** Match host path to UI activePath (may be remote:<conn>:<hostPath>). */
@@ -450,30 +451,15 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
                 {filteredExisting.map((e) => {
                   const meta = wtMetas[e.path]
                   const detached = !e.branch
-                  const dirty = meta?.dirty
-                  const isCurrent = sameWorktreePath(e.path, wtState?.activePath)
                   return (
-                    <button
+                    <WorktreeEntryRow
                       key={e.path}
-                      type="button"
+                      label={detached ? `${t('chat.worktree.detachedLabel')} ${meta?.shortHead ?? ''}` : e.branch!}
+                      detached={detached}
+                      dirty={meta?.dirty}
+                      isCurrent={sameWorktreePath(e.path, wtState?.activePath)}
                       onClick={() => handleSwitchToExisting(e)}
-                      className="flex w-full items-start gap-2 px-3 py-1.5 text-xs hover:bg-accent"
-                    >
-                      {detached ? <GitCommit className="mt-0.5 size-3 shrink-0 text-muted-foreground" /> : <GitBranch className="mt-0.5 size-3 shrink-0 text-muted-foreground" />}
-                      <div className="flex flex-1 flex-col items-start min-w-0">
-                        {/* Long branch names wrap onto a second line instead of colliding
-                            with the trailing columns; the hash only identifies detached rows. */}
-                        <span className={`line-clamp-2 break-words text-left ${detached ? 'text-muted-foreground' : ''}`}>
-                          {detached ? `${t('chat.worktree.detachedLabel')} ${meta?.shortHead ?? ''}` : e.branch}
-                        </span>
-                        {dirty && dirty.files > 0 && (
-                          <span className="text-xs text-amber-500">
-                            <DiffStat stat={dirty} />
-                          </span>
-                        )}
-                      </div>
-                      {isCurrent && <Check className="mt-0.5 size-3 shrink-0 text-primary" />}
-                    </button>
+                    />
                   )
                 })}
               </>

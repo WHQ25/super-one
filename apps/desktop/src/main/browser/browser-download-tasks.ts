@@ -2,6 +2,8 @@ import { randomUUID } from 'crypto'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import log from '../logger'
 import { downloadUrl, type DownloadProgress, type DownloadResult } from './browser-downloads'
+import { wakeDownloadDelivery } from '../agent/browser-download-store'
+import { currentHostActionConnection } from '../mcp/artifact-registry'
 
 export type DownloadTaskStatus = 'running' | 'completed' | 'failed' | 'stopped'
 
@@ -39,12 +41,14 @@ type Settled =
 interface InternalTask extends DownloadTaskSnapshot {
   done: Promise<Settled>
   resolveDone: (value: Settled) => void
+  /** Remote connection this download was started for; absent for a local session. */
+  connectionId?: string
 }
 
 const tasks = new Map<string, InternalTask>()
 
 function snapshotOf(t: InternalTask): DownloadTaskSnapshot {
-  const { done: _d, resolveDone: _r, ...snap } = t
+  const { done: _d, resolveDone: _r, connectionId: _c, ...snap } = t
   return { ...snap }
 }
 
@@ -65,6 +69,7 @@ export function hasRunningDownloadTasks(sessionId?: string): boolean {
 function createTask(
   sessionId: string,
   fields: Partial<Pick<DownloadTaskSnapshot, 'url' | 'filename'>>,
+  connectionId?: string,
 ): InternalTask {
   let resolveDone!: (value: Settled) => void
   const done = new Promise<Settled>((resolve) => {
@@ -81,6 +86,7 @@ function createTask(
     filename: fields.filename,
     done,
     resolveDone,
+    ...(connectionId ? { connectionId } : {}),
   }
   tasks.set(task.taskId, task)
   emitHost(sessionId, {
@@ -153,6 +159,11 @@ function settle(task: InternalTask, settled: Settled): void {
     resultText: JSON.stringify(resultPayload),
   })
 
+  // A foreground download settles inside its tool call, where the registry has
+  // the ref and the executor pushes it eagerly; only a backgrounded one finishes
+  // with nobody left to push it, and its sealed row waits for the worker.
+  if (settled.ok && task.backgrounded && task.connectionId) wakeDownloadDelivery(task.connectionId)
+
   if (task.backgrounded) {
     void notifyAgent(task, settled).catch((err) => {
       log.warn('[browser-download-tasks] notify agent failed task=%s: %s', task.taskId, err instanceof Error ? err.message : String(err))
@@ -204,7 +215,10 @@ export function startUrlDownloadTask(
   filename?: string,
   dir?: string,
 ): DownloadTaskSnapshot {
-  const task = createTask(sessionId, { url, filename })
+  // Read while the tool call's scope is still open: the download itself
+  // finishes later, outside it.
+  const connectionId = currentHostActionConnection() ?? undefined
+  const task = createTask(sessionId, { url, filename }, connectionId)
   const onProgress = (p: DownloadProgress): void => {
     task.filename = p.filename
     task.bytes = p.bytes
@@ -220,7 +234,7 @@ export function startUrlDownloadTask(
       url,
     })
   }
-  void downloadUrl(url, { filename, dir, onProgress })
+  void downloadUrl(url, { filename, dir, sessionId, onProgress })
     .then((result) => settle(task, { ok: true, result }))
     .catch((err) => settle(task, { ok: false, error: err instanceof Error ? err.message : String(err) }))
   return snapshotOf(task)

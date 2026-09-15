@@ -27,26 +27,26 @@ export interface NativeActionPorts {
    * Show the file itself: small text in the preview page, anything else through
    * the receive/share sheet. `line` is the cited line a chip was tapped on.
    */
-  previewFile(path: string, line?: number): Promise<void>
+  previewFile(path: string, line?: number, root?: string): Promise<void>
   /**
    * Fetch an image for the transcript to show inline. Resolves to the data URI,
    * or to `confirmRequired` when the relay would have to stage the file on R2
    * first; `confirmed` is that approval on the second request. Small relay
    * files skip confirmation and come back as a data URI in one trip.
    */
-  loadImage(path: string, confirmed: boolean): Promise<Record<string, unknown>>
+  loadImage(path: string, confirmed: boolean, root?: string): Promise<Record<string, unknown>>
   /**
    * The first frame of a video on the host, for the transcript's video tile.
    * Cut on the host and always in-band, so there is no confirmation step;
    * `null` when the host cannot decode the clip and the tile stays a chip.
    */
-  loadVideoPoster(path: string): Promise<VideoPosterResult | null>
+  loadVideoPoster(path: string, root?: string): Promise<VideoPosterResult | null>
   /**
    * A small text file, in-band, for the files previewer to render in place.
    * `tooLarge` when the host will not put it on the RPC; the card then shows
    * a chip that opens the preview page instead.
    */
-  loadTextFile(path: string): Promise<TextFileResult>
+  loadTextFile(path: string, root?: string): Promise<TextFileResult>
   /**
    * The original picture behind a thumbnail the transcript carries for an
    * attachment (`ImageAttachment.preview`), as a data URI for the viewer.
@@ -95,6 +95,16 @@ function payloadString(message: NativeRequest, key: string): string {
   const value = (message.payload as Record<string, unknown> | undefined)?.[key]
   if (typeof value !== 'string' || !value) throw new Error(`invalid ${message.action} payload`)
   return value
+}
+
+/**
+ * The session root a file command names, when the card knows it. Absent from a
+ * surface that only ever shows local paths, so it stays optional rather than
+ * required (inline-files-previewer.md §6.1).
+ */
+function payloadRoot(message: NativeRequest): string | undefined {
+  const value = (message.payload as Record<string, unknown> | undefined)?.root
+  return typeof value === 'string' && value ? value : undefined
 }
 
 /**
@@ -157,14 +167,15 @@ export async function resolveNativeRequest(
       await ports.previewFile(
         payloadString(message, 'path'),
         typeof line === 'number' && Number.isInteger(line) && line > 0 ? line : undefined,
+        payloadRoot(message),
       )
     } else if (message.action === 'loadImage') {
       const confirmed = (message.payload as Record<string, unknown> | undefined)?.confirmed === true
-      result = await ports.loadImage(payloadString(message, 'path'), confirmed)
+      result = await ports.loadImage(payloadString(message, 'path'), confirmed, payloadRoot(message))
     } else if (message.action === 'loadVideoPoster') {
-      result = { poster: await ports.loadVideoPoster(payloadString(message, 'path')) }
+      result = { poster: await ports.loadVideoPoster(payloadString(message, 'path'), payloadRoot(message)) }
     } else if (message.action === 'loadTextFile') {
-      result = await ports.loadTextFile(payloadString(message, 'path'))
+      result = await ports.loadTextFile(payloadString(message, 'path'), payloadRoot(message))
     } else if (message.action === 'loadAttachment') {
       const attachmentId = (message.payload as Record<string, unknown> | undefined)?.attachmentId
       result = { dataUri: await ports.loadAttachment(payloadString(message, 'messageId'), {

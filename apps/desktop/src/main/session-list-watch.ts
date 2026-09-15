@@ -26,3 +26,24 @@ export function notifySessionList(projectPath: string | null | undefined): void 
   if (!projectPath) return
   for (const watcher of sessionListWatchers) watcher(projectPath)
 }
+
+/**
+ * "These sessions no longer exist" — the signal everything that holds
+ * per-session state outside the database reclaims on (the sync zone under
+ * userData, its transfer jobs). Same reasoning as the list watcher: three
+ * entry points delete sessions (one IPC, "delete older", `session_cleanup`),
+ * and a cleanup hung off one of them was missed by the other two.
+ */
+export type SessionDeleteWatcher = (sessionIds: string[]) => void
+
+const sessionDeleteWatchers = new Set<SessionDeleteWatcher>()
+
+export function watchSessionDeletes(watcher: SessionDeleteWatcher): () => void {
+  sessionDeleteWatchers.add(watcher)
+  return () => { sessionDeleteWatchers.delete(watcher) }
+}
+
+export function notifySessionsDeleted(sessionIds: string[]): void {
+  if (sessionIds.length === 0) return
+  for (const watcher of sessionDeleteWatchers) watcher(sessionIds)
+}

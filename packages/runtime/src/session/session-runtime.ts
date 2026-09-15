@@ -221,6 +221,15 @@ export class SessionRuntime {
    * beginTurn + long-lived SDK session instead.
    */
   private readonly turnQueues = new Map<string, TurnQueueItem[]>()
+  /**
+   * `session + notificationId` already delivered, so a retried
+   * artifact-completion RPC injects once. In memory: a node restart may let
+   * one duplicate through, which is the right way round — a repeated wake is
+   * noise, a lost one leaves the agent believing a path it can read is gone.
+   */
+  private readonly deliveredArtifactNotifications = new Set<string>()
+  /** Deliveries in flight, so concurrent retries share one turn instead of racing. */
+  private readonly deliveringArtifactNotifications = new Map<string, Promise<void>>()
   /** In-flight runTurn count per session (for multi-turn live inject). */
   private readonly activeTurnCounts = new Map<string, number>()
   /**
@@ -1017,6 +1026,60 @@ export class SessionRuntime {
     return this.clone(session)
   }
 
+  /**
+   * Deliver a host-built completion notification for finished artifact
+   * transfers (`docs/design/session-sync-zone.md` §4.1). Controller-bound like
+   * the Host Action channel, and idempotent by `notificationId` so a desktop
+   * retry after a dropped ACK injects the turn once. The text is built on the
+   * node from files it has confirmed — the desktop cannot inject arbitrary
+   * text as a user turn through this path.
+   */
+  async notifyArtifactsCompleted(input: {
+    sessionId: string
+    controllerClientSessionId: string
+    notificationId: string
+    text: string
+  }): Promise<{ delivered: boolean }> {
+    const session = this.live.get(input.sessionId)
+    if (!session) throw Object.assign(new Error('session not found'), { code: 'not_found' })
+    if (!session.controllerClientSessionId || session.controllerClientSessionId !== input.controllerClientSessionId) {
+      throw Object.assign(new Error('not the session controller'), { code: 'forbidden' })
+    }
+    // Keyed by session as well as id: two sessions' jobs are unrelated even
+    // when their ids collide. Recorded only *after* the turn is accepted — a
+    // receipt written before the await turns a transient failure into a
+    // permanently lost notification, which is the one outcome this channel
+    // exists to prevent.
+    const key = `${input.sessionId}\u0000${input.notificationId}`
+    // The receipt lives in the host-action store, which survives a restart;
+    // the in-memory set only stands in when there is no store at all.
+    const delivered = this.hostActions
+      ? this.hostActions.hasDeliveredNotification(input.sessionId, input.notificationId)
+      : this.deliveredArtifactNotifications.has(key)
+    if (delivered) return { delivered: true }
+    const existing = this.deliveringArtifactNotifications.get(key)
+    if (existing) {
+      await existing
+      return { delivered: true }
+    }
+    const work = this.sendWithoutLease({ sessionId: input.sessionId, text: input.text, source: 'task-notification' })
+      .then(() => {
+        if (this.hostActions) {
+          this.hostActions.recordDeliveredNotification(input.sessionId, input.notificationId)
+          return
+        }
+        this.deliveredArtifactNotifications.add(key)
+        if (this.deliveredArtifactNotifications.size > 4096) {
+          const oldest = this.deliveredArtifactNotifications.values().next().value
+          if (oldest !== undefined) this.deliveredArtifactNotifications.delete(oldest)
+        }
+      })
+      .finally(() => this.deliveringArtifactNotifications.delete(key))
+    this.deliveringArtifactNotifications.set(key, work)
+    await work
+    return { delivered: true }
+  }
+
   private appendUserMessage(session: NodeSessionRecord, opts: TurnOpts): void {
     // Model still receives full opts.text (incl. collab credential); transcript
     // stores a redacted copy for task-notification wakes.
@@ -1683,6 +1746,29 @@ export class SessionRuntime {
       sessionId: row.sessionId,
       turnId: row.turnId,
     }
+  }
+
+  /**
+   * Extend a live claim instead of letting it lapse (§4.1) — the desktop asks
+   * when a Host Action's outputs are still uploading. Bounded by the action's
+   * own deadline, so the agent never waits longer than it already agreed to.
+   */
+  renewHostActionClaim(input: {
+    actionId: string
+    claimToken: string
+    controllerClientSessionId: string
+    ttlMs?: number
+  }): { actionId: string; version: number; claimExpiresAt: number } {
+    if (!this.hostActions) {
+      throw Object.assign(new Error('host action store not configured'), { code: 'failed_precondition' })
+    }
+    const row = this.hostActions.renewClaim({
+      actionId: input.actionId,
+      claimToken: input.claimToken,
+      controllerClientSessionId: input.controllerClientSessionId,
+      ttlMs: input.ttlMs ?? DEFAULT_HOST_ACTION_CLAIM_TTL_MS,
+    })
+    return { actionId: row.actionId, version: row.version, claimExpiresAt: row.claimExpiresAt! }
   }
 
   /**

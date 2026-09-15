@@ -572,7 +572,7 @@ describe('IosSimulatorManager screen capture', () => {
 
     expect(capture.kind).toBe('screenshot')
     expect(capture.path).toBe(`/captures/device-a/${capture.fileName}`)
-    expect(capture.fileName).toMatch(/^iPhone-17-Pro-\d{8}-\d{6}\.png$/)
+    expect(capture.fileName).toMatch(/^iPhone-17-Pro-\d{8}-\d{6}-\d{3}-[0-9a-f]{4}\.png$/)
     expect(harness.capture.screenshot).toHaveBeenCalledWith('device-a', capture.path)
   })
 

@@ -16,8 +16,10 @@
  * fingerprint differs.
  */
 
+import { ensureArtifactDir } from '../environment/zone-owner'
 import { createHash } from 'node:crypto'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { writeFileSync } from 'node:fs'
+import { publishZoneFileAt } from '../environment/zone-delivery'
 import { dirname, join } from 'node:path'
 import type { DeviceOrientation, DeviceUiNode } from '@superone/shared/device-agent'
 import { splitDeviceText } from '@superone/shared/device'
@@ -183,8 +185,11 @@ export class AndroidBackend implements TouchDeviceBackend {
     const { serial, name } = this.require()
     const png = await this.screencap(serial)
     const path = join(this.captureRoot, this.deviceId, captureFileName(name, 'png', new Date()))
-    await mkdir(dirname(path), { recursive: true })
-    await writeFile(path, png)
+    ensureArtifactDir(dirname(path))
+    // Synchronous, and the record in the same sequence: an `await` between the
+    // file and its row is a window a directory mirror can prune through.
+    writeFileSync(path, png)
+    publishZoneFileAt(path, png)
     const size = readPngSize(png)
     return { path, width: size?.width ?? 0, height: size?.height ?? 0 }
   }

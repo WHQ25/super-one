@@ -24,6 +24,7 @@ import { changeLocale } from '@/i18n'
 import { useAppStore } from '@/stores/app'
 import { DefaultProviderRow } from '@/components/providers/DefaultProviderRow'
 import { NotificationSettingsSection } from '@/components/settings/NotificationSettingsSection'
+import { SessionStorageSection } from '@/components/settings/SessionStorageSection'
 import type { Locale, PowerMode } from '@superone/shared/agent-types'
 
 export function AppSettingsPage() {
@@ -226,6 +227,8 @@ export function AppSettingsPage() {
         </div>
 
         <NotificationSettingsSection />
+
+        <SessionStorageSection />
 
         <div className="rounded-lg border border-border">
           <div className="border-b border-border px-4 py-2">

@@ -557,23 +557,23 @@ export function MobileApp() {
         if (!runtime) throw new Error('no active session')
         runtime.respondCodexPlan(messageId, status, feedback)
       },
-      previewFile: (path, line) => filePreview.open(path, line),
+      previewFile: (path, line, root) => filePreview.open(path, line, root),
       previewImage: async (target) => { filePreview.showImage(target) },
       previewMermaid: async (svg) => { filePreview.showMermaid(svg) },
-      loadImage: async (path, confirmed) => {
+      loadImage: async (path, confirmed, root) => {
         const client = clientRef.current
         if (!client || !project) throw new Error('no active project')
-        return loadInlineImage({ host: client, transport: activeTransport, projectPath: project.path, sessionId, path, confirmed })
+        return loadInlineImage({ host: client, transport: activeTransport, projectPath: project.path, sessionId, path, root, confirmed })
       },
-      loadVideoPoster: async (path) => {
+      loadVideoPoster: async (path, root) => {
         const client = clientRef.current
         if (!client || !project) throw new Error('no active project')
-        return loadVideoPoster({ host: client, projectPath: project.path, sessionId, path })
+        return loadVideoPoster({ host: client, projectPath: project.path, sessionId, path, root })
       },
-      loadTextFile: async (path) => {
+      loadTextFile: async (path, root) => {
         const client = clientRef.current
         if (!client || !project) throw new Error('no active project')
-        return loadTextFile({ host: client, projectPath: project.path, sessionId, path })
+        return loadTextFile({ host: client, projectPath: project.path, sessionId, path, root })
       },
       loadAttachment: async (messageId, ref) => {
         const runtime = runtimeRef.current

@@ -1,5 +1,5 @@
+import { ensureArtifactDir } from '../environment/zone-owner'
 import { spawn } from 'node:child_process'
-import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
 /** A recording in flight. Stopping is the only thing that produces the file. */
@@ -32,7 +32,7 @@ export interface SimctlCaptureDeps {
 function defaultDeps(): SimctlCaptureDeps {
   return {
     spawnProcess: spawn,
-    ensureDir: async (path) => { await mkdir(path, { recursive: true }) },
+    ensureDir: async (path) => { ensureArtifactDir(path) },
   }
 }
 

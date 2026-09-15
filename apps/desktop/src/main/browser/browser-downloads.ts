@@ -6,7 +6,9 @@ import { pipeline } from 'stream/promises'
 import log from '../logger'
 import { mediaFileGrants } from '../media-file-grants'
 import { browserAutomationCall } from './browser-automation-bridge'
-import { filenameFor, reserveDownloadPath } from '../agent/browser-download-store'
+import { abandonZoneFile, sealZoneFile } from '../environment/zone-delivery'
+import { filenameFor, registerDownload, reserveDownloadPath, wakeDownloadDelivery } from '../agent/browser-download-store'
+import { tabDriver, type TabDriver } from './browser-tab-drivers'
 
 const BROWSER_PARTITION = 'persist:browser'
 const MAX_CAPTURED = 20
@@ -20,12 +22,14 @@ interface CapturedDownload {
   state: 'progressing' | 'completed' | 'cancelled' | 'interrupted'
   startedAt: number
   webContentsId: number
+  /** The session that drove the tab when the download started, if known. */
+  driver: TabDriver | null
 }
 
 // The capture buffer spans every browser view in the app, so a download is only
 // ever reported to the session that owns the tab it came from — otherwise one
 // session's agent could read another's downloaded files.
-export type DownloadRecord = Omit<CapturedDownload, 'webContentsId'>
+export type DownloadRecord = Omit<CapturedDownload, 'webContentsId' | 'driver'>
 
 export interface DownloadResult {
   path: string
@@ -94,19 +98,33 @@ export interface DownloadUrlOptions {
   filename?: string
   /** Absolute directory to save into. Defaults to the configured download directory. */
   dir?: string | null
+  /**
+   * Session the download belongs to. A remote session's file lands in its sync
+   * zone and is registered so the Host Action pushes it to the node
+   * (`docs/design/session-sync-zone.md` §6); a local session is unaffected.
+   */
+  sessionId?: string | null
   onProgress?: (p: DownloadProgress) => void
 }
 
 export async function downloadUrl(url: string, opts: DownloadUrlOptions = {}): Promise<DownloadResult> {
-  const { filename: filenameOverride, dir, onProgress } = opts
+  const { filename: filenameOverride, dir, sessionId, onProgress } = opts
   if (!url) throw new Error('Invalid URL')
   if (url.startsWith('data:')) {
     const { buf, mimeType } = parseDataUrl(url, 'application/octet-stream')
     const filename = filenameFor(filenameOverride || '', url, mimeType)
-    const path = reserveDownloadPath(filename, dir)
-    await writeFile(path, buf)
+    const path = reserveDownloadPath(filename, dir, sessionId)
+    try {
+      await writeFile(path, buf)
+    } catch (err) {
+      // The reservation claimed the path against the mirror; a write that never
+      // happened must give it back or the file is protected forever.
+      if (sessionId) abandonZoneFile(sessionId, path)
+      throw err
+    }
     onProgress?.({ bytes: buf.byteLength, totalBytes: buf.byteLength, filename, mimeType })
     mediaFileGrants().add(path)
+    registerDownload(sessionId, path, true)
     return { path, filename, bytes: buf.byteLength, mimeType }
   }
 
@@ -115,14 +133,23 @@ export async function downloadUrl(url: string, opts: DownloadUrlOptions = {}): P
   const mimeType = resp.headers.get('content-type')?.split(';')[0]?.trim() || 'application/octet-stream'
   const disposition = resp.headers.get('content-disposition')
   const filename = filenameFor(filenameOverride || nameFromDisposition(disposition), url, mimeType)
-  const path = reserveDownloadPath(filename, dir)
+  const path = reserveDownloadPath(filename, dir, sessionId)
   const totalBytes = Number(resp.headers.get('content-length')) || null
 
+  try {
+    return await receiveBody()
+  } catch (err) {
+    if (sessionId) abandonZoneFile(sessionId, path)
+    throw err
+  }
+
+  async function receiveBody(): Promise<DownloadResult> {
   if (!resp.body) {
     const buf = Buffer.from(await resp.arrayBuffer())
     await writeFile(path, buf)
     onProgress?.({ bytes: buf.byteLength, totalBytes: buf.byteLength, filename, mimeType })
     mediaFileGrants().add(path)
+    registerDownload(sessionId, path, true)
     return { path, filename, bytes: buf.byteLength, mimeType }
   }
 
@@ -142,7 +169,9 @@ export async function downloadUrl(url: string, opts: DownloadUrlOptions = {}): P
   const { size } = await import('fs/promises').then((fs) => fs.stat(path))
   onProgress?.({ bytes: size, totalBytes: totalBytes ?? size, filename, mimeType })
   mediaFileGrants().add(path)
+  registerDownload(sessionId, path, true)
   return { path, filename, bytes: size, mimeType }
+  }
 }
 
 /**
@@ -154,11 +183,37 @@ export async function downloadUrl(url: string, opts: DownloadUrlOptions = {}): P
 export function registerBrowserDownloadCapture(): void {
   session.fromPartition(BROWSER_PARTITION).on('will-download', (_event, item, webContents) => {
     const filename = filenameFor(item.getFilename(), item.getURL(), item.getMimeType() || '')
+    // Ownership is renderer state behind an async call and this handler must
+    // answer now; the session that last drove the tab is known synchronously
+    // and is the one whose agent clicked. A remote session's file goes into
+    // its zone so the agent can open it; a local session's into Downloads.
+    const driver = tabDriver(webContents?.id)
     let path: string
     try {
-      path = reserveDownloadPath(filename)
+      path = driver
+        ? reserveDownloadPath(filename, null, driver.sessionId, { connectionId: driver.connectionId })
+        : reserveDownloadPath(filename)
     } catch (err) {
-      log.warn('[browser-download] failed to reserve a save path', err)
+      // The reservation is now strict: the delivery record could not be written,
+      // or the session's zone was dropped. Returning here would let Electron
+      // fall back to its default save flow — a dialog, or an untracked file in
+      // the user's Downloads that a remote agent can never see (E090-6). Cancel
+      // the download instead, and record the failure for `waitForDownloads`.
+      log.warn('[browser-download] refused to reserve a save path; cancelling', err)
+      try { item.cancel() } catch (cancelErr) { log.debug('[browser-download] could not cancel a refused download', cancelErr) }
+      const failed: CapturedDownload = {
+        url: item.getURL(),
+        filename,
+        path: '',
+        bytes: 0,
+        state: 'interrupted',
+        startedAt: Date.now(),
+        webContentsId: webContents?.id ?? -1,
+        driver,
+      }
+      captured.unshift(failed)
+      captured.length = Math.min(captured.length, MAX_CAPTURED)
+      notifyWaiters()
       return
     }
     item.setSavePath(path)
@@ -171,6 +226,7 @@ export function registerBrowserDownloadCapture(): void {
       state: 'progressing',
       startedAt: Date.now(),
       webContentsId: webContents?.id ?? -1,
+      driver,
     }
     captured.unshift(record)
     captured.length = Math.min(captured.length, MAX_CAPTURED)
@@ -180,23 +236,37 @@ export function registerBrowserDownloadCapture(): void {
       record.bytes = item.getReceivedBytes()
       if (state === 'completed') {
         try { mediaFileGrants().add(path) } catch (error) { log.warn('[browser-download] could not persist media grant', error) }
+        // The delivery record is sealed HERE, by the item's own completion —
+        // not by a later listing that may never come. Its node was named at
+        // reservation, from the tab driver; a local session's file has no
+        // row. Outside any tool call, so the worker carries it, and its
+        // completion wake is how the agent learns the node path works.
+        if (driver) {
+          try {
+            sealZoneFile({ sessionId: driver.sessionId, path, origin: 'page-download', connectionId: driver.connectionId })
+            if (driver.connectionId) wakeDownloadDelivery(driver.connectionId)
+          } catch (err) {
+            // The session let go of the reservation while the bytes came in:
+            // nothing will carry them, and the listing must not say otherwise.
+            record.state = 'interrupted'
+            log.warn(`[browser-download] completed but not deliverable: ${record.url}`, err)
+          }
+        }
       }
-      if (state !== 'completed') log.warn(`[browser-download] ${state}: ${record.url}`)
+      if (state !== 'completed') {
+        log.warn(`[browser-download] ${state}: ${record.url}`)
+        // Cancelled or interrupted: there is nothing to hand on, and holding
+        // the row would pin a stub the mirror may never prune.
+        if (driver) abandonZoneFile(driver.sessionId, path)
+      }
       notifyWaiters()
     })
     notifyWaiters()
   })
 }
 
-function toRecord(d: CapturedDownload): DownloadRecord {
-  return {
-    url: d.url,
-    filename: d.filename,
-    path: d.path,
-    bytes: d.bytes,
-    state: d.state,
-    startedAt: d.startedAt,
-  }
+function toRecord({ webContentsId: _wc, driver: _driver, ...record }: CapturedDownload): DownloadRecord {
+  return record
 }
 
 async function ownedWebContentsIds(sessionId: string): Promise<Set<number>> {

@@ -253,6 +253,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
       ...process.env,
       ...opts.env,
       ...providerEnv,
+      ...(input.sessionDir ? { SUPERONE_SESSION_DIR: input.sessionDir } : {}),
     }
 
     if (isCodexAccountProvider(input.apiProviderId)) {

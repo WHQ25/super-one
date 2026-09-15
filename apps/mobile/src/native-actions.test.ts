@@ -101,7 +101,7 @@ describe('native chat actions', () => {
     }, target)).resolves.toMatchObject({ result: { ok: true } })
     expect(target.openLink).toHaveBeenCalledWith('https://example.com')
     expect(target.openFile).toHaveBeenCalledWith('src/App.tsx')
-    expect(target.previewFile).toHaveBeenCalledWith('art/output.png', undefined)
+    expect(target.previewFile).toHaveBeenCalledWith('art/output.png', undefined, undefined)
   })
 
   it('carries a cited line into the preview and drops a malformed one', async () => {
@@ -112,8 +112,8 @@ describe('native chat actions', () => {
     await resolveNativeRequest({
       type: 'requestNative', requestId: 'p2', action: 'previewFile', payload: { path: 'src/App.tsx', line: '42' },
     }, target)
-    expect(target.previewFile).toHaveBeenNthCalledWith(1, 'src/App.tsx', 42)
-    expect(target.previewFile).toHaveBeenNthCalledWith(2, 'src/App.tsx', undefined)
+    expect(target.previewFile).toHaveBeenNthCalledWith(1, 'src/App.tsx', 42, undefined)
+    expect(target.previewFile).toHaveBeenNthCalledWith(2, 'src/App.tsx', undefined, undefined)
   })
 
   it('answers loadImage with the port fields merged into the result', async () => {
@@ -121,11 +121,11 @@ describe('native chat actions', () => {
     await expect(resolveNativeRequest({
       type: 'requestNative', requestId: 'img', action: 'loadImage', payload: { path: 'shots/a.png' },
     }, target)).resolves.toMatchObject({ result: { ok: true, dataUri: 'data:image/png;base64,AA==' } })
-    expect(target.loadImage).toHaveBeenCalledWith('shots/a.png', false)
+    expect(target.loadImage).toHaveBeenCalledWith('shots/a.png', false, undefined)
     await resolveNativeRequest({
       type: 'requestNative', requestId: 'img2', action: 'loadImage', payload: { path: 'shots/a.png', confirmed: true },
     }, target)
-    expect(target.loadImage).toHaveBeenLastCalledWith('shots/a.png', true)
+    expect(target.loadImage).toHaveBeenLastCalledWith('shots/a.png', true, undefined)
   })
 
   it('answers loadVideoPoster with the poster under its own key, and null when the host cut none', async () => {
@@ -133,11 +133,33 @@ describe('native chat actions', () => {
     await expect(resolveNativeRequest({
       type: 'requestNative', requestId: 'vid', action: 'loadVideoPoster', payload: { path: 'out/clip.mp4' },
     }, target)).resolves.toMatchObject({ result: { ok: true, poster: { dataUri: 'data:image/jpeg;base64,/9j/', width: 320, height: 180, durationMs: 4200 } } })
-    expect(target.loadVideoPoster).toHaveBeenCalledWith('out/clip.mp4')
+    expect(target.loadVideoPoster).toHaveBeenCalledWith('out/clip.mp4', undefined)
     vi.mocked(target.loadVideoPoster).mockResolvedValueOnce(null)
     await expect(resolveNativeRequest({
       type: 'requestNative', requestId: 'vid2', action: 'loadVideoPoster', payload: { path: 'out/odd.mkv' },
     }, target)).resolves.toMatchObject({ result: { ok: true, poster: null } })
+  })
+
+  it('passes the session root to every file port so a node file resolves on the desktop', async () => {
+    const target = ports()
+    const ROOT = 'remote:conn-1:/home/node/proj'
+    const NODE_FILE = '/home/node/.superone/node/sync/s1/browser/shot.png'
+    await resolveNativeRequest({
+      type: 'requestNative', requestId: 'i', action: 'loadImage', payload: { path: NODE_FILE, root: ROOT },
+    }, target)
+    await resolveNativeRequest({
+      type: 'requestNative', requestId: 'v', action: 'loadVideoPoster', payload: { path: '/home/node/sync/s1/clip.mp4', root: ROOT },
+    }, target)
+    await resolveNativeRequest({
+      type: 'requestNative', requestId: 't', action: 'loadTextFile', payload: { path: '/home/node/proj/a.md', root: ROOT },
+    }, target)
+    await resolveNativeRequest({
+      type: 'requestNative', requestId: 'p', action: 'previewFile', payload: { path: NODE_FILE, root: ROOT },
+    }, target)
+    expect(target.loadImage).toHaveBeenCalledWith(NODE_FILE, false, ROOT)
+    expect(target.loadVideoPoster).toHaveBeenCalledWith('/home/node/sync/s1/clip.mp4', ROOT)
+    expect(target.loadTextFile).toHaveBeenCalledWith('/home/node/proj/a.md', ROOT)
+    expect(target.previewFile).toHaveBeenCalledWith(NODE_FILE, undefined, ROOT)
   })
 
   it('answers loadTextFile with the text in-band, and passes a tooLarge verdict through', async () => {
@@ -145,7 +167,7 @@ describe('native chat actions', () => {
     await expect(resolveNativeRequest({
       type: 'requestNative', requestId: 'txt', action: 'loadTextFile', payload: { path: '/proj/README.md' },
     }, target)).resolves.toMatchObject({ result: { ok: true, text: '# hi\n' } })
-    expect(target.loadTextFile).toHaveBeenCalledWith('/proj/README.md')
+    expect(target.loadTextFile).toHaveBeenCalledWith('/proj/README.md', undefined)
     vi.mocked(target.loadTextFile).mockResolvedValueOnce({ tooLarge: true, size: 900_000 })
     await expect(resolveNativeRequest({
       type: 'requestNative', requestId: 'txt2', action: 'loadTextFile', payload: { path: '/proj/big.log' },

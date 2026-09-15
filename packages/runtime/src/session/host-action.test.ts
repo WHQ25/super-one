@@ -161,6 +161,97 @@ describe('Host Action store', () => {
     ).toThrow(/conflict|pending/i)
   })
 
+  it('renews a live claim up to the action deadline and refuses every other caller', () => {
+    // A Host Action whose outputs are still uploading asks for more time
+    // rather than deferring them (docs/design/session-sync-zone.md §4.1).
+    const { hostActions } = boot()
+    const row = hostActions.create({
+      sessionId: 's1',
+      controllerClientSessionId: 'c1',
+      toolName: 'computer.snapshot',
+      toolGroup: HOST_ACTION_TOOL_GROUPS.browserRead,
+      args: {},
+      replayPolicy: 'safe',
+      deadlineMs: 120_000,
+      now: 1_000,
+    })
+    const claimed = hostActions.claim({
+      actionId: row.actionId,
+      expectedVersion: row.version,
+      controllerClientSessionId: 'c1',
+      claimTtlMs: 10_000,
+      now: 1_000,
+    })
+    expect(claimed.row.claimExpiresAt).toBe(11_000)
+
+    const renewed = hostActions.renewClaim({
+      actionId: row.actionId,
+      claimToken: claimed.claimToken,
+      controllerClientSessionId: 'c1',
+      ttlMs: 30_000,
+      now: 5_000,
+    })
+    expect(renewed.claimExpiresAt).toBe(35_000)
+    expect(renewed.version).toBeGreaterThan(claimed.row.version)
+
+    // The action's own deadline is the ceiling; a claim cannot outlive it.
+    const capped = hostActions.renewClaim({
+      actionId: row.actionId,
+      claimToken: claimed.claimToken,
+      controllerClientSessionId: 'c1',
+      ttlMs: 10 * 60_000,
+      now: 6_000,
+    })
+    expect(capped.claimExpiresAt).toBe(row.deadline)
+
+    expect(() => hostActions.renewClaim({
+      actionId: row.actionId, claimToken: 'not-the-token', controllerClientSessionId: 'c1', ttlMs: 1_000,
+    })).toThrow(/forbidden|token/i)
+    expect(() => hostActions.renewClaim({
+      actionId: row.actionId, claimToken: claimed.claimToken, controllerClientSessionId: 'other', ttlMs: 1_000,
+    })).toThrow(/controller/i)
+  })
+
+  it('refuses to renew a claim that has already expired, sweep or no sweep', () => {
+    // The sweep runs on a timer; a claim is dead the moment it expires, not
+    // the moment something notices.
+    const { hostActions } = boot()
+    const row = hostActions.create({
+      sessionId: 's1',
+      controllerClientSessionId: 'c1',
+      toolName: 'computer.snapshot',
+      toolGroup: HOST_ACTION_TOOL_GROUPS.browserRead,
+      args: {},
+      replayPolicy: 'safe',
+      now: 1_000,
+    })
+    const claimed = hostActions.claim({
+      actionId: row.actionId, expectedVersion: row.version, controllerClientSessionId: 'c1', claimTtlMs: 1_000, now: 1_000,
+    })
+    expect(() => hostActions.renewClaim({
+      actionId: row.actionId, claimToken: claimed.claimToken, controllerClientSessionId: 'c1', ttlMs: 10_000, now: 3_000,
+    })).toThrow(/expired|precondition/i)
+  })
+
+  it('refuses to renew a claim the expiry sweep already took back', () => {
+    const { hostActions } = boot()
+    const row = hostActions.create({
+      sessionId: 's1',
+      controllerClientSessionId: 'c1',
+      toolName: 'computer.snapshot',
+      toolGroup: HOST_ACTION_TOOL_GROUPS.browserRead,
+      args: {},
+      replayPolicy: 'safe',
+    })
+    const claimed = hostActions.claim({
+      actionId: row.actionId, expectedVersion: row.version, controllerClientSessionId: 'c1', claimTtlMs: 1_000, now: 1_000,
+    })
+    hostActions.reconcileExpired(3_000)
+    expect(() => hostActions.renewClaim({
+      actionId: row.actionId, claimToken: claimed.claimToken, controllerClientSessionId: 'c1', ttlMs: 10_000, now: 3_100,
+    })).toThrow(/claimed|precondition/i)
+  })
+
   it('accepts identical terminal response and rejects conflicting payload', () => {
     const { hostActions } = boot()
     const row = hostActions.create({

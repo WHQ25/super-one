@@ -32,6 +32,13 @@ export interface ExecutionEnvironmentDescriptor {
   generations?: HandshakeGenerations
   /** Node instance public-key fingerprint (hex). Local may omit until keying is wired. */
   nodePublicKeyFingerprint?: string
+  /**
+   * Absolute root of this environment's session sync zone, in its own path
+   * separator (`<nodeHome>/sync`). Present iff `capabilities.syncZone`. The
+   * desktop compares foreign paths against it textually and never resolves
+   * it locally (`docs/design/session-sync-zone.md` §2).
+   */
+  syncRoot?: string
 }
 
 /** Well-known constant for the in-process desktop environment before identity is persisted. */

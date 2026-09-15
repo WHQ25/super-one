@@ -1674,7 +1674,7 @@ export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescri
           "type": "string"
         },
         "dir": {
-          "description": "download only: absolute directory to save into. Defaults to the configured download directory.",
+          "description": "download only: absolute directory to save into. Defaults to the configured download directory, or the session directory on a remote node.",
           "type": "string"
         },
         "state": {

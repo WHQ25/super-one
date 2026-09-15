@@ -1,5 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import type {
+  ArtifactDeleteResult,
+  ArtifactGetRequest,
+  ArtifactGetResult,
+  ArtifactListRequest,
+  ArtifactListResult,
+  ArtifactPutRequest,
+  ArtifactPutResult,
+  ArtifactStatResult,
   ControlLease,
   CreateSessionInput,
   CreateTerminalInput,
@@ -46,6 +54,20 @@ import type { ProjectExtraDirsPatch } from '@superone/shared/project-extra-dirs'
 import type { NodeRpcClient } from './node-rpc-client'
 import type { CodexMcpOauthLoginOptions } from '@superone/shared/agent-types'
 
+export interface ArtifactGateway {
+  stat(input: { sessionId: string; relativePath: string }): Promise<ArtifactStatResult>
+  list(input: ArtifactListRequest): Promise<ArtifactListResult>
+  get(input: ArtifactGetRequest): Promise<ArtifactGetResult>
+  put(input: ArtifactPutRequest, control: MutatingControlContext): Promise<ArtifactPutResult>
+  delete(input: { sessionId: string; relativePath?: string }, control: MutatingControlContext): Promise<ArtifactDeleteResult>
+  /**
+   * Tell the session's agent that deferred transfers landed (§4.1). No lease —
+   * it reports work the controller already did — and idempotent by
+   * `notificationId`, so a retry after a dropped reply wakes the agent once.
+   */
+  notifyCompleted(input: { sessionId: string; notificationId: string; relativePaths: string[] }): Promise<{ delivered: boolean }>
+}
+
 /**
  * Environment gateway that delegates to an authenticated node RPC session.
  * Sessions, interactions, terminals, and workspace (incl. watch) all go over RPC.
@@ -56,6 +78,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
   readonly terminals: TerminalGateway
   readonly workspace: WorkspaceGateway
   readonly drafts: DraftGateway
+  readonly artifacts: ArtifactGateway
 
   private descriptorCache: ExecutionEnvironmentDescriptor | null = null
   private fixedEnvironmentId: string | null = null
@@ -66,6 +89,42 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     this.terminals = this.createTerminalGateway()
     this.workspace = this.createWorkspaceGateway()
     this.drafts = this.createDraftGateway()
+    this.artifacts = this.createArtifactGateway()
+  }
+
+  /**
+   * The node's side of the session sync zone, or null when the node predates
+   * it (`capabilities.syncZone` absent). Read from the descriptor cached at
+   * connect; the root is compared textually, never resolved here.
+   */
+  syncZone(): { syncRoot: string; os: ExecutionEnvironmentDescriptor['platform']['os'] } | null {
+    const descriptor = this.descriptorCache
+    if (!descriptor?.capabilities?.syncZone || !descriptor.syncRoot) return null
+    return { syncRoot: descriptor.syncRoot, os: descriptor.platform.os }
+  }
+
+  /**
+   * Extend a Host Action claim this desktop holds (`session-sync-zone.md`
+   * §4.1). The claim token proves the holder; the node caps the new expiry at
+   * the action's own deadline. Not on `SessionGateway` for the same reason
+   * claim/respond are not: the Host Action channel is the consumer's, not the
+   * session list's.
+   */
+  renewHostActionClaim(input: { actionId: string; claimToken: string; ttlMs?: number }): Promise<{ claimExpiresAt: number; version: number }> {
+    return this.client.rpc<{ claimExpiresAt: number; version: number }>('session.renewHostActionClaim', input)
+  }
+
+  /** `artifact.*` — scoped by the node to `<syncRoot>/<sessionId>`; `put`/`delete` carry the lease. */
+  private createArtifactGateway(): ArtifactGateway {
+    const client = this.client
+    return {
+      stat: (input) => client.rpc<ArtifactStatResult>('artifact.stat', input),
+      list: (input) => client.rpc<ArtifactListResult>('artifact.list', input),
+      get: (input) => client.rpc<ArtifactGetResult>('artifact.get', input),
+      put: (input, control) => client.rpc<ArtifactPutResult>('artifact.put', { ...input, ...control }),
+      delete: (input, control) => client.rpc<ArtifactDeleteResult>('artifact.delete', { ...input, ...control }),
+      notifyCompleted: (input) => client.rpc<{ delivered: boolean }>('session.notifyArtifactCompleted', input),
+    }
   }
 
   /**

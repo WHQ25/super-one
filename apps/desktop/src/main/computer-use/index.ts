@@ -70,7 +70,6 @@ export {
   persistComputerUseScreenshot,
   writeOptimizedAgentImage,
   needsComputerUseOptimize,
-  COMPUTER_USE_SCREENSHOT_DIR,
   CU_AGENT_MAX_SIDE,
   CU_AGENT_MAX_BYTES,
 } from './screenshot-store'

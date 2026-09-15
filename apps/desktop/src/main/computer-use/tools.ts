@@ -10,11 +10,12 @@ import { ensureComputerUseAppGrant } from './grant-request'
 import { ComputerUseError, type Condition } from './types'
 import type { SuperoneMcpToolDescriptor } from '../mcp/superone-mcp-types'
 import { readAppSettings } from '../app-settings-service'
-import { persistComputerUseScreenshot, COMPUTER_USE_SCREENSHOT_DIR } from './screenshot-store'
+import { persistComputerUseScreenshot } from './screenshot-store'
 import { releaseComputerUseViewfinder } from './viewfinder'
 import type { CapturedImage } from './types'
 import { encode as toonEncode } from '@toon-format/toon'
-import { createActionRecordingPath } from '../agent/action-recording-store'
+import { abandonActionRecording, createActionRecordingPath } from '../agent/action-recording-store'
+import { publishArtifact } from '../environment/zone-delivery'
 import { outlineToToon } from './outline-toon'
 import { imageNote, recordingNote } from '../mcp/show-your-work-notes'
 
@@ -63,7 +64,7 @@ function toonReply(data: unknown): ComputerUseToolReply {
  */
 function toAgentImage(
   image: CapturedImage | undefined,
-  screenshotDir: string,
+  sessionId: string,
 ): CapturedImage | undefined {
   if (!image) return undefined
   if (image.path && !image.data) {
@@ -79,7 +80,7 @@ function toAgentImage(
       image.data,
       image.mimeType,
       { width: image.width, height: image.height },
-      { dir: screenshotDir },
+      { sessionId },
     )
     if (persisted) {
       return {
@@ -100,9 +101,9 @@ function toAgentImage(
 }
 
 /** Swap in path-only (possibly JPEG-optimized) image; keep capture coordinateSpace. */
-function withAgentImages<T extends { image?: CapturedImage }>(result: T, screenshotDir: string): T {
+function withAgentImages<T extends { image?: CapturedImage }>(result: T, sessionId: string): T {
   if (!result.image) return result
-  const image = toAgentImage(result.image, screenshotDir)
+  const image = toAgentImage(result.image, sessionId)
   return { ...result, image, ...(image?.path ? { imageNote: imageNote('image.path') } : {}) }
 }
 
@@ -677,8 +678,6 @@ async function executeComputerUseToolInner(
   } catch (err) {
     return errorReply(err)
   }
-  const screenshotDir = COMPUTER_USE_SCREENSHOT_DIR
-
   // Keep policy in sync with settings for default host path.
   syncPolicyFromSettings(service)
 
@@ -727,7 +726,7 @@ async function executeComputerUseToolInner(
           (args.mode as 'visual' | 'semantic' | 'fused' | undefined) ?? 'fused',
           (args.capture as 'window' | 'display' | undefined) ?? 'window',
         )
-        const agentResult = withAgentImages(result, screenshotDir)
+        const agentResult = withAgentImages(result, sessionId)
         // Persist path onto stored state so later UI can resolve the same file.
         if (agentResult.image?.path) {
           service.alignStateVisual(result.stateId, agentResult.image)
@@ -743,7 +742,7 @@ async function executeComputerUseToolInner(
         }
         await ensureGrantForState(sessionId, service, normalized, String(args.stateId))
         const result = await service.zoom(String(args.stateId), region)
-        return textReply(withAgentImages(result, screenshotDir))
+        return textReply(withAgentImages(result, sessionId))
       }
       case 'computer_query': {
         // Read-only on cached state — grant already required to create the state.
@@ -764,18 +763,35 @@ async function executeComputerUseToolInner(
       }
       case 'computer_act': {
         await ensureGrantForState(sessionId, service, normalized, String(args.stateId))
-        const result = await service.act(String(args.stateId), args.actions, {
-          expect: parseCondition(args.expect),
-          delivery: args.delivery as 'semantic' | 'app-directed' | 'physical' | undefined,
-          timeoutMs: args.timeoutMs as number | undefined,
-          signal: context.signal,
-          ...(args.recording === true
-            ? { recordingPath: createActionRecordingPath('computer', 'mp4') }
-            : {}),
-        })
-        const successorImage = toAgentImage(result.successorImage, screenshotDir)
+        // Reserved before the action: the helper's recorder fills it for the
+        // whole run. Every exit that does not hand back a sealed recording —
+        // the action failing, the helper producing none — gives the path up.
+        const recordingPath = args.recording === true ? createActionRecordingPath(sessionId, 'computer', 'mp4') : null
+        let result: Awaited<ReturnType<typeof service.act>>
+        try {
+          result = await service.act(String(args.stateId), args.actions, {
+            expect: parseCondition(args.expect),
+            delivery: args.delivery as 'semantic' | 'app-directed' | 'physical' | undefined,
+            timeoutMs: args.timeoutMs as number | undefined,
+            signal: context.signal,
+            ...(recordingPath ? { recordingPath } : {}),
+          })
+        } catch (error) {
+          if (recordingPath) abandonActionRecording(sessionId, recordingPath)
+          throw error
+        }
+        const successorImage = toAgentImage(result.successorImage, sessionId)
         if (successorImage?.path) {
           service.alignStateVisual(result.successorStateId, successorImage)
+        }
+        // The path was reserved before the action ran; it is an artifact only
+        // once the helper has sealed the file, which is what `recording` in the
+        // result means (session-sync-zone.md §3).
+        const savedPath = (result as { recording?: { savedPath?: unknown } }).recording?.savedPath
+        if (typeof savedPath === 'string' && savedPath) {
+          publishArtifact(sessionId, { path: savedPath, producer: 'recording', final: true })
+        } else if (recordingPath) {
+          abandonActionRecording(sessionId, recordingPath)
         }
         return textReply({
           ...result,

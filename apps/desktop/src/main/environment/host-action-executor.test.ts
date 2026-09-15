@@ -5,7 +5,16 @@
  *
  * session_rename is routed to EnvironmentHost (node RPC) instead of local SessionManager.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createHash } from 'node:crypto'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import type { ArtifactPutRequest } from '@superone/shared/environment'
+
+const zoneState = vi.hoisted(() => ({ userData: '' }))
+vi.mock('electron', () => ({ app: { getPath: () => zoneState.userData } }))
+vi.mock('../database', async () => (await import('../../test/fixtures/delivery-db')).deliveryDatabase())
 
 const browser = vi.hoisted(() => ({
   executeBrowserTool: vi.fn(async (sessionId: string, toolName: string, args: unknown) => ({
@@ -21,11 +30,55 @@ const browser = vi.hoisted(() => ({
   clearBrowserToolHandlers: vi.fn(),
 }))
 
+/** What a node with a sync zone looks like from the executor: a zone, artifact RPCs, a transfer service. */
+const node = vi.hoisted(() => {
+  const files = new Map<string, Buffer>()
+  const parts = new Map<string, Buffer[]>()
+  let wakes = 0
+  return {
+    files,
+    parts,
+    wakes: () => wakes,
+    wake: () => { wakes++ },
+    zone: null as { syncRoot: string; os: 'linux' } | null,
+    put: async (_c: string, req: ArtifactPutRequest) => {
+      const chunks = parts.get(req.transferId) ?? []
+      chunks.push(Buffer.from(req.chunk, 'base64'))
+      parts.set(req.transferId, chunks)
+      const written = chunks.reduce((n, c) => n + c.length, 0)
+      if (!req.final) return { ok: true as const, bytesWritten: written }
+      const whole = Buffer.concat(chunks)
+      if (createHash('sha256').update(whole).digest('hex') !== req.sha256) throw new Error('sha mismatch')
+      files.set(req.relativePath, whole)
+      return { ok: true as const, bytesWritten: written, mtimeMs: 1_700_000_000_000 }
+    },
+  }
+})
+
 const envHost = vi.hoisted(() => ({
   renameSession: vi.fn(async (_connectionId: string, _sessionId: string, title: string) => ({
     title,
   })),
+  getSyncZone: () => node.zone,
+  artifactPut: (c: string, req: ArtifactPutRequest) => node.put(c, req),
+  artifactGet: async (_c: string, req: { relativePath: string; offset: number; maxBytes: number }) => {
+    const f = node.files.get(req.relativePath)!
+    const slice = f.subarray(req.offset, req.offset + req.maxBytes)
+    return { chunk: slice.toString('base64'), total: f.length, mtimeMs: 1_700_000_000_000, eof: req.offset + slice.length >= f.length }
+  },
+  artifactStat: async (_c: string, _s: string, relativePath: string) => {
+    const f = node.files.get(relativePath)
+    return f ? { exists: true, size: f.length, mtimeMs: 1_700_000_000_000 } : { exists: false, size: 0, mtimeMs: 0 }
+  },
+  artifactTransfers: {
+    throughputBytesPerMs: () => 1024,
+    recordThroughput: () => {},
+    wake: () => node.wake(),
+  },
 }))
+
+/** Registered refs the fake tool surface hands back with its result. */
+const registry = vi.hoisted(() => ({ artifacts: [] as { path: string; producer: 'browser'; final: boolean; deliveryId?: string }[] }))
 
 const mcpSurface = vi.hoisted(() => ({
   executeSuperoneMcpTool: vi.fn(async (sessionId: string, toolName: string, args: unknown) => {
@@ -35,6 +88,11 @@ const mcpSurface = vi.hoisted(() => ({
     return {
       content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ok', tags: ['oauth'] }) }],
     }
+  }),
+  executeSuperoneMcpToolCollecting: async (sessionId: string, toolName: string, args: unknown) => ({
+    result: await mcpSurface.executeSuperoneMcpTool(sessionId, toolName, args),
+    artifacts: registry.artifacts.splice(0),
+    held: new Map(),
   }),
 }))
 
@@ -72,6 +130,10 @@ vi.mock('../mcp/session-tag-tools', () => renameTags)
 
 import { desktopHostActionExecutor } from './host-action-executor'
 import type { ClaimHostActionResult } from '@superone/shared/environment'
+import { resetDeliveryDatabase } from '../../test/fixtures/delivery-db'
+import { _resetHoldersForTests } from './delivery-holders'
+import { sealZoneFile } from './zone-delivery'
+import { findDeliveryByPath } from '../db-session-deliveries'
 
 function claimed(partial: Partial<ClaimHostActionResult> & Pick<ClaimHostActionResult, 'toolName' | 'sessionId'>): ClaimHostActionResult {
   return {
@@ -88,12 +150,88 @@ function claimed(partial: Partial<ClaimHostActionResult> & Pick<ClaimHostActionR
 }
 
 describe('desktopHostActionExecutor', () => {
+  beforeEach(() => {
+    zoneState.userData = mkdtempSync(join(tmpdir(), 'ha-exec-'))
+  })
   afterEach(() => {
+    rmSync(zoneState.userData, { recursive: true, force: true })
+    node.zone = null
+    node.files.clear()
+    node.parts.clear()
+    registry.artifacts.length = 0
+    resetDeliveryDatabase()
+    _resetHoldersForTests()
     browser.executeBrowserTool.mockClear()
     envHost.renameSession.mockClear()
     mcpSurface.executeSuperoneMcpTool.mockClear()
     renameTags.applyRenameTags.mockClear()
     renameTags.applyRenameTags.mockImplementation(() => ['oauth'])
+  })
+
+  describe('session sync zone', () => {
+    function desktopArtifact(sessionId: string, rel: string, data: string): string {
+      const path = join(zoneState.userData, 'sync', sessionId, ...rel.split('/'))
+      mkdirSync(join(path, '..'), { recursive: true })
+      writeFileSync(path, data)
+      return path
+    }
+
+    it('pushes a screenshot to the node zone and hands the agent the node path', async () => {
+      node.zone = { syncRoot: '/home/node/.superone/node/sync', os: 'linux' }
+      const shot = desktopArtifact('node-s', 'browser/shot.png', 'png-bytes')
+      browser.executeBrowserTool.mockImplementationOnce(async () => {
+        // The producer seals the file as a delivery for this node, exactly as
+        // the real screenshot store does; the ref carries the id.
+        const deliveryId = sealZoneFile({ sessionId: 'node-s', path: shot, origin: 'produced', connectionId: 'conn-1', bytes: 'png-bytes' })!
+        registry.artifacts.push({ path: shot, producer: 'browser', final: true, deliveryId })
+        return { content: [{ type: 'text' as const, text: JSON.stringify({ path: shot, width: 1, height: 1 }) }] }
+      })
+      const out = await desktopHostActionExecutor(
+        claimed({ toolName: 'browser_screenshot', toolGroup: 'browser.read', sessionId: 'node-s' }),
+        new AbortController().signal,
+        'conn-1',
+      )
+      expect(out.outcome).toBe('succeeded')
+      const reply = out.result as { content: { text: string }[] }
+      expect(JSON.parse(reply.content[0].text).path).toBe('/home/node/.superone/node/sync/node-s/browser/shot.png')
+      expect(node.files.get('browser/shot.png')!.toString()).toBe('png-bytes')
+      expect(findDeliveryByPath('node-s', shot)).toMatchObject({ phase: 'notifying', outcome: 'done' })
+    })
+
+    it('maps a node zone path in the args to the desktop mirror before the tool runs', async () => {
+      node.zone = { syncRoot: '/home/node/.superone/node/sync', os: 'linux' }
+      node.files.set('agent/chart.png', Buffer.from('chart'))
+      await desktopHostActionExecutor(
+        claimed({
+          toolName: 'browser_upload',
+          toolGroup: 'browser.act',
+          sessionId: 'node-s',
+          args: { path: '/home/node/.superone/node/sync/node-s/agent/chart.png' },
+        }),
+        new AbortController().signal,
+        'conn-1',
+      )
+      expect(browser.executeBrowserTool).toHaveBeenCalledWith('node-s', 'browser_upload', {
+        path: join(zoneState.userData, 'sync', 'node-s', 'agent', 'chart.png'),
+      })
+    })
+
+    it('leaves an older node without a zone on the old behaviour: no push, no rewrite', async () => {
+      node.zone = null
+      const shot = desktopArtifact('node-s', 'browser/shot.png', 'png-bytes')
+      browser.executeBrowserTool.mockImplementationOnce(async () => {
+        registry.artifacts.push({ path: shot, producer: 'browser', final: true })
+        return { content: [{ type: 'text' as const, text: JSON.stringify({ path: shot }) }] }
+      })
+      const out = await desktopHostActionExecutor(
+        claimed({ toolName: 'browser_screenshot', toolGroup: 'browser.read', sessionId: 'node-s' }),
+        new AbortController().signal,
+        'conn-1',
+      )
+      const reply = out.result as { content: { text: string }[] }
+      expect(JSON.parse(reply.content[0].text).path).toBe(shot)
+      expect(node.files.size).toBe(0)
+    })
   })
 
   it('dispatches browser_snapshot with the node sessionId (tab owner key)', async () => {

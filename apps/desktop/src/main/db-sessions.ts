@@ -4,7 +4,7 @@ import { serializeMessageContent, rowToChatMessage, deriveHarnessId } from './se
 import { recordSessionStarted, recordMessageCounts, type HarnessKind } from './usage-stats-service'
 import type { ChatMessage, EffortLevel, HarnessId, SessionHistoryEntry, PinnedSessionEntry } from '@superone/shared/agent-types'
 import { parseTagsJson } from '@superone/shared/session-tags'
-import { notifySessionList } from './session-list-watch'
+import { notifySessionList, notifySessionsDeleted } from './session-list-watch'
 
 interface DbSession {
   id: string
@@ -396,6 +396,7 @@ export function deleteSession(sessionId: string): void {
   const projectPath = projectPathOfSession(sessionId)
   db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId)
   notifySessionList(projectPath)
+  notifySessionsDeleted([sessionId])
 }
 
 /** Delete non-pinned sessions older than cutoffDate for a project. Returns deleted session IDs. */
@@ -420,6 +421,7 @@ export function deleteSessionsOlderThan(folderPath: string, cutoffDate: string):
   db.prepare(`DELETE FROM sessions WHERE id IN (${placeholders})`).run(...ids)
 
   notifySessionList(folderPath)
+  notifySessionsDeleted(ids)
   return ids
 }
 
@@ -442,6 +444,12 @@ export function readSessionHarnessId(sessionId: string): HarnessId | null {
     .prepare('SELECT provider, provider_id FROM sessions WHERE id = ?')
     .get(sessionId) as { provider: string | null; provider_id: string | null } | undefined
   return row ? deriveHarnessId(row) : null
+}
+
+/** Does this desktop still have a row for the session? Used by sync-zone reclaim (§7). */
+export function sessionExists(sessionId: string): boolean {
+  const row = getDb().prepare('SELECT 1 FROM sessions WHERE id = ?').get(sessionId) as unknown
+  return row !== undefined
 }
 
 export function sessionHasMessages(sessionId: string): boolean {

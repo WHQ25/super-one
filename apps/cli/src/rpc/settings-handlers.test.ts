@@ -104,6 +104,7 @@ function baseCtx(over: Partial<RpcContext> & { settingsConfigPath: string }): Rp
     } as unknown as RpcContext['idempotency'],
     providers: {} as RpcContext['providers'],
     drafts: {} as RpcContext['drafts'],
+    artifacts: {} as RpcContext['artifacts'],
     automations: {} as RpcContext['automations'],
     automationService: {} as RpcContext['automationService'],
     sessionProviders: {

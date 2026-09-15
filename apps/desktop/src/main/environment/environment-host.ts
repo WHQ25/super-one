@@ -2,8 +2,17 @@ import { remoteSuperoneHome, remoteNodePort } from './remote-data-path'
 import { app } from 'electron'
 import { join } from 'node:path'
 import type {
+  ArtifactGetRequest,
+  ArtifactGetResult,
+  ArtifactListRequest,
+  ArtifactListResult,
+  ArtifactPutRequest,
+  ArtifactPutResult,
+  ArtifactStatResult,
   EndpointProfile,
   EnvironmentGateway,
+  EnvironmentOs,
+  WorkspaceEntry,
   EnvironmentInstallProgress,
   EnvironmentListItem,
   ExecutionEnvironmentDescriptor,
@@ -29,6 +38,7 @@ import {
   type RemoteInstallSource,
 } from '@superone/shared/environment'
 import { EnvironmentRegistryImpl } from './environment-registry'
+import { ArtifactTransferService } from './artifact-transfer-service'
 import { NodeConnectionManager } from './node-connection-manager'
 import { NodeCredentialStore } from './node-credential-store'
 import { WorkspaceRouter } from './workspace-router'
@@ -172,6 +182,13 @@ export class EnvironmentHost {
   >()
   /** One Host Action consumer per live connectionId. */
   private readonly hostActionConsumers = new Map<string, RemoteHostActionConsumer>()
+  /**
+   * Deferred artifact uploads (session-sync-zone.md §5.3); one worker per live
+   * connection, started and stopped with its Host Action consumer. Null until
+   * `enableArtifactTransfers` — the production singleton turns it on, unit
+   * tests that never open the desktop database leave it off.
+   */
+  private transfers: ArtifactTransferService | null = null
   private readonly hostActionExecutor: HostActionExecutor
   private readonly hostActionConcurrency: number
   private readonly hostActionPollWaitMs: number
@@ -840,6 +857,84 @@ export class EnvironmentHost {
   async getSession(connectionId: string, sessionId: string): Promise<unknown> {
     const { gateway, environmentId } = this.resolveRemote(connectionId)
     return gateway.sessions.get({ environmentId, sessionId })
+  }
+
+  /** Host path of a remote project, for the files-previewer root key. */
+  async getRemoteProjectPath(connectionId: string, projectId: string): Promise<string | null> {
+    const { gateway } = this.resolveRemote(connectionId)
+    const project = await gateway.getProject(projectId)
+    return project?.path ?? null
+  }
+
+  /** `workspace.listDir` for a remote project directory (files-previewer stat). */
+  async remoteWorkspaceListDir(
+    connectionId: string,
+    projectId: string,
+    relativeDir: string,
+  ): Promise<WorkspaceEntry[]> {
+    const { gateway, environmentId } = this.resolveRemote(connectionId)
+    return gateway.workspace.listDir({ project: { environmentId, projectId }, relativePath: relativeDir })
+  }
+
+  /**
+   * The node's session sync zone root and OS, or null when the connection is
+   * not live or the node predates the zone (`docs/design/session-sync-zone.md` §5.1).
+   */
+  getSyncZone(connectionId: string): { syncRoot: string; os: EnvironmentOs } | null {
+    try {
+      return this.resolveRemote(connectionId).gateway.syncZone()
+    } catch {
+      return null
+    }
+  }
+
+  /** `artifact.stat` / `artifact.get` — controller binding only, no lease. */
+  artifactStat(connectionId: string, sessionId: string, relativePath: string): Promise<ArtifactStatResult> {
+    return this.resolveRemote(connectionId).gateway.artifacts.stat({ sessionId, relativePath })
+  }
+
+  artifactGet(connectionId: string, input: ArtifactGetRequest): Promise<ArtifactGetResult> {
+    return this.resolveRemote(connectionId).gateway.artifacts.get(input)
+  }
+
+  artifactList(connectionId: string, input: ArtifactListRequest): Promise<ArtifactListResult> {
+    return this.resolveRemote(connectionId).gateway.artifacts.list(input)
+  }
+
+  /** `artifact.put` — one chunk; the session lease is acquired or renewed here. */
+  async artifactPut(connectionId: string, input: ArtifactPutRequest): Promise<ArtifactPutResult> {
+    const { gateway } = this.resolveRemote(connectionId)
+    const control = await this.ensureSessionLease(connectionId, input.sessionId)
+    return gateway.artifacts.put(input, control)
+  }
+
+  /**
+   * Extend a Host Action's claim (§4.1), returning the new expiry. The node
+   * caps it at the action's own deadline, so this buys time inside the window
+   * the agent already agreed to wait.
+   */
+  async renewHostActionClaim(
+    connectionId: string,
+    input: { actionId: string; claimToken: string; ttlMs?: number },
+  ): Promise<number> {
+    const { gateway } = this.resolveRemote(connectionId)
+    const result = await gateway.renewHostActionClaim(input)
+    return result.claimExpiresAt
+  }
+
+  /** Wake the node session after a deferred transfer landed (§4.1). No lease needed. */
+  async artifactNotifyCompleted(
+    connectionId: string,
+    input: { sessionId: string; notificationId: string; relativePaths: string[] },
+  ): Promise<{ delivered: boolean }> {
+    const { gateway } = this.resolveRemote(connectionId)
+    return gateway.artifacts.notifyCompleted(input)
+  }
+
+  async artifactDelete(connectionId: string, sessionId: string, relativePath?: string): Promise<void> {
+    const { gateway } = this.resolveRemote(connectionId)
+    const control = await this.ensureSessionLease(connectionId, sessionId)
+    await gateway.artifacts.delete({ sessionId, relativePath }, control)
   }
 
   /**
@@ -2011,8 +2106,21 @@ export class EnvironmentHost {
     }
     this.abortSessionDrain(this.sessionCursorKey(connectionId, sessionId), 'session_removed')
     this.sessionEventCursors.delete(this.sessionCursorKey(connectionId, sessionId))
+    // Cancel local transfer jobs and delete the node's zone directory before the
+    // session row is gone — afterwards the controller binding artifact.delete needs
+    // no longer holds (docs/design/session-sync-zone.md §7).
+    this.transfers?.dropSession(sessionId)
+    if (control?.leaseId && this.getSyncZone(connectionId)) {
+      try {
+        await this.artifactDelete(connectionId, sessionId)
+      } catch {
+        // The node drops it too on session.remove; a failure here is not fatal.
+      }
+    }
     const result = await gateway.removeSession(sessionId, control)
     this.sessionLeases.delete(this.leaseKey(connectionId, sessionId))
+    // The desktop mirror of this session's artifacts is ours to remove.
+    void import('./session-zone-reclaim').then((m) => m.removeSessionZone(sessionId)).catch(() => undefined)
     return result
   }
 
@@ -3259,6 +3367,7 @@ export class EnvironmentHost {
     for (const id of [...this.hostActionConsumers.keys()]) {
       this.stopHostActionConsumer(id, 'dispose')
     }
+    this.transfers?.stopAll()
     for (const id of this.connections.listKnown().map((known) => known.connectionId)) {
       this.abortConnectionSessionDrains(id, 'dispose')
     }
@@ -3287,13 +3396,36 @@ export class EnvironmentHost {
     })
     this.hostActionConsumers.set(connectionId, consumer)
     consumer.start()
+    this.transfers?.start(connectionId)
   }
 
   private stopHostActionConsumer(connectionId: string, reason: string): void {
+    this.transfers?.stop(connectionId)
     const consumer = this.hostActionConsumers.get(connectionId)
     if (!consumer) return
     consumer.stop(reason)
     this.hostActionConsumers.delete(connectionId)
+  }
+
+  /** Turn on the deferred-upload workers (needs the desktop database). Idempotent. */
+  enableArtifactTransfers(): ArtifactTransferService {
+    if (this.transfers) return this.transfers
+    this.transfers = new ArtifactTransferService({
+      put: (connectionId, input) => this.artifactPut(connectionId, input),
+      notifyCompleted: (connectionId, input) => this.artifactNotifyCompleted(connectionId, input),
+      // Lazy logger for the same reason as publishStatus: a static ../logger import breaks partial electron mocks.
+      log: {
+        info: (...args) => void import('../logger').then((m) => m.default.info(...args)).catch(() => undefined),
+        warn: (...args) => void import('../logger').then((m) => m.default.warn(...args)).catch(() => undefined),
+      },
+    })
+    for (const connectionId of this.hostActionConsumers.keys()) this.transfers.start(connectionId)
+    return this.transfers
+  }
+
+  /** The transfer-job service, or null when transfers are disabled (unit tests). */
+  get artifactTransfers(): ArtifactTransferService | null {
+    return this.transfers
   }
 
   private loadKnown(): KnownEnvironmentRecord[] {
@@ -3338,7 +3470,10 @@ export function getEnvironmentHost(): EnvironmentHost {
     .catch(() => {
       // Non-Electron unit tests without ipcMain.
     })
-  if (!singleton) singleton = new EnvironmentHost()
+  if (!singleton) {
+    singleton = new EnvironmentHost()
+    singleton.enableArtifactTransfers()
+  }
   return singleton
 }
 

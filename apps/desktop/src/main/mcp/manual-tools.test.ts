@@ -73,6 +73,10 @@ describe('manualReadHandler', () => {
     expect(text).toMatch(/template: '@native\/files-previewer'/)
     expect(prose).toMatch(/two or more files.*@native\/files-previewer/i)
     expect(prose).toMatch(/single capture still goes inline/)
+    // Agent-written deliverables go in the session zone's agent/ directory (session-sync-zone.md §5.4).
+    expect(text).toMatch(/\$SUPERONE_SESSION_DIR\/agent\//)
+    expect(prose).toMatch(/Only `agent\/` is writable/)
+    expect(prose).toMatch(/mirrored between the machine you run on and the desktop/)
   })
 
   it('lists collaboration in product domain index', async () => {

@@ -22,7 +22,8 @@ vi.mock('./logger', () => ({
   },
 }))
 
-import { countMessagesForSessions, deleteSessionsOlderThan, listPinnedSessions, listSessionsForFolder, saveSessionState } from './db-sessions'
+import { countMessagesForSessions, deleteSession, deleteSessionsOlderThan, listPinnedSessions, listSessionsForFolder, saveSessionState } from './db-sessions'
+import { watchSessionDeletes } from './session-list-watch'
 
 describe('db-sessions session query + mapping', () => {
   beforeEach(() => {
@@ -248,6 +249,25 @@ describe('deleteSessionsOlderThan', () => {
     expect(result).toEqual(['old-session-1', 'old-session-2'])
     expect(prepareMock).toHaveBeenCalledTimes(2)
     expect(runMock).toHaveBeenCalledWith('old-session-1', 'old-session-2')
+  })
+
+  it('tells the delete watchers which sessions went, from every delete path', () => {
+    // The sync zone and its transfer jobs are reclaimed off this signal; a
+    // cleanup wired to one IPC handler was missed by "delete older" and session_cleanup.
+    const deleted: string[][] = []
+    const unwatch = watchSessionDeletes((ids) => deleted.push(ids))
+    try {
+      getProjectIdMock.mockReturnValue('proj-1')
+      const allMock = vi.fn().mockReturnValue([{ id: 'old-1' }, { id: 'old-2' }])
+      const getMock = vi.fn().mockReturnValue({ path: '/tmp/project' })
+      const prepareMock = vi.fn().mockReturnValue({ all: allMock, run: vi.fn(), get: getMock })
+      getDbMock.mockReturnValue({ prepare: prepareMock })
+      deleteSessionsOlderThan('/tmp/project', '2026-02-01T00:00:00.000Z')
+      deleteSession('single')
+      expect(deleted).toEqual([['old-1', 'old-2'], ['single']])
+    } finally {
+      unwatch()
+    }
   })
 
   it('excludes pinned sessions in SQL query', () => {

@@ -36,6 +36,8 @@ class FakeBackend implements TouchDeviceBackend {
     readonly settled = true,
     /** Same hash on every observation: the pixels did not move, only the tree did. */
     private readonly frameHash?: string,
+    /** Where this backend says it wrote the screenshot. */
+    private readonly capturePath = '/tmp/shot.png',
   ) {}
 
   async observe(_options?: ObserveOptions): Promise<DeviceObservation> {
@@ -52,7 +54,7 @@ class FakeBackend implements TouchDeviceBackend {
   }
 
   async capture(): Promise<DeviceImage> {
-    return { path: '/tmp/shot.png', width: 1320, height: 2868 }
+    return { path: this.capturePath, width: 1320, height: 2868 }
   }
 
   async perform(action: ResolvedAction, context?: PerformContext): Promise<void> {
@@ -68,6 +70,31 @@ class FakeBackend implements TouchDeviceBackend {
 function parse(reply: { content: Array<{ text: string }> }): Record<string, unknown> {
   return JSON.parse(reply.content[0]!.text)
 }
+
+describe('device snapshot artifacts', () => {
+  it('registers the screenshot it hands the agent, so a remote session can read it', async () => {
+    // The reply carries `image.path` and nothing else about the pixels; on a
+    // remote node that path only resolves if the executor pushed the file
+    // (docs/design/session-sync-zone.md §3).
+    const { collectArtifacts, resetArtifactRegistry, takeArtifacts } = await import('../mcp/artifact-registry')
+    const { producerDir } = await import('../media-output-paths')
+    resetArtifactRegistry()
+    const shot = `${producerDir('s1', 'android')}/dev-1/shot.png`
+    const session = new DeviceAgentSession(new FakeBackend([screen([node('@e1')])], false, undefined, shot), 's1')
+    const reply = await collectArtifacts('s1', 'call-1', () => session.snapshot({ mode: 'visual' }))
+    expect(parse(reply).image).toMatchObject({ path: shot })
+    // The producer is read back off the layout, so no backend has to carry it.
+    expect(takeArtifacts('s1', 'call-1')).toEqual([{ path: shot, producer: 'android', final: true }])
+  })
+
+  it('registers nothing for the default semantic snapshot, which has no file to push', async () => {
+    const { collectArtifacts, resetArtifactRegistry, takeArtifacts } = await import('../mcp/artifact-registry')
+    resetArtifactRegistry()
+    const session = new DeviceAgentSession(new FakeBackend([screen([node('@e1')])]), 's1')
+    await collectArtifacts('s1', 'call-2', () => session.snapshot({}))
+    expect(takeArtifacts('s1', 'call-2')).toEqual([])
+  })
+})
 
 describe('device_act staleness', () => {
   it('refuses a superseded snapshot before performing anything', async () => {

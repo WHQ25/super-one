@@ -81,7 +81,7 @@ import { TerminalBroadcaster } from './remote/terminal-broadcaster'
 import { nodePtySpawner } from './terminal/pty'
 import { DeviceRegistry } from './remote/device-registry'
 import { MobileBroadcaster } from './remote/mobile-broadcaster'
-import { watchSessionList } from './session-list-watch'
+import { watchSessionDeletes, watchSessionList } from './session-list-watch'
 import { localDraftStore } from './db-drafts'
 import { withoutDraftAttachmentBytes } from '@superone/shared/environment/draft-content'
 import { installDraftOpenFlush } from './remote/draft-open-flush'
@@ -3191,6 +3191,11 @@ function registerIpcHandlers(): void {
   const VIDEO_EXTS = VIDEO_EXTENSIONS
   const AUDIO_EXTS = AUDIO_EXTENSIONS
   ipcMain.handle(AgentIpcChannels.STAT_PREVIEW_FILE, async (_event, root: string, filePath: string) => {
+    // A remote root re-stats on the node (inline-files-previewer.md §2.2);
+    // the local resolver would only ever answer `missing` for a node path.
+    const { statPreviewerFileForRoot } = await import('./environment/files-previewer-context')
+    const remote = await statPreviewerFileForRoot(root, filePath)
+    if (remote) return remote
     const { resolvePreviewerFile } = await import('./generative-ui/files-previewer-payload')
     return resolvePreviewerFile({ path: filePath }, { root })
   })
@@ -4087,6 +4092,14 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.APP_SETTINGS_GET, () => readAppSettings())
   ipcMain.handle(AgentIpcChannels.APP_SETTINGS_SAVE, (_e, patch) => applyAppSettingsPatch(patch))
   ipcMain.handle(AgentIpcChannels.APP_DEFAULT_DOWNLOAD_DIR, () => systemDownloadDir())
+  ipcMain.handle(AgentIpcChannels.SYNC_ZONE_USAGE_GET, async () => (await import('./environment/session-zone-reclaim')).syncZoneUsage())
+  ipcMain.handle(AgentIpcChannels.SYNC_ZONE_RECLAIM, async () => (await import('./environment/session-zone-reclaim')).sweepSyncZone())
+  // A delivery automatic retry gave up on has no worker coming for it, so a
+  // person who fixed whatever was wrong needs a way to say "try again now".
+  ipcMain.handle(AgentIpcChannels.SYNC_ZONE_RETRY_HANDOFFS, async () => {
+    const transfers = (await import('./environment/environment-host')).getEnvironmentHost().artifactTransfers
+    return transfers?.retryGivenUp() ?? { retried: 0 }
+  })
 
   ipcMain.handle(AgentIpcChannels.APP_INSTALL_ID_GET, () => getInstallId())
   ipcMain.handle(
@@ -4492,6 +4505,37 @@ function registerIpcHandlers(): void {
   // constructing the service in a test leaves no process-wide watcher behind.
   watchSessionList((projectPath) => {
     agentService.notifyEventSubscribers({ type: 'session_list_changed', projectPath })
+  })
+  // A deleted session takes its sync zone and transfer jobs with it
+  // (docs/design/session-sync-zone.md §7) — off the db-layer signal, so the
+  // single delete, "delete older" and session_cleanup all reclaim.
+  // Housekeeping for the sync zone (docs/design/session-sync-zone.md §7):
+  // directories whose session is provably gone, and adhoc captures nobody
+  // claimed. Runs 30 s after launch — never between launch and the first
+  // window — and again whenever a node connects, because a node that was
+  // offline at launch is one the launch sweep could only say "keep" about.
+  void Promise.all([import('./environment/session-zone-reclaim'), import('./environment')]).then(([{ createReclaimScheduler, sweepSyncZone }, { getEnvironmentHost }]) => {
+    const sweep = createReclaimScheduler(() =>
+      sweepSyncZone()
+        .then(({ removed, freedBytes }) => {
+          if (removed.length > 0 || freedBytes > 0) {
+            log.info('[main] sync zone reclaimed %d session(s), %d bytes', removed.length, freedBytes)
+          }
+        })
+        .catch((err) => log.warn('[main] sync zone reclaim failed: %s', err instanceof Error ? err.message : String(err))),
+    )
+    setTimeout(() => sweep.request(), 30_000).unref?.()
+    getEnvironmentHost().onStatusChange((snapshot) => {
+      if (snapshot.state === 'connected') sweep.request()
+    })
+  })
+
+  watchSessionDeletes((sessionIds) => {
+    void import('./environment/session-zone-reclaim').then(({ removeSessionZone }) =>
+      Promise.all(sessionIds.map((id) => removeSessionZone(id).catch((err: unknown) => {
+        log.warn('[main] sync zone cleanup failed sid=%s: %s', id, err instanceof Error ? err.message : String(err))
+      }))),
+    )
   })
   deviceRegistry.setDraftControl(localDraftStore())
   agentService.setPrepareDraftOpen(installDraftOpenFlush(allWindows))

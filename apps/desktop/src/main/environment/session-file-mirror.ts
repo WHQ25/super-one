@@ -1,0 +1,477 @@
+/**
+ * Cache-through mirror of node zone artifacts on the desktop
+ * (`docs/design/session-sync-zone.md` §4.2).
+ *
+ * A node-zone path maps by prefix to `<userData>/sync/<sessionId>/<relative>`.
+ * The local copy is trusted only while its size and mtime match what
+ * `artifact.stat` reports — the built-in writers rewrite `.preview.jpg` and
+ * friends in place, so immutability is not something to rely on. When the
+ * copy is stale or absent it is fetched with `artifact.get` into a `.part`
+ * and renamed, so a concurrent reader never sees a half file.
+ *
+ * Every destructive step here — a type-conflict removal, a prune — runs behind
+ * the same three guards, because a mirror both writes and deletes inside a
+ * directory another producer may be writing to: the target must resolve inside
+ * this session's zone (a link out of it is never followed), it must not be a
+ * desktop original still owed to the node, and the action must not have been
+ * cancelled. A directory mirror holds one generation at a time per session.
+ *
+ * What is "owed to the node" is asked of the delivery record, one row per file
+ * (`docs/design/session-sync-zone-delivery-record.md` R4), at the moment each
+ * destructive step acts: the table is synchronous, so there is no `await`
+ * between deciding to delete or overwrite and doing it. A record that cannot
+ * be read protects everything (R5).
+ */
+import { basename, join, relative, sep } from 'node:path'
+import { lstatSync, readdirSync, rmSync, statSync } from 'node:fs'
+import type { ArtifactGetRequest, ArtifactGetResult, ArtifactListRequest, ArtifactListResult, ArtifactStatResult } from '@superone/shared/environment'
+import { classifyDeliveriesUnder, classifyDeliveryAt, type DeliveryProtection } from '../db-session-deliveries'
+import { downloadArtifact } from './artifact-transfer'
+import { desktopMirrorPath, withinSessionZone } from './sync-zone-paths'
+import { sessionZoneDir } from '../media-output-paths'
+import { markZoneOwner, OWNER_FILE } from './zone-owner'
+
+export interface MirrorDeps {
+  stat: (input: { sessionId: string; relativePath: string }) => Promise<ArtifactStatResult>
+  get: (input: ArtifactGetRequest) => Promise<ArtifactGetResult>
+  /** Every file under a zone directory; needed only to mirror a directory. */
+  list?: (input: ArtifactListRequest) => Promise<ArtifactListResult>
+  signal?: AbortSignal
+  /**
+   * The node being mirrored from. Recorded on the zone directory the mirror
+   * writes into, so the reclaim sweep knows whom to ask about the session —
+   * a directory that only ever held mirrored files used to stay unmarked.
+   */
+  connectionId?: string
+}
+
+/** The node saying the file is not there. This is the only absence it reports. */
+const ABSENT_STAT_ERRORS = new Set(['not_found'])
+/**
+ * The node answering, but refusing. A refusal is not an absence: reporting it
+ * as `missing` lets a caller fall through to whatever copy is at the desktop
+ * path, which is the stale-bytes case this mirror exists to prevent.
+ */
+const REFUSED_STAT_ERRORS = new Set(['forbidden', 'invalid_argument', 'failed_precondition'])
+
+/**
+ * Zone metadata that is not an artifact and must never be fetched, listed as a
+ * member, or overwritten. `.owner` is the reclaim marker — mirroring the node's
+ * copy over it would move a directory's ownership and hand it to the sweep.
+ */
+const RESERVED_ZONE_NAMES = new Set([OWNER_FILE, '.parts'])
+function namesReservedMetadata(relativePath: string): boolean {
+  return relativePath.split(/[\\/]/).some((seg) => RESERVED_ZONE_NAMES.has(seg))
+}
+
+/**
+ * A row that says the desktop copy must not be deleted or overwritten. Two of
+ * the record's answers are that (R4): `protected-readable` — a complete
+ * desktop original the node does not have yet, the newest version anywhere,
+ * served as well as kept — and `protected-unreadable` — being written, or
+ * mid-commit with the outcome unknown, kept but never handed over: half a file
+ * is not an input. `unavailable` is the table not answering, and counts as the
+ * stronger of the two (R5).
+ */
+const PROTECTED = new Set<DeliveryProtection>(['protected-readable', 'protected-unreadable', 'unavailable'])
+
+/** Why a protected-but-unreadable path cannot be an answer, in the caller's words. */
+function unreadableReason(relativePath: string, protection: DeliveryProtection): string {
+  return protection === 'unavailable'
+    ? `the delivery record for ${relativePath} could not be read`
+    : `${relativePath} is still being written on this desktop`
+}
+
+export type MirrorOutcome =
+  | { kind: 'local'; path: string; size: number; mtimeMs: number }
+  | { kind: 'missing' }
+  /** The node has the file but it cannot be placed safely; a caller that needs the bytes must not proceed. */
+  | { kind: 'unavailable'; reason: string }
+
+function aborted(): Error {
+  return Object.assign(new Error('artifact mirror aborted'), { code: 'aborted' })
+}
+
+/** In-flight fetches keyed by desktop path so two readers of one file share a download. */
+const inflight = new Map<string, Promise<MirrorOutcome>>()
+
+function localStat(path: string): { size: number; mtimeMs: number } | null {
+  try {
+    const st = statSync(path)
+    return st.isFile() ? { size: st.size, mtimeMs: Math.floor(st.mtimeMs) } : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Return the desktop copy of `<sessionId>/<relativePath>`, fetching or
+ * refreshing it first when the node's stat disagrees with what is on disk.
+ * The node is authoritative for what exists: a file it does not have is
+ * `missing` even when a copy sits here — unless that copy is a desktop
+ * original whose upload is still pending, which is the one case where the
+ * desktop knows better. Only an unreachable node falls back to the copy.
+ */
+export async function mirrorNodeArtifact(sessionId: string, relativePath: string, deps: MirrorDeps): Promise<MirrorOutcome> {
+  if (namesReservedMetadata(relativePath)) return { kind: 'missing' }
+  const path = desktopMirrorPath(sessionId, relativePath)
+  const existing = inflight.get(path)
+  if (existing) return existing
+  const work = mirrorOneArtifact(sessionId, relativePath, path, deps).finally(() => inflight.delete(path))
+  inflight.set(path, work)
+  return work
+}
+
+async function mirrorOneArtifact(sessionId: string, relativePath: string, path: string, deps: MirrorDeps): Promise<MirrorOutcome> {
+  const outside = (): MirrorOutcome => ({ kind: 'unavailable', reason: `${relativePath} resolves outside the session zone` })
+  // Before anything is read OR written: a path that resolves out of the zone is
+  // not this mirror's to serve either. A cached copy behind a planted link is
+  // still a file from outside, and the callers hand the path straight on.
+  if (!withinSessionZone(sessionId, path)) return outside()
+  const local = localStat(path)
+  /**
+   * Every `local` answer goes through here, so every refusal is stated once:
+   * the boundary is re-checked because a link can be planted mid-flight, and a
+   * file a producer is still filling — or whose record cannot be read — is
+   * never handed over, including on the offline fallback, where there is no
+   * node answer to weigh it against.
+   */
+  const serveLocal = (st: { size: number; mtimeMs: number }): MirrorOutcome => {
+    if (!withinSessionZone(sessionId, path)) return outside()
+    const protection = classifyDeliveryAt(sessionId, path)
+    if (protection === 'protected-unreadable' || protection === 'unavailable') {
+      return { kind: 'unavailable', reason: unreadableReason(relativePath, protection) }
+    }
+    return { kind: 'local', path, size: st.size, mtimeMs: st.mtimeMs }
+  }
+  /** What the desktop has when the node does not have the file. */
+  const pendingHere = (): MirrorOutcome => (local && PROTECTED.has(classifyDeliveryAt(sessionId, path)) ? serveLocal(local) : { kind: 'missing' })
+  let remote: ArtifactStatResult
+  try {
+    remote = await deps.stat({ sessionId, relativePath })
+  } catch (err) {
+    const code = String((err as { code?: unknown })?.code)
+    if (ABSENT_STAT_ERRORS.has(code)) return pendingHere()
+    if (REFUSED_STAT_ERRORS.has(code)) return { kind: 'unavailable', reason: `the node refused to stat it (${code})` }
+    // Node unreachable: the local copy, if any, is the best answer there is.
+    return local ? serveLocal(local) : { kind: 'missing' }
+  }
+  if (!remote.exists) return pendingHere()
+  // A desktop original still owed to the node is newer than anything the node
+  // can have; overwriting it with the node's older copy destroys the only one.
+  // A file still being written is protected the same way but is not an answer.
+  if (local && PROTECTED.has(classifyDeliveryAt(sessionId, path))) return serveLocal(local)
+  if (local && local.size === remote.size && local.mtimeMs === remote.mtimeMs) return serveLocal(local)
+  // The stat was an await: a cancel may have arrived, and the destructive
+  // reconcile below must not run past it (a deleted directory does not come
+  // back when the fetch then throws aborted).
+  if (deps.signal?.aborted) throw aborted()
+  if (!withinSessionZone(sessionId, path)) return outside()
+  // Mark the owner before a single `.part` is opened: a first mirror that
+  // crashes mid-download must still leave a directory the reclaim sweep can
+  // reason about, and an unmarked one is kept forever.
+  if (deps.connectionId) markZoneOwner(sessionId, deps.connectionId)
+  const reconciled = reconcileMirrorType(sessionId, path, deps.signal)
+  if (reconciled === 'conflict') {
+    return { kind: 'unavailable', reason: `${relativePath} cannot be placed: a desktop original or an out-of-zone link is in the way` }
+  }
+  try {
+    const fetched = await downloadArtifact({
+      sessionId,
+      relativePath,
+      destPath: path,
+      get: deps.get,
+      signal: deps.signal,
+      // The last word, synchronously, immediately before the rename: the whole
+      // download was an await, and a producer may have written and queued the
+      // real original at this path while it ran.
+      beforeCommit: () => {
+        if (deps.signal?.aborted) throw aborted()
+        const protection = classifyDeliveryAt(sessionId, path)
+        if (PROTECTED.has(protection)) {
+          const reason =
+            protection === 'protected-readable'
+              ? `${relativePath} was produced here and is still owed to the node`
+              : unreadableReason(relativePath, protection)
+          throw Object.assign(new Error(reason), { code: 'conflict' })
+        }
+        if (!withinSessionZone(sessionId, path)) {
+          throw Object.assign(new Error(`${relativePath} resolves outside the session zone`), { code: 'conflict' })
+        }
+      },
+    })
+    return { kind: 'local', path, size: fetched.bytes, mtimeMs: fetched.mtimeMs }
+  } catch (err) {
+    if ((err as { code?: string }).code === 'aborted') throw err
+    // The node has it and we could not get it. Saying `missing` would let a
+    // caller fall through to whatever is at the desktop path.
+    return { kind: 'unavailable', reason: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+/**
+ * A file the node now has where the desktop has the wrong kind of thing: a
+ * directory where a file should go (`downloadArtifact` would `EISDIR` opening
+ * it), or a file where a parent directory should go (its `mkdir` would
+ * `EEXIST`). The blocker is removed so the fetch can land — but never when
+ * doing so would delete a desktop original still owed to the node, or follow a
+ * link out of the zone: those are `conflict`, and the fetch is refused instead.
+ */
+function reconcileMirrorType(sessionId: string, destPath: string, signal?: AbortSignal): 'clear' | 'conflict' {
+  const zoneRoot = sessionZoneDir(sessionId)
+  const segments = relative(zoneRoot, destPath).split(sep)
+  let cursor = zoneRoot
+  for (let i = 0; i < segments.length; i++) {
+    cursor = join(cursor, segments[i]!)
+    const last = i === segments.length - 1
+    let st: ReturnType<typeof lstatSync>
+    try {
+      st = lstatSync(cursor)
+    } catch {
+      return 'clear' // nothing here yet, nor anything below it
+    }
+    // A parent that is not a directory, or a leaf that is a directory, blocks
+    // the fetch. A symlink is never descended into; it is removed as the link.
+    const blocks = st.isSymbolicLink() || (last ? st.isDirectory() : !st.isDirectory())
+    if (!blocks) continue
+    if (signal?.aborted) throw aborted()
+    // The link, or what it points at, is outside the zone: not ours to remove.
+    if (!withinSessionZone(sessionId, cursor)) return 'conflict'
+    // The blocker (or a file under it) is a desktop original still owed to the
+    // node, or a fetch in progress: deleting it would lose the only copy.
+    if (subtreeHasProtectedFile(sessionId, cursor)) return 'conflict'
+    try {
+      rmSync(cursor, { recursive: true, force: true })
+    } catch {
+      return 'conflict'
+    }
+    return 'clear'
+  }
+  return 'clear'
+}
+
+/**
+ * Does `path`, or any file under it, still owe an upload or belong to a running
+ * fetch? The record answers for the whole subtree in one query — a directory is
+ * destroyed as a unit — and the walk, `lstat` only, adds the `.part.*` of a
+ * fetch in flight, which has no row of its own.
+ */
+function subtreeHasProtectedFile(sessionId: string, path: string): boolean {
+  if (classifyDeliveriesUnder(sessionId, path) !== 'none') return true
+  return subtreeHasPartFile(path)
+}
+
+function subtreeHasPartFile(path: string): boolean {
+  let st: ReturnType<typeof lstatSync>
+  try {
+    st = lstatSync(path)
+  } catch {
+    return false
+  }
+  if (st.isSymbolicLink()) return false
+  if (st.isFile()) return basename(path).includes('.part.')
+  if (st.isDirectory()) {
+    let names: string[]
+    try {
+      names = readdirSync(path)
+    } catch {
+      // Cannot see inside it — assume it holds something worth keeping rather
+      // than delete blind.
+      return true
+    }
+    return names.some((name) => subtreeHasPartFile(join(path, name)))
+  }
+  return false
+}
+
+/** How many member files are fetched at once when a directory is mirrored. */
+const DIRECTORY_MIRROR_CONCURRENCY = 4
+
+/**
+ * One directory mirror at a time per session, and the *whole* of it — every
+ * member fetch drained — before the next runs. Two mirrors of overlapping
+ * directories interleaved would let an older, slower listing prune files a
+ * newer one just brought down, or let a worker a failed mirror abandoned write
+ * into the tree a later mirror produced. Directory mirrors are rare (a mini-app
+ * source tree for a dev tool), so a session-wide gate costs nothing real.
+ */
+const directoryMirrorChains = new Map<string, Promise<unknown>>()
+
+/**
+ * Bring a whole node directory to the desktop mirror — for a tool that will
+ * *read* a directory (a mini-app source tree), which no single `stat` can
+ * vouch for. The node lists it, every member goes through the same per-file
+ * fetch, and anything under the mirror the node no longer has — and the
+ * desktop does not still owe it — is removed. A listing the node had to
+ * truncate, a subtree it could not read, a member that cannot be placed
+ * safely, or a cancel is refused as `unavailable`/`aborted` rather than
+ * handed over as a whole tree that is not.
+ */
+export async function mirrorNodeDirectory(sessionId: string, relativePath: string, deps: MirrorDeps): Promise<MirrorOutcome> {
+  if (!deps.list) return { kind: 'unavailable', reason: 'this node cannot list a zone directory' }
+  if (namesReservedMetadata(relativePath)) return { kind: 'unavailable', reason: `${relativePath} is reserved metadata, not a directory to mirror` }
+  const prior = directoryMirrorChains.get(sessionId) ?? Promise.resolve()
+  const run = prior.then(
+    () => mirrorDirectoryLocked(sessionId, relativePath, deps),
+    () => mirrorDirectoryLocked(sessionId, relativePath, deps),
+  )
+  directoryMirrorChains.set(sessionId, run)
+  try {
+    return await run
+  } finally {
+    if (directoryMirrorChains.get(sessionId) === run) directoryMirrorChains.delete(sessionId)
+  }
+}
+
+async function mirrorDirectoryLocked(sessionId: string, relativePath: string, deps: MirrorDeps): Promise<MirrorOutcome> {
+  if (deps.signal?.aborted) throw aborted()
+  let listing: ArtifactListResult
+  try {
+    listing = await deps.list!({ sessionId, relativePath })
+  } catch (err) {
+    const code = String((err as { code?: unknown })?.code)
+    if (ABSENT_STAT_ERRORS.has(code)) return { kind: 'missing' }
+    return { kind: 'unavailable', reason: `the node would not list it (${code})` }
+  }
+  if (!listing.exists) return { kind: 'missing' }
+  if (listing.truncated) {
+    return { kind: 'unavailable', reason: `${relativePath} has more files than one listing carries; it cannot be mirrored whole` }
+  }
+  // A cancel that arrived while the node was listing must stop here, before
+  // anything is fetched or pruned — an empty list after an abort is not an
+  // instruction to empty the directory.
+  if (deps.signal?.aborted) throw aborted()
+  const dir = desktopMirrorPath(sessionId, relativePath)
+  // The mirror root itself must be inside this session's zone. A symlink here
+  // would send the prune's `readdir` out of the zone and delete files that are
+  // not the mirror's; refuse rather than follow it.
+  if (!withinSessionZone(sessionId, dir)) {
+    return { kind: 'unavailable', reason: `${relativePath} does not resolve inside the session zone` }
+  }
+  // Mark before any bytes so a crash mid-mirror still leaves a markable dir.
+  if (deps.connectionId) markZoneOwner(sessionId, deps.connectionId)
+
+  // The batch is cancelled as one: a member that cannot be placed, or the
+  // caller's own abort, stops every worker — and every worker is awaited before
+  // this returns, so a fetch a failed batch abandoned cannot outlive it and
+  // land in a later mirror's tree.
+  const batch = new AbortController()
+  // Carried over synchronously: an abort that already fired never fires again.
+  if (deps.signal?.aborted) batch.abort()
+  const relayAbort = () => batch.abort()
+  deps.signal?.addEventListener('abort', relayAbort, { once: true })
+  const workerDeps: MirrorDeps = { ...deps, signal: batch.signal }
+  const keep = new Set<string>()
+  let failure: MirrorOutcome | Error | null = null
+  const queue = [...listing.entries]
+  const worker = async (): Promise<void> => {
+    for (let entry = queue.shift(); entry; entry = queue.shift()) {
+      if (batch.signal.aborted) return
+      let outcome: MirrorOutcome
+      try {
+        outcome = await mirrorNodeArtifactWithin(sessionId, entry.relativePath, workerDeps)
+      } catch (err) {
+        failure ??= err as Error
+        batch.abort()
+        return
+      }
+      if (outcome.kind === 'unavailable') {
+        failure ??= outcome
+        batch.abort()
+        return
+      }
+      if (outcome.kind === 'local') keep.add(desktopMirrorPath(sessionId, entry.relativePath))
+    }
+  }
+  try {
+    await Promise.all(Array.from({ length: Math.min(DIRECTORY_MIRROR_CONCURRENCY, queue.length) || 1 }, worker))
+  } finally {
+    deps.signal?.removeEventListener('abort', relayAbort)
+  }
+  // The caller's cancel wins over any member failure it caused.
+  if (deps.signal?.aborted) throw aborted()
+  // Read through an explicit widening: the assignments happen inside the worker
+  // closures, which control-flow analysis does not follow, so `failure` would
+  // otherwise still be typed as its `null` initialiser here.
+  const failed = failure as MirrorOutcome | Error | null
+  if (failed) {
+    if (failed instanceof Error) throw failed
+    return failed
+  }
+  // Each file is asked about as it is deleted, not from a snapshot taken before
+  // the fetches: a capture another Host Action produced while they ran is the
+  // only copy of that file.
+  pruneMirroredDirectory(dir, keep, sessionId, deps.signal)
+  // A directory is handed to its caller as a unit — `miniapp_dev_pack` reads
+  // the whole tree — so one half-written member makes the whole answer wrong.
+  // The prune correctly KEEPS that file; keeping it and then calling the tree
+  // complete are different questions, and only the first was answered.
+  const protection = classifyDeliveriesUnder(sessionId, dir)
+  if (protection === 'protected-unreadable' || protection === 'unavailable') {
+    return { kind: 'unavailable', reason: protection === 'unavailable' ? unreadableReason(relativePath, protection) : `${relativePath} holds a file this desktop is still writing` }
+  }
+  return { kind: 'local', path: dir, size: 0, mtimeMs: 0 }
+}
+
+/** A directory-mirror member fetch, never re-deduped as reserved. */
+function mirrorNodeArtifactWithin(sessionId: string, relativePath: string, deps: MirrorDeps): Promise<MirrorOutcome> {
+  if (namesReservedMetadata(relativePath)) return Promise.resolve({ kind: 'missing' })
+  const path = desktopMirrorPath(sessionId, relativePath)
+  const existing = inflight.get(path)
+  if (existing) return existing
+  const work = mirrorOneArtifact(sessionId, relativePath, path, deps).finally(() => inflight.delete(path))
+  inflight.set(path, work)
+  return work
+}
+
+/**
+ * Remove every file under the mirror the node's listing did not name — unless
+ * the desktop still owes it to the node (a fresh capture queued for upload,
+ * which the node has not seen yet and which is the only copy). Synchronous:
+ * each file's record is read immediately before its delete, with nothing
+ * `await`ed between. `lstat` only, and links removed as links; the boundary
+ * and the cancel are re-checked at every level and before every delete.
+ */
+function pruneMirroredDirectory(dir: string, keep: ReadonlySet<string>, sessionId: string, signal?: AbortSignal): void {
+  if (signal?.aborted) throw aborted()
+  // Refused if the directory does not resolve inside the zone; re-checked at
+  // every recursion, because a link could sit at any depth.
+  if (!withinSessionZone(sessionId, dir)) return
+  // The record not answering protects the whole tree (R5): nothing is pruned.
+  if (classifyDeliveriesUnder(sessionId, dir) === 'unavailable') return
+  let names: string[]
+  try {
+    names = readdirSync(dir)
+  } catch {
+    return
+  }
+  for (const name of names) {
+    if (signal?.aborted) throw aborted()
+    const path = join(dir, name)
+    let st: ReturnType<typeof lstatSync>
+    try {
+      st = lstatSync(path)
+    } catch {
+      continue
+    }
+    if (st.isDirectory() && !st.isSymbolicLink()) {
+      pruneMirroredDirectory(path, keep, sessionId, signal)
+      continue
+    }
+    if (keep.has(path)) continue
+    // A `.part.*` of a fetch still in flight belongs to that fetch; `.owner` is
+    // the reclaim marker, never a mirrored artifact.
+    if (name.includes('.part.') || RESERVED_ZONE_NAMES.has(name)) continue
+    // A desktop original whose upload has not landed, or a file a producer here
+    // is still writing, is the only copy there is.
+    if (PROTECTED.has(classifyDeliveryAt(sessionId, path))) continue
+    // `dir` was re-checked in the zone at this recursion\'s entry and the walk
+    // holds no `await`, so nothing swaps it under us; a stale link here is
+    // removed as the link, never followed to its target.
+    try {
+      rmSync(path, { force: true })
+    } catch {
+      /* raced; the next mirror sees it */
+    }
+  }
+}

@@ -2,6 +2,8 @@ import type { BrowserWindow } from 'electron'
 import { randomUUID } from 'crypto'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
 import log from '../logger'
+import { currentHostActionConnection } from '../mcp/artifact-registry'
+import { rememberTabDriver } from './browser-tab-drivers'
 
 export type BrowserAutomationOp =
   | 'snapshot'
@@ -64,6 +66,17 @@ export function browserAutomationCall(sessionId: string, op: BrowserAutomationOp
   })
 }
 
+/**
+ * Record which session (and, for a Host Action, which node) is driving a view,
+ * so a download the page starts moments later is filed under it (§6). Called at
+ * every action's target resolution — before the action runs, because a
+ * synthetic click can start the download before its result returns — so a tab
+ * handed from one session to another is re-attributed to the second.
+ */
+function recordDriver(webContentsId: number, sessionId: string): void {
+  rememberTabDriver(webContentsId, sessionId, currentHostActionConnection())
+}
+
 export async function resolveBrowserWebContentsId(sessionId: string, tab?: string): Promise<number> {
   const result = await browserAutomationCall(sessionId, 'resolveWebContentsId', { tab }) as {
     webContentsId?: number
@@ -71,7 +84,67 @@ export async function resolveBrowserWebContentsId(sessionId: string, tab?: strin
   if (typeof result.webContentsId !== 'number' || result.webContentsId < 0) {
     throw new Error('Could not resolve the target browser view')
   }
+  recordDriver(result.webContentsId, sessionId)
   return result.webContentsId
+}
+
+/** A resolved click/hover/drag point, driver recorded — the CDP action paths' target resolution. */
+export async function resolvePointForSession(sessionId: string, args: unknown): Promise<Record<string, unknown>> {
+  const point = await browserAutomationCall(sessionId, 'resolvePoint', args) as Record<string, unknown>
+  if (typeof point.webContentsId === 'number' && point.webContentsId >= 0) recordDriver(point.webContentsId, sessionId)
+  return point
+}
+
+/**
+ * Record the driver for an action the renderer will run itself (a synthetic
+ * click, a navigate). The renderer resolves the tab and may start a download
+ * during the action, before any result comes back — so the driver is set here,
+ * before the action is dispatched. A resolution failure is swallowed; the real
+ * action reports it.
+ */
+export async function noteTabDriver(sessionId: string, tab?: string): Promise<void> {
+  try {
+    await resolveBrowserWebContentsId(sessionId, tab)
+  } catch {
+    /* the action that follows surfaces the real error */
+  }
+}
+
+/** How long a freshly opened tab may take to acquire a webContents. */
+const DRIVER_ATTACH_TIMEOUT_MS = 3000
+const DRIVER_ATTACH_POLL_MS = 25
+
+/**
+ * Record the driver for a tab that must be attributed *before* anything runs
+ * in it, waiting out the gap between a view being registered and its
+ * webContents existing.
+ *
+ * `noteTabDriver` is best-effort on purpose: the action behind it reports its
+ * own failure, so a swallowed resolve costs nothing. This one is not. A tab
+ * opened cold is registered by a renderer effect before `webContentsIdForBrowser`
+ * can answer for it, so the first resolve can fail with "Browser view is not
+ * attached yet" and then succeed a moment later. Navigating in between is what
+ * loses the attribution: the page may start a download on first paint, and an
+ * unattributed download goes to this machine's Downloads folder — somewhere a
+ * remote agent cannot read, with no error raised anywhere.
+ *
+ * Returns whether the tab is attributed. A caller that cannot proceed without
+ * it must not navigate.
+ */
+export async function requireTabDriver(sessionId: string, tab: string): Promise<boolean> {
+  const deadline = Date.now() + DRIVER_ATTACH_TIMEOUT_MS
+  for (;;) {
+    try {
+      await resolveBrowserWebContentsId(sessionId, tab)
+      return true
+    } catch (err) {
+      if (Date.now() >= deadline) {
+        log.warn('[browser-automation] tab %s never became attributable: %s', tab, err instanceof Error ? err.message : String(err))
+        return false
+      }
+      await new Promise((resolve) => setTimeout(resolve, DRIVER_ATTACH_POLL_MS))
+    }
+  }
 }
 
 /**

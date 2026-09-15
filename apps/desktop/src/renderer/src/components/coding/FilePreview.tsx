@@ -7,7 +7,22 @@ import { cn } from '@superone/ui/lib/utils'
 import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { useEffectiveProjectRoot } from '@/stores/app'
 import { isAbsoluteLocalPath } from '@/lib/file-link'
-import { toLocalFileUrl, toMediaUrl } from '@/lib/path-utils'
+import { localFileUrlToPath, toLocalFileUrl, toMediaUrl } from '@/lib/path-utils'
+
+/**
+ * What a media preview loads. The host answers with bytes (a data URI) for a
+ * file on a node, with the URL of the desktop mirror for a file in the
+ * session zone, and with nothing for a plain local file — which is then
+ * loaded from its own path. Streams (video, audio) go through the media
+ * server when a local path is known, so a large mirror plays by range.
+ */
+function previewSrc(content: string | undefined, fromPath: () => string, stream?: (path: string) => string): string {
+  if (!content) return fromPath()
+  if (content.startsWith('data:')) return content
+  const mirror = localFileUrlToPath(content)
+  if (mirror) return stream ? stream(mirror) : content
+  return fromPath()
+}
 import { PdfPreview } from '@/components/chat/PdfPreview'
 import type { GitFileDiff, GitFileContent } from '@superone/shared/agent-types'
 import {
@@ -318,30 +333,18 @@ export function FilePreview({ filePath }: FilePreviewProps) {
               </FileSelectionContextMenuZone>
             ) : effectiveTab === 'preview' && isBinImg ? (
               <ImagePreview
-                src={
-                  fileContent?.content?.startsWith('data:')
-                    ? fileContent.content
-                    : toLocalFileUrl(fullFilePath)
-                }
+                src={previewSrc(fileContent?.content, () => toLocalFileUrl(fullFilePath))}
                 alt={fileName}
               />
             ) : effectiveTab === 'preview' && isPdfFile ? (
               <PdfPreview
-                url={
-                  fileContent?.content?.startsWith('data:')
-                    ? fileContent.content
-                    : toLocalFileUrl(fullFilePath)
-                }
+                url={previewSrc(fileContent?.content, () => toLocalFileUrl(fullFilePath))}
                 className="h-full"
               />
             ) : effectiveTab === 'preview' && isVideoFile ? (
               <div className="flex h-full items-center justify-center p-4">
                 <video
-                  src={
-                    fileContent?.content?.startsWith('data:')
-                      ? fileContent.content
-                      : toMediaUrl(fullFilePath)
-                  }
+                  src={previewSrc(fileContent?.content, () => toMediaUrl(fullFilePath), toMediaUrl)}
                   controls
                   preload="auto"
                   className="max-h-full max-w-full"
@@ -350,11 +353,7 @@ export function FilePreview({ filePath }: FilePreviewProps) {
             ) : effectiveTab === 'preview' && isAudioFile ? (
               <div className="flex h-full items-center justify-center p-4">
                 <audio
-                  src={
-                    fileContent?.content?.startsWith('data:')
-                      ? fileContent.content
-                      : toMediaUrl(fullFilePath)
-                  }
+                  src={previewSrc(fileContent?.content, () => toMediaUrl(fullFilePath), toMediaUrl)}
                   controls
                   preload="auto"
                 />

@@ -18,6 +18,14 @@
 
 import type { ClaimHostActionResult } from '@superone/shared/environment'
 import type { HostActionExecutor } from './remote-host-action-consumer'
+import {
+  mapHostActionInputs,
+  withInputMapping,
+  syncHostActionOutputs,
+  type HostActionSyncDeps,
+  type ToolReply,
+} from './host-action-sync'
+import { releaseHeldDeliveries } from '../mcp/artifact-registry'
 
 /**
  * Tools that mutate node session metadata, not desktop-local resources.
@@ -75,6 +83,7 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
 
   /** First race winner: 'work' | 'deadline'. Late work completions are logged. */
   let raceWinner: 'work' | 'deadline' | null = null
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined
 
   try {
     const work = (async (): Promise<ExecutorResult> => {
@@ -100,21 +109,64 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
           )
         }
 
-        const { executeSuperoneMcpTool } = await import('../mcp/superone-mcp-tool-surface')
-        const toolResult = await executeSuperoneMcpTool(
+        const aborted = (): ExecutorResult => ({
+          outcome: 'failed',
+          error: {
+            code: 'aborted',
+            message: 'host action aborted or timed out during execution',
+          },
+        })
+
+        // Session sync zone (docs/design/session-sync-zone.md §3): a node that
+        // reports its zone gets node-zone args mapped to the desktop mirror
+        // first, and desktop-produced outputs pushed and rewritten afterwards.
+        // Older nodes report no zone and get today's behaviour unchanged.
+        const sync = await resolveSyncContext(connectionId, runAbort.signal, {
+          actionId: claimed.actionId,
+          claimToken: claimed.claimToken,
+        })
+        const mappedArgs = sync ? await mapHostActionInputs(args, { ...sync, sessionId: claimed.sessionId, toolName: claimed.toolName }) : args
+        if (runAbort.signal.aborted || raceWinner === 'deadline') return aborted()
+
+        const { executeSuperoneMcpToolCollecting } = await import('../mcp/superone-mcp-tool-surface')
+        if (runAbort.signal.aborted || raceWinner === 'deadline') return aborted()
+        const runTool = () => executeSuperoneMcpToolCollecting(
           claimed.sessionId,
           claimed.toolName,
-          args,
+          mappedArgs,
+          runAbort.signal,
+          connectionId,
         )
-        if (runAbort.signal.aborted || raceWinner === 'deadline') {
-          return {
-            outcome: 'failed',
-            error: {
-              code: 'aborted',
-              message: 'host action aborted or timed out during execution',
-            },
-          }
+        // A wrapper tool maps the arguments of the tool it dispatches at the
+        // point of dispatch, by that tool's roles; it finds the mapping here.
+        const { result: rawResult, artifacts, held } = sync
+          ? await withInputMapping({ ...sync, sessionId: claimed.sessionId }, runTool)
+          : await runTool()
+        // The executor holds no claims of its own. Protection and delivery are
+        // one responsibility and `syncHostActionOutputs` owns it end to end:
+        // it acquires a transfer instance per file BEFORE its first node RPC
+        // and releases it on delivery, on handing the file to a job, or on its
+        // own way out. An executor that also took claims gave two callers the
+        // same label, and cancelling one released the other's file.
+        //
+        // Which is why a cancelled action is NOT short-circuited here. The sync
+        // acquires synchronously and then throws on the already-aborted signal,
+        // so its `finally` frees what the tool produced. Returning early
+        // instead would leave a sealed file held by its writer with nothing
+        // downstream to deliver it — pinned for the life of the process.
+        let toolResult: unknown
+        if (sync && artifacts.length > 0) {
+          // The held handles this call owns are threaded in so the selection
+          // holds each file live through its decision (E090-4).
+          toolResult = await syncHostActionOutputs(claimed.sessionId, artifacts, held, rawResult as ToolReply, claimed.claimExpiresAt, sync)
+        } else {
+          // No selection will run: release any rows the call was still holding
+          // to the worker (a local or output-less call normally holds none).
+          releaseHeldDeliveries(held.values())
+          toolResult = rawResult
         }
+        if (runAbort.signal.aborted || raceWinner === 'deadline') return aborted()
+
         const isError = Boolean((toolResult as { isError?: boolean })?.isError)
         if (isError) {
           return { outcome: 'failed', error: toolResult, result: toolResult }
@@ -139,7 +191,7 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
     void work.catch(() => undefined)
 
     const deadline = new Promise<ExecutorResult>((resolve) => {
-      const timer = setTimeout(() => {
+      deadlineTimer = setTimeout(() => {
         runAbort.abort()
         resolve({
           outcome: 'failed',
@@ -153,7 +205,7 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
       signal.addEventListener(
         'abort',
         () => {
-          clearTimeout(timer)
+          clearTimeout(deadlineTimer)
           resolve({
             outcome: 'failed',
             error: { code: 'aborted', message: 'host action aborted during execution' },
@@ -190,6 +242,42 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
     }
   } finally {
     signal.removeEventListener('abort', onOuterAbort)
+    // The deadline was only ever cleared when the OUTER signal aborted, so a
+    // Host Action that simply succeeded left a live timer behind for the rest
+    // of the timeout — holding the event loop open and firing an abort on a
+    // controller nobody is listening to any more.
+    clearTimeout(deadlineTimer)
+  }
+}
+
+/**
+ * Everything the sync steps need for one connection, or null when the node
+ * has no zone. Dynamic import keeps EnvironmentHost out of the unit graph.
+ */
+async function resolveSyncContext(
+  connectionId: string,
+  signal: AbortSignal,
+  claim: { actionId: string; claimToken: string },
+): Promise<HostActionSyncDeps | null> {
+  const { getEnvironmentHost } = await import('./environment-host')
+  const host = getEnvironmentHost()
+  const zone = host.getSyncZone(connectionId)
+  if (!zone) return null
+  const transfers = host.artifactTransfers
+  if (!transfers) return null
+  return {
+    zone,
+    connectionId,
+    signal,
+    renewClaim: (ttlMs) => host.renewHostActionClaim(connectionId, { ...claim, ttlMs }),
+    put: (input) => host.artifactPut(connectionId, input),
+    get: (input) => host.artifactGet(connectionId, input),
+    stat: (input) => host.artifactStat(connectionId, input.sessionId, input.relativePath),
+    list: (input) => host.artifactList(connectionId, input),
+    transfers,
+    log: {
+      warn: (...args) => void import('../logger').then((m) => m.default.warn(...args)).catch(() => undefined),
+    },
   }
 }
 

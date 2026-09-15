@@ -17,8 +17,9 @@ vi.mock('../media-gen/providers', () => ({
 vi.mock('../media-gen/settings-service', () => ({
   getMediaProviderStatuses: mockGetMediaProviderStatuses,
 }))
+const mockReadVideoGeneration = vi.hoisted(() => vi.fn())
 vi.mock('../media-gen/video/history', () => ({
-  readVideoGeneration: vi.fn(),
+  readVideoGeneration: mockReadVideoGeneration,
   submitVideoGeneration: mockSubmitVideoGeneration,
 }))
 vi.mock('../media-gen/history', () => ({ generateAndRecord: vi.fn() }))
@@ -28,6 +29,7 @@ import type { AgentEvent, PermissionRequest } from '@superone/shared/agent-types
 import { VIDEO_GEN_PARAMS_FIELD } from '@superone/shared/agent-types'
 import {
   generateVideoToolHandler,
+  videoStatusToolHandler,
   resolveVideoConfirm,
   rejectVideoConfirm,
   type GenerateVideoArgs,
@@ -76,6 +78,21 @@ const BASE_ARGS: GenerateVideoArgs = { prompt: 'a cat walks through neon city' }
 function makeDeps(sessionHost: unknown) {
   return { notifyDevAppReady: vi.fn(), sessionId: 'sess-test', sessionHost: sessionHost as never }
 }
+
+describe('videoStatusToolHandler', () => {
+  it('registers the finished files as artifacts every time it reports them, not only when they were written', async () => {
+    // A second status call answers from the record; the Host Action executor
+    // still has to push and rewrite those paths for a remote agent.
+    const { collectArtifacts, takeArtifacts, resetArtifactRegistry } = await import('./artifact-registry')
+    const { syncZoneRoot } = await import('../media-output-paths')
+    const { join } = await import('node:path')
+    resetArtifactRegistry()
+    const saved = join(syncZoneRoot(), 'sess-test', 'media-gen', 'clip.mp4')
+    mockReadVideoGeneration.mockResolvedValue({ generationId: 'g1', status: 'succeeded', savedPaths: [saved], warnings: [], error: null })
+    await collectArtifacts('sess-test', 'call-2', () => videoStatusToolHandler({ generation_id: 'g1' }))
+    expect(takeArtifacts('sess-test', 'call-2')).toEqual([{ path: saved, producer: 'media-gen', final: true }])
+  })
+})
 
 describe('readMediaGuideHandler', () => {
   it('returns non-empty, distinct content for every declared topic', () => {

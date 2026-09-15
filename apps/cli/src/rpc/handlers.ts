@@ -50,6 +50,7 @@ import {
   dispatchAutomationRpc,
 } from './automation-handlers'
 import { dispatchDraftRpc } from './draft-handlers'
+import { dispatchArtifactRpc } from './artifact-handlers'
 import {
   CODEX_MUTATING_METHODS,
   dispatchCodexRpc,
@@ -62,6 +63,7 @@ import { dispatchHarnessResourcesRpc } from './harness-resources-handlers'
 import type { AutomationService } from '@superone/runtime/automations'
 import type { AutomationStore } from '@superone/runtime/automations'
 import type { DraftStore } from '@superone/runtime/drafts'
+import type { ArtifactZoneService } from '../workspace/artifact-zone'
 import {
   settingsFromSessionProviderConfig,
   type SessionProviderStore,
@@ -97,6 +99,11 @@ export interface RpcContext {
    * a queued write freely without replay receipts.
    */
   drafts: DraftStore
+  /**
+   * Session sync zone under `<nodeHome>/sync` (`artifact.*`). Like drafts,
+   * absent from MUTATING_METHODS: `put` is idempotent by its offset contract.
+   */
+  artifacts: ArtifactZoneService
   /** Process-lifecycle scheduler + runNow executor. */
   automationService: AutomationService
   /** Session-layer provider profiles (claude-base, custom multi-profile, …). */
@@ -301,6 +308,15 @@ async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContex
   const draft = dispatchDraftRpc(method, payload, { client: ctx.client, drafts: ctx.drafts })
   if (draft) return draft
 
+  const artifact = dispatchArtifactRpc(method, payload, {
+    client: ctx.client,
+    environmentId: ctx.identity.environmentId,
+    sessions: ctx.sessions,
+    leases: ctx.leases,
+    artifacts: ctx.artifacts,
+  })
+  if (artifact) return await artifact
+
   const sessionProviders = dispatchSessionProviderRpc(method, payload, {
     client: ctx.client,
     sessionProviders: ctx.sessionProviders,
@@ -471,6 +487,10 @@ async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContex
       return handleSessionClaimHostAction(payload, ctx)
     case 'session.respondHostAction':
       return handleSessionRespondHostAction(payload, ctx)
+    case 'session.renewHostActionClaim':
+      return handleSessionRenewHostActionClaim(payload, ctx)
+    case 'session.notifyArtifactCompleted':
+      return handleSessionNotifyArtifactCompleted(payload, ctx)
     case 'session.events':
       return handleSessionEvents(payload, ctx)
     case 'session.messages.list':
@@ -724,12 +744,14 @@ function handleDescriptor(ctx: RpcContext): RpcResult {
       // yet — streaming rows are reconciled to interrupted (see SessionRuntime).
       turnReattach: false,
       hostActionV1: true,
+      syncZone: true,
     },
     generations: {
       protocol: { ...PROTOCOL_GENERATION },
       databaseSchema: { ...DATABASE_SCHEMA_GENERATION },
     },
     nodePublicKeyFingerprint: ctx.identity.publicKeyFingerprint,
+    syncRoot: ctx.artifacts.syncRoot,
   }
   return { result: descriptor }
 }
@@ -2226,6 +2248,9 @@ function handleSessionRemove(payload: unknown, ctx: RpcContext): RpcResult {
       })
     }
     const removed = ctx.sessions.remove(sessionId)
+    // The zone directory goes with the session (session-sync-zone.md §7); the
+    // controller cannot call artifact.delete afterwards because the binding is gone.
+    void ctx.artifacts.delete(sessionId).catch(() => undefined)
     return { result: removed }
   } catch (err) {
     return mapThrown(err)
@@ -2631,6 +2656,24 @@ function handleSessionClaimHostAction(payload: unknown, ctx: RpcContext): RpcRes
   }
 }
 
+/** Extend a live claim rather than deferring the work it is still doing (§4.1). */
+function handleSessionRenewHostActionClaim(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    const result = ctx.sessions.renewHostActionClaim({
+      actionId: String(p.actionId ?? ''),
+      claimToken: String(p.claimToken ?? ''),
+      controllerClientSessionId: ctx.client.clientSessionId,
+      ttlMs: typeof p.ttlMs === 'number' ? p.ttlMs : undefined,
+    })
+    return { result }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
 function handleSessionRespondHostAction(payload: unknown, ctx: RpcContext): RpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
   if (denied) return denied
@@ -2647,6 +2690,74 @@ function handleSessionRespondHostAction(payload: unknown, ctx: RpcContext): RpcR
       outcome,
       result: p.result,
       error: p.error,
+    })
+    return { result }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+/**
+ * A deferred artifact transfer landed (`docs/design/session-sync-zone.md` §4.1).
+ *
+ * The desktop names the session and the zone-relative paths; the node checks
+ * each one itself and builds the wording, so this cannot become a channel for
+ * injecting arbitrary text as a user turn. Controller-bound, no lease — it
+ * reports work the controller already did — and idempotent by
+ * `notificationId`, because the desktop retries when an ACK is lost.
+ */
+/** One wake names at most this many files; the rest are covered by their own jobs. */
+const MAX_NOTIFIED_PATHS = 32
+
+async function handleSessionNotifyArtifactCompleted(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const sessionId = String(p.sessionId ?? '')
+  const notificationId = String(p.notificationId ?? '')
+  const relativePaths = Array.isArray(p.relativePaths)
+    ? p.relativePaths.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
+    : []
+  if (!sessionId || !notificationId || relativePaths.length === 0) {
+    return { error: { code: 'invalid_argument', message: 'sessionId, notificationId and relativePaths are required' } }
+  }
+  // Authorisation first, and before touching the filesystem: otherwise
+  // "delivered: false" versus "forbidden" tells a client that is not the
+  // controller whether a given path exists in someone else's zone.
+  const session = ctx.sessions.get(sessionId)
+  if (!session) return { error: { code: 'not_found', message: 'session not found' } }
+  if (session.controllerClientSessionId !== ctx.client.clientSessionId) {
+    return { error: { code: 'forbidden', message: 'not the session controller' } }
+  }
+  // Only paths the node actually holds, named the way the node resolved them:
+  // the caller's spelling never reaches the wording, so a path that normalises
+  // onto a real file cannot smuggle text into the agent's turn.
+  const ready: string[] = []
+  for (const relativePath of relativePaths.slice(0, MAX_NOTIFIED_PATHS)) {
+    try {
+      const absolute = ctx.artifacts.resolve(sessionId, relativePath)
+      if (ctx.artifacts.stat(sessionId, relativePath).exists) ready.push(absolute)
+    } catch {
+      /* an unusable path is not a file that landed */
+    }
+  }
+  if (ready.length === 0) return { result: { delivered: false } }
+  const text = [
+    `<task_notification source="artifact_sync" status="completed">`,
+    ready.length === 1
+      ? 'A file SuperOne was transferring to this machine has finished and can now be read:'
+      : 'Files SuperOne was transferring to this machine have finished and can now be read:',
+    // JSON-quoted: a file name may contain anything a filesystem allows, and
+    // the wording around it has to stay the node's.
+    ...ready.map((path) => `- ${JSON.stringify(path)}`),
+    `</task_notification>`,
+  ].join('\n')
+  try {
+    const result = await ctx.sessions.notifyArtifactsCompleted({
+      sessionId,
+      controllerClientSessionId: ctx.client.clientSessionId,
+      notificationId,
+      text,
     })
     return { result }
   } catch (err) {

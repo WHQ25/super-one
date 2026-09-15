@@ -41,6 +41,8 @@ export type RpcErrorCode =
   | 'lease_stale'
   | 'cursor_too_old'
   | 'identity_conflict'
+  /** artifact.put: another transfer is already writing this path. */
+  | 'busy'
 
 export interface RpcError {
   code: RpcErrorCode

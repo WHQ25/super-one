@@ -1075,6 +1075,25 @@ export type Messages = {
           confirm: string
         }
       }
+      storage: {
+        section: string
+        label: string
+        description: string
+        summary: string
+        pending: string
+        stuck: string
+        stuckRetry: string
+        needsRedelivery: string
+        retrying: string
+        reclaimable: string
+        nothingReclaimable: string
+        reclaim: string
+        reclaiming: string
+        reveal: string
+        freed: string
+        freedNothing: string
+        unreadable: string
+      }
       imageProvider: {
         label: string
         description: string
@@ -4796,6 +4815,25 @@ export const en: Messages = {
           plan: 'Plan approvals',
           confirm: 'Host confirmations',
         },
+      },
+      storage: {
+        section: 'Storage',
+        label: 'Session Files',
+        description: 'Screenshots, recordings, downloads and generated media that agents produced, kept per session so the previewer and the tools can reach them.',
+        summary: '{{total}} across {{count}} sessions',
+        pending: '{{bytes}} waiting to upload',
+        stuck: '{{bytes}} in {{count}} files could not be queued for upload ({{error}}) — kept until they are',
+        stuckRetry: 'Retry Upload',
+        needsRedelivery: '{{bytes}} in {{count}} files were sent but never confirmed — re-run the action that produced them to deliver again',
+        retrying: 'Retrying…',
+        reclaimable: '{{bytes}} from {{count}} finished sessions can be reclaimed',
+        nothingReclaimable: 'Nothing to reclaim — every session here is still known',
+        reclaim: 'Reclaim Now',
+        reclaiming: 'Reclaiming…',
+        reveal: 'Show in Folder',
+        freed: 'Freed {{bytes}}',
+        freedNothing: 'Nothing to reclaim',
+        unreadable: 'Could not read the session files folder',
       },
       imageProvider: {
         label: 'Image Provider',

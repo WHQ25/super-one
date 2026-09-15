@@ -23,6 +23,8 @@ import {
   type TouchDeviceBackend,
 } from './types'
 import { imageNote } from '../mcp/show-your-work-notes'
+import { zoneArtifactRef } from '../media-output-paths'
+import { publishArtifact } from '../environment/zone-delivery'
 
 /**
  * What "this screen" means when deciding whether an action did anything.
@@ -178,7 +180,30 @@ function needsFocusSettle(previous: ResolvedAction | undefined, next: ResolvedAc
 export class DeviceAgentSession {
   readonly store = new DeviceStateStore()
 
-  constructor(private readonly backend: TouchDeviceBackend) {}
+  constructor(
+    private readonly backend: TouchDeviceBackend,
+    /**
+     * Whose session this device is driven for. Every screenshot the backend
+     * writes is registered under it, so a Host Action for a remote session
+     * pushes the file the reply's `image.path` names
+     * (`docs/design/session-sync-zone.md` §3). Absent in unit tests that drive
+     * a fake backend directly.
+     */
+    private readonly sessionId?: string,
+  ) {}
+
+  /**
+   * One place for every platform's capture: the backends all return a path,
+   * and which producer wrote it is already in that path (ios-simulator,
+   * android, ios-mirror). A capture outside the zone — an injected test root —
+   * is not an artifact.
+   */
+  private registerCapture(image: { path: string } | undefined): void {
+    if (!image || !this.sessionId) return
+    const ref = zoneArtifactRef(image.path)
+    if (!ref || ref.sessionId !== this.sessionId) return
+    publishArtifact(this.sessionId, { path: image.path, producer: ref.producer, final: true })
+  }
 
   /**
    * Every public method funnels failures through here rather than throwing.
@@ -248,6 +273,7 @@ export class DeviceAgentSession {
     throwIfDeviceOperationAborted(signal)
     const image = mode === 'visual' || mode === 'fused' ? await this.backend.capture() : undefined
     if (image) this.store.attachImage(state.stateId, image)
+    this.registerCapture(image)
     throwIfDeviceOperationAborted(signal)
 
     return reply({

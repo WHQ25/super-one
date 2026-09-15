@@ -1995,11 +1995,21 @@ export class AgentService {
    * both file RPCs share. `null` means the error has already been sent.
    */
   private async authorizeRemoteFile(
-    command: { requestId: string; path: string; maxBytes?: number },
+    command: { requestId: string; path: string; maxBytes?: number; root?: string },
     respond: RemoteResponder,
   ): Promise<AuthorizedFile | null> {
     try {
-      return await authorizeAndStat(command.path, { allowedRoots: [] }, { maxBytes: command.maxBytes, skipRootCheck: true })
+      // A remote-session file (root is `remote:<conn>:<path>`) is resolved to a
+      // real local path first (session-sync-zone.md §4.2): a node-zone artifact
+      // via the desktop mirror, a node project file staged under the OS temp
+      // cache. Only then does it go through the same host-file gate as any local
+      // path. A bare path (no root, or a local root) authorizes as before.
+      const localPath = command.root ? await this.resolveRemoteSessionFilePath(command.root, command.path) : command.path
+      if (localPath === null) {
+        await respond(command.requestId, { ok: false, error: 'not_found', message: 'file does not exist' })
+        return null
+      }
+      return await authorizeAndStat(localPath, { allowedRoots: [] }, { maxBytes: command.maxBytes, skipRootCheck: true })
     } catch (err) {
       if (err instanceof FileBridgeError) {
         await respond(command.requestId, { ok: false, error: err.code, message: err.message })
@@ -2010,13 +2020,43 @@ export class AgentService {
     }
   }
 
+  /**
+   * A remote-session `(root, path)` as a real local file the phone bridge can
+   * serve: the desktop mirror of a node-zone artifact, or a node project file
+   * staged under the OS temp cache. Null when the file exists on neither side.
+   */
+  private async resolveRemoteSessionFilePath(root: string, path: string): Promise<string | null> {
+    const { getEnvironmentHost } = await import('../environment/environment-host')
+    const host = getEnvironmentHost()
+    const { resolveSessionFile, resolverDepsFor, materializeRemoteProjectFile } = await import('../environment/session-file-resolver')
+    const resolution = await resolveSessionFile(root, path, resolverDepsFor(host))
+    if (resolution.kind === 'local') return resolution.path
+    if (resolution.kind === 'missing') return null
+    const { resolveRemoteProjectContext } = await import('../environment/remote-file-tree')
+    const ctx = await resolveRemoteProjectContext(host, resolution.folderPath)
+    if (!ctx) return null
+    const ref = { environmentId: ctx.environmentId, projectId: ctx.projectId }
+    return materializeRemoteProjectFile(resolution.connectionId, resolution.folderPath, resolution.relativePath, {
+      stat: async (rel) => {
+        const parentRel = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '.'
+        const entries = await host.workspace().listDir({ project: ref, relativePath: parentRel || '.' })
+        const self = entries.find((e) => e.name === rel.slice(rel.lastIndexOf('/') + 1))
+        return self && self.type === 'file' ? { size: self.size ?? 0, mtimeMs: self.mtimeMs ?? 0 } : null
+      },
+      read: async (rel) => {
+        const raw = await host.workspace().readFile({ project: ref, relativePath: rel })
+        return typeof raw.content === 'string' ? Buffer.from(raw.content, 'utf8') : Buffer.from(raw.content)
+      },
+    })
+  }
+
   private async handleReadVideoPoster(
     command: Extract<RemoteCommand, { type: 'read_video_poster' }>,
     respond?: RemoteResponder,
   ): Promise<void> {
     if (!respond) return
     // No size cap: only the first frame leaves the host, however long the clip.
-    const authorized = await this.authorizeRemoteFile({ requestId: command.requestId, path: command.path, maxBytes: Number.MAX_SAFE_INTEGER }, respond)
+    const authorized = await this.authorizeRemoteFile({ requestId: command.requestId, path: command.path, root: command.root, maxBytes: Number.MAX_SAFE_INTEGER }, respond)
     if (!authorized) return
     const metadata = { mimeType: authorized.mimeType, name: authorized.name, size: authorized.size, modifiedAt: authorized.modifiedAt }
     if (!authorized.mimeType.startsWith('video/')) {
@@ -3891,6 +3931,8 @@ export class AgentService {
           log.warn('[agent-service] dispose before delete failed sid=%s: %s', sessionId, err instanceof Error ? err.message : String(err))
         }
       }
+      // The sync zone and transfer jobs are reclaimed off the db-layer delete
+      // signal (session-list-watch.ts), the same for every delete entry point.
       dbDeleteSession(sessionId)
       this.emitSessionsChanged()
     })

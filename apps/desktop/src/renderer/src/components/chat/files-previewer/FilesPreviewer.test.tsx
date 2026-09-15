@@ -33,6 +33,32 @@ beforeEach(() => {
 const card = () => screen.getByTestId('files-previewer')
 const stage = () => screen.getByTestId('previewer-stage')
 
+describe('files previewer card — remote sessions', () => {
+  const REMOTE_ROOT = 'remote:conn-1:/home/node/proj'
+  const nodeShot: PreviewerFile = {
+    path: '/home/node/.superone/node/sync/s1/browser/shot.png',
+    absolutePath: '/home/node/.superone/node/sync/s1/browser/shot.png',
+    name: 'shot.png',
+    kind: 'image',
+    size: 12,
+    note: 'the result',
+  }
+
+  it('loads a node media file through readProjectFile as a data URI instead of a file path', async () => {
+    // The main process serves the mirror/artifact bytes back as a data: URI.
+    readProjectFile.mockResolvedValue({
+      path: nodeShot.absolutePath,
+      content: 'data:image/png;base64,aW1n',
+      language: 'image',
+    })
+    render(<FilesPreviewer payload={{ kind: 'native', nativeType: 'files-previewer', title: 't', root: REMOTE_ROOT, files: [nodeShot] }} />)
+    const img = await screen.findByAltText('shot.png')
+    expect(img).toHaveAttribute('src', 'data:image/png;base64,aW1n')
+    // It went through readProjectFile with the remote root, never a bare file:// URL.
+    expect(readProjectFile).toHaveBeenCalledWith(REMOTE_ROOT, nodeShot.absolutePath)
+  })
+})
+
 describe('files previewer card', () => {
   it('shows the first file with its note, counter and kind, and only reads the slide it shows', async () => {
     render(<FilesPreviewer payload={payload([image, text, missing])} />)
@@ -94,7 +120,8 @@ describe('files previewer card', () => {
     expect(screen.getByTestId('previewer-error').textContent).toContain('File not found')
 
     await act(async () => { fireEvent.click(screen.getByText('Retry')) })
-    await waitFor(() => expect(statPreviewFile).toHaveBeenCalledWith(ROOT, 'gone.md'))
+    // Re-stat by the absolute path: a remote root has no cwd to resolve 'gone.md' against.
+    await waitFor(() => expect(statPreviewFile).toHaveBeenCalledWith(ROOT, '/repo/gone.md'))
     await waitFor(() => expect(screen.queryByTestId('previewer-error')).toBeNull())
     // The note survives the re-stat; the host does not know it.
     expect(screen.getByTestId('previewer-note').textContent).toBe('Not yet written')

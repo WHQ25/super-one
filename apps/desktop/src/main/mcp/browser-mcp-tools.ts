@@ -2,15 +2,17 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { z, toJSONSchema, type ZodTypeAny } from 'zod'
-import { browserAutomationCall, browserFocusGuard, resolveBrowserWebContentsId, type BrowserAutomationOp } from '../browser/browser-automation-bridge'
+import { browserAutomationCall, browserFocusGuard, noteTabDriver, requireTabDriver, resolveBrowserWebContentsId, resolvePointForSession, type BrowserAutomationOp } from '../browser/browser-automation-bridge'
 import { existsSync } from 'fs'
 import { isCdpEnabled, isCdpCookiesEnabled, isCdpMockEnabled, isCdpEmulateEnabled, resolveCdpTarget, cdpClick, cdpHover, cdpDrag, cdpPress, cdpType, cdpEmulate, cdpGetCookies, cdpSetFileInput } from '../browser/browser-cdp'
 import { encode as toonEncode } from '@toon-format/toon'
 import { startRecording, stopRecording, waitForRecordedRequest, getRecordedRequest, addMockRule, clearMockRules, type RecordedRequest } from '../browser/browser-cdp-network'
 import { measurePerf, samplePerf, resolveAppTarget } from '../browser/browser-cdp-perf'
+import { mapNestedToolInputs } from '../environment/host-action-sync'
 import { persistScreenshot } from '../agent/browser-screenshot-store'
 import { raceDownloadTask, startUrlDownloadTask } from '../browser/browser-download-tasks'
 import { listDownloads } from '../browser/browser-downloads'
+import { adoptCapturedDownload } from '../agent/browser-download-store'
 import { persistTextArtifact } from '../agent/browser-artifact-store'
 import type { SuperoneMcpToolDescriptor } from './superone-mcp-types'
 import { registerBrowserActionTools } from './browser-action-mcp-tools'
@@ -138,6 +140,9 @@ async function cdpOrData(
     // renderer-side isolation window, so the guard has to span the whole call.
     // The synthetic branch is already covered by the renderer's own wrapper.
     if (useCdp) return textReply(await withHostFocusGuard(sessionId, cdpFn))
+    // The synthetic action runs in the renderer and can start a download
+    // before its result returns; record the driver first (§6).
+    await noteTabDriver(sessionId, (input as { tab?: string }).tab)
     return textReply(await browserAutomationCall(sessionId, op, input))
   } catch (err) {
     return errorReply(err)
@@ -573,7 +578,7 @@ function captureLegacyTools(sessionId: string, webMcpEnabled: boolean): {
   return { descriptors: capturing.descriptors, handlers: capturing.handlers }
 }
 
-function runPrimitive(
+async function runPrimitive(
   sessionId: string,
   name: string,
   args: Record<string, unknown>,
@@ -584,8 +589,29 @@ function runPrimitive(
     primitiveHandlerCache.set(sessionId, primitives)
   }
   const handler = primitives.get(name)
-  if (!handler) return Promise.resolve(errorReply(new Error(`Unknown browser primitive: ${name}`)))
-  return handler(args)
+  if (!handler) return errorReply(new Error(`Unknown browser primitive: ${name}`))
+  return runMappedTool(name, args, handler)
+}
+
+/**
+ * Every route to a browser tool passes here — the compact dispatcher, the
+ * `browser_perf` wrapper, a saved action's expanded step — so this is where a
+ * remote session's node-zone arguments are mapped by the tool's own roles
+ * (`docs/design/session-sync-zone.md` §3.1). A refused mapping is an error
+ * reply, never a rejection: callers up the stack read `isError`.
+ */
+async function runMappedTool(
+  name: string,
+  args: Record<string, unknown>,
+  handler: (args: Record<string, unknown>) => Promise<ToolReply>,
+): Promise<ToolReply> {
+  let mapped: Record<string, unknown>
+  try {
+    mapped = await mapNestedToolInputs(name, args)
+  } catch (err) {
+    return errorReply(err instanceof Error ? err : new Error(String(err)))
+  }
+  return handler(mapped)
 }
 
 function captureCompactTools(sessionId: string, webMcpEnabled: boolean): {
@@ -634,7 +660,7 @@ export async function executeBrowserTool(
 ): Promise<ToolReply> {
   const handler = ensureAllHandlers(sessionId).get(toolName)
   if (!handler) throw new Error(`Unknown browser tool: ${toolName}`)
-  return handler(args)
+  return runMappedTool(toolName, args, handler)
 }
 
 export function clearBrowserToolHandlers(sessionId: string): void {
@@ -845,7 +871,7 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
         // to re-rasterize before reading pixels; a CDP Page.captureScreenshot reads
         // the composited surface as-is, so under PiP it returned a blurry upscale.
         const result = (await browserAutomationCall(sessionId, 'screenshot', args)) as ScreenshotResult
-        const path = persistScreenshot(result.data, result.mimeType)
+        const path = persistScreenshot(sessionId, result.data, result.mimeType)
         if (!path) return errorReply('Failed to save screenshot to disk.')
         return textReply({ path, width: result.width, height: result.height, imageNote: imageNote('path') })
       } catch (err) {
@@ -880,7 +906,7 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
         'click',
         args,
         async () => {
-          const point = (await browserAutomationCall(sessionId, 'resolvePoint', args)) as ResolvePoint
+          const point = (await resolvePointForSession(sessionId, args)) as unknown as ResolvePoint
           if (!point.ok) throw new Error(point.error ?? 'click target not found')
           await cdpClick(point.webContentsId, point.x, point.y)
           return { ok: true, selector: point.selector, name: point.name, ...(point.ambiguous ? { ambiguous: point.ambiguous } : {}) }
@@ -917,7 +943,7 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
         'hover',
         args,
         async () => {
-          const point = (await browserAutomationCall(sessionId, 'resolvePoint', args)) as ResolvePoint
+          const point = (await resolvePointForSession(sessionId, args)) as unknown as ResolvePoint
           if (!point.ok) throw new Error(point.error ?? 'hover target not found')
           await cdpHover(point.webContentsId, point.x, point.y)
           return { ok: true, selector: point.selector, name: point.name, ...(point.ambiguous ? { ambiguous: point.ambiguous } : {}) }
@@ -978,11 +1004,12 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
         readiness: z.enum(['load', 'none']).default('load').describe("'load' waits for loading to stop (default); 'none' returns immediately."),
       },
     },
-    (args) => {
+    async (args) => {
       const modes = Number(args.url != null) + Number(args.port != null) + Number(args.action != null)
       if (modes !== 1) {
-        return Promise.resolve(errorReply('Provide exactly one of url, port, or action.'))
+        return errorReply('Provide exactly one of url, port, or action.')
       }
+      await noteTabDriver(sessionId, args.tab)
       return dataTool(sessionId, 'navigate', args)
     },
   )
@@ -1097,9 +1124,9 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
       if (modes(args.from) !== 1) return Promise.resolve(errorReply('Provide exactly one of selector, text, or x+y for `from`.'))
       if (modes(args.to) !== 1) return Promise.resolve(errorReply('Provide exactly one of selector, text, or x+y for `to`.'))
       return cdpOrData(sessionId, 'drag', args, async () => {
-        const src = (await browserAutomationCall(sessionId, 'resolvePoint', { tab: args.tab, ...args.from })) as ResolvePoint
+        const src = (await resolvePointForSession(sessionId, { tab: args.tab, ...args.from })) as unknown as ResolvePoint
         if (!src.ok) throw new Error(src.error ?? 'drag source not found')
-        const dst = (await browserAutomationCall(sessionId, 'resolvePoint', { tab: args.tab, ...args.to })) as ResolvePoint
+        const dst = (await resolvePointForSession(sessionId, { tab: args.tab, ...args.to })) as unknown as ResolvePoint
         if (!dst.ok) throw new Error(dst.error ?? 'drag target not found')
         await cdpDrag(src.webContentsId, src.x, src.y, dst.x, dst.y, { steps: args.steps, holdMs: args.holdMs, humanize: args.humanize })
         return { ok: true, from: { selector: src.selector, name: src.name }, to: { selector: dst.selector, name: dst.name } }
@@ -1122,7 +1149,11 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
         checked: z.boolean().optional().describe('Desired checked state (for checkbox/radio). Defaults to true.'),
       },
     },
-    (args) => dataTool(sessionId, 'select', args),
+    async (args) => {
+      // A select's change handler can start a download; record the driver first.
+      await noteTabDriver(sessionId, args.tab)
+      return dataTool(sessionId, 'select', args)
+    },
   )
 
   server.registerTool(
@@ -1137,7 +1168,41 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
         readiness: z.enum(['load', 'none']).default('load').describe("'load' waits for loading to stop (default); 'none' returns as soon as the tab exists."),
       },
     },
-    (args) => dataTool(sessionId, 'open', args),
+    async (args) => {
+      if (args.tab) await noteTabDriver(sessionId, args.tab)
+      // The tab is created blank first, so this session is recorded as its
+      // driver BEFORE the initial URL loads. Navigating straight to the URL
+      // would let a direct-download link (or a first-paint script) start a
+      // download while the tab still had no driver, and the file would land in
+      // the Downloads folder instead of the session zone (§6).
+      const opened = (await browserAutomationCall(sessionId, 'open', { ...args, url: undefined, readiness: 'none' })) as {
+        tab?: string
+        url?: string
+        title?: string
+      }
+      if (!args.url || typeof opened.tab !== 'string') {
+        if (typeof opened.tab === 'string') await noteTabDriver(sessionId, opened.tab)
+        return textReply(opened)
+      }
+      // Attribution is a precondition for the initial navigation, not a
+      // best-effort side errand: a cold-started view is registered before its
+      // webContents exists, so the first resolve can fail and the next succeed.
+      // Navigating in between is exactly how a first-paint download ends up
+      // unattributed. Report the tab that WAS opened so the caller can retry or
+      // close it rather than leaking a blank view.
+      if (!(await requireTabDriver(sessionId, opened.tab))) {
+        return errorReply(
+          `Opened tab ${opened.tab} but could not attribute it to this session, so it was left on about:blank. Retry the navigation with browser_act, or close the tab.`,
+        )
+      }
+      // `readiness` keeps its meaning: it is the initial navigation it describes.
+      const navigated = (await browserAutomationCall(sessionId, 'navigate', {
+        tab: opened.tab,
+        url: args.url,
+        readiness: args.readiness,
+      })) as { url?: string; title?: string }
+      return textReply({ ...opened, url: navigated.url ?? args.url, title: navigated.title ?? opened.title })
+    },
   )
 
   server.registerTool(
@@ -1169,10 +1234,12 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
     },
     async (args) => {
       try {
+        // Evaluate can navigate or trigger a download; record the driver first.
+        await noteTabDriver(sessionId, args.tab)
         const res = (await browserAutomationCall(sessionId, 'evaluate', args)) as { value: unknown }
         const json = JSON.stringify(res.value ?? null)
         if (json.length <= INLINE_ARTIFACT_LIMIT) return textReply({ value: res.value ?? null })
-        const path = persistTextArtifact(json, 'json')
+        const path = persistTextArtifact(sessionId, json, 'json')
         if (!path) return textReply({ value: res.value ?? null, bytes: json.length })
         return textReply({ spilled: true, path, bytes: json.length, preview: json.slice(0, ARTIFACT_PREVIEW_CHARS) })
       } catch (err) {
@@ -1325,7 +1392,7 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
         detail.bodyOmitted = e.bodyOmitted ?? 'not-captured'
         return Promise.resolve(toonReply(detail))
       }
-      return Promise.resolve(toonReply(spillLargeBrowserField({ ...detail, body: e.body, bodyTruncated: e.bodyTruncated }, 'body', 'txt')))
+      return Promise.resolve(toonReply(spillLargeBrowserField(sessionId, { ...detail, body: e.body, bodyTruncated: e.bodyTruncated }, 'body', 'txt')))
     },
   )
 
@@ -1377,7 +1444,7 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
     'browser_download',
     {
       description:
-        "Fetch a file by URL and save it to disk through the browser session (cookies/auth apply, no CORS; data: URLs ok). Completes synchronously if finished within `timeoutMs`; otherwise continues in the background and returns status 'background' with a taskId — you will receive a task notification when it finishes. For downloads the page starts itself (export buttons, attachment links), click first then use browser_list_downloads. Without `dir` the file lands in the user's configured download directory; pass `dir` when it belongs somewhere specific, such as the project the user is working in.",
+        "Fetch a file by URL and save it to disk through the browser session (cookies/auth apply, no CORS; data: URLs ok). Completes synchronously if finished within `timeoutMs`; otherwise continues in the background and returns status 'background' with a taskId — you will receive a task notification when it finishes. For downloads the page starts itself (export buttons, attachment links), click first then use browser_list_downloads. Without `dir` the file lands in the user's configured download directory — or, for a session running on a remote node, in that session's directory ($SUPERONE_SESSION_DIR), which is where you can read it. Pass `dir` when it belongs somewhere specific, such as the project the user is working in.",
       inputSchema: {
         ...descriptionField,
         url: z.string().min(1).describe('Absolute URL (or data: URL) of the file to download.'),
@@ -1388,7 +1455,7 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
         dir: z
           .string()
           .optional()
-          .describe("Absolute directory to save into, created if missing. Defaults to the user's configured download directory."),
+          .describe("Absolute directory to save into, created if missing. Defaults to the user's configured download directory, or the session directory on a remote node."),
         timeoutMs: z
           .number()
           .int()
@@ -1446,11 +1513,19 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
     },
     async (args) => {
       try {
-        const downloads = await listDownloads(sessionId, {
+        const listed = await listDownloads(sessionId, {
           state: args.state,
           wait: args.wait,
           timeoutMs: args.timeoutMs,
         })
+        // A download the page started could not be filed by session when it
+        // began; on a remote node it is adopted into the zone now, so the path
+        // reported here is one the agent can open.
+        const downloads = listed.map((download) =>
+          download.state === 'completed' && download.path
+            ? { ...download, path: adoptCapturedDownload(sessionId, download.path) }
+            : download,
+        )
         return textReply({ count: downloads.length, downloads })
       } catch (err) {
         return errorReply(err)

@@ -153,10 +153,22 @@ proves nothing — and say in one line what you closed.
 
 ## Where files live
 
-Screenshots and recordings are written under the OS temp directory
-(`super-one-captures/…` and `super-one-recordings/…`) and nothing but the OS
-ever prunes them: fine to embed in the reply you are writing now, not a place
-to link from a note that will be read next month. Nothing needs to be copied
-into the project to embed one. If the user wants a piece of evidence kept with
-the work — for a PR, a handoff, a design note — copy it somewhere gitignored
-and link that copy; screenshots and videos do not belong in git.
+Screenshots, spilled browser results and generated media are written into the
+session's own artifact directory (`…/sync/<sessionId>/<producer>/…`); device
+recordings still land under the OS temp directory (`super-one-recordings/…`).
+Session artifacts live as long as the session does and are deleted with it:
+fine to embed in the reply you are writing now, not a place to link from a
+note that will be read next month. Nothing needs to be copied into the project
+to embed one. If the user wants a piece of evidence kept with the work — for a
+PR, a handoff, a design note — copy it somewhere gitignored and link that
+copy; screenshots and videos do not belong in git.
+
+Deliverables you write yourself — a report, a contact sheet, an export — that
+the user should be able to open from any device go under the session's `agent/`
+directory: `$SUPERONE_SESSION_DIR/agent/<name>`. `SUPERONE_SESSION_DIR` is set
+in your environment on every session; it is the same directory the captures
+above live in, mirrored between the machine you run on and the desktop the
+user is looking at, so a file placed there renders in the chat and on the
+phone exactly like a screenshot does. Only `agent/` is writable for you; the
+other subdirectories belong to the tools. If the variable is not set, you are
+running on the desktop itself and any gitignored path works as before.

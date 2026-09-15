@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { shortenPath, homePath, resolveAssetUrls, toAssetUrl, toLocalFileUrl, mediaUrlFor } from './path-utils'
+import { shortenPath, homePath, resolveAssetUrls, toAssetUrl, toLocalFileUrl, localFileUrlToPath, mediaUrlFor } from './path-utils'
 
 describe('shortenPath', () => {
   it('returns relative path when shortest', () => {
@@ -95,6 +95,14 @@ describe('toLocalFileUrl', () => {
 
   it('encodes hash signs in filenames', () => {
     expect(toLocalFileUrl('/Users/alice/file#1.png')).toBe('local-file:///Users/alice/file%231.png')
+  })
+
+  it('encodes a question mark so the URL parser does not read the rest of the name as a query', () => {
+    // A `report?draft.png` is a legal POSIX name; unencoded, `new URL(...).pathname`
+    // stops at the `?` and the file resolves to `report`.
+    const url = toLocalFileUrl('/Users/alice/report?draft.png')
+    expect(url).toBe('local-file:///Users/alice/report%3Fdraft.png')
+    expect(localFileUrlToPath(url)).toBe('/Users/alice/report?draft.png')
   })
 })
 

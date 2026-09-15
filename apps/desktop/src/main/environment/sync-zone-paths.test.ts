@@ -1,0 +1,174 @@
+import { describe, expect, it, vi } from 'vitest'
+
+vi.mock('electron', () => ({ app: { getPath: () => '/Users/me/Library/Application Support/SuperOne' } }))
+
+import { mapNodeZoneArgs, mentionsArtifactPath, nodeTwinOf, nodeZonePath, parseNodeZonePath, rewriteArtifactPaths } from './sync-zone-paths'
+
+const linux = { syncRoot: '/home/node/.superone/node/sync', os: 'linux' as const }
+const windows = { syncRoot: 'C:\\Users\\node\\.superone\\node\\sync', os: 'windows' as const }
+const desktopZone = '/Users/me/Library/Application Support/SuperOne/sync'
+
+describe('sync zone prefix mapping', () => {
+  it('builds the node twin of a desktop zone path in the node separator', () => {
+    expect(nodeTwinOf(linux, `${desktopZone}/s1/browser/shot.png`)).toBe('/home/node/.superone/node/sync/s1/browser/shot.png')
+    expect(nodeTwinOf(windows, `${desktopZone}/s1/browser/shot.png`)).toBe('C:\\Users\\node\\.superone\\node\\sync\\s1\\browser\\shot.png')
+    expect(nodeTwinOf(linux, '/Users/me/project/shot.png')).toBeNull()
+  })
+
+  it('parses a node zone path textually without resolving it locally', () => {
+    expect(parseNodeZonePath(linux, '/home/node/.superone/node/sync/s1/agent/report.md')).toEqual({ sessionId: 's1', relativePath: 'agent/report.md' })
+    expect(parseNodeZonePath(windows, 'C:\\Users\\node\\.superone\\node\\sync\\s1\\agent\\report.md')).toEqual({ sessionId: 's1', relativePath: 'agent/report.md' })
+    expect(parseNodeZonePath(windows, 'c:\\users\\node\\.superone\\node\\sync\\s1\\a.md')).toEqual({ sessionId: 's1', relativePath: 'a.md' })
+    expect(parseNodeZonePath(linux, '/home/node/.superone/node/sync/s1')).toBeNull()
+    expect(parseNodeZonePath(linux, '/home/node/.superone/node/synced/s1/a.md')).toBeNull()
+    expect(parseNodeZonePath(linux, '/home/node/.superone/node/sync/s1/../s2/a.md')).toBeNull()
+    expect(parseNodeZonePath(linux, '/home/node/project/a.md')).toBeNull()
+    expect(nodeZonePath({ ...linux, syncRoot: '/home/node/.superone/node/sync/' }, 's1', 'agent/x')).toBe('/home/node/.superone/node/sync/s1/agent/x')
+  })
+
+  it('parses a Windows zone path whose separators were normalised on the way through a URL', () => {
+    // `encodeRemoteMediaUrl` folds `\` to `/` before base64-ing the payload, so
+    // by the time a media URL comes back the Windows path is slash-separated.
+    // Refusing it here is what made every Windows-node screenshot preview
+    // resolve to `missing`.
+    const native = nodeZonePath(windows, 's1', 'browser/shot.png')
+    expect(native).toBe('C:\\Users\\node\\.superone\\node\\sync\\s1\\browser\\shot.png')
+    expect(parseNodeZonePath(windows, native)).toEqual({ sessionId: 's1', relativePath: 'browser/shot.png' })
+    expect(parseNodeZonePath(windows, native.replace(/\\/g, '/'))).toEqual({ sessionId: 's1', relativePath: 'browser/shot.png' })
+    // A POSIX node keeps backslash as an ordinary filename character.
+    expect(parseNodeZonePath(linux, '/home/node/.superone/node/sync/s1/browser/od\\d.png'))
+      .toEqual({ sessionId: 's1', relativePath: 'browser/od\\d.png' })
+  })
+
+  it('rewrites whole path tokens only, in raw and JSON-escaped form', () => {
+    const from = `${desktopZone}/s1/browser/shot.png`
+    const to = nodeTwinOf(linux, from)!
+    // `shot.png.bak` is another file — one that was never pushed — not a mention of shot.png.
+    const text = JSON.stringify({ path: from, note: `see ${from}.`, other: `${from}.bak`, page: 'the string sync/s1 appears in page text' })
+    const out = rewriteArtifactPaths(text, new Map([[from, to]]))
+    expect(JSON.parse(out)).toEqual({ path: to, note: `see ${to}.`, other: `${from}.bak`, page: 'the string sync/s1 appears in page text' })
+    expect(mentionsArtifactPath(text, from)).toBe(true)
+    expect(mentionsArtifactPath(JSON.stringify({ other: `${from}.bak` }), from)).toBe(false)
+    // A Windows desktop path is doubled in JSON text; that form is rewritten too.
+    const win = 'C:\\Users\\me\\sync\\s1\\browser\\shot.png'
+    const winText = JSON.stringify({ path: win })
+    expect(JSON.parse(rewriteArtifactPaths(winText, new Map([[win, '/home/node/sync/s1/browser/shot.png']])))).toEqual({ path: '/home/node/sync/s1/browser/shot.png' })
+  })
+
+  it('keeps JSON content parseable when the node twin carries backslashes', () => {
+    // A POSIX desktop path needs no escaping, so a text-level replace would
+    // drop C:\node\... unescaped into the JSON string and break the reply.
+    const from = `${desktopZone}/s1/browser/shot.png`
+    const to = nodeTwinOf(windows, from)!
+    const text = JSON.stringify({ path: from, nested: JSON.stringify({ inner: from }) })
+    const out = rewriteArtifactPaths(text, new Map([[from, to]]))
+    const parsed = JSON.parse(out) as { path: string; nested: string }
+    expect(parsed.path).toBe(to)
+    // A string value that is itself JSON is rewritten at its own level and stays JSON.
+    expect(JSON.parse(parsed.nested)).toEqual({ inner: to })
+    // Plain text gets the raw twin.
+    expect(rewriteArtifactPaths(`saved to ${from}`, new Map([[from, to]]))).toBe(`saved to ${to}`)
+  })
+
+  it('finds and rewrites a path inside a JSON string that is itself inside JSON', () => {
+    // A tool that embeds a serialised result as a string value nests the
+    // escaping twice. Missing it made the push decision and the rewrite
+    // disagree: the ref was judged "never mentioned" and silently skipped.
+    const from = `${desktopZone}/s1/browser/shot.png`
+    const to = nodeTwinOf(windows, from)!
+    const text = JSON.stringify({ payload: JSON.stringify({ path: from }) })
+    expect(mentionsArtifactPath(text, from)).toBe(true)
+    const out = rewriteArtifactPaths(text, new Map([[from, to]]))
+    const outer = JSON.parse(out) as { payload: string }
+    expect(JSON.parse(outer.payload)).toEqual({ path: to })
+  })
+
+  it('keeps a bare JSON string value valid when the twin carries backslashes', () => {
+    const from = `${desktopZone}/s1/browser/a[1]+(x).png`
+    const to = nodeTwinOf(windows, from)!
+    const text = JSON.stringify(JSON.stringify(from))
+    const out = rewriteArtifactPaths(text, new Map([[from, to]]))
+    expect(JSON.parse(JSON.parse(out) as string)).toBe(to)
+  })
+
+  it('sees a Windows path nested two JSON levels deep, so its ref is still pushed', () => {
+    // `rewriteArtifactPaths` walks nested JSON and would rewrite this path.
+    // If `mentionsArtifactPath` disagrees, the ref is judged unmentioned and
+    // never uploaded — and the agent is handed a node path for a file the
+    // node does not have. The two have to answer the same question.
+    const from = 'C:\\Users\\me\\AppData\\Roaming\\SuperOne\\sync\\s1\\browser\\shot.png'
+    const text = JSON.stringify({ result: JSON.stringify({ path: from }) })
+    expect(mentionsArtifactPath(text, from)).toBe(true)
+    const rewritten = rewriteArtifactPaths(text, new Map([[from, 'D:\\node\\sync\\s1\\browser\\shot.png']]))
+    expect(JSON.parse(JSON.parse(rewritten).result).path).toBe('D:\\node\\sync\\s1\\browser\\shot.png')
+  })
+
+  it('does not match a longer absolute path that merely ends with a registered one', () => {
+    // Without a left boundary the match is a substring search: `/tmp/a.png`
+    // "occurs" inside `/other/tmp/a.png`, and rewriting it produces a node
+    // path spliced into the middle of somebody else's.
+    const from = `${desktopZone}/s1/browser/a.png`
+    for (const text of [`/other${from}`, `${from}/child`, `${from}{copy}`, `${from}[copy]`, `${from}.bak`, `${from}副本`, `/其他${from}`, `${from}\\child`]) {
+      expect(mentionsArtifactPath(text, from)).toBe(false)
+      expect(rewriteArtifactPaths(text, new Map([[from, '/node/a.png']]))).toBe(text)
+    }
+    for (const text of [from, `saw ${from} today`, `${from}.`, `(${from})`, `"${from}"`, `[${from}]`, `${from},`]) {
+      expect(mentionsArtifactPath(text, from)).toBe(true)
+    }
+    // A Windows path with a longer path spliced onto it, inside JSON: the
+    // decoded value is not the path, so neither is it a mention.
+    const win = 'C:\\desk\\sync\\s\\a.png'
+    const text = JSON.stringify({ path: `${win}\\child` })
+    expect(mentionsArtifactPath(text, win)).toBe(false)
+    expect(rewriteArtifactPaths(text, new Map([[win, 'D:\\node\\a.png']]))).toBe(text)
+  })
+
+  it('compares a JSON path value exactly instead of searching inside it', () => {
+    // `/tmp/a.png copy.png` and `/other:/tmp/a.png` are other files. A space
+    // or a colon is a legal file-name character, so a value that *is* a path
+    // is compared whole; only prose is scanned.
+    const from = `${desktopZone}/s1/browser/a.png`
+    const mapping = new Map([[from, '/node/a.png']])
+    for (const other of [`${from} copy.png`, `${from},old`, `/other:${from}`]) {
+      for (const text of [JSON.stringify({ path: other }), JSON.stringify({ result: JSON.stringify({ path: other }) })]) {
+        expect(mentionsArtifactPath(text, from)).toBe(false)
+        expect(rewriteArtifactPaths(text, mapping)).toBe(text)
+      }
+    }
+    // A prose value inside JSON is still prose.
+    const prose = JSON.stringify({ note: `saved ${from} for you` })
+    expect(mentionsArtifactPath(prose, from)).toBe(true)
+    expect(JSON.parse(rewriteArtifactPaths(prose, mapping)).note).toBe('saved /node/a.png for you')
+  })
+
+  it('finds a path bounded by Chinese punctuation or corner brackets', () => {
+    const from = `${desktopZone}/s1/browser/a.png`
+    for (const text of [`已保存到 ${from}。`, `已保存到 ${from}，继续`, `路径：${from}`, `「${from}」`, `（${from}）`]) {
+      expect(mentionsArtifactPath(text, from)).toBe(true)
+      expect(rewriteArtifactPaths(text, new Map([[from, '/node/a.png']]))).toContain('/node/a.png')
+    }
+  })
+
+  it('prefers the longest registered path when one is a prefix of another', () => {
+    const short = `${desktopZone}/s1/browser/shot.png`
+    const long = `${desktopZone}/s1/browser/shot.png.agent.jpg`
+    const mapping = new Map([[short, nodeTwinOf(linux, short)!], [long, nodeTwinOf(linux, long)!]])
+    expect(rewriteArtifactPaths(`${short} and ${long}`, mapping)).toBe(`${nodeTwinOf(linux, short)} and ${nodeTwinOf(linux, long)}`)
+  })
+
+  it('maps node zone strings anywhere in structured args to the desktop mirror', () => {
+    const { args, refs } = mapNodeZoneArgs(linux, {
+      data: { images: [{ path: '/home/node/.superone/node/sync/s1/agent/a.png' }, { base64: 'AAA' }] },
+      referenceImages: ['/home/node/.superone/node/sync/s1/agent/a.png', '/home/node/project/b.png'],
+      title: 'x',
+    })
+    expect(args).toEqual({
+      data: { images: [{ path: `${desktopZone}/s1/agent/a.png` }, { base64: 'AAA' }] },
+      referenceImages: [`${desktopZone}/s1/agent/a.png`, '/home/node/project/b.png'],
+      title: 'x',
+    })
+    // Every top-level argument that named the path rides along: whether it
+    // has to exist already depends on which parameters named it — all of them.
+    expect(refs).toEqual([{ sessionId: 's1', relativePath: 'agent/a.png', desktopPath: `${desktopZone}/s1/agent/a.png`, keys: ['data', 'referenceImages'] }])
+  })
+})

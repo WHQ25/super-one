@@ -88,6 +88,18 @@ export interface HostActionStore {
     now?: number
     /** Caller already verified session binding / grants / active turn. */
   }): ClaimHostActionStoreResult
+  /**
+   * Extend a live claim, up to the action's own deadline (§4.1). The holder
+   * proves itself with the claim token, so an expired-and-requeued action
+   * cannot be revived and a second controller cannot steal time.
+   */
+  renewClaim(input: {
+    actionId: string
+    claimToken: string
+    controllerClientSessionId: string
+    ttlMs?: number
+    now?: number
+  }): HostActionRow
   respond(input: {
     actionId: string
     claimToken: string
@@ -118,6 +130,15 @@ export interface HostActionStore {
     toControllerClientSessionId: string
     now?: number
   }): { migrated: HostActionRow[]; cancelled: HostActionRow[] }
+  /**
+   * Has this artifact-completion wake already been injected into the session?
+   * The desktop retries a wake until the node acknowledges it, and the
+   * acknowledgement is only as durable as the record behind it — an in-memory
+   * one forgot every delivery on restart, and the next retry injected the
+   * same sentence again (`docs/design/session-sync-zone.md` §9).
+   */
+  hasDeliveredNotification(sessionId: string, notificationId: string): boolean
+  recordDeliveredNotification(sessionId: string, notificationId: string, now?: number): void
   /**
    * Requeue expired claimed+safe actions to pending; cancel expired claimed+unsafe.
    * Also cancel any action past its deadline still non-terminal.
@@ -247,7 +268,18 @@ export function ensureHostActionTables(db: SqliteDatabase): void {
     `CREATE INDEX IF NOT EXISTS idx_host_action_changes_controller_seq
      ON host_action_changes(controller_client_session_id, sequence)`,
   ).run()
+  db.prepare(
+    `CREATE TABLE IF NOT EXISTS artifact_notifications (
+      session_id TEXT NOT NULL,
+      notification_id TEXT NOT NULL,
+      delivered_at INTEGER NOT NULL,
+      PRIMARY KEY (session_id, notification_id)
+    )`,
+  ).run()
 }
+
+/** A delivery receipt older than this has outlived any retry the desktop would make. */
+const NOTIFICATION_RECEIPT_TTL_MS = 30 * 24 * 60 * 60 * 1000
 
 export function createSqliteHostActionStore(db: SqliteDatabase): HostActionStore {
   ensureHostActionTables(db)
@@ -336,7 +368,20 @@ export function createSqliteHostActionStore(db: SqliteDatabase): HostActionStore
     }
   }
 
+  const hasDelivered = db.prepare(
+    'SELECT 1 FROM artifact_notifications WHERE session_id = ? AND notification_id = ?',
+  )
+  const recordDelivered = db.prepare(
+    'INSERT OR REPLACE INTO artifact_notifications (session_id, notification_id, delivered_at) VALUES (?, ?, ?)',
+  )
+  const pruneDelivered = db.prepare('DELETE FROM artifact_notifications WHERE delivered_at < ?')
+
   const store: HostActionStore = {
+    hasDeliveredNotification: (sessionId, notificationId) => hasDelivered.get(sessionId, notificationId) !== undefined,
+    recordDeliveredNotification: (sessionId, notificationId, now = Date.now()) => {
+      recordDelivered.run(sessionId, notificationId, now)
+      pruneDelivered.run(now - NOTIFICATION_RECEIPT_TTL_MS)
+    },
     create(input) {
       const now = input.now ?? Date.now()
       const deadlineMs = input.deadlineMs ?? DEFAULT_HOST_ACTION_DEADLINE_MS
@@ -520,6 +565,60 @@ export function createSqliteHostActionStore(db: SqliteDatabase): HostActionStore
         insertChange(updated, now)
         db.prepare('COMMIT').run()
         return { row: updated, claimToken }
+      } catch (err) {
+        try {
+          db.prepare('ROLLBACK').run()
+        } catch {
+          /* ignore */
+        }
+        throw err
+      }
+    },
+
+    renewClaim(input) {
+      const now = input.now ?? Date.now()
+      const ttlMs = Math.max(0, input.ttlMs ?? DEFAULT_HOST_ACTION_CLAIM_TTL_MS)
+      const tokenHash = hashToken(input.claimToken)
+      db.prepare('BEGIN IMMEDIATE').run()
+      try {
+        const row = load(input.actionId)
+        if (!row) throw Object.assign(new Error('host action not found'), { code: 'not_found' })
+        if (row.controllerClientSessionId !== input.controllerClientSessionId) {
+          throw Object.assign(new Error('not the session controller'), { code: 'forbidden' })
+        }
+        if (row.state !== 'claimed' || !row.claimTokenHash) {
+          throw Object.assign(new Error(`host action is ${row.state}, expected claimed`), {
+            code: 'failed_precondition',
+          })
+        }
+        if (!tokensEqual(row.claimTokenHash, tokenHash)) {
+          throw Object.assign(new Error('claim token does not match'), { code: 'forbidden' })
+        }
+        if (row.deadline <= now) {
+          throw Object.assign(new Error('host action deadline expired'), { code: 'failed_precondition' })
+        }
+        // A claim is dead when it expires, not when the sweep notices. Without
+        // this, the window between the two is a grace period nothing granted.
+        if (row.claimExpiresAt == null || row.claimExpiresAt <= now) {
+          throw Object.assign(new Error('claim has expired'), { code: 'failed_precondition' })
+        }
+        // The action's deadline is the ceiling: renewal buys time inside the
+        // window the agent is already waiting in, never past it.
+        const claimExpiresAt = Math.min(now + ttlMs, row.deadline)
+        const nextVersion = row.version + 1
+        const result = db
+          .prepare(
+            `UPDATE host_actions SET version = ?, claim_expires_at = ?
+             WHERE action_id = ? AND version = ? AND state = 'claimed'`,
+          )
+          .run(nextVersion, claimExpiresAt, input.actionId, row.version)
+        if (result.changes !== 1) {
+          throw Object.assign(new Error('renew lost race'), { code: 'conflict' })
+        }
+        const updated = load(input.actionId)!
+        insertChange(updated, now)
+        db.prepare('COMMIT').run()
+        return updated
       } catch (err) {
         try {
           db.prepare('ROLLBACK').run()

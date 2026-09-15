@@ -1,5 +1,5 @@
 import { isNodeLocalSuperoneTool } from '@superone/shared/environment/host-action-browser-catalog'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -9,6 +9,9 @@ vi.mock('../browser/browser-automation-bridge', () => ({
   browserAutomationCall: vi.fn(),
   browserFocusGuard: vi.fn(async () => {}),
   resolveBrowserWebContentsId: vi.fn(async () => 7),
+  resolvePointForSession: vi.fn(async (_sid: string, args: { x?: number; y?: number }) => ({ ok: true, webContentsId: 7, x: args.x ?? 10, y: args.y ?? 20 })),
+  noteTabDriver: vi.fn(async () => {}),
+  requireTabDriver: vi.fn(async () => true),
 }))
 
 const gates = {
@@ -93,6 +96,13 @@ vi.mock('../browser/browser-download-tasks', () => ({
 vi.mock('../browser/browser-downloads', () => ({
   listDownloads: vi.fn(async () => []),
 }))
+vi.mock('../browser/browser-cdp-perf', () => ({
+  measurePerf: vi.fn(async ({ runAction }: { runAction: () => Promise<unknown> }) => { await runAction(); return { settled: 'idle' } }),
+  samplePerf: vi.fn(async () => ({})),
+  resolveAppTarget: vi.fn(() => 1),
+}))
+const electron = vi.hoisted(() => ({ userData: '' }))
+vi.mock('electron', () => ({ app: { getPath: () => electron.userData } }))
 
 import { decode as toonDecode } from '@toon-format/toon'
 import {
@@ -116,8 +126,14 @@ import { HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS } from '@superone/shared/environm
 import { startRecording, stopRecording, waitForRecordedRequest, getRecordedRequest } from './../browser/browser-cdp-network'
 import { browserAutomationCall, browserFocusGuard, resolveBrowserWebContentsId } from '../browser/browser-automation-bridge'
 import { cdpClick, cdpHover } from '../browser/browser-cdp'
+import { resolvePointForSession, noteTabDriver, requireTabDriver } from '../browser/browser-automation-bridge'
 import { startUrlDownloadTask, raceDownloadTask } from '../browser/browser-download-tasks'
 import { listDownloads } from '../browser/browser-downloads'
+import { withInputMapping } from '../environment/host-action-sync'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { cdpSetFileInput } from '../browser/browser-cdp'
 import { resolveWebmcpTrustConfirm } from './browser-webmcp-confirm'
 import { BROWSER_TOOLS_CALL_SUMMARY_DESCRIPTION } from './browser-webmcp-tool-defs'
 
@@ -645,18 +661,19 @@ describe('browser tool registration under experimental gates', () => {
   it('hovers via a trusted CDP mouse move when CDP is on', async () => {
     gates.cdp = true
     const tools = buildTools()
-    vi.mocked(browserAutomationCall).mockResolvedValueOnce({ ok: true, webContentsId: 7, x: 12, y: 34, selector: '#menu', name: 'Menu' })
+    vi.mocked(resolvePointForSession).mockResolvedValueOnce({ ok: true, webContentsId: 7, x: 12, y: 34, selector: '#menu', name: 'Menu' })
 
     const reply = await tools.get('browser_hover')!({ selector: '#menu' })
     expect(reply.isError).toBeUndefined()
-    expect(vi.mocked(browserAutomationCall)).toHaveBeenCalledWith('sess-1', 'resolvePoint', { selector: '#menu' })
+    // Resolution records the driver before the trusted move (§6).
+    expect(vi.mocked(resolvePointForSession)).toHaveBeenCalledWith('sess-1', { selector: '#menu' })
     expect(vi.mocked(cdpHover)).toHaveBeenCalledWith(7, 12, 34)
   })
 
   it('holds the host focus guard around a CDP click so the composer keeps the caret', async () => {
     gates.cdp = true
     const tools = buildTools()
-    vi.mocked(browserAutomationCall).mockResolvedValueOnce({ ok: true, webContentsId: 7, x: 12, y: 34, selector: '#go' })
+    vi.mocked(resolvePointForSession).mockResolvedValueOnce({ ok: true, webContentsId: 7, x: 12, y: 34, selector: '#go' })
 
     const reply = await tools.get('browser_click')!({ selector: '#go' })
     expect(reply.isError).toBeUndefined()
@@ -759,6 +776,57 @@ describe('browser tool registration under experimental gates', () => {
     expect(resultText(miss)).toContain('gone')
   })
 
+  it('records the tab driver before select, evaluate and open, so a download they start is attributed', async () => {
+    // These three used to bypass the driver update: select via dataTool,
+    // evaluate via a direct call, open before its new tab existed. A page
+    // download from any of them was filed under whoever last drove the tab (§6).
+    const tools = buildTools()
+    vi.mocked(noteTabDriver).mockClear()
+
+    vi.mocked(browserAutomationCall).mockResolvedValueOnce({ ok: true })
+    await tools.get('browser_select')!({ tab: 'browser-1', selector: '#fmt', value: 'csv' })
+    expect(vi.mocked(noteTabDriver)).toHaveBeenCalledWith('sess-1', 'browser-1')
+
+    vi.mocked(noteTabDriver).mockClear()
+    vi.mocked(browserAutomationCall).mockResolvedValueOnce({ value: 1 })
+    await tools.get('browser_evaluate')!({ tab: 'browser-1', expression: 'x' })
+    expect(vi.mocked(noteTabDriver)).toHaveBeenCalledWith('sess-1', 'browser-1')
+
+    vi.mocked(noteTabDriver).mockClear()
+    vi.mocked(requireTabDriver).mockClear()
+    vi.mocked(browserAutomationCall).mockClear()
+    vi.mocked(browserAutomationCall)
+      .mockResolvedValueOnce({ tab: 'browser-9', url: 'about:blank', title: '' })
+      .mockResolvedValueOnce({ ok: true, url: 'https://x.test', title: 't' })
+    const opened = await tools.get('browser_open')!({ url: 'https://x.test', readiness: 'load' })
+    // The freshly created tab is attributed to this session, not left undriven.
+    expect(vi.mocked(requireTabDriver)).toHaveBeenCalledWith('sess-1', 'browser-9')
+    // And the tab is created blank first, so the driver is on record before the
+    // initial URL — a direct-download link there would otherwise start with none.
+    const ops = vi.mocked(browserAutomationCall).mock.calls.map((c) => c[1])
+    expect(ops).toEqual(['open', 'navigate'])
+    expect(vi.mocked(browserAutomationCall).mock.calls[0]![2]).toMatchObject({ url: undefined, readiness: 'none' })
+    expect(vi.mocked(browserAutomationCall).mock.calls[1]![2]).toMatchObject({ tab: 'browser-9', url: 'https://x.test', readiness: 'load' })
+    const [openOrder] = vi.mocked(browserAutomationCall).mock.invocationCallOrder
+    const [driverOrder] = vi.mocked(requireTabDriver).mock.invocationCallOrder
+    expect(driverOrder).toBeGreaterThan(openOrder!)
+    expect(JSON.parse(resultText(opened))).toMatchObject({ tab: 'browser-9', url: 'https://x.test' })
+  })
+
+  it('does not navigate a new tab it could not attribute, and says which tab was left open', async () => {
+    // Navigating an unattributed tab is how a first-paint download lands in
+    // this machine's Downloads folder, unreadable by a remote agent and with
+    // no error raised. Attribution is the precondition, not a side errand.
+    const tools = buildTools()
+    vi.mocked(browserAutomationCall).mockClear()
+    vi.mocked(browserAutomationCall).mockResolvedValueOnce({ tab: 'browser-9', url: 'about:blank', title: '' })
+    vi.mocked(requireTabDriver).mockResolvedValueOnce(false)
+    const reply = await tools.get('browser_open')!({ url: 'https://x.test' })
+    expect(reply).toMatchObject({ isError: true })
+    expect(resultText(reply)).toContain('browser-9')
+    expect(vi.mocked(browserAutomationCall).mock.calls.map((c) => c[1])).toEqual(['open'])
+  })
+
   it('spills a large evaluate result but returns a small one inline', async () => {
     const tools = buildTools()
 
@@ -783,6 +851,12 @@ describe('browser_download', () => {
       mode: 'sync',
       settled: { ok: true, result: { path: '/tmp/dl/a.png', filename: 'a.png', bytes: 12, mimeType: 'image/png' } },
     })
+    electron.userData = mkdtempSync(join(tmpdir(), 'browser-mcp-tools-'))
+    clearBrowserToolHandlers('sess-1')
+  })
+
+  afterEach(() => {
+    rmSync(electron.userData, { recursive: true, force: true })
   })
 
   it('starts a url task and returns the path when it finishes within timeout', async () => {
@@ -809,6 +883,97 @@ describe('browser_download', () => {
       undefined,
       '/Users/dev/project/assets',
     )
+  })
+
+  it('maps a remote download directory the same way from every entry: direct, wrapped in browser_perf, and from a saved action', async () => {
+    // All three reach the download primitive, through different internal
+    // names on the way (`browser_perf_measure`, `browser_action_do`). The
+    // node-zone `dir` has to arrive as the desktop mirror from each, or one
+    // entry hands the download a directory this machine does not have.
+    gates.cdp = true
+    const nodeDir = '/home/node/.superone/node/sync/sess-1/download/reports'
+    const desktopDir = join(electron.userData, 'sync', 'sess-1', 'download', 'reports')
+    const stat = vi.fn(async () => ({ exists: false, size: 0, mtimeMs: 0 }))
+    const deps = {
+      zone: { syncRoot: '/home/node/.superone/node/sync', os: 'linux' as const },
+      sessionId: 'sess-1',
+      signal: new AbortController().signal,
+      stat,
+      get: async () => { throw new Error('not called') },
+    }
+    const run = (tool: string, args: Record<string, unknown>) => withInputMapping(deps, () => executeBrowserTool('sess-1', tool, args))
+
+    vi.mocked(startUrlDownloadTask).mockClear()
+    const direct = await run('browser_network', { action: 'download', url: 'https://x.test/a.png', dir: nodeDir })
+    expect(direct.isError).toBeUndefined()
+    expect(startUrlDownloadTask).toHaveBeenCalledTimes(1)
+    expect(startUrlDownloadTask).toHaveBeenCalledWith('sess-1', 'https://x.test/a.png', undefined, desktopDir)
+
+    vi.mocked(startUrlDownloadTask).mockClear()
+    const perf = await run('browser_perf', { action: { tool: 'browser_download', args: { url: 'https://x.test/a.png', dir: nodeDir } } })
+    expect(perf.isError).toBeUndefined()
+    expect(startUrlDownloadTask).toHaveBeenCalledTimes(1)
+    expect(startUrlDownloadTask).toHaveBeenCalledWith('sess-1', 'https://x.test/a.png', undefined, desktopDir)
+
+    // Saving a flow is saving a definition: a default that names a directory
+    // which does not exist yet must not be refused, and nothing is mirrored.
+    stat.mockClear()
+    const saved = await run('browser_action', {
+      action: 'save',
+      domain: 'x.test',
+      name: 'export',
+      description: 'download the export',
+      parameters: [{ name: 'dir', type: 'string', default: nodeDir }],
+      steps: [{ kind: 'tool', tool: 'browser_download', args: { url: 'https://x.test/a.png', dir: '${input.dir}' } }],
+    })
+    expect(saved.isError).toBeUndefined()
+    expect(stat).not.toHaveBeenCalled()
+
+    vi.mocked(startUrlDownloadTask).mockClear()
+    const done = await run('browser_action', { action: 'do', domain: 'x.test', name: 'export' })
+    expect(done.isError).toBeUndefined()
+    expect(startUrlDownloadTask).toHaveBeenCalledTimes(1)
+    expect(startUrlDownloadTask).toHaveBeenCalledWith('sess-1', 'https://x.test/a.png', undefined, desktopDir)
+  })
+
+  it('reads a saved action\'s source default from the node at run time, not from the copy taken when it was saved', async () => {
+    // A default that names a node file is definition data. Mirroring it at
+    // save time and storing the desktop path would freeze the file at that
+    // version: the node could rewrite it and every later run would upload
+    // the old bytes without ever asking.
+    gates.cdp = true
+    const nodeFile = '/home/node/.superone/node/sync/sess-1/agent/a.txt'
+    const node = { bytes: Buffer.from('old'), mtimeMs: 1_700_000_000_000 }
+    const stat = vi.fn(async () => ({ exists: true, size: node.bytes.length, mtimeMs: node.mtimeMs }))
+    const deps = {
+      zone: { syncRoot: '/home/node/.superone/node/sync', os: 'linux' as const },
+      sessionId: 'sess-1',
+      signal: new AbortController().signal,
+      stat,
+      get: async () => ({ chunk: node.bytes.toString('base64'), total: node.bytes.length, mtimeMs: node.mtimeMs, eof: true }),
+    }
+    const run = (tool: string, args: Record<string, unknown>) => withInputMapping(deps, () => executeBrowserTool('sess-1', tool, args))
+
+    const saved = await run('browser_action', {
+      action: 'save',
+      domain: 'x.test',
+      name: 'attach',
+      description: 'attach the report',
+      parameters: [{ name: 'file', type: 'string', default: nodeFile }],
+      steps: [{ kind: 'tool', tool: 'browser_upload_file', args: { selector: '#f', files: ['${input.file}'] } }],
+    })
+    expect(saved.isError).toBeUndefined()
+    expect(stat).not.toHaveBeenCalled()
+
+    const desktopFile = join(electron.userData, 'sync', 'sess-1', 'agent', 'a.txt')
+    expect((await run('browser_action', { action: 'do', domain: 'x.test', name: 'attach' })).isError).toBeUndefined()
+    expect(cdpSetFileInput).toHaveBeenLastCalledWith(7, '#f', [desktopFile])
+    expect(readFileSync(desktopFile, 'utf8')).toBe('old')
+
+    node.bytes = Buffer.from('new')
+    node.mtimeMs += 1000
+    expect((await run('browser_action', { action: 'do', domain: 'x.test', name: 'attach' })).isError).toBeUndefined()
+    expect(readFileSync(desktopFile, 'utf8')).toBe('new')
   })
 
   it('returns background status with taskId when the download exceeds timeout', async () => {

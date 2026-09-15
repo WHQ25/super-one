@@ -154,6 +154,42 @@ export const Chips: Story = {
   name: 'Chip stages · pdf, audio, notebook, large text, binary',
   args: { payload: payload([files.pdf, files.audio, files.notebook, files.largeText, files.binary]) },
 }
+/**
+ * A remote-node session. The paths are the node's — a screenshot in the session
+ * sync zone, a report the agent wrote into `$SUPERONE_SESSION_DIR/agent`, a file
+ * in the node project — and `root` rides on every `loadImage` / `loadTextFile` /
+ * `previewFile` so the desktop resolves them through `resolveSessionFile` and
+ * the WebView caches key them apart from a local file of the same path
+ * (inline-files-previewer.md §6.1). The card is deliberately identical.
+ */
+const NODE_ROOT = 'remote:conn-1:/home/node/proj'
+const NODE_ZONE = '/home/node/.superone/node/sync/s1'
+TEXTS[`${NODE_ZONE}/agent/report.md`] = [
+  '# Run report',
+  '',
+  'All three breakpoints hold; the drawer collapses below 400px.',
+  '',
+  ...Array.from({ length: 8 }, (_, i) => `Finding ${i + 1}: nothing regressed.\n`),
+].join('\n')
+TEXTS['/home/node/proj/src/index.ts'] = [
+  "export { createServer } from './server'",
+  '',
+  ...Array.from({ length: 20 }, (_, i) => `// line ${i + 3}: node project source, read over two hops`),
+].join('\n')
+
+const nodeFiles = {
+  shot: { path: `${NODE_ZONE}/browser/shot.png`, absolutePath: `${NODE_ZONE}/browser/shot-${stamp}.png`, name: 'shot.png', kind: 'image', size: 184_320, note: 'Taken on the desktop, pushed to the node, read back through the mirror.' },
+  report: { path: `${NODE_ZONE}/agent/report.md`, absolutePath: `${NODE_ZONE}/agent/report.md`, name: 'report.md', kind: 'markdown', size: 512, note: 'Written by the agent into the session directory.' },
+  source: { path: 'src/index.ts', absolutePath: '/home/node/proj/src/index.ts', name: 'index.ts', kind: 'text', size: 840, note: 'A file in the node project.' },
+} satisfies Record<string, PreviewerFile>
+
+export const RemoteNodeSession: Story = {
+  name: 'Remote node session · node paths, root on every request',
+  args: {
+    payload: { kind: 'native', nativeType: 'files-previewer', title: 'evidence', root: NODE_ROOT, files: [nodeFiles.shot, nodeFiles.report, nodeFiles.source] },
+  },
+}
+
 export const Missing: Story = { args: { payload: payload([files.missing]) } }
 export const Slow: Story = { name: 'Slow host · spinners until the bytes land', args: { mode: 'slow' } }
 export const Unavailable: Story = {

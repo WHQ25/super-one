@@ -95,6 +95,26 @@ function validateEntries(files: unknown): { entries?: { path: string; note?: str
 }
 
 /**
+ * Kind + size verdict for a file whose bytes may live on another machine.
+ * `sniffHead` returns the first bytes for a text-class file (to reject a binary
+ * mislabelled `.txt`); a remote resolver that cannot cheaply read them omits it
+ * and trusts the extension — the renderer's read still returns `binary` if wrong.
+ */
+export function classifyPreviewerFile(
+  base: Omit<PreviewerFile, 'kind'>,
+  size: number,
+  sniffHead?: () => Uint8Array,
+): PreviewerFile {
+  const withSize = { ...base, size }
+  const kind: PreviewerFileKind = fileKindFromName(base.name)
+  if (kind === 'image' || kind === 'pdf' || kind === 'video' || kind === 'audio') return { ...withSize, kind }
+  const ext = base.name.includes('.') ? base.name.slice(base.name.lastIndexOf('.')) : ''
+  if (size > maxReadableBytes(ext)) return unpreviewable(withSize, 'too_large')
+  if (kind === 'text' && sniffHead && looksBinary(sniffHead())) return unpreviewable(withSize, 'binary')
+  return { ...withSize, kind }
+}
+
+/**
  * One row. Order and count always match the agent's list: a file that cannot be shown is a row
  * that says why, never a silent drop.
  */
@@ -127,17 +147,9 @@ function resolveFile(
 
   const st = fs.stat(absolutePath)
   if (!st.isFile) return { ...base, kind: 'missing' }
-  const withSize = { ...resolved, size: st.size }
-
-  const kind: PreviewerFileKind = fileKindFromName(name)
-  if (kind === 'image' || kind === 'pdf' || kind === 'video' || kind === 'audio') return { ...withSize, kind }
-
   // Text-class kinds get the host's own verdict: the same size cap the panel applies and a NUL
   // sniff, because `.txt` and `.log` can be anything.
-  const ext = name.includes('.') ? name.slice(name.lastIndexOf('.')) : ''
-  if (st.size > maxReadableBytes(ext)) return unpreviewable(withSize, 'too_large')
-  if (kind === 'text' && looksBinary(fs.head(absolutePath))) return unpreviewable(withSize, 'binary')
-  return { ...withSize, kind }
+  return classifyPreviewerFile(resolved, st.size, () => fs.head(absolutePath))
 }
 
 /** One file's verdict on its own — what the card's retry asks for after `missing`. */
@@ -149,13 +161,22 @@ export function resolvePreviewerFile(entry: { path: string; note?: string }, dep
   })
 }
 
-export function buildFilesPreviewerPayload(
+export interface PreviewerBuildContext {
+  /** Root every `absolutePath` was resolved against: a local dir, or a `remote:<conn>:<path>` key. */
+  root: string
+  /** One resolver per file — local reads disk synchronously, remote stats over RPC. */
+  resolveOne: (entry: { path: string; note?: string }) => PreviewerFile | Promise<PreviewerFile>
+}
+
+export async function buildFilesPreviewerPayload(
   title: string,
   data: Record<string, unknown> | undefined,
-  deps: FilesPreviewerDeps,
-): { payload?: NativeWidgetPayload; error?: string } {
+  ctx: PreviewerBuildContext | FilesPreviewerDeps,
+): Promise<{ payload?: NativeWidgetPayload; error?: string }> {
   const { entries, error } = validateEntries(data?.files)
   if (!entries) return { error }
-  const files = entries.map((entry) => resolvePreviewerFile(entry, deps))
-  return { payload: { kind: 'native', nativeType: 'files-previewer', title, root: deps.root, files } }
+  const build: PreviewerBuildContext =
+    'resolveOne' in ctx ? ctx : { root: ctx.root, resolveOne: (entry) => resolvePreviewerFile(entry, ctx) }
+  const files = await Promise.all(entries.map((entry) => build.resolveOne(entry)))
+  return { payload: { kind: 'native', nativeType: 'files-previewer', title, root: build.root, files } }
 }

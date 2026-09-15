@@ -41,5 +41,7 @@ export function nodePaths(nodeHome: string) {
     providerSecretsKey: join(nodeHome, 'secrets', 'provider-secrets.key'),
     logsDir: join(nodeHome, 'logs'),
     runtimeJson: join(nodeHome, 'runtime.json'),
+    /** Session sync zone root — mirrors the desktop's `<userData>/sync` layout. */
+    syncRoot: join(nodeHome, 'sync'),
   }
 }

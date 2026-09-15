@@ -1,12 +1,5 @@
-export { shortenPath, homePath } from '@superone/shared/path-display'
-
-export function toLocalFileUrl(filePath: string): string {
-  const normalized = filePath.replace(/\\/g, '/')
-  const encoded = encodeURI(normalized).replace(/#/g, '%23')
-  return /^[A-Za-z]:/.test(normalized)
-    ? `local-file:///${encoded}`
-    : `local-file://${encoded}`
-}
+export { shortenPath, homePath, toLocalFileUrl, localFileUrlToPath } from '@superone/shared/path-display'
+import { toLocalFileUrl } from '@superone/shared/path-display'
 
 export function toAssetUrl(path: string | undefined | null): string | null {
   if (!path) return null

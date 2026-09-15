@@ -6,6 +6,7 @@
  * Default selection = all detected, or Claude-only when nothing found.
  */
 
+import { formatBytes } from '@superone/shared/format-bytes'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowRight, Check, Loader2, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -40,13 +41,6 @@ function providerOf(id: CatalogId): 'claude' | 'codex' | 'opencode' | 'cursor' |
 
 function acpAgentOf(id: CatalogId): string | null {
   return id === 'acp-grok' ? 'grok-build' : null
-}
-
-function formatBytes(n: number): string {
-  if (!Number.isFinite(n) || n <= 0) return '0 B'
-  if (n < 1024) return `${n} B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`
 }
 
 export function OnboardingDiscover(): React.JSX.Element {

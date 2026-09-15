@@ -19,6 +19,12 @@ interface WidgetToolsOptions {
    * registered once per session and would otherwise freeze a stale value.
    */
   resolveSessionRoot?: () => string | undefined
+  /**
+   * Async context provider for `@native/files-previewer` — supplies a
+   * remote-node session's live root and per-file resolver. When it resolves to
+   * undefined the local `resolveSessionRoot` path is used.
+   */
+  resolvePreviewerContext?: () => Promise<import('./files-previewer-payload').PreviewerBuildContext | undefined>
 }
 
 function templateRoots(opts?: WidgetToolsOptions): TemplateRoots {
@@ -57,15 +63,16 @@ async function executeNativeWidget(
   }
 
   if (nativeType === 'files-previewer') {
-    const root = opts?.resolveSessionRoot?.() ?? opts?.projectPath
+    const { buildFilesPreviewerPayload } = await import('./files-previewer-payload')
+    const remoteContext = opts?.resolvePreviewerContext ? await opts.resolvePreviewerContext() : undefined
+    const root = remoteContext?.root ?? opts?.resolveSessionRoot?.() ?? opts?.projectPath
     if (!root) {
       return {
         content: [{ type: 'text' as const, text: '[Error] @native/files-previewer needs a session working directory to resolve paths against; none is available here.' }],
         isError: true as const,
       }
     }
-    const { buildFilesPreviewerPayload } = await import('./files-previewer-payload')
-    const built = buildFilesPreviewerPayload(title, data, { root })
+    const built = await buildFilesPreviewerPayload(title, data, remoteContext ?? { root })
     if (!built.payload) {
       return { content: [{ type: 'text' as const, text: built.error ?? '[Error] widget_show failed.' }], isError: true as const }
     }

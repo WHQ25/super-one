@@ -1,11 +1,13 @@
 # Inline files previewer (`@native/files-previewer`)
 
-Status: **phases 1–2 implemented (desktop + phone, local sessions), phase 3 proposed** — 2026-09-13.
-Revised the same day five times: after a
-first Codex design review, after scoping the card to "stage, not workspace",
-after switching the trigger from a Markdown table to a `widget_show` native
-template, after deciding remote-node support rides on the session sync zone,
-and after a second Codex review of that version; phases 1 and 2 then landed.
+Status: **implemented (phases 1–3, desktop + phone, local and remote-node
+sessions)** — designed 2026-09-13, phase 3 built 2026-09-14 on top of
+`session-sync-zone.md` phases 1–4. The design was revised five times on the
+day it was written: after a first Codex design review, after scoping the card
+to "stage, not workspace", after switching the trigger from a Markdown table to
+a `widget_show` native template, after deciding remote-node support rides on
+the session sync zone, and after a second Codex review of that version.
+Deviations from the design as written are listed in §8.
 Scope: a chat block that shows N files as a fixed-height carousel with a note
 per file, on desktop (`apps/desktop`) and on the phone (`packages/chat-view`
 + `apps/mobile`). Sibling docs: `session-sync-zone.md` (remote-node artifact
@@ -564,25 +566,66 @@ before the phone shows it; the generated HTML is not committed.
    (`portable-files-previewer.test.tsx`). Deferred to phase 3 with the reason
    for them: `root` on the file commands and cache re-keying by root. Needs
    `build:chat-view`; no native module, no dev-client rebuild.
-3. **Remote sessions** — `resolveSessionContext` for Host Action calls,
-   builder stat via mirror / `artifact.stat` / `workspace.listDir`,
-   `remote-media://` for zone paths, `resolveSessionFile` under
-   `readProjectFile`, the media URL handler, `authorizeRemoteFile` and the
-   poster path. Depends on `session-sync-zone.md` phases 2–4; the context and
-   builder half can land as soon as phase 2 (descriptor + RPCs) exists, the
-   viewing half needs phase 4.
+3. **Remote sessions** — implemented.
+   `environment/files-previewer-context.ts` resolves the session for a Host
+   Action call (root = `remote:<connectionId>:<hostProjectPath>`),
+   `files-previewer-remote.ts` stats each entry — a zone path through the
+   lazy mirror, a project path through `workspace.listDir` on its parent — and
+   `buildFilesPreviewerPayload` takes a `PreviewerBuildContext` so the local
+   and remote paths share one classifier. On the desktop the card resolves
+   `absolutePath` through `resolveSessionFile` (media as `remote-media://`);
+   on the phone `root` rides on `loadImage` / `loadVideoPoster` /
+   `loadTextFile` / `previewFile`, and `PortableHostImage`,
+   `PortableHostVideo` and the previewer's text cache key on `root + path`.
 
 Each phase is a separate PR.
+
+### Deviations from the design as written
+
+- **A remote *project* file is classified from its extension, not sniffed.**
+  §5.2 has the builder sniff the first bytes to separate text from binary;
+  over RPC that is a second round trip per file for a distinction the
+  extension already makes in every case the card renders. Zone files *are*
+  sniffed — the mirror is local by then, so it costs nothing.
+- **A path under neither the zone nor the project is `unpreviewable`
+  (`outside_readable_roots`), not `missing`.** It exists as far as anyone
+  knows; what is missing is permission to look, and the card should not claim
+  the agent's file is gone.
+- **`previewFile` always carries `root`**, local sessions included — one
+  command shape rather than two. Same for the cache keys: a local file keys on
+  `'' + path`, so nothing about the local path changed.
+- **`buildFilesPreviewerPayload` became `async`.** A remote stat is a round
+  trip; the local path still does no I/O beyond the `stat` it already did.
 
 ## 9. Out of scope / open
 
 - **Line targeting.** A `line` field on `files[]` is the natural extension;
   scrolling `FileWithDiffView` to it in a 400px card is cheap. Not in v1.
 - **Remote-node artifact ownership** is the sync zone's problem, not the
-  previewer's. Two things it does not cover and the previewer inherits:
-  `browser_download` with an explicit `dir` on a remote session, and a
-  deferred (oversized) transfer that has not finished when the block renders
-  — that file is `missing` until it lands, and there is no notification.
+  previewer's. All three gaps this section used to list closed on
+  2026-09-14 (`session-sync-zone.md` §9): `browser_download` honours a `dir`
+  inside the session zone, a deferred transfer now wakes the agent when it
+  lands, and recordings, device captures and downloads write into the zone.
+  What the previewer still inherits: a file is `missing` between the block
+  rendering and the transfer landing. (Zone media over 10 MiB previews since
+  2026-09-14: the host returns the mirror's `local-file://` URL and the
+  previewer streams it like a local file.)
+- **A remote session whose `cwd` is a worktree outside its registered project
+  root** — **narrowed 2026-09-14.** Node reads are project-relative
+  (`fs-service.ts` `readFile(projectId, relativePath)`), so the worktree's
+  files are reachable only through a project the node has for that path.
+  `resolveRemotePreviewerContext` now checks: when `cwd` leaves the project
+  root and the node lists a project rooted at (or above) `cwd`, the payload is
+  keyed by that project and files resolve inside it — the same key the file
+  tree uses when the person opens that folder, so Retry and the renderer's
+  read need nothing new. When the node lists no such project, the registered
+  root stays and those files read as `unpreviewable` /
+  `outside_readable_roots`, as before. Registering the worktree from a tool
+  call was deliberately not done: it would leave a ghost project on the node
+  for every forked session (`remote-file-tree.ts` avoids exactly that for git
+  probes), and widening `workspace.readFile` to worktrees is a node
+  authorisation change, not a previewer-sized one. The local path is
+  unaffected — it always resolved against the live `cwd`.
 - **Adjacent prefetch and any retained cache** on either surface: measure
   first.
 - **Carousel inside the phone viewer** (swipe between the block's files

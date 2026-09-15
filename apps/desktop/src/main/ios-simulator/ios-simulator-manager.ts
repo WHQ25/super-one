@@ -39,7 +39,10 @@ import {
   type IosSimulatorRecording,
 } from './capture'
 import { captureFileName } from '../device/capture-path'
-import { captureDir } from '../media-output-paths'
+import { producerDir } from '../media-output-paths'
+import { abandonZoneFile, reserveZoneFile, sealZoneFile } from '../environment/zone-delivery'
+import { ensureZoneDir, type ZoneOwner } from '../environment/zone-owner'
+import { currentCallOwner } from '../mcp/artifact-registry'
 import { SimctlClient } from './simctl'
 import log from '../logger'
 
@@ -146,7 +149,8 @@ const delay = (milliseconds: number) => new Promise<void>((resolve) => setTimeou
 export class IosSimulatorManager {
   private readonly simctl: IosSimulatorPort
   private readonly capture: IosSimulatorCapturePort
-  private readonly captureRoot: string
+  /** Explicit override; without one the owning session's zone is used per capture. */
+  private readonly captureRoot: string | null
   private readonly chromeLoader: IosSimulatorChromePort | null
   private readonly helperProbe: () => Promise<IosSimulatorHelperProbe | null>
   private readonly nativeFactory: () => Promise<IosSimulatorNativePort>
@@ -160,6 +164,12 @@ export class IosSimulatorManager {
    * a recording belong to a DEVICE, not to whoever is watching it.
    */
   private readonly owners = new Map<string, string>()
+  /**
+   * udid -> whose zone the owning session's captures belong to, read from the
+   * call scope at bind time. A capture the person takes from the panel runs in
+   * no scope, and the zone still has to be marked for the node that bound.
+   */
+  private readonly zoneOwners = new Map<string, ZoneOwner | undefined>()
 
   /** udid -> the name the last listing saw. For messages only; see `withOwnership`. */
   private readonly deviceNames = new Map<string, string>()
@@ -195,7 +205,7 @@ export class IosSimulatorManager {
   constructor(options: ManagerOptions) {
     this.simctl = options.simctl ?? new SimctlClient()
     this.capture = options.capture ?? new SimctlCapture()
-    this.captureRoot = options.captureRoot ?? captureDir('ios-simulator')
+    this.captureRoot = options.captureRoot ?? null
     this.chromeLoader = options.chrome ?? null
     this.helperProbe = options.helperProbe
     this.nativeFactory = options.nativeFactory
@@ -314,6 +324,7 @@ export class IosSimulatorManager {
     // No "previous device" to give up: a session may hold several at once, so
     // letting one go is a decision its holder makes explicitly, through `detach`.
     this.owners.set(udid, sessionId)
+    this.zoneOwners.set(udid, currentCallOwner())
     if (device.booted) await this.ensureNativeSession(udid)
     // The row read above, not a fresh one: nothing between here and there changes what
     // simctl would say about this device — attaching the helper does not boot it — and
@@ -792,7 +803,13 @@ export class IosSimulatorManager {
   async screenshot(udid: string): Promise<IosSimulatorCapture> {
     const { deviceName } = await this.requireCaptureTarget(udid)
     const capture = this.captureFor(udid, deviceName, 'screenshot', 'png')
-    await this.capture.screenshot(udid, capture.path)
+    try {
+      await this.capture.screenshot(udid, capture.path)
+    } catch (error) {
+      this.abandonCapture(udid, capture)
+      throw error
+    }
+    this.sealCapture(udid, capture)
     return capture
   }
 
@@ -812,6 +829,7 @@ export class IosSimulatorManager {
       await flight
     } catch (error) {
       this.recordings.delete(udid)
+      this.abandonCapture(udid, capture)
       throw error
     }
     return capture
@@ -823,10 +841,16 @@ export class IosSimulatorManager {
     if (!current) return null
     this.recordings.delete(udid)
     // A start that already failed has nothing to signal, and its rejection was
-    // reported to whoever pressed record.
+    // reported to whoever pressed record — and its reservation given back.
     const recording = await current.flight.catch(() => null)
     if (!recording) return null
-    await recording.stop()
+    try {
+      await recording.stop()
+    } catch (error) {
+      this.abandonCapture(udid, current.capture)
+      throw error
+    }
+    this.sealCapture(udid, current.capture)
     return current.capture
   }
 
@@ -916,6 +940,12 @@ export class IosSimulatorManager {
    * Where a capture lands. Filed under the DEVICE, not the session that took it:
    * a session may hold several devices, and their screenshots in one folder could
    * not be told apart.
+   *
+   * The root is the owning session's sync zone, so a remote agent can read the
+   * path the tool reply gives it (`docs/design/session-sync-zone.md` §6).
+   * `owners` is the ownership fact already, so the session is read from there
+   * rather than threaded through every capture call; an injected `captureRoot`
+   * (tests, the manual live harness) still wins.
    */
   private captureFor(
     udid: string,
@@ -924,11 +954,43 @@ export class IosSimulatorManager {
     extension: string,
   ): IosSimulatorCapture {
     const fileName = captureFileName(deviceName, extension, new Date())
-    return { kind, fileName, path: join(this.captureRoot, udid, fileName) }
+    if (this.captureRoot) return { kind, fileName, path: join(this.captureRoot, udid, fileName) }
+    const sessionId = this.owners.get(udid) ?? null
+    const root = join(producerDir(sessionId, 'ios-simulator'), udid)
+    // Created here, with the owner recorded at bind, because the capture port
+    // creating it later runs in whatever scope the caller has — none, from
+    // the panel — and an unknown owner marks nothing.
+    ensureZoneDir(root, this.zoneOwners.get(udid))
+    const path = join(root, fileName)
+    // Spoken for before simctl opens it: the recorder fills the file over the
+    // whole recording, and a mirror in that window must find it owned rather
+    // than prunable. The destination is the one recorded at bind, since the
+    // panel calls from no scope at all; a refusal is the capture's failure.
+    if (sessionId) reserveZoneFile({ sessionId, path, origin: 'produced', ...this.captureDestination(udid) })
+    return { kind, fileName, path }
+  }
+
+  private captureDestination(udid: string): { connectionId?: ZoneOwner } {
+    const owner = this.zoneOwners.get(udid)
+    return owner === undefined ? {} : { connectionId: owner }
+  }
+
+  /** The bytes are in: the capture is a delivery from here on. */
+  private sealCapture(udid: string, capture: IosSimulatorCapture): void {
+    const sessionId = this.owners.get(udid)
+    if (!sessionId || this.captureRoot) return
+    sealZoneFile({ sessionId, path: capture.path, origin: 'produced', ...this.captureDestination(udid) })
+  }
+
+  /** The capture is not going to exist: give the reservation back. */
+  private abandonCapture(udid: string, capture: IosSimulatorCapture): void {
+    const sessionId = this.owners.get(udid)
+    if (sessionId) abandonZoneFile(sessionId, capture.path)
   }
 
   private unbind(udid: string): void {
     this.owners.delete(udid)
+    this.zoneOwners.delete(udid)
   }
 
   /** Serialises every open/close for one session behind the previous one. */

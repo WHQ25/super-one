@@ -41,11 +41,15 @@ const loadedText = new Map<string, string>()
 let loadedChars = 0
 const inflightText = new Map<string, Promise<TextPhase>>()
 
-function rememberText(path: string, text: string): void {
-  loadedText.set(path, text)
+function textKey(root: string | undefined, path: string): string {
+  return root ? `${root}\u0000${path}` : path
+}
+
+function rememberText(key: string, text: string): void {
+  loadedText.set(key, text)
   loadedChars += text.length
   for (const [oldest, value] of loadedText) {
-    if (loadedChars <= TEXT_CACHE_CHARS || oldest === path) break
+    if (loadedChars <= TEXT_CACHE_CHARS || oldest === key) break
     loadedText.delete(oldest)
     loadedChars -= value.length
   }
@@ -57,19 +61,20 @@ function parseTextResult(value: unknown): TextPhase {
   return { kind: 'fallback' }
 }
 
-function loadTextFile(path: string): Promise<TextPhase> {
-  const cached = loadedText.get(path)
+function loadTextFile(root: string | undefined, path: string): Promise<TextPhase> {
+  const key = textKey(root, path)
+  const cached = loadedText.get(key)
   if (cached !== undefined) return Promise.resolve({ kind: 'ready', text: cached })
-  const pending = inflightText.get(path)
+  const pending = inflightText.get(key)
   if (pending) return pending
-  const promise = requestNativeAsync('loadTextFile', { path })
+  const promise = requestNativeAsync('loadTextFile', { path, ...(root ? { root } : {}) })
     .then(parseTextResult, (): TextPhase => ({ kind: 'fallback' }))
     .then((phase) => {
-      if (phase.kind === 'ready') rememberText(path, phase.text)
-      inflightText.delete(path)
+      if (phase.kind === 'ready') rememberText(key, phase.text)
+      inflightText.delete(key)
       return phase
     })
-  inflightText.set(path, promise)
+  inflightText.set(key, promise)
   return promise
 }
 
@@ -88,24 +93,24 @@ function fenceSource(name: string, text: string): string {
 }
 
 /** A text-class file the host can put on the RPC: rendered in place, scrolling inside the card. */
-function TextStage({ file, scheme }: { file: PreviewerFile; scheme: 'light' | 'dark' }) {
+function TextStage({ file, root, scheme }: { file: PreviewerFile; root: string; scheme: 'light' | 'dark' }) {
   const { t } = useTranslation()
   const [phase, setPhase] = useState<TextPhase>(() => {
-    const cached = loadedText.get(file.absolutePath)
+    const cached = loadedText.get(textKey(root, file.absolutePath))
     return cached !== undefined ? { kind: 'ready', text: cached } : { kind: 'loading' }
   })
 
   useEffect(() => {
     let live = true
-    const cached = loadedText.get(file.absolutePath)
+    const cached = loadedText.get(textKey(root, file.absolutePath))
     if (cached !== undefined) {
       setPhase({ kind: 'ready', text: cached })
     } else {
       setPhase({ kind: 'loading' })
-      void loadTextFile(file.absolutePath).then((next) => { if (live) setPhase(next) })
+      void loadTextFile(root, file.absolutePath).then((next) => { if (live) setPhase(next) })
     }
     return () => { live = false }
-  }, [file.absolutePath])
+  }, [root, file.absolutePath])
 
   if (phase.kind === 'loading') {
     return (
@@ -151,7 +156,7 @@ function ChipStage(props: { file: PreviewerFile; hint: string; tone?: 'default' 
   )
 }
 
-function Stage({ file, scheme }: { file: PreviewerFile; scheme: 'light' | 'dark' }) {
+function Stage({ file, root, scheme }: { file: PreviewerFile; root: string; scheme: 'light' | 'dark' }) {
   const { t } = useTranslation()
   switch (file.kind) {
     case 'image':
@@ -162,6 +167,7 @@ function Stage({ file, scheme }: { file: PreviewerFile; scheme: 'light' | 'dark'
         <div className="flex h-full w-full items-center justify-center">
           <PortableHostImage
             path={file.absolutePath}
+            root={root}
             label={file.name}
             className="flex flex-col items-center justify-center gap-1.5 px-6 text-center"
             pictureClassName="flex h-full w-full items-center justify-center"
@@ -175,6 +181,7 @@ function Stage({ file, scheme }: { file: PreviewerFile; scheme: 'light' | 'dark'
         <div className="flex h-full w-full items-center justify-center">
           <PortableHostVideo
             path={file.absolutePath}
+            root={root}
             label={file.name}
             className="flex flex-col items-center justify-center gap-1.5 px-6 text-center"
             tileClassName="relative flex h-full w-full items-center justify-center bg-black"
@@ -197,7 +204,7 @@ function Stage({ file, scheme }: { file: PreviewerFile; scheme: 'light' | 'dark'
     case 'text':
     case 'markdown':
       if (isInlinePreviewCandidate(file.name, file.size ?? Number.POSITIVE_INFINITY)) {
-        return <TextStage file={file} scheme={scheme} />
+        return <TextStage file={file} root={root} scheme={scheme} />
       }
       return <ChipStage file={file} hint={t('chat.filesPreviewer.tapToOpen')} />
     default:
@@ -218,6 +225,7 @@ export function PortableFilesPreviewer({ payload, toolUseId }: { payload: Native
   const { t } = useTranslation()
   const { scheme } = useContext(PortableTurnContext)
   const files = payload.files ?? []
+  const root = payload.root ?? ''
   const [index, setIndex] = useState(0)
   const count = files.length
   const file = files[Math.min(index, count - 1)]
@@ -231,7 +239,7 @@ export function PortableFilesPreviewer({ payload, toolUseId }: { payload: Native
 
   const open = useCallback(() => {
     if (!file || file.kind === 'missing') return
-    requestNative('previewFile', { path: file.absolutePath })
+    requestNative('previewFile', { path: file.absolutePath, ...(root ? { root } : {}) })
   }, [file])
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -309,7 +317,7 @@ export function PortableFilesPreviewer({ payload, toolUseId }: { payload: Native
         onPointerCancel={onPointerCancel}
         onClickCapture={onClickCapture}
       >
-        <Stage key={`${file.absolutePath}-${index}`} file={file} scheme={scheme} />
+        <Stage key={`${file.absolutePath}-${index}`} file={file} root={root} scheme={scheme} />
       </div>
 
       <div className="flex shrink-0 flex-col items-center gap-1.5 px-3 pt-2 pb-0.5">

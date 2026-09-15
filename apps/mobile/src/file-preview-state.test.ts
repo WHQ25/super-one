@@ -107,6 +107,12 @@ describe('file preview response reduction', () => {
     expect(reducePreviewResponse(loading, { ok: false, error: 'too_large' }, 'lan'))
       .toMatchObject({ kind: 'error', message: 'too_large' })
   })
+
+  it('keeps the session root on an error so Retry asks for the same remote file', () => {
+    const remote = { ...loading, root: 'remote:conn-1:/home/node/proj' }
+    expect(reducePreviewResponse(remote, { ok: false, error: 'not_found' }, 'lan'))
+      .toEqual({ kind: 'error', path: loading.path, name: loading.name, message: 'not_found', root: 'remote:conn-1:/home/node/proj' })
+  })
 })
 
 describe('transfer completion', () => {

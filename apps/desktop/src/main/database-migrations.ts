@@ -22,6 +22,7 @@ import {
 import { DRAFTS_TABLE_DDL } from '@superone/runtime/drafts'
 import { BASE_SESSION_PROVIDER_DEFINITIONS } from '@superone/shared/session-provider-definitions'
 import type Database from 'better-sqlite3'
+import { ensureSessionFileDeliveriesSchema } from './db-session-deliveries'
 import { encryptSecret } from './crypto/secret-store'
 
 /**
@@ -32,7 +33,7 @@ import { encryptSecret } from './crypto/secret-store'
  * every launch); it decides when a pre-migration snapshot is taken and lets a
  * build recognise a database written by a newer build.
  */
-export const SCHEMA_VERSION = 5
+export const SCHEMA_VERSION = 6
 
 /**
  * The oldest schema revision that can still read this database.
@@ -680,6 +681,15 @@ function applyMigrations(db: Database.Database): void {
     // spawn = create child (default, back-compat); link = mailbox with existing session
     db.exec(`ALTER TABLE session_collaboration_grants ADD COLUMN kind TEXT NOT NULL DEFAULT 'spawn'`)
   }
+
+  // Session sync zone delivery record (docs/design/session-sync-zone-delivery-record.md):
+  // one durable row per zone file delivered to its node — created before the
+  // first controlled byte, advanced through a monotonic phase, and read by the
+  // mirror, the eager push and the transfer worker alike. It is the whole of
+  // the sync bookkeeping; the claim/handoff/job triple it replaced never
+  // shipped (the zone feature is branch-only). The DDL lives with the module so
+  // the tests build the exact schema the migration does.
+  ensureSessionFileDeliveriesSchema(db)
 }
 
 function seedBaseSessionProviders(db: Database.Database): void {

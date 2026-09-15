@@ -46,6 +46,9 @@ import {
   CODEX_MANAGED_BROWSER_COMPUTER_DENIED_MESSAGE,
   isCodexBrowserAndComputerUseDenied,
 } from '../codex/codex-managed-capability-policy'
+import { abandonHeldDeliveries, collectArtifacts, takeArtifacts, takeHeldDeliveries, type ArtifactRef } from './artifact-registry'
+import type { DeliveryHandle } from '../db-session-deliveries'
+import { randomUUID } from 'node:crypto'
 
 const WIDGET_LIST_TEMPLATES_NAME = 'widget_list_templates'
 const WIDGET_SHOW_NAME = 'widget_show'
@@ -100,11 +103,69 @@ export function listSuperoneMcpTools(sessionId: string): SuperoneMcpToolDescript
   return tools
 }
 
+/**
+ * `executeSuperoneMcpTool` plus the artifact refs the call registered
+ * (session-sync-zone.md §3). The Host Action executor uses this so it can push
+ * a remote session's outputs to the node before the reply goes back; local
+ * callers keep the plain result.
+ */
+const markedZoneOwners = new Set<string>()
+
+export async function executeSuperoneMcpToolCollecting(
+  sessionId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+  signal?: AbortSignal,
+  connectionId?: string,
+): Promise<{ result: Awaited<ReturnType<typeof executeSuperoneMcpTool>>; artifacts: ArtifactRef[]; held: Map<string, DeliveryHandle> }> {
+  const callId = randomUUID()
+  // Record which side owns this session's zone directory, so the reclaim sweep
+  // can ask the right one whether the session still exists (§7). Once per
+  // (session, connection) per process — the marker does not change after that.
+  const ownerKey = `${sessionId}\u0000${connectionId ?? 'local'}`
+  if (!markedZoneOwners.has(ownerKey)) {
+    markedZoneOwners.add(ownerKey)
+    void import('../environment/session-zone-reclaim')
+      .then((m) => m.markZoneOwner(sessionId, connectionId && connectionId !== 'local' ? connectionId : null))
+      .catch(() => markedZoneOwners.delete(ownerKey))
+  }
+  try {
+    const result = await collectArtifacts(
+      sessionId,
+      callId,
+      () => executeSuperoneMcpTool(sessionId, toolName, args, signal, connectionId),
+      connectionId,
+    )
+    // Drain the held deliveries first, then the refs: the reply-selection is
+    // handed the live handles so the worker can never take an undecided file in
+    // the gap between here and the selection (E090-4).
+    const held = takeHeldDeliveries(sessionId, callId)
+    const artifacts = takeArtifacts(sessionId, callId)
+    return { result, artifacts, held: new Map(held.filter((h) => h.deliveryId).map((h) => [h.deliveryId, h])) }
+  } finally {
+    // A call that threw after registering must not leave its scope behind. On
+    // the success path both takes are empty — the caller already drained them
+    // and owns the deliveries. Here they are not: this call OWNS its held rows,
+    // so a thrown tool abandons them. The refs are only drained to free the
+    // scope — a ref WITHOUT a held handle is an observation of someone else's
+    // delivery (a page or background download the worker has not yet carried),
+    // never this call's to abandon (E090-4).
+    abandonHeldDeliveries(takeHeldDeliveries(sessionId, callId))
+    takeArtifacts(sessionId, callId)
+  }
+}
+
 export async function executeSuperoneMcpTool(
   sessionId: string,
   toolName: string,
   args: Record<string, unknown>,
   signal?: AbortSignal,
+  /**
+   * Owning remote connection when this runs as a Host Action. Only the
+   * files-previewer widget uses it — to reach the node session's live cwd and
+   * stat its files where they live (inline-files-previewer.md §2.2).
+   */
+  connectionId?: string,
 ) {
   if (
     isCodexBrowserAndComputerUseDenied(sessionId)
@@ -179,6 +240,15 @@ export async function executeSuperoneMcpTool(
       projectPath,
       sessionId,
       resolveSessionRoot: () => getSessionHost()?.getSession(sessionId)?.cwd || projectPath,
+      // A remote Host Action has no local SessionManager entry; the previewer's
+      // context comes from the owning node instead (inline-files-previewer.md §2.2).
+      resolvePreviewerContext:
+        connectionId && connectionId !== 'local' && !session
+          ? async () => {
+              const { resolveRemotePreviewerContext } = await import('../environment/files-previewer-context')
+              return resolveRemotePreviewerContext(connectionId, sessionId)
+            }
+          : undefined,
     })
   }
 

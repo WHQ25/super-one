@@ -1,17 +1,20 @@
 import { mkdtempSync, rmSync } from 'fs'
 import { homedir, tmpdir } from 'os'
 import { dirname, join } from 'path'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // The shared setup stub hardcodes userData under /tmp; native widget_show actually writes there,
 // so this file needs a directory it is allowed to create.
 const USER_DATA = join(tmpdir(), 'widget-mcp-userdata')
+// The zone's delivery record: a table that cannot be read protects every zone file (R5).
+vi.mock('../database', async () => (await import('../../test/fixtures/delivery-db')).deliveryDatabase())
 vi.mock('electron', () => ({
   app: { getPath: (name: string) => (name === 'userData' ? USER_DATA : tmpdir()), getVersion: () => '0.0.0-test' },
 }))
 import { parseNativeWidgetResult } from '@superone/shared/generative-ui/native-widgets'
 import { executeWidgetShowTool, listWidgetTemplatesHandler } from './mcp-server'
 import { saveTemplate } from './template-store'
+import { markZoneOwner } from '../environment/zone-owner'
 
 const created: string[] = []
 
@@ -43,6 +46,9 @@ describe('widget MCP tools', () => {
 
 describe('widget_show rendering a native SuperOne surface', () => {
   const png = Buffer.from('89504e470d0a1a0a', 'hex').toString('base64')
+  // Called here without the tool call scope the MCP surface would give it:
+  // the zone marker says the session is this desktop's own.
+  beforeEach(() => markZoneOwner('sess-native', null))
 
   it('returns a payload the chat gallery owns, instead of widget code for a frame', async () => {
     const result = await executeWidgetShowTool({

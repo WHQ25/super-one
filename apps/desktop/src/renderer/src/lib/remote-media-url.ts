@@ -82,15 +82,20 @@ export function resolveMediaSrcForProject(src: string, projectPath: string): str
   if (src.startsWith('/') || /^[A-Za-z]:[\\/]/.test(src)) {
     const rel = relativeUnderRemoteProject(projectPath, src)
     if (rel != null && rel !== '.') return encodeRemoteMediaUrl(projectPath, rel)
-    // Outside project root — fall back to host path (works for same-machine lab).
-    return toLocalFileUrl(src)
+    // Outside the project root — a session sync-zone artifact (a screenshot, a
+    // generated image) or an out-of-project file. Keep the connection and carry
+    // the absolute node path so the main process resolves it through
+    // resolveSessionFile (session-sync-zone.md §4.2) instead of losing it to a
+    // local-file URL that only worked on a same-machine lab.
+    return encodeRemoteMediaUrl(projectPath, src)
   }
   return encodeRemoteMediaUrl(projectPath, clean)
 }
 
 /**
  * Turn a remote-media ref (or already-resolved src) into a browser-displayable URL.
- * Uses readProjectFile which returns data: URIs for media on remote projects.
+ * Uses readProjectFile, which returns a data: URI for media on the node and a
+ * local-file: URL for media mirrored into the session zone.
  */
 export async function resolveDisplayMediaSrc(src: string): Promise<string | null> {
   if (!src) return null
@@ -103,7 +108,9 @@ export async function resolveDisplayMediaSrc(src: string): Promise<string | null
   try {
     const file = await window.app.readProjectFile(remote.projectPath, remote.relativePath)
     if (file.language === 'too-large' || file.language === 'binary') return null
-    if (file.content.startsWith('data:')) return file.content
+    // Node media arrives as a data URI; session-zone media as the URL of its
+    // desktop mirror, which the local-file protocol streams at any size.
+    if (file.content.startsWith('data:') || file.content.startsWith('local-file:')) return file.content
     if (file.language === 'svg' && file.content) {
       return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(file.content)}`
     }

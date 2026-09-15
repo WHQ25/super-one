@@ -16,7 +16,12 @@ import { MIN_COMPATIBLE_SCHEMA_VERSION, SCHEMA_VERSION } from './database-migrat
  * expand/contract change instead.
  */
 
-const MIGRATIONS_SOURCE = join(__dirname, 'database-migrations.ts')
+/**
+ * Every file that runs DDL at migration time. `applyMigrations` delegates a
+ * table's schema to the module that owns it when tests need the same DDL, and
+ * that module is then as much a migration as this file is.
+ */
+const MIGRATION_SOURCES = [join(__dirname, 'database-migrations.ts'), join(__dirname, 'db-session-deliveries-schema.ts')]
 const DESTRUCTIVE_PATTERN = /\b(?:DROP\s+TABLE(?:\s+IF\s+EXISTS)?|DROP\s+COLUMN|RENAME\s+COLUMN|RENAME\s+TO)\b[^'"`\n]*/gi
 
 /**
@@ -36,8 +41,10 @@ const GRANDFATHERED = [
 ]
 
 function destructiveStatements(): string[] {
-  const source = readFileSync(MIGRATIONS_SOURCE, 'utf8')
-  return (source.match(DESTRUCTIVE_PATTERN) ?? []).map((match) => match.trim().replace(/\s+/g, ' '))
+  return MIGRATION_SOURCES.flatMap((file) => {
+    const source = readFileSync(file, 'utf8')
+    return (source.match(DESTRUCTIVE_PATTERN) ?? []).map((match) => match.trim().replace(/\s+/g, ' '))
+  })
 }
 
 describe('additive-only migration policy', () => {

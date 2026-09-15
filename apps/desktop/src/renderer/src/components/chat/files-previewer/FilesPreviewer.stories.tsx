@@ -142,6 +142,40 @@ export const Loading: Story = {
   decorators: [(Story) => <Fixtures delayMs={60_000}><Story /></Fixtures>],
 }
 
+/**
+ * A remote-node session. Every path the agent wrote is a node path — a
+ * screenshot in the session sync zone, a source file in the node project — and
+ * the card never touches a desktop file:// URL: text and media alike go through
+ * `readProjectFile(root, absolutePath)`, which the main process resolves via
+ * `resolveSessionFile` (session-sync-zone.md §4.2). Visually identical to a
+ * local card, which is the point.
+ */
+const NODE_ROOT = 'remote:conn-1:/home/node/proj'
+const NODE_ZONE = '/home/node/.superone/node/sync/s1'
+const nodeFiles = {
+  shot: { path: `${NODE_ZONE}/browser/shot.png`, absolutePath: `${NODE_ZONE}/browser/shot.png`, name: 'shot.png', kind: 'image', size: 24_576, note: 'Taken on the desktop, pushed to the node, read back through the mirror.' },
+  report: { path: `${NODE_ZONE}/agent/report.md`, absolutePath: `${NODE_ZONE}/agent/report.md`, name: 'report.md', kind: 'markdown', size: 512, note: 'Written by the agent into $SUPERONE_SESSION_DIR/agent.' },
+  source: { path: 'src/index.ts', absolutePath: '/home/node/proj/src/index.ts', name: 'index.ts', kind: 'text', size: 840, note: 'A file in the node project, stat via workspace.listDir.' },
+} satisfies Record<string, PreviewerFile>
+
+function RemoteFixtures({ children }: { children: React.ReactNode }) {
+  useMemo(() => {
+    mockIpc('app', 'readProjectFile', async (_root: unknown, path: unknown) => {
+      const key = String(path)
+      if (key.endsWith('.png')) return { path, content: DIAGRAM_URL, language: 'image' }
+      if (key.endsWith('.md')) return { path, content: '# Run report\n\nAll three breakpoints hold.\n', language: 'markdown' }
+      return { path, content: 'export const answer = 42\n', language: 'typescript' }
+    })
+    mockIpc('app', 'getMediaServerPort', async () => 0)
+  }, [])
+  return <>{children}</>
+}
+
+export const RemoteNodeSession: Story = {
+  args: { payload: { kind: 'native', nativeType: 'files-previewer', title: 'evidence', root: NODE_ROOT, files: [nodeFiles.shot, nodeFiles.report, nodeFiles.source] } },
+  decorators: [(Story) => <RemoteFixtures><div style={{ maxWidth: 720, containerType: 'inline-size' }}><Story /></div></RemoteFixtures>],
+}
+
 export const LongNote: Story = { args: { payload: payload([files.longNote, files.text]) } }
 
 /** Below 512px the card drops to 480px and the arrows stay visible. */

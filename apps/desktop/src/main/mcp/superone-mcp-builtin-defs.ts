@@ -50,211 +50,46 @@ export const CONFIG_SETTINGS_DOMAINS = [
   'custom-platform',
 ] as const
 
-export const MANUAL_READ_DESCRIPTION =
-  'Read bundled SuperOne manuals. Omit domain to list all domains; pass domain to list its topics; ' +
-  'pass domain with topic to read one topic. For widget, pass either topic or modules, never both. ' +
-  // The full topic list is not repeated here: calling this tool with no arguments returns
-  // exactly that index. Only the "read X before doing Y" triggers stay, because those are
-  // the ones a model cannot discover after the fact — by then it has already acted.
-  'Read product/collaboration before session_collab_request, product/automation before automation_apply, ' +
-  'product/devices before device_request_control, product/browser before saving a browser action, ' +
-  'product/show-your-work before reporting work verified with a screenshot or recording, ' +
-  'miniapp/overview before mini-app development, and media/overview before provider-specific options. ' +
-  'Use config_read for live settings and widget_list_templates for saved widgets.'
-
-export const MINIAPP_GUIDE_TOPIC_DESCRIPTION =
-  'Read overview first, then choose the narrowest topic needed for the current implementation step.'
-
-export const SETUP_MINI_APP_DEV_DESCRIPTION =
-  'Scaffold and register a new mini-app after reading miniapp/overview and confirming its requirements, template, tools, directory, and scope with the user. ' +
-  'The tool creates source files, updates dev-registry.json in the variant-specific personal data root, and writes a project- or user-scoped .s1-dev.json pointer. ' +
-  'Use miniapp_dev_register instead when source files already exist.'
-
-export const REGISTER_DEV_MINIAPP_DESCRIPTION =
-  'Register an existing mini-app directory without modifying its source files. ' +
-  'Reads manifest.json from the directory or dist, updates dev-registry.json in the variant-specific personal data root, and optionally writes a project- or user-scoped .s1-dev.json pointer.'
-
-export const PACK_MINI_APP_DESCRIPTION =
-  'Package a mini-app directory into a .s1app file for distribution. The app directory must contain a valid manifest.json with a version field. Generates integrity checksums and creates a compressed archive.'
-
-export const UPDATE_SUPERONE_TYPES_DESCRIPTION =
-  'Update the superone.d.ts type definitions in an existing mini-app project to the latest version. Use this when the mini-app needs access to newly added SuperOne APIs.'
-
-export const RENAME_SESSION_DESCRIPTION =
-  'Rename the current chat session to a concise topic label shown in the sidebar. ' +
-  'Always pass tags (set): 1–4 short kebab-case labels you choose so session_list/session_search can find this chat. ' +
-  'Reuse names from session_tag_list when they fit; invent one when they don\'t. ' +
-  'When the session fixes an issue, reviews a PR, or opens one, add a ref tag issue-N / pr-N on top of the labels. ' +
-  // The user_locked recovery path is not described here: the error reply itself already
-  // says "Do not call session_rename again for this session", so spelling it out in the
-  // always-loaded surface charged every turn for advice only one reply ever needs.
-  'Top-level agent only — a Task/subagent worker does not own the user-facing title and must not call it.'
-
-export const SESSION_TAG_DESCRIPTION =
-  'Tag SuperOne sessions so session_list/session_search can filter by tag. Default: current session. ' +
-  'Pass sessionId for one other session, or sessionIds with add to tag many. Use add, remove, or set (exactly one). set: [] clears. ' +
-  'Pick 1–4 short kebab-case labels; reuse names from session_tag_list when they fit, otherwise invent. ' +
-  'Add pr-N as soon as the session opens a PR, and issue-N / pr-N when work turns out to target one. ' +
-  'Only the top-level agent may call this; subagents must not. Not session_rename (titles) and not live collab.'
-
-export const SESSION_TAG_LIST_DESCRIPTION =
-  'List tags used on SuperOne sessions (tag + session count). Default: current project; projectId or allProjects for other scope. ' +
-  'kind: label (default) = topic labels to reuse; ref = issue-N / pr-N tracker references; all = both. ' +
-  'Filter with query (tag substring). Hidden sessions omitted unless includeHidden. ' +
-  'Call this before session_list/session_search with label tags, then filter with tags + tagMatch any (at least one) or all (every tag). A known ref tag (pr-456) needs no lookup. Not live collab.'
-
-export const PROJECT_LIST_DESCRIPTION =
-  'List SuperOne projects (id, name, path, lastActiveAt). ' +
-  'Call this to discover projectId before session_list/session_search with projectId. ' +
-  'Default order is last-active desc. Filter with query (name/path substring). ' +
-  'isCurrent marks the project of the calling session.'
-
-export const SESSION_LIST_DESCRIPTION =
-  'List SuperOne sessions (metadata only). Default: current project. ' +
-  'Pass projectId (from project_list) or allProjects=true. Rows include projectId only — use project_list for path/name. ' +
-  'Filter by title query, harness, pin/hidden, dates or tags (discover them with session_tag_list). ' +
-  'Use before session_read/session_search. Not live collab or harness resume.'
-
-export const SESSION_SEARCH_DESCRIPTION =
-  'Search SuperOne chat transcripts by text (title + message body). Default: current project; projectId or allProjects for cross-project. ' +
-  'Optional tags + tagMatch (any/all, default any) narrows sessions in SQL before scanning messages. Discover tags with session_tag_list. ' +
-  'Returns matching message hits with short snippets and projectId. Then call session_read with sessionId/messageId. Snippets are pointers only — not full bodies.'
-
-export const SESSION_READ_DESCRIPTION =
-  'Read another SuperOne session\'s saved transcript by id (any project; harness-agnostic; does not resume provider threads). ' +
-  'Do not read the current session — it is already in your context. ' +
-  'Views: meta | user | assistant | text | tools | tool_detail. user/assistant/text are pure conversation (no tool lines; assistant/text include toolCount). ' +
-  'tools = index; tool_detail needs toolUseId. Paginate with limit/cursor; anchor with messageId/around. Prefer user then on-demand assistant/tools. meta includes projectId and tags.'
-
-export const SESSION_TAGS_FILTER_DESCRIPTION =
-  'Tags from session_tag_list. Filter sessions that have these labels.'
-
-export const SESSION_TAG_MATCH_DESCRIPTION =
-  'any = at least one listed tag (default). all = every listed tag. Ignored when tags is omitted.'
-
-export const SESSION_CLEANUP_DESCRIPTION =
-  'Hide, unhide, or delete SuperOne sessions by id (from session_list; ids may be from any project). ' +
-  'hide/unhide need no confirmation. delete always opens a user confirmation dialog. ' +
-  'Never deletes the current session; skips pinned unless includePinned. Prefer session_list to choose ids first.'
-
-export const CONFIG_READ_DESCRIPTION =
-  'Read live SuperOne settings and their field schema. Always call this before config_apply. ' +
-  'Omit domain to list settings and resource domains; pass domain to read exact keys, current values, and constraints. ' +
-  'For resource domains, pass recordId to read one record before updating or deleting it. Use read_manual for documentation.'
-
-export const CONFIG_APPLY_DESCRIPTION =
-  'Propose a settings change or resource create/update/delete using keys returned by config_read. ' +
-  'Pass exactly one of changes or resource. Every call opens an editable confirmation dialog and applies nothing without user approval. ' +
-  'For updates, send only changed fields. Stop on cancelled or error; on rejected, use the returned feedback before retrying.'
-
-export const MEDIA_GUIDE_TOPIC_DESCRIPTION =
-  'Read overview first, then choose the provider-task topic matching media_list_providers.kind and the requested media type.'
-
-export const LIST_MEDIA_PROVIDERS_DESCRIPTION =
-  'List configured media providers that have usable credentials. Filter by image or video. ' +
-  'Use a returned provider id with media_generate_image or media_generate_video; use kind to select the matching media manual topic. ' +
-  'Honor returned sizing and sizeNote constraints.'
-
-export const GENERATE_IMAGE_DESCRIPTION =
-  'Generate or edit an image. For edits, pass source files in reference_image_paths. ' +
-  'The result is displayed automatically; do not embed it again. Inspect previewPaths only, because savedPaths contains full-resolution originals for export or follow-up edits. ' +
-  'Before provider-specific options, call media_list_providers and read media/overview plus the matching provider topic. Check result warnings for ignored options.'
-
-export const GENERATE_VIDEO_DESCRIPTION =
-  'Submit an asynchronous video generation after the user reviews its parameters. Stop on cancelled or error; use feedback before retrying. ' +
-  'Poll media_video_status about every 30s until generated or error. The finished video is displayed automatically — do not embed it again. ' +
-  'For provider options call media_list_providers(category:"video"), then read media/overview and the matching provider topic.'
-
-export const VIDEO_STATUS_DESCRIPTION =
-  'Check on a video generation started by media_generate_video. ' +
-  'Returns `{status:"running"}` while it renders, `{status:"generated", savedPaths:[...]}` when finished, or `{status:"error", message}` if it failed. ' +
-  'Each call asks the provider directly and is what advances the job, so polling is required rather than cosmetic: without it the video is never downloaded or saved. ' +
-  'Poll roughly every 30 seconds while it is running. Do not tell the user the video is ready until this returns `generated`.'
-
-export const SESSION_LIST_AGENTS_DESCRIPTION =
-  'List the agent profiles available for user-approved child sessions. Only launchable agents are returned. ' +
-  'Inspect each profile\'s harness and defaultConfig before session_collab_request. ' +
-  'You may reuse one agentId for multiple launches. ' +
-  'Skip this call when the user already named an agent with @ — that mention carries its agentId.'
-
-export const SESSION_REQUEST_AGENTS_DESCRIPTION =
-  'Request user approval for collaboration launches. See the mode field for spawn vs handoff vs link. ' +
-  'Spawn/handoff: pick an agentId from session_collab_list_agents; require name, role, summary, task. Link: require sessionId + summary. ' +
-  'Read read_manual({ domain: "product", topic: "collaboration" }) before the first launch in a session. ' +
-  'User must approve; returns the credential for session_collab_start.'
-
-export const LAUNCH_SUMMARY_DESCRIPTION =
-  'Short 2–3 sentence task summary shown collapsed in the confirm dialog. Not the full brief — put detail in task.'
-
-export const LAUNCH_TASK_DESCRIPTION =
-  'Full Markdown brief. Spawn/handoff: delivered to the new session on session_collab_start. ' +
-  'A handoff receiver cannot ask you anything back, so make the brief self-contained. ' +
-  'Link: optional opening for the peer (mailbox + turn wake, never system prompt). Expandable in the confirm UI.'
-
-export const LAUNCH_MODE_DESCRIPTION =
-  '"spawn" (default) = nested child with a two-way mailbox. ' +
-  '"handoff" = top-level sibling, not nested: it owns the task from then on, with no mailbox and no reply — pass work forward rather than supervise it. ' +
-  '"link" = connect to an existing session (sessionId required).'
-
-export const LAUNCH_SESSION_ID_DESCRIPTION =
-  'Existing SuperOne session id to link with (mode "link" only). Required for link; ignore for spawn. Prefer ids from @session mentions or session_list — never invent ids.'
-
-/**
- * Field-level guidance, not part of the tool description: `session_collab_request`
- * is an always-visible built-in and its description is on a 700-char budget, but
- * the input schema is only read when the model actually fills the field in.
- * Both registration surfaces (JSON Schema for the Codex stdio bridge, Zod for the
- * in-process Claude server) must carry it — see superone-mcp-builtin-defs.test.ts.
- *
- * Long worktree/cwd recipes live in product/collaboration via read_manual — keep
- * field blurbs short and point there.
- */
-export const LAUNCH_PERMISSION_MODE_DESCRIPTION =
-  'How autonomous the child session is. Nobody watches a child, so prefer the most autonomous mode it can finish under; "plan"/"default" only when stopping for human review is the point. ' +
-  'Per-harness mode names, and why requesting autonomy is safe here: See read_manual({ domain: "product", topic: "collaboration" }).'
-
-export const LAUNCH_CWD_DESCRIPTION =
-  'Only for a genuinely different project root; omit for the current project. ' +
-  'Never a same-repo worktree leaf — express isolation with config.worktree. ' +
-  'See read_manual({ domain: "product", topic: "collaboration" }).'
-
-export const LAUNCH_WORKTREE_DESCRIPTION =
-  'Host-managed worktree for same-repo isolation; leave cwd unset. ' +
-  'For parallel implementers, not for read-only review of the shared checkout. ' +
-  'See read_manual({ domain: "product", topic: "collaboration" }).'
-
-export const LAUNCH_BRANCH_NAME_DESCRIPTION =
-  'With mode "branch", create this unique branch. Git cannot check out one branch in two worktrees.'
-
-export const SESSION_START_DESCRIPTION =
-  'Activate one approved collaboration credential. Spawn: create the child and deliver its task. ' +
-  'Handoff: create the sibling session and deliver the task; the credential is spent, no mailbox follows. ' +
-  'Link: bind the existing peer and wake it via turn injection (not system prompt). ' +
-  'Returns when the peer begins or is notified. Retries are idempotent. Start all credentials back-to-back.'
-
-export const SESSION_SEND_DESCRIPTION =
-  'Send a persistent Markdown message through one collaboration mailbox (spawn parent-child or link peers). ' +
-  'Use clientMessageId for retry-safe delivery. The host wakes the peer and later wakes you when it replies. ' +
-  'After sending, continue other work or end your turn. Never sleep, resend, or poll session_collab_retrieve while waiting.'
-
-export const SESSION_RETRIEVE_DESCRIPTION =
-  'Retrieve queued Markdown messages for this session from one or more collaboration mailboxes. ' +
-  'Call after a collaboration wake, or once before acting on peer input. This is a non-blocking read: status "empty" is not a retry signal. ' +
-  'Do not sleep or poll; end your turn and wait for the next wake.'
-
-export const AUTOMATION_LIST_DESCRIPTION =
-  'List scheduled agent automations for the current project (id, name, enabled, schedule, last/next run). ' +
-  'Pass id for full detail (prompt, agentConfig, schedule). Filter with query (name) or enabled. ' +
-  'Call before automation_apply or automation_delete. Current project only — not session archive tools.'
-
-export const AUTOMATION_APPLY_DESCRIPTION =
-  'Create or update a project automation. create needs name, prompt, schedule; update needs id plus any field (pause via enabled=false). ' +
-  'Call automation_list first for ids; remove with automation_delete. Always opens a user confirmation dialog and applies nothing without approval. ' +
-  'For schedule and agentConfig shapes see read_manual({ domain: "product", topic: "automation" }).'
-
-export const AUTOMATION_DELETE_DESCRIPTION =
-  'Permanently delete project automations by id (from automation_list). ' +
-  'Always opens a user confirmation dialog. Current project only. Prefer automation_list to choose ids first.'
+import {
+  MANUAL_READ_DESCRIPTION,
+  SETUP_MINI_APP_DEV_DESCRIPTION,
+  REGISTER_DEV_MINIAPP_DESCRIPTION,
+  PACK_MINI_APP_DESCRIPTION,
+  UPDATE_SUPERONE_TYPES_DESCRIPTION,
+  RENAME_SESSION_DESCRIPTION,
+  SESSION_TAG_DESCRIPTION,
+  SESSION_TAG_LIST_DESCRIPTION,
+  PROJECT_LIST_DESCRIPTION,
+  SESSION_LIST_DESCRIPTION,
+  SESSION_SEARCH_DESCRIPTION,
+  SESSION_READ_DESCRIPTION,
+  SESSION_TAGS_FILTER_DESCRIPTION,
+  SESSION_TAG_MATCH_DESCRIPTION,
+  SESSION_CLEANUP_DESCRIPTION,
+  CONFIG_READ_DESCRIPTION,
+  CONFIG_APPLY_DESCRIPTION,
+  LIST_MEDIA_PROVIDERS_DESCRIPTION,
+  GENERATE_IMAGE_DESCRIPTION,
+  GENERATE_VIDEO_DESCRIPTION,
+  VIDEO_STATUS_DESCRIPTION,
+  SESSION_LIST_AGENTS_DESCRIPTION,
+  SESSION_REQUEST_AGENTS_DESCRIPTION,
+  LAUNCH_SUMMARY_DESCRIPTION,
+  LAUNCH_TASK_DESCRIPTION,
+  LAUNCH_MODE_DESCRIPTION,
+  LAUNCH_SESSION_ID_DESCRIPTION,
+  LAUNCH_PERMISSION_MODE_DESCRIPTION,
+  LAUNCH_CWD_DESCRIPTION,
+  LAUNCH_WORKTREE_DESCRIPTION,
+  LAUNCH_BRANCH_NAME_DESCRIPTION,
+  SESSION_START_DESCRIPTION,
+  SESSION_SEND_DESCRIPTION,
+  SESSION_RETRIEVE_DESCRIPTION,
+  AUTOMATION_LIST_DESCRIPTION,
+  AUTOMATION_APPLY_DESCRIPTION,
+  AUTOMATION_DELETE_DESCRIPTION
+} from '@superone/shared/superone-tool-descriptions'
+export * from '@superone/shared/superone-tool-descriptions'
 
 /** Shared nested schedule schema for automation_apply (JSON Schema + host-action). */
 export const AUTOMATION_SCHEDULE_INPUT_SCHEMA = {

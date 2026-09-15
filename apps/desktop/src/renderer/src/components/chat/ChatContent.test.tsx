@@ -67,6 +67,7 @@ const hoisted = vi.hoisted(() => {
     isRemoteLocked: { value: false },
     scope,
     scrollMounts,
+    suggestionMounts: { count: 0 },
     contentZoom,
     onScrollMount,
     steerQueuedMessage: vi.fn(),
@@ -194,8 +195,15 @@ vi.mock('./SubagentFullView', () => ({
 vi.mock('./ForkedThreadView', () => ({
   ForkedThreadView: () => <div data-testid="forked-thread-view" />,
 }))
-vi.mock('./ChatSuggestions', () => ({ ChatSuggestions: () => <div data-testid="chat-suggestions" /> }))
-vi.mock('./DraftSessionSurface', () => ({ DraftSessionSurface: () => <div data-testid="draft-session-surface" /> }))
+vi.mock('./ChatSuggestions', async () => {
+  const { useEffect } = await import('react')
+  return {
+    ChatSuggestions: ({ draft }: { draft?: boolean }) => {
+      useEffect(() => { hoisted.suggestionMounts.count++ }, [])
+      return <div data-testid="chat-suggestions" data-draft={String(!!draft)} />
+    },
+  }
+})
 vi.mock('./PermissionPrompt', () => ({ PermissionPrompt: () => <div data-testid="permission-prompt" /> }))
 vi.mock('./RealtimeCallIndicator', () => ({ RealtimeCallIndicator: () => <div data-testid="realtime-call-indicator" /> }))
 vi.mock('./AskUserQuestionPrompt', () => ({ AskUserQuestionPrompt: () => <div data-testid="ask-user-question" /> }))
@@ -398,7 +406,7 @@ describe('ChatContent empty-state gate is harness-agnostic', () => {
     expect(screen.getByTestId('chat-suggestions')).toBeInTheDocument()
   })
 
-  it('shows the draft surface instead of ChatSuggestions for a restored draft', () => {
+  it('renders ChatSuggestions in draft mode for a restored draft', () => {
     reset()
     hoisted.sessionState.messages = []
     hoisted.sessionState.session = null
@@ -407,8 +415,29 @@ describe('ChatContent empty-state gate is harness-agnostic', () => {
 
     renderContent()
 
-    expect(screen.queryByTestId('chat-suggestions')).toBeNull()
-    expect(screen.getByTestId('draft-session-surface')).toBeInTheDocument()
+    expect(screen.getByTestId('chat-suggestions')).toHaveAttribute('data-draft', 'true')
+  })
+
+  // Draft autosave stamps `draftId` on the session ~250ms after the first
+  // keystroke. That must flip the landing into draft mode in place — swapping
+  // the component would replay its fade-in / icon entrance under the cursor.
+  it('keeps ChatSuggestions mounted when autosave stamps a draftId on the session being typed in', () => {
+    reset()
+    hoisted.sessionState.messages = []
+    hoisted.sessionState.session = null
+    hoisted.sessionState._historyHydrated = true
+    hoisted.suggestionMounts.count = 0
+
+    const ref = createRef<HTMLDivElement>()
+    const { rerender } = render(<ChatContent scrollViewportRef={ref} />)
+    expect(screen.getByTestId('chat-suggestions')).toHaveAttribute('data-draft', 'false')
+    expect(hoisted.suggestionMounts.count).toBe(1)
+
+    hoisted.sessionState.draftId = 'draft-1'
+    rerender(<ChatContent scrollViewportRef={ref} />)
+
+    expect(screen.getByTestId('chat-suggestions')).toHaveAttribute('data-draft', 'true')
+    expect(hoisted.suggestionMounts.count).toBe(1)
   })
 
   it('ignores timeline thread copies for a Codex session without voice history', () => {

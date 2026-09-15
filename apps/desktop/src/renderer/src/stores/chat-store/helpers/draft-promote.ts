@@ -570,7 +570,7 @@ export async function promoteDraftIfUnsent(
   try {
     await useDraftsStore.getState().saveDraft(target.connectionId, draft)
     claimDraftForSession(sessionId, draft.id)
-    // Stamp draftId on the live session so the pane stays on DraftSessionSurface
+    // Stamp draftId on the live session so the pane stays in draft mode
     // and the sidebar can hide the row while the origin is still focused.
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } fr
 import { AnimatePresence, motion } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore, useHasRealProject } from '@/stores/app'
-import { useActiveSession, useChatStore, useSessionScope, type ChatProvider } from '@/stores/chat'
+import { useActiveSession, useChatStore, useIsRemoteLocked, useSessionScope, type ChatProvider } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
 import { ProviderLabel } from '@/components/ProviderLabel'
 import { consumerForHarness, resolveEffective } from '@/lib/provider-resolve'
@@ -718,8 +718,16 @@ function ActiveProviderHint() {
   )
 }
 
-export function ChatSuggestions() {
+/**
+ * Empty-pane landing. `draft` keeps the pane on a restored / carried / autosaved
+ * draft: the session already owns its harness / model / permission / worktree,
+ * so the default-harness auto-apply and the project-switch session reset are
+ * off. It is a prop, not a sibling component, so autosave stamping `draftId`
+ * mid-typing flips mode in place instead of remounting under the cursor.
+ */
+export function ChatSuggestions({ draft = false }: { draft?: boolean } = {}) {
   const { t } = useTranslation()
+  const locked = useIsRemoteLocked()
   const selectProject = useAppStore((s) => s.selectProject)
   const fetchRecentFolders = useAppStore((s) => s.fetchRecentFolders)
   const isSwitchingHostProject = useAppStore((s) => s.isSwitchingHostProject)
@@ -762,7 +770,7 @@ export function ChatSuggestions() {
       autoOpenAttemptRef.current = null
       return
     }
-    if (isSwitchingHostProject || loading || error) return
+    if (draft || isSwitchingHostProject || loading || error) return
     const first = projects.find((folder) => !folder.missing)
     if (!first) return
     const attemptKey = `${connectionId}::${first.path}`
@@ -773,6 +781,7 @@ export function ChatSuggestions() {
       projectId: first.id || undefined,
     })
   }, [
+    draft,
     hasRealProject,
     isSwitchingHostProject,
     loading,
@@ -821,7 +830,7 @@ export function ChatSuggestions() {
     />
   )
 
-  if (!hasRealProject) {
+  if (!hasRealProject && !draft) {
     const hasProjects = projects.length > 0
     const isProjectLoading = isSwitchingHostProject || loading
     return (
@@ -884,12 +893,18 @@ export function ChatSuggestions() {
   }
 
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-4 px-4" style={{ animation: 'fade-in 400ms ease-out' }}>
-      <ProviderSelector />
+    <div
+      className="flex h-full flex-col items-center justify-center gap-4 px-4"
+      style={{ animation: 'fade-in 400ms ease-out' }}
+      data-draft={draft || undefined}
+      inert={locked}
+    >
+      <ProviderSelector disableAutoApply={draft} />
       <ProjectSelector
         align="center"
         carryOpenDraft
         onOpened={() => {
+          if (draft) return
           const store = useChatStore.getState()
           const path = store.activeProject
           const sid = path ? store.projectSessions[path]?._activeSessionId : null
@@ -899,7 +914,7 @@ export function ChatSuggestions() {
           if (sess?.draftText.trim() || sess?.draftId) return
           void resetSession()
         }}
-        onAddProject={isLocal ? undefined : () => setAddDialogOpen(true)}
+        onAddProject={isLocal ? undefined : startAddProject}
       />
       {addDialog}
     </div>

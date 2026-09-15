@@ -16,7 +16,6 @@ import { ModelFallbackRow } from './ModelFallbackRow'
 import { selectClaudeModels } from '@/stores/chat-store/selectors'
 import { ChatSuggestions } from './ChatSuggestions'
 import { SideChatEmptyState } from './SideChatEmptyState'
-import { DraftSessionSurface } from './DraftSessionSurface'
 import { PlanApprovalPrompt } from './PlanApprovalPrompt'
 import { PlanFullscreenContext } from './codex-item-renderer'
 import { CodexPlanFullscreenView } from './CodexPlanFullscreenView'
@@ -306,9 +305,10 @@ function ChatTranscript({
             ? <RealtimeStartingSurface />
             : awaitingRealtimeTimeline
               ? <p className="py-16 text-center text-sm text-muted-foreground">{t('common.loading')}</p>
-              : draftId || (queueProvider === 'codex' && hasRealtimeTimeline)
-                  ? <DraftSessionSurface />
-                  : <ChatSuggestions />
+              // Draft mode is a prop, not a sibling component: autosave stamps
+              // draftId ~250ms into typing, and a remount here would replay the
+              // landing's entrance animation under the cursor.
+              : <ChatSuggestions draft={!!draftId || (queueProvider === 'codex' && hasRealtimeTimeline)} />
       ) : (
         <ScrollArea key={displayedSessionId ?? 'default'} className="chat-scroll-area h-full min-w-0" viewportRef={scrollViewportRef}>
           <SelectionContextMenuZone className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">

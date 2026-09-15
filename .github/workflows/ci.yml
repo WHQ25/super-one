@@ -108,3 +108,8 @@ jobs:
       # Builds chat-view, runs assert-release-config (which guards the EAS
       # profiles and the self-update prerequisites), then vitest + jest-expo.
       - run: bun run test:mobile
+      # The committed *.generated.json / PNG icon sets are derived from
+      # packages/ui and packages/shared, which change without anyone opening
+      # apps/mobile; this catches a source edit that was never regenerated.
+      - run: bun run check:icons
+        working-directory: apps/mobile

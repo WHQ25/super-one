@@ -5,7 +5,7 @@
  * older contract with nothing failing. All three import this string.
  */
 export const WIDGET_SHOW_DESCRIPTION =
-  'Render SVG, diagrams, charts, or interactive HTML inline in chat. '
+  'Render SVG, diagrams, charts, interactive HTML, or a SuperOne native surface (media gallery, files previewer) inline in chat. '
   + 'Pass widget_code for new content, or template + data to reuse a saved template. '
   + 'To show media you produced yourself, pass a @native/* template so it renders in SuperOne\'s own gallery '
   + '(viewer, download, drag-out) instead of a lookalike you build in widget_code — call widget_list_templates for the list. '

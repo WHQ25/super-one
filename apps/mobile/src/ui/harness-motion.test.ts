@@ -19,10 +19,11 @@ describe('desktop animation translation', () => {
     expect(track.outputRange[off]).toBe(0)
   })
 
-  it('retains a translucent resting background veil with motion disabled', () => {
-    const veil = motionTracks(data.motions['codex-session-veil'], 20)[0]!
-    expect(veil.outputRange[0]).toBe(0.7)
-    expect(veil.outputRange.every((value) => value < 1)).toBe(true)
+  it('carries no background veil, matching the desktop Codex icon', () => {
+    // The desktop dropped the veil because it only composited correctly on one
+    // row colour; the generated scenes must follow the source, not a stale copy.
+    expect(data.motions).not.toHaveProperty('codex-session-veil')
+    expect(JSON.stringify(data.scenes.codex.background)).not.toContain('veil')
   })
 
   it('omits decorative continuous motion from compact resting icons', () => {

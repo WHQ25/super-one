@@ -4,8 +4,8 @@ import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { OfficialProviderPanel } from "./OfficialProviderPanel";
 
-const codexGetAccountStatus = vi.fn();
-const codexGetAuthStatus = vi.fn();
+const claudeListAccounts = vi.fn();
+const codexListAccounts = vi.fn();
 
 vi.mock("@/stores/chat", () => ({
   useChatStore: (selector: (state: unknown) => unknown) =>
@@ -22,7 +22,7 @@ vi.mock("./ProviderLabel", () => ({
 Object.defineProperty(window, "app", {
   configurable: true,
   value: new Proxy(
-    { codexGetAccountStatus, codexGetAuthStatus },
+    { claudeListAccounts, codexListAccounts },
     {
       get(target, prop, receiver) {
         if (prop in target) return Reflect.get(target, prop, receiver);
@@ -32,45 +32,28 @@ Object.defineProperty(window, "app", {
   ),
 });
 
-describe("Codex provider account status", () => {
+// The panel only dispatches on harness; account behaviour lives with
+// ClaudeAccountsPanel / CodexAuthSettings and their own tests.
+describe("OfficialProviderPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    codexGetAccountStatus.mockResolvedValue({
-      signedIn: false,
-      authMode: null,
-      email: null,
-      planType: null,
-      requiresOpenaiAuth: true,
-    });
+    claudeListAccounts.mockResolvedValue([]);
+    codexListAccounts.mockResolvedValue([]);
   });
 
-  it("does not treat the default ChatGPT preference as a signed-in account", async () => {
-    codexGetAuthStatus.mockResolvedValue({
-      mode: "auto",
-      resolvedMode: "chatgpt",
-      hasEnvApiKey: false,
-      hasSessionApiKey: false,
-      isRunning: false,
-    });
-
-    render(<OfficialProviderPanel harness="codex" />);
+  it("renders the Claude account list for the claude harness", async () => {
+    render(<OfficialProviderPanel harness="claude" />);
 
     expect(await screen.findByText(/not signed in/i)).toBeInTheDocument();
-    expect(screen.queryByText("ChatGPT")).toBeNull();
+    expect(claudeListAccounts).toHaveBeenCalled();
+    expect(codexListAccounts).not.toHaveBeenCalled();
   });
 
-  it("still reports a configured API key when no ChatGPT account is present", async () => {
-    codexGetAuthStatus.mockResolvedValue({
-      mode: "apiKey",
-      resolvedMode: "apiKey",
-      hasEnvApiKey: false,
-      hasSessionApiKey: true,
-      isRunning: false,
-    });
-
+  it("renders the ChatGPT account manager for the codex harness", async () => {
     render(<OfficialProviderPanel harness="codex" />);
 
-    expect(await screen.findByText("API Key")).toBeInTheDocument();
-    expect(screen.queryByText(/not signed in/i)).toBeNull();
+    expect(await screen.findByRole("region", { name: "ChatGPT Accounts" })).toBeInTheDocument();
+    expect(codexListAccounts).toHaveBeenCalledWith("/project");
+    expect(claudeListAccounts).not.toHaveBeenCalled();
   });
 });

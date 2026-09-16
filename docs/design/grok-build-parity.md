@@ -329,8 +329,8 @@ Host-relevant rows:
 |----|------|---------|-----------------|----------|-----|----------|
 | TD-01 | Unit: preapprove + yolo create/notify | tests-docs | done | `acp-permission-preapprove.test.ts`, runtime tests | — | — |
 | TD-02 | Unit: exit_plan / ask_user wire + PlanApproval UI | tests-docs | done | backend + PlanApprovalPrompt + `AskUserQuestionPrompt.test.tsx` | — | — |
-| TD-03 | Manual live grok CLI checklist | tests-docs | missing | deferred 2026-09-16 — no recorded macOS grok run in this session | owner: follow-up; Grok binary stays out of CI | **P1** |
-| TD-04 | Permissions G1–G5 boxes | tests-docs | partial | code shipped; boxes empty | PR0 + TD-03 | **P1** |
+| TD-03 | Manual live grok CLI checklist | tests-docs | partial | live CDP run 2026-09-16 (grok 1.0.30, SuperOne Dev) — results in §4.7 | items 2/5/9 not fully observed; defects listed in §4.7 | **P1** |
+| TD-04 | Permissions G1–G5 boxes | tests-docs | partial | G1/G4/G5 ticked from the TD-03 run | G2 not observed (Grok did not ask); G3 fails — see §4.7 | **P1** |
 | TD-05 | This parity matrix vs code | tests-docs | partial | this rewrite | keep living | — |
 | TD-06 | ExtNotification design vs tests | tests-docs | done | PR0: bus marked shipped; leftover at MCP-10 / RT-06 / XAI-24 | — | — |
 | TD-07 | authenticate unit | tests-docs | done | `acp-auth.test.ts` cached_token / api_key / grok.com | interactive path is PR7 | — |
@@ -514,6 +514,23 @@ Recommend **A** unless product signs off on B.
 9. Workflow progress + follow-up chips.
 10. Node/CLI: ask or plan reverse does not hang (after 4.0).
 
+**Live run 2026-09-16** — grok 1.0.30 (`~/.grok/bin/grok-1.0.30`), SuperOne Dev `0.67.0` from this worktree driven over CDP (`bun run dev:cdp`, port 9333, Playwright `connectOverCDP`), default `.dev-data` profile (an `instance-td03` profile pushes the SuperOne MCP AF_UNIX socket path past 104 bytes → `listen EINVAL` → `superone=no`). Evidence: `dev.log`, `event-trace.db`, `~/.grok/sessions/<cwd>/<id>/events.jsonl`, `permission_superone.toml`.
+
+| # | result | evidence |
+|---|--------|----------|
+| 1 | pass | `session/set_model model=grok-4.5 effort=high` after picking Grok 4.5; usage reports `grok-4.5`. Effort Low picked in a new session → grok `chat_history` shows `reasoning_effort:"low"` (via `_meta.reasoningEffort`). **Defect:** every session's 2nd send logs `rebuilding backend effortChanged=true` (spurious) → `session/load`, and the rebuild path emits `acp_modes modes:[]` last (`applyModel` → `emitConfigFromOptions` without a mode fallback), so the effort selector goes blank after the first turn. |
+| 2 | pass* | Bash card (`git push --dry-run`) with Allow / Allow for this session / Decline / Cancel; `allowAlwaysAllow=true`. "Allow for this session" persisted by Grok as an exact-command grant (`permission_superone.toml allowed_bash_commands`), identical command re-ran with `wait_ms=0`. *Only after switching Auto→Ask mid-session (see G3). |
+| 3 | partial | Built-in `widget_list_templates` / `session_tag_list` / `session_rename`: zero cards (Grok never sent `request_permission` for them). Third-party `context7 resolve-library-id` also ran with **no** prompt in Ask mode (grok `permission_resolved allow wait_ms=0`) — agent-side allow, SuperOne preapprove not exercised. |
+| 4 | pass | Selecting Auto shows `chat.acpPermissionModes.autoFailClosedToast`; `x.ai/yolo_mode_changed auto_mode=true` sent. |
+| 5 | partial | Host Plan via selector → `session/set_mode plan`, plan placeholder, `current_mode_update plan` echoed. `exit_plan_mode` → PlanApprovalPrompt; Reject + overall feedback → revised plan; Approve → agent `current_mode_update default`, no host `set_mode` (XAI-05). Line comments not exercised. **Defect:** Always Approve → Shift+Tab → Shift+Tab lands on Ask and sends `yolo_mode_changed permission_mode=ask` (`togglePlanModeShortcutImpl` toggles plan↔`default`); Always baseline is wiped. |
+| 6 | pass | Agent `current_mode_update` (plan on enter, default after approve) flips the status-bar selector. |
+| 7 | pass | `session ready … mcp=2 superone=yes`; `/mcp` shows Live · Grok session with open-computer-use / context7 / GitHub / superone. Refresh re-reads state only; `superone` survives `session/load` rebuilds. Nit: every server shows "0 tools". |
+| 8 | pass | `session/load ok … replayed=6/46`; `/recap` → `x.ai/recap auto=false` + Recap row; `/compact` → "Conversation Compacted 31.9k → 14.8k" (nit: a second `manual 46.5k` marker is rendered for the same compaction); rewind (conversation) removed the prompt from grok `chat_history.jsonl` / `rewind_points.jsonl`; fork → `x.ai/session/fork` new id, forked session resumed with `replayed=46`. Fork's first menu item created a git worktree (`tlgbmz-a186b20`). |
+| 9 | skip | No workflow / follow-up-chip events in this run. |
+| 10 | skip | Not re-run here; parent wire probe (`.td03-grok-live.ts`) passed ask/exit cancel-without-hang the same day. |
+
+**G3 root cause (live):** `grokSessionPermissionMeta` omits `autoMode`/`yoloMode` for Ask, and grok's `resolve_session_auto_mode` then falls back to the user's `~/.grok/config.toml` `permission_mode = "auto"` — so SuperOne "Ask" ran Grok Auto (classifier waits of 8–26 s, `rm` / `git push --dry-run` executed without a card) until a mid-session `yolo_mode_changed auto_mode=false`. Fix: always send explicit booleans on session/new|load. Also: the ACP permission map sets `blockedPath` for every located tool call, so ordinary in-project Edit cards render the amber "Blocked path:" line.
+
 ---
 
 ## 5. PR plan
@@ -664,11 +681,11 @@ Shipped work (do **not** re-open as PRs): stdio lifecycle, yolo/auto meta + noti
 
 Desktop Ask-mode Grok session:
 
-- [ ] Built-in SuperOne MCP: zero permission cards.
-- [ ] Third-party MCP and bash still prompt; Always (PR1) persists the grant Grok offered.
-- [ ] Model + effort switch via `session/set_model`.
-- [ ] Plan enter (host or agent) updates chrome; approve/reject + line comments; Always/Auto baseline not wiped.
-- [ ] User MCP attached on session/new; reload keeps HTTP SuperOne.
-- [ ] Resume, recap, compact, rewind, fork work in one recorded grok CLI run (TD-03).
-- [ ] Node/CLI does not hang on ask/exit_plan.
+- [x] Built-in SuperOne MCP: zero permission cards. (live 2026-09-16, §4.7 #3)
+- [ ] Third-party MCP and bash still prompt; Always (PR1) persists the grant Grok offered. (bash + Always: pass; third-party MCP did not prompt — §4.7 #2/#3)
+- [x] Model + effort switch via `session/set_model`. (live 2026-09-16, §4.7 #1; effort selector blanks after first turn — open defect)
+- [ ] Plan enter (host or agent) updates chrome; approve/reject + line comments; Always/Auto baseline not wiped. (chrome + approve/reject: pass; line comments untested; Shift+Tab wipes Always — §4.7 #5)
+- [x] User MCP attached on session/new; reload keeps HTTP SuperOne. (live 2026-09-16, §4.7 #7)
+- [x] Resume, recap, compact, rewind, fork work in one recorded grok CLI run (TD-03). (live 2026-09-16, §4.7 #8)
+- [ ] Node/CLI does not hang on ask/exit_plan. (wire probe passed 2026-09-16; not part of the CDP run)
 - [ ] Docs (permissions, ext-notifications, this file) no longer contradict tests.

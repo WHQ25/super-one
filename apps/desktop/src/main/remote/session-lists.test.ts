@@ -83,6 +83,15 @@ describe('mobile session list scheduled sends', () => {
       .toMatchObject({ totalCount: 2, sessions: [{ sessionId: 'two', scheduledSendAt: null }] })
   })
 
+  it('finds one session by id with its project, and nothing for a hidden or unknown id', () => {
+    expect(readRemoteSessionList({ type: 'find_session', requestId: 'f', sessionId: 'two' })).toEqual({
+      session: expect.objectContaining({ sessionId: 'two', title: 'Other session', provider: 'claude', projectPath: '/repo', projectName: 'repo' }),
+    })
+    db.prepare('UPDATE sessions SET is_hidden = 1 WHERE id = ?').run('two')
+    expect(readRemoteSessionList({ type: 'find_session', requestId: 'f', sessionId: 'two' })).toEqual({ session: null })
+    expect(readRemoteSessionList({ type: 'find_session', requestId: 'f', sessionId: 'missing' })).toEqual({ session: null })
+  })
+
   it('only invalidates a source-scoped deletion when it removes an armed send', () => {
     upsertScheduledSend('one', { sendAt, armed: true, source: 'manual' })
     changed.length = 0

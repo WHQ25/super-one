@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState, type HTMLAttributes, type MouseEvent, type ReactNode } from 'react'
-import { useTranslation } from 'react-i18next'
+import { Trans, useTranslation } from 'react-i18next'
 import { Bot, ChevronDown } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 
@@ -9,6 +9,10 @@ const PREVIEW_RATIO = 0.5
 export interface CollabTaskBubblePresenterProps {
   /** The rendered markdown body; each host brings its own renderer. */
   children: ReactNode
+  /** Title of the launching session; omitted for tasks recorded before it was captured. */
+  fromTitle?: string
+  /** Opens the launching session; the title reads as a link only when the host supplies this. */
+  onOpenFrom?: () => void
   /** Trailing node in the label row — the desktop's hover copy button. */
   labelTrailing?: ReactNode
   /** Gesture handlers spread onto the bubble itself (phone long-press menu). */
@@ -25,6 +29,8 @@ export interface CollabTaskBubblePresenterProps {
  */
 export function CollabTaskBubblePresenter({
   children,
+  fromTitle,
+  onOpenFrom,
   labelTrailing,
   bubbleProps,
   menu,
@@ -64,9 +70,25 @@ export function CollabTaskBubblePresenter({
   return (
     <div className="mb-0.5 flex w-0 min-w-full justify-end">
       <div className="group/copy relative flex min-w-0 max-w-[90%] flex-col items-end">
-        <div className="mb-1 flex items-center gap-1.5 px-0.5 text-xs text-muted-foreground">
+        <div className="mb-1 flex max-w-full items-center gap-1.5 px-0.5 text-xs text-muted-foreground">
           <Bot className="size-3 shrink-0 opacity-80" />
-          <span className="shrink-0">{t('chat.collaboration.initialTask')}</span>
+          <span className="min-w-0 truncate">
+            {fromTitle
+              ? (
+                <Trans
+                  i18nKey="chat.collaboration.taskFrom"
+                  values={{ title: fromTitle }}
+                  components={{
+                    // `inline` (not the button default inline-block) so the row's
+                    // ellipsis can cut inside the title instead of dropping it whole.
+                    title: onOpenFrom
+                      ? <button type="button" className="inline cursor-pointer text-foreground hover:underline" onClick={onOpenFrom} />
+                      : <span className="text-foreground" />,
+                  }}
+                />
+              )
+              : t('chat.collaboration.initialTask')}
+          </span>
           {labelTrailing}
         </div>
         <div

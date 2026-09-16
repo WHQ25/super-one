@@ -2032,6 +2032,7 @@ export type Messages = {
     }
     collaboration: {
       initialTask: string
+      taskFrom: string
       fromAgent: string
       toAgent: string
       taskNotification: string
@@ -5837,6 +5838,7 @@ export const en: Messages = {
     },
     collaboration: {
       initialTask: 'Agent task',
+      taskFrom: 'Task from <title>{{title}}</title>',
       fromAgent: 'From agent',
       toAgent: 'To agent',
       taskNotification: 'System wake',

@@ -412,7 +412,9 @@ export const ChatMessage = memo(function ChatMessage({
       isCollaboration={isCollab}
       collaborationLabel={collabLabelKey ? t(collabLabelKey) : undefined}
       mailboxLabel={isMailboxWake ? t('chat.collaboration.mailboxReady') : undefined}
-      initialTask={isInitialTask ? <CollabTaskBubble text={userText} /> : undefined}
+      initialTask={isInitialTask
+        ? <CollabTaskBubble text={userText} from={message.metadata?.collaboration} />
+        : undefined}
       body={body}
       imageGallery={generatedImages.length > 0
         ? <ImageGalleryBlock items={generatedImages} />

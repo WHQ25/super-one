@@ -1517,7 +1517,8 @@ export class AgentService {
       }
       case 'list_sessions':
       case 'list_pinned_sessions':
-      case 'search_sessions': {
+      case 'search_sessions':
+      case 'find_session': {
         try {
           await respond?.(command.requestId, readRemoteSessionList(command, this.sessionManager))
         } catch (err) {

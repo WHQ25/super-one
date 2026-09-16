@@ -874,6 +874,17 @@ async function ensureChildProject(cwd: string, parentProjectPath: string): Promi
   return cwd
 }
 
+/** Title (null while untitled) and project of the session that launched `grant`. */
+function parentSessionInfo(grant: GrantRow): { title: string | null; projectPath: string | null } {
+  const row = getDb().prepare(`
+    SELECT s.title, p.path AS project_path
+    FROM sessions s
+    LEFT JOIN projects p ON p.id = s.project_id
+    WHERE s.id = ?
+  `).get(grant.parent_session_id) as { title: string | null; project_path: string | null } | undefined
+  return { title: row?.title?.trim() || null, projectPath: row?.project_path ?? null }
+}
+
 /**
  * Opening body for the receiving session.
  *
@@ -882,9 +893,7 @@ async function ensureChildProject(cwd: string, parentProjectPath: string): Promi
  */
 function initialTaskContent(grant: GrantRow): string {
   if (grant.kind !== 'handoff') return grant.task
-  const row = getDb().prepare('SELECT title FROM sessions WHERE id = ?')
-    .get(grant.parent_session_id) as { title: string | null } | undefined
-  const title = row?.title?.trim() || grant.parent_session_id.slice(0, 8)
+  const title = parentSessionInfo(grant).title || grant.parent_session_id.slice(0, 8)
   return (
     `> Handed off from SuperOne session \`${grant.parent_session_id}\` ("${title}"). `
     + 'This is a one-way handoff: you own this task now and cannot message that session back. '
@@ -901,6 +910,7 @@ function initialTaskContent(grant: GrantRow): string {
 async function deliverInitialTask(grant: GrantRow, child: Session): Promise<void> {
   if (grant.task_sent === 1) return
   const config = parseConfig(grant.config_json)
+  const parent = parentSessionInfo(grant)
 
   // Use a box so TS control-flow does not treat the cleanup as always-null
   // (assignment happens inside the Promise executor, which CFA does not track).
@@ -931,6 +941,8 @@ async function deliverInitialTask(grant: GrantRow, child: Session): Promise<void
     collaboration: {
       kind: 'initial_task',
       fromSessionId: grant.parent_session_id,
+      fromSessionTitle: parent.title ?? undefined,
+      fromProjectPath: parent.projectPath ?? undefined,
       direction: 'inbound',
     },
   })

@@ -84,7 +84,7 @@ import { createMediaPorts } from '../media-ports'
 import type { ReconnectController } from '../reconnect-controller'
 import { createMobileRelayConnection } from '../mobile-relay-connection'
 import { SessionTransition } from '../session-transition'
-import { readProjectSessions } from './workspace-data'
+import { findSession, readProjectSessions } from './workspace-data'
 import { useRemoteDirectory } from './use-remote-directory'
 import { useProjectGitStatus } from './use-project-git-status'
 import { useProjectGitInfo } from './use-project-git-info'
@@ -571,6 +571,19 @@ export function MobileApp() {
         const runtime = runtimeRef.current
         if (!runtime) throw new Error('no active session')
         runtime.respondCodexPlan(messageId, status, feedback)
+      },
+      openSession: async (targetId) => {
+        const client = clientRef.current
+        if (!client) throw new Error('not connected')
+        // The WebView fires this and forgets, so failures go to the status line
+        // like every other navigation. The transcript only carries the id; the
+        // row (provider, project) comes from the host so the header and picker
+        // land on the right harness.
+        runUiAction(async () => {
+          const row = await findSession(client, targetId)
+          if (!row) throw new Error('that session is no longer on the host')
+          await openSessionAnywhere(row)
+        }, setStatus, 'failed to open session')
       },
       previewFile: (path, line, root) => filePreview.open(path, line, root),
       previewImage: async (target) => { filePreview.showImage(target) },
@@ -1204,6 +1217,18 @@ export function MobileApp() {
       setSessionLoading(false)
     }
   }).catch(failSessionTransition)
+
+  /**
+   * Open a row from a cross-project list (search, a transcript link): the row
+   * names its project, which may be one the drawer has never listed.
+   */
+  const openSessionAnywhere = async (row: SessionRow) => {
+    const target = projects.find((item) => item.path === row.projectPath)
+      ?? (row.projectPath ? { path: row.projectPath, name: row.projectName ?? row.projectPath } : project)
+    if (!target) throw new Error('no project for this session')
+    if (target.path !== project?.path) await openProject(target)
+    await openSession(row, target)
+  }
 
   /**
    * Runs one session-list command. The list applies its own change only when
@@ -2224,13 +2249,7 @@ export function MobileApp() {
         <SessionSearchScreen
           client={clientRef.current}
           onCancel={leaveToWorkspace}
-          onOpenSession={(row) => runUiAction(async () => {
-            const target = projects.find((item) => item.path === row.projectPath)
-              ?? (row.projectPath ? { path: row.projectPath, name: row.projectName ?? row.projectPath } : project)
-            if (!target) throw new Error('no project for this session')
-            if (target.path !== project?.path) await openProject(target)
-            await openSession(row, target)
-          }, setStatus, 'failed to open session')}
+          onOpenSession={(row) => runUiAction(() => openSessionAnywhere(row), setStatus, 'failed to open session')}
         />
       ) : null}
 

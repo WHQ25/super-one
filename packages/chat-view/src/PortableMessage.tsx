@@ -208,6 +208,8 @@ export const PortableMessage = memo(function PortableMessage({
             ? (
               <PortableCollabTaskBubble
                 text={initialTaskText}
+                fromTitle={message.metadata?.collaboration?.fromSessionTitle}
+                fromSessionId={message.metadata?.collaboration?.fromSessionId}
                 scheme={scheme}
                 bubbleProps={userMenu.bubbleProps}
                 menu={userMenu.menu}

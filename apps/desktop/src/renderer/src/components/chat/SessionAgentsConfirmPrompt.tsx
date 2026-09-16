@@ -24,10 +24,9 @@ import type {
   SessionAgentRequestPayload,
 } from '@superone/shared/agent-types'
 import { resolveSessionIcon, resolveSessionIconFromBrandKey } from '@/components/harness/resolve-session-icon'
-import { useMosaicStore } from '@/components/mosaic/mosaic-store'
+import { openPeerSession } from '@/lib/open-peer-session'
 import { hasOpenRadixOverlay } from '@/lib/radix-overlay'
 import { useAppStore } from '@/stores/app'
-import { useChatStore } from '@/stores/chat'
 import {
   streamdownComponents,
   streamdownControls,
@@ -80,17 +79,6 @@ function HarnessGlyph({
         : <Bot className="size-3 text-muted-foreground" />}
     </span>
   )
-}
-
-/** Open peer session in the main chat (mosaic tile if open, else switch). */
-function openPeerSession(sessionId: string, projectPath?: string | null): void {
-  if (!sessionId) return
-  void (async () => {
-    const target = projectPath?.trim() || useChatStore.getState().activeProject
-    if (!target) return
-    if (useMosaicStore.getState().focusOrReplaceFocused(target, sessionId)) return
-    await useChatStore.getState().switchToSession(target, sessionId)
-  })()
 }
 
 function MetaChip({

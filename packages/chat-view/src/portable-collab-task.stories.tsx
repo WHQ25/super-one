@@ -9,7 +9,7 @@ import { LONG_PRESS_DELAY_MS } from './long-press'
  * to half the viewport with an expand toggle. Copy lives in the same long-press
  * menu as any other user bubble.
  */
-function taskMessage(text: string): ChatMessage {
+function taskMessage(text: string, fromSessionTitle: string | undefined = 'Mobile file preview review'): ChatMessage {
   return {
     id: 'collab-task',
     role: 'user',
@@ -19,7 +19,7 @@ function taskMessage(text: string): ChatMessage {
     content: [{ type: 'text', text }],
     metadata: {
       source: 'collaboration',
-      collaboration: { kind: 'initial_task', direction: 'inbound', fromSessionId: 'parent-1' },
+      collaboration: { kind: 'initial_task', direction: 'inbound', fromSessionId: 'parent-1', fromSessionTitle },
     },
   } as ChatMessage
 }
@@ -91,4 +91,17 @@ export const LongPressMenu: Story = {
 export const Narrow: Story = {
   name: 'Narrow · 320pt column',
   args: { message: taskMessage(LONG_TASK), width: 320 },
+}
+
+export const LongTitle: Story = {
+  name: 'Long title · label truncates instead of wrapping',
+  args: {
+    message: taskMessage(SHORT_TASK, 'Investigate why the Android file preview loses orientation state after the keyboard closes'),
+    width: 320,
+  },
+}
+
+export const Untitled: Story = {
+  name: 'Untitled parent · generic "Agent task" label',
+  args: { message: taskMessage(SHORT_TASK, undefined) },
 }

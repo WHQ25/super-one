@@ -89,6 +89,11 @@ export interface NativeActionPorts {
   saveWidgetTemplate(input: SaveWidgetTemplateRequest): Promise<void>
   codexAsyncQuestionAnswer(messageId: string, itemId: string, answers: string[]): Promise<void>
   codexPlanApproval(messageId: string, status: 'approved' | 'rejected', feedback?: string): Promise<void>
+  /**
+   * Leave for another session the transcript links to (the launch task's
+   * parent). Only the id is known here; the shell resolves its project.
+   */
+  openSession(sessionId: string): Promise<void>
 }
 
 function payloadString(message: NativeRequest, key: string): string {
@@ -204,6 +209,8 @@ export async function resolveNativeRequest(
       await ports.previewMermaid(svg)
     } else if (message.action === 'copyText') {
       await ports.copyText(payloadString(message, 'text'))
+    } else if (message.action === 'openSession') {
+      await ports.openSession(payloadString(message, 'sessionId'))
     } else if (message.action === 'haptic') {
       const style = (message.payload as Record<string, unknown> | undefined)?.style
       // An unknown strength still ticks: feedback is better than a silent gesture.

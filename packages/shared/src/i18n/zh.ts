@@ -2127,6 +2127,7 @@ export const zh: Messages = {
     },
     collaboration: {
       initialTask: '智能体任务',
+      taskFrom: '来自「<title>{{title}}</title>」的任务',
       fromAgent: '来自智能体',
       toAgent: '发给智能体',
       taskNotification: '系统唤醒',

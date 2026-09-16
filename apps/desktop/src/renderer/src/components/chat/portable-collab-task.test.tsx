@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PortableMessage } from '@superone/chat-view/PortableMessage'
 import type { ChatMessage } from '@superone/shared/agent-types'
@@ -11,7 +11,7 @@ import type { ChatMessage } from '@superone/shared/agent-types'
  * to fall through to the generic collaboration path (left-aligned, plain text,
  * never expandable). Both hosts now mount the same presenter.
  */
-function collabTaskMessage(text: string): ChatMessage {
+function collabTaskMessage(text: string, fromSessionTitle?: string): ChatMessage {
   return {
     id: 'task-1',
     role: 'user',
@@ -21,7 +21,7 @@ function collabTaskMessage(text: string): ChatMessage {
     content: [{ type: 'text', text }],
     metadata: {
       source: 'collaboration',
-      collaboration: { kind: 'initial_task', direction: 'inbound', fromSessionId: 'parent-1' },
+      collaboration: { kind: 'initial_task', direction: 'inbound', fromSessionId: 'parent-1', fromSessionTitle },
     },
   } as ChatMessage
 }
@@ -46,14 +46,34 @@ afterEach(() => {
 describe('PortableMessage collaboration initial task', () => {
   it('renders the launch task as right-aligned markdown, not the left collaboration bubble', () => {
     const task = `## Review request\n\n${Array.from({ length: 40 }, (_, i) => `- step ${i}`).join('\n')}`
-    const { container } = renderTask(collabTaskMessage(task))
+    const { container } = renderTask(collabTaskMessage(task, 'Mobile file preview'))
 
-    expect(screen.getByText('Agent task')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Mobile file preview' }).parentElement).toHaveTextContent('Task from Mobile file preview')
     expect(screen.getByText('Review request').tagName).toBe('H2')
     expect(container.querySelector('.justify-end')).not.toBeNull()
     expect(container.querySelector('.justify-start')).toBeNull()
     // The generic collaboration chrome (primary border) must not wrap it.
     expect(container.querySelector('.border-primary\\/25')).toBeNull()
+  })
+
+  it('asks the shell to open the launching session when its title is tapped', () => {
+    const browser = globalThis as unknown as Window & { ReactNativeWebView?: { postMessage(message: string): void } }
+    const posted: Array<{ action: string; payload?: unknown }> = []
+    browser.ReactNativeWebView = { postMessage: (raw) => posted.push(JSON.parse(raw)) }
+    try {
+      renderTask(collabTaskMessage('Do the thing', 'Mobile file preview'))
+      fireEvent.click(screen.getByRole('button', { name: 'Mobile file preview' }))
+    } finally {
+      delete browser.ReactNativeWebView
+    }
+
+    expect(posted).toEqual([expect.objectContaining({ action: 'openSession', payload: { sessionId: 'parent-1' } })])
+  })
+
+  it('falls back to the generic label when the launching session had no title', () => {
+    renderTask(collabTaskMessage('Do the thing'))
+
+    expect(screen.getByText('Agent task')).toBeInTheDocument()
   })
 
   it('clamps a task taller than half the viewport until expanded', () => {

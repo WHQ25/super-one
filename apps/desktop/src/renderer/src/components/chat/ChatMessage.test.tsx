@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatMessage as ChatMessageType } from '@superone/shared/agent-types'
 import { ChatMessage, findLastAssistantMessageId, isRedundantTurnSummaryMarker } from './ChatMessage'
@@ -16,6 +16,9 @@ vi.mock('./CodexTurnView', () => ({
 vi.mock('./ForkButton', () => ({
   ForkButton: () => <button type="button" aria-label="fork" />,
 }))
+
+const { openPeerSession } = vi.hoisted(() => ({ openPeerSession: vi.fn() }))
+vi.mock('@/lib/open-peer-session', () => ({ openPeerSession }))
 
 function createCodexMessage(overrides: Partial<ChatMessageType> = {}): ChatMessageType {
   return {
@@ -360,7 +363,7 @@ function createUserMessage(text: string, id = 'msg-user-1'): ChatMessageType {
   }
 }
 
-function createCollabTaskMessage(text: string): ChatMessageType {
+function createCollabTaskMessage(text: string, fromSessionTitle?: string): ChatMessageType {
   return {
     id: 'msg-collab-1',
     role: 'user',
@@ -370,7 +373,13 @@ function createCollabTaskMessage(text: string): ChatMessageType {
     providerId: 'claude',
     metadata: {
       source: 'collaboration',
-      collaboration: { kind: 'initial_task', direction: 'inbound', fromSessionId: 'parent-1' },
+      collaboration: {
+        kind: 'initial_task',
+        direction: 'inbound',
+        fromSessionId: 'parent-1',
+        fromSessionTitle,
+        ...(fromSessionTitle ? { fromProjectPath: '/parent-repo' } : {}),
+      },
     },
   }
 }
@@ -476,14 +485,26 @@ describe('ChatMessage collaboration initial task', () => {
   it('renders the launch task as right-aligned markdown instead of a paste chip', () => {
     const task = `## Review request\n\n${Array.from({ length: 40 }, (_, i) => `- step ${i}`).join('\n')}`
     const { container } = render(
-      <ChatMessage message={createCollabTaskMessage(task)} sessionStatus="idle" isLastAssistant={false} />,
+      <ChatMessage message={createCollabTaskMessage(task, 'Mobile file preview')} sessionStatus="idle" isLastAssistant={false} />,
     )
 
-    expect(screen.getByText('Agent task')).toBeInTheDocument()
+    const title = screen.getByRole('button', { name: 'Mobile file preview' })
+    expect(title.parentElement).toHaveTextContent('Task from Mobile file preview')
+    // The title opens the parent in its own project, not the child's.
+    fireEvent.click(title)
+    expect(openPeerSession).toHaveBeenCalledWith('parent-1', '/parent-repo')
     // Markdown, not the `35 lines` LongTextChip the plain-text path would produce.
     expect(container.querySelector('.chat-md')).not.toBeNull()
     expect(screen.getByText('Review request').tagName).toBe('H2')
     expect(container.querySelector('.justify-end')).not.toBeNull()
+  })
+
+  it('keeps the generic label for tasks recorded before the parent title was captured', () => {
+    render(
+      <ChatMessage message={createCollabTaskMessage('Do the thing')} sessionStatus="idle" isLastAssistant={false} />,
+    )
+
+    expect(screen.getByText('Agent task')).toBeInTheDocument()
   })
 
   it('clamps a task taller than half the viewport until the expand toggle is clicked', () => {

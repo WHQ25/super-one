@@ -36,6 +36,15 @@ export async function searchSessions(
   return crossProjectSessions(client, { type: 'search_sessions', requestId: randomId(), query, limit })
 }
 
+/** One session by id from any project; null when the host has no such row. */
+export async function findSession(client: RelayClient, sessionId: string): Promise<SessionListRow | null> {
+  const result = await client.request({ type: 'find_session', requestId: randomId(), sessionId } as RemoteCommand) as {
+    session?: SessionListRow | null; error?: string
+  }
+  if (result.error) throw new Error(result.error)
+  return result.session ?? null
+}
+
 async function crossProjectSessions(client: RelayClient, command: unknown): Promise<SessionListRow[]> {
   const result = await client.request(command as RemoteCommand) as {
     sessions?: SessionListRow[]; error?: string

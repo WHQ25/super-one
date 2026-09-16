@@ -19,10 +19,19 @@ function ports(): NativeActionPorts {
     saveWidgetTemplate: vi.fn(),
     codexPlanApproval: vi.fn(),
     codexAsyncQuestionAnswer: vi.fn(),
+    openSession: vi.fn(),
   }
 }
 
 describe('native chat actions', () => {
+  it('opens the session a transcript link names', async () => {
+    const target = ports()
+    await expect(resolveNativeRequest({
+      type: 'requestNative', requestId: 'open', action: 'openSession', payload: { sessionId: 'parent-1' },
+    }, target)).resolves.toMatchObject({ result: { ok: true } })
+    expect(target.openSession).toHaveBeenCalledWith('parent-1')
+  })
+
   it('plays the requested haptic impact', async () => {
     const target = ports()
     await expect(resolveNativeRequest({

@@ -495,6 +495,13 @@ export interface CollaborationMessageMeta {
   /** initial_task = parent-approved launch task; mailbox = session_send content shown in UI. */
   kind: 'initial_task' | 'mailbox'
   fromSessionId?: string
+  /**
+   * Parent title captured when the launch task was delivered. Stored with the
+   * message so the phone can label the bubble without a session lookup.
+   */
+  fromSessionTitle?: string
+  /** Project the launching session lives in, so the title can open it across projects. */
+  fromProjectPath?: string
   /** inbound = received from peer; outbound = this session sent it. */
   direction?: 'inbound' | 'outbound'
   messageId?: string
@@ -4645,6 +4652,8 @@ export type RemoteCommand =
   | { type: 'pin_session'; requestId: string; projectPath: string; sessionId: string; pinned: boolean }
   | { type: 'list_pinned_sessions'; requestId: string }
   | { type: 'search_sessions'; requestId: string; query: string; limit?: number }
+  /** One session by id, whichever project it lives in — a link into another session's transcript. */
+  | { type: 'find_session'; requestId: string; sessionId: string }
   | { type: 'delete_session'; requestId: string; projectPath: string; sessionId: string }
   /**
    * Branch a session's conversation into a new one — the desktop's fork entries

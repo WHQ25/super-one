@@ -1,4 +1,5 @@
 import type { HTMLAttributes, ReactNode } from 'react'
+import { requestNative } from './bridge'
 import { CollabTaskBubblePresenter } from './presenters/CollabTaskBubble'
 import { PortableMarkdown } from './PortableMarkdown'
 
@@ -9,17 +10,27 @@ import { PortableMarkdown } from './PortableMarkdown'
  */
 export function PortableCollabTaskBubble({
   text,
+  fromTitle,
+  fromSessionId,
   scheme,
   bubbleProps,
   menu,
 }: {
   text: string
+  fromTitle?: string
+  /** Launching session; the shell resolves its project and opens it. */
+  fromSessionId?: string
   scheme: 'light' | 'dark'
   bubbleProps?: HTMLAttributes<HTMLDivElement>
   menu?: ReactNode
 }) {
   return (
-    <CollabTaskBubblePresenter bubbleProps={bubbleProps} menu={menu}>
+    <CollabTaskBubblePresenter
+      fromTitle={fromTitle}
+      onOpenFrom={fromSessionId ? () => requestNative('openSession', { sessionId: fromSessionId }) : undefined}
+      bubbleProps={bubbleProps}
+      menu={menu}
+    >
       <PortableMarkdown text={text} isStreaming={false} scheme={scheme} />
     </CollabTaskBubblePresenter>
   )

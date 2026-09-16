@@ -512,6 +512,15 @@ function mapCrossProjectSession(r: CrossProjectSessionRow): PinnedSessionEntry {
   }
 }
 
+/** One session by id with the project it lives in; null when unknown or hidden. */
+export function findSessionAcrossProjects(sessionId: string): PinnedSessionEntry | null {
+  const row = getDb().prepare(`
+    ${CROSS_PROJECT_SESSION_SELECT}
+    WHERE s.id = ? AND COALESCE(s.is_hidden, 0) = 0
+  `).get(sessionId) as CrossProjectSessionRow | undefined
+  return row ? mapCrossProjectSession(row) : null
+}
+
 /** List all pinned sessions across all projects. */
 export function listPinnedSessions(): PinnedSessionEntry[] {
   const rows = getDb().prepare(`

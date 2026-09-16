@@ -19,17 +19,12 @@
 
 import type { AgentEvent } from '@superone/shared/agent-types'
 import type { NotificationIntent, NotificationKind } from '@superone/shared/notifications'
-import { permissionPendingReason } from '@superone/shared/pending-interaction'
 
 export interface IntentContext {
   /** Localizer — main-process `t()` in production. */
   t(key: string, options?: Record<string, unknown>): string
-  /**
-   * Session title / project for the notification body. Missing session →
-   * undefined. `lastAssistantText` is the body of a `completed` banner — the
-   * agent's closing words are the best one-line summary of what it did.
-   */
-  describeSession(sessionId: string): { title?: string | null; projectPath?: string; lastAssistantText?: string | null } | undefined
+  /** Session title / project for the notification title. Missing session → undefined. */
+  describeSession(sessionId: string): { title?: string | null; projectPath?: string } | undefined
   now(): number
   /** True only for the `status_change: idle` that closes a clean run — see `RunTracker`. */
   runCompleted?: boolean
@@ -78,18 +73,10 @@ export class RunTracker {
   }
 }
 
-/** Longest body we hand a channel; OS notifications truncate anyway, but not always gracefully. */
-const MAX_BODY = 180
-
-function clamp(text: string): string {
-  const flat = text.replace(/\s+/g, ' ').trim()
-  return flat.length > MAX_BODY ? `${flat.slice(0, MAX_BODY - 1)}…` : flat
-}
-
 /**
- * Session label for the notification title. Falls back to the project's
- * basename, then to a generic string — a brand-new session often has no title
- * yet, and that is exactly when a permission gate tends to fire.
+ * Notification title. Falls back to the project's basename, then to a generic
+ * string — a brand-new session often has no title yet, and that is exactly
+ * when a permission gate tends to fire.
  */
 function sessionLabel(ctx: IntentContext, sessionId: string): { label: string; projectPath?: string } {
   const info = ctx.describeSession(sessionId)
@@ -100,23 +87,25 @@ function sessionLabel(ctx: IntentContext, sessionId: string): { label: string; p
   return { label: base || ctx.t('notifications.untitledSession'), projectPath }
 }
 
-function build(
-  ctx: IntentContext,
-  kind: NotificationKind,
-  id: string,
-  sessionId: string,
-  body: string,
-): NotificationIntent {
+/** Body per kind — a fixed status, never content from the request itself. */
+const BODY_KEY: Record<NotificationKind, string> = {
+  permission: 'notifications.waitingApproval',
+  confirm: 'notifications.waitingApproval',
+  plan: 'notifications.waitingApproval',
+  question: 'notifications.waitingInput',
+  completed: 'notifications.completed',
+}
+
+/**
+ * Two lines, nothing else: the session as title, a fixed status as body. An
+ * OS banner is a glance surface; what the agent is asking (the tool, the
+ * question, the plan) belongs in the app the click lands on, and only bloats
+ * the banner.
+ */
+function build(ctx: IntentContext, kind: NotificationKind, id: string, sessionId: string): NotificationIntent {
   const { label, projectPath } = sessionLabel(ctx, sessionId)
-  return {
-    id,
-    kind,
-    sessionId,
-    projectPath,
-    title: ctx.t(`notifications.kind.${kind}.title`, { session: label }),
-    body: clamp(body),
-    createdAt: ctx.now(),
-  }
+  const body = ctx.t(BODY_KEY[kind])
+  return { id, kind, sessionId, projectPath, title: label, body, createdAt: ctx.now() }
 }
 
 /**
@@ -141,23 +130,15 @@ export function intentForEvent(event: AgentEvent, ctx: IntentContext): Notificat
   switch (event.type) {
     case 'permission_request': {
       const req = event.request
-      // Same sentence the sidebar row shows, so the banner and the chip agree.
-      const body = permissionPendingReason(req, ctx.t)
-      return build(ctx, req.requestKind ? 'confirm' : 'permission', req.requestId, sessionId, body)
+      return build(ctx, req.requestKind ? 'confirm' : 'permission', req.requestId, sessionId)
     }
-    case 'ask_user_question': {
-      const req = event.request
-      const body = req.questions[0]?.question?.trim() || ctx.t('sidebar.pending.waitingInput')
-      return build(ctx, 'question', req.requestId, sessionId, body)
-    }
+    case 'ask_user_question':
+      return build(ctx, 'question', event.request.requestId, sessionId)
     case 'plan_approval':
-      return build(ctx, 'plan', event.request.requestId, sessionId, ctx.t('sidebar.pending.reviewPlan'))
-    case 'status_change': {
+      return build(ctx, 'plan', event.request.requestId, sessionId)
+    case 'status_change':
       if (!ctx.runCompleted) return null
-      const body = ctx.describeSession(sessionId)?.lastAssistantText?.trim()
-        || ctx.t('notifications.kind.completed.body')
-      return build(ctx, 'completed', completedIntentId(sessionId), sessionId, body)
-    }
+      return build(ctx, 'completed', completedIntentId(sessionId), sessionId)
     default:
       return null
   }

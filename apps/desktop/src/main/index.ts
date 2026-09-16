@@ -86,7 +86,6 @@ import { watchSessionDeletes, watchSessionList } from './session-list-watch'
 import { localDraftStore } from './db-drafts'
 import { withoutDraftAttachmentBytes } from '@superone/shared/environment/draft-content'
 import { installDraftOpenFlush } from './remote/draft-open-flush'
-import { lastAssistantText } from '@superone/shared/session-activity'
 import { NotificationService } from './notifications/notification-service'
 import { DesktopNotificationChannel } from './notifications/desktop-notification-channel'
 import { PresenceCoordinator } from './remote/presence-coordinator'
@@ -707,11 +706,7 @@ const notificationService = new NotificationService({
   describeSession: (sessionId) => {
     const session = sessionManager.getSession(sessionId)
     if (!session) return undefined
-    return {
-      title: session.snapshot.title,
-      projectPath: session.projectPath,
-      lastAssistantText: lastAssistantText(session.snapshot.messages),
-    }
+    return { title: session.snapshot.title, projectPath: session.projectPath }
   },
   t: (key, options) => t(key, options),
 })

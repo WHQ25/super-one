@@ -563,6 +563,8 @@ export type Messages = {
   notifications: {
     prime: { title: string; body: string }
     untitledSession: string
+    waitingApproval: string
+    waitingInput: string
     completed: string
   }
   settings: {
@@ -572,9 +574,9 @@ export type Messages = {
         appearance: string
         browser: string
         computerUse: string
+        terminal: string
         apps: string
         remote: string
-        terminal: string
         usage: string
         mediaGen: string
         providers: string
@@ -936,8 +938,6 @@ export type Messages = {
         mock: { label: string; description: string }
       }
     }
-    computerUse: {
-      title: string
     terminal: {
       title: string
       subtitle: string
@@ -951,6 +951,8 @@ export type Messages = {
         remoteBadge: string
       }
     }
+    computerUse: {
+      title: string
       subtitle: string
       enable: {
         label: string
@@ -4298,6 +4300,8 @@ export const en: Messages = {
       body: "SuperOne will let you know when an agent needs you and you're looking elsewhere.",
     },
     untitledSession: 'Untitled session',
+    waitingApproval: 'Waiting for approval',
+    waitingInput: 'Waiting for your input',
     completed: 'Finished',
   },
   settings: {
@@ -4307,11 +4311,11 @@ export const en: Messages = {
         appearance: 'Appearance',
         browser: 'Browser',
         computerUse: 'Computer Use',
+        terminal: 'Terminal',
         apps: 'Mini Apps',
         remote: 'Remote Control',
         usage: 'Usage Stats',
         mediaGen: 'Image Gen',
-        terminal: 'Terminal',
         providers: 'AI Provider',
         harnesses: 'Harnesses',
         agents: 'Subagents',
@@ -4720,10 +4724,6 @@ export const en: Messages = {
         },
       },
     },
-    computerUse: {
-      title: 'Computer Use',
-      subtitle: 'Let the agent observe and control native desktop apps (fallback when browser/Bash tools are not enough)',
-      enable: {
     terminal: {
       title: 'Terminal',
       subtitle: 'Manage what the agent may run in terminal tabs',
@@ -4737,6 +4737,10 @@ export const en: Messages = {
         remoteBadge: 'Remote',
       },
     },
+    computerUse: {
+      title: 'Computer Use',
+      subtitle: 'Let the agent observe and control native desktop apps (fallback when browser/Bash tools are not enough)',
+      enable: {
         label: 'Enable Computer Use',
         description: 'Expose computer_* tools to the agent. Off by default. Requires the SuperOne Computer Use helper app and macOS Accessibility + Screen Recording permissions.',
       },

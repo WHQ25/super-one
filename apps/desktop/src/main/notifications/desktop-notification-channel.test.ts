@@ -93,13 +93,29 @@ describe('DesktopNotificationChannel', () => {
     expect(FakeNotification.instances[0].options.id).toBe('req-42')
   })
 
-  it('passes an icon when the host supplies one, and omits it otherwise', () => {
+  describe('icon', () => {
+    const platform = process.platform
     const icon = { fake: 'icon' } as never
-    new DesktopNotificationChannel({ onActivate: vi.fn(), getIcon: () => icon }).deliver(intent())
-    expect(FakeNotification.instances[0].options.icon).toBe(icon)
+    afterEach(() => {
+      Object.defineProperty(process, 'platform', { value: platform, configurable: true })
+    })
 
-    new DesktopNotificationChannel({ onActivate: vi.fn(), getIcon: () => null }).deliver(intent())
-    expect('icon' in FakeNotification.instances[1].options).toBe(false)
+    it('passes the host icon on Linux/Windows, and omits it when the host has none', () => {
+      Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
+      new DesktopNotificationChannel({ onActivate: vi.fn(), getIcon: () => icon }).deliver(intent())
+      expect(FakeNotification.instances[0].options.icon).toBe(icon)
+
+      new DesktopNotificationChannel({ onActivate: vi.fn(), getIcon: () => null }).deliver(intent())
+      expect('icon' in FakeNotification.instances[1].options).toBe(false)
+    })
+
+    it('never passes an icon on macOS — it would render as a duplicate trailing attachment', () => {
+      Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
+      const getIcon = vi.fn(() => icon)
+      new DesktopNotificationChannel({ onActivate: vi.fn(), getIcon }).deliver(intent())
+      expect('icon' in FakeNotification.instances[0].options).toBe(false)
+      expect(getIcon).not.toHaveBeenCalled()
+    })
   })
 
   it('logs posting and delivery separately so a swallowed notification is visible', () => {

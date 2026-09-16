@@ -604,6 +604,8 @@ export const zh: Messages = {
       body: '当智能体需要你、而你正在别处时，SuperOne 会提醒你。',
     },
     untitledSession: '未命名会话',
+    waitingApproval: '等待审批',
+    waitingInput: '请求输入',
     completed: '已完成',
   },
   settings: {
@@ -613,9 +615,9 @@ export const zh: Messages = {
         appearance: '外观',
         browser: '浏览器',
         computerUse: '使用电脑',
+        terminal: '终端',
         apps: '小程序',
         remote: '远程控制',
-        terminal: '终端',
         usage: '用量统计',
         mediaGen: '生图',
         providers: 'AI 服务商',
@@ -1014,8 +1016,6 @@ export const zh: Messages = {
         },
       },
     },
-    computerUse: {
-      title: '使用电脑',
     terminal: {
       title: '终端',
       subtitle: '管理智能体在终端标签页中可以运行的命令',
@@ -1029,6 +1029,8 @@ export const zh: Messages = {
         remoteBadge: '远程',
       },
     },
+    computerUse: {
+      title: '使用电脑',
       subtitle: '让智能体观察并操控原生桌面应用（浏览器 / Bash 等工具覆盖不到时的兜底层）',
       enable: {
         label: '启用「使用电脑」',

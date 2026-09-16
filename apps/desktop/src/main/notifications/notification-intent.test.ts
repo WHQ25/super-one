@@ -20,10 +20,9 @@ describe('intentForEvent', () => {
     }
     const intent = intentForEvent(event, ctx())
     expect(intent).toMatchObject({ id: 'req-1', kind: 'permission', sessionId: 'sid', projectPath: '/repo/app' })
-    expect(intent!.title).toContain('notifications.kind.permission.title')
-    expect(intent!.title).toContain('Fix login')
-    // Body comes from the shared pending-reason helper, same as the sidebar.
-    expect(intent!.body).toContain('sidebar.pending.allowTool')
+    // Two lines only: session as title, a fixed status as body.
+    expect(intent!.title).toBe('Fix login')
+    expect(intent!.body).toBe('notifications.waitingApproval')
   })
 
   it('routes a permission_request carrying requestKind to confirm, not permission', () => {
@@ -42,10 +41,11 @@ describe('intentForEvent', () => {
     }
     const intent = intentForEvent(event, ctx())
     expect(intent!.kind).toBe('confirm')
-    expect(intent!.body).toBe('Which environment?')
+    // Server-authored elicitation text stays in the app; the banner is a fixed status.
+    expect(intent!.body).toBe('notifications.waitingApproval')
   })
 
-  it('sends session_collab_request through the confirm kind with the sidebar’s own copy', () => {
+  it('sends session_collab_request through the confirm kind', () => {
     const event: AgentEvent = {
       type: 'permission_request',
       sessionId: 'sid',
@@ -62,9 +62,7 @@ describe('intentForEvent', () => {
     } as AgentEvent
     const intent = intentForEvent(event, ctx())
     expect(intent!.kind).toBe('confirm')
-    // Same key the sidebar row renders — the two surfaces must not drift.
-    expect(intent!.body).toContain('sidebar.pending.collabOneWithRole')
-    expect(intent!.body).toContain('DiffBot')
+    expect(intent!.body).toBe('notifications.waitingApproval')
   })
 
   it('keeps host confirms that set no requestKind in the permission bucket', () => {
@@ -80,23 +78,6 @@ describe('intentForEvent', () => {
       },
     }
     expect(intentForEvent(event, ctx())!.kind).toBe('permission')
-  })
-
-  it('uses the first question text as the body', () => {
-    const event: AgentEvent = {
-      type: 'ask_user_question',
-      sessionId: 'sid',
-      request: {
-        requestId: 'q-1',
-        questions: [
-          { question: 'Which database?', header: 'DB', options: [], multiSelect: false },
-          { question: 'Ignored', header: 'X', options: [], multiSelect: false },
-        ],
-      },
-    }
-    const intent = intentForEvent(event, ctx())
-    expect(intent!.kind).toBe('question')
-    expect(intent!.body).toBe('Which database?')
   })
 
   it('maps plan_approval', () => {
@@ -115,7 +96,7 @@ describe('intentForEvent', () => {
       request: { requestId: 'req-1', toolName: 'Bash', input: {}, allowAlwaysAllow: true },
     }
     const intent = intentForEvent(event, ctx({ describeSession: () => ({ title: null, projectPath: '/repo/app' }) }))
-    expect(intent!.title).toContain('app')
+    expect(intent!.title).toBe('app')
   })
 
   it('ignores events with no sessionId — there would be nothing to focus', () => {
@@ -136,36 +117,30 @@ describe('intentForEvent', () => {
     expect(intentForEvent({ type: 'status_change', status: 'idle', sessionId: 'sid' }, ctx({ runCompleted: false }))).toBeNull()
   })
 
-  it('maps a completed run to the completed kind with the agent’s closing words as body', () => {
+  it('maps a completed run to the completed kind with a status line, not the agent’s prose', () => {
     const intent = intentForEvent(
       { type: 'status_change', status: 'idle', sessionId: 'sid' },
-      ctx({ runCompleted: true, describeSession: () => ({ title: 'Fix login', projectPath: '/repo/app', lastAssistantText: 'Done — 3 files changed.' }) }),
+      ctx({ runCompleted: true }),
     )
-    expect(intent).toMatchObject({ id: 'completed:sid', kind: 'completed', sessionId: 'sid', body: 'Done — 3 files changed.' })
-    expect(intent!.title).toContain('notifications.kind.completed.title')
+    expect(intent).toMatchObject({ id: 'completed:sid', kind: 'completed', sessionId: 'sid', title: 'Fix login', body: 'notifications.completed' })
   })
 
-  it('falls back to generic completed copy when the last turn had no prose', () => {
-    const intent = intentForEvent(
-      { type: 'status_change', status: 'idle', sessionId: 'sid' },
-      ctx({ runCompleted: true, describeSession: () => ({ title: 'T', lastAssistantText: null }) }),
-    )
-    expect(intent!.body).toBe('notifications.kind.completed.body')
-  })
-
-  it('collapses whitespace and truncates a long body', () => {
-    const event: AgentEvent = {
+  it('keeps interaction banners to a fixed status line — the question itself lives in the app', () => {
+    const question: AgentEvent = {
       type: 'ask_user_question',
       sessionId: 'sid',
       request: {
         requestId: 'q-1',
-        questions: [{ question: `a\n\n${'x'.repeat(400)}`, header: 'H', options: [], multiSelect: false }],
+        questions: [{ question: 'x'.repeat(400), header: 'H', options: [], multiSelect: false }],
       },
     }
-    const body = intentForEvent(event, ctx())!.body
-    expect(body.length).toBeLessThanOrEqual(180)
-    expect(body.endsWith('…')).toBe(true)
-    expect(body).not.toContain('\n')
+    const plan: AgentEvent = {
+      type: 'plan_approval',
+      sessionId: 'sid',
+      request: { requestId: 'p-1', planContent: '...', planFilePath: '/tmp/p.md', allowedPrompts: [] },
+    }
+    expect(intentForEvent(question, ctx())!.body).toBe('notifications.waitingInput')
+    expect(intentForEvent(plan, ctx())!.body).toBe('notifications.waitingApproval')
   })
 })
 

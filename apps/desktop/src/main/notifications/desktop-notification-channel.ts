@@ -15,9 +15,10 @@ export interface DesktopNotificationChannelDeps {
   /** Focus the app and route to the session the user just acted on. */
   onActivate(intent: NotificationIntent): void
   /**
-   * App icon for the banner. macOS derives it from the bundle and ignores this;
-   * Linux (libnotify) and Windows both want it explicitly or fall back to a
-   * generic placeholder.
+   * App icon for the banner on Linux (libnotify) and Windows, which want it
+   * explicitly or fall back to a generic placeholder. Not consulted on macOS:
+   * the app icon there comes from the bundle, and Electron turns `icon` into a
+   * UNNotificationAttachment — a second, trailing thumbnail of the same icon.
    */
   getIcon?(): NativeImage | null
 }
@@ -59,7 +60,7 @@ export class DesktopNotificationChannel implements NotificationChannel {
   }
 
   deliver(intent: NotificationIntent): void {
-    const icon = this.deps.getIcon?.() ?? undefined
+    const icon = process.platform === 'darwin' ? undefined : this.deps.getIcon?.() ?? undefined
     const notification = new Notification({
       title: intent.title,
       body: intent.body,

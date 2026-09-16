@@ -28,7 +28,7 @@ export function mobileHeaderTitle(
 ): string {
   // A session title is host data and stays verbatim; the new-session placeholder
   // is our own copy, so it follows the dictionary's casing and locale.
-  if (route === 'chat') return sessionTitle === 'New session' ? translate(sessionTitle) : sessionTitle || translate('Chat')
+  if (route === 'chat') return sessionTitle === 'New session' ? translate(sessionTitle) : sessionTitle
   if (route === 'terminal') return terminalTitle
   if (route === 'worktree') return translate('Worktree')
   if (route === 'branch') return translate('Branch')

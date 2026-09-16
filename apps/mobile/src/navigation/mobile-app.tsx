@@ -160,7 +160,9 @@ export function MobileApp() {
   const [sessions, setSessions] = useState<SessionRow[]>([])
   const [project, setProject] = useState<Project | null>(null)
   const [sessionId, setSessionId] = useState<string | null>(null)
-  const [activeSessionTitle, setActiveSessionTitle] = useState('')
+  // Chat with no session is the new-session landing, so that is the title
+  // whenever nothing is open — not only after the New Session button.
+  const [activeSessionTitle, setActiveSessionTitle] = useState('New session')
   const harnessSelection = useHarnessSelection()
   const {
     selectedProvider,
@@ -1141,7 +1143,7 @@ export function MobileApp() {
     runtimeRef.current = null
     termRuntimeRef.current = null
     setSessionId(null)
-    setActiveSessionTitle('')
+    setActiveSessionTitle('New session')
     setSessionLoading(false)
     setHasTranscript(false)
     resetSessionChrome()

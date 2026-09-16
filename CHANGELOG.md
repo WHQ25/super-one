@@ -21,23 +21,33 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Chat attachments are admitted inline with size and type limits.
   A rejected file stays in the draft so it can be resized or
   removed.
-- Desktop notifies when a run finishes, with the agent's closing
-  text.
+- Desktop notifies when an agent needs you or a run finishes:
+  the session as title and a short status as body.
 - Settings puts ChatGPT accounts on the provider cards, with
   per-account usage.
 - Sessions can be found later by issue/PR reference tags.
 - Scheduled sends show a clock on desktop and mobile session lists.
 - Mobile: usage on the composer ring; permission, question and
   plan sheets put away on an outside tap instead of dismissing.
+- Agents can run interactive commands in SuperOne terminal tabs
+  (approve once or always in this project). Agent tabs appear in
+  the dock; chat shows the screen the agent saw. Settings lists
+  and revokes always-allow rules.
+- Maximizing an activity tab folds the sidebar and collapses
+  floating chat.
+- The files previewer is named in the always-on rendering rules.
 
 ### Fixed
 
 - A Claude refusal fallback no longer wipes the rest of the turn.
 - Worktree status updates to the attached branch at turn end;
-  long branch names wrap and show the diff stat.
+  long branch names wrap and show the diff stat; rows keep a
+  uniform height.
 - Deleting a session waits for runtime shutdown.
 - Mobile: permission sheets close after a sent decision; missed
   transcript updates retry.
+- Git failures that are not "not a repo" (Xcode license, missing
+  binary) show a warning chip instead of an Init Git button.
 
 ### Changed
 
@@ -48,6 +58,41 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 - Mobile reconnects reuse workspace caches; host payloads are
   compressed. Upgrade desktop and phone together.
+
+## [0.67.0-alpha.1] - 2026-09-16
+
+### Added
+
+- Agents can drive interactive commands in SuperOne terminal tabs
+  (`terminal_tabs` / `snapshot` / `act` / `wait_for`). Each command
+  is Allow Once or Always Allow in this project; control ends when
+  the command leaves the foreground. Agent-opened tabs appear in
+  the activity dock. Chat renders the screen the agent saw, and
+  Settings → Terminal lists and revokes the always-allow rules.
+- Maximizing an activity tab folds the sidebar and collapses
+  floating chat.
+- The always-on rendering rules name `@native/files-previewer`, so
+  agents use the files card instead of stacking embeds.
+
+### Fixed
+
+- OS banners are two lines: the session title and a fixed status
+  (waiting / finished). macOS no longer draws a duplicate app icon.
+- The empty-session landing no longer flashes when autosave stamps
+  a draft id.
+- Worktree rows in the workdir indicator keep a uniform two-line
+  height.
+- Claude is told the `mcp__superone__` names of deferred SuperOne
+  tools, so ToolSearch can load them.
+- The git status bar treats "git unavailable" (Xcode license,
+  missing binary) as a warning chip, not an Init Git button.
+- Terminal command-rule IPC registers at startup, not inside the
+  kill handler.
+
+### Tests
+
+- Deepseek: the cancel-interrupt test waits for the stream to
+  start instead of a fixed sleep.
 
 ## [0.67.0-alpha] - 2026-09-15
 

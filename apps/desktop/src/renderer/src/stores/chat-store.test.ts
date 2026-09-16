@@ -5246,6 +5246,20 @@ describe('cyclePermissionMode', () => {
     await useChatStore.getState().cyclePermissionMode()
     expect(getActiveDraftSession('/test')!.permissionMode).toBe('default')
   })
+
+  it('cycles ACP modes Ask → Plan → Auto → Always Approve → Ask', async () => {
+    setupProject('/test')
+    patchDraftSession('/test', { sessionProvider: 'acp', permissionMode: 'default' })
+
+    await useChatStore.getState().cyclePermissionMode()
+    expect(getActiveDraftSession('/test')!.permissionMode).toBe('plan')
+    await useChatStore.getState().cyclePermissionMode()
+    expect(getActiveDraftSession('/test')!.permissionMode).toBe('auto')
+    await useChatStore.getState().cyclePermissionMode()
+    expect(getActiveDraftSession('/test')!.permissionMode).toBe('bypassPermissions')
+    await useChatStore.getState().cyclePermissionMode()
+    expect(getActiveDraftSession('/test')!.permissionMode).toBe('default')
+  })
 })
 
 describe('setSelectedModel permission mode preservation', () => {

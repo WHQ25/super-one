@@ -207,4 +207,107 @@ describe('ACP production turn runner AgentEvents', () => {
     expect(result).toEqual({ outcome: 'accept' })
     await turn
   })
+
+  it('advertises askUserQuestion and exitPlanMode on initialize', async () => {
+    mocks.active.nextUpdate.mockResolvedValue({ kind: 'stop', stopReason: 'end_turn' })
+    const runner = createAcpAgentTurnRunner({
+      launch: { command: '/fake/acp' },
+      resolveProjectPath: () => '/tmp',
+    })
+    await runner({
+      session: session(),
+      messageId: 'message-init-meta',
+      text: 'go',
+      onAgentEvent: () => {},
+      onDelta: () => {},
+      signal: new AbortController().signal,
+    })
+    expect(mocks.connection.agent.request).toHaveBeenCalledWith(
+      'initialize',
+      expect.objectContaining({
+        _meta: {
+          askUserQuestion: true,
+          exitPlanMode: true,
+          clientIdentifier: 'superone',
+        },
+      }),
+    )
+  })
+
+  it('cancels ask_user_question immediately when the runner has no question UI', async () => {
+    mocks.active.nextUpdate.mockResolvedValue({ kind: 'stop', stopReason: 'end_turn' })
+    const runner = createAcpAgentTurnRunner({
+      launch: { command: '/fake/acp' },
+      resolveProjectPath: () => '/tmp',
+    })
+    const turn = runner({
+      session: session(),
+      messageId: 'message-ask',
+      text: 'go',
+      onAgentEvent: () => {},
+      onDelta: () => {},
+      signal: new AbortController().signal,
+    })
+    await vi.waitFor(() => expect(mocks.requestHandlers.has('x.ai/ask_user_question')).toBe(true))
+    const ask = mocks.requestHandlers.get('x.ai/ask_user_question')!
+    const result = await ask.handle({
+      params: ask.parse({ questions: [{ question: 'Pick one?' }] }),
+    })
+    expect(result).toEqual({ outcome: 'cancelled' })
+    const alias = mocks.requestHandlers.get('_x.ai/ask_user_question')!
+    expect(await alias.handle({ params: alias.parse({}) })).toEqual({ outcome: 'cancelled' })
+    await turn
+  })
+
+  it('cancels exit_plan_mode immediately when the runner has no plan UI', async () => {
+    mocks.active.nextUpdate.mockResolvedValue({ kind: 'stop', stopReason: 'end_turn' })
+    const runner = createAcpAgentTurnRunner({
+      launch: { command: '/fake/acp' },
+      resolveProjectPath: () => '/tmp',
+    })
+    const turn = runner({
+      session: session(),
+      messageId: 'message-plan',
+      text: 'go',
+      onAgentEvent: () => {},
+      onDelta: () => {},
+      signal: new AbortController().signal,
+    })
+    await vi.waitFor(() => expect(mocks.requestHandlers.has('x.ai/exit_plan_mode')).toBe(true))
+    const exitPlan = mocks.requestHandlers.get('x.ai/exit_plan_mode')!
+    expect(await exitPlan.handle({ params: exitPlan.parse({ planContent: '# Plan' }) }))
+      .toEqual({ outcome: 'cancelled' })
+    const alias = mocks.requestHandlers.get('_x.ai/exit_plan_mode')!
+    expect(await alias.handle({ params: alias.parse({}) })).toEqual({ outcome: 'cancelled' })
+    await turn
+  })
+
+  it('parks ask_user_question on onQuestion when a UI waiter exists', async () => {
+    mocks.active.nextUpdate.mockResolvedValue({ kind: 'stop', stopReason: 'end_turn' })
+    const onQuestion = vi.fn(async () => ({ 'Pick one?': ['A'] }))
+    const runner = createAcpAgentTurnRunner({
+      launch: { command: '/fake/acp' },
+      resolveProjectPath: () => '/tmp',
+    })
+    const turn = runner({
+      session: session(),
+      messageId: 'message-ask-ui',
+      text: 'go',
+      onAgentEvent: () => {},
+      onDelta: () => {},
+      onQuestion,
+      signal: new AbortController().signal,
+    })
+    await vi.waitFor(() => expect(mocks.requestHandlers.has('x.ai/ask_user_question')).toBe(true))
+    const ask = mocks.requestHandlers.get('x.ai/ask_user_question')!
+    const result = await ask.handle({
+      params: ask.parse({ toolCallId: 'q-1', questions: [{ question: 'Pick one?' }] }),
+    })
+    expect(onQuestion).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'question',
+      interactionId: 'q-1',
+    }))
+    expect(result).toEqual({ outcome: 'accepted', answers: { 'Pick one?': ['A'] } })
+    await turn
+  })
 })

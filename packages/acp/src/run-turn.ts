@@ -19,6 +19,8 @@ import {
 import { mapPermissionDecision, mapPermissionRequest } from './permission-map'
 import { spawnAcpProcess, type AcpLaunch } from './process'
 import {
+  XAI_ASK_USER_QUESTION,
+  XAI_EXIT_PLAN_MODE,
   XAI_EXT_NOTIFICATION_METHODS,
   XAI_MCP_ELICIT,
   XAI_MCP_ELICIT_COMPLETE,
@@ -26,7 +28,11 @@ import {
   parseXaiExtParams,
 } from './xai-state'
 import {
+  formatGrokAskUserAccepted,
+  formatGrokAskUserCancelled,
   formatGrokElicitOutcome,
+  formatGrokExitPlanCancelled,
+  formatGrokExitPlanFromDecision,
   formatGrokScheduledTaskPrompt,
   grokElicitToPendingInteraction,
   parseGrokElicitComplete,
@@ -132,9 +138,58 @@ export function createAcpAgentTurnRunner(opts: RunAcpTurnOptions = {}): TurnRunn
           })
         })
       }
+      const handleAskUser = async (ctx: { params: unknown }) => {
+        if (!input.onQuestion) return formatGrokAskUserCancelled()
+        const raw = ctx.params && typeof ctx.params === 'object' && !Array.isArray(ctx.params)
+          ? ctx.params as Record<string, unknown>
+          : {}
+        const toolCallId = typeof raw.toolCallId === 'string' ? raw.toolCallId
+          : typeof raw.tool_call_id === 'string' ? raw.tool_call_id
+          : `acp_ask_${Date.now().toString(36)}`
+        try {
+          const answers = await input.onQuestion({
+            interactionId: toolCallId,
+            kind: 'question',
+            toolUseId: toolCallId,
+            input: raw,
+            createdAt: Date.now(),
+          })
+          return formatGrokAskUserAccepted(answers)
+        } catch {
+          return formatGrokAskUserCancelled()
+        }
+      }
+      const handleExitPlan = async (ctx: { params: unknown }) => {
+        if (!input.onPlan) return formatGrokExitPlanCancelled()
+        const raw = ctx.params && typeof ctx.params === 'object' && !Array.isArray(ctx.params)
+          ? ctx.params as Record<string, unknown>
+          : {}
+        const toolCallId = typeof raw.toolCallId === 'string' ? raw.toolCallId
+          : typeof raw.tool_call_id === 'string' ? raw.tool_call_id
+          : `acp_plan_${Date.now().toString(36)}`
+        const planContent = typeof raw.planContent === 'string' ? raw.planContent
+          : typeof raw.plan_content === 'string' ? raw.plan_content
+          : ''
+        try {
+          const result = await input.onPlan({
+            interactionId: toolCallId,
+            kind: 'plan',
+            toolUseId: toolCallId,
+            input: { planContent, ...raw },
+            createdAt: Date.now(),
+          })
+          return formatGrokExitPlanFromDecision(result.decision, result.options)
+        } catch {
+          return formatGrokExitPlanCancelled()
+        }
+      }
       let clientBuilder = client({ name: opts.clientName ?? 'superone-node' })
         .onRequest(XAI_MCP_ELICIT, (raw: unknown) => raw, handleElicit)
         .onRequest(`_${XAI_MCP_ELICIT}`, (raw: unknown) => raw, handleElicit)
+        .onRequest(XAI_ASK_USER_QUESTION, (raw: unknown) => raw, handleAskUser)
+        .onRequest(`_${XAI_ASK_USER_QUESTION}`, (raw: unknown) => raw, handleAskUser)
+        .onRequest(XAI_EXIT_PLAN_MODE, (raw: unknown) => raw, handleExitPlan)
+        .onRequest(`_${XAI_EXIT_PLAN_MODE}`, (raw: unknown) => raw, handleExitPlan)
         .onRequest(methods.client.session.requestPermission, async (ctx) => {
           const mapped = mapPermissionRequest(ctx.params)
           pendingOptions = mapped.options
@@ -194,6 +249,11 @@ export function createAcpAgentTurnRunner(opts: RunAcpTurnOptions = {}): TurnRunn
         protocolVersion: PROTOCOL_VERSION,
         clientInfo: { name: opts.clientName ?? 'superone-node', version: '0.0.0' },
         clientCapabilities: {},
+        _meta: {
+          askUserQuestion: true,
+          exitPlanMode: true,
+          clientIdentifier: 'superone',
+        },
       })
 
       const mcpServers =

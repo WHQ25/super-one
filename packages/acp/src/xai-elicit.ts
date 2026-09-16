@@ -113,3 +113,30 @@ export function grokElicitToPendingInteraction(raw: unknown): {
 export function formatGrokElicitOutcome(allow: boolean): { outcome: 'accept' | 'cancel' } {
   return { outcome: allow ? 'accept' : 'cancel' }
 }
+
+/** Headless / no-UI answer for `x.ai/ask_user_question` — never leave the RPC hanging. */
+export function formatGrokAskUserCancelled(): { outcome: 'cancelled' } {
+  return { outcome: 'cancelled' }
+}
+
+export function formatGrokAskUserAccepted(answers: unknown): Record<string, unknown> {
+  if (!answers || typeof answers !== 'object' || Array.isArray(answers)) {
+    return formatGrokAskUserCancelled()
+  }
+  return { outcome: 'accepted', answers }
+}
+
+/** Headless / no-UI answer for `x.ai/exit_plan_mode`. */
+export function formatGrokExitPlanCancelled(feedback?: string): Record<string, unknown> {
+  const trimmed = feedback?.trim()
+  return { outcome: 'cancelled', ...(trimmed ? { feedback: trimmed } : {}) }
+}
+
+export function formatGrokExitPlanFromDecision(
+  decision: 'approve' | 'reject',
+  options?: Record<string, unknown>,
+): Record<string, unknown> {
+  if (decision === 'approve') return { outcome: 'approved' }
+  const feedback = typeof options?.feedback === 'string' ? options.feedback : undefined
+  return formatGrokExitPlanCancelled(feedback)
+}

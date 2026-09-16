@@ -132,7 +132,7 @@ Evidence paths are under SuperOne unless noted.
 | RT-03 | Detect grok CLI (`~/.grok/bin` + PATH) | runtime | partial | `acp-detect.ts` splits PATH on `:` always | Windows `;` PATH likely misses installs | P2 |
 | RT-04 | initialize PROTOCOL_VERSION + `clientInfo` superone | acp-host | done | `acp-runtime.ts`, `acp-client-info.ts` | no `_meta.clientType` (intentional Generic) | na |
 | RT-05 | Grok: fs/terminal=false | acp-host | done | `useHostDelegation = agentId !== 'grok-build'` | intentional | na |
-| RT-06 | Advertise askUserQuestion + exitPlanMode | acp-host | partial | desktop `initialize._meta`; `packages/acp` initialize `clientCapabilities: {}` | Node omits flags so Grok may not park reverse RPCs | **P0** (CLI) |
+| RT-06 | Advertise askUserQuestion + exitPlanMode | acp-host | done | desktop + `packages/acp` initialize `_meta` | Node cancels immediately if no UI | — |
 | RT-07 | Non-interactive authenticate | acp-host | partial | cached_token / api_key heuristics | interactive `x.ai/auth/*` missing; no unit test | P2 |
 | RT-08 | session/new mcpServers (superone + user) | acp-host | done | `buildAcpSessionMcpServers`, runtime tests | load payload not asserted for mcpServers | P3 |
 | RT-09 | session/new `_meta` yolo/auto + clientIdentifier | acp-host | done | `grokSessionPermissionMeta` | — | — |
@@ -192,10 +192,10 @@ Evidence paths are under SuperOne unless noted.
 
 | id | name | surface | SuperOne status | evidence | gap | priority |
 |----|------|---------|-----------------|----------|-----|----------|
-| XAI-01 | ask_user_question reverse + UI | acp-host | done | `AskUserQuestionPrompt.tsx`, backend tests | Node does not register; no component unit test | P2 / **P0** CLI |
+| XAI-01 | ask_user_question reverse + UI | acp-host | done | desktop UI + Node registers dual ids (cancel if no UI) | no `AskUserQuestionPrompt.test.tsx` (PR6) | P2 |
 | XAI-02 | ask plan outcomes `chat_about_this` / `skip_interview` | acp-host | missing | comments only in `formatGrokAskUserResponse` | host only `accepted\|cancelled` | P2 |
 | XAI-03 | exit_plan_mode reverse + PlanApproval + line review | acp-host | done | `PlanApprovalPrompt.tsx`, `plan-feedback.ts` | `planFilePath` always `''` | P3 |
-| XAI-04 | Dual `_x.ai/*` onRequest aliases | acp-host | partial | desktop ask/exit/elicit; Node elicit only | underscore path untested e2e | P3 |
+| XAI-04 | Dual `_x.ai/*` onRequest aliases | acp-host | done | desktop + Node ask/exit/elicit | underscore path untested e2e vs live grok | P3 |
 | XAI-05 | Approve plan: skip forced permissionMode default | session-ui | done | ACP approve skips `setPermissionMode`; Claude toggle unchanged | — | — |
 | XAI-06 | Hide Claude post-approve acceptEdits toggle | session-ui | done | `showPostApprovalModeToggle = claude` | — | — |
 | XAI-07 | ExtNotification bus (session_notification / session/update) | acp-host | done | `acp-xai-session-notify.ts`, `xai-event-map.ts` | leftover: `prompt_complete`, apply `tools_changed`, Node ask/exit | — |
@@ -566,7 +566,7 @@ Shipped work (do **not** re-open as PRs): stdio lifecycle, yolo/auto meta + noti
 | **Deps** | none |
 | **Out of scope** | `x.ai/mcp/sdk_call`; managing `~/.grok/config.toml`; `tools_changed` apply (small follow in same PR if cheap) |
 
-### PR4 — Node/CLI reverse host (ask + exit_plan)
+### PR4 — Node/CLI reverse host (ask + exit_plan)  **(landed)**
 
 | | |
 |--|--|

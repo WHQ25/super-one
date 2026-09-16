@@ -51,7 +51,11 @@ export {
   type MapXaiNotifyContext,
 } from './xai-event-map'
 export {
+  formatGrokAskUserAccepted,
+  formatGrokAskUserCancelled,
   formatGrokElicitOutcome,
+  formatGrokExitPlanCancelled,
+  formatGrokExitPlanFromDecision,
   formatGrokScheduledTaskPrompt,
   grokElicitToPendingInteraction,
   parseGrokElicitComplete,
@@ -61,6 +65,8 @@ export {
   XAI_EXT_NOTIFICATION_METHODS,
   XAI_FOLLOW_UPS,
   XAI_MONITOR_EVENT,
+  XAI_ASK_USER_QUESTION,
+  XAI_EXIT_PLAN_MODE,
   XAI_MCP_ELICIT,
   XAI_MCP_ELICIT_COMPLETE,
   XAI_SCHEDULED_TASK_CREATED,

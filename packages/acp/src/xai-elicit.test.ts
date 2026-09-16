@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  formatGrokAskUserAccepted,
+  formatGrokAskUserCancelled,
   formatGrokElicitOutcome,
+  formatGrokExitPlanCancelled,
+  formatGrokExitPlanFromDecision,
   formatGrokScheduledTaskPrompt,
   grokElicitToPendingInteraction,
   parseGrokElicitComplete,
@@ -47,5 +51,25 @@ describe('scheduled inject', () => {
   it('reads elicit complete ids', () => {
     expect(parseGrokElicitComplete({ elicitation_id: 'e-1' })).toEqual({ elicitationId: 'e-1' })
     expect(parseGrokElicitComplete({})).toBeNull()
+  })
+})
+
+describe('ask / exit_plan fail-closed formatters', () => {
+  it('cancels ask when answers are missing', () => {
+    expect(formatGrokAskUserCancelled()).toEqual({ outcome: 'cancelled' })
+    expect(formatGrokAskUserAccepted(null)).toEqual({ outcome: 'cancelled' })
+    expect(formatGrokAskUserAccepted({ 'Q?': ['A'] })).toEqual({
+      outcome: 'accepted',
+      answers: { 'Q?': ['A'] },
+    })
+  })
+
+  it('maps plan approve/reject onto Grok outcomes', () => {
+    expect(formatGrokExitPlanFromDecision('approve')).toEqual({ outcome: 'approved' })
+    expect(formatGrokExitPlanFromDecision('reject', { feedback: 'nope' })).toEqual({
+      outcome: 'cancelled',
+      feedback: 'nope',
+    })
+    expect(formatGrokExitPlanCancelled()).toEqual({ outcome: 'cancelled' })
   })
 })

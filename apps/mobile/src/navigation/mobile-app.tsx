@@ -1369,7 +1369,6 @@ export function MobileApp() {
       harnessSelection.resetForProvider(option.provider, option.acpAgentId)
       applySystemInfo(option.provider, info)
       setHarness(option.provider)
-      if (option.provider !== 'claude') setWorktreeSelection(LOCAL_WORKTREE_SELECTION)
     }
     const cached = peekHarnessResource(client, 'get_system_info', project.path, option.provider)
     if (cached) apply(cached)

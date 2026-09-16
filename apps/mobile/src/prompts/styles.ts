@@ -27,7 +27,9 @@ export function usePromptStyles() {
       multiline: { minHeight: 64, maxHeight: 128, textAlignVertical: 'top' },
       choice: { flexDirection: 'row', alignItems: 'flex-start', gap: s.sm, paddingHorizontal: 10, paddingVertical: 10, minHeight: 44, borderRadius: r.md, borderWidth: 1, borderColor: c.border },
       selectedChoice: { borderColor: c.primary, backgroundColor: tint(c.primary) },
-      choiceIcon: { marginTop: 1 },
+      // Centre the 16px glyph on the 22px first line of `body`, so multi-line
+      // choices keep the icon beside the label rather than the block middle.
+      choiceIcon: { marginTop: 3 },
       pill: { borderWidth: 1, borderColor: c.border, borderRadius: r.sm, paddingHorizontal: 10, paddingVertical: 7, minHeight: 44, justifyContent: 'center' },
       selectedPill: { backgroundColor: c.primary, borderColor: c.primary },
       pillText: { color: c.foreground, fontSize: 13, lineHeight: 18 },

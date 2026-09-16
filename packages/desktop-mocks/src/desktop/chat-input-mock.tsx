@@ -185,7 +185,8 @@ export function ChatStatusBarMock({
     ? { icon: codexPreset.triggerIcon, label: t(codexPreset.labelKey), color: codexPreset.triggerToneClass }
     : permission
       ? { ...permissionMode(permission.id), label: permission.label ?? permissionMode(permission.id).label }
-      : permissionModeByLabel(harnessMeta.permission)
+      // Harnesses without Claude-style modes keep their own label on the Normal chrome.
+      : { ...permissionModeByLabel(harnessMeta.permission), label: harnessMeta.permission }
   const sandboxMode = sandbox ?? harnessMeta.sandbox
   const sandboxInteractive = harnessMeta.sandboxInteractive
   const SandboxIcon = sandboxMode === "off" ? PackageOpen : Box

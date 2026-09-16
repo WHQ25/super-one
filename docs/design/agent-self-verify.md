@@ -67,7 +67,7 @@ bunx vitest run \
 | allow-always-mcp | auto-allow selects allow-always-mcp for builtins |
 | ExtNotification bus | `acp-xai-session-notify` / `xai-event-map` parse + map workflow/subagent/usage |
 | Node reverse RPCs | `packages/acp` `run-turn` elicit; ask/exit after parity PR4 |
-| Permission card Always | ACP + `allowAlwaysAllow` uses the four-button row (parity PR1) |
+| Permission card Always | ACP + `allowAlwaysAllow` uses the four-button row |
 | clientInfo.version | non-placeholder version string |
 | mobile_share stdio | list/execute when session enabled |
 | harness caps | acp supportsMcp/plan/todos |

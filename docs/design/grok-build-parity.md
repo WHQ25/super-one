@@ -176,7 +176,7 @@ Evidence paths are under SuperOne unless noted.
 | PM-09 | plan ≠ yolo: setPermissionMode(plan) → set_mode | acp-host | done | `acp-runtime.ts` | — | — |
 | PM-10 | cyclePermissionMode ACP subset | session-ui | partial | `cyclePermissionModeImpl` uses `ACP_PERMISSION_MODES` | chat-store tests still Claude-only | P3 |
 | PM-11 | Shift+Tab togglePlanModeShortcut plan↔default | session-ui | done | `togglePlanModeShortcutImpl` | — | — |
-| PM-12 | PermissionPrompt Always / `allow_always` for ACP | session-ui | missing | `getPermissionPromptConfig` 4-button **Codex only** | `allowAlwaysAllow` set from wire; UI never offers it | **P1** |
+| PM-12 | PermissionPrompt Always / `allow_always` for ACP | session-ui | done | `getPermissionPromptConfig` ACP + Codex 4-button when `allowAlwaysAllow` | maps to `allow-always-mcp` / `allow_always`, not yolo | — |
 | PM-13 | Auto under Generic: classifier blocks auto-deny | acp-host | missing | Grok `ClientType::Generic`; SuperOne offers Auto | no toast / eligibility; tools fail closed silently | **P1** |
 | PM-14 | Settings SessionDefaults ACP labels | session-ui | partial | `SessionDefaultsSection` uses Claude `PermissionModeList` (Normal/Bypass) | draft popover uses `AcpPermissionModeList` correctly | **P1** |
 | PM-15 | enable-always-approve option id | acp-host | missing | Generic never receives it | ignore unless spoofing Desktop (non-goal) | P3 |
@@ -533,7 +533,7 @@ Shipped work (do **not** re-open as PRs): stdio lifecycle, yolo/auto meta + noti
 | **Deps** | none |
 | **Out of scope** | Code; ticking G1–G5 without TD-03 |
 
-### PR1 — ACP PermissionPrompt Always / session grants
+### PR1 — ACP PermissionPrompt Always / session grants  **(landed)**
 
 | | |
 |--|--|

@@ -42,4 +42,41 @@ describe('getPermissionPromptConfig', () => {
       enterSubmitsFeedback: true,
     })
   })
+
+  it('gives ACP the four-button Always row when the agent offers allow_always', () => {
+    expect(getPermissionPromptConfig('acp', true, false)).toEqual({
+      buttonCount: 4,
+      includesFeedbackOnDeny: false,
+      enterSubmitsFeedback: false,
+    })
+  })
+
+  it('keeps ACP on Allow / Deny when the agent does not offer allow_always', () => {
+    expect(getPermissionPromptConfig('acp', false, false)).toEqual({
+      buttonCount: 2,
+      includesFeedbackOnDeny: true,
+      enterSubmitsFeedback: true,
+    })
+  })
+
+  it('does not put elicitation on the four-button Always row', () => {
+    expect(getPermissionPromptConfig('acp', true, true)).toEqual({
+      buttonCount: 2,
+      includesFeedbackOnDeny: true,
+      enterSubmitsFeedback: true,
+    })
+    expect(getPermissionPromptConfig('codex', true, true)).toEqual({
+      buttonCount: 2,
+      includesFeedbackOnDeny: true,
+      enterSubmitsFeedback: true,
+    })
+  })
+
+  it('leaves Claude on Allow / Deny even when allowAlwaysAllow is set', () => {
+    expect(getPermissionPromptConfig('claude', true, false)).toEqual({
+      buttonCount: 2,
+      includesFeedbackOnDeny: true,
+      enterSubmitsFeedback: true,
+    })
+  })
 })

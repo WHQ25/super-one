@@ -88,6 +88,7 @@ function renderInChat(ui: ReactElement) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  activeSessionState.sessionProvider = 'codex'
   activeSessionState.pendingPermissions = [{
     requestId: 'req-1',
     toolName: 'Bash',
@@ -136,6 +137,49 @@ describe('PermissionPrompt', () => {
     fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
 
     expect(chatState.respondToPermission).toHaveBeenCalledWith('req-1', false, undefined, undefined, undefined, 'cancel')
+  })
+
+  it('shows Always on an ACP prompt when the agent offers allow_always', () => {
+    activeSessionState.sessionProvider = 'acp'
+    renderInChat(<PermissionPrompt />)
+
+    expect(screen.getByRole('button', { name: /allow for this session/i })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /decline/i })).toBeTruthy()
+    expect(screen.queryByPlaceholderText('Deny reason (optional, Enter to submit)')).toBeNull()
+  })
+
+  it('sends alwaysAllow on ACP Shift+Enter without flipping yolo', () => {
+    activeSessionState.sessionProvider = 'acp'
+    renderInChat(<PermissionPrompt />)
+
+    fireEvent.keyDown(window, { key: 'Enter', shiftKey: true })
+
+    expect(chatState.respondToPermission).toHaveBeenCalledWith('req-1', true, true)
+    expect(chatState.setPermissionMode).not.toHaveBeenCalled()
+  })
+
+  it('keeps ACP elicitation off the four-button Always row', () => {
+    activeSessionState.sessionProvider = 'acp'
+    activeSessionState.pendingPermissions = [{
+      requestId: 'elicit-1',
+      toolName: 'github',
+      input: {},
+      allowAlwaysAllow: true,
+      requestKind: 'mcp_elicitation',
+      serverName: 'github',
+      message: 'Sign in to GitHub',
+      elicitationUrl: 'https://github.com/login/oauth',
+      elicitationId: 'e-1',
+    }]
+    const openExternal = vi.fn()
+    ;(window as unknown as { app: { openExternalLink: typeof openExternal } }).app = {
+      openExternalLink: openExternal,
+    }
+
+    renderInChat(<PermissionPrompt />)
+
+    expect(screen.getByRole('button', { name: /open in browser/i })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /allow for this session/i })).toBeNull()
   })
 
   it('opens a URL elicitation in the browser and keeps the waiting card', () => {

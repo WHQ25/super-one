@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useEffect, type ReactNode } from 'react'
 import { PermissionPrompt } from './PermissionPrompt'
-import { useChatStore } from '@/stores/chat'
+import { useChatStore, type ChatProvider } from '@/stores/chat'
 import type { PermissionRequest } from '@superone/shared/agent-types'
 
 function StoryShell({ children, width = 720 }: { children: ReactNode; width?: number }) {
@@ -12,7 +12,13 @@ function StoryShell({ children, width = 720 }: { children: ReactNode; width?: nu
   )
 }
 
-function SeedPermission({ request }: { request: PermissionRequest | null }) {
+function SeedPermission({
+  request,
+  sessionProvider,
+}: {
+  request: PermissionRequest | null
+  sessionProvider?: ChatProvider
+}) {
   useEffect(() => {
     const apply = (): void => {
       useChatStore.setState((s) => {
@@ -34,6 +40,7 @@ function SeedPermission({ request }: { request: PermissionRequest | null }) {
                 [sid]: {
                   ...session,
                   pendingPermissions: request ? [request] : [],
+                  ...(sessionProvider ? { sessionProvider } : {}),
                 },
               },
             },
@@ -44,7 +51,7 @@ function SeedPermission({ request }: { request: PermissionRequest | null }) {
     apply()
     const t = setTimeout(apply, 0)
     return () => clearTimeout(t)
-  }, [request])
+  }, [request, sessionProvider])
   return null
 }
 
@@ -273,6 +280,97 @@ export const NoPending: Story = {
   decorators: [(Story) => (
     <>
       <SeedPermission request={null} />
+      <Story />
+    </>
+  )],
+}
+
+/** Codex four-button row: Allow / Allow for this session / Decline / Cancel. */
+export const CodexAlwaysAllow: Story = {
+  decorators: [(Story) => (
+    <>
+      <SeedPermission
+        sessionProvider="codex"
+        request={{
+          requestId: 'p-codex-always',
+          toolName: 'Bash',
+          toolUseId: 'tu-codex-always',
+          input: { command: 'git push --force-with-lease origin feat/grok' },
+          allowAlwaysAllow: true,
+          riskLevel: 'medium',
+          message: 'Run shell command',
+        }}
+      />
+      <Story />
+    </>
+  )],
+}
+
+/** ACP four-button row when Grok offers `allow_always` / `allow-always-mcp`. */
+export const AcpAlwaysAllow: Story = {
+  decorators: [(Story) => (
+    <>
+      <SeedPermission
+        sessionProvider="acp"
+        request={{
+          requestId: 'p-acp-always',
+          toolName: 'Bash',
+          toolUseId: 'tu-acp-always',
+          input: { command: 'bunx vitest run src/main/acp/acp-permission-map.test.ts' },
+          allowAlwaysAllow: true,
+          riskLevel: 'medium',
+          message: 'Run tests',
+        }}
+      />
+      <Story />
+    </>
+  )],
+}
+
+/** ACP stays on Allow / Deny when the agent does not offer a session grant. */
+export const AcpAllowOnce: Story = {
+  decorators: [(Story) => (
+    <>
+      <SeedPermission
+        sessionProvider="acp"
+        request={{
+          requestId: 'p-acp-once',
+          toolName: 'Edit',
+          toolUseId: 'tu-acp-once',
+          input: {
+            file_path: '/Users/me/projects/super-one/src/main/acp/acp-runtime.ts',
+            old_string: 'prompt(blocks)',
+            new_string: 'prompt(blocks, { meta: { mode } })',
+          },
+          allowAlwaysAllow: false,
+          toolDiff: EDIT_DIFF,
+          riskLevel: 'low',
+        }}
+      />
+      <Story />
+    </>
+  )],
+}
+
+/** ACP elicitation keeps the URL / form layout; Always is not a session grant here. */
+export const AcpElicitation: Story = {
+  decorators: [(Story) => (
+    <>
+      <SeedPermission
+        sessionProvider="acp"
+        request={{
+          requestId: 'p-acp-elicit',
+          toolName: 'github',
+          toolUseId: 'tu-acp-elicit',
+          input: {},
+          allowAlwaysAllow: true,
+          requestKind: 'mcp_elicitation',
+          serverName: 'github',
+          message: 'Sign in to GitHub',
+          elicitationUrl: 'https://github.com/login/oauth',
+          elicitationId: 'e-1',
+        }}
+      />
       <Story />
     </>
   )],

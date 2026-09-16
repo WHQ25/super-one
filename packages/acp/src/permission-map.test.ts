@@ -41,4 +41,33 @@ describe('mapPermissionDecision', () => {
       outcome: { outcome: 'cancelled' },
     })
   })
+
+  it('prefers allow-always-mcp over a generic allow_always option', () => {
+    const mcpOptions = [
+      { optionId: 'allow-always-mcp', kind: 'allow_always' as const },
+      { optionId: 'allow-always-command', kind: 'allow_always' as const },
+      { optionId: 'allow-once', kind: 'allow_once' as const },
+      { optionId: 'reject-once', kind: 'reject_once' as const },
+    ]
+    expect(mapPermissionDecision(mcpOptions, true, true)).toEqual({
+      outcome: { outcome: 'selected', optionId: 'allow-always-mcp' },
+    })
+    expect(mapPermissionDecision(mcpOptions, true, false)).toEqual({
+      outcome: { outcome: 'selected', optionId: 'allow-once' },
+    })
+  })
+
+  it('falls back to allow_always kind when no MCP option id is present', () => {
+    expect(mapPermissionDecision(
+      [
+        { optionId: 'allow-once', kind: 'allow_once' },
+        { optionId: 'allow-always-command', kind: 'allow_always' },
+        { optionId: 'reject-once', kind: 'reject_once' },
+      ],
+      true,
+      true,
+    )).toEqual({
+      outcome: { outcome: 'selected', optionId: 'allow-always-command' },
+    })
+  })
 })

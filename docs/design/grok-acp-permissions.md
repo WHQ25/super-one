@@ -242,7 +242,7 @@ Reuse `mapPermissionDecision(options, allow=true, alwaysAllow=?)` via `decideAcp
 
 1. Built-in SuperOne tools (except main-thread-only) prefer `allow-always-mcp` / `kind === allow_always` so Grok stores a server grant and stops re-prompting.
 2. Mini-app preapprovals and main-thread-only tools still use `allow_once`.
-3. User-facing Always on the permission card (native bash / third-party MCP) is a separate product gap — see `grok-build-parity.md` PR1 (PM-12). Do **not** map that Always to yolo / `enable-always-approve`.
+3. User-facing Always on the permission card (native bash / third-party MCP) is shipped (parity PR1): ACP + `allowAlwaysAllow` offers the four-button row. Map Always → `allow-always-mcp` / `allow_always`, **not** yolo / `enable-always-approve`.
 4. If no allow option exists, log + cancel (fail closed for the call, not hang).
 
 #### Integration point
@@ -480,7 +480,7 @@ tool needs permission
 4. **Mid-session via `x.ai/yolo_mode_changed`**, create-time via `session/new` `_meta.yoloMode` / `autoMode`.  
 5. **Keep `permissionMode` orthogonal to `acpModes` (effort).**  
 6. **Honest `clientType: superone` (Generic)** until Desktop option parity exists.  
-7. **Prefer `allow-always-mcp` for built-in preapprove responses** (except main-thread-only). User-facing Always on the card is parity PR1.
+7. **Prefer `allow-always-mcp` for built-in preapprove responses** (except main-thread-only). User-facing Always on the card (parity PR1) maps to the same option ids, not yolo.
 
 ---
 

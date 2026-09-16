@@ -6,8 +6,9 @@ import type { ChatProvider } from '@/stores/chat'
  * component body only reads from a single source.
  *
  * - `buttonCount`: number of action buttons in the focus ring. Claude has
- *   2 (Allow / Deny), Codex has 4 (Allow / Deny / Allow Always / Feedback),
- *   and a host-raised device grant has 3 (Allow / Always / Deny).
+ *   2 (Allow / Deny), Codex and ACP (when the agent offers `allow_always`) have
+ *   4 (Allow / Allow for this session / Decline / Cancel), and a host-raised
+ *   device grant has 3 (Allow / Always / Deny).
  * - `includesFeedbackOnDeny`: whether typing into the feedback textarea
  *   should be attached to the deny action. Claude attaches; Codex routes
  *   feedback through a separate button and intentionally drops the deny
@@ -41,10 +42,17 @@ export function getPermissionPromptConfig(
   if (requestKind === 'terminal_command_confirm') {
     return { buttonCount: 2, includesFeedbackOnDeny: true, enterSubmitsFeedback: true }
   }
-  const isCodexDecisionPrompt = sessionProvider === 'codex' && allowAlwaysAllow && !isElicitation
+  // Codex and ACP both persist a session grant via `alwaysAllow=true` on
+  // respondToPermission. ACP maps that to `allow-always-mcp` / `allow_always`
+  // option ids — not yolo / `enable-always-approve`. Elicitation keeps its
+  // own form layout (Allow / optional persist / Decline / Cancel).
+  const offersSessionAlways =
+    (sessionProvider === 'codex' || sessionProvider === 'acp')
+    && allowAlwaysAllow
+    && !isElicitation
   return {
-    buttonCount: isCodexDecisionPrompt ? 4 : 2,
-    includesFeedbackOnDeny: !isCodexDecisionPrompt,
-    enterSubmitsFeedback: !isCodexDecisionPrompt,
+    buttonCount: offersSessionAlways ? 4 : 2,
+    includesFeedbackOnDeny: !offersSessionAlways,
+    enterSubmitsFeedback: !offersSessionAlways,
   }
 }

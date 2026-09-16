@@ -212,10 +212,15 @@ export function workflowToolTargetLabel(input: string | Record<string, unknown> 
     o = input
   }
   if (!o) return ''
-  if (typeof o.name === 'string' && o.name.trim()) return o.name.trim()
-  const scriptPath = typeof o.script_path === 'string' ? o.script_path
-    : typeof o.scriptPath === 'string' ? o.scriptPath
-      : ''
+  // Grok nests the launch target: `source: { type: 'name', name }` / `{ type: 'script_path', script_path }`.
+  const source = o.source && typeof o.source === 'object' && !Array.isArray(o.source)
+    ? o.source as Record<string, unknown>
+    : null
+  const name = strField(o, 'name') ?? (source ? strField(source, 'name') : undefined)
+  if (name) return name.trim()
+  const scriptPath = strField(o, 'script_path', 'scriptPath')
+    ?? (source ? strField(source, 'script_path', 'scriptPath') : undefined)
+    ?? ''
   if (scriptPath) {
     const base = scriptPath.replace(/\\/g, '/').split('/').pop()
     if (base) return base.replace(/\.rhai$/i, '')

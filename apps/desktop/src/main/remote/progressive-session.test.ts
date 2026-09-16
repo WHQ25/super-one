@@ -55,6 +55,39 @@ describe('progressive session projection', () => {
     expect(projectProgressiveEvent({ type: 'codex_item_patch', messageId: 'm', phase: 'updated', itemId: 'r', patch: { type: 'reasoning', textDelta: 'private reasoning' } }, [source])).toMatchObject({ patch: { textDelta: '' } })
     expect(JSON.stringify(projectProgressiveEvent({ type: 'message_complete', messageId: 'm', metadata: source.metadata }, [source]))).not.toMatch(/private reasoning|large output/)
   })
+  it('keeps workflow agent rows on progressive task events while dropping transcript text', () => {
+    const progress = projectProgressiveEvent({
+      type: 'task_progress', taskId: 'wf', toolUseId: 'w', description: 'parity: catalog',
+      usage: { totalTokens: 1, toolUses: 1, durationMs: 1 }, activityText: 'private activity',
+      toolEntries: [{ toolName: 'Read', description: 'a.ts' }],
+      workflowAgents: [{ label: 'cataloger', toolCount: 2, tokens: 1, state: 'running' }],
+    }, [])
+    expect(progress).toMatchObject({ workflowAgents: [{ label: 'cataloger' }], activityText: undefined, toolEntries: undefined })
+    const done = projectProgressiveEvent({
+      type: 'task_notification', taskId: 'wf', toolUseId: 'w', taskStatus: 'completed', outputFile: '/tmp/out.jsonl',
+      resultText: 'long result', workflowAgents: [{ label: 'cataloger', toolCount: 2, tokens: 1, state: 'done' }],
+    }, [])
+    expect(done).toMatchObject({ workflowAgents: [{ label: 'cataloger' }], resultText: undefined, outputFile: '' })
+  })
+  it('projects a workflow shell with its declared meta and task lifecycle, and the run output on expand', () => {
+    const script = 'export const meta = { name: "parity", description: "Gap the coverage", phases: [{ title: "Source", detail: "clone" }] }\n' + 'x'.repeat(2000)
+    const source: ChatMessage = { ...message(), content: [
+      { type: 'tool_use', toolName: 'Workflow', toolUseId: 'w', input: JSON.stringify({ script }), status: 'complete',
+        taskStatus: 'completed', taskSummary: 'done', taskResultText: 'Plan written', taskUsage: { totalTokens: 9, toolUses: 2, durationMs: 200 },
+        workflowAgents: [{ label: 'cataloger', toolCount: 2, tokens: 9, state: 'done' }] },
+      { type: 'tool_result', toolUseId: 'w', summary: '{"runId":"wf_1","transcriptDir":"/tmp/wf_1"}' },
+    ] }
+    const shell = projectProgressiveMessage(source).content[0]
+    expect(JSON.stringify(shell)).not.toContain('xxxx')
+    expect(shell).toMatchObject({
+      input: '', workflowName: 'parity', workflowDescription: 'Gap the coverage',
+      workflowPhases: [{ title: 'Source', detail: 'clone' }], taskStatus: 'completed', taskSummary: 'done',
+      taskUsage: { totalTokens: 9 }, workflowAgents: [{ label: 'cataloger' }],
+    })
+    expect(shell).not.toHaveProperty('taskResultText')
+    setProgressiveSession('a', 's')
+    expect(JSON.parse(subscribeDetail('a', 's', 'wf', '["m","tool","w"]', source).text)).toMatchObject({ taskResultText: 'Plan written' })
+  })
   it('fetches original tool input and full result only on expansion', () => {
     setProgressiveSession('a', 's')
     const detail = subscribeDetail('a', 's', 'tool', '["m","tool","t"]', message())

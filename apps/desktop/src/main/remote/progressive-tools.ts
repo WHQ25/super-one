@@ -1,6 +1,6 @@
 import type { ChatMessage, ContentBlock, CodexFileUpdateChange, CodexMcpToolCallItem, CodexThreadItem } from '@superone/shared/agent-types'
 import { sanitizeRemoteToolInput } from '@superone/shared/remote-tool-input'
-import { compactMediaToolResult, computeToolLineDelta, stripMessagesForRemote } from '../remote-content'
+import { compactMediaToolResult, computeToolLineDelta, computeToolMeta, stripMessagesForRemote } from '../remote-content'
 
 /**
  * Inline UI and decision prompts are visible content, not hidden tool detail.
@@ -29,6 +29,26 @@ function projectedToolSummary(block: Extract<ContentBlock, { toolName: string }>
   }
 }
 
+/**
+ * What the workflow card draws besides the shell: the script's declared meta
+ * (the script itself is stripped, so the phone cannot parse it) and the task
+ * lifecycle the reducers patch onto the block. Bounded rows, no transcript text.
+ */
+function workflowShell(block: Extract<ContentBlock, { toolName: string }>): Partial<ContentBlock> {
+  const meta = block.workflowName || block.workflowPhases ? {} : computeToolMeta({ ...block, type: 'tool_use' })
+  return {
+    workflowName: block.workflowName ?? meta.workflowName,
+    workflowDescription: block.workflowDescription ?? meta.workflowDescription,
+    workflowPhases: block.workflowPhases ?? meta.workflowPhases,
+    workflowCurrentPhase: block.workflowCurrentPhase,
+    workflowAgents: block.workflowAgents,
+    taskSummary: block.taskSummary,
+    taskDescription: block.taskDescription,
+    taskUsage: block.taskUsage,
+    taskStatus: block.taskStatus,
+  }
+}
+
 export function projectTool(block: ContentBlock, ref: string): ContentBlock {
   if (!('toolName' in block) || !deferTool(block.toolName)) return block
   const input = sanitizeRemoteToolInput(block.toolName, block.input)
@@ -38,6 +58,7 @@ export function projectTool(block: ContentBlock, ref: string): ContentBlock {
     parentToolUseId: block.parentToolUseId, startedAt: block.startedAt,
     toolSummary: projectedToolSummary(block), toolFilePath: block.toolFilePath,
     ...(toolLineDelta ? { toolLineDelta } : {}),
+    ...(block.toolName === 'Workflow' ? workflowShell(block) : {}),
     remoteDetail: ref } as ContentBlock
 }
 export function toolDetail(message: ChatMessage, id: string): string {
@@ -53,6 +74,9 @@ export function toolDetail(message: ChatMessage, id: string): string {
   return JSON.stringify({
     input: projectedTool?.input ?? tool.input,
     result: output,
+    // A background task's `result` is only its launch receipt; the run's own
+    // output is patched onto the block when the task_notification lands.
+    taskResultText: tool.taskResultText,
     childBlocks: children,
     toolDiff: projectedTool?.toolDiff,
     toolDiffTokens: projectedTool?.toolDiffTokens,

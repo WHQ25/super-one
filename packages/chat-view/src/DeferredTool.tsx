@@ -5,7 +5,12 @@ import { isCodexCommandToolError } from '@superone/shared/codex-command-status'
 import { PortableToolRow, type PortableToolRowProps } from './PortableToolRow'
 import { useDeferredText } from './use-deferred-text'
 
-export type DeferredToolDetail = Partial<PortableToolRowProps> & { item?: CodexThreadItem; childBlocks?: ContentBlock[] }
+export type DeferredToolDetail = Partial<PortableToolRowProps> & {
+  item?: CodexThreadItem
+  childBlocks?: ContentBlock[]
+  /** A background task's own output, distinct from `result` (its launch receipt). */
+  taskResultText?: string
+}
 
 /**
  * Loads the projected tool detail (`toolDetail` / `codexToolDetail` JSON) once the row

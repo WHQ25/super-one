@@ -240,6 +240,22 @@ export function readOutputFile(outputFile: string, projectPath?: string): { resu
   } catch { return { toolEntries: [] } }
 }
 
+/**
+ * Tools whose block carries the task lifecycle. Workflow is here because the
+ * persisted transcript is what a phone loads as history: without the patch a
+ * finished workflow reopens with no phases, agents, or terminal state.
+ */
+const TASK_BLOCK_TOOLS = new Set(['Agent', 'Workflow'])
+
+/** Workflow rows a task event carries, in the field names the tool block uses. */
+function workflowBlockFields(event: Extract<AgentEvent, { type: 'task_progress' | 'task_notification' }>): Record<string, unknown> {
+  return {
+    ...(event.workflowAgents?.length ? { workflowAgents: event.workflowAgents } : {}),
+    ...(event.workflowPhases?.length ? { workflowPhases: event.workflowPhases } : {}),
+    ...(event.currentPhase ? { workflowCurrentPhase: event.currentPhase } : {}),
+  }
+}
+
 export function patchAgentBlock(messages: ChatMessage[], tid: string, patch: Record<string, unknown>): ChatMessage[] {
   // Preserve object identity for unchanged messages so Session can derive dirty
   // ids via reference comparison after the reducer.
@@ -247,7 +263,7 @@ export function patchAgentBlock(messages: ChatMessage[], tid: string, patch: Rec
   const next = messages.map((msg) => {
     let blockChanged = false
     const content = msg.content.map((block) => {
-      if (block.type === 'tool_use' && block.toolName === 'Agent' && block.toolUseId === tid) {
+      if (block.type === 'tool_use' && TASK_BLOCK_TOOLS.has(block.toolName) && block.toolUseId === tid) {
         blockChanged = true
         return { ...block, ...patch }
       }
@@ -507,6 +523,8 @@ export function applyClaudeEventToRuntime(
           taskUsage: { totalTokens: usage.totalTokens, toolUses: usage.toolUses, durationMs: usage.durationMs },
           taskToolHistory: toolHistory,
           taskSummary: progressSummary,
+          taskDescription: event.description,
+          ...workflowBlockFields(event),
         }),
         taskProgress: {
           ...runtime.taskProgress,
@@ -532,12 +550,15 @@ export function applyClaudeEventToRuntime(
       const finalSummary = event.summary || prev?.summary
       const usage = event.usage ?? { totalTokens: prev?.totalTokens ?? 0, toolUses: prev?.toolUses ?? 0, durationMs: prev?.durationMs ?? 0 }
       const finalToolHistory = prev?.toolHistory ?? []
-      const taskResultText = event.outputFile ? readOutputFileResultText(event.outputFile) : undefined
+      // Grok hands the structured result on the event itself; Claude leaves it in the output file.
+      const taskResultText = event.resultText ?? (event.outputFile ? readOutputFileResultText(event.outputFile) : undefined)
       let msgs = patchAgentBlock(runtime.messages, tid, {
         taskUsage: { totalTokens: usage.totalTokens, toolUses: usage.toolUses, durationMs: usage.durationMs },
         taskToolHistory: finalToolHistory,
         taskSummary: finalSummary,
+        taskStatus: event.taskStatus,
         ...(taskResultText ? { taskResultText } : {}),
+        ...workflowBlockFields(event),
       })
       if (event.outputFile) {
         // Preserve object identity for messages that do not own this tool_result,

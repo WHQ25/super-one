@@ -59,7 +59,16 @@ interface AgentTaskData {
   taskUsage?: { totalTokens: number; toolUses: number; durationMs: number }
   taskToolHistory?: Array<{ toolName: string; description: string }>
   taskSummary?: string
+  /** Latest `task_progress.description`; a Grok workflow phrases it `name: objective`. */
+  taskDescription?: string
   taskResultText?: string
+  /**
+   * Terminal state from `task_notification`. The block is the only task fact a
+   * remote surface receives — it has no `taskProgress` store — and a background
+   * launch's `tool_result` lands long before the run ends, so without this the
+   * phone cannot tell a running workflow from a finished one.
+   */
+  taskStatus?: 'completed' | 'failed' | 'stopped'
   /**
    * Persisted path to child transcript (Grok chat_history.jsonl / Claude agent-*.jsonl).
    * Survives history reload when live taskProgress is empty.

@@ -250,6 +250,41 @@ describe('applyClaudeEventToRuntime task events', () => {
     const block = getAgentBlock(rt, TID)
     expect(block!.taskResultText).toBeUndefined()
   })
+
+  it('persists a Grok workflow lifecycle onto the Workflow block', () => {
+    const WF = 'call-wf-1'
+    const message: ChatMessage = {
+      ...agentMessage(WF),
+      content: [{ type: 'tool_use', toolName: 'Workflow', toolUseId: WF, input: '{"source":{"type":"name","name":"parity"}}' }],
+    }
+    let rt = makeRuntime([message])
+    rt = applyClaudeEventToRuntime(rt, {
+      type: 'task_progress', taskId: 'wf_1', toolUseId: WF,
+      description: 'parity: gap SuperOne coverage',
+      usage: { totalTokens: 10, toolUses: 2, durationMs: 1000 },
+      workflowPhases: [{ title: 'Source', state: 'done' }, { title: 'Catalog', state: 'active' }],
+      currentPhase: 'Catalog',
+      workflowAgents: [{ label: 'cataloger', toolCount: 3, tokens: 10, state: 'running' }],
+    } as AgentEvent)
+    let block = getAgentBlock(rt, WF)
+    expect(block!.taskDescription).toBe('parity: gap SuperOne coverage')
+    expect(block!.workflowCurrentPhase).toBe('Catalog')
+    expect(block!.workflowPhases).toHaveLength(2)
+    expect(block!.workflowAgents).toEqual([{ label: 'cataloger', toolCount: 3, tokens: 10, state: 'running' }])
+    expect(block!.taskStatus).toBeUndefined()
+
+    rt = applyClaudeEventToRuntime(rt, {
+      type: 'task_notification', taskId: 'wf_1', toolUseId: WF,
+      taskStatus: 'completed', outputFile: '', summary: 'Wrote the plan',
+      resultText: 'Plan written to docs/plan.md',
+      usage: { totalTokens: 900, toolUses: 12, durationMs: 60000 },
+    } as AgentEvent)
+    block = getAgentBlock(rt, WF)
+    expect(block!.taskStatus).toBe('completed')
+    // Event-carried result text persists even with no output file to read.
+    expect(block!.taskResultText).toBe('Plan written to docs/plan.md')
+    expect(block!.taskUsage).toEqual({ totalTokens: 900, toolUses: 12, durationMs: 60000 })
+  })
 })
 
 describe('message_start is an idempotent upsert', () => {

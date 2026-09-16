@@ -131,6 +131,11 @@ describe('workflowToolTargetLabel', () => {
     expect(workflowToolTargetLabel({ script_path: '/home/x/.grok/workflows/mobile-adapt.rhai' })).toBe('mobile-adapt')
     expect(workflowToolTargetLabel(JSON.stringify({ script: REAL_SCRIPT }))).toBe('ui-test-minimal')
   })
+
+  it('reads a Grok launch target nested under source', () => {
+    expect(workflowToolTargetLabel({ source: { type: 'name', name: 'grok-build-parity' } })).toBe('grok-build-parity')
+    expect(workflowToolTargetLabel({ source: { type: 'script_path', script_path: '/x/.grok/workflows/parity.rhai' } })).toBe('parity')
+  })
 })
 
 describe('parseWorkflowLaunch', () => {

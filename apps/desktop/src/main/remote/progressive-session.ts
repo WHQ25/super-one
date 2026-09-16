@@ -121,8 +121,10 @@ function projectEvent(event: AgentEvent, messages: readonly ChatMessage[]): Agen
   if (event.type === 'message_start' || event.type === 'user_message_appended') {
     return { ...event, message: projectProgressiveMessage(event.message) }
   }
-  if (event.type === 'task_progress') return { ...event, activityText: undefined, toolEntries: undefined, workflowAgents: undefined }
-  if (event.type === 'task_notification') return { ...event, resultText: undefined, toolEntries: undefined, outputFile: '', workflowAgents: undefined }
+  // Workflow agent rows stay: they are the card's Agents list (label, tool count,
+  // tokens, state), not transcript text, and the phone has no other source for them.
+  if (event.type === 'task_progress') return { ...event, activityText: undefined, toolEntries: undefined }
+  if (event.type === 'task_notification') return { ...event, resultText: undefined, toolEntries: undefined, outputFile: '' }
   const messageId = 'messageId' in event ? event.messageId : undefined
   const message = messages.find(message => message.id === messageId)
   if (event.type === 'content_delta' && event.delta.type === 'thinking') {

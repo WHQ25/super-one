@@ -63,6 +63,36 @@ describe('Grok UX reducer slices', () => {
     expect(session.taskProgress['tu-1']?.status).toBe('failed')
   })
 
+  it('stamps the task lifecycle onto the Workflow block for surfaces without taskProgress', () => {
+    const session = createDefaultChatCoreSession()
+    session.messages = [{
+      id: 'm1', role: 'assistant', status: 'streaming', createdAt: '', providerId: 'acp',
+      content: [{ type: 'tool_use', toolName: 'Workflow', toolUseId: 'tu-1', input: '{}' }],
+    }]
+    Object.assign(session, applyEventToSession(session, {
+      type: 'task_progress',
+      taskId: 'wf-1',
+      toolUseId: 'tu-1',
+      description: 'parity: catalog capabilities',
+      usage: { totalTokens: 5, toolUses: 1, durationMs: 100 },
+    }))
+    const running = session.messages[0]!.content[0] as { taskDescription?: string; taskStatus?: string }
+    expect(running.taskDescription).toBe('parity: catalog capabilities')
+    expect(running.taskStatus).toBeUndefined()
+    Object.assign(session, applyEventToSession(session, {
+      type: 'task_notification',
+      taskId: 'wf-1',
+      toolUseId: 'tu-1',
+      taskStatus: 'failed',
+      outputFile: '',
+      summary: 'budget exhausted',
+      usage: { totalTokens: 9, toolUses: 2, durationMs: 200 },
+    }))
+    const done = session.messages[0]!.content[0] as { taskStatus?: string; taskSummary?: string }
+    expect(done.taskStatus).toBe('failed')
+    expect(done.taskSummary).toBe('budget exhausted')
+  })
+
   it('keeps the current ACP model when the catalog drops it', () => {
     const session = createDefaultChatCoreSession()
     session.sessionProvider = 'acp'

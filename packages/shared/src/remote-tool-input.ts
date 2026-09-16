@@ -61,7 +61,8 @@ const BUILTIN_TOOL_INPUT_FIELDS: Record<string, readonly string[]> = {
   Skill: ['skill'],
   Agent: ['name', 'subagent_type', 'description', 'model', 'team_name', 'prompt', 'run_in_background'],
   Task: ['name', 'subagent_type', 'description', 'model', 'team_name', 'prompt', 'run_in_background'],
-  Workflow: ['name', 'script_path', 'scriptPath', 'validate_only', 'validateOnly'],
+  // `source` is Grok's `{ type: 'name' | 'script_path', name?, script_path? }` launch target.
+  Workflow: ['name', 'script_path', 'scriptPath', 'source', 'validate_only', 'validateOnly'],
   TaskOutput: ['task_id', 'task_ids'],
   KillTask: ['task_id', 'taskId'],
   TaskCreate: ['subject'],

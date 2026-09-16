@@ -102,7 +102,7 @@ import { SuperoneCompactToolRowPresenter } from './presenters/SuperoneCompactToo
 import { superoneToolDescriptor } from './presenters/superone-tool-display'
 import { ToolGroupPresenter } from './presenters/ToolGroup'
 import { WorkflowBlockPresenter } from './presenters/WorkflowBlock'
-import { mergeWorkflowPhaseRows } from './presenters/workflow-utils'
+import { parseWorkflowLaunch, stripWorkflowNamePrefix, workflowToolTargetLabel } from './presenters/workflow-utils'
 import { TurnDetailSection } from './TurnDetailSection'
 
 const PORTABLE_COLORS: SubagentColorClasses = {
@@ -687,27 +687,33 @@ function PortableSubagent({
   )
 }
 
-/** Workflow card; like the subagent card it fetches its deferred input/result on expand. */
+/**
+ * Workflow card for the phone. Same presenter as the desktop card, fed from the
+ * tool block alone: the desktop reads `taskProgress` and the run directory on
+ * disk, neither of which exists here, so every fact it derives from those must
+ * already have been patched onto the block (`taskStatus`, `workflowAgents`, …).
+ *
+ * A workflow runs in the background, so its `tool_result` is a launch receipt
+ * (run id, script path) that lands seconds after the call — it proves the run
+ * started, never that it finished. Completion is `taskStatus`; the receipt is
+ * only shown when the launch itself failed.
+ */
 function PortableWorkflow({ toolBlock, resultBlock: shellResultBlock, isStreaming }: ClaudeWorkflowPresenterProps) {
   const [expanded, setExpanded] = useState(false)
-  const { detail } = useDeferredToolDetail(toolBlock.remoteDetail, expanded, Boolean(shellResultBlock) || !isStreaming)
-  const params = parseRecord(detail.input ?? toolBlock.input)
+  const finished = !!toolBlock.taskStatus
+  const { detail } = useDeferredToolDetail(toolBlock.remoteDetail, expanded, finished)
+  const input = detail.input ?? toolBlock.input
   const resultBlock: ContentBlock | undefined = detail.result
     ? { type: 'tool_result', toolUseId: toolBlock.toolUseId, summary: detail.result }
     : shellResultBlock
   const result = resultBlock?.type === 'tool_result' ? resultBlock : undefined
-  const declaredPhases = Array.isArray(params.phases)
-    ? params.phases.flatMap((phase) => {
-        if (typeof phase === 'string') return [{ title: phase }]
-        if (!phase || typeof phase !== 'object' || Array.isArray(phase)) return []
-        const row = phase as Record<string, unknown>
-        return [{ title: String(row.title ?? row.name ?? ''), detail: String(row.detail ?? '') || undefined }]
-      }).filter((phase) => phase.title)
-    : []
-  const phases = mergeWorkflowPhaseRows(
-    Array.isArray(toolBlock.workflowPhases) ? toolBlock.workflowPhases : undefined,
-    declaredPhases,
-  )
+  const launch = parseWorkflowLaunch(result?.summary)
+  const launchFailed = !!result?.isError
+  const launched = !launchFailed && (!!(launch.runId ?? launch.taskId) || !!toolBlock.taskSummary || !!toolBlock.taskUsage)
+  const isComplete = finished || launchFailed
+  const isRunning = !isComplete && (launched || isStreaming)
+  const name = toolBlock.workflowName || launch.name || workflowToolTargetLabel(input) || undefined
+  const description = stripWorkflowNamePrefix(toolBlock.workflowDescription || toolBlock.taskDescription, name)
   const agents = (toolBlock.workflowAgents ?? []).map((agent, index) => ({
     agentId: agent.agentId ?? `agent-${index}`,
     label: agent.label,
@@ -715,28 +721,30 @@ function PortableWorkflow({ toolBlock, resultBlock: shellResultBlock, isStreamin
     tokens: agent.tokens,
     state: agent.state,
   }))
-  const complete = Boolean(resultBlock || toolBlock.taskResultText)
+  const agentsTokens = agents.reduce((sum, agent) => sum + (agent.tokens ?? 0), 0)
+  const summary = stripWorkflowNamePrefix(toolBlock.taskSummary, name)
   return (
     <WorkflowBlockPresenter
       colors={PORTABLE_COLORS}
-      name={String(params.name ?? toolBlock.workflowName ?? '') || undefined}
-      description={String(params.description ?? toolBlock.workflowDescription ?? '') || undefined}
-      isSpawning={!complete && isStreaming && !params.name}
-      isRunning={!complete && isStreaming}
-      isComplete={complete}
-      terminalStatus={result?.isError ? 'failed' : complete ? 'completed' : undefined}
-      activePhase={toolBlock.workflowCurrentPhase}
-      phases={phases}
+      name={name}
+      description={description}
+      isSpawning={!launched && !isComplete && !name}
+      isRunning={isRunning}
+      isComplete={isComplete}
+      terminalStatus={toolBlock.taskStatus ?? (launchFailed ? 'failed' : undefined)}
+      activePhase={isRunning ? toolBlock.workflowCurrentPhase : undefined}
+      phases={toolBlock.workflowPhases ?? []}
       agents={agents}
-      totalTokens={agents.reduce((sum, agent) => sum + (agent.tokens ?? 0), 0)}
-      elapsed={toolBlock.elapsedSeconds ?? 0}
+      totalTokens={toolBlock.taskUsage?.totalTokens || agentsTokens}
+      elapsed={toolBlock.taskUsage?.durationMs ? Math.round(toolBlock.taskUsage.durationMs / 1000) : 0}
       expanded={expanded}
       onExpandedChange={setExpanded}
       canOpenFullView={false}
       onOpenFullView={() => undefined}
       logs={[]}
-      resultText={result?.summary ?? toolBlock.taskResultText}
-      runningSummary={toolBlock.taskSummary}
+      resultText={launchFailed ? result?.summary : (toolBlock.taskResultText ?? detail.taskResultText)}
+      runningSummary={summary}
+      terminalSummary={summary}
       formatTokens={formatTokens}
       StructuredOutput={({ data }) => <PlainCode>{data}</PlainCode>}
     />

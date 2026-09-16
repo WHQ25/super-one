@@ -26,8 +26,8 @@ export interface CreateTerminalOptions {
   rows?: number
   env?: Record<string, string>
   shell?: string
-  /** Tab opened by an agent tool — labelled and revealed in the activity panel. */
-  openedByAgent?: boolean
+  /** Session whose agent tool opened the tab — docked in that session's activity panel. */
+  agentSessionId?: string
 }
 
 export class TerminalManager {
@@ -54,7 +54,7 @@ export class TerminalManager {
       onEvent: this.opts.onEvent,
       env: opts.env,
       shell: opts.shell,
-      openedByAgent: opts.openedByAgent,
+      agentSessionId: opts.agentSessionId,
       coalesceMs: this.opts.coalesceMs,
       snapshotSoftLimit: this.opts.snapshotSoftLimit,
     })

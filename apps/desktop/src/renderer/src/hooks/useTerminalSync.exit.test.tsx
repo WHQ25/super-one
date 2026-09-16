@@ -55,10 +55,21 @@ describe('useTerminalSync on terminal_exited', () => {
     expect(removeTab).not.toHaveBeenCalled()
   })
 
-  it('reveals an agent-opened tab in the dock when it is created', () => {
+  it('docks an agent-opened tab without forcing the panel open, and keeps it out of the bottom panel', () => {
     renderHook(() => useTerminalSync())
-    const item = { terminalId: 't2', cwd: '/proj', projectPath: '/proj', openedByAgent: true } as TerminalListItem
+    const item = { terminalId: 't2', cwd: '/proj', projectPath: '/proj', agentSessionId: 'sess-a' } as TerminalListItem
     emit({ type: 'terminal_created', item } as TerminalEvent)
-    expect(revealTerminalTabInActivity).toHaveBeenCalledWith(item)
+    expect(revealTerminalTabInActivity).toHaveBeenCalledWith(item, { reveal: false })
+    // The bottom panel is per project: listing the tab there would show it to
+    // every session in the project, not only the one whose agent opened it.
+    expect(storeState.upsertTab).not.toHaveBeenCalled()
+  })
+
+  it('leaves a user-opened tab out of the activity dock', () => {
+    renderHook(() => useTerminalSync())
+    const item = { terminalId: 't3', cwd: '/proj', projectPath: '/proj' } as TerminalListItem
+    emit({ type: 'terminal_created', item } as TerminalEvent)
+    expect(revealTerminalTabInActivity).not.toHaveBeenCalled()
+    expect(storeState.upsertTab).toHaveBeenCalledWith('/proj', item)
   })
 })

@@ -282,8 +282,12 @@ PTY, scrollback spill.
   post-action screen collapsed to the last 8 lines with expand. Clicking the title
   reveals the tab in the terminal panel. Stories: open (pending confirm / granted /
   rejected), act batch, wait_for met / timed out, exited tab, long screen, narrow.
-- **Activity panel**: `run` opens the tab in the activity panel and focuses it
-  (`terminal_created` already upserts; add a `reveal` flag on agent-created items).
+- **Activity panel**: `run` opens the tab in the activity panel of the session that
+  ran it. `TerminalListItem.agentSessionId` records the owner: the bottom terminal
+  panel (per project) leaves such tabs out, `terminal_created` docks the tab only
+  when its owner is the on-screen session, and `materializeOwnedTerminalTabs` adds
+  the rest when the owner session is restored — the same model as agent browser
+  tabs. Other sessions' tools do not list or resolve the tab.
   While the agent controls the command the tab shows a Bot icon and a status line
   *Agent is driving `bun run storybook` — you can type here too*; it clears itself when
   the command exits. Reuse the remote-device banner styling.

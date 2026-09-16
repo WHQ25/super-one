@@ -65,7 +65,7 @@ class StubManager implements TerminalToolHost {
       spawner,
       ownership: new TerminalOwnership(),
       shell: '/bin/zsh',
-      openedByAgent: opts.openedByAgent,
+      agentSessionId: opts.agentSessionId,
       onEvent: () => {},
       control: { pollMs: 20, startGraceMs: 200, idleMs: 50 },
     })
@@ -91,13 +91,13 @@ class StubManager implements TerminalToolHost {
   }
 }
 
-function makeDeps(opts: { preapproved?: string[]; signal?: AbortSignal } = {}) {
-  const manager = new StubManager()
+function makeDeps(opts: { preapproved?: string[]; signal?: AbortSignal; sessionId?: string; manager?: StubManager } = {}) {
+  const manager = opts.manager ?? new StubManager()
   const events: AgentEvent[] = []
   const rulesAdded: string[] = []
   const deps: BuiltInSuperoneToolDeps = {
     notifyDevAppReady: () => {},
-    sessionId: 'agent-1',
+    sessionId: opts.sessionId ?? 'agent-1',
     sessionHost: {
       getSession: () => ({
         projectPath: '/proj',
@@ -166,7 +166,7 @@ describe('terminal_tabs run', () => {
     expect(result.foreground).toBe('bun')
     expect(rulesAdded).toEqual(['bun run storybook --ci:*'])
     const session = manager.get('t1')!
-    expect(session.openedByAgent).toBe(true)
+    expect(session.agentSessionId).toBe('agent-1')
     expect(manager.ptys.get('t1')!.writes).toEqual(['bun run storybook --ci\r'])
     expect(session.agentControl?.command).toBe('bun run storybook --ci')
   })
@@ -310,5 +310,44 @@ describe('terminal_tabs close', () => {
     expect(result.skipped).toEqual([{ tab: userTab.terminalId, reason: 'User declined' }])
     expect(manager.killed).toEqual(['t1'])
     expect(pendingRequest(events)?.allowAlwaysAllow).toBe(false)
+  })
+})
+
+describe('agent tabs are scoped to the session that opened them', () => {
+  /** Session A runs a command in its own tab; session B shares the manager (same project). */
+  async function twoSessions() {
+    const a = makeDeps({ preapproved: ['python3'], sessionId: 'sess-a' })
+    const b = makeDeps({ preapproved: ['ls'], sessionId: 'sess-b', manager: a.manager })
+    await terminalTabsHandler({ action: 'run', command: 'python3' }, a.deps)
+    const userTab = a.manager.create({ cwd: '/proj', projectPath: '/proj', title: 'user' })
+    return { a, b, userTab }
+  }
+
+  it('hides another session\'s agent tab from list', async () => {
+    const { a, b, userTab } = await twoSessions()
+    const mine = (await terminalTabsHandler({ action: 'list' }, a.deps)).content[0].text
+    expect(mine).toContain('t1')
+    expect(mine).toContain(userTab.terminalId)
+    const theirs = (await terminalTabsHandler({ action: 'list' }, b.deps)).content[0].text
+    expect(theirs).not.toContain('t1')
+    expect(theirs).toContain(userTab.terminalId)
+  })
+
+  it('reports another session\'s agent tab as not found for every action', async () => {
+    const { b } = await twoSessions()
+    const snapshot = await terminalSnapshotHandler({ tab: 't1' }, b.deps)
+    expect(snapshot.isError).toBe(true)
+    expect(snapshot.content[0].text).toMatch(/not found/)
+    const wait = await terminalWaitForHandler({ tab: 't1', text: '>>>' }, b.deps)
+    expect(wait.isError).toBe(true)
+    const act = await terminalActHandler({ tab: 't1', actions: [{ type: 'type', text: 'x' }] }, b.deps)
+    expect(act.isError).toBe(true)
+    const run = await terminalTabsHandler({ action: 'run', command: 'ls', tab: 't1' }, b.deps)
+    expect(run.isError).toBe(true)
+    const attach = await terminalTabsHandler({ action: 'attach', tab: 't1' }, b.deps)
+    expect(attach.isError).toBe(true)
+    const close = parse(await terminalTabsHandler({ action: 'close', tab: 't1' }, b.deps))
+    expect(close.skipped).toEqual([{ tab: 't1', reason: 'not found' }])
+    expect(b.manager.killed).toEqual([])
   })
 })

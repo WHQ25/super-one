@@ -542,29 +542,70 @@ export async function openTerminalTab(projectPath: string, sessionId?: string) {
   revealTerminalTabInActivity(item)
 }
 
+const terminalPanelId = (terminalId: string) => `terminal-${terminalId}`
+
+function addTerminalPanel(item: { terminalId: string; title?: string }) {
+  if (!dockApi) return
+  const position = positionInMaximizedGroup()
+  dockApi.addPanel({
+    id: terminalPanelId(item.terminalId),
+    component: 'terminal',
+    tabComponent: 'terminal-tab',
+    title: item.title || 'Terminal',
+    params: { terminalId: item.terminalId },
+    ...(position ? { position } : {}),
+  })
+}
+
 /**
- * Show an existing PTY as an activity-panel tab (agent-opened terminals arrive
- * this way: main spawns them, `terminal_created` reveals them here so the user
- * watches the agent work in the same dock as its browser tabs).
+ * Show an existing PTY as an activity-panel tab.
+ *
+ * An agent-opened tab belongs to the session whose agent opened it
+ * (`agentSessionId`). Like `openBrowserTab`, one owned by a session the user is
+ * not viewing must not land in the live dock — it is materialized into its
+ * owner's layout when that session is next restored.
+ *
+ * `reveal: false` is the agent path (`terminal_created` for an agent-opened PTY):
+ * the tab is docked so it is there when the user looks, but the panel is not
+ * forced open — the same contract as `openBrowserTab`'s automation path, so a
+ * command the agent runs no longer yanks the layout while the user reads chat.
+ * User actions (the launcher, the tool row's reveal) keep the default.
  */
-export function revealTerminalTabInActivity(item: { terminalId: string; title?: string }) {
-  ensureVisible()
-  const panelId = `terminal-${item.terminalId}`
+export function revealTerminalTabInActivity(item: { terminalId: string; title?: string; agentSessionId?: string }, opts?: { reveal?: boolean }) {
+  const owner = item.agentSessionId
+  if (owner != null && owner !== (currentSessionIdGetter?.() ?? null)) return
+  if (opts?.reveal !== false) ensureVisible()
+  const panelId = terminalPanelId(item.terminalId)
   execOrDefer(() => {
     if (!dockApi) return
     const existing = dockApi.panels.find((p) => p.id === panelId)
-    if (existing) {
-      activateInMaximizedGroup(existing)
-    } else {
-      const position = positionInMaximizedGroup()
-      dockApi.addPanel({
-        id: panelId,
-        component: 'terminal',
-        tabComponent: 'terminal-tab',
-        title: item.title || 'Terminal',
-        params: { terminalId: item.terminalId },
-        ...(position ? { position } : {}),
-      })
+    if (existing) activateInMaximizedGroup(existing)
+    else addTerminalPanel(item)
+  })
+}
+
+/**
+ * When a session is restored, dock the agent-opened terminals it owns and drop
+ * dock tabs whose PTY died while the session was off screen.
+ *
+ * Main is the source of truth for PTYs, so this reads the live list rather
+ * than a renderer registry; the session check after the await guards against
+ * the user switching again before the list arrives.
+ */
+export function materializeOwnedTerminalTabs(sessionId: string) {
+  if (!dockApi) return
+  void window.terminal.list().then((items) => {
+    if (!dockApi || (currentSessionIdGetter?.() ?? null) !== sessionId) return
+    const live = new Set(items.map((item) => item.terminalId))
+    for (const panel of [...dockApi.panels]) {
+      if (!panel.id.startsWith('terminal-')) continue
+      const terminalId = (panel.params as { terminalId?: string } | undefined)?.terminalId
+      if (terminalId && !live.has(terminalId)) dropActivityTerminalTab(terminalId)
+    }
+    for (const item of items) {
+      if (item.agentSessionId !== sessionId || item.status !== 'running') continue
+      if (dockApi.panels.some((p) => p.id === terminalPanelId(item.terminalId))) continue
+      addTerminalPanel(item)
     }
   })
 }
@@ -582,7 +623,7 @@ export function closeActivityTerminalTab(terminalId: string) {
  */
 export function dropActivityTerminalTab(terminalId: string) {
   disposeActivityTermInstance(terminalId)
-  dockApi?.panels.find((p) => p.id === `terminal-${terminalId}`)?.api.close()
+  dockApi?.panels.find((p) => p.id === terminalPanelId(terminalId))?.api.close()
 }
 
 export function closeBrowserTab(browserId: string) {

@@ -20,7 +20,7 @@ class RealManager implements TerminalToolHost {
   private n = 0
   create(opts: CreateTerminalOptions): TerminalSession {
     const terminalId = `real${++this.n}`
-    const s = new TerminalSession({ terminalId, cwd: opts.cwd, projectPath: opts.projectPath, title: opts.title ?? 'T', cols: opts.cols ?? 80, rows: opts.rows ?? 24, spawner: nodePtySpawner, ownership: new TerminalOwnership(), openedByAgent: opts.openedByAgent, onEvent: () => {}, control: { pollMs: 100 } })
+    const s = new TerminalSession({ terminalId, cwd: opts.cwd, projectPath: opts.projectPath, title: opts.title ?? 'T', cols: opts.cols ?? 80, rows: opts.rows ?? 24, spawner: nodePtySpawner, ownership: new TerminalOwnership(), agentSessionId: opts.agentSessionId, onEvent: () => {}, control: { pollMs: 100 } })
     this.sessions.set(terminalId, s)
     return s
   }

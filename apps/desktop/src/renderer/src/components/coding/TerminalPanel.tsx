@@ -14,7 +14,7 @@ import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
 import { EMPTY_TABS, useTerminalStore } from '@/stores/terminal'
 import { useTerminalPanel } from '@/hooks/useTerminalPanel'
-import { tabBelongsToProject } from '@/hooks/useTerminalSync'
+import { tabShowsInTerminalPanel } from '@/hooks/useTerminalSync'
 import { TerminalRemoteBanner } from './TerminalRemoteBanner'
 import { HoverCloseSlot } from '@/components/activity/ActivityTab'
 import { SelectionMenu } from '@/components/chat/SelectionContextMenu'
@@ -229,7 +229,7 @@ export function TerminalPanel() {
     void window.terminal.list().then((items) => {
       if (cancelled) return
       for (const item of items) {
-        if (tabBelongsToProject(item, projectPath)) upsertTab(projectPath, item)
+        if (tabShowsInTerminalPanel(item, projectPath)) upsertTab(projectPath, item)
       }
       const existing = useTerminalStore.getState().byProject[projectPath]?.tabs ?? EMPTY_TABS
       if (existing.length === 0) void createTerminal()

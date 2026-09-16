@@ -12,6 +12,8 @@ import {
   beginMosaicRecording,
   replayMosaicOpenedPanels,
   materializeOwnedBrowserTabs,
+  materializeOwnedTerminalTabs,
+  revealTerminalTabInActivity,
   maximizeActivityPanel,
   toggleMaximizedActivityGroup,
   setCurrentSessionIdGetter,
@@ -378,6 +380,84 @@ describe('browser tabs stay confined to their owner session', () => {
     // Idempotent: a second restore does not duplicate the already-present panel.
     materializeOwnedBrowserTabs('sess-hidden')
     expect(dock.panels.map((p) => p.id)).toEqual(['browser-bg'])
+  })
+})
+
+describe('agent terminal tabs stay confined to their owner session', () => {
+  type FakePanel = { id: string; params?: { terminalId?: string }; api: { setActive: () => void; close: () => void } }
+  function fakeDock(initial: FakePanel[] = []) {
+    const panels: FakePanel[] = initial.map((panel) => ({
+      ...panel,
+      api: { setActive: vi.fn(), close: vi.fn(() => { panels.splice(panels.findIndex((p) => p.id === panel.id), 1) }) },
+    }))
+    const addPanel = vi.fn((spec: { id: string; params?: { terminalId?: string } }) => {
+      panels.push({ id: spec.id, params: spec.params, api: { setActive: vi.fn(), close: vi.fn() } })
+    })
+    setDockApi({ panels, activePanel: undefined, addPanel } as never)
+    return { panels, addPanel }
+  }
+  const list = vi.fn()
+
+  beforeEach(() => {
+    useActivityPanelStore.setState({ showPanel: false, side: 'left', panelWidth: 560 })
+    setCurrentSessionIdGetter(() => 'sess-visible')
+    list.mockReset()
+    Object.defineProperty(window, 'terminal', { configurable: true, value: { list } })
+  })
+
+  afterEach(() => {
+    setCurrentSessionIdGetter(null)
+  })
+
+  it('does not dock a tab whose owner is not the on-screen session', () => {
+    const dock = fakeDock()
+
+    revealTerminalTabInActivity({ terminalId: 't-bg', agentSessionId: 'sess-hidden' }, { reveal: false })
+
+    expect(dock.addPanel).not.toHaveBeenCalled()
+    expect(useActivityPanelStore.getState().showPanel).toBe(false)
+  })
+
+  it('docks a tab owned by the on-screen session without opening the panel', () => {
+    const dock = fakeDock()
+
+    revealTerminalTabInActivity({ terminalId: 't-fg', agentSessionId: 'sess-visible' }, { reveal: false })
+
+    expect(dock.addPanel).toHaveBeenCalledWith(expect.objectContaining({ id: 'terminal-t-fg', params: { terminalId: 't-fg' } }))
+    expect(useActivityPanelStore.getState().showPanel).toBe(false)
+  })
+
+  it('materializes running owned tabs on restore and drops dock tabs whose PTY died off screen', async () => {
+    const dock = fakeDock([{ id: 'terminal-t-dead', params: { terminalId: 't-dead' }, api: { setActive: vi.fn(), close: vi.fn() } }])
+    list.mockResolvedValue([
+      { terminalId: 't-bg', status: 'running', agentSessionId: 'sess-visible', title: 'bun' },
+      { terminalId: 't-exited', status: 'exited', agentSessionId: 'sess-visible' },
+      { terminalId: 't-foreign', status: 'running', agentSessionId: 'sess-other' },
+      { terminalId: 't-user', status: 'running' },
+    ])
+
+    materializeOwnedTerminalTabs('sess-visible')
+    await vi.waitFor(() => expect(dock.panels.map((p) => p.id)).toEqual(['terminal-t-bg']))
+    expect(useActivityPanelStore.getState().showPanel).toBe(false)
+
+    // Idempotent: a second restore does not duplicate the already-present panel.
+    materializeOwnedTerminalTabs('sess-visible')
+    await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(2))
+    expect(dock.panels.map((p) => p.id)).toEqual(['terminal-t-bg'])
+  })
+
+  it('leaves the dock alone when the user switched sessions before the list arrived', async () => {
+    const dock = fakeDock()
+    let resolve: (items: unknown[]) => void = () => {}
+    list.mockReturnValue(new Promise((r) => { resolve = r }))
+
+    materializeOwnedTerminalTabs('sess-visible')
+    setCurrentSessionIdGetter(() => 'sess-other')
+    resolve([{ terminalId: 't-bg', status: 'running', agentSessionId: 'sess-visible' }])
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(dock.addPanel).not.toHaveBeenCalled()
   })
 })
 

@@ -13,6 +13,15 @@ export function tabBelongsToProject(item: Pick<TerminalListItem, 'cwd' | 'projec
 }
 
 /**
+ * Whether the bottom terminal panel lists this tab. The panel is per project,
+ * so an agent-opened tab — owned by one session and docked in that session's
+ * activity panel — stays out, or every session in the project would see it.
+ */
+export function tabShowsInTerminalPanel(item: Pick<TerminalListItem, 'cwd' | 'projectPath' | 'agentSessionId'>, projectPath: string): boolean {
+  return !item.agentSessionId && tabBelongsToProject(item, projectPath)
+}
+
+/**
  * Keep the desktop tab strip in sync with PTYs created or killed on a phone,
  * and surface the panel when a phone takes a tab — the same observation
  * model as a remote-locked session.
@@ -31,10 +40,13 @@ export function useTerminalSync(): void {
       const folder = useAppStore.getState().currentFolder
       if (event.type === 'terminal_created') {
         if (!folder || !tabBelongsToProject(event.item, folder)) return
-        upsertTab(folder, event.item)
-        // An agent-opened tab is the agent's screen: reveal it in the activity
-        // dock next to the agent's browser tabs so the user can watch and take over.
-        if (event.item.openedByAgent) revealTerminalTabInActivity(event.item)
+        // An agent-opened tab is the agent's screen: dock it next to the agent's
+        // browser tabs so the user can find it and take over, without opening the
+        // panel — like browser automation, the agent's work runs in the background.
+        // The reveal is owner-aware, so a tab for a session the user is not viewing
+        // waits in main until that session is restored.
+        if (event.item.agentSessionId) revealTerminalTabInActivity(event.item, { reveal: false })
+        else upsertTab(folder, event.item)
         return
       }
       if (!event.terminalId) return

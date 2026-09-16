@@ -12,6 +12,7 @@ const {
   mockCloseGhostMiniAppPanels,
   mockCloseGhostSideChatPanel,
   mockMaterializeOwnedBrowserTabs,
+  mockMaterializeOwnedTerminalTabs,
   openAppsRef,
   sideChatRef,
 } = vi.hoisted(() => ({
@@ -24,6 +25,7 @@ const {
   mockCloseGhostSideChatPanel: vi.fn<(isAlive: (sessionId: string) => boolean) => void>(),
   sideChatRef: { value: null as { sessionId: string } | null },
   mockMaterializeOwnedBrowserTabs: vi.fn<(sessionId: string) => void>(),
+  mockMaterializeOwnedTerminalTabs: vi.fn<(sessionId: string) => void>(),
   openAppsRef: { value: {} as Record<string, unknown> },
 }))
 
@@ -36,6 +38,7 @@ vi.mock('@/components/activity/activity-panel-api', () => ({
   closeGhostMiniAppPanels: mockCloseGhostMiniAppPanels,
   closeGhostSideChatPanel: mockCloseGhostSideChatPanel,
   materializeOwnedBrowserTabs: mockMaterializeOwnedBrowserTabs,
+  materializeOwnedTerminalTabs: mockMaterializeOwnedTerminalTabs,
 }))
 
 vi.mock('./miniapp', () => ({
@@ -242,6 +245,17 @@ describe('activity-view-state', () => {
     expect(mockMaterializeOwnedBrowserTabs).toHaveBeenCalledWith('sess-A')
   })
 
+  it('materializes owned terminal tabs when a session is restored (regression: an agent terminal opened off screen landed in the on-screen session)', () => {
+    mockIsDockReady.mockReturnValue(true)
+    mockGetDockSnapshot.mockReturnValue(makeLayout('foo'))
+    useActivityViewStateStore.getState().park('sess-A')
+
+    mockMaterializeOwnedTerminalTabs.mockClear()
+    useActivityViewStateStore.getState().restore('sess-A')
+
+    expect(mockMaterializeOwnedTerminalTabs).toHaveBeenCalledWith('sess-A')
+  })
+
   it('materializes owned browser tabs when a deferred restore flushes on dock-ready', () => {
     mockIsDockReady.mockReturnValue(true)
     mockGetDockSnapshot.mockReturnValue(makeLayout('parked'))
@@ -255,6 +269,7 @@ describe('activity-view-state', () => {
     useActivityViewStateStore.getState().flushPending()
 
     expect(mockMaterializeOwnedBrowserTabs).toHaveBeenCalledWith('sess-A')
+    expect(mockMaterializeOwnedTerminalTabs).toHaveBeenCalledWith('sess-A')
   })
 
   it('clearForSession removes the entry and clears matching pendingRestore', () => {

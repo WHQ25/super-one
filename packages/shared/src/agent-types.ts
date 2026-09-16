@@ -4416,8 +4416,12 @@ export interface TerminalListItem {
   ownerDeviceId: string | null
   /** Present while an agent session controls the tab's foreground command. */
   agentControl?: TerminalAgentControl | null
-  /** Tab opened by an agent — the panel labels it and reveals it on creation. */
-  openedByAgent?: boolean
+  /**
+   * Session whose agent opened this tab; absent for user-opened tabs. The tab
+   * belongs to that session's activity panel and is hidden from every other
+   * session's tools and terminal panel.
+   */
+  agentSessionId?: string
 }
 
 export type TerminalErrorCode = 'not_owner' | 'no_terminal' | 'spawn_failed' | 'cwd_invalid'

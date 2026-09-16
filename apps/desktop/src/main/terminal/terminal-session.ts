@@ -32,7 +32,7 @@ export interface TerminalSessionOptions {
   coalesceMs?: number
   snapshotSoftLimit?: number
   /** Tab opened by an agent tool rather than the user. */
-  openedByAgent?: boolean
+  agentSessionId?: string
   control?: TerminalControlOptions
 }
 
@@ -57,7 +57,7 @@ export class TerminalSession {
   readonly projectPath: string
   readonly ownership: TerminalOwnership
   readonly control: TerminalControl
-  readonly openedByAgent: boolean
+  readonly agentSessionId: string | undefined
   title: string
   lastAnsi = ''
   /** Last PTY output for idle detection; 0 until the process has printed anything. */
@@ -94,7 +94,7 @@ export class TerminalSession {
     this.snapshotSoftLimit = opts.snapshotSoftLimit ?? DEFAULT_SNAPSHOT_SOFT_LIMIT
     this._cols = opts.cols
     this._rows = opts.rows
-    this.openedByAgent = opts.openedByAgent === true
+    this.agentSessionId = opts.agentSessionId
     this.shellName = processBaseName(opts.shell || defaultShell())
 
     this.term = new Terminal({ cols: opts.cols, rows: opts.rows, allowProposedApi: true, scrollback: SCROLLBACK_LINES })
@@ -152,7 +152,7 @@ export class TerminalSession {
       status: this._status,
       ownerDeviceId: this.ownership.ownerDeviceId,
       agentControl: this.control.current,
-      openedByAgent: this.openedByAgent,
+      agentSessionId: this.agentSessionId,
     }
   }
 

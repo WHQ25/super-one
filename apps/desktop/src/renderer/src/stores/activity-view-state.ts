@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { SerializedDockview } from 'dockview-core'
-import { applyDockSnapshot, closeGhostMiniAppPanels, closeGhostSideChatPanel, getDockSnapshot, isDockReady, materializeOwnedBrowserTabs, setCurrentSessionIdGetter, setOnDockReady } from '@/components/activity/activity-panel-api'
+import { applyDockSnapshot, closeGhostMiniAppPanels, closeGhostSideChatPanel, getDockSnapshot, isDockReady, materializeOwnedBrowserTabs, materializeOwnedTerminalTabs, setCurrentSessionIdGetter, setOnDockReady } from '@/components/activity/activity-panel-api'
 import { useActivityPanelStore } from './activity-panel'
 import { useMiniAppStore } from './miniapp'
 import { useSideChatStore } from './side-chat'
@@ -31,6 +31,13 @@ function applyState(state: SessionViewState | undefined) {
   closeGhostSideChatPanel((sessionId) => sessionId === useSideChatStore.getState().current?.sessionId)
 }
 
+/** Bring a session's layout on screen, then add the agent tabs it acquired while parked. */
+function showSession(sessionId: string, state: SessionViewState | undefined) {
+  applyState(state ? { layout: state.layout ? structuredClone(state.layout) : null, showPanel: state.showPanel } : undefined)
+  materializeOwnedBrowserTabs(sessionId)
+  materializeOwnedTerminalTabs(sessionId)
+}
+
 export const useActivityViewStateStore = create<ActivityViewStateStore>((set, get) => ({
   perSession: {},
   pendingRestore: null,
@@ -54,9 +61,7 @@ export const useActivityViewStateStore = create<ActivityViewStateStore>((set, ge
       return
     }
     set({ pendingRestore: null, _currentSessionId: sessionId })
-    const target = get().perSession[sessionId]
-    applyState(target ? { layout: target.layout ? structuredClone(target.layout) : null, showPanel: target.showPanel } : undefined)
-    materializeOwnedBrowserTabs(sessionId)
+    showSession(sessionId, get().perSession[sessionId])
   },
 
   seedFromCurrent: (sessionId) => {
@@ -86,9 +91,7 @@ export const useActivityViewStateStore = create<ActivityViewStateStore>((set, ge
     if (!state.pendingRestore) return
     const sid = state.pendingRestore
     set({ pendingRestore: null })
-    const target = state.perSession[sid]
-    applyState(target ? { layout: target.layout ? structuredClone(target.layout) : null, showPanel: target.showPanel } : undefined)
-    materializeOwnedBrowserTabs(sid)
+    showSession(sid, state.perSession[sid])
   },
 
   _resetForTest: () => set({ perSession: {}, pendingRestore: null, _currentSessionId: null }),

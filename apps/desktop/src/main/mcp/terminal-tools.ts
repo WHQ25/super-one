@@ -164,9 +164,23 @@ function clampInt(value: unknown, fallback: number, min: number, max: number): n
   return Math.min(max, Math.max(min, n))
 }
 
-/** Reading is allowed on tabs the agent opened, or while it controls the command. */
+/** A tab this session may see: the user's tabs and the ones its own agent opened. */
+function visibleTo(item: Pick<TerminalListItem, 'agentSessionId'>, sessionId: string): boolean {
+  return !item.agentSessionId || item.agentSessionId === sessionId
+}
+
+/**
+ * Resolve a tab id the way the session sees the world: another session's
+ * agent tab is reported as missing, the same as it is left out of `list`.
+ */
+function findTab(terminals: TerminalToolDeps, sessionId: string, id: string): TerminalSession | undefined {
+  const target = terminals.manager.get(id)
+  return target && visibleTo(target, sessionId) ? target : undefined
+}
+
+/** Reading is allowed on tabs this session's agent opened, or while it controls the command. */
 function canRead(session: TerminalSession, sessionId: string): boolean {
-  return session.openedByAgent || session.control.heldBy(sessionId)
+  return session.agentSessionId === sessionId || session.control.heldBy(sessionId)
 }
 
 async function describeTab(session: TerminalSession, sessionId: string) {
@@ -221,7 +235,7 @@ export async function terminalTabsHandler(args: TerminalTabsArgs, deps: BuiltInS
   const action = args.action ?? 'list'
 
   if (action === 'list') {
-    const items = terminals.manager.listForProject(session.projectPath, session.cwd)
+    const items = terminals.manager.listForProject(session.projectPath, session.cwd).filter((item) => visibleTo(item, session.sessionId))
     const rows = items.map((item) => {
       const live = terminals.manager.get(item.terminalId)
       return {
@@ -231,7 +245,7 @@ export async function terminalTabsHandler(args: TerminalTabsArgs, deps: BuiltInS
         status: item.status,
         foreground: live?.foregroundProcess() || '',
         control: item.agentControl ? (item.agentControl.sessionId === session.sessionId ? 'me' : 'other-session') : 'none',
-        openedBy: item.openedByAgent ? 'agent' : 'user',
+        openedBy: item.agentSessionId ? 'agent' : 'user',
         altScreen: live?.altScreen ?? false,
       }
     })
@@ -242,7 +256,7 @@ export async function terminalTabsHandler(args: TerminalTabsArgs, deps: BuiltInS
     const command = normalizeTerminalCommand(String(args.command ?? ''))
     if (!command) return toolResult('[Error] command is required for action=run.', true)
     const ids = tabIds(args.tab)
-    let target = ids[0] ? terminals.manager.get(ids[0]) : undefined
+    let target = ids[0] ? findTab(terminals, session.sessionId, ids[0]) : undefined
     if (ids[0] && !target) return toolResult(`[Error] Tab ${ids[0]} not found. Call terminal_tabs action=list.`, true)
     if (target) {
       if (target.status !== 'running') return toolResult(`[Error] Tab ${target.terminalId} has exited; omit tab to open a new one.`, true)
@@ -285,7 +299,7 @@ export async function terminalTabsHandler(args: TerminalTabsArgs, deps: BuiltInS
         title: typeof args.title === 'string' && args.title ? args.title : command.split(' ')[0] || basename(cwd),
         cols: clampInt(args.size?.cols, DEFAULT_COLS, 20, 400),
         rows: clampInt(args.size?.rows, DEFAULT_ROWS, 5, 200),
-        openedByAgent: true,
+        agentSessionId: session.sessionId,
       })
       // Let the login shell print its prompt and go quiet before the command lands
       // in its input; typing earlier leaves the line echoed by both the tty and ZLE.
@@ -308,7 +322,7 @@ export async function terminalTabsHandler(args: TerminalTabsArgs, deps: BuiltInS
   if (action === 'attach') {
     const id = tabIds(args.tab)[0]
     if (!id) return toolResult('[Error] tab is required for action=attach.', true)
-    const target = terminals.manager.get(id)
+    const target = findTab(terminals, session.sessionId, id)
     if (!target) return toolResult(`[Error] Tab ${id} not found. Call terminal_tabs action=list.`, true)
     if (target.status !== 'running') return toolResult(`[Error] Tab ${id} has exited.`, true)
     if (target.control.heldBy(session.sessionId)) return toolResult({ status: 'ok', ...(await describeTab(target, session.sessionId)) })
@@ -351,12 +365,12 @@ export async function terminalTabsHandler(args: TerminalTabsArgs, deps: BuiltInS
     const closed: string[] = []
     const skipped: Array<{ tab: string; reason: string }> = []
     for (const id of ids) {
-      const target = terminals.manager.get(id)
+      const target = findTab(terminals, session.sessionId, id)
       if (!target) {
         skipped.push({ tab: id, reason: 'not found' })
         continue
       }
-      const mine = target.openedByAgent || target.control.heldBy(session.sessionId)
+      const mine = canRead(target, session.sessionId)
       if (!mine) {
         let decision
         try {
@@ -393,7 +407,7 @@ export async function terminalSnapshotHandler(args: TerminalSnapshotArgs, deps: 
   if (!ctx.ok) return ctx.error
   const badArg = unknownArgsError('terminal_snapshot', args)
   if (badArg) return badArg
-  const target = ctx.terminals.manager.get(String(args.tab ?? ''))
+  const target = findTab(ctx.terminals, ctx.session.sessionId, String(args.tab ?? ''))
   if (!target) return toolResult(`[Error] Tab ${String(args.tab)} not found. Call terminal_tabs action=list.`, true)
   if (!canRead(target, ctx.session.sessionId)) {
     return toolResult(`[Error] Tab ${target.terminalId} belongs to the user. Use terminal_tabs action=attach while a command is running in it.`, true)
@@ -420,7 +434,7 @@ export async function terminalSnapshotHandler(args: TerminalSnapshotArgs, deps: 
       altScreen: target.altScreen,
       cols: target.cols,
       rows: target.rows,
-      openedBy: target.openedByAgent ? 'agent' : 'user',
+      openedBy: target.agentSessionId ? 'agent' : 'user',
     }
   }
   return toolResult(include.has('scrollback') ? spillLargeBrowserField(ctx.session.sessionId, out, 'scrollback', 'txt') : out)
@@ -449,7 +463,7 @@ export async function terminalActHandler(args: TerminalActArgs, deps: BuiltInSup
   if (!ctx.ok) return ctx.error
   const badArg = unknownArgsError('terminal_act', args, args.actions)
   if (badArg) return badArg
-  const target = ctx.terminals.manager.get(String(args.tab ?? ''))
+  const target = findTab(ctx.terminals, ctx.session.sessionId, String(args.tab ?? ''))
   if (!target) return toolResult(`[Error] Tab ${String(args.tab)} not found. Call terminal_tabs action=list.`, true)
   const actions = Array.isArray(args.actions) ? args.actions : []
   if (actions.length === 0 || actions.length > MAX_ACTIONS) return toolResult(`[Error] actions must hold 1–${MAX_ACTIONS} items.`, true)
@@ -506,7 +520,7 @@ export async function terminalWaitForHandler(args: TerminalWaitForArgs, deps: Bu
   if (!ctx.ok) return ctx.error
   const badArg = unknownArgsError('terminal_wait_for', args)
   if (badArg) return badArg
-  const target = ctx.terminals.manager.get(String(args.tab ?? ''))
+  const target = findTab(ctx.terminals, ctx.session.sessionId, String(args.tab ?? ''))
   if (!target) return toolResult(`[Error] Tab ${String(args.tab)} not found. Call terminal_tabs action=list.`, true)
   if (!canRead(target, ctx.session.sessionId)) {
     return toolResult(`[Error] Tab ${target.terminalId} belongs to the user. Use terminal_tabs action=attach while a command is running in it.`, true)

@@ -211,7 +211,7 @@ const SUGGESTIONS = [
  * a stray chip between the status row and the action bar.
  */
 export const PromptSuggestions = {
-  args: { promptSuggestions: SUGGESTIONS },
+  args: { promptSuggestions: SUGGESTIONS, onPromptSuggestionsDismiss: noop },
   name: 'Prompt suggestions',
 }
 

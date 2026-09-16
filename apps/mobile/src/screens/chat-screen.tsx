@@ -62,6 +62,7 @@ export function ChatScreen(props: {
   /** End-of-turn follow-ups; the composer renders every one as a tappable chip. */
   promptSuggestions?: string[]
   onPromptSuggestion?: (suggestion: string) => void
+  onPromptSuggestionsDismiss?: () => void
   attachments: ImageAttachment[]
   projectDirs: string[]
   sessionDirs: string[]

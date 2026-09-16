@@ -223,6 +223,10 @@ export function MobileApp() {
   const [queuedMessages, setQueuedMessages] = useState<ChatMessage[]>([])
   const [todos, setTodos] = useState<Record<string, TodoItem>>({})
   const [promptSuggestions, setPromptSuggestions] = useState<string[]>([])
+  // The follow-ups are host state and come back on every runtime sync, so a
+  // dismissal remembers *which* list it hid; the next turn's list still shows.
+  const [hiddenPromptSuggestions, setHiddenPromptSuggestions] = useState('')
+  const promptSuggestionsKey = promptSuggestions.join('\u0000')
   const [slashOutput, setSlashOutput] = useState<{ command: string; content: string } | null>(null)
   const [mcp, setMcp] = useState<{ open: boolean; loading: boolean; rows: McpServerRow[]; error?: string }>(
     { open: false, loading: false, rows: [] },
@@ -2028,7 +2032,8 @@ export function MobileApp() {
           usage={composerUsage}
           slashHits={slashHits}
           slashCatalogStatus={suggestions.slashCatalogStatus}
-          promptSuggestions={promptSuggestions}
+          promptSuggestions={promptSuggestionsKey === hiddenPromptSuggestions ? [] : promptSuggestions}
+          onPromptSuggestionsDismiss={() => setHiddenPromptSuggestions(promptSuggestionsKey)}
           // `writeCommandLine` rather than a whole-draft overwrite: it is the one
           // path that also drives the native editor, and it leaves anything the
           // user typed on a later line — mention chips included — in place.

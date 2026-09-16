@@ -75,6 +75,7 @@ export type ChatComposerProps = {
    */
   promptSuggestions?: string[]
   onPromptSuggestion?: (suggestion: string) => void
+  onPromptSuggestionsDismiss?: () => void
   onDraft: (value: string) => void; onSend: () => void; onStop: () => void
   onSteer?: () => void
   onSteerSoon?: () => void
@@ -205,7 +206,8 @@ export function ChatComposer(props: ChatComposerProps) {
           answer in progress, and the turn's follow-ups are not competing for it. */}
       {empty && !props.streaming && !props.loadingConversation
         ? <PromptSuggestions suggestions={props.promptSuggestions ?? []}
-          onSelect={(suggestion) => props.onPromptSuggestion?.(suggestion)} />
+          onSelect={(suggestion) => props.onPromptSuggestion?.(suggestion)}
+          onDismiss={props.onPromptSuggestionsDismiss} />
         : null}
       <SlashSuggestions matches={props.slashHits} status={props.slashCatalogStatus} onSelect={props.onSlash} onDismiss={props.onSlashDismiss} />
       <MentionSuggestions rows={props.mentionRows} onSelect={props.onMention} search={props.mentionSearch}

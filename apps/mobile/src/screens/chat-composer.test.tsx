@@ -137,6 +137,21 @@ test('prompt suggestions yield the slot to the command list', async () => {
   expect(screen.getByText('/clear')).toBeTruthy()
 })
 
+test('the dismiss on the suggestions title reports without selecting', async () => {
+  const picked: string[] = []
+  let dismissed = 0
+  await renderWithTheme(composer({
+    promptSuggestions: FOLLOW_UPS,
+    onPromptSuggestion: (s) => picked.push(s),
+    onPromptSuggestionsDismiss: () => { dismissed += 1 },
+  }))
+
+  fireEvent.press(screen.getByLabelText('Hide Suggestions'))
+
+  expect(dismissed).toBe(1)
+  expect(picked).toEqual([])
+})
+
 test('prompt suggestions stay off while a turn is streaming', async () => {
   await renderWithTheme(composer({ promptSuggestions: FOLLOW_UPS, streaming: true }))
 

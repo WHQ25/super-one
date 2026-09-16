@@ -285,16 +285,20 @@ export function MentionSuggestions({ rows, onSelect, search, onRetry, onLoadMore
  * panel is the shape everything else in that slot already takes. It answers no
  * keystroke — it shows while the draft is empty and leaves once there is one.
  */
-export function PromptSuggestions({ suggestions, onSelect }: {
+export function PromptSuggestions({ suggestions, onSelect, onDismiss }: {
   suggestions: string[]
   onSelect: (suggestion: string) => void
+  onDismiss?: () => void
 }) {
   const { tokens: { colors } } = useMobileTheme()
   if (!suggestions.length) return null
+  // Same 28 pt dismiss on the title row as the command list, for the same reason.
+  const dismiss = onDismiss ? <IconButton icon={X} label="Hide suggestions" chrome="plain" iconSize={16}
+    style={{ width: 28, height: 28 }} hitSlop={8} onPress={onDismiss} /> : null
   return <ScrollView testID="prompt-suggestions" keyboardShouldPersistTaps="always"
     style={{ maxHeight: 256, flexGrow: 0, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, borderRadius: 12 }}
     contentContainerStyle={{ padding: 6 }}>
-    <SectionTitle title="Suggestions" count={suggestions.length} />
+    <SectionTitle title="Suggestions" count={suggestions.length} action={dismiss} />
     {suggestions.map((suggestion) => <Pressable key={suggestion} accessibilityRole="button" accessibilityLabel={suggestion}
       onPress={() => onSelect(suggestion)}
       style={({ pressed }) => ({ minHeight: 44, justifyContent: 'center', paddingHorizontal: 8, paddingVertical: 8, borderRadius: 6, backgroundColor: pressed ? colors.muted : 'transparent' })}>

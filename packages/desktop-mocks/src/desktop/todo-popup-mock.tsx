@@ -140,7 +140,7 @@ export function TodoPopupMock({
                   onClick={detail ? () => toggleRow(item.id) : undefined}
                 >
                   {item.status === "completed" ? (
-                    <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-green-500" />
+                    <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-success" />
                   ) : item.status === "in_progress" ? (
                     <CircleDashed className="mt-0.5 size-3.5 shrink-0 animate-spin text-primary [animation-duration:3s]" />
                   ) : (
@@ -161,7 +161,7 @@ export function TodoPopupMock({
                       </span>
                     )}
                     {blockers.length > 0 && (
-                      <span className="ml-1.5 inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-1.5 py-px align-middle text-[10px] font-medium text-amber-700 dark:text-amber-400">
+                      <span className="ml-1.5 inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-1.5 py-px align-middle text-xs font-medium text-amber-700 dark:text-amber-400">
                         <Lock className="size-2.5" />
                         {blockers.map((b) => `#${b}`).join(" ")}
                       </span>

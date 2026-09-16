@@ -158,7 +158,7 @@ export const TerminalCommand: Story = {
           action: 'run',
           command: 'bun run storybook --ci',
           cwd: '/Users/me/Developer/super-one/apps/desktop',
-          rule: 'bun run storybook --ci:*',
+          rule: 'bun run:*',
           description: 'Start Storybook to check the new terminal stories',
         },
         allowAlwaysAllow: true,

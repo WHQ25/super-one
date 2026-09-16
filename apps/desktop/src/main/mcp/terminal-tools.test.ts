@@ -151,9 +151,24 @@ describe('terminal_tabs run', () => {
     expect(manager.sessions.size).toBe(0)
     const req = pendingRequest(events)
     expect(req?.requestKind).toBe('terminal_command_confirm')
-    expect(req?.input).toMatchObject({ action: 'run', command: 'bun run dev', cwd: '/proj', rule: 'bun run dev:*' })
+    expect(req?.input).toMatchObject({ action: 'run', command: 'bun run dev', cwd: '/proj', rule: 'bun run:*' })
     expect(req?.allowAlwaysAllow).toBe(true)
     expect(events.some((e) => e.type === 'interaction_resolved')).toBe(true)
+  })
+
+  it('offers the agent-proposed rule and stores it when the user turns it on', async () => {
+    const { deps, events, rulesAdded } = makeDeps()
+    answerNextConfirm(events, true, true)
+    await terminalTabsHandler({ action: 'run', command: 'bun run storybook --ci', rule: 'bun run storybook:*' }, deps)
+    expect(pendingRequest(events)?.input).toMatchObject({ rule: 'bun run storybook:*' })
+    expect(rulesAdded).toEqual(['bun run storybook:*'])
+  })
+
+  it('ignores a proposed rule that does not match the command', async () => {
+    const { deps, events } = makeDeps()
+    answerNextConfirm(events, true, false)
+    await terminalTabsHandler({ action: 'run', command: 'bun run storybook --ci', rule: 'git push:*' }, deps)
+    expect(pendingRequest(events)?.input).toMatchObject({ rule: 'bun run:*' })
   })
 
   it('opens an agent tab, types the approved command and holds control while it runs', async () => {
@@ -164,7 +179,7 @@ describe('terminal_tabs run', () => {
     expect(result.tab).toBe('t1')
     expect(result.control).toBe('me')
     expect(result.foreground).toBe('bun')
-    expect(rulesAdded).toEqual(['bun run storybook --ci:*'])
+    expect(rulesAdded).toEqual(['bun run:*'])
     const session = manager.get('t1')!
     expect(session.agentSessionId).toBe('agent-1')
     expect(manager.ptys.get('t1')!.writes).toEqual(['bun run storybook --ci\r'])

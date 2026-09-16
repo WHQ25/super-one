@@ -2,7 +2,7 @@ import { basename } from 'node:path'
 import { encode as toonEncode } from '@toon-format/toon'
 import type { AgentEvent, TerminalListItem } from '@superone/shared/agent-types'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
-import { normalizeTerminalCommand, terminalCommandRuleFor } from '@superone/shared/terminal-command-rules'
+import { normalizeTerminalCommand, resolveTerminalCommandRule } from '@superone/shared/terminal-command-rules'
 import { HOST_ACTION_TERMINAL_DESCRIPTORS, TERMINAL_ACTION_INPUT_SCHEMA } from '@superone/shared/environment/host-action-terminal-descriptors'
 import type { CreateTerminalOptions } from '../terminal/terminal-manager'
 import type { TerminalSession } from '../terminal/terminal-session'
@@ -34,6 +34,7 @@ export interface TerminalTabsArgs {
   action?: 'list' | 'run' | 'attach' | 'close'
   tab?: string | string[]
   command?: string
+  rule?: string
   cwd?: string
   title?: string
   size?: { cols: number; rows: number }
@@ -266,7 +267,7 @@ export async function terminalTabsHandler(args: TerminalTabsArgs, deps: BuiltInS
       }
     }
     const cwd = typeof args.cwd === 'string' && args.cwd ? args.cwd : (target?.cwd ?? session.cwd)
-    const rule = terminalCommandRuleFor(command)
+    const rule = resolveTerminalCommandRule(args.rule, command)
 
     if (!terminals.rules.isPreapproved(session.projectPath, command)) {
       let decision
@@ -331,6 +332,7 @@ export async function terminalTabsHandler(args: TerminalTabsArgs, deps: BuiltInS
     if (target.isAtShell() || !command) {
       return toolResult(`[Error] Tab ${id} is at a shell prompt with nothing running; use action=run with a command instead.`, true)
     }
+    const rule = resolveTerminalCommandRule(args.rule, command)
     if (!terminals.rules.isPreapproved(session.projectPath, command)) {
       let decision
       try {
@@ -339,7 +341,7 @@ export async function terminalTabsHandler(args: TerminalTabsArgs, deps: BuiltInS
           action: 'attach',
           command,
           cwd: target.cwd,
-          rule: terminalCommandRuleFor(command),
+          rule,
           tabTitle: target.title,
           description: typeof args.description === 'string' ? args.description : undefined,
           message: `Let the agent interact with \`${command}\` running in tab “${target.title}”?`,
@@ -352,7 +354,7 @@ export async function terminalTabsHandler(args: TerminalTabsArgs, deps: BuiltInS
       if (decision.action !== 'accept') {
         return toolResult({ status: 'rejected', reason: decision.reason ?? 'User declined', hint: 'Do not retry on your own — wait for the user.' })
       }
-      if (decision.alwaysAllow) terminals.rules.add(session.projectPath, terminalCommandRuleFor(command))
+      if (decision.alwaysAllow) terminals.rules.add(session.projectPath, rule)
     }
     target.control.grant({ sessionId: session.sessionId, command, startedAt: Date.now() })
     target.control.poll()

@@ -186,7 +186,12 @@ bounded by that command's lifetime:
   (`requestKind: 'terminal_command'`) showing the command, cwd, and tab. The dialog
   offers *Allow once* and *Always allow in this project*; the latter stores a rule
   keyed by project path with the same prefix grammar the harness shell rules use
-  (`bun run storybook:*`, `python3`, `ssh staging:*`). Rules are SuperOne-owned
+  (`bun run storybook:*`, `python3`, `ssh staging:*`). The offered rule is the
+  agent's own `rule` argument when it matches the command (like Claude Code's Bash
+  suggestions, the agent knows which leading words are the stable part); otherwise it
+  is derived — command + subcommand (`bun run dev` → `bun run:*`), with compound
+  lines, quoted arguments, and delegators such as `sudo` / `ssh` / `docker` keeping
+  the full command. Rules are SuperOne-owned
   (SuperOne DB, harness-agnostic), not written into `.claude/settings.json`, and are
   listed/removable in project settings next to mini-app preapprovals.
 - **Control = "the approved command is the foreground process of that tab."** While it

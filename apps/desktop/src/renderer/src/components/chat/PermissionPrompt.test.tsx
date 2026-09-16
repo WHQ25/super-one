@@ -248,7 +248,7 @@ describe('PermissionPrompt', () => {
         requestId: 'req-term',
         toolName: 'mcp__superone__terminal_tabs',
         toolUseId: 'tu-term',
-        input: { action: 'run', command: 'npm run dev', cwd: '/repo', rule: 'npm run dev:*' },
+        input: { action: 'run', command: 'npm run dev', cwd: '/repo', rule: 'npm run:*' },
         allowAlwaysAllow: true,
         supportsAlwaysPersist: true,
         requestKind: 'terminal_command_confirm',
@@ -262,7 +262,7 @@ describe('PermissionPrompt', () => {
       expect(screen.getByRole('button', { name: /^allow/i })).toBeTruthy()
       expect(screen.getByRole('button', { name: /deny/i })).toBeTruthy()
       expect(screen.queryByRole('button', { name: /always allow in project/i })).toBeNull()
-      const toggle = screen.getByRole('button', { pressed: false, name: /always allow npm run dev:\* in this project/i })
+      const toggle = screen.getByRole('button', { pressed: false, name: /always allow npm run:\* in this project/i })
       expect(toggle).toBeTruthy()
 
       fireEvent.click(screen.getByRole('button', { name: /^allow/i }))
@@ -271,7 +271,7 @@ describe('PermissionPrompt', () => {
 
     it('stores the rule when the toggle is on and Allow is pressed', () => {
       renderInChat(<PermissionPrompt />)
-      fireEvent.click(screen.getByRole('button', { name: /always allow npm run dev:\* in this project/i }))
+      fireEvent.click(screen.getByRole('button', { name: /always allow npm run:\* in this project/i }))
       expect(screen.getByRole('button', { pressed: true })).toBeTruthy()
 
       fireEvent.keyDown(window, { key: 'Enter' })

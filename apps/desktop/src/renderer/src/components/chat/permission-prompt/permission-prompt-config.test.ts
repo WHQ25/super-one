@@ -28,9 +28,9 @@ describe('getPermissionPromptConfig', () => {
       .toEqual(getPermissionPromptConfig('codex', true, false, 'device_control_confirm'))
   })
 
-  it('gives a terminal command the three-button row only when always-allow is offered', () => {
+  it('keeps a terminal command on the two-button row even when always-allow is offered', () => {
     expect(getPermissionPromptConfig('codex', true, false, 'terminal_command_confirm'))
-      .toEqual({ buttonCount: 3, includesFeedbackOnDeny: true, enterSubmitsFeedback: true })
+      .toEqual({ buttonCount: 2, includesFeedbackOnDeny: true, enterSubmitsFeedback: true })
     expect(getPermissionPromptConfig('codex', false, false, 'terminal_command_confirm'))
       .toEqual({ buttonCount: 2, includesFeedbackOnDeny: true, enterSubmitsFeedback: true })
   })

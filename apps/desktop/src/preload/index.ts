@@ -4,6 +4,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { AgentIpcChannels, type AgentEvent, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexGoalStatus, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type CodexExternalAgentItem, type CodexMcpOauthLoginOptions, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type ClaudeSteerPriority, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type SideChatStartRequest, type SideChatStartResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest, type ThemeMode, type ComputerUseDisplayInfo, type ComputerUseViewfinderClaim, type ComputerUseViewfinderFrame, type RealtimeVoiceStartRequest, type RealtimeTimelineResult, type CodexRealtimeVoiceCatalog } from '@superone/shared/agent-types'
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
+import type { TerminalCommandRule } from '@superone/shared/terminal-command-rules'
 import type { DshPluginInstallSource, FileEntryKind, PinnedSessionEntry, ScheduledSend, ScheduledSendPatch, ScheduledSendSessionInit, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
 import type { DraftListEntry, DraftUpsertRequest, ProjectSnapshot } from '@superone/shared/environment'
@@ -863,6 +864,12 @@ const terminalAPI = {
 
   claim: (terminalId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.TERMINAL_CLAIM, terminalId) as Promise<void>,
+
+  listCommandRules: () =>
+    ipcRenderer.invoke(AgentIpcChannels.TERMINAL_COMMAND_RULES_LIST) as Promise<TerminalCommandRule[]>,
+
+  removeCommandRule: (projectKey: string, pattern: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.TERMINAL_COMMAND_RULE_REMOVE, projectKey, pattern) as Promise<boolean>,
 
   onTerminalEvent: (callback: (event: TerminalEvent) => void) => {
     const handler = (_ipcEvent: Electron.IpcRendererEvent, event: TerminalEvent): void => {

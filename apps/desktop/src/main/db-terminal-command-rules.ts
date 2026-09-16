@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
 import { getDb } from './database'
-import { isTerminalCommandAllowed } from '@superone/shared/terminal-command-rules'
+import { isTerminalCommandAllowed, type TerminalCommandRule } from '@superone/shared/terminal-command-rules'
 
 /**
  * "Always allow in this project" rules for `terminal_tabs run` / `attach`
@@ -21,17 +21,23 @@ export function ensureTerminalCommandRulesSchema(db: Database.Database): void {
   `)
 }
 
-export interface TerminalCommandRule {
-  projectKey: string
-  pattern: string
-  createdAt: string
-}
+type RuleRow = { project_key: string; pattern: string; created_at: string }
+
+const toRule = (row: RuleRow): TerminalCommandRule => ({ projectKey: row.project_key, pattern: row.pattern, createdAt: row.created_at })
 
 export function listTerminalCommandRules(projectKey: string): TerminalCommandRule[] {
   const rows = getDb()
     .prepare('SELECT project_key, pattern, created_at FROM terminal_command_rules WHERE project_key = ? ORDER BY created_at, pattern')
-    .all(projectKey) as Array<{ project_key: string; pattern: string; created_at: string }>
-  return rows.map((row) => ({ projectKey: row.project_key, pattern: row.pattern, createdAt: row.created_at }))
+    .all(projectKey) as RuleRow[]
+  return rows.map(toRule)
+}
+
+/** Every project's rules, for the settings page that lets the user revoke them. */
+export function listAllTerminalCommandRules(): TerminalCommandRule[] {
+  const rows = getDb()
+    .prepare('SELECT project_key, pattern, created_at FROM terminal_command_rules ORDER BY project_key, created_at, pattern')
+    .all() as RuleRow[]
+  return rows.map(toRule)
 }
 
 export function addTerminalCommandRule(projectKey: string, pattern: string): void {

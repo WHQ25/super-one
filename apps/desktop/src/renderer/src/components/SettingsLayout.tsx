@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { ArrowLeft, BarChart3, Brain, Cpu, Globe, LayoutGrid, Loader2, MousePointer2, Paintbrush, Settings, Smartphone } from 'lucide-react'
+import { ArrowLeft, BarChart3, Brain, Cpu, Globe, LayoutGrid, Loader2, MousePointer2, Paintbrush, Settings, Smartphone, SquareTerminal } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { useAppStore } from '@/stores/app'
@@ -11,6 +11,7 @@ import { AppearancePage } from './AppearancePage'
 import { BrowserSettingsPage } from './BrowserSettingsPage'
 import { ComputerUseSettingsPage } from './ComputerUseSettingsPage'
 import { HarnessesSettingsPage } from './HarnessesSettingsPage'
+import { TerminalSettingsPage } from './TerminalSettingsPage'
 import { cn } from '@superone/ui/lib/utils'
 import { isComputerUseSupportedPlatform } from '@/lib/computer-use-platform'
 
@@ -23,6 +24,7 @@ const globalTabs = [
   { id: 'harnesses' as const, labelKey: 'settings.layout.tabs.harnesses', icon: Cpu },
   { id: 'browser' as const, labelKey: 'settings.layout.tabs.browser', icon: Globe },
   { id: 'computer-use' as const, labelKey: 'settings.layout.tabs.computerUse', icon: MousePointer2 },
+  { id: 'terminal' as const, labelKey: 'settings.layout.tabs.terminal', icon: SquareTerminal },
   { id: 'apps' as const, labelKey: 'settings.layout.tabs.apps', icon: LayoutGrid },
   { id: 'remote' as const, labelKey: 'settings.layout.tabs.remote', icon: Smartphone },
   { id: 'usage' as const, labelKey: 'settings.layout.tabs.usage', icon: BarChart3 },
@@ -86,6 +88,7 @@ export function SettingsLayout() {
         {activeSettingsTab === 'harnesses' && <HarnessesSettingsPage />}
         {activeSettingsTab === 'browser' && <BrowserSettingsPage />}
         {activeSettingsTab === 'computer-use' && <ComputerUseSettingsPage />}
+        {activeSettingsTab === 'terminal' && <TerminalSettingsPage />}
         {activeSettingsTab === 'apps' && <AppsSettingsPage />}
         {activeSettingsTab === 'remote' && <RemotePage />}
         {activeSettingsTab === 'usage' && (

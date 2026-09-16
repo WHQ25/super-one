@@ -571,9 +571,18 @@ export function revealTerminalTabInActivity(item: { terminalId: string; title?: 
 
 export function closeActivityTerminalTab(terminalId: string) {
   void window.terminal.kill(terminalId)
+  dropActivityTerminalTab(terminalId)
+}
+
+/**
+ * The PTY is already gone (`terminal_exited`: the agent closed its tab, the
+ * user typed `exit`, main killed it) — drop the dock tab that showed it. The
+ * bottom panel removes its tab from the store on the same event; without this
+ * the activity dock kept a dead "[process exited]" screen open.
+ */
+export function dropActivityTerminalTab(terminalId: string) {
   disposeActivityTermInstance(terminalId)
-  const existing = dockApi?.panels.find((p) => p.id === `terminal-${terminalId}`)
-  existing?.api.close()
+  dockApi?.panels.find((p) => p.id === `terminal-${terminalId}`)?.api.close()
 }
 
 export function closeBrowserTab(browserId: string) {

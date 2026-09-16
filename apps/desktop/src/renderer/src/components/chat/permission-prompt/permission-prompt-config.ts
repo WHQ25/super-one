@@ -36,10 +36,10 @@ export function getPermissionPromptConfig(
   if (requestKind === 'device_control_confirm') {
     return { buttonCount: 3, includesFeedbackOnDeny: true, enterSubmitsFeedback: true }
   }
-  // Same shape for an agent terminal command: Allow once / Always allow in project /
-  // Deny. Closing a user tab sets allowAlwaysAllow=false and keeps the plain row.
+  // An agent terminal command keeps the plain Allow / Deny row; "always allow in
+  // this project" is a toggle under it, the way Claude's rule suggestions are.
   if (requestKind === 'terminal_command_confirm') {
-    return { buttonCount: allowAlwaysAllow ? 3 : 2, includesFeedbackOnDeny: true, enterSubmitsFeedback: true }
+    return { buttonCount: 2, includesFeedbackOnDeny: true, enterSubmitsFeedback: true }
   }
   const isCodexDecisionPrompt = sessionProvider === 'codex' && allowAlwaysAllow && !isElicitation
   return {

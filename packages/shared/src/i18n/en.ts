@@ -20,10 +20,6 @@ export type Messages = {
       terminal: string
       device: string
     }
-    terminal: {
-      /** Status line under an agent-controlled tab: the command it is driving. */
-      agentBanner: string
-    }
     device: {
       title: string
       refresh: string
@@ -578,6 +574,7 @@ export type Messages = {
         computerUse: string
         apps: string
         remote: string
+        terminal: string
         usage: string
         mediaGen: string
         providers: string
@@ -941,6 +938,19 @@ export type Messages = {
     }
     computerUse: {
       title: string
+    terminal: {
+      title: string
+      subtitle: string
+      rules: {
+        title: string
+        description: string
+        empty: string
+        remove: string
+        error: string
+        retry: string
+        remoteBadge: string
+      }
+    }
       subtitle: string
       enable: {
         label: string
@@ -1843,15 +1853,12 @@ export type Messages = {
       alwaysAllow: string
       /** device_control_confirm only — persists the grant for every session. */
       alwaysAllowDevice: string
-      /** terminal_command_confirm only — one-shot approval of this command. */
-      allowOnce: string
-      /** terminal_command_confirm only — stores a per-project rule for the command. */
-      alwaysAllowInProject: string
       terminal: {
         run: string
         attach: string
         close: string
-        ruleHint: string
+        /** Toggle row under Allow / Deny: opting in stores the cmd:* rule for this project. */
+        alwaysAllowRule: string
       }
       openUrl: string
       copyUrl: string
@@ -3686,9 +3693,6 @@ export const en: Messages = {
       terminal: 'Terminal',
       device: 'Device',
     },
-    terminal: {
-      agentBanner: 'Agent is driving {{command}} — you can type here too',
-    },
     device: {
       title: 'Device',
       refresh: 'Refresh',
@@ -4307,6 +4311,7 @@ export const en: Messages = {
         remote: 'Remote Control',
         usage: 'Usage Stats',
         mediaGen: 'Image Gen',
+        terminal: 'Terminal',
         providers: 'AI Provider',
         harnesses: 'Harnesses',
         agents: 'Subagents',
@@ -4719,6 +4724,19 @@ export const en: Messages = {
       title: 'Computer Use',
       subtitle: 'Let the agent observe and control native desktop apps (fallback when browser/Bash tools are not enough)',
       enable: {
+    terminal: {
+      title: 'Terminal',
+      subtitle: 'Manage what the agent may run in terminal tabs',
+      rules: {
+        title: 'Always-Allowed Commands',
+        description: 'Commands you approved with "Always allow in this project". A matching command runs in a terminal tab without asking again; remove a rule to be asked next time.',
+        empty: 'No commands are always allowed yet.',
+        remove: 'Remove this rule',
+        error: 'Could not load the rules.',
+        retry: 'Retry',
+        remoteBadge: 'Remote',
+      },
+    },
         label: 'Enable Computer Use',
         description: 'Expose computer_* tools to the agent. Off by default. Requires the SuperOne Computer Use helper app and macOS Accessibility + Screen Recording permissions.',
       },
@@ -5645,13 +5663,11 @@ export const en: Messages = {
       denyReasonPlaceholder: 'Deny reason (optional, Enter to submit)',
       alwaysAllow: 'Always Allow',
       alwaysAllowDevice: 'Always Allow',
-      allowOnce: 'Allow Once',
-      alwaysAllowInProject: 'Always Allow in Project',
       terminal: {
         run: 'Run in Terminal',
         attach: 'Interact with Running Command',
         close: 'Close Terminal Tab',
-        ruleHint: 'Always allow also covers later commands matching {{rule}} in this project.',
+        alwaysAllowRule: 'Always allow <rule>{{rule}}</rule> in this project',
       },
       openUrl: 'Open in browser',
       copyUrl: 'Copy link',

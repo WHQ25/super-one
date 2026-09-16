@@ -153,6 +153,12 @@ export function PermissionPrompt() {
   // It only adds a third button.
   const isDeviceControlConfirm = pendingPermission?.requestKind === 'device_control_confirm'
   const isTerminalCommandConfirm = pendingPermission?.requestKind === 'terminal_command_confirm'
+  // Terminal keeps Allow / Deny and offers "always allow in this project" as a toggle
+  // row under them, shaped like Claude's rule suggestions so both read the same.
+  const terminalRule = isTerminalCommandConfirm && pendingPermission?.allowAlwaysAllow && typeof pendingPermission.input.rule === 'string'
+    ? pendingPermission.input.rule
+    : null
+  const [alwaysAllowRule, setAlwaysAllowRule] = useState(false)
   const isSelfManagedConfirm =
     isVideoGenConfirm
     || isConfigConfirm
@@ -211,6 +217,7 @@ export function PermissionPrompt() {
     setFeedback('')
     setFocusedIdx(0)
     setSelectedSuggestions(new Set())
+    setAlwaysAllowRule(false)
     setIsFeedbackFocused(false)
     setIsCollapsed(false)
     setFormValues({})
@@ -277,6 +284,10 @@ export function PermissionPrompt() {
       respondToPermission(requestId, true, false, undefined, undefined, undefined, formValues)
       return
     }
+    if (terminalRule && alwaysAllowRule) {
+      respondToPermission(requestId, true, true)
+      return
+    }
     if (selectedSuggestions.size > 0) {
       const sugg = pendingPermission?.suggestions
       const upgradeIdx = autoEligible
@@ -295,7 +306,7 @@ export function PermissionPrompt() {
     } else {
       respondToPermission(requestId, true)
     }
-  }, [requestId, respondToPermission, selectedSuggestions, isElicitation, formValues, autoEligible, pendingPermission, setPermissionMode])
+  }, [requestId, respondToPermission, selectedSuggestions, isElicitation, formValues, autoEligible, pendingPermission, setPermissionMode, terminalRule, alwaysAllowRule])
 
   const handleElicitationAlwaysAllow = useCallback(() => {
     if (!requestId) return
@@ -384,6 +395,12 @@ export function PermissionPrompt() {
         return
       }
 
+      if (terminalRule && e.key === '1') {
+        e.preventDefault()
+        setAlwaysAllowRule((v) => !v)
+        return
+      }
+
       if (e.key >= '1' && e.key <= '9') {
         const idx = parseInt(e.key) - 1
         if (idx < suggestionsCount) {
@@ -411,7 +428,7 @@ export function PermissionPrompt() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [requestId, btnCount, handleCancel, handleDeny, handleAcceptEdit, handleAllow, handleAlwaysAllow, isCodexDecisionPrompt, hasHostAlwaysButton, isEditTool, isCollapsed, suggestionsCount, toggleSuggestion, isSelfManagedConfirm, chatRootRef, defaultToNo])
+  }, [requestId, btnCount, handleCancel, handleDeny, handleAcceptEdit, handleAllow, handleAlwaysAllow, isCodexDecisionPrompt, hasHostAlwaysButton, isEditTool, isCollapsed, suggestionsCount, toggleSuggestion, isSelfManagedConfirm, chatRootRef, defaultToNo, terminalRule])
 
   if (!pendingPermission) return null
 
@@ -714,9 +731,6 @@ export function PermissionPrompt() {
                   <p className="truncate font-mono text-muted-foreground" title={typeof input.cwd === 'string' ? input.cwd : undefined}>
                     {typeof input.tab === 'string' && input.tab ? `${input.tab} · ` : ''}{typeof input.cwd === 'string' ? input.cwd : ''}
                   </p>
-                  {hasHostAlwaysButton && typeof input.rule === 'string' && (
-                    <p className="text-muted-foreground">{t('chat.permission.terminal.ruleHint', { rule: input.rule })}</p>
-                  )}
                 </div>
               )}
               {(toolName === 'Edit' || toolName === 'Write') && (
@@ -798,13 +812,9 @@ export function PermissionPrompt() {
                     // Two answers that differ only in lifetime read as the same word
                     // unless both say theirs. "Allow" next to "Always Allow" invites
                     // the user to assume the first one also sticks.
-                    {...(isDeviceControlConfirm
-                      ? { approveLabel: t('chat.permission.allowForSession') }
-                      : isTerminalCommandConfirm && hasHostAlwaysButton
-                        ? { approveLabel: t('chat.permission.allowOnce') }
-                        : {})}
-                    approveSuffix={selectedSuggestions.size > 0 && (
-                      <span className="ml-1 text-xs text-success-foreground/70">+{selectedSuggestions.size}</span>
+                    {...(isDeviceControlConfirm ? { approveLabel: t('chat.permission.allowForSession') } : {})}
+                    approveSuffix={(selectedSuggestions.size > 0 || alwaysAllowRule) && (
+                      <span className="ml-1 text-xs text-success-foreground/70">+{selectedSuggestions.size + (alwaysAllowRule ? 1 : 0)}</span>
                     )}
                     extraActions={hasHostAlwaysButton && (
                       <PermissionActionButton
@@ -813,7 +823,7 @@ export function PermissionPrompt() {
                         kbd="⇧⏎"
                         onClick={handleAlwaysAllow}
                       >
-                        {isTerminalCommandConfirm ? t('chat.permission.alwaysAllowInProject') : t('chat.permission.alwaysAllowDevice')}
+                        {t('chat.permission.alwaysAllowDevice')}
                       </PermissionActionButton>
                     )}
                     feedback={{
@@ -823,6 +833,30 @@ export function PermissionPrompt() {
                       onFocusChange: setIsFeedbackFocused,
                     }}
                   />
+                )}
+                {terminalRule && (
+                  <button
+                    type="button"
+                    aria-pressed={alwaysAllowRule}
+                    className={`flex h-7 w-full cursor-pointer items-center gap-1.5 rounded border px-2.5 text-xs transition-colors ${
+                      alwaysAllowRule
+                        ? 'border-success/50 bg-success/10 text-success hover:bg-success/20'
+                        : 'border-border text-muted-foreground hover:bg-success/10 hover:text-success'
+                    }`}
+                    onClick={() => setAlwaysAllowRule((v) => !v)}
+                  >
+                    {alwaysAllowRule
+                      ? <CheckCircle2 className="size-3.5 shrink-0 text-success" />
+                      : <Circle className="size-3.5 shrink-0 text-muted-foreground/40" />}
+                    <span className="min-w-0 truncate">
+                      <Trans
+                        i18nKey="chat.permission.terminal.alwaysAllowRule"
+                        values={{ rule: terminalRule }}
+                        components={{ rule: <span className="font-mono font-medium" /> }}
+                      />
+                    </span>
+                    <Kbd variant="square" className="ml-auto">1</Kbd>
+                  </button>
                 )}
                 {hasSuggestionRow && (
                   <div className="grid grid-cols-1 gap-1.5">

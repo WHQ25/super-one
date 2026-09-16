@@ -3,7 +3,7 @@ import type { TerminalEvent, TerminalListItem } from '@superone/shared/agent-typ
 import { useAppStore } from '@/stores/app'
 import { useTerminalStore } from '@/stores/terminal'
 import { useTerminalPanel } from './useTerminalPanel'
-import { revealTerminalTabInActivity } from '@/components/activity/activity-panel-api'
+import { dropActivityTerminalTab, revealTerminalTabInActivity } from '@/components/activity/activity-panel-api'
 
 export function tabBelongsToProject(item: Pick<TerminalListItem, 'cwd' | 'projectPath'>, projectPath: string): boolean {
   if (item.projectPath === projectPath) return true
@@ -45,6 +45,7 @@ export function useTerminalSync(): void {
         if (event.ownerDeviceId && folder) revealRemoteTab(folder, event.terminalId, event.ownerDeviceId, upsertTab, setActive, setOpen)
       }
       if (event.type === 'terminal_exited') {
+        dropActivityTerminalTab(event.terminalId)
         for (const [path, pt] of Object.entries(useTerminalStore.getState().byProject)) {
           if (pt.tabs.some((tab) => tab.terminalId === event.terminalId)) removeTab(path, event.terminalId)
         }

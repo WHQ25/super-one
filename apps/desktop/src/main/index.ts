@@ -73,7 +73,7 @@ import { AgentService } from './agent/agent-service'
 import { createRendererAgentEventTransport } from './agent/renderer-agent-event-transport'
 import { SessionManagerImpl } from './session/session-manager'
 import { TerminalManager } from './terminal/terminal-manager'
-import { addTerminalCommandRule, isTerminalCommandPreapproved } from './db-terminal-command-rules'
+import { addTerminalCommandRule, isTerminalCommandPreapproved, listAllTerminalCommandRules, removeTerminalCommandRule } from './db-terminal-command-rules'
 import { RemoteTerminalController } from './environment/remote-terminal-controller'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import { AUDIO_EXTENSIONS, BINARY_IMAGE_EXTENSIONS, PDF_EXTENSIONS, VIDEO_EXTENSIONS } from '@superone/shared/file-preview'
@@ -2279,6 +2279,9 @@ function registerIpcHandlers(): void {
       return
     }
     terminalManager.kill(terminalId)
+  ipcMain.handle(AgentIpcChannels.TERMINAL_COMMAND_RULES_LIST, () => listAllTerminalCommandRules())
+  ipcMain.handle(AgentIpcChannels.TERMINAL_COMMAND_RULE_REMOVE, (_e, projectKey: string, pattern: string) =>
+    removeTerminalCommandRule(projectKey, pattern))
   })
   ipcMain.handle(AgentIpcChannels.TERMINAL_CLAIM, (_e, terminalId: string) => {
     if (remoteTerminalController.has(terminalId)) return

@@ -4180,6 +4180,9 @@ export const AgentIpcChannels = {
   TERMINAL_CLAIM: 'terminal:claim',
   TERMINAL_RELEASE: 'terminal:release',
   TERMINAL_EVENT: 'terminal:event',
+  /** Stored "always allow in this project" command rules (settings > Terminal). */
+  TERMINAL_COMMAND_RULES_LIST: 'terminal:command-rules:list',
+  TERMINAL_COMMAND_RULE_REMOVE: 'terminal:command-rules:remove',
 
   // Multi-environment / remote node (Main environment host)
   ENVIRONMENT_LIST: 'environment:list',

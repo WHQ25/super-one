@@ -241,4 +241,60 @@ describe('PermissionPrompt', () => {
       expect(chatState.respondToPermission).toHaveBeenCalledWith('req-no', false, undefined, undefined)
     })
   })
+
+  describe('terminal command confirm', () => {
+    beforeEach(() => {
+      activeSessionState.pendingPermissions = [{
+        requestId: 'req-term',
+        toolName: 'mcp__superone__terminal_tabs',
+        toolUseId: 'tu-term',
+        input: { action: 'run', command: 'npm run dev', cwd: '/repo', rule: 'npm run dev:*' },
+        allowAlwaysAllow: true,
+        supportsAlwaysPersist: true,
+        requestKind: 'terminal_command_confirm',
+        serverName: 'superone',
+        message: 'Run npm run dev?',
+      }]
+    })
+
+    it('keeps Allow / Deny and offers the project rule as a toggle, off by default', () => {
+      renderInChat(<PermissionPrompt />)
+      expect(screen.getByRole('button', { name: /^allow/i })).toBeTruthy()
+      expect(screen.getByRole('button', { name: /deny/i })).toBeTruthy()
+      expect(screen.queryByRole('button', { name: /always allow in project/i })).toBeNull()
+      const toggle = screen.getByRole('button', { pressed: false, name: /always allow npm run dev:\* in this project/i })
+      expect(toggle).toBeTruthy()
+
+      fireEvent.click(screen.getByRole('button', { name: /^allow/i }))
+      expect(chatState.respondToPermission).toHaveBeenCalledWith('req-term', true)
+    })
+
+    it('stores the rule when the toggle is on and Allow is pressed', () => {
+      renderInChat(<PermissionPrompt />)
+      fireEvent.click(screen.getByRole('button', { name: /always allow npm run dev:\* in this project/i }))
+      expect(screen.getByRole('button', { pressed: true })).toBeTruthy()
+
+      fireEvent.keyDown(window, { key: 'Enter' })
+      expect(chatState.respondToPermission).toHaveBeenCalledWith('req-term', true, true)
+    })
+
+    it('toggles the rule with the 1 key', () => {
+      renderInChat(<PermissionPrompt />)
+      fireEvent.keyDown(window, { key: '1' })
+      expect(screen.getByRole('button', { pressed: true })).toBeTruthy()
+      fireEvent.keyDown(window, { key: '1' })
+      expect(screen.queryByRole('button', { pressed: true })).toBeNull()
+    })
+
+    it('shows no toggle when always-allow is not offered', () => {
+      activeSessionState.pendingPermissions[0] = {
+        ...activeSessionState.pendingPermissions[0]!,
+        allowAlwaysAllow: false,
+        input: { action: 'close', command: 'node', cwd: '/repo', tab: 'dev server' },
+      }
+      renderInChat(<PermissionPrompt />)
+      expect(screen.queryByRole('button', { pressed: false })).toBeNull()
+      expect(screen.queryByText(/always allow/i)).toBeNull()
+    })
+  })
 })

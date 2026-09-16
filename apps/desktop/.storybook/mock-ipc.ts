@@ -53,6 +53,7 @@ export function installIpcMocks(): void {
   if (!w.agent) w.agent = proxyFor('agent')
   if (!w.app) w.app = proxyFor('app')
   if (!w.miniapp) w.miniapp = proxyFor('miniapp')
+  if (!w.terminal) w.terminal = proxyFor('terminal')
   if (!w.electron) {
     w.electron = {
       ipcRenderer: {

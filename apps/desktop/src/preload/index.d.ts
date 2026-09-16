@@ -1,5 +1,6 @@
 import type { CodexAccount, CodexManagedLoginStart } from '@superone/shared/codex-accounts'
 import type { CollaborationMailboxAPI } from '@superone/shared/collaboration-mailbox'
+import type { TerminalCommandRule } from '@superone/shared/terminal-command-rules'
 import type { ElectronAPI } from '@electron-toolkit/preload'
 import type { AppMetricsSnapshot } from '@superone/shared/agent-types'
 import type { PreviewerFile } from '@superone/shared/generative-ui/native-widgets'
@@ -817,6 +818,9 @@ interface TerminalAPI {
   resize(terminalId: string, cols: number, rows: number): Promise<void>
   kill(terminalId: string): Promise<void>
   claim(terminalId: string): Promise<void>
+  /** Stored "always allow in this project" command rules, every project. */
+  listCommandRules(): Promise<TerminalCommandRule[]>
+  removeCommandRule(projectKey: string, pattern: string): Promise<boolean>
   onTerminalEvent(callback: (event: TerminalEvent) => void): () => void
 }
 

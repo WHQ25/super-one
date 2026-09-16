@@ -16,7 +16,6 @@ import { EMPTY_TABS, useTerminalStore } from '@/stores/terminal'
 import { useTerminalPanel } from '@/hooks/useTerminalPanel'
 import { tabBelongsToProject } from '@/hooks/useTerminalSync'
 import { TerminalRemoteBanner } from './TerminalRemoteBanner'
-import { TerminalAgentBanner } from './TerminalAgentBanner'
 import { HoverCloseSlot } from '@/components/activity/ActivityTab'
 import { SelectionMenu } from '@/components/chat/SelectionContextMenu'
 
@@ -355,11 +354,9 @@ export function TerminalPanel() {
               inputRef={findInputRef}
             />
           )}
-          {activeTab?.ownerDeviceId ? (
+          {activeTab?.ownerDeviceId && (
             <TerminalRemoteBanner onDisconnect={() => { if (activeId) void window.terminal.claim(activeId) }} />
-          ) : activeTab?.agentControl ? (
-            <TerminalAgentBanner command={activeTab.agentControl.command} />
-          ) : null}
+          )}
         </div>
       )}
       {menu && (

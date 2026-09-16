@@ -8,6 +8,7 @@ import {
   addTerminalCommandRule,
   ensureTerminalCommandRulesSchema,
   isTerminalCommandPreapproved,
+  listAllTerminalCommandRules,
   listTerminalCommandRules,
   removeTerminalCommandRule,
 } from './db-terminal-command-rules'
@@ -40,5 +41,16 @@ describe('terminal command rules store', () => {
     expect(removeTerminalCommandRule('/proj/a', 'ssh staging:*')).toBe(true)
     expect(removeTerminalCommandRule('/proj/a', 'ssh staging:*')).toBe(false)
     expect(listTerminalCommandRules('/proj/a')).toEqual([])
+  })
+
+  it('lists every project for the settings page, grouped in project order', () => {
+    addTerminalCommandRule('/proj/b', 'python3')
+    addTerminalCommandRule('/proj/a', 'bun run dev:*')
+    addTerminalCommandRule('remote:node1:/srv/c', 'ssh staging:*')
+    expect(listAllTerminalCommandRules().map((r) => [r.projectKey, r.pattern])).toEqual([
+      ['/proj/a', 'bun run dev:*'],
+      ['/proj/b', 'python3'],
+      ['remote:node1:/srv/c', 'ssh staging:*'],
+    ])
   })
 })

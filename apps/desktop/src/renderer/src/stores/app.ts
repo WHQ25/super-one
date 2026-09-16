@@ -53,7 +53,7 @@ type UpdateStatus =
   | 'ready'
   | 'up-to-date'
   | 'error'
-export type SettingsTab = 'providers' | 'agents' | 'skills' | 'mcp' | 'plugins' | 'hooks' | 'apps' | 'preferences' | 'remote' | 'usage' | 'automations' | 'app-settings' | 'appearance' | 'browser' | 'computer-use' | 'harnesses'
+export type SettingsTab = 'providers' | 'agents' | 'skills' | 'mcp' | 'plugins' | 'hooks' | 'apps' | 'preferences' | 'remote' | 'usage' | 'automations' | 'app-settings' | 'appearance' | 'browser' | 'computer-use' | 'terminal' | 'harnesses'
 
 /** Nested config pages opened from Settings → Harnesses (reuse existing page components). */
 export type HarnessConfigSection =

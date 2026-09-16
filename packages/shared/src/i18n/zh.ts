@@ -8,9 +8,6 @@ export const zh: Messages = {
       terminal: '终端',
       device: '设备',
     },
-    terminal: {
-      agentBanner: '智能体正在操作 {{command}}，你也可以直接输入',
-    },
     device: {
       title: '设备',
       refresh: '刷新',
@@ -618,6 +615,7 @@ export const zh: Messages = {
         computerUse: '使用电脑',
         apps: '小程序',
         remote: '远程控制',
+        terminal: '终端',
         usage: '用量统计',
         mediaGen: '生图',
         providers: 'AI 服务商',
@@ -1018,6 +1016,19 @@ export const zh: Messages = {
     },
     computerUse: {
       title: '使用电脑',
+    terminal: {
+      title: '终端',
+      subtitle: '管理智能体在终端标签页中可以运行的命令',
+      rules: {
+        title: '始终允许的命令',
+        description: '你在审批时选择“在此项目中始终允许”的命令。匹配的命令会直接在终端标签页运行，不再询问；删除规则后下次会重新询问。',
+        empty: '暂无始终允许的命令。',
+        remove: '删除该规则',
+        error: '规则加载失败。',
+        retry: '重试',
+        remoteBadge: '远程',
+      },
+    },
       subtitle: '让智能体观察并操控原生桌面应用（浏览器 / Bash 等工具覆盖不到时的兜底层）',
       enable: {
         label: '启用「使用电脑」',
@@ -1944,13 +1955,11 @@ export const zh: Messages = {
       denyReasonPlaceholder: '拒绝原因（可选，按 Enter 提交）',
       alwaysAllow: '总是允许',
       alwaysAllowDevice: '始终允许',
-      allowOnce: '允许一次',
-      alwaysAllowInProject: '本项目始终允许',
       terminal: {
         run: '在终端中运行',
         attach: '与运行中的命令交互',
         close: '关闭终端标签页',
-        ruleHint: '“始终允许”同时覆盖本项目中之后匹配 {{rule}} 的命令。',
+        alwaysAllowRule: '本项目始终允许 <rule>{{rule}}</rule>',
       },
       openUrl: '在浏览器中打开',
       copyUrl: '复制链接',

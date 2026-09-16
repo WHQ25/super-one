@@ -33,3 +33,10 @@ export function matchesTerminalCommandRule(pattern: string, command: string): bo
 export function isTerminalCommandAllowed(rules: readonly string[], command: string): boolean {
   return rules.some((rule) => matchesTerminalCommandRule(rule, command))
 }
+
+/** One stored rule; `projectKey` is a path locally, `remote:<connection>:<path>` for a node. */
+export interface TerminalCommandRule {
+  projectKey: string
+  pattern: string
+  createdAt: string
+}

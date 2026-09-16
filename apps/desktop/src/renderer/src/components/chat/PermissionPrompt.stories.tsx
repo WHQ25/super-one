@@ -146,7 +146,7 @@ export const McpTool: Story = {
   )],
 }
 
-/** Host confirm for an agent terminal command: Allow Once / Always Allow in Project / Deny. */
+/** Host confirm for an agent terminal command: Allow / Deny, plus the "always allow in this project" toggle row. */
 export const TerminalCommand: Story = {
   decorators: [(Story) => (
     <>
@@ -172,7 +172,7 @@ export const TerminalCommand: Story = {
   )],
 }
 
-/** Closing a user tab: same kind, but no always-allow, so the plain two-button row. */
+/** Closing a user tab: same kind, but no always-allow, so no toggle row. */
 export const TerminalCloseUserTab: Story = {
   decorators: [(Story) => (
     <>

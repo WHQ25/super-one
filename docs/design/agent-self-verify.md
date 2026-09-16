@@ -45,7 +45,17 @@ Skill for Electron workflows: `bunx agent-browser skills get electron --full`.
 bunx vitest run \
   apps/desktop/src/main/acp/ \
   apps/desktop/src/main/session/backends/acp-backend.test.ts \
-  packages/shared/src/harness/harness-capabilities.test.ts
+  packages/shared/src/harness/harness-capabilities.test.ts \
+  packages/acp/src/run-turn.test.ts \
+  packages/acp/src/xai-event-map.ts
+```
+
+From `apps/desktop` for renderer permission chrome:
+
+```bash
+bunx vitest run \
+  src/renderer/src/components/chat/permission-prompt/permission-prompt-config.test.ts \
+  src/renderer/src/components/chat/PermissionPrompt.test.tsx
 ```
 
 | Feature | What the tests prove |
@@ -55,6 +65,9 @@ bunx vitest run \
 | `session/load` | load success + fallback to new |
 | Plan enter | setPermissionMode(plan) → set_mode, no yolo |
 | allow-always-mcp | auto-allow selects allow-always-mcp for builtins |
+| ExtNotification bus | `acp-xai-session-notify` / `xai-event-map` parse + map workflow/subagent/usage |
+| Node reverse RPCs | `packages/acp` `run-turn` elicit; ask/exit after parity PR4 |
+| Permission card Always | ACP + `allowAlwaysAllow` uses the four-button row (parity PR1) |
 | clientInfo.version | non-placeholder version string |
 | mobile_share stdio | list/execute when session enabled |
 | harness caps | acp supportsMcp/plan/todos |

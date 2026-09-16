@@ -2,36 +2,33 @@
 
 | Field | Value |
 |-------|--------|
-| Status | Draft |
+| Status | **Implemented (bus)** — live code; leftover items in [`grok-build-parity.md`](./grok-build-parity.md) |
 | Date | 2026-07-28 |
+| Verified | 2026-09-16 against SuperOne working tree (docs PR0) |
 | Scope | SuperOne as ACP host for Grok Build — **agent → client ExtNotification bus** (workflow, subagent, background tasks, goal, usage, compact, …) |
 | SuperOne path | this monorepo (`apps/desktop/src/main/acp/`) |
-| Grok Build source | `/Users/wuhangqi25/Developer/Projects/grok-build` (scanned 2026-07-28) |
+| Grok Build source | `/Users/wuhangqi25/Developer/Projects/grok-build` (scanned 2026-07-28; bus verified 2026-09-16) |
 | Related | [`grok-build-parity.md`](./grok-build-parity.md), [`grok-acp-permissions.md`](./grok-acp-permissions.md) |
-| Trigger | Workflow runs succeed inside Grok but SuperOne never receives progress / result |
+| Trigger | Workflow runs succeed inside Grok but SuperOne never receives progress / result — **fixed by registering the bus** |
 
 ---
 
 ## 0. Executive summary
 
-**Symptom.** When Grok launches a workflow (or other long-lived background work), SuperOne may show a brief `workflow` tool call with a launch ack, then nothing — no phases, agents, progress, or `result_summary`.
+**Shipped (2026-09-16).** SuperOne registers the Grok agent→client ExtNotification bus and maps high-value variants onto existing `AgentEvent` types. Live code: `acp-xai-session-notify.ts`, `packages/acp/src/xai-event-map.ts`, tests. Do **not** treat the original “bus missing” write-up below as current status.
 
-**Root cause (verified against Grok source).**
+**Original symptom (historical).** When Grok launched a workflow, SuperOne showed a brief `workflow` tool call with a launch ack, then nothing — no phases, agents, progress, or `result_summary`. Standard ACP has no workflow types; Grok ships them as ExtNotifications (`x.ai/session_notification` / `x.ai/session/update` plus standalones). The host used to pump only standard `session/update`.
 
-1. Standard ACP has **no** workflow / subagent-progress / goal types.
-2. Grok ships those updates as **ACP extension notifications** (`ExtNotification`), primarily:
-   - `x.ai/session_notification` (and aliases `x.ai/session/update`, `_x.ai/…`)
-   - plus standalone methods (`x.ai/task_backgrounded`, `x.ai/task_completed`, `x.ai/monitor_event`, `x.ai/follow_ups`, …)
-3. SuperOne’s ACP host only:
-   - pumps **standard** `session/update` via `session.nextUpdate()`
-   - handles reverse **requests** `x.ai/ask_user_question` / `x.ai/exit_plan_mode`
-   - sends client→agent **notify** `x.ai/yolo_mode_changed`
-4. SuperOne does **not** register any handler for agent→client ExtNotifications. The entire progressive bus is dropped on the floor.
+**Remaining (not this bus’s registration):**
 
-**Not true:** “ACP cannot carry workflow information.”  
-**True:** ACP does not define it; Grok uses the **extension rail** that SuperOne has not implemented.
+| Item | Where |
+|------|--------|
+| `x.ai/session/prompt_complete` (legacy turn-end alias) | parity XAI-24 / RT-16 — P3; wake already closed via nested `turn_completed` |
+| Apply `x.ai/mcp/tools_changed` (subscribed; `handleMcpExt` has no case) | parity MCP-10 — P2; counts stale until `servers_updated` |
+| Node/CLI missing `ask_user_question` / `exit_plan_mode` reverse RPCs | parity RT-06 / XAI-01 / PR4 — **P0 hang**, not a notification gap |
+| TUI-only methods (sessions/changed, queue, announcements, git_head, leader) | omitted from `XAI_EXT_NOTIFICATION_METHODS` by policy |
 
-**Fix direction.** Register the ExtNotification bus once, parse `sessionUpdate` variants (and key standalone methods), map high-value payloads onto existing SuperOne `AgentEvent` types. Do **not** change Grok agent source for host correctness.
+Point leftover host work at [`grok-build-parity.md`](./grok-build-parity.md). Do not change Grok agent source.
 
 ---
 
@@ -43,7 +40,7 @@
 | `grok-build-parity.md` | Broad host parity matrix | Explicitly deferred “full x.ai surface” as non-goal (P2/P3). **This doc elevates the progressive bus** (workflow / subagent / bg task / usage) because it is **main-chat correctness**, not TUI chrome. |
 | This doc | Agent→client extension notifications only | Owns wire inventory, mapping, PR plan for the bus |
 
-Update `grok-build-parity.md` later (docs PR) to link here and reclassify progressive lifecycle as **in scope** rather than “full x.ai surface / defer”.
+`grok-build-parity.md` (rewritten 2026-09-16) already links here and marks the progressive bus **in scope / shipped**. Keep this doc as the wire inventory; keep the parity matrix as the leftover tracker.
 
 ---
 
@@ -62,12 +59,17 @@ createAcpRuntime  ──spawn──►  `grok agent stdio` (JSON-RPC ACP)
         │
         ├── session/new | load | prompt | cancel
         ├── nextUpdate() loop  →  mapSessionUpdate()  →  AgentEvent
-        │         ▲
-        │         └── ONLY standard session/update
+        ├── ExtNotification bus (shipped)
+        │     x.ai/session_notification | x.ai/session/update | _x.ai/…
+        │     standalones: task_*, monitor_event, follow_ups, scheduled_task_*,
+        │                  mcp/server_status|init_progress|tools_changed|servers_updated,
+        │                  models/update, settings/update, interjection
         ├── reverse request: request_permission, fs/*, terminal/*
-        ├── reverse request: x.ai/ask_user_question, x.ai/exit_plan_mode
+        ├── reverse request (desktop): x.ai/ask_user_question, x.ai/exit_plan_mode, x.ai/mcp/elicit
         └── client notify: x.ai/yolo_mode_changed
 ```
+
+Node (`packages/acp` `run-turn.ts`) registers the **same notification methods** but only answers `request_permission` + `mcp/elicit` reverse requests — ask/exit hang is parity PR4, not a bus-registration gap.
 
 **Key SuperOne files**
 
@@ -244,15 +246,15 @@ From `handle_ext_notification` in the pager:
 
 | Method | Purpose | SuperOne priority |
 |--------|---------|-------------------|
-| `x.ai/session_notification` / `x.ai/session/update` | Progressive bus | **P0** |
-| `x.ai/task_backgrounded` | Bg bash/monitor start | **P0** (or via nested variant if duplicated) |
-| `x.ai/task_completed` | Bg task done | **P0** |
-| `x.ai/monitor_event` | Monitor lines | P1 |
-| `x.ai/follow_ups` | Follow-up suggestion chips | P1 |
-| `x.ai/scheduled_task_*` (+ `inject_prompt`) | Cron-like tasks | P2 |
-| `x.ai/session/prompt_complete` | Legacy turn end (deprecating toward `turn_completed`) | P2 |
-| `x.ai/session/interjection` | Mid-turn user insert display | P2 |
-| `x.ai/mcp/init_progress` / `tools_changed` / `server_status` / `servers_updated` / `mcp_initialized` | MCP host status | P2 (`getMcpServerStatus` currently `[]`) |
+| `x.ai/session_notification` / `x.ai/session/update` | Progressive bus | **done** |
+| `x.ai/task_backgrounded` | Bg bash/monitor start | **done** |
+| `x.ai/task_completed` | Bg task done | **done** |
+| `x.ai/monitor_event` | Monitor lines | **done** |
+| `x.ai/follow_ups` | Follow-up suggestion chips | **done** |
+| `x.ai/scheduled_task_*` (+ `inject_prompt`) | Cron-like tasks | **done** |
+| `x.ai/session/prompt_complete` | Legacy turn end (deprecating toward `turn_completed`) | **remaining** (P3; nested `turn_completed` already wakes) |
+| `x.ai/session/interjection` | Mid-turn user insert display | **done** |
+| `x.ai/mcp/init_progress` / `tools_changed` / `server_status` / `servers_updated` / `mcp_initialized` | MCP host status | **partial** — status mapping shipped; `tools_changed` subscribed but not applied (parity MCP-10) |
 | `x.ai/models/update`, `settings/update`, `sessions/changed`, `queue/changed`, `announcements/update`, `git_head_changed` | Multi-client / TUI | **defer** (stdio single client) |
 
 ### 3.4 What SuperOne already handles (not this bus)
@@ -273,22 +275,24 @@ Status: `missing` | `partial` | `done` | `na`.
 
 | id | Capability | Source | SuperOne status | User impact if missing | Priority |
 |----|------------|--------|-----------------|------------------------|----------|
-| BUS-01 | ExtNotification registration | runtime | **missing** | Entire progressive bus dead | **P0** |
-| BUS-02 | Parse `x.ai/session_notification` envelope | runtime | **missing** | — | **P0** |
-| WF-01 | `workflow_updated` progress | session_notification | **missing** | “Workflow ran but SuperOne empty” | **P0** |
-| WF-02 | `workflow_updated` terminal + `result_summary` | session_notification | **missing** | No result | **P0** |
-| WF-03 | Correlate `run_id` ↔ launch `tool_use_id` | host state | **missing** | Orphan progress events | **P0** |
-| WF-04 | `workflow` in TOOL_ID_TO_NAME | event-map | **missing** | Launch chip may look like generic tool | P1 |
-| SA-01 | `subagent_spawned` / `progress` / `finished` | session_notification | **missing** | No live subagent panel | **P0** |
-| BG-01 | `task_backgrounded` / `task_completed` | standalone and/or nested | **missing** | Bg bash never completes in UI | **P0** |
-| BG-02 | `monitor_event` | standalone | **missing** | Monitor silent | P1 |
-| US-01 | `turn_completed.usage` | session_notification | **missing** | Context bar null (`getContextUsage` stub) | P1 |
-| US-02 | Auto-compact indicators | session_notification | **missing** | Silent compact | P1 |
-| US-03 | `model_changed` | session_notification | **missing** | UI model lag after remote switch | P1 |
-| FU-01 | `x.ai/follow_ups` | standalone | **missing** | No suggestion chips | P1 |
-| GL-01 | `goal_updated` | session_notification | **missing** | Goal mode opaque | P2 |
-| SC-01 | Scheduler notifications | standalone | **missing** | Cron UX | P2 |
-| MCP-N | MCP status notifications | standalone | **missing** | Status UI empty | P2 |
+| BUS-01 | ExtNotification registration | runtime | **done** | — | — |
+| BUS-02 | Parse `x.ai/session_notification` envelope | runtime | **done** | — | — |
+| WF-01 | `workflow_updated` progress | session_notification | **done** | — | — |
+| WF-02 | `workflow_updated` terminal + `result_summary` | session_notification | **done** | — | — |
+| WF-03 | Correlate `run_id` ↔ launch `tool_use_id` | host state | **done** | — | — |
+| WF-04 | `workflow` in TOOL_ID_TO_NAME | event-map | **done** | — | — |
+| SA-01 | `subagent_spawned` / `progress` / `finished` | session_notification | **done** | cap `supportsSubagents` still false (parity PR9) | P2 |
+| BG-01 | `task_backgrounded` / `task_completed` | standalone and/or nested | **done** | no `_x.ai/task_*` alias (P3) | — |
+| BG-02 | `monitor_event` | standalone | **done** | — | — |
+| US-01 | `turn_completed.usage` | session_notification | **done** | — | — |
+| US-02 | Auto-compact indicators | session_notification | **done** | — | — |
+| US-03 | `model_changed` | session_notification | **done** | — | — |
+| FU-01 | `x.ai/follow_ups` | standalone | **done** | — | — |
+| GL-01 | `goal_updated` | session_notification | **done** | — | — |
+| SC-01 | Scheduler notifications | standalone | **done** | — | — |
+| MCP-N | MCP status notifications | standalone | **partial** | `tools_changed` not applied (parity MCP-10) | P2 |
+| NODE-01 | Node ask/exit reverse RPCs | `packages/acp` `run-turn.ts` | **missing** | CLI turn can hang (parity PR4) | **P0** |
+| XAI-24 | `x.ai/session/prompt_complete` | standalone | **missing** | legacy; nested `turn_completed` already wakes | P3 |
 | TUI-* | announcements, queue, leader | standalone | **na** | Multi-client / pager | defer |
 
 Claude-specific SuperOne workflow features (DAG replay from Rhai transcripts under Claude project dirs) are **orthogonal** — Grok does not use that filesystem layout. Phase-1 Grok workflow UX should use **snapshot events**, not Claude transcript scraping.
@@ -348,16 +352,16 @@ interface XaiCorrelationState {
 
 Populate `workflowToolByRunId` when standard map emits tool_result for a workflow-like tool whose output JSON contains `run_id` / `task_id`.
 
-### 5.3 New / extended modules
+### 5.3 Modules (shipped)
 
 | Module | Responsibility |
 |--------|----------------|
-| `acp-xai-session-notify.ts` (new) | Parse envelope; switch on `sessionUpdate`; pure mappers → `AgentEvent[]` |
-| `acp-xai-extensions.ts` (extend) | Method name constants; shared types |
+| `acp-xai-session-notify.ts` | Parse envelope; switch on `sessionUpdate`; pure mappers → `AgentEvent[]` |
+| `packages/acp/src/xai-event-map.ts` / `xai-state.ts` | Shared Node + desktop mappers and method list |
+| `acp-xai-extensions.ts` | Reverse-request helpers (ask / exit_plan / elicit) |
 | `acp-runtime.ts` | Register notifications; own correlation maps; `deliver` |
-| `acp-event-map.ts` | Add `workflow` → display name; optionally stash run_id from tool result |
-| `acp-backend.ts` | Ensure session-level events reach chat store after turn; implement `getContextUsage` from cache |
-| tests | Fixtures cloned from Grok serde shapes |
+| `acp-event-map.ts` | Standard `session/update` + `workflow` display name |
+| `acp-backend.ts` | Session-level events after turn; `getContextUsage` from cache |
 
 ### 5.4 Event mapping (recommended)
 
@@ -444,9 +448,11 @@ Requirements:
 
 ## 6. PR plan
 
-Each PR = one logical change (Agents.md commit style). Suggested subjects:
+**This doc’s PR1–PR5 shipped** (bus + workflow/subagent/bg/usage/follow_ups mapping). Do not re-open them. Leftover host work is `grok-build-parity.md` PR0–PR9 (docs, Always, plan chrome, MCP live ops, Node ask/exit, Auto honesty).
 
-### PR1 — `feat(acp): handle x.ai/session_notification bus`
+Historical slices below are kept as the original implementation record.
+
+### PR1 — `feat(acp): handle x.ai/session_notification bus`  **(shipped)**
 
 **Scope**
 
@@ -538,12 +544,14 @@ Extend existing ACP mock pattern in `acp-runtime.test.ts`:
 
 ### 7.3 Manual Grok CLI checklist
 
+Live `grok agent stdio` acceptance is **parity TD-03**. Do not tick G1–G6 in §9 from units alone.
+
 - [ ] Start SuperOne ACP session with Grok Build.
 - [ ] Prompt: launch a short built-in or project workflow (`/workflow` or agent tool).
 - [ ] Observe launch tool chip.
-- [ ] Observe progressive phase / agents (after PR2).
+- [ ] Observe progressive phase / agents.
 - [ ] Observe terminal result summary.
-- [ ] Spawn background Task/subagent; observe finish (after PR3).
+- [ ] Spawn background Task/subagent; observe finish.
 - [ ] Confirm chat still works after turn returns while workflow runs.
 - [ ] Reload/resume session: progressive events for new runs still work (replay optional later).
 
@@ -573,14 +581,16 @@ Defaults until decided: Task rows + result text; slash commands remain agent-sid
 
 ## 9. Success criteria
 
-| # | Criterion | PR |
-|---|-----------|-----|
-| G1 | SuperOne logs / handles `x.ai/session_notification` without breaking standard ACP | PR1 |
-| G2 | Live workflow progress visible in SuperOne chat | PR2 |
-| G3 | Workflow terminal `result_summary` visible | PR2 |
-| G4 | Subagent + bg task completion visible | PR3 |
-| G5 | Context usage no longer always null after Grok turns that emit usage | PR4 |
-| G6 | Unknown future `sessionUpdate` variants never crash the host | PR1 |
+Units exist for G1/G6 and the mappers behind G2–G5. **Leave live-run boxes open until parity TD-03.**
+
+| # | Criterion | Code | Live grok CLI |
+|---|-----------|------|----------------|
+| G1 | SuperOne logs / handles `x.ai/session_notification` without breaking standard ACP | shipped | [ ] TD-03 |
+| G2 | Live workflow progress visible in SuperOne chat | shipped | [ ] TD-03 |
+| G3 | Workflow terminal `result_summary` visible | shipped | [ ] TD-03 |
+| G4 | Subagent + bg task completion visible | shipped | [ ] TD-03 |
+| G5 | Context usage no longer always null after Grok turns that emit usage | shipped | [ ] TD-03 |
+| G6 | Unknown future `sessionUpdate` variants never crash the host | shipped | — |
 
 ---
 

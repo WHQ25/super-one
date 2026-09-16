@@ -3,10 +3,11 @@
 | Field | Value |
 |-------|--------|
 | Status | **Implemented (phase 1)** — live code; §1 is historical problem statement |
+| Verified | 2026-09-16 against SuperOne working tree (docs PR0) |
 | Scope | ACP / Grok Build harness |
 | Repo | `super-one` |
 | Related source | `/Users/wuhangqi25/Developer/Projects/grok-build` (`xai-org/grok-build`) |
-| Broader parity | [`grok-build-parity.md`](./grok-build-parity.md) (models, MCP attach, session/load, …) |
+| Broader parity | [`grok-build-parity.md`](./grok-build-parity.md) — remaining host polish (Always button, Auto honesty, plan chrome sync, MCP live ops, Node reverse RPCs) |
 | Out of scope | terminal capability re-enable, session resume, hooks |
 
 ---
@@ -21,7 +22,7 @@ Grok Build is SuperOne's default experimental ACP agent (`grok agent stdio`). Tw
 
 2. **Permission mode switching was a no-op.** Composer called `backend.setPermissionMode` but ACP was empty. **Fixed:** session/new `_meta` yolo/auto + mid-session `x.ai/yolo_mode_changed`.
 
-**Also shipped separately:** full `x.ai/exit_plan_mode` plan approval UI — see parity doc §4.0.
+**Also shipped separately:** full `x.ai/exit_plan_mode` plan approval UI — see parity doc XAI-03. Remaining plan *chrome* sync is parity PR2.
 
 ---
 
@@ -61,10 +62,14 @@ Grok Build is SuperOne's default experimental ACP agent (`grok agent stdio`). Tw
 │ OpenCode    │ ─ allow each built-in ─────► │ Same effect      │
 └─────────────┘                             └──────────────────┘
 
-┌─────────────┐   session/request_permission ┌──────────────────┐
-│ ACP / Grok  │ ─ handlePermissionRequest ─► │ ALWAYS UI prompt │  ← gap
-│             │ ─ setPermissionMode ───────► │ no-op            │  ← gap
-└─────────────┘                             └──────────────────┘
+┌─────────────┐   session/request_permission ┌──────────────────────┐
+│ ACP / Grok  │ ─ handlePermissionRequest ─► │ preapprove builtins  │
+│             │                              │ UI prompt otherwise  │
+│             │ ─ setPermissionMode ───────► │ yolo/auto notify     │
+│             │ ─ plan (permissionMode) ───► │ session/set_mode     │
+└─────────────┘                             └──────────────────────┘
+  Remaining product polish (Always on the card, Auto Generic honesty,
+  plan chrome sync) lives in grok-build-parity.md — not this subsystem.
 ```
 
 ### 3.2 Key SuperOne files
@@ -233,20 +238,22 @@ isToolPreapproved(claudeName)
 
 #### Auto-allow response shape
 
-Reuse `mapPermissionDecision(options, allow=true, alwaysAllow=?)`:
+Reuse `mapPermissionDecision(options, allow=true, alwaysAllow=?)` via `decideAcpPermission`:
 
-1. Prefer `allow_once` for built-ins (no persistent grant pollution).
-2. If options include an always-MCP option (`allow-always-mcp` or `kind === allow_always` with MCP meta) **and** tool is built-in SuperOne, prefer selecting that with server-scope when response meta is supported — **phase 2** if meta wiring is missing; phase 1 only needs `allow_once`.
-3. If no allow option exists, log + cancel (fail closed for the call, not hang).
+1. Built-in SuperOne tools (except main-thread-only) prefer `allow-always-mcp` / `kind === allow_always` so Grok stores a server grant and stops re-prompting.
+2. Mini-app preapprovals and main-thread-only tools still use `allow_once`.
+3. User-facing Always on the permission card (native bash / third-party MCP) is a separate product gap — see `grok-build-parity.md` PR1 (PM-12). Do **not** map that Always to yolo / `enable-always-approve`.
+4. If no allow option exists, log + cancel (fail closed for the call, not hang).
 
 #### Integration point
 
 ```ts
 // AcpBackend.handlePermissionRequest
 private handlePermissionRequest(params: RequestPermissionRequest): Promise<RequestPermissionResponse> {
-  if (shouldAutoAllowAcpPermission(params)) {
-    const { options } = mapPermissionRequest(params) // or extract options only
-    return Promise.resolve(mapPermissionDecision(options, true, /* alwaysAllow */ false))
+  const decision = decideAcpPermission(params, mainSessionId)
+  if (decision.kind === 'auto-allow') {
+    const { options } = mapPermissionRequest(params)
+    return Promise.resolve(mapPermissionDecision(options, true, decision.alwaysAllow))
   }
   // existing emit + park path
 }
@@ -275,18 +282,19 @@ Some built-ins (e.g. `media_generate_video`, `config_apply`) may open SuperOne�
 
 #### Strategy for modes Grok ACP cannot toggle mid-session
 
-**Phase 1 (ship first):** Map only the three live controls:
+**Phase 1 (shipped):** Map the three live yolo/auto controls:
 
 - `default` ↔ ask  
 - `auto` ↔ auto  
 - `bypassPermissions` ↔ always-approve  
 
-UI for Grok sessions shows these three (like a reduced `PermissionModeSelector` / OpenCode-style subset). Hide or disable `acceptEdits` / `dontAsk` / Claude-only `plan` permission entry for `agentId === 'grok-build'` until phase 2.
+UI for Grok sessions shows Ask / Auto / Always Approve plus **Plan**. `acceptEdits` / `dontAsk` stay hidden (not on the yolo wire).
 
-**Phase 2 (optional follow-up):**
+**Plan is not yolo (shipped):** SuperOne `permissionMode: 'plan'` calls ACP `session/set_mode` with id `plan`, not `setPermissionMode` / yolo notify. Host enter-plan (status-bar / Shift+Tab) is live. Remaining chrome sync — agent `current_mode_update`, prompt `_meta.mode`, skip post-approve `setPermissionMode('default')` — is `grok-build-parity.md` PR2.
 
-- `acceptEdits` / `dontAsk`: on **idle** session, rebuild ACP runtime with env or CLI flags if Grok supports `--permission-mode acceptEdits` on `agent stdio` (verify against installed CLI). Alternatively inject Claude-compat settings only if product accepts writing under project/home `.claude` / `.grok` (prefer not).
-- `plan`: wire SuperOne plan toggle to Grok `session/set_mode` plan id when advertised, not to `setPermissionMode`.
+**Still deferred:**
+
+- `acceptEdits` / `dontAsk`: on **idle** session, rebuild ACP runtime with env or CLI flags if Grok supports `--permission-mode acceptEdits` on `agent stdio`. Do not write project `.grok` allowlists for this.
 
 #### Runtime plumbing
 
@@ -468,11 +476,11 @@ tool needs permission
 
 1. **Client-side preapproval short-circuit** for built-ins + mini-app preapprovals — mirrors Claude, no Grok config dependency.  
 2. **Do not auto-allow all `superone__*` tools** — only `BUILT_IN_SUPERONE_TOOL_NAMES` (+ mobile share) and explicit preapprovals.  
-3. **Phase 1 mode set = `{ default, auto, bypassPermissions }`** for Grok; acceptEdits/dontAsk deferred.  
+3. **Phase 1 mode set = `{ default, auto, bypassPermissions, plan }`** for Grok; plan uses `session/set_mode`, not yolo. acceptEdits/dontAsk deferred.  
 4. **Mid-session via `x.ai/yolo_mode_changed`**, create-time via `session/new` `_meta.yoloMode` / `autoMode`.  
 5. **Keep `permissionMode` orthogonal to `acpModes` (effort).**  
 6. **Honest `clientType: superone` (Generic)** until Desktop option parity exists.  
-7. **Prefer `allow_once` for built-in preapprove responses** in phase 1; optional always-mcp server grant later for fewer round-trips.
+7. **Prefer `allow-always-mcp` for built-in preapprove responses** (except main-thread-only). User-facing Always on the card is parity PR1.
 
 ---
 
@@ -482,7 +490,7 @@ tool needs permission
 |---|----------|------------------------|
 | Q1 | Exact ACP SDK API for sending ext **notifications** from the client (method name / wrapper)? | Probe `@agentclientprotocol/sdk` during PR1; fallback raw JSON-RPC if needed |
 | Q2 | Does installed `grok agent stdio` honor `--permission-mode acceptEdits` for phase 2? | Measure with `grok --help`; defer acceptEdits until confirmed |
-| Q3 | Should auto-allow respond with `allow-always-mcp` + server `superone` when option present (fewer reverse-requests)? | Phase 1: allow_once only; phase 1.1 optimization |
+| Q3 | Should auto-allow respond with `allow-always-mcp` + server `superone` when option present (fewer reverse-requests)? | **Shipped:** builtins (not main-thread-only) select `allow-always-mcp` when present |
 | Q4 | Gate mode UI on `agentId === 'grok-build'` only, or any agent that advertises yolo meta? | Start with grok-build only |
 | Q5 | Does Grok auto mode require a remote/feature flag (`auto_permission_mode_enabled_from_disk`)? | If auto fails closed, UI should show toast and stay on default |
 
@@ -613,12 +621,13 @@ function grokYoloNotification(mode: PermissionMode) {
 
 ## 12. Success criteria
 
-- [ ] Grok session: consecutive built-in MCP calls produce **zero** `permission_request` UI events (unit + manual).  
-- [ ] Third-party MCP still prompts in ask mode.  
-- [ ] Preapproved mini-app tools silent; non-preapproved prompt.  
-- [ ] Setting Bypass updates Grok behavior without restart; Default restores prompts.  
-- [ ] Auto maps correctly or fails with user-visible feedback if feature-disabled.  
-- [ ] `acpModes` effort selector still independent of permission mode.  
+G1–G5 below match §2. **Unit tests exist** (`acp-permission-preapprove.test.ts`, runtime yolo/auto notify, `set_mode` plan). **Do not tick these boxes until a recorded live `grok agent stdio` run (parity TD-03).** Remaining host UX (Always button, Auto Generic toast, SessionDefaults labels) is tracked in `grok-build-parity.md`, not here.
+
+- [ ] G1 Grok session: consecutive built-in MCP calls produce **zero** `permission_request` UI events (unit + manual).  
+- [ ] G2 Third-party MCP still prompts in ask mode. Preapproved mini-app tools silent; non-preapproved prompt.  
+- [ ] G3 Setting Bypass updates Grok behavior without restart; Default restores prompts.  
+- [ ] G4 `acpModes` effort selector still independent of permission mode.  
+- [ ] G5 Auto maps correctly or fails with user-visible feedback if feature-disabled (parity PR5).  
 - [ ] No regression on Claude/Codex/OpenCode permission paths.
 
 ---
@@ -628,3 +637,4 @@ function grokYoloNotification(mode: PermissionMode) {
 | Date | Note |
 |------|------|
 | 2026-07-25 | Initial design from SuperOne + `xai-org/grok-build` source review |
+| 2026-09-16 | PR0: mark phase-1 preapprove + yolo/auto + host plan `set_mode` as shipped; point leftover Always/Auto/chrome work at `grok-build-parity.md`. G1–G5 boxes stay open until TD-03. |

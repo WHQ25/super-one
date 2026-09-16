@@ -1,4 +1,8 @@
+"use client"
+
 import { createContext, useContext, useMemo, type ReactNode } from "react"
+import { createInstance, type i18n as I18nInstance } from "i18next"
+import { I18nextProvider } from "react-i18next"
 import type { Locale } from "@superone/shared/agent-types"
 import { resources } from "@superone/shared/i18n"
 
@@ -44,6 +48,31 @@ interface MockLocaleValue {
   t: MockT
 }
 
+/**
+ * Production presenters from `@superone/chat-view` read `useTranslation()`, so a
+ * mock tree also carries a real i18next instance. It is scoped through
+ * `I18nextProvider` rather than installed as the global default, which keeps a
+ * host that already initialised i18next (Storybook, the desktop) untouched.
+ */
+const i18nInstances = new Map<Locale, I18nInstance>()
+
+function i18nFor(locale: Locale): I18nInstance {
+  let instance = i18nInstances.get(locale)
+  if (!instance) {
+    instance = createInstance({
+      resources,
+      lng: locale,
+      fallbackLng: "en",
+      interpolation: { escapeValue: false },
+      returnNull: false,
+      initAsync: false,
+    })
+    void instance.init()
+    i18nInstances.set(locale, instance)
+  }
+  return instance
+}
+
 const MockLocaleContext = createContext<MockLocaleValue>({
   locale: "en",
   t: createT("en"),
@@ -57,7 +86,11 @@ export function MockLocaleProvider({
   children: ReactNode
 }) {
   const value = useMemo<MockLocaleValue>(() => ({ locale, t: createT(locale) }), [locale])
-  return <MockLocaleContext.Provider value={value}>{children}</MockLocaleContext.Provider>
+  return (
+    <MockLocaleContext.Provider value={value}>
+      <I18nextProvider i18n={i18nFor(locale)}>{children}</I18nextProvider>
+    </MockLocaleContext.Provider>
+  )
 }
 
 export function useMockT(): MockT {

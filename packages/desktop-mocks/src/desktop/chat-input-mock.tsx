@@ -1,5 +1,6 @@
 "use client"
 
+import type { ReactNode } from "react"
 import {
   ArrowUp,
   AudioLines,
@@ -7,13 +8,13 @@ import {
   ChevronDown,
   Circle,
   Clock3,
-  FolderClosed,
   GitBranch,
+  GitBranchPlus,
   Loader2,
+  Monitor,
   MonitorUp,
   PackageOpen,
   Paperclip,
-  Shield,
   Square,
   Users,
   X,
@@ -22,6 +23,13 @@ import { IconButton } from "@superone/ui/components/ui/icon-button"
 import { cn } from "@superone/ui/lib/utils"
 import type { Harness } from "./icons"
 import { useMockT } from "./i18n"
+import {
+  codexPermissionPreset,
+  permissionMode,
+  permissionModeByLabel,
+  type CodexPermissionId,
+  type PermissionModeId,
+} from "./permission-modes"
 import {
   harnessShowcaseMeta,
   SHOWCASE_SANDBOX_LABEL,
@@ -36,11 +44,11 @@ export interface ChatInputMockProps {
   effortLabel?: string
   contextPct?: number
   harness?: Harness
-  workDirName?: string
+  worktree?: string | null
   branch?: string
   branchDirty?: boolean
-  permissionLabel?: string
-  sandboxLabel?: "Off" | "On" | "Auto"
+  permission?: ChatStatusBarMockProps["permission"]
+  sandbox?: SandboxModeId
   voiceState?: MockVoiceState
   streaming?: boolean
   scheduled?: boolean
@@ -56,11 +64,11 @@ export function ChatInputMock({
   effortLabel,
   contextPct = 0.18,
   harness = "claude",
-  workDirName = "super-one",
+  worktree = null,
   branch = "main",
   branchDirty = true,
-  permissionLabel,
-  sandboxLabel,
+  permission,
+  sandbox,
   voiceState,
   streaming = false,
   scheduled = false,
@@ -74,8 +82,6 @@ export function ChatInputMock({
   const model = modelLabel ?? harnessMeta.model
   const effort = effortLabel ?? t("settings.preferences.effort.levels.xhigh")
   const placeholderText = placeholder ?? harnessMeta.placeholder
-  const resolvedPermissionLabel = permissionLabel ?? harnessMeta.permission
-  const resolvedSandboxLabel = sandboxLabel ?? SHOWCASE_SANDBOX_LABEL[harnessMeta.sandbox]
   const resolvedVoiceState = voiceState ?? (harness === "codex" ? "idle" : "hidden")
 
   return (
@@ -116,11 +122,11 @@ export function ChatInputMock({
 
       <ChatStatusBarMock
         harness={harness}
-        workDirName={workDirName}
+        worktree={worktree}
         branch={branch}
         branchDirty={branchDirty}
-        permissionLabel={resolvedPermissionLabel}
-        sandboxLabel={resolvedSandboxLabel}
+        permission={permission}
+        sandbox={sandbox}
         backgroundAgents={backgroundAgents}
         pipKind={pipKind}
       />
@@ -128,113 +134,152 @@ export function ChatInputMock({
   )
 }
 
+export type SandboxModeId = "off" | "on" | "auto"
+
 export interface ChatStatusBarMockProps {
-  harness: Harness
-  workDirName: string
-  branch: string
-  branchDirty: boolean
-  permissionLabel: string
-  sandboxLabel: "Off" | "On" | "Auto"
-  backgroundAgents: number
+  harness?: Harness
+  /**
+   * Checkout the session runs in. `null` is the main checkout, which the
+   * desktop labels "Local"; a string is the worktree's branch name.
+   */
+  worktree?: string | null
+  branch?: string
+  branchDirty?: boolean
+  /** Claude-style permission mode. Defaults to the harness showcase mode. */
+  permission?: { id: PermissionModeId; label?: string }
+  /** Codex approval preset; wins over `permission` for the Codex harness. */
+  codexPermission?: CodexPermissionId
+  /** Defaults to the harness showcase sandbox state. */
+  sandbox?: SandboxModeId
+  backgroundAgents?: number
   pipKind?: MockPipKind
+  activeTrigger?: "workdir" | "branch" | "permission" | "codex-permission" | "sandbox" | null
+  className?: string
 }
 
-const SANDBOX_COLOR: Record<"Off" | "On" | "Auto", string> = {
-  Off: "text-muted-foreground",
-  On: "text-success",
-  Auto: "text-warning",
+const SANDBOX_TONE: Record<SandboxModeId, string> = {
+  off: "text-muted-foreground",
+  on: "text-success",
+  auto: "text-warning",
 }
 
 export function ChatStatusBarMock({
-  harness,
-  workDirName,
-  branch,
-  branchDirty,
-  permissionLabel,
-  sandboxLabel,
-  backgroundAgents,
+  harness = "claude",
+  worktree = null,
+  branch = "main",
+  branchDirty = true,
+  permission,
+  codexPermission,
+  sandbox,
+  backgroundAgents = 0,
   pipKind,
+  activeTrigger = null,
+  className,
 }: ChatStatusBarMockProps) {
-  const sandboxInteractive = harnessShowcaseMeta(harness).sandboxInteractive
-  const SandboxIcon = sandboxLabel === "Off" ? PackageOpen : Box
+  const t = useMockT()
+  const harnessMeta = harnessShowcaseMeta(harness)
+  const codexPreset = harness === "codex" && !permission
+    ? codexPermissionPreset(codexPermission ?? harnessMeta.codexPermission ?? "default")
+    : null
+  const mode = codexPreset
+    ? { icon: codexPreset.triggerIcon, label: t(codexPreset.labelKey), color: codexPreset.triggerToneClass }
+    : permission
+      ? { ...permissionMode(permission.id), label: permission.label ?? permissionMode(permission.id).label }
+      : permissionModeByLabel(harnessMeta.permission)
+  const sandboxMode = sandbox ?? harnessMeta.sandbox
+  const sandboxInteractive = harnessMeta.sandboxInteractive
+  const SandboxIcon = sandboxMode === "off" ? PackageOpen : Box
 
   return (
-    <div className="flex items-center gap-2 whitespace-nowrap px-3 pb-1 pt-0.5 @lg:px-7 @lg:pb-3 @lg:pt-1 text-[11px] text-muted-foreground">
-      <button
-        type="button"
-        className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors hover:bg-muted hover:text-foreground"
-        title={workDirName}
-      >
-        <FolderClosed className="size-3" />
-        <span className="max-w-[140px] truncate">{workDirName}</span>
-      </button>
+    <div
+      className={cn(
+        "flex items-center gap-2 whitespace-nowrap px-3 pb-1 pt-0.5 text-[11px] text-muted-foreground @lg:px-7 @lg:pb-3 @lg:pt-1",
+        className,
+      )}
+    >
+      <StatusBarTrigger
+        icon={worktree ? <GitBranchPlus className="size-3" /> : <Monitor className="size-3" />}
+        label={worktree ?? t("tooltips.local")}
+        active={activeTrigger === "workdir"}
+      />
 
       <div className="h-3 w-px bg-border" />
 
-      <button
-        type="button"
-        className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors hover:bg-muted hover:text-foreground"
-      >
-        <GitBranch className="size-3" />
-        <span className="max-w-[140px] truncate">{branch}</span>
-        {branchDirty && <Circle className="size-1.5 fill-warning text-warning" />}
-        <ChevronDown className="size-3" />
-      </button>
+      <StatusBarTrigger
+        icon={<GitBranch className="size-3" />}
+        label={branch}
+        active={activeTrigger === "branch"}
+        trailing={branchDirty ? <Circle className="size-1.5 fill-warning text-warning" /> : null}
+      />
 
       <div className="h-3 w-px bg-border" />
 
-      <button
-        type="button"
-        className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors hover:bg-muted hover:text-foreground"
-      >
-        <Shield className="size-3" />
-        <span>{permissionLabel}</span>
-        <ChevronDown className="size-3" />
-      </button>
+      <StatusBarTrigger
+        icon={mode.icon}
+        label={mode.label}
+        active={activeTrigger === "permission" || activeTrigger === "codex-permission"}
+        colorClassName={mode.color}
+      />
 
       <div className="flex-1" />
 
       {backgroundAgents > 0 && (
-        <button type="button" className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors hover:bg-muted">
-          <Users className="size-3" />
-          <span>{backgroundAgents}</span>
-        </button>
+        <StatusBarTrigger icon={<Users className="size-3" />} label={String(backgroundAgents)} showChevron={false} />
       )}
 
       {pipKind && (
-        <button type="button" className="flex items-center gap-1 rounded-lg px-2 py-1 transition-colors hover:bg-muted">
-          <MonitorUp className="size-3" />
-          <span className="capitalize">{pipKind}</span>
-        </button>
+        <StatusBarTrigger
+          icon={<MonitorUp className="size-3" />}
+          label={<span className="capitalize">{pipKind}</span>}
+          showChevron={false}
+        />
       )}
 
-      {sandboxInteractive ? (
-        <button
-          type="button"
-          className={cn(
-            "flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] transition-colors hover:bg-muted",
-            SANDBOX_COLOR[sandboxLabel],
-          )}
-          title={`Sandbox ${sandboxLabel}`}
-        >
-          <SandboxIcon className="size-3" />
-          <span>{sandboxLabel}</span>
-          <ChevronDown className="size-3" />
-        </button>
-      ) : (
-        <span
-          className={cn(
-            "flex items-center gap-1 rounded-lg px-2 py-1 text-[11px]",
-            SANDBOX_COLOR[sandboxLabel],
-          )}
-          title={`Sandbox ${sandboxLabel}`}
-          aria-label={`Sandbox ${sandboxLabel}`}
-        >
-          <SandboxIcon className="size-3" />
-          <span>{sandboxLabel}</span>
-        </span>
-      )}
+      <StatusBarTrigger
+        icon={<SandboxIcon className="size-3" />}
+        label={SHOWCASE_SANDBOX_LABEL[sandboxMode]}
+        active={activeTrigger === "sandbox"}
+        colorClassName={SANDBOX_TONE[sandboxMode]}
+        showChevron={sandboxInteractive}
+      />
     </div>
+  )
+}
+
+export interface StatusBarTriggerProps {
+  icon: ReactNode
+  label: ReactNode
+  active?: boolean
+  colorClassName?: string
+  showChevron?: boolean
+  trailing?: ReactNode
+}
+
+/** One chip in the composer status bar: icon, label, optional dirty dot, optional chevron. */
+export function StatusBarTrigger({
+  icon,
+  label,
+  active = false,
+  colorClassName = "text-muted-foreground",
+  showChevron = true,
+  trailing,
+}: StatusBarTriggerProps) {
+  return (
+    <button
+      type="button"
+      className={cn(
+        "flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] transition-colors hover:bg-muted hover:text-foreground",
+        colorClassName,
+        active && "bg-muted text-foreground",
+      )}
+    >
+      {icon}
+      <span className="max-w-[140px] truncate">{label}</span>
+      {trailing}
+      {showChevron && (
+        <ChevronDown className={cn("size-3 transition-transform duration-200", active && "rotate-180")} />
+      )}
+    </button>
   )
 }
 

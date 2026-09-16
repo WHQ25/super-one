@@ -47,7 +47,7 @@
     },
     "apps/desktop": {
       "name": "@superone/desktop",
-      "version": "0.66.0",
+      "version": "0.67.0",
       "dependencies": {
         "@agentclientprotocol/sdk": "^1.4.0",
         "@ai-sdk/google": "^4.0.62",
@@ -671,9 +671,11 @@
       "dependencies": {
         "@streamdown/code": "^1.0.1",
         "@streamdown/math": "^1.0.2",
+        "@superone/chat-view": "workspace:*",
         "@superone/shared": "workspace:*",
         "@superone/ui": "workspace:*",
         "hast-util-sanitize": "^5.0.2",
+        "i18next": "^26.4.1",
         "katex": "^0.18.5",
         "mermaid": "^11.17.2",
         "react-i18next": "^17.0.13",

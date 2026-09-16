@@ -6,9 +6,12 @@ import {
   type ReactNode,
 } from "react"
 import {
+  ArrowDown,
+  ArrowUp,
   ChartNoAxesColumnIncreasing,
   Check,
   ChevronDown,
+  Clock,
   ChevronRight,
   CircleDashed,
   FileDiff,
@@ -18,6 +21,7 @@ import {
   Wrench,
 } from "lucide-react"
 import { cn } from "@superone/ui/lib/utils"
+import { useMockT } from "./i18n"
 import { MockMarkdown } from "./mock-markdown"
 import { ToolBlockMock, type ToolBlockSpec } from "./tool-block-mock"
 
@@ -60,9 +64,18 @@ export type TurnDetailRunMock =
       node: ReactNode
     }
 
+export interface TurnFooterMock {
+  /** Already formatted, e.g. "45s" or "3m 30s". */
+  duration?: string
+  inputTokens?: number
+  outputTokens?: number
+}
+
 export interface TurnDetailMockProps {
   runs?: TurnDetailRunMock[]
   stats?: TurnDetailStatsMock
+  /** Duration and token spend under the turn, as the desktop's turn footer shows them. */
+  footer?: TurnFooterMock
   expanded?: boolean
   defaultExpanded?: boolean
   onExpandedChange?: (expanded: boolean) => void
@@ -74,6 +87,43 @@ const DEFAULT_STATS: TurnDetailStatsMock = {
   filesChanged: 3,
   added: 126,
   removed: 38,
+}
+
+const DEFAULT_FOOTER: TurnFooterMock = { duration: "45s", inputTokens: 18_400, outputTokens: 2_600 }
+
+function formatTokens(value: number): string {
+  if (value < 1000) return String(value)
+  if (value < 10_000) return `${(value / 1000).toFixed(1)}k`
+  return `${Math.round(value / 1000)}k`
+}
+
+/** Mirrors `PortableTurnFooter`: clock, then ↑ / ↓ token spend. */
+function TurnFooter({ footer }: { footer: TurnFooterMock }) {
+  const hasTokens = (footer.inputTokens ?? 0) > 0 || (footer.outputTokens ?? 0) > 0
+  if (!footer.duration && !hasTokens) return null
+  return (
+    <div className="mt-2 flex flex-wrap items-start gap-1.5 text-xs text-muted-foreground">
+      {footer.duration && (
+        <span className="inline-flex h-4 shrink-0 items-center gap-1.5">
+          <Clock className="size-3" />
+          <span>{footer.duration}</span>
+        </span>
+      )}
+      {footer.duration && hasTokens && <span aria-hidden>·</span>}
+      {(footer.inputTokens ?? 0) > 0 && (
+        <span className="inline-flex items-center gap-0.5 tabular-nums">
+          <ArrowUp className="size-3" />
+          <span>{formatTokens(footer.inputTokens!)}</span>
+        </span>
+      )}
+      {(footer.outputTokens ?? 0) > 0 && (
+        <span className="inline-flex items-center gap-0.5 tabular-nums">
+          <ArrowDown className="size-3" />
+          <span>{formatTokens(footer.outputTokens!)}</span>
+        </span>
+      )}
+    </div>
+  )
 }
 
 function DefaultReadinessWidget() {
@@ -172,7 +222,7 @@ function DetailStats({ stats }: { stats: TurnDetailStatsMock }) {
   const hasLineDelta = stats.added > 0 || stats.removed > 0
 
   return (
-    <span className="flex items-center gap-1.5 text-[10px] leading-none tabular-nums">
+    <span className="flex items-center gap-1.5 text-2xs leading-none tabular-nums">
       {stats.toolCalls > 0 && (
         <span className="inline-flex items-center gap-0.5 opacity-70" title={`${stats.toolCalls} tool calls`}>
           <Wrench className="size-2.5" />
@@ -275,11 +325,13 @@ function renderRun(run: TurnDetailRunMock): ReactNode {
 export function TurnDetailMock({
   runs = DEFAULT_RUNS,
   stats = DEFAULT_STATS,
+  footer = DEFAULT_FOOTER,
   expanded: expandedProp,
   defaultExpanded = false,
   onExpandedChange,
   className,
 }: TurnDetailMockProps) {
+  const t = useMockT()
   const [internalExpanded, setInternalExpanded] = useState(defaultExpanded)
   const expanded = expandedProp ?? internalExpanded
   const firstCollapsible = runs.findIndex(isCollapsible)
@@ -301,7 +353,7 @@ export function TurnDetailMock({
         )}
       >
         <List className="size-3 shrink-0 opacity-70" />
-        <span className="min-w-0 truncate font-normal tracking-wide">Details</span>
+        <span className="min-w-0 truncate font-normal tracking-wide">{t("chat.compactMode.detail")}</span>
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
           <DetailStats stats={stats} />
           {expanded ? (
@@ -326,6 +378,7 @@ export function TurnDetailMock({
           )}
         </Fragment>
       ))}
+      <TurnFooter footer={footer} />
     </div>
   )
 }

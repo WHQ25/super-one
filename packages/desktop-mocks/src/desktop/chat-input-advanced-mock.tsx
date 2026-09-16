@@ -23,14 +23,13 @@ import {
   ContextDial,
   ModelEffortTriggerMock,
   ScheduledSendControlMock,
+  type ChatStatusBarMockProps,
   type MockPipKind,
   type MockVoiceState,
+  type SandboxModeId,
 } from "./chat-input-mock"
 import { useMockT } from "./i18n"
-import {
-  harnessShowcaseMeta,
-  SHOWCASE_SANDBOX_LABEL,
-} from "./showcase-catalog"
+import { harnessShowcaseMeta } from "./showcase-catalog"
 
 export type ChatInputDirScope = "user" | "project" | "session"
 
@@ -119,11 +118,11 @@ export interface SlashPopupMock {
 
 export interface ChatInputAdvancedMockProps {
   harness?: Harness
-  workDirName?: string
+  worktree?: string | null
   branch?: string
   branchDirty?: boolean
-  permissionLabel?: string
-  sandboxLabel?: "Off" | "On" | "Auto"
+  permission?: ChatStatusBarMockProps["permission"]
+  sandbox?: SandboxModeId
   modelLabel?: string
   effortLabel?: string
   contextPct?: number
@@ -157,11 +156,11 @@ export interface ChatInputAdvancedMockProps {
 
 export function ChatInputAdvancedMock({
   harness = "claude",
-  workDirName = "super-one",
+  worktree = null,
   branch = "main",
   branchDirty = true,
-  permissionLabel,
-  sandboxLabel,
+  permission,
+  sandbox,
   modelLabel,
   effortLabel,
   contextPct = 0.32,
@@ -193,8 +192,6 @@ export function ChatInputAdvancedMock({
   const model = modelLabel ?? harnessMeta.model
   const effort = effortLabel ?? t("settings.preferences.effort.levels.xhigh")
   const placeholderText = placeholder ?? harnessMeta.placeholder
-  const resolvedPermissionLabel = permissionLabel ?? harnessMeta.permission
-  const resolvedSandboxLabel = sandboxLabel ?? SHOWCASE_SANDBOX_LABEL[harnessMeta.sandbox]
   const resolvedVoiceState = voiceState ?? (harness === "codex" ? "idle" : "hidden")
 
   const trimmedValue = value ?? ""
@@ -302,11 +299,11 @@ export function ChatInputAdvancedMock({
 
       <ChatStatusBarMock
         harness={harness}
-        workDirName={workDirName}
+        worktree={worktree}
         branch={branch}
         branchDirty={branchDirty}
-        permissionLabel={resolvedPermissionLabel}
-        sandboxLabel={resolvedSandboxLabel}
+        permission={permission}
+        sandbox={sandbox}
         backgroundAgents={backgroundAgents}
         pipKind={pipKind}
       />

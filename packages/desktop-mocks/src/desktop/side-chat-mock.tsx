@@ -101,7 +101,6 @@ export function SideChatMock({
         harness={harness}
         placeholder={composerPlaceholder}
         contextPct={contextPct}
-        workDirName="super-one"
         branch="main"
         branchDirty={false}
       />

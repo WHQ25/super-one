@@ -14,6 +14,7 @@ import { Kbd } from "@superone/ui/components/ui/kbd"
 import { cn } from "@superone/ui/lib/utils"
 import { MockMarkdown } from "./mock-markdown"
 import { useMockT } from "./i18n"
+import { PermissionFeedbackInputMock } from "./permission-action-bar-mock"
 
 export type PlanApprovalAction = "approve" | "reject" | "toggle"
 
@@ -24,6 +25,7 @@ export interface PlanApprovalMockProps {
   switchAfterApproval?: boolean
   fastModeTarget?: "auto" | "acceptEdits"
   focusedAction?: PlanApprovalAction
+  /** Defaults to the desktop's "Reject feedback (optional, Enter to submit)". */
   feedbackPlaceholder?: string
   className?: string
 }
@@ -35,25 +37,29 @@ export function PlanApprovalMock({
   switchAfterApproval = false,
   fastModeTarget = "acceptEdits",
   focusedAction = "approve",
-  feedbackPlaceholder = "Tell Claude what to change about the plan",
+  feedbackPlaceholder,
   className,
 }: PlanApprovalMockProps) {
   const t = useMockT()
   const isAutoTarget = fastModeTarget === "auto"
+  // Mode identity colours stay bare palette steps, as on the desktop; the plain
+  // approve/reject pair is the semantic success/destructive pair.
   const approveBtn = switchAfterApproval
     ? {
         cls: isAutoTarget
-          ? "bg-amber-600 hover:bg-amber-500"
-          : "bg-purple-600 hover:bg-purple-500",
+          ? "bg-amber-600 text-white hover:bg-amber-500"
+          : "bg-purple-600 text-white hover:bg-purple-500",
         icon: isAutoTarget ? <Zap className="size-3" /> : <FastForward className="size-3" />,
-        label: isAutoTarget ? "Approve + auto" : "Approve + accept edits",
+        label: t(isAutoTarget ? "chat.plan.approveAuto" : "chat.plan.approveAccept"),
         kbdCls: isAutoTarget ? "text-amber-200/80" : "text-purple-200/80",
+        ring: isAutoTarget ? "ring-amber-500" : "ring-purple-500",
       }
     : {
-        cls: "bg-green-600 hover:bg-green-500",
+        cls: "bg-success text-success-foreground hover:bg-success/90",
         icon: <Check className="size-3" />,
-        label: "Approve plan",
-        kbdCls: "text-green-200/80",
+        label: t("chat.plan.approve"),
+        kbdCls: "text-success-foreground/70",
+        ring: "ring-success",
       }
 
   return (
@@ -64,9 +70,10 @@ export function PlanApprovalMock({
       )}
     >
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2">
-        <PenLine className="size-4 text-blue-600 dark:text-blue-400" />
-        <span className="text-sm font-medium text-foreground">Plan review</span>
+        <PenLine className="size-4 text-primary" />
+        <span className="text-sm font-medium text-foreground">{t("chat.plan.review")}</span>
         {fileName && <span className="text-sm text-muted-foreground">{fileName}</span>}
+        <span className="ml-auto text-xs text-muted-foreground">{t("chat.plan.commentHint")}</span>
       </div>
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden">
@@ -78,14 +85,14 @@ export function PlanApprovalMock({
       <div className="shrink-0 border-t border-border px-4 py-3 space-y-2">
         {allowedPrompts.length > 0 && (
           <div>
-            <div className="mb-1 text-[10px] font-medium uppercase text-muted-foreground">
+            <div className="mb-1 text-xs font-medium uppercase text-muted-foreground">
               {t("chat.plan.requestedPermissions")}
             </div>
             <div className="flex flex-wrap gap-1.5">
               {allowedPrompts.map((p, i) => (
                 <span
                   key={i}
-                  className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground"
+                  className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
                 >
                   <span className="font-medium">{p.tool}</span>
                   <span>{p.prompt}</span>
@@ -99,9 +106,9 @@ export function PlanApprovalMock({
           <Button
             size="sm"
             className={cn(
-              "h-7 cursor-pointer gap-1 px-3 text-xs text-white",
+              "h-7 cursor-pointer gap-1 px-3 text-xs",
               approveBtn.cls,
-              focusedAction === "approve" && "ring-2 ring-ring/60 ring-offset-1 ring-offset-background",
+              focusedAction === "approve" && cn("ring-2", approveBtn.ring),
             )}
           >
             {approveBtn.icon}
@@ -111,32 +118,29 @@ export function PlanApprovalMock({
           <Button
             size="sm"
             className={cn(
-              "h-7 cursor-pointer gap-1 bg-red-700 px-3 text-xs text-white hover:bg-red-600",
-              focusedAction === "reject" && "ring-2 ring-red-600/60 ring-offset-1 ring-offset-background",
+              "h-7 cursor-pointer gap-1 bg-destructive px-3 text-xs text-destructive-foreground hover:bg-destructive/90",
+              focusedAction === "reject" && "ring-2 ring-destructive",
             )}
           >
             <X className="size-3" />
             {t("chat.plan.reject")}
-            <Kbd variant="inline" className="ml-1 text-red-200/80">esc</Kbd>
+            <Kbd variant="inline" className="ml-1 text-destructive-foreground/70">esc</Kbd>
           </Button>
-          <div className="relative flex flex-1 items-center">
-            <div className="flex h-7 w-full items-center rounded bg-muted px-2 pr-12 text-xs text-muted-foreground">
-              {feedbackPlaceholder}
-            </div>
-            <Kbd className="pointer-events-none absolute right-2">⇥</Kbd>
-          </div>
+          <PermissionFeedbackInputMock placeholder={feedbackPlaceholder ?? t("chat.plan.feedbackPlaceholder")} />
         </div>
 
         <button
           type="button"
           className={cn(
-            "flex h-7 w-full cursor-pointer items-center gap-1.5 rounded border px-2.5 text-[11px] transition-colors",
+            "flex h-7 w-full cursor-pointer items-center gap-1.5 rounded border px-2.5 text-xs transition-colors",
             switchAfterApproval
               ? isAutoTarget
                 ? "border-amber-500/50 bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-500"
-                : "border-purple-500/50 bg-purple-500/10 text-purple-500 hover:bg-purple-500/20"
-              : "border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-            focusedAction === "toggle" && "ring-2 ring-ring/60 ring-offset-1 ring-offset-background",
+                : "border-purple-500/50 bg-purple-500/10 text-purple-600 hover:bg-purple-500/20 dark:text-purple-400"
+              : isAutoTarget
+                ? "border-border text-muted-foreground hover:bg-amber-500/10"
+                : "border-border text-muted-foreground hover:bg-purple-500/10",
+            focusedAction === "toggle" && "ring-2 ring-ring",
           )}
         >
           {switchAfterApproval ? (

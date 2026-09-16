@@ -52,7 +52,7 @@
       },
       "voice": {
         "title": "Talk to it, watch it work",
-        "desc": "Hold a realtime voice conversation with the agent. The transcript lands as a timeline while tools keep running in the background."
+        "desc": "Hold a realtime voice conversation with the agent. Spoken turns land in the same thread as typed ones while tools keep running in the background."
       }
     },
     "cta": {
@@ -182,7 +182,7 @@
       },
       "conversation": {
         "title": "Conversation and activity",
-        "description": "Realtime voice, thread/timeline switching, temporary side chat, activity tabs, and compact completed-turn details."
+        "description": "Realtime voice, the backing Codex thread, temporary side chat, activity tabs, and compact completed-turn details."
       },
       "coordination": {
         "title": "Cross-harness coordination",
@@ -211,8 +211,8 @@
         "description": "Slash commands, side chat, background-agent state, voice, model, permission, and sandbox controls compose in one input."
       },
       "realtime": {
-        "title": "Realtime voice timeline",
-        "description": "Codex voice sessions can move between the normal thread and a live chronological timeline."
+        "title": "Realtime voice call",
+        "description": "Spoken turns render through the ordinary chat turn UI; the cloud above the composer carries live captions, and the header toggles to the backing Codex thread."
       },
       "activity": {
         "title": "Unified activity panel",

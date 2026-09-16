@@ -22,11 +22,7 @@ const ROWS = [
   {
     key: "voice",
     render: () => (
-      <RealtimeVoiceMock
-        defaultView="realtime"
-        defaultVoiceState="active"
-        speakingSegmentIds={["call-2-assistant-1"]}
-      />
+      <RealtimeVoiceMock />
     ),
   },
 ] as const

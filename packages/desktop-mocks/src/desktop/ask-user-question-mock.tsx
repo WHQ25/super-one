@@ -53,7 +53,7 @@ export function AskUserQuestionMock({
   })
 
   return (
-    <div className={cn("@container mx-3 mb-2 rounded-lg border border-primary/40 bg-muted/60 p-3 dark:border-blue-600/40", className)}>
+    <div className={cn("@container mx-3 mb-2 rounded-lg border border-primary/40 bg-card p-3", className)}>
       {!singleQuestion && (
         <div className="mb-3 flex gap-1 border-b border-border/50 pb-2">
           {questions.map((q, i) => {
@@ -65,12 +65,12 @@ export function AskUserQuestionMock({
                 className={cn(
                   "rounded-md px-2.5 py-1 text-xs font-medium",
                   active
-                    ? "bg-primary/15 text-primary dark:bg-blue-600/15 dark:text-blue-500"
+                    ? "bg-primary/15 text-primary"
                     : "text-muted-foreground",
                 )}
               >
                 {q.header}
-                {answered && <span className="ml-1 text-[10px] text-green-500">&#10003;</span>}
+                {answered && <span className="ml-1 text-xs text-success">&#10003;</span>}
               </div>
             )
           })}
@@ -96,7 +96,7 @@ export function AskUserQuestionMock({
           size="sm"
           disabled={!allAnswered}
           className={cn(
-            "h-7 cursor-pointer bg-primary px-4 text-xs text-primary-foreground hover:bg-primary/90 dark:bg-blue-600 dark:text-white disabled:opacity-50",
+            "h-7 cursor-pointer bg-primary px-4 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50",
           )}
         >
           {t("chat.askUser.submit")}
@@ -153,7 +153,7 @@ function OptionButton({
       className={cn(
         "rounded px-2 py-1 text-xs text-left whitespace-normal @[420px]:py-1.5",
         selected
-          ? "bg-primary text-primary-foreground dark:bg-blue-600 dark:text-white"
+          ? "bg-primary text-primary-foreground"
           : "bg-muted text-foreground",
       )}
     >
@@ -203,7 +203,7 @@ function SimplePanel({
         </div>
       </div>
       {description && (
-        <div className="mt-2 border-l-2 border-primary bg-primary/10 px-2.5 py-1.5 text-xs leading-snug text-primary dark:border-blue-500 dark:bg-blue-500/15 dark:text-blue-400">
+        <div className="mt-2 border-l-2 border-primary bg-primary/10 px-2.5 py-1.5 text-xs leading-snug text-primary">
           {description}
         </div>
       )}

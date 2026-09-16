@@ -5,7 +5,7 @@ import { ScrollArea } from "@superone/ui/components/ui/scroll-area"
 import { cn } from "@superone/ui/lib/utils"
 import { ArrowDown, ArrowUp, Clock, Loader2 } from "lucide-react"
 import { DesktopShell, type DesktopShellProps } from "./desktop-shell"
-import { ChatInputMock } from "./chat-input-mock"
+import { ChatInputMock, type MockVoiceState } from "./chat-input-mock"
 import type { Harness } from "./icons"
 import { ToolBlockMock, type ToolBlockSpec } from "./tool-block-mock"
 import { MockMarkdown } from "./mock-markdown"
@@ -423,6 +423,9 @@ export interface ChatBodyProps {
   askUserQuestion?: ReactNode
   todoPopup?: ReactNode
   planApproval?: ReactNode
+  /** Rendered between the transcript and the composer, e.g. a live call indicator. */
+  beforeComposer?: ReactNode
+  voiceState?: MockVoiceState
   showFooter?: boolean
 }
 
@@ -441,6 +444,8 @@ export function ChatBody({
   askUserQuestion,
   todoPopup,
   planApproval,
+  beforeComposer,
+  voiceState,
   showFooter = true,
 }: ChatBodyProps) {
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -494,6 +499,8 @@ export function ChatBody({
       askUserQuestion={askUserQuestion}
       todoPopup={todoPopup}
       planApproval={planApproval}
+      beforeComposer={beforeComposer}
+      voiceState={voiceState}
     />
   )
 }
@@ -513,6 +520,8 @@ function ChatBodyInner({
   askUserQuestion,
   todoPopup,
   planApproval,
+  beforeComposer,
+  voiceState,
 }: {
   reveal: RevealState
   viewportRef: React.RefObject<HTMLDivElement | null>
@@ -528,6 +537,8 @@ function ChatBodyInner({
   askUserQuestion?: ReactNode
   todoPopup?: ReactNode
   planApproval?: ReactNode
+  beforeComposer?: ReactNode
+  voiceState?: MockVoiceState
 }) {
   return (
     <div className="@container flex h-full flex-col">
@@ -557,14 +568,16 @@ function ChatBodyInner({
                 ))}
               </div>
             </ScrollArea>
-            <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-linear-to-b from-card to-transparent" />
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-6 bg-linear-to-t from-card to-transparent" />
+            {/* Scroll fades read as bands once --card is translucent, so glass drops them like the desktop does. */}
+            <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-linear-to-b from-card to-transparent [.liquid-glass_&]:hidden" />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-6 bg-linear-to-t from-card to-transparent [.liquid-glass_&]:hidden" />
           </div>
           <div className="mx-auto w-full min-w-0 max-w-3xl">
             {permissionPrompt}
             {askUserQuestion}
             {todoPopup}
-            <ChatInputMock harness={harness} placeholder={placeholder} contextPct={0.32} />
+            {beforeComposer}
+            <ChatInputMock harness={harness} placeholder={placeholder} contextPct={0.32} voiceState={voiceState} />
           </div>
         </>
       )}

@@ -12,8 +12,10 @@
   "dependencies": {
     "@streamdown/code": "^1.0.1",
     "@streamdown/math": "^1.0.2",
+    "@superone/chat-view": "workspace:*",
     "@superone/ui": "workspace:*",
     "hast-util-sanitize": "^5.0.2",
+    "i18next": "^26.4.1",
     "@superone/shared": "workspace:*",
     "katex": "^0.18.5",
     "mermaid": "^11.17.2",

@@ -1,4 +1,5 @@
 import type { HarnessId } from "@superone/shared/agent-types"
+import type { CodexPermissionId } from "./permission-modes"
 
 export type ShowcaseSandboxMode = "off" | "on" | "auto"
 
@@ -16,7 +17,9 @@ export interface HarnessShowcaseMeta {
   label: string
   shortLabel: string
   model: string
+  /** Claude-style permission mode label; Codex reads `codexPermission` instead. */
   permission: string
+  codexPermission?: CodexPermissionId
   sandbox: ShowcaseSandboxMode
   sandboxInteractive: boolean
   placeholder: string
@@ -46,6 +49,7 @@ export const HARNESS_SHOWCASE: readonly HarnessShowcaseMeta[] = [
     shortLabel: "Codex",
     model: "GPT5.6 Sol",
     permission: "Auto",
+    codexPermission: "auto-review",
     sandbox: "on",
     sandboxInteractive: false,
     placeholder: "Ask Codex to work in this project…",

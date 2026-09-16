@@ -13,6 +13,7 @@ import "../globals.css"
 import { routing } from "@/i18n/routing"
 import { ThemeProvider } from "@/components/providers/theme-provider"
 import { BrandHueProvider } from "@/components/providers/brand-hue-provider"
+import { MockLocaleProvider } from "@superone/desktop-mocks/desktop"
 import { SiteHeader } from "@/components/site/site-header"
 import { SiteFooter } from "@/components/site/site-footer"
 
@@ -83,9 +84,12 @@ export default async function LocaleLayout({
         <ThemeProvider>
           <BrandHueProvider>
             <NextIntlClientProvider messages={messages} locale={locale}>
-              <SiteHeader />
-              <div className="flex flex-1 flex-col">{children}</div>
-              <SiteFooter />
+              {/* Simulated app surfaces speak the desktop's own locale files. */}
+              <MockLocaleProvider locale={locale}>
+                <SiteHeader />
+                <div className="flex flex-1 flex-col">{children}</div>
+                <SiteFooter />
+              </MockLocaleProvider>
             </NextIntlClientProvider>
           </BrandHueProvider>
         </ThemeProvider>

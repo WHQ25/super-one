@@ -2,31 +2,21 @@
 
 import { type ReactNode } from "react"
 import {
-  AlertTriangle,
   Box,
   Check,
   ChevronDown,
   ChevronRight,
-  Circle,
-  FastForward,
   GitBranch,
   GitCommit,
-  Lock,
   Monitor,
   PackageOpen,
-  PenLine,
   Plus,
   Search,
-  Shield,
-  ShieldCheck,
-  ShieldOff,
-  Zap,
 } from "lucide-react"
 import { cn } from "@superone/ui/lib/utils"
-import { ModelEffortTriggerMock } from "./chat-input-mock"
-import type { Harness } from "./icons"
+import { ModelEffortTriggerMock, type SandboxModeId } from "./chat-input-mock"
+import { CODEX_PERMISSION_PRESETS, PERMISSION_MODES, type CodexPermissionId, type PermissionModeId } from "./permission-modes"
 import { useMockT } from "./i18n"
-import { harnessShowcaseMeta } from "./showcase-catalog"
 
 export interface PopoverShellProps {
   width?: number
@@ -278,67 +268,6 @@ export function EffortSelectorPopoverMock({
   )
 }
 
-export type PermissionModeId =
-  | "default"
-  | "plan"
-  | "auto"
-  | "acceptEdits"
-  | "dontAsk"
-  | "bypassPermissions"
-
-interface PermissionModeDescriptor {
-  id: PermissionModeId
-  label: string
-  description: string
-  icon: ReactNode
-  color: string
-}
-
-const PERMISSION_MODES_DATA: PermissionModeDescriptor[] = [
-  {
-    id: "default",
-    label: "Normal",
-    description: "Prompts for dangerous operations",
-    icon: <Shield className="size-3" />,
-    color: "text-muted-foreground",
-  },
-  {
-    id: "plan",
-    label: "Plan Mode",
-    description: "Planning only, no actual execution",
-    icon: <PenLine className="size-3" />,
-    color: "text-primary",
-  },
-  {
-    id: "auto",
-    label: "Auto",
-    description: "Model classifier decides each permission",
-    icon: <Zap className="size-3" />,
-    color: "text-warning",
-  },
-  {
-    id: "acceptEdits",
-    label: "Accept Edits",
-    description: "Auto-accept file edit operations",
-    icon: <FastForward className="size-3" />,
-    color: "text-success",
-  },
-  {
-    id: "dontAsk",
-    label: "Don't Ask",
-    description: "Deny anything not pre-approved",
-    icon: <Lock className="size-3" />,
-    color: "text-warning",
-  },
-  {
-    id: "bypassPermissions",
-    label: "Bypass",
-    description: "Bypass all permission checks",
-    icon: <ShieldOff className="size-3" />,
-    color: "text-destructive",
-  },
-]
-
 export interface PermissionModePopoverMockProps {
   activeId?: PermissionModeId
   autoBlockedMessage?: string
@@ -356,7 +285,7 @@ export function PermissionModePopoverMock({
   return (
     <PopoverShell width={208} className={className}>
       <PopoverTitle>{title ?? t("chat.permissionModeTitle")}</PopoverTitle>
-      {PERMISSION_MODES_DATA.map((mode) => {
+      {PERMISSION_MODES.map((mode) => {
         const isAutoBlocked = mode.id === "auto" && !!autoBlockedMessage
         const showDivider = mode.id === "dontAsk"
         const active = mode.id === activeId && !isAutoBlocked
@@ -382,8 +311,6 @@ export function PermissionModePopoverMock({
     </PopoverShell>
   )
 }
-
-export type SandboxModeId = "off" | "on" | "auto"
 
 interface SandboxModeDescriptor {
   id: SandboxModeId
@@ -459,8 +386,6 @@ export function SandboxModePopoverMock({
   )
 }
 
-export type CodexPermissionId = "default" | "full-access"
-
 export interface CodexPermissionPopoverMockProps {
   activeId?: CodexPermissionId
   title?: string
@@ -469,38 +394,15 @@ export interface CodexPermissionPopoverMockProps {
 
 export function CodexPermissionPopoverMock({
   activeId = "default",
-  title = "Codex permission preset",
+  title,
   className,
 }: CodexPermissionPopoverMockProps) {
   const t = useMockT()
-  const options: Array<{
-    id: CodexPermissionId
-    label: string
-    description: string
-    icon: ReactNode
-    toneClass: string
-  }> = [
-    {
-      id: "default",
-      label: t("resources.automation.defaultValue"),
-      description: "Sandboxed read/run, asks before edits & network.",
-      icon: <ShieldCheck className="size-3.5" />,
-      toneClass: "text-foreground",
-    },
-    {
-      id: "full-access",
-      label: t("resources.automation.fullAccess"),
-      description: "Bypass sandbox & approvals — use only when you trust the task.",
-      icon: <AlertTriangle className="size-3.5" />,
-      toneClass: "text-destructive",
-    },
-  ]
-
   return (
     <PopoverShell width={288} className={cn("p-2", className)}>
       <div className="space-y-1 text-xs">
-        <PopoverTitle>{title}</PopoverTitle>
-        {options.map((option) => {
+        <PopoverTitle>{title ?? t("chat.permissionModeTitle")}</PopoverTitle>
+        {CODEX_PERMISSION_PRESETS.map((option) => {
           const active = option.id === activeId
           return (
             <div
@@ -514,9 +416,9 @@ export function CodexPermissionPopoverMock({
                 <div className="flex min-w-0 flex-col gap-0.5">
                   <span className={cn("inline-flex items-center gap-1.5 font-medium", option.toneClass)}>
                     {option.icon}
-                    {option.label}
+                    {t(option.labelKey)}
                   </span>
-                  <span className="text-[11px] text-muted-foreground">{option.description}</span>
+                  <span className="text-[11px] text-muted-foreground">{t(option.descriptionKey)}</span>
                 </div>
                 {active && <Check className="mt-0.5 size-3.5 shrink-0" />}
               </div>
@@ -730,150 +632,6 @@ export function WorktreePopoverMock({
         )}
       </div>
     </PopoverShell>
-  )
-}
-
-export interface StatusBarTriggerProps {
-  icon: ReactNode
-  label: string
-  active?: boolean
-  colorClassName?: string
-  showChevron?: boolean
-  trailing?: ReactNode
-}
-
-export function StatusBarTrigger({
-  icon,
-  label,
-  active = false,
-  colorClassName = "text-muted-foreground",
-  showChevron = true,
-  trailing,
-}: StatusBarTriggerProps) {
-  return (
-    <div
-      className={cn(
-        "flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] transition-colors",
-        colorClassName,
-        active && "bg-muted text-foreground",
-      )}
-    >
-      {icon}
-      <span className="max-w-[140px] truncate">{label}</span>
-      {trailing}
-      {showChevron && (
-        <ChevronDown className={cn("size-3 transition-transform duration-200", active && "rotate-180")} />
-      )}
-    </div>
-  )
-}
-
-export interface ChatStatusBarMockProps {
-  workDirName?: string
-  branch?: string
-  branchDirty?: boolean
-  permission?: { id: PermissionModeId; label: string }
-  sandbox?: SandboxModeId
-  harness?: Harness
-  activeTrigger?:
-    | "workdir"
-    | "branch"
-    | "permission"
-    | "sandbox"
-    | "codex-permission"
-    | null
-  className?: string
-}
-
-const PERMISSION_TONE: Record<PermissionModeId, string> = {
-  default: "text-muted-foreground",
-  plan: "text-primary",
-  auto: "text-warning",
-  acceptEdits: "text-success",
-  dontAsk: "text-warning",
-  bypassPermissions: "text-destructive",
-}
-
-const PERMISSION_ICON: Record<PermissionModeId, ReactNode> = {
-  default: <Shield className="size-3" />,
-  plan: <PenLine className="size-3" />,
-  auto: <Zap className="size-3" />,
-  acceptEdits: <FastForward className="size-3" />,
-  dontAsk: <Lock className="size-3" />,
-  bypassPermissions: <ShieldOff className="size-3" />,
-}
-
-const SANDBOX_TONE: Record<SandboxModeId, string> = {
-  off: "text-muted-foreground",
-  on: "text-success",
-  auto: "text-warning",
-}
-
-const SANDBOX_ICON: Record<SandboxModeId, ReactNode> = {
-  off: <PackageOpen className="size-3" />,
-  on: <Box className="size-3" />,
-  auto: <Box className="size-3" />,
-}
-
-const SANDBOX_TRIGGER_LABEL: Record<SandboxModeId, string> = {
-  off: "Off",
-  on: "On",
-  auto: "Auto",
-}
-
-export function ChatStatusBarMock({
-  workDirName = "super-one",
-  branch = "main",
-  branchDirty = true,
-  permission,
-  sandbox,
-  harness = "claude",
-  activeTrigger = null,
-  className,
-}: ChatStatusBarMockProps) {
-  const effectivePermission = permission ?? {
-    id: "default",
-    label: harnessShowcaseMeta(harness).permission,
-  }
-  const harnessMeta = harnessShowcaseMeta(harness)
-  const effectiveSandbox = sandbox ?? harnessMeta.sandbox
-  const sandboxIsInteractive = harnessMeta.sandboxInteractive
-  return (
-    <div
-      className={cn(
-        "flex items-center gap-2 whitespace-nowrap px-4 py-2 text-[11px] text-muted-foreground",
-        className,
-      )}
-    >
-      <StatusBarTrigger
-        icon={<Monitor className="size-3" />}
-        label={workDirName}
-        active={activeTrigger === "workdir"}
-        showChevron={false}
-      />
-      <div className="h-3 w-px bg-border" />
-      <StatusBarTrigger
-        icon={<GitBranch className="size-3" />}
-        label={branch}
-        active={activeTrigger === "branch"}
-        trailing={branchDirty ? <Circle className="size-1.5 fill-warning text-warning" /> : null}
-      />
-      <div className="h-3 w-px bg-border" />
-      <StatusBarTrigger
-        icon={PERMISSION_ICON[effectivePermission.id]}
-        label={effectivePermission.label}
-        active={activeTrigger === "permission" || activeTrigger === "codex-permission"}
-        colorClassName={PERMISSION_TONE[effectivePermission.id]}
-      />
-      <div className="flex-1" />
-      <StatusBarTrigger
-        icon={SANDBOX_ICON[effectiveSandbox]}
-        label={SANDBOX_TRIGGER_LABEL[effectiveSandbox]}
-        active={activeTrigger === "sandbox"}
-        colorClassName={SANDBOX_TONE[effectiveSandbox]}
-        showChevron={sandboxIsInteractive}
-      />
-    </div>
   )
 }
 

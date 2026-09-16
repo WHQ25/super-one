@@ -23,6 +23,8 @@ import {
   X,
 } from "lucide-react"
 import { cn } from "@superone/ui/lib/utils"
+import { FileIcon } from "@superone/ui/components/ui/FileIcon"
+import { FileChipShell } from "@superone/chat-view/presenters/FileChipShell"
 import { useMockT } from "./i18n"
 import { ShimmerText } from "./shimmer-text"
 import { RollingNumber } from "./rolling-number"
@@ -271,19 +273,19 @@ export function ToolBlockMock({
   return (
     <div
       className={cn(
-        "tool-node my-0.5 rounded transition-colors",
+        "tool-node my-0.5 min-w-0 rounded transition-colors",
         isDenied
-          ? "denied bg-red-500/10 hover:bg-red-500/20"
+          ? "denied bg-error/10 hover:bg-error/20"
           : isError
-            ? "errored bg-amber-500/10 hover:bg-amber-500/20"
-            : "bg-muted/50 hover:bg-muted/70",
+            ? "errored bg-warning/10 hover:bg-warning/20"
+            : "bg-muted/20 hover:bg-muted/40",
         meta.body && "cursor-pointer",
         resolvedExpanded && "overflow-hidden",
         className,
       )}
     >
       <div
-        className="flex items-center gap-1.5 px-2 py-1.5 text-xs"
+        className="tool-node-header flex min-w-0 items-center gap-1.5 px-2 py-1.5 text-xs"
         onClick={() => {
           if (!isControlled && meta.body) setInternalExpanded((v) => !v)
         }}
@@ -291,11 +293,7 @@ export function ToolBlockMock({
         <span
           className={cn(
             "size-3 shrink-0",
-            isDenied
-              ? "text-red-600 dark:text-red-400"
-              : isError
-                ? "text-amber-600 dark:text-amber-400"
-                : "text-muted-foreground",
+            isDenied ? "text-error" : isError ? "text-warning" : "text-muted-foreground",
           )}
         >
           {isDenied ? <Ban className="size-3" /> : isError ? <TriangleAlert className="size-3" /> : meta.icon}
@@ -303,11 +301,7 @@ export function ToolBlockMock({
         <span
           className={cn(
             "font-medium shrink-0",
-            isDenied
-              ? "text-red-600 dark:text-red-400"
-              : isError
-                ? "text-amber-600 dark:text-amber-400"
-                : "text-foreground",
+            isDenied ? "text-error" : isError ? "text-warning" : "text-foreground",
           )}
         >
           {showShimmerLabel ? (
@@ -316,13 +310,20 @@ export function ToolBlockMock({
             meta.tool
           )}
         </span>
-        {meta.summary && (
+        {meta.file ? (
+          <>
+            <FileChipMock path={meta.file.path} />
+            {meta.file.meta && (
+              <span className="shrink-0 whitespace-nowrap text-muted-foreground">{meta.file.meta}</span>
+            )}
+          </>
+        ) : meta.summary ? (
           <span className="min-w-0 truncate text-muted-foreground">{meta.summary}</span>
-        )}
+        ) : null}
         {lineDelta && (lineDelta.added > 0 || lineDelta.removed > 0) && (
-          <span className="shrink-0 font-mono text-[11px]">
+          <span className="shrink-0 font-mono text-xs">
             {lineDelta.added > 0 && (
-              <span className="inline-flex items-baseline text-green-600 dark:text-green-400">
+              <span className="inline-flex items-baseline text-success">
                 +<RollingNumber value={lineDelta.added} frame={frame} />
               </span>
             )}
@@ -330,23 +331,28 @@ export function ToolBlockMock({
               <span className="text-muted-foreground/50"> </span>
             )}
             {lineDelta.removed > 0 && (
-              <span className="inline-flex items-baseline text-red-600 dark:text-red-400">
+              <span className="inline-flex items-baseline text-error">
                 -<RollingNumber value={lineDelta.removed} frame={frame} />
               </span>
             )}
           </span>
         )}
         {isRunning && elapsedSec >= 1 && (
-          <span className="shrink-0 text-muted-foreground tabular-nums">{elapsedSec}s</span>
+          <span className="ml-auto shrink-0 text-muted-foreground tabular-nums">{elapsedSec}s</span>
         )}
         {meta.badge && (
-          <span className={cn("shrink-0 rounded px-1 py-px text-[10px]", meta.badge.className)}>
+          <span className={cn("shrink-0 rounded px-1 py-px text-xs", meta.badge.className)}>
             {meta.badge.text}
           </span>
         )}
         {isDenied && (
-          <span className="shrink-0 rounded bg-red-500/20 px-1 py-px text-[10px] text-red-600 dark:text-red-400">
+          <span className="shrink-0 rounded bg-error/20 px-1 py-px text-xs text-error">
             {t("chat.toolBlock.denied")}
+          </span>
+        )}
+        {isError && !isDenied && (
+          <span className="shrink-0 rounded bg-warning/20 px-1 py-px text-xs text-warning">
+            {t("chat.toolBlock.error")}
           </span>
         )}
         {meta.body && (
@@ -367,10 +373,25 @@ interface SpecMeta {
   icon: ReactNode
   tool: ReactNode
   summary?: string
+  /** File tools name the file as a chip (icon + basename) instead of a path summary. */
+  file?: { path: string; meta?: string }
   body?: ReactNode
   denied?: boolean
   errored?: boolean
   badge?: { text: string; className: string }
+}
+
+/** The desktop file chip minus its drag/open behaviour: same shell, same file-type icon. */
+export function FileChipMock({ path, className }: { path: string; className?: string }) {
+  const name = path.split(/[/\\]/).pop() || path
+  return <FileChipShell icon={<FileIcon name={name} size={12} />} name={name} title={path} className={className} />
+}
+
+/** Mirrors `formatReadMeta`: "(300-320)" style ranges read as "L300–320" beside the chip. */
+function readMeta(lineRange?: string): string | undefined {
+  if (!lineRange) return undefined
+  const [start, end] = lineRange.split(/[-–]/).map((part) => part.trim())
+  return end ? `L${start}–${end}` : `L${start}+`
 }
 
 function describeSpec(
@@ -410,7 +431,7 @@ function describeSpec(
       return {
         icon: <FileEdit className="size-3" />,
         tool: "Edit",
-        summary: spec.filePath,
+        file: { path: spec.filePath },
         body: (
           <EditDiffBody
             oldText={spec.oldText}
@@ -425,14 +446,14 @@ function describeSpec(
       return {
         icon: <FileText className="size-3" />,
         tool: "Read",
-        summary: spec.lineRange ? `${spec.filePath} (${spec.lineRange})` : spec.filePath,
+        file: { path: spec.filePath, meta: readMeta(spec.lineRange) },
         body: spec.preview ? <ResultBody text={spec.preview} /> : undefined,
       }
     case "write":
       return {
         icon: <FilePlus2 className="size-3" />,
         tool: "Write",
-        summary: spec.filePath,
+        file: { path: spec.filePath },
         body: (
           <EditDiffBody
             oldText=""
@@ -506,7 +527,7 @@ function describeSpec(
       return {
         icon: <FilePlus2 className="size-3" />,
         tool: "NotebookEdit",
-        summary: spec.notebookPath,
+        file: { path: spec.notebookPath },
         body: (
           <EditDiffBody
             oldText={spec.oldSource}
@@ -521,7 +542,7 @@ function describeSpec(
       return {
         icon: <FileEdit className="size-3" />,
         tool: "FileChange",
-        summary: `${spec.filePath} · ${spec.kind}`,
+        file: { path: spec.filePath, meta: spec.kind },
         body: (
           <FileChangeBody
             diff={sliceDiffByProgress(spec.diff, progress)}
@@ -562,9 +583,9 @@ function BannerBlock({
   const t = useMockT()
   if (kind === "enterPlanMode") {
     return (
-      <div className="my-4 flex items-center gap-1.5 rounded bg-blue-500/10 px-2 py-1.5 text-sm">
-        <PenLine className="size-3 shrink-0 text-blue-600 dark:text-blue-400" />
-        <span className="font-medium text-blue-600 dark:text-blue-400">{t("chat.toolBlock.enteredPlanMode")}</span>
+      <div className="my-4 flex items-center gap-1.5 rounded bg-primary/10 px-2 py-1.5 text-sm">
+        <PenLine className="size-3 shrink-0 text-primary" />
+        <span className="font-medium text-primary">{t("chat.toolBlock.enteredPlanMode")}</span>
       </div>
     )
   }
@@ -578,22 +599,22 @@ function BannerBlock({
   }
   if (kind === "planApproved") {
     return (
-      <div className="my-4 flex items-center gap-1.5 rounded bg-green-500/10 px-2 py-1.5 text-sm">
-        <PenLine className="size-3 shrink-0 text-green-600 dark:text-green-400" />
-        <span className="font-medium text-green-600 dark:text-green-400">{t("chat.plan.planApproved")}</span>
-        <Check className="ml-auto size-3 shrink-0 text-green-600 dark:text-green-400" />
+      <div className="my-4 flex items-center gap-1.5 rounded bg-success/10 px-2 py-1.5 text-sm">
+        <PenLine className="size-3 shrink-0 text-success" />
+        <span className="font-medium text-success">{t("chat.plan.planApproved")}</span>
+        <Check className="ml-auto size-3 shrink-0 text-success" />
       </div>
     )
   }
   return (
-    <div className="my-4 rounded bg-red-500/10 px-2 py-1.5 text-sm">
+    <div className="my-4 rounded bg-error/10 px-2 py-1.5 text-sm">
       <div className="flex items-center gap-1.5">
-        <PenLine className="size-3 shrink-0 text-red-600 dark:text-red-400" />
-        <span className="font-medium text-red-600 dark:text-red-400">{t("chat.plan.planRejected")}</span>
-        <X className="ml-auto size-3 shrink-0 text-red-600 dark:text-red-400" />
+        <PenLine className="size-3 shrink-0 text-error" />
+        <span className="font-medium text-error">{t("chat.plan.planRejected")}</span>
+        <X className="ml-auto size-3 shrink-0 text-error" />
       </div>
       {feedback && (
-        <div className="mt-1 text-xs text-red-600/70 dark:text-red-400/70">{feedback}</div>
+        <div className="mt-1 text-xs text-error/70">{feedback}</div>
       )}
     </div>
   )
@@ -886,7 +907,7 @@ function QABody({ pairs }: { pairs: Array<{ question: string; answer: string }> 
       {pairs.map((p, i) => (
         <div key={i} className="rounded bg-background/70 px-2 py-1.5 text-[11px] leading-relaxed">
           <div className="text-muted-foreground">{p.question}</div>
-          <div className="text-green-600 dark:text-green-400">{p.answer}</div>
+          <div className="text-success">{p.answer}</div>
         </div>
       ))}
     </div>

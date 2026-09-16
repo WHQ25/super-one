@@ -85,7 +85,7 @@ export const WithSuggestions: Story = {
     suggestions: [
       { label: "Allow Bash(bun install) for this session", selected: true },
       { label: "Allow Bash(bun *) for this project" },
-      { label: "Switch to acceptEdits" },
+      { mode: "auto" },
     ],
     focusedAction: "allow",
   },

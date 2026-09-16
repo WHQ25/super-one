@@ -7,6 +7,7 @@ import {
   Bot,
   Check,
   ChevronRight,
+  Maximize,
   MessageSquare,
   Sparkles,
   Wrench,
@@ -210,6 +211,42 @@ export function SubagentBlockMock({
 
   const hasTokens = inputTokens > 0 || outputTokens > 0
 
+  // Same numbers in the collapsed header and the expanded footer, as on the desktop.
+  const stats = (
+    <>
+      {resolvedToolCount > 0 && (
+        <span className="inline-flex items-center gap-0.5">
+          <Wrench className="size-3" />
+          {resolvedToolCount}
+        </span>
+      )}
+      {isAsync ? (
+        totalTokens > 0 && (
+          <>
+            {resolvedToolCount > 0 && <span>·</span>}
+            <span className="tabular-nums">{formatTokensCompact(totalTokens)}</span>
+          </>
+        )
+      ) : (
+        <>
+          {hasTokens && resolvedToolCount > 0 && <span>·</span>}
+          {inputTokens > 0 && (
+            <span className="inline-flex items-center gap-0.5 tabular-nums">
+              <ArrowUp className="size-2.5" />
+              {formatTokensCompact(inputTokens)}
+            </span>
+          )}
+          {outputTokens > 0 && (
+            <span className="inline-flex items-center gap-0.5 tabular-nums">
+              <ArrowDown className="size-2.5" />
+              {formatTokensCompact(outputTokens)}
+            </span>
+          )}
+        </>
+      )}
+    </>
+  )
+
   return (
     <div
       className={cn(
@@ -217,7 +254,12 @@ export function SubagentBlockMock({
         className,
       )}
     >
-      <div className="flex w-full items-center gap-2 px-2.5 py-2 text-xs">
+      <div
+        className={cn(
+          "flex w-full items-center gap-2 px-2.5 py-2 text-xs transition-colors",
+          isSpawning ? "cursor-default" : "cursor-pointer hover:bg-muted/40",
+        )}
+      >
         <Bot
           className={cn(
             "size-3.5 shrink-0",
@@ -226,7 +268,7 @@ export function SubagentBlockMock({
           )}
         />
         {subagentType && (
-          <span className={cn("shrink-0 rounded px-1 py-px text-[10px]", colors.tagBg, colors.tagText)}>
+          <span className={cn("shrink-0 rounded px-1 py-px text-xs", colors.tagBg, colors.tagText)}>
             {subagentType}
           </span>
         )}
@@ -236,12 +278,19 @@ export function SubagentBlockMock({
         {isSpawning && !description && (
           <span className="min-w-0 text-left text-muted-foreground">{t("chat.subagent.spawning")}</span>
         )}
-        <ChevronRight
-          className={cn(
-            "ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200",
-            resolvedExpanded && "rotate-90",
-          )}
-        />
+        {!isSpawning && (
+          <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+            {!resolvedExpanded && stats}
+            {resolvedExpanded && (
+              <span className="inline-flex items-center rounded p-0.5 hover:bg-muted hover:text-foreground">
+                <Maximize className="size-3" />
+              </span>
+            )}
+            <ChevronRight
+              className={cn("size-3 shrink-0 transition-transform duration-200", resolvedExpanded && "rotate-90")}
+            />
+          </span>
+        )}
       </div>
 
       {resolvedExpanded && (
@@ -280,7 +329,7 @@ export function SubagentBlockMock({
       )}
 
       {resolvedExpanded && (isRunning || isComplete) && (
-        <div className="flex items-center gap-1.5 border-t border-border/30 px-2.5 py-1.5 text-[11px] text-muted-foreground">
+        <div className="flex items-center gap-1.5 border-t border-border/30 px-2.5 py-1.5 text-xs text-muted-foreground">
           {isRunning ? (
             <>
               <span>
@@ -296,53 +345,14 @@ export function SubagentBlockMock({
             </>
           ) : (
             <>
-              <Check className="size-3 shrink-0 text-green-600 dark:text-green-400" />
+              <Check className="size-3 shrink-0 text-success" />
               <span>
                 {t("chat.subagent.done")}
                 {elapsedSec > 0 ? ` ${formatElapsed(elapsedSec)}` : ""}
               </span>
             </>
           )}
-          <span className="ml-auto flex items-center gap-1.5">
-            {isAsync ? (
-              <>
-                {resolvedToolCount > 0 && (
-                  <span className="inline-flex items-center gap-0.5">
-                    <Wrench className="size-3" />
-                    {resolvedToolCount}
-                  </span>
-                )}
-                {totalTokens > 0 && (
-                  <>
-                    {resolvedToolCount > 0 && <span>·</span>}
-                    <span className="tabular-nums">{formatTokensCompact(totalTokens)}</span>
-                  </>
-                )}
-              </>
-            ) : (
-              <>
-                {resolvedToolCount > 0 && (
-                  <span className="inline-flex items-center gap-0.5">
-                    <Wrench className="size-3" />
-                    {resolvedToolCount}
-                  </span>
-                )}
-                {hasTokens && resolvedToolCount > 0 && <span>·</span>}
-                {inputTokens > 0 && (
-                  <span className="inline-flex items-center gap-0.5 tabular-nums">
-                    <ArrowUp className="size-2.5" />
-                    {formatTokensCompact(inputTokens)}
-                  </span>
-                )}
-                {outputTokens > 0 && (
-                  <span className="inline-flex items-center gap-0.5 tabular-nums">
-                    <ArrowDown className="size-2.5" />
-                    {formatTokensCompact(outputTokens)}
-                  </span>
-                )}
-              </>
-            )}
-          </span>
+          <span className="ml-auto flex items-center gap-1.5">{stats}</span>
         </div>
       )}
     </div>
@@ -360,7 +370,7 @@ function PromptPreview({
 }) {
   const t = useMockT()
   return (
-    <div className="px-3 py-1.5 text-[11px]">
+    <div className="px-3 py-1.5 text-xs">
       <div className="flex items-center gap-1 text-muted-foreground">
         <ChevronRight
           className={cn(
@@ -370,7 +380,7 @@ function PromptPreview({
         />
         <span>{t("chat.subagent.prompt")}</span>
         {model && (
-          <span className="ml-1 rounded bg-muted px-1 py-px text-[10px]">{model}</span>
+          <span className="ml-1 rounded bg-muted px-1 py-px text-xs">{model}</span>
         )}
       </div>
       {expanded && (
@@ -386,7 +396,7 @@ function OutputPreview({ text, expanded }: { text: string; expanded: boolean }) 
   const t = useMockT()
   return (
     <div className="border-t border-border/30 px-3 py-1.5">
-      <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+      <div className="flex items-center gap-1 text-xs text-muted-foreground">
         <ChevronRight
           className={cn(
             "size-2.5 shrink-0 transition-transform duration-200",
@@ -484,7 +494,7 @@ function AsyncToolRow({
   isActive: boolean
 }) {
   return (
-    <div className="tool-node my-0.5 flex items-center gap-1.5 rounded bg-muted/50 px-2 py-1.5 text-xs">
+    <div className="tool-node my-0.5 flex items-center gap-1.5 rounded bg-muted/20 px-2 py-1.5 text-xs">
       <Wrench className="size-3 shrink-0 text-muted-foreground" />
       <span className="shrink-0 font-medium text-foreground">
         {isActive ? `${toolName}…` : toolName}

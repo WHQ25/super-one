@@ -186,11 +186,7 @@ export function DemosGallery() {
           title={t("cards.realtime.title")}
           description={t("cards.realtime.description")}
         >
-          <RealtimeVoiceMock
-            defaultView="realtime"
-            defaultVoiceState="active"
-            speakingSegmentIds={["call-2-assistant-1"]}
-          />
+          <RealtimeVoiceMock />
         </DemoCard>
 
         <DemoCard
@@ -288,8 +284,9 @@ export function DemosGallery() {
             spec={{ variant: "bash", command: "bun --filter @superone/web build" }}
             description="verify static rendering and the production client graph"
             suggestions={[
-              { label: "Allow this exact build command", selected: true },
-              { label: "Allow Bun builds for this project" },
+              { label: "Allow Bash(bun --filter @superone/web build) for this session", selected: true },
+              { label: "Allow Bash(bun *) for this project" },
+              { mode: "auto" },
             ]}
           />
         </DemoCard>
@@ -311,7 +308,7 @@ export function DemosGallery() {
           title={t("cards.plan.title")}
           description={t("cards.plan.description")}
           wide
-          surfaceClassName="h-[38rem] p-2"
+          surfaceClassName="p-2"
         >
           <PlanApprovalMock
             fileName="refresh-web-showcase.plan.md"
@@ -320,7 +317,6 @@ export function DemosGallery() {
               { tool: "Edit", prompt: "apps/web" },
               { tool: "Bash", prompt: "web typecheck and build" },
             ]}
-            switchAfterApproval
             fastModeTarget="auto"
           />
         </DemoCard>

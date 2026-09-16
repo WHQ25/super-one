@@ -77,13 +77,17 @@ export function collapsibleItems<T>(runs: ReadonlyArray<TurnRun<T>>): T[] {
   return runs.flatMap((run) => (run.collapsible ? run.items : []))
 }
 
-/** Claude / ACP content segments: bare text blocks and user-facing tool calls are pinned. */
+/**
+ * Claude / ACP content segments: the agent's prose and user-facing tool calls
+ * are pinned. Remote surfaces receive insight callouts pre-split out of `text`
+ * (see remote-content), so they count as prose too.
+ */
 export function isClaudePinnedSegment(seg: {
   kind: string
   block?: { type: string; toolName?: string }
 }, ports: CompactChatModePorts): boolean {
   if (seg.kind !== 'block' || !seg.block) return false
-  if (seg.block.type === 'text') return true
+  if (seg.block.type === 'text' || seg.block.type === 'insight') return true
   return seg.block.type === 'tool_use' && isPinnedToolName(seg.block.toolName ?? '', ports)
 }
 

@@ -45,6 +45,18 @@ describe('partitionTurnForCompactMode', () => {
     expect(collapsibleItems(runs).map((s) => ('id' in s ? s.id : s.kind))).toEqual(['thinking', 'tools'])
   })
 
+  it('pins pre-split insight blocks — remote surfaces receive them as their own block', () => {
+    const items = [
+      { kind: 'thinking' },
+      { kind: 'tools', id: 'tools' },
+      text('answer'),
+      { kind: 'block', block: { type: 'insight' }, id: 'insight' },
+      text('tail'),
+    ]
+    const runs = partitionTurnForCompactMode(items, isClaudePinnedSegment)
+    expect(shape(runs)).toEqual(['c:thinking,tools', 'p:answer,insight,tail'])
+  })
+
   it('pins widget_show tool calls wherever they appear', () => {
     const items = [
       { kind: 'tools', id: 'early' },

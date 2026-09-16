@@ -41,6 +41,8 @@ Search in src/renderer/src/components/chat/ and src/renderer/src/stores/ and src
         {
           "input": "{"description":"Explore todo rendering pipeline"}",
           "status": "complete",
+          "taskDescription": "Reading src/renderer/src/components/chat/TodoPopup.test.tsx",
+          "taskStatus": "stopped",
           "taskSummary": "Explore todo rendering pipeline",
           "taskToolHistory": [
             {

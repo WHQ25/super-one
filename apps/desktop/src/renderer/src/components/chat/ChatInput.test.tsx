@@ -357,8 +357,19 @@ vi.mock('./model-selector/useSelectorProviders', () => ({
 }))
 
 vi.mock('./GoalIndicator', () => ({
-  GoalIndicator: ({ goal, harnessName }: { goal: { objective: string }; harnessName: string }) => (
-    <div data-testid="goal-indicator" data-harness={harnessName}>{goal.objective}</div>
+  GoalIndicator: ({
+    goal,
+    harnessName,
+    onPause,
+  }: {
+    goal: { objective: string }
+    harnessName: string
+    onPause?: () => Promise<void>
+  }) => (
+    <div data-testid="goal-indicator" data-harness={harnessName}>
+      {goal.objective}
+      {onPause ? <button type="button" data-testid="goal-pause" onClick={() => void onPause()}>Pause</button> : null}
+    </div>
   ),
 }))
 
@@ -616,6 +627,35 @@ describe('ChatInput', () => {
     const indicator = screen.getByTestId('goal-indicator')
     expect(indicator).toHaveTextContent('Ship login')
     expect(indicator).toHaveAttribute('data-harness', 'Grok')
+  })
+
+  it('pauses a live Grok goal with interrupt instead of posting /goal pause', async () => {
+    activeSessionState.preferredProvider = 'acp'
+    activeSessionState.sessionProvider = 'acp'
+    activeSessionState.acpAgentId = 'grok-build'
+    activeSessionState.status = 'streaming'
+    activeSessionState.sessionGoal = { objective: 'Ship login', status: 'active' }
+
+    render(<ChatInput />)
+    fireEvent.click(screen.getByTestId('goal-pause'))
+
+    await waitFor(() => expect(chatActions.interrupt).toHaveBeenCalled())
+    expect(chatActions.sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('posts /goal pause from the chip only when the Grok turn is idle', async () => {
+    activeSessionState.preferredProvider = 'acp'
+    activeSessionState.sessionProvider = 'acp'
+    activeSessionState.acpAgentId = 'grok-build'
+    activeSessionState.status = 'idle'
+    activeSessionState.sessionGoal = { objective: 'Ship login', status: 'active' }
+
+    render(<ChatInput />)
+    fireEvent.click(screen.getByTestId('goal-pause'))
+
+    await waitFor(() => expect(chatActions.sendMessage).toHaveBeenCalled())
+    expect(chatActions.sendMessage.mock.calls[0][0]).toBe('/goal pause')
+    expect(chatActions.interrupt).not.toHaveBeenCalled()
   })
 
   it('keeps the goal surface out of a harness that has none', () => {

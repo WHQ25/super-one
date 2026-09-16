@@ -65,6 +65,7 @@ import {
 import { QueuedUserMessageQueue } from '../queued-user-message-queue'
 import type { BackendCommand, BackendStartOptions, HarnessId, SessionBackend, TaskNotificationInjectResult } from '../types'
 import {
+  isGrokGoalSlash,
   parseGrokCompactSlash,
   rewindPreviewFromPoints,
   rewindResultFromExecute,
@@ -1067,6 +1068,22 @@ export class AcpBackend implements SessionBackend {
     return this.currentMessageId !== null || this.activePrompt !== null
   }
 
+  /**
+   * Cancel the live `session/prompt` and wait for it to settle. Used when a
+   * `/goal …` line must be its own prompt — Grok's slash parser only looks at
+   * the start of a new turn, and a concurrent prompt would otherwise park.
+   */
+  private async cancelLivePrompt(): Promise<void> {
+    const inFlight = this.activePrompt
+    this.interrupted = true
+    try {
+      await this.runtime?.cancel()
+    } catch (err) {
+      log.debug('[AcpBackend] cancel live prompt failed:', err)
+    }
+    if (inFlight) await inFlight.catch(() => {})
+  }
+
   private emitMcpStatus(): void {
     this.emit({
       type: 'mcp_status',
@@ -1260,6 +1277,12 @@ export class AcpBackend implements SessionBackend {
     if (compact) {
       await this.compactNow(compact.userContext)
       return
+    }
+    // `/goal …` has to be a new prompt so Grok's slash parser sees it. Parking
+    // it for interject (or behind the live goal turn) leaves pause/clear as a
+    // queued chip that never runs.
+    if (isGrokGoalSlash(request.content) && this.isTurnBusy()) {
+      await this.cancelLivePrompt()
     }
     if (this.pendingQueued.intercept(request)) return
     // Concurrent session/prompt cancels Grok's live turn. Park even `now`.

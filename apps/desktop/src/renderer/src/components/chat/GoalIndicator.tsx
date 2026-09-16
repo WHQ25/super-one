@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Pause, Pencil, Play, Target, Trash2 } from 'lucide-react'
 import type { SessionGoal } from '@superone/shared/agent-types'
@@ -45,6 +45,13 @@ export function GoalIndicator({
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Pause can settle on the host (session/cancel) before `session_goal` arrives.
+  // Keep the chip on Paused so a second click cannot post `/goal pause` again.
+  const [pendingPause, setPendingPause] = useState(false)
+
+  useEffect(() => {
+    if (goal.status !== 'active') setPendingPause(false)
+  }, [goal.status])
 
   const run = async (action: () => Promise<void>, closeOnSuccess = false) => {
     setBusy(true)
@@ -59,10 +66,11 @@ export function GoalIndicator({
     }
   }
 
+  const status = pendingPause && goal.status === 'active' ? 'paused' : goal.status
   // Blocked counts as resumable: the harness stopped itself, and the user
   // telling it to go again is exactly how that state is meant to be left.
-  const canPause = capability.canPause && goal.status === 'active'
-  const canResume = capability.canPause && (goal.status === 'paused' || goal.status === 'blocked')
+  const canPause = capability.canPause && status === 'active'
+  const canResume = capability.canPause && (status === 'paused' || status === 'blocked')
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -76,7 +84,7 @@ export function GoalIndicator({
         <PopoverHeader>
           <div className="flex items-center justify-between gap-3">
             <PopoverTitle>{t('chat.goal.title', { harness: harnessName })}</PopoverTitle>
-            <Badge variant="secondary">{t(`chat.goal.statuses.${goal.status}`)}</Badge>
+            <Badge variant="secondary">{t(`chat.goal.statuses.${status}`)}</Badge>
           </div>
           <PopoverDescription className="line-clamp-5 whitespace-pre-wrap">
             {goal.objective}
@@ -117,7 +125,15 @@ export function GoalIndicator({
           </Button>
           <div className="flex-1" />
           {canPause && (
-            <Button variant="outline" size="xs" onClick={() => void run(onPause)} disabled={busy}>
+            <Button
+              variant="outline"
+              size="xs"
+              onClick={() => void run(async () => {
+                await onPause()
+                setPendingPause(true)
+              })}
+              disabled={busy}
+            >
               <Pause data-icon="inline-start" />
               {t('chat.goal.pause')}
             </Button>

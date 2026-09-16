@@ -951,14 +951,22 @@ export function ChatInput() {
       return result
     }, [clearDraft, serializeDraft])
 
-    const sendGoalSlash = useCallback(async (line: string) => {
-      await sendMessage(
+    /**
+     * Post `/goal …` as a turn without holding the dialog/indicator on the
+     * whole prompt. Grok's GoalSet/GoalResume replace the prompt and keep
+     * sampling, so awaiting `sendMessage` would leave the editor open until
+     * the goal finishes.
+     */
+    const dispatchGoalSlash = useCallback((line: string) => {
+      void sendMessage(
         line,
         [{ text: line, isPaste: false }],
         [],
         [],
         sessionScope ?? undefined,
-      )
+      ).catch((err) => {
+        console.error('[ChatInput] goal slash failed:', err)
+      })
     }, [sendMessage, sessionScope])
 
     /**
@@ -973,10 +981,19 @@ export function ChatInput() {
       if (!goalCapability) return null
       if (goalCapability.transport === 'slash') {
         return {
-          save: (objective: string) => sendGoalSlash(`/goal ${objective}`),
-          clear: () => sendGoalSlash('/goal clear'),
-          pause: () => sendGoalSlash('/goal pause'),
-          resume: () => sendGoalSlash('/goal resume'),
+          save: async (objective: string) => { dispatchGoalSlash(`/goal ${objective}`) },
+          clear: async () => { dispatchGoalSlash('/goal clear') },
+          // Grok treats session/cancel on an active goal as a user pause, so
+          // Stop is enough while a turn is live — posting `/goal pause` after
+          // that is a second prompt that just says the goal is already paused.
+          pause: async () => {
+            if (isStreaming) {
+              await scopedInterrupt()
+              return
+            }
+            dispatchGoalSlash('/goal pause')
+          },
+          resume: async () => { dispatchGoalSlash('/goal resume') },
         }
       }
       // Codex cannot hold a goal before its thread exists.
@@ -993,7 +1010,7 @@ export function ChatInput() {
           if (sessionGoal) await window.app.codexSetGoal(sid, tid, sessionGoal.objective, 'active')
         },
       }
-    }, [goalCapability, sendGoalSlash, displayedSessionId, codexThreadId, sessionGoal])
+    }, [goalCapability, dispatchGoalSlash, displayedSessionId, codexThreadId, sessionGoal, isStreaming, scopedInterrupt])
 
     /**
      * Plain text of the composer as the scheduler would send it — mentions in

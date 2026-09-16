@@ -5,6 +5,7 @@ import {
   buildGrokInterjectParams,
   grokForkTargetPromptIndex,
   grokPromptIndexForUserMessage,
+  isGrokGoalSlash,
   parseGrokCompactSlash,
   parseGrokForkResponse,
   parseGrokRewindExecute,
@@ -36,6 +37,21 @@ function assistant(id: string): ChatMessage {
     providerId: 'local',
   }
 }
+
+describe('isGrokGoalSlash', () => {
+  it('matches /goal and its subcommands', () => {
+    expect(isGrokGoalSlash('/goal')).toBe(true)
+    expect(isGrokGoalSlash('  /goal pause  ')).toBe(true)
+    expect(isGrokGoalSlash('/GOAL clear')).toBe(true)
+    expect(isGrokGoalSlash('/goal Ship the login flow')).toBe(true)
+  })
+
+  it('does not match other slashes or embedded /goal', () => {
+    expect(isGrokGoalSlash('/goalie')).toBe(false)
+    expect(isGrokGoalSlash('/compact')).toBe(false)
+    expect(isGrokGoalSlash('please /goal pause')).toBe(false)
+  })
+})
 
 describe('parseGrokCompactSlash', () => {
   it('matches bare /compact', () => {

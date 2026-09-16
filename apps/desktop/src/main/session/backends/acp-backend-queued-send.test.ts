@@ -34,17 +34,24 @@ function manualTurnRuntime(
   return mockAcpRuntime({
     prompt: async (text, messageId, onEvent) => {
       await new Promise<void>((resolve) => {
+        let settled = false
+        const finish = () => {
+          if (settled) return
+          settled = true
+          onEvent({ type: 'message_complete', messageId })
+          onEvent({ type: 'status_change', status: 'idle' })
+          resolve()
+        }
         calls.push({
           text: typeof text === 'string' ? text : String(text),
           messageId,
           onEvent,
-          finish: () => {
-            onEvent({ type: 'message_complete', messageId })
-            onEvent({ type: 'status_change', status: 'idle' })
-            resolve()
-          },
+          finish,
         })
       })
+    },
+    cancel: async () => {
+      calls.at(-1)?.finish()
     },
     ...(extras?.interject ? { interject: extras.interject } : {}),
   })
@@ -245,6 +252,33 @@ describe('AcpBackend queued send / interject', () => {
     expect(calls).toHaveLength(1)
     expect(events.some((e) => e.type === 'queued_message_consumed')).toBe(false)
 
+    await backend.close()
+  })
+
+  it('cancels the live turn so a /goal slash is a new prompt, not a queued follow-up', async () => {
+    const calls: PromptCall[] = []
+    const { backend, events } = await startBackend(calls, {
+      interject: async () => { throw new Error('must not interject a /goal line') },
+    })
+
+    void backend.send({ content: '/goal Ship login', assistantMessageId: 'a1' })
+    await vi.waitFor(() => expect(calls).toHaveLength(1))
+
+    const pause = backend.send({
+      content: '/goal pause',
+      clientMessageId: 'u2',
+      assistantMessageId: 'a2',
+      priority: 'next',
+    })
+    await vi.waitFor(() => expect(calls).toHaveLength(2))
+    expect(calls[1].text).toContain('/goal pause')
+    expect(messageStarts(events)).toEqual(['a1', 'a2'])
+    const consumed = events.filter((e) => e.type === 'queued_message_consumed')
+    expect(consumed).toHaveLength(1)
+    expect((consumed[0] as { clientMessageId: string }).clientMessageId).toBe('u2')
+
+    calls[1].finish()
+    await pause
     await backend.close()
   })
 })

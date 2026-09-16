@@ -75,6 +75,17 @@ describe('GoalIndicator', () => {
     await waitFor(() => expect(onClear).toHaveBeenCalled())
   })
 
+  it('flips to paused after a successful pause even before the harness event arrives', async () => {
+    renderIndicator()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Goal' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }))
+
+    await waitFor(() => expect(screen.getByText('Paused')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Resume' })).toBeInTheDocument()
+  })
+
   it('omits pause and resume entirely for a harness without that lifecycle', () => {
     renderIndicator({ goal: goal('active'), capability: CONDITION_ONLY, harnessName: 'Claude' })
 

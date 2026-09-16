@@ -104,6 +104,16 @@ export function parseGrokCompactSlash(content: string): { userContext?: string }
   return userContext ? { userContext } : {}
 }
 
+/**
+ * Grok parses `/goal` only as the first token of a new `session/prompt`.
+ * Mid-turn follow-ups are parked for `x.ai/interject`, which never hits that
+ * parser — so a live goal turn must be cancelled and this line sent as its
+ * own prompt (`pause` / `clear` / a replacement objective).
+ */
+export function isGrokGoalSlash(content: string): boolean {
+  return /^\/goal(?:\s|$)/i.test(content.trim())
+}
+
 export function parseGrokSessionInterjection(raw: unknown): GrokSessionInterjection | null {
   const o = asRecord(raw)
   if (!o) return null

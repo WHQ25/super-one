@@ -36,6 +36,33 @@ describe('acp-usage-service', () => {
     await expect(getAcpRateLimits('grok-build', session)).resolves.toEqual(SAMPLE)
   })
 
+  it('a forced read with warm spawns the runtime for a session that has none', async () => {
+    const prewarm = vi.fn()
+    const session = {
+      id: 's1',
+      hasActiveRuntime: () => false,
+      prewarm,
+      getRateLimits: async () => SAMPLE,
+    } as unknown as Session
+
+    await expect(getAcpRateLimits('grok-build', session, true, { warm: true })).resolves.toEqual(SAMPLE)
+    expect(prewarm).toHaveBeenCalledWith({ acpAgentId: 'grok-build' })
+  })
+
+  it('a routine read never spawns a runtime, even with warm', async () => {
+    const prewarm = vi.fn()
+    const session = {
+      id: 's1',
+      hasActiveRuntime: () => false,
+      prewarm,
+      getRateLimits: async () => null,
+    } as unknown as Session
+
+    await expect(getAcpRateLimits('grok-build', session, false, { warm: true })).resolves.toBeNull()
+    await expect(getAcpRateLimits('grok-build', session, true)).resolves.toBeNull()
+    expect(prewarm).not.toHaveBeenCalled()
+  })
+
   it('does not cache an empty answer so a later prefetch can fill the gauge', async () => {
     const session = {
       getRateLimits: async () => null,

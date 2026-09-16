@@ -1665,6 +1665,9 @@ export class AcpBackend implements SessionBackend {
    * open must never cold-start an agent process (matches requestSessionRecap).
    */
   async getRateLimits(): Promise<ProviderRateLimits | null> {
+    // A read that lands mid-spawn — a turn just started, or a prewarm the read
+    // itself triggered — waits for the runtime instead of reporting nothing.
+    if (!this.runtime && this.ensureRuntimePromise) await this.ensureRuntimePromise.catch(() => null)
     if (!this.runtime || typeof this.runtime.getRateLimits !== 'function') {
       log.info('[AcpBackend] getRateLimits skipped — no runtime')
       return null

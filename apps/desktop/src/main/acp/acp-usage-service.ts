@@ -38,6 +38,14 @@ export async function getAcpRateLimits(
   agentId: string,
   session: SessionContract | null | undefined,
   force = false,
+  opts: {
+    /**
+     * Spawn the session's runtime for a forced read when it has none. The
+     * desktop prewarms on session select, so its reads always find one; a phone
+     * only resumes passively, and its manual refresh stands in for that select.
+     */
+    warm?: boolean
+  } = {},
 ): Promise<ProviderRateLimits | null> {
   const key = cacheKey(agentId)
   const cached = cache.get(key)
@@ -46,6 +54,10 @@ export async function getAcpRateLimits(
   if (!session) {
     log.info('[acp-usage] no active session agent=%s cached=%s', agentId, cached ? 'yes' : 'no')
     return cached?.data ?? null
+  }
+  if (force && opts.warm && !session.hasActiveRuntime()) {
+    log.info('[acp-usage] warming runtime for a forced read agent=%s sid=%s', agentId, session.id)
+    session.prewarm({ acpAgentId: agentId })
   }
 
   try {

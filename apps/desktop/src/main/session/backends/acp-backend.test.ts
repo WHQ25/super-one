@@ -123,6 +123,27 @@ describe('AcpBackend', () => {
     await backend.close()
   })
 
+  it('a billing read during a prewarm spawn waits for the runtime', async () => {
+    const limits = {
+      title: 'Grok Build',
+      planType: 'SuperGrok Heavy',
+      windows: [{ label: 'Weekly limit', usedPercent: 12, resetsAt: null }],
+      extraUsage: null,
+      fetchedAt: 1,
+    }
+    let release: () => void = () => {}
+    setAcpRuntimeFactory(async () => {
+      await new Promise<void>((resolve) => { release = resolve })
+      return mockRuntime({ getRateLimits: async () => limits })
+    })
+    const backend = new AcpBackend()
+    backend.prewarm(startOpts({ agentId: 'grok-build' }))
+    const read = backend.getRateLimits()
+    release()
+    await expect(read).resolves.toEqual(limits)
+    await backend.close()
+  })
+
   it('records Grok turn usage with the selected model', async () => {
     setAcpRuntimeFactory(async () => mockRuntime({
       getConfigOptions: () => [],

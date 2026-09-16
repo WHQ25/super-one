@@ -103,7 +103,7 @@ import { buildClaudeEnv, buildRemoteActiveService, resolveChatService } from './
 import type { ProxyUpstream } from './providers/llm-proxy-manager'
 import { shutdownAll as shutdownAllProxies } from './providers/llm-proxy-manager'
 import { getBinding } from './providers/credential-store'
-import type { SessionProvider } from './session/types'
+import type { Session as SessionContract, SessionProvider } from './session/types'
 import { claudeAccountCredentialDir, expandProviderModelEnv } from '@superone/shared/agent-types'
 import { PROXY_TRANSFORMERS_ENV } from '@superone/shared/platform-registry'
 import { detectBuiltinAgents } from './acp/acp-detect'
@@ -2321,11 +2321,19 @@ function registerIpcHandlers(): void {
         return codexService.getAccountUsage(projectPath, apiProviderId, threadId)
       },
       // Grok billing rides the session's ACP connection: prefer the session the
-      // phone is looking at, then whichever session the project has live.
+      // phone is looking at, then the project's active one, then any session on
+      // the same agent that still has a runtime (billing is account-scoped).
+      // A forced read may spawn the runtime: the phone has no PREWARM on select.
       acpRateLimits: async (agentId, { sessionId, projectPath }, force) => {
         const { getAcpRateLimits } = await import('./acp/acp-usage-service')
-        const session = (sessionId ? sessionManager.getSession(sessionId) : null) ?? sessionManager.getActiveSession(projectPath) ?? null
-        return getAcpRateLimits(agentId, session, force)
+        const bills = (session: SessionContract | null | undefined) =>
+          session?.snapshot.harnessId === 'acp' && (session.snapshot.acpAgentId ?? agentId) === agentId ? session : null
+        let live: SessionContract | null = null
+        sessionManager.forEachSession((session) => { if (!live && bills(session)?.hasActiveRuntime()) live = session })
+        const session = bills(sessionId ? sessionManager.getSession(sessionId) : null)
+          ?? bills(sessionManager.getActiveSession(projectPath))
+          ?? live
+        return getAcpRateLimits(agentId, session, force, { warm: true })
       },
     })
   })

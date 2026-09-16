@@ -178,12 +178,12 @@ export const AUTOMATION_DELETE_DESCRIPTION =
 
 
 export const TERMINAL_TABS_DESCRIPTION =
-  'Manage terminal tabs in the activity panel for processes that outlive one command or need input: dev servers, watch modes, REPLs, TUIs, ssh, wizards. ' +
+  'Manage activity-panel terminal tabs for long-lived or interactive processes: dev servers, watch modes, REPLs, TUIs, ssh, wizards. ' +
   'One-shot commands (build, test, git) belong in your shell tool. ' +
-  'action=list (default) returns a TOON table: tab / title / cwd / status / foreground / control — the user\'s tabs plus the ones this session opened; tabs other sessions opened are not visible to you. ' +
-  'action=run asks the user to approve `command`, types it into a new (or a given idle) tab and returns the screen; you control the tab only while that command is in the foreground. ' +
+  'action=list (default) returns this session\'s tabs plus the user\'s as a TOON table; other sessions\' tabs are hidden. ' +
+  'action=run asks to approve `command`, types it into a new or idle tab, and returns the screen; you control the tab only while that command is in the foreground. ' +
   'action=attach asks to control a command already running in a user tab. ' +
-  'action=close kills a tab — never one the user is using. Follow up with terminal_act / terminal_wait_for / terminal_snapshot on the tab id.'
+  'action=close kills a tab you opened, never one the user is using. Follow with terminal_act / terminal_wait_for / terminal_snapshot.'
 
 export const TERMINAL_SNAPSHOT_DESCRIPTION =
   'Read a terminal tab as rendered text. `include` picks sections: screen (visible rows, default), scrollback (last `tail` lines including scrolled-off output), cursor, meta (title, cwd, status, foreground command, control). ' +

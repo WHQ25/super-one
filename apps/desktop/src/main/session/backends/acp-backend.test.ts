@@ -24,6 +24,7 @@ vi.mock('../../usage-stats-service', async (importOriginal) => {
 import { AcpBackend, setAcpRuntimeFactory } from './acp-backend'
 import type { AcpRuntimeOptions } from '../../acp/acp-runtime'
 import { acpStartOpts as startOpts, mockAcpRuntime as mockRuntime } from '../../../test/fixtures/acp-backend-fixtures'
+import * as acpMcp from '../../acp/acp-mcp'
 
 describe('AcpBackend', () => {
   beforeEach(() => {
@@ -1593,6 +1594,49 @@ describe('AcpBackend', () => {
       expect(getContextUsage).toHaveBeenCalled()
     })
     expect(getSessionUsage).not.toHaveBeenCalled()
+    await backend.close()
+  })
+
+  it('reloadMcpServers passes agent MCP caps so HTTP SuperOne is kept', async () => {
+    const caps = {
+      loadSession: false,
+      mcp: { http: true, sse: true, acp: false },
+      sessionCapabilities: { additionalDirectories: false },
+    }
+    const updateMcpServers = vi.fn(async () => {})
+    const spy = vi.spyOn(acpMcp, 'buildAcpSessionMcpServers').mockReturnValue([
+      { type: 'http', name: 'superone', url: 'http://127.0.0.1/mcp', headers: [] },
+    ] as never)
+    setAcpRuntimeFactory(async () => mockRuntime({
+      updateMcpServers,
+      getAgentCapabilities: () => caps,
+    }))
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await backend.reloadMcpServers()
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ agentCapabilities: caps }))
+    expect(updateMcpServers).toHaveBeenCalledWith([
+      expect.objectContaining({ name: 'superone', type: 'http' }),
+    ])
+    spy.mockRestore()
+    await backend.close()
+  })
+
+  it('toggleMcpServer and reconnectMcp rebuild the live list via updateMcpServers', async () => {
+    const updateMcpServers = vi.fn(async () => {})
+    setAcpRuntimeFactory(async () => mockRuntime({
+      updateMcpServers,
+      getAgentCapabilities: () => ({
+        loadSession: false,
+        mcp: { http: true, sse: false, acp: false },
+        sessionCapabilities: { additionalDirectories: false },
+      }),
+    }))
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await backend.toggleMcpServer('github', false)
+    await backend.reconnectMcp('github')
+    expect(updateMcpServers).toHaveBeenCalledTimes(2)
     await backend.close()
   })
 })

@@ -229,10 +229,10 @@ Evidence paths are under SuperOne unless noted.
 | MCP-02 | session/load re-attaches same mcpServers | mcp-host | partial | spread `sessionRequestBase` | load test does not assert mcpServers | P3 |
 | MCP-03 | User MCP from Claude-shaped configs | mcp-host | done | `listMcpConfigs` → `toAcpMcpServer` | not `~/.grok/config.toml` | P2 |
 | MCP-04 | Filter HTTP/SSE by agent mcpCapabilities | mcp-host | done | `mcpTransportCapsFromAgent` | — | — |
-| MCP-05 | Mid-session `x.ai/session/update_mcp_servers` | mcp-host | partial | `AcpBackend.reloadMcpServers` **omits agentCapabilities** | live reload drops HTTP/SSE; SuperOne falls back to stdio | **P1** |
-| MCP-06 | reconnectMcp | mcp-host | missing | `async reconnectMcp() {}` | Claude/OpenCode implement | **P1** |
-| MCP-07 | toggleMcpServer | mcp-host | missing | no-op; settings still call it | writes Claude config then hits no-op | **P1** |
-| MCP-08 | authenticateMcp / OAuth login RPC | mcp-host | missing | no `authenticateMcp`; Grok is `x.ai/mcp/auth_trigger` + elicit URL | `/mcp` LogIn throws | **P1** |
+| MCP-05 | Mid-session `x.ai/session/update_mcp_servers` | mcp-host | done | `reloadMcpServers` passes cached `agentCapabilities` | — | — |
+| MCP-06 | reconnectMcp | mcp-host | done | rebuilds list via `updateMcpServers` | — | — |
+| MCP-07 | toggleMcpServer | mcp-host | done | rebuilds list after settings write `disabled` | — | — |
+| MCP-08 | authenticateMcp / OAuth login RPC | mcp-host | done | `/mcp` LogIn hidden for ACP (OpenCode-only); elicit-URL still parks | `x.ai/mcp/auth_trigger` not wired | P2 |
 | MCP-09 | server_status / init_progress / servers_updated → mcp_status | mcp-host | done | `acp-xai-mcp-status.ts` | — | — |
 | MCP-10 | x.ai/mcp/tools_changed apply | mcp-host | partial | subscribed; `handleMcpExt` has no case | tool counts stale until servers_updated | P2 |
 | MCP-11 | Host-only `/mcp` popup | session-ui | done | `McpSlashPopup.tsx` | Grok settings still open Claude MCP tab | P2 |
@@ -555,7 +555,7 @@ Shipped work (do **not** re-open as PRs): stdio lifecycle, yolo/auto meta + noti
 | **Deps** | none |
 | **Out of scope** | `executePlan` prompt meta; Grok session mode `ask` chrome; `planFilePath` |
 
-### PR3 — MCP live ops: reload caps, toggle/reconnect, OAuth entry
+### PR3 — MCP live ops: reload caps, toggle/reconnect, OAuth entry  **(landed)**
 
 | | |
 |--|--|

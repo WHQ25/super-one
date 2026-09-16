@@ -1759,16 +1759,27 @@ export class AcpBackend implements SessionBackend {
     }
   }
 
-  async reconnectMcp(_serverName: string): Promise<void> {}
+  async reconnectMcp(_serverName: string): Promise<void> {
+    await this.pushMcpServers()
+  }
 
-  async toggleMcpServer(_serverName: string, _enabled: boolean): Promise<void> {}
+  async toggleMcpServer(_serverName: string, _enabled: boolean): Promise<void> {
+    // Settings already wrote Claude-shaped `disabled` before this call.
+    // Rebuild the live list so Grok drops/reattaches without a process restart.
+    await this.pushMcpServers()
+  }
 
   async reloadMcpServers(): Promise<void> {
+    await this.pushMcpServers()
+  }
+
+  private async pushMcpServers(): Promise<void> {
     const runtime = this.runtime
     if (!runtime?.updateMcpServers || !this.startOpts) return
     const servers = buildAcpSessionMcpServers({
       cwd: this.effectiveCwd(this.startOpts),
       superoneSessionId: this.startOpts.sessionId,
+      agentCapabilities: runtime.getAgentCapabilities(),
     })
     await runtime.updateMcpServers(servers)
   }

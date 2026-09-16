@@ -228,6 +228,16 @@ describe('McpSlashPopup', () => {
     expect(await screen.findByText(/Live · Codex session/)).toBeInTheDocument()
   })
 
+  it('hides LogIn on ACP Grok sessions even when a server needs auth', async () => {
+    setChat({ sessionProvider: 'acp', acpAgentId: 'grok-build' })
+    mockWindow([{ name: 'github', status: 'needs-auth' }], [])
+
+    render(<McpSlashPopup onClose={vi.fn()} />)
+
+    expect(await screen.findByText('github')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /authenticate github/i })).toBeNull()
+  })
+
   it('authenticates an OpenCode MCP server and refreshes live status', async () => {
     setChat({ sessionProvider: 'opencode' })
     mockWindow([{ name: 'linear', status: 'needs-auth' }], [])

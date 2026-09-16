@@ -234,6 +234,8 @@ export interface AcpRuntime {
   }): Promise<GrokRewindExecuteResult>
   updateMcpServers(servers: unknown[]): Promise<void>
   getSessionUsage(): Promise<{ totalTokens: number; inputTokens: number; outputTokens: number } | null>
+  /** Initialize-time MCP/session caps — required so mid-session reload keeps HTTP/SSE. */
+  getAgentCapabilities(): AcpAgentCapabilities | null
 }
 
 export interface AcpRuntimeOptions {
@@ -1460,6 +1462,9 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         sessionId: activeSession.sessionId,
         mcpServers: servers,
       })
+    },
+    getAgentCapabilities() {
+      return agentCapabilities
     },
     async getSessionUsage() {
       try {

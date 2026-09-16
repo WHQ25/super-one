@@ -7,7 +7,7 @@ import { DiffStat } from './DiffStat'
 interface WorktreeEntryRowProps {
   label: string
   detached: boolean
-  /** Undefined while the dirty status is still loading. */
+  /** Undefined while loading or when the status could not be read; `files: 0` means clean. */
   dirty: GitDirtyStatus | undefined
   isCurrent: boolean
   onClick: () => void

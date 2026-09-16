@@ -74,7 +74,7 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** Popover listing existing worktrees: long branch wraps to two lines, diff stat sits below, clean rows show nothing. */
+/** Popover listing existing worktrees: long branch wraps to two lines, diff stat sits below, clean rows read `clean`. */
 export const WorktreeList: Story = { play: openPopover }
 
 /** Same list with the long-branch worktree currently active (check mark on its row). */

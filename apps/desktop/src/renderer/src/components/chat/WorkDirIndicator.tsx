@@ -5,7 +5,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components
 import { useActiveSession, useSessionScope } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useOnTurnCompleted } from '@/hooks/useOnTurnCompleted'
-import type { GitDirtyStatus, WorktreeEntry, WorktreeInfo, WorktreeMode } from '@superone/shared/agent-types'
+import type { GitDirtyStatus, GitInfoResult, WorktreeEntry, WorktreeInfo, WorktreeMode } from '@superone/shared/agent-types'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { WorkDirLabel, workDirIcon, workDirTitle, type WorkDirState } from './work-dir-label'
 import { WorktreeHandoffSection } from './WorktreeHandoffSection'
@@ -39,6 +39,16 @@ interface WtMeta {
   baseBranch?: string | null
   isDetached: boolean
 }
+
+const CLEAN: GitDirtyStatus = { files: 0, insertions: 0, deletions: 0 }
+
+/**
+ * GIT_INFO omits `dirty` for a clean checkout, but this popover distinguishes
+ * "known clean" (renders `clean` / the grey dot) from "unknown" (blank line):
+ * a successful read with no changes is clean; a failed read stays undefined.
+ */
+const knownDirty = (info: GitInfoResult | null | undefined): GitDirtyStatus | undefined =>
+  info && info.branch !== null ? (info.dirty ?? CLEAN) : undefined
 
 export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicatorProps) {
   const { t } = useTranslation()
@@ -90,7 +100,8 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
   const refreshActiveDirty = useCallback(() => {
     if (!activePath) return
     window.app.getGitInfo(activePath).then((info) => {
-      setActiveDirty((prev) => (sameDirty(prev, info?.dirty) ? prev : info?.dirty))
+      const next = knownDirty(info)
+      setActiveDirty((prev) => (sameDirty(prev, next) ? prev : next))
     }).catch(() => {})
   }, [activePath])
 
@@ -110,7 +121,9 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
     if (!activePath) { setActiveDirty(undefined); return }
     let cancelled = false
     window.app.getGitInfo(activePath).then((info) => {
-      if (!cancelled) setActiveDirty((prev) => (sameDirty(prev, info?.dirty) ? prev : info?.dirty))
+      if (cancelled) return
+      const next = knownDirty(info)
+      setActiveDirty((prev) => (sameDirty(prev, next) ? prev : next))
     }).catch(() => {})
     const unsub = window.app.onGitHeadChange((evt) => {
       if (evt.folderPath === activePath) refreshActiveWorktree()
@@ -151,7 +164,7 @@ export function WorkDirIndicator({ compact = false, isGitRepo }: WorkDirIndicato
         await Promise.all(nonMain.map(async (e) => {
           const wtInfo = await window.app.getGitInfo(e.path).catch(() => null)
           metas[e.path] = {
-            dirty: wtInfo?.dirty,
+            dirty: knownDirty(wtInfo),
             shortHead: e.head ? e.head.slice(0, 7) : '',
             isDetached: !e.branch,
           }

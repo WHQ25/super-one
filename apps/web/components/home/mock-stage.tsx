@@ -14,6 +14,8 @@ interface MockStageProps {
   /** Never scale past this. Keeps small mocks from being blown up. */
   maxScale?: number
   className?: string
+  /** See `BrandedSurface`. Off for inline chat pieces that are not a window. */
+  glass?: boolean
 }
 
 /**
@@ -31,6 +33,7 @@ export function MockStage({
   maxHeight,
   maxScale = 1,
   className,
+  glass,
 }: MockStageProps) {
   const [outerRef, outer] = useElementSize<HTMLDivElement>()
   const [contentRef, content] = useElementSize<HTMLDivElement>()
@@ -46,10 +49,8 @@ export function MockStage({
 
   return (
     <BrandedSurface
-      className={cn(
-        "border-border bg-card relative overflow-hidden rounded-xl border",
-        className,
-      )}
+      glass={glass}
+      className={cn("border-border overflow-hidden rounded-xl border", className)}
     >
       <div
         ref={outerRef}

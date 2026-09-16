@@ -21,14 +21,14 @@ const PILLARS = [
     key: "integrate",
     span: "md:col-span-3",
     href: "/features/engines",
-    stage: { width: 640, maxHeight: 220 },
+    stage: { width: 1056, maxHeight: 220 },
     render: () => <HarnessLineup />,
   },
   {
     key: "extend",
     span: "md:col-span-1",
     href: "/features/extend",
-    stage: { width: 520, maxHeight: 210 },
+    stage: { width: 340, maxHeight: 210 },
     render: () => (
       <ToolBlockMock
         className="p-3"
@@ -47,7 +47,7 @@ const PILLARS = [
     key: "collaborate",
     span: "md:col-span-1",
     href: "/features/collab",
-    stage: { width: 520, maxHeight: 210 },
+    stage: { width: 340, maxHeight: 210 },
     render: () => (
       <SubagentBlockMock
         state="running"
@@ -61,7 +61,7 @@ const PILLARS = [
     key: "build",
     span: "md:col-span-1",
     href: "/features/extend/mini-apps",
-    stage: { width: 520, maxHeight: 210 },
+    stage: { width: 340, maxHeight: 210 },
     render: () => (
       <ToolBlockMock
         className="p-3"

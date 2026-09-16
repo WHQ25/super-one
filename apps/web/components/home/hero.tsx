@@ -430,7 +430,7 @@ export function Hero() {
           <div className="relative">
             <MockStage
               className="shadow-2xl ring-1 ring-black/5 dark:ring-white/10"
-              width={980}
+              width={1152}
             >
               <NewSessionMock
                 defaultHarness="codex"

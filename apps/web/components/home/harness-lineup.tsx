@@ -14,7 +14,7 @@ import {
  */
 export function HarnessLineup() {
   return (
-    <div className="grid h-full w-full grid-cols-2 gap-2.5 p-4 sm:grid-cols-3">
+    <div className="grid h-full w-full grid-cols-3 gap-2.5 p-4">
       {HARNESS_SHOWCASE.map((h) => (
         <BrandScope
           key={h.id}

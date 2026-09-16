@@ -258,7 +258,9 @@ export function DesktopShell({
         hostLabel={hostLabel}
         showHostSwitcher={showHostSwitcher}
       />
-      <div className="flex min-w-0 flex-1 flex-col bg-card">
+      {/* Windowed layout: the content is a floating card over the sidebar gutter,
+          which is what makes the glass read as one pane behind everything. */}
+      <div className="my-[5px] mr-[5px] flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/50 bg-card shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
         <DesktopMainHeader
           title={resolvedHeaderTitle}
           showTerminalToggle={showTerminalToggle}
@@ -268,7 +270,7 @@ export function DesktopShell({
           <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
           {terminalOpen && (
             <div
-              className="relative flex shrink-0 flex-col border-t border-border bg-card"
+              className="relative flex shrink-0 flex-col border-t border-border"
               style={{ height: terminalHeight }}
             >
               <div className="absolute inset-x-0 -top-1 z-10 h-2">
@@ -362,7 +364,7 @@ function MainHeader({
   terminalOpen: boolean
 }) {
   return (
-    <div className="flex h-11 shrink-0 items-center bg-card pl-3 pt-[2px]">
+    <div className="flex h-11 shrink-0 items-center pl-3 pt-[2px]">
       <span className="max-w-[260px] truncate text-xs text-muted-foreground">{title}</span>
       <div className="flex-1" />
       <div className="mr-3 flex items-center gap-1.5">

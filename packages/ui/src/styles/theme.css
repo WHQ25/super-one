@@ -83,7 +83,16 @@
 }
 
 
-.dark {
+/*
+ * `.dark .brand-scope` is listed so a hue-scoped wrapper that ends up inside a
+ * dark tree (the website embeds mocks under next-themes' `html.dark`) resolves
+ * the neutral dark palette instead of its own light re-declarations — the
+ * wrapper declares tokens on itself, which would otherwise beat anything
+ * inherited from `html.dark`. Desktop never nests the two (panes drop
+ * `.brand-scope` in dark), so this is a no-op there.
+ */
+.dark,
+.dark .brand-scope {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
@@ -129,7 +138,10 @@
   --insight-fg: oklch(0.7 0.15 280);
 }
 
-.liquid-glass.dark {
+/* Second selector: glass opted into per surface (website mock windows) rather
+   than on <html>. */
+.liquid-glass.dark,
+.dark .brand-scope.liquid-glass {
   --card: oklch(0.205 0 0 / 0.72);
   --sidebar: transparent;
   --sidebar-hover: oklch(1 0 0 / 0.08);

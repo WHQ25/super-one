@@ -12,57 +12,28 @@ body {
 }
 
 /*
- * Brand-hue scope.
+ * Simulated app surfaces (`<BrandedSurface>`).
  *
- * Custom-property values are eagerly substituted at the declaring scope —
- * `--primary: oklch(... var(--brand-hue))` declared on :root locks in the
- * :root value of --brand-hue. Setting --brand-hue on a descendant does NOT
- * cascade through unless we re-declare every dependent token in that scope.
+ * Tokens come from `@superone/ui/styles/theme.css`: `.brand-scope` re-resolves
+ * the light palette under the surface's own `--brand-hue`, `.dark .brand-scope`
+ * falls back to the neutral dark palette, and `.dark .brand-scope.liquid-glass`
+ * layers the translucent glass tokens on top. Nothing is mirrored here.
  *
- * `.brand-scope` mirrors the hue-derived declarations from theme.css so that
- * `<BrandedSurface>` (which sets `--brand-hue` inline + adds this class)
- * forces re-resolution of all surface/foreground/accent tokens at its own
- * element scope, using the user-controlled hue.
- *
- * Forces light-mode appearance regardless of the page's dark class — the
- * simulated app surface is intentionally always light (mirrors the desktop
- * brand-hue UX, which is light-only).
+ * The desktop gets its frost from native window vibrancy. On the web the same
+ * look is two layers: a wallpaper painted behind the window and a backdrop blur
+ * plus dark scrim on the window itself, tuned to macOS `under-window` in dark.
  */
-.brand-scope {
-  --radius: 0.625rem;
-  --background: oklch(var(--background-l, 0.975) var(--background-c, 0.002) var(--background-h, var(--brand-hue, 240)) / var(--background-a, 1));
-  --foreground: oklch(var(--foreground-l, 0.2) var(--foreground-c, 0.006) var(--foreground-h, var(--brand-hue, 240)) / var(--foreground-a, 1));
-  --card: oklch(var(--card-l, 0.995) var(--card-c, 0.0015) var(--card-h, var(--brand-hue, 240)) / var(--card-a, 1));
-  --card-foreground: oklch(var(--card-foreground-l, 0.2) var(--card-foreground-c, 0.006) var(--card-foreground-h, var(--brand-hue, 240)) / var(--card-foreground-a, 1));
-  --popover: oklch(var(--popover-l, 0.995) var(--popover-c, 0.0015) var(--popover-h, var(--brand-hue, 240)) / var(--popover-a, 1));
-  --popover-foreground: oklch(var(--popover-foreground-l, 0.2) var(--popover-foreground-c, 0.006) var(--popover-h, var(--brand-hue, 240)) / var(--popover-a, 1));
-  --primary: oklch(var(--primary-l, 0.55) var(--primary-c, 0.12) var(--primary-h, var(--brand-hue, 240)) / var(--primary-a, 1));
-  --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(var(--secondary-l, 0.905) var(--secondary-c, 0.004) var(--secondary-h, var(--brand-hue, 240)) / var(--secondary-a, 1));
-  --secondary-foreground: oklch(var(--secondary-foreground-l, 0.2) var(--secondary-foreground-c, 0.006) var(--secondary-h, var(--brand-hue, 240)) / var(--secondary-a, 1));
-  --muted: oklch(var(--muted-l, 0.905) var(--muted-c, 0.004) var(--muted-h, var(--brand-hue, 240)) / var(--muted-a, 1));
-  --muted-foreground: oklch(var(--muted-foreground-l, 0.5) var(--muted-foreground-c, 0.01) var(--muted-h, var(--brand-hue, 240)) / var(--muted-a, 1));
-  --accent: oklch(var(--accent-l, 0.905) var(--accent-c, 0.004) var(--accent-h, var(--brand-hue, 240)) / var(--accent-a, 1));
-  --accent-foreground: oklch(var(--accent-foreground-l, 0.2) var(--accent-foreground-c, 0.006) var(--accent-h, var(--brand-hue, 240)) / var(--accent-a, 1));
-  --destructive: oklch(0.55 0.25 27);
-  --destructive-foreground: oklch(0.99 0 0);
-  --success: oklch(0.6 0.15 150);
-  --success-foreground: oklch(0.99 0 0);
-  --warning: oklch(0.64 0.14 67);
-  --warning-foreground: oklch(0.99 0 0);
-  --error: oklch(0.55 0.22 27);
-  --error-foreground: oklch(0.99 0 0);
-  --border: oklch(var(--border-l, 0.888) var(--border-c, 0.003) var(--border-h, var(--brand-hue, 240)) / var(--border-a, 1));
-  --input: oklch(var(--input-l, 0.888) var(--input-c, 0.003) var(--input-h, var(--brand-hue, 240)) / var(--input-a, 1));
-  --ring: oklch(var(--ring-l, 0.52) var(--ring-c, 0.114) var(--ring-h, var(--brand-hue, 240)) / var(--ring-a, 1));
-  --sidebar: oklch(var(--sidebar-l, 0.26) var(--sidebar-c, 0.02) var(--sidebar-h, var(--brand-hue, 240)) / var(--sidebar-a, 1));
-  --sidebar-foreground: oklch(var(--sidebar-foreground-l, 0.93) var(--sidebar-foreground-c, 0.006) var(--sidebar-foreground-h, var(--brand-hue, 240)) / var(--sidebar-foreground-a, 1));
-  --sidebar-primary: oklch(var(--sidebar-primary-l, 0.68) var(--sidebar-primary-c, 0.148) var(--sidebar-primary-h, var(--brand-hue, 240)) / var(--sidebar-primary-a, 1));
-  --sidebar-primary-foreground: oklch(0.2 0.006 var(--brand-hue, 240));
-  --sidebar-hover: oklch(var(--sidebar-hover-l, 0.34) var(--sidebar-hover-c, 0.022) var(--sidebar-hover-h, var(--brand-hue, 240)) / var(--sidebar-hover-a, 1));
-  --sidebar-accent: oklch(var(--sidebar-accent-l, 0.68) var(--sidebar-accent-c, 0.148) var(--sidebar-accent-h, var(--brand-hue, 240)) / var(--sidebar-accent-a, 1));
-  --sidebar-accent-foreground: oklch(var(--sidebar-accent-foreground-l, 0.2) var(--sidebar-accent-foreground-c, 0.006) var(--sidebar-accent-foreground-h, var(--brand-hue, 240)) / var(--sidebar-accent-foreground-a, 1));
-  --sidebar-border: oklch(var(--sidebar-border-l, 0.34) var(--sidebar-border-c, 0.018) var(--sidebar-border-h, var(--brand-hue, 240)) / var(--sidebar-border-a, 1));
-  --sidebar-ring: oklch(var(--sidebar-ring-l, 0.52) var(--sidebar-ring-c, 0.114) var(--sidebar-ring-h, var(--brand-hue, 240)) / var(--sidebar-ring-a, 1));
-  --highlighted: var(--primary);
+.mock-wallpaper {
+  background:
+    radial-gradient(55% 70% at 12% 18%, oklch(0.62 0.2 300 / 0.9), transparent 62%),
+    radial-gradient(45% 60% at 88% 22%, oklch(0.72 0.17 45 / 0.85), transparent 60%),
+    radial-gradient(60% 55% at 55% 95%, oklch(0.66 0.19 225 / 0.9), transparent 62%),
+    radial-gradient(40% 40% at 70% 55%, oklch(0.7 0.16 160 / 0.6), transparent 60%),
+    oklch(0.28 0.05 285);
+}
+
+.dark .mock-glass {
+  background-color: oklch(0.16 0 0 / 0.74);
+  -webkit-backdrop-filter: blur(64px) saturate(1.2);
+  backdrop-filter: blur(64px) saturate(1.2);
 }

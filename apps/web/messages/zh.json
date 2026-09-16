@@ -172,7 +172,7 @@
     "rights": "保留所有权利。"
   },
   "Demos": {
-    "release": "UI 基线 · v0.59.0-alpha + 最新 main",
+    "release": "UI 基线 · v{version}",
     "title": "逐个查看当前版本的 SuperOne 界面",
     "description": "这里按场景整理了网站、Storybook 与发行素材共用的桌面产品状态。调整页头品牌色，即可在同一套局部主题系统下检查全部预览。",
     "sections": {

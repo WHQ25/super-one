@@ -172,7 +172,7 @@
     "rights": "All rights reserved."
   },
   "Demos": {
-    "release": "UI baseline · v0.59.0-alpha + latest main",
+    "release": "UI baseline · v{version}",
     "title": "The current SuperOne interface, surface by surface",
     "description": "A categorized gallery of the desktop product states used by the website, Storybook, and release media. Change the brand color in the header to inspect every preview under the same scoped theme system.",
     "sections": {

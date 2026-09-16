@@ -2279,14 +2279,14 @@ function registerIpcHandlers(): void {
       return
     }
     terminalManager.kill(terminalId)
-  ipcMain.handle(AgentIpcChannels.TERMINAL_COMMAND_RULES_LIST, () => listAllTerminalCommandRules())
-  ipcMain.handle(AgentIpcChannels.TERMINAL_COMMAND_RULE_REMOVE, (_e, projectKey: string, pattern: string) =>
-    removeTerminalCommandRule(projectKey, pattern))
   })
   ipcMain.handle(AgentIpcChannels.TERMINAL_CLAIM, (_e, terminalId: string) => {
     if (remoteTerminalController.has(terminalId)) return
     terminalManager.get(terminalId)?.ownership.reclaimLocal()
   })
+  ipcMain.handle(AgentIpcChannels.TERMINAL_COMMAND_RULES_LIST, () => listAllTerminalCommandRules())
+  ipcMain.handle(AgentIpcChannels.TERMINAL_COMMAND_RULE_REMOVE, (_e, projectKey: string, pattern: string) =>
+    removeTerminalCommandRule(projectKey, pattern))
 
 
   // Setup agent IPC handlers (does NOT auto-initialize)

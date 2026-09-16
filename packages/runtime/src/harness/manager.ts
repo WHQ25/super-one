@@ -28,6 +28,7 @@ import {
 } from '@superone/shared/environment'
 import type { HarnessId } from '@superone/shared/session-types'
 import type { TransactionalSqliteDatabase } from '../sqlite'
+import type { ExternalLaunchConfig } from './types'
 
 export interface HarnessConfigPatch {
   enabled?: boolean
@@ -128,6 +129,20 @@ export class HarnessManager {
       runtimeVersion: status.runtimeVersion ?? 'simulated',
       diagnostic: buildHarnessDiagnostic('simulated'),
     }
+  }
+
+  getExternalLaunchConfig(id: NodeHarnessId): ExternalLaunchConfig {
+    const row = this.db.prepare('SELECT config_json FROM harness_installations WHERE harness_id = ?')
+      .get(id) as { config_json?: string | null } | undefined
+    try {
+      const config = JSON.parse(row?.config_json || '{}')
+      return {
+        ...(typeof config.usesDefaultArgs === 'boolean' ? { usesDefaultArgs: config.usesDefaultArgs } : {}),
+        ...(typeof config.command === 'string' ? { command: config.command } : {}),
+        ...(['path', 'explicit'].includes(config.commandSource) ? { commandSource: config.commandSource } : {}),
+        ...(Array.isArray(config.args) && config.args.every((arg: unknown) => typeof arg === 'string') ? { args: config.args } : {}),
+      }
+    } catch { return {} }
   }
 
   private readPersisted(id: NodeHarnessId): HarnessInstallationStatus {

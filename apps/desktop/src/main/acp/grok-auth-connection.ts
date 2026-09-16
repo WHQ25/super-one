@@ -1,7 +1,6 @@
 import { client, methods, PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
 import { homedir } from 'node:os'
-import { detectAgent } from './acp-detect'
-import { getBuiltinAgent } from './agent-catalog'
+import { resolveDesktopGrokLaunch } from '../harness/grok-launch'
 import { spawnAcpProcess } from './acp-process'
 import { xaiExtWireMethod } from './acp-xai-extensions'
 import { resolveAcpClientVersion } from './acp-client-info'
@@ -14,11 +13,10 @@ export interface GrokAuthConnection {
 
 /** An auth-only process: never creates a chat session or attaches tools. */
 export async function openGrokAuthConnection(): Promise<GrokAuthConnection | null> {
-  const definition = getBuiltinAgent('grok-build')!
-  const detected = await detectAgent(definition)
-  if (!detected.resolvedPath) return null
+  const launch = resolveDesktopGrokLaunch()
+  if (!launch) return null
   const process = spawnAcpProcess({
-    agentId: definition.id, command: detected.resolvedPath, args: definition.args,
+    agentId: 'grok-build', ...launch,
     cwd: homedir(), env: {},
   })
   const connection = client({ name: 'superone' }).connect(process.stream)

@@ -12,6 +12,7 @@ import {
   managedHarnessPrefix,
   readCurrentPointer,
   resolveExternalCommand,
+  resolveGrokRuntime,
   isCursorSdkAvailable,
   resolveCursorApiKeyPlain,
   setHarnessReleaseVersionProvider,
@@ -113,8 +114,7 @@ export const desktopHarnessResolver: HarnessRuntimeResolver = {
     // External harnesses: catalog command or PATH/env.
     // Same enabled gate as claude/codex — disable must stop resolution, not just hide UI.
     if (id === 'acp-grok') {
-      if (!harnesses.get(id).enabled) return null
-      return envBinary('SUPERONE_ACP_BINARY') ?? harnesses.get(id).command ?? null
+      return resolveGrokRuntime(harnesses)?.command ?? null
     }
     if (id === 'opencode') {
       if (!harnesses.get(id).enabled) return null

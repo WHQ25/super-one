@@ -6,6 +6,11 @@ import {
   PROTOCOL_VERSION,
   type Stream,
 } from '@agentclientprotocol/sdk'
+import { spawnAcpProcess } from './acp-process'
+import { resolveDesktopGrokLaunch } from '../harness/grok-launch'
+import { openGrokAuthConnection } from './grok-auth-connection'
+vi.mock('./acp-process', () => ({ spawnAcpProcess: vi.fn() }))
+vi.mock('../harness/grok-launch', () => ({ resolveDesktopGrokLaunch: vi.fn() }))
 import { createAcpRuntime } from './acp-runtime'
 import {
   XAI_AUTH_GET_URL,
@@ -200,6 +205,28 @@ describe('createAcpRuntime (in-process agent)', () => {
     expect(clientInfo?.name).toBe('superone')
     expect(clientInfo?.version).toMatch(/^\d+\.\d+/)
     expect(clientInfo?.version).not.toBe('0.0.0')
+  })
+
+  it('uses the same resolved Grok executable and arguments for chat and account login', async () => {
+    vi.mocked(resolveDesktopGrokLaunch).mockReturnValue({ command: '/resolved/grok', args: ['agent', 'stdio', '--custom'], source: 'path' })
+    vi.mocked(spawnAcpProcess).mockClear()
+    for (let i = 0; i < 2; i++) {
+      vi.mocked(spawnAcpProcess).mockReturnValueOnce({
+        stream: makeEchoAgentStream().stream, child: {} as never,
+        kill: vi.fn(async () => {}), closed: new Promise(() => {}),
+      })
+    }
+    const runtime = await createAcpRuntime({
+      launch: { agentId: 'grok-build', defaultCwd: '/tmp/proj' },
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+    })
+    await runtime.close()
+    const login = await openGrokAuthConnection()
+    await login?.close()
+    expect(spawnAcpProcess).toHaveBeenCalledTimes(2)
+    for (const [launch] of vi.mocked(spawnAcpProcess).mock.calls) {
+      expect(launch).toMatchObject({ command: '/resolved/grok', args: ['agent', 'stdio', '--custom'] })
+    }
   })
 
   it('skips interactive grok.com auth when cached_token is advertised', async () => {

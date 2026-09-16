@@ -31,6 +31,7 @@ import {
   isDesktopManagedPinAligned,
 } from './tarball-installer'
 import log from '../logger'
+import { refreshGrokInstallation } from './grok-installation'
 
 let manager: HarnessManager | null = null
 
@@ -80,7 +81,9 @@ export function resetHarnessManagerForTests(): void {
 }
 
 export function listHarnessInstallations(): HarnessInstallationStatus[] {
-  return getHarnessManager().list()
+  const manager = getHarnessManager()
+  const grok = refreshGrokInstallation(manager)
+  return manager.list().map((row) => row.id === 'acp-grok' ? grok : row)
 }
 
 export function getHarnessInstallation(id: NodeHarnessId): HarnessInstallationStatus {

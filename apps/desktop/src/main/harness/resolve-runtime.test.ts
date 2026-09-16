@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, mkdtempSync, rmSync, writeFileSync, chmodSync } from 'node:fs'
+import { tmpdir, homedir } from 'node:os'
 import { join } from 'node:path'
 import { NODE_HARNESS_IDS } from '@superone/shared/environment/harness-installation'
 
@@ -66,6 +66,7 @@ const {
   resetHarnessManagerForTests,
   enableDesktopHarness,
   disableDesktopHarness,
+  listHarnessInstallations,
 } = await import('./service')
 const {
   resolveHarnessRuntime,
@@ -159,5 +160,48 @@ describe('resolveHarnessRuntime', () => {
     const list = m.list()
     expect(list.map((h) => h.id).sort()).toEqual([...NODE_HARNESS_IDS].sort())
     expect(list.every((h) => h.enabled === false && h.state === 'disabled')).toBe(true)
+  })
+})
+
+
+describe('Grok settings and launch resolution', () => {
+  afterEach(() => { resetDb(); vi.unstubAllEnvs() })
+  it('migrates a missing legacy version without losing custom arguments', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'grok-repair-'))
+    try {
+      const binary = join(dir, 'grok')
+      writeFileSync(binary, '#!/bin/sh\nexit 0\n'); chmodSync(binary, 0o755)
+      vi.stubEnv('PATH', dir); vi.stubEnv('SUPERONE_ACP_BINARY', '')
+      const old = join(homedir(), '.grok', 'bin', 'grok-0.0.0-superone-missing-test')
+      expect(existsSync(old)).toBe(false)
+      const manager = getHarnessManager()
+      manager.update('acp-grok', { enabled: true, state: 'ready', command: old, configJson: JSON.stringify({ command: old, args: ['agent', 'stdio', '--custom'], usesDefaultArgs: false }) })
+      expect(listHarnessInstallations().find((row) => row.id === 'acp-grok')?.command).toBe(binary)
+      expect(manager.getExternalLaunchConfig('acp-grok')).toEqual({ commandSource: 'path', command: binary, args: ['agent', 'stdio', '--custom'], usesDefaultArgs: false })
+      manager.update('acp-grok', { command: join(dir, 'missing-custom'), configJson: '{}' })
+      for (let i = 0; i < 2; i++) expect(listHarnessInstallations().find((row) => row.id === 'acp-grok')).toMatchObject({ state: 'missing', command: undefined })
+      expect(manager.get('acp-grok').command).toBe(join(dir, 'missing-custom'))
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('refreshes the displayed command and shares it with login/chat launch', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'grok-catalog-'))
+    try {
+      const binary = join(dir, 'grok')
+      writeFileSync(binary, '#!/bin/sh\nexit 0\n'); chmodSync(binary, 0o755)
+      vi.stubEnv('PATH', dir); vi.stubEnv('SUPERONE_ACP_BINARY', '')
+      const manager = getHarnessManager()
+      manager.update('acp-grok', { enabled: true, state: 'ready', command: '/old/grok', runtimeVersion: '1.0.13', configJson: JSON.stringify({ commandSource: 'path', args: ['agent', 'stdio'] }) })
+      const { resolveDesktopGrokLaunch } = await import('./grok-launch')
+      expect(listHarnessInstallations().find((row) => row.id === 'acp-grok')).toMatchObject({ command: binary, state: 'ready' })
+      expect(manager.get('acp-grok').runtimeVersion).toBeUndefined()
+      expect(resolveDesktopGrokLaunch()).toMatchObject({ command: binary, args: ['agent', 'stdio'] })
+      const override = join(dir, 'pinned')
+      writeFileSync(override, '#!/bin/sh\nexit 0\n'); chmodSync(override, 0o755)
+      vi.stubEnv('SUPERONE_ACP_BINARY', override)
+      expect(listHarnessInstallations().find((row) => row.id === 'acp-grok')?.command).toBe(override)
+      expect(resolveDesktopGrokLaunch()?.command).toBe(override)
+      expect(manager.get('acp-grok').command).toBe(binary)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 })

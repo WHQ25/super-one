@@ -37,13 +37,19 @@ export interface ResolvedAutoRuntime {
   runtimeVersion?: string
 }
 
-/**
- * Read-only catalog view. This is the minimal surface binary resolvers need —
- * depend on this rather than the concrete `HarnessManager` so resolvers stay
- * usable from any host.
- */
+/** Allowlisted external launch configuration; contains no credentials. */
+export interface ExternalLaunchConfig {
+  command?: string
+  commandSource?: 'path' | 'explicit'
+  args?: string[]
+  usesDefaultArgs?: boolean
+}
+
+/** Minimal catalog surface required by host binary resolvers. */
 export interface HarnessCatalogReader {
   get(id: NodeHarnessId): HarnessInstallationStatus
+  /** Non-secret external launch settings, when supported by the catalog. */
+  getExternalLaunchConfig?(id: NodeHarnessId): ExternalLaunchConfig
 }
 
 /**

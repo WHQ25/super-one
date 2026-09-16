@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { accessSync, constants } from 'fs'
+import { accessSync, constants, mkdtempSync, writeFileSync, chmodSync, rmSync } from 'fs'
 import { delimiter, join } from 'path'
-import { homedir } from 'os'
+import { homedir, tmpdir } from 'os'
 
 vi.mock('../agent/resolve-cli', () => ({
   fixPath: vi.fn(),
@@ -18,6 +18,16 @@ describe('acp-detect', () => {
       '/usr/bin',
       '/bin',
     ].join(delimiter)
+  })
+
+  it('preserves PATH priority ahead of fallback installation directories', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'acp-path-'))
+    try {
+      const command = join(dir, 'grok')
+      writeFileSync(command, '#!/bin/sh\nexit 0\n'); chmodSync(command, 0o755)
+      process.env.PATH = dir
+      expect((await detectAgent({ id: 'grok-build', name: 'Grok', command: 'grok', args: [] })).resolvedPath).toBe(command)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 
   it('marks agents installed when which finds them on PATH', async () => {

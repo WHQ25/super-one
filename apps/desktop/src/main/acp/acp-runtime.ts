@@ -423,6 +423,13 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     stream = custom.stream
     disposeStream = custom.dispose
   } else {
+    if (launch.agentId === 'grok-build') {
+      const { resolveDesktopGrokLaunch } = await import('../harness/grok-launch')
+      const resolved = resolveDesktopGrokLaunch(opts.launch)
+      if (!resolved) throw new Error('Grok command not found. Check Settings → Harnesses → Grok.')
+      launch.command = resolved.command
+      launch.args = resolved.args
+    }
     try {
       processHandle = spawnAcpProcess(launch)
     } catch (err) {

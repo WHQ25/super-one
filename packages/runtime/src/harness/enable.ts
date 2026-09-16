@@ -291,7 +291,7 @@ export function enableAcpGrok(
 ): HarnessInstallationStatus {
   const defaultArgs = ['agent', 'stdio']
   const args = sanitizeHarnessArgs(opts.args.length > 0 ? opts.args : defaultArgs)
-  const resolved = resolveExternalCommand(opts.command, ['grok'])
+  const resolved = resolveExternalCommand(opts.command, ['grok'], { preserveSymlinks: true })
   if (!resolved) {
     return manager.update('acp-grok', {
       enabled: true,
@@ -299,7 +299,7 @@ export function enableAcpGrok(
       command: null,
       diagnosticCode: 'not_found',
       lastProbedAt: Date.now(),
-      configJson: JSON.stringify({ args, usesDefaultArgs: opts.args.length === 0 }),
+      configJson: JSON.stringify({ commandSource: opts.command ? 'explicit' : 'path', command: opts.command, args, usesDefaultArgs: opts.args.length === 0 }),
     })
   }
   return manager.update('acp-grok', {
@@ -310,6 +310,7 @@ export function enableAcpGrok(
     lastProbedAt: Date.now(),
     configJson: JSON.stringify({
       command: resolved,
+      commandSource: opts.command ? 'explicit' : 'path',
       args,
       usesDefaultArgs: opts.args.length === 0,
     }),
@@ -337,6 +338,7 @@ function requireRegularReadableFile(path: string): string {
 export function resolveExternalCommand(
   explicit: string | undefined,
   searchNames: string[],
+  options: { preserveSymlinks?: boolean; pathEnv?: string } = {},
 ): string | null {
   if (explicit) {
     const abs = isAbsolute(explicit) ? explicit : resolve(explicit)
@@ -347,9 +349,9 @@ export function resolveExternalCommand(
     } catch {
       return null
     }
-    return realpathSync(abs)
+    return options.preserveSymlinks ? abs : realpathSync(abs)
   }
-  const pathEnv = process.env.PATH || ''
+  const pathEnv = options.pathEnv ?? process.env.PATH ?? ''
   const dirs = pathEnv.split(process.platform === 'win32' ? ';' : ':')
   for (const name of searchNames) {
     for (const dir of dirs) {
@@ -359,7 +361,7 @@ export function resolveExternalCommand(
       try {
         if (!statSync(candidate).isFile()) continue
         accessSync(candidate, constants.X_OK)
-        return realpathSync(candidate)
+        return options.preserveSymlinks ? candidate : realpathSync(candidate)
       } catch {
         /* try next */
       }

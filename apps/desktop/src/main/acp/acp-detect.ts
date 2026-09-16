@@ -57,7 +57,8 @@ function ensureSearchPath(): string {
   const seen = new Set(parts)
   for (const dir of knownBinDirs()) {
     if (!seen.has(dir)) {
-      parts.unshift(dir)
+      // Fallback locations must not outrank the user's login-shell PATH.
+      parts.push(dir)
       seen.add(dir)
     }
   }

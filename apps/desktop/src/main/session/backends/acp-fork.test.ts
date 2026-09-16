@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ForkContext, ForkSource } from '../types'
-import { forkAcpTranscript, setGrokForkConnector } from './acp-fork'
+import { forkAcpTranscript, grokForkInitializeParams, setGrokForkConnector } from './acp-fork'
 
 const connector = vi.fn(async () => 'forked-grok')
 
@@ -22,6 +22,20 @@ beforeEach(() => {
 
 afterEach(() => {
   setGrokForkConnector(null)
+})
+
+describe('grokForkInitializeParams', () => {
+  it('matches the live runtime initialize _meta flags', () => {
+    expect(grokForkInitializeParams('1.2.3')).toMatchObject({
+      clientInfo: { name: 'superone', version: '1.2.3' },
+      clientCapabilities: { terminal: false, fs: { readTextFile: false, writeTextFile: false } },
+      _meta: {
+        askUserQuestion: true,
+        exitPlanMode: true,
+        clientIdentifier: 'superone',
+      },
+    })
+  })
 })
 
 describe('forkAcpTranscript', () => {

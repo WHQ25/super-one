@@ -148,6 +148,8 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsPlanMode: true,
     // ACP session/update plan entries map to todo_write-style UI events.
     supportsTodos: true,
+    // Subagent_* notifications already map to task rows, but there is no nested
+    // child chrome for ACP. Keep false until Task UI can host those sessions.
     supportsSubagents: false,
     // Host intercepts `/compact` → `x.ai/compact_conversation`.
     supportsCompact: true,

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { accessSync, constants } from 'fs'
-import { join } from 'path'
+import { delimiter, join } from 'path'
 import { homedir } from 'os'
 
 vi.mock('../agent/resolve-cli', () => ({
@@ -17,7 +17,7 @@ describe('acp-detect', () => {
       '/opt/homebrew/bin',
       '/usr/bin',
       '/bin',
-    ].join(':')
+    ].join(delimiter)
   })
 
   it('marks agents installed when which finds them on PATH', async () => {

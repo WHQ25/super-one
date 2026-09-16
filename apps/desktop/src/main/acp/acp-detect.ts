@@ -1,6 +1,6 @@
 import { accessSync, constants } from 'fs'
 import { homedir } from 'os'
-import { join } from 'path'
+import { delimiter, join } from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { fixPath } from '../agent/resolve-cli'
@@ -53,7 +53,7 @@ function ensureSearchPath(): string {
     pathReady = true
   }
   const current = process.env.PATH ?? ''
-  const parts = current.split(':').filter(Boolean)
+  const parts = current.split(delimiter).filter(Boolean)
   const seen = new Set(parts)
   for (const dir of knownBinDirs()) {
     if (!seen.has(dir)) {
@@ -61,7 +61,7 @@ function ensureSearchPath(): string {
       seen.add(dir)
     }
   }
-  const merged = parts.join(':')
+  const merged = parts.join(delimiter)
   process.env.PATH = merged
   return merged
 }
@@ -75,7 +75,7 @@ function resolveFromKnownDirs(command: string): string | null {
 }
 
 function resolveFromPathEnv(command: string, pathEnv: string): string | null {
-  for (const dir of pathEnv.split(':').filter(Boolean)) {
+  for (const dir of pathEnv.split(delimiter).filter(Boolean)) {
     const candidate = join(dir, command)
     if (isExecutable(candidate)) return candidate
   }

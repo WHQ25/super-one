@@ -79,6 +79,19 @@ describe('formatGrokAskUserResponse', () => {
   it('formats cancelled as outcome=cancelled', () => {
     expect(formatGrokAskUserResponse({ kind: 'cancelled' })).toEqual({ outcome: 'cancelled' })
   })
+
+  it('formats plan-mode chat_about_this / skip_interview outcomes', () => {
+    expect(formatGrokAskUserResponse({
+      kind: 'chat_about_this',
+      answers: { 'Q?': 'A' },
+    })).toEqual({
+      outcome: 'chat_about_this',
+      partial_answers: { 'Q?': ['A'] },
+    })
+    expect(formatGrokAskUserResponse({ kind: 'skip_interview' })).toEqual({
+      outcome: 'skip_interview',
+    })
+  })
 })
 
 describe('buildAskUserQuestionRequest', () => {

@@ -68,6 +68,8 @@ export interface GrokAskUserQuestionParams {
 export type GrokAskUserAnswer =
   | { kind: 'accepted'; answers: Record<string, string>; annotations?: QuestionAnnotations }
   | { kind: 'cancelled' }
+  | { kind: 'chat_about_this'; answers?: Record<string, string> }
+  | { kind: 'skip_interview'; answers?: Record<string, string> }
 
 /** Wire params for `x.ai/exit_plan_mode` (camelCase per Grok ExitPlanModeExtRequest). */
 export interface GrokExitPlanModeParams {
@@ -188,6 +190,17 @@ export function buildConsentRecordParams(gate: GrokConsentGate): { noticeId: str
 export function formatGrokAskUserResponse(answer: GrokAskUserAnswer): Record<string, unknown> {
   if (answer.kind === 'cancelled') {
     return { outcome: 'cancelled' }
+  }
+  if (answer.kind === 'chat_about_this' || answer.kind === 'skip_interview') {
+    const partial: Record<string, string[]> = {}
+    for (const [key, value] of Object.entries(answer.answers ?? {})) {
+      if (!value) continue
+      partial[key] = value.includes(', ') ? value.split(', ').map((s) => s.trim()).filter(Boolean) : [value]
+    }
+    return {
+      outcome: answer.kind,
+      ...(Object.keys(partial).length > 0 ? { partial_answers: partial } : {}),
+    }
   }
   const answers: Record<string, string[]> = {}
   for (const [key, value] of Object.entries(answer.answers)) {

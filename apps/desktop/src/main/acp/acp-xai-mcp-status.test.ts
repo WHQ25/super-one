@@ -3,6 +3,7 @@ import {
   parseGrokMcpInitProgress,
   parseGrokMcpServerStatus,
   parseGrokMcpServersUpdated,
+  parseGrokMcpToolsChanged,
   parseGrokSessionUsage,
   upsertMcpServer,
 } from './acp-xai-mcp-status'
@@ -29,6 +30,21 @@ describe('parseGrokMcpServerStatus', () => {
       name: 'linear',
       status: 'needs-auth',
       authStatus: 'needs-auth',
+    })
+  })
+})
+
+describe('parseGrokMcpToolsChanged', () => {
+  it('refreshes tool counts for a server', () => {
+    expect(parseGrokMcpToolsChanged({
+      session_id: 's',
+      server_name: 'github',
+      tools: [{ name: 'search' }, { name: 'create_issue' }],
+    })).toEqual({
+      name: 'github',
+      status: 'connected',
+      tools: [{ name: 'search' }, { name: 'create_issue' }],
+      toolCount: 2,
     })
   })
 })

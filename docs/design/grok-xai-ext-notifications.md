@@ -24,8 +24,6 @@
 | Item | Where |
 |------|--------|
 | `x.ai/session/prompt_complete` (legacy turn-end alias) | parity XAI-24 / RT-16 — P3; wake already closed via nested `turn_completed` |
-| Apply `x.ai/mcp/tools_changed` (subscribed; `handleMcpExt` has no case) | parity MCP-10 — P2; counts stale until `servers_updated` |
-| Node/CLI missing `ask_user_question` / `exit_plan_mode` reverse RPCs | parity RT-06 / XAI-01 / PR4 — **P0 hang**, not a notification gap |
 | TUI-only methods (sessions/changed, queue, announcements, git_head, leader) | omitted from `XAI_EXT_NOTIFICATION_METHODS` by policy |
 
 Point leftover host work at [`grok-build-parity.md`](./grok-build-parity.md). Do not change Grok agent source.
@@ -254,7 +252,7 @@ From `handle_ext_notification` in the pager:
 | `x.ai/scheduled_task_*` (+ `inject_prompt`) | Cron-like tasks | **done** |
 | `x.ai/session/prompt_complete` | Legacy turn end (deprecating toward `turn_completed`) | **remaining** (P3; nested `turn_completed` already wakes) |
 | `x.ai/session/interjection` | Mid-turn user insert display | **done** |
-| `x.ai/mcp/init_progress` / `tools_changed` / `server_status` / `servers_updated` / `mcp_initialized` | MCP host status | **partial** — status mapping shipped; `tools_changed` subscribed but not applied (parity MCP-10) |
+| `x.ai/mcp/init_progress` / `tools_changed` / `server_status` / `servers_updated` / `mcp_initialized` | MCP host status | **done** — status mapping + `tools_changed` upserts tool counts |
 | `x.ai/models/update`, `settings/update`, `sessions/changed`, `queue/changed`, `announcements/update`, `git_head_changed` | Multi-client / TUI | **defer** (stdio single client) |
 
 ### 3.4 What SuperOne already handles (not this bus)
@@ -281,7 +279,7 @@ Status: `missing` | `partial` | `done` | `na`.
 | WF-02 | `workflow_updated` terminal + `result_summary` | session_notification | **done** | — | — |
 | WF-03 | Correlate `run_id` ↔ launch `tool_use_id` | host state | **done** | — | — |
 | WF-04 | `workflow` in TOOL_ID_TO_NAME | event-map | **done** | — | — |
-| SA-01 | `subagent_spawned` / `progress` / `finished` | session_notification | **done** | cap `supportsSubagents` still false (parity PR9) | P2 |
+| SA-01 | `subagent_spawned` / `progress` / `finished` | session_notification | **done** | cap `supportsSubagents` stays false (no nested child chrome) | P3 |
 | BG-01 | `task_backgrounded` / `task_completed` | standalone and/or nested | **done** | no `_x.ai/task_*` alias (P3) | — |
 | BG-02 | `monitor_event` | standalone | **done** | — | — |
 | US-01 | `turn_completed.usage` | session_notification | **done** | — | — |
@@ -290,8 +288,8 @@ Status: `missing` | `partial` | `done` | `na`.
 | FU-01 | `x.ai/follow_ups` | standalone | **done** | — | — |
 | GL-01 | `goal_updated` | session_notification | **done** | — | — |
 | SC-01 | Scheduler notifications | standalone | **done** | — | — |
-| MCP-N | MCP status notifications | standalone | **partial** | `tools_changed` not applied (parity MCP-10) | P2 |
-| NODE-01 | Node ask/exit reverse RPCs | `packages/acp` `run-turn.ts` | **missing** | CLI turn can hang (parity PR4) | **P0** |
+| MCP-N | MCP status notifications | standalone | **done** | `tools_changed` upserts tool counts | — |
+| NODE-01 | Node ask/exit reverse RPCs | `packages/acp` `run-turn.ts` | **done** | cancel immediately if no UI | — |
 | XAI-24 | `x.ai/session/prompt_complete` | standalone | **missing** | legacy; nested `turn_completed` already wakes | P3 |
 | TUI-* | announcements, queue, leader | standalone | **na** | Multi-client / pager | defer |
 
@@ -448,7 +446,7 @@ Requirements:
 
 ## 6. PR plan
 
-**This doc’s PR1–PR5 shipped** (bus + workflow/subagent/bg/usage/follow_ups mapping). Do not re-open them. Leftover host work is `grok-build-parity.md` PR0–PR9 (docs, Always, plan chrome, MCP live ops, Node ask/exit, Auto honesty).
+**This doc’s PR1–PR5 shipped** (bus + workflow/subagent/bg/usage/follow_ups mapping). Do not re-open them. Parity PR0–PR9 also landed; leftover is live `grok agent stdio` acceptance (TD-03) plus P3 aliases (`prompt_complete`).
 
 Historical slices below are kept as the original implementation record.
 

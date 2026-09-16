@@ -77,6 +77,7 @@ import {
   parseGrokMcpInitProgress,
   parseGrokMcpServerStatus,
   parseGrokMcpServersUpdated,
+  parseGrokMcpToolsChanged,
   upsertMcpServer,
 } from '../../acp/acp-xai-mcp-status'
 import { buildAcpSessionMcpServers } from '../../acp/acp-mcp'
@@ -1159,6 +1160,12 @@ export class AcpBackend implements SessionBackend {
     if (bare === 'x.ai/mcp/servers_updated') {
       const list = parseGrokMcpServersUpdated(params)
       if (list) this.mcpServers = list
+      this.emitMcpStatus()
+      return
+    }
+    if (bare === 'x.ai/mcp/tools_changed') {
+      const server = parseGrokMcpToolsChanged(params)
+      if (server) this.mcpServers = upsertMcpServer(this.mcpServers, server)
       this.emitMcpStatus()
       return
     }

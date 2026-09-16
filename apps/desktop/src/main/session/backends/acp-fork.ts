@@ -15,6 +15,7 @@ import {
   parseGrokForkResponse,
 } from '../../acp/acp-xai-session-ops'
 import { resolveAcpClientVersion } from '../../acp/acp-client-info'
+import { GROK_ACP_CLIENT_IDENTIFIER } from '../../acp/acp-permission-preapprove'
 import { resolveAcpLaunch } from '../../acp/agent-catalog'
 import { spawnAcpProcess } from '../../acp/acp-process'
 import log from '../../logger'
@@ -35,6 +36,23 @@ export interface GrokForkRequest {
 
 export type GrokForkConnector = (request: GrokForkRequest) => Promise<string>
 
+/** Same initialize `_meta` as `createAcpRuntime` so fork children park ask/exit. */
+export function grokForkInitializeParams(version: string): Record<string, unknown> {
+  return {
+    protocolVersion: PROTOCOL_VERSION,
+    clientInfo: { name: 'superone', version },
+    clientCapabilities: {
+      fs: { readTextFile: false, writeTextFile: false },
+      terminal: false,
+    },
+    _meta: {
+      askUserQuestion: true,
+      exitPlanMode: true,
+      clientIdentifier: GROK_ACP_CLIENT_IDENTIFIER,
+    },
+  }
+}
+
 async function spawnGrokFork(request: GrokForkRequest): Promise<string> {
   const launch = resolveAcpLaunch({
     agentId: request.agentId,
@@ -47,11 +65,10 @@ async function spawnGrokFork(request: GrokForkRequest): Promise<string> {
   const processHandle = spawnAcpProcess(launch)
   try {
     const connection = client({ name: 'superone' }).connect(processHandle.stream)
-    await connection.agent.request(methods.agent.initialize, {
-      protocolVersion: PROTOCOL_VERSION,
-      clientInfo: { name: 'superone', version: resolveAcpClientVersion() },
-      clientCapabilities: {},
-    } as never)
+    await connection.agent.request(
+      methods.agent.initialize,
+      grokForkInitializeParams(resolveAcpClientVersion()) as never,
+    )
     const params = buildGrokForkParams({
       sourceSessionId: request.sourceSessionId,
       sourceCwd: request.sourceCwd,

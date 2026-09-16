@@ -36,7 +36,7 @@ That doc owns **permission correctness**: built-in MCP preapprove, `session/new`
 
 ### `grok-xai-ext-notifications.md` — keep; bus is shipped
 
-That doc correctly identified the **agent→client ExtNotification rail** (`x.ai/session_notification` and standalones). **Live code now registers the bus** (`acp-xai-session-notify.ts`, `packages/acp/src/xai-event-map.ts`) with tests. The draft’s §4 gap matrix (BUS/WF/SA/BG/US/FU missing) is **stale**. Remaining bus items: `x.ai/session/prompt_complete`, applying `x.ai/mcp/tools_changed`, Node missing ask/exit reverse RPCs.
+That doc correctly identified the **agent→client ExtNotification rail** (`x.ai/session_notification` and standalones). **Live code now registers the bus** (`acp-xai-session-notify.ts`, `packages/acp/src/xai-event-map.ts`) with tests. The draft’s §4 gap matrix (BUS/WF/SA/BG/US/FU missing) is **stale**. Remaining bus item: `x.ai/session/prompt_complete` (legacy alias; wake already closed via nested `turn_completed`).
 
 ### This document
 
@@ -129,7 +129,7 @@ Evidence paths are under SuperOne unless noted.
 |----|------|---------|-----------------|----------|-----|----------|
 | RT-01 | Spawn `grok agent stdio` + ndjson | runtime | done | `acp-process.ts`, `agent-catalog.ts` (`grok-build`) | — | — |
 | RT-02 | Safe spawn env / Windows hide | runtime | done | `acp-process.ts`, `packages/runtime/src/spawn-env.ts` | — | — |
-| RT-03 | Detect grok CLI (`~/.grok/bin` + PATH) | runtime | partial | `acp-detect.ts` splits PATH on `:` always | Windows `;` PATH likely misses installs | P2 |
+| RT-03 | Detect grok CLI (`~/.grok/bin` + PATH) | runtime | done | `acp-detect.ts` uses `path.delimiter` | — | — |
 | RT-04 | initialize PROTOCOL_VERSION + `clientInfo` superone | acp-host | done | `acp-runtime.ts`, `acp-client-info.ts` | no `_meta.clientType` (intentional Generic) | na |
 | RT-05 | Grok: fs/terminal=false | acp-host | done | `useHostDelegation = agentId !== 'grok-build'` | intentional | na |
 | RT-06 | Advertise askUserQuestion + exitPlanMode | acp-host | done | desktop + `packages/acp` initialize `_meta` | Node cancels immediately if no UI | — |
@@ -155,7 +155,7 @@ Evidence paths are under SuperOne unless noted.
 | RT-26 | session/close on tab drop | acp-host | na | `close()` kills stdio process (no `session/close`) | OK for per-session stdio; needed if leader/serve | na |
 | RT-27 | session/resume (no replay) | acp-host | missing | host uses session/load | prefer load; resume is optional reconnect | P3 |
 | RT-28 | additionalDirectories gated | acp-host | partial | `supportsExtraRoots`; Grok usually `{}` | extra roots dropped; no mid-session set | P2 |
-| RT-29 | Cold `x.ai/session/fork` initialize | acp-host | partial | `acp-fork.ts` empty `clientCapabilities` | fork path untested vs real grok; caps empty | P2 |
+| RT-29 | Cold `x.ai/session/fork` initialize | acp-host | done | fork initialize `_meta` matches runtime | live grok fork still TD-03 | — |
 | RT-30 | Prompt images + @file resource blocks | acp-host | done | `acp-prompt.ts` | — | — |
 | RT-31 | Host-context append (not systemPromptOverride) | acp-host | done | `_meta.rules` from systemPromptAppend; host block still on first prompt | override only if explicitly passed | — |
 | RT-32 | GROK_CONFIG overlay on spawn | config | done | allowlisted JSON; secrets stripped | empty overlay not set | — |
@@ -192,13 +192,13 @@ Evidence paths are under SuperOne unless noted.
 
 | id | name | surface | SuperOne status | evidence | gap | priority |
 |----|------|---------|-----------------|----------|-----|----------|
-| XAI-01 | ask_user_question reverse + UI | acp-host | done | desktop UI + Node registers dual ids (cancel if no UI) | no `AskUserQuestionPrompt.test.tsx` (PR6) | P2 |
-| XAI-02 | ask plan outcomes `chat_about_this` / `skip_interview` | acp-host | missing | comments only in `formatGrokAskUserResponse` | host only `accepted\|cancelled` | P2 |
+| XAI-01 | ask_user_question reverse + UI | acp-host | done | desktop UI + Node registers dual ids (cancel if no UI); `AskUserQuestionPrompt.test.tsx` | — | — |
+| XAI-02 | ask plan outcomes `chat_about_this` / `skip_interview` | acp-host | done | formatter maps both outcomes | AskUserQuestion UI still accepted/cancelled only | P3 |
 | XAI-03 | exit_plan_mode reverse + PlanApproval + line review | acp-host | done | `PlanApprovalPrompt.tsx`, `plan-feedback.ts` | `planFilePath` always `''` | P3 |
 | XAI-04 | Dual `_x.ai/*` onRequest aliases | acp-host | done | desktop + Node ask/exit/elicit | underscore path untested e2e vs live grok | P3 |
 | XAI-05 | Approve plan: skip forced permissionMode default | session-ui | done | ACP approve skips `setPermissionMode`; Claude toggle unchanged | — | — |
 | XAI-06 | Hide Claude post-approve acceptEdits toggle | session-ui | done | `showPostApprovalModeToggle = claude` | — | — |
-| XAI-07 | ExtNotification bus (session_notification / session/update) | acp-host | done | `acp-xai-session-notify.ts`, `xai-event-map.ts` | leftover: `prompt_complete`, apply `tools_changed`, Node ask/exit | — |
+| XAI-07 | ExtNotification bus (session_notification / session/update) | acp-host | done | `acp-xai-session-notify.ts`, `xai-event-map.ts` | leftover: `prompt_complete` (XAI-24) | — |
 | XAI-08 | workflow_updated / subagent_* / goal_updated | acp-host | done | mapper + tests | `supportsSubagents: false` vs mapped events | P2 |
 | XAI-09 | task_backgrounded / task_completed | acp-host | done | standalone + nested | no `_x.ai/task_*` alias | P3 |
 | XAI-10 | monitor_event | acp-host | done | mapper | — | — |
@@ -234,7 +234,7 @@ Evidence paths are under SuperOne unless noted.
 | MCP-07 | toggleMcpServer | mcp-host | done | rebuilds list after settings write `disabled` | — | — |
 | MCP-08 | authenticateMcp / OAuth login RPC | mcp-host | done | `/mcp` LogIn hidden for ACP (OpenCode-only); elicit-URL still parks | `x.ai/mcp/auth_trigger` not wired | P2 |
 | MCP-09 | server_status / init_progress / servers_updated → mcp_status | mcp-host | done | `acp-xai-mcp-status.ts` | — | — |
-| MCP-10 | x.ai/mcp/tools_changed apply | mcp-host | partial | subscribed; `handleMcpExt` has no case | tool counts stale until servers_updated | P2 |
+| MCP-10 | x.ai/mcp/tools_changed apply | mcp-host | done | `parseGrokMcpToolsChanged` upserts tool counts | — | — |
 | MCP-11 | Host-only `/mcp` popup | session-ui | done | `McpSlashPopup.tsx` | Grok settings still open Claude MCP tab | P2 |
 | MCP-12 | use_tool unwrap → `mcp__server__tool` | mcp-host | done | `unwrapMcpEnvelope` | — | — |
 | MCP-13 | Sparse use_tool skipped (no fallback chip) | mcp-host | done | event-map tests | — | — |
@@ -256,12 +256,12 @@ Evidence paths are under SuperOne unless noted.
 | SU-01 | AcpModelSelector from modelState/sessionConfig | session-ui | done | `coalesceModelConfig` | — | — |
 | SU-02 | set_model when configId null | acp-host | done | backend `applyModel` | — | — |
 | SU-03 | Reasoning effort via set_model `_meta.reasoningEffort` | session-ui | done | `GroupedModelEffortSelector` | — | — |
-| SU-04 | Host enter plan: setPermissionMode(plan) → set_mode | session-ui | done | runtime tests | prompt `_meta.mode` still missing | P1 |
+| SU-04 | Host enter plan: setPermissionMode(plan) → set_mode | session-ui | done | runtime tests; prompt `_meta.mode` stamped | — | — |
 | SU-05 | HARNESS_CAPABILITIES.acp plan/todo/mcp/compact/fork/steer | session-ui | done | `harness-capabilities.ts` | `supportsSubagents: false` | P2 |
 | SU-06 | session/update plan → todos | session-ui | done | `mapPlanToTodoEvents` | — | — |
 | SU-07 | Context occupancy bar | session-ui | done | `getContextUsage` from turn_completed / `_meta.totalTokens` | old parity row stale | — |
 | SU-08 | x.ai/billing rate-limit gauge | session-ui | done | `getRateLimits` | — | — |
-| SU-09 | Rewind / compact / fork host ops | acp-host | done | session maps prompt index; `/compact`; ForkButton | fork initialize caps empty | P2 |
+| SU-09 | Rewind / compact / fork host ops | acp-host | done | session maps prompt index; `/compact`; ForkButton; fork initialize matches runtime | live grok fork still TD-03 | — |
 | SU-10 | session/prompt `_meta.mode=agent\|ask\|plan` | acp-host | done | `prompt()` stamps `_meta.mode` from tracked ACP session mode | `ask` session mode still not a UI item | P3 |
 | SU-11 | `current_mode_update` → host chrome | acp-host | done | `acp-event-map.ts` + yolo baseline restore | — | — |
 | SU-12 | available_commands → slash palette | session-ui | done | `acp_commands` | — | — |
@@ -618,7 +618,7 @@ Shipped work (do **not** re-open as PRs): stdio lifecycle, yolo/auto meta + noti
 | **Deps** | none |
 | **Out of scope** | Full plugins/marketplace UI; client hooks SDK |
 
-### PR9 — Polish: Windows PATH, fork initialize caps, ask plan outcomes, tools_changed, subagent cap  **(follow-up)**
+### PR9 — Polish: Windows PATH, fork initialize caps, ask plan outcomes, tools_changed, subagent cap  **(landed)**
 
 | | |
 |--|--|

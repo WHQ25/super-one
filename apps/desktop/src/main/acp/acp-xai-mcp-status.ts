@@ -130,6 +130,20 @@ export function parseGrokMcpServersUpdated(raw: unknown): McpServerInfo[] | null
   return out
 }
 
+/** `x.ai/mcp/tools_changed` — per-server tool catalog refresh. */
+export function parseGrokMcpToolsChanged(raw: unknown): McpServerInfo | null {
+  const o = asRecord(raw)
+  if (!o) return null
+  const name = str(o, 'serverName', 'server_name', 'name')
+  if (!name) return null
+  const tools = parseTools(o.tools)
+  return {
+    name,
+    status: 'connected',
+    ...(tools ? { tools, toolCount: tools.length } : { toolCount: 0, tools: [] }),
+  }
+}
+
 export function upsertMcpServer(servers: McpServerInfo[], next: McpServerInfo): McpServerInfo[] {
   const idx = servers.findIndex((s) => s.name === next.name)
   if (idx < 0) return [...servers, next]

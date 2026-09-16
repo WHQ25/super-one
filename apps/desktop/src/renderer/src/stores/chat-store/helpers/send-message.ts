@@ -1,4 +1,5 @@
 import { codexAccountId, isCodexAccountProvider } from '@superone/shared/codex-accounts'
+import { isCompactSlashSend } from '@superone/shared/compact-boundary'
 import type {
   ChatMessage,
   ContentBlock,
@@ -1199,13 +1200,7 @@ export async function sendMessageImpl(
     contexts: messageContexts,
     userSelections: userSelections.length > 0 ? [...userSelections] : undefined,
   }
-  const isCompactSlash = (
-    effectiveProvider === 'claude'
-    || effectiveProvider === 'opencode'
-    // dsh opens no turn for `/compact`, so the typed message would otherwise
-    // sit in the transcript with nothing answering it.
-    || effectiveProvider === 'dsh'
-  ) && finalContent.trim() === '/compact'
+  const isCompactSlash = isCompactSlashSend(effectiveProvider, finalContent)
   set((s) => ({
     ...commitPerSession(s, writeTarget, (sess) => ({
       ...(!isQueuedSend ? { messages: [...sess.messages, userMessage] } : {}),

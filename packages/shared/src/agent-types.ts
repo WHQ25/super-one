@@ -1723,7 +1723,20 @@ export type AgentEventBase =
   | { type: 'plan_approval'; request: PlanApprovalRequest }
   | { type: 'hook_started'; hook: HookEvent }
   | { type: 'hook_complete'; hook: HookEvent }
-  | { type: 'compact_boundary'; trigger: 'manual' | 'auto'; preTokens: number; postTokens?: number; durationMs?: number; messageId?: string }
+  | {
+    type: 'compact_boundary'
+    trigger: 'manual' | 'auto'
+    preTokens: number
+    postTokens?: number
+    durationMs?: number
+    messageId?: string
+    /**
+     * Transcript row id for the divider. Session assigns it before reducing, so
+     * main's persisted snapshot and every live reducer (renderer, mobile)
+     * materialise the same row and a later snapshot merge dedupes it by id.
+     */
+    id?: string
+  }
   | { type: 'status_indicator'; indicator: 'compacting' | null; permissionMode?: PermissionMode; compactResult?: 'success' | 'failed'; compactError?: string }
   | {
     type: 'task_started'

@@ -1,5 +1,7 @@
 import { admitTurnAttachments } from '@superone/shared/attachment-turn'
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
+import { buildCompactBoundaryMessage, compactBoundaryInsertIndex, isCompactSlashSend } from '@superone/shared/compact-boundary'
+import { newMessageId } from '@superone/shared/message-id'
 import { SessionShutdown } from './session-shutdown'
 import { hostPendingInteractions, trackHostInteraction } from './host-pending-interactions'
 import { dispatchBackendSteer } from './dispatch-backend-steer'
@@ -302,6 +304,19 @@ export class Session implements SessionContract {
   private _cachedAcpModels: AgentEvent | null = null
   private _cachedAcpModes: AgentEvent | null = null
   private _cachedAcpCommands: AgentEvent | null = null
+  /**
+   * Backend is compacting right now. Replayed as `status_indicator` so a
+   * subscriber that arrives mid-compaction (mobile opening the session, a
+   * mini-window) paints the indicator instead of waiting for the boundary.
+   */
+  private _compacting = false
+  /**
+   * The `/compact` bubble of a manual compaction in flight. The renderer drops
+   * it together with the turn's (empty) assistant row once the boundary lands;
+   * main mirrors that so a reload or a phone opening later sees the same
+   * transcript instead of a stray "/compact" and a blank reply.
+   */
+  private _pendingCompactUserId = ''
   /**
    * Accumulated composer/status-bar settings. Replayed as agent_setting_change
    * and exposed on LiveSessionSnapshot.uiSettings so mini-window paints correctly.
@@ -1552,6 +1567,9 @@ export class Session implements SessionContract {
     if (this._cachedAcpModels) out.push(this._cachedAcpModels)
     if (this._cachedAcpModes) out.push(this._cachedAcpModes)
     if (this._cachedAcpCommands) out.push(this._cachedAcpCommands)
+    if (this._compacting) {
+      out.push({ type: 'status_indicator', indicator: 'compacting', sessionId: this.id, projectPath: this.projectPath })
+    }
     return out
   }
 
@@ -1846,9 +1864,19 @@ export class Session implements SessionContract {
     ) {
       this._currentMessageId = null
     }
-    const sequenced = event.seq === undefined
-      ? ({ ...event, ...nextEventSeq() } as AgentEvent)
+    if (event.type === 'status_indicator') {
+      this._compacting = event.indicator === 'compacting'
+      if (event.compactResult === 'failed') this._pendingCompactUserId = ''
+    } else if (event.type === 'compact_boundary') {
+      this._compacting = false
+    }
+    // The divider row's id travels on the event so every reducer mints the same row.
+    const stamped = event.type === 'compact_boundary' && !event.id
+      ? ({ ...event, id: newMessageId('compact') } as AgentEvent)
       : event
+    const sequenced = stamped.seq === undefined
+      ? ({ ...stamped, ...nextEventSeq() } as AgentEvent)
+      : stamped
     // The swap outlives its turn, so it lands in the transcript instead of in
     // transient session state that `status: idle` would wipe.
     let modelFallbackRow: ChatMessage | null = null
@@ -1983,6 +2011,27 @@ export class Session implements SessionContract {
    * unregistered harness is a compile error, never a silent default.
    */
   private applyReducer(event: AgentEvent): void {
+    // The divider outlives the turn and the process: without it in `_messages`
+    // a session opened after compaction (mobile, desktop reload) has no boundary.
+    if (event.type === 'compact_boundary') {
+      const compactUserId = this._pendingCompactUserId
+      this._pendingCompactUserId = ''
+      if (event.id && !this._messages.some((m) => m.id === event.id)) {
+        // Manual: the "/compact" bubble and its reply are the command, not the
+        // conversation — drop them and close the transcript with the divider.
+        const sourceId = compactUserId ? event.messageId ?? this._currentMessageId : null
+        const next = compactUserId
+          ? this._messages.filter((m) => m.id !== compactUserId && m.id !== sourceId)
+          : [...this._messages]
+        const insertIdx = compactUserId ? next.length : compactBoundaryInsertIndex(next)
+        next.splice(insertIdx, 0, buildCompactBoundaryMessage(event, event.id, new Date().toISOString()))
+        // Incremental persistence only rewrites dirty rows; removing rows or
+        // inserting mid-transcript shifts every sort_order after the change.
+        this.replaceMessages(next, { fullPersist: next.length !== this._messages.length + 1 || insertIdx < this._messages.length })
+        this.notifyStateChange()
+      }
+      return
+    }
     const dialect = messageDialectFor(this.harnessId)
     switch (dialect) {
       case 'claude':
@@ -2186,6 +2235,9 @@ export class Session implements SessionContract {
         }
       : request
     const userMsg = buildClaudeUserMessage(displayRequest, messageOrigin)
+    if (isCompactSlashSend(this.harnessId, request.content)) {
+      this._pendingCompactUserId = userMsg.id
+    }
     const wasNew = !this._messages.some((m) => m.id === userMsg.id)
     if (wasNew) {
       this.replaceMessages([...this._messages, userMsg])

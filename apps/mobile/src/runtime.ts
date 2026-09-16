@@ -1,6 +1,7 @@
 import { networkLedger } from './network-ledger'
 import { requestHarnessResource } from './harness-resource-cache'
 import { extendHistoryIndex, mergeIndexedHistory, type SessionHistoryIndex } from '@superone/shared/session-history-index'
+import { isCompactSlashSend } from '@superone/shared/compact-boundary'
 import { codexAsyncAnswerId } from '@superone/shared/codex-async-question'
 import { requestMentionSearch, type MentionSearchOptions, type MentionSearchResult } from './mention-search'
 import type {
@@ -512,6 +513,9 @@ export class ChatRuntime {
     this.session = {
       ...this.session,
       _pendingSlashCommand: pendingSlashCommandFrom(content),
+      // Same rule as the desktop composer: the boundary reducer drops this bubble
+      // and the turn's blank reply instead of leaving "/compact" in the transcript.
+      ...(!queued && isCompactSlashSend(this.provider as HarnessId, content) ? { _pendingCompactUserId: clientMessageId } : {}),
       ...(queued ? { queuedMessages: [...this.session.queuedMessages, queued] } : {}),
     }
     // A live send paints its own bubble, as the desktop does: the host echoes

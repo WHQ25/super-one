@@ -1,4 +1,5 @@
 import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
+import { buildCompactBoundaryMessage, compactBoundaryInsertIndex } from '@superone/shared/compact-boundary'
 import { findCheckpointTarget } from './helpers'
 import type { ChatCoreSession } from './types'
 import { defaultChatCorePorts, type ChatCorePorts } from './ports'
@@ -233,23 +234,12 @@ export function reduceSlash(
       const msgs = compactUserId
         ? session.messages.filter((m) => m.id !== compactUserId && m.id !== sourceMessageId)
         : [...session.messages]
-      let insertIdx = msgs.length
-      if (!compactUserId) {
-        // A boundary marks the exact point where the old context was compacted.
-        // Keep only the live continuation below it; everything already completed
-        // belongs to the compacted history. This also handles goal mode, where
-        // several assistant turns can run after the most recent user message.
-        const liveIdx = msgs.findLastIndex((m) => m.role === 'assistant' && m.status === 'streaming')
-        insertIdx = liveIdx !== -1 ? liveIdx : msgs.length
+      const row = buildCompactBoundaryMessage(event, event.id ?? ports.id('compact_'), new Date(ports.now()).toISOString())
+      // Main materialises the same row (same id) into its snapshot; a replay
+      // that already delivered it must not add a second divider.
+      if (!msgs.some((m) => m.id === row.id)) {
+        msgs.splice(compactUserId ? msgs.length : compactBoundaryInsertIndex(msgs), 0, row)
       }
-      msgs.splice(insertIdx, 0, {
-        id: ports.id('compact_'),
-        role: 'assistant' as const,
-        status: 'complete' as const,
-        content: [{ type: 'text' as const, text: `__compact__:${event.trigger}:${event.preTokens}:${event.postTokens ?? ''}:${event.durationMs ?? ''}` }],
-        createdAt: new Date(ports.now()).toISOString(),
-        providerId: 'system',
-      })
       return {
         isCompacting: false,
         compactingStartedAt: null,

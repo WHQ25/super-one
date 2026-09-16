@@ -16,6 +16,6 @@
  * The prefix is kept because it makes traces and logs readable; only the
  * unique half changes.
  */
-export function newMessageId(prefix: 'user' | 'remote' | 'auto'): string {
+export function newMessageId(prefix: 'user' | 'remote' | 'auto' | 'compact'): string {
   return `${prefix}_${crypto.randomUUID()}`
 }

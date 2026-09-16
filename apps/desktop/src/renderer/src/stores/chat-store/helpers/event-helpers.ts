@@ -18,8 +18,9 @@ export function extractSessionTitle(messages: ChatMessage[]): string | null {
 export function mergeMessagesByMaxSeq(snap: ChatMessage[], existing: ChatMessage[]): ChatMessage[] {
   const existingById = new Map(existing.map((m) => [m.id, m]))
   const snapIds = new Set(snap.map((m) => m.id))
-  // Rows main never saw — the `__compact__` / `__turn_meta__` markers a reducer
-  // splices in — carry no place in the snapshot order. Re-insert each ahead of
+  // Rows main never saw — the `__turn_meta__` markers a reducer splices in, or a
+  // `__compact__` divider minted before main stamped ids on the boundary event —
+  // carry no place in the snapshot order. Re-insert each ahead of
   // the row it locally preceded; only rows with nothing left to precede are
   // genuinely newer than the snapshot and belong at the end. Appending them all
   // instead drags a compact divider to the bottom of the transcript, where it

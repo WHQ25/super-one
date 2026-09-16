@@ -311,6 +311,40 @@ describe('reduceSlash: compact_boundary', () => {
     expect(msgs.findLast((m) => m.role === 'assistant')!.id).toBe('a1')
   })
 
+  it('mints the row under the id main stamped on the event, so snapshot merges dedupe it', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [makeMessage('u1', { role: 'user' })]
+
+    const patch = reduceSlash(session, {
+      type: 'compact_boundary',
+      trigger: 'auto',
+      preTokens: 1234,
+      id: 'compact_from-main',
+    } as never)
+
+    expect(patch.messages!.find((m) => m.providerId === 'system')?.id).toBe('compact_from-main')
+  })
+
+  it('does not add a second divider when the snapshot already delivered the row', () => {
+    const session = createDefaultPerSessionState()
+    session.isCompacting = true
+    session.messages = [
+      makeMessage('u1', { role: 'user' }),
+      makeMessage('compact_from-main', { role: 'assistant', providerId: 'system' }),
+      makeMessage('a1', { role: 'assistant', status: 'streaming' }),
+    ]
+
+    const patch = reduceSlash(session, {
+      type: 'compact_boundary',
+      trigger: 'auto',
+      preTokens: 1234,
+      id: 'compact_from-main',
+    } as never)
+
+    expect(patch.messages!.map((m) => m.id)).toEqual(['u1', 'compact_from-main', 'a1'])
+    expect(patch.isCompacting).toBe(false)
+  })
+
   it('strips the pending compact user message and re-emits __compact__ when _pendingCompactUserId is set', () => {
     const session = createDefaultPerSessionState()
     session._pendingCompactUserId = 'u-pending'

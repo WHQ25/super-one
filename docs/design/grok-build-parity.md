@@ -138,7 +138,7 @@ Evidence paths are under SuperOne unless noted.
 | RT-09 | session/new `_meta` yolo/auto + clientIdentifier | acp-host | done | `grokSessionPermissionMeta` | — | — |
 | RT-10 | session/new\|load `_meta.reasoningEffort` | acp-host | done | `sessionRequestBase` | — | — |
 | RT-11 | session/load resume + drain replay + fallback new | acp-host | done | `drainLoadReplay`, `acp-runtime.test.ts` | — | — |
-| RT-12 | session/prompt + update pump | acp-host | done | `acp-runtime.ts` prompt/pump | no prompt `_meta.mode` (see SU-10) | P1 |
+| RT-12 | session/prompt + update pump | acp-host | done | `acp-runtime.ts` prompt/pump | stamps `_meta.mode` (SU-10) | — |
 | RT-13 | session/cancel + 2s stop fallback | acp-host | done | `CANCEL_STOP_FALLBACK_MS` | no `_meta.cancelTrigger` / rewindIfNoOutput | P3 |
 | RT-14 | Concurrent prompt isolation | acp-host | done | `AcpPromptTurn`, concurrent-turn tests | — | — |
 | RT-15 | Rejected prompt (quota -32003) ends turn | acp-host | done | `acp-runtime-turn-failure.test.ts` | — | — |
@@ -196,7 +196,7 @@ Evidence paths are under SuperOne unless noted.
 | XAI-02 | ask plan outcomes `chat_about_this` / `skip_interview` | acp-host | missing | comments only in `formatGrokAskUserResponse` | host only `accepted\|cancelled` | P2 |
 | XAI-03 | exit_plan_mode reverse + PlanApproval + line review | acp-host | done | `PlanApprovalPrompt.tsx`, `plan-feedback.ts` | `planFilePath` always `''` | P3 |
 | XAI-04 | Dual `_x.ai/*` onRequest aliases | acp-host | partial | desktop ask/exit/elicit; Node elicit only | underscore path untested e2e | P3 |
-| XAI-05 | Approve plan: skip forced permissionMode default | session-ui | partial | `respondToPlanApprovalImpl` `postApprovalMode ?? 'default'` | ACP approve drops auto/always-approve | **P1** |
+| XAI-05 | Approve plan: skip forced permissionMode default | session-ui | done | ACP approve skips `setPermissionMode`; Claude toggle unchanged | — | — |
 | XAI-06 | Hide Claude post-approve acceptEdits toggle | session-ui | done | `showPostApprovalModeToggle = claude` | — | — |
 | XAI-07 | ExtNotification bus (session_notification / session/update) | acp-host | done | `acp-xai-session-notify.ts`, `xai-event-map.ts` | leftover: `prompt_complete`, apply `tools_changed`, Node ask/exit | — |
 | XAI-08 | workflow_updated / subagent_* / goal_updated | acp-host | done | mapper + tests | `supportsSubagents: false` vs mapped events | P2 |
@@ -262,8 +262,8 @@ Evidence paths are under SuperOne unless noted.
 | SU-07 | Context occupancy bar | session-ui | done | `getContextUsage` from turn_completed / `_meta.totalTokens` | old parity row stale | — |
 | SU-08 | x.ai/billing rate-limit gauge | session-ui | done | `getRateLimits` | — | — |
 | SU-09 | Rewind / compact / fork host ops | acp-host | done | session maps prompt index; `/compact`; ForkButton | fork initialize caps empty | P2 |
-| SU-10 | session/prompt `_meta.mode=agent\|ask\|plan` | acp-host | missing | `prompt()` sends ContentBlocks only | Grok reconciles plan tracker from this | **P1** |
-| SU-11 | `current_mode_update` → host chrome | acp-host | missing | `acp-event-map.ts` ignores unknown kinds | agent enter/exit plan does not flip selector | **P1** |
+| SU-10 | session/prompt `_meta.mode=agent\|ask\|plan` | acp-host | done | `prompt()` stamps `_meta.mode` from tracked ACP session mode | `ask` session mode still not a UI item | P3 |
+| SU-11 | `current_mode_update` → host chrome | acp-host | done | `acp-event-map.ts` + yolo baseline restore | — | — |
 | SU-12 | available_commands → slash palette | session-ui | done | `acp_commands` | — | — |
 | SU-13 | `/recap` `/compact` `/goal` intercepts | session-ui | done | ChatInput + backend | — | — |
 | SU-14 | follow_ups → PromptSuggestionChips | session-ui | done | chat-core grok-ux tests | — | — |
@@ -544,7 +544,7 @@ Shipped work (do **not** re-open as PRs): stdio lifecycle, yolo/auto meta + noti
 | **Deps** | none (parallel to PR0) |
 | **Out of scope** | `enable-always-approve`; spoof Desktop; `allow-edits-session` |
 
-### PR2 — Plan chrome sync: current_mode_update + prompt `_meta.mode` + skip post-approve default
+### PR2 — Plan chrome sync: current_mode_update + prompt `_meta.mode` + skip post-approve default  **(landed)**
 
 | | |
 |--|--|

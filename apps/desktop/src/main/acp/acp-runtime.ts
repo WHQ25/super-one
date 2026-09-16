@@ -33,6 +33,7 @@ import {
   buildAcpPromptContentAsync,
   cancelOpenToolEvents,
   getAgentChunkMessageId,
+  grokPromptMetaMode,
   mapSessionUpdate,
   mapStopReason,
   trackOpenTools,
@@ -852,6 +853,11 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
   // Route to the active prompt callback when one is in flight.
   let promptGen = 0
   const promptStopWaiters: Array<(stopReason: string) => void> = []
+  // Plan is ACP session mode; Ask/Auto/Always is the yolo baseline. Agent
+  // `current_mode_update` default must restore this, not force SuperOne `default`.
+  let yoloBaseline: PermissionMode =
+    opts.permissionMode && opts.permissionMode !== 'plan' ? opts.permissionMode : 'default'
+  let acpSessionMode: 'plan' | 'default' = opts.permissionMode === 'plan' ? 'plan' : 'default'
   let pumping = true
   /**
    * Per-turn streaming state. A newer `session/prompt` must never mutate an
@@ -1066,12 +1072,17 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
             messageId = xaiCorrelation.lastMessageId
           }
         }
+        if (update.sessionUpdate === 'current_mode_update') {
+          const modeId = (update as { currentModeId?: string }).currentModeId
+          acpSessionMode = modeId === 'plan' ? 'plan' : 'default'
+        }
         const mapped = mapSessionUpdate(update, { messageId }, {
           resolveTerminalCommand: (id) => terminalManager.getCommandLine(id),
           resolveTerminalOutput: (id) => terminalManager.getOutput(id),
           onTerminalEmbedded: (terminalId, toolUseId) => {
             terminalManager.bindTool(terminalId, toolUseId)
           },
+          yoloBaseline,
         })
         // When occupancy changes, push a context-only usage event so the ring
         // updates mid-turn without clobbering footer in/out.
@@ -1248,6 +1259,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     async setPermissionMode(mode) {
       // Plan is ACP session mode, not Grok yolo/auto permission baseline.
       if (mode === 'plan') {
+        acpSessionMode = 'plan'
         try {
           await setAcpSessionMode('plan')
         } catch (err) {
@@ -1255,6 +1267,8 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         }
         return
       }
+      acpSessionMode = 'default'
+      yoloBaseline = mode
       // Leaving plan (or switching permission): restore agent mode then yolo baseline.
       try {
         await setAcpSessionMode('default')
@@ -1325,14 +1339,23 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
           text: acpHostContextText(opts.systemPromptAppend),
         })
       }
-      const promptPromise = activeSession.prompt(promptBlocks as never)
+      // ActiveSession.prompt() cannot stamp `_meta`. Grok's
+      // reconcile_plan_mode_with_prompt treats prompt `_meta.mode` as the only
+      // prompt-carried mode signal (`agent` | `ask` | `plan`).
+      const promptPromise = activeConnection.agent.request(methods.agent.session.prompt, {
+        sessionId: activeSession.sessionId,
+        prompt: promptBlocks as never,
+        _meta: { mode: grokPromptMetaMode(acpSessionMode) },
+      })
       // A rejected session/prompt (Grok quota exhausted → JSON-RPC -32003) never
       // produces a stop message, so its failure must be raced explicitly or the
-      // turn hangs in `streaming` forever. Success stays on the stop rail: the
-      // SDK queues the response as a stop, and consuming it here instead would
-      // leave that stale stop to settle the *next* turn's waiter.
+      // turn hangs in `streaming` forever. Success settles this turn's waiter
+      // (we skipped ActiveSession.prompt, which would have enqueued a stop).
       const promptFailure = promptPromise.then<string>(
-        () => new Promise<string>(() => {}),
+        (value) => {
+          stopWaiter?.(String(value.stopReason ?? 'end_turn'))
+          return new Promise<string>(() => {})
+        },
         (err) => { throw err },
       )
       try {

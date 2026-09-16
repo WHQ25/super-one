@@ -606,6 +606,22 @@ describe('respondToPlanApprovalImpl', () => {
     expect(sess.permissionMode).toBe('plan')
   })
 
+  it('does not reset ACP permissionMode to default on approve', () => {
+    seedSession('sid-1', {
+      sessionProvider: 'acp',
+      permissionMode: 'plan',
+      pendingPlanApproval: { requestId: 'p1', planContent: 'plan', planFilePath: '/plan', allowedPrompts: [] } as never,
+    })
+
+    useChatStore.getState().respondToPlanApproval('p1', true)
+
+    expect(mockAgent.respondToPlanApproval).toHaveBeenCalledWith('sid-1', 'p1', true, undefined)
+    expect(mockAgent.setPermissionMode).not.toHaveBeenCalled()
+    const sess = activeSession()
+    expect(sess.pendingPlanApproval).toBeNull()
+    expect(sess.permissionMode).toBe('plan')
+  })
+
   it('is a no-op when no project is active', () => {
     useChatStore.setState({ projectSessions: {}, activeProject: null })
 

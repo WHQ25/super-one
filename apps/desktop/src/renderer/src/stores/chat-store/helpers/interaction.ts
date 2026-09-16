@@ -578,7 +578,10 @@ export function respondToPlanApprovalImpl(
       })
     } else {
       window.agent.respondToPlanApproval(targetSid, requestId, approved, feedback)
-      if (approved) {
+      // ACP plan exit is independent of yolo baseline. Forcing `default` here
+      // would notify Grok `permission_mode: ask` and wipe Auto / Always Approve.
+      // Claude still leaves plan into acceptEdits / default via the post-approve toggle.
+      if (approved && session.sessionProvider !== 'acp') {
         const nextMode: PermissionMode = postApprovalMode ?? 'default'
         void window.agent
           .setPermissionMode(activeProject, targetSid, nextMode)
@@ -590,7 +593,9 @@ export function respondToPlanApprovalImpl(
     const perSessionUpdate = commitPerSession(s, target, () => ({
       pendingPlanApproval: null,
       planApprovalOutcome: { approved, feedback },
-      ...(approved && { permissionMode: (postApprovalMode ?? 'default') as PermissionMode }),
+      ...(approved && session.sessionProvider !== 'acp' && {
+        permissionMode: (postApprovalMode ?? 'default') as PermissionMode,
+      }),
     }))
     const proj = (perSessionUpdate.projectSessions ?? s.projectSessions)[activeProject]
     if (proj) {

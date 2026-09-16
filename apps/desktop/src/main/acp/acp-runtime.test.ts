@@ -52,6 +52,7 @@ interface CapturedRequests {
   initialize?: Record<string, unknown>
   newSession: Record<string, unknown> | null
   prompts: Array<Array<{ type: string; text?: string }>>
+  promptMetas?: Array<Record<string, unknown> | null | undefined>
   notifications: Array<{ method: string; params: unknown }>
   setModelRequests?: Array<Record<string, unknown>>
 }
@@ -106,6 +107,8 @@ function makeEchoAgentStream(
     .onRequest(methods.agent.session.prompt, async (ctx) => {
       if (captured) {
         captured.prompts.push(ctx.params.prompt as Array<{ type: string; text?: string }>)
+        captured.promptMetas = captured.promptMetas ?? []
+        captured.promptMetas.push((ctx.params as { _meta?: Record<string, unknown> | null })._meta)
       }
       await ctx.client.notify(methods.client.session.update, {
         sessionId: ctx.params.sessionId,
@@ -687,6 +690,73 @@ describe('createAcpRuntime (in-process agent)', () => {
       },
     })
     expect(yoloNotes.some((n) => n.params && typeof n.params === 'object' && 'clientIdentifier' in n.params)).toBe(false)
+    await runtime.close()
+  })
+
+  it('stamps session/prompt _meta.mode from the tracked ACP session mode', async () => {
+    const captured: CapturedRequests = { newSession: null, prompts: [], notifications: [] }
+    const runtime = await createAcpRuntime({
+      launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
+      permissionMode: 'auto',
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+      streamFactory: async () => makeEchoAgentStream(captured),
+    })
+    await runtime.prompt('hello', 'msg-mode-agent', () => {})
+    expect(captured.promptMetas?.[0]).toEqual({ mode: 'agent' })
+
+    await runtime.setPermissionMode('plan')
+    await runtime.prompt('plan this', 'msg-mode-plan', () => {})
+    expect(captured.promptMetas?.[1]).toEqual({ mode: 'plan' })
+    await runtime.close()
+  })
+
+  it('restores Auto chrome when the agent leaves plan via current_mode_update', async () => {
+    const sessionEvents: AgentEvent[] = []
+    let notifyClient: { notify: (method: string, params: unknown) => Promise<void> } | null = null
+    const agentApp = agent({ name: 'mode-agent' })
+      .onRequest(methods.agent.initialize, async () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: {},
+      }))
+      .onRequest(methods.agent.session.new, async () => ({ sessionId: 'mode-session' }))
+      .onRequest(methods.agent.session.prompt, async (ctx) => {
+        notifyClient = ctx.client
+        return { stopReason: 'end_turn' as const }
+      })
+      .onRequest(methods.agent.session.setMode, async () => ({}))
+      .onNotification(methods.agent.session.cancel, async () => {})
+
+    const clientToAgent = new TransformStream<Uint8Array>()
+    const agentToClient = new TransformStream<Uint8Array>()
+    agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
+    const runtime = await createAcpRuntime({
+      launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
+      permissionMode: 'auto',
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+      onSessionEvent: (e) => sessionEvents.push(e),
+      streamFactory: async () => ({
+        stream: ndJsonStream(clientToAgent.writable, agentToClient.readable),
+        dispose: () => {},
+      }),
+    })
+    await runtime.prompt('go', 'msg-before-mode', () => {})
+    await vi.waitFor(() => expect(notifyClient).toBeTruthy())
+    await notifyClient!.notify(methods.client.session.update, {
+      sessionId: 'mode-session',
+      update: { sessionUpdate: 'current_mode_update', currentModeId: 'plan' },
+    })
+    await vi.waitFor(() => expect(sessionEvents).toContainEqual({
+      type: 'permission_mode_change',
+      mode: 'plan',
+    }))
+    await notifyClient!.notify(methods.client.session.update, {
+      sessionId: 'mode-session',
+      update: { sessionUpdate: 'current_mode_update', currentModeId: 'default' },
+    })
+    await vi.waitFor(() => expect(sessionEvents).toContainEqual({
+      type: 'permission_mode_change',
+      mode: 'auto',
+    }))
     await runtime.close()
   })
 

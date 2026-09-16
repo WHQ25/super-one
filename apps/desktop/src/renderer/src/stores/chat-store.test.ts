@@ -5977,6 +5977,34 @@ describe('interaction response routing', () => {
     expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/test', 'a', 'default')
   })
 
+  it('respondToPlanApproval on ACP does not call setPermissionMode(default)', () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    useChatStore.setState({
+      projectSessions: {
+        '/test': {
+          ...proj,
+          _activeSessionId: 'a',
+          _sessions: {
+            a: {
+              ...createDefaultPerSessionState(),
+              sessionProvider: 'acp',
+              status: 'streaming' as const,
+              permissionMode: 'plan',
+              pendingPlanApproval: { requestId: 'p1', planContent: 'plan', planFilePath: '/plan', allowedPrompts: [] } as never,
+            },
+          },
+        },
+      },
+    })
+
+    mockWindowAgent.setPermissionMode.mockClear()
+    useChatStore.getState().respondToPlanApproval('p1', true)
+
+    expect(mockWindowAgent.setPermissionMode).not.toHaveBeenCalled()
+    expect(useChatStore.getState().projectSessions['/test']._sessions.a.permissionMode).toBe('plan')
+  })
+
   it('respondToPlanApproval(approved=false) does NOT invoke setPermissionMode', () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']

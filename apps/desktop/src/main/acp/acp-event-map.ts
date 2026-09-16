@@ -1,4 +1,4 @@
-import type { AgentEvent, ContentBlock, SlashCommandInfo } from '@superone/shared/agent-types'
+import type { AgentEvent, ContentBlock, PermissionMode, SlashCommandInfo } from '@superone/shared/agent-types'
 import type { SessionConfigOption, SessionUpdate, ToolCall, ToolCallUpdate } from '@agentclientprotocol/sdk'
 import { readArgumentHintFromMarkdownFile } from '@superone/runtime/fs'
 import { getBuiltinCapability } from '@superone/shared/capability-prompt-tags'
@@ -852,6 +852,24 @@ export interface MapSessionUpdateOptions {
   resolveTerminalOutput?: (terminalId: string) => string | undefined
   /** Called when a tool_use embeds a terminal, so runtime can bind streaming. */
   onTerminalEmbedded?: (terminalId: string, toolUseId: string) => void
+  /**
+   * Last Ask/Auto/Always baseline to restore when Grok leaves plan
+   * (`current_mode_update` id `default` / `ask`). Plan ≠ yolo.
+   */
+  yoloBaseline?: PermissionMode
+}
+
+/** Grok `session/prompt` `_meta.mode` from the tracked ACP session mode. */
+export function grokPromptMetaMode(acpSessionMode: string): 'plan' | 'agent' {
+  return acpSessionMode === 'plan' ? 'plan' : 'agent'
+}
+
+/** Map ACP `current_mode_update` onto SuperOne permission chrome. */
+export function permissionModeFromAcpCurrentMode(
+  currentModeId: string | undefined,
+  yoloBaseline: PermissionMode = 'default',
+): PermissionMode {
+  return currentModeId === 'plan' ? 'plan' : yoloBaseline
 }
 
 /** Map one ACP session update into zero or more SuperOne AgentEvents. */
@@ -1052,6 +1070,13 @@ export function mapSessionUpdate(
         })
       }
       return [{ type: 'acp_commands', commands }]
+    }
+    case 'current_mode_update': {
+      const modeId = (update as { currentModeId?: string }).currentModeId
+      return [{
+        type: 'permission_mode_change',
+        mode: permissionModeFromAcpCurrentMode(modeId, opts?.yoloBaseline),
+      }]
     }
     default:
       return []

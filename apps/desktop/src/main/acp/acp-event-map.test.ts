@@ -6,6 +6,7 @@ import {
   cancelOpenToolEvents,
   extractFileMentions,
   formatAcpRawOutput,
+  grokPromptMetaMode,
   mapSessionUpdate,
   mapStopReason,
   normalizeAcpTool,
@@ -332,6 +333,36 @@ describe('mapSessionUpdate', () => {
     expect(blocks[0]).toEqual({ type: 'image', mimeType: 'image/png', data: PNG_ATTACHMENT.base64, uri: expect.stringMatching(/^file:\/\//) })
     expect(blocks[1]).toEqual({ type: 'text', text: expect.stringContaining('hi') })
     expect(blocks[1]!.text).toContain('shot.png')
+  })
+
+  it('maps current_mode_update plan to permissionMode plan', () => {
+    const events = mapSessionUpdate({
+      sessionUpdate: 'current_mode_update',
+      currentModeId: 'plan',
+    }, ctx)
+    expect(events).toEqual([{ type: 'permission_mode_change', mode: 'plan' }])
+  })
+
+  it('restores the yolo baseline when current_mode_update leaves plan', () => {
+    const events = mapSessionUpdate({
+      sessionUpdate: 'current_mode_update',
+      currentModeId: 'default',
+    }, ctx, { yoloBaseline: 'auto' })
+    expect(events).toEqual([{ type: 'permission_mode_change', mode: 'auto' }])
+  })
+
+  it('does not force SuperOne default when leaving plan without a baseline', () => {
+    const events = mapSessionUpdate({
+      sessionUpdate: 'current_mode_update',
+      currentModeId: 'ask',
+    }, ctx)
+    expect(events).toEqual([{ type: 'permission_mode_change', mode: 'default' }])
+  })
+
+  it('stamps prompt _meta.mode plan vs agent', () => {
+    expect(grokPromptMetaMode('plan')).toBe('plan')
+    expect(grokPromptMetaMode('default')).toBe('agent')
+    expect(grokPromptMetaMode('ask')).toBe('agent')
   })
 
   it('maps available_commands_update to acp_commands', () => {

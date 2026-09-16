@@ -2,9 +2,13 @@ import type { ChatMessage, ContentBlock, CodexFileUpdateChange, CodexMcpToolCall
 import { sanitizeRemoteToolInput } from '@superone/shared/remote-tool-input'
 import { compactMediaToolResult, computeToolLineDelta, stripMessagesForRemote } from '../remote-content'
 
-/** Inline UI and decision prompts are visible content, not hidden tool detail. */
+/**
+ * Inline UI and decision prompts are visible content, not hidden tool detail.
+ * `ReportFindings` belongs here too: its findings live in the input, which the
+ * 1 KB shell cap would otherwise blank into `{}` and render as an empty review.
+ */
 export function deferTool(name: string): boolean {
-  return !/widget_show|media_|imagegen|image_gen|video_gen|AskUserQuestion|Todo|TaskCreate|TaskUpdate|EnterPlanMode|ExitPlanMode/.test(name)
+  return !/widget_show|media_|imagegen|image_gen|video_gen|AskUserQuestion|Todo|TaskCreate|TaskUpdate|EnterPlanMode|ExitPlanMode|ReportFindings/.test(name)
 }
 
 function projectedToolSummary(block: Extract<ContentBlock, { toolName: string }>): string | undefined {

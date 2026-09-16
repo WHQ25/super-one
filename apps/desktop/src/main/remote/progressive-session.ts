@@ -1,6 +1,7 @@
 import { compactMediaToolResult } from '../remote-content'
 import { codexToolDetail, nestedCodexItem, deferTool, projectCodexTool, projectTool, toolDetail } from './progressive-tools'
 import type { AgentEvent, ChatMessage, ContentBlock } from '@superone/shared/agent-types'
+import { isSubagentToolName } from '@superone/shared/tool-ui'
 
 /** View preferences are device-scoped; persisted transcripts remain complete. */
 const views = new Map<string, { sessionId: string; details: Map<string, DetailSubscription> }>()
@@ -15,8 +16,18 @@ export function isProgressiveSession(deviceId: string, sessionId: string): boole
 }
 const reference = (messageId: string, kind: string, key: string | number) => JSON.stringify([messageId, kind, key])
 
+/**
+ * Only a subagent card owns its children: the phone fetches them with the card's
+ * detail on expand. A forked Skill (`/code-review`) also parents its blocks, but
+ * the desktop renders those inline, so they stream to the phone like any other row.
+ */
+function isChildContainer(block: ContentBlock): block is Extract<ContentBlock, { toolName: string }> {
+  return 'toolName' in block && isSubagentToolName(block.toolName)
+}
+
 export function projectProgressiveMessage(message: ChatMessage): ChatMessage {
   const deferredIds = new Set(message.content.flatMap(block => 'toolName' in block && deferTool(block.toolName) ? [block.toolUseId] : []))
+  const containerIds = new Set(message.content.flatMap(block => isChildContainer(block) ? [block.toolUseId] : []))
   const content = message.content.map((block, index): ContentBlock => block.type === 'thinking'
     ? { ...block, thinking: '', remoteDetail: reference(message.id, 'thinking', index) }
     : 'toolName' in block ? projectTool(block, reference(message.id, 'tool', block.toolUseId))
@@ -29,7 +40,7 @@ export function projectProgressiveMessage(message: ChatMessage): ChatMessage {
         summary: compactMediaToolResult(block.summary) ?? '',
         isError: block.isError,
         parentToolUseId: block.parentToolUseId,
-      } : block).filter(block => !('parentToolUseId' in block) || !block.parentToolUseId || !deferredIds.has(block.parentToolUseId))
+      } : block).filter(block => !('parentToolUseId' in block) || !block.parentToolUseId || !containerIds.has(block.parentToolUseId))
   const codex = message.metadata?.codex
   return {
     ...message, content,
@@ -102,7 +113,7 @@ export function detailUpdates(deviceId: string, sessionId: string, messages: rea
 export function projectProgressiveEvent(event: AgentEvent, messages: readonly ChatMessage[]): AgentEvent | null {
   if (event.type === 'content_delta' && 'parentToolUseId' in event.delta && event.delta.parentToolUseId) {
     const parentId = event.delta.parentToolUseId
-    if (messages.some(message => message.content.some(block => 'toolName' in block && block.toolUseId === parentId && deferTool(block.toolName)))) return null
+    if (messages.some(message => message.content.some(block => isChildContainer(block) && block.toolUseId === parentId))) return null
   }
   return { ...projectEvent(event, messages), remoteView: 'summary' }
 }

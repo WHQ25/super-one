@@ -80,6 +80,33 @@ describe('progressive session projection', () => {
     expect(JSON.stringify(projected)).not.toContain('old_string')
     expect(JSON.stringify(projected)).not.toContain('const enabled')
   })
+  /**
+   * `/code-review` runs as a forked Skill: every Bash and ReportFindings block it
+   * emits is parented to the Skill tool_use. The desktop renders them inline, so
+   * the phone must receive them live — only subagent cards hide their children
+   * behind the card's detail.
+   */
+  it('streams a forked Skill\'s child blocks but not a subagent\'s', () => {
+    const findings = JSON.stringify({ findings: [{ file: 'a.ts', line: 3, summary: 'x'.repeat(1500) }] })
+    const parent = (toolName: string, toolUseId: string): ChatMessage => ({ ...message(), content: [
+      { type: 'tool_use', toolName, toolUseId, input: '{}', status: 'streaming' },
+    ] })
+    const child = (parentToolUseId: string, toolName = 'Bash', input = '{"command":"git diff"}') => projectProgressiveEvent({
+      type: 'content_delta', sessionId: 's', messageId: 'm',
+      delta: { type: 'tool_use', toolName, toolUseId: 'c', input, status: 'streaming', parentToolUseId },
+    }, [parent(parentToolUseId === 'skill' ? 'Skill' : 'Task', parentToolUseId)])
+    expect(child('skill')).toMatchObject({ delta: { toolName: 'Bash', parentToolUseId: 'skill', remoteDetail: '["m","tool","c"]' } })
+    expect(child('task')).toBeNull()
+    expect(child('skill', 'ReportFindings', findings)).toMatchObject({ delta: { toolName: 'ReportFindings', input: findings } })
+    const persisted = projectProgressiveMessage({ ...message(), content: [
+      ...parent('Skill', 'skill').content,
+      { type: 'tool_use', toolName: 'ReportFindings', toolUseId: 'r', input: findings, status: 'complete', parentToolUseId: 'skill' },
+      ...parent('Task', 'task').content,
+      { type: 'tool_use', toolName: 'Read', toolUseId: 'n', input: '{"file_path":"a.ts"}', status: 'complete', parentToolUseId: 'task' },
+    ] })
+    expect(persisted.content.map(block => block.type === 'tool_use' ? block.toolUseId : block.type)).toEqual(['skill', 'r', 'task'])
+    expect(persisted.content[1]).toMatchObject({ input: findings })
+  })
   it('keeps a browser screenshot path in the summary so the phone can load the image', () => {
     const source: ChatMessage = {
       id: 'm',

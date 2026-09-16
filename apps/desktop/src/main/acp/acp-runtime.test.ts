@@ -555,6 +555,41 @@ describe('createAcpRuntime (in-process agent)', () => {
     await runtime.close()
   })
 
+  it('stamps session/new _meta.pluginDirs and rules when initialize advertised them', async () => {
+    const captured: CapturedRequests = { newSession: null, prompts: [], notifications: [] }
+    const agentApp = agent({ name: 'meta-agent' })
+      .onRequest(methods.agent.initialize, async () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: {},
+        _meta: { 'x.ai/pluginDirs': true },
+      }))
+      .onRequest(methods.agent.session.new, async (ctx) => {
+        captured.newSession = ctx.params as Record<string, unknown>
+        return { sessionId: 'meta-session' }
+      })
+      .onRequest(methods.agent.session.prompt, async () => ({ stopReason: 'end_turn' as const }))
+      .onNotification(methods.agent.session.cancel, async () => {})
+    const clientToAgent = new TransformStream<Uint8Array>()
+    const agentToClient = new TransformStream<Uint8Array>()
+    agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
+    const runtime = await createAcpRuntime({
+      launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+      systemPromptAppend: 'Be terse.',
+      extraPluginDirs: ['/abs/extra-plugins'],
+      streamFactory: async () => ({
+        stream: ndJsonStream(clientToAgent.writable, agentToClient.readable),
+        dispose: () => {},
+      }),
+    })
+    expect(captured.newSession?._meta).toMatchObject({
+      pluginDirs: ['/abs/extra-plugins'],
+      rules: 'Be terse.',
+      clientIdentifier: 'superone',
+    })
+    await runtime.close()
+  })
+
   it('passes yoloMode on session/new when permissionMode is bypassPermissions', async () => {
     const captured: CapturedRequests = { newSession: null, prompts: [], notifications: [] }
     const runtime = await createAcpRuntime({

@@ -121,6 +121,11 @@ import {
   parseGrokAuthUrl,
   pickNonInteractiveAcpAuthMethod,
 } from './acp-auth'
+import {
+  buildGrokConfigOverlay,
+  buildGrokSessionMetaOverlay,
+  grokInitializeAdvertisesPluginDirs,
+} from './acp-session-meta'
 import { describeAcpRequestFailure } from './acp-request-error'
 import { pushBashOutput } from '../bash-output-watcher'
 import type {
@@ -298,6 +303,13 @@ export interface AcpRuntimeOptions {
   resumeSessionId?: string
   /** Extra SuperOne instructions hidden inside the first ACP prompt (ACP has no system channel). */
   systemPromptAppend?: string
+  /** Extra plugin roots for session `_meta.pluginDirs` when advertised. */
+  extraPluginDirs?: string[]
+  /**
+   * Optional GROK_CONFIG JSON overlay (allowlisted keys only). Secrets are
+   * stripped before spawn. Prefer session `_meta.pluginDirs` for plugin roots.
+   */
+  grokConfigOverlay?: Record<string, unknown>
   /** Override the post-`session/cancel` local stop fallback (tests). */
   cancelStopFallbackMs?: number
 }
@@ -397,6 +409,12 @@ function formatProcessExit(
 export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRuntime> {
   if (opts.signal?.aborted) throw new Error('ACP runtime initialization aborted')
   const launch = resolveAcpLaunch(opts.launch)
+  const grokConfigJson = opts.grokConfigOverlay
+    ? buildGrokConfigOverlay(opts.grokConfigOverlay)
+    : null
+  if (grokConfigJson) {
+    launch.env = { ...launch.env, GROK_CONFIG: grokConfigJson }
+  }
   const fsRoots = [launch.cwd, ...(opts.additionalRoots ?? [])].filter(Boolean)
   const terminalManager = new AcpTerminalManager({
     projectPath: launch.cwd,
@@ -406,6 +424,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       pushBashOutput(toolUseId, content, finished)
     },
   })
+  let stampedRules = false
   let processHandle: AcpProcessHandle | null = null
   let disposeStream: (() => void) | null = null
   let stream: Stream
@@ -733,14 +752,24 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     const permissionMeta = grokSessionPermissionMeta(opts.permissionMode, {
       reasoningEffort: opts.reasoningEffort,
     })
+    const sessionMetaOverlay = buildGrokSessionMetaOverlay({
+      advertisedPluginDirs: grokInitializeAdvertisesPluginDirs(
+        (initResult as { _meta?: Record<string, unknown> | null })._meta,
+      ),
+      cwd: launch.cwd,
+      extraPluginDirs: opts.extraPluginDirs,
+      rules: opts.systemPromptAppend,
+    })
+    const sessionMeta = { ...permissionMeta, ...sessionMetaOverlay }
+    stampedRules = typeof sessionMetaOverlay.rules === 'string'
     const sessionRequestBase = {
       cwd: launch.cwd,
       mcpServers,
       ...(extraRoots.length > 0 && supportsExtraRoots
         ? { additionalDirectories: extraRoots }
         : {}),
-      ...(Object.keys(permissionMeta).length > 0
-        ? { _meta: permissionMeta }
+      ...(Object.keys(sessionMeta).length > 0
+        ? { _meta: sessionMeta }
         : {}),
     }
 
@@ -1382,7 +1411,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         systemPromptSent = true
         promptBlocks.push({
           type: 'text',
-          text: acpHostContextText(opts.systemPromptAppend),
+          text: acpHostContextText(stampedRules ? undefined : opts.systemPromptAppend),
         })
       }
       // ActiveSession.prompt() cannot stamp `_meta`. Grok's

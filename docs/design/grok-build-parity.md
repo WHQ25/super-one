@@ -157,8 +157,8 @@ Evidence paths are under SuperOne unless noted.
 | RT-28 | additionalDirectories gated | acp-host | partial | `supportsExtraRoots`; Grok usually `{}` | extra roots dropped; no mid-session set | P2 |
 | RT-29 | Cold `x.ai/session/fork` initialize | acp-host | partial | `acp-fork.ts` empty `clientCapabilities` | fork path untested vs real grok; caps empty | P2 |
 | RT-30 | Prompt images + @file resource blocks | acp-host | done | `acp-prompt.ts` | — | — |
-| RT-31 | Host-context append (not systemPromptOverride) | acp-host | partial | first non-slash prompt append | no `_meta.rules` / `systemPromptOverride` / `pluginDirs` | P2 |
-| RT-32 | GROK_CONFIG overlay on spawn | config | missing | no `GROK_CONFIG` / `GROK_CONFIG_PATH` | host mutates nothing; overlay is the safe inject | P2 |
+| RT-31 | Host-context append (not systemPromptOverride) | acp-host | done | `_meta.rules` from systemPromptAppend; host block still on first prompt | override only if explicitly passed | — |
+| RT-32 | GROK_CONFIG overlay on spawn | config | done | allowlisted JSON; secrets stripped | empty overlay not set | — |
 | RT-33 | grok agent serve / leader | runtime | na | stdio only | explicit non-goal | na |
 
 ### 3.2 Permissions & mode UI (`permissions-ui`)
@@ -247,7 +247,7 @@ Evidence paths are under SuperOne unless noted.
 | MCP-20 | `{{session_id}}` header interpolation | mcp-host | missing | headers copied verbatim | SuperOne uses explicit session header | P3 |
 | MCP-21 | startup/tool timeout fields on descriptors | mcp-host | missing | name/command/url/headers only | Grok TOML timeouts not forwarded | P3 |
 | MCP-22 | Manage `~/.grok/config.toml` [mcp_servers] | mcp-host | missing | SuperOne reads Claude-shaped configs | Grok still merges its own TOML | P2 |
-| MCP-23 | pluginDirs trusted plugin MCP roots | acp-host | missing | no `_meta.pluginDirs` | — | P2 |
+| MCP-23 | pluginDirs trusted plugin MCP roots | acp-host | done | session `_meta.pluginDirs` when `x.ai/pluginDirs` advertised | — | — |
 
 ### 3.5 Session model, plan mode, composer (`session-ui`)
 
@@ -294,7 +294,7 @@ Host maps `_meta["x.ai/tool"]` and does not reimplement tools.
 | SK-01 | ACP availableCommands / skills as slash | acp-host | done | `available_commands_update` | — | — |
 | SK-02 | x.ai/skills/* management UI | tui-only | na | agent + grok CLI | optional Extensions modal later | P3 |
 | SK-03 | x.ai/plugins/* + marketplace | tui-only | na | grok plugin CLI | — | P3 |
-| SK-04 | session `_meta.pluginDirs` | acp-host | missing | — | host cannot pin extra plugin roots | P2 |
+| SK-04 | session `_meta.pluginDirs` | acp-host | done | advertised-only; extra dirs + cwd `.grok/plugins` | — | — |
 | SK-05 | Disk hooks (`.grok/hooks`) | config | na | agent-owned; folder-trust gated | — | na |
 | SK-06 | Client/SDK hooks reverse `x.ai/hooks/run` | acp-host | missing | — | only if SuperOne hosts in-process hooks | P2 |
 
@@ -607,7 +607,7 @@ Shipped work (do **not** re-open as PRs): stdio lifecycle, yolo/auto meta + noti
 | **Deps** | none; after PR0 so docs do not still say “auth skipped” without a tracker |
 | **Out of scope** | Spoofing pager login screens; writing `auth.json` from SuperOne |
 
-### PR8 — Session spawn `_meta`: pluginDirs / rules / systemPromptOverride / GROK_CONFIG  **(follow-up)**
+### PR8 — Session spawn `_meta`: pluginDirs / rules / systemPromptOverride / GROK_CONFIG  **(landed)**
 
 | | |
 |--|--|

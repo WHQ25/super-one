@@ -30,6 +30,7 @@ const ROWS: Row[] = [
   { label: 'Local · session started (locked)', selection: LOCAL_WORKTREE_SELECTION, branch: 'main', dirty: true, locked: true },
   { label: 'Worktree · on a branch', selection: { kind: 'existing', path: '/workspace/.worktrees/review', branch: 'review/pr-482' } },
   { label: 'Worktree · detached HEAD', selection: { kind: 'existing', path: '/workspace/.worktrees/detached' } },
+  { label: 'Worktree · long branch name', selection: { kind: 'existing', path: '/workspace/.worktrees/long', branch: 'feat/optimize-skill-and-prompt-for-agent-collaboration-handoff' } },
   { label: 'Worktree · detached, unknown HEAD', selection: { kind: 'existing', path: '/workspace/.worktrees/gone' } },
   { label: 'Worktree · locked to the session', selection: { kind: 'existing', path: '/workspace/.worktrees/review', branch: 'review/pr-482' }, locked: true },
   { label: 'Pending · create branch', selection: { kind: 'create', baseBranch: 'main', mode: 'branch', branchName: 'feat/new-idea', carryLocalChanges: false } },
@@ -38,6 +39,7 @@ const ROWS: Row[] = [
   { label: 'Pending · attach to branch', selection: { kind: 'create', baseBranch: 'fix/pairing-timeout', mode: 'attach', branchName: '', carryLocalChanges: false } },
   { label: 'Pending · attach blocked (checked out)', selection: { kind: 'create', baseBranch: 'release/1.4', mode: 'attach', branchName: '', carryLocalChanges: false } },
   { label: 'Pending · create from (detached)', selection: { kind: 'create', baseBranch: 'main', mode: 'detach', branchName: '', carryLocalChanges: true } },
+  { label: 'Pending · create from long base branch', selection: { kind: 'create', baseBranch: 'feat/optimize-skill-and-prompt-for-agent-collaboration-handoff', mode: 'detach', branchName: '', carryLocalChanges: false } },
 ]
 
 export function GitIndicatorGallery(props: {

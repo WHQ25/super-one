@@ -133,7 +133,7 @@ Evidence paths are under SuperOne unless noted.
 | RT-04 | initialize PROTOCOL_VERSION + `clientInfo` superone | acp-host | done | `acp-runtime.ts`, `acp-client-info.ts` | no `_meta.clientType` (intentional Generic) | na |
 | RT-05 | Grok: fs/terminal=false | acp-host | done | `useHostDelegation = agentId !== 'grok-build'` | intentional | na |
 | RT-06 | Advertise askUserQuestion + exitPlanMode | acp-host | done | desktop + `packages/acp` initialize `_meta` | Node cancels immediately if no UI | — |
-| RT-07 | Non-interactive authenticate | acp-host | partial | cached_token / api_key heuristics | interactive `x.ai/auth/*` missing; no unit test | P2 |
+| RT-07 | Non-interactive authenticate | acp-host | done | cached_token / api_key first; grok.com via get_url + submit_code | cancel throws, does not write auth.json | — |
 | RT-08 | session/new mcpServers (superone + user) | acp-host | done | `buildAcpSessionMcpServers`, runtime tests | load payload not asserted for mcpServers | P3 |
 | RT-09 | session/new `_meta` yolo/auto + clientIdentifier | acp-host | done | `grokSessionPermissionMeta` | — | — |
 | RT-10 | session/new\|load `_meta.reasoningEffort` | acp-host | done | `sessionRequestBase` | — | — |
@@ -596,7 +596,7 @@ Shipped work (do **not** re-open as PRs): stdio lifecycle, yolo/auto meta + noti
 | **Landed** | `cyclePermissionMode` ACP cycle; `AskUserQuestionPrompt.test.tsx`; `acp-auth.test.ts` heuristics. |
 | **Deferred** | **TD-03** live `grok agent stdio` run until the live-verify pass in this session (Grok binary stays out of CI). |
 
-### PR7 — Interactive Grok auth (`x.ai/auth/*`)  **(follow-up)**
+### PR7 — Interactive Grok auth (`x.ai/auth/*`)  **(landed)**
 
 | | |
 |--|--|

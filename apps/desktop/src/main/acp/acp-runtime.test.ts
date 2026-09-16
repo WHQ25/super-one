@@ -8,6 +8,9 @@ import {
 } from '@agentclientprotocol/sdk'
 import { createAcpRuntime } from './acp-runtime'
 import {
+  XAI_AUTH_CANCEL,
+  XAI_AUTH_GET_URL,
+  XAI_AUTH_SUBMIT_CODE,
   XAI_CONSENT_RECORD,
   XAI_MCP_ELICIT,
   XAI_RECAP,
@@ -28,6 +31,9 @@ import type { AgentEvent } from '@superone/shared/agent-types'
 // Grok routes x.ai methods only under the `_` wire prefix; the bare name is
 // rejected with `Method not found`. The in-process test agent mirrors the real
 // agent by registering the same wire names SuperOne must send.
+const XAI_AUTH_GET_URL_WIRE = xaiExtWireMethod(XAI_AUTH_GET_URL)
+const XAI_AUTH_SUBMIT_CODE_WIRE = xaiExtWireMethod(XAI_AUTH_SUBMIT_CODE)
+const XAI_AUTH_CANCEL_WIRE = xaiExtWireMethod(XAI_AUTH_CANCEL)
 const XAI_RECAP_WIRE = xaiExtWireMethod(XAI_RECAP)
 const XAI_YOLO_MODE_CHANGED_WIRE = xaiExtWireMethod(XAI_YOLO_MODE_CHANGED)
 const XAI_CONSENT_RECORD_WIRE = xaiExtWireMethod(XAI_CONSENT_RECORD)
@@ -198,6 +204,112 @@ describe('createAcpRuntime (in-process agent)', () => {
     expect(clientInfo?.name).toBe('superone')
     expect(clientInfo?.version).toMatch(/^\d+\.\d+/)
     expect(clientInfo?.version).not.toBe('0.0.0')
+  })
+
+  it('skips interactive grok.com auth when cached_token is advertised', async () => {
+    const authCalls: string[] = []
+    const getUrlCalls: unknown[] = []
+    const agentApp = agent({ name: 'auth-agent' })
+      .onRequest(methods.agent.initialize, async () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: {},
+        authMethods: [{ id: 'cached_token' }, { id: 'grok.com' }],
+        _meta: { defaultAuthMethodId: 'cached_token' },
+      }))
+      .onRequest(methods.agent.authenticate, async (ctx) => {
+        authCalls.push(String((ctx.params as { methodId?: string }).methodId))
+        return {}
+      })
+      .onRequest(methods.agent.session.new, async () => ({ sessionId: 'auth-session' }))
+      .onRequest(methods.agent.session.prompt, async () => ({ stopReason: 'end_turn' as const }))
+      .onNotification(methods.agent.session.cancel, async () => {})
+      .onRequest(XAI_AUTH_GET_URL_WIRE, (raw: unknown) => raw, async (ctx) => {
+        getUrlCalls.push(ctx.params)
+        return { auth_url: 'https://grok.com/device' }
+      })
+    const clientToAgent = new TransformStream<Uint8Array>()
+    const agentToClient = new TransformStream<Uint8Array>()
+    agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
+    const runtime = await createAcpRuntime({
+      launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+      interactiveAuth: { request: async () => ({ kind: 'cancel' }) },
+      streamFactory: async () => ({
+        stream: ndJsonStream(clientToAgent.writable, agentToClient.readable),
+        dispose: () => {},
+      }),
+    })
+    expect(authCalls).toEqual(['cached_token'])
+    expect(getUrlCalls).toEqual([])
+    await runtime.close()
+  })
+
+  it('hosts grok.com login via get_url + submit_code', async () => {
+    const submitted: unknown[] = []
+    const agentApp = agent({ name: 'login-agent' })
+      .onRequest(methods.agent.initialize, async () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: {},
+        authMethods: [{ id: 'grok.com' }],
+      }))
+      .onRequest(methods.agent.session.new, async () => ({ sessionId: 'login-session' }))
+      .onRequest(methods.agent.session.prompt, async () => ({ stopReason: 'end_turn' as const }))
+      .onNotification(methods.agent.session.cancel, async () => {})
+      .onRequest(XAI_AUTH_GET_URL_WIRE, (raw: unknown) => raw, async () => ({
+        auth_url: 'https://grok.com/device',
+        mode: 'device_code',
+      }))
+      .onRequest(XAI_AUTH_SUBMIT_CODE_WIRE, (raw: unknown) => raw, async (ctx) => {
+        submitted.push(ctx.params)
+        return {}
+      })
+    const clientToAgent = new TransformStream<Uint8Array>()
+    const agentToClient = new TransformStream<Uint8Array>()
+    agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
+    const runtime = await createAcpRuntime({
+      launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+      interactiveAuth: { request: async () => ({ kind: 'code', code: 'ABCD-1234' }) },
+      streamFactory: async () => ({
+        stream: ndJsonStream(clientToAgent.writable, agentToClient.readable),
+        dispose: () => {},
+      }),
+    })
+    expect(submitted).toEqual([{ code: 'ABCD-1234' }])
+    await runtime.close()
+  })
+
+  it('cancels interactive login without hanging session setup', async () => {
+    const cancelled: unknown[] = []
+    const agentApp = agent({ name: 'cancel-login' })
+      .onRequest(methods.agent.initialize, async () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: {},
+        authMethods: [{ id: 'grok.com' }],
+      }))
+      .onRequest(methods.agent.session.new, async () => ({ sessionId: 'cancel-session' }))
+      .onRequest(methods.agent.session.prompt, async () => ({ stopReason: 'end_turn' as const }))
+      .onNotification(methods.agent.session.cancel, async () => {})
+      .onRequest(XAI_AUTH_GET_URL_WIRE, (raw: unknown) => raw, async () => ({
+        auth_url: 'https://grok.com/device',
+      }))
+      .onRequest(XAI_AUTH_CANCEL_WIRE, (raw: unknown) => raw, async (ctx) => {
+        cancelled.push(ctx.params)
+        return {}
+      })
+    const clientToAgent = new TransformStream<Uint8Array>()
+    const agentToClient = new TransformStream<Uint8Array>()
+    agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
+    await expect(createAcpRuntime({
+      launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+      interactiveAuth: { request: async () => ({ kind: 'cancel' }) },
+      streamFactory: async () => ({
+        stream: ndJsonStream(clientToAgent.writable, agentToClient.readable),
+        dispose: () => {},
+      }),
+    })).rejects.toThrow(/Grok login cancelled/)
+    expect(cancelled).toHaveLength(1)
   })
 
   it('parses sessionRecap from initialize and requests x.ai/recap', async () => {

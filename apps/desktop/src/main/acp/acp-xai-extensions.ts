@@ -26,6 +26,12 @@ export const XAI_BILLING = 'x.ai/billing'
 export const XAI_SETTINGS_UPDATE = 'x.ai/settings/update'
 /** Client → agent: record that the user accepted a consent notice. */
 export const XAI_CONSENT_RECORD = 'x.ai/consent/record'
+/** Client → agent: poll for an interactive grok.com / OIDC login URL. */
+export const XAI_AUTH_GET_URL = 'x.ai/auth/get_url'
+/** Client → agent: submit a device / OIDC login code. */
+export const XAI_AUTH_SUBMIT_CODE = 'x.ai/auth/submit_code'
+/** Client → agent: cancel an in-flight interactive login. */
+export const XAI_AUTH_CANCEL = 'x.ai/auth/cancel'
 
 /** `consent_gate` on `x.ai/settings/update`. */
 export interface GrokConsentGate {

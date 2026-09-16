@@ -250,15 +250,24 @@ describe('deepseek runtime end-to-end (mock adapter)', () => {
     })())
 
     const events: AgentEvent[] = []
+    let sawStart!: () => void
+    const started = new Promise<void>((resolve) => {
+      sawStart = resolve
+    })
     const agent = await runtime.createAgent({
       sessionId: randomUUID(),
       cwd: process.cwd(),
       provider: 'slow',
       model: 'mock-1',
-      onEvent: (event) => events.push(event),
+      onEvent: (event) => {
+        events.push(event)
+        if (event.type === 'message_start') sawStart()
+      },
     })
     agent.sendText('go')
-    await new Promise((resolve) => setTimeout(resolve, 150))
+    // Cancel only after the turn is in-flight. A fixed sleep races the
+    // adapter under parallel load and cancel becomes a no-op.
+    await started
     agent.cancel()
     await agent.whenIdle()
 

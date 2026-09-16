@@ -25,14 +25,24 @@ Every alpha release keeps its own notes on its GitHub Release.
   the session as title and a short status as body.
 - Settings puts ChatGPT accounts on the provider cards, with
   per-account usage.
+- Grok can be signed in from Settings (browser URL + optional
+  code). Permission cards offer Always when the agent allows it;
+  plan mode follows the agent; session `_meta` carries rules,
+  prompt override, and plugin dirs.
 - Sessions can be found later by issue/PR reference tags.
 - Scheduled sends show a clock on desktop and mobile session lists.
+- `/goal` is a composer chip. A collab launch bubble names and
+  links the parent session.
 - Mobile: usage on the composer ring; permission, question and
   plan sheets put away on an outside tap instead of dismissing.
+  Fork a session from the header; dismiss prompt suggestions.
 - Agents can run interactive commands in SuperOne terminal tabs
-  (approve once or always in this project). Agent tabs appear in
-  the dock; chat shows the screen the agent saw. Settings lists
-  and revokes always-allow rules.
+  (approve once or always in this project, with an agent-proposed
+  rule). Agent tabs appear in the dock and stay on the session
+  that opened them. Chat shows the screen the agent saw. Settings
+  lists and revokes always-allow rules.
+- Built-in browser on macOS can use Touch ID passkeys in signed
+  builds.
 - Maximizing an activity tab folds the sidebar and collapses
   floating chat.
 - The files previewer is named in the always-on rendering rules.
@@ -41,11 +51,15 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 - A Claude refusal fallback no longer wipes the rest of the turn.
 - Worktree status updates to the attached branch at turn end;
-  long branch names wrap and show the diff stat; rows keep a
-  uniform height.
+  long branch names wrap and show the diff stat; a clean checkout
+  reads `clean`; rows keep a uniform height. The phone keeps the
+  worktree pick when switching harness.
 - Deleting a session waits for runtime shutdown.
+- A compact boundary persists for reloads and the phone.
 - Mobile: permission sheets close after a sent decision; missed
-  transcript updates retry.
+  transcript updates retry; anchored menus close when the
+  keyboard moves; the usage ring stays on screen; leaving a
+  session keeps the new-session title.
 - Git failures that are not "not a repo" (Xcode license, missing
   binary) show a warning chip instead of an Init Git button.
 
@@ -58,6 +72,61 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 - Mobile reconnects reuse workspace caches; host payloads are
   compressed. Upgrade desktop and phone together.
+
+## [0.67.0-alpha.2] - 2026-09-17
+
+### Added
+
+- Grok: sign in from Settings (browser URL + optional code) when the
+  CLI only offers grok.com / OIDC. cached_token and api_key still
+  run first. SuperOne does not write `auth.json`.
+- Grok: session `_meta` carries rules, prompt override, and plugin
+  dirs when initialize advertises them.
+- Grok: permission cards offer Always when the agent sends
+  `allow_always`. Plan enter/exit follows `current_mode_update` and
+  prompt `_meta.mode`; approving a plan no longer wipes Auto/Always.
+- Grok: Node registers `ask_user_question` and `exit_plan_mode`.
+- `/goal` is a composer chip instead of a dialog. Pause/resume
+  follow `HarnessCapabilities.goal`.
+- A collab launch bubble names the parent session and opens it.
+- Built-in browser on macOS can use Touch ID passkeys (Developer
+  ID-signed builds only).
+- Mobile: fork a session from the header menu (same worktree or a
+  new one), matching desktop.
+- `terminal_tabs run` can propose the always-allow rule
+  (`bun run:*`, `git commit:*`) instead of storing the full command.
+- Mobile: dismiss the prompt-suggestions card; long branch names
+  wrap under the git chips.
+
+### Fixed
+
+- Grok Settings and launch follow a locally upgraded CLI.
+- Grok account copy matches the settings page width.
+- Grok MCP reload/toggle/reconnect keep HTTP/SSE caps. `/mcp`
+  LogIn is hidden for ACP (OpenCode-only).
+- Session defaults use Ask / Always Approve for ACP. Picking Auto
+  under Generic toasts that classifier blocks fail closed.
+- A compact boundary persists for late subscribers and reloads.
+- Grok `/goal` shows the plan-writer subagent and treats task
+  frames as liveness, so the bubble is not empty during planning.
+- Closing the goal chip interrupts the turn; the workflow picker
+  is scoped to the session cwd.
+- Agent terminal tabs belong to the session that opened them.
+- A known-clean worktree row reads `clean` instead of a blank line.
+- Phone: workflow cards get desktop task facts; forked skill
+  blocks stream; compact insight blocks stay visible; prompt-choice
+  icons sit on the first line of the label.
+- Phone: anchored menus close when the keyboard moves the
+  composer; the worktree pick survives a harness switch; the usage
+  ring stays on screen and can pull a meter; a Grok usage refresh
+  can spawn the runtime; leaving a session keeps the new-session
+  title.
+
+### Tests
+
+- ACP permission-cycle, AskUserQuestion, and Grok authenticate
+  heuristics. Oracle snapshot includes task block lifecycle
+  fields. `terminal_tabs` description stays under 700 characters.
 
 ## [0.67.0-alpha.1] - 2026-09-16
 

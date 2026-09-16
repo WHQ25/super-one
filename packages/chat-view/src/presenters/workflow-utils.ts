@@ -308,3 +308,33 @@ export function parseWorkflowLaunch(summary?: string): WorkflowLaunchInfo {
     scriptPath,
   }
 }
+
+export type WorkflowAgentRuntimeStatus = 'running' | 'failed' | 'done'
+
+/** Normalise the free-form agent `state` (Grok workflow_updated / state.json) to a UI status. */
+export function normalizeWorkflowAgentState(state: string | undefined): WorkflowAgentRuntimeStatus | undefined {
+  if (!state) return undefined
+  const s = state.toLowerCase()
+  if (s === 'running' || s === 'active' || s === 'in_progress' || s === 'pending') return 'running'
+  if (s === 'failed' || s === 'error' || s === 'cancelled' || s === 'canceled') return 'failed'
+  if (s === 'done' || s === 'completed' || s === 'complete' || s === 'success') return 'done'
+  return undefined
+}
+
+/**
+ * Bot icon classes for a workflow agent row: pulse while running (same idiom as
+ * SubagentBlock's header icon), amber on failure, otherwise the idle colour.
+ * `workflowRunning` gates the pulse so a stale `running` state cannot keep
+ * breathing after the run itself has ended.
+ */
+export function workflowAgentIconClass(
+  state: string | undefined,
+  workflowRunning: boolean,
+  idleClass: string,
+  activeClass: string,
+): string {
+  const status = normalizeWorkflowAgentState(state)
+  if (status === 'failed') return 'text-amber-600 dark:text-amber-400'
+  if (status === 'running' && workflowRunning) return `${activeClass} animate-pulse`
+  return idleClass
+}

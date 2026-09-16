@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { useEffect, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { WorkflowBlock } from './WorkflowBlock'
-import { useChatStore } from '@/stores/chat'
+import { SeedTaskProgress } from './workflow-story-fixtures'
 import type { ContentBlock } from '@superone/shared/agent-types'
 import { mockIpc } from '../../../../../.storybook/mock-ipc'
 
@@ -18,52 +18,6 @@ function StoryShell({ children, width = 720 }: { children: ReactNode; width?: nu
       {children}
     </div>
   )
-}
-
-function SeedTaskProgress({
-  toolUseId,
-  progress,
-}: {
-  toolUseId: string
-  progress: {
-    completed: boolean
-    description: string
-    lastToolName?: string
-    toolUses: number
-    totalTokens: number
-    durationMs?: number
-  } | null
-}) {
-  useEffect(() => {
-    const apply = (): void => {
-      useChatStore.setState((s) => {
-        const projectId = s.activeProject
-        if (!projectId) return s
-        const project = s.projectSessions[projectId]
-        if (!project) return s
-        const sid = project._activeSessionId
-        if (!sid) return s
-        const session = project._sessions[sid]
-        if (!session) return s
-        const taskProgress = { ...session.taskProgress }
-        if (progress) taskProgress[toolUseId] = progress as never
-        else delete taskProgress[toolUseId]
-        return {
-          projectSessions: {
-            ...s.projectSessions,
-            [projectId]: {
-              ...project,
-              _sessions: { ...project._sessions, [sid]: { ...session, taskProgress } },
-            },
-          },
-        }
-      })
-    }
-    apply()
-    const t = setTimeout(apply, 0)
-    return () => clearTimeout(t)
-  }, [toolUseId, progress])
-  return null
 }
 
 const SCRIPT = `export const meta = {
@@ -123,7 +77,20 @@ export const Running: Story = {
     <>
       <SeedTaskProgress
         toolUseId="wf-running"
-        progress={{ completed: false, description: 'Fan-out: color:蓝色', lastToolName: 'color:蓝色', toolUses: 2, totalTokens: 39_498, durationMs: 4_579 }}
+        progress={{
+          completed: false,
+          description: 'Fan-out: color:蓝色',
+          lastToolName: 'color:蓝色',
+          toolUses: 2,
+          totalTokens: 39_498,
+          durationMs: 4_579,
+          workflowAgents: [
+            { agentId: 'a1', label: FAKE_AGENTS[0].label, toolCount: 0, state: 'completed' },
+            { agentId: 'b2', label: FAKE_AGENTS[1].label, toolCount: 1, state: 'failed' },
+            { agentId: 'c3', label: FAKE_AGENTS[2].label, toolCount: 1, state: 'running' },
+            { agentId: 'd4', label: FAKE_AGENTS[3].label, toolCount: 1, state: 'running' },
+          ],
+        }}
       />
       <Story />
     </>

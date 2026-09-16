@@ -1,4 +1,5 @@
 import type { WorkflowGraph, WorkflowBlock, WorkflowAgentSpec, FanoutItem } from './workflow-graph'
+import { normalizeWorkflowAgentState } from './workflow-utils'
 
 export interface DagRuntimeAgent {
   label: string
@@ -487,12 +488,7 @@ function matchAgentRuntime(
 
 /** Map Grok/live agent state strings onto DAG status chips. */
 export function runtimeStatusFromAgentState(state: string | undefined): DagRuntimeAgent['status'] {
-  if (!state) return undefined
-  const s = state.toLowerCase()
-  if (s === 'running' || s === 'active' || s === 'in_progress' || s === 'pending') return 'running'
-  if (s === 'failed' || s === 'error' || s === 'cancelled' || s === 'canceled') return 'failed'
-  if (s === 'done' || s === 'completed' || s === 'complete' || s === 'success') return 'done'
-  return undefined
+  return normalizeWorkflowAgentState(state)
 }
 
 /**

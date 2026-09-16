@@ -4,6 +4,7 @@ import { WorkflowFullView } from './WorkflowFullView'
 import { WorkflowNavigationContext, type WorkflowViewState } from './workflow-navigation-context'
 import { mockIpc } from '../../../../../.storybook/mock-ipc'
 import type { WorkflowAgentInfo } from './use-workflow-agents'
+import { SeedTaskProgress } from './workflow-story-fixtures'
 
 const SCRIPT = `export const meta = {
   name: 'ui-test-minimal',
@@ -81,6 +82,31 @@ export const WithAgents: Story = {
   args: {
     view: { toolUseId: 'wf-full', transcriptDir: '/tmp/demo/subagents/workflows/wf_demo', name: 'ui-test-minimal', script: SCRIPT },
   },
+}
+
+export const Running: Story = {
+  args: {
+    view: { toolUseId: 'wf-live', transcriptDir: '/tmp/demo/subagents/workflows/wf_demo', name: 'ui-test-minimal', script: SCRIPT },
+  },
+  decorators: [(Story) => (
+    <>
+      <SeedTaskProgress
+        toolUseId="wf-live"
+        progress={{
+          completed: false,
+          description: 'Fan-out: color:绿色',
+          toolUses: 3,
+          totalTokens: 12_000,
+          workflowAgents: [
+            { agentId: 'a1f00d', label: FAKE_AGENTS[0].label, toolCount: 0, state: 'completed' },
+            { agentId: 'b2c0de', label: FAKE_AGENTS[1].label, toolCount: 1, state: 'failed' },
+            { agentId: 'c3a11e', label: FAKE_AGENTS[2].label, toolCount: 2, state: 'running' },
+          ],
+        }}
+      />
+      <Story />
+    </>
+  )],
 }
 
 export const Empty: Story = {

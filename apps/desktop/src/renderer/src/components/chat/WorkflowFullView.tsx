@@ -25,7 +25,7 @@ import { renderJsonlEntry } from './subagent-activity'
 import { NestedToolContext } from './nested-tool-context'
 import { StructuredOutputView } from './StructuredOutputView'
 import { looksLikeRhaiWorkflow } from './workflow-graph-rhai'
-import { workflowArtifactPath } from './workflow-utils'
+import { workflowArtifactPath, workflowAgentIconClass } from './workflow-utils'
 import {
   streamdownPlugins,
   streamdownRehypePlugins,
@@ -95,10 +95,14 @@ function AgentTranscript({ agent, colors, phase }: { agent: WorkflowAgentInfo; c
   )
 }
 
-function TranscriptHeader({ agent, colors }: { agent: WorkflowAgentInfo; colors: SubagentColorClasses }) {
+function TranscriptHeader({ agent, colors, isRunning }: {
+  agent: WorkflowAgentInfo
+  colors: SubagentColorClasses
+  isRunning: boolean
+}) {
   return (
     <div className="flex min-w-0 items-center gap-1.5 text-xs">
-      <Bot className={cn('size-3.5 shrink-0', colors.text)} />
+      <Bot className={cn('size-3.5 shrink-0', workflowAgentIconClass(agent.state, isRunning, colors.text, colors.text))} />
       <span className="min-w-0 truncate font-medium text-foreground">{agent.label}</span>
       <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
         {agent.toolCount > 0 && (
@@ -163,17 +167,19 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
   const { t } = useTranslation()
   const nav = useWorkflowNavigation()
   const diskAgents = useWorkflowAgents(view.transcriptDir, true)
-  const liveRows = useActiveSession((s) => {
+  const liveProgress = useActiveSession((s) => {
     const byTool = s.taskProgress[view.toolUseId]
-    if (byTool?.workflowAgents?.length) return byTool.workflowAgents
+    if (byTool?.workflowAgents?.length) return byTool
     // Grok may key progress by run_id after launch correlation.
     for (const entry of Object.values(s.taskProgress)) {
       if (entry.workflowAgents?.length && entry.taskId && view.transcriptDir?.includes(entry.taskId)) {
-        return entry.workflowAgents
+        return entry
       }
     }
     return undefined
   })
+  const liveRows = liveProgress?.workflowAgents
+  const isRunning = !!liveProgress && !liveProgress.completed
   // Annotated because the live-only branch omits the optional prompt/result
   // fields, which would otherwise widen this into a union that drops them.
   const agents = useMemo<WorkflowAgentInfo[]>(() => {
@@ -431,11 +437,8 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
                         listSelected?.agentId === a.agentId ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/50',
                       )}
                     >
-                      <Bot className={cn('size-3 shrink-0', colors.text)} />
+                      <Bot className={cn('size-3 shrink-0', workflowAgentIconClass(a.state, isRunning, colors.text, colors.text))} />
                       <span className="min-w-0 truncate">{a.label}</span>
-                      {a.state && (
-                        <span className="shrink-0 text-xs text-muted-foreground/80">{a.state}</span>
-                      )}
                       {a.tokens != null && a.tokens > 0 && (
                         <span className="ml-auto shrink-0 tabular-nums text-xs text-muted-foreground">{formatTokens(a.tokens)}</span>
                       )}
@@ -494,7 +497,7 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
                   <ArrowLeft className="size-3.5" />
                 </button>
                 <div className="min-w-0 flex-1">
-                  <TranscriptHeader agent={selected} colors={colors} />
+                  <TranscriptHeader agent={selected} colors={colors} isRunning={isRunning} />
                 </div>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto">
@@ -508,7 +511,7 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
               onSelectNode={selectByNode}
               stats={nodeStats}
               onContainerWidth={setContainerWidth}
-              overlayHeader={isLarge && selected ? <TranscriptHeader agent={selected} colors={colors} /> : undefined}
+              overlayHeader={isLarge && selected ? <TranscriptHeader agent={selected} colors={colors} isRunning={isRunning} /> : undefined}
               overlayContent={isLarge && transcript ? <div className="chat-md">{transcript}</div> : undefined}
               onCloseOverlay={() => setSelectedNodeId(null)}
             />

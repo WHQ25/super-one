@@ -263,8 +263,9 @@ describe('WorkflowBlock — Grok launch without transcript', () => {
     )
     expect(screen.getByText('Plan')).toBeInTheDocument()
     expect(screen.getByText('Execute')).toBeInTheDocument()
-    expect(screen.getByText('Explore')).toBeInTheDocument()
-    expect(screen.getByText('running')).toBeInTheDocument()
+    const agentRow = screen.getByText('Explore').closest('button, div')
+    expect(agentRow?.querySelector('svg')).toHaveClass('animate-pulse')
+    expect(screen.queryByText('running')).not.toBeInTheDocument()
     expect(screen.getByText(/phase: Execute/)).toBeInTheDocument()
     // Grok resolves ~/.grok/sessions/.../workflows/<run_id> → full view available
     expect(screen.getByTitle('Open full view')).toBeInTheDocument()

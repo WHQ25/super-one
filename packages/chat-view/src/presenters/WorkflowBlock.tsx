@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import type { SubagentColorClasses } from './SubagentBlock'
+import { workflowAgentIconClass } from './workflow-utils'
 
 export interface WorkflowPhaseView {
   title: string
@@ -270,9 +271,11 @@ export function WorkflowBlockPresenter({
                 {agents.map((agent) => {
                   const row = (
                     <>
-                      <Bot className="size-3 shrink-0 text-muted-foreground" />
+                      <Bot className={cn(
+                        'size-3 shrink-0',
+                        workflowAgentIconClass(agent.state, isRunning, 'text-muted-foreground', colors.text),
+                      )} />
                       <span className="min-w-0 truncate text-foreground">{agent.label}</span>
-                      {agent.state && <span className="shrink-0 text-muted-foreground/80">{agent.state}</span>}
                       <span className="ml-auto flex shrink-0 items-center gap-1.5 text-muted-foreground">
                         {agent.toolCount > 0 && (
                           <span className="inline-flex items-center gap-0.5">

@@ -95,7 +95,7 @@ export function GrokAuthSettings({ api = defaultApi, onAuthChanged }: {
     : state.status === 'unavailable' ? t('grokAuth.unavailable') : t('grokAuth.signedOut')
 
   return (
-    <section className="flex max-w-2xl flex-col gap-4 py-2" aria-label={t('grokAuth.title')}>
+    <section className="flex w-full flex-col gap-4 py-2" aria-label={t('grokAuth.title')}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0 flex-1" role="status">
           <div className="flex items-center gap-2 text-sm font-medium">

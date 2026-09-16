@@ -778,7 +778,9 @@ export class AcpBackend implements SessionBackend {
     if (event.type === 'acp_commands') {
       if (agentId) {
         try {
-          // Always persist (including empty) so cache mirrors agent-advertised set.
+          // Persist agent-global commands (including empty). Project-scoped
+          // workflows are stripped inside the cache writer — they belong to
+          // this session's cwd, not every grok-build session.
           upsertAcpAgentSlashCommands(agentId, event.commands)
         } catch (err) {
           log.debug('[AcpBackend] upsert slash commands cache failed:', err)

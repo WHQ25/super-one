@@ -52,6 +52,31 @@ describe('applyEventToSession: acp_commands', () => {
     expect(patch).toEqual({})
   })
 
+  it('keeps project-scoped workflows on the live session', () => {
+    const session = {
+      ...createDefaultPerSessionState(),
+      preferredProvider: 'acp' as const,
+      sessionProvider: 'acp' as const,
+      acpAgentId: 'grok-build',
+    }
+    const live: SlashCommandInfo[] = [
+      {
+        name: 'only-in-this-cwd',
+        description: 'Project workflow',
+        argumentHint: '',
+        isSkill: false,
+        isWorkflow: true,
+        workflowSource: 'project',
+      },
+    ]
+    const patch = applyEventToSession(session, {
+      type: 'acp_commands',
+      agentId: 'grok-build',
+      commands: live,
+    })
+    expect(patch.acpSlashCommands).toEqual(live)
+  })
+
   it('replaces the full command list on update', () => {
     const session = {
       ...createDefaultPerSessionState(),

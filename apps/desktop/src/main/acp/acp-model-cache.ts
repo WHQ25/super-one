@@ -10,6 +10,7 @@ import type {
   ModelOption,
   SlashCommandInfo,
 } from '@superone/shared/agent-types'
+import { withoutProjectScopedWorkflows } from '@superone/shared/workflow-commands'
 import { listBuiltinAgentDescriptors, getBuiltinAgent } from './agent-catalog'
 import { createAcpRuntime } from './acp-runtime'
 import {
@@ -269,7 +270,8 @@ export function upsertAcpAgentSlashCommands(
     extraModes: prev?.extraModes,
     selectedModeId: prev?.selectedModeId,
     modeConfigId: prev?.modeConfigId,
-    slashCommands: commands,
+    // Project `.grok/workflows` ads are cwd-scoped; the cache is agent-global.
+    slashCommands: withoutProjectScopedWorkflows(commands),
     updatedAt: new Date().toISOString(),
   }
   const configByAgentId = { ...(current.configByAgentId ?? {}), [agentId]: nextCatalog }

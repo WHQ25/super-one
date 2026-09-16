@@ -307,6 +307,50 @@ describe('acp-model-cache', () => {
     expect(getCachedSessionCatalog('opencode')?.slashCommands[0]?.name).toBe('web')
   })
 
+  it('does not persist project-scoped Grok workflows on the agent-global cache', () => {
+    writeAcpResourcesCache({
+      agents: [{ id: 'grok-build', name: 'Grok Build', installed: true, commandPreview: 'grok agent stdio' }],
+      selectedAgentId: 'grok-build',
+      configByAgentId: {
+        'grok-build': {
+          configOptions: [],
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      },
+    })
+    upsertAcpAgentSlashCommands('grok-build', [
+      { name: 'clear', description: 'Clear', argumentHint: '', isSkill: false },
+      {
+        name: 'client-cli-coverage-scan',
+        description: 'Scan desktop client',
+        argumentHint: '',
+        isSkill: false,
+        isWorkflow: true,
+        workflowSource: 'project',
+      },
+      {
+        name: 'deep-research',
+        description: 'Research',
+        argumentHint: '',
+        isSkill: false,
+        isWorkflow: true,
+        workflowSource: 'builtin',
+      },
+      {
+        name: 'mobile-adapt',
+        description: 'Adapt',
+        argumentHint: '',
+        isSkill: false,
+        isWorkflow: true,
+        workflowSource: 'user',
+      },
+    ])
+    expect(readAcpResourcesCache().configByAgentId?.['grok-build']?.slashCommands?.map((c) => c.name))
+      .toEqual(['clear', 'deep-research', 'mobile-adapt'])
+    expect(getCachedSessionCatalog('grok-build')?.slashCommands.map((c) => c.name))
+      .toEqual(['clear', 'deep-research', 'mobile-adapt'])
+  })
+
   it('config-only upsert preserves previously cached slash commands', () => {
     writeAcpResourcesCache({
       agents: [{ id: 'opencode', name: 'OpenCode', installed: true, commandPreview: 'opencode acp' }],

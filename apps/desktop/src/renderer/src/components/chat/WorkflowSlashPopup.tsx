@@ -6,14 +6,15 @@ import { HighlightedText } from '@superone/ui/components/ui/HighlightedText'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import type { SlashCommandInfo } from '@superone/shared/agent-types'
 import { useActiveSession, useSessionScope, getActiveSessionView, useChatStore } from '@/stores/chat'
-import { useEffectiveProjectRoot } from '@/stores/app'
 import {
   applyWorkflowSuggestion,
   buildWorkflowSuggestItems,
   catalogWorkflows,
   groupWorkflowSuggestItems,
+  mergeWorkflowCatalog,
   parseWorkflowSlashPhase,
   resolveWorkflowArgsTip,
+  resolveWorkflowDiscoveryCwd,
   sessionRunNames,
   type WorkflowCatalogEntry,
   type WorkflowSuggestItem,
@@ -125,9 +126,11 @@ export const WorkflowSlashPopup = forwardRef<WorkflowSlashPopupHandle, WorkflowS
   ) {
     const { t } = useTranslation()
     const scope = useSessionScope()
-    const projectRoot = useEffectiveProjectRoot()
+    const sessionCwd = useActiveSession((s) => s.cwd)
     const activeProject = useChatStore((s) => s.activeProject)
-    const cwd = projectRoot || activeProject
+    // Grok discovers project workflows from the agent session cwd, not the
+    // SuperOne window folder / last-opened project.
+    const cwd = resolveWorkflowDiscoveryCwd(sessionCwd, activeProject)
     const activitySignature = useActiveSession((s) => computeBackgroundActivitySignature(s.messages))
     const taskProgress = useActiveSession((s) => s.taskProgress)
     const itemRefs = useRef<Map<number, HTMLButtonElement>>(new Map())
@@ -156,30 +159,10 @@ export const WorkflowSlashPopup = forwardRef<WorkflowSlashPopupHandle, WorkflowS
 
     const acpCatalog = useMemo(() => catalogWorkflows(slashCommands), [slashCommands])
 
-    const catalog: WorkflowCatalogEntry[] = useMemo(() => {
-      const byName = new Map<string, WorkflowCatalogEntry>()
-      for (const d of discovered) {
-        byName.set(d.name, {
-          name: d.name,
-          description: d.description,
-          source: d.source,
-          path: d.path,
-          argumentHint: d.args.length > 0
-            ? d.args.map((a) => `${a.name}=…`).join(' ')
-            : undefined,
-        })
-      }
-      for (const a of acpCatalog) {
-        if (!byName.has(a.name)) byName.set(a.name, a)
-        else {
-          const cur = byName.get(a.name)!
-          if (!cur.description && a.description) {
-            byName.set(a.name, { ...cur, description: a.description })
-          }
-        }
-      }
-      return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name))
-    }, [discovered, acpCatalog])
+    const catalog: WorkflowCatalogEntry[] = useMemo(
+      () => mergeWorkflowCatalog(discovered, acpCatalog),
+      [discovered, acpCatalog],
+    )
 
     const hintsByName = useMemo(() => {
       const map: Record<string, { whenToUse?: string; args: WorkflowArgSpec[]; exampleJson?: string }> = {}

@@ -65,13 +65,20 @@ async function scanDir(
 /**
  * Scan project + user `.grok/workflows/*.rhai` and parse supported `args` fields.
  * Does not depend on ACP available_commands meta (which often omits path).
+ *
+ * `projectPath` must be the agent session cwd (the repo Grok was launched in),
+ * not SuperOne's window folder / last-opened project. `userHome` is injectable
+ * so tests can isolate `~/.grok/workflows` from the real home directory.
  */
-export async function discoverGrokWorkflows(projectPath?: string | null): Promise<DiscoveredWorkflow[]> {
+export async function discoverGrokWorkflows(
+  projectPath?: string | null,
+  userHome: string = homedir(),
+): Promise<DiscoveredWorkflow[]> {
   const dirs: Array<{ dir: string; source: 'project' | 'user' }> = []
   if (projectPath && projectPath.trim()) {
     dirs.push({ dir: join(projectPath, '.grok', 'workflows'), source: 'project' })
   }
-  dirs.push({ dir: join(homedir(), '.grok', 'workflows'), source: 'user' })
+  dirs.push({ dir: join(userHome, '.grok', 'workflows'), source: 'user' })
 
   const byName = new Map<string, DiscoveredWorkflow>()
   // Project wins over user on name collision (same as Grok registry).

@@ -5,6 +5,8 @@ import {
   parseWorkflowSlashLine,
   isWorkflowSlashArgsMode,
   catalogWorkflows,
+  mergeWorkflowCatalog,
+  resolveWorkflowDiscoveryCwd,
   sessionRunNames,
   buildWorkflowSuggestItems,
   applyWorkflowSuggestion,
@@ -110,6 +112,96 @@ describe('catalogWorkflows', () => {
       argumentHint: '<args>',
       source: 'project',
     })
+  })
+})
+
+describe('mergeWorkflowCatalog', () => {
+  const discovered = [
+    {
+      name: 'only-in-a',
+      description: 'Project A workflow',
+      source: 'project' as const,
+      path: '/a/.grok/workflows/only-in-a.rhai',
+      args: [{ name: 'focus' }],
+    },
+    {
+      name: 'user-global',
+      description: 'User workflow',
+      source: 'user' as const,
+      path: '/home/.grok/workflows/user-global.rhai',
+    },
+  ]
+
+  it('keeps cwd-discovered project + user and ACP builtins', () => {
+    const merged = mergeWorkflowCatalog(discovered, [
+      { name: 'deep-research', description: 'Research', source: 'builtin' },
+      {
+        name: 'grok-build-parity',
+        description: 'Foreign project workflow',
+        source: 'project',
+        path: '/super-one/.grok/workflows/grok-build-parity.rhai',
+      },
+    ])
+    expect(merged.map((w) => w.name)).toEqual(['deep-research', 'only-in-a', 'user-global'])
+    expect(merged.find((w) => w.name === 'only-in-a')).toMatchObject({
+      source: 'project',
+      argumentHint: 'focus=…',
+    })
+  })
+
+  it('does not list a SuperOne project workflow for a grok-build session', () => {
+    const grokBuildScan = [
+      {
+        name: 'user-global',
+        description: 'User workflow',
+        source: 'user' as const,
+        path: '/home/.grok/workflows/user-global.rhai',
+      },
+    ]
+    const acpFromStaleCache = catalogWorkflows([
+      {
+        name: 'client-cli-coverage-scan',
+        description: 'Workflow: Scan desktop client',
+        argumentHint: '',
+        isSkill: false,
+        isWorkflow: true,
+        workflowSource: 'project',
+        workflowPath: '/super-one/.grok/workflows/client-cli-coverage-scan.rhai',
+      },
+      {
+        name: 'deep-research',
+        description: 'Workflow: Research',
+        argumentHint: '',
+        isSkill: false,
+        isWorkflow: true,
+        workflowSource: 'builtin',
+      },
+      {
+        name: 'user-global',
+        description: 'Workflow: User workflow',
+        argumentHint: '',
+        isSkill: false,
+        isWorkflow: true,
+        workflowSource: 'user',
+      },
+    ])
+    const merged = mergeWorkflowCatalog(grokBuildScan, acpFromStaleCache)
+    expect(merged.map((w) => w.name)).toEqual(['deep-research', 'user-global'])
+    expect(merged.find((w) => w.name === 'client-cli-coverage-scan')).toBeUndefined()
+  })
+})
+
+describe('resolveWorkflowDiscoveryCwd', () => {
+  it('prefers the agent session cwd over the window project', () => {
+    expect(resolveWorkflowDiscoveryCwd(
+      '/Users/me/Projects/grok-build',
+      '/Users/me/Projects/super-one',
+    )).toBe('/Users/me/Projects/grok-build')
+  })
+
+  it('skips remote project keys so host scan does not walk a local path', () => {
+    expect(resolveWorkflowDiscoveryCwd('', 'remote:abc:/node/path')).toBeNull()
+    expect(resolveWorkflowDiscoveryCwd('remote:abc:/node/path', '/local')).toBe('/local')
   })
 })
 

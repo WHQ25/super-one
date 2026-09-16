@@ -1378,7 +1378,8 @@ export interface SlashCommandInfo {
   /**
    * Grok advertises registered workflows as available_commands with
    * `_meta.workflowSource` (builtin | project | user). Used by `/workflow` name
-   * autocomplete in the host.
+   * autocomplete in the host. `project` is cwd-scoped and must not be stored on
+   * the agent-global ACP cache — see `withoutProjectScopedWorkflows`.
    */
   isWorkflow?: boolean
   workflowSource?: string

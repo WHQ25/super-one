@@ -225,6 +225,32 @@ describe('serializeConfigOptions + deriveSessionCatalog', () => {
     expect(session.selectedModeId).toBe('high')
     expect(session.modeConfigId).toBeNull()
   })
+
+  it('drops project-scoped workflows when reading the agent-global cache', () => {
+    const session = deriveSessionCatalog({
+      configOptions: [],
+      slashCommands: [
+        {
+          name: 'client-cli-coverage-scan',
+          description: 'Scan',
+          argumentHint: '',
+          isSkill: false,
+          isWorkflow: true,
+          workflowSource: 'project',
+        },
+        {
+          name: 'deep-research',
+          description: 'Research',
+          argumentHint: '',
+          isSkill: false,
+          isWorkflow: true,
+          workflowSource: 'builtin',
+        },
+      ],
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    })
+    expect(session.slashCommands.map((c) => c.name)).toEqual(['deep-research'])
+  })
 })
 
 describe('extractModelsFromInitializeResult (Grok)', () => {

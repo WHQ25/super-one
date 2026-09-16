@@ -9,6 +9,7 @@ import type {
   EffortLevel,
   SessionSettingsPatch,
 } from '@superone/shared/agent-types'
+import { withoutProjectScopedWorkflows } from '@superone/shared/workflow-commands'
 import { useAppStore } from '../../app'
 import type { ChatProvider, ChatStore, PerSessionState } from '../types'
 import { buildSlashCommands } from '../helpers/chat-helpers'
@@ -707,7 +708,7 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
                       extraModes: prevConfig?.extraModes,
                       selectedModeId: prevConfig?.selectedModeId,
                       modeConfigId: prevConfig?.modeConfigId,
-                      slashCommands: event.commands,
+                      slashCommands: withoutProjectScopedWorkflows(event.commands),
                       updatedAt: now,
                     },
                   },

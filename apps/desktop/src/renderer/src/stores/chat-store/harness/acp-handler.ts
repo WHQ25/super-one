@@ -6,6 +6,7 @@ import type {
   AcpSessionCatalog,
   ModelOption,
 } from '@superone/shared/agent-types'
+import { withoutProjectScopedWorkflows } from '@superone/shared/workflow-commands'
 import type { ChatStore, PerSessionState } from '../types'
 
 export function applyAcpResources(
@@ -119,7 +120,7 @@ function sessionCatalogFromConfig(catalog: AcpAgentConfigCatalog): AcpSessionCat
         ? selectedModeId
         : (modes[0]?.id ?? null),
     modeConfigId,
-    slashCommands: catalog.slashCommands ?? [],
+    slashCommands: withoutProjectScopedWorkflows(catalog.slashCommands ?? []),
     updatedAt: catalog.updatedAt,
   }
 }

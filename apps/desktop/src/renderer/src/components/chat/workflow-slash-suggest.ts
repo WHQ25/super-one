@@ -202,6 +202,67 @@ export function catalogWorkflows(commands: SlashCommandInfo[]): WorkflowCatalogE
   return out
 }
 
+/**
+ * Host scan of *this session's cwd* is the source of truth for project + user
+ * `.rhai` files. ACP `available_commands` may still carry another project's
+ * `workflowSource: project` ads via the agent-global cache — never import those
+ * unless the cwd scan already found the same name.
+ *
+ * Built-in (and other non-project) ACP ads fill gaps: Grok bundled workflows
+ * are not on disk under the session repo.
+ */
+export function mergeWorkflowCatalog(
+  discovered: Array<{
+    name: string
+    description: string
+    source: 'project' | 'user'
+    path: string
+    args?: Array<{ name: string }>
+  }>,
+  acp: WorkflowCatalogEntry[],
+): WorkflowCatalogEntry[] {
+  const byName = new Map<string, WorkflowCatalogEntry>()
+  for (const d of discovered) {
+    byName.set(d.name, {
+      name: d.name,
+      description: d.description,
+      source: d.source,
+      path: d.path,
+      argumentHint: d.args && d.args.length > 0
+        ? d.args.map((a) => `${a.name}=…`).join(' ')
+        : undefined,
+    })
+  }
+  for (const a of acp) {
+    const existing = byName.get(a.name)
+    if (existing) {
+      if (!existing.description && a.description) {
+        byName.set(a.name, {
+          ...existing,
+          description: a.description,
+          argumentHint: existing.argumentHint ?? a.argumentHint,
+        })
+      }
+      continue
+    }
+    if ((a.source ?? '').toLowerCase() === 'project') continue
+    byName.set(a.name, a)
+  }
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name))
+}
+
+/** Prefer the agent session cwd; skip remote project keys (not a local scan root). */
+export function resolveWorkflowDiscoveryCwd(
+  sessionCwd: string | null | undefined,
+  fallbackProjectPath: string | null | undefined,
+): string | null {
+  const cwd = sessionCwd?.trim()
+  if (cwd && !cwd.startsWith('remote:')) return cwd
+  const fallback = fallbackProjectPath?.trim()
+  if (fallback && !fallback.startsWith('remote:')) return fallback
+  return null
+}
+
 export function sessionRunNames(
   messages: Array<{ content: ContentBlock[] }>,
   taskProgress?: Record<string, { completed?: boolean; description?: string; taskId?: string }>,

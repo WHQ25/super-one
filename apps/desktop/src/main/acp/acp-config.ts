@@ -6,6 +6,7 @@ import type {
   EffortLevel,
   ModelOption,
 } from '@superone/shared/agent-types'
+import { withoutProjectScopedWorkflows } from '@superone/shared/workflow-commands'
 import type { SessionConfigOption } from '@agentclientprotocol/sdk'
 
 export interface AcpModelConfig {
@@ -272,7 +273,7 @@ export function deriveSessionCatalog(catalog: AcpAgentConfigCatalog): AcpSession
         ? selectedModeId
         : (modes[0]?.id ?? null),
     modeConfigId,
-    slashCommands: catalog.slashCommands ?? [],
+    slashCommands: withoutProjectScopedWorkflows(catalog.slashCommands ?? []),
     updatedAt: catalog.updatedAt,
   }
 }

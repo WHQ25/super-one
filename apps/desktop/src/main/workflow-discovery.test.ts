@@ -4,6 +4,19 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { discoverGrokWorkflows } from './workflow-discovery'
 
+function writeWorkflow(dir: string, name: string, description: string) {
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(
+    join(dir, `${name}.rhai`),
+    `let meta = #{
+    name: "${name}",
+    description: "${description}",
+};
+`,
+    'utf8',
+  )
+}
+
 describe('discoverGrokWorkflows', () => {
   it('scans project .grok/workflows and parses documented args', async () => {
     const root = mkdtempSync(join(tmpdir(), 'wf-disc-'))
@@ -41,5 +54,27 @@ let focus = a.focus;
     expect(hit!.args.find((a) => a.name === 'focus')?.description).toMatch(/free-text/)
     expect(hit!.exampleJson).toBeTruthy()
     expect(hit!.whenToUse).toMatch(/migration/)
+  })
+
+  it('lists this repo project workflows plus user-level, not another repo', async () => {
+    const userHome = mkdtempSync(join(tmpdir(), 'wf-home-'))
+    writeWorkflow(join(userHome, '.grok', 'workflows'), 'user-global', 'User workflow')
+
+    const projectA = mkdtempSync(join(tmpdir(), 'wf-a-'))
+    writeWorkflow(join(projectA, '.grok', 'workflows'), 'only-in-a', 'Project A only')
+
+    const projectB = mkdtempSync(join(tmpdir(), 'wf-b-'))
+    writeWorkflow(join(projectB, '.grok', 'workflows'), 'only-in-b', 'Project B only')
+
+    const fromA = await discoverGrokWorkflows(projectA, userHome)
+    const fromB = await discoverGrokWorkflows(projectB, userHome)
+
+    expect(fromA.map((w) => w.name).sort()).toEqual(['only-in-a', 'user-global'])
+    expect(fromB.map((w) => w.name).sort()).toEqual(['only-in-b', 'user-global'])
+    expect(fromA.find((w) => w.name === 'only-in-a')?.source).toBe('project')
+    expect(fromB.find((w) => w.name === 'only-in-b')?.source).toBe('project')
+    expect(fromA.find((w) => w.name === 'user-global')?.source).toBe('user')
+    expect(fromB.find((w) => w.name === 'only-in-a')).toBeUndefined()
+    expect(fromA.find((w) => w.name === 'only-in-b')).toBeUndefined()
   })
 })

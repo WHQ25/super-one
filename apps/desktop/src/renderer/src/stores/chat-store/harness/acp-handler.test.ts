@@ -135,6 +135,41 @@ describe('sessionPatchFromAcpCatalog', () => {
     expect(patch.acpSlashCommands?.map((c) => c.name)).toEqual(['web', 'plan'])
   })
 
+  it('does not seed another project workflow from the grok-build agent cache', () => {
+    const withCommands = {
+      ...resources,
+      configByAgentId: {
+        ...resources.configByAgentId,
+        'grok-build': {
+          configOptions: [],
+          slashCommands: [
+            { name: 'web', description: 'Search', argumentHint: '', isSkill: false },
+            {
+              name: 'client-cli-coverage-scan',
+              description: 'Scan desktop client',
+              argumentHint: '',
+              isSkill: false,
+              isWorkflow: true,
+              workflowSource: 'project',
+            },
+            {
+              name: 'deep-research',
+              description: 'Research',
+              argumentHint: '',
+              isSkill: false,
+              isWorkflow: true,
+              workflowSource: 'builtin',
+            },
+          ],
+          updatedAt: '',
+        },
+      },
+    }
+    const catalog = getCachedAcpCatalog(withCommands, 'grok-build')!
+    const patch = sessionPatchFromAcpCatalog(catalog)
+    expect(patch.acpSlashCommands?.map((c) => c.name)).toEqual(['web', 'deep-research'])
+  })
+
   it('honors preferSelected when present in catalog', () => {
     const catalog = getCachedAcpCatalog(resources, 'opencode')!
     const patch = sessionPatchFromAcpCatalog(catalog, { preferSelected: 'openai/gpt-5.4' })

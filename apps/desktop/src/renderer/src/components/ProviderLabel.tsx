@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { Globe } from 'lucide-react'
-import { Anthropic, Claude, Cursor, OpenRouter, Zhipu, ZAI, Kimi, Moonshot, Minimax, Volcengine, Bailian, Bedrock, Google, Gemini, VertexAI, DeepSeek, KwaiKAT, LongCat, ModelScope, Nvidia, SiliconCloud, XiaomiMiMo, OpenAI } from '@lobehub/icons'
+import { Anthropic, Claude, Cursor, OpenRouter, Zhipu, ZAI, Kimi, Moonshot, Minimax, Volcengine, Bailian, Bedrock, Google, Gemini, VertexAI, DeepSeek, KwaiKAT, LongCat, ModelScope, Nvidia, SiliconCloud, XiaomiMiMo, OpenAI, Grok } from '@lobehub/icons'
 import type { IconType } from '@lobehub/icons'
 import { TightCombine } from './TightCombine'
 
@@ -38,6 +38,7 @@ const BRANDS: Record<string, BrandEntry> = {
   openai: { Mono: OpenAI, Text: OpenAI.Text },
   chatgpt: { Mono: OpenAI, extraLabel: 'ChatGPT' },
   cursor: { Mono: Cursor, Text: Cursor.Text },
+  grok: { Mono: Grok, Text: Grok.Text },
 }
 
 /** Every brand this component can draw. Consumed by the native brand generator. */

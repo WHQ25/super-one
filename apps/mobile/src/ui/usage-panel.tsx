@@ -36,6 +36,8 @@ const RESET_OUTCOME_COPY: Record<CodexRateLimitResetOutcome, string> = {
 export function usageBrandKey(usage: RemoteUsage): string | null {
   if (usage.kind === 'claude') return 'claude'
   if (usage.kind === 'codex') return 'openai'
+  // The host only shapes an ACP meter for Grok (the one ACP agent with billing).
+  if (usage.kind === 'acp') return 'grok'
   const title = usage.title.toLowerCase()
   if (title.includes('glm') || title.includes('zhipu')) return 'zhipu'
   if (title.includes('minimax')) return 'minimax'

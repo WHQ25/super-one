@@ -358,7 +358,9 @@ describe('UsageStatusIcon rate-limit tip', () => {
       await Promise.resolve()
     })
 
-    expect(screen.getByText('Grok Build')).toBeInTheDocument()
+    // The title is the Grok brand lockup (artwork), so the trigger carries the name.
+    expect(screen.getByRole('button', { name: 'Grok Build' })).toBeInTheDocument()
+    expect(screen.queryByText('Grok Build')).toBeNull()
     expect(screen.getByText('SuperGrok Heavy')).toBeInTheDocument()
     expect(screen.getByText('Weekly limit')).toBeInTheDocument()
     // Fully spent pool reads as 0% left, and the badge mirrors it.
@@ -386,7 +388,7 @@ describe('UsageStatusIcon rate-limit tip', () => {
     await act(async () => {
       await Promise.resolve()
     })
-    expect(screen.queryByText('Grok Build')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Grok Build' })).toBeNull()
 
     await act(async () => {
       vi.advanceTimersByTime(2_000)
@@ -394,7 +396,7 @@ describe('UsageStatusIcon rate-limit tip', () => {
     })
 
     expect(acpGetRateLimits).toHaveBeenCalledTimes(2)
-    expect(screen.getByText('Grok Build')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Grok Build' })).toBeInTheDocument()
     expect(screen.getByText('SuperGrok Heavy')).toBeInTheDocument()
   })
 

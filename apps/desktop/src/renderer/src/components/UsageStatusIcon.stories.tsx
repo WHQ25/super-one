@@ -273,3 +273,29 @@ function CodexAccountUsagePreview() {
 }
 
 export const CodexAccountUsage: Story = { render: () => <CodexAccountUsagePreview /> }
+
+function GrokCreditsPreview() {
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    mockIpc('app', 'acpGetRateLimits', async () => ({
+      title: 'Grok Build',
+      planType: 'SuperGrok Heavy',
+      windows: [{ label: 'Weekly limit', usedPercent: 64, resetsAt: Math.floor(Date.now() / 1000) + 2 * 86400 }],
+      extraUsage: null,
+      creditBalanceDollars: 12.34,
+      fetchedAt: Date.now(),
+    }))
+    const project = createDefaultProjectState()
+    project._activeSessionId = SB_SESSION
+    project._sessions = { [SB_SESSION]: {
+      ...createDefaultPerSessionState(), preferredProvider: 'acp', sessionProvider: 'acp',
+      acpAgentId: 'grok-build', apiProviderId: null, status: 'idle',
+    } }
+    useChatStore.setState({ activeProject: SB_PROJECT, projectSessions: { [SB_PROJECT]: project } })
+    setReady(true)
+  }, [])
+  return <div className="flex h-screen overflow-hidden"><SidebarPreview>{ready && <UsageStatusIcon />}</SidebarPreview></div>
+}
+
+/** Grok Build credits — the title is the Grok brand lockup, like Claude / Codex. */
+export const GrokCredits: Story = { name: 'Grok credits', render: () => <GrokCreditsPreview /> }

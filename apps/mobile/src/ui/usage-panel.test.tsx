@@ -44,6 +44,18 @@ test('the Codex meter carries its account stats and a redeemable reset credit', 
   await waitFor(() => expect(screen.getByText('Usage reset')).toBeTruthy())
 })
 
+test('the Grok meter wears the Grok brand lockup instead of the globe fallback', async () => {
+  const grok: RemoteUsage = {
+    kind: 'acp', title: 'Grok Build', account: null, planType: 'SuperGrok', extraUsage: null, fetchedAt: now,
+    windows: [{ label: 'Weekly limit', usedPercent: 40, resetsAt: null }],
+  }
+  await renderWithTheme(<UsagePanel usage={grok} />)
+  // The lockup renders the name as artwork and exposes it through the accessibility label.
+  expect(screen.getByLabelText('Grok Build')).toBeTruthy()
+  expect(screen.queryByText('Grok Build')).toBeNull()
+  expect(screen.getByText('SuperGrok')).toBeTruthy()
+})
+
 test('a live rejection is spelled out above the windows, and stands alone without a reading', async () => {
   await renderWithTheme(<UsagePanel usage={null} rateLimit={{ status: 'rejected', resetsAt: Math.round(now / 1000) + 600 }} />)
   expect(screen.getByText('Rate limited · Resets in 10m')).toBeTruthy()

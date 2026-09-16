@@ -661,7 +661,7 @@ function AcpRateLimitIcon({ projectPath, agentId, status, tip, highlight }: { pr
 
   return (
     <RateLimitTipHost tip={tip}>
-      <RateLimitGauge title={limits.title} label={limits.title} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt} highlight={highlight}>
+      <RateLimitGauge title={isGrokAcpAgent(agentId) ? <ProviderLabel brandKey="grok" size={14} /> : limits.title} label={limits.title} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt} highlight={highlight}>
         {limits.windows.map((w) => (
           <WindowRow key={w.label} label={w.label} usedPercent={w.usedPercent} resetsAt={w.resetsAt} />
         ))}

@@ -40,6 +40,26 @@ function Arc({ radius, fraction, color, trackOpacity = 0.35 }: { radius: number;
   </>
 }
 
+/** The numbers both the chip and its panel draw, derived once from the props. */
+function useRingModel({ tokens, contextWindow, costUsd, usage: meter }: ContextRingProps) {
+  const { tokens: { colors } } = useMobileTheme()
+  const usage = meter?.usage ?? null
+  const live = activeRateLimit(meter?.rateLimit)
+  const hasContext = tokens > 0 || costUsd > 0
+  const hasWindow = contextWindow != null && contextWindow > 0
+  const occupancy = hasWindow ? Math.min(tokens / contextWindow, 1) : 0
+  const exceeded = hasWindow ? tokens > contextWindow : false
+  return {
+    usage, live, hasContext, hasWindow, occupancy, exceeded,
+    hasReading: !!usage || !!live,
+    percent: hasWindow ? Math.round((tokens / contextWindow) * 100) : 0,
+    contextFill: exceeded || occupancy > 0.7 ? colors.error : occupancy > 0.4 ? colors.warning : colors.success,
+    usedLabel: formatTokens(tokens),
+    maxLabel: hasWindow ? formatTokens(contextWindow) : null,
+    badge: usageBadgeWindow(usage),
+  }
+}
+
 /**
  * Context occupancy, mirroring the desktop status bar's ring — same thresholds and
  * same numbers, so a session read on the phone and on the desktop agree. The arc
@@ -49,33 +69,19 @@ function Arc({ radius, fraction, color, trackOpacity = 0.35 }: { radius: number;
  * outer ring (the desktop keeps it in the sidebar footer, which the phone does
  * not have), and the panel gains the subscription section below the context one.
  *
- * Renders nothing until the session has spent something or a meter exists. A
- * ring at 0% next to a fresh session is noise, and it is also a lie for the
- * harnesses that only report usage once the first turn completes.
+ * Always on screen: an empty track on a fresh session is the affordance for
+ * opening the panel and pulling the meter by hand, which matters for the
+ * harnesses that only answer once a runtime is up (Grok) or that the host had
+ * not read yet.
  */
-export function ContextRing({ tokens, contextWindow, costUsd, usage: meter }: ContextRingProps) {
+export function ContextRing(props: ContextRingProps) {
+  const { usage: meter } = props
   const menu = useMenuAnchor()
-  const { tokens: theme } = useMobileTheme()
+  const { tokens: { colors } } = useMobileTheme()
   const { t } = useMobileLocale()
   const toneColor = useToneColor()
-  const { colors } = theme
+  const { usage, live, hasContext, hasReading, hasWindow, occupancy, percent, contextFill, usedLabel, badge } = useRingModel(props)
 
-  const usage = meter?.usage ?? null
-  const live = activeRateLimit(meter?.rateLimit)
-  const hasContext = tokens > 0 || costUsd > 0
-  if (!hasContext && !usage && !live) return null
-
-  const hasWindow = contextWindow != null && contextWindow > 0
-  const occupancy = hasWindow ? Math.min(tokens / contextWindow, 1) : 0
-  const percent = hasWindow ? Math.round((tokens / contextWindow) * 100) : 0
-  const exceeded = hasWindow ? tokens > contextWindow : false
-  const contextFill = exceeded || occupancy > 0.7
-    ? colors.error
-    : occupancy > 0.4 ? colors.warning : colors.success
-  const usedLabel = formatTokens(tokens)
-  const maxLabel = hasWindow ? formatTokens(contextWindow) : null
-
-  const badge = usageBadgeWindow(usage)
   const usageFill = badge ? toneColor(usageTone(badge.usedPercent)) : colors.mutedForeground
   // The live event outranks the polled meter: a rejected turn tints the chip
   // even when the last reading still said there was room.
@@ -86,54 +92,70 @@ export function ContextRing({ tokens, contextWindow, costUsd, usage: meter }: Co
   const usageLabel = badge
     ? `${t('Usage left:')} ${100 - Math.round(badge.usedPercent)}%`
     : live ? t(live.status === 'rejected' ? 'Rate limited' : 'Approaching limit') : null
+  const label = [usageLabel, hasContext ? contextLabel : null].filter(Boolean).join(', ') || t(meter ? 'Usage' : 'Context')
+  // Before anything is spent the ring is a bare track, not a full muted circle
+  // pretending to be a reading.
+  const contextArc = hasContext ? (hasWindow ? occupancy : 1) : 0
+  const contextArcColor = hasWindow ? contextFill : colors.mutedForeground
 
   // A live limit tints the whole chip, the way the desktop gauge's border
   // lights up: the ring alone is too small to carry a warning at a glance.
   return <>
-    <Pressable ref={menu.ref} accessibilityRole="button" testID="context-ring"
-      accessibilityLabel={[usageLabel, hasContext ? contextLabel : null].filter(Boolean).join(', ')}
+    <Pressable ref={menu.ref} accessibilityRole="button" testID="context-ring" accessibilityLabel={label}
       accessibilityState={{ expanded: !!menu.anchor }} onPress={open} hitSlop={CHIP_HIT_SLOP}
       style={({ pressed }) => ({ minHeight: CHIP_HEIGHT, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', borderRadius: 8,
         backgroundColor: highlight && !pressed && !menu.anchor ? `${highlight}26` : chipTriggerBackground({ pressed, open: !!menu.anchor }, colors.muted) })}>
       <Svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`}>
-        {usage || live
+        {hasReading
           ? <>
             <Arc radius={OUTER_RADIUS} fraction={badge ? badge.usedPercent / 100 : 0} color={usageFill} />
-            {hasContext ? <Arc radius={INNER_RADIUS} fraction={hasWindow ? occupancy : 1} color={hasWindow ? contextFill : colors.mutedForeground} trackOpacity={0.25} /> : null}
+            {hasContext ? <Arc radius={INNER_RADIUS} fraction={contextArc} color={contextArcColor} trackOpacity={0.25} /> : null}
           </>
-          : <Arc radius={RADIUS} fraction={hasWindow ? occupancy : 1} color={hasWindow ? contextFill : colors.mutedForeground} />}
+          : <Arc radius={RADIUS} fraction={contextArc} color={contextArcColor} />}
       </Svg>
     </Pressable>
-    <AnchoredMenu anchor={menu.anchor} title={usage || live ? 'Usage' : 'Context'} onDismiss={menu.close} width={usage ? 280 : 240}
-      titleAccessory={usage ? <UsageRefreshAccessory refreshing={meter?.refreshing} onRefresh={meter?.onRefresh} /> : undefined}>
-      <View style={{ padding: 8, gap: 12 }}>
-        {usage || live ? <UsagePanel usage={usage} rateLimit={meter?.rateLimit} onConsumeResetCredit={meter?.onConsumeResetCredit} /> : null}
-        {hasContext ? <View style={{ gap: 8, ...(usage || live ? { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 10 } : {}) }}>
-          {usage || live ? <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{t('Context')}</Text> : null}
-          <View style={{ gap: 2 }}>
-            <Text style={{ color: exceeded ? colors.error : colors.foreground, fontSize: 20, fontWeight: '500', fontVariant: ['tabular-nums'] }}>
-              {hasWindow ? `${percent}%` : `${usedLabel} ${t('tokens')}`}
-            </Text>
-            {maxLabel ? <Text style={{ color: colors.mutedForeground, fontSize: 12, fontVariant: ['tabular-nums'] }}>
-              {usedLabel} / {maxLabel} {t('tokens')}
-            </Text> : null}
-          </View>
-          {exceeded ? <Text style={{ color: colors.error, fontSize: 12 }}>{t('Exceeds the model’s context window')}</Text> : null}
-          <View style={{ height: 6, borderRadius: 3, overflow: 'hidden', backgroundColor: colors.muted }}>
-            <View style={{ width: `${hasWindow ? Math.round(occupancy * 100) : 100}%`, height: '100%', backgroundColor: contextFill }} />
-          </View>
-          {hasWindow ? <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
-            <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{t('Free')}</Text>
-            <Text style={{ color: colors.foreground, fontSize: 12, fontVariant: ['tabular-nums'] }}>
-              {formatTokens(Math.max(0, contextWindow - tokens))}
-            </Text>
-          </View> : null}
-          {costUsd > 0 ? <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
-            <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{t('Cost')}</Text>
-            <Text style={{ color: colors.foreground, fontSize: 12, fontVariant: ['tabular-nums'] }}>${costUsd.toFixed(4)}</Text>
-          </View> : null}
-        </View> : null}
-      </View>
+    <AnchoredMenu anchor={menu.anchor} title={meter ? 'Usage' : 'Context'} onDismiss={menu.close} width={usage ? 280 : 240}
+      titleAccessory={meter ? <UsageRefreshAccessory refreshing={meter.refreshing} onRefresh={meter.onRefresh} /> : undefined}>
+      <ContextRingPanel {...props} />
     </AnchoredMenu>
   </>
+}
+
+/** The chip's popover body; exported so it can be rendered without the native anchor measurement. */
+export function ContextRingPanel(props: ContextRingProps) {
+  const { tokens, contextWindow, costUsd, usage: meter } = props
+  const { tokens: { colors } } = useMobileTheme()
+  const { t } = useMobileLocale()
+  const { usage, hasContext, hasReading, hasWindow, occupancy, percent, exceeded, contextFill, usedLabel, maxLabel } = useRingModel(props)
+
+  return <View style={{ padding: 8, gap: 12 }}>
+    {hasReading
+      ? <UsagePanel usage={usage} rateLimit={meter?.rateLimit} onConsumeResetCredit={meter?.onConsumeResetCredit} />
+      : meter ? <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{t('No usage data yet')}</Text> : null}
+    {hasContext ? <View style={{ gap: 8, ...(meter ? { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 10 } : {}) }}>
+      {meter ? <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{t('Context')}</Text> : null}
+      <View style={{ gap: 2 }}>
+        <Text style={{ color: exceeded ? colors.error : colors.foreground, fontSize: 20, fontWeight: '500', fontVariant: ['tabular-nums'] }}>
+          {hasWindow ? `${percent}%` : `${usedLabel} ${t('tokens')}`}
+        </Text>
+        {maxLabel ? <Text style={{ color: colors.mutedForeground, fontSize: 12, fontVariant: ['tabular-nums'] }}>
+          {usedLabel} / {maxLabel} {t('tokens')}
+        </Text> : null}
+      </View>
+      {exceeded ? <Text style={{ color: colors.error, fontSize: 12 }}>{t('Exceeds the model’s context window')}</Text> : null}
+      <View style={{ height: 6, borderRadius: 3, overflow: 'hidden', backgroundColor: colors.muted }}>
+        <View style={{ width: `${hasWindow ? Math.round(occupancy * 100) : 100}%`, height: '100%', backgroundColor: contextFill }} />
+      </View>
+      {contextWindow != null && hasWindow ? <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
+        <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{t('Free')}</Text>
+        <Text style={{ color: colors.foreground, fontSize: 12, fontVariant: ['tabular-nums'] }}>
+          {formatTokens(Math.max(0, contextWindow - tokens))}
+        </Text>
+      </View> : null}
+      {costUsd > 0 ? <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
+        <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{t('Cost')}</Text>
+        <Text style={{ color: colors.foreground, fontSize: 12, fontVariant: ['tabular-nums'] }}>${costUsd.toFixed(4)}</Text>
+      </View> : null}
+    </View> : null}
+  </View>
 }

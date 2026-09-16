@@ -2,7 +2,7 @@ import { View } from 'react-native'
 import type { RemoteUsage } from '@superone/shared/agent-types'
 import { MobileThemeProvider } from '../theme/context'
 import { Text } from './text'
-import { ContextRing } from './context-ring'
+import { ContextRing, ContextRingPanel } from './context-ring'
 import { UsagePanel, type UsageMeterProps } from './usage-panel'
 import { USAGE_FIXTURES, inSeconds } from '../preview/usage-fixtures'
 
@@ -34,7 +34,9 @@ function Chips() {
         usage={meter(claude, { rateLimit: { status: 'allowed_warning', utilization: 0.9, resetsAt: inSeconds(1800) } })} /></Chip>
       <Chip label="Live rejection, no reading"><ContextRing tokens={0} contextWindow={null} costUsd={0}
         usage={meter(null, { rateLimit: { status: 'rejected', resetsAt: inSeconds(3600) } })} /></Chip>
-      <Chip label="No meter, nothing spent (hidden)"><ContextRing tokens={0} contextWindow={200_000} costUsd={0} usage={meter(null)} /></Chip>
+      <Chip label="No reading yet, nothing spent"><ContextRing tokens={0} contextWindow={200_000} costUsd={0} usage={meter(null)} /></Chip>
+      <Chip label="Refreshing an empty meter"><ContextRing tokens={0} contextWindow={null} costUsd={0} usage={meter(null, { refreshing: true })} /></Chip>
+      <Chip label="No meter, nothing spent"><ContextRing tokens={0} contextWindow={200_000} costUsd={0} /></Chip>
     </View>
   </MobileThemeProvider>
 }
@@ -61,6 +63,12 @@ export const PanelGateway = { name: 'Panel · GLM gateway', render: () => <Panel
 export const PanelLiveWarning = {
   name: 'Panel · live warning above the windows',
   render: () => <Panel usage={claude} rateLimit={{ status: 'allowed_warning', utilization: 0.9, resetsAt: inSeconds(1800) }} />,
+}
+export const PanelEmpty = {
+  name: 'Panel · no reading yet, refresh in the title row',
+  render: () => <MobileThemeProvider>
+    <View style={{ width: 240 }}><ContextRingPanel tokens={0} contextWindow={200_000} costUsd={0} usage={meter(null)} /></View>
+  </MobileThemeProvider>,
 }
 export const PanelLiveRejectedAlone = {
   name: 'Panel · rejection with no polled reading',

@@ -33,6 +33,7 @@ export function UsageGallery() {
     ['Live rejection, no reading', <ContextRing tokens={0} contextWindow={null} costUsd={0}
       usage={meter(null, { rateLimit: { status: 'rejected', resetsAt: inSeconds(3600) } })} />],
     ['Refreshing', <ContextRing tokens={0} contextWindow={null} costUsd={0} usage={meter(grok, { refreshing: true })} />],
+    ['No reading yet, nothing spent', <ContextRing tokens={0} contextWindow={200_000} costUsd={0} usage={meter(null)} />],
   ]
   const panels: Array<[string, RemoteUsage | null, UsageMeterProps['rateLimit']]> = [
     ['Claude · three windows + extra usage', claude, null],

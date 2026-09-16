@@ -123,7 +123,28 @@ export function formatGrokAskUserAccepted(answers: unknown): Record<string, unkn
   if (!answers || typeof answers !== 'object' || Array.isArray(answers)) {
     return formatGrokAskUserCancelled()
   }
-  return { outcome: 'accepted', answers }
+  const record = answers as Record<string, unknown>
+  // Remote UI returns an envelope; legacy hosts return the bare answer map.
+  const wrapped = record.answers !== null && typeof record.answers === 'object'
+    && !Array.isArray(record.answers)
+  const source = wrapped ? record.answers as Record<string, unknown> : record
+  const normalized: Record<string, string[]> = {}
+  for (const [question, value] of Object.entries(source)) {
+    if (typeof value === 'string') {
+      if (value) normalized[question] = value.split(', ').map((part) => part.trim()).filter(Boolean)
+    } else if (Array.isArray(value) && value.every((part) => typeof part === 'string')) {
+      normalized[question] = value
+    } else {
+      return formatGrokAskUserCancelled()
+    }
+  }
+  if (Object.keys(normalized).length === 0) return formatGrokAskUserCancelled()
+  return {
+    outcome: 'accepted',
+    answers: normalized,
+    ...(wrapped && record.annotations && typeof record.annotations === 'object'
+      && !Array.isArray(record.annotations) ? { annotations: record.annotations } : {}),
+  }
 }
 
 /** Headless / no-UI answer for `x.ai/exit_plan_mode`. */

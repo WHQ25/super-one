@@ -2,6 +2,30 @@ import { interactionMemoryZh } from './interaction-memory'
 import type { Messages } from './en'
 
 export const zh: Messages = {
+  grokAuth: {
+    title: "Grok 账户",
+    signedOut: "未登录",
+    signedIn: "已登录",
+    signedOutHint: "已在 Grok Build 登录？刷新即可。",
+    signIn: "登录",
+    refresh: "刷新",
+    checking: "检查中…",
+    starting: "正在准备登录…",
+    waiting: "等待浏览器登录…",
+    openBrowser: "打开浏览器",
+    cancel: "取消",
+    haveCode: "已有登录验证码？",
+    codeLabel: "登录验证码",
+    submit: "提交验证码",
+    verifying: "正在验证账户…",
+    failed: "登录未完成",
+    retry: "重试",
+    unavailable: "尚未安装 Grok Build",
+    installHint: "请安装 Grok Build，然后刷新。",
+    apiKey: "已配置 API Key",
+    browserError: "无法打开浏览器，请重试。",
+    unknownError: "无法连接 Grok Build，请重试。",
+  },
   activity: {
     launcher: {
       browser: '浏览器',

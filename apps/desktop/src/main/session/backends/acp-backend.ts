@@ -3,7 +3,6 @@ import type {
   ContextUsageInfo,
   McpServerInfo,
   PermissionMode,
-  PermissionRequest,
   ProviderRateLimits,
   QuestionAnnotations,
   RewindFilesResult,
@@ -697,9 +696,6 @@ export class AcpBackend implements SessionBackend {
           request: (params) => this.handleMcpElicit(params),
           complete: (payload) => this.handleMcpElicitComplete(payload),
         },
-        interactiveAuth: {
-          request: (params) => this.handleGrokInteractiveAuth(params),
-        },
         scheduledTaskInject: {
           request: (payload) => this.handleScheduledTaskInject(payload),
         },
@@ -943,48 +939,6 @@ export class AcpBackend implements SessionBackend {
     return new Promise((resolve) => {
       this.pendingPlanApprovals.set(requestId, {
         resolve: (answer) => resolve(formatGrokExitPlanModeResponse(answer)),
-        event,
-      })
-      this.emit(event)
-    })
-  }
-
-  private handleGrokInteractiveAuth(params: {
-    authUrl: string
-    mode?: string
-  }): Promise<{ kind: 'code'; code: string } | { kind: 'opened' } | { kind: 'cancel' }> {
-    const requestId = `acp_login_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-    this.rejectPendingElicitations()
-    const request: PermissionRequest = {
-      requestId,
-      toolName: 'grok',
-      toolUseId: requestId,
-      input: {},
-      allowAlwaysAllow: false,
-      requestKind: 'mcp_elicitation',
-      serverName: 'grok',
-      message: 'Sign in to Grok',
-      subtitle: params.authUrl,
-      elicitationUrl: params.authUrl,
-      elicitationForm: [{
-        name: 'code',
-        type: 'string',
-        label: 'Login code',
-        required: false,
-      }],
-    }
-    const event: AgentEvent = { type: 'permission_request', request }
-    log.info('[AcpBackend] grok interactive login requestId=%s', requestId)
-    return new Promise((resolve) => {
-      this.pendingElicitations.set(requestId, {
-        resolve: (answer) => {
-          if (answer.kind === 'accept') {
-            const code = typeof answer.content?.code === 'string' ? answer.content.code.trim() : ''
-            resolve(code ? { kind: 'code', code } : { kind: 'opened' })
-          } else {
-            resolve({ kind: 'cancel' })
-          }
-        },
         event,
       })
       this.emit(event)

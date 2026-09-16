@@ -56,6 +56,7 @@ export function configTabsFor(provider: SettingsProvider | undefined): HarnessCo
   if (provider === 'codex') return CODEX_CONFIG_TABS
   if (provider === 'cursor') return CURSOR_CONFIG_TABS
   if (provider === 'dsh') return DSH_CONFIG_TABS
-  if (provider === 'acp' || provider === 'opencode') return SESSION_DEFAULTS_ONLY_TABS
+  if (provider === 'acp') return ['account', 'preferences']
+  if (provider === 'opencode') return SESSION_DEFAULTS_ONLY_TABS
   return null
 }

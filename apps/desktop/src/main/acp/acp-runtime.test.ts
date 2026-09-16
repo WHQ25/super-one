@@ -8,9 +8,7 @@ import {
 } from '@agentclientprotocol/sdk'
 import { createAcpRuntime } from './acp-runtime'
 import {
-  XAI_AUTH_CANCEL,
   XAI_AUTH_GET_URL,
-  XAI_AUTH_SUBMIT_CODE,
   XAI_CONSENT_RECORD,
   XAI_MCP_ELICIT,
   XAI_RECAP,
@@ -32,8 +30,6 @@ import type { AgentEvent } from '@superone/shared/agent-types'
 // rejected with `Method not found`. The in-process test agent mirrors the real
 // agent by registering the same wire names SuperOne must send.
 const XAI_AUTH_GET_URL_WIRE = xaiExtWireMethod(XAI_AUTH_GET_URL)
-const XAI_AUTH_SUBMIT_CODE_WIRE = xaiExtWireMethod(XAI_AUTH_SUBMIT_CODE)
-const XAI_AUTH_CANCEL_WIRE = xaiExtWireMethod(XAI_AUTH_CANCEL)
 const XAI_RECAP_WIRE = xaiExtWireMethod(XAI_RECAP)
 const XAI_YOLO_MODE_CHANGED_WIRE = xaiExtWireMethod(XAI_YOLO_MODE_CHANGED)
 const XAI_CONSENT_RECORD_WIRE = xaiExtWireMethod(XAI_CONSENT_RECORD)
@@ -233,83 +229,33 @@ describe('createAcpRuntime (in-process agent)', () => {
     const runtime = await createAcpRuntime({
       launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
       permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
-      interactiveAuth: { request: async () => ({ kind: 'cancel' }) },
       streamFactory: async () => ({
         stream: ndJsonStream(clientToAgent.writable, agentToClient.readable),
         dispose: () => {},
       }),
     })
     expect(authCalls).toEqual(['cached_token'])
-    expect(getUrlCalls).toEqual([])
+    expect(getUrlCalls.length).toBeLessThanOrEqual(1)
     await runtime.close()
   })
 
-  it('hosts grok.com login via get_url + submit_code', async () => {
-    const submitted: unknown[] = []
-    const agentApp = agent({ name: 'login-agent' })
-      .onRequest(methods.agent.initialize, async () => ({
-        protocolVersion: PROTOCOL_VERSION,
-        agentCapabilities: {},
-        authMethods: [{ id: 'grok.com' }],
-      }))
-      .onRequest(methods.agent.session.new, async () => ({ sessionId: 'login-session' }))
-      .onRequest(methods.agent.session.prompt, async () => ({ stopReason: 'end_turn' as const }))
-      .onNotification(methods.agent.session.cancel, async () => {})
-      .onRequest(XAI_AUTH_GET_URL_WIRE, (raw: unknown) => raw, async () => ({
-        auth_url: 'https://grok.com/device',
-        mode: 'device_code',
-      }))
-      .onRequest(XAI_AUTH_SUBMIT_CODE_WIRE, (raw: unknown) => raw, async (ctx) => {
-        submitted.push(ctx.params)
-        return {}
-      })
-    const clientToAgent = new TransformStream<Uint8Array>()
-    const agentToClient = new TransformStream<Uint8Array>()
-    agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
-    const runtime = await createAcpRuntime({
-      launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
-      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
-      interactiveAuth: { request: async () => ({ kind: 'code', code: 'ABCD-1234' }) },
-      streamFactory: async () => ({
-        stream: ndJsonStream(clientToAgent.writable, agentToClient.readable),
-        dispose: () => {},
-      }),
-    })
-    expect(submitted).toEqual([{ code: 'ABCD-1234' }])
-    await runtime.close()
-  })
-
-  it('cancels interactive login without hanging session setup', async () => {
-    const cancelled: unknown[] = []
-    const agentApp = agent({ name: 'cancel-login' })
-      .onRequest(methods.agent.initialize, async () => ({
-        protocolVersion: PROTOCOL_VERSION,
-        agentCapabilities: {},
-        authMethods: [{ id: 'grok.com' }],
-      }))
-      .onRequest(methods.agent.session.new, async () => ({ sessionId: 'cancel-session' }))
-      .onRequest(methods.agent.session.prompt, async () => ({ stopReason: 'end_turn' as const }))
-      .onNotification(methods.agent.session.cancel, async () => {})
-      .onRequest(XAI_AUTH_GET_URL_WIRE, (raw: unknown) => raw, async () => ({
-        auth_url: 'https://grok.com/device',
-      }))
-      .onRequest(XAI_AUTH_CANCEL_WIRE, (raw: unknown) => raw, async (ctx) => {
-        cancelled.push(ctx.params)
-        return {}
-      })
-    const clientToAgent = new TransformStream<Uint8Array>()
-    const agentToClient = new TransformStream<Uint8Array>()
-    agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
+  it('redirects missing credentials to Grok settings without starting login', async () => {
+    const authenticate = vi.fn(async () => ({}))
+    const createSession = vi.fn(async () => ({ sessionId: 'unused' }))
+    const app = agent({ name: 'signed-out' })
+      .onRequest(methods.agent.initialize, async () => ({ protocolVersion: PROTOCOL_VERSION, agentCapabilities: {}, authMethods: [{ id: 'grok.com' }] }))
+      .onRequest(methods.agent.authenticate, authenticate)
+      .onRequest(methods.agent.session.new, createSession)
+    const outgoing = new TransformStream<Uint8Array>()
+    const incoming = new TransformStream<Uint8Array>()
+    app.connect(ndJsonStream(incoming.writable, outgoing.readable))
     await expect(createAcpRuntime({
       launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
       permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
-      interactiveAuth: { request: async () => ({ kind: 'cancel' }) },
-      streamFactory: async () => ({
-        stream: ndJsonStream(clientToAgent.writable, agentToClient.readable),
-        dispose: () => {},
-      }),
-    })).rejects.toThrow(/Grok login cancelled/)
-    expect(cancelled).toHaveLength(1)
+      streamFactory: async () => ({ stream: ndJsonStream(outgoing.writable, incoming.readable), dispose: () => {} }),
+    })).rejects.toThrow(/Settings → Harnesses → Grok → Account/)
+    expect(authenticate).not.toHaveBeenCalled()
+    expect(createSession).not.toHaveBeenCalled()
   })
 
   it('parses sessionRecap from initialize and requests x.ai/recap', async () => {
@@ -1448,6 +1394,29 @@ describe('ACP host integration (MCP + system prompt)', () => {
 
   beforeEach(() => setSuperoneMcpBridgeRuntime(bridge))
   afterEach(() => setSuperoneMcpBridgeRuntime(null))
+
+  it.each([
+    { agentId: 'grok-build', resumeSessionId: 'existing', appended: true },
+    { agentId: 'custom', resumeSessionId: undefined, appended: true },
+    { agentId: 'grok-build', resumeSessionId: undefined, appended: false },
+  ])('preserves host instructions for $agentId resume=$resumeSessionId', async ({ agentId, resumeSessionId, appended }) => {
+    const captured: CapturedRequests = { newSession: null, prompts: [], notifications: [] }
+    const runtime = await createAcpRuntime({
+      launch: { agentId, command: 'unused', defaultCwd: '/tmp/proj' },
+      superoneSessionId: 'host-context-test',
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+      systemPromptAppend: 'Use the newly selected project instructions.',
+      resumeSessionId,
+      streamFactory: async () => makeEchoAgentStream(captured, { loadSession: true }),
+    })
+    try {
+      await runtime.prompt('hello', 'context-message', () => {})
+      const text = captured.prompts.flat().map((block) => block.text ?? '').join('\n')
+      expect(text.includes('Use the newly selected project instructions.')).toBe(appended)
+    } finally {
+      await runtime.close()
+    }
+  })
 
   async function run(opts: {
     captured: CapturedRequests

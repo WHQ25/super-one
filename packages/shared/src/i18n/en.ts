@@ -14,6 +14,30 @@ type SetupAdvice = {
 }
 
 export type Messages = {
+  grokAuth: {
+    title: string
+    signedOut: string
+    signedIn: string
+    signedOutHint: string
+    signIn: string
+    refresh: string
+    checking: string
+    starting: string
+    waiting: string
+    openBrowser: string
+    cancel: string
+    haveCode: string
+    codeLabel: string
+    submit: string
+    verifying: string
+    failed: string
+    retry: string
+    unavailable: string
+    installHint: string
+    apiKey: string
+    browserError: string
+    unknownError: string
+  }
   activity: {
     launcher: {
       browser: string
@@ -3692,6 +3716,30 @@ export type Messages = {
 }
 
 export const en: Messages = {
+  grokAuth: {
+    title: "Grok Account",
+    signedOut: "Not Signed In",
+    signedIn: "Signed In",
+    signedOutHint: "Already signed in with Grok Build? Refresh to connect.",
+    signIn: "Sign In",
+    refresh: "Refresh",
+    checking: "Checking…",
+    starting: "Preparing Sign-in…",
+    waiting: "Waiting for Browser Sign-in…",
+    openBrowser: "Open Browser",
+    cancel: "Cancel",
+    haveCode: "Have a Login Code?",
+    codeLabel: "Login Code",
+    submit: "Submit Code",
+    verifying: "Verifying Your Account…",
+    failed: "Could Not Sign In",
+    retry: "Try Again",
+    unavailable: "Grok Build Is Not Installed",
+    installHint: "Install Grok Build, then refresh.",
+    apiKey: "API Key Configured",
+    browserError: "Could not open the browser. Please try again.",
+    unknownError: "Unable to reach Grok Build. Please try again.",
+  },
   activity: {
     launcher: {
       browser: 'Browser',

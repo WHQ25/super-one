@@ -1,10 +1,15 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+
 import { join } from 'node:path'
 import {
   extractWorkflowScriptHints,
   type WorkflowArgSpec,
 } from '@superone/shared/workflow-args'
+
+const execFileAsync = promisify(execFile)
 
 export interface DiscoveredWorkflow {
   name: string
@@ -76,7 +81,12 @@ export async function discoverGrokWorkflows(
 ): Promise<DiscoveredWorkflow[]> {
   const dirs: Array<{ dir: string; source: 'project' | 'user' }> = []
   if (projectPath && projectPath.trim()) {
-    dirs.push({ dir: join(projectPath, '.grok', 'workflows'), source: 'project' })
+    let root = projectPath.trim()
+    try {
+      const { stdout } = await execFileAsync('git', ['-C', root, 'rev-parse', '--show-toplevel'], { timeout: 5_000 })
+      root = stdout.trim() || root
+    } catch { /* Non-Git projects discover directly under cwd. */ }
+    dirs.push({ dir: join(root, '.grok', 'workflows'), source: 'project' })
   }
   dirs.push({ dir: join(userHome, '.grok', 'workflows'), source: 'user' })
 

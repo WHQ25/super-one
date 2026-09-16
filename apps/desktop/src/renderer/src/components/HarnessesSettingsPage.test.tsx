@@ -9,6 +9,8 @@ import {
 } from '@superone/shared/environment/harness-installation'
 import { HarnessesSettingsPage, listKeyForSettingsProvider } from './HarnessesSettingsPage'
 
+vi.mock('./GrokAuthSettings', () => ({ GrokAuthSettings: () => <div>grok-account</div> }))
+
 const hoisted = vi.hoisted(() => ({
   enableHarness: vi.fn(),
   refreshHarnessCatalog: vi.fn(),
@@ -183,7 +185,7 @@ describe('first-party harness settings entries', () => {
     'keeps %s selected instead of snapping back to Claude Code',
     async (harnessId) => {
       const user = userEvent.setup()
-      render(<HarnessesSettingsPage />)
+      const view = render(<HarnessesSettingsPage />)
 
       await user.click(await screen.findByRole('button', { name: HARNESS_LABELS[harnessId] }))
 
@@ -191,7 +193,12 @@ describe('first-party harness settings entries', () => {
         expect(screen.queryByRole('tab', { name: /Subagents/i })).not.toBeInTheDocument()
       })
       expect(screen.getByRole('tab', { name: /Preferences/i })).toBeInTheDocument()
-      expect(screen.getAllByRole('tab')).toHaveLength(1)
+      expect(screen.getAllByRole('tab')).toHaveLength(harnessId === 'acp-grok' ? 2 : 1)
+      if (harnessId === 'acp-grok') {
+        expect(screen.getByText('grok-account')).toBeInTheDocument()
+        await user.click(screen.getByRole('tab', { name: /Preferences/i }))
+        view.rerender(<HarnessesSettingsPage />)
+      }
       expect(
         screen.getByText(
           harnessId === 'acp-grok' ? 'preferences-for-acp' : 'preferences-for-opencode',

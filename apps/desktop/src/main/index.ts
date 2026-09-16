@@ -1,4 +1,5 @@
 import { codexAccountStore } from './codex/codex-account-store'
+import { registerGrokAuthIpc } from './acp/grok-auth-ipc'
 import { registerCodexAccountIpc } from './codex/codex-account-ipc'
 import { superoneHome } from './superone-home'
 import { registerCollaborationMailboxIpc } from './session/collaboration-mailbox-ipc'
@@ -2515,6 +2516,7 @@ function registerIpcHandlers(): void {
   })
 
   registerCodexAccountIpc(codexService)
+  registerGrokAuthIpc()
 
   ipcMain.handle(AgentIpcChannels.CODEX_GET_RATE_LIMITS, async (_event, projectPath: string, apiProviderId?: string | null) => {
     if (parseRemoteProjectKey(projectPath)) {

@@ -144,7 +144,8 @@ export const WorkflowSlashPopup = forwardRef<WorkflowSlashPopupHandle, WorkflowS
       let cancelled = false
       void (async () => {
         try {
-          const rows = await window.app.discoverGrokWorkflows?.(cwd ?? null)
+          // Remote catalog entries come from the agent; never scan this host's home.
+          const rows = cwd ? await window.app.discoverGrokWorkflows?.(cwd) : []
           if (cancelled) return
           setDiscovered(Array.isArray(rows) ? rows : [])
           setDiscoverError(null)

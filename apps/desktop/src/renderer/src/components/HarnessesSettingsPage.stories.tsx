@@ -111,6 +111,7 @@ function baseCatalog(overrides: Partial<Record<string, Partial<CatalogRow>>> = {
 }
 
 type Scenario = {
+  section?: 'account' | 'preferences'
   catalog: CatalogRow[]
   /** Simulate a multi-step download when enableHarness is called. */
   simulateInstall?: boolean
@@ -293,6 +294,8 @@ function installHarnessMocks(scenario: Scenario): void {
   mockIpc('app', 'listPlugins', async () => [])
   mockIpc('app', 'listHooks', async () => [])
 
+  mockIpc('app', 'grokAuth', async () => ({ status: 'signed_out' }))
+
   mockIpc('app', 'getCursorAuthStatus', async () => ({
     configured: false,
     apiKeyName: null,
@@ -357,7 +360,7 @@ function StoryFrame({
     useAppStore.setState({
       settingsProvider: select,
       // Non-null section triggers list selection sync for every catalog harness.
-      harnessConfigSection: 'preferences',
+      harnessConfigSection: scenario.section ?? 'preferences',
     })
     return () => {
       clearInstallTimers()
@@ -682,4 +685,9 @@ export const FailOnEnable: Story = {
 export const CodexPreferences: Story = {
   name: 'Codex (preferences, accounts managed in Providers)',
   decorators: [(Story) => <StoryFrame scenario={{ select: 'codex', catalog: baseCatalog({ codex: { enabled: true, state: 'ready', runtimeSource: 'managed', runtimeVersion: '0.45.0' } }) }}><Story /></StoryFrame>],
+}
+
+export const GrokAccount: Story = {
+  name: 'Grok Account',
+  decorators: [(Story) => <StoryFrame scenario={{ select: 'acp', section: 'account', catalog: baseCatalog({ 'acp-grok': { enabled: true, state: 'ready', runtimeSource: 'external', command: '/Users/demo/.grok/bin/grok agent stdio' } }) }}><Story /></StoryFrame>],
 }

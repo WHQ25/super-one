@@ -58,6 +58,7 @@ import { PluginsPage } from './PluginsPage'
 import { DshPluginsPage } from './DshPluginsPage'
 import { PreferencesPage } from './PreferencesPage'
 import { CursorAuthSettings, type CursorSettingsSection } from './CursorAuthSettings'
+import { GrokAuthSettings } from './GrokAuthSettings'
 import { HarnessPreferencesPage } from './preferences/SessionDefaultsSection'
 
 interface CatalogRow {
@@ -906,6 +907,7 @@ function HarnessDetail({
                 {section === 'preferences' && (
                   <PreferencesPage provider={item.configProvider} />
                 )}
+                {section === 'account' && item.configProvider === 'acp' && <GrokAuthSettings onAuthChanged={onRefresh} />}
                 {section === 'agents' && <AgentsPage />}
                 {section === 'skills' && <SkillsPage />}
                 {section === 'mcp' && <McpPage />}

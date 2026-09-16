@@ -1,3 +1,4 @@
+import { withoutProjectScopedWorkflows } from '@superone/shared/workflow-commands'
 import { describe, it, expect } from 'vitest'
 import type { ContentBlock, SlashCommandInfo } from '@superone/shared/agent-types'
 import {
@@ -132,24 +133,24 @@ describe('mergeWorkflowCatalog', () => {
     },
   ]
 
-  it('keeps cwd-discovered project + user and ACP builtins', () => {
+  it('keeps local discoveries and live ACP project workflows', () => {
     const merged = mergeWorkflowCatalog(discovered, [
       { name: 'deep-research', description: 'Research', source: 'builtin' },
       {
         name: 'grok-build-parity',
-        description: 'Foreign project workflow',
+        description: 'Live project workflow',
         source: 'project',
         path: '/super-one/.grok/workflows/grok-build-parity.rhai',
       },
     ])
-    expect(merged.map((w) => w.name)).toEqual(['deep-research', 'only-in-a', 'user-global'])
+    expect(merged.map((w) => w.name)).toEqual(['deep-research', 'grok-build-parity', 'only-in-a', 'user-global'])
     expect(merged.find((w) => w.name === 'only-in-a')).toMatchObject({
       source: 'project',
       argumentHint: 'focus=…',
     })
   })
 
-  it('does not list a SuperOne project workflow for a grok-build session', () => {
+  it('keeps agent-global cache entries filtered before merging with the live catalog', () => {
     const grokBuildScan = [
       {
         name: 'user-global',
@@ -158,7 +159,7 @@ describe('mergeWorkflowCatalog', () => {
         path: '/home/.grok/workflows/user-global.rhai',
       },
     ]
-    const acpFromStaleCache = catalogWorkflows([
+    const acpFromStaleCache = catalogWorkflows(withoutProjectScopedWorkflows([
       {
         name: 'client-cli-coverage-scan',
         description: 'Workflow: Scan desktop client',
@@ -184,10 +185,17 @@ describe('mergeWorkflowCatalog', () => {
         isWorkflow: true,
         workflowSource: 'user',
       },
-    ])
+    ]))
     const merged = mergeWorkflowCatalog(grokBuildScan, acpFromStaleCache)
     expect(merged.map((w) => w.name)).toEqual(['deep-research', 'user-global'])
     expect(merged.find((w) => w.name === 'client-cli-coverage-scan')).toBeUndefined()
+  })
+})
+
+describe('remote workflow catalog', () => {
+  it('lists a live project workflow when no local scan is available', () => {
+    expect(mergeWorkflowCatalog([], [{ name: 'deploy', description: 'Remote deploy', source: 'project' }]))
+      .toEqual([{ name: 'deploy', description: 'Remote deploy', source: 'project' }])
   })
 })
 
@@ -201,7 +209,8 @@ describe('resolveWorkflowDiscoveryCwd', () => {
 
   it('skips remote project keys so host scan does not walk a local path', () => {
     expect(resolveWorkflowDiscoveryCwd('', 'remote:abc:/node/path')).toBeNull()
-    expect(resolveWorkflowDiscoveryCwd('remote:abc:/node/path', '/local')).toBe('/local')
+    expect(resolveWorkflowDiscoveryCwd('remote:abc:/node/path', '/local')).toBeNull()
+    expect(resolveWorkflowDiscoveryCwd('/node/path', 'remote:abc:/node/path')).toBeNull()
   })
 })
 

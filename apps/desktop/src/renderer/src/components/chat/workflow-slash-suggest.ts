@@ -202,14 +202,9 @@ export function catalogWorkflows(commands: SlashCommandInfo[]): WorkflowCatalogE
   return out
 }
 
-/**
- * Host scan of *this session's cwd* is the source of truth for project + user
- * `.rhai` files. ACP `available_commands` may still carry another project's
- * `workflowSource: project` ads via the agent-global cache — never import those
- * unless the cwd scan already found the same name.
- *
- * Built-in (and other non-project) ACP ads fill gaps: Grok bundled workflows
- * are not on disk under the session repo.
+/** Merge local discoveries with this session's live ACP catalog.
+ * Agent-global caches filter project entries before they reach this function.
+ * Live entries remain authoritative when the agent runs on another host.
  */
 export function mergeWorkflowCatalog(
   discovered: Array<{
@@ -245,7 +240,6 @@ export function mergeWorkflowCatalog(
       }
       continue
     }
-    if ((a.source ?? '').toLowerCase() === 'project') continue
     byName.set(a.name, a)
   }
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name))
@@ -256,6 +250,7 @@ export function resolveWorkflowDiscoveryCwd(
   sessionCwd: string | null | undefined,
   fallbackProjectPath: string | null | undefined,
 ): string | null {
+  if (fallbackProjectPath?.trim().startsWith('remote:') || sessionCwd?.trim().startsWith('remote:')) return null
   const cwd = sessionCwd?.trim()
   if (cwd && !cwd.startsWith('remote:')) return cwd
   const fallback = fallbackProjectPath?.trim()

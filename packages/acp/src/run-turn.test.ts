@@ -284,7 +284,10 @@ describe('ACP production turn runner AgentEvents', () => {
 
   it('parks ask_user_question on onQuestion when a UI waiter exists', async () => {
     mocks.active.nextUpdate.mockResolvedValue({ kind: 'stop', stopReason: 'end_turn' })
-    const onQuestion = vi.fn(async () => ({ 'Pick one?': ['A'] }))
+    const onQuestion = vi.fn(async () => ({
+      answers: { 'Pick one?': 'A' },
+      annotations: { 'Pick one?': { notes: 'Selected from the remote UI' } },
+    }))
     const runner = createAcpAgentTurnRunner({
       launch: { command: '/fake/acp' },
       resolveProjectPath: () => '/tmp',
@@ -307,7 +310,10 @@ describe('ACP production turn runner AgentEvents', () => {
       kind: 'question',
       interactionId: 'q-1',
     }))
-    expect(result).toEqual({ outcome: 'accepted', answers: { 'Pick one?': ['A'] } })
+    expect(result).toEqual({
+      outcome: 'accepted', answers: { 'Pick one?': ['A'] },
+      annotations: { 'Pick one?': { notes: 'Selected from the remote UI' } },
+    })
     await turn
   })
 })

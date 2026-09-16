@@ -437,6 +437,7 @@ interface AppAPI {
   testProviderEndpoint(data: { apiKey: string; credentialId?: string; baseUrl: string; endpoints: ServiceEndpoint[] }): Promise<ProviderEndpointTestResponse>
   discoverProviderModels(data: { apiKey: string; credentialId?: string; baseUrl: string }): Promise<DiscoverModelsResult>
   listAcpAgents(): Promise<import('@superone/shared/agent-types').AcpResources>
+  grokAuth(request: import('@superone/shared/grok-auth').GrokAuthRequest): Promise<import('@superone/shared/grok-auth').GrokAuthState>
   refreshAcpModels(agentId?: string): Promise<import('@superone/shared/agent-types').AcpResources>
 
   // File operations

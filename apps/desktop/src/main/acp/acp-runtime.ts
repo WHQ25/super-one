@@ -1,3 +1,4 @@
+import { authenticateGrokCached } from './grok-cached-auth'
 import {
   client,
   methods,
@@ -51,9 +52,6 @@ import { handleReadTextFile, handleWriteTextFile } from './acp-fs'
 import { AcpTerminalManager } from './acp-terminals'
 import {
   XAI_ASK_USER_QUESTION,
-  XAI_AUTH_CANCEL,
-  XAI_AUTH_GET_URL,
-  XAI_AUTH_SUBMIT_CODE,
   XAI_BILLING,
   XAI_CONSENT_RECORD,
   XAI_EXIT_PLAN_MODE,
@@ -117,8 +115,6 @@ import {
 } from './acp-permission-preapprove'
 import { parseGrokBilling } from './acp-billing'
 import {
-  isInteractiveAcpAuthMethod,
-  parseGrokAuthUrl,
   pickNonInteractiveAcpAuthMethod,
 } from './acp-auth'
 import {
@@ -126,6 +122,7 @@ import {
   buildGrokSessionMetaOverlay,
   grokInitializeAdvertisesPluginDirs,
 } from './acp-session-meta'
+import { GROK_AUTH_REQUIRED } from '@superone/shared/grok-auth'
 import { describeAcpRequestFailure } from './acp-request-error'
 import { pushBashOutput } from '../bash-output-watcher'
 import type {
@@ -259,15 +256,6 @@ export interface AcpRuntimeOptions {
   exitPlanMode?: AcpExitPlanModeGate
   consentNotice?: AcpConsentNoticeGate
   mcpElicit?: AcpMcpElicitGate
-  /**
-   * Interactive grok.com / OIDC login when initialize only advertises those
-   * methods. Cancel must not hang session start.
-   */
-  interactiveAuth?: {
-    request: (params: { authUrl: string; mode?: string }) => Promise<
-      { kind: 'code'; code: string } | { kind: 'opened' } | { kind: 'cancel' }
-    >
-  }
   scheduledTaskInject?: AcpScheduledTaskInjectGate
   /** Agent-broadcast mid-turn insert from another client (or our own echo). */
   onSessionInterjection?: (payload: {
@@ -687,52 +675,21 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     const methodId = pickNonInteractiveAcpAuthMethod(authMethods, defaultAuthId)
     if (methodId) {
       try {
-        await connection.agent.request(methods.agent.authenticate, { methodId })
+        if (launch.agentId === 'grok-build') {
+          const authConnection = connection
+          await authenticateGrokCached((method, params) => authConnection.agent.request(
+            method === 'authenticate' ? methods.agent.authenticate : xaiExtWireMethod(method), params as never,
+          ), methodId)
+        } else {
+          await connection.agent.request(methods.agent.authenticate, { methodId })
+        }
         log.info('[acp-runtime] authenticated method=%s agent=%s', methodId, launch.agentId)
       } catch (err) {
         log.warn('[acp-runtime] authenticate failed method=%s:', methodId, err)
+        if (launch.agentId === 'grok-build') throw err
       }
-    } else if (
-      launch.agentId === 'grok-build'
-      && opts.interactiveAuth
-      && authMethods.some((m) => isInteractiveAcpAuthMethod(m.id))
-    ) {
-      const interactiveId = authMethods.find((m) => isInteractiveAcpAuthMethod(m.id))?.id ?? 'grok.com'
-      let parsed: ReturnType<typeof parseGrokAuthUrl> = null
-      for (let i = 0; i < 20 && !parsed; i++) {
-        if (i > 0) await new Promise((r) => setTimeout(r, 50))
-        try {
-          const raw = await connection.agent.request(xaiExtWireMethod(XAI_AUTH_GET_URL), {})
-          parsed = parseGrokAuthUrl(raw)
-        } catch (err) {
-          log.debug('[acp-runtime] x.ai/auth/get_url attempt %d:', i, err)
-        }
-      }
-      if (!parsed) {
-        log.warn('[acp-runtime] interactive Grok auth advertised but get_url returned no URL')
-      } else {
-        const answer = await opts.interactiveAuth.request({
-          authUrl: parsed.authUrl,
-          mode: parsed.mode,
-        })
-        if (answer.kind === 'cancel') {
-          try {
-            await connection.agent.request(xaiExtWireMethod(XAI_AUTH_CANCEL), {})
-          } catch { /* best-effort */ }
-          throw new Error('Grok login cancelled')
-        }
-        if (answer.kind === 'code') {
-          await connection.agent.request(xaiExtWireMethod(XAI_AUTH_SUBMIT_CODE), { code: answer.code })
-          log.info('[acp-runtime] submitted Grok login code agent=%s', launch.agentId)
-        } else {
-          try {
-            await connection.agent.request(methods.agent.authenticate, { methodId: interactiveId })
-            log.info('[acp-runtime] authenticated interactive method=%s', interactiveId)
-          } catch (err) {
-            log.warn('[acp-runtime] interactive authenticate failed method=%s:', interactiveId, err)
-          }
-        }
-      }
+    } else if (launch.agentId === 'grok-build' && authMethods.length > 0) {
+      throw new Error(GROK_AUTH_REQUIRED)
     } else if (authMethods.length > 0) {
       log.info(
         '[acp-runtime] skip interactive auth methods agent=%s methods=%s',
@@ -761,7 +718,6 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       rules: opts.systemPromptAppend,
     })
     const sessionMeta = { ...permissionMeta, ...sessionMetaOverlay }
-    stampedRules = typeof sessionMetaOverlay.rules === 'string'
     const sessionRequestBase = {
       cwd: launch.cwd,
       mcpServers,
@@ -857,6 +813,9 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       }
     }
     if (!session) throw new Error('ACP session not established')
+    // Grok applies rules only at creation. Other ACP agents may ignore this extension.
+    stampedRules = launch.agentId === 'grok-build' && sessionVia === 'new'
+      && typeof sessionMetaOverlay.rules === 'string'
     xaiCorrelation.parentSessionId = session.sessionId
 
     sessionModels = extractModelsFromNewSessionResult(session.newSessionResponse)

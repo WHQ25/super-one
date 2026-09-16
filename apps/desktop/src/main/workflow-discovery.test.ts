@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { execFileSync } from 'node:child_process'
 import { discoverGrokWorkflows } from './workflow-discovery'
 
 function writeWorkflow(dir: string, name: string, description: string) {
@@ -54,6 +55,18 @@ let focus = a.focus;
     expect(hit!.args.find((a) => a.name === 'focus')?.description).toMatch(/free-text/)
     expect(hit!.exampleJson).toBeTruthy()
     expect(hit!.whenToUse).toMatch(/migration/)
+  })
+
+  it('discovers repository workflows when the session cwd is a subdirectory', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'wf-nested-'))
+    const home = mkdtempSync(join(tmpdir(), 'wf-empty-home-'))
+    execFileSync('git', ['init', root])
+    const cwd = join(root, 'packages', 'app')
+    mkdirSync(cwd, { recursive: true })
+    writeWorkflow(join(root, '.grok', 'workflows'), 'repo-workflow', 'Repository workflow')
+    const found = await discoverGrokWorkflows(cwd, home)
+    expect(found.map((entry) => entry.name)).toEqual(['repo-workflow'])
+    expect(found[0]?.source).toBe('project')
   })
 
   it('lists this repo project workflows plus user-level, not another repo', async () => {

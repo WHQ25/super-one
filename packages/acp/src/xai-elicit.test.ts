@@ -64,6 +64,19 @@ describe('ask / exit_plan fail-closed formatters', () => {
     })
   })
 
+  it('unwraps remote answers and preserves annotations', () => {
+    expect(formatGrokAskUserAccepted({
+      answers: { 'Which?': 'A, B' },
+      annotations: { 'Which?': { notes: 'Both' } },
+    })).toEqual({
+      outcome: 'accepted', answers: { 'Which?': ['A', 'B'] },
+      annotations: { 'Which?': { notes: 'Both' } },
+    })
+    expect(formatGrokAskUserAccepted({})).toEqual({ outcome: 'cancelled' })
+    expect(formatGrokAskUserAccepted({ answers: {} })).toEqual({ outcome: 'cancelled' })
+    expect(formatGrokAskUserAccepted({ answers: { 'Q?': {} } })).toEqual({ outcome: 'cancelled' })
+  })
+
   it('maps plan approve/reject onto Grok outcomes', () => {
     expect(formatGrokExitPlanFromDecision('approve')).toEqual({ outcome: 'approved' })
     expect(formatGrokExitPlanFromDecision('reject', { feedback: 'nope' })).toEqual({

@@ -1633,6 +1633,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_TEST_ENDPOINT, data) as Promise<ProviderEndpointTestResponse>,
   discoverProviderModels: (data: { apiKey: string; credentialId?: string; baseUrl: string }) =>
     ipcRenderer.invoke(AgentIpcChannels.PROVIDERS_DISCOVER_MODELS, data) as Promise<DiscoverModelsResult>,
+  grokAuth: (request: import('@superone/shared/grok-auth').GrokAuthRequest) =>
+    ipcRenderer.invoke('acp:grok-auth', request) as Promise<import('@superone/shared/grok-auth').GrokAuthState>,
   listAcpAgents: () =>
     ipcRenderer.invoke(AgentIpcChannels.ACP_LIST_AGENTS) as Promise<import('@superone/shared/agent-types').AcpResources>,
   refreshAcpModels: (agentId?: string) =>
